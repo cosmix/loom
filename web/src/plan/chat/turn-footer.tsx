@@ -29,8 +29,7 @@ function changedDocKind(path: string): DocKind | null {
   if (/^doc\/plans\/(?:[a-z0-9-]+\/)?briefs\/.+/.test(path)) return "brief";
   const name = path.match(/^doc\/plans\/(?:[a-z0-9-]+\/)?(?:archive\/)?([^/]+)$/)?.[1];
   if (name && /^(?:(?:IN_PROGRESS|DONE|RETIRED)-)?PLAN-.+\.md$/.test(name)) return "plan";
-  if (/^doc\/plans\/(?:[a-z0-9-]+\/)?(?:index|[^/]*metaplan[^/]*)\.md$/.test(path))
-    return "metaplan";
+  if (/^doc\/plans\/(?:[a-z0-9-]+\/)?index\.md$/.test(path)) return "metaplan";
   return null;
 }
 

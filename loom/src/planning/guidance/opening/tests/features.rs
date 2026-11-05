@@ -60,7 +60,7 @@ fn opening_uses_feature_slug_when_document_titles_change() {
     let project = Project::load(temp.path()).unwrap();
 
     let message = opening_message(
-        &AuthoringStart::Offer(Offer::RefineSpec),
+        &AuthoringStart::Offer(Offer::PlanFollowUps),
         &project,
         Some("f"),
     )
@@ -113,24 +113,21 @@ fn feature_scope_mismatch_is_a_typed_error() {
 }
 
 #[test]
-fn metaplan_round_ignores_other_features() {
+fn plan_follow_ups_names_its_own_feature_index() {
     let (temp, _) = fixture();
     fs::create_dir_all(temp.path().join("doc/plans/b")).unwrap();
-    fs::write(
-        temp.path().join("doc/plans/b/metaplan-02.md"),
-        "# Other round\n",
-    )
-    .unwrap();
+    fs::write(temp.path().join("doc/plans/b/index.md"), "# Other\n").unwrap();
     let project = Project::load(temp.path()).unwrap();
 
     let message = opening_message(
-        &AuthoringStart::Offer(Offer::NewMetaplanRound),
+        &AuthoringStart::Offer(Offer::PlanFollowUps),
         &project,
         Some("f"),
     )
     .unwrap();
 
-    assert!(message.contains("Write doc/plans/f/metaplan-02.md"));
+    assert!(message.contains("in doc/plans/f/index.md."), "{message}");
+    assert!(!message.contains("doc/plans/b/"), "{message}");
 }
 
 #[test]

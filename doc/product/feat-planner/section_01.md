@@ -23,8 +23,8 @@ one. The project view lists features and standalone plans; standalone plans have
 | ---- | ------------- | --------------------------------------------------------------- |
 | 1    | Vision        | `doc/product/<f>/index.md` exists                               |
 | 2    | Product spec  | every section the feature's vision lists has its file           |
-| 3    | Metaplan      | at least one metaplan exists in the feature                     |
-| 4    | Plans         | every entry in the feature's metaplans has a plan file          |
+| 3    | Metaplan      | the feature's metaplan exists                                   |
+| 4    | Plans         | every entry in the feature's metaplan has a plan file           |
 | 5    | Pressure test | optional: the user decides which plans to pressure-test         |
 | 6    | Run           | the user starts `loom run`; the app shows plans running or done |
 
@@ -54,7 +54,7 @@ and exclude `archive`, `briefs`, `plans` and `overview`. Documents under an inva
 directory are classified as `other`, with a `bad-feature-name` problem.
 
 A vision at `doc/product/index.md`, a section directly under `doc/product/`, or a metaplan
-directly under `doc/plans/` raises `needs-feature` when the document is unlocked. Its
+at `doc/plans/index.md` raises `needs-feature` when the document is unlocked. Its
 `MoveIntoFeature` offer starts a conversation to move the document and what it lists into a
 feature and fix the references. These documents do not form a project-wide checklist.
 
@@ -82,10 +82,10 @@ to the vision's table when the vision exists. It is not a gap for step 2.
 
 ### Metaplans
 
-A metaplan is `doc/plans/<f>/index.md` or any `doc/plans/<f>/*metaplan*.md`, directly in the
-feature's plans directory; no configuration moves them. A feature can hold several, for
-example one per planning round (`metaplan-NN.md`); each contributes its own entries. (My call:
-the returning author adds a round rather than rewriting a finished metaplan.)
+A feature has one metaplan, `doc/plans/<f>/index.md`, directly in the feature's plans
+directory; no configuration moves it. Any other `*metaplan*.md` file in a feature is an `Other`
+document and contributes no entries. Follow-up work is new entries appended to `index.md` after a
+`## Follow-ups` heading; finished entries stay unchanged (section 11, "After plans complete").
 
 A metaplan entry is a heading of level 2 that names a plan file in backticks, the form the
 existing metaplan uses:
@@ -123,7 +123,7 @@ so the app offers no replacement plan to write; the problem calls for moving or 
 `Implements: section_07` resolves against the plan's own feature's vision table. Brief bundles
 live under `doc/plans/<f>/briefs/<slug>/`.
 
-A plan in a feature that none of its metaplans names is an **unlisted plan**: read and reviewed
+A plan in a feature that its metaplan does not name is an **unlisted plan**: read and reviewed
 like any other, and offered for pressure testing like any other. It has no offer to add it to
 a metaplan and is not a gap for step 4.
 
@@ -185,25 +185,23 @@ new session briefed for that step and that document (section 09).
 | ready           | Refine any document; start a run (section 11)                         |
 | ready, all done | none                                                                  |
 
-A finished feature has no primary offer. Its two follow-ups, comparing the spec with what was
-built and starting a new metaplan round, are secondary offers drawn only on the Run page
-(section 11).
+A finished feature has no primary offer. Its view shows the Built state (section 11, "After
+plans complete") with the `Plan follow-ups` offer, its sole secondary offer.
 
 Offer labels are short, and the sentence beside the button explains what it does:
 
-| Offer                            | Label                          |
-| -------------------------------- | ------------------------------ |
-| Start the vision                 | `Start the vision`             |
-| Fix the vision's section list    | `Fix the section table`        |
-| Write a missing section          | `Write section NN`             |
-| Add an unlisted section          | `Add section NN to the vision` |
-| Start a metaplan                 | `Start the metaplan`           |
-| Write a missing plan             | `Write plan <slug>`            |
-| Pressure-test a plan             | `Pressure-test <slug>`         |
-| Start a run                      | `Start a run`                  |
-| Compare spec with what was built | `Compare spec with build`      |
-| Start a new metaplan round       | `New metaplan round`           |
-| Draft all sections or plans      | `Draft all with a team`        |
+| Offer                         | Label                          |
+| ----------------------------- | ------------------------------ |
+| Start the vision              | `Start the vision`             |
+| Fix the vision's section list | `Fix the section table`        |
+| Write a missing section       | `Write section NN`             |
+| Add an unlisted section       | `Add section NN to the vision` |
+| Start a metaplan              | `Start the metaplan`           |
+| Write a missing plan          | `Write plan <slug>`            |
+| Pressure-test a plan          | `Pressure-test <slug>`         |
+| Start a run                   | `Start a run`                  |
+| Plan follow-ups               | `Plan follow-ups`              |
+| Draft all sections or plans   | `Draft all with a team`        |
 
 **No screen draws one offer twice.** The chat panel carries no offer to start a step (section
 08). On the product and engineering pages the page owns the primary offer while its pace and

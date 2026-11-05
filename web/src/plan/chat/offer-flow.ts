@@ -102,7 +102,7 @@ export function createOfferStarter(store: Store): {
   const start = async (offer: string, feature?: string): Promise<void> => {
     if (request) return;
     // The end wait can last minutes: the chat belongs to the screen the offer was chosen on.
-    // `refine_spec` and `new_metaplan_round` name no feature on the wire, so the screen's applies.
+    // `plan_follow_ups` names no feature on the wire, so the screen's applies.
     const owner = store.get(startOwnerAtom);
     const ownerFeature = feature ?? owner.feature;
     const plan = feature === undefined ? owner.plan : undefined;

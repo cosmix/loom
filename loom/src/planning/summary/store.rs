@@ -4,23 +4,23 @@
 //! - `STORE_DIR: &str` is `doc/loom/summaries`.
 //! - `validate_id(id: &str) -> anyhow::Result<()>` accepts only
 //!   `overview/<feature>/{product,engineering}`, `<feature>/product/section_<2+ digits>`,
-//!   `<feature>/product/vision`, `<feature>/metaplan/<stem>` and `plans/<slug>`. Features use
-//!   `kinds::is_feature_name`; a metaplan stem matches `[a-z0-9][a-z0-9-]*`; slugs start with an
-//!   ASCII alphanumeric, continue with `[A-Za-z0-9._-]` and cannot contain `..`.
+//!   `<feature>/product/vision`, `<feature>/metaplan/index` and `plans/<slug>`. Features use
+//!   `kinds::is_feature_name`; slugs start with an ASCII alphanumeric, continue with
+//!   `[A-Za-z0-9._-]` and cannot contain `..`.
 //! - `is_overview(id: &str) -> bool` recognizes valid feature overview ids.
 //! - `summary_path(id: &str) -> PathBuf` returns `<STORE_DIR>/<id>.md`, empty if invalid.
 //! - `summary_id_for(project: &Project, rel: &Path) -> Option<String>` identifies an
 //!   eligible section or winning plan; `source_of(project: &Project, id: &str) ->
 //!   Option<PathBuf>` finds that document's current path.
 //!   Sections and metaplans need a feature (a metaplan summary is a document summary of the
-//!   metaplan file whose stem the id carries); plans must sit directly in their home
+//!   feature's only metaplan, `index.md`); plans must sit directly in their home
 //!   (`doc/plans` or `doc/plans/<feature>`) or be named by a metaplan of their own feature.
 //!   Losing copies and top-level sections are excluded.
 //! - `expected_ids(project: &Project) -> Vec<String>` includes eligible documents and
 //!   each feature's overviews with existing vision/metaplan sources, including empty ones.
 //! - `scope(project: &Project, feature: &str) -> Scope` computes one feature's ordered
 //!   `product` and `engineering` members and sorted `outside` documents. The vision
-//!   summary (`<feature>/product/vision`) and the metaplan summaries are in none of the three
+//!   summary (`<feature>/product/vision`) and the metaplan summary (one per feature) are in none of the three
 //!   lists. `Scope.feature` is the requested name; unknown features have empty lists. Other features and standalone
 //!   plans are excluded. Standalone plans remain in `expected_ids`.
 //! - `Scope::of(project: &Project, overview_id: &str) -> Option<Scope>` selects that
@@ -35,7 +35,7 @@ use std::path::{Component, Path, PathBuf};
 
 use anyhow::{bail, Result};
 
-use crate::planning::kinds::{is_feature_name, is_slug_chars, plans_dir, vision_path, DocKind};
+use crate::planning::kinds::{is_feature_name, plans_dir, vision_path, DocKind};
 use crate::planning::project::{Feature, Project};
 
 /// Repository-relative directory containing summaries.
@@ -63,15 +63,14 @@ pub fn is_vision(id: &str) -> bool {
     vision_feature(id).is_some()
 }
 
-/// The feature of a metaplan summary id `<feature>/metaplan/<stem>`, else `None`.
-/// A stem matches `[a-z0-9][a-z0-9-]*`, so it can never hold `.` or `/`.
+/// The feature of a metaplan summary id `<feature>/metaplan/index`, else `None`.
+/// A feature has one metaplan, `index.md`, so `index` is the only accepted stem.
 pub fn metaplan_feature(id: &str) -> Option<&str> {
-    let (feature, stem) = id.split_once("/metaplan/")?;
-    let stem_ok = is_slug_chars(stem);
-    (stem_ok && is_feature_name(feature)).then_some(feature)
+    id.strip_suffix("/metaplan/index")
+        .filter(|feature| is_feature_name(feature))
 }
 
-/// Whether `id` is a feature metaplan's document summary, `<feature>/metaplan/<stem>`.
+/// Whether `id` is a feature metaplan's document summary, `<feature>/metaplan/index`.
 pub fn is_metaplan(id: &str) -> bool {
     metaplan_feature(id).is_some()
 }

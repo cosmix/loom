@@ -179,7 +179,7 @@ What a refinement may do instead of editing a locked plan:
 | Work a done plan built                    | Writes a new plan for the change, with its own slug and `Implements:` line, and an entry for it in a metaplan                 |
 | Work a running plan is building           | The same: a new plan, to run after the running one. Correcting a running stage's verification is `loom stage amend`, a terminal operation outside this app |
 | A retired plan the author wants back      | A new plan with a new slug; reusing the retired slug would be a stray copy (section 03, "Plans and their lifecycle")          |
-| The metaplan's account of a plan          | Edits the metaplan. Metaplans are never locked; a new round may go in a new metaplan (section 01)                            |
+| The metaplan's account of a plan          | Edits the metaplan. Metaplans are never locked; follow-ups append entries to `index.md` (section 01)                         |
 
 The new plan names the plan it follows in its prose ("Follows `DONE-PLAN-token-flow.md`"), as a
 cross-reference section 03 already resolves. (My call: no new convention, and a plain reader sees

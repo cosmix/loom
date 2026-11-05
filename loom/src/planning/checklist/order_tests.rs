@@ -7,9 +7,6 @@ use super::tests::{
 };
 use super::{CurrentStep, ItemStatus, Offer, Step, StepMark};
 
-/// A second metaplan file; `doc/plans/demo/index.md` sorts before it.
-const SECOND_META: &str = "doc/plans/demo/metaplan-b.md";
-
 fn write_plan(metaplan: &str, slug: &str) -> Offer {
     Offer::WritePlan {
         feature: FEATURE.into(),
@@ -31,9 +28,15 @@ fn draft_all_plans() -> Offer {
     }
 }
 
-/// The metaplan fixture written to `rel` instead of `doc/plans/demo/index.md`.
-fn metaplan_at(rel: &str, slugs: &[&str]) -> (String, String) {
-    (rel.to_string(), metaplan(slugs).1)
+/// The metaplan fixture with `follow_ups` entries under a `## Follow-ups` heading.
+fn metaplan_with_follow_ups(slugs: &[&str], follow_ups: &[&str]) -> (String, String) {
+    let mut text = metaplan(slugs).1;
+    text.push_str("## Follow-ups\n\n");
+    for (i, slug) in follow_ups.iter().enumerate() {
+        let number = slugs.len() + i + 1;
+        text.push_str(&format!("## {number}. F (`PLAN-{slug}.md`)\n\n"));
+    }
+    (META.to_string(), text)
 }
 
 #[test]
@@ -70,41 +73,29 @@ fn finished_feature_has_no_primary_and_keeps_followups_in_order() {
     let c = checklist(&project);
     assert_eq!(c.current, CurrentStep::ReadyAllDone);
     assert_eq!(c.primary, None);
-    assert_eq!(c.secondary, [Offer::RefineSpec, Offer::NewMetaplanRound]);
+    assert_eq!(c.secondary, [Offer::PlanFollowUps]);
     assert_eq!(c.steps.len(), 6);
     assert_eq!(c.steps[5], (Step::Run, StepMark::Done));
 }
 
 #[test]
-fn first_missing_plan_belongs_to_the_first_metaplan_in_reading_order() {
-    let files = spec(vec![
-        metaplan_at(SECOND_META, &["x"]),
-        owned(metaplan(&["y"])),
-    ]);
+fn follow_up_entries_come_after_the_numbered_ones() {
+    let files = spec(vec![metaplan_with_follow_ups(&["y"], &["x"])]);
     let (_temp, project) = load(&files);
     let c = checklist(&project);
     assert_eq!(c.primary, Some(write_plan(META, "y")));
-    assert_eq!(
-        c.secondary,
-        [draft_all_plans(), write_plan(SECOND_META, "x")]
-    );
-    let listed: Vec<_> = checklist(&project).state.metaplans.iter().collect();
-    assert_eq!(listed, [&PathBuf::from(META), &PathBuf::from(SECOND_META)]);
+    assert_eq!(c.secondary, [draft_all_plans(), write_plan(META, "x")]);
+    let listed: Vec<_> = c.state.metaplans.iter().collect();
+    assert_eq!(listed, [&PathBuf::from(META)]);
 }
 
 #[test]
-fn a_slug_named_by_two_metaplans_is_offered_once_for_the_first() {
-    let files = spec(vec![
-        metaplan_at(SECOND_META, &["a", "b"]),
-        owned(metaplan(&["a"])),
-    ]);
+fn a_slug_named_twice_in_the_metaplan_is_offered_once() {
+    let files = spec(vec![metaplan_with_follow_ups(&["a"], &["a", "b"])]);
     let (_temp, project) = load(&files);
     let c = checklist(&project);
     assert_eq!(c.primary, Some(write_plan(META, "a")));
-    assert_eq!(
-        c.secondary,
-        [draft_all_plans(), write_plan(SECOND_META, "b")]
-    );
+    assert_eq!(c.secondary, [draft_all_plans(), write_plan(META, "b")]);
 }
 
 #[test]

@@ -228,17 +228,10 @@ fn unscoped_offers_omit_optional_context_and_keep_a_null_target() {
             }),
         ),
         (
-            Offer::RefineSpec,
+            Offer::PlanFollowUps,
             json!({
-                "id": "refine-spec", "kind": "refine_spec",
-                "label": "Compare spec with build", "target": null
-            }),
-        ),
-        (
-            Offer::NewMetaplanRound,
-            json!({
-                "id": "new-metaplan-round", "kind": "new_metaplan_round",
-                "label": "New metaplan round", "target": null
+                "id": "plan-follow-ups", "kind": "plan_follow_ups",
+                "label": "Plan follow-ups", "target": null
             }),
         ),
     ];

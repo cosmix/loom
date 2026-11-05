@@ -127,10 +127,7 @@ function finishedChecklist(): ChecklistView {
     current: { kind: "ready_all_done" },
     steps: checklistFixture.checklists[0]!.steps.map((step) => ({ ...step, mark: "done" })),
     primary: null,
-    secondary: [
-      offer("refine_spec", "Refine the spec"),
-      offer("new_metaplan_round", "New metaplan round"),
-    ],
+    secondary: [offer("plan_follow_ups", "Plan follow-ups")],
     items: [],
   });
 }

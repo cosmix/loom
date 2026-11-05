@@ -71,7 +71,6 @@ plugin/
   skills/metaplan/SKILL.md
   skills/plan/SKILL.md
   skills/refine/SKILL.md
-  skills/retro/SKILL.md
   skills/knowledge/SKILL.md
   skills/summaries/SKILL.md
   agents/summary.md               document-summary rebuilder
@@ -231,21 +230,21 @@ and the teammate count; the skill uses the shared team procedure under `loom-pla
 with `loom plan check` for the lead's consistency pass. Each teammate follows the section
 conventions above and leaves unresolved choices under `## Open questions`.
 
-### `loom-plan:metaplan`: a metaplan or a new round
+### `loom-plan:metaplan`: the metaplan or its follow-ups
 
-Target: `doc/plans/<feature>/index.md` for a feature's first metaplan; for a later round,
-`doc/plans/<feature>/metaplan-<nn>.md` with the next free two-digit number (section 01 accepts any
-`doc/plans/<feature>/*metaplan*.md`, and the returning author adds a round and leaves finished metaplans
-as they are). (My call: a number orders rounds in a directory listing.)
+Target: `doc/plans/<feature>/index.md`, the feature's one metaplan (section 01). A first session
+writes the file. Once it exists, a session appends new entries under a `## Follow-ups` heading in
+it, creating the heading when it is absent, and leaves finished entries unchanged.
 
 The procedure is the same `loom-plan:brainstorming` discussion, over how to cut the product into
 plans: what each plan delivers, which product sections it implements, the order, and what each
-needs from another. The session reads the feature's product spec, existing metaplans and every plan in any state,
-so a new round never repeats work that is written, running or done.
+needs from another. The session reads the feature's product spec, the metaplan, every plan in any
+state and, for follow-ups, the done plans' run reviews (section 03), so a new entry never repeats
+work that is written, running or done.
 
 The metaplan it produces:
 
-- a level-1 title and an introduction stating the round's goal and what it builds on;
+- a level-1 title and an introduction stating the goal and what it builds on;
 - one entry per plan, a level-2 heading that names the plan file in backticks before the plan
   exists, `## <n>. <Title> (`PLAN-<slug>.md`)`, followed by three or four paragraphs: what the
   plan delivers, the product sections it implements by number, what it depends on and what
@@ -254,6 +253,10 @@ The metaplan it produces:
 - entry order as the intended execution order.
 
 It also handles "add this unlisted plan to a metaplan".
+
+The `Plan follow-ups` offer opens this skill with the message `Append follow-up entries under
+"## Follow-ups" in doc/plans/<f>/index.md.`, followed by the item or the text the user started it
+from (section 11, "After plans complete").
 
 ### `loom-plan:plan`: one loom plan
 
@@ -313,15 +316,6 @@ make the change the user asks for; carry the change into every document that sta
 thing, in the same turn, or record the conflict under `## Open questions` in the document that
 cannot change; keep headings that summaries cite unless the change is about the heading.
 
-### `loom-plan:retro`: after plans have run
-
-Used by the returning author's offers (section 11, "After plans complete"). The skill reads each
-done plan's run review (`REVIEW-<plan file stem>.md`, section 03), the product sections in the
-plan's `Implements:` line, and the knowledge base index; it walks the user through what was built
-differently from what the spec says; it records each divergence the user accepts as a decision in
-the affected section, and each follow-up as an open question or as a proposed entry for a new
-metaplan round. It never edits done plans or run reviews.
-
 ### `loom-plan:knowledge`: changing the knowledge base
 
 The knowledge base is read-only in the app, and changes reach it only through `loom knowledge`
@@ -355,8 +349,7 @@ Load the skill loom-plan:plan, then begin by telling me what you read and what y
 | Draft all missing plans                | 4    | the missing plans and their brief bundles in the feature | `loom-plan:plan`      |
 | Add an unlisted plan to a metaplan     | 4    | the metaplan, with the plan's file name                  | `loom-plan:metaplan`  |
 | Refine a document or a passage         | any  | the document, with any attached passage                  | `loom-plan:refine`    |
-| Compare spec with build                | done | the done plans and their run reviews                     | `loom-plan:retro`     |
-| Start a new metaplan round             | done | `doc/plans/<feature>/metaplan-<nn>.md`                   | `loom-plan:metaplan`  |
+| Plan follow-ups                        | done | `doc/plans/<f>/index.md` and the done plans' run reviews | `loom-plan:metaplan`  |
 | Change the knowledge base              | any  | the knowledge file, if one was open                      | `loom-plan:knowledge` |
 
 A chat the user starts with no offer (an empty chat box) gets the common brief with
@@ -395,7 +388,7 @@ section 12 enforces them.
   plan's brief bundle: stages that start later in a run read the briefs committed at that time,
   so an edit would run half the plan on one version and half on another. (My call.) Asked to
   change any of these, the session says why it cannot and offers what can be done: a correction
-  to running or finished work becomes a new metaplan entry or a refinement of the spec.
+  to running or finished work becomes a follow-up entry in the metaplan or a refinement of the spec.
 - **Run reviews.** `REVIEW-*.md` files are never edited (section 03).
 - **Knowledge.** Nothing under `doc/loom/knowledge/` is written with a file tool; every change
   runs through `loom knowledge`.
@@ -477,10 +470,9 @@ The pressure steps keep the existing `[pressure]` keys
 app and one started from a terminal resolve the same way.
 
 **Spec steps** are the product-spec work: step 1 (vision), step 2 (product sections), a refinement
-started on a document under `doc/product/`, a comparison of the spec with what was built (it records into product
-sections), a knowledge change, and a chat started with no step. **Plan steps** are step 3
-(metaplans), step 4 (loom plans), a refinement started on a document under `doc/plans/`, and a new
-metaplan round. A chat started by sending a message counts as a plan step when its first
+started on a document under `doc/product/`, a knowledge change, and a chat started with no step. **Plan steps** are step 3
+(metaplans), step 4 (loom plans), a refinement started on a document under `doc/plans/`, and plan
+follow-ups. A chat started by sending a message counts as a plan step when its first
 attached document is under `doc/plans/`, and as a spec step otherwise. Spec steps run at medium
 effort, plan steps at high: a plan fixes the stages,
 files and acceptance criteria every execution session follows, and a mistake there costs a run.

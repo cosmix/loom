@@ -48,12 +48,14 @@ directories are always skipped (section 12, "Symlinks under `doc/`").
 | Vision          | `doc/product/<f>/index.md`                                                                     | none (root of the feature's product tree)         |
 | Product section | `doc/product/<f>/section_<nn>.md`                                                              | the feature's vision, through its sections table  |
 | Product note    | any other file under `doc/product/<f>/`                                                        | the feature's vision, as an attachment            |
-| Metaplan        | `doc/plans/<f>/index.md`, `doc/plans/<f>/*metaplan*.md`                                        | none (root of the feature's engineering tree)     |
-| Feature plan    | `doc/plans/<f>/PLAN-<slug>.md` and its lifecycle spellings, including `doc/plans/<f>/archive/` | each metaplan in the feature whose entry names it |
+| Metaplan        | `doc/plans/<f>/index.md`                                                                       | none (root of the feature's engineering tree)     |
+| Feature plan    | `doc/plans/<f>/PLAN-<slug>.md` and its lifecycle spellings, including `doc/plans/<f>/archive/` | the metaplan in the feature whose entry names it  |
 | Brief           | any file under `doc/plans/<f>/briefs/<slug>/`, and briefs a feature plan names                 | the plan with that slug                           |
 | Run review      | `REVIEW-<plan file stem>.md` in `doc/plans/<f>/` or `doc/plans/<f>/archive/`                   | the plan with that slug                           |
 | Knowledge       | any file under `doc/loom/knowledge/`                                                           | the knowledge index (see below)                   |
 | Other           | anything else under `doc/`                                                                     | none                                              |
+
+Any other `*metaplan*.md` file in a feature is an `Other` document: a feature has one metaplan.
 
 Here `<f>` is a feature name: `[a-z0-9][a-z0-9-]*`, at most 64 characters. `archive`, `briefs`,
 `plans` and `overview` are reserved feature names. At the first directory under `doc/plans/`,
@@ -63,7 +65,7 @@ directory. Plans and run reviews live directly in their home or its `archive/`; 
 deeper under an archive are `other`. Brief bundles may contain nested directories.
 
 A vision at `doc/product/index.md`, a section directly under `doc/product/`, or a metaplan
-directly under `doc/plans/` keeps its kind but raises `needs-feature`: it belongs in a feature
+at `doc/plans/index.md` keeps its kind but raises `needs-feature`: it belongs in a feature
 directory. The top of `doc/plans/` holds standalone plans, their archive, briefs and run reviews.
 
 The title of a Markdown document is its first level-1 heading, else its file name. Product
@@ -120,10 +122,10 @@ written as `PLAN-foo.md` keeps working after `loom run` renames the file.
 ### Metaplans
 
 A metaplan entry is a level-2 heading that names a plan file in backticks (section 01). Any
-lifecycle spelling in the backticks resolves by slug, so a metaplan written after a plan ran can
+lifecycle spelling in the backticks resolves by slug, so an entry appended after a plan ran can
 name `DONE-PLAN-foo.md`. The entry's heading section, from the heading to the next level-2
-heading, is the plan's description in that metaplan; the plan's view links to it. A plan named
-by two metaplans in its feature has both as parents. An entry naming a plan from another
+heading, is the plan's description in the metaplan; the plan's view links to it. A plan named
+by two entries has both as parents. An entry naming a plan from another
 feature or the standalone shelf raises `metaplan-entry-foreign-plan`.
 
 ### Briefs
@@ -161,7 +163,7 @@ file mode and from the plan's summary where it cites them.
 ### Run reviews
 
 `loom run` writes a code review per plan as `REVIEW-<plan file stem>.md`
-(`loom/src/fs/plan_review/mod.rs:33`), for example `REVIEW-PLAN-foo.md` or
+(`generate` in `loom/src/fs/plan_review/mod.rs`), for example `REVIEW-PLAN-foo.md` or
 `REVIEW-IN_PROGRESS-PLAN-foo.md`. The app attaches it to the plan by slug and shows it in file
 mode as the record of what was built. It is never summarized and never edited by planning
 sessions. (My call: section 10 uses it to show what changed since a plan ran.)

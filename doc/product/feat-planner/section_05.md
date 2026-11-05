@@ -12,14 +12,14 @@ section states only what the reader sees and what the reader needs from the summ
 
 Concept mode has three levels of text, each a step closer to the files:
 
-| Level | Text                                                                                    | A sentence opens to                                        |
-| ----- | --------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
-| 0     | An overview: product, or engineering                                                    | The level 1 sentences it cites, from one or more documents |
-| 1     | A document summary: the vision, one per product section, one per metaplan, one per plan | The source passages it cites                               |
-| 2     | A source passage: one heading section of a file under `doc/`                            | Nothing further; it links to file mode                     |
+| Level | Text                                                                                          | A sentence opens to                                        |
+| ----- | --------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
+| 0     | An overview: product, or engineering                                                          | The level 1 sentences it cites, from one or more documents |
+| 1     | A document summary: the vision, one per product section, the feature's metaplan, one per plan | The source passages it cites                               |
+| 2     | A source passage: one heading section of a file under `doc/`                                  | Nothing further; it links to file mode                     |
 
 The vision has a document summary of its own: at most 8 sentences in at most 3 paragraphs, short
-enough to read in under a minute (vision, Decisions, "Summary levels"). Each metaplan has a
+enough to read in under a minute (vision, Decisions, "Summary levels"). The metaplan has a
 document summary of its own, read on its own page. A product overview sentence that draws on the
 vision opens straight to its source passage, one level down instead of two, and the vision's
 summary is not one of the overview's members. An engineering overview sentence that draws on a
@@ -45,10 +45,9 @@ these pages by section 01's landing rule. The routes:
 | `/f/<feature>/metaplan[/<file>]` | a metaplan's summary, with **Source** one click away                                      | Metaplan               |
 | `/f/<feature>/engineering`       | the engineering overview, with the pace and plan queue above it while plans are missing   | Plans, Overview        |
 | `/f/<feature>/engineering/<doc>` | a plan's summary                                                                          | that plan              |
-| `/f/<feature>/run`               | run state and a finished feature's follow-up offers (section 11)                          | Run                    |
+| `/f/<feature>/run`               | run state                                                                                 | Run                    |
 
-The metaplan route renders the summary of the first metaplan, or of the metaplan named by
-`<file>`; its heading's **Source** link opens the metaplan's text. A metaplan whose summary is not
+The metaplan route renders the summary of the feature's metaplan (the optional file segment is `index.md`, the only metaplan file); its heading's **Source** link opens the metaplan's text. A metaplan whose summary is not
 built yet shows the "not built yet" state with a Rebuild action, never the raw text. The vision's
 summary reads like a section's: its sentences open to the vision's own passages. File mode is
 section 06. Standalone plans keep `/plans/<slug>`. A feature with a product spec opens on
@@ -58,10 +57,10 @@ opens on `/f/<feature>/vision`, which offers to start one.
 - **Product overview**: built from `doc/product/<feature>/index.md` and the sections it names.
   Sections of that feature the vision does not name are listed under its overview as unlisted
   sections, each linking to its document summary.
-- **Engineering overview**: built from the feature's metaplans and their plans (section 01: a
-  feature can hold several metaplans). Plans of that feature no metaplan names are listed under
-  its overview as unlisted plans, each linking to its document summary. An overview summarises
-  what the metaplans set out to build; unlisted plans are still one click away. Standalone plans
+- **Engineering overview**: built from the feature's metaplan and its plans. Plans of that feature
+  no metaplan names are listed under its overview as unlisted plans, each linking to its document
+  summary. An overview summarises what the metaplan sets out to build; unlisted plans are still
+  one click away. Standalone plans
   have their own summary pages and do not belong to a feature's overview.
 
 Each overview renders the headings and paragraphs section 04 produces, in the reading column,

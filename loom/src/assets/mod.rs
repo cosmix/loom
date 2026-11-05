@@ -64,7 +64,6 @@ mod tests_table {
             "skills/metaplan/SKILL.md",
             "skills/plan/SKILL.md",
             "skills/refine/SKILL.md",
-            "skills/retro/SKILL.md",
             "skills/knowledge/SKILL.md",
             "skills/summaries/SKILL.md",
             "agents/summary.md",

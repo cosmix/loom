@@ -72,10 +72,9 @@ fn authoring_display_name_cases() -> [(Offer, &'static str); 6] {
 
 #[test]
 fn authoring_display_names() {
-    let cases = authoring_display_name_cases().into_iter().chain([
-        (Offer::RefineSpec, "loom plan: retro"),
-        (Offer::NewMetaplanRound, "loom plan: metaplan"),
-    ]);
+    let cases = authoring_display_name_cases()
+        .into_iter()
+        .chain([(Offer::PlanFollowUps, "loom plan: metaplan")]);
     for (offer, expected) in cases {
         assert_eq!(
             display_name("authoring", Some(&AuthoringStart::Offer(offer))),

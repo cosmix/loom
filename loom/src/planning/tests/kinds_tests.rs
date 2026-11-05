@@ -2,7 +2,9 @@
 
 use std::path::Path;
 
+use crate::planning::checklist::Offer;
 use crate::planning::kinds::{classify, doc_id, is_feature_name, plan_path, section_path, DocKind};
+use crate::planning::project::Project;
 use crate::planning::slug::PlanState;
 
 mod features;
@@ -122,27 +124,19 @@ fn feature_product_roles_and_notes_have_feature_scoped_ids() {
 }
 
 #[test]
-fn metaplans_are_only_classified_at_the_top_level_or_feature_root() {
-    for path in [
+fn only_index_md_is_a_metaplan_at_the_top_level_or_feature_root() {
+    check(
         "doc/plans/index.md",
-        "doc/plans/round-2-metaplan.md",
-        "doc/plans/metaplan-01.md",
-    ] {
-        check(path, DocKind::Metaplan { feature: None }, &path[4..]);
-    }
-    for path in [
+        DocKind::Metaplan { feature: None },
+        "plans/index.md",
+    );
+    check(
         "doc/plans/f/index.md",
-        "doc/plans/f/round-2-metaplan.md",
-        "doc/plans/f/metaplan-01.md",
-    ] {
-        check(
-            path,
-            DocKind::Metaplan {
-                feature: Some("f".into()),
-            },
-            &path[4..],
-        );
-    }
+        DocKind::Metaplan {
+            feature: Some("f".into()),
+        },
+        "plans/f/index.md",
+    );
     for path in [
         "doc/plans/f/sub/index.md",
         "doc/plans/f/sub/x-metaplan.md",
@@ -153,6 +147,44 @@ fn metaplans_are_only_classified_at_the_top_level_or_feature_root() {
     ] {
         check(path, DocKind::Other, &path[4..]);
     }
+}
+
+#[test]
+fn a_second_metaplan_file_is_another_document() {
+    for path in [
+        "doc/plans/f/metaplan-02.md",
+        "doc/plans/f/round-2-metaplan.md",
+        "doc/plans/optim-metaplan.md",
+    ] {
+        check(path, DocKind::Other, &path[4..]);
+    }
+
+    let temp = tempfile::TempDir::new().unwrap();
+    for (rel, text) in [
+        ("doc/plans/demo/index.md", "## 1. A (`PLAN-a.md`)\n"),
+        ("doc/plans/demo/metaplan-02.md", "## 2. X (`PLAN-x.md`)\n"),
+        ("doc/plans/optim-metaplan.md", "## 1. Y (`PLAN-y.md`)\n"),
+    ] {
+        let path = temp.path().join(rel);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, text).unwrap();
+    }
+    let project = Project::load(temp.path()).unwrap();
+    let feature = project.feature("demo").expect("demo feature");
+    let files: Vec<_> = feature.metaplans.iter().map(|(rel, _)| rel).collect();
+    assert_eq!(files, [Path::new("doc/plans/demo/index.md")]);
+    let named: Vec<_> = feature
+        .checklist
+        .items
+        .iter()
+        .filter_map(|item| item.offer.as_ref())
+        .chain(&feature.checklist.primary)
+        .chain(&feature.checklist.secondary)
+        .map(Offer::id)
+        .collect();
+    assert!(!named.iter().any(|id| id.ends_with(":x")), "{named:?}");
+    assert!(project.problems.iter().all(|p| p.code != "needs-feature"));
+    assert!(project.moves.is_empty(), "{:?}", project.moves);
 }
 
 #[test]
