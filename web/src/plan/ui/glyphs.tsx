@@ -19,14 +19,25 @@ import {
   MessageCircleQuestion,
   Minus,
   PencilLine,
-  RefreshCw,
   SlidersHorizontal,
   StickyNote,
   Telescope,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
+import type { ReactNode } from "react";
 
 import type { MarkView } from "@/plan/api/schema";
+import { RoundelGlyph } from "@/plan/ui/roundel-glyph";
+
+/** The props a glyph site passes: a lucide icon takes them, and so does the roundel glyph. */
+export interface GlyphProps {
+  className?: string;
+  size?: number | string;
+  "aria-hidden"?: boolean | "true" | "false";
+}
+
+/** A state glyph: a lucide icon, or the roundel for a state that means work in progress. */
+export type Glyph = (props: GlyphProps) => ReactNode;
 
 export type DocKind =
   | "vision"
@@ -52,18 +63,18 @@ export const DOC_KIND_GLYPHS: Record<DocKind, LucideIcon> = {
   review: FileSearch,
 };
 
-// Running is the rotating arrows everywhere in the planner, so it shares SUMMARY_STATE_GLYPHS'
-// `rebuilding` icon on purpose: both say "work in progress". Only doc kinds must stay distinct.
-export const PLAN_STATE_GLYPHS: Record<PlanState, LucideIcon> = {
+// Work in progress is the roundel everywhere in the planner (ui/DESIGN.md, Status), so a running
+// plan and a rebuilding summary share it on purpose. Only doc kinds must stay distinct.
+export const PLAN_STATE_GLYPHS: Record<PlanState, Glyph> = {
   written: PencilLine,
-  running: RefreshCw,
+  running: RoundelGlyph,
   done: CircleCheckBig,
   retired: Archive,
 };
 
-export const SUMMARY_STATE_GLYPHS: Record<SummaryState, LucideIcon> = {
+export const SUMMARY_STATE_GLYPHS: Record<SummaryState, Glyph> = {
   current: CircleCheck,
-  rebuilding: RefreshCw,
+  rebuilding: RoundelGlyph,
   stale: CircleDashed,
 };
 

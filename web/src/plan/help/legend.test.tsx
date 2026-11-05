@@ -208,7 +208,7 @@ it("uses each production document, state and activity glyph", () => {
     ...Object.values(PLAN_NAMES),
     ...Object.values(SUMMARY_NAMES),
   ]) {
-    expect(tileOf(states, name).querySelector("svg")).not.toBeNull();
+    expect(tileOf(states, name).querySelector("svg, .plan-roundel-glyph")).not.toBeNull();
   }
 
   const group = screen.getByRole("region", { name: "In progress" });
@@ -233,9 +233,9 @@ it("shows the roundel once, as the one sign of work in progress", () => {
   expect(
     working.querySelectorAll(".activity-glyph .aurora-roundel[data-busy='true']"),
   ).toHaveLength(1);
-  expect(container.querySelectorAll(".aurora-roundel")).toHaveLength(1);
-  // The States group keeps the static state glyphs (a plan's "running" arrows); the progress
-  // group draws no turning icon beside the disc.
+  // The States group draws the roundel for a plan's Running and a summary's Rebuilding too.
+  expect(container.querySelectorAll(".aurora-roundel")).toHaveLength(3);
+  // The progress group draws no turning icon beside the disc.
   expect(group.querySelectorAll(".lucide-refresh-cw, .lucide-loader-circle")).toHaveLength(0);
 });
 

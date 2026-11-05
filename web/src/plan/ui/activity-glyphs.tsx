@@ -1,7 +1,7 @@
 import { BellRing } from "lucide-react";
 import type { JSX, ReactNode } from "react";
 
-import { BusyRoundel } from "@/aurora-ui/feedback/BusyRoundel";
+import { RoundelGlyph } from "@/plan/ui/roundel-glyph";
 
 import "./activity-glyphs.css";
 
@@ -66,15 +66,10 @@ function YourTurnShape({ kind }: { kind: YourTurnKind }): JSX.Element {
   }
 }
 
-function ActivityShape({ kind, paused }: { kind: ActivityKind; paused: boolean }): JSX.Element {
-  if (!isProgressKind(kind)) return <YourTurnShape kind={kind} />;
-  // A paused roundel rests upright and dims (busy-roundel.css); it is not frozen mid-turn.
-  return <BusyRoundel busy={!paused} size="100%" busyLabel="" idleLabel="" />;
-}
-
 /**
  * The decorative glyph of an activity kind. The root is `aria-hidden`: the caller's label is the
- * announcement. Work in progress is the roundel; a paused one rests.
+ * announcement. Work in progress is the roundel glyph itself (`ui/roundel-glyph.tsx`); a paused
+ * one rests upright and dims (busy-roundel.css) rather than freezing mid-turn.
  */
 export function ActivityGlyph({
   kind,
@@ -85,14 +80,15 @@ export function ActivityGlyph({
   className?: string;
   paused?: boolean;
 }): JSX.Element {
+  const root = {
+    className: `activity-glyph${className ? ` ${className}` : ""}`,
+    "data-kind": kind,
+    "data-paused": paused || undefined,
+  };
+  if (isProgressKind(kind)) return <RoundelGlyph {...root} busy={!paused} />;
   return (
-    <span
-      className={`activity-glyph${className ? ` ${className}` : ""}`}
-      data-kind={kind}
-      data-paused={paused || undefined}
-      aria-hidden="true"
-    >
-      <ActivityShape kind={kind} paused={paused} />
+    <span {...root} aria-hidden="true">
+      <YourTurnShape kind={kind} />
     </span>
   );
 }

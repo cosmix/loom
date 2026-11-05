@@ -1,6 +1,5 @@
 import { cleanup, render } from "@testing-library/react";
 import { CircleCheck, CircleDashed, CircleDot, Minus } from "lucide-react";
-import type { LucideIcon } from "lucide-react";
 import { afterEach, describe, expect, it } from "vitest";
 
 import {
@@ -10,7 +9,9 @@ import {
   STEP_MARK_GLYPHS,
   SUMMARY_STATE_GLYPHS,
   VIEW_GLYPHS,
+  type Glyph,
 } from "@/plan/ui/glyphs";
+import { RoundelGlyph } from "@/plan/ui/roundel-glyph";
 
 afterEach(cleanup);
 
@@ -55,11 +56,15 @@ const glyphRecords = [
   },
 ];
 
-const glyphCases = glyphRecords.flatMap(({ name, glyphs }) =>
+const allCases = glyphRecords.flatMap(({ name, glyphs }) =>
   Object.entries(glyphs).map(([key, glyph]) => ({ name: `${name}: ${key}`, glyph })),
 );
+// The states that mean work in progress draw the roundel, a disc of spans rather than an SVG
+// (ui/DESIGN.md, Status); "draws the roundel for work in progress" below covers them.
+const glyphCases = allCases.filter(({ glyph }) => glyph !== RoundelGlyph);
+const roundelCases = allCases.filter(({ glyph }) => glyph === RoundelGlyph);
 
-function GlyphHarness({ glyph: Glyph }: { glyph: LucideIcon }) {
+function GlyphHarness({ glyph: Glyph }: { glyph: Glyph }) {
   return (
     <span>
       <Glyph aria-hidden="true" />
@@ -76,6 +81,22 @@ describe("planner glyphs", () => {
     const { container } = render(<GlyphHarness glyph={glyph} />);
 
     expect(container.querySelector("svg")).not.toBeNull();
+  });
+
+  it("draws the roundel for work in progress: a running plan and a rebuilding summary", () => {
+    expect(roundelCases.map(({ name }) => name)).toEqual([
+      "plan states: running",
+      "summary states: rebuilding",
+    ]);
+    for (const { glyph } of roundelCases) {
+      const { container } = render(<GlyphHarness glyph={glyph} />);
+
+      expect(container.querySelector("svg")).toBeNull();
+      expect(
+        container.querySelector('[aria-hidden="true"] .aurora-roundel')?.getAttribute("data-busy"),
+      ).toBe("true");
+      cleanup();
+    }
   });
 
   it("uses a distinct glyph for each document kind", () => {
