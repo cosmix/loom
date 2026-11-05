@@ -20,7 +20,8 @@ dependencies. Separate document summaries from overviews without adding ids to t
 batch. Leave another session's claims alone. A feature summary's id names its feature:
 feature ids are `overview/<feature>/product`, `overview/<feature>/engineering`,
 `<feature>/product/vision`, `<feature>/product/section_<nn>`, and `<feature>/metaplan/<stem>`
-(one per metaplan file of the feature, `<stem>` the file name without `.md`). Plan summary ids are
+(one per metaplan file of the feature whose name without `.md`, the `<stem>`, matches
+`[a-z0-9][a-z0-9-]*`; any other metaplan file has none). Plan summary ids are
 `plans/<slug>` with repository-wide unique slugs; plan document ids remain `plan/<slug>`.
 
 Process document summaries first, one at a time in the listed order. Then process

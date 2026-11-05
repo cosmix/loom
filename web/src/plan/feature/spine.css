@@ -226,47 +226,30 @@
   font-weight: 500;
 }
 
-/* A plan's pressure record: a quiet glyph and word after the state (ui/DESIGN.md, Status). Tested
-   and untested differ in glyph and in word; only the tested glyph takes a tone. The badge keeps
-   its width and never wraps under the name: the name gives way first, and in a row too narrow for
-   the name beside the whole record the date is the first thing to go. It goes from view only
-   (the clip below), so the link's accessible name keeps it. */
+/* A plan row is one line (ui/DESIGN.md, Status): the mono slug, then its state and its pressure
+   record as glyphs alone, each 14px and keeping its width, so the slug has the rest of the row and
+   takes an end ellipsis only when it is longer than that. The words stay in the DOM for the
+   link's name (`.sr-only`, spine-row.tsx) and show on hover as the glyph's tooltip. The glyphs sit
+   in --muted-foreground, quieter than the slug; only the tested flask takes a tone. */
+[data-loom-plan] .plan-spine__glyph {
+  display: inline-flex;
+  flex: none;
+  color: var(--muted-foreground);
+}
+
+[data-loom-plan] .plan-spine__glyph > svg {
+  width: 14px;
+  height: 14px;
+}
+
 [data-loom-plan] .plan-spine__badge {
   display: inline-flex;
   align-items: center;
-  gap: var(--space-1);
-  flex: none;
-  white-space: nowrap;
-}
-
-[data-loom-plan] .plan-spine__badge > svg {
-  width: 14px;
-  height: 14px;
   flex: none;
 }
 
-[data-loom-plan] .plan-spine__badge[data-tested="true"] > svg {
+[data-loom-plan] .plan-spine__badge[data-tested="true"] > .plan-spine__glyph {
   color: var(--tone-completed);
-}
-
-/* Each child row measures itself: the 18rem spine's rows are under 20rem, the full-width rows of
-   the narrow layout are not until the viewport is close to its floor. */
-[data-loom-plan] .plan-spine__children > li {
-  container: spine-row / inline-size;
-}
-
-@container spine-row (max-width: 20rem) {
-  [data-loom-plan] .plan-spine__badge-date {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    margin: -1px;
-    padding: 0;
-    overflow: hidden;
-    clip-path: inset(50%);
-    white-space: nowrap;
-    border: 0;
-  }
 }
 
 /* On a document's source (`data-view="source"`, set by spine.tsx) the current row says "Source" on

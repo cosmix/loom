@@ -79,12 +79,18 @@ pub const MAX_FEATURE_NAME: usize = 64;
 /// Accept `[a-z0-9][a-z0-9-]*` up to 64 characters, excluding `archive` and `briefs`
 /// and `plans` and `overview`, which are the first segments of summary ids.
 pub fn is_feature_name(name: &str) -> bool {
-    let mut bytes = name.bytes();
     name.len() <= MAX_FEATURE_NAME
         && !matches!(name, "archive" | "briefs" | "plans" | "overview")
-        && bytes
-            .next()
-            .is_some_and(|b| b.is_ascii_lowercase() || b.is_ascii_digit())
+        && is_slug_chars(name)
+}
+
+/// The slug character class `[a-z0-9][a-z0-9-]*`: non-empty, a lowercase letter or digit
+/// first, then lowercase letters, digits or `-`.
+pub(crate) fn is_slug_chars(s: &str) -> bool {
+    let mut bytes = s.bytes();
+    bytes
+        .next()
+        .is_some_and(|b| b.is_ascii_lowercase() || b.is_ascii_digit())
         && bytes.all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
 }
 

@@ -9,8 +9,6 @@ export const ROOT = `/f/${FEATURE}`;
 export const SPEC_DIR = `doc/product/${FEATURE}`;
 export const SECTION_5 = `${SPEC_DIR}/section_05.md`;
 export const NO_TMUX = "tmux cannot create a socket here";
-// A route a later stage (pages-and-reading) builds; its layout catch-all says "No such page".
-export const LATER_PAGE = /\/f\/[^/]+\/(pressure|run)$/;
 
 export const STEP_TIMEOUT_MS = 10_000;
 export const SPINE_SELECTOR = 'nav[aria-label="Feature documents"]';
@@ -257,15 +255,9 @@ export function fakeClaudePids() {
 // function below because Playwright serialises them and a module constant would not travel.
 
 /** The state of the routed page: waiting (null), real content, or the catch-all. */
-const PAGE_STATE = ({ prev, allowPending }) => {
+const PAGE_STATE = ({ prev }) => {
   if (document.querySelector('[role="status"][aria-label^="Loading"]')) return null;
   const root = document.querySelector(".plan-layout__page") ?? document.querySelector("main");
-  const said =
-    (root?.innerText ?? "").includes("No such page") ||
-    [...(root?.querySelectorAll('h1,h2,h3,[role="heading"],[role="status"]') ?? [])].some((e) =>
-      e.textContent.includes("No such page"),
-    );
-  if (said && allowPending) return "pending";
   if (!root) return null;
   const text = root.innerText.trim();
   const heading = root.querySelector('h1,h2,h3,h4,[role="heading"]');
@@ -291,7 +283,7 @@ export const mainText = (page) =>
   );
 
 export async function pageState(page, href, prev) {
-  const arg = { prev, allowPending: LATER_PAGE.test(href) };
+  const arg = { prev };
   try {
     return await (await page.waitForFunction(PAGE_STATE, arg)).jsonValue();
   } catch {
@@ -304,8 +296,6 @@ export async function pageState(page, href, prev) {
         nope: (root?.innerText ?? "").includes("No such page"),
       };
     });
-    // The catch-all of a page a later stage builds is PENDING at every width, never a failure.
-    if (arg.allowPending && seen.nope) return "pending";
     const why = seen.main
       ? `the page holds ${seen.headings} headings and ${seen.chars} characters${seen.nope ? ' and says "No such page"' : ""}`
       : "no main element or routed page";

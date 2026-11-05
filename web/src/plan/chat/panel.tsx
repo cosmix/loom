@@ -18,14 +18,14 @@ import { ComposerArea } from "./composer";
 import { ConnectionBanner, useConnectionDim } from "./connection-banner";
 import { pendingPermissionsAtom, sessionAtom, useChatSocket } from "./model";
 import { offerErrorAtom } from "./offer-error";
-import { createOfferStarter, DESKTOP } from "./offer-flow";
+import { createOfferStarter } from "./offer-flow";
 import { registerAuthoringOffers } from "./offer-handlers";
 import { PanelHead } from "./panel-head";
 import { panelWidthAtom } from "./prefs";
 import { RunHeader } from "./run-header";
 import { ScreenSync } from "./screen-sync";
 import { elsewhereSessionAtom, sessionHereAtom } from "./session-home";
-import { chatSheetOpenAtom } from "./sheet-state";
+import { chatSheetOpenAtom, DESKTOP } from "./sheet-state";
 import { shownSessionAtom } from "./shown-session";
 import { StateLine } from "./state-line";
 import { useQueueRefill } from "./stop-control";
@@ -35,8 +35,6 @@ import { Transcript } from "./transcript";
 import { Untrusted } from "./visible-controls";
 import "./chat.css";
 import "./chat-surface.css";
-
-export { chatSheetOpenAtom } from "./sheet-state";
 
 /** The chat socket and attention watcher for routes that mount no ChatPanel, which owns them there. */
 function ChatConnection(): null {

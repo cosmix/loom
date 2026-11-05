@@ -57,7 +57,9 @@ it.each([
   show({ state: { state, out_of_date: null } });
 
   const chip = screen.getByText(label).closest("[data-chip]");
-  expect(chip?.querySelector(`svg.lucide-${glyph}`)).toBeTruthy();
+  // A rebuilding summary draws the activity roundel, not an icon.
+  const mark = glyph === "refresh-cw" ? ".aurora-roundel" : `svg.lucide-${glyph}`;
+  expect(chip?.querySelector(mark)).toBeTruthy();
   expect(chip?.getAttribute("data-tone")).toBe(tone);
 });
 
@@ -73,7 +75,8 @@ it.each([
 
   const chip = screen.getByText(label).closest("[data-chip]");
   expect(chip?.getAttribute("data-tone")).toBe("warning");
-  expect(chip?.querySelector(`svg.lucide-${glyph}`)).toBeTruthy();
+  const mark = glyph === "refresh-cw" ? ".aurora-roundel" : `svg.lucide-${glyph}`;
+  expect(chip?.querySelector(mark)).toBeTruthy();
 });
 
 it("sets the summary action right after the status chip, on its baseline", () => {

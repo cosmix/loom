@@ -1,7 +1,8 @@
 import { useAtomValue, useSetAtom } from "jotai";
-import { FileText, X } from "lucide-react";
+import { FileText } from "lucide-react";
 import type { JSX } from "react";
 
+import { ChipRemove } from "./chip-remove";
 import { isActiveSession, panelSessionAtom } from "./session-home";
 import { contextDismissedAtom, contextDocumentAtom } from "./viewed-document";
 import { Untrusted, visibleControls } from "./visible-controls";
@@ -34,14 +35,7 @@ export function ContextLine(): JSX.Element | null {
           <Untrusted text={viewed.name} />
         </span>
       </span>
-      <button
-        type="button"
-        className="chat-context-dismiss"
-        aria-label="Dismiss context"
-        onClick={() => dismiss({ path: viewed.path })}
-      >
-        <X size={14} aria-hidden="true" />
-      </button>
+      <ChipRemove label="context" verb="Dismiss" onRemove={() => dismiss({ path: viewed.path })} />
     </div>
   );
 }

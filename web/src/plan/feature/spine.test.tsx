@@ -56,6 +56,12 @@ function renderSpine(path: string, checklist: ChecklistView = atlas()) {
 }
 
 const spine = () => screen.getByRole("navigation", { name: "Feature documents" });
+/** The row's text with its `.sr-only` spans taken out: what a sighted reader sees. */
+const visibleText = (row: Element) => {
+  const copy = row.cloneNode(true) as Element;
+  for (const hidden of copy.querySelectorAll(".sr-only")) hidden.remove();
+  return copy.textContent?.replace(/\s+/g, " ").trim();
+};
 const link = (name: string | RegExp) => within(spine()).getByRole("link", { name });
 const current = () => within(spine()).getAllByRole("link", { current: "page" });
 
@@ -207,6 +213,67 @@ describe("the pressure record on a plan row", () => {
     renderSpine("/f/atlas/engineering");
 
     expect(within(spine()).queryByRole("link", { name: /^Pressure test\b/ })).toBeNull();
+  });
+
+  it("shows the state and the record as hidden glyphs whose words are read, not seen", () => {
+    const rows = [
+      withDate("atlas-01", "done", "2026-10-20"),
+      withDate("atlas-02", "retired", null),
+    ];
+    renderSpine("/f/atlas/engineering", atlas({ plan_rows: rows }));
+
+    // The accessible name keeps the words, each glyph's tooltip repeats its own, and the slug is
+    // the row's only visible text.
+    const tested = link("atlas-01 done Pressure-tested 2026-10-20");
+    const glyphs = [...tested.querySelectorAll(".plan-spine__glyph")];
+    const titled = (glyph: Element) => [
+      glyph.getAttribute("aria-hidden"),
+      glyph.getAttribute("title"),
+    ];
+    expect(glyphs.map(titled)).toEqual([
+      ["true", "done"],
+      ["true", "Pressure-tested 2026-10-20"],
+    ]);
+    expect(glyphs.map((glyph) => glyph.querySelector("svg") !== null)).toEqual([true, true]);
+    expect(visibleText(tested)).toBe("atlas-01");
+    expect(tested.querySelector(".plan-spine__glyph[aria-label]")).toBeNull();
+
+    const retired = link("atlas-02 retired");
+    expect(retired.querySelector(".plan-spine__glyph")?.getAttribute("title")).toBe("retired");
+    expect(visibleText(retired)).toBe("atlas-02");
+  });
+
+  it("keeps a section's note as a visible word with no glyph", () => {
+    renderSpine("/f/atlas/product");
+
+    const missing = within(spine()).getByText("Section 02").closest("li")!;
+    expect(missing.querySelector(".plan-spine__glyph")).toBeNull();
+    expect(visibleText(missing)).toBe("02 Section 02 not written");
+  });
+
+  it("lays a plan row out on one line, the slug giving way before the glyphs", () => {
+    const css = spineSheet.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\s+/g, " ");
+    expect(css).toContain(".plan-spine__glyph { display: inline-flex; flex: none;");
+    expect(css).toContain(".plan-spine__glyph > svg { width: 14px; height: 14px; }");
+    expect(css).toContain(
+      '.plan-spine__badge[data-tested="true"] > .plan-spine__glyph { color: var(--tone-completed); }',
+    );
+    // No rule breaks the name onto its own line or clips a date: the row has no second line.
+    expect(css).not.toContain(":has(> .plan-spine__badge)");
+    expect(css).not.toContain("@container spine-row");
+    expect(css).not.toContain(".plan-spine__badge-date");
+  });
+
+  it("gives the badge to plan rows and no other row", () => {
+    renderSpine("/f/atlas/engineering");
+
+    const badged = within(spine())
+      .getAllByRole("link")
+      .filter((anchor) => anchor.querySelector(".plan-spine__badge") !== null);
+    expect(badged.map((anchor) => anchor.textContent?.split(" ")[0])).toEqual([
+      "atlas-01",
+      "atlas-02",
+    ]);
   });
 });
 

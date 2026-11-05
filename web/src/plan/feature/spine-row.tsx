@@ -1,11 +1,12 @@
-import { ChevronRight, FlaskConical, Gauge } from "lucide-react";
+import { ChevronRight } from "lucide-react";
 import { Link } from "react-router";
 
 import { Button } from "@/components/ui/button";
-import { Untrusted } from "@/plan/chat/visible-controls";
+import { Untrusted, visibleControls } from "@/plan/chat/visible-controls";
 import { SentenceText } from "@/plan/concept/sentence-text";
+import { NOT_PRESSURE_TESTED, PRESSURE_TESTED, pressureIcon } from "@/plan/files/heading-parts";
 import type { NameStyle, PlanPressure, SpineChild, SpineGroup } from "@/plan/feature/spine-model";
-import { STEP_MARK_GLYPHS } from "@/plan/ui/glyphs";
+import { type Glyph as GlyphIcon, STEP_MARK_GLYPHS } from "@/plan/ui/glyphs";
 
 /** A document's name as its kind needs it: Markdown phrasing, a slug in mono, or plain text. */
 export function Name({ name, style }: { name: string; style: NameStyle }) {
@@ -15,31 +16,46 @@ export function Name({ name, style }: { name: string; style: NameStyle }) {
 }
 
 /**
- * The plan's pressure record, in the same words as the plan page's chip (`pressureChip`). The date
- * has its own span so a narrow row can take it out of view (spine.css) and keep it in the name.
+ * A glyph shown in place of its word: the word is read (`.sr-only`, so the link's name and text
+ * keep it) and a hover shows it as the browser's tooltip. The wrapper is hidden from assistive
+ * technology, so its `title` adds no second announcement.
  */
+function Glyph({ icon: Icon, word }: { icon: GlyphIcon; word: string }) {
+  return (
+    <>
+      <span className="plan-spine__glyph" title={word} aria-hidden="true">
+        <Icon />
+      </span>
+      <span className="sr-only">{word}</span>
+    </>
+  );
+}
+
+/** The plan's pressure record, in the same words as the plan page's chip (`pressureChip`). */
 function PressureBadge({ pressure }: { pressure: PlanPressure }) {
   const { date } = pressure;
-  const Icon = date === null ? Gauge : FlaskConical;
+  // The date is the schema's string; `visibleControls` keeps the word readable as text.
+  const word = date === null ? NOT_PRESSURE_TESTED : `${PRESSURE_TESTED} ${visibleControls(date)}`;
   return (
     <span className="plan-spine__badge plan-fine" data-tested={date !== null}>
-      <Icon aria-hidden="true" />
-      {date !== null ? (
-        <>
-          Pressure-tested{" "}
-          <span className="plan-spine__badge-date">
-            <Untrusted text={date} />
-          </span>
-        </>
-      ) : (
-        "Not pressure-tested"
-      )}
+      <Glyph icon={pressureIcon(date)} word={word} />
+    </span>
+  );
+}
+
+/**
+ * A note with a glyph (a plan's state) shows the glyph alone, so the slug keeps the row's width
+ * (ui/DESIGN.md, Status); a note with none (a section's "not written") stays a word.
+ */
+function Note({ icon, note }: { icon: GlyphIcon | null; note: string }) {
+  return (
+    <span className="plan-status plan-fine">
+      {icon ? <Glyph icon={icon} word={visibleControls(note)} /> : <Untrusted text={note} />}
     </span>
   );
 }
 
 function ChildRow({ child, pathname }: { child: SpineChild; pathname: string }) {
-  const Icon = child.icon;
   const body = (
     <>
       {/* The spaces keep the spans apart in the link's accessible name ("01 Name", "slug done"). */}
@@ -56,10 +72,7 @@ function ChildRow({ child, pathname }: { child: SpineChild; pathname: string }) 
       {child.note !== null && (
         <>
           {" "}
-          <span className="plan-status plan-fine">
-            {Icon && <Icon aria-hidden="true" />}
-            <Untrusted text={child.note} />
-          </span>
+          <Note icon={child.icon} note={child.note} />
         </>
       )}
       {child.pressure !== null && (

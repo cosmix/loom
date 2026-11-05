@@ -17,7 +17,7 @@ import {
   startOwnerAtom,
   type StartOwner,
 } from "./session-home";
-import { chatSheetOpenAtom } from "./sheet-state";
+import { revealChat } from "./sheet-state";
 import { useSessionBrief } from "./use-session-brief";
 import { Untrusted, visibleControls } from "./visible-controls";
 
@@ -29,7 +29,7 @@ async function beginChat(store: Store, owner: StartOwner, signal: AbortSignal): 
   if (isActiveSession(current)) await endCurrentChat(store, current, signal, "start a new chat");
   if (signal.aborted) return;
   await startChat(store, null, null, [], owner.feature, owner.plan);
-  store.set(chatSheetOpenAtom, true);
+  revealChat(store);
 }
 
 /** Runs one New chat request at a time; unmounting aborts the wait for the old chat to end. */

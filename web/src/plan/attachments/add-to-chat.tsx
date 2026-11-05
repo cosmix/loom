@@ -4,7 +4,7 @@ import type { ReactNode, RefObject } from "react";
 import { Button } from "@/components/ui/button";
 import type { SectionView } from "@/plan/api/schema-files";
 import { elsewhereSessionAtom } from "@/plan/chat/session-home";
-import { chatSheetOpenAtom } from "@/plan/chat/sheet-state";
+import { revealChat } from "@/plan/chat/sheet-state";
 import { canAuthorAtom } from "@/plan/state/atoms";
 
 import { addAttachmentAtom } from "./atoms";
@@ -51,7 +51,7 @@ export function AddToChat({ draft, rect, onAdded }: AddToChatProps) {
               add(draft);
               // The chip lands in a composer the user can see: the panel is always shown on a wide
               // screen, and the sheet opens on a narrow one, as New chat does (chat/start-chat.tsx).
-              store.set(chatSheetOpenAtom, true);
+              revealChat(store);
               onAdded();
             }}
           >

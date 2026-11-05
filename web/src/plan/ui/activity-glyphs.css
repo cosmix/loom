@@ -16,10 +16,10 @@
     height: 100%;
   }
 
-  /* Work in progress is the roundel (aurora-ui), sized to the glyph box it replaces: a lucide
-     glyph's strokes reach about 86% of its box, so the disc keeps the weight of the glyphs beside
-     it. The disc's own stylesheet turns it, rests it upright when idle and stops the spin under
-     reduced motion. */
+  /* Work in progress is the roundel glyph (`ui/roundel-glyph.tsx`), whose root takes the
+     `.activity-glyph` box here. Its own stylesheet already draws the disc at 86% of the box (a
+     lucide glyph's strokes reach about that far); this rule restates it for the activity glyph,
+     whose size is the one `activity-glyphs.test.tsx` pins. */
   .activity-glyph > .aurora-roundel-wrap {
     width: 86%;
     height: 86%;
@@ -58,14 +58,6 @@
   .activity-tile > svg {
     width: 15px;
     height: 15px;
-  }
-
-  .activity-tile[data-tone="executing"] {
-    color: var(--tone-executing);
-  }
-
-  .activity-tile[data-tone="ring"] {
-    color: var(--ring);
   }
 
   .activity-tile[data-tone="completed"] {

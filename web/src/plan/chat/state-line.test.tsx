@@ -273,3 +273,19 @@ it("session strings expose controls as visible text", () => {
   );
   expect(container.textContent).toContain("Failed⟨U+200B⟩here");
 });
+
+it("the working detail is one run on a row that cuts it, with the whole of it as the row's title", () => {
+  const h = harness(
+    session({ state: "working", subagents_running: 2, state_since: now.toISOString() }),
+    [turn([tool("Inspect doc/plans/feat-planner/product.md")])],
+  );
+  const { container } = h.show();
+  const text = container.querySelector(".chat-state-row > .chat-state-text");
+  expect(text?.getAttribute("title")).toBe(
+    "41s · Inspect doc/plans/feat-planner/product.md · 2 subagents",
+  );
+  // One text run: a split would read as separate words to the test above and to a screen reader.
+  expect(screen.getByText("41s · Inspect doc/plans/feat-planner/product.md · 2 subagents")).toBe(
+    text?.lastElementChild,
+  );
+});

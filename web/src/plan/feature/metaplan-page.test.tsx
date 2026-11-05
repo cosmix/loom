@@ -62,3 +62,31 @@ it("a metaplan with a valid stem still opens its summary page", async () => {
   await waitFor(() => expect(conceptKeys()).toContain("atlas/metaplan/index"));
   expect(document.querySelector(".plan-document")).toBeNull();
 });
+
+function renderTwoMetaplans(path: string) {
+  const checklist = checklistViewSchema.parse({
+    ...checklistFixture.checklists[0]!,
+    feature: "atlas",
+    metaplans: [
+      { path: "doc/plans/atlas/a-metaplan.md", title: "Alpha" },
+      { path: "doc/plans/atlas/index.md", title: "Roadmap" },
+    ],
+  });
+  return renderAt(path, (store) =>
+    store.set(projectAtom, { checklists: [checklist], standalone: [], moves: [] }),
+  );
+}
+
+it("the bare metaplan route of two metaplans shows the index summary, not the first by path", async () => {
+  const { router } = renderTwoMetaplans("/f/atlas/metaplan");
+  await waitFor(() => expect(conceptKeys()).toContain("atlas/metaplan/index"));
+  expect(conceptKeys()).not.toContain("atlas/metaplan/a-metaplan");
+  expect(router.state.location.pathname).toBe("/f/atlas/metaplan");
+});
+
+it("the bare metaplan route marks the index metaplan's row as current", async () => {
+  renderTwoMetaplans("/f/atlas/metaplan");
+  await waitFor(() => expect(conceptKeys()).toContain("atlas/metaplan/index"));
+  const current = document.querySelector('.plan-spine__link[aria-current="page"]');
+  expect(current?.getAttribute("href")).toBe("/f/atlas/metaplan/index.md");
+});
