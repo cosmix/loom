@@ -1,6 +1,6 @@
 //! Whether a citation still holds, and whether a summary still covers its whole source.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use super::{members_hash, SentenceState, SummaryEval, SummaryState};
@@ -24,17 +24,22 @@ enum Kind<'a> {
 /// The judging context of one summary.
 pub(super) struct Context<'a> {
     project: &'a Project,
+    id: &'a str,
     front: &'a FrontMatter,
     kind: Kind<'a>,
+    /// Ids of this summary's current sentences that cite no sentence of it: what a link to one
+    /// of its own sentences may rest on.
+    own: BTreeSet<String>,
 }
 
 impl<'a> Context<'a> {
     /// The context of summary `id` holding `file`; `source` is set for a document summary.
-    /// `done` holds the evaluations of the document summaries an overview may cite.
+    /// `done` holds the evaluations of the document summaries an overview may cite. No link to
+    /// the summary's own sentences holds until [`Context::with_own`] names them.
     pub(super) fn new(
         project: &'a Project,
         done: &'a BTreeMap<String, SummaryEval>,
-        id: &str,
+        id: &'a str,
         file: &'a SummaryFile,
         source: Option<&'a Path>,
     ) -> Self {
@@ -66,9 +71,16 @@ impl<'a> Context<'a> {
         };
         Context {
             project,
+            id,
             front: &file.front,
             kind,
+            own: BTreeSet::new(),
         }
+    }
+
+    /// This context with `own` as the summary's current sentences that cite none of its own.
+    pub(super) fn with_own(self, own: BTreeSet<String>) -> Self {
+        Context { own, ..self }
     }
 
     /// Whether the citation `target` still holds.
@@ -87,6 +99,9 @@ impl<'a> Context<'a> {
             }
             (LinkTarget::Sentence { summary, id }, Kind::Overview { members, done, .. }) => {
                 members.contains(summary) && member_sentence_current(done, summary, id)
+            }
+            (LinkTarget::Sentence { summary, id }, Kind::Document { .. }) if summary == self.id => {
+                self.own.contains(id)
             }
             _ => false,
         }

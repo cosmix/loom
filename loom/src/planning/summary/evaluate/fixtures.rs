@@ -11,6 +11,7 @@ use crate::planning::project::Project;
 use crate::planning::runtime::{runtime_paths_under, RuntimePaths};
 use crate::planning::summary::evaluate::{cite_key, members_hash};
 use crate::planning::summary::format::{self, FrontMatter, SummaryFile, SummaryKind};
+use crate::planning::summary::seal::{seal, SealError};
 use crate::planning::summary::store;
 
 pub(crate) const VISION: &str = "doc/product/demo/index.md";
@@ -77,6 +78,14 @@ pub(crate) fn two_features() -> Fixture {
             "# Plan: Solo\n\nImplements: none\n",
         ),
     ])
+}
+
+/// Write `draft` as the draft of summary `id` and seal it the way `loom plan summary seal` does.
+pub(crate) fn seal_draft(f: &Fixture, id: &str, draft: &str) -> Result<(), SealError> {
+    let path = f.paths.drafts.join(format!("{id}.md"));
+    fs::create_dir_all(path.parent().expect("parent")).expect("drafts dir");
+    fs::write(&path, draft).expect("write draft");
+    seal(&f.root, &f.paths, id, false).map(|_| ())
 }
 
 pub(crate) fn put(root: &Path, rel: &str, text: &str) {

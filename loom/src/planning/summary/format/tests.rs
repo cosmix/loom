@@ -236,9 +236,12 @@ fn sentence_caps_depend_on_the_id() {
         let lines: Vec<_> = (0..n).map(|i| format!("S{i}. {LINK}")).collect();
         format!("# T\n\n{}\n", lines.join("\n"))
     };
-    assert!(parse_draft("plans/p", &many(15)).is_ok());
-    let errors = parse_draft("plans/p", &many(16)).unwrap_err();
+    assert!(parse_draft("alpha/product/section_01", &many(15)).is_ok());
+    let errors = parse_draft("alpha/product/section_01", &many(16)).unwrap_err();
     assert_eq!(lines_of(&errors), vec![18]);
+    assert!(parse_draft("plans/p", &many(MAX_PLAN_SENTENCES)).is_ok());
+    let errors = parse_draft("plans/p", &many(MAX_PLAN_SENTENCES + 1)).unwrap_err();
+    assert_eq!(lines_of(&errors), vec![MAX_PLAN_SENTENCES + 3]);
     assert!(parse_draft("overview/alpha/product", &many(30)).is_ok());
     assert!(parse_draft("overview/alpha/product", &many(31)).is_err());
     assert!(parse_draft("overview/alpha/engineering", &many(30)).is_ok());
@@ -257,7 +260,7 @@ fn a_vision_draft_holds_at_most_eight_sentences() {
     for (id, limit) in [
         ("alpha/product/vision", MAX_VISION_SENTENCES),
         ("alpha/product/section_01", MAX_DOCUMENT_SENTENCES),
-        ("plans/p", MAX_DOCUMENT_SENTENCES),
+        ("plans/p", MAX_PLAN_SENTENCES),
         ("alpha/metaplan/index", MAX_DOCUMENT_SENTENCES),
         ("overview/alpha/product", MAX_OVERVIEW_SENTENCES),
     ] {

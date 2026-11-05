@@ -6,6 +6,9 @@ mod front;
 mod front_tests;
 #[cfg(test)]
 mod id_tests;
+mod levels;
+#[cfg(test)]
+mod levels_tests;
 #[cfg(test)]
 mod tests;
 
@@ -15,20 +18,28 @@ use std::path::{Path, PathBuf};
 use super::store::{self, STORE_DIR};
 pub use body::{render_body, sentence_id};
 pub use front::{FrontMatter, SummaryKind};
+pub use levels::{cites_own, split_levels, Levels};
 
-/// Most sentences a document summary may hold.
+/// Most sentences a document summary may hold, and the detail level of a plan summary.
 pub const MAX_DOCUMENT_SENTENCES: usize = 15;
+/// Most sentences the opening level of a plan summary may hold.
+pub const MAX_OPENING_SENTENCES: usize = 8;
+/// Most sentences a plan summary may hold: its opening level and its detail level.
+pub const MAX_PLAN_SENTENCES: usize = MAX_OPENING_SENTENCES + MAX_DOCUMENT_SENTENCES;
 /// Most sentences an overview may hold.
 pub const MAX_OVERVIEW_SENTENCES: usize = 30;
 /// Most sentences a vision summary may hold.
 pub const MAX_VISION_SENTENCES: usize = 8;
 
-/// Most sentences the summary `id` may hold.
+/// Most sentences the summary `id` may hold. A plan summary's cap covers both of its levels;
+/// the seal checks each level against its own cap.
 pub fn sentence_limit(id: &str) -> usize {
     if store::is_overview(id) {
         MAX_OVERVIEW_SENTENCES
     } else if store::is_vision(id) {
         MAX_VISION_SENTENCES
+    } else if store::is_plan(id) {
+        MAX_PLAN_SENTENCES
     } else {
         MAX_DOCUMENT_SENTENCES
     }

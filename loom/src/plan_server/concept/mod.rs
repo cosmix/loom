@@ -22,6 +22,10 @@ mod engine_tests;
 #[cfg(test)]
 mod key_tests;
 #[cfg(test)]
+mod levels_contract_tests;
+#[cfg(test)]
+mod levels_tests;
+#[cfg(test)]
 mod links_tests;
 #[cfg(test)]
 mod metaplan_tests;

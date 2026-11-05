@@ -1,10 +1,18 @@
 //! Sealing a draft into the summary store.
 //!
 //! `seal` reads the draft from the runtime directory, parses it, checks every link against the
-//! project and writes the canonical summary file. The link checks and the write run in one hold
+//! project and a plan summary's two levels, and writes the canonical summary file. The link checks and the write run in one hold
 //! of the store lock, so a member reseal cannot land between the check and the write. Sealing
 //! deletes the draft and the claim of the summary it wrote.
 
+mod levels;
+// The frozen contract file clones `Copy` states; a frozen file cannot be edited, so the lint is
+// allowed on the module. Drop the attribute if the contract is ever rewritten.
+#[cfg(test)]
+#[allow(clippy::clone_on_copy)]
+mod levels_contract_tests;
+#[cfg(test)]
+mod levels_tests;
 mod links;
 mod restate;
 #[cfg(test)]
@@ -188,7 +196,9 @@ fn build_text(project: &Project, id: &str, body: &SummaryBody) -> Result<String,
         id,
         evaluation: evaluation.as_ref(),
     };
-    let (cited, errors) = links::check(&rules, body);
+    let (cited, mut errors) = links::check(&rules, body);
+    errors.extend(levels::check(id, body));
+    errors.sort_by_key(|e| e.line);
     if !errors.is_empty() {
         return Err(SealError::Rejected(errors));
     }

@@ -7,7 +7,7 @@ use anyhow::{bail, Context, Result};
 
 use super::claims::{create_claim, delete_claim, draft_path, ClaimHeld};
 use super::evaluate::{evaluate, SentenceState, SummaryEval};
-use super::format::sentence_limit;
+use super::format::{sentence_limit, MAX_DOCUMENT_SENTENCES, MAX_OPENING_SENTENCES};
 use super::lock::with_store_lock;
 use super::store::{self, validate_id};
 use super::write::read_summary;
@@ -196,6 +196,17 @@ fn one_line(text: &str) -> String {
     terminal_safe(text).replace(['\n', '\t'], " ")
 }
 
+/// What the summary's sentences may cite; a plan's two levels cite different things.
+fn cite_rule(id: &str, overview: bool) -> &'static str {
+    if overview {
+        "cite every member summary and the vision or every metaplan; member citations must point to current sentences"
+    } else if store::is_plan(id) {
+        "opening sentences cite only this summary's detail sentences, detail sentences cite only the source document and its valid anchors"
+    } else {
+        "cite only the source document and its valid anchors"
+    }
+}
+
 fn write_rules(out: &mut String, id: &str, overview: bool) -> Result<()> {
     writeln!(out, "Body rules:")?;
     writeln!(
@@ -206,17 +217,21 @@ fn write_rules(out: &mut String, id: &str, overview: bool) -> Result<()> {
     writeln!(out, "- Each sentence has nonempty text followed only by citation links at the end; no duplicate sentences.")?;
     writeln!(
         out,
-        "- At most {} sentences; cite {}.",
+        "- At most {} sentences; {}.",
         sentence_limit(id),
-        if overview {
-            "every member summary and the vision or every metaplan; member citations must point to current sentences"
-        } else {
-            "only the source document and its valid anchors"
-        }
+        cite_rule(id, overview)
     )?;
+    if store::is_plan(id) {
+        writeln!(out, "- A plan summary has two levels. First the opening level: about one sentence per topic, each citing every sentence of the detail paragraph(s) it opens, in order, as [d](#s-xxxxxxxx). Then the detail level: short paragraphs whose sentences cite the plan's heading sections. No heading after the opening level.")?;
+        writeln!(
+            out,
+            "- At most {MAX_OPENING_SENTENCES} opening and {MAX_DOCUMENT_SENTENCES} detail sentences."
+        )?;
+        writeln!(out, "- Write the detail level first and seal: the refusal lists each detail sentence's id. Then add the opening level above it and seal again.")?;
+    }
     if overview {
         writeln!(out, "- Rewrite a sentence that repeats the sentence it cites to say what the cited sentences add up to, even when it is marked [keep].")?;
-        writeln!(out, "- An overview sentence that cites member sentences cites at least two of them and says what they add up to; it may cite one only when that member's summary holds a single sentence.")?;
+        writeln!(out, "- An overview sentence that cites member sentences cites at least two of them and says what they add up to; it may cite one only when that member's summary holds a single citable sentence.")?;
     }
     Ok(())
 }
