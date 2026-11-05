@@ -75,9 +75,6 @@ fn authoring_opening(
         }
         // The caller supplies the user's verbatim text; this start stores only paths.
         AuthoringStart::Message { .. } => Ok(String::new()),
-        AuthoringStart::NoStep => {
-            Ok("loom plan: no step chosen.\nAsk me what I want to work on.".into())
-        }
     }
 }
 
@@ -294,7 +291,6 @@ pub fn display_name(kind_label: &str, start: Option<&AuthoringStart>) -> String 
             .unwrap_or("chat"),
         Some(AuthoringStart::Refine { .. } | AuthoringStart::Message { .. }) => "refine",
         Some(AuthoringStart::Knowledge { .. }) => "knowledge",
-        Some(AuthoringStart::NoStep) => "chat",
         None => kind_label,
     };
     format!("loom plan: {skill}")

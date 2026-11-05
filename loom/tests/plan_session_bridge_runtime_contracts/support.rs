@@ -18,7 +18,7 @@ use loom::plan_session::bridge::{
     SendOutcome, StartRequest, TurnPins,
 };
 use loom::plan_session::kind::{SessionDir, SessionKind};
-use loom::plan_session::model::{DenyReason, Origin, SessionState};
+use loom::plan_session::model::{DenyReason, SessionState};
 use loom::plan_session::permission::{Answer, Behavior};
 use loom::plan_session::spool::append_event;
 use loom::planning::runtime::{create_runtime_dir, runtime_paths_under, RuntimePaths};
@@ -276,7 +276,7 @@ impl Harness {
         let request = StartRequest {
             kind,
             guidance,
-            opening_origin: Some(Origin::Start),
+            opening_origin: None,
             offer: None,
             feature: None,
             plan: None,

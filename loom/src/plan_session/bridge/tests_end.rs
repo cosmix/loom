@@ -140,6 +140,17 @@ fn a_final_write_pastes_the_closing_message_at_idle_and_ends_after_its_stop() {
 }
 
 #[test]
+fn a_session_opened_by_the_users_typed_message_gets_the_closing_message_at_idle() {
+    let h = Harness::ready(|_| {});
+    // The harness opening carries no origin: it is the user's own first message.
+    let s = h.idle(Authoring);
+    h.bridge
+        .end(&s.id, EndMode::FinalWrite, EndCause::Holder)
+        .unwrap();
+    wait_until("the closing message", || h.sent(&s) == [CLOSING]);
+}
+
+#[test]
 fn an_interrupt_resets_the_subagents_so_the_final_write_ends_at_the_next_stop() {
     let h = Harness::ready(|_| {});
     let s = h.idle(Authoring);

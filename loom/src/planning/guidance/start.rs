@@ -37,8 +37,6 @@ pub enum AuthoringStart {
         /// Repository-relative attachments, in message order.
         paths: Vec<PathBuf>,
     },
-    /// Begin a discussion without choosing a step.
-    NoStep,
 }
 
 impl AuthoringStart {
@@ -115,7 +113,7 @@ impl AuthoringStart {
                 )
             }
             Self::Knowledge { open_file: None } => "Change the knowledge base".into(),
-            Self::Message { .. } | Self::NoStep => "New chat".into(),
+            Self::Message { .. } => "New chat".into(),
         }
     }
 }
@@ -187,9 +185,7 @@ pub fn step_class(start: &AuthoringStart) -> StepClass {
                 StepClass::Spec
             }
         }
-        AuthoringStart::Kickoff { .. }
-        | AuthoringStart::Knowledge { .. }
-        | AuthoringStart::NoStep => StepClass::Spec,
+        AuthoringStart::Kickoff { .. } | AuthoringStart::Knowledge { .. } => StepClass::Spec,
     }
 }
 

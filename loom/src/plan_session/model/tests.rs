@@ -282,11 +282,7 @@ fn item_enums_round_trip_as_snake_case() {
         (Delivery::Delivered, "delivered"),
         (Delivery::Undelivered, "undelivered"),
     ]);
-    enum_values(&[
-        (Origin::Offer, "offer"),
-        (Origin::Start, "start"),
-        (Origin::Closing, "closing"),
-    ]);
+    enum_values(&[(Origin::Offer, "offer"), (Origin::Closing, "closing")]);
     enum_values(&[
         (ToolStatus::Pending, "pending"),
         (ToolStatus::Done, "done"),

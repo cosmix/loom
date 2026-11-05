@@ -49,7 +49,12 @@ fn fixture(files: &[(&str, &str)]) -> (TempDir, Project) {
 
 fn common_brief() -> String {
     let (_temp, project) = fixture(&[]);
-    brief::common_brief(&AuthoringStart::NoStep, &project, None).unwrap()
+    brief::common_brief(
+        &AuthoringStart::Message { paths: Vec::new() },
+        &project,
+        None,
+    )
+    .unwrap()
 }
 
 #[test]
@@ -129,7 +134,7 @@ fn closing_message_matches_product_spec_with_continuation_indent() {
         product_block(
             "section_09.md",
             "loom plan is ending this session",
-            "Then reply \"Closing write done.\" and stop."
+            "decision this conversation settled and for each point it left open."
         )
     );
 }

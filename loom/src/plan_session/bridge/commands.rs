@@ -8,14 +8,13 @@ use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use super::registry::ChildRecord;
-use super::session::{Closing, EndPlan, Phase, Queued, Session};
+use super::session::{Phase, Queued, Session};
 use super::{Bridge, BridgeConfig, BridgeError, BridgeEvent, EndCause, EndMode, SendOutcome};
 use crate::plan_session::attachments::{parse_unwrapped, Attachment};
 use crate::plan_session::input::{check_delivered, sanitize};
 use crate::plan_session::kind::SessionKind;
 use crate::plan_session::model::{ChatDelta, DenyReason, NoticeKind, SessionState};
 use crate::plan_session::permission::{write_answer, Answer, Behavior};
-use crate::plan_session::state::Input;
 use crate::process::ProcessIdentity;
 
 /// Messages that may wait in the queue.
@@ -362,31 +361,5 @@ impl Session {
             self.deny_open(reason, message, step);
         }
         Ok(self.return_unsent(step))
-    }
-
-    /// The first end request sets the plan; a later one may only harden it.
-    pub(super) fn plan_end(&mut self, mode: EndMode, deny_new: Option<(DenyReason, &'static str)>) {
-        let reason = deny_new.map_or(DenyReason::SessionEnded, |(reason, _)| reason);
-        if let Some(plan) = &mut self.flow.end {
-            if mode == EndMode::Teardown {
-                plan.mode = mode;
-            }
-            if deny_new.is_some() {
-                (plan.deny_new, plan.reason) = (deny_new, reason);
-            }
-            return;
-        }
-        self.machine.apply(Input::EndRequested);
-        let closing = match self.kind {
-            SessionKind::Authoring => Closing::NotSent,
-            _ => Closing::Skip,
-        };
-        self.flow.end = Some(EndPlan {
-            mode,
-            requested_at: Instant::now(),
-            closing,
-            deny_new,
-            reason,
-        });
     }
 }

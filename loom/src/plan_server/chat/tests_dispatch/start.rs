@@ -74,6 +74,36 @@ fn a_refused_start_leaves_authoring_free() {
 }
 
 #[test]
+fn a_start_with_blank_text_and_no_offer_is_refused_and_launches_nothing() {
+    let f = Fixture::new(false);
+    let tab = f.connect(&browser());
+    for text in [Some(""), Some("  \n\t "), None] {
+        let cmd = ChatCommand::Start {
+            client_id: Some("c1".into()),
+            offer: None,
+            feature: None,
+            plan: None,
+            text: text.map(Into::into),
+            attachments: Vec::new(),
+        };
+
+        assert_eq!(
+            f.command(&tab, cmd),
+            refused("a chat starts with your first message")
+        );
+    }
+    let send = ChatCommand::Send {
+        client_id: Some("c1".into()),
+        text: " ".into(),
+        attachments: Vec::new(),
+    };
+    // A send that would start a chat is refused too: `check_delivered` rejects a blank message.
+    assert_eq!(f.command(&tab, send), refused(InputRefusal::Empty));
+    assert!(f.ctx.authoring().holder().is_none());
+    assert!(f.bridge.chat_session_id().is_none());
+}
+
+#[test]
 fn a_start_with_an_id_the_checklist_does_not_offer_is_refused_by_the_provider() {
     let f = Fixture::new(false);
     let tab = f.connect(&browser());
@@ -143,7 +173,7 @@ fn reserve_held(f: &Fixture, other: &Tab) -> (mpsc::Receiver<()>, mpsc::Sender<(
     let request = StartRequest {
         kind: SessionKind::Authoring,
         guidance,
-        opening_origin: Some(Origin::Start),
+        opening_origin: Some(Origin::Offer),
         offer: None,
         feature: None,
         plan: None,

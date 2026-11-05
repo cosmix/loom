@@ -36,7 +36,7 @@ fn delivered_prompt_replaces_the_sent_item_and_carries_its_chips() {
         text: "Please check this.".into(),
         attachments: vec![cited()],
         delivery: Delivery::Sent,
-        origin: Some(Origin::Start),
+        origin: Some(Origin::Offer),
     };
     let mut mapper = mapper();
     let added = mapper.add_server_item(sent);
@@ -47,7 +47,7 @@ fn delivered_prompt_replaces_the_sent_item_and_carries_its_chips() {
     assert!(opened, "{added:?}");
     let out = drive(&mut mapper, &lines("attachments.jsonl"));
 
-    let mut delivered = user("u-u1", "Please check this.", Some(Origin::Start));
+    let mut delivered = user("u-u1", "Please check this.", Some(Origin::Offer));
     if let Item::User { attachments, .. } = &mut delivered {
         *attachments = vec![cited()];
     }

@@ -69,11 +69,7 @@ fn starting_point(
         .next()
         .and_then(|line| line.strip_prefix("loom plan: "))
         .context("authoring opening is missing its step label")?;
-    let step = if matches!(start, AuthoringStart::NoStep) {
-        "none chosen."
-    } else {
-        label.strip_prefix("step ").unwrap_or(label)
-    };
+    let step = label.strip_prefix("step ").unwrap_or(label);
     let target = lines
         .next()
         .context("authoring opening is missing its target")?;
@@ -82,15 +78,13 @@ fn starting_point(
     if !kickoff {
         block.push_str(&format!("Target: {target}\n"));
     }
-    if !matches!(start, AuthoringStart::NoStep) {
-        let skill = lines
-            .next()
-            .and_then(|line| line.strip_prefix("Load the skill "))
-            .and_then(|line| line.split_once(','))
-            .map(|(skill, _)| skill)
-            .context("authoring opening is missing its skill")?;
-        block.push_str(&format!("Skill: {skill}.\n"));
-    }
+    let skill = lines
+        .next()
+        .and_then(|line| line.strip_prefix("Load the skill "))
+        .and_then(|line| line.split_once(','))
+        .map(|(skill, _)| skill)
+        .context("authoring opening is missing its skill")?;
+    block.push_str(&format!("Skill: {skill}.\n"));
     if kickoff {
         block.push_str(&format!("{target}\n"));
     }

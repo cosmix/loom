@@ -82,7 +82,9 @@ pub const CLOSING_MESSAGE: &str = concat!(
     "2. Add every point still open as an item under \"## Open questions\" in the document it concerns,\n",
     "   with the options and your recommendation.\n",
     "3. Finish the turn-end duty for what you changed.\n",
-    "Then reply \"Closing write done.\" and stop."
+    "Then reply \"Closing write done.\" followed by a fenced block whose info string is loom-closing,\n",
+    "holding one JSON object {\"decisions\": [...], \"questions\": [...]}: one plain sentence for each\n",
+    "decision this conversation settled and for each point it left open. Then stop."
 );
 
 impl From<SessionGuidance> for crate::plan_session::bridge::LaunchGuidance {

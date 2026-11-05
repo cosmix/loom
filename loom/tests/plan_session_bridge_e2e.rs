@@ -248,7 +248,7 @@ fn abandoned_session(
     let bound = Duration::from_secs(600);
     let mut a = Running::new(config(root, runtime, claude.to_path_buf(), home, bound));
     a.bridge.recover();
-    let opening = request("Begin.", Some(Origin::Start), false);
+    let opening = request("Begin.", None, false);
     let id = a.bridge.start_session(opening).unwrap();
     wait("the launch", Duration::from_secs(20), || {
         let events = a.events.lock().unwrap();

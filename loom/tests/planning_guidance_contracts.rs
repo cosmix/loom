@@ -47,7 +47,7 @@ fn write_section_3() -> AuthoringStart {
 fn authoring_plugin_carries_skills_and_agents_only() {
     let fx = Fixture::new();
     let models = fx.models("");
-    let kind = SessionGuidanceKind::Authoring(AuthoringStart::NoStep);
+    let kind = SessionGuidanceKind::Authoring(AuthoringStart::Message { paths: Vec::new() });
     fx.render(&kind, &fx.session, &models).unwrap();
     let plugin = fx.session.plugin();
     let mut expected: Vec<String> = SKILLS
@@ -187,7 +187,7 @@ fn plan_step_uses_plan_authoring_keys() {
 fn brainstorming_copy_keeps_mit_notice() {
     let fx = Fixture::new();
     let models = fx.models("");
-    let kind = SessionGuidanceKind::Authoring(AuthoringStart::NoStep);
+    let kind = SessionGuidanceKind::Authoring(AuthoringStart::Message { paths: Vec::new() });
     fx.render(&kind, &fx.session, &models).unwrap();
     let license_path = repo_file(
         "../doc/plans/feat-planner/briefs/feat-planner-08-guidance/upstream/superpowers-LICENSE",
@@ -280,7 +280,7 @@ fn render_refuses_symlinked_plugin_dir() {
     let models = fx.models("");
     let target = tempfile::tempdir().unwrap();
     std::os::unix::fs::symlink(target.path(), fx.session.plugin()).unwrap();
-    let kind = SessionGuidanceKind::Authoring(AuthoringStart::NoStep);
+    let kind = SessionGuidanceKind::Authoring(AuthoringStart::Message { paths: Vec::new() });
     let result = fx.render(&kind, &fx.session, &models);
     assert!(result.is_err(), "rendered through a symlinked plugin/");
     assert_eq!(
