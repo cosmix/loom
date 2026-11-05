@@ -25,7 +25,6 @@ vi.mock("@/plan/files/reading-column", () => ({
     <div>{`Source of ${path} at ${anchor}`}</div>
   ),
 }));
-vi.mock("@/plan/feature/pressure-page", () => ({ PressurePage: () => <div>Pressure page</div> }));
 vi.mock("@/plan/feature/run-page", () => ({ RunPage: () => <div>Run page</div> }));
 vi.mock("@/plan/new/kickoff-route", () => ({ KickoffRoute: () => <div>Kickoff page</div> }));
 
@@ -85,14 +84,16 @@ describe("plan routes", () => {
     expect(within(shell!).getByText("Feature landing")).toBeTruthy();
   });
 
-  it.each([
-    ["/f/demo/pressure", "Pressure page"],
-    ["/f/demo/run", "Run page"],
-  ])("routes %s to its page inside the feature layout", (path, page) => {
-    const shell = renderRoute(path);
+  it("routes /f/demo/run to its page inside the feature layout", () => {
+    const shell = renderRoute("/f/demo/run");
     expect(within(shell!).getByText("Feature page")).toBeTruthy();
-    expect(within(shell!).getByText(page)).toBeTruthy();
+    expect(within(shell!).getByText("Run page")).toBeTruthy();
     expect(within(shell!).queryByText("No such page")).toBeNull();
+  });
+
+  it("has no Pressure page: the route answers like any mistyped feature page", () => {
+    const shell = renderRoute("/f/demo/pressure");
+    expect(within(shell!).getByText("No such page")).toBeTruthy();
   });
 
   it("answers a feature page that has no route with an error, not a blank page", () => {
@@ -147,6 +148,35 @@ describe("plan routes", () => {
     seedFeature({ has_product: false });
     const shell = renderRoute("/f/demo/vision");
     expect(within(shell!).queryByRole("link", { name: "Read the full vision" })).toBeNull();
+  });
+
+  it.each(["/f/demo/metaplan", "/f/demo/metaplan/index.md"])(
+    "shows the metaplan's summary page at %s, not its source",
+    (path) => {
+      seedFeature({ metaplans: [{ path: "doc/plans/demo/index.md", title: "Roadmap" }] });
+      const shell = renderRoute(path);
+      expect(within(shell!).getByText("Concept page")).toBeTruthy();
+      expect(within(shell!).queryByText(/^Source of/)).toBeNull();
+    },
+  );
+
+  it("moves a first metaplan that is not the index to its own file route", () => {
+    seedFeature({ metaplans: [{ path: "doc/plans/demo/round-two.md", title: "Round two" }] });
+    const router = createMemoryRouter(routes, { initialEntries: ["/f/demo/metaplan"] });
+    render(<RouterProvider router={router} />);
+    expect(router.state.location.pathname).toBe("/f/demo/metaplan/round-two.md");
+    expect(screen.getByText("Concept page")).toBeTruthy();
+  });
+
+  it("keeps the offer to start a metaplan while there is none, and refuses an unknown file", () => {
+    seedFeature({ metaplans: [] });
+    const none = renderRoute("/f/demo/metaplan");
+    expect(within(none!).getByText("This feature has no metaplan yet.")).toBeTruthy();
+    cleanup();
+    seedFeature({ metaplans: [{ path: "doc/plans/demo/index.md", title: "Roadmap" }] });
+    const shell = renderRoute("/f/demo/metaplan/other.md");
+    expect(within(shell!).getByText("No such metaplan")).toBeTruthy();
+    expect(within(shell!).queryByText("Concept page")).toBeNull();
   });
 
   it.each([

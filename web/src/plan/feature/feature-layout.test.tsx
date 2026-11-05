@@ -64,7 +64,7 @@ describe("FeatureLayout", () => {
     act(() => store.set(projectAtom, projectOf(named("demo"))));
 
     await waitFor(() => expect(store.get(activeFeatureAtom)).toBe("demo"));
-    await waitFor(() => expect(router.state.location.pathname).toBe("/f/demo/vision"));
+    await waitFor(() => expect(router.state.location.pathname).toBe("/f/demo/product"));
     expect(router.state.historyAction).toBe("REPLACE");
     expect(screen.getByText("Page body")).toBeTruthy();
     expect(screen.getByRole("navigation", { name: "Feature documents" })).toBeTruthy();

@@ -3,20 +3,19 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import overviewFixture from "@/plan/api/fixtures/concept-overview.json";
 import summaryFixture from "@/plan/api/fixtures/concept-summary.json";
-import checklistFixture from "@/plan/api/fixtures/checklist.json";
 import filesDocFixture from "@/plan/api/fixtures/files-doc.json";
 import serverInfoFixture from "@/plan/api/fixtures/server-info.json";
-import { checklistViewSchema } from "@/plan/api/schema";
 import { conceptPageSchema } from "@/plan/api/schema-concept";
 import { storageKey } from "@/plan/chat/storage";
-import { checklistAtom } from "@/plan/state/atoms";
 
 import { conceptPageLabel } from "./concept-route";
 import {
+  authorWithOffers,
   canAuthor,
   clone,
   descriptionOf,
   doc,
+  empty,
   FIRST_OVERVIEW,
   keyList,
   makeStubFetch,
@@ -26,8 +25,8 @@ import {
   readingColumn,
   renderAt,
   text,
+  withOffers,
   type Page,
-  type Store,
 } from "./concept-route-support";
 import { conceptPageAtom } from "./page-state";
 
@@ -240,41 +239,8 @@ describe("overviews and the document key", () => {
     expect(await readingColumn()).toBeTruthy();
   });
 });
-/** The offers plan 1 sends in the checklist; `EmptyOffer` looks its offer up there. */
-function withOffers(store: Store): void {
-  store.set(
-    checklistAtom,
-    checklistViewSchema.parse({
-      ...checklistFixture.checklists[0]!,
-      secondary: [
-        {
-          id: "start-vision",
-          kind: "start_vision",
-          label: "Start the product vision",
-          target: null,
-        },
-        {
-          id: "start-metaplan",
-          kind: "start_metaplan",
-          label: "Start a metaplan from the product spec",
-          target: null,
-        },
-      ],
-    }),
-  );
-}
-const authorWithOffers = (store: Store): void => {
-  canAuthor(store);
-  withOffers(store);
-};
 
 describe("empty and partial states", () => {
-  const empty = (kind: string, extra: Page = {}) => ({
-    ...clone(overviewFixture),
-    key_chips: [],
-    blocks: [],
-    empty: { kind, count: null, offer: null, docs: [], ...extra },
-  });
   it("sections without vision list", async () => {
     const docsList = [doc("b", "Beta", "demo/product/b"), doc("c", "Gamma", "demo/product/c")];
     pages = { "overview/demo/product": empty("sections_no_vision", { docs: docsList }) };
@@ -285,32 +251,6 @@ describe("empty and partial states", () => {
         .getAllByRole("link")
         .map((link) => link.textContent),
     ).toEqual(["Beta", "Gamma"]);
-  });
-  it("No metaplan yet", async () => {
-    pages = {
-      "overview/demo/engineering": {
-        ...empty("no_metaplan", { offer: "start-metaplan" }),
-        key: "overview/demo/engineering",
-      },
-    };
-    renderAt("/f/demo/engineering", authorWithOffers);
-    expect(await screen.findByText("No metaplan yet")).toBeTruthy();
-    expect(screen.getByRole("button", { name: /metaplan/ })).toBeTruthy();
-  });
-  it("plans without metaplan list and offer", async () => {
-    pages = {
-      "overview/demo/engineering": {
-        ...empty("plans_no_metaplan", {
-          docs: [doc("a", "Alpha", "demo/engineering/a")],
-          offer: "start-metaplan",
-        }),
-        key: "overview/demo/engineering",
-      },
-    };
-    renderAt("/f/demo/engineering", authorWithOffers);
-    const list = await screen.findByRole("list", { name: "Documents" });
-    expect(within(list).getByRole("link", { name: "Alpha" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: /metaplan/ })).toBeTruthy();
   });
   it("never built state", async () => {
     const files = [
@@ -383,6 +323,8 @@ describe("wiring", () => {
     expect(conceptPageLabel("/f/demo/product/section_04")).toBe("section_04 summary");
     expect(conceptPageLabel("/f/demo/engineering/feat-x")).toBe("feat-x summary");
     expect(conceptPageLabel("/plans/x")).toBe("x summary");
+    expect(conceptPageLabel("/f/demo/metaplan")).toBe("Metaplan summary");
+    expect(conceptPageLabel("/f/demo/metaplan/index.md")).toBe("Metaplan summary");
     expect(conceptPageLabel("/product")).toBeNull();
     expect(conceptPageLabel("/engineering/a")).toBeNull();
     expect(conceptPageLabel("/f/demo/product/a%2Fb")).toBeNull();

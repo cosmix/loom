@@ -10,9 +10,9 @@ import { featurePage } from "@/plan/feature/page-offer";
 import { NextAction } from "@/plan/feature/next-action";
 import { GroupRow, Name } from "@/plan/feature/spine-row";
 import {
+  currentPathname,
   groupOfPathname,
   spineGroups,
-  summaryPathnameOfSource,
   type GroupId,
   type NameStyle,
   type SpineGroup,
@@ -118,7 +118,7 @@ export function Spine() {
   const here = groupOfPathname(pathname);
   const source = isSourcePath(pathname);
   // On a document's source its summary row is the current one, with "Source" drawn under it.
-  const rowPath = summaryPathnameOfSource(checklist, pathname) ?? pathname;
+  const rowPath = currentPathname(checklist, pathname);
   return (
     <nav
       aria-label="Feature documents"

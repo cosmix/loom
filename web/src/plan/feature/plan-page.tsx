@@ -30,7 +30,7 @@ export function PageHead({
 }
 
 /**
- * The frame of the Pressure test and Run pages: the feature slug and page label as the eyebrow,
+ * The frame of the Run page: the feature slug and page label as the eyebrow,
  * the page title, and an optional sentence under it, then the page's content.
  */
 export function PlanPage({

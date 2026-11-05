@@ -71,6 +71,7 @@ export function conceptPageLabel(pathname: string): string | null {
   if (parts.kind === "overview") {
     return parts.scope === "product" ? "Product overview" : "Engineering overview";
   }
+  if (parts.kind === "summary" && parts.scope === "metaplan") return "Metaplan summary";
   return `${parts.doc} summary`;
 }
 

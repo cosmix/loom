@@ -96,11 +96,6 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-it("a feature with a written spec opens on its vision", async () => {
-  const { router } = renderAt("/f/atlas", seed);
-  await waitFor(() => expect(router.state.location.pathname).toBe("/f/atlas/vision"));
-});
-
 it("the vision page shows the vision summary with Source one click away", async () => {
   pages = {
     "atlas/product/vision": {

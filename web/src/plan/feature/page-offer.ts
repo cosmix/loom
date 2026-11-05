@@ -43,18 +43,6 @@ export function missingDocumentOffer(
   return undefined;
 }
 
-/**
- * The pressure-test step's offer for this plan: only a written plan with no pressure test on
- * record has one. The Pressure page draws it on the plan's row.
- */
-export function pressureOffer(checklist: ChecklistView, row: PlanRow): OfferView | null {
-  if (row.state !== "written" || row.pressure_date !== null) return null;
-  const item = checklist.items.find(
-    (candidate) => candidate.step === STEP.pressure && candidate.path === row.path,
-  );
-  return item?.offer?.kind === "pressure_test" ? item.offer : null;
-}
-
 /** The ids of the offers the pace choice draws on an overview: both cards, or none without a choice. */
 export function paceOfferIds(checklist: ChecklistView, scope: GapScope): string[] {
   const step = gapStep(checklist, scope);
@@ -87,8 +75,8 @@ function planPageDraws(checklist: ChecklistView, doc: string, primary: OfferView
 /**
  * Whether the page at `pathname` draws the checklist's primary offer itself, so the spine shows
  * its sentence only. Each offer has one owner, decided by its id: the pace choice on an overview
- * (only when it draws that offer), a missing document's page, a written plan's page, the Pressure
- * page (the row of the plan the primary tests) or the Run page (its Start a run button).
+ * (only when it draws that offer), a missing document's page, a written plan's page or the Run page
+ * (its Start a run button). A pressure test is drawn by the plan's own page, else by the spine.
  */
 export function pageDrawsPrimary(checklist: ChecklistView, pathname: string): boolean {
   const { primary } = checklist;
@@ -99,12 +87,6 @@ export function pageDrawsPrimary(checklist: ChecklistView, pathname: string): bo
   if (shown === null) return false;
   if (shown.page === "engineering" && shown.doc !== null) {
     return planPageDraws(checklist, shown.doc, primary);
-  }
-  if (shown.page === "pressure") {
-    return (
-      primary.kind === "pressure_test" &&
-      checklist.plan_rows.some((row) => pressureOffer(checklist, row)?.id === primary.id)
-    );
   }
   // The Run page draws a start_run primary in every run state (`startControl`): enabled, blocked
   // while a run holds the workspace or the state is unread, or resuming a stopped run.
