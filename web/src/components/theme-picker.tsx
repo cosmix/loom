@@ -21,7 +21,7 @@ export interface ThemePalette {
   primaryForeground: string;
 }
 
-export type ThemeId = "ledger" | "aubergine" | "pacific" | "graphite";
+export type ThemeId = "ledger" | "walnut" | "graphite";
 
 export interface ThemeOption {
   id: ThemeId;
@@ -47,34 +47,25 @@ export const THEME_OPTIONS: readonly ThemeOption[] = [
   {
     id: "ledger",
     label: "Ledger",
-    caption: "light · hue 102",
+    caption: "light · stone paper",
     scheme: "light",
     lightVariant: "ledger",
     darkVariant: null,
     palette: PALETTE_VARIABLES,
   },
   {
-    id: "aubergine",
-    label: "Aubergine",
-    caption: "dark · hue 325",
+    id: "walnut",
+    label: "Walnut",
+    caption: "dark · warm brown-black",
     scheme: "dark",
     lightVariant: null,
-    darkVariant: "aubergine",
-    palette: PALETTE_VARIABLES,
-  },
-  {
-    id: "pacific",
-    label: "Pacific",
-    caption: "dark blue · hue 258",
-    scheme: "dark",
-    lightVariant: null,
-    darkVariant: "blue",
+    darkVariant: "walnut",
     palette: PALETTE_VARIABLES,
   },
   {
     id: "graphite",
     label: "Graphite",
-    caption: "dark gray · hue 270",
+    caption: "dark · neutral charcoal",
     scheme: "dark",
     lightVariant: null,
     darkVariant: "gray",

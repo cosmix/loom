@@ -52,7 +52,7 @@ describe("PlannerThemeSwatch", () => {
 
   it("changes its fills when a different palette is supplied", () => {
     const ledger = THEME_OPTIONS[0]!.palette;
-    const pacific = {
+    const other = {
       ...ledger,
       background: "var(--custom-background)",
       primary: "var(--custom-primary)",
@@ -63,7 +63,7 @@ describe("PlannerThemeSwatch", () => {
       (rect) => rect.style.fill,
     );
 
-    rerender(PlannerThemeSwatch(pacific));
+    rerender(PlannerThemeSwatch(other));
 
     const nextFills = Array.from(
       container.querySelectorAll<SVGRectElement>("rect"),
@@ -71,8 +71,8 @@ describe("PlannerThemeSwatch", () => {
     );
     expect(nextFills).not.toEqual(initialFills);
     expect(initialFills[0]).toBe(ledger.background);
-    expect(nextFills[0]).toBe(pacific.background);
-    expect(nextFills).toContain(pacific.primary);
+    expect(nextFills[0]).toBe(other.background);
+    expect(nextFills).toContain(other.primary);
     expect(nextFills).not.toContain(ledger.primary);
   });
 });

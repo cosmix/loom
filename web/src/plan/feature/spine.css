@@ -230,11 +230,17 @@
    record as glyphs alone, each 14px and keeping its width, so the slug has the rest of the row and
    takes an end ellipsis only when it is longer than that. The words stay in the DOM for the
    link's name (`.sr-only`, spine-row.tsx) and show on hover as the glyph's tooltip. The glyphs sit
-   in --muted-foreground, quieter than the slug; only the tested flask takes a tone. */
+   in --muted-foreground, quieter than the slug. Two take --tone-completed, the colour of finished
+   work: the state glyph of a done plan (`data-state="done"`) and the tested flask; the running
+   roundel, the written pencil, the retired glyph and the untested gauge stay muted. */
 [data-loom-plan] .plan-spine__glyph {
   display: inline-flex;
   flex: none;
   color: var(--muted-foreground);
+}
+
+[data-loom-plan] .plan-spine__glyph[data-state="done"] {
+  color: var(--tone-completed);
 }
 
 [data-loom-plan] .plan-spine__glyph > svg {

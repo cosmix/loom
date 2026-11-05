@@ -1,36 +1,51 @@
 import { useAtomValue } from "jotai/react";
-import { useId, useState, type ReactNode } from "react";
+import { useId, useRef, useState, type ReactNode } from "react";
 
-import type {
-  RunningRebuild,
-  SummaryPanel as SummaryPanelData,
-  TokenVector,
-} from "@/plan/api/schema-summaries";
+import type { RunningRebuild, SummaryPanel as SummaryPanelData } from "@/plan/api/schema-summaries";
 import { Untrusted } from "@/plan/chat/visible-controls";
 import { relativeTime } from "@/plan/files/heading-parts";
 import { authorBlockReasonAtom } from "@/plan/state/atoms";
 import { DisabledReason } from "@/plan/ui/disabled-reason";
 import { useSummaryActions } from "./state";
+import { COMPONENTS, TokenCards, TokenFigure } from "./token-figures";
+import "./summary-panel.css";
+
+type CostLine = NonNullable<SummaryPanelData["last"]>;
 
 /**
- * The rebuild statistics, mounted only by Settings. The provider limits are not drawn here: the
- * footer is their one place.
+ * The rebuild statistics, mounted only by Settings: the token totals as two figure cards, the
+ * last rebuild as one row, then what is in progress (`RebuildActivity`, shared with the activity
+ * popover) and the terminal claims. The provider limits are not drawn here: the footer is their
+ * one place.
  */
 export function SummaryPanel({ panel, nowSecs }: { panel: SummaryPanelData; nowSecs: number }) {
+  const now = nowSecs * 1000;
   return (
-    <div className="w-full min-w-0 max-w-full space-y-[var(--space-5)] text-[length:var(--type-ui)] [overflow-wrap:anywhere]">
+    <div className="sp-panel">
       {panel.read_only !== null && (
-        <p className="text-muted-foreground">
+        <p className="sp-muted">
           <Untrusted text={panel.read_only} />
         </p>
       )}
+      <Section title="Token totals">
+        <TokenCards today={panel.today} week={panel.week} />
+      </Section>
+      <Section title="Last rebuild">
+        <LastRebuild last={panel.last} failed={panel.failed.length > 0} now={now} />
+      </Section>
+      {panel.running === null && <p className="sp-idle">{idleLine(panel.last, now)}</p>}
       <RebuildActivity panel={panel} />
-      <TokenStatistics panel={panel} nowSecs={nowSecs} />
       {panel.terminal_claims.length > 0 && (
-        <Section title="Terminal claims" className="space-y-2">
-          <ul className="space-y-3">
+        <Section title="Terminal claims">
+          <ul className="plan-list sp-rows">
             {panel.terminal_claims.map((id) => (
-              <TerminalClaim key={id} id={id} canRelease={panel.read_only === null} />
+              <ActionRow
+                key={id}
+                id={id}
+                verb="Release"
+                action="release"
+                canAct={panel.read_only === null}
+              />
             ))}
           </ul>
         </Section>
@@ -40,23 +55,76 @@ export function SummaryPanel({ panel, nowSecs }: { panel: SummaryPanelData; nowS
 }
 
 /** A region named by its own heading, so the name cannot drift from the visible title. */
-function Section({
-  title,
-  className = "space-y-1",
-  children,
-}: {
-  title: string;
-  className?: string;
-  children: ReactNode;
-}) {
+function Section({ title, children }: { title: string; children: ReactNode }) {
   const headingId = useId();
   return (
-    <section aria-labelledby={headingId} className={className}>
-      <h3 id={headingId} className="font-semibold text-foreground">
+    <section aria-labelledby={headingId} className="sp-section">
+      <h3 id={headingId} className="sp-title">
         {title}
       </h3>
       {children}
     </section>
+  );
+}
+
+function IdList({ ids }: { ids: string[] }) {
+  return (
+    <ul className="sp-ids">
+      {ids.map((id) => (
+        <li key={id}>
+          <Untrusted text={id} />
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function idleLine(last: CostLine | null, now: number): string {
+  return last === null ? "Idle · no runs yet" : `Idle · last run ${relativeTime(last.time, now)}`;
+}
+
+/** The three components of the last rebuild's cost line; cache writes stay in the cards' legends. */
+const COST_COMPONENTS = COMPONENTS.filter(({ key }) => key !== "cache_write");
+
+/**
+ * The wire carries no duration and no success flag for the last rebuild: the row shows none, and
+ * its dot reads "failed" while the panel lists any failed rebuild.
+ */
+function LastRebuild({
+  last,
+  failed,
+  now,
+}: {
+  last: CostLine | null;
+  failed: boolean;
+  now: number;
+}) {
+  if (last === null) return <p className="sp-muted">None yet</p>;
+  const count = last.summaries.length;
+  return (
+    <div className="sp-last">
+      <p className="sp-last-head">
+        <span className="sp-last-state">
+          <span className="sp-dot" data-state={failed ? "failed" : "ok"} aria-hidden="true" />
+          {failed ? "Failed" : "Rebuilt"}
+        </span>
+        <time
+          dateTime={last.time}
+          title={new Date(last.time).toLocaleString()}
+          className="sp-muted"
+        >
+          {relativeTime(last.time, now)}
+        </time>
+        <span className="sp-muted">
+          {count} {count === 1 ? "document" : "documents"}
+        </span>
+      </p>
+      <dl className="sp-cost">
+        {COST_COMPONENTS.map(({ key, label }) => (
+          <TokenFigure key={key} label={label} value={last.tokens[key]} />
+        ))}
+      </dl>
+    </div>
   );
 }
 
@@ -65,22 +133,30 @@ function Section({
  * has none, so its log file is the way to follow it.
  */
 function RunningRebuildSection({ running }: { running: RunningRebuild }) {
+  const share = running.total > 0 ? (running.done / running.total) * 100 : 0;
   return (
-    <section aria-label="Running rebuild" className="space-y-1">
-      <h3 className="font-semibold text-foreground">
-        Rebuilding {running.done} of {running.total}
-      </h3>
-      <ul className="space-y-1 font-mono text-xs">
-        {running.ids.map((id) => (
-          <li key={id}>
-            <Untrusted text={id} />
-          </li>
-        ))}
-      </ul>
+    <section aria-label="Running rebuild" className="sp-section">
+      <div className="sp-running-head">
+        <span className="sp-pulse" aria-hidden="true" />
+        <h3 className="sp-title">
+          Rebuilding {running.done} of {running.total}
+        </h3>
+      </div>
+      <div
+        role="progressbar"
+        aria-label="Rebuild progress"
+        aria-valuemin={0}
+        aria-valuemax={running.total}
+        aria-valuenow={running.done}
+        className="sp-progress"
+      >
+        <span className="sp-progress-fill" style={{ width: `${share}%` }} />
+      </div>
+      <IdList ids={running.ids} />
       {running.log_path !== null && (
-        <p className="text-muted-foreground">
+        <p className="sp-muted">
           Log:{" "}
-          <code className="font-mono text-xs">
+          <code className="sp-mono">
             <Untrusted text={running.log_path} />
           </code>
         </p>
@@ -106,33 +182,27 @@ export function RebuildActivity({ panel }: { panel: SummaryPanelData }) {
       {panel.running !== null && <RunningRebuildSection running={panel.running} />}
       {queue.length > 0 && (
         <Section title="Queue">
-          <ul className="space-y-1 font-mono text-xs">
-            {queue.map((id) => (
-              <li key={id}>
-                <Untrusted text={id} />
-              </li>
-            ))}
-          </ul>
+          <IdList ids={queue} />
         </Section>
       )}
       {panel.failed.length > 0 && (
         <Section title="Failed rebuilds">
-          <ul className="space-y-2">
+          <ul className="plan-list sp-rows">
             {panel.failed.map(({ id, error }) => (
-              <li key={id}>
-                <span className="font-mono text-xs">
-                  <Untrusted text={id} />
-                </span>
-                <p className="text-muted-foreground">
-                  <Untrusted text={error} />
-                </p>
-              </li>
+              <ActionRow
+                key={id}
+                id={id}
+                detail={error}
+                verb="Retry"
+                action="rebuild"
+                canAct={panel.read_only === null}
+              />
             ))}
           </ul>
         </Section>
       )}
       {panel.start_error !== null && (
-        <p role="alert" className="text-destructive">
+        <p role="alert" className="sp-alert">
           <Untrusted text={panel.start_error} />
         </p>
       )}
@@ -140,112 +210,63 @@ export function RebuildActivity({ panel }: { panel: SummaryPanelData }) {
   );
 }
 
-const COLUMN = "grid min-w-0 content-start gap-[var(--space-2)]";
-const CAPTION = "font-medium text-foreground";
-
 /**
- * Last rebuild, Today and 7 days as three equal columns of labelled figures, each under a caption
- * naming its span, so a figure reads across the row against its neighbours. Below `md` the last
- * rebuild takes the first of two columns and the totals the row under it, so each column keeps room
- * for "cache reads 412,000" and the 390px dialog never scrolls sideways. The two sections' headings
- * and captions share one size and gap, which keeps the figure rows on one line without a subgrid.
+ * A compact row: the id in mono, a detail under it, and one action at its end (Retry a failed
+ * rebuild, Release a terminal claim), drawn only while the panel is not read-only. The action's
+ * failure shows as an alert under the id, as RebuildButton's does beside its button.
  */
-function TokenStatistics({ panel, nowSecs }: { panel: SummaryPanelData; nowSecs: number }) {
-  return (
-    <div className="grid grid-cols-2 gap-x-[var(--space-4)] gap-y-[var(--space-5)] md:grid-cols-[minmax(0,13rem)_minmax(0,27rem)]">
-      <Section title="Last rebuild" className={COLUMN}>
-        <p className={CAPTION}>
-          {panel.last === null ? (
-            "None yet"
-          ) : (
-            <time dateTime={panel.last.time}>{relativeTime(panel.last.time, nowSecs * 1000)}</time>
-          )}
-        </p>
-        <TokenFigures tokens={panel.last?.tokens} />
-      </Section>
-      <Section title="Token totals" className={`${COLUMN} col-span-2 md:col-span-1`}>
-        <dl className="grid grid-cols-2 gap-x-[var(--space-4)]">
-          <div className={COLUMN}>
-            <dt className={CAPTION}>Today</dt>
-            <dd>
-              <TokenFigures tokens={panel.today} />
-            </dd>
-          </div>
-          <div className={COLUMN}>
-            <dt className={CAPTION}>7 days</dt>
-            <dd>
-              <TokenFigures tokens={panel.week} />
-            </dd>
-          </div>
-        </dl>
-      </Section>
-    </div>
-  );
-}
-
-const FIGURES = [
-  ["fresh", "fresh_input"],
-  ["cache reads", "cache_read"],
-  ["output", "output"],
-] as const;
-
-/**
- * One labelled figure per line, the figure set flush right in tabular numerals so the digits of a
- * column line up on the units. A missing figure reads "unknown" in muted text; zero prints as 0.
- */
-function TokenFigures({ tokens }: { tokens: TokenVector | undefined }) {
-  return (
-    <dl className="grid gap-[var(--space-1)]">
-      {FIGURES.map(([label, key]) => {
-        const value = tokens?.[key];
-        return (
-          <div
-            key={key}
-            className="flex min-w-0 items-baseline justify-between gap-[var(--space-2)]"
-          >
-            <dt className="text-muted-foreground">{label}</dt>
-            <dd
-              className={
-                value === undefined ? "text-muted-foreground" : "tabular-nums text-foreground"
-              }
-            >
-              {value?.toLocaleString("en-US") ?? "unknown"}
-            </dd>
-          </div>
-        );
-      })}
-    </dl>
-  );
-}
-
-function TerminalClaim({ id, canRelease }: { id: string; canRelease: boolean }) {
+function ActionRow({
+  id,
+  detail,
+  verb,
+  action,
+  canAct,
+}: {
+  id: string;
+  detail?: string;
+  verb: string;
+  action: "rebuild" | "release";
+  canAct: boolean;
+}) {
   const reason = useAtomValue(authorBlockReasonAtom);
-  const { release } = useSummaryActions();
+  const actions = useSummaryActions();
   const [error, setError] = useState<string | null>(null);
+  const pending = useRef(false);
+
+  async function handleAct() {
+    if (pending.current) return;
+    pending.current = true;
+    setError(null);
+    try {
+      setError(await actions[action]([id]));
+    } finally {
+      pending.current = false;
+    }
+  }
 
   return (
-    <li className="min-w-0 space-y-1">
-      <div className="flex min-w-0 flex-wrap items-start justify-between gap-2">
-        <span className="min-w-0 font-mono text-xs">
+    <li className="sp-row">
+      <div className="sp-row-main">
+        <span className="sp-mono">
           <Untrusted text={id} />
         </span>
-        {canRelease && (
-          <DisabledReason
-            reason={reason}
-            size="sm"
-            onClick={() => {
-              setError(null);
-              void release([id]).then(setError);
-            }}
-          >
-            Release
-          </DisabledReason>
+        {detail !== undefined && (
+          <p className="sp-row-sub">
+            <Untrusted text={detail} />
+          </p>
+        )}
+        {canAct && error !== null && (
+          <p role="alert" className="sp-alert">
+            <Untrusted text={error} />
+          </p>
         )}
       </div>
-      {canRelease && error !== null && (
-        <p role="alert" className="text-destructive">
-          <Untrusted text={error} />
-        </p>
+      {canAct && (
+        <div className="sp-row-action">
+          <DisabledReason reason={reason} size="sm" onClick={() => void handleAct()}>
+            {verb}
+          </DisabledReason>
+        </div>
       )}
     </li>
   );

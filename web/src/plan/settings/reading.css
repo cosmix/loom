@@ -1,0 +1,181 @@
+/*
+ * The Reading face and Reading size groups of the settings dialog: the specimen, the face cards
+ * and the size tiles. Unlayered `.ps-` rules, as settings.css, because the dialog portals out of
+ * `[data-loom-plan]` and reads only the global tokens. `--accent-ink` (index.css) is the one
+ * accent drawn here: the specimen's start rule and the chosen tile's edge and drawing.
+ */
+
+/* ── The specimen ─────────────────────────────────────────────────────────── */
+
+/* A sunken card one step below the dialog: `--background` under the `--card` dialog, a 1px edge
+   and a 3px rule of accent ink down its start, so the sample reads as a specimen and not a note. */
+.ps-preview {
+  margin: 0 0 var(--space-4);
+  padding: var(--space-4);
+  border: 1px solid var(--border);
+  border-inline-start: 3px solid var(--accent-ink);
+  border-radius: 8px;
+  background: var(--background);
+  color: var(--foreground);
+}
+
+.ps-preview-eyebrow {
+  margin: 0 0 var(--space-2);
+  font-family: var(--font-sans, inherit);
+  font-size: var(--type-fine);
+  font-weight: 500;
+  font-variant-caps: all-small-caps;
+  letter-spacing: 0.1em;
+  line-height: 1;
+  color: var(--muted-foreground);
+}
+
+.ps-preview p {
+  margin: 0;
+  max-width: 68ch;
+}
+
+.ps-preview p + p {
+  margin-top: 0.4em;
+  color: var(--muted-foreground);
+}
+
+/* ── The face cards ───────────────────────────────────────────────────────── */
+
+.ps-faces {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: var(--space-3);
+}
+
+.ps-face {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 3px;
+  padding: var(--space-3);
+  border: 1px solid var(--hairline);
+  border-radius: var(--corner-control);
+  cursor: pointer;
+}
+
+.ps-face:hover {
+  background: var(--muted);
+}
+
+.ps-face:has(input:checked) {
+  border-color: var(--foreground);
+}
+
+.ps-face:has(input:focus-visible),
+.ps-seg-item:has(input:focus-visible) {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.ps-specimen {
+  display: grid;
+  height: 66px;
+  place-content: center;
+  justify-items: center;
+  margin-bottom: var(--space-1);
+  line-height: 1;
+}
+
+.ps-specimen-latin {
+  font-size: 36px;
+  color: var(--foreground);
+}
+
+.ps-specimen-greek {
+  font-size: 20px;
+  color: var(--muted-foreground);
+}
+
+.ps-face-name {
+  font-size: var(--type-ui);
+  font-weight: 600;
+  color: var(--foreground);
+}
+
+.ps-face-caption {
+  font-size: var(--type-fine);
+  color: var(--muted-foreground);
+}
+
+/* "Default" is a word in the card's corner, not a filled chip. */
+.ps-flag {
+  position: absolute;
+  top: var(--space-2);
+  right: var(--space-3);
+  color: var(--muted-foreground);
+  font-size: var(--type-fine);
+  line-height: 1;
+}
+
+/* ── The size tiles ───────────────────────────────────────────────────────── */
+
+/* Three tiles in one row, each a page picture over its word and px value. The picture and the
+   word are drawn in `currentColor`, so the tile's colour is the whole state: muted at rest, the
+   foreground under the pointer, the accent ink when chosen. */
+.ps-seg {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-2);
+  max-width: 420px;
+}
+
+.ps-seg-item {
+  display: grid;
+  justify-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+  padding: var(--space-3) var(--space-2);
+  border: 1px solid var(--hairline);
+  border-radius: var(--corner-control);
+  color: var(--muted-foreground);
+  font-size: var(--type-ui);
+  font-weight: 500;
+  line-height: var(--leading-ui);
+  text-align: center;
+  cursor: pointer;
+  transition:
+    color 120ms ease,
+    border-color 120ms ease;
+}
+
+.ps-seg-item svg {
+  display: block;
+  margin-bottom: var(--space-1);
+}
+
+.ps-seg-item:hover {
+  color: var(--foreground);
+}
+
+.ps-seg-item:has(input:checked) {
+  border-color: var(--accent-ink);
+  color: var(--accent-ink);
+}
+
+.ps-seg-item:has(input:checked) .ps-seg-label {
+  color: var(--foreground);
+  font-weight: 600;
+}
+
+/* The tile's accent ink is too faint for 12px text on some themes; the label stays foreground. */
+.ps-seg-item:has(input:checked) .ps-seg-px {
+  color: var(--foreground);
+}
+
+.ps-seg-px {
+  font-size: var(--type-fine);
+  font-variant-numeric: tabular-nums;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ps-seg-item {
+    transition: none;
+  }
+}

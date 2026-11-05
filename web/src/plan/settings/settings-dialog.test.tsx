@@ -88,13 +88,13 @@ describe("planner settings sections", () => {
     expect(screen.getByRole("radiogroup", { name: "Reading size" })).toBeTruthy();
   });
 
-  it("uses all four planner swatches at 120 by 76, hidden from assistive technology", () => {
+  it("uses all three planner swatches at 120 by 76, hidden from assistive technology", () => {
     renderSettings();
 
     const theme = screen.getByRole("group", { name: "theme" });
     const swatches = theme.querySelectorAll('svg[width="120"][height="76"][aria-hidden="true"]');
-    expect(swatches).toHaveLength(4);
-    for (const label of ["Ledger", "Aubergine", "Pacific", "Graphite"]) {
+    expect(swatches).toHaveLength(3);
+    for (const label of ["Ledger", "Walnut", "Graphite"]) {
       const card = within(theme).getByRole("button", { name: `${label} theme` });
       expect(card.querySelector("svg")?.getAttribute("viewBox")).toBe("0 0 120 76");
       expect(card.querySelector('[data-region="spine"]')).toBeTruthy();
@@ -151,15 +151,22 @@ describe("planner settings sections", () => {
     },
   );
 
-  it("renders the size choices as a segmented control with the pressed segment checked", () => {
+  it("renders the size choices as a row of tiles, each a picture over its word and px value", () => {
     renderSettings();
 
     const group = screen.getByRole("radiogroup", { name: "Reading size" });
     expect(group.className).toContain("ps-seg");
-    const labels = within(group)
+    const tiles = within(group)
       .getAllByRole("radio")
-      .map((radio) => radio.closest("label")!.textContent);
-    expect(labels).toEqual(["Compact17px", "Comfortable19px", "Large21px"]);
+      .map((radio) => radio.closest("label")!);
+    expect(tiles.map((tile) => tile.className)).toEqual(Array(3).fill("ps-seg-item"));
+    // The picture is an SVG without text, so the tile's text is its word and px value only.
+    expect(tiles.map((tile) => tile.textContent)).toEqual([
+      "Compact17px",
+      "Comfortable19px",
+      "Large21px",
+    ]);
+    expect(tiles.map((tile) => tile.querySelectorAll("svg [data-line]").length)).toEqual([5, 4, 3]);
     expect(within(group).getByRole("radio", { name: "Comfortable 19px" })).toHaveProperty(
       "checked",
       true,
@@ -184,6 +191,21 @@ describe("planner settings sections", () => {
     expect(preview.style.lineHeight).toBe("1.6");
     expect(screen.getByText(ENGLISH_PREVIEW).getAttribute("lang")).toBe("en");
     expect(screen.getByText(GREEK_PREVIEW).getAttribute("lang")).toBe("el");
+  });
+
+  it("frames the preview as a specimen with a hidden eyebrow inside the Reading face group", () => {
+    renderSettings();
+
+    const figure = screen.getByRole("figure", { name: "Reading preview" });
+    expect(figure.className).toBe("ps-preview");
+    const eyebrow = figure.querySelector("figcaption")!;
+    expect(eyebrow.textContent).toBe("Preview");
+    expect(eyebrow.getAttribute("aria-hidden")).toBe("true");
+    const group = screen.getByRole("heading", { name: "Reading face" }).closest("section")!;
+    expect(group.contains(figure)).toBe(true);
+    expect(figure.nextElementSibling).toBe(
+      screen.getByRole("radiogroup", { name: "Reading face" }),
+    );
   });
 
   it.each([
