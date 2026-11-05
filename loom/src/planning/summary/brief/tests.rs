@@ -70,10 +70,38 @@ fn vision_brief_caps_at_eight_sentences_and_cites_only_the_vision() {
     assert!(!text.contains("At most 15"), "{text}");
     let overview = brief(&f.root, &f.paths, &[PRODUCT.into()], None).unwrap();
     assert!(
-        overview.contains("- An overview sentence that cites member sentences cites at least two of them and says what they add up to; it may cite one only when that member's summary holds a single sentence."),
+        overview.contains("- An overview sentence that cites member sentences cites at least two of them and says what they add up to; it may cite one only when that member's summary holds a single citable sentence."),
         "{overview}"
     );
     assert!(!text.contains("cites at least two"), "{text}");
+}
+
+#[test]
+fn plan_brief_teaches_the_two_levels_and_sealing_twice() {
+    let f = two_sections();
+    put(&f.root, META, &metaplan(&["PLAN-x.md"]));
+    put(
+        &f.root,
+        "doc/plans/demo/PLAN-x.md",
+        "# Plan: X\n\nDoes x.\n",
+    );
+    let text = brief(&f.root, &f.paths, &["plans/x".into()], None).unwrap();
+    for rule in [
+        "- At most 23 sentences; opening sentences cite only this summary's detail sentences, \
+         detail sentences cite only the source document and its valid anchors.\n",
+        "- A plan summary has two levels. First the opening level: about one sentence per topic, \
+         each citing every sentence of the detail paragraph(s) it opens, in order, as \
+         [d](#s-xxxxxxxx). Then the detail level: short paragraphs whose sentences cite the \
+         plan's heading sections. No heading after the opening level.\n",
+        "- At most 8 opening and 15 detail sentences.\n",
+        "- Write the detail level first and seal: the refusal lists each detail sentence's id. \
+         Then add the opening level above it and seal again.\n",
+    ] {
+        assert!(text.contains(rule), "{rule}\nmissing from\n{text}");
+    }
+    assert!(!text.contains("; cite only the source document"), "{text}");
+    let section = brief(&f.root, &f.paths, &[ID1.into()], None).unwrap();
+    assert!(!section.contains("two levels"), "{section}");
 }
 
 #[test]

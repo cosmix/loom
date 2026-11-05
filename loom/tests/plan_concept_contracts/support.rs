@@ -164,10 +164,13 @@ pub fn plan(slug: &str, extra: &str) -> (String, String) {
     (path, format!("# Plan: {slug}\n\n{extra}Does {slug}.\n"))
 }
 
-/// The one-sentence summary draft of plan `slug`, citing its title section.
+/// The two-level summary draft of plan `slug`: an opening sentence citing the detail sentence,
+/// which cites the plan's title section.
 pub fn plan_draft(slug: &str) -> String {
     format!(
-        "# {slug}\n\n{} [§](../../../plans/demo/PLAN-{slug}.md#plan-{slug})\n",
+        "# {slug}\n\nPlan {slug} is outlined. [d](#{})\n\n\
+         {} [§](../../../plans/demo/PLAN-{slug}.md#plan-{slug})\n",
+        sid(&plan_sentence(slug)),
         plan_sentence(slug)
     )
 }

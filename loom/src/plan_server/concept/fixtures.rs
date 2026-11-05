@@ -1,8 +1,8 @@
 //! Feature-scoped fixtures using the planning summary test helpers.
 
 pub(super) use crate::planning::summary::evaluate::fixtures::{
-    fixture, load, metaplan, put, seal_document, seal_overview, section, vision, write_file,
-    Fixture,
+    fixture, load, metaplan, put, seal_document, seal_draft, seal_overview, section, vision,
+    write_file, Fixture,
 };
 
 /// Its vision source.

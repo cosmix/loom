@@ -12,7 +12,7 @@ use crate::plan_server::wire::concept::{
 use crate::planning::kinds::DocKind;
 use crate::planning::project::Project;
 use crate::planning::summary::evaluate::{sentences_of, Evaluation, SummaryState};
-use crate::planning::summary::format::{self, LinkTarget, SummaryFile};
+use crate::planning::summary::format::{self, split_levels, LinkTarget, SummaryFile};
 use crate::planning::summary::store::{
     is_overview, metaplan_feature, source_of, summary_id_for, vision_feature,
 };
@@ -41,15 +41,23 @@ struct Cited {
     missing: bool,
 }
 
-/// Render a summary body with its citations and feature-local plan links.
+/// A rendered summary body: the blocks a page shows and, for a two-level summary, the detail
+/// sentences its opening sentences cite.
+pub(crate) struct Body {
+    pub blocks: Vec<Block>,
+    pub detail: Vec<Sentence>,
+}
+
+/// Render the body of summary `id` with its citations and feature-local plan links.
 pub(crate) fn blocks(
     project: &Project,
+    id: &str,
     file: &SummaryFile,
     eval: &Evaluation,
     chips: &[KeyChip],
     level: Level,
     ctx: &PageContext,
-) -> Vec<Block> {
+) -> Body {
     let cx = Cx {
         project,
         eval,
@@ -65,8 +73,10 @@ pub(crate) fn blocks(
         Level::Document => section_number(project, &file.front.of),
         Level::Overview => None,
     };
-    file.blocks
-        .iter()
+    let levels = split_levels(id, &file.blocks);
+    let blocks = levels
+        .shown
+        .into_iter()
         .map(|block| match block {
             format::Block::Heading { level, text, .. } => Block::Heading {
                 level: *level,
@@ -80,7 +90,10 @@ pub(crate) fn blocks(
                     .collect(),
             },
         })
-        .collect()
+        .collect();
+    let detail = levels.detail.into_iter();
+    let detail = detail.map(|one| sentence(&cx, file, one, None)).collect();
+    Body { blocks, detail }
 }
 
 fn section_number(project: &Project, of: &str) -> Option<u32> {
@@ -90,15 +103,19 @@ fn section_number(project: &Project, of: &str) -> Option<u32> {
     }
 }
 
+/// One rendered sentence. An overview sentence, and an opening sentence of a two-level summary,
+/// rests on the passages of the sentences it cites; any other sentence on its own passages.
 fn sentence(cx: &Cx, file: &SummaryFile, one: &format::Sentence, number: Option<u32>) -> Sentence {
     let citations = citations(cx, &one.links);
+    let cites_sentences = citations
+        .iter()
+        .any(|citation| matches!(citation, Citation::Sentence { .. }));
     let (rests_on, marks) = if citations.is_empty() {
         (Vec::new(), Vec::new())
+    } else if cx.level == Level::Overview || cites_sentences {
+        overview_level(cx, &citations)
     } else {
-        match cx.level {
-            Level::Document => document_level(cx, file, &citations),
-            Level::Overview => overview_level(cx, &citations),
-        }
+        document_level(cx, file, &citations)
     };
     Sentence {
         id: one.id.clone(),

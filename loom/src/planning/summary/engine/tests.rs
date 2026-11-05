@@ -111,6 +111,40 @@ fn renamed_source_with_new_content_is_not_rewritten() {
 }
 
 #[test]
+fn a_renamed_two_level_plan_summary_keeps_its_own_links_and_stays_current() {
+    let plan = "# Plan: X\n\nDoes x.\n\n## Detail\n\nMore.\n";
+    let fx = fixture(&[(META, &metaplan(&["PLAN-x.md"])), (PLAN_X, plan)]);
+    let opening = format!(
+        "X is outlined here. [d](#{}) [d](#{})",
+        format::sentence_id("X does x."),
+        format::sentence_id("X has detail.")
+    );
+    let draft = format!(
+        "# X\n\n{opening}\n\nX does x. [§](../../../plans/demo/PLAN-x.md#plan-x)\n\
+         X has detail. [§](../../../plans/demo/PLAN-x.md#detail)\n"
+    );
+    if let Err(error) = seal_draft(&fx, "plans/x", &draft) {
+        panic!("the two-level draft was refused: {error}");
+    }
+    fs::create_dir_all(fx.root.join("doc/plans/demo/archive")).unwrap();
+    fs::rename(fx.root.join(PLAN_X), fx.root.join(ARCHIVED_X)).unwrap();
+    let update = engine(&fx, OwnWrites::default())
+        .on_batch(&load(&fx.root), &Batch::default())
+        .expect("on_batch");
+    assert_eq!(update.rewritten, vec!["plans/x".to_string()]);
+    let summary = &update.evaluation.summaries["plans/x"];
+    assert_eq!(summary.state, SummaryState::Current);
+    let states: Vec<SentenceState> = summary.sentences.iter().map(|s| s.state).collect();
+    assert_eq!(states, vec![SentenceState::Current; 3]);
+    let text = summary_text(&fx.root, "plans/x");
+    assert!(text.contains(&format!("\n{opening}\n")), "{text}");
+    assert!(
+        text.contains("X does x. [§](../../../plans/demo/archive/DONE-PLAN-x.md#plan-x)"),
+        "{text}"
+    );
+}
+
+#[test]
 fn deletes_archived_plan_no_metaplan_names() {
     let fx = fixture(&[
         (META, &metaplan(&["PLAN-x.md"])),

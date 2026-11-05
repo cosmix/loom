@@ -18,6 +18,10 @@ pub struct ConceptPage {
     pub last_pressure: Option<String>,
     pub key_chips: Vec<KeyChip>,
     pub blocks: Vec<Block>,
+    /// The detail level of a two-level summary, which its opening sentences cite; empty and
+    /// absent from the JSON for every other page.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub detail: Vec<Sentence>,
     pub unlisted: Vec<DocLink>,
     pub implements: Option<ImplementsView>,
     pub implemented_by: Vec<PlanLink>,

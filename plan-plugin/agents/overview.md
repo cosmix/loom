@@ -36,8 +36,9 @@ summaries or delegate work. Work without asking the user anything.
      or metaplans directly. Do not replace document-summary citations with raw section or
      plan citations. Resolve links relative to the final overview file, not the runtime draft.
    - Cite every document in the overview's scope with at least one overview sentence.
+   - Cite a plan summary's detail sentences, never its opening level.
    - An overview sentence that cites member sentences cites at least two of them, and says what
-     they add up to. Cite one only when that member's summary holds a single sentence.
+     they add up to. Cite one only when that member's summary holds a single citable sentence.
    - Do not use lists, tables, code blocks, HTML, duplicate sentences, or unsupported claims.
 4. Run `loom plan summary seal <id>`. Exit 1 reports problems as
    `<draft path>:<line>: <message>`. Fix every reported problem in the named draft and run the

@@ -28,8 +28,10 @@ pub const LOCKED_PLAN: &str = "doc/plans/IN_PROGRESS-PLAN-b.md";
 pub const SECRET: &str = "planning-confinement-secret";
 /// The symbol `loom map --outline loom/src/lib.rs` must print.
 pub const SYMBOL: &str = "confinement_probe_symbol";
-/// A summary draft of `doc/plans/PLAN-a.md` citing its title section.
-const DRAFT: &str = "# A\n\nA does a. [§](../../../plans/PLAN-a.md#plan-a)\n";
+/// A two-level summary draft of `doc/plans/PLAN-a.md`: an opening sentence citing the detail
+/// sentence, which cites the plan's title section.
+const DRAFT: &str =
+    "# A\n\nA is planned. [d](#s-ee726dbe)\n\nA does a. [§](../../../plans/PLAN-a.md#plan-a)\n";
 
 /// One project with its runtime and the authoring session's sandbox files.
 pub struct Fixture {

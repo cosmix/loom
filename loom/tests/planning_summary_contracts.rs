@@ -265,7 +265,8 @@ fn plan_summary_cites_stage_anchor() {
         (META, &metaplan(&["PLAN-x.md"])),
         (PLAN_X, &staged_plan("First.", "Second.")),
     ]);
-    let draft = "# X\n\nAlpha runs first. [§](../../../plans/demo/PLAN-x.md#stage:alpha)\n";
+    let draft = "# X\n\nX opens with alpha. [d](#s-63eb2337)\n\n\
+                 Alpha runs first. [§](../../../plans/demo/PLAN-x.md#stage:alpha)\n";
     sealed(&root, &home, "plans/x", draft);
     assert_eq!(state(&eval(&root, &[]), "plans/x"), "current");
     put(&root, PLAN_X, staged_plan("First.", "Second, edited."));
@@ -275,7 +276,10 @@ fn plan_summary_cites_stage_anchor() {
         "incomplete",
         "an edit of another stage"
     );
-    let want = vec![("Alpha runs first.".to_string(), "current")];
+    let want = vec![
+        ("X opens with alpha.".to_string(), "current"),
+        ("Alpha runs first.".to_string(), "current"),
+    ];
     assert_eq!(sentence_states(&e, "plans/x"), want);
     put(
         &root,
@@ -342,7 +346,8 @@ fn deleted_source_deletes_summary() {
         (PLAN_Y, "# Plan: Y\n"),
     ];
     let (_t, root, home) = plan_fixture(&files);
-    let y = "# Y\n\nY does y. [§](../../../plans/demo/PLAN-y.md#plan-y)\n";
+    let y = "# Y\n\nY is planned. [d](#s-946cc169)\n\n\
+             Y does y. [§](../../../plans/demo/PLAN-y.md#plan-y)\n";
     sealed(&root, &home, "plans/y", y);
     let (sx, sy) = (sid("X does x."), sid("Y does y."));
     let overview = format!(
