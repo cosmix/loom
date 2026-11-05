@@ -4,7 +4,6 @@ import { Provider } from "jotai/react";
 import { afterEach, describe, expect, it } from "vitest";
 
 import tokensCss from "@/aurora-ui/shared/styles/tokens.css?raw";
-import tokenVariantsCss from "@/aurora-ui/shared/styles/tokens-dark-variants.css?raw";
 import { THEME_OPTIONS, ThemePicker, type ThemeOption } from "@/components/theme-picker";
 
 const TOKENS = {
@@ -21,8 +20,7 @@ const TOKEN_ENTRIES = Object.entries(TOKENS) as [keyof typeof TOKENS, string][];
 /// The tokens.css rule that owns each offered theme's palette.
 const OWNING_SELECTOR: Record<ThemeOption["id"], string> = {
   ledger: ":root",
-  aubergine: ".dark",
-  pacific: '.dark[data-dark-theme="blue"]',
+  walnut: ".dark",
   graphite: '.dark[data-dark-theme="gray"]',
 };
 
@@ -89,7 +87,7 @@ function applyToRoot(option: ThemeOption): HTMLElement {
   const root = document.documentElement;
   root.classList.toggle("dark", option.scheme === "dark");
   root.dataset.lightTheme = option.lightVariant ?? "ledger";
-  root.dataset.darkTheme = option.darkVariant ?? "aubergine";
+  root.dataset.darkTheme = option.darkVariant ?? "walnut";
   return root;
 }
 
@@ -109,7 +107,7 @@ afterEach(() => {
 });
 
 describe("theme picker palettes", () => {
-  const rules = parseRules(tokensCss + "\n" + tokenVariantsCss);
+  const rules = parseRules(tokensCss);
 
   it.each(THEME_OPTIONS)("$label previews and applies its tokens.css palette", (option) => {
     renderPicker();
@@ -138,18 +136,18 @@ describe("theme picker palettes", () => {
 
   it("moves the preview and the applied theme together when the source changes", () => {
     renderPicker();
-    const pacific = THEME_OPTIONS.find((option) => option.id === "pacific")!;
-    const edited = parseRules(tokensCss + "\n" + tokenVariantsCss);
-    owningRule(edited, OWNING_SELECTOR.pacific).declarations.set("--primary", "oklch(0 0 0)");
+    const walnut = THEME_OPTIONS.find((option) => option.id === "walnut")!;
+    const edited = parseRules(tokensCss);
+    owningRule(edited, OWNING_SELECTOR.walnut).declarations.set("--primary", "oklch(0 0 0)");
 
-    expect(resolveTokens(previewOf(pacific), edited).get("--primary")).toBe("oklch(0 0 0)");
-    expect(resolveTokens(applyToRoot(pacific), edited).get("--primary")).toBe("oklch(0 0 0)");
+    expect(resolveTokens(previewOf(walnut), edited).get("--primary")).toBe("oklch(0 0 0)");
+    expect(resolveTokens(applyToRoot(walnut), edited).get("--primary")).toBe("oklch(0 0 0)");
   });
 
   it("detects a preview scope dropped from the light palette selector", () => {
     renderPicker();
     const ledger = THEME_OPTIONS.find((option) => option.id === "ledger")!;
-    const edited = parseRules(tokensCss + "\n" + tokenVariantsCss);
+    const edited = parseRules(tokensCss);
     const rule = owningRule(edited, OWNING_SELECTOR.ledger);
     rule.selectors = rule.selectors.filter((selector) => selector !== ".theme-preview");
 

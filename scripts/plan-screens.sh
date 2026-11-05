@@ -7,8 +7,8 @@
 # Run from the worktree root after `cd web && bun run build` and `cargo build` (the binary embeds
 # web/dist). Serves a shallow scratch clone of HEAD's doc/ so the operator commits nothing;
 # --worktree-doc copies the worktree's current doc/ over it so uncommitted docs show. Shoots each
-# route at 1440x900 and 390x844 in Ledger and Aubergine, or the --themes ids (ledger, aubergine,
-# pacific, graphite); exits non-zero on a console error or a route that does not render. Loopback
+# route at 1440x900 and 390x844 in Ledger and Walnut, or the --themes ids (ledger, walnut,
+# graphite); exits non-zero on a console error or a route that does not render. Loopback
 # is per Bash call, so the server and browser run here.
 set -euo pipefail
 
