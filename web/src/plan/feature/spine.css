@@ -226,11 +226,33 @@
   font-weight: 500;
 }
 
+/* A plan row is two lines (ui/DESIGN.md, Surfaces and borders): the slug alone on the first, so
+   it reads to its end and only a slug longer than the row takes an ellipsis; the state and the
+   pressure record on a quieter second line in --muted-foreground at 400, under the slug. The row
+   is told apart by its badge, which every plan but a retired one carries. The name's full basis
+   breaks the line after it; the state and the record then sit side by side, and the record drops
+   under the state only in a row too narrow to hold both. The row's dot stays centred on the row. */
+[data-loom-plan] .plan-spine__child:has(> .plan-spine__badge) {
+  flex-wrap: wrap;
+  row-gap: 0;
+  padding-block: var(--space-1);
+}
+
+[data-loom-plan] .plan-spine__child:has(> .plan-spine__badge) > .plan-spine__name {
+  flex-basis: 100%;
+}
+
+[data-loom-plan] .plan-spine__child:has(> .plan-spine__badge) > .plan-status,
+[data-loom-plan] .plan-spine__child:has(> .plan-spine__badge) > .plan-spine__badge {
+  color: var(--muted-foreground);
+  font-weight: 400;
+}
+
 /* A plan's pressure record: a quiet glyph and word after the state (ui/DESIGN.md, Status). Tested
    and untested differ in glyph and in word; only the tested glyph takes a tone. The badge keeps
-   its width and never wraps under the name: the name gives way first, and in a row too narrow for
-   the name beside the whole record the date is the first thing to go. It goes from view only
-   (the clip below), so the link's accessible name keeps it. */
+   its width; in a row too narrow for the state and the whole record on one line the date is the
+   first thing to go. It goes from view only (the clip below), so the link's accessible name keeps
+   it. */
 [data-loom-plan] .plan-spine__badge {
   display: inline-flex;
   align-items: center;
@@ -249,13 +271,15 @@
   color: var(--tone-completed);
 }
 
-/* Each child row measures itself: the 18rem spine's rows are under 20rem, the full-width rows of
-   the narrow layout are not until the viewport is close to its floor. */
+/* Each child row measures itself. The 18rem spine's rows measure about 15.5rem, where the state
+   and the dated record (about 16.5rem together at 13px) do not share a line, so the date leaves
+   view there; the full-width rows of the narrow layout measure 18rem from about a 340px viewport
+   up, so a phone shows the date. Under that the row is still the spine's width: nothing scrolls. */
 [data-loom-plan] .plan-spine__children > li {
   container: spine-row / inline-size;
 }
 
-@container spine-row (max-width: 20rem) {
+@container spine-row (max-width: 18rem) {
   [data-loom-plan] .plan-spine__badge-date {
     position: absolute;
     width: 1px;

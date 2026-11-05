@@ -8,7 +8,7 @@ export const VISION_DOC = "vision";
 /** The document family of a feature's concept page. */
 export type ConceptScope = "product" | "engineering" | "metaplan";
 
-/** The summary stem of a feature's first metaplan (`doc/plans/<feature>/index.md`), served at `/f/<feature>/metaplan`. */
+/** The summary stem of the metaplan file `doc/plans/<feature>/index.md`, which the bare `/f/<feature>/metaplan` route shows. */
 export const FIRST_METAPLAN = "index";
 
 /** A metaplan summary's stem: the metaplan file's name without `.md`, as the server names it. */

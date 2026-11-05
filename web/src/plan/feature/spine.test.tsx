@@ -208,6 +208,29 @@ describe("the pressure record on a plan row", () => {
 
     expect(within(spine()).queryByRole("link", { name: /^Pressure test\b/ })).toBeNull();
   });
+
+  it("stacks the state and the record under the slug of a row that carries a badge", () => {
+    const css = spineSheet.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\s+/g, " ");
+    const stacked = ".plan-spine__child:has(> .plan-spine__badge)";
+    expect(css).toContain(`${stacked} { flex-wrap: wrap;`);
+    expect(css).toContain(`${stacked} > .plan-spine__name { flex-basis: 100%; }`);
+    expect(css).toContain(`${stacked} > .plan-spine__badge { color: var(--muted-foreground);`);
+    // The date leaves view in the 18rem spine, whose rows measure under 18rem, and not at 390px.
+    expect(css).toContain("@container spine-row (max-width: 18rem) {");
+    expect(css).not.toContain("(max-width: 20rem)");
+  });
+
+  it("gives the badge, and so the two-line layout, to plan rows and no other row", () => {
+    renderSpine("/f/atlas/engineering");
+
+    const badged = within(spine())
+      .getAllByRole("link")
+      .filter((anchor) => anchor.querySelector(".plan-spine__badge") !== null);
+    expect(badged.map((anchor) => anchor.textContent?.split(" ")[0])).toEqual([
+      "atlas-01",
+      "atlas-02",
+    ]);
+  });
 });
 
 describe("the current row", () => {

@@ -1,12 +1,11 @@
-import type { LucideIcon } from "lucide-react";
-
+import { FIRST_METAPLAN } from "@/plan/api/page-key";
 import type { ChecklistView, MarkView, StepView } from "@/plan/api/schema";
 import { featurePage } from "@/plan/feature/page-offer";
 import { STEP } from "@/plan/feature/steps";
 import { featureOfDocPath } from "@/plan/feature/source-href";
 import { featureHref } from "@/plan/feature/use-feature";
 import { decode, docRel } from "@/plan/files/address";
-import { PLAN_STATE_GLYPHS, type PlanState } from "@/plan/ui/glyphs";
+import { PLAN_STATE_GLYPHS, type Glyph, type PlanState } from "@/plan/ui/glyphs";
 
 export type GroupId = "vision" | "product" | "metaplan" | "plans" | "run";
 
@@ -28,7 +27,7 @@ export interface SpineChild {
   number: string | null;
   /** The word beside the name: a plan's state, or "not written". */
   note: string | null;
-  icon: LucideIcon | null;
+  icon: Glyph | null;
   /** A plan's pressure record; null for every other child and for a retired plan. */
   pressure: PlanPressure | null;
 }
@@ -147,6 +146,13 @@ export function metaplanFile(path: string): string {
   return path.split("/").at(-1) ?? path;
 }
 
+/** The metaplan the bare `/metaplan` route shows: the file `index.md`, else the first in path order. */
+export function firstMetaplan<T extends { path: string }>(metaplans: T[]): T | undefined {
+  return (
+    metaplans.find((item) => metaplanFile(item.path) === `${FIRST_METAPLAN}.md`) ?? metaplans[0]
+  );
+}
+
 function metaplanChildren(checklist: ChecklistView): SpineChild[] {
   if (checklist.metaplans.length < 2) return [];
   return checklist.metaplans.map((metaplan) => ({
@@ -226,9 +232,16 @@ export function summaryPathnameOfSource(checklist: ChecklistView, pathname: stri
 export function currentPathname(checklist: ChecklistView, pathname: string): string {
   const fromSource = summaryPathnameOfSource(checklist, pathname);
   if (fromSource !== null) return fromSource;
-  if (featurePage(pathname)?.page !== "metaplan") return pathname;
+  const shown = featurePage(pathname);
+  if (shown?.page !== "metaplan") return pathname;
   const head = spineGroups(checklist).find((group) => group.id === groupOfPathname(pathname));
-  return head && head.children.length === 0 ? head.to : pathname;
+  if (head && head.children.length === 0) return head.to;
+  // The bare route shows the first metaplan, whose child row is then the current one.
+  const first = firstMetaplan(checklist.metaplans);
+  if (shown.doc === null && first) {
+    return head?.children.find((child) => child.key === first.path)?.to ?? pathname;
+  }
+  return pathname;
 }
 
 function childrenOf(id: GroupId, checklist: ChecklistView, page: string): SpineChild[] {
