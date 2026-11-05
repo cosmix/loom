@@ -12,7 +12,7 @@ use chrono::{DateTime, NaiveDateTime, SecondsFormat, Utc};
 use super::compare::is_commit_id;
 use crate::git::runner::run_git_checked;
 use crate::planning::discover::read_doc;
-use crate::planning::kinds::DocKind;
+use crate::planning::kinds::{plans_dir, DocKind};
 use crate::planning::paths::check_relpath_syntax;
 use crate::planning::project::Project;
 use crate::planning::slug::{plan_home, PlanState};
@@ -117,7 +117,7 @@ pub(crate) fn built_inputs(project: &Project, section: &str) -> Result<BuiltInpu
                 Some(PlanState::Running) => Some(PlanInput::Running { slug: slug.clone() }),
                 Some(PlanState::Done) => Some(PlanInput::Done {
                     slug: slug.clone(),
-                    reviews: review_paths(project, slug),
+                    reviews: run_review_paths(project, slug),
                 }),
                 Some(PlanState::Written | PlanState::Retired) | None => None,
             },
@@ -155,9 +155,11 @@ pub(crate) fn built_from(inputs: BuiltInputs) -> Result<Vec<BuiltNote>> {
     Ok(notes)
 }
 
-/// Every run review of `slug`, wherever discovery found it and however `generate` spelled
-/// its name.
-fn review_paths(project: &Project, slug: &str) -> Vec<PathBuf> {
+/// Every run review of `slug`, sorted by path, wherever discovery found it and however
+/// `generate` spelled its name: in the plan's home, the home's `archive/`, or at the top of
+/// `doc/plans/` or `doc/plans/archive/` (where `fs::plan_review::generate` writes it even for a
+/// feature plan).
+pub(crate) fn run_review_paths(project: &Project, slug: &str) -> Vec<PathBuf> {
     let Some(home) = project
         .tree
         .plan(slug)
@@ -165,18 +167,25 @@ fn review_paths(project: &Project, slug: &str) -> Vec<PathBuf> {
     else {
         return Vec::new();
     };
-    let archive = home.join("archive");
-    project
+    let top = plans_dir(None);
+    let parents: Vec<PathBuf> = [&home, &top]
+        .into_iter()
+        .flat_map(|dir| [dir.clone(), dir.join("archive")])
+        .collect();
+    let mut paths: Vec<PathBuf> = project
         .tree
         .docs
         .iter()
         .filter(|doc| matches!(&doc.kind, DocKind::RunReview { slug: of } if of == slug))
         .filter(|doc| {
-            doc.path.parent() == Some(home.as_path())
-                || doc.path.parent() == Some(archive.as_path())
+            doc.path
+                .parent()
+                .is_some_and(|parent| parents.iter().any(|dir| dir == parent))
         })
         .map(|doc| doc.path.clone())
-        .collect()
+        .collect();
+    paths.sort();
+    paths
 }
 
 /// The newest `**Generated:**` stamp among the run reviews.
