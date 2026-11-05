@@ -225,3 +225,15 @@ A container-query component in an unsized flex item (footer meters stacked), a s
 **Why:** clearing `completed_commit` forces re-verification of an in-flight stage, but a merged stage cannot re-verify. The amendment broke the merged-implies-commit invariant that the scheduler relies on.
 **Prevention:** an amendment must never clear `completed_commit` on a stage with `merged` or `merge_assumed`; integration-verify legitimately amends earlier stages' wiring.
 **Fix:** operator recreated `loom/chat-and-shell-visual` at its merged tip and ran `loom stage complete chat-and-shell-visual --force-unsafe --assume-merged`.
+
+## Spec sections inventing features
+
+A spec section adds an action, button or skill only when the vision names it. See [mistakes/spec-scope-invention](mistakes/spec-scope-invention.md).
+
+## Visual requests reduced to DOM tests
+
+A visual request needs a concrete design brief and a screenshot check, not only DOM-presence tests. See [mistakes/planner-visual-feedback-shortfall](mistakes/planner-visual-feedback-shortfall.md).
+
+## Run review written outside the plan's home
+
+Feature run reviews land at the top of `doc/plans/` while readers search the plan's home. See [mistakes/run-review-location](mistakes/run-review-location.md).

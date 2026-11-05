@@ -12,8 +12,7 @@
 | [entry-points.md](entry-points.md) | Key files agents should read first | 83 |
 | [patterns.md](patterns.md) | Architectural patterns discovered in the codebase | 186 |
 | [conventions.md](conventions.md) | Coding conventions discovered in the codebase | 250 |
-| [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 220 |
-| [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 223 |
+| [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 239 |
 | [stack.md](stack.md) | Dependencies, frameworks, and tooling used in the project | 115 |
 | [concerns.md](concerns.md) | Technical debt, warnings, and issues to address | 234 |
 
@@ -169,6 +168,7 @@
 | [planner-redesign](mistakes/planner-redesign.md) | Redesign | 80 |
 | [planner-review-fixes](mistakes/planner-review-fixes.md) | Review-fix slips | 48 |
 | [planner-ui-repair](mistakes/planner-ui-repair.md) | Repair | 131 |
+| [planner-visual-feedback-shortfall](mistakes/planner-visual-feedback-shortfall.md) | Visual asks reduced to DOM tests; shared-table summary expanded twice | 17 |
 | [planning-sandbox-delivery](mistakes/planning-sandbox-delivery.md) |  | 73 |
 | [pre-commit-hardening](mistakes/pre-commit-hardening.md) | Staging | 93 |
 | [refactor-stragglers](mistakes/refactor-stragglers.md) |  | 329 |
@@ -177,6 +177,7 @@
 | [review-final-wave](mistakes/review-final-wave.md) | Final wave | 190 |
 | [review-integration-verification](mistakes/review-integration-verification.md) | Integration | 168 |
 | [review-tracker](mistakes/review-tracker.md) | Findings | 353 |
+| [run-review-location](mistakes/run-review-location.md) | Feature run reviews written to doc/plans/ top, read only from the plan home | 10 |
 | [sandbox-and-settings](mistakes/sandbox-and-settings.md) |  | 391 |
 | [sandbox-protected-hooks-dir](mistakes/sandbox-protected-hooks-dir.md) |  | 37 |
 | [sandbox-state-channels](mistakes/sandbox-state-channels.md) |  | 299 |
@@ -187,6 +188,7 @@
 | [sessions-and-liveness](mistakes/sessions-and-liveness.md) |  | 382 |
 | [shell-command-matchers](mistakes/shell-command-matchers.md) |  | 246 |
 | [source-graph-delivery](mistakes/source-graph-delivery.md) | Misses | 172 |
+| [spec-scope-invention](mistakes/spec-scope-invention.md) | Spec sections must not invent features the vision never asked for | 10 |
 | [spurious-waiting-for-input](mistakes/spurious-waiting-for-input.md) | Idle | 43 |
 | [status-broadcast-hardening](mistakes/status-broadcast-hardening.md) |  | 75 |
 | [store-without-consumer](mistakes/store-without-consumer.md) | Unread | 104 |
