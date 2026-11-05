@@ -6,7 +6,9 @@ import type { KickoffView } from "@/plan/api/schema-kickoff";
 import { ComposerArea } from "@/plan/chat/composer";
 import { sessionAtom, useChatSocket } from "@/plan/chat/model";
 import { isActiveSession } from "@/plan/chat/session-home";
+import { revealChat } from "@/plan/chat/sheet-state";
 import { Transcript } from "@/plan/chat/transcript";
+import { featureHref } from "@/plan/feature/use-feature";
 import { useFileSocket } from "@/plan/files/api";
 import { DraftView } from "@/plan/new/draft-view";
 import { EmptyKickoff } from "@/plan/new/empty-kickoff";
@@ -18,9 +20,16 @@ import { TakingShape } from "@/plan/new/taking-shape";
 import { kickoffAtom } from "@/plan/state/atoms";
 import "@/plan/new/kickoff.css";
 
+/** The feature `/new` opens on Follow-up for, when the route state names one (the Built page). */
+function followUpOf(state: unknown): string | null {
+  const followUp = (state as { followUp?: unknown } | null)?.followUp;
+  return typeof followUp === "string" ? followUp : null;
+}
+
 /**
  * `/new` is always the empty form. `/new?session=<id>` is that kickoff: its conversation while the
- * server runs it, its draft once it ended. This tab's own start only navigates here.
+ * server runs it, its draft once it ended. This tab's own start only navigates here; a follow-up
+ * start is a feature chat and moves to that feature's metaplan, where the chat panel shows it.
  */
 export function KickoffRoute() {
   const store = useStore();
@@ -46,7 +55,19 @@ export function KickoffRoute() {
   }, [tab, session, requested, store, navigate]);
   // Leaving /new before the session arrived must not leave the start to redirect a later visit.
   useEffect(() => () => void store.set(kickoffSessionAtom, null), [store]);
-  if (requested === null) return <EmptyKickoff small={location.state?.small === true} />;
+  const onFollowUp = (feature: string) => {
+    void navigate(featureHref(feature, "metaplan"));
+    revealChat(store);
+  };
+  if (requested === null) {
+    return (
+      <EmptyKickoff
+        small={location.state?.small === true}
+        followUp={followUpOf(location.state)}
+        onFollowUp={onFollowUp}
+      />
+    );
+  }
   if (!active) return <DraftView id={requested} />;
   return (
     <div className="kickoff-page" data-state="live">

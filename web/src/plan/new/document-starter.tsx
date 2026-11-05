@@ -20,7 +20,7 @@ import { treeAtom } from "@/plan/files/atoms";
 import { treeDocs } from "@/plan/files/tree";
 import { Popover, PopoverContent, PopoverTrigger } from "@/plan/header/popover";
 import { BusyText } from "@/plan/ui/busy-text";
-import type { ButtonLook } from "@/plan/ui/disabled-reason";
+import type { ButtonLook, ButtonShape } from "@/plan/ui/disabled-reason";
 
 /** `file` is set for an upload: the attachment then names it by id and the chip needs its size. */
 export type StarterDocument = {
@@ -200,6 +200,7 @@ export function DocumentStarter({
   className,
   variant = "outline",
   look,
+  shape,
   disabled,
   room,
 }: {
@@ -210,6 +211,8 @@ export function DocumentStarter({
   variant?: ComponentProps<typeof Button>["variant"];
   /** Draws the trigger on the planner's button scale; without it the caller's class styles it. */
   look?: ButtonLook;
+  /** With `look`, the hearth shape of the trigger (`/new`'s round field). */
+  shape?: ButtonShape;
   disabled?: boolean;
   /** How many more attachments fit; files past it are refused rather than uploaded. */
   room?: number;
@@ -240,6 +243,7 @@ export function DocumentStarter({
             type="button"
             variant={variant}
             data-look={look}
+            data-shape={look ? shape : undefined}
             className={look ? `plan-button ${className ?? ""}` : className}
             disabled={disabled}
           >

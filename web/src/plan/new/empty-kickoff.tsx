@@ -1,148 +1,124 @@
-import { useAtomValue, useStore } from "jotai";
-import {
-  File,
-  FileImage,
-  FileText,
-  FileUp,
-  FolderInput,
-  Lightbulb,
-  Paperclip,
-  SendHorizontal,
-  Wrench,
-  X,
-} from "lucide-react";
-import { useEffect, useId, useRef, useState } from "react";
+import { useAtomValue } from "jotai";
+import { ArrowUp, Paperclip } from "lucide-react";
+import { useId, useRef, useState, type RefObject } from "react";
 
-import { previewUrl } from "@/plan/attachments/intake";
-import { startChat } from "@/plan/chat/commands";
-import { sessionAtom } from "@/plan/chat/model";
-import { noPanelRefusal, startError } from "@/plan/chat/offer-flow";
-import { isActiveSession } from "@/plan/chat/session-home";
 import { Untrusted, visibleControls } from "@/plan/chat/visible-controls";
-import { docRel } from "@/plan/files/address";
 import { OpenDraftNotice } from "@/plan/new/draft-view";
+import { FeaturePicker, PickedFeature, PickFeature } from "@/plan/new/feature-picker";
+import { followUpFeatures, type FollowUpFeature } from "@/plan/new/follow-up-features";
+import { KickoffAttachments } from "@/plan/new/kickoff-attachments";
+import { useKickoffStart, type PickedDocument, type WorkKind } from "@/plan/new/kickoff-start";
+import {
+  FollowUpSuggestions,
+  KickoffStarters,
+  toggleSeed,
+  type Starter,
+} from "@/plan/new/kickoff-starters";
 import { KindControl } from "@/plan/new/kind-control";
-import { kickoffSessionAtom, waitForKickoffSession } from "@/plan/new/kickoff-state";
-import { authorBlockReasonAtom, canAuthorAtom, kickoffDraftsAtom } from "@/plan/state/atoms";
+import {
+  authorBlockReasonAtom,
+  canAuthorAtom,
+  featuresAtom,
+  kickoffDraftsAtom,
+} from "@/plan/state/atoms";
 import { DisabledReason } from "@/plan/ui/disabled-reason";
 import { LoomDoodle } from "@/plan/ui/doodle";
-import { formatBytes } from "@/plan/ui/format-bytes";
-import type { Store } from "@/state/store";
 import { DocumentStarter, type StarterDocument } from "./document-starter";
 
-import "@/plan/chat/chat-chips.css";
 import "./kickoff.css";
+import "./threshold.css";
 
-type PickedDocument = StarterDocument & { id: string };
 type KickoffDraft = ReturnType<typeof useKickoffDraft>;
 
-const STARTERS = [
-  {
-    label: "A new feature for this project",
-    text: "I want to build a new feature: ",
-    small: false,
-    Icon: Lightbulb,
-  },
-  {
-    label: "A small fix or improvement",
-    text: "I want to fix or improve: ",
-    small: true,
-    Icon: Wrench,
-  },
-  {
-    label: "Grow standalone plans into a feature",
-    text: "I have standalone plans that belong together and want to grow them into a feature.",
-    small: false,
-    Icon: FolderInput,
-  },
-];
-
-async function beginKickoff(
-  store: Store,
-  small: boolean,
-  text: string,
-  documents: PickedDocument[],
-  signal: AbortSignal,
-  onTimeout: () => void,
-) {
-  // An ended session may remain in the snapshot; only a different one is this kickoff's.
-  const previous = store.get(sessionAtom);
-  store.set(kickoffSessionAtom, null);
-  await startChat(
-    store,
-    small ? "kickoff-small" : "kickoff",
-    text,
-    documents.map((document) => document.attachment),
-  );
-  if (!signal.aborted) await waitForKickoffSession(store, previous?.id ?? null, signal, onTimeout);
+/** The element that opened the picker, when it can take focus back. */
+function focusable(element: Element | null): HTMLElement | null {
+  return element instanceof HTMLElement && element !== document.body ? element : null;
 }
 
-function useKickoffStart() {
-  const store = useStore();
-  const request = useRef<AbortController | null>(null);
-  const sessionWait = useRef<AbortController | null>(null);
-  const [pending, setPending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  useEffect(() => () => sessionWait.current?.abort(), []);
-  const start = async (small: boolean, text: string, documents: PickedDocument[]) => {
-    if (request.current || !store.get(canAuthorAtom) || (!text.trim() && !documents.length)) return;
-    const current = store.get(sessionAtom);
-    if (isActiveSession(current)) {
-      // This form shows only while the route shows no session, so a chat open now is not on this
-      // screen and is not this screen's to end. The exception is this tab's own kickoff, whose
-      // snapshot has arrived and is about to replace the form.
-      if (current.id !== store.get(kickoffSessionAtom)) setError(noPanelRefusal(store));
-      return;
-    }
-    sessionWait.current?.abort();
-    const controller = new AbortController();
-    request.current = controller;
-    sessionWait.current = controller;
-    setPending(true);
-    setError(null);
-    try {
-      await beginKickoff(store, small, text, documents, controller.signal, () => {
-        if (controller.signal.aborted) return;
-        request.current = null;
-        setPending(false);
-        setError("The conversation did not start. Please try again.");
-      });
-      if (!controller.signal.aborted) setError(null);
-    } catch (cause) {
-      if (!controller.signal.aborted) setError(startError(store, cause));
-    } finally {
-      if (request.current === controller) request.current = null;
-      if (!controller.signal.aborted) setPending(false);
-    }
+/** Whether the feature picker floats under the switch, and what takes focus back when it closes. */
+function usePicker(kindRoot: RefObject<HTMLFieldSetElement | null>) {
+  const [picking, setPicking] = useState(false);
+  const opener = useRef<HTMLElement | null>(null);
+  const open = () => {
+    opener.current = focusable(document.activeElement);
+    setPicking(true);
   };
-  return { start, pending, error };
+  const close = () => {
+    setPicking(false);
+    // The opener may have left with the starters; the chosen radio is then the way back.
+    const back = opener.current?.isConnected
+      ? opener.current
+      : kindRoot.current?.querySelector<HTMLElement>("input:checked");
+    back?.focus();
+  };
+  return { picking, open, close, dismiss: () => setPicking(false) };
 }
 
-function useKickoffDraft(initialSmall: boolean) {
-  const [small, setSmall] = useState(initialSmall);
+/** The form's state: the kind and its feature, the words, the documents, and the open picker. */
+function useKickoffDraft(initial: { kind: WorkKind; feature: string | null }) {
+  const [kind, setKindState] = useState(initial.kind);
+  const [feature, setFeature] = useState(initial.feature);
   const [text, setText] = useState("");
   const [documents, setDocuments] = useState<PickedDocument[]>([]);
   const composer = useRef<HTMLTextAreaElement>(null);
-  const choose = (starter: (typeof STARTERS)[number]) => {
-    setSmall(starter.small);
+  const kindRoot = useRef<HTMLFieldSetElement>(null);
+  const picker = usePicker(kindRoot);
+  const setKind = (next: WorkKind) => {
+    setKindState(next);
+    if (next === "follow-up" && feature === null) picker.open();
+    else picker.dismiss();
+  };
+  const pick = (name: string) => {
+    setFeature(name);
+    picker.dismiss();
+    composer.current?.focus();
+  };
+  const choose = (starter: Starter) => {
+    setKind(starter.kind);
+    if (starter.text === null) return;
     setText(starter.text);
     composer.current?.focus();
   };
   const attach = (document: StarterDocument) => {
-    const picked = { ...document, id: crypto.randomUUID() };
-    setDocuments((previous) => [...previous, picked]);
+    setDocuments((previous) => [...previous, { ...document, id: crypto.randomUUID() }]);
     composer.current?.focus();
   };
   const remove = (id: string) => setDocuments((previous) => previous.filter((d) => d.id !== id));
-  return { small, setSmall, text, setText, documents, composer, choose, attach, remove };
+  const toggle = (seed: string) => setText((previous) => toggleSeed(previous, seed));
+  return {
+    kind,
+    setKind,
+    feature,
+    text,
+    setText,
+    documents,
+    picker,
+    pick,
+    choose,
+    attach,
+    remove,
+    toggle,
+    composer,
+    kindRoot,
+  };
+}
+
+function placeholderFor(picked: FollowUpFeature | null): string {
+  if (picked === null) return "Say what's on your mind…";
+  const ask = `What should change in ${visibleControls(picked.name)}?`;
+  return picked.candidates.length
+    ? `${ask} Pick a finding below, or say it in your own words.`
+    : ask;
 }
 
 function KickoffComposer({
   draft,
+  picked,
   disabled,
   start,
 }: {
   draft: KickoffDraft;
+  picked: FollowUpFeature | null;
   disabled: boolean;
   start: () => void;
 }) {
@@ -158,6 +134,7 @@ function KickoffComposer({
         className="kickoff-composer"
         rows={3}
         value={draft.text}
+        placeholder={placeholderFor(picked)}
         disabled={disabled}
         onChange={(event) => draft.setText(event.target.value)}
         onKeyDown={(event) => {
@@ -170,112 +147,8 @@ function KickoffComposer({
   );
 }
 
-/** The row's glyph: an image's own thumbnail, else a file's or a document's mark. */
-function AttachmentGlyph({ document }: { document: PickedDocument }) {
-  const image = document.file?.media_type.startsWith("image/") ?? false;
-  const thumbnail = image && document.file ? previewUrl(document.file.id) : null;
-  if (thumbnail !== null) return <img src={thumbnail} alt="" className="chat-chip-thumb" />;
-  const Glyph = image ? FileImage : document.file ? File : FileText;
-  return (
-    <span aria-hidden="true" className="chat-chip-glyph">
-      <Glyph />
-    </span>
-  );
-}
-
-/** What stands after the name: an upload's size, or a document's file name. */
-function attachmentDetail(document: PickedDocument): string | null {
-  if (document.file) return formatBytes(document.file.bytes);
-  if (document.attachment.kind === "file") return null;
-  return docRel(document.attachment.path).split("/").pop() ?? null;
-}
-
-/**
- * One attached document, drawn as the chat composer draws its rows (chat-chips.css): the glyph,
- * the name with its detail after it, and the remove at the row's end. "Attached:" is read, not
- * shown: on screen the row's place under the field says it.
- */
-function KickoffAttachment({
-  document,
-  disabled,
-  onRemove,
-}: {
-  document: PickedDocument;
-  disabled: boolean;
-  onRemove: () => void;
-}) {
-  const nameId = useId();
-  const label = visibleControls(document.label);
-  const detail = attachmentDetail(document);
-  return (
-    <li className="chat-chip" data-kind={document.file ? "file" : undefined}>
-      <AttachmentGlyph document={document} />
-      <span id={nameId} className="chat-chip-label" title={label}>
-        <span className="sr-only">Attached: </span>
-        <Untrusted text={document.label} />
-      </span>
-      {detail !== null && (
-        <span className={document.file ? "chat-chip-size" : "chat-chip-source"}>
-          <Untrusted text={detail} />
-        </span>
-      )}
-      {/* The row's name is the button's description; its own name is the bare verb, which the
-          screen's tests query. */}
-      <button
-        type="button"
-        className="chat-chip-remove"
-        aria-label="Remove"
-        aria-describedby={nameId}
-        disabled={disabled}
-        onClick={onRemove}
-      >
-        <X size={14} aria-hidden="true" />
-      </button>
-    </li>
-  );
-}
-
-function KickoffAttachments({ draft, disabled }: { draft: KickoffDraft; disabled: boolean }) {
-  if (!draft.documents.length) return null;
-  return (
-    <ul aria-label="Attached documents" className="kickoff-attachments chat-chip-list">
-      {draft.documents.map((document) => (
-        <KickoffAttachment
-          key={document.id}
-          document={document}
-          disabled={disabled}
-          onRemove={() => draft.remove(document.id)}
-        />
-      ))}
-    </ul>
-  );
-}
-
-function KickoffStarters({ draft, disabled }: { draft: KickoffDraft; disabled: boolean }) {
-  return (
-    <fieldset disabled={disabled} className="kickoff-starters">
-      <legend className="sr-only">Conversation starters</legend>
-      {STARTERS.map((starter) => (
-        <button
-          key={starter.label}
-          type="button"
-          data-look="secondary"
-          className="plan-button kickoff-starter"
-          onClick={() => draft.choose(starter)}
-        >
-          <starter.Icon aria-hidden="true" />
-          {starter.label}
-        </button>
-      ))}
-      <DocumentStarter onPick={draft.attach} look="secondary" className="kickoff-starter">
-        <FileUp aria-hidden="true" />
-        Start from a document I have
-      </DocumentStarter>
-    </fieldset>
-  );
-}
-
-function KickoffCard({
+/** The field's foot: attach, the blocked reason, and the round primary Start. */
+function KickoffFoot({
   draft,
   disabled,
   reason,
@@ -288,37 +161,80 @@ function KickoffCard({
   error: string | null;
   submit: () => void;
 }) {
+  const reasonId = useId();
   return (
-    <div className="kickoff-card">
-      <KickoffComposer draft={draft} disabled={disabled} start={submit} />
-      <KickoffAttachments draft={draft} disabled={disabled} />
-      <div className="kickoff-actions">
-        <DocumentStarter onPick={draft.attach} variant="ghost" look="quiet" disabled={disabled}>
-          <Paperclip aria-hidden="true" />
-          Attach notes or a document
-        </DocumentStarter>
-        <div className="kickoff-start">
-          <DisabledReason reason={reason} look="primary" onClick={submit}>
-            <SendHorizontal aria-hidden="true" />
-            {error ? (
-              "Try again"
-            ) : (
-              <>
-                Start <span className="sr-only">the conversation</span>
-              </>
-            )}
-          </DisabledReason>
-        </div>
-      </div>
+    <div className="kickoff-field__foot">
+      <DocumentStarter
+        onPick={draft.attach}
+        variant="ghost"
+        look="quiet"
+        shape="pill"
+        className="kickoff-attach"
+        disabled={disabled}
+      >
+        <Paperclip aria-hidden="true" />
+        <span className="kickoff-attach__word">Attach a document</span>
+      </DocumentStarter>
+      {reason !== null && (
+        <span id={reasonId} className="plan-fine kickoff-field__reason">
+          <Untrusted text={reason} />
+        </span>
+      )}
+      <DisabledReason
+        reason={reason}
+        reasonId={reasonId}
+        look="primary"
+        shape="round"
+        onClick={submit}
+      >
+        <ArrowUp aria-hidden="true" />
+        <span className="sr-only">{error ? "Try again" : "Start the conversation"}</span>
+      </DisabledReason>
+    </div>
+  );
+}
+
+type Threshold = ReturnType<typeof useThreshold>;
+
+/** The threshold: one round field holding the kind switch, the words, the documents and the foot. */
+function KickoffField({ draft, features, picked, disabled, reason, error, submit }: Threshold) {
+  return (
+    <div className="kickoff-field">
+      <KindControl
+        ref={draft.kindRoot}
+        kind={draft.kind}
+        onChange={draft.setKind}
+        disabled={disabled}
+        beside={
+          picked !== null ? (
+            <PickedFeature feature={picked} onChange={draft.picker.open} />
+          ) : draft.kind === "follow-up" ? (
+            <PickFeature onPick={draft.picker.open} />
+          ) : undefined
+        }
+      >
+        {draft.picker.picking && (
+          <FeaturePicker features={features} onPick={draft.pick} onClose={draft.picker.close} />
+        )}
+      </KindControl>
+      <KickoffComposer draft={draft} picked={picked} disabled={disabled} start={submit} />
+      <KickoffAttachments documents={draft.documents} disabled={disabled} onRemove={draft.remove} />
+      <KickoffFoot
+        draft={draft}
+        disabled={disabled}
+        reason={reason}
+        error={error}
+        submit={submit}
+      />
     </div>
   );
 }
 
 function KickoffTitle() {
   return (
-    <header className="kickoff-title">
-      <p className="plan-eyebrow">New work</p>
-      <h1 className="plan-page-title">What do you want to build?</h1>
+    <header className="kickoff-title kickoff-threshold__head">
+      <p className="plan-eyebrow kickoff-eyebrow">New work</p>
+      <h1 className="kickoff-heading">What do you want to build?</h1>
       <p className="kickoff-lead">
         Describe it the way you would to a colleague: the problem, who has it, what you have in
         mind. Loom asks questions, pushes back, and suggests a name and the sections a spec needs.
@@ -327,50 +243,96 @@ function KickoffTitle() {
   );
 }
 
-export function EmptyKickoff({ small = false }: { small?: boolean }) {
-  const draft = useKickoffDraft(small);
-  const { start, pending, error } = useKickoffStart();
+/** Under the field: the starters, or the picked feature's findings; nothing while none is picked. */
+function UnderField({ draft, picked, disabled }: Threshold) {
+  if (draft.kind !== "follow-up") {
+    return <KickoffStarters disabled={disabled} onChoose={draft.choose} onAttach={draft.attach} />;
+  }
+  if (picked === null) return null;
+  return (
+    <FollowUpSuggestions
+      feature={picked}
+      text={draft.text}
+      disabled={disabled}
+      onToggle={draft.toggle}
+    />
+  );
+}
+
+function blockedReason(
+  draft: Pick<KickoffDraft, "kind" | "text" | "documents">,
+  picked: FollowUpFeature | null,
+  authoring: { canAuthor: boolean; blockReason: string | null },
+  pending: boolean,
+): string | null {
+  if (!authoring.canAuthor) return authoring.blockReason ?? "Authoring is unavailable";
+  if (pending) return "Starting the conversation";
+  if (draft.kind === "follow-up" && picked === null) return "Pick a feature first";
+  if (!draft.text.trim() && !draft.documents.length) {
+    return "Describe what you want to build or attach a document";
+  }
+  return null;
+}
+
+/** The form, its start and what blocks it. `followUp` is honoured only for a listed feature. */
+function useThreshold(
+  small: boolean,
+  followUp: string | null,
+  onFollowUp: ((feature: string) => void) | undefined,
+) {
+  const features = followUpFeatures(useAtomValue(featuresAtom));
+  const preset = features.some((entry) => entry.name === followUp) ? followUp : null;
+  const draft = useKickoffDraft({
+    kind: preset !== null ? "follow-up" : small ? "plan" : "feature",
+    feature: preset,
+  });
+  const { start, pending, error } = useKickoffStart(onFollowUp);
   const canAuthor = useAtomValue(canAuthorAtom);
   const blockReason = useAtomValue(authorBlockReasonAtom);
+  const picked =
+    draft.kind === "follow-up"
+      ? (features.find((entry) => entry.name === draft.feature) ?? null)
+      : null;
+  const disabled = !canAuthor || pending;
+  const reason = blockedReason(draft, picked, { canAuthor, blockReason }, pending);
+  const submit = () => {
+    void start(draft.kind, draft.text, draft.documents, picked?.name ?? null);
+  };
+  return { draft, features, picked, disabled, reason, error, submit };
+}
+
+/**
+ * `/new` with no session: the kind of work, the words, the documents and Start. `small` opens on
+ * Standalone plan; `followUp` opens on Follow-up with that feature picked, when it has a metaplan.
+ * A follow-up start is a feature chat: `onFollowUp` gets the feature once it has started.
+ */
+export function EmptyKickoff({
+  small = false,
+  followUp = null,
+  onFollowUp,
+}: {
+  small?: boolean;
+  followUp?: string | null;
+  onFollowUp?: (feature: string) => void;
+}) {
+  const form = useThreshold(small, followUp, onFollowUp);
   // The form is always empty; a kickoff still running is offered above it, never reopened here.
   const open = useAtomValue(kickoffDraftsAtom).find((entry) => entry.live);
-  const disabled = !canAuthor || pending;
-  const reason = !canAuthor
-    ? (blockReason ?? "Authoring is unavailable")
-    : pending
-      ? "Starting the conversation"
-      : !draft.text.trim() && !draft.documents.length
-        ? "Describe what you want to build or attach a document"
-        : null;
-  const submit = () => {
-    void start(draft.small, draft.text, draft.documents);
-  };
-  // The same page grid as the live conversation (kickoff-route.tsx): the head sits where the
-  // conversation's head will, and the doodle holds the column Taking shape takes over.
   return (
     <div className="kickoff-page" data-state="empty">
-      <section className="kickoff-main kickoff-empty" aria-label="Start something new">
+      <section className="kickoff-main kickoff-threshold" aria-label="Start something new">
+        <LoomDoodle className="kickoff-doodle" draw />
         <KickoffTitle />
         {open && <OpenDraftNotice draft={open} />}
-        <KindControl small={draft.small} onChange={draft.setSmall} disabled={disabled} />
-        <KickoffCard
-          draft={draft}
-          disabled={disabled}
-          reason={reason}
-          error={error}
-          submit={submit}
-        />
-        {error && (
+        <KickoffField {...form} />
+        {form.error && (
           <p role="status" className="kickoff-error">
-            <Untrusted text={error} />
+            <Untrusted text={form.error} />
           </p>
         )}
-        <KickoffStarters draft={draft} disabled={disabled} />
-        <p className="plan-fine kickoff-note">Nothing is written until you say so.</p>
+        <UnderField {...form} />
+        <p className="kickoff-note">Nothing runs until you send.</p>
       </section>
-      <div className="kickoff-side kickoff-side--art">
-        <LoomDoodle className="text-muted-foreground" />
-      </div>
     </div>
   );
 }
