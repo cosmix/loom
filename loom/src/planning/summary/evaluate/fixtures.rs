@@ -20,6 +20,7 @@ pub(crate) const META: &str = "doc/plans/demo/index.md";
 pub(crate) const PRODUCT: &str = "overview/demo/product";
 pub(crate) const ENGINEERING: &str = "overview/demo/engineering";
 pub(crate) const VISION_ID: &str = "demo/product/vision";
+pub(crate) const METAPLAN_ID: &str = "demo/metaplan/index";
 pub(crate) const ID1: &str = "demo/product/section_01";
 pub(crate) const ID2: &str = "demo/product/section_02";
 

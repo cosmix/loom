@@ -191,8 +191,10 @@ fn invalidated_lists_only_newly_out_of_date_ids() {
 fn expected_work_includes_both_features_and_the_standalone_shelf() {
     let fx = two_features();
     let expected = [
+        METAPLAN_ID,
         ID1,
         VISION_ID,
+        "other/metaplan/index",
         "other/product/section_01",
         "other/product/vision",
         ENGINEERING,

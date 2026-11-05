@@ -229,6 +229,8 @@ fn page_keys_for_a_summary() {
         ["demo/engineering/a", "overview/demo/engineering"]
     );
     assert!(keys("plans/zzz").is_empty());
+    assert_eq!(keys("demo/metaplan/index"), ["demo/metaplan/index"]);
+    assert!(keys("other/metaplan/index").is_empty());
     assert_eq!(keys("overview/demo/product"), ["overview/demo/product"]);
     assert_eq!(
         keys("overview/demo/engineering"),

@@ -67,7 +67,7 @@ fn only_valid_feature_overview_ids_are_overviews() {
 
 type IdCase = (&'static str, Option<&'static str>);
 
-fn document_id_cases() -> [IdCase; 19] {
+fn document_id_cases() -> [IdCase; 20] {
     [
         (
             "doc/product/alpha/section_01.md",
@@ -96,7 +96,11 @@ fn document_id_cases() -> [IdCase; 19] {
         ("doc/plans/beta/PLAN-done.md", None),
         ("doc/plans/alpha/archive/DONE-PLAN-foreign-only.md", None),
         ("doc/plans/alpha/archive/DONE-PLAN-unnamed.md", None),
-        ("doc/plans/beta/index.md", None),
+        ("doc/plans/beta/index.md", Some("beta/metaplan/index")),
+        (
+            "doc/plans/alpha/metaplan-02.md",
+            Some("alpha/metaplan/metaplan-02"),
+        ),
         ("doc/product/alpha/index.md", Some("alpha/product/vision")),
         ("doc/product/beta/index.md", Some("beta/product/vision")),
         ("doc/plans/briefs/solo/note.md", None),
@@ -148,10 +152,13 @@ fn expected_ids_cover_two_features_and_the_standalone_shelf() {
     assert_eq!(
         ids,
         [
+            "alpha/metaplan/index",
+            "alpha/metaplan/metaplan-02",
             "alpha/product/section_01",
             "alpha/product/section_02",
             "alpha/product/section_03",
             "alpha/product/vision",
+            "beta/metaplan/index",
             "beta/product/section_01",
             "beta/product/section_02",
             "beta/product/vision",
@@ -231,6 +238,7 @@ fn overview_sources_may_be_empty_or_present_on_only_one_side() {
     assert_eq!(
         ids,
         [
+            "eng/metaplan/index",
             "lone/product/section_01",
             "overview/eng/engineering",
             "overview/spec/product",
