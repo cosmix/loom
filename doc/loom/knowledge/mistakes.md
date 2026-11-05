@@ -218,3 +218,10 @@ Claude Code began wrapping a delivered prompt in `<pasted_content id="X">` tags 
 ## Planner Polish
 
 A container-query component in an unsized flex item (footer meters stacked), a stop notice produced twice from one event, spine plan rows that lost their slug to badge words, layout and glyph fixes judged from a stubbed payload or one surface, and worker slips. → [Planner Polish Mistakes](mistakes/planner-polish.md)
+
+## Plan Amendment Strips completed_commit From a Merged Stage
+
+**What happened:** during PLAN-planner-polish, integration-verify's session amended merged stage chat-and-shell-visual's `wiring` twice (11:45Z, 11:46Z). `plan/amendment_fields.rs::sync_stage_from_definition` set `completed_commit = None` because the field changed, but left `merged: true`. When the adjudication verdict re-queued integration-verify at 11:49Z, `verify/transitions/state.rs::describe_dependency_block` returned `MissingCommit` for the dependency, and the stage sat queued for 68 minutes.
+**Why:** clearing `completed_commit` forces re-verification of an in-flight stage, but a merged stage cannot re-verify. The amendment broke the merged-implies-commit invariant that the scheduler relies on.
+**Prevention:** an amendment must never clear `completed_commit` on a stage with `merged` or `merge_assumed`; integration-verify legitimately amends earlier stages' wiring.
+**Fix:** operator recreated `loom/chat-and-shell-visual` at its merged tip and ran `loom stage complete chat-and-shell-visual --force-unsafe --assume-merged`.
