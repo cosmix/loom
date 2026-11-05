@@ -1,21 +1,36 @@
 import { useAtomValue, useStore } from "jotai";
-import { FileUp, FolderInput, Lightbulb, Paperclip, SendHorizontal, Wrench } from "lucide-react";
+import {
+  File,
+  FileImage,
+  FileText,
+  FileUp,
+  FolderInput,
+  Lightbulb,
+  Paperclip,
+  SendHorizontal,
+  Wrench,
+  X,
+} from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 
+import { previewUrl } from "@/plan/attachments/intake";
 import { startChat } from "@/plan/chat/commands";
 import { sessionAtom } from "@/plan/chat/model";
 import { noPanelRefusal, startError } from "@/plan/chat/offer-flow";
 import { isActiveSession } from "@/plan/chat/session-home";
-import { Untrusted } from "@/plan/chat/visible-controls";
+import { Untrusted, visibleControls } from "@/plan/chat/visible-controls";
+import { docRel } from "@/plan/files/address";
 import { OpenDraftNotice } from "@/plan/new/draft-view";
 import { KindControl } from "@/plan/new/kind-control";
 import { kickoffSessionAtom, waitForKickoffSession } from "@/plan/new/kickoff-state";
 import { authorBlockReasonAtom, canAuthorAtom, kickoffDraftsAtom } from "@/plan/state/atoms";
 import { DisabledReason } from "@/plan/ui/disabled-reason";
 import { LoomDoodle } from "@/plan/ui/doodle";
+import { formatBytes } from "@/plan/ui/format-bytes";
 import type { Store } from "@/state/store";
 import { DocumentStarter, type StarterDocument } from "./document-starter";
 
+import "@/plan/chat/chat-chips.css";
 import "./kickoff.css";
 
 type PickedDocument = StarterDocument & { id: string };
@@ -155,24 +170,82 @@ function KickoffComposer({
   );
 }
 
+/** The row's glyph: an image's own thumbnail, else a file's or a document's mark. */
+function AttachmentGlyph({ document }: { document: PickedDocument }) {
+  const image = document.file?.media_type.startsWith("image/") ?? false;
+  const thumbnail = image && document.file ? previewUrl(document.file.id) : null;
+  if (thumbnail !== null) return <img src={thumbnail} alt="" className="chat-chip-thumb" />;
+  const Glyph = image ? FileImage : document.file ? File : FileText;
+  return (
+    <span aria-hidden="true" className="chat-chip-glyph">
+      <Glyph />
+    </span>
+  );
+}
+
+/** What stands after the name: an upload's size, or a document's file name. */
+function attachmentDetail(document: PickedDocument): string | null {
+  if (document.file) return formatBytes(document.file.bytes);
+  if (document.attachment.kind === "file") return null;
+  return docRel(document.attachment.path).split("/").pop() ?? null;
+}
+
+/**
+ * One attached document, drawn as the chat composer draws its rows (chat-chips.css): the glyph,
+ * the name with its detail after it, and the remove at the row's end. "Attached:" is read, not
+ * shown: on screen the row's place under the field says it.
+ */
+function KickoffAttachment({
+  document,
+  disabled,
+  onRemove,
+}: {
+  document: PickedDocument;
+  disabled: boolean;
+  onRemove: () => void;
+}) {
+  const nameId = useId();
+  const label = visibleControls(document.label);
+  const detail = attachmentDetail(document);
+  return (
+    <li className="chat-chip" data-kind={document.file ? "file" : undefined}>
+      <AttachmentGlyph document={document} />
+      <span id={nameId} className="chat-chip-label" title={label}>
+        <span className="sr-only">Attached: </span>
+        <Untrusted text={document.label} />
+      </span>
+      {detail !== null && (
+        <span className={document.file ? "chat-chip-size" : "chat-chip-source"}>
+          <Untrusted text={detail} />
+        </span>
+      )}
+      {/* The row's name is the button's description; its own name is the bare verb, which the
+          screen's tests query. */}
+      <button
+        type="button"
+        className="chat-chip-remove"
+        aria-label="Remove"
+        aria-describedby={nameId}
+        disabled={disabled}
+        onClick={onRemove}
+      >
+        <X size={14} aria-hidden="true" />
+      </button>
+    </li>
+  );
+}
+
 function KickoffAttachments({ draft, disabled }: { draft: KickoffDraft; disabled: boolean }) {
   if (!draft.documents.length) return null;
   return (
-    <ul aria-label="Attached documents" className="kickoff-attachments">
+    <ul aria-label="Attached documents" className="kickoff-attachments chat-chip-list">
       {draft.documents.map((document) => (
-        <li key={document.id} className="kickoff-attachment">
-          <span>
-            Attached: <Untrusted text={document.label} />
-          </span>
-          <button
-            type="button"
-            disabled={disabled}
-            className="kickoff-attachment__remove"
-            onClick={() => draft.remove(document.id)}
-          >
-            Remove
-          </button>
-        </li>
+        <KickoffAttachment
+          key={document.id}
+          document={document}
+          disabled={disabled}
+          onRemove={() => draft.remove(document.id)}
+        />
       ))}
     </ul>
   );

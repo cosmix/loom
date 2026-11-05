@@ -7,7 +7,7 @@ import fixture from "@/plan/api/fixtures/chat-snapshot.json";
 import hello from "@/plan/api/fixtures/hello.json";
 import { chatSnapshotSchema } from "@/plan/api/schema-chat";
 import { authoringAtom, connectionAtom, serverInfoAtom, youAtom } from "@/plan/state/atoms";
-import { DESKTOP } from "./offer-flow";
+import { DESKTOP } from "./sheet-state";
 import { ChatPanel, ChatRegistrations, ChatSheetButton } from "./panel";
 
 // The test files own their `vi.mock` calls (vitest hoists them per file); this kit holds the rest of the setup.

@@ -393,3 +393,18 @@ it("keeps the draft in memory only", () => {
 
   expect(composer().value).toBe("");
 });
+
+it("an attached document reads as the chat composer's row: glyph, name, file name, remove", () => {
+  mount();
+  fireEvent.click(screen.getByRole("button", { name: "Attach notes or a document" }));
+  const row = screen.getByRole("listitem");
+  expect(row.classList.contains("chat-chip")).toBe(true);
+  const parts = [...row.children].map((child) => child.className);
+  expect(parts[0]).toBe("chat-chip-glyph");
+  expect(parts.indexOf("chat-chip-label")).toBe(1);
+  expect(parts.indexOf("chat-chip-source")).toBe(2);
+  expect(parts[parts.length - 1]).toBe("chat-chip-remove");
+  expect(row.querySelector(".chat-chip-source")?.textContent).toBe("notes.md");
+  const remove = within(row).getByRole("button", { name: "Remove" });
+  expect(remove.getAttribute("aria-describedby")).toBe(row.querySelector(".chat-chip-label")?.id);
+});

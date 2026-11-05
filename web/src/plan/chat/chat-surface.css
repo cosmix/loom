@@ -231,9 +231,32 @@
   align-items: center;
 }
 
-/* A pressure run's head states its own elapsed time; the row would repeat it alone. */
+/* The row (a flex line, state-line.tsx; its test queries `.flex`): the glyph, then the words
+ * and the detail as one shrinkable run beside it, never wrapped under the glyph. */
+.chat-state-row {
+  flex-wrap: nowrap;
+  min-width: 0;
+}
+
+.chat-state-text {
+  min-width: 0;
+}
+
+/* Working: the elapsed time and the newest tool's summary (a path, mostly) keep one line; the
+ * run is cut with an ellipsis at the panel's width, and the whole of it stays in the DOM and in
+ * the row's title. */
+.chat-state-line[data-state="working"] .chat-state-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* A pressure run's head states its own elapsed time; the row would repeat it alone. The head's
+ * state word turns the one roundel for every busy state (DESIGN.md, Status), so the row's copy
+ * of it is hidden a line under it; the row keeps the words or the detail the head lacks. */
 .chat-panel .chat-state-line[data-kind="pressure"][data-state="working"] > [aria-live="off"],
 .chat-panel .chat-state-line:is([data-state="idle"], [data-state="permission"]) > [aria-live="off"],
+.chat-panel .chat-state-line:is([data-state="starting"], [data-state="ending"]) .chat-state-glyph,
 .chat-panel
   .chat-state-line[data-state="working"]
   :is(.chat-state-glyph, .chat-state-words, .chat-state-sep) {

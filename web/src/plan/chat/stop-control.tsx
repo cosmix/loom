@@ -36,7 +36,7 @@ export function useQueueRefill(): void {
  * Stop, in the composer's action row immediately before Send and at Send's size, while a turn
  * runs or waits on a decision. Its error sits under it, in the row's reason size.
  */
-export function StopControl({ confirm }: { confirm?: string }) {
+export function StopControl() {
   const store = useStore();
   const session = useAtomValue(sessionAtom);
   const isHolder = useAtomValue(isHolderAtom);
@@ -46,7 +46,6 @@ export function StopControl({ confirm }: { confirm?: string }) {
 
   if (!isHolder || (session?.state !== "working" && session?.state !== "permission")) return null;
   const stop = () => {
-    if (confirm && !window.confirm(confirm)) return;
     setError(null);
     setPending(true);
     void interruptChat(store)

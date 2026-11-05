@@ -33,13 +33,11 @@ export function RunHeader({ session }: { session: SessionView }) {
   );
   // Authoring presence clears on return before the next session snapshot arrives.
   const awayUntil = holder ? holder.frees_at : session.away_until;
-  const activity = BUSY_STATES.has(session.state)
-    ? "drafting"
-    : session.state === "idle"
-      ? "waiting"
-      : null;
+  const busy = BUSY_STATES.has(session.state);
+  const activity = session.state === "idle" ? "waiting" : null;
   return (
     <div className="chat-run-header chat-run-line">
+      {busy && <span aria-hidden="true" className="chat-led" />}
       {activity && <ActivityGlyph kind={activity} />}
       <span className="chat-run-seg" data-cut>
         {awayUntil ? (

@@ -67,13 +67,12 @@
   object-fit: cover;
 }
 
-/* The label: a file's name, a document's name, or a selection's quoted start. It is the part of
- * the row that gives way, cut with an ellipsis, and never under eight characters. Its shrink
- * factor is a hundred times the source's, so the row's missing width comes out of the label
- * first; the source shortens only once the label stands at its eight characters. */
+/* The label: a file's name, a document's name, or a selection's quoted start. It keeps its
+ * width first: the row's missing width comes out of the source (below) until the source is
+ * gone, and only then is the label cut with an ellipsis, never under eight characters. */
 .chat-chip-open,
 .chat-chip-label {
-  flex: 0 100 auto;
+  flex: 0 1 auto;
   min-width: 8ch;
   overflow: hidden;
   padding: 0;
@@ -117,11 +116,15 @@
 }
 
 /* A selection's source, a file's size: secondary text on the row's one line, after the label.
- * The source keeps its natural width up to 45% of the row; it gives way only after the label
- * (see above) and keeps at least six characters. */
+ * The source is the part of the row that gives way: its shrink factor is a hundred times the
+ * label's, so it shortens first, down to nothing, before the label loses a character. It stays
+ * in the DOM for assistive technology, and the hovered passage names it (below). Known limit:
+ * over the last few pixels before it is gone it shows an ellipsis alone; a container query on
+ * the row would drop it instead, once the passage tooltip no longer sits inside the row (size
+ * containment would clip it). The size is a few characters and never shrinks. */
 .chat-chip-source,
 .chat-chip-size {
-  flex: 0 1 auto;
+  flex: 0 0 auto;
   min-width: 0;
   overflow: hidden;
   color: var(--muted-foreground);
@@ -132,12 +135,8 @@
 }
 
 .chat-chip-source {
-  min-width: 6ch;
+  flex-shrink: 100;
   max-width: 45%;
-}
-
-.chat-chip-size {
-  flex-shrink: 0;
 }
 
 /* "△ changed" stays one text run (its tests read it whole), so it carries weight, not a tone. */
@@ -157,8 +156,7 @@
 }
 
 /* The remove control, the same on every row: a 24px quiet square at the row's end. */
-.chat-chip-remove,
-.chat-context-dismiss {
+.chat-chip-remove {
   display: inline-grid;
   flex-shrink: 0;
   place-items: center;
@@ -176,14 +174,23 @@
     color 120ms;
 }
 
-.chat-chip-remove:hover,
-.chat-context-dismiss:hover {
+.chat-chip-remove:hover {
   background: var(--muted);
   color: var(--foreground);
 }
 
+/* The kickoff's rows disable the remove while the conversation starts. */
+.chat-chip-remove:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.chat-chip-remove:disabled:hover {
+  background: transparent;
+  color: var(--muted-foreground);
+}
+
 .chat-chip-remove:focus-visible,
-.chat-context-dismiss:focus-visible,
 .chat-chip-open:focus-visible {
   outline: 2px solid var(--ring);
   outline-offset: 2px;
@@ -241,9 +248,20 @@
     var(--dialog-shadow);
 }
 
+/* The passage names its source under the quote, read from the attribute (chips.tsx), so the
+ * tooltip's own text stays the quote; the row may have had no room for the source. */
+.chat-passage[data-source]::after {
+  content: attr(data-source);
+  display: block;
+  margin-block-start: var(--space-2);
+  color: var(--muted-foreground);
+  font-size: var(--type-ui);
+  line-height: var(--leading-ui);
+  unicode-bidi: isolate;
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .chat-chip-remove,
-  .chat-context-dismiss {
+  .chat-chip-remove {
     transition: none;
   }
 }
