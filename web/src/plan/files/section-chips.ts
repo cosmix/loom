@@ -32,8 +32,8 @@ export function stemOf(path: string): string | null {
 }
 
 /**
- * The key of the summary page of a feature's vision, one of its sections or one of its metaplans;
- * null for any other document, or a metaplan whose file name is no valid summary stem. The
+ * The key of the summary page of a feature's vision, one of its sections or its metaplan;
+ * null for any other document, or a metaplan file other than `index.md`. The
  * vision's and a metaplan's summary are their own pages, not an overview.
  */
 export function docSummaryKey(doc: DocView): string | null {
@@ -41,11 +41,6 @@ export function docSummaryKey(doc: DocView): string | null {
   if (doc.kind === "vision") return summaryKey(doc.feature, "product", VISION_DOC);
   if (doc.kind !== "section" && doc.kind !== "metaplan") return null;
   return stemSummaryKey(doc.feature, doc.kind === "section" ? "product" : "metaplan", doc.path);
-}
-
-/** The summary key of the metaplan file at `path`; null when its file name is no valid stem. */
-export function metaplanSummaryKey(feature: string, path: string): string | null {
-  return stemSummaryKey(feature, "metaplan", path);
 }
 
 function stemSummaryKey(feature: string, scope: "product" | "metaplan", path: string) {

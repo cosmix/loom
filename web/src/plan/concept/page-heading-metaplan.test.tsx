@@ -44,9 +44,9 @@ function show(overrides: Partial<ConceptPage> = {}) {
 
 it("heads a metaplan's summary with the feature and Metaplan, and opens its source in the feature", () => {
   show({
-    key: "demo/metaplan/round-two",
-    title: "Round two",
-    path: "doc/plans/demo/round-two.md",
+    key: "demo/metaplan/index",
+    title: "Roadmap",
+    path: "doc/plans/demo/index.md",
   });
 
   const crumbs = screen.getByRole("navigation", { name: "Breadcrumb" });
@@ -56,5 +56,5 @@ it("heads a metaplan's summary with the feature and Metaplan, and opens its sour
       .map((item) => item.textContent),
   ).toEqual(["demo", "Metaplan"]);
   const source = screen.getByRole("link", { name: "Source" });
-  expect(source.getAttribute("href")).toBe("/f/demo/source/plans/demo/round-two.md");
+  expect(source.getAttribute("href")).toBe("/f/demo/source/plans/demo/index.md");
 });

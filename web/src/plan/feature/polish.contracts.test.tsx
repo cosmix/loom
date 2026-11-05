@@ -170,7 +170,7 @@ afterEach(() => {
 });
 
 it("a feature with a written spec opens on its product overview", async () => {
-  const { router } = renderRoutes("/f/atlas", finishedChecklist());
+  const { router } = renderRoutes("/f/atlas", pressureChecklist());
 
   await waitFor(() => expect(router.state.location.pathname).toBe("/f/atlas/product"));
 });

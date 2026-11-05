@@ -1,135 +1,29 @@
-import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { Provider } from "jotai";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { createMemoryRouter, RouterProvider } from "react-router";
-import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { expect, it, vi } from "vitest";
 
-import snapshotFixture from "@/plan/api/fixtures/chat-snapshot.json";
 import treeFixture from "@/plan/api/fixtures/files-tree.json";
-import type { ChecklistView } from "@/plan/api/schema";
-import { sessionViewSchema, type SessionView } from "@/plan/api/schema-chat";
-import type { KickoffView } from "@/plan/api/schema-kickoff";
-import type { connectPlanSocket } from "@/plan/api/socket";
-import { snapshotAtom } from "@/plan/chat/model";
-import { storeFor } from "@/plan/chat/panel-test-kit";
 import { Dock } from "@/plan/dock";
 import { treeAtom } from "@/plan/files/atoms";
-import { resetKickoffLanding } from "@/plan/new/kickoff-landing";
-import { KickoffRoute } from "@/plan/new/kickoff-route";
-import { kickoffSessionAtom } from "@/plan/new/kickoff-state";
-import { authoringAtom, kickoffAtom, planSocketAtom, projectAtom } from "@/plan/state/atoms";
+import {
+  atlas,
+  feature,
+  installKickoffRouteLifecycle,
+  kickoff,
+  LIVE,
+  mount,
+  session,
+} from "@/plan/new/kickoff-route-kit";
+import { authoringAtom, kickoffAtom, projectAtom } from "@/plan/state/atoms";
 
 vi.mock("@/plan/chat/panel", () => ({
   ChatRegistrations: () => <span>Chat registrations</span>,
   ChatPanel: () => <aside aria-label="Chat">Chat panel</aside>,
 }));
 
-const session = sessionViewSchema.parse({ ...snapshotFixture.session, state: "idle" });
-const feature: ChecklistView = {
-  feature: "planner-search",
-  pitch: null,
-  has_product: true,
-  sections: [],
-  plans: { listed: 0, total: 0, written: 0, running: 0, done: 0 },
-  untested: 0,
-  metaplans: [],
-  plan_rows: [],
-  current: { kind: "step", number: 1 },
-  steps: [],
-  primary: null,
-  secondary: [],
-  items: [],
-};
-const LIVE = `?session=${session.id}`;
-const kickoff: KickoffView = {
-  session: session.id,
-  target: null,
-  shape: {
-    size: "feature",
-    name: "planner-search",
-    proposal: true,
-    problem: "Finding plans takes too long.",
-    decisions: [],
-    questions: [],
-    sections: [],
-  },
-};
+installKickoffRouteLifecycle();
 
-class FakeSocket {
-  listeners = new Map<string, Set<(message: unknown) => void>>();
-  send = vi.fn((_message: unknown) => true);
-  subscribe = (type: string, handler: (message: unknown) => void) => {
-    const handlers = this.listeners.get(type) ?? new Set();
-    this.listeners.set(type, handlers);
-    handlers.add(handler);
-    return () => {
-      handlers.delete(handler);
-    };
-  };
-  onResync = () => () => {};
-  dispose = () => {};
-  receive(frame: object) {
-    for (const handler of this.listeners.get("chat") ?? []) {
-      handler({ type: "chat", ...frame });
-    }
-  }
-  result(error: string | null = null) {
-    const sent = this.send.mock.calls.at(-1)?.[0] as { client_id: string };
-    this.receive({ frame: "result", client_id: sent.client_id, ok: error === null, error });
-  }
-}
-
-function mount({
-  current = null,
-  view = null,
-  tab = null,
-  state = null,
-  search = "",
-  checklists = [],
-}: {
-  current?: SessionView | null;
-  view?: KickoffView | null;
-  tab?: string | null;
-  state?: { small: unknown } | null;
-  search?: string;
-  checklists?: ChecklistView[];
-} = {}) {
-  const store = storeFor();
-  const socket = new FakeSocket();
-  store.set(planSocketAtom, socket as unknown as ReturnType<typeof connectPlanSocket>);
-  store.set(snapshotAtom, { session: current, turns: [], queue: [], previous: null });
-  store.set(kickoffAtom, view);
-  store.set(kickoffSessionAtom, tab);
-  store.set(projectAtom, { checklists, standalone: [], moves: [] });
-  const router = createMemoryRouter([{ path: "*", element: <KickoffRoute /> }], {
-    initialEntries: [{ pathname: "/new", search, state }],
-  });
-  const navigate = vi.spyOn(router, "navigate");
-  const rendered = render(
-    <Provider store={store}>
-      <RouterProvider router={router} />
-    </Provider>,
-  );
-  return { ...rendered, store, socket, router, navigate };
-}
-
-beforeEach(() => {
-  localStorage.clear();
-  resetKickoffLanding();
-  vi.stubGlobal(
-    "fetch",
-    vi.fn<typeof fetch>().mockImplementation((input) => {
-      const draft = String(input).startsWith("/api/kickoffs/");
-      const body = draft ? { error: "not_found" } : treeFixture;
-      return Promise.resolve(new Response(JSON.stringify(body), { status: draft ? 404 : 200 }));
-    }),
-  );
-});
-afterEach(() => {
-  cleanup();
-  localStorage.clear();
-  vi.restoreAllMocks();
-  vi.unstubAllGlobals();
-});
+const conversation = () => screen.getByRole("region", { name: "Kickoff conversation" });
 
 it("shows the empty kickoff when there is no session", () => {
   mount();
@@ -145,7 +39,7 @@ it("loads the file tree for the document picker on a fresh visit to /new", async
     expect.objectContaining({ method: "GET", credentials: "same-origin" }),
   );
   await waitFor(() => expect(store.get(treeAtom)).toEqual(treeFixture));
-  fireEvent.click(screen.getByRole("button", { name: "Attach notes or a document" }));
+  fireEvent.click(screen.getByRole("button", { name: "Attach a document" }));
 
   const documents = within(screen.getByRole("list", { name: "Documents" }));
   expect(documents.getByRole("button", { name: "Vision" })).toBeTruthy();
@@ -170,17 +64,42 @@ it.each([
   });
 });
 
+it("opens on Follow-up for the feature the route state names and lands its chat on the metaplan", async () => {
+  const { socket, router } = mount({ state: { followUp: "atlas" }, checklists: [atlas] });
+  expect((screen.getByRole("radio", { name: "Follow-up" }) as HTMLInputElement).checked).toBe(true);
+  expect(screen.getByRole("button", { name: "Change" })).toBeTruthy();
+  fireEvent.change(screen.getByRole("textbox", { name: "What do you want to build?" }), {
+    target: { value: "Tighten the settings dialog" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Start the conversation" }));
+  expect(socket.send).toHaveBeenCalledWith(
+    expect.objectContaining({ command: "start", offer: "plan-follow-ups", feature: "atlas" }),
+  );
+  expect(router.state.location.pathname).toBe("/new");
+
+  await act(async () => socket.result());
+
+  await waitFor(() => expect(router.state.location.pathname).toBe("/f/atlas/metaplan"));
+});
+
+it("ignores a followUp route state that names no listed feature", () => {
+  mount({ state: { followUp: "nowhere" }, checklists: [atlas] });
+  expect((screen.getByRole("radio", { name: "Feature" }) as HTMLInputElement).checked).toBe(true);
+});
+
 it("shows the real transcript, composer, Taking shape and an unconfirmed proposal", () => {
   mount({ current: session, view: kickoff, search: LIVE });
-  const conversation = screen.getByRole("region", { name: "Kickoff conversation" });
-  expect(conversation.classList.contains("kickoff-transcript")).toBe(true);
-  expect(
-    within(conversation).getByRole("heading", { level: 1, name: "planner-search" }),
-  ).toBeTruthy();
-  expect(within(conversation).getByText("Feature", { selector: ".plan-eyebrow" })).toBeTruthy();
+  const region = conversation();
+  expect(region.classList.contains("kickoff-transcript")).toBe(true);
+  const head = region.querySelector<HTMLElement>(".kickoff-head")!;
+  expect(within(head).getByRole("heading", { level: 1, name: "planner-search" })).toBeTruthy();
+  // Idle: the head's sub-line says nothing and the head draws no roundel.
+  expect(head.querySelector(".chat-state-words")).toBeNull();
+  expect(head.querySelector(".aurora-roundel")).toBeNull();
   expect(screen.queryByText("New work")).toBeNull();
-  expect(within(conversation).getByRole("log", { name: "Chat transcript" })).toBeTruthy();
-  expect(within(conversation).getByRole("textbox", { name: "Message" })).toBeTruthy();
+  expect(screen.queryByText("Feature", { selector: ".plan-eyebrow" })).toBeNull();
+  expect(within(region).getByRole("log", { name: "Chat transcript" })).toBeTruthy();
+  expect(within(region).getByRole("textbox", { name: "Message" })).toBeTruthy();
   const panel = screen.getByRole("complementary", { name: "Taking shape" });
   expect(panel.classList.contains("font-sans")).toBe(true);
   expect(within(panel).getByText("Finding plans takes too long.")).toBeTruthy();
@@ -191,7 +110,30 @@ it("shows the real transcript, composer, Taking shape and an unconfirmed proposa
   const write = screen.getByRole("button", { name: "Write the vision" });
   expect(write.getAttribute("aria-disabled")).toBe("true");
   expect(screen.getByText("Settle the size and name first")).toBeTruthy();
-  expect(screen.getByText("Waiting for you", { selector: ".kickoff-pill" })).toBeTruthy();
+  expect(screen.queryByText("Waiting for you")).toBeNull();
+});
+
+it("draws the pane's one roundel for a starting session, in the transcript and not the head", () => {
+  mount({ current: { ...session, state: "starting" }, search: LIVE });
+  const region = conversation();
+  expect(region.querySelectorAll(".aurora-roundel")).toHaveLength(1);
+  const head = region.querySelector<HTMLElement>(".kickoff-head")!;
+  expect(head.querySelector(".aurora-roundel")).toBeNull();
+  expect(head.querySelector(".chat-state-words")?.textContent).toBe("Starting");
+  expect(within(head).getByRole("heading", { level: 1 }).textContent).toBe("New work");
+});
+
+it("draws no roundel for an idle session", () => {
+  mount({ current: session, search: LIVE });
+  expect(conversation().querySelectorAll(".aurora-roundel")).toHaveLength(0);
+});
+
+it.each([
+  ["kickoff", "New feature"],
+  ["kickoff-small", "New standalone plan"],
+])("titles an unnamed kickoff started as %s by its kind", (offer, title) => {
+  mount({ current: { ...session, offer }, search: LIVE });
+  expect(within(conversation()).getByRole("heading", { level: 1 }).textContent).toBe(title);
 });
 
 it("asks the session to change the size from the segmented control", async () => {
@@ -213,7 +155,7 @@ it("asks the session to change the size from the segmented control", async () =>
 it("recognizes the addressed kickoff before its shape arrives and consumes live snapshots", () => {
   const { socket } = mount({ current: session, search: LIVE });
   expect(screen.getByRole("log", { name: "Chat transcript" })).toBeTruthy();
-  expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Untitled");
+  expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("New work");
   expect(
     screen.getByText("Nothing yet. The shape appears here as the conversation settles it."),
   ).toBeTruthy();
@@ -353,7 +295,7 @@ it("keeps writing authoring-gated and isolates the holder's name", () => {
   });
   act(() =>
     store.set(authoringAtom, {
-      holder: { public_id: "other", name: "Other\u202eauthor", away_since: null, frees_at: null },
+      holder: { public_id: "other", name: "Other‮author", away_since: null, frees_at: null },
     }),
   );
   const write = screen.getByRole("button", { name: "Write the vision" });

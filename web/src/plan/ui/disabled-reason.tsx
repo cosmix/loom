@@ -40,6 +40,7 @@ export function DisabledReason({
   look = "secondary",
   shape,
   reasonPlacement = "below",
+  describedBy,
   children,
 }: {
   /** Text is untrusted; an element is the caller's own markup (e.g. `BusyText`). */
@@ -55,10 +56,15 @@ export function DisabledReason({
   look?: ButtonLook;
   shape?: ButtonShape;
   reasonPlacement?: ReasonPlacement;
+  /** The id of another element that describes the button (e.g. the text it acts on); it follows the reason's id. */
+  describedBy?: string;
   children: ReactNode;
 }) {
   const ownId = useId();
   const blocked = reason !== null;
+  const described = [blocked ? (reasonId ?? ownId) : undefined, describedBy]
+    .filter((id): id is string => id !== undefined && id !== "")
+    .join(" ");
   const Wrapper = reasonPlacement === "inline" ? "span" : "div";
 
   return (
@@ -71,7 +77,7 @@ export function DisabledReason({
         data-shape={shape}
         className="plan-button aria-disabled:cursor-not-allowed aria-disabled:opacity-50"
         aria-disabled={blocked || undefined}
-        aria-describedby={blocked ? (reasonId ?? ownId) : undefined}
+        aria-describedby={described === "" ? undefined : described}
         onClick={blocked ? undefined : onClick}
       >
         {children}

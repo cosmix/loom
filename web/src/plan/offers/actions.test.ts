@@ -26,6 +26,15 @@ describe("offer actions", () => {
     expect(runOffer(offer)).toBe(false);
   });
 
+  it("passes a seed to the handler", () => {
+    const handler = vi.fn();
+    const unregister = registerOfferAction(offer.kind, handler);
+
+    expect(runOffer(offer, "Settings look bland")).toBe(true);
+    expect(handler).toHaveBeenCalledWith(offer, "Settings look bland");
+    unregister();
+  });
+
   it("keeps a replacement when an earlier registration is removed", () => {
     const handler = vi.fn();
     const unregisterOld = registerOfferAction(offer.kind, handler);

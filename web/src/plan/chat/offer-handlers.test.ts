@@ -52,6 +52,29 @@ describe("authoring offer handlers", () => {
     }
   });
 
+  it("sends the seed as the text of the start", () => {
+    const send = vi.fn();
+    const unregister = registerAuthoringOffers(send);
+    const offer: OfferView = {
+      id: "plan-follow-ups",
+      kind: "plan_follow_ups",
+      label: "Plan follow-ups",
+      target: null,
+      feature: "demo",
+    };
+    try {
+      runOffer(offer, "Settings look bland");
+
+      expect(send).toHaveBeenCalledExactlyOnceWith({
+        offer: "plan-follow-ups",
+        feature: "demo",
+        text: "Settings look bland",
+      });
+    } finally {
+      unregister();
+    }
+  });
+
   it.each(["draft_all_sections", "write_section"] as const)(
     "includes the selected feature for %s",
     (kind) => {

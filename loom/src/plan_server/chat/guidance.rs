@@ -12,6 +12,8 @@ use crate::fs::safe_fs::{
 use crate::plan_server::context::PlanContext;
 use crate::plan_session::bridge::LaunchGuidance;
 use crate::plan_session::kind::SessionDir;
+use crate::planning::checklist::Offer;
+use crate::planning::guidance::start::follow_ups_open;
 use crate::planning::kinds::{is_feature_name, plans_dir, product_dir, vision_path};
 use crate::planning::project::{Feature, Project};
 
@@ -88,6 +90,9 @@ fn offered(ctx: &PlanContext, offer: &str, selected: Option<&str>) -> bool {
         return true;
     }
     let project = ctx.project();
+    if offer == Offer::PlanFollowUps.id() {
+        return selected.is_some_and(|feature| follow_ups_open(&project, feature));
+    }
     project
         .moves
         .iter()

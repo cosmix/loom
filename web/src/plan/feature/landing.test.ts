@@ -49,6 +49,24 @@ it("opens a feature with a metaplan and no vision on the plans", () => {
   );
 });
 
+it("opens a feature whose every plan is done on what was built", () => {
+  const rows = ["one", "two"].map((slug) => ({
+    slug,
+    path: `doc/plans/atlas/archive/DONE-PLAN-${slug}.md`,
+    title: slug,
+    state: "done",
+    pressure_date: null,
+    listed: true,
+  }));
+  const done = feature({
+    has_product: true,
+    metaplans: metaplan,
+    plan_rows: rows,
+    current: { kind: "ready_all_done" },
+  });
+  expect(landingPath(done)).toBe("/f/atlas/built");
+});
+
 it("encodes a feature name that is not a path segment", () => {
   expect(landingPath(feature({ feature: "a feature", has_product: false, metaplans: [] }))).toBe(
     "/f/a%20feature/vision",
