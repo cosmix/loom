@@ -46,7 +46,7 @@ it("the first load shows one line of status, not a skeleton block", () => {
 
   expect(status.tagName).toBe("P");
   expect(status.textContent).toBe("Loading implementing plans…");
-  expect(status.children).toHaveLength(0);
+  expect(status.querySelector('[data-slot="skeleton"], .animate-pulse')).toBeNull();
 });
 
 it.each(["doc/product/demo/section_2.md", "doc/product/demo/section_002.md"])(

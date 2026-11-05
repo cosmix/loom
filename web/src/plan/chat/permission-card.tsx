@@ -80,7 +80,7 @@ function fileEdit(tool: string, fields: Record<string, unknown>): FileEdit | nul
 
 function Mono({ text }: { text: string }): JSX.Element {
   return (
-    <pre className="whitespace-pre-wrap break-words font-mono text-xs leading-relaxed">
+    <pre className="chat-tool-pre">
       <Untrusted text={text} />
     </pre>
   );
@@ -90,11 +90,11 @@ function FileEditBody({ edit }: { edit: FileEdit }): JSX.Element {
   const hasExtras = Object.keys(edit.extras).length > 0;
   return (
     <div className="space-y-2">
-      <p className="break-words font-mono text-xs">
+      <p className="chat-tool-pre">
         <Untrusted text={edit.path} />
       </p>
       {edit.replaceAll && (
-        <p className="text-xs font-medium">
+        <p className="chat-decision-label">
           <Untrusted text="Replaces every occurrence" />
         </p>
       )}
@@ -151,8 +151,8 @@ function TimeLeft({ expiresAt }: { expiresAt: string }): JSX.Element {
 
 /**
  * Moves focus to the pinned card once per request, only from a control inside the panel. The
- * assertive announcement is ChatAnnouncer's: this card is unmounted while the panel is collapsed
- * or the sheet is closed, and the request must still be heard then.
+ * assertive announcement is ChatAnnouncer's: this card is unmounted while the sheet is closed
+ * (below 1280px the panel is a sheet), and the request must still be heard then.
  */
 function usePinnedFocus(item: Permission) {
   const card = useRef<HTMLDivElement>(null);
@@ -224,7 +224,7 @@ function DenyNoteForm({ answer, busy }: { answer: Answer; busy: boolean }): JSX.
   const reason = busy ? "Sending" : null;
   return (
     <div className="space-y-2">
-      <label className="block text-xs">
+      <label className="chat-decision-label">
         Deny note
         <input
           autoFocus
@@ -285,7 +285,7 @@ function DecisionFooter({
         </p>
       )}
       {error && (
-        <p role="alert" className="text-xs">
+        <p role="alert" className="plan-fine">
           <Untrusted text={error} />
         </p>
       )}
@@ -355,7 +355,7 @@ export function PermissionCard({ item }: Props): JSX.Element {
     <div
       role="group"
       aria-label={`Permission: ${visibleControls(item.tool)}`}
-      className="text-xs leading-relaxed text-muted-foreground"
+      className="chat-decision-outcome"
     >
       <Untrusted text={outcome(item)} />
     </div>

@@ -14,7 +14,10 @@ export function Name({ name, style }: { name: string; style: NameStyle }) {
   return style === "mono" ? <span className="plan-spine__mono">{text}</span> : text;
 }
 
-/** The plan's pressure record, in the same words as the plan page's chip (`pressureChip`). */
+/**
+ * The plan's pressure record, in the same words as the plan page's chip (`pressureChip`). The date
+ * has its own span so a narrow row can take it out of view (spine.css) and keep it in the name.
+ */
 function PressureBadge({ pressure }: { pressure: PlanPressure }) {
   const { date } = pressure;
   const Icon = date === null ? Gauge : FlaskConical;
@@ -23,7 +26,10 @@ function PressureBadge({ pressure }: { pressure: PlanPressure }) {
       <Icon aria-hidden="true" />
       {date !== null ? (
         <>
-          Pressure-tested <Untrusted text={date} />
+          Pressure-tested{" "}
+          <span className="plan-spine__badge-date">
+            <Untrusted text={date} />
+          </span>
         </>
       ) : (
         "Not pressure-tested"

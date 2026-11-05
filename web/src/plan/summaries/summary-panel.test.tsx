@@ -122,56 +122,97 @@ it("shows a failed start as an alert", () => {
   expect(screen.getByRole("alert").textContent).toBe("Could not start the rebuild session");
 });
 
-it("keeps the last cost's three labelled figures in one element", () => {
+/** One span's labelled figures: each figure label's `dt` paired with the `dd` beside it. */
+function figuresIn(scope: HTMLElement): Record<string, string | null> {
+  const labels = ["fresh", "cache reads", "output"];
+  const terms = Array.from(scope.querySelectorAll("dt")).filter((term) =>
+    labels.includes(term.textContent ?? ""),
+  );
+  return Object.fromEntries(
+    terms.map((term) => [term.textContent, term.nextElementSibling?.textContent ?? null]),
+  );
+}
+
+const lastRebuild = () => screen.getByRole("region", { name: "Last rebuild" });
+const span = (name: string) => {
+  const totals = within(screen.getByRole("region", { name: "Token totals" }));
+  const term = totals.getByText(name);
+  expect(term.tagName).toBe("DT");
+  return term.parentElement!;
+};
+
+it("pairs each of the last cost's labels with its figure", () => {
   show();
 
-  const last = within(screen.getByRole("region", { name: "Last rebuild" }));
-  expect(last.getByText("fresh 1,840 · cache reads 9,200 · output 760")).toBeTruthy();
+  expect(figuresIn(lastRebuild())).toEqual({
+    fresh: "1,840",
+    "cache reads": "9,200",
+    output: "760",
+  });
+});
+
+it("captions the last rebuild with its age", () => {
+  show({ last: { ...LAST, time: "2026-10-29T08:01:00Z" } });
+
+  const time = lastRebuild().querySelector("time");
+  expect(time?.getAttribute("dateTime")).toBe("2026-10-29T08:01:00Z");
+  expect(time?.textContent).toBe("10 min ago");
 });
 
 it.each([
-  [{ cache_read: 9200, output: 760 }, "fresh unknown · cache reads 9,200 · output 760"],
-  [{ fresh_input: 1840, output: 760 }, "fresh 1,840 · cache reads unknown · output 760"],
-  [{ fresh_input: 1840, cache_read: 9200 }, "fresh 1,840 · cache reads 9,200 · output unknown"],
+  [
+    { cache_read: 9200, output: 760 },
+    { fresh: "unknown", "cache reads": "9,200", output: "760" },
+  ],
+  [
+    { fresh_input: 1840, output: 760 },
+    { fresh: "1,840", "cache reads": "unknown", output: "760" },
+  ],
+  [
+    { fresh_input: 1840, cache_read: 9200 },
+    { fresh: "1,840", "cache reads": "9,200", output: "unknown" },
+  ],
 ])("shows unknown for absent cost fields: %s", (tokens, expected) => {
   show({ last: { ...LAST, tokens } });
 
-  const last = within(screen.getByRole("region", { name: "Last rebuild" }));
-  expect(last.getByText(expected)).toBeTruthy();
+  expect(figuresIn(lastRebuild())).toEqual(expected);
 });
+
+const UNKNOWN = { fresh: "unknown", "cache reads": "unknown", output: "unknown" };
 
 it("shows unknown when there is no last rebuild", () => {
   show({ last: null });
 
-  const last = within(screen.getByRole("region", { name: "Last rebuild" }));
-  expect(last.getByText("fresh unknown · cache reads unknown · output unknown")).toBeTruthy();
+  expect(within(lastRebuild()).getByText("None yet")).toBeTruthy();
+  expect(figuresIn(lastRebuild())).toEqual(UNKNOWN);
 });
 
 it("shows today and seven-day totals with formatted figures", () => {
   show();
 
-  const totals = within(screen.getByRole("region", { name: "Token totals" }));
-  expect(totals.getByText("Today").parentElement?.textContent).toBe(
-    "Todayfresh 12,400 · cache reads 68,000 · output 4,800",
-  );
-  expect(totals.getByText("7 days").parentElement?.textContent).toBe(
-    "7 daysfresh 74,600 · cache reads 412,000 · output 29,600",
-  );
+  expect(figuresIn(span("Today"))).toEqual({
+    fresh: "12,400",
+    "cache reads": "68,000",
+    output: "4,800",
+  });
+  expect(figuresIn(span("7 days"))).toEqual({
+    fresh: "74,600",
+    "cache reads": "412,000",
+    output: "29,600",
+  });
 });
 
 it("distinguishes absent total fields from recorded zeroes", () => {
   show({ today: {}, week: { fresh_input: 0, cache_read: 0, output: 0 } });
 
-  const totals = within(screen.getByRole("region", { name: "Token totals" }));
-  expect(totals.getByText("fresh unknown · cache reads unknown · output unknown")).toBeTruthy();
-  expect(totals.getByText("fresh 0 · cache reads 0 · output 0")).toBeTruthy();
+  expect(figuresIn(span("Today"))).toEqual(UNKNOWN);
+  expect(figuresIn(span("7 days"))).toEqual({ fresh: "0", "cache reads": "0", output: "0" });
 });
 
-it("renders the shared quota meters", () => {
+it("draws no provider limit meters: the footer is their one place", () => {
   show();
 
-  expect(screen.getByRole("img", { name: /^claude 5h window 48% used/ })).toBeTruthy();
-  expect(screen.getByRole("img", { name: /^codex 7d window 63% used/ })).toBeTruthy();
+  expect(screen.queryByRole("img", { name: /window .*% used/ })).toBeNull();
 });
 
 it("shows the panel's read-only reason without action controls", () => {

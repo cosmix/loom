@@ -5,6 +5,7 @@ import helloFixture from "@/plan/api/fixtures/hello.json";
 import { checklistViewSchema } from "@/plan/api/schema";
 import { registerOfferAction } from "@/plan/offers/actions";
 import { authoringAtom, checklistAtom, stoppingAtom } from "@/plan/state/atoms";
+import composerCss from "./chat-composer.css?raw";
 import { ComposerArea } from "./composer";
 import { snapshotAtom, unconfirmedSendsAtom } from "./model";
 import { StopControl } from "./stop-control";
@@ -78,6 +79,29 @@ it("viewer has no stop", () => {
   const h = setup("working", true);
   mount(h.store);
   expect(screen.queryByRole("button", { name: "Stop" })).toBeNull();
+});
+it("stop sits at the action row's end, immediately before Send and at its size", () => {
+  const h = setup("working");
+  mount(h.store);
+  const stop = screen.getByRole("button", { name: "Stop" });
+  const cluster = stop.closest(".chat-composer-end");
+  expect(cluster).not.toBeNull();
+  expect(cluster!.contains(send())).toBe(true);
+  expect(stop.compareDocumentPosition(send()) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(stop.getAttribute("data-size")).toBe(send().getAttribute("data-size"));
+  expect(stop.closest(".chat-composer-actions")?.querySelector(".chat-attach")).not.toBeNull();
+});
+it("send's reason is a row of the end cluster under the buttons, not a column beside Stop", () => {
+  // Layout is not measurable here; the rules that keep Stop, Send and the reason inside a 320px
+  // panel are pinned by text, as the composer's border is (chat-fixes.contracts.test.tsx).
+  const cluster = composerCss.match(/\.chat-composer-end \{[^}]*\}/)?.[0] ?? "";
+  expect(cluster).toContain("flex-wrap: wrap;");
+  expect(composerCss).toMatch(
+    /\.chat-composer-send,\s*\.chat-composer-send > div \{\s*display: contents;/,
+  );
+  const reason = composerCss.match(/\.chat-composer-send \.plan-fine \{[^}]*\}/)?.[0] ?? "";
+  expect(reason).toContain("flex: 1 1 100%;");
+  expect(composerCss).not.toMatch(/\.chat-composer-send \{[^}]*flex-shrink: 0/);
 });
 it("ending disables with reason", () => {
   const h = setup("ending");

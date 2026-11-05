@@ -2,10 +2,10 @@ import { useAtomValue } from "jotai/react";
 import type { ReactNode } from "react";
 
 import { BusyRoundel } from "@/aurora-ui/feedback/BusyRoundel";
-import { WorkRoundel } from "@/components/activity-roundel";
 import { useNow } from "@/components/hooks/use-now";
 import { formatElapsed } from "@/lib/format";
 import type { Item, SessionView, Turn } from "@/plan/api/schema-chat";
+import { BUSY_STATES } from "./chat-state-glyph";
 import { pendingPermissionsAtom, turnsAtom } from "./model";
 import { panelSessionAtom } from "./session-home";
 import { StartingBrief } from "./start-chat";
@@ -62,7 +62,7 @@ function stateWords(session: SessionView | null, pending: Permission[]): string 
 
 /**
  * States whose announcement belongs to ChatAnnouncer, which stays mounted when the panel does
- * not (a collapsed rail, a closed sheet). The polite region here leaves them out, so each is
+ * not (a closed sheet below 1280px). The polite region here leaves them out, so each is
  * announced once, and the permission words on the row are not hidden behind a duplicate.
  */
 function announcedElsewhere(session: SessionView | null): boolean {
@@ -70,36 +70,28 @@ function announcedElsewhere(session: SessionView | null): boolean {
   return state === "permission" || state === "ended" || state === "failed";
 }
 
-function StateGlyph({ state }: { state: SessionView["state"] | undefined }) {
-  if (state === "working") {
-    // WorkRoundel currently reads dashboard stages. Override only its animation
-    // until its owner exposes a session activity input; reduced motion still wins.
+/**
+ * The state as a glyph: the roundel for every busy state (starting, working, ending), the warning
+ * mark for a decision, the quiet LED for a chat waiting or none. Each is hidden from assistive
+ * technology; the words beside it carry the state. Exported so the head can draw the same glyph
+ * beside its state word.
+ */
+export function StateGlyph({ state }: { state: SessionView["state"] | undefined }) {
+  if (state !== undefined && BUSY_STATES.has(state)) {
     return (
-      <span
-        aria-hidden="true"
-        className="chat-state-glyph [&_.aurora-roundel]:animate-[aurora-roundel-spin_1.6s_linear_infinite] motion-reduce:[&_.aurora-roundel]:animate-none"
-      >
-        <WorkRoundel size={14} />
+      <span aria-hidden="true" className="chat-state-glyph">
+        <BusyRoundel size={14} busy busyLabel="" idleLabel="" />
       </span>
     );
   }
   if (state === "permission") {
     return (
-      <span aria-hidden="true" className="text-(--tone-warning)">
+      <span aria-hidden="true" className="chat-state-glyph text-(--tone-warning)">
         ⚠
       </span>
     );
   }
-  // The roundel is the shared busy disc (fixed black and white quadrants): it belongs to
-  // starting and ending only. With no chat, or one waiting, the row shows the muted idle LED.
-  if (state === undefined || state === "idle") {
-    return <span aria-hidden="true" className="chat-led" />;
-  }
-  return (
-    <span aria-hidden="true">
-      <BusyRoundel size={14} busy />
-    </span>
-  );
+  return <span aria-hidden="true" className="chat-led" />;
 }
 
 /** A failure notice: a toned glyph and a title over plain text, with no box. */
@@ -206,7 +198,7 @@ export function StateLine() {
   const hideWords = !elsewhere && session?.state !== "starting";
   return (
     <div
-      className="chat-state-line text-[13px] font-medium"
+      className="chat-state-line"
       data-kind={session?.kind}
       data-state={session?.state ?? "none"}
     >

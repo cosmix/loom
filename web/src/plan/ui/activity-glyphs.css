@@ -16,30 +16,13 @@
     height: 100%;
   }
 
-  .activity-glyph[data-kind="summaries"] > .activity-glyph__motion {
-    animation: activity-glyph-summaries 1.2s linear infinite;
-  }
-
-  .activity-glyph .activity-glyph__needle {
-    transform-box: view-box;
-    transform-origin: 12px 15px;
-    animation: activity-glyph-pressure 1.8s ease-in-out infinite;
-  }
-
-  .activity-glyph .activity-glyph__beam {
-    animation: activity-glyph-codex 1.6s ease-in-out infinite;
-  }
-
-  .activity-glyph[data-kind="drafting"] > .activity-glyph__motion {
-    animation: activity-glyph-drafting 1.6s ease-in-out infinite;
-  }
-
-  .activity-glyph[data-kind="running"] > .activity-glyph__motion {
-    animation: activity-glyph-running 1.6s linear infinite;
-  }
-
-  .activity-glyph[data-kind="starting"] > .activity-glyph__motion {
-    animation: activity-glyph-starting 1s linear infinite;
+  /* Work in progress is the roundel (aurora-ui), sized to the glyph box it replaces: a lucide
+     glyph's strokes reach about 86% of its box, so the disc keeps the weight of the glyphs beside
+     it. The disc's own stylesheet turns it, rests it upright when idle and stops the spin under
+     reduced motion. */
+  .activity-glyph > .aurora-roundel-wrap {
+    width: 86%;
+    height: 86%;
   }
 
   .activity-glyph[data-kind="waiting"] {
@@ -97,60 +80,6 @@
   .activity-glyph[data-paused="true"] * {
     /* Override the more specific per-kind animation shorthands. */
     animation-play-state: paused !important;
-  }
-}
-
-@keyframes activity-glyph-summaries {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-@keyframes activity-glyph-pressure {
-  0%,
-  100% {
-    transform: rotate(-55deg);
-  }
-  50% {
-    transform: rotate(55deg);
-  }
-}
-
-@keyframes activity-glyph-codex {
-  0%,
-  100% {
-    transform: translateX(-5px);
-  }
-  50% {
-    transform: translateX(5px);
-  }
-}
-
-@keyframes activity-glyph-drafting {
-  0%,
-  100% {
-    transform: translate(0, 0);
-  }
-  25% {
-    transform: translate(0.08em, -0.06em);
-  }
-  50% {
-    transform: translate(-0.06em, 0.06em);
-  }
-  75% {
-    transform: translate(0.06em, 0.03em);
-  }
-}
-
-@keyframes activity-glyph-running {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-@keyframes activity-glyph-starting {
-  to {
-    transform: rotate(360deg);
   }
 }
 

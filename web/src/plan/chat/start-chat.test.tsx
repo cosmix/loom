@@ -11,7 +11,6 @@ import { EndChatMenuItem } from "./end-chat";
 import { snapshotAtom } from "./model";
 import { createOfferStarter } from "./offer-flow";
 import { registerAuthoringOffers } from "./offer-handlers";
-import { panelCollapsedAtom } from "./prefs";
 import { SessionDivider } from "./session-divider";
 import { chatSheetOpenAtom } from "./sheet-state";
 import {
@@ -78,17 +77,14 @@ it.each([
 
 it("new chat start", async () => {
   const h = harness();
-  h.store.set(panelCollapsedAtom, true);
   h.mount(<NewChatButton />);
   fireEvent.click(screen.getByRole("button", { name: "New chat" }));
   expect(h.send).toHaveBeenCalledWith(
     expect.objectContaining({ command: "start", offer: null, text: null, attachments: [] }),
   );
-  expect(h.store.get(panelCollapsedAtom)).toBe(true);
   expect(h.store.get(chatSheetOpenAtom)).toBe(false);
   h.result();
   await waitFor(() => expect(h.store.get(chatSheetOpenAtom)).toBe(true));
-  expect(h.store.get(panelCollapsedAtom)).toBe(false);
 });
 
 it("first message start", async () => {
@@ -108,9 +104,8 @@ it("first message start", async () => {
   expect(await screen.findByText(brief.display_name)).toBeTruthy();
 });
 
-it("starting shows the brief view and leaves the panel as it is", async () => {
+it("starting shows the brief view and leaves the sheet as it is", async () => {
   const h = harness(session);
-  h.store.set(panelCollapsedAtom, true);
   h.mount(
     <>
       <StartingBrief session={session} />
@@ -120,7 +115,6 @@ it("starting shows the brief view and leaves the panel as it is", async () => {
   expect(await screen.findByText(brief.display_name)).toBeTruthy();
   expect(screen.getByText(brief.model)).toBeTruthy();
   expect(screen.getByText(brief.effort)).toBeTruthy();
-  expect(h.store.get(panelCollapsedAtom)).toBe(true);
   expect(h.store.get(chatSheetOpenAtom)).toBe(false);
   fireEvent.click(screen.getByRole("button", { name: "Brief" }));
   const dialog = await screen.findByRole("dialog", { name: "Brief" });
@@ -217,7 +211,6 @@ it("cancelling end current chat keeps it running", () => {
 
 it("lost race message", async () => {
   const h = harness();
-  h.store.set(panelCollapsedAtom, true);
   h.mount(<NewChatButton />);
   fireEvent.click(screen.getByRole("button", { name: "New chat" }));
   act(() =>
@@ -235,7 +228,6 @@ it("lost race message", async () => {
   );
   h.result(0, "Another browser holds authoring (Alex)");
   expect(await screen.findByText("Alex started a chat first")).toBeTruthy();
-  expect(h.store.get(panelCollapsedAtom)).toBe(true);
   expect(h.store.get(chatSheetOpenAtom)).toBe(false);
 });
 

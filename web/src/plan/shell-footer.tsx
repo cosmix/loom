@@ -27,9 +27,14 @@ export function PlanFooter(): JSX.Element | null {
   return (
     <footer className="plan-footer">
       <QuotaMeters snapshot={panel.quota} quotaLeft={[]} nowSecs={nowSecs} />
-      {missing.map(({ name, label }) => (
-        <span key={name}>{`${label} limits unavailable`}</span>
-      ))}
+      {/* One grid track holds every note, so two notes never open a third column. */}
+      {missing.length > 0 && (
+        <span className="plan-footer__notes">
+          {missing.map(({ name, label }) => (
+            <span key={name}>{`${label} limits unavailable`}</span>
+          ))}
+        </span>
+      )}
     </footer>
   );
 }

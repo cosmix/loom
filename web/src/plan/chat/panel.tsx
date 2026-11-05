@@ -1,4 +1,4 @@
-import { useAtom, useAtomValue, useSetAtom, useStore } from "jotai";
+import { useAtom, useAtomValue, useStore } from "jotai";
 import { Dialog } from "radix-ui";
 import { useEffect, useRef, type JSX, type KeyboardEvent, type PointerEvent } from "react";
 import { Link } from "react-router";
@@ -21,7 +21,7 @@ import { offerErrorAtom } from "./offer-error";
 import { createOfferStarter, DESKTOP } from "./offer-flow";
 import { registerAuthoringOffers } from "./offer-handlers";
 import { PanelHead } from "./panel-head";
-import { panelCollapsedAtom, panelWidthAtom } from "./prefs";
+import { panelWidthAtom } from "./prefs";
 import { RunHeader } from "./run-header";
 import { ScreenSync } from "./screen-sync";
 import { elsewhereSessionAtom, sessionHereAtom } from "./session-home";
@@ -48,7 +48,7 @@ function ChatConnection(): null {
 
 /**
  * Mounts once beside the routed page so offers, Send to author, live review, the announcements
- * and the Brief dialog work at every width, with the panel collapsed or the sheet closed.
+ * and the Brief dialog work at every width, with the sheet closed.
  * `connect` also opens the chat socket and attention watcher, for routes without a ChatPanel.
  * `panel` is false where the page mounts no ChatPanel: the `c` key then has no composer to focus.
  */
@@ -146,46 +146,6 @@ export function ChatSheetButton() {
       <PermissionBadge />
       {attachments > 0 && <span aria-hidden="true">{attachments}</span>}
     </button>
-  );
-}
-
-/** The state the rail spells out, when a chat is shown; a waiting decision outranks the state. */
-function useRailState(): string | null {
-  const session = useAtomValue(shownSessionAtom);
-  const decisions = useAtomValue(pendingPermissionsAtom).length;
-  if (decisions > 0) return STATE_NAME.permission;
-  return session ? STATE_NAME[session.state] : null;
-}
-
-/**
- * The collapsed panel: one tall tab, the glyph over the word "Chat" set vertically and the state
- * word under it. The whole strip is the button, so it opens in one click from anywhere on it.
- * The words are drawn for sight; the button's name carries them for everyone else.
- */
-function CollapsedRail() {
-  const setCollapsed = useSetAtom(panelCollapsedAtom);
-  const name = useChatButtonName("Expand chat");
-  const state = useRailState();
-  return (
-    <aside aria-label="Chat" className="chat-rail" style={{ width: "2.5rem", flexShrink: 0 }}>
-      <button
-        type="button"
-        aria-label={name}
-        onClick={() => setCollapsed(false)}
-        className="chat-rail-tab"
-      >
-        <ChatGlyph />
-        <span className="chat-rail-word" aria-hidden="true">
-          Chat
-        </span>
-        {state && (
-          <span className="chat-rail-state" aria-hidden="true">
-            {state}
-          </span>
-        )}
-        <PermissionBadge />
-      </button>
-    </aside>
   );
 }
 
@@ -349,15 +309,12 @@ export function ChatPanel() {
   useChatSocket(store);
   useAttention();
   const desktop = useMediaQuery(DESKTOP);
-  const collapsed = useAtomValue(panelCollapsedAtom);
   const width = useAtomValue(panelWidthAtom);
   return (
     <>
       <ScreenSync />
       {!desktop ? (
         <ChatSheet />
-      ) : collapsed ? (
-        <CollapsedRail />
       ) : (
         <aside
           aria-label="Chat"

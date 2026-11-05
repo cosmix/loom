@@ -47,8 +47,8 @@ function QueueRow({
 }) {
   const busy = pending ? "A queue change is pending" : null;
   return (
-    <li className="flex items-center gap-2 text-xs">
-      <span className="min-w-0 flex-1 truncate">
+    <li className="chat-queue-row">
+      <span>
         <Untrusted text={item.first_line} />
       </span>
       <DisabledReason reason={reason ?? busy} onClick={() => withdraw(item, false)} size="sm">
@@ -76,7 +76,7 @@ export function QueueStrip() {
     <QueueRow key={item.id} item={item} reason={reason} pending={pending} withdraw={withdraw} />
   );
   return (
-    <section aria-label="Queued messages" className="text-xs">
+    <section aria-label="Queued messages" className="chat-queue">
       <p>Queued ({queue.length})</p>
       {isHolder && (
         <>
@@ -88,7 +88,7 @@ export function QueueStrip() {
             </details>
           )}
           {error && (
-            <p role="status" className="text-muted-foreground">
+            <p role="status" className="chat-composer-status">
               <Untrusted text={error} />
             </p>
           )}

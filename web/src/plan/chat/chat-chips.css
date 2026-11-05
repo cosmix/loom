@@ -1,0 +1,249 @@
+/* What a message carries: the context row, selection chips, file chips, in the composer box and
+ * under a sent turn. One anatomy everywhere: a row the compact control's height, a glyph at the
+ * start, the label, its source as secondary text on the same line, and the remove control at
+ * the row's end, so every × stands in one column. Rows stack; none flows beside another and none
+ * scrolls sideways. Imported by chat-surface.css; see its header for why these rules are
+ * unlayered.
+ */
+
+/* A list of rows, in the box or in the transcript. In the box the rows wait inside the attached
+ * area (chat-composer.css), which caps their height. */
+.chat-chip-list,
+.chat-chips {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0;
+  min-width: 0;
+}
+
+/* Keeps the rows off the panel edges while no chat is open. */
+.chat-pending-chips {
+  padding: 0 var(--chat-gutter) var(--space-2);
+}
+
+.chat-pending-chips:empty {
+  display: none;
+}
+
+/* ── The row ──────────────────────────────────────────────────────────────── */
+
+.chat-chip,
+.chat-context-chip {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  box-sizing: border-box;
+  min-width: 0;
+  max-width: 100%;
+  min-height: var(--control-height-sm);
+  color: var(--foreground);
+  font-size: var(--type-body);
+  line-height: var(--leading-ui);
+}
+
+/* The glyph at the start of a row: a document's mark in its hue, a file, the page being read. */
+.chat-chip-glyph {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  color: var(--muted-foreground);
+}
+
+.chat-chip-glyph > svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* An image chip shows the picture itself, 32px square. */
+.chat-chip-thumb {
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  border-radius: 4px;
+  object-fit: cover;
+}
+
+/* The label: a file's name, a document's name, or a selection's quoted start. It is the part of
+ * the row that gives way, cut with an ellipsis, and never under eight characters. Its shrink
+ * factor is a hundred times the source's, so the row's missing width comes out of the label
+ * first; the source shortens only once the label stands at its eight characters. */
+.chat-chip-open,
+.chat-chip-label {
+  flex: 0 100 auto;
+  min-width: 8ch;
+  overflow: hidden;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--foreground);
+  font: inherit;
+  text-align: start;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-chip-open {
+  cursor: pointer;
+}
+
+.chat-chip-open:hover {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* A quoted label holds its closing mark in an element of its own that never shrinks, and only the
+ * words before it are cut, so a quote the row cannot hold reads “…” with both marks and the
+ * ellipsis inside them. */
+.chat-chip-open[data-quoted],
+.chat-chip-label[data-quoted] {
+  display: inline-flex;
+  align-items: baseline;
+}
+
+.chat-chip-quote {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-chip-quote-mark {
+  flex-shrink: 0;
+}
+
+/* A selection's source, a file's size: secondary text on the row's one line, after the label.
+ * The source keeps its natural width up to 45% of the row; it gives way only after the label
+ * (see above) and keeps at least six characters. */
+.chat-chip-source,
+.chat-chip-size {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted-foreground);
+  font-size: var(--type-ui);
+  font-weight: 400;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-chip-source {
+  min-width: 6ch;
+  max-width: 45%;
+}
+
+.chat-chip-size {
+  flex-shrink: 0;
+}
+
+/* "△ changed" stays one text run (its tests read it whole), so it carries weight, not a tone. */
+.chat-chip-note,
+.chat-chip-state {
+  flex-shrink: 0;
+  color: var(--muted-foreground);
+  font-size: var(--type-ui);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.chat-chip-lock {
+  display: inline-flex;
+  flex-shrink: 0;
+  color: var(--muted-foreground);
+}
+
+/* The remove control, the same on every row: a 24px quiet square at the row's end. */
+.chat-chip-remove,
+.chat-context-dismiss {
+  display: inline-grid;
+  flex-shrink: 0;
+  place-items: center;
+  width: var(--control-height-sm);
+  height: var(--control-height-sm);
+  margin-inline-start: auto;
+  padding: 0;
+  border: 0;
+  border-radius: var(--corner-control);
+  background: transparent;
+  color: var(--muted-foreground);
+  cursor: pointer;
+  transition:
+    background-color 120ms,
+    color 120ms;
+}
+
+.chat-chip-remove:hover,
+.chat-context-dismiss:hover {
+  background: var(--muted);
+  color: var(--foreground);
+}
+
+.chat-chip-remove:focus-visible,
+.chat-context-dismiss:focus-visible,
+.chat-chip-open:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+/* "Now viewing section_05": the page being read, as the first row of the set. The words are
+ * muted and the name is the row's label. */
+.chat-context-chip > .chat-chip-label {
+  color: var(--muted-foreground);
+}
+
+.chat-context-name {
+  color: var(--foreground);
+  font-weight: 500;
+}
+
+/* The rows' own lines of status: "+N more", "Uploading 2 files…", a refused file. */
+.chat-chip-more,
+.chat-chip-status {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--control-height-sm);
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: var(--type-ui);
+  line-height: var(--leading-ui);
+}
+
+.chat-chip-status[data-tone="error"] {
+  color: var(--foreground);
+}
+
+.chat-chip-status[data-tone="error"]::before {
+  content: "⚠" / "";
+  color: var(--tone-blocked);
+}
+
+/* A hovered chip's full quote floats over the panel. */
+.chat-passage {
+  position: fixed;
+  z-index: 50;
+  max-width: 24rem;
+  max-height: 16rem;
+  overflow: auto;
+  padding: var(--space-3);
+  border-radius: var(--corner-surface);
+  background: var(--popover);
+  color: var(--popover-foreground);
+  font-size: var(--type-body);
+  line-height: var(--leading-body);
+  white-space: pre-wrap;
+  box-shadow:
+    0 0 0 1px color-mix(in oklch, var(--foreground) 10%, transparent),
+    var(--dialog-shadow);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-chip-remove,
+  .chat-context-dismiss {
+    transition: none;
+  }
+}

@@ -25,11 +25,11 @@ function ToolStatus({ status }: { status: ToolItem["status"] }): JSX.Element {
     <span className="chat-tool-status" data-status={status}>
       {status === "pending" && (
         <span aria-hidden="true">
-          <BusyRoundel busy size={12} busyLabel="" />
+          <BusyRoundel busy size={13} busyLabel="" idleLabel="" />
         </span>
       )}
-      {status === "error" && <X size={12} aria-hidden="true" />}
-      {status === "done" && <Check size={12} aria-hidden="true" />}
+      {status === "error" && <X size={13} aria-hidden="true" />}
+      {status === "done" && <Check size={13} aria-hidden="true" />}
       {STATUS_WORD[status]}
     </span>
   );
@@ -53,7 +53,7 @@ function ToolOutput({
       {patch ? (
         <PatchView patch={shown} />
       ) : (
-        <pre className="whitespace-pre-wrap break-words font-mono text-xs leading-relaxed">
+        <pre className="chat-tool-pre">
           <Untrusted text={shown} />
         </pre>
       )}
@@ -73,7 +73,7 @@ function ToolDetails({ item }: { item: ToolItem }): JSX.Element {
     <div className="chat-tool-details">
       <div>
         <p className="chat-tool-details-label">Input</p>
-        <pre className="whitespace-pre-wrap break-words font-mono text-xs leading-relaxed">
+        <pre className="chat-tool-pre">
           <Untrusted text={item.input} />
         </pre>
       </div>
@@ -123,7 +123,7 @@ function ToolHeader({
       className="chat-tool-head"
       onClick={onToggle}
     >
-      <ChevronRight size={12} aria-hidden="true" className="chat-tool-chevron" />
+      <ChevronRight size={13} aria-hidden="true" className="chat-tool-chevron" />
       <span className="flex min-w-0 flex-1 items-baseline gap-2">
         <span className="chat-tool-name">
           <Untrusted

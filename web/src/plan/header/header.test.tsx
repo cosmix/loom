@@ -1,7 +1,7 @@
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { Provider } from "jotai/react";
 import { createStore } from "jotai/vanilla";
-import { MemoryRouter } from "react-router";
+import { MemoryRouter, useLocation } from "react-router";
 import { afterEach, expect, it, vi } from "vitest";
 
 import checklistFixture from "@/plan/api/fixtures/checklist.json";
@@ -13,9 +13,13 @@ import { activeFeatureAtom, checklistAtom, kickoffAtom, serverInfoAtom } from "@
 const NEXT_STEP = "Section 05 is the next product spec document to write.";
 const OFFER_LABEL = checklistFixture.checklists[0]!.primary!.label;
 
+// The real HeaderExtras draws the Chat button on every route that mounts a panel and hides it
+// from 1280px; the stand-in keeps the route rule, which is what this file checks.
 vi.mock("@/plan/header-extras", () => ({
-  HeaderExtras: ({ compact }: { compact: boolean }) =>
-    compact ? <button type="button">Chat</button> : null,
+  HeaderExtras: () => {
+    const { pathname } = useLocation();
+    return pathname === "/" || pathname === "/new" ? null : <button type="button">Chat</button>;
+  },
 }));
 vi.mock("@/plan/header/name-prompt", () => ({ useResendStoredName: () => {} }));
 vi.mock("@/plan/header/overflow", () => ({ Overflow: () => <button type="button">More</button> }));

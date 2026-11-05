@@ -11,7 +11,6 @@ import { startChat } from "./commands";
 import { sessionAtom } from "./model";
 import { offerErrorAtom } from "./offer-error";
 import { confirmEndFirst, elsewhereRefusal, endCurrentChat, startError } from "./offer-flow";
-import { panelCollapsedAtom } from "./prefs";
 import {
   elsewhereSessionAtom,
   isActiveSession,
@@ -30,7 +29,6 @@ async function beginChat(store: Store, owner: StartOwner, signal: AbortSignal): 
   if (isActiveSession(current)) await endCurrentChat(store, current, signal, "start a new chat");
   if (signal.aborted) return;
   await startChat(store, null, null, [], owner.feature, owner.plan);
-  store.set(panelCollapsedAtom, false);
   store.set(chatSheetOpenAtom, true);
 }
 

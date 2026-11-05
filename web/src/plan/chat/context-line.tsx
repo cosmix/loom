@@ -7,11 +7,12 @@ import { contextDismissedAtom, contextDocumentAtom } from "./viewed-document";
 import { Untrusted, visibleControls } from "./visible-controls";
 
 /**
- * What the chat knows the user is reading, as a quiet chip inside the composer box: "About
+ * What the chat knows the user is reading, as the first row of the composer's attachments: "About
  * section_05", or "Now viewing section_05" while a chat runs, where the next message carries the
- * page. It follows the route, is not a live region (it changes on every navigation), and goes
- * away with its dismiss button until the user moves to another document. Its name is
- * "Viewing <name>", which the visible words do not repeat.
+ * page. It shares the attachment rows' anatomy (a glyph, the label, the remove at the end). It
+ * follows the route, is not a live region (it changes on every navigation), and goes away with
+ * its dismiss button until the user moves to another document. Its name is "Viewing <name>",
+ * which the visible words do not repeat.
  */
 export function ContextLine(): JSX.Element | null {
   const viewed = useAtomValue(contextDocumentAtom);
@@ -24,8 +25,10 @@ export function ContextLine(): JSX.Element | null {
       aria-label={`Viewing ${visibleControls(viewed.name)}`}
       className="chat-context-chip"
     >
-      <FileText size={13} aria-hidden="true" />
-      <span>
+      <span aria-hidden="true" className="chat-chip-glyph">
+        <FileText />
+      </span>
+      <span className="chat-chip-label" title={visibleControls(viewed.name)}>
         {running ? "Now viewing" : "About"}{" "}
         <span className="chat-context-name">
           <Untrusted text={viewed.name} />
@@ -37,7 +40,7 @@ export function ContextLine(): JSX.Element | null {
         aria-label="Dismiss context"
         onClick={() => dismiss({ path: viewed.path })}
       >
-        <X size={13} aria-hidden="true" />
+        <X size={14} aria-hidden="true" />
       </button>
     </div>
   );

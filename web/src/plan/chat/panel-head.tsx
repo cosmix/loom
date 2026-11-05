@@ -1,12 +1,13 @@
 import { useAtomValue, useSetAtom } from "jotai";
-import { MoreHorizontal, PanelRightClose, X } from "lucide-react";
+import { MoreHorizontal, X } from "lucide-react";
+import { useEffect, useRef, type RefObject } from "react";
 
 import type { SessionView } from "@/plan/api/schema-chat";
 import { STATE_NAME } from "./chat-state-glyph";
 import { EndChatMenuItem, useCanEndChat } from "./end-chat";
-import { panelCollapsedAtom } from "./prefs";
 import { panelSessionAtom } from "./session-home";
 import { chatSheetOpenAtom } from "./sheet-state";
+import { StateGlyph } from "./state-line";
 import { NewChatButton } from "./start-chat";
 import { useSessionBrief, type BriefState } from "./use-session-brief";
 import { Untrusted, visibleControls } from "./visible-controls";
@@ -25,30 +26,76 @@ function headTitle(session: SessionView | null, brief: BriefState): string {
   return /^\p{Lu}/u.test(session.name) ? session.name : "Chat";
 }
 
-/** The state as a glyph and a word; the LED takes the state's tone, the word stays muted. */
+/** The state as a glyph and a word; busy states draw the roundel, the others the LED or a mark. */
 function StateWord({ state }: { state: SessionView["state"] }) {
   return (
     <span className="chat-state plan-status" data-state={state}>
-      <span className="chat-led" aria-hidden="true" />
+      <StateGlyph state={state} />
       {STATE_NAME[state]}
     </span>
   );
 }
 
 /**
+ * Closes an open `<details>` menu on Escape (focus returns to its summary) and on a pointer-down
+ * outside it. Escape is taken in the capture phase on the window, ahead of a dialog's own Escape,
+ * so closing the menu inside the chat sheet leaves the sheet open. Only an Escape pressed inside
+ * the menu is taken: with focus elsewhere it belongs to edit mode, the help search or a popover.
+ */
+function useDetailsDismiss(menu: RefObject<HTMLDetailsElement | null>, active: boolean): void {
+  useEffect(() => {
+    const details = menu.current;
+    if (!active || !details) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || !details.open) return;
+      if (!(event.target instanceof Node) || !details.contains(event.target)) return;
+      event.stopPropagation();
+      details.open = false;
+      details.querySelector("summary")?.focus();
+    };
+    const onPointerDown = (event: PointerEvent) => {
+      if (details.open && event.target instanceof Node && !details.contains(event.target))
+        details.open = false;
+    };
+    window.addEventListener("keydown", onKeyDown, true);
+    document.addEventListener("pointerdown", onPointerDown);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown, true);
+      document.removeEventListener("pointerdown", onPointerDown);
+    };
+  }, [menu, active]);
+}
+
+/**
  * The ⋯ menu exists only while a chat is live, and holds End chat alone. Starting fresh is End chat,
- * then New chat: New chat is never drawn beside a live chat.
+ * then New chat: New chat is never drawn beside a live chat. The menu closes once the chat has
+ * ended; a refused or failed End chat leaves it open, since its reason or error is drawn inside.
+ * Focus leaving the menu closes it too.
  */
 function ChatMenu() {
   const canEnd = useCanEndChat();
+  const menu = useRef<HTMLDetailsElement>(null);
+  useDetailsDismiss(menu, canEnd);
   if (!canEnd) return null;
   return (
-    <details className="chat-menu relative">
+    <details
+      ref={menu}
+      className="chat-menu relative"
+      onBlur={(event) => {
+        const next = event.relatedTarget;
+        if (next instanceof Node && !event.currentTarget.contains(next))
+          event.currentTarget.open = false;
+      }}
+    >
       <summary aria-label="Chat menu" className="chat-head-button">
         <MoreHorizontal size={15} aria-hidden="true" />
       </summary>
       <div className="chat-menu-pop">
-        <EndChatMenuItem />
+        <EndChatMenuItem
+          onEnded={() => {
+            if (menu.current) menu.current.open = false;
+          }}
+        />
       </div>
     </details>
   );
@@ -61,9 +108,7 @@ function ChatMenu() {
  */
 export function PanelHead({ sheet }: { sheet: boolean }) {
   const session = useAtomValue(panelSessionAtom);
-  const setCollapsed = useSetAtom(panelCollapsedAtom);
   const setOpen = useSetAtom(chatSheetOpenAtom);
-  const Close = sheet ? X : PanelRightClose;
   const title = headTitle(session, useSessionBrief(session?.id ?? null));
   return (
     <header className="chat-head">
@@ -80,14 +125,16 @@ export function PanelHead({ sheet }: { sheet: boolean }) {
       <div className="chat-head-side">
         {session ? <StateWord state={session.state} /> : <NewChatButton />}
         <ChatMenu />
-        <button
-          type="button"
-          className="chat-head-button"
-          aria-label={sheet ? "Close chat" : "Collapse chat"}
-          onClick={() => (sheet ? setOpen(false) : setCollapsed(true))}
-        >
-          <Close size={15} aria-hidden="true" />
-        </button>
+        {sheet && (
+          <button
+            type="button"
+            className="chat-head-button"
+            aria-label="Close chat"
+            onClick={() => setOpen(false)}
+          >
+            <X size={15} aria-hidden="true" />
+          </button>
+        )}
       </div>
     </header>
   );

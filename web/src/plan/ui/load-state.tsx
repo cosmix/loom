@@ -3,8 +3,8 @@ import { InboxIcon, SearchXIcon } from "lucide-react";
 import { EmptyState } from "@/aurora-ui/feedback/EmptyState";
 import { HazardPanel } from "@/aurora-ui/feedback/HazardPanel";
 import { Button } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
 import { Untrusted } from "@/plan/chat/visible-controls";
+import { BusyText } from "@/plan/ui/busy-text";
 
 interface LoadStateProps {
   state: "loading" | "empty" | "not_found" | "error";
@@ -19,9 +19,11 @@ export function LoadState({ state, title, message, action }: LoadStateProps) {
   const text = message ? <Untrusted text={message} /> : undefined;
 
   if (state === "loading") {
+    // The title is the one announcement (the roundel is hidden), set where the content will start.
+    const label = title ?? "Loading";
     return (
-      <div role="status" aria-label={title ?? "Loading"}>
-        <Skeleton className="h-24 w-full" />
+      <div role="status" aria-label={label}>
+        <BusyText className="plan-empty">{label}</BusyText>
         {text && <p>{text}</p>}
         {button}
       </div>

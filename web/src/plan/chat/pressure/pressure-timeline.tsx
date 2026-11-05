@@ -81,7 +81,7 @@ function Row({
         {text}
         <span className="sr-only">{state}</span>
       </span>
-      <span className="font-mono text-[11.5px] text-muted-foreground">{time}</span>
+      <span className="font-mono text-xs text-muted-foreground">{time}</span>
       {children && (
         <div className="col-start-2 col-end-4 grid min-w-0 gap-1.5 pb-1">{children}</div>
       )}
@@ -89,8 +89,7 @@ function Row({
   );
 }
 
-const ROW_GRID =
-  "grid grid-cols-[20px_minmax(0,1fr)_auto] items-center gap-x-2 gap-y-1 text-[12.5px]";
+const ROW_GRID = "grid grid-cols-[20px_minmax(0,1fr)_auto] items-center gap-x-2 gap-y-1 text-xs";
 // The server accepts 1 to 10 rounds (the form offers 1 to 3); the cap keeps a malformed count in
 // a snapshot from queuing placeholder rows without end.
 const MAX_QUEUED_ROUNDS = 10;
@@ -168,7 +167,7 @@ function RoundRows({
 }): JSX.Element {
   return (
     <section data-pressure-round={round} className="grid gap-0.5">
-      <p className="text-[10.5px] font-semibold tracking-[0.12em] text-muted-foreground uppercase">
+      <p className="text-xs font-semibold tracking-[0.12em] text-muted-foreground uppercase">
         Round {round}
       </p>
       {STEP_ORDER.flatMap((kind) => {

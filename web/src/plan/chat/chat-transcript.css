@@ -1,8 +1,9 @@
 /* The transcript's parts: turns, the user's words, the assistant's prose, notices and tool
  * runs. Imported by chat-surface.css; see its header for why these rules are unlayered.
  * Every size is set here, on classes the transcript carries wherever it mounts (the panel, the
- * kickoff screen, the help scene), so it never shrinks outside the panel. Nothing in it is set
- * below --type-ui: the user's words are --type-body, the assistant's prose the reading face.
+ * kickoff screen, the help scene), so it never shrinks outside the panel. Chrome is --type-body,
+ * secondary text (a time, a control) --type-ui, the user's words --type-title and the assistant's
+ * prose the reading face at 16px. Nothing is set below 13px.
  */
 
 .chat-panel-middle {
@@ -16,7 +17,7 @@
   padding: var(--space-4) var(--chat-gutter) var(--space-5);
   color: var(--foreground);
   font-family: var(--font-sans);
-  font-size: var(--type-ui);
+  font-size: var(--type-body);
   line-height: var(--leading-body);
 }
 
@@ -60,7 +61,7 @@
   border-radius: var(--corner-control);
   background: transparent;
   color: var(--muted-foreground);
-  font-size: var(--type-ui);
+  font-size: var(--type-body);
   text-align: start;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -90,7 +91,7 @@
   border-radius: 999px;
   background: var(--card);
   color: var(--foreground);
-  font-size: var(--type-ui);
+  font-size: var(--type-body);
   font-weight: 500;
   transform: translateX(-50%);
   cursor: pointer;
@@ -118,7 +119,7 @@
   border-inline-start: 2px solid var(--border);
   color: var(--foreground);
   font-family: var(--font-sans);
-  font-size: var(--type-body);
+  font-size: var(--type-title);
   font-weight: 500;
   line-height: var(--leading-body);
 }
@@ -134,7 +135,7 @@
   margin: 0;
   color: var(--muted-foreground);
   font-family: var(--font-reading);
-  font-size: var(--type-body);
+  font-size: var(--type-title);
   font-weight: 400;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 3;
@@ -146,7 +147,7 @@
   justify-content: space-between;
   gap: var(--space-2);
   color: var(--muted-foreground);
-  font-size: var(--type-ui);
+  font-size: var(--type-body);
   font-weight: 400;
 }
 
@@ -160,11 +161,11 @@
 
 /* ── The assistant's prose ─────────────────────────────────────────────────── */
 
-/* The reading face, one size over the chrome: a serif at the chrome's 14px reads small. */
+/* The reading face, two sizes over the chrome: a serif at the chrome's 14px reads small. */
 .chat-assistant-text .md {
   max-width: min(100%, 62ch);
   font-family: var(--font-reading);
-  font-size: 15px;
+  font-size: 16px;
   line-height: 1.55;
 }
 
@@ -175,7 +176,7 @@
 .chat-thinking {
   margin: 0;
   color: var(--muted-foreground);
-  font-size: var(--type-ui);
+  font-size: var(--type-body);
 }
 
 /* A notice is a centred muted line. A stop (auto mode, interrupt) is drawn as a break in the
@@ -187,7 +188,7 @@
   gap: var(--space-3);
   margin: 0;
   color: var(--muted-foreground);
-  font-size: var(--type-ui);
+  font-size: var(--type-body);
 }
 
 .chat-notice-item > span {
@@ -239,8 +240,18 @@
 .chat-tool {
   min-width: 0;
   color: var(--muted-foreground);
-  font-size: var(--type-ui);
+  font-size: var(--type-body);
   line-height: var(--leading-ui);
+}
+
+/* A tool's input, patch and result: mono at the secondary size, wrapped. */
+.chat-tool-pre {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--type-ui);
+  line-height: var(--leading-body);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .chat-tool-head {
@@ -328,11 +339,18 @@
   min-height: var(--control-height-sm);
   border-radius: var(--corner-control);
   color: var(--muted-foreground);
-  font-size: var(--type-ui);
+  font-size: var(--type-body);
   font-weight: 500;
   line-height: var(--leading-ui);
   list-style: none;
   cursor: pointer;
+}
+
+/* The busy mark after the fold's words while one of its tools still runs. */
+.chat-tool-fold-busy {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
 }
 
 .chat-tool-fold > summary::-webkit-details-marker {

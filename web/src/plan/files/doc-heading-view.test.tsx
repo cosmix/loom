@@ -10,7 +10,6 @@ import { pendingAttachmentsAtom } from "@/plan/attachments";
 import { focusComposerAtom } from "@/plan/chat/composer-hooks";
 import { snapshotAtom } from "@/plan/chat/model";
 import { offerErrorAtom } from "@/plan/chat/offer-error";
-import { panelCollapsedAtom } from "@/plan/chat/prefs";
 import { pressureRunAtom } from "@/plan/chat/pressure/use-pressure";
 import { screenAtom } from "@/plan/chat/session-home";
 import { chatSheetOpenAtom } from "@/plan/chat/sheet-state";
@@ -346,7 +345,6 @@ describe("FileDocHeading", () => {
   it("Discuss attaches the whole document by path and opens and focuses chat", () => {
     const doc = makeDoc({ text: "📝".repeat(2_001) });
     const store = authorStore();
-    store.set(panelCollapsedAtom, true);
     mount(doc, store);
 
     fireEvent.click(screen.getByRole("button", { name: "Discuss" }));
@@ -362,7 +360,6 @@ describe("FileDocHeading", () => {
         hash: doc.hash,
       },
     ]);
-    expect(store.get(panelCollapsedAtom)).toBe(false);
     expect(store.get(chatSheetOpenAtom)).toBe(true);
     expect(store.get(focusComposerAtom)).toBe(true);
   });
@@ -376,7 +373,6 @@ describe("FileDocHeading", () => {
     });
     store.set(snapshotAtom, { session, turns: [], queue: [], previous: null });
     store.set(screenAtom, { feature: "beta", plan: null });
-    store.set(panelCollapsedAtom, true);
     mount(makeDoc(), store);
 
     fireEvent.click(screen.getByRole("button", { name: "Discuss" }));
@@ -384,7 +380,6 @@ describe("FileDocHeading", () => {
     expect(store.get(offerErrorAtom)).toBe("Finish the session in alpha first.");
     expect(store.get(pendingAttachmentsAtom)).toEqual([]);
     expect(store.get(focusComposerAtom)).toBe(false);
-    expect(store.get(panelCollapsedAtom)).toBe(false);
     expect(store.get(chatSheetOpenAtom)).toBe(true);
     // The same click attaches once the chat is on this screen, so the refusal above is the guard.
     store.set(screenAtom, { feature: "alpha", plan: null });

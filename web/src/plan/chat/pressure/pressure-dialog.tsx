@@ -1,5 +1,5 @@
 import { useAtomValue, useStore } from "jotai";
-import { useEffect, useId, useRef, useState, type FormEvent } from "react";
+import { useEffect, useId, useRef, useState, type FormEvent, type ReactElement } from "react";
 
 import { FlaskConical, Lock } from "lucide-react";
 
@@ -10,6 +10,7 @@ import { sessionAtom } from "@/plan/chat/model";
 import { isActiveSession } from "@/plan/chat/session-home";
 import { pressureDialogAtom } from "@/plan/offers/actions-pressure";
 import { ActionError } from "@/plan/ui/action-error";
+import { BusyText } from "@/plan/ui/busy-text";
 import { DisabledReason } from "@/plan/ui/disabled-reason";
 import { LoadState } from "@/plan/ui/load-state";
 import type { Store } from "@/state/store";
@@ -108,7 +109,7 @@ function PressureForm({ options, initialPlan, close }: PressureFormProps) {
             setRounds={(rounds) => setSlots({ ...slots, rounds })}
           />
           <ModelRows options={options} slots={slots} setSlots={setSlots} />
-          <p className="flex items-center gap-2 text-[12.5px] text-muted-foreground">
+          <p className="flex items-center gap-2 text-[13px] text-muted-foreground">
             <span
               aria-hidden="true"
               className="size-1.5 shrink-0 rounded-full bg-(--tone-completed)"
@@ -123,7 +124,7 @@ function PressureForm({ options, initialPlan, close }: PressureFormProps) {
         {error !== null && <ActionError message={error} />}
       </fieldset>
       <PressureFooter
-        reason={reason ?? (pending ? "Starting pressure test…" : null)}
+        reason={reason ?? (pending ? <BusyText>Starting pressure test…</BusyText> : null)}
         close={close}
         onStart={() => form.current?.requestSubmit()}
       />
@@ -138,13 +139,13 @@ function PressureFooter({
   close,
   onStart,
 }: {
-  reason: string | null;
+  reason: string | ReactElement | null;
   close: () => void;
   onStart: () => void;
 }) {
   return (
     <div className="flex flex-wrap items-center gap-2 border-t border-hairline bg-background px-5 py-3.5">
-      <p className="mr-auto flex items-center gap-1.5 text-xs text-muted-foreground">
+      <p className="mr-auto flex items-center gap-1.5 text-[13px] text-muted-foreground">
         <Lock aria-hidden="true" className="size-3.5" />
         Holds authoring until it finishes
       </p>
@@ -244,7 +245,7 @@ function ModelRows({
         values={row.models}
         onChange={(value) => setSlots({ ...slots, [row.model]: value })}
       />
-      <span aria-hidden="true" className="font-mono text-[11.5px] text-muted-foreground">
+      <span aria-hidden="true" className="font-mono text-[13px] text-muted-foreground">
         ·
       </span>
       <OptionSelect
@@ -290,7 +291,7 @@ function OptionSelect({
         name={name}
         value={value}
         required
-        className="h-7 w-full rounded-[8px] border border-hairline bg-background px-2 font-mono text-[11.5px] focus-visible:outline-2 focus-visible:outline-ring"
+        className="h-7 w-full rounded-[8px] border border-hairline bg-background px-2 font-mono text-[13px] focus-visible:outline-2 focus-visible:outline-ring"
         onChange={(event) => onChange(event.currentTarget.value)}
       >
         {values.map((option) => (

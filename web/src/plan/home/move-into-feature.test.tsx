@@ -5,8 +5,8 @@ import { describe, expect, it } from "vitest";
 
 import type { ProjectChecklistView } from "@/plan/api/schema";
 import { snapshotAtom } from "@/plan/chat/model";
-import { panelCollapsedAtom } from "@/plan/chat/prefs";
 import { screenAtom } from "@/plan/chat/session-home";
+import { chatSheetOpenAtom } from "@/plan/chat/sheet-state";
 import { harness, installStartChatLifecycle, session } from "@/plan/chat/start-chat-test-kit";
 import { MoveIntoFeatureDialog } from "@/plan/home/move-into-feature";
 import { FEATURE_NAME_HINT } from "@/plan/new/feature-name";
@@ -296,9 +296,8 @@ describe("MoveIntoFeatureDialog", () => {
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   });
 
-  it("a dialog closed during the start reveals no panel", async () => {
+  it("a dialog closed during the start opens no sheet", async () => {
     const h = mount();
-    h.store.set(panelCollapsedAtom, true);
     enterName("search");
     fireEvent.click(confirmButton());
 
@@ -306,6 +305,6 @@ describe("MoveIntoFeatureDialog", () => {
     h.result();
     await act(async () => {});
 
-    expect(h.store.get(panelCollapsedAtom)).toBe(true);
+    expect(h.store.get(chatSheetOpenAtom)).toBe(false);
   });
 });
