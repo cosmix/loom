@@ -246,7 +246,7 @@ it("the composer invites a question about the feature only where the screen has 
   expect(box().placeholder).toBe("Ask about this feature");
 
   view(h, "05");
-  expect(box().placeholder).toBe("Ask about section_05, or say what to change");
+  expect(box().placeholder).toBe("Ask about section_05…");
   act(() => h.store.set(contextDismissedAtom, { path: pathOf("05") }));
   expect(box().placeholder).toBe("Ask about this feature");
 });

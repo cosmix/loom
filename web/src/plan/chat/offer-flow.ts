@@ -2,7 +2,8 @@ import type { SessionView } from "@/plan/api/schema-chat";
 import { authoringAtom, connectionAtom } from "@/plan/state/atoms";
 import type { Store } from "@/state/store";
 import { endChat, startChat } from "./commands";
-import { sessionAtom } from "./model";
+import { userWrote } from "./closing";
+import { sessionAtom, turnsAtom } from "./model";
 import { offerErrorAtom } from "./offer-error";
 import {
   elsewhereSessionAtom,
@@ -29,8 +30,14 @@ export function noPanelRefusal(store: Store): string | null {
   return elsewhere ? elsewhereRefusal(elsewhere) : "Finish the open chat first.";
 }
 
-/** Asks before a new chat replaces the running one on this screen. */
-export function confirmEndFirst(): boolean {
+/**
+ * Asks before a new chat replaces the running one on this screen. It asks nothing when the chat is
+ * already ending or the user never wrote to it: no closing write runs, so no open questions are
+ * written and there is nothing to warn about.
+ */
+export function confirmEndFirst(store: Store): boolean {
+  const running = store.get(sessionAtom);
+  if (running?.state === "ending" || !userWrote(store.get(turnsAtom))) return true;
   return window.confirm(END_FIRST_CONFIRM);
 }
 
@@ -113,7 +120,7 @@ export function createOfferStarter(store: Store): {
       return;
     }
     const running = store.get(sessionAtom);
-    if (isActiveSession(running) && !confirmEndFirst()) return;
+    if (isActiveSession(running) && !confirmEndFirst(store)) return;
     const controller = new AbortController();
     request = controller;
     try {

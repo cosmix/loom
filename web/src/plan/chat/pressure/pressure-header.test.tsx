@@ -124,12 +124,12 @@ it("confirms Stop and posts to the whole-run endpoint", async () => {
   );
 });
 
-it("gives Stop its danger look as separate class tokens", () => {
+it("draws Stop as the project's secondary button, the tone on its glyph only", () => {
   mount();
-  const look = screen.getByRole("button", { name: "Stop" }).closest(".ml-auto");
-  const tokens = [...(look?.classList ?? [])];
-  expect(tokens).toContain("[&_button]:text-(--tone-blocked)");
-  expect(tokens.filter((token) => token.startsWith("[&_button]:hover:bg-"))).toHaveLength(1);
+  const stop = screen.getByRole("button", { name: "Stop" });
+  expect(stop.getAttribute("data-look")).toBe("secondary");
+  expect(stop.closest(".ml-auto")?.className).toBe("ml-auto");
+  expect(stop.querySelector("svg")?.getAttribute("class")).toContain("text-(--tone-blocked)");
 });
 
 it("sends no request when Stop is declined", () => {

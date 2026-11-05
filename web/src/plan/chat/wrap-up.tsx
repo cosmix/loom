@@ -4,7 +4,6 @@ import { Link } from "react-router";
 
 import type { SessionView } from "@/plan/api/schema-chat";
 import { CHANGES_PATH } from "@/plan/review/changed-since";
-import { plural } from "@/plan/ui/plural";
 import { RoundelGlyph } from "@/plan/ui/roundel-glyph";
 import type { ClosingTick, LeftBehind } from "./closing";
 import { StartingBrief } from "./start-chat";
@@ -48,9 +47,9 @@ export function WrapUpCard({ ticks }: { ticks: ClosingTick[] }): JSX.Element {
   );
 }
 
-/** "documents changed", "decision": the noun after the count, which the pill sets apart. */
+/** "documents", "decision": the noun after the count, which the pill sets apart. */
 function noun(count: number, singular: string): string {
-  return plural(count, singular).replace(/^\d+ /, "");
+  return count === 1 ? singular : `${singular}s`;
 }
 
 function Counts({ summary }: { summary: LeftBehind }): JSX.Element | null {

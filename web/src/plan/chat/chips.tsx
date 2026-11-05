@@ -12,7 +12,6 @@ import { treeAtom } from "@/plan/files/atoms";
 import { getTurnSections, type TurnSectionsResponse } from "@/plan/review/api";
 import { hashesAtom } from "@/plan/review/live";
 import { connectionEpochAtom } from "@/plan/state/atoms";
-import { BusyText } from "@/plan/ui/busy-text";
 import { OTHER_GLYPHS } from "@/plan/ui/glyphs";
 import { chipLabel, chipSource, summaryIdOf, type LabelInput } from "./chip-label";
 import { ChipMark } from "./chip-mark";
@@ -239,7 +238,8 @@ function UploadNotes() {
     <>
       {busy > 0 && (
         <p role="status" className="chat-chip-status">
-          <BusyText>Uploading {busy === 1 ? "a file" : `${busy} files`}…</BusyText>
+          {/* Words only: a turn's activity roundel may already be the pane's one. */}
+          Uploading {busy === 1 ? "a file" : `${busy} files`}…
         </p>
       )}
       {problems.map((problem, index) => (
@@ -248,6 +248,27 @@ function UploadNotes() {
         </p>
       ))}
     </>
+  );
+}
+
+function MoreButton({
+  expanded,
+  onClick,
+  children,
+}: {
+  expanded: boolean;
+  onClick: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      className="chat-link-button chat-chip-more"
+      aria-expanded={expanded}
+      onClick={onClick}
+    >
+      {children}
+    </button>
   );
 }
 
@@ -274,25 +295,15 @@ export function PendingChips() {
           />
         ))}
         {count < pending.length && (
-          <button
-            type="button"
-            className="chat-link-button chat-chip-more"
-            aria-expanded={false}
-            onClick={() => setExpanded(true)}
-          >
+          <MoreButton expanded={false} onClick={() => setExpanded(true)}>
             +{pending.length - count} more
-          </button>
+          </MoreButton>
         )}
       </div>
       {expanded && pending.length > 4 && (
-        <button
-          type="button"
-          className="chat-link-button chat-chip-more"
-          aria-expanded={true}
-          onClick={() => setExpanded(false)}
-        >
+        <MoreButton expanded onClick={() => setExpanded(false)}>
           Show fewer attachments
-        </button>
+        </MoreButton>
       )}
       {note && (
         <p role="status" className="chat-chip-status">
@@ -376,7 +387,7 @@ export function SentChips({ item, turn }: { item: Extract<Item, { type: "user" }
       })}
       {!turn.open && !result && (
         <p role="status" className="chat-chip-status">
-          <BusyText>Checking attached passages…</BusyText>
+          Checking attached passages…
         </p>
       )}
       {result?.error && <ErrorLine role="status" text={result.error} />}

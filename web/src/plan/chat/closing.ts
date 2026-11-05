@@ -14,10 +14,10 @@ const CLOSING_INFO = "loom-closing";
 const WRITE_TOOLS = new Set(["Edit", "Write", "MultiEdit"]);
 
 /** The closing block is read as data: any other key is ignored, long lists are refused whole. */
-const closingBlock = z.object({
-  decisions: z.array(z.string()).max(50),
-  questions: z.array(z.string()).max(50),
-});
+const MAX_ENTRIES = 50;
+const MAX_ENTRY_CHARS = 500;
+const closingEntries = z.array(z.string().max(MAX_ENTRY_CHARS)).max(MAX_ENTRIES);
+const closingBlock = z.object({ decisions: closingEntries, questions: closingEntries });
 
 /** A turn that opens with the closing prompt loom plan sends when the chat ends. */
 export function isClosingTurn(turn: Turn): boolean {
