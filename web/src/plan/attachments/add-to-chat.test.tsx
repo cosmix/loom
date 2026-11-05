@@ -151,11 +151,14 @@ describe("AddToChat", () => {
     const unregister = registerSelectionSecondary((d) => (
       <button type="button">Send {d.text}</button>
     ));
-    mount(storeWith(ada));
-    expect(screen.getByRole("button", { name: "Send words" })).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Add to chat" })).toBeNull();
-    cleanup();
-    unregister();
+    try {
+      mount(storeWith(ada));
+      expect(screen.getByRole("button", { name: "Send words" })).toBeTruthy();
+      expect(screen.queryByRole("button", { name: "Add to chat" })).toBeNull();
+      cleanup();
+    } finally {
+      unregister();
+    }
     const { container } = mount(storeWith(ada));
     expect(container.textContent).toBe("");
   });
@@ -167,5 +170,26 @@ describe("AddToChat", () => {
     cleanup();
     mount(storeWith(null), draft("a".repeat(MAX_ATTACHMENT_BYTES)));
     expect(screen.getByRole("button", { name: "Add to chat" })).toBeTruthy();
+  });
+
+  it("sets the oversize note under the pill, never inside it", () => {
+    const oversize = draft("a".repeat(MAX_ATTACHMENT_BYTES + 1));
+    // Alone: no pill is drawn, the note stands in the group by itself.
+    const { container } = mount(storeWith(null), oversize);
+    expect(container.querySelector(".add-to-chat__pill")).toBeNull();
+    expect(screen.getByRole("note").closest(".add-to-chat")).not.toBeNull();
+    cleanup();
+
+    // Beside a secondary: the pill holds the secondary, the note sits under it.
+    const unregister = registerSelectionSecondary(() => <button type="button">Send</button>);
+    try {
+      mount(storeWith(null), oversize);
+      const pill = screen.getByRole("button", { name: "Send" }).closest(".add-to-chat__pill");
+      expect(pill).not.toBeNull();
+      expect(screen.getByRole("note").closest(".add-to-chat__pill")).toBeNull();
+      expect(screen.queryByRole("button", { name: "Add to chat" })).toBeNull();
+    } finally {
+      unregister();
+    }
   });
 });

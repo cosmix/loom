@@ -18,12 +18,13 @@ export function Name({ name, style }: { name: string; style: NameStyle }) {
 /**
  * A glyph shown in place of its word: the word is read (`.sr-only`, so the link's name and text
  * keep it) and a hover shows it as the browser's tooltip. The wrapper is hidden from assistive
- * technology, so its `title` adds no second announcement.
+ * technology, so its `title` adds no second announcement. A plan's state glyph carries the state
+ * as `data-state`, which spine.css reads to light the done check.
  */
-function Glyph({ icon: Icon, word }: { icon: GlyphIcon; word: string }) {
+function Glyph({ icon: Icon, word, state }: { icon: GlyphIcon; word: string; state?: string }) {
   return (
     <>
-      <span className="plan-spine__glyph" title={word} aria-hidden="true">
+      <span className="plan-spine__glyph" title={word} aria-hidden="true" data-state={state}>
         <Icon />
       </span>
       <span className="sr-only">{word}</span>
@@ -45,12 +46,17 @@ function PressureBadge({ pressure }: { pressure: PlanPressure }) {
 
 /**
  * A note with a glyph (a plan's state) shows the glyph alone, so the slug keeps the row's width
- * (ui/DESIGN.md, Status); a note with none (a section's "not written") stays a word.
+ * (ui/DESIGN.md, Status); a note with none (a section's "not written") stays a word. Only plan
+ * rows have a glyph, so the note it carries is one of the `PlanState` names.
  */
 function Note({ icon, note }: { icon: GlyphIcon | null; note: string }) {
   return (
     <span className="plan-status plan-fine">
-      {icon ? <Glyph icon={icon} word={visibleControls(note)} /> : <Untrusted text={note} />}
+      {icon ? (
+        <Glyph icon={icon} word={visibleControls(note)} state={note} />
+      ) : (
+        <Untrusted text={note} />
+      )}
     </span>
   );
 }

@@ -9,8 +9,8 @@
  *   - an inline run (cited sentences) carries a hairline under each of its sentences, which
  *     turns the hue while one of its own caps is hovered or focused, naming the run that cap
  *     would fold;
- *   - the fold caps sit in the text at both ends of a run, a chevron in the hue on a `--muted`
- *     square.
+ *   - the fold caps sit in the text at both ends of a run: a bare chevron in the hue, no box, that
+ *     brightens and leans the way it points when hovered or focused.
  * The hue is identity (which document), never a status, and `--primary` never appears here.
  */
 
@@ -50,32 +50,49 @@
   border-inline-start: 2px solid var(--run-colour);
 }
 
-/* The fold cap: a chevron in the document's hue on a `--muted` square, in the text at each end
-   of the run, visible at rest; hover and focus deepen the square to `--border`. */
+/* The fold cap: the chevron is the control. A 1.1em chevron in the document's hue at 70%, in the
+   text at each end of the run, with no box, edge or wash at rest or on hover: a square read as a
+   button stuck in the prose. The 1.5em box of padding (never under 24px) is the hit area and
+   keeps the old footprint and `vertical-align`, so the line box does not grow. The box is round,
+   so the focus ring is a circle around the chevron. */
 .concept-run-cap {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  box-sizing: border-box;
   width: 1.5em;
   height: 1.5em;
+  min-width: 24px;
+  min-height: 24px;
   margin: 0 0.15em;
-  padding: 0;
+  padding: 0.2em;
   border: 0;
-  border-radius: 5px;
-  background: var(--muted);
+  border-radius: 999px;
+  background: transparent;
   color: var(--run-colour);
+  opacity: 0.7;
   vertical-align: -0.35em;
   cursor: pointer;
-  transition: background-color 120ms;
+  transition: opacity 120ms;
 }
 
 .concept-run-cap-icon {
-  width: 1em;
-  height: 1em;
+  width: 1.1em;
+  height: 1.1em;
+  transition: transform 120ms;
 }
 
+/* Hovered or focused, the chevron comes to full strength and leans 2px the way it points. */
 .concept-run-cap:is(:hover, :focus-visible) {
-  background: var(--border);
+  opacity: 1;
+}
+
+.concept-run-cap[data-side="start"]:is(:hover, :focus-visible) > .concept-run-cap-icon {
+  transform: translateX(-2px);
+}
+
+.concept-run-cap[data-side="end"]:is(:hover, :focus-visible) > .concept-run-cap-icon {
+  transform: translateX(2px);
 }
 
 .concept-run-cap:focus-visible,
@@ -201,7 +218,12 @@
 @media (prefers-reduced-motion: reduce) {
   .concept-run > .concept-sentence-wrap,
   .concept-run-cap,
+  .concept-run-cap-icon,
   .concept-passage-chip {
     transition: none;
+  }
+
+  .concept-run-cap:is(:hover, :focus-visible) > .concept-run-cap-icon {
+    transform: none;
   }
 }
