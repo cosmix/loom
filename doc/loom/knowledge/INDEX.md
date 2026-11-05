@@ -12,9 +12,9 @@
 | [entry-points.md](entry-points.md) | Key files agents should read first | 83 |
 | [patterns.md](patterns.md) | Architectural patterns discovered in the codebase | 186 |
 | [conventions.md](conventions.md) | Coding conventions discovered in the codebase | 250 |
-| [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 216 |
+| [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 220 |
 | [stack.md](stack.md) | Dependencies, frameworks, and tooling used in the project | 115 |
-| [concerns.md](concerns.md) | Technical debt, warnings, and issues to address | 230 |
+| [concerns.md](concerns.md) | Technical debt, warnings, and issues to address | 234 |
 
 ## Tier 2 — Topics
 
@@ -50,9 +50,9 @@
 | [owned-waits](architecture/owned-waits.md) | One bound wait per session | 72 |
 | [plan-lifecycle-and-fields](architecture/plan-lifecycle-and-fields.md) |  | 257 |
 | [plan-server](architecture/plan-server.md) | Chat | 245 |
-| [planner-feature-screens](architecture/planner-feature-screens.md) | Layout route, spine, offers | 30 |
+| [planner-feature-screens](architecture/planner-feature-screens.md) | Spine | 33 |
 | [planner-uploads-and-drafts](architecture/planner-uploads-and-drafts.md) | Uploads, drafts | 35 |
-| [planner-web-shell](architecture/planner-web-shell.md) | Shell and screens | 71 |
+| [planner-web-shell](architecture/planner-web-shell.md) | Shell | 79 |
 | [planning-document-model](architecture/planning-document-model.md) | Docs | 180 |
 | [planning-guidance](architecture/planning-guidance.md) |  | 35 |
 | [planning-session-bridge](architecture/planning-session-bridge.md) |  | 264 |
@@ -119,7 +119,7 @@
 | [git-and-build-workflow](conventions/git-and-build-workflow.md) |  | 239 |
 | [guidance-channels-and-plugin-scope](conventions/guidance-channels-and-plugin-scope.md) |  | 139 |
 | [model-and-effort-config](conventions/model-and-effort-config.md) | [models] | 143 |
-| [plan-web](conventions/plan-web.md) |  | 91 |
+| [plan-web](conventions/plan-web.md) |  | 100 |
 | [plan-yaml-and-hooks](conventions/plan-yaml-and-hooks.md) |  | 182 |
 | [web-dashboard-typography](conventions/web-dashboard-typography.md) |  | 63 |
 
@@ -164,6 +164,7 @@
 | [pinned-literals-ledgers-and-wiring](mistakes/pinned-literals-ledgers-and-wiring.md) | Pins | 332 |
 | [plan-authoring](mistakes/plan-authoring.md) | Plan gaps | 79 |
 | [plan-server-delivery](mistakes/plan-server-delivery.md) | Delivery | 371 |
+| [planner-polish](mistakes/planner-polish.md) | Polish | 58 |
 | [planner-redesign](mistakes/planner-redesign.md) | Redesign | 80 |
 | [planner-review-fixes](mistakes/planner-review-fixes.md) | Review-fix slips | 48 |
 | [planner-ui-repair](mistakes/planner-ui-repair.md) | Repair | 131 |
@@ -221,7 +222,7 @@
 | [loom-ask-and-read-gate](concerns/loom-ask-and-read-gate.md) | Ask, read gate | 112 |
 | [merge-and-recovery-edge-cases](concerns/merge-and-recovery-edge-cases.md) | Edges | 105 |
 | [plan-chat-followups](concerns/plan-chat-followups.md) | Chat | 40 |
-| [planner-ui-repair-followups](concerns/planner-ui-repair-followups.md) | Repair | 141 |
+| [planner-ui-repair-followups](concerns/planner-ui-repair-followups.md) | Repair | 159 |
 | [planning-document-model-followups](concerns/planning-document-model-followups.md) |  | 143 |
 | [planning-guidance-followups](concerns/planning-guidance-followups.md) |  | 42 |
 | [planning-session-sandbox-limits](concerns/planning-session-sandbox-limits.md) |  | 185 |
