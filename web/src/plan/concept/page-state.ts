@@ -12,7 +12,9 @@ import {
 import { planSocketAtom } from "@/plan/state/atoms";
 import type { Store } from "@/state/store";
 
-import { carryStoredRuns, pageSentences, type CitedLookup } from "./open-state";
+import { summaryIdOfKey } from "./column-context";
+import { columnPage } from "./fragments";
+import { carryStoredRuns, citableSentences, pageSentences, type CitedLookup } from "./open-state";
 import { refreshAllDocViews, refreshDocView } from "./passages";
 import { notesAtom, openRunsAtom } from "./view-state";
 
@@ -74,11 +76,15 @@ export function pageKeyOfSummary(page: ConceptPage, summary: string): string {
   return linkedPageKey(page, summary) ?? summary;
 }
 
-/** Resolves an overview's sentence citations against the summary pages loaded in `store`. */
+/**
+ * Resolves an overview's sentence citations against the summary pages loaded in `store`; the
+ * page's own summary id resolves against `page` itself (a two-level plan cites its detail).
+ */
 export function citedLookup(store: Store, page: ConceptPage): CitedLookup {
+  const own = summaryIdOfKey(page.key);
   return (summary, id) => {
-    const cited = loadedPage(store, pageKeyOfSummary(page, summary));
-    return cited ? pageSentences(cited).find((sentence) => sentence.id === id) : undefined;
+    const cited = summary === own ? page : loadedPage(store, pageKeyOfSummary(page, summary));
+    return cited ? citableSentences(cited).find((sentence) => sentence.id === id) : undefined;
   };
 }
 
@@ -92,7 +98,7 @@ export function citedLookup(store: Store, page: ConceptPage): CitedLookup {
 function restoreStoredRuns(store: Store, key: string, page: ConceptPage): void {
   const stored = store.get(openRunsAtom(key));
   if (stored.length === 0) return;
-  const carried = carryStoredRuns(page, stored, citedLookup(store, page));
+  const carried = carryStoredRuns(columnPage(page), stored, citedLookup(store, page));
   if (!carried) return;
   store.set(openRunsAtom(key), carried.open);
   if (carried.notes.length > 0) store.set(notesAtom(key), (notes) => [...notes, ...carried.notes]);
@@ -189,7 +195,8 @@ export function markOutOfDate(page: ConceptPage, summaries: Set<string>): Concep
       ? { ...block, sentences: block.sentences.map((s) => ({ ...s, marks: s.marks.map(mark) })) }
       : block,
   );
-  return changed ? { ...page, key_chips, blocks } : page;
+  const detail = page.detail?.map((s) => ({ ...s, marks: s.marks.map(mark) }));
+  return changed ? { ...page, key_chips, blocks, ...(detail && { detail }) } : page;
 }
 
 function dashOutOfDate(store: Store, summaries: string[]): void {

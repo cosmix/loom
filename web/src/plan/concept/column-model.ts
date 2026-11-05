@@ -8,6 +8,7 @@ import {
   targetKey,
   type SentenceSite,
 } from "./column-context";
+import { runOfSentence, runSentences } from "./fragments";
 import { anchorKey, pageSentences, type CitedLookup } from "./open-state";
 import type { ColumnTarget, OpenRun } from "./types";
 
@@ -26,15 +27,11 @@ export function passagesRecord(
   const out: Record<string, string[]> = {};
   const keysOf = (sentence: Sentence) => passageAnchors(sentence).map(anchorKey);
   for (const sentence of pageSentences(page)) {
-    if (!open.some((run) => isTop(run, sentence.id) && run.level < 2)) continue;
-    const citations = sentenceCitations(sentence);
-    if (citations.length === 0) out[sentence.id] = keysOf(sentence);
-    for (const citation of citations) {
-      const cited = lookup(citation.summary, citation.id);
-      const isOpen = open.some(
-        (run) => run.level === 1 && run.sentenceId === citation.id && run.parent === sentence.id,
-      );
-      if (cited && isOpen) out[citation.id] = keysOf(cited);
+    if (!runOfSentence(open, sentence, null)) continue;
+    const entries = runSentences(sentence, lookup);
+    if (entries.length === 0) out[sentence.id] = keysOf(sentence);
+    for (const { sentence: cited } of entries) {
+      if (cited && runOfSentence(open, cited, sentence.id)) out[cited.id] = keysOf(cited);
     }
   }
   return out;
@@ -165,9 +162,8 @@ export function findSite(
       : null;
   }
   const citing = sentences.find((item) => item.id === parent);
-  const citation = citing && sentenceCitations(citing).find((item) => item.id === id);
-  const cited = citation && lookup(citation.summary, id);
-  return cited && citation
-    ? { sentence: cited, summary: citation.summary, parent, marks: [] }
+  const entry = citing && runSentences(citing, lookup).find((item) => item.sentence?.id === id);
+  return entry?.sentence
+    ? { sentence: entry.sentence, summary: entry.citation.summary, parent, marks: [] }
     : null;
 }

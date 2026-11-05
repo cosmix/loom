@@ -4,8 +4,9 @@ import { isOverviewKey } from "@/plan/api/page-key";
 import type { ConceptPage } from "@/plan/api/schema-concept";
 import type { Store } from "@/state/store";
 
-import { runAt, sentenceKey, type SentenceSite } from "./column-context";
+import { sentenceKey, type SentenceSite } from "./column-context";
 import { foldedWith, paragraphIds, runFor } from "./column-model";
+import { runAt } from "./fragments";
 import type { OpenRun } from "./types";
 import { clearNotesIn, openRunsAtom } from "./view-state";
 

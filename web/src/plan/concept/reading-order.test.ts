@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { ConceptPage, Sentence } from "@/plan/api/schema-concept";
+import { columnPage } from "./fragments";
+import type { CitedLookup } from "./open-state";
 import type { OpenRun } from "./types";
 import { readingOrder } from "./reading-order";
 
@@ -45,9 +47,21 @@ const cite = (id: string): Sentence["citations"][number] => ({
   id,
 });
 
+/** Every cited sentence resolves, as a loaded summary page would resolve it. */
+const known: CitedLookup = (_summary, id) => sentence(id);
+
+/** A sentence that rests on and cites the sections `anchors` of doc/a.md. */
+const sourceSentence = (id: string, anchors: string[]): Sentence => ({
+  ...sentence(
+    id,
+    anchors.map((anchor) => ({ kind: "source", path: "doc/a.md", anchor })),
+  ),
+  rests_on: anchors.map((anchor) => ({ path: "doc/a.md", anchor })),
+});
+
 describe("readingOrder", () => {
   it("lists a closed page in document order", () => {
-    expect(readingOrder(page([sentence("a", [cite("x")]), sentence("b")]), [], {})).toEqual([
+    expect(readingOrder(page([sentence("a", [cite("x")]), sentence("b")]), [], {}, known)).toEqual([
       { kind: "sentence", id: "a", level: 0, runOf: null },
       { kind: "sentence", id: "b", level: 0, runOf: null },
     ]);
@@ -55,7 +69,12 @@ describe("readingOrder", () => {
 
   it("lists an open level-0 run in citation order", () => {
     expect(
-      readingOrder(page([sentence("a", [cite("y"), cite("x")]), sentence("b")]), [run("a", 0)], {}),
+      readingOrder(
+        page([sentence("a", [cite("y"), cite("x")]), sentence("b")]),
+        [run("a", 0)],
+        {},
+        known,
+      ),
     ).toEqual([
       { kind: "sentence", id: "a", level: 0, runOf: null },
       { kind: "sentence", id: "y", level: 1, runOf: "a" },
@@ -66,9 +85,12 @@ describe("readingOrder", () => {
 
   it("lists two passages within a nested level-1 run", () => {
     expect(
-      readingOrder(page([sentence("a", [cite("x"), cite("y")])]), [run("a", 0), run("x", 1, "a")], {
-        x: ["doc/a.md#one", "doc/b.md#two"],
-      }),
+      readingOrder(
+        page([sentence("a", [cite("x"), cite("y")])]),
+        [run("a", 0), run("x", 1, "a")],
+        { x: ["doc/a.md#one", "doc/b.md#two"] },
+        known,
+      ),
     ).toEqual([
       { kind: "sentence", id: "a", level: 0, runOf: null },
       { kind: "sentence", id: "x", level: 1, runOf: "a" },
@@ -80,7 +102,12 @@ describe("readingOrder", () => {
 
   it("omits folded runs even if a nested run remains open", () => {
     expect(
-      readingOrder(page([sentence("a", [cite("x")])]), [run("x", 1, "a")], { x: ["doc/a.md#one"] }),
+      readingOrder(
+        page([sentence("a", [cite("x")])]),
+        [run("x", 1, "a")],
+        { x: ["doc/a.md#one"] },
+        known,
+      ),
     ).toEqual([{ kind: "sentence", id: "a", level: 0, runOf: null }]);
   });
 
@@ -89,6 +116,7 @@ describe("readingOrder", () => {
       page([sentence("a", [cite("x")]), sentence("b", [cite("x")])]),
       [run("a", 0), run("b", 0), run("x", 1, "a")],
       { x: ["doc/a.md#one"] },
+      known,
     );
     expect(order).toEqual([
       { kind: "sentence", id: "a", level: 0, runOf: null },
@@ -104,6 +132,7 @@ describe("readingOrder", () => {
       page([sentence("x"), sentence("a", [cite("x")])]),
       [run("x", 1), run("a", 0)],
       { x: ["doc/a.md#one"] },
+      known,
     );
     expect(order.filter((target) => target.kind === "passage")).toEqual([
       { kind: "passage", id: "doc/a.md#one", level: 1, runOf: "x" },
@@ -117,10 +146,43 @@ describe("readingOrder", () => {
       anchor: "one",
     };
     expect(
-      readingOrder(page([sentence("a", [source])]), [run("a", 0)], { a: ["doc/a.md#one"] }),
+      readingOrder(page([sentence("a", [source])]), [run("a", 0)], { a: ["doc/a.md#one"] }, known),
     ).toEqual([
       { kind: "sentence", id: "a", level: 0, runOf: null },
       { kind: "passage", id: "doc/a.md#one", level: 1, runOf: "a" },
+    ]);
+  });
+
+  it("lists a merged fragment as one sentence with the union of its passages", () => {
+    const merged = columnPage(
+      page([sourceSentence("a", ["one"]), sourceSentence("b", ["one", "two"])]),
+    );
+    expect(
+      readingOrder(merged, [run("a", 0)], { a: ["doc/a.md#one", "doc/a.md#two"] }, known),
+    ).toEqual([
+      { kind: "sentence", id: "a", level: 0, runOf: null },
+      { kind: "passage", id: "doc/a.md#one", level: 1, runOf: "a" },
+      { kind: "passage", id: "doc/a.md#two", level: 1, runOf: "a" },
+    ]);
+  });
+
+  it("lists adjacent cited sentences that share a section as one nested entry", () => {
+    const cited: Record<string, Sentence> = {
+      x: sourceSentence("x", ["one"]),
+      y: sourceSentence("y", ["one"]),
+    };
+    const lookup: CitedLookup = (_summary, id) => cited[id];
+    expect(
+      readingOrder(
+        page([sentence("a", [cite("x"), cite("y")])]),
+        [run("a", 0), run("x", 1, "a")],
+        { x: ["doc/a.md#one"] },
+        lookup,
+      ),
+    ).toEqual([
+      { kind: "sentence", id: "a", level: 0, runOf: null },
+      { kind: "sentence", id: "x", level: 1, runOf: "a" },
+      { kind: "passage", id: "doc/a.md#one", level: 2, runOf: "x" },
     ]);
   });
 });

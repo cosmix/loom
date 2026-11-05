@@ -187,7 +187,11 @@ it("ArrowLeft folds like Escape", async () => {
 });
 
 it("j and k move like the arrows", async () => {
-  const { column } = mountProduct([openable("a", "First line."), openable("b", "Second line.")]);
+  const { column } = mountProduct([
+    openable("a", "First line."),
+    // Another section, so the two lines are not one fragment.
+    sent("b", "Second line.", [src(S2, "detail")]),
+  ]);
   column.focus();
   await waitFor(() => expect(active().textContent).toBe("First line."));
   press("j");
