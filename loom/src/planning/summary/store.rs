@@ -13,14 +13,15 @@
 //!   eligible section or winning plan; `source_of(project: &Project, id: &str) ->
 //!   Option<PathBuf>` finds that document's current path.
 //!   Sections and metaplans need a feature (a metaplan summary is a document summary of the
-//!   metaplan file whose stem the id carries); plans must sit directly in their home (`doc/plans` or
-//!   `doc/plans/<feature>`) or be named by a metaplan of their own feature. Losing copies and top-level sections are excluded.
+//!   metaplan file whose stem the id carries); plans must sit directly in their home
+//!   (`doc/plans` or `doc/plans/<feature>`) or be named by a metaplan of their own feature.
+//!   Losing copies and top-level sections are excluded.
 //! - `expected_ids(project: &Project) -> Vec<String>` includes eligible documents and
 //!   each feature's overviews with existing vision/metaplan sources, including empty ones.
 //! - `scope(project: &Project, feature: &str) -> Scope` computes one feature's ordered
 //!   `product` and `engineering` members and sorted `outside` documents. The vision
-//!   summary (`<feature>/product/vision`) and the metaplan summaries are in none of the three lists. `Scope.feature`
-//!   is the requested name; unknown features have empty lists. Other features and standalone
+//!   summary (`<feature>/product/vision`) and the metaplan summaries are in none of the three
+//!   lists. `Scope.feature` is the requested name; unknown features have empty lists. Other features and standalone
 //!   plans are excluded. Standalone plans remain in `expected_ids`.
 //! - `Scope::of(project: &Project, overview_id: &str) -> Option<Scope>` selects that
 //!   feature's scope; invalid overview ids and unknown features yield `None`.
@@ -34,7 +35,7 @@ use std::path::{Component, Path, PathBuf};
 
 use anyhow::{bail, Result};
 
-use crate::planning::kinds::{is_feature_name, plans_dir, vision_path, DocKind};
+use crate::planning::kinds::{is_feature_name, is_slug_chars, plans_dir, vision_path, DocKind};
 use crate::planning::project::{Feature, Project};
 
 /// Repository-relative directory containing summaries.
@@ -66,11 +67,7 @@ pub fn is_vision(id: &str) -> bool {
 /// A stem matches `[a-z0-9][a-z0-9-]*`, so it can never hold `.` or `/`.
 pub fn metaplan_feature(id: &str) -> Option<&str> {
     let (feature, stem) = id.split_once("/metaplan/")?;
-    let mut bytes = stem.bytes();
-    let stem_ok = bytes
-        .next()
-        .is_some_and(|b| b.is_ascii_lowercase() || b.is_ascii_digit())
-        && bytes.all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-');
+    let stem_ok = is_slug_chars(stem);
     (stem_ok && is_feature_name(feature)).then_some(feature)
 }
 
