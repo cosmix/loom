@@ -9,8 +9,7 @@ const authoringKinds = [
   "write_plan",
   "draft_all_sections",
   "draft_all_plans",
-  "refine_spec",
-  "new_metaplan_round",
+  "plan_follow_ups",
   "fix_vision_table",
 ] as const satisfies readonly OfferKind[];
 

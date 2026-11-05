@@ -148,7 +148,7 @@ fn locked_misplaced_documents_do_not_need_a_feature() {
 fn bad_feature_names_are_reported_once_per_name_at_the_first_directory() {
     let temp = tree(&[
         ("doc/plans/Bad/index.md", "# Metaplan\n"),
-        ("doc/plans/Bad/metaplan-02.md", "# Round two\n"),
+        ("doc/plans/Bad/notes.md", "# Notes\n"),
         ("doc/product/Bad/index.md", "# Vision\n"),
         ("doc/product/also_bad/section_01.md", "# One\n"),
     ]);

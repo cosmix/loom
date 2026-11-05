@@ -1,8 +1,9 @@
 //! Parsing plan `Implements:` declarations.
 
 use crate::fs::knowledge::splice::fence_mask;
+use crate::planning::kinds::{self, DocKind};
 use serde::Serialize;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 /// The product sections a plan declares it implements.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -56,6 +57,33 @@ pub fn parse(text: &str) -> ImplementsLine {
         }
     }
     result
+}
+
+/// The product section paths a feature plan declares it implements, in declaration order with
+/// duplicates dropped.
+///
+/// `plan_rel` is the plan's repository-relative path. A standalone or unclassifiable plan,
+/// `Implements: none` and a missing declaration yield nothing; invalid tokens are skipped (the
+/// plan check reports them).
+pub fn implemented_section_paths(plan_rel: &Path, text: &str) -> Vec<PathBuf> {
+    let DocKind::Plan {
+        feature: Some(feature),
+        ..
+    } = kinds::classify(plan_rel)
+    else {
+        return Vec::new();
+    };
+    let Implements::Sections(numbers) = parse(text).value else {
+        return Vec::new();
+    };
+    let mut paths = Vec::new();
+    for number in numbers {
+        let path = kinds::section_path(&feature, number);
+        if !paths.contains(&path) {
+            paths.push(path);
+        }
+    }
+    paths
 }
 
 fn parse_value(value: &str, result: &mut ImplementsLine) {

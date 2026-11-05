@@ -14,23 +14,25 @@ fn asset(assets: &[Asset], key: &str) -> &'static str {
         .unwrap_or_else(|| panic!("missing embedded asset: {key}"))
 }
 
-fn product_lines(file: &str, first: usize, last: usize) -> String {
+/// The lines of a product section from the first line starting with `first_prefix`
+/// through the next line starting with `last_prefix`. Markers survive edits that move
+/// line numbers.
+fn product_block(file: &str, first_prefix: &str, last_prefix: &str) -> String {
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../doc/product/feat-planner")
         .join(file);
     let text = fs::read_to_string(&path).unwrap();
-    let lines: Vec<_> = text
-        .lines()
-        .skip(first - 1)
-        .take(last - first + 1)
-        .collect();
-    assert_eq!(
-        lines.len(),
-        last - first + 1,
-        "{} is too short",
-        path.display()
-    );
-    lines.join("\n")
+    let lines: Vec<_> = text.lines().collect();
+    let start = lines
+        .iter()
+        .position(|line| line.starts_with(first_prefix))
+        .unwrap_or_else(|| panic!("{} has no line starting {first_prefix:?}", path.display()));
+    let end = lines[start..]
+        .iter()
+        .position(|line| line.starts_with(last_prefix))
+        .unwrap_or_else(|| panic!("{} has no line starting {last_prefix:?}", path.display()))
+        + start;
+    lines[start..=end].join("\n")
 }
 
 fn fixture(files: &[(&str, &str)]) -> (TempDir, Project) {
@@ -86,7 +88,7 @@ fn every_skill_has_matching_name_and_description_in_frontmatter() {
             "{path} is missing a frontmatter description"
         );
     }
-    assert_eq!(count, 10, "all ten planning skills must be checked");
+    assert_eq!(count, 9, "all nine planning skills must be checked");
 }
 
 #[test]
@@ -109,7 +111,11 @@ fn knowledge_skill_preserves_every_distill_routing_line() {
 
 #[test]
 fn common_brief_quotes_product_writing_conventions_verbatim() {
-    let conventions = product_lines("section_03.md", 282, 290);
+    let conventions = product_block(
+        "section_03.md",
+        "- Files at the paths in the kinds table",
+        "- In each plan:",
+    );
     assert!(
         common_brief().contains(&conventions),
         "section 03 conventions drifted"
@@ -118,7 +124,14 @@ fn common_brief_quotes_product_writing_conventions_verbatim() {
 
 #[test]
 fn closing_message_matches_product_spec_with_continuation_indent() {
-    assert_eq!(CLOSING_MESSAGE, product_lines("section_09.md", 375, 380));
+    assert_eq!(
+        CLOSING_MESSAGE,
+        product_block(
+            "section_09.md",
+            "loom plan is ending this session",
+            "Then reply \"Closing write done.\" and stop."
+        )
+    );
 }
 
 #[test]
@@ -204,11 +217,10 @@ fn step_skills_carry_their_target_and_document_conventions() {
         ),
         (
             "metaplan",
-            vec!["doc/plans/<feature>/index.md", "metaplan-"],
+            vec!["doc/plans/<feature>/index.md", "## Follow-ups"],
         ),
         ("plan", vec!["Implements:", "loom-plan-writer"]),
         ("refine", vec!["## Open questions"]),
-        ("retro", vec!["REVIEW-"]),
         (
             "knowledge",
             vec!["Do not run `loom memory pending` or `loom memory resolve`."],

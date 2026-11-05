@@ -25,7 +25,8 @@ pub enum DocKind {
         /// The owning feature.
         feature: String,
     },
-    /// An engineering metaplan.
+    /// A feature's only metaplan, `doc/plans/<feature>/index.md`; any other `*metaplan*.md`
+    /// is `Other`.
     Metaplan {
         /// The owning feature, or `None` for a misplaced top-level metaplan.
         feature: Option<String>,
@@ -214,9 +215,7 @@ fn plans_kind(rel: &Path) -> DocKind {
             return DocKind::RunReview { slug };
         }
     }
-    if rel.parent() == Some(dir.as_path())
-        && (name == "index.md" || (name.contains("metaplan") && name.ends_with(".md")))
-    {
+    if rel.parent() == Some(dir.as_path()) && name == "index.md" {
         return DocKind::Metaplan {
             feature: feature.map(str::to_owned),
         };

@@ -408,19 +408,32 @@ checklist moves on.
 
 ## After plans complete
 
-A finished feature, where every metaplan entry's plan is done, has no primary offer (section
-01). Two secondary offers appear on the Run page: compare the spec with what was built, with one
-sentence saying it starts a chat that compares the done plans and their run reviews with the
-spec, and start a new metaplan round. The same offers appear on any done plan's view while other
-plans remain.
+Before a plan finishes, its integration-verify stage reads the product sections the plan's
+`Implements:` line names. It fixes the code where the build lacks or contradicts a section. When
+the build is right and the section is wrong, it edits the section to match and records a
+`spec-conformance:` decision; a gap it neither fixes nor corrects becomes a `spec-conformance:`
+question. The run review (`REVIEW-<plan file stem>.md`, section 03) lists those decisions and
+questions under `## Spec Conformance`, then the stage-level `## Open Questions` and
+`## Open Findings`: reviewer suggestions no stage implemented and entries deferred during the run.
+Each bullet names the stage and its id.
 
-- **Compare spec with build** opens a session with the `loom-plan:retro` skill (section 09). It reads
-  the done plans' run reviews and the sections their `Implements:` lines name, and records, with
-  the user, what the spec should now say. The knowledge base, which knowledge stages updated
-  during the run, is read as evidence and changed only through `loom knowledge`.
-- **Start a new metaplan round** opens a `loom-plan:metaplan` session for
-  `doc/plans/metaplan-<nn>.md`. Earlier metaplans stay as they are; done plans keep closing their
-  entries.
+A finished feature, where every metaplan entry's plan is done, has no primary offer (section
+01). Its view shows the Built state instead:
+
+- the done plans, each with a link to its run review;
+- the spec-conformance outcomes from those run reviews;
+- candidate follow-ups: every open finding and open question across the done plans' run
+  reviews, each with a `Plan this` button;
+- a free-text box, "What else needs doing?".
+
+Either control starts the `Plan follow-ups` session (`loom-plan:metaplan`, section 09), seeded
+with the item or the text. The session appends entries to `doc/plans/<f>/index.md` under a
+`## Follow-ups` heading and leaves finished entries unchanged; the entries keep the level-2 entry
+form (section 01). Once an entry has no plan, step 4's gap offers `Write plan <slug>` and drives
+the rest. Work that is no follow-up of the feature is a new feature, started from the home page.
+
+Another offer stays on the Run page while any written plan remains:
+
 - **Run the next plan** stays offered while any written plan remains: the workspace state table
   above gives `loom init <plan> --clean`.
 

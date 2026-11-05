@@ -61,9 +61,7 @@ fn starting_point_uses_checklist_counts_and_sorts_only_locked_plan_files() {
     ]
     .into();
     state.plans_unlisted = 1;
-    state.metaplans = ["doc/plans/f/metaplan-02.md", "doc/plans/f/index.md"]
-        .map(Into::into)
-        .into();
+    state.metaplans = ["doc/plans/f/index.md"].map(Into::into).into();
     state.locked_files = [
         "doc/plans/f/RETIRED-PLAN-z.md",
         "doc/plans/f/briefs/foo/stage.md",
@@ -75,7 +73,7 @@ fn starting_point_uses_checklist_counts_and_sorts_only_locked_plan_files() {
     .into();
     let text = brief::common_brief(&AuthoringStart::NoStep, &project, Some("f")).unwrap();
     assert!(text.contains("- Plans: 3 written (1 unlisted), 2 running, 4 done, 1 retired.\n"));
-    assert!(text.contains("- Metaplans: doc/plans/f/index.md, doc/plans/f/metaplan-02.md.\n"));
+    assert!(text.contains("- Metaplans: doc/plans/f/index.md.\n"));
     assert_eq!(
         text.lines().last().unwrap(),
         concat!(
@@ -90,17 +88,19 @@ fn starting_point_names_vision_and_completed_feature_offer_skills() {
     let (_temp, project) = fixture(&[]);
     for (start, expected) in [
         (
-            AuthoringStart::Offer(Offer::StartVision { feature: "f".into() }),
+            AuthoringStart::Offer(Offer::StartVision {
+                feature: "f".into(),
+            }),
             concat!(
                 "Step: 1, Vision.\nTarget: Write doc/product/f/index.md, the product vision.\n",
                 "Skill: loom-plan:vision.\n"
             ),
         ),
         (
-            AuthoringStart::Offer(Offer::RefineSpec),
+            AuthoringStart::Offer(Offer::PlanFollowUps),
             concat!(
-                "Step: done, Compare spec with build.\nTarget: Review the done plans and their ",
-                "run reviews in doc/plans/f/ against the product spec in doc/product/f/.\nSkill: loom-plan:retro.\n"
+                "Step: done, Plan follow-ups.\nTarget: Append follow-up entries under ",
+                "\"## Follow-ups\" in doc/plans/f/index.md.\nSkill: loom-plan:metaplan.\n"
             ),
         ),
     ] {

@@ -60,10 +60,8 @@ pub enum Offer {
     },
     /// Run the plans.
     StartRun,
-    /// Refine the product spec.
-    RefineSpec,
-    /// Start a new metaplan round.
-    NewMetaplanRound,
+    /// Plan follow-up entries in the feature's metaplan.
+    PlanFollowUps,
     /// Draft every missing section in one authoring session.
     DraftAllSections {
         /// The owning feature.
@@ -124,8 +122,7 @@ impl Offer {
             Offer::WritePlan { .. } => "write-plan",
             Offer::PressureTest { .. } => "pressure-test",
             Offer::StartRun => "start-run",
-            Offer::RefineSpec => "refine-spec",
-            Offer::NewMetaplanRound => "new-metaplan-round",
+            Offer::PlanFollowUps => "plan-follow-ups",
             Offer::DraftAllSections { .. } => "draft-all-sections",
             Offer::DraftAllPlans { .. } => "draft-all-plans",
             Offer::MoveIntoFeature { .. } => "move-into-feature",
@@ -161,8 +158,7 @@ impl Offer {
             Offer::WritePlan { slug, .. } => format!("Write plan {slug}"),
             Offer::PressureTest { slug, .. } => format!("Pressure-test {slug}"),
             Offer::StartRun => "Start a run".into(),
-            Offer::RefineSpec => "Compare spec with build".into(),
-            Offer::NewMetaplanRound => "New metaplan round".into(),
+            Offer::PlanFollowUps => "Plan follow-ups".into(),
             Offer::DraftAllSections { .. } => "Draft all with a team".into(),
             Offer::DraftAllPlans { .. } => "Draft all with a team".into(),
             Offer::MoveIntoFeature { path } => {
@@ -236,8 +232,8 @@ pub(super) fn choose(current: &CurrentStep, facts: &Facts) -> (Option<Offer>, Ve
                 .collect()
         }
         CurrentStep::Step(_) => gap_offers(facts),
-        CurrentStep::Ready => vec![Offer::StartRun, Offer::RefineSpec],
-        CurrentStep::ReadyAllDone => vec![Offer::RefineSpec, Offer::NewMetaplanRound],
+        CurrentStep::Ready => vec![Offer::StartRun],
+        CurrentStep::ReadyAllDone => vec![Offer::PlanFollowUps],
     };
     offers.extend(extras(facts));
     let mut seen = BTreeSet::new();

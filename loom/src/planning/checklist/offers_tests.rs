@@ -95,14 +95,14 @@ fn write_plan_contract() {
     assert_offer(
         Offer::WritePlan {
             feature: "demo".into(),
-            metaplan: "doc/plans/demo/metaplan-02.md".into(),
+            metaplan: "doc/plans/demo/index.md".into(),
             slug: "alpha".into(),
         },
         "write-plan:alpha",
         "Write plan alpha",
         Some("doc/plans/demo/PLAN-alpha.md"),
         json!({"id": "write-plan:alpha", "kind": "write-plan", "feature": "demo",
-            "metaplan": "doc/plans/demo/metaplan-02.md", "slug": "alpha",
+            "metaplan": "doc/plans/demo/index.md", "slug": "alpha",
             "target": "doc/plans/demo/PLAN-alpha.md"}),
     );
 }
@@ -132,18 +132,11 @@ fn shared_action_contracts() {
         json!({"id": "start-run", "kind": "start-run", "target": null}),
     );
     assert_offer(
-        Offer::RefineSpec,
-        "refine-spec",
-        "Compare spec with build",
+        Offer::PlanFollowUps,
+        "plan-follow-ups",
+        "Plan follow-ups",
         None,
-        json!({"id": "refine-spec", "kind": "refine-spec", "target": null}),
-    );
-    assert_offer(
-        Offer::NewMetaplanRound,
-        "new-metaplan-round",
-        "New metaplan round",
-        None,
-        json!({"id": "new-metaplan-round", "kind": "new-metaplan-round", "target": null}),
+        json!({"id": "plan-follow-ups", "kind": "plan-follow-ups", "target": null}),
     );
 }
 
@@ -201,7 +194,6 @@ fn move_offers_include_only_misplaced_documents_in_path_order() {
     for path in [
         "doc/product/section_07.md",
         "doc/product/index.md",
-        "doc/plans/metaplan-02.md",
         "doc/plans/index.md",
         "doc/plans/PLAN-standalone.md",
         "doc/plans/archive/DONE-PLAN-finished.md",
@@ -225,7 +217,6 @@ fn move_offers_include_only_misplaced_documents_in_path_order() {
         offers.iter().map(Offer::id).collect::<Vec<_>>(),
         [
             "move-into-feature:doc/plans/index.md",
-            "move-into-feature:doc/plans/metaplan-02.md",
             "move-into-feature:doc/product/index.md",
             "move-into-feature:doc/product/section_07.md",
         ]

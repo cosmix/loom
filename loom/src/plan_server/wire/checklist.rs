@@ -196,10 +196,8 @@ pub enum OfferKind {
     PressureTest,
     /// Run the plans.
     StartRun,
-    /// Refine the product spec.
-    RefineSpec,
-    /// Start another metaplan round.
-    NewMetaplanRound,
+    /// Plan follow-ups for a finished feature.
+    PlanFollowUps,
     /// Draft all missing product sections with a team.
     DraftAllSections,
     /// Draft all missing plans with a team.
@@ -224,8 +222,7 @@ impl From<&Offer> for OfferKind {
             Offer::WritePlan { .. } => Self::WritePlan,
             Offer::PressureTest { .. } => Self::PressureTest,
             Offer::StartRun => Self::StartRun,
-            Offer::RefineSpec => Self::RefineSpec,
-            Offer::NewMetaplanRound => Self::NewMetaplanRound,
+            Offer::PlanFollowUps => Self::PlanFollowUps,
             Offer::DraftAllSections { .. } => Self::DraftAllSections,
             Offer::DraftAllPlans { .. } => Self::DraftAllPlans,
             Offer::MoveIntoFeature { .. } => Self::MoveIntoFeature,

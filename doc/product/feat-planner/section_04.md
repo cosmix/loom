@@ -26,13 +26,13 @@ doc/loom/summaries/
   overview/<f>/engineering.md      one engineering overview per feature with a metaplan
   <f>/product/vision.md            one per feature's vision
   <f>/product/section_01.md         one per feature's product section, named after the section file
-  <f>/metaplan/<stem>.md           one per metaplan file whose stem is a valid summary stem
+  <f>/metaplan/index.md            one per feature's metaplan
   plans/<slug>.md                  one per eligible plan, named by the plan's slug
 ```
 
 A summary's **id** is its path under `doc/loom/summaries/` without `.md`:
 `overview/<f>/product`, `overview/<f>/engineering`, `<f>/product/vision`,
-`<f>/product/section_<nn>`, `<f>/metaplan/<stem>`, or `plans/<slug>`.
+`<f>/product/section_<nn>`, `<f>/metaplan/index`, or `plans/<slug>`.
 Here `<f>` is a feature name (section 03), and `<nn>` has at least two digits. `plans` and
 `overview` are reserved feature names, so plan and overview ids cannot collide with a feature's
 section ids. For example: `overview/feat-planner/product`, `feat-planner/product/section_01`,
@@ -40,38 +40,36 @@ section ids. For example: `overview/feat-planner/product`, `feat-planner/product
 
 Which documents get a summary:
 
-| Source                                                                                          | Summary                    |
-| ----------------------------------------------------------------------------------------------- | -------------------------- |
-| `doc/product/<f>/index.md`, the feature's vision                                                | `<f>/product/vision`       |
-| `doc/product/<f>/section_<nn>.md`, listed or unlisted (section 01)                              | `<f>/product/section_<nn>` |
-| A plan directly in its feature home, `doc/plans/<f>/`, in any lifecycle state                   | `plans/<slug>`             |
-| A plan directly in the standalone home, `doc/plans/`, in any lifecycle state                    | `plans/<slug>`             |
-| A plan in `doc/plans/<f>/archive/` named by a metaplan of feature `<f>`                         | `plans/<slug>`             |
-| An archived plan no metaplan of its feature names, including every plan in `doc/plans/archive/` | none                       |
-| `doc/plans/<f>/<stem>.md`, a metaplan of feature `<f>` whose stem matches `[a-z0-9][a-z0-9-]*`  | `<f>/metaplan/<stem>`      |
-| Any other metaplan file of `<f>` (for example `metaplan_02.md`), whose route shows its source   | none                       |
-| A misplaced top-level `doc/plans/index.md`, briefs, knowledge                                   | none                       |
+| Source                                                                                                   | Summary                    |
+| -------------------------------------------------------------------------------------------------------- | -------------------------- |
+| `doc/product/<f>/index.md`, the feature's vision                                                         | `<f>/product/vision`       |
+| `doc/product/<f>/section_<nn>.md`, listed or unlisted (section 01)                                       | `<f>/product/section_<nn>` |
+| A plan directly in its feature home, `doc/plans/<f>/`, in any lifecycle state                            | `plans/<slug>`             |
+| A plan directly in the standalone home, `doc/plans/`, in any lifecycle state                             | `plans/<slug>`             |
+| A plan in `doc/plans/<f>/archive/` named by the metaplan of feature `<f>`                                | `plans/<slug>`             |
+| An archived plan the metaplan of its feature does not name, including every plan in `doc/plans/archive/` | none                       |
+| `doc/plans/<f>/index.md`, the metaplan of feature `<f>`                                                  | `<f>/metaplan/index`       |
+| Any other `*metaplan*.md` file of `<f>` (for example `metaplan_02.md`), an Other document (section 03)   | none                       |
+| A misplaced top-level `doc/plans/index.md`, briefs, knowledge                                            | none                       |
 
 Plan summaries are keyed by slug, unique repository-wide, so lifecycle renames and moves between
 homes keep the same id; a move into an archive keeps the summary only while the plan is eligible.
-Archived plans that no metaplan of their feature names are left out because an older project
+Archived plans the metaplan of their feature does not name are left out because an older project
 can hold dozens of them and summarizing them would cost more than any reader gains; they stay
 readable in file mode. Standalone plans have no metaplan, so their archived plans get no summary.
 The vision's summary is built and rebuilt like a section summary. It is not a member of the
 product overview and not listed among the documents outside it: the product overview cites the
-vision's heading sections directly. Each metaplan of a feature whose file stem matches
-`[a-z0-9][a-z0-9-]*` has a document summary with id
-`<feature>/metaplan/<stem>`, stored at `doc/loom/summaries/<feature>/metaplan/<stem>.md`; `<stem>`
-is the file stem. A metaplan file with any other stem has no summary. Its sentences cite that metaplan's passages
-only. Like the vision summary it is a member of neither overview: the engineering overview
-still cites the metaplans' raw passages and the plan summaries (below).
+vision's heading sections directly. A feature's metaplan, `doc/plans/<feature>/index.md`, has a document summary with id
+`<feature>/metaplan/index`, stored at `doc/loom/summaries/<feature>/metaplan/index.md`. Its
+sentences cite that metaplan's passages only. Like the vision summary it is a member of neither overview: the engineering overview
+still cites the metaplan's raw passages and the plan summaries (below).
 
 **Overview scope.** Each feature has its own scope. Its product overview covers its vision and
 the product sections that vision's table lists (section 01); its engineering overview covers
-its metaplans and the plans in that feature that those metaplans name. The product overview is
+its metaplan and the plans in that feature that the metaplan names. The product overview is
 expected only when the feature has a vision; the engineering overview only when it has a
-metaplan, even if either has no members. An unlisted section, or an eligible plan no metaplan of
-its feature names, is outside that feature's overview scope: it still gets its document summary,
+metaplan, even if either has no members. An unlisted section, or an eligible plan the metaplan of
+its feature does not name, is outside that feature's overview scope: it still gets its document summary,
 and section 05 lists it under the overview instead of in it. An overview's members are the
 document summaries in its scope. Standalone plans belong to no feature's overview scope.
 
@@ -133,7 +131,7 @@ Rules for the body, enforced when the summary is sealed (below):
   anchors section 03 defines. A link with no fragment cites the text before the first heading.
 - **An overview cites document-summary sentences and raw passages.** It links a document
   summary's sentence by the sentence's id as fragment (`#s-3fa9c2d1`), and links heading
-  sections of its feature's vision (product overview) or metaplans (engineering overview) directly;
+  sections of its feature's vision (product overview) or metaplan (engineering overview) directly;
   the vision's own summary is not one of its members. Every document in the overview's scope must be cited by
   at least one overview sentence, so no section or plan drops out of the overview silently.
 - **An overview sentence draws on at least two member sentences.** A sentence that cites member

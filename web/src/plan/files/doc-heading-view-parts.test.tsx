@@ -73,8 +73,7 @@ describe("FileDocHeading chips and crumbs", () => {
     mount(makeDoc({ editable: false }, { state: "done" }));
 
     expect(screen.queryByText("No offer is available")).toBeNull();
-    expect(screen.queryByRole("button", { name: "Compare spec with build" })).toBeNull();
-    expect(screen.queryByRole("button", { name: "New metaplan round" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Plan follow-ups" })).toBeNull();
   });
 
   it("chips a section's open questions as a warning link to them", () => {

@@ -50,8 +50,7 @@ fn metaplan_and_review_offer_labels_name_the_action() {
             },
             "Start the metaplan",
         ),
-        (Offer::RefineSpec, "Compare spec with build"),
-        (Offer::NewMetaplanRound, "New metaplan round"),
+        (Offer::PlanFollowUps, "Plan follow-ups"),
     ] {
         assert_eq!(AuthoringStart::Offer(offer).label(), expected);
     }

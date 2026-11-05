@@ -1,6 +1,7 @@
-//! Contract: each metaplan file of a feature has a document summary of its own,
-//! `<feature>/metaplan/<stem>`, stored beside the other summaries of the feature and never counted
-//! as a member of either overview. A metaplan outside a feature directory has none.
+//! Contract: a feature's only metaplan, `index.md`, has a document summary of its own,
+//! `<feature>/metaplan/index`, stored beside the other summaries of the feature and never counted
+//! as a member of either overview. A metaplan outside a feature directory has none, and no other
+//! `*metaplan*.md` file has one.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -11,7 +12,6 @@ use super::{expected_ids, source_of, summary_id_for, summary_path, validate_id, 
 use crate::planning::project::Project;
 
 const INDEX_ID: &str = "alpha/metaplan/index";
-const SECOND_ID: &str = "alpha/metaplan/metaplan-02";
 
 fn project() -> (TempDir, Project) {
     let dir = TempDir::new().unwrap();
@@ -45,21 +45,19 @@ fn a_feature_metaplan_has_a_document_summary() {
     let (_dir, project) = project();
 
     let ids = expected_ids(&project);
-    for id in [INDEX_ID, SECOND_ID] {
-        assert!(
-            ids.iter().any(|got| got == id),
-            "expected ids lack {id}: {ids:?}"
-        );
-    }
+    assert!(
+        ids.iter().any(|got| got == INDEX_ID),
+        "expected ids lack {INDEX_ID}: {ids:?}"
+    );
     let metaplan_ids: Vec<_> = ids.iter().filter(|id| id.contains("metaplan/")).collect();
-    assert_eq!(metaplan_ids.len(), 2, "only alpha's two metaplans: {ids:?}");
+    assert_eq!(metaplan_ids.len(), 1, "only alpha's index: {ids:?}");
     assert_eq!(
         summary_id_for(&project, Path::new("doc/plans/index.md")),
         None
     );
     assert_eq!(
-        summary_id_for(&project, Path::new("doc/plans/alpha/metaplan-02.md")).as_deref(),
-        Some(SECOND_ID)
+        summary_id_for(&project, Path::new("doc/plans/alpha/metaplan-02.md")),
+        None
     );
     assert_eq!(
         summary_path(INDEX_ID),
@@ -69,7 +67,11 @@ fn a_feature_metaplan_has_a_document_summary() {
         source_of(&project, INDEX_ID),
         Some(PathBuf::from("doc/plans/alpha/index.md"))
     );
-    for bad in ["alpha/metaplan/../x", "alpha/metaplan/Index"] {
+    for bad in [
+        "alpha/metaplan/../x",
+        "alpha/metaplan/Index",
+        "alpha/metaplan/metaplan-02",
+    ] {
         assert!(validate_id(bad).is_err(), "{bad} is accepted");
     }
 
