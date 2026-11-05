@@ -146,7 +146,13 @@ fn no_feature_renders_a_general_chat_without_a_feature_checklist() {
 
     let guidance = fixture
         .provider
-        .authoring(&fixture.ctx, &fixture.session, None, None, None)
+        .authoring(
+            &fixture.ctx,
+            &fixture.session,
+            None,
+            Some("Plan the next step."),
+            None,
+        )
         .unwrap();
 
     let brief = std::fs::read_to_string(guidance.brief_path).unwrap();

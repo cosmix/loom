@@ -15,7 +15,7 @@ use super::{team::TeamTracker, EndMode, EndOutcome, RecoveryReport};
 use crate::plan_session::attachments::Attachment;
 use crate::plan_session::kind::{SessionDir, SessionKind};
 use crate::plan_session::model::{
-    ChangedFile, DenyReason, EndedChat, Failure, Origin, SessionState, SessionView,
+    ChangedFile, Delivery, DenyReason, EndedChat, Failure, Item, Origin, SessionState, SessionView,
 };
 use crate::plan_session::permission::Answer;
 use crate::plan_session::state::StateMachine;
@@ -274,6 +274,22 @@ impl Session {
     pub(super) fn next_id(&mut self, prefix: &str) -> String {
         self.flow.counter += 1;
         format!("{prefix}{}", self.flow.counter)
+    }
+
+    /// Whether the user sent this session a message of their own: a user item with no
+    /// generated origin that was pasted. An offer chat the user never wrote in has only the
+    /// offer's opening, so it has nothing to write into the documents at its end.
+    pub(super) fn user_wrote(&self) -> bool {
+        self.mapper
+            .turns()
+            .iter()
+            .flat_map(|turn| &turn.items)
+            .any(|item| {
+                matches!(
+                    item,
+                    Item::User { origin: None, delivery, .. } if *delivery != Delivery::Undelivered
+                )
+            })
     }
 }
 

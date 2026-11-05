@@ -144,7 +144,7 @@ scalar_coverage!(
     Origin,
     "origin",
     Some(("type", "user")),
-    [Offer, Start, Closing]
+    [Offer, Closing]
 );
 scalar_coverage!(
     tool_status_variants_in_fixtures,

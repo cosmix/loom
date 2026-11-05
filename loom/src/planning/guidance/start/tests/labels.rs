@@ -93,13 +93,9 @@ fn knowledge_labels_name_the_open_file_when_present() {
 }
 
 #[test]
-fn message_and_no_step_labels_are_new_chat() {
-    for start in [
-        AuthoringStart::Message {
-            paths: vec!["doc/plans/f/index.md".into()],
-        },
-        AuthoringStart::NoStep,
-    ] {
-        assert_eq!(start.label(), "New chat");
-    }
+fn message_label_is_new_chat() {
+    let start = AuthoringStart::Message {
+        paths: vec!["doc/plans/f/index.md".into()],
+    };
+    assert_eq!(start.label(), "New chat");
 }

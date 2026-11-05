@@ -118,7 +118,7 @@ fn message_class_depends_only_on_first_attachment() {
 }
 
 #[test]
-fn kickoff_knowledge_and_no_step_use_spec_class() {
+fn kickoff_and_knowledge_use_spec_class() {
     for start in [
         AuthoringStart::Kickoff { small: false },
         AuthoringStart::Kickoff { small: true },
@@ -126,7 +126,6 @@ fn kickoff_knowledge_and_no_step_use_spec_class() {
         AuthoringStart::Knowledge {
             open_file: Some("doc/plans/f/index.md".into()),
         },
-        AuthoringStart::NoStep,
     ] {
         assert_eq!(step_class(&start), StepClass::Spec, "{start:?}");
     }

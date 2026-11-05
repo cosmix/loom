@@ -260,7 +260,7 @@ pub(super) fn start() -> ChatCommand {
         offer: None,
         feature: None,
         plan: None,
-        text: None,
+        text: Some("Plan the next step.".into()),
         attachments: Vec::new(),
     }
 }

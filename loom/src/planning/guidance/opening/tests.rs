@@ -190,15 +190,6 @@ fn knowledge_with_file() {
 }
 
 #[test]
-fn no_step() {
-    let (_temp, project) = fixture();
-    assert_eq!(
-        opening_message(&AuthoringStart::NoStep, &project, None).unwrap(),
-        "loom plan: no step chosen.\nAsk me what I want to work on."
-    );
-}
-
-#[test]
 fn pressure_and_run_have_no_authoring_start() {
     let (_temp, project) = fixture();
     for offer in [

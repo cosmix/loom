@@ -214,7 +214,7 @@ fn start_is_refused_while_the_server_is_stopping() {
 }
 
 #[test]
-fn start_without_offer_or_text_takes_authoring_and_marks_the_opening_as_start() {
+fn a_typed_start_takes_authoring_and_opens_with_the_users_own_message() {
     let f = fixture(false);
     let tab = f.connect(&browser());
     let guidance = record_guidance(&f);
@@ -224,14 +224,11 @@ fn start_without_offer_or_text_takes_authoring_and_marks_the_opening_as_start() 
     let item = opening(&f, &s);
 
     assert!(f.ctx.authoring().is_holder(&tab.conn.browser));
-    assert_eq!(*guidance.calls.lock().unwrap(), vec![(None, None, None)]);
-    assert!(matches!(
-        item,
-        Item::User {
-            origin: Some(Origin::Start),
-            ..
-        }
-    ));
+    assert_eq!(
+        *guidance.calls.lock().unwrap(),
+        vec![(None, Some("Plan the next step.".into()), None)]
+    );
+    assert!(matches!(item, Item::User { origin: None, .. }));
 }
 
 #[test]
