@@ -117,8 +117,9 @@ impl Mapper {
     }
 
     /// An interrupt record: a notice, every pending tool of the turn not finished, the turn
-    /// closed (a later `end_turn` for it publishes nothing). When the turn's last item is the
-    /// "Stopped" notice the Stop button already added, the record adds no second notice.
+    /// closed (a later `end_turn` for it publishes nothing). When the turn holds the "Stopped"
+    /// notice the Stop button added after its last user item, the record adds no second notice,
+    /// even if assistant output that predates the Stop was ingested after it.
     pub(super) fn interrupt(&mut self, uuid: &str, at: Option<DateTime<Utc>>, out: &mut Ingest) {
         if let Some(at) = at {
             #[cfg(test)]
@@ -130,14 +131,7 @@ impl Mapper {
         let Some(turn) = self.current_or_last() else {
             return;
         };
-        let stopped = matches!(
-            self.turns[turn].items.last(),
-            Some(Item::Notice {
-                kind: NoticeKind::Stopped,
-                ..
-            })
-        );
-        if !stopped {
+        if !self.stopped_after_last_user(turn) {
             let notice = Item::Notice {
                 id: format!("n-{uuid}"),
                 kind: NoticeKind::Interrupted,
@@ -161,5 +155,24 @@ impl Mapper {
         if self.open == Some(turn) {
             self.close(turn, &mut out.deltas);
         }
+    }
+
+    /// A Stopped notice anywhere after the turn's last user item: the Stop button's notice
+    /// is followed by whatever Claude Code had already written, so it is not always last.
+    fn stopped_after_last_user(&self, turn: usize) -> bool {
+        self.turns[turn]
+            .items
+            .iter()
+            .rev()
+            .take_while(|item| !matches!(item, Item::User { .. }))
+            .any(|item| {
+                matches!(
+                    item,
+                    Item::Notice {
+                        kind: NoticeKind::Stopped,
+                        ..
+                    }
+                )
+            })
     }
 }
