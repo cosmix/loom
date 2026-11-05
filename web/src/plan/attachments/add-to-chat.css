@@ -71,17 +71,38 @@
   outline-offset: 2px;
 }
 
-/* The note stands on the popover surface too: it sits over document text and needs its own ground. */
+/* The note stands on the popover surface too: it sits over document text and needs its own ground.
+ * It is a banner: one line of --foreground text led by a toned glyph (a ringed "!" in the warning
+ * tone, drawn here and unspoken), never a line of toned text. */
 .add-to-chat__note {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
   margin: 0;
   padding: var(--space-1) var(--space-2);
   border: 1px solid var(--border);
   border-radius: var(--corner-control);
   background: var(--popover);
   box-shadow: var(--plan-shadow), var(--popover-lift);
-  color: var(--destructive);
+  color: var(--foreground);
   font-size: var(--type-fine);
   line-height: 1.4;
+}
+
+.add-to-chat__note::before {
+  content: "!" / "";
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  border: 1.5px solid currentColor;
+  border-radius: 50%;
+  color: var(--tone-warning);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
 }
 
 @keyframes add-to-chat-rise {

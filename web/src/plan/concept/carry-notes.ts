@@ -1,10 +1,7 @@
+import { fileName } from "./passages";
 import type { FoldNote, SourceAnchorRef } from "./types";
 
 /* The wording of the notes a carry leaves where a run folded (section 05, "What stays open"). */
-
-function fileName(path: string): string {
-  return path.slice(path.lastIndexOf("/") + 1);
-}
 
 function titleOf(anchor: SourceAnchorRef): string {
   return anchor.title ?? anchor.anchor;

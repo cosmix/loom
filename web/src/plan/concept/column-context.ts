@@ -43,6 +43,11 @@ export function useColumn(): ColumnContextValue {
   return value;
 }
 
+/** Names a sentence's site: the same id can stand for different fragments under different citers. */
+export function siteKey(parent: string | null, id: string): string {
+  return `${parent ?? ""}|${id}`;
+}
+
 export function sentenceKey(parent: string | null, id: string): string {
   return `s|${parent ?? ""}|${id}`;
 }

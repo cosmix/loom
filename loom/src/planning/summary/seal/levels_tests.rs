@@ -109,6 +109,8 @@ fn the_opening_level_comes_before_the_detail_level() {
     assert_eq!(rejections(&f, ID, &after), [format!("6: {ORDER}")]);
     let heading = format!("# X\n\n{opening}\n\n{D1} {STAGES}\n\n## Risks\n\n{D2} {RISKS}\n");
     assert_eq!(rejections(&f, ID, &heading), [format!("7: {ORDER}")]);
+    let between = format!("# X\n\n{opening}\n\n## Detail\n\n{}", detail());
+    assert_eq!(rejections(&f, ID, &between), [format!("5: {ORDER}")]);
     sealed(
         &f,
         ID,
@@ -152,6 +154,18 @@ fn an_opening_sentence_opens_whole_detail_paragraphs_in_order() {
         own(D2)
     );
     sealed(&f, ID, &two);
+}
+
+#[test]
+fn an_opening_sentence_citing_one_detail_sentence_twice_says_so() {
+    let f = plan_fixture();
+    let text = draft(&format!("{O1} {} {} {}", own(D1), own(D1), own(D2)));
+    let want = format!(
+        "3: sentence {} cites detail sentence {} twice",
+        sentence_id(O1),
+        sentence_id(D1)
+    );
+    assert_eq!(rejections(&f, ID, &text), [want]);
 }
 
 #[test]

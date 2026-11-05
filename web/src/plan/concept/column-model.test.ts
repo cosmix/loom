@@ -2,9 +2,11 @@ import { describe, expect, it } from "vitest";
 
 import type { ConceptPage, Sentence } from "@/plan/api/schema-concept";
 
-import { sentenceKey } from "./column-context";
+import { sentenceKey, targetKey } from "./column-context";
 import { findSite, movedRun, passagesRecord, survivorKey } from "./column-model";
 import { columnPage } from "./fragments";
+import { columnOrder } from "./reading-order";
+import { firstPassageKeys } from "./same-passage";
 import type { CitedLookup } from "./open-state";
 import type { ColumnTarget, OpenRun } from "./types";
 
@@ -122,11 +124,15 @@ describe("merged fragments", () => {
   const none: CitedLookup = () => undefined;
 
   it("gives an open fragment the union of its members' passages, each once", () => {
-    expect(passagesRecord(view, [run("a")], none)).toEqual({ a: ["doc/a.md#one", "doc/a.md#two"] });
+    expect(passagesRecord(view, [run("a")], none)).toEqual({
+      "|a": ["doc/a.md#one", "doc/a.md#two"],
+    });
   });
 
   it("opens a fragment when the run was stored under one of its members", () => {
-    expect(passagesRecord(view, [run("b")], none)).toEqual({ a: ["doc/a.md#one", "doc/a.md#two"] });
+    expect(passagesRecord(view, [run("b")], none)).toEqual({
+      "|a": ["doc/a.md#one", "doc/a.md#two"],
+    });
   });
 
   it("finds a cited fragment's site as the merged sentence", () => {
@@ -136,5 +142,33 @@ describe("merged fragments", () => {
     const site = findSite(merged, lookup, "demo/product/section_01", "x", "o");
     expect(site?.sentence.text).toBe("x y");
     expect(findSite(merged, lookup, "demo/product/section_01", "y", "o")).toBeNull();
+  });
+});
+
+describe("one cited id under two citers", () => {
+  it("keeps each citer's own fragment passages, so the shared passage is shown once", () => {
+    const cited: Record<string, Sentence> = {
+      d1: resting("d1", ["stages"]),
+      d2: resting("d2", ["stages", "risks"]),
+      e1: resting("e1", ["other"]),
+    };
+    const lookup: CitedLookup = (_summary, id) => cited[id];
+    const view = columnPage(
+      pageOf([citing("B", ["d1", "e1"]), resting("mid", []), citing("A", ["d1", "d2"])]),
+    );
+    const open: OpenRun[] = [
+      { level: 0, sentenceId: "B", restsOn: [], parent: null },
+      { level: 0, sentenceId: "A", restsOn: [], parent: null },
+      { level: 1, sentenceId: "d1", restsOn: [], parent: "B" },
+      { level: 1, sentenceId: "d1", restsOn: [], parent: "A" },
+    ];
+
+    const passages = passagesRecord(view, open, lookup);
+    const order = columnOrder(view, open, passages, lookup);
+    const keys = order.map(targetKey);
+
+    expect(keys).toContain("p|A|d1|doc/a.md#risks");
+    expect(keys).not.toContain("p|B|d1|doc/a.md#risks");
+    for (const key of firstPassageKeys(order).values()) expect(keys).toContain(key);
   });
 });

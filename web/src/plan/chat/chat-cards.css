@@ -63,8 +63,9 @@
   color: var(--muted-foreground);
 }
 
-/* A 20px circle: a done one fills with the completed tone and draws its check; the live one
- * takes the accent edge; the next ones wait on the hairline edge. */
+/* A 20px circle: a done one fills with the completed tone and draws its check; the live one holds
+ * an 8px accent dot inside the same edge as the next ones (the accent is never a border, and in
+ * Ledger it would be one hue step from the edge); the next ones wait empty. */
 .chat-wrap-tick {
   display: inline-flex;
   width: 20px;
@@ -98,8 +99,12 @@
   animation: chat-draw 500ms var(--chat-ease, cubic-bezier(0.16, 1, 0.3, 1)) 300ms forwards;
 }
 
-.chat-wrap-ticks li[data-state="live"] .chat-wrap-tick {
-  border-color: var(--primary);
+.chat-wrap-ticks li[data-state="live"] .chat-wrap-tick::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent-ink);
 }
 
 .chat-wrap-path {

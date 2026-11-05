@@ -1,6 +1,7 @@
 import { act, cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { stubMotion } from "./motion-stub";
 import { todaySpan, TokenBar, TokenCards, totalTokens } from "./token-figures";
 
 afterEach(() => {
@@ -68,20 +69,6 @@ it("totals only the recorded components, telling an absent vector from a recorde
   expect(totalTokens({ fresh_input: 0 })).toBe(0);
   expect(totalTokens({ fresh_input: 1, cache_read: 2, cache_write: 3, output: 4 })).toBe(10);
 });
-
-/** A `matchMedia` whose answer is `matches(query)`; jsdom has none, which reads as no motion. */
-function stubMotion(matches: (query: string) => boolean) {
-  vi.stubGlobal("matchMedia", (query: string) => ({
-    matches: matches(query),
-    media: query,
-    onchange: null,
-    addEventListener() {},
-    removeEventListener() {},
-    addListener() {},
-    removeListener() {},
-    dispatchEvent: () => false,
-  }));
-}
 
 const TODAY = { fresh_input: 700, output: 300 };
 const WEEK = { fresh_input: 3500, cache_read: 3500 };

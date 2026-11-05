@@ -277,8 +277,9 @@ impl Session {
     }
 
     /// Whether the user sent this session a message of their own: a user item with no
-    /// generated origin that was pasted. An offer chat the user never wrote in has only the
-    /// offer's opening, so it has nothing to write into the documents at its end.
+    /// generated origin that is not `Delivery::Undelivered` (`Sent` is set when the item is
+    /// created, before the paste reaches the terminal). An offer chat the user never wrote in has
+    /// only the offer's opening, so it has nothing to write into the documents at its end.
     pub(super) fn user_wrote(&self) -> bool {
         self.mapper
             .turns()

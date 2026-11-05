@@ -5,6 +5,7 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 
 use super::PlanRowView;
+use crate::fs::plan_review::SPEC_CONFORMANCE_PREFIX;
 use crate::plan_server::review::built::{parse_generated, run_review_paths};
 use crate::planning::project::Project;
 use crate::planning::run_review::{review_items, ReviewItem, ReviewSection};
@@ -90,7 +91,8 @@ pub(super) fn built_view(project: &Project, rows: &[PlanRowView]) -> BuiltView {
             path: path.clone(),
         });
         let items = |section| review_items(text, section);
-        let spec = items(ReviewSection::SpecConformance).into_iter();
+        let asked = items(ReviewSection::OpenQuestions);
+        let spec = unasked_spec_items(items(ReviewSection::SpecConformance), &asked);
         built.spec.extend(spec.map(|item| SpecItemView {
             stage: item.stage_name,
             stage_id: item.stage_id,
@@ -108,11 +110,35 @@ pub(super) fn built_view(project: &Project, rows: &[PlanRowView]) -> BuiltView {
         built
             .candidates
             .extend(findings.map(|item| candidate(CandidateKind::Finding, item)));
-        let asked = items(ReviewSection::OpenQuestions).into_iter();
-        questions.extend(asked.map(|item| candidate(CandidateKind::Question, item)));
+        questions.extend(
+            asked
+                .into_iter()
+                .map(|item| candidate(CandidateKind::Question, item)),
+        );
     }
     built.candidates.extend(questions);
     built
+}
+
+/// The spec conformance items that are not also a question.
+///
+/// A spec-check question is written under both sections, but `## Spec Conformance` strips the
+/// `spec-conformance:` prefix and `## Open Questions` keeps the raw text, so the question is
+/// compared prefix-stripped. The candidate keeps it, being the one place the page offers a
+/// follow-up from.
+fn unasked_spec_items<'a>(
+    spec: Vec<ReviewItem>,
+    asked: &'a [ReviewItem],
+) -> impl Iterator<Item = ReviewItem> + 'a {
+    let same = move |item: &ReviewItem, q: &ReviewItem| {
+        let text = q
+            .text
+            .strip_prefix(SPEC_CONFORMANCE_PREFIX)
+            .unwrap_or(&q.text);
+        q.stage_id == item.stage_id && text.trim_start() == item.text
+    };
+    spec.into_iter()
+        .filter(move |item| !asked.iter().any(|q| same(item, q)))
 }
 
 /// The newest readable run review of `slug` by its Generated stamp, the last path when no stamp

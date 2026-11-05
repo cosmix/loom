@@ -14,6 +14,7 @@ import {
   type SummaryPanel as SummaryPanelData,
 } from "@/plan/api/schema-summaries";
 import { authoringAtom, serverInfoAtom, youAtom } from "@/plan/state/atoms";
+import { stubMotion } from "./motion-stub";
 import { SummaryPanel } from "./summary-panel";
 
 const NOW_SECS = 1793261460;
@@ -35,20 +36,6 @@ function show(fields: Partial<SummaryPanelData> = {}) {
     </Provider>,
   );
   return { ...rendered, store };
-}
-
-/** A `matchMedia` whose answer is `matches(query)`; jsdom has none, which reads as no motion. */
-function stubMotion(matches: (query: string) => boolean) {
-  vi.stubGlobal("matchMedia", (query: string) => ({
-    matches: matches(query),
-    media: query,
-    onchange: null,
-    addEventListener() {},
-    removeEventListener() {},
-    addListener() {},
-    removeListener() {},
-    dispatchEvent: () => false,
-  }));
 }
 
 /** Every labelled figure in `scope`: each `dt` with the `dd` beside it. */

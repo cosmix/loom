@@ -12,6 +12,7 @@ use enrichment::{build_cross_stage_summary, wants_stage_enrichment};
 pub(super) use findings::build_dependency_findings;
 pub(super) use findings::build_dependency_findings_with_changes;
 pub(super) use findings::DEPENDENCY_FINDINGS_HEADING;
+pub(super) use product_sections::append_product_sections;
 // Read only by tests (this crate's and the dependency harness), so the lib
 // build would flag an unconditional re-export as unused.
 #[cfg(test)]

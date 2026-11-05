@@ -1,4 +1,5 @@
 import type { ConceptPage, Sentence } from "@/plan/api/schema-concept";
+import { siteKey } from "./column-context";
 import { runOfSentence, runSentences } from "./fragments";
 import type { CitedLookup } from "./open-state";
 import type { ColumnTarget, FocusTarget, OpenRun } from "./types";
@@ -19,7 +20,7 @@ export function readingOrder(
   // overview sentences is open only under the one it was opened from.
   const addPassages = (sentence: Sentence, parent: string | null, level: 1 | 2) => {
     if (!runOfSentence(open, sentence, parent)) return;
-    for (const key of passages[sentence.id] ?? []) {
+    for (const key of passages[siteKey(parent, sentence.id)] ?? []) {
       targets.push({ kind: "passage", id: key, level, runOf: sentence.id });
     }
   };

@@ -102,7 +102,8 @@ fn writes_private_brief_and_minimal_plugin_with_fixed_launch_settings() {
     assert_eq!(guidance.effort, "medium");
     assert_eq!(guidance.display_name, "loom plan: chat");
     assert!(!guidance.opening_on_argv);
-    assert_eq!(FixedGuidance.closing_message(), CLOSING);
+    assert_eq!(FixedGuidance.closing_message(), CLOSING_MESSAGE);
+    assert!(CLOSING_MESSAGE.contains("loom-closing"));
 }
 
 #[test]

@@ -37,6 +37,39 @@ export function SettingsGroup({
   );
 }
 
+/** The switch: a native checkbox in the switch role, labelled and described by the row's ids. */
+function ToggleSwitch({
+  id,
+  checked,
+  disabled,
+  labelledBy,
+  describedBy,
+  onChange,
+}: {
+  id: string;
+  checked: boolean;
+  disabled: boolean;
+  labelledBy: string;
+  describedBy: string;
+  onChange: () => void;
+}): ReactElement {
+  return (
+    <span className="ps-switch">
+      <input
+        id={id}
+        type="checkbox"
+        role="switch"
+        checked={checked}
+        aria-labelledby={labelledBy}
+        aria-describedby={describedBy}
+        disabled={disabled}
+        onChange={onChange}
+      />
+      <span className="ps-knob" aria-hidden="true" />
+    </span>
+  );
+}
+
 function ToggleRow({
   title,
   subtitle,
@@ -67,19 +100,14 @@ function ToggleRow({
             {subtitle}
           </span>
         </label>
-        <span className="ps-switch">
-          <input
-            id={id}
-            type="checkbox"
-            role="switch"
-            checked={checked}
-            aria-labelledby={titleId}
-            aria-describedby={status ? `${subtitleId} ${statusId}` : subtitleId}
-            disabled={disabled}
-            onChange={onChange}
-          />
-          <span className="ps-knob" aria-hidden="true" />
-        </span>
+        <ToggleSwitch
+          id={id}
+          checked={checked}
+          disabled={disabled}
+          labelledBy={titleId}
+          describedBy={status ? `${subtitleId} ${statusId}` : subtitleId}
+          onChange={onChange}
+        />
       </div>
       {status && (
         <p id={statusId} role="status" className="ps-status">
@@ -105,10 +133,10 @@ function NotificationRow(): ReactElement {
 }
 
 /**
- * The whole summary panel (token totals, last rebuild, rebuild activity, terminal claims), read
- * from the feed the shell runs. The provider limits show only in the footer. Plain text stands in
- * for the panel until the feed answers; a status role here would collide with the notification
- * row's.
+ * The whole summary panel, read from the feed the shell runs: token totals, last rebuild,
+ * rebuild activity and terminal claims, in that order. The provider limits show only in the
+ * footer. Plain text stands in for the panel until the feed answers; a status role here would
+ * collide with the notification row's.
  */
 export function SummariesGroup(): ReactElement {
   const load = useAtomValue(panelLoadAtom);

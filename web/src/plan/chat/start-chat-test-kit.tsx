@@ -8,7 +8,12 @@ import brief from "@/plan/api/fixtures/session-brief.json";
 import helloFixture from "@/plan/api/fixtures/hello.json";
 import snapshotFixture from "@/plan/api/fixtures/chat-snapshot.json";
 import { planMessageSchema, type OfferView } from "@/plan/api/schema";
-import { sessionViewSchema, type SessionView } from "@/plan/api/schema-chat";
+import {
+  chatSnapshotSchema,
+  sessionViewSchema,
+  type SessionView,
+  type Turn,
+} from "@/plan/api/schema-chat";
 import type { connectPlanSocket } from "@/plan/api/socket";
 import {
   authoringAtom,
@@ -27,9 +32,18 @@ export const offer: OfferView = {
   label: "Start the product vision",
   target: null,
 };
+/** A chat the user wrote in: only such a chat has a closing write, so only it asks before ending. */
+export const wroteTurns: Turn[] = [
+  {
+    ...chatSnapshotSchema.parse(snapshotFixture).turns[0]!,
+    items: [
+      { type: "user", id: "wrote", text: "Hi", attachments: [], delivery: "sent", origin: null },
+    ],
+  },
+];
 export const disposers: Array<() => void> = [];
 
-export function harness(current: SessionView | null = null) {
+export function harness(current: SessionView | null = null, turns: Turn[] = wroteTurns) {
   const store = createStore();
   const hello = planMessageSchema.parse(helloFixture);
   if (hello.type !== "hello") throw new Error("Expected the hello fixture");
@@ -45,7 +59,7 @@ export function harness(current: SessionView | null = null) {
   });
   store.set(checklistAtom, { ...hello.checklists[0], primary: offer });
   store.set(connectionAtom, { phase: "open", everOpen: true, lastMessageAt: null });
-  store.set(snapshotAtom, { session: current, turns: [], queue: [], previous: null });
+  store.set(snapshotAtom, { session: current, turns, queue: [], previous: null });
   const listeners = new Map<string, Set<(message: unknown) => void>>();
   const send = vi.fn((_message: unknown) => true);
   const socket = {
