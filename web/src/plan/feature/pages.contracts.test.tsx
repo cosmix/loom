@@ -34,7 +34,6 @@ const SPINE = "Feature documents";
 const TESTED = "ledger";
 const UNTESTED = "gateway";
 const TESTED_DATE = "2026-10-20";
-const NOT_TESTED = "Not tested";
 const COMPARE = "Compare spec with build";
 
 let compareRuns: OfferView[] = [];
@@ -100,21 +99,6 @@ function atlas(patch: Record<string, unknown>): ChecklistView {
     feature: "atlas",
     metaplans: [{ path: "doc/plans/atlas/index.md", title: "Atlas roadmap" }],
     ...patch,
-  });
-}
-
-/** Two written plans, one pressure tested on TESTED_DATE and the other the next thing to test. */
-function pressureChecklist(): ChecklistView {
-  const untested = planRow(UNTESTED, "written", null);
-  const test = offer("pressure_test", `Pressure-test ${UNTESTED}`, untested.path);
-  return atlas({
-    plan_rows: [planRow(TESTED, "written", TESTED_DATE), untested],
-    plans: { listed: 2, total: 2, written: 2, running: 0, done: 0 },
-    untested: 1,
-    current: { kind: "step", number: 5 },
-    primary: test,
-    secondary: [],
-    items: [{ step: 5, text: `Pressure-test ${UNTESTED}`, path: untested.path, offer: test }],
   });
 }
 
@@ -187,19 +171,6 @@ afterEach(() => {
   cleanup();
   unregister.forEach((remove) => remove());
   vi.unstubAllGlobals();
-});
-
-it("the Pressure page lists every plan with its record state", async () => {
-  renderRoute("/f/atlas/pressure", pressureChecklist());
-  const page = await routedPage();
-
-  const tested = await planRowOf(page, TESTED, UNTESTED);
-  expect(tested.textContent).toContain(TESTED_DATE);
-  expect(tested.textContent).not.toContain(NOT_TESTED);
-
-  const untested = await planRowOf(page, UNTESTED, TESTED);
-  expect(untested.textContent).toContain(NOT_TESTED);
-  expect(untested.textContent).not.toContain(TESTED_DATE);
 });
 
 it("a finished feature's Run page holds the compare offer once", async () => {

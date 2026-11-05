@@ -96,11 +96,11 @@ const buttonsNamed = (root: HTMLElement, label: string) =>
     .queryAllByRole("button")
     .filter((button) => button.textContent?.includes(label));
 
-it("the spine and the Pressure page draw the pressure test offer once on a read-only server", async () => {
+it("the spine draws the pressure test offer once on a read-only server when no page owns it", async () => {
   const row = planRow(ONE, "written");
   const test = offer("pressure_test", PRESSURE_LABEL, row.path);
   renderRoute(
-    "/f/atlas/pressure",
+    "/f/atlas/vision",
     atlas({
       plan_rows: [row],
       plans: { listed: 1, total: 1, written: 1, running: 0, done: 0 },
@@ -112,7 +112,7 @@ it("the spine and the Pressure page draw the pressure test offer once on a read-
   const spine = await screen.findByRole("navigation", { name: SPINE });
 
   await waitFor(() => expect(buttonsNamed(document.body, PRESSURE_LABEL)).toHaveLength(1));
-  expect(buttonsNamed(spine, PRESSURE_LABEL)).toEqual([]);
+  expect(buttonsNamed(spine, PRESSURE_LABEL)).toHaveLength(1);
   expect(buttonsNamed(document.body, PRESSURE_LABEL)[0]!.getAttribute("aria-disabled")).toBe(
     "true",
   );

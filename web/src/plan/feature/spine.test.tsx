@@ -60,7 +60,7 @@ const link = (name: string | RegExp) => within(spine()).getByRole("link", { name
 const current = () => within(spine()).getAllByRole("link", { current: "page" });
 
 describe("rows", () => {
-  it("lists the six groups in workflow order, each a link to its page", () => {
+  it("lists the five groups in workflow order, each a link to its page", () => {
     renderSpine("/f/atlas/product");
 
     const heads = within(spine())
@@ -73,7 +73,6 @@ describe("rows", () => {
       ["Product spec 0/1", "/f/atlas/product"],
       ["Metaplan done", "/f/atlas/metaplan"],
       ["Plans 1/1", "/f/atlas/engineering"],
-      ["Pressure test 1 untested", "/f/atlas/pressure"],
       ["Run optional", "/f/atlas/run"],
     ]);
   });
@@ -89,10 +88,13 @@ describe("rows", () => {
   });
 
   it("reads a shown unit once, with no hidden word repeating it", () => {
-    renderSpine("/f/atlas/product");
+    const steps = checklistFixture.checklists[0]!.steps.map((step) =>
+      step.number === 4 ? { ...step, label: "Done" } : step,
+    );
+    renderSpine("/f/atlas/product", atlas({ steps }));
 
-    // Visible "1 untested" already names the state; a bare count ("0/1") keeps its hidden word.
-    expect(link(/\bPressure test\b/).textContent).toBe("Pressure test 1 untested");
+    // Visible "1/1 done" already names the state; a bare count ("0/1") keeps its hidden word.
+    expect(link(/\bPlans\b/).textContent).toBe("Plans 1/1 done");
     expect(link(/\bProduct spec\b/).textContent).toBe("Product spec 0/1, has gaps");
   });
 
@@ -100,13 +102,7 @@ describe("rows", () => {
     renderSpine("/f/atlas/vision", atlas({ sections: [], steps: [] }));
 
     expect(link(/\bProduct spec\b/).textContent).toContain("not started");
-    for (const name of [
-      /\bVision\b/,
-      /\bMetaplan\b/,
-      /\bPlans\b/,
-      /\bPressure test\b/,
-      /\bRun\b/,
-    ]) {
+    for (const name of [/\bVision\b/, /\bMetaplan\b/, /\bPlans\b/, /\bRun\b/]) {
       expect(link(name)).toBeTruthy();
     }
   });
@@ -168,36 +164,49 @@ describe("hostile names and marks", () => {
 
     const row = link(/atlas-03/);
     expect(row.textContent).toContain("constructor");
-    expect(row.querySelector("svg")).toBeNull();
+    // The pressure badge draws its own glyph; the state draws none.
+    expect(row.querySelector(".plan-status svg")).toBeNull();
   });
 });
 
-describe("the Pressure test mark", () => {
-  const pressureDone = (rows: Record<string, unknown>[]) =>
-    atlas({
-      plan_rows: rows,
-      steps: checklistFixture.checklists[0]!.steps.map((step) =>
-        step.number === 5 ? { ...step, mark: "done", count: null, label: step.name } : step,
-      ),
-    });
-  const mark = () =>
-    link(/\bPressure test\b/)
-      .closest("li")
-      ?.getAttribute("data-mark");
-
-  it("reads optional when the server says done but no plan has a test on record", () => {
-    renderSpine("/f/atlas/product", pressureDone([plan("atlas-01", "done")]));
-
-    expect(mark()).toBe("optional");
-    expect(link(/\bPressure test\b/).textContent).toContain("optional");
+describe("the pressure record on a plan row", () => {
+  const withDate = (slug: string, state: string, date: string | null) => ({
+    ...plan(slug, state),
+    pressure_date: date,
   });
 
-  it("reads done once a plan has a test on record", () => {
-    const tested = { ...plan("atlas-01", "done"), pressure_date: "2026-10-20" };
-    renderSpine("/f/atlas/product", pressureDone([tested]));
+  it("reads the test date, or that there is none, after the plan's state", () => {
+    const rows = [
+      withDate("atlas-01", "written", "2026-10-20"),
+      withDate("atlas-02", "written", null),
+    ];
+    renderSpine("/f/atlas/engineering", atlas({ plan_rows: rows }));
 
-    expect(mark()).toBe("done");
-    expect(link(/\bPressure test\b/).textContent).toContain("done");
+    const tested = link(/atlas-01/);
+    expect(tested.textContent).toBe("atlas-01 written Pressure-tested 2026-10-20");
+    expect(tested.querySelector('[data-tested="true"]')).not.toBeNull();
+    expect(link(/atlas-02/).querySelector('[data-tested="false"]')?.textContent).toBe(
+      "Not pressure-tested",
+    );
+  });
+
+  it("shows the record on a running and a done plan, and nothing on a retired one", () => {
+    const rows = [
+      withDate("atlas-01", "running", null),
+      withDate("atlas-02", "done", "2026-10-01"),
+      withDate("atlas-03", "retired", "2026-09-01"),
+    ];
+    renderSpine("/f/atlas/engineering", atlas({ plan_rows: rows }));
+
+    expect(link(/atlas-01/).textContent).toContain("Not pressure-tested");
+    expect(link(/atlas-02/).textContent).toContain("Pressure-tested 2026-10-01");
+    expect(link(/atlas-03/).querySelector(".plan-spine__badge")).toBeNull();
+  });
+
+  it("has no Pressure test group", () => {
+    renderSpine("/f/atlas/engineering");
+
+    expect(within(spine()).queryByRole("link", { name: /^Pressure test\b/ })).toBeNull();
   });
 });
 
@@ -336,5 +345,11 @@ describe("a document's source", () => {
 
     renderSpine("/f/atlas/source/product/atlas/notes.md");
     expect(within(spine()).queryAllByRole("link", { current: "page" })).toEqual([]);
+  });
+
+  it("marks the group's head on the page of a lone metaplan that is not index.md", () => {
+    const lone = atlas({ metaplans: [{ path: "doc/plans/atlas/round-1.md", title: "Round one" }] });
+    renderSpine("/f/atlas/metaplan/round-1.md", lone);
+    expect(current().map((anchor) => anchor.getAttribute("href"))).toEqual(["/f/atlas/metaplan"]);
   });
 });

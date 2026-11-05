@@ -37,7 +37,6 @@ it.each([
     "doc/plans/atlas/IN_PROGRESS-PLAN-atlas-01-documents.md",
     "atlas-01-documents",
   ],
-  ["/f/atlas/pressure", "pressure", null, "Pressure test"],
   ["/f/atlas/run", "run", null, "Run"],
   ["/plans/solo", "plan", "doc/plans/PLAN-solo.md", "solo"],
   ["/files/product/atlas/notes.md", "file", "doc/product/atlas/notes.md", "notes.md"],
@@ -81,13 +80,9 @@ it("a feature with no vision or metaplan has no document on its overview pages",
   expect(view("/f/atlas/metaplan", bare)).toEqual(NO_DOCUMENT);
 });
 
-it("pressure and run have no document by design but keep their names with a loaded checklist", () => {
+it("run has no document by design but keeps its name with a loaded checklist", () => {
   const bare = checklist({ has_product: false, metaplans: [], sections: [] });
-  expect(view("/f/atlas/pressure", bare)).toEqual({
-    kind: "pressure",
-    path: null,
-    name: "Pressure test",
-  });
+  expect(view("/f/atlas/pressure", bare)).toEqual(NO_DOCUMENT);
   expect(view("/f/atlas/run", bare)).toEqual({ kind: "run", path: null, name: "Run" });
 });
 

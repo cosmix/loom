@@ -11,10 +11,13 @@ it.each([
   ["/f/atlas/product/section_01", "product"],
   ["/f/atlas/engineering/atlas-01", "plans"],
   ["/f/atlas/metaplan", "metaplan"],
-  ["/f/atlas/pressure", "pressure"],
   ["/f/atlas/run", "run"],
 ])("selects the group of %s", (pathname, group) => {
   expect(groupOfPathname(pathname)).toBe(group);
+});
+
+it("selects no group for the removed Pressure page", () => {
+  expect(groupOfPathname("/f/atlas/pressure")).toBeNull();
 });
 
 it.each([
