@@ -127,5 +127,10 @@
         "number": 5
       }
     }
-  ]
+  ],
+  "built": {
+    "reviews": [],
+    "spec": [],
+    "candidates": []
+  }
 }

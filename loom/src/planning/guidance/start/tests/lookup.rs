@@ -45,6 +45,23 @@ fn lookup_accepts_draft_all_offers() {
 }
 
 #[test]
+fn plan_follow_ups_starts_for_a_feature_with_a_written_plan() {
+    let (temp, _) = fixture();
+    let plan = temp.path().join("doc/plans/f/PLAN-f-01.md");
+    fs::write(plan, "# Plan: f-01\n").unwrap();
+    let project = Project::load(temp.path()).unwrap();
+
+    assert_eq!(
+        AuthoringStart::from_offer_id("plan-follow-ups", &project, Some("f")),
+        Ok(AuthoringStart::Offer(Offer::PlanFollowUps))
+    );
+    assert_eq!(
+        AuthoringStart::from_offer_id("plan-follow-ups", &project, None),
+        Err(StartError::FeatureRequired)
+    );
+}
+
+#[test]
 fn kickoff_ids_need_no_feature_or_documents() {
     let temp = tempfile::tempdir().unwrap();
     fs::create_dir(temp.path().join("doc")).unwrap();
