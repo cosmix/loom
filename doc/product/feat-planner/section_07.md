@@ -348,7 +348,7 @@ per turn: a second Escape at an idle prompt opens Claude Code's rewind picker.
 
 **End.** A session ends with a final write when:
 
-- the user ends the chat from the authoring browser;
+- the user starts a new chat or opens another offer from the authoring browser;
 - the authoring browser has been gone for the grace period;
 - `loom plan` gets its first Ctrl-C or SIGTERM.
 
@@ -360,6 +360,9 @@ section 09: record the remaining open questions and anything pending into the do
 for that turn's `Stop` with no subagent running, then tears the session down. The final write
 is bounded at 10 minutes, after which the session is torn down as it stands. (My call: decisions
 are recorded as they are made, so the bound loses at most the open-questions pass.)
+
+A session whose user sent no message is torn down at once, without the closing message: there is
+nothing to write, so no model turn is spent on it.
 
 **Grace period: 10 minutes** from the moment the holder's last WebSocket closes. (My call: long
 enough for a reload, a network switch, or a short laptop sleep with the server on another

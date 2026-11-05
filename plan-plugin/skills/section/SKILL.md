@@ -104,8 +104,9 @@ documents already written stay.
 
 When the closing-write message arrives, ask no further questions. Write any settled
 decisions still missing and add every unresolved point under `## Open questions`,
-with options and your recommendation. Finish the turn-end duty, reply
-`Closing write done.` and stop. If there is nothing to write, reply at once.
+with options and your recommendation. Finish the turn-end duty, reply as the closing
+message asks (`Closing write done.` and its `loom-closing` block), then stop. If there is
+nothing to write, reply at once.
 
 ## Finish each editing turn
 
