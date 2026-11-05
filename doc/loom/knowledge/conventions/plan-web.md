@@ -89,3 +89,12 @@ Every worker brief names its design files. Visual and layout stages run on Claud
 - **Bundle size.** `plan.js` must stay under vite's 500 kB chunk warning; help is a lazy chunk for that reason ([the shell](../architecture/planner-web-shell.md#header-and-dock)).
 - **Wiring checks match text.** Keep each wired call in code, not a comment ([the mistake](../mistakes/planner-review-fixes.md#a-fix-worker-satisfied-a-text-wiring-check-with-a-comment)).
 - **Chat fixtures.** A chat test that sends and then asks for a final write runs the pasted message's turn to Idle first ([the mistake](../mistakes/planner-review-fixes.md#a-chat-test-sent-a-message-and-asked-for-a-final-write-without-finishing-the-turn)).
+
+## Planner Polish Rules
+
+- **Desktop chat in tests.** The panel shows from 1280px (`DESKTOP`, `chat/sheet-state.ts`); `panel-test-kit.tsx` `media()` matches only the 1024px query, so a test that needs the real panel body stubs `matchMedia` true for every `min-width` query.
+- **State glyphs are not SVG.** Running and rebuilding glyphs are `RoundelGlyph` spans, so a test that finds a state glyph selects `svg, .plan-roundel-glyph`; a count of SVGs drops by the busy glyphs ([the glyph](../architecture/planner-web-shell.md#roundel-and-busy-text)). A roundel sits under an `aria-hidden` ancestor with `busyLabel=""` and `idleLabel=""`, or a second status region and stray text appear.
+- **Selection after Add to chat.** The sheet takes focus on a button when it opens, and jsdom parks a collapsed range there: assert `getSelection().toString() === ""`, not `rangeCount === 0`.
+- **Chat CSS hooks.** Layout for the run line hangs on `.chat-run-line`, never `.chat-run-header`, which the pressure head shares. A quoted chip label is read from `.chat-chip-open` or `.chat-chip-label` `textContent`, because `getByText` matches an element's own text nodes only.
+- **Frozen names win.** A frozen contract's query fixes a name or a layout: the `SummaryPanel` columns repeat their labels (each label within 40 characters of its figure), and the kickoff remove button stays "Remove". Record the cost in concerns rather than renaming.
+- **Briefs.** Give a fix worker absolute worktree paths and say never to read the main checkout. A Rust worker that edits a function runs `cargo test --test maintainability` in its single check (the 50-line limit). A visual defect from integration-verify shots goes to a fable worker that loads `frontend-design:frontend-design`, one per area, with the before shot and the real data shape.
