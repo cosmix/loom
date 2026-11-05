@@ -4,6 +4,7 @@ import { Provider } from "jotai/react";
 import { afterEach, describe, expect, it } from "vitest";
 
 import tokensCss from "@/aurora-ui/shared/styles/tokens.css?raw";
+import tokenVariantsCss from "@/aurora-ui/shared/styles/tokens-dark-variants.css?raw";
 import { THEME_OPTIONS, ThemePicker, type ThemeOption } from "@/components/theme-picker";
 
 const TOKENS = {
@@ -108,7 +109,7 @@ afterEach(() => {
 });
 
 describe("theme picker palettes", () => {
-  const rules = parseRules(tokensCss);
+  const rules = parseRules(tokensCss + "\n" + tokenVariantsCss);
 
   it.each(THEME_OPTIONS)("$label previews and applies its tokens.css palette", (option) => {
     renderPicker();
@@ -138,7 +139,7 @@ describe("theme picker palettes", () => {
   it("moves the preview and the applied theme together when the source changes", () => {
     renderPicker();
     const pacific = THEME_OPTIONS.find((option) => option.id === "pacific")!;
-    const edited = parseRules(tokensCss);
+    const edited = parseRules(tokensCss + "\n" + tokenVariantsCss);
     owningRule(edited, OWNING_SELECTOR.pacific).declarations.set("--primary", "oklch(0 0 0)");
 
     expect(resolveTokens(previewOf(pacific), edited).get("--primary")).toBe("oklch(0 0 0)");
@@ -148,7 +149,7 @@ describe("theme picker palettes", () => {
   it("detects a preview scope dropped from the light palette selector", () => {
     renderPicker();
     const ledger = THEME_OPTIONS.find((option) => option.id === "ledger")!;
-    const edited = parseRules(tokensCss);
+    const edited = parseRules(tokensCss + "\n" + tokenVariantsCss);
     const rule = owningRule(edited, OWNING_SELECTOR.ledger);
     rule.selectors = rule.selectors.filter((selector) => selector !== ".theme-preview");
 

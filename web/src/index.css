@@ -7,6 +7,7 @@
 @import "@xyflow/react/dist/style.css";
 /* aurora-ui: tokens before anything that reads them, then its per-component sheets. */
 @import "./aurora-ui/shared/styles/tokens.css";
+@import "./aurora-ui/shared/styles/tokens-dark-variants.css";
 @import "./aurora-ui/shared/styles/animations.css";
 @import "./aurora-ui/feedback/busy-roundel.css";
 @import "./aurora-ui/feedback/hazard.css";
