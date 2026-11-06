@@ -13,7 +13,13 @@ import type { DocKind } from "@/plan/ui/glyphs";
 import { TurnFooterExtras } from "./footer-extras";
 import { lineCounts } from "./line-diff";
 import { RestoreAll, RestoreButton } from "./restore";
-import { ImplementingPlans, sectionFile, useImplementedBy } from "./turn-footer-plans";
+import {
+  ImplementingPlans,
+  sectionFile,
+  sectionId,
+  useImplementedBy,
+  type ImplementedBy,
+} from "./turn-footer-plans";
 import { RebuiltSummaries } from "./turn-footer-rebuilt";
 import { useTurnTexts, type TurnRow } from "./use-turn-texts";
 import { Untrusted, visibleControls } from "./visible-controls";
@@ -109,6 +115,13 @@ function ChangedRow(props: RowProps) {
   );
 }
 
+/** The slugs of the plans `ImplementingPlans` draws under a changed section file. */
+function shownSlugs(path: string, implemented: ImplementedBy): ReadonlySet<string> {
+  const id = sectionId(path);
+  if (id === null || !implemented.sections) return new Set();
+  return new Set((implemented.sections[id] ?? []).map((plan) => plan.slug));
+}
+
 function ChangedFiles({
   turn,
   sessionId,
@@ -143,7 +156,7 @@ function ChangedFiles({
             {sectionFile.test(file.path) && (
               <ImplementingPlans path={file.path} loaded={implemented} />
             )}
-            <ImpactRows path={file.path} />
+            <ImpactRows path={file.path} omitPlans={shownSlugs(file.path, implemented)} />
           </li>
         ))}
       </ul>

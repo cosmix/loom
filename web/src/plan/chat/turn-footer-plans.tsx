@@ -25,6 +25,12 @@ export type ImplementedBy = {
 
 export const sectionFile = /^doc\/product\/([a-z0-9-]+)\/section_(\d+)\.md$/;
 
+/** The `implemented-by` key of a changed section file (`product/<feature>/section_NN`), else null. */
+export function sectionId(path: string): string | null {
+  const match = path.match(sectionFile);
+  return match ? `product/${match[1]}/section_${String(Number(match[2])).padStart(2, "0")}` : null;
+}
+
 /**
  * One `implemented-by` request per turn footer, shared by every changed section file. A reload on
  * reconnect or retry keeps the last `sections` on show: resetting them would swap the plans for a
@@ -52,7 +58,7 @@ export function useImplementedBy(enabled: boolean): ImplementedBy {
 }
 
 /** A run review (`REVIEW-…-PLAN-<slug>.md`) shares the plan's suffix but is not the plan. */
-function isPlanFile(path: string | null, slug: string): path is string {
+export function isPlanFile(path: string | null, slug: string): path is string {
   const name = path?.split("/").at(-1);
   if (!name || name.startsWith("REVIEW-")) return false;
   return name === `PLAN-${slug}.md` || name.endsWith(`-PLAN-${slug}.md`);
@@ -201,10 +207,7 @@ function PlanGroup({ path, state, plans }: { path: string; state: string; plans:
 
 export function ImplementingPlans({ path, loaded }: { path: string; loaded: ImplementedBy }) {
   const { sections, error, retry } = loaded;
-  const section = path.match(sectionFile);
-  const id = section
-    ? `product/${section[1]}/section_${String(Number(section[2])).padStart(2, "0")}`
-    : null;
+  const id = sectionId(path);
   const plans = id ? (sections?.[id] ?? []) : [];
   if (error)
     return (

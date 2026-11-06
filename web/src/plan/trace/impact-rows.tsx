@@ -1,6 +1,7 @@
 import type { JSX } from "react";
 import { Link } from "react-router";
 
+import { isPlanFile } from "@/plan/chat/turn-footer-plans";
 import { Untrusted } from "@/plan/chat/visible-controls";
 import { featureOfDocPath, featureSourceHref } from "@/plan/feature/source-href";
 
@@ -13,13 +14,22 @@ import "./trace.css";
  * Under a changed document in the turn footer: the documents that moved with it (`revised`,
  * `stub_changed`, `upstream_changed`) and the plans covering a changed section, each with its
  * settle state. Titles come from the documents, so they are drawn as text. Nothing renders for
- * a document outside a feature or one with no downstream.
+ * a document outside a feature or one with no downstream. `omitPlans` names plan slugs whose
+ * rows are left out because the caller draws those plans itself.
  */
-export function ImpactRows({ path }: { path: string }): JSX.Element | null {
+export function ImpactRows({
+  path,
+  omitPlans,
+}: {
+  path: string;
+  omitPlans?: ReadonlySet<string>;
+}): JSX.Element | null {
   const feature = featureOfDocPath(path);
   const { trace } = useTrace(feature ?? "");
   if (feature === null || !trace) return null;
-  const rows = impactFor(trace, [path])[0]?.rows ?? [];
+  const rows = (impactFor(trace, [path])[0]?.rows ?? []).filter(
+    (row) => !omitPlans || ![...omitPlans].some((slug) => isPlanFile(row.path, slug)),
+  );
   if (rows.length === 0) return null;
   return (
     <>

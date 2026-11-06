@@ -24,7 +24,7 @@ import {
 } from "@/plan/files/heading-parts";
 import { HeadingActions, usePressureActive } from "@/plan/files/doc-heading-view";
 import { LockNotice } from "@/plan/files/lock-notice";
-import { SettleControl } from "@/plan/trace/settle-control";
+import { docIsLocked, SettleControl } from "@/plan/trace/settle-control";
 import { StubPanel } from "@/plan/trace/stub-panel";
 import {
   DocHeading,
@@ -185,7 +185,8 @@ function tracedDocument(page: ConceptPage): { feature: string; path: string } | 
  */
 function SettleOfSource({ feature, path }: { feature: string; path: string }): JSX.Element {
   const { doc } = useKeptDoc(path);
-  return <SettleControl feature={feature} path={path} hash={doc?.hash ?? null} />;
+  const locked = docIsLocked(doc);
+  return <SettleControl feature={feature} path={path} hash={doc?.hash ?? null} locked={locked} />;
 }
 
 /** The settle control is the toolbar's second group, after the Summary / Source switch. */
