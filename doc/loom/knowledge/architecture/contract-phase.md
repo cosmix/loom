@@ -189,7 +189,7 @@ The stage must already be frozen. The accept notice lists the re-frozen paths; s
 
 A refused freeze never waits for the operator. loom files it as a `freeze-refusal` dispute
 (`DisputeKind::FreezeRefusal`), an adjudicator decides it, and a fresh contract writer starts with the verdict
-(see [mistakes/contract-phase-human-blocking.md](../mistakes/contract-phase-human-blocking.md)).
+(see [mistakes/contract-autonomy-delivery.md#a-contract-freeze-refusal-waited-on-the-operator](../mistakes/contract-autonomy-delivery.md#a-contract-freeze-refusal-waited-on-the-operator)).
 
 **Where a refusal is kept.** `verify::contracts::refusal` holds both sources.
 

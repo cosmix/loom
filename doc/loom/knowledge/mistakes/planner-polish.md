@@ -78,3 +78,23 @@
 **Why:** the brief asked for "a quiet icon" and the implementer picked the inline glyph size; the browser check measured centring, never whether the figure read at page scale. `DESIGN.md` even forbade a medallion.
 **Prevention:** a state's figure is sized for its container (`DESIGN.md`, Loading, empty and error states: 40px in a 72px disc on a page, 24px in 44px compact). A visual check of a new state judges the screenshot at its real size, not only its geometry.
 **Fix:** `ui/load-state.css` sizes the figure from `--plan-state-disc` and `--plan-state-icon`, pinned by `load-state.test.tsx`.
+
+## A DOM-target fix was briefed without reading the test helper
+
+**What happened:** review found that a Mod-click on plain text beside a link followed the link: `hrefAt` resolved `posAtDOM(event.target)`, and a browser targets the `.cm-line` element for unstyled text, so the line start (or the side -1 fallback at a link's end) landed in the `Link`. The unit tests had passed because they dispatched on text nodes, which browsers never target. The round-1 fix brief then told the worker that a `.cm-line` target always means unstyled text. The existing helper dispatched at `domAtPos(label end)`, the boundary of a hidden range, which returns the `.cm-line`, so the guard broke two existing tests and the worker stopped.
+
+**Why:** the reviewer's DOM claim was taken without reading how the jsdom helper picks event targets.
+
+**Prevention:** before briefing a fix that depends on an event target, read the test helper that synthesises the event. A helper that picks targets the browser cannot produce hides the defect and breaks the fix.
+
+**Fix:** the helper fires on the parent element of the text node holding the clicked character; `hrefAt` returns null for a `.cm-line` or `.cm-content` target and resolves side 1 only ([the rule](../architecture/live-preview-editor.md#live-preview-decorations)).
+
+## A commit used a Conventional Commits type the rules do not allow
+
+**What happened:** a bundle-size fix was committed as `perf(web): ...`. The project allows `feat`, `fix`, `refactor`, `test`, `docs` and `chore`.
+
+**Why:** the type was picked from the general Conventional Commits list without checking the project's narrower one.
+
+**Prevention:** check the type against the six allowed before every `loom stage commit`; a bundle-size fix is `fix`.
+
+**Fix:** none; rewriting history is forbidden inside a stage, and later commits use allowed types.

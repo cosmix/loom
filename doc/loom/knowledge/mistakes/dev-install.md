@@ -1,6 +1,6 @@
 # dev-install.sh and the Running Daemon
 >
-> Daemon kill after install; installing unasked
+> Daemon
 
 ## A Daemon Started During dev-install.sh Keeps the Old Binary (2026-10-27)
 
