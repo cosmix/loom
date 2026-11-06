@@ -47,8 +47,8 @@ The offer is disabled, with the reason, when:
 
 ### The dialog
 
-Starting a pressure test opens a dialog with a hero row: an animated gauge in a tinted badge, "Pressure-test a plan",
-and "Two reviewers read the plan at once, then an editor addresses both."
+Starting a pressure test opens a dialog with a hero row: the still pressure-tested flask in a tinted badge, "Pressure-test a plan",
+and "Two reviewers read the plan at once, then an editor addresses both reviews."
 The plan card carries its DocMark, title, file name, state chips, and "Change" to choose another plan.
 
 "What happens" starts with the rounds control: 1/2/3 quick picks and a number field, default 2, as `loom pressure --rounds`.
@@ -118,18 +118,19 @@ user's Codex login; principle 7 forbids headless Claude, and no Claude session h
 ### What the chat shows
 
 A pressure run has no strip under the app header. The activity popover from the header notification pill carries the
-run's row: the plan's file name, round x of y, the current step (`/pressure`, `$pressure`, `/address`), a determinate
-progress bar counting the finished steps, and the elapsed time.
-The plan's header carries "Being pressure-tested" and locks Edit. In the chat, a running step (Codex, `/pressure`,
-`/address`) shows the rotating-arrow spinner, a finished step its done glyph and a step not yet started a quiet still
-glyph; motion stops when work ends and freezes with `prefers-reduced-motion`.
+run's row, titled "Pressure test · round x of y": the plan's file name and the current step (`/pressure`, `$pressure`,
+`/address`), the elapsed time, and a determinate progress bar counting the finished steps.
+The plan's header carries "Being pressure-tested" and locks Edit. In the chat, each running step (Codex, `/pressure`,
+`/address`) turns its own rotating arrow, even when two run at once; a finished step shows its done glyph and a step not
+yet started a quiet still glyph. The Codex card's tile (a magnifier) and the run header's flask are still glyphs. Motion
+stops when work ends and freezes with `prefers-reduced-motion`.
 
 The run occupies the chat panel the way an authoring session does. Its run header names the plan, round and step, with
 elapsed time, tokens and "Stop". The step timeline groups each round's Codex and Claude `/pressure` side by side,
 then Claude `/address`; the record line follows the last round:
 
 - each Claude step is a run of turns rendered like any session's (section 08), with its tool activity and its permission requests;
-- the Codex step is one status item, with an animated scan frame and travelling beam while it reviews: the model actually
+- the Codex step is one status item, whose tile is a still magnifier while it reviews: the model actually
   running (after any fallback, `loom/src/commands/pressure/fallback.rs:54`), the elapsed time, and on finish either
   "Review written" with a link to the `codex-<plan file>` report or "No review", with the log's tail on a failure, labelled "Codex failed";
 - each step lists the plan edits it made with their diffs (section 07's changed-file list);
@@ -387,12 +388,12 @@ The planning app does not monitor stages; the dashboard does (vision, Non-goals)
   the dashboard is up, and one row per plan with its state, each linking to the plan's concept
   page. The global run state covers only the active plan, so the page shows no per-plan progress
   beyond state. (My call; revisit if per-stage progress is wanted here.)
-- **A run strip** in the header, while `.loom/work` exists: a Play glyph with an outgoing pulse
-  while the daemon runs, the active plan, whether the daemon
-  runs, the count of stages merged out of the total, and the count needing attention, with the
-  dashboard link. A thin progress bar shows merged stages; attention uses the warning tone. In a
-  narrow header the strip is a button with details in a popover. The server reads it every 5 seconds with the code the dashboard's file-poll lane
-  uses (`data::collect_status_data`, `render::attention_entries`;
+- **The run row** in the header's activity popover, while `.loom/work` exists: while the daemon
+  runs, a "Plan running" row with the active plan's file name, the count of stages merged out of
+  the total, the count needing attention in the warning tone, and the dashboard link. A stopped
+  run leaves one line in the popover's foot with the same plan, count, attention and link. No
+  strip sits under the app header. The server reads it every 5 seconds with the code the
+  dashboard's file-poll lane uses (`data::collect_status_data`, `render::attention_entries`;
   `doc/loom/knowledge/architecture/web-dashboard.md`, "Server"). (My call: one line tells a
   planner whether to look at the dashboard, without rebuilding it.)
 - **Locked notices**: a running plan's file and briefs open read-only with "running; open the

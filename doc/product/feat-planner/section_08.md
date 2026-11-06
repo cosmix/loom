@@ -61,9 +61,12 @@ position live in the browser.
   run of lines that folds, assistant text has no box, and the composer is one round box with a
   round Send and a round Stop. A permission decision is the one item allowed real emphasis, and
   even that does not nest boxes. No coloured spine marks anything in it
-  (`conventions/web-dashboard-typography.md`, "Stage thread chips"). The pane draws at most one
-  roundel: on the starting or wrap-up card, and none when nothing works. It is an activity signal,
-  never an avatar, so no message carries one. A working turn ends with a typing bubble instead.
+  (`conventions/web-dashboard-typography.md`, "Stage thread chips"). Only the transcript
+  scrolls: the panel head and the composer stay in place. The pane draws one live sign per
+  working thing and none when nothing works, and never the roundel (the header notification
+  pill's sign, section 02). The starting and wrap-up cards draw a ring spinner. A working turn
+  ends with a typing bubble, the user's bubble mirrored to the left. In a pressure run each
+  running step turns its own arrow. No sign is an avatar, so no message carries one.
 - **Header.** The title sits over a sub-line. The title is the session's brief label ("Write
   section 08 — Chat interface"), "Chat" until it loads, and "New chat" while no session exists.
   The sub-line names the state in a few words, then the place the chat concerns (the feature or
@@ -158,7 +161,7 @@ closing message the server delivers before a session ends (section 07, "Interrup
 never shown. Its turn is drawn as the ending (below). (My call.)
 
 **The ending.** The closing turn is not drawn as a turn. While its write runs it is a card with
-the pane's one roundel, "Writing down what we decided", and a tick for each document the write
+a ring spinner, "Writing down what we decided", and a tick for each document the write
 has reached. When it is done the card reads "Here's what this chat left behind": the documents
 changed with their line counts, the decisions (Decided), and the open questions (Still open),
 read from the `loom-closing` block the closing message asks for (section 09), with a link to
@@ -223,7 +226,7 @@ only signal. The states are section 07's, with one more before the first message
 | State      | Head sub-line                                      | Panel                                                                        | Composer (authoring browser)                                  |
 | ---------- | -------------------------------------------------- | ---------------------------------------------------------------------------- | ------------------------------------------------------------- |
 | none       | no words                                           | The greeting (below)                                                         | Enabled with the context prompts; the first message starts a chat |
-| Starting   | "Starting"                                         | A card with the pane's roundel: "Starting the session", the name, model, effort | Enabled; messages queue                                       |
+| Starting   | "Starting"                                         | A card with a ring spinner: "Starting the session", the name, model, effort  | Enabled; messages queue                                       |
 | Idle       | no words                                           | The conversation                                                             | Enabled; Send delivers                                        |
 | Working    | "Working"                                          | The typing bubble on the newest turn; the running tool's own row             | Enabled; Send queues; Stop beside Send                        |
 | Permission | "Needs your answer", with a `--tone-warning` mark  | The permission card, pinned (below)                                          | Enabled; Send queues; Stop beside Send                        |
@@ -245,15 +248,13 @@ pills above the composer. The panel carries no offer from section 01. New chat s
 clears the concluded chat from the panel, and the composer takes focus. The user's first message,
 with its attachments, starts the chat.
 
-**Header glyphs.** The sheet-opening Chat button uses `ChatGlyph`: the turning roundel for
-Starting, Working and Ending, a ringing `BellRing` in `--tone-warning` while permission is
-needed, `!` for Failed, `✓` for Ended, and a resting `MessageSquare` for Idle and no chat.
-Pending permissions take priority over the session's state. The panel draws one roundel at most,
-on the starting or wrap-up card, and a working turn its typing bubble, so the head's sub-line
-draws no glyph of its own for those states. The glyphs freeze under `prefers-reduced-motion`.
-
-The roundel reuses `RoundelGlyph` (`web/src/plan/ui/roundel-glyph.tsx`), the planner's one sign of
-work in progress.
+**Header glyphs.** The sheet-opening Chat button uses `ChatGlyph`: a turning arrow while the
+chat starts (an operation that finishes), the green pulsing status dot for Working and Ending
+(a state being shown), a ringing `BellRing` in `--tone-warning` while permission is needed, `!`
+for Failed, `✓` for Ended, and a resting `MessageSquare` for Idle and no chat. Pending
+permissions take priority over the session's state. The panel's own signs are the cards' ring
+spinner and the working turn's typing bubble, so the head's sub-line draws no glyph of its own
+for those states. The glyphs freeze under `prefers-reduced-motion`.
 
 - **Failed** says which kind of failure: "The session could not start" with the spawn error, or
   "The session stopped unexpectedly" with the time of its last transcript activity. Both add:
@@ -551,9 +552,12 @@ takes authoring like starting a chat (section 02).
   divider naming the step and its model. Its footer lists the plan edits the step made, with
   Diff links (above, "What a turn changed"), and its tokens, teammates included (section 11).
 - **Codex step.** The Codex step is one status item: the model actually running, the elapsed
-  time with a `BusyRoundel` while it runs, and on finish either "Review written" with a link that
+  time, and on finish either "Review written" with a link that
   opens the `codex-<plan file>` report in file mode, or "No review". On a failure the item shows
-  the log's tail as monospace text. Codex tokens are not shown.
+  the log's tail as monospace text. Codex tokens are not shown. While the step runs, its row in
+  the step timeline turns an arrow, and so does the Claude `/pressure` row beside it when both
+  run at once; a finished step shows a check and a step not yet started a dashed circle. The
+  card's tile (a magnifier) and the run header's flask are still glyphs.
 - **Composer.** The holder keeps the composer, and messages go to the foreground Claude step as
   in a chat. During the Codex step there is no session to deliver to, so Send is disabled with
   "Codex is reviewing; send when the next Claude step starts". (My call.)
@@ -625,8 +629,8 @@ received, dimmed, with "Last update 3m ago". (My call.)
 - Every glyph has a text label; the state is always in words.
 - The panel is one landmark (`aside`, labelled "Chat"); `Tab` from the reading column reaches it
   (section 05), and `c` focuses the composer.
-- Animations follow `prefers-reduced-motion` as the dashboard's do: the roundel rests, and new
-  items appear without motion.
+- Animations follow `prefers-reduced-motion` as the dashboard's do: the spinners, the arrow, the
+  status dot and the typing bubble's dots rest, and new items appear without motion.
 
 ## Out of scope for this section
 
