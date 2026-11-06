@@ -14,6 +14,7 @@ pub mod run;
 pub mod server;
 pub mod summaries;
 pub mod team;
+pub mod trace;
 
 #[cfg(test)]
 mod built_contract_tests;

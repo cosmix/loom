@@ -1,4 +1,4 @@
 {
   "$schema": "./node_modules/oxfmt/configuration_schema.json",
-  "ignorePatterns": ["src/aurora-ui/**"]
+  "ignorePatterns": ["src/aurora-ui/**", "src/plan/api/fixtures/trace.json"]
 }

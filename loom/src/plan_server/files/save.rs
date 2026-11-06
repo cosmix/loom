@@ -173,7 +173,7 @@ pub fn save_route(req: &ApiRequest<'_>) -> ApiResponse {
     }
 }
 
-fn outcome_response(outcome: SaveOutcome) -> ApiResponse {
+pub(crate) fn outcome_response(outcome: SaveOutcome) -> ApiResponse {
     let (status, result) = match outcome {
         SaveOutcome::Saved { hash, validation } => (200, SaveResult::Saved { hash, validation }),
         SaveOutcome::Conflict {
@@ -191,7 +191,7 @@ fn outcome_response(outcome: SaveOutcome) -> ApiResponse {
     ApiResponse::json(status, &result)
 }
 
-fn refusal_response(ctx: &PlanContext, refusal: &SaveRefusal) -> ApiResponse {
+pub(crate) fn refusal_response(ctx: &PlanContext, refusal: &SaveRefusal) -> ApiResponse {
     match refusal {
         SaveRefusal::Authoring(refusal) => {
             ApiResponse::error(403, "authoring", &ctx.refusal_message(refusal))
