@@ -1,17 +1,18 @@
-import { BookOpen, CircleCheckBig, Gauge, ListChecks } from "lucide-react";
+import { CircleCheckBig } from "lucide-react";
 import { useAtomValue } from "jotai/react";
-import { useId, type ReactNode } from "react";
+import { useId, useMemo, type ReactNode } from "react";
 import { Link } from "react-router";
 
 import type { ChecklistView } from "@/plan/api/schema";
 import { Untrusted } from "@/plan/chat/visible-controls";
 import { SentenceText } from "@/plan/concept/sentence-text";
-import { plural } from "@/plan/ui/plural";
-import { FeatureMark } from "@/plan/home/feature-mark";
 import { STEP } from "@/plan/feature/steps";
+import { attentionOf, byAttention } from "@/plan/home/attention";
+import { FeatureMark } from "@/plan/home/feature-mark";
+import { FeatureStatus } from "@/plan/home/feature-status";
 import { ProgressStrip } from "@/plan/home/progress-strip";
 import { featuresAtom } from "@/plan/state/atoms";
-import { ActivityGlyph } from "@/plan/ui/activity-glyphs";
+import { plural } from "@/plan/ui/plural";
 
 import "./feature-card.css";
 
@@ -27,30 +28,26 @@ function currentStep(checklist: ChecklistView): number | null {
   return current.kind === "ready" ? STEP.run : null;
 }
 
-function Fact({ icon, children }: { icon: ReactNode; children: string }) {
-  return (
-    <span className="feature-card__fact">
-      {icon}
-      {children}
-    </span>
-  );
+/** "4 of 6 steps done, 2 with gaps"; the gap clause only when a step has one. */
+function stepSummary({ steps }: ChecklistView): string {
+  const done = steps.filter((step) => step.mark === "done").length;
+  const gaps = steps.filter((step) => step.mark === "gap").length;
+  const summary = `${done} of ${plural(steps.length, "step")} done`;
+  return gaps > 0 ? `${summary}, ${gaps} with gaps` : summary;
 }
 
-function Facts({ checklist }: { checklist: ChecklistView }) {
-  const { plans, sections, untested, steps } = checklist;
-  const allDone = steps.length > 0 && steps.every((step) => step.mark === "done");
-
+/** The document counts in fine print, and "all done" once every step is. */
+function Facts({ checklist, allDone }: { checklist: ChecklistView; allDone: boolean }) {
   return (
-    <div className="feature-card__facts">
-      {plans.running > 0 && (
-        <Fact icon={<ActivityGlyph kind="running" className="size-3.5" />}>
-          {`${plans.running} running`}
-        </Fact>
+    <div className="feature-card__facts plan-fine">
+      <span>{plural(checklist.sections.length, "section")}</span>
+      <span>{plural(checklist.plans.total, "plan")}</span>
+      {allDone && (
+        <span className="feature-card__done">
+          <CircleCheckBig aria-hidden="true" className="tone-completed" />
+          all done
+        </span>
       )}
-      <Fact icon={<BookOpen aria-hidden="true" />}>{plural(sections.length, "section")}</Fact>
-      <Fact icon={<ListChecks aria-hidden="true" />}>{plural(plans.total, "plan")}</Fact>
-      {untested > 0 && <Fact icon={<Gauge aria-hidden="true" />}>{`${untested} untested`}</Fact>}
-      {allDone && <Fact icon={<CircleCheckBig aria-hidden="true" />}>all done</Fact>}
     </div>
   );
 }
@@ -58,14 +55,18 @@ function Facts({ checklist }: { checklist: ChecklistView }) {
 export function FeatureCard({ checklist }: { checklist: ChecklistView }) {
   const headingId = useId();
   const summaryId = useId();
-  const done = checklist.steps.filter((step) => step.mark === "done").length;
-  const gaps = checklist.steps.filter((step) => step.mark === "gap").length;
+  const statusId = useId();
+  const attention = attentionOf(checklist);
+  const { running, questions, findings, untested } = attention;
+  // The status list renders only with something in it; the link is described by it only then.
+  const status = running + questions + findings + untested > 0 ? ` ${statusId}` : "";
 
   return (
     <Link
       to={`/f/${encodeURIComponent(checklist.feature)}`}
       aria-labelledby={headingId}
-      aria-describedby={summaryId}
+      aria-describedby={`${summaryId}${status}`}
+      data-quiet={attention.quiet || undefined}
       className="feature-card"
     >
       <div className="feature-card__top">
@@ -74,7 +75,7 @@ export function FeatureCard({ checklist }: { checklist: ChecklistView }) {
           <h3 id={headingId} className="feature-card__title">
             <Untrusted text={checklist.feature} />
           </h3>
-          <span className="feature-card__path plan-fine">
+          <span className="feature-card__path">
             <Untrusted text={pathLine(checklist)} />
           </span>
         </div>
@@ -86,33 +87,45 @@ export function FeatureCard({ checklist }: { checklist: ChecklistView }) {
           </span>
         </p>
       )}
-      <ProgressStrip
-        steps={checklist.steps}
-        current={currentStep(checklist)}
-        running={checklist.plans.running > 0}
-      />
-      <div className="feature-card__meta">
-        <span id={summaryId} className="plan-fine">
-          {`${done} of ${plural(checklist.steps.length, "step")} done, ${gaps} with gaps`}
-        </span>
-        <Facts checklist={checklist} />
+      <div className="feature-card__foot">
+        <Progress checklist={checklist} summaryId={summaryId} />
+        <FeatureStatus id={statusId} attention={attention} />
+        <Facts checklist={checklist} allDone={attention.allDone} />
       </div>
     </Link>
   );
 }
 
+/** The strip and the step count, read as one line; the count describes the card's link. */
+function Progress({ checklist, summaryId }: { checklist: ChecklistView; summaryId: string }) {
+  return (
+    <div className="feature-card__meta">
+      <ProgressStrip
+        steps={checklist.steps}
+        current={currentStep(checklist)}
+        running={checklist.plans.running > 0}
+      />
+      <span id={summaryId} className="feature-card__count">
+        {stepSummary(checklist)}
+      </span>
+    </div>
+  );
+}
+
 /**
- * The list is the grid. `lead` renders as its first item, so a card placed there (the home
- * invitation) flows through the same tracks as the features instead of owning a row.
+ * The list is the grid. `lead` renders as its first item, across the whole row, so the home
+ * invitation heads the features instead of taking a card's place among them. Features come in
+ * reading order (`byAttention`): running work first, finished work last.
  */
 export function FeatureCards({ lead }: { lead?: ReactNode }) {
   const features = useAtomValue(featuresAtom);
-  if (features.length === 0) return null;
+  const ordered = useMemo(() => byAttention(features), [features]);
+  if (ordered.length === 0) return null;
 
   return (
     <ul aria-label="Features" className="card-grid">
       {lead && <li className="card-grid__lead">{lead}</li>}
-      {features.map((checklist) => (
+      {ordered.map((checklist) => (
         <li key={checklist.feature} className="min-w-0">
           <FeatureCard checklist={checklist} />
         </li>

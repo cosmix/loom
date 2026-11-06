@@ -1,40 +1,38 @@
-/* One grid holds the lead card and the feature cards. Its container is queried, not the viewport:
- * two 290px columns and the gap need 594px, and only then can the lead card span two. */
+/* One grid holds the invitation and the feature cards. The invitation (`.card-grid__lead`) heads
+ * the grid across every track; the cards flow under it, three across at the 80rem page and one
+ * across on a phone. */
 .card-grid {
   container-type: inline-size;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 290px), 1fr));
-  gap: var(--space-3);
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 20rem), 1fr));
+  gap: var(--space-4);
   min-width: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
 
 .card-grid__lead {
+  grid-column: 1 / -1;
   min-width: 0;
-}
-
-.card-grid__lead > * {
-  height: 100%;
-}
-
-@container (min-width: 594px) {
-  .card-grid__lead {
-    grid-column: span 2;
-  }
 }
 
 /* A card is the planner's one surface standing on the page: a hairline edge, no shadow, and a
-   muted wash on hover. Nothing inside it draws a border. */
+   muted wash on hover. Nothing inside it draws a border. The foot (progress, status, counts) sits
+   at the card's bottom, so the feet of a row's cards line up whatever their pitches' length. */
 .feature-card {
-  display: grid;
-  align-content: start;
-  gap: var(--space-2);
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
   height: 100%;
   min-width: 0;
-  padding: var(--space-4);
+  padding: var(--space-5);
   border: 1px solid var(--hairline);
   border-radius: var(--corner-surface);
   background: var(--card);
   color: var(--card-foreground);
+  text-decoration: none;
   transition: background-color 120ms;
 }
 
@@ -42,15 +40,31 @@
   background: var(--muted);
 }
 
+@container (max-width: 30rem) {
+  .feature-card {
+    padding: var(--space-4);
+  }
+}
+
 .feature-card:focus-visible {
   outline: 2px solid var(--ring);
   outline-offset: 2px;
 }
 
+/* A finished feature with nothing to answer recedes: no card fill, so it stands on the page
+   ground inside its edge, and its pitch is cut at two lines (ui/DESIGN.md, Surfaces). */
+.feature-card[data-quiet] {
+  background: transparent;
+}
+
+.feature-card[data-quiet]:hover {
+  background: var(--muted);
+}
+
 .feature-card__top {
   display: flex;
   align-items: center;
-  gap: var(--space-2);
+  gap: var(--space-3);
   min-width: 0;
 }
 
@@ -61,6 +75,7 @@
 }
 
 .feature-card__title {
+  margin: 0;
   font-size: var(--type-title);
   font-weight: 600;
   line-height: var(--leading-ui);
@@ -70,51 +85,134 @@
 
 /* One path line, cut with an ellipsis rather than wrapped. */
 .feature-card__path {
-  font-family: var(--font-mono);
   overflow: hidden;
+  font-family: var(--font-mono);
+  font-size: var(--type-fine);
+  color: var(--muted-foreground);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-/* The reading face and colour come from `.feature-pitch`; the card sets its own size and clamp. */
+/* The reading face and colour come from `.feature-pitch`; the card sets its size and clamp. */
 .feature-card .feature-card__pitch {
   display: -webkit-box;
+  margin: 0;
+  overflow: hidden;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 3;
-  overflow: hidden;
-  font-size: var(--type-body);
+  font-size: var(--type-title);
   line-height: var(--leading-body);
   color: var(--muted-foreground);
   overflow-wrap: break-word;
+}
+
+.feature-card[data-quiet] .feature-card__pitch {
+  -webkit-line-clamp: 2;
 }
 
 .feature-card__pitch code {
   font-size: 0.8em;
 }
 
-/* The step count and the facts read as one line of fine print. */
+.feature-card__foot {
+  display: grid;
+  gap: var(--space-2);
+  margin-top: auto;
+  padding-top: var(--space-1);
+}
+
+/* The strip and the step count read as one line. */
 .feature-card__meta {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: var(--space-1) var(--space-3);
+  min-width: 0;
 }
 
-.feature-card__facts {
-  display: contents;
-  font-size: var(--type-fine);
+.feature-card__count {
+  font-size: var(--type-ui);
   color: var(--muted-foreground);
 }
 
-.feature-card__fact {
+.feature-card__facts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-3);
+  margin: 0;
+  color: var(--muted-foreground);
+}
+
+.feature-card__done {
   display: inline-flex;
   align-items: center;
   gap: var(--space-1);
 }
 
-.feature-card__fact > svg {
+.feature-card__done > svg {
   width: 14px;
   height: 14px;
-  flex-shrink: 0;
+  flex: none;
+}
+
+/* ── The six-cell strip: one 14px step mark per step, 2px apart ──────────── */
+
+.progress-strip {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.progress-strip__cell {
+  display: flex;
+}
+
+.progress-strip__glyph {
+  display: inline-flex;
+  width: 16px;
+  height: 16px;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted-foreground);
+}
+
+.progress-strip__glyph > svg {
+  width: 14px;
+  height: 14px;
+}
+
+.progress-strip__glyph > .activity-glyph {
+  width: 14px;
+  height: 14px;
+}
+
+.progress-strip__cell[data-cell="done"] .progress-strip__glyph {
+  color: var(--tone-completed);
+}
+
+.progress-strip__cell[data-cell="current"] .progress-strip__glyph {
+  color: var(--foreground);
+}
+
+/* ── What needs the reader: a glyph and a word per item, in --foreground ──── */
+
+.feature-status {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--foreground);
+}
+
+.feature-status__quiet {
+  color: var(--muted-foreground);
 }
 
 /* The feature's glyph carries its document colour; there is no tile behind it. */

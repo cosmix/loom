@@ -191,7 +191,13 @@ it.each([
     shape: { ...kickoff.shape, size: "plan" },
   };
   const { store, router, navigate } = mount(view);
-  const plan: StandalonePlanView = { slug: "search", path, title: "Search", state: "written" };
+  const plan: StandalonePlanView = {
+    slug: "search",
+    path,
+    title: "Search",
+    state: "written",
+    last_change: null,
+  };
   publish(store, [], [{ ...plan, path: "doc/plans/PLAN-other-search.md" }]);
   expect(navigate).not.toHaveBeenCalled();
   publish(store, [], [plan]);
@@ -210,7 +216,7 @@ it("recognizes a lifecycle prefix on the confirmed target", async () => {
     target: path,
     shape: { ...kickoff.shape, size: "plan" },
   });
-  publish(store, [], [{ slug: "search", path, title: "Search", state: "done" }]);
+  publish(store, [], [{ slug: "search", path, title: "Search", state: "done", last_change: null }]);
   await waitFor(() =>
     expect(router.state.location.pathname).toBe("/files/plans/DONE-PLAN-search.md"),
   );
@@ -223,7 +229,11 @@ it("encodes standalone plan path segments without introducing a query or hash", 
     target: path,
     shape: { ...kickoff.shape, size: "plan" },
   });
-  publish(store, [], [{ slug: "search", path, title: "Search", state: "written" }]);
+  publish(
+    store,
+    [],
+    [{ slug: "search", path, title: "Search", state: "written", last_change: null }],
+  );
 
   await waitFor(() =>
     expect(router.state.location.pathname).toBe(
@@ -256,7 +266,15 @@ it.each([
   publish(
     store,
     [feature],
-    [{ slug: "search", path: "doc/plans/PLAN-search.md", title: "Search", state: "written" }],
+    [
+      {
+        slug: "search",
+        path: "doc/plans/PLAN-search.md",
+        title: "Search",
+        state: "written",
+        last_change: null,
+      },
+    ],
   );
   expect(navigate).not.toHaveBeenCalled();
 });

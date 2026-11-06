@@ -104,7 +104,13 @@ mod tests {
 
         let response = get(&server, "/api/features", &cookies);
         assert_eq!(status(&response), 200);
-        let value = json_body(&response);
+        let mut value = json_body(&response);
+        let modified = value["standalone"][0]
+            .as_object_mut()
+            .unwrap()
+            .remove("last_change")
+            .unwrap();
+        assert!(modified.as_str().unwrap().ends_with('Z'));
         let features = value["features"].as_array().unwrap();
         assert_eq!(features.len(), 2);
         assert_eq!(features[0]["name"], "alpha");
@@ -119,6 +125,11 @@ mod tests {
         assert_eq!(features[1]["has_vision"], false);
         assert_eq!(features[1]["has_metaplan"], true);
         assert_eq!(features[1]["checklist"]["feature"], "zeta");
+        assert_standalone_and_moves(&value);
+        server.stop().unwrap();
+    }
+
+    fn assert_standalone_and_moves(value: &serde_json::Value) {
         assert_eq!(
             value["standalone"],
             json!([{
@@ -134,7 +145,6 @@ mod tests {
                 "target": "doc/product/index.md"
             }])
         );
-        server.stop().unwrap();
     }
 
     #[test]

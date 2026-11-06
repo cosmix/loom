@@ -1,0 +1,309 @@
+/* The standalone plans table, a ledger on the page ground: a sticky header under one hairline,
+   rows that divide with hairlines, each row one link to its plan. The plan's name leads in
+   --foreground over its mono slug; state and date are quieter, and the column the table is sorted
+   by is set in --foreground so the order reads at a glance (ui/DESIGN.md, Surfaces). */
+
+/* ── Toolbar: the filter on the left, the selection on the right ──────────── */
+
+.shelf-table-wrap {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+  padding-top: var(--space-3);
+}
+
+.shelf-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-4);
+  min-height: 32px;
+}
+
+.shelf-filter {
+  flex: 0 1 18rem;
+  min-width: 0;
+  height: var(--control-height);
+  padding: 0 var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--corner-control);
+  background: var(--background);
+  color: var(--foreground);
+  font-size: var(--type-ui);
+}
+
+.shelf-filter::placeholder {
+  color: var(--muted-foreground);
+}
+
+.shelf-filter:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+/* ── The table ─────────────────────────────────────────────────────────────── */
+
+/* Rows wash on hover out to a hair beyond the text column, so the text keeps the page's edge.
+   Fixed layout: a long slug truncates in its column instead of widening the table. */
+.shelf-table {
+  width: calc(100% + 2 * var(--space-2));
+  margin-inline: calc(-1 * var(--space-2));
+  border-collapse: separate;
+  border-spacing: 0;
+  table-layout: fixed;
+  font-size: var(--type-ui);
+  line-height: var(--leading-ui);
+  font-variant-numeric: tabular-nums;
+}
+
+.shelf-table th,
+.shelf-table td {
+  padding: var(--space-3) var(--space-2);
+  text-align: left;
+  vertical-align: middle;
+}
+
+/* The header stays in view while the page scrolls the rows under it. */
+.shelf-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  padding-block: var(--space-2);
+  border-bottom: 1px solid var(--hairline);
+  background: var(--background);
+  font-weight: 500;
+  color: var(--muted-foreground);
+}
+
+.shelf-table tbody tr {
+  position: relative;
+  transition: background-color 120ms;
+}
+
+.shelf-table tbody tr + tr > td {
+  border-top: 1px solid var(--hairline);
+}
+
+.shelf-table tbody tr:hover,
+.shelf-table tbody tr[data-selected] {
+  background: var(--muted);
+}
+
+/* The box's column: the 14px box plus the cell's padding on both sides (border-box). */
+.shelf-table__select {
+  width: calc(14px + 2 * var(--space-2));
+}
+
+/* The box sits above the row's link, so a click on it selects and does not open the plan. */
+.shelf-table input[type="checkbox"] {
+  position: relative;
+  z-index: 1;
+  display: block;
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  accent-color: var(--foreground);
+  cursor: pointer;
+}
+
+.shelf-table input[type="checkbox"]:focus-visible,
+.shelf-table__sort:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.shelf-table__state {
+  width: 8.5rem;
+  white-space: nowrap;
+}
+
+.shelf-table .shelf-table__modified {
+  width: 8rem;
+  white-space: nowrap;
+  text-align: right;
+}
+
+/* A header sorts on click; its arrow shows the order, a muted double arrow that it can. */
+.shelf-table__sort {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-height: 24px;
+  border-radius: var(--corner-control);
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.shelf-table__sort:hover,
+.shelf-table__sort[data-sorted] {
+  color: var(--foreground);
+}
+
+.shelf-table__sort[data-sorted] {
+  font-weight: 600;
+}
+
+.shelf-table__sort > svg {
+  width: 12px;
+  height: 12px;
+}
+
+.shelf-table__plan {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.shelf-table__link {
+  justify-self: start;
+  max-width: 100%;
+  font-size: var(--type-body);
+  font-weight: 500;
+  color: var(--foreground);
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+
+/* The link's box covers the whole row; its focus ring rings the row. */
+.shelf-table__link::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: var(--corner-control);
+}
+
+.shelf-table__link:focus-visible {
+  outline: none;
+}
+
+.shelf-table__link:focus-visible::after {
+  outline: 2px solid var(--ring);
+  outline-offset: -2px;
+}
+
+.shelf-table tbody tr:hover .shelf-table__link {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.shelf-table__slug {
+  min-width: 0;
+  overflow: hidden;
+  font-family: var(--font-mono);
+  font-size: var(--type-fine);
+  color: var(--muted-foreground);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* State and date are secondary; a running plan's state stands up, finished ones stay quiet. */
+.shelf-table__state .plan-status,
+.shelf-table__modified {
+  color: var(--muted-foreground);
+}
+
+.shelf-table tr[data-state="running"] .shelf-table__state .plan-status {
+  font-weight: 600;
+  color: var(--foreground);
+}
+
+.shelf-table[data-sort="state"] tbody .shelf-table__state .plan-status,
+.shelf-table[data-sort="modified"] tbody .shelf-table__modified {
+  color: var(--foreground);
+}
+
+.shelf-table__none {
+  padding-block: var(--space-5);
+  text-align: center;
+}
+
+/* At phone widths a row stacks: the box beside the title and slug, then the state and the date on
+   one line under them, so the table never scrolls sideways. The header becomes one sticky line:
+   the select-all box and the three sort buttons. */
+@media (max-width: 599.98px) {
+  .shelf-table,
+  .shelf-table tbody {
+    display: block;
+  }
+
+  .shelf-table thead {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    display: block;
+    border-bottom: 1px solid var(--hairline);
+    background: var(--background);
+  }
+
+  .shelf-table thead tr {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+  }
+
+  .shelf-table thead th {
+    position: static;
+    width: auto;
+    border-bottom: 0;
+  }
+
+  .shelf-table tbody tr {
+    display: grid;
+    grid-template-columns: 30px minmax(0, 1fr) auto;
+    grid-template-areas:
+      "select plan plan"
+      ". state modified";
+    padding-block: var(--space-2);
+  }
+
+  .shelf-table tbody tr + tr {
+    border-top: 1px solid var(--hairline);
+  }
+
+  .shelf-table tbody tr + tr > td {
+    border-top: 0;
+  }
+
+  .shelf-table td {
+    display: block;
+    width: auto;
+    padding-block: 2px;
+  }
+
+  .shelf-table tbody .shelf-table__select {
+    grid-area: select;
+    padding-top: var(--space-1);
+  }
+
+  .shelf-table tbody .shelf-table__title {
+    grid-area: plan;
+  }
+
+  .shelf-table tbody .shelf-table__state {
+    grid-area: state;
+  }
+
+  .shelf-table tbody .shelf-table__modified {
+    grid-area: modified;
+    width: auto;
+  }
+
+  .shelf-table thead .shelf-table__modified {
+    width: auto;
+  }
+
+  .shelf-table tbody .shelf-table__none {
+    grid-column: 1 / -1;
+  }
+
+  .shelf-filter {
+    flex-basis: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shelf-table tbody tr {
+    transition: none;
+  }
+}

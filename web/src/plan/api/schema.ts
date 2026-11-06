@@ -178,6 +178,7 @@ export const standalonePlanViewSchema = z.strictObject({
   path: z.string(),
   state: planStateViewSchema,
   title: z.string(),
+  last_change: z.string().nullable(),
 });
 export const projectChecklistViewSchema = z.strictObject({
   checklists: z.array(checklistViewSchema),
