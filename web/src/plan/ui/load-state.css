@@ -6,6 +6,8 @@
  * vertical middle to be the container's.
  */
 .plan-state {
+  --plan-state-disc: 72px;
+  --plan-state-icon: 40px;
   box-sizing: border-box;
   display: flex;
   flex: 1 1 auto;
@@ -28,6 +30,8 @@
 }
 
 .plan-state[data-size="compact"] {
+  --plan-state-disc: 44px;
+  --plan-state-icon: 24px;
   gap: var(--space-1);
   padding: var(--space-5) var(--space-4);
 }
@@ -37,10 +41,28 @@
   animation: plan-state-in 240ms ease-out 160ms both;
 }
 
+/* The glyph is the state's figure: a 40px icon in a 72px --muted disc on a page, 24px in 44px
+ * when compact (the sizes are on .plan-state). The loading spinner takes the same box, so a state
+ * keeps its size from loading to empty or error. */
 .plan-state__glyph {
-  display: inline-flex;
-  margin-bottom: var(--space-1);
+  display: inline-grid;
+  place-items: center;
+  width: var(--plan-state-disc);
+  height: var(--plan-state-disc);
+  margin-bottom: var(--space-2);
+  border-radius: 50%;
+  background: var(--muted);
   color: var(--muted-foreground);
+}
+
+.plan-state__glyph > svg {
+  width: var(--plan-state-icon);
+  height: var(--plan-state-icon);
+}
+
+/* The spinner turns on the page's own background: no disc behind it. */
+.plan-state[data-state="loading"] .plan-state__glyph {
+  background: transparent;
 }
 
 .plan-state[data-state="error"] .plan-state__glyph {
