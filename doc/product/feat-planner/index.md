@@ -67,10 +67,17 @@ edits the documents in `doc/`.
 ## The screen
 
 The project home (`/`) lists features, each named by its slug, with a pitch from its vision, a
-six-cell progress strip and document counts. A feature is named by its slug everywhere in the
+six-cell progress strip and document counts. A card also names what asks for the reader: plans
+running, open questions in the spec, findings the last run left open, and plans not
+pressure-tested. Features with running work come first and finished features with nothing open
+come last, drawn quieter. A feature is named by its slug everywhere in the
 app: switcher, eyebrow, cards, breadcrumbs, chat and the browser tab. A document keeps its own
 heading. Standalone plans share a shelf with "Add plan" and "Move plan";
-they have no six-step checklist or per-plan workflow offers. An invitation card offers "Start a
+they have no six-step checklist or per-plan workflow offers. The shelf counts its plans by state,
+and its table lists each plan's name, state and when its file last changed (Modified), newest
+first, sorted by any column from its header. Above the table, toggles named by state with their
+counts ("All", "Running 1", "Done 53") narrow it to one or several states, combining with the
+text filter; a selected plan they hide is unselected. An invitation card offers "Start a
 conversation" at `/new`: the kickoff settles whether the work needs a feature or a standalone
 plan before writing anything. A repository with exactly one feature opens on `/f/<name>`.
 
@@ -106,10 +113,7 @@ A feature page has one header row above three columns:
   rows open the real content, and the spine is the only place a feature's progress is drawn. Each
   document row shows its settle state beside its glyph (draft, revised, settled; section 01).
   Product spec also holds a Coverage row, and Run holds a Findings row with the count of open
-  findings. At its head, the **next step** is one sentence and at most one button. A feature with
-  no gap and nothing to start shows the sentence only. While a page lists missing sections or
-  plans (the pace and queue of section 01), that page owns the button and the spine keeps the
-  sentence. Under the sentence sit the **frontier hints**: at most five short lines, one link
+  findings. At its head sit the **frontier hints**: at most five short lines, one link
   each, naming the documents that need attention next, such as a settled section that changed. A
   hint is a link, never a button, and starts no session. (My call.)
 - **Reading column**, centred, at most about 70 characters wide: the vision or a metaplan as
@@ -117,7 +121,7 @@ A feature page has one header row above three columns:
   above. Each overview sentence carries small colour marks, one per document it draws on, in that
   document's colour; a mark drawn dashed means that summary is out of date and being rebuilt.
 - **Chat panel**, a fixed column on the right at 1280px and wider (resizable, 20 to 40rem) and
-  a sheet behind the header's Chat button below that; it is never collapsed. It shows the current
+  a sheet behind the header's Chat button below that; the same button collapses and expands the column. It shows the current
   session's conversation. It knows which
   document the reader is viewing, shows it as a context line, offers prompts that fit it, and
   attaches the document to the next message (section 08). Selecting text in the reading column
@@ -146,7 +150,7 @@ kickoff conversation. Opening `/f/<feature>` lands on the page where the feature
 | No product spec, a metaplan     | The engineering overview                    |
 
 A feature with a product spec opens on the product overview, where its reading starts. The
-spine's next-step sentence suggests what to do and never forces it; accepting an offer opens a
+offers suggest what to do and never force it; accepting an offer opens a
 new session briefed for that step. Refining is available at every step, including after
 everything exists. How "finished", "pressure-tested" and "listed sections" are detected from the
 files is for section 01 to settle.

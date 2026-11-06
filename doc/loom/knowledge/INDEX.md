@@ -120,7 +120,7 @@
 | [git-and-build-workflow](conventions/git-and-build-workflow.md) |  | 237 |
 | [guidance-channels-and-plugin-scope](conventions/guidance-channels-and-plugin-scope.md) |  | 139 |
 | [model-and-effort-config](conventions/model-and-effort-config.md) |  | 143 |
-| [plan-web](conventions/plan-web.md) |  | 130 |
+| [plan-web](conventions/plan-web.md) |  | 134 |
 | [plan-yaml-and-hooks](conventions/plan-yaml-and-hooks.md) |  | 182 |
 | [web-dashboard-typography](conventions/web-dashboard-typography.md) |  | 63 |
 
@@ -165,7 +165,7 @@
 | [pinned-literals-ledgers-and-wiring](mistakes/pinned-literals-ledgers-and-wiring.md) | Pins | 332 |
 | [plan-authoring](mistakes/plan-authoring.md) |  | 79 |
 | [plan-server-delivery](mistakes/plan-server-delivery.md) | Slips | 374 |
-| [planner-design-brainstorm](mistakes/planner-design-brainstorm.md) | Stubs | 59 |
+| [planner-design-brainstorm](mistakes/planner-design-brainstorm.md) | Stubs | 73 |
 | [planner-follow-ups-delivery](mistakes/planner-follow-ups-delivery.md) | Slips | 68 |
 | [planner-polish](mistakes/planner-polish.md) | Polish | 100 |
 | [planner-redesign](mistakes/planner-redesign.md) |  | 80 |
