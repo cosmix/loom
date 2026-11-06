@@ -1,6 +1,6 @@
 # Host Verify Group Containment
 
-> Guardian cleanup
+>
 
 ## Group guardian assumed bubblewrap payload stayed in its host group
 

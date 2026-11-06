@@ -1,6 +1,6 @@
 # Source Graph Resolution
 
-> Bindings
+>
 
 Cross-file binding of source-graph edges: what extraction decides alone, what `context::resolve`
 decides with the whole graph, and the refusal rules that keep both honest. Edge classes and

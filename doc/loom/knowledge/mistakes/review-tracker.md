@@ -1,6 +1,6 @@
 # Review Tracker
 
-> Findings
+>
 
 ## Keep the review tracker current
 

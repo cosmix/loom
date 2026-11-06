@@ -2,7 +2,7 @@
 
 >
 >
-> Oversights
+>
 > context.
 
 1. **Mutex poisoning cascade.** `loom/src/commands/status/web/broadcast.rs` calls
@@ -52,9 +52,8 @@ Current settings behavior and remaining concerns:
 
 Two gaps accepted rather than closed while adding the theme picker and notification switch:
 
-1. **Two tone tokens keep Aubergine's hue under Pacific and Graphite.** `--tone-pending` and
-   `--tone-dimmed` are `oklch(... 0.025 325)` for every `.dark` variant (`web/src/index.css`). At chroma 0.025 they read as near-gray in practice, but the literal hue is still
-   Aubergine's 325, not tuned per theme; "no new theme tokens" stayed a non-goal for this plan,
+1. **Two tone tokens keep hue 325 under Walnut and Graphite.** `--tone-pending` and
+   `--tone-dimmed` are `oklch(... 0.025 325)` for every `.dark` variant (`web/src/index.css`). At chroma 0.025 they read as near-gray in practice, but the literal hue is a leftover violet 325, not tuned per theme (Walnut is hue 55, Graphite 270); "no new theme tokens" stayed a non-goal for this plan,
    so it was left rather than adding per-theme overrides. Every other loom token either derives
    from `var(--primary)`/`var(--border)` or is hue-neutral.
 2. **No gate in the web pipeline executes the built bundle in a browser.** `bun run --cwd web

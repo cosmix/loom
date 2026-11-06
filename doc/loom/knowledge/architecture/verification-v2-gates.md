@@ -1,6 +1,6 @@
 # Verification V2 Gates
 >
-> Daemon-run gates
+>
 >
 >
 

@@ -1,6 +1,6 @@
 # Plan Server Delivery
 >
-> Delivery
+>
 
 >
 
