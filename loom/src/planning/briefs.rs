@@ -9,7 +9,8 @@ use anyhow::{Context, Result};
 use crate::plan::inputs::collect_inputs;
 use crate::planning::discover::DocTree;
 use crate::planning::kinds::DocKind;
-use crate::planning::slug::{plan_home, PlanEntry};
+use crate::planning::project::Project;
+use crate::planning::slug::{plan_home, plan_slug, PlanEntry};
 
 /// The inputs of a plan, grouped by their place in its bundle.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -73,6 +74,28 @@ fn group_input(result: &mut PlanBriefs, bundle: &Path, stages: &[String], path: 
         }
     }
     result.other.push(path);
+}
+
+/// The brief files of a plan's bundle, sorted: the loaded project's documents classified
+/// `DocKind::Brief` for the plan's slug under `<plan home>/briefs/<slug>/`.
+///
+/// This reads the loaded project, never the disk (`plan_briefs` reads the disk for the run
+/// preflight). A path that is not a plan has no bundle.
+pub fn bundle_files(project: &Project, plan_rel: &Path) -> Vec<PathBuf> {
+    let name = plan_rel.file_name().and_then(|name| name.to_str());
+    let (Some(slug), Some(home)) = (name.and_then(plan_slug), plan_home(plan_rel)) else {
+        return Vec::new();
+    };
+    let bundle = home.join("briefs").join(&slug);
+    // The map iterates in path order, so the result is sorted.
+    project
+        .docs
+        .values()
+        .map(|doc| &doc.doc)
+        .filter(|doc| doc.path.starts_with(&bundle))
+        .filter(|doc| matches!(&doc.kind, DocKind::Brief { slug: found } if *found == slug))
+        .map(|doc| doc.path.clone())
+        .collect()
 }
 
 /// Return sorted bundle slugs represented in the tree that have no plan.

@@ -13,6 +13,8 @@
 //! - `pressure`: pressure-test records and open questions.
 //! - `xref`: cross-references between documents.
 //! - `briefs`: plan briefs grouped by stage.
+//! - `findings`: a feature's findings ledger.
+//! - `trace`: a feature's planning trace (edge tokens, settled marks, coverage and gaps).
 //! - `problems`: the convention problems `loom plan check` reports.
 //! - `project`: the loaded project view.
 //! - `checklist`: the planning checklist, current step and offers.
@@ -20,6 +22,7 @@
 pub mod briefs;
 pub mod checklist;
 pub mod discover;
+pub mod findings;
 pub mod guidance;
 pub mod implements;
 pub mod kinds;
@@ -33,6 +36,7 @@ pub mod runtime;
 pub mod sections;
 pub mod slug;
 pub mod summary;
+pub mod trace;
 pub mod vision;
 pub mod watch;
 pub mod xref;
