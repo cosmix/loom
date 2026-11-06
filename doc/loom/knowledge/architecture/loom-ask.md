@@ -15,7 +15,7 @@ verified: 3e22bf84e13e65479097f1a8206ca9bd0158ff61
 
 # `loom ask`
 >
-> loom ask worker and --eval
+>
 
 `loom ask` answers one question about named files with a one-shot worker that has no tools, no settings
 and no project instructions. `loom ask --eval <cases.json>` scores a backend against a cases file. It exists

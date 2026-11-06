@@ -3,7 +3,7 @@
 
 # Cli Process And Conventions
 
-> CLI, TUI
+>
 
 ## TUI Patterns
 

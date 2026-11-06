@@ -23,7 +23,7 @@ verified: 3e22bf84e13e65479097f1a8206ca9bd0158ff61
 
 # Read Gate
 >
-> Read gate
+>
 
 The read gate redirects a whole read of a large file to `loom map --outline`. Rule 1 of
 `loom_read_discipline_check` (`loom-hooks/_read_discipline.sh`) is deny-once inside a live stage. No Rust

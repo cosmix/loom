@@ -1,6 +1,6 @@
 # Planner Review Fixes Mistakes
 >
-> Review-fix slips
+>
 
 Slips from the planner review-fixes plan (kickoff, chat, drafts, uploads, vision summary). Current behaviour is in [Planner Uploads and Kickoff Drafts](../architecture/planner-uploads-and-drafts.md) and [Planner Web Shell](../architecture/planner-web-shell.md).
 

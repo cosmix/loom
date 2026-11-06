@@ -1,6 +1,6 @@
 # Planner Uploads and Kickoff Drafts
 >
-> Uploads, drafts
+>
 
 Two stores outside the repository, both under the planner's runtime directory, with the commands and transcript rules that use them. Web side: [Planner Web Shell](planner-web-shell.md).
 

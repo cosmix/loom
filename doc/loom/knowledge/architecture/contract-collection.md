@@ -1,6 +1,6 @@
 # Contract Collection
 
-> Scaffold
+>
 
 ## Contract Collection: Scaffold, Chain Check and Target Model
 

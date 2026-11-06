@@ -3,7 +3,9 @@
 
 # Security And Isolation
 >
-> Worktree deny and check
+> Deny
+>
+>
 >
 >
 

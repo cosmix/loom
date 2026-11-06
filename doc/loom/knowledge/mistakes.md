@@ -228,7 +228,7 @@ A container-query component in an unsized flex item (footer meters stacked), a s
 
 ## Spec sections inventing features
 
-A spec section adds an action, button or skill only when the vision names it. See [mistakes/spec-scope-invention](mistakes/spec-scope-invention.md).
+A spec section adds an action, button or skill only when the vision names it; spec and build are aligned by integration-verify's spec-conformance duty, not by an invented offer. See [mistakes/spec-scope-invention](mistakes/spec-scope-invention.md).
 
 ## Visual requests reduced to DOM tests
 
@@ -236,4 +236,8 @@ A visual request needs a concrete design brief and a screenshot check, not only 
 
 ## Run review written outside the plan's home
 
-Feature run reviews land at the top of `doc/plans/` while readers search the plan's home. See [mistakes/run-review-location](mistakes/run-review-location.md).
+Feature run reviews land at the top of `doc/plans/` while readers once searched only the plan's home; the readers now search both. See [mistakes/run-review-location](mistakes/run-review-location.md).
+
+## Planner follow-ups delivery
+
+A live region mounted twice, a test constant that passed vitest and failed the type check, a classifier test with a name the generator never writes, a fix that broke another stage's wiring literal, a container query on its own container, a CSS reset that lost on specificity, a screenshot clone left in the worktree root, a frozen contract that matched a plan's own truth check, and a scaffold order rustfmt reversed. See [mistakes/planner-follow-ups-delivery](mistakes/planner-follow-ups-delivery.md).

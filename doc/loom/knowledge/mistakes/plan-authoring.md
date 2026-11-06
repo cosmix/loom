@@ -1,6 +1,6 @@
 # Plan Authoring
 
-> Plan gaps
+>
 
 ## Web stages left the embedded bundle stale
 

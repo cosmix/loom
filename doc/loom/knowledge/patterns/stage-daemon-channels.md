@@ -1,7 +1,7 @@
 # Stage-to-Daemon Channels
 
 >
-> Channels
+>
 
 ## Three Routes, Chosen by What the Caller Can Actually Do
 
