@@ -44,7 +44,7 @@ installStartChatLifecycle();
 
 const PICKER = "Which feature?";
 const SEED =
-  "Settings statistics look bland (open finding from REVIEW-PLAN-atlas-01.md, stage chat-polish)";
+  "F-1: Settings statistics look bland (open finding from REVIEW-PLAN-atlas-01.md, stage chat-polish)";
 
 function feature(patch: Record<string, unknown>): ChecklistView {
   return checklistViewSchema.parse({ ...checklistFixture.checklists[0]!, ...patch });
@@ -71,6 +71,7 @@ function atlas(): ChecklistView {
       spec: [],
       candidates: [
         {
+          id: "F-1",
           kind: "finding",
           stage: "Chat polish",
           stage_id: "chat-polish",

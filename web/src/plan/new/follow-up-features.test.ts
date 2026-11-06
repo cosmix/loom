@@ -6,6 +6,7 @@ import { featureStatus, followUpFeatures, PLAN_FOLLOW_UPS_ID } from "@/plan/new/
 
 const metaplans = [{ path: "doc/plans/x/index.md", title: "Roadmap" }];
 const candidate = {
+  id: "F-1",
   kind: "finding",
   stage: "Chat polish",
   stage_id: "chat-polish",

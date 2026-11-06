@@ -9,6 +9,7 @@ use serde::{Serialize, Serializer};
 use super::{CurrentStep, Facts, Step};
 use crate::planning::discover::DocTree;
 use crate::planning::kinds::{plans_dir, product_dir, vision_path, DocKind};
+use crate::planning::slug::{PlanEntry, PlanState};
 
 /// One action the app proposes.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -62,6 +63,8 @@ pub enum Offer {
     StartRun,
     /// Plan follow-up entries in the feature's metaplan.
     PlanFollowUps,
+    /// Review what a plan built and record the findings in the feature's ledger.
+    ReviewFeature,
     /// Draft every missing section in one authoring session.
     DraftAllSections {
         /// The owning feature.
@@ -123,6 +126,7 @@ impl Offer {
             Offer::PressureTest { .. } => "pressure-test",
             Offer::StartRun => "start-run",
             Offer::PlanFollowUps => "plan-follow-ups",
+            Offer::ReviewFeature => "review-feature",
             Offer::DraftAllSections { .. } => "draft-all-sections",
             Offer::DraftAllPlans { .. } => "draft-all-plans",
             Offer::MoveIntoFeature { .. } => "move-into-feature",
@@ -159,6 +163,7 @@ impl Offer {
             Offer::PressureTest { slug, .. } => format!("Pressure-test {slug}"),
             Offer::StartRun => "Start a run".into(),
             Offer::PlanFollowUps => "Plan follow-ups".into(),
+            Offer::ReviewFeature => "Review the feature".into(),
             Offer::DraftAllSections { .. } => "Draft all with a team".into(),
             Offer::DraftAllPlans { .. } => "Draft all with a team".into(),
             Offer::MoveIntoFeature { path } => {
@@ -303,7 +308,8 @@ fn pressure_tests(facts: &Facts) -> Vec<Offer> {
         .collect()
 }
 
-/// What every state also offers: pressure tests and unlisted sections when a vision exists.
+/// What every state also offers: pressure tests, unlisted sections when a vision exists, and a
+/// review of the feature once one of its plans is running or done.
 fn extras(facts: &Facts) -> Vec<Offer> {
     let mut offers = pressure_tests(facts);
     if facts.vision {
@@ -312,6 +318,10 @@ fn extras(facts: &Facts) -> Vec<Offer> {
             feature: facts.feature.into(),
             number,
         }));
+    }
+    let has_run = |plan: &PlanEntry| matches!(plan.state, PlanState::Running | PlanState::Done);
+    if facts.plans().any(has_run) {
+        offers.push(Offer::ReviewFeature);
     }
     offers
 }

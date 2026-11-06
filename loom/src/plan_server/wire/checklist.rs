@@ -203,6 +203,8 @@ pub enum OfferKind {
     StartRun,
     /// Plan follow-ups for a finished feature.
     PlanFollowUps,
+    /// Review what a plan built and record the findings.
+    ReviewFeature,
     /// Draft all missing product sections with a team.
     DraftAllSections,
     /// Draft all missing plans with a team.
@@ -228,6 +230,7 @@ impl From<&Offer> for OfferKind {
             Offer::PressureTest { .. } => Self::PressureTest,
             Offer::StartRun => Self::StartRun,
             Offer::PlanFollowUps => Self::PlanFollowUps,
+            Offer::ReviewFeature => Self::ReviewFeature,
             Offer::DraftAllSections { .. } => Self::DraftAllSections,
             Offer::DraftAllPlans { .. } => Self::DraftAllPlans,
             Offer::MoveIntoFeature { .. } => Self::MoveIntoFeature,
@@ -287,7 +290,7 @@ impl From<&Project> for ProjectChecklistView {
                 let mut view = ChecklistView::from(&feature.checklist);
                 view.pitch = pitch::feature_pitch(project, &feature.name);
                 card::card_facts(project, &feature.name, &mut view);
-                view.built = built::built_view(project, &view.plan_rows);
+                view.built = built::built_view(project, &feature.name, &view.plan_rows);
                 view
             })
             .collect();

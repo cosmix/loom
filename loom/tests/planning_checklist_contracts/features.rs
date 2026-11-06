@@ -276,5 +276,9 @@ fn unlisted_plans_never_offer_add_plan_to_metaplan() {
     let item_offers = c.items.iter().filter_map(|i| i.offer.as_ref());
     let mut all = item_offers.chain(c.primary.iter()).chain(&c.secondary);
     assert!(all.all(|o| !o.id().starts_with("add-plan-to-metaplan")));
-    assert_eq!(offers(&c), ["pressure-test:x", "start-run"]);
+    // The running plan `Y` makes the feature reviewable, so `review-feature` follows.
+    assert_eq!(
+        offers(&c),
+        ["pressure-test:x", "start-run", "review-feature"]
+    );
 }

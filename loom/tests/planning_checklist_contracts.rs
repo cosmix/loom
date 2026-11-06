@@ -157,7 +157,7 @@ fn checklist_state_rows() {
         let steps: Vec<_> = c.steps.iter().map(|(s, _)| *s as u8).collect();
         assert_eq!(steps, [1, 2, 3, 4, 5, 6]);
         if current == CurrentStep::ReadyAllDone {
-            assert_eq!(secondary(&c), ["plan-follow-ups"]);
+            assert_eq!(secondary(&c), ["plan-follow-ups", "review-feature"]);
         }
         if i == 4 {
             assert!(secondary(&c).contains(&"start-run".to_string()), "{c:?}");

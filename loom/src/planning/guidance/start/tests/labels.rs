@@ -51,6 +51,7 @@ fn metaplan_and_review_offer_labels_name_the_action() {
             "Start the metaplan",
         ),
         (Offer::PlanFollowUps, "Plan follow-ups"),
+        (Offer::ReviewFeature, "Review the feature"),
     ] {
         assert_eq!(AuthoringStart::Offer(offer).label(), expected);
     }
