@@ -34,8 +34,9 @@ For each id, complete these steps before moving to the next id:
    sentences that may stay word for word, body rules, the draft path, and the seal
    command. If it refuses the claim, record the id and reason for the final report;
    never take over or release another session's claim.
-2. Read only what the brief names. For a document summary, check every claim
-   against its named source document and the brief's existing summary. For an
+2. Read only what the brief names, and read all of it. For a document summary, check
+   every claim against its named source document and the brief's existing summary;
+   for a plan summary, read the plan and every brief file listed under Sources. For an
    overview, check every claim against the document summaries in scope and the
    vision passages for a product overview or metaplan passages for an engineering
    overview. Preserve current sentences word for word; their text determines the
@@ -69,7 +70,12 @@ Use this exact draft body format for document summaries:
 - A plan summary (id `plans/<slug>`) has two levels. First the opening level: about one
   sentence per topic, each citing every sentence of the detail paragraph(s) it opens, in
   order, as `[d](#s-xxxxxxxx)`, and nothing else. Then the detail level: short paragraphs
-  whose sentences cite the plan's heading sections. No heading after the opening level. At
+  whose sentences cite the plan's heading sections and its brief files. Give each stage its
+  own detail paragraph citing the stage as `PLAN-<x>.md#stage:<id>` and that stage's brief
+  files (`briefs/<slug>/<stage-id>/...`); cite `common.md` and the other brief files where the
+  plan relies on them. Cite every Markdown brief file listed under Sources at least once: the
+  seal refuses a plan summary that leaves one out. A brief with no Markdown text, such as a
+  JSON mockup, may be read but is not cited. No heading after the opening level. At
   most 8 opening and 15 detail sentences. An opening sentence says what its paragraphs add up
   to; it never repeats a detail sentence. Write the detail level first and seal: the refusal
   lists each detail sentence's id. Then add the opening level above it, citing those ids, and
@@ -77,8 +83,8 @@ Use this exact draft body format for document summaries:
 - A sentence compresses its cited section; never copy a sentence of the source.
 - Use only `#` and `##` headings to group prose; headings carry no links.
 - End every sentence with one or more plain Markdown links to heading sections of this
-  summary's own source document; only a plan summary's opening sentences cite its detail
-  sentences instead. Use a link without a fragment only for text before the
+  summary's own source document (for a plan summary, the plan or one of its brief files);
+  only a plan summary's opening sentences cite its detail sentences instead. Use a link without a fragment only for text before the
   first heading. Resolve links relative to the final summary file, not the runtime draft.
 - Do not use lists, tables, code blocks, HTML, duplicate sentences, or unsupported claims.
 

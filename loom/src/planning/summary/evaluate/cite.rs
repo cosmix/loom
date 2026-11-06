@@ -4,6 +4,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use super::{members_hash, SentenceState, SummaryEval, SummaryState};
+use crate::planning::briefs::bundle_files;
 use crate::planning::kinds::{classify, doc_id, vision_path};
 use crate::planning::project::Project;
 use crate::planning::summary::format::{FrontMatter, LinkTarget, SummaryFile};
@@ -11,8 +12,13 @@ use crate::planning::summary::store::Scope;
 
 /// What a summary's citations are judged against.
 enum Kind<'a> {
-    /// A document summary of `source` (its current path).
-    Document { source: &'a Path },
+    /// A document summary of `source` (its current path). `bundle` holds the brief files of a
+    /// plan's bundle, which a plan summary cites beside the plan; it is empty for every other
+    /// document.
+    Document {
+        source: &'a Path,
+        bundle: Vec<PathBuf>,
+    },
     /// An overview over `members`, citing raw passages of `sources` only.
     Overview {
         members: Vec<String>,
@@ -60,7 +66,10 @@ impl<'a> Context<'a> {
                 done,
             }
         } else if let Some(source) = source {
-            Kind::Document { source }
+            Kind::Document {
+                source,
+                bundle: bundle_files(project, source),
+            }
         } else {
             // A document without a source cannot have a loaded file.
             Kind::Overview {
@@ -86,7 +95,12 @@ impl<'a> Context<'a> {
     /// Whether the citation `target` still holds.
     pub(super) fn holds(&self, target: &LinkTarget) -> bool {
         match (target, &self.kind) {
-            (LinkTarget::Source { path, anchor }, Kind::Document { source }) => {
+            (LinkTarget::Source { path, anchor }, Kind::Document { bundle, .. })
+                if bundle.contains(path) =>
+            {
+                self.span_matches(path, anchor, &[cite_key(path, anchor)])
+            }
+            (LinkTarget::Source { path, anchor }, Kind::Document { source, .. }) => {
                 let named = self.names_source(path, source);
                 let keys = [
                     cite_key(source, anchor),
@@ -135,14 +149,15 @@ impl<'a> Context<'a> {
     }
 
     /// Whether the summary still covers everything: a document's `file` hash equals its
-    /// source's, an overview's `members` map equals the members' hashes now.
+    /// source's and its `bundle` map equals its plan's bundle now (a brief added, removed or
+    /// changed breaks it), an overview's `members` map equals the members' hashes now.
     pub(super) fn complete(&self) -> bool {
         match &self.kind {
-            Kind::Document { source } => self
-                .front
-                .file
-                .as_deref()
-                .is_some_and(|f| Some(f) == self.project.content_hash(source)),
+            Kind::Document { source, bundle } => {
+                let file = self.front.file.as_deref();
+                file.is_some_and(|f| Some(f) == self.project.content_hash(source))
+                    && bundle_hashes(self.project, bundle) == self.front.bundle
+            }
             Kind::Overview { members, done, .. } => {
                 let now: BTreeMap<String, String> = members
                     .iter()
@@ -163,6 +178,22 @@ fn member_sentence_current(done: &BTreeMap<String, SummaryEval>, summary: &str, 
                 .iter()
                 .any(|s| s.id == id && s.state == SentenceState::Current)
     })
+}
+
+/// The `bundle` front matter of a plan summary whose brief files are `files`: each brief's
+/// repository path to its content hash. A brief the project holds no text for (not Markdown,
+/// unreadable, oversized) is hashed by the fingerprint the planning trace also uses.
+pub fn bundle_hashes(project: &Project, files: &[PathBuf]) -> BTreeMap<String, String> {
+    files
+        .iter()
+        .filter_map(|path| {
+            let hash = project
+                .content_hash(path)
+                .map(str::to_string)
+                .or_else(|| project.fingerprint(path))?;
+            Some((path.to_string_lossy().into_owned(), hash))
+        })
+        .collect()
 }
 
 /// The `cites` key of `anchor` in `path`: `path#anchor`, or `path` for the preamble.

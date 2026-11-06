@@ -4,6 +4,8 @@
 //! ([`read_summary`]). Document summaries are evaluated first, so an overview sentence can ask
 //! whether the member sentence it cites is current.
 
+#[cfg(test)]
+mod bundle_tests;
 mod cite;
 #[cfg(test)]
 mod feature_tests;
@@ -16,7 +18,7 @@ mod tests;
 #[cfg(test)]
 mod vision_tests;
 
-pub use cite::cite_key;
+pub use cite::{bundle_hashes, cite_key};
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
@@ -53,8 +55,9 @@ impl SentenceState {
 pub enum SummaryState {
     /// Every sentence current and the source (or the member set) unchanged.
     Current,
-    /// Every sentence current, but the source changed outside the cited spans, or a member
-    /// summary changed, was added or was removed.
+    /// Every sentence current, but the source changed outside the cited spans, a brief of a
+    /// plan's bundle changed, joined or left it, or a member summary changed, was added or was
+    /// removed.
     Incomplete,
     /// At least one sentence stale.
     Stale,
