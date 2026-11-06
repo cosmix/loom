@@ -36,12 +36,11 @@ against its test, so a test going green under the mutated rule is a defect in th
 
 `classify(rel)` reads no file. A feature is a name (`[a-z0-9][a-z0-9-]*`, not `archive`, `briefs`, `plans` or `overview`; a bad name classifies as `other`) shared by `doc/product/<feature>/` and
 `doc/plans/<feature>/`. `doc/product/<feature>/index.md` is the vision; `doc/product/<feature>/section_<digits>.md` a
-product section; anything else under `doc/product/<feature>/` a product note; `doc/plans/<feature>/index.md` or a
-`*metaplan*.md` there a metaplan; a `PLAN-` file in `doc/plans/<feature>/` or its `archive/` a feature plan;
+product section; anything else under `doc/product/<feature>/` a product note; `doc/plans/<feature>/index.md` the feature's one metaplan (another `*metaplan*.md` there is an `Other` document, and follow-ups are entries under `## Follow-ups` in `index.md`); a `PLAN-` file in `doc/plans/<feature>/` or its `archive/` a feature plan;
 `doc/plans/<feature>/briefs/<slug>/<file>` a brief. A `PLAN-` file in `doc/plans/` or `doc/plans/archive/` is a
 standalone plan with briefs under `doc/plans/briefs/<slug>/`. A vision, section or metaplan at the top level
-(an `index.md` directly under `doc/product` or `doc/plans`, or a `*metaplan*.md` directly under `doc/plans`) raises `needs-feature`. `REVIEW-<plan file>` beside a plan is a run
-review; `doc/loom/knowledge/` is knowledge; the rest other.
+(an `index.md` directly under `doc/product` or `doc/plans`) raises `needs-feature`. `REVIEW-<plan slug>.md` directly in a plan home, its `archive/`, or the top of `doc/plans/` (where `fs::plan_review::generate` writes it) or `doc/plans/archive/` is a run
+review ([run reviews](planner-feature-screens.md#run-reviews)); `doc/loom/knowledge/` is knowledge; the rest other.
 
 `doc_id` is `product/<feature>/index`, `product/<feature>/section_NN`, `plan/<slug>` (the state is not part of the id,
 so an id survives `loom run` renaming the file), else the path without `doc/`.
@@ -140,15 +139,15 @@ directory (`runtime.rs::check_parent`). `server_runtime_paths` ignores `LOOM_PLA
 
 ## Project View and Checklist
 
-`Project::load(root)` discovers the tree, reads every Markdown document (bounded), parses vision, metaplans,
+`Project::load(root)` discovers the tree, reads every Markdown document (bounded), parses vision, the metaplan,
 `Implements:` lines, pressure records, cross-references and briefs, then derives problems and the checklist.
 `Project::refresh(&Batch)` keeps a private text cache, re-reads only the batch paths plus documents the cache lacks, and
 re-derives every field from the cached texts: a document's references depend on the whole tree (paths, slugs, other
 documents' anchors), so a refreshed view equals a fresh `load` only if everything is re-derived. The cost is `doc/`
 text held in memory.
 
-`build_checklist(&DocTree, &ParsedDocs)` is a pure function. Seven `Step`s (vision, product spec, metaplan, plans,
-pressure test, review, run) carry a `StepMark` (`Done`, `Gap`, `Active`, `Optional`); `CurrentStep` is the earliest
+`build_checklist(&DocTree, &ParsedDocs)` is a pure function. Six `Step`s (vision, product spec, metaplan, plans,
+pressure test, run) carry a `StepMark` (`Done`, `Gap`, `Active`, `Optional`); `CurrentStep` is the earliest
 gap, `Ready`, or `ReadyAllDone`. Rules the contracts pin:
 
 - The vision's Specification sections table decides which sections are expected, in table order (the first missing
@@ -161,7 +160,7 @@ gap, `Ready`, or `ReadyAllDone`. Rules the contracts pin:
   numbered entry heading without a plan file is a `metaplan-entry-without-plan` problem unless it says `no plan file`;
   an unnumbered level-2 heading is prose. Entries without a plan file are left out of step marks, items and
   `WritePlan` offers.
-- Pressure-tested status never makes step 5 a gap (`ItemStatus::Untested`); offers exist per feature: `StartVision`, `FixVisionTable`, `WriteSection`, `AddSectionToVision`, `StartMetaplan`, `WritePlan`, `PressureTest`, `DraftAllSections`, `DraftAllPlans`, and `MoveIntoFeature` for a misplaced top-level document (`checklist/offers.rs`).
+- Pressure-tested status never makes step 5 a gap (`ItemStatus::Untested`); offers exist per feature: `StartVision`, `FixVisionTable`, `WriteSection`, `AddSectionToVision`, `StartMetaplan`, `WritePlan`, `PressureTest`, `DraftAllSections`, `DraftAllPlans`, `PlanFollowUps` (the one offer of a finished feature, `CurrentStep::ReadyAllDone`) and `MoveIntoFeature` for a misplaced top-level document (`checklist/offers.rs`).
 
 Problem codes (`problems.rs`): `bad-feature-name`, `broken-reference`, `broken-brief-reference`, `doc-missing`, `duplicate-plan-slug`,
 `implements-broken`, `implements-duplicate`, `implements-missing`, `metaplan-entry-foreign-plan`,

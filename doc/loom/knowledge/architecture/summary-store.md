@@ -8,14 +8,14 @@
 
 Summaries of the planning documents live in `doc/loom/summaries/` (`store::STORE_DIR`), one Markdown file per id, all
 under `loom/src/planning/summary/`. `store::validate_id` accepts `overview/<feature>/product` and `overview/<feature>/engineering` (the overviews,
-`store::is_overview`), `<feature>/product/section_<2+ digits>`, `<feature>/product/vision` (a feature's vision, `store::is_vision` and `vision_feature`), `<feature>/metaplan/<stem>` (a metaplan's document summary, `store::is_metaplan` and `metaplan_feature`) and `plans/<slug>` (first byte alphanumeric, rest
-`[A-Za-z0-9._-]`, no `..`); a feature name follows `kinds::is_feature_name`; the file is `<id>.md`. A metaplan stem matches `[a-z0-9][a-z0-9-]*` (`kinds::is_slug_chars`, shared with `is_feature_name`), so it holds no `.` or `/` and an uppercase stem is invalid: the stem becomes a path segment. `summary_id_for` makes an id for a
-product section of a feature, for the feature's vision document (`DocKind::Vision`, `doc/product/<feature>/index.md`), for a feature's metaplan file (`DocKind::Metaplan`, the file stem is the id's stem) or for a plan that is the winning copy of its slug and either sits directly in its home
-(`plans_dir(feature)`: `doc/plans/<feature>/`, or `doc/plans/` for a standalone plan) or is named by one of its
-feature's metaplan entries. `expected_ids` is every such document (the vision summary is listed whenever the vision document exists and sorts first, because `index.md` precedes `section_NN` in path order) plus `overview/<f>/product` (when the feature's vision
+`store::is_overview`), `<feature>/product/section_<2+ digits>`, `<feature>/product/vision` (a feature's vision, `store::is_vision` and `vision_feature`), `<feature>/metaplan/index` (the feature's metaplan, `store::is_metaplan` and `metaplan_feature`) and `plans/<slug>` (first byte alphanumeric, rest
+`[A-Za-z0-9._-]`, no `..`); a feature name follows `kinds::is_feature_name`; the file is `<id>.md`. A feature has one metaplan, `doc/plans/<feature>/index.md`, so `index` is the only accepted stem and `<feature>/metaplan/<other>` is invalid; a second `*metaplan*.md` file is an `Other` document with no summary (`kinds.rs` `plans_kind`: only `index.md` directly in the feature's plan home is `DocKind::Metaplan`; follow-ups are entries under `## Follow-ups` in that file). `summary_id_for` makes an id for a
+product section of a feature, for the feature's vision document (`DocKind::Vision`, `doc/product/<feature>/index.md`), for the feature's metaplan (`DocKind::Metaplan`) or for a plan that is the winning copy of its slug and either sits directly in its home
+(`plans_dir(feature)`: `doc/plans/<feature>/`, or `doc/plans/` for a standalone plan) or is named by an entry of its
+feature's metaplan. `expected_ids` is every such document (the vision summary is listed whenever the vision document exists and sorts first, because `index.md` precedes `section_NN` in path order) plus `overview/<f>/product` (when the feature's vision
 exists) and `overview/<f>/engineering` (when it has a metaplan). `Scope` is per feature (`Scope::of(project, overview_id)`):
-it lists the overview members in source order (`product`: the vision's rows; `engineering`: the metaplans' entries whose
-plan belongs to the feature) and the feature's eligible documents outside both. The vision summary and the metaplan summaries are in neither member list nor in `Scope.outside` (the filter drops `is_vision` and `is_metaplan` ids): the product overview keeps citing the vision's sections directly, and the engineering overview cites plans, so overview sealing involves neither. A metaplan summary takes the document limit (`format::MAX_DOCUMENT_SENTENCES`), a vision summary at most 8 sentences (`format::MAX_VISION_SENTENCES`), both chosen by `format::sentence_limit(id)`, which the rebuild brief also states; a vision summary holds at most 3 paragraphs, a prompt rule only, because no parser counts paragraphs. `validate_id`'s slug rule is stricter than `planning::slug::plan_slug`, so a plan whose slug holds a space silently gets no summary. `summary_path` returns an empty path for an invalid id; every caller
+it lists the overview members in source order (`product`: the vision's rows; `engineering`: the metaplan's entries whose
+plan belongs to the feature) and the feature's eligible documents outside both. The vision summary and the metaplan summary are in neither member list nor in `Scope.outside` (the filter drops `is_vision` and `is_metaplan` ids): the product overview keeps citing the vision's sections directly, and the engineering overview cites plans, so overview sealing involves neither. The metaplan summary takes the document limit (`format::MAX_DOCUMENT_SENTENCES`), a plan summary the plan limit (`MAX_PLAN_SENTENCES`, [File Format](#file-format)), a vision summary at most 8 sentences (`format::MAX_VISION_SENTENCES`), all chosen by `format::sentence_limit(id)`, which the rebuild brief also states; a vision summary holds at most 3 paragraphs, a prompt rule only, because no parser counts paragraphs. `validate_id`'s slug rule is stricter than `planning::slug::plan_slug`, so a plan whose slug holds a space silently gets no summary. `summary_path` returns an empty path for an invalid id; every caller
 validates first. Adding an expected id changes every summary id list and count in the lib tests and the Rust summary contract targets.
 
 The runtime directory (`planning-document-model.md`, Runtime Directory) holds the store's session state outside the
@@ -34,14 +34,19 @@ A summary file is front matter, one `#` title, then headings (`#`, `##`) and par
 
 Body rules, each a rejection with a 1-based line: no indented lines, list items, table rows, code fences, block quotes,
 headings deeper than level 2, HTML or conflict markers; a heading holds no link; a sentence is one line whose citation
-links are a trailing run (`[label](target)` separated only by whitespace) with no link before them. At most 15
-sentences in a document summary, 8 in a vision summary and 30 in an overview (`MAX_DOCUMENT_SENTENCES`,
-`MAX_VISION_SENTENCES`, `MAX_OVERVIEW_SENTENCES`; `sentence_limit(id)` picks one).
+links are a trailing run (`[label](target)` separated only by whitespace) with no link before them. Sentence limits
+(`MAX_DOCUMENT_SENTENCES` 15, `MAX_VISION_SENTENCES` 8, `MAX_OVERVIEW_SENTENCES` 30, `MAX_PLAN_SENTENCES` 23;
+`sentence_limit(id)` picks one): a section or metaplan summary takes 15, a vision 8, an overview 30 and a plan summary 23, split as 8 opening plus 15 detail
+(`MAX_OPENING_SENTENCES`).
+
+**Two levels in a plan summary.** A plan summary (`plans/<slug>`) holds an opening level above a detail level in one file. A detail
+sentence cites the plan; an opening sentence cites its own summary's detail sentences as `[d](#s-xxxxxxxx)`
+(`cites_own` and `split_levels`, `format/levels.rs`). Any sentence with a self-link is opening; every other is detail. The seal checks the split ([Seal](#seal)).
 
 A sentence id is `s-` plus the first 8 hex digits of the SHA-256 of the whitespace-collapsed text with its links
 removed, so rewording changes the id and a link edit does not. Identical text twice in one summary is a duplicate-id
 rejection. Link targets classify against the summary's own location as `Source { path, anchor }`, `Sentence { summary,
-id }` (another summary's sentence, written `<relative path to the summary>#s-xxxxxxxx`) or `Unresolved`. A plan summary
+id }` (a summary's sentence, written `<relative path to the summary>#s-xxxxxxxx`, the summary's own included) or `Unresolved`. A plan summary
 cites a stage as `PLAN-x.md#stage:<id>`. `scan_links` is linear: its `)` search is guarded by `line.rfind(')')` so a long
 run of `[` stays O(n).
 
@@ -52,8 +57,8 @@ sentence can ask whether the member sentence it cites is current (`evaluate/cite
 
 | Level | State | Meaning |
 | --- | --- | --- |
-| Sentence | `current` | it has at least one citation and every citation holds: the cited span's hash equals the `cites` entry, or the cited member sentence exists and is current |
-| Sentence | `stale` | a cited span changed or vanished, or a cited member sentence is gone or stale |
+| Sentence | `current` | it has at least one citation and every citation holds: the cited span's hash equals the `cites` entry, the cited member sentence exists and is current, or the cited sentence is the summary's own, cites no own sentence and is itself current (`evaluate.rs` `own_current`, `cite.rs` `Context::with_own`) |
+| Sentence | `stale` | a cited span changed or vanished, a cited member sentence is gone or stale, or a self-link goes to a stale sentence (opening sentences citing each other read stale) |
 | Summary | `missing` | no file, or a file that fails validation, holds conflict markers, or names another source; checked first, so a claim on a missing summary reads `missing [claimed by ...]` |
 | Summary | `rebuilding` | a claim names it and the file is valid; its sentences keep their states |
 | Summary | `stale` | any sentence stale |
@@ -88,17 +93,34 @@ are not reported" must add an unrelated `doc/` change in the same window.
 
 `loom plan summary seal <id> [--force]` (`seal.rs`): validate the id, load the `Project`, require the id to be expected,
 read the draft `drafts/<id>.md` from the runtime directory (bounded to 256 KiB, no-follow), check the claim, parse the
-draft, then in one hold of the store lock check every link and write the canonical file. Rules (`seal/links.rs`):
+draft, then in one hold of the store lock check every link and write the canonical file. Rules (`seal/links.rs`, `seal/levels.rs`):
 
 - every link must resolve; a `Source` link must name a source of this summary (a document: its own source; `product`: the
-  vision; `engineering`: the metaplans) and an existing anchor, and records its span hash under `cites`;
-- a `Sentence` link is allowed only in an overview, only to a member, and only to a current sentence of a non-missing
-  member; a document summary cites only its source (a `stage:` anchor counts as a source anchor);
+  vision; `engineering`: the metaplan) and an existing anchor, and records its span hash under `cites`;
+- a `Sentence` link is allowed in two places. An overview may link only to a member, only to a current sentence of a non-missing
+  member, and only to a **citable** sentence: one that cites no summary sentence (`links.rs` `citable`). A plan summary's opening sentences cite their own
+  detail sentences, so an overview cites the detail sentences of a plan and a member sentence that cites a sentence is refused ("opens to detail sentences; cite those detail sentences
+  instead"). A plan summary may also link to its own detail sentences ([two levels](#two-levels-in-a-plan-summary-seal)). Any other document summary cites only its source (a `stage:` anchor counts as a source anchor);
 - an overview sentence may not restate the member sentence it cites (`seal/restate.rs`, called from `links.rs` as `restate::restates(`): opening it would show the same text twice. The measure is the Dice similarity `2|A∩B| / (|A|+|B|)` over the lowercase ASCII letter-and-digit word sets of the two texts (links removed), rejected at `RESTATE_THRESHOLD` 0.75 or above against any single cited member; an empty text restates nothing. The threshold was measured over the 103 resolvable overview-to-member pairs stored at the plan's HEAD: 2 were byte-identical, 18 scored 0.75 or more, and a reworded copy scored 0.78 ("File mode adds the server's document, tree, save, diff and search routes, with in-process plan validation." against the member's longer sentence), while a two-member compression scores under 0.75 against each member and passes. A sentence citing one member twice reports one restatement (`check()` keeps a per-sentence set). Known limit: the word set is ASCII-only, so non-ASCII prose is never flagged. Overviews sealed before the check keep their near-copies until the next rebuild;
-- **two-member rule** (`single_member_problem` in `seal/links.rs`): an overview sentence that cites member sentences draws on at least two of them, because a sentence that opens to one member sentence shows the reader the same thing twice. The seal refuses a sentence whose problem-free citations name exactly one member sentence ("an overview sentence draws on at least two"), unless that member's summary holds a single sentence, where there is nothing else to cite. The brief's overview rule (`brief.rs`) and the agent and codex prompts state the same rule and exemption. Measured over the stored overviews before the rule: 7 of 25 member-citing sentences in `feat-planner/product` and 12 of 27 in `feat-planner/engineering` cited exactly one member sentence; stored overviews change on their next rebuild. Known gap: `drawn` counts only problem-free citations, so a sentence citing one current and one stale member sentence also gets this error beside the stale error ([follow-up](../concerns/planner-ui-repair-followups.md#planner-review-fixes-unchecked-here-and-reviewer-suggestions));
+- **two-member rule** (`single_member_problem` in `seal/links.rs`): an overview sentence that cites member sentences draws on at least two of them, because a sentence that opens to one member sentence shows the reader the same thing twice. The seal refuses a sentence whose problem-free citations name exactly one member sentence ("an overview sentence draws on at least two"), unless that member's summary holds exactly one citable sentence, where there is nothing else to cite (the exemption counts citable sentences, so a plan summary with one detail sentence can be cited alone; its opening sentences cite a sentence and are not citable). The brief's overview rule (`brief.rs`) pins the text "holds a single sentence"; the agent and codex prompts and `section_04` say "a single citable sentence". Measured over the stored overviews before the rule: 7 of 25 member-citing sentences in `feat-planner/product` and 12 of 27 in `feat-planner/engineering` cited exactly one member sentence; stored overviews change on their next rebuild. Known gap: `drawn` counts only problem-free citations, so a sentence citing one current and one stale member sentence also gets this error beside the stale error ([follow-up](../concerns/planner-ui-repair-followups.md#planner-review-fixes-unchecked-here-and-reviewer-suggestions));
 - an overview must cite every member and every source document at least once, or the seal is refused;
 - the front matter is computed, never taken from the draft: `file` from the source's content hash, `members` from each
   member's `members_hash` at seal time.
+
+### Two levels in a plan summary (seal)
+
+`seal/levels.rs` `check` runs only for `plans/<slug>` ids. Opening and detail are told apart by the self-link alone; a one-level draft reports only rule 1 plus the caps. The rules, each a refusal with the sentence's line:
+
+1. the opening level exists: at least one sentence cites a detail sentence. Sentence ids are hashes an agent cannot compute, so every refusal that needs them lists the draft's detail sentences as `detail sentences: s-… "first six words", …` (or `detail sentences: none`), and the agent writes the detail level, seals, and copies the ids from the refusal;
+2. the opening level comes first: no opening paragraph or heading after the detail level begins, and no paragraph mixes the levels;
+3. an opening sentence cites only detail sentences, never the plan's source beside its self-links (only `Source` links count; `links.rs` keeps reporting other link kinds);
+4. every self-link goes to a detail sentence of this summary;
+5. no detail sentence is cited twice by one opening sentence, and an opening sentence opens whole detail paragraphs in order (a run of consecutive detail paragraphs, in document order);
+6. an opening sentence does not restate a detail sentence it opens (the `restate` measure);
+7. every detail sentence is opened by some opening sentence;
+8. at most 8 opening and 15 detail sentences (`MAX_OPENING_SENTENCES`, `MAX_DOCUMENT_SENTENCES`).
+
+An unknown self-link target is draft text, so the refusal wraps it in `terminal_safe` where the message is built (`commands/plan/summary.rs` applies it again to the whole line; idempotent). Known limit: the seal lets two opening sentences open the same detail paragraph; non-adjacent ones repeat the detail text when both open ([follow-up](../concerns/planner-follow-ups-followups.md#summary-levels-and-fragments)).
 
 The seal retries up to 3 times when the file changes between its read and its locked write, then fails with "kept
 changing". On success it deletes the claim first, then the draft; a draft-removal failure is logged with `tracing::warn`

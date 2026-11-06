@@ -1,7 +1,7 @@
 # Web Terminal (loom status --web terminal viewer)
 
 >
-> Terminal bridge
+>
 > the xterm viewer under `web/src/components/terminal/`. See
 > [architecture/web-terminal.md](../architecture/web-terminal.md) for the current design.
 

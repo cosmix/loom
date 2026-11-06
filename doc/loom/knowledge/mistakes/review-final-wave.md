@@ -1,6 +1,6 @@
 # Review Final Wave
 
-> Final wave
+>
 
 ## A hook lock depended on a loom subcommand the PATH binary lacks
 

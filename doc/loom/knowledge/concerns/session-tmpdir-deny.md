@@ -1,6 +1,6 @@
 # Session Deny on Claude Code's TMPDIR
 
-> Read-only TMPDIR
+>
 
 `sandbox/control_surfaces/session_denies.rs::session_denies` leaves `<tmp>/claude-<uid>`, Claude Code's own `TMPDIR`, writable, task output files included: its Bash wrapper writes its cwd file there, so a deny on that root would fail every sandboxed command. Linux skips `denyWrite` globs, so no literal path can deny only the receipt channels under its `*/*/tasks` directories, and a sandboxed session can write them.
 

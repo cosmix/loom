@@ -232,3 +232,7 @@ Operator checks no stage sandbox can run (rebuilt summaries, a real image read, 
 ## Planner Polish Follow-ups
 
 Operator checks no stage sandbox can run (a rebuilt metaplan summary, a real Stop, journeys J3-J5 and J8) and about twenty unimplemented reviewer suggestions on chat tests, the Stop button look, roundel CSS, spine row accessibility and metaplan breadcrumbs. → [Planner UI Repair Follow-ups](concerns/planner-ui-repair-followups.md#planner-polish-unchecked-here-and-reviewer-suggestions)
+
+## Planner Follow-ups Follow-ups
+
+Open items from the plan-summary levels and fragment column, the three-theme palette, the Hearth chat (client `userWrote` mirror, closing block limits), the spine and run reviews, the requirement walk's "could not check here" lines and the operator checks no stage sandbox can run. → [Planner follow-ups open items](concerns/planner-follow-ups-followups.md)
