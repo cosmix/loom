@@ -12,7 +12,7 @@
 | [entry-points.md](entry-points.md) | Key files agents should read first | 83 |
 | [patterns.md](patterns.md) | Architectural patterns discovered in the codebase | 186 |
 | [conventions.md](conventions.md) | Coding conventions discovered in the codebase | 250 |
-| [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 252 |
+| [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 248 |
 | [stack.md](stack.md) | Dependencies, frameworks, and tooling used in the project | 115 |
 | [concerns.md](concerns.md) | Technical debt, warnings, and issues to address | 238 |
 
@@ -42,6 +42,7 @@
 | [hook-system](architecture/hook-system.md) |  | 309 |
 | [knowledge-bootstrap](architecture/knowledge-bootstrap.md) | Digest | 83 |
 | [knowledge-hierarchy](architecture/knowledge-hierarchy.md) | KB fs | 264 |
+| [live-preview-editor](architecture/live-preview-editor.md) | Editor | 28 |
 | [loom-ask](architecture/loom-ask.md) |  | 75 |
 | [memory-spool](architecture/memory-spool.md) |  | 205 |
 | [merge-checkout-state](architecture/merge-checkout-state.md) | FF | 32 |
@@ -52,7 +53,7 @@
 | [plan-server](architecture/plan-server.md) | Chat | 245 |
 | [planner-feature-screens](architecture/planner-feature-screens.md) | Spine | 45 |
 | [planner-uploads-and-drafts](architecture/planner-uploads-and-drafts.md) |  | 35 |
-| [planner-web-shell](architecture/planner-web-shell.md) | Shell | 104 |
+| [planner-web-shell](architecture/planner-web-shell.md) | Shell | 108 |
 | [planning-document-model](architecture/planning-document-model.md) | Docs | 179 |
 | [planning-guidance](architecture/planning-guidance.md) |  | 35 |
 | [planning-session-bridge](architecture/planning-session-bridge.md) |  | 264 |
@@ -119,7 +120,7 @@
 | [git-and-build-workflow](conventions/git-and-build-workflow.md) |  | 237 |
 | [guidance-channels-and-plugin-scope](conventions/guidance-channels-and-plugin-scope.md) |  | 139 |
 | [model-and-effort-config](conventions/model-and-effort-config.md) |  | 143 |
-| [plan-web](conventions/plan-web.md) |  | 116 |
+| [plan-web](conventions/plan-web.md) |  | 130 |
 | [plan-yaml-and-hooks](conventions/plan-yaml-and-hooks.md) |  | 182 |
 | [web-dashboard-typography](conventions/web-dashboard-typography.md) |  | 63 |
 
@@ -140,12 +141,11 @@
 | [completion-runtime](mistakes/completion-runtime.md) | Churn | 74 |
 | [computed-values-and-hidden-couplings](mistakes/computed-values-and-hidden-couplings.md) | Values | 284 |
 | [concurrency-and-locking](mistakes/concurrency-and-locking.md) |  | 107 |
-| [contract-autonomy-delivery](mistakes/contract-autonomy-delivery.md) | Bypass | 75 |
-| [contract-phase-human-blocking](mistakes/contract-phase-human-blocking.md) |  | 11 |
+| [contract-autonomy-delivery](mistakes/contract-autonomy-delivery.md) | Bypass | 83 |
 | [daemon-fork-after-threads](mistakes/daemon-fork-after-threads.md) | Fork | 38 |
 | [daemon-singleton](mistakes/daemon-singleton.md) |  | 141 |
 | [detached-spawn-in-tests](mistakes/detached-spawn-in-tests.md) |  | 55 |
-| [dev-install](mistakes/dev-install.md) | Daemon kill after install; installing unasked | 37 |
+| [dev-install](mistakes/dev-install.md) | Daemon | 37 |
 | [doctrine-and-acceptance](mistakes/doctrine-and-acceptance.md) |  | 392 |
 | [frontmatter-boundary](mistakes/frontmatter-boundary.md) |  | 13 |
 | [hooks-shell-portability](mistakes/hooks-shell-portability.md) |  | 362 |
@@ -165,9 +165,9 @@
 | [pinned-literals-ledgers-and-wiring](mistakes/pinned-literals-ledgers-and-wiring.md) | Pins | 332 |
 | [plan-authoring](mistakes/plan-authoring.md) |  | 79 |
 | [plan-server-delivery](mistakes/plan-server-delivery.md) | Slips | 374 |
-| [planner-design-brainstorm](mistakes/planner-design-brainstorm.md) | Stubs are not summaries; briefs need summaries | 38 |
+| [planner-design-brainstorm](mistakes/planner-design-brainstorm.md) | Stubs | 52 |
 | [planner-follow-ups-delivery](mistakes/planner-follow-ups-delivery.md) | Slips | 68 |
-| [planner-polish](mistakes/planner-polish.md) | Polish | 80 |
+| [planner-polish](mistakes/planner-polish.md) | Polish | 100 |
 | [planner-redesign](mistakes/planner-redesign.md) |  | 80 |
 | [planner-review-fixes](mistakes/planner-review-fixes.md) |  | 48 |
 | [planner-ui-repair](mistakes/planner-ui-repair.md) | Repair | 131 |
@@ -180,7 +180,6 @@
 | [review-final-wave](mistakes/review-final-wave.md) |  | 190 |
 | [review-integration-verification](mistakes/review-integration-verification.md) |  | 168 |
 | [review-tracker](mistakes/review-tracker.md) |  | 353 |
-| [run-review-location](mistakes/run-review-location.md) |  | 11 |
 | [sandbox-and-settings](mistakes/sandbox-and-settings.md) |  | 391 |
 | [sandbox-protected-hooks-dir](mistakes/sandbox-protected-hooks-dir.md) |  | 37 |
 | [sandbox-state-channels](mistakes/sandbox-state-channels.md) |  | 299 |
@@ -191,7 +190,6 @@
 | [sessions-and-liveness](mistakes/sessions-and-liveness.md) |  | 382 |
 | [shell-command-matchers](mistakes/shell-command-matchers.md) |  | 246 |
 | [source-graph-delivery](mistakes/source-graph-delivery.md) | Misses | 172 |
-| [spec-scope-invention](mistakes/spec-scope-invention.md) |  | 11 |
 | [spurious-waiting-for-input](mistakes/spurious-waiting-for-input.md) | Idle | 43 |
 | [status-broadcast-hardening](mistakes/status-broadcast-hardening.md) |  | 75 |
 | [store-without-consumer](mistakes/store-without-consumer.md) | Unread | 104 |
@@ -229,7 +227,7 @@
 | [merge-and-recovery-edge-cases](concerns/merge-and-recovery-edge-cases.md) | Edges | 105 |
 | [plan-chat-followups](concerns/plan-chat-followups.md) | Chat | 40 |
 | [planner-follow-ups-followups](concerns/planner-follow-ups-followups.md) |  | 59 |
-| [planner-ui-repair-followups](concerns/planner-ui-repair-followups.md) | Repair | 158 |
+| [planner-ui-repair-followups](concerns/planner-ui-repair-followups.md) | Repair | 178 |
 | [planning-document-model-followups](concerns/planning-document-model-followups.md) |  | 143 |
 | [planning-guidance-followups](concerns/planning-guidance-followups.md) |  | 42 |
 | [planning-session-sandbox-limits](concerns/planning-session-sandbox-limits.md) |  | 185 |
