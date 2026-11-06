@@ -11,6 +11,9 @@ use crate::planning::project::Project;
 use crate::planning::run_review::{review_items, ReviewItem, ReviewSection};
 use crate::planning::slug::PlanState;
 
+#[path = "checklist_built/candidates.rs"]
+mod candidates;
+
 /// What the feature's done plans left in their run reviews.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -20,7 +23,8 @@ pub struct BuiltView {
     /// The `## Spec Conformance` items of those reviews: what integration-verify changed in the
     /// spec or the build to make them agree.
     pub spec: Vec<SpecItemView>,
-    /// Their open findings, then their open questions: the candidate follow-ups.
+    /// The open entries of the feature's findings ledger, in ledger order: the candidate
+    /// follow-ups.
     pub candidates: Vec<CandidateView>,
 }
 
@@ -58,26 +62,31 @@ pub enum CandidateKind {
     Question,
 }
 
-/// An open finding or question from a run review, offered as a follow-up.
+/// An open ledger entry, offered as a follow-up.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CandidateView {
+    /// The ledger id of the finding, `F-<n>`.
+    pub id: String,
     /// Whether it was recorded as a finding or a question.
     pub kind: CandidateKind,
-    /// The name of the stage that recorded it.
+    /// What recorded it: the stage id of an imported review item, `review` for a finding written
+    /// by hand.
     pub stage: String,
-    /// The id of the stage that recorded it.
+    /// The id of the stage that recorded it, empty for a finding written by hand.
     pub stage_id: String,
     /// The recorded text, on one line.
     pub text: String,
-    /// Path of the run review it came from.
+    /// Path of the run review it was imported from, else of the ledger.
     pub review: String,
 }
 
-/// What the feature's done plans left in their run reviews.
-pub(super) fn built_view(project: &Project, rows: &[PlanRowView]) -> BuiltView {
-    let mut built = BuiltView::default();
-    let mut questions = Vec::new();
+/// What the feature's done plans left in their run reviews, and the open entries of its ledger.
+pub(super) fn built_view(project: &Project, feature: &str, rows: &[PlanRowView]) -> BuiltView {
+    let mut built = BuiltView {
+        candidates: candidates::ledger_candidates(project, feature),
+        ..BuiltView::default()
+    };
     for row in rows {
         let done = project
             .tree
@@ -99,33 +108,16 @@ pub(super) fn built_view(project: &Project, rows: &[PlanRowView]) -> BuiltView {
             text: item.text,
             review: path.clone(),
         }));
-        let candidate = |kind, item: ReviewItem| CandidateView {
-            kind,
-            stage: item.stage_name,
-            stage_id: item.stage_id,
-            text: item.text,
-            review: path.clone(),
-        };
-        let findings = items(ReviewSection::OpenFindings).into_iter();
-        built
-            .candidates
-            .extend(findings.map(|item| candidate(CandidateKind::Finding, item)));
-        questions.extend(
-            asked
-                .into_iter()
-                .map(|item| candidate(CandidateKind::Question, item)),
-        );
     }
-    built.candidates.extend(questions);
     built
 }
 
-/// The spec conformance items that are not also a question.
+/// The spec conformance items that are not also a question: a question is a candidate, listed
+/// from the ledger.
 ///
 /// A spec-check question is written under both sections, but `## Spec Conformance` strips the
 /// `spec-conformance:` prefix and `## Open Questions` keeps the raw text, so the question is
-/// compared prefix-stripped. The candidate keeps it, being the one place the page offers a
-/// follow-up from.
+/// compared prefix-stripped.
 fn unasked_spec_items<'a>(
     spec: Vec<ReviewItem>,
     asked: &'a [ReviewItem],

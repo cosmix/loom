@@ -33,10 +33,13 @@ export function reviewHref(path: string): string {
 }
 
 /**
- * The text that seeds a Plan follow-ups session with one candidate and its source. The source is
- * the review file and the stage id; the stage name stays on screen only.
+ * The text that seeds a Plan follow-ups session with one candidate: its ledger id, its title (the
+ * first line of its text) and its source, the review file and the stage id. A finding written by
+ * hand has no stage id, so the source names the file only.
  */
 export function followUpSeed(candidate: CandidateView): string {
   const kind = candidate.kind === "finding" ? "finding" : "question";
-  return `${candidate.text} (open ${kind} from ${reviewFile(candidate.review)}, stage ${candidate.stage_id})`;
+  const title = candidate.text.split("\n", 1)[0];
+  const stage = candidate.stage_id === "" ? "" : `, stage ${candidate.stage_id}`;
+  return `${candidate.id}: ${title} (open ${kind} from ${reviewFile(candidate.review)}${stage})`;
 }

@@ -147,7 +147,7 @@ fn ready_rows_secondaries() {
     let (_temp, project) = load(&spec(vec![owned(metaplan(&["a"])), done]));
     let c = checklist(&project);
     assert_eq!(c.current, CurrentStep::ReadyAllDone);
-    assert_eq!(ids(&c.secondary), ["plan-follow-ups"]);
+    assert_eq!(ids(&c.secondary), ["plan-follow-ups", "review-feature"]);
     assert_eq!(c.steps[5], (Step::Run, StepMark::Done));
 }
 
@@ -158,7 +158,7 @@ fn a_follow_up_entry_reopens_the_plans_step() {
     let c = checklist(&project);
     assert_eq!(c.current, CurrentStep::ReadyAllDone);
     assert_eq!(c.primary, None);
-    assert_eq!(ids(&c.secondary), ["plan-follow-ups"]);
+    assert_eq!(ids(&c.secondary), ["plan-follow-ups", "review-feature"]);
 
     let (rel, mut text) = metaplan(&["a"]);
     text.push_str("## Follow-ups\n\n## 2. Polish (`PLAN-polish.md`)\n");

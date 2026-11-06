@@ -83,7 +83,8 @@ function donePlan(slug: string) {
 }
 
 function candidate(kind: "finding" | "question", text: string, review = REVIEW_ONE) {
-  return { kind, stage: "Chat polish", stage_id: "chat-polish", text, review };
+  const id = kind === "finding" ? "F-1" : "F-2";
+  return { id, kind, stage: "Chat polish", stage_id: "chat-polish", text, review };
 }
 
 /** Two done plans with every patch over a feature that is ready and all done. */
@@ -209,7 +210,9 @@ describe("the Built page", () => {
     );
 
     expect(await screen.findByText("The runs recorded no change to the spec.")).toBeTruthy();
-    expect(screen.getByText("The run reviews list no open findings or questions.")).toBeTruthy();
+    expect(
+      screen.getByText("The findings ledger lists no open findings or questions."),
+    ).toBeTruthy();
     expect(screen.queryByRole("list", { name: "Spec check" })).toBeNull();
     expect(screen.queryByRole("list", { name: "Candidate follow-ups" })).toBeNull();
   });
@@ -237,7 +240,7 @@ describe("the Built page", () => {
     expect(calls).toHaveLength(1);
     expect(calls[0]!.offer.kind).toBe("plan_follow_ups");
     expect(calls[0]!.seed).toBe(
-      "Should the footer keep its meters? (open question from REVIEW-PLAN-atlas-02.md, stage chat-polish)",
+      "F-2: Should the footer keep its meters? (open question from REVIEW-PLAN-atlas-02.md, stage chat-polish)",
     );
   });
 

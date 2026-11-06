@@ -109,6 +109,7 @@ fn offer_step_and_skill(offer: &Offer) -> Result<(&'static str, &'static str)> {
         Offer::WritePlan { .. } => ("step 4, Plans", "plan"),
         Offer::DraftAllPlans { .. } => ("step 4, Draft all missing plans", "plan"),
         Offer::PlanFollowUps => ("done, Plan follow-ups", "metaplan"),
+        Offer::ReviewFeature => ("review, Review the feature", "review"),
         _ => bail!("{} is not an authoring offer", offer.id()),
     })
 }
@@ -140,6 +141,10 @@ fn offer_target(offer: &Offer, project: &Project, feature: &str) -> Result<Strin
         }
         Offer::PlanFollowUps => format!(
             "Append follow-up entries under \"## Follow-ups\" in {}/index.md.",
+            plans.display()
+        ),
+        Offer::ReviewFeature => format!(
+            "Record findings from reviewing the feature in {}/findings.md.",
             plans.display()
         ),
         _ => bail!("{} is not an authoring offer", offer.id()),

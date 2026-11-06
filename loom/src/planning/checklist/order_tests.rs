@@ -73,7 +73,7 @@ fn finished_feature_has_no_primary_and_keeps_followups_in_order() {
     let c = checklist(&project);
     assert_eq!(c.current, CurrentStep::ReadyAllDone);
     assert_eq!(c.primary, None);
-    assert_eq!(c.secondary, [Offer::PlanFollowUps]);
+    assert_eq!(c.secondary, [Offer::PlanFollowUps, Offer::ReviewFeature]);
     assert_eq!(c.steps.len(), 6);
     assert_eq!(c.steps[5], (Step::Run, StepMark::Done));
 }

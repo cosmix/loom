@@ -12,6 +12,7 @@ const kinds: OfferKind[] = [
   "draft_all_sections",
   "draft_all_plans",
   "plan_follow_ups",
+  "review_feature",
   "fix_vision_table",
 ];
 

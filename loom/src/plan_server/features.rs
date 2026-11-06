@@ -201,7 +201,13 @@ mod tests {
             .iter()
             .map(|offer| (offer.id.as_str(), offer.label.as_str()))
             .collect();
-        assert_eq!(secondary, [("plan-follow-ups", "Plan follow-ups")]);
+        assert_eq!(
+            secondary,
+            [
+                ("plan-follow-ups", "Plan follow-ups"),
+                ("review-feature", "Review the feature"),
+            ]
+        );
     }
 
     #[test]

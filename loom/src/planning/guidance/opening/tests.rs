@@ -131,6 +131,16 @@ fn plan_follow_ups_appends_to_the_index() {
 }
 
 #[test]
+fn review_feature_points_at_the_findings_ledger() {
+    assert_opening(
+        AuthoringStart::Offer(Offer::ReviewFeature),
+        "review, Review the feature",
+        "Record findings from reviewing the feature in doc/plans/f/findings.md.",
+        "review",
+    );
+}
+
+#[test]
 fn refine_target() {
     assert_opening(
         AuthoringStart::Refine {
