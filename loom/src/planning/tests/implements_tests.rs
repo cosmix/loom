@@ -81,3 +81,59 @@ fn reports_invalid_and_empty_tokens() {
     assert_eq!(empty.value, Implements::Sections(vec![]));
     assert_eq!(empty.bad_tokens, [""]);
 }
+
+#[test]
+fn anchors_are_kept_in_order_and_deduplicated() {
+    let parsed = parse(
+        "Implements: section_04#b, [s](section_02.md#a), section_04#b, section_04#a, \
+         section_02#a\n",
+    );
+    assert_eq!(parsed.value, Implements::Sections(vec![4, 2]));
+    assert_eq!(
+        parsed.anchors,
+        [
+            (4, "b".to_string()),
+            (2, "a".to_string()),
+            (4, "a".to_string())
+        ]
+    );
+    assert!(parsed.bad_tokens.is_empty(), "{:?}", parsed.bad_tokens);
+}
+
+#[test]
+fn malformed_anchors_are_bad_tokens() {
+    let parsed = parse("Implements: section_01#Up, section_02#.., section_03#, section_05\n");
+    assert_eq!(parsed.value, Implements::Sections(vec![5]));
+    assert_eq!(
+        parsed.bad_tokens,
+        ["section_01#Up", "section_02#..", "section_03#"]
+    );
+    assert!(parsed.anchors.is_empty());
+}
+
+#[test]
+fn anchored_tokens_still_give_section_paths() {
+    let paths = implemented_section_paths(
+        Path::new("doc/plans/beta/PLAN-y.md"),
+        "# Y\n\nImplements: section_04#a, section_04\n",
+    );
+    assert_eq!(paths, [PathBuf::from("doc/product/beta/section_04.md")]);
+}
+
+#[test]
+fn whole_lists_sections_named_without_an_anchor() {
+    let parsed = parse("Implements: section_04#a, section_02, section_04, section_07#x\n");
+    assert_eq!(parsed.whole, [2, 4]);
+    let claims: Vec<(u32, Option<String>)> = parsed
+        .claims()
+        .into_iter()
+        .map(|claim| (claim.number, claim.anchor))
+        .collect();
+    assert_eq!(claims, [(4, None), (2, None), (7, Some("x".to_string()))]);
+}
+
+#[test]
+fn claims_are_empty_for_none_and_for_a_missing_line() {
+    assert!(parse("Implements: none\n").claims().is_empty());
+    assert!(parse("# X\n").claims().is_empty());
+}

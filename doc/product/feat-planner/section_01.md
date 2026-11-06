@@ -28,15 +28,15 @@ one. The project view lists features and standalone plans; standalone plans have
 | 5    | Pressure test | optional: the user decides which plans to pressure-test         |
 | 6    | Run           | the user starts `loom run`; the app shows plans running or done |
 
-Reviewing the result is the user reading, and the app records nothing about it (vision,
-Decisions). It is no step and has no state: the screens of sections 05 and 06 are where it
-happens.
+Reviewing the result is the user reading. It is no step: the screens of sections 05 and 06 are
+where it happens. What the reader records is a settled mark on each document they agree to
+(below, "Document maturity"); a mark never holds a step back.
 
 Step 5 never holds a feature back. Once steps 1 to 4 have no gaps, the spine marks step 5
 while any written plan has no pressure-test record, and offers to test it next to the offer to
 start a run; the user picks either. An untested plan is a suggestion, never a gap.
 
-With steps 1 to 4 complete the feature is "ready", because the app records no approval. The
+With steps 1 to 4 complete the feature is "ready", whether or not any document is settled. The
 spine marks step 6 as active while any plan is `IN_PROGRESS-`, and as done when every metaplan
 entry's plan is `DONE-` or `RETIRED-`.
 
@@ -169,6 +169,40 @@ design, and refinements would otherwise reopen the offer on every change. The pl
 the last test's date beside the plan's last change, so a reviewer can judge for themselves.
 (My call.)
 
+## Document maturity
+
+Beside its step, every document carries two states, both read from the files on every load. The
+only record of the reader's agreement is the `Settled:` line in the document (section 03).
+
+**Progress** says how far the document's subject has come:
+
+| Document        | Progress states                                                                |
+| --------------- | ------------------------------------------------------------------------------ |
+| Product section | stub (a vision row, no file), written, planned, built                          |
+| Plan            | stub (a metaplan entry, no plan file), written, running (`IN_PROGRESS-`), done |
+| Vision          | written                                                                        |
+| Metaplan        | written                                                                        |
+
+A section is planned once an entry, a plan or a stage covers it or one of its headings. It is
+built once it is covered and every plan covering it is `DONE-` or `RETIRED-`, with at least one
+`DONE-`. A retired plan counts as finished for this rule; a section covered only by retired plans
+is planned.
+
+**Settle state** says whether the reader's agreement still holds. The reader settles a document
+from its page (section 03 gives the line and its hashes), and the app checks it in this order:
+
+| State            | Meaning                                                                    |
+| ---------------- | -------------------------------------------------------------------------- |
+| Draft            | no `Settled:` line, or one that does not parse                             |
+| Revised          | the document, or for a plan its brief bundle, changed since it was settled |
+| Stub changed     | the document is as settled, but its vision row or metaplan entry changed   |
+| Upstream changed | a plan is as settled, but a section or heading it implements changed       |
+| Settled          | everything matches                                                         |
+
+Settling a document that still holds `(My call.)` marks or open questions asks for a
+confirmation that lists them; the reader may settle anyway. An unsettled draft shows as a frontier
+hint (below) and blocks no step. (My call.)
+
 ## What the app offers
 
 Each feature's **primary offer** closes the first gap of its current step. Every other gap is
@@ -186,7 +220,13 @@ new session briefed for that step and that document (section 09).
 | ready, all done | none                                                                  |
 
 A finished feature has no primary offer. Its view shows the Built state (section 11, "After
-plans complete") with the `Plan follow-ups` offer, its sole secondary offer.
+plans complete") with the `Plan follow-ups` offer, its sole secondary offer on that view.
+
+`Review the feature` is a secondary offer on any feature with a plan running or done. It starts
+a session that asks what the reader saw (running the feature, reading code, reading a run
+review), reads code and documents without writing them, and records findings in
+`doc/plans/<f>/findings.md` (section 03). The Findings page owns the offer, so no other screen
+draws it. (My call.)
 
 Offer labels are short, and the sentence beside the button explains what it does:
 
@@ -201,6 +241,7 @@ Offer labels are short, and the sentence beside the button explains what it does
 | Pressure-test a plan          | `Pressure-test <slug>`         |
 | Start a run                   | `Start a run`                  |
 | Plan follow-ups               | `Plan follow-ups`              |
+| Review the feature            | `Review the feature`           |
 | Draft all sections or plans   | `Draft all with a team`        |
 
 **No screen draws one offer twice.** The chat panel carries no offer to start a step (section
@@ -227,6 +268,38 @@ teammates coordinate while drafting. The lead checks consistency and hands the u
 queue ordered by open-question count. The cost line shows assignments and model before launch;
 "Stop the team" ends it and keeps written documents. Section 09 owns the session procedure.
 Pace belongs to the session request; it adds no stored workflow state or approval record.
+
+## The frontier
+
+Under the next-step sentence the spine lists the **frontier**: at most five short hints, one per
+document, each a link to the page where the gap is dealt with. The frontier reads the maturity
+states above and the findings ledger; it is a view of what needs attention next, never a step.
+Hints appear in this order:
+
+1. A settled document that was revised.
+2. A document whose stub changed since it was settled.
+3. A plan whose upstream sections changed since it was settled.
+4. A metaplan entry to revisit: its plan has not started running (unwritten, or written without a
+   lifecycle prefix), and findings were folded into it or open findings name a heading it covers
+   or its plan implements.
+5. A written draft section or plan to settle, in spine order.
+6. A heading of a settled section that no metaplan entry, plan or stage covers.
+7. One hint carrying the count of open findings, which opens the Findings page.
+
+**The frontier starts no session.** A hint is a link; an offer is the only thing that opens a
+session, and it keeps its own owner (above). (My call.)
+
+## The Coverage and Findings pages
+
+Two pages join the feature's screens, each with a spine row (vision, "The screen"):
+
+- **Coverage**, `/f/<f>/coverage`, shows which spec headings the metaplan, plans and stages cover:
+  the vision's rows, the headings of each written section, the metaplan entries, the plans with
+  their stages, and the findings, in columns. Selecting a card highlights its lineage across the
+  columns. Filters are All, Uncovered, Changed since settled and Open findings.
+- **Findings**, `/f/<f>/findings`, lists the ledger's findings, grouped by the run review they
+  came from (newest first) and then reviews. Each shows what it concerns, its status and the
+  actions Plan this, Fold into entry and Dismiss (with a reason).
 
 ## Where a feature opens
 

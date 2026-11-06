@@ -3,8 +3,9 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use crate::planning::briefs::{orphan_bundles, plan_briefs};
+use crate::planning::briefs::{bundle_files, orphan_bundles, plan_briefs};
 use crate::planning::discover::discover;
+use crate::planning::project::Project;
 
 fn put(root: &Path, rel: &str, text: &str) {
     let path = root.join(rel);
@@ -131,4 +132,77 @@ fn orphan_bundles_include_feature_homes_and_ignore_invalid_names() {
 
     let tree = discover(root).unwrap();
     assert_eq!(orphan_bundles(&tree), ["another-orphan", "orphan"]);
+}
+
+fn bundle(project: &Project, plan: &str) -> Vec<String> {
+    let files = bundle_files(project, Path::new(plan));
+    files
+        .iter()
+        .map(|path| path.display().to_string())
+        .collect()
+}
+
+#[test]
+fn bundle_files_are_the_loaded_briefs_of_that_plan_only() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path();
+    put(root, "doc/plans/feature/PLAN-p.md", "# P\n");
+    put(root, "doc/plans/feature/PLAN-q.md", "# Q\n");
+    for name in [
+        "briefs/p/common.md",
+        "briefs/p/alpha/w1.md",
+        "briefs/p/mock.json",
+    ] {
+        put(root, &format!("doc/plans/feature/{name}"), "# Brief\n");
+    }
+    put(root, "doc/plans/feature/briefs/q/common.md", "# Q brief\n");
+    put(
+        root,
+        "doc/plans/feature/briefs/orphan/common.md",
+        "# Orphan\n",
+    );
+    put(root, "doc/plans/briefs/p/common.md", "# Standalone p\n");
+    let project = Project::load(root).unwrap();
+
+    let want = [
+        "doc/plans/feature/briefs/p/alpha/w1.md",
+        "doc/plans/feature/briefs/p/common.md",
+        "doc/plans/feature/briefs/p/mock.json",
+    ];
+    assert_eq!(bundle(&project, "doc/plans/feature/PLAN-p.md"), want);
+    assert_eq!(
+        bundle(&project, "doc/plans/feature/PLAN-q.md"),
+        ["doc/plans/feature/briefs/q/common.md"]
+    );
+}
+
+#[test]
+fn bundle_files_follow_standalone_archived_and_unbundled_plans() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path();
+    put(root, "doc/plans/PLAN-solo.md", "# Solo\n");
+    put(root, "doc/plans/briefs/solo/common.md", "# Solo brief\n");
+    put(
+        root,
+        "doc/plans/feature/archive/DONE-PLAN-old.md",
+        "# Old\n",
+    );
+    put(
+        root,
+        "doc/plans/feature/briefs/old/common.md",
+        "# Old brief\n",
+    );
+    put(root, "doc/plans/feature/PLAN-bare.md", "# Bare\n");
+    let project = Project::load(root).unwrap();
+
+    assert_eq!(
+        bundle(&project, "doc/plans/PLAN-solo.md"),
+        ["doc/plans/briefs/solo/common.md"]
+    );
+    assert_eq!(
+        bundle(&project, "doc/plans/feature/archive/DONE-PLAN-old.md"),
+        ["doc/plans/feature/briefs/old/common.md"]
+    );
+    assert!(bundle(&project, "doc/plans/feature/PLAN-bare.md").is_empty());
+    assert!(bundle(&project, "doc/plans/feature/index.md").is_empty());
 }
