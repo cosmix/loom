@@ -367,9 +367,13 @@ it.each([
   "plans/feat-review",
 ])("does not request build markers for %s", (key) => {
   mount(<PageHeading page={{ ...page, key, feature: featureOfKey(key) }} />);
-  // The header reads its own source document for Edit and Discuss; nothing else is requested.
+  // The header reads its own source document for Edit and Discuss and the feature's trace for
+  // the settle state; nothing else is requested.
   const urls = fetchMock.mock.calls.map(([url]) => String(url));
-  expect(urls.filter((url) => !url.startsWith("/api/doc?path="))).toEqual([]);
+  const other = urls.filter(
+    (url) => !url.startsWith("/api/doc?path=") && !url.startsWith("/api/trace/"),
+  );
+  expect(other).toEqual([]);
 });
 
 it("pathless summaries and folders have no review indicators", () => {

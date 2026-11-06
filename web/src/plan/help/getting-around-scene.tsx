@@ -76,7 +76,7 @@ export function GettingAroundScene() {
               <div data-loom-plan inert>
                 <PlanHeader sample onOpenSettings={ignoreAction} onOpenHelp={ignoreAction} />
                 <div className="w-64 max-w-full">
-                  <Spine />
+                  <Spine sample />
                 </div>
               </div>
             }
