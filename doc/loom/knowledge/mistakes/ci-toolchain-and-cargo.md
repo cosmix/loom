@@ -398,3 +398,10 @@ The sweep follow-ups on executable startup, cache coverage, hook-path navigation
 **Why:** The fix was treated as implied by the complaint. Installing replaces the binary and global configuration every session on the machine uses.
 **Prevention:** Report the diagnosis and the install command. Run an install only on an explicit request.
 **Fix:** The operator runs the install.
+
+## dev-install.sh Stopped Killing the Daemon on a Review Finding
+
+**What happened:** finding INT-03 of an external review (`doc/astra-code-review-2026-10-31.md`) rated `dev-install.sh`'s `pkill -x loom` CRITICAL because it signals every same-user loom process, not only this checkout's daemon. Commit `573f4f66` replaced the kill with a printed `loom stop && loom run` hint, bundled into an unrelated hooks commit. The operator had not asked for the change.
+**Why:** the review's scope argument was applied without weighing the failure the kill exists to prevent: any daemon left running keeps the old binary and refuses spawns on hook drift (see the 2026-10-27 entry above). Killing every repository's daemon is the intended behaviour for a dev install.
+**Prevention:** a review finding that reverses a behaviour recorded in a mistakes entry needs the operator's decision before it is applied. Keep installer behaviour changes in their own commit.
+**Fix:** the post-install `pkill -x loom` block is restored; `scripts/tests/test_dev_install.py` asserts it runs after a successful install and never after a failed build or install.
