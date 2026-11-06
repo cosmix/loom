@@ -43,7 +43,9 @@ installPanelLifecycle();
 const panel = () => document.getElementById("chat-panel")!;
 const stored = (store: ReturnType<typeof storeFor>) =>
   localStorage.getItem(storageKey(store.get(serverInfoAtom)!.project_key, "panel-collapsed"));
-const expandButton = () => screen.queryByRole("button", { name: /^Expand chat/ });
+const expandButton = () => screen.getByRole("button", { name: /^Expand chat/ });
+const toggle = () => document.querySelector<HTMLElement>("[data-chat-sheet-trigger]")!;
+const panelCollapse = () => panel().querySelector<HTMLElement>("[data-chat-collapse]")!;
 
 function DiffProbe() {
   useDiffViewCollapse();
@@ -56,20 +58,38 @@ function DiffRoute() {
   return useAtomValue(onDiffAtom) ? <DiffProbe /> : null;
 }
 
-it("the side panel starts expanded, and the header offers no Expand chat", () => {
+it("the side panel starts expanded, and the header's Chat button shows it pressed", () => {
   mount();
   expect(panel().hidden).toBe(false);
-  const collapse = screen.getByRole("button", { name: "Collapse chat" });
-  expect(collapse.getAttribute("aria-expanded")).toBe("true");
-  expect(collapse.getAttribute("aria-controls")).toBe("chat-panel");
-  expect(expandButton()).toBeNull();
+  for (const collapse of [panelCollapse(), toggle()]) {
+    expect(collapse.getAttribute("aria-label")).toBe("Collapse chat");
+    expect(collapse.getAttribute("aria-expanded")).toBe("true");
+    expect(collapse.getAttribute("aria-controls")).toBe("chat-panel");
+  }
+  expect(toggle().textContent).toContain("Chat");
 });
 
-it("Collapse chat hides the panel without unmounting it; the header's Expand chat restores it", () => {
+it("the header's Chat button toggles the panel and keeps focus on itself", () => {
+  const store = storeFor();
+  mount(store);
+  toggle().focus();
+  fireEvent.click(toggle());
+  expect(panel().hidden).toBe(true);
+  expect(toggle().getAttribute("aria-label")).toBe("Expand chat");
+  expect(toggle().getAttribute("aria-expanded")).toBe("false");
+  expect(stored(store)).toBe("true");
+  expect(document.activeElement).toBe(toggle());
+  fireEvent.click(toggle());
+  expect(panel().hidden).toBe(false);
+  expect(toggle().getAttribute("aria-expanded")).toBe("true");
+  expect(stored(store)).toBe("false");
+});
+
+it("Collapse chat hides the panel without unmounting it; the header's Chat button restores it", () => {
   const store = storeFor();
   store.set(snapshotAtom, permissionSnapshot());
   mount(store);
-  const collapse = screen.getByRole("button", { name: "Collapse chat" });
+  const collapse = panelCollapse();
   collapse.focus();
   fireEvent.click(collapse);
   expect(panel().hidden).toBe(true);
@@ -87,8 +107,15 @@ it("Collapse chat hides the panel without unmounting it; the header's Expand cha
   fireEvent.click(expand);
   expect(panel().hidden).toBe(false);
   expect(stored(store)).toBe("false");
-  expect(expandButton()).toBeNull();
-  expect(document.activeElement).toBe(screen.getByRole("button", { name: "Collapse chat" }));
+  expect(document.activeElement).toBe(expand);
+});
+
+it("expanding with focus on the page body moves focus to the panel's Collapse chat", () => {
+  const { store } = mount();
+  act(() => store.set(chatCollapsedAtom, true));
+  (document.activeElement as HTMLElement | null)?.blur();
+  act(() => store.set(chatCollapsedAtom, false));
+  expect(document.activeElement).toBe(panelCollapse());
 });
 
 it("a stored collapsed choice starts collapsed at desktop width and is ignored by the sheet", () => {
@@ -115,9 +142,9 @@ it("the panel collapses and expands in memory when storage throws", () => {
   vi.spyOn(Storage.prototype, "setItem").mockImplementation(denied);
   mount();
   expect(panel().hidden).toBe(false);
-  fireEvent.click(screen.getByRole("button", { name: "Collapse chat" }));
+  fireEvent.click(panelCollapse());
   expect(panel().hidden).toBe(true);
-  fireEvent.click(expandButton()!);
+  fireEvent.click(expandButton());
   expect(panel().hidden).toBe(false);
 });
 
@@ -130,7 +157,7 @@ it("a diff view collapses the panel once per entry and leaving restores the user
   view(false);
   expect(panel().hidden).toBe(false);
   view(true);
-  fireEvent.click(expandButton()!);
+  fireEvent.click(expandButton());
   view(true);
   expect(panel().hidden).toBe(false);
   view(false);

@@ -2,6 +2,7 @@ import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import { PanelRightClose } from "lucide-react";
 import { useLayoutEffect, useRef, type RefObject } from "react";
 
+import { Button } from "@/components/ui/button";
 import { useMediaQuery } from "@/lib/use-media-query";
 import { pendingAttachmentsAtom } from "@/plan/attachments";
 import { ChatGlyph, STATE_NAME } from "./chat-state-glyph";
@@ -34,32 +35,38 @@ function useChatButtonName(verb: string, attachments = 0): string {
 }
 
 /**
- * The header's Chat button. Below 1280px it opens the sheet; from 1280px it shows only while the
- * side panel is collapsed, and expands it, so the decisions waiting stay in sight either way.
+ * The header's Chat button, always present on a chat route. Below 1280px it opens the sheet; from
+ * 1280px it is the disclosure for the side panel (`aria-expanded` while the panel is open) and a
+ * click collapses or expands it, so the decisions waiting stay in sight either way.
  */
 export function ChatSheetButton() {
   const desktop = useMediaQuery(DESKTOP);
   const [open, setOpen] = useAtom(chatSheetOpenAtom);
   const [collapsed, setCollapsed] = useAtom(chatCollapsedAtom);
   const attachments = useAtomValue(pendingAttachmentsAtom).length;
-  const name = useChatButtonName(desktop ? "Expand chat" : "Open chat", attachments);
-  if (desktop && !collapsed) return null;
+  const verb = !desktop ? "Open chat" : collapsed ? "Expand chat" : "Collapse chat";
+  const name = useChatButtonName(verb, attachments);
   return (
-    <button
-      type="button"
+    <Button
+      variant="ghost"
+      data-look="quiet"
+      className="plan-button chat-trigger"
       data-chat-sheet-trigger
       aria-label={name}
       aria-haspopup={desktop ? undefined : "dialog"}
-      aria-expanded={desktop ? false : open}
+      aria-expanded={desktop ? !collapsed : open}
       aria-controls={desktop ? CHAT_PANEL_ID : undefined}
-      onClick={() => (desktop ? setCollapsed(false) : setOpen(true))}
-      className="inline-flex items-center gap-1.5 text-[13px]"
+      onClick={() => (desktop ? setCollapsed(!collapsed) : setOpen(true))}
     >
       <ChatGlyph />
       <span>Chat</span>
       <PermissionBadge />
-      {attachments > 0 && <span aria-hidden="true">{attachments}</span>}
-    </button>
+      {attachments > 0 && (
+        <span className="chat-count-badge" aria-hidden="true">
+          {attachments}
+        </span>
+      )}
+    </Button>
   );
 }
 
@@ -83,7 +90,7 @@ export function CollapseChatButton() {
 
 /**
  * Keeps focus when the side panel changes: collapsing with focus inside the panel moves it to the
- * header's Expand chat, and expanding after that button left the page moves it to Collapse chat.
+ * header's Chat button, and expanding after the focus left the page moves it to the panel's Collapse chat.
  * Runs only on a change, so the first render never takes focus.
  */
 export function useCollapseFocus(panel: RefObject<HTMLElement | null>, collapsed: boolean): void {
