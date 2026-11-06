@@ -1,5 +1,6 @@
 import { useAtomValue, useStore } from "jotai/react";
-import { loadable } from "jotai/utils";
+import { atom, type Atom } from "jotai";
+import { unwrap } from "jotai/utils";
 import { useEffect, useState } from "react";
 
 import type { SourceAnchor } from "@/plan/api/schema-concept";
@@ -8,20 +9,36 @@ import type { Store } from "@/state/store";
 
 import { docViewAtom, passageOf } from "./passages";
 
-const loadables = new Map<string, ReturnType<typeof makeLoadable>>();
+type DocState =
+  | { state: "loading" }
+  | { state: "hasData"; data: DocView }
+  | { state: "hasError"; error: unknown };
 
-function makeLoadable(path: string) {
-  return loadable(docViewAtom(path));
+const LOADING = { state: "loading" } as const;
+const loadables = new Map<string, Atom<DocState>>();
+
+// Jotai's own `loadable` body, built from `unwrap` (the library helper is deprecated); a
+// document is never null, so null marks the pending fetch.
+function makeLoadable(path: string): Atom<DocState> {
+  const unwrapped = unwrap(docViewAtom(path), () => null);
+  return atom((get): DocState => {
+    try {
+      const data = get(unwrapped);
+      return data === null ? LOADING : { state: "hasData", data };
+    } catch (error) {
+      return { state: "hasError", error };
+    }
+  });
 }
 
 /** One loadable per document, so every passage of a file shares a single fetch and atom. */
-function docLoadable(path: string) {
-  let atom = loadables.get(path);
-  if (!atom) {
-    atom = makeLoadable(path);
-    loadables.set(path, atom);
+export function docLoadable(path: string): Atom<DocState> {
+  let entry = loadables.get(path);
+  if (!entry) {
+    entry = makeLoadable(path);
+    loadables.set(path, entry);
   }
-  return atom;
+  return entry;
 }
 
 /**
