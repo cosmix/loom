@@ -80,7 +80,7 @@
 | [token-flow-sources](architecture/token-flow-sources.md) |  | 75 |
 | [usage-evidence](architecture/usage-evidence.md) |  | 127 |
 | [verification-v2-gates](architecture/verification-v2-gates.md) | Gates | 250 |
-| [web-dashboard](architecture/web-dashboard.md) | Web | 118 |
+| [web-dashboard](architecture/web-dashboard.md) | Web | 131 |
 | [web-terminal](architecture/web-terminal.md) |  | 181 |
 
 ### entry-points
