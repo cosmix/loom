@@ -3,6 +3,7 @@ import { ChevronDown } from "lucide-react";
 import { Fragment, type CSSProperties, type JSX } from "react";
 
 import type { ConceptPage, PlanLink, SectionLink, Sentence } from "@/plan/api/schema-concept";
+import { EdgeChips } from "@/plan/trace/edge-chips";
 
 import { canOpen, runDomId, sentenceKey, useColumn, type SentenceSite } from "./column-context";
 import { FLASH_CLASS, flashKey } from "./flash";
@@ -110,6 +111,7 @@ export function ClosedSentence({ site, glyph, flashPage }: ClosedSentenceProps):
         )}
       </span>
       <SentenceTail site={site} button={button} />
+      <EdgeChips sentence={sentence} summary={summary} />
       {cited && <PlanGlyph plans={plansOf(cited, sentence)} sections={implementsOf(cited)} />}
     </span>
   );

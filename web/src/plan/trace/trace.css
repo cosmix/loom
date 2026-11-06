@@ -1,0 +1,397 @@
+/*
+ * The planning trace in the browser: settle marks, frontier hints, the heading's settle control,
+ * the stub panel, edge chips and the turn footer's impact rows. Every rule sits on the scales of
+ * ui/design.css and the tokens of index.css; nothing names a colour.
+ *
+ * One tone per settle state, read from `data-settle` into --trace-tone and spent on a glyph alone
+ * (ui/DESIGN.md, Status): draft is quiet chrome, settled the done tone, and the three moved states
+ * share the warning tone, so one amber mark means "look again". The word beside it says which.
+ */
+[data-loom-plan] [data-settle] {
+  --trace-tone: var(--muted-foreground);
+}
+
+[data-loom-plan] [data-settle="settled"] {
+  --trace-tone: var(--tone-completed);
+}
+
+[data-loom-plan] [data-settle="revised"],
+[data-loom-plan] [data-settle="stub_changed"],
+[data-loom-plan] [data-settle="upstream_changed"] {
+  --trace-tone: var(--tone-warning);
+}
+
+/* Shared: the focus ring of the reading column, chrome links that underline on hover, and the
+   6px dot a state word carries in a chip or an impact row. */
+[data-loom-plan] .trace-frontier a:focus-visible,
+[data-loom-plan] .trace-settle-changes:focus-visible,
+[data-loom-plan] .trace-settle-state:focus-visible,
+[data-loom-plan] .trace-stub a:focus-visible,
+[data-loom-plan] .trace-chip:focus-visible,
+[data-loom-plan] .trace-impact a:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+[data-loom-plan] .trace-frontier a,
+[data-loom-plan] .trace-stub-text > a,
+[data-loom-plan] .trace-briefs a,
+[data-loom-plan] .trace-impact a {
+  border-radius: 3px;
+  color: var(--muted-foreground);
+  text-decoration: none;
+}
+
+[data-loom-plan] .trace-frontier a:hover,
+[data-loom-plan] .trace-stub-text > a:hover,
+[data-loom-plan] .trace-briefs a:hover,
+[data-loom-plan] .trace-impact a:hover {
+  color: var(--foreground);
+  text-decoration: underline;
+}
+
+[data-loom-plan] .trace-chip-state::before,
+[data-loom-plan] .trace-impact-state::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--trace-tone);
+}
+
+/* ── Spine ─────────────────────────────────────────────────────────────────── */
+
+/* One more 14px glyph after a row's name (spine.css, `.plan-spine__glyph`), keeping its width so
+   the slug keeps the row's; the word is in `.sr-only` and the tooltip. A draft's outline circle
+   stays muted; the other states colour the glyph. */
+[data-loom-plan] .trace-settle {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+}
+
+[data-loom-plan] .trace-settle > .plan-spine__glyph {
+  color: var(--trace-tone);
+}
+
+/* Frontier hints: at most five link lines, one line each, cut at the column's edge, a step under
+   the next-step sentence and pulled up to --space-3 under it instead of the body's --space-5. */
+[data-loom-plan] .trace-frontier {
+  display: grid;
+  gap: 2px;
+  max-width: 48ch;
+  margin: calc(var(--space-3) - var(--space-5)) 0 0;
+  padding: 0 var(--space-2);
+  list-style: none;
+  font-size: var(--type-ui);
+  line-height: var(--leading-ui);
+}
+
+[data-loom-plan] .trace-frontier > li {
+  min-width: 0;
+}
+
+[data-loom-plan] .trace-frontier a {
+  display: block;
+  overflow: hidden;
+  padding: 2px 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition: color 120ms;
+}
+
+/* ── Document heading ──────────────────────────────────────────────────────── */
+
+/* One row on the heading's 24px control line: the state pill, the quiet `sm` buttons, the
+   Changes link, and a note when there is one. */
+[data-loom-plan] .trace-settle-control {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-2);
+  min-width: 0;
+  min-height: var(--control-height-sm);
+  font-family: var(--font-sans);
+  font-size: var(--type-ui);
+  line-height: var(--leading-ui);
+}
+
+/* The pill takes focus from code (settle-control.tsx) once a settle or an unsettle removed the
+   button that had it. A keyboard-driven move keeps the ring; a mouse click on the pill draws none. */
+[data-loom-plan] .trace-settle-state:focus:not(:focus-visible) {
+  outline: none;
+}
+
+/* The state pill: the chat file chip's shape (chat-decision.css) on --muted, --foreground at
+   500, led by a 7px dot in the tone; a draft's dot is an outline. ui/DESIGN.md, Status. */
+[data-loom-plan] .trace-settle-state {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-2);
+  height: var(--control-height-sm);
+  padding: 0 var(--space-3) 0 10px;
+  border-radius: 999px;
+  background: var(--muted);
+  color: var(--foreground);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+[data-loom-plan] .trace-settle-state::before {
+  content: "";
+  box-sizing: border-box;
+  width: 7px;
+  height: 7px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--trace-tone);
+}
+
+[data-loom-plan] .trace-settle-state[data-settle="draft"]::before {
+  border: 1.5px solid var(--trace-tone);
+  background: transparent;
+}
+
+/* Changes since settled: a link at the quiet row button's size, as the footer's Diff is. */
+[data-loom-plan] .trace-settle-changes {
+  display: inline-flex;
+  align-items: center;
+  height: var(--control-height-sm);
+  padding: 0 var(--space-2);
+  border-radius: var(--corner-control);
+  color: var(--muted-foreground);
+  font-weight: 500;
+  text-decoration: none;
+  white-space: nowrap;
+  transition:
+    background-color 120ms,
+    color 120ms;
+}
+
+[data-loom-plan] .trace-settle-changes:hover {
+  background: var(--muted);
+  color: var(--foreground);
+}
+
+/* A note is one --type-ui line in --foreground led by a 7px dot: the blocked tone for an alert,
+   muted for a status, the warning tone for "Stub changed since settled". */
+[data-loom-plan] .trace-settle-note,
+[data-loom-plan] .trace-stub-note {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  margin: 0;
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  font-size: var(--type-ui);
+  font-weight: 400;
+  line-height: var(--leading-ui);
+}
+
+[data-loom-plan] .trace-settle-note::before,
+[data-loom-plan] .trace-stub-note::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--muted-foreground);
+}
+
+[data-loom-plan] .trace-settle-note[role="alert"]::before {
+  background: var(--tone-blocked);
+}
+
+[data-loom-plan] .trace-stub-note::before {
+  background: var(--tone-warning);
+}
+
+/* On a document's source route the control and the stub sit over the reading column's heading,
+   on its inset (doc-heading.css). The box is gone when neither renders. */
+[data-loom-plan] .trace-source-head {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-5) 0;
+}
+
+[data-loom-plan] .trace-source-head:empty {
+  display: none;
+}
+
+/* ── Stub panel ────────────────────────────────────────────────────────────── */
+
+/* The stub reads before the body in the reading face, one size down and in muted ink, behind a
+   2px hairline on its start edge: the words that set the document's scope, apart from it. */
+[data-loom-plan] .trace-stub {
+  display: grid;
+  gap: var(--space-2);
+  max-width: 68ch;
+  padding-inline-start: var(--space-3);
+  border-inline-start: 2px solid var(--hairline);
+  color: var(--muted-foreground);
+  font-family: var(--font-reading);
+  font-size: calc(var(--reading-size) * 0.85);
+  line-height: 1.5;
+}
+
+[data-loom-plan] .trace-stub p {
+  margin: 0;
+}
+
+[data-loom-plan] .trace-stub-text {
+  display: grid;
+  gap: var(--space-1);
+}
+
+/* "Stub in the vision" / "Stub in the metaplan": a chrome link over the stub's words. */
+[data-loom-plan] .trace-stub-text > a {
+  justify-self: start;
+  font-family: var(--font-sans);
+  font-size: var(--type-ui);
+  font-weight: 500;
+  line-height: var(--leading-ui);
+}
+
+[data-loom-plan] .trace-stub-text strong {
+  color: var(--foreground);
+  font-weight: 500;
+}
+
+/* A plan's briefs: a label, then one mono line per file, each cut at the measure. */
+[data-loom-plan] .trace-briefs {
+  display: grid;
+  gap: var(--space-1);
+  font-family: var(--font-sans);
+  font-size: var(--type-ui);
+  line-height: var(--leading-ui);
+}
+
+[data-loom-plan] .trace-briefs > p {
+  font-weight: 500;
+}
+
+[data-loom-plan] .trace-briefs ul {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+[data-loom-plan] .trace-briefs li {
+  min-width: 0;
+}
+
+[data-loom-plan] .trace-briefs a {
+  display: block;
+  overflow: hidden;
+  font-family: var(--font-mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── Edge chips ────────────────────────────────────────────────────────────── */
+
+/* Mono --type-fine pills on --muted after a sentence (a mono id in the reading column, ui/DESIGN.md
+   Page rhythm). They rest at 55% so they never compete with the measure and come up whole while
+   their sentence is hovered or holds focus, while a chip has focus, and inside an opened run.
+   Opacity, never display: the chips keep their place in the accessibility tree and the tab order. */
+[data-loom-plan] .trace-chips {
+  margin-inline-start: 0.15em;
+  opacity: 0.55;
+  transition: opacity 120ms;
+}
+
+[data-loom-plan] .concept-sentence-wrap:is(:hover, :focus-within) .trace-chips,
+[data-loom-plan] .concept-run > .concept-sentence-wrap .trace-chips,
+[data-loom-plan] .trace-chips:focus-within {
+  opacity: 1;
+}
+
+[data-loom-plan] .trace-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4em;
+  max-width: 28ch;
+  height: 1.6em;
+  padding: 0 0.6em;
+  border-radius: 999px;
+  background: var(--muted);
+  color: var(--foreground);
+  font-family: var(--font-mono);
+  font-size: var(--type-fine);
+  font-weight: 400;
+  line-height: 1;
+  text-decoration: none;
+  vertical-align: 0.15em;
+  white-space: nowrap;
+  transition: background-color 120ms;
+}
+
+[data-loom-plan] .trace-chip > :first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+[data-loom-plan] .trace-chip:hover {
+  background: color-mix(in oklab, var(--muted) 70%, var(--border));
+  text-decoration: underline;
+}
+
+/* A section's settle state inside a plan page's chip: the dot in the tone, then the word. */
+[data-loom-plan] .trace-chip-state {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 0.4em;
+  color: var(--muted-foreground);
+}
+
+/* ── Turn footer: impact rows ──────────────────────────────────────────────── */
+
+/* Under a changed file's chip, the documents that moved with it: one row each behind a hairline
+   on the start edge, indented to the chip's words. Outranks the footer's `ul` reset
+   (chat-decision.css, `.chat-turn-footer ul`). */
+[data-loom-plan] .chat-turn-footer .trace-impact {
+  gap: 2px;
+  margin-inline-start: 11px;
+  padding-inline-start: var(--space-3);
+  border-inline-start: 1px solid var(--hairline);
+}
+
+[data-loom-plan] .trace-impact > li {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  min-height: 20px;
+}
+
+[data-loom-plan] .trace-impact a {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The state word keeps its width; the title gives way first. */
+[data-loom-plan] .trace-impact-state {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-1);
+  white-space: nowrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-loom-plan] .trace-frontier a,
+  [data-loom-plan] .trace-settle-changes,
+  [data-loom-plan] .trace-chips,
+  [data-loom-plan] .trace-chip {
+    transition: none;
+  }
+}

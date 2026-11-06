@@ -6,6 +6,7 @@ import type { Turn } from "@/plan/api/schema-chat";
 import type { DiffTexts } from "@/plan/api/schema-files";
 import { openDiff } from "@/plan/diff/open-diff";
 import { docRel } from "@/plan/files/address";
+import { ImpactRows } from "@/plan/trace/impact-rows";
 import { plural } from "@/plan/ui/plural";
 import { DisabledReason } from "@/plan/ui/disabled-reason";
 import type { DocKind } from "@/plan/ui/glyphs";
@@ -142,6 +143,7 @@ function ChangedFiles({
             {sectionFile.test(file.path) && (
               <ImplementingPlans path={file.path} loaded={implemented} />
             )}
+            <ImpactRows path={file.path} />
           </li>
         ))}
       </ul>
