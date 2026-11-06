@@ -103,7 +103,8 @@ function QuestionAnswer({ question }: { question: SummaryQuestion }) {
 }
 
 function StatusContent({ load, reload }: { load: PanelLoad; reload: () => void }) {
-  if (load.status === "loading") return <LoadState state="loading" size="compact" title="Loading summaries" />;
+  if (load.status === "loading")
+    return <LoadState state="loading" size="compact" title="Loading summaries" />;
   if (load.status === "error") {
     return (
       <LoadState

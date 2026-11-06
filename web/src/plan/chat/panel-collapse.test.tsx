@@ -7,7 +7,13 @@ import { DiffPage } from "@/plan/diff/diff-page";
 import { ChangesPage } from "@/plan/review/changes-page";
 import { serverInfoAtom } from "@/plan/state/atoms";
 import { snapshotAtom } from "./model";
-import { installPanelLifecycle, media, mount, permissionSnapshot, storeFor } from "./panel-test-kit";
+import {
+  installPanelLifecycle,
+  media,
+  mount,
+  permissionSnapshot,
+  storeFor,
+} from "./panel-test-kit";
 import { chatCollapsedAtom, revealChat, useDiffViewCollapse } from "./sheet-state";
 import { storageKey } from "./storage";
 
@@ -87,7 +93,10 @@ it("Collapse chat hides the panel without unmounting it; the header's Expand cha
 
 it("a stored collapsed choice starts collapsed at desktop width and is ignored by the sheet", () => {
   const store = storeFor();
-  localStorage.setItem(storageKey(store.get(serverInfoAtom)!.project_key, "panel-collapsed"), "true");
+  localStorage.setItem(
+    storageKey(store.get(serverInfoAtom)!.project_key, "panel-collapsed"),
+    "true",
+  );
   const { unmount } = mount(store);
   expect(panel().hidden).toBe(true);
   unmount();
