@@ -1,6 +1,6 @@
 /*
- * The feature spine: the documents of one feature in workflow order, with the next step at its
- * head. Chrome set in --type-body and --muted-foreground, with its mono ids, counts and notes at
+ * The feature spine: the documents of one feature in workflow order, with the frontier hints at
+ * its head. Chrome set in --type-body and --muted-foreground, with its mono ids, counts and notes at
  * --type-ui (one step above the rest of the chrome, ui/DESIGN.md Type), the current row in
  * --foreground; the accent marks the current group's glyph and the current document's dot, and
  * nothing else. Groups divide by hairlines, children sit under their group with no rule of their
@@ -48,24 +48,6 @@
 [data-loom-plan] .plan-spine__group,
 [data-loom-plan] .plan-spine__row {
   min-width: 0;
-}
-
-/* The next step: one sentence, then at most one button. The button's wrapper spans the column so
-   a long label truncates inside it (design.css, `.plan-button`) instead of widening the spine. */
-[data-loom-plan] .plan-spine-next {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: var(--space-2);
-  padding: 0 var(--space-2);
-}
-
-[data-loom-plan] .plan-spine-next__text {
-  max-width: 48ch;
-  margin: 0;
-  color: var(--foreground);
-  font-size: var(--type-body);
-  line-height: var(--leading-body);
-  overflow-wrap: anywhere;
 }
 
 [data-loom-plan] .plan-spine__groups,

@@ -91,7 +91,6 @@ it("renders the sample project and its spine without throwing", () => {
     within(container).getByRole("button", { name: "Switch feature, current: atlas", hidden: true }),
   ).toBeDefined();
   expect(container.querySelectorAll(SPINE)).toHaveLength(1);
-  expect(container.querySelectorAll(".plan-spine-next")).toHaveLength(1);
 });
 
 it.each(["/", "/files", "/f/other/product"])(
@@ -155,7 +154,7 @@ it("matches every pin selector inside its rendered production scene", () => {
 it("pins the header's logo, switcher, activity pill, settings and help once each", () => {
   const [around] = PLANNER_HELP_TOPICS;
   const notes = around!.scenes[0]!.notes;
-  expect(notes).toHaveLength(6);
+  expect(notes).toHaveLength(5);
   expect(notes[0]!.text).toContain("feature switcher");
   const { container } = render(<GettingAroundScene />);
 
@@ -171,20 +170,6 @@ it("pins the header's logo, switcher, activity pill, settings and help once each
   for (const selector of selectors) {
     expect(container.querySelectorAll(selector)).toHaveLength(1);
   }
-});
-
-it("pins the spine's next step on the third note, not Share", () => {
-  const note = PLANNER_HELP_TOPICS[0]!.scenes[0]!.notes[2]!;
-  const targets = typeof note.target === "string" ? [note.target] : note.target;
-  const { container } = render(<GettingAroundScene />);
-
-  const matched = new Set(targets.flatMap((selector) => [...container.querySelectorAll(selector)]));
-  expect(matched.size).toBe(1);
-  const next = [...matched][0] as HTMLElement;
-  expect(next.classList.contains("plan-spine-next")).toBe(true);
-  expect(next.textContent).toMatch(/metaplan/i);
-  expect(within(next).queryByRole("button", { name: /share/i, hidden: true })).toBeNull();
-  expect(next.contains(container.querySelector('[aria-label="Settings"]'))).toBe(false);
 });
 
 it("pins the whole spine, which holds no removed step and cannot scroll the scene", () => {
@@ -216,7 +201,7 @@ it("keeps the scene inert without HTTP requests or a live socket", () => {
 it("states the current planner behavior in the notes, tips and intros", () => {
   const [around, , , chat, pressure] = PLANNER_HELP_TOPICS;
   expect(around!.scenes[0]!.notes[1]!.text).toMatch(/five groups.*Not pressure-tested/);
-  expect(around!.scenes[0]!.notes[3]!.text).toContain("roundel");
+  expect(around!.scenes[0]!.notes[2]!.text).toContain("roundel");
   const aroundTips = (around!.tips ?? []).join(" ");
   expect(aroundTips).toContain("product overview");
   expect(aroundTips).toContain("Claude and Codex limits");

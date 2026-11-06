@@ -12,10 +12,7 @@ import { canAuthorAtom, serverInfoAtom } from "@/plan/state/atoms";
  * runs the registered handler, which asks before replacing a running chat.
  * `checklist` is the one the screen belongs to (the route feature's, else the active one on a
  * standalone page), so the offer comes from the feature the reader is looking at. Only an offer
- * that is that checklist's primary takes the primary look. On a spine screen the one page that
- * reaches that case is a missing vision or metaplan (`MissingDocument`), which owns the offer
- * itself; `EmptyStates` leaves the primary to the spine. A standalone plan page has no spine, so
- * its empty states can draw the active checklist's primary here.
+ * that is that checklist's primary takes the primary look.
  */
 export function EmptyOffer({
   offer,
