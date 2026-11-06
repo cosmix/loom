@@ -61,7 +61,6 @@ it("a new permission request is announced with the side panel shown or the sheet
   const store = storeFor();
   store.set(snapshotAtom, { ...permissionSnapshot(), session: null, turns: [] });
   mount(store);
-  expect(screen.queryByRole("button", { name: /Collapse chat|Expand chat/ })).toBeNull();
   act(() => store.set(snapshotAtom, permissionSnapshot()));
   await waitFor(() => expect(announced("alert")).toBe("Needs a decision: Bash"));
   cleanup();

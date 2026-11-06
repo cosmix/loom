@@ -33,6 +33,7 @@ import { useSuggestionFeed } from "./suggestion-cards";
 import chatCss from "./chat.css?raw";
 import { panelWidthAtom } from "./prefs";
 import { chatSheetOpenAtom } from "./sheet-state";
+import { clearedChatAtom } from "./shown-session";
 import { storageKey } from "./storage";
 
 vi.mock("./transcript", () => ({ Transcript: () => <div role="log">Transcript</div> }));
@@ -111,18 +112,16 @@ it("separator arrow keys resize", () => {
   expect(store.get(panelWidthAtom)).toBe(40);
 });
 
-it("the panel has no collapse: a stored collapsed flag is ignored and no rail or toggle draws", () => {
+it("New chat after a pressure run draws the greeting alone, with no pressure head over it", () => {
   const store = storeFor();
-  const key = store.get(serverInfoAtom)!.project_key;
-  localStorage.setItem(storageKey(key, "panel-collapsed"), "true");
-  store.set(snapshotAtom, permissionSnapshot());
+  const { session } = chatSnapshotSchema.parse(fixture);
+  const run = { ...session!, kind: "pressure", state: "ended" as const, failure: null };
+  store.set(snapshotAtom, { session: run, turns: [], queue: [], previous: null });
+  store.set(clearedChatAtom, run.id);
   mount(store);
   const panel = screen.getByRole("complementary", { name: "Chat" });
-  expect(panel.style.width).toBe("21.25rem");
-  expect(screen.getByRole("log")).toBeTruthy();
-  expect(screen.queryByRole("button", { name: /Collapse chat|Expand chat/ })).toBeNull();
-  // The sheet's Close chat is the only window control; the side panel has none.
-  expect(within(panel).queryByRole("button", { name: "Close chat" })).toBeNull();
+  expect(panel.querySelector(".chat-empty")).not.toBeNull();
+  expect(within(panel).queryByText("Run header")).toBeNull();
 });
 
 it("sheet below lg", () => {
@@ -246,7 +245,7 @@ it.each([
   expect(screen.queryByRole("button", { name: "Changed since" })).toBeNull();
 });
 
-it("the header shows no chat button while the side panel is shown", () => {
+it("the header shows no chat button while the side panel is expanded", () => {
   media(true);
   render(
     <Provider store={storeFor()}>

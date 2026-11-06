@@ -42,8 +42,8 @@ const TYPING_TARGET =
   "input, textarea, select, [contenteditable]:not([contenteditable=false]), [role=textbox]";
 
 /**
- * Registers the `c` key. It opens a closed sheet first (the panel is always shown from 1280px), then asks the
- * composer to focus. Call it from a component that stays mounted while the panel is hidden.
+ * Registers the `c` key. It reveals the chat first (`revealChat`: a closed sheet opens, a collapsed side
+ * panel expands), then asks the composer to focus. Call it from a component that stays mounted while the panel is hidden.
  * With `enabled` false (a screen that mounts no panel) the key is left alone: nothing there
  * would clear the requests it sets, so the sheet would open unasked on the next screen.
  */
