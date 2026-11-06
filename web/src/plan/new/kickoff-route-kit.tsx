@@ -57,7 +57,7 @@ export const atlas: ChecklistView = checklistViewSchema.parse({
   primary: null,
   secondary: [],
   items: [],
-  built: { reviews: [], spec: [], candidates: [] },
+  candidates: [],
 });
 
 export const kickoff: KickoffView = {

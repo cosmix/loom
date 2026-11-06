@@ -91,8 +91,7 @@ its top edge (Feature, Standalone plan, Follow-up). Follow-up opens a picker of 
 have a metaplan, done or not, each with its state and plan count; the picked feature's open
 findings and open questions from its run reviews appear as suggestions under the field. Start
 for a follow-up starts Plan follow-ups for that feature with the typed text and opens the
-feature's metaplan page with the chat. The Built page's "Start it on New work" arrives with the
-feature picked. While a kickoff is open the form also says "<name or
+feature's metaplan page with the chat. While a kickoff is open the form also says "<name or
 Untitled> is still open", with Continue and Set it aside. A kickoff persists as a draft under the
 runtime directory (`kickoffs/<session id>.json`): the user's typed texts (at most 40 of 4 KiB),
 the agent's last shape, the start's attachments, the user's rename and the confirmed target. The

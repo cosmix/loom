@@ -1,9 +1,8 @@
 import { Check, Plus } from "lucide-react";
 
 import { Untrusted } from "@/plan/chat/visible-controls";
-import { followUpSeed } from "@/plan/feature/built-model";
 import { DocumentStarter, type StarterDocument } from "@/plan/new/document-starter";
-import type { FollowUpFeature } from "@/plan/new/follow-up-features";
+import { followUpSeed, type FollowUpFeature } from "@/plan/new/follow-up-features";
 import type { WorkKind } from "@/plan/new/kickoff-start";
 
 /** A starter is words alone (DESIGN.md, New work); only a finding pill carries a glyph. */

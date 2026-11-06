@@ -20,12 +20,6 @@ import { TakingShape } from "@/plan/new/taking-shape";
 import { kickoffAtom } from "@/plan/state/atoms";
 import "@/plan/new/kickoff.css";
 
-/** The feature `/new` opens on Follow-up for, when the route state names one (the Built page). */
-function followUpOf(state: unknown): string | null {
-  const followUp = (state as { followUp?: unknown } | null)?.followUp;
-  return typeof followUp === "string" ? followUp : null;
-}
-
 /**
  * `/new` is always the empty form. `/new?session=<id>` is that kickoff: its conversation while the
  * server runs it, its draft once it ended. This tab's own start only navigates here; a follow-up
@@ -60,13 +54,7 @@ export function KickoffRoute() {
     revealChat(store);
   };
   if (requested === null) {
-    return (
-      <EmptyKickoff
-        small={location.state?.small === true}
-        followUp={followUpOf(location.state)}
-        onFollowUp={onFollowUp}
-      />
-    );
+    return <EmptyKickoff small={location.state?.small === true} onFollowUp={onFollowUp} />;
   }
   if (!active) return <DraftView id={requested} />;
   return (

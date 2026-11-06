@@ -128,9 +128,5 @@
       }
     }
   ],
-  "built": {
-    "reviews": [],
-    "spec": [],
-    "candidates": []
-  }
+  "candidates": []
 }

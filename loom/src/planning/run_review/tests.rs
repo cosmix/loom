@@ -53,7 +53,6 @@ fn sections_stop_at_the_next_heading_and_an_absent_section_is_empty() {
         [item("Q", "q", "a question")]
     );
     assert!(review_items(&doc, ReviewSection::OpenFindings).is_empty());
-    assert!(review_items(&doc, ReviewSection::SpecConformance).is_empty());
 }
 
 #[test]

@@ -1,7 +1,6 @@
 import { createBrowserRouter, type RouteObject } from "react-router";
 
 import { ConceptRoute } from "@/plan/concept/concept-route";
-import { BuiltPage } from "@/plan/feature/built-page";
 import { FeatureSourcePage, MetaplanPage, VisionPage } from "@/plan/feature/document-page";
 import { FeatureLanding, FeatureLayout } from "@/plan/feature/feature-layout";
 import { Gaps } from "@/plan/feature/gaps";
@@ -33,7 +32,6 @@ const featureRoutes: RouteObject = {
     { path: "metaplan", element: <MetaplanPage /> },
     ...conceptRoutes("engineering"),
     { path: "run", element: <RunPage /> },
-    { path: "built", element: <BuiltPage /> },
     // Any other child of a feature is a mistyped link: say so rather than draw a blank page.
     { path: "*", element: <LoadState state="not_found" title="No such page" /> },
   ],

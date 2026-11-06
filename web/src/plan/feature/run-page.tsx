@@ -1,15 +1,13 @@
 import { useAtomValue, useStore } from "jotai/react";
 import { useEffect, useState } from "react";
-import { Link } from "react-router";
 
 import type { ChecklistView } from "@/plan/api/schema";
 import { ConfigBlockNotice } from "@/plan/chat/pressure/config-block-notice";
 import { Untrusted } from "@/plan/chat/visible-controls";
-import { isBuilt } from "@/plan/feature/built-model";
 import { NoPlans, PlanPage, UnwrittenPlans } from "@/plan/feature/plan-page";
 import { PlanName, PlanStateStatus } from "@/plan/feature/plan-state";
 import { runScope, runSentence, startControl, type RunRead } from "@/plan/feature/run-scope";
-import { featureHref, useFeature } from "@/plan/feature/use-feature";
+import { useFeature } from "@/plan/feature/use-feature";
 import { DashboardLink, webUrl } from "@/plan/run/dashboard-button";
 import { StartRunButton } from "@/plan/run/plan-run-actions";
 import { fetchRunState, runStateAtom, runStripAtom } from "@/plan/run/use-run";
@@ -79,10 +77,7 @@ function useRunRead(): RunRead {
   return read;
 }
 
-/**
- * `/f/:feature/run`: the run's state, the one start action, each plan's state, and once every plan
- * is done a link to what was built.
- */
+/** `/f/:feature/run`: the run's state, the one start action and each plan's state. */
 export function RunPage() {
   const { checklist } = useFeature();
   const state = useAtomValue(runStateAtom);
@@ -110,14 +105,6 @@ export function RunPage() {
         <>
           <RunActions checklist={checklist} read={read} />
           <PlanRows checklist={checklist} />
-          {isBuilt(checklist) && (
-            <p className="plan-fine">
-              Every plan is done.{" "}
-              <Link to={featureHref(checklist.feature, "built")} className="plan-page__link">
-                See what was built
-              </Link>
-            </p>
-          )}
           <UnwrittenPlans checklist={checklist} />
         </>
       )}

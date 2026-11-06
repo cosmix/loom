@@ -41,7 +41,7 @@ Open items from the plan-summary levels, fragment merging and the reading column
 
 ## Run review
 
-- `fs/plan_review/sections.rs`: a deferred `spec-conformance:` decision appears in both Spec Conformance and Open Findings; the Built view would list it as a spec item and as a finding candidate.
+- `fs/plan_review/sections.rs`: a deferred `spec-conformance:` decision appears in both Spec Conformance and Open Findings, so the findings import also files it in the ledger as an open finding.
 - `orchestrator/signals/generate/product_sections.rs` has no signal-level test of the `Implements: none` case, and no assertion through `assemble_signal`, so removing the `generate.rs` call fails no test (the plan's wiring pattern `product_sections::append_product_sections(` catches it at `loom stage complete`).
 
 ## Requirement walk: not checked here
@@ -56,4 +56,4 @@ The integration-verify walk of the planner-follow-ups requirements (R1-R13) foun
 
 ## Operator checks after the run
 
-Rebuild the summaries and open a plan summary (opening, detail, source link, fragment at rest); confirm New chat spends no tokens before the first message and a real ending shows the designed card; start a follow-up from the Built page and from `/new` and confirm the entry appended under `## Follow-ups` in `index.md`; run a plan whose `Implements:` names sections and read the spec-conformance lines in its run review; open the dashboard theme picker in Walnut and Graphite; open the Settings statistics block with a Claude login.
+Rebuild the summaries and open a plan summary (opening, detail, source link, fragment at rest); confirm New chat spends no tokens before the first message and a real ending shows the designed card; start a follow-up from `/new` and confirm the entry appended under `## Follow-ups` in `index.md`; run a plan whose `Implements:` names sections and read the spec-conformance lines in its run review; open the dashboard theme picker in Walnut and Graphite; open the Settings statistics block with a Claude login.

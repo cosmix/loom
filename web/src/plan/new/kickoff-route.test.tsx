@@ -64,10 +64,11 @@ it.each([
   });
 });
 
-it("opens on Follow-up for the feature the route state names and lands its chat on the metaplan", async () => {
-  const { socket, router } = mount({ state: { followUp: "atlas" }, checklists: [atlas] });
-  expect((screen.getByRole("radio", { name: "Follow-up" }) as HTMLInputElement).checked).toBe(true);
-  expect(screen.getByRole("button", { name: "Change" })).toBeTruthy();
+it("lands a started follow-up's chat on the feature's metaplan", async () => {
+  const { socket, router } = mount({ checklists: [atlas] });
+  fireEvent.click(screen.getByRole("radio", { name: "Follow-up" }));
+  const picker = screen.getByRole("listbox", { name: "Which feature?" });
+  fireEvent.click(within(picker).getByRole("option", { name: /atlas/ }));
   fireEvent.change(screen.getByRole("textbox", { name: "What do you want to build?" }), {
     target: { value: "Tighten the settings dialog" },
   });
@@ -80,11 +81,6 @@ it("opens on Follow-up for the feature the route state names and lands its chat 
   await act(async () => socket.result());
 
   await waitFor(() => expect(router.state.location.pathname).toBe("/f/atlas/metaplan"));
-});
-
-it("ignores a followUp route state that names no listed feature", () => {
-  mount({ state: { followUp: "nowhere" }, checklists: [atlas] });
-  expect((screen.getByRole("radio", { name: "Feature" }) as HTMLInputElement).checked).toBe(true);
 });
 
 it("shows the real transcript, composer, Taking shape and an unconfirmed proposal", () => {

@@ -66,20 +66,16 @@ function atlas(): ChecklistView {
     primary: null,
     secondary: [],
     items: [],
-    built: {
-      reviews: [{ slug: "atlas-01", path: "doc/plans/REVIEW-PLAN-atlas-01.md" }],
-      spec: [],
-      candidates: [
-        {
-          id: "F-1",
-          kind: "finding",
-          stage: "Chat polish",
-          stage_id: "chat-polish",
-          text: "Settings statistics look bland",
-          review: "doc/plans/REVIEW-PLAN-atlas-01.md",
-        },
-      ],
-    },
+    candidates: [
+      {
+        id: "F-1",
+        kind: "finding",
+        stage: "Chat polish",
+        stage_id: "chat-polish",
+        text: "Settings statistics look bland",
+        review: "doc/plans/REVIEW-PLAN-atlas-01.md",
+      },
+    ],
   });
 }
 
@@ -90,11 +86,11 @@ function beacon(): ChecklistView {
     metaplans: [{ path: "doc/plans/beacon/index.md", title: "Beacon" }],
     plan_rows: [plan("beacon-01", "written", "doc/plans/beacon/PLAN-beacon-01.md")],
     current: { kind: "ready" },
-    built: { reviews: [], spec: [], candidates: [] },
+    candidates: [],
   });
 }
 
-function mount(props: { followUp?: string | null; onFollowUp?: (feature: string) => void } = {}) {
+function mount(props: { onFollowUp?: (feature: string) => void } = {}) {
   const h = harness();
   h.store.set(projectAtom, { checklists: [atlas(), beacon()], standalone: [], moves: [] });
   h.mount(<EmptyKickoff {...props} />);
@@ -204,30 +200,6 @@ it("a dismissed picker is reopened by Pick a feature, which gives way to Change 
   expect(screen.getByRole("button", { name: "Change" })).toBeTruthy();
 });
 
-it("followUp opens on Follow-up with that feature picked and the picker closed", () => {
-  mount({ followUp: "atlas" });
-  expect(radio("Follow-up").checked).toBe(true);
-  expect(screen.getByRole("button", { name: "Change" })).toBeTruthy();
-  expect(screen.queryByRole("listbox", { name: PICKER })).toBeNull();
-  expect(composer().placeholder.startsWith("What should change in atlas?")).toBe(true);
-});
-
-it("applies followUp once the features arrive after the first render", () => {
-  const h = harness();
-  h.mount(<EmptyKickoff followUp="atlas" />);
-  expect(radio("Feature").checked).toBe(true);
-  expect(screen.queryByRole("button", { name: "Change" })).toBeNull();
-
-  act(() => {
-    h.store.set(projectAtom, { checklists: [atlas(), beacon()], standalone: [], moves: [] });
-  });
-
-  expect(radio("Follow-up").checked).toBe(true);
-  expect(screen.getByRole("button", { name: "Change" })).toBeTruthy();
-  expect(screen.queryByRole("listbox", { name: PICKER })).toBeNull();
-  expect(composer().placeholder.startsWith("What should change in atlas?")).toBe(true);
-});
-
 it("the foot's line is the reason while Start is blocked and the keys while it is live", () => {
   mount();
   const line = () => document.querySelector(".kickoff-field__reason")!;
@@ -259,12 +231,6 @@ it("a starter is words alone; a finding pill carries its glyph", () => {
 
   const pill = screen.getByRole("button", { name: "Settings statistics look bland" });
   expect(pill.querySelector("svg")).toBeTruthy();
-});
-
-it("ignores a followUp feature that has no metaplan", () => {
-  mount({ followUp: "comet" });
-  expect(radio("Feature").checked).toBe(true);
-  expect(screen.queryByRole("button", { name: "Change" })).toBeNull();
 });
 
 it("starts Plan follow-ups for the picked feature and tells the route once it has started", async () => {
