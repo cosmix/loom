@@ -1,6 +1,6 @@
 # Planner Design Brainstorm
 
-> Stubs are not summaries; briefs need summaries
+> Stubs
 
 ## Stubs were mistaken for summaries in a planner redesign proposal
 
@@ -36,3 +36,17 @@
 **Why**: The orchestrator overcorrected in the brief and gave no quality bar, so 'plain' was followed literally. A design skill does not rescue a brief that asks for plain.
 **Prevention**: A design brief names an approved quality bar (here the Hearth and Threshold mockups), states minimum content type sizes, describes each screen's user task and hierarchy, and limits clutter by rules (one state glyph per row) rather than by asking for plainness. Show the editing loop (chat open) when the screens exist to support it.
 **Fix**: Round 3 briefed with those rules.
+
+## Spec sections invented product features the vision never asked for
+
+**What happened**: Writing the feat-planner spec sections from the vision, an agent turned one sentence about a returning author ('revise the spec or add plans in light of what was built') into two done-state offers, 'Compare spec with build' (with a new loom-plan:retro skill) and 'New metaplan round', and later plans implemented both. The user never asked for either and rejected the first.
+**Why**: A user description in the vision was read as a feature request, and spec sections were treated as license to add UI and skills.
+**Prevention**: A spec section adds a user-facing action, button or skill only when the vision names it; a user story the vision describes gets an open question in the section, not an invented feature. Mark any such addition '(My call.)' and raise it with the user before plans build it.
+**Fix**: The plan planner-follow-ups removed both offers and the `loom-plan:retro` skill. Spec and build are aligned inside each run by integration-verify's spec-conformance duty ([the Product Sections block](../architecture/signal-generation.md#product-sections-block-integration-verify-only)); follow-up work is the Built page's single `Plan follow-ups` offer, which appends entries under `## Follow-ups` in the feature's `index.md` ([Built page](../architecture/planner-feature-screens.md#built-page)).
+
+## A feature plan's run review is written where nothing looks for it
+
+**What happened**: `fs::plan_review::generate` (and `fs/plan_lifecycle/commit.rs`) write `doc/plans/REVIEW-<plan stem>.md` at the top of `doc/plans/` for every plan, feature plans included, while `kinds::classify` gives `DocKind::RunReview` only to a review in the plan's own home or its `archive/`, and `plan_server/review/built.rs` searches only there. A feature plan's run review is never found by the planner.
+**Why**: The run review predates feature directories under `doc/plans/<f>/`; the writer kept the old flat location when the readers moved to the plan's home.
+**Prevention**: When a document's home moves, `rg` every writer of the old path and every reader of the new one, and add a test that writes through the real generator and reads through the real classifier.
+**Fix**: The readers accept the writer's location: `kinds::classify` gives `RunReview` in a plan home, its `archive/`, the top of `doc/plans/` and `doc/plans/archive/`, and `run_review_paths` (`plan_server/review/built.rs`) searches the same four places, so the Built page reads each done plan's newest review ([run reviews](../architecture/planner-feature-screens.md#run-reviews)). The writer was left where it is.

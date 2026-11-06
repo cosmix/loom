@@ -93,4 +93,4 @@ The conflicted card prints the word once: `ActivityLine` (the first line of the 
 
 ## The Bundle Is Over 500 kB and the Gate Hides the Warning
 
-`vite build` warns "Some chunks are larger than 500 kB after minification" (`web/dist/assets/index.js` about 880 KB, over before the token-flow plan). The dist criterion runs vite with `--logLevel error`, so the gate never shows it; raising `build.chunkSizeWarningLimit` would only hide it. Code-splitting adds chunks the embedded Rust asset server must serve, so it needs its own change.
+The dashboard bundle is split: `web/vite.config.ts` `codeSplitting` groups (`react`, `zod`, `router`, `flow`, `markdown`, `cm-view`, `cm-lang`) keep `web/dist/assets/index.js` near 190 kB, and `loom/src/web_server/assets.rs` serves any `web/dist` path, so a new chunk needs no server change. `plan.js` is the chunk that sits near the 500 kB warning (about 412 kB with edit mode lazy); the rule that keeps it there is in [Plan Web](../conventions/plan-web.md#live-preview-editor-rules). The dist criterion runs vite with `--logLevel error`, so the gate never prints the warning; raising `build.chunkSizeWarningLimit` would only hide it.
