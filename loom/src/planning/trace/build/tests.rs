@@ -146,6 +146,21 @@ fn settling_a_section_is_no_upstream_change_for_a_plan_implementing_it_whole() {
     assert_eq!(doc(&fx.trace(), plan).settle, SettleState::UpstreamChanged);
 }
 
+#[test]
+fn open_questions_and_out_of_scope_headings_are_no_spec_content() {
+    let text = "# S1\n\n## One\n\nText.\n\n## Open questions\n\nNone.\n\n\
+                ## Out of scope for this section\n\nNone.\n";
+    let fx = Fixture::new(&[
+        (VISION, &vision(&[1])),
+        (&section(1), text),
+        (PLAN_FIRST, "# First\n\nImplements: section_01#one\n"),
+    ]);
+    let trace = fx.trace();
+    let anchors: Vec<&str> = trace.headings.iter().map(|h| h.anchor.as_str()).collect();
+    assert_eq!(anchors, ["one"]);
+    assert!(uncovered(&trace).is_empty(), "{:?}", uncovered(&trace));
+}
+
 /// Sections 01 and 02 covered by an entry (`#one`), a stage line (`#two`) and a plan naming
 /// section 02 whole.
 fn coverage_fixture() -> Fixture {

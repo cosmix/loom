@@ -81,6 +81,33 @@ fn clear_restores_every_text_mark_wrote_into() {
 }
 
 #[test]
+fn text_directly_under_the_anchor_leaves_the_mark_a_paragraph_of_its_own() {
+    let settled = line(A, None, None);
+    let cases = [
+        ("# T\nIntro.", format!("# T\nSettled: {A}\n\nIntro.")),
+        (
+            "# T\n\nImplements: none\nText.\n",
+            format!("# T\n\nSettled: {A}\n\nImplements: none\nText.\n"),
+        ),
+        (
+            "# T\nImplements: none\nText.\n",
+            format!("# T\nSettled: {A}\n\nImplements: none\nText.\n"),
+        ),
+        (
+            "# T\r\nIntro.\r\n",
+            format!("# T\r\nSettled: {A}\r\n\r\nIntro.\r\n"),
+        ),
+    ];
+    for (text, expected) in cases {
+        let marked = mark(text, &settled);
+        assert_eq!(marked, expected, "{text:?}");
+        assert_eq!(clear(&marked), text, "{text:?}");
+        assert_eq!(mark(&marked, &settled), marked, "{text:?}");
+        assert_eq!(body_hash(&marked, &[]), body_hash(text, &[]), "{text:?}");
+    }
+}
+
+#[test]
 fn the_mark_goes_after_the_title_or_the_implements_line_under_it() {
     let settled = line(A, None, None);
     let cases = [

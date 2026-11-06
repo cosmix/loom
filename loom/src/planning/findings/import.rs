@@ -5,7 +5,7 @@ use std::collections::HashSet;
 use std::io::ErrorKind;
 use std::path::Path;
 
-use super::{entry_text, ledger_path, next_number, parse, title, FindingStatus};
+use super::{entry_text, ledger_path, next_number, parse, FindingStatus};
 use crate::context::source_graph::body_hash;
 use crate::fs::locking::lock_plan;
 use crate::fs::safe_read::read_to_string_bounded;
@@ -110,7 +110,7 @@ fn append(existing: Option<&str>, plan: &Plan, candidates: &[Candidate]) -> (Str
         text.push('\n');
         text.push_str(&entry_text(
             &format!("F-{number}"),
-            &title(&candidate.text),
+            &candidate.text,
             &about,
             Some(&source),
             &FindingStatus::Open,

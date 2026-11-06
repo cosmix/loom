@@ -41,10 +41,14 @@ impl Rules<'_> {
     /// bundle of a plan.
     pub(super) fn allowed_sources(&self) -> Vec<PathBuf> {
         let Some(scope) = store::Scope::of(self.project, self.id) else {
-            return store::source_of(self.project, self.id)
-                .into_iter()
-                .chain(self.bundle())
-                .collect();
+            // The source first, then the brief files of a plan summary's bundle; every other
+            // summary's source is no plan, so its bundle is empty.
+            let source = store::source_of(self.project, self.id);
+            let bundle = source
+                .as_ref()
+                .map(|plan| bundle_files(self.project, plan))
+                .unwrap_or_default();
+            return source.into_iter().chain(bundle).collect();
         };
         if self.id.ends_with("/product") {
             vec![vision_path(&scope.feature)]
@@ -55,14 +59,6 @@ impl Rules<'_> {
                 .flat_map(|feature| feature.metaplans.iter().map(|(path, _)| path.clone()))
                 .collect()
         }
-    }
-
-    /// The brief files of a plan summary's bundle; empty for every other summary, whose source
-    /// is no plan (an overview has no source document).
-    fn bundle(&self) -> Vec<PathBuf> {
-        store::source_of(self.project, self.id)
-            .map(|plan| bundle_files(self.project, &plan))
-            .unwrap_or_default()
     }
 
     /// The member summaries of an overview, in reading order.
@@ -239,7 +235,7 @@ fn uncited(rules: &Rules<'_>, allowed: &[PathBuf], cited: &Cited) -> Vec<FormatE
         let sources = sources.map(|p| format!("source {} is not cited", p.display()));
         members.chain(sources).collect()
     } else {
-        uncited_briefs(rules, cited)
+        uncited_briefs(rules, allowed, cited)
     };
     messages
         .into_iter()
@@ -250,9 +246,13 @@ fn uncited(rules: &Rules<'_>, allowed: &[PathBuf], cited: &Cited) -> Vec<FormatE
 /// The briefs of a plan summary's bundle that no sentence cites. A brief the project holds no
 /// text for (not Markdown, unreadable) has no anchor to cite, so it is not required; its hash
 /// still goes into the `bundle` front matter.
-fn uncited_briefs(rules: &Rules<'_>, cited: &Cited) -> Vec<String> {
-    let briefs = rules.bundle().into_iter().filter(|brief| {
-        rules.project.content_hash(brief).is_some() && !cited.sources.contains(brief)
+fn uncited_briefs(rules: &Rules<'_>, allowed: &[PathBuf], cited: &Cited) -> Vec<String> {
+    // `allowed` is the source followed by the bundle: drop the source, keep the briefs.
+    let source = store::source_of(rules.project, rules.id);
+    let briefs = allowed.iter().filter(|brief| {
+        source.as_ref() != Some(*brief)
+            && rules.project.content_hash(brief).is_some()
+            && !cited.sources.contains(*brief)
     });
     briefs
         .map(|brief| format!("brief {} is not cited", brief.display()))

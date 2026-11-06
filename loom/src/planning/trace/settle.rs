@@ -85,7 +85,7 @@ pub fn mark(text: &str, line: &SettledLine) -> String {
     out
 }
 
-/// `text` without its `Settled:` lines, each with the blank line `mark` put before it.
+/// `text` without its `Settled:` lines, each with the blank line `mark` put beside it.
 pub fn clear(text: &str) -> String {
     let lines = split(text);
     let marks = mark_indices(&lines);
@@ -102,8 +102,9 @@ pub fn clear(text: &str) -> String {
         dropped[at] = true;
         if at > 0 && blank(at - 1) {
             dropped[at - 1] = true;
-        } else if at == 0 && blank(1) {
-            dropped[1] = true;
+        } else if (at == 0 || filled(&lines, at - 1)) && blank(at + 1) {
+            // The mark was written at the top, or tight under its anchor (see `insert`).
+            dropped[at + 1] = true;
         }
     }
     // A mark that ended an unterminated text also ended the line above it (see `insert`).
@@ -250,6 +251,9 @@ fn insert(text: &str, lines: &[Line], rendered: &str) -> String {
         "" => line_ending(lines),
         own => own,
     };
+    // Text directly under the anchor: the mark sits right under it (no blank line above, so
+    // `clear` can tell this form apart) and a blank line below keeps it a paragraph of its own.
+    let tight = filled(lines, at + 1);
     let mut out = String::with_capacity(text.len() + rendered.len() + 3 * eol.len());
     for (index, line) in lines.iter().enumerate() {
         out.push_str(line.content);
@@ -258,8 +262,13 @@ fn insert(text: &str, lines: &[Line], rendered: &str) -> String {
             continue;
         }
         out.push_str(eol);
-        out.push_str(eol);
+        if !tight {
+            out.push_str(eol);
+        }
         out.push_str(rendered);
+        if tight {
+            out.push_str(eol);
+        }
         // An anchor that ended an unterminated text leaves the mark unterminated instead.
         out.push_str(line.eol);
     }
@@ -272,10 +281,18 @@ fn placement(text: &str, lines: &[Line]) -> Option<usize> {
     let headings = sections_of(text).headings;
     let title = headings.iter().find(|h| h.level == 1)?.span.start_line;
     let next = (title + 1..lines.len()).find(|&i| !lines[i].content.trim().is_empty());
+    // Text glued to the `Implements:` line would swallow the mark into its paragraph.
     match next {
-        Some(index) if lines[index].content.starts_with("Implements:") => Some(index),
+        Some(i) if lines[i].content.starts_with("Implements:") && !filled(lines, i + 1) => Some(i),
         _ => Some(title),
     }
+}
+
+/// Whether line `index` exists and holds text.
+fn filled(lines: &[Line], index: usize) -> bool {
+    lines
+        .get(index)
+        .is_some_and(|l| !l.content.trim().is_empty())
 }
 
 /// The text's first line ending, `\n` when it has none.
