@@ -13,8 +13,8 @@ import { slugNumber } from "@/plan/files/heading-parts";
 import { planSlug } from "@/plan/files/tree";
 import { OfferButton } from "@/plan/offers/offer-button";
 import { authorBlockReasonAtom, draftTeamAtom } from "@/plan/state/atoms";
-import { ActivityGlyph } from "@/plan/ui/activity-glyphs";
-import { PLAN_STATE_GLYPHS, type Glyph, type PlanState } from "@/plan/ui/glyphs";
+import { StateMark } from "@/plan/ui/activity-glyphs";
+import { PLAN_STATE_WORD_GLYPHS, type Glyph, type PlanState } from "@/plan/ui/glyphs";
 import { plural } from "@/plan/ui/plural";
 
 export type QueueKind = "section" | "plan";
@@ -41,8 +41,8 @@ type QueueRow = {
 };
 
 function planIcon(state: string): Glyph {
-  return Object.hasOwn(PLAN_STATE_GLYPHS, state)
-    ? PLAN_STATE_GLYPHS[state as PlanState]
+  return Object.hasOwn(PLAN_STATE_WORD_GLYPHS, state)
+    ? PLAN_STATE_WORD_GLYPHS[state as PlanState]
     : CircleCheck;
 }
 
@@ -147,7 +147,7 @@ function RowStatus({ row, drafting }: { row: QueueRow; drafting: boolean }) {
     <>
       {drafting ? (
         <span className="plan-status plan-fine">
-          <ActivityGlyph kind="drafting" />
+          <StateMark kind="drafting" />
           Drafting…
         </span>
       ) : (
@@ -165,9 +165,8 @@ function RowStatus({ row, drafting }: { row: QueueRow; drafting: boolean }) {
 }
 
 /**
- * "Next" stands in for the button of a row whose offer another surface already draws: the
- * primary (the spine or the pace card owns it) and either pace card's offer. While authoring is
- * blocked a row draws no button: the page's primary carries the reason once.
+ * "Next" stands in for the button of a row whose offer the pace choice already draws, either
+ * card's. While authoring is blocked a row draws no button.
  */
 function RowAction({ row, drawn }: { row: QueueRow; drawn: string[] }) {
   const blocked = useAtomValue(authorBlockReasonAtom) !== null;
@@ -194,7 +193,6 @@ export function Queue({ checklist, kind }: { checklist: ChecklistView; kind: Que
   const rows = queueRows(checklist, kind);
   if (rows.length === 0) return null;
   const drawn = paceOfferIds(checklist, QUEUE_SCOPE[kind]);
-  if (checklist.primary !== null) drawn.push(checklist.primary.id);
   return (
     <ul
       aria-label={kind === "section" ? "Section queue" : "Plan queue"}

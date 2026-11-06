@@ -10,8 +10,10 @@ import {
   ActivityGlyph,
   ActivityTile,
   isProgressKind,
+  isStateWordKind,
   LiveDot,
   PROGRESS_KINDS,
+  StateMark,
 } from "./activity-glyphs";
 
 const EXPECTED_KINDS = [
@@ -90,6 +92,36 @@ describe("activity glyphs", () => {
       expect(container.textContent).toBe("");
     },
   );
+
+  it("draws StateMark as the two rotating arrows, resting and dimmed when paused", () => {
+    const { container, rerender } = render(<StateMark kind="drafting" />);
+    const arrows = container.querySelector("svg")!;
+    expect(arrows.classList.contains("lucide-refresh-cw")).toBe(true);
+    expect(arrows.getAttribute("data-kind")).toBe("drafting");
+    expect(arrows.getAttribute("data-busy")).toBe("true");
+    expect(arrows.getAttribute("aria-hidden")).toBe("true");
+    expect(container.querySelector(".activity-glyph__led")).toBeNull();
+
+    rerender(<StateMark kind="drafting" paused />);
+    expect(container.querySelector("svg")?.getAttribute("data-busy")).toBe("false");
+  });
+
+  it.each(["running", "codex", "drafting", "summaries", "starting"] as const)(
+    "tiles the state-word kind %s as the two rotating arrows",
+    (kind) => {
+      expect(isStateWordKind(kind)).toBe(true);
+      const { container } = render(<ActivityTile kind={kind} />);
+      expect(container.querySelector("svg.lucide-refresh-cw")).not.toBeNull();
+      expect(container.querySelector(".activity-glyph__led")).toBeNull();
+    },
+  );
+
+  it.each(["pressure", "waiting"] as const)("tiles %s as the dot, not the arrows", (kind) => {
+    expect(isStateWordKind(kind)).toBe(false);
+    const { container } = render(<ActivityTile kind={kind} />);
+    expect(container.querySelector(".activity-glyph__led")).not.toBeNull();
+    expect(container.querySelector("svg")).toBeNull();
+  });
 
   it("draws the live dot for a running plan's state glyph, sized like an icon", () => {
     const { container } = render(<LiveDot className="size-4" size={14} />);

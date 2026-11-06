@@ -8,11 +8,10 @@ import { sourceHref } from "@/plan/feature/source-href";
 import { repoRel, toAddress } from "@/plan/files/address";
 import { openQuestionsAtom } from "@/plan/review/live";
 import { featuresAtom } from "@/plan/state/atoms";
-import { ActivityGlyph } from "@/plan/ui/activity-glyphs";
 import type { HeadingChip, HeadingCrumb } from "@/plan/ui/doc-heading";
 import {
   OTHER_GLYPHS,
-  PLAN_STATE_GLYPHS,
+  PLAN_STATE_WORD_GLYPHS,
   SUMMARY_STATE_GLYPHS,
   type PlanState,
 } from "@/plan/ui/glyphs";
@@ -63,13 +62,13 @@ export function sectionLabel(stem: string, total: number | null): string | null 
   return total === null ? `Section ${number}` : `Section ${number} of ${total}`;
 }
 
-/** Running is `go` with the animated glyph, Done is `ok`; Written and Retired stay neutral. */
+/** Running is `go` with the rotating arrows (the chip is a state word), Done is `ok`; Written and Retired stay neutral. */
 export function planStateChip(state: PlanState): HeadingChip {
-  const StateGlyph = PLAN_STATE_GLYPHS[state];
+  const StateGlyph = PLAN_STATE_WORD_GLYPHS[state];
   return {
     key: "state",
     label: STATE_LABELS[state],
-    icon: state === "running" ? <ActivityGlyph kind="running" /> : <StateGlyph />,
+    icon: <StateGlyph />,
     tone: state === "running" ? "accent" : state === "done" ? "ok" : "neutral",
   };
 }

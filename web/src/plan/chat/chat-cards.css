@@ -1,7 +1,7 @@
 /* The ending's cards and the starting line. Imported by chat-transcript.css; unlayered like the
  * rest of the chat (see chat-surface.css). Each card is --background on the --card panel with the
  * transcript's 14px corner and no border: the wrap-up while the closing write runs, what the chat
- * left behind once it ended, and the starting line with the pane's one roundel.
+ * left behind once it ended, and the starting line with the block Spinner.
  */
 
 /* ── Wrap-up ───────────────────────────────────────────────────────────────── */
@@ -22,7 +22,7 @@
   min-width: 0;
 }
 
-/* The roundel centred in a 36px --muted circle. */
+/* The mark box, 36px, that holds the wrap-up card's block Spinner. */
 .chat-wrap-mark {
   display: inline-flex;
   flex: none;

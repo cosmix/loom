@@ -3,7 +3,7 @@ import { Link } from "react-router";
 
 import { Untrusted } from "@/plan/chat/visible-controls";
 import { featureHref } from "@/plan/feature/use-feature";
-import { PLAN_STATE_GLYPHS, type PlanState } from "@/plan/ui/glyphs";
+import { PLAN_STATE_WORD_GLYPHS, type PlanState } from "@/plan/ui/glyphs";
 
 /**
  * A plan row's state as a glyph and a word (DESIGN.md, Status). The server's `state` is a free
@@ -11,8 +11,8 @@ import { PLAN_STATE_GLYPHS, type PlanState } from "@/plan/ui/glyphs";
  */
 export function PlanStateStatus({ state }: { state: string }) {
   // Own keys only: a state named "constructor" must not pick a function off the prototype.
-  const Icon = Object.hasOwn(PLAN_STATE_GLYPHS, state)
-    ? PLAN_STATE_GLYPHS[state as PlanState]
+  const Icon = Object.hasOwn(PLAN_STATE_WORD_GLYPHS, state)
+    ? PLAN_STATE_WORD_GLYPHS[state as PlanState]
     : CircleDashed;
   return (
     <span className="plan-status">

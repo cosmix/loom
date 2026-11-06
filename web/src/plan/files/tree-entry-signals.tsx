@@ -7,7 +7,7 @@ import { visibleControls } from "@/plan/chat/visible-controls";
 import { validationAtom } from "@/plan/files/atoms";
 import { NOT_PRESSURE_TESTED, PRESSURE_TESTED, pressureIcon } from "@/plan/files/heading-parts";
 import { TreeEntryExtras } from "@/plan/files/tree-entry-extras";
-import { PLAN_STATE_GLYPHS, type Glyph } from "@/plan/ui/glyphs";
+import { PLAN_STATE_GLYPHS, PLAN_STATE_WORD_GLYPHS, type Glyph } from "@/plan/ui/glyphs";
 
 /**
  * A glyph standing for a word: the word is read from `.sr-only` and shown as the glyph's
@@ -46,7 +46,7 @@ function PlanState({ entry }: { entry: TreeEntry }): JSX.Element | null {
   if (entry.kind !== "plan" || state === null) return null;
   if (state === "running") {
     return (
-      <Loud icon={PLAN_STATE_GLYPHS.running} tone="running">
+      <Loud icon={PLAN_STATE_WORD_GLYPHS.running} tone="running">
         running
       </Loud>
     );

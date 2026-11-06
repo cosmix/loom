@@ -51,7 +51,7 @@ function StateWords({ state }: { state: SessionView["state"] }) {
 /**
  * The live kickoff's head, the Hearth chat head over a hairline: the work's name, else "New
  * feature" or "New standalone plan" by kind, else "New work", as the one heading, and under it
- * the state in a few words (idle says nothing). It draws no roundel: the transcript's starting
+ * the state in a few words (idle says nothing). It draws no busy sign: the transcript's starting
  * card or working turn carries the pane's one.
  */
 export function KickoffHead() {

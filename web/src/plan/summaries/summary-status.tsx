@@ -8,7 +8,7 @@ import { Untrusted, visibleControls } from "@/plan/chat/visible-controls";
 import "@/plan/header/activity.css";
 import { Popover, PopoverContent, PopoverTrigger } from "@/plan/header/popover";
 import { canAuthorAtom } from "@/plan/state/atoms";
-import { ActivityTile } from "@/plan/ui/activity-glyphs";
+import { ActivityGlyph, ActivityTile } from "@/plan/ui/activity-glyphs";
 import { SUMMARY_STATE_GLYPHS } from "@/plan/ui/glyphs";
 import { LoadState } from "@/plan/ui/load-state";
 
@@ -40,8 +40,8 @@ function statusText(load: PanelLoad): { label: string; count: string } {
 }
 
 /**
- * The compact trigger's glyph is the summaries' state (`ui/glyphs.tsx`): the roundel while a
- * rebuild runs, the dashed circle while some are out of date, the check when all are current.
+ * The compact trigger's glyph is the summaries' state (`ui/glyphs.tsx`): the two rotating
+ * arrows while a rebuild runs, the dashed circle while some are out of date, the check when all are current.
  * A load still in flight or failed shows the dashed circle too: nothing is known to be current.
  */
 function compactGlyph(load: PanelLoad): keyof typeof SUMMARY_STATE_GLYPHS {
@@ -279,7 +279,9 @@ export function SummaryStatusRow({
         aria-label={summaryRowLabel(load)}
         onClick={toggle}
       >
-        <ActivityTile kind="summaries" paused={!running} />
+        <ActivityTile kind="summaries" paused={!running}>
+          <ActivityGlyph kind="summaries" paused={!running} />
+        </ActivityTile>
         <span className="activity-row__body">
           <span className="activity-row__title">{SUMMARY_ROW_TITLE}</span>
           <span className="activity-row__sub">{label}</span>
