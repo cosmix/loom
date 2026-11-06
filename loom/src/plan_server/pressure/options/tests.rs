@@ -157,7 +157,7 @@ fn available_with_free_authoring_or_the_requesters_lease() {
         assert!(!result.running);
         assert_eq!(result.plans, ["doc/plans/PLAN-a.md"]);
         assert_eq!(result.defaults, default_slots(ctx.root()));
-        assert_eq!(result.defaults.rounds, 2);
+        assert_eq!(result.defaults.rounds, 1);
         assert_eq!(result.claude_models, CLAUDE_MODELS);
         assert_eq!(result.claude_efforts, ALLOWED_REASONING_EFFORTS);
         assert_eq!(result.codex_models, CODEX_MODELS);

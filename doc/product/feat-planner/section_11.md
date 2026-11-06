@@ -51,7 +51,7 @@ Starting a pressure test opens a dialog with a hero row: the still pressure-test
 and "Two reviewers read the plan at once, then an editor addresses both reviews."
 The plan card carries its DocMark, title, file name, state chips, and "Change" to choose another plan.
 
-"What happens" starts with the rounds control: 1/2/3 quick picks and a number field, default 2, as `loom pressure --rounds`.
+"What happens" starts with the rounds control: 1/2/3 quick picks and a number field, default 1, as `loom pressure --rounds`.
 Below it, a dashed "Each round, N times" frame draws one round: Review (Claude `/pressure`) and Second review
 (Codex `$pressure`, marked "background") both connect to Address (Claude `/address`). Each node carries its model and
 effort pickers, set to the values `[pressure]` configuration resolves (`loom/src/commands/pressure/models.rs:44`) and

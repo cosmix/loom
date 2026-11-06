@@ -110,7 +110,7 @@ fn first_disabled_reason(
 fn default_slots(root: &Path) -> PressureSlots {
     let models = resolve_for(root, PressureModelFlags::default());
     PressureSlots {
-        rounds: 2,
+        rounds: 1,
         claude_model: models.claude,
         claude_effort: models.claude_effort,
         codex_model: models.codex,
