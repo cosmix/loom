@@ -93,7 +93,7 @@ export function HeatStrip({
     <div
       role="img"
       aria-label={label}
-      className={cn("grid h-[18px] gap-px rounded-[3px] bg-foreground/[0.04] p-px", className)}
+      className={cn("grid h-[18px] rounded-[3px] bg-foreground/[0.04] py-px pr-px", className)}
       style={{ gridAutoFlow: "column", gridAutoColumns: "minmax(0, 1fr)" }}
     >
       {values.map((value, index) => {
@@ -107,10 +107,13 @@ export function HeatStrip({
         return (
           <span
             key={index}
-            className="rounded-[2px]"
+            // The gap is a transparent left border, not a grid gap: Firefox snaps
+            // fractional gaps per cell, giving uneven spacing, while borders stay
+            // a whole device pixel wide.
+            className="rounded-[2px] border-l border-l-transparent bg-clip-padding"
             data-level={Math.ceil(4 * ratio)}
             style={{
-              background: mix(percent),
+              backgroundColor: mix(percent),
               boxShadow: ratio >= HEAT_GLOW ? `0 0 5px ${mix(45)}` : undefined,
             }}
           />
