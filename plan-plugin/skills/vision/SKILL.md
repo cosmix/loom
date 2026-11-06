@@ -66,6 +66,9 @@ from the first cell of each row; `01` maps to `doc/product/<feature>/section_01.
 rows but no numbered first cell is an error. Without that heading and a table, the app
 cannot read the section list; it never infers sections from prose.
 
+Each row is the stub of its section: keep the `Covers` cell a true one-line scope. When a
+section's scope moves past its row, update the row in the same turn or ask.
+
 Under `## Decisions`, list decisions that span sections. Name the section numbers each
 decision binds, so a section writer can identify its constraints.
 
@@ -79,6 +82,13 @@ For “add this unlisted section to the vision”, read
 `doc/product/<feature>/section_<nn>.md` and add its number, title and coverage to
 the table. Keep the existing file and its number;
 write only the vision. Do not create or rewrite the section as part of this repair.
+
+## Settled documents
+
+Never write or edit a `Settled:` line; the app's Mark settled action writes it. When the turn
+edits the vision and it has one, say so in the reply ("the vision was settled; it now reads
+revised"). Editing a row of the table also changes the stub of the section it names, so say
+which sections' stubs changed.
 
 ## Close the session
 

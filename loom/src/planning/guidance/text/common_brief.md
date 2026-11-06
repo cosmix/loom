@@ -19,6 +19,14 @@ A correction about the product is a decision: record it in the document it affec
 where another instruction says to record corrections as knowledge. The knowledge base takes
 facts about the code only.
 
+A document has three layers: its stub, its body and its summary. The stub of a product section
+is its row in the vision's section table; the stub of a plan is its metaplan entry. When a
+body's scope moves past its stub, update the stub in the same turn or ask. Link lines are plain
+text at column 0, outside fences: a metaplan entry carries `Covers: section_NN#<anchor>, ...`
+under its heading paragraph, and a plan's `Implements:` line names headings the same way where
+it covers part of a section (`section_NN` only for a whole section). A stage that covers a
+narrower part adds `Implements (stage:<id>): section_NN#<anchor>, ...` in the plan's prose.
+
 ## What the writing sessions keep to
 
 Section 09 gives the sessions their skills; these are the conventions the skills must produce:
@@ -44,6 +52,9 @@ Section 09 gives the sessions their skills; these are the conventions the skills
   versions. Decline requests to edit these files with that reason. Offer a new metaplan
   entry or a refinement of the spec for corrections to running or finished work.
 - **Run reviews.** Never edit `REVIEW-*.md` files.
+- **Settled marks.** Never write or edit a `Settled:` line; the app's Mark settled action
+  writes it. When a turn edits a document that has one, say so in the reply ("section 04 was
+  settled; it now reads revised").
 - **Knowledge.** Never write under `doc/loom/knowledge/` with a file tool; make every
   knowledge change through `loom knowledge`.
 - **Summaries.** Never write directly under `doc/loom/summaries/`; change summaries
