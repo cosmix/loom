@@ -92,6 +92,17 @@ the cross links below. Plan pages also show the plan's state (written, running, 
 section 01) and the date of its last pressure test, if any. Running, done and retired plans show
 the read-only notice of the vision's "Locked plans" decision.
 
+A page's heading, and the heading of the same document's source page, also shows the document's
+**settle state** (Draft, Settled, Revised, Stub changed or Upstream changed) next to the summary's
+own state; the spine row of every written document carries the same state as a small glyph whose
+word is its tooltip and accessible name. Settling is the reader's act, made from that heading
+(section 03 owns the mark). Summaries are built for drafts and settled documents alike: a draft
+plan is summarised so that it can be reviewed before it is settled, and settling does not start
+or stop a rebuild. Under the heading a section or plan shows its **stub** (the vision row or
+metaplan entry that set its scope) linked to its place, with a note when the stub changed after
+the document was settled. A plan's pages also list its **brief files**, each linked to its source
+page; the briefs are part of what the plan's settled mark covers.
+
 The body is the summary's text, every sentence opening to its source passages exactly as level 1
 sentences do inside an overview. A plan page shows its opening level; each opening sentence opens
 to its detail sentences in place, and each detail sentence opens to its source passages.
@@ -268,6 +279,12 @@ text.
   and each opens the plan's summary page under the engineering route. The engineering side does the
   same in reverse. (My call: the link appears where the reader has drilled into one document, so
   level 0 prose stays uncluttered.)
+- **Edge chips.** On a product page, a sentence also shows a small chip for each entry, plan and
+  stage covering the headings it rests on (a whole-section source counts every heading of that
+  section), and a count of the open findings on those headings. On a plan page, a sentence
+  citing a stage (or the plan) shows a chip for each spec heading that stage implements, with
+  the settle state of the heading's section. The chips are computed in the browser from the
+  sentence's sources and the feature's trace; they sit beside the plan glyph, which stays.
 - An `Implements:` line naming a section that does not exist shows on the plan page as a broken
   link with the name as written, so the reviewer sees it. It is a broken reference (section 03),
   never a checklist gap.
