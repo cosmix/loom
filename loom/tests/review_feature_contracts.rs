@@ -48,8 +48,11 @@ fn demo() -> TempDir {
     temp
 }
 
+/// `(id, label)` of each offer in one checklist tier.
+type Offers = Vec<(String, String)>;
+
 /// Every offer of the demo checklist as `(id, label)`, primary first.
-fn offers(project: &Project) -> (Vec<(String, String)>, Vec<(String, String)>) {
+fn offers(project: &Project) -> (Offers, Offers) {
     let checklist = &project.feature("demo").expect("feature demo").checklist;
     let pair = |offer: &Offer| (offer.id(), offer.label());
     let primary = checklist.primary.iter().map(pair).collect();
