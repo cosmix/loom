@@ -19,7 +19,7 @@ import {
   draftTeamAtom,
   featuresAtom,
 } from "@/plan/state/atoms";
-import { ActivityGlyph } from "@/plan/ui/activity-glyphs";
+import { StateMark } from "@/plan/ui/activity-glyphs";
 import { DisabledReason } from "@/plan/ui/disabled-reason";
 import { DocMark } from "@/plan/ui/doc-mark";
 
@@ -47,7 +47,7 @@ function DocumentRow({ path, teammates }: { path: string; teammates: TeammateSta
         {teammate ? <Untrusted text={teammate.name} /> : "Unassigned"}
       </span>
       <span className="inline-flex items-center gap-1 text-sm">
-        {state === "Drafting" && <ActivityGlyph kind="drafting" />}
+        {state === "Drafting" && <StateMark kind="drafting" />}
         {state}
       </span>
     </li>

@@ -1,3 +1,4 @@
+import { RefreshCw } from "lucide-react";
 import type { CSSProperties, JSX, SVGProps } from "react";
 
 import "./spinner.css";
@@ -29,7 +30,7 @@ export interface ArrowSpinnerProps extends Omit<
 }
 
 /**
- * Work in progress at glyph size (`ui/DESIGN.md`, Status): a lucide-weight circular arrow that
+ * Work in progress at glyph size (`ui/DESIGN.md`, Status): lucide's two-arrow `RefreshCw` that
  * turns, in `currentColor`. It takes the props a glyph site passes a lucide icon (`className`,
  * `size`, data attributes), so the glyph maps in `ui/glyphs.tsx` hold it beside the icons. It is
  * always `aria-hidden`: the words beside it are the announcement. Static under reduced motion.
@@ -44,22 +45,13 @@ export function ArrowSpinner({
   const sized: CSSProperties | undefined =
     size === undefined ? style : { ...style, width: size, height: size };
   return (
-    <svg
+    <RefreshCw
       {...rest}
       className={`plan-arrow-spinner${className ? ` ${className}` : ""}`}
       data-busy={busy ? "true" : "false"}
       style={sized}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={2}
-      strokeLinecap="round"
-      strokeLinejoin="round"
       aria-hidden="true"
       focusable="false"
-    >
-      <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" />
-      <path d="M21 3v5h-5" />
-    </svg>
+    />
   );
 }

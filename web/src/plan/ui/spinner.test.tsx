@@ -40,7 +40,7 @@ describe("Spinner", () => {
 });
 
 describe("ArrowSpinner", () => {
-  it("is a lucide-weight circular arrow in currentColor, always hidden from assistive technology", () => {
+  it("is the two-arrow lucide RefreshCw in currentColor, always hidden from assistive technology", () => {
     const { container } = render(<ArrowSpinner aria-hidden="false" data-kind="summaries" />);
     const svg = container.querySelector("svg")!;
     expect(svg.classList.contains("plan-arrow-spinner")).toBe(true);
@@ -48,14 +48,15 @@ describe("ArrowSpinner", () => {
     expect(svg.getAttribute("stroke")).toBe("currentColor");
     expect(svg.getAttribute("stroke-width")).toBe("2");
     expect(svg.getAttribute("data-kind")).toBe("summaries");
-    expect(svg.querySelectorAll("path")).toHaveLength(2);
+    expect(svg.classList.contains("lucide-refresh-cw")).toBe(true);
+    expect(svg.querySelectorAll("path")).toHaveLength(4);
     expect(svg.getAttribute("data-busy")).toBe("true");
   });
 
   it("takes a glyph site's class and size, and rests when not busy", () => {
     const { container } = render(<ArrowSpinner className="size-4" size={12} busy={false} />);
     const svg = container.querySelector("svg")!;
-    expect(svg.getAttribute("class")).toBe("plan-arrow-spinner size-4");
+    expect(svg.getAttribute("class")).toBe("lucide lucide-refresh-cw plan-arrow-spinner size-4");
     expect(svg.style.width).toBe("12px");
     expect(svg.style.height).toBe("12px");
     expect(svg.getAttribute("data-busy")).toBe("false");

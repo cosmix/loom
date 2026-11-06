@@ -64,13 +64,18 @@ export const DOC_KIND_GLYPHS: Record<DocKind, LucideIcon> = {
   review: FileSearch,
 };
 
-// A running plan is a state shown, so the live status dot; a rebuilding summary is an operation
-// that ends, so the arrow spinner (ui/DESIGN.md, Status). Only doc kinds must stay distinct.
+// A plan state's mark before the plan itself: a running plan is the live dot. Before the state's
+// word ("Running") use PLAN_STATE_WORD_GLYPHS: the rotating arrows (ui/DESIGN.md, Status).
 export const PLAN_STATE_GLYPHS: Record<PlanState, Glyph> = {
   written: PencilLine,
   running: LiveDot,
   done: CircleCheckBig,
   retired: Archive,
+};
+
+export const PLAN_STATE_WORD_GLYPHS: Record<PlanState, Glyph> = {
+  ...PLAN_STATE_GLYPHS,
+  running: ArrowSpinner,
 };
 
 export const SUMMARY_STATE_GLYPHS: Record<SummaryState, Glyph> = {
