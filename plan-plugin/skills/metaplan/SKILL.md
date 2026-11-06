@@ -17,8 +17,7 @@ an open point binds; put a decision that spans product sections under `## Decisi
 
 Keep plans with an `IN_PROGRESS-`, `DONE-`, or `RETIRED-` prefix, their brief
 bundles, everything under `doc/plans/<feature>/archive/` or `doc/plans/archive/`,
-and all `REVIEW-*.md` files read-only. Leave finished entries unchanged, and every entry whose
-plan exists. If asked to change locked work, explain the limit and offer a new metaplan entry or
+and all `REVIEW-*.md` files read-only. Leave finished entries, and entries whose plan is running, done or retired, unchanged. If asked to change locked work, explain the limit and offer a new metaplan entry or
 a refinement of the product spec. Never write knowledge or summaries directly;
 knowledge changes go through `loom knowledge`, and summary changes go through
 `loom plan summary seal` using the turn-end delegation below.
@@ -107,11 +106,13 @@ The rebuild budget counts plan summaries but not brief changes.
 
 ## Fold a finding into an entry
 
-When the user folds a finding into an entry whose plan is not yet written, edit that entry so
+When the user folds a finding into an entry whose plan has not started running (unwritten, or written with no lifecycle prefix), edit that entry so
 its paragraphs include the finding (and its `Covers:` line names the finding's spec headings),
 then set the finding's `Status:` line to `folded metaplan#<entry anchor>`, where the anchor is
-the GitHub anchor of the entry's heading. Fold only into an entry whose plan is unwritten or
-written and not yet running.
+the GitHub anchor of the entry's heading. Fold only into such an entry. When its plan is already written, the plan's stub no longer
+matches the entry: the stub changes so it reads stub changed after settling, and tell the user to
+revisit the plan. A fold seed's instruction takes precedence over the Plan follow-ups opening
+target ("Append follow-up entries under ## Follow-ups").
 
 ## Add an unlisted plan
 

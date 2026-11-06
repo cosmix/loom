@@ -63,4 +63,5 @@ Write only `doc/plans/<feature>/findings.md`. Never write a `Settled:` line, a s
 brief, a run review, `doc/loom/knowledge/` or `doc/loom/summaries/`. Never stage, commit, or
 branch, and never run `loom init`, `loom run`, or `loom pressure`.
 
-After any turn that edited the ledger, run `loom plan check` and fix what it reports.
+After any turn that edited the ledger, run `loom plan check` and fix what it reports about `findings.md`;
+report any other problem to the user without editing it.
