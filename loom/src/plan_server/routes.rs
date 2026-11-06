@@ -81,6 +81,7 @@ pub fn all_routes() -> Vec<RouteSpec> {
     routes.extend(super::run::routes());
     routes.extend(super::uploads::routes());
     routes.extend(super::chat::routes());
+    routes.extend(super::trace::routes());
     routes
 }
 

@@ -119,12 +119,17 @@ fn bad_and_duplicate_headings_are_reported_and_skipped() {
 }
 
 #[test]
-fn reasons_lose_control_characters_and_stop_at_200_chars() {
+fn reasons_flatten_whitespace_controls_and_stop_at_200_chars() {
     assert_eq!(
         reason("  too\u{7} late\n now \t").as_deref(),
-        Some("too late now")
+        Some("too late  now")
     );
     assert_eq!(reason(" \n\u{1b}\t "), None);
+    // A line break stays a word break: the reason cannot open a ledger heading.
+    assert_eq!(
+        reason("not needed\n## F-2 x").as_deref(),
+        Some("not needed ## F-2 x")
+    );
     let long = "é".repeat(300);
     assert_eq!(reason(&long).unwrap().chars().count(), 200);
 }

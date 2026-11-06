@@ -1,0 +1,365 @@
+{
+  "documents": [
+    {
+      "path": "doc/product/demo/index.md",
+      "role": "vision",
+      "title": "Demo",
+      "progress": "written",
+      "settle": "draft",
+      "stub": null,
+      "number": null,
+      "slug": null,
+      "bundle": [],
+      "my_calls": 0,
+      "open_questions": 0,
+      "current": {
+        "body": "dd78b7a2898f",
+        "stub": null,
+        "upstream": null
+      }
+    },
+    {
+      "path": "doc/product/demo/section_01.md",
+      "role": "section",
+      "title": "Alpha",
+      "progress": "planned",
+      "settle": "settled",
+      "stub": {
+        "path": "doc/product/demo/index.md",
+        "anchor": "specification-sections"
+      },
+      "number": 1,
+      "slug": null,
+      "bundle": [],
+      "my_calls": 0,
+      "open_questions": 1,
+      "current": {
+        "body": "2ae79a1f9835",
+        "stub": "95ad245d46ad",
+        "upstream": null
+      }
+    },
+    {
+      "path": "doc/product/demo/section_02.md",
+      "role": "section",
+      "title": "Beta",
+      "progress": "planned",
+      "settle": "revised",
+      "stub": {
+        "path": "doc/product/demo/index.md",
+        "anchor": "specification-sections"
+      },
+      "number": 2,
+      "slug": null,
+      "bundle": [],
+      "my_calls": 1,
+      "open_questions": 0,
+      "current": {
+        "body": "f9f6a90ecc5c",
+        "stub": "3d33c7cbcef3",
+        "upstream": null
+      }
+    },
+    {
+      "path": "doc/product/demo/section_03.md",
+      "role": "section",
+      "title": "Gamma",
+      "progress": "stub",
+      "settle": "draft",
+      "stub": {
+        "path": "doc/product/demo/index.md",
+        "anchor": "specification-sections"
+      },
+      "number": 3,
+      "slug": null,
+      "bundle": [],
+      "my_calls": 0,
+      "open_questions": 0,
+      "current": {
+        "body": "e3b0c44298fc",
+        "stub": "20344c394b5f",
+        "upstream": null
+      }
+    },
+    {
+      "path": "doc/plans/demo/index.md",
+      "role": "metaplan",
+      "title": "Engineering",
+      "progress": "written",
+      "settle": "draft",
+      "stub": null,
+      "number": null,
+      "slug": null,
+      "bundle": [],
+      "my_calls": 0,
+      "open_questions": 0,
+      "current": {
+        "body": "2d4fe8c9bbc9",
+        "stub": null,
+        "upstream": null
+      }
+    },
+    {
+      "path": "doc/plans/demo/PLAN-first.md",
+      "role": "plan",
+      "title": "First",
+      "progress": "written",
+      "settle": "draft",
+      "stub": {
+        "path": "doc/plans/demo/index.md",
+        "anchor": "1-first-plan-firstmd"
+      },
+      "number": null,
+      "slug": "first",
+      "bundle": [
+        "doc/plans/demo/briefs/first/build/r1.md"
+      ],
+      "my_calls": 0,
+      "open_questions": 0,
+      "current": {
+        "body": "6c1e81b2925f",
+        "stub": "4195db5d1230",
+        "upstream": "4a1e04ee203a"
+      }
+    },
+    {
+      "path": "doc/plans/demo/PLAN-second.md",
+      "role": "plan",
+      "title": "2. Second (`PLAN-second.md`)",
+      "progress": "stub",
+      "settle": "draft",
+      "stub": {
+        "path": "doc/plans/demo/index.md",
+        "anchor": "2-second-plan-secondmd"
+      },
+      "number": null,
+      "slug": "second",
+      "bundle": [],
+      "my_calls": 0,
+      "open_questions": 0,
+      "current": {
+        "body": "e3b0c44298fc",
+        "stub": "9385dfb89ae3",
+        "upstream": null
+      }
+    }
+  ],
+  "headings": [
+    {
+      "path": "doc/product/demo/section_01.md",
+      "anchor": "one",
+      "title": "One",
+      "covered_by": [
+        {
+          "kind": "entry",
+          "path": "doc/plans/demo/index.md",
+          "anchor": "1-first-plan-firstmd",
+          "slug": "first",
+          "stage": null
+        },
+        {
+          "kind": "plan",
+          "path": "doc/plans/demo/PLAN-first.md",
+          "anchor": null,
+          "slug": "first",
+          "stage": null
+        }
+      ],
+      "findings": []
+    },
+    {
+      "path": "doc/product/demo/section_01.md",
+      "anchor": "two",
+      "title": "Two",
+      "covered_by": [
+        {
+          "kind": "stage",
+          "path": "doc/plans/demo/PLAN-first.md",
+          "anchor": "stage:build",
+          "slug": "first",
+          "stage": "build"
+        }
+      ],
+      "findings": [
+        "F-1"
+      ]
+    },
+    {
+      "path": "doc/product/demo/section_02.md",
+      "anchor": "three",
+      "title": "Three",
+      "covered_by": [
+        {
+          "kind": "entry",
+          "path": "doc/plans/demo/index.md",
+          "anchor": "2-second-plan-secondmd",
+          "slug": "second",
+          "stage": null
+        }
+      ],
+      "findings": [
+        "F-2"
+      ]
+    },
+    {
+      "path": "doc/product/demo/section_02.md",
+      "anchor": "four",
+      "title": "Four",
+      "covered_by": [
+        {
+          "kind": "entry",
+          "path": "doc/plans/demo/index.md",
+          "anchor": "2-second-plan-secondmd",
+          "slug": "second",
+          "stage": null
+        }
+      ],
+      "findings": [
+        "F-2"
+      ]
+    }
+  ],
+  "entries": [
+    {
+      "anchor": "1-first-plan-firstmd",
+      "title": "1. First (`PLAN-first.md`)",
+      "slug": "first",
+      "plan": "doc/plans/demo/PLAN-first.md",
+      "covers": [
+        {
+          "path": "doc/product/demo/section_01.md",
+          "anchor": "one"
+        }
+      ],
+      "revisit": [
+        "F-1"
+      ]
+    },
+    {
+      "anchor": "2-second-plan-secondmd",
+      "title": "2. Second (`PLAN-second.md`)",
+      "slug": "second",
+      "plan": null,
+      "covers": [
+        {
+          "path": "doc/product/demo/section_02.md",
+          "anchor": null
+        }
+      ],
+      "revisit": []
+    }
+  ],
+  "findings": [
+    {
+      "finding": {
+        "id": "F-1",
+        "title": "Rebuild ignores briefs",
+        "about": [
+          "PLAN-first.md#stage:build",
+          "section_01#two"
+        ],
+        "source": "REVIEW-PLAN-first.md#open-findings (build, 1a2b3c4d5e6f)",
+        "status": {
+          "kind": "open",
+          "detail": null
+        },
+        "text": "The rebuild budget counts plans but not briefs."
+      },
+      "about": [
+        {
+          "path": "doc/product/demo/section_01.md",
+          "anchor": "two"
+        }
+      ]
+    },
+    {
+      "finding": {
+        "id": "F-2",
+        "title": "Rename the flag",
+        "about": [
+          "section_02"
+        ],
+        "source": null,
+        "status": {
+          "kind": "dismissed",
+          "detail": "not needed"
+        },
+        "text": "Rename it."
+      },
+      "about": [
+        {
+          "path": "doc/product/demo/section_02.md",
+          "anchor": null
+        }
+      ]
+    }
+  ],
+  "gaps": [
+    {
+      "kind": "revised",
+      "node": {
+        "path": "doc/product/demo/section_02.md",
+        "anchor": null
+      },
+      "count": null
+    },
+    {
+      "kind": "revisit",
+      "node": {
+        "path": "doc/plans/demo/PLAN-first.md",
+        "anchor": null
+      },
+      "count": 1
+    },
+    {
+      "kind": "settle",
+      "node": {
+        "path": "doc/plans/demo/PLAN-first.md",
+        "anchor": null
+      },
+      "count": null
+    },
+    {
+      "kind": "triage",
+      "node": {
+        "path": "doc/plans/demo/findings.md",
+        "anchor": null
+      },
+      "count": 1
+    }
+  ],
+  "frontier": [
+    {
+      "kind": "revised",
+      "node": {
+        "path": "doc/product/demo/section_02.md",
+        "anchor": null
+      },
+      "count": null
+    },
+    {
+      "kind": "revisit",
+      "node": {
+        "path": "doc/plans/demo/PLAN-first.md",
+        "anchor": null
+      },
+      "count": 1
+    },
+    {
+      "kind": "triage",
+      "node": {
+        "path": "doc/plans/demo/findings.md",
+        "anchor": null
+      },
+      "count": 1
+    }
+  ],
+  "problems": [
+    {
+      "code": "about-unresolved",
+      "path": "doc/plans/demo/findings.md",
+      "line": 3,
+      "message": "F-1: About: token `PLAN-first.md#stage:build` names no `stage:build` in doc/plans/demo/PLAN-first.md"
+    }
+  ]
+}
