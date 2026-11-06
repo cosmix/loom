@@ -21,8 +21,8 @@ use super::target::non_empty_env;
 const MAX_STDIN_BYTES: u64 = 1024 * 1024;
 const QUERY_INPUTS: &str = "the stage inputs, worker task and explicitly declared paths";
 const CODEX_FORWARD_PATH: &str = "loom-hooks/codex-forward.sh";
-/// The mechanical worker has no `Skill` tool, so a skills line would name a tool it lacks.
-const MECHANICAL_WORKER: &str = "loom-mechanical-engineer";
+/// The software developer agent has no `Skill` tool, so a skills line would name a tool it lacks.
+const HAIKU_WORKER: &str = "loom-software-developer";
 
 #[derive(Deserialize)]
 struct HookPayload {
@@ -135,7 +135,7 @@ fn issue(raw: &str, config: &Config) -> Option<Envelope> {
     }
     let paths = declared_paths(&payload.tool_input.prompt);
     let pack = retrieve_pack(config, &payload, &paths)?;
-    let skills: &[String] = if payload.tool_input.subagent_type == MECHANICAL_WORKER {
+    let skills: &[String] = if payload.tool_input.subagent_type == HAIKU_WORKER {
         &[]
     } else {
         &config.stage.skills

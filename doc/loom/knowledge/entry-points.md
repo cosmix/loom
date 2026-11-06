@@ -24,7 +24,7 @@ The full hook roster — every script in `loom-hooks/`, the event it binds to, w
 - `loom/src/commands/ask/` (`mod.rs`, `backend.rs`, `run.rs`, `payload.rs`, `eval.rs`) — `loom ask` one-shot worker and `--eval` ([loom ask](architecture/loom-ask.md))
 - `loom/src/commands/usage/sections/attribution/` — `loom usage` Attribution section ([Read Gate](architecture/read-gate.md#the-attribution-section-of-loom-usage))
 - `loom/src/map/views/markdown_outline.rs` — direct heading outline for `loom map --outline` of a Markdown file
-- `agents/loom-mechanical-engineer.md` — haiku implementer with no `Skill` tool ([Subagent Hierarchy](patterns/subagent-hierarchy.md))
+- `agents/loom-software-developer.md` — haiku implementer with no `Skill` tool ([Subagent Hierarchy](patterns/subagent-hierarchy.md))
 
 → [Token Accounting and Receipts](architecture/token-accounting-and-receipts.md)
 

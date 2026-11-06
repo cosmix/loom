@@ -110,7 +110,7 @@ Check skills and agents before implementing; the prompt-submit hook surfaces mat
 
 | Agent | Model | Use for |
 | --- | --- | --- |
-| `loom-mechanical-engineer` | Haiku | Mechanical edits, boilerplate, scaffolding, simple unit tests |
+| `loom-software-developer` | Haiku | Routine edits, boilerplate, scaffolding, simple unit tests |
 | `loom-software-engineer` | Sonnet | Common implementation and integration tests; refactors to spec |
 | `loom-senior-software-engineer` | Opus (effort high) | Mainstream architecture, algorithm implementation, complex debugging, security-sensitive code, cross-cutting refactors; spawn with `effort: xhigh` for hard debugging, core algorithmic or architectural work, distributed systems, heavily multithreaded or parallel code, systems engineering |
 | `loom-code-reviewer` | — | Read-only code/security/architecture review |
