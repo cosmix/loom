@@ -75,8 +75,9 @@ function planPageDraws(checklist: ChecklistView, doc: string, primary: OfferView
 /**
  * Whether the page at `pathname` draws the checklist's primary offer itself, so the spine shows
  * its sentence only. Each offer has one owner, decided by its id: the pace choice on an overview
- * (only when it draws that offer), a missing document's page, a written plan's page or the Run page
- * (its Start a run button). A pressure test is drawn by the plan's own page, else by the spine.
+ * (only when it draws that offer), a missing document's page, a written plan's page, the Run page
+ * (its Start a run button) or the Findings page (its Review the feature button). A pressure test is
+ * drawn by the plan's own page, else by the spine.
  */
 export function pageDrawsPrimary(checklist: ChecklistView, pathname: string): boolean {
   const { primary } = checklist;
@@ -91,5 +92,7 @@ export function pageDrawsPrimary(checklist: ChecklistView, pathname: string): bo
   // The Run page draws a start_run primary in every run state (`startControl`): enabled, blocked
   // while a run holds the workspace or the state is unread, or resuming a stopped run.
   if (shown.page === "run") return primary.kind === "start_run";
+  // The Findings page header draws Review the feature, whether it is the primary or a secondary.
+  if (shown.page === "findings") return primary.kind === "review_feature";
   return missingDocumentOffer(checklist, shown.page)?.id === primary.id;
 }

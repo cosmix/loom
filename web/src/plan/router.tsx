@@ -9,6 +9,8 @@ import { HomeRoute } from "@/plan/home/home";
 import { KickoffRoute } from "@/plan/new/kickoff-route";
 import { ChangesPage } from "@/plan/review/changes-page";
 import { PlanShell } from "@/plan/shell";
+import { CoveragePage } from "@/plan/trace/coverage-page";
+import { FindingsPage } from "@/plan/trace/findings-page";
 import { PLAN_TAB_ROUTES } from "@/plan/tabs";
 import { LoadState } from "@/plan/ui/load-state";
 import { RouteError } from "@/routes/error";
@@ -32,6 +34,8 @@ const featureRoutes: RouteObject = {
     { path: "metaplan", element: <MetaplanPage /> },
     ...conceptRoutes("engineering"),
     { path: "run", element: <RunPage /> },
+    { path: "coverage", element: <CoveragePage /> },
+    { path: "findings", element: <FindingsPage /> },
     // Any other child of a feature is a mistyped link: say so rather than draw a blank page.
     { path: "*", element: <LoadState state="not_found" title="No such page" /> },
   ],

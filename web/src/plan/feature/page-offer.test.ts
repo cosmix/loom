@@ -38,3 +38,14 @@ it("owns the primary start_run on the Run page, whatever the plans' states", () 
   expect(pageDrawsPrimary(running, "/f/atlas/run")).toBe(true);
   expect(pageDrawsPrimary({ ...run, primary: null }, "/f/atlas/run")).toBe(false);
 });
+
+it("owns the primary review_feature on the Findings page only", () => {
+  const review = offer("review_feature", "Review the feature");
+  const done = atlas({ plan_rows: [planRow("gateway", "done")], primary: review });
+  expect(pageDrawsPrimary(done, "/f/atlas/findings")).toBe(true);
+  expect(pageDrawsPrimary(done, "/f/atlas/run")).toBe(false);
+  expect(pageDrawsPrimary(done, "/f/atlas/coverage")).toBe(false);
+  // Another primary stays with the spine on the Findings page: the page draws only its own offer.
+  const start = offer("start_run", "Start a run", path("gateway"));
+  expect(pageDrawsPrimary({ ...done, primary: start }, "/f/atlas/findings")).toBe(false);
+});
