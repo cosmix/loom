@@ -182,17 +182,37 @@
   outline-offset: 2px;
 }
 
-/* Decisions waiting, on the sheet button: a count, not a badge. */
-.chat-permission-badge {
-  font-size: var(--type-body);
+/* Counts on the header's Chat button: small pills that stay inside the button's line box, so a
+   count never changes its height. Decisions waiting read as the accent; attachments stay quiet. */
+.chat-permission-badge,
+.chat-count-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 var(--space-1);
+  border-radius: 999px;
+  font-size: var(--type-fine);
   font-weight: 600;
   line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.chat-permission-badge {
+  background: var(--primary);
+  color: var(--primary-foreground);
+}
+
+.chat-count-badge {
+  background: var(--muted);
   color: var(--foreground);
+  box-shadow: inset 0 0 0 1px var(--border);
 }
 
 /* ── Empty state (empty-chat.tsx) ───────────────────────────────────────── */
 
-/* Before any message: a greeting and a line, bottom-aligned above the composer and its prompt
+/* Before any message: a headline and a line, bottom-aligned above the composer and its prompt
  * pills, start-aligned. The title is the one reading-face line of chrome in the panel. */
 .chat-empty {
   display: grid;

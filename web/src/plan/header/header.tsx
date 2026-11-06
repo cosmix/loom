@@ -29,8 +29,6 @@ function HeaderControls({
   return (
     <div className="plan-header-controls header-controls">
       <ActivityPill compact={narrow} sample={sample} />
-      {/* HeaderExtras shows the chat button only where the dock mounts a sheet. */}
-      {!sample && <HeaderExtras />}
       {narrow ? (
         <Overflow onOpenSettings={onOpenSettings} onOpenHelp={onOpenHelp} />
       ) : (
@@ -43,6 +41,8 @@ function HeaderControls({
           <HelpButton onClick={onOpenHelp} />
         </>
       )}
+      {/* Last, at the right edge, where the chat panel opens. It shows only where the dock mounts a sheet or the panel is collapsed. */}
+      {!sample && <HeaderExtras />}
     </div>
   );
 }
