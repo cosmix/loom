@@ -30,13 +30,16 @@
       "node_modules/@lezer/**",
       "assets/cm-view.js",
       "assets/cm-lang.js",
-      "src/plan/editor/codemirror.ts"
+      "src/plan/editor/codemirror.ts",
+      "src/plan/editor/edit-mode.tsx"
     ],
     "forbidText": [
       "xterm-helper-textarea",
       "terminal-takeover-cue",
       "Saved terminal history",
-      "cm-editor"
+      "cm-editor",
+      "Your kept text",
+      "took authoring. Your text is kept as a draft."
     ]
   }
 }
