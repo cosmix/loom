@@ -1,112 +1,4 @@
 {
-  "../../../../../../../home/dkaponis/src/loom/web/node_modules/@fontsource-variable/inter/files/inter-latin-wght-normal.woff2": {
-    "file": "assets/inter-latin-wght-normal.woff2",
-    "src": "../../../../../../../home/dkaponis/src/loom/web/node_modules/@fontsource-variable/inter/files/inter-latin-wght-normal.woff2"
-  },
-  "../../../../../../../home/dkaponis/src/loom/web/node_modules/@fontsource-variable/literata/files/literata-cyrillic-ext-wght-normal.woff2": {
-    "file": "assets/literata-cyrillic-ext-wght-normal.woff2",
-    "src": "../../../../../../../home/dkaponis/src/loom/web/node_modules/@fontsource-variable/literata/files/literata-cyrillic-ext-wght-normal.woff2"
-  },
-  "../../../../../../../home/dkaponis/src/loom/web/node_modules/@fontsource-variable/literata/files/literata-cyrillic-wght-normal.woff2": {
-    "file": "assets/literata-cyrillic-wght-normal.woff2",
-    "src": "../../../../../../../home/dkaponis/src/loom/web/node_modules/@fontsource-variable/literata/files/literata-cyrillic-wght-normal.woff2"
-  },
-  "../../../../../../../home/dkaponis/src/loom/web/node_modules/@fontsource-variable/literata/files/literata-greek-ext-wght-normal.woff2": {
-    "file": "assets/literata-greek-ext-wght-normal.woff2",
-    "src": "../../../../../../../home/dkaponis/src/loom/web/node_modules/@fontsource-variable/literata/files/literata-greek-ext-wght-normal.woff2"
-  },
-  "../../../../../../../home/dkaponis/src/loom/web/node_modules/@fontsource-variable/literata/files/literata-greek-wght-normal.woff2": {
-    "file": "assets/literata-greek-wght-normal.woff2",
-    "src": "../../../../../../../home/dkaponis/src/loom/web/node_modules/@fontsource-variable/literata/files/literata-greek-wght-normal.woff2"
-  },
-  "../../../../../../../home/dkaponis/src/loom/web/node_modules/@fontsource-variable/literata/files/literata-latin-ext-wght-normal.woff2": {
-    "file": "assets/literata-latin-ext-wght-normal.woff2",
-    "src": "../../../../../../../home/dkaponis/src/loom/web/node_modules/@fontsource-variable/literata/files/literata-latin-ext-wght-normal.woff2"
-  },
-  "../../../../../../../home/dkaponis/src/loom/web/node_modules/@fontsource-variable/literata/files/literata-latin-wght-normal.woff2": {
-    "file": "assets/literata-latin-wght-normal.woff2",
-    "src": "../../../../../../../home/dkaponis/src/loom/web/node_modules/@fontsource-variable/literata/files/literata-latin-wght-normal.woff2"
-  },
-  "../../../../../../../home/dkaponis/src/loom/web/node_modules/@fontsource-variable/literata/files/literata-vietnamese-wght-normal.woff2": {
-    "file": "assets/literata-vietnamese-wght-normal.woff2",
-    "src": "../../../../../../../home/dkaponis/src/loom/web/node_modules/@fontsource-variable/literata/files/literata-vietnamese-wght-normal.woff2"
-  },
-  "../../../../../../../home/dkaponis/src/loom/web/node_modules/@fontsource-variable/piazzolla/files/piazzolla-cyrillic-ext-wght-normal.woff2": {
-    "file": "assets/piazzolla-cyrillic-ext-wght-normal.woff2",
-    "src": "../../../../../../../home/dkaponis/src/loom/web/node_modules/@fontsource-variable/piazzolla/files/piazzolla-cyrillic-ext-wght-normal.woff2"
-  },
-  "../../../../../../../home/dkaponis/src/loom/web/node_modules/@fontsource-variable/piazzolla/files/piazzolla-cyrillic-wght-normal.woff2": {
-    "file": "assets/piazzolla-cyrillic-wght-normal.woff2",
-    "src": "../../../../../../../home/dkaponis/src/loom/web/node_modules/@fontsource-variable/piazzolla/files/piazzolla-cyrillic-wght-normal.woff2"
-  },
-  "../../../../../../../home/dkaponis/src/loom/web/node_modules/@fontsource-variable/piazzolla/files/piazzolla-greek-ext-wght-normal.woff2": {
-    "file": "assets/piazzolla-greek-ext-wght-normal.woff2",
-    "src": "../../../../../../../home/dkaponis/src/loom/web/node_modules/@fontsource-variable/piazzolla/files/piazzolla-greek-ext-wght-normal.woff2"
-  },
-  "../../../../../../../home/dkaponis/src/loom/web/node_modules/@fontsource-variable/piazzolla/files/piazzolla-greek-wght-normal.woff2": {
-    "file": "assets/piazzolla-greek-wght-normal.woff2",
-    "src": "../../../../../../../home/dkaponis/src/loom/web/node_modules/@fontsource-variable/piazzolla/files/piazzolla-greek-wght-normal.woff2"
-  },
-  "../../../../../../../home/dkaponis/src/loom/web/node_modules/@fontsource-variable/piazzolla/files/piazzolla-latin-ext-wght-normal.woff2": {
-    "file": "assets/piazzolla-latin-ext-wght-normal.woff2",
-    "src": "../../../../../../../home/dkaponis/src/loom/web/node_modules/@fontsource-variable/piazzolla/files/piazzolla-latin-ext-wght-normal.woff2"
-  },
-  "../../../../../../../home/dkaponis/src/loom/web/node_modules/@fontsource-variable/piazzolla/files/piazzolla-latin-wght-normal.woff2": {
-    "file": "assets/piazzolla-latin-wght-normal.woff2",
-    "src": "../../../../../../../home/dkaponis/src/loom/web/node_modules/@fontsource-variable/piazzolla/files/piazzolla-latin-wght-normal.woff2"
-  },
-  "../../../../../../../home/dkaponis/src/loom/web/node_modules/@fontsource-variable/piazzolla/files/piazzolla-vietnamese-wght-normal.woff2": {
-    "file": "assets/piazzolla-vietnamese-wght-normal.woff2",
-    "src": "../../../../../../../home/dkaponis/src/loom/web/node_modules/@fontsource-variable/piazzolla/files/piazzolla-vietnamese-wght-normal.woff2"
-  },
-  "../../../../../../../home/dkaponis/src/loom/web/node_modules/@fontsource-variable/source-serif-4/files/source-serif-4-cyrillic-ext-wght-normal.woff2": {
-    "file": "assets/source-serif-4-cyrillic-ext-wght-normal.woff2",
-    "src": "../../../../../../../home/dkaponis/src/loom/web/node_modules/@fontsource-variable/source-serif-4/files/source-serif-4-cyrillic-ext-wght-normal.woff2"
-  },
-  "../../../../../../../home/dkaponis/src/loom/web/node_modules/@fontsource-variable/source-serif-4/files/source-serif-4-cyrillic-wght-normal.woff2": {
-    "file": "assets/source-serif-4-cyrillic-wght-normal.woff2",
-    "src": "../../../../../../../home/dkaponis/src/loom/web/node_modules/@fontsource-variable/source-serif-4/files/source-serif-4-cyrillic-wght-normal.woff2"
-  },
-  "../../../../../../../home/dkaponis/src/loom/web/node_modules/@fontsource-variable/source-serif-4/files/source-serif-4-greek-wght-normal.woff2": {
-    "file": "assets/source-serif-4-greek-wght-normal.woff2",
-    "src": "../../../../../../../home/dkaponis/src/loom/web/node_modules/@fontsource-variable/source-serif-4/files/source-serif-4-greek-wght-normal.woff2"
-  },
-  "../../../../../../../home/dkaponis/src/loom/web/node_modules/@fontsource-variable/source-serif-4/files/source-serif-4-latin-ext-wght-normal.woff2": {
-    "file": "assets/source-serif-4-latin-ext-wght-normal.woff2",
-    "src": "../../../../../../../home/dkaponis/src/loom/web/node_modules/@fontsource-variable/source-serif-4/files/source-serif-4-latin-ext-wght-normal.woff2"
-  },
-  "../../../../../../../home/dkaponis/src/loom/web/node_modules/@fontsource-variable/source-serif-4/files/source-serif-4-latin-wght-normal.woff2": {
-    "file": "assets/source-serif-4-latin-wght-normal.woff2",
-    "src": "../../../../../../../home/dkaponis/src/loom/web/node_modules/@fontsource-variable/source-serif-4/files/source-serif-4-latin-wght-normal.woff2"
-  },
-  "../../../../../../../home/dkaponis/src/loom/web/node_modules/@fontsource-variable/source-serif-4/files/source-serif-4-vietnamese-wght-normal.woff2": {
-    "file": "assets/source-serif-4-vietnamese-wght-normal.woff2",
-    "src": "../../../../../../../home/dkaponis/src/loom/web/node_modules/@fontsource-variable/source-serif-4/files/source-serif-4-vietnamese-wght-normal.woff2"
-  },
-  "../../../../../../../home/dkaponis/src/loom/web/node_modules/@xterm/addon-fit/lib/addon-fit.mjs": {
-    "file": "assets/addon-fit.js",
-    "name": "addon-fit",
-    "src": "../../../../../../../home/dkaponis/src/loom/web/node_modules/@xterm/addon-fit/lib/addon-fit.mjs",
-    "isDynamicEntry": true
-  },
-  "../../../../../../../home/dkaponis/src/loom/web/node_modules/@xterm/addon-unicode11/lib/addon-unicode11.mjs": {
-    "file": "assets/addon-unicode11.js",
-    "name": "addon-unicode11",
-    "src": "../../../../../../../home/dkaponis/src/loom/web/node_modules/@xterm/addon-unicode11/lib/addon-unicode11.mjs",
-    "isDynamicEntry": true
-  },
-  "../../../../../../../home/dkaponis/src/loom/web/node_modules/@xterm/addon-webgl/lib/addon-webgl.mjs": {
-    "file": "assets/addon-webgl.js",
-    "name": "addon-webgl",
-    "src": "../../../../../../../home/dkaponis/src/loom/web/node_modules/@xterm/addon-webgl/lib/addon-webgl.mjs",
-    "isDynamicEntry": true
-  },
-  "../../../../../../../home/dkaponis/src/loom/web/node_modules/@xterm/xterm/lib/xterm.mjs": {
-    "file": "assets/xterm.js",
-    "name": "xterm",
-    "src": "../../../../../../../home/dkaponis/src/loom/web/node_modules/@xterm/xterm/lib/xterm.mjs",
-    "isDynamicEntry": true
-  },
   "_cm-lang.js": {
     "file": "assets/cm-lang.js",
     "name": "cm-lang",
@@ -208,14 +100,122 @@
       "_flow.js"
     ],
     "dynamicImports": [
-      "../../../../../../../home/dkaponis/src/loom/web/node_modules/@xterm/xterm/lib/xterm.mjs",
-      "../../../../../../../home/dkaponis/src/loom/web/node_modules/@xterm/addon-fit/lib/addon-fit.mjs",
-      "../../../../../../../home/dkaponis/src/loom/web/node_modules/@xterm/addon-webgl/lib/addon-webgl.mjs",
-      "../../../../../../../home/dkaponis/src/loom/web/node_modules/@xterm/addon-unicode11/lib/addon-unicode11.mjs"
+      "node_modules/@xterm/xterm/lib/xterm.mjs",
+      "node_modules/@xterm/addon-fit/lib/addon-fit.mjs",
+      "node_modules/@xterm/addon-webgl/lib/addon-webgl.mjs",
+      "node_modules/@xterm/addon-unicode11/lib/addon-unicode11.mjs"
     ],
     "css": [
       "assets/index.css"
     ]
+  },
+  "node_modules/@fontsource-variable/inter/files/inter-latin-wght-normal.woff2": {
+    "file": "assets/inter-latin-wght-normal.woff2",
+    "src": "node_modules/@fontsource-variable/inter/files/inter-latin-wght-normal.woff2"
+  },
+  "node_modules/@fontsource-variable/literata/files/literata-cyrillic-ext-wght-normal.woff2": {
+    "file": "assets/literata-cyrillic-ext-wght-normal.woff2",
+    "src": "node_modules/@fontsource-variable/literata/files/literata-cyrillic-ext-wght-normal.woff2"
+  },
+  "node_modules/@fontsource-variable/literata/files/literata-cyrillic-wght-normal.woff2": {
+    "file": "assets/literata-cyrillic-wght-normal.woff2",
+    "src": "node_modules/@fontsource-variable/literata/files/literata-cyrillic-wght-normal.woff2"
+  },
+  "node_modules/@fontsource-variable/literata/files/literata-greek-ext-wght-normal.woff2": {
+    "file": "assets/literata-greek-ext-wght-normal.woff2",
+    "src": "node_modules/@fontsource-variable/literata/files/literata-greek-ext-wght-normal.woff2"
+  },
+  "node_modules/@fontsource-variable/literata/files/literata-greek-wght-normal.woff2": {
+    "file": "assets/literata-greek-wght-normal.woff2",
+    "src": "node_modules/@fontsource-variable/literata/files/literata-greek-wght-normal.woff2"
+  },
+  "node_modules/@fontsource-variable/literata/files/literata-latin-ext-wght-normal.woff2": {
+    "file": "assets/literata-latin-ext-wght-normal.woff2",
+    "src": "node_modules/@fontsource-variable/literata/files/literata-latin-ext-wght-normal.woff2"
+  },
+  "node_modules/@fontsource-variable/literata/files/literata-latin-wght-normal.woff2": {
+    "file": "assets/literata-latin-wght-normal.woff2",
+    "src": "node_modules/@fontsource-variable/literata/files/literata-latin-wght-normal.woff2"
+  },
+  "node_modules/@fontsource-variable/literata/files/literata-vietnamese-wght-normal.woff2": {
+    "file": "assets/literata-vietnamese-wght-normal.woff2",
+    "src": "node_modules/@fontsource-variable/literata/files/literata-vietnamese-wght-normal.woff2"
+  },
+  "node_modules/@fontsource-variable/piazzolla/files/piazzolla-cyrillic-ext-wght-normal.woff2": {
+    "file": "assets/piazzolla-cyrillic-ext-wght-normal.woff2",
+    "src": "node_modules/@fontsource-variable/piazzolla/files/piazzolla-cyrillic-ext-wght-normal.woff2"
+  },
+  "node_modules/@fontsource-variable/piazzolla/files/piazzolla-cyrillic-wght-normal.woff2": {
+    "file": "assets/piazzolla-cyrillic-wght-normal.woff2",
+    "src": "node_modules/@fontsource-variable/piazzolla/files/piazzolla-cyrillic-wght-normal.woff2"
+  },
+  "node_modules/@fontsource-variable/piazzolla/files/piazzolla-greek-ext-wght-normal.woff2": {
+    "file": "assets/piazzolla-greek-ext-wght-normal.woff2",
+    "src": "node_modules/@fontsource-variable/piazzolla/files/piazzolla-greek-ext-wght-normal.woff2"
+  },
+  "node_modules/@fontsource-variable/piazzolla/files/piazzolla-greek-wght-normal.woff2": {
+    "file": "assets/piazzolla-greek-wght-normal.woff2",
+    "src": "node_modules/@fontsource-variable/piazzolla/files/piazzolla-greek-wght-normal.woff2"
+  },
+  "node_modules/@fontsource-variable/piazzolla/files/piazzolla-latin-ext-wght-normal.woff2": {
+    "file": "assets/piazzolla-latin-ext-wght-normal.woff2",
+    "src": "node_modules/@fontsource-variable/piazzolla/files/piazzolla-latin-ext-wght-normal.woff2"
+  },
+  "node_modules/@fontsource-variable/piazzolla/files/piazzolla-latin-wght-normal.woff2": {
+    "file": "assets/piazzolla-latin-wght-normal.woff2",
+    "src": "node_modules/@fontsource-variable/piazzolla/files/piazzolla-latin-wght-normal.woff2"
+  },
+  "node_modules/@fontsource-variable/piazzolla/files/piazzolla-vietnamese-wght-normal.woff2": {
+    "file": "assets/piazzolla-vietnamese-wght-normal.woff2",
+    "src": "node_modules/@fontsource-variable/piazzolla/files/piazzolla-vietnamese-wght-normal.woff2"
+  },
+  "node_modules/@fontsource-variable/source-serif-4/files/source-serif-4-cyrillic-ext-wght-normal.woff2": {
+    "file": "assets/source-serif-4-cyrillic-ext-wght-normal.woff2",
+    "src": "node_modules/@fontsource-variable/source-serif-4/files/source-serif-4-cyrillic-ext-wght-normal.woff2"
+  },
+  "node_modules/@fontsource-variable/source-serif-4/files/source-serif-4-cyrillic-wght-normal.woff2": {
+    "file": "assets/source-serif-4-cyrillic-wght-normal.woff2",
+    "src": "node_modules/@fontsource-variable/source-serif-4/files/source-serif-4-cyrillic-wght-normal.woff2"
+  },
+  "node_modules/@fontsource-variable/source-serif-4/files/source-serif-4-greek-wght-normal.woff2": {
+    "file": "assets/source-serif-4-greek-wght-normal.woff2",
+    "src": "node_modules/@fontsource-variable/source-serif-4/files/source-serif-4-greek-wght-normal.woff2"
+  },
+  "node_modules/@fontsource-variable/source-serif-4/files/source-serif-4-latin-ext-wght-normal.woff2": {
+    "file": "assets/source-serif-4-latin-ext-wght-normal.woff2",
+    "src": "node_modules/@fontsource-variable/source-serif-4/files/source-serif-4-latin-ext-wght-normal.woff2"
+  },
+  "node_modules/@fontsource-variable/source-serif-4/files/source-serif-4-latin-wght-normal.woff2": {
+    "file": "assets/source-serif-4-latin-wght-normal.woff2",
+    "src": "node_modules/@fontsource-variable/source-serif-4/files/source-serif-4-latin-wght-normal.woff2"
+  },
+  "node_modules/@fontsource-variable/source-serif-4/files/source-serif-4-vietnamese-wght-normal.woff2": {
+    "file": "assets/source-serif-4-vietnamese-wght-normal.woff2",
+    "src": "node_modules/@fontsource-variable/source-serif-4/files/source-serif-4-vietnamese-wght-normal.woff2"
+  },
+  "node_modules/@xterm/addon-fit/lib/addon-fit.mjs": {
+    "file": "assets/addon-fit.js",
+    "name": "addon-fit",
+    "src": "node_modules/@xterm/addon-fit/lib/addon-fit.mjs",
+    "isDynamicEntry": true
+  },
+  "node_modules/@xterm/addon-unicode11/lib/addon-unicode11.mjs": {
+    "file": "assets/addon-unicode11.js",
+    "name": "addon-unicode11",
+    "src": "node_modules/@xterm/addon-unicode11/lib/addon-unicode11.mjs",
+    "isDynamicEntry": true
+  },
+  "node_modules/@xterm/addon-webgl/lib/addon-webgl.mjs": {
+    "file": "assets/addon-webgl.js",
+    "name": "addon-webgl",
+    "src": "node_modules/@xterm/addon-webgl/lib/addon-webgl.mjs",
+    "isDynamicEntry": true
+  },
+  "node_modules/@xterm/xterm/lib/xterm.mjs": {
+    "file": "assets/xterm.js",
+    "name": "xterm",
+    "src": "node_modules/@xterm/xterm/lib/xterm.mjs",
+    "isDynamicEntry": true
   },
   "plan.html": {
     "file": "assets/plan.js",
