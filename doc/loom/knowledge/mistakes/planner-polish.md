@@ -57,3 +57,10 @@
 - A journey step (`plan-journeys-reading.mjs`, J1) failed twice after the landing moved to `product`: at 390px `openRow` does not wait for React to commit a route, so a row was judged against the previous page, and the old landing had hidden the race. Seed `prev` with the landing's text.
 - A merge that changed nothing under `web/` or `loom/` still moved the review fingerprint, because moving the merge base changed the stage diff for four `web/dist` assets and `DESIGN.md`; a fresh review round was needed.
 - `loom check integration-verify` run with `run_in_background` was refused with "the request never reached the daemon" ([the relay](plan-server-delivery.md)). Run it in the foreground.
+
+## A Long Chat Scrolled the Whole Page Through a Hidden Span
+
+**What happened:** with a long chat, the dock panel, the kickoff page and the mobile sheet all scrolled as a whole instead of only the transcript (html scrollHeight 23435 against 900 at 1440x900).
+**Why:** the working turn's sr-only "Working" span is `position: absolute`, and `.chat-transcript` was static, so the span's containing block was Transcript's relative root outside the scroller. It sat at its static offset at the end of the chat, unclipped. Visual passes checked layout in jsdom or on short transcripts, where nothing overflows.
+**Prevention:** a scroller holding positioned content is itself positioned ([plan-web conventions](../conventions/plan-web.md)); check chat layout with a long transcript in a real browser.
+**Fix:** `position: relative` on `.chat-transcript`, pinned by `chat/transcript-scroll.test.ts`.

@@ -65,7 +65,7 @@ Every worker brief names its design files. Visual and layout stages run on Claud
 - A screenshot driver `cd`s into an absolute scratch path in the same command as any `git clone`; a clone left in the worktree root holds a `.git` the sandbox cannot delete ([the mistake](../mistakes/planner-follow-ups-delivery.md#a-screenshot-driver-cloned-into-the-worktree-root)).
 - Journeys J2 (needs sealed summaries: `doc/loom/summaries/` is not in the tree), J3 (the `/tmp` plan-lock 500) and J4, J5, J8 (tmux) cannot pass in a stage sandbox; run them outside a stage.
 - Compare a visual stage with its mockup frame by frame. A mockup's wide and narrow frames can disagree (starter pills drew glyphs in one and none in the other), so the brief names the winning frame.
-- 390px must not scroll sideways: `position: absolute` sr-only text escapes a scroller whose containing block lies outside it (`position: relative` on `.plan-step-list` fixed a 1158px page).
+- A scroller that holds `position: absolute` content (sr-only text included) is itself positioned. Otherwise that content's containing block lies outside the scroller, so it is never clipped and its overflow scrolls the page: sideways at 390px (`.plan-step-list`), or the whole chat with a long transcript (`.chat-transcript`). Layout overflow is invisible to jsdom; check a long transcript in a real browser.
 
 ## UI Repair Test Rules
 
