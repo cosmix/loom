@@ -1,6 +1,6 @@
 # Subagent Hierarchy
 
-> Fan-out
+>
 
 ## Subagent Hierarchy + Ultracode Guidance
 

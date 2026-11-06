@@ -4,8 +4,8 @@
 # Computed Values and Hidden Couplings
 
 >
-> Couplings
-> of logic was locally correct and globally wrong because of something
+>
+> Values
 > outside the function currently being read — a downstream consumer that
 > forgot to ask, a second reader of a value that looked purely cosmetic, or a
 > threshold whose meaning is a function of a corpus that changed underneath

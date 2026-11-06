@@ -1,6 +1,6 @@
 # Frontmatter Boundary
 
-> YAML vs body offsets
+>
 
 ## Shadowed frontmatter body offset
 

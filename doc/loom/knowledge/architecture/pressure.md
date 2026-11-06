@@ -1,6 +1,6 @@
 # Pressure
 
-> Pipeline
+>
 
 ## One Pipeline, Two Drivers
 

@@ -1,7 +1,7 @@
 # Typed Config Values: the `ConfigValue` Read-Path Seam
 
 >
-> ConfigValue read-path seam
+>
 
 ## The Seam
 
