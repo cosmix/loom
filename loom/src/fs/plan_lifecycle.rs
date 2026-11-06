@@ -15,6 +15,7 @@ use toml_edit::value;
 use crate::fs::memory::archive_run_state;
 use crate::fs::work_dir::{self, WorkDir};
 use crate::parser::frontmatter::extract_frontmatter_field;
+use crate::planning::findings;
 
 pub(crate) mod commit;
 use commit::commit_post_completion_changes;
@@ -215,8 +216,9 @@ pub fn mark_plan_done_if_all_merged(work_dir: &WorkDir) -> Result<Option<PathBuf
         .main_project_root()
         .context("Cannot determine plan project root")?;
     // Rebuild from final memories before archiving/renaming. Failure keeps IN_PROGRESS retryable.
-    crate::fs::plan_review::generate(work_dir.root(), &root, &root, false)
+    let review = crate::fs::plan_review::generate(work_dir.root(), &root, &root, false)
         .context("Failed to generate final plan review")?;
+    import_review_findings(&root, &current_path, &review)?;
     if already_done {
         return Ok(None);
     }
@@ -226,6 +228,30 @@ pub fn mark_plan_done_if_all_merged(work_dir: &WorkDir) -> Result<Option<PathBuf
     archive_run_state_before_done(work_dir, &root)?;
     rename_completed_plan(work_dir, &current_path, &new_path)?;
     Ok(Some(new_path))
+}
+
+/// Record the run review's open findings and questions in the plan's feature ledger. The import
+/// is idempotent, so the repeated calls for an already-DONE plan add nothing; a failure leaves an
+/// in-progress plan retryable. A plan outside the project root cannot sit in a feature's plan
+/// home, so it has nothing to import; that case warns.
+fn import_review_findings(root: &Path, plan: &Path, review: &Path) -> Result<()> {
+    let plan_rel = match plan.strip_prefix(root) {
+        Ok(relative) => relative,
+        Err(_) if plan.is_relative() => plan,
+        Err(_) => {
+            eprintln!(
+                "  {} Warning: plan {} is outside the project root; its review findings were not imported",
+                "⚠".yellow().bold(),
+                plan.display()
+            );
+            return Ok(());
+        }
+    };
+    let text = fs::read_to_string(review)
+        .with_context(|| format!("Failed to read run review {}", review.display()))?;
+    findings::import_review(root, plan_rel, &text)
+        .context("Failed to import run review findings")?;
+    Ok(())
 }
 
 fn rename_completed_plan(work_dir: &WorkDir, current_path: &Path, new_path: &Path) -> Result<()> {
@@ -284,3 +310,6 @@ fn archive_run_state_before_done(work_dir: &WorkDir, main_root: &Path) -> Result
 #[cfg(test)]
 #[path = "plan_lifecycle_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+mod import_tests;

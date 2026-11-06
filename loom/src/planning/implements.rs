@@ -2,6 +2,7 @@
 
 use crate::fs::knowledge::splice::fence_mask;
 use crate::planning::kinds::{self, DocKind};
+use crate::planning::trace::tokens::{section_refs, SectionRef};
 use serde::Serialize;
 use std::path::{Path, PathBuf};
 
@@ -28,6 +29,41 @@ pub struct ImplementsLine {
     pub duplicate_lines: Vec<usize>,
     /// Invalid tokens from the first declaration, trimmed as written.
     pub bad_tokens: Vec<String>,
+    /// The anchored tokens of the first declaration as `(section number, anchor)`, in
+    /// declaration order and deduplicated. A section named both with and without an anchor is
+    /// still implemented whole: see `whole`.
+    pub anchors: Vec<(u32, String)>,
+    /// The sections of the first declaration implemented whole, in first-seen order: those named
+    /// by at least one token without an anchor. A section named only through anchors is absent.
+    pub whole: Vec<u32>,
+}
+
+impl ImplementsLine {
+    /// The claims the first declaration makes, in section order: a `SectionRef` without an anchor
+    /// for each whole section, otherwise one per anchored token of that section.
+    pub fn claims(&self) -> Vec<SectionRef> {
+        let Implements::Sections(numbers) = &self.value else {
+            return Vec::new();
+        };
+        let mut refs = Vec::new();
+        for &number in numbers {
+            if self.whole.contains(&number) {
+                refs.push(SectionRef {
+                    number,
+                    anchor: None,
+                });
+                continue;
+            }
+            let anchors = self.anchors.iter().filter(|(own, _)| *own == number);
+            for (_, anchor) in anchors {
+                refs.push(SectionRef {
+                    number,
+                    anchor: Some(anchor.clone()),
+                });
+            }
+        }
+        refs
+    }
 }
 
 /// Parse declarations before plan metadata, ignoring fenced code blocks.
@@ -39,6 +75,8 @@ pub fn parse(text: &str) -> ImplementsLine {
         line: None,
         duplicate_lines: Vec::new(),
         bad_tokens: Vec::new(),
+        anchors: Vec::new(),
+        whole: Vec::new(),
     };
     for (index, line) in lines.iter().enumerate() {
         if mask[index] {
@@ -91,31 +129,18 @@ fn parse_value(value: &str, result: &mut ImplementsLine) {
         result.value = Implements::NoneDeclared;
         return;
     }
-    let mut sections = Vec::new();
-    for token in value.split(',').map(str::trim) {
-        if let Some(number) = token_number(token) {
-            sections.push(number);
-        } else {
-            result.bad_tokens.push(token.to_owned());
+    let (refs, bad) = section_refs(value);
+    let mut numbers = Vec::new();
+    for section in refs {
+        if !numbers.contains(&section.number) {
+            numbers.push(section.number);
+        }
+        match section.anchor {
+            Some(anchor) => result.anchors.push((section.number, anchor)),
+            None if !result.whole.contains(&section.number) => result.whole.push(section.number),
+            None => {}
         }
     }
-    result.value = Implements::Sections(sections);
-}
-
-fn token_number(token: &str) -> Option<u32> {
-    if let Some(link) = token.strip_prefix('[') {
-        let (label, target) = link.split_once("](")?;
-        let target = target.strip_suffix(')')?;
-        let stem = Path::new(target.split(['#', '?']).next()?).file_stem();
-        return section_number(label).or_else(|| section_number(stem?.to_str()?));
-    }
-    section_number(token.strip_suffix(".md").unwrap_or(token))
-}
-
-fn section_number(token: &str) -> Option<u32> {
-    let digits = token.strip_prefix("section_")?;
-    if digits.is_empty() || !digits.bytes().all(|byte| byte.is_ascii_digit()) {
-        return None;
-    }
-    digits.parse().ok()
+    result.bad_tokens = bad;
+    result.value = Implements::Sections(numbers);
 }

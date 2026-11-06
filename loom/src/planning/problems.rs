@@ -7,8 +7,11 @@
 //! Problem codes: `doc-missing`, `needs-feature`, `bad-feature-name`, `missing-title`,
 //! `vision-table-unreadable`, `unlisted-section`, `metaplan-entry-without-plan`,
 //! `metaplan-entry-foreign-plan`, `implements-missing`, `implements-broken`,
-//! `implements-duplicate`, `stray-plan-copy`, `duplicate-plan-slug`, `broken-reference`,
-//! `broken-brief-reference`.
+//! `implements-duplicate`, `implements-anchor-missing`, `stage-line-unknown`,
+//! `covers-bad-token`, `covers-anchor-missing`, `stray-plan-copy`, `duplicate-plan-slug`,
+//! `broken-reference`, `broken-brief-reference`, and from each feature's trace
+//! `settled-duplicate`, `settled-bad`, `about-unresolved`, `findings-bad-entry`,
+//! `findings-duplicate-id` and `findings-bad-status`.
 
 use std::path::Path;
 use std::path::PathBuf;
@@ -23,6 +26,7 @@ use crate::planning::sections::DocSections;
 
 mod features;
 mod plans;
+mod trace;
 
 /// One convention problem.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -47,6 +51,11 @@ pub(crate) fn collect(project: &Project) -> Vec<Problem> {
     features::collect(project, &mut found);
     title_problems(project, &mut found);
     plans::collect(project, &mut found);
+    trace::collect(project, &mut found);
+    // The trace build already left out locked documents.
+    for feature in &project.features {
+        found.extend(feature.trace.problems.iter().cloned());
+    }
     reference_problems(project, &mut found);
     brief_problems(project, &mut found);
     found.sort_by(|a, b| (&a.path, a.line, a.code).cmp(&(&b.path, b.line, b.code)));

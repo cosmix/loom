@@ -13,10 +13,12 @@ one model and does not change any of them.
 A document's kind comes from its path and file name, nothing else: no front matter, no marker
 comment, no sidecar file. Parent links run one way, from the document that lists to the document
 listed (the vision lists its sections, a metaplan lists its plans, a plan's slug names its brief
-bundle), with one exception: a plan names the product sections it implements in an
-`Implements:` line. Every link is a path, a file name, or a heading a person can read, so a
-reader without the app can follow the same tree the app draws. (My call: one direction per link
-means two files can never disagree about a relationship.)
+bundle), with one exception: edge lines. A metaplan entry names the sections or headings its
+plan will deliver in a `Covers:` line, a plan names those it implements in an `Implements:` line,
+and a stage in an `Implements (stage:<id>):` line. Every link is a path, a file name, or a heading
+a person can read, so a reader without the app can follow the same tree the app draws. (My call:
+one direction per link means two files can never disagree about a relationship.) The one other
+record the documents hold is the reader's `Settled:` line, below.
 
 ## Discovery
 
@@ -56,6 +58,8 @@ directories are always skipped (section 12, "Symlinks under `doc/`").
 | Other           | anything else under `doc/`                                                                     | none                                              |
 
 Any other `*metaplan*.md` file in a feature is an `Other` document: a feature has one metaplan.
+So is `doc/plans/<f>/findings.md`, the feature's findings ledger, which has a format of its own
+(below).
 
 Here `<f>` is a feature name: `[a-z0-9][a-z0-9-]*`, at most 64 characters. `archive`, `briefs`,
 `plans` and `overview` are reserved feature names. At the first directory under `doc/plans/`,
@@ -157,8 +161,12 @@ A directory whose name matches a stage id in the plan's metadata is grouped unde
 anything else is listed under the plan as "other briefs". A bundle whose slug matches no plan is
 an **orphan bundle**, listed in file mode under its own heading and not a checklist gap.
 
-Briefs have no summaries of their own (vision, Decisions); they are reached from their plan in
-file mode and from the plan's summary where it cites them.
+The files under the conventional bundle directory are the plan's **bundle**; the settled mark
+below and the plan's summary (section 04) both cover it. A brief has no summary of its own: the
+plan's summary has one detail paragraph per stage that cites the stage and its briefs. The link
+from a brief to its stage comes from its path, `briefs/<slug>/<stage-id>/...`, so no line names
+it. A plan's pages list its briefs, each linked to its source; they are not rows in the spine.
+(My call.)
 
 ### Run reviews
 
@@ -186,22 +194,23 @@ overview, and no checklist lines (vision, Decisions).
 
 ## Product-to-plan links
 
-A plan names the product sections it implements in one plain line in its prose, above the
-`<!-- loom METADATA -->` marker, conventionally directly under its title:
+A plan names the product sections or headings it implements in one plain line in its prose,
+above the `<!-- loom METADATA -->` marker, conventionally directly under its title:
 
 ```markdown
 # PLAN: Session Bridge
 
-Implements: section_07, section_08
+Implements: section_07, section_08#session-states
 ```
 
 Rules:
 
 - The line starts with `Implements:` at the start of a line, outside fenced code. The first such
   line in the plan counts; a second is flagged as a duplicate.
-- Each value is a section token `section_<nn>`, separated by commas. A link
-  (`[section_07](../../product/<f>/section_07.md)`) or a file name (`section_07.md`) is read as the
-  same token, so an author can make the line clickable on GitHub.
+- Each value is a section token, `section_<nn>` or `section_<nn>#<anchor>`, separated by commas.
+  A link (`[section_07](../../product/<f>/section_07.md)`) or a file name (`section_07.md`) is
+  read as the same token, so an author can make the line clickable on GitHub. A section named
+  both whole and by heading counts as the whole section.
 - `Implements: section_07` resolves against the plan's own feature's vision table and
   `doc/product/<f>/section_07.md`. A link's target does not select another feature.
 - `Implements: none` states that the plan implements no product section (tooling, cleanup).
@@ -210,15 +219,143 @@ Rules:
   Concept mode (section 05) shows unmapped plans
   apart from plans that declared `none`, because the first is a gap in the record and the
   second is a decision. (My call.)
-- A token naming a section the feature's vision does not list is a broken reference, shown on the plan.
-- Links are at section granularity. A plan that implements part of a section names the whole
-  section; which part is for its prose to say. (My call: a heading-level link would break on
-  every rename of a product heading.)
+- A token naming a section the feature's vision does not list, or a heading the section does not
+  have, is a broken reference, shown on the plan.
+- A plan that implements part of a section names the headings it delivers. The anchor is the
+  heading's GitHub anchor (below), so renaming a heading breaks the link visibly, as a broken
+  reference on the plan, and never silently.
 
 The plan-writing skill adds the line (section 09). The line sits in prose, so plan validation,
 which reads only the metadata block (`loom/src/plan/parser/extraction.rs:75`), is unaffected.
-Metaplans carry no `Implements:` lines; the link is the plan's, and section 05 builds the
-links between each feature's two overviews from these lines only (vision, Decisions).
+Metaplans carry no `Implements:` lines; their entries carry `Covers:` lines (below), and section
+05 builds the links between each feature's two overviews from the edge lines only (vision,
+Decisions).
+
+## Edge lines
+
+Four line types carry the links between documents. Each starts at the beginning of a line,
+outside fenced code and before the first `<!-- loom METADATA` line, and holds comma-separated
+tokens; the app trims the whitespace around them.
+
+| Line                                | Where                                                                                                | Meaning                                        |
+| ----------------------------------- | ---------------------------------------------------------------------------------------------------- | ---------------------------------------------- |
+| `Covers: <tokens>`                  | inside a metaplan entry, after its `##` heading and before the next heading of level 2 or shallower | the entry's plan will deliver these spec nodes |
+| `Implements: <tokens>`              | the plan's declaration, above                                                                        | the plan delivers these sections or headings   |
+| `Implements (stage:<id>): <tokens>` | anywhere in a plan's prose                                                                           | one stage delivers these headings              |
+| `About: <tokens>`                   | inside a findings ledger entry                                                                       | the nodes a finding concerns                   |
+
+The stage line exists because stage ids live in the plan's YAML, which gains no field. (My call.)
+A stage line names headings the stage delivers, for example:
+
+```text
+Implements (stage:scheduler): section_04#rebuild-budget, section_04#invalidation
+```
+
+A token resolves relative to the document's feature `<f>`:
+
+| Token                                                                  | Node                                                        |
+| ---------------------------------------------------------------------- | ----------------------------------------------------------- |
+| `section_NN` or `section_NN.md`                                        | `doc/product/<f>/section_NN.md`, the whole section          |
+| `section_NN#<anchor>`                                                  | one heading of that section                                 |
+| `vision` or `vision#<anchor>`                                          | `doc/product/<f>/index.md` or one of its headings           |
+| `metaplan` or `metaplan#<anchor>`                                      | `doc/plans/<f>/index.md` or one of its entries              |
+| `PLAN-<slug>.md`, also with a lifecycle prefix (`DONE-PLAN-<slug>.md`) | the plan with that slug, whichever file spelling is current |
+| `PLAN-<slug>.md#stage:<id>` or `PLAN-<slug>.md#<anchor>`               | a stage or a heading of that plan                           |
+| `[label](<target>)`                                                    | the target's file name and fragment, read as above          |
+
+`NN` is one or more digits. An anchor is a heading's GitHub anchor (see "Headings as anchors");
+`stage:<id>` is the stage anchor of "Plan metadata". Anything else is a bad token. The app keeps
+a bad token as written and reports it on its document. A well-formed token that names a missing
+document or heading is unresolved and is reported as well. `Covers:` and both `Implements` lines
+accept section tokens; `About:` accepts every kind of token.
+
+## Settled marks
+
+A reader who agrees to a document settles it. The mark is one plain line in the document:
+
+```text
+Settled: <body> [stub <stub>] [upstream <upstream>]
+```
+
+For example, `Settled: 3f9a1c0b7d42 stub 9e01b5c2a8f3`. Each hash is the first 12 lowercase hex
+digits of a SHA-256.
+
+- **Placement.** The line is its own paragraph, directly after the document's first `#` heading.
+  When the next non-blank line after that heading is an `Implements:` line, the Settled line goes
+  after it. Settling again replaces the line in place; unsettling removes it. Lines that start
+  with `Status:` are ordinary prose and unrelated, which is why the mark is named `Settled:`.
+- **Body hash.** The content hash (section 04) of the document's text with its Settled line
+  removed. For a plan the body is the plan and its brief bundle: the hash covers the plan's text
+  and then, in path order, each brief's repository path and text.
+- **Stub hash.** The stub is the document's scope before it was written. For a product section it
+  is the vision's table row for that section; for a plan it is its metaplan entry's heading
+  section. The vision, the metaplan and a plan with no entry have no stub.
+- **Upstream hash.** Plans only. It covers each heading the plan implements, through its
+  `Implements:` and stage lines, plus each section it implements whole.
+- **States.** Draft (no line, or one that does not parse), revised (the body hash differs), stub
+  changed (the body matches, the stub differs or is gone), upstream changed (body and stub
+  match, the upstream differs) and settled (everything matches), checked in that order.
+  Section 01 gives the names the app shows.
+- **Who writes it.** Only the app writes or removes the line, at the reader's request from the
+  document's page. Sessions never write or edit a Settled line. A session that edits a settled
+  document says so in its reply; the document reads as revised until it is settled again.
+- **Which documents.** The vision, product sections, the metaplan, and plans with no lifecycle
+  prefix. A locked document (`IN_PROGRESS-`, `DONE-`, `RETIRED-`, archive) cannot be settled or
+  unsettled, and keeps whatever line it held when it locked.
+- **Unresolved points.** A document that holds `(My call.)` markers or open questions asks the
+  reader to confirm before it is settled, listing them. (My call.)
+- **Changes since settled.** The page for a revised document compares it with the settled
+  version: the newest commit whose version of the file holds the current Settled line. When no
+  commit holds it, the page says the settled version is not committed and shows no comparison.
+- **Problems.** A Settled line that does not parse (a hash that is not 12 lowercase hex digits,
+  an unknown word, words out of order) raises `settled-bad` and reads as draft. A second Settled
+  line raises `settled-duplicate`.
+
+## The findings ledger
+
+Each feature keeps its findings in one plain Markdown file, `doc/plans/<f>/findings.md`, an
+`Other` document. Run reviews stay the unchanged evidence; the ledger holds the triage state.
+
+```markdown
+# Findings
+
+## F-1 Rebuild threshold ignores briefs
+
+About: PLAN-feat-planner-03-summaries.md#stage:scheduler, section_04#rebuild-budget
+Source: REVIEW-PLAN-feat-planner-03-summaries.md#open-findings (scheduler, 1a2b3c4d5e6f)
+Status: open
+
+The rebuild budget counts plan summaries but not brief changes.
+```
+
+- **Entries.** An entry is a `## F-<n> <title>` heading (n is 1 or more and unique in the file),
+  then an `About:` line, an optional `Source:` line and an optional `Status:` line in any order,
+  then one paragraph of text. A heading of any other shape raises `findings-bad-entry`.
+- **Statuses.** `Status:` is `open`, `planned PLAN-<slug>.md`, `folded metaplan#<entry anchor>`
+  or `dismissed: <reason>`. A missing or unknown value reads as open and is reported.
+- **Import.** When a plan completes and its run review is written, each item under the review's
+  `## Open Findings` and `## Open Questions` headings is added as an open entry that is not
+  already present; importing the same review twice adds nothing. The entry's `Source:` line
+  names the review heading, the stage and a 12-hex hash of the item text, which is how a repeat
+  is recognised. Its `About:` line names the stage and then the plan's `Implements:` tokens. A
+  standalone plan, or a plan whose feature cannot be read from its path, imports nothing.
+- **Review the feature.** The same session that section 01 describes appends entries with
+  `Status: open`, an `About:` line naming the most specific nodes it can, and either no `Source:`
+  line or `Source: review <YYYY-MM-DD>`.
+- **Triage.** The reader plans a finding (a follow-up session sets `planned PLAN-<slug>.md`),
+  folds it into a metaplan entry whose plan has not started running (the session edits the entry
+  and sets `folded metaplan#<anchor>`), or dismisses it with a reason. A reason is one line of at
+  most 200 characters after control characters are removed, and cannot be empty. The metaplan
+  entry that received a folded finding reads as "revisit before writing" or "revisit before
+  running" until its plan runs.
+- **Untrusted text.** Item text is written by agents. The title is the first 80 characters of the
+  text on one line; the paragraph is the whole text on one line, and a paragraph that starts with
+  `#` gets a leading backslash, so a finding never creates a heading. The app shows finding
+  text, titles and reasons as plain text.
+- **Where the file lands.** Import runs in the daemon's host job against the main checkout, so
+  the new entries are an uncommitted change there, like the summaries the planner rebuilds. The
+  user commits them. Writes refuse a symlinked `findings.md` or a symlinked directory above it
+  (section 12, "Symlinks under `doc/`").
 
 ## Cross-references
 
@@ -300,6 +437,8 @@ Section 09 gives the sessions their skills; these are the conventions the skills
 - Detection of steps, gaps and pressure-test records: section 01.
 - Hashing, the manifest, invalidation, and the summary store's layout: section 04.
 - How overviews, document summaries and product-to-plan links are shown: section 05.
+- How the trace, the Coverage and Findings pages, and the settle controls are shown: section 01
+  (states and pages), sections 05 and 10 (reading and review).
 - Rendering, navigation, editing, save-time validation and broken-reference display: section 06.
 - The skills that write these conventions: section 09.
 - What a run review is used for after execution: section 10.

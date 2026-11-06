@@ -4,13 +4,18 @@ use std::path::Path;
 
 use super::{features::listed_sections, problem, unlocked, Problem};
 use crate::planning::implements::{Implements, ImplementsLine};
-use crate::planning::kinds::DocKind;
+use crate::planning::kinds::{section_path, DocKind};
 use crate::planning::metaplan::{entries, MetaplanEntry};
 use crate::planning::project::Project;
+use crate::planning::trace::tokens::stage_lines;
+
+#[cfg(test)]
+mod tests;
 
 pub(super) fn collect(project: &Project, found: &mut Vec<Problem>) {
     metaplan_problems(project, found);
     implements_problems(project, found);
+    anchor_problems(project, found);
     duplicate_implementations(project, found);
     copy_problems(project, found);
 }
@@ -140,13 +145,88 @@ fn declaration_problems(path: &Path, parsed: &ImplementsLine, found: &mut Vec<Pr
     }
 }
 
+/// Why `section_NN#anchor` of `feature` names nothing, or `None` when it resolves.
+pub(super) fn unresolved_anchor(
+    project: &Project,
+    feature: &str,
+    number: u32,
+    anchor: &str,
+) -> Option<String> {
+    match project.docs.get(&section_path(feature, number)) {
+        None => Some(format!("section_{number:02} does not exist")),
+        Some(doc) if doc.sections.find(anchor).is_none() => {
+            Some(format!("section_{number:02} has no heading `{anchor}`"))
+        }
+        Some(_) => None,
+    }
+}
+
+/// Anchored `Implements:` tokens and `Implements (stage:<id>):` lines of unlocked feature plans.
+fn anchor_problems(project: &Project, found: &mut Vec<Problem>) {
+    for plan in project.tree.plans.values() {
+        let (Some(feature), Some(doc)) = (plan.feature.as_deref(), project.docs.get(&plan.path))
+        else {
+            continue;
+        };
+        if doc.lock.is_some() {
+            continue;
+        }
+        if let Some(parsed) = project.implements.get(&plan.slug) {
+            let at = parsed.line.map(|line| line + 1);
+            for (number, anchor) in &parsed.anchors {
+                if let Some(reason) = unresolved_anchor(project, feature, *number, anchor) {
+                    let message = format!("Implements: {reason}");
+                    found.push(problem(
+                        "implements-anchor-missing",
+                        &plan.path,
+                        at,
+                        message,
+                    ));
+                }
+            }
+        }
+        let text = project.text(&plan.path).unwrap_or_default();
+        stage_line_problems(project, plan.path.as_path(), (feature, text), found);
+    }
+}
+
+fn stage_line_problems(
+    project: &Project,
+    path: &Path,
+    (feature, text): (&str, &str),
+    found: &mut Vec<Problem>,
+) {
+    let stages = project.docs.get(path).map(|doc| &doc.sections.stages);
+    for line in stage_lines(text) {
+        let at = Some(line.line + 1);
+        let id = &line.stage;
+        if !stages.is_some_and(|stages| stages.iter().any(|(stage, _)| stage == id)) {
+            let message = format!("Implements (stage:{id}): the plan has no stage `{id}`");
+            found.push(problem("stage-line-unknown", path, at, message));
+        }
+        for token in &line.bad {
+            let message =
+                format!("Implements (stage:{id}): token `{token}` does not name a product section");
+            found.push(problem("implements-broken", path, at, message));
+        }
+        for section in &line.refs {
+            let Some(anchor) = &section.anchor else {
+                continue;
+            };
+            if let Some(reason) = unresolved_anchor(project, feature, section.number, anchor) {
+                let message = format!("Implements (stage:{id}): {reason}");
+                found.push(problem("implements-anchor-missing", path, at, message));
+            }
+        }
+    }
+}
+
+/// Plans of one feature that implement the same part of a section: the whole section, or the
+/// same heading. Plans that each implement different headings of one section do not clash.
 fn duplicate_implementations(project: &Project, found: &mut Vec<Problem>) {
     for feature in &project.features {
         for (number, slugs) in &feature.implemented_by {
-            if slugs.len() < 2 {
-                continue;
-            }
-            for slug in slugs {
+            for slug in clashing(project, *number, slugs) {
                 let Some(plan) = project.tree.plan(slug) else {
                     continue;
                 };
@@ -168,6 +248,33 @@ fn duplicate_implementations(project: &Project, found: &mut Vec<Problem>) {
             }
         }
     }
+}
+
+/// The slugs among `slugs` whose claim on section `number` overlaps another one's.
+fn clashing<'a>(project: &Project, number: u32, slugs: &'a [String]) -> Vec<&'a String> {
+    let parsed: Vec<Option<&ImplementsLine>> = slugs
+        .iter()
+        .map(|slug| project.implements.get(slug))
+        .collect();
+    let mut clash = Vec::new();
+    for (index, slug) in slugs.iter().enumerate() {
+        let Some(own) = parsed[index] else {
+            continue;
+        };
+        let overlaps = |other: &ImplementsLine| {
+            own.whole.contains(&number)
+                || other.whole.contains(&number)
+                || own
+                    .anchors
+                    .iter()
+                    .any(|claim| claim.0 == number && other.anchors.contains(claim))
+        };
+        let others = parsed.iter().enumerate().filter(|(at, _)| *at != index);
+        if others.filter_map(|(_, other)| *other).any(overlaps) {
+            clash.push(slug);
+        }
+    }
+    clash
 }
 
 fn copy_problems(project: &Project, found: &mut Vec<Problem>) {
