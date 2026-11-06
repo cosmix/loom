@@ -23,6 +23,13 @@ function planWith(stages: StageRow[]): PlanView {
   return { ...docViewSchema.parse(planFixture).plan!, stages };
 }
 
+const LINKS = {
+  path: "doc/plans/PLAN-x.md",
+  onNavigate: () => {},
+  docPaths: new Set<string>(),
+  anchorsOf: () => null,
+};
+
 const DUPLICATED = [row("dup", "First"), row("solo", "Solo"), row("dup", "Second")];
 
 beforeEach(() => {
@@ -36,7 +43,7 @@ afterEach(() => {
 describe("StagesPanel with a repeated stage id", () => {
   it("renders every row without a duplicate key or duplicate DOM id", () => {
     const error = vi.spyOn(console, "error").mockImplementation(() => {});
-    const { container } = render(<StagesPanel plan={planWith(DUPLICATED)} />);
+    const { container } = render(<StagesPanel plan={planWith(DUPLICATED)} links={LINKS} />);
     expect(screen.getAllByRole("listitem")).toHaveLength(3);
     const ids = Array.from(container.querySelectorAll("[id]"), (element) => element.id);
     expect(new Set(ids).size).toBe(ids.length);
@@ -44,14 +51,14 @@ describe("StagesPanel with a repeated stage id", () => {
   });
 
   it("keeps the bare id on the first occurrence and suffixes the later one with its index", () => {
-    render(<StagesPanel plan={planWith(DUPLICATED)} />);
+    render(<StagesPanel plan={planWith(DUPLICATED)} links={LINKS} />);
     expect(document.getElementById("stage:dup")?.textContent).toContain("First");
     expect(document.getElementById("stage:solo")).not.toBeNull();
     expect(document.getElementById("stage:dup:2")?.textContent).toContain("Second");
   });
 
   it("points each toggle's aria-controls at its own row body", () => {
-    render(<StagesPanel plan={planWith(DUPLICATED)} />);
+    render(<StagesPanel plan={planWith(DUPLICATED)} links={LINKS} />);
     for (const [rowId, text] of [
       ["stage:dup", "About First"],
       ["stage:dup:2", "About Second"],
@@ -66,7 +73,7 @@ describe("StagesPanel with a repeated stage id", () => {
   });
 
   it("scrolls to the first row of the id when the graph reports it", () => {
-    render(<StagesPanel plan={planWith(DUPLICATED)} />);
+    render(<StagesPanel plan={planWith(DUPLICATED)} links={LINKS} />);
     fireEvent.click(screen.getByRole("button", { name: "pick dup" }));
     const mock = vi.mocked(Element.prototype.scrollIntoView);
     expect(mock.mock.instances.at(-1)).toBe(document.getElementById("stage:dup"));
@@ -75,7 +82,7 @@ describe("StagesPanel with a repeated stage id", () => {
 
 describe("StagesPanel YAML toggle", () => {
   it("changes its label without carrying aria-pressed", () => {
-    render(<StagesPanel plan={planWith([row("a", "A")])} />);
+    render(<StagesPanel plan={planWith([row("a", "A")])} links={LINKS} />);
     const toggle = screen.getByRole("button", { name: "Show YAML" });
     expect(toggle.hasAttribute("aria-pressed")).toBe(false);
     fireEvent.click(toggle);

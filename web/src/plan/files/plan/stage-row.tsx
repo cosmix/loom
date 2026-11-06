@@ -3,6 +3,12 @@ import { useState } from "react";
 
 import type { StageRow as StageRowData } from "@/plan/api/schema-files";
 import { Untrusted } from "@/plan/chat/visible-controls";
+import { Markdown, type MarkdownProps } from "@/plan/markdown";
+
+import "./stage-row.css";
+
+/** The plan document's link rules, which a stage description's Markdown resolves against. */
+export type StageLinks = Pick<MarkdownProps, "path" | "onNavigate" | "docPaths" | "anchorsOf">;
 
 function TextList({ label, items }: { label: string; items: string[] }) {
   if (items.length === 0) return null;
@@ -21,9 +27,19 @@ function TextList({ label, items }: { label: string; items: string[] }) {
 }
 
 /// One stage: id, name, type, summary and dependencies, expanding to its
-/// description, acceptance criteria and files, all as plain text. `idSuffix` keeps the DOM ids
-/// unique when a plan repeats a stage id; the first row of an id takes the bare `stage:<id>`.
-export function StageRow({ stage, idSuffix = "" }: { stage: StageRowData; idSuffix?: string }) {
+/// description as Markdown (tables, lists and code render; a single line break stays a break, as
+/// plan authors write one instruction per line), then acceptance criteria and files as plain text.
+/// `idSuffix` keeps the DOM ids unique when a plan repeats a stage id; the first row of an id
+/// takes the bare `stage:<id>`.
+export function StageRow({
+  stage,
+  links,
+  idSuffix = "",
+}: {
+  stage: StageRowData;
+  links: StageLinks;
+  idSuffix?: string;
+}) {
   const [open, setOpen] = useState(false);
   const bodyId = `stage-body:${stage.id}${idSuffix}`;
   return (
@@ -72,9 +88,9 @@ export function StageRow({ stage, idSuffix = "" }: { stage: StageRowData; idSuff
       {open && (
         <div id={bodyId} className="mt-2 space-y-2 pl-5 text-[13px]">
           {stage.description !== "" && (
-            <p className="whitespace-pre-wrap">
-              <Untrusted text={stage.description} />
-            </p>
+            <div className="stage-description">
+              <Markdown source={stage.description} sections={[]} headingIds={false} {...links} />
+            </div>
           )}
           <TextList label="Acceptance" items={stage.acceptance} />
           <TextList label="Files" items={stage.files} />
