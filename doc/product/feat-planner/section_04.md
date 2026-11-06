@@ -52,6 +52,8 @@ Which documents get a summary:
 | Any other `*metaplan*.md` file of `<f>` (for example `metaplan_02.md`), an Other document (section 03)   | none                       |
 | A misplaced top-level `doc/plans/index.md`, briefs, knowledge                                            | none                       |
 
+Briefs have no summary of their own: their plan's summary covers them (see the bundle rule under
+[The summary file](#the-summary-file)).
 Plan summaries are keyed by slug, unique repository-wide, so lifecycle renames and moves between
 homes keep the same id; a move into an archive keeps the summary only while the plan is eligible.
 Archived plans the metaplan of their feature does not name are left out because an older project
@@ -129,6 +131,7 @@ Rules for the body, enforced when the summary is sealed (below):
   agents use a short label (`§`, a section number, a plan slug).
 - **A document summary cites only its own source**: heading sections of that file, by the
   anchors section 03 defines. A link with no fragment cites the text before the first heading.
+  A plan summary's source is the plan together with its brief bundle (below).
 - **A plan summary has two levels.** The opening level comes first: the title, optional `##`
   headings, and about one sentence per topic, each citing every sentence of the detail
   paragraph or paragraphs it opens, whole and in order, by a link to its own sentence id
@@ -139,6 +142,15 @@ Rules for the body, enforced when the summary is sealed (below):
   sentences by id with their first words: the agent writes the detail level, seals, copies the
   ids into the opening level and seals again. Overviews cite only sentences that cite no
   sentence, so they cite a plan summary's detail sentences, never its opening level.
+- **A plan summary covers its brief bundle.** The bundle is every file under the plan's
+  `briefs/<slug>/` directory in its plan home. The detail level cites the plan and its brief
+  files: each stage gets its own paragraph citing `PLAN-<slug>.md#stage:<id>` and that stage's
+  briefs (`briefs/<slug>/<stage-id>/…`), and `common.md` and the other briefs are cited where the
+  plan relies on them. The seal refuses a plan summary that leaves a brief uncited, and refuses a
+  link to any file outside the plan and its bundle, another plan's briefs included. A brief with
+  no Markdown text to cite (a JSON mockup, an unreadable file) need not be cited. These rules
+  add to the two levels and relax none of them: an opening sentence still cites only detail
+  sentences.
 - **An overview cites document-summary sentences and raw passages.** It links a document
   summary's sentence by the sentence's id as fragment (`#s-3fa9c2d1`), and links heading
   sections of its feature's vision (product overview) or metaplan (engineering overview) directly;
@@ -164,8 +176,16 @@ text, a rebuild that keeps a sentence word for word keeps the overview links int
 | `kind`    | both     | `document` or `overview`                                                                                        |
 | `of`      | both     | the source file's path (document), or `overview/<f>/product` / `overview/<f>/engineering` (overview)            |
 | `file`    | document | hash of the whole source file                                                                                   |
+| `bundle`  | plan     | brief path to the hash of that whole brief file, for every file of the plan's brief bundle                      |
 | `cites`   | both     | `path#anchor` to the hash of that span, for every raw passage the body links                                    |
 | `members` | overview | summary id to the hash of its ordered sentence ids, for every document summary in that feature's overview scope |
+
+`bundle` appears only in a plan summary whose plan has briefs, and is written only when it holds
+an entry. An overview or a non-plan document summary that carries it fails validation; a plan
+summary whose map differs from its plan's briefs, a map for a plan with no briefs included, reads
+incomplete. A brief with no Markdown text is recorded by the fingerprint the planning trace keeps
+for it (a hash of its bytes, or why it could not be read). Like `file`, `bundle` is computed when
+the summary is sealed and never taken from the draft: a draft carries no front matter at all.
 
 `members` hashes the ordered list of sentence ids, so rewriting a link or the front
 matter of a document summary does not make the overview out of date. Front matter carries no
@@ -187,7 +207,9 @@ endings become `\n` and trailing whitespace on each line is dropped, so an edito
 line endings does not invalidate summaries. (My call.)
 
 The engine also hashes the whole source file, which is how it notices a change in a passage no
-sentence cites, and a new or removed section.
+sentence cites, and a new or removed section. For a plan it hashes every brief file of the
+bundle as well, which is how it notices an edit to a brief no sentence cites, and a brief that
+joins or leaves the bundle.
 
 ## What "out of date" means
 
@@ -203,8 +225,8 @@ Each summary has one state:
 
 | State      | When                                                                                                    |
 | ---------- | ------------------------------------------------------------------------------------------------------- |
-| current    | every sentence current, and the source's `file` hash (document) or every `members` hash (overview) matches |
-| incomplete | every sentence current, but the source changed outside the cited spans, or a member summary changed, was added, or was removed |
+| current    | every sentence current, and the source's `file` hash and, for a plan, its `bundle` map (document) or every `members` hash (overview) matches |
+| incomplete | every sentence current, but the source changed outside the cited spans, a plan's brief changed, joined its bundle or left it, or a member summary changed, joined the overview's scope or left it |
 | stale      | at least one sentence stale                                                                             |
 | rebuilding | claimed by a session (below); its last sentences stay readable with their states                        |
 | missing    | no file, a file that fails validation, or a file with git conflict markers                              |
@@ -280,7 +302,8 @@ the claiming session, and refuses a summary that already has a claim file. It de
 `claims/` alone. It accepts a current summary as well as an out-of-date one, so a session that
 finds a sentence misstating its source can rebuild it (section 10); `--note <text>` names the
 sentence to replace and why, and the brief prints the note beside that sentence. The brief
-lists, per summary, the source paths, the current summary text with each stale sentence marked,
+lists, per summary, the source paths (for a plan, the plan and every file of its brief bundle),
+the current summary text with each stale sentence marked,
 which sentences may stay word for word, the body rules, the draft path, and the `seal` command.
 Keeping current sentences word for word keeps their ids, so overview links into them survive.
 

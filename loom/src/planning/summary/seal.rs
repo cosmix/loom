@@ -5,6 +5,10 @@
 //! of the store lock, so a member reseal cannot land between the check and the write. Sealing
 //! deletes the draft and the claim of the summary it wrote.
 
+#[cfg(test)]
+mod bundle_contract_tests;
+#[cfg(test)]
+mod bundle_tests;
 mod levels;
 // The frozen contract file clones `Copy` states; a frozen file cannot be edited, so the lint is
 // allowed on the module. Drop the attribute if the contract is ever rewritten.
@@ -23,6 +27,7 @@ mod tests;
 mod two_member_contract_tests;
 
 use std::cell::RefCell;
+use std::collections::BTreeMap;
 use std::fmt;
 use std::os::fd::AsRawFd;
 use std::path::{Path, PathBuf};
@@ -30,7 +35,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{anyhow, Context};
 
 use super::claims::{current_session, delete_claim, draft_rel, list_claims};
-use super::evaluate::{evaluate, members_hash};
+use super::evaluate::{bundle_hashes, evaluate, members_hash, Evaluation};
 use super::format::{
     parse_draft, render, Block, FormatError, FrontMatter, SummaryBody, SummaryFile, SummaryKind,
 };
@@ -38,6 +43,7 @@ use super::store;
 use super::write::{read_summary, write_summary_if, WriteOutcome};
 use crate::fs::safe_fs::{safe_open_dirfd, safe_remove_in_workdir};
 use crate::fs::safe_read::{is_not_found, read_to_string_bounded};
+use crate::planning::briefs::bundle_files;
 use crate::planning::project::Project;
 use crate::planning::runtime::RuntimePaths;
 use crate::planning::sections::normalized_hash;
@@ -189,8 +195,7 @@ fn sentence_count(body: &SummaryBody) -> usize {
 
 /// Check the links of `body` and render the summary file text; runs under the store lock.
 fn build_text(project: &Project, id: &str, body: &SummaryBody) -> Result<String, SealError> {
-    let overview = store::is_overview(id);
-    let evaluation = overview.then(|| evaluate(project, &[]));
+    let evaluation = store::is_overview(id).then(|| evaluate(project, &[]));
     let rules = Rules {
         project,
         id,
@@ -202,32 +207,9 @@ fn build_text(project: &Project, id: &str, body: &SummaryBody) -> Result<String,
     if !errors.is_empty() {
         return Err(SealError::Rejected(errors));
     }
-    let front = if overview {
-        let members = rules.members();
-        let hashes = members.iter().filter_map(|member| {
-            let eval = evaluation.as_ref()?.summaries.get(member)?;
-            Some((member.clone(), members_hash(eval.file.as_ref()?)))
-        });
-        FrontMatter {
-            kind: SummaryKind::Overview,
-            of: id.to_string(),
-            file: None,
-            cites: cited.cites,
-            members: hashes.collect(),
-        }
-    } else {
-        let source = store::source_of(project, id)
-            .ok_or_else(|| rejected(format!("{id} has no source document")))?;
-        let file = project
-            .content_hash(&source)
-            .ok_or_else(|| rejected(format!("{} cannot be read", source.display())))?;
-        FrontMatter {
-            kind: SummaryKind::Document,
-            of: source.to_string_lossy().into_owned(),
-            file: Some(file.to_string()),
-            cites: cited.cites,
-            members: Default::default(),
-        }
+    let front = match &evaluation {
+        Some(evaluation) => overview_front(&rules, evaluation, cited.cites),
+        None => document_front(project, id, cited.cites)?,
     };
     let file = SummaryFile {
         front,
@@ -235,6 +217,49 @@ fn build_text(project: &Project, id: &str, body: &SummaryBody) -> Result<String,
         blocks: body.blocks.clone(),
     };
     Ok(render(&file))
+}
+
+/// The front matter of overview `rules.id`: `members` from each member's sentence ids now.
+fn overview_front(
+    rules: &Rules<'_>,
+    evaluation: &Evaluation,
+    cites: BTreeMap<String, String>,
+) -> FrontMatter {
+    let members = rules.members();
+    let hashes = members.iter().filter_map(|member| {
+        let eval = evaluation.summaries.get(member)?;
+        Some((member.clone(), members_hash(eval.file.as_ref()?)))
+    });
+    FrontMatter {
+        kind: SummaryKind::Overview,
+        of: rules.id.to_string(),
+        file: None,
+        bundle: BTreeMap::new(),
+        cites,
+        members: hashes.collect(),
+    }
+}
+
+/// The front matter of document summary `id`, computed from the project and never taken from
+/// the draft: `file` from the source's content hash and, for a plan, `bundle` from each brief's.
+fn document_front(
+    project: &Project,
+    id: &str,
+    cites: BTreeMap<String, String>,
+) -> Result<FrontMatter, SealError> {
+    let source = store::source_of(project, id)
+        .ok_or_else(|| rejected(format!("{id} has no source document")))?;
+    let file = project
+        .content_hash(&source)
+        .ok_or_else(|| rejected(format!("{} cannot be read", source.display())))?;
+    Ok(FrontMatter {
+        kind: SummaryKind::Document,
+        of: source.to_string_lossy().into_owned(),
+        file: Some(file.to_string()),
+        bundle: bundle_hashes(project, &bundle_files(project, &source)),
+        cites,
+        members: BTreeMap::new(),
+    })
 }
 
 /// Delete the draft; an absent draft is fine.

@@ -25,6 +25,7 @@ fn feature_overviews_round_trip_with_their_member_ids() {
                 kind: SummaryKind::Overview,
                 of: id.into(),
                 file: None,
+                bundle: BTreeMap::new(),
                 cites: BTreeMap::new(),
                 members: BTreeMap::from([(member.into(), "sha256:member".into())]),
             },

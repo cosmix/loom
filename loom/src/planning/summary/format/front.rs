@@ -27,6 +27,9 @@ pub struct FrontMatter {
     pub of: String,
     /// The source document's hash, for document summaries.
     pub file: Option<String>,
+    /// A plan summary's brief bundle: each brief's repository path to its content hash, taken
+    /// at seal time. Empty for every other summary.
+    pub bundle: BTreeMap<String, String>,
     /// Source passages and their hashes.
     pub cites: BTreeMap<String, String>,
     /// Member summary IDs and their hashes.
@@ -39,11 +42,17 @@ struct RawFront {
     kind: SummaryKind,
     of: String,
     file: Option<String>,
+    bundle: Option<BTreeMap<String, String>>,
     cites: BTreeMap<String, String>,
     members: Option<BTreeMap<String, String>>,
 }
 
-pub(crate) fn parse_front(yaml: &str, first_line: usize) -> Result<FrontMatter, Vec<FormatError>> {
+/// Parse the front matter of summary `id`; `first_line` is the 1-based line of its first key.
+pub(crate) fn parse_front(
+    yaml: &str,
+    first_line: usize,
+    id: &str,
+) -> Result<FrontMatter, Vec<FormatError>> {
     let raw: RawFront = serde_saphyr::from_str(yaml).map_err(|error| {
         let offset = error
             .location()
@@ -53,19 +62,7 @@ pub(crate) fn parse_front(yaml: &str, first_line: usize) -> Result<FrontMatter, 
             message: error.to_string(),
         }]
     })?;
-    let problem = match (&raw.kind, &raw.file, &raw.members) {
-        (SummaryKind::Document, None, _) => Some("document front matter requires file"),
-        (SummaryKind::Document, _, Some(_)) => {
-            Some("document front matter must not contain members")
-        }
-        (SummaryKind::Overview, Some(_), _) => Some("overview front matter must not contain file"),
-        (SummaryKind::Overview, _, None) => Some("overview front matter requires members"),
-        (SummaryKind::Overview, _, _) if !store::is_overview(&raw.of) => {
-            Some("overview front matter requires a valid feature overview id")
-        }
-        _ => None,
-    };
-    if let Some(message) = problem {
+    if let Some(message) = shape_problem(&raw, id) {
         return Err(vec![FormatError {
             line: first_line,
             message: message.to_owned(),
@@ -75,9 +72,34 @@ pub(crate) fn parse_front(yaml: &str, first_line: usize) -> Result<FrontMatter, 
         kind: raw.kind,
         of: raw.of,
         file: raw.file,
+        bundle: raw.bundle.unwrap_or_default(),
         cites: raw.cites,
         members: raw.members.unwrap_or_default(),
     })
+}
+
+/// The keys `raw` holds that its kind (and, for `bundle`, its summary `id`) does not allow.
+fn shape_problem(raw: &RawFront, id: &str) -> Option<&'static str> {
+    match (&raw.kind, &raw.file, &raw.members, &raw.bundle) {
+        (SummaryKind::Document, None, _, _) => Some("document front matter requires file"),
+        (SummaryKind::Document, _, Some(_), _) => {
+            Some("document front matter must not contain members")
+        }
+        (SummaryKind::Document, _, _, Some(_)) if !store::is_plan(id) => {
+            Some("only a plan summary's front matter may contain bundle")
+        }
+        (SummaryKind::Overview, Some(_), _, _) => {
+            Some("overview front matter must not contain file")
+        }
+        (SummaryKind::Overview, _, None, _) => Some("overview front matter requires members"),
+        (SummaryKind::Overview, _, _, Some(_)) => {
+            Some("overview front matter must not contain bundle")
+        }
+        (SummaryKind::Overview, _, _, _) if !store::is_overview(&raw.of) => {
+            Some("overview front matter requires a valid feature overview id")
+        }
+        _ => None,
+    }
 }
 
 pub(crate) fn render_front(front: &FrontMatter) -> String {
@@ -93,6 +115,9 @@ pub(crate) fn render_front(front: &FrontMatter) -> String {
         output.push_str("file: ");
         output.push_str(&plain_or_quoted(file));
         output.push('\n');
+    }
+    if !front.bundle.is_empty() {
+        write_map(&mut output, "bundle", &front.bundle);
     }
     write_map(&mut output, "cites", &front.cites);
     if front.kind == SummaryKind::Overview {

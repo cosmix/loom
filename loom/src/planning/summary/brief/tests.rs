@@ -88,11 +88,15 @@ fn plan_brief_teaches_the_two_levels_and_sealing_twice() {
     let text = brief(&f.root, &f.paths, &["plans/x".into()], None).unwrap();
     for rule in [
         "- At most 23 sentences; opening sentences cite only this summary's detail sentences, \
-         detail sentences cite only the source document and its valid anchors.\n",
+         detail sentences cite only the plan and the brief files listed under Sources at valid \
+         anchors, and every Markdown brief file is cited at least once (a brief with no Markdown \
+         text, such as a JSON mockup, may be read but is not cited).\n",
         "- A plan summary has two levels. First the opening level: about one sentence per topic, \
          each citing every sentence of the detail paragraph(s) it opens, in order, as \
          [d](#s-xxxxxxxx). Then the detail level: short paragraphs whose sentences cite the \
-         plan's heading sections. No heading after the opening level.\n",
+         plan's heading sections and its brief files, one paragraph per stage citing the stage \
+         as PLAN-<slug>.md#stage:<id> and that stage's brief files. No heading after the \
+         opening level.\n",
         "- At most 8 opening and 15 detail sentences.\n",
         "- Write the detail level first and seal: the refusal lists each detail sentence's id. \
          Then add the opening level above it and seal again.\n",
