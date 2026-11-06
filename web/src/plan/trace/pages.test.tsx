@@ -3,7 +3,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import docFixture from "@/plan/api/fixtures/files-doc.json";
 import traceFixture from "@/plan/api/fixtures/trace.json";
+import type { TraceView } from "@/plan/api/schema-trace";
 import { atlas, offer, renderPage } from "@/plan/feature/pages-kit";
+import { registerOfferAction } from "@/plan/offers/actions";
 
 import { CoveragePage } from "./coverage-page";
 import { FindingsPage } from "./findings-page";
@@ -23,6 +25,7 @@ let served: Served = "pending";
 /** The hash `/api/doc` answers for the ledger; null leaves the request unanswered. */
 let docHash: string | null = null;
 let posts: Record<string, unknown>[] = [];
+let docFetches = 0;
 
 function json(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
@@ -35,9 +38,11 @@ beforeEach(() => {
   served = "pending";
   docHash = null;
   posts = [];
+  docFetches = 0;
   vi.stubGlobal("fetch", (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     const { pathname } = new URL(String(input), "http://localhost");
     if (pathname === "/api/doc") {
+      docFetches += 1;
       return docHash === null
         ? new Promise<Response>(() => {})
         : Promise.resolve(json(200, { ...docFixture, hash: docHash }));
@@ -109,12 +114,97 @@ describe("the findings page with no ledger", () => {
   });
 
   it("blocks Plan this with a visible reason when the feature has no follow-up offer", async () => {
-    served = { status: 200, body: traceFixture };
+    // No metaplan: the server starts Plan follow-ups only for a feature that has one.
+    const noMetaplan = {
+      ...traceFixture,
+      documents: traceFixture.documents.filter((doc) => doc.role !== "metaplan"),
+    };
+    served = { status: 200, body: noMetaplan };
     renderPage(<FindingsPage />, "/f/atlas/findings", atlas({}));
     const plan = await screen.findByRole("button", { name: /^Plan this/ });
     expect(plan.getAttribute("aria-disabled")).toBe("true");
     // One reason for both buttons that need the offer.
     expect(screen.getAllByText(/no Plan follow-ups/)).toHaveLength(1);
+  });
+});
+
+/** The fixture trace with its first entry's plan unwritten, and the metaplan kept or dropped. */
+function unwrittenEntryTrace(withMetaplan: boolean): TraceView {
+  const trace = structuredClone(traceFixture) as TraceView;
+  trace.entries = [{ ...trace.entries[0]!, plan: null }];
+  if (!withMetaplan) trace.documents = trace.documents.filter((doc) => doc.role !== "metaplan");
+  return trace;
+}
+
+describe("Plan this and Fold into entry on a feature with a metaplan", () => {
+  it("start the seeded session although the checklist carries no follow-up offer", async () => {
+    served = { status: 200, body: unwrittenEntryTrace(true) };
+    const started: { offer: unknown; seed: string | undefined }[] = [];
+    const unregister = registerOfferAction("plan_follow_ups", (offer, seed) => {
+      started.push({ offer, seed });
+    });
+    try {
+      renderPage(<FindingsPage />, "/f/atlas/findings", atlas({}));
+      const plan = await screen.findByRole("button", { name: /^Plan this/ });
+      expect(plan.getAttribute("aria-disabled")).toBeNull();
+      fireEvent.click(plan);
+      expect(started).toHaveLength(1);
+      expect(started[0]!.offer).toMatchObject({
+        id: "plan-follow-ups",
+        kind: "plan_follow_ups",
+        feature: "atlas",
+      });
+      expect(started[0]!.seed).toMatch(/^Plan finding F-1: /);
+
+      fireEvent.click(screen.getByRole("button", { name: /^Fold into entry\b/ }));
+      const picker = screen.getByRole("group", { name: "Fold into which entry" });
+      expect(within(picker).getByRole("button", { name: /First/ })).toBeTruthy();
+    } finally {
+      unregister();
+    }
+  });
+
+  it("name their finding, so two open findings' buttons are distinguishable", async () => {
+    const trace = unwrittenEntryTrace(true);
+    const second = structuredClone(trace.findings[0]!);
+    second.finding.id = "F-9";
+    trace.findings.push(second);
+    served = { status: 200, body: trace };
+    renderPage(<FindingsPage />, "/f/atlas/findings", atlas({}));
+    const plans = await screen.findAllByRole("button", { name: /^Plan this\b/ });
+    expect(plans.map((button) => button.getAttribute("aria-label"))).toEqual([
+      "Plan this F-1",
+      "Plan this F-9",
+    ]);
+    expect(screen.getByRole("button", { name: "Dismiss F-9" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Fold into entry F-9" })).toBeTruthy();
+  });
+
+  it("stay blocked, with the reason once, when the feature has no metaplan", async () => {
+    served = { status: 200, body: unwrittenEntryTrace(false) };
+    renderPage(<FindingsPage />, "/f/atlas/findings", atlas({}));
+    const plan = await screen.findByRole("button", { name: /^Plan this/ });
+    expect(plan.getAttribute("aria-disabled")).toBe("true");
+    expect(
+      screen.getByRole("button", { name: /^Fold into entry\b/ }).getAttribute("aria-disabled"),
+    ).toBe("true");
+    expect(screen.getAllByText(/no Plan follow-ups/)).toHaveLength(1);
+  });
+});
+
+describe("reading the ledger's hash", () => {
+  it("does not fetch the ledger when the trace has no findings", async () => {
+    served = { status: 200, body: EMPTY_TRACE };
+    renderPage(<FindingsPage />, "/f/atlas/findings", atlas({}));
+    await screen.findByText(/No findings yet/);
+    expect(docFetches).toBe(0);
+  });
+
+  it("fetches the ledger when the trace has findings", async () => {
+    served = { status: 200, body: traceFixture };
+    renderPage(<FindingsPage />, "/f/atlas/findings", atlas({}));
+    await screen.findByRole("heading", { name: "Reviews" });
+    await waitFor(() => expect(docFetches).toBe(1));
   });
 });
 
@@ -187,6 +277,23 @@ describe("dismissing a finding", () => {
   });
 });
 
+describe("after a dismissal is saved", () => {
+  it("moves focus to the finding's heading, since the actions are gone", async () => {
+    served = { status: 200, body: traceFixture };
+    docHash = "sha256:shown";
+    renderPage(<FindingsPage />, "/f/atlas/findings", atlas({}));
+    fireEvent.click(await screen.findByRole("button", { name: /^Dismiss/ }));
+    fireEvent.change(await screen.findByRole("textbox", { name: /reason/i }), {
+      target: { value: "duplicate" },
+    });
+    const confirm = screen.getByRole("button", { name: "Confirm dismissal" });
+    await waitFor(() => expect(confirm.getAttribute("aria-disabled")).toBeNull());
+    fireEvent.click(confirm);
+    const heading = screen.getByRole("heading", { name: "Rebuild ignores briefs" });
+    await waitFor(() => expect(document.activeElement).toBe(heading));
+  });
+});
+
 describe("the coverage page", () => {
   it("selects a clicked card, focuses it, and names the focus panel after it", async () => {
     served = { status: 200, body: traceFixture };
@@ -195,5 +302,21 @@ describe("the coverage page", () => {
     fireEvent.click(finding);
     expect(document.activeElement).toBe(finding);
     expect(screen.getByRole("complementary", { name: /Rebuild ignores briefs/ })).toBeTruthy();
+  });
+
+  it("names each section's card list after the section title", async () => {
+    served = { status: 200, body: traceFixture };
+    renderPage(<CoveragePage />, "/f/atlas/coverage", atlas({}));
+    await screen.findByRole("button", { name: /Rebuild ignores briefs/ });
+    const titles = screen
+      .getAllByRole("heading", { level: 3 })
+      .filter((title) => title.classList.contains("maps-group-title"));
+    expect(titles.length).toBeGreaterThan(0);
+    for (const title of titles) {
+      const list = title.nextElementSibling;
+      expect(list?.tagName).toBe("UL");
+      expect(list?.getAttribute("aria-labelledby")).toBe(title.id);
+      expect(title.id).not.toBe("");
+    }
   });
 });

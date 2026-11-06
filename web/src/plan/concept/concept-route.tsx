@@ -22,6 +22,7 @@ import { Untrusted, visibleControls } from "@/plan/chat/visible-controls";
 import { PageHead } from "@/plan/feature/plan-page";
 import { activeFeatureAtom, canAuthorAtom, featuresAtom } from "@/plan/state/atoms";
 import { PendingApprovalNotice } from "@/plan/summaries/approval-notice";
+import { OPEN_DIALOG } from "@/plan/trace/coverage-keys";
 import { LoadState } from "@/plan/ui/load-state";
 import type { Store } from "@/state/store";
 
@@ -121,8 +122,7 @@ function useEscapeKeys(pageKey: string): void {
       ) {
         return;
       }
-      if (document.querySelector('[role="dialog"][data-state="open"], [role="alertdialog"]'))
-        return;
+      if (document.querySelector(OPEN_DIALOG)) return;
       // The column owns Escape around its focused run, including events from its controls.
       const target = event.target instanceof Element ? event.target : null;
       if (

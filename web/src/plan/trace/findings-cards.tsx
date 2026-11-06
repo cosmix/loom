@@ -12,7 +12,14 @@ import { authorBlockReasonAtom } from "@/plan/state/atoms";
 import { ActionError } from "@/plan/ui/action-error";
 import { DisabledReason } from "@/plan/ui/disabled-reason";
 
-import { dismissReason, failureOf, foldSeed, planSeed, setFindingStatus } from "./findings-actions";
+import {
+  dismissReason,
+  failureOf,
+  foldSeed,
+  planSeed,
+  REASON_MAX,
+  setFindingStatus,
+} from "./findings-actions";
 import { foldableEntries, nodeLabel, statusText, type FindingGroup } from "./findings-model";
 import { ledgerBlock, type LedgerHash } from "./ledger-hash";
 import { loadTrace } from "./state";
@@ -31,7 +38,7 @@ export interface Context {
 }
 
 const NOT_STARTED = "The planner chat is not available, so no session started.";
-const NO_OFFER = "This feature has no Plan follow-ups to start yet.";
+const NO_OFFER = "This feature has no metaplan, so no Plan follow-ups can start.";
 const FOLD_LABEL = "Fold into entry";
 const DISMISS_LABEL = "Dismiss";
 
@@ -119,7 +126,7 @@ function DismissForm(props: {
           ref={field}
           type="text"
           value={text}
-          maxLength={200}
+          maxLength={REASON_MAX}
           onChange={(event) => setText(event.target.value)}
         />
       </label>
@@ -159,24 +166,39 @@ function useRestoreFocus(mode: Mode) {
 
 /** The three buttons; Plan this and Fold into entry share one blocked reason, drawn once. */
 function ActionButtons(props: {
+  /** Names each button after its finding: the same three buttons are drawn on every open card. */
+  findingId: string;
   offerBlock: string | null;
   authorBlock: string | null;
   onPlan: () => void;
   onFold: () => void;
   onDismiss: () => void;
 }) {
-  const { offerBlock, authorBlock } = props;
+  const { offerBlock, authorBlock, findingId } = props;
   const reasonId = useId();
   const dismissShares = authorBlock !== null && authorBlock === offerBlock;
   return (
     <>
-      <DisabledReason reason={offerBlock} reasonId={reasonId} look="quiet" onClick={props.onPlan}>
+      <DisabledReason
+        reason={offerBlock}
+        reasonId={reasonId}
+        look="quiet"
+        label={`Plan this ${findingId}`}
+        onClick={props.onPlan}
+      >
         Plan this
       </DisabledReason>
-      <DisabledReason reason={offerBlock} reasonId={reasonId} look="quiet" onClick={props.onFold}>
+      <DisabledReason
+        reason={offerBlock}
+        reasonId={reasonId}
+        look="quiet"
+        label={`${FOLD_LABEL} ${findingId}`}
+        onClick={props.onFold}
+      >
         {FOLD_LABEL}
       </DisabledReason>
       <DisabledReason
+        label={`${DISMISS_LABEL} ${findingId}`}
         reason={authorBlock}
         reasonId={dismissShares ? reasonId : undefined}
         look="quiet"
@@ -222,8 +244,8 @@ function useDismiss(
 }
 
 /** Plan this, Fold into entry and Dismiss for one open finding. */
-function Actions(props: Context & { entry: TraceFinding }) {
-  const { entry, trace, feature, offer, ledger } = props;
+function Actions(props: Context & { entry: TraceFinding; onDismissed: () => void }) {
+  const { entry, trace, feature, offer, ledger, onDismissed } = props;
   const [mode, setMode] = useState<Mode>("idle");
   const [failure, setFailure] = useState<string | null>(null);
   const authorBlock = useAtomValue(authorBlockReasonAtom);
@@ -239,7 +261,12 @@ function Actions(props: Context & { entry: TraceFinding }) {
     close();
     setFailure(runOffer(offer, seed) ? null : NOT_STARTED);
   };
-  const { busy, dismiss } = useDismiss(feature, entry.finding.id, ledger, close, setFailure);
+  // The card leaves the open state and this control unmounts, so focus goes to the card's heading.
+  const dismissed = () => {
+    setMode("idle");
+    onDismissed();
+  };
+  const { busy, dismiss } = useDismiss(feature, entry.finding.id, ledger, dismissed, setFailure);
 
   return (
     <div className="maps-actions" ref={root}>
@@ -247,6 +274,7 @@ function Actions(props: Context & { entry: TraceFinding }) {
         <DismissForm busy={busy} ledger={ledger} onConfirm={dismiss} onCancel={close} />
       ) : (
         <ActionButtons
+          findingId={entry.finding.id}
           offerBlock={offerBlock}
           authorBlock={authorBlock}
           onPlan={() => start(planSeed(entry.finding))}
@@ -267,9 +295,10 @@ function Actions(props: Context & { entry: TraceFinding }) {
 }
 
 function FindingCard(props: Context & { entry: TraceFinding }) {
-  const { entry, trace, feature } = props;
+  const { entry, trace, feature, ...context } = props;
   const { finding } = entry;
   const { hash } = useLocation();
+  const heading = useRef<HTMLHeadingElement>(null);
   // `data-addressed` washes the card the address names; `:target` does not follow router pushes.
   const addressed = hashAnchor(hash) === `finding-${finding.id}`;
   return (
@@ -283,7 +312,7 @@ function FindingCard(props: Context & { entry: TraceFinding }) {
         <span className="plan-fine maps-finding-id">
           <Untrusted text={finding.id} />
         </span>
-        <h3 className="maps-finding-title">
+        <h3 className="maps-finding-title" ref={heading} tabIndex={-1}>
           <Untrusted text={finding.title} />
         </h3>
       </div>
@@ -294,7 +323,15 @@ function FindingCard(props: Context & { entry: TraceFinding }) {
         <Untrusted text={finding.text} />
       </p>
       <AboutChips trace={trace} feature={feature} nodes={entry.about} />
-      {finding.status.kind === "open" && <Actions {...props} />}
+      {finding.status.kind === "open" && (
+        <Actions
+          entry={entry}
+          trace={trace}
+          feature={feature}
+          {...context}
+          onDismissed={() => heading.current?.focus()}
+        />
+      )}
     </li>
   );
 }
