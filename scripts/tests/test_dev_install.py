@@ -103,30 +103,18 @@ sys.exit(int(os.environ.get('BUILD_EXIT', '0')))
         self.assertFalse((self.root / "install.trace").exists())
         self.assertFalse((self.root / "signals.trace").exists())
 
-    def test_install_reports_restart_without_signalling_processes(self):
-        repositories = [self.root / "checkout-a", self.root / "checkout-b"]
-        for repo in repositories:
-            repo.mkdir()
-        processes = [subprocess.Popen(
-            [sys.executable, "-c", "import time; time.sleep(60)"], cwd=repo
-        ) for repo in repositories]
-        def cleanup():
-            for process in processes:
-                if process.poll() is None:
-                    process.terminate()
-                process.wait()
-        self.addCleanup(cleanup)
-        self.assertTrue(all(p.poll() is None for p in processes))
+    def test_install_stops_daemon_after_install(self):
         result = self.run_install()
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("loom stop && loom run", result.stdout)
-        self.assertFalse((self.root / "signals.trace").exists())
-        self.assertTrue(all(p.poll() is None for p in processes))
+        self.assertTrue((self.root / "install.trace").exists())
+        signals = (self.root / "signals.trace").read_text().split()
+        self.assertEqual(signals, ["pgrep", "pkill"])
+        self.assertLess(result.stdout.index("Running install.sh"),
+                        result.stdout.index("Killing loom daemon"))
 
-    def test_failed_install_does_not_report_restart_or_signal(self):
+    def test_failed_install_does_not_signal(self):
         result = self.run_install(INSTALL_EXIT="9")
         self.assertEqual(result.returncode, 9, result.stderr)
-        self.assertNotIn("loom stop && loom run", result.stdout)
         self.assertFalse((self.root / "signals.trace").exists())
 
 
