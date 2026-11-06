@@ -18,6 +18,8 @@ import {
   type SpineGroup,
 } from "@/plan/feature/spine-model";
 import { useFeature } from "@/plan/feature/use-feature";
+import { FrontierHints } from "@/plan/trace/frontier-hints";
+import { useTrace } from "@/plan/trace/state";
 
 import "./spine.css";
 
@@ -104,17 +106,21 @@ function MenuButton({
  * screen draws a feature's progress. Below 760px the list sits behind a "Documents" control that
  * names the current row; the list stays in the document either way (CSS hides it), so it never
  * scrolls sideways.
+ *
+ * `sample` draws the spine for a Help scene: it makes no trace request and shows no frontier hints.
  */
-export function Spine() {
+export function Spine({ sample = false }: { sample?: boolean }) {
   const { checklist } = useFeature();
   const { pathname } = useLocation();
   const [menuOpen, setMenuOpen] = useState(false);
   const bodyId = useId();
   const { opened, toggle } = useExpandedGroups(checklist?.feature ?? "");
+  // A sample spine reads no live trace.
+  const { trace } = useTrace(!sample && checklist ? checklist.feature : "");
   useEffect(() => setMenuOpen(false), [pathname]);
   if (!checklist) return null;
 
-  const groups = spineGroups(checklist);
+  const groups = spineGroups(checklist, trace);
   const here = groupOfPathname(pathname);
   const source = isSourcePath(pathname);
   // On a document's source its summary row is the current one, with "Source" drawn under it.
@@ -137,6 +143,7 @@ export function Spine() {
       />
       <div id={bodyId} className="plan-spine__body">
         <NextAction checklist={checklist} />
+        {!sample && <FrontierHints feature={checklist.feature} />}
         <ol className="plan-spine__groups">
           {groups.map((group) => (
             <GroupRow

@@ -24,6 +24,8 @@ import {
 } from "@/plan/files/heading-parts";
 import { HeadingActions, usePressureActive } from "@/plan/files/doc-heading-view";
 import { LockNotice } from "@/plan/files/lock-notice";
+import { SettleControl } from "@/plan/trace/settle-control";
+import { StubPanel } from "@/plan/trace/stub-panel";
 import {
   DocHeading,
   HEADING_BUTTON,
@@ -150,6 +152,40 @@ export function OpenAllButton({ page }: { page: ConceptPage }): JSX.Element {
   );
 }
 
+/**
+ * The settle state and stub of a document's summary page. Overviews are not documents of their
+ * own (they summarise the vision or the metaplan), so only a summary page carries them.
+ */
+function tracedDocument(page: ConceptPage): { feature: string; path: string } | null {
+  if (page.feature === null || !page.path || parsePageKey(page.key)?.kind !== "summary") {
+    return null;
+  }
+  return { feature: page.feature, path: page.path };
+}
+
+/**
+ * The settle control with the hash of the source document: `/api/settle` compares it with the
+ * source's hash, not the summary file's (`page.file_hash`). Rendered with `key={path}` for the
+ * same reason as `SourceActions`.
+ */
+function SettleOfSource({ feature, path }: { feature: string; path: string }): JSX.Element {
+  const { doc } = useKeptDoc(path);
+  return <SettleControl feature={feature} path={path} hash={doc?.hash ?? null} />;
+}
+
+/** The settle control sits in the heading's action row, beside the Summary/Source switch. */
+function TraceSettle({ page }: { page: ConceptPage }): JSX.Element | null {
+  const document = tracedDocument(page);
+  if (!document) return null;
+  return <SettleOfSource key={document.path} feature={document.feature} path={document.path} />;
+}
+
+function TraceExtras({ page }: { page: ConceptPage }): JSX.Element | null {
+  const document = tracedDocument(page);
+  if (!document) return null;
+  return <StubPanel feature={document.feature} path={document.path} />;
+}
+
 /** Summary metadata and navigation adapted to the shared document heading. */
 export function PageHeading({ page }: { page: ConceptPage }): JSX.Element {
   const facts = useFeatureFacts(page.feature);
@@ -171,6 +207,7 @@ export function PageHeading({ page }: { page: ConceptPage }): JSX.Element {
       }}
       actions={
         <>
+          <TraceSettle page={page} />
           {page.path && <SourceActions key={page.path} path={page.path} />}
           {hasOpenable(page) && <OpenAllButton page={page} />}
         </>
@@ -178,6 +215,7 @@ export function PageHeading({ page }: { page: ConceptPage }): JSX.Element {
       chips={pageChips(page, rebuilding, questions)}
     >
       {notice && <LockNotice notice={notice} />}
+      <TraceExtras page={page} />
       <PageHeaderExtras page={page} />
     </DocHeading>
   );
