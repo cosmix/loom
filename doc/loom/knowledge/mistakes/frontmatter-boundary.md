@@ -1,6 +1,6 @@
 # Frontmatter Boundary
 
-> Offsets
+>
 
 ## Shadowed frontmatter body offset
 
