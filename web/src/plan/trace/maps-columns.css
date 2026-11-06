@@ -1,0 +1,290 @@
+/*
+ * The coverage map (`coverage-page.tsx`): the filter, the five columns and their cards, at every
+ * width. maps.css (the sheet the page imports) imports this one first and then adds the focus
+ * panel and the width steps, so the steps cascade after these base rules. The findings ledger is
+ * maps-findings.css. Every rule sits on the scales of ui/design.css and the tokens of index.css;
+ * nothing names a colour. ui/DESIGN.md, Page rhythm ("Map pages") and Status.
+ *
+ * The map is a map, not a reading column: its page drops the 68ch cap and lays out by its own
+ * width (a container query on `.maps-coverage`), because the page's width, not the viewport's,
+ * decides whether five columns and a docked panel fit beside the spine and the chat.
+ */
+[data-loom-plan] .plan-page:has(> .maps-coverage) {
+  max-width: none;
+}
+
+[data-loom-plan] .maps-coverage {
+  container: maps / inline-size;
+}
+
+/* One tone per card flag, spent on the card's glyph alone (ui/DESIGN.md, Status): a gap keeps
+   the muted ink; an open finding and the three moved settle states share the warning tone, so
+   one amber mark means "needs you" wherever it appears. The word under the title says which. */
+[data-loom-plan] .maps-card {
+  --trace-tone: var(--muted-foreground);
+}
+
+[data-loom-plan] .maps-card[data-state="open"],
+[data-loom-plan] .maps-card[data-state="revised"],
+[data-loom-plan] .maps-card[data-state="stub_changed"],
+[data-loom-plan] .maps-card[data-state="upstream_changed"] {
+  --trace-tone: var(--tone-warning);
+}
+
+/* ── Filter ────────────────────────────────────────────────────────────────── */
+
+/* A segmented choice: a hairline track around native radios, the chosen one filled in --muted and
+   set at 600, as the kind switch on /new (DESIGN.md, Surfaces and borders). The radio covers its
+   label, so the label is the hit area and the ring lands on the segment. */
+[data-loom-plan] .maps-filter {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  max-width: 100%;
+  margin: 0 0 var(--space-5);
+  padding: 2px;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+}
+
+[data-loom-plan] .maps-filter-option {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  height: var(--control-height-sm);
+  padding: 0 var(--space-3);
+  border-radius: 999px;
+  color: var(--muted-foreground);
+  font-family: var(--font-sans);
+  font-size: var(--type-ui);
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background-color 120ms,
+    color 120ms;
+}
+
+[data-loom-plan] .maps-filter-option > input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+[data-loom-plan] .maps-filter-option:hover {
+  color: var(--foreground);
+}
+
+[data-loom-plan] .maps-filter-option:has(> input:checked) {
+  background: var(--muted);
+  color: var(--foreground);
+  font-weight: 600;
+}
+
+[data-loom-plan] .maps-filter-option:has(> input:focus-visible) {
+  outline: 2px solid var(--ring);
+  outline-offset: -2px;
+}
+
+/* ── Columns ───────────────────────────────────────────────────────────────── */
+
+[data-loom-plan] .maps-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+}
+
+/* Five columns divided by hairlines, never joined by lines: a card's lineage is read from the
+   marks, not drawn across the gutters. The start padding is the gutter the lineage dot sits in. */
+[data-loom-plan] .maps-columns {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 0 var(--space-4);
+  min-width: 0;
+}
+
+[data-loom-plan] .maps-column {
+  min-width: 0;
+  padding-inline-start: var(--space-3);
+}
+
+[data-loom-plan] .maps-column + .maps-column {
+  border-inline-start: 1px solid var(--hairline);
+}
+
+/* Two lines' room, bottom-aligned, so a title that wraps ("Plans and stages") keeps its cards on
+   the row of the other columns'. */
+[data-loom-plan] .maps-column-title {
+  display: flex;
+  align-items: flex-end;
+  min-height: 2.7em;
+  margin: 0 0 var(--space-3);
+}
+
+[data-loom-plan] .maps-group + .maps-group {
+  margin-top: var(--space-4);
+}
+
+/* A section's name over its headings: a step under the cards, in muted ink. */
+[data-loom-plan] .maps-group-title {
+  margin: 0 0 var(--space-2);
+  font-size: var(--type-ui);
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+[data-loom-plan] .maps-cards {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+[data-loom-plan] .maps-card-item {
+  position: relative;
+  min-width: 0;
+}
+
+/* ── Cards ─────────────────────────────────────────────────────────────────── */
+
+/* A compact card in the planner's card style (home/feature-card.css): --card on a hairline edge,
+   no shadow, the muted wash on hover. It is a button, so its corners sit between a control's and
+   a surface's. The title spans both grid columns; a flagged card adds its glyph and word below. */
+[data-loom-plan] .maps-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 2px var(--space-1);
+  width: 100%;
+  min-height: 36px;
+  padding: var(--space-2) 10px;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  background: var(--card);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  font-size: var(--type-ui);
+  font-weight: 500;
+  line-height: var(--leading-ui);
+  text-align: start;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+  transition:
+    background-color 120ms,
+    border-color 120ms,
+    color 120ms;
+}
+
+[data-loom-plan] .maps-card > span {
+  grid-column: 1 / -1;
+  min-width: 0;
+}
+
+[data-loom-plan] .maps-card:hover {
+  background: var(--muted);
+}
+
+[data-loom-plan] .maps-card:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+/* A gap is a hole in the map: a dashed edge, no fill, and under the title a dashed ring with the
+   words "Not covered". The drawn words carry empty alternative text: the card's accessible
+   description (`.sr-only` beside it) already says it, so the line stays out of the name. */
+[data-loom-plan] .maps-card[data-state="uncovered"] {
+  border-style: dashed;
+  background: transparent;
+}
+
+[data-loom-plan] .maps-card[data-state]:not([data-state="plain"])::before {
+  content: "";
+  box-sizing: border-box;
+  grid-column: 1;
+  align-self: center;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--trace-tone);
+}
+
+[data-loom-plan] .maps-card[data-state="uncovered"]::before {
+  width: 9px;
+  height: 9px;
+  border: 1.5px dashed var(--trace-tone);
+  background: transparent;
+}
+
+[data-loom-plan] .maps-card[data-state]:not([data-state="plain"])::after {
+  grid-column: 2;
+  color: var(--muted-foreground);
+  font-size: var(--type-fine);
+  font-weight: 400;
+  line-height: var(--leading-ui);
+}
+
+[data-loom-plan] .maps-card[data-state="uncovered"]::after {
+  content: "Not covered" / "";
+}
+
+[data-loom-plan] .maps-card[data-state="open"]::after {
+  content: "Open" / "";
+}
+
+[data-loom-plan] .maps-card[data-state="revised"]::after {
+  content: "Revised" / "";
+}
+
+[data-loom-plan] .maps-card[data-state="stub_changed"]::after {
+  content: "Stub changed" / "";
+}
+
+[data-loom-plan] .maps-card[data-state="upstream_changed"]::after {
+  content: "Upstream changed" / "";
+}
+
+/* Lineage. The selected card and every card upstream or downstream of it carry an accent dot in
+   the column's gutter, as the spine marks its current row (feature/spine.css); the selected one
+   is also filled and set at 600, so it differs from its relatives by more than a hue. While a
+   card is selected, the cards outside its lineage sink into the page: no fill, a fainter edge,
+   muted ink at 400, still legible (DESIGN.md, Colour). */
+[data-loom-plan] .maps-card-item:has(> [data-lineage])::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: calc(-1 * var(--space-2) - 2px);
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent-ink);
+  transform: translateY(-50%);
+}
+
+[data-loom-plan] .maps-card[data-lineage="self"] {
+  background: var(--muted);
+  font-weight: 600;
+}
+
+[data-loom-plan] .maps-columns:has([data-lineage="self"]) .maps-card:not([data-lineage]) {
+  border-color: color-mix(in oklch, var(--hairline) 60%, transparent);
+  background: transparent;
+  color: var(--muted-foreground);
+  font-weight: 400;
+}
+
+[data-loom-plan] .maps-columns:has([data-lineage="self"]) .maps-card:not([data-lineage]):hover {
+  background: var(--muted);
+  color: var(--foreground);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-loom-plan] .maps-filter-option,
+  [data-loom-plan] .maps-card {
+    transition: none;
+  }
+}
