@@ -285,6 +285,7 @@ fn file(key: &str) -> SummaryFile {
         kind: SummaryKind::Document,
         of: "doc/product/alpha/section_01.md".into(),
         file: Some("sha256:cd".into()),
+        bundle: BTreeMap::new(),
         cites,
         members: BTreeMap::new(),
     };

@@ -4,6 +4,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
+use crate::planning::briefs::bundle_files;
 use crate::planning::kinds::vision_path;
 use crate::planning::project::Project;
 use crate::planning::summary::evaluate::{
@@ -36,11 +37,13 @@ pub(super) struct Rules<'a> {
 }
 
 impl Rules<'_> {
-    /// The documents a passage link may point at.
+    /// The documents a passage link may point at: a document summary's source, plus the brief
+    /// bundle of a plan.
     pub(super) fn allowed_sources(&self) -> Vec<PathBuf> {
         let Some(scope) = store::Scope::of(self.project, self.id) else {
             return store::source_of(self.project, self.id)
                 .into_iter()
+                .chain(self.bundle())
                 .collect();
         };
         if self.id.ends_with("/product") {
@@ -52,6 +55,14 @@ impl Rules<'_> {
                 .flat_map(|feature| feature.metaplans.iter().map(|(path, _)| path.clone()))
                 .collect()
         }
+    }
+
+    /// The brief files of a plan summary's bundle; empty for every other summary, whose source
+    /// is no plan (an overview has no source document).
+    fn bundle(&self) -> Vec<PathBuf> {
+        store::source_of(self.project, self.id)
+            .map(|plan| bundle_files(self.project, &plan))
+            .unwrap_or_default()
     }
 
     /// The member summaries of an overview, in reading order.
@@ -215,20 +226,35 @@ fn single_member_problem(
     })
 }
 
-/// Overviews cite every member and every source document at least once.
+/// Overviews cite every member and every source document at least once; a plan summary cites
+/// every brief of its bundle.
 fn uncited(rules: &Rules<'_>, allowed: &[PathBuf], cited: &Cited) -> Vec<FormatError> {
-    if !store::is_overview(rules.id) {
-        return Vec::new();
-    }
-    let members = rules
-        .members()
+    let messages: Vec<String> = if store::is_overview(rules.id) {
+        let members = rules
+            .members()
+            .into_iter()
+            .filter(|m| !cited.members.contains(m));
+        let members = members.map(|m| format!("member summary {m} is not cited"));
+        let sources = allowed.iter().filter(|p| !cited.sources.contains(*p));
+        let sources = sources.map(|p| format!("source {} is not cited", p.display()));
+        members.chain(sources).collect()
+    } else {
+        uncited_briefs(rules, cited)
+    };
+    messages
         .into_iter()
-        .filter(|m| !cited.members.contains(m));
-    let members = members.map(|m| format!("member summary {m} is not cited"));
-    let sources = allowed.iter().filter(|p| !cited.sources.contains(*p));
-    let sources = sources.map(|p| format!("source {} is not cited", p.display()));
-    members
-        .chain(sources)
         .map(|message| FormatError { line: 1, message })
+        .collect()
+}
+
+/// The briefs of a plan summary's bundle that no sentence cites. A brief the project holds no
+/// text for (not Markdown, unreadable) has no anchor to cite, so it is not required; its hash
+/// still goes into the `bundle` front matter.
+fn uncited_briefs(rules: &Rules<'_>, cited: &Cited) -> Vec<String> {
+    let briefs = rules.bundle().into_iter().filter(|brief| {
+        rules.project.content_hash(brief).is_some() && !cited.sources.contains(brief)
+    });
+    briefs
+        .map(|brief| format!("brief {} is not cited", brief.display()))
         .collect()
 }

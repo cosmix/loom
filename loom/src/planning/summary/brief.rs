@@ -12,6 +12,7 @@ use super::lock::with_store_lock;
 use super::store::{self, validate_id};
 use super::write::read_summary;
 use crate::context::untrusted::terminal_safe;
+use crate::planning::briefs::bundle_files;
 use crate::planning::kinds::vision_path;
 use crate::planning::project::Project;
 use crate::planning::runtime::RuntimePaths;
@@ -142,9 +143,15 @@ fn write_heading(
     Ok(())
 }
 
+/// What the summary is built from: a document's source (and a plan's brief bundle), or an
+/// overview's vision or metaplans and its member summaries.
 fn sources(project: &Project, eval: &SummaryEval) -> Vec<PathBuf> {
     let Some(scope) = store::Scope::of(project, &eval.id) else {
-        return eval.source.iter().cloned().collect();
+        let briefs = eval
+            .source
+            .iter()
+            .flat_map(|plan| bundle_files(project, plan));
+        return eval.source.iter().cloned().chain(briefs).collect();
     };
     if eval.id.ends_with("/product") {
         std::iter::once(vision_path(&scope.feature))
@@ -201,7 +208,7 @@ fn cite_rule(id: &str, overview: bool) -> &'static str {
     if overview {
         "cite every member summary and the vision or every metaplan; member citations must point to current sentences"
     } else if store::is_plan(id) {
-        "opening sentences cite only this summary's detail sentences, detail sentences cite only the source document and its valid anchors"
+        "opening sentences cite only this summary's detail sentences, detail sentences cite only the plan and the brief files listed under Sources at valid anchors, and every Markdown brief file is cited at least once (a brief with no Markdown text, such as a JSON mockup, may be read but is not cited)"
     } else {
         "cite only the source document and its valid anchors"
     }
@@ -222,7 +229,7 @@ fn write_rules(out: &mut String, id: &str, overview: bool) -> Result<()> {
         cite_rule(id, overview)
     )?;
     if store::is_plan(id) {
-        writeln!(out, "- A plan summary has two levels. First the opening level: about one sentence per topic, each citing every sentence of the detail paragraph(s) it opens, in order, as [d](#s-xxxxxxxx). Then the detail level: short paragraphs whose sentences cite the plan's heading sections. No heading after the opening level.")?;
+        writeln!(out, "- A plan summary has two levels. First the opening level: about one sentence per topic, each citing every sentence of the detail paragraph(s) it opens, in order, as [d](#s-xxxxxxxx). Then the detail level: short paragraphs whose sentences cite the plan's heading sections and its brief files, one paragraph per stage citing the stage as PLAN-<slug>.md#stage:<id> and that stage's brief files. No heading after the opening level.")?;
         writeln!(
             out,
             "- At most {MAX_OPENING_SENTENCES} opening and {MAX_DOCUMENT_SENTENCES} detail sentences."

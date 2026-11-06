@@ -228,7 +228,7 @@ pub fn parse(summary_rel: &Path, text: &str) -> Result<SummaryFile, Vec<FormatEr
         return Err(one_error(1, "path is not a file of the summary store"));
     };
     let (yaml, body_offset) = split_front(text)?;
-    let front = front::parse_front(&yaml, 2)?;
+    let front = front::parse_front(&yaml, 2, &id)?;
     let limit = sentence_limit(&id);
     let body_text = text
         .lines()

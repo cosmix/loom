@@ -17,7 +17,8 @@ anything.
    the id and prints the source paths, existing summary with stale sentences marked, sentences
    that may stay word for word, body rules, draft path, and seal command. If it refuses the
    claim, report the id and reason; never take over or release another session's claim.
-2. Read only what the brief names. Use the named source document and the brief's existing
+2. Read only what the brief names, and read all of it: for a plan summary that is the plan
+   and every brief file listed under Sources. Use the named sources and the brief's existing
    summary to check every claim. Preserve current sentences word for word unless the assigned
    correction requires changing them; their text determines the sentence ids overviews cite.
    Replace stale or incorrect claims with statements supported by the source.
@@ -33,7 +34,12 @@ anything.
    - A plan summary (id `plans/<slug>`) has two levels. First the opening level: about one
      sentence per topic, each citing every sentence of the detail paragraph(s) it opens, in
      order, as `[d](#s-xxxxxxxx)`, and nothing else. Then the detail level: short paragraphs
-     whose sentences cite the plan's heading sections. No heading after the opening level. At
+     whose sentences cite the plan's heading sections and its brief files. Give each stage its
+     own detail paragraph citing the stage as `PLAN-<x>.md#stage:<id>` and that stage's brief
+     files (`briefs/<slug>/<stage-id>/...`); cite `common.md` and the other brief files where
+     the plan relies on them. Cite every Markdown brief file listed under Sources at least once:
+     the seal refuses a plan summary that leaves one out. A brief with no Markdown text, such
+     as a JSON mockup, may be read but is not cited. No heading after the opening level. At
      most 8 opening and 15 detail sentences. An opening sentence says what its paragraphs add
      up to; it never repeats a detail sentence. Write the detail level first and seal: the
      refusal lists each detail sentence's id. Then add the opening level above it, citing
@@ -41,8 +47,8 @@ anything.
    - A sentence compresses its cited section; never copy a sentence of the source.
    - Use only `#` and `##` headings to group prose; headings carry no links.
    - End every sentence with one or more plain Markdown links to heading sections of this
-     summary's own source document; only a plan summary's opening sentences cite its detail
-     sentences instead. Use a link without a fragment only for text before the
+     summary's own source document (for a plan summary, the plan or one of its brief files);
+     only a plan summary's opening sentences cite its detail sentences instead. Use a link without a fragment only for text before the
      first heading. Resolve links relative to the final summary file, not the runtime draft.
    - Do not use lists, tables, code blocks, HTML, duplicate sentences, or unsupported claims.
 4. Run `loom plan summary seal <id>`. Exit 1 reports problems as
