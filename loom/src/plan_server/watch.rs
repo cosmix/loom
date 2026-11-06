@@ -9,6 +9,7 @@ use std::time::{Duration, Instant, SystemTime};
 use anyhow::{Context, Result};
 
 use super::context::PlanContext;
+use super::trace;
 use super::wire::checklist::ProjectChecklistView;
 use super::wire::message::PlanMessage;
 use crate::planning::watch::{Batch, OwnWrites, Watcher};
@@ -53,20 +54,28 @@ pub(super) fn apply_batch(ctx: &PlanContext, batch: &Batch) {
     if batch.initial {
         return;
     }
-    let changed = {
+    let (changed, traced) = {
         let mut project = ctx.project_mut();
         let before = ProjectChecklistView::from(&*project);
+        let traces_before = trace::changed::views(&project);
         if let Err(error) = project.refresh(batch) {
             tracing::warn!("loom plan could not refresh the project: {error:#}");
         }
         let after = ProjectChecklistView::from(&*project);
-        (before != after).then_some(after)
+        let traces_after = trace::changed::views(&project);
+        (
+            (before != after).then_some(after),
+            trace::changed::changed(&traces_before, &traces_after),
+        )
     };
     for hook in ctx.batch_hooks() {
         hook(ctx, batch);
     }
     if let Some(checklist) = changed {
         ctx.hub().broadcast(&PlanMessage::Checklist(checklist));
+    }
+    for feature in traced {
+        ctx.hub().broadcast(&PlanMessage::TraceChanged { feature });
     }
 }
 

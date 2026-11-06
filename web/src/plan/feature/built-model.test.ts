@@ -71,6 +71,7 @@ it("opens a standalone review in the file browser and a feature's inside its fea
 });
 
 const candidate = (kind: CandidateView["kind"]): CandidateView => ({
+  id: "F-1",
   kind,
   stage: "Chat polish",
   stage_id: "chat-polish",
@@ -80,9 +81,16 @@ const candidate = (kind: CandidateView["kind"]): CandidateView => ({
 
 it("seeds a follow-up with the candidate, its kind, review file and stage id", () => {
   expect(followUpSeed(candidate("finding"))).toBe(
-    "Settings statistics look bland (open finding from REVIEW-PLAN-atlas-01.md, stage chat-polish)",
+    "F-1: Settings statistics look bland (open finding from REVIEW-PLAN-atlas-01.md, stage chat-polish)",
   );
   expect(followUpSeed(candidate("question"))).toBe(
-    "Settings statistics look bland (open question from REVIEW-PLAN-atlas-01.md, stage chat-polish)",
+    "F-1: Settings statistics look bland (open question from REVIEW-PLAN-atlas-01.md, stage chat-polish)",
+  );
+});
+
+it("seeds a hand-written finding without a stage, and only its first line", () => {
+  const byHand = { ...candidate("finding"), id: "F-7", stage: "review", stage_id: "" };
+  expect(followUpSeed({ ...byHand, text: "Found by hand\nsecond line" })).toBe(
+    "F-7: Found by hand (open finding from REVIEW-PLAN-atlas-01.md)",
   );
 });

@@ -234,6 +234,13 @@ fn unscoped_offers_omit_optional_context_and_keep_a_null_target() {
                 "label": "Plan follow-ups", "target": null
             }),
         ),
+        (
+            Offer::ReviewFeature,
+            json!({
+                "id": "review-feature", "kind": "review_feature",
+                "label": "Review the feature", "target": null
+            }),
+        ),
     ];
     for (offer, expected) in cases {
         assert_offer(offer, expected);

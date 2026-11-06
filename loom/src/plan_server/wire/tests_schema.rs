@@ -15,8 +15,18 @@ fn assert_all_in_schema<T: serde::Serialize + std::fmt::Debug>(
     array_name: &str,
     tag: Option<&str>,
 ) {
+    assert_all_in_source(SCHEMA_TS, values, enum_name, array_name, tag);
+}
+
+pub(super) fn assert_all_in_source<T: serde::Serialize + std::fmt::Debug>(
+    source: &str,
+    values: &[T],
+    enum_name: &str,
+    array_name: &str,
+    tag: Option<&str>,
+) {
     let declaration = format!("export const {array_name} = [");
-    let array = SCHEMA_TS
+    let array = source
         .split_once(&declaration)
         .unwrap_or_else(|| panic!("missing {array_name} in planning schema"))
         .1
@@ -133,6 +143,7 @@ fn all_offers() -> Vec<Offer> {
         | Offer::PressureTest { .. }
         | Offer::StartRun
         | Offer::PlanFollowUps
+        | Offer::ReviewFeature
         | Offer::DraftAllSections { .. }
         | Offer::DraftAllPlans { .. }
         | Offer::MoveIntoFeature { .. } => {}
@@ -142,6 +153,7 @@ fn all_offers() -> Vec<Offer> {
     offers.extend([
         Offer::StartRun,
         Offer::PlanFollowUps,
+        Offer::ReviewFeature,
         Offer::MoveIntoFeature {
             path: "doc/product/index.md".into(),
         },
@@ -160,6 +172,7 @@ fn all_offer_kinds() -> Vec<OfferKind> {
         | OfferKind::PressureTest
         | OfferKind::StartRun
         | OfferKind::PlanFollowUps
+        | OfferKind::ReviewFeature
         | OfferKind::DraftAllSections
         | OfferKind::DraftAllPlans
         | OfferKind::MoveIntoFeature => {}
@@ -174,6 +187,7 @@ fn all_offer_kinds() -> Vec<OfferKind> {
         OfferKind::PressureTest,
         OfferKind::StartRun,
         OfferKind::PlanFollowUps,
+        OfferKind::ReviewFeature,
         OfferKind::DraftAllSections,
         OfferKind::DraftAllPlans,
         OfferKind::MoveIntoFeature,
@@ -206,7 +220,8 @@ fn assert_exhaustive(message: &PlanMessage) {
         | PlanMessage::PressureOptionsChanged
         | PlanMessage::RunState(_)
         | PlanMessage::RunOutput(_)
-        | PlanMessage::RunStrip(_) => {}
+        | PlanMessage::RunStrip(_)
+        | PlanMessage::TraceChanged { .. } => {}
     }
 }
 
@@ -236,6 +251,9 @@ fn all_plan_messages() -> Vec<PlanMessage> {
         PlanMessage::ServerStopping,
         kickoff_drafts,
         PlanMessage::PressureOptionsChanged,
+        PlanMessage::TraceChanged {
+            feature: String::new(),
+        },
         PlanMessage::Refused(Refused {
             command: String::new(),
             reason: String::new(),

@@ -76,6 +76,7 @@ fn rendered_authoring_plugin_installs_all_skills_including_kickoff() {
             "metaplan",
             "plan",
             "refine",
+            "review",
             "section",
             "summaries",
             "vision",

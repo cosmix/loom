@@ -42,6 +42,7 @@ function atlas(): ChecklistView {
       spec: [],
       candidates: [
         {
+          id: "F-1",
           kind: "finding",
           stage: "Chat polish",
           stage_id: "chat-polish",

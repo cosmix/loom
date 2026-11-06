@@ -7,8 +7,9 @@ takes it into a chat, the session edits the documents, and the reader sees what 
 settles how attached passages are written into the message the session receives, how a reviewer
 undoes a turn's edit, what a refinement may do once plans have run, how a product change points
 at the plans that implement it, what a read-only browser can contribute, where open questions
-show, and how a reviewer sees what changed since they last looked. Reviewing is the
-user reading, which has no step in the workflow; the app records no approval (vision, Decisions, "Approval").
+show, how a reviewer sees what changed since they last looked, how a reader settles a document,
+and how findings are triaged. Reviewing is the user reading, which has no step in the workflow;
+approval is the settled mark (vision, Decisions, "Approval").
 
 ## The loop in one paragraph
 
@@ -114,7 +115,9 @@ route is the one that carries the reason.
 When the turn ends, the reviewer has four views of its effect, all already defined elsewhere:
 
 1. **The turn's footer** (section 08): every changed file with its line counts and a Diff link,
-   and every rebuilt summary with its cost.
+   and every rebuilt summary with its cost. Under each changed document it lists the downstream
+   impact: the related documents that now read revised, stub changed or upstream changed, and the
+   plans covering a changed section, each with its settle state.
 2. **The turn diff** (section 06, "Diffs"): source text before the turn and after it, per file,
    covering subagent edits and the summary rebuild.
 3. **The chips on the sent message** (section 08): each attachment says "changed in this turn"
@@ -157,10 +160,50 @@ uncommitted diff and git remain.
 
 ## Approval
 
-There is no approve button, no sign-off record, and no "reviewed" flag on any document. Reviewing is
-the user reading; when they are satisfied, starting a run is their act (section 11). A team that
-wants a record of who agreed uses its usual means, a pull request review of the committed `doc/`
-tree, which the plain-Markdown rule (vision, principle 1) makes possible.
+Approval is the settled mark of the next section: a reader who is satisfied with a document marks
+it settled. There is no separate sign-off record and no "reviewed" flag. Starting a run is the
+user's act (section 11). A team that wants a record of who agreed uses its usual means, a pull
+request review of the committed `doc/` tree, which the plain-Markdown rule (vision, principle 1)
+makes possible.
+
+## Settling a document
+
+The summary page and the source page of the vision, a product section, the metaplan or a plan
+without a lifecycle prefix show the document's settle state beside its title: draft, revised,
+stub changed, upstream changed or settled (section 03 defines the `Settled:` line and its
+hashes). The mark is document-level; a plan is settled together with its brief bundle.
+
+- **Mark settled** writes the `Settled:` line, through the save path, covering the document's
+  text now. Only this action writes it; sessions never do (section 09, "Write limits"). Mark
+  settled needs authoring, like every write.
+- **Unresolved points.** A document with `(My call.)` markers or open questions is not settled
+  silently: the dialog lists them and the reader confirms, or backs out.
+- **Unsettle** removes the line. A locked document (running, done, retired or archived) can be
+  neither settled nor unsettled; it keeps the line it had.
+- **Changes since settled.** A document that reads revised offers the comparison with the version
+  that was settled: the newest commit whose text holds the current `Settled:` line. The view is
+  the commit comparison of "Seeing what a refinement changed". When the line was never committed,
+  the page says the settled version is not committed and shows no diff. This is separate from
+  "What changed since you last looked", which is each browser's own record.
+- **Stubs.** A section or plan shows its stub, the vision row or metaplan entry, above its body,
+  linked to its place, with a note when the stub changed since the document was settled. A body
+  whose scope moved past its stub is the session's duty to fix in the same turn (section 09);
+  the app records only that the stub changed.
+
+## Triaging findings
+
+The Findings page (section 11, "After a run") lists the feature's ledger. Each open finding offers
+three actions for the holding browser:
+
+- **Plan this** starts the `Plan follow-ups` session, seeded with the finding's id, title and
+  About nodes. The session writes the follow-up entry and sets the finding to `planned`.
+- **Fold into entry** picks an entry whose plan has not started running (unwritten, or written
+  and not yet run). The session starts seeded the same way, edits the entry to include the
+  finding, and sets the finding to `folded`.
+- **Dismiss** takes a reason, required, one line of at most 200 characters, and sets the finding
+  to `dismissed: <reason>` without a session.
+
+Finding titles, text and reasons are shown as text, never as markup.
 
 ## Refinement after plans ran
 

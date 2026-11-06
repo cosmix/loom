@@ -54,7 +54,11 @@ fn finished_feature_offers_only_plan_follow_ups() {
     let checklist = checklist_of(done.path());
     assert_eq!(checklist.current, CurrentStep::ReadyAllDone);
     assert_eq!(checklist.primary, None);
-    assert_eq!(ids(&checklist.secondary), ["plan-follow-ups"]);
+    // Review the feature is offered after any plan has run; it is not a follow-up offer.
+    assert_eq!(
+        ids(&checklist.secondary),
+        ["plan-follow-ups", "review-feature"]
+    );
     assert_eq!(checklist.secondary[0].label(), "Plan follow-ups");
 
     let ready = done_fixture();

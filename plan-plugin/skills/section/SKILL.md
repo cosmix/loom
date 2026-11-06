@@ -100,6 +100,14 @@ when no changes were needed. Report anything that could not be resolved.
 The lead never starts a second team. If the user says “Stop the team”, end it;
 documents already written stay.
 
+## Settled documents
+
+Never write or edit a `Settled:` line; the app's Mark settled action writes it. When the turn
+edits a section that has one, say so in the reply ("section 04 was settled; it now reads
+revised"). The section's stub is its row in the vision's `Specification sections` table: keep
+the row a true one-line scope. When this section's scope moves past its row, update the row in
+the same turn or ask.
+
 ## Close the session
 
 When the closing-write message arrives, ask no further questions. Write any settled

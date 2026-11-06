@@ -71,6 +71,7 @@ plugin/
   skills/metaplan/SKILL.md
   skills/plan/SKILL.md
   skills/refine/SKILL.md
+  skills/review/SKILL.md
   skills/knowledge/SKILL.md
   skills/summaries/SKILL.md
   agents/summary.md               document-summary rebuilder
@@ -116,7 +117,8 @@ states, in this order:
 2. **The documents are the truth, and the next session starts cold.** Record each decision in the
    document it affects as soon as the user settles it, in the section that covers the topic.
    Nothing a later session needs may live only in this conversation (vision, "Sessions start
-   cold").
+   cold"). The body also covers the stub and link-line duties of "Stubs, link lines and settled
+   documents" below.
 3. **The conventions** of section 03, "What the writing sessions keep to", quoted as a list, plus
    the step conventions below.
 4. **What this session may write** (below, "Write limits").
@@ -303,9 +305,10 @@ The shared team procedure:
 The draft-all launch enables in-process teammates; the bridge reads their transcripts for tokens
 and document assignments and does not render their messages (sections 07 and 12). (My call.)
 
-`loom-plan-writer` itself gains the `Implements:` line in its skeleton and its plan template
-(`skills/loom-plan-writer/SKILL.md`, `references/plan-template.md`), so plans written outside the
-app carry it too (vision, Decisions, "Product-to-plan links").
+`loom-plan-writer` itself carries the `Implements:` line in its skeleton and its plan template
+(`skills/loom-plan-writer/SKILL.md`, `references/plan-template.md`), and documents the anchored
+form and the `Implements (stage:<id>):` line, so plans written outside the app carry them too
+(vision, Decisions, "Product-to-plan links").
 
 ### `loom-plan:refine`: refining any document
 
@@ -314,7 +317,58 @@ owns how a passage is attached). The skill: read the document and the documents 
 bound by (a section's vision; a plan's metaplan entry and the sections in its `Implements:` line);
 make the change the user asks for; carry the change into every document that states the same
 thing, in the same turn, or record the conflict under `## Open questions` in the document that
-cannot change; keep headings that summaries cite unless the change is about the heading.
+cannot change; keep headings that summaries cite unless the change is about the heading. When an
+attachment is a finding, it reads the feature's `findings.md` for the finding's About nodes and
+status.
+
+### `loom-plan:review`: reviewing the feature
+
+Target: `doc/plans/<feature>/findings.md`, the feature's findings ledger (section 11, "After a
+run"). The skill asks what the user saw (running the feature, reading code, reading a run review),
+reads code and documents read-only, and appends one entry per finding in the ledger format below.
+It writes nothing else.
+
+```markdown
+## F-1 Rebuild threshold ignores briefs
+
+About: PLAN-feat-planner-03-summaries.md#stage:scheduler, section_04#rebuild-budget
+Source: REVIEW-PLAN-feat-planner-03-summaries.md#open-findings (scheduler, 1a2b3c4d5e6f)
+Status: open
+
+The rebuild budget counts plan summaries but not brief changes.
+```
+
+An entry is a `## F-<n> <title>` heading with the next free number, then `About:`, optional
+`Source:` and `Status:` lines, then one text paragraph. `About:` names the most specific nodes
+(`section_NN#<anchor>`, `PLAN-<slug>.md#stage:<id>`, `vision#<anchor>`, `metaplan#<anchor>`).
+`Status:` is `open`, `planned PLAN-<slug>.md`, `folded metaplan#<entry anchor>` or
+`dismissed: <reason>`. The review skill writes `Status: open` and, as `Source:`, either no line or
+`Source: review <YYYY-MM-DD>`.
+
+### Stubs, link lines and settled documents
+
+A document has three layers: a stub that exists before it and sets its scope, the body, and the
+summary generated from the body. A product section's stub is its row in the vision's table; a
+plan's stub is its metaplan entry. Every authoring skill keeps these duties:
+
+- **Stubs.** When a body's scope moves past its stub, the session updates the stub in the same
+  turn or asks. `loom-plan:vision` and `loom-plan:section` keep a vision row a true one-line scope.
+  `loom-plan:metaplan` and `loom-plan:plan` keep an entry and its plan agreeing.
+- **Covers.** Every metaplan entry carries a `Covers:` line directly under its heading paragraph,
+  naming the most specific spec headings it delivers (`section_NN#<anchor>`, or `section_NN` when
+  the plan covers the whole section). The one exception is an entry whose plan covers no section:
+  it has no `Covers:` line, and `none` is not a token. A follow-up entry takes its line from the
+  finding's About.
+- **Implements.** A plan's `Implements:` line names headings where the plan covers part of a
+  section. A stage that covers a narrower part adds `Implements (stage:<id>): section_NN#<anchor>,
+  ...` in the plan's prose. The entry's `Covers:` and the plan's `Implements:` agree; a scope
+  change updates both in the same turn.
+- **Findings.** `loom-plan:metaplan` reads `findings.md` when planning follow-ups. Planning a
+  finding: it writes the follow-up entry, then sets the finding's `Status:` line to `planned
+  PLAN-<slug>.md`. Folding a finding: it edits the unwritten entry so its paragraphs include the
+  finding, then sets `Status:` to `folded metaplan#<entry anchor>`.
+- **Settled lines.** No skill writes or edits a `Settled:` line. A turn that edits a document
+  holding one says so in the reply.
 
 ### `loom-plan:knowledge`: changing the knowledge base
 
@@ -350,6 +404,7 @@ Load the skill loom-plan:plan, then begin by telling me what you read and what y
 | Add an unlisted plan to a metaplan     | 4    | the metaplan, with the plan's file name                  | `loom-plan:metaplan`  |
 | Refine a document or a passage         | any  | the document, with any attached passage                  | `loom-plan:refine`    |
 | Plan follow-ups                        | done | `doc/plans/<f>/index.md` and the done plans' run reviews | `loom-plan:metaplan`  |
+| Review the feature                     | any  | `doc/plans/<f>/findings.md`                              | `loom-plan:review`    |
 | Change the knowledge base              | any  | the knowledge file, if one was open                      | `loom-plan:knowledge` |
 
 New chat starts no session. The user's first message starts it, with the common brief of a
@@ -401,6 +456,9 @@ section 12 enforces them.
 - **No git and no execution.** A planning session never stages, commits, branches, or runs
   `loom init`, `loom run`, or `loom pressure`. Committing and starting execution are the user's
   acts (vision, Decisions, "Approval"; section 11).
+- **Settled marks.** A session never writes or edits a `Settled:` line; the reader's Mark settled
+  action writes it (section 10, "Settling a document"). A session that edits a document holding
+  one says so in its reply ("section 04 was settled; it now reads revised").
 
 ## Summaries after a turn
 

@@ -7,6 +7,7 @@ import { pressureMessageSchemas } from "./schema-pressure";
 import { runMessageSchemas } from "./schema-run";
 import { reviewWireCommandSchema, reviewWireMessageSchema } from "./schema-review";
 import { summaryMessageSchemas } from "./schema-summaries";
+import { traceMessageSchemas } from "./schema-trace";
 
 export const PREREQ_KINDS = ["tmux", "claude", "claude_login", "sandbox"] as const;
 export const BIND_KINDS = ["loopback", "remote"] as const;
@@ -25,6 +26,7 @@ export const OFFER_KINDS = [
   "draft_all_sections",
   "draft_all_plans",
   "move_into_feature",
+  "review_feature",
 ] as const;
 export const PLAN_MESSAGE_TYPES = [
   "hello",
@@ -49,6 +51,7 @@ export const PLAN_MESSAGE_TYPES = [
   "kickoff",
   "draft_team",
   "kickoff_drafts",
+  "trace_changed",
 ] as const;
 export const CLIENT_MESSAGE_TYPES = ["set_name", "reading"] as const;
 
@@ -152,6 +155,7 @@ export const specItemViewSchema = z.strictObject({
   review: z.string(),
 });
 export const candidateViewSchema = z.strictObject({
+  id: z.string(),
   kind: z.enum(["finding", "question"]),
   stage: z.string(),
   stage_id: z.string(),
@@ -212,6 +216,7 @@ export const planMessageSchema = z.discriminatedUnion("type", [
   ...pressureMessageSchemas,
   ...runMessageSchemas,
   ...kickoffMessageSchemas,
+  ...traceMessageSchemas,
 ]);
 export const clientMessageSchema = z.discriminatedUnion("type", [
   z.strictObject({ type: z.literal("set_name"), name: z.string() }),
