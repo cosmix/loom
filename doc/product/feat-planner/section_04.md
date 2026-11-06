@@ -159,8 +159,8 @@ Rules for the body, enforced when the summary is sealed (below):
 - **An overview sentence draws on at least two member sentences.** A sentence that cites member
   sentences cites at least two of them and says what they add up to; the seal rejects a sentence
   that cites exactly one, unless that member's summary holds a single citable sentence.
-- **Length.** A section summary holds at most 15 sentences, a plan summary at most 8 opening and
-  15 detail sentences, a vision summary at most 8 in at most 3 paragraphs, an overview at most
+- **Length.** A section summary holds at most 15 sentences, a plan summary 8 to 12 opening and
+  15 to 60 detail sentences, scaled to the lines of the plan and its briefs, a vision summary at most 8 in at most 3 paragraphs, an overview at most
   30. (My call: the overview has to be readable in the few minutes the vision's reviewer goal
   allows.)
 

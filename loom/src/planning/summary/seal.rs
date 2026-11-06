@@ -202,7 +202,7 @@ fn build_text(project: &Project, id: &str, body: &SummaryBody) -> Result<String,
         evaluation: evaluation.as_ref(),
     };
     let (cited, mut errors) = links::check(&rules, body);
-    errors.extend(levels::check(id, body));
+    errors.extend(levels::check(id, body, store::plan_caps(project, id)));
     errors.sort_by_key(|e| e.line);
     if !errors.is_empty() {
         return Err(SealError::Rejected(errors));
