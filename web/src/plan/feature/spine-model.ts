@@ -5,6 +5,7 @@ import { STEP } from "@/plan/feature/steps";
 import { featureOfDocPath } from "@/plan/feature/source-href";
 import { featureHref } from "@/plan/feature/use-feature";
 import { decode, docRel } from "@/plan/files/address";
+import { openCount } from "@/plan/trace/findings-model";
 import { docOfPath } from "@/plan/trace/model";
 import { PLAN_STATE_GLYPHS, type Glyph, type PlanState } from "@/plan/ui/glyphs";
 
@@ -70,9 +71,12 @@ function unitOf(server: StepView | undefined, count: string | null): string | nu
 }
 
 /** The page segment each group lives under, for finding the group of a pathname. */
-const GROUP_OF_PAGE: Record<string, GroupId> = Object.fromEntries(
-  GROUPS.map((group) => [group.page, group.id]),
-);
+const GROUP_OF_PAGE: Record<string, GroupId> = {
+  ...Object.fromEntries(GROUPS.map((group) => [group.page, group.id])),
+  // The trace pages sit under the group whose row links them.
+  coverage: "product",
+  findings: "run",
+};
 
 /** A plan file name, lifecycle prefix included (`PLAN-x.md`, `IN_PROGRESS-PLAN-x.md`). */
 const PLAN_FILE = /^(?:[A-Z_]+-)?PLAN-/;
@@ -231,6 +235,20 @@ export function currentPathname(checklist: ChecklistView, pathname: string): str
   return summaryPathnameOfSource(checklist, pathname) ?? pathname;
 }
 
+/** A row for one of the trace pages: a plain name, and for Findings the open count as its note. */
+function tracePageChild(
+  feature: string,
+  page: "coverage" | "findings",
+  note: string | null,
+): SpineChild {
+  return {
+    ...overviewChild(feature, page),
+    key: page,
+    name: page === "coverage" ? "Coverage" : "Findings",
+    note,
+  };
+}
+
 function childrenOf(
   id: GroupId,
   checklist: ChecklistView,
@@ -238,10 +256,18 @@ function childrenOf(
   trace: TraceView | null,
 ): SpineChild[] {
   if (id === "product") {
-    return [overviewChild(checklist.feature, page), ...sectionChildren(checklist, trace)];
+    return [
+      overviewChild(checklist.feature, page),
+      ...sectionChildren(checklist, trace),
+      tracePageChild(checklist.feature, "coverage", null),
+    ];
   }
   if (id === "plans") {
     return [overviewChild(checklist.feature, page), ...planChildren(checklist, trace)];
+  }
+  if (id === "run") {
+    const open = trace === null ? 0 : openCount(trace);
+    return [tracePageChild(checklist.feature, "findings", open > 0 ? `${open} open` : null)];
   }
   return [];
 }
