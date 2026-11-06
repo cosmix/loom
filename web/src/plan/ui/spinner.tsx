@@ -9,12 +9,7 @@ import "./spinner.css";
  */
 export function Spinner(): JSX.Element {
   return (
-    <svg
-      className="plan-spinner"
-      viewBox="0 0 16 16"
-      aria-hidden="true"
-      focusable="false"
-    >
+    <svg className="plan-spinner" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
       <circle className="plan-spinner__track" cx="8" cy="8" r="6.25" />
       <circle className="plan-spinner__arc" cx="8" cy="8" r="6.25" pathLength="100" />
     </svg>

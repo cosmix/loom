@@ -62,8 +62,12 @@ describe("ArrowSpinner", () => {
   });
 
   it("turns only while busy, defaults to the 14px glyph box in the components layer, and stops under reduced motion", () => {
-    expect(css).toMatch(/\.plan-arrow-spinner\[data-busy="true"\]\s*\{\s*animation:\s*plan-spinner-turn/);
-    expect(css).toMatch(/@layer components\s*\{\s*:where\(\.plan-arrow-spinner\)\s*\{\s*width:\s*14px/);
+    expect(css).toMatch(
+      /\.plan-arrow-spinner\[data-busy="true"\]\s*\{\s*animation:\s*plan-spinner-turn/,
+    );
+    expect(css).toMatch(
+      /@layer components\s*\{\s*:where\(\.plan-arrow-spinner\)\s*\{\s*width:\s*14px/,
+    );
     expect(reducedMotion()).toMatch(
       /\.plan-arrow-spinner\[data-busy="true"\]\s*\{\s*animation:\s*none/,
     );

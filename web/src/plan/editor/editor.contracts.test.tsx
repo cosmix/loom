@@ -26,6 +26,7 @@ const fakeCodeMirror = vi.hoisted(() => {
     return element;
   }
   function handle(element: HTMLTextAreaElement) {
+    let mode: "preview" | "source" = "preview";
     return {
       destroy: () => element.remove(),
       getText: () => element.value,
@@ -33,6 +34,13 @@ const fakeCodeMirror = vi.hoisted(() => {
         element.value = text;
       },
       searchOpen: () => false,
+      rangeLines: () => null,
+      rangeText: () => null,
+      mode: () => mode,
+      setMode: (next: "preview" | "source") => {
+        mode = next;
+      },
+      format: () => {},
     };
   }
   type Change = (text: string) => void;
@@ -205,18 +213,23 @@ describe("editor contracts", () => {
     ) as Record<string, string>;
     const staticImport =
       /^\s*(?:import|export)\b[^;]*?\bfrom\s*["']@codemirror\/|^\s*import\s*["']@codemirror\//m;
-    const loader = "/src/plan/editor/codemirror.ts";
+    // The chunk is these four modules; line-break.ts is pure and imports no CodeMirror.
+    const chunk = ["codemirror", "live-preview", "md-commands", "marks-gutter"].map(
+      (name) => `/src/plan/editor/${name}.ts`,
+    );
 
-    // The scan must see the one module that is allowed to import CodeMirror,
-    // and the lazy loader must reach it through a dynamic import only.
-    expect(Object.keys(sources)).toContain(loader);
-    expect(staticImport.test(sources[loader] ?? "")).toBe(true);
+    // The scan must see the modules that are allowed to import CodeMirror,
+    // and the lazy loader must reach them through a dynamic import only.
+    for (const file of chunk) {
+      expect(Object.keys(sources)).toContain(file);
+      expect(staticImport.test(sources[file] ?? "")).toBe(true);
+    }
     expect(sources["/src/plan/editor/load.ts"] ?? "").toMatch(
       /import\(\s*["']\.\/codemirror["']\s*\)/,
     );
 
     const offenders = Object.entries(sources)
-      .filter(([file]) => file !== loader)
+      .filter(([file]) => !chunk.includes(file))
       .filter(([, text]) => staticImport.test(text))
       .map(([file]) => file);
     expect(offenders).toEqual([]);

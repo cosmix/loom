@@ -64,7 +64,9 @@ export function DashboardButton({ variant = "full" }: { variant?: Variant }): JS
           <Untrusted text={result.dashboard.tunnel} />
         </p>
       )}
-      {variant === "full" && result.error && <LoadState state="error" size="compact" message={result.error} />}
+      {variant === "full" && result.error && (
+        <LoadState state="error" size="compact" message={result.error} />
+      )}
     </div>
   );
 }
