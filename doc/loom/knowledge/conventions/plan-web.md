@@ -110,3 +110,7 @@ Every worker brief names its design files. Visual and layout stages run on Claud
 - **Reorder `mod` lines as `cargo fmt` does.** A scaffold line a stage text places after `mod tests;` belongs where `reorder_modules` sorts it ([the mistake](../mistakes/planner-follow-ups-delivery.md#the-stage-texts-scaffold-order-disagreed-with-rustfmt)).
 - **A frozen contract that names a banned literal** builds it by concatenation, or a plan-level `after_stage` truth check matches the contract itself ([the mistake](../mistakes/planner-follow-ups-delivery.md#a-frozen-contract-named-an-id-that-a-plans-truth-check-bans)).
 - **Accent text and error text use their own tokens.** Accent-coloured text runs take `--accent-text` (4.5:1); `--accent-ink` stays for lines and glyphs (3:1). A 12px error figure takes `--tone-blocked` (4.9:1 on the Ledger page), not `--destructive` (3.8:1). Contrast floors: [themes](../architecture/planner-web-shell.md#themes).
+
+## A Change That Deviates From the Product Spec Updates the Spec in the Same Change
+
+When the implementation stops matching `doc/product/<feature>/` (an operator's correction, a design rule rewritten in `web/src/plan/ui/DESIGN.md`, a surface added or removed), the change rewrites the spec's affected sections to the new truth and commits them with the code. A stale spec is a defect, reported nowhere: the next agent builds from it. Before committing, `rg` the spec for every name the change retired (a component, a glyph, a surface) and rewrite each hit.
