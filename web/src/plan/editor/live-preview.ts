@@ -362,19 +362,20 @@ const destination = (raw: string): string =>
   (raw.startsWith("<") && raw.endsWith(">") ? raw.slice(1, -1) : raw).replace(ESCAPED, "$1");
 
 function hrefAt(view: EditorView, target: Node): string | null {
+  // Links sit in highlight spans; a click on unstyled text targets the line, so no link was hit.
+  if (target instanceof Element && target.matches(".cm-line, .cm-content")) return null;
   let pos: number;
   try {
     pos = view.posAtDOM(target);
   } catch {
     return null;
   }
-  const tree = syntaxTree(view.state);
-  for (const side of [1, -1] as const) {
-    for (let node: SyntaxNode | null = tree.resolveInner(pos, side); node; node = node.parent) {
-      if (node.name === "Image") return null;
-      const url = urlOf(node);
-      if (url) return destination(view.state.sliceDoc(url.from, url.to));
-    }
+  // Side 1 only: a span starting where a link ends must not reach back into it.
+  let node: SyntaxNode | null = syntaxTree(view.state).resolveInner(pos, 1);
+  for (; node; node = node.parent) {
+    if (node.name === "Image") return null;
+    const url = urlOf(node);
+    if (url) return destination(view.state.sliceDoc(url.from, url.to));
   }
   return null;
 }
