@@ -13,7 +13,9 @@ has `Implements: none`, and has no metaplan.
 1. Read the target document and any attached passage in context. Read the documents it
    binds or is bound by: for a product section, its vision; for a plan, its metaplan
    entry if any and every product section named in its `Implements:` line. Follow references
-   to find the other documents that state the same requirement or decision.
+   to find the other documents that state the same requirement or decision. When an
+   attachment is a finding, read the feature's `doc/plans/<feature>/findings.md` for its
+   `About:` nodes and status.
 2. Check the write limits before editing. Refuse changes to files prefixed
    `IN_PROGRESS-`, `DONE-`, or `RETIRED-`, anything under `doc/plans/<feature>/archive/`
    or `doc/plans/archive/`, a locked plan's brief bundle, and `REVIEW-*.md` files.
@@ -30,6 +32,10 @@ has `Implements: none`, and has no metaplan.
    in the affected editable spec or proposed metaplan entry instead; explain the limit.
 5. Keep headings that summaries cite unless the requested change concerns the heading
    itself. Keep cross-references consistent with any deliberate heading change.
+6. Never write or edit a `Settled:` line; the app's Mark settled action writes it. When a
+   document you edit has one, say so in the reply ("section 04 was settled; it now reads
+   revised"). A section's stub is its vision row and a plan's stub is its metaplan entry:
+   when a body's scope moves past its stub, update the stub in the same turn or ask.
 
 Write only the target and affected editable documents under `doc/`, including an
 agreed new metaplan entry under `doc/plans/<feature>/`. Never edit code or configuration.
