@@ -1,6 +1,6 @@
 # B1: the roundel on text-only busy messages (issue 9, D10)
 
-Tier: haiku (`loom-mechanical-engineer`). Runs after V1 has created `web/src/plan/ui/busy-text.tsx` (`BusyText`, props `{ children: ReactNode; className?: string }`). Read `common.md` D10.
+Tier: haiku (`loom-software-developer`). Runs after V1 has created `web/src/plan/ui/busy-text.tsx` (`BusyText`, props `{ children: ReactNode; className?: string }`). Read `common.md` D10.
 
 ## Change
 

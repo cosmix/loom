@@ -55,23 +55,28 @@ export function InvitationCard({ empty }: { empty: boolean }) {
   const headingId = useId();
 
   return (
-    <section aria-labelledby={headingId} data-doodle-host className="invitation">
+    <section
+      aria-labelledby={headingId}
+      data-doodle-host
+      data-empty={empty || undefined}
+      className="invitation"
+    >
       <div className="invitation__art">
         <LoomDoodle />
       </div>
-      <div className="invitation__body">
-        <h2 id={headingId} className="plan-section-title invitation__title">
+      <div className="invitation__text">
+        {empty && <p className="invitation__empty">No features yet.</p>}
+        <h2 id={headingId} className="invitation__title">
           Start something new
         </h2>
-        <div className="invitation__lead">
-          {empty && <p className="invitation__empty">No features yet.</p>}
-          <p>
-            Bring a rough idea. Loom talks it through with you, then shapes it into a feature with
-            its own spec, or a single plan.
-          </p>
-        </div>
+        <p className="invitation__lead">
+          Bring a rough idea. Loom talks it through with you, then shapes it into a feature with its
+          own spec, or a single plan.
+        </p>
+      </div>
+      <div className="invitation__act">
         <StartConversation />
-        <p className="plan-fine">Nothing is written until you say so.</p>
+        <p className="plan-fine invitation__note">Nothing is written until you say so.</p>
       </div>
     </section>
   );
@@ -101,7 +106,7 @@ function LoadedHome() {
   const invitation = <InvitationCard empty={empty} />;
 
   return (
-    <div className="home">
+    <div className="home" data-empty={empty || undefined}>
       {!empty && (
         <div className="home__head">
           <p className="plan-eyebrow">doc/ in this repository</p>

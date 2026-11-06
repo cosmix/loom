@@ -16,6 +16,7 @@ const standalone: StandalonePlanView = {
   title: "Fix search",
   path: "doc/plans/PLAN-fix-search.md",
   state: "written",
+  last_change: null,
 };
 
 beforeEach(() => {

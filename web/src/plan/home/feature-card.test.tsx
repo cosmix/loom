@@ -89,13 +89,14 @@ describe("FeatureCard", () => {
     };
     renderHome(<FeatureCard checklist={value} />);
 
-    expect(screen.getByText("1 of 1 step done, 0 with gaps")).toBeTruthy();
+    expect(screen.getByText("1 of 1 step done")).toBeTruthy();
   });
 
-  it("uses plural labels for zero counts", () => {
+  it("uses plural labels for zero counts and leaves out a gap clause with no gaps", () => {
     renderHome(<FeatureCard checklist={{ ...checklist(), steps: [], items: [] }} />);
 
-    expect(screen.getByText("0 of 0 steps done, 0 with gaps")).toBeTruthy();
+    expect(screen.getByText("0 of 0 steps done")).toBeTruthy();
+    expect(screen.queryByText(/with gaps/)).toBeNull();
   });
 
   it("names one folder: the product directory, else the plans directory", () => {
@@ -115,30 +116,61 @@ describe("FeatureCard", () => {
     expect(screen.queryByText(/product\/demo/)).toBeNull();
   });
 
-  it("states sections, plans, untested and running as facts with the right conditions", () => {
+  it("lists what needs attention, most urgent first, and counts documents in fine print", () => {
     const value: ChecklistView = {
       ...checklist(),
       sections: [
-        { number: "01", name: "One", written: true, open_questions: 0 },
-        { number: "02", name: "Two", written: false, open_questions: 0 },
+        { number: "01", name: "One", written: true, open_questions: 2 },
+        { number: "02", name: "Two", written: false, open_questions: 1 },
       ],
       plans: { listed: 3, total: 3, written: 3, running: 1, done: 0 },
       untested: 2,
+      candidates: [
+        { id: "f1", kind: "finding", stage: "S", stage_id: "s", text: "t", review: "r" },
+      ],
     };
     const { container } = renderHome(<FeatureCard checklist={value} />);
 
-    const facts = container.querySelector(".feature-card__facts")?.textContent;
-    expect(facts).toBe("1 running2 sections3 plans2 untested");
-    expect(container.querySelector(".feature-card__facts [data-kind='running']")).not.toBeNull();
+    const status = screen.getByRole("list", { name: "Needs attention" });
+    expect(
+      within(status)
+        .getAllByRole("listitem")
+        .map((item) => item.textContent),
+    ).toEqual(["1 plan running", "3 open questions", "1 open finding", "2 not pressure-tested"]);
+    // "running" is a state verb, so its mark is the turning two-arrow glyph, not the live dot.
+    const running = status.querySelector("[data-kind='running']")!;
+    expect(running.querySelector("svg.lucide-refresh-cw.plan-arrow-spinner")).not.toBeNull();
+    expect(running.querySelector(".activity-glyph")).toBeNull();
+    expect(container.querySelector(".feature-card__facts")?.textContent).toBe("2 sections3 plans");
+    expect(
+      screen.getByRole("link", { name: "demo", description: /3 open questions/ }),
+    ).toBeTruthy();
   });
 
-  it("omits running and untested facts at zero and says all done when every step is", () => {
+  it("draws no attention list when nothing asks for the reader", () => {
+    renderHome(<FeatureCard checklist={checklist()} />);
+
+    expect(screen.queryByRole("list", { name: "Needs attention" })).toBeNull();
+    const link = screen.getByRole("link", { name: "demo" });
+    expect(link.getAttribute("aria-describedby")?.split(" ")).toHaveLength(1);
+  });
+
+  it("says all done and recedes when every step is done and nothing is open", () => {
     const steps = checklist().steps.map((step) => ({ ...step, mark: "done" as const }));
     const { container } = renderHome(<FeatureCard checklist={{ ...checklist(), steps }} />);
 
     expect(container.querySelector(".feature-card__facts")?.textContent).toBe(
       "0 sections0 plansall done",
     );
+    expect(screen.getByRole("link", { name: "demo" }).hasAttribute("data-quiet")).toBe(true);
+  });
+
+  it("keeps a finished feature with an open question in full view", () => {
+    const steps = checklist().steps.map((step) => ({ ...step, mark: "done" as const }));
+    const sections = [{ number: "01", name: "One", written: true, open_questions: 1 }];
+    renderHome(<FeatureCard checklist={{ ...checklist(), steps, sections }} />);
+
+    expect(screen.getByRole("link", { name: "demo" }).hasAttribute("data-quiet")).toBe(false);
   });
 
   it("tints the mark by a stable hash of the slug over --doc-1..8", () => {
@@ -226,6 +258,28 @@ describe("FeatureCards", () => {
     renderHome(<FeatureCards />, { features: [checklist("alpha")] });
 
     expect(screen.getByRole("list", { name: "Features" }).children).toHaveLength(1);
+  });
+
+  it("orders running work first and finished work last, keeping the server's order otherwise", () => {
+    const done = checklist().steps.map((step) => ({ ...step, mark: "done" as const }));
+    const running = { listed: 1, total: 1, written: 1, running: 1, done: 0 };
+    renderHome(<FeatureCards />, {
+      features: [
+        { ...checklist("finished"), steps: done },
+        checklist("first-under-way"),
+        {
+          ...checklist("asking"),
+          sections: [{ number: "01", name: "A", written: true, open_questions: 1 }],
+        },
+        checklist("second-under-way"),
+        { ...checklist("running"), plans: running },
+      ],
+    });
+
+    const names = within(screen.getByRole("list", { name: "Features" }))
+      .getAllByRole("heading")
+      .map((heading) => heading.textContent);
+    expect(names).toEqual(["running", "asking", "first-under-way", "second-under-way", "finished"]);
   });
 
   it("renders nothing when there are no features", () => {

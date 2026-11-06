@@ -174,7 +174,7 @@ it("keeps the compact idle control to a glyph", async () => {
   expect(visibleText(trigger)).toBe("");
 });
 
-it("draws the compact glyph as the summaries' state: the arrow spinner while rebuilding", async () => {
+it("draws the compact glyph as the summaries' state: the two rotating arrows while rebuilding", async () => {
   replies = [{ status: 200, body: panelFixture }];
   show(true);
   const trigger = await screen.findByRole("button", {
@@ -182,7 +182,7 @@ it("draws the compact glyph as the summaries' state: the arrow spinner while reb
   });
   expect(trigger.querySelector('svg.plan-arrow-spinner[aria-hidden="true"]')).toBeTruthy();
   expect(trigger.querySelector(".plan-arrow-spinner")?.getAttribute("data-busy")).toBe("true");
-  expect(trigger.querySelector(".lucide-refresh-cw")).toBeNull();
+  expect(trigger.querySelector(".lucide-refresh-cw.plan-arrow-spinner")).toBeTruthy();
   expect(visibleText(trigger)).toBe("1/3");
 });
 
@@ -395,6 +395,9 @@ it("the row variant labels the status, expands in place, and runs no feed of its
   const row = screen.getByRole("button", { name: "Summary rebuilds: Rebuilding 1 of 3" });
   expect(visibleText(row)).toContain("Rebuilding 1 of 3");
   expect(visibleText(row)).toContain("1/3");
+  // The tile leads the title "Summaries" (an item), so it is the live dot, not the arrows.
+  expect(row.querySelector(".activity-tile .activity-glyph__led")).not.toBeNull();
+  expect(row.querySelector(".activity-tile .plan-arrow-spinner")).toBeNull();
   expect(row.getAttribute("aria-expanded")).toBe("false");
   expect(screen.queryByRole("heading", { name: "Rebuilding 1 of 3" })).toBeNull();
 

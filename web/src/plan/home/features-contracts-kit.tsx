@@ -62,6 +62,7 @@ export function standalonePlans(count: number): StandalonePlanView[] {
     path: `doc/plans/PLAN-plan-${index + 1}.md`,
     title: `Plan ${index + 1}`,
     state: "written",
+    last_change: null,
   }));
 }
 

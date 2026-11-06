@@ -186,14 +186,14 @@ describe("section queue", () => {
     }
   });
 
-  it("shows Next and no button on the row of the primary offer", () => {
+  it("draws the button on the row of the primary offer when no pace card holds it", () => {
     const unregister = registerOfferAction("write_section", () => {});
     try {
       renderQueue(base, "section");
 
       const [row] = rowsOf("Section queue").map((item) => within(item));
-      expect(row!.getByText("Next")).toBeTruthy();
-      expect(row!.queryByRole("button")).toBeNull();
+      expect(row!.queryByText("Next")).toBeNull();
+      expect(row!.getAllByRole("button")).toHaveLength(1);
     } finally {
       unregister();
     }

@@ -35,9 +35,9 @@ A summary file is front matter, one `#` title, then headings (`#`, `##`) and par
 Body rules, each a rejection with a 1-based line: no indented lines, list items, table rows, code fences, block quotes,
 headings deeper than level 2, HTML or conflict markers; a heading holds no link; a sentence is one line whose citation
 links are a trailing run (`[label](target)` separated only by whitespace) with no link before them. Sentence limits
-(`MAX_DOCUMENT_SENTENCES` 15, `MAX_VISION_SENTENCES` 8, `MAX_OVERVIEW_SENTENCES` 30, `MAX_PLAN_SENTENCES` 23;
-`sentence_limit(id)` picks one): a section or metaplan summary takes 15, a vision 8, an overview 30 and a plan summary 23, split as 8 opening plus 15 detail
-(`MAX_OPENING_SENTENCES`).
+(`MAX_DOCUMENT_SENTENCES` 15, `MAX_VISION_SENTENCES` 8, `MAX_OVERVIEW_SENTENCES` 30, `MAX_PLAN_SENTENCES` 72;
+`sentence_limit(id)` picks one): a section or metaplan summary takes 15, a vision 8, an overview 30 and a plan summary up to `MAX_PLAN_SENTENCES` (72), the parser's ceiling. The seal holds each level to
+`PlanCaps::for_source_lines` of the plan's and its briefs' total lines (`store::plan_caps`): detail lines/24 clamped to 15..60, opening a fifth of that clamped to 8..12.
 
 **Two levels in a plan summary.** A plan summary (`plans/<slug>`) holds an opening level above a detail level in one file. A detail
 sentence cites the plan; an opening sentence cites its own summary's detail sentences as `[d](#s-xxxxxxxx)`
@@ -118,7 +118,7 @@ draft, then in one hold of the store lock check every link and write the canonic
 5. no detail sentence is cited twice by one opening sentence, and an opening sentence opens whole detail paragraphs in order (a run of consecutive detail paragraphs, in document order);
 6. an opening sentence does not restate a detail sentence it opens (the `restate` measure);
 7. every detail sentence is opened by some opening sentence;
-8. at most 8 opening and 15 detail sentences (`MAX_OPENING_SENTENCES`, `MAX_DOCUMENT_SENTENCES`).
+8. at most `PlanCaps` opening and detail sentences (8..12 and 15..60, by source size).
 
 An unknown self-link target is draft text, so the refusal wraps it in `terminal_safe` where the message is built (`commands/plan/summary.rs` applies it again to the whole line; idempotent). Known limit: the seal lets two opening sentences open the same detail paragraph; non-adjacent ones repeat the detail text when both open ([follow-up](../concerns/planner-follow-ups-followups.md#summary-levels-and-fragments)).
 

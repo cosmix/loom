@@ -80,8 +80,9 @@
 }
 
 /* Theme cards come from the shared ThemePicker, which takes no `look`: its `optionClassName` marks
-   them, and only their spacing and the chosen edge change here. The chosen card takes the
-   foreground edge; --primary is never a border. */
+   them, and only their spacing changes here. The chosen card's one outline is the accent ring
+   ThemePicker draws (`ring-2 ring-primary`, a box-shadow). This rule's border is unlayered, so it
+   wins over ThemePicker's layered `border-primary`: the card keeps its hairline edge. */
 .ps-theme [role="group"] {
   gap: var(--space-3);
 }
@@ -90,10 +91,6 @@
   padding: var(--space-2);
   border: 1px solid var(--hairline);
   border-radius: var(--corner-control);
-}
-
-.ps-theme-option[aria-pressed="true"] {
-  border-color: var(--foreground);
 }
 
 /* The reading face cards, the size tiles and the specimen are in reading.css. */

@@ -1,5 +1,5 @@
 import { FoldVertical, UnfoldVertical } from "lucide-react";
-import type { JSX, ReactNode } from "react";
+import type { JSX } from "react";
 
 import {
   VISION_DOC,
@@ -31,11 +31,12 @@ import {
   HEADING_BUTTON,
   type HeadingChip,
   type HeadingCrumb,
+  ToolbarGroup,
 } from "@/plan/ui/doc-heading";
 
 import { hasOpenable, useAllOpen, useFoldAll, useOpenAll } from "./open-all";
 import { useKeptDoc } from "./passage-doc";
-import { PageHeaderExtras, SummaryAction } from "./page-header-extras";
+import { PageHeaderExtras, SummaryAction, SummaryDetail } from "./page-header-extras";
 
 const RUN_NOTICE =
   "This plan is running. `loom run` works from the committed copy, so the app keeps it read-only.";
@@ -95,25 +96,39 @@ function implementsChips(page: ConceptPage): HeadingChip[] {
 }
 
 /**
- * The summary status chip, with its Rebuild action on the same line. A page whose state is null
- * gets no chip and so no Rebuild: the server sets state for every expected id
- * (`plan_server/concept/evaluate.rs`), so null occurs only while a cached evaluation predates a
- * new document.
+ * The summary status row, with its Rebuild action at its end and the pending approval's
+ * sentence as its detail. A page whose state is null gets no row and so no Rebuild: the server
+ * sets state for every expected id (`plan_server/concept/evaluate.rs`), so null occurs only
+ * while a cached evaluation predates a new document.
  */
-function statusChips(page: ConceptPage, rebuilding: boolean, action: ReactNode): HeadingChip[] {
-  return summaryChips(page, rebuilding).map((chip) => ({ ...chip, after: action }));
+function statusChips(page: ConceptPage, rebuilding: boolean): HeadingChip[] {
+  return summaryChips(page, rebuilding).map((chip) => ({
+    ...chip,
+    action: <SummaryAction page={page} />,
+    detail: <SummaryDetail page={page} />,
+  }));
 }
 
+/** A relationship reads on the facts line, not in the status card. */
+function fact(chip: HeadingChip): HeadingChip {
+  return { ...chip, kind: "fact" };
+}
+
+/**
+ * The status card's rows, what needs attention first (the summary's state with its Rebuild, the
+ * open questions, a plan's state and pressure record), then the facts line: what the document
+ * implements and the plans that build it.
+ */
 function pageChips(page: ConceptPage, rebuilding: boolean, questions: HeadingChip[]) {
   const plan = page.plan_state;
   const showPressure = plan !== null || page.last_pressure !== null;
   return [
+    ...statusChips(page, rebuilding),
+    ...questions,
     ...(plan === null ? [] : [planStateChip(plan)]),
     ...(showPressure ? [pressureChip(page.last_pressure, false)] : []),
-    ...implementsChips(page),
-    ...statusChips(page, rebuilding, <SummaryAction page={page} />),
-    ...questions,
-    ...builtByChips(page),
+    ...implementsChips(page).map(fact),
+    ...builtByChips(page).map(fact),
   ];
 }
 
@@ -173,7 +188,7 @@ function SettleOfSource({ feature, path }: { feature: string; path: string }): J
   return <SettleControl feature={feature} path={path} hash={doc?.hash ?? null} />;
 }
 
-/** The settle control sits in the heading's action row, beside the Summary/Source switch. */
+/** The settle control is the toolbar's second group, after the Summary / Source switch. */
 function TraceSettle({ page }: { page: ConceptPage }): JSX.Element | null {
   const document = tracedDocument(page);
   if (!document) return null;
@@ -206,10 +221,17 @@ export function PageHeading({ page }: { page: ConceptPage }): JSX.Element {
         sourceTo: page.path ? sourceAddress(page.path) : null,
       }}
       actions={
+        // Two groups of the toolbar bar after the view switch: the settle state with its verb,
+        // then the actions over the text. Either group is hidden by CSS when nothing renders
+        // inside it.
         <>
-          <TraceSettle page={page} />
-          {page.path && <SourceActions key={page.path} path={page.path} />}
-          {hasOpenable(page) && <OpenAllButton page={page} />}
+          <ToolbarGroup>
+            <TraceSettle page={page} />
+          </ToolbarGroup>
+          <ToolbarGroup>
+            {page.path && <SourceActions key={page.path} path={page.path} />}
+            {hasOpenable(page) && <OpenAllButton page={page} />}
+          </ToolbarGroup>
         </>
       }
       chips={pageChips(page, rebuilding, questions)}

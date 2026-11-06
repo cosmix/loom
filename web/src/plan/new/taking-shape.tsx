@@ -14,7 +14,7 @@ import { useProposalActions } from "@/plan/new/proposal";
 import { RenameForm } from "@/plan/new/rename-field";
 import { ShapeSize } from "@/plan/new/shape-size";
 import { WriteKickoff } from "@/plan/new/write-kickoff";
-import { ActivityGlyph } from "@/plan/ui/activity-glyphs";
+import { StateMark } from "@/plan/ui/activity-glyphs";
 import { DisabledReason } from "@/plan/ui/disabled-reason";
 
 import "./taking-shape.css";
@@ -23,7 +23,7 @@ type Tone = "ok" | "warn" | "muted";
 
 const SECTION_STATES = {
   settled: { label: "Settled", icon: <CircleCheck aria-hidden="true" /> },
-  wording: { label: "Being worded", icon: <ActivityGlyph kind="drafting" /> },
+  wording: { label: "Being worded", icon: <StateMark kind="drafting" /> },
   open: { label: "Open", icon: <Circle aria-hidden="true" /> },
 } as const;
 

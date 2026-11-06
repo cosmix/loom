@@ -134,7 +134,7 @@ source paths such as `loom/src/orchestrator/signals/**`, so in this repository t
 
 `startup.rs` reports, per agent type, the transcripts counted, the median resident context of the first
 request, and the largest attachment kinds inside it. Only fresh starts (`true_fresh_start == Some(true)`) are
-counted. The mechanical worker (`loom-mechanical-engineer`) is judged on this median.
+counted. The haiku worker (`loom-software-developer`) is judged on this median.
 
 ### Reading It
 

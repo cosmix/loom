@@ -8,7 +8,7 @@ import { useTrace } from "./state";
 import "./trace.css";
 
 /**
- * What the feature's trace says needs attention, as at most five links under the next step:
+ * What the feature's trace says needs attention, as at most five links at the head of the spine:
  * documents that moved since they were settled, plans to revisit, drafts to read, spec headings
  * no plan covers and the open findings. They are offers to follow; nothing starts by itself.
  */

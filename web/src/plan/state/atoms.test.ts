@@ -34,6 +34,7 @@ const project: ProjectChecklistView = {
       path: "doc/plans/PLAN-standalone.md",
       state: "written",
       title: "Standalone",
+      last_change: null,
     },
   ],
   moves: [{ id: "move", kind: "move_into_feature", label: "Move plan", target: null }],

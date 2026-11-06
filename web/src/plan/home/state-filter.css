@@ -1,0 +1,82 @@
+/* The state filter above the standalone plans table: a row of toggles the control height tall,
+   each a hairline-edged pill holding the state's glyph, its word and its count. A pressed toggle is
+   filled with --muted, edged in --foreground and set at 600, so the pressed set reads at rest in
+   every theme; the rows wrap on a phone and never scroll the page sideways (ui/DESIGN.md). */
+.state-filter {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.state-filter__toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  height: var(--control-height);
+  padding: 0 var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted-foreground);
+  font: inherit;
+  font-size: var(--type-ui);
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background-color 120ms,
+    border-color 120ms,
+    color 120ms;
+}
+
+.state-filter__toggle > svg {
+  width: 14px;
+  height: 14px;
+  flex: none;
+}
+
+.state-filter__toggle:hover {
+  background: var(--muted);
+  color: var(--foreground);
+}
+
+.state-filter__toggle:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.state-filter__toggle[aria-pressed="true"] {
+  border-color: var(--foreground);
+  background: var(--muted);
+  color: var(--foreground);
+  font-weight: 600;
+}
+
+.state-filter__count {
+  font-variant-numeric: tabular-nums;
+  color: var(--muted-foreground);
+}
+
+.state-filter__toggle[aria-pressed="true"] .state-filter__count {
+  color: var(--foreground);
+}
+
+/* No plan in the picked states: one muted line and the way back, in place of the table. */
+.state-filter__empty {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  padding-block: var(--space-4);
+}
+
+.state-filter__empty > .plan-empty {
+  margin: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .state-filter__toggle {
+    transition: none;
+  }
+}

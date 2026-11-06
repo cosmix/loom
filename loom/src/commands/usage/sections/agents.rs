@@ -267,7 +267,7 @@ const KNOWN_AGENT_TYPES: [&str; 7] = [
     "loom-code-reviewer",
     "general-purpose",
     "loom-advisor",
-    "loom-mechanical-engineer",
+    "loom-software-developer",
 ];
 
 /// Infer a type from delimited prompt mentions when no joined type exists.

@@ -3,11 +3,11 @@ import { useRef, useState } from "react";
 
 import { Untrusted } from "@/plan/chat/visible-controls";
 import { authorBlockReasonAtom } from "@/plan/state/atoms";
-import { DisabledReason, INLINE_BASELINE } from "@/plan/ui/disabled-reason";
+import { type ButtonLook, DisabledReason, INLINE_BASELINE } from "@/plan/ui/disabled-reason";
 
 import { useSummaryActions } from "./state";
 
-export function RebuildButton({ ids }: { ids: string[] }) {
+export function RebuildButton({ ids, look }: { ids: string[]; look?: ButtonLook }) {
   const reason = useAtomValue(authorBlockReasonAtom);
   const { rebuild } = useSummaryActions();
   const pending = useRef(false);
@@ -32,6 +32,7 @@ export function RebuildButton({ ids }: { ids: string[] }) {
       <DisabledReason
         reason={reason}
         size="sm"
+        look={look}
         reasonPlacement="inline"
         onClick={() => void handleRebuild()}
       >

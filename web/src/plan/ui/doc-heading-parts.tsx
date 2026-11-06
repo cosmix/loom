@@ -5,7 +5,6 @@ import { Link } from "react-router";
 import { Untrusted, visibleControls } from "@/plan/chat/visible-controls";
 
 import type { HeadingChip, HeadingTone } from "./doc-heading";
-import { INLINE_BASELINE } from "./disabled-reason";
 
 export const FOCUS =
   "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring";
@@ -72,50 +71,41 @@ function ChipLinks({ chip }: { chip: HeadingChip }): JSX.Element {
   );
 }
 
-function ChipContent({ chip }: { chip: HeadingChip }): JSX.Element {
+/** The chip's words: its label, then its inline links. */
+function ChipWords({ chip }: { chip: HeadingChip }): JSX.Element {
   return (
-    <>
-      {chip.icon && (
-        <span
-          aria-hidden="true"
-          className={cn(
-            "inline-flex h-5 shrink-0 items-center self-start [&_svg]:size-3.5",
-            CHIP_ICON[chip.tone ?? "neutral"],
-          )}
-        >
-          {chip.icon}
-        </span>
+    <span className="doc-heading-chip__label">
+      <Described label={chip.label} description={chip.description} />
+      {chip.links && (
+        <>
+          {" "}
+          <ChipLinks chip={chip} />
+        </>
       )}
-      {/* The words, not the glyph box, give the chip its baseline, so an action set after the
-          chip (`after`) lines up with the words. */}
-      <span className="min-w-0 self-baseline [overflow-wrap:anywhere]">
-        <Described label={chip.label} description={chip.description} />
-        {chip.links && (
-          <>
-            {" "}
-            <ChipLinks chip={chip} />
-          </>
-        )}
-      </span>
-    </>
+    </span>
   );
 }
 
+/**
+ * A status: a link, a pressable button or a plain span (`.doc-heading-chip`) carrying the
+ * tooltip and the tone, holding its glyph column and its words. The glyph column is drawn for a
+ * chip without a glyph too, so every row's words share one left edge; only the glyph takes a
+ * tone, and no fill or pill is drawn (DESIGN.md, Status).
+ */
 function Chip({ chip }: { chip: HeadingChip }): JSX.Element {
   const tone = chip.tone ?? "neutral";
-  // Status is a toned glyph and a word in the text's colour: no fill, no pill (DESIGN.md, Status).
-  // The glyph sits in a box as tall as one line and stays on the first line when the words wrap.
-  const className =
-    "inline-flex min-h-6 max-w-full items-start gap-1.5 text-[13px] leading-5 text-foreground";
   const shared = { title: hoverTitle(chip.title), "data-chip": "", "data-tone": tone };
-  const content = <ChipContent chip={chip} />;
+  const content = (
+    <>
+      <span aria-hidden="true" className={cn("doc-heading-chip__glyph", CHIP_ICON[tone])}>
+        {chip.icon}
+      </span>
+      <ChipWords chip={chip} />
+    </>
+  );
   if (chip.to !== undefined) {
     return (
-      <Link
-        to={chip.to}
-        {...shared}
-        className={cn(className, FOCUS, "rounded underline-offset-2 hover:underline")}
-      >
+      <Link to={chip.to} {...shared} className={cn("doc-heading-chip", FOCUS, "rounded")}>
         {content}
       </Link>
     );
@@ -127,33 +117,66 @@ function Chip({ chip }: { chip: HeadingChip }): JSX.Element {
         onClick={chip.onClick}
         aria-pressed={chip.pressed}
         {...shared}
-        className={cn(className, FOCUS, "rounded underline-offset-2 hover:underline")}
+        className={cn("doc-heading-chip", FOCUS, "rounded")}
       >
         {content}
       </button>
     );
   }
   return (
-    <span {...shared} className={className}>
+    <span {...shared} className="doc-heading-chip">
       {content}
     </span>
   );
 }
 
-/** The chip row; a chip with an action keeps it on its own baseline, wrapping as one pair. */
-export function ChipRow({ chips }: { chips: readonly HeadingChip[] }): JSX.Element {
+/**
+ * The status card (`.doc-heading-status`, `doc-heading.css`): one row per chip, in the order
+ * given, each row its status, then its detail line under the words and its action at the end.
+ */
+export function StatusCard({ chips }: { chips: readonly HeadingChip[] }): JSX.Element {
   return (
-    <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-      {chips.map((chip) =>
-        chip.after ? (
-          <span key={chip.key} className={INLINE_BASELINE}>
-            <Chip chip={chip} />
-            {chip.after}
-          </span>
-        ) : (
-          <Chip key={chip.key} chip={chip} />
-        ),
-      )}
-    </div>
+    <ul className="doc-heading-status plan-surface" aria-label="Status">
+      {chips.map((chip) => (
+        <li key={chip.key} className="doc-heading-row" data-action={chip.action ? "" : undefined}>
+          <Chip chip={chip} />
+          {chip.detail && <div className="doc-heading-row__detail plan-fine">{chip.detail}</div>}
+          {chip.action && <div className="doc-heading-row__action">{chip.action}</div>}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/**
+ * The facts line (`.doc-heading-facts`): what the document relates to, as label and value pairs
+ * ("Built by 05 · 09", "Implements §01, §03"). A fact keeps the chip's tooltip and tone attributes
+ * on its pair, so its text and links read as the chip's do.
+ */
+export function FactsLine({ chips }: { chips: readonly HeadingChip[] }): JSX.Element {
+  return (
+    <dl className="doc-heading-facts">
+      {chips.map((chip) => (
+        <div
+          key={chip.key}
+          className="doc-heading-fact"
+          title={hoverTitle(chip.title)}
+          data-chip=""
+          data-tone={chip.tone ?? "neutral"}
+        >
+          <dt>
+            <Described label={chip.label} description={chip.description} />
+          </dt>
+          {chip.links && chip.links.length > 0 && (
+            <>
+              {" "}
+              <dd>
+                <ChipLinks chip={chip} />
+              </dd>
+            </>
+          )}
+        </div>
+      ))}
+    </dl>
   );
 }

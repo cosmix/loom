@@ -7,7 +7,7 @@ import { Untrusted } from "@/plan/chat/visible-controls";
 import { CopyButton, selectContents } from "@/plan/markdown/copy-button";
 
 import "./doc-heading.css";
-import { ChipRow, FOCUS } from "./doc-heading-parts";
+import { FactsLine, FOCUS, StatusCard } from "./doc-heading-parts";
 import { DocMark } from "./doc-mark";
 import type { DocKind } from "./glyphs";
 
@@ -44,8 +44,15 @@ export interface HeadingChip {
   to?: string;
   onClick?: () => void;
   pressed?: boolean;
-  /** An action that belongs to this chip, set after it on its baseline: the summary's Rebuild. */
-  after?: ReactNode;
+  /** The control that acts on this status, set at its row's end: the summary's Rebuild. */
+  action?: ReactNode;
+  /** One fine line under the words: the approval sentence a rebuild waits on. */
+  detail?: ReactNode;
+  /**
+   * `status` (the default) is a row of the status card: what needs attention. `fact` is a pair
+   * on the facts line under it: what the document relates to (Built by, Implements).
+   */
+  kind?: "status" | "fact";
 }
 
 export interface HeadingViews {
@@ -69,7 +76,7 @@ export interface DocHeadingProps {
 }
 
 /**
- * Props of a control in the heading's action row (Summary, Source, Edit, Discuss, Open all): the
+ * Props of a control in the heading's toolbar (Summary, Source, Edit, Discuss, Open all): the
  * quiet look in the row size, drawn by `.plan-button` alone (DESIGN.md, Buttons). Spread onto a
  * plain `<button>`, a `Link` or a `span`, never onto the shared `Button`, whose own height,
  * padding and corner utilities would put a second scale beside `.plan-button`'s.
@@ -79,6 +86,15 @@ export const HEADING_BUTTON = {
   "data-look": "quiet",
   className: "plan-button inline-flex shrink-0 items-center justify-center",
 } as const;
+
+/**
+ * One group of the toolbar bar (`.doc-heading-group`, `doc-heading.css`): a segment of the bar,
+ * divided from the next by a rule. A group whose children all render nothing is hidden by CSS
+ * (`:empty`), and its rule goes with it.
+ */
+export function ToolbarGroup({ children }: { children: ReactNode }): JSX.Element {
+  return <span className="doc-heading-group">{children}</span>;
+}
 
 function Breadcrumbs({ crumbs }: { crumbs: readonly HeadingCrumb[] }): JSX.Element {
   return (
@@ -122,10 +138,9 @@ function Breadcrumbs({ crumbs }: { crumbs: readonly HeadingCrumb[] }): JSX.Eleme
 }
 
 /**
- * Summary and Source: one two-state segmented control, a hairline track the height of the row's
- * other controls with the current view filled (`.doc-heading-views` in `doc-heading.css`). Both
- * states stay on screen, so the way back from the source is always the segment beside the one
- * the reader is on.
+ * Summary and Source: one two-state segmented control, the toolbar bar's first group, with the
+ * current view filled (`.doc-heading-views` in `doc-heading.css`). Both states stay on screen,
+ * so the way back from the source is always the segment beside the one the reader is on.
  */
 function ViewSwitch({ views }: { views: HeadingViews }): JSX.Element {
   return (
@@ -218,34 +233,47 @@ function PathRow({
   );
 }
 
-function TitleRow({ kind, title, rebuilding, views, actions }: DocHeadingProps): JSX.Element {
+/** The mark and the title, sharing one 30px line band (`doc-heading.css`). */
+function TitleRow({ kind, title, rebuilding }: DocHeadingProps): JSX.Element {
   return (
-    // The actions drop under the title exactly when its one-line width plus theirs do not fit,
-    // whatever the column width; a grid track could not wrap, and the viewport breakpoint does
-    // not follow the tree and chat columns. Mark, title and actions share one 30px line band
-    // (`doc-heading.css`), so the controls centre on the title's first line even when it wraps.
-    <div className="doc-heading-title-row flex flex-wrap items-start gap-x-4 gap-y-2">
-      <div className="flex min-w-0 flex-[1_1_max-content] items-start gap-3">
-        {kind !== null && <DocMark kind={kind} size="lg" rebuilding={rebuilding} />}
-        <h1 className="plan-page-title min-w-0 font-[650] text-balance [overflow-wrap:anywhere]">
-          {typeof title === "string" ? <Untrusted text={title} /> : title}
-        </h1>
-      </div>
-      <div className="doc-heading-actions ml-auto flex flex-wrap items-center justify-end gap-2 max-[900px]:basis-full max-[900px]:justify-start">
-        {views && <ViewSwitch views={views} />}
-        {actions}
-      </div>
+    <div className="doc-heading-title-row">
+      {kind !== null && <DocMark kind={kind} size="lg" rebuilding={rebuilding} />}
+      <h1 className="plan-page-title min-w-0 font-[650] text-balance [overflow-wrap:anywhere]">
+        {typeof title === "string" ? <Untrusted text={title} /> : title}
+      </h1>
+    </div>
+  );
+}
+
+/**
+ * The toolbar bar under the title: the view switch in the first group, then the caller's
+ * actions, each in its own `ToolbarGroup`. Absent with nothing to hold.
+ */
+function Toolbar({ views, actions }: DocHeadingProps): JSX.Element | null {
+  if (!views && actions == null) return null;
+  return (
+    <div className="doc-heading-toolbar">
+      {views && (
+        <ToolbarGroup>
+          <ViewSwitch views={views} />
+        </ToolbarGroup>
+      )}
+      {actions}
     </div>
   );
 }
 
 export function DocHeading(props: DocHeadingProps): JSX.Element {
-  const { breadcrumb, chips, path, changes, children } = props;
+  const { breadcrumb, chips = [], path, changes, children } = props;
+  const status = chips.filter((chip) => chip.kind !== "fact");
+  const facts = chips.filter((chip) => chip.kind === "fact");
   return (
-    <header className="doc-heading grid gap-2.5 border-b border-hairline bg-background pt-[18px] pb-3.5 font-sans">
+    <header className="doc-heading">
       <Breadcrumbs crumbs={breadcrumb} />
       <TitleRow {...props} />
-      {chips && chips.length > 0 && <ChipRow chips={chips} />}
+      <Toolbar {...props} />
+      {status.length > 0 && <StatusCard chips={status} />}
+      {facts.length > 0 && <FactsLine chips={facts} />}
       {path && <PathRow key={path} path={path} changes={changes} />}
       {children}
     </header>

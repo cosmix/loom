@@ -62,11 +62,11 @@ it("marks a plan with its DocMark and says only a running plan's state aloud", (
   expect(mark?.classList.contains("size-4")).toBe(true);
   expect(mark?.getAttribute("aria-hidden")).toBe("true");
   expect(mark?.getAttribute("style")).toContain("var(--doc-5)");
-  // A running plan draws the live status dot beside its visible word.
+  // A running plan draws the two rotating arrows before its visible state word.
   const running = screen.getByText("running");
   expect(running.classList.contains("sr-only")).toBe(false);
   expect(
-    running.closest(".plan-tree__signal")?.querySelector(".activity-glyph__led"),
+    running.closest(".plan-tree__signal")?.querySelector(".plan-arrow-spinner"),
   ).not.toBeNull();
 });
 

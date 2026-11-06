@@ -71,7 +71,7 @@ stages. Every prompt carries a file-ownership table:
 
 **Declared skills.** A stage may list `skills: [<skill-name>, ...]` (full names, such as
 `loom-rust`; `loom plan verify` rejects an unknown name). Pass declared skills and their signal-named invocation to applicable Claude briefs.
-For Codex and `loom-mechanical-engineer`, quote applicable rules in briefs; neither opens skills.
+For Codex and `loom-software-developer`, quote applicable rules in briefs; neither opens skills.
 
 **Sibling-read ledger.** Every agent of one session writes its reads ledger into one session directory:
 `$LOOM_WORK_DIR/hooks/reads/<LOOM_SESSION_ID>/<agent-id>.tsv` inside a stage, a per-session
@@ -99,7 +99,7 @@ Coordinators delegate too (hard stop 6), going opus only when territory integrat
 judgment. Mix lanes under ONE ownership table. On a stage listing codex in `implementers`, a
 coordinator spawns `loom-codex-forwarder` BY AGENT TYPE (never the plugin's `codex:codex-rescue`
 directly), foreground only: gpt-6.1-terra for common implementation and integration tests.
-Boilerplate, scaffolding, and simple unit tests go to haiku (loom-mechanical-engineer); gpt-6-luna does that work only when the user or the plan asks for it.
+Boilerplate, scaffolding, and simple unit tests go to haiku (loom-software-developer); gpt-6-luna does that work only when the user or the plan asks for it.
 The lane is chosen per subagent,
 never per stage; the coordinator still does not verify.
 
@@ -117,7 +117,7 @@ CLAUDE.md is already in your context; the rules below are the ones that bind you
 COORDINATOR ROLE - YOU ARE A SUBAGENT COORDINATING WORKERS (ONE LEVEL ONLY):
 - You own ONE territory: [TERRITORY]. Never touch files outside it.
 - Partition your territory into DISJOINT worker file sets - two workers writing one file = LOST WORK
-- Spawn workers via the Task tool BY AGENT TYPE (loom-software-engineer = sonnet; loom-mechanical-engineer for mechanical work) and never pass `name`; include the WORKER PREAMBLE as the first lines of EVERY worker prompt; spawn independent workers in ONE message
+- Spawn workers via the Task tool BY AGENT TYPE (loom-software-engineer = sonnet; loom-software-developer for routine work) and never pass `name`; include the WORKER PREAMBLE as the first lines of EVERY worker prompt; spawn independent workers in ONE message
 - Workers NEVER spawn subagents - they are LEAVES (loom caps the tree at 2 levels)
 - Delegate implementation; write at most small glue/fixes within your territory
 - AT MOST ONE narrowly-scoped check over the files your workers wrote (e.g. `cargo test <your_module>::`), run ONCE; skip it if you are unsure. The stage's gate runs after you return; the MAIN AGENT owns fixes.
@@ -158,8 +158,8 @@ WORKER RESTRICTIONS - YOU ARE A LEAF AGENT:
    the subagent typically finishes under about 400,000 tokens, and never split
    below what that needs: every extra spawn pays the boot cost again. Pick PER
    SUBAGENT by what that piece needs, never once for the whole stage, and
-   default downward: HAIKU (loom-mechanical-engineer) for
-   mechanical edits, boilerplate, scaffolding, and simple unit tests; codex
+   default downward: HAIKU (loom-software-developer) for
+   routine edits, boilerplate, scaffolding, and simple unit tests; codex
    gpt-6-luna for that same work only when the user or the plan asks for it;
    codex gpt-6.1-terra or SONNET (loom-software-engineer) for common
    implementation and integration tests — most work belongs at this tier, and

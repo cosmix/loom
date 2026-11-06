@@ -2,55 +2,129 @@
  * The document heading's own rules, over the shared scales of design.css. Unlayered, so they
  * outrank the utilities a shared component carries.
  *
- * One line band runs through the title row: the 30px document mark, the title's first line and
- * the action row are all 30px tall and start at the row's top, so every control centres on the
- * title's first line whether the title wraps or not. `.plan-page-title` keeps its size and
- * weight; only its line height takes the band.
+ * The heading is one column of blocks on one left edge, read top to bottom: the breadcrumb, the
+ * title, the toolbar bar, the status card, the facts line, then the stub and the page's own rows,
+ * over the hairline that ends it. The heading is a size container, so its blocks read the
+ * heading's width, not the viewport's: the spine and the chat panel narrow the column without a
+ * breakpoint.
  */
+.doc-heading {
+  container-type: inline-size;
+  display: grid;
+  row-gap: var(--space-3);
+  min-width: 0;
+  padding-block: var(--space-4) var(--space-5);
+  border-bottom: 1px solid var(--hairline);
+  background: var(--background);
+  font-family: var(--font-sans);
+}
+
 /*
- * The heading's side inset is the column's own, so breadcrumb, title, actions and status start
- * and end on the edges the text below them uses. In a pane (the source view) that is the body's
- * `--space-5` padding; a host that already sets its content in a column (the concept pages' 68ch
- * column) sets `--doc-heading-inset: 0`, and the action row ends on the column's right edge.
+ * The heading's side inset is the column's own, so every block starts and ends on the edges the
+ * text below them uses. In a pane (the source view) that is the body's `--space-5` padding; a
+ * host that already sets its content in a column (the concept pages' 68ch column) sets
+ * `--doc-heading-inset: 0`.
  */
 .doc-heading {
   padding-inline: var(--doc-heading-inset, var(--space-5));
 }
 
+/* The breadcrumb sits closer to the title than the blocks sit to each other. */
+.doc-heading > nav {
+  margin-bottom: calc(var(--space-2) - var(--space-3));
+}
+
+/* ── Title row ────────────────────────────────────────────────────────────── */
+
+/* One line band runs through the title row: the 30px document mark and the title's first line
+   are both 30px tall and start at the row's top, so the mark centres on the first line whether
+   the title wraps or not. `.plan-page-title` keeps its size and weight; only its line height
+   takes the band. The toolbar follows at `--space-4`, a step more than the blocks under it. */
 .doc-heading-title-row {
   --heading-line: 30px;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  min-width: 0;
+  margin-bottom: var(--space-1);
 }
 
 .doc-heading-title-row .plan-page-title {
   line-height: var(--heading-line);
 }
 
-.doc-heading-actions {
-  min-height: var(--heading-line);
+/* ── Toolbar ──────────────────────────────────────────────────────────────── */
+
+/* One bordered bar holds every control over the document, so they read as one instrument: a
+   32px track (`--border` edge, control corners) whose groups (`.doc-heading-group`) are divided
+   by 1px rules of the same edge. Inside, every control is a 24px row control on one centre line:
+   the view switch's segments, the settle pill, and the quiet buttons. The first group is the
+   view switch; the second the settle state and its verb; the third Edit, Discuss and Open all. A
+   group that renders nothing collapses (`:empty`), and its rule goes with it. Under 40rem of
+   heading width the bar stacks its groups as rows divided by hairlines, so nothing wraps mid
+   group and nothing scrolls sideways. */
+.doc-heading-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--corner-control);
+}
+
+.doc-heading-toolbar:empty {
+  display: none;
+}
+
+.doc-heading-group {
+  display: flex;
+  flex: 0 1 auto;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+  min-height: calc(var(--control-height-sm) + 2 * 3px);
+  padding: 3px var(--space-2);
+}
+
+.doc-heading-group:empty {
+  display: none;
+}
+
+.doc-heading-group + .doc-heading-group {
+  border-inline-start: 1px solid var(--border);
+}
+
+@container (max-width: 40rem) {
+  .doc-heading-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .doc-heading-group + .doc-heading-group {
+    border-inline-start: 0;
+    border-top: 1px solid var(--hairline);
+  }
 }
 
 /*
- * The Summary / Source switch: a segmented control. The track carries a secondary button's
- * hairline edge and is exactly a row control's height (24px), so it sits on the action row's
- * centre line beside Edit and Discuss; the two segments are inset 1px inside it. The current view
- * is filled with `--muted` and set in `--foreground` at 600; the other is a quiet segment that
- * only recolours on hover, so hovering never makes the two states look alike. `--primary` stays
- * off it (DESIGN.md, Colour). A deliberate exception: DESIGN.md, Surfaces.
+ * The Summary / Source switch: a segmented control inside the bar. Its two segments sit flush
+ * in the first group with no track of their own; the current view is filled with `--muted` and
+ * set in `--foreground` at 600, and the other is a quiet segment that only recolours on hover,
+ * so hovering never makes the two states look alike. `--primary` stays off it (DESIGN.md,
+ * Colour). A deliberate exception: DESIGN.md, Surfaces.
  */
 .doc-heading-views {
   display: inline-flex;
   flex: none;
   align-items: stretch;
+  gap: 2px;
   height: var(--control-height-sm);
-  padding: 1px;
-  border: 1px solid var(--border);
-  border-radius: var(--corner-control);
 }
 
 .doc-heading-views > .plan-button {
   height: auto;
   border: 0;
-  border-radius: calc(var(--corner-control) - 2px);
 }
 
 .doc-heading-views > .plan-button:hover {
@@ -65,4 +139,197 @@
 
 .doc-heading-views > .plan-button[aria-current="page"]:hover {
   background: var(--muted);
+}
+
+/* ── Status card ──────────────────────────────────────────────────────────── */
+
+/* What needs attention, as one card (`.plan-surface`) of rows divided by hairlines. A row is
+   its status (a toned 14px glyph, then the words in `--foreground`), a detail line under the
+   words in fine muted print, and the row's one action at its end: a quiet button at the row's
+   centre line. The words of every row and every detail share one left edge, 22px in from the
+   glyph column. */
+.doc-heading-status {
+  display: grid;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.doc-heading-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: var(--space-3);
+  align-items: center;
+  min-width: 0;
+  min-height: 36px;
+  padding: var(--space-2) var(--space-3);
+}
+
+.doc-heading-row + .doc-heading-row {
+  border-top: 1px solid var(--hairline);
+}
+
+.doc-heading-row__detail {
+  grid-column: 1;
+  min-width: 0;
+  padding-inline-start: calc(14px + var(--space-2));
+  overflow-wrap: anywhere;
+}
+
+.doc-heading-row__action {
+  display: flex;
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  align-items: center;
+  justify-content: flex-end;
+  min-width: 0;
+  max-width: 24rem;
+}
+
+/* Under 30rem of heading width the action moves under the words, on their left edge, so the
+   words and the detail keep the row's width. */
+@container (max-width: 30rem) {
+  .doc-heading-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .doc-heading-row__action {
+    grid-column: 1;
+    grid-row: auto;
+    justify-content: flex-start;
+    max-width: none;
+    padding-inline-start: calc(14px + var(--space-2) - var(--space-2));
+  }
+}
+
+/* The status itself: glyph and words. A link or a pressable button in chrome underlines its
+   words on hover only, never its glyph (DESIGN.md, Focus and hover). */
+.doc-heading-chip {
+  display: inline-grid;
+  grid-template-columns: 14px minmax(0, 1fr);
+  column-gap: var(--space-2);
+  align-items: start;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--foreground);
+  font: inherit;
+  font-size: var(--type-ui);
+  font-weight: 500;
+  line-height: 20px;
+  text-align: start;
+  text-decoration: none;
+}
+
+button.doc-heading-chip {
+  cursor: pointer;
+}
+
+a.doc-heading-chip:hover .doc-heading-chip__label,
+button.doc-heading-chip:hover .doc-heading-chip__label {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.doc-heading-chip__glyph {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+}
+
+.doc-heading-chip__glyph svg {
+  width: 14px;
+  height: 14px;
+}
+
+.doc-heading-chip__label {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* ── Facts ────────────────────────────────────────────────────────────────── */
+
+/* What the document relates to, as one quiet line of label and value pairs: "Built by 05 · 09",
+   "Implements §01, §03". Labels are muted, values keep the text's colour and link where they
+   can. The line wraps pair by pair. */
+.doc-heading-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-5);
+  min-width: 0;
+  margin: 0;
+  padding-inline: var(--space-3);
+  font-size: var(--type-ui);
+  line-height: 20px;
+}
+
+.doc-heading-fact {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0 var(--space-2);
+  min-width: 0;
+  color: var(--foreground);
+}
+
+.doc-heading-fact > dt {
+  color: var(--muted-foreground);
+}
+
+.doc-heading-fact > dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.doc-heading-fact a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.doc-heading-fact a:hover {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* ── Stub ─────────────────────────────────────────────────────────────────── */
+
+/* In the heading, the stub panel (`trace/stub-panel.tsx`, `.trace-stub`) is a `--muted` wash
+   with the surface corners and no edge: the words that set the document's scope, read before the
+   body and apart from it, with its place ("Stub in the vision") as a fine muted label over them.
+   A deliberate exception: DESIGN.md, Status. */
+[data-loom-plan] .doc-heading .trace-stub {
+  max-width: none;
+  padding: var(--space-3);
+  border: 0;
+  border-radius: var(--corner-surface);
+  background: var(--muted);
+}
+
+[data-loom-plan] .doc-heading .trace-stub-text > a {
+  font-size: var(--type-fine);
+  font-weight: 500;
+  color: var(--muted-foreground);
+}
+
+/* ── Extras ───────────────────────────────────────────────────────────────── */
+
+/* A page's own rows after the status: a plan's run actions, a section's build marker. The box
+   is gone when neither renders; the marker aligns with the status rows' words. */
+.doc-heading-extras {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+  font-size: var(--type-ui);
+  line-height: 20px;
+}
+
+.doc-heading-extras:empty,
+.doc-heading-extras__marker:empty {
+  display: none;
+}
+
+.doc-heading-extras__marker {
+  padding-inline-start: calc(var(--space-3) + 14px + var(--space-2));
 }

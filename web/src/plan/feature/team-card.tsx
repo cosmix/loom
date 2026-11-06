@@ -5,7 +5,7 @@ import { compactTokens } from "@/lib/tokens";
 import type { TeammateStatus, TokenCounts } from "@/plan/api/schema-kickoff";
 import { Untrusted } from "@/plan/chat/visible-controls";
 import { featureColour } from "@/plan/home/feature-mark";
-import { ActivityGlyph } from "@/plan/ui/activity-glyphs";
+import { StateMark } from "@/plan/ui/activity-glyphs";
 
 export function totalTokens(tokens: TokenCounts): number {
   return tokens.input + tokens.cache_write + tokens.cache_read + tokens.output;
@@ -44,7 +44,7 @@ export function TeammateCard({ teammate }: { teammate: TeammateStatus }) {
         </span>
         <span className="plan-team-card__state">
           {writing ? (
-            <ActivityGlyph kind="drafting" />
+            <StateMark kind="drafting" />
           ) : (
             <CircleCheck className="size-3.5" aria-hidden="true" />
           )}

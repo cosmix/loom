@@ -119,7 +119,9 @@ it("shows the standalone plan's title, the mono file name and the Change afforda
   store.set(projectAtom, {
     checklists: [],
     moves: [],
-    standalone: [{ slug: "example", path: plan, state: "written", title: "Example plan" }],
+    standalone: [
+      { slug: "example", path: plan, state: "written", title: "Example plan", last_change: null },
+    ],
   });
   await mount(store);
 
@@ -299,7 +301,9 @@ it("renders control characters in the plan title and file name as visible marker
   store.set(projectAtom, {
     checklists: [],
     moves: [],
-    standalone: [{ slug: "evil", path: evil, state: "written", title: "Evil\u202E plan" }],
+    standalone: [
+      { slug: "evil", path: evil, state: "written", title: "Evil\u202E plan", last_change: null },
+    ],
   });
   await mount(store);
 

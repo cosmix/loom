@@ -21,8 +21,8 @@ import "./trace.css";
 
 // `/f/<feature>/findings`: the ledger of what reviews found, grouped by the run that found it,
 // with the three ways to settle a finding (`findings-cards.tsx`). The page head and its Review
-// the feature button are drawn before the trace arrives, since the page owns that primary offer
-// (`pageDrawsPrimary`) whatever state the trace is in; only the ledger waits on the trace.
+// the feature button are drawn before the trace arrives, since the page owns that offer whatever
+// state the trace is in; only the ledger waits on the trace.
 
 /** Scrolls to the finding the address names (`#finding-F-3`), once the cards are drawn. */
 function useScrollToHash(ready: boolean): void {

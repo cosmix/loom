@@ -253,7 +253,13 @@ describe("plan socket", () => {
     const project = {
       checklists: [hello.checklists[0], selected],
       standalone: [
-        { slug: "solo", path: "doc/plans/PLAN-solo.md", state: "written", title: "Solo" },
+        {
+          slug: "solo",
+          path: "doc/plans/PLAN-solo.md",
+          state: "written",
+          title: "Solo",
+          last_change: "2026-10-30T09:12:00Z",
+        },
       ],
       moves: [{ id: "move", kind: "move_into_feature", label: "Move plan", target: null }],
     };

@@ -12,7 +12,7 @@ import { summaryPanelSchema } from "@/plan/api/schema-summaries";
 import { panelLoadAtom } from "@/plan/summaries/state";
 import { authoringAtom, youAtom } from "@/plan/state/atoms";
 
-import { PageHeaderExtras, SummaryAction } from "./page-header-extras";
+import { PageHeaderExtras, SummaryAction, SummaryDetail } from "./page-header-extras";
 
 // The build marker fetches its own data; these tests are about the summary action and the extras.
 vi.mock("@/plan/review/built-marker", () => ({ BuiltMarker: () => null }));
@@ -33,6 +33,9 @@ function show(key: string, overrides: Record<string, unknown> = {}, pending = fa
   return render(
     <Provider store={store}>
       <SummaryAction page={page} />
+      <div data-testid="detail">
+        <SummaryDetail page={page} />
+      </div>
       <div data-testid="extras">
         <PageHeaderExtras page={page} />
       </div>
@@ -86,10 +89,22 @@ it("offers no summary action for a page without a source path", () => {
   expect(screen.queryByRole("button", { name: /Rebuild/ })).toBeNull();
 });
 
-it("offers Rebuild all with its one-line reason while an approval is pending", () => {
+it("offers Rebuild all as the quiet action and the pending rebuild's sentence as the detail", () => {
   show("demo/product/section_01", {}, true);
   const approval = screen.getByRole("group", { name: "Rebuild approval" });
-  expect(approval.querySelector("button")?.textContent).toBe("Rebuild all");
-  expect(approval.textContent).toMatch(/above the budget and waiting for approval/);
+  const button = approval.querySelector("button");
+  expect(button?.textContent).toBe("Rebuild all");
+  expect(button?.getAttribute("data-look")).toBe("quiet");
+  // The sentence is the row's detail, drawn once, never beside the button.
+  expect(approval.textContent).toBe("Rebuild all");
+  expect(screen.getByTestId("detail").textContent).toMatch(
+    /summaries out of date\. The rebuild is above the budget and waiting for approval: .* tokens\./,
+  );
   expect(screen.queryByRole("button", { name: "Rebuild" })).toBeNull();
+});
+
+it("draws the quiet Rebuild and no detail while no approval is pending", () => {
+  show("demo/product/section_01");
+  expect(screen.getByRole("button", { name: "Rebuild" }).getAttribute("data-look")).toBe("quiet");
+  expect(screen.getByTestId("detail").textContent).toBe("");
 });

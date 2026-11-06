@@ -18,15 +18,29 @@ const project: ProjectChecklistView = {
       path: "doc/plans/PLAN-fix-search.md",
       title: "Fix search",
       state: "written",
+      last_change: "2026-11-05T10:00:00Z",
     },
     {
       slug: "cache",
       path: "doc/plans/IN_PROGRESS-PLAN-cache.md",
       title: "Cache",
       state: "running",
+      last_change: "2026-11-06T08:00:00Z",
     },
-    { slug: "cleanup", path: "doc/plans/DONE-PLAN-cleanup.md", title: "Cleanup", state: "done" },
-    { slug: "old", path: "doc/plans/RETIRED-PLAN-old.md", title: "Old", state: "retired" },
+    {
+      slug: "cleanup",
+      path: "doc/plans/DONE-PLAN-cleanup.md",
+      title: "Cleanup",
+      state: "done",
+      last_change: "2026-10-01T12:00:00Z",
+    },
+    {
+      slug: "old",
+      path: "doc/plans/RETIRED-PLAN-old.md",
+      title: "Old",
+      state: "retired",
+      last_change: null,
+    },
   ],
   moves: [],
 };
@@ -78,7 +92,7 @@ describe("StandaloneShelf", () => {
       within(table)
         .getAllByRole("columnheader")
         .map((cell) => cell.textContent),
-    ).toEqual(["", "Plan", "State"]);
+    ).toEqual(["", "Plan", "State", "Modified"]);
     expect(screen.getByRole("link", { name: "Fix search" }).getAttribute("href")).toBe(
       "/files/plans/PLAN-100%25-fix.md",
     );
@@ -115,6 +129,44 @@ describe("StandaloneShelf", () => {
         .map((button) => button.textContent),
     ).toEqual(["New standalone plan"]);
     expect(within(summary).queryByRole("link")).toBeNull();
+  });
+
+  it("counts the plans in each state under the closed summary, running first", () => {
+    mount({
+      ...project,
+      standalone: [
+        ...project.standalone,
+        { ...project.standalone[2]!, slug: "b", path: "doc/plans/DONE-PLAN-b.md" },
+      ],
+    });
+
+    const states = details().querySelector(":scope > summary .shelf__states") as HTMLElement;
+    expect([...states.children].map((state) => state.textContent)).toEqual([
+      "1 running",
+      "1 written",
+      "2 done",
+      "1 retired",
+    ]);
+  });
+
+  it("lists the newest plan first, marks Modified as the sorted column and toggles it", () => {
+    mount();
+
+    const modified = () => screen.getByRole("columnheader", { name: "Modified" });
+    expect(titles()).toEqual(["Cache", "Fix search", "Cleanup", "Old"]);
+    expect(modified().getAttribute("aria-sort")).toBe("descending");
+    const cell = screen.getByRole("link", { name: "Cleanup" }).closest("tr")!.lastElementChild!;
+    const time = cell.querySelector("time")!;
+    expect(time.getAttribute("datetime")).toBe("2026-10-01T12:00:00Z");
+    expect(time.getAttribute("title")).toBeTruthy();
+    expect(
+      screen.getByRole("link", { name: "Old" }).closest("tr")!.lastElementChild!.textContent,
+    ).toBe("unknown");
+
+    fireEvent.click(screen.getByRole("button", { name: "Modified" }));
+    expect(modified().getAttribute("aria-sort")).toBe("ascending");
+    // A plan with no readable time stays last in either direction.
+    expect(titles()).toEqual(["Cleanup", "Fix search", "Cache", "Old"]);
   });
 
   it("does not toggle the shelf when the summary's action is clicked", () => {
@@ -162,7 +214,13 @@ describe("StandaloneShelf", () => {
       checklists: [],
       standalone: [
         ...standalonePlans(9),
-        { slug: "zeta", path: "doc/plans/PLAN-zeta.md", title: "Speed up search", state: "done" },
+        {
+          slug: "zeta",
+          path: "doc/plans/PLAN-zeta.md",
+          title: "Speed up search",
+          state: "done",
+          last_change: null,
+        },
       ],
       moves: [],
     });

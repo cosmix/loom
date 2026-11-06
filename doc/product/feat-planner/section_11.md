@@ -25,13 +25,9 @@ dashboard. Plans that finish bring the project to the returning author's offers.
 Pressure testing is optional (section 01, "The six steps"). The app offers it:
 
 - on every written plan's page, `/f/<feature>/engineering/<slug>`, as a **Pressure-test** button, whether or not the
-  plan was tested before (`run/plan-run-actions.tsx`). The page draws the offer for its own plan, so the spine's
-  next-step line shows its sentence only there;
-- in the spine's next-step line, when the page is not that plan: the first untested written plan's offer is
-  the step's offer, beside the offer to start a run. The spine has no Pressure test row and the app has no
+  plan was tested before (`run/plan-run-actions.tsx`). The spine has no Pressure test row and the app has no
   Pressure page. Every plan row in the spine except a retired plan's carries a badge, "Pressure-tested <date>" or "Not pressure-tested",
-  and a tested plan's record is the `## Pressure tests` section in file mode. A feature with no plan gets one
-  sentence naming what comes first.
+  and a tested plan's record is the `## Pressure tests` section in file mode.
 
 It is offered only for plans in the written state, `<plan home>/PLAN-<slug>.md`. The plan home is `doc/plans/<feature>/`
 for a feature, or `doc/plans/` for a standalone plan; its brief bundle is `<plan home>/briefs/<slug>/`.

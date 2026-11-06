@@ -112,7 +112,7 @@ it("separator arrow keys resize", () => {
   expect(store.get(panelWidthAtom)).toBe(40);
 });
 
-it("New chat after a pressure run draws the greeting alone, with no pressure head over it", () => {
+it("New chat after a pressure run draws the empty headline alone, with no pressure head over it", () => {
   const store = storeFor();
   const { session } = chatSnapshotSchema.parse(fixture);
   const run = { ...session!, kind: "pressure", state: "ended" as const, failure: null };
@@ -245,7 +245,7 @@ it.each([
   expect(screen.queryByRole("button", { name: "Changed since" })).toBeNull();
 });
 
-it("the header shows no chat button while the side panel is expanded", () => {
+it("the header keeps its chat button while the side panel is expanded", () => {
   media(true);
   render(
     <Provider store={storeFor()}>
@@ -254,7 +254,8 @@ it("the header shows no chat button while the side panel is expanded", () => {
       </MemoryRouter>
     </Provider>,
   );
-  expect(screen.queryByRole("button", { name: /^Open chat/ })).toBeNull();
+  const button = screen.getByRole("button", { name: /^Collapse chat/ });
+  expect(button.getAttribute("aria-expanded")).toBe("true");
 });
 
 it("below lg with the sheet closed, an OfferButton is a button", async () => {
@@ -329,7 +330,7 @@ it("a refused offer start shows a dismissible alert inside the panel until the n
 it("with no chat the panel shows the empty state in place of the transcript", () => {
   mount();
   expect(screen.queryByRole("log")).toBeNull();
-  const empty = screen.getByRole("region", { name: /What are we deciding\?$/ });
+  const empty = screen.getByRole("region", { name: "Let's spec!" });
   expect(empty.className).toBe("chat-empty");
   expect(empty.textContent).toContain("Your first message starts the session.");
   cleanup();
@@ -337,7 +338,7 @@ it("with no chat the panel shows the empty state in place of the transcript", ()
   store.set(snapshotAtom, permissionSnapshot());
   mount(store);
   expect(screen.getByRole("log")).toBeTruthy();
-  expect(screen.queryByRole("region", { name: /What are we deciding\?$/ })).toBeNull();
+  expect(screen.queryByRole("region", { name: "Let's spec!" })).toBeNull();
 });
 
 it("the panel has no Chat menu and no End chat button, with or without a chat", () => {

@@ -57,3 +57,17 @@
 **Why**: Spec section 05/11 described a done-state page, and implementing agents built every listed element without checking it against the vision or judging usability.
 **Prevention**: Every screen needs a named user task from the vision and a navigation entry the user can find; a label must describe what the control does; a section with no content is not rendered. Review UI against a screenshot in a real browser, not only against the spec text.
 **Fix**: The Built page, its route and its wire (spec check, run review list) were removed; the feature-name link opens the product page, else the plans overview. Follow-up candidates stay as suggestion pills on New work.
+
+## Approved trace mockups were never committed and the plan ran on the superseded web briefs
+
+**What happened:** The round-3 trace mockups lived only as untracked files under `doc/plans/mockups/trace/` and disappeared from the tree before review finished (cause not confirmed). Meanwhile `PLAN-planning-trace` ran its web stages from briefs still describing the round-1 design, so `trace-web-documents` merged the rejected UI.
+**Why:** Mockups were treated as scratch work, and the web briefs were not marked as pending a design decision before the plan was handed over.
+**Prevention:** Commit mockups (HTML plus Firefox screenshots) as soon as a round is produced, and mark any brief that waits on a design approval so it is rewritten before the plan runs.
+**Fix:** A follow-up plan reworks the shipped trace UI to the approved round-3 design, using the surviving screenshots committed under `doc/plans/mockups/`.
+
+## A plan commit swept in files another session had staged
+
+**What happened:** `git add <plan paths> && git commit` on `feat-planner-ui` committed 23 unrelated files that were already in the index from other work.
+**Why:** `git add <paths>` adds to the existing index; it does not limit the commit to those paths.
+**Prevention:** On a shared working tree, run `git diff --cached --stat` before committing, or commit with `git commit -- <paths>`, which builds the commit from those paths alone and leaves other staged entries staged.
+**Fix:** `git reset --soft HEAD~1`, then `git commit -- <paths>`.

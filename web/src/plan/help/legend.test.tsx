@@ -225,17 +225,17 @@ it("uses each production document, state and activity glyph", () => {
   ).toHaveLength(1);
 });
 
-it("shows work under way as the live dot, a rebuild as the arrow, and no roundel", () => {
+it("shows a state word's mark as the two rotating arrows, and no roundel", () => {
   const { container } = render(<PlannerLegend />, { wrapper: MemoryRouter });
   const group = screen.getByRole("region", { name: "In progress" });
 
   const working = tileOf(group, "Working");
-  expect(working.querySelectorAll(".activity-glyph .activity-glyph__led")).toHaveLength(1);
-  // A summary's Rebuilding is the one operation among the states: the arrow spinner.
-  expect(container.querySelectorAll(".plan-arrow-spinner")).toHaveLength(1);
-  // The roundel is the header pill's alone; no lucide turning icon stands in for the arrow.
+  expect(working.querySelectorAll(".lucide-refresh-cw.plan-arrow-spinner")).toHaveLength(1);
+  // Working, a running plan and a rebuilding summary: every state word is the same arrows.
+  expect(container.querySelectorAll(".lucide-refresh-cw.plan-arrow-spinner")).toHaveLength(3);
+  // The roundel is the header pill's alone; no single-arrow icon stands in for the arrows.
   expect(container.querySelectorAll(".aurora-roundel")).toHaveLength(0);
-  expect(group.querySelectorAll(".lucide-refresh-cw, .lucide-loader-circle")).toHaveLength(0);
+  expect(group.querySelectorAll(".lucide-loader-circle, .lucide-rotate-cw")).toHaveLength(0);
 });
 
 it("sets no legend text below 13px", () => {

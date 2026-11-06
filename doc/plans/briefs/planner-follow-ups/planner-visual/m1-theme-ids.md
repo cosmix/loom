@@ -1,6 +1,6 @@
 # M1: the screenshot scripts, the browser theme check and the docs take the new theme ids (R9)
 
-Tier: haiku (`loom-mechanical-engineer`).
+Tier: haiku (`loom-software-developer`).
 
 Read `../common.md` first. The planner's themes become Ledger (light), Walnut (dark, the default
 dark theme) and Graphite (dark). Aubergine and Pacific are removed. The stored dark-variant ids are
