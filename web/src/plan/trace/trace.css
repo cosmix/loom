@@ -75,13 +75,13 @@
   color: var(--trace-tone);
 }
 
-/* Frontier hints: at most five link lines, one line each, cut at the column's edge, a step under
-   the next-step sentence and pulled up to --space-3 under it instead of the body's --space-5. */
+/* Frontier hints: at most five link lines, one line each, cut at the column's edge, at the head
+   of the spine body. */
 [data-loom-plan] .trace-frontier {
   display: grid;
   gap: 2px;
   max-width: 48ch;
-  margin: calc(var(--space-3) - var(--space-5)) 0 0;
+  margin: 0;
   padding: 0 var(--space-2);
   list-style: none;
   font-size: var(--type-ui);

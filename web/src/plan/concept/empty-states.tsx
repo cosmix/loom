@@ -105,9 +105,6 @@ function useScreenChecklist() {
 
 /** The page's empty or partial state, with section 05's text for its kind. */
 export function EmptyStates({ page, empty }: { page: ConceptPage; empty: EmptyData }) {
-  // The route's feature, as `NextAction` and `pageDrawsPrimary` read it. A standalone plan page has
-  // no route feature, no spine and so no suppression.
-  const primary = useFeature().checklist?.primary;
   const checklist = useScreenChecklist();
   const copy = copyFor(page, empty);
   // The server lists no documents for a never-built overview; its key chips are them. A document
@@ -120,8 +117,7 @@ export function EmptyStates({ page, empty }: { page: ConceptPage; empty: EmptyDa
   // The server sends no offer with a plans-without-metaplan list; section 05 still offers one.
   const offer = empty.offer ?? (empty.kind === "plans_no_metaplan" ? "start-metaplan" : null);
   let action: ReactNode = null;
-  // The spine's next step owns the checklist's primary offer; a second button for it is a repeat.
-  if (empty.kind !== "building" && offer && offer !== primary?.id) {
+  if (empty.kind !== "building" && offer) {
     action = <EmptyOffer offer={offer} checklist={checklist ?? null} />;
   }
   return (

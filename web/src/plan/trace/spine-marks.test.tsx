@@ -178,7 +178,7 @@ it("marks nothing while the trace is missing", async () => {
   expect(spine.queryByRole("list", { name: "Needs attention" })).toBeNull();
 });
 
-it("lists the frontier hints under the next step", async () => {
+it("lists the frontier hints at the head of the spine", async () => {
   const frontier: Gap[] = [
     { kind: "revised", node: { path: SECTION, anchor: null }, count: null },
     { kind: "settle", node: { path: PLAN, anchor: null }, count: null },
@@ -192,8 +192,6 @@ it("lists the frontier hints under the next step", async () => {
     ["Run loop changed since you settled it", "/f/atlas/product/section_01"],
     ["Read Atlas one and settle it", "/f/atlas/engineering/atlas-01"],
   ]);
-  const next = document.querySelector(".plan-spine-next")!;
-  expect(next.compareDocumentPosition(hints) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   const groups = document.querySelector(".plan-spine__groups")!;
   expect(hints.compareDocumentPosition(groups) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 });

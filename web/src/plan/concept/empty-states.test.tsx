@@ -122,12 +122,12 @@ function showTwoFeatures(primaries: { demo: boolean; other: boolean }, routeFeat
   renderEmptyMetaplan(store, `/f/${routeFeature}/product`);
 }
 
-it("leaves the primary offer to the spine and keeps its sentence", () => {
+it("draws the primary offer under its sentence", () => {
   const unregister = registerOfferAction("start_metaplan", vi.fn());
   showMetaplanOffer(METAPLAN_OFFER, []);
 
   expect(screen.getByText("No metaplan yet")).toBeTruthy();
-  expect(screen.queryByRole("button", { name: "Start the metaplan" })).toBeNull();
+  expect(screen.getByRole("button", { name: "Start the metaplan" })).toBeTruthy();
   unregister();
 });
 
@@ -139,7 +139,7 @@ it("draws an offer that is not the primary", () => {
   unregister();
 });
 
-it("draws the offer on a standalone page, which has no route feature and no spine", () => {
+it("draws the offer on a standalone page, which has no route feature", () => {
   const unregister = registerOfferAction("start_metaplan", vi.fn());
   showMetaplanOffer(METAPLAN_OFFER, [], "/plans/demo");
 
@@ -147,14 +147,12 @@ it("draws the offer on a standalone page, which has no route feature and no spin
   unregister();
 });
 
-it("suppresses the offer by the route feature's primary, not the active feature's", () => {
+it("draws the offer of the route feature whichever feature is active", () => {
   const unregister = registerOfferAction("start_metaplan", vi.fn());
-  // The route's feature `other` owns the primary; the active `demo` does not. The spine draws it.
   showTwoFeatures({ demo: false, other: true }, "other");
-  expect(screen.queryByRole("button", { name: "Start the metaplan" })).toBeNull();
+  expect(screen.getByRole("button", { name: "Start the metaplan" })).toBeTruthy();
   cleanup();
 
-  // The active `demo` owns the primary; the route's `other` does not. Nothing else draws it.
   showTwoFeatures({ demo: true, other: false }, "other");
   expect(screen.getByRole("button", { name: "Start the metaplan" })).toBeTruthy();
   unregister();
