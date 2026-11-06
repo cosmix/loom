@@ -7,20 +7,36 @@ import { ConceptRoute } from "@/plan/concept/concept-route";
 import { EmptyOffer } from "@/plan/concept/empty-offer";
 import { hashAnchor, repoRel } from "@/plan/files/address";
 import { useFileSocket } from "@/plan/files/api";
-import { treeAtom } from "@/plan/files/atoms";
+import { openDocAtom, treeAtom } from "@/plan/files/atoms";
 import { ReadingColumn } from "@/plan/files/reading-column";
 import { missingDocumentOffer } from "@/plan/feature/page-offer";
 import { featureOfDocPath, featureSourceHref } from "@/plan/feature/source-href";
 import { useFeature } from "@/plan/feature/use-feature";
+import { SettleControl } from "@/plan/trace/settle-control";
+import { StubPanel } from "@/plan/trace/stub-panel";
 import { LoadState } from "@/plan/ui/load-state";
 
+/** The document's settle state and stub, above its source; the hash is the opened document's. */
+function SourceTrace({ feature, path }: { feature: string; path: string }) {
+  const open = useAtomValue(openDocAtom);
+  const hash = open?.doc.path === repoRel(path) ? open.doc.hash : null;
+  return (
+    <div className="trace-source-head">
+      <SettleControl feature={feature} path={path} hash={hash} />
+      <StubPanel feature={feature} path={path} />
+    </div>
+  );
+}
+
 /** A document's source, read in the reading column; `anchor` scrolls to one of its sections. */
-function SourcePage({ path, anchor = null }: { path: string; anchor?: string | null }) {
+function SourcePage(props: { feature: string; path: string; anchor?: string | null }) {
+  const { feature, path, anchor = null } = props;
   const store = useStore();
   useFileSocket(store);
   const tree = useAtomValue(treeAtom);
   return (
     <div className="plan-document">
+      <SourceTrace key={path} feature={feature} path={path} />
       <ReadingColumn key={path} path={repoRel(path)} anchor={anchor} tree={tree} />
     </div>
   );
@@ -117,5 +133,5 @@ export function FeatureSourcePage() {
       />
     );
   }
-  return <SourcePage path={path} anchor={hashAnchor(hash)} />;
+  return <SourcePage feature={checklist.feature} path={path} anchor={hashAnchor(hash)} />;
 }

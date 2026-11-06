@@ -1,12 +1,17 @@
-import { ChevronRight } from "lucide-react";
+import { ArrowDownToLine, BadgeCheck, ChevronRight, Circle, Pencil, Replace } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import { Link } from "react-router";
 
 import { Button } from "@/components/ui/button";
+import type { SettleState } from "@/plan/api/schema-trace";
 import { Untrusted, visibleControls } from "@/plan/chat/visible-controls";
 import { SentenceText } from "@/plan/concept/sentence-text";
 import { NOT_PRESSURE_TESTED, PRESSURE_TESTED, pressureIcon } from "@/plan/files/heading-parts";
 import type { NameStyle, PlanPressure, SpineChild, SpineGroup } from "@/plan/feature/spine-model";
+import { settleLabel } from "@/plan/trace/model";
 import { type Glyph as GlyphIcon, STEP_MARK_GLYPHS } from "@/plan/ui/glyphs";
+
+import "@/plan/trace/trace.css";
 
 /** A document's name as its kind needs it: Markdown phrasing, a slug in mono, or plain text. */
 export function Name({ name, style }: { name: string; style: NameStyle }) {
@@ -29,6 +34,23 @@ function Glyph({ icon: Icon, word, state }: { icon: GlyphIcon; word: string; sta
       </span>
       <span className="sr-only">{word}</span>
     </>
+  );
+}
+
+const SETTLE_GLYPHS: Record<SettleState, LucideIcon> = {
+  draft: Circle,
+  revised: Pencil,
+  stub_changed: Replace,
+  upstream_changed: ArrowDownToLine,
+  settled: BadgeCheck,
+};
+
+/** A document's settle state beside its other glyphs: the glyph shows, the word is read. */
+export function SettleMark({ state }: { state: SettleState }) {
+  return (
+    <span className="trace-settle" data-settle={state}>
+      <Glyph icon={SETTLE_GLYPHS[state]} word={settleLabel(state)} />
+    </span>
   );
 }
 
@@ -75,6 +97,12 @@ function ChildRow({ child, pathname }: { child: SpineChild; pathname: string }) 
       <span className="plan-spine__name">
         <Name name={child.name} style={child.style} />
       </span>
+      {child.settle !== null && (
+        <>
+          {" "}
+          <SettleMark state={child.settle} />
+        </>
+      )}
       {child.note !== null && (
         <>
           {" "}
@@ -113,6 +141,11 @@ function GroupHead({ group, selected }: { group: SpineGroup; selected: boolean }
     >
       <Mark className="plan-spine__mark" aria-hidden="true" />
       <span className="plan-spine__name">{group.label}</span>{" "}
+      {group.settle !== null && (
+        <>
+          <SettleMark state={group.settle} />{" "}
+        </>
+      )}
       {group.count !== null ? (
         <>
           <span className="plan-fine">

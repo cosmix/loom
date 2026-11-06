@@ -1,9 +1,11 @@
 import type { ChecklistView, MarkView, StepView } from "@/plan/api/schema";
+import type { SettleState, TraceView } from "@/plan/api/schema-trace";
 import { featurePage } from "@/plan/feature/page-offer";
 import { STEP } from "@/plan/feature/steps";
 import { featureOfDocPath } from "@/plan/feature/source-href";
 import { featureHref } from "@/plan/feature/use-feature";
 import { decode, docRel } from "@/plan/files/address";
+import { docOfPath } from "@/plan/trace/model";
 import { PLAN_STATE_GLYPHS, type Glyph, type PlanState } from "@/plan/ui/glyphs";
 
 export type GroupId = "vision" | "product" | "metaplan" | "plans" | "run";
@@ -29,6 +31,8 @@ export interface SpineChild {
   icon: Glyph | null;
   /** A plan's pressure record; null for every other child and for a retired plan. */
   pressure: PlanPressure | null;
+  /** The document's settle state from the trace; null for a document with no body to settle. */
+  settle: SettleState | null;
 }
 
 export interface SpineGroup {
@@ -43,6 +47,8 @@ export interface SpineGroup {
    *  label is only the step's name. */
   unit: string | null;
   children: SpineChild[];
+  /** The settle state of the vision and metaplan rows; null for every other group. */
+  settle: SettleState | null;
   /** Whether the first child is the group's own overview page, which shares the group's target. */
   overview: boolean;
 }
@@ -111,6 +117,12 @@ export function groupOfPathname(pathname: string): GroupId | null {
   return page === "source" ? groupOfSource(pathname) : (GROUP_OF_PAGE[page] ?? null);
 }
 
+/** The settle state of a written document; a listed-only document has nothing to settle. */
+function settleOf(trace: TraceView | null, repoPath: string): SettleState | null {
+  const doc = trace ? docOfPath(trace, repoPath) : undefined;
+  return doc && doc.progress !== "stub" ? doc.settle : null;
+}
+
 function overviewChild(feature: string, page: string): SpineChild {
   return {
     key: "overview",
@@ -121,10 +133,11 @@ function overviewChild(feature: string, page: string): SpineChild {
     note: null,
     icon: null,
     pressure: null,
+    settle: null,
   };
 }
 
-function sectionChildren(checklist: ChecklistView): SpineChild[] {
+function sectionChildren(checklist: ChecklistView, trace: TraceView | null): SpineChild[] {
   return checklist.sections.map((section) => ({
     key: section.number,
     to: section.written
@@ -136,10 +149,13 @@ function sectionChildren(checklist: ChecklistView): SpineChild[] {
     note: section.written ? null : "not written",
     icon: null,
     pressure: null,
+    settle: section.written
+      ? settleOf(trace, `doc/product/${checklist.feature}/section_${section.number}.md`)
+      : null,
   }));
 }
 
-function planChildren(checklist: ChecklistView): SpineChild[] {
+function planChildren(checklist: ChecklistView, trace: TraceView | null): SpineChild[] {
   return checklist.plan_rows.map((plan) => ({
     key: plan.slug,
     to: featureHref(checklist.feature, `engineering/${encodeURIComponent(plan.slug)}`),
@@ -151,6 +167,7 @@ function planChildren(checklist: ChecklistView): SpineChild[] {
       ? PLAN_STATE_GLYPHS[plan.state as PlanState]
       : null,
     pressure: plan.state === "retired" ? null : { date: plan.pressure_date },
+    settle: settleOf(trace, plan.path),
   }));
 }
 
@@ -216,16 +233,35 @@ export function currentPathname(checklist: ChecklistView, pathname: string): str
   return summaryPathnameOfSource(checklist, pathname) ?? pathname;
 }
 
-function childrenOf(id: GroupId, checklist: ChecklistView, page: string): SpineChild[] {
+function childrenOf(
+  id: GroupId,
+  checklist: ChecklistView,
+  page: string,
+  trace: TraceView | null,
+): SpineChild[] {
   if (id === "product") {
-    return [overviewChild(checklist.feature, page), ...sectionChildren(checklist)];
+    return [overviewChild(checklist.feature, page), ...sectionChildren(checklist, trace)];
   }
-  if (id === "plans") return [overviewChild(checklist.feature, page), ...planChildren(checklist)];
+  if (id === "plans") {
+    return [overviewChild(checklist.feature, page), ...planChildren(checklist, trace)];
+  }
   return [];
 }
 
-/** The spine's groups in workflow order. A feature with nothing yet hides no group. */
-export function spineGroups(checklist: ChecklistView): SpineGroup[] {
+/** The settle state of the vision or metaplan row: the trace's one document of that role. */
+function groupSettle(id: GroupId, trace: TraceView | null): SettleState | null {
+  const role = id === "vision" || id === "metaplan" ? id : null;
+  return role ? (trace?.documents.find((doc) => doc.role === role)?.settle ?? null) : null;
+}
+
+/**
+ * The spine's groups in workflow order. A feature with nothing yet hides no group. `trace` adds
+ * each document's settle state; without it (not loaded yet) no row shows one.
+ */
+export function spineGroups(
+  checklist: ChecklistView,
+  trace: TraceView | null = null,
+): SpineGroup[] {
   return GROUPS.map(({ id, label, step, page }) => {
     const server: StepView | undefined = checklist.steps.find(
       (candidate) => candidate.number === step,
@@ -240,7 +276,8 @@ export function spineGroups(checklist: ChecklistView): SpineGroup[] {
       word: wordOf(id, mark, checklist),
       count,
       unit: unitOf(server, count),
-      children: childrenOf(id, checklist, page),
+      children: childrenOf(id, checklist, page, trace),
+      settle: groupSettle(id, trace),
       overview: id === "product" || id === "plans",
     };
   });
