@@ -125,3 +125,11 @@ it("shows control characters in the log tail as visible markers", () => {
 
   expect(container.querySelector("pre code")?.textContent).toBe("rm ⟨U+202E⟩fdp.sh");
 });
+
+it("rests the running card's tile: the step's row carries the one turning arrow", () => {
+  const { container } = render(<CodexStatusItem status={status} startedMs={1000} />);
+
+  const tile = container.querySelector(".activity-tile");
+  expect(tile?.querySelector(".lucide-search")).not.toBeNull();
+  expect(container.querySelector(".activity-glyph, .plan-arrow-spinner")).toBeNull();
+});

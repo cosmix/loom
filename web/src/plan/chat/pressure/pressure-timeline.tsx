@@ -11,8 +11,8 @@ import type {
 } from "@/plan/api/schema-pressure";
 import { openDiff } from "@/plan/diff/open-diff";
 import { toAddress } from "@/plan/files/address";
-import { ActivityGlyph } from "@/plan/ui/activity-glyphs";
 import { OTHER_GLYPHS } from "@/plan/ui/glyphs";
+import { ArrowSpinner } from "@/plan/ui/spinner";
 import { snapshotAtom } from "../model";
 import { CodexStatusItem } from "./codex-status";
 import { Elapsed, LiveElapsed } from "./elapsed";
@@ -44,11 +44,11 @@ function editAddress(snapshot: ChatSnapshot, step: PressureStepView, path: strin
     : toAddress(path);
 }
 
-function StepGlyph({ step, turning }: { step: PressureStepView; turning: boolean }): JSX.Element {
+// A running step is an operation that will finish: the turning arrow (ui/DESIGN.md, Status, rule
+// 2), however many steps run side by side. A finished step shows its done glyph.
+function StepGlyph({ step }: { step: PressureStepView }): JSX.Element {
   if (step.state === "running") {
-    const kind =
-      step.kind === "codex" ? "codex" : step.kind === "claude_pressure" ? "pressure" : "drafting";
-    return <ActivityGlyph kind={kind} paused={!turning} className="text-sm" />;
+    return <ArrowSpinner data-kind={step.kind} className="size-3.5 shrink-0 text-(--tone-executing)" />;
   }
   const Glyph = step.state === "done" ? OTHER_GLYPHS.stepDone : X;
   const tone = step.state === "done" ? "text-(--tone-completed)" : "text-muted-foreground";
@@ -94,8 +94,7 @@ const ROW_GRID = "grid grid-cols-[20px_minmax(0,1fr)_auto] items-center gap-x-2 
 // a snapshot from queuing placeholder rows without end.
 const MAX_QUEUED_ROUNDS = 10;
 
-// At most one roundel turns in the pane: the step the run is on; side-by-side steps rest.
-function StepRow({ step, turning }: { step: PressureStepView; turning: boolean }): JSX.Element {
+function StepRow({ step }: { step: PressureStepView }): JSX.Element {
   const snapshot = useAtomValue(snapshotAtom);
   const tokens = step.tokens;
   const hasExtras = step.edits.length > 0 || tokens !== null || step.codex !== null;
@@ -106,7 +105,7 @@ function StepRow({ step, turning }: { step: PressureStepView; turning: boolean }
       className={ROW_GRID}
     >
       <Row
-        glyph={<StepGlyph step={step} turning={turning} />}
+        glyph={<StepGlyph step={step} />}
         text={ROW_TEXT[step.kind]}
         state={step.state}
         time={<StepTime step={step} />}
@@ -161,12 +160,10 @@ function RoundRows({
   round,
   steps,
   queue,
-  current,
 }: {
   round: number;
   steps: PressureStepView[];
   queue: boolean;
-  current: string | null;
 }): JSX.Element {
   return (
     <section data-pressure-round={round} className="grid gap-0.5">
@@ -177,7 +174,7 @@ function RoundRows({
         const present = steps.filter((step) => step.kind === kind);
         if (present.length > 0) {
           return present.map((step) => (
-            <StepRow key={`${round}/${kind}`} step={step} turning={step.kind === current} />
+            <StepRow key={`${round}/${kind}`} step={step} />
           ));
         }
         return queue ? [<QueuedRow key={`${round}/${kind}`} text={ROW_TEXT[kind]} />] : [];
@@ -225,7 +222,6 @@ export function StepTimeline({ run }: { run: PressureRunView }): JSX.Element {
             round={round}
             steps={steps}
             queue={live && round >= run.round}
-            current={live && round === run.round ? run.step : null}
           />
         ))}
       <RecordRow run={run} />

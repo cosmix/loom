@@ -44,3 +44,18 @@ export function endLine(end: PressureEnd): string {
       return "Interrupted";
   }
 }
+
+/** Every round runs /pressure, Codex and /address once. */
+const STEPS_PER_ROUND = 3;
+
+/** The plan's file name, the way a run names its plan. */
+export function planFileName(plan: string): string {
+  return plan.split("/").at(-1) ?? plan;
+}
+
+/** Counted work: the steps that stopped running out of every step the rounds will run. */
+export function pressureProgress(run: PressureRunView): { done: number; total: number } {
+  const total = Math.max(1, run.rounds * STEPS_PER_ROUND);
+  const done = Math.min(total, run.steps.filter((step) => step.state !== "running").length);
+  return { done, total };
+}

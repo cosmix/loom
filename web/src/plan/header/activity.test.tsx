@@ -360,3 +360,27 @@ it("sets the popover width and surface", async () => {
   expect(dialog.classList.contains("bg-card")).toBe(true);
   expect(dialog.style.boxShadow).toContain("var(--plan-shadow)");
 });
+
+it("a pressure run's row carries a determinate progress bar beside its elapsed time", async () => {
+  const run: Activity = {
+    id: "pressure:run",
+    kind: "pressure",
+    title: "Pressure test · round 1 of 2",
+    subject: "PLAN-example.md · /pressure",
+    since: NOW - 65_000,
+    progress: { done: 2, total: 6 },
+  };
+  vi.mocked(useActivities).mockReturnValue([run]);
+  render(<ActivityPill compact={false} />);
+  fireEvent.click(screen.getByRole("button", { name: "1 in progress: Pressure test" }));
+
+  const row = await within(await screen.findByRole("list", { name: "In progress" })).findByRole(
+    "listitem",
+  );
+  expect(within(row).getByText("PLAN-example.md · /pressure")).toBeTruthy();
+  expect(within(row).getByText("1:05")).toBeTruthy();
+  const bar = within(row).getByRole("progressbar", { name: "Pressure test progress" });
+  expect(bar.getAttribute("aria-valuenow")).toBe("2");
+  expect(bar.getAttribute("aria-valuemax")).toBe("6");
+  expect((bar.firstElementChild as HTMLElement).style.width).toBe("33.33333333333333%");
+});
