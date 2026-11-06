@@ -51,8 +51,8 @@ position live in the browser.
   discuss a passage should never have to find the panel first.)
 - **Narrow screens.** Below 1280px the panel leaves the layout and becomes a sheet over the
   reading column, opened from the header's Chat button, which carries the state glyph and the
-  permission badge. The button shows on every route that has a chat panel and is hidden at 1280px
-  and wider. Selecting "Add to chat" in the reading column (sections 05, 06) adds the
+  permission badge. The button shows on every route that has a chat panel; at 1280px and wider it
+  toggles the side panel instead (pressed while the panel is open). Selecting "Add to chat" in the reading column (sections 05, 06) adds the
   chip without opening the sheet; the button shows the attachment count. (My call: on a phone
   the reader collects passages first and writes once.)
 - **Surface.** The panel sits on `--card` with a `--hairline` left border, beside the reading
@@ -493,7 +493,7 @@ spending is steered, not in the conversation.)
 
 A chat starts in one of two ways, all from the browser that will hold authoring:
 
-1. **An offer** (section 01) on the page that owns it: the spine's next step, a queue row on the
+1. **An offer** (section 01) on the page that owns it: a missing document's page, a queue row on the
    product or engineering page, the Pressure test or Run page, an empty state's offer (section
    05), or a missing entry in file mode's tree (section 06). The panel offers none.
 2. **Sending a message** when no chat runs: a new refinement session whose opening message is

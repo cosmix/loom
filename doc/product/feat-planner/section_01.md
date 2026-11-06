@@ -13,8 +13,8 @@ The app stores no workflow state. On every start, and on every change under `doc
 reads the tree and builds one **checklist per feature**, scoped to `doc/product/<f>/` and
 `doc/plans/<f>/`: one line per document the workflow expects, each either present or a gap.
 Each feature's **current step** is the earliest step that has a gap. The app shows that step
-in the feature's spine, offers to close its first gap, and lists every other gap as a secondary
-offer. Nothing is blocked: a gap in an early step never stops the user from working on a later
+in the feature's spine, offers to close its first gap on the page that owns the offer, and lists
+every other gap as a secondary offer. Nothing is blocked: a gap in an early step never stops the user from working on a later
 one. The project view lists features and standalone plans; standalone plans have no checklist.
 
 ## The six steps
@@ -246,8 +246,7 @@ Offer labels are short, and the sentence beside the button explains what it does
 
 **No screen draws one offer twice.** The chat panel carries no offer to start a step (section
 08). On the product and engineering pages the page owns the primary offer while its pace and
-queue show, and the spine keeps the sentence only; a queue row whose offer is the primary shows
-"Next" with no button.
+queue show; a queue row whose offer one of the pace cards draws shows "Next" with no button.
 
 "First" follows document order: the vision's table order for sections, the metaplan's heading
 order for plans, then unlisted plans by file name.
@@ -271,7 +270,7 @@ Pace belongs to the session request; it adds no stored workflow state or approva
 
 ## The frontier
 
-Under the next-step sentence the spine lists the **frontier**: at most five short hints, one per
+At the head of the spine it lists the **frontier**: at most five short hints, one per
 document, each a link to the page where the gap is dealt with. The frontier reads the maturity
 states above and the findings ledger; it is a view of what needs attention next, never a step.
 Hints appear in this order:
