@@ -26,7 +26,7 @@ function ReadingPreview(): ReactElement {
   const size = useAtomValue(readingSizeAtom);
   const family = READING_FACES.find((option) => option.id === face)!.family;
   return (
-    <figure aria-label="Reading preview" className="ps-preview">
+    <figure aria-label="Reading preview" className="ps-preview rounded-md border bg-card">
       <figcaption className="ps-preview-eyebrow" aria-hidden="true">
         Preview
       </figcaption>

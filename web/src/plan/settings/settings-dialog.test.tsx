@@ -198,7 +198,7 @@ describe("planner settings sections", () => {
     renderSettings();
 
     const figure = screen.getByRole("figure", { name: "Reading preview" });
-    expect(figure.className).toBe("ps-preview");
+    expect(figure.className).toBe("ps-preview rounded-md border bg-card");
     const eyebrow = figure.querySelector("figcaption")!;
     expect(eyebrow.textContent).toBe("Preview");
     expect(eyebrow.getAttribute("aria-hidden")).toBe("true");
