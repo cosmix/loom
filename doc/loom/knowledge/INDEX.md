@@ -12,7 +12,7 @@
 | [entry-points.md](entry-points.md) | Key files agents should read first | 83 |
 | [patterns.md](patterns.md) | Architectural patterns discovered in the codebase | 186 |
 | [conventions.md](conventions.md) | Coding conventions discovered in the codebase | 250 |
-| [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 243 |
+| [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 253 |
 | [stack.md](stack.md) | Dependencies, frameworks, and tooling used in the project | 115 |
 | [concerns.md](concerns.md) | Technical debt, warnings, and issues to address | 238 |
 
@@ -52,7 +52,7 @@
 | [plan-server](architecture/plan-server.md) | Chat | 245 |
 | [planner-feature-screens](architecture/planner-feature-screens.md) | Spine | 45 |
 | [planner-uploads-and-drafts](architecture/planner-uploads-and-drafts.md) |  | 35 |
-| [planner-web-shell](architecture/planner-web-shell.md) | Shell | 95 |
+| [planner-web-shell](architecture/planner-web-shell.md) | Shell | 104 |
 | [planning-document-model](architecture/planning-document-model.md) | Docs | 179 |
 | [planning-guidance](architecture/planning-guidance.md) |  | 35 |
 | [planning-session-bridge](architecture/planning-session-bridge.md) |  | 264 |
@@ -116,10 +116,10 @@
 | [commits](conventions/commits.md) | Format | 24 |
 | [config-plan-and-gate-rules](conventions/config-plan-and-gate-rules.md) |  | 23 |
 | [dispute-and-adjudication](conventions/dispute-and-adjudication.md) |  | 119 |
-| [git-and-build-workflow](conventions/git-and-build-workflow.md) |  | 239 |
+| [git-and-build-workflow](conventions/git-and-build-workflow.md) |  | 237 |
 | [guidance-channels-and-plugin-scope](conventions/guidance-channels-and-plugin-scope.md) |  | 139 |
 | [model-and-effort-config](conventions/model-and-effort-config.md) |  | 143 |
-| [plan-web](conventions/plan-web.md) |  | 112 |
+| [plan-web](conventions/plan-web.md) |  | 116 |
 | [plan-yaml-and-hooks](conventions/plan-yaml-and-hooks.md) |  | 182 |
 | [web-dashboard-typography](conventions/web-dashboard-typography.md) |  | 63 |
 
@@ -130,7 +130,7 @@
 | [adjudication-autonomy-deadlock](mistakes/adjudication-autonomy-deadlock.md) |  | 231 |
 | [ambient-filesystem-trust](mistakes/ambient-filesystem-trust.md) |  | 176 |
 | [briefs-and-bug-reports](mistakes/briefs-and-bug-reports.md) |  | 399 |
-| [ci-toolchain-and-cargo](mistakes/ci-toolchain-and-cargo.md) |  | 400 |
+| [ci-toolchain-and-cargo](mistakes/ci-toolchain-and-cargo.md) |  | 373 |
 | [codex-direct-mode-invisible](mistakes/codex-direct-mode-invisible.md) |  | 23 |
 | [codex-lane-rogue-wrapper](mistakes/codex-lane-rogue-wrapper.md) |  | 177 |
 | [codex-navigation](mistakes/codex-navigation.md) | Reader | 132 |
@@ -145,6 +145,7 @@
 | [daemon-fork-after-threads](mistakes/daemon-fork-after-threads.md) | Fork | 38 |
 | [daemon-singleton](mistakes/daemon-singleton.md) |  | 141 |
 | [detached-spawn-in-tests](mistakes/detached-spawn-in-tests.md) |  | 55 |
+| [dev-install](mistakes/dev-install.md) | Daemon kill after install; installing unasked | 37 |
 | [doctrine-and-acceptance](mistakes/doctrine-and-acceptance.md) |  | 392 |
 | [frontmatter-boundary](mistakes/frontmatter-boundary.md) |  | 13 |
 | [hooks-shell-portability](mistakes/hooks-shell-portability.md) |  | 362 |
@@ -164,8 +165,9 @@
 | [pinned-literals-ledgers-and-wiring](mistakes/pinned-literals-ledgers-and-wiring.md) | Pins | 332 |
 | [plan-authoring](mistakes/plan-authoring.md) |  | 79 |
 | [plan-server-delivery](mistakes/plan-server-delivery.md) | Slips | 374 |
+| [planner-design-brainstorm](mistakes/planner-design-brainstorm.md) | Stubs are not summaries; briefs need summaries | 38 |
 | [planner-follow-ups-delivery](mistakes/planner-follow-ups-delivery.md) | Slips | 68 |
-| [planner-polish](mistakes/planner-polish.md) | Polish | 59 |
+| [planner-polish](mistakes/planner-polish.md) | Polish | 80 |
 | [planner-redesign](mistakes/planner-redesign.md) |  | 80 |
 | [planner-review-fixes](mistakes/planner-review-fixes.md) |  | 48 |
 | [planner-ui-repair](mistakes/planner-ui-repair.md) | Repair | 131 |
