@@ -20,6 +20,12 @@
   /* The cards' corner and the rise's curve, shared by every part of the transcript. */
   --chat-card-corner: 14px;
   --chat-ease: cubic-bezier(0.16, 1, 0.3, 1);
+  /* The scroller is the containing block of everything positioned inside it. Without it an
+   * sr-only span (position: absolute) with no positioned ancestor in the log, such as the typing
+   * bubble's "Working", is placed against Transcript's relative root outside the scroller: it sits
+   * at its static offset deep in the flow, is never clipped, and its overflow runs up through the
+   * panel or the kickoff page until the document or `main` scrolls with the whole chat. */
+  position: relative;
   padding: var(--space-2) var(--chat-gutter) var(--space-4);
   color: var(--foreground);
   font-family: var(--font-sans);
@@ -199,12 +205,34 @@
   font-family: var(--font-mono);
 }
 
-/* The pane's one roundel, at the end of the working turn at the reply's left edge. */
-.chat-turn-activity {
+/* The typing bubble at the end of the working turn: the user's bubble mirrored to the left, its
+ * square corner at the bottom left, the size of its three dots. */
+.chat-typing {
   display: flex;
   align-items: center;
-  gap: var(--space-2);
-  min-height: 16px;
+  justify-self: start;
+  gap: 5px;
+  width: fit-content;
+  padding: 10px 14px;
+  border-radius: var(--chat-card-corner) var(--chat-card-corner) var(--chat-card-corner) 4px;
+  background: var(--muted);
+}
+
+.chat-typing-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--muted-foreground);
+  opacity: 0.35;
+  animation: chat-typing 1.2s ease-in-out infinite;
+}
+
+.chat-typing-dot:nth-child(2) {
+  animation-delay: 160ms;
+}
+
+.chat-typing-dot:nth-child(3) {
+  animation-delay: 320ms;
 }
 
 /* ── Notices ───────────────────────────────────────────────────────────────── */
@@ -255,12 +283,29 @@
   }
 }
 
+/* Each typing dot rises 3px and comes up to full strength a third of the way through its cycle,
+ * and is back at rest by 60%. */
+@keyframes chat-typing {
+  0%,
+  60%,
+  100% {
+    opacity: 0.35;
+    transform: none;
+  }
+
+  30% {
+    opacity: 1;
+    transform: translateY(-3px);
+  }
+}
+
 .chat-turn-items > *,
 .chat-tool-fold > .chat-tool-run,
 .chat-decision,
 .chat-wrap,
 .chat-left-behind,
-.chat-starting {
+.chat-starting,
+.chat-typing {
   animation: chat-rise 460ms var(--chat-ease, cubic-bezier(0.16, 1, 0.3, 1)) both;
 }
 
@@ -282,7 +327,13 @@
   .chat-decision,
   .chat-wrap,
   .chat-left-behind,
-  .chat-starting {
+  .chat-starting,
+  .chat-typing {
+    animation: none;
+  }
+
+  .chat-typing-dot {
+    opacity: 0.6;
     animation: none;
   }
 }

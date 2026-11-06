@@ -105,9 +105,9 @@ it("http link opens new tab with noopener", () => {
 it("no placeholder while working", () => {
   const { log } = mount();
   expect(log.querySelector(".md")).toBeNull();
-  // The sr-only "Working" belongs to the turn's one roundel (chat-turn-activity).
+  // The sr-only "Working" belongs to the typing bubble, whose dots carry no text.
   expect(log.textContent).not.toMatch(/thinking|typing|\.\.\./i);
-  expect(log.querySelectorAll(".chat-turn-activity .aurora-roundel")).toHaveLength(1);
+  expect(log.querySelectorAll(".chat-typing")).toHaveLength(1);
 });
 
 it("copy control copies markdown source", async () => {
@@ -142,7 +142,7 @@ it("a closing turn is a wrap-up card and never shows its prompt, reply or tools"
   expect(log.querySelector(".chat-wrap")?.textContent).toContain("Writing down what we decided");
   expect(log.textContent).not.toMatch(/Hidden close|Closing write done|Closing message/);
   expect(within(log).queryByRole("button", { name: /show/i })).toBeNull();
-  expect(log.querySelector(".chat-turn-activity")).toBeNull();
+  expect(log.querySelector(".chat-typing")).toBeNull();
 });
 
 it("null origin renders plainly", () => {
