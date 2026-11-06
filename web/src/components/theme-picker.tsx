@@ -233,7 +233,9 @@ export function ThemePicker({
   const [scheme, setScheme] = useAtom(themeAtom);
   const [lightVariant, setLightVariant] = useAtom(lightVariantAtom);
   const [darkVariant, setDarkVariant] = useAtom(darkVariantAtom);
-  const options = themes ? THEME_OPTIONS.filter((option) => themes.includes(option.id)) : THEME_OPTIONS;
+  const options = themes
+    ? THEME_OPTIONS.filter((option) => themes.includes(option.id))
+    : THEME_OPTIONS;
 
   return (
     <div role="group" aria-label="theme" className="flex flex-wrap gap-3">

@@ -5,11 +5,19 @@ export type StageSpan = { id: string; start_line: number; end_line: number };
 /** `side` is set by a side-by-side diff: which text the lines number. */
 export type SelectionLines = { start: number; end: number; side?: "before" | "after" };
 
-/** Builds a source attachment from a selection and its 1-based inclusive document lines. */
+/**
+ * Builds a source attachment from a selection and its 1-based inclusive document lines.
+ * `sourceText` is the document slice the editor reports for the selection; live preview hides
+ * Markdown markers from the DOM, so it is preferred over the selection's DOM text.
+ */
 export function editorProvenance(path: string, sections: SectionView[], stages: StageSpan[]) {
-  return (selection: Selection, lines: SelectionLines): AttachmentDraft | null => {
+  return (
+    selection: Selection,
+    lines: SelectionLines,
+    sourceText?: string | null,
+  ): AttachmentDraft | null => {
     if (selection.rangeCount === 0 || selection.isCollapsed) return null;
-    const text = selection.toString();
+    const text = sourceText || selection.toString();
     if (!text || !Number.isInteger(lines.start) || !Number.isInteger(lines.end)) return null;
     if (lines.start < 1 || lines.end < lines.start) return null;
 

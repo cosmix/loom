@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type JSX, type RefObject } from "react";
 
-import type { EditorHandle, SourceEditorHandle } from "./codemirror";
+import type { EditorHandle, EditorMode, SourceEditorHandle } from "./codemirror";
 import { loadCodeMirror } from "./load";
 
 export interface SourceEditorProps {
@@ -9,6 +9,10 @@ export interface SourceEditorProps {
   readOnly?: boolean;
   onChange(text: string): void;
   onSave(): void;
+  /** The mode the toolbar shows. The editor is built in it and follows it without a rebuild. */
+  mode: EditorMode;
+  /** Mod-click on a link in live preview; the raw href from the Markdown source. */
+  onFollowLink?(href: string): void;
   /** 1-based lines marked in the gutter. */
   gutterMarks?: number[];
   /** Receives the live editor (null while loading or after unmount) for scroll and selection lookups. */
@@ -22,7 +26,7 @@ type Phase = "loading" | "ready" | "failed";
  * on mount and on path or read-only change, then syncs text and gutter marks into it.
  */
 function useSourceEditorHost(props: SourceEditorProps) {
-  const { path, text, readOnly = false, gutterMarks } = props;
+  const { path, text, readOnly = false, gutterMarks, mode } = props;
   const host = useRef<HTMLDivElement>(null);
   const handle = useRef<SourceEditorHandle | null>(null);
   const latest = useRef(props);
@@ -41,6 +45,8 @@ function useSourceEditorHost(props: SourceEditorProps) {
           readOnly,
           onChange: (next) => latest.current.onChange(next),
           onSave: () => latest.current.onSave(),
+          mode: latest.current.mode,
+          onFollowLink: (href) => latest.current.onFollowLink?.(href),
         });
         handle.current = created;
         if (latest.current.handleRef) latest.current.handleRef.current = created;
@@ -62,6 +68,10 @@ function useSourceEditorHost(props: SourceEditorProps) {
     if (phase === "ready" && editor && editor.getText() !== text) editor.setText(text);
   }, [phase, text]);
   useEffect(() => {
+    const editor = handle.current;
+    if (phase === "ready" && editor && editor.mode() !== mode) editor.setMode(mode);
+  }, [phase, mode]);
+  useEffect(() => {
     if (phase === "ready") handle.current?.setGutterMarks?.(gutterMarks ?? []);
   }, [phase, gutterMarks]);
   return { host, phase };
@@ -69,8 +79,8 @@ function useSourceEditorHost(props: SourceEditorProps) {
 
 /**
  * The CodeMirror source surface for one document. The editor is rebuilt when the
- * path or read-only state changes, never when the opened hash moves after a save (that
- * would drop undo history, cursor and scroll). `text` is applied only when it differs
+ * path or read-only state changes, never when the opened hash moves after a save or the
+ * mode changes (either would drop undo history, cursor and scroll). `text` is applied only when it differs
  * from what the editor holds, so typing never loops back through props.
  */
 export function SourceEditor(props: SourceEditorProps): JSX.Element {

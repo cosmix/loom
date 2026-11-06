@@ -63,4 +63,25 @@ describe("editor provenance", () => {
     expect(provenance(selection, { start: 2, end: 1 })).toBeNull();
     expect(provenance(selection, { start: 1.5, end: 2 })).toBeNull();
   });
+
+  it("prefers the editor's source text over the DOM text of the selection", () => {
+    const provenance = editorProvenance("doc/plan.md", sections, stages);
+    const lines = { start: 6, end: 6 };
+    expect(provenance(select("some bold text"), lines, "some **bold** text")).toMatchObject({
+      text: "some **bold** text",
+    });
+  });
+
+  it("falls back to the DOM text when the source text is null, undefined or empty", () => {
+    const provenance = editorProvenance("doc/plan.md", sections, stages);
+    const lines = { start: 6, end: 6 };
+    for (const sourceText of [null, undefined, ""]) {
+      expect(provenance(select("dom text"), lines, sourceText)).toMatchObject({ text: "dom text" });
+    }
+  });
+
+  it("still rejects a collapsed selection when source text is given", () => {
+    const provenance = editorProvenance("doc/plan.md", sections, stages);
+    expect(provenance(select("text", 0, 0), { start: 1, end: 1 }, "**text**")).toBeNull();
+  });
 });

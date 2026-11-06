@@ -50,15 +50,20 @@ describe("LoadState", () => {
     ["empty", "Nothing here yet"],
     ["not_found", "Not found"],
     ["error", "Something went wrong"],
-  ] as const)("draws %s with a quiet glyph and its default title, no status role", (state, title) => {
-    const { container } = render(<LoadState state={state} />);
-    const root = container.firstElementChild!;
-    expect(root.getAttribute("data-state")).toBe(state);
-    expect(root.querySelector(".plan-state__glyph svg")?.getAttribute("aria-hidden")).toBe("true");
-    expect(root.querySelector(".plan-spinner")).toBeNull();
-    expect(screen.queryByRole("status")).toBeNull();
-    expect(screen.getByText(title)).toBeTruthy();
-  });
+  ] as const)(
+    "draws %s with a quiet glyph and its default title, no status role",
+    (state, title) => {
+      const { container } = render(<LoadState state={state} />);
+      const root = container.firstElementChild!;
+      expect(root.getAttribute("data-state")).toBe(state);
+      expect(root.querySelector(".plan-state__glyph svg")?.getAttribute("aria-hidden")).toBe(
+        "true",
+      );
+      expect(root.querySelector(".plan-spinner")).toBeNull();
+      expect(screen.queryByRole("status")).toBeNull();
+      expect(screen.getByText(title)).toBeTruthy();
+    },
+  );
 
   it("draws no dashed card and no hazard stripes", () => {
     for (const state of ["empty", "not_found", "error"] as const) {

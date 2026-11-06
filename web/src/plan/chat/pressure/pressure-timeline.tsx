@@ -48,7 +48,9 @@ function editAddress(snapshot: ChatSnapshot, step: PressureStepView, path: strin
 // 2), however many steps run side by side. A finished step shows its done glyph.
 function StepGlyph({ step }: { step: PressureStepView }): JSX.Element {
   if (step.state === "running") {
-    return <ArrowSpinner data-kind={step.kind} className="size-3.5 shrink-0 text-(--tone-executing)" />;
+    return (
+      <ArrowSpinner data-kind={step.kind} className="size-3.5 shrink-0 text-(--tone-executing)" />
+    );
   }
   const Glyph = step.state === "done" ? OTHER_GLYPHS.stepDone : X;
   const tone = step.state === "done" ? "text-(--tone-completed)" : "text-muted-foreground";
@@ -173,9 +175,7 @@ function RoundRows({
       {STEP_ORDER.flatMap((kind) => {
         const present = steps.filter((step) => step.kind === kind);
         if (present.length > 0) {
-          return present.map((step) => (
-            <StepRow key={`${round}/${kind}`} step={step} />
-          ));
+          return present.map((step) => <StepRow key={`${round}/${kind}`} step={step} />);
         }
         return queue ? [<QueuedRow key={`${round}/${kind}`} text={ROW_TEXT[kind]} />] : [];
       })}
@@ -217,12 +217,7 @@ export function StepTimeline({ run }: { run: PressureRunView }): JSX.Element {
       {[...byRound]
         .sort(([left], [right]) => left - right)
         .map(([round, steps]) => (
-          <RoundRows
-            key={round}
-            round={round}
-            steps={steps}
-            queue={live && round >= run.round}
-          />
+          <RoundRows key={round} round={round} steps={steps} queue={live && round >= run.round} />
         ))}
       <RecordRow run={run} />
     </div>
