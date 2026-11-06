@@ -14,8 +14,10 @@ import { initClient } from "@/plan/api/client";
 import { connectPlanSocket } from "@/plan/api/socket";
 import { router } from "@/plan/router";
 import { planSocketAtom } from "@/plan/state/atoms";
+import { seedPlannerDarkTheme } from "@/plan/theme-default";
 
 const store = createStore();
+seedPlannerDarkTheme(store, globalThis.localStorage);
 initClient(store);
 
 // Handle held for the app's lifetime: this SPA's root never unmounts, so
