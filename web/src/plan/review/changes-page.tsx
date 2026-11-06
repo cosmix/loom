@@ -22,12 +22,11 @@ function NothingChanged({ from }: { from: string | null }) {
     if (!active || active === document.body || !active.isConnected) back.current?.focus();
   }, []);
   return (
-    <div className="changes-page__empty">
-      <p className="plan-empty">Nothing changed since you looked.</p>
+    <LoadState state="empty" title="Nothing changed since you looked.">
       <Link ref={back} to={from ?? "/"} className="changed-since__link">
         {from ? "Back to where you were" : "Go to Home"}
       </Link>
-    </div>
+    </LoadState>
   );
 }
 

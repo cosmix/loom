@@ -127,7 +127,7 @@ function AbandonFlow({ abandon, busy }: { abandon: AbandonView; busy: boolean })
               baseBranch={abandon.base_branch}
             />
           )}
-          {flow.pending && <LoadState state="loading" title="Abandoning run" />}
+          {flow.pending && <LoadState state="loading" size="compact" title="Abandoning run" />}
           {(flow.pending || flow.error !== null) && <AbandonOutput />}
           {flow.error && <ActionError message={flow.error} />}
           <ConfirmationActions flow={flow} />
@@ -272,7 +272,7 @@ function FinishAbandon({ busy }: { busy: boolean }) {
           Finish abandoning
         </DisabledReason>
       )}
-      {pending && <LoadState state="loading" title="Finishing abandoning" />}
+      {pending && <LoadState state="loading" size="compact" title="Finishing abandoning" />}
       {error && <ActionError message={error} />}
       <p role="status">{finished && "Plan retired"}</p>
     </>

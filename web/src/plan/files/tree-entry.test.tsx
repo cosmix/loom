@@ -67,8 +67,8 @@ it.each([
   expect(mark?.classList.contains("size-5")).toBe(true);
   expect(mark?.getAttribute("aria-hidden")).toBe("true");
   expect(mark?.getAttribute("style")).toContain("var(--doc-5)");
-  // A running plan draws the activity roundel, not an icon.
-  const stateMark = glyph === "refresh-cw" ? ".aurora-roundel" : `.lucide-${glyph}`;
+  // A running plan draws the live status dot in its glyph slot.
+  const stateMark = glyph === "refresh-cw" ? ".activity-glyph__led" : `.lucide-${glyph}`;
   expect(screen.getByText(state).querySelector(stateMark)).not.toBeNull();
   expect(container.querySelector(".lucide-file-text")).toBeNull();
 });

@@ -171,13 +171,6 @@
   flex: none;
 }
 
-.plan-switcher-empty {
-  margin: 0;
-  padding: var(--space-1) var(--space-2) var(--space-2);
-  font-size: var(--type-ui);
-  color: var(--muted-foreground);
-}
-
 .plan-header-controls {
   display: flex;
   min-width: 0;

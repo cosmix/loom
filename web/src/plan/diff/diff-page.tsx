@@ -74,16 +74,15 @@ function NotFound({ kind, path }: { kind: "turn" | "head"; path: string }): JSX.
     return <LoadState state="not_found" title="This document no longer exists" />;
   }
   return (
-    <div className="flex flex-col gap-2">
-      <LoadState
-        state="not_found"
-        title="This turn's diff is gone"
-        message="This turn's diff is gone: loom plan restarted. The uncommitted diff still shows the work."
-      />
-      <Link to={openDiff("head", path)} className="px-4 text-[13px] underline">
+    <LoadState
+      state="not_found"
+      title="This turn's diff is gone"
+      message="This turn's diff is gone: loom plan restarted. The uncommitted diff still shows the work."
+    >
+      <Link to={openDiff("head", path)} className="underline">
         Show the uncommitted diff
       </Link>
-    </div>
+    </LoadState>
   );
 }
 
@@ -126,7 +125,7 @@ function DiffBody({ path, kind, turn }: DiffPageProps): JSX.Element {
 /** The diff address of file mode: the header and the diff of one kind. */
 export function DiffPage(props: DiffPageProps): JSX.Element {
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
+    <div className="flex min-h-full flex-1 flex-col">
       <Header kind={props.kind} path={props.path} />
       <DiffBody {...props} />
     </div>

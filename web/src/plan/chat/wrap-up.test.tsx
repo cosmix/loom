@@ -28,7 +28,7 @@ const summary = (fields: Partial<LeftBehind> = {}): LeftBehind => ({
   ...fields,
 });
 
-it("the wrap-up is no live region of its own, with its roundel, heading and one line per document", () => {
+it("the wrap-up is no live region of its own, with its spinner, heading and one line per document", () => {
   const { container } = view(
     <WrapUpCard
       ticks={[
@@ -45,7 +45,7 @@ it("the wrap-up is no live region of its own, with its roundel, heading and one 
   expect(card.textContent).toContain(
     "Putting this chat's decisions and open questions into the documents.",
   );
-  expect(card.querySelectorAll(".chat-wrap-mark .aurora-roundel")).toHaveLength(1);
+  expect(card.querySelectorAll(".chat-wrap-mark .plan-spinner")).toHaveLength(1);
   const rows = [...container.querySelectorAll(".chat-wrap-ticks li")];
   expect(rows.map((row) => row.getAttribute("data-state"))).toEqual(["done", "live"]);
   expect(rows[0]!.querySelector(".chat-wrap-tick svg")).not.toBeNull();
@@ -131,9 +131,9 @@ it("model and path text renders as text, never as markup", () => {
   expect(container.textContent).toContain("<i>why</i>?");
 });
 
-it("the starting card holds one roundel and the starting brief", () => {
+it("the starting card holds one spinner and the starting brief", () => {
   const { container } = view(<StartingCard session={{ ...fixture.session!, state: "starting" }} />);
 
-  expect(container.querySelectorAll(".chat-starting .aurora-roundel")).toHaveLength(1);
+  expect(container.querySelectorAll(".chat-starting .plan-spinner")).toHaveLength(1);
   expect(container.textContent).toContain("Starting");
 });

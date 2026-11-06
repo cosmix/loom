@@ -25,7 +25,12 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-const busy = (root: HTMLElement) => root.querySelectorAll('.aurora-roundel[data-busy="true"]');
+// The live signs of the pane: a live status dot, the block spinner, a turning arrow. The roundel is
+// the header pill's alone (ui/DESIGN.md, Status), so none is drawn here.
+const busy = (root: HTMLElement) =>
+  root.querySelectorAll(
+    '.activity-glyph:not([data-paused="true"]) .activity-glyph__led, .plan-spinner, .plan-arrow-spinner[data-busy="true"], .aurora-roundel',
+  );
 
 function drawPane(run: unknown, state: "working" | "idle") {
   const session = sessionViewSchema.parse({
@@ -64,14 +69,14 @@ function drawPane(run: unknown, state: "working" | "idle") {
   );
 }
 
-it("a working pressure run's pane turns exactly one roundel: the running step's, none in the transcript", () => {
-  // The fixture runs the Codex step: its card and the other glyphs rest, the row's glyph turns.
+it("a working pressure run's pane shows exactly one live dot: the running step's, none in the transcript", () => {
+  // The fixture runs the Codex step: its card and the other glyphs rest, the row's dot is live.
   const pane = drawPane(runFixture, "working");
-  expect(screen.getByRole("log").querySelector(".aurora-roundel")).toBeNull();
+  expect(busy(screen.getByRole("log"))[0] ?? null).toBeNull();
   expect(busy(pane.container)).toHaveLength(1);
 });
 
-it("steps running side by side turn only the one the run is on", () => {
+it("steps running side by side light only the one the run is on", () => {
   const both = {
     ...runFixture,
     steps: runFixture.steps.map((step) => ({ ...step, state: "running", ended_ms: null })),
@@ -79,7 +84,7 @@ it("steps running side by side turn only the one the run is on", () => {
   expect(busy(drawPane(both, "working").container)).toHaveLength(1);
 });
 
-it("an ended pressure run's pane turns no roundel", () => {
+it("an ended pressure run's pane shows no live sign", () => {
   const ended = {
     ...runFixture,
     steps: runFixture.steps.map((step) => ({ ...step, state: "stopped", ended_ms: 3000 })),

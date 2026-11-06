@@ -58,7 +58,7 @@ it("a working chat ends its newest open turn with the typing bubble and no round
   expect(typing[0]!.textContent).toBe("Working");
   expect(typing[0]!.getAttribute("aria-live")).toBe("off");
   expect(typing[0]!.closest("section")?.getAttribute("aria-label")).toBe("Turn 2");
-  expect(log.querySelector(".aurora-roundel")).toBeNull();
+  expect(log.querySelector(".plan-spinner")).toBeNull();
 });
 
 it("a working pressure run draws no typing bubble in the transcript", () => {
@@ -67,20 +67,20 @@ it("a working pressure run draws no typing bubble in the transcript", () => {
   const { log } = mount([], { session: pressure, turns: [open] });
 
   expect(log.querySelector(".chat-typing")).toBeNull();
-  expect(log.querySelector(".aurora-roundel")).toBeNull();
+  expect(log.querySelector(".plan-spinner")).toBeNull();
 });
 
 it("no typing bubble while the chat is idle, or on a closing turn", () => {
   const open = turn([said("u1")], { open: true });
   const idle = mount([], { session: session("idle"), turns: [open] });
   expect(idle.log.querySelector(".chat-typing")).toBeNull();
-  expect(idle.log.querySelector(".aurora-roundel")).toBeNull();
+  expect(idle.log.querySelector(".plan-spinner")).toBeNull();
   cleanup();
 
   const closing = turn([closingPrompt], { id: "t2", open: true, started_at: at(2) });
   const { log } = mount([], { session: session("ending"), turns: [closing] });
   expect(log.querySelector(".chat-typing")).toBeNull();
-  expect(log.querySelectorAll(".aurora-roundel")).toHaveLength(1);
+  expect(log.querySelectorAll(".plan-spinner")).toHaveLength(1);
 });
 
 it("an ending chat shows the wrap-up once the user has written, before the closing turn", () => {
@@ -113,7 +113,7 @@ it("an ended chat whose closing turn is still open draws the left-behind card, n
 
   expect(log.querySelectorAll(".chat-left-behind")).toHaveLength(1);
   expect(log.querySelector(".chat-wrap")).toBeNull();
-  expect(log.querySelector(".aurora-roundel")).toBeNull();
+  expect(log.querySelector(".plan-spinner")).toBeNull();
   expect(log.textContent).not.toContain("Writing down what we decided");
 });
 
@@ -128,11 +128,11 @@ it("an ended chat that changed nothing, or that the user never wrote to, shows n
   expect(second.log.querySelector(".chat-left-behind")).toBeNull();
 });
 
-it("a starting chat shows the starting card with the pane's roundel", () => {
+it("a starting chat shows the starting card with the pane's spinner", () => {
   const { log } = mount([], { session: session("starting"), turns: [] });
 
   const card = log.querySelector(".chat-starting")!;
-  expect(card.querySelectorAll(".aurora-roundel")).toHaveLength(1);
+  expect(card.querySelectorAll(".plan-spinner")).toHaveLength(1);
   expect(card.textContent).toContain("Starting");
 });
 

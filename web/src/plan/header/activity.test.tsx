@@ -115,6 +115,17 @@ it("shows only the count in compact mode with the full accessible label", () => 
   expect(trigger.querySelector('[data-kind="permission"]')).toBeTruthy();
 });
 
+it("turns the planner's one roundel on the trigger while work runs", () => {
+  vi.mocked(useActivities).mockReturnValue(activities.slice(1));
+  render(<ActivityPill compact={false} />);
+
+  const trigger = screen.getByRole("button", { name: "2 in progress: Pressure test" });
+  const glyph = trigger.querySelector('.activity-glyph[data-kind="pressure"]');
+  expect(glyph?.getAttribute("aria-hidden")).toBe("true");
+  expect(glyph?.querySelector('.aurora-roundel[data-busy="true"]')).not.toBeNull();
+  expect(trigger.querySelector(".activity-glyph__led, .plan-arrow-spinner")).toBeNull();
+});
+
 it("shows the most urgent activity's glyph on the trigger", () => {
   render(<ActivityPill compact={false} />);
 

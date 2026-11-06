@@ -223,7 +223,7 @@ export const STATES: readonly LegendEntry[] = [
   },
 ];
 
-/** The signs that mean "your turn"; every progress kind draws the one roundel instead. */
+/** The signs that mean "your turn"; every progress kind draws the live status dot instead. */
 const YOUR_TURN: Record<YourTurnKind, string> = {
   permission: "A session needs your permission before it can continue.",
   waiting: "A session is waiting for your reply.",
@@ -233,7 +233,7 @@ export const ACTIVITIES: readonly LegendEntry[] = [
   {
     name: "Working",
     meaning:
-      "The roundel turns wherever work is in progress: a plan running, a document being drafted, summaries rebuilding, a pressure test or Codex review, a session starting. It rests when the work pauses.",
+      "A green dot pulses beside work under way: a plan running, a document being drafted, a pressure test or Codex review. It turns gray and still when the work pauses. An action that will finish, such as a rebuild or a send, turns a small arrow instead.",
     glyph: <ActivityGlyph kind="running" className="size-4" />,
   },
   ...(Object.keys(YOUR_TURN) as YourTurnKind[]).map((kind) => ({

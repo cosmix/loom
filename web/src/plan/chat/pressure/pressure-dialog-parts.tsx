@@ -3,15 +3,18 @@ import { Clock, FilePen, FilePlus, TriangleAlert } from "lucide-react";
 import { useId, type JSX, type ReactNode } from "react";
 
 import { DialogDescription, DialogTitle } from "@/components/ui/dialog";
-import { ActivityGlyph } from "@/plan/ui/activity-glyphs";
+import { OTHER_GLYPHS } from "@/plan/ui/glyphs";
 
 import { Untrusted } from "../visible-controls";
+
+const PressureMark = OTHER_GLYPHS.pressureTested;
 
 export function PressureHero(): JSX.Element {
   return (
     <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3.5 border-b border-hairline bg-[radial-gradient(120%_160%_at_0%_0%,color-mix(in_oklch,var(--primary)_16%,var(--card))_0%,var(--card)_62%)] px-5 pt-[18px] pb-4">
       <span className="flex size-11 shrink-0 items-center justify-center rounded-[12px] bg-[color-mix(in_oklch,var(--primary)_28%,transparent)] text-primary">
-        <ActivityGlyph kind="pressure" className="size-6" />
+        {/* The dialog's mark, not work in progress: the pressure-tested flask, still. */}
+        <PressureMark className="size-6" aria-hidden="true" />
       </span>
       <div className="min-w-0 space-y-0.5">
         <DialogTitle className="text-[17px] font-[650]">Pressure-test a plan</DialogTitle>

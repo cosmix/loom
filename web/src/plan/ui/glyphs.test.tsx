@@ -11,7 +11,8 @@ import {
   VIEW_GLYPHS,
   type Glyph,
 } from "@/plan/ui/glyphs";
-import { RoundelGlyph } from "@/plan/ui/roundel-glyph";
+import { LiveDot } from "@/plan/ui/activity-glyphs";
+import { ArrowSpinner } from "@/plan/ui/spinner";
 
 afterEach(cleanup);
 
@@ -59,10 +60,9 @@ const glyphRecords = [
 const allCases = glyphRecords.flatMap(({ name, glyphs }) =>
   Object.entries(glyphs).map(([key, glyph]) => ({ name: `${name}: ${key}`, glyph })),
 );
-// The states that mean work in progress draw the roundel, a disc of spans rather than an SVG
-// (ui/DESIGN.md, Status); "draws the roundel for work in progress" below covers them.
-const glyphCases = allCases.filter(({ glyph }) => glyph !== RoundelGlyph);
-const roundelCases = allCases.filter(({ glyph }) => glyph === RoundelGlyph);
+// A running plan is a state shown, the live dot (a span); a rebuilding summary is an operation, the
+// arrow spinner (ui/DESIGN.md, Status). The tests below the SVG one cover both.
+const svgCases = allCases.filter(({ glyph }) => glyph !== LiveDot);
 
 function GlyphHarness({ glyph: Glyph }: { glyph: Glyph }) {
   return (
@@ -77,26 +77,28 @@ describe("planner glyphs", () => {
     expect(Object.keys(glyphs).sort()).toEqual([...keys].sort());
   });
 
-  it.each(glyphCases)("renders $name as an SVG", ({ glyph }) => {
+  it.each(svgCases)("renders $name as an SVG", ({ glyph }) => {
     const { container } = render(<GlyphHarness glyph={glyph} />);
 
     expect(container.querySelector("svg")).not.toBeNull();
   });
 
-  it("draws the roundel for work in progress: a running plan and a rebuilding summary", () => {
-    expect(roundelCases.map(({ name }) => name)).toEqual([
-      "plan states: running",
-      "summary states: rebuilding",
-    ]);
-    for (const { glyph } of roundelCases) {
-      const { container } = render(<GlyphHarness glyph={glyph} />);
+  it("draws a running plan as the live status dot and a rebuild as the arrow spinner", () => {
+    expect(PLAN_STATE_GLYPHS.running).toBe(LiveDot);
+    expect(SUMMARY_STATE_GLYPHS.rebuilding).toBe(ArrowSpinner);
+    expect(allCases.filter(({ glyph }) => glyph === LiveDot || glyph === ArrowSpinner)).toHaveLength(
+      2,
+    );
 
-      expect(container.querySelector("svg")).toBeNull();
-      expect(
-        container.querySelector('[aria-hidden="true"] .aurora-roundel')?.getAttribute("data-busy"),
-      ).toBe("true");
-      cleanup();
-    }
+    const running = render(<GlyphHarness glyph={PLAN_STATE_GLYPHS.running} />);
+    expect(running.container.querySelector('[aria-hidden="true"] .activity-glyph__led')).not.toBeNull();
+    expect(running.container.querySelector("svg")).toBeNull();
+    cleanup();
+    const rebuilding = render(<GlyphHarness glyph={SUMMARY_STATE_GLYPHS.rebuilding} />);
+    const svg = rebuilding.container.querySelector("svg.plan-arrow-spinner");
+    expect(svg?.getAttribute("aria-hidden")).toBe("true");
+    expect(svg?.getAttribute("data-busy")).toBe("true");
+    expect(rebuilding.container.querySelector(".aurora-roundel")).toBeNull();
   });
 
   it("uses a distinct glyph for each document kind", () => {

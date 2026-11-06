@@ -1,7 +1,7 @@
 import { BellRing } from "lucide-react";
 import type { JSX, ReactNode } from "react";
 
-import { RoundelGlyph } from "@/plan/ui/roundel-glyph";
+import type { GlyphProps } from "@/plan/ui/glyphs";
 
 import "./activity-glyphs.css";
 
@@ -38,8 +38,9 @@ export const ACTIVITY_LABELS: Record<ActivityKind, string> = {
 };
 
 /**
- * The kinds that mean work is in progress. They all draw the one roundel (`ui/DESIGN.md`, Status);
- * the rest (`YourTurnKind`) mean "your turn" and keep their own glyphs.
+ * The kinds that mean work is under way. Each is a state being shown, so each draws the live
+ * status dot (`ui/DESIGN.md`, Status); the rest (`YourTurnKind`) mean "your turn": the waiting
+ * kind draws the same dot, the permission kind its bell.
  */
 export const PROGRESS_KINDS = [
   "running",
@@ -57,19 +58,29 @@ export function isProgressKind(kind: ActivityKind): kind is ProgressKind {
   return (PROGRESS_KINDS as readonly ActivityKind[]).includes(kind);
 }
 
-function YourTurnShape({ kind }: { kind: YourTurnKind }): JSX.Element {
-  switch (kind) {
-    case "waiting":
-      return <span className="activity-glyph__led" />;
-    case "permission":
-      return <BellRing className="activity-glyph__motion" />;
-  }
+/**
+ * A running plan's state glyph (`ui/glyphs.tsx` `PLAN_STATE_GLYPHS.running`): the live status dot,
+ * with the props a glyph site passes a lucide icon.
+ */
+export function LiveDot({ className, size }: GlyphProps): JSX.Element {
+  return (
+    <span
+      className={`activity-glyph${className ? ` ${className}` : ""}`}
+      data-kind="running"
+      style={size === undefined ? undefined : { width: size, height: size }}
+      aria-hidden="true"
+    >
+      <span className="activity-glyph__led" />
+    </span>
+  );
 }
 
 /**
  * The decorative glyph of an activity kind. The root is `aria-hidden`: the caller's label is the
- * announcement. Work in progress is the roundel glyph itself (`ui/roundel-glyph.tsx`); a paused
- * one rests upright and dims (busy-roundel.css) rather than freezing mid-turn.
+ * announcement. Every kind but permission is a status dot, live (green, pulsing) while it runs and
+ * gray while paused; permission is the bell. It never draws the roundel, which is the header
+ * pill's alone (`header/activity.tsx`), nor a spinner: an operation that ends draws the arrow
+ * spinner (`ui/spinner.tsx`) at its own site.
  */
 export function ActivityGlyph({
   kind,
@@ -85,10 +96,13 @@ export function ActivityGlyph({
     "data-kind": kind,
     "data-paused": paused || undefined,
   };
-  if (isProgressKind(kind)) return <RoundelGlyph {...root} busy={!paused} />;
   return (
     <span {...root} aria-hidden="true">
-      <YourTurnShape kind={kind} />
+      {kind === "permission" ? (
+        <BellRing className="activity-glyph__motion" />
+      ) : (
+        <span className="activity-glyph__led" />
+      )}
     </span>
   );
 }

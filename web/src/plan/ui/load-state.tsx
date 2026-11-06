@@ -1,50 +1,85 @@
-import { InboxIcon, SearchXIcon } from "lucide-react";
+import { CircleAlert, Inbox, SearchX, type LucideIcon } from "lucide-react";
+import type { ReactNode } from "react";
 
-import { EmptyState } from "@/aurora-ui/feedback/EmptyState";
-import { HazardPanel } from "@/aurora-ui/feedback/HazardPanel";
 import { Button } from "@/components/ui/button";
 import { Untrusted } from "@/plan/chat/visible-controls";
-import { BusyText } from "@/plan/ui/busy-text";
+import { Spinner } from "@/plan/ui/spinner";
+
+import "./load-state.css";
+
+type State = "loading" | "empty" | "not_found" | "error";
 
 interface LoadStateProps {
-  state: "loading" | "empty" | "not_found" | "error";
+  state: State;
   title?: string;
   message?: string;
   action?: { label: string; onClick: () => void };
+  /** More of the action row: a link out, or a second way on. */
+  children?: ReactNode;
+  /** `compact` tightens the padding for a popover, a card, a dialog section or a sidebar. */
+  size?: "page" | "compact";
 }
 
-/** `message` is often a server's or an error's text, so it is drawn through Untrusted here. */
-export function LoadState({ state, title, message, action }: LoadStateProps) {
-  const button = action && <Button onClick={action.onClick}>{action.label}</Button>;
-  const text = message ? <Untrusted text={message} /> : undefined;
+const GLYPHS: Record<Exclude<State, "loading">, LucideIcon> = {
+  empty: Inbox,
+  not_found: SearchX,
+  error: CircleAlert,
+};
 
-  if (state === "loading") {
-    // The title is the one announcement (the roundel is hidden), set where the content will start.
-    const label = title ?? "Loading";
-    return (
-      <div role="status" aria-label={label}>
-        <BusyText className="plan-empty">{label}</BusyText>
-        {text && <p>{text}</p>}
-        {button}
-      </div>
-    );
-  }
+const TITLES: Record<State, string> = {
+  loading: "Loading",
+  empty: "Nothing here yet",
+  not_found: "Not found",
+  error: "Something went wrong",
+};
 
-  if (state === "error") {
-    return (
-      <HazardPanel tone="error" title={title ?? "Something went wrong"}>
-        {text && <p>{text}</p>}
-        {button}
-      </HazardPanel>
-    );
-  }
-
+/**
+ * The planner's one loading, empty and error state (`ui/DESIGN.md`): a glyph, a title, an
+ * optional detail and an optional action row, centred in whatever holds it. It fills a flex
+ * column's spare height and, as an only child, its parent's height, so the container decides where
+ * the middle is. Loading draws the spinner under `role="status"` named by the title; the roundel
+ * means activity and is never drawn here. `message` is often a server's or an error's text, so it
+ * is drawn through Untrusted.
+ */
+export function LoadState({
+  state,
+  title,
+  message,
+  action,
+  children,
+  size = "page",
+}: LoadStateProps) {
+  const label = title ?? TITLES[state];
+  const loading = state === "loading";
+  const Glyph = loading ? null : GLYPHS[state];
+  const actions = (action || children) && (
+    <div className="plan-state__actions">
+      {action && (
+        <Button data-look="secondary" className="plan-button" onClick={action.onClick}>
+          {action.label}
+        </Button>
+      )}
+      {children}
+    </div>
+  );
   return (
-    <EmptyState
-      icon={state === "empty" ? InboxIcon : SearchXIcon}
-      title={title ?? (state === "empty" ? "Nothing here yet" : "Not found")}
-      description={text}
-      action={button}
-    />
+    <div
+      className="plan-state"
+      data-state={state}
+      data-size={size}
+      role={loading ? "status" : undefined}
+      aria-label={loading ? label : undefined}
+    >
+      <span className="plan-state__glyph">
+        {Glyph ? <Glyph size={20} strokeWidth={1.5} aria-hidden="true" /> : <Spinner />}
+      </span>
+      <p className="plan-state__title">{label}</p>
+      {message && (
+        <p className="plan-state__detail">
+          <Untrusted text={message} />
+        </p>
+      )}
+      {actions}
+    </div>
   );
 }

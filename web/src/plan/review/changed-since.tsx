@@ -9,6 +9,7 @@ import "@/plan/header/activity.css";
 import { Untrusted, visibleControls } from "@/plan/chat/visible-controls";
 import { DiffView } from "@/plan/diff/diff-view";
 import { serverInfoAtom } from "@/plan/state/atoms";
+import { ActionError } from "@/plan/ui/action-error";
 import { ActivityTile } from "@/plan/ui/activity-glyphs";
 import { LoadState } from "@/plan/ui/load-state";
 
@@ -135,10 +136,11 @@ function CompareStatus({
           Comparing with <Untrusted text={comparison.name} />. This ref is not stored.
         </p>
       )}
-      {compare.loading && <LoadState state="loading" title="Loading comparison" />}
+      {compare.loading && <LoadState state="loading" size="compact" title="Loading comparison" />}
       {compare.error && (
         <LoadState
           state="error"
+          size="compact"
           message={visibleControls(compare.error)}
           action={{ label: "Retry comparison", onClick: compare.retry }}
         />
@@ -199,13 +201,7 @@ function ComparisonFoot({
     <footer className="changed-since__foot">
       {paths && <MarkAllButton mark={mark} paths={paths} />}
       <RefForm onCompare={onRef} />
-      {mark.error && (
-        <LoadState
-          state="error"
-          title="Could not mark all seen"
-          message={visibleControls(mark.error)}
-        />
-      )}
+      {mark.error && <ActionError title="Could not mark all seen" message={mark.error} />}
       <Limits />
     </footer>
   );

@@ -1,50 +1,79 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import css from "./load-state.css?raw";
 import { LoadState } from "./load-state";
 
 afterEach(cleanup);
 
+/** The body of the first rule whose selector is exactly `selector`. */
+function rule(selector: string): string {
+  const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const match = new RegExp(`(?:^|\\n)${escaped}\\s*\\{([^}]*)\\}`).exec(css);
+  expect(match, `no rule for ${selector}`).not.toBeNull();
+  return match![1]!;
+}
+
 describe("LoadState", () => {
-  it("draws the roundel with its title while loading, under one status role", () => {
+  it("draws the spinner, never the roundel, under one status role named by its title", () => {
     const { container } = render(<LoadState state="loading" title="Loading the feature" />);
-    const status = screen.getByRole("status");
-    expect(status.getAttribute("aria-label")).toBe("Loading the feature");
-    expect(status.querySelector('[aria-hidden="true"] .aurora-roundel')).not.toBeNull();
+    const status = screen.getByRole("status", { name: "Loading the feature" });
     expect(screen.getAllByRole("status")).toHaveLength(1);
+    expect(status.querySelector("svg.plan-spinner")?.getAttribute("aria-hidden")).toBe("true");
+    expect(container.querySelector(".aurora-roundel")).toBeNull();
     expect(screen.getByText("Loading the feature")).toBeTruthy();
-    expect(container.querySelector('[data-slot="skeleton"]')).toBeNull();
   });
 
   it("titles the loading state Loading by default", () => {
     render(<LoadState state="loading" />);
-    expect(screen.getByRole("status").getAttribute("aria-label")).toBe("Loading");
+    expect(screen.getByRole("status", { name: "Loading" })).toBeTruthy();
     expect(screen.getByText("Loading")).toBeTruthy();
   });
 
-  it.each(["empty", "not_found"] as const)("renders an empty state for %s", (state) => {
-    const { container } = render(
-      <LoadState state={state} title="Custom title" message="Details" />,
-    );
-    expect(screen.getByText("Custom title")).toBeTruthy();
-    expect(screen.getByText("Details")).toBeTruthy();
-    expect(container.querySelector(".border-dashed")).not.toBeNull();
+  it.each([
+    ["empty", "Nothing here yet"],
+    ["not_found", "Not found"],
+    ["error", "Something went wrong"],
+  ] as const)("draws %s with a quiet glyph and its default title, no status role", (state, title) => {
+    const { container } = render(<LoadState state={state} />);
+    const root = container.firstElementChild!;
+    expect(root.getAttribute("data-state")).toBe(state);
+    expect(root.querySelector(".plan-state__glyph svg")?.getAttribute("aria-hidden")).toBe("true");
+    expect(root.querySelector(".plan-spinner")).toBeNull();
+    expect(screen.queryByRole("status")).toBeNull();
+    expect(screen.getByText(title)).toBeTruthy();
   });
 
-  it("renders an error hazard panel", () => {
-    const { container } = render(<LoadState state="error" title="Failed" message="Details" />);
-    expect(screen.getByText("Failed")).toBeTruthy();
-    expect(screen.getByText("Details")).toBeTruthy();
-    expect(container.querySelector(".hazard-error")).not.toBeNull();
+  it("draws no dashed card and no hazard stripes", () => {
+    for (const state of ["empty", "not_found", "error"] as const) {
+      const { container } = render(<LoadState state={state} title="T" message="Details" />);
+      expect(container.querySelector(".border-dashed")).toBeNull();
+      expect(container.querySelector(".hazard-error")).toBeNull();
+      cleanup();
+    }
+  });
+
+  it("sets the title and the detail on their own lines", () => {
+    render(<LoadState state="error" title="Failed" message="Details" />);
+    expect(screen.getByText("Failed").className).toBe("plan-state__title");
+    expect(screen.getByText("Details").closest(".plan-state__detail")).not.toBeNull();
+  });
+
+  it("is the page size by default and compact on request", () => {
+    const page = render(<LoadState state="empty" />);
+    expect(page.container.firstElementChild?.getAttribute("data-size")).toBe("page");
+    cleanup();
+    const compact = render(<LoadState state="empty" size="compact" />);
+    expect(compact.container.firstElementChild?.getAttribute("data-size")).toBe("compact");
   });
 
   it.each(["loading", "empty", "not_found", "error"] as const)(
     "shows a bidirectional override in the message of %s as visible text",
     (state) => {
-      render(<LoadState state={state} message={"file\u202egnp.md"} />);
+      render(<LoadState state={state} message={"file‮gnp.md"} />);
       const text = screen.getByText("file⟨U+202E⟩gnp.md");
       expect(text.style.unicodeBidi).toBe("isolate");
-      expect(document.body.textContent).not.toContain("\u202e");
+      expect(document.body.textContent).not.toContain("‮");
     },
   );
 
@@ -57,4 +86,41 @@ describe("LoadState", () => {
       expect(onClick).toHaveBeenCalledOnce();
     },
   );
+
+  it("puts its children in the action row after the action", () => {
+    render(
+      <LoadState state="not_found" action={{ label: "Retry", onClick: () => {} }}>
+        <a href="/">Back to home</a>
+      </LoadState>,
+    );
+    const row = screen.getByRole("button", { name: "Retry" }).parentElement!;
+    expect(row.className).toBe("plan-state__actions");
+    expect(row.lastElementChild?.textContent).toBe("Back to home");
+  });
+
+  it("draws no action row without an action or children", () => {
+    const { container } = render(<LoadState state="empty" />);
+    expect(container.querySelector(".plan-state__actions")).toBeNull();
+  });
+});
+
+describe("load-state.css", () => {
+  it("centres on both axes and fills a flex column's spare height", () => {
+    const body = rule(".plan-state");
+    expect(body).toMatch(/display:\s*flex/);
+    expect(body).toMatch(/flex-direction:\s*column/);
+    expect(body).toMatch(/align-items:\s*center/);
+    expect(body).toMatch(/justify-content:\s*center/);
+    expect(body).toMatch(/flex:\s*1 1 auto/);
+    expect(body).toMatch(/text-align:\s*center/);
+  });
+
+  it("is at least its parent's height when it is the only child", () => {
+    expect(rule(".plan-state:only-child")).toMatch(/min-height:\s*100%/);
+  });
+
+  it("drops the loading fade under reduced motion", () => {
+    const reduced = /@media \(prefers-reduced-motion: reduce\)\s*\{([\s\S]*)\}\s*$/.exec(css);
+    expect(reduced?.[1]).toMatch(/\.plan-state\[data-state="loading"\]\s*\{\s*animation:\s*none/);
+  });
 });

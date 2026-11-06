@@ -8,6 +8,7 @@ import type { DocView } from "@/plan/api/schema-files";
 import { Untrusted } from "@/plan/chat/visible-controls";
 import { featureOfDocPath, featureSourceHref } from "@/plan/feature/source-href";
 import { Markdown } from "@/plan/markdown";
+import { BusyText } from "@/plan/ui/busy-text";
 
 import { passageKey, useColumn } from "./column-context";
 import { FLASH_CLASS, useFlashOnChange } from "./flash";
@@ -55,9 +56,9 @@ function PassageBody({
   );
 }
 
-function missingText(failed: boolean, doc: DocView | null): string {
+function missingText(failed: boolean, doc: DocView | null): ReactNode {
   if (failed) return "This file could not be loaded.";
-  return doc ? "This section no longer exists." : "Loading";
+  return doc ? "This section no longer exists." : <BusyText>Loading</BusyText>;
 }
 
 /** A repeated passage: one line pointing back to the first showing in this view. */

@@ -5,10 +5,12 @@
  * document's diff under its row. From 1024px: a 22rem list beside the diff, each scrolling on its
  * own inside the page's height, the foot fixed under both.
  */
+/* At least the main's height, so a loading or empty body centres in the space under the head. */
 .changes-page {
   display: flex;
   flex-direction: column;
   width: 100%;
+  min-height: 100%;
   padding: var(--space-6) var(--page-gutter) 0;
   color: var(--foreground);
   font-family: var(--font-sans);
@@ -34,18 +36,6 @@
 .changes-page__head .plan-fine {
   margin: 0;
   max-width: 48ch;
-}
-
-.changes-page__empty {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: var(--space-2) var(--space-4);
-  padding-bottom: var(--space-5);
-}
-
-.changes-page__empty > .plan-empty {
-  margin: 0;
 }
 
 .changed-since__body {

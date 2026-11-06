@@ -10,6 +10,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/plan/header/popover";
 import { kindOf } from "@/plan/new/kickoff-state";
 import { featuresAtom, kickoffAtom, kickoffDraftsAtom, serverInfoAtom } from "@/plan/state/atoms";
 import { OTHER_GLYPHS } from "@/plan/ui/glyphs";
+import { LoadState } from "@/plan/ui/load-state";
 
 const SwitcherIcon = OTHER_GLYPHS.switcher;
 
@@ -100,7 +101,7 @@ function FeatureLinks({
 }) {
   const features = useAtomValue(featuresAtom);
   if (features.length === 0) {
-    return <p className="plan-switcher-empty">No features yet.</p>;
+    return <LoadState state="empty" size="compact" title="No features yet." />;
   }
   return (
     <nav aria-label="Feature navigation" className="plan-switcher-menu" onKeyDown={moveFocus}>

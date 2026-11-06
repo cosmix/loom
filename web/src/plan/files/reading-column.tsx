@@ -85,20 +85,17 @@ function Missing({
   const known = slug ?? planSlug(path.split("/").at(-1) ?? null);
   const moved = tree && known ? renamedPlan(tree, known, path) : null;
   return (
-    <>
-      <LoadState
-        state="not_found"
-        title="This document no longer exists"
-        action={{ label: "Back to the tree", onClick: () => navigate("/files") }}
-      />
+    <LoadState
+      state="not_found"
+      title="This document no longer exists"
+      action={{ label: "Back to the tree", onClick: () => navigate("/files") }}
+    >
       {moved?.path && (
-        <p className="px-6 text-[13px]">
-          <Link to={toAddress(moved.path)} className="underline">
-            {moved.title} is now at {moved.path}
-          </Link>
-        </p>
+        <Link to={toAddress(moved.path)} className="underline">
+          {moved.title} is now at {moved.path}
+        </Link>
       )}
-    </>
+    </LoadState>
   );
 }
 
@@ -292,7 +289,7 @@ export function ReadingColumn({ path, anchor, tree, opener }: Props): JSX.Elemen
   useRenamedRedirect(doc, tree, path);
 
   return (
-    <div className="flex min-w-0 flex-1 flex-col">
+    <div className="flex min-h-full min-w-0 flex-1 flex-col">
       {opener}
       <LoadStates load={load} loaded={!!doc} retry={retry} tree={tree} path={path} slug={slug} />
       {doc && (

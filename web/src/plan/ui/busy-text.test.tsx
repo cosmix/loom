@@ -6,23 +6,26 @@ import { BusyText } from "./busy-text";
 afterEach(cleanup);
 
 describe("BusyText", () => {
-  it("leads the words with a spinning roundel hidden from assistive technology", () => {
-    const { container } = render(<BusyText>Starting the session</BusyText>);
+  it("leads the words with the text-sized arrow spinner, never the roundel", () => {
+    const { container } = render(<BusyText>Sending…</BusyText>);
 
     const root = container.firstElementChild!;
     expect(root.classList.contains("plan-busy-text")).toBe(true);
     const lead = root.firstElementChild!;
+    expect(lead.classList.contains("plan-arrow-spinner")).toBe(true);
     expect(lead.getAttribute("aria-hidden")).toBe("true");
-    expect(lead.querySelector(".aurora-roundel")?.getAttribute("data-busy")).toBe("true");
-    expect(root.lastChild?.textContent).toBe("Starting the session");
-    expect(screen.getByText("Starting the session")).toBe(root);
+    expect(lead.getAttribute("data-busy")).toBe("true");
+    expect(lead.getAttribute("style")).toContain("width: 1em");
+    expect(container.querySelector(".aurora-roundel")).toBeNull();
+    expect(root.lastChild?.textContent).toBe("Sending…");
+    expect(screen.getByText("Sending…")).toBe(root);
   });
 
   it("announces nothing of its own: the caller's words and role are the message", () => {
-    render(<BusyText>Rebuilding</BusyText>);
+    render(<BusyText>Uploading…</BusyText>);
 
     expect(screen.queryByRole("status")).toBeNull();
-    expect(document.body.textContent).toBe("Rebuilding");
+    expect(document.body.textContent).toBe("Uploading…");
   });
 
   it("forwards a class name to its root", () => {

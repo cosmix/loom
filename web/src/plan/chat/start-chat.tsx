@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 
 import type { SessionView } from "@/plan/api/schema-chat";
 import { authorBlockReasonAtom, canAuthorAtom, serverInfoAtom } from "@/plan/state/atoms";
+import { BusyText } from "@/plan/ui/busy-text";
 import { DisabledReason } from "@/plan/ui/disabled-reason";
 import { LoadState } from "@/plan/ui/load-state";
 import type { Store } from "@/state/store";
@@ -138,15 +139,16 @@ export function StartingBrief({ session }: { session: SessionView }) {
         <>
           {state.status === "loading" && (
             <p role="status" className="text-xs text-muted-foreground">
-              Loading brief…
+              <BusyText>Loading brief…</BusyText>
             </p>
           )}
           {state.status === "unavailable" && (
-            <LoadState state="error" title="Brief not available" />
+            <LoadState state="error" size="compact" title="Brief not available" />
           )}
           {state.status === "error" && (
             <LoadState
               state="error"
+              size="compact"
               title="Brief not available"
               message={visibleControls(state.message)}
             />

@@ -6,6 +6,7 @@ import { AddToChat } from "@/plan/attachments";
 import type { EditorHandle } from "@/plan/editor/codemirror";
 import { loadCodeMirror } from "@/plan/editor/load";
 import { useEditorSelectionAttachment } from "@/plan/editor/selection-attachment";
+import { LoadState } from "@/plan/ui/load-state";
 
 import { diffProvenance } from "./diff-provenance";
 
@@ -89,15 +90,21 @@ export function DiffView({
       role="group"
       aria-label={`Diff of ${path}`}
     >
-      {phase === "loading" ? (
-        <p className="px-3 py-2 text-[13px] text-muted-foreground">Loading diff</p>
-      ) : null}
-      {phase === "failed" ? (
-        <p role="alert" className="px-3 py-2 text-[13px] text-destructive">
-          The diff failed to load. Reload the page to try again.
-        </p>
-      ) : null}
-      <div ref={host} className="min-h-0 flex-1 overflow-auto" />
+      {phase === "loading" && <LoadState state="loading" size="compact" title="Loading diff" />}
+      {phase === "failed" && (
+        <LoadState
+          state="error"
+          size="compact"
+          title="The diff failed to load"
+          message="Reload the page to try again."
+        />
+      )}
+      {/* The host stays mounted for the editor to build into; it takes the spare height only once
+          the diff is drawn, so the state above centres in the whole view until then. */}
+      <div
+        ref={host}
+        className={phase === "ready" ? "min-h-0 flex-1 overflow-auto" : "min-h-0 overflow-auto"}
+      />
       {attachment.draft && attachment.rect && (
         <AddToChat draft={attachment.draft} rect={attachment.rect} onAdded={attachment.clear} />
       )}

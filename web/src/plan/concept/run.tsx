@@ -5,6 +5,7 @@ import { Link } from "react-router";
 import { pageHref } from "@/plan/api/page-key";
 import type { Sentence } from "@/plan/api/schema-concept";
 import { Untrusted, visibleControls } from "@/plan/chat/visible-controls";
+import { BusyText } from "@/plan/ui/busy-text";
 
 import {
   firstWords,
@@ -176,7 +177,11 @@ function CitedSentence({ citing, entry, first, leading }: CitedProps): JSX.Eleme
     return (
       <>
         {leading}
-        {notice ?? <span className="concept-muted">Loading</span>}
+        {notice ?? (
+          <span className="concept-muted">
+            <BusyText>Loading</BusyText>
+          </span>
+        )}
       </>
     );
   }

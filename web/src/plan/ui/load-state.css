@@ -1,0 +1,94 @@
+/*
+ * The loading, empty and error state (`ui/load-state.tsx`, DESIGN.md "Loading, empty and error
+ * states"). It centres itself in its container on both axes: it grows into a flex column's spare
+ * height, and as an only child it is at least its parent's height, so the parent must have a
+ * definite height (the shell's `main`, a stretched grid area, a `min-h-full` column) for the
+ * vertical middle to be the container's.
+ */
+.plan-state {
+  box-sizing: border-box;
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  width: 100%;
+  min-width: 0;
+  padding: var(--space-7) var(--page-gutter);
+  text-align: center;
+  font-family: var(--font-sans);
+  font-size: var(--type-body);
+  line-height: var(--leading-body);
+  color: var(--muted-foreground);
+}
+
+.plan-state:only-child {
+  min-height: 100%;
+}
+
+.plan-state[data-size="compact"] {
+  gap: var(--space-1);
+  padding: var(--space-5) var(--space-4);
+}
+
+/* A load that answers at once never flashes: the loading state fades in after a beat. */
+.plan-state[data-state="loading"] {
+  animation: plan-state-in 240ms ease-out 160ms both;
+}
+
+.plan-state__glyph {
+  display: inline-flex;
+  margin-bottom: var(--space-1);
+  color: var(--muted-foreground);
+}
+
+.plan-state[data-state="error"] .plan-state__glyph {
+  color: var(--tone-blocked);
+}
+
+.plan-state__title {
+  margin: 0;
+  max-width: 48ch;
+  font-weight: 500;
+  color: var(--foreground);
+  text-wrap: balance;
+}
+
+.plan-state[data-state="loading"] .plan-state__title {
+  font-weight: 400;
+  color: var(--muted-foreground);
+}
+
+.plan-state__detail {
+  margin: 0;
+  max-width: 56ch;
+  font-size: var(--type-ui);
+  line-height: var(--leading-ui);
+  overflow-wrap: anywhere;
+}
+
+.plan-state__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2) var(--space-4);
+  margin-top: var(--space-2);
+  font-size: var(--type-ui);
+}
+
+@keyframes plan-state-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .plan-state[data-state="loading"] {
+    animation: none;
+  }
+}

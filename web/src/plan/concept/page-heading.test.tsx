@@ -57,8 +57,8 @@ it.each([
   show({ state: { state, out_of_date: null } });
 
   const chip = screen.getByText(label).closest("[data-chip]");
-  // A rebuilding summary draws the activity roundel, not an icon.
-  const mark = glyph === "refresh-cw" ? ".aurora-roundel" : `svg.lucide-${glyph}`;
+  // A rebuilding summary is an operation that ends: the arrow spinner, not an icon.
+  const mark = glyph === "refresh-cw" ? "svg.plan-arrow-spinner" : `svg.lucide-${glyph}`;
   expect(chip?.querySelector(mark)).toBeTruthy();
   expect(chip?.getAttribute("data-tone")).toBe(tone);
 });
@@ -75,7 +75,7 @@ it.each([
 
   const chip = screen.getByText(label).closest("[data-chip]");
   expect(chip?.getAttribute("data-tone")).toBe("warning");
-  const mark = glyph === "refresh-cw" ? ".aurora-roundel" : `svg.lucide-${glyph}`;
+  const mark = glyph === "refresh-cw" ? "svg.plan-arrow-spinner" : `svg.lucide-${glyph}`;
   expect(chip?.querySelector(mark)).toBeTruthy();
 });
 
@@ -122,8 +122,8 @@ it.each([
 
     const chip = screen.getByText(label).closest("[data-chip]");
     expect(chip?.getAttribute("data-tone")).toBe(tone);
-    // A running plan draws the activity roundel, not an icon.
-    const mark = glyph === "refresh-cw" ? ".aurora-roundel" : `svg.lucide-${glyph}`;
+    // A running plan is a state shown: the live status dot, not an icon.
+    const mark = glyph === "refresh-cw" ? ".activity-glyph__led" : `svg.lucide-${glyph}`;
     expect(chip?.querySelector(mark)).not.toBeNull();
     expect(screen.queryByRole("note")?.textContent ?? null).toBe(notice);
   },

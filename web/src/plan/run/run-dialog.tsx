@@ -47,7 +47,7 @@ export function RunDialog(): JSX.Element | null {
         {state ? (
           <RunForm key={plan} state={state} initialPlan={plan} />
         ) : (
-          !error && <LoadState state="loading" title="Loading run state" />
+          !error && <LoadState state="loading" size="compact" title="Loading run state" />
         )}
       </DialogContent>
     </Dialog>
@@ -153,7 +153,7 @@ function RunForm({ state, initialPlan }: { state: RunStateView; initialPlan: str
         </p>
       )}
       {form.request.pending && (
-        <LoadState state="loading" title={`Submitting ${form.request.pending}`} />
+        <LoadState state="loading" size="compact" title={`Submitting ${form.request.pending}`} />
       )}
       {form.request.error && <ActionError message={form.request.error} />}
       <RunActions state={state} form={form} />

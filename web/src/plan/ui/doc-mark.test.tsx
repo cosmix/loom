@@ -65,14 +65,14 @@ describe("DocMark", () => {
       const activity = container.querySelector('[data-kind="summaries"]');
       expect(activity).not.toBeNull();
       expect(activity?.classList.contains(glyphClass)).toBe(true);
-      // Rebuilding is the roundel in the kind glyph's place: no icon remains in the mark.
-      expect(activity?.querySelector(".aurora-roundel[data-busy='true']")).not.toBeNull();
-      expect(container.querySelectorAll("svg")).toHaveLength(0);
+      // Rebuilding is the arrow spinner in the kind glyph's place: no kind icon remains.
+      expect(activity?.matches("svg.plan-arrow-spinner[data-busy='true']")).toBe(true);
+      expect(container.querySelectorAll("svg")).toHaveLength(1);
       expect(container.contains(kindGlyph)).toBe(false);
 
       rerender(<DocMark kind="vision" size={size} />);
 
-      expect(container.querySelector(".aurora-roundel")).toBeNull();
+      expect(container.querySelector(".plan-arrow-spinner")).toBeNull();
       expect(container.querySelector("svg")?.innerHTML).toBe(kindDrawing);
     },
   );

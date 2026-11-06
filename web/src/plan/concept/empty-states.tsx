@@ -168,20 +168,15 @@ export function ConceptNotFound({ pageKey }: { pageKey: string }) {
   if (source !== null && exists === null) return <LoadState state="loading" />;
   if (source !== null && exists) {
     return (
-      <div className="concept-empty">
-        <EmptyNote title={`No summary for ${visibleControls(name)}`} />
+      <LoadState state="empty" title={`No summary for ${visibleControls(name)}`}>
         <Button asChild data-look="secondary" className="plan-button">
           <Link to={toAddress(source)}>Open in file mode</Link>
         </Button>
-      </div>
+      </LoadState>
     );
   }
   return (
-    <div className="concept-empty">
-      <EmptyNote
-        title="No such document"
-        description={`${visibleControls(name)} does not exist.`}
-      />
+    <LoadState state="not_found" title="No such document" message={`${name} does not exist.`}>
       {feature !== null ? (
         <nav aria-label="Overviews" className="concept-empty-links">
           <Link
@@ -202,6 +197,6 @@ export function ConceptNotFound({ pageKey }: { pageKey: string }) {
           Planner
         </Link>
       )}
-    </div>
+    </LoadState>
   );
 }
