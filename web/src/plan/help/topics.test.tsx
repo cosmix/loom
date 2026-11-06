@@ -8,6 +8,7 @@ import { CHAT_SCENES } from "./chat-scene";
 import { FEATURES_SCENES } from "./features-scene";
 import { GettingAroundScene } from "./getting-around-scene";
 import { PlannerLegend } from "./legend";
+import { CoverageHelp, FindingsHelp } from "./maps-help";
 import { PRESSURE_SCENES } from "./pressure-scene";
 import { READING_SCENES } from "./reading-scene";
 import { PlannerShortcuts } from "./shortcuts";
@@ -35,18 +36,21 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-it("provides the seven topics in order with unique ids and their production content", () => {
+it("provides the nine topics in order with unique ids and their production content", () => {
   expect(PLANNER_HELP_TOPICS.map(({ id, label }) => [id, label])).toEqual([
     ["getting-around", "Getting around"],
     ["reading", "Reading summaries"],
     ["features", "Features"],
     ["chat", "Chat and sessions"],
     ["pressure", "Pressure tests and runs"],
+    ["coverage", "Coverage map"],
+    ["findings", "Findings"],
     ["legend", "Legend"],
     ["shortcuts", "Shortcuts"],
   ]);
-  expect(new Set(PLANNER_HELP_TOPICS.map(({ id }) => id)).size).toBe(7);
-  const [around, reading, features, chat, pressure, legend, shortcuts] = PLANNER_HELP_TOPICS;
+  expect(new Set(PLANNER_HELP_TOPICS.map(({ id }) => id)).size).toBe(9);
+  const [around, reading, features, chat, pressure, coverage, findings, legend, shortcuts] =
+    PLANNER_HELP_TOPICS;
   expect(around!.scenes).toHaveLength(1);
   expect(around!.scenes[0]!.Scene).toBe(GettingAroundScene);
   expect(around!.scenes[0]!.scale).toBe(0.74);
@@ -60,6 +64,13 @@ it("provides the seven topics in order with unique ids and their production cont
   }
   expect(reading!.scenes).toHaveLength(1);
   expect(pressure!.scenes).toHaveLength(1);
+  // The map pages read the trace from the server, so their topics are bodies, not live scenes.
+  expect(coverage!.Body).toBe(CoverageHelp);
+  expect(coverage!.scenes).toEqual([]);
+  expect(coverage!.tips?.length ?? 0).toBeGreaterThan(0);
+  expect(findings!.Body).toBe(FindingsHelp);
+  expect(findings!.scenes).toEqual([]);
+  expect(findings!.tips?.length ?? 0).toBeGreaterThan(0);
   expect(legend!.Body).toBe(PlannerLegend);
   expect(legend!.scenes).toEqual([]);
   expect(shortcuts!.Body).toBe(PlannerShortcuts);

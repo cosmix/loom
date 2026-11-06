@@ -1,11 +1,13 @@
 import {
   BookOpenIcon,
+  ClipboardListIcon,
   CompassIcon,
   FlaskConicalIcon,
   KeyboardIcon,
   LayersIcon,
   MessagesSquareIcon,
   ScrollTextIcon,
+  WaypointsIcon,
   type LucideIcon,
 } from "lucide-react";
 import type { ComponentType } from "react";
@@ -14,6 +16,7 @@ import { CHAT_SCENES, CHAT_TIPS } from "./chat-scene";
 import { FEATURES_SCENES, FEATURES_TIPS } from "./features-scene";
 import { GettingAroundScene } from "./getting-around-scene";
 import { PlannerLegend } from "./legend";
+import { COVERAGE_TIPS, CoverageHelp, FINDINGS_TIPS, FindingsHelp } from "./maps-help";
 import type { PlannerHelpScene } from "./pinned-scene";
 import { PRESSURE_SCENES, PRESSURE_TIPS } from "./pressure-scene";
 import { READING_SCENES, READING_TIPS } from "./reading-scene";
@@ -122,6 +125,30 @@ export const PLANNER_HELP_TOPICS: readonly PlannerHelpTopic[] = [
       "A pressure test challenges a plan before it runs, and a run reports each step as it happens.",
     scenes: PRESSURE_SCENES,
     tips: PRESSURE_TIPS,
+  },
+  {
+    id: "coverage",
+    label: "Coverage map",
+    description: "Read the map from vision rows to plans, find gaps and follow a card's lineage.",
+    Icon: WaypointsIcon,
+    hue: 7,
+    intro:
+      "The Coverage page lays a feature out in five columns, from the vision's rows to the findings about them. Select a card to see why it exists and how it is delivered.",
+    scenes: [],
+    Body: CoverageHelp,
+    tips: COVERAGE_TIPS,
+  },
+  {
+    id: "findings",
+    label: "Findings",
+    description: "Triage what reviews found: plan it, fold it into an entry or dismiss it.",
+    Icon: ClipboardListIcon,
+    hue: 3,
+    intro:
+      "The Findings page is the feature's ledger of what reviews found, grouped by the run that found it. Each open finding offers three ways to decide it.",
+    scenes: [],
+    Body: FindingsHelp,
+    tips: FINDINGS_TIPS,
   },
   {
     id: "legend",

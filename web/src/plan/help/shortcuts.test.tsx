@@ -6,17 +6,28 @@ import { PlannerShortcuts, PLANNER_SHORTCUT_GROUPS } from "./shortcuts";
 afterEach(cleanup);
 
 describe("PlannerShortcuts", () => {
-  it("renders the two shortcut groups in order", () => {
+  it("renders the three shortcut groups in order", () => {
     render(<PlannerShortcuts />);
 
     expect(screen.getAllByRole("heading").map((heading) => heading.textContent)).toEqual([
       "While reading",
+      "On the coverage map",
       "Anywhere",
     ]);
   });
 
   it.each([
     { title: "Anywhere", action: "Save in the editor", keys: ["Ctrl", "S", "⌘", "S"] },
+    {
+      title: "On the coverage map",
+      action: "Focus the first card that follows from the focused one",
+      keys: ["l"],
+    },
+    {
+      title: "On the coverage map",
+      action: "Open the focused card's document or passage",
+      keys: ["Enter"],
+    },
     { title: "Anywhere", action: "Allow the pinned permission request", keys: ["y"] },
     { title: "Anywhere", action: "Focus the chat composer", keys: ["c"] },
     {
