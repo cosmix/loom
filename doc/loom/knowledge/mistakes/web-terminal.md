@@ -3,7 +3,7 @@
 >
 >
 >
-> [architecture/web-terminal.md](../architecture/web-terminal.md) for the current design.
+> TTY
 
 ## PTY Master Fd Leaked Into the Child, Defeating Hangup Detection (2026-09-09)
 

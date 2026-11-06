@@ -47,7 +47,7 @@
 | [merge-checkout-state](architecture/merge-checkout-state.md) | FF | 32 |
 | [merge-flow](architecture/merge-flow.md) |  | 133 |
 | [orchestrator-loop](architecture/orchestrator-loop.md) | Ticks | 80 |
-| [owned-waits](architecture/owned-waits.md) | Waits | 73 |
+| [owned-waits](architecture/owned-waits.md) | Waits | 74 |
 | [plan-lifecycle-and-fields](architecture/plan-lifecycle-and-fields.md) |  | 257 |
 | [plan-server](architecture/plan-server.md) | Chat | 245 |
 | [planner-feature-screens](architecture/planner-feature-screens.md) | Spine | 45 |
@@ -62,7 +62,7 @@
 | [read-gate](architecture/read-gate.md) |  | 146 |
 | [remote-control](architecture/remote-control.md) |  | 81 |
 | [run-handoff](architecture/run-handoff.md) |  | 52 |
-| [security-and-isolation](architecture/security-and-isolation.md) | Deny | 201 |
+| [security-and-isolation](architecture/security-and-isolation.md) | Deny | 202 |
 | [signal-generation](architecture/signal-generation.md) |  | 247 |
 | [skill-catalog](architecture/skill-catalog.md) |  | 158 |
 | [source-graph](architecture/source-graph.md) |  | 371 |
@@ -78,7 +78,7 @@
 | [token-accounting-and-receipts](architecture/token-accounting-and-receipts.md) | Ledger | 358 |
 | [token-flow-sources](architecture/token-flow-sources.md) |  | 75 |
 | [usage-evidence](architecture/usage-evidence.md) |  | 127 |
-| [verification-v2-gates](architecture/verification-v2-gates.md) | Gates | 249 |
+| [verification-v2-gates](architecture/verification-v2-gates.md) | Gates | 250 |
 | [web-dashboard](architecture/web-dashboard.md) | Web | 118 |
 | [web-terminal](architecture/web-terminal.md) |  | 181 |
 
@@ -91,7 +91,7 @@
 | [filesystem-and-integration-modules](entry-points/filesystem-and-integration-modules.md) |  | 135 |
 | [hooks](entry-points/hooks.md) |  | 143 |
 | [orchestrator-daemon-and-sessions](entry-points/orchestrator-daemon-and-sessions.md) |  | 250 |
-| [remote-control](entry-points/remote-control.md) | RC | 99 |
+| [remote-control](entry-points/remote-control.md) | RC | 100 |
 
 ### patterns
 
@@ -159,17 +159,17 @@
 | [merge-cleanup-boundary](mistakes/merge-cleanup-boundary.md) |  | 205 |
 | [merge-in-operator-checkout](mistakes/merge-in-operator-checkout.md) |  | 70 |
 | [merge-resolver-sandbox](mistakes/merge-resolver-sandbox.md) |  | 25 |
-| [parallel-worktree-shared-state](mistakes/parallel-worktree-shared-state.md) |  | 356 |
-| [phantom-merges](mistakes/phantom-merges.md) | Merges | 350 |
+| [parallel-worktree-shared-state](mistakes/parallel-worktree-shared-state.md) | Shared | 357 |
+| [phantom-merges](mistakes/phantom-merges.md) | Merges | 351 |
 | [pinned-literals-ledgers-and-wiring](mistakes/pinned-literals-ledgers-and-wiring.md) | Pins | 332 |
 | [plan-authoring](mistakes/plan-authoring.md) |  | 79 |
-| [plan-server-delivery](mistakes/plan-server-delivery.md) |  | 372 |
-| [planner-follow-ups-delivery](mistakes/planner-follow-ups-delivery.md) | Slips | 67 |
+| [plan-server-delivery](mistakes/plan-server-delivery.md) | Slips | 373 |
+| [planner-follow-ups-delivery](mistakes/planner-follow-ups-delivery.md) | Slips | 68 |
 | [planner-polish](mistakes/planner-polish.md) | Polish | 59 |
 | [planner-redesign](mistakes/planner-redesign.md) |  | 80 |
 | [planner-review-fixes](mistakes/planner-review-fixes.md) |  | 48 |
 | [planner-ui-repair](mistakes/planner-ui-repair.md) | Repair | 131 |
-| [planner-visual-feedback-shortfall](mistakes/planner-visual-feedback-shortfall.md) | Visual | 18 |
+| [planner-visual-feedback-shortfall](mistakes/planner-visual-feedback-shortfall.md) | Visual | 19 |
 | [planning-sandbox-delivery](mistakes/planning-sandbox-delivery.md) |  | 73 |
 | [pre-commit-hardening](mistakes/pre-commit-hardening.md) |  | 93 |
 | [refactor-stragglers](mistakes/refactor-stragglers.md) |  | 329 |
@@ -195,7 +195,7 @@
 | [store-without-consumer](mistakes/store-without-consumer.md) | Unread | 104 |
 | [subagent-briefing](mistakes/subagent-briefing.md) |  | 386 |
 | [subagent-liveness-and-watch](mistakes/subagent-liveness-and-watch.md) |  | 387 |
-| [subagent-orchestration](mistakes/subagent-orchestration.md) |  | 392 |
+| [subagent-orchestration](mistakes/subagent-orchestration.md) | Agents | 393 |
 | [test-concurrency-and-fixtures](mistakes/test-concurrency-and-fixtures.md) | Races | 390 |
 | [test-sweep-and-fixture-discipline](mistakes/test-sweep-and-fixture-discipline.md) |  | 358 |
 | [testing-and-lint](mistakes/testing-and-lint.md) |  | 398 |
@@ -208,7 +208,7 @@
 | [visibility-and-reachability](mistakes/visibility-and-reachability.md) |  | 141 |
 | [web-dashboard](mistakes/web-dashboard.md) | UI | 17 |
 | [web-dashboard-server](mistakes/web-dashboard-server.md) | Races | 278 |
-| [web-terminal](mistakes/web-terminal.md) |  | 135 |
+| [web-terminal](mistakes/web-terminal.md) | TTY | 135 |
 | [writer-reader-address](mistakes/writer-reader-address.md) | Keys | 115 |
 
 ### concerns
@@ -217,7 +217,7 @@
 | --- | --- | --- |
 | [agent-rule-bending-hardening](concerns/agent-rule-bending-hardening.md) |  | 375 |
 | [automatic-knowledge-source-graph-followups](concerns/automatic-knowledge-source-graph-followups.md) | Gaps | 71 |
-| [code-quality-and-hook-debt](concerns/code-quality-and-hook-debt.md) | Debt | 227 |
+| [code-quality-and-hook-debt](concerns/code-quality-and-hook-debt.md) | Debt | 228 |
 | [codex-heartbeat-starvation](concerns/codex-heartbeat-starvation.md) |  | 22 |
 | [contract-autonomy-followups](concerns/contract-autonomy-followups.md) |  | 61 |
 | [handoff-followups](concerns/handoff-followups.md) |  | 57 |
@@ -236,7 +236,7 @@
 | [sandbox-and-confinement-gaps](concerns/sandbox-and-confinement-gaps.md) |  | 363 |
 | [session-tmpdir-deny](concerns/session-tmpdir-deny.md) |  | 7 |
 | [source-graph-known-gaps](concerns/source-graph-known-gaps.md) | Limits | 86 |
-| [source-graph-review-backlog](concerns/source-graph-review-backlog.md) |  | 304 |
+| [source-graph-review-backlog](concerns/source-graph-review-backlog.md) | Backlog | 305 |
 | [state-confinement-gaps](concerns/state-confinement-gaps.md) | Caches | 21 |
 | [token-accounting-and-proof-defects](concerns/token-accounting-and-proof-defects.md) |  | 334 |
 | [typed-config-values](concerns/typed-config-values.md) | Gaps | 22 |
