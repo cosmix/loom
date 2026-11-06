@@ -1,0 +1,356 @@
+/*
+ * The file tree's Product / Plans switch and the plan rail (tree-tabs.tsx, plan-rail.tsx,
+ * product-list.tsx, attention-bar.tsx). Each feature is a head (name, "N plans complete", a
+ * ring), at most one bar for its open questions, then its plans on a rail: one disc per plan
+ * strung on a 2px line, the disc's glyph saying its state, the title over one muted line of stage
+ * names. Settled plans are one row each; only what needs the reader opens by itself.
+ *
+ * One-class selectors, outside [data-loom-plan]: the tree also draws in a portalled drawer. Every
+ * colour is a theme token; a disc's tint is its tone mixed into the page, opaque, so the rail's
+ * line stops at its edge.
+ */
+.plan-tabs {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+
+.plan-tabs__tab {
+  flex: 1;
+  height: 32px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: color-mix(in oklab, var(--muted) 55%, transparent);
+  color: var(--muted-foreground);
+  font-size: var(--type-ui);
+  font-weight: 500;
+  text-align: center;
+  transition:
+    background-color 120ms,
+    color 120ms;
+}
+
+.plan-tabs__tab:hover {
+  color: var(--foreground);
+}
+
+.plan-tabs__tab[aria-pressed="true"] {
+  border-color: var(--border);
+  background: var(--muted);
+  color: var(--foreground);
+  font-weight: 600;
+}
+
+.plan-rail-tab {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+.plan-rail-tab + .plan-tree__group {
+  margin-top: var(--space-5);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--hairline);
+}
+
+.plan-rail__empty {
+  padding: 0 10px;
+}
+
+.plan-rail {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.plan-rail__head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 0 10px;
+}
+
+.plan-rail__heading {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+}
+
+.plan-rail__name {
+  overflow: hidden;
+  color: var(--foreground);
+  font-size: var(--type-title);
+  font-weight: 600;
+  text-decoration: none;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+a.plan-rail__name:hover {
+  text-decoration: underline;
+}
+
+.plan-rail__head[data-current] .plan-rail__name {
+  text-decoration: underline;
+  text-decoration-color: var(--accent-ink);
+  text-decoration-thickness: 2px;
+  text-underline-offset: 3px;
+}
+
+.plan-rail__complete {
+  color: var(--muted-foreground);
+  font-size: var(--type-fine);
+}
+
+.plan-ring {
+  width: 40px;
+  height: 40px;
+  flex: none;
+}
+
+.plan-ring__track,
+.plan-ring__fill {
+  fill: none;
+  stroke-width: 4;
+}
+
+.plan-ring__track {
+  stroke: var(--border);
+}
+
+.plan-ring__fill {
+  stroke: var(--tone-completed);
+  stroke-linecap: round;
+}
+
+/* The one bar a section draws for its open questions: a control on the page, so a hairline edge. */
+.plan-attention {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 42px;
+  margin: 0 4px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--card);
+  color: var(--foreground);
+  text-decoration: none;
+  transition: background-color 120ms;
+}
+
+.plan-attention:hover {
+  background: var(--muted);
+}
+
+.plan-attention__dot {
+  width: 8px;
+  height: 8px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--tone-warning);
+}
+
+.plan-attention__name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.plan-attention__count {
+  flex: none;
+  font-size: var(--type-fine);
+  font-weight: 500;
+}
+
+.plan-rail__list {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0 4px;
+  list-style: none;
+}
+
+/* The rail: under every disc's centre, from the first to the last. */
+.plan-rail__list::before {
+  content: "";
+  position: absolute;
+  top: 16px;
+  bottom: 16px;
+  left: 22px;
+  width: 2px;
+  background: var(--border);
+}
+
+.plan-rail__item {
+  position: relative;
+  display: flex;
+  width: 100%;
+  gap: var(--space-3);
+  padding: 7px 10px 7px 8px;
+  border-radius: 10px;
+  color: var(--foreground);
+  text-align: left;
+  text-decoration: none;
+  transition: background-color 120ms;
+}
+
+.plan-rail__item:hover {
+  background: color-mix(in oklab, var(--muted) 70%, transparent);
+}
+
+.plan-rail__entry[data-current] > .plan-rail__item {
+  background: var(--muted);
+}
+
+.plan-rail__entry[data-current] .plan-rail__title {
+  font-weight: 600;
+}
+
+.plan-rail__node {
+  --node: var(--muted-foreground);
+  display: flex;
+  width: 22px;
+  height: 22px;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  margin-top: 1px;
+  border: 1px solid color-mix(in oklab, var(--node) 45%, var(--background));
+  border-radius: 50%;
+  background: color-mix(in oklab, var(--node) 18%, var(--background));
+  color: var(--node);
+}
+
+.plan-rail__node > * {
+  width: 12px;
+  height: 12px;
+}
+
+.plan-rail__node > svg {
+  stroke-width: 3;
+}
+
+.plan-rail__node[data-node="done"] {
+  --node: var(--tone-completed);
+}
+
+.plan-rail__node[data-node="error"] {
+  --node: var(--tone-blocked);
+}
+
+.plan-rail__node[data-node="question"] {
+  --node: var(--tone-warning);
+}
+
+.plan-rail__node[data-node="question"] > svg,
+.plan-rail__node[data-node="error"] > svg {
+  stroke-width: 2.5;
+}
+
+.plan-rail__node[data-node="running"] {
+  border-color: var(--tone-completed);
+  background: var(--background);
+}
+
+.plan-rail__node[data-node="written"] {
+  border: 1.5px solid var(--muted-foreground);
+  background: var(--background);
+}
+
+.plan-rail__node[data-node="gap"] {
+  border: 1.5px dashed var(--muted-foreground);
+  background: var(--background);
+}
+
+/* The open document's plan: its disc ringed in the accent, as the current spine row's mark is. */
+.plan-rail__entry[data-current] .plan-rail__node {
+  outline: 2px solid var(--accent-ink);
+  outline-offset: 2px;
+}
+
+.plan-rail__text {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.plan-rail__line {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+
+.plan-rail__number,
+.plan-rail__sub {
+  color: var(--muted-foreground);
+  font-family: var(--font-mono);
+  font-size: var(--type-fine);
+}
+
+.plan-rail__number {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+}
+
+.plan-rail__title {
+  min-width: 0;
+  overflow: hidden;
+  font-size: var(--type-body);
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Inline code in a title keeps the title's size: the mono face alone marks it. */
+.plan-rail__title code {
+  font-size: 0.9em;
+}
+
+.plan-rail__sub {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* A plan not written yet is a link to its gap page, its title muted beside the dashed disc. */
+a.plan-rail__item .plan-rail__title {
+  color: var(--muted-foreground);
+}
+
+/* An opened plan's documents sit under its title column, clear of the rail. Two classes, so the
+   tree's list reset (tree.css, `.plan-tree__list`) does not take the indent back. */
+.plan-rail__list .plan-rail__stages {
+  margin: 2px 0 var(--space-2);
+  padding-left: 34px;
+}
+
+/* A product row has no children, so its chevron column would only push the title right. */
+.plan-product__rows span.plan-tree__twist {
+  display: none;
+}
+
+.plan-tabs__tab:focus-visible,
+.plan-rail__item:focus-visible,
+.plan-rail__name:focus-visible,
+.plan-attention:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .plan-tabs__tab,
+  .plan-attention,
+  .plan-rail__item {
+    transition: none;
+  }
+}

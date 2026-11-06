@@ -1,38 +1,20 @@
 import { useAtomValue } from "jotai/react";
-import { ChevronDownIcon, ChevronRightIcon, CircleAlert } from "lucide-react";
+import { ChevronRightIcon, CircleCheckBig, CircleDashed, File, Folder } from "lucide-react";
 import type { Nodes } from "mdast";
 import { fromMarkdown } from "mdast-util-from-markdown";
 import { useEffect, useState, type JSX } from "react";
 import { Link } from "react-router";
 
-import { cn } from "cn";
 import type { TreeEntry } from "@/plan/api/schema-files";
 import { Untrusted, visibleControls } from "@/plan/chat/visible-controls";
 import { SentenceText } from "@/plan/concept/sentence-text";
 import { toAddress } from "@/plan/files/address";
-import { openDocAtom, validationAtom } from "@/plan/files/atoms";
+import { openDocAtom } from "@/plan/files/atoms";
 import { Outline } from "@/plan/files/outline";
-import { TreeEntryExtras } from "@/plan/files/tree-entry-extras";
+import { EntrySignals } from "@/plan/files/tree-entry-signals";
+import { arrangeChildren, featureCount, entryNumber, shortTitle } from "@/plan/files/tree-model";
+import { FeatureMark } from "@/plan/home/feature-mark";
 import { DocMark } from "@/plan/ui/doc-mark";
-import { OTHER_GLYPHS, PLAN_STATE_GLYPHS } from "@/plan/ui/glyphs";
-
-const ReadOnly = OTHER_GLYPHS.readOnly;
-
-function EntryMark({ kind }: Pick<TreeEntry, "kind">): JSX.Element | null {
-  switch (kind) {
-    case "vision":
-    case "section":
-    case "note":
-    case "metaplan":
-    case "plan":
-    case "brief":
-    case "knowledge":
-    case "review":
-      return <DocMark kind={kind} />;
-    default:
-      return null;
-  }
-}
 
 export function gapAddress(
   title: string,
@@ -50,48 +32,6 @@ export function containsPath(entry: TreeEntry, path: string | null): boolean {
   return entry.path === path || entry.children.some((child) => containsPath(child, path));
 }
 
-// Only the glyph takes a tone; the word keeps the row's muted colour (ui/DESIGN.md, Status).
-const STATE_TONES = {
-  running: "tone-executing",
-  done: "tone-completed",
-  retired: "tone-dimmed",
-} as const;
-
-/** A plan's state: a fixed-width right-aligned label that stays on the name's line. */
-function StateLabel({ entry }: { entry: TreeEntry }): JSX.Element | null {
-  if (entry.kind !== "plan" || entry.state === null) return null;
-  const Icon = PLAN_STATE_GLYPHS[entry.state];
-  return (
-    <span className="flex w-[5.25rem] shrink-0 items-center justify-end gap-1 text-xs text-muted-foreground">
-      <Icon
-        className={cn("size-3", entry.state !== "written" && STATE_TONES[entry.state])}
-        aria-hidden="true"
-      />
-      {entry.state}
-    </span>
-  );
-}
-
-/** The plan's pressure date and error count, under the name. */
-function PlanMeta({ entry }: { entry: TreeEntry }): JSX.Element | null {
-  const validation = useAtomValue(validationAtom);
-  if (entry.kind !== "plan" || entry.state === null) return null;
-  const live = entry.path ? validation[entry.path] : undefined;
-  const errors = live ? live.errors.length : entry.errors;
-  if (!entry.pressure_date && errors === 0) return null;
-  return (
-    <span className="flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
-      {entry.pressure_date && <span>Pressure-tested {entry.pressure_date}</span>}
-      {errors > 0 && (
-        <span className="inline-flex items-center gap-1">
-          <CircleAlert className="tone-blocked size-3" aria-hidden="true" />
-          {errors === 1 ? "1 error" : `${errors} errors`}
-        </span>
-      )}
-    </span>
-  );
-}
-
 export function plainTitle(text: string): string {
   const textOf = (node: Nodes): string => {
     if (node.type === "definition") return "";
@@ -104,99 +44,199 @@ export function plainTitle(text: string): string {
   return fromMarkdown(text).children.map(textOf).join(" ");
 }
 
-function Title({ entry, current }: { entry: TreeEntry; current: boolean }): JSX.Element {
-  const className = cn(
-    "max-w-full min-w-[8ch] flex-1 basis-0 truncate text-[13px] hover:text-foreground",
-    current ? "font-semibold text-foreground" : "font-medium text-muted-foreground",
+/** Open or closed, starting at `initial`; it opens by itself once it holds the open document. */
+export function useDisclosure(initial: boolean, holdsOpen: boolean) {
+  const [expanded, setExpanded] = useState(initial || holdsOpen);
+  useEffect(() => {
+    if (holdsOpen) setExpanded(true);
+  }, [holdsOpen]);
+  return [expanded, setExpanded] as const;
+}
+
+/** The chevron column: a toggle for a row with children, an empty slot of the same width else. */
+export function Twist({
+  shown,
+  label,
+  onToggle,
+}: {
+  shown: boolean;
+  label: string | null;
+  onToggle: () => void;
+}): JSX.Element {
+  if (label === null) return <span className="plan-tree__twist" aria-hidden="true" />;
+  return (
+    <button
+      type="button"
+      aria-expanded={shown}
+      aria-label={`${shown ? "Collapse" : "Expand"} ${label}`}
+      className="plan-tree__twist"
+      onClick={onToggle}
+    >
+      <ChevronRightIcon aria-hidden="true" />
+    </button>
   );
-  const title = (
-    <span style={{ unicodeBidi: "isolate", direction: "ltr" }}>
-      <SentenceText text={entry.title} />
-    </span>
+}
+
+/** What a row is: a document's coloured mark, a feature's mark, a folder, or a dashed gap. */
+function EntryMark({ entry }: { entry: TreeEntry }): JSX.Element {
+  if (entry.gap) return <CircleDashed className="plan-tree__mark" aria-hidden="true" />;
+  switch (entry.kind) {
+    case "feature":
+      return <FeatureMark slug={entry.feature ?? entry.title} />;
+    case "brief_folder":
+    case "knowledge_folder":
+      return <Folder className="plan-tree__mark" aria-hidden="true" />;
+    case "other":
+    case "metaplan_entry":
+      return <File className="plan-tree__mark" aria-hidden="true" />;
+    default:
+      return <DocMark kind={entry.kind} className="size-4 rounded-[4px]" />;
+  }
+}
+
+/** The full title and the file name, for the row's tooltip: the row shows a short title. */
+function tooltipOf(entry: TreeEntry): string {
+  const full = visibleControls(plainTitle(entry.title));
+  return entry.file_name ? `${full}\n${visibleControls(entry.file_name)}` : full;
+}
+
+/** The row's link (or label, for a row with no document): its mark, number and short title. */
+function EntryLabel({ entry, current }: { entry: TreeEntry; current: boolean }): JSX.Element {
+  const number = entryNumber(entry);
+  const body = (
+    <>
+      <EntryMark entry={entry} />
+      {number !== null && (
+        <>
+          <span className="plan-tree__number">
+            <Untrusted text={number} />
+          </span>{" "}
+        </>
+      )}
+      <span className="plan-tree__title" style={{ unicodeBidi: "isolate", direction: "ltr" }}>
+        <SentenceText text={shortTitle(entry)} />
+      </span>
+    </>
   );
+  const props = { className: "plan-tree__label", title: tooltipOf(entry) };
   if (entry.gap) {
     return (
-      <Link to={gapAddress(entry.title, entry.feature, entry.target)} className={className}>
-        {title}
+      <Link to={gapAddress(entry.title, entry.feature, entry.target)} {...props}>
+        {body}
       </Link>
     );
   }
-  if (entry.path === null) return <span className={className}>{title}</span>;
+  if (entry.path === null) return <span {...props}>{body}</span>;
   return (
-    <Link
-      to={toAddress(entry.path)}
-      title={entry.file_name ? visibleControls(entry.file_name) : undefined}
-      aria-current={current ? "page" : undefined}
-      className={className}
-    >
-      {title}
+    <Link to={toAddress(entry.path)} aria-current={current ? "page" : undefined} {...props}>
+      {body}
     </Link>
+  );
+}
+
+/** A feature's plan count, finished over listed, at the end of its row. */
+function FeatureCount({ entry }: { entry: TreeEntry }): JSX.Element | null {
+  const count = featureCount(entry);
+  if (count === null) return null;
+  return (
+    <span className="plan-tree__count" title={count.spoken}>
+      <span aria-hidden="true">{count.text}</span>
+      <span className="sr-only">{count.spoken}</span>
+    </span>
   );
 }
 
 type Props = { entry: TreeEntry; forceOpen: boolean };
 
-function EntryLabel({ entry, current }: { entry: TreeEntry; current: boolean }): JSX.Element {
+/** The plans whose work is over, folded under one row that opens to list them. */
+function FinishedPlans({ entries, forceOpen }: { entries: TreeEntry[]; forceOpen: boolean }) {
+  const open = useAtomValue(openDocAtom)?.doc.path ?? null;
+  const holdsOpen = entries.some((entry) => containsPath(entry, open));
+  const [expanded, setExpanded] = useDisclosure(false, holdsOpen);
+  const shown = expanded || forceOpen;
+  // The whole row is the one toggle: it names no document, so there is nothing else to open.
   return (
-    <div className="flex min-w-0 flex-1 flex-nowrap items-center gap-1">
-      <Title entry={entry} current={current} />
-      {entry.gap && <span className="text-xs text-muted-foreground">missing</span>}
-      {entry.locked && (
-        <ReadOnly className="size-3 shrink-0 text-muted-foreground" aria-label="Locked" />
-      )}
-      <StateLabel entry={entry} />
-      <TreeEntryExtras entry={entry} />
-    </div>
+    <li className="plan-tree__item">
+      <button
+        type="button"
+        aria-expanded={shown}
+        className="plan-tree__row plan-tree__fold"
+        onClick={() => setExpanded(!shown)}
+      >
+        <span className="plan-tree__twist" aria-hidden="true">
+          <ChevronRightIcon />
+        </span>
+        <span className="plan-tree__label">
+          <CircleCheckBig className="plan-tree__mark" data-tone="done" aria-hidden="true" />
+          <span className="plan-tree__title">Finished plans</span>
+        </span>{" "}
+        <span className="plan-tree__count">{entries.length}</span>
+      </button>
+      {shown && <Children rows={entries} finished={[]} forceOpen={forceOpen} />}
+    </li>
   );
 }
 
-/** One tree row with its metadata, brief bundles or topics nested beneath. */
+function Children({
+  rows,
+  finished,
+  forceOpen,
+}: {
+  rows: TreeEntry[];
+  finished: TreeEntry[];
+  forceOpen: boolean;
+}): JSX.Element {
+  return (
+    <ul className="plan-tree__children">
+      {rows.map((child) => (
+        <TreeEntryRow key={child.path ?? child.title} entry={child} forceOpen={forceOpen} />
+      ))}
+      {finished.length > 0 && <FinishedPlans entries={finished} forceOpen={forceOpen} />}
+    </ul>
+  );
+}
+
+/**
+ * One tree row: chevron, mark, short title and signals on one line, then its blurb, the open
+ * document's outline and its children. A row starts closed unless it holds the open document;
+ * filtering (`forceOpen`) opens every row.
+ */
 export function TreeEntryRow({ entry, forceOpen }: Props): JSX.Element {
   const open = useAtomValue(openDocAtom)?.doc ?? null;
+  const { rows, finished } = arrangeChildren(entry);
+  const expandable = rows.length + finished.length > 0;
   const holdsOpen = containsPath(entry, open?.path ?? null);
-  const expandable = entry.children.length > 0;
-  const [expanded, setExpanded] = useState(expandable && !entry.kind.endsWith("_folder"));
-  useEffect(() => {
-    if (holdsOpen) setExpanded(true);
-  }, [holdsOpen]);
+  const [expanded, setExpanded] = useDisclosure(false, holdsOpen);
   const shown = expandable && (expanded || forceOpen);
-  const Chevron = shown ? ChevronDownIcon : ChevronRightIcon;
   const current = open !== null && entry.path === open.path;
   return (
-    <li className={cn(entry.gap && "opacity-70")}>
-      <div className="flex items-start gap-1 px-2 py-1">
-        {expandable ? (
-          <button
-            type="button"
-            aria-expanded={shown}
-            aria-label={`${shown ? "Collapse" : "Expand"} ${visibleControls(plainTitle(entry.title))}`}
-            className="shrink-0 text-muted-foreground"
-            onClick={() => setExpanded(!shown)}
-          >
-            <Chevron className="size-3.5" aria-hidden="true" />
-          </button>
-        ) : (
-          <span className="w-3.5 shrink-0" aria-hidden="true" />
-        )}
-        <EntryMark kind={entry.kind} />
+    <li className="plan-tree__item">
+      <div
+        className="plan-tree__row"
+        data-kind={entry.kind}
+        data-current={current ? "" : undefined}
+        data-gap={entry.gap ? "" : undefined}
+      >
+        <Twist
+          shown={shown}
+          label={expandable ? visibleControls(plainTitle(entry.title)) : null}
+          onToggle={() => setExpanded(!shown)}
+        />
         <EntryLabel entry={entry} current={current} />
+        <FeatureCount entry={entry} />
+        <EntrySignals entry={entry} />
       </div>
-      <div className="flex flex-col gap-0.5 pr-2 pl-7">
-        <PlanMeta entry={entry} />
-        {entry.blurb && (
-          <span className="text-xs text-muted-foreground">
-            <Untrusted text={entry.blurb} />
-          </span>
-        )}
-      </div>
-      {current && open && <Outline path={open.path} sections={open.sections} />}
-      {shown && (
-        <ul className="ml-4 border-l border-hairline">
-          {entry.children.map((child) => (
-            <TreeEntryRow key={child.path ?? child.title} entry={child} forceOpen={forceOpen} />
-          ))}
-        </ul>
+      {entry.blurb && (
+        <p className="plan-tree__blurb">
+          <Untrusted text={entry.blurb} />
+        </p>
       )}
+      {current && open && (
+        <div className="plan-tree__outline">
+          <Outline path={open.path} sections={open.sections} />
+        </div>
+      )}
+      {shown && <Children rows={rows} finished={finished} forceOpen={forceOpen} />}
     </li>
   );
 }
