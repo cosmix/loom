@@ -71,3 +71,10 @@
 **Why:** `loom plan` serves `web/dist`, which is committed and embedded in the binary. Tests run against `web/src`, so nothing failed when the bundle was stale.
 **Prevention:** a change under `web/src` that the operator should see ends with `bun run build` in `web/` and `web/dist` committed beside it; check the bundle with `rg` for a new class name. The operator then reinstalls with `dev-install.sh`.
 **Fix:** rebuilt `web/dist` from HEAD and committed it.
+
+## Empty States Drawn With an Inline-Glyph Icon
+
+**What happened:** the shared `LoadState` drew its empty, not-found and error icons at 20px with no backing, so a full-page "Choose a document from the tree." showed a speck above a line of text. The operator called it out on first sight.
+**Why:** the brief asked for "a quiet icon" and the implementer picked the inline glyph size; the browser check measured centring, never whether the figure read at page scale. `DESIGN.md` even forbade a medallion.
+**Prevention:** a state's figure is sized for its container (`DESIGN.md`, Loading, empty and error states: 40px in a 72px disc on a page, 24px in 44px compact). A visual check of a new state judges the screenshot at its real size, not only its geometry.
+**Fix:** `ui/load-state.css` sizes the figure from `--plan-state-disc` and `--plan-state-icon`, pinned by `load-state.test.tsx`.
