@@ -88,7 +88,9 @@ export function SourceEditor(props: SourceEditorProps): JSX.Element {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       {phase === "loading" ? (
-        <p className="px-3 py-2 text-[13px] text-muted-foreground">Loading editor</p>
+        <p role="status" className="px-3 py-2 text-[13px] text-muted-foreground">
+          Loading editor
+        </p>
       ) : null}
       {phase === "failed" ? (
         <p role="alert" className="px-3 py-2 text-[13px] text-destructive">

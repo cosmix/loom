@@ -1,7 +1,6 @@
 import { createStore } from "jotai";
 import type { Atom } from "jotai";
 import { Provider } from "jotai/react";
-import { loadable } from "jotai/utils";
 import { INTERNAL_getBuildingBlocksRev3 } from "jotai/vanilla/internals";
 import { useState } from "react";
 import type { JSX } from "react";
@@ -10,7 +9,7 @@ import { pageHref, summaryKey } from "@/plan/api/page-key";
 import type { ConceptPage, Mark, Sentence } from "@/plan/api/schema-concept";
 import type { DocView } from "@/plan/api/schema-files";
 import { conceptPageAtom } from "@/plan/concept/page-state";
-import { docViewAtom } from "@/plan/concept/passages";
+import { docLoadable } from "@/plan/concept/passage-doc";
 import { ReadingColumn } from "@/plan/concept/reading-column";
 import type { OpenRun } from "@/plan/concept/types";
 import { openRunsAtom } from "@/plan/concept/view-state";
@@ -117,9 +116,9 @@ const OPEN_RUN: OpenRun = {
 };
 
 // docViewAtom is a read-only derived atom that fetches when read, so no public setter can
-// preload it; seed this store's cache directly. The seed reaches the reader because jotai's
-// `loadable()` memoizes per base atom (WeakMap), so the instance built here is the one
-// concept/passage-doc.ts builds for the same atom. This cache shape is tied to the pinned Jotai
+// preload it; seed this store's cache directly. The seed reaches the reader because
+// concept/passage-doc.ts memoizes one loadable atom per path and the scene seeds that same
+// atom (`docLoadable`). This cache shape is tied to the pinned Jotai
 // 2.20.3 internal API: revisit on any Jotai major upgrade, or
 // when docViewAtom exposes a writable seed or Jotai a public one. openRunsAtom is seeded the
 // same way, because its setter would write sessionStorage on every mount of the dialog.
@@ -136,7 +135,7 @@ function sampleStore(page: ConceptPage, open: OpenRun[]): ReturnType<typeof crea
   const store = createSampleStore();
   store.set(conceptPageAtom(page.key), { page, previous: null, error: null });
   seedSample(store, openRunsAtom(page.key), open);
-  seedSample(store, loadable(docViewAtom(SOURCE.path)), { state: "hasData", data: SOURCE_DOC });
+  seedSample(store, docLoadable(SOURCE.path), { state: "hasData", data: SOURCE_DOC });
   return store;
 }
 

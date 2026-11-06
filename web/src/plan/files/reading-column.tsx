@@ -1,12 +1,11 @@
 import { useAtomValue } from "jotai/react";
-import { useEffect, useRef, type JSX, type ReactNode, type RefObject } from "react";
+import { lazy, Suspense, useEffect, useRef, type JSX, type ReactNode, type RefObject } from "react";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router";
 
 import { Button } from "@/components/ui/button";
 import type { DocView, FileTree } from "@/plan/api/schema-files";
 import { SelectionAttach } from "@/plan/attachments";
 import { openDiff } from "@/plan/diff/open-diff";
-import { EditMode } from "@/plan/editor/edit-mode";
 import { toAddress } from "@/plan/files/address";
 import { openDocAtom, previousOpenTextAtom } from "@/plan/files/atoms";
 import { FileDocHeading } from "@/plan/files/doc-heading-view";
@@ -17,6 +16,13 @@ import { useDocMarkdownProps } from "@/plan/files/use-doc-markdown";
 import { Markdown } from "@/plan/markdown";
 import { formatBytes } from "@/plan/ui/format-bytes";
 import { LoadState } from "@/plan/ui/load-state";
+
+// Edit mode's React side is a separate chunk, fetched when editing starts: it kept plan.js over
+// vite's 500 kB chunk warning. Revisit if plan.js drops well below the limit or edit mode must
+// open without a second fetch.
+const EditMode = lazy(() =>
+  import("@/plan/editor/edit-mode").then((module) => ({ default: module.EditMode })),
+);
 
 type Props = {
   path: string;
@@ -219,6 +225,20 @@ function LoadStates({
   );
 }
 
+function LazyEditMode({ doc }: { doc: DocView }): JSX.Element {
+  return (
+    <Suspense
+      fallback={
+        <p role="status" className="px-3 py-2 text-[13px] text-muted-foreground">
+          Loading editor
+        </p>
+      }
+    >
+      <EditMode doc={doc} />
+    </Suspense>
+  );
+}
+
 function DocPane({
   doc,
   anchor,
@@ -251,7 +271,7 @@ function DocPane({
         refresh={refresh}
       />
       {editing ? (
-        <EditMode doc={doc} />
+        <LazyEditMode doc={doc} />
       ) : (
         <>
           <div ref={container} data-doc-container className="min-w-0 px-6 py-4">
