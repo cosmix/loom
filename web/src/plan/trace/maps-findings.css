@@ -1,0 +1,267 @@
+/*
+ * The findings ledger (`findings-page.tsx`): a reading-width list grouped by run, one card per
+ * finding. Every rule sits on the scales of ui/design.css and the tokens of index.css; nothing
+ * names a colour. ui/DESIGN.md, Page rhythm ("Map pages") and Status (finding status tones).
+ */
+[data-loom-plan] .maps-findings-head {
+  margin-bottom: var(--space-5);
+}
+
+[data-loom-plan] .maps-finding-group + .maps-finding-group {
+  margin-top: var(--space-6);
+}
+
+[data-loom-plan] .maps-finding-group > .plan-eyebrow {
+  margin-bottom: var(--space-3);
+  overflow-wrap: anywhere;
+}
+
+/* The list is the cards' query container (an element never queries itself): under 36rem a
+   card's status drops under its head instead of squeezing it. */
+[data-loom-plan] .maps-findings-list {
+  container-type: inline-size;
+  display: grid;
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* One finding: the planner's card (home/feature-card.css), holding the id in mono and the title
+   on one line with the status pill at the end, the text in the reading face, the About chips,
+   then the actions. Nothing inside it draws a border but the reason field (DESIGN.md, Surfaces
+   and borders). The address `#finding-<id>` washes the card through `data-addressed`, which the
+   page sets from the router location (`:target` does not follow a pushState navigation). */
+[data-loom-plan] .maps-finding {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "head status"
+    "text text"
+    "about about"
+    "actions actions";
+  gap: var(--space-3);
+  min-width: 0;
+  padding: var(--space-4);
+  border: 1px solid var(--hairline);
+  border-radius: var(--corner-surface);
+  background: var(--card);
+  scroll-margin-top: var(--space-5);
+}
+
+[data-loom-plan] .maps-finding[data-addressed] {
+  background: var(--muted);
+}
+
+@container (max-width: 36rem) {
+  [data-loom-plan] .maps-finding {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      "head"
+      "status"
+      "text"
+      "about"
+      "actions";
+  }
+
+  [data-loom-plan] .maps-finding-status {
+    justify-self: start;
+  }
+}
+
+[data-loom-plan] .maps-finding-head {
+  display: flex;
+  flex-wrap: wrap;
+  grid-area: head;
+  align-items: baseline;
+  gap: var(--space-1) var(--space-2);
+  min-width: 0;
+}
+
+[data-loom-plan] .maps-finding-id {
+  flex: none;
+  font-family: var(--font-mono);
+  font-weight: 500;
+}
+
+[data-loom-plan] .maps-finding-title {
+  min-width: 0;
+  margin: 0;
+  font-family: var(--font-sans);
+  font-size: var(--type-title);
+  font-weight: 600;
+  line-height: var(--leading-ui);
+  letter-spacing: -0.01em;
+  overflow-wrap: anywhere;
+}
+
+/* The status pill: the settle state's shape (trace.css), --muted with the word at 500 and a 7px
+   dot in the tone. Open takes the warning tone, the "needs you" amber of the moved settle states;
+   planned and folded keep a quiet muted dot; dismissed is an outline dot with the word in muted
+   ink, the one status read as past. */
+[data-loom-plan] .maps-finding-status {
+  --trace-tone: var(--muted-foreground);
+  display: inline-flex;
+  grid-area: status;
+  align-self: start;
+  align-items: center;
+  gap: var(--space-2);
+  /* A dismissal reason runs to 200 characters: it wraps inside the pill, which never takes the
+     head's room. */
+  max-width: min(100%, 28rem);
+  min-height: var(--control-height-sm);
+  margin: 0;
+  padding: 3px var(--space-3) 3px 10px;
+  border-radius: 999px;
+  background: var(--muted);
+  color: var(--foreground);
+  font-size: var(--type-ui);
+  font-weight: 500;
+  line-height: var(--leading-ui);
+  overflow-wrap: anywhere;
+}
+
+[data-loom-plan] .maps-finding[data-status="open"] .maps-finding-status {
+  --trace-tone: var(--tone-warning);
+}
+
+[data-loom-plan] .maps-finding-status::before {
+  content: "";
+  box-sizing: border-box;
+  width: 7px;
+  height: 7px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--trace-tone);
+}
+
+[data-loom-plan] .maps-finding[data-status="dismissed"] .maps-finding-status {
+  color: var(--muted-foreground);
+}
+
+[data-loom-plan] .maps-finding[data-status="dismissed"] .maps-finding-status::before {
+  border: 1.5px solid var(--trace-tone);
+  background: transparent;
+}
+
+[data-loom-plan] .maps-finding[data-status="dismissed"] .maps-finding-title,
+[data-loom-plan] .maps-finding[data-status="dismissed"] .maps-finding-text {
+  color: var(--muted-foreground);
+}
+
+[data-loom-plan] .maps-finding-text {
+  grid-area: text;
+  max-width: 68ch;
+  margin: 0;
+  font-family: var(--font-reading);
+  font-size: calc(var(--reading-size) * 0.85);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+/* About: the nodes a finding concerns, as the plan page's chips, led by the word (drawn with
+   empty alternative text: the list is already named "About"). */
+[data-loom-plan] .maps-about {
+  display: flex;
+  flex-wrap: wrap;
+  grid-area: about;
+  align-items: center;
+  gap: var(--space-1) var(--space-2);
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: var(--type-fine);
+  line-height: var(--leading-ui);
+}
+
+[data-loom-plan] .maps-about::before {
+  content: "About" / "";
+}
+
+[data-loom-plan] .maps-about > span {
+  min-width: 0;
+}
+
+[data-loom-plan] .maps-chip {
+  max-width: 100%;
+}
+
+/* The actions on one line, wrapping; the picker, the reason form and an error take a line each. */
+[data-loom-plan] .maps-actions {
+  display: flex;
+  flex-wrap: wrap;
+  grid-area: actions;
+  align-items: flex-start;
+  gap: var(--space-2) var(--space-3);
+  min-width: 0;
+}
+
+[data-loom-plan] .maps-actions > .maps-picker,
+[data-loom-plan] .maps-actions > .maps-dismiss,
+[data-loom-plan] .maps-actions > [role="alert"] {
+  flex: 1 0 100%;
+  min-width: 0;
+  margin: 0;
+}
+
+[data-loom-plan] .maps-actions > [role="alert"] {
+  font-size: var(--type-ui);
+  line-height: var(--leading-ui);
+}
+
+/* Fold into entry: the entries whose plan has not started, as a wrapped row under the question
+   (the group's name, drawn with empty alternative text). */
+[data-loom-plan] .maps-picker {
+  display: grid;
+  gap: var(--space-2);
+}
+
+[data-loom-plan] .maps-picker::before {
+  content: "Fold into which entry" / "";
+  font-size: var(--type-ui);
+  font-weight: 500;
+  line-height: var(--leading-ui);
+}
+
+[data-loom-plan] .maps-picker > p {
+  margin: 0;
+}
+
+[data-loom-plan] .maps-picker ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* Dismiss: the reason field grows on the line, the confirm and Cancel after it. */
+[data-loom-plan] .maps-dismiss {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-2) var(--space-3);
+}
+
+[data-loom-plan] .maps-reason {
+  display: grid;
+  flex: 1 1 16rem;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+[data-loom-plan] .maps-reason > input {
+  height: var(--control-height);
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--corner-control);
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  font-size: var(--type-ui);
+}
+
+[data-loom-plan] .maps-reason > input:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}

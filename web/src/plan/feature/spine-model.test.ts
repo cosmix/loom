@@ -1,9 +1,11 @@
-import { expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import checklistFixture from "@/plan/api/fixtures/checklist.json";
+import traceFixture from "@/plan/api/fixtures/trace.json";
 import { checklistViewSchema, type ChecklistView } from "@/plan/api/schema";
+import { traceViewSchema } from "@/plan/api/schema-trace";
 
-import { groupOfPathname, summaryPathnameOfSource } from "./spine-model";
+import { groupOfPathname, spineGroups, summaryPathnameOfSource } from "./spine-model";
 
 it.each([
   ["/f/atlas/vision", "vision"],
@@ -12,6 +14,8 @@ it.each([
   ["/f/atlas/engineering/atlas-01", "plans"],
   ["/f/atlas/metaplan", "metaplan"],
   ["/f/atlas/run", "run"],
+  ["/f/atlas/coverage", "product"],
+  ["/f/atlas/findings", "run"],
 ])("selects the group of %s", (pathname, group) => {
   expect(groupOfPathname(pathname)).toBe(group);
 });
@@ -106,4 +110,31 @@ it.each([
 
 it("maps a metaplan file the checklist does not list to no summary route", () => {
   expect(summaryPathnameOfSource(atlas(), "/f/atlas/source/plans/atlas/round%202.md")).toBeNull();
+});
+
+describe("the trace pages' rows", () => {
+  const trace = traceViewSchema.parse(structuredClone(traceFixture));
+  const group = (id: string, view = trace) =>
+    spineGroups(atlas(), view).find((candidate) => candidate.id === id)!;
+
+  it("lists Coverage after the sections of the Product spec group", () => {
+    const coverage = group("product").children.at(-1)!;
+    expect(coverage).toMatchObject({ name: "Coverage", to: "/f/atlas/coverage", note: null });
+    expect(group("product").children[0]!.name).toBe("Overview");
+  });
+
+  it("lists Findings in the Run group with the open count as its note", () => {
+    expect(group("run").children).toMatchObject([
+      { name: "Findings", to: "/f/atlas/findings", note: "1 open" },
+    ]);
+  });
+
+  it("counts only open findings, and says nothing without any or without a trace", () => {
+    const settled = structuredClone(trace);
+    for (const { finding } of settled.findings) {
+      finding.status = { kind: "dismissed", detail: "x" };
+    }
+    expect(group("run", settled).children[0]!.note).toBeNull();
+    expect(spineGroups(atlas()).find((g) => g.id === "run")!.children[0]!.note).toBeNull();
+  });
 });
