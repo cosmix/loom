@@ -62,10 +62,10 @@
   transition: border-color 120ms;
 }
 
-/* Focus in the text: the edge takes the ring and the ring stands off it. Keyed on the field, not
- * `:focus-within`, so a focused tool keeps its own ring alone. */
+/* Focus in the text: the one ring stands off the box's resting edge, as on every focusable thing
+ * (DESIGN.md, Focus and hover); the edge itself never recolours, which drew a second ring inside
+ * the first. Keyed on the field, not `:focus-within`, so a focused tool keeps its own ring alone. */
 .chat-composer-box:has(> .chat-composer-field:focus-visible) {
-  border-color: var(--ring);
   outline: 2px solid var(--ring);
   outline-offset: 2px;
 }

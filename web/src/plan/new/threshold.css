@@ -98,11 +98,9 @@
   transition: border-color 120ms;
 }
 
-[data-loom-plan] .kickoff-field:focus-within {
-  border-color: var(--ring);
-}
-
-/* The ring itself only while the words have focus: a focused button draws its own. */
+/* The one ring, only while the words have focus, standing off the box's resting edge: a focused
+   button inside draws its own, and the edge never recolours on top of either (DESIGN.md, Focus
+   and hover). */
 [data-loom-plan] .kickoff-field:has(> .kickoff-composer:focus-visible) {
   outline: 2px solid var(--ring);
   outline-offset: 2px;
