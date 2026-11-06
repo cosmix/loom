@@ -1,7 +1,9 @@
 //! Feature checklist conversion and snapshot contract tests.
 
 use super::*;
+use chrono::{DateTime, SecondsFormat, Utc};
 use serde_json::{json, Value};
+use std::fs;
 
 #[path = "checklist_plan_rows_tests.rs"]
 mod plan_rows;
@@ -247,6 +249,24 @@ fn unscoped_offers_omit_optional_context_and_keep_a_null_target() {
     }
 }
 
+/// Each plan carries its file's modification time; checks it and returns the rest of the rows.
+fn standalone_without_last_change(
+    snapshot: &ProjectChecklistView,
+    root: &std::path::Path,
+) -> serde_json::Value {
+    let mut standalone = serde_json::to_value(&snapshot.standalone).unwrap();
+    for row in standalone.as_array_mut().unwrap() {
+        let modified = row.as_object_mut().unwrap().remove("last_change").unwrap();
+        let path = root.join(row["path"].as_str().unwrap());
+        let mtime = DateTime::<Utc>::from(fs::metadata(path).unwrap().modified().unwrap());
+        assert_eq!(
+            modified,
+            json!(mtime.to_rfc3339_opts(SecondsFormat::Secs, true))
+        );
+    }
+    standalone
+}
+
 #[test]
 fn project_snapshot_groups_features_and_uses_winning_standalone_paths_and_titles() {
     let temp = tempfile::tempdir().unwrap();
@@ -273,8 +293,9 @@ fn project_snapshot_groups_features_and_uses_winning_standalone_paths_and_titles
     // Alpha has only a metaplan; Zeta's vision has no paragraph.
     assert_eq!(snapshot.checklists[0].pitch, None);
     assert_eq!(snapshot.checklists[1].pitch, None);
+    let standalone = standalone_without_last_change(&snapshot, temp.path());
     assert_eq!(
-        serde_json::to_value(snapshot.standalone).unwrap(),
+        standalone,
         json!([
             {"slug":"first","path":"doc/plans/PLAN-first.md","state":"written","title":"First"},
             {"slug":"fix","path":"doc/plans/IN_PROGRESS-PLAN-fix.md","state":"running","title":"Fix in progress"},

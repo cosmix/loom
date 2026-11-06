@@ -68,7 +68,15 @@ function mount(value = turn(), holder = true) {
         items: [{ step: 4, text: "Draft plan", path: "doc/plans/PLAN-draft.md", offer: null }],
       },
     ],
-    standalone: [{ slug: "y", path: "doc/plans/PLAN-y.md", state: "written", title: "Standalone" }],
+    standalone: [
+      {
+        slug: "y",
+        path: "doc/plans/PLAN-y.md",
+        state: "written",
+        title: "Standalone",
+        last_change: null,
+      },
+    ],
     moves: [],
   });
   store.set(projectAtom, project);

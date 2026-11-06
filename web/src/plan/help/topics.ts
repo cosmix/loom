@@ -58,10 +58,6 @@ export const PLANNER_HELP_TOPICS: readonly PlannerHelpTopic[] = [
             text: "The spine has five groups: Vision, Product spec, Metaplan, Plans and Run. It marks what is done, and each plan row reads Pressure-tested with a date or Not pressure-tested.",
           },
           {
-            target: ".plan-spine-next",
-            text: "The next step at the head of the spine offers the next action for the current planning work.",
-          },
-          {
             target: '[aria-label$="Waiting for you"]',
             text: "The activity pill counts what is in progress, such as a chat waiting for you, and opens the list. A roundel marks work that is running.",
           },

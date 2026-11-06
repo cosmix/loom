@@ -3,8 +3,10 @@ import { ChevronRight, Plus } from "lucide-react";
 import { useId, useState, type SyntheticEvent } from "react";
 import { useNavigate } from "react-router";
 
+import type { StandalonePlanView } from "@/plan/api/schema";
 import { Untrusted } from "@/plan/chat/visible-controls";
 import { MoveIntoFeatureDialog } from "@/plan/home/move-into-feature";
+import { STATE_TONE, stateCounts } from "@/plan/home/standalone-order";
 import { StandaloneTable } from "@/plan/home/standalone-table";
 import {
   authorBlockReasonAtom,
@@ -13,6 +15,7 @@ import {
   standaloneAtom,
 } from "@/plan/state/atoms";
 import { DisabledReason } from "@/plan/ui/disabled-reason";
+import { PLAN_STATE_WORD_GLYPHS } from "@/plan/ui/glyphs";
 import { plural } from "@/plan/ui/plural";
 
 import "./standalone-shelf.css";
@@ -120,13 +123,35 @@ function useSelection() {
   return { plans, selected, toggle, select, clear: () => setPicked(new Set()) };
 }
 
-function ShelfSummary({ count, reason }: { count: number; reason: string | null }) {
+/** How many plans are in each state, running first; a state with none is left out. */
+function ShelfStates({ plans }: { plans: StandalonePlanView[] }) {
+  const counts = stateCounts(plans);
+  if (counts.length === 0) return null;
+  return (
+    <span className="shelf__states">
+      {counts.map(({ state, count }) => {
+        const Glyph = PLAN_STATE_WORD_GLYPHS[state];
+        return (
+          <span key={state} data-state={state} className="plan-status">
+            <Glyph aria-hidden="true" className={STATE_TONE[state]} />
+            {`${count} ${state}`}
+          </span>
+        );
+      })}
+    </span>
+  );
+}
+
+function ShelfSummary({ plans, reason }: { plans: StandalonePlanView[]; reason: string | null }) {
   return (
     <summary className="shelf__summary">
       <ChevronRight aria-hidden="true" className="shelf__chevron" />
-      <span className="shelf__count">{plural(count, "standalone plan")}</span>
-      <span className="shelf__hint">bugfixes, performance work and small features</span>
+      <span className="shelf__head">
+        <span className="shelf__count">{plural(plans.length, "standalone plan")}</span>
+        <span className="shelf__hint">bugfixes, performance work and small features</span>
+      </span>
       <NewPlanAction reason={reason} />
+      <ShelfStates plans={plans} />
     </summary>
   );
 }
@@ -162,7 +187,7 @@ export function StandaloneShelf({ defaultOpen = false }: { defaultOpen?: boolean
       </h2>
       <MoveRows reason={reason} onMove={(path) => setMoving([path])} />
       <details className="shelf__details" open={defaultOpen || plans.length === 0}>
-        <ShelfSummary count={plans.length} reason={reason} />
+        <ShelfSummary plans={plans} reason={reason} />
         {plans.length === 0 && <ShelfEmpty />}
         {plans.length > 0 && (
           <StandaloneTable

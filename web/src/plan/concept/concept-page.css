@@ -46,25 +46,35 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
-  margin-block: var(--space-1) var(--space-5);
+  margin-block: var(--space-2) var(--space-5);
   font-family: var(--font-sans);
 }
 
-/* The lede says what the documents are to this page ("Sources: the 12 sections this overview
-   summarizes"); one fine line, its weight the legend's. */
+/* The head line: the lede, which says what the documents are to this page ("Sources: the 12
+   sections this overview summarizes"), and at its end the mark legend when the page has marks,
+   both fine print; the legend drops under the lede when the line is too narrow. */
+.concept-key-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-1) var(--space-4);
+  min-width: 0;
+}
+
 .concept-key-lede {
   max-width: 68ch;
   margin: 0;
 }
 
 /* Every document sits on one fixed-width track, so a long key reads as aligned columns and a
-   title is cut at the same width wherever it falls: three tracks across the 68ch column at
+   title is cut at the same width wherever it falls: four tracks across the 68ch column at
    1440px, two at 390px, where four documents take two lines and "more" a third. */
 .concept-key-list {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 10rem), 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 9.5rem), 1fr));
   align-items: center;
-  gap: 0 var(--space-4);
+  gap: 0 var(--space-3);
   min-width: 0;
   margin: 0;
   padding: 0;
@@ -86,7 +96,7 @@
   gap: var(--space-2);
   min-width: 0;
   max-width: 100%;
-  min-height: var(--control-height);
+  min-height: var(--control-height-sm);
   padding: 0;
   border: 0;
   border-bottom: 1px solid transparent;
@@ -170,9 +180,10 @@ a.concept-key-doc:hover .concept-key-title {
 
 /* The legend for the squares after sentences: one sample square, then one sentence. */
 .concept-key-legend {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   gap: var(--space-2);
+  min-width: 0;
   max-width: 68ch;
   margin: 0;
 }

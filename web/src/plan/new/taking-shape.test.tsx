@@ -74,7 +74,9 @@ describe("TakingShape", () => {
     ]);
     expect(sections.getByText("Settled").querySelector(".lucide-circle-check")).not.toBeNull();
     expect(
-      sections.getByText("Being worded").querySelector('.activity-glyph[data-kind="drafting"]'),
+      sections
+        .getByText("Being worded")
+        .querySelector('.lucide-refresh-cw.plan-arrow-spinner[data-kind="drafting"]'),
     ).not.toBeNull();
     expect(sections.getByText("Open").querySelector(".lucide-circle")).not.toBeNull();
   });

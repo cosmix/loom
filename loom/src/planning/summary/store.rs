@@ -35,8 +35,10 @@ use std::path::{Component, Path, PathBuf};
 
 use anyhow::{bail, Result};
 
+use crate::planning::briefs::bundle_files;
 use crate::planning::kinds::{is_feature_name, plans_dir, vision_path, DocKind};
 use crate::planning::project::{Feature, Project};
+use crate::planning::summary::format::PlanCaps;
 
 /// Repository-relative directory containing summaries.
 pub const STORE_DIR: &str = "doc/loom/summaries";
@@ -284,6 +286,24 @@ pub fn source_of(project: &Project, id: &str) -> Option<PathBuf> {
     project.tree.docs.iter().find_map(|doc| {
         (summary_id_for(project, &doc.path).as_deref() == Some(id)).then(|| doc.path.clone())
     })
+}
+
+/// Sentence caps of plan summary `id`, scaled to the lines of the plan and its brief files;
+/// the floor caps when the plan is unknown.
+pub fn plan_caps(project: &Project, id: &str) -> PlanCaps {
+    let lines = |path: &Path| {
+        let sections = &project.docs.get(path)?.sections;
+        let ends = sections.headings.iter().map(|h| h.span.end_line);
+        ends.chain([sections.preamble.end_line]).max()
+    };
+    let total = source_of(project, id).map_or(0, |plan| {
+        let briefs = bundle_files(project, &plan);
+        std::iter::once(plan)
+            .chain(briefs)
+            .filter_map(|p| lines(&p))
+            .sum()
+    });
+    PlanCaps::for_source_lines(total)
 }
 
 fn normalized(path: &Path) -> Option<PathBuf> {

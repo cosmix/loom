@@ -20,6 +20,7 @@ vi.mock("./page-header-extras", () => ({
     </div>
   ),
   SummaryAction: () => <span>Summary action</span>,
+  SummaryDetail: () => null,
 }));
 
 afterEach(() => {

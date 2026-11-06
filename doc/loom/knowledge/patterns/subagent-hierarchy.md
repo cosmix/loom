@@ -80,8 +80,8 @@ exploration and one command proves it (a fable main session delegates even those
 advisory past that size; see [hook-system.md](../architecture/hook-system.md)). Everything larger goes to subagents
 spawned by agent type across these tiers (BLOCK-B point 3):
 
-- haiku (`loom-mechanical-engineer`, `agents/loom-mechanical-engineer.md`: `model: haiku`, no `Skill`
-  tool, so its brief quotes the rules it needs): mechanical edits, boilerplate, scaffolding,
+- haiku (`loom-software-developer`, `agents/loom-software-developer.md`: `model: haiku`, no `Skill`
+  tool, so its brief quotes the rules it needs): routine edits, boilerplate, scaffolding,
   simple unit tests. Haiku 5.5 is the default for this work; codex GPT-6 Luna takes it only when
   the user or the plan asks for luna.
 - sonnet (`loom-software-engineer`) or GPT-6.1 Terra (`loom-codex-forwarder`): common

@@ -7,7 +7,7 @@ use anyhow::{bail, Context, Result};
 
 use super::claims::{create_claim, delete_claim, draft_path, ClaimHeld};
 use super::evaluate::{evaluate, SentenceState, SummaryEval};
-use super::format::{sentence_limit, MAX_DOCUMENT_SENTENCES, MAX_OPENING_SENTENCES};
+use super::format::sentence_limit;
 use super::lock::with_store_lock;
 use super::store::{self, validate_id};
 use super::write::read_summary;
@@ -112,7 +112,7 @@ fn write_summary_brief(
     } else {
         writeln!(out, "(none)")?;
     }
-    write_rules(out, id, overview)?;
+    write_rules(out, project, id, overview)?;
     let draft = draft_path(paths, id);
     let absolute = if draft.is_absolute() {
         draft
@@ -214,7 +214,7 @@ fn cite_rule(id: &str, overview: bool) -> &'static str {
     }
 }
 
-fn write_rules(out: &mut String, id: &str, overview: bool) -> Result<()> {
+fn write_rules(out: &mut String, project: &Project, id: &str, overview: bool) -> Result<()> {
     writeln!(out, "Body rules:")?;
     writeln!(
         out,
@@ -230,9 +230,11 @@ fn write_rules(out: &mut String, id: &str, overview: bool) -> Result<()> {
     )?;
     if store::is_plan(id) {
         writeln!(out, "- A plan summary has two levels. First the opening level: about one sentence per topic, each citing every sentence of the detail paragraph(s) it opens, in order, as [d](#s-xxxxxxxx). Then the detail level: short paragraphs whose sentences cite the plan's heading sections and its brief files, one paragraph per stage citing the stage as PLAN-<slug>.md#stage:<id> and that stage's brief files. No heading after the opening level.")?;
+        let caps = store::plan_caps(project, id);
         writeln!(
             out,
-            "- At most {MAX_OPENING_SENTENCES} opening and {MAX_DOCUMENT_SENTENCES} detail sentences."
+            "- At most {} opening and {} detail sentences; the detail level is a real expansion of the opening level, so use the room: cover each stage and each brief file in several sentences, not one.",
+            caps.opening, caps.detail
         )?;
         writeln!(out, "- Write the detail level first and seal: the refusal lists each detail sentence's id. Then add the opening level above it and seal again.")?;
     }

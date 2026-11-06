@@ -57,7 +57,7 @@ describe("FileDocHeading chips and crumbs", () => {
   });
 
   it.each<[PlanView["state"], string, string]>([
-    ["running", "accent", '.activity-glyph[data-kind="running"] .activity-glyph__led'],
+    ["running", "accent", "svg.lucide-refresh-cw.plan-arrow-spinner"],
     ["done", "ok", "svg.lucide-circle-check-big"],
     ["written", "neutral", "svg.lucide-pencil-line"],
   ])("tones the %s state chip %s", (state, tone, glyph) => {
@@ -66,8 +66,7 @@ describe("FileDocHeading chips and crumbs", () => {
     const chip = screen.getByText(state[0]!.toUpperCase() + state.slice(1)).closest("[data-chip]");
     expect(chip?.getAttribute("data-tone")).toBe(tone);
     expect(chip?.querySelector(glyph)).not.toBeNull();
-    expect(chip?.querySelector(".activity-glyph") !== null).toBe(state === "running");
-    expect(chip?.querySelector(".aurora-roundel, .plan-arrow-spinner")).toBeNull();
+    expect(chip?.querySelector(".activity-glyph, .aurora-roundel")).toBeNull();
   });
 
   it("offers nothing for a done plan with no follow-up offer, not dead buttons", () => {

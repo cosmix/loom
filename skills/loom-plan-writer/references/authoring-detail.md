@@ -62,7 +62,7 @@ declared-skill rules: Codex opens no skill files. Keep a concern's code, consume
 together in dependency order, spanning several files where cohesive. Waves follow dependencies
 on another job's result on disk; never slice jobs into waves by the cap of 6.
 
-Match agent type to work: execution → `loom-software-engineer` (pins sonnet), `loom-mechanical-engineer` for mechanical pieces, or `loom-codex-forwarder` for a codex unit on a stage licensed for codex (`codex-implementers.md`); judgment → `loom-senior-software-engineer`.
+Match agent type to work: execution → `loom-software-engineer` (pins sonnet), `loom-software-developer` for routine pieces, or `loom-codex-forwarder` for a codex unit on a stage licensed for codex (`codex-implementers.md`); judgment → `loom-senior-software-engineer`.
 
 ## Section 6 — Prose promises
 

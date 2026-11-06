@@ -56,7 +56,7 @@ type StartControl = { path: string | null; reason: string | null };
  * its own plan even when no plan is written. A run in flight, a foreign stopped run (the server
  * refuses both, `run/start.rs` admit) and an unreadable state draw it blocked with one reason.
  * Otherwise it starts `startTarget`. It is drawn whenever there is a plan to start, a run to
- * resume or a start_run primary, which `pageDrawsPrimary` counts as the page's own offer.
+ * resume or a start_run primary.
  * Null when none of those holds.
  */
 export function startControl(

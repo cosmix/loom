@@ -85,9 +85,11 @@ reader's legend, the place that says which colour is which document.
 Every document summary is also readable on its own: a section at
 `/f/<feature>/product/<section stem>` (for example `/f/feat-planner/product/section_04`), a feature
 plan at `/f/<feature>/engineering/<slug>`, and a standalone plan at `/plans/<slug>`.
-The page header gives the title, the path
-(monospace), the colour, whether the summary is up to date, an **Open in file mode** link, and
-the cross links below. Plan pages also show the plan's state (written, running, done, retired;
+The page header gives the breadcrumb, the title with its document mark in the document's
+colour, a toolbar (the **Summary** / **Source** switch, whose Source segment opens the file's
+text; the settle state and its action; Edit, Discuss and Open all), then a status area:
+whether the summary is up to date with its Rebuild action, the open questions, and the cross
+links below. Plan pages also show the plan's state (written, running, done, retired;
 section 01) and the date of its last pressure test, if any. Running, done and retired plans show
 the read-only notice of the vision's "Locked plans" decision.
 

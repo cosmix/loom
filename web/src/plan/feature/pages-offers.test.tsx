@@ -24,7 +24,6 @@ vi.mock("@/plan/chat/panel", async (original) => ({
 
 const SPINE = "Feature documents";
 const ONE = "one";
-const PRESSURE_LABEL = `Pressure-test ${ONE}`;
 const START_LABEL = "Start a run";
 let unregister: (() => void)[] = [];
 
@@ -96,29 +95,7 @@ const buttonsNamed = (root: HTMLElement, label: string) =>
     .queryAllByRole("button")
     .filter((button) => button.textContent?.includes(label));
 
-it("the spine draws the pressure test offer once on a read-only server when no page owns it", async () => {
-  const row = planRow(ONE, "written");
-  const test = offer("pressure_test", PRESSURE_LABEL, row.path);
-  renderRoute(
-    "/f/atlas/vision",
-    atlas({
-      plan_rows: [row],
-      plans: { listed: 1, total: 1, written: 1, running: 0, done: 0 },
-      current: { kind: "step", number: 5 },
-      primary: test,
-      items: [{ step: 5, text: PRESSURE_LABEL, path: row.path, offer: test }],
-    }),
-  );
-  const spine = await screen.findByRole("navigation", { name: SPINE });
-
-  await waitFor(() => expect(buttonsNamed(document.body, PRESSURE_LABEL)).toHaveLength(1));
-  expect(buttonsNamed(spine, PRESSURE_LABEL)).toHaveLength(1);
-  expect(buttonsNamed(document.body, PRESSURE_LABEL)[0]!.getAttribute("aria-disabled")).toBe(
-    "true",
-  );
-});
-
-it("the spine and the Run page draw the start_run offer once on a read-only server", async () => {
+it("the Run page draws the start_run offer once on a read-only server", async () => {
   const row = planRow(ONE, "written");
   renderRoute(
     "/f/atlas/run",

@@ -5,12 +5,17 @@ import type { StepView } from "@/plan/api/schema";
 import { FoldCap } from "@/plan/concept/fold-handle";
 import { Marks } from "@/plan/concept/marks";
 import { PlanGlyph } from "@/plan/concept/plan-glyph";
-import { ACTIVITY_LABELS, ActivityGlyph, type YourTurnKind } from "@/plan/ui/activity-glyphs";
+import {
+  ACTIVITY_LABELS,
+  ActivityGlyph,
+  StateMark,
+  type YourTurnKind,
+} from "@/plan/ui/activity-glyphs";
 import { DocMark } from "@/plan/ui/doc-mark";
 import {
   DOC_KIND_GLYPHS,
   OTHER_GLYPHS,
-  PLAN_STATE_GLYPHS,
+  PLAN_STATE_WORD_GLYPHS,
   STEP_MARK_GLYPHS,
   SUMMARY_STATE_GLYPHS,
   type DocKind,
@@ -195,8 +200,8 @@ export const STATES: readonly LegendEntry[] = [
     ...DOCUMENTS[kind],
     glyph: <DocMark kind={kind} />,
   })),
-  ...(Object.keys(PLAN_STATE_GLYPHS) as PlanState[]).map((state) => {
-    const Glyph = PLAN_STATE_GLYPHS[state];
+  ...(Object.keys(PLAN_STATE_WORD_GLYPHS) as PlanState[]).map((state) => {
+    const Glyph = PLAN_STATE_WORD_GLYPHS[state];
     return { ...PLAN_STATES[state], glyph: <Glyph className="size-4" /> };
   }),
   ...(Object.keys(SUMMARY_STATE_GLYPHS) as SummaryState[]).map((state) => {
@@ -223,7 +228,7 @@ export const STATES: readonly LegendEntry[] = [
   },
 ];
 
-/** The signs that mean "your turn"; every progress kind draws the live status dot instead. */
+/** The signs that mean "your turn"; work under way draws the two rotating arrows instead. */
 const YOUR_TURN: Record<YourTurnKind, string> = {
   permission: "A session needs your permission before it can continue.",
   waiting: "A session is waiting for your reply.",
@@ -233,8 +238,8 @@ export const ACTIVITIES: readonly LegendEntry[] = [
   {
     name: "Working",
     meaning:
-      "A green dot pulses beside work under way: a plan running, a document being drafted, a pressure test or Codex review. It turns gray and still when the work pauses. An action that will finish, such as a rebuild or a send, turns a small arrow instead.",
-    glyph: <ActivityGlyph kind="running" className="size-4" />,
+      "Two rotating arrows stand before a word that says what is happening: Running, Drafting, Rebuilding. They stop when the work does. A green dot pulses before the item or action itself, such as a plan, a document or a pressure test.",
+    glyph: <StateMark kind="running" className="size-4" />,
   },
   ...(Object.keys(YOUR_TURN) as YourTurnKind[]).map((kind) => ({
     name: ACTIVITY_LABELS[kind],

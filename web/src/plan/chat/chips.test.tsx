@@ -103,7 +103,13 @@ it.each([
         },
       ],
       standalone: [
-        { slug: "y", path: "doc/plans/PLAN-y.md", state: "written", title: "Standalone" },
+        {
+          slug: "y",
+          path: "doc/plans/PLAN-y.md",
+          state: "written",
+          title: "Standalone",
+          last_change: null,
+        },
       ],
       moves: [],
     }),

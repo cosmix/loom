@@ -270,7 +270,7 @@
 /* ── Motion ────────────────────────────────────────────────────────────────── */
 
 /* A new message, card or row enters with a rise; items arriving together are staggered 70ms.
- * The roundel's turn is BusyRoundel's own. */
+ * A spinner's turn is its own. */
 @keyframes chat-rise {
   from {
     opacity: 0;

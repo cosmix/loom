@@ -64,8 +64,8 @@ function announcedElsewhere(session: SessionView | null): boolean {
 }
 
 /**
- * The head's sub-line: the state in a few words. It draws no roundel: the transcript shows the
- * work (a working turn's typing bubble, the starting or wrap-up card's roundel). `hideWords` hides
+ * The head's sub-line: the state in a few words. It draws no busy sign: the transcript shows the
+ * work (a working turn's typing bubble, the starting or wrap-up card's Spinner). `hideWords` hides
  * the words from browse mode where the sr-only region announces them.
  */
 function StateWords({ state, hideWords }: { state: SessionView["state"]; hideWords: boolean }) {

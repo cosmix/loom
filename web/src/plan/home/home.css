@@ -1,8 +1,11 @@
-/* One column of sections on the page ground: the head, Unfinished, the cards (the invitation
-   first), then the standalone shelf. Sections follow at --space-6; the head sits --space-5 above
-   what it titles (ui/DESIGN.md, Page rhythm). */
+/* One column of sections on the page ground: the head, Unfinished, the invitation heading the
+   feature cards, then the standalone shelf. Sections follow at --space-6; the head sits --space-5
+   above what it titles (ui/DESIGN.md, Page rhythm). The page is positioned so the sr-only text it
+   holds stays inside the shell's scroller (mistakes/planner-polish.md). */
 .home {
+  position: relative;
   display: grid;
+  align-content: start;
   gap: var(--space-6);
   width: 100%;
   max-width: 80rem;
@@ -16,16 +19,29 @@
   margin-bottom: calc(var(--space-5) - var(--space-6));
 }
 
-/* The invitation is a card among the cards: the same surface, with the doodle and the screen's
-   one primary button. The link inside covers the card, so the card is one target. */
+/* A repository with nothing in it: the invitation alone, centred in the page. */
+.home[data-empty] {
+  min-height: 100%;
+  align-content: center;
+  justify-items: center;
+}
+
+.home[data-empty] > .card-grid {
+  width: 100%;
+  max-width: 36rem;
+}
+
+/* The invitation heads the features as one band: the doodle, what Loom does, and the screen's
+   one primary at the band's end. The link inside covers the band, so the band is one target. */
 .invitation {
   position: relative;
   display: grid;
-  grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+  grid-template-columns: 10rem minmax(0, 1fr) auto;
+  grid-template-areas: "art text act";
   align-items: center;
-  gap: var(--space-2) var(--space-4);
+  gap: var(--space-3) var(--space-6);
   min-width: 0;
-  padding: var(--space-4);
+  padding: var(--space-4) var(--space-6) var(--space-4) var(--space-5);
   border: 1px solid var(--hairline);
   border-radius: var(--corner-surface);
   background: var(--card);
@@ -38,32 +54,50 @@
 }
 
 .invitation__art {
+  grid-area: art;
   min-width: 0;
 }
 
-.invitation__body {
+.invitation__text {
+  grid-area: text;
   display: grid;
-  justify-items: start;
-  gap: var(--space-2);
+  gap: var(--space-1);
   min-width: 0;
 }
 
 .invitation__title {
   margin: 0;
+  font-size: var(--type-title);
+  font-weight: 600;
+  line-height: var(--leading-ui);
+  letter-spacing: -0.01em;
 }
 
 .invitation__lead {
-  display: grid;
-  gap: var(--space-1);
-  max-width: 48ch;
+  max-width: 56ch;
+  margin: 0;
   font-size: var(--type-body);
   line-height: var(--leading-body);
   color: var(--muted-foreground);
 }
 
 .invitation__empty {
+  margin: 0 0 var(--space-1);
+  font-size: var(--type-body);
   font-weight: 600;
   color: var(--foreground);
+}
+
+.invitation__act {
+  grid-area: act;
+  display: grid;
+  justify-items: end;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.invitation__note {
+  margin: 0;
 }
 
 /* The button scale (`.plan-button`) sets height, type and look; a link needs only its layout. */
@@ -80,9 +114,47 @@ a.invitation__cta::after {
   border-radius: var(--corner-surface);
 }
 
-@container (max-width: 593px) {
-  .invitation {
+/* Alone on an empty page, the invitation stands upright and centred, the doodle at full size. */
+.invitation[data-empty] {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas: "art" "text" "act";
+  justify-items: center;
+  gap: var(--space-4);
+  padding: var(--space-6);
+  text-align: center;
+}
+
+.invitation[data-empty] .invitation__art {
+  width: min(100%, 17rem);
+}
+
+.invitation[data-empty] .invitation__lead {
+  max-width: 44ch;
+}
+
+.invitation[data-empty] .invitation__act {
+  justify-items: center;
+}
+
+/* Narrow (the grid's container under 40rem): the doodle, the words and the button stack. */
+@container (max-width: 40rem) {
+  .invitation:not([data-empty]) {
     grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "art" "text" "act";
+    gap: var(--space-2);
+    padding: var(--space-4);
+  }
+
+  .invitation:not([data-empty]) .invitation__art {
+    width: 7.5rem;
+  }
+
+  .invitation:not([data-empty]) .invitation__act {
+    margin-top: var(--space-1);
+  }
+
+  .invitation:not([data-empty]) .invitation__act {
+    justify-items: start;
   }
 }
 

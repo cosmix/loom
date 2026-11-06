@@ -167,7 +167,13 @@ mod tests {
         apply_batch(&ctx, &batch);
 
         let frame = frames.try_recv().expect("the standalone shelf changed");
-        let value: Value = serde_json::from_str(&frame).unwrap();
+        let mut value: Value = serde_json::from_str(&frame).unwrap();
+        let modified = value["standalone"][0]
+            .as_object_mut()
+            .unwrap()
+            .remove("last_change")
+            .unwrap();
+        assert!(modified.as_str().unwrap().ends_with('Z'));
         assert_eq!(
             value,
             json!({

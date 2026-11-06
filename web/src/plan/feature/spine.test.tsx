@@ -209,16 +209,6 @@ describe("the Documents control", () => {
   });
 });
 
-describe("the next step", () => {
-  it("heads the list of groups", () => {
-    renderSpine("/f/atlas/vision");
-
-    const body = spine().querySelector(".plan-spine__body");
-    expect(body?.firstElementChild?.className).toBe("plan-spine-next");
-    expect(body?.lastElementChild?.tagName).toBe("OL");
-  });
-});
-
 describe("a document's source", () => {
   it.each([
     ["/f/atlas/source/product/atlas/index.md", true],

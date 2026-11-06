@@ -38,6 +38,7 @@ const project: ProjectChecklistView = {
       path: "doc/plans/PLAN-fix-search.md",
       title: "Fix search",
       state: "written",
+      last_change: null,
     },
   ],
   moves: [],

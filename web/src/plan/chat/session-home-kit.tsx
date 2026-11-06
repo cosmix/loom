@@ -40,7 +40,15 @@ export function setup(path: string, current: SessionView | null, selected = offe
       { ...checklist, feature: "alpha" },
       { ...checklist, feature: "beta" },
     ],
-    standalone: [{ slug: "solo", path: "doc/plans/PLAN-solo.md", state: "written", title: "Solo" }],
+    standalone: [
+      {
+        slug: "solo",
+        path: "doc/plans/PLAN-solo.md",
+        state: "written",
+        title: "Solo",
+        last_change: null,
+      },
+    ],
     moves: [],
   });
   store.set(snapshotAtom, {

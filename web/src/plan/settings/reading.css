@@ -2,20 +2,16 @@
  * The Reading face and Reading size groups of the settings dialog: the specimen, the face cards
  * and the size tiles. Unlayered `.ps-` rules, as settings.css, because the dialog portals out of
  * `[data-loom-plan]` and reads only the global tokens. `--accent-ink` (index.css) is the one
- * accent drawn here: the specimen's start rule and the chosen tile's edge and drawing.
+ * accent drawn here: the chosen face's and the chosen tile's edge, and the chosen tile's drawing.
  */
 
 /* ── The specimen ─────────────────────────────────────────────────────────── */
 
-/* A sunken card one step below the dialog: `--background` under the `--card` dialog, a 1px edge
-   and a 3px rule of accent ink down its start, so the sample reads as a specimen and not a note. */
+/* A plain shadcn card: its `rounded-md border bg-card` are utilities on the figure, so this rule
+   sets only the spacing and the text colour. */
 .ps-preview {
   margin: 0 0 var(--space-4);
   padding: var(--space-4);
-  border: 1px solid var(--border);
-  border-inline-start: 3px solid var(--accent-ink);
-  border-radius: 8px;
-  background: var(--background);
   color: var(--foreground);
 }
 
@@ -62,10 +58,6 @@
 
 .ps-face:hover {
   background: var(--muted);
-}
-
-.ps-face:has(input:checked) {
-  border-color: var(--foreground);
 }
 
 .ps-face:has(input:focus-visible),
@@ -154,8 +146,13 @@
   color: var(--foreground);
 }
 
+/* The chosen face and the chosen size tile share one edge: the accent ink. */
+.ps-face:has(input:checked),
 .ps-seg-item:has(input:checked) {
   border-color: var(--accent-ink);
+}
+
+.ps-seg-item:has(input:checked) {
   color: var(--accent-ink);
 }
 
