@@ -127,6 +127,22 @@ describe("PlanView", () => {
     expect(within(row).getByText("loom/src/lib.rs")).toBeTruthy();
   });
 
+  it("renders a stage description as Markdown, keeping its line breaks", () => {
+    const doc = makeDoc();
+    doc.plan!.stages[0]!.description =
+      "First line.\nSecond line.\n\n| Worker | Tier |\n| --- | --- |\n| W1 | sonnet |";
+    renderPlan(doc);
+    const row = document.getElementById(`stage:${doc.plan!.stages[0]!.id}`)!;
+    fireEvent.click(within(row).getAllByRole("button")[0]!);
+    const table = within(row).getByRole("table");
+    expect(within(table).getByRole("columnheader", { name: "Worker" })).toBeTruthy();
+    expect(within(table).getByRole("cell", { name: "sonnet" })).toBeTruthy();
+    expect(within(row).queryByText(/\| --- \|/)).toBeNull();
+    expect(row.querySelector(".stage-description p")?.textContent).toBe(
+      "First line.\nSecond line.",
+    );
+  });
+
   it("shows the pressure date beside the last change", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-10-20T12:00:00Z"));

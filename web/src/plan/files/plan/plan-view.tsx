@@ -23,7 +23,7 @@ export function PlanView({ doc }: { doc: DocView }) {
         suppressTitle={doc.title}
         {...shared}
       />
-      <StagesPanel plan={plan} />
+      <StagesPanel plan={plan} links={{ path: doc.path, ...links }} />
       {parts.record !== "" && (
         <Markdown source={parts.record} lineOffset={parts.record_offset} {...shared} />
       )}

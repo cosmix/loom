@@ -1,0 +1,5 @@
+/* A stage description is written one instruction per line: a soft line break inside a paragraph
+ * stays a break, where prose Markdown would join the lines. */
+.stage-description .md :is(p, li) {
+  white-space: pre-line;
+}

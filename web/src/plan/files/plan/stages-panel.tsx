@@ -3,7 +3,7 @@ import { useState } from "react";
 import type { PlanView, StageRow as StageRowData } from "@/plan/api/schema-files";
 import { Untrusted } from "@/plan/chat/visible-controls";
 import { StageGraph } from "@/plan/files/plan/stage-graph";
-import { StageRow } from "@/plan/files/plan/stage-row";
+import { StageRow, type StageLinks } from "@/plan/files/plan/stage-row";
 import { HEADING_BUTTON } from "@/plan/ui/doc-heading";
 
 function scrollToStage(id: string): void {
@@ -25,7 +25,7 @@ function idSuffixes(stages: StageRowData[]): string[] {
 
 /// Stands in for the plan's metadata block: the stage graph and one row per
 /// stage, or the YAML itself on request.
-export function StagesPanel({ plan }: { plan: PlanView }) {
+export function StagesPanel({ plan, links }: { plan: PlanView; links: StageLinks }) {
   const [showYaml, setShowYaml] = useState(false);
 
   if (plan.yaml_error !== null) {
@@ -63,7 +63,12 @@ export function StagesPanel({ plan }: { plan: PlanView }) {
           {plan.stages.length > 0 && <StageGraph stages={plan.stages} onSelect={scrollToStage} />}
           <ul>
             {plan.stages.map((stage, index) => (
-              <StageRow key={`${index}:${stage.id}`} stage={stage} idSuffix={suffixes[index]} />
+              <StageRow
+                key={`${index}:${stage.id}`}
+                stage={stage}
+                links={links}
+                idSuffix={suffixes[index]}
+              />
             ))}
           </ul>
         </>
