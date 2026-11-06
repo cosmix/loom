@@ -154,8 +154,9 @@ record (section 01). The plan view renders them as:
 3. **A Stages panel** in place of the metadata block: the stage graph drawn with the dashboard's
    graph layout (`web/src/lib/graph.ts`, React Flow and dagre) without live state, then one
    row per stage with its id, name, type, summary, and dependencies. A row expands to show the
-   stage's description, acceptance criteria, and file lists as text. Clicking a node scrolls to
-   its row. (My call: a reviewer reads a plan's shape from its graph and summaries; the YAML is
+   stage's description rendered as Markdown (tables, lists, code and links work, and a single
+   line break stays a break), then its acceptance criteria and file lists as text. Clicking a
+   node scrolls to its row. (My call: a reviewer reads a plan's shape from its graph and summaries; the YAML is
    the authoring form.)
 4. A **"Show YAML"** control on the Stages panel replaces it with the raw block as a code
    block, so a reader can always see exactly what loom will parse.
@@ -209,7 +210,7 @@ File mode never creates, renames, moves, or deletes a file. Those happen through
 ## The editor
 
 The Edit control swaps the rendered view for the file's full source in CodeMirror 6, in the
-reading column, with line numbers. CodeMirror and its language modes load as a lazy chunk the
+reading column, opening in live preview (below). CodeMirror and its language modes load as a lazy chunk the
 first time any browser opens the editor or a diff, the way the dashboard loads xterm
 (`web/src/components/terminal/emulator.ts:134-161`), so a reader who never edits never
 downloads it. Every `.md` file opens in Markdown mode; fenced `yaml` blocks, which includes the
@@ -217,6 +218,49 @@ plan metadata block, are highlighted as YAML inside it. The editor is themed fro
 CSS tokens (`web/src/aurora-ui/shared/styles/tokens.css`, `web/src/index.css`) through CSS
 variables, so it follows the active theme and the `.dark` class without a second palette. There
 is no schema-aware completion (vision, Decisions).
+
+### Live preview and source
+
+The editor has two modes over the same CodeMirror document, switched by a "Live preview /
+Source" toggle in the editor's toolbar. Both edit the Markdown text itself; live preview only
+changes how that text is drawn. Switching keeps the text, the cursor, the selection and the undo
+history, because nothing is converted. A save writes exactly the text in the editor, so bytes the
+user did not touch never change. (Decided 2026-11-06. A rich-text editor that rebuilds Markdown
+from a document tree on save was rejected: it normalises list markers, emphasis, table padding
+and wrapping across the file, so a one-word fix would become a whole-file diff in git and in a
+turn's changes (section 10), and it mishandles the `<!-- loom METADATA -->` comments and the
+fenced YAML plan block.)
+
+- **Live preview** is the mode a Markdown file opens in. Text is drawn styled: headings at their
+  rendered sizes, bold, italic, strikethrough and inline code styled, links drawn as their link
+  text, list bullets and quote bars drawn as in the reading view. The Markdown markers (`#`,
+  `**`, `` ` ``, `[`, `](url)`, and so on) are hidden except on the lines the cursor or selection
+  touches, where they show so the user sees exactly what is being changed. A plain click on a
+  link places the cursor; Ctrl-click / Cmd-click follows it as the reading view would.
+  Task-list boxes are drawn as checkboxes, and clicking one toggles `[ ]` and `[x]` in the text.
+- **Blocks that stay close to source in live preview.** Fenced code blocks show in the
+  monospace face on the muted ground with their language label, and their fence lines show only
+  when the cursor is inside the block. Fenced `yaml` blocks, including the plan metadata block,
+  keep YAML highlighting. Tables show as their source rows in the monospace face with pipes
+  dimmed; they are not drawn as grids. HTML comments, including the `<!-- loom METADATA -->`
+  markers, show as dimmed source and are never hidden, so the user cannot delete one unseen.
+  Other raw HTML shows as source, never rendered (Rendering Markdown, above).
+- **Source** shows the plain text with Markdown and YAML highlighting and line numbers, the
+  editor as it was before live preview. Line numbers show only in this mode.
+- **Toolbar and shortcuts**, active in both modes, insert or remove the Markdown syntax around
+  the selection: bold (Ctrl-B / Cmd-B), italic (Ctrl-I / Cmd-I), inline code, link (Ctrl-K /
+  Cmd-K), heading level, bullet, numbered and task list, quote, code block, and a table
+  skeleton. They edit the text the same way typing would, so undo reverses them one step at a
+  time.
+- The chosen mode is remembered in the browser's local storage, so the editor reopens in the
+  mode last used. (My call.)
+- Validation markers (Plan validation, below) attach to lines in either mode. The merge view
+  (When the file changed underneath) and diffs (Diffs, below) always show source.
+
+Live preview is built from CodeMirror's own decoration and widget facilities over the Markdown
+syntax tree the Markdown mode already parses. It adds no second editor library to the lazy chunk.
+
+### Saving and drafts
 
 - **Save** is a button and Ctrl-S / Cmd-S. The request carries the path, the content hash of the
   text the editor opened (section 04's hash), and the new text.
@@ -340,7 +384,8 @@ In the rendered view, the editor, or a diff, selecting text shows a small "Add t
 next to the selection. It attaches the passage to the next chat message as a reference made of:
 
 - the document's path and the anchor of the heading that contains the selection start;
-- the selected text, as the reader saw it (rendered text in the view, source in the editor);
+- the selected text, as the reader saw it (rendered text in the view, source in the editor,
+  including the Markdown markers live preview hides);
 - the line range, when the selection is in the editor or a diff;
 - the stage id, when the selection is in a plan's Stages panel.
 

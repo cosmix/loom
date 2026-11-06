@@ -203,7 +203,8 @@ files is for section 01 to settle.
 
 - Replacing Claude Code. Sessions are real Claude Code processes; the app is a front end to them.
 - A general Markdown editor or wiki. Chat with a session is the primary way to change documents;
-  file mode embeds a plain-text editor for direct fixes, and a saved edit goes through the same
+  file mode embeds a Markdown editor for direct fixes (live preview over the source text, with
+  a toggle to plain source; it never rewrites text the user did not touch), and a saved edit goes through the same
   hash check and summary rebuild as any other change made outside a session.
 - Replacing `loom status --web` for monitoring running stages. The Run step hands off to
   `loom run` and the existing dashboard.
@@ -321,7 +322,10 @@ Each becomes `doc/product/<feature>/section_NN.md`. Order is a first proposal fo
   decision in the documents as it is made (my call), so the closing write only adds the open
   questions and anything still pending.
 - **Embedded editor (06).** File mode embeds CodeMirror 6, loaded as a lazy chunk the way the
-  dashboard loads its terminal emulator: Markdown and YAML modes, `@codemirror/merge` for showing
+  dashboard loads its terminal emulator: Markdown and YAML modes, a live preview mode that draws
+  the Markdown styled while the user edits the text itself, with a toggle to plain source
+  (decided 2026-11-06; a rich-text editor that rebuilds Markdown on save was rejected because it
+  rewrites untouched text), `@codemirror/merge` for showing
   what a turn changed, themed from the dashboard's CSS tokens. Plan YAML is checked on save by
   loom's own plan validation on the server (my call); schema-aware completion in the editor is
   left out.
