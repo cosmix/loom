@@ -157,7 +157,9 @@ opened run after its file-and-heading chip, which opens file mode at that headin
 passages follow in citation order. Passages render with the same Markdown renderer file mode
 uses (section 06); lists, tables and code keep their Markdown layout. No card, coloured left
 border or spine marks the passage (`conventions/web-dashboard-typography.md`, "Stage thread
-chips").
+chips"). A passage never shows a file's YAML front matter (the `---` block at the top of a
+summary or a knowledge topic): a file's opening passage starts after that block. File mode
+shows the whole file, front matter included.
 
 A passage that an earlier fragment in the same view already shows appears as one line: its chip,
 then a **Same passage as above** button. The button moves focus to the first showing, scrolling
@@ -291,8 +293,12 @@ read-only browser has no chat input: it gets **Send to author** in place of Add 
 
 ## Empty and partial states
 
-Empty states use the dashboard's `EmptyState` (`web/src/aurora-ui/feedback/EmptyState.tsx:54`).
-The states below apply to the selected feature. Offers in them are section 01's; read-only
+A page that is loading, not found or failed to load is one centred state, `LoadState`
+(`web/src/plan/ui/load-state.tsx`): a muted disc holding an icon (a 40px icon in a 72px disc on
+a page, 24px in 44px when compact), a title, an optional detail and an optional action. It is
+centred on both axes in its container. Loading shows the ring spinner and fades in after 160ms,
+so a load that answers at once never flashes. The partial states below are a quiet sentence in
+the page with the offer under it. The states below apply to the selected feature. Offers in them are section 01's; read-only
 browsers see the same text without the offer button.
 
 | State                                                   | Product page                                                                                       | Engineering page                                                                                  |
@@ -302,7 +308,7 @@ browsers see the same text without the offer button.
 | No metaplan, no plans                                   | as above                                                                                           | "No metaplan yet", offer to start one from the spec                                               |
 | Plans, no metaplan                                      | as above                                                                                           | No overview; list of plan summaries in file-name order, offer to start a metaplan                 |
 | Documents exist, summaries never built                  | "Summaries not built", the count, and the cost line section 04 provides; documents listed with file mode links | same                                                                                 |
-| Summaries being built                                   | `BusyRoundel` with "Building 4 of 12"; document summaries appear in the key as they finish and open from it; the overview appears when built | same                                                       |
+| Summaries being built                                   | "Building 4 of 12"; document summaries appear in the key as they finish and open from it; the overview appears when built | same                                                       |
 | Rebuild above the budget waiting for approval           | Overview readable with dashed marks; a notice in the key row with the stale count and, for the author, an approve button | same                                                        |
 
 An overview never renders half-built: it shows its last complete version with dashed marks, or the
@@ -327,9 +333,11 @@ Concept mode follows the dashboard's conventions:
   The column label above the key uses the existing `eyebrow` utility
   (`web/src/index.css:125`); no new all-caps chips.
 - **Colour.** Surfaces from `tokens.css`, dark mode through the `.dark` class, document colours
-  from the new `--doc-*` tokens, flash from `--primary`, focus ring from `--ring`.
-- **Components.** Tooltips, `Kbd`, `Skeleton`, `EmptyState`, `BusyRoundel` and the header's
-  `ViewSwitch` (`web/src/components/view-switch.tsx`) for the tabs, reused from `web/`.
+  from the new `--doc-*` tokens, flash from `--primary`, focus ring from `--ring`. The planner
+  has three themes: Ledger (light), Walnut and Graphite (dark). Light or dark starts from the
+  desktop's setting, and the dark theme is Graphite until the reader picks another in Settings.
+- **Components.** Tooltips and `Kbd` reused from `web/`, and `LoadState` for the loading,
+  empty, not-found and error states.
 - **Narrow screens.** Below the `lg` breakpoint the column takes the full width with a 16px
   gutter; fold caps stay inline and marks keep their size. The chat panel's
   narrow layout is section 08's.

@@ -99,6 +99,16 @@ a browser names itself on first open (kept in that browser), else it shows as "V
 (My call.) Sections 07 and 08 own the chat side of this; section 12 owns how a person reaches
 the server from another machine.
 
+The header's activity pill gathers what is in progress. Its sign is the roundel, a turning
+black-and-white disc, while any work runs; it is the only place the planner draws the roundel.
+When the most urgent item is the user's turn (a permission request, or a chat waiting for
+them), the pill shows that item's bell or status dot instead. The popover lists one row per
+thing in progress: a running plan, a drafting session, a pressure test, a Codex review, a
+summary rebuild and a chat waiting. Elsewhere in the planner an operation that will finish
+turns an arrow, a shown state is a status dot (green and pulsing when live, gray and still when
+paused or ended), a block that loads is a ring spinner, and counted work is a progress bar.
+All of them rest under reduced motion.
+
 ## Runtime state
 
 `loom plan` writes nothing into the project except documents under `doc/` (and what sessions
