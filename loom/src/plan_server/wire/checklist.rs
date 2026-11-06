@@ -3,6 +3,7 @@
 use serde::{Deserialize, Serialize};
 
 use super::files::PlanStateView;
+use crate::plan_server::files::plan_view::last_change;
 use crate::planning::checklist::Offer;
 use crate::planning::project::Project;
 use crate::planning::slug::PlanState;
@@ -43,6 +44,8 @@ pub struct StandalonePlanView {
     pub state: PlanStateView,
     /// The document's first level-one heading, or its filename.
     pub title: String,
+    /// The plan file's modification time (RFC 3339, UTC), or null when it cannot be read.
+    pub last_change: Option<String>,
 }
 
 /// The six-step checklist belonging to one feature.
@@ -312,6 +315,7 @@ impl From<&Project> for ProjectChecklistView {
                         PlanState::Retired => PlanStateView::Retired,
                     },
                     title: doc.title.clone(),
+                    last_change: last_change(&project.root, &plan.path),
                 })
             })
             .collect();

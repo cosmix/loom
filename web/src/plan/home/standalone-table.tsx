@@ -6,41 +6,23 @@ import type { StandalonePlanView } from "@/plan/api/schema";
 import { Untrusted } from "@/plan/chat/visible-controls";
 import { IsolatedSentence } from "@/plan/concept/sentence-text";
 import { toAddress } from "@/plan/files/address";
-import { PLAN_STATE_GLYPHS } from "@/plan/ui/glyphs";
+import {
+  DEFAULT_SORT,
+  firstDirection,
+  modifiedLabel,
+  shortTitle,
+  shownPlans,
+  STATE_TONE,
+  type Sort,
+  type SortKey,
+} from "@/plan/home/standalone-order";
+import { StateFilter, StateFilterEmpty, useStateFilter } from "@/plan/home/state-filter";
+import { PLAN_STATE_WORD_GLYPHS } from "@/plan/ui/glyphs";
 
-type PlanState = StandalonePlanView["state"];
-type SortKey = "title" | "state";
-type Sort = { key: SortKey; direction: "ascending" | "descending" } | null;
+import "./standalone-table.css";
 
 /** A filter field appears from this many plans; below it the whole list reads at a glance. */
 export const FILTER_FROM = 10;
-
-// Work in progress first, then what is ready, then what is finished or set aside.
-const STATE_ORDER: Record<PlanState, number> = { running: 0, written: 1, done: 2, retired: 3 };
-const STATE_TONE: Record<PlanState, string | undefined> = {
-  running: "tone-executing",
-  written: undefined,
-  done: "tone-completed",
-  retired: "tone-dimmed",
-};
-const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
-
-function shownPlans(plans: StandalonePlanView[], query: string, sort: Sort) {
-  const needle = query.trim().toLowerCase();
-  const matching = needle
-    ? plans.filter(
-        (plan) =>
-          plan.title.toLowerCase().includes(needle) || plan.slug.toLowerCase().includes(needle),
-      )
-    : plans;
-  if (sort === null) return matching;
-  const sign = sort.direction === "ascending" ? 1 : -1;
-  return [...matching].sort((a, b) => {
-    const byState = STATE_ORDER[a.state] - STATE_ORDER[b.state];
-    const byTitle = collator.compare(a.title, b.title);
-    return sign * (sort.key === "state" ? byState || byTitle : byTitle || byState);
-  });
-}
 
 function SortHeader({
   label,
@@ -53,18 +35,22 @@ function SortHeader({
   sort: Sort;
   onSort: (sort: Sort) => void;
 }) {
-  const direction = sort?.key === column ? sort.direction : undefined;
+  const direction = sort.key === column ? sort.direction : undefined;
   const Icon =
     direction === "ascending" ? ArrowUp : direction === "descending" ? ArrowDown : ChevronsUpDown;
+  const next =
+    direction === undefined
+      ? firstDirection(column)
+      : direction === "ascending"
+        ? "descending"
+        : "ascending";
   return (
     <th role="columnheader" scope="col" aria-sort={direction} className={`shelf-table__${column}`}>
       <button
         type="button"
         className="shelf-table__sort"
         data-sorted={direction !== undefined || undefined}
-        onClick={() =>
-          onSort({ key: column, direction: direction === "ascending" ? "descending" : "ascending" })
-        }
+        onClick={() => onSort({ key: column, direction: next })}
       >
         {label}
         <Icon aria-hidden="true" />
@@ -73,21 +59,33 @@ function SortHeader({
   );
 }
 
+function Modified({ stamp, now }: { stamp: string | null; now: number }) {
+  const label = modifiedLabel(stamp, now);
+  if (label === null) return <span className="shelf-table__unknown">unknown</span>;
+  return (
+    <time dateTime={stamp ?? undefined} title={label.title}>
+      {label.text}
+    </time>
+  );
+}
+
 function PlanRow({
   plan,
   checked,
   selectLabel,
+  now,
   onToggle,
 }: {
   plan: StandalonePlanView;
   checked: boolean;
   selectLabel: string;
+  now: number;
   onToggle: (path: string) => void;
 }) {
   const titleId = useId();
-  const Glyph = PLAN_STATE_GLYPHS[plan.state];
+  const Glyph = PLAN_STATE_WORD_GLYPHS[plan.state];
   return (
-    <tr role="row" data-selected={checked || undefined}>
+    <tr role="row" data-selected={checked || undefined} data-state={plan.state}>
       <td role="cell" className="shelf-table__select">
         {/* Named "Select <title>": the title can carry inline markup, so it is referenced, not
             copied into an attribute. */}
@@ -100,9 +98,10 @@ function PlanRow({
       </td>
       <td role="cell" className="shelf-table__title">
         <div className="shelf-table__plan">
+          {/* The link's box covers the row, so the whole row opens the plan. */}
           <Link to={toAddress(plan.path)} className="shelf-table__link">
             <span id={titleId}>
-              <IsolatedSentence text={plan.title} />
+              <IsolatedSentence text={shortTitle(plan.title)} />
             </span>
           </Link>
           <span className="shelf-table__slug">
@@ -115,6 +114,9 @@ function PlanRow({
           <Glyph aria-hidden="true" className={STATE_TONE[plan.state]} />
           <Untrusted text={plan.state} />
         </span>
+      </td>
+      <td role="cell" className="shelf-table__modified">
+        <Modified stamp={plan.last_change} now={now} />
       </td>
     </tr>
   );
@@ -160,9 +162,12 @@ export interface StandaloneTableProps {
 }
 
 /**
- * Every standalone plan, uncapped: a select box, the title (the link) over its slug, and the
- * state as a glyph and a word. Headers sort; from FILTER_FROM plans a field narrows by title or
- * slug. Selection survives filtering, and the header box acts on the plans shown.
+ * Every standalone plan, uncapped: a select box, the title (the link, covering the row) over its
+ * slug, the state as a glyph and a word, and when the plan file last changed. Headers sort,
+ * newest first until the reader picks another order; from FILTER_FROM plans a field narrows by
+ * title or slug, and with two states or more the state toggles narrow by state (states first,
+ * then the field, then the sort). Selection survives the text filter; a plan the state filter
+ * hides is unselected (`useStateFilter`). The header box acts on the plans shown.
  */
 export function StandaloneTable({
   plans,
@@ -172,38 +177,129 @@ export function StandaloneTable({
   actions,
 }: StandaloneTableProps) {
   const [query, setQuery] = useState("");
-  const [sort, setSort] = useState<Sort>(null);
-  const selectLabel = useId();
+  const [sort, setSort] = useState<Sort>(DEFAULT_SORT);
   // The query applies only while its field is shown, so a list that shrinks below FILTER_FROM
   // never keeps rows hidden behind a field that is gone.
   const filtering = plans.length >= FILTER_FROM;
   const activeQuery = filtering ? query : "";
-  const shown = useMemo(() => shownPlans(plans, activeQuery, sort), [plans, activeQuery, sort]);
+  const filter = useStateFilter(plans, selected, onSelect);
+  const { states } = filter;
+  const shown = useMemo(
+    () => shownPlans(plans, activeQuery, sort, states),
+    [plans, activeQuery, sort, states],
+  );
   return (
     <div className="shelf-table-wrap">
       <Toolbar filtering={filtering} query={query} onQuery={setQuery} actions={actions} />
+      <StateFilter
+        counts={filter.counts}
+        total={plans.length}
+        picked={states}
+        onToggle={filter.toggle}
+        onAll={filter.all}
+      />
+      {shown.length === 0 && states.size > 0 ? (
+        <StateFilterEmpty onAll={filter.all} />
+      ) : (
+        <PlanTable
+          shown={shown}
+          selected={selected}
+          query={activeQuery}
+          sort={sort}
+          onSort={setSort}
+          onSelect={onSelect}
+          onToggle={onToggle}
+        />
+      )}
+    </div>
+  );
+}
+
+/** The table itself: the sortable header and a row per shown plan. */
+function PlanTable({
+  shown,
+  selected,
+  query,
+  sort,
+  onSort,
+  onSelect,
+  onToggle,
+}: {
+  shown: StandalonePlanView[];
+  selected: ReadonlySet<string>;
+  query: string;
+  sort: Sort;
+  onSort: (sort: Sort) => void;
+  onSelect: (paths: string[], on: boolean) => void;
+  onToggle: (path: string) => void;
+}) {
+  const selectLabel = useId();
+  // One clock per mount: every row's relative date is measured from the same moment.
+  const [now] = useState(() => Date.now());
+  return (
+    <>
       <span id={selectLabel} hidden>
         Select
       </span>
       {/* The phone layout sets display:block on the table parts, which WebKit reads as dropping their
           semantics; the explicit roles keep them. */}
-      <table role="table" className="shelf-table">
+      <table role="table" className="shelf-table" data-sort={sort.key}>
         <TableHead
           shown={shown}
           selected={selected}
           onSelect={onSelect}
           sort={sort}
-          onSort={setSort}
+          onSort={onSort}
         />
         <TableBody
           shown={shown}
           selected={selected}
           selectLabel={selectLabel}
-          query={activeQuery}
+          query={query}
+          now={now}
           onToggle={onToggle}
         />
       </table>
-    </div>
+    </>
+  );
+}
+
+function TableBody({
+  shown,
+  selected,
+  selectLabel,
+  query,
+  now,
+  onToggle,
+}: {
+  shown: StandalonePlanView[];
+  selected: ReadonlySet<string>;
+  selectLabel: string;
+  query: string;
+  now: number;
+  onToggle: (path: string) => void;
+}) {
+  return (
+    <tbody role="rowgroup">
+      {shown.map((plan) => (
+        <PlanRow
+          key={plan.path}
+          plan={plan}
+          checked={selected.has(plan.path)}
+          selectLabel={selectLabel}
+          now={now}
+          onToggle={onToggle}
+        />
+      ))}
+      {shown.length === 0 && (
+        <tr role="row">
+          <td role="cell" colSpan={4} className="plan-empty shelf-table__none">
+            No plan matches “<Untrusted text={query.trim()} />
+            ”.
+          </td>
+        </tr>
+      )}
+    </tbody>
   );
 }
 
@@ -256,43 +352,8 @@ function TableHead({
         </th>
         <SortHeader label="Plan" column="title" sort={sort} onSort={onSort} />
         <SortHeader label="State" column="state" sort={sort} onSort={onSort} />
+        <SortHeader label="Modified" column="modified" sort={sort} onSort={onSort} />
       </tr>
     </thead>
-  );
-}
-
-function TableBody({
-  shown,
-  selected,
-  selectLabel,
-  query,
-  onToggle,
-}: {
-  shown: StandalonePlanView[];
-  selected: ReadonlySet<string>;
-  selectLabel: string;
-  query: string;
-  onToggle: (path: string) => void;
-}) {
-  return (
-    <tbody role="rowgroup">
-      {shown.map((plan) => (
-        <PlanRow
-          key={plan.path}
-          plan={plan}
-          checked={selected.has(plan.path)}
-          selectLabel={selectLabel}
-          onToggle={onToggle}
-        />
-      ))}
-      {shown.length === 0 && (
-        <tr role="row">
-          <td role="cell" colSpan={3} className="plan-empty shelf-table__none">
-            No plan matches “<Untrusted text={query.trim()} />
-            ”.
-          </td>
-        </tr>
-      )}
-    </tbody>
   );
 }

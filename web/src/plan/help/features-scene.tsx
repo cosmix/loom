@@ -38,6 +38,7 @@ const SAMPLE_PROJECT = projectChecklistViewSchema.parse({
       title: "Fix search keyboard focus",
       path: "doc/plans/PLAN-fix-search.md",
       state: "written",
+      last_change: null,
     },
   ],
   moves: [],
