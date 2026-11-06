@@ -64,3 +64,10 @@
 **Why:** the working turn's sr-only "Working" span is `position: absolute`, and `.chat-transcript` was static, so the span's containing block was Transcript's relative root outside the scroller. It sat at its static offset at the end of the chat, unclipped. Visual passes checked layout in jsdom or on short transcripts, where nothing overflows.
 **Prevention:** a scroller holding positioned content is itself positioned ([plan-web conventions](../conventions/plan-web.md)); check chat layout with a long transcript in a real browser.
 **Fix:** `position: relative` on `.chat-transcript`, pinned by `chat/transcript-scroll.test.ts`.
+
+## Web Changes Committed Without Rebuilding web/dist
+
+**What happened:** the typing bubble, the transcript scroll fix and the front matter fix were committed in `web/src` with every test green, and the operator still saw the roundel in the chat.
+**Why:** `loom plan` serves `web/dist`, which is committed and embedded in the binary. Tests run against `web/src`, so nothing failed when the bundle was stale.
+**Prevention:** a change under `web/src` that the operator should see ends with `bun run build` in `web/` and `web/dist` committed beside it; check the bundle with `rg` for a new class name. The operator then reinstalls with `dev-install.sh`.
+**Fix:** rebuilt `web/dist` from HEAD and committed it.
