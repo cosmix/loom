@@ -1,0 +1,187 @@
+/*
+ * The coverage map (`coverage-page.tsx`): maps-columns.css holds the filter, the columns and the
+ * cards; this sheet adds the focus panel and the width steps, after the base rules so the steps
+ * win on equal specificity (a CSS @import always cascades first). The container is
+ * `.maps-coverage` (maps-columns.css): under 56rem of page width the panel is a sheet stuck to
+ * the foot of the scrollport; from 56rem it docks on the right; under 40rem the five columns
+ * become a list of sections, each with its layers in order, so nothing scrolls sideways.
+ */
+@import "./maps-columns.css";
+
+/* Why, How and Findings for the selected card. As a sheet: behind a hairline on an opaque
+   ground, scrolling inside itself past two fifths of the viewport. No shadow: it is in the page
+   flow, not floating over it. */
+[data-loom-plan] .maps-focus {
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
+  display: grid;
+  gap: var(--space-4);
+  align-content: start;
+  min-width: 0;
+  max-height: 40vh;
+  margin-top: var(--space-5);
+  padding: var(--space-3) 0;
+  overflow-y: auto;
+  border-top: 1px solid var(--hairline);
+  background: var(--background);
+}
+
+[data-loom-plan] .maps-focus-title {
+  margin: 0;
+  font-family: var(--font-sans);
+  font-size: var(--type-title);
+  font-weight: 600;
+  line-height: var(--leading-ui);
+  letter-spacing: -0.01em;
+  overflow-wrap: anywhere;
+}
+
+[data-loom-plan] .maps-focus > .plan-fine {
+  margin: 0;
+}
+
+[data-loom-plan] .maps-related {
+  display: grid;
+  align-content: start;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+[data-loom-plan] .maps-related > h3 {
+  margin: 0;
+}
+
+[data-loom-plan] .maps-related ul {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+[data-loom-plan] .maps-related li {
+  min-width: 0;
+}
+
+/* One line per related node, cut at the panel's edge; chrome links underline on hover only. */
+[data-loom-plan] .maps-related a {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  padding: 2px 0;
+  border-radius: 3px;
+  color: var(--muted-foreground);
+  font-size: var(--type-ui);
+  line-height: var(--leading-ui);
+  text-decoration: none;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition: color 120ms;
+}
+
+[data-loom-plan] .maps-related a:hover {
+  color: var(--foreground);
+  text-decoration: underline;
+}
+
+/* Open is a link drawn as the secondary button (ui/design.css, `.plan-button`): the panel's one
+   action, on the button scale. */
+[data-loom-plan] .maps-open {
+  display: inline-flex;
+  justify-self: start;
+  align-items: center;
+  height: var(--control-height);
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--corner-control);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  font-size: var(--type-ui);
+  font-weight: 500;
+  line-height: 1;
+  text-decoration: none;
+  transition:
+    background-color 120ms,
+    color 120ms;
+}
+
+[data-loom-plan] .maps-open:hover {
+  background: var(--muted);
+}
+
+[data-loom-plan] .maps-related a:focus-visible,
+[data-loom-plan] .maps-open:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+/* Between 40rem and 56rem the sheet's three lists sit side by side, so it stays short. */
+@container maps (min-width: 40rem) and (max-width: 55.99rem) {
+  [data-loom-plan] .maps-focus {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  [data-loom-plan] .maps-focus > .maps-focus-title,
+  [data-loom-plan] .maps-focus > .plan-fine,
+  [data-loom-plan] .maps-focus > .maps-open {
+    grid-column: 1 / -1;
+  }
+}
+
+/* From 56rem the panel docks on the right, behind a hairline on its start edge, and sticks to the
+   top of the scrollport beside the columns. */
+@container maps (min-width: 56rem) {
+  [data-loom-plan] .maps-body {
+    grid-template-columns: minmax(0, 1fr) 16rem;
+    gap: var(--space-6);
+  }
+
+  [data-loom-plan] .maps-focus {
+    top: var(--space-5);
+    bottom: auto;
+    max-height: calc(100vh - 9rem);
+    margin-top: 0;
+    padding: 0 0 var(--space-2) var(--space-5);
+    border-top: 0;
+    border-inline-start: 1px solid var(--hairline);
+    background: transparent;
+  }
+}
+
+/* Under 40rem the five columns become a list of sections, each with its layers in order, and the
+   filter's segments wrap as single pills. The lineage dot keeps its gutter in the page gutter. */
+@container maps (max-width: 39.99rem) {
+  [data-loom-plan] .maps-filter {
+    gap: var(--space-1);
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+  }
+
+  [data-loom-plan] .maps-filter-option {
+    border: 1px solid var(--hairline);
+  }
+
+  [data-loom-plan] .maps-columns {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-6);
+  }
+
+  [data-loom-plan] .maps-column,
+  [data-loom-plan] .maps-column + .maps-column {
+    padding-inline-start: 0;
+    border-inline-start: 0;
+  }
+
+  [data-loom-plan] .maps-column-title {
+    min-height: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-loom-plan] .maps-related a,
+  [data-loom-plan] .maps-open {
+    transition: none;
+  }
+}
