@@ -198,9 +198,10 @@ function hasMarks(page: ConceptPage): boolean {
 
 /**
  * What the spine cannot show: which colour is which document, and what the squares after a
- * sentence mean. On the page ground: a one-line lede, then per document its mark, number and
- * title on a fixed-width track, the first four with "more" for the rest; under them, the one-line
- * mark legend when the page has marks. No chips, no box (DESIGN.md, Surfaces).
+ * sentence mean. On the page ground: one head line holding the lede and, when the page has
+ * marks, the mark legend at its end; then per document its mark, number and title on a
+ * fixed-width track, the first four with "more" for the rest. No chips, no box (DESIGN.md,
+ * Surfaces).
  */
 export function DocumentKey({ page, pageKey }: { page: ConceptPage; pageKey: string }) {
   // Expansion belongs to one page: another page opens collapsed without remounting the key row,
@@ -213,9 +214,19 @@ export function DocumentKey({ page, pageKey }: { page: ConceptPage; pageKey: str
   const dashed = page.key_chips.some((chip) => chip.out_of_date !== null);
   return (
     <div className="concept-key">
-      <p id={ledeId} className="plan-fine concept-key-lede">
-        {keyLede(page)}
-      </p>
+      <div className="concept-key-head">
+        <p id={ledeId} className="plan-fine concept-key-lede">
+          {keyLede(page)}
+        </p>
+        {hasMarks(page) && (
+          <p className="plan-fine concept-key-legend">
+            <span aria-hidden="true" className="concept-key-square" />
+            {dashed
+              ? "A square after a sentence names a document it draws on. Dashed means out of date."
+              : "A square after a sentence names a document it draws on."}
+          </p>
+        )}
+      </div>
       <ul
         role="list"
         aria-label="Document key"
@@ -233,14 +244,6 @@ export function DocumentKey({ page, pageKey }: { page: ConceptPage; pageKey: str
           />
         )}
       </ul>
-      {hasMarks(page) && (
-        <p className="plan-fine concept-key-legend">
-          <span aria-hidden="true" className="concept-key-square" />
-          {dashed
-            ? "A square after a sentence names a document it draws on. Dashed means out of date."
-            : "A square after a sentence names a document it draws on."}
-        </p>
-      )}
     </div>
   );
 }

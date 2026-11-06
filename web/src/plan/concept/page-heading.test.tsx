@@ -25,6 +25,7 @@ vi.mock("./page-header-extras", () => ({
     </div>
   ),
   SummaryAction: () => <span>Summary action</span>,
+  SummaryDetail: () => <span>Summary detail</span>,
 }));
 
 afterEach(() => {
@@ -79,14 +80,56 @@ it.each([
   expect(chip?.querySelector(mark)).toBeTruthy();
 });
 
-it("sets the summary action right after the status chip, on its baseline", () => {
+it("sets the summary action at the end of its status row and its detail under the words", () => {
   show({ state: { state: "current", out_of_date: null } });
 
   const chip = screen.getByText("Summary current").closest("[data-chip]") as HTMLElement;
-  expect(chip.nextElementSibling?.textContent).toBe("Summary action");
-  const pair = chip.parentElement as HTMLElement;
-  expect(pair.classList.contains("items-baseline")).toBe(true);
-  expect(pair.children).toHaveLength(2);
+  expect(chip.tagName).toBe("SPAN");
+  const row = chip.parentElement as HTMLElement;
+  expect(row.classList.contains("doc-heading-row")).toBe(true);
+  expect(row.hasAttribute("data-action")).toBe(true);
+  expect(row.querySelector(".doc-heading-row__detail")?.textContent).toBe("Summary detail");
+  expect(row.lastElementChild?.className).toBe("doc-heading-row__action");
+  expect(row.lastElementChild?.textContent).toBe("Summary action");
+});
+
+it("leads the status card with the summary's state, then the plan's state and record, and sets Built by on the facts line", () => {
+  show({
+    key: "demo/engineering/my-plan",
+    plan_state: "written",
+    state: { state: "current", out_of_date: null },
+    implemented_by: [{ slug: "feat-planner-09", title: "Other", state: "done" }],
+  });
+
+  const card = screen.getByRole("list", { name: "Status" });
+  const chips = [...card.querySelectorAll("[data-chip]")];
+  expect(chips.map((chip) => chip.querySelector(".doc-heading-chip__label")?.textContent)).toEqual([
+    "Summary current",
+    "Written",
+    "Not pressure-tested",
+  ]);
+  // Every row draws its glyph column first, so the words share one left edge.
+  for (const chip of chips) {
+    expect(chip.firstElementChild?.classList.contains("doc-heading-chip__glyph")).toBe(true);
+  }
+  const facts = card.nextElementSibling as HTMLElement;
+  expect(facts.className).toBe("doc-heading-facts");
+  expect(facts.textContent).toBe("Built by 09 (Other, done)");
+  expect(within(facts).getByRole("link", { name: "09 (Other, done)" })).toBeTruthy();
+  expect(within(card).queryByText("Built by", { exact: false })).toBeNull();
+});
+
+it("groups the toolbar: the view switch, the settle state, then Edit, Discuss and Open all", () => {
+  const { container } = show();
+
+  const toolbar = container.querySelector(".doc-heading-toolbar") as HTMLElement;
+  expect(toolbar.previousElementSibling?.querySelector("h1")).not.toBeNull();
+  const groups = [...toolbar.children];
+  expect(groups.map((group) => group.className)).toEqual(Array(3).fill("doc-heading-group"));
+  expect(groups[0]?.contains(screen.getByRole("group", { name: "View" }))).toBe(true);
+  // No trace is loaded, so the settle group renders nothing and CSS collapses it.
+  expect(groups[1]?.childElementCount).toBe(0);
+  expect(groups[2]?.lastElementChild).toBe(screen.getByRole("button", { name: "Open all" }));
 });
 
 it("omits summary status when no state is available", () => {
@@ -122,8 +165,9 @@ it.each([
 
     const chip = screen.getByText(label).closest("[data-chip]");
     expect(chip?.getAttribute("data-tone")).toBe(tone);
-    // A running plan is a state shown: the live status dot, not an icon.
-    const mark = glyph === "refresh-cw" ? ".activity-glyph__led" : `svg.lucide-${glyph}`;
+    // "Running" is a state word, so its mark is the two-arrow glyph, never the dot.
+    const mark =
+      glyph === "refresh-cw" ? "svg.lucide-refresh-cw.plan-arrow-spinner" : `svg.lucide-${glyph}`;
     expect(chip?.querySelector(mark)).not.toBeNull();
     expect(screen.queryByRole("note")?.textContent ?? null).toBe(notice);
   },

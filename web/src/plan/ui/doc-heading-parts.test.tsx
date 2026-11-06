@@ -2,7 +2,8 @@ import { cleanup, render, screen, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { afterEach, expect, it } from "vitest";
 
-import { DocHeading, type DocHeadingProps } from "./doc-heading";
+import { DocHeading, type DocHeadingProps, ToolbarGroup } from "./doc-heading";
+import headingSheet from "./doc-heading.css?raw";
 
 afterEach(cleanup);
 
@@ -12,13 +13,16 @@ function renderHeading(props: Partial<DocHeadingProps> = {}) {
   });
 }
 
-it("sets the header on the card with a hairline rule and a 10px grid", () => {
+it("sets the header as one grid of rows over a hairline, in the page's own sheet", () => {
   const { container } = renderHeading();
 
   const header = container.querySelector("header") as HTMLElement;
-  for (const name of ["bg-background", "border-b", "border-hairline", "gap-2.5", "grid"]) {
-    expect(header.classList.contains(name)).toBe(true);
-  }
+  expect(header.className).toBe("doc-heading");
+  const css = headingSheet.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\s+/g, " ");
+  expect(css).toContain(
+    ".doc-heading { container-type: inline-size; display: grid; row-gap: var(--space-3);",
+  );
+  expect(css).toContain("border-bottom: 1px solid var(--hairline); background: var(--background);");
 });
 
 it("renders a crumb icon and sets a plan's slug crumb in mono", () => {
@@ -50,14 +54,65 @@ it("puts an icon in each segment of the view switch", () => {
   expect(group.className).not.toContain("border");
 });
 
-it("lets the actions wrap under the title, on their own row below 900px", () => {
-  renderHeading({ actions: <button type="button">Discuss</button> });
+it("sets the actions in a toolbar row under the title, whose empty groups collapse", () => {
+  renderHeading({
+    actions: (
+      <>
+        <ToolbarGroup>{null}</ToolbarGroup>
+        <ToolbarGroup>
+          <button type="button">Discuss</button>
+        </ToolbarGroup>
+      </>
+    ),
+  });
 
-  const actions = screen.getByRole("button", { name: "Discuss" }).parentElement as HTMLElement;
-  const row = actions.parentElement as HTMLElement;
-  expect(actions.className).toContain("max-[900px]:basis-full");
-  expect(row.className).toContain("flex-wrap");
-  expect(row.firstElementChild?.className).toContain("flex-[1_1_max-content]");
+  const group = screen.getByRole("button", { name: "Discuss" }).parentElement as HTMLElement;
+  expect(group.className).toBe("doc-heading-group");
+  const toolbar = group.parentElement as HTMLElement;
+  expect(toolbar.className).toBe("doc-heading-toolbar");
+  expect(toolbar.previousElementSibling).toBe(
+    screen.getByRole("heading", { level: 1 }).parentElement,
+  );
+  expect(toolbar.firstElementChild?.childElementCount).toBe(0);
+  const css = headingSheet.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\s+/g, " ");
+  expect(css).toContain(".doc-heading-group:empty { display: none; }");
+  expect(css).toContain(".doc-heading-toolbar { display: flex; flex-wrap: wrap;");
+  // Under 40rem of heading width the bar stacks its groups as rows divided by hairlines.
+  expect(css).toContain(
+    "@container (max-width: 40rem) { .doc-heading-toolbar { flex-direction: column; align-items: stretch; } .doc-heading-group + .doc-heading-group { border-inline-start: 0; border-top: 1px solid var(--hairline); } }",
+  );
+});
+
+it("sets a status row's action at its end and its detail under the words, and facts on their own line", () => {
+  renderHeading({
+    chips: [
+      {
+        key: "status",
+        label: "Out of date",
+        tone: "warning",
+        action: <button type="button">Rebuild all</button>,
+        detail: "21 summaries out of date.",
+      },
+      { key: "built", label: "Built by", kind: "fact", links: [{ label: "05", to: "/plans/a" }] },
+    ],
+  });
+
+  const row = screen.getByText("Out of date").closest(".doc-heading-row") as HTMLElement;
+  expect(row.hasAttribute("data-action")).toBe(true);
+  expect(row.querySelector(".doc-heading-row__detail")?.textContent).toBe(
+    "21 summaries out of date.",
+  );
+  expect(row.lastElementChild).toBe(
+    screen.getByRole("button", { name: "Rebuild all" }).parentElement,
+  );
+  const facts = screen.getByText("Built by").closest(".doc-heading-facts") as HTMLElement;
+  expect(facts.tagName).toBe("DL");
+  expect(facts.previousElementSibling).toBe(screen.getByRole("list", { name: "Status" }));
+  expect(screen.getByRole("link", { name: "05" }).closest("dd")).not.toBeNull();
+  const css = headingSheet.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\s+/g, " ");
+  expect(css).toContain(
+    "@container (max-width: 30rem) { .doc-heading-row { grid-template-columns: minmax(0, 1fr); }",
+  );
 });
 
 it.each([
@@ -73,7 +128,7 @@ it.each([
   expect(chip.getAttribute("data-tone")).toBe(tone);
   expect(chip.className).not.toMatch(/\bbg-/);
   expect(screen.getByTestId("icon").parentElement?.className).toContain(`text-(${variable})`);
-  expect(chip.className).toContain("text-foreground");
+  expect(chip.className).toContain("doc-heading-chip");
 });
 
 it("leaves neutral and ok chips unfilled", () => {

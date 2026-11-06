@@ -22,6 +22,7 @@ vi.mock("./passage-doc", () => ({ useKeptDoc: () => ({ doc: kept.doc, failed: ke
 vi.mock("./page-header-extras", () => ({
   PageHeaderExtras: () => null,
   SummaryAction: () => null,
+  SummaryDetail: () => null,
 }));
 
 afterEach(() => {
