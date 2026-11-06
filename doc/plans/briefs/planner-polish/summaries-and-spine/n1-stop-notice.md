@@ -1,6 +1,6 @@
 # N1: one notice after Stop (issue 3, D1)
 
-Tier: haiku (`loom-mechanical-engineer`). Read `common.md` D1.
+Tier: haiku (`loom-software-developer`). Read `common.md` D1.
 
 ## Change
 

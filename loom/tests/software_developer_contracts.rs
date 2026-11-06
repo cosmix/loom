@@ -1,4 +1,4 @@
-//! Contract: the mechanical worker drops the tools whose listings it exists to
+//! Contract: the software developer agent drops the tools whose listings it exists to
 //! remove from a subagent's startup context.
 
 use std::fs;
@@ -12,8 +12,8 @@ fn frontmatter_value<'a>(frontmatter: &'a str, key: &str) -> Option<&'a str> {
 }
 
 #[test]
-fn mechanical_worker_carries_no_skill_tool() {
-    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../agents/loom-mechanical-engineer.md");
+fn software_developer_carries_no_skill_tool() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../agents/loom-software-developer.md");
     let body = fs::read_to_string(&path)
         .unwrap_or_else(|error| panic!("read {}: {error}", path.display()));
 

@@ -62,4 +62,4 @@ Put non-contract tests in `sections/attribution/more_tests.rs` if needed. Each f
 
 ## KNOWN_AGENT_TYPES
 
-In `KNOWN_AGENT_TYPES` in `sections/agents.rs`, add `"loom-mechanical-engineer"` and change the array length to 7.
+In `KNOWN_AGENT_TYPES` in `sections/agents.rs`, add `"loom-software-developer"` and change the array length to 7.

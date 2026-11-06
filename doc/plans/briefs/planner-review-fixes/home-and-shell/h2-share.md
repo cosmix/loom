@@ -1,6 +1,6 @@
 # H2 — remove the SSH tunnel from Share (issue 14)
 
-Tier: haiku (`loom-mechanical-engineer`). Read `common.md` first, D16 in particular. Every decision is settled here; report anything that does not match.
+Tier: haiku (`loom-software-developer`). Read `common.md` first, D16 in particular. Every decision is settled here; report anything that does not match.
 
 ## Edits
 
