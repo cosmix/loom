@@ -16,7 +16,8 @@ pub enum ReviewSection {
 }
 
 impl ReviewSection {
-    fn heading(self) -> &'static str {
+    /// The `## ...` line the section is written under.
+    pub fn heading(self) -> &'static str {
         match self {
             Self::SpecConformance => SPEC_CONFORMANCE_HEADING,
             Self::OpenQuestions => OPEN_QUESTIONS_HEADING,
