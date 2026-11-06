@@ -13,7 +13,7 @@ use crate::status::attention_model::{Alternative, AttentionEntry};
 use crate::status::data::{FailingCriterion, StatusData};
 
 /// One frame of the web dashboard: everything the page renders, as one JSON object.
-/// Served by `/api/status` and pushed as every WebSocket text frame.
+/// Served by `/api/status` and carried by every `full` message on `/ws`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WebSnapshot {
     /// The exact status payload exposed by the live CLI.

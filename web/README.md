@@ -4,8 +4,8 @@ The browser view behind `loom status --web`: the same ledger `loom status
 --live`
 draws in a terminal, re-rendered as a page that stays open on a second monitor.
 The server in `loom/src/commands/status/web/` serves the built bundle and
-streams
-snapshots over a WebSocket; this directory is the React client.
+streams a full snapshot, then small deltas, over a WebSocket; this directory is
+the React client.
 
 ## Develop
 

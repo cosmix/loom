@@ -2,18 +2,14 @@
 
 use std::sync::{mpsc, Arc, Mutex};
 
-/// Delivers each published frame to every live subscriber, and remembers the
-/// latest one for subscribers that join later.
+/// Delivers each published frame to every live subscriber.
 ///
-/// Lock order, taken by both [`Hub::publish`] and [`Hub::subscribe`]:
-/// `subscribers`, then `latest`. Registering a subscriber reads `latest` while
-/// holding `subscribers`, so a concurrent `publish` cannot slip a frame past a
-/// half-registered client - which would otherwise strand it on a stale frame
-/// until the next publish.
+/// `subscribers` is the hub's only lock. The caller serialises priming against
+/// publishing: the dashboard's `Broadcaster` holds its `feed` lock across both,
+/// so no frame can fall between a subscriber's primer and its registration.
 pub struct Hub {
     queue_depth: usize,
     subscribers: Mutex<Vec<mpsc::SyncSender<Arc<String>>>>,
-    latest: Mutex<Option<Arc<String>>>,
 }
 
 impl Hub {
@@ -23,68 +19,57 @@ impl Hub {
         Self {
             queue_depth,
             subscribers: Mutex::new(Vec::new()),
-            latest: Mutex::new(None),
         }
     }
 
-    /// Register a subscriber, its queue primed with the latest frame, if any.
-    pub fn subscribe(&self) -> mpsc::Receiver<Arc<String>> {
+    /// Register a subscriber, its queue primed with `primer`, if any.
+    pub fn subscribe(&self, primer: Option<Arc<String>>) -> mpsc::Receiver<Arc<String>> {
         let (sender, receiver) = mpsc::sync_channel(self.queue_depth);
         let mut subscribers = self.subscribers.lock().expect("hub subscribers poisoned");
-        if let Some(frame) = self.latest() {
+        if let Some(frame) = primer {
             let _ = sender.try_send(frame);
         }
         subscribers.push(sender);
         receiver
     }
 
-    /// Record `frame` as the latest and queue it for every subscriber,
-    /// dropping each one whose queue is full or whose receiver is gone.
-    pub fn publish(&self, frame: String) {
-        let frame = Arc::new(frame);
+    /// Queue `frame` for every subscriber, dropping each one whose queue is
+    /// full or whose receiver is gone.
+    pub fn publish(&self, frame: Arc<String>) {
         let mut subscribers = self.subscribers.lock().expect("hub subscribers poisoned");
-        *self.latest.lock().expect("hub latest frame poisoned") = Some(Arc::clone(&frame));
         subscribers.retain(|sender| sender.try_send(Arc::clone(&frame)).is_ok());
-    }
-
-    /// The latest frame published, if any.
-    pub fn latest(&self) -> Option<Arc<String>> {
-        self.latest
-            .lock()
-            .expect("hub latest frame poisoned")
-            .clone()
     }
 }
 
 #[cfg(test)]
 mod tests {
     use std::sync::mpsc::TryRecvError;
+    use std::sync::Arc;
 
     use super::Hub;
 
     #[test]
-    fn a_late_subscriber_is_primed_with_the_latest_frame() {
+    fn a_subscriber_is_primed_with_the_frame_it_is_given() {
         let hub = Hub::new(2);
-        assert!(hub.latest().is_none());
-        hub.publish("first".to_owned());
-        hub.publish("second".to_owned());
-        let receiver = hub.subscribe();
+        hub.publish(Arc::new("before".to_owned()));
+        let receiver = hub.subscribe(Some(Arc::new("primer".to_owned())));
         assert_eq!(
             receiver.try_recv().expect("primed frame").as_str(),
-            "second"
+            "primer"
         );
         assert_eq!(receiver.try_recv(), Err(TryRecvError::Empty));
+        hub.publish(Arc::new("after".to_owned()));
+        assert_eq!(receiver.try_recv().expect("live frame").as_str(), "after");
     }
 
     #[test]
     fn a_subscriber_whose_queue_is_full_is_dropped() {
         let hub = Hub::new(1);
-        let receiver = hub.subscribe();
-        hub.publish("kept".to_owned());
-        hub.publish("overflow".to_owned());
-        hub.publish("after".to_owned());
+        let receiver = hub.subscribe(None);
+        hub.publish(Arc::new("kept".to_owned()));
+        hub.publish(Arc::new("overflow".to_owned()));
+        hub.publish(Arc::new("after".to_owned()));
         assert_eq!(receiver.try_recv().expect("queued frame").as_str(), "kept");
         assert_eq!(receiver.try_recv(), Err(TryRecvError::Disconnected));
-        assert_eq!(hub.latest().expect("latest").as_str(), "after");
     }
 }

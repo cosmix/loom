@@ -3,8 +3,7 @@
 
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc;
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
@@ -12,17 +11,16 @@ use std::time::Duration;
 use tungstenite::client::IntoClientRequest;
 
 use super::{
-    assert_security_headers, body, request, skip_without_loopback, start, stop, workspace,
+    assert_security_headers, body, parse_full, request, skip_without_loopback, start, stop,
+    workspace,
 };
 use crate::commands::status::web::broadcast::Broadcaster;
 use crate::commands::status::web::model::{DaemonState, SnapshotSource, WebSnapshot};
-use crate::commands::status::web::MAX_INBOUND_BYTES;
 use crate::fs::work_dir::WorkDir;
 use crate::models::stage::Stage;
 use crate::verify::transitions::create_stage;
 use crate::web_server::http;
-use crate::web_server::limits::{Limits, MAX_CONNECTIONS};
-use crate::web_server::ws::handle_with_keepalive;
+use crate::web_server::limits::MAX_CONNECTIONS;
 
 fn split_request(port: u16, first: &str, headers: &str) -> TcpStream {
     let mut stream = TcpStream::connect(("127.0.0.1", port)).expect("connect split request");
@@ -192,9 +190,22 @@ fn connect_websocket(port: u16) -> tungstenite::WebSocket<TcpStream> {
     socket
 }
 
-fn read_snapshot(socket: &mut tungstenite::WebSocket<TcpStream>) -> WebSnapshot {
-    let frame = socket.read().expect("read snapshot frame");
-    serde_json::from_str(frame.to_text().expect("text frame")).expect("snapshot JSON")
+/// The kind of the next message on the stream, with its text.
+fn read_message(socket: &mut tungstenite::WebSocket<TcpStream>) -> (String, String) {
+    let frame = socket.read().expect("read frame");
+    let text = frame.to_text().expect("text frame").to_owned();
+    let message: serde_json::Value = serde_json::from_str(&text).expect("frame JSON");
+    (message["t"].as_str().expect("frame tag").to_owned(), text)
+}
+
+/// The snapshot in the next `full` message, skipping the deltas before it.
+fn read_full(socket: &mut tungstenite::WebSocket<TcpStream>) -> WebSnapshot {
+    loop {
+        let (kind, text) = read_message(socket);
+        if kind == "full" {
+            return parse_full(&text);
+        }
+    }
 }
 
 #[test]
@@ -205,7 +216,7 @@ fn websocket_delivers_a_snapshot() {
     let (_temp, base) = workspace();
     let (port, running) = start(base);
     let mut socket = connect_websocket(port);
-    assert_eq!(read_snapshot(&mut socket).source, SnapshotSource::Files);
+    assert_eq!(read_full(&mut socket).source, SnapshotSource::Files);
     let _ = socket.close(None);
     stop(running);
 }
@@ -225,12 +236,11 @@ fn websocket_delivers_successive_frames() {
         .to_path_buf();
     let (port, running) = start(base);
     let mut socket = connect_websocket(port);
-    let first = read_snapshot(&mut socket);
+    let first = read_full(&mut socket);
     assert!(first.status.stages.is_empty());
-    // An unchanged body is suppressed, so a second frame arrives only because
-    // this stage changed the serialized tree.
+    // Adding a stage changes the stage set, which is announced as a new `full`.
     create_stage(&Stage::new("Live Update".to_owned(), None), &work_root).expect("create stage");
-    let second = read_snapshot(&mut socket);
+    let second = read_full(&mut socket);
     stop(running);
     assert_eq!(second.status.stages.len(), 1);
     assert!(
@@ -247,7 +257,7 @@ fn websocket_closes_on_client_close() {
     let (_temp, base) = workspace();
     let (port, running) = start(base);
     let mut socket = connect_websocket(port);
-    let _ = read_snapshot(&mut socket);
+    let _ = read_full(&mut socket);
     let peer = socket.get_mut();
     // A masked, empty close frame, written past tungstenite so the read below
     // observes the server's own close rather than client-side bookkeeping.
@@ -292,7 +302,7 @@ fn broadcaster_publishes_file_snapshot_without_daemon() {
         .recv_timeout(Duration::from_secs(5))
         .expect("file frame");
     stop(running);
-    let snapshot: WebSnapshot = serde_json::from_str(&frame).expect("snapshot JSON");
+    let snapshot = parse_full(&frame);
     assert_eq!(snapshot.source, SnapshotSource::Files);
 }
 
@@ -311,8 +321,7 @@ fn handshake_survives_a_split_head() {
     let mut stream = split_request(port, "GET /ws HTTP/1.1\r\n", headers);
     let response = read_http_head(&mut stream);
     assert!(response.starts_with("HTTP/1.1 101"));
-    let snapshot: WebSnapshot =
-        serde_json::from_str(&read_websocket_text(&mut stream)).expect("snapshot JSON");
+    let snapshot = parse_full(&read_websocket_text(&mut stream));
     assert_eq!(snapshot.source, SnapshotSource::Files);
     stop(running);
 }
@@ -362,36 +371,23 @@ fn a_connection_past_the_cap_is_answered_503() {
     );
 }
 
-/// A quiet feed must still produce traffic: the last frame is resent after the
-/// keepalive interval so a client can tell silence from a half-open socket.
+/// A quiet tree must still produce traffic: every collect sends a `tick`, so a
+/// client can tell silence from a half-open socket.
 #[test]
-fn websocket_resends_the_last_frame_after_the_keepalive() {
-    if skip_without_loopback("websocket_resends_the_last_frame_after_the_keepalive") {
+fn websocket_sends_ticks_while_the_tree_is_quiet() {
+    if skip_without_loopback("websocket_sends_ticks_while_the_tree_is_quiet") {
         return;
     }
-    let listener = TcpListener::bind("127.0.0.1:0").expect("bind listener");
-    let port = listener.local_addr().expect("listener address").port();
-    let (tx, rx) = mpsc::channel::<Arc<String>>();
-    let running = Arc::new(AtomicBool::new(true));
-    let flag = running.clone();
-    let server = thread::spawn(move || {
-        let (stream, _) = listener.accept().expect("accept client");
-        handle_with_keepalive(
-            stream,
-            rx,
-            &flag,
-            Duration::from_millis(300),
-            &Limits::new(MAX_INBOUND_BYTES),
-        );
-    });
+    let (_temp, base) = workspace();
+    let (port, running) = start(base);
     let mut socket = connect_websocket(port);
-    tx.send(Arc::new("{\"frame\":1}".to_owned()))
-        .expect("publish");
-    let first = socket.read().expect("first frame");
-    let again = socket.read().expect("keepalive frame");
-    assert_eq!(first.to_text().expect("text"), "{\"frame\":1}");
-    assert_eq!(again.to_text().expect("text"), "{\"frame\":1}");
-    running.store(false, Ordering::SeqCst);
+    socket
+        .get_mut()
+        .set_read_timeout(Some(Duration::from_secs(5)))
+        .expect("set WebSocket timeout");
+    assert_eq!(read_message(&mut socket).0, "full");
+    // Each read waits up to the timeout above, so a silent server fails here.
+    while read_message(&mut socket).0 != "tick" {}
     let _ = socket.close(None);
-    server.join().expect("server thread");
+    stop(running);
 }

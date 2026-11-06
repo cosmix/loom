@@ -76,6 +76,8 @@
 mod broadcast;
 mod config_api;
 mod connection;
+mod feed;
+mod feed_split;
 pub mod model;
 mod router;
 #[cfg(test)]

@@ -1,5 +1,5 @@
 import { createStore } from "jotai/vanilla";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 
 import fixtureJson from "@/api/fixtures/snapshot.json";
 import { snapshotSchema } from "@/api/schema";
@@ -35,6 +35,17 @@ class FakeSocket {
   }
 }
 
+function full(snapshot: unknown): string {
+  return JSON.stringify({ t: "full", snapshot });
+}
+
+const tickMessage = JSON.stringify({
+  t: "tick",
+  at: "2026-09-04T12:00:01Z",
+  tick_age: 1,
+  stages: {},
+});
+
 let clock = 0;
 let intervalCallback: (() => void) | undefined;
 let intervalCleared = false;
@@ -44,7 +55,6 @@ let timeoutCleared = false;
 function dependencies(): SocketDeps {
   return {
     WebSocket: FakeSocket as unknown as typeof WebSocket,
-    fetch: (async () => ({ json: async () => fixture })) as unknown as typeof fetch,
     location: { protocol: "http:", host: "127.0.0.1:7373" },
     setTimeout: ((callback: () => void) => {
       timeoutCallback = callback;
@@ -79,11 +89,10 @@ afterEach(() => {
 });
 
 describe("status socket watchdog", () => {
-  it("expires each silent handshake and ignores events from the retired socket", async () => {
+  it("expires each silent handshake and ignores events from the retired socket", () => {
     const store = createStore();
     const dispose = connectStatusSocket(store, dependencies());
     const first = FakeSocket.instances[0];
-    await vi.waitFor(() => expect(store.get(snapshotAtom)).toEqual(fixture));
     expect(store.get(connectionAtom).phase).toBe("connecting");
 
     tick(30000);
@@ -96,9 +105,9 @@ describe("status socket watchdog", () => {
     timeoutCallback?.();
     const second = FakeSocket.instances[1];
     first.open();
-    first.receive(JSON.stringify({ ...fixture, generated_at: "2099-01-01T00:00:00Z" }));
+    first.receive(full({ ...fixture, generated_at: "2099-01-01T00:00:00Z" }));
     expect(store.get(connectionAtom).phase).toBe("reconnecting");
-    expect(store.get(snapshotAtom)).toEqual(fixture);
+    expect(store.get(snapshotAtom)).toBeNull();
     tick(30000);
     expect(second.closed).toBe(true);
     expect(store.get(connectionAtom).since).toBe(since);
@@ -133,7 +142,7 @@ describe("status socket watchdog", () => {
     socket.open();
 
     tick(25000);
-    socket.receive(JSON.stringify(fixture));
+    socket.receive(full(fixture));
     tick(25000);
     expect(store.get(connectionAtom).phase).toBe("live");
 
@@ -144,18 +153,27 @@ describe("status socket watchdog", () => {
     dispose();
   });
 
-  it("keeps the same snapshot object when the keepalive resends an identical frame", () => {
+  it("ticks every second keep the socket live for a minute, and 31s of silence reconnects", () => {
     const store = createStore();
     const dispose = connectStatusSocket(store, dependencies());
     const socket = FakeSocket.instances[0];
     socket.open();
-    socket.receive(JSON.stringify(fixture));
-    const stored = store.get(snapshotAtom);
+    socket.receive(full(fixture));
 
-    socket.receive(JSON.stringify(fixture));
-
-    expect(store.get(snapshotAtom)).toBe(stored);
+    for (let second = 0; second < 60; second++) {
+      socket.receive(tickMessage);
+      tick(1000);
+    }
     expect(store.get(connectionAtom).phase).toBe("live");
+    expect(socket.closed).toBe(false);
+    expect(store.get(snapshotAtom)?.generated_at).toBe("2026-09-04T12:00:01Z");
+
+    tick(30000);
+    expect(store.get(connectionAtom)).toMatchObject({
+      phase: "reconnecting",
+      message: "no data for 30s",
+    });
+    expect(socket.closed).toBe(true);
     dispose();
   });
 
