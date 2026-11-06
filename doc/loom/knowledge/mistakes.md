@@ -241,3 +241,12 @@ Feature run reviews land at the top of `doc/plans/` while readers once searched 
 ## Planner follow-ups delivery
 
 A live region mounted twice, a test constant that passed vitest and failed the type check, a classifier test with a name the generator never writes, a fix that broke another stage's wiring literal, a container query on its own container, a CSS reset that lost on specificity, a screenshot clone left in the worktree root, a frozen contract that matched a plan's own truth check, and a scaffold order rustfmt reversed. See [mistakes/planner-follow-ups-delivery](mistakes/planner-follow-ups-delivery.md).
+Feature run reviews land at the top of `doc/plans/` while readers search the plan's home. See [mistakes/run-review-location](mistakes/run-review-location.md).
+
+## Planner design: stubs vs summaries, briefs unsummarized
+
+Stubs (vision section paragraphs, metaplan entries) scope a document before it exists; summaries are generated after it is final, for review. Briefs need summaries too. See [planner-design-brainstorm](mistakes/planner-design-brainstorm.md).
+
+## dev-install.sh and the Running Daemon
+
+Why `dev-install.sh` stops every loom process after the install, the review finding that removed the kill, and installing the operator's binary unasked. → [dev-install.sh and the Running Daemon](mistakes/dev-install.md)
