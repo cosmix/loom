@@ -7,9 +7,10 @@ use std::path::{Path, PathBuf};
 
 use tempfile::TempDir;
 
+use crate::planning::briefs::bundle_files;
 use crate::planning::project::Project;
 use crate::planning::runtime::{runtime_paths_under, RuntimePaths};
-use crate::planning::summary::evaluate::{cite_key, members_hash};
+use crate::planning::summary::evaluate::{bundle_hashes, cite_key, members_hash};
 use crate::planning::summary::format::{self, FrontMatter, SummaryFile, SummaryKind};
 use crate::planning::summary::seal::{seal, SealError};
 use crate::planning::summary::store;
@@ -190,6 +191,7 @@ pub(crate) fn seal_document_citing(
         kind: SummaryKind::Document,
         of: source.to_string_lossy().into_owned(),
         file: project.content_hash(&source).map(str::to_string),
+        bundle: bundle_hashes(&project, &bundle_files(&project, &source)),
         cites: cites_for(&project, id, &refs),
         members: BTreeMap::new(),
     };
@@ -225,6 +227,7 @@ pub(crate) fn seal_overview(
         kind: SummaryKind::Overview,
         of: id.to_string(),
         file: None,
+        bundle: BTreeMap::new(),
         cites: cites_for(&project, id, &refs),
         members: members_now(root, &project, id),
     };

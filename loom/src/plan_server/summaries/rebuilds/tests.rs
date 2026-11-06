@@ -114,6 +114,7 @@ pub(super) fn file(title: &str) -> SummaryFile {
         kind: SummaryKind::Document,
         of: "doc/plans/demo/PLAN-x.md".into(),
         file: None,
+        bundle: BTreeMap::new(),
         cites: BTreeMap::new(),
         members: BTreeMap::new(),
     };
