@@ -85,7 +85,8 @@
   text-transform: uppercase;
 }
 
-/* An empty state is one sentence, set where the content would start. */
+/* One muted sentence inside a list, a shelf or a partial page. A whole container's loading, empty
+   or error state is `LoadState` (load-state.css), centred in its container. */
 .plan-empty {
   margin: 0;
   max-width: 48ch;
@@ -226,18 +227,12 @@
   }
 }
 
-/* A text-only busy message (`ui/busy-text.tsx`): the roundel, then the words. The roundel is
-   decoration sized from the text; the words carry the meaning and the caller's role. */
+/* An operation's busy words (`ui/busy-text.tsx`): the 1em arrow spinner, then the words. */
 .plan-busy-text {
   display: inline-flex;
   align-items: center;
   gap: var(--space-2);
   min-width: 0;
-}
-
-.plan-busy-text__roundel {
-  display: inline-flex;
-  flex: none;
 }
 
 /* ── Buttons ──────────────────────────────────────────────────────────────── */

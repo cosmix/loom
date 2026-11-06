@@ -220,6 +220,13 @@ a.concept-key-doc:hover .concept-key-title {
 
 /* ── Empty states ─────────────────────────────────────────────────────────── */
 
+/* A page not loaded yet, or missing: the gaps above, then the state centred in what is left. */
+.concept-unloaded {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+}
+
 .concept-empty {
   display: flex;
   flex-direction: column;

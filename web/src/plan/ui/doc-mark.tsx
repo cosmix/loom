@@ -1,7 +1,7 @@
 import { cn } from "cn";
 import type { CSSProperties, JSX } from "react";
 
-import { ActivityGlyph } from "./activity-glyphs";
+import { ArrowSpinner } from "./spinner";
 import { DOC_KIND_GLYPHS, type DocKind } from "./glyphs";
 
 export const DOC_KIND_COLOUR: Record<DocKind, number> = {
@@ -43,7 +43,8 @@ export function DocMark({
       style={{ color: colour, "--doc-mark": colour } as CSSProperties}
     >
       {rebuilding ? (
-        <ActivityGlyph kind="summaries" className={glyphClassName} />
+        // A rebuild is an operation that ends: the arrow spinner in the kind glyph's place.
+        <ArrowSpinner data-kind="summaries" className={glyphClassName} />
       ) : (
         <Glyph className={glyphClassName} />
       )}

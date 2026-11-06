@@ -338,10 +338,10 @@ function RouteBody({ pageKey, above }: { pageKey: string; above: ReactNode }) {
   const state = useConceptPage(pageKey);
   if (state.page) return <LoadedPage page={state.page} pageKey={pageKey} above={above} />;
   return (
-    <>
+    <div className="concept-unloaded">
       {above}
       <Unloaded pageKey={pageKey} state={state} />
-    </>
+    </div>
   );
 }
 

@@ -251,15 +251,14 @@ export function DraftView({ id }: { id: string }) {
   }
   if (load.status === "ready") return <DraftBody detail={load.detail} />;
   return (
-    <>
-      <LoadState
-        state="error"
-        title={load.status === "missing" ? "That draft is gone" : "The draft did not load"}
-        message={load.status === "error" ? load.message : undefined}
-      />
+    <LoadState
+      state={load.status === "missing" ? "not_found" : "error"}
+      title={load.status === "missing" ? "That draft is gone" : "The draft did not load"}
+      message={load.status === "error" ? load.message : undefined}
+    >
       <Link to="/new" data-look="secondary" className="plan-button">
         Start new work
       </Link>
-    </>
+    </LoadState>
   );
 }

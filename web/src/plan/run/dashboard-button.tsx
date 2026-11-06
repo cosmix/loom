@@ -53,7 +53,7 @@ export function DashboardButton({ variant = "full" }: { variant?: Variant }): JS
   const url = webUrl(result.dashboard?.url);
   if (!url) {
     return result.error && variant === "full" ? (
-      <LoadState state="error" message={result.error} />
+      <LoadState state="error" size="compact" message={result.error} />
     ) : null;
   }
   return (
@@ -64,7 +64,7 @@ export function DashboardButton({ variant = "full" }: { variant?: Variant }): JS
           <Untrusted text={result.dashboard.tunnel} />
         </p>
       )}
-      {variant === "full" && result.error && <LoadState state="error" message={result.error} />}
+      {variant === "full" && result.error && <LoadState state="error" size="compact" message={result.error} />}
     </div>
   );
 }

@@ -208,7 +208,7 @@ it("uses each production document, state and activity glyph", () => {
     ...Object.values(PLAN_NAMES),
     ...Object.values(SUMMARY_NAMES),
   ]) {
-    expect(tileOf(states, name).querySelector("svg, .plan-roundel-glyph")).not.toBeNull();
+    expect(tileOf(states, name).querySelector("svg, .activity-glyph")).not.toBeNull();
   }
 
   const group = screen.getByRole("region", { name: "In progress" });
@@ -225,17 +225,16 @@ it("uses each production document, state and activity glyph", () => {
   ).toHaveLength(1);
 });
 
-it("shows the roundel once, as the one sign of work in progress", () => {
+it("shows work under way as the live dot, a rebuild as the arrow, and no roundel", () => {
   const { container } = render(<PlannerLegend />, { wrapper: MemoryRouter });
   const group = screen.getByRole("region", { name: "In progress" });
 
   const working = tileOf(group, "Working");
-  expect(
-    working.querySelectorAll(".activity-glyph .aurora-roundel[data-busy='true']"),
-  ).toHaveLength(1);
-  // The States group draws the roundel for a plan's Running and a summary's Rebuilding too.
-  expect(container.querySelectorAll(".aurora-roundel")).toHaveLength(3);
-  // The progress group draws no turning icon beside the disc.
+  expect(working.querySelectorAll(".activity-glyph .activity-glyph__led")).toHaveLength(1);
+  // A summary's Rebuilding is the one operation among the states: the arrow spinner.
+  expect(container.querySelectorAll(".plan-arrow-spinner")).toHaveLength(1);
+  // The roundel is the header pill's alone; no lucide turning icon stands in for the arrow.
+  expect(container.querySelectorAll(".aurora-roundel")).toHaveLength(0);
   expect(group.querySelectorAll(".lucide-refresh-cw, .lucide-loader-circle")).toHaveLength(0);
 });
 

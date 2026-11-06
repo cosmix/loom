@@ -160,7 +160,7 @@ it("shows a compact glyph and progress count with a full accessible name", async
   const trigger = await screen.findByRole("button", {
     name: "Summary rebuilds: Rebuilding 1 of 3",
   });
-  expect(trigger.querySelector('.plan-roundel-glyph[aria-hidden="true"]')).toBeTruthy();
+  expect(trigger.querySelector('.plan-arrow-spinner[aria-hidden="true"]')).toBeTruthy();
   expect(visibleText(trigger)).toBe("1/3");
   expect(trigger.getAttribute("aria-label")).toBe("Summary rebuilds: Rebuilding 1 of 3");
 });
@@ -174,14 +174,14 @@ it("keeps the compact idle control to a glyph", async () => {
   expect(visibleText(trigger)).toBe("");
 });
 
-it("draws the compact glyph as the summaries' state: the roundel while rebuilding", async () => {
+it("draws the compact glyph as the summaries' state: the arrow spinner while rebuilding", async () => {
   replies = [{ status: 200, body: panelFixture }];
   show(true);
   const trigger = await screen.findByRole("button", {
     name: "Summary rebuilds: Rebuilding 1 of 3",
   });
-  expect(trigger.querySelector('[aria-hidden="true"] .aurora-roundel')).toBeTruthy();
-  expect(trigger.querySelector(".aurora-roundel")?.getAttribute("data-busy")).toBe("true");
+  expect(trigger.querySelector('svg.plan-arrow-spinner[aria-hidden="true"]')).toBeTruthy();
+  expect(trigger.querySelector(".plan-arrow-spinner")?.getAttribute("data-busy")).toBe("true");
   expect(trigger.querySelector(".lucide-refresh-cw")).toBeNull();
   expect(visibleText(trigger)).toBe("1/3");
 });
@@ -192,7 +192,7 @@ it("draws the compact glyph as the summaries' state: the check when all are curr
     name: "Summary rebuilds: Summaries up to date",
   });
   expect(trigger.querySelector("svg.lucide-circle-check")).toBeTruthy();
-  expect(trigger.querySelector(".aurora-roundel")).toBeNull();
+  expect(trigger.querySelector(".plan-arrow-spinner")).toBeNull();
 });
 
 it("deduplicates stale IDs across queued, failed, and questioned summaries", async () => {

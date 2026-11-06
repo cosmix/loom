@@ -1,6 +1,10 @@
 /* The feature screen: the spine beside the routed page. The page keeps <main> as its scroll
    container (the spine sticks inside it), so the reading column's scroll logic is untouched. */
+/* A grid even without the spine, so the page's area is stretched to the full height and a
+   loading or empty state inside it centres in the page (ui/load-state.css). */
 [data-loom-plan] .plan-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
   min-height: 100%;
 }
 

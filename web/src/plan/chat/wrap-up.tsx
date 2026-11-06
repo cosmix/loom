@@ -4,14 +4,14 @@ import { Link } from "react-router";
 
 import type { SessionView } from "@/plan/api/schema-chat";
 import { CHANGES_PATH } from "@/plan/review/changed-since";
-import { RoundelGlyph } from "@/plan/ui/roundel-glyph";
+import { Spinner } from "@/plan/ui/spinner";
 import type { ClosingTick, LeftBehind } from "./closing";
 import { StartingBrief } from "./start-chat";
 import { ChangeCounts } from "./tool-row";
 import { Untrusted } from "./visible-controls";
 
 /**
- * The ending, while the closing write runs: the pane's one roundel, and a tick per document the
+ * The ending, while the closing write runs: the pane's one spinner, and a tick per document the
  * write has reached. The closing prompt itself is never drawn (transcript.tsx). It sits inside the
  * polite `role="log"` transcript, so it is not a live region of its own: tick changes would be
  * announced twice.
@@ -21,7 +21,7 @@ export function WrapUpCard({ ticks }: { ticks: ClosingTick[] }): JSX.Element {
     <div className="chat-wrap" aria-live="off">
       <div className="chat-wrap-head">
         <span className="chat-wrap-mark">
-          <RoundelGlyph size={22} />
+          <Spinner />
         </span>
         <div>
           <h3>Writing down what we decided</h3>
@@ -138,11 +138,11 @@ export function LeftBehindCard({ summary }: { summary: LeftBehind }): JSX.Elemen
   );
 }
 
-/** The starting state: the pane's one roundel, a title, and the session's brief line under it. */
+/** The starting state: the pane's one spinner, a title, and the session's brief line under it. */
 export function StartingCard({ session }: { session: SessionView }): JSX.Element {
   return (
     <div className="chat-starting">
-      <RoundelGlyph size={16} />
+      <Spinner />
       <div className="chat-starting-text">
         <p className="chat-starting-title">Starting the session</p>
         <StartingBrief session={session} />

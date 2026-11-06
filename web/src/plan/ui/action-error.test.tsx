@@ -17,3 +17,11 @@ it("renders markup in the message as text and wraps a long unbroken token", () =
   expect(container.querySelector("img")).toBeNull();
   expect(alert.classList.contains("[overflow-wrap:anywhere]")).toBe(true);
 });
+
+it("leads the message with its title, and keeps the message its own element", () => {
+  render(<ActionError title="Could not mark all seen" message="Hashes are unavailable" />);
+  expect(screen.getByRole("alert").textContent).toBe(
+    "Could not mark all seen: Hashes are unavailable",
+  );
+  expect(screen.getByText("Hashes are unavailable").tagName).toBe("SPAN");
+});

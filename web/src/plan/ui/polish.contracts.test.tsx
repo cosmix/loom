@@ -3,6 +3,7 @@ import { afterEach, expect, it } from "vitest";
 
 import tokensCss from "@/aurora-ui/shared/styles/tokens.css?raw";
 import { ActivityGlyph } from "./activity-glyphs";
+import { BusyText } from "./busy-text";
 import { LoadState } from "./load-state";
 
 afterEach(cleanup);
@@ -18,12 +19,17 @@ function graphitePrimaries(css: string): string[] {
     .map(([, , body]) => /--primary\s*:\s*([^;]+);/.exec(body!)![1]!.trim());
 }
 
-it("progress glyphs and loading states draw the roundel", () => {
+it("activity glyphs draw the status dot, busy text the arrow, loading the spinner, never the roundel", () => {
   const glyph = render(<ActivityGlyph kind="summaries" />);
-  expect(glyph.container.querySelector(".aurora-roundel")).not.toBeNull();
+  expect(glyph.container.querySelector(".activity-glyph__led")).not.toBeNull();
+  expect(glyph.container.querySelector(".aurora-roundel")).toBeNull();
+  cleanup();
+  const busy = render(<BusyText>Sending…</BusyText>);
+  expect(busy.container.querySelector("svg.plan-arrow-spinner")).not.toBeNull();
   cleanup();
   const loading = render(<LoadState state="loading" title="Loading the feature" />);
-  expect(loading.container.querySelector(".aurora-roundel")).not.toBeNull();
+  expect(loading.container.querySelector(".aurora-roundel")).toBeNull();
+  expect(loading.container.querySelector(".plan-spinner")).not.toBeNull();
   expect(screen.getByRole("status").getAttribute("aria-label")).toBe("Loading the feature");
 });
 

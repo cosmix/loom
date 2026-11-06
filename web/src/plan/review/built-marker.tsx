@@ -9,7 +9,6 @@ import { DiffView } from "@/plan/diff/diff-view";
 import { toAddress } from "@/plan/files/address";
 import { fetchDoc } from "@/plan/files/api";
 import { connectionEpochAtom } from "@/plan/state/atoms";
-import { BusyText } from "@/plan/ui/busy-text";
 import { LoadState } from "@/plan/ui/load-state";
 
 import { getAtCommit, getBuilt, type BuiltResponse } from "./api";
@@ -190,16 +189,12 @@ export function BuiltMarker({ section }: { section: string }) {
     };
   }, [section, epoch, hashes, attempt]);
   const load = loaded?.section === section ? loaded.result : null;
-  if (!load)
-    return (
-      <p role="status" className="text-[13px] text-muted-foreground">
-        <BusyText>Loading build markers…</BusyText>
-      </p>
-    );
+  if (!load) return <LoadState state="loading" size="compact" title="Loading build markers" />;
   if (!load.ok)
     return (
       <LoadState
         state="error"
+        size="compact"
         title="Build markers did not load"
         message={visibleControls(load.message)}
         action={{

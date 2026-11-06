@@ -2,6 +2,7 @@ import { useAtomValue } from "jotai/react";
 import { ChevronDown, ChevronUp, CircleCheck } from "lucide-react";
 import { useState, type JSX, type ReactNode, type Ref } from "react";
 
+import { BusyRoundel } from "@/aurora-ui/feedback/BusyRoundel";
 import { ChangedSinceControl } from "@/plan/review/changed-since";
 import { panelLoadAtom, summaryQuestionAtom, summaryReloadAtom } from "@/plan/summaries/state";
 import {
@@ -10,7 +11,14 @@ import {
   useQuestionPopover,
   useSummaryExpansion,
 } from "@/plan/summaries/summary-status";
-import { ACTIVITY_LABELS, ACTIVITY_TONES, ActivityGlyph } from "@/plan/ui/activity-glyphs";
+import {
+  ACTIVITY_LABELS,
+  ACTIVITY_TONES,
+  ActivityGlyph,
+  isProgressKind,
+  type ActivityKind,
+} from "@/plan/ui/activity-glyphs";
+import { LoadState } from "@/plan/ui/load-state";
 
 import "./activity.css";
 import { ActivityList, RunLine, type LiveRows } from "./activity-rows";
@@ -29,6 +37,19 @@ interface PopoverControl {
   onCloseAutoFocus?: (event: Event) => void;
 }
 
+/**
+ * The pill's lead glyph. Work in progress here is the roundel, the planner's one (`ui/DESIGN.md`,
+ * Status); a "your turn" kind keeps its bell or LED. Decorative: the pill's words are the label.
+ */
+function PillGlyph({ kind }: { kind: ActivityKind }): JSX.Element {
+  if (!isProgressKind(kind)) return <ActivityGlyph kind={kind} />;
+  return (
+    <span className="activity-glyph" data-kind={kind} aria-hidden="true">
+      <BusyRoundel busy size="100%" busyLabel="" idleLabel="" />
+    </span>
+  );
+}
+
 function PillBody({
   activities,
   compact,
@@ -44,7 +65,7 @@ function PillBody({
     <>
       {urgent ? (
         <>
-          <ActivityGlyph kind={urgent.kind} />
+          <PillGlyph kind={urgent.kind} />
           <span className="tabular-nums">
             {compact ? activities.length : `${activities.length} in progress`}
           </span>
@@ -127,7 +148,7 @@ function PillContent({
         {activities.length > 0 ? (
           <ActivityList activities={activities} live={live} />
         ) : (
-          <p className="activity-empty">Nothing in progress.</p>
+          <LoadState state="empty" size="compact" title="Nothing in progress." />
         )}
       </div>
       {footer}

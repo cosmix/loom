@@ -304,12 +304,12 @@
 
 .chat-starting {
   display: grid;
-  grid-template-columns: 16px minmax(0, 1fr);
+  grid-template-columns: 20px minmax(0, 1fr);
   gap: var(--space-3);
   align-items: start;
 }
 
-.chat-starting > .plan-roundel-glyph {
+.chat-starting > .plan-spinner {
   margin-block-start: 2px;
 }
 

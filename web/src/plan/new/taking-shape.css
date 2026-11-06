@@ -177,7 +177,7 @@
   white-space: nowrap;
 }
 
-[data-loom-plan] .kickoff-state :is(svg, .plan-roundel-glyph) {
+[data-loom-plan] .kickoff-state svg {
   width: 12px;
   height: 12px;
 }

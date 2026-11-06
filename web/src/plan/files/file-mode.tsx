@@ -65,15 +65,16 @@ function GapView({
 /** No document open: the drawer control on narrow screens, then the gap view or a hint. */
 function NoDocument({ search, opener }: { search: URLSearchParams; opener?: JSX.Element }) {
   const gap = search.get("gap");
+  // A column at least the region's height, so the hint centres in the reading region.
   return (
-    <>
+    <div className="flex min-h-full flex-col">
       {opener}
       {gap ? (
         <GapView title={gap} feature={search.get("feature")} target={search.get("target")} />
       ) : (
-        <p className="p-6 text-[13px] text-muted-foreground">Choose a document from the tree.</p>
+        <LoadState state="empty" title="Choose a document from the tree." />
       )}
-    </>
+    </div>
   );
 }
 
@@ -111,7 +112,7 @@ export function FileMode(): JSX.Element {
   const tab = tree ? (
     <Tree tree={tree} open={hasPath ? address.path : null} />
   ) : (
-    <LoadState state="loading" title="Loading the documents" />
+    <LoadState state="loading" size="compact" title="Loading the documents" />
   );
 
   return (

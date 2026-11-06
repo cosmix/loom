@@ -35,7 +35,7 @@ const featureRoutes: RouteObject = {
     { path: "run", element: <RunPage /> },
     { path: "built", element: <BuiltPage /> },
     // Any other child of a feature is a mistyped link: say so rather than draw a blank page.
-    { path: "*", element: <LoadState state="error" title="No such page" /> },
+    { path: "*", element: <LoadState state="not_found" title="No such page" /> },
   ],
 };
 

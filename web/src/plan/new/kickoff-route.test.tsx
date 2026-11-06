@@ -93,9 +93,9 @@ it("shows the real transcript, composer, Taking shape and an unconfirmed proposa
   expect(region.classList.contains("kickoff-transcript")).toBe(true);
   const head = region.querySelector<HTMLElement>(".kickoff-head")!;
   expect(within(head).getByRole("heading", { level: 1, name: "planner-search" })).toBeTruthy();
-  // Idle: the head's sub-line says nothing and the head draws no roundel.
+  // Idle: the head's sub-line says nothing and the head draws no spinner.
   expect(head.querySelector(".chat-state-words")).toBeNull();
-  expect(head.querySelector(".aurora-roundel")).toBeNull();
+  expect(head.querySelector(".plan-spinner")).toBeNull();
   expect(screen.queryByText("New work")).toBeNull();
   expect(screen.queryByText("Feature", { selector: ".plan-eyebrow" })).toBeNull();
   expect(within(region).getByRole("log", { name: "Chat transcript" })).toBeTruthy();
@@ -113,19 +113,19 @@ it("shows the real transcript, composer, Taking shape and an unconfirmed proposa
   expect(screen.queryByText("Waiting for you")).toBeNull();
 });
 
-it("draws the pane's one roundel for a starting session, in the transcript and not the head", () => {
+it("draws the pane's one spinner for a starting session, in the transcript and not the head", () => {
   mount({ current: { ...session, state: "starting" }, search: LIVE });
   const region = conversation();
-  expect(region.querySelectorAll(".aurora-roundel")).toHaveLength(1);
+  expect(region.querySelectorAll(".plan-spinner")).toHaveLength(1);
   const head = region.querySelector<HTMLElement>(".kickoff-head")!;
-  expect(head.querySelector(".aurora-roundel")).toBeNull();
+  expect(head.querySelector(".plan-spinner")).toBeNull();
   expect(head.querySelector(".chat-state-words")?.textContent).toBe("Starting");
   expect(within(head).getByRole("heading", { level: 1 }).textContent).toBe("New work");
 });
 
-it("draws no roundel for an idle session", () => {
+it("draws no spinner for an idle session", () => {
   mount({ current: session, search: LIVE });
-  expect(conversation().querySelectorAll(".aurora-roundel")).toHaveLength(0);
+  expect(conversation().querySelectorAll(".plan-spinner")).toHaveLength(0);
 });
 
 it.each([

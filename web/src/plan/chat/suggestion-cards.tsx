@@ -17,8 +17,9 @@ import {
   isHolderAtom,
   planSocketAtom,
 } from "@/plan/state/atoms";
+import { ActionError } from "@/plan/ui/action-error";
+import { BusyText } from "@/plan/ui/busy-text";
 import { DisabledReason } from "@/plan/ui/disabled-reason";
-import { LoadState } from "@/plan/ui/load-state";
 import type { Store } from "@/state/store";
 import { chipLabel, summaryIdOf } from "./chips";
 import { answerSuggestion } from "./commands";
@@ -211,17 +212,10 @@ function SuggestionCard({ suggestion }: { suggestion: Suggestion }) {
       </div>
       {pending && (
         <p role="status" className="text-xs text-muted-foreground">
-          Answering suggestion…
+          <BusyText>Answering suggestion…</BusyText>
         </p>
       )}
-      {error && (
-        <>
-          <LoadState state="error" title="Could not answer suggestion" />
-          <p role="status" className="break-words text-xs">
-            <Untrusted text={error} />
-          </p>
-        </>
-      )}
+      {error && <ActionError title="Could not answer suggestion" message={error} />}
     </article>
   );
 }

@@ -3,6 +3,7 @@ import { MessageSquare } from "lucide-react";
 
 import type { SessionView } from "@/plan/api/schema-chat";
 import { ActivityGlyph } from "@/plan/ui/activity-glyphs";
+import { ArrowSpinner } from "@/plan/ui/spinner";
 import { pendingPermissionsAtom } from "./model";
 import { shownSessionAtom } from "./shown-session";
 
@@ -41,7 +42,12 @@ export function ChatGlyph() {
   if (state !== undefined && BUSY_STATES.has(state))
     return (
       <span className="inline-flex">
-        <ActivityGlyph kind={state === "starting" ? "starting" : "drafting"} />
+        {/* Starting is an operation that ends (the arrow); a working chat is a state (the dot). */}
+        {state === "starting" ? (
+          <ArrowSpinner data-kind="starting" className="activity-glyph" />
+        ) : (
+          <ActivityGlyph kind="drafting" />
+        )}
         <span role="status" aria-live="polite" className="sr-only">
           {label}
         </span>

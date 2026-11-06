@@ -2,7 +2,6 @@ import { useSetAtom } from "jotai/react";
 import { useEffect } from "react";
 import { Link, Navigate, Outlet } from "react-router";
 
-import { Untrusted } from "@/plan/chat/visible-controls";
 import { landingPath } from "@/plan/feature/landing";
 import { Spine } from "@/plan/feature/spine";
 import { useFeature } from "@/plan/feature/use-feature";
@@ -13,15 +12,11 @@ import "./feature.css";
 
 function UnknownFeature({ name }: { name: string }) {
   return (
-    <div className="space-y-3">
-      <LoadState state="error" title="No such feature" />
-      <p>
-        <Untrusted text={name} /> does not exist.
-      </p>
-      <Link to="/" className="text-sm underline">
+    <LoadState state="not_found" title="No such feature" message={name}>
+      <Link to="/" className="underline">
         Back to home
       </Link>
-    </div>
+    </LoadState>
   );
 }
 

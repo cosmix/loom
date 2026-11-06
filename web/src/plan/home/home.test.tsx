@@ -94,7 +94,12 @@ function mount(
 it("shows loading until project data arrives", () => {
   mount(null);
 
-  expect(screen.getByRole("status", { name: "Loading your project" })).toBeTruthy();
+  const status = screen.getByRole("status", { name: "Loading your project" });
+  // The route's only element is the centring state block, with the spinner and not the roundel.
+  expect(status.classList.contains("plan-state")).toBe(true);
+  expect(status.parentElement?.children).toHaveLength(1);
+  expect(status.querySelector(".plan-spinner")).not.toBeNull();
+  expect(status.querySelector(".aurora-roundel")).toBeNull();
   expect(screen.queryByRole("heading", { name: "Start something new" })).toBeNull();
   expect(screen.queryByText("No features yet.")).toBeNull();
   expect(fetch).not.toHaveBeenCalled();

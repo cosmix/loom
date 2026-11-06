@@ -76,7 +76,7 @@ describe("tree", () => {
     const state = within(plan).getByText("running");
     const errors = within(plan).getByText("2 errors");
     expect(state.className).not.toContain("tone");
-    expect(state.querySelector("svg, .plan-roundel-glyph")?.getAttribute("class")).toContain(
+    expect(state.querySelector("svg, .activity-glyph")?.getAttribute("class")).toContain(
       "tone-executing",
     );
     expect(errors.className).not.toContain("tone");

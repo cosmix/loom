@@ -27,16 +27,17 @@ import type { LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
 
 import type { MarkView } from "@/plan/api/schema";
-import { RoundelGlyph } from "@/plan/ui/roundel-glyph";
+import { LiveDot } from "@/plan/ui/activity-glyphs";
+import { ArrowSpinner } from "@/plan/ui/spinner";
 
-/** The props a glyph site passes: a lucide icon takes them, and so does the roundel glyph. */
+/** The props a glyph site passes: a lucide icon takes them, and so do the arrow spinner and the live dot. */
 export interface GlyphProps {
   className?: string;
   size?: number | string;
   "aria-hidden"?: boolean | "true" | "false";
 }
 
-/** A state glyph: a lucide icon, or the roundel for a state that means work in progress. */
+/** A state glyph: a lucide icon, the live dot, or the arrow spinner. */
 export type Glyph = (props: GlyphProps) => ReactNode;
 
 export type DocKind =
@@ -63,18 +64,18 @@ export const DOC_KIND_GLYPHS: Record<DocKind, LucideIcon> = {
   review: FileSearch,
 };
 
-// Work in progress is the roundel everywhere in the planner (ui/DESIGN.md, Status), so a running
-// plan and a rebuilding summary share it on purpose. Only doc kinds must stay distinct.
+// A running plan is a state shown, so the live status dot; a rebuilding summary is an operation
+// that ends, so the arrow spinner (ui/DESIGN.md, Status). Only doc kinds must stay distinct.
 export const PLAN_STATE_GLYPHS: Record<PlanState, Glyph> = {
   written: PencilLine,
-  running: RoundelGlyph,
+  running: LiveDot,
   done: CircleCheckBig,
   retired: Archive,
 };
 
 export const SUMMARY_STATE_GLYPHS: Record<SummaryState, Glyph> = {
   current: CircleCheck,
-  rebuilding: RoundelGlyph,
+  rebuilding: ArrowSpinner,
   stale: CircleDashed,
 };
 

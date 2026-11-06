@@ -142,9 +142,9 @@ function useTreeSearch() {
 function SearchPane({ search, onOpen }: { search: Search; onOpen: (hit: SearchHit) => void }) {
   switch (search.status) {
     case "loading":
-      return <LoadState state="loading" title="Searching" />;
+      return <LoadState state="loading" size="compact" title="Searching" />;
     case "error":
-      return <LoadState state="error" title="Search failed" message={search.message} />;
+      return <LoadState state="error" size="compact" title="Search failed" message={search.message} />;
     case "ready":
       return <SearchResults results={search.results} onOpen={onOpen} />;
     case "idle":

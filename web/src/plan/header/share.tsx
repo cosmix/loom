@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { apiGet } from "@/plan/api/client";
 import { shareLinkSchema, type ShareLink } from "@/plan/api/schema";
 import { Popover, PopoverContent, PopoverTrigger } from "@/plan/header/popover";
+import { LoadState } from "@/plan/ui/load-state";
 
 type Loaded =
   | { kind: "loading" }
@@ -117,14 +118,17 @@ export function Share() {
       </PopoverTrigger>
       <PopoverContent aria-label="Share link">
         {loaded.kind === "loading" && (
-          <p role="status" className="text-xs text-muted-foreground">
-            Loading link
-          </p>
+          <LoadState state="loading" size="compact" title="Loading link" />
         )}
         {loaded.kind === "error" && (
-          <p role="alert" className="text-xs font-medium text-(--tone-blocked)">
-            Could not load the link: {loaded.message}
-          </p>
+          <div role="alert">
+            <LoadState
+              state="error"
+              size="compact"
+              title="Could not load the link"
+              message={loaded.message}
+            />
+          </div>
         )}
         {loaded.kind === "link" && <ShareBody link={loaded.link} />}
       </PopoverContent>

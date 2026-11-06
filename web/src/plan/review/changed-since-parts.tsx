@@ -5,6 +5,7 @@ import { Link } from "react-router";
 import { Button } from "@/components/ui/button";
 import { Untrusted, visibleControls } from "@/plan/chat/visible-controls";
 import { openDiff } from "@/plan/diff/open-diff";
+import { ActionError } from "@/plan/ui/action-error";
 import { LoadState } from "@/plan/ui/load-state";
 
 import { resolveRef } from "./api";
@@ -80,13 +81,7 @@ export function RefForm({ onCompare }: { onCompare: (value: Comparison | null) =
           Use checkpoint
         </Button>
       </form>
-      {error && (
-        <LoadState
-          state="error"
-          title="The ref could not be resolved"
-          message={visibleControls(error)}
-        />
-      )}
+      {error && <ActionError title="The ref could not be resolved" message={error} />}
     </details>
   );
 }
@@ -169,7 +164,7 @@ export function ChangeRows({
   detail: ReactNode;
   onOpen: (row: Row) => void;
 }) {
-  if (!rows.length) return <LoadState state="empty" title="No changed documents" />;
+  if (!rows.length) return <LoadState state="empty" size="compact" title="No changed documents" />;
   return (
     <ul aria-label="Changed documents" className="changed-since__list">
       {rows.map((row) => {

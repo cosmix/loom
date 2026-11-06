@@ -10,6 +10,7 @@ import {
   ActivityGlyph,
   ActivityTile,
   isProgressKind,
+  LiveDot,
   PROGRESS_KINDS,
 } from "./activity-glyphs";
 
@@ -64,12 +65,7 @@ describe("activity glyphs", () => {
     expect(glyph?.getAttribute("data-kind")).toBe(kind);
     expect(glyph?.getAttribute("aria-hidden")).toBe("true");
     expect(glyph?.hasAttribute("data-paused")).toBe(false);
-    const shape =
-      kind === "waiting"
-        ? ".activity-glyph__led"
-        : kind === "permission"
-          ? "svg"
-          : ".aurora-roundel";
+    const shape = kind === "permission" ? "svg" : ".activity-glyph__led";
     expect(glyph?.querySelector(shape)).not.toBeNull();
     expect(ACTIVITY_LABELS[kind].trim().length).toBeGreaterThan(0);
   });
@@ -83,32 +79,46 @@ describe("activity glyphs", () => {
   });
 
   it.each(WORKING)(
-    "draws %s as the one spinning roundel, with no icon and no announcement",
+    "draws %s as the live status dot: no spinner, no roundel, no announcement",
     (kind) => {
       const { container } = render(<ActivityGlyph kind={kind} />);
 
-      expect(container.querySelector(".aurora-roundel")?.getAttribute("data-busy")).toBe("true");
+      const glyph = container.querySelector('.activity-glyph[aria-hidden="true"]');
+      expect(glyph?.querySelector(".activity-glyph__led")).not.toBeNull();
       expect(container.querySelector("svg")).toBeNull();
+      expect(container.querySelector(".aurora-roundel")).toBeNull();
       expect(container.textContent).toBe("");
-      expect(
-        container.querySelector('.activity-glyph[aria-hidden="true"] .aurora-roundel'),
-      ).not.toBeNull();
     },
   );
 
-  it("rests the roundel while paused", () => {
-    const { container } = render(<ActivityGlyph kind="running" paused />);
-    expect(container.querySelector(".aurora-roundel")?.hasAttribute("data-busy")).toBe(false);
+  it("draws the live dot for a running plan's state glyph, sized like an icon", () => {
+    const { container } = render(<LiveDot className="size-4" size={14} />);
+    const glyph = container.firstElementChild as HTMLElement;
+    expect(glyph.classList.contains("activity-glyph")).toBe(true);
+    expect(glyph.classList.contains("size-4")).toBe(true);
+    expect(glyph.getAttribute("data-kind")).toBe("running");
+    expect(glyph.getAttribute("aria-hidden")).toBe("true");
+    expect(glyph.style.width).toBe("14px");
+    expect(glyph.querySelector(".activity-glyph__led")).not.toBeNull();
   });
 
-  it("sizes the roundel to the glyph box it replaces", () => {
+  it("greens a live dot, grays a paused one, and pulses it only with motion allowed", () => {
+    expect(css).toMatch(
+      /\.activity-glyph:not\(\[data-kind="permission"\]\)\s*\{\s*color:\s*var\(--tone-completed\)/,
+    );
+    expect(css).toMatch(
+      /\.activity-glyph\[data-paused="true"\]\s*\{\s*color:\s*var\(--muted-foreground\)/,
+    );
+    expect(css).toMatch(/\.activity-glyph__led\s*\{[^}]*animation:\s*activity-glyph-waiting/);
+  });
+
+  it("sizes the header pill's roundel to the glyph box", () => {
     expect(css).toMatch(
       /\.activity-glyph > \.aurora-roundel-wrap\s*\{[^}]*width:\s*86%;[^}]*height:\s*86%;/,
     );
   });
 
-  it("gives the waiting LED the completed tone and the bell its pivot", () => {
-    expect(css).toMatch(/\[data-kind="waiting"\]\s*\{\s*color:\s*var\(--tone-completed\)/);
+  it("keeps one LED pattern and gives the bell its pivot", () => {
     expect(css).not.toMatch(/activity-glyph__pulse/);
     expect(css).toMatch(/transform-origin:\s*50% 10%/);
   });
@@ -146,7 +156,7 @@ describe("activity glyphs", () => {
     expect(css).toMatch(new RegExp(`animation:\\s*activity-glyph-${kind}\\s`));
   });
 
-  it("keeps no keyframes for the kinds the roundel draws", () => {
+  it("keeps no keyframes of their own for the kinds the status dot draws", () => {
     for (const kind of WORKING) {
       expect(css).not.toMatch(new RegExp(`activity-glyph-${kind}\\b`));
     }

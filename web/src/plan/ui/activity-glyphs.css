@@ -16,17 +16,21 @@
     height: 100%;
   }
 
-  /* Work in progress is the roundel glyph (`ui/roundel-glyph.tsx`), whose root takes the
-     `.activity-glyph` box here. Its own stylesheet already draws the disc at 86% of the box (a
-     lucide glyph's strokes reach about that far); this rule restates it for the activity glyph,
-     whose size is the one `activity-glyphs.test.tsx` pins. */
+  /* The header pill's roundel (`header/activity.tsx`) takes the `.activity-glyph` box: the disc
+     fills 86% of it, the reach of a lucide glyph's strokes. */
   .activity-glyph > .aurora-roundel-wrap {
     width: 86%;
     height: 86%;
   }
 
-  .activity-glyph[data-kind="waiting"] {
+  /* The status dot: every kind but permission. Live (running, waiting) is green and pulses;
+     a paused one is gray and still. */
+  .activity-glyph:not([data-kind="permission"]) {
     color: var(--tone-completed);
+  }
+
+  .activity-glyph[data-paused="true"] {
+    color: var(--muted-foreground);
   }
 
   .activity-glyph .activity-glyph__led {
