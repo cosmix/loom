@@ -1,134 +1,24 @@
-import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { createStore } from "jotai";
-import { Provider } from "jotai/react";
-import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { expect, it } from "vitest";
 
-import { TooltipProvider } from "@/components/ui/tooltip";
-import { initClient } from "@/plan/api/client";
-import helloFixture from "@/plan/api/fixtures/hello.json";
 import panelFixture from "@/plan/api/fixtures/summary-panel.json";
-import questionFixture from "@/plan/api/fixtures/summary-question.json";
-import { serverInfoSchema } from "@/plan/api/schema";
-import { summaryPanelSchema, summaryQuestionSchema } from "@/plan/api/schema-summaries";
-import type { connectPlanSocket } from "@/plan/api/socket";
+import { connectionEpochAtom } from "@/plan/state/atoms";
+
 import {
-  authoringAtom,
-  connectionEpochAtom,
-  planSocketAtom,
-  serverInfoAtom,
-  youAtom,
-} from "@/plan/state/atoms";
+  PANEL_PATH,
+  deliver,
+  fetchMock,
+  handlers,
+  idle,
+  installHarness,
+  question,
+  resyncs,
+  setReplies,
+  show,
+  visibleText,
+} from "./summary-status-kit";
 
-import { panelLoadAtom, type PanelLoad } from "./state";
-import { SummaryStatus, SummaryStatusRow, useSummaryExpansion } from "./summary-status";
-
-type Message = Record<string, unknown>;
-type Handler = (message: Message) => void;
-const PANEL_PATH = "/api/summaries/panel";
-const idle = summaryPanelSchema.parse({
-  ...panelFixture,
-  running: null,
-  queue: [],
-  failed: [],
-  question: null,
-  terminal_claims: [],
-});
-const question = summaryQuestionSchema.parse(questionFixture);
-let handlers: Map<string, Set<Handler>>;
-let resyncs: Set<() => void>;
-let replies: Array<{ status: number; body: unknown }>;
-let fetchMock: ReturnType<typeof vi.fn<typeof fetch>>;
-
-function fakeSocket(): ReturnType<typeof connectPlanSocket> {
-  const subscribe = (type: string, handler: Handler) => {
-    const listeners = handlers.get(type) ?? new Set<Handler>();
-    handlers.set(type, listeners.add(handler));
-    return () => void listeners.delete(handler);
-  };
-  const onResync = (handler: () => void) => {
-    resyncs.add(handler);
-    return () => void resyncs.delete(handler);
-  };
-  return { subscribe, onResync, send: () => true, dispose: () => {} } as unknown as ReturnType<
-    typeof connectPlanSocket
-  >;
-}
-
-function seededStore(canAnswer: boolean) {
-  const store = createStore();
-  initClient(store);
-  store.set(youAtom, helloFixture.you);
-  store.set(serverInfoAtom, serverInfoSchema.parse({ ...helloFixture.server, read_only: [] }));
-  store.set(authoringAtom, {
-    holder: {
-      ...(canAnswer ? helloFixture.you : { public_id: "other-browser", name: "Dana" }),
-      away_since: null,
-      frees_at: null,
-    },
-  });
-  store.set(planSocketAtom, fakeSocket());
-  return store;
-}
-
-/** The activity popover owns the expansion; this stands in for it. */
-function Row({ load }: { load: PanelLoad }) {
-  return <SummaryStatusRow load={load} reload={() => {}} expansion={useSummaryExpansion()} />;
-}
-
-function showRow(load: PanelLoad) {
-  const store = seededStore(true);
-  store.set(panelLoadAtom, load);
-  render(
-    <Provider store={store}>
-      <TooltipProvider>
-        <Row load={load} />
-      </TooltipProvider>
-    </Provider>,
-  );
-  return store;
-}
-
-function show(compact = false, canAnswer = true) {
-  const store = seededStore(canAnswer);
-  render(
-    <Provider store={store}>
-      <TooltipProvider>
-        <textarea aria-label="Message" />
-        <SummaryStatus compact={compact} />
-      </TooltipProvider>
-    </Provider>,
-  );
-  return store;
-}
-
-function deliver(type: string, body: Message) {
-  act(() => handlers.get(type)?.forEach((handler) => handler({ type, ...body })));
-}
-
-function visibleText(element: HTMLElement): string | null {
-  const clone = element.cloneNode(true) as HTMLElement;
-  clone.querySelectorAll(".sr-only").forEach((hidden) => hidden.remove());
-  return clone.textContent;
-}
-
-beforeEach(() => {
-  handlers = new Map();
-  resyncs = new Set();
-  replies = [{ status: 200, body: idle }];
-  fetchMock = vi.fn<typeof fetch>(async () => {
-    const reply = replies.length > 1 ? replies.shift() : replies[0];
-    return new Response(JSON.stringify(reply?.body), {
-      status: reply?.status ?? 500,
-      headers: { "content-type": "application/json" },
-    });
-  });
-  vi.stubGlobal("fetch", fetchMock);
-});
-
-afterEach(() => {
-  cleanup();
-  vi.unstubAllGlobals();
-});
+installHarness();
 
 it("shows the idle label and subscribes to the panel feed once", async () => {
   show();
@@ -143,7 +33,7 @@ it("shows the idle label and subscribes to the panel feed once", async () => {
 });
 
 it("shows progress while a rebuild is running", async () => {
-  replies = [{ status: 200, body: panelFixture }];
+  setReplies([{ status: 200, body: panelFixture }]);
   show();
   const trigger = await screen.findByRole("button", {
     name: "Summary rebuilds: Rebuilding 1 of 3",
@@ -155,7 +45,7 @@ it("shows progress while a rebuild is running", async () => {
 });
 
 it("shows a compact glyph and progress count with a full accessible name", async () => {
-  replies = [{ status: 200, body: panelFixture }];
+  setReplies([{ status: 200, body: panelFixture }]);
   show(true);
   const trigger = await screen.findByRole("button", {
     name: "Summary rebuilds: Rebuilding 1 of 3",
@@ -175,7 +65,7 @@ it("keeps the compact idle control to a glyph", async () => {
 });
 
 it("draws the compact glyph as the summaries' state: the two rotating arrows while rebuilding", async () => {
-  replies = [{ status: 200, body: panelFixture }];
+  setReplies([{ status: 200, body: panelFixture }]);
   show(true);
   const trigger = await screen.findByRole("button", {
     name: "Summary rebuilds: Rebuilding 1 of 3",
@@ -196,7 +86,7 @@ it("draws the compact glyph as the summaries' state: the check when all are curr
 });
 
 it("deduplicates stale IDs across queued, failed, and questioned summaries", async () => {
-  replies = [
+  setReplies([
     {
       status: 200,
       body: {
@@ -206,7 +96,7 @@ it("deduplicates stale IDs across queued, failed, and questioned summaries", asy
         question: { ...question, ids: ["b", "c"], count: 3 },
       },
     },
-  ];
+  ]);
   show(true);
   const trigger = await screen.findByRole("button", { name: "Summary rebuilds: 4 out of date" });
   expect(visibleText(trigger)).toBe("4");
@@ -220,10 +110,10 @@ it("keeps a trigger during loading and shows the loading state when opened", () 
 });
 
 it("shows a panel fetch error and retries from the popover", async () => {
-  replies = [
+  setReplies([
     { status: 500, body: { error: "internal", message: "panel failed\u202E" } },
     { status: 200, body: idle },
-  ];
+  ]);
   show();
   fireEvent.click(await screen.findByRole("button", { name: /status unavailable/ }));
   expect(await screen.findByText("panel failed⟨U+202E⟩")).toBeTruthy();
@@ -263,10 +153,10 @@ it("does not reopen a dismissed question until a new ID arrives", async () => {
 });
 
 it("reseeds the panel and clears the question after a reconnect", async () => {
-  replies = [
+  setReplies([
     { status: 200, body: panelFixture },
     { status: 200, body: idle },
-  ];
+  ]);
   const store = show();
   await screen.findByRole("button", { name: /Rebuilding 1 of 3/ });
   deliver("summary_question", question);
@@ -320,104 +210,4 @@ it("shows the question to a browser that cannot answer", async () => {
   expect(rebuild.getAttribute("aria-disabled")).toBe("true");
   fireEvent.click(rebuild);
   expect(fetchMock).toHaveBeenCalledTimes(1);
-});
-
-function answerPosts() {
-  return fetchMock.mock.calls.filter(([url]) => String(url).includes("/api/summaries/answer"));
-}
-
-it("moves focus into the popover when the user opens it from the trigger", async () => {
-  show();
-  fireEvent.click(await screen.findByRole("button", { name: /Summaries up to date/ }));
-  const dialog = await screen.findByRole("dialog", { name: "Summary rebuilds" });
-  await waitFor(() => expect(dialog.contains(document.activeElement)).toBe(true));
-});
-
-it("reopens from the trigger with focus inside, and Escape returns focus to the trigger", async () => {
-  show();
-  const trigger = await screen.findByRole("button", { name: /Summaries up to date/ });
-  const textbox = screen.getByRole("textbox", { name: "Message" });
-  act(() => textbox.focus());
-  deliver("summary_question", question);
-  await screen.findByRole("button", { name: "Not now" });
-  expect(document.activeElement).toBe(textbox);
-  fireEvent.click(trigger);
-  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-  fireEvent.click(trigger);
-  const dialog = await screen.findByRole("dialog", { name: "Summary rebuilds" });
-  await waitFor(() => expect(dialog.contains(document.activeElement)).toBe(true));
-  fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape", code: "Escape" });
-  await waitFor(() => expect(document.activeElement).toBe(trigger));
-});
-
-it("leaves focus in the composer when Escape closes a popover a question opened", async () => {
-  show();
-  await screen.findByRole("button", { name: /Summaries up to date/ });
-  const textbox = screen.getByRole("textbox", { name: "Message" });
-  act(() => textbox.focus());
-  deliver("summary_question", question);
-  await screen.findByRole("button", { name: "Not now" });
-  fireEvent.keyDown(textbox, { key: "Escape", code: "Escape" });
-  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-  // Radix restores focus from a timeout once the content unmounts; let it run.
-  await act(async () => {
-    await new Promise((resolve) => setTimeout(resolve, 0));
-  });
-  expect(document.activeElement).toBe(textbox);
-});
-
-it("sends one answer when an answer button is clicked twice before the reply", async () => {
-  show();
-  await screen.findByRole("button", { name: /Summaries up to date/ });
-  deliver("summary_question", question);
-  let reply!: (response: Response) => void;
-  fetchMock.mockImplementationOnce(() => new Promise<Response>((resolve) => (reply = resolve)));
-  const notNow = await screen.findByRole("button", { name: "Not now" });
-  fireEvent.click(notNow);
-  fireEvent.click(notNow);
-  await waitFor(() => expect(answerPosts()).toHaveLength(1));
-  await act(async () => {});
-  expect(answerPosts()).toHaveLength(1);
-  await act(async () => {
-    reply(
-      new Response(JSON.stringify(idle), {
-        status: 200,
-        headers: { "content-type": "application/json" },
-      }),
-    );
-  });
-  await waitFor(() => expect(screen.queryByRole("button", { name: "Not now" })).toBeNull());
-});
-
-it("the row variant labels the status, expands in place, and runs no feed of its own", () => {
-  showRow({ status: "ready", panel: summaryPanelSchema.parse(panelFixture) });
-
-  const row = screen.getByRole("button", { name: "Summary rebuilds: Rebuilding 1 of 3" });
-  expect(visibleText(row)).toContain("Rebuilding 1 of 3");
-  expect(visibleText(row)).toContain("1/3");
-  // The tile leads the title "Summaries" (an item), so it is the live dot, not the arrows.
-  expect(row.querySelector(".activity-tile .activity-glyph__led")).not.toBeNull();
-  expect(row.querySelector(".activity-tile .plan-arrow-spinner")).toBeNull();
-  expect(row.getAttribute("aria-expanded")).toBe("false");
-  expect(screen.queryByRole("heading", { name: "Rebuilding 1 of 3" })).toBeNull();
-
-  fireEvent.click(row);
-
-  expect(row.getAttribute("aria-expanded")).toBe("true");
-  expect(screen.getByRole("heading", { name: "Rebuilding 1 of 3" })).toBeTruthy();
-  expect(screen.queryByRole("dialog")).toBeNull();
-  expect(fetchMock).not.toHaveBeenCalled();
-  expect(handlers.size).toBe(0);
-});
-
-it("the row variant expands for an open question and leaves the announcing to its caller", () => {
-  showRow({
-    status: "ready",
-    panel: summaryPanelSchema.parse({ ...panelFixture, running: null, question }),
-  });
-
-  expect(
-    screen.getByRole("button", { name: /^Summary rebuilds:/ }).getAttribute("aria-expanded"),
-  ).toBe("true");
-  expect(screen.queryByRole("status")).toBeNull();
 });
