@@ -21,47 +21,83 @@ class Socket {
   }
 }
 
+const fixture = snapshotSchema.parse(fixtureJson);
+const full = (snapshot: unknown) => ({ t: "full", snapshot });
+const tick = (at: string) => ({ t: "tick", at, tick_age: 1, stages: {} });
+const state = (at: string) => ({ t: "state", at, notice: "early" });
+
 function setup() {
   vi.useFakeTimers();
+  vi.spyOn(console, "error").mockImplementation(() => undefined);
+  const request = vi.fn();
+  vi.stubGlobal("fetch", request);
   const store = createStore();
-  let resolve!: (snapshot: unknown) => void;
-  const response = new Promise((done) => {
-    resolve = done;
-  });
   const dispose = connectStatusSocket(store, {
     WebSocket: Socket as unknown as typeof WebSocket,
-    fetch: (async () => ({ json: () => response })) as unknown as typeof fetch,
     location: { protocol: "http:", host: "test" },
   });
-  return { store, resolve, dispose, socket: Socket.instances[0] };
+  return { store, dispose, request, socket: Socket.instances[0] };
 }
 
-const fixture = snapshotSchema.parse(fixtureJson);
-const flush = async () => {
-  await Promise.resolve();
-  await Promise.resolve();
-  await Promise.resolve();
-};
 afterEach(() => {
   Socket.instances = [];
   vi.useRealTimers();
+  vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
 
-it("HTTP data never establishes live transport", async () => {
-  const { store, resolve, dispose } = setup();
-  resolve(fixture);
-  await flush();
+it("takes its first snapshot from the socket and requests nothing", () => {
+  const { store, dispose, request, socket } = setup();
+
+  expect(request).not.toHaveBeenCalled();
+  expect(store.get(snapshotAtom)).toBeNull();
+  socket.onopen?.();
+  socket.receive(full(fixture));
+
   expect(store.get(snapshotAtom)).toEqual(fixture);
-  expect(store.get(connectionAtom).phase).toBe("connecting");
+  expect(request).not.toHaveBeenCalled();
+  dispose();
+});
+
+it("ignores a tick or state before the socket's first full", () => {
+  const { store, dispose, socket } = setup();
+  socket.onopen?.();
+
+  socket.receive(tick("2099-01-01T00:00:00Z"));
+  socket.receive(state("2099-01-01T00:00:00Z"));
+  expect(store.get(snapshotAtom)).toBeNull();
+  expect(store.get(connectionAtom).phase).toBe("live");
+
+  socket.receive(full(fixture));
+  socket.receive(tick("2099-01-01T00:00:01Z"));
+  expect(store.get(snapshotAtom)?.generated_at).toBe("2099-01-01T00:00:01Z");
+  dispose();
+});
+
+it("a reconnected socket must send its own full before deltas apply", async () => {
+  const { store, dispose, socket } = setup();
+  socket.onopen?.();
+  socket.receive(full(fixture));
+  socket.close();
+  await vi.advanceTimersByTimeAsync(1000);
+  const second = Socket.instances[1];
+  second.onopen?.();
+
+  second.receive(tick("2099-01-01T00:00:00Z"));
+  expect(store.get(snapshotAtom)).toEqual(fixture);
+
+  const newer = { ...fixture, generated_at: "2099-01-01T00:00:01Z", version: "newer" };
+  second.receive(full(newer));
+  expect(store.get(snapshotAtom)).toEqual(newer);
   dispose();
 });
 
 it.each(["disconnect", "reconnect", "dispose"])(
-  "ignores delayed bootstrap after %s",
+  "ignores a superseded socket's frames after %s",
   async (operation) => {
-    const { store, resolve, dispose, socket } = setup();
+    const { store, dispose, socket } = setup();
     socket.onopen?.();
-    socket.receive(fixture);
+    socket.receive(full(fixture));
     if (operation === "dispose") dispose();
     else socket.close();
     if (operation === "reconnect") {
@@ -69,28 +105,12 @@ it.each(["disconnect", "reconnect", "dispose"])(
       Socket.instances[1].onopen?.();
     }
     const phase = store.get(connectionAtom);
-    const newer = { ...fixture, generated_at: "2099-01-01T00:00:00Z" };
-    resolve(newer);
-    await flush();
-    // Neither health nor data may be changed by a superseded continuation.
-    expect(store.get(connectionAtom)).toEqual(phase);
-    expect(store.get(snapshotAtom)).toEqual(fixture);
+
     socket.onopen?.();
-    socket.receive(newer);
+    socket.receive(full({ ...fixture, generated_at: "2099-01-01T00:00:00Z" }));
+
     expect(store.get(connectionAtom)).toEqual(phase);
     expect(store.get(snapshotAtom)).toEqual(fixture);
     dispose();
   },
 );
-
-it("an old HTTP snapshot cannot change health even when timestamp filtering rejects its data", async () => {
-  const { store, resolve, dispose, socket } = setup();
-  const newer = { ...fixture, generated_at: "2099-01-01T00:00:00Z" };
-  socket.receive(newer);
-  socket.close();
-  resolve(fixture);
-  await flush();
-  expect(store.get(connectionAtom).phase).toBe("reconnecting");
-  expect(store.get(snapshotAtom)).toEqual(newer);
-  dispose();
-});

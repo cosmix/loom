@@ -1,5 +1,5 @@
 // Run with: bun scripts/graph-keyboard-test.mjs
-// Uses an installed Chrome and a fixture status endpoint to exercise native key activation.
+// Uses an installed Chrome and a stub status socket that delivers the fixture to exercise native key activation.
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { chromium } from "playwright-core";
@@ -23,10 +23,16 @@ const browser = await chromium.launch({
 });
 try {
   const page = await browser.newPage();
-  await page.route("**/api/status", (route) => route.fulfill({ json: snapshot }));
-  await page.addInitScript(() => {
-    // Keep the status fetch from racing reconnects to the absent daemon.
+  await page.addInitScript((snapshot) => {
+    // The stub socket opens and delivers one `full` message, as the server does.
     window.WebSocket = class extends EventTarget {
+      constructor() {
+        super();
+        setTimeout(() => {
+          this.onopen?.();
+          this.onmessage?.({ data: JSON.stringify({ t: "full", snapshot }) });
+        }, 0);
+      }
       close() {}
       send() {}
     };
@@ -36,7 +42,7 @@ try {
       window.navigationCount++;
       return push(...args);
     };
-  });
+  }, snapshot);
   const url = `http://127.0.0.1:${address.port}/`;
   await page.goto(url);
   const wrapper = page.locator(`.react-flow__node-stage[data-id="${stage.id}"]`);

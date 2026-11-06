@@ -76,10 +76,13 @@ function fireNextTimer(): void {
   timer.callback();
 }
 
-function dependencies(fetchImpl?: typeof fetch): SocketDeps {
+function full(snapshot: unknown): string {
+  return JSON.stringify({ t: "full", snapshot });
+}
+
+function dependencies(): SocketDeps {
   return {
     WebSocket: FakeSocket as unknown as typeof WebSocket,
-    fetch: fetchImpl ?? ((async () => ({ json: async () => fixture })) as unknown as typeof fetch),
     location: { protocol: "http:", host: "127.0.0.1:7373" },
     setTimeout: fakeTimeout as unknown as typeof setTimeout,
     clearTimeout: fakeClearTimeout as unknown as typeof clearTimeout,
@@ -93,38 +96,21 @@ afterEach(() => {
 });
 
 describe("status socket", () => {
-  it("fetches the initial status and opens the expected socket URL", async () => {
+  it("opens the expected socket URL and goes live on open", () => {
     const store = createStore();
-    const fetchImpl = vi.fn(async () => ({ json: async () => fixture })) as unknown as typeof fetch;
-    const dispose = connectStatusSocket(store, dependencies(fetchImpl));
+    const fetchImpl = vi.fn();
+    vi.stubGlobal("fetch", fetchImpl);
+    const dispose = connectStatusSocket(store, dependencies());
 
     expect(store.get(connectionAtom).phase).toBe("connecting");
     expect(FakeSocket.instances[0].url).toBe("ws://127.0.0.1:7373/ws");
-    expect(fetchImpl).toHaveBeenCalledWith("/api/status", { cache: "no-store" });
-
-    // Flush the fetch().then(json).then(receiveSnapshot) chain before the
-    // socket's first frame arrives.
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(store.get(snapshotAtom)?.status.plan_name).toBe("Web Dashboard Fixture");
+    expect(store.get(snapshotAtom)).toBeNull();
 
     FakeSocket.instances[0].open();
     expect(store.get(connectionAtom).phase).toBe("live");
-    dispose();
-  });
-
-  it("logs and leaves the snapshot empty when the initial status fetch fails", async () => {
-    const store = createStore();
-    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
-    const failing = vi.fn(async () => {
-      throw new Error("network down");
-    }) as unknown as typeof fetch;
-    const dispose = connectStatusSocket(store, dependencies(failing));
-
-    await new Promise((resolve) => setTimeout(resolve, 0));
-
-    expect(error).toHaveBeenCalledWith("dashboard: status fetch failed", expect.any(Error));
-    expect(store.get(snapshotAtom)).toBeNull();
-    error.mockRestore();
+    // The socket's first message is the whole snapshot: nothing is fetched.
+    expect(fetchImpl).not.toHaveBeenCalled();
+    vi.unstubAllGlobals();
     dispose();
   });
 
@@ -133,13 +119,55 @@ describe("status socket", () => {
     const dispose = connectStatusSocket(store, dependencies());
     const socket = FakeSocket.instances[0];
 
-    socket.receive(JSON.stringify(fixture));
+    socket.receive(full(fixture));
     const next = structuredClone(fixture);
     next.generated_at = "2026-09-04T12:00:01Z";
     next.status.stages.find((stage) => stage.id === "server")!.status = "completed";
-    socket.receive(JSON.stringify(next));
+    socket.receive(full(next));
 
     expect(store.get(snapshotAtom)?.status.plan_name).toBe("Web Dashboard Fixture");
+    expect(store.get(snapshotAtom)?.generated_at).toBe("2026-09-04T12:00:01Z");
+    dispose();
+  });
+
+  it("applies deltas after the first full snapshot", () => {
+    const store = createStore();
+    const dispose = connectStatusSocket(store, dependencies());
+    const socket = FakeSocket.instances[0];
+    socket.open();
+    socket.receive(full(fixture));
+
+    socket.receive(
+      JSON.stringify({
+        t: "tick",
+        at: "2026-09-04T12:00:02Z",
+        tick_age: 9,
+        stages: { server: { elapsed: 1000 } },
+      }),
+    );
+    socket.receive(JSON.stringify({ t: "state", at: "2026-09-04T12:00:03Z", notice: "degraded" }));
+
+    const snapshot = store.get(snapshotAtom);
+    expect(snapshot?.status.stages.find((stage) => stage.id === "server")?.elapsed_secs).toBe(1000);
+    expect(snapshot?.tick_age_secs).toBe(9);
+    expect(snapshot?.notice).toBe("degraded");
+    expect(snapshot?.generated_at).toBe("2026-09-04T12:00:03Z");
+    expect(store.get(connectionAtom).phase).toBe("live");
+    dispose();
+  });
+
+  it("drops a delta that arrives before the socket's first full snapshot", () => {
+    const store = createStore();
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const dispose = connectStatusSocket(store, dependencies());
+    const socket = FakeSocket.instances[0];
+    socket.open();
+
+    socket.receive(JSON.stringify({ t: "state", at: "2026-09-04T12:00:03Z", notice: "early" }));
+
+    expect(store.get(snapshotAtom)).toBeNull();
+    expect(error).toHaveBeenCalledWith("dashboard: frame before the first full snapshot", "state");
+    error.mockRestore();
     dispose();
   });
 
@@ -150,7 +178,7 @@ describe("status socket", () => {
     const invalid = structuredClone(fixture);
     invalid.status.tokens!.plan.rate.cache_write = -1;
 
-    socket.receive(JSON.stringify(invalid));
+    socket.receive(full(invalid));
 
     expect(store.get(connectionAtom).phase).toBe("live");
     expect(store.get(snapshotAtom)?.status.plan_name).toBe("Web Dashboard Fixture");
@@ -159,23 +187,63 @@ describe("status socket", () => {
     dispose();
   });
 
+  it("applies a tokens frame whose block is invalid as no tokens", () => {
+    const store = createStore();
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const dispose = connectStatusSocket(store, dependencies());
+    const socket = FakeSocket.instances[0];
+    socket.receive(full(fixture));
+    const invalid = structuredClone(fixture.status.tokens!);
+    invalid.plan.rate.cache_write = -1;
+
+    socket.receive(JSON.stringify({ t: "tokens", tokens: invalid }));
+
+    expect(store.get(connectionAtom).phase).toBe("live");
+    expect(store.get(snapshotAtom)?.status.tokens).toBeUndefined();
+    expect(store.get(snapshotAtom)?.status.stages).toHaveLength(fixture.status.stages.length);
+    error.mockRestore();
+    dispose();
+  });
+
   it("keeps the last snapshot after a bad frame", () => {
     const store = createStore();
     const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
     const dispose = connectStatusSocket(store, dependencies());
     const socket = FakeSocket.instances[0];
-    socket.receive(JSON.stringify(fixture));
+    socket.receive(full(fixture));
     const previous = store.get(snapshotAtom);
     const invalid = structuredClone(fixture) as {
       status: { stages: Array<{ status: string }> };
     };
     invalid.status.stages[0].status = "bogus";
 
-    socket.receive(JSON.stringify(invalid));
+    socket.receive(full(invalid));
 
     expect(store.get(connectionAtom).phase).toBe("error");
     expect(store.get(snapshotAtom)).toBe(previous);
     expect(error).toHaveBeenCalledWith("dashboard: bad frame", expect.any(Array));
+    error.mockRestore();
+    dispose();
+  });
+
+  it("drops deltas after a rejected frame and stays in error until a full parses", () => {
+    const store = createStore();
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const dispose = connectStatusSocket(store, dependencies());
+    const socket = FakeSocket.instances[0];
+    socket.receive(full(fixture));
+    const previous = store.get(snapshotAtom);
+    socket.receive(JSON.stringify({ t: "state", at: "2026-01-01T00:00:00Z", stages: { x: {} } }));
+    expect(store.get(connectionAtom).phase).toBe("error");
+
+    socket.receive(
+      JSON.stringify({ t: "tick", at: "2026-01-01T00:00:01Z", tick_age: 1, stages: {} }),
+    );
+
+    expect(store.get(connectionAtom).phase).toBe("error");
+    expect(store.get(snapshotAtom)).toBe(previous);
+    socket.receive(full(fixture));
+    expect(store.get(connectionAtom).phase).toBe("live");
     error.mockRestore();
     dispose();
   });
@@ -185,15 +253,15 @@ describe("status socket", () => {
     const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
     const dispose = connectStatusSocket(store, dependencies());
     const socket = FakeSocket.instances[0];
-    socket.receive(JSON.stringify(fixture));
+    socket.receive(full(fixture));
     const invalid = structuredClone(fixture) as {
       status: { stages: Array<{ status: string }> };
     };
     invalid.status.stages[0].status = "bogus";
-    socket.receive(JSON.stringify(invalid));
+    socket.receive(full(invalid));
     expect(store.get(connectionAtom).phase).toBe("error");
 
-    socket.receive(JSON.stringify(fixture));
+    socket.receive(full(fixture));
 
     expect(store.get(connectionAtom).phase).toBe("live");
     expect(store.get(connectionAtom).message).toBeUndefined();
@@ -203,7 +271,7 @@ describe("status socket", () => {
     // A second consecutive valid frame must not call setConnection again -
     // `since` marks when the "live" phase began, not when a frame last
     // arrived, so it must stay pinned across repeat live frames.
-    socket.receive(JSON.stringify(fixture));
+    socket.receive(full(fixture));
 
     expect(store.get(connectionAtom).since).toBe(since);
     error.mockRestore();
@@ -286,16 +354,11 @@ describe("status socket", () => {
     dispose();
   });
 
-  it("binds the global fetch/setTimeout/clearTimeout fallbacks to globalThis, not the client instance", () => {
-    const originalFetch = globalThis.fetch;
+  it("binds the global setTimeout/clearTimeout fallbacks to globalThis, not the client instance", () => {
     const originalSetTimeout = globalThis.setTimeout;
     const originalClearTimeout = globalThis.clearTimeout;
-    const receivers: { fetch?: unknown; setTimeout?: unknown; clearTimeout?: unknown } = {};
+    const receivers: { setTimeout?: unknown; clearTimeout?: unknown } = {};
 
-    globalThis.fetch = function (this: unknown) {
-      receivers.fetch = this;
-      return Promise.resolve({ json: async () => fixture });
-    } as unknown as typeof fetch;
     globalThis.setTimeout = function (this: unknown) {
       receivers.setTimeout = this;
       return 1;
@@ -312,16 +375,14 @@ describe("status socket", () => {
       });
       const socket = FakeSocket.instances[0];
 
-      // Triggers the initial fetch, a reconnect (setTimeout), then dispose
-      // (clearTimeout), exercising all three fallbacks the same way.
+      // Triggers a reconnect (setTimeout), then dispose (clearTimeout),
+      // exercising both fallbacks the same way.
       socket.closeFromServer("lost connection");
       dispose();
 
-      expect(receivers.fetch).toBe(globalThis);
       expect(receivers.setTimeout).toBe(globalThis);
       expect(receivers.clearTimeout).toBe(globalThis);
     } finally {
-      globalThis.fetch = originalFetch;
       globalThis.setTimeout = originalSetTimeout;
       globalThis.clearTimeout = originalClearTimeout;
     }

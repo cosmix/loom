@@ -13,10 +13,13 @@ use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 
+use crate::commands::status::web::model::WebSnapshot;
 use crate::fs::work_dir::WorkDir;
 use crate::process::sandbox_probe::{loopback_bindable, skip_unless};
 use tempfile::TempDir;
 
+#[path = "tests/cli_flags.rs"]
+mod cli_flags;
 #[path = "tests/config_api.rs"]
 mod config_api;
 #[path = "tests/embedded.rs"]
@@ -43,6 +46,13 @@ pub(super) fn workspace() -> (TempDir, PathBuf) {
         .initialize()
         .expect("initialize work dir");
     (temp, base)
+}
+
+/// The snapshot inside a `full` message of the `/ws` stream.
+pub(super) fn parse_full(frame: &str) -> WebSnapshot {
+    let mut message: serde_json::Value = serde_json::from_str(frame).expect("frame JSON");
+    assert_eq!(message["t"], "full", "expected a full frame: {frame:.80}");
+    serde_json::from_value(message["snapshot"].take()).expect("snapshot JSON")
 }
 
 /// Assert a response carries every header the dashboard always sends.

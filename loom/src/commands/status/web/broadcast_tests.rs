@@ -26,7 +26,7 @@ fn forwards_fragmented_status_before_eof_and_ignores_completion() {
     send_fragmented_status(&mut sender);
 
     let frame = updates.recv_timeout(Duration::from_secs(3)).unwrap();
-    let snapshot: WebSnapshot = serde_json::from_str(&frame).unwrap();
+    let snapshot = crate::commands::status::web::tests::parse_full(&frame);
     assert_eq!(snapshot.source, SnapshotSource::Daemon);
     assert_eq!(
         snapshot.status.plan_name.as_deref(),
@@ -40,6 +40,7 @@ fn forwards_fragmented_status_before_eof_and_ignores_completion() {
             received_frame: true
         }
     ));
+    // Only the collect's `full`: nothing follows it.
     assert!(updates.try_recv().is_err());
 }
 
