@@ -157,6 +157,23 @@
     text-overflow: ellipsis;
   }
 
+  /* A pressure run's counted work: a 4px determinate bar under the subject line. */
+  .activity-row__bar {
+    display: block;
+    height: 4px;
+    margin-top: var(--space-1);
+    overflow: hidden;
+    border-radius: 9999px;
+    background: var(--muted);
+  }
+
+  .activity-row__bar > span {
+    display: block;
+    height: 100%;
+    border-radius: inherit;
+    background: var(--tone-executing);
+  }
+
   .activity-attention {
     display: inline-flex;
     flex: none;

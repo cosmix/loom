@@ -1,5 +1,5 @@
 import { useAtomValue, useStore } from "jotai";
-import { Square } from "lucide-react";
+import { FlaskConical, Square } from "lucide-react";
 import { useState, type JSX } from "react";
 
 import { compactTokens } from "@/lib/tokens";
@@ -7,7 +7,6 @@ import type { SessionView } from "@/plan/api/schema-chat";
 import type { PressureRunView } from "@/plan/api/schema-pressure";
 import { authorBlockReasonAtom, isHolderAtom, serverInfoAtom } from "@/plan/state/atoms";
 import { ActionError } from "@/plan/ui/action-error";
-import { ActivityGlyph } from "@/plan/ui/activity-glyphs";
 import { DisabledReason } from "@/plan/ui/disabled-reason";
 import { Untrusted } from "../visible-controls";
 import { Elapsed, LiveElapsed } from "./elapsed";
@@ -58,8 +57,8 @@ function RunHead({ run, stop }: { run: PressureRunView; stop: StopRun }): JSX.El
   return (
     <div className="chat-run-header grid gap-2 px-4 py-3">
       <div className="flex flex-wrap items-center gap-2">
-        {/* The head rests: the one turning roundel of the pane is the running step's. */}
-        <ActivityGlyph kind="pressure" paused className="text-sm" />
+        {/* The head's mark is still: the running steps below carry the turning arrows. */}
+        <FlaskConical aria-hidden="true" className="size-3.5 shrink-0" />
         <span className="text-[13px] font-semibold text-foreground">Pressure test</span>
         <span className="inline-flex h-5 items-center rounded-md bg-muted px-1.5 text-xs font-medium">
           round {run.round} of {run.rounds}

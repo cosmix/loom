@@ -285,7 +285,8 @@ function ChatTurns({ turns, sessionId, before, cutoff, workingId }: ChatTurnsPro
 }
 
 function newestOpenId(turns: Turn[], session: SessionView | null): string | null {
-  // A pressure run's head carries its own roundel; its transcript draws no typing bubble.
+  // A pressure run's running steps carry their own turning arrows; its transcript draws no typing
+  // bubble.
   if (session?.state !== "working" || session.kind === "pressure") return null;
   return turns.findLast((turn) => turn.open && !isClosingTurn(turn))?.id ?? null;
 }

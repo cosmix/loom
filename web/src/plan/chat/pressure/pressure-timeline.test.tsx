@@ -184,18 +184,31 @@ it("renders only the steps received for a partially completed round", () => {
   ]);
 });
 
-it.each<[PressureStepKind, string, string]>([
-  ["codex", "Codex", "codex"],
-  ["claude_pressure", "/pressure", "pressure"],
-  ["claude_address", "/address", "drafting"],
-])("shows the %s activity glyph for a running step", (kind, label, glyph) => {
+it.each<[PressureStepKind, string]>([
+  ["codex", "Codex"],
+  ["claude_pressure", "/pressure"],
+  ["claude_address", "/address"],
+])("shows the turning arrow for a running %s step", (kind, label) => {
   mount({ ...run, round: 1, step: kind, steps: [step(1, kind, "running")] });
 
   const card = screen.getByRole("group", { name: `Round 1 ${label}` });
-  const activity = card.querySelector(`[data-kind="${glyph}"]`);
-  expect(activity).not.toBeNull();
-  expect(activity?.getAttribute("aria-hidden")).toBe("true");
-  expect(activity?.hasAttribute("data-paused")).toBe(false);
+  const arrow = card.querySelector(".plan-arrow-spinner");
+  expect(arrow?.getAttribute("data-busy")).toBe("true");
+  expect(arrow?.getAttribute("aria-hidden")).toBe("true");
+  expect(card.querySelector(".activity-glyph")).toBeNull();
+});
+
+it("turns the arrow of a Codex step running beside the /pressure step the run is on", () => {
+  mount({
+    ...run,
+    step: "claude_pressure",
+    steps: [step(1, "claude_pressure", "running"), step(1, "codex", "running")],
+  });
+
+  for (const label of ["Codex", "/pressure"]) {
+    const card = screen.getByRole("group", { name: `Round 1 ${label}` });
+    expect(card.querySelector('.plan-arrow-spinner[data-busy="true"]')).not.toBeNull();
+  }
 });
 
 it.each<[StepState, string]>([
@@ -221,11 +234,11 @@ it.each<StepState>(["running", "done", "failed", "stopped"])(
   },
 );
 
-it("draws the header gauge at rest while the run works and after a socket update ends it", () => {
+it("draws the header flask still while the run works and after a socket update ends it", () => {
   const { container, socket } = mount();
-  const gauge = container.querySelector('.chat-run-header [data-kind="pressure"]');
-  expect(gauge).not.toBeNull();
-  expect(gauge?.getAttribute("data-paused")).toBe("true");
+  const head = container.querySelector(".chat-run-header");
+  expect(head?.querySelector(".lucide-flask-conical")).not.toBeNull();
+  expect(head?.querySelector(".activity-glyph, .plan-arrow-spinner")).toBeNull();
 
   act(() =>
     socket.receive({
@@ -234,7 +247,7 @@ it("draws the header gauge at rest while the run works and after a socket update
     }),
   );
 
-  expect(gauge?.getAttribute("data-paused")).toBe("true");
+  expect(head?.querySelector(".activity-glyph, .plan-arrow-spinner")).toBeNull();
   expect(screen.getByText("Interrupted")).toBeTruthy();
 });
 
@@ -266,7 +279,7 @@ it("mounts PressureDone before the timeline and the end line with the latest run
 });
 
 it.each<CodexState>(["running", "review_written", "no_review", "failed"])(
-  "shows the Codex status activity glyph only while running (%s)",
+  "draws no dot or arrow in the Codex card, whatever its state (%s)",
   (state) => {
     const { container } = render(
       <CodexStatusItem
@@ -275,7 +288,7 @@ it.each<CodexState>(["running", "review_written", "no_review", "failed"])(
       />,
     );
 
-    expect(container.querySelector('[data-kind="codex"]') !== null).toBe(state === "running");
+    expect(container.querySelector(".activity-glyph, .plan-arrow-spinner")).toBeNull();
     if (state === "running") {
       expect(screen.getByRole("status").textContent).toBe("Codex is reviewing");
     }

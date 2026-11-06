@@ -5,6 +5,7 @@ import type { PressureRunView } from "@/plan/api/schema-pressure";
 import type { RunStateView, RunStrip as Strip } from "@/plan/api/schema-run";
 import type { SummaryPanel } from "@/plan/api/schema-summaries";
 import { pendingPermissionsAtom, sessionAtom } from "@/plan/chat/model";
+import { planFileName, pressureProgress, stepLabel } from "@/plan/chat/pressure/steps";
 import { pressureRunAtom } from "@/plan/chat/pressure/use-pressure";
 import { runStateAtom, runStripAtom } from "@/plan/run/use-run";
 import { kickoffAtom, kickoffDraftsAtom } from "@/plan/state/atoms";
@@ -17,6 +18,8 @@ export interface Activity {
   title: string;
   subject: string | null;
   since: number | null; // Epoch milliseconds; null when the operation's start is unknown.
+  /** Counted work (a pressure run's finished steps); its row draws a determinate bar. */
+  progress?: { done: number; total: number };
   /**
    * The chat a waiting row stands for; its row links to that chat's screen. `named` is false while
    * the title is the state's own words, which the live row replaces with the session brief's label.
@@ -68,7 +71,9 @@ function pressureActivities(run: PressureRunView | null): Activity[] {
   if (!run || run.ended !== null) return [];
   const id = `${run.plan}:${run.started_ms}`;
   const title = `${ACTIVITY_LABELS.pressure} · round ${run.round} of ${run.rounds}`;
-  const activities = [activity(`pressure:${id}`, "pressure", run.plan, run.started_ms, title)];
+  const subject = `${planFileName(run.plan)} · ${stepLabel(run.step)}`;
+  const row = activity(`pressure:${id}`, "pressure", subject, run.started_ms, title);
+  const activities: Activity[] = [{ ...row, progress: pressureProgress(run) }];
   // Codex can be running alongside Claude before run.step switches to "codex".
   for (const step of run.steps) {
     if (

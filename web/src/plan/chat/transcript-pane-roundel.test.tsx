@@ -26,7 +26,8 @@ afterEach(() => {
 });
 
 // The live signs of the pane: a live status dot, the block spinner, a turning arrow. The roundel is
-// the header pill's alone (ui/DESIGN.md, Status), so none is drawn here.
+// the header pill's alone (ui/DESIGN.md, Status), so none is drawn here. A running step turns an
+// arrow; the pane has no live dot.
 const busy = (root: HTMLElement) =>
   root.querySelectorAll(
     '.activity-glyph:not([data-paused="true"]) .activity-glyph__led, .plan-spinner, .plan-arrow-spinner[data-busy="true"], .aurora-roundel',
@@ -69,19 +70,19 @@ function drawPane(run: unknown, state: "working" | "idle") {
   );
 }
 
-it("a working pressure run's pane shows exactly one live dot: the running step's, none in the transcript", () => {
-  // The fixture runs the Codex step: its card and the other glyphs rest, the row's dot is live.
+it("a working pressure run's pane shows exactly one turning arrow: the running step's, none in the transcript", () => {
+  // The fixture runs the Codex step: its card and the head rest, the row's arrow turns.
   const pane = drawPane(runFixture, "working");
   expect(busy(screen.getByRole("log"))[0] ?? null).toBeNull();
   expect(busy(pane.container)).toHaveLength(1);
 });
 
-it("steps running side by side light only the one the run is on", () => {
+it("steps running side by side each turn their own arrow, one per step", () => {
   const both = {
     ...runFixture,
     steps: runFixture.steps.map((step) => ({ ...step, state: "running", ended_ms: null })),
   };
-  expect(busy(drawPane(both, "working").container)).toHaveLength(1);
+  expect(busy(drawPane(both, "working").container)).toHaveLength(runFixture.steps.length);
 });
 
 it("an ended pressure run's pane shows no live sign", () => {

@@ -1,4 +1,4 @@
-import { Check, Minus, TriangleAlert } from "lucide-react";
+import { Check, Minus, Search, TriangleAlert } from "lucide-react";
 import type { JSX } from "react";
 import { Link } from "react-router";
 
@@ -8,19 +8,17 @@ import { ActivityTile } from "@/plan/ui/activity-glyphs";
 import { Untrusted } from "../visible-controls";
 import { LiveElapsed } from "./elapsed";
 
-const SETTLED_ICON = {
+const TILE_ICON = {
+  // The step's row beside the card already turns the arrow; one turning sign per running step
+  // (ui/DESIGN.md, Status), so a running card holds a quiet still glyph.
+  running: <Search />,
   review_written: <Check />,
   no_review: <Minus />,
   failed: <TriangleAlert />,
-} as const satisfies Record<Exclude<CodexState, "running">, JSX.Element>;
+} as const satisfies Record<CodexState, JSX.Element>;
 
 function CodexTile({ state }: { state: CodexState }): JSX.Element {
-  // The pane turns one roundel, the running step's glyph; this tile rests (DESIGN.md, Status).
-  return state === "running" ? (
-    <ActivityTile kind="codex" paused />
-  ) : (
-    <ActivityTile>{SETTLED_ICON[state]}</ActivityTile>
-  );
+  return <ActivityTile>{TILE_ICON[state]}</ActivityTile>;
 }
 
 function CodexOutcome({ status }: { status: CodexStatus }): JSX.Element {

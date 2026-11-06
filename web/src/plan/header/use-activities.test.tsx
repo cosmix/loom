@@ -395,3 +395,16 @@ it("reads existing atoms from a Jotai store and reacts when operations end", () 
   });
   expect(result.current).toEqual([]);
 });
+
+it("gives a pressure run's row the plan's file name, the current step and counted progress", () => {
+  const done = { ...codexStep(1, startedMs), state: "done" as const, ended_ms: startedMs + 1 };
+  const run = { ...pressure([done, codexStep(1, startedMs)]), round: 1, step: "claude_address" as const };
+  const [row] = deriveActivities({ ...empty, pressureRun: run });
+  expect(row).toMatchObject({
+    kind: "pressure",
+    title: "Pressure test · round 1 of 2",
+    subject: "PLAN-example.md · /address",
+    since: startedMs,
+    progress: { done: 1, total: 6 },
+  });
+});

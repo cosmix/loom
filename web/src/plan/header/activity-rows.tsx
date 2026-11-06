@@ -45,15 +45,33 @@ function Elapsed({ since, now }: { since: number | null; now: number }) {
   return since === null ? null : <span>{elapsedLabel(since, now)}</span>;
 }
 
+/** Counted work (DESIGN.md, Status, rule 5): a determinate bar that carries the count. */
+function ProgressBar({ done, total }: { done: number; total: number }): JSX.Element {
+  return (
+    <span
+      role="progressbar"
+      aria-label="Pressure test progress"
+      aria-valuemin={0}
+      aria-valuemax={total}
+      aria-valuenow={done}
+      className="activity-row__bar"
+    >
+      <span style={{ width: `${(done / total) * 100}%` }} />
+    </span>
+  );
+}
+
 /** The text column every row shares: a title, then one subject line that truncates. */
 function RowText({
   title,
   subject,
   extra,
+  progress,
 }: {
   title: string;
   subject: string | null;
   extra?: ReactNode;
+  progress?: Activity["progress"];
 }): JSX.Element {
   return (
     <span className="activity-row__body">
@@ -70,6 +88,7 @@ function RowText({
           {extra}
         </span>
       )}
+      {progress && <ProgressBar {...progress} />}
     </span>
   );
 }
@@ -106,7 +125,7 @@ function PlainRow({ activity, now }: { activity: Activity; now: number }) {
   const content = (
     <>
       <ActivityTile kind={activity.kind} />
-      <RowText title={activity.title} subject={activity.subject} />
+      <RowText title={activity.title} subject={activity.subject} progress={activity.progress} />
       <span className="activity-row__time">
         <Elapsed since={activity.since} now={now} />
       </span>

@@ -9,7 +9,6 @@ import { Identity } from "@/plan/header/feature-switcher";
 import { HelpButton, SettingsButton } from "@/plan/header/header-buttons";
 import { useResendStoredName } from "@/plan/header/name-prompt";
 import { Overflow } from "@/plan/header/overflow";
-import { PressureStrip } from "@/plan/header/pressure-strip";
 import { Presence } from "@/plan/header/presence";
 import { Share } from "@/plan/header/share";
 import { Tabs } from "@/plan/header/tabs";
@@ -50,7 +49,7 @@ function HeaderControls({
 
 /**
  * `sample` leaves out the controls that fetch and subscribe to live state (activity rows, summary
- * rebuilds, chat, the pressure strip), for Help scenes that draw the header over seeded atoms.
+ * rebuilds, chat), for Help scenes that draw the header over seeded atoms.
  */
 export function PlanHeader({
   onOpenSettings,
@@ -76,7 +75,6 @@ export function PlanHeader({
           />
         </div>
       </div>
-      {!sample && <PressureStrip />}
     </header>
   );
 }

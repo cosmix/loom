@@ -117,9 +117,12 @@ user's Codex login; principle 7 forbids headless Claude, and no Claude session h
 
 ### What the chat shows
 
-A pressure run has a strip under the app header: the animated gauge, plan, round, step, progress, and elapsed time.
-The plan's header carries "Being pressure-tested" and locks Edit. The gauge's needle sweeps while the run is active;
-glyph motion stops when work ends and freezes with `prefers-reduced-motion`.
+A pressure run has no strip under the app header. The activity popover from the header notification pill carries the
+run's row: the plan's file name, round x of y, the current step (`/pressure`, `$pressure`, `/address`), a determinate
+progress bar counting the finished steps, and the elapsed time.
+The plan's header carries "Being pressure-tested" and locks Edit. In the chat, a running step (Codex, `/pressure`,
+`/address`) shows the rotating-arrow spinner, a finished step its done glyph and a step not yet started a quiet still
+glyph; motion stops when work ends and freezes with `prefers-reduced-motion`.
 
 The run occupies the chat panel the way an authoring session does. Its run header names the plan, round and step, with
 elapsed time, tokens and "Stop". The step timeline groups each round's Codex and Claude `/pressure` side by side,
