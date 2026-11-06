@@ -11,6 +11,7 @@ const extras = vi.hoisted(() => ({
 vi.mock("./page-header-extras", () => ({
   PageHeaderExtras: extras.header,
   SummaryAction: extras.action,
+  SummaryDetail: () => null,
 }));
 vi.mock("./key-chip-extras", () => ({ KeyChipExtras: extras.chip }));
 

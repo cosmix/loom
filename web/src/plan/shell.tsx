@@ -64,7 +64,9 @@ export function PlanShell() {
             />
             <Banners />
             <div className="flex min-h-0 flex-1">
-              <main className="min-w-0 flex-1 overflow-y-auto">
+              {/* Positioned: the page's sr-only text and other absolute content takes <main> as
+                  its containing block and is clipped by its scroll, never the page's. */}
+              <main className="relative min-w-0 flex-1 overflow-y-auto">
                 <ErrorBoundary resetKey={pathname}>
                   <Outlet />
                 </ErrorBoundary>

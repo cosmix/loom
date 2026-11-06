@@ -112,14 +112,24 @@ it.each([
   expect(within(group).queryAllByRole("link")).toHaveLength(0);
 });
 
-it("draws the views as one segmented control at the row's height, the current one filled", () => {
+it("draws the views as one segmented control inside the bordered toolbar bar, the current one filled", () => {
   renderHeading({ views: { current: "source", summaryTo: "/summary", sourceTo: "/source" } });
 
   const group = screen.getByRole("group", { name: "View" });
   expect(group.className).toBe("doc-heading-views");
+  expect(group.parentElement?.className).toBe("doc-heading-group");
+  expect(group.parentElement?.parentElement?.className).toBe("doc-heading-toolbar");
   const css = headingSheet.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\s+/g, " ");
-  expect(css).toContain("height: var(--control-height-sm); padding: 1px;");
-  expect(css).toContain("border: 1px solid var(--border);");
+  // The bar carries the one edge; the segments sit flush inside its first group.
+  expect(css).toContain(
+    ".doc-heading-toolbar { display: flex; flex-wrap: wrap; align-items: stretch; min-width: 0; border: 1px solid var(--border);",
+  );
+  expect(css).toContain(
+    ".doc-heading-views { display: inline-flex; flex: none; align-items: stretch; gap: 2px; height: var(--control-height-sm); }",
+  );
+  expect(css).toContain(
+    ".doc-heading-group + .doc-heading-group { border-inline-start: 1px solid var(--border); }",
+  );
   expect(css).toContain(
     '.doc-heading-views > .plan-button[aria-current="page"] { background: var(--muted); color: var(--foreground);',
   );
@@ -133,8 +143,9 @@ it("renders actions after the view switch", () => {
     actions: <button type="button">Discuss</button>,
   });
 
-  const group = screen.getByRole("group", { name: "View" });
-  expect(group.nextElementSibling).toBe(screen.getByRole("button", { name: "Discuss" }));
+  const views = screen.getByRole("group", { name: "View" }).parentElement as HTMLElement;
+  expect(views.className).toBe("doc-heading-group");
+  expect(views.nextElementSibling).toBe(screen.getByRole("button", { name: "Discuss" }));
 });
 
 it("omits optional view, chip, path and lock rows when their data is absent", () => {
@@ -146,7 +157,7 @@ it("omits optional view, chip, path and lock rows when their data is absent", ()
   expect(container.querySelector("header")?.children).toHaveLength(2);
 });
 
-it("renders linked, pressed-button and plain chips in one wrapping row", () => {
+it("renders linked, pressed-button and plain chips as rows of one status card", () => {
   const onClick = vi.fn();
   renderHeading({
     chips: [
@@ -171,10 +182,14 @@ it("renders linked, pressed-button and plain chips in one wrapping row", () => {
   expect(button.getAttribute("aria-pressed")).toBe("true");
   expect(screen.getByTestId("chip-icon").parentElement?.getAttribute("aria-hidden")).toBe("true");
   expect(plain.tagName).toBe("SPAN");
-  expect(link.parentElement).toBe(button.parentElement);
-  expect(button.parentElement).toBe(plain.parentElement);
-  expect(plain.parentElement?.classList.contains("flex-wrap")).toBe(true);
-  expect(plain.parentElement?.classList.contains("gap-x-4")).toBe(true);
+  const rows = [link, button, plain].map((chip) => chip.parentElement as HTMLElement);
+  for (const row of rows) expect(row.className).toBe("doc-heading-row");
+  const card = screen.getByRole("list", { name: "Status" });
+  for (const row of rows) expect(row.parentElement).toBe(card);
+  expect(card.classList.contains("plan-surface")).toBe(true);
+  // The glyph column comes first on every row, drawn empty where the chip has no glyph.
+  expect(link.firstElementChild?.className).toContain("doc-heading-chip__glyph");
+  expect(link.firstElementChild?.childElementCount).toBe(0);
 
   fireEvent.click(button);
   expect(onClick).toHaveBeenCalledOnce();
@@ -368,14 +383,14 @@ it("renders no document mark and leaves the title alone in its group when kind i
   expect(group?.parentElement?.children).toHaveLength(2);
 });
 
-it("wraps the actions under the title instead of squeezing it, whatever the column width", () => {
+it("keeps the title row to the mark and the title, with the actions in the toolbar under it", () => {
   renderHeading({ actions: <button type="button">Edit</button> });
 
-  const group = screen.getByRole("heading", { level: 1 }).parentElement as HTMLElement;
-  const row = group.parentElement as HTMLElement;
-  const actions = screen.getByRole("button", { name: "Edit" }).parentElement as HTMLElement;
-  expect(row.classList.contains("flex-wrap")).toBe(true);
-  expect(group.classList.contains("flex-[1_1_max-content]")).toBe(true);
-  expect(actions.classList.contains("ml-auto")).toBe(true);
-  expect(actions.classList.contains("max-[900px]:basis-full")).toBe(true);
+  const row = screen.getByRole("heading", { level: 1 }).parentElement as HTMLElement;
+  expect(row.className).toBe("doc-heading-title-row");
+  expect(row.children).toHaveLength(2);
+  expect(row.querySelector("button")).toBeNull();
+  const toolbar = screen.getByRole("button", { name: "Edit" }).parentElement as HTMLElement;
+  expect(toolbar.className).toBe("doc-heading-toolbar");
+  expect(toolbar.previousElementSibling).toBe(row);
 });
