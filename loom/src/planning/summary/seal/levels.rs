@@ -10,8 +10,7 @@ use std::collections::BTreeSet;
 
 use crate::context::untrusted::terminal_safe;
 use crate::planning::summary::format::{
-    cites_own, Block, FormatError, Link, LinkTarget, Sentence, SummaryBody, MAX_DOCUMENT_SENTENCES,
-    MAX_OPENING_SENTENCES,
+    cites_own, Block, FormatError, Link, LinkTarget, PlanCaps, Sentence, SummaryBody,
 };
 use crate::planning::summary::store;
 
@@ -99,13 +98,14 @@ fn at(sentence: &Sentence, message: String) -> FormatError {
     }
 }
 
-/// The level problems of the draft of summary `id`; none unless `id` is a plan summary.
-pub(super) fn check(id: &str, body: &SummaryBody) -> Vec<FormatError> {
+/// The level problems of the draft of summary `id`, its levels held to `caps`; none unless `id`
+/// is a plan summary.
+pub(super) fn check(id: &str, body: &SummaryBody, caps: PlanCaps) -> Vec<FormatError> {
     if !store::is_plan(id) {
         return Vec::new();
     }
     let draft = Draft::new(id, body);
-    let mut errors = limits(&draft);
+    let mut errors = limits(&draft, caps);
     if draft.opening.is_empty() {
         errors.push(FormatError {
             line: 1,
@@ -126,14 +126,14 @@ pub(super) fn check(id: &str, body: &SummaryBody) -> Vec<FormatError> {
 }
 
 /// More opening or detail sentences than their caps, reported at the first sentence over.
-fn limits(draft: &Draft<'_>) -> Vec<FormatError> {
+fn limits(draft: &Draft<'_>, caps: PlanCaps) -> Vec<FormatError> {
     let detail: Vec<&Sentence> = draft.detail().collect();
     let over = |sentences: &[&Sentence], cap: usize, level: &str| -> Option<FormatError> {
         let first = sentences.get(cap)?;
         Some(at(first, format!("more than {cap} {level} sentences")))
     };
-    let opening = over(&draft.opening, MAX_OPENING_SENTENCES, "opening");
-    let detail = over(&detail, MAX_DOCUMENT_SENTENCES, "detail");
+    let opening = over(&draft.opening, caps.opening, "opening");
+    let detail = over(&detail, caps.detail, "detail");
     opening.into_iter().chain(detail).collect()
 }
 

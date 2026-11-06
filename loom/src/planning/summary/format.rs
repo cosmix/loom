@@ -11,6 +11,8 @@ mod levels;
 mod levels_tests;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_plan;
 
 use std::fmt;
 use std::path::{Path, PathBuf};
@@ -20,12 +22,43 @@ pub use body::{render_body, sentence_id};
 pub use front::{FrontMatter, SummaryKind};
 pub use levels::{cites_own, split_levels, Levels};
 
-/// Most sentences a document summary may hold, and the detail level of a plan summary.
+/// Most sentences a document summary may hold, and fewest the detail level of a plan summary
+/// is capped at.
 pub const MAX_DOCUMENT_SENTENCES: usize = 15;
-/// Most sentences the opening level of a plan summary may hold.
-pub const MAX_OPENING_SENTENCES: usize = 8;
-/// Most sentences a plan summary may hold: its opening level and its detail level.
-pub const MAX_PLAN_SENTENCES: usize = MAX_OPENING_SENTENCES + MAX_DOCUMENT_SENTENCES;
+/// Fewest opening sentences a plan summary may be capped at; a small plan gets this many.
+const MIN_OPENING_SENTENCES: usize = 8;
+/// Most opening sentences any plan summary may hold.
+const MAX_OPENING_SENTENCES: usize = 12;
+/// Most detail sentences any plan summary may hold.
+const MAX_DETAIL_SENTENCES: usize = 60;
+/// Source lines one detail sentence stands for: a sentence of about 150 characters over lines
+/// of about 50 characters, compressed roughly eightfold.
+const SOURCE_LINES_PER_DETAIL: usize = 24;
+/// Most sentences a plan summary may hold: the ceiling the parser applies; the seal checks each
+/// level against the caps its source's size gives (`PlanCaps`).
+pub const MAX_PLAN_SENTENCES: usize = MAX_OPENING_SENTENCES + MAX_DETAIL_SENTENCES;
+
+/// The sentence caps of a plan summary's two levels, scaled to the size of what it summarizes
+/// so the detail level stays a short step above the opening level and far below the source.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PlanCaps {
+    /// Most opening sentences.
+    pub opening: usize,
+    /// Most detail sentences.
+    pub detail: usize,
+}
+
+impl PlanCaps {
+    /// The caps for a plan and its briefs totalling `source_lines` lines: detail from
+    /// `MAX_DOCUMENT_SENTENCES` to `MAX_DETAIL_SENTENCES`, opening a fifth of it from
+    /// `MIN_OPENING_SENTENCES` to `MAX_OPENING_SENTENCES`.
+    pub fn for_source_lines(source_lines: usize) -> Self {
+        let detail = (source_lines / SOURCE_LINES_PER_DETAIL)
+            .clamp(MAX_DOCUMENT_SENTENCES, MAX_DETAIL_SENTENCES);
+        let opening = (detail / 5).clamp(MIN_OPENING_SENTENCES, MAX_OPENING_SENTENCES);
+        Self { opening, detail }
+    }
+}
 /// Most sentences an overview may hold.
 pub const MAX_OVERVIEW_SENTENCES: usize = 30;
 /// Most sentences a vision summary may hold.

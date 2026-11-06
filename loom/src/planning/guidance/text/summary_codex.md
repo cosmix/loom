@@ -75,8 +75,9 @@ Use this exact draft body format for document summaries:
   files (`briefs/<slug>/<stage-id>/...`); cite `common.md` and the other brief files where the
   plan relies on them. Cite every Markdown brief file listed under Sources at least once: the
   seal refuses a plan summary that leaves one out. A brief with no Markdown text, such as a
-  JSON mockup, may be read but is not cited. No heading after the opening level. At
-  most 8 opening and 15 detail sentences. An opening sentence says what its paragraphs add up
+  JSON mockup, may be read but is not cited. No heading after the opening level. Stay
+  within the caps the rebuild brief states (8 to 12 opening, 15 to 60 detail, scaled to the plan
+  and its briefs); use the detail room, several sentences per stage and brief file. An opening sentence says what its paragraphs add up
   to; it never repeats a detail sentence. Write the detail level first and seal: the refusal
   lists each detail sentence's id. Then add the opening level above it, citing those ids, and
   seal again.
