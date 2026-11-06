@@ -8,7 +8,7 @@ use crate::planning::findings::{self, Finding, FindingStatus};
 use crate::planning::kinds::{section_path, vision_path};
 use crate::planning::metaplan::MetaplanEntry;
 use crate::planning::slug::{PlanEntry, PlanState};
-use crate::planning::trace::tokens::{tokens, Token};
+use crate::planning::trace::tokens::{is_plan_token, tokens, Token};
 use crate::planning::trace::{
     CoverKind, CoverRef, NodeRef, TraceEntry, TraceFinding, TraceHeading, TraceProblem,
 };
@@ -59,6 +59,19 @@ fn resolve_finding(
                 path: ledger.to_path_buf(),
                 line: heading_line(cx, ledger, &finding.id),
                 message: format!("{}: Status: folded target `{target}` {reason}", finding.id),
+            });
+        }
+    }
+    if let FindingStatus::Planned(detail) = &finding.status {
+        if !is_plan_token(detail) {
+            problems.push(TraceProblem {
+                code: findings::BAD_STATUS,
+                path: ledger.to_path_buf(),
+                line: heading_line(cx, ledger, &finding.id),
+                message: format!(
+                    "{}: Status: planned target `{detail}` is not a `PLAN-<slug>.md` token",
+                    finding.id
+                ),
             });
         }
     }
