@@ -1,5 +1,6 @@
-// Toolbar and shortcut commands (and the save shortcut): each inserts or removes Markdown syntax around the selection
-// as ONE transaction, so one undo reverses it. All of them refuse a read-only state.
+// Toolbar and shortcut commands: each inserts or removes Markdown syntax around the selection
+// as ONE transaction, so one undo reverses it. The formatting commands refuse a read-only state;
+// the save shortcut only hands Ctrl-S / Cmd-S to `onSave`.
 import { isolateHistory } from "@codemirror/commands";
 import {
   EditorSelection,
@@ -331,6 +332,7 @@ export function formatCommand(name: FormatCommand): StateCommand {
   return COMMANDS[name];
 }
 
+// Kept here, not in codemirror.ts, so that file stays under 400 lines.
 /** Ahead of the default keymap so Ctrl-S / Cmd-S never reaches the browser's save. */
 export function saveKeymap(onSave: () => void): Extension {
   return keymap.of([

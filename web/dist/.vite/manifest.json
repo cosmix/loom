@@ -28,10 +28,20 @@
     "imports": [
       "_rolldown-runtime.js",
       "_react.js",
-      "_store.js"
+      "_is-typing.js",
+      "_quota-meters.js"
     ],
     "css": [
       "assets/help-shortcuts.css"
+    ]
+  },
+  "_is-typing.js": {
+    "file": "assets/is-typing.js",
+    "name": "is-typing",
+    "imports": [
+      "_rolldown-runtime.js",
+      "_react.js",
+      "_zod.js"
     ]
   },
   "_markdown.js": {
@@ -41,11 +51,55 @@
       "_rolldown-runtime.js"
     ]
   },
+  "_quota-meters.css": {
+    "file": "assets/quota-meters.css",
+    "src": "_quota-meters.css"
+  },
+  "_quota-meters.js": {
+    "file": "assets/quota-meters.js",
+    "name": "quota-meters",
+    "imports": [
+      "_rolldown-runtime.js",
+      "_react.js",
+      "_is-typing.js",
+      "_router.js",
+      "_zod.js",
+      "_flow.js"
+    ],
+    "css": [
+      "assets/quota-meters.css"
+    ],
+    "assets": [
+      "assets/inter-latin-wght-normal.woff2"
+    ]
+  },
   "_react.js": {
     "file": "assets/react.js",
     "name": "react",
     "imports": [
       "_rolldown-runtime.js"
+    ]
+  },
+  "_request-edit.css": {
+    "file": "assets/request-edit.css",
+    "src": "_request-edit.css"
+  },
+  "_request-edit.js": {
+    "file": "assets/request-edit.js",
+    "name": "request-edit",
+    "imports": [
+      "_rolldown-runtime.js",
+      "_react.js",
+      "_is-typing.js",
+      "_router.js",
+      "_zod.js",
+      "_markdown.js"
+    ],
+    "dynamicImports": [
+      "src/plan/editor/codemirror.ts"
+    ],
+    "css": [
+      "assets/request-edit.css"
     ]
   },
   "_rolldown-runtime.js": {
@@ -60,25 +114,11 @@
       "_react.js"
     ]
   },
-  "_store.css": {
-    "file": "assets/store.css",
-    "src": "_store.css"
-  },
   "_store.js": {
     "file": "assets/store.js",
     "name": "store",
     "imports": [
-      "_rolldown-runtime.js",
-      "_react.js",
-      "_router.js",
-      "_zod.js",
-      "_flow.js"
-    ],
-    "css": [
-      "assets/store.css"
-    ],
-    "assets": [
-      "assets/inter-latin-wght-normal.woff2"
+      "_is-typing.js"
     ]
   },
   "_zod.js": {
@@ -93,11 +133,13 @@
     "imports": [
       "_rolldown-runtime.js",
       "_react.js",
-      "_store.js",
+      "_is-typing.js",
       "_router.js",
+      "_quota-meters.js",
       "_zod.js",
       "_help-shortcuts.js",
-      "_flow.js"
+      "_flow.js",
+      "_store.js"
     ],
     "dynamicImports": [
       "node_modules/@xterm/xterm/lib/xterm.mjs",
@@ -225,14 +267,16 @@
     "imports": [
       "_rolldown-runtime.js",
       "_react.js",
-      "_store.js",
+      "_is-typing.js",
       "_router.js",
+      "_quota-meters.js",
       "_zod.js",
+      "_request-edit.js",
       "_flow.js",
       "_markdown.js"
     ],
     "dynamicImports": [
-      "src/plan/editor/codemirror.ts",
+      "src/plan/editor/edit-mode.tsx",
       "src/plan/help/help-dialog.tsx"
     ],
     "css": [
@@ -271,6 +315,20 @@
       "_cm-lang.js"
     ]
   },
+  "src/plan/editor/edit-mode.tsx": {
+    "file": "assets/edit-mode.js",
+    "name": "edit-mode",
+    "src": "src/plan/editor/edit-mode.tsx",
+    "isDynamicEntry": true,
+    "imports": [
+      "_rolldown-runtime.js",
+      "_react.js",
+      "_is-typing.js",
+      "_router.js",
+      "_request-edit.js",
+      "_store.js"
+    ]
+  },
   "src/plan/help/help-dialog.tsx": {
     "file": "assets/help-dialog.js",
     "name": "help-dialog",
@@ -279,8 +337,10 @@
     "imports": [
       "_rolldown-runtime.js",
       "_react.js",
-      "_store.js",
+      "_is-typing.js",
       "_router.js",
+      "_quota-meters.js",
+      "_request-edit.js",
       "_help-shortcuts.js",
       "plan.html"
     ],
