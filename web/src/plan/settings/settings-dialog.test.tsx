@@ -94,6 +94,7 @@ describe("planner settings sections", () => {
     const theme = screen.getByRole("group", { name: "theme" });
     const swatches = theme.querySelectorAll('svg[width="120"][height="76"][aria-hidden="true"]');
     expect(swatches).toHaveLength(3);
+    expect(within(theme).queryByRole("button", { name: "Aubergine theme" })).toBeNull();
     for (const label of ["Ledger", "Walnut", "Graphite"]) {
       const card = within(theme).getByRole("button", { name: `${label} theme` });
       expect(card.querySelector("svg")?.getAttribute("viewBox")).toBe("0 0 120 76");

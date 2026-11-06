@@ -20,6 +20,7 @@ const TOKEN_ENTRIES = Object.entries(TOKENS) as [keyof typeof TOKENS, string][];
 /// The tokens.css rule that owns each offered theme's palette.
 const OWNING_SELECTOR: Record<ThemeOption["id"], string> = {
   ledger: ":root",
+  aubergine: '.dark[data-dark-theme="aubergine"]',
   walnut: ".dark",
   graphite: '.dark[data-dark-theme="gray"]',
 };

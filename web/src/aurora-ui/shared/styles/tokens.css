@@ -280,6 +280,52 @@ html.dark {
   --sidebar-ring: oklch(0.55 0.10 235);
 }
 
+/* ── Dark variant: aubergine (hue 325) ─────────────────────────────────── */
+.dark[data-dark-theme="aubergine"] {
+  --background: oklch(0.16 0.035 325);
+  --foreground: oklch(0.94 0.012 325);
+  --card: oklch(0.195 0.04 325);
+  --card-foreground: oklch(0.94 0.012 325);
+  --popover: oklch(0.195 0.04 325);
+  --popover-foreground: oklch(0.94 0.012 325);
+  --primary: oklch(0.83 0.165 82);
+  --primary-foreground: oklch(0.2 0.04 325);
+  --secondary: oklch(0.23 0.045 325);
+  --secondary-foreground: oklch(0.92 0.015 325);
+  --muted: oklch(0.225 0.045 325);
+  --muted-foreground: oklch(0.73 0.03 325);
+  --accent: oklch(0.26 0.05 325);
+  --accent-foreground: oklch(0.92 0.015 325);
+  --destructive: oklch(0.704 0.191 22.216);
+  --hazard-warning: oklch(0.74 0.16 55);
+  --hazard-error: oklch(0.65 0.21 25);
+  --border: oklch(0.31 0.045 325);
+  --input: oklch(0.27 0.04 325);
+  --ring: oklch(0.83 0.165 82);
+  --chart-1: oklch(0.72 0.18 255);
+  --chart-2: oklch(0.72 0.18 165);
+  --chart-3: oklch(0.68 0.20 310);
+  --chart-4: oklch(0.72 0.18 15);
+  --chart-5: oklch(0.70 0.14 220);
+  --ost-opp: oklch(0.25 0.055 285);
+  --ost-opp-border: oklch(0.38 0.07 285);
+  --ost-idea: oklch(0.17 0.04 285);
+  --ost-idea-border: oklch(0.30 0.055 285);
+  --ost-line: oklch(0.48 0.06 285);
+  --postit-bg: oklch(0.34 0.085 285);
+  --postit-border: oklch(0.46 0.115 285);
+  --postit-text: oklch(0.96 0.025 285);
+  --postit-sidebar: oklch(0.255 0.05 285);
+  --sidebar: oklch(0.16 0.035 285);
+  --sidebar-foreground: oklch(0.94 0.015 285);
+  --sidebar-primary: oklch(0.72 0.19 285);
+  --sidebar-primary-foreground: oklch(0.16 0.03 285);
+  --sidebar-accent: oklch(0.26 0.06 285);
+  --sidebar-accent-foreground: oklch(0.92 0.02 285);
+  --sidebar-border: oklch(0.38 0.07 285);
+  --sidebar-ring: oklch(0.65 0.17 285);
+}
+
 /* ── Dark variant: gray (graphite: neutral charcoal, hue 270) ──────────── */
 /* The one lit hue in Graphite is the same orange lamp as Walnut's; dark text on it reads at 7.5:1. */
 .dark[data-dark-theme="gray"] {

@@ -149,14 +149,15 @@ const APPROVED: Record<string, Record<string, [number, number, number]>> = {
 
 const triple = ({ lightness, chroma, hue }: Oklch) => [lightness, chroma, hue];
 
-it("the theme picker offers Ledger Walnut and Graphite with Walnut as the dark default", async () => {
+it("the theme picker offers Ledger Walnut and Graphite (the dashboard default dark is Aubergine)", async () => {
   const store = createStore();
-  expect(store.get(darkVariantAtom)).toBe("walnut");
+  expect(store.get(darkVariantAtom)).toBe("aubergine");
   store.set(themeAtom, "dark");
+  store.set(darkVariantAtom, "walnut");
   render(
     <Provider store={store}>
       <ThemeProvider>
-        <ThemePicker />
+        <ThemePicker themes={["ledger", "walnut", "graphite"]} />
       </ThemeProvider>
     </Provider>,
   );

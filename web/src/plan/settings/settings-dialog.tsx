@@ -1,7 +1,7 @@
 import { SlidersHorizontalIcon } from "lucide-react";
 import { useRef, type ReactElement } from "react";
 
-import { ThemePicker } from "@/components/theme-picker";
+import { ThemePicker, type ThemeId } from "@/components/theme-picker";
 import {
   Dialog,
   DialogContent,
@@ -13,6 +13,9 @@ import { PlannerThemeSwatch } from "./planner-swatch";
 import { ReadingFaceGroup, ReadingSizeGroup } from "./reading-sections";
 import { ReadingTogglesGroup, SettingsGroup, SummariesGroup } from "./settings-sections";
 import "./settings.css";
+
+/** The planner offers three themes; Aubergine is dashboard-only. */
+const PLANNER_THEMES: readonly ThemeId[] = ["ledger", "walnut", "graphite"];
 
 export function SettingsDialog({
   open,
@@ -44,7 +47,7 @@ export function SettingsDialog({
         <div className="ps-body">
           <SettingsGroup title="Theme" hint="Remembered in this browser">
             <div className="ps-theme">
-              <ThemePicker swatch={PlannerThemeSwatch} optionClassName="ps-theme-option" />
+              <ThemePicker themes={PLANNER_THEMES} swatch={PlannerThemeSwatch} optionClassName="ps-theme-option" />
             </div>
           </SettingsGroup>
           <ReadingFaceGroup />
