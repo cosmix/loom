@@ -214,3 +214,10 @@ an added line is a knowledge defect to fix.
 **Prevention:** Pass `--` before positional replacement content that may begin with a dash.
 
 **Fix:** Repeat the unchanged replacement with the option terminator.
+
+## An emptied blurb falls back to a later blockquote and the INDEX goes stale
+
+**What happened**: knowledge-distill trimmed `INDEX.md` under its 16,384-byte budget by running `loom knowledge annotate <topic> --blurb ""` on about forty topics. `annotate` wrote an empty `>` line, the INDEX regenerated with blank cells and the check passed. After the commit the check failed with "INDEX.md is stale": a full regeneration reads a topic's blurb as the first line starting with `>` (`fs/knowledge/index.rs` `extract_title_and_blurb`), so a bare `>` matches nothing and a later blockquote line in the file became the blurb for 13 topics, growing the INDEX past the budget.
+**Why**: the INDEX written by `annotate` and the INDEX a regeneration produces differ for a topic with a blockquote further down; the check that ran before the commit compared the first with itself.
+**Prevention**: after trimming the INDEX, run `loom knowledge annotate` once more on any topic and check that `INDEX.md` does not change, or give each trimmed topic a short non-empty blurb. A topic whose body holds a `>` line cannot be blank.
+**Fix**: those 13 topics carry one-word blurbs; the rest are blank because their files hold no other `>` line.

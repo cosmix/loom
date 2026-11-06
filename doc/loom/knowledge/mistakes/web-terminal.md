@@ -2,7 +2,7 @@
 
 >
 >
-> the xterm viewer under `web/src/components/terminal/`. See
+>
 > [architecture/web-terminal.md](../architecture/web-terminal.md) for the current design.
 
 ## PTY Master Fd Leaked Into the Child, Defeating Hangup Detection (2026-09-09)
