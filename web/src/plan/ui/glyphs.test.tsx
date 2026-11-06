@@ -86,12 +86,14 @@ describe("planner glyphs", () => {
   it("draws a running plan as the live status dot and a rebuild as the arrow spinner", () => {
     expect(PLAN_STATE_GLYPHS.running).toBe(LiveDot);
     expect(SUMMARY_STATE_GLYPHS.rebuilding).toBe(ArrowSpinner);
-    expect(allCases.filter(({ glyph }) => glyph === LiveDot || glyph === ArrowSpinner)).toHaveLength(
-      2,
-    );
+    expect(
+      allCases.filter(({ glyph }) => glyph === LiveDot || glyph === ArrowSpinner),
+    ).toHaveLength(2);
 
     const running = render(<GlyphHarness glyph={PLAN_STATE_GLYPHS.running} />);
-    expect(running.container.querySelector('[aria-hidden="true"] .activity-glyph__led')).not.toBeNull();
+    expect(
+      running.container.querySelector('[aria-hidden="true"] .activity-glyph__led'),
+    ).not.toBeNull();
     expect(running.container.querySelector("svg")).toBeNull();
     cleanup();
     const rebuilding = render(<GlyphHarness glyph={SUMMARY_STATE_GLYPHS.rebuilding} />);
