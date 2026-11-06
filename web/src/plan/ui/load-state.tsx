@@ -71,7 +71,7 @@ export function LoadState({
       aria-label={loading ? label : undefined}
     >
       <span className="plan-state__glyph">
-        {Glyph ? <Glyph size={20} strokeWidth={1.5} aria-hidden="true" /> : <Spinner />}
+        {Glyph ? <Glyph strokeWidth={1.25} aria-hidden="true" /> : <Spinner />}
       </span>
       <p className="plan-state__title">{label}</p>
       {message && (

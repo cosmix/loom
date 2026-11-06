@@ -6,6 +6,22 @@ import { LoadState } from "./load-state";
 
 afterEach(cleanup);
 
+describe("the state's figure", () => {
+  it("is a 40px icon in a 72px disc on a page and 24px in 44px when compact", () => {
+    expect(rule(".plan-state")).toMatch(/--plan-state-disc:\s*72px;[^}]*--plan-state-icon:\s*40px/);
+    expect(rule('.plan-state[data-size="compact"]')).toMatch(
+      /--plan-state-disc:\s*44px;[^}]*--plan-state-icon:\s*24px/,
+    );
+    expect(rule(".plan-state__glyph")).toMatch(/width:\s*var\(--plan-state-disc\)/);
+    expect(rule(".plan-state__glyph > svg")).toMatch(/width:\s*var\(--plan-state-icon\)/);
+  });
+
+  it("draws the icon with no fixed size of its own", () => {
+    const { container } = render(<LoadState state="empty" />);
+    expect(container.querySelector(".plan-state__glyph svg")?.getAttribute("width")).toBe("24");
+  });
+});
+
 /** The body of the first rule whose selector is exactly `selector`. */
 function rule(selector: string): string {
   const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
