@@ -660,3 +660,36 @@ built result is taken in a follow-up round.
   is independent of the app. It could move out of plan 11 into a small plan run first.
   Recommendation: keep it in plan 11 unless a pressure test is run on these plans before plan 11
   starts, in which case run it first so their records exist.
+
+## Follow-ups
+
+## 14. Live preview editor (`PLAN-feat-planner-14-live-preview-editor.md`)
+
+This plan gives file mode's CodeMirror editor the live preview mode that section 06 ("Live
+preview and source", agreed 2026-11-06) specifies. A Markdown file opens in live preview: the
+text is drawn styled and the Markdown markers are hidden except on the lines the cursor or
+selection touches. A "Live preview / Source" toggle switches to the plain source view with line
+numbers, keeping the text, cursor, selection and undo history. A toolbar and shortcuts (bold,
+italic, inline code, link, heading level, lists, task list, quote, code block, table skeleton)
+insert or remove the syntax. Task-list boxes toggle on click. The chosen mode is remembered in
+local storage. Code blocks, YAML blocks and tables stay close to source, and HTML comments
+(including the `<!-- loom METADATA -->` markers) are always shown dimmed.
+
+It implements part of section 06: the editor's live preview mode, its toolbar and the mode
+toggle. The save path, drafts, the merge view, diffs and plan validation do not change. The merge
+view and diffs keep showing plain source.
+
+It builds on plan 3 (file mode and the editor in `web/src/plan/editor/`) and on plans 12 and 13,
+which rebuilt the reading surfaces; all are done. Nothing depends on it.
+
+Risks: a save must stay byte-exact. Live preview may only add decorations and widgets, never
+change the document except through edits the user makes. A test must open a document, switch
+modes and save without editing, and get the identical bytes back. Hidden markers must not hide
+an HTML comment. The lazy CodeMirror chunk must stay the only code path that loads
+`@codemirror/*`, so a reader who never edits downloads nothing new. `codemirror.ts` is already
+380 lines, so live preview goes in its own module inside the chunk.
+
+Acceptance: the web suites pass, including the round-trip test and tests for marker hiding at
+the cursor line, toggling a task box, each toolbar command and its undo, and the mode toggle
+keeping the cursor and undo history. A real-browser check in light and dark themes edits a
+section and a plan file in both modes.
