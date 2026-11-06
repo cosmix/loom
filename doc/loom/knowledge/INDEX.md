@@ -159,11 +159,11 @@
 | [merge-cleanup-boundary](mistakes/merge-cleanup-boundary.md) |  | 205 |
 | [merge-in-operator-checkout](mistakes/merge-in-operator-checkout.md) |  | 70 |
 | [merge-resolver-sandbox](mistakes/merge-resolver-sandbox.md) |  | 25 |
-| [parallel-worktree-shared-state](mistakes/parallel-worktree-shared-state.md) | Shared | 357 |
+| [parallel-worktree-shared-state](mistakes/parallel-worktree-shared-state.md) | Shared | 358 |
 | [phantom-merges](mistakes/phantom-merges.md) | Merges | 351 |
 | [pinned-literals-ledgers-and-wiring](mistakes/pinned-literals-ledgers-and-wiring.md) | Pins | 332 |
 | [plan-authoring](mistakes/plan-authoring.md) |  | 79 |
-| [plan-server-delivery](mistakes/plan-server-delivery.md) | Slips | 373 |
+| [plan-server-delivery](mistakes/plan-server-delivery.md) | Slips | 374 |
 | [planner-follow-ups-delivery](mistakes/planner-follow-ups-delivery.md) | Slips | 68 |
 | [planner-polish](mistakes/planner-polish.md) | Polish | 59 |
 | [planner-redesign](mistakes/planner-redesign.md) |  | 80 |
@@ -195,7 +195,7 @@
 | [store-without-consumer](mistakes/store-without-consumer.md) | Unread | 104 |
 | [subagent-briefing](mistakes/subagent-briefing.md) |  | 386 |
 | [subagent-liveness-and-watch](mistakes/subagent-liveness-and-watch.md) |  | 387 |
-| [subagent-orchestration](mistakes/subagent-orchestration.md) | Agents | 393 |
+| [subagent-orchestration](mistakes/subagent-orchestration.md) | Agents | 394 |
 | [test-concurrency-and-fixtures](mistakes/test-concurrency-and-fixtures.md) | Races | 390 |
 | [test-sweep-and-fixture-discipline](mistakes/test-sweep-and-fixture-discipline.md) |  | 358 |
 | [testing-and-lint](mistakes/testing-and-lint.md) |  | 398 |
@@ -236,7 +236,7 @@
 | [sandbox-and-confinement-gaps](concerns/sandbox-and-confinement-gaps.md) |  | 363 |
 | [session-tmpdir-deny](concerns/session-tmpdir-deny.md) |  | 7 |
 | [source-graph-known-gaps](concerns/source-graph-known-gaps.md) | Limits | 86 |
-| [source-graph-review-backlog](concerns/source-graph-review-backlog.md) | Backlog | 305 |
+| [source-graph-review-backlog](concerns/source-graph-review-backlog.md) | Backlog | 306 |
 | [state-confinement-gaps](concerns/state-confinement-gaps.md) | Caches | 21 |
 | [token-accounting-and-proof-defects](concerns/token-accounting-and-proof-defects.md) |  | 334 |
 | [typed-config-values](concerns/typed-config-values.md) | Gaps | 22 |
