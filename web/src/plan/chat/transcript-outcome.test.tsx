@@ -47,35 +47,39 @@ const edit = item("tool", {
 const changed = [{ path: "doc/product/demo/section_01.md", before_hash: "h", by_tool: true }];
 const at = (minute: number) => `2026-11-05T10:0${minute}:00Z`;
 
-it("a working chat ends its newest open turn with the one roundel", () => {
+it("a working chat ends its newest open turn with the typing bubble and no roundel", () => {
   const closed = turn([said("u1")], { id: "t1", open: false, started_at: at(1) });
   const open = turn([said("u2")], { id: "t2", open: true, started_at: at(2) });
   const { log } = mount([], { session: session("working"), turns: [closed, open] });
 
-  expect(log.querySelectorAll(".aurora-roundel")).toHaveLength(1);
-  const activity = log.querySelector(".chat-turn-activity")!;
-  expect(activity.textContent).toBe("Working");
-  expect(activity.closest("section")?.getAttribute("aria-label")).toBe("Turn 2");
+  const typing = log.querySelectorAll(".chat-typing");
+  expect(typing).toHaveLength(1);
+  expect(typing[0]!.querySelectorAll(".chat-typing-dot")).toHaveLength(3);
+  expect(typing[0]!.textContent).toBe("Working");
+  expect(typing[0]!.getAttribute("aria-live")).toBe("off");
+  expect(typing[0]!.closest("section")?.getAttribute("aria-label")).toBe("Turn 2");
+  expect(log.querySelector(".aurora-roundel")).toBeNull();
 });
 
-it("a working pressure run draws no turn roundel in the transcript", () => {
+it("a working pressure run draws no typing bubble in the transcript", () => {
   const open = turn([said("u1")], { open: true });
   const pressure = { ...session("working"), kind: "pressure" } as ChatSnapshot["session"];
   const { log } = mount([], { session: pressure, turns: [open] });
 
-  expect(log.querySelector(".chat-turn-activity")).toBeNull();
+  expect(log.querySelector(".chat-typing")).toBeNull();
   expect(log.querySelector(".aurora-roundel")).toBeNull();
 });
 
-it("no roundel while the chat is idle, or on a closing turn", () => {
+it("no typing bubble while the chat is idle, or on a closing turn", () => {
   const open = turn([said("u1")], { open: true });
   const idle = mount([], { session: session("idle"), turns: [open] });
+  expect(idle.log.querySelector(".chat-typing")).toBeNull();
   expect(idle.log.querySelector(".aurora-roundel")).toBeNull();
   cleanup();
 
   const closing = turn([closingPrompt], { id: "t2", open: true, started_at: at(2) });
   const { log } = mount([], { session: session("ending"), turns: [closing] });
-  expect(log.querySelector(".chat-turn-activity")).toBeNull();
+  expect(log.querySelector(".chat-typing")).toBeNull();
   expect(log.querySelectorAll(".aurora-roundel")).toHaveLength(1);
 });
 

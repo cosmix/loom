@@ -238,7 +238,7 @@ function UploadNotes() {
     <>
       {busy > 0 && (
         <p role="status" className="chat-chip-status">
-          {/* Words only: a turn's activity roundel may already be the pane's one. */}
+          {/* Words only: the transcript is where the chat's work shows. */}
           Uploading {busy === 1 ? "a file" : `${busy} files`}…
         </p>
       )}

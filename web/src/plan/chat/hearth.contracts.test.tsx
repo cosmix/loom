@@ -210,7 +210,8 @@ function elevenTurns(working: boolean): Turn[] {
   return [...closed, last];
 }
 
-function roundelsIn(state: Session["state"], turns: Turn[]): number {
+/** The typing bubbles and roundels the chat pane draws in `state`. */
+function signsIn(state: Session["state"], turns: Turn[]): { typing: number; roundels: number } {
   const store = storeWith(state, turns);
   renderIn(
     store,
@@ -220,12 +221,15 @@ function roundelsIn(state: Session["state"], turns: Turn[]): number {
     </>,
   );
   const chat = screen.getByRole("complementary", { name: "Chat" });
-  return chat.querySelectorAll(".aurora-roundel").length;
+  return {
+    typing: chat.querySelectorAll(".chat-typing").length,
+    roundels: chat.querySelectorAll(".aurora-roundel").length,
+  };
 }
 
-it("a working chat draws one roundel and an idle chat none", () => {
+it("a working chat draws one typing bubble and no roundel, an idle chat neither", () => {
   wideViewport();
-  expect(roundelsIn("working", elevenTurns(true))).toBe(1);
+  expect(signsIn("working", elevenTurns(true))).toEqual({ typing: 1, roundels: 0 });
   cleanup();
-  expect(roundelsIn("idle", elevenTurns(false))).toBe(0);
+  expect(signsIn("idle", elevenTurns(false))).toEqual({ typing: 0, roundels: 0 });
 });

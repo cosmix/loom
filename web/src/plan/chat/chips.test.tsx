@@ -264,7 +264,7 @@ it("a failed section check is one status line in the server's words, with no box
   expect(line?.getAttribute("data-tone")).toBe("error");
 });
 
-it("an upload under way is words only: the pane's one roundel is a turn's", () => {
+it("an upload under way is words only, with no roundel", () => {
   const store = setup();
   const view = mount(store);
   act(() => store.set(uploadStatusAtom, { busy: 2, problems: [] }));

@@ -62,8 +62,8 @@ position live in the browser.
   round Send and a round Stop. A permission decision is the one item allowed real emphasis, and
   even that does not nest boxes. No coloured spine marks anything in it
   (`conventions/web-dashboard-typography.md`, "Stage thread chips"). The pane draws at most one
-  roundel: on what is working now, and none when nothing works. It is an activity signal, never
-  an avatar, so no message carries one.
+  roundel: on the starting or wrap-up card, and none when nothing works. It is an activity signal,
+  never an avatar, so no message carries one. A working turn ends with a typing bubble instead.
 - **Header.** The title sits over a sub-line. The title is the session's brief label ("Write
   section 08 — Chat interface"), "Chat" until it loads, and "New chat" while no session exists.
   The sub-line names the state in a few words, then the place the chat concerns (the feature or
@@ -141,9 +141,11 @@ open in a new tab. A chat reply never navigates away from the app.
 
 **Block by block.** Text appears one content block at a time, as Claude Code writes each block to
 the transcript (section 07, "Streaming granularity"). A block appears whole, without a typing
-animation. While the session works and the newest block has not arrived, the head says "Working" and the
-turn carries the pane's roundel; the transcript shows no placeholder bubble. (My call: a fake typing effect would claim a
-granularity the bridge does not have.)
+animation. While the session works, the head says "Working" and the working turn ends with a typing bubble:
+the user's bubble mirrored to the left, holding three dots that rise in turn and rest under
+reduced motion, its words "Working" for screen readers. It says the model is busy and nothing
+more: the reply's text still arrives a block at a time, never typed out, because the bridge has
+no finer granularity. (Operator's call.)
 
 **Hover controls.** Each user message and each assistant text block shows on hover a copy
 control (copies the Markdown source) and its time. Items are not editable after sending.
@@ -189,7 +191,7 @@ is section 07's `summary` field, which the bridge forms from the tool input:
 
 | Status       | Shows                                                                           |
 | ------------ | ------------------------------------------------------------------------------- |
-| pending      | the word "Pending"; the pane's one roundel is on the working turn, not in the row |
+| pending      | the word "Pending"; the working turn's typing bubble shows the work, not the row |
 | done         | nothing beyond the row; an edit shows its `+a −b` counts                        |
 | error        | `--tone-blocked` cross and the error's first line under the row, without expanding |
 | denied       | "Denied", with the deny note if one was given                                   |
@@ -223,7 +225,7 @@ only signal. The states are section 07's, with one more before the first message
 | none       | no words                                           | The greeting (below)                                                         | Enabled with the context prompts; the first message starts a chat |
 | Starting   | "Starting"                                         | A card with the pane's roundel: "Starting the session", the name, model, effort | Enabled; messages queue                                       |
 | Idle       | no words                                           | The conversation                                                             | Enabled; Send delivers                                        |
-| Working    | "Working"                                          | The roundel on the newest turn; the running tool's own row                   | Enabled; Send queues; Stop beside Send                        |
+| Working    | "Working"                                          | The typing bubble on the newest turn; the running tool's own row             | Enabled; Send queues; Stop beside Send                        |
 | Permission | "Needs your answer", with a `--tone-warning` mark  | The permission card, pinned (below)                                          | Enabled; Send queues; Stop beside Send                        |
 | Ending     | "Wrapping up"                                      | The ending card (above)                                                      | Replaced by "The composer comes back with your next chat."    |
 | Ended      | "Ended"                                            | The conversation, then what the chat left behind                             | Replaced by "This chat has ended." and **Start a new chat**   |
@@ -246,9 +248,9 @@ with its attachments, starts the chat.
 **Header glyphs.** The sheet-opening Chat button uses `ChatGlyph`: the turning roundel for
 Starting, Working and Ending, a ringing `BellRing` in `--tone-warning` while permission is
 needed, `!` for Failed, `✓` for Ended, and a resting `MessageSquare` for Idle and no chat.
-Pending permissions take priority over the session's state. The panel draws one roundel at most:
-on what is working now, and none when nothing works, so the head's sub-line draws no glyph of its
-own for those states. The glyphs freeze under `prefers-reduced-motion`.
+Pending permissions take priority over the session's state. The panel draws one roundel at most,
+on the starting or wrap-up card, and a working turn its typing bubble, so the head's sub-line
+draws no glyph of its own for those states. The glyphs freeze under `prefers-reduced-motion`.
 
 The roundel reuses `RoundelGlyph` (`web/src/plan/ui/roundel-glyph.tsx`), the planner's one sign of
 work in progress.
@@ -580,7 +582,7 @@ panel exactly as the holder does, live, with these differences:
   viewers").
 
 **Presence.** The header's presence list (section 02) names the holder and lists the other
-browsers by their browser names; the chat panel carries no presence line and no typing indicator. (My call: it would need a new
+browsers by their browser names; the chat panel carries no presence line and never shows another browser typing. (My call: it would need a new
 message lane for little gain.)
 
 When `loom plan` runs in its read-only mode (section 02, "Missing prerequisites": `tmux` or

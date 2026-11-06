@@ -3,7 +3,6 @@ import { memo, useId, useLayoutEffect, useRef, useState, type JSX } from "react"
 
 import type { EndedChat, Item, SessionView, Turn } from "@/plan/api/schema-chat";
 import { plural } from "@/plan/ui/plural";
-import { RoundelGlyph } from "@/plan/ui/roundel-glyph";
 import { closingTicks, isClosingTurn, leftBehind, userWrote } from "./closing";
 import { FailureNotice } from "./failure-notice";
 import { ItemView } from "./items";
@@ -23,7 +22,7 @@ type TurnProps = {
   sessionId: string;
   number: number;
   collapsed: boolean;
-  /** The turn the model is working on now: it ends with the pane's one roundel. */
+  /** The turn the model is working on now: it ends with the typing bubble. */
   working: boolean;
 };
 
@@ -125,11 +124,13 @@ function turnLabel(turn: Turn, number: number): string {
   return `Turn ${number} · ${plural(turn.changed_files.length, "file")} changed`;
 }
 
-/** The one roundel of the pane while the model works; the words are for screen readers. */
-function TurnActivity(): JSX.Element {
+/** The assistant's typing bubble while the model works; the words are for screen readers. */
+function TypingBubble(): JSX.Element {
   return (
-    <div className="chat-turn-activity" aria-live="off">
-      <RoundelGlyph size={16} />
+    <div className="chat-typing" aria-live="off">
+      <span className="chat-typing-dot" aria-hidden="true" />
+      <span className="chat-typing-dot" aria-hidden="true" />
+      <span className="chat-typing-dot" aria-hidden="true" />
       <span className="sr-only">Working</span>
     </div>
   );
@@ -172,7 +173,7 @@ const TranscriptTurn = memo(function TranscriptTurn({
             <div aria-live="off">
               <TurnFooter turn={turn} sessionId={sessionId} />
             </div>
-            {working && <TurnActivity />}
+            {working && <TypingBubble />}
           </>
         )}
       </div>
@@ -284,7 +285,7 @@ function ChatTurns({ turns, sessionId, before, cutoff, workingId }: ChatTurnsPro
 }
 
 function newestOpenId(turns: Turn[], session: SessionView | null): string | null {
-  // A pressure run's head carries that session's roundel: the pane draws one at most.
+  // A pressure run's head carries its own roundel; its transcript draws no typing bubble.
   if (session?.state !== "working" || session.kind === "pressure") return null;
   return turns.findLast((turn) => turn.open && !isClosingTurn(turn))?.id ?? null;
 }
