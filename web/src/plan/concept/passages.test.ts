@@ -42,6 +42,24 @@ describe("passageOf", () => {
     });
   });
 
+  it("leaves a leading front matter block out of the preamble", () => {
+    const fronted = docViewSchema.parse({
+      ...fixture,
+      text: "---\nkind: document\ncites:\n  a: b\n---\n\nIntro\n## Parent\nParent text",
+      sections: [{ level: 2, title: "Parent", anchor: "parent", start_line: 8, end_line: 9 }],
+    });
+    expect(passageOf(fronted, "")).toMatchObject({
+      startLine: 6,
+      endLine: 7,
+      markdown: "\nIntro",
+    });
+  });
+
+  it("keeps a preamble whose opening rule never closes", () => {
+    const open = docViewSchema.parse({ ...fixture, text: "---\nIntro", sections: [] });
+    expect(passageOf(open, "")?.markdown).toBe("---\nIntro");
+  });
+
   it("returns null for a missing anchor", () => {
     expect(passageOf(doc, "missing")).toBeNull();
   });
