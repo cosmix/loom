@@ -1,8 +1,11 @@
-//! The Built view's candidate follow-ups: the open entries of the feature's findings ledger.
+//! A feature's candidate follow-ups: the open entries of its findings ledger.
 
 use std::collections::HashMap;
+use std::path::PathBuf;
 
-use super::{newest_review, CandidateKind, CandidateView};
+use serde::{Deserialize, Serialize};
+
+use crate::plan_server::review::built::{parse_generated, run_review_paths};
 use crate::planning::findings::{ledger_path, Finding, FindingStatus};
 use crate::planning::project::Project;
 
@@ -10,6 +13,35 @@ use crate::planning::project::Project;
 const QUESTIONS_ANCHOR: &str = "open-questions";
 /// The file-name prefix of a run review's `Source:` line, before the plan slug.
 const REVIEW_PREFIX: &str = "REVIEW-PLAN-";
+
+/// What a candidate follow-up was recorded as.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CandidateKind {
+    /// An open finding.
+    Finding,
+    /// An open question.
+    Question,
+}
+
+/// An open ledger entry, offered as a follow-up.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CandidateView {
+    /// The ledger id of the finding, `F-<n>`.
+    pub id: String,
+    /// Whether it was recorded as a finding or a question.
+    pub kind: CandidateKind,
+    /// What recorded it: the stage id of an imported review item, `review` for a finding written
+    /// by hand.
+    pub stage: String,
+    /// The id of the stage that recorded it, empty for a finding written by hand.
+    pub stage_id: String,
+    /// The recorded text, on one line.
+    pub text: String,
+    /// Path of the run review it was imported from, else of the ledger.
+    pub review: String,
+}
 
 /// The feature's open ledger entries in ledger order, each as a candidate. An entry imported from
 /// a run review names that review and its stage; one written by hand names the ledger.
@@ -48,7 +80,7 @@ fn candidate<'a>(
         .and_then(|slug| {
             reviews
                 .entry(slug)
-                .or_insert_with(|| newest_review(project, slug).map(|(path, _)| path))
+                .or_insert_with(|| newest_review(project, slug))
                 .clone()
         })
         .unwrap_or_else(|| ledger.to_owned());
@@ -65,6 +97,25 @@ fn candidate<'a>(
         text: finding.text.clone(),
         review,
     }
+}
+
+/// The path of the newest readable run review of `slug` by its Generated stamp, the last path
+/// when no stamp parses.
+fn newest_review(project: &Project, slug: &str) -> Option<String> {
+    let reviews: Vec<(PathBuf, &str)> = run_review_paths(project, slug)
+        .into_iter()
+        .filter_map(|path| {
+            let text = project.text(&path)?;
+            Some((path, text))
+        })
+        .collect();
+    let newest = reviews
+        .iter()
+        .filter_map(|(path, text)| Some((parse_generated(text)?, path)))
+        .max_by_key(|(stamp, _)| *stamp)
+        .map(|(_, path)| path)
+        .or_else(|| reviews.last().map(|(path, _)| path))?;
+    Some(newest.to_string_lossy().into_owned())
 }
 
 /// A `Source:` value the review import wrote:
@@ -93,3 +144,7 @@ impl<'a> ReviewSource<'a> {
         })
     }
 }
+
+#[cfg(test)]
+#[path = "checklist_candidates_tests.rs"]
+mod tests;

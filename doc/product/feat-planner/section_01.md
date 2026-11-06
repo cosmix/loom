@@ -219,8 +219,8 @@ new session briefed for that step and that document (section 09).
 | ready           | Refine any document; start a run (section 11)                         |
 | ready, all done | none                                                                  |
 
-A finished feature has no primary offer. Its view shows the Built state (section 11, "After
-plans complete") with the `Plan follow-ups` offer, its sole secondary offer on that view.
+A finished feature has no primary offer. `Plan follow-ups` is its secondary offer, started from
+`/new` with the feature picked as a Follow-up (section 11, "After plans complete").
 
 `Review the feature` is a secondary offer on any feature with a plan running or done. It starts
 a session that asks what the reader saw (running the feature, reading code, reading a run

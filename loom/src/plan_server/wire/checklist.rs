@@ -7,8 +7,8 @@ use crate::planning::checklist::Offer;
 use crate::planning::project::Project;
 use crate::planning::slug::PlanState;
 
-#[path = "checklist_built.rs"]
-mod built;
+#[path = "checklist_candidates.rs"]
+mod candidates;
 #[path = "checklist_card.rs"]
 mod card;
 #[path = "checklist_pitch.rs"]
@@ -16,7 +16,7 @@ mod pitch;
 #[path = "checklist_rows.rs"]
 mod rows;
 
-pub use built::{BuiltView, CandidateKind, CandidateView, RunReviewView, SpecItemView};
+pub use candidates::{CandidateKind, CandidateView};
 pub use rows::{MetaplanRowView, PlanRowView};
 
 /// All feature checklists, standalone plans and misplaced-document offers in a snapshot.
@@ -75,8 +75,9 @@ pub struct ChecklistView {
     pub secondary: Vec<OfferView>,
     /// The feature's documents and gaps, each naming its step.
     pub items: Vec<ItemView>,
-    /// What the feature's done plans left in their run reviews.
-    pub built: BuiltView,
+    /// The open entries of the feature's findings ledger, in ledger order: what a follow-up can
+    /// start from.
+    pub candidates: Vec<CandidateView>,
 }
 
 /// One named planning step and its current mark.
@@ -290,7 +291,7 @@ impl From<&Project> for ProjectChecklistView {
                 let mut view = ChecklistView::from(&feature.checklist);
                 view.pitch = pitch::feature_pitch(project, &feature.name);
                 card::card_facts(project, &feature.name, &mut view);
-                view.built = built::built_view(project, &feature.name, &view.plan_rows);
+                view.candidates = candidates::ledger_candidates(project, &feature.name);
                 view
             })
             .collect();

@@ -1,11 +1,16 @@
 import { expect, it } from "vitest";
 
 import checklistFixture from "@/plan/api/fixtures/checklist.json";
-import { checklistViewSchema, type ChecklistView } from "@/plan/api/schema";
-import { featureStatus, followUpFeatures, PLAN_FOLLOW_UPS_ID } from "@/plan/new/follow-up-features";
+import { checklistViewSchema, type CandidateView, type ChecklistView } from "@/plan/api/schema";
+import {
+  featureStatus,
+  followUpFeatures,
+  followUpSeed,
+  PLAN_FOLLOW_UPS_ID,
+} from "@/plan/new/follow-up-features";
 
 const metaplans = [{ path: "doc/plans/x/index.md", title: "Roadmap" }];
-const candidate = {
+const candidate: CandidateView = {
   id: "F-1",
   kind: "finding",
   stage: "Chat polish",
@@ -35,7 +40,7 @@ function feature(name: string, states: string[], patch: Record<string, unknown> 
 const finished = (name: string, count: number): ChecklistView =>
   feature(name, Array<string>(count).fill("done"), {
     current: { kind: "ready_all_done" },
-    built: { reviews: [], spec: [], candidates: [candidate] },
+    candidates: [candidate],
   });
 
 it("names the follow-up offer plan-follow-ups", () => {
@@ -80,4 +85,37 @@ it("reads a feature with a metaplan and no plan as having no plans yet", () => {
   const [entry] = followUpFeatures([feature("comet", [])]);
 
   expect(entry).toMatchObject({ built: false, total: 0, status: "no plans yet" });
+});
+
+it("is built only when the server says all done and every live plan is done", () => {
+  const built = (kind: "ready" | "ready_all_done", states: string[]) =>
+    followUpFeatures([feature("atlas", states, { current: { kind } })])[0]!.built;
+
+  expect(built("ready_all_done", ["done", "done"])).toBe(true);
+  expect(built("ready_all_done", ["done", "written"])).toBe(false);
+  expect(built("ready", ["done", "done"])).toBe(false);
+  expect(built("ready_all_done", ["done", "retired"])).toBe(true);
+  expect(built("ready_all_done", ["retired"])).toBe(false);
+  expect(built("ready_all_done", [])).toBe(false);
+});
+
+it("seeds a follow-up with the candidate, its kind, review file and stage id", () => {
+  expect(followUpSeed(candidate)).toBe(
+    "F-1: Settings statistics look bland (open finding from REVIEW-PLAN-x-01.md, stage chat-polish)",
+  );
+  expect(followUpSeed({ ...candidate, kind: "question" })).toBe(
+    "F-1: Settings statistics look bland (open question from REVIEW-PLAN-x-01.md, stage chat-polish)",
+  );
+});
+
+it("seeds a hand-written finding without a stage, and only its first line", () => {
+  const byHand = {
+    ...candidate,
+    id: "F-7",
+    stage: "review",
+    stage_id: "",
+    text: "Found by hand\nsecond line",
+    review: "doc/plans/x/findings.md",
+  };
+  expect(followUpSeed(byHand)).toBe("F-7: Found by hand (open finding from findings.md)");
 });

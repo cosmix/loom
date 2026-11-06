@@ -12,7 +12,6 @@ it.each([
   ["/f/atlas/engineering/atlas-01", "plans"],
   ["/f/atlas/metaplan", "metaplan"],
   ["/f/atlas/run", "run"],
-  ["/f/atlas/built", "run"],
 ])("selects the group of %s", (pathname, group) => {
   expect(groupOfPathname(pathname)).toBe(group);
 });

@@ -147,13 +147,6 @@ export const planRowViewSchema = z.strictObject({
   pressure_date: z.string().nullable(),
   listed: z.boolean(),
 });
-export const runReviewViewSchema = z.strictObject({ slug: z.string(), path: z.string() });
-export const specItemViewSchema = z.strictObject({
-  stage: z.string(),
-  stage_id: z.string(),
-  text: z.string(),
-  review: z.string(),
-});
 export const candidateViewSchema = z.strictObject({
   id: z.string(),
   kind: z.enum(["finding", "question"]),
@@ -161,11 +154,6 @@ export const candidateViewSchema = z.strictObject({
   stage_id: z.string(),
   text: z.string(),
   review: z.string(),
-});
-export const builtViewSchema = z.strictObject({
-  reviews: z.array(runReviewViewSchema),
-  spec: z.array(specItemViewSchema),
-  candidates: z.array(candidateViewSchema),
 });
 export const checklistViewSchema = z.strictObject({
   feature: z.string(),
@@ -182,8 +170,8 @@ export const checklistViewSchema = z.strictObject({
   secondary: z.array(offerViewSchema),
   items: z.array(itemViewSchema),
   // The server always sends it; optional so the typed ChecklistView literals that build a
-  // checklist by hand stay valid. Readers go through `builtOf`, never `checklist.built`.
-  built: builtViewSchema.optional(),
+  // checklist by hand stay valid. Readers treat an absent list as empty.
+  candidates: z.array(candidateViewSchema).optional(),
 });
 export const standalonePlanViewSchema = z.strictObject({
   slug: z.string(),
@@ -240,10 +228,7 @@ export type StepView = z.infer<typeof stepViewSchema>;
 export type CurrentView = z.infer<typeof currentViewSchema>;
 export type OfferView = z.infer<typeof offerViewSchema>;
 export type ItemView = z.infer<typeof itemViewSchema>;
-export type RunReviewView = z.infer<typeof runReviewViewSchema>;
-export type SpecItemView = z.infer<typeof specItemViewSchema>;
 export type CandidateView = z.infer<typeof candidateViewSchema>;
-export type BuiltView = z.infer<typeof builtViewSchema>;
 export type ChecklistView = z.infer<typeof checklistViewSchema>;
 export type StandalonePlanView = z.infer<typeof standalonePlanViewSchema>;
 export type ProjectChecklistView = z.infer<typeof projectChecklistViewSchema>;

@@ -11,7 +11,6 @@ import { projectAtom } from "@/plan/state/atoms";
 installStartChatLifecycle();
 
 const PICKER = "Which feature?";
-const EMPTY_BUILT = { reviews: [], spec: [], candidates: [] };
 
 function feature(patch: Record<string, unknown>): ChecklistView {
   return checklistViewSchema.parse({ ...checklistFixture.checklists[0]!, ...patch });
@@ -37,20 +36,16 @@ function atlas(): ChecklistView {
       { id: "plan-follow-ups", kind: "plan_follow_ups", label: "Plan follow-ups", target: null },
     ],
     items: [],
-    built: {
-      reviews: [{ slug: "atlas-01", path: "doc/plans/REVIEW-PLAN-atlas-01.md" }],
-      spec: [],
-      candidates: [
-        {
-          id: "F-1",
-          kind: "finding",
-          stage: "Chat polish",
-          stage_id: "chat-polish",
-          text: "Settings statistics look bland",
-          review: "doc/plans/REVIEW-PLAN-atlas-01.md",
-        },
-      ],
-    },
+    candidates: [
+      {
+        id: "F-1",
+        kind: "finding",
+        stage: "Chat polish",
+        stage_id: "chat-polish",
+        text: "Settings statistics look bland",
+        review: "doc/plans/REVIEW-PLAN-atlas-01.md",
+      },
+    ],
   });
 }
 
@@ -60,7 +55,7 @@ function beacon(): ChecklistView {
     metaplans: [{ path: "doc/plans/beacon/index.md", title: "Beacon" }],
     plan_rows: [plan("beacon-01", "written", "doc/plans/beacon/PLAN-beacon-01.md")],
     current: { kind: "ready" },
-    built: EMPTY_BUILT,
+    candidates: [],
   });
 }
 
@@ -70,7 +65,7 @@ function comet(): ChecklistView {
     metaplans: [],
     plan_rows: [],
     current: { kind: "step", number: 3 },
-    built: EMPTY_BUILT,
+    candidates: [],
   });
 }
 

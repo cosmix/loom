@@ -1,6 +1,5 @@
 import type { CandidateView, ChecklistView } from "@/plan/api/schema";
-import { builtOf, isBuilt } from "@/plan/feature/built-model";
-import { livePlans } from "@/plan/feature/run-scope";
+import { allPlansDone, livePlans } from "@/plan/feature/run-scope";
 import { plural } from "@/plan/ui/plural";
 
 /** The offer id of Plan follow-ups: what a follow-up start sends as its offer. */
@@ -15,8 +14,16 @@ export interface FollowUpFeature {
   /** Live plan rows. */
   total: number;
   status: string;
-  /** The open findings and questions of its run reviews. */
+  /** The open entries of its findings ledger. */
   candidates: CandidateView[];
+}
+
+/**
+ * Every plan is done: the server says the feature is ready and all done, and every live plan row
+ * is done (a row still written or running is not built, and a feature with no live plan is not).
+ */
+function isBuilt(checklist: ChecklistView): boolean {
+  return checklist.current.kind === "ready_all_done" && allPlansDone(checklist);
 }
 
 /** "done · 13 plans", "in progress · 4 of 6 plans", or "no plans yet". */
@@ -25,6 +32,19 @@ export function featureStatus(built: boolean, done: number, total: number): stri
   return built
     ? `done · ${plural(total, "plan")}`
     : `in progress · ${done} of ${plural(total, "plan")}`;
+}
+
+/**
+ * The line a candidate puts in the follow-up field: its ledger id, its title (the first line of
+ * its text) and its source, the review file and the stage id. A finding written by hand has no
+ * stage id, so the source names the file only.
+ */
+export function followUpSeed(candidate: CandidateView): string {
+  const kind = candidate.kind === "finding" ? "finding" : "question";
+  const title = candidate.text.split("\n", 1)[0];
+  const file = candidate.review.slice(candidate.review.lastIndexOf("/") + 1);
+  const stage = candidate.stage_id === "" ? "" : `, stage ${candidate.stage_id}`;
+  return `${candidate.id}: ${title} (open ${kind} from ${file}${stage})`;
 }
 
 function followUpFeature(checklist: ChecklistView): FollowUpFeature {
@@ -37,7 +57,7 @@ function followUpFeature(checklist: ChecklistView): FollowUpFeature {
     done,
     total: live.length,
     status: featureStatus(built, done, live.length),
-    candidates: builtOf(checklist).candidates,
+    candidates: checklist.candidates ?? [],
   };
 }
 

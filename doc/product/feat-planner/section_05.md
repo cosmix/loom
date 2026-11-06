@@ -52,16 +52,15 @@ these pages by section 01's landing rule. The routes:
 | `/f/<feature>/metaplan`          | the feature's one metaplan (`doc/plans/<feature>/index.md`), a summary with **Source** one click away                                                         | Metaplan               |
 | `/f/<feature>/engineering`       | the engineering overview, with the pace and plan queue above it while plans are missing                                                                       | Plans, Overview        |
 | `/f/<feature>/engineering/<doc>` | a plan's summary                                                                                                                                              | that plan              |
-| `/f/<feature>/run`               | run state, each plan's state, and a link to the Built page once every plan is done                                                                            | Run                    |
-| `/f/<feature>/built`             | the Built state: done plans with their run reviews, the spec check's outcomes, candidate follow-ups and free text, each starting Plan follow-ups (section 11) | Run                    |
+| `/f/<feature>/run`               | run state and each plan's state; once every plan is done, its lede says so                                                                                    | Run                    |
 
 The metaplan route renders the summary of the feature's metaplan, `doc/plans/<feature>/index.md`; its heading's **Source** link opens the metaplan's text. A metaplan whose summary is not
 built yet shows the "not built yet" state with a Rebuild action, never the raw text. The vision's
 summary reads like a section's: its sentences open to the vision's own passages. File mode is
-section 06. Standalone plans keep `/plans/<slug>`. A feature whose plans are all done (the
-checklist's current step is ready, all done) opens on `/f/<feature>/built`; a feature with a
-product spec opens on `/f/<feature>/product`; one with only a metaplan opens on
-`/f/<feature>/engineering`; any other opens on `/f/<feature>/vision`, which offers to start one.
+section 06. Standalone plans keep `/plans/<slug>`. A feature, done or not, with a product spec
+opens on `/f/<feature>/product`; one with only a metaplan opens on `/f/<feature>/engineering`;
+any other opens on `/f/<feature>/vision`, which offers to start one. The feature switcher in the
+header links each feature to `/f/<feature>`, which lands by this rule.
 
 - **Product overview**: built from `doc/product/<feature>/index.md` and the sections it names.
   Sections of that feature the vision does not name are listed under its overview as unlisted

@@ -272,21 +272,14 @@ const finished = (secondary: ReturnType<typeof offer>[]) =>
     secondary,
   });
 
-it("links a built feature's Run page to what was built and draws no follow-up button", () => {
+it("says a finished feature's plans are done in its lede and draws no follow-up button", () => {
   renderPage(<RunPage />, PATH, finished([offer("plan_follow_ups", "Plan follow-ups")]));
 
-  expect(screen.getByRole("link", { name: "See what was built" }).getAttribute("href")).toBe(
-    "/f/atlas/built",
-  );
+  expect(screen.getByRole("status").textContent).toBe("Every plan is done.");
+  expect(screen.queryByRole("link", { name: /what was built/ })).toBeNull();
   expect(screen.queryByRole("button", { name: "Plan follow-ups" })).toBeNull();
   expect(screen.queryByText("Next round")).toBeNull();
   expect(handler).not.toHaveBeenCalled();
-});
-
-it("draws no built link while a plan is still written", () => {
-  renderPage(<RunPage />, PATH, written);
-
-  expect(screen.queryByRole("link", { name: "See what was built" })).toBeNull();
 });
 
 it("sends an empty feature to Plans with one sentence", () => {

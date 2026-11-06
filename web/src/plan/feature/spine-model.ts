@@ -64,11 +64,9 @@ function unitOf(server: StepView | undefined, count: string | null): string | nu
 }
 
 /** The page segment each group lives under, for finding the group of a pathname. */
-const GROUP_OF_PAGE: Record<string, GroupId> = {
-  ...Object.fromEntries(GROUPS.map((group) => [group.page, group.id])),
-  // The Built page belongs to the Run group: a finished feature's run is what it shows.
-  built: "run",
-};
+const GROUP_OF_PAGE: Record<string, GroupId> = Object.fromEntries(
+  GROUPS.map((group) => [group.page, group.id]),
+);
 
 /** A plan file name, lifecycle prefix included (`PLAN-x.md`, `IN_PROGRESS-PLAN-x.md`). */
 const PLAN_FILE = /^(?:[A-Z_]+-)?PLAN-/;

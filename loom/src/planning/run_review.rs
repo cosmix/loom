@@ -1,14 +1,10 @@
 //! Reading the bullet sections of a run review written by `fs::plan_review`.
 
-use crate::fs::plan_review::{
-    OPEN_FINDINGS_HEADING, OPEN_QUESTIONS_HEADING, SPEC_CONFORMANCE_HEADING,
-};
+use crate::fs::plan_review::{OPEN_FINDINGS_HEADING, OPEN_QUESTIONS_HEADING};
 
 /// A run review section written in the shared bullet format.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ReviewSection {
-    /// The spec conformance outcomes integration-verify recorded.
-    SpecConformance,
     /// The questions recorded during the run.
     OpenQuestions,
     /// The suggestions never built and the entries deferred during the run.
@@ -19,7 +15,6 @@ impl ReviewSection {
     /// The `## ...` line the section is written under.
     pub fn heading(self) -> &'static str {
         match self {
-            Self::SpecConformance => SPEC_CONFORMANCE_HEADING,
             Self::OpenQuestions => OPEN_QUESTIONS_HEADING,
             Self::OpenFindings => OPEN_FINDINGS_HEADING,
         }

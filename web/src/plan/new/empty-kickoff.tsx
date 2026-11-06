@@ -1,6 +1,6 @@
 import { useAtomValue } from "jotai";
 import { ArrowUp, Paperclip } from "lucide-react";
-import { useEffect, useId, useRef, useState, type RefObject } from "react";
+import { useId, useRef, useState, type RefObject } from "react";
 
 import { Untrusted, visibleControls } from "@/plan/chat/visible-controls";
 import { OpenDraftNotice } from "@/plan/new/draft-view";
@@ -57,27 +57,10 @@ function usePicker(kindRoot: RefObject<HTMLFieldSetElement | null>) {
   return { picking, open, close, dismiss: () => setPicking(false) };
 }
 
-/**
- * The kind and its feature. A preset feature that arrives after the first render (the feature list
- * still loading on a reload of /new carrying the Built page's state) is applied once, when it
- * arrives.
- */
-function useKindAndFeature(initial: { kind: WorkKind; feature: string | null }) {
-  const [kind, setKindState] = useState(initial.kind);
-  const [feature, setFeature] = useState(initial.feature);
-  const presetApplied = useRef(initial.feature !== null);
-  useEffect(() => {
-    if (initial.feature === null || presetApplied.current) return;
-    presetApplied.current = true;
-    setKindState("follow-up");
-    setFeature(initial.feature);
-  }, [initial.feature]);
-  return { kind, setKindState, feature, setFeature };
-}
-
 /** The form's state: the kind and its feature, the words, the documents, and the open picker. */
-function useKickoffDraft(initial: { kind: WorkKind; feature: string | null }) {
-  const { kind, setKindState, feature, setFeature } = useKindAndFeature(initial);
+function useKickoffDraft(initialKind: WorkKind) {
+  const [kind, setKindState] = useState(initialKind);
+  const [feature, setFeature] = useState<string | null>(null);
   const [text, setText] = useState("");
   const [documents, setDocuments] = useState<PickedDocument[]>([]);
   const composer = useRef<HTMLTextAreaElement>(null);
@@ -299,18 +282,10 @@ function blockedReason(
   return null;
 }
 
-/** The form, its start and what blocks it. `followUp` is honoured only for a listed feature. */
-function useThreshold(
-  small: boolean,
-  followUp: string | null,
-  onFollowUp: ((feature: string) => void) | undefined,
-) {
+/** The form, its start and what blocks it. */
+function useThreshold(small: boolean, onFollowUp: ((feature: string) => void) | undefined) {
   const features = followUpFeatures(useAtomValue(featuresAtom));
-  const preset = features.some((entry) => entry.name === followUp) ? followUp : null;
-  const draft = useKickoffDraft({
-    kind: preset !== null ? "follow-up" : small ? "plan" : "feature",
-    feature: preset,
-  });
+  const draft = useKickoffDraft(small ? "plan" : "feature");
   const { start, pending, error } = useKickoffStart(onFollowUp);
   const canAuthor = useAtomValue(canAuthorAtom);
   const blockReason = useAtomValue(authorBlockReasonAtom);
@@ -328,19 +303,17 @@ function useThreshold(
 
 /**
  * `/new` with no session: the kind of work, the words, the documents and Start. `small` opens on
- * Standalone plan; `followUp` opens on Follow-up with that feature picked, when it has a metaplan.
- * A follow-up start is a feature chat: `onFollowUp` gets the feature once it has started.
+ * Standalone plan. A follow-up start is a feature chat: `onFollowUp` gets the feature once it has
+ * started.
  */
 export function EmptyKickoff({
   small = false,
-  followUp = null,
   onFollowUp,
 }: {
   small?: boolean;
-  followUp?: string | null;
   onFollowUp?: (feature: string) => void;
 }) {
-  const form = useThreshold(small, followUp, onFollowUp);
+  const form = useThreshold(small, onFollowUp);
   // The form is always empty; a kickoff still running is offered above it, never reopened here.
   const open = useAtomValue(kickoffDraftsAtom).find((entry) => entry.live);
   return (

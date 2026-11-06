@@ -392,3 +392,10 @@ Review rounds are counted per reviewer and per stage. A gate runs once per tree,
 - **Test-integrity profile globs** cover a Rust test file only when its name is `tests`, starts with `tests_`, or ends with `_tests` or `_test` before the extension; `state_tests_more` matches none, so assertion removals there raise no event. Name extra test files `tests_<topic>`.
 - **A worker file list must fit the 400-line limit**: the bridge-runtime list could not hold ~3000 lines of non-test code, and the worker added `flow.rs`, `requests.rs` and `recovery.rs` owned by nobody.
 - **`Skill(skill="loom-skills", args=...)` returned only the loader text** in one session; the body was read from the absolute path `/home/<user>/.claude/loom-skill-catalog/<name>/SKILL.md`.
+
+## An agent staged deletions with git rm
+
+**What happened**: A subagent deleted four Rust files with `git rm`, which stages the deletion, against the rule that only the main agent stages.
+**Why**: `git rm` reads as a delete command but is a staging command.
+**Prevention**: Delete with `rm`; a subagent never runs a git command that writes the index.
+**Fix**: The subagent unstaged with `git reset -q -- <paths>` at once; nothing stayed staged.

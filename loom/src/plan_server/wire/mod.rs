@@ -17,8 +17,6 @@ pub mod team;
 pub mod trace;
 
 #[cfg(test)]
-mod built_contract_tests;
-#[cfg(test)]
 mod files_tests;
 #[cfg(test)]
 mod paths_tests;

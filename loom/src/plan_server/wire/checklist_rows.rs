@@ -4,9 +4,7 @@ use std::collections::BTreeSet;
 
 use serde::{Deserialize, Serialize};
 
-use super::{
-    offer_view, BuiltView, ChecklistView, CurrentView, ItemView, MarkView, PlanCountsView, StepView,
-};
+use super::{offer_view, ChecklistView, CurrentView, ItemView, MarkView, PlanCountsView, StepView};
 use crate::plan_server::concept::links::plan_state_name;
 use crate::plan_server::files::plan_view::latest_pressure_date;
 use crate::planning::checklist::{Checklist, CurrentStep, Step, StepMark};
@@ -133,7 +131,7 @@ impl From<&Checklist> for ChecklistView {
                     offer: item.offer.as_ref().map(offer_view),
                 })
                 .collect(),
-            built: BuiltView::default(),
+            candidates: Vec::new(),
         }
     }
 }

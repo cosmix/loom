@@ -430,18 +430,13 @@ the summaries the planner rebuilds; the user commits it. The run review stays th
 evidence; the ledger holds the triage state.
 
 A finished feature, where every metaplan entry's plan is done, has no primary offer (section
-01). Its view shows the Built state instead:
-
-- the done plans, each with a link to its run review;
-- the spec-conformance outcomes from those run reviews;
-- candidate follow-ups: every open finding in the ledger, each with a `Plan this` button, and a
-  link to the Findings page;
-- a free-text box, "What else needs doing?".
-
-Either control starts the `Plan follow-ups` session (`loom-plan:metaplan`, section 09), seeded
-with the item or the text. The session appends entries to `doc/plans/<f>/index.md` under a
-`## Follow-ups` heading and leaves finished entries unchanged; the entries keep the level-2 entry
-form (section 01). Once an entry has no plan, step 4's gap offers `Write plan <slug>` and drives
+01) and has no page of its own: it opens where an unfinished feature opens (section 05, the
+landing rule), and its Run page says every plan is done. Follow-ups start on `/new` (section 08):
+Follow-up with the feature picked lists the ledger's open findings and questions as suggestions
+under the field, and Start sends the typed text, with any picked suggestions, to the
+`Plan follow-ups` session (`loom-plan:metaplan`, section 09). The session appends entries to
+`doc/plans/<f>/index.md` under a `## Follow-ups` heading and leaves finished entries unchanged;
+the entries keep the level-2 entry form (section 01). Once an entry has no plan, step 4's gap offers `Write plan <slug>` and drives
 the rest. Work that is no follow-up of the feature is a new feature, started from the home page.
 
 **The Findings page.** `/f/<f>/findings` is the wave screen: the ledger's findings grouped by the

@@ -168,7 +168,7 @@ describe("plan routes", () => {
     expect(within(shell!).queryByText("Concept page")).toBeNull();
   });
 
-  it("routes /f/demo/built to the Built page of a feature whose every plan is done", () => {
+  it("has no /built page, even for a feature whose every plan is done", () => {
     seedFeature({
       plan_rows: [
         {
@@ -187,8 +187,7 @@ describe("plan routes", () => {
     });
     const shell = renderRoute("/f/demo/built");
     expect(within(shell!).getByText("Feature page")).toBeTruthy();
-    expect(within(shell!).getByRole("heading", { level: 1, name: "Built" })).toBeTruthy();
-    expect(within(shell!).queryByText("No such page")).toBeNull();
+    expect(within(shell!).getByText("No such page")).toBeTruthy();
   });
 
   it.each([

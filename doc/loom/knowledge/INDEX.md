@@ -165,7 +165,7 @@
 | [pinned-literals-ledgers-and-wiring](mistakes/pinned-literals-ledgers-and-wiring.md) | Pins | 332 |
 | [plan-authoring](mistakes/plan-authoring.md) |  | 79 |
 | [plan-server-delivery](mistakes/plan-server-delivery.md) | Slips | 374 |
-| [planner-design-brainstorm](mistakes/planner-design-brainstorm.md) | Stubs | 52 |
+| [planner-design-brainstorm](mistakes/planner-design-brainstorm.md) | Stubs | 59 |
 | [planner-follow-ups-delivery](mistakes/planner-follow-ups-delivery.md) | Slips | 68 |
 | [planner-polish](mistakes/planner-polish.md) | Polish | 100 |
 | [planner-redesign](mistakes/planner-redesign.md) |  | 80 |
@@ -195,7 +195,7 @@
 | [store-without-consumer](mistakes/store-without-consumer.md) | Unread | 104 |
 | [subagent-briefing](mistakes/subagent-briefing.md) |  | 386 |
 | [subagent-liveness-and-watch](mistakes/subagent-liveness-and-watch.md) |  | 387 |
-| [subagent-orchestration](mistakes/subagent-orchestration.md) | Agents | 394 |
+| [subagent-orchestration](mistakes/subagent-orchestration.md) | Agents | 401 |
 | [test-concurrency-and-fixtures](mistakes/test-concurrency-and-fixtures.md) | Races | 390 |
 | [test-sweep-and-fixture-discipline](mistakes/test-sweep-and-fixture-discipline.md) |  | 358 |
 | [testing-and-lint](mistakes/testing-and-lint.md) |  | 398 |
