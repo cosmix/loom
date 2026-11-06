@@ -8,21 +8,22 @@ import { openQuestionsAtom } from "./live";
 
 const OpenQuestionsIcon = OTHER_GLYPHS.openQuestions;
 
+/**
+ * A tree row's open questions: the glyph and the count, linking to the document's list. The
+ * words are read (`.sr-only`) and shown on hover; a document with none draws nothing.
+ */
 export function OpenQuestionCount({ path }: { path: string }) {
   const counts = useAtomValue(openQuestionsAtom);
   const count = counts[repoRel(path)];
-  if (count === undefined) return null;
+  if (count === undefined || count === 0) return null;
   return (
     <Link
       to={toAddress(path, "open-questions")}
-      className="inline-flex items-center gap-1 text-[13px] font-medium underline"
+      title={`Open questions · ${count}`}
+      className="plan-tree__questions"
     >
-      <OpenQuestionsIcon
-        data-other-glyph="openQuestions"
-        className="size-4 shrink-0"
-        aria-hidden="true"
-      />
-      Open questions · {count}
+      <OpenQuestionsIcon data-other-glyph="openQuestions" aria-hidden="true" />
+      <span className="sr-only">Open questions ·</span> {count}
     </Link>
   );
 }

@@ -217,7 +217,8 @@ it("count on summary header and tree entry", async () => {
   expect(
     within(screen.getByRole("banner")).queryByRole("link", { name: /open question/i }),
   ).toBeNull();
-  expect(screen.getAllByRole("link", { name: "Open questions · 0" })).toHaveLength(1);
+  // A document with no open question left draws no count in the tree either.
+  expect(screen.queryByRole("link", { name: /open question/i })).toBeNull();
   act(() => store.set(openQuestionsAtom, {}));
   expect(screen.queryByRole("link", { name: /open question/i })).toBeNull();
   await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(builtUrl, expect.anything()));

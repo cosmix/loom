@@ -10,16 +10,19 @@ import { OfferButton } from "@/plan/offers/offer-button";
  * The next step, at the head of the spine: one sentence and, for the checklist's primary offer,
  * one button. The button is the screen's one primary (DESIGN.md, Buttons). It is left out while
  * the page itself draws that offer (the pace choice, a missing document), so no screen shows an
- * offer twice; a feature with nothing to start shows the sentence only.
+ * offer twice; a feature with nothing to start shows the sentence only, and one with nothing to
+ * say draws nothing.
  */
 export function NextAction({ checklist }: { checklist: ChecklistView }) {
   const { pathname } = useLocation();
   const { primary } = checklist;
   const pageHasIt = pageDrawsPrimary(checklist, pathname);
+  const sentence = nextSentence(checklist);
+  if (sentence === null) return null;
   return (
     <div className="plan-spine-next">
       <p className="plan-spine-next__text">
-        <Untrusted text={nextSentence(checklist)} />
+        <Untrusted text={sentence} />
       </p>
       {primary !== null && !pageHasIt && <OfferButton offer={primary} look="primary" />}
     </div>

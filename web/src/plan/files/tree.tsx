@@ -1,5 +1,5 @@
-import { ChevronDownIcon, ChevronRightIcon } from "lucide-react";
-import { useEffect, useRef, useState, type JSX } from "react";
+import { ChevronRightIcon } from "lucide-react";
+import { useRef, useState, type JSX } from "react";
 import { useNavigate } from "react-router";
 
 import type {
@@ -12,8 +12,14 @@ import { toAddress } from "@/plan/files/address";
 import { searchDocs } from "@/plan/files/api";
 import { SearchBox, type SearchScope } from "@/plan/files/search-box";
 import { SearchResults } from "@/plan/files/search-results";
-import { TreeEntryRow, containsPath } from "@/plan/files/tree-entry";
+import { TreeEntryRow, containsPath, useDisclosure } from "@/plan/files/tree-entry";
+import { planSlug } from "@/plan/files/tree-model";
+import { TreeTabs } from "@/plan/files/tree-tabs";
 import { LoadState } from "@/plan/ui/load-state";
+
+import "./tree.css";
+
+export { planSlug };
 
 const GROUPS = [
   ["product", "Product"],
@@ -61,27 +67,26 @@ function filterEntries(entries: TreeEntry[], needle: string): TreeEntry[] {
 
 type GroupProps = { label: string; entries: TreeEntry[]; forceOpen: boolean; open: string | null };
 
+/** One category (Knowledge, Other, Archive; every one while filtering). Archive starts closed. */
 function Group({ label, entries, forceOpen, open }: GroupProps): JSX.Element {
   const holdsOpen = entries.some((entry) => containsPath(entry, open));
-  const [expanded, setExpanded] = useState(label !== "Archive");
-  useEffect(() => {
-    if (holdsOpen) setExpanded(true);
-  }, [holdsOpen]);
+  const [expanded, setExpanded] = useDisclosure(label !== "Archive", holdsOpen);
   const shown = expanded || forceOpen;
-  const Chevron = shown ? ChevronDownIcon : ChevronRightIcon;
   return (
-    <section aria-label={label}>
+    <section aria-label={label} className="plan-tree__group">
       <button
         type="button"
         aria-expanded={shown}
-        className="flex w-full items-center gap-1 px-2 py-2 text-[13px] font-semibold text-foreground"
+        className="plan-tree__heading"
         onClick={() => setExpanded(!shown)}
       >
-        <Chevron className="size-3.5" aria-hidden="true" />
+        <span className="plan-tree__twist" aria-hidden="true">
+          <ChevronRightIcon />
+        </span>
         {label}
       </button>
       {shown && (
-        <ul>
+        <ul className="plan-tree__list">
           {entries.map((entry) => (
             <TreeEntryRow key={entry.path ?? entry.title} entry={entry} forceOpen={forceOpen} />
           ))}
@@ -154,12 +159,17 @@ function SearchPane({ search, onOpen }: { search: Search; onOpen: (hit: SearchHi
   }
 }
 
-type GroupsProps = { tree: FileTree; needle: string; open: string | null };
+type GroupsProps = {
+  tree: FileTree;
+  needle: string;
+  open: string | null;
+  keys: readonly (keyof FileTree)[];
+};
 
-function Groups({ tree, needle, open }: GroupsProps): JSX.Element {
+function Groups({ tree, needle, open, keys }: GroupsProps): JSX.Element {
   return (
     <>
-      {GROUPS.map(([key, label]) => {
+      {GROUPS.filter(([key]) => keys.includes(key)).map(([key, label]) => {
         const entries = needle ? filterEntries(tree[key], needle) : tree[key];
         if (entries.length === 0) return null;
         return (
@@ -170,26 +180,35 @@ function Groups({ tree, needle, open }: GroupsProps): JSX.Element {
   );
 }
 
-/** The navigation tree under a search box; `open` is the repo path of the open document. */
+const EVERY_GROUP = GROUPS.map(([key]) => key);
+/** The categories drawn under the Product and Plans switch, as collapsible lists. */
+const MORE_GROUPS = ["knowledge", "other", "archive"] as const;
+
+/**
+ * The navigation tree under a search box; `open` is the repo path of the open document. At rest
+ * it is the Product / Plans switch (the plans drawn as a rail) over the other categories; while
+ * the box filters, every category is a list opened to its matches.
+ */
 export function Tree({ tree, open = null }: { tree: FileTree; open?: string | null }): JSX.Element {
   const { query, scope, search, onOpen, ...handlers } = useTreeSearch();
+  const needle = query.trim().toLowerCase();
   return (
-    <nav aria-label="Documents" className="flex min-h-0 flex-1 flex-col">
+    <nav aria-label="Documents" className="plan-tree flex min-h-0 flex-1 flex-col">
       <SearchBox value={query} scope={scope} {...handlers} />
-      <div className="min-h-0 flex-1 overflow-y-auto">
+      <div className="plan-tree__scroll min-h-0 flex-1 overflow-y-auto">
         <SearchPane search={search} onOpen={onOpen} />
-        {search.status === "idle" && (
-          <Groups tree={tree} needle={query.trim().toLowerCase()} open={open} />
-        )}
+        {search.status === "idle" &&
+          (needle ? (
+            <Groups tree={tree} needle={needle} open={open} keys={EVERY_GROUP} />
+          ) : (
+            <>
+              <TreeTabs tree={tree} open={open} />
+              <Groups tree={tree} needle="" open={open} keys={MORE_GROUPS} />
+            </>
+          ))}
       </div>
     </nav>
   );
-}
-
-/** The slug in a plan file name, whatever its lock prefix: `IN_PROGRESS-PLAN-x.md` gives `x`. */
-export function planSlug(fileName: string | null): string | null {
-  const found = /^(?:(?:IN_PROGRESS|DONE|RETIRED)-)?PLAN-(.+)\.md$/i.exec(fileName ?? "");
-  return found ? found[1].toLowerCase() : null;
 }
 
 /** The plan with this slug at a path other than `path`: where a renamed plan went. */

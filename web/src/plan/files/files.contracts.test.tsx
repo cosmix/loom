@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { createStore } from "jotai";
 import { Provider } from "jotai/react";
 import type { ReactNode } from "react";
@@ -50,7 +50,8 @@ describe("file mode contracts", () => {
       expect(precedes(groups[index - 1], groups[index])).toBe(true);
     }
 
-    // The gap entry stays visible, marked "missing" inside its own entry.
+    // The gap entry stays visible on the Product tab, marked "missing" inside its own entry.
+    fireEvent.click(screen.getByRole("button", { name: "Product" }));
     let entry: HTMLElement | null = firstExact("Section 2");
     while (entry && !/missing/i.test(entry.textContent ?? "")) {
       entry = entry.parentElement;

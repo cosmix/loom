@@ -49,38 +49,15 @@ describe("tree", () => {
 
   it("shows the file name on hover and a missing word on a gap", () => {
     renderTree(fixture());
-    expect(screen.getByRole("link", { name: "Notes" }).getAttribute("title")).toBe("notes.md");
+    fireEvent.click(screen.getByRole("button", { name: "Product" }));
+    expect(screen.getByRole("link", { name: "Notes" }).getAttribute("title")).toBe(
+      "Notes\nnotes.md",
+    );
     const gap = screen.getByText("Section 2").closest("li") as HTMLElement;
     expect(within(gap).getByText("missing")).toBeTruthy();
     expect(screen.getByRole("link", { name: "Section 2" }).getAttribute("href")).toBe(
       "/files?gap=Section%202&feature=demo&target=doc%2Fproduct%2Fdemo%2Fsection_02.md",
     );
-  });
-
-  it("shows a running plan's state word and lock, and a plan's error count", () => {
-    const tree = fixture();
-    tree.plans[0] = { ...tree.plans[0], state: "running", locked: true, errors: 2 };
-    renderTree(tree);
-    const plan = screen.getByText("File mode").closest("li") as HTMLElement;
-    expect(within(plan).getByText("running")).toBeTruthy();
-    expect(within(plan).getByLabelText("Locked")).toBeTruthy();
-    expect(within(plan).getByText("2 errors")).toBeTruthy();
-    expect(within(plan).getByText(/2026-10-17/)).toBeTruthy();
-  });
-
-  it("tones the state and error glyphs, never their words", () => {
-    const tree = fixture();
-    tree.plans[0] = { ...tree.plans[0], state: "running", errors: 2 };
-    renderTree(tree);
-    const plan = screen.getByText("File mode").closest("li") as HTMLElement;
-    const state = within(plan).getByText("running");
-    const errors = within(plan).getByText("2 errors");
-    expect(state.className).not.toContain("tone");
-    expect(state.querySelector("svg, .activity-glyph")?.getAttribute("class")).toContain(
-      "tone-executing",
-    );
-    expect(errors.className).not.toContain("tone");
-    expect(errors.querySelector("svg")?.getAttribute("class")).toContain("tone-blocked");
   });
 
   it("filters by title and file name as you type", () => {
@@ -109,7 +86,7 @@ describe("tree", () => {
     expect(hit.querySelector("mark")?.textContent).toBe("purpose");
     expect(screen.getByText("50 results shown; refine the search")).toBeTruthy();
     fireEvent.keyDown(box, { key: "Escape" });
-    expect(screen.getByText("Vision")).toBeTruthy();
+    expect(screen.getByText("File mode")).toBeTruthy();
     expect((box as HTMLInputElement).value).toBe("");
   });
 

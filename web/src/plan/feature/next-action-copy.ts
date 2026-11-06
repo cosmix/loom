@@ -50,12 +50,14 @@ function readyLabel(current: CurrentView): string | null {
   return null;
 }
 
-/** The sentence for the checklist's next step; the feature is named by its slug. */
-export function nextSentence(checklist: ChecklistView): string {
+/**
+ * The sentence for the checklist's next step; the feature is named by its slug. With no primary
+ * offer only a ready state has something to say. A checklist item's bare text ("product vision")
+ * named a document, not a step, so it is never shown here.
+ */
+export function nextSentence(checklist: ChecklistView): string | null {
   const { primary } = checklist;
-  if (primary === null) {
-    return checklist.items[0]?.text || readyLabel(checklist.current) || "Nothing to do next";
-  }
+  if (primary === null) return readyLabel(checklist.current);
   const owner = primary.feature ?? checklist.feature;
   const section =
     primary.number === undefined

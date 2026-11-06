@@ -1,0 +1,303 @@
+/*
+ * The file tree (file mode's document list). One line per row: a chevron column, the row's mark,
+ * a short title that takes every pixel left, then its signals. What needs the reader (errors, a
+ * running plan, open questions, a missing document) is a glyph and words; what is settled is a
+ * quiet glyph or nothing. A level costs 13px (the guide's 12px and its hairline), so a brief four
+ * levels down still has most of the column for its title.
+ *
+ * Selectors are one class, never under [data-loom-plan]: below the wide breakpoint the tree is
+ * drawn in a dialog that portals out of the shell (tree-drawer.tsx). The tokens sit on :root.
+ */
+.plan-tree {
+  --tree-twist: 16px;
+  --tree-mark: 16px;
+  --tree-pad: 4px;
+  /* Where a row's title starts, for the lines set under it (blurb, outline). */
+  --tree-text: calc(var(--tree-pad) + var(--tree-twist) + 2px + var(--tree-mark) + 6px);
+  font-size: var(--type-ui);
+  line-height: var(--leading-ui);
+}
+
+/* The scroller is the containing block of every positioned thing in the tree: a row's sr-only
+   words (", done") are `position: absolute`, and against a static scroller they sat at their
+   static offsets below the viewport and scrolled the whole page (mistakes/planner-polish.md). */
+.plan-tree__scroll {
+  position: relative;
+  padding: var(--space-2) var(--space-2) var(--space-5);
+}
+
+.plan-tree__group + .plan-tree__group {
+  margin-top: var(--space-3);
+}
+
+.plan-tree__list,
+.plan-tree__children {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* The guide sits under the parent's chevron, so the eye runs down from the row that opened it. */
+.plan-tree__children {
+  margin-left: calc(var(--tree-pad) + var(--tree-twist) / 2);
+  border-left: 1px solid var(--hairline);
+  animation: plan-tree-open 160ms ease-out;
+}
+
+@keyframes plan-tree-open {
+  from {
+    opacity: 0;
+    transform: translateY(-2px);
+  }
+}
+
+/* A category: the one place the tree uses the foreground at 600 on its own line. */
+.plan-tree__heading {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 2px;
+  min-height: 28px;
+  padding: 0 var(--tree-pad);
+  border-radius: var(--corner-control);
+  color: var(--foreground);
+  font-weight: 600;
+  text-align: left;
+}
+
+.plan-tree__row {
+  position: relative;
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  align-items: center;
+  gap: 2px;
+  min-height: 28px;
+  padding: 0 var(--space-1) 0 var(--tree-pad);
+  border-radius: var(--corner-control);
+  color: color-mix(in oklab, var(--foreground) 70%, var(--muted-foreground));
+  text-align: left;
+  transition: background-color 120ms;
+}
+
+.plan-tree__row:hover,
+.plan-tree__heading:hover {
+  background: color-mix(in oklab, var(--muted) 70%, transparent);
+}
+
+/* The open document: the row filled in --muted and its title in --foreground at 600, as the
+   document heading's chosen view is (ui/DESIGN.md, Surfaces). */
+.plan-tree__row[data-current] {
+  background: var(--muted);
+  color: var(--foreground);
+}
+
+.plan-tree__row[data-current] .plan-tree__title {
+  font-weight: 600;
+}
+
+/* A feature heads its documents: its name in the foreground, a step up from the rows under it. */
+.plan-tree__row[data-kind="feature"] {
+  color: var(--foreground);
+}
+
+.plan-tree__row[data-kind="feature"] .plan-tree__title {
+  font-weight: 600;
+}
+
+/* A document not written yet: muted at 400 beside its "missing" word, its mark a dashed ring. */
+.plan-tree__row[data-gap] {
+  color: var(--muted-foreground);
+}
+
+.plan-tree__row[data-gap] .plan-tree__title {
+  font-weight: 400;
+}
+
+.plan-tree__twist {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: var(--tree-twist);
+  height: 20px;
+  border-radius: 4px;
+  color: var(--muted-foreground);
+}
+
+.plan-tree__twist > svg {
+  width: 14px;
+  height: 14px;
+  transition: transform 120ms;
+}
+
+button.plan-tree__twist:hover {
+  color: var(--foreground);
+}
+
+.plan-tree__twist[aria-expanded="true"] > svg,
+[aria-expanded="true"] > .plan-tree__twist > svg {
+  transform: rotate(90deg);
+}
+
+.plan-tree__label {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  color: inherit;
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.plan-tree__mark {
+  width: var(--tree-mark);
+  height: var(--tree-mark);
+  flex: none;
+  color: var(--muted-foreground);
+}
+
+/* A drawn glyph (folder, dashed ring, check) sits 1px inside the box a document's tile fills. */
+svg.plan-tree__mark {
+  padding: 1px;
+}
+
+.plan-tree__mark[data-tone="done"] {
+  color: var(--tone-completed);
+}
+
+.plan-tree__number {
+  flex: none;
+  color: var(--muted-foreground);
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.plan-tree__title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.plan-tree__count,
+.plan-tree__signals {
+  margin-left: var(--space-2);
+}
+
+.plan-tree__count {
+  flex: none;
+  color: var(--muted-foreground);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.plan-tree__signals {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--muted-foreground);
+  white-space: nowrap;
+}
+
+.plan-tree__signals:empty {
+  display: none;
+}
+
+.plan-tree__signal {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+/* Words beside a glyph keep the row's text colour; only the glyph takes a tone (ui/DESIGN.md). */
+.plan-tree__signal[data-loud] {
+  color: var(--foreground);
+}
+
+.plan-tree__glyph {
+  display: inline-flex;
+}
+
+.plan-tree__glyph > * {
+  width: 14px;
+  height: 14px;
+}
+
+.plan-tree__glyph[data-tone="done"] {
+  color: var(--tone-completed);
+}
+
+.plan-tree__glyph[data-tone="blocked"] {
+  color: var(--tone-blocked);
+}
+
+.plan-tree__questions {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 0 2px;
+  border-radius: 4px;
+  color: var(--foreground);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  text-decoration: none;
+}
+
+.plan-tree__questions > svg {
+  width: 14px;
+  height: 14px;
+  color: var(--tone-warning);
+}
+
+.plan-tree__questions:hover {
+  text-decoration: underline;
+}
+
+.plan-tree__changed {
+  width: 6px;
+  height: 6px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--muted-foreground);
+}
+
+.plan-tree__blurb {
+  display: -webkit-box;
+  margin: 0 0 var(--space-1);
+  padding: 0 var(--space-2) 0 var(--tree-text);
+  overflow: hidden;
+  color: var(--muted-foreground);
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+/* The open document's headings hang under its mark, their own guide in line with the mark's centre. */
+.plan-tree__outline {
+  padding: 0 var(--space-2) var(--space-1)
+    calc(var(--tree-pad) + var(--tree-twist) + 2px + var(--tree-mark) / 2 - 20px);
+}
+
+.plan-tree__heading:focus-visible,
+.plan-tree__row:focus-visible,
+.plan-tree__label:focus-visible,
+.plan-tree__twist:focus-visible,
+.plan-tree__questions:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: -2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .plan-tree__children {
+    animation: none;
+  }
+
+  .plan-tree__row,
+  .plan-tree__twist > svg {
+    transition: none;
+  }
+}

@@ -80,11 +80,11 @@ export function SearchBox({
   useSlashFocus(input);
 
   return (
-    <div className="flex flex-col gap-2 border-b border-hairline p-3">
+    <div className="flex flex-col gap-2 px-3 pt-3 pb-1">
       <label className="relative block">
         <span className="sr-only">Search documents</span>
         <SearchIcon
-          className="pointer-events-none absolute top-1/2 left-2 size-3.5 -translate-y-1/2 text-muted-foreground"
+          className="pointer-events-none absolute top-1/2 left-3 size-3.5 -translate-y-1/2 text-muted-foreground"
           aria-hidden="true"
         />
         <input
@@ -93,7 +93,7 @@ export function SearchBox({
           value={value}
           maxLength={MAX_QUERY}
           placeholder="Filter, or press Enter to search"
-          className="h-8 w-full rounded-md border border-border bg-transparent pr-2 pl-7 text-[13px] outline-none focus-visible:border-ring"
+          className="h-9 w-full rounded-[10px] border border-border bg-card pr-3 pl-8 text-[13px] outline-none focus-visible:border-ring"
           onChange={(event) => onChange(event.target.value.slice(0, MAX_QUERY))}
           onKeyDown={(event) => {
             if (event.key === "Enter" && value.trim()) onSubmit();

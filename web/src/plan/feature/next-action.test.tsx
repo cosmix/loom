@@ -100,17 +100,15 @@ describe("the next-step sentence", () => {
     expect(sentence()).toBe(text);
   });
 
-  it("falls back to the first checklist item with no primary", () => {
-    renderAction({ ...base, primary: null });
-
-    expect(sentence()).toBe(base.items[0]!.text);
-  });
-
-  it("says nothing is next with a current step, no primary and no items", () => {
+  it("draws nothing with no primary and no ready state, never a checklist item's bare text", () => {
     expect(base.current.kind).toBe("step");
-    renderAction({ ...base, primary: null, items: [] });
+    for (const items of [base.items, []]) {
+      const { container } = renderAction({ ...base, primary: null, items });
 
-    expect(sentence()).toBe("Nothing to do next");
+      expect(container.querySelector(".plan-spine-next")).toBeNull();
+      expect(container.textContent).not.toContain("product vision");
+      cleanup();
+    }
   });
 });
 
