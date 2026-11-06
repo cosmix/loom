@@ -271,12 +271,19 @@ describe("syntax tree rebuilds", () => {
 });
 
 describe("Mod-click", () => {
+  // Fires on what a browser targets: the element holding the text node of `text`'s first character.
   function click(view: EditorView, text: string, init: MouseEventInit): void {
-    const doc = view.state.doc.toString();
-    const { node } = view.domAtPos(doc.indexOf(text) + 1);
-    node.dispatchEvent(
-      new MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 0, ...init }),
-    );
+    const at = view.state.doc.toString().indexOf(text);
+    const walker = document.createTreeWalker(view.contentDOM, NodeFilter.SHOW_TEXT);
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+      const from = view.posAtDOM(node, 0);
+      if (at < from || at >= from + (node.textContent ?? "").length) continue;
+      node.parentElement?.dispatchEvent(
+        new MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 0, ...init }),
+      );
+      return;
+    }
+    throw new Error(`no text node holds ${text}`);
   }
 
   it("follows a link on Ctrl or Meta, an autolink and a bare URL, but not an image", () => {
@@ -312,6 +319,20 @@ describe("Mod-click", () => {
     expect(onFollowLink).not.toHaveBeenCalled();
     const bare = edit(doc, 0);
     expect(() => click(bare.view, "a](one", { ctrlKey: true })).not.toThrow();
+  });
+
+  it("ignores a Mod-click on plain text beside a link", () => {
+    const onFollowLink = vi.fn();
+    const first = edit("x\n\n[a](one.md) plain", 0, { onFollowLink });
+    click(first.view, " plain", { ctrlKey: true });
+    expect(onFollowLink).not.toHaveBeenCalled();
+
+    const second = edit("x\n\n## [a](one.md) more", 0, { onFollowLink });
+    click(second.view, " more", { ctrlKey: true });
+    expect(onFollowLink).not.toHaveBeenCalled();
+
+    click(second.view, "a](one", { ctrlKey: true });
+    expect(onFollowLink.mock.calls).toEqual([["one.md"]]);
   });
 });
 
