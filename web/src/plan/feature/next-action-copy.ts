@@ -39,6 +39,7 @@ const SENTENCES: Record<OfferKind, (names: Names) => string> = {
       : `Plan ${plan} is ready for pressure testing.`,
   start_run: ({ owner }) => `The plans for ${owner} are ready to run.`,
   plan_follow_ups: ({ owner }) => `Every plan for ${owner} is done; follow-ups start from here.`,
+  review_feature: () => "Review what was built and record what you find.",
   draft_all_plans: ({ owner }) => `The plans missing for ${owner} are ready to draft.`,
 };
 

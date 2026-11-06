@@ -33,7 +33,10 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
   );
 }
 
-/** Where an entry came from: the stage's name and its review file, which opens the review. */
+/**
+ * Where an entry came from: what recorded it (a stage id, or `review` for a finding written by
+ * hand) and its review file, which opens the review.
+ */
 function SourceLine({ stage, review }: { stage: string; review: string }) {
   return (
     <p className="plan-fine plan-built__source">
@@ -136,7 +139,7 @@ function Candidates({
   offer: OfferView | null;
 }) {
   if (candidates.length === 0) {
-    return <p className="plan-empty">The run reviews list no open findings or questions.</p>;
+    return <p className="plan-empty">The findings ledger lists no open findings or questions.</p>;
   }
   return (
     <ul aria-label="Candidate follow-ups" className="plan-list plan-built__entries">

@@ -136,6 +136,16 @@ Include a Mermaid execution diagram (`&` = concurrent), as in the canonical temp
 
 Never give a knowledge stage a heading-presence grep on a tier-1 file: an established tier-1 file already carries `##` sections, so the criterion passes at base and cannot fail. Full bookend text: `references/bookend-stages.md`; full YAML: Section 10.
 
+**`Implements:` forms.** The line takes `section_<nn>` for a whole section and `section_<nn>#<anchor>` (the GitHub anchor of a heading) for a plan that delivers part of one; mix them in one comma-separated line. A stage that delivers a narrower part than the plan adds one line in the plan's prose, under the stage's heading, at column 0 and outside fences, naming the stage's `id`. Both lines are plain text a reader without `loom` can follow:
+
+```text
+Implements: section_07#rebuild-budget, section_08
+
+Implements (stage:scheduler): section_07#rebuild-budget
+```
+
+When the plan comes from a metaplan entry, the entry's `Covers:` line and the plan's `Implements:` agree; a scope change updates both in the same turn.
+
 ### Wiring stages (engines, drivers, shared integration files)
 
 - **A plan that ships anything constructed and driven at runtime** (an engine, driver, controller, streamer) **needs a stage that OWNS its production call site.** That stage's `files:` includes the real composition-root/bootstrap/loop file, and its verification proves the thing is reached through the boot chain — an executable wiring test that drives the real loop, not a grep and not a unit test calling `update()` directly (logged twice: a tile streamer and a lighting driver that nothing ever ticked).

@@ -39,6 +39,7 @@ fn plan_offers_use_plan_class() {
             slug: "delivery-truth".into(),
         },
         Offer::PlanFollowUps,
+        Offer::ReviewFeature,
         Offer::DraftAllPlans {
             feature: "f".into(),
         },

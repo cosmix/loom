@@ -39,6 +39,12 @@ fn candidate_texts(built: &BuiltView) -> Vec<&str> {
     built.candidates.iter().map(|c| c.text.as_str()).collect()
 }
 
+/// A ledger entry as the review import writes it, `source` being its `Source:` line.
+fn entry(id: &str, source: Option<&str>, status: &str, text: &str) -> String {
+    let source = source.map_or(String::new(), |value| format!("Source: {value}\n"));
+    format!("## {id} Title\n\nAbout: PLAN-one.md\n{source}Status: {status}\n\n{text}\n\n")
+}
+
 #[test]
 fn the_newer_of_two_reviews_wins_by_its_generated_stamp() {
     let temp = tempfile::tempdir().unwrap();
@@ -59,7 +65,6 @@ fn the_newer_of_two_reviews_wins_by_its_generated_stamp() {
         built.reviews[0].path,
         "doc/plans/demo/archive/REVIEW-DONE-PLAN-one.md"
     );
-    assert_eq!(candidate_texts(&built), ["newer finding"]);
 }
 
 #[test]
@@ -68,7 +73,7 @@ fn a_feature_without_a_review_has_an_empty_view() {
     let view = checklist(temp.path(), &[]);
     assert_eq!(view.built, BuiltView::default());
     assert_eq!(
-        built_view(&Project::load(temp.path()).unwrap(), &[]),
+        built_view(&Project::load(temp.path()).unwrap(), "demo", &[]),
         view.built
     );
 }
@@ -95,7 +100,6 @@ fn a_review_in_the_plan_home_and_one_at_the_top_are_both_found() {
         let built = checklist(both.path(), &[(HOME, home_text), (TOP, top_text)]).built;
         assert_eq!(built.reviews.len(), 1);
         assert_eq!(built.reviews[0].path, winner);
-        assert_eq!(candidate_texts(&built), ["newer finding"]);
     }
 }
 
@@ -132,18 +136,7 @@ fn the_wire_reads_what_the_generator_writes() {
         )
     );
     assert_eq!(spec.review, path);
-    let kinds: Vec<_> = built
-        .candidates
-        .iter()
-        .map(|c| (c.kind, c.text.as_str()))
-        .collect();
-    assert_eq!(
-        kinds,
-        [
-            (CandidateKind::Finding, "Bland stats"),
-            (CandidateKind::Question, "Close on send?")
-        ]
-    );
+    assert!(built.candidates.is_empty(), "no ledger, no candidates");
 }
 
 /// The run review the generator writes for a run whose integration-verify stage recorded a
@@ -180,5 +173,66 @@ fn a_question_in_both_sections_is_listed_once_as_a_candidate() {
 
     let spec: Vec<_> = built.spec.iter().map(|s| s.text.as_str()).collect();
     assert_eq!(spec, ["s_01.md: corrected"]);
-    assert_eq!(candidate_texts(&built), ["spec-conformance: s_02.md: gap"]);
+}
+
+/// A Built view over a ledger holding every entry shape: two imported, one by hand, and two that
+/// are no longer open.
+fn built_from_mixed_ledger(root: &Path) -> BuiltView {
+    let review = review("2026-11-01 10:00 UTC", "a finding");
+    let imported = |id: &str, section: &str, stage: &str, text: &str| {
+        let source = format!("REVIEW-PLAN-one.md#{section} ({stage}, 0123456789ab)");
+        entry(id, Some(&source), "open", text)
+    };
+    let ledger = format!(
+        "# Findings\n\n{}{}{}{}{}",
+        imported("F-1", "open-findings", "stage", "Imported finding"),
+        imported("F-2", "open-questions", "chat", "Imported question"),
+        entry("F-3", None, "open", "Found by hand"),
+        entry("F-4", None, "planned PLAN-two.md", "Already planned"),
+        entry("F-5", None, "dismissed: no", "Dismissed"),
+    );
+    let files = [
+        ("doc/plans/REVIEW-PLAN-one.md", review.as_str()),
+        ("doc/plans/demo/findings.md", ledger.as_str()),
+    ];
+    checklist(root, &files).built
+}
+
+#[test]
+fn candidates_are_the_open_ledger_entries_in_ledger_order() {
+    let temp = tempfile::tempdir().unwrap();
+    let built = built_from_mixed_ledger(temp.path());
+
+    let rows: Vec<_> = built
+        .candidates
+        .iter()
+        .map(|c| {
+            (
+                c.id.as_str(),
+                c.kind,
+                c.stage.as_str(),
+                c.stage_id.as_str(),
+                c.review.as_str(),
+            )
+        })
+        .collect();
+    let review = "doc/plans/REVIEW-PLAN-one.md";
+    assert_eq!(
+        rows,
+        [
+            ("F-1", CandidateKind::Finding, "stage", "stage", review),
+            ("F-2", CandidateKind::Question, "chat", "chat", review),
+            (
+                "F-3",
+                CandidateKind::Finding,
+                "review",
+                "",
+                "doc/plans/demo/findings.md"
+            ),
+        ]
+    );
+    assert_eq!(
+        candidate_texts(&built),
+        ["Imported finding", "Imported question", "Found by hand"]
+    );
 }

@@ -344,3 +344,49 @@ fn unlisted_sections_keep_add_offers_and_unlisted_plans_have_no_add_offer() {
         ]
     );
 }
+
+#[test]
+fn review_feature_contract() {
+    assert_offer(
+        Offer::ReviewFeature,
+        "review-feature",
+        "Review the feature",
+        None,
+        json!({"id": "review-feature", "kind": "review-feature", "target": null}),
+    );
+}
+
+#[test]
+fn review_feature_is_a_secondary_once_a_plan_is_running_or_done() {
+    for path in [
+        "doc/plans/demo/IN_PROGRESS-PLAN-one.md",
+        "doc/plans/demo/archive/DONE-PLAN-one.md",
+    ] {
+        let checklist = checklist(&[], &["one"], &[path]);
+        assert!(
+            checklist.secondary.contains(&Offer::ReviewFeature),
+            "{path}"
+        );
+        assert_ne!(checklist.primary, Some(Offer::ReviewFeature));
+    }
+}
+
+#[test]
+fn review_feature_is_not_offered_before_a_plan_runs() {
+    for written in [&["doc/plans/demo/PLAN-one.md"][..], &[]] {
+        let checklist = checklist(&[], &["one"], written);
+        assert!(!ids(&checklist).iter().any(|id| id == "review-feature"));
+    }
+}
+
+#[test]
+fn review_feature_is_offered_once_with_several_runs() {
+    let running = "doc/plans/demo/IN_PROGRESS-PLAN-one.md";
+    let done = "doc/plans/demo/archive/DONE-PLAN-two.md";
+    let checklist = checklist(&[], &["one", "two"], &[running, done]);
+
+    let reviews = ids(&checklist)
+        .into_iter()
+        .filter(|id| id == "review-feature");
+    assert_eq!(reviews.count(), 1);
+}

@@ -49,8 +49,24 @@ Implements: section_07, section_08
 
 Use comma-separated `section_<nn>` tokens for sections listed in the feature's vision.
 Resolve them inside `doc/product/<feature>/`, the plan's own feature.
-For a plan that implements part of a section, name the whole section and
-explain the part in the prose. Write exactly one `Implements:` line. Use
+For a plan that implements part of a section, name the headings it covers as
+`section_<nn>#<anchor>` (the GitHub anchor of the heading) and explain the part in the
+prose; name the whole section as `section_<nn>` only when the plan covers all of it:
+
+```markdown
+Implements: section_07#rebuild-budget, section_08
+```
+
+A stage that covers a narrower part than the plan gets its own line in the plan's prose, under
+the stage's heading, starting at column 0 and outside fences:
+
+```text
+Implements (stage:scheduler): section_07#rebuild-budget
+```
+
+The stage id is the `id` of the stage in the plan's YAML. The metaplan entry's `Covers:` line
+and the plan's `Implements:` line agree; when the scope changes, update both in the same turn.
+Write exactly one `Implements:` line. Use
 `Implements: none` when the plan implements no product section; do not omit it.
 
 Put feature briefs under `doc/plans/<feature>/briefs/<slug>/` and refer to each
@@ -117,6 +133,14 @@ when no changes were needed. Report anything that could not be resolved.
 
 The lead never starts a second team. If the user says “Stop the team”, end it;
 documents already written stay.
+
+## Settled documents
+
+Never write or edit a `Settled:` line; the app's Mark settled action writes it. A plan is
+settled together with its brief bundle, so editing a brief of a settled plan makes the plan
+read revised: say so in the reply ("the plan was settled; it now reads revised"). The plan's
+stub is its metaplan entry: when the plan's scope moves past the entry, update the entry in the
+same turn or ask.
 
 ## Finish the turn
 

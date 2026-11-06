@@ -310,7 +310,7 @@ refetches that feature's trace.
 | Route | Role | Body | Effect |
 | --- | --- | --- | --- |
 | `GET /api/trace/<feature>` | Viewer | none | the `TraceView` |
-| `POST /api/settle?path=&hash=[&confirm=1][&clear=1]` | HolderOrTake | none | writes or removes the Settled line through `save_document`; 200 `Saved`, 409 `Conflict` on a stale hash, 409 `unresolved` (see Settled marks), 403 `locked` for a locked document, 400 for a document that cannot be settled |
+| `POST /api/settle?path=&hash=[&confirm=1][&clear=1]` | HolderOrTake | none | writes or removes the Settled line through `save_document`; 200 `Saved`, 409 `Conflict` on a stale hash, 409 `unresolved` (see Settled marks), 409 `stale` while the loaded project trails the file, 422 for a plan with validation errors, 403 `locked` for a locked document, 400 for a document that cannot be settled |
 | `POST /api/findings/status` | HolderOrTake | JSON `{ feature, id, hash, status: { kind, detail } }` | rewrites the entry's `Status:` line through `save_document`; 400 for an unknown id, an empty or invalid detail, a `planned` detail that is not a `PLAN-<slug>.md` token, or a `folded` detail that does not name an entry of the feature's metaplan |
 | `GET /api/settled-version?path=` | Viewer | none | `{ commit: string \| null }`, the commit holding the current Settled line |
 

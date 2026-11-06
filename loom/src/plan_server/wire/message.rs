@@ -89,6 +89,10 @@ pub enum PlanMessage {
     RunOutput(RunOutput),
     /// Execution progress displayed across browsers.
     RunStrip(RunStrip),
+    /// A feature's planning trace changed: browsers fetch it again.
+    TraceChanged {
+        feature: String,
+    },
 }
 
 impl PlanMessage {

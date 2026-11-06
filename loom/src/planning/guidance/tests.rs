@@ -93,7 +93,7 @@ fn every_skill_has_matching_name_and_description_in_frontmatter() {
             "{path} is missing a frontmatter description"
         );
     }
-    assert_eq!(count, 9, "all nine planning skills must be checked");
+    assert_eq!(count, 10, "all ten planning skills must be checked");
 }
 
 #[test]
@@ -226,6 +226,14 @@ fn step_skills_carry_their_target_and_document_conventions() {
         ),
         ("plan", vec!["Implements:", "loom-plan-writer"]),
         ("refine", vec!["## Open questions"]),
+        (
+            "review",
+            vec![
+                "doc/plans/<feature>/findings.md",
+                "Status: open",
+                "loom plan check",
+            ],
+        ),
         (
             "knowledge",
             vec!["Do not run `loom memory pending` or `loom memory resolve`."],

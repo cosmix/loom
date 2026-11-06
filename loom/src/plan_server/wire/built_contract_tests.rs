@@ -39,6 +39,51 @@ const REVIEW_02: &str = "# Code Review: Alpha two\n\n\
 ## Open Questions\n\nNo open questions.\n\n\
 ## Open Findings\n\nNo open findings.\n";
 
+/// The ledger the run-review import writes for the open items of `REVIEW_01`, plus an entry that
+/// is no longer open.
+fn findings_ledger() -> String {
+    let entry = |n: u8, section: &str, stage: &str, text: &str, status: &str| {
+        format!(
+            "## F-{n} {text}\n\nAbout: PLAN-alpha-01.md#stage:{stage}\n\
+             Source: REVIEW-PLAN-alpha-01.md#{section} ({stage}, 0123456789ab)\n\
+             Status: {status}\n\n{text}\n\n"
+        )
+    };
+    let open = "open";
+    [
+        "# Findings\n\n".to_owned(),
+        entry(
+            1,
+            "open-questions",
+            "integration-verify",
+            "Does section_01 cover empty exports?",
+            open,
+        ),
+        entry(
+            2,
+            "open-questions",
+            "chat-polish",
+            "Should the sheet close on send?",
+            open,
+        ),
+        entry(
+            3,
+            "open-findings",
+            "chat-polish",
+            "Settings statistics look bland",
+            open,
+        ),
+        entry(
+            4,
+            "open-findings",
+            "chat-polish",
+            "Not done yet",
+            "dismissed: later",
+        ),
+    ]
+    .concat()
+}
+
 const REVIEW_01_PATH: &str = "doc/plans/REVIEW-PLAN-alpha-01.md";
 const REVIEW_02_PATH: &str = "doc/plans/alpha/archive/REVIEW-PLAN-alpha-02.md";
 
@@ -53,6 +98,7 @@ fn alpha_checklist(root: &Path) -> ChecklistView {
         .replace("alpha one", "alpha three")
         .replace("PLAN-alpha-01", "PLAN-alpha-03")
         .replace("Settings statistics look bland", "Not done yet");
+    let findings = findings_ledger();
     for (path, text) in [
         ("doc/product/alpha/index.md", VISION),
         ("doc/product/alpha/section_01.md", "# Export\n\nBody.\n"),
@@ -66,6 +112,7 @@ fn alpha_checklist(root: &Path) -> ChecklistView {
             "# Plan: alpha-02\n",
         ),
         ("doc/plans/alpha/PLAN-alpha-03.md", "# Plan: alpha-03\n"),
+        ("doc/plans/alpha/findings.md", findings.as_str()),
         (REVIEW_01_PATH, REVIEW_01),
         (REVIEW_02_PATH, REVIEW_02),
         ("doc/plans/REVIEW-PLAN-alpha-03.md", review_03.as_str()),
@@ -106,6 +153,7 @@ fn spec_rows(built: &BuiltView) -> Vec<[&str; 4]> {
 
 fn candidate_row(candidate: &CandidateView) -> (&str, &str, &str, &str, &str) {
     let CandidateView {
+        id: _,
         kind,
         stage,
         stage_id,
@@ -151,7 +199,7 @@ fn built_view_reads_the_newest_run_review_of_each_done_plan() {
     assert_eq!(candidates.len(), 3, "{candidates:?}");
     let finding = (
         "finding",
-        "Chat polish",
+        "chat-polish",
         "chat-polish",
         "Settings statistics look bland",
         REVIEW_01_PATH,

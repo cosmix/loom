@@ -7,6 +7,7 @@ import type { FollowUpFeature } from "@/plan/new/follow-up-features";
 afterEach(cleanup);
 
 const candidate = {
+  id: "F-1",
   kind: "finding" as const,
   stage: "Chat polish",
   stage_id: "chat-polish",

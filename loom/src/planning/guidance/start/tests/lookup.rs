@@ -45,6 +45,30 @@ fn lookup_accepts_draft_all_offers() {
 }
 
 #[test]
+fn review_feature_starts_only_from_the_features_offers() {
+    let (_temp, mut project) = fixture();
+    let id = Offer::ReviewFeature.id();
+    assert_eq!(
+        AuthoringStart::from_offer_id(&id, &project, Some("f")),
+        Err(StartError::NotOffered(id.clone()))
+    );
+
+    project.features[0].checklist.secondary = vec![Offer::ReviewFeature];
+    assert_eq!(
+        AuthoringStart::from_offer_id(&id, &project, Some("f")),
+        Ok(AuthoringStart::Offer(Offer::ReviewFeature))
+    );
+    assert_eq!(
+        AuthoringStart::Offer(Offer::ReviewFeature).feature(None),
+        Err(StartError::FeatureRequired)
+    );
+    assert_eq!(
+        AuthoringStart::Offer(Offer::ReviewFeature).feature(Some("f")),
+        Ok(Some("f"))
+    );
+}
+
+#[test]
 fn plan_follow_ups_starts_for_a_feature_with_a_written_plan() {
     let (temp, _) = fixture();
     let plan = temp.path().join("doc/plans/f/PLAN-f-01.md");
