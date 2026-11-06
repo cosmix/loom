@@ -167,7 +167,7 @@ A missing subagent report is not a missing result; codex worker briefing gotchas
 
 A metaplan that denied the `Workflow` tool every ultracode stage runs on, a sibling-directory deny nested above a `config.worktree` deny that aborts bubblewrap, a probe control the Knowledge capsule does not grant, and metaplan reasons that went stale against the tree: [Sandbox Paths and Settings](mistakes/sandbox-and-settings.md). A `rustfmt` edition and recursion, a filtered `loom check` that hid the relay line, and the scratch directory a read-only reviewer cannot read: [Brief and Dev-Server Gotchas](mistakes/typed-config-values-process.md). An integration-verify suite criterion with no extended timeout: [Cargo Churn and Stall Kills](mistakes/completion-runtime.md).
 
-- [contract-phase-human-blocking](mistakes/contract-phase-human-blocking.md): a plan defect in the contract phase parked the stage on the operator. Rule: no stage waits on a human for something loom or an agent can resolve; a human is reached only after the automatic budgets run out.
+- [contract-phase-human-blocking](mistakes/contract-autonomy-delivery.md#a-contract-freeze-refusal-waited-on-the-operator): a plan defect in the contract phase parked the stage on the operator. Rule: no stage waits on a human for something loom or an agent can resolve; a human is reached only after the automatic budgets run out.
 
 - [codex-direct-mode-invisible](mistakes/codex-direct-mode-invisible.md): direct-mode codex forwards (Linux nested-bubblewrap fallback) leave no companion job, so reconcile, lifecycle and the status model display all miss them.
 
@@ -226,22 +226,13 @@ A container-query component in an unsized flex item (footer meters stacked), a s
 **Prevention:** an amendment must never clear `completed_commit` on a stage with `merged` or `merge_assumed`; integration-verify legitimately amends earlier stages' wiring.
 **Fix:** operator recreated `loom/chat-and-shell-visual` at its merged tip and ran `loom stage complete chat-and-shell-visual --force-unsafe --assume-merged`.
 
-## Spec sections inventing features
-
-A spec section adds an action, button or skill only when the vision names it; spec and build are aligned by integration-verify's spec-conformance duty, not by an invented offer. See [mistakes/spec-scope-invention](mistakes/spec-scope-invention.md).
-
 ## Visual requests reduced to DOM tests
 
 A visual request needs a concrete design brief and a screenshot check, not only DOM-presence tests. See [mistakes/planner-visual-feedback-shortfall](mistakes/planner-visual-feedback-shortfall.md).
 
-## Run review written outside the plan's home
-
-Feature run reviews land at the top of `doc/plans/` while readers once searched only the plan's home; the readers now search both. See [mistakes/run-review-location](mistakes/run-review-location.md).
-
 ## Planner follow-ups delivery
 
 A live region mounted twice, a test constant that passed vitest and failed the type check, a classifier test with a name the generator never writes, a fix that broke another stage's wiring literal, a container query on its own container, a CSS reset that lost on specificity, a screenshot clone left in the worktree root, a frozen contract that matched a plan's own truth check, and a scaffold order rustfmt reversed. See [mistakes/planner-follow-ups-delivery](mistakes/planner-follow-ups-delivery.md).
-Feature run reviews land at the top of `doc/plans/` while readers search the plan's home. See [mistakes/run-review-location](mistakes/run-review-location.md).
 
 ## Planner design: stubs vs summaries, briefs unsummarized
 
@@ -250,3 +241,8 @@ Stubs (vision section paragraphs, metaplan entries) scope a document before it e
 ## dev-install.sh and the Running Daemon
 
 Why `dev-install.sh` stops every loom process after the install, the review finding that removed the kill, and installing the operator's binary unasked. → [dev-install.sh and the Running Daemon](mistakes/dev-install.md)
+
+## Planner spec scope and run review location
+
+- A spec section adds an action, button or skill only when the vision names it; integration-verify's spec-conformance duty aligns spec and build. See [spec sections invented product features](mistakes/planner-design-brainstorm.md#spec-sections-invented-product-features-the-vision-never-asked-for).
+- Feature run reviews land at the top of `doc/plans/`, and the readers search the plan's home, its `archive/` and the top of `doc/plans/`. See [a feature plan's run review](mistakes/planner-design-brainstorm.md#a-feature-plans-run-review-is-written-where-nothing-looks-for-it).
