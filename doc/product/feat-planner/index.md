@@ -82,12 +82,14 @@ Logo  feat-planner ▾                     Idle   Home   Files   Settings
     Overview           │   concept mode by default │
     01 Workflow model  │   Source · Edit · Discuss │
     …                  │                           │
+    Coverage           │                           │
 ✓ Metaplan             │                           │
 ✓ Plans         12/12  │                           │
     Overview           │                           │
     01 documents  done │                           │
     …                  │                           │
 ✓ Run        12 done   │                           │
+    Findings   2 open  │                           │
 ```
 
 A feature page has one header row above three columns:
@@ -101,10 +103,15 @@ A feature page has one header row above three columns:
   row shows a glyph for its state and a count where it has one. Product spec and Plans expand
   into an Overview row and one row per section or plan, a plan with its state and a badge,
   "Pressure-tested <date>" or "Not pressure-tested". The
-  rows open the real content, and the spine is the only place a feature's progress is drawn. At
-  its head, the **next step** is one sentence and at most one button. A feature with no gap and
-  nothing to start shows the sentence only. While a page lists missing sections or plans (the
-  pace and queue of section 01), that page owns the button and the spine keeps the sentence.
+  rows open the real content, and the spine is the only place a feature's progress is drawn. Each
+  document row shows its settle state beside its glyph (draft, revised, settled; section 01).
+  Product spec also holds a Coverage row, and Run holds a Findings row with the count of open
+  findings. At its head, the **next step** is one sentence and at most one button. A feature with
+  no gap and nothing to start shows the sentence only. While a page lists missing sections or
+  plans (the pace and queue of section 01), that page owns the button and the spine keeps the
+  sentence. Under the sentence sit the **frontier hints**: at most five short lines, one link
+  each, naming the documents that need attention next, such as a settled section that changed. A
+  hint is a link, never a button, and starts no session. (My call.)
 - **Reading column**, centred, at most about 70 characters wide: the vision or a metaplan as
   source, or the overview or document being read in concept mode, expanding in place as described
   above. Each overview sentence carries small colour marks, one per document it draws on, in that
@@ -149,7 +156,8 @@ files is for section 01 to settle.
 1. **The files in `doc/` are the truth.** Every document stays plain, committable Markdown (and
    plan YAML where loom requires it) in the paths and conventions loom already uses. A person or
    an agent that has never heard of `loom plan` can read and edit them with any editor, and the
-   app picks up those edits.
+   app picks up those edits. Edge lines (`Covers:`, `Implements:`), `Settled:` lines and the
+   findings ledger are plain Markdown lines in those files that a reader can follow the same way.
 2. **Summaries are derived and disposable.** Concept mode reads from summaries that agents
    generate from the files (see Decisions for which agent rebuilds what). Each summary records content hashes of what it summarizes; a
    changed, added, or removed file invalidates exactly the summaries built on it, and only those
@@ -181,9 +189,12 @@ files is for section 01 to settle.
   stop juggling skills, file paths, and step order.
 - **The reviewer**: a PM, lead, or engineer who did not write the plans and has to approve them
   before a run. They want to understand the shape of the work in minutes, drill into the parts they
-  doubt, and send corrections back without reading everything.
+  doubt, and send corrections back without reading everything. They settle the documents they
+  have agreed to, and see later which of those changed.
 - **The returning author**: the same person weeks later, after some plans have run, coming back to
-  revise the spec or add plans in light of what was built.
+  revise the spec or add plans in light of what was built. They see what changed since each
+  document was settled, which spec headings no plan covers, and what the runs and their own
+  feature reviews found.
 
 ## Goals
 
@@ -240,7 +251,7 @@ Each becomes `doc/product/<feature>/section_NN.md`. Order is a first proposal fo
 | 07  | Session bridge                   | Starting and owning Claude Code sessions in tmux; reading transcript JSONL as structured messages; delivering input; permission and waiting states; several sessions; resume       |
 | 08  | Chat interface                   | Message rendering, tool activity, session states, attaching document passages as context, showing the files a turn changed                                                         |
 | 09  | Session skills and guidance      | Skills and instructions per step (vision, sections, metaplan, plans, pressure), how loom injects them, how they keep output in the conventions of section 03                       |
-| 10  | Review and refinement loop       | Questioning a passage, taking it into a chat, seeing what a refinement changed; reading is the review, with no step and no approval record                                         |
+| 10  | Review and refinement loop       | Questioning a passage, taking it into a chat, seeing what a refinement changed; reading is the review, with no step; the reader settles what they agreed to                        |
 | 11  | Handoff to execution             | Pressure testing from the app, `loom init`/`loom run` from the app, returning to planning after plans complete                                                                     |
 | 12  | Access and safety                | The app can start write-capable sessions: authentication, sandboxing of planning sessions, which paths they may write                                                              |
 
@@ -296,12 +307,23 @@ Each becomes `doc/product/<feature>/section_NN.md`. Order is a first proposal fo
     from its metaplan and plans.
   - _Document summaries_: one for the vision (at most 8 sentences in at most 3 paragraphs), one per
     product section, one for the feature's metaplan and one per plan. No overview cites a metaplan's summary: an
-    engineering overview sentence that draws on a metaplan links to its source passage.
+    engineering overview sentence that draws on a metaplan links to its source passage. A plan's
+    summary covers the plan's brief bundle: it has one detail paragraph per stage, citing the
+    stage and the briefs that stage's work rests on.
 
   An overview sentence links to the document summaries it draws on (one or several); a document
-  summary sentence links to the heading section of the raw document it draws on. Briefs are
-  reached through their plan's summary and through file mode, with no summaries of their own (my
-  call). The knowledge base keeps its own hierarchy and is browsed in file mode.
+  summary sentence links to the heading section of the raw document it draws on, and a plan
+  summary sentence also to the stage and briefs it draws on. Briefs are listed on their plan's
+  pages and opened in file mode; they have no spine rows of their own, because the spine's
+  column is too narrow to hold a bundle (my call). Summaries are built for drafts as well as
+  settled documents, since a long plan needs one while it is still a draft. The knowledge base
+  keeps its own hierarchy and is browsed in file mode.
+- **Layers (01, 04, 05).** A document has three layers. The _stub_ exists before the document and
+  sets its scope: a product section's stub is its row in the vision's table, a plan's stub is its
+  metaplan entry. The _body_ is the document. The _summary_ is generated from the body for human
+  review. A stub never replaces a summary and a summary never replaces a stub. A session that
+  changes a body also updates its stub in the same turn, or asks; no agent judges in the
+  background whether a body has outgrown its stub (my call).
 
 - **Refinement (04, 05, 10).** A refinement edits only the documents under `doc/`. In the same
   turn, the session that made the edit has subagents rebuild the summaries built on the changed
@@ -337,8 +359,12 @@ Each becomes `doc/product/<feature>/section_NN.md`. Order is a first proposal fo
 - **Spec location (03).** `doc/product/<feature>/`, with sections at
   `doc/product/<feature>/section_NN.md`. The metaplan and feature plans live in
   `doc/plans/<feature>/`; standalone plans live at the top of `doc/plans/`.
-- **Approval (10).** Not recorded. Reviewing is the user reading, which has no step in the app;
-  starting execution is their act.
+- **Approval (01, 03, 10).** Approval is a document-level settled mark. The reader writes it from
+  the document's page as a `Settled:` line in the document (section 03), covering the document's
+  text and, for a plan, its whole brief bundle: a plan is settled together with its briefs. Only
+  the reader's request writes the line; sessions never do. A settled document that changes reads
+  as revised, and its page offers the changes since the settled version. Reading itself has no
+  step in the app, and starting execution is the user's act.
 - **Server (02).** Its own process, default port 7272, well clear of the dashboard's 7373 and up.
 - **Command (02).** Bare `loom plan` starts the app; the existing `loom plan` subcommand
   (`verify`) keeps working unchanged. It opens the browser unless it runs headless
@@ -360,7 +386,24 @@ Each becomes `doc/product/<feature>/section_NN.md`. Order is a first proposal fo
   run reviews (`REVIEW-*.md`), and the brief
   bundles of locked plans are read-only in the app, in the editor and to sessions, with a notice
   saying why.
-- **Product-to-plan links (03, 05, 09).** Each plan names the product sections it implements in a
-  plain line, `Implements: section_07` (several separated by commas), which the plan-writing
-  skill adds. Concept mode's links between the two overviews come only from these lines, never
-  from inference.
+- **Product-to-plan links (03, 05, 09).** Links may point at sections or at headings
+  (`section_04#rebuild-budget`). Each plan names what it implements in a plain line,
+  `Implements: section_07, section_04#rebuild-budget` (several separated by commas), which the
+  plan-writing skill adds. A metaplan entry carries a `Covers:` line naming what its plan will
+  deliver. A stage that delivers a narrower part carries an `Implements (stage:<id>): ...` line in
+  the plan's prose, because stage ids live in the plan's YAML, which gains no field (my call).
+  The link from a brief to its stage comes from the bundle path, `briefs/<slug>/<stage-id>/`.
+  Concept mode's links between the two overviews, and the planning trace, come only from these
+  lines, never from inference.
+- **Findings (01, 10, 11).** Each feature keeps one ledger, `doc/plans/<f>/findings.md`, in plain
+  Markdown. A completed plan's run review adds its open findings and open questions to it, and a
+  Review the feature session adds what the reader saw while running or reading the feature. The
+  reader triages each finding on the Findings page: plan it, fold it into a metaplan entry whose
+  plan has not started running, or dismiss it with a reason. Run reviews stay the unchanged
+  evidence; the ledger holds the triage state. Review the feature can start at any point once a
+  plan has run (my call: it is a secondary offer, owned by the Findings page).
+- **Planning trace (01, 03, 05).** The trace of how the documents relate (vision rows, sections
+  and their headings, metaplan entries, plans, stages, findings) is built from the edge lines,
+  `Settled:` lines and ledger on every load. It stores nothing outside the documents. It is
+  separate from `loom map`'s source graph: no code symbol is a node in it and it reads no state
+  of that graph.
