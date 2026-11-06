@@ -64,7 +64,7 @@ fn options_are_available_with_the_written_plans_and_defaults() {
     let body = options(&f, &f.holder);
     assert_eq!(body["available"], true, "{body}");
     assert_eq!(body["plans"], serde_json::json!([PLAN]));
-    assert_eq!(body["defaults"]["rounds"], 2);
+    assert_eq!(body["defaults"]["rounds"], 1);
 }
 
 #[test]
