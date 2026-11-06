@@ -4,7 +4,6 @@ import { useEffect, useRef, type JSX, type KeyboardEvent, type PointerEvent } fr
 import { Link } from "react-router";
 
 import { useMediaQuery } from "@/lib/use-media-query";
-import { pendingAttachmentsAtom } from "@/plan/attachments";
 import { useReviewLive } from "@/plan/review/live";
 import { registerSendToAuthor } from "@/plan/review/send-to-author";
 import { readingFaceAtom, readingSizeAtom } from "@/plan/settings/preferences";
@@ -12,21 +11,21 @@ import { canAuthorAtom } from "@/plan/state/atoms";
 import { AnnouncerRegions, ChatAnnouncer } from "./announcer";
 import { useAttention } from "./attention";
 import { BriefDialogHost } from "./brief-dialog";
-import { ChatGlyph, STATE_NAME } from "./chat-state-glyph";
 import { PendingChips } from "./chips";
 import { ComposerArea } from "./composer";
 import { ConnectionBanner, useConnectionDim } from "./connection-banner";
 import { EmptyChat } from "./empty-chat";
-import { pendingPermissionsAtom, sessionAtom, useChatSocket } from "./model";
+import { useChatSocket } from "./model";
 import { offerErrorAtom } from "./offer-error";
 import { createOfferStarter } from "./offer-flow";
 import { registerAuthoringOffers } from "./offer-handlers";
+import { useCollapseFocus } from "./panel-collapse";
 import { PanelHead } from "./panel-head";
 import { panelWidthAtom } from "./prefs";
 import { RunHeader } from "./run-header";
 import { ScreenSync } from "./screen-sync";
 import { elsewhereSessionAtom, sessionHereAtom } from "./session-home";
-import { chatSheetOpenAtom, DESKTOP } from "./sheet-state";
+import { CHAT_PANEL_ID, chatCollapsedAtom, chatSheetOpenAtom, DESKTOP } from "./sheet-state";
 import { shownSessionAtom } from "./shown-session";
 import { useQueueRefill } from "./stop-control";
 import { useComposerShortcut } from "./composer-hooks";
@@ -99,51 +98,6 @@ function OfferError() {
         Dismiss
       </button>
     </p>
-  );
-}
-
-/** The count is drawn for sight; the button's accessible name carries it for everyone else. */
-function PermissionBadge() {
-  const count = useAtomValue(pendingPermissionsAtom).length;
-  return count ? (
-    <span className="chat-permission-badge" aria-hidden="true">
-      {count}
-    </span>
-  ) : null;
-}
-
-/** An aria-label replaces a button's contents, so the state and counts are spelled into the name. */
-function useChatButtonName(verb: string, attachments = 0): string {
-  const session = useAtomValue(shownSessionAtom);
-  const decisions = useAtomValue(pendingPermissionsAtom).length;
-  const parts = [verb];
-  if (decisions > 0) parts.push(`${decisions} decision${decisions === 1 ? "" : "s"} waiting`);
-  else if (session) parts.push(STATE_NAME[session.state]);
-  if (attachments > 0) parts.push(`${attachments} attachment${attachments === 1 ? "" : "s"}`);
-  return parts.join(", ");
-}
-
-export function ChatSheetButton() {
-  const desktop = useMediaQuery(DESKTOP);
-  const [open, setOpen] = useAtom(chatSheetOpenAtom);
-  const attachments = useAtomValue(pendingAttachmentsAtom).length;
-  const name = useChatButtonName("Open chat", attachments);
-  if (desktop) return null;
-  return (
-    <button
-      type="button"
-      data-chat-sheet-trigger
-      aria-label={name}
-      aria-haspopup="dialog"
-      aria-expanded={open}
-      onClick={() => setOpen(true)}
-      className="inline-flex items-center gap-1.5 text-[13px]"
-    >
-      <ChatGlyph />
-      <span>Chat</span>
-      <PermissionBadge />
-      {attachments > 0 && <span aria-hidden="true">{attachments}</span>}
-    </button>
   );
 }
 
@@ -240,7 +194,6 @@ function ElsewhereBody({ sheet }: { sheet: boolean }) {
 }
 
 function SessionBody({ sheet }: { sheet: boolean }) {
-  const session = useAtomValue(sessionAtom);
   const shown = useAtomValue(shownSessionAtom);
   const dim = useConnectionDim();
   return (
@@ -248,7 +201,7 @@ function SessionBody({ sheet }: { sheet: boolean }) {
       <div className="chat-panel-top">
         <PanelHead sheet={sheet} />
         <OfferError />
-        {session && <RunHeader session={session} />}
+        {shown && <RunHeader session={shown} />}
         <ConnectionBanner />
       </div>
       <div className="chat-panel-middle">
@@ -301,27 +254,40 @@ function ChatSheet() {
   );
 }
 
+/**
+ * The side panel from 1280px. Collapsed, it stays mounted and `hidden`, so the socket, the drafts
+ * and the transcript survive while nothing in it can take focus or be read; the page's
+ * ChatAnnouncer keeps announcing, and the header's Chat button expands it.
+ */
+function DockedPanel() {
+  const width = useAtomValue(panelWidthAtom);
+  const collapsed = useAtomValue(chatCollapsedAtom);
+  const ref = useRef<HTMLElement>(null);
+  useCollapseFocus(ref, collapsed);
+  return (
+    <aside
+      ref={ref}
+      id={CHAT_PANEL_ID}
+      aria-label="Chat"
+      className="chat-panel"
+      hidden={collapsed}
+      style={{ width: `${width}rem`, flexShrink: 0 }}
+    >
+      <ResizeHandle />
+      <PanelBody sheet={false} />
+    </aside>
+  );
+}
+
 export function ChatPanel() {
   const store = useStore();
   useChatSocket(store);
   useAttention();
   const desktop = useMediaQuery(DESKTOP);
-  const width = useAtomValue(panelWidthAtom);
   return (
     <>
       <ScreenSync />
-      {!desktop ? (
-        <ChatSheet />
-      ) : (
-        <aside
-          aria-label="Chat"
-          className="chat-panel"
-          style={{ width: `${width}rem`, flexShrink: 0 }}
-        >
-          <ResizeHandle />
-          <PanelBody sheet={false} />
-        </aside>
-      )}
+      {desktop ? <DockedPanel /> : <ChatSheet />}
     </>
   );
 }

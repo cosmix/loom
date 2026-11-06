@@ -4,6 +4,7 @@ import { Link } from "react-router";
 
 import type { ApiResult } from "@/plan/api/client";
 import type { DiffTexts } from "@/plan/api/schema-files";
+import { useDiffViewCollapse } from "@/plan/chat/sheet-state";
 import { Untrusted } from "@/plan/chat/visible-controls";
 import { toAddress } from "@/plan/files/address";
 import { fetchHeadDiff, fetchTurnDiff } from "@/plan/files/api";
@@ -122,8 +123,9 @@ function DiffBody({ path, kind, turn }: DiffPageProps): JSX.Element {
   return <ServerDiff kind={kind} path={path} turn={turn} />;
 }
 
-/** The diff address of file mode: the header and the diff of one kind. */
+/** The diff address of file mode: the header and the diff of one kind, with the chat collapsed. */
 export function DiffPage(props: DiffPageProps): JSX.Element {
+  useDiffViewCollapse();
   return (
     <div className="flex min-h-full flex-1 flex-col">
       <Header kind={props.kind} path={props.path} />

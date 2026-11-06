@@ -3,7 +3,6 @@ import { Provider } from "jotai";
 import { MemoryRouter } from "react-router";
 import { expect, it, vi } from "vitest";
 
-import { serverInfoAtom } from "@/plan/state/atoms";
 import {
   installComposerLifecycle,
   mount as mountComposer,
@@ -11,7 +10,6 @@ import {
 } from "./composer-harness";
 import { ChatPanel, ChatRegistrations } from "./panel";
 import { installPanelLifecycle, storeFor } from "./panel-test-kit";
-import { storageKey } from "./storage";
 
 // The panel's own body is under test; its children are stood in for, as panel.test.tsx does.
 // The composer stays real, so its Message textbox shows whether the panel body is open.
@@ -59,13 +57,10 @@ function wideViewport() {
   }));
 }
 
-it("the chat panel has no collapse at a wide viewport", () => {
+it("the chat panel starts expanded at a wide viewport, with a Collapse chat control", () => {
   wideViewport();
-  const store = storeFor();
-  const key = store.get(serverInfoAtom)!.project_key;
-  localStorage.setItem(storageKey(key, "panel-collapsed"), "true");
   render(
-    <Provider store={store}>
+    <Provider store={storeFor()}>
       <MemoryRouter>
         <ChatRegistrations />
         <ChatPanel />
@@ -73,8 +68,10 @@ it("the chat panel has no collapse at a wide viewport", () => {
     </Provider>,
   );
   const panel = screen.getByRole("complementary", { name: "Chat" });
+  expect(panel.hidden).toBe(false);
   expect(within(panel).getByRole("textbox", { name: "Message" })).toBeTruthy();
-  expect(screen.queryByRole("button", { name: /Collapse chat|Expand chat/ })).toBeNull();
+  const collapse = within(panel).getByRole("button", { name: "Collapse chat" });
+  expect(collapse.getAttribute("aria-expanded")).toBe("true");
 });
 
 it("Stop sits in the composer's action row", () => {

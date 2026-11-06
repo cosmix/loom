@@ -2,6 +2,7 @@ import { useAtomValue } from "jotai";
 import { useEffect, useRef } from "react";
 import { Link, useLocation } from "react-router";
 
+import { useDiffViewCollapse } from "@/plan/chat/sheet-state";
 import { serverInfoAtom } from "@/plan/state/atoms";
 import { LoadState } from "@/plan/ui/load-state";
 
@@ -47,9 +48,11 @@ function ChangesBody({ from }: { from: string | null }) {
 /**
  * "Changed since you looked": the documents edited since the reader last viewed them, across the
  * page's width so a side-by-side diff has room. Arriving (from the activity popover or a link)
- * puts focus on the heading, so a screen reader starts at the page's title.
+ * puts focus on the heading, so a screen reader starts at the page's title. The chat side panel
+ * collapses on arrival for the same room.
  */
 export function ChangesPage() {
+  useDiffViewCollapse();
   const location = useLocation();
   const heading = useRef<HTMLHeadingElement>(null);
   useEffect(() => {
