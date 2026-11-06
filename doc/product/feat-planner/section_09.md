@@ -365,7 +365,7 @@ plan's stub is its metaplan entry. Every authoring skill keeps these duties:
   change updates both in the same turn.
 - **Findings.** `loom-plan:metaplan` reads `findings.md` when planning follow-ups. Planning a
   finding: it writes the follow-up entry, then sets the finding's `Status:` line to `planned
-  PLAN-<slug>.md`. Folding a finding: it edits the unwritten entry so its paragraphs include the
+  PLAN-<slug>.md`. Folding a finding: it edits the entry, whose plan has not started running, so its paragraphs include the
   finding, then sets `Status:` to `folded metaplan#<entry anchor>`.
 - **Settled lines.** No skill writes or edits a `Settled:` line. A turn that edits a document
   holding one says so in the reply.

@@ -114,7 +114,10 @@ Settled: <body> [stub <stub>] [upstream <upstream>]
 - Each hash is the first 12 lowercase hex digits of a SHA-256 (`settle::short_hash`).
 - **Placement.** One line, its own paragraph, directly after the document's first `# ` heading.
   When the next non-blank line after that heading is an `Implements:` line, the Settled line goes
-  after it. `settle::mark` replaces an existing Settled line in place; `settle::clear` removes it
+  after it. When text follows that anchor line with no blank line between, the Settled line goes
+  directly under the anchor with a blank line after it, so it stays its own paragraph; an
+  `Implements:` line glued to the text below it is no anchor, and the mark goes under the
+  heading. `settle::mark` replaces an existing Settled line in place; `settle::clear` removes it
   and the blank line it added. A second Settled line is the plan-check problem `settled-duplicate`.
   A `Settled:` line that does not parse (a hash that is not 12 lowercase hex digits, an unknown
   word, words out of order) is `settled-bad` and reads as Draft. Lines starting `Status:` are
