@@ -1,7 +1,49 @@
 import { useEffect, useRef, type JSX } from "react";
 
+import { cn } from "cn";
+
 import { Button } from "@/components/ui/button";
 import { DisabledReason } from "@/plan/ui/disabled-reason";
+
+import type { EditorMode, FormatCommand } from "./codemirror";
+import { FormatButtons } from "./edit-toolbar-controls";
+
+const MODES: { mode: EditorMode; label: string }[] = [
+  { mode: "preview", label: "Live preview" },
+  { mode: "source", label: "Source" },
+];
+
+/** Two buttons, one pressed: Live preview draws the Markdown, Source shows it as typed. */
+function ModeToggle(props: { mode: EditorMode; onMode(mode: EditorMode): void }): JSX.Element {
+  return (
+    <div
+      role="group"
+      aria-label="Editor mode"
+      className="inline-flex h-7 items-stretch overflow-hidden rounded-md border border-hairline"
+    >
+      {MODES.map(({ mode, label }) => {
+        const pressed = props.mode === mode;
+        return (
+          <button
+            key={mode}
+            type="button"
+            aria-pressed={pressed}
+            onClick={() => props.onMode(mode)}
+            className={cn(
+              "px-2.5 text-[0.8rem] transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-inset",
+              "not-first:border-l not-first:border-hairline",
+              pressed
+                ? "bg-muted font-medium text-foreground"
+                : "text-muted-foreground hover:bg-muted/60 hover:text-foreground",
+            )}
+          >
+            {label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
 
 export function GonePanel(props: { what: string; text: string; onDiscard(): void }): JSX.Element {
   return (
@@ -92,9 +134,14 @@ export function EditToolbar(props: {
   saving: boolean;
   onSave(): void;
   onDone(): void;
+  mode: EditorMode;
+  onMode(mode: EditorMode): void;
+  onFormat(command: FormatCommand): void;
+  /** Read-only editor or the merge view: the formatting buttons do nothing there. */
+  formatDisabled: boolean;
 }): JSX.Element {
   return (
-    <div className="flex flex-wrap items-start gap-2 border-b border-hairline px-4 py-2">
+    <div className="flex flex-wrap items-start gap-x-2 gap-y-1.5 border-b border-hairline px-4 py-2">
       <DisabledReason reason={props.blockReason} onClick={props.onSave} size="sm">
         Save
       </DisabledReason>
@@ -107,6 +154,9 @@ export function EditToolbar(props: {
       >
         Done
       </Button>
+      <span aria-hidden="true" className="mx-1 h-7 w-px self-start bg-hairline" />
+      <ModeToggle mode={props.mode} onMode={props.onMode} />
+      <FormatButtons disabled={props.formatDisabled} onFormat={props.onFormat} />
       {props.saving && (
         <span className="self-center text-[13px] text-muted-foreground">Saving</span>
       )}

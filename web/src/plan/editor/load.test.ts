@@ -7,20 +7,26 @@ vi.mock("./codemirror", () => ({ createSourceEditor: vi.fn() }));
 
 const PLAN_PREFIX = "/src/plan/";
 
-// Every plan source except the lazy module itself and tests, keyed relative to src/plan.
-const planSources = Object.entries(
-  import.meta.glob(["/src/plan/**/*.{ts,tsx}", "!**/*.test.ts", "!**/*.test.tsx"], {
-    query: "?raw",
-    import: "default",
-    eager: true,
-  }) as Record<string, string>,
-)
-  .filter(([key]) => !key.endsWith("/codemirror.ts"))
+// The lazy chunk: the only modules that may import @codemirror/* or @lezer/* statically.
+// codemirror.ts imports the other three; line-break.ts is pure and imports no CodeMirror.
+const CHUNK_MODULES = ["codemirror", "live-preview", "md-commands", "marks-gutter"].map(
+  (name) => `/src/plan/editor/${name}.ts`,
+);
+
+// Every plan source except the chunk modules and tests, keyed relative to src/plan.
+const allPlanSources = import.meta.glob(
+  ["/src/plan/**/*.{ts,tsx}", "!**/*.test.ts", "!**/*.test.tsx"],
+  { query: "?raw", import: "default", eager: true },
+) as Record<string, string>;
+const planSources = Object.entries(allPlanSources)
+  .filter(([key]) => !CHUNK_MODULES.includes(key))
   .map(([key, source]) => [key.slice(PLAN_PREFIX.length), source] as const);
 
-function staticCodeMirrorImports(path: string, source: string, scope = "@codemirror/"): string[] {
+// Every static import or export-from specifier (type-only ones included) with its line, plus
+// dynamic import("...") calls when asked.
+function moduleSpecifiers(path: string, source: string, dynamic = true) {
   const file = ts.createSourceFile(path, source, ts.ScriptTarget.Latest, true);
-  const violations: string[] = [];
+  const found: { text: string; line: number }[] = [];
   function visit(node: ts.Node) {
     let specifier: ts.Expression | undefined;
     if (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) {
@@ -30,15 +36,27 @@ function staticCodeMirrorImports(path: string, source: string, scope = "@codemir
       ts.isExternalModuleReference(node.moduleReference)
     ) {
       specifier = node.moduleReference.expression;
+    } else if (
+      dynamic &&
+      ts.isCallExpression(node) &&
+      node.expression.kind === ts.SyntaxKind.ImportKeyword
+    ) {
+      specifier = node.arguments[0];
     }
-    if (specifier && ts.isStringLiteral(specifier) && specifier.text.startsWith(scope)) {
+    if (specifier && ts.isStringLiteral(specifier)) {
       const line = file.getLineAndCharacterOfPosition(node.getStart(file)).line + 1;
-      violations.push(`${path}:${line}: ${specifier.text}`);
+      found.push({ text: specifier.text, line });
     }
     ts.forEachChild(node, visit);
   }
   visit(file);
-  return violations;
+  return found;
+}
+
+function staticCodeMirrorImports(path: string, source: string, scope = "@codemirror/"): string[] {
+  return moduleSpecifiers(path, source, false)
+    .filter((specifier) => specifier.text.startsWith(scope))
+    .map((specifier) => `${path}:${specifier.line}: ${specifier.text}`);
 }
 
 describe("CodeMirror lazy boundary", () => {
@@ -59,9 +77,26 @@ describe("CodeMirror lazy boundary", () => {
     expect(staticCodeMirrorImports("example.ts", source)).toHaveLength(3);
   });
 
-  it("keeps static CodeMirror imports in the lazy module", () => {
+  it("keeps static CodeMirror imports in the lazy chunk", () => {
     const violations = planSources.flatMap(([path, source]) =>
       staticCodeMirrorImports(path, source),
+    );
+    expect(violations).toEqual([]);
+  });
+
+  it("sees the static CodeMirror imports of every chunk module", () => {
+    for (const module of CHUNK_MODULES) {
+      expect(allPlanSources[module], module).toBeDefined();
+      expect(staticCodeMirrorImports(module, allPlanSources[module] ?? ""), module).not.toEqual([]);
+    }
+  });
+
+  it("keeps the chunk helpers behind codemirror.ts", () => {
+    const helper = /(?:^|\/)(?:live-preview|md-commands|marks-gutter)$/;
+    const violations = planSources.flatMap(([path, source]) =>
+      moduleSpecifiers(path, source)
+        .filter((specifier) => helper.test(specifier.text))
+        .map((specifier) => `${path}:${specifier.line}: ${specifier.text}`),
     );
     expect(violations).toEqual([]);
   });
@@ -75,7 +110,7 @@ const appSources = Object.entries(
     import: "default",
     eager: true,
   }) as Record<string, string>,
-).filter(([key]) => key !== "/src/plan/editor/codemirror.ts");
+).filter(([key]) => !CHUNK_MODULES.includes(key));
 
 describe("Lezer lazy boundary", () => {
   it("recognizes static @lezer/ imports and re-exports without matching dynamic imports", () => {
@@ -94,7 +129,7 @@ describe("Lezer lazy boundary", () => {
     expect(appSources.some(([key]) => key.startsWith("/src/components/"))).toBe(true);
   });
 
-  it("keeps static @lezer/ imports in the lazy module", () => {
+  it("keeps static @lezer/ imports in the lazy chunk", () => {
     const violations = appSources.flatMap(([path, source]) =>
       staticCodeMirrorImports(path, source, "@lezer/"),
     );

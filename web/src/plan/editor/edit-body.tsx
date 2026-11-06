@@ -1,15 +1,18 @@
 import { useAtomValue } from "jotai/react";
-import { useMemo, useRef, type JSX, type KeyboardEvent } from "react";
+import { useCallback, useMemo, useRef, useState, type JSX, type KeyboardEvent } from "react";
+import { useNavigate } from "react-router";
 
 import type { DocView } from "@/plan/api/schema-files";
 import { AddToChat } from "@/plan/attachments";
+import { resolveLink, toAddress } from "@/plan/files/address";
 import { docChangedAtom, validationAtom } from "@/plan/files/atoms";
 import { authorBlockReasonAtom, authoringAtom } from "@/plan/state/atoms";
 
-import type { EditorHandle } from "./codemirror";
+import type { EditorHandle, EditorMode, FormatCommand, SourceEditorHandle } from "./codemirror";
 import { draftNote, stageSpans } from "./edit-flow";
 import { EditToolbar, LeaveChoice, Notes } from "./edit-panels";
 import type { EditSession } from "./edit-session";
+import { readEditorMode, writeEditorMode } from "./editor-mode";
 import { editorProvenance } from "./editor-provenance";
 import { MergePanel } from "./merge-panel";
 import { useEditorSelectionAttachment } from "./selection-attachment";
@@ -26,8 +29,8 @@ function useSourceAttachment(
     () => editorProvenance(doc.path, doc.sections, stageSpans(doc)),
     [doc],
   );
-  return useEditorSelectionAttachment(wrapper, handle, (selection, lines) => {
-    const draft = provenance(selection, lines);
+  return useEditorSelectionAttachment(wrapper, handle, (selection, lines, text) => {
+    const draft = provenance(selection, lines, text);
     return draft && draft.kind === "source" ? { ...draft, hash: openedHash } : draft;
   });
 }
@@ -57,6 +60,44 @@ function StaleNote(props: { onCompare(): void }): JSX.Element {
 }
 
 type Handle = { current: EditorHandle | null };
+
+/**
+ * Mod-click on a link in live preview. Documents and anchors go through the router, so the
+ * leave guard asks first when text is unsaved; external links open in a new tab, which leaves
+ * the page (and its text) alone; anything else does nothing.
+ */
+function useFollowLink(path: string): (href: string) => void {
+  const navigate = useNavigate();
+  return useCallback(
+    (href: string) => {
+      const link = resolveLink(path, href);
+      if (link.kind === "doc") navigate(toAddress(link.path, link.anchor));
+      else if (link.kind === "anchor") navigate(toAddress(path, link.anchor));
+      else if (link.kind === "external") window.open(link.href, "_blank", "noopener,noreferrer");
+    },
+    [path, navigate],
+  );
+}
+
+/**
+ * The editor mode and the toolbar's routes into the editor. The mode lives here, read once
+ * from storage, so the source editor never reads it and a rebuild keeps what the toolbar shows.
+ */
+function useEditorControls(path: string, handle: Handle) {
+  const [mode, setMode] = useState<EditorMode>(() => readEditorMode());
+  const onMode = useCallback((next: EditorMode) => {
+    writeEditorMode(next);
+    setMode(next);
+  }, []);
+  const onFormat = useCallback(
+    (command: FormatCommand) => {
+      const editor = handle.current;
+      if (editor && "format" in editor) (editor as SourceEditorHandle).format(command);
+    },
+    [handle],
+  );
+  return { mode, onMode, onFormat, onFollowLink: useFollowLink(path) };
+}
 
 /** True when the file changed on disk after the opened hash and no merge is open. */
 function useStaleSource(path: string, openedHash: string, merging: boolean): boolean {
@@ -110,6 +151,8 @@ function EditSurface(props: {
   session: EditSession;
   marks: number[];
   handle: Handle;
+  mode: EditorMode;
+  onFollowLink(href: string): void;
 }): JSX.Element {
   const { session, handle } = props;
   const { state } = session.flow;
@@ -135,7 +178,32 @@ function EditSurface(props: {
       onChange={session.flow.change}
       onSave={save}
       gutterMarks={props.marks}
+      mode={props.mode}
+      onFollowLink={props.onFollowLink}
       handleRef={handle}
+    />
+  );
+}
+
+/** Save, Done, the mode toggle and the formatting buttons, wired to the session and editor. */
+function EditBodyToolbar(props: {
+  session: EditSession;
+  controls: ReturnType<typeof useEditorControls>;
+}): JSX.Element {
+  const { session, controls } = props;
+  const { state } = session.flow;
+  const blockReason = useAtomValue(authorBlockReasonAtom);
+  return (
+    <EditToolbar
+      blockReason={blockReason}
+      saving={state.status === "saving"}
+      onSave={() => session.flow.save(false)}
+      onDone={session.done}
+      mode={controls.mode}
+      onMode={controls.onMode}
+      onFormat={controls.onFormat}
+      // Read-only, or the merge view (a different surface) is showing.
+      formatDisabled={!session.canAuthor || state.currentText !== null}
     />
   );
 }
@@ -146,10 +214,10 @@ export function EditBody({ doc, session }: { doc: DocView; session: EditSession 
   const { state } = flow;
   const wrapper = useRef<HTMLDivElement>(null);
   const handle = useRef<EditorHandle | null>(null);
-  const blockReason = useAtomValue(authorBlockReasonAtom);
   const { validation, marks } = useEditValidation(doc.path, state.validation);
   const stale = useStaleSource(doc.path, state.openedHash, state.currentText !== null);
   const onKeyDown = editKeyHandler(wrapper, session);
+  const controls = useEditorControls(doc.path, handle);
 
   return (
     // The key handler only watches Escape from inside the editor; it is not a control.
@@ -159,12 +227,7 @@ export function EditBody({ doc, session }: { doc: DocView; session: EditSession 
       className="flex min-h-0 flex-1 flex-col"
       data-edit-mode
     >
-      <EditToolbar
-        blockReason={blockReason}
-        saving={state.status === "saving"}
-        onSave={() => flow.save(false)}
-        onDone={session.done}
-      />
+      <EditBodyToolbar session={session} controls={controls} />
       {session.asking && (
         <LeaveChoice
           onSave={session.saveAndClose}
@@ -180,7 +243,14 @@ export function EditBody({ doc, session }: { doc: DocView; session: EditSession 
           onSaveWithErrors={state.status === "invalid" ? () => flow.save(true) : undefined}
         />
       )}
-      <EditSurface doc={doc} session={session} marks={marks} handle={handle} />
+      <EditSurface
+        doc={doc}
+        session={session}
+        marks={marks}
+        handle={handle}
+        mode={controls.mode}
+        onFollowLink={controls.onFollowLink}
+      />
       <SourceAddToChat doc={doc} hash={state.openedHash} wrapper={wrapper} handle={handle} />
     </div>
   );

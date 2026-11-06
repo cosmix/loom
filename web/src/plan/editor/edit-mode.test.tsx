@@ -28,6 +28,7 @@ const fake = vi.hoisted(() => {
     return element;
   }
   function handle(element: HTMLTextAreaElement) {
+    let mode: "preview" | "source" = "preview";
     return {
       destroy: () => element.remove(),
       getText: () => element.value,
@@ -37,6 +38,13 @@ const fake = vi.hoisted(() => {
       searchOpen: () => false,
       setGutterMarks: () => {},
       scrollToLine: (line: number) => scrolled.push(line),
+      rangeLines: () => null,
+      rangeText: () => null,
+      mode: () => mode,
+      setMode: (next: "preview" | "source") => {
+        mode = next;
+      },
+      format: () => {},
     };
   }
   function onCtrlS(element: HTMLElement, save?: () => void) {

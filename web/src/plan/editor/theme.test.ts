@@ -80,3 +80,27 @@ describe("editor theme readability", () => {
     }
   });
 });
+
+describe("editor theme live preview", () => {
+  it("sets prose in the body face only in live preview, keeping the scroller monospace", () => {
+    expect(themeSpec["&.cm-live-preview .cm-content"].fontFamily).toBe("var(--font-sans)");
+    expect(themeSpec[".cm-scroller"].fontFamily).toBe("var(--font-mono)");
+  });
+
+  it("sizes headings like the reading view", () => {
+    expect(themeSpec[".cm-lp-h1"]).toMatchObject({ fontSize: "1.5em", fontWeight: "650" });
+    expect(themeSpec[".cm-lp-h2"]).toMatchObject({ fontSize: "1.25em", fontWeight: "650" });
+    expect(themeSpec[".cm-lp-h3"].fontSize).toBe("1.08em");
+    expect(themeSpec[".cm-lp-h4"].fontSize).toBe("1em");
+    expect(themeSpec[".cm-lp-h5, .cm-lp-h6"]).toMatchObject({
+      fontSize: "0.9em",
+      color: "var(--muted-foreground)",
+    });
+  });
+
+  it("puts code on the muted ground and dims table pipes", () => {
+    expect(themeSpec[".cm-lp-code"].backgroundColor).toBe("var(--muted)");
+    expect(themeSpec[".cm-lp-code"].fontFamily).toBe("var(--font-mono)");
+    expect(themeSpec[".cm-lp-dim"].color).toBe("var(--muted-foreground)");
+  });
+});

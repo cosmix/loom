@@ -309,3 +309,92 @@ describe("unified diff selections", () => {
     expect(handle.rangeLines(onLast)).toEqual({ start: 2, end: 2 });
   });
 });
+
+describe("line numbers", () => {
+  it("show in the merge view and in both diff layouts", () => {
+    const merge = mount((host) => createMergeView(host, { left: "a", right: "b" }));
+    const side = mount((host) => createDiffView(host, { before: "a", after: "b", unified: false }));
+    const unified = mount((host) =>
+      createDiffView(host, { before: "a", after: "b", unified: true }),
+    );
+    expect(merge.parent.querySelectorAll(".cm-lineNumbers")).toHaveLength(2);
+    expect(side.parent.querySelectorAll(".cm-lineNumbers")).toHaveLength(2);
+    expect(unified.parent.querySelectorAll(".cm-lineNumbers")).toHaveLength(1);
+  });
+});
+
+describe("range text", () => {
+  it("returns the document slice of a range, and null outside the editor", () => {
+    const { handle, pane } = source("one\ntwo\nthree");
+    const [first, second] = linesOf(pane);
+    const range = document.createRange();
+    range.setStart(first!, 0);
+    range.setEnd(second!, second!.childNodes.length);
+    expect(handle.rangeText(range)).toBe("one\ntwo");
+    const stray = document.createElement("p");
+    stray.textContent = "elsewhere";
+    document.body.append(stray);
+    range.selectNodeContents(stray);
+    expect(handle.rangeText(range)).toBeNull();
+    stray.remove();
+  });
+
+  it("reads the editable side of a merge view and both sides of a diff", () => {
+    const merge = mount((host) => createMergeView(host, { left: "old", right: "new" }));
+    const [left, right] = panes(merge.parent);
+    const range = (pane: HTMLElement) => {
+      const found = document.createRange();
+      found.selectNodeContents(linesOf(pane)[0]!);
+      return found;
+    };
+    expect(merge.handle.rangeText(range(left!))).toBeNull();
+    expect(merge.handle.rangeText(range(right!))).toBe("new");
+    const diff = mount((host) => createDiffView(host, { before: "a", after: "b", unified: false }));
+    const [before, after] = panes(diff.parent);
+    expect(diff.handle.rangeText(range(before!))).toBe("a");
+    expect(diff.handle.rangeText(range(after!))).toBe("b");
+  });
+});
+
+describe("line endings", () => {
+  it("keeps CRLF through reads, Enter and setText", () => {
+    const { handle, pane, onChange } = source("a\r\nb");
+    expect(handle.getText()).toBe("a\r\nb");
+    const view = viewOf(pane);
+    view.dispatch({ selection: { anchor: view.state.doc.length } });
+    press(contentOf(pane), { key: "Enter", keyCode: 13 });
+    expect(handle.getText()).toBe("a\r\nb\r\n");
+    expect(onChange).toHaveBeenLastCalledWith("a\r\nb\r\n");
+    handle.setText("x\r\ny");
+    expect(handle.getText()).toBe("x\r\ny");
+    expect(view.state.doc.lines).toBe(2);
+  });
+
+  it("rewrites pasted LF text to the document's break", () => {
+    const { handle, pane } = source("a\r\nb");
+    const clipboardData = { getData: () => "x\ny\r\nz\rw" };
+    contentOf(pane).dispatchEvent(Object.assign(new Event("paste"), { clipboardData }));
+    expect(handle.getText()).toBe("x\r\ny\r\nz\r\nwa\r\nb");
+  });
+
+  it("leaves a plain LF document with the default splitting", () => {
+    const { pane } = source("a\nb\n");
+    expect(viewOf(pane).state.lineBreak).toBe("\n");
+    expect(viewOf(pane).state.doc.lines).toBe(3);
+  });
+});
+
+describe("format shortcuts", () => {
+  it("are installed in the source editor and not in the merge view", () => {
+    const { handle, pane } = source("word");
+    viewOf(pane).dispatch({ selection: { anchor: 0, head: 4 } });
+    press(contentOf(pane), { key: "b", ctrlKey: true });
+    expect(handle.getText()).toBe("**word**");
+
+    const merge = mount((host) => createMergeView(host, { left: "word", right: "word" }));
+    const right = panes(merge.parent)[1]!;
+    viewOf(right).dispatch({ selection: { anchor: 0, head: 4 } });
+    press(contentOf(right), { key: "b", ctrlKey: true });
+    expect(merge.handle.getText()).toBe("word");
+  });
+});
