@@ -19,12 +19,23 @@ export function fileName(path: string): string {
   return path.slice(path.lastIndexOf("/") + 1);
 }
 
+/**
+ * The first line after a leading YAML front matter block (`---` … `---`), else 1. Front matter is
+ * the file's metadata (a summary's cites, a knowledge topic's fields): file mode shows it, a
+ * passage never does.
+ */
+function bodyStart(lines: string[]): number {
+  if (lines[0]?.trimEnd() !== "---") return 1;
+  const close = lines.findIndex((line, index) => index > 0 && /^(---|\.\.\.)\s*$/.test(line));
+  return close === -1 ? 1 : close + 2;
+}
+
 export function passageOf(doc: DocView, anchor: string): Passage | null {
   const section = anchor === "" ? undefined : doc.sections.find((item) => item.anchor === anchor);
   if (anchor !== "" && !section) return null;
 
   const lines = doc.text.split("\n");
-  const startLine = section?.start_line ?? 1;
+  const startLine = section?.start_line ?? bodyStart(lines);
   const endLine = section?.end_line ?? (doc.sections[0]?.start_line ?? lines.length + 1) - 1;
   return {
     title: section?.title ?? doc.title,
