@@ -147,8 +147,12 @@ it("derives queued rows for the missing steps, later rounds and the record line"
       .getAllByText("queued")
       .map((node) => node.parentElement?.textContent),
   ).toEqual(["Codex reviews the planqueued", "Claude addresses both reviewsqueued"]);
-  expect(within(second).getAllByText("queued")).toHaveLength(3);
-  expect(screen.getByText("Write the record line").textContent).toBe("Write the record linequeued");
+  expect(within(first).getAllByText("queued")).toHaveLength(2);
+  expect(within(second).getAllByText("queued")).toHaveLength(4);
+  const record = screen.getByText("Log the run at the end of the plan");
+  expect(record.textContent).toBe("Log the run at the end of the planqueued");
+  expect(record.closest("[data-pressure-round]")).toBe(second);
+  expect(first.contains(record)).toBe(false);
   expect(screen.getAllByRole("group")).toHaveLength(1);
 });
 
@@ -160,8 +164,12 @@ it("shows the record line as done once recorded and drops queued rows when a run
     steps: [step(1, "codex"), step(1, "claude_pressure"), step(1, "claude_address")],
     ended: { kind: "recorded", by: null, step: null, reason: null, line: "ok" },
   });
-  const record = screen.getByText("Write the record line").parentElement as HTMLElement;
+  const recordText = screen.getByText("Log the run at the end of the plan");
+  const record = recordText.parentElement as HTMLElement;
   expect(within(record).getByText("done")).toBeTruthy();
+  expect(recordText.closest("[data-pressure-round]")?.getAttribute("data-pressure-round")).toBe(
+    "1",
+  );
   expect(container.querySelector(".lucide-circle-dashed")).toBeNull();
   cleanup();
 
@@ -173,7 +181,7 @@ it("shows the record line as done once recorded and drops queued rows when a run
     ended: { kind: "stopped", by: "Ada", step: null, reason: null, line: null },
   });
   expect(screen.queryByText("queued")).toBeNull();
-  expect(screen.queryByText("Write the record line")).toBeNull();
+  expect(screen.queryByText("Log the run at the end of the plan")).toBeNull();
 });
 
 it("renders only the steps received for a partially completed round", () => {
@@ -279,12 +287,11 @@ it("mounts PressureDone before the timeline and the end line with the latest run
 });
 
 it.each<CodexState>(["running", "review_written", "no_review", "failed"])(
-  "draws no dot or arrow in the Codex card, whatever its state (%s)",
+  "draws no dot or arrow in the Codex detail line, whatever its state (%s)",
   (state) => {
     const { container } = render(
       <CodexStatusItem
         status={{ model: "gpt-6.1-terra", state, report_path: null, log_tail: null }}
-        startedMs={2000}
       />,
     );
 
