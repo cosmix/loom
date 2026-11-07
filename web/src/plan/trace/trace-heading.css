@@ -1,17 +1,18 @@
 /*
  * A feature document's heading (ui/DESIGN.md, Page rhythm): the summary page's layout over the
- * shared heading (`ui/doc-heading.tsx`, `doc-heading.css`), and the trace's parts of it on the
- * summary and the source route: the scope standfirst and the settle control. What the control
- * opens is trace-settle.css, imported first. Imported by trace.css.
+ * shared heading (`ui/doc-heading.tsx`, `doc-heading.css`), and the source route's chrome. The
+ * trace's parts of the heading (the standfirst, the settle control) are trace-heading-parts.css and
+ * what the control opens is trace-settle.css, both imported first. Imported by trace.css.
  *
  * A summary page's heading is the one inside the concept page column. Read top to bottom: the
  * breadcrumb with the Summary / Source switch at its end, the title at the document step (40px
- * Inter, ui/DESIGN.md Type), the standfirst, the chip row, the action row of 32px bordered
- * buttons, then the hairline. The toolbar bar of the shared heading dissolves (`display:
+ * in the chrome face, `--font-sans`, ui/DESIGN.md Type), the standfirst, the chip row, the facts line, the action row of 32px
+ * bordered buttons, then the hairline. The toolbar bar of the shared heading dissolves (`display:
  * contents`), so its two groups take their own places in the heading's grid, and `order` sets the
  * chip row before the action row whatever their DOM order.
  */
 @import "./trace-settle.css";
+@import "./trace-heading-parts.css";
 
 .concept-page-column .doc-heading {
   grid-template-columns: minmax(0, 1fr) auto;
@@ -38,7 +39,8 @@
   display: contents;
 }
 
-/* The view switch: a hairline-edged track at the breadcrumb's end, its segments as they are. */
+/* The view switch: a hairline-edged track at the breadcrumb's end, its segments at --type-ui (the
+   heading's chrome keeps the 13px floor). */
 .concept-page-column .doc-heading-group:has(> .doc-heading-views) {
   grid-column: 2;
   order: 0;
@@ -47,6 +49,15 @@
   padding: 2px;
   border: 1px solid var(--border);
   border-radius: var(--corner-control);
+}
+
+.concept-page-column .doc-heading-views > .plan-button {
+  font-size: var(--type-ui);
+}
+
+.concept-page-column .doc-heading-views > .plan-button svg {
+  width: 14px;
+  height: 14px;
 }
 
 .concept-page-column .doc-heading-title-row {
@@ -67,18 +78,27 @@
   margin-top: calc((var(--heading-line) - 30px) / 2);
 }
 
+.concept-page-column .doc-heading-number {
+  color: var(--muted-foreground);
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+
 .concept-page-column .doc-heading > .trace-standfirst {
   order: 2;
 }
 
-/* The chip row: the status card's rows set as glyph and words on one wrapping line, with no card,
-   edge or rule, each row's action (Rebuild) after its words and a detail line under the row. */
+/* The chip row: the status card's rows set as compact chips on one line, with no card, edge or
+   rule: the summary's freshness with Rebuild after its words, the settle state, the coverage. A
+   row's detail line (a waiting rebuild's sentence) goes under its words and action, and a row
+   that has one takes the row's whole width. Rows past the line's room (a plan's state with
+   Pressure-test and its blocked reason, the open questions) wrap to a line of their own. */
 .concept-page-column .doc-heading-status {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   order: 3;
-  gap: var(--space-2) var(--space-5);
+  gap: var(--space-2) var(--space-4);
   margin-top: var(--space-5);
   border: 0;
   border-radius: 0;
@@ -98,9 +118,21 @@
   border-top: 0;
 }
 
+.concept-page-column .doc-heading-row:has(> .doc-heading-row__detail:not(:empty)) {
+  flex-basis: 100%;
+}
+
+/* The detail is always mounted (its component may draw nothing), so an empty one leaves the flow;
+   `order` puts it after the action, so Rebuild stays on its words' line. */
 .concept-page-column .doc-heading-row__detail {
+  order: 1;
   flex-basis: 100%;
   padding-inline-start: calc(16px + var(--space-2));
+  font-size: var(--type-ui);
+}
+
+.concept-page-column .doc-heading-row__detail:empty {
+  display: none;
 }
 
 .concept-page-column .doc-heading-row__action {
@@ -108,7 +140,7 @@
   padding: 0;
 }
 
-.concept-page-column .doc-heading-row__action .plan-button {
+.concept-page-column .doc-heading-row__action :is(.plan-button, .plan-fine) {
   font-size: var(--type-ui);
 }
 
@@ -127,15 +159,17 @@
   height: 16px;
 }
 
+/* The facts (Built by, Implements): one quiet line under the chip row. */
 .concept-page-column .doc-heading-facts {
   order: 4;
   margin-top: var(--space-2);
   padding-inline: 0;
 }
 
-/* The action row: Edit · Discuss · the settle control (· Open all), real 32px buttons in one
-   bordered style; See what changed stays a quiet button beside the settle button. On the source
-   route the settle button over the source takes the same look. */
+/* The action row: Edit · Discuss · the settle control, real 32px buttons in one bordered style, on
+   one line beside the chat panel (a 680px column holds "Spec changed since you settled this plan"
+   with See what changed). See what changed stays a quiet button beside the settle button. On the
+   source route the settle button over the source takes the same look. */
 .concept-page-column .doc-heading-group:not(:has(> .doc-heading-views)) {
   grid-column: 1 / -1;
   order: 5;
@@ -149,8 +183,8 @@
 .concept-page-column .doc-heading-group:not(:has(> .doc-heading-views)) .plan-button,
 [data-loom-plan] .trace-source-head .trace-settle-control .plan-button {
   height: 32px;
-  gap: var(--space-2);
-  padding: 0 var(--space-3);
+  gap: 6px;
+  padding: 0 10px;
   border-color: var(--border);
   color: var(--foreground);
   font-size: var(--type-body);
@@ -164,6 +198,7 @@
 
 .concept-page-column .doc-heading-group:not(:has(> .doc-heading-views)) .plan-button.trace-changes,
 [data-loom-plan] .trace-source-head .trace-settle-control .plan-button.trace-changes {
+  padding-inline: var(--space-2);
   border-color: transparent;
   color: var(--muted-foreground);
 }
@@ -175,16 +210,29 @@
   color: var(--foreground);
 }
 
-/* The settle button's chevron: smaller and muted, after the state's words. */
+/* The settle button's chevron: smaller and muted, close after the state's words. */
 [data-loom-plan] .doc-heading .trace-settle-button > svg,
 [data-loom-plan] .trace-source-head .trace-settle-button > svg {
   width: 14px;
   height: 14px;
+  margin-inline-start: -2px;
   color: var(--muted-foreground);
 }
 
+/* Open all beside the settle control is its 32px square glyph at the row's end: with its words the
+   row would not hold beside the chat panel. Its words stay in the button for its accessible name;
+   without a settle control (an overview) it keeps them. */
+.concept-page-column .doc-heading-group > .trace-settle-control ~ .plan-button {
+  width: 32px;
+  margin-inline-start: auto;
+  padding: 0;
+  gap: 0;
+  font-size: 0;
+}
+
 /* Under 30rem of heading width (a phone): the switch leads, the breadcrumb under it; the title
-   steps down; Edit and Discuss share a row and the settle control takes the next whole. */
+   steps down; Edit and Discuss share a row and the settle control takes the next whole. Open all
+   takes a cell with its words. */
 @container (max-width: 30rem) {
   .concept-page-column .doc-heading-group:has(> .doc-heading-views) {
     grid-column: 1 / -1;
@@ -215,6 +263,13 @@
     width: 100%;
   }
 
+  .concept-page-column .doc-heading-group > .trace-settle-control ~ .plan-button {
+    margin-inline-start: 0;
+    padding: 0 10px;
+    gap: 6px;
+    font-size: var(--type-body);
+  }
+
   .concept-page-column .doc-heading-group > .trace-settle-control {
     grid-column: 1 / -1;
   }
@@ -224,151 +279,14 @@
   }
 }
 
-/* ── Scope standfirst ──────────────────────────────────────────────────────── */
-
-/* The stub's words in the reading face, a step over the body, ending in a small muted link to
-   their place; an amber note under them when the stub changed since settling. */
-[data-loom-plan] .trace-standfirst {
-  display: grid;
-  gap: var(--space-2);
-  min-width: 0;
-}
-
-[data-loom-plan] .trace-scope {
-  margin: 0;
-  color: var(--foreground);
-  font-family: var(--font-reading);
-  font-size: calc(var(--reading-size) * 1.1);
-  line-height: 1.45;
-  overflow-wrap: anywhere;
-  text-wrap: pretty;
-}
-
-[data-loom-plan] .trace-scope__from {
-  margin-inline-start: var(--space-1);
-  border-radius: 3px;
-  color: var(--muted-foreground);
-  font-family: var(--font-sans);
+/* The source route's own heading (the reading column's, under `.trace-source-head`): its
+   breadcrumb and toolbar controls at --type-ui, so the trace screens' chrome keeps 13px. */
+[data-loom-plan] .plan-document:has(> .trace-source-head) .doc-heading > nav,
+[data-loom-plan] .plan-document:has(> .trace-source-head) .doc-heading-toolbar .plan-button {
   font-size: var(--type-ui);
-  font-weight: 500;
-  text-decoration: none;
-  white-space: nowrap;
 }
 
-[data-loom-plan] .trace-scope__from:hover {
-  color: var(--foreground);
-  text-decoration: underline;
-  text-underline-offset: 2px;
-}
-
-[data-loom-plan] .trace-scope__note {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-1) var(--space-2);
-  margin: 0;
-  color: var(--foreground);
-  font-family: var(--font-sans);
-  font-size: var(--type-body);
-  line-height: var(--leading-ui);
-}
-
-/* See what changed inside a sentence: a link in the line's colour, underlined in a quiet edge. */
-[data-loom-plan] a.trace-changes:not(.plan-button) {
-  border-radius: 3px;
-  color: inherit;
-  font-weight: 500;
-  text-decoration: underline;
-  text-decoration-color: var(--border);
-  text-underline-offset: 3px;
-}
-
-[data-loom-plan] a.trace-changes:not(.plan-button):hover {
-  text-decoration-color: currentColor;
-}
-
-[data-loom-plan] .trace-scope__from:focus-visible,
-[data-loom-plan] a.trace-changes:not(.plan-button):focus-visible,
-[data-loom-plan] .trace-confirm__where a:focus-visible {
-  outline: 2px solid var(--ring);
-  outline-offset: 2px;
-}
-
-/* On the source route the standfirst, the settle control and a plan's briefs sit over the reading
-   column's heading, on its inset. The box is gone when none renders. */
-[data-loom-plan] .trace-source-head {
-  display: grid;
-  gap: var(--space-4);
-  padding: var(--space-5) var(--space-5) 0;
-}
-
-[data-loom-plan] .trace-source-head:empty {
-  display: none;
-}
-
-/* ── Settle control ────────────────────────────────────────────────────────── */
-
-/* The settle button, See what changed, a blocked reason and a note, on one wrapping line. */
-[data-loom-plan] .trace-settle-control {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-2);
-  min-width: 0;
-  font-family: var(--font-sans);
-  font-size: var(--type-ui);
-  line-height: var(--leading-ui);
-}
-
-/* A locked document's state: its glyph and words alone, on the buttons' line. */
-[data-loom-plan] .trace-settle-state {
-  display: inline-flex;
-  flex: none;
-  align-items: center;
-  gap: var(--space-2);
-  min-height: 32px;
-  color: var(--foreground);
-  font-family: var(--font-sans);
-  font-size: var(--type-body);
-  font-weight: 500;
-  white-space: nowrap;
-}
-
-[data-loom-plan] .trace-settle-state > .trace-glyph > svg {
-  width: 16px;
-  height: 16px;
-}
-
-/* A note is one --type-ui line in --foreground led by a 7px dot: the blocked tone for an alert,
-   muted for a status. */
-[data-loom-plan] .trace-settle-note {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-  min-width: 0;
-  margin: 0;
-  color: var(--foreground);
-  font-family: var(--font-sans);
-  font-size: var(--type-ui);
-  font-weight: 400;
-  line-height: var(--leading-ui);
-}
-
-[data-loom-plan] .trace-settle-note::before {
-  content: "";
-  width: 7px;
-  height: 7px;
-  flex: none;
-  border-radius: 50%;
-  background: var(--muted-foreground);
-}
-
-[data-loom-plan] .trace-settle-note[role="alert"]::before {
-  background: var(--tone-blocked);
-}
-
-.concept-page-column .doc-heading-number {
-  color: var(--muted-foreground);
-  font-weight: 400;
-  font-variant-numeric: tabular-nums;
+[data-loom-plan] .plan-document:has(> .trace-source-head) .doc-heading-toolbar .plan-button svg {
+  width: 14px;
+  height: 14px;
 }

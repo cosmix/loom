@@ -6,8 +6,9 @@
  * ledger is maps-findings.css. Every rule sits on the scales of ui/design.css and the tokens of
  * index.css; nothing names a colour. ui/DESIGN.md, Page rhythm ("Map pages") and Status.
  *
- * Titles and headings are Inter at the feature-document step (40px page title, 24px section
- * header, 18px heading row); prose is the reader's own face (`--font-reading`).
+ * Titles and headings are the chrome face (`--font-sans`) at the feature-document step (40px page
+ * title, 32px under 480px; 24px section header; 18px heading row); prose is the reader's own face
+ * (`--font-reading`).
  */
 @import "./maps-columns.css";
 
@@ -39,6 +40,15 @@
   line-height: 1.1;
   letter-spacing: -0.02em;
   overflow-wrap: anywhere;
+}
+
+/* The breadcrumb over the title (`map-page.tsx`), the document heading's trail at --type-ui. */
+[data-loom-plan]
+  .plan-page:has(> .coverage, > .maps-findings-head, > .maps-findings)
+  .plan-page__head
+  > nav {
+  min-width: 0;
+  font-size: var(--type-ui);
 }
 
 /* The standfirst: the reading face a step over the reading size, as a document's scope line. */
@@ -147,7 +157,7 @@
 }
 
 /* A filter tile repeats its row state's glyph before the word, drawn here as decoration (the
-   button is named by its label): a dashed ring for a gap and a ringed "!" for a change, both in
+   button is named by its count and word; the glyph's alt text is empty): a dashed ring for a gap and a ringed "!" for a change, both in
    the warning tone, a plain ring for open findings. */
 [data-loom-plan]
   .coverage-tile:is([data-tile="uncovered"], [data-tile="changed"], [data-tile="open"])

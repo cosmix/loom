@@ -53,7 +53,8 @@
 /* ── Plan page ─────────────────────────────────────────────────────────────── */
 
 /* Under a plan's heading, before its summary: the pressure record, what it implements and its
-   briefs, each a section under an Inter heading (the document step's 22px, ui/DESIGN.md Type) with
+   briefs, each a section under a chrome-face heading (`--font-sans` at the document step's 22px,
+   ui/DESIGN.md Type) with
    its count beside it on the heading's baseline. Space and hairlines divide them; only the
    pressure record stands on a surface. */
 [data-loom-plan] .trace-plan {
@@ -168,7 +169,7 @@
 }
 
 /* What it implements: one row per spec heading on a hairline, the mono section number, the
-   heading (Inter at row-heading size) with its section in muted ink, and the section's settle
+   heading (`--font-sans` at row-heading size) with its section in muted ink, and the section's settle
    glyph and short word at the row's end. Under 480px the state drops under the heading. */
 [data-loom-plan] .trace-implements__rows {
   margin: 0;
@@ -255,7 +256,7 @@
 
 [data-loom-plan] .concept-passage-coverage__slug {
   font-family: var(--font-mono);
-  font-size: 0.92em;
+  font-size: var(--type-ui);
 }
 
 [data-loom-plan] .concept-passage-coverage[data-covered="false"] a {

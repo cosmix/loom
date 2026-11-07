@@ -135,3 +135,31 @@
   outline: 2px solid var(--ring);
   outline-offset: 2px;
 }
+
+/* ── Buttons ───────────────────────────────────────────────────────────────── */
+
+/* Every action on the page (Review the feature, Plan this · Fold into entry · Dismiss, and the
+   forms' confirms and Cancel) is a 32px button at --type-body with a 16px glyph, and a reason
+   beside one is --type-ui: the page's chrome keeps the 13px floor. */
+[data-loom-plan]
+  :is(.maps-findings-head, .maps-actions, .maps-picker__actions, .maps-dismiss)
+  .plan-button {
+  height: 32px;
+  gap: var(--space-2);
+  padding: 0 var(--space-3);
+  font-size: var(--type-body);
+}
+
+[data-loom-plan]
+  :is(.maps-findings-head, .maps-actions, .maps-picker__actions, .maps-dismiss)
+  .plan-button
+  svg {
+  width: 16px;
+  height: 16px;
+}
+
+[data-loom-plan]
+  :is(.maps-findings-head, .maps-actions, .maps-picker__actions, .maps-dismiss)
+  .plan-fine {
+  font-size: var(--type-ui);
+}
