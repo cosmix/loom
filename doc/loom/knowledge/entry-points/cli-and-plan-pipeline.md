@@ -72,7 +72,7 @@ Three files to add a new subcommand:
 
 ## Verification System
 
-- `verify/criteria/runner.rs` - Acceptance criteria execution: handles AcceptanceCriterion::Simple (5min) and Extended (30s + output checks) + detect_stderr_warnings()
+- `verify/criteria/runner.rs` - Acceptance criteria execution: handles AcceptanceCriterion::Simple (5min) and Extended (`timeout_secs`, else 300 s, + output checks) + detect_stderr_warnings()
 - `verify/criteria/executor.rs` - Single criterion with timeout, SIGKILL on timeout
 - `verify/goal_backward/mod.rs` - Goal-backward verification (artifacts, wiring, wiring_tests, dead_code) — truths removed from goal-backward
 - `verify/goal_backward/truths.rs` - verify_truth_checks() retained for before_after.rs only
@@ -165,6 +165,11 @@ Internal modules: `extraction.rs` (YAML block extraction, plan name), `validatio
 | `loom/src/commands/hook/review_harvest.rs`                                                                                                                               | `loom hook review-harvest`, called by `subagent-stop.sh`                                                                                                                                                                      |
 | `loom/src/orchestrator/adjudication/{verdict_kinds,apply_kinds,prompt/*}.rs`, `daemon/server/{contracts,dispute_kinds}.rs`                                               | dispute kinds: verdicts, apply, judge prompts, daemon handlers                                                                                                                                                                |
 | `loom/src/plan/schema/{types_v2.rs,validation/v2_lints/}`                                                                                                                | v2 fields and `plan verify` lints                                                                                                                                                                                             |
+| `loom/src/verify/contracts/{choices,choices_validate,run_dir}.rs`, `stage_service/contracts_choices.rs`, `host_verify/{freeze,freeze_artefacts,freeze_format}.rs` | writer-chosen test, runner and cwd, their validation, and the freeze's static gate ([contract-phase](../architecture/contract-phase.md#writer-chosen-contract-details)) |
+| `loom/src/verify/integrity/{statements,moves,moves_collect,ratchet_diff}.rs` | statement-level edit comparison, cross-file move cancellation, ratchet direction |
+| `loom/src/commands/hook/reviewer_brief.rs`, `reviewer_brief_plan.rs` | `loom hook reviewer-brief`, called by `spawn-guard.sh` |
+| `loom/src/commands/plan/verify/dry_run*.rs` | `loom plan verify --dry-run` |
+| `loom/src/orchestrator/core/verdict_completion.rs`, `host_verify/verdict_complete.rs`, `models/stage/verdict_completion.rs` | the daemon's completion of a held stage after a verdict |
 | `doc/loom/knowledge/architecture/verification-v2-gates.md`                                                                                                               | current gate order, owners and runtime inputs                                                                                                                                                                                 |
 
 ## New CLI Surface

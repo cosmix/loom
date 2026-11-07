@@ -283,3 +283,19 @@ sibling's files.
 **Why:** The orchestrator took file names from `rg -l` matches on a keyword ("summary", "mermaid") and wrote them into the brief as the owner without opening the matched lines.
 **Prevention:** Before a brief names a file as the site of a bug or of existing behavior, read the matching lines (`rg -n`, not `-l`). In the planner, `summaries/summary-panel.*` is the Settings statistics panel; a document's reading body lives under `files/reading-column.tsx` and `ui/doc-heading.css`.
 **Fix:** The subagents were re-briefed with the correct owners.
+
+## A Growth Budget Ignored the Stable-Prefix Size Ceiling
+
+**What happened:** the brief for the `STAGE_EXIT_RULES` doctrine edit allowed 250 bytes of growth. `tests_size.rs` pins a ceiling and a floor on the stable prefix, and the edit needed about 217 bytes of trims elsewhere (`cache/blocks.rs`) to pass.
+
+**Why:** the brief set a growth cap without reading the headroom `tests_size.rs` leaves.
+
+**Prevention:** before setting a growth budget for signal text, read the headroom in `orchestrator/signals/tests_size.rs`; brief the trims with the growth.
+
+## A Worker's Compile Signal Never Existed
+
+**What happened:** in the verdict-completion and criteria-authoring stages the subagent PreToolUse hook blocked `cargo check --lib`, `cargo build --all-targets` and `cargo check --lib --tests` for workers, even when the brief allowed one check. Only a narrow `cargo test --lib <module>::` ran; integration-test targets (`tests/*.rs`) stayed uncompiled, and one worker's code (`tests_freeze.rs:307`, an old 6-argument call) reached the main agent's gate uncompiled.
+
+**Why:** the hook treats a compile as project-wide verification, and the brief promised a check the hook refuses.
+
+**Prevention:** brief workers with the one check the hook allows (a lib filter) and tell them it is the only compile signal; name the arity and signature changes other files must follow so the first full compile is the main agent's gate; a fix brief that edits a function near a size limit names `cargo test --manifest-path loom/Cargo.toml --test maintainability` as the check (a worker's lib filter never runs it: the security fix worker grew `record_static_refusal` to 54 lines, caught only by the gate). That repeat of [a worker's one scoped check missing the maintainability test](contract-autonomy-delivery.md#a-workers-one-scoped-check-missed-its-consumers-and-the-maintainability-test) has a hook proposal in [concerns/code-quality-and-hook-debt](../concerns/code-quality-and-hook-debt.md).
