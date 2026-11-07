@@ -50,18 +50,8 @@
   font-family: var(--font-sans);
 }
 
-/* The head line: the lede, which says what the documents are to this page ("Sources: the 12
-   sections this overview summarizes"), and at its end the mark legend when the page has marks,
-   both fine print; the legend drops under the lede when the line is too narrow. */
-.concept-key-head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: var(--space-1) var(--space-4);
-  min-width: 0;
-}
-
+/* The lede says what the documents are to the overview ("Sources: the 12 sections this overview
+   summarizes"), in fine print. */
 .concept-key-lede {
   max-width: 68ch;
   margin: 0;
@@ -127,6 +117,7 @@ a.concept-key-doc:hover {
 
 /* The title reads in the chrome's foreground so it, not the number, names the document. */
 .concept-key-title {
+  flex: 0 100 auto;
   min-width: 0;
   overflow: hidden;
   color: var(--foreground);
@@ -145,10 +136,13 @@ a.concept-key-doc:hover .concept-key-title {
   white-space: nowrap;
 }
 
-/* A section number never shrinks; a long plan slug is cut with an ellipsis at 14 characters so its
-   title still shows, and its full name stays in the link's name. */
+/* A long plan slug is cut with an ellipsis at 14 characters so its title still shows, and its
+   full name stays in the link's name. Once the title has given all its width, the slug shrinks
+   further, down to 4 characters, so the link and a "changed" after it fit their track instead of
+   running into the next one (the title's large shrink factor makes it give way first). */
 .concept-key-label {
-  flex: none;
+  flex: 0 1 auto;
+  min-width: 4ch;
   max-width: 14ch;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -176,24 +170,6 @@ a.concept-key-doc:hover .concept-key-title {
 
 .dark .concept-key-mark {
   background-color: color-mix(in oklch, var(--key-colour) 20%, transparent);
-}
-
-/* The legend for the squares after sentences: one sample square, then one sentence. */
-.concept-key-legend {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-  min-width: 0;
-  max-width: 68ch;
-  margin: 0;
-}
-
-.concept-key-square {
-  flex: none;
-  width: 8px;
-  height: 8px;
-  border-radius: 2px;
-  background: var(--muted-foreground);
 }
 
 /* ── Source link ──────────────────────────────────────────────────────────── */

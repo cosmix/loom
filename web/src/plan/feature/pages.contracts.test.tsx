@@ -130,23 +130,12 @@ function renderRoute(path: string, checklist: ChecklistView): void {
   );
 }
 
-/** The routed page beside the spine: the spine lists every plan too, so it proves nothing here. */
+/** The routed page beside the spine, whose own rows prove nothing about the page. */
 async function routedPage(): Promise<HTMLElement> {
   await screen.findByRole("navigation", { name: SPINE });
   const page = document.querySelector<HTMLElement>(".plan-layout__page");
   if (!page) throw new Error("the feature layout drew no page");
   return page;
-}
-
-/** The largest element around the plan's name that names no other plan, whatever draws the row. */
-async function planRowOf(page: HTMLElement, slug: string, other: string): Promise<HTMLElement> {
-  const [name] = await within(page).findAllByText(slug);
-  let row = name!;
-  while (row.parentElement && row.parentElement !== page) {
-    if (row.parentElement.textContent?.includes(other)) break;
-    row = row.parentElement;
-  }
-  return row;
 }
 
 function offerButtons(root: HTMLElement, label: string): HTMLElement[] {
@@ -172,12 +161,14 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-it("a finished feature's Run page lists every plan and holds no follow-up offer", async () => {
+it("a finished feature's Plans overview says every plan is done and holds no follow-up offer", async () => {
+  // An old Run link lands on the Plans overview, which holds the run.
   renderRoute("/f/atlas/run", finishedChecklist());
   const page = await routedPage();
 
-  await planRowOf(page, TESTED, UNTESTED);
-  await planRowOf(page, UNTESTED, TESTED);
+  const run = await within(page).findByRole("region", { name: "Run" });
+  expect(within(run).getByRole("status").textContent).toBe("Every plan is done.");
+  expect(within(run).queryByRole("button", { name: "Start a run" })).toBeNull();
 
   expect(offerButtons(page, FOLLOW_UPS)).toEqual([]);
   expect(followUpRuns).toEqual([]);

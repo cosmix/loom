@@ -1,6 +1,6 @@
 /*
  * The planning trace in the browser: settle marks, frontier hints, the heading's settle control,
- * the stub panel, edge chips and the turn footer's impact rows. Every rule sits on the scales of
+ * the stub panel, edge chips and the turn footer's impact rows (the briefs card is briefs.css). Every rule sits on the scales of
  * ui/design.css and the tokens of index.css; nothing names a colour.
  *
  * One tone per settle state, read from `data-settle` into --trace-tone and spent on a glyph alone
@@ -35,7 +35,6 @@
 
 [data-loom-plan] .trace-frontier a,
 [data-loom-plan] .trace-stub-text > a,
-[data-loom-plan] .trace-briefs a,
 [data-loom-plan] .trace-impact a {
   border-radius: 3px;
   color: var(--muted-foreground);
@@ -44,7 +43,6 @@
 
 [data-loom-plan] .trace-frontier a:hover,
 [data-loom-plan] .trace-stub-text > a:hover,
-[data-loom-plan] .trace-briefs a:hover,
 [data-loom-plan] .trace-impact a:hover {
   color: var(--foreground);
   text-decoration: underline;
@@ -258,39 +256,6 @@
 [data-loom-plan] .trace-stub-text strong {
   color: var(--foreground);
   font-weight: 500;
-}
-
-/* A plan's briefs: a label, then one mono line per file, each cut at the measure. */
-[data-loom-plan] .trace-briefs {
-  display: grid;
-  gap: var(--space-1);
-  font-family: var(--font-sans);
-  font-size: var(--type-ui);
-  line-height: var(--leading-ui);
-}
-
-[data-loom-plan] .trace-briefs > p {
-  font-weight: 500;
-}
-
-[data-loom-plan] .trace-briefs ul {
-  display: grid;
-  gap: 2px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-[data-loom-plan] .trace-briefs li {
-  min-width: 0;
-}
-
-[data-loom-plan] .trace-briefs a {
-  display: block;
-  overflow: hidden;
-  font-family: var(--font-mono);
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 /* ── Edge chips ────────────────────────────────────────────────────────────── */

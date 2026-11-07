@@ -51,6 +51,7 @@ function doc(path: string, role: DocRole, settle: SettleState, title: string, sl
     title,
     progress: "written" as const,
     settle,
+    settleable: true,
     stub: null,
     number: null,
     slug: slug ?? null,
@@ -168,6 +169,21 @@ it("marks no row for a document that is not written or has no trace entry", asyn
   // Section 02 is listed, not linked; the second plan is missing from the trace.
   expect(spine.getByText("Unwritten").closest("li")!.querySelector(".trace-settle")).toBeNull();
   expect(spine.getByRole("link", { name: /atlas-02/ }).querySelector(".trace-settle")).toBeNull();
+});
+
+it("marks no done work: a done feature's vision, metaplan and plans, while its sections keep theirs", async () => {
+  const trace = atlasTrace();
+  for (const doc of trace.documents) doc.settleable = doc.role === "section";
+  answer = { status: 200, body: trace };
+  const spine = renderSpine();
+
+  await waitFor(() =>
+    expect(settleWord(spine.getByRole("link", { name: /Run loop/ }))).toBe("Revised"),
+  );
+  expect(settleWord(spine.getByRole("link", { name: /^Vision/ }))).toBeUndefined();
+  expect(settleWord(spine.getByRole("link", { name: /^Metaplan/ }))).toBeUndefined();
+  expandPlans(spine);
+  expect(spine.getByRole("link", { name: /atlas-01/ }).querySelector(".trace-settle")).toBeNull();
 });
 
 it("marks nothing while the trace is missing", async () => {

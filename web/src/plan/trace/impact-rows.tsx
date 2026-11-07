@@ -12,7 +12,7 @@ import "./trace.css";
 /**
  * Under a changed document in the turn footer: the documents that moved with it (`revised`,
  * `stub_changed`, `upstream_changed`) and the plans covering a changed section, each with its
- * settle state. Titles come from the documents, so they are drawn as text. Nothing renders for
+ * settle state unless it is done work. Titles come from the documents, so they are drawn as text. Nothing renders for
  * a document outside a feature or one with no downstream.
  */
 export function ImpactRows({ path }: { path: string }): JSX.Element | null {
@@ -32,10 +32,15 @@ export function ImpactRows({ path }: { path: string }): JSX.Element | null {
             <li key={row.path}>
               <Link to={to}>
                 <Untrusted text={row.title} />
-              </Link>{" "}
-              <span className="trace-impact-state" data-settle={row.state}>
-                {settleLabel(row.state)}
-              </span>
+              </Link>
+              {row.state !== null && (
+                <>
+                  {" "}
+                  <span className="trace-impact-state" data-settle={row.state}>
+                    {settleLabel(row.state)}
+                  </span>
+                </>
+              )}
             </li>
           );
         })}

@@ -74,9 +74,9 @@ it("is not a live region, since it changes on every navigation", () => {
 
 it("follows navigation with nothing clicked, and is gone on a page with no document", async () => {
   const { router } = mount(SECTION_FIVE);
-  await go(router, "/f/atlas/run");
+  await go(router, "/f/atlas/engineering");
   expect(line("section_05")).toBeNull();
-  expect(line("Run")?.textContent).toContain("About Run");
+  expect(line("Engineering overview")?.textContent).toContain("About Engineering overview");
   await go(router, "/new");
   expect(screen.queryByRole("group")).toBeNull();
 });
@@ -125,9 +125,11 @@ it("a dismissal holds across pages that share one file, and ends at the next doc
 });
 
 it("a dismissal on a page without a source ends at any navigation", async () => {
-  const { router } = mount("/f/atlas/run");
+  const { store, router } = mount("/f/atlas/product");
+  // Without its checklist the overview names no source file.
+  act(() => store.set(checklistAtom, null));
   fireEvent.click(screen.getByRole("button", { name: "Dismiss context" }));
-  expect(line("Run")).toBeNull();
+  expect(line("Product overview")).toBeNull();
 
   await go(router, "/f/atlas/engineering");
   expect(line("Engineering overview")).not.toBeNull();

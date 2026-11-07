@@ -1,8 +1,8 @@
-import type { SettleState, TraceView } from "@/plan/api/schema-trace";
+import type { SettleState, TraceDoc, TraceView } from "@/plan/api/schema-trace";
 import { fileName } from "@/plan/concept/passages";
 import { featureSourceHref } from "@/plan/feature/source-href";
 import { featureHref } from "@/plan/feature/use-feature";
-import { docOfPath, settleLabel, summaryHref } from "@/plan/trace/model";
+import { docOfPath, settleLabel, shownSettle, summaryHref } from "@/plan/trace/model";
 
 // The coverage map as data: five columns of cards, the lineage that ties them together and the
 // filters. Pure reads of the trace; `coverage-page.tsx` draws it and `coverage-keys.ts` walks it.
@@ -57,9 +57,13 @@ export interface CoverageModel {
 
 const MOVED = new Set<CardState>(["revised", "stub_changed", "upstream_changed"]);
 
-/** The state a document's settle state gives its card; a draft or settled document flags nothing. */
-function settleCardState(state: SettleState): CardState {
-  return state === "draft" || state === "settled" ? "plain" : state;
+/**
+ * The state a document's settle state gives its card; a draft or settled document, and done work
+ * the reader is not asked to settle, flag nothing.
+ */
+function settleCardState(doc: TraceDoc | undefined): CardState {
+  const state = shownSettle(doc);
+  return state === null || state === "draft" || state === "settled" ? "plain" : state;
 }
 
 function describe(state: CardState): string | null {
@@ -86,7 +90,7 @@ function visionCards(trace: TraceView, feature: string): Card[] {
         key: `vision:${doc.path}`,
         column: "vision",
         title: doc.title,
-        state: settleCardState(doc.settle),
+        state: settleCardState(doc),
         href: summaryHref(feature, doc),
       }),
     );
@@ -146,7 +150,7 @@ function planCards(trace: TraceView, feature: string): Card[] {
         key: `plan:${path}`,
         column: "plans",
         title: doc?.title ?? name,
-        state: doc ? settleCardState(doc.settle) : "plain",
+        state: settleCardState(doc),
         href: doc ? summaryHref(feature, doc) : featureSourceHref(feature, path),
       }),
     );

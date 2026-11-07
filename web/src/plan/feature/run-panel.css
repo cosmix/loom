@@ -1,0 +1,25 @@
+/*
+ * The run on the Plans overview (`run-panel.tsx`): one chrome line on the run's state, then the
+ * start button with its notice under it and the dashboard link beside it. On the page ground,
+ * in no box (ui/DESIGN.md, Surfaces): a status and a button row draw no border.
+ */
+[data-loom-plan] .plan-run {
+  display: grid;
+  gap: var(--space-3);
+  margin-bottom: var(--space-6);
+}
+
+[data-loom-plan] .plan-run__line {
+  max-width: 48ch;
+  margin: 0;
+  color: var(--foreground);
+  font-size: var(--type-body);
+  line-height: var(--leading-body);
+}
+
+[data-loom-plan] .plan-run__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--space-2) var(--space-4);
+}
