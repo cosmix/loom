@@ -59,8 +59,9 @@ Open parser and command gaps found while writing the language skills, checked ag
   [verification-v2-delivery.md](../mistakes/verification-v2-delivery.md). A preflight check could resolve each
   contract's adapter and require its manifest in `working_dir`.
 - **Integrity blind spot.** A file marked skip-worktree or assume-unchanged hides its edits from the `git diff` the
-  fingerprint and the count totals trust. `verify::integrity::current_events` has no production caller (kept for the
-  pinned dispute-kinds API).
+  fingerprint and the count totals trust. `verify::integrity::current_events` is the
+  evidence source for `loom stage dispute-integrity` (`commands/stage/dispute_kinds.rs:73`), so the blind spot reaches
+  the judge's evidence too.
 - **Duplicated helpers** to unify: `verify/review/store.rs::canonical_work_dir` and the private one in
   `verify/contracts/store.rs`; the journal walk in `signals/v2_section_review.rs` and `commands/memory/handlers/pending.rs::staged_entries`;
   `CwdGuard` copied into four test files; `verify/utils.rs` `.size_limit(1 << 20)` versus `wiring.rs` `PATTERN_SIZE_LIMIT`.

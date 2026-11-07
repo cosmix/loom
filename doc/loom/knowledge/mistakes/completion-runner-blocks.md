@@ -183,7 +183,7 @@ each diagnostic to stderr.
 
 The unfiltered suite ran only inside host jobs.
 
-**Why:** the verifier round re-ran criteria that `loom stage complete` runs again. Completion could not reuse the check's passes, because the cache key pins HEAD ([Acceptance Cache Key Pins the Commit](../concerns/verification-v2-followups.md#acceptance-cache-key-pins-the-commit)).
+**Why:** the verifier round re-ran criteria that `loom stage complete` runs again. Completion could not reuse the check's passes, because the cache key then hashed the HEAD commit, so the commit between check and complete invalidated every pass. Commit 865eed49 rekeyed the cache on a content manifest of the tree; `host_verify/tests_child_reuse.rs` pins the reuse ([Acceptance Cache Rekeyed on Content](completion-runtime.md)).
 
 **Prevention:** the orchestrator runs `loom check` once per tree, fix rounds run `loom check <stage-id> --criterion <n>`, and completion runs once on the final committed tree. Count gate commands in transcripts before accepting a claim about gate cost.
 
