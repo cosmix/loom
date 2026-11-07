@@ -1,6 +1,7 @@
 //! Frozen contracts for the deny-once read gate and the Markdown outline. They run the real hook
-//! scripts and the real binary. Rule 1 warns with exit 0 before the gate exists, so each contract
-//! about an allowed read also asserts a denial: a contract of exit 0 alone would already pass.
+//! scripts and the real binary. The gate denies only a first whole read of a file that has an
+//! outline (`Gate::outlined`); a file with none (`Gate::live`) only warns. Each contract about an
+//! allowed read also asserts a denial: a contract of exit 0 alone would already pass.
 
 #[path = "integration/helpers.rs"]
 #[allow(dead_code)]
@@ -21,19 +22,43 @@ fn files_dir() -> TempDir {
 }
 
 #[test]
-fn first_whole_read_denied_then_repeat_allowed() {
+fn first_unoutlined_read_warns_every_time() {
     let gate = Gate::live();
+    let files = files_dir();
+    let file = big_file(files.path(), "big.txt");
+
+    gate.read(AGENT, &file)
+        .assert_unoutlined_warned(&file, "first whole read");
+    gate.read(AGENT, &file)
+        .assert_unoutlined_warned(&file, "repeat of a warned read");
+    assert!(gate.blocks().is_empty(), "blocks: {:?}", gate.blocks());
+}
+
+#[test]
+fn first_outlined_read_denied_then_repeat_allowed() {
+    let gate = Gate::outlined();
     let files = files_dir();
     let file = big_file(files.path(), "big.txt");
 
     gate.read(AGENT, &file).assert_denied("first whole read");
     gate.read(AGENT, &file)
         .assert_silently_allowed("repeat of a denied read");
+
+    let blocks = gate.blocks();
+    assert_eq!(blocks.len(), 1, "one block row: {blocks:?}");
+    for (field, want) in [
+        ("guard", "read-discipline"),
+        ("rule", "first-read"),
+        ("tool", "Read"),
+        ("subject", &*file.to_string_lossy()),
+    ] {
+        assert_eq!(blocks[0][field], want, "ledger field {field}: {blocks:?}");
+    }
 }
 
 #[test]
 fn outside_a_live_stage_only_warns() {
-    let mut gate = Gate::live();
+    let mut gate = Gate::outlined();
     let files = files_dir();
     let live = big_file(files.path(), "live.txt");
     let dead = big_file(files.path(), "dead.txt");
@@ -52,7 +77,7 @@ fn outside_a_live_stage_only_warns() {
 
 #[test]
 fn unrecordable_denial_fails_open() {
-    let mut gate = Gate::live();
+    let mut gate = Gate::outlined();
     let files = files_dir();
     let file = big_file(files.path(), "big.txt");
 
@@ -95,12 +120,12 @@ fn control_inputs_are_exempt() {
 
     let ordinary = big_file(root.path(), "doc/guides/ordinary.md");
     gate.read(AGENT, &ordinary)
-        .assert_denied("a file outside the exempt directories");
+        .assert_unoutlined_warned(&ordinary, "a file outside the exempt directories");
 }
 
 #[test]
 fn read_gate_false_only_warns() {
-    let gate = Gate::live();
+    let gate = Gate::outlined();
     let files = files_dir();
     let file = big_file(files.path(), "big.txt");
 
@@ -206,7 +231,7 @@ fn markdown_outline_reaches_the_denial() {
 
     let mut gate = Gate::live();
     gate.cwd = Some(repo.path().to_path_buf());
-    gate.loom_bin = Some(helpers::loom_bin_path());
+    gate.loom_bin = Some(helpers::loom_bin_path().into());
 
     let out = gate.read(AGENT, &file);
     out.assert_denied("whole read of a large Markdown file");
@@ -223,7 +248,7 @@ fn markdown_outline_reaches_the_denial() {
 
 #[test]
 fn second_agent_gets_its_own_denial() {
-    let gate = Gate::live();
+    let gate = Gate::outlined();
     let files = files_dir();
     let file = big_file(files.path(), "big.txt");
 
@@ -240,7 +265,7 @@ fn bash_cat_and_read_share_one_denial() {
     let big = big_file(root.path(), "files/big.md");
     let other = big_file(root.path(), "files/other.md");
 
-    let mut gate = Gate::live();
+    let mut gate = Gate::outlined();
     gate.cwd = Some(cwd);
 
     gate.bash(AGENT, "cat ../files/big.md")
@@ -250,11 +275,18 @@ fn bash_cat_and_read_share_one_denial() {
     gate.read(AGENT, &other).assert_denied("Read first");
     gate.bash(AGENT, "cat ../files/other.md")
         .assert_allowed("cat after Read");
+
+    let tools: Vec<_> = gate
+        .blocks()
+        .iter()
+        .map(|row| row["tool"].clone())
+        .collect();
+    assert_eq!(tools, ["Bash", "Read"], "block ledger tools");
 }
 
 #[test]
 fn denial_ledger_at_capacity_warns() {
-    let gate = Gate::live();
+    let gate = Gate::outlined();
     let files = files_dir();
     let paths: Vec<_> = (0..301)
         .map(|index| big_file(files.path(), &format!("file-{index}.txt")))
