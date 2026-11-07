@@ -1,11 +1,12 @@
-import { Layers } from "lucide-react";
-
 import type { HeadingChip, HeadingTone } from "@/plan/ui/doc-heading";
+import { INSTRUMENT_GLYPHS } from "@/plan/ui/glyphs";
 
 import { sectionCoverage, settleWords } from "./doc-model";
 import { coverageHref, docOfPath, isMoved, shownSettle } from "./model";
 import { SettleGlyph } from "./settle-glyph";
 import { useTrace } from "./state";
+
+const CoverageGlyph = INSTRUMENT_GLYPHS.coverage;
 
 /**
  * The chips a summary page's heading draws from the trace: the document's settle state as glyph
@@ -33,7 +34,7 @@ export function useTraceChips(feature: string | null, path: string | null): Head
     chips.push({
       key: "coverage",
       label: `${covered} of ${total} headings covered`,
-      icon: <Layers />,
+      icon: <CoverageGlyph />,
       to: coverageHref(feature, doc.path),
     });
   }

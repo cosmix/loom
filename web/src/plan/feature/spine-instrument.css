@@ -1,0 +1,211 @@
+/*
+ * The spine's two instruments (spine-instrument.tsx; ui/DESIGN.md, Surfaces): Coverage at the
+ * foot of Product spec and Findings at the foot of Plans, each a well inset to the child-row
+ * column. A well stands one surface step off the spine's ground (--card on --background) inside a
+ * hairline, where document rows are bare, because it is read as a ledger over the rows above it:
+ * an icon, a small uppercase label, a serif old-style figure, one dot per heading or finding, and
+ * an italic footnote. The link covers the whole well through its ::after and carries the focus
+ * ring there; the current well takes the --accent wash and an edge mixed toward --foreground, as the
+ * current row takes --muted. No motion beyond the rows' 120ms hover transition.
+ */
+[data-loom-plan] .plan-spine__instrument {
+  position: relative;
+  min-width: 0;
+  margin: var(--space-2) 0 var(--space-1);
+  padding: 10px 12px 11px;
+  border: 1px solid var(--hairline);
+  border-radius: 9px;
+  background: var(--card);
+  transition:
+    background-color 120ms,
+    border-color 120ms;
+}
+
+[data-loom-plan] .plan-spine__instrument:hover {
+  background: var(--muted);
+}
+
+/* Ledger's --accent sits a hair off the hover --muted, so the edge carries the difference: a
+   token mix toward --foreground, which hover (background only) never draws. The current well
+   stays this way under the pointer: the rule is later and ties hover on specificity. */
+[data-loom-plan] .plan-spine__instrument:has(> * > [aria-current="page"]) {
+  border-color: color-mix(in oklch, var(--foreground) 28%, var(--border));
+  background: var(--accent);
+}
+
+/* The top line: the 14px icon, then the label with the figure set to its end on one baseline. */
+[data-loom-plan] .plan-spine__instrument-top {
+  display: grid;
+  grid-template-columns: 14px minmax(0, 1fr);
+  align-items: center;
+  column-gap: var(--space-2);
+}
+
+[data-loom-plan] .plan-spine__instrument-mark {
+  display: inline-flex;
+  width: 14px;
+  height: 14px;
+  color: var(--muted-foreground);
+}
+
+[data-loom-plan] .plan-spine__instrument-mark > svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* The findings icon turns amber while any finding waits: attention turns the glyph (Status). */
+[data-loom-plan] .plan-spine__instrument-mark[data-tone="warning"] {
+  color: var(--tone-warning);
+}
+
+[data-loom-plan] .plan-spine__instrument-link {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+  min-width: 0;
+  color: inherit;
+  text-decoration: none;
+}
+
+/* The link's hit area and focus ring are the whole well. `position: static` on the link itself
+   keeps the ::after's containing block the well, which is positioned. */
+[data-loom-plan] .plan-spine__instrument-link::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 9px;
+}
+
+[data-loom-plan] .plan-spine__instrument-link:focus-visible {
+  outline: none;
+}
+
+[data-loom-plan] .plan-spine__instrument-link:focus-visible::after {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+/* The label is the one uppercase line in the spine, under the eyebrow utility's letterspacing
+   at 11px: the figure beside it is 22px, and a sentence-case word at the rows' size would read as
+   one more row. */
+[data-loom-plan] .plan-spine__instrument-label {
+  color: var(--muted-foreground);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  line-height: 1.3;
+  text-transform: uppercase;
+  transition: color 120ms;
+}
+
+[data-loom-plan] .plan-spine__instrument:hover .plan-spine__instrument-label,
+[data-loom-plan] .plan-spine__instrument-link[aria-current="page"] .plan-spine__instrument-label,
+[data-loom-plan]
+  .plan-spine__instrument:has(> * > [aria-current="page"])
+  .plan-spine__instrument-mark {
+  color: var(--foreground);
+}
+
+/* The figure: a reading-face old-style numeral, its unit after it in italic muted type. */
+[data-loom-plan] .plan-spine__instrument-figure {
+  flex: none;
+  color: var(--foreground);
+  font-family: var(--font-reading);
+  font-size: 22px;
+  font-weight: 600;
+  font-variant-numeric: oldstyle-nums;
+  letter-spacing: -0.01em;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+/* The one toned figure: open findings, read beside the amber icon. The suffix stays muted. */
+[data-loom-plan] .plan-spine__instrument-figure[data-tone="warning"] {
+  color: var(--tone-warning);
+}
+
+[data-loom-plan] .plan-spine__instrument-suffix {
+  color: var(--muted-foreground);
+  font-size: var(--type-ui);
+  font-style: italic;
+  font-weight: 400;
+}
+
+[data-loom-plan] .plan-spine__instrument-clear {
+  flex: none;
+  color: var(--muted-foreground);
+  font-family: var(--font-reading);
+  font-size: 15px;
+  font-style: italic;
+  line-height: 1;
+}
+
+/* The strip starts under the label, past the icon and its gap, and wraps inside the well: a
+   section's dots sit 2px apart and sections 7px apart, so the groups read before the count. A
+   section longer than the well's width wraps too, so no spec overflows the spine. */
+[data-loom-plan] .plan-spine__instrument-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) 7px;
+  margin: 9px 0 0 calc(14px + var(--space-2));
+}
+
+[data-loom-plan] .plan-spine__instrument-section {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+}
+
+[data-loom-plan] .plan-spine__instrument-dot {
+  display: block;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+}
+
+/* A covered heading is ink at 70%; one nothing covers is a hollow amber ring, Coverage's Not
+   covered state. An open finding is filled amber; a decided one a hollow muted ring. */
+[data-loom-plan] .plan-spine__instrument-dot[data-dot="covered"] {
+  background: color-mix(in oklab, var(--foreground) 70%, transparent);
+}
+
+[data-loom-plan] .plan-spine__instrument-dot[data-dot="uncovered"] {
+  box-shadow: inset 0 0 0 1.25px var(--tone-warning);
+}
+
+[data-loom-plan] .plan-spine__instrument-dot[data-dot="open"] {
+  background: var(--tone-warning);
+}
+
+[data-loom-plan] .plan-spine__instrument-dot[data-dot="decided"] {
+  box-shadow: inset 0 0 0 1.25px var(--muted-foreground);
+}
+
+/* The footnote: the reading face in italic at the spine's 13px floor, its section numbers and
+   run labels set upright in mono. */
+[data-loom-plan] .plan-spine__instrument-foot {
+  margin: 7px 0 0 calc(14px + var(--space-2));
+  color: var(--muted-foreground);
+  font-family: var(--font-reading);
+  font-size: var(--type-ui);
+  font-style: italic;
+  font-weight: 400;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+[data-loom-plan] .plan-spine__instrument-ref {
+  color: var(--foreground);
+  font-family: var(--font-mono);
+  font-size: var(--type-ui);
+  font-style: normal;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-loom-plan] .plan-spine__instrument,
+  [data-loom-plan] .plan-spine__instrument-label {
+    transition: none;
+  }
+}

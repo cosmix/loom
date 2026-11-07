@@ -132,6 +132,29 @@ describe("rows", () => {
     expect(link("Overview").getAttribute("href")).toBe("/f/atlas/product");
   });
 
+  it("ends Product spec with Coverage and Plans with Findings, each a bare name without the trace", () => {
+    renderSpine("/f/atlas/product");
+    fireEvent.click(within(spine()).getByRole("button", { name: "Expand Plans" }));
+
+    // Each instrument is the last row of its group's list, with no trace to read from here.
+    const coverage = link("Coverage").closest("li")!;
+    expect(coverage.parentElement?.lastElementChild).toBe(coverage);
+    expect(coverage.parentElement?.querySelector("[title='atlas-01']")).toBeNull();
+    expect(coverage.getAttribute("data-instrument")).toBe("coverage");
+    expect(coverage.textContent).toBe("Coverage");
+    expect(coverage.querySelector(".plan-spine__instrument-mark svg")).not.toBeNull();
+    expect(coverage.querySelector("[data-glyph]")).toBeNull();
+    expect(link("Coverage").getAttribute("href")).toBe("/f/atlas/coverage");
+
+    const findings = link("Findings").closest("li")!;
+    expect(findings.parentElement?.lastElementChild).toBe(findings);
+    expect(findings.parentElement?.contains(planRow("atlas-02"))).toBe(true);
+    expect(findings.getAttribute("data-instrument")).toBe("findings");
+    expect(findings.textContent).toBe("Findings");
+    expect(findings.querySelector("[data-tone]")).toBeNull();
+    expect(link("Findings").getAttribute("href")).toBe("/f/atlas/findings");
+  });
+
   it("lists no documents under the metaplan group", () => {
     const metaplans = [{ path: "doc/plans/atlas/index.md", title: "Roadmap" }];
     renderSpine("/f/atlas/metaplan", atlas({ metaplans }));
@@ -151,6 +174,16 @@ describe("the current row", () => {
     renderSpine("/f/atlas/product");
 
     expect(current().map((anchor) => anchor.textContent)).toEqual(["Overview"]);
+  });
+
+  it("marks the Coverage row on its page, and the Documents control names it", () => {
+    renderSpine("/f/atlas/coverage");
+
+    expect(current().map((anchor) => anchor.getAttribute("href"))).toEqual(["/f/atlas/coverage"]);
+    expect(current()[0]!.closest("li")?.getAttribute("data-instrument")).toBe("coverage");
+    expect(within(spine()).getByRole("button", { name: /Documents/ }).textContent).toContain(
+      "Coverage",
+    );
   });
 
   it("marks a section, and a row with no children by its own link", () => {

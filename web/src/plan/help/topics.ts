@@ -1,16 +1,16 @@
 import {
   BookOpenIcon,
-  ClipboardListIcon,
   CompassIcon,
   FlaskConicalIcon,
   KeyboardIcon,
   LayersIcon,
   MessagesSquareIcon,
   ScrollTextIcon,
-  WaypointsIcon,
   type LucideIcon,
 } from "lucide-react";
 import type { ComponentType } from "react";
+
+import { INSTRUMENT_GLYPHS } from "@/plan/ui/glyphs";
 
 import { CHAT_SCENES, CHAT_TIPS } from "./chat-scene";
 import { FEATURES_SCENES, FEATURES_TIPS } from "./features-scene";
@@ -55,7 +55,7 @@ export const PLANNER_HELP_TOPICS: readonly PlannerHelpTopic[] = [
           },
           {
             target: 'nav[aria-label="Feature documents"]',
-            text: "The spine has four groups: Vision, Product spec, Metaplan and Plans, which ends with the Findings page. It marks what is done, and each plan row reads Pressure-tested with a date or Not pressure-tested.",
+            text: "The spine has four groups: Vision, Product spec, Metaplan and Plans. Product spec ends with the Coverage well and Plans with the Findings well, the two ledgers read over the documents above them: a count, one dot per heading or finding, and a footnote naming the gaps or the review. It marks what is done, and each plan row reads Pressure-tested with a date or Not pressure-tested.",
           },
           {
             target: '[aria-label$="Waiting for you"]',
@@ -126,10 +126,10 @@ export const PLANNER_HELP_TOPICS: readonly PlannerHelpTopic[] = [
     id: "coverage",
     label: "Coverage",
     description: "See which spec headings plans cover, find the gaps and open a row to see why.",
-    Icon: WaypointsIcon,
+    Icon: INSTRUMENT_GLYPHS.coverage,
     hue: 7,
     intro:
-      "The Coverage page lists every heading of the spec by section, with the plans and stages that cover it. The four tiles count the rows and filter them; open a row to see why the heading exists and how it is delivered.",
+      "The Coverage page lists every heading of the spec by section, with the plans and stages that cover it. The four tiles count the rows and filter them; open a row to see why the heading exists and how it is delivered. Its well closes the spine's Product spec group: one dot per heading, grouped by section and hollow where no plan covers it, with the count and the sections that have gaps.",
     scenes: [],
     Body: CoverageHelp,
     tips: COVERAGE_TIPS,
@@ -138,10 +138,10 @@ export const PLANNER_HELP_TOPICS: readonly PlannerHelpTopic[] = [
     id: "findings",
     label: "Findings",
     description: "Triage what reviews found: plan it, fold it into an entry or dismiss it.",
-    Icon: ClipboardListIcon,
+    Icon: INSTRUMENT_GLYPHS.findings,
     hue: 3,
     intro:
-      "The Findings page is the feature's ledger of what reviews found, grouped by the run that found it. Each open finding offers three ways to decide it.",
+      "The Findings page is the feature's ledger of what reviews found, grouped by the run that found it. Each open finding offers three ways to decide it. Its well closes the spine's Plans group: one pip per finding, filled while it waits for a decision, with the open count and the review it came from.",
     scenes: [],
     Body: FindingsHelp,
     tips: FINDINGS_TIPS,

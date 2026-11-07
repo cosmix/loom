@@ -15,6 +15,7 @@ import type {
   SpineChild,
   SpineGroup,
 } from "@/plan/feature/spine-model";
+import { InstrumentWell } from "@/plan/feature/spine-instrument";
 import { SEAL_ICONS } from "@/plan/trace/settle-glyph";
 import { STEP_MARK_GLYPHS } from "@/plan/ui/glyphs";
 
@@ -80,6 +81,12 @@ function PressureWord({ pressure }: { pressure: PlanPressure }) {
 }
 
 function ChildRow({ child, pathname }: { child: SpineChild; pathname: string }) {
+  // An instrument closes its group as a well of its own (spine-instrument.tsx), not a row.
+  if (child.instrument !== null && child.to !== null) {
+    return (
+      <InstrumentWell instrument={child.instrument} to={child.to} current={pathname === child.to} />
+    );
+  }
   const body = (
     <>
       {child.glyph !== null && <GlyphMark glyph={child.glyph} />}

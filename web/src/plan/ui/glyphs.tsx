@@ -5,6 +5,7 @@ import {
   CircleCheck,
   CircleCheckBig,
   CircleDashed,
+  ClipboardList,
   CircleDot,
   CircleHelp,
   FileSearch,
@@ -22,6 +23,7 @@ import {
   SlidersHorizontal,
   StickyNote,
   Telescope,
+  Waypoints,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
@@ -96,6 +98,12 @@ export const STEP_MARK_GLYPHS: Record<MarkView, LucideIcon> = {
 export const VIEW_GLYPHS: Record<ViewId, LucideIcon> = {
   home: House,
   files: FolderTree,
+};
+
+/** The two trace ledgers, as the spine's instrument rows and the Help topics draw them. */
+export const INSTRUMENT_GLYPHS: Record<"coverage" | "findings", LucideIcon> = {
+  coverage: Waypoints,
+  findings: ClipboardList,
 };
 
 export const OTHER_GLYPHS: {

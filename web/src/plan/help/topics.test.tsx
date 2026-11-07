@@ -212,7 +212,9 @@ it("keeps the scene inert without HTTP requests or a live socket", () => {
 
 it("states the current planner behavior in the notes, tips and intros", () => {
   const [around, , , chat, pressure] = PLANNER_HELP_TOPICS;
-  expect(around!.scenes[0]!.notes[1]!.text).toMatch(/four groups.*Findings.*Not pressure-tested/);
+  expect(around!.scenes[0]!.notes[1]!.text).toMatch(
+    /four groups.*Coverage.*Findings.*Not pressure-tested/,
+  );
   expect(around!.scenes[0]!.notes[2]!.text).toContain("roundel");
   const aroundTips = (around!.tips ?? []).join(" ");
   expect(aroundTips).toContain("product overview");

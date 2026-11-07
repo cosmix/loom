@@ -187,15 +187,12 @@ describe("the coverage page rows", () => {
 });
 
 describe("the entry links", () => {
-  it("send the product overview to Coverage", () => {
-    renderPage(<Gaps scope="product" />, "/f/atlas/product", atlas({}));
-    expect(screen.getByRole("link", { name: "Coverage" }).getAttribute("href")).toBe(
-      "/f/atlas/coverage",
-    );
-  });
-
-  it("draw no Coverage link on the engineering overview", () => {
-    renderPage(<Gaps scope="engineering" />, "/f/atlas/engineering", atlas({}));
-    expect(screen.queryByRole("link", { name: "Coverage" })).toBeNull();
-  });
+  // The way to Coverage is the spine's well at the foot of the Product spec group (spine-instrument.tsx).
+  it.each(["product", "engineering"] as const)(
+    "draw no Coverage link of their own on the %s overview",
+    (scope) => {
+      renderPage(<Gaps scope={scope} />, `/f/atlas/${scope}`, atlas({}));
+      expect(screen.queryByRole("link", { name: /Coverage/ })).toBeNull();
+    },
+  );
 });
