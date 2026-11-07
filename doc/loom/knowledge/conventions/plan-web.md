@@ -167,3 +167,7 @@ The user's browser is Firefox; a Chromium-only pass missed an overflowing spine,
 - Plan detection on a summary page uses the page key's scope (`engineering`), never `plan_state`: a fixture summary has `plan_state` null.
 - A redesign that contradicts frozen tests removes or updates them in the main agent and names them in one `loom stage dispute-integrity` filing; the replacement contracts live in `trace/trace-ui.contracts.test.tsx`, and the surviving old contracts keep passing unchanged. Each moved import (`OPEN_DIALOG` to `web/src/lib/open-dialog.ts`) is a one-line edit made where the deleted module was imported.
 - Visual edits go through a worker briefed to invoke `frontend-design:frontend-design` first, or the main agent loads it before editing, however small the edit.
+
+## Accessible Names Trim Each Span
+
+The accessible-name and accessible-description algorithms (dom-accessibility-api, used by testing-library's getByRole name/description options) trim each span's own text before joining. A separating space or word placed inside a span is lost: `<span>4</span><span class="sr-only"> headings covered</span>` reads "4headings covered". Put separators (" ", " and ", ", ") in text nodes beside the spans (`feature/spine-instrument.tsx`). The repo has no jest-dom; assert descriptions with `getByRole(role, { name, description })`.
