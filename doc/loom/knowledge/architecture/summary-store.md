@@ -18,6 +18,8 @@ it lists the overview members in source order (`product`: the vision's rows; `en
 plan belongs to the feature) and the feature's eligible documents outside both. The vision summary and the metaplan summary are in neither member list nor in `Scope.outside` (the filter drops `is_vision` and `is_metaplan` ids): the product overview keeps citing the vision's sections directly, and the engineering overview cites plans, so overview sealing involves neither. The metaplan summary takes the document limit (`format::MAX_DOCUMENT_SENTENCES`), a plan summary the plan limit (`MAX_PLAN_SENTENCES`, [File Format](#file-format)), a vision summary at most 8 sentences (`format::MAX_VISION_SENTENCES`), all chosen by `format::sentence_limit(id)`, which the rebuild brief also states; a vision summary holds at most 3 paragraphs, a prompt rule only, because no parser counts paragraphs. `validate_id`'s slug rule is stricter than `planning::slug::plan_slug`, so a plan whose slug holds a space silently gets no summary. `summary_path` returns an empty path for an invalid id; every caller
 validates first. Adding an expected id changes every summary id list and count in the lib tests and the Rust summary contract targets.
 
+A brief has no summary id of its own. A plan summary covers the plan's brief bundle (`briefs::bundle_files`, the files under `<plan home>/briefs/<slug>/`), so the summary store and the [planning trace](planning-trace.md) share one definition of what a plan is made of. A move between homes (`engine.rs` `with_source`) rewrites only the plan's own `links` and `cites` keys; brief links, brief `cites` keys and `bundle` keys keep the old `briefs/<slug>/` path, so a moved plan with briefs reads stale and is rebuilt ([limit](../concerns/planning-document-model-followups.md#planning-trace-limits)).
+
 The runtime directory (`planning-document-model.md`, Runtime Directory) holds the store's session state outside the
 repository: `claims/`, `drafts/<id>.md` and `summaries.lock`.
 
@@ -31,6 +33,7 @@ A summary file is front matter, one `#` title, then headings (`#`, `##`) and par
 - `cites`: `path#anchor` (or `path` for the preamble) to the hash of the cited span.
 - `members`: overview only, member id to `members_hash`, the `normalized_hash` of that member's sentence ids joined by
   `\n` in order.
+- `bundle`: plan summaries only, each brief of the plan's bundle (`briefs::bundle_files`) to its content hash, or to `Project::fingerprint` for a brief without Markdown text (JSON mockup, unreadable, oversized). Computed at seal by `evaluate::bundle_hashes`, written only when non-empty; `parse_front` takes the summary id and refuses `bundle` on overviews and on every non-plan document summary (`format/front.rs`). A plan summary of a plan with no briefs that carries `bundle` parses and reads incomplete.
 
 Body rules, each a rejection with a 1-based line: no indented lines, list items, table rows, code fences, block quotes,
 headings deeper than level 2, HTML or conflict markers; a heading holds no link; a sentence is one line whose citation
@@ -62,7 +65,7 @@ sentence can ask whether the member sentence it cites is current (`evaluate/cite
 | Summary | `missing` | no file, or a file that fails validation, holds conflict markers, or names another source; checked first, so a claim on a missing summary reads `missing [claimed by ...]` |
 | Summary | `rebuilding` | a claim names it and the file is valid; its sentences keep their states |
 | Summary | `stale` | any sentence stale |
-| Summary | `incomplete` | all sentences current, but a document's `file` hash differs from its source's, or an overview's `members` map differs from the members' hashes now |
+| Summary | `incomplete` | all sentences current, but a document's `file` hash differs from its source's, a plan summary's `bundle` map differs from `evaluate::bundle_hashes` of its briefs now (a brief added, removed or edited; `evaluate/cite.rs` `Context::complete`), or an overview's `members` map differs from the members' hashes now. A cited brief span that changed stales its sentence (`Context::holds`, `Kind::Document.bundle`) |
 | Summary | `current` | none of the above |
 
 `is_out_of_date` is stale, incomplete or missing. A deleted source drops its member summary and stales the overview
@@ -95,8 +98,8 @@ are not reported" must add an unrelated `doc/` change in the same window.
 read the draft `drafts/<id>.md` from the runtime directory (bounded to 256 KiB, no-follow), check the claim, parse the
 draft, then in one hold of the store lock check every link and write the canonical file. Rules (`seal/links.rs`, `seal/levels.rs`):
 
-- every link must resolve; a `Source` link must name a source of this summary (a document: its own source; `product`: the
-  vision; `engineering`: the metaplan) and an existing anchor, and records its span hash under `cites`;
+- every link must resolve; a `Source` link must name a source of this summary (a document: its own source, and for a plan summary also each file of its brief bundle, `Rules::allowed_sources`; `product`: the
+  vision; `engineering`: the metaplan) and an existing anchor, and records its span hash under `cites`. A plan summary must cite every brief with Markdown text (`uncited_briefs`; refusal `brief <path> is not cited` on line 1); a brief without text is allowed as a source but not required, because it has no citable anchor. The plan's locked state does not matter: briefs of an `IN_PROGRESS-` or `DONE-` plan keep their sections and content hash;
 - a `Sentence` link is allowed in two places. An overview may link only to a member, only to a current sentence of a non-missing
   member, and only to a **citable** sentence: one that cites no summary sentence (`links.rs` `citable`). A plan summary's opening sentences cite their own
   detail sentences, so an overview cites the detail sentences of a plan and a member sentence that cites a sentence is refused ("opens to detail sentences; cite those detail sentences
@@ -105,7 +108,7 @@ draft, then in one hold of the store lock check every link and write the canonic
 - **two-member rule** (`single_member_problem` in `seal/links.rs`): an overview sentence that cites member sentences draws on at least two of them, because a sentence that opens to one member sentence shows the reader the same thing twice. The seal refuses a sentence whose problem-free citations name exactly one member sentence ("an overview sentence draws on at least two"), unless that member's summary holds exactly one citable sentence, where there is nothing else to cite (the exemption counts citable sentences, so a plan summary with one detail sentence can be cited alone; its opening sentences cite a sentence and are not citable). The brief's overview rule (`brief.rs`) pins the text "holds a single sentence"; the agent and codex prompts and `section_04` say "a single citable sentence". Measured over the stored overviews before the rule: 7 of 25 member-citing sentences in `feat-planner/product` and 12 of 27 in `feat-planner/engineering` cited exactly one member sentence; stored overviews change on their next rebuild. Known gap: `drawn` counts only problem-free citations, so a sentence citing one current and one stale member sentence also gets this error beside the stale error ([follow-up](../concerns/planner-ui-repair-followups.md#planner-review-fixes-unchecked-here-and-reviewer-suggestions));
 - an overview must cite every member and every source document at least once, or the seal is refused;
 - the front matter is computed, never taken from the draft: `file` from the source's content hash, `members` from each
-  member's `members_hash` at seal time.
+  member's `members_hash` at seal time, `bundle` from `evaluate::bundle_hashes`.
 
 ### Two levels in a plan summary (seal)
 

@@ -14,7 +14,7 @@
 | [conventions.md](conventions.md) | Coding conventions discovered in the codebase | 250 |
 | [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 248 |
 | [stack.md](stack.md) | Dependencies, frameworks, and tooling used in the project | 115 |
-| [concerns.md](concerns.md) | Technical debt, warnings, and issues to address | 238 |
+| [concerns.md](concerns.md) | Technical debt, warnings, and issues to address | 240 |
 
 ## Tier 2 — Topics
 
@@ -25,7 +25,7 @@
 | [adjudication-lifecycle](architecture/adjudication-lifecycle.md) |  | 150 |
 | [codex-concurrency](architecture/codex-concurrency.md) | Limits | 110 |
 | [codex-plugin](architecture/codex-plugin.md) |  | 378 |
-| [completion-recovery](architecture/completion-recovery.md) | Attest | 38 |
+| [completion-recovery](architecture/completion-recovery.md) |  | 38 |
 | [config-value-types](architecture/config-value-types.md) |  | 85 |
 | [context-ceiling](architecture/context-ceiling.md) |  | 111 |
 | [context-retrieval](architecture/context-retrieval.md) |  | 396 |
@@ -40,7 +40,7 @@
 | [directory-structure](architecture/directory-structure.md) | Tree | 50 |
 | [execution-containment](architecture/execution-containment.md) |  | 395 |
 | [hook-system](architecture/hook-system.md) |  | 309 |
-| [knowledge-bootstrap](architecture/knowledge-bootstrap.md) | Digest | 83 |
+| [knowledge-bootstrap](architecture/knowledge-bootstrap.md) |  | 83 |
 | [knowledge-hierarchy](architecture/knowledge-hierarchy.md) | KB fs | 264 |
 | [live-preview-editor](architecture/live-preview-editor.md) | Editor | 28 |
 | [loom-ask](architecture/loom-ask.md) |  | 75 |
@@ -50,14 +50,15 @@
 | [orchestrator-loop](architecture/orchestrator-loop.md) | Ticks | 80 |
 | [owned-waits](architecture/owned-waits.md) | Waits | 74 |
 | [plan-lifecycle-and-fields](architecture/plan-lifecycle-and-fields.md) |  | 257 |
-| [plan-server](architecture/plan-server.md) | Chat | 245 |
-| [planner-feature-screens](architecture/planner-feature-screens.md) | Spine | 45 |
+| [plan-server](architecture/plan-server.md) | Chat | 246 |
+| [planner-feature-screens](architecture/planner-feature-screens.md) | Spine | 47 |
 | [planner-uploads-and-drafts](architecture/planner-uploads-and-drafts.md) |  | 35 |
 | [planner-web-shell](architecture/planner-web-shell.md) | Shell | 108 |
-| [planning-document-model](architecture/planning-document-model.md) | Docs | 179 |
+| [planning-document-model](architecture/planning-document-model.md) | Docs | 183 |
 | [planning-guidance](architecture/planning-guidance.md) |  | 35 |
 | [planning-session-bridge](architecture/planning-session-bridge.md) |  | 264 |
 | [planning-session-sandbox](architecture/planning-session-sandbox.md) |  | 146 |
+| [planning-trace](architecture/planning-trace.md) |  | 91 |
 | [pressure](architecture/pressure.md) |  | 42 |
 | [quota-poller](architecture/quota-poller.md) |  | 37 |
 | [read-gate](architecture/read-gate.md) |  | 146 |
@@ -72,7 +73,7 @@
 | [source-graph-resolution](architecture/source-graph-resolution.md) |  | 125 |
 | [source-graph-view](architecture/source-graph-view.md) |  | 78 |
 | [status-data-model](architecture/status-data-model.md) | Fields | 241 |
-| [summary-store](architecture/summary-store.md) |  | 309 |
+| [summary-store](architecture/summary-store.md) |  | 312 |
 | [target-guard](architecture/target-guard.md) | Tip | 127 |
 | [terminal-backends](architecture/terminal-backends.md) |  | 285 |
 | [test-runner-adapters](architecture/test-runner-adapters.md) |  | 56 |
@@ -120,7 +121,7 @@
 | [git-and-build-workflow](conventions/git-and-build-workflow.md) |  | 237 |
 | [guidance-channels-and-plugin-scope](conventions/guidance-channels-and-plugin-scope.md) |  | 139 |
 | [model-and-effort-config](conventions/model-and-effort-config.md) |  | 143 |
-| [plan-web](conventions/plan-web.md) |  | 134 |
+| [plan-web](conventions/plan-web.md) |  | 145 |
 | [plan-yaml-and-hooks](conventions/plan-yaml-and-hooks.md) |  | 182 |
 | [web-dashboard-typography](conventions/web-dashboard-typography.md) |  | 63 |
 
@@ -166,7 +167,7 @@
 | [plan-authoring](mistakes/plan-authoring.md) |  | 79 |
 | [plan-server-delivery](mistakes/plan-server-delivery.md) | Slips | 374 |
 | [planner-design-brainstorm](mistakes/planner-design-brainstorm.md) | Stubs | 73 |
-| [planner-follow-ups-delivery](mistakes/planner-follow-ups-delivery.md) | Slips | 68 |
+| [planner-follow-ups-delivery](mistakes/planner-follow-ups-delivery.md) | Slips | 146 |
 | [planner-polish](mistakes/planner-polish.md) | Polish | 100 |
 | [planner-redesign](mistakes/planner-redesign.md) |  | 80 |
 | [planner-review-fixes](mistakes/planner-review-fixes.md) |  | 48 |
@@ -195,7 +196,7 @@
 | [store-without-consumer](mistakes/store-without-consumer.md) | Unread | 104 |
 | [subagent-briefing](mistakes/subagent-briefing.md) |  | 386 |
 | [subagent-liveness-and-watch](mistakes/subagent-liveness-and-watch.md) |  | 387 |
-| [subagent-orchestration](mistakes/subagent-orchestration.md) | Agents | 401 |
+| [subagent-orchestration](mistakes/subagent-orchestration.md) | Agents | 400 |
 | [test-concurrency-and-fixtures](mistakes/test-concurrency-and-fixtures.md) | Races | 390 |
 | [test-sweep-and-fixture-discipline](mistakes/test-sweep-and-fixture-discipline.md) |  | 358 |
 | [testing-and-lint](mistakes/testing-and-lint.md) |  | 398 |
@@ -228,14 +229,14 @@
 | [plan-chat-followups](concerns/plan-chat-followups.md) | Chat | 40 |
 | [planner-follow-ups-followups](concerns/planner-follow-ups-followups.md) |  | 59 |
 | [planner-ui-repair-followups](concerns/planner-ui-repair-followups.md) | Repair | 178 |
-| [planning-document-model-followups](concerns/planning-document-model-followups.md) |  | 143 |
+| [planning-document-model-followups](concerns/planning-document-model-followups.md) |  | 172 |
 | [planning-guidance-followups](concerns/planning-guidance-followups.md) |  | 42 |
 | [planning-session-sandbox-limits](concerns/planning-session-sandbox-limits.md) |  | 185 |
 | [platform-and-commit-gaps](concerns/platform-and-commit-gaps.md) |  | 204 |
 | [runtime-and-session-safety](concerns/runtime-and-session-safety.md) |  | 137 |
 | [sandbox-and-confinement-gaps](concerns/sandbox-and-confinement-gaps.md) |  | 363 |
 | [session-tmpdir-deny](concerns/session-tmpdir-deny.md) |  | 7 |
-| [source-graph-known-gaps](concerns/source-graph-known-gaps.md) | Limits | 86 |
+| [source-graph-known-gaps](concerns/source-graph-known-gaps.md) | Limits | 90 |
 | [source-graph-review-backlog](concerns/source-graph-review-backlog.md) | Backlog | 306 |
 | [state-confinement-gaps](concerns/state-confinement-gaps.md) | Caches | 21 |
 | [token-accounting-and-proof-defects](concerns/token-accounting-and-proof-defects.md) |  | 334 |

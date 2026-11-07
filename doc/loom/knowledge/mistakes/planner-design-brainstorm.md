@@ -14,7 +14,7 @@
 **What happened**: The feat-planner vision ruled that briefs get no summaries of their own and are reached only through their plan's summary and file mode, marked (my call).
 **Why**: Briefs were treated as supporting files; they hold much of a plan's reviewable content, so a reviewer of a plan summary misses it.
 **Prevention**: Anything a reviewer has to approve before a run, briefs included, needs a summary path.
-**Fix**: Pending: the user named it a mistake on 2026-11-05; a redesign must summarize briefs.
+**Fix**: A plan's summary covers its brief bundle (`briefs::bundle_files`): it may cite every brief file and must cite each one with Markdown text, `bundle` front matter records each brief's hash, and a changed brief makes the plan summary out of date ([summary store](../architecture/summary-store.md#file-format)). A brief has no summary of its own; the plan page lists its briefs.
 
 ## A plan's new line grammar collided with existing documents
 
