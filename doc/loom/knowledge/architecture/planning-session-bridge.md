@@ -15,11 +15,13 @@ requests and ends or recovers sessions. Contract: `doc/product/feat-planner/sect
 | `launch.rs`, `launch/script.rs` | `prepare` (session directory, sandbox files, trust entry) and `launch_script`: a 0700 launch script that `env -i` execs `claude` with `LOOM_PLAN_STATE` and `LOOM_PLAN_SESSION` pinned after the passed env |
 | `tmux_io.rs`, `tmux_host.rs` | `pane_pid` (`#{pane_pid}:#{pane_dead}:#{pane_dead_status}`, fails on a dead pane), paste and key delivery; `TmuxHost` implements `SessionHost` over the lane's free functions in `orchestrator/terminal/tmux/` |
 | `spool.rs`, `hook_cli.rs`, `permission.rs` | the ten `SPOOL_EVENTS` registrations, the locked append, the blocking `PermissionRequest` hook |
+| `web_fetch.rs` | the `WebFetch` fetch policy (`FetchMode`, `FetchPolicy`, `FetchPolicyCell`), host parsing and allowlist validation |
 | `state.rs` | `StateMachine` over `Input::{Spool, Record, ...}` |
 | `transcript/` | the record mapper: `mod.rs` (dedup, routing), `records.rs` (classification), `content.rs`, `turns.rs`, `tools.rs`, `usage.rs` |
 | `input.rs`, `attachments/` | `check_send`, the 100 KB cap, the `<loom-attachments>` block (`format`, `parse`, `resolve`) |
-| `bridge/` | `Bridge` and `SessionHost` (`mod.rs`, `host.rs`), start path (`start.rs`), per-session state (`session.rs`), the driver tick (`driver.rs`, `registry.rs`), delivery and interrupt (`flow.rs`, `turns.rs`), cards (`requests.rs`), browser commands (`commands.rs`), end and teardown (`ending.rs`, `stopping.rs`), restart recovery (`recovery.rs`), test fakes (`fake_host.rs`, `harness.rs`) |
-| `plan_server/chat/` | `dispatch.rs` (start, send, interrupt, end from the browser), `guidance.rs` (`GuidanceSlot`), `mod.rs` (`install`, holder fill) |
+| `bridge/` | `Bridge` and `SessionHost` (`mod.rs`, `host.rs`), start path (`start.rs`), per-session state (`session.rs`), the driver tick (`driver.rs`, `registry.rs`), delivery and interrupt (`flow.rs`, `turns.rs`), cards (`requests.rs`), fetch rules and grant (`fetches.rs`), browser commands (`commands.rs`), end and teardown (`ending.rs`, `stopping.rs`), restart recovery (`recovery.rs`), test fakes (`fake_host.rs`, `harness.rs`) |
+| `plan_server/chat/` | `dispatch.rs` (start, send, interrupt, end from the browser), `fetch_cmd.rs` (the card's fetch choices, Ask again), `guidance.rs` (`GuidanceSlot`), `mod.rs` (`install`, holder fill) |
+| `plan_server/web_fetch/` | `web-fetch.json` in the runtime directory (temp file and rename), `GET`/`POST /api/web-fetch` (viewer read, holder write), the cell the bridge reads |
 
 ## Naming and the session directory
 
@@ -75,11 +77,29 @@ The hook writes the request to the spool (`auto_denied` inside `payload` when it
 the server denies unanswered requests with `timeout` at `permission_deny_after` = 3590 s, the hook gives up
 at `HOOK_WAIT` = 3595 s, and the hook is registered with `timeout_secs` 3600 for Claude Code. The server
 answer always lands first. `DenyReason` (`model/mod.rs`) is a published wire enum: `holder`, `timeout`,
-`session_ended`, `server_stopping`, `hook_error`, `interrupt`, `summary_session`. A request whose
+`session_ended`, `server_stopping`, `hook_error`, `interrupt`, `summary_session`, `settings`. A request whose
 `tool_input` the card cannot show whole (a `TRUNCATED` marker in any string, or pretty input over
 `INPUT_CHARS`) is denied `hook_error` on arrival because Allow would approve the uncut call. Answer
 request ids are validated (no path separators). A mismatched `hook_event_name` makes the hook print nothing,
 and Claude Code then falls back to its own pane dialog.
+
+**Fetch rules (`web_fetch.rs`, `bridge/fetches.rs`).** A `WebFetch` request carries a `FetchView` on its card:
+the parsed URL (punycode, cut at 2048 characters), `host`, `listable` (the host passes
+`validate_domain`, which gates "Always allow <host>"), the answering rule and `matched` (the allowlist entry
+that covered it, which the transcript line names). `Session::arrival_rule` runs after the recovered answer, the
+cut-input deny and an ending's `deny_new`, then reads `BridgeConfig::fetch_policy` (a shared
+`FetchPolicyCell` the server's `plan_server/web_fetch/` replaces on each Settings save) with the session's
+`Flow::fetch_grant`: Never denies (`settings`), Always and a listed host allow, the grant allows, else the
+card. Always and the grant allow only a non-local host name: an IP literal, `localhost`, `*.localhost`, a
+single label or an unreadable URL goes to the card, because the fetch runs in the unsandboxed Claude Code
+process. The policy file carries a `revision`; a Settings `POST` with a stale one gets 409 `stale_policy`,
+and `validated` keeps the serialized policy under half of `MAX_BODY_BYTES` so Settings can always save it. A rule-answered request is added as an already closed item, never pending, so no browser pings.
+The grant is set only by `Bridge::grant_fetches` (the holder's "Allow this session", through
+`plan_server/chat/fetch_cmd.rs` and `on_chat`), refused on a non-`WebFetch` card, cleared by
+`revoke_fetches`, and lives in `Flow`, so a new or recovered session starts without it. "Always allow"
+lists `Bridge::fetch_host` (the server-parsed host, never the browser's), moves Ask to Listed, then
+`answer_fetches` closes every open fetch card the rules now cover. Host matching uses the `url` crate:
+exact host or a `.`-suffix, punycode, IP hosts never listed.
 
 ## State machine and its two honesty rules
 

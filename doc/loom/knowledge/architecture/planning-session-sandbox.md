@@ -35,7 +35,9 @@ them and writes `settings.json` and `guard.json` (0600, no-follow) into the sess
    `LOOM_HOME`), with the three runtime grants carved back out through `allowRead`.
 2. **Permission rules.** `Edit(//<abs>)` allow and deny rules only (`Write(path)` is never emitted:
    [Sandbox Settings Emission](execution-containment.md#sandbox-settings-emission--editpath-never-writepath)),
-   the five `Bash(loom ...)` commands of authoring, `WebSearch` allowed, `WebFetch` asking,
+   the five `Bash(loom ...)` commands of authoring, `WebSearch` allowed, `WebFetch` asking (the
+   server answers that ask itself when the project's fetch policy or the session's grant covers it;
+   the rule stays `ask`: [planning-session-bridge.md](planning-session-bridge.md#permission-requests)),
    `AskUserQuestion` and the capsule tools denied, `defaultMode` from `permission_mode(kind)`
    (`sandbox/permissions.rs`: `auto` for authoring and pressure, `default` for summary, where an
    unlisted tool is denied at once; the launch command passes the same value as `--permission-mode`
