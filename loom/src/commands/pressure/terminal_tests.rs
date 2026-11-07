@@ -89,31 +89,42 @@ fn an_interrupted_claude_retires_codex_instead_of_waiting_for_it() {
     wait_for_exit(descendant_of(root));
 }
 
+#[cfg(target_os = "linux")]
+const SIGNAL_REPO_ENV: &str = "LOOM_TEST_PRESSURE_SIGNAL_REPO";
+
+/// The child side of the signal test: install the handler, start Codex, and
+/// wait for the parent's signal, which ends this process.
+#[cfg(target_os = "linux")]
+fn await_signal_with_codex_running(repo: &Path) -> ! {
+    let retirement = CodexRetirement::default();
+    let notice = interrupted_notice("doc/plans/PLAN-x.md", &repo.join("codex-PLAN-x.md"));
+    retire_on_signal(retirement.clone(), notice).unwrap();
+    let _run = retirement
+        .spawn_with_fallback(
+            Path::new("/bin/sh"),
+            repo,
+            "$pressure plan.md",
+            &repo.join("codex.log"),
+            vec!["first".into()],
+            "high",
+        )
+        .unwrap();
+    thread::sleep(Duration::from_secs(60));
+    panic!("no signal arrived");
+}
+
 /// The handler in a child process: one is allowed per process, and it ends
-/// the process it runs in.
+/// the process it runs in. It says the plan was not recorded: a run cut short
+/// by `pkill -x loom` otherwise left no sign that its record step never ran.
 #[cfg(target_os = "linux")]
 #[test]
 fn a_termination_signal_retires_codex_and_exits_130() {
     use nix::sys::signal::{kill, Signal};
     use nix::unistd::Pid;
+    use std::io::Read;
 
-    const REPO_ENV: &str = "LOOM_TEST_PRESSURE_SIGNAL_REPO";
-    if let Some(repo) = std::env::var_os(REPO_ENV) {
-        let repo = Path::new(&repo);
-        let retirement = CodexRetirement::default();
-        retire_on_signal(retirement.clone()).unwrap();
-        let _run = retirement
-            .spawn_with_fallback(
-                Path::new("/bin/sh"),
-                repo,
-                "$pressure plan.md",
-                &repo.join("codex.log"),
-                vec!["first".into()],
-                "high",
-            )
-            .unwrap();
-        thread::sleep(Duration::from_secs(60));
-        panic!("no signal arrived");
+    if let Some(repo) = std::env::var_os(SIGNAL_REPO_ENV) {
+        await_signal_with_codex_running(Path::new(&repo));
     }
     for signal in [Signal::SIGINT, Signal::SIGTERM, Signal::SIGHUP] {
         let repo = tempfile::tempdir().unwrap();
@@ -125,8 +136,9 @@ fn a_termination_signal_retires_codex_and_exits_130() {
                  a_termination_signal_retires_codex_and_exits_130",
                 "--nocapture",
             ])
-            .env(REPO_ENV, repo.path())
+            .env(SIGNAL_REPO_ENV, repo.path())
             .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::piped())
             .spawn()
             .unwrap();
         let descendant = descendant_of(repo.path());
@@ -134,6 +146,22 @@ fn a_termination_signal_retires_codex_and_exits_130() {
         kill(Pid::from_raw(driver.id() as i32), signal).unwrap();
 
         assert_eq!(driver.wait().unwrap().code(), Some(130), "{signal}");
+        let mut stderr = String::new();
+        driver
+            .stderr
+            .take()
+            .unwrap()
+            .read_to_string(&mut stderr)
+            .unwrap();
+        let report = repo.path().join("codex-PLAN-x.md");
+        assert!(
+            stderr.contains(&format!(
+                "doc/plans/PLAN-x.md was not recorded as pressure-tested; \
+                 the Codex review, if written, is at {}",
+                report.display()
+            )),
+            "{signal}: {stderr}"
+        );
         wait_for_exit(descendant);
     }
 }

@@ -46,7 +46,7 @@ use crate::pressure::paths::{codex_report_path, resolve_plan_path, ResolvedPlan}
 use crate::pressure::{plan_steps, PipelineInput, PipelineOutcome, Step, RECORD_STEP_LABEL};
 use paths::{claude_marker_path, codex_log_path, resolve_repo_root};
 use spawn::{claude_args, AGENT_TEAMS_ENV};
-use terminal::{retire_on_signal, TerminalDriver};
+use terminal::{interrupted_notice, retire_on_signal, TerminalDriver};
 
 /// Render the exact commands `--dry-run` would execute.
 ///
@@ -226,7 +226,10 @@ pub fn execute(args: PressureArgs) -> Result<()> {
     let claude_path = find_claude_path()?;
     let codex_path = find_codex_path()?;
     let retirement = CodexRetirement::default();
-    retire_on_signal(retirement.clone())?;
+    retire_on_signal(
+        retirement.clone(),
+        interrupted_notice(&resolved.invocation, &report),
+    )?;
     let mut driver = TerminalDriver {
         claude_path: &claude_path,
         codex_path: &codex_path,
