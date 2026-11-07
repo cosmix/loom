@@ -28,7 +28,7 @@ triggers:
 
 The rules a session needs when it spawns subagents or runs a loom stage as its main agent, beyond what
 `~/.claude/CLAUDE.md` and the stage signal already carry, filed under the CLAUDE.md rule number they
-belong to. A single-agent session does not need this skill.
+belong to.
 
 ## Session start
 
@@ -58,11 +58,9 @@ description"`, and wait for it with `loom request status <id> --wait 90`; never 
 | **Agent teams** | Wide, exploratory work needing inter-agent messaging or dynamic task discovery; NOT for concrete assignments with clear file ownership | ~7x whole-job | Team lead, who alone runs `loom stage complete` and `loom memory` | Rule 5 |
 
 Team lead: TeamCreate → TaskCreate → spawn → monitor (TaskList) → shutdown, gate (Rule 4), complete;
-delegate, keep context <40%, shut down ALL teammates. The ≤~6 threshold counts subagents after
-grouping, never raw tasks.
+delegate, keep context <40%, shut down ALL teammates. The ≤~6 threshold counts grouped subagents.
 
-Two subagents writing one file = lost work; if unavoidable, serialize in one subagent or split
-stages. Every prompt carries a file-ownership table:
+Two subagents never write one file; serialize in one subagent or split stages. Every prompt carries a file-ownership table:
 
 | Subagent | Files Owned (write) | Files Read-Only | Shared context — quoted in the brief, do not open |
 | --- | --- | --- | --- |
@@ -73,12 +71,12 @@ stages. Every prompt carries a file-ownership table:
 `loom-rust`; `loom plan verify` rejects an unknown name). Pass declared skills and their signal-named invocation to applicable Claude briefs.
 For Codex and `loom-software-developer`, quote applicable rules in briefs; neither opens skills.
 
-**Sibling-read ledger.** Every agent of one session writes its reads ledger into one session directory:
-`$LOOM_WORK_DIR/hooks/reads/<LOOM_SESSION_ID>/<agent-id>.tsv` inside a stage, a per-session
-directory under `${TMPDIR:-/tmp}/loom-reads/` outside one. When a subagent reads a file of more
-than 200 lines whole that a sibling already requested whole and unchanged, the read guard appends
-`<absolute path>\t<lines>\t<agent count>\t<UTC timestamp>` to that directory's `_shared.tsv`; the
-latest row per path carries the current count. Before the next round of briefs, read it: a file
+**Sibling-read ledger.** Each agent writes its reads ledger to
+`$LOOM_WORK_DIR/hooks/reads/<LOOM_SESSION_ID>/<agent-id>.tsv` (outside a stage, a per-session
+directory under `${TMPDIR:-/tmp}/loom-reads/`). When a subagent reads whole a file of over 200
+lines that a sibling already requested whole and unchanged, the read guard appends
+`<absolute path>\t<lines>\t<agent count>\t<UTC timestamp>` to that directory's `_shared.tsv`
+(the latest row per path is current). Before the next briefs, read it: a file
 several subagents each read whole belongs in the brief as quoted `file:line` ranges.
 
 **Checking on subagents: use one owned `loom subagents` wait, never a hand-rolled poll loop.** Spawn every worker first and capture each worker ID: the Claude agent ID from the spawn result, or the Codex unit ID you assigned with `--unit-id`. Then run ONE `loom subagents watch --worker claude:<agent-id> --worker codex:<unit-id> --timeout 3600` through the Bash tool's `run_in_background`, with one `--worker` for every worker. It binds those workers once, holds one lease for the parent session, prints one initial record and one terminal record, then exits. Treat its exit distinctly:
@@ -193,7 +191,7 @@ WORKER RESTRICTIONS - YOU ARE A LEAF AGENT:
 Keep each assignment within point 3's size; decompose via Rule 6 rather than escalating for
 context headroom. The cheaper the tier, the fuller the brief: paths, `file:line` ranges,
 signatures, patterns, steps, per-step acceptance, decisions settled, traps named. Never paste code
-the worker can open; it reads the ranges at its own rate. Plan authors: rubric in
+the worker can open. Plan authors: rubric in
 `/loom-plan-writer`.
 
 ## Plan version 2 stages
@@ -233,10 +231,13 @@ the worktree. A contract that is itself wrong is disputed, never edited:
 
 **Test integrity** (standard, integration-verify). Completion compares test files to base.
 Fewer declarations or assertions in a language, assertion statements lost or changed in a test file
-at base (a reflow, a move or a lowered ledger entry does not count), or a loosened `ratchet_files`
-entry each raise an event; `loom stage review integrity <stage-id>` lists them. Revert the cause or
-dispute: `loom stage dispute-integrity <stage-id> --event <id> ...`. Reviewers see these events;
-fix their findings before the final round. An accepted event holds while it gets no worse.
+at base (a reflow or a lowered ledger entry does not count; an identical move into a collected file
+cancels, an edited move or one into an undeclared file raises TI-edit), or a loosened
+`ratchet_files` entry each raise an event; `loom stage review integrity <stage-id>` lists them.
+Revert the cause or dispute: `loom stage dispute-integrity <stage-id> --event <id> ...`. Reviewers
+see them; fix their findings before the final round. An accepted count event holds while its total
+does not drop; accepted TI-edit and TI-ratchet events pin the file's sha256, so any later
+edit reopens them.
 
 **What `loom stage complete` checks, in order.** The daemon's host job runs acceptance first. Only
 a pass continues to steps 2 to 6, and each of those runs even after an earlier one failed, so one
