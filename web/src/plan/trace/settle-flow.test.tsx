@@ -179,6 +179,24 @@ it("Not yet closes the popover and returns focus to the Mark settled button", as
   expect(posts).toHaveLength(1);
 });
 
+it("Mark settled after Not yet asks the server again, unconfirmed, and confirms again", async () => {
+  settleAnswers = [
+    { status: 409, body: UNRESOLVED },
+    { status: 409, body: UNRESOLVED },
+  ];
+  mount(settle(S03));
+  const opener = await screen.findByRole("button", { name: "Mark settled" });
+  fireEvent.click(opener);
+  fireEvent.click(
+    within(await screen.findByRole("dialog")).getByRole("button", { name: "Not yet" }),
+  );
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+
+  fireEvent.click(opener);
+  await screen.findByRole("dialog", { name: "Settle with open items?" });
+  expect(posts.map((params) => params.get("confirm"))).toEqual([null, null]);
+});
+
 it("Escape dismisses the confirmation and returns focus to the button", async () => {
   settleAnswers = [{ status: 409, body: UNRESOLVED }];
   mount(settle(S03));
