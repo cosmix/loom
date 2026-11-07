@@ -193,6 +193,8 @@ The plan 4 harness printed a stop-rule FAIL on all three recorded pairs (guard-c
 
 Unapplied reviewer suggestions for `loom::planning`: heading and cross-reference parsing edges, refresh and lock-scan cost, symlink and non-UTF-8 handling in `LockedSet::scan` and `collect_inputs`, Unicode folding in the locked-name rules, and untested branches; plus the summary store's open robustness items (store lock timeout, unreadable summary files, claim-removal failure after a seal) and test gaps.
 
+The planning trace's open checks (journeys that need a real session or tmux, the settle stale window, the `Settled:` prose-line hash, signed-commit `git log` output) and its unapplied reviewer suggestions are in [Planning Trace Limits](concerns/planning-document-model-followups.md#planning-trace-limits).
+
 → [Planning Document Model Followups](concerns/planning-document-model-followups.md)
 
 ## Every Stage Worktree Builds From Cold [DETAILED]

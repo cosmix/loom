@@ -20,7 +20,7 @@ Seven lessons on what a large removal or rename leaves behind — straggler init
 
 ## Sandbox: Contradictory Path Rules
 
-Sandbox path rules, permission sync, `excludedCommands` matching, settings env leaking between the main repo and its worktrees, a worktree-only escape rule applied at the repo root, a directory literally named `hooks/` being sandbox-protected regardless of permission config, and `Write(path)` permission rules never enforcing (only `Edit(path)` does). Root cause: settings are _merged_ from several sources. The tool and network failures (sccache, `cargo audit`, loopback TCP, bind-mounted files, macOS path aliases) and the `.loom/work` state channels (credentials, `loom memory`, handoff, daemon socket, ledgers) each have their own topic, as does a merge resolver that inherited its stage's write denies and gave up silently. → [Merge Resolver Sandbox](mistakes/merge-resolver-sandbox.md), [Sandbox & Settings](mistakes/sandbox-and-settings.md), [Tooling & Network](mistakes/sandbox-tooling-and-network.md), [State Channels](mistakes/sandbox-state-channels.md), [Directory Named `hooks/`](mistakes/sandbox-protected-hooks-dir.md), [Sandbox Write Rules Inert](mistakes/sandbox-write-rules-inert.md) (also the TMPDIR deny that failed every Bash call)
+Sandbox path rules, permission sync, `excludedCommands` matching, settings env leaking between the main repo and its worktrees, a worktree-only escape rule applied at the repo root, a directory literally named `hooks/` being sandbox-protected regardless of permission config, and `Write(path)` permission rules never enforcing (only `Edit(path)` does). Root cause: settings are _merged_ from several sources. The tool and network failures (sccache, `cargo audit`, loopback TCP, bind-mounted files, macOS path aliases) and the `.loom/work` state channels (credentials, `loom memory`, handoff, daemon socket, ledgers) each have their own topic, as does a merge resolver that inherited its stage's write denies and gave up silently, or was handed back because the integrity gate read its formatter reflow of an unchanged assertion as a changed one (reformat-only hunks are exempt). → [Merge Resolver Sandbox](mistakes/merge-resolver-sandbox.md), [Sandbox & Settings](mistakes/sandbox-and-settings.md), [Tooling & Network](mistakes/sandbox-tooling-and-network.md), [State Channels](mistakes/sandbox-state-channels.md), [Directory Named `hooks/`](mistakes/sandbox-protected-hooks-dir.md), [Sandbox Write Rules Inert](mistakes/sandbox-write-rules-inert.md) (also the TMPDIR deny that failed every Bash call)
 
 ## Session Identity: Backend Metadata Must Be Persisted
 
@@ -236,7 +236,7 @@ A live region mounted twice, a test constant that passed vitest and failed the t
 
 ## Planner design: stubs vs summaries, briefs unsummarized
 
-Stubs (vision section paragraphs, metaplan entries) scope a document before it exists; summaries are generated after it is final, for review. Briefs need summaries too. See [planner-design-brainstorm](mistakes/planner-design-brainstorm.md).
+Stubs (vision section paragraphs, metaplan entries) scope a document before it exists; summaries are generated after it is final, for review. A plan's summary covers its brief bundle, so a reviewer sees the briefs. See [planner-design-brainstorm](mistakes/planner-design-brainstorm.md). Delivery slips of the planning trace (settle hash source, socket test deadlines, CSS import order, contrast on the composited colour, assertion lines, wiring after a sibling merge) are in [planner-follow-ups-delivery](mistakes/planner-follow-ups-delivery.md#a-socket-test-waited-on-a-frame-that-never-came).
 
 ## dev-install.sh and the Running Daemon
 
@@ -246,7 +246,3 @@ Why `dev-install.sh` stops every loom process after the install, the review find
 
 - A spec section adds an action, button or skill only when the vision names it; integration-verify's spec-conformance duty aligns spec and build. See [spec sections invented product features](mistakes/planner-design-brainstorm.md#spec-sections-invented-product-features-the-vision-never-asked-for).
 - Feature run reviews land at the top of `doc/plans/`, and the readers search the plan's home, its `archive/` and the top of `doc/plans/`. See [a feature plan's run review](mistakes/planner-design-brainstorm.md#a-feature-plans-run-review-is-written-where-nothing-looks-for-it).
-
-## Test-Integrity Gate and Formatters
-
-The integrity gate once read a formatter reflow of an unchanged assertion as a changed assertion, so a resolver that ran the formatter to pass `oxfmt --check` was handed back. Reformat-only hunks are now exempt. → [test-integrity-gate](mistakes/test-integrity-gate.md)

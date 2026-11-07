@@ -24,7 +24,8 @@ sources:
 | `watch`, `watch/pending` | polling `Watcher`, `Batch`, `OwnWrites` |
 | `runtime` | per-project runtime directory: path computation, `LOOM_PLAN_STATE` provenance checks, and `create_runtime_dir` shared by the plan server and the summary CLI |
 | `summary/` | the summary store: format, evaluation, seal, claims, engine; see [Summary Store](summary-store.md) |
-| `vision`, `metaplan`, `implements`, `pressure`, `briefs`, `xref` | parsers over document text |
+| `vision`, `metaplan`, `implements`, `pressure`, `briefs`, `xref` | parsers over document text. `implements::parse` takes `section_NN#<anchor>` beside whole-section tokens (`ImplementsLine.anchors`, `whole`, `claims()`); `metaplan` reads each entry's `Covers:` line (`MetaplanEntry.covers`, `bad_covers`, `span_hash`); `briefs::bundle_files(project, plan_rel)` lists a plan's brief files from the loaded project (`briefs::plan_briefs` reads the disk for the run preflight) |
+| `trace/`, `findings/` | the planning trace and the findings ledger; see [Planning Trace](planning-trace.md) |
 | `problems`, `checklist`, `checklist/{items,offers}` | convention problems; the checklist |
 | `project` | `Project::load` and `refresh`: tree, parsed documents, problems, checklist |
 
@@ -163,9 +164,12 @@ gap, `Ready`, or `ReadyAllDone`. Rules the contracts pin:
 - Pressure-tested status never makes step 5 a gap (`ItemStatus::Untested`); offers exist per feature: `StartVision`, `FixVisionTable`, `WriteSection`, `AddSectionToVision`, `StartMetaplan`, `WritePlan`, `PressureTest`, `DraftAllSections`, `DraftAllPlans`, `PlanFollowUps` (the one offer of a finished feature, `CurrentStep::ReadyAllDone`) and `MoveIntoFeature` for a misplaced top-level document (`checklist/offers.rs`).
 
 Problem codes (`problems.rs`): `bad-feature-name`, `broken-reference`, `broken-brief-reference`, `doc-missing`, `duplicate-plan-slug`,
-`implements-broken`, `implements-duplicate`, `implements-missing`, `metaplan-entry-foreign-plan`,
-`metaplan-entry-without-plan`, `missing-title`, `needs-feature`, `stray-plan-copy`, `unlisted-section`,
-`vision-table-unreadable`. A locked document reports none; a stray copy is reported wherever it is.
+`implements-anchor-missing`, `implements-broken`, `implements-duplicate`, `implements-missing`, `metaplan-entry-foreign-plan`,
+`metaplan-entry-without-plan`, `missing-title`, `needs-feature`, `stage-line-unknown`, `stray-plan-copy`, `unlisted-section`,
+`vision-table-unreadable`, and the trace codes `covers-bad-token`, `covers-anchor-missing`, `settled-bad`, `settled-duplicate`, `about-unresolved`,
+`findings-bad-entry`, `findings-duplicate-id` and `findings-bad-status` (`problems/trace.rs`, `trace::collect`; each feature's `trace.problems` is appended by `problems::collect`, and the trace build leaves locked documents out). A locked document reports none; a stray copy is reported wherever it is.
+
+Edge links between the documents are heading-level: an anchored `Implements:` token, a `Covers:` line and an `About:` line name headings. The concept page's `ImplementsView` (`SectionLink`) and `implemented_by` stay section-level, so a plan that implements one heading of a section links the whole section there; the heading-level edges are in the trace.
 Cross-reference extraction masks fenced code (`fence_mask`).
 
 ## `loom plan check`
