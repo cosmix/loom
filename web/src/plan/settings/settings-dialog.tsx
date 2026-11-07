@@ -14,8 +14,8 @@ import { ReadingFaceGroup, ReadingSizeGroup } from "./reading-sections";
 import { ReadingTogglesGroup, SettingsGroup, SummariesGroup } from "./settings-sections";
 import "./settings.css";
 
-/** The planner offers three themes; Aubergine is dashboard-only. */
-const PLANNER_THEMES: readonly ThemeId[] = ["ledger", "walnut", "graphite"];
+/** The planner offers every theme; `theme-default.ts` seeds Graphite as its default. */
+const PLANNER_THEMES: readonly ThemeId[] = ["ledger", "aubergine", "walnut", "graphite"];
 
 export function SettingsDialog({
   open,
