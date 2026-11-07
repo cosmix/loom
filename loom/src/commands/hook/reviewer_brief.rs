@@ -71,13 +71,15 @@ pub fn emit_reviewer_brief() -> Result<()> {
 }
 
 fn brief_line(config: Option<&Config>) -> String {
-    config
-        .and_then(issue)
+    let Some(config) = config else {
+        return "{}".to_string();
+    };
+    build_envelope(config)
         .and_then(|envelope| serde_json::to_string(&envelope).ok())
         .unwrap_or_else(|| "{}".to_string())
 }
 
-fn issue(config: &Config) -> Option<Envelope> {
+fn build_envelope(config: &Config) -> Option<Envelope> {
     let stage = &config.stage;
     let (worktree, target) =
         crate::commands::stage::stage_worktree_and_target(&config.work_dir, stage).ok()?;
