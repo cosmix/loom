@@ -4,6 +4,12 @@
 
 use super::{Block, LinkTarget, Sentence};
 
+/// Most sentences one opening paragraph of a plan summary holds. The Summary page draws each
+/// paragraph as a block, so a longer one reads as a solid wall of sentences; the seal refuses it
+/// and the rebuild brief teaches it. Revisit if the reading column starts breaking long
+/// paragraphs itself.
+pub const MAX_OPENING_PARAGRAPH: usize = 3;
+
 /// Whether `sentence` cites a sentence of its own summary `summary_id`.
 pub fn cites_own(summary_id: &str, sentence: &Sentence) -> bool {
     sentence.links.iter().any(|link| {

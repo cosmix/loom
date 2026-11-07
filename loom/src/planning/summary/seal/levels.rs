@@ -11,6 +11,7 @@ use std::collections::BTreeSet;
 use crate::context::untrusted::terminal_safe;
 use crate::planning::summary::format::{
     cites_own, Block, FormatError, Link, LinkTarget, PlanCaps, Sentence, SummaryBody,
+    MAX_OPENING_PARAGRAPH,
 };
 use crate::planning::summary::store;
 
@@ -118,6 +119,7 @@ pub(super) fn check(id: &str, body: &SummaryBody, caps: PlanCaps) -> Vec<FormatE
         return errors;
     }
     errors.extend(order(id, body));
+    errors.extend(crowded(id, body));
     for sentence in &draft.opening {
         errors.extend(opening_problems(&draft, sentence));
     }
@@ -135,6 +137,26 @@ fn limits(draft: &Draft<'_>, caps: PlanCaps) -> Vec<FormatError> {
     let opening = over(&draft.opening, caps.opening, "opening");
     let detail = over(&detail, caps.detail, "detail");
     opening.into_iter().chain(detail).collect()
+}
+
+/// Opening paragraphs of more than [`MAX_OPENING_PARAGRAPH`] sentences, each reported at its first
+/// sentence over: the Summary page draws a paragraph as a block, so a long one is a wall of text.
+fn crowded(id: &str, body: &SummaryBody) -> Vec<FormatError> {
+    let message = format!(
+        "more than {MAX_OPENING_PARAGRAPH} sentences in one opening paragraph; end the \
+         paragraph with a blank line and group the rest by topic"
+    );
+    let mut errors = Vec::new();
+    for block in &body.blocks {
+        let Block::Paragraph(sentences) = block else {
+            continue;
+        };
+        let mut opening = sentences.iter().filter(|s| cites_own(id, s));
+        if let Some(over) = opening.nth(MAX_OPENING_PARAGRAPH) {
+            errors.push(at(over, message.clone()));
+        }
+    }
+    errors
 }
 
 /// Headings and opening paragraphs that follow the first detail paragraph, headings between the

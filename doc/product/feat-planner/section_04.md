@@ -135,7 +135,9 @@ Rules for the body, enforced when the summary is sealed (below):
 - **A plan summary has two levels.** The opening level comes first: the title, optional `##`
   headings, and about one sentence per topic, each citing every sentence of the detail
   paragraph or paragraphs it opens, whole and in order, by a link to its own sentence id
-  (`[d](#s-3fa9c2d1)`) and nothing else. The detail level follows: short paragraphs whose
+  (`[d](#s-3fa9c2d1)`) and nothing else. The opening sentences are grouped by topic into
+  paragraphs of at most 3 sentences, separated by blank lines, so the Summary page reads as
+  paragraphs and the seal refuses a longer one. The detail level follows: short paragraphs whose
   sentences cite the plan's heading sections, with no heading among them. An opening sentence
   says what its paragraphs add up to and never restates one of their sentences. Sentence ids are
   hashes an agent cannot compute, so every refusal about the levels lists the draft's detail

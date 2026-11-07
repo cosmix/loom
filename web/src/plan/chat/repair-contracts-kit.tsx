@@ -154,7 +154,9 @@ export async function mountPressure(plan: string, title: string) {
   store.set(projectAtom, {
     checklists: [],
     moves: [],
-    standalone: [{ slug, path: plan, state: "written", title, last_change: null }],
+    standalone: [
+      { slug, path: plan, state: "written", title, last_change: null, has_summary: false },
+    ],
   });
   store.set(pressureDialogAtom, { open: true, plan });
   initClient(store);

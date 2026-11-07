@@ -65,6 +65,78 @@ describe("passageOf", () => {
   });
 });
 
+describe("passageOf on a plan with a metadata block", () => {
+  const text = [
+    "# Plan: X",
+    "",
+    "## Overview",
+    "Does x.",
+    "",
+    "## Residual risks",
+    "Risk one.",
+    "",
+    "---",
+    "",
+    "<!-- loom METADATA -->",
+    "",
+    "```yaml",
+    "loom:",
+    "  version: 2",
+    "```",
+    "",
+    "<!-- END loom METADATA -->",
+    "",
+    "## Pressure test",
+    "Pressure notes.",
+  ].join("\n");
+  const plan = (sections: object[], body = text) =>
+    docViewSchema.parse({
+      ...fixture,
+      text: body,
+      sections,
+      plan: { ...fixture.plan, metadata_line: 11 },
+    });
+  const sections = [
+    { level: 2, title: "Overview", anchor: "overview", start_line: 3, end_line: 5 },
+    { level: 2, title: "Residual risks", anchor: "residual-risks", start_line: 6, end_line: 19 },
+    { level: 2, title: "Pressure test", anchor: "pressure-test", start_line: 20, end_line: 21 },
+  ];
+
+  it("ends the section that runs through the block where the block begins", () => {
+    const risks = passageOf(plan(sections), "residual-risks");
+    expect(risks).toMatchObject({
+      startLine: 6,
+      endLine: 7,
+      markdown: "## Residual risks\nRisk one.",
+    });
+    expect(risks?.markdown).not.toMatch(/METADATA|loom:|version/);
+  });
+
+  it("leaves sections before and after the block whole", () => {
+    expect(passageOf(plan(sections), "overview")?.markdown).toBe("## Overview\nDoes x.\n");
+    expect(passageOf(plan(sections), "pressure-test")).toMatchObject({
+      startLine: 20,
+      endLine: 21,
+      markdown: "## Pressure test\nPressure notes.",
+    });
+  });
+
+  it("ends a preamble that runs to the end of the file where the block begins", () => {
+    const body = ["Intro text.", "", "<!-- loom METADATA -->", "```yaml", "loom: {}", "```"];
+    const bare = docViewSchema.parse({
+      ...fixture,
+      text: body.join("\n"),
+      sections: [],
+      plan: { ...fixture.plan, metadata_line: 3 },
+    });
+    expect(passageOf(bare, "")).toMatchObject({
+      startLine: 1,
+      endLine: 1,
+      markdown: "Intro text.",
+    });
+  });
+});
+
 describe("document cache", () => {
   it("memoizes each path and refreshes one subscribed document", async () => {
     const store = createStore();

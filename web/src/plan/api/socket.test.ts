@@ -259,6 +259,7 @@ describe("plan socket", () => {
           state: "written",
           title: "Solo",
           last_change: "2026-10-30T09:12:00Z",
+          has_summary: false,
         },
       ],
       moves: [{ id: "move", kind: "move_into_feature", label: "Move plan", target: null }],

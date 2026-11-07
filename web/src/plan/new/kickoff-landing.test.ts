@@ -197,6 +197,7 @@ it.each([
     title: "Search",
     state: "written",
     last_change: null,
+    has_summary: false,
   };
   publish(store, [], [{ ...plan, path: "doc/plans/PLAN-other-search.md" }]);
   expect(navigate).not.toHaveBeenCalled();
@@ -216,7 +217,20 @@ it("recognizes a lifecycle prefix on the confirmed target", async () => {
     target: path,
     shape: { ...kickoff.shape, size: "plan" },
   });
-  publish(store, [], [{ slug: "search", path, title: "Search", state: "done", last_change: null }]);
+  publish(
+    store,
+    [],
+    [
+      {
+        slug: "search",
+        path,
+        title: "Search",
+        state: "done",
+        last_change: null,
+        has_summary: false,
+      },
+    ],
+  );
   await waitFor(() =>
     expect(router.state.location.pathname).toBe("/files/plans/DONE-PLAN-search.md"),
   );
@@ -232,7 +246,16 @@ it("encodes standalone plan path segments without introducing a query or hash", 
   publish(
     store,
     [],
-    [{ slug: "search", path, title: "Search", state: "written", last_change: null }],
+    [
+      {
+        slug: "search",
+        path,
+        title: "Search",
+        state: "written",
+        last_change: null,
+        has_summary: false,
+      },
+    ],
   );
 
   await waitFor(() =>
@@ -273,6 +296,7 @@ it.each([
         title: "Search",
         state: "written",
         last_change: null,
+        has_summary: false,
       },
     ],
   );

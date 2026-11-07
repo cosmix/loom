@@ -179,6 +179,38 @@ fn every_detail_sentence_is_opened() {
     assert_eq!(rejections(&f, ID, &text), [want]);
 }
 
+/// `count` opening sentences on adjacent lines (one paragraph), each over a detail paragraph
+/// of its own, and the detail level below.
+fn opening_paragraph(count: usize) -> String {
+    let details: Vec<String> = (1..=count)
+        .map(|i| format!("Detail number {i} holds."))
+        .collect();
+    let openings: Vec<String> = details
+        .iter()
+        .enumerate()
+        .map(|(i, d)| format!("Opening {} sums up a part. {}", i + 1, own(d)))
+        .collect();
+    let paragraphs: Vec<String> = details.iter().map(|d| format!("{d} {STAGES}\n")).collect();
+    format!(
+        "# X\n\n{}\n\n{}",
+        openings.join("\n"),
+        paragraphs.join("\n")
+    )
+}
+
+#[test]
+fn an_opening_paragraph_holds_at_most_three_sentences() {
+    let f = plan_fixture();
+    sealed(&f, ID, &opening_paragraph(3));
+    assert_eq!(
+        rejections(&f, ID, &opening_paragraph(4)),
+        [
+            "6: more than 3 sentences in one opening paragraph; end the paragraph with a blank \
+          line and group the rest by topic"
+        ]
+    );
+}
+
 #[test]
 fn each_level_keeps_its_own_cap() {
     let f = plan_fixture();
@@ -193,12 +225,12 @@ fn each_level_keeps_its_own_cap() {
     let paragraphs: Vec<String> = details.iter().map(|d| format!("{d} {STAGES}\n")).collect();
     let text = format!(
         "# X\n\n{}\n\n{}",
-        openings.join("\n"),
+        openings.join("\n\n"),
         paragraphs.join("\n")
     );
     assert_eq!(
         rejections(&f, ID, &text),
-        ["11: more than 8 opening sentences"]
+        ["19: more than 8 opening sentences"]
     );
     let details: Vec<String> = (1..=16)
         .map(|i| format!("Detail number {i} holds."))

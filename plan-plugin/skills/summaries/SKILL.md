@@ -16,7 +16,7 @@ summary ids use the repository-wide unique slug; plan document ids remain `plan/
 A vision summary (`<feature>/product/vision`) takes at most 8 sentences in at most 3
 paragraphs, distilling the vision so a reader grasps it in under a minute; a section
 summary takes at most 15 sentences. A plan summary has two levels: an opening level of at
-most 8 sentences, each citing whole detail paragraphs as `[d](#s-xxxxxxxx)`, then a detail
+most 8 sentences in paragraphs of at most 3, each citing whole detail paragraphs as `[d](#s-xxxxxxxx)`, then a detail
 level of at most 15 sentences citing the plan. The summary subagent writes the detail level
 first, seals, reads the detail ids from the refusal, adds the opening level above it, and
 seals again.

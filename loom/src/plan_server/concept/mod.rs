@@ -32,6 +32,8 @@ mod metaplan_tests;
 #[cfg(test)]
 mod route_tests;
 #[cfg(test)]
+mod standalone_row_tests;
+#[cfg(test)]
 mod state_tests;
 #[cfg(test)]
 mod tests;
