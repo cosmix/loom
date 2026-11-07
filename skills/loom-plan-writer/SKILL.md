@@ -350,4 +350,4 @@ Read `references/plan-template.md` when writing YAML. It contains the complete p
 - Checks cover owned files, execute real behavior, select tests, and fail on a plausible regression; no ceremonial tests for trivial edits. Preserve mandatory v2 contracts and gates.
 - Baseline checks run in the planned worktree/sandbox; produced-artifact checks tried on good and broken fixtures; timeouts and ungrantable resources resolved.
 - Sandbox, provisioning and environment inventory complete; command paths resolve from working_dir; YAML/shell quoting checked.
-- Self-consistency and ownership sweep complete; `loom plan verify --strict` passes and `loom plan verify --strict --dry-run` reports no error. Report the plan and STOP; do not implement.
+- Self-consistency and ownership sweep complete; `loom plan verify --strict` passes and `loom plan verify --strict --dry-run` passes (under `--strict` a warning fails too). Report the plan and STOP; do not implement.
