@@ -11,3 +11,9 @@ fn removed_hook_flags_and_subcommands_do_not_parse() {
     );
     assert!(Cli::try_parse_from(["loom", "hook", "worker-brief"]).is_ok());
 }
+
+#[test]
+fn reviewer_brief_takes_no_arguments() {
+    assert!(Cli::try_parse_from(["loom", "hook", "reviewer-brief"]).is_ok());
+    assert!(Cli::try_parse_from(["loom", "hook", "reviewer-brief", "--x"]).is_err());
+}
