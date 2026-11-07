@@ -39,6 +39,29 @@ loom_reviewer_model_override() {
 	LOOM_SPAWN_WARN_REVIEWER="loom hook reviewer-model failed${reason}; loom-code-reviewer runs its frontmatter model. Check models.code_reviewer_model in ~/.loom/config.toml / .loom/work/config.toml"
 }
 
+# _loom_brief_json ENVELOPE MARKER - validates a `loom hook worker-brief` or
+# `loom hook reviewer-brief` envelope (MARKER loom-worker-brief or
+# loom-reviewer-brief) and prints the brief as a JSON string, or nothing. Valid:
+# one line, an object whose keys are exactly `brief` and `nonce`, a 32-hex
+# nonce, a non-empty string brief holding exactly one line equal to
+# `<!-- MARKER nonce=NONCE -->`. With a third argument `first` the marker line must
+# also be the brief's first line and no other line may start with `<!-- loom-`.
+_loom_brief_json() {
+	local envelope="$1" marker="$2" strict="${3:-}"
+	[[ "$envelope" != *$'\n'* ]] || return 0
+	printf '%s' "$envelope" | jq -ec --arg marker "$marker" --arg strict "$strict" '
+		select(type == "object" and (keys | sort) == ["brief", "nonce"])
+		| .nonce as $nonce
+		| select(($nonce | type) == "string" and ($nonce | test("^[0-9a-f]{32}$")))
+		| select((.brief | type) == "string" and (.brief | length) > 0)
+		| select(([.brief | split("\n")[] | select(. == ("<!-- " + $marker + " nonce=" + $nonce + " -->"))] | length) == 1)
+		| (.brief | split("\n")) as $lines
+		| select($strict != "first" or (
+			$lines[0] == ("<!-- " + $marker + " nonce=" + $nonce + " -->")
+			and ([$lines[1:][] | select(startswith("<!-- loom-"))] | length) == 0))
+		| .brief' 2>/dev/null || true
+}
+
 # loom_worker_brief - spawn-guard's scoped worker brief. Sets LOOM_SPAWN_WORKER_BRIEF_JSON
 # (empty when none) from INPUT_JSON, TOOL_INPUT, GATE_PASSED, AGENT_TYPE_REQ.
 # A missing command, timeout, bad envelope or empty selection changes nothing.
@@ -53,16 +76,43 @@ loom_worker_brief() {
 		if ! envelope=$(printf '%s' "$INPUT_JSON" | LOOM_HOOK_CONTEXT=1 loom_run_bounded 5 "${LOOM_BIN:-loom}" hook worker-brief 2>/dev/null) || [[ -z "$envelope" ]]; then
 			loom_debug "spawn-guard: worker-brief timeout, nonzero exit or empty output"
 		else
-			if [[ "$envelope" != *$'\n'* ]]; then
-				LOOM_SPAWN_WORKER_BRIEF_JSON=$(printf '%s' "$envelope" | jq -ec '
-					select(type == "object" and (keys | sort) == ["brief", "nonce"])
-					| .nonce as $nonce
-					| select(($nonce | type) == "string" and ($nonce | test("^[0-9a-f]{32}$")))
-					| select((.brief | type) == "string" and (.brief | length) > 0)
-					| select(([.brief | split("\n")[] | select(. == ("<!-- loom-worker-brief nonce=" + $nonce + " -->"))] | length) == 1)
-					| .brief' 2>/dev/null || true)
-			fi
+			LOOM_SPAWN_WORKER_BRIEF_JSON=$(_loom_brief_json "$envelope" loom-worker-brief)
 			[[ -n "$LOOM_SPAWN_WORKER_BRIEF_JSON" ]] || loom_debug "spawn-guard: worker-brief invalid envelope"
 		fi
+	fi
+}
+
+# loom_reviewer_brief TOOL_INPUT GATE_PASSED AGENT_TYPE_REQ - the stage's test-integrity
+# brief for a loom-code-reviewer. Sets LOOM_SPAWN_REVIEWER_BRIEF_JSON (empty when none).
+# Runs only inside a live stage session (GATE_PASSED 1) for exactly loom-code-reviewer
+# with a string prompt. `loom hook reviewer-brief` reads no stdin, so it gets /dev/null:
+# piping a payload into a command that never reads it dies of SIGPIPE under pipefail.
+# A missing command, timeout, bad envelope or empty output changes nothing.
+loom_reviewer_brief() {
+	local TOOL_INPUT="$1" GATE_PASSED="$2" AGENT_TYPE_REQ="$3" envelope
+	LOOM_SPAWN_REVIEWER_BRIEF_JSON=""
+	[[ $GATE_PASSED -eq 1 && "$AGENT_TYPE_REQ" == loom-code-reviewer ]] || return 0
+	command -v "${LOOM_BIN:-loom}" &>/dev/null || return 0
+	printf '%s' "$TOOL_INPUT" | jq -e 'type == "object" and (.prompt | type == "string")' >/dev/null 2>&1 || return 0
+	if ! envelope=$(loom_run_bounded 5 "${LOOM_BIN:-loom}" hook reviewer-brief </dev/null 2>/dev/null) || [[ -z "$envelope" ]]; then
+		loom_debug "spawn-guard: reviewer-brief timeout, nonzero exit or empty output"
+		return 0
+	fi
+	LOOM_SPAWN_REVIEWER_BRIEF_JSON=$(_loom_brief_json "$envelope" loom-reviewer-brief first)
+	[[ -n "$LOOM_SPAWN_REVIEWER_BRIEF_JSON" ]] || loom_debug "spawn-guard: reviewer-brief invalid envelope"
+}
+
+# loom_append_brief BRIEF_JSON - appends a validated brief (a JSON string, possibly
+# empty) to the caller's UPDATED_INPUT prompt after a blank line and sets the caller's
+# PROMPT_REWRITTEN. Empty input or a jq failure changes nothing.
+loom_append_brief() {
+	local updated
+	[[ -n "$1" ]] || return 0
+	if updated=$(printf '%s' "$UPDATED_INPUT" | jq -c --argjson brief "$1" \
+		'. + {prompt: (.prompt + "\n\n" + $brief)}' 2>/dev/null) && [[ -n "$updated" ]]; then
+		UPDATED_INPUT="$updated"
+		PROMPT_REWRITTEN=1
+	else
+		loom_debug "spawn-guard: brief append failed"
 	fi
 }
