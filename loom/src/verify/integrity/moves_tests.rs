@@ -294,3 +294,87 @@ fn statements_of_a_hand_built_delta_index_its_own_sides() {
     assert_eq!(delta.lost.len(), 1);
     assert!(delta.base[delta.lost[0].start..].starts_with("assert_eq!(compute(a, 1)"));
 }
+
+const TS_SOURCE: &str = "web/src/calc.test.ts";
+const TS_DEST: &str = "web/src/more.test.ts";
+const TS_KEEP: &str = "const keeps = () => {\n  expect(compute(1, 2)).toBe(3);\n};\n";
+const TS_MOVED: &str = "const subtracts = () => {\n  expect(compute(1, -1)).toBe(0);\n};\n";
+
+/// `TS_MOVED` leaves `TS_SOURCE` for `TS_DEST` as `moved`; the lost statement
+/// is still lost afterwards when nothing cancelled it.
+fn move_typescript(moved: &str) -> (Vec<FileDelta>, usize) {
+    let mut deltas = vec![
+        delta(TS_SOURCE, &format!("{TS_KEEP}{TS_MOVED}"), TS_KEEP),
+        delta(TS_DEST, "", moved),
+    ];
+    let partners = cancel_moves(&mut deltas, &tree(&[])).len();
+    (deltas, partners)
+}
+
+#[test]
+fn named_typescript_function_moved_verbatim_cancels() {
+    let (deltas, partners) = move_typescript(TS_MOVED);
+
+    assert_eq!(partners, 1);
+    assert!(deltas[0].lost.is_empty() && deltas[1].added.is_empty());
+}
+
+#[test]
+fn typescript_move_gaining_a_skip_wrapper_on_its_first_line_cancels_nothing() {
+    let skipped = format!("describe.skip(\"s\", () => {{ {TS_MOVED}}});\n");
+
+    let (deltas, partners) = move_typescript(&skipped);
+
+    assert_eq!(partners, 0);
+    assert_eq!(deltas[0].lost.len(), 1);
+    assert_eq!(deltas[1].added.len(), 1);
+}
+
+#[test]
+fn anonymous_callback_test_never_cancels() {
+    let callback = "it(\"subtracts\", () => {\n  expect(compute(1, -1)).toBe(0);\n});\n";
+    let mut deltas = vec![
+        delta(TS_SOURCE, &format!("{TS_KEEP}{callback}"), TS_KEEP),
+        delta(TS_DEST, "", callback),
+    ];
+
+    assert!(cancel_moves(&mut deltas, &tree(&[])).is_empty());
+    assert_eq!(deltas[0].lost.len(), 1);
+}
+
+/// Cancellations of `SUBTRACTS` moved to `src/split_tests.rs`, which
+/// `src/calc.rs` (reached by a `mod` chain) declares with `declaring`.
+fn hop_through(declaring: &str) -> usize {
+    let source_head = file(&[ADDS]);
+    let dest = file(&[SUBTRACTS]);
+    let mut deltas = vec![
+        delta(SOURCE, &file(&[ADDS, SUBTRACTS]), &source_head),
+        delta("src/split_tests.rs", "", &dest),
+    ];
+    deltas[1].siblings = vec!["src/calc.rs".to_string()];
+    let head = tree(&[
+        ("Cargo.toml", CARGO),
+        ("src/lib.rs", "mod calc;\n#[cfg(test)]\nmod calc_tests;\n"),
+        ("src/calc.rs", declaring),
+        (SOURCE, &source_head),
+        ("src/split_tests.rs", &dest),
+    ]);
+    cancel_moves(&mut deltas, &head).len()
+}
+
+#[test]
+fn path_declaration_rustc_never_compiles_does_not_collect_the_moved_file() {
+    let live = "#[cfg(test)]\n#[path = \"split_tests.rs\"]\nmod split;\n";
+    assert_eq!(hop_through(live), 1);
+
+    let commented = format!("/*\n{live}*/\n");
+    assert_eq!(hop_through(&commented), 0, "block comment");
+    let off = "#[cfg(any())]\n#[path = \"split_tests.rs\"]\nmod split;\n";
+    assert_eq!(hop_through(off), 0, "cfg(any())");
+    let nested = format!("#[cfg(any())]\nmod off {{\n{live}}}\n");
+    assert_eq!(hop_through(&nested), 0, "inside a gated inline module");
+    let raw = format!("const TEXT: &str = r#\"\n{live}\"#;\n");
+    assert_eq!(hop_through(&raw), 0, "raw string");
+    let in_macro = format!("macro_rules! declare {{\n    () => {{\n{live}    }};\n}}\n");
+    assert_eq!(hop_through(&in_macro), 0, "macro body");
+}

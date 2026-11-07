@@ -1,30 +1,17 @@
 //! Whether the runner collects a test file at head, for the cross-file move
 //! check: a moved test that no runner picks up is a weakened test.
 
-use regex::Regex;
 use std::collections::HashMap;
-use std::sync::LazyLock;
 
 use super::moves::FileDelta;
-use crate::verify::contracts::collection::rust::chain_problems;
+use crate::verify::contracts::collection::rust::{chain_problems, parent, path_modules};
 use crate::verify::contracts::collection::FileSource;
 
-/// An out-of-line `mod name;` item with the attributes written before it.
-static MOD_ITEM: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"((?:#\[[^\]]*\]\s*)+)(?:pub(?:\([^)]*\))?\s+)?mod\s+([A-Za-z_]\w*)\s*;")
-        .expect("mod item regex must compile")
-});
-static ATTRIBUTE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"#\[([^\]]*)\]").expect("attribute regex must compile"));
-static PATH_ATTRIBUTE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r#"^path\s*=\s*"([^"\\]*)"$"#).expect("path attribute regex must compile")
-});
-
 /// Answers "does the runner collect this destination file at head", reading
-/// the head tree through `head` and remembering each Rust verdict.
+/// the head tree through `head` and remembering each Rust verdict per file.
 pub(super) struct Collector<'a> {
     head: FileSource<'a>,
-    rust: HashMap<(String, String), bool>,
+    rust: HashMap<String, bool>,
 }
 
 impl<'a> Collector<'a> {
@@ -53,13 +40,18 @@ impl<'a> Collector<'a> {
     }
 
     fn rust_collected(&mut self, dest: &FileDelta, scope: &[String]) -> bool {
-        let key = (dest.path.clone(), scope.join("::"));
-        if let Some(known) = self.rust.get(&key) {
+        let tail = scope.join("::");
+        if tail.is_empty() {
+            return false;
+        }
+        // The chain check compares `tail` only as a proper extension of the
+        // file's module path, so the verdict is the same for every function
+        // of the file.
+        if let Some(known) = self.rust.get(&dest.path) {
             return *known;
         }
-        let verdict = !key.1.is_empty()
-            && (self.reached(&dest.path, &key.1) || self.through_path_attribute(dest, &key.1));
-        self.rust.insert(key, verdict);
+        let verdict = self.reached(&dest.path, &tail) || self.through_path_attribute(dest, &tail);
+        self.rust.insert(dest.path.clone(), verdict);
         verdict
     }
 
@@ -99,10 +91,6 @@ fn file_name(path: &str) -> &str {
     path.rsplit('/').next().unwrap_or(path)
 }
 
-fn parent(path: &str) -> &str {
-    path.rsplit_once('/').map_or("", |(dir, _)| dir)
-}
-
 fn python_name(name: &str) -> bool {
     (name.starts_with("test_") || name.ends_with("_test.py")) && name.ends_with(".py")
 }
@@ -123,35 +111,6 @@ fn module_components(file: &str) -> Vec<&str> {
         parts.pop();
     }
     parts
-}
-
-/// The `(module name, path attribute value)` of every out-of-line module of
-/// `text` declared with exactly one `#[path = ".."]` and otherwise only
-/// `#[cfg(test)]` or `#[allow(..)]`. Lexical: line comments are dropped, block
-/// comments and nested inline modules are not understood.
-fn path_modules(text: &str) -> Vec<(String, String)> {
-    let code: String = text
-        .lines()
-        .filter(|line| !line.trim_start().starts_with("//"))
-        .collect::<Vec<_>>()
-        .join("\n");
-    MOD_ITEM
-        .captures_iter(&code)
-        .filter_map(|item| {
-            let mut path = None;
-            for attribute in ATTRIBUTE.captures_iter(&item[1]) {
-                let inner = attribute[1].trim();
-                if let Some(value) = PATH_ATTRIBUTE.captures(inner) {
-                    if path.replace(value[1].to_string()).is_some() {
-                        return None;
-                    }
-                } else if inner != "cfg(test)" && !inner.starts_with("allow(") {
-                    return None;
-                }
-            }
-            Some((item[2].to_string(), path?))
-        })
-        .collect()
 }
 
 /// `relative` joined to `dir`, `.` and `..` resolved; `None` when it is
