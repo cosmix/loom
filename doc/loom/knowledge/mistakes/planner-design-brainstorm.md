@@ -28,7 +28,7 @@
 **What happened**: The first planning-trace mockups put every trace concept on the feature page at the same time: settle diamonds in a new spine gutter, five frontier hints, three rows of heading pills, a stub panel, and edge chips floating in a right margin. They were verified only in headless Chrome. In the user's Firefox the spine overflowed its column, ghost chips leaked, and nothing aligned. The user judged the result broken, confusing, overly complex and ugly.
 **Why**: The brief listed every element of common.md 'The browser' and asked for all of them to be drawn, so the designer added surfaces instead of designing an experience. Visual verification used a different browser from the user's.
 **Prevention**: A mockup brief states the user task each screen serves and a budget of new elements per surface (show state only where it needs attention; detail on demand). Verify in the user's browser (Firefox here) at real window sizes, and have the orchestrator read the screenshots before showing the user.
-**Fix**: Pending: a redesign brief with a simplicity budget, verified in Firefox.
+**Fix**: The approved round-3 design is specified in `doc/plans/briefs/trace-screens-redesign/design.md` with Firefox screenshots in `doc/plans/mockups/trace-screens-redesign/`, and `PLAN-trace-screens-redesign.md` reworks the shipped screens to it; its stages check each screen in Firefox against the screenshots.
 
 ## The second trace mockup round was bland because the brief asked for plain
 
