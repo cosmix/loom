@@ -9,6 +9,7 @@ import { snapshotAtom } from "@/plan/chat/model";
 import { Spine } from "@/plan/feature/spine";
 import { PlanHeader } from "@/plan/header/header";
 import { ignoreAction, SAMPLE_SERVER, SAMPLE_STEPS } from "@/plan/help/sample";
+import { SAMPLE_PLANS, SAMPLE_SECTIONS, SAMPLE_TRACE } from "@/plan/help/sample-trace";
 import { SceneRouter } from "@/plan/help/scene-router";
 import { checklistAtom, serverInfoAtom } from "@/plan/state/atoms";
 
@@ -16,11 +17,18 @@ const SAMPLE_CHECKLIST = checklistViewSchema.parse({
   feature: "atlas",
   pitch: null,
   has_product: true,
-  sections: [],
-  plans: { listed: 0, total: 0, written: 0, running: 0, done: 0 },
-  untested: 0,
+  sections: SAMPLE_SECTIONS.map((section) => ({ ...section, open_questions: 0 })),
+  plans: { listed: 2, total: 2, written: 2, running: 0, done: 0 },
+  untested: 1,
   metaplans: [],
-  plan_rows: [],
+  plan_rows: SAMPLE_PLANS.map(({ slug, path, title, pressure }) => ({
+    slug,
+    path,
+    title,
+    state: "written",
+    pressure_date: pressure,
+    listed: true,
+  })),
   current: { kind: "step", number: 3 },
   steps: SAMPLE_STEPS,
   primary: {
@@ -76,7 +84,7 @@ export function GettingAroundScene() {
               <div data-loom-plan inert>
                 <PlanHeader sample onOpenSettings={ignoreAction} onOpenHelp={ignoreAction} />
                 <div className="w-64 max-w-full">
-                  <Spine sample />
+                  <Spine sample sampleTrace={SAMPLE_TRACE} />
                 </div>
               </div>
             }

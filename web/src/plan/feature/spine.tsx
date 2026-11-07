@@ -4,6 +4,7 @@ import { useEffect, useId, useState } from "react";
 import { useLocation } from "react-router";
 
 import { z } from "@/api/zod";
+import type { TraceView } from "@/plan/api/schema-trace";
 import { Button } from "@/components/ui/button";
 import { projectPref } from "@/plan/chat/prefs";
 import { featurePage } from "@/plan/feature/page-offer";
@@ -106,16 +107,24 @@ function MenuButton({
  * names the current row; the list stays in the document either way (CSS hides it), so it never
  * scrolls sideways.
  *
- * `sample` draws the spine for a Help scene: it makes no trace request and shows no head.
+ * `sample` draws the spine for a Help scene: it makes no trace request, shows no head and opens
+ * every group so the scene shows the instrument wells; `sampleTrace` is the trace it reads instead.
  */
-export function Spine({ sample = false }: { sample?: boolean }) {
+export function Spine({
+  sample = false,
+  sampleTrace = null,
+}: {
+  sample?: boolean;
+  sampleTrace?: TraceView | null;
+}) {
   const { checklist } = useFeature();
   const { pathname } = useLocation();
   const [menuOpen, setMenuOpen] = useState(false);
   const bodyId = useId();
   const { opened, toggle } = useExpandedGroups(checklist?.feature ?? "");
   // A sample spine reads no live trace.
-  const { trace } = useTrace(!sample && checklist ? checklist.feature : "");
+  const live = useTrace(!sample && checklist ? checklist.feature : "").trace;
+  const trace = sample ? sampleTrace : live;
   useEffect(() => setMenuOpen(false), [pathname]);
   if (!checklist) return null;
 
@@ -149,7 +158,7 @@ export function Spine({ sample = false }: { sample?: boolean }) {
               group={group}
               pathname={rowPath}
               here={group.id === here}
-              open={group.id === here || opened.includes(group.id)}
+              open={sample || group.id === here || opened.includes(group.id)}
               onToggle={() => toggle(group.id)}
             />
           ))}
