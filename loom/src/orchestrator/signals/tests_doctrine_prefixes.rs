@@ -186,6 +186,7 @@ fn integration_verify_prefix_retains_required_review_and_doctrine_guards() {
         "loom-security-audit",
         "spawn these as PARALLEL subagents",
         "OWASP Top 10",
+        "**Performance**",
         "Mini Adversarial Code Review",
         "search the WHOLE codebase",
     ] {
@@ -207,6 +208,10 @@ fn integration_verify_prefix_retains_required_review_and_doctrine_guards() {
             "IV prefix lost review dimension: {dimension}"
         );
     }
+    assert!(
+        prefix.contains("review it against the plan's stage briefs"),
+        "IV prefix lost the plan-wide briefs instruction of the Performance dimension"
+    );
     assert!(!prefix.contains("Knowledge Distillation (MANDATORY)"));
     assert!(!prefix.contains("Agent Teams"));
     assert!(!prefix.contains("loom subagents watch"));

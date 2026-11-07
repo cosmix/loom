@@ -231,13 +231,12 @@ the worktree. A contract that is itself wrong is disputed, never edited:
 
 **Review order (plan v2):** run `loom check` once beside the final review. One fix worker handles all findings and failed criteria; re-check failures with `loom check <stage-id> --criterion <n>`, then one re-review on the follow-up model, then complete. After the final round, code edits including formatting need re-review. Comment-only lines, blank lines, and prose markdown outside skills/, agents/, commands/, loom-hooks/, tests and fixtures need none; the base must be unchanged. Block comments and every other edit need re-review. Commits do not change it.
 
-**Test integrity** (standard and integration-verify stages). Completion compares the stage's test
-files with the base. Fewer test declarations or assertions in a language, assertion lines removed
-or changed in a test file that existed at base (a moved line does not count), or a changed
-`ratchet_files` entry each raise an event; `loom stage review integrity <stage-id>` lists them.
-Revert the change behind each event, or dispute them together:
-`loom stage dispute-integrity <stage-id> --event <id> ... --reason "..."`. An accepted event stays
-accepted while it gets no worse.
+**Test integrity** (standard, integration-verify). Completion compares test files to base.
+Fewer declarations or assertions in a language, assertion statements lost or changed in a test file
+at base (a reflow, a move or a lowered ledger entry does not count), or a loosened `ratchet_files`
+entry each raise an event; `loom stage review integrity <stage-id>` lists them. Revert the cause or
+dispute: `loom stage dispute-integrity <stage-id> --event <id> ...`. Reviewers see these events;
+fix their findings before the final round. An accepted event holds while it gets no worse.
 
 **What `loom stage complete` checks, in order.** The daemon's host job runs acceptance first. Only
 a pass continues to steps 2 to 6, and each of those runs even after an earlier one failed, so one

@@ -24,6 +24,10 @@ use crate::testrun::{languages, registry};
 
 const ORCHESTRATION_SKILL: &str = include_str!("../../../../skills/loom-orchestration/SKILL.md");
 const PLAN_WRITER_SKILL: &str = include_str!("../../../../skills/loom-plan-writer/SKILL.md");
+const V2_CONTRACTS: &str =
+    include_str!("../../../../skills/loom-plan-writer/references/v2-contracts.md");
+const BOOKEND_STAGES: &str =
+    include_str!("../../../../skills/loom-plan-writer/references/bookend-stages.md");
 
 /// The language skills, read at run time: which skill an adapter needs is only
 /// known once `registry::all()` has been walked.
@@ -148,4 +152,30 @@ fn plan_writer_skill_names_project_detect() {
              detect each package's adapter with it and write contracts from that reference"
         );
     }
+}
+
+#[test]
+fn v2_contracts_reference_describes_the_statement_detector() {
+    let enforced = section(V2_CONTRACTS, "5. What completion enforces in v2")
+        .expect("v2-contracts.md keeps its `## 5. What completion enforces in v2` section");
+    for needle in ["assertion statement", "loosens", "loom hook reviewer-brief"] {
+        assert!(
+            enforced.contains(needle),
+            "v2-contracts.md Section 5 must describe the test-integrity detector: missing `{needle}`"
+        );
+    }
+}
+
+#[test]
+fn bookend_stages_lists_the_signals_review_dimensions() {
+    for needle in ["performance", "build/test/sandbox"] {
+        assert!(
+            BOOKEND_STAGES.contains(needle),
+            "bookend-stages.md must list the review dimensions the signal injects: missing `{needle}`"
+        );
+    }
+    assert!(
+        !BOOKEND_STAGES.contains("test coverage"),
+        "bookend-stages.md must not name a `test coverage` review dimension the signal does not inject"
+    );
 }

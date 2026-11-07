@@ -50,7 +50,12 @@ pub(super) fn append_review_gate(content: &mut String, stage: &Stage, work_dir: 
          current worktree, and the files changed since that round.\n\
          - Send all findings of a round to ONE fix worker before ONE re-review on the follow-up model. \
          A re-review covers the files changed since the previous round plus the open \
-         findings. A finding closes when a later round lists its id under `resolved`.\n\n",
+         findings. A finding closes when a later round lists its id under `resolved`.\n\
+         - The spawn guard appends a `loom-reviewer-brief` section to every reviewer brief: this stage's \
+         current test-integrity events with their lost assertion statements and, in integration-verify, \
+         the files the plan changed, the plan's briefs directory and every `consumer_deferred`. Do not \
+         paste them. A reviewer reports a finding for each lost guard that no equal or stronger check \
+         replaces; fix it, or dispute the event, before the final round.\n\n",
         id = stage.id
     ));
     append_dispute_commands(content, stage);
