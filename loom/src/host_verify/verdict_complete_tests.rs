@@ -1,18 +1,23 @@
 //! The verdict completion beyond its frozen contracts: which record is the
 //! latest completion request, which runs cannot stand for a session, the
 //! gates and bindings that hand a passing run back, the deadline the runner
-//! gives the job, and the retry owner giving up on its application.
+//! gives the job, and the retry owner giving up on its application. Then the
+//! daemon's sweep over a held stage with a real worktree.
 
 use chrono::Utc;
 
 use super::{latest_completion_head, submit_verdict_completion, VerdictStart, STAGE_BOUND_SESSION};
+use crate::fs::work_dir::write_terminal_config;
 use crate::host_verify::apply::{self, Applied, APPLIED_MARKER};
 use crate::host_verify::tests_complete_support::{ignored, Fixture, STAGE};
 use crate::host_verify::{
     apply_retry, runner, store, CriterionOutcome, JobKind, JobRecord, JobResult, JobState,
 };
+use crate::models::session::{SessionBackendKind, TerminalConfig};
 use crate::models::stage::{StageStatus, StageType};
 use crate::orchestrator::adjudication::feedback;
+use crate::orchestrator::core::{Orchestrator, OrchestratorConfig};
+use crate::plan::ExecutionGraph;
 use crate::verify::transitions::update_stage;
 
 /// A fixture whose stage a verdict held: `NeedsAdjudication`, no session.
@@ -256,4 +261,86 @@ fn giving_up_on_the_application_hands_the_stage_back() {
         notes.contains("could not apply its completion run"),
         "{notes}"
     );
+}
+
+/// An orchestrator over the fixture on the tmux lane. Its terminal section
+/// goes into `config.toml`, which the completion policy digests, so build it
+/// before saving a run whose policy must still match.
+fn orchestrator(fx: &Fixture) -> Orchestrator {
+    let tmux = TerminalConfig {
+        backend: SessionBackendKind::Tmux,
+    };
+    write_terminal_config(&fx.work_dir, &tmux).expect("write the terminal config");
+    let config = OrchestratorConfig {
+        work_dir: fx.work_dir.clone(),
+        repo_root: fx.repo.clone(),
+        enable_skill_routing: false,
+        ..Default::default()
+    };
+    let graph = ExecutionGraph::build(Vec::new()).expect("an empty graph");
+    Orchestrator::new(config, graph).expect("build the orchestrator")
+}
+
+/// Run the daemon's verdict pass: with no verdict pending, it is the sweep of
+/// the held stages alone.
+fn sweep(daemon: &mut Orchestrator) {
+    daemon
+        .apply_pending_verdicts()
+        .expect("run the verdict pass");
+}
+
+#[test]
+fn the_sweep_queues_the_completion_of_an_eligible_held_stage() {
+    let fx = held(StageType::Standard, 2);
+    let mut daemon = orchestrator(&fx);
+    fx.passed();
+
+    sweep(&mut daemon);
+
+    let current = store::load_current(&fx.work_dir, STAGE)
+        .expect("load the current record")
+        .expect("a current record");
+    assert_eq!(current.kind, JobKind::VerdictComplete);
+    assert_eq!(current.state, JobState::Queued);
+    assert_eq!(current.session_id, STAGE_BOUND_SESSION);
+    assert_eq!(current.head, fx.head());
+    assert_eq!(fx.load_stage().status, StageStatus::NeedsAdjudication);
+}
+
+#[test]
+fn a_held_stage_reset_since_the_sweep_listed_it_queues_nothing() {
+    let fx = held(StageType::Standard, 2);
+    fx.passed();
+    update_stage(STAGE, &fx.work_dir, |s| {
+        s.status = StageStatus::WaitingForDeps;
+        Ok(())
+    })
+    .expect("reset the stage");
+
+    let start = submit_verdict_completion(&fx.work_dir, &fx.load_stage(), Utc::now())
+        .expect("submit the verdict completion");
+
+    assert_eq!(start, VerdictStart::NotHeld);
+    let current = store::load_current(&fx.work_dir, STAGE).expect("load the current record");
+    assert!(
+        current.is_none_or(|record| record.kind != JobKind::VerdictComplete),
+        "a reset stage gets no VerdictComplete job"
+    );
+}
+
+#[test]
+fn an_unreadable_completion_result_hands_the_stage_back_with_the_error() {
+    let fx = held(StageType::Standard, 2);
+    let mut daemon = orchestrator(&fx);
+    let record = fx.passed();
+    let result = store::job_dir(&fx.work_dir, STAGE, &record.id)
+        .expect("the job directory")
+        .join("result.json");
+    std::fs::write(result, "{ not json").expect("corrupt the result");
+
+    sweep(&mut daemon);
+
+    assert_eq!(fx.load_stage().status, StageStatus::Queued);
+    let notes = feedback_of(&fx);
+    assert!(notes.contains("malformed"), "{notes}");
 }
