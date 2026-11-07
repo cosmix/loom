@@ -653,13 +653,9 @@ built result is taken in a follow-up round.
   `doc/plans/<feature>/index.md` metaplan form of the feature model, so its entries count toward step 4.
 - **Plan 9's size.** Plan 9 has four stages, under the split threshold, so the review loop stays
   in `PLAN-feat-planner-09-chat.md` and there is no separate review-loop plan.
+- **Pressure record.** The `## Pressure tests` writer stayed in plan 11 and shipped with it.
 
 ## Open questions
-
-- **Pressure record early.** The `## Pressure tests` writer is useful to terminal users now and
-  is independent of the app. It could move out of plan 11 into a small plan run first.
-  Recommendation: keep it in plan 11 unless a pressure test is run on these plans before plan 11
-  starts, in which case run it first so their records exist.
 
 ## Follow-ups
 
