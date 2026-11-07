@@ -67,6 +67,9 @@ impl Orchestrator {
     /// executor instead of a successor being spawned. A retirement that
     /// leaves survivors, or that fails outright, defers the verdict rather
     /// than re-queueing the stage onto a live writer.
+    ///
+    /// Ends by starting the completion of every stage a verdict left held
+    /// (`start_verdict_completions`), once every verdict's claim has dropped.
     pub(crate) fn apply_pending_verdicts(&mut self) -> Result<()> {
         let work_dir = self.config.work_dir.clone();
         let pending = match self.adjudicators.pending_verdicts(&work_dir) {
@@ -82,6 +85,7 @@ impl Orchestrator {
         for (stage_id, dispute_id) in pending {
             self.apply_one_verdict(&work_dir, &stage_id, dispute_id);
         }
+        self.start_verdict_completions();
         Ok(())
     }
 
