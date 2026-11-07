@@ -127,7 +127,9 @@ function pageChips(page: ConceptPage, rebuilding: boolean, questions: HeadingChi
     ...statusChips(page, rebuilding),
     ...questions,
     ...(plan === null ? [] : [planStateChip(plan)]),
-    ...(showPressure ? [pressureChip(page.last_pressure, false)] : []),
+    ...(showPressure
+      ? [pressureChip(page.last_pressure, false, plan === "written" ? page.path : null)]
+      : []),
     ...implementsChips(page).map(fact),
     ...builtByChips(page).map(fact),
   ];

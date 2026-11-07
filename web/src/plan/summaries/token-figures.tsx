@@ -3,6 +3,8 @@ import { useEffect, useId, useState, type ReactElement } from "react";
 import { useMediaQuery } from "@/lib/use-media-query";
 import type { TokenVector } from "@/plan/api/schema-summaries";
 
+import "./token-figures.css";
+
 /** The token components in the order every figure, bar and legend uses, with their labels. */
 export const COMPONENTS = [
   { key: "fresh_input", label: "fresh" },
@@ -29,7 +31,7 @@ export function todaySpan(todayTotal: number, weekTotal: number): number {
 
 /**
  * One labelled figure: the label, then the figure. In a legend the label carries the component's
- * swatch (`ramp`); the last rebuild's cost line uses it bare. A missing figure reads "unknown" in
+ * swatch (`ramp`, the component's index in COMPONENTS); the last rebuild's cost line carries it too. A missing figure reads "unknown" in
  * muted text; a recorded zero prints as 0.
  */
 export function TokenFigure({

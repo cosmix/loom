@@ -1,0 +1,213 @@
+/*
+ * The token statistics (token-figures.tsx): two figure cards (Today, 7 days), each a total, a
+ * stacked bar and a legend, and the last rebuild's cost line of the same figures. Unlayered `.sp-`
+ * rules: the panel is Settings' and is portaled out of `[data-loom-plan]`, so only the global
+ * tokens and design.css's :root scales apply. The rest of the panel is in summary-panel.css.
+ *
+ * The four components take the four `--stat-*` tokens (index.css, per scheme): hues far apart,
+ * lightness staggered, each at 3:1 or more on the `--muted` track. The swatch is the segment's
+ * colour, so the bar is read through the legend and never by hue alone: every segment also
+ * announces its label and figure.
+ */
+
+/* Two cards beside each other once the panel is 480px wide, divided by one hairline; under that
+   they stack with the hairline between them. No box: the dialog is the one surface. */
+.sp-cards {
+  container-type: inline-size;
+  min-width: 0;
+}
+
+/* A container query cannot style its own container, so the grid is the container's child. */
+.sp-cards-grid {
+  display: grid;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.sp-card {
+  display: grid;
+  align-content: start;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.sp-card + .sp-card {
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--hairline);
+}
+
+@container (min-width: 480px) {
+  .sp-cards-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .sp-card + .sp-card {
+    padding-top: 0;
+    padding-inline-start: var(--space-4);
+    border-top: 0;
+    border-inline-start: 1px solid var(--hairline);
+  }
+}
+
+.sp-card-caption {
+  font-size: var(--type-ui);
+  font-weight: 500;
+  color: var(--muted-foreground);
+}
+
+.sp-total {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+}
+
+.sp-total-figure {
+  font-family: var(--font-mono);
+  font-size: 1.75rem;
+  font-weight: 500;
+  line-height: 1.1;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+  color: var(--foreground);
+}
+
+.sp-total-unit {
+  font-size: var(--type-fine);
+  font-variant-caps: all-small-caps;
+  letter-spacing: 0.1em;
+  color: var(--muted-foreground);
+}
+
+.sp-unknown {
+  color: var(--muted-foreground);
+}
+
+/* The stacked bar: a muted track, one segment per component, the tick over the track. The track
+   is thick and a segment never thinner than 3px, so a component that is recorded but a sliver of
+   the total still shows its hue. */
+.sp-bar {
+  position: relative;
+  margin: var(--space-1) 0;
+}
+
+.sp-track {
+  display: flex;
+  height: 10px;
+  overflow: hidden;
+  border-radius: 5px;
+  background: var(--muted);
+}
+
+.sp-segment {
+  display: block;
+  flex: none;
+  height: 100%;
+  min-width: 3px;
+}
+
+.sp-tick {
+  position: absolute;
+  top: -3px;
+  bottom: -3px;
+  width: 2px;
+  border-radius: 1px;
+  background: var(--foreground);
+  transform: translateX(-50%);
+}
+
+/* `data-ramp` is the component's index in COMPONENTS (fresh, cache reads, cache writes, output). */
+.sp-segment[data-ramp="0"],
+.sp-swatch[data-ramp="0"] {
+  background: var(--stat-fresh);
+}
+
+.sp-segment[data-ramp="1"],
+.sp-swatch[data-ramp="1"] {
+  background: var(--stat-read);
+}
+
+.sp-segment[data-ramp="2"],
+.sp-swatch[data-ramp="2"] {
+  background: var(--stat-write);
+}
+
+.sp-segment[data-ramp="3"],
+.sp-swatch[data-ramp="3"] {
+  background: var(--stat-output);
+}
+
+.sp-swatch {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  margin-inline-end: var(--space-2);
+  border-radius: 3px;
+}
+
+/* A figure is its label (with the component's swatch) and its number. */
+.sp-figure dt {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  color: var(--muted-foreground);
+}
+
+.sp-figure dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+  color: var(--foreground);
+}
+
+.sp-figure dd.sp-unknown {
+  color: var(--muted-foreground);
+}
+
+/* The legend is one column of swatch and label with the figure at the row's end, so the four
+   figures align down the card instead of trailing on one wrapping line, whatever the card's
+   width (the two cards side by side are each too narrow for two legend columns). */
+.sp-legend {
+  display: grid;
+  gap: var(--space-1);
+  margin: 0;
+}
+
+.sp-legend .sp-figure {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--space-2);
+  align-items: center;
+  min-width: 0;
+}
+
+/* The last rebuild's cost line: each figure a small tile, the label over the figure in the mono
+   face, divided by hairlines. */
+.sp-cost {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-3);
+  margin: 0;
+}
+
+.sp-cost .sp-figure {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 2px;
+  align-items: flex-start;
+  min-width: 0;
+}
+
+.sp-cost .sp-figure + .sp-figure {
+  padding-inline-start: var(--space-3);
+  border-inline-start: 1px solid var(--hairline);
+}
+
+.sp-cost .sp-figure dt {
+  font-size: var(--type-fine);
+}
+
+.sp-cost .sp-figure dd {
+  font-family: var(--font-mono);
+  font-size: var(--type-title);
+  font-weight: 500;
+}

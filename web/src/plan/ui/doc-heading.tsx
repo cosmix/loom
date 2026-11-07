@@ -137,6 +137,12 @@ function Breadcrumbs({ crumbs }: { crumbs: readonly HeadingCrumb[] }): JSX.Eleme
   );
 }
 
+/** The tooltip and description of a segment that has nowhere to go, as Edit's lock gives its reason. */
+const VIEW_UNAVAILABLE = {
+  summary: "This document has no summary yet",
+  source: "This page has no source document",
+} as const;
+
 /**
  * Summary and Source: one two-state segmented control, the toolbar bar's first group, with the
  * current view filled (`.doc-heading-views` in `doc-heading.css`). Both states stay on screen,
@@ -162,6 +168,7 @@ function ViewSwitch({ views }: { views: HeadingViews }): JSX.Element {
             {...HEADING_BUTTON}
             aria-current={current ? "page" : undefined}
             aria-disabled={current ? undefined : true}
+            title={current ? undefined : VIEW_UNAVAILABLE[view]}
           >
             {content}
           </span>

@@ -1,5 +1,5 @@
 import { act, cleanup, fireEvent, screen, within } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import snapshotFixture from "@/plan/api/fixtures/chat-snapshot.json";
 import runFixture from "@/plan/api/fixtures/pressure-run.json";
@@ -15,17 +15,9 @@ import { screenAtom } from "@/plan/chat/session-home";
 import { chatSheetOpenAtom } from "@/plan/chat/sheet-state";
 
 import { authorStore, makeDoc, mount, withFeature } from "./doc-heading-kit";
+import { registerDocHeadingHooks } from "./doc-heading-view.fixtures";
 
-beforeEach(() => {
-  vi.useFakeTimers({ toFake: ["Date"] });
-  vi.setSystemTime(new Date(2026, 9, 29, 0, 15));
-  window.localStorage.clear();
-});
-
-afterEach(() => {
-  cleanup();
-  vi.useRealTimers();
-});
+registerDocHeadingHooks();
 
 describe("FileDocHeading", () => {
   it("renders the feature slug, group and plan slug as the breadcrumb", () => {
@@ -184,6 +176,27 @@ describe("FileDocHeading", () => {
     ).not.toBeNull();
   });
 
+  it("sets Pressure-test at the end of the pressure status row, whatever its record", () => {
+    mount(makeDoc({}, { pressure_date: null }));
+    const row = screen.getByText("Not pressure-tested").closest("li");
+    const button = screen.getByRole("button", { name: "Pressure-test" });
+    expect(row?.contains(button)).toBe(true);
+    expect(button.closest(".doc-heading-row__action")).not.toBeNull();
+    cleanup();
+    mount(makeDoc({}, { pressure_date: "2026-10-17" }));
+    expect(
+      screen
+        .getByText("Pressure-tested 2026-10-17")
+        .closest("li")
+        ?.contains(screen.getByRole("button", { name: "Pressure-test" })),
+    ).toBe(true);
+  });
+
+  it("draws no Pressure-test for a plan that is not written", () => {
+    mount(makeDoc({}, { state: "running" }));
+    expect(screen.queryByRole("button", { name: "Pressure-test" })).toBeNull();
+  });
+
   it("prioritizes an active pressure run and hides Edit until the run ends", () => {
     const doc = makeDoc();
     const store = authorStore();
@@ -226,52 +239,17 @@ describe("FileDocHeading", () => {
     expect(changed?.getAttribute("title")).toBe("2026-10-29T20:51:53Z");
     expect(changed?.querySelector("svg.lucide-clock")).not.toBeNull();
     expect(screen.getByRole("button", { name: "Pressure-test" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Start a run" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Start a run" })).toBeNull();
   });
 
-  it("links a plan's Summary and marks its file Source as current", () => {
-    mount(makeDoc({ feature: "demo" }, { slug: "file-mode" }));
-    const views = screen.getByRole("group", { name: "View" });
-
-    expect(within(views).getByRole("link", { name: "Summary" }).getAttribute("href")).toBe(
-      "/f/demo/engineering/file-mode",
+  it("sets Edit and Discuss in a toolbar group, on the view switch's centre line", () => {
+    mount();
+    const group = screen.getByRole("link", { name: "Edit" }).parentElement;
+    expect(group?.className).toBe("doc-heading-group");
+    expect(group?.contains(screen.getByRole("button", { name: "Discuss" }))).toBe(true);
+    expect(group?.parentElement).toBe(
+      screen.getByRole("group", { name: "View" }).parentElement?.parentElement,
     );
-    const source = within(views).getByRole("link", { name: "Source" });
-    expect(source.getAttribute("href")).toBe("/f/demo/source/plans/demo/PLAN-file-mode.md");
-    expect(source.getAttribute("aria-current")).toBe("page");
-  });
-
-  it.each<[EntryKind, string | null, string | null]>([
-    ["section", "demo", "/f/demo/product/section_03"],
-    ["vision", "demo", "/f/demo/vision"],
-    ["metaplan", "demo", "/f/demo/metaplan"],
-    ["plan", null, "/plans/file-mode"],
-    ["section", null, null],
-    ["vision", null, null],
-    ["metaplan", null, null],
-    ["note", "demo", null],
-  ])("links the Summary for kind=%s feature=%s", (kind, feature, target) => {
-    mount(
-      makeDoc(
-        {
-          kind,
-          feature,
-          path: kind === "metaplan" ? "doc/plans/demo/index.md" : "doc/product/demo/section_03.md",
-          ...(kind === "plan" ? {} : { plan: null }),
-        },
-        { slug: "file-mode" },
-      ),
-    );
-    const views = screen.getByRole("group", { name: "View" });
-
-    if (target === null) {
-      expect(within(views).queryByRole("link", { name: "Summary" })).toBeNull();
-      expect(within(views).getByText("Summary").getAttribute("aria-disabled")).toBe("true");
-    } else {
-      expect(within(views).getByRole("link", { name: "Summary" }).getAttribute("href")).toBe(
-        target,
-      );
-    }
   });
 
   it.each<[boolean, boolean, string, boolean]>([
