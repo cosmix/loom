@@ -1,5 +1,7 @@
 # 01 — Workflow Model and Project State
 
+Settled: 4c1fbd3d525f stub 4c4ce187fe0c
+
 Part of the [Loom Plan product vision](index.md).
 
 This section defines the six workflow steps as states, how the app reads the project's state
