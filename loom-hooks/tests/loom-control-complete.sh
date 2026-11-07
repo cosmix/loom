@@ -68,7 +68,6 @@ assert_rc 0
 symlink_bin="$TMP/bin/loom-link"
 ln -s "$TMP/bin/loom" "$symlink_bin"
 INVALID_COMMANDS=(
-	'loom stage complete build-api'
 	"loom() { \"$TMP/bin/loom\" \"\$@\"; }; loom stage complete build-api"
 	"alias loom='$TMP/bin/loom'; loom stage complete build-api"
 	"$symlink_bin stage complete build-api"
@@ -113,8 +112,9 @@ TEST_WORKTREE_OVERRIDE="$nested_main" run_pre 'loom stage complete build-api'
 assert_rc 0
 [[ -z "$HOOK_OUTPUT" ]] || { echo "nested main-repo path emitted a pin" >&2; exit 1; }
 TEST_WORKTREE_OVERRIDE="$real_nested_worktree" run_pre 'loom stage complete build-api'
-assert_rc 2
-assert_output 'retry with the pinned command'
+assert_rc 0
+[[ "$(jq -r .hookSpecificOutput.updatedInput.command <<<"$HOOK_OUTPUT")" == "$PINNED" ]] ||
+	{ echo "bare completion was not rewritten to the pinned command: $HOOK_OUTPUT" >&2; exit 1; }
 
 production_hook="$TMP/installed/loom-control-complete.sh"
 mkdir -p "$(dirname "$production_hook")"

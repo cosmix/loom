@@ -5,10 +5,13 @@
 # worktree isolation boundaries:
 #
 # For Bash tool:
-#   - Block `git -C`, `git --work-tree`, `git --git-dir` (accessing other git dirs)
+#   - Block global `git -C`, `--work-tree`, `--git-dir` unless every target
+#     resolves into this worktree or the session scratch directory
 #   - Block GIT_DIR= / GIT_WORK_TREE= env assignments that retarget git
 #   - Block `eval`-reached git (the regex cannot see inside eval'd strings)
-#   - Block `../../` path traversal (escaping worktree)
+#   - Block `..` path traversal that RESOLVES outside the worktree (against
+#     the directory each token runs in, loom_track_cwd); warn instead when a
+#     `../..` token's directory cannot be known
 #   - Block `.worktrees/` access (except current worktree)
 #
 # SECURITY NOTE (best-effort): this is regex/token-scanning, not a parser. It
@@ -18,37 +21,23 @@
 # paths; this hook is defense-in-depth that raises the cost of the obvious
 # bypasses.
 #
-# TOKEN SCANNING: each pattern below is checked against word-shaped argv
-# tokens produced by loom_tokenize_command (loom-hooks/_common.sh), not the raw
-# command string. A quoted PROSE payload — a codex-forward task brief, a
-# `loom memory note` body — tokenizes to ONE token carrying embedded
-# whitespace, and loom_token_is_word excludes it from every check; a real
-# path, flag, or env assignment is always a whitespace-free word and stays
-# covered. This is what lets `echo 'import x from "../../../src/y"'` and a
-# multi-line codex brief quoting relative-import specifiers through, while
-# `cat "../../foo"` (a quoted but genuinely word-shaped path argument) still
-# blocks — quoting alone was never the right discriminator; whitespace
-# inside the token is. When loom_tokenize_command cannot produce a
-# trustworthy token list (an unterminated quote), every pattern falls back
-# to the original raw-string regex scan, so protection is never weaker than
-# it was before tokenizing existed.
-#
-# NARROWER EXCEPTION for the path-traversal and cross-worktree checks: a
-# whitespace-bearing token that STARTS WITH the traversal sequence
-# (`../..`/`..\..`) or with `.worktrees/` is still checked, even though it
-# fails loom_token_is_word. A prose payload effectively never BEGINS with
-# either sequence, so this closes a real escape whose path contains a space
-# (`cat "../../doc/my notes.md"`) without reintroducing the false positive
-# above. The discriminator stays "does this token LOOK like a path being
-# operated on" — a token that STARTS WITH the sequence does, whatever
-# follows it.
+# TOKEN SCANNING: each pattern checks argv tokens from loom_tokenize_command,
+# not the raw string. A quoted PROSE payload (a codex brief, a `loom memory
+# note` body) is ONE token with embedded whitespace, which loom_token_is_word
+# excludes; a real path, flag or env assignment is a whitespace-free word, so
+# `cat "../../foo"` is still checked. Exception: a whitespace-bearing token
+# that STARTS WITH `../..` or `.worktrees/` is checked too
+# (`cat "../../doc/my notes.md"`); prose almost never begins that way. When
+# the tokenizer fails (an unterminated quote), the raw-string regex fallback
+# decides, so protection is never weaker than before tokenizing existed.
 #
 # Input: JSON from stdin (Claude Code passes tool info via stdin)
-#   {"tool_name": "Bash", "tool_input": {...}, ...}
+#   {"tool_name": "Bash", "tool_input": {...}, "cwd": "...", ...}
 #
 # Exit codes:
-#   0 - Allow the operation
-#   2 - Block with guidance message
+#   0 - Allow the operation (stdout may carry a LOOM_HOOK_WARN additionalContext)
+#   2 - Block with guidance message; each block appends one line to the stage
+#       block ledger (loom_record_block, rule id in BLOCK_RULE)
 #   2 - jq not installed (fail closed)
 #
 # Environment:
@@ -93,18 +82,30 @@ CURRENT_WORKTREE=$(loom_current_worktree) || {
 # Derive the stage from the worktree path itself — authoritative for which
 # worktree this session owns, and immune to a stale LOOM_STAGE_ID.
 CURRENT_STAGE=$(basename "$CURRENT_WORKTREE")
-source "$(dirname "${BASH_SOURCE[0]}")/_worktree_policy.sh" || exit 2
-loom_load_worktree_policy || exit 2
+BLOCK_RULE=""
+POLICY_TAG="[worktree-isolation/policy-load] "
+
+# block_policy_load - record and exit for a policy that cannot be loaded.
+block_policy_load() {
+    loom_record_block worktree-isolation policy-load "${TOOL_NAME:-unknown}" \
+        "$(jq -r '.tool_input.command // empty' <<<"$INPUT_JSON" 2>/dev/null || true)"
+    exit 2
+}
+if ! source "$(dirname "${BASH_SOURCE[0]}")/_worktree_policy.sh"; then
+    echo "${POLICY_TAG}LOOM: BLOCKED - _worktree_policy.sh cannot be loaded" >&2
+    block_policy_load
+fi
+loom_load_worktree_policy "$POLICY_TAG" || block_policy_load
 
 # === BLOCK MESSAGES ===
 # Factored out so both the token-scan path and the legacy regex fallback path
-# print identical guidance text.
+# print identical guidance text. Each opens with the `[worktree-isolation/<rule>]`
+# tag from BLOCK_RULE on its first non-empty line.
 
 print_git_override_block() {
-    cat >&2 <<'EOF'
+    cat >&2 <<EOF
 
-============================================================
-  LOOM: BLOCKED - Git directory override detected
+[worktree-isolation/${BLOCK_RULE}] LOOM: BLOCKED - Git directory override detected
 ============================================================
 
 You tried to: Retarget git at another directory (-C / --work-tree /
@@ -116,10 +117,11 @@ This is FORBIDDEN in loom worktrees because:
   - eval hides the real command from isolation checks
 
 Instead, you should:
-  - Run git commands in the CURRENT worktree only
-  - Use relative paths within this worktree
+  - For eval: run the command directly, or loop in plain shell without eval
+  - For -C: run git from inside this worktree, or point -C at a scratch repo
+    under \$LOOM_SCRATCH_DIR, written as "\$LOOM_SCRATCH_DIR/<repo>" or as
+    the literal path
   - Stay confined to your assigned worktree
-  - Do not wrap git in eval
 
 Git commands should operate on the current directory.
 ============================================================
@@ -128,13 +130,12 @@ EOF
 }
 
 print_path_traversal_block() {
-    cat >&2 <<'EOF'
+    cat >&2 <<EOF
 
-============================================================
-  LOOM: BLOCKED - Path traversal detected
+[worktree-isolation/${BLOCK_RULE}] LOOM: BLOCKED - Path traversal detected
 ============================================================
 
-You tried to: Use ../../ to escape the worktree
+You tried to: Reach ${1}, outside this worktree
 
 This is FORBIDDEN in loom worktrees because:
   - You are CONFINED to this worktree
@@ -155,8 +156,7 @@ EOF
 print_cross_worktree_block() {
     cat >&2 <<EOF
 
-============================================================
-  LOOM: BLOCKED - Cross-worktree access detected
+[worktree-isolation/${BLOCK_RULE}] LOOM: BLOCKED - Cross-worktree access detected
 ============================================================
 
 You tried to: Access .worktrees/ directory (another stage's worktree)
@@ -180,56 +180,88 @@ EOF
 # === TOKEN-SCAN PATTERN CHECKS (LOOM_TOKENS already populated by a prior
 # successful loom_tokenize_command call) ===
 
-# Pattern 1 (token path): git directory/work-tree overrides and eval-reached
-# git. loom_tokens_cmd_has_arg/loom_tokens_invoke only match a REAL command
-# segment (the effective command word, after wrapper-unwrapping), so `eval`
-# or `GIT_DIR=` merely mentioned inside a quoted brief no longer arms these -
-# and the GIT_DIR=/GIT_WORK_TREE= checks are both ANCHORED (^...=) AND
-# word-shaped, so a prose sentence that happens to contain that substring
-# never matches either. Returns 0 when this pattern is present.
+# Pattern 1 (token path): git directory overrides that leave the worktree,
+# GIT_DIR=/GIT_WORK_TREE= assignments and eval-reached git, matched only in a
+# REAL command segment (loom_policy_git_tokens). Returns 0 when present.
 check_git_override_tokens() {
     loom_policy_git_tokens
 }
 
-# Pattern 2 (token path): ../../ path traversal. THE HEADLINE FIX -
-# loom_tokens_word_matches only considers word-shaped (whitespace-free)
-# tokens, so a quoted PROSE payload (a codex-forward brief, a `loom memory
-# note` body) that merely CONTAINS "../../../src/..." tokenizes to one
-# multi-word token and is skipped, while a quoted but genuinely word-shaped
-# path argument (`cat "../../foo"`) is still a single whitespace-free token
-# and still matches. Do not "simplify" this back to scanning every token -
-# that reintroduces the exact false positive this rewrite exists to fix.
+# Pattern 2 (token path): `..` traversal, decided by RESOLUTION against the
+# directory each token runs in (LOOM_TOKEN_CWD, loom_track_cwd), so
+# `cd web/src && cat ../../doc/x.md` is allowed and `cat ../sibling/x` is not.
+# A PAIR candidate is what the lexical check matched before: a word-shaped
+# token containing the policy's parent_pair, or ANY token starting with it
+# (`cat "../../doc/my notes.md"`). A quoted prose payload is neither, so it
+# stays unchecked. A WIDENED candidate is any other word-shaped token whose
+# path part has a parent component (`../x`, `a/../b`, `..`).
 #
-# check_path_traversal_prefix_tokens below covers the remaining gap: a
-# genuine traversal path whose argument contains a space
-# (`cat "../../doc/my notes.md"`) tokenizes to ONE whitespace-bearing token
-# and loom_tokens_word_matches would miss it entirely. It is checked
-# separately (STARTS WITH, not CONTAINS) so a prose payload that merely
-# mentions "../.." mid-sentence still does not match.
-#
-# Returns 0 when this pattern is present.
-check_path_traversal_tokens() {
-    loom_tokens_word_matches "$LOOM_POLICY_PARENT_PAIR" ||
-        check_path_traversal_prefix_tokens
+# traversal_path_part <token> - the text after the first `=` when the text
+# before it holds no `/` (`--opt=../x`), else the whole token: in `../a=b`
+# the `=` sits inside a path component.
+traversal_path_part() {
+    local tok="$1"
+    if [[ "$tok" == *=* && "${tok%%=*}" != */* ]]; then
+        printf '%s' "${tok#*=}"
+    else
+        printf '%s' "$tok"
+    fi
 }
 
-# Pattern 2b (token path): the whitespace-bearing half of the prefix
-# exception described above the TOKEN SCANNING header comment. Walks
-# LOOM_TOKENS directly (bash 3.2 `set -u` empty-array guard, same as
-# check_cross_worktree_tokens) because no loom_tokens_* helper in _common.sh
-# checks a PREFIX rather than a full-token or unanchored match. Returns 0
-# when some token (word-shaped or not, skipping only the "%%SEP%%"
-# sentinel) starts with `../..` or `..\..`.
-check_path_traversal_prefix_tokens() {
-    local n=${#LOOM_TOKENS[@]}
-    ((n > 0)) || return 1
-    local i tok prefix="^$LOOM_POLICY_PARENT_PAIR"
+# traversal_kind <token> - print pair, widened, or nothing.
+traversal_kind() {
+    local tok="$1" prefix="^$LOOM_POLICY_PARENT_PAIR"
+    if [[ "$tok" =~ $prefix ]] ||
+        { loom_token_is_word "$tok" && [[ "$tok" =~ $LOOM_POLICY_PARENT_PAIR ]]; }; then
+        printf pair
+    elif loom_token_is_word "$tok" &&
+        [[ "$(traversal_path_part "$tok")" =~ $LOOM_POLICY_PARENT_COMPONENT ]]; then
+        printf widened
+    fi
+}
+
+# check_path_traversal_resolved - 0 (block) when a candidate resolves to a
+# sibling worktree, the shared state or outside, or a PAIR candidate cannot be
+# normalized (`$X/../../y`, or a glob/brace component before a `..`: bash
+# expands `.loom/w*` to the `work` symlink, and `..` then leaves it physically);
+# TRAVERSAL_PATH names the target (a literal ${LOOM_SCRATCH_DIR} prefix is no
+# brace). A relative PAIR candidate whose directory is unknown goes to
+# TRAVERSAL_WARN; a WIDENED one that cannot be resolved stays allowed.
+check_path_traversal_resolved() {
+    TRAVERSAL_WARN=() TRAVERSAL_PATH=""
+    local n=${#LOOM_TOKENS[@]} i tok kind part cwd abs glob_re='[*?[{\\][^/]*/(.*/)?\.\.(/|$)'
+    local scr='${LOOM_SCRATCH_DIR}'
     for ((i = 0; i < n; i++)); do
         tok="${LOOM_TOKENS[$i]}"
-        [[ "$tok" == "%%SEP%%" ]] && continue
-        [[ "$tok" =~ $prefix ]] && return 0
+        [[ "$tok" != "%%SEP%%" ]] || continue
+        kind=$(traversal_kind "$tok")
+        [[ -n "$kind" ]] || continue
+        part=$(traversal_path_part "$tok")
+        cwd="${LOOM_TOKEN_CWD[$i]:-}"
+        if [[ -z "$cwd" && "$part" != [/~\$]* ]]; then
+            if [[ "$kind" == pair ]]; then TRAVERSAL_WARN+=("$tok"); fi
+            continue
+        fi
+        if [[ "${part#"$scr"}" =~ $glob_re ]] || ! abs=$(loom_normalize_path "$cwd" "$part"); then
+            [[ "$kind" == pair ]] || continue
+            TRAVERSAL_PATH="$tok (which cannot be resolved)"
+            return 0
+        fi
+        case "$(loom_path_class "$abs")" in worktree | scratch) continue ;; esac
+        TRAVERSAL_PATH="$abs (from $tok)"
+        return 0
     done
     return 1
+}
+
+# print_traversal_warning - emit one LOOM_HOOK_WARN additionalContext naming
+# every TRAVERSAL_WARN token, or nothing when there is none.
+print_traversal_warning() {
+    ((${#TRAVERSAL_WARN[@]} > 0)) || return 0
+    local list="" tok
+    for tok in "${TRAVERSAL_WARN[@]}"; do list="${list:+$list, }$tok"; done
+    jq -nc --arg ctx "LOOM_HOOK_WARN: worktree-isolation cannot tell which directory runs $list (a subshell, pipe, sh -c or a cd that may fail comes first), so its traversal was not checked. Use an absolute path inside your worktree instead." \
+        '{hookSpecificOutput:{hookEventName:"PreToolUse",additionalContext:$ctx}}'
 }
 
 # Pattern 3 (token path): .worktrees/ access outside the current stage. No
@@ -266,22 +298,28 @@ check_cross_worktree_tokens() {
     return 1
 }
 
+# A block from any pattern wins over a traversal warning.
 validate_bash_command_token_path() {
+    loom_track_cwd "$(jq -r '.cwd // empty' <<<"$INPUT_JSON" 2>/dev/null || true)"
     if check_git_override_tokens; then
+        BLOCK_RULE=git-override
         print_git_override_block
         return 1
     fi
 
-    if check_path_traversal_tokens; then
-        print_path_traversal_block
+    if check_path_traversal_resolved; then
+        BLOCK_RULE=path-traversal
+        print_path_traversal_block "$TRAVERSAL_PATH"
         return 1
     fi
 
     if check_cross_worktree_tokens; then
+        BLOCK_RULE=cross-worktree
         print_cross_worktree_block
         return 1
     fi
 
+    print_traversal_warning
     return 0
 }
 
@@ -300,13 +338,15 @@ validate_bash_command_regex_fallback() {
     #   - `eval ... git ...` — the regex cannot see inside an eval'd string, so we
     #     refuse the whole command rather than let it through unparsed.
     if loom_policy_git_fallback "$stripped"; then
+        BLOCK_RULE=git-override
         print_git_override_block
         return 1
     fi
 
     # Pattern 2: Block ../../ path traversal (escaping worktree)
     if [[ "$stripped" =~ $LOOM_POLICY_PARENT_PAIR ]]; then
-        print_path_traversal_block
+        BLOCK_RULE=path-traversal
+        print_path_traversal_block "a ../../ path"
         return 1
     fi
 
@@ -314,6 +354,7 @@ validate_bash_command_regex_fallback() {
     # Allow references to current stage, block others
     if echo "$stripped" | grep -qE "$LOOM_POLICY_WORKTREE_MARKER" && \
        ! echo "$stripped" | grep -qE "${LOOM_POLICY_WORKTREE_MARKER}${CURRENT_STAGE}[/[:space:]]|${LOOM_POLICY_WORKTREE_MARKER}${CURRENT_STAGE}\$"; then
+        BLOCK_RULE=cross-worktree
         print_cross_worktree_block
         return 1
     fi
@@ -344,6 +385,7 @@ case "$TOOL_NAME" in
         if [[ -n "$COMMAND" ]]; then
             if ! validate_bash_command "$COMMAND"; then
                 debug "BLOCKED: Bash command failed validation"
+                loom_record_block worktree-isolation "${BLOCK_RULE:-unknown}" Bash "$COMMAND"
                 exit 2
             fi
         fi
