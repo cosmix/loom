@@ -16,6 +16,7 @@ import {
   featureCrumb,
   isRebuilding,
   planStateChip,
+  pressureChip,
   sectionLabel,
   sectionNumberLabel,
   slugNumber,
@@ -113,6 +114,11 @@ function statusChips(page: ConceptPage, rebuilding: boolean): HeadingChip[] {
   }));
 }
 
+/** A standalone plan has no pressure record card, so its test date stays on the facts line. */
+function standalonePressure(page: ConceptPage): HeadingChip[] {
+  return page.last_pressure === null ? [] : [fact(pressureChip(page.last_pressure, false))];
+}
+
 /** A relationship reads on the facts line, not in the status card. */
 function fact(chip: HeadingChip): HeadingChip {
   return { ...chip, kind: "fact" };
@@ -146,6 +152,7 @@ function pageChips(
     ...trace,
     ...questions,
     ...(plan === null ? [] : [planRow(plan, page.path)]),
+    ...(plan === null || tracedPlan(page) ? [] : standalonePressure(page)),
     ...implementsChips(page).map(fact),
     ...builtByChips(page).map(fact),
   ];
@@ -223,15 +230,21 @@ function TraceScope({ page }: { page: ConceptPage }): JSX.Element | null {
   return <ScopeLine feature={document.feature} path={document.path} />;
 }
 
-/** A plan's pressure record, what it implements and its briefs, under its heading. */
-function TracePlan({ page }: { page: ConceptPage }): JSX.Element | null {
+/**
+ * The traced document of a feature plan: a summary page of the engineering scope (`plan_state` is
+ * not set on every plan page). A standalone plan has no feature, so it has none.
+ */
+function tracedPlan(page: ConceptPage): { feature: string; path: string } | null {
   const document = tracedDocument(page);
   const key = parsePageKey(page.key);
-  // A plan is a summary page of the engineering scope; `plan_state` is not set on every plan page.
-  if (!document || key?.kind !== "summary" || key.scope !== "engineering") return null;
-  return (
-    <PlanExtras feature={document.feature} path={document.path} pressure={page.last_pressure} />
-  );
+  return document && key?.kind === "summary" && key.scope === "engineering" ? document : null;
+}
+
+/** A plan's pressure record, what it implements and its briefs, under its heading. */
+function TracePlan({ page }: { page: ConceptPage }): JSX.Element | null {
+  const plan = tracedPlan(page);
+  if (!plan) return null;
+  return <PlanExtras feature={plan.feature} path={plan.path} pressure={page.last_pressure} />;
 }
 
 /**
