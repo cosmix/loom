@@ -22,7 +22,7 @@ pub(super) use super::section_formatters::{
 /// Handoff trigger: the PostToolUse hook reports the ceiling, so the agent never
 /// estimates it. The second line states the handoff's cost so a session does not
 /// use it as a routine checkpoint.
-pub(super) const CONTEXT_CEILING_HANDOFF: &str = "- When the PostToolUse hook reports the context ceiling, finish the current unit and run `loom handoff --stage <id> --session <id> --trigger ceiling`, then stop.\n- A handoff discards a loaded session: a rare last resort, triggered only by the hook.\n";
+pub(super) const CONTEXT_CEILING_HANDOFF: &str = "- When the PostToolUse hook reports the context ceiling, finish the current unit and run `loom handoff --stage <id> --session <id> --trigger ceiling`, then stop. A handoff discards a loaded session, so only the hook triggers it.\n";
 
 /// Write a signal file to the signals directory, creating it if needed.
 pub(super) fn write_signal_file(
@@ -200,14 +200,14 @@ pub(super) fn append_commit_timing_rules(
     add_target: &str,
 ) {
     content.push_str("**When to Commit (ORCHESTRATOR ONLY — AT EXIT):**\n\n");
-    content.push_str("Commits are yours alone and ONLY as the final step of the stage — never mid-stage, never \"what is done so far\". Exception: commit before filing a block or dispute when the stage cannot finish. For completion, commit only once ALL of these hold:\n\n");
-    content.push_str("1. Every subagent, coordinator, team, and Workflow you spawned has RETURNED and its result is absorbed.\n");
+    content.push_str("Commits are yours alone and ONLY as the final step of the stage — never mid-stage. Exception: commit before filing a block or dispute when the stage cannot finish. For completion, commit only once ALL of these hold:\n\n");
+    content.push_str("1. Every subagent, coordinator, team, and Workflow you spawned has RETURNED, result absorbed.\n");
     content.push_str(&format!(
         "2. The full verification gate is GREEN on the complete tree: {gate}.\n"
     ));
     content.push_str(&format!("3. {review}\n\n"));
     content.push_str(&format!(
-        "Then {} One logical commit per concern (module, tests, wiring, docs). Then run `loom stage complete <stage-id>`.\n\n",
+        "Then {} One logical commit per concern. Then run `loom stage complete <stage-id>`.\n\n",
         commit_command_rule(add_target)
     ));
 }
@@ -263,7 +263,7 @@ pub(super) fn append_knowledge_mission(content: &mut String) {
 /// integration-verify and knowledge prefixes.
 pub(super) fn append_settled_completion_rules(content: &mut String) {
     content.push_str(
-        "- **`loom stage complete` is the LAST act of your session.** Run it ONLY when SETTLED: every subagent returned and absorbed, every defect fixed and re-verified, all work committed (`git status` clean).\n",
+        "- **`loom stage complete` is the LAST act of your session.** Run it ONLY when SETTLED: every subagent returned, every defect fixed and re-verified, all work committed (`git status` clean).\n",
     );
     content.push_str(
         "- **After `completed`: STOP and end the session** — post-completion work is LOST WORK.\n",
@@ -274,14 +274,14 @@ pub(super) fn append_settled_completion_rules(content: &mut String) {
 /// BLOCK-F: when a stage cannot finish, the main agent disputes a wrong check
 /// or blocks the stage on a need only a person can meet. `tests_doctrine_v2.rs`
 /// pins every prefix copy.
-const STAGE_EXIT_RULES: &str = "**When the stage cannot finish.** Fix what the stage can fix. A wrong criterion, wiring check, contract, review finding or test-integrity event gets a dispute: `loom stage dispute-criteria` (`--field` for wiring, wiring-tests, impact-tests entries), `dispute-contract`, `dispute-findings` or `dispute-integrity`. Filing ends this session; if the verdict changes nothing, loom reruns completion on your last-completed tree (an impact-tests-only failure too) and completes the stage if it passes, else a fresh session starts. Never revert, weaken or postpone correct work to avoid a dispute. A criterion failing only because of where completion runs (no network, unreadable git metadata, timeout, sandbox denial) is disputed, never blocked: one `loom stage dispute-criteria <stage-id> --criterion-index <n> [--criterion-index <n> ...]` filing names them all. `loom stage block <stage-id> \"<what is needed and why>\"` is for a credential, a host install or a decision only a person can make; loom refuses it while the latest `loom stage complete` fails a criterion. Before a dispute, run `loom stage complete` on that commit. Never end a turn asking the operator to act mid-stage.";
+const STAGE_EXIT_RULES: &str = "**When the stage cannot finish.** Fix what the stage can fix. A wrong criterion, wiring check, contract, review finding or test-integrity event gets a dispute: `loom stage dispute-criteria` (`--field` for wiring, wiring-tests, impact-tests entries), `dispute-contract`, `dispute-findings` or `dispute-integrity`. Filing ends this session; if the verdict changes nothing, loom reruns completion on your last-completed tree (an impact-tests-only failure too) and completes the stage on a pass, else a fresh session starts. Never revert, weaken or postpone correct work to avoid a dispute. A criterion failing only because of where completion runs (no network, unreadable git metadata, timeout, sandbox denial) is disputed, never blocked: one `loom stage dispute-criteria <stage-id> --criterion-index <n> [--criterion-index <n> ...]` filing names them all. `loom stage block <stage-id> \"<what is needed and why>\"` is for a credential, a host install or a decision only a person can make; loom refuses it while the latest `loom stage complete` fails a criterion. Before a dispute, run `loom stage complete` on that commit. Never end a turn asking the operator to act mid-stage.";
 
 /// Append completion rules shared between standard and integration-verify prefixes
 pub(super) fn append_completion_rules(content: &mut String) {
     append_settled_completion_rules(content);
     content.push_str("- No `loom stage retry` mid-session.\n");
     content.push_str(CONTEXT_CEILING_HANDOFF);
-    content.push_str("- Run `loom stage complete <stage-id>` in the worktree ROOT directory. `Host job:` requested/pending/stopped: rerun; failed/rejected/refused: fix, commit, rerun\n\n");
+    content.push_str("- Run `loom stage complete <stage-id>` in the worktree ROOT directory. `Host job:` requested/pending/stopped: rerun; failed/rejected/refused: fix, commit, rerun. Run it alone; at most `2>&1 | tail -N` may follow it.\n\n");
     content.push_str(STAGE_EXIT_RULES);
     content.push_str("\n\n");
 }
