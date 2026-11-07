@@ -25,6 +25,7 @@ import {
 } from "@/plan/files/heading-parts";
 import { HeadingActions, usePressureActive } from "@/plan/files/doc-heading-view";
 import { LockNotice } from "@/plan/files/lock-notice";
+import { PressureTestAction, PressureTestDetail } from "@/plan/run/plan-run-actions";
 import { useTraceChips } from "@/plan/trace/heading-chips";
 import { PlanExtras } from "@/plan/trace/plan-extras";
 import { ScopeLine } from "@/plan/trace/scope-line";
@@ -118,10 +119,20 @@ function fact(chip: HeadingChip): HeadingChip {
 }
 
 /**
+ * A plan's state row. A written plan's row ends in Pressure-test, with the Codex configuration
+ * notice as its detail: the pressure record itself is the card under the heading.
+ */
+function planRow(plan: NonNullable<ConceptPage["plan_state"]>, path: string | null): HeadingChip {
+  const chip = planStateChip(plan);
+  if (plan !== "written" || path === null) return chip;
+  return { ...chip, action: <PressureTestAction path={path} />, detail: <PressureTestDetail /> };
+}
+
+/**
  * The status card's rows, what needs attention first (the summary's state with its Rebuild, the
- * document's settle state and coverage, the open questions, a plan's state), then the facts line:
- * what the document implements and the plans that build it. A plan's pressure record has a card of
- * its own under the heading (`PlanExtras`).
+ * document's settle state and coverage, the open questions, a plan's state with a written plan's
+ * Pressure-test), then the facts line: what the document implements and the plans that build it.
+ * A plan's pressure record has a card of its own under the heading (`PlanExtras`).
  */
 function pageChips(
   page: ConceptPage,
@@ -134,7 +145,7 @@ function pageChips(
     ...statusChips(page, rebuilding),
     ...trace,
     ...questions,
-    ...(plan === null ? [] : [planStateChip(plan)]),
+    ...(plan === null ? [] : [planRow(plan, page.path)]),
     ...implementsChips(page).map(fact),
     ...builtByChips(page).map(fact),
   ];

@@ -4,7 +4,6 @@ import { useLayoutEffect, useRef, type RefObject } from "react";
 
 import { Button } from "@/components/ui/button";
 import { useMediaQuery } from "@/lib/use-media-query";
-import { pendingAttachmentsAtom } from "@/plan/attachments";
 import { ChatGlyph, STATE_NAME } from "./chat-state-glyph";
 import { pendingPermissionsAtom } from "./model";
 import { CHAT_PANEL_ID, chatCollapsedAtom, chatSheetOpenAtom, DESKTOP } from "./sheet-state";
@@ -24,13 +23,12 @@ function PermissionBadge() {
 }
 
 /** An aria-label replaces a button's contents, so the state and counts are spelled into the name. */
-function useChatButtonName(verb: string, attachments = 0): string {
+function useChatButtonName(verb: string): string {
   const session = useAtomValue(shownSessionAtom);
   const decisions = useAtomValue(pendingPermissionsAtom).length;
   const parts = [verb];
   if (decisions > 0) parts.push(`${decisions} decision${decisions === 1 ? "" : "s"} waiting`);
   else if (session) parts.push(STATE_NAME[session.state]);
-  if (attachments > 0) parts.push(`${attachments} attachment${attachments === 1 ? "" : "s"}`);
   return parts.join(", ");
 }
 
@@ -43,9 +41,8 @@ export function ChatSheetButton() {
   const desktop = useMediaQuery(DESKTOP);
   const [open, setOpen] = useAtom(chatSheetOpenAtom);
   const [collapsed, setCollapsed] = useAtom(chatCollapsedAtom);
-  const attachments = useAtomValue(pendingAttachmentsAtom).length;
   const verb = !desktop ? "Open chat" : collapsed ? "Expand chat" : "Collapse chat";
-  const name = useChatButtonName(verb, attachments);
+  const name = useChatButtonName(verb);
   return (
     <Button
       variant="ghost"
@@ -61,11 +58,6 @@ export function ChatSheetButton() {
       <ChatGlyph />
       <span>Chat</span>
       <PermissionBadge />
-      {attachments > 0 && (
-        <span className="chat-count-badge" aria-hidden="true">
-          {attachments}
-        </span>
-      )}
     </Button>
   );
 }

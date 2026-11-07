@@ -182,10 +182,9 @@
   outline-offset: 2px;
 }
 
-/* Counts on the header's Chat button: small pills that stay inside the button's line box, so a
-   count never changes its height. Decisions waiting read as the accent; attachments stay quiet. */
-.chat-permission-badge,
-.chat-count-badge {
+/* The decisions-waiting count on the header's Chat button: a small pill that stays inside the
+   button's line box, so the count never changes its height. It reads as the accent. */
+.chat-permission-badge {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -202,12 +201,6 @@
 .chat-permission-badge {
   background: var(--primary);
   color: var(--primary-foreground);
-}
-
-.chat-count-badge {
-  background: var(--muted);
-  color: var(--foreground);
-  box-shadow: inset 0 0 0 1px var(--border);
 }
 
 /* ── Empty state (empty-chat.tsx) ───────────────────────────────────────── */
