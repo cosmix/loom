@@ -17,7 +17,8 @@
     "failure": null,
     "offer": null,
     "feature": null,
-    "plan": null
+    "plan": null,
+    "fetch_grant": false
   },
   "turns": [
     {
@@ -226,7 +227,8 @@
           "status": "pending",
           "deny_reason": null,
           "note": null,
-          "expires_at": "2026-10-17T09:00:00Z"
+          "expires_at": "2026-10-17T09:00:00Z",
+          "fetch": null
         },
         {
           "type": "permission",
@@ -237,7 +239,8 @@
           "status": "allowed",
           "deny_reason": null,
           "note": "Approved for this update.",
-          "expires_at": "2026-10-17T09:00:00Z"
+          "expires_at": "2026-10-17T09:00:00Z",
+          "fetch": null
         },
         {
           "type": "permission",
@@ -248,7 +251,8 @@
           "status": "denied",
           "deny_reason": "holder",
           "note": null,
-          "expires_at": "2026-10-17T09:00:00Z"
+          "expires_at": "2026-10-17T09:00:00Z",
+          "fetch": null
         },
         {
           "type": "permission",
@@ -259,7 +263,8 @@
           "status": "denied",
           "deny_reason": "timeout",
           "note": null,
-          "expires_at": "2026-10-17T09:00:00Z"
+          "expires_at": "2026-10-17T09:00:00Z",
+          "fetch": null
         },
         {
           "type": "permission",
@@ -270,7 +275,8 @@
           "status": "denied",
           "deny_reason": "session_ended",
           "note": null,
-          "expires_at": "2026-10-17T09:00:00Z"
+          "expires_at": "2026-10-17T09:00:00Z",
+          "fetch": null
         },
         {
           "type": "permission",
@@ -281,7 +287,8 @@
           "status": "denied",
           "deny_reason": "server_stopping",
           "note": null,
-          "expires_at": "2026-10-17T09:00:00Z"
+          "expires_at": "2026-10-17T09:00:00Z",
+          "fetch": null
         },
         {
           "type": "permission",
@@ -292,7 +299,8 @@
           "status": "denied",
           "deny_reason": "hook_error",
           "note": null,
-          "expires_at": "2026-10-17T09:00:00Z"
+          "expires_at": "2026-10-17T09:00:00Z",
+          "fetch": null
         },
         {
           "type": "permission",
@@ -303,7 +311,8 @@
           "status": "denied",
           "deny_reason": "interrupt",
           "note": null,
-          "expires_at": "2026-10-17T09:00:00Z"
+          "expires_at": "2026-10-17T09:00:00Z",
+          "fetch": null
         },
         {
           "type": "permission",
@@ -314,7 +323,80 @@
           "status": "denied",
           "deny_reason": "summary_session",
           "note": null,
-          "expires_at": "2026-10-17T09:00:00Z"
+          "expires_at": "2026-10-17T09:00:00Z",
+          "fetch": null
+        },
+        {
+          "type": "permission",
+          "id": "p-00000000-0000-4000-8000-000000000049",
+          "request_id": "00000000-0000-4000-8000-000000000049",
+          "tool": "WebFetch",
+          "input": "{\n  \"url\": \"https://docs.rs/serde\",\n  \"prompt\": \"Summarise the page.\"\n}",
+          "status": "allowed",
+          "deny_reason": null,
+          "note": null,
+          "expires_at": "2026-10-17T09:00:00Z",
+          "fetch": {
+            "url": "https://docs.rs/serde",
+            "host": "docs.rs",
+            "listable": true,
+            "matched": "docs.rs",
+            "rule": "listed"
+          }
+        },
+        {
+          "type": "permission",
+          "id": "p-00000000-0000-4000-8000-000000000050",
+          "request_id": "00000000-0000-4000-8000-000000000050",
+          "tool": "WebFetch",
+          "input": "{\n  \"url\": \"https://example.com/a\",\n  \"prompt\": \"Summarise the page.\"\n}",
+          "status": "allowed",
+          "deny_reason": null,
+          "note": null,
+          "expires_at": "2026-10-17T09:00:00Z",
+          "fetch": {
+            "url": "https://example.com/a",
+            "host": "example.com",
+            "listable": true,
+            "matched": null,
+            "rule": "always"
+          }
+        },
+        {
+          "type": "permission",
+          "id": "p-00000000-0000-4000-8000-000000000051",
+          "request_id": "00000000-0000-4000-8000-000000000051",
+          "tool": "WebFetch",
+          "input": "{\n  \"url\": \"https://example.org/b\",\n  \"prompt\": \"Summarise the page.\"\n}",
+          "status": "allowed",
+          "deny_reason": null,
+          "note": null,
+          "expires_at": "2026-10-17T09:00:00Z",
+          "fetch": {
+            "url": "https://example.org/b",
+            "host": "example.org",
+            "listable": true,
+            "matched": null,
+            "rule": "session"
+          }
+        },
+        {
+          "type": "permission",
+          "id": "p-00000000-0000-4000-8000-000000000052",
+          "request_id": "00000000-0000-4000-8000-000000000052",
+          "tool": "WebFetch",
+          "input": "{\n  \"url\": \"https://docs.rs/tokio\",\n  \"prompt\": \"Summarise the page.\"\n}",
+          "status": "denied",
+          "deny_reason": "settings",
+          "note": "Web fetches are turned off in Settings.",
+          "expires_at": "2026-10-17T09:00:00Z",
+          "fetch": {
+            "url": "https://docs.rs/tokio",
+            "host": "docs.rs",
+            "listable": true,
+            "matched": null,
+            "rule": "never"
+          }
         },
         {
           "type": "notice",
@@ -410,7 +492,8 @@
       },
       "offer": null,
       "feature": null,
-      "plan": null
+      "plan": null,
+      "fetch_grant": false
     },
     "turns": [
       {

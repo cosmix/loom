@@ -15,8 +15,9 @@ use super::registry::{read_record, write_record, ChildRecord, SessionRecord, SCH
 use super::{BridgeError, BridgeEvent, EndCause, EndMode, EndOutcome, RecoveryReport};
 use crate::plan_session::kind::SessionKind::{Authoring, Summary};
 use crate::plan_session::kind::{SessionDir, SessionKind};
-use crate::plan_session::model::DenyReason;
+use crate::plan_session::model::{DenyReason, FetchRule, Item, PermissionStatus};
 use crate::plan_session::permission::{write_answer, Answer, Behavior};
+use crate::plan_session::web_fetch::{FetchMode, FetchPolicy, FetchPolicyCell};
 use crate::process::{process_start_time, IdentityStatus};
 
 /// A child the test owns; killed and reaped on drop.
@@ -294,4 +295,53 @@ fn a_panicking_listener_stops_neither_recovery_nor_the_driver() {
         .unwrap();
     wait_until("the end", || ended(&s.id));
     assert!(calls.load(Ordering::SeqCst) > 1, "the listener was dropped");
+}
+
+/// The card of `request`: its status and the rule credited with it.
+fn fetch_card(h: &Harness, request: &str) -> Option<(PermissionStatus, Option<FetchRule>)> {
+    let turns = h.bridge.chat_snapshot(true).turns;
+    let mut items = turns.into_iter().flat_map(|turn| turn.items);
+    items.find_map(|item| match item {
+        Item::Permission {
+            request_id,
+            status,
+            fetch,
+            ..
+        } if request_id == request => Some((status, fetch.and_then(|fetch| fetch.rule))),
+        _ => None,
+    })
+}
+
+#[test]
+fn a_recovered_answer_to_a_fetch_wins_over_an_allowing_policy() {
+    let cell = FetchPolicyCell::default();
+    let domains: [String; 0] = [];
+    cell.set(FetchPolicy::validated(FetchMode::Always, &domains).unwrap());
+    let h = Harness::new(move |c| {
+        c.final_write_bound = Duration::from_secs(10);
+        c.fetch_policy = cell;
+    });
+    let s = recorded(&h, Authoring, Some(3_800_401));
+    h.spool(&s, "SessionStart", json!({"source": "startup"}));
+    h.spool(&s, "UserPromptSubmit", json!({"prompt": "go on"}));
+    let input = json!({"url": "https://docs.rs/", "prompt": "p"});
+    let fetched = h.permission(&s, "WebFetch", input);
+    let deny = Answer {
+        behavior: Behavior::Deny,
+        message: Some("no".to_owned()),
+        reason: Some(DenyReason::Holder),
+    };
+    write_answer(s.dir.path(), &fetched, &deny).unwrap();
+    let bridge = h.bridge.clone();
+    let recovering = thread::spawn(move || bridge.recover());
+    wait_until("the recovered card", || fetch_card(&h, &fetched).is_some());
+    let denied = Some((PermissionStatus::Denied, None));
+    assert_eq!(fetch_card(&h, &fetched), denied, "the policy answered it");
+    let answer = h.answer(&s, &fetched).unwrap();
+    assert_eq!(answer.behavior, Behavior::Deny, "the policy overwrote it");
+    h.spool(&s, "Stop", json!({}));
+    wait_until("the closing message", || h.sent(&s) == [CLOSING]);
+    h.spool(&s, "UserPromptSubmit", json!({"prompt": CLOSING}));
+    h.spool(&s, "Stop", json!({}));
+    recovering.join().unwrap();
 }

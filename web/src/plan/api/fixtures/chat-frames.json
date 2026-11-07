@@ -19,7 +19,8 @@
       "failure": null,
       "offer": null,
       "feature": null,
-      "plan": null
+      "plan": null,
+      "fetch_grant": false
     },
     "turns": [
       {
@@ -27,7 +28,12 @@
         "started_at": "2026-10-28T09:01:00Z",
         "duration_ms": null,
         "open": true,
-        "tokens": { "input": 1200, "cache_write": 200, "cache_read": 0, "output": 80 },
+        "tokens": {
+          "input": 1200,
+          "cache_write": 200,
+          "cache_read": 0,
+          "output": 80
+        },
         "items": [],
         "changed_files": [],
         "summaries_rebuilding": []

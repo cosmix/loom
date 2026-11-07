@@ -5,8 +5,6 @@ import { afterEach, expect, it } from "vitest";
 
 import draftsFixture from "@/plan/api/fixtures/kickoff-drafts.json";
 import panelFixture from "@/plan/api/fixtures/summary-panel.json";
-import type { SessionView } from "@/plan/api/schema-chat";
-import type { PressureRunView, PressureStepView } from "@/plan/api/schema-pressure";
 import { kickoffDraftViewSchema } from "@/plan/api/schema-kickoff";
 import { summaryPanelSchema } from "@/plan/api/schema-summaries";
 import { kickoffDraftsAtom } from "@/plan/state/atoms";
@@ -21,11 +19,10 @@ import {
   useActivities,
   type ActivitiesInput,
 } from "./use-activities";
+import { codexStep, pressure, session, startedAt, startedMs } from "./use-activities-test-kit";
 
 afterEach(cleanup);
 
-const startedAt = "2026-10-29T08:00:00Z";
-const startedMs = Date.parse(startedAt);
 const rebuild = {
   session: "summary-session",
   ids: ["a", "b", "c"],
@@ -42,58 +39,6 @@ const empty: ActivitiesInput = {
   session: null,
   pendingPermissions: [],
 };
-
-function session(state: SessionView["state"]): SessionView {
-  return {
-    id: "chat-1",
-    kind: "authoring",
-    state,
-    name: "Planning",
-    model: "claude",
-    socket: "chat.sock",
-    holder: null,
-    away_until: null,
-    queued: 0,
-    started_at: startedAt,
-    state_since: startedAt,
-    working_since: null,
-    subagents_running: 0,
-    last_activity: null,
-    failure: null,
-    offer: null,
-    feature: null,
-    plan: null,
-  };
-}
-
-function codexStep(round: number, since: number): PressureStepView {
-  return {
-    round,
-    kind: "codex",
-    session_id: null,
-    model: "codex",
-    effort: "high",
-    state: "running",
-    started_ms: since,
-    ended_ms: null,
-    tokens: null,
-    codex: { model: "codex", state: "running", report_path: null, log_tail: null },
-    edits: [],
-  };
-}
-
-function pressure(steps: PressureStepView[] = []): PressureRunView {
-  return {
-    plan: "doc/plans/PLAN-example.md",
-    rounds: 2,
-    round: 1,
-    step: "claude_pressure",
-    started_ms: startedMs,
-    tokens_total: 0,
-    steps,
-    ended: null,
-  };
-}
 
 it("orders activities by urgency, then oldest start within a kind", () => {
   const activities = deriveActivities({

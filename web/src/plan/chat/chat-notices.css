@@ -89,3 +89,18 @@
 .chat-link-button:hover {
   text-decoration: underline;
 }
+
+/* The session's standing fetch permission (`fetch-grant-line.tsx`): one quiet chrome line under
+   the head, its globe muted, Ask again a quiet row button at its end. */
+.chat-fetch-grant {
+  padding: 0 var(--chat-gutter) var(--space-2);
+  font-size: var(--type-body);
+}
+
+.chat-fetch-grant-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-2);
+  color: var(--muted-foreground);
+}

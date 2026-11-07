@@ -48,6 +48,7 @@ function setup(holder = true, session: Partial<SessionView> = {}, turns = [turn]
       ...baseSession,
       state: "idle",
       subagents_running: 0,
+      fetch_grant: false,
       working_since: null,
       ...session,
     },

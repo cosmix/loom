@@ -145,6 +145,7 @@ export function permissions(store: Store, count = 2) {
     deny_reason: null,
     note: null,
     expires_at: "2099-01-01T00:00:00Z",
+    fetch: null,
   }));
   store.set(snapshotAtom, (s) => ({ ...s, turns: [{ ...initial.turns[0], items }] }));
 }

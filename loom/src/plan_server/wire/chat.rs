@@ -77,6 +77,20 @@ pub enum ChatCommand {
         allow: bool,
         note: Option<String>,
     },
+    /// "Allow this session" on a `WebFetch` card: allow it and the session's later fetches.
+    AllowSessionFetches {
+        client_id: Option<String>,
+        request_id: String,
+    },
+    /// `"Always allow <host>"` on a `WebFetch` card: list its host in Settings and allow it.
+    AllowFetchHost {
+        client_id: Option<String>,
+        request_id: String,
+    },
+    /// "Ask again": the session's later fetches show a card again.
+    AskFetchesAgain {
+        client_id: Option<String>,
+    },
     Interrupt {
         client_id: Option<String>,
     },

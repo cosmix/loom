@@ -39,6 +39,7 @@ pub mod summaries;
 pub mod trace;
 pub mod uploads;
 pub mod watch;
+pub mod web_fetch;
 pub mod wire;
 mod worker_owner;
 pub mod ws;

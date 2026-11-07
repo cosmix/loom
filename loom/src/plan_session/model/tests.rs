@@ -49,6 +49,7 @@ fn session() -> SessionView {
         offer: Some("offer".into()),
         feature: Some("feature".into()),
         plan: None,
+        fetch_grant: true,
     }
 }
 
@@ -117,6 +118,13 @@ fn permission_item() -> Item {
         deny_reason: Some(DenyReason::Timeout),
         note: Some("expired".into()),
         expires_at: "2026-10-28T10:00:00Z".into(),
+        fetch: Some(FetchView {
+            url: "https://docs.rs/".into(),
+            host: Some("docs.rs".into()),
+            listable: true,
+            matched: Some("docs.rs".into()),
+            rule: Some(FetchRule::Listed),
+        }),
     }
 }
 
@@ -303,6 +311,13 @@ fn item_enums_round_trip_as_snake_case() {
         (DenyReason::HookError, "hook_error"),
         (DenyReason::Interrupt, "interrupt"),
         (DenyReason::SummarySession, "summary_session"),
+        (DenyReason::Settings, "settings"),
+    ]);
+    enum_values(&[
+        (FetchRule::Never, "never"),
+        (FetchRule::Always, "always"),
+        (FetchRule::Listed, "listed"),
+        (FetchRule::Session, "session"),
     ]);
     enum_values(&[
         (NoticeKind::Interrupted, "interrupted"),

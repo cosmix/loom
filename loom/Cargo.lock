@@ -1502,6 +1502,7 @@ dependencies = [
  "tree-sitter-rust",
  "tree-sitter-typescript",
  "tungstenite",
+ "url",
  "uuid",
  "wait-timeout",
  "which",

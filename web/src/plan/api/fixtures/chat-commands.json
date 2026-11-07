@@ -45,6 +45,20 @@
     "note": "Please inspect the plan before editing it."
   },
   {
+    "command": "allow_session_fetches",
+    "client_id": "0b6f4b8e-5d0e-4f43-9a51-6f1f8f1d2a07",
+    "request_id": "a5df3215-a909-4f6e-b5e0-973bbd1cb1e3"
+  },
+  {
+    "command": "allow_fetch_host",
+    "client_id": "3c2a9e41-7b5d-4e8f-8c16-0d4e5b6a7f92",
+    "request_id": "a5df3215-a909-4f6e-b5e0-973bbd1cb1e3"
+  },
+  {
+    "command": "ask_fetches_again",
+    "client_id": "9e8d7c6b-5a49-4382-a1f0-e2d3c4b5a697"
+  },
+  {
     "command": "interrupt",
     "client_id": "5e00db85-c4b1-4e37-b859-491aa8bf2c93"
   },

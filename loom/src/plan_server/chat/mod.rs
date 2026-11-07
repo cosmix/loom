@@ -3,6 +3,7 @@
 mod dispatch;
 mod draft_cmd;
 mod drafts;
+mod fetch_cmd;
 pub mod guidance;
 mod kickoff;
 mod kickoff_cmd;
@@ -179,6 +180,7 @@ fn bridge_config(ctx: &PlanContext, slot: &Arc<GuidanceSlot>) -> BridgeConfig {
         permission_deny_after: Duration::from_secs(3590),
         identity_interval: Duration::from_secs(2),
         tick: Duration::from_millis(200),
+        fetch_policy: super::web_fetch::policy(ctx),
     }
 }
 

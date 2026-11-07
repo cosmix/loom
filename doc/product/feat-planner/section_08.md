@@ -278,8 +278,8 @@ the point it arose, and the same card is pinned above the composer while it is p
 holder sees it wherever the transcript is scrolled.
 
 In auto mode (section 07) a card appears only for a call that matches an `ask` rule in the
-session's settings: `WebFetch`, and the `loom knowledge` and `loom plan summary` commands that
-Kickoff and Team do not pre-allow (section 12). A call that Claude Code's classifier blocks shows
+session's settings: `WebFetch` when no standing rule answers it, and the `loom knowledge` and
+`loom plan summary` commands that Kickoff and Team do not pre-allow (sections 07 and 12). A call that Claude Code's classifier blocks shows
 as a notice in the transcript, `Auto mode blocked Bash: [Irreversible Local Destruction]` (the
 tool and the classifier's reason; `Auto mode blocked an action` when the payload names no tool).
 The notice has no buttons, and its tone reads as the session having been stopped at that point,
@@ -293,26 +293,37 @@ The card shows the tool name, its input, and the time left before the automatic 
 
 The holding browser sees two buttons, **Allow** and **Deny**. Deny opens a one-line note field
 with "Deny" and "Deny with note" actions; the note reaches the session as the deny message
-(section 07). There is no "always allow" (section 07). Keyboard: with the pinned card focused,
-`y` allows and `n` opens the deny note; the keys do nothing while the composer has focus. (My
-call.)
+(section 07). A `WebFetch` card adds two secondary pills after them, **Allow this session** and
+**Always allow docs.rs** (the URL's host; the second only when the URL names a host that can be
+listed), over one `plan-fine` sentence that describes both; section 07 says what each does. Allow
+stays the card's one primary. Keyboard: with the pinned card focused, `y` allows and `n` opens
+the deny note; the keys do nothing while the composer has focus. (My call.)
+
+While the chat's session holds a fetch grant, one quiet line under the head reads "Web fetches
+allowed for this session", led by a muted globe, with a quiet `sm` **Ask again** for the holder.
 
 Read-only browsers see the same card without buttons: "Waiting for Dana to decide".
 
 After the answer the card collapses to one line:
 
-| Outcome                                         | Line                                         |
-| ----------------------------------------------- | -------------------------------------------- |
-| `allowed`                                       | "Allowed: Bash"                              |
-| `denied`, `holder`                              | "Denied: Bash", and the note                 |
-| `denied`, `timeout`                             | "Denied automatically after one hour: Bash"  |
-| `denied`, `interrupt`                           | "Denied when the turn was stopped: Bash"     |
-| `denied`, `session_ended` or `server_stopping`  | "Denied: the session was ending"             |
-| `denied`, `hook_error`                          | "Denied: the permission hook failed: Bash"   |
+| Outcome                                        | Line                                                             |
+| ---------------------------------------------- | ---------------------------------------------------------------- |
+| `allowed`                                      | "Allowed: Bash"                                                  |
+| `denied`, `holder`                             | "Denied: Bash", and the note                                     |
+| `denied`, `timeout`                            | "Denied automatically after one hour: Bash"                      |
+| `denied`, `interrupt`                          | "Denied when the turn was stopped: Bash"                         |
+| `denied`, `session_ended` or `server_stopping` | "Denied: the session was ending"                                 |
+| `denied`, `hook_error`                         | "Denied: the permission hook failed: Bash"                       |
+| `allowed`, fetch rule `listed`                 | "Fetch allowed: <url> · docs.rs is listed in Settings"           |
+| `allowed`, fetch rule `always`                 | "Fetch allowed: <url> · Settings allow every fetch"              |
+| `allowed`, fetch rule `session`                | "Fetch allowed: <url> · allowed for this session"                |
+| `denied`, `settings`                           | "Fetch refused: <url> · Web fetches are turned off in Settings." |
 
 The line comes from section 07's `permission` item: its `status` (`pending`, `allowed`,
-`denied`), its `deny_reason`, and its `note`, the holder's deny note. The `summary_session`
-reason never shows here: summary sessions have no chat.
+`denied`), its `deny_reason`, its `note`, the holder's deny note, and for a `WebFetch` request
+its `fetch`: the URL, the host that can be listed, and the rule that answered it. A line a rule
+wrote was never a card: no browser was asked and none is pinged. The `summary_session` reason
+never shows here: summary sessions have no chat.
 
 ## Composing and sending
 

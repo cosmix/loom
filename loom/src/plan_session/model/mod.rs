@@ -49,6 +49,8 @@ pub struct SessionView {
     pub feature: Option<String>,
     /// The standalone plan's slug the session was started for; `None` for one with no plan.
     pub plan: Option<String>,
+    /// The holder allowed this session's later `WebFetch` requests from a card.
+    pub fetch_grant: bool,
 }
 
 /// A session failure and its explanation.
@@ -142,6 +144,8 @@ pub enum Item {
         deny_reason: Option<DenyReason>,
         note: Option<String>,
         expires_at: String,
+        /// Set for a `WebFetch` request only.
+        fetch: Option<FetchView>,
     },
     Notice {
         id: String,
@@ -198,6 +202,32 @@ pub enum DenyReason {
     HookError,
     Interrupt,
     SummarySession,
+    /// The project's fetch policy is Never.
+    Settings,
+}
+
+/// The standing rule that answered a `WebFetch` request without a card.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FetchRule {
+    Never,
+    Always,
+    Listed,
+    Session,
+}
+
+/// What a `WebFetch` request shows of its URL.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FetchView {
+    /// The URL as the fetch reads it (host in punycode), cut at 2048 characters with a `…`.
+    pub url: String,
+    /// The URL's host name for matching the allowlist (never an IP address).
+    pub host: Option<String>,
+    /// The host can go on the allowlist (`localhost`, a single label or `_` cannot).
+    pub listable: bool,
+    /// The allowlist entry that allowed the request, set with `rule` Listed.
+    pub matched: Option<String>,
+    pub rule: Option<FetchRule>,
 }
 
 /// The category of a chat notice.

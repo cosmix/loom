@@ -6,6 +6,7 @@
 
 use std::ffi::OsString;
 use std::fs::{File, Permissions};
+use std::os::fd::{AsRawFd, OwnedFd};
 use std::os::unix::fs::{MetadataExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 
@@ -13,7 +14,7 @@ use anyhow::{anyhow, bail, Context, Result};
 use nix::unistd::{access, AccessFlags};
 
 use crate::context::source_graph::body_hash;
-use crate::fs::safe_fs::{safe_create_dir_all, safe_open_dirfd};
+use crate::fs::safe_fs::{open_safely, safe_create_dir_all, safe_open_dirfd};
 
 /// Environment variable a planning session uses to name its runtime directory.
 const STATE_VAR: &str = "LOOM_PLAN_STATE";
@@ -244,6 +245,31 @@ pub fn create_runtime_dir(paths: &RuntimePaths) -> Result<()> {
     let dir = File::from(safe_open_dirfd(&paths.dir)?);
     dir.set_permissions(Permissions::from_mode(0o700))
         .with_context(|| format!("cannot restrict {} to mode 0700", paths.dir.display()))
+}
+
+/// Open the runtime directory, creating it first when `create`. The server trusts the ancestors
+/// of the loom user directory (`/tmp` may itself be a symlink) and refuses a symlink anywhere
+/// below it, as [`create_runtime_dir`] does.
+pub(crate) fn open_runtime_dir(runtime: &RuntimePaths, create: bool) -> Result<OwnedFd> {
+    if create {
+        create_runtime_dir(runtime)?;
+    }
+    let base = runtime
+        .planning_root
+        .parent()
+        .context("the planning root has no parent directory")?;
+    let relative = runtime
+        .dir
+        .strip_prefix(base)
+        .context("the runtime directory is outside the loom user directory")?;
+    let anchor = safe_open_dirfd(base)?;
+    open_safely(
+        anchor.as_raw_fd(),
+        relative,
+        libc::O_RDONLY | libc::O_DIRECTORY,
+        0,
+    )
+    .with_context(|| format!("cannot open runtime directory {}", runtime.dir.display()))
 }
 
 /// Runtime paths for the server, which never honours `LOOM_PLAN_STATE`.

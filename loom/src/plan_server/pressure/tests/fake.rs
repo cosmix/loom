@@ -360,6 +360,7 @@ fn view(id: &str) -> SessionView {
         offer: None,
         feature: None,
         plan: None,
+        fetch_grant: false,
     }
 }
 

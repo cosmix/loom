@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use super::guidance::{validate_feature, validate_plan, GuidanceSlot};
 use super::release::give_back;
-use super::{draft_cmd, kickoff_cmd, ChatState};
+use super::{draft_cmd, fetch_cmd, kickoff_cmd, ChatState};
 use crate::plan_server::authoring::{Refusal, Take};
 use crate::plan_server::context::PlanContext;
 use crate::plan_server::ids::ConnCtx;
@@ -57,6 +57,9 @@ pub fn dispatch(ctx: &Arc<PlanContext>, conn: &ConnCtx, cmd: ChatCommand) {
         | ChatCommand::DiscardKickoff { client_id, .. }
         | ChatCommand::Withdraw { client_id, .. }
         | ChatCommand::Permission { client_id, .. }
+        | ChatCommand::AllowSessionFetches { client_id, .. }
+        | ChatCommand::AllowFetchHost { client_id, .. }
+        | ChatCommand::AskFetchesAgain { client_id }
         | ChatCommand::Interrupt { client_id }
         | ChatCommand::End { client_id } => client_id.clone(),
     };
@@ -99,6 +102,13 @@ fn run(ctx: &Arc<PlanContext>, conn: &ConnCtx, cmd: ChatCommand) -> Outcome {
             bridge.answer_permission(id, &request_id, allow, note)?;
             Ok(Vec::new())
         }),
+        ChatCommand::AllowSessionFetches { request_id, .. } => {
+            fetch_cmd::allow_session(ctx, conn, &request_id)
+        }
+        ChatCommand::AllowFetchHost { request_id, .. } => {
+            fetch_cmd::allow_host(ctx, conn, &request_id)
+        }
+        ChatCommand::AskFetchesAgain { .. } => fetch_cmd::ask_again(ctx, conn),
         ChatCommand::Interrupt { .. } => {
             on_chat(ctx, conn, NO_TURN, |bridge, id| bridge.interrupt(id))
         }

@@ -2,13 +2,14 @@ import { useAtomValue, useStore } from "jotai/react";
 import { TriangleAlert } from "lucide-react";
 import { useEffect, useRef, useState, type JSX, type KeyboardEvent } from "react";
 
-import type { Item } from "@/plan/api/schema-chat";
+import type { CommandResult, Item } from "@/plan/api/schema-chat";
 import { HazardRail } from "@/aurora-ui/feedback/HazardPanel";
 import { authoringAtom, isHolderAtom } from "@/plan/state/atoms";
 import { DisabledReason } from "@/plan/ui/disabled-reason";
 import { answerPermission } from "./commands";
 import { pendingPermissionsAtom } from "./model";
 import { PatchView } from "./patch-view";
+import { FetchChoices, fetchOutcome } from "./permission-fetch";
 import { Untrusted, visibleControls } from "./visible-controls";
 
 type Permission = Extract<Item, { type: "permission" }>;
@@ -122,6 +123,8 @@ function PermissionBody({ item }: { item: Permission }): JSX.Element {
 }
 
 function outcome(item: Permission): string {
+  const quiet = item.fetch && fetchOutcome(item.fetch);
+  if (quiet) return quiet;
   if (item.status === "allowed") return `Allowed: ${item.tool}`;
   switch (item.deny_reason) {
     case "timeout":
@@ -179,13 +182,13 @@ function useAnswer(item: Permission) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const sending = useRef(false);
-  async function answer(allow: boolean, note: string | null = null) {
+  async function send(command: () => Promise<CommandResult>) {
     if (sending.current || !store.get(isHolderAtom) || item.status !== "pending") return;
     sending.current = true;
     setBusy(true);
     setError(null);
     try {
-      const result = await answerPermission(store, item.request_id, allow, note);
+      const result = await command();
       if (!result.ok) setError(result.error ?? "The decision was refused");
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
@@ -194,10 +197,13 @@ function useAnswer(item: Permission) {
       setBusy(false);
     }
   }
-  return { answer, busy, error };
+  const answer = (allow: boolean, note: string | null = null) =>
+    send(() => answerPermission(store, item.request_id, allow, note));
+  return { answer, send, busy, error };
 }
 
 type Answer = (allow: boolean, note?: string | null) => Promise<void>;
+type Send = (command: () => Promise<CommandResult>) => Promise<void>;
 
 function InitialButtons({
   answer,
@@ -251,31 +257,26 @@ function DenyNoteForm({ answer, busy }: { answer: Answer; busy: boolean }): JSX.
   );
 }
 
-function DecisionControls({
-  denyOpen,
-  setDenyOpen,
-  answer,
-  busy,
-}: {
+type Controls = {
+  item: Permission;
   denyOpen: boolean;
   setDenyOpen: (open: boolean) => void;
   answer: Answer;
+  send: Send;
   busy: boolean;
-}): JSX.Element {
+};
+
+function DecisionControls({ item, denyOpen, setDenyOpen, answer, send, busy }: Controls) {
   if (denyOpen) return <DenyNoteForm answer={answer} busy={busy} />;
-  return <InitialButtons answer={answer} busy={busy} onDeny={() => setDenyOpen(true)} />;
+  return (
+    <>
+      <InitialButtons answer={answer} busy={busy} onDeny={() => setDenyOpen(true)} />
+      {item.fetch && <FetchChoices item={item} fetch={item.fetch} busy={busy} send={send} />}
+    </>
+  );
 }
 
-function DecisionFooter({
-  error,
-  ...controls
-}: {
-  denyOpen: boolean;
-  setDenyOpen: (open: boolean) => void;
-  answer: Answer;
-  busy: boolean;
-  error: string | null;
-}): JSX.Element {
+function DecisionFooter({ error, ...controls }: Controls & { error: string | null }): JSX.Element {
   const isHolder = useAtomValue(isHolderAtom);
   const holder = useAtomValue(authoringAtom)?.holder?.name ?? "the author";
   return (
@@ -322,7 +323,7 @@ function usePermissionKeys(
 function PendingPermission({ item }: Props): JSX.Element {
   const pending = useAtomValue(pendingPermissionsAtom);
   const [denyOpen, setDenyOpen] = useState(false);
-  const { answer, busy, error } = useAnswer(item);
+  const { answer, send, busy, error } = useAnswer(item);
   const card = usePinnedFocus(item);
   const onKeyDown = usePermissionKeys(item, busy, answer, setDenyOpen);
   return (
@@ -347,9 +348,11 @@ function PendingPermission({ item }: Props): JSX.Element {
         <PermissionBody item={item} />
         <TimeLeft expiresAt={item.expires_at} />
         <DecisionFooter
+          item={item}
           denyOpen={denyOpen}
           setDenyOpen={setDenyOpen}
           answer={answer}
+          send={send}
           busy={busy}
           error={error}
         />

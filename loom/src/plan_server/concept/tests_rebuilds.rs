@@ -79,6 +79,7 @@ fn bridge(fixture: &Fixture) -> Arc<Bridge> {
         permission_deny_after: Duration::from_secs(3590),
         identity_interval: Duration::from_secs(2),
         tick: Duration::from_millis(200),
+        fetch_policy: Default::default(),
     };
     Bridge::new(config, Arc::new(TmuxHost), None)
 }

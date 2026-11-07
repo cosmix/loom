@@ -41,6 +41,7 @@ function permission(id = "request-1"): Extract<Item, { type: "permission" }> {
     deny_reason: null,
     note: null,
     expires_at: "2026-10-29T10:00:00Z",
+    fetch: null,
   };
 }
 

@@ -2,17 +2,15 @@
 
 use std::fs::File;
 use std::io;
-use std::os::fd::{AsRawFd, OwnedFd};
+use std::os::fd::AsRawFd;
 use std::path::Path;
 
 use anyhow::{ensure, Context, Result};
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 
-use crate::fs::safe_fs::{
-    open_safely, safe_open_dirfd, safe_remove_in_workdir, safe_write_with_mode_in_workdir,
-};
-use crate::planning::runtime::{create_runtime_dir, RuntimePaths};
+use crate::fs::safe_fs::{open_safely, safe_remove_in_workdir, safe_write_with_mode_in_workdir};
+use crate::planning::runtime::{open_runtime_dir, RuntimePaths};
 
 const BLOCK_FILE: &str = "config-block.json";
 
@@ -84,30 +82,6 @@ impl StartBlocks {
             .with_context(|| format!("cannot parse config block {}", path.display()))
             .map(Some)
     }
-}
-
-fn open_runtime_dir(runtime: &RuntimePaths, create: bool) -> Result<OwnedFd> {
-    // The server trusts the ancestors of the loom user directory (`/tmp` may itself be a symlink)
-    // and refuses a symlink anywhere below it, as `create_runtime_dir` does.
-    if create {
-        create_runtime_dir(runtime)?;
-    }
-    let base = runtime
-        .planning_root
-        .parent()
-        .context("the planning root has no parent directory")?;
-    let relative = runtime
-        .dir
-        .strip_prefix(base)
-        .context("the runtime directory is outside the loom user directory")?;
-    let anchor = safe_open_dirfd(base)?;
-    open_safely(
-        anchor.as_raw_fd(),
-        relative,
-        libc::O_RDONLY | libc::O_DIRECTORY,
-        0,
-    )
-    .with_context(|| format!("cannot open runtime directory {}", runtime.dir.display()))
 }
 
 fn is_missing(error: &anyhow::Error) -> bool {
