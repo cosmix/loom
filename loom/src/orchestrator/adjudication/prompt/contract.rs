@@ -6,6 +6,7 @@ use std::path::Path;
 use super::{KindPromptInput, Prompt};
 use crate::models::dispute::DisputeKind;
 use crate::plan::schema::ContractSpec;
+use crate::testrun::TestRunnerAdapter;
 use crate::verify::contracts::run_dir::{resolve_run, ContractRun};
 use crate::verify::contracts::{choices, resolve_adapter, store};
 
@@ -19,6 +20,25 @@ use frozen_set::FROZEN_SET_HEADING;
 pub(super) const FROZEN_CONTENT_HEADING: &str = "## Frozen content";
 pub(super) const CURRENT_CONTENT_HEADING: &str = "## Current content";
 pub(super) const DIFF_HEADING: &str = "## Diff (frozen vs current)";
+
+/// What a prompt shows for the run of a contract [`writer_test_unrunnable`]
+/// holds for.
+pub(super) const NO_ADAPTER_FOR_WRITER_TEST: &str =
+    "(no test-runner adapter answers where the contract runs, so loom runs no command for the \
+     writer's test)";
+
+/// Whether `effective`, the contract `plan` with the writer's choices, has a
+/// test the writer chose and no adapter to run it. Without an adapter a test
+/// runs as a shell command: a test the plan set is the planner's command and
+/// a prompt may show it as one, but a writer's test is an identifier, never a
+/// command, so no prompt shows it as one.
+pub(super) fn writer_test_unrunnable(
+    plan: &ContractSpec,
+    effective: &ContractSpec,
+    adapter: Option<&dyn TestRunnerAdapter>,
+) -> bool {
+    adapter.is_none() && effective.test != plan.test
+}
 
 pub(super) fn build(input: &KindPromptInput<'_>) -> Prompt {
     let record = store::load_freeze(input.work_dir, &input.stage.id).map_err(|e| format!("{e:#}"));
@@ -79,7 +99,10 @@ fn first_step(input: &KindPromptInput<'_>, record: &FreezeSnapshot) -> String {
             s.push_str("(contract file path is unsafe; do not run a command against it)\n\n");
         }
         (Some(contract), Some(worktree)) => match contract_run(input, contract, worktree, record) {
-            Ok(run) => {
+            Ok(None) => s.push_str(&format!(
+                "{NO_ADAPTER_FOR_WRITER_TEST}; report what evidence is missing\n\n"
+            )),
+            Ok(Some(run)) => {
                 let quoted_dir = run.dir.display().to_string().replace('\'', "'\\''");
                 s.push_str(&format!(
                     "Run from the contract's run directory (`{}` in the stage's worktree), \
@@ -128,17 +151,21 @@ fn effective_spec(
 
 /// Where and how the completion check runs `contract`, from the run
 /// directory the plan gives or the freeze recorded for its file, with the
-/// test the writer chose. A contract with no test cannot be run: the error
-/// says so.
+/// test the writer chose; `None` when that test has no adapter to run it
+/// ([`writer_test_unrunnable`]). A contract with no test cannot be run: the
+/// error says so.
 fn contract_run(
     input: &KindPromptInput<'_>,
     contract: &ContractSpec,
     worktree: &Path,
     record: &FreezeSnapshot,
-) -> anyhow::Result<ContractRun> {
+) -> anyhow::Result<Option<ContractRun>> {
     let recorded = recorded_cwd(record, contract).map_err(|error| anyhow::anyhow!("{error}"))?;
     let effective = effective_spec(input, contract, record);
     let adapter = resolve_adapter(&effective, &input.site.path);
+    if writer_test_unrunnable(contract, &effective, adapter) {
+        return Ok(None);
+    }
     resolve_run(
         &effective,
         adapter,
@@ -146,6 +173,7 @@ fn contract_run(
         &input.site.path,
         recorded.as_deref(),
     )
+    .map(Some)
 }
 
 /// The run directory the freeze recorded for `contract`'s file, if it
@@ -331,3 +359,7 @@ mod tests;
 #[cfg(test)]
 #[path = "contract_choice_tests.rs"]
 mod choice_tests;
+
+#[cfg(test)]
+#[path = "contract_no_adapter_tests.rs"]
+mod no_adapter_tests;

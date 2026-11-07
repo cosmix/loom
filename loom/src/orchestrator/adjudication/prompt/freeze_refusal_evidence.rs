@@ -9,9 +9,12 @@
 
 use std::path::Path;
 
-use super::super::contract::{CURRENT_CONTENT_HEADING, DIFF_HEADING};
+use super::super::contract::{
+    writer_test_unrunnable, CURRENT_CONTENT_HEADING, DIFF_HEADING, NO_ADAPTER_FOR_WRITER_TEST,
+};
 use super::super::KindPromptInput;
 use super::{scaffold_line, WRITER_PREFIX};
+use crate::context::render::fence_for;
 use crate::fs::memory::{read_journal, read_pending, MemoryEntry};
 use crate::fs::safe_read::read_to_string_bounded;
 use crate::models::dispute::{strip_control, truncate_to_byte_limit, DisputeKind};
@@ -198,7 +201,7 @@ fn contracts_section(input: &KindPromptInput<'_>) -> String {
             writer_choice_line(plan, chosen),
             single_line(&plan.scenario),
             single_line(&plan.rejects),
-            single_line(&run_line(input, chosen))
+            single_line(&run_line(input, plan, chosen))
         ));
     }
     s
@@ -218,7 +221,7 @@ fn writer_choice_line(plan: &ContractSpec, chosen: &ContractSpec) -> String {
         .filter_map(|(name, _, chosen)| {
             chosen
                 .as_deref()
-                .map(|value| format!("{name} `{}`", single_line(value)))
+                .map(|value| format!("{name} {}", code_span(&single_line(value))))
         })
         .collect();
     if parts.is_empty() {
@@ -230,12 +233,26 @@ fn writer_choice_line(plan: &ContractSpec, chosen: &ContractSpec) -> String {
     )
 }
 
-/// Where and how loom runs `contract`, or why it cannot.
-fn run_line(input: &KindPromptInput<'_>, contract: &ContractSpec) -> String {
+/// `value` as one inline code span: delimited by a backtick run longer than
+/// any inside it, so a backtick in the writer's text cannot close the span.
+fn code_span(value: &str) -> String {
+    if !value.contains('`') {
+        return format!("`{value}`");
+    }
+    let fence = fence_for(value);
+    format!("{fence} {value} {fence}")
+}
+
+/// Where and how loom runs `contract`, whose plan entry is `plan`, or why it
+/// cannot; never the writer's test as a command (`writer_test_unrunnable`).
+fn run_line(input: &KindPromptInput<'_>, plan: &ContractSpec, contract: &ContractSpec) -> String {
     let Some(worktree) = input.worktree else {
         return "(stage worktree unavailable)".to_string();
     };
     let adapter = resolve_adapter(contract, &input.site.path);
+    if writer_test_unrunnable(plan, contract, adapter) {
+        return NO_ADAPTER_FOR_WRITER_TEST.to_string();
+    }
     match resolve_run(contract, adapter, worktree, &input.site.path, None) {
         Ok(run) => format!("`{}` from `{}`", run.command, run.cwd),
         Err(error) => format!("(cannot be run: {error:#})"),

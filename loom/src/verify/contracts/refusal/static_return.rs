@@ -34,8 +34,9 @@ pub enum StaticRefusal {
 /// `session_id`, counting it against the session's [`STATIC_RETURN_LIMIT`].
 /// Ordered as `record_job_refusal` orders job refusals: the same job again
 /// answers the record's state without counting twice, and an older job than
-/// the one on record is [`StaticRefusal::Superseded`]. A record of another
-/// session does not count.
+/// the one on record is [`StaticRefusal::Superseded`]. A newer job finding a
+/// record of the session still to be filed keeps it and answers
+/// [`StaticRefusal::Filed`]. A record of another session does not count.
 pub fn record_static_refusal(
     work_dir: &Path,
     stage_id: &str,
@@ -49,18 +50,8 @@ pub fn record_static_refusal(
             .filter(|existing| existing.session_id == session_id);
         let mut prior = 0;
         if let Some(existing) = existing {
-            let recorded = existing
-                .job_origin
-                .context("unversioned refusal has unknown job order")?;
-            if recorded == origin {
-                return Ok(state_of(existing.returned));
-            }
-            ensure!(
-                recorded.submission_order != origin.submission_order,
-                "distinct host jobs share a refusal order"
-            );
-            if recorded.submission_order > origin.submission_order {
-                return Ok(StaticRefusal::Superseded);
+            if let Some(answer) = settled_by(&existing, &origin)? {
+                return Ok(answer);
             }
             prior = existing.returned;
         }
@@ -83,6 +74,35 @@ pub fn record_static_refusal(
         Ok(state_of(returned))
     })
     .with_context(|| format!("failed to record the static refusal of stage '{stage_id}'"))
+}
+
+/// The answer a same-session record already on file gives to the refusal of
+/// `origin`, or `None` when the new refusal replaces the record.
+fn settled_by(
+    existing: &DaemonRefusal,
+    origin: &JobRefusalOrigin,
+) -> Result<Option<StaticRefusal>> {
+    let recorded = existing
+        .job_origin
+        .as_ref()
+        .context("unversioned refusal has unknown job order")?;
+    if recorded == origin {
+        return Ok(Some(state_of(existing.returned)));
+    }
+    ensure!(
+        recorded.submission_order != origin.submission_order,
+        "distinct host jobs share a refusal order"
+    );
+    if recorded.submission_order > origin.submission_order {
+        return Ok(Some(StaticRefusal::Superseded));
+    }
+    // A refusal at 0 the tick has neither filed (filing takes the record) nor
+    // declined is still to be filed: replacing it would drop its problems and
+    // start the count again.
+    if existing.returned == 0 && existing.declined.is_none() {
+        return Ok(Some(StaticRefusal::Filed));
+    }
+    Ok(None)
 }
 
 fn state_of(returned: u32) -> StaticRefusal {
