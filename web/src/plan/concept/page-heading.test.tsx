@@ -149,13 +149,31 @@ it.each([
   },
 );
 
-it("leaves the pressure record off the chip row: a plan's card under the heading draws it", () => {
-  show({ last_pressure: "2026-10-20" });
-  expect(screen.queryByText("Pressure-tested 2026-10-20")).toBeNull();
+it("leaves the pressure record off a feature plan's chip rows: its card draws it", () => {
+  show({
+    key: "demo/engineering/a",
+    feature: "demo",
+    path: "plans/demo/PLAN-a.md",
+    plan_state: "written",
+    last_pressure: "2026-10-20",
+  });
+  const dates = screen.getAllByText(/pressure-tested 2026-10-20/i);
+  expect(dates.map((node) => node.className)).toEqual(["trace-pressure__when"]);
   cleanup();
 
   show({ key: "demo/engineering/a", plan_state: "written", last_pressure: null });
   expect(screen.queryByText(/pressure-tested/i)).toBeNull();
+});
+
+it("keeps a standalone plan's pressure date on its facts line", () => {
+  show({
+    key: "plans/my-plan",
+    feature: null,
+    path: "plans/PLAN-my-plan.md",
+    plan_state: "written",
+    last_pressure: "2026-10-20",
+  });
+  expect(screen.getByText(/pressure-tested 2026-10-20/i)).toBeTruthy();
 });
 
 it("ends a written plan's state row in Pressure-test, and only a written plan's", () => {
