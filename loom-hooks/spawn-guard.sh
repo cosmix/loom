@@ -19,7 +19,8 @@
 #   5. PREPENDS _subagent-preamble.txt to a typed spawn's prompt that lacks
 #      it, in every session (except loom-codex-forwarder and codex:* spawns);
 #      inside a stage (the GATE_PASSED gate) also APPENDS an optional worker
-#      brief, except to loom-codex-forwarder and codex:* spawns.
+#      brief, except to loom-codex-forwarder and codex:* spawns; a
+#      loom-code-reviewer spawn also gets the reviewer brief appended last.
 #   6. RECORDS every typed spawn to $LOOM_WORK_DIR/subagents/<stage-id>/spawns.jsonl
 #      (the state directory - .loom/work, or the legacy .work) so
 #      `loom subagents` can report on model usage across a stage.
@@ -310,15 +311,12 @@ WARN_TEXT="$WARN_ESCALATION"
 if [[ -n "$WARN_REVIEWER" ]]; then WARN_TEXT="${WARN_TEXT:+${WARN_TEXT} | }${WARN_REVIEWER}"; fi
 if [[ -n "$WARN_PREAMBLE" ]]; then WARN_TEXT="${WARN_TEXT:+${WARN_TEXT} | }${WARN_PREAMBLE}"; fi
 
-# A scoped brief is optional (loom_worker_brief, _spawn_policy.sh): any failure changes nothing.
+# Scoped briefs are optional (_spawn_policy.sh): any failure changes nothing.
+# The worker brief follows the prompt; the reviewer brief (loom-code-reviewer only) comes last.
 loom_worker_brief "$INPUT_JSON" "$TOOL_INPUT" "$GATE_PASSED" "$AGENT_TYPE_REQ"
-WORKER_BRIEF_JSON="$LOOM_SPAWN_WORKER_BRIEF_JSON"
-
-if [[ -n "$WORKER_BRIEF_JSON" ]]; then
-	UPDATED_INPUT=$(printf '%s' "$UPDATED_INPUT" | jq -c --argjson brief "$WORKER_BRIEF_JSON" \
-		'. + {prompt: (.prompt + "\n\n" + $brief)}')
-	PROMPT_REWRITTEN=1
-fi
+loom_append_brief "$LOOM_SPAWN_WORKER_BRIEF_JSON"
+loom_reviewer_brief "$TOOL_INPUT" "$GATE_PASSED" "$AGENT_TYPE_REQ"
+loom_append_brief "$LOOM_SPAWN_REVIEWER_BRIEF_JSON"
 if [[ $NEEDS_REWRITE -eq 1 ]]; then
 	UPDATED_INPUT=$(printf '%s' "$UPDATED_INPUT" | jq -c --arg model "$MODEL" '. + {model: $model}')
 	if [[ -n "$EFFORT" ]]; then
