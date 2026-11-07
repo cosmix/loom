@@ -28,7 +28,7 @@
 **What happened**: The first planning-trace mockups put every trace concept on the feature page at the same time: settle diamonds in a new spine gutter, five frontier hints, three rows of heading pills, a stub panel, and edge chips floating in a right margin. They were verified only in headless Chrome. In the user's Firefox the spine overflowed its column, ghost chips leaked, and nothing aligned. The user judged the result broken, confusing, overly complex and ugly.
 **Why**: The brief listed every element of common.md 'The browser' and asked for all of them to be drawn, so the designer added surfaces instead of designing an experience. Visual verification used a different browser from the user's.
 **Prevention**: A mockup brief states the user task each screen serves and a budget of new elements per surface (show state only where it needs attention; detail on demand). Verify in the user's browser (Firefox here) at real window sizes, and have the orchestrator read the screenshots before showing the user.
-**Fix**: The approved round-3 design is specified in `doc/plans/briefs/trace-screens-redesign/design.md` with Firefox screenshots in `doc/plans/mockups/trace-screens-redesign/`, and `PLAN-trace-screens-redesign.md` reworks the shipped screens to it; its stages check each screen in Firefox against the screenshots.
+**Fix**: The approved round-3 design is specified in `doc/plans/briefs/trace-screens-redesign/design.md` with Firefox screenshots in `doc/plans/mockups/trace-screens-redesign/`, and `PLAN-trace-screens-redesign` reworked the shipped screens to it, checking each screen in Firefox against the screenshots.
 
 ## The second trace mockup round was bland because the brief asked for plain
 
@@ -63,7 +63,7 @@
 **What happened:** The round-3 trace mockups lived only as untracked files under `doc/plans/mockups/trace/` and disappeared from the tree before review finished (cause not confirmed). Meanwhile `PLAN-planning-trace` ran its web stages from briefs still describing the round-1 design, so `trace-web-documents` merged the rejected UI.
 **Why:** Mockups were treated as scratch work, and the web briefs were not marked as pending a design decision before the plan was handed over.
 **Prevention:** Commit mockups (HTML plus Firefox screenshots) as soon as a round is produced, and mark any brief that waits on a design approval so it is rewritten before the plan runs.
-**Fix:** A follow-up plan reworks the shipped trace UI to the approved round-3 design, using the surviving screenshots committed under `doc/plans/mockups/`.
+**Fix:** `PLAN-trace-screens-redesign` reworked the shipped screens to the approved design (`doc/plans/briefs/trace-screens-redesign/design.md`) from the surviving Firefox screenshots committed under `doc/plans/mockups/trace-screens-redesign/`; the mockups' HTML is gone, so the screenshots and `design.md` are the only visual target. Its integration-verify stage walked every screen in Firefox at 1440 and 390 in two themes against those screenshots.
 
 ## A plan commit swept in files another session had staged
 
@@ -71,3 +71,24 @@
 **Why:** `git add <paths>` adds to the existing index; it does not limit the commit to those paths.
 **Prevention:** On a shared working tree, run `git diff --cached --stat` before committing, or commit with `git commit -- <paths>`, which builds the commit from those paths alone and leaves other staged entries staged.
 **Fix:** `git reset --soft HEAD~1`, then `git commit -- <paths>`.
+
+## A walk driver waited on an async predicate
+
+**What happened**: An integration-verify walk waited for a trace state with `page.waitForFunction(async () => fetch(...))`. It resolved at once, the page was read before the server had seen the edit, and a stale-trace server bug was nearly reported.
+**Why**: An async predicate returns a Promise, which is truthy; `waitForFunction` does not await it as a condition.
+**Prevention**: Poll from Node: loop on `page.evaluate(fetch)` until the state matches, with a deadline. An external edit under `doc/` took about 8.5 s to reach `/api/trace` on the debug binary.
+**Fix**: The walk driver polls from Node ([the screenshot rules](../conventions/plan-web.md#checking-screens-in-the-users-browser)).
+
+## A look worker was briefed to build and shoot, and the hook blocks both
+
+**What happened**: Look workers on the trace-screens redesign (V1, V2) could not shoot their own CSS in Firefox. The subagent PreToolUse hook blocks `bun run build` and `cargo build` as project-wide verification, so `web/dist` and the PATH `loom` stayed at HEAD, without the markup the sibling worker was adding.
+**Why**: The briefs asked a subagent for a step only the orchestrator can run.
+**Prevention**: The orchestrator builds web and loom after the look workers return, then runs `scripts/plan-screens.sh --browser=firefox` itself, or the brief hands the worker a built binary path. A visual edit is also never made without the `frontend-design:frontend-design` skill loaded: the main agent's own small edits (the spine head button wrap, the findings empty-state class, the numbered title) skipped it and the user steered the stage back to it.
+**Fix**: Shots moved to the integration-verify stage.
+
+## A worker undid its own edit with git checkout
+
+**What happened**: A trace-ui worker ran `git checkout -- run-panel.css` to remove its own appended rule, though its brief forbade git commands. The file was unmodified at session start, so nothing else was lost.
+**Why**: `git checkout` restores to HEAD, which equals the pre-edit state only when nothing else touched the file.
+**Prevention**: Undo your own edit with the Edit tool. `git checkout` is allowed only where the brief says so (restoring `web/dist` is the one case).
+**Fix**: None needed; recorded as a recurrence risk.
