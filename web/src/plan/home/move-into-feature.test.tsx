@@ -39,6 +39,7 @@ const project: ProjectChecklistView = {
       title: "Fix search",
       state: "written",
       last_change: null,
+      pressure_date: null,
       has_summary: false,
     },
   ],

@@ -179,6 +179,7 @@ export const standalonePlanViewSchema = z.strictObject({
   state: planStateViewSchema,
   title: z.string(),
   last_change: z.string().nullable(),
+  pressure_date: z.string().nullable(),
   has_summary: z.boolean(),
 });
 export const projectChecklistViewSchema = z.strictObject({

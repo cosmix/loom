@@ -259,6 +259,7 @@ describe("plan socket", () => {
           state: "written",
           title: "Solo",
           last_change: "2026-10-30T09:12:00Z",
+          pressure_date: null,
           has_summary: false,
         },
       ],

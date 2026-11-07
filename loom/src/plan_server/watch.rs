@@ -180,7 +180,7 @@ mod tests {
             value,
             json!({
                 "type": "checklist", "checklists": [], "moves": [],
-                "standalone": [{"slug":"fix", "path":"doc/plans/PLAN-fix.md", "state":"written", "title":"After", "has_summary": false}]
+                "standalone": [{"slug":"fix", "path":"doc/plans/PLAN-fix.md", "state":"written", "title":"After", "pressure_date": null, "has_summary": false}]
             })
         );
         apply_batch(&ctx, &batch);

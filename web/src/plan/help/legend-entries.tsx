@@ -119,7 +119,7 @@ export const READING: readonly LegendEntry[] = [
   {
     name: "Pressure-test status",
     meaning:
-      "Marks a plan's pressure-test status: not tested, being tested, or the date of the last test.",
+      "Marks a plan's pressure-test status: not tested, being tested, or the date of the last test; the flask in the home table marks a tested standalone plan.",
     glyph: otherGlyph("pressureTested"),
   },
   {

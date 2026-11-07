@@ -155,7 +155,15 @@ export async function mountPressure(plan: string, title: string) {
     checklists: [],
     moves: [],
     standalone: [
-      { slug, path: plan, state: "written", title, last_change: null, has_summary: false },
+      {
+        slug,
+        path: plan,
+        state: "written",
+        title,
+        last_change: null,
+        pressure_date: null,
+        has_summary: false,
+      },
     ],
   });
   store.set(pressureDialogAtom, { open: true, plan });

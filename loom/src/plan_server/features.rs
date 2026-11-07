@@ -137,7 +137,7 @@ mod tests {
             value["standalone"],
             json!([{
                 "slug": "fix", "path": "doc/plans/PLAN-fix.md",
-                "state": "written", "title": "A small fix", "has_summary": false
+                "state": "written", "title": "A small fix", "pressure_date": null, "has_summary": false
             }])
         );
         assert_eq!(

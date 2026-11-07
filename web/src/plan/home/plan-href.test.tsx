@@ -13,6 +13,7 @@ function plan(slug: string, hasSummary: boolean): StandalonePlanView {
     title: `Plan ${slug}`,
     state: "written",
     last_change: null,
+    pressure_date: null,
     has_summary: hasSummary,
   };
 }

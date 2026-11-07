@@ -17,7 +17,7 @@ import {
   type SortKey,
 } from "@/plan/home/standalone-order";
 import { StateFilter, StateFilterEmpty, useStateFilter } from "@/plan/home/state-filter";
-import { PLAN_STATE_WORD_GLYPHS } from "@/plan/ui/glyphs";
+import { OTHER_GLYPHS, PLAN_STATE_WORD_GLYPHS } from "@/plan/ui/glyphs";
 
 import "./standalone-table.css";
 
@@ -69,6 +69,19 @@ function Modified({ stamp, now }: { stamp: string | null; now: number }) {
   );
 }
 
+/** The flask after the slug of a pressure-tested plan; the date is the latest record's. */
+function PressureMark({ date }: { date: string }) {
+  const Flask = OTHER_GLYPHS.pressureTested;
+  return (
+    <span className="shelf-table__pressure" title={`Pressure-tested ${date}`}>
+      <Flask aria-hidden="true" />
+      <span className="sr-only">
+        Pressure-tested <Untrusted text={date} />
+      </span>
+    </span>
+  );
+}
+
 function PlanRow({
   plan,
   checked,
@@ -104,9 +117,12 @@ function PlanRow({
               <IsolatedSentence text={shortTitle(plan.title)} />
             </span>
           </Link>
-          <span className="shelf-table__slug">
-            <Untrusted text={plan.slug} />
-          </span>
+          <div className="shelf-table__slugline">
+            <span className="shelf-table__slug">
+              <Untrusted text={plan.slug} />
+            </span>
+            {plan.pressure_date !== null && <PressureMark date={plan.pressure_date} />}
+          </div>
         </div>
       </td>
       <td role="cell" className="shelf-table__state">

@@ -19,6 +19,7 @@ function plan(slug: string, state: StandalonePlanView["state"]): StandalonePlanV
     state,
     path: `doc/plans/PLAN-${slug}.md`,
     last_change: null,
+    pressure_date: null,
     has_summary: false,
   };
 }

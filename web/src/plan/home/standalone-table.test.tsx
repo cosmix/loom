@@ -31,3 +31,31 @@ it("shows every plan once the list shrinks below the filter threshold", () => {
   expect(screen.queryByRole("searchbox", { name: "Filter plans" })).toBeNull();
   expect(screen.getAllByRole("link")).toHaveLength(9);
 });
+
+it("marks a pressure-tested plan with a flask and its date, and draws nothing for an untested one", () => {
+  const [tested, untested] = standalonePlans(2);
+  const plans = [
+    { ...tested, pressure_date: "2026-11-05" },
+    { ...untested, pressure_date: null },
+  ];
+  const { container } = render(
+    <MemoryRouter>
+      <StandaloneTable
+        plans={plans}
+        selected={new Set()}
+        onToggle={() => {}}
+        onSelect={() => {}}
+        actions={null}
+      />
+    </MemoryRouter>,
+  );
+
+  const rowOf = (slug: string) =>
+    [...container.querySelectorAll("tbody tr")].find((row) => row.textContent?.includes(slug));
+  expect(rowOf("plan-1")?.querySelector(".lucide-flask-conical")).not.toBeNull();
+  expect(rowOf("plan-1")?.querySelector(".sr-only")?.textContent).toBe(
+    "Pressure-tested 2026-11-05",
+  );
+  expect(rowOf("plan-2")?.querySelector(".lucide-flask-conical")).toBeNull();
+  expect(rowOf("plan-2")?.querySelector(".shelf-table__pressure")).toBeNull();
+});

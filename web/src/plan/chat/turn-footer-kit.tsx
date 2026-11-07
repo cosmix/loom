@@ -65,6 +65,7 @@ export function mount(value = turn(), holder = true) {
         state: "written",
         title: "Standalone",
         last_change: null,
+        pressure_date: null,
         has_summary: false,
       },
     ],
