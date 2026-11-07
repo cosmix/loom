@@ -7,7 +7,7 @@ use anyhow::{bail, Context, Result};
 
 use super::claims::{create_claim, delete_claim, draft_path, ClaimHeld};
 use super::evaluate::{evaluate, SentenceState, SummaryEval};
-use super::format::sentence_limit;
+use super::format::{sentence_limit, MAX_OPENING_PARAGRAPH};
 use super::lock::with_store_lock;
 use super::store::{self, validate_id};
 use super::write::read_summary;
@@ -230,6 +230,7 @@ fn write_rules(out: &mut String, project: &Project, id: &str, overview: bool) ->
     )?;
     if store::is_plan(id) {
         writeln!(out, "- A plan summary has two levels. First the opening level: about one sentence per topic, each citing every sentence of the detail paragraph(s) it opens, in order, as [d](#s-xxxxxxxx). Then the detail level: short paragraphs whose sentences cite the plan's heading sections and its brief files, one paragraph per stage citing the stage as PLAN-<slug>.md#stage:<id> and that stage's brief files. No heading after the opening level.")?;
+        writeln!(out, "- Write the opening level as paragraphs of one to {MAX_OPENING_PARAGRAPH} sentences that share a topic, a blank line between paragraphs: the Summary page draws each paragraph as a block, and a longer one is refused.")?;
         let caps = store::plan_caps(project, id);
         writeln!(
             out,

@@ -5,7 +5,7 @@ import { Link } from "react-router";
 import type { StandalonePlanView } from "@/plan/api/schema";
 import { Untrusted } from "@/plan/chat/visible-controls";
 import { IsolatedSentence } from "@/plan/concept/sentence-text";
-import { toAddress } from "@/plan/files/address";
+import { standalonePlanHref } from "@/plan/home/plan-href";
 import {
   DEFAULT_SORT,
   firstDirection,
@@ -98,8 +98,8 @@ function PlanRow({
       </td>
       <td role="cell" className="shelf-table__title">
         <div className="shelf-table__plan">
-          {/* The link's box covers the row, so the whole row opens the plan. */}
-          <Link to={toAddress(plan.path)} className="shelf-table__link">
+          {/* The link's box covers the row, so the whole row opens the plan: its summary when it has one, else its source. */}
+          <Link to={standalonePlanHref(plan)} className="shelf-table__link">
             <span id={titleId}>
               <IsolatedSentence text={shortTitle(plan.title)} />
             </span>

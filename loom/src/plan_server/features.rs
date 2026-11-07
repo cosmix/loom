@@ -34,9 +34,8 @@ struct FeatureView {
     checklist: ChecklistView,
 }
 
-impl From<&Project> for FeaturesView {
-    fn from(project: &Project) -> Self {
-        let planning = ProjectChecklistView::from(project);
+impl FeaturesView {
+    fn new(project: &Project, planning: ProjectChecklistView) -> Self {
         let features = planning
             .checklists
             .into_iter()
@@ -58,7 +57,11 @@ impl From<&Project> for FeaturesView {
 }
 
 fn features(req: &ApiRequest<'_>) -> ApiResponse {
-    ApiResponse::json(200, &FeaturesView::from(&*req.ctx.project()))
+    let project = req.ctx.project();
+    ApiResponse::json(
+        200,
+        &FeaturesView::new(&project, req.ctx.checklist_of(&project)),
+    )
 }
 
 #[cfg(test)]
@@ -134,7 +137,7 @@ mod tests {
             value["standalone"],
             json!([{
                 "slug": "fix", "path": "doc/plans/PLAN-fix.md",
-                "state": "written", "title": "A small fix"
+                "state": "written", "title": "A small fix", "has_summary": false
             }])
         );
         assert_eq!(
@@ -198,7 +201,7 @@ mod tests {
             "# Finished\n",
         );
         let project = Project::load(root.path()).unwrap();
-        let view = FeaturesView::from(&project);
+        let view = FeaturesView::new(&project, ProjectChecklistView::from(&project));
         let feature = &view.features[0];
 
         assert_eq!(feature.name, "demo");
@@ -225,7 +228,11 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         let project = Project::load(root.path()).unwrap();
         assert_eq!(
-            serde_json::to_value(FeaturesView::from(&project)).unwrap(),
+            serde_json::to_value(FeaturesView::new(
+                &project,
+                ProjectChecklistView::from(&project)
+            ))
+            .unwrap(),
             json!({
                 "features": [], "standalone": [], "moves": []
             })

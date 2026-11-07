@@ -109,6 +109,27 @@ fn plan_brief_teaches_the_two_levels_and_sealing_twice() {
 }
 
 #[test]
+fn plan_brief_teaches_opening_paragraphs_and_a_section_brief_does_not() {
+    let f = two_sections();
+    put(&f.root, META, &metaplan(&["PLAN-x.md"]));
+    put(
+        &f.root,
+        "doc/plans/demo/PLAN-x.md",
+        "# Plan: X\n\nDoes x.\n",
+    );
+    let rule = "- Write the opening level as paragraphs of one to 3 sentences that share a topic, \
+                a blank line between paragraphs: the Summary page draws each paragraph as a \
+                block, and a longer one is refused.\n";
+    let text = brief(&f.root, &f.paths, &["plans/x".into()], None).unwrap();
+    assert!(text.contains(rule), "{rule}\nmissing from\n{text}");
+    let section = brief(&f.root, &f.paths, &[ID1.into()], None).unwrap();
+    assert!(
+        !section.contains("opening level as paragraphs"),
+        "{section}"
+    );
+}
+
+#[test]
 fn overview_brief_lists_the_vision_and_every_member_summary() {
     let f = two_sections();
     let text = brief(&f.root, &f.paths, &[PRODUCT.into()], None).unwrap();

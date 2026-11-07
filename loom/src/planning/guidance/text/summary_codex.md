@@ -69,7 +69,9 @@ Use this exact draft body format for document summaries:
   between paragraphs.
 - A plan summary (id `plans/<slug>`) has two levels. First the opening level: about one
   sentence per topic, each citing every sentence of the detail paragraph(s) it opens, in
-  order, as `[d](#s-xxxxxxxx)`, and nothing else. Then the detail level: short paragraphs
+  order, as `[d](#s-xxxxxxxx)`, and nothing else. Group the opening sentences into paragraphs
+  of one to three sentences that share a topic, with a blank line between paragraphs; the seal
+  refuses a longer one. Then the detail level: short paragraphs
   whose sentences cite the plan's heading sections and its brief files. Give each stage its
   own detail paragraph citing the stage as `PLAN-<x>.md#stage:<id>` and that stage's brief
   files (`briefs/<slug>/<stage-id>/...`); cite `common.md` and the other brief files where the

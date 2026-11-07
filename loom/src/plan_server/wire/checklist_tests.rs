@@ -297,10 +297,10 @@ fn project_snapshot_groups_features_and_uses_winning_standalone_paths_and_titles
     assert_eq!(
         standalone,
         json!([
-            {"slug":"first","path":"doc/plans/PLAN-first.md","state":"written","title":"First"},
-            {"slug":"fix","path":"doc/plans/IN_PROGRESS-PLAN-fix.md","state":"running","title":"Fix in progress"},
-            {"slug":"last","path":"doc/plans/archive/DONE-PLAN-last.md","state":"done","title":"Last"},
-            {"slug":"old","path":"doc/plans/archive/RETIRED-PLAN-old.md","state":"retired","title":"Old"}
+            {"slug":"first","path":"doc/plans/PLAN-first.md","state":"written","title":"First","has_summary":false},
+            {"slug":"fix","path":"doc/plans/IN_PROGRESS-PLAN-fix.md","state":"running","title":"Fix in progress","has_summary":false},
+            {"slug":"last","path":"doc/plans/archive/DONE-PLAN-last.md","state":"done","title":"Last","has_summary":false},
+            {"slug":"old","path":"doc/plans/archive/RETIRED-PLAN-old.md","state":"retired","title":"Old","has_summary":false}
         ])
     );
     assert_eq!(

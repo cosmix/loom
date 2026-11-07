@@ -13,7 +13,14 @@ installStartChatLifecycle();
 
 function plan(slug: string, state: StandalonePlanView["state"]): StandalonePlanView {
   const title = slug[0]!.toUpperCase() + slug.slice(1);
-  return { slug, title, state, path: `doc/plans/PLAN-${slug}.md`, last_change: null };
+  return {
+    slug,
+    title,
+    state,
+    path: `doc/plans/PLAN-${slug}.md`,
+    last_change: null,
+    has_summary: false,
+  };
 }
 
 const mixed = [plan("cache", "running"), plan("search", "written"), plan("lint", "written")];

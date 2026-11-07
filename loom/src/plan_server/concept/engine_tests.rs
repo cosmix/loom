@@ -19,7 +19,7 @@ const ARCHIVED_X: &str = "doc/plans/demo/archive/DONE-PLAN-x.md";
 
 /// A context over `fixture` with concept mode installed on the fixture's scratch runtime
 /// directory.
-fn installed(fixture: &Fixture) -> (Arc<PlanContext>, Arc<ConceptState>) {
+pub(super) fn installed(fixture: &Fixture) -> (Arc<PlanContext>, Arc<ConceptState>) {
     let bind = BindInfo::new(SocketAddr::from(([127, 0, 0, 1], 0)), "t");
     let read_only = ReadOnly::from_problems(Vec::new());
     let ctx = PlanContext::new(fixture.root.clone(), read_only, bind, OwnWrites::default());

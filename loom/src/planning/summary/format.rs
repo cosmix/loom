@@ -20,7 +20,7 @@ use std::path::{Path, PathBuf};
 use super::store::{self, STORE_DIR};
 pub use body::{render_body, sentence_id};
 pub use front::{FrontMatter, SummaryKind};
-pub use levels::{cites_own, split_levels, Levels};
+pub use levels::{cites_own, split_levels, Levels, MAX_OPENING_PARAGRAPH};
 
 /// Most sentences a document summary may hold, and fewest the detail level of a plan summary
 /// is capped at.

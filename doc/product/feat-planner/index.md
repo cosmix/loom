@@ -77,7 +77,8 @@ they have no six-step checklist or per-plan workflow offers. The shelf counts it
 and its table lists each plan's name, state and when its file last changed (Modified), newest
 first, sorted by any column from its header. Above the table, toggles named by state with their
 counts ("All", "Running 1", "Done 53") narrow it to one or several states, combining with the
-text filter; a selected plan they hide is unselected. An invitation card offers "Start a
+text filter; a selected plan they hide is unselected. A row opens its plan's Summary view when the
+plan has a summary and its Source view otherwise. An invitation card offers "Start a
 conversation" at `/new`: the kickoff settles whether the work needs a feature or a standalone
 plan before writing anything. A repository with exactly one feature opens on `/f/<name>`.
 

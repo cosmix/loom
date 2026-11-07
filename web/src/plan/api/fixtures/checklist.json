@@ -139,7 +139,8 @@
       "path": "doc/plans/PLAN-example.md",
       "state": "written",
       "title": "Example plan",
-      "last_change": "2026-10-30T09:12:00Z"
+      "last_change": "2026-10-30T09:12:00Z",
+      "has_summary": true
     }
   ],
   "moves": [

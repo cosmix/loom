@@ -30,13 +30,30 @@ function bodyStart(lines: string[]): number {
   return close === -1 ? 1 : close + 2;
 }
 
+/**
+ * The last line of a passage spanning lines `start` to `end`, cut where a plan's
+ * `<!-- loom METADATA -->` block begins. The block is the plan's machine record: the last heading
+ * section of a plan runs to the end of the file and would show it, and the plan page shows it as
+ * the Stages panel instead. The blank lines and the horizontal rule that set the block apart go
+ * with it. A passage that starts at or after the block (the pressure record below it) is whole.
+ */
+function proseEnd(doc: DocView, lines: string[], start: number, end: number): number {
+  const marker = doc.plan?.metadata_line ?? null;
+  if (marker === null || marker <= start || marker > end) return end;
+  let last = marker - 1;
+  const apart = (line: string | undefined) => /^\s*$|^ {0,3}([-*_])( ?\1){2,}\s*$/.test(line ?? "");
+  while (last > start && apart(lines[last - 1])) last--;
+  return last;
+}
+
 export function passageOf(doc: DocView, anchor: string): Passage | null {
   const section = anchor === "" ? undefined : doc.sections.find((item) => item.anchor === anchor);
   if (anchor !== "" && !section) return null;
 
   const lines = doc.text.split("\n");
   const startLine = section?.start_line ?? bodyStart(lines);
-  const endLine = section?.end_line ?? (doc.sections[0]?.start_line ?? lines.length + 1) - 1;
+  const wholeEnd = section?.end_line ?? (doc.sections[0]?.start_line ?? lines.length + 1) - 1;
+  const endLine = proseEnd(doc, lines, startLine, wholeEnd);
   return {
     title: section?.title ?? doc.title,
     anchor,

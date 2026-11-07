@@ -19,6 +19,7 @@ const project: ProjectChecklistView = {
       title: "Fix search",
       state: "written",
       last_change: "2026-11-05T10:00:00Z",
+      has_summary: false,
     },
     {
       slug: "cache",
@@ -26,6 +27,7 @@ const project: ProjectChecklistView = {
       title: "Cache",
       state: "running",
       last_change: "2026-11-06T08:00:00Z",
+      has_summary: false,
     },
     {
       slug: "cleanup",
@@ -33,6 +35,7 @@ const project: ProjectChecklistView = {
       title: "Cleanup",
       state: "done",
       last_change: "2026-10-01T12:00:00Z",
+      has_summary: false,
     },
     {
       slug: "old",
@@ -40,6 +43,7 @@ const project: ProjectChecklistView = {
       title: "Old",
       state: "retired",
       last_change: null,
+      has_summary: false,
     },
   ],
   moves: [],
@@ -220,6 +224,7 @@ describe("StandaloneShelf", () => {
           title: "Speed up search",
           state: "done",
           last_change: null,
+          has_summary: false,
         },
       ],
       moves: [],

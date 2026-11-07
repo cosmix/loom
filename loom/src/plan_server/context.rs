@@ -9,6 +9,7 @@ use std::time::SystemTime;
 use anyhow::Result;
 
 use super::authoring::{Authoring, Refusal, Take};
+use super::concept::engine::ConceptState;
 use super::extensions::Extensions;
 use super::ids::{BrowserId, ConnCtx, ConnId, PublicId};
 use super::loading::Loading;
@@ -363,8 +364,19 @@ impl PlanContext {
         self.broadcast_presence();
     }
 
+    /// The planning snapshot clients are sent for `project`: its checklists, standalone plans and
+    /// move offers, with each standalone plan's `has_summary` read from the summary engine's
+    /// latest evaluation (all false while no engine is installed).
+    pub(crate) fn checklist_of(&self, project: &Project) -> ProjectChecklistView {
+        let view = ProjectChecklistView::from(project);
+        match self.extensions().get::<ConceptState>() {
+            Some(state) => view.with_summaries(&state.latest()),
+            None => view,
+        }
+    }
+
     fn hello(&self, conn: &ConnCtx) -> Hello {
-        let planning = ProjectChecklistView::from(&*self.project());
+        let planning = self.checklist_of(&self.project());
         let server = self.server_info(&conn.browser, &conn.public_id);
         Hello {
             you: server.you.clone(),

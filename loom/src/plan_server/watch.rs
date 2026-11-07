@@ -10,7 +10,6 @@ use anyhow::{Context, Result};
 
 use super::context::PlanContext;
 use super::trace;
-use super::wire::checklist::ProjectChecklistView;
 use super::wire::message::PlanMessage;
 use crate::planning::watch::{Batch, OwnWrites, Watcher};
 
@@ -54,25 +53,27 @@ pub(super) fn apply_batch(ctx: &PlanContext, batch: &Batch) {
     if batch.initial {
         return;
     }
-    let (changed, traced) = {
+    let (before, traced) = {
         let mut project = ctx.project_mut();
-        let before = ProjectChecklistView::from(&*project);
+        let before = ctx.checklist_of(&project);
         let traces_before = trace::changed::views(&project);
         if let Err(error) = project.refresh(batch) {
             tracing::warn!("loom plan could not refresh the project: {error:#}");
         }
-        let after = ProjectChecklistView::from(&*project);
         let traces_after = trace::changed::views(&project);
         (
-            (before != after).then_some(after),
+            before,
             trace::changed::changed(&traces_before, &traces_after),
         )
     };
     for hook in ctx.batch_hooks() {
         hook(ctx, batch);
     }
-    if let Some(checklist) = changed {
-        ctx.hub().broadcast(&PlanMessage::Checklist(checklist));
+    // Compared after the hooks: the summary engine's hook updates the evaluation that
+    // `has_summary` reads, so a sealed summary reaches the standalone table.
+    let after = ctx.checklist_of(&ctx.project());
+    if before != after {
+        ctx.hub().broadcast(&PlanMessage::Checklist(after));
     }
     for feature in traced {
         ctx.hub().broadcast(&PlanMessage::TraceChanged { feature });
@@ -130,6 +131,7 @@ mod tests {
     use crate::plan_server::context::BindInfo;
     use crate::plan_server::ids::BrowserId;
     use crate::plan_server::prereq::ReadOnly;
+    use crate::plan_server::wire::checklist::ProjectChecklistView;
     use serde_json::{json, Value};
     use std::path::Path;
 
@@ -178,7 +180,7 @@ mod tests {
             value,
             json!({
                 "type": "checklist", "checklists": [], "moves": [],
-                "standalone": [{"slug":"fix", "path":"doc/plans/PLAN-fix.md", "state":"written", "title":"After"}]
+                "standalone": [{"slug":"fix", "path":"doc/plans/PLAN-fix.md", "state":"written", "title":"After", "has_summary": false}]
             })
         );
         apply_batch(&ctx, &batch);

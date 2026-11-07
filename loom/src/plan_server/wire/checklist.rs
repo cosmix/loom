@@ -7,6 +7,7 @@ use crate::plan_server::files::plan_view::last_change;
 use crate::planning::checklist::Offer;
 use crate::planning::project::Project;
 use crate::planning::slug::PlanState;
+use crate::planning::summary::evaluate::{Evaluation, SummaryState};
 
 #[path = "checklist_candidates.rs"]
 mod candidates;
@@ -46,6 +47,10 @@ pub struct StandalonePlanView {
     pub title: String,
     /// The plan file's modification time (RFC 3339, UTC), or null when it cannot be read.
     pub last_change: Option<String>,
+    /// Whether the plan has a summary: its summary is not `missing` in the summary engine's
+    /// evaluation, the test the plan page's Summary view applies. False until `with_summaries`
+    /// reads the evaluation, because the project alone does not hold the summary store.
+    pub has_summary: bool,
 }
 
 /// The six-step checklist belonging to one feature.
@@ -285,6 +290,19 @@ pub struct ItemView {
     pub offer: Option<OfferView>,
 }
 
+impl ProjectChecklistView {
+    /// This snapshot with each standalone plan's `has_summary` read from `eval`.
+    pub fn with_summaries(mut self, eval: &Evaluation) -> Self {
+        for plan in &mut self.standalone {
+            plan.has_summary = eval
+                .summaries
+                .get(&format!("plans/{}", plan.slug))
+                .is_some_and(|summary| summary.state != SummaryState::Missing);
+        }
+        self
+    }
+}
+
 impl From<&Project> for ProjectChecklistView {
     fn from(project: &Project) -> Self {
         let mut checklists: Vec<_> = project
@@ -316,6 +334,7 @@ impl From<&Project> for ProjectChecklistView {
                     },
                     title: doc.title.clone(),
                     last_change: last_change(&project.root, &plan.path),
+                    has_summary: false,
                 })
             })
             .collect();

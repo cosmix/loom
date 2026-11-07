@@ -63,6 +63,7 @@ export function standalonePlans(count: number): StandalonePlanView[] {
     title: `Plan ${index + 1}`,
     state: "written",
     last_change: null,
+    has_summary: false,
   }));
 }
 

@@ -18,7 +18,7 @@ function plan(
   state: StandalonePlanView["state"],
   last_change: string | null,
 ): StandalonePlanView {
-  return { slug, title, state, last_change, path: `doc/plans/PLAN-${slug}.md` };
+  return { slug, title, state, last_change, has_summary: false, path: `doc/plans/PLAN-${slug}.md` };
 }
 
 const plans = [

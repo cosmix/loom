@@ -109,6 +109,7 @@ it.each([
           state: "written",
           title: "Standalone",
           last_change: null,
+          has_summary: false,
         },
       ],
       moves: [],

@@ -39,6 +39,7 @@ const SAMPLE_PROJECT = projectChecklistViewSchema.parse({
       path: "doc/plans/PLAN-fix-search.md",
       state: "written",
       last_change: null,
+      has_summary: false,
     },
   ],
   moves: [],
@@ -148,7 +149,7 @@ export const FEATURES_SCENES: readonly PlannerHelpScene[] = [
       },
       {
         target: 'a[href="/files/plans/PLAN-fix-search.md"]',
-        text: "A standalone plan row opens the plan document.",
+        text: "A standalone plan row opens the plan's summary, or its source when it has none.",
       },
       {
         target: "section[aria-labelledby] summary button",

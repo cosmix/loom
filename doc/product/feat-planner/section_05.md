@@ -171,7 +171,9 @@ uses (section 06); lists, tables and code keep their Markdown layout. No card, c
 border or spine marks the passage (`conventions/web-dashboard-typography.md`, "Stage thread
 chips"). A passage never shows a file's YAML front matter (the `---` block at the top of a
 summary or a knowledge topic): a file's opening passage starts after that block. File mode
-shows the whole file, front matter included.
+shows the whole file, front matter included. A passage of a plan ends where the plan's
+`<!-- loom METADATA -->` block begins, so the block never shows in an opened sentence; the plan page
+draws it as the Stages panel.
 
 A passage that an earlier fragment in the same view already shows appears as one line: its chip,
 then a **Same passage as above** button. The button moves focus to the first showing, scrolling
