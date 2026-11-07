@@ -395,7 +395,6 @@ Review rounds are counted per reviewer and per stage. A gate runs once per tree,
 
 ## An agent staged deletions with git rm
 
-**What happened**: A subagent deleted four Rust files with `git rm`, which stages the deletion, against the rule that only the main agent stages.
-**Why**: `git rm` reads as a delete command but is a staging command.
-**Prevention**: Delete with `rm`; a subagent never runs a git command that writes the index.
+**What happened**: A subagent deleted four Rust files with `git rm`, which stages the deletion, against the rule that only the main agent stages. `git rm` reads as a delete command but is a staging command; `git mv` stages a rename the same way and recurred ([again](planner-follow-ups-delivery.md#small-slips-that-recurred-in-this-plan)).
+**Prevention**: Delete with `rm` and rename with `mv`; a subagent never runs a git command that writes the index.
 **Fix**: The subagent unstaged with `git reset -q -- <paths>` at once; nothing stayed staged.

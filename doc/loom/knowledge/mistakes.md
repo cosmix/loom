@@ -236,7 +236,7 @@ A live region mounted twice, a test constant that passed vitest and failed the t
 
 ## Planner design: stubs vs summaries, briefs unsummarized
 
-Stubs (vision section paragraphs, metaplan entries) scope a document before it exists; summaries are generated after it is final, for review. Briefs need summaries too. See [planner-design-brainstorm](mistakes/planner-design-brainstorm.md).
+Stubs (vision section paragraphs, metaplan entries) scope a document before it exists; summaries are generated after it is final, for review. A plan's summary covers its brief bundle, so a reviewer sees the briefs. See [planner-design-brainstorm](mistakes/planner-design-brainstorm.md). Delivery slips of the planning trace (settle hash source, socket test deadlines, CSS import order, contrast on the composited colour, assertion lines, wiring after a sibling merge) are in [planner-follow-ups-delivery](mistakes/planner-follow-ups-delivery.md#a-socket-test-waited-on-a-frame-that-never-came).
 
 ## dev-install.sh and the Running Daemon
 
