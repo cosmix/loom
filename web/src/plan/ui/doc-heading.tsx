@@ -72,6 +72,8 @@ export interface DocHeadingProps {
   chips?: readonly HeadingChip[];
   path?: string | null;
   changes?: { to: string } | null;
+  /** The document's scope, set under the title and before the toolbar. */
+  standfirst?: ReactNode;
   children?: ReactNode;
 }
 
@@ -278,6 +280,7 @@ export function DocHeading(props: DocHeadingProps): JSX.Element {
     <header className="doc-heading">
       <Breadcrumbs crumbs={breadcrumb} />
       <TitleRow {...props} />
+      {props.standfirst}
       <Toolbar {...props} />
       {status.length > 0 && <StatusCard chips={status} />}
       {facts.length > 0 && <FactsLine chips={facts} />}

@@ -79,24 +79,32 @@ function lit(element: Element | null, selectors: string[]): boolean {
   });
 }
 
-it("a done plan glyph and a tested plan glyph take the completed tone", () => {
+/** The spine's glyph of `kind`, placed under the plan root so the stylesheet's selectors can match it. */
+function glyphOf(kind: string): Element {
+  const root = document.createElement("div");
+  root.setAttribute("data-loom-plan", "");
+  const glyph = document.createElement("span");
+  glyph.className = "plan-spine__glyph";
+  glyph.setAttribute("data-glyph", kind);
+  root.append(glyph);
+  document.body.append(root);
+  return glyph;
+}
+
+it("a done plan glyph and a settled glyph take the completed tone", () => {
   renderSpine("/f/atlas/engineering");
   const nav = screen.getByRole("navigation", { name: "Feature documents" });
-  const link = (slug: string) => within(nav).getByRole("link", { name: new RegExp(`^${slug}`) });
-  const stateGlyph = (slug: string) => link(slug).querySelector(".plan-spine__glyph");
-  const badgeGlyph = (slug: string) =>
-    link(slug).querySelector(".plan-spine__badge .plan-spine__glyph");
+  const kindOf = (slug: string) =>
+    within(nav).getByTitle(slug).querySelector(".plan-spine__glyph")?.getAttribute("data-glyph");
 
-  const states = { "atlas-01": "done", "atlas-02": "running", "atlas-03": "written" };
-  for (const [slug, state] of Object.entries({ ...states, "atlas-04": "done" })) {
-    expect(stateGlyph(slug)?.getAttribute("data-state"), slug).toBe(state);
-  }
+  expect(kindOf("atlas-01")).toBe("done");
+  expect(kindOf("atlas-02")).toBe("running");
+  expect(kindOf("atlas-03")).toBe("draft");
+  expect(kindOf("atlas-04")).toBe("done");
 
   const selectors = completedToneSelectors();
-  expect(lit(stateGlyph("atlas-01"), selectors)).toBe(true);
-  expect(lit(stateGlyph("atlas-04"), selectors)).toBe(true);
-  expect(lit(badgeGlyph("atlas-01"), selectors)).toBe(true);
-  expect(lit(stateGlyph("atlas-02"), selectors)).toBe(false);
-  expect(lit(stateGlyph("atlas-03"), selectors)).toBe(false);
-  expect(lit(badgeGlyph("atlas-02"), selectors)).toBe(false);
+  for (const kind of ["done", "settled"]) expect(lit(glyphOf(kind), selectors), kind).toBe(true);
+  for (const kind of ["running", "attention", "not-written", "draft", "retired"]) {
+    expect(lit(glyphOf(kind), selectors), kind).toBe(false);
+  }
 });

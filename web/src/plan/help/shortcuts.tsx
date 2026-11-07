@@ -3,15 +3,13 @@ import type { JSX } from "react";
 import { ShortcutGroups } from "@/components/help-shortcuts";
 import type { HelpShortcutGroup } from "@/components/help-topics";
 
-/** The coverage map's keys (`trace/coverage-keys.ts`); the Coverage topic lists them too. */
+/** The coverage page's keys (`trace/coverage-page.tsx`); the Coverage topic lists them too. */
 export const COVERAGE_SHORTCUTS: HelpShortcutGroup = {
-  title: "On the coverage map",
+  title: "On the coverage page",
   rows: [
-    ["j", "Focus the next card in the column"],
-    ["k", "Focus the previous card in the column"],
-    ["l", "Focus the first card that follows from the focused one"],
-    ["h", "Focus the first card the focused one descends from"],
-    ["Enter", "Open the focused card's document or passage"],
+    ["↓", "Focus the next heading row"],
+    ["↑", "Focus the previous heading row"],
+    ["Enter / Space", "Open or close the focused heading row"],
   ],
 };
 

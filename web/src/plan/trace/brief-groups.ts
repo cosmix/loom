@@ -8,8 +8,6 @@ export interface Brief {
   to: string;
   /** The file's name (`c1-wire.md`). */
   name: string;
-  /** The name a chip shows: a Markdown brief without its `.md`. */
-  stem: string;
 }
 
 export interface BriefGroup {
@@ -18,9 +16,6 @@ export interface BriefGroup {
   briefs: Brief[];
 }
 
-/** A bundle this long starts folded behind its count, so the heading stays short. */
-export const BRIEFS_FOLDED_OVER = 6;
-
 const ORDER = new Intl.Collator("en", { numeric: true });
 
 function briefOf(link: BundleLink): { folder: string; brief: Brief } {
@@ -28,7 +23,7 @@ function briefOf(link: BundleLink): { folder: string; brief: Brief } {
   const name = link.label.slice(cut + 1);
   return {
     folder: cut < 0 ? "" : link.label.slice(0, cut),
-    brief: { path: link.path, to: link.to, name, stem: name.replace(/\.md$/i, "") },
+    brief: { path: link.path, to: link.to, name },
   };
 }
 

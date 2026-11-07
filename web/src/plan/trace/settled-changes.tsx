@@ -1,3 +1,4 @@
+import { FileDiff } from "lucide-react";
 import { useMemo, useRef, useState, type JSX, type RefObject } from "react";
 
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
@@ -7,6 +8,7 @@ import { Untrusted, visibleControls } from "@/plan/chat/visible-controls";
 import { DiffView } from "@/plan/diff/diff-view";
 import { docRel } from "@/plan/files/address";
 import { sourceHref } from "@/plan/feature/source-href";
+import { HEADING_BUTTON } from "@/plan/ui/doc-heading";
 import { useSelectedDiff } from "@/plan/review/changed-since-data";
 import { shortSha } from "@/plan/review/changed-since-parts";
 import { returnFocusTo } from "@/plan/review/focus-return";
@@ -75,18 +77,28 @@ function SettledDialog(props: {
 }
 
 /**
- * `Changes since settled`: a link to the document that, on click, asks which commit holds the
- * current Settled line and opens the commit comparison against it. A line that was never
- * committed has no version to compare with, and the control says so.
+ * "See what changed": a link that, on click, asks which commit holds `settled`'s current Settled
+ * line and opens the commit comparison of `compare` (default: the same document) against it. A
+ * line that was never committed has no version to compare with, and the control says so. `look`
+ * is a quiet heading button, or a plain link inside a sentence.
  */
-export function ChangesSinceSettled({ path }: { path: string }): JSX.Element {
+export function ChangesSinceSettled(props: {
+  settled: string;
+  compare?: string;
+  look: "button" | "inline";
+}): JSX.Element {
+  const { settled, compare = settled, look } = props;
   const [lookup, setLookup] = useState<Lookup>({ kind: "closed" });
   const link = useRef<HTMLAnchorElement>(null);
+  const anchorProps =
+    look === "button"
+      ? { ...HEADING_BUTTON, className: `${HEADING_BUTTON.className} trace-changes` }
+      : { className: "trace-changes" };
 
   const open = async () => {
     setLookup({ kind: "asking" });
     const result = await apiGet(
-      `/api/settled-version?path=${encodeURIComponent(docRel(path))}`,
+      `/api/settled-version?path=${encodeURIComponent(docRel(settled))}`,
       settledVersionSchema,
     );
     if (!result.ok) setLookup({ kind: "failed", message: result.message });
@@ -98,14 +110,15 @@ export function ChangesSinceSettled({ path }: { path: string }): JSX.Element {
     <>
       <a
         ref={link}
-        href={sourceHref(path)}
-        className="trace-settle-changes"
+        href={sourceHref(compare)}
+        {...anchorProps}
         onClick={(event) => {
           event.preventDefault();
           void open();
         }}
       >
-        Changes since settled
+        {look === "button" && <FileDiff aria-hidden="true" />}
+        See what changed
       </a>
       {lookup.kind === "uncommitted" && (
         <span role="status" className="trace-settle-note">
@@ -119,7 +132,7 @@ export function ChangesSinceSettled({ path }: { path: string }): JSX.Element {
       )}
       {lookup.kind === "commit" && (
         <SettledDialog
-          path={path}
+          path={compare}
           commit={lookup.commit}
           link={link}
           onClose={() => setLookup({ kind: "closed" })}

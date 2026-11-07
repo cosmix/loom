@@ -2,7 +2,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-li
 import { createStore } from "jotai";
 import { Provider } from "jotai/react";
 import { createMemoryRouter, RouterProvider } from "react-router";
-import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { initClient } from "@/plan/api/client";
 import checklistFixture from "@/plan/api/fixtures/checklist.json";
@@ -126,88 +126,150 @@ function expandPlans(spine: ReturnType<typeof renderSpine>): void {
   fireEvent.click(spine.getByRole("button", { name: "Expand Plans" }));
 }
 
-/** The settle word a spine row's link carries, read from its accessible text. */
-function settleWord(link: HTMLElement): string | undefined {
-  return link.querySelector<HTMLElement>(".trace-settle .sr-only")?.textContent ?? undefined;
+const ROW_GLYPH = "[data-glyph]";
+
+/** The spine row linking `href`. */
+function rowAt(spine: ReturnType<typeof renderSpine>, href: string): HTMLElement {
+  const row = spine.getAllByRole("link").find((link) => link.getAttribute("href") === href);
+  if (!row) throw new Error(`no spine row links ${href}`);
+  return row;
 }
 
-it("draws each written document's settle state beside its glyphs", async () => {
+/** What a row's glyph says: its kind and the word read after the name. */
+function glyphOf(row: HTMLElement): { kind: string | null; word: string | undefined } {
+  return {
+    kind: row.querySelector(ROW_GLYPH)?.getAttribute("data-glyph") ?? null,
+    // The roundel carries a live region of its own inside the glyph; the word is read outside it.
+    word: [...row.querySelectorAll(".sr-only")].find((node) => !node.closest(ROW_GLYPH))
+      ?.textContent,
+  };
+}
+
+it("gives each row one glyph, chosen from the settle state, with its word read", async () => {
   answer = { status: 200, body: atlasTrace() };
   const spine = renderSpine();
 
   const vision = spine.getByRole("link", { name: /^Vision/ });
-  const metaplan = spine.getByRole("link", { name: /^Metaplan/ });
-  await waitFor(() => expect(settleWord(vision)).toBe("Settled"));
-  expect(settleWord(metaplan)).toBe("Draft");
-  expect(settleWord(spine.getByRole("link", { name: /Run loop/ }))).toBe("Revised");
+  await waitFor(() => expect(glyphOf(vision).word).toBe("Settled"));
+  expect(glyphOf(vision).kind).toBe("settled");
+  expect(glyphOf(spine.getByRole("link", { name: /^Metaplan/ }))).toEqual({
+    kind: "draft",
+    word: "Draft",
+  });
+  const section = rowAt(spine, "/f/atlas/product/section_01");
+  expect(glyphOf(section)).toEqual({ kind: "attention", word: "Changed since you settled it" });
   expandPlans(spine);
-  const planRow = spine.getByRole("link", { name: /atlas-01/ });
-  expect(settleWord(planRow)).toBe("Upstream changed");
-  // The plan's own state glyph stays beside it.
-  expect(planRow.textContent).toMatch(/running/);
+  for (const row of spine.getAllByRole("link")) {
+    expect(row.querySelectorAll(ROW_GLYPH).length).toBeLessThanOrEqual(1);
+  }
+  // The pressure flask is gone from rows; only the words stay, read aloud.
+  expect(document.querySelector(".plan-spine__badge")).toBeNull();
 });
 
-it("shows the state as a hover title on a glyph, with no visible word", async () => {
+it("shows the glyph's word as its hover title and hides the glyph from assistive technology", async () => {
   answer = { status: 200, body: atlasTrace() };
   const spine = renderSpine();
 
-  const row = spine.getByRole("link", { name: /Run loop/ });
-  await waitFor(() => expect(settleWord(row)).toBe("Revised"));
-  const glyph = row.querySelector<HTMLElement>(".trace-settle .plan-spine__glyph")!;
-  expect(glyph.getAttribute("title")).toBe("Revised");
+  const row = rowAt(spine, "/f/atlas/product/section_01");
+  await waitFor(() => expect(glyphOf(row).kind).toBe("attention"));
+  const glyph = row.querySelector<HTMLElement>(ROW_GLYPH)!;
+  expect(glyph.getAttribute("title")).toBe("Changed since you settled it");
   expect(glyph.getAttribute("aria-hidden")).toBe("true");
 });
 
-it("marks no row for a document that is not written or has no trace entry", async () => {
+it("draws the roundel on a running plan, with the plan's own state ahead of its settle state", async () => {
+  // The trace calls plan atlas-01 `upstream_changed`, but it is running.
   answer = { status: 200, body: atlasTrace() };
   const spine = renderSpine();
   await waitFor(() =>
-    expect(settleWord(spine.getByRole("link", { name: /^Vision/ }))).toBe("Settled"),
+    expect(glyphOf(rowAt(spine, "/f/atlas/product/section_01")).kind).toBe("attention"),
   );
 
   expandPlans(spine);
-  // Section 02 is listed, not linked; the second plan is missing from the trace.
-  expect(spine.getByText("Unwritten").closest("li")!.querySelector(".trace-settle")).toBeNull();
-  expect(spine.getByRole("link", { name: /atlas-02/ }).querySelector(".trace-settle")).toBeNull();
+  const running = rowAt(spine, "/f/atlas/engineering/atlas-01");
+  expect(glyphOf(running)).toEqual({ kind: "running", word: "Running" });
+  expect(running.querySelector(`${ROW_GLYPH} .aurora-roundel`)).not.toBeNull();
+  expect(running.querySelector(".activity-glyph__led")).toBeNull();
 });
 
-it("marks no done work: a done feature's vision, metaplan and plans, while its sections keep theirs", async () => {
+it("shortens a plan's slug in its row and keeps the full slug in the row's title", async () => {
+  answer = { status: 200, body: atlasTrace() };
+  const spine = renderSpine();
+  expandPlans(spine);
+
+  const row = rowAt(spine, "/f/atlas/engineering/atlas-01");
+  expect(row.querySelector(".plan-spine__name")?.textContent).toBe("01");
+  expect(row.getAttribute("title")).toBe("atlas-01");
+});
+
+it("marks a section that is not written with the dashed circle and no word", async () => {
+  answer = { status: 200, body: atlasTrace() };
+  const spine = renderSpine();
+  await screen.findByRole("navigation", { name: "Feature documents" });
+
+  const item = spine.getByText("Unwritten").closest("li")!;
+  expect(item.querySelector(ROW_GLYPH)?.getAttribute("data-glyph")).toBe("not-written");
+  expect(item.querySelector(".sr-only")).toBeNull();
+});
+
+it("names no draft and no settled state for done work, and still draws one glyph per row", async () => {
   const trace = atlasTrace();
   for (const doc of trace.documents) doc.settleable = doc.role === "section";
   answer = { status: 200, body: trace };
   const spine = renderSpine();
 
   await waitFor(() =>
-    expect(settleWord(spine.getByRole("link", { name: /Run loop/ }))).toBe("Revised"),
+    expect(glyphOf(rowAt(spine, "/f/atlas/product/section_01")).kind).toBe("attention"),
   );
-  expect(settleWord(spine.getByRole("link", { name: /^Vision/ }))).toBeUndefined();
-  expect(settleWord(spine.getByRole("link", { name: /^Metaplan/ }))).toBeUndefined();
-  expandPlans(spine);
-  expect(spine.getByRole("link", { name: /atlas-01/ }).querySelector(".trace-settle")).toBeNull();
+  expect(glyphOf(spine.getByRole("link", { name: /^Vision/ }))).toEqual({
+    kind: "draft",
+    word: undefined,
+  });
 });
 
-it("marks nothing while the trace is missing", async () => {
+it("draws a glyph with no word for each written row while the trace is missing", async () => {
   const spine = renderSpine();
   await screen.findByRole("navigation", { name: "Feature documents" });
   await waitFor(() => expect(spine.getByRole("link", { name: /^Vision/ })).toBeTruthy());
-  expect(document.querySelector(".trace-settle")).toBeNull();
-  expect(spine.queryByRole("list", { name: "Needs attention" })).toBeNull();
+
+  expect(glyphOf(spine.getByRole("link", { name: /^Vision/ }))).toEqual({
+    kind: "draft",
+    word: undefined,
+  });
+  expect(document.querySelector(".plan-spine-next")).toBeNull();
 });
 
-it("lists the frontier hints at the head of the spine", async () => {
+describe("the spine head", () => {
   const frontier: Gap[] = [
     { kind: "revised", node: { path: SECTION, anchor: null }, count: null },
     { kind: "settle", node: { path: PLAN, anchor: null }, count: null },
   ];
-  answer = { status: 200, body: atlasTrace(frontier) };
-  const spine = renderSpine();
 
-  const hints = await spine.findByRole("list", { name: "Needs attention" });
-  const links = within(hints).getAllByRole("link");
-  expect(links.map((hint) => [hint.textContent, hint.getAttribute("href")])).toEqual([
-    ["Run loop changed since you settled it", "/f/atlas/product/section_01"],
-    ["Read Atlas one and settle it", "/f/atlas/engineering/atlas-01"],
-  ]);
-  const groups = document.querySelector(".plan-spine__groups")!;
-  expect(hints.compareDocumentPosition(groups) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  it("says the top frontier item once, with one link, and nothing of the rest", async () => {
+    answer = { status: 200, body: atlasTrace(frontier) };
+    const spine = renderSpine();
+
+    const head = await waitFor(() => {
+      const found = document.querySelector<HTMLElement>(".plan-spine-next");
+      if (!found) throw new Error("no head");
+      return found;
+    });
+    expect(within(head).getByText("Run loop changed since you settled it.")).toBeTruthy();
+    const link = within(head).getByRole("link", { name: "Review Run loop" });
+    expect(link.getAttribute("href")).toBe("/f/atlas/product/section_01");
+    expect(within(head).getAllByRole("link")).toHaveLength(1);
+    expect(spine.queryByRole("list", { name: "Needs attention" })).toBeNull();
+    const groups = document.querySelector(".plan-spine__groups")!;
+    expect(head.compareDocumentPosition(groups) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("draws nothing for an empty frontier", async () => {
+    answer = { status: 200, body: atlasTrace() };
+    const spine = renderSpine();
+    await waitFor(() =>
+      expect(glyphOf(spine.getByRole("link", { name: /^Vision/ })).kind).toBe("settled"),
+    );
+
+    expect(document.querySelector(".plan-spine-next")).toBeNull();
+  });
 });

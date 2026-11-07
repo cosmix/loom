@@ -1,169 +1,224 @@
+import { cn } from "cn";
 import { useAtomValue } from "jotai/react";
-import { useId, useRef, type JSX } from "react";
+import { ChevronDown } from "lucide-react";
+import { Popover as PopoverPrimitive } from "radix-ui";
+import { useId, useRef, useState, type JSX, type RefObject } from "react";
 
-import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import type { TraceDoc } from "@/plan/api/schema-trace";
 import { Untrusted } from "@/plan/chat/visible-controls";
+import { Popover } from "@/plan/header/popover";
 import { authorBlockReasonAtom } from "@/plan/state/atoms";
-import { DisabledReason } from "@/plan/ui/disabled-reason";
-import { plural } from "@/plan/ui/plural";
+import { HEADING_BUTTON } from "@/plan/ui/doc-heading";
 
-import { docOfPath, settleLabel, shownSettle } from "./model";
-import { useSettle, type SettlePhase } from "./settle-flow";
+import { changeTarget, settleWords } from "./doc-model";
+import { docOfPath, shownSettle } from "./model";
+import { SettleConfirm } from "./settle-confirm";
+import { useSettle } from "./settle-flow";
+import { SettleGlyph } from "./settle-glyph";
+import { SettleMenu } from "./settle-menu";
+import { SettleSurface, useNarrow } from "./settle-surface";
 import { ChangesSinceSettled } from "./settled-changes";
 import { useTrace } from "./state";
 
 import "./trace.css";
 
-/** "1 My call and 2 open questions": only the kinds the document holds. */
-function pointsText(myCalls: number, openQuestions: number): string {
-  const points = [
-    ...(myCalls > 0 ? [plural(myCalls, "My call")] : []),
-    ...(openQuestions > 0 ? [plural(openQuestions, "open question")] : []),
-  ];
-  return points.join(" and ");
-}
+const CONFIRM_TITLE = "Settle with open items?";
 
-function ConfirmDialog(props: {
-  phase: Extract<SettlePhase, { kind: "confirm" }>;
-  onConfirm: () => void;
-  onCancel: () => void;
-  returnFocus: () => void;
+type Flow = ReturnType<typeof useSettle>;
+
+/** The one button: its label is the state, and a settled or moved state opens a menu from it. */
+function SettleButton(props: {
+  doc: TraceDoc;
+  buttonRef: RefObject<HTMLButtonElement | null>;
+  reason: string | null;
+  reasonId: string;
+  open: boolean;
+  onPress: () => void;
 }): JSX.Element {
-  const { phase, onConfirm, onCancel, returnFocus } = props;
+  const { doc, buttonRef, reason, reasonId, open, onPress } = props;
+  const words = settleWords(doc.settle, doc.role);
+  const menu = doc.settle !== "draft";
+  // The anchor places the confirmation under the button, which no Radix trigger opens.
   return (
-    <Dialog
-      open
-      onOpenChange={(open) => {
-        if (!open) onCancel();
-      }}
-    >
-      <DialogContent
-        showCloseButton={false}
-        onCloseAutoFocus={(event) => {
-          // Nothing opened the dialog by a trigger, so the default would drop focus on the body.
-          event.preventDefault();
-          returnFocus();
-        }}
+    <PopoverPrimitive.Anchor asChild>
+      <button
+        ref={buttonRef}
+        type="button"
+        {...HEADING_BUTTON}
+        className={cn(HEADING_BUTTON.className, "trace-settle-button")}
+        data-settle={doc.settle}
+        aria-disabled={reason !== null || undefined}
+        aria-describedby={reason !== null ? reasonId : undefined}
+        aria-haspopup={menu ? "dialog" : undefined}
+        aria-expanded={menu ? open : undefined}
+        onClick={onPress}
       >
-        <DialogTitle>Settle with open points?</DialogTitle>
-        <DialogDescription>
-          This document holds {pointsText(phase.myCalls, phase.openQuestions)}. Settling records it
-          as read with those points still open.
-        </DialogDescription>
-        <DialogFooter>
-          <Button variant="outline" onClick={onCancel}>
-            Cancel
-          </Button>
-          <Button onClick={onConfirm}>Settle anyway</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        <SettleGlyph state={doc.settle} />
+        {words.button}
+        {menu && <ChevronDown aria-hidden="true" />}
+      </button>
+    </PopoverPrimitive.Anchor>
   );
 }
 
-type Offer = { settle: boolean; unsettle: boolean; changes: boolean };
+/** The confirmation of an `unresolved` answer, else the menu the button opened. */
+function SettlePanel(props: {
+  feature: string;
+  doc: TraceDoc;
+  flow: Flow;
+  menuOpen: boolean;
+  run: (go: () => Promise<boolean>) => void;
+  closeMenu: () => void;
+}): JSX.Element | null {
+  const { feature, doc, flow, menuOpen, run, closeMenu } = props;
+  const { phase } = flow;
+  if (phase.kind === "confirm") {
+    return (
+      <SettleConfirm
+        feature={feature}
+        path={doc.path}
+        myCalls={phase.myCalls}
+        openQuestions={phase.openQuestions}
+        onConfirm={() => run(flow.confirm)}
+        onCancel={flow.dismiss}
+      />
+    );
+  }
+  if (!menuOpen) return null;
+  const choose = (go: () => Promise<boolean>) => {
+    closeMenu();
+    run(go);
+  };
+  return (
+    <SettleMenu
+      moved={doc.settle !== "settled"}
+      onSettle={() => choose(flow.settle)}
+      onUnsettle={() => choose(flow.unsettle)}
+    />
+  );
+}
 
-/**
- * Which controls a state offers: settling anything not settled (a moved document is settled
- * again), clearing anything that carries a line, and the comparison only when the body moved.
- */
-function offerFor(doc: TraceDoc): Offer {
+/** The menu's state, the focus that returns to the button, and the runner of a flow step. */
+function useSettleMenu(flow: Flow, button: RefObject<HTMLButtonElement | null>) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const confirming = flow.phase.kind === "confirm";
+  const focusButton = () => button.current?.focus();
   return {
-    settle: doc.settle !== "settled",
-    unsettle: doc.settle !== "draft",
-    changes: doc.settle === "revised",
+    menuOpen,
+    open: menuOpen || confirming,
+    focusButton,
+    closeMenu: () => setMenuOpen(false),
+    toggleMenu: () => setMenuOpen((open) => !open),
+    // Closing from outside or with Escape also drops a pending confirmation.
+    close: () => {
+      setMenuOpen(false);
+      if (confirming) flow.dismiss();
+    },
+    // A written line turns the button's words; focus stays on the same button.
+    run: (go: () => Promise<boolean>) =>
+      void go().then((written) => {
+        if (written) focusButton();
+      }),
   };
 }
 
-function SettleBody({
-  feature,
-  doc,
-  hash,
-  locked,
-}: {
+/** What stands beside the button: why it is disabled, the way to see what changed, a notice. */
+function SettleAside(props: {
   feature: string;
   doc: TraceDoc;
-  hash: string | null;
-  locked: boolean | undefined;
+  flow: Flow;
+  reason: string | null;
+  reasonId: string;
 }): JSX.Element {
-  const flow = useSettle(feature, doc.path, hash);
-  const blocked = useAtomValue(authorBlockReasonAtom);
-  const reasonId = useId();
-  const state = useRef<HTMLSpanElement>(null);
-  const root = useRef<HTMLDivElement>(null);
-  const confirmed = useRef(false);
-  const working = flow.phase.kind === "working";
-  const reason = working ? "Working" : blocked;
-  // A locked document, and one whose hash has not loaded, show the state alone.
-  const shown = !locked && hash !== null ? offerFor(doc) : null;
-  const buttons = shown !== null && (shown.settle || shown.unsettle);
-  const focusState = () => state.current?.focus();
-  // A confirmed, written settle removes the button, so focus goes to the pill; cancel and Escape
-  // go back to Mark settled, the button that opened the dialog (the first button of the control).
-  const returnFocus = () => {
-    if (confirmed.current) focusState();
-    else (root.current?.querySelector("button") ?? state.current)?.focus();
-    confirmed.current = false;
-  };
-  // A written line removes the button that was pressed; focus moves to the state it now reads.
-  const run = (go: () => Promise<boolean>) =>
-    void go().then((written) => {
-      if (written) focusState();
-    });
-  const button = {
-    reason,
-    reasonId,
-    look: "quiet",
-    size: "sm",
-    reasonPlacement: "inline",
-  } as const;
+  const { feature, doc, flow, reason, reasonId } = props;
+  const { trace } = useTrace(feature);
+  const target = trace ? changeTarget(trace, doc) : null;
   return (
-    <div ref={root} className="trace-settle-control">
-      <span ref={state} tabIndex={-1} className="trace-settle-state" data-settle={doc.settle}>
-        {settleLabel(doc.settle)}
-      </span>
-      {shown?.settle && (
-        <DisabledReason {...button} onClick={() => run(flow.settle)}>
-          Mark settled
-        </DisabledReason>
-      )}
-      {shown?.unsettle && (
-        <DisabledReason {...button} onClick={() => run(flow.unsettle)}>
-          Unsettle
-        </DisabledReason>
-      )}
-      {buttons && reason !== null && (
+    <>
+      {reason !== null && (
         <span id={reasonId} className="plan-fine text-muted-foreground">
           <Untrusted text={reason} />
         </span>
       )}
-      {shown?.changes && <ChangesSinceSettled path={doc.path} />}
+      {target && (
+        <ChangesSinceSettled settled={target.settled} compare={target.compare} look="button" />
+      )}
       {flow.phase.kind === "notice" && (
         <span role="alert" className="trace-settle-note">
           <Untrusted text={flow.phase.message} />
         </span>
       )}
-      {flow.phase.kind === "confirm" && (
-        <ConfirmDialog
-          phase={flow.phase}
-          onConfirm={() => {
-            confirmed.current = true;
-            run(flow.confirm);
-          }}
-          onCancel={flow.dismiss}
-          returnFocus={returnFocus}
+    </>
+  );
+}
+
+function SettleInteractive(props: { feature: string; doc: TraceDoc; hash: string }): JSX.Element {
+  const { feature, doc, hash } = props;
+  const flow = useSettle(feature, doc.path, hash);
+  const blocked = useAtomValue(authorBlockReasonAtom);
+  const narrow = useNarrow();
+  const reasonId = useId();
+  const button = useRef<HTMLButtonElement>(null);
+  const menu = useSettleMenu(flow, button);
+  const confirming = flow.phase.kind === "confirm";
+  const reason = flow.phase.kind === "working" ? "Working" : blocked;
+  const press = () => {
+    if (reason !== null) return;
+    if (doc.settle === "draft") menu.run(flow.settle);
+    else menu.toggleMenu();
+  };
+  return (
+    <div className="trace-settle-control">
+      <Popover open={menu.open && !narrow} onOpenChange={(next) => !next && menu.close()}>
+        <SettleButton
+          doc={doc}
+          buttonRef={button}
+          reason={reason}
+          reasonId={reasonId}
+          open={menu.open}
+          onPress={press}
         />
-      )}
+        <SettleSurface
+          open={menu.open}
+          narrow={narrow}
+          label={confirming ? CONFIRM_TITLE : settleWords(doc.settle, doc.role).button}
+          showTitle={confirming}
+          onClose={menu.close}
+          returnFocus={menu.focusButton}
+          button={button}
+        >
+          <SettlePanel
+            feature={feature}
+            doc={doc}
+            flow={flow}
+            menuOpen={menu.menuOpen}
+            run={menu.run}
+            closeMenu={menu.closeMenu}
+          />
+        </SettleSurface>
+      </Popover>
+      <SettleAside feature={feature} doc={doc} flow={flow} reason={reason} reasonId={reasonId} />
     </div>
   );
+}
+
+function SettleBody(props: {
+  feature: string;
+  doc: TraceDoc;
+  hash: string | null;
+  locked: boolean | undefined;
+}): JSX.Element {
+  const { feature, doc, hash, locked } = props;
+  // A locked document, and one whose hash has not loaded, show the state alone.
+  if (locked || hash === null) {
+    return (
+      <span className="trace-settle-state" data-settle={doc.settle}>
+        <SettleGlyph state={doc.settle} />
+        {settleWords(doc.settle, doc.role).chip}
+      </span>
+    );
+  }
+  return <SettleInteractive feature={feature} doc={doc} hash={hash} />;
 }
 
 /** What `SettleControl` takes as `locked` for an opened document; undefined until one is open. */
@@ -174,11 +229,12 @@ export function docIsLocked(
 }
 
 /**
- * A document's settle state with the controls that change it. `path` is the repository path and
- * `hash` the opened document's save hash and `locked` the server's answer for it (`lock !== null`
- * or not `editable`). Renders nothing for a path the trace does not know (a brief, a file outside
- * the feature's documents) or for done work, which is never settled (`shownSettle`: a locked
- * plan, a done feature's vision and metaplan).
+ * A document's settle state as one button, whose label is the state: "Mark settled" for a draft,
+ * and for a settled or moved one the state with a menu of what the reader may do about it. `path`
+ * is the repository path, `hash` the opened document's save hash and `locked` the server's answer
+ * for it (`lock !== null` or not `editable`). Renders nothing for a path the trace does not know (a
+ * brief, a file outside the feature's documents) or for done work, which is never settled
+ * (`shownSettle`: a locked plan, a done feature's vision and metaplan).
  */
 export function SettleControl(props: {
   feature: string;

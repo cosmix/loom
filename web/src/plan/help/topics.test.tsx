@@ -43,7 +43,7 @@ it("provides the nine topics in order with unique ids and their production conte
     ["features", "Features"],
     ["chat", "Chat and sessions"],
     ["pressure", "Pressure tests and runs"],
-    ["coverage", "Coverage map"],
+    ["coverage", "Coverage"],
     ["findings", "Findings"],
     ["legend", "Legend"],
     ["shortcuts", "Shortcuts"],
