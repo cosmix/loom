@@ -7,6 +7,7 @@ use crate::git::worktree::WorktreeGit;
 use crate::models::dispute::DisputeKind;
 use crate::verify::contracts::changes::diff_from_base;
 use crate::verify::integrity::{EventKind, IntegrityEvent};
+use crate::verify::review::report::single_line;
 
 pub(super) fn build(input: &KindPromptInput<'_>) -> Prompt {
     Prompt {
@@ -105,12 +106,12 @@ fn push_event(s: &mut String, event: &IntegrityEvent) {
         }
     }
     if event.kind == EventKind::AssertionEdit {
-        s.push_str("Removed or changed assertion lines:\n");
+        s.push_str("Removed or changed assertion statements:\n");
         if event.detail.is_empty() {
             s.push_str("(detail lines unavailable)\n");
         } else {
             for line in &event.detail {
-                s.push_str(&format!("- {line}\n"));
+                s.push_str(&format!("- {}\n", single_line(line)));
             }
         }
     }
@@ -257,6 +258,25 @@ mod tests {
                 Some("ratchet.txt"),
             ),
         ]
+    }
+
+    #[test]
+    fn statement_line_breaks_stay_on_one_line_per_entry() {
+        let mut edit = event(
+            "TI-edit-tests/a.rs",
+            EventKind::AssertionEdit,
+            Some("tests/a.rs"),
+        );
+        edit.detail = vec![
+            "assert_eq!(s, \"a\nb\");".to_string(),
+            "assert!(ok);".to_string(),
+        ];
+        let mut out = String::new();
+        push_event(&mut out, &edit);
+        assert!(
+            out.contains("\n- assert_eq!(s, \"a b\");\n- assert!(ok);\n"),
+            "{out}"
+        );
     }
 
     #[test]

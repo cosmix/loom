@@ -139,6 +139,20 @@ fn review_gate_block_carries_block_e_verbatim() {
     }
     let distill = render(&v2_stage_of(StageType::KnowledgeDistill), temp.path());
     assert!(!distill.contains("## Review Gate"));
+    assert!(!distill.contains("loom-reviewer-brief"));
+}
+
+#[test]
+fn review_gate_names_the_reviewer_brief_section() {
+    let temp = tempfile::tempdir().unwrap();
+    for stage_type in [StageType::Standard, StageType::IntegrationVerify] {
+        let content = render(&v2_stage_of(stage_type), temp.path());
+        assert!(
+            content.contains("appends a `loom-reviewer-brief` section to every reviewer brief"),
+            "{stage_type:?} lacks the reviewer-brief bullet"
+        );
+        assert!(content.contains("Do not paste them."), "{stage_type:?}");
+    }
 }
 
 #[test]

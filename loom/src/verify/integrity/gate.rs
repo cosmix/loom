@@ -108,10 +108,10 @@ pub fn describe(event: &IntegrityEvent) -> String {
         EventKind::DeclTotal => counted("test declarations"),
         EventKind::AssertTotal => counted("assertions"),
         EventKind::AssertionEdit => format!(
-            "{id} ({} assertion line(s) removed or changed)",
+            "{id} ({} assertion statement(s) removed or changed)",
             event.detail.len()
         ),
-        EventKind::Ratchet => format!("{id} (ratchet file differs from base)"),
+        EventKind::Ratchet => format!("{id} (ratchet file loosened from base)"),
     }
 }
 

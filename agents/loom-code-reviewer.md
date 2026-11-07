@@ -33,6 +33,14 @@ The model in the frontmatter is the default. Callers can override it for a parti
 5. Reconfirm each finding against the code. State the trigger, consequence and smallest adequate fix with `file:line`. Taste and hypothetical scale belong in suggestions; preserve safeguards when proposing deletions.
 6. Judge the diff against each acceptance criterion in your brief. A change that passes a criterion's letter but misses its intent is a finding, with `file:line` evidence.
 
+## Loom briefs
+
+A brief may end with a `loom-reviewer-brief` section that loom computed:
+
+- For each lost assertion statement it lists, report a finding unless an equal or stronger check replaces it; name that check with `file:line`.
+- An event the stage description's INTEGRITY line names as expected, with its reason, needs a finding only when the changed statement no longer asserts what that reason describes.
+- In integration-verify, judge the diff against the plan's briefs it lists, treat a `consumer_deferred` line as a declared gap, and review performance.
+
 ## Constraints
 
 - **Read-only**: Cannot modify files - use Read, Glob, Grep only

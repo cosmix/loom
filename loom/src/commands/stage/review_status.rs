@@ -60,7 +60,7 @@ fn current_fingerprint(
 /// The stage's worktree and the target branch the completion gates diff it
 /// against, resolved from the CWD's repository root as `loom stage complete`
 /// resolves it, so the `loom stage review` commands and completion agree.
-pub(super) fn stage_worktree_and_target(
+pub(crate) fn stage_worktree_and_target(
     work_dir: &Path,
     stage: &Stage,
 ) -> Result<(PathBuf, String)> {
