@@ -268,14 +268,16 @@ _loom_path_is_control_input() {
 # The message carries the outline inline when `loom map --outline` returns
 # rows. Otherwise it gives `rg -n` advice: the 2-second bound on
 # _loom_outline_covered_rows can time out on a covered file, so the message
-# says only that no outline is available. loom_read_deny_once decides whether
-# the message denies or warns.
+# says only that no outline is available. LOOM_RD_V1_OUTLINED is 1 on the
+# outline branch and 0 otherwise; loom_read_deny_once denies only when it is 1.
 _loom_read_discipline_verdict1() {
 	local path="$1" n="$2" rows quoted
 	if rows=$(_loom_outline_covered_rows "$path"); then
+		LOOM_RD_V1_OUTLINED=1
 		LOOM_RD_V1_MSG="${path} is ${n} lines. Outline: ${rows}
 Read the ranges you need with offset/limit."
 	else
+		LOOM_RD_V1_OUTLINED=0
 		printf -v quoted '%q' "$path"
 		LOOM_RD_V1_MSG="${path} is ${n} lines and no outline is available - find the part you need with \`rg -n '<pattern>' ${quoted}\`, then read that range with offset/limit."
 	fi
@@ -297,8 +299,9 @@ Read the ranges you need with offset/limit."
 #   1. An unbounded ("full") read of a file over READ_GUARD_LINE_LIMIT lines
 #      is redirected to `loom map --outline` (loom_read_deny_once in
 #      _read_ledger.sh). Inside a live stage the first such read of a path by
-#      an agent is denied, with the outline when one exists, and that agent's
-#      next whole read of the path (Read or Bash) passes; outside one, or with
+#      an agent is denied when an outline exists, and that agent's next whole
+#      read of the path (Read or Bash) passes; with no outline it is always a
+#      warning. Outside a live stage, or with
 #      `[hooks] read_gate = false`, it is a warning. A denial that cannot be
 #      recorded, or would overflow the denial ledger, is a warning too.
 #      Control inputs (_loom_is_read_gate_exempt: .loom/, $LOOM_WORK_DIR,

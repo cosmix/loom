@@ -19,10 +19,10 @@ INPUT_JSON=$(loom_read_input 5 2>/dev/null || true)
 TOOL_NAME=$(printf '%s' "$INPUT_JSON" | jq -r '.tool_name // empty' 2>/dev/null || true)
 
 if [[ -n "$INPUT_JSON" && -z "$TOOL_NAME" ]]; then
+	loom_record_block "worktree-file-guard" "bad-payload" "unknown" ""
 	cat >&2 <<EOF
 
-============================================================
-  LOOM: BLOCKED - File operation metadata could not be parsed
+[worktree-file-guard/bad-payload] LOOM: BLOCKED - File operation metadata could not be parsed
 ============================================================
 
 Reason: received non-empty tool input that did not contain a valid tool name.
@@ -110,13 +110,14 @@ canonical_target() {
 	fi
 }
 
+# block_path <rule> <original> <reason> - record the block in the stage block
+# ledger, print the banner and exit 2.
 block_path() {
-	local original="$1"
-	local reason="$2"
+	local rule="$1" original="$2" reason="$3"
+	loom_record_block "worktree-file-guard" "$rule" "$TOOL_NAME" "$original"
 	cat >&2 <<EOF
 
-============================================================
-  LOOM: BLOCKED - File operation crossed the worktree policy
+[worktree-file-guard/$rule] LOOM: BLOCKED - File operation crossed the worktree policy
 ============================================================
 
 Tool: $TOOL_NAME
@@ -128,6 +129,7 @@ explicitly permitted shared write roots.
 ============================================================
 
 EOF
+	exit 2
 }
 
 extract_path() {
@@ -156,6 +158,71 @@ owned_by_uid() {
 	[[ -n "$owner" && "$owner" == "$(id -u)" ]]
 }
 
+# payload_session_id - print the payload session_id when it is a plain id.
+payload_session_id() {
+	local session
+	session=$(printf '%s' "$INPUT_JSON" | jq -r '.session_id // empty' 2>/dev/null || true)
+	[[ "$session" =~ ^[A-Za-z0-9_-]+$ ]] || return 1
+	printf '%s' "$session"
+}
+
+# owned_plain_file <root> <rest> - <root>/<rest> is a uid-owned regular file with
+# one link, reached through uid-owned real directories, no symlink, empty or `.`.
+owned_plain_file() {
+	local path="$1" rest="$2" comp mode links
+	owned_by_uid "$path" && [[ -d "$path" ]] || return 1
+	while [[ -n "$rest" ]]; do
+		comp=${rest%%/*}
+		[[ "$rest" == */* ]] && rest=${rest#*/} || rest=""
+		[[ -n "$comp" && "$comp" != . && "$comp" != .. ]] || return 1
+		path+="/$comp"
+		owned_by_uid "$path" || return 1
+		[[ -z "$rest" || -d "$path" ]] || return 1
+	done
+	[[ -f "$path" ]] || return 1
+	# GNU and BSD `ls -n` both print the link count second; stat formats differ.
+	read -r mode links rest <<<"$(ls -ldn -- "$path" 2>/dev/null)" || return 1
+	[[ "$links" == 1 ]]
+}
+
+# Read of ~/.claude/projects/<slug>/<payload session_id>/tool-results/<file>, the
+# harness output of this session and its subagents (they share the session_id).
+# A symlinked HOME or ~/.claude resolves first; nothing below it may be a link.
+allow_tool_results() {
+	local lexical="$1" session raw projects rest
+	[[ "$TOOL_NAME" == "Read" && "${HOME:-}" == /* ]] || return 1
+	session=$(payload_session_id) || return 1
+	raw="$HOME/.claude/projects"
+	projects=$(canonical_existing "$raw" 2>/dev/null) && [[ -n "$projects" ]] || return 1
+	case "$lexical" in
+	"$projects"/*) rest=${lexical#"$projects"/} ;;
+	"$raw"/*) rest=${lexical#"$raw"/} ;;
+	*) return 1 ;;
+	esac
+	[[ "$rest" =~ ^[^/]+/${session}/tool-results/[^/]+$ ]] || return 1
+	owned_plain_file "$projects" "$rest" || return 1
+	[[ "$(canonical_existing "$lexical" 2>/dev/null)" == "$projects/$rest" ]]
+}
+
+# Read of a plain file of ours under the literal /tmp/claude-<uid> (macOS
+# /private/tmp), Bash's TMPDIR; hooks never see that TMPDIR. Another session's
+# <root>/<project>/<uuid> stays closed; Grep and Glob would recurse into it.
+allow_tmpdir() {
+	local lexical="$1" uid root rest re session canon
+	[[ "$TOOL_NAME" == "Read" ]] || return 1
+	uid=$(id -u) || return 1
+	root="/tmp/claude-$uid"
+	[[ "$lexical" == "/private$root"/* ]] && root="/private$root"
+	[[ "$lexical" == "$root"/* ]] || return 1
+	rest=${lexical#"$root"/}
+	session=$(payload_session_id) || session=""
+	re='^[^/]+/([0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12})/'
+	[[ "$rest" =~ $re && "${BASH_REMATCH[1]}" != "$session" ]] && return 1
+	owned_plain_file "$root" "$rest" || return 1
+	canon=$(canonical_existing "$root" 2>/dev/null) && [[ -n "$canon" ]] || return 1
+	[[ "$(canonical_existing "$lexical" 2>/dev/null)" == "$canon/$rest" ]]
+}
+
 allow_background_output() {
 	local lexical="$1"
 	[[ "$TOOL_NAME" == "Read" ]] || return 1
@@ -174,8 +241,7 @@ allow_background_output() {
 allow_scratchpad() {
 	local lexical=${1%/} uid session re root dir rest resolved
 	uid=$(id -u) || return 1
-	session=$(printf '%s' "$INPUT_JSON" | jq -r '.session_id // empty' 2>/dev/null || true)
-	[[ "$session" =~ ^[A-Za-z0-9_-]+$ ]] || return 1
+	session=$(payload_session_id) || return 1
 	re="^((/private)?/tmp/claude-${uid})/([^/]+)/${session}/scratchpad(/.*)?\$"
 	[[ "$lexical" =~ $re ]] || return 1
 	root=${BASH_REMATCH[1]}
@@ -213,40 +279,38 @@ FILE_PATH=$(extract_path)
 if [[ -z "$FILE_PATH" ]]; then
 	case "$TOOL_NAME" in
 	Glob | Grep) FILE_PATH="." ;;
-	*) block_path "<missing>" "required file_path metadata is missing"; exit 2 ;;
+	*) block_path missing-path "<missing>" "required file_path metadata is missing" ;;
 	esac
 fi
 
 if [[ "$FILE_PATH" == *$'\n'* || "$FILE_PATH" == *$'\r'* ]]; then
-	block_path "$FILE_PATH" "control characters are not valid in guarded paths"
-	exit 2
+	block_path control-chars "$FILE_PATH" "control characters are not valid in guarded paths"
 fi
 
 # Reject every parent component. This deliberately fails closed even when a
 # lexical `..` would normalize back into the worktree.
 if [[ "$FILE_PATH" =~ $LOOM_POLICY_PARENT_COMPONENT ]]; then
-	block_path "$FILE_PATH" "parent-directory components are forbidden"
-	exit 2
+	block_path parent-component "$FILE_PATH" "parent-directory components are forbidden"
 fi
 
 if [[ "$FILE_PATH" == /* ]]; then
 	LEXICAL_PATH="$FILE_PATH"
 elif [[ "$FILE_PATH" == "~" ]]; then
-	[[ -n "${HOME:-}" ]] || { block_path "$FILE_PATH" "HOME is unavailable for tilde expansion"; exit 2; }
+	[[ -n "${HOME:-}" ]] || block_path tilde "$FILE_PATH" "HOME is unavailable for tilde expansion"
 	LEXICAL_PATH="$HOME"
 elif [[ "$FILE_PATH" == "~/"* ]]; then
-	[[ -n "${HOME:-}" ]] || { block_path "$FILE_PATH" "HOME is unavailable for tilde expansion"; exit 2; }
+	[[ -n "${HOME:-}" ]] || block_path tilde "$FILE_PATH" "HOME is unavailable for tilde expansion"
 	LEXICAL_PATH="$HOME/${FILE_PATH#\~/}"
 elif [[ "$FILE_PATH" == "~"* ]]; then
-	block_path "$FILE_PATH" "named-user tilde expansion is not supported safely"
-	exit 2
+	block_path tilde "$FILE_PATH" "named-user tilde expansion is not supported safely"
 else
 	CURRENT_DIR=$(pwd -P) || exit 2
 	LEXICAL_PATH="$CURRENT_DIR/$FILE_PATH"
 fi
 
 if allow_background_output "$LEXICAL_PATH" || allow_scratchpad "$LEXICAL_PATH" ||
-	allow_loom_scratch "$LEXICAL_PATH"; then
+	allow_loom_scratch "$LEXICAL_PATH" || allow_tool_results "$LEXICAL_PATH" ||
+	allow_tmpdir "$LEXICAL_PATH"; then
 	exit 0
 fi
 
@@ -270,50 +334,23 @@ if [[ -L "$LEAF_PATH" ]]; then
 	if [[ "$LEAF_PATH" == "$WORK_LINK" && "$TOOL_NAME" =~ ^(Read|Glob|Grep)$ && -n "$WORK_SHARED" ]]; then
 		exit 0
 	fi
-	block_path "$FILE_PATH" "symlink leaf targets are forbidden"
-	exit 2
+	block_path symlink-leaf "$FILE_PATH" "symlink leaf targets are forbidden"
 fi
 
 RESOLVED_PATH=$(canonical_target "$LEXICAL_PATH" 2>/dev/null || true)
 if [[ -z "$RESOLVED_PATH" ]]; then
-	block_path "$FILE_PATH" "path could not be resolved safely"
-	exit 2
+	block_path unresolvable "$FILE_PATH" "path could not be resolved safely"
 fi
 
-# A skill's SKILL.md is exempt from worktree containment for read-class tools
-# only (Read, Glob, Grep - never Write/Edit/MultiEdit/NotebookEdit, which stay
-# confined). The catalog splits skills across two roots under $HOME -
-# $HOME/.claude/loom-skill-catalog/<name>/SKILL.md and
-# $HOME/.claude/skills/<name>/SKILL.md - and both are meant to be read whole
-# from inside a worktree: the loom-skills loader reaches them with the Read
-# tool (skills/loom-skills/SKILL.md, allowed-tools: [Read]), which this hook
-# gates on every worktree stage session.
-#
-# Anchored to the two real roots built from $HOME, with <name> constrained to
-# EXACTLY one path component, matched against RESOLVED_PATH (after `..`
-# rejection and symlink/ancestor resolution above) - NOT a bare path-suffix
-# glob. A suffix glob like `*.claude/skills/*/SKILL.md` lets `*` cross `/` on
-# both sides: it would match any directory anywhere merely ENDING in
-# `.claude` (e.g. `~/.ssh/evil.claude/skills/a/SKILL.md`) and let `<name>`
-# itself span several components, widening worktree containment to an
-# attacker-chosen path. If HOME is unset or empty the exemption does not
-# apply at all, rather than degrading to a bare-prefix match.
-#
-# Each root is canonicalized ONCE per call with canonical_existing - the SAME
-# helper canonical_target used above to produce RESOLVED_PATH - before the
-# comparison. RESOLVED_PATH has every symlink component already resolved, so
-# comparing it against the RAW "$HOME/.claude/skills" string never matches
-# when $HOME itself traverses a symlink (autofs, a `/home/x -> /data/x`
-# layout, a dotfiles-managed ~/.claude) - that would silently re-block all 53
-# catalogued skills, the exact bug this exemption exists to fix. A root that
-# does not exist (e.g. a --skills all install with no catalog directory) is
-# SKIPPED outright rather than compared as a raw string, which would reopen
-# the escape closed above.
-#
-# loom-hooks/_read_discipline.sh:105's `_loom_is_skill_md_path` keeps the looser
-# suffix-glob shape deliberately - it gates a read-discipline WARNING, not
-# worktree containment, so the wider match there is not a boundary widening.
-# The two diverge on purpose; keep both in mind when touching either.
+# A skill's SKILL.md is exempt from containment for Read, Glob and Grep only:
+# the loom-skills loader reads $HOME/.claude/loom-skill-catalog/<name>/SKILL.md
+# and $HOME/.claude/skills/<name>/SKILL.md whole from inside a worktree.
+# Anchored to those two roots with <name> EXACTLY one component, matched against
+# RESOLVED_PATH. A suffix glob (`*.claude/skills/*/SKILL.md`) would match any
+# directory ending in `.claude` and a multi-component <name>. Each root is
+# canonicalized first, so a symlinked HOME or ~/.claude still matches; a missing
+# root, or an unset HOME, disables the exemption. _read_discipline.sh's
+# `_loom_is_skill_md_path` keeps the looser glob on purpose: it gates a warning.
 is_skill_md_path() {
 	local path="$1" home="${HOME:-}" raw_root canon_root rest name
 	[[ -n "$home" ]] || return 1
@@ -344,8 +381,7 @@ if [[ -n "$WORK_SHARED" ]] && is_within "$RESOLVED_PATH" "$WORK_SHARED"; then
 	RELATIVE_WORK_PATH="${RESOLVED_PATH#"$WORK_SHARED"}"
 	case "$RELATIVE_WORK_PATH" in
 	/admin.token | /user.token)
-		block_path "$FILE_PATH" "orchestrator capability tokens are not readable by stages"
-		exit 2
+		block_path capability-token "$FILE_PATH" "orchestrator capability tokens are not readable by stages"
 		;;
 	esac
 
@@ -355,11 +391,9 @@ if [[ -n "$WORK_SHARED" ]] && is_within "$RESOLVED_PATH" "$WORK_SHARED"; then
 		if loom_policy_shared_write_allowed "$RELATIVE_WORK_PATH"; then
 			exit 0
 		fi
-		block_path "$FILE_PATH" "shared orchestration state is not writable by file tools"
-		exit 2
+		block_path shared-write "$FILE_PATH" "shared orchestration state is not writable by file tools"
 		;;
 	esac
 fi
 
-block_path "$FILE_PATH" "resolved path is outside the current worktree"
-exit 2
+block_path outside-worktree "$FILE_PATH" "resolved path is outside the current worktree"

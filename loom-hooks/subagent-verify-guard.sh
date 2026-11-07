@@ -166,25 +166,29 @@ NTOK=${#TOKENS[@]}
 
 # block <reason> - refuse the tool call and print the doctrine on stderr.
 #
-# Everything below the "BLOCKED" framing line is the SHARED no-verify doctrine,
-# byte-identical to the copies in loom/src/orchestrator/signals/cache.rs and
-# CLAUDE.md.template - a subagent meets the same words in its signal, in
-# CLAUDE.md, and here. Reword one and you must reword all three:
+# Everything below the "BLOCKED" framing line is the SHARED no-verify doctrine
+# (BLOCK-A), byte-identical to loom-hooks/_subagent-preamble.txt,
+# loom/src/orchestrator/signals/cache/blocks.rs and tests_doctrine_blocks.rs.
+# Reword one and you must reword all four:
 # loom/src/orchestrator/signals/tests_doctrine.rs fails if they drift.
 block() {
 	loom_debug "DEBUG: BLOCKED - $1"
 	if [[ "$ROLE" == main ]]; then
+		loom_record_block subagent-verify-guard gate-once Bash "$COMMAND"
 		cat >&2 <<EOF
-⛔ BLOCKED: the stage gate runs once, in loom check $STAGE_ID; re-check one criterion with loom check $STAGE_ID --criterion <n>; run your own work with a filtered test
+[subagent-verify-guard/gate-once] ⛔ BLOCKED: the stage gate runs once, in loom check $STAGE_ID; re-check one criterion with loom check $STAGE_ID --criterion <n>; run your own work with a filtered test
 EOF
 		exit 2
 	fi
+	loom_record_block subagent-verify-guard subagent-verify Bash "$COMMAND"
 	cat >&2 <<'EOF'
-⛔ BLOCKED: Subagent attempting project-wide verification.
+[subagent-verify-guard/subagent-verify] ⛔ BLOCKED: Subagent attempting project-wide verification.
 
 VERIFICATION IS THE MAIN AGENT'S JOB - NOT YOURS:
-- Do NOT verify your work. No full build, no full test suite, no linter, no
-  formatter, no type-checker, and never a repeated or looping check.
+- Compile the files YOU wrote as often as you need (`cargo check`,
+  `cargo build`, `tsc --noEmit`, `bun run build`) and format them with
+  `rustfmt --edition 2021 <files>`. No full test suite, no linter, no
+  `cargo fmt`, and never a repeated or looping check.
 - AT MOST ONE narrowly-scoped check over the files YOU wrote (e.g.
   `cargo test <your_module>::`), run ONCE. Skip it if you are unsure.
 - Report instead: files changed, assumptions made, anything unresolved.
@@ -290,8 +294,9 @@ block_on_word() {
 	return 0
 }
 
-# cargo: build/clippy/fmt/check are project-wide in any form. `cargo test` and
-# `cargo nextest run` are blocked unless they name a scope (filter, --test, -p).
+# cargo: a subagent may compile (`build`, `check`, `test --no-run`); clippy and
+# every `fmt` form (`fmt -- <files>` still formats the whole package) block.
+# `cargo test` and `cargo nextest run` are blocked unless they name a scope.
 check_cargo() {
 	local i="$1" sub=""
 	# Skip a toolchain override (`cargo +nightly test`) and leading flags
@@ -306,8 +311,8 @@ check_cargo() {
 
 	sub="${TOKENS[$i]}"
 	case "$sub" in
-	build | clippy | fmt | check) [[ "$ROLE" == main ]] || block "cargo $sub" ;;
-	test) block_unless_scoped $((i + 1)) "cargo test" ;;
+	clippy | fmt) [[ "$ROLE" == main ]] || block "cargo $sub" ;;
+	test) runner_args_have $((i + 1)) "--no-run" || block_unless_scoped $((i + 1)) "cargo test" ;;
 	nextest)
 		# `r` is nextest's alias of `run`; -E/--filterset/--partition select a subset
 		case "${TOKENS[$((i + 1))]:-}" in
@@ -327,14 +332,23 @@ block_unless_scoped() {
 	return 0
 }
 
-# tsc: -p/-b and a bare `tsc` typecheck everything; only a file list is scoped.
+# tsc: a non-watching `--noEmit` run is a compile check and passes. Otherwise
+# -p/-b and a bare `tsc` typecheck everything; only a file list is scoped.
 check_tsc() {
 	[[ "$ROLE" != main ]] || return 0
+	tsc_compiles_only "$1" && return 0
 	block_on_word "$1" "-p --project -b --build -w --watch" "tsc whole-project"
 	if [[ -z "$(first_positional "$1" "--outDir --outFile --target -t --module --lib --rootDir")" ]]; then
 		block "tsc (no file argument)"
 	fi
 	return 0
+}
+
+# tsc_compiles_only <idx> - `--noEmit` is given and no watch flag or `false`
+# (`--noEmit false` emits) is. tsc reads option names case-insensitively.
+tsc_compiles_only() {
+	runner_args_have "$1" "--[nN][oO][eE][mM][iI][tT]" &&
+		! runner_args_have "$1" "false -[wW] --[wW][aA][tT][cC][hH]*"
 }
 
 check_eslint() {
@@ -379,7 +393,8 @@ check_node_pm() {
 	esac
 	case "$tok" in
 	test) block_unless_scoped $((i + 1)) "$pm $tok" ;;
-	build | lint | typecheck) [[ "$ROLE" == main ]] || block_unless_scoped $((i + 1)) "$pm $tok" ;;
+	# `build` compiles and passes; the guard never reads a script's body
+	lint | typecheck) [[ "$ROLE" == main ]] || block_unless_scoped $((i + 1)) "$pm $tok" ;;
 	vitest | jest | mocha | rspec | phpunit | ctest) check_command "$i" ;; # pnpm exec vitest, yarn jest
 	esac
 	return 0
