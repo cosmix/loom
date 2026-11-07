@@ -40,7 +40,7 @@ const BLOCK_E: &str = "**Review order (plan v2):** run `loom check` once beside 
 /// BLOCK-F - when the stage cannot finish, verbatim. The standard,
 /// integration-verify and knowledge-distill stable prefixes carry it byte for
 /// byte; the orchestration skill, which those sessions load, does not repeat it.
-const BLOCK_F: &str = "**When the stage cannot finish.** Fix what the stage can fix. A wrong criterion, wiring check, contract, review finding or test-integrity event gets a dispute: `loom stage dispute-criteria` (`--field` for wiring, wiring-tests, impact-tests entries), `dispute-contract`, `dispute-findings` or `dispute-integrity`. Filing ends this session; the daemon starts a fresh one with the verdict. Never revert, weaken or postpone correct work to avoid a dispute. A criterion failing only because of where completion runs (no network, unreadable git metadata, timeout, sandbox denial) is disputed, never blocked: one `loom stage dispute-criteria <stage-id> --criterion-index <n> [--criterion-index <n> ...]` filing names every such criterion. `loom stage block <stage-id> \"<what is needed and why>\"` is for a credential, a host install or a decision only a person can make; loom refuses it while the latest `loom stage complete` shows a failing criterion. Commit before filing either. Never end a turn asking the operator to act while the stage is executing.";
+const BLOCK_F: &str = "**When the stage cannot finish.** Fix what the stage can fix. A wrong criterion, wiring check, contract, review finding or test-integrity event gets a dispute: `loom stage dispute-criteria` (`--field` for wiring, wiring-tests, impact-tests entries), `dispute-contract`, `dispute-findings` or `dispute-integrity`. Filing ends this session; if the verdict changes nothing, loom reruns completion on your last-completed tree (an impact-tests-only failure too) and completes the stage if it passes, else a fresh session starts. Never revert, weaken or postpone correct work to avoid a dispute. A criterion failing only because of where completion runs (no network, unreadable git metadata, timeout, sandbox denial) is disputed, never blocked: one `loom stage dispute-criteria <stage-id> --criterion-index <n> [--criterion-index <n> ...]` filing names them all. `loom stage block <stage-id> \"<what is needed and why>\"` is for a credential, a host install or a decision only a person can make; loom refuses it while the latest `loom stage complete` fails a criterion. Before a dispute, run `loom stage complete` on that commit. Never end a turn asking the operator to act mid-stage.";
 
 /// The body of the `## <heading>` section of `markdown`: everything after the
 /// heading line up to the next level-2 heading or the end. `None` when no line
@@ -109,6 +109,52 @@ fn block_f_agrees_across_every_surface() {
              byte-identical wherever it appears; reword one copy and you must reword all \
              of them. Expected to find:\n{BLOCK_F}"
         );
+    }
+}
+
+/// What follows a verdict, as every agent-facing surface states it: a verdict that changes
+/// nothing lets the daemon complete the stage, and no surface still says that every verdict
+/// starts a fresh session.
+#[test]
+fn verdict_completion_doctrine_agrees_across_every_surface() {
+    let prefix = super::cache::generate_stable_prefix();
+    for (label, text, needle) in [
+        (
+            "skills/loom-plan-writer/SKILL.md",
+            PLAN_WRITER_SKILL,
+            "lets the daemon complete the stage without a session",
+        ),
+        (
+            "references/v2-contracts.md",
+            V2_CONTRACTS,
+            "lets the daemon complete the stage without a session",
+        ),
+        (
+            "skills/loom-orchestration/SKILL.md",
+            ORCHESTRATION_SKILL,
+            "lets the daemon complete a passing tree",
+        ),
+        (
+            "the standard stable prefix",
+            prefix.as_str(),
+            "loom reruns completion on your last-completed tree",
+        ),
+    ] {
+        assert!(
+            text.contains(needle),
+            "{label} must say that a verdict changing nothing lets loom complete the stage; \
+             expected: {needle}"
+        );
+        for stale in [
+            "the daemon starts a fresh session with the verdict, so the agent never waits on it",
+            "the daemon restarts with the verdict",
+            "the daemon starts a fresh one with the verdict",
+        ] {
+            assert!(
+                !text.contains(stale),
+                "{label} still says every verdict starts a fresh session: {stale}"
+            );
+        }
     }
 }
 

@@ -140,7 +140,7 @@ impl Stage {
     /// `Ok(())` if the transition succeeded, `Err` if invalid
     pub fn try_complete_merge(&mut self) -> anyhow::Result<()> {
         if self.status != StageStatus::Completed {
-            self.try_transition(StageStatus::Completed)?;
+            self.try_transition_to_completed()?;
             self.stamp_completed();
         }
         self.merge_conflict = false;

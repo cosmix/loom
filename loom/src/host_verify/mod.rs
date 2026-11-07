@@ -8,7 +8,8 @@
 //! `loom stage verify-host` process, `digest` fingerprints the tree a request
 //! saw, `wait` is the session side, and `apply` is what the daemon does with a
 //! finished job: complete the stage, record a checkpoint, or freeze contracts
-//! (`freeze`).
+//! (`freeze`). `verdict_complete` submits and applies the completion the
+//! daemon runs for a stage a verdict left held.
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -31,6 +32,7 @@ mod spawn;
 pub mod store;
 mod store_fs;
 pub mod submit;
+pub(crate) mod verdict_complete;
 pub mod wait;
 mod wait_report;
 mod wait_state;
@@ -77,6 +79,8 @@ mod tests_wait;
 mod tests_wait_criteria;
 #[cfg(test)]
 mod tests_wait_refusal;
+#[cfg(test)]
+mod verdict_complete_contract_tests;
 
 /// Most bytes a record's `detail` keeps.
 pub(crate) const DETAIL_MAX_BYTES: usize = 512;
@@ -85,22 +89,26 @@ pub(crate) const DETAIL_MAX_BYTES: usize = 512;
 pub(crate) const BUDGET_POLICY_ENV: &str = "LOOM_VERIFY_BUDGET_POLICY";
 
 /// What a job runs: the stage's gate (`loom check`), the completion run
-/// whose pass lets the daemon complete the stage, or the contract run that
-/// freezes a stage's contracts.
+/// whose pass lets the daemon complete the stage, the contract run that
+/// freezes a stage's contracts, or the completion the daemon runs for a
+/// stage a verdict left held.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum JobKind {
     Check,
     Complete,
     Freeze,
+    VerdictComplete,
 }
 
 impl JobKind {
-    /// The kind as it is serialized: `check`, `complete` or `freeze`.
+    /// The kind as it is serialized: `check`, `complete`, `verdict_complete`
+    /// or `freeze`.
     pub fn name(self) -> &'static str {
         match self {
             Self::Check => "check",
             Self::Complete => "complete",
+            Self::VerdictComplete => "verdict_complete",
             Self::Freeze => "freeze",
         }
     }

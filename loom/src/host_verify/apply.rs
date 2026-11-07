@@ -1,6 +1,7 @@
 //! What the daemon does with a finished host job: complete the stage a
-//! passing `Complete` run verified, record the checkpoint of a failed one, or
-//! hand a `Freeze` job to `freeze::apply_freeze_result`.
+//! passing `Complete` run verified, record the checkpoint of a failed one,
+//! hand a `VerdictComplete` job to `verdict_complete::apply_verdict_completion`,
+//! or a `Freeze` job to `freeze::apply_freeze_result`.
 //!
 //! The orchestrator calls [`apply_finished`] for every record the runner
 //! reports and, at startup, for every terminal record the retry owner lists.
@@ -20,7 +21,9 @@ use anyhow::{Context, Result};
 use super::apply_rejection::{
     receipt_recorded, record_acceptance, record_failure, record_rejection,
 };
-use super::{bounded_detail, freeze, store, JobKind, JobRecord, JobResult, JobState};
+use super::{
+    bounded_detail, freeze, store, verdict_complete, JobKind, JobRecord, JobResult, JobState,
+};
 use crate::fs::locking::locked_dir_update;
 use crate::fs::session_files::load_session_exact;
 use crate::handoff::completion::content::VerificationSnapshot;
@@ -50,6 +53,8 @@ pub enum Applied {
     FreezeRefused(String),
     /// Nothing was applied, for the reason given.
     Ignored(String),
+    /// The stage went back to a fresh session, for the reason given.
+    HandedBack(String),
 }
 
 /// A binding the passing run no longer satisfies. Raised inside the stage
@@ -66,7 +71,7 @@ impl fmt::Display for BindingFailed {
 
 impl std::error::Error for BindingFailed {}
 
-fn binding_failed(reason: impl Into<String>) -> anyhow::Error {
+pub(super) fn binding_failed(reason: impl Into<String>) -> anyhow::Error {
     anyhow::Error::new(BindingFailed(reason.into()))
 }
 
@@ -83,6 +88,7 @@ pub fn apply_finished(work_dir: &Path, record: &JobRecord) -> Result<Applied> {
         JobKind::Check => Applied::Ignored("a check changes no stage state".to_string()),
         JobKind::Freeze => apply_freeze(work_dir, record)?,
         JobKind::Complete => apply_complete(work_dir, record)?,
+        JobKind::VerdictComplete => verdict_complete::apply_verdict_completion(work_dir, record)?,
     };
     let note = bounded_detail(&describe(&applied));
     store::save_job_file(
@@ -108,6 +114,7 @@ fn describe(applied: &Applied) -> String {
         Applied::FreezeAccepted { files } => format!("froze the contracts ({files} files)"),
         Applied::FreezeRefused(message) => format!("refused the contract run: {message}"),
         Applied::Ignored(reason) => reason.clone(),
+        Applied::HandedBack(reason) => format!("handed the stage to a fresh session: {reason}"),
     }
 }
 
@@ -230,7 +237,7 @@ fn check_outside_lock(work_dir: &Path, record: &JobRecord) -> Result<Option<Stri
 
 /// The reason of a binding failure; any other error is a failure to read or
 /// write state and stays an error.
-fn binding_reason(error: anyhow::Error) -> Result<String> {
+pub(super) fn binding_reason(error: anyhow::Error) -> Result<String> {
     match error.downcast_ref::<BindingFailed>() {
         Some(failed) => Ok(failed.0.clone()),
         None => Err(error),
@@ -295,6 +302,23 @@ fn bind_and_complete(
             "stage session changed before completion was applied",
         ));
     }
+    verify_bound_run(stage, work_dir, record, result)?;
+    if stage.stage_type == StageType::Knowledge {
+        stage.merged = true;
+    }
+    stage.completed_commit = Some(result.head.clone());
+    stage.try_complete(None)
+}
+
+/// The binding every completion from a run requires: the run passed at the
+/// requested head, the stage's committed content is still that head, and the
+/// check definition is the one the run was bound to.
+pub(super) fn verify_bound_run(
+    stage: &Stage,
+    work_dir: &Path,
+    record: &JobRecord,
+    result: &JobResult,
+) -> Result<()> {
     if !result.passed || result.head != record.head {
         return Err(binding_failed("the run does not verify the requested head"));
     }
@@ -312,11 +336,7 @@ fn bind_and_complete(
             "the stage's check definition changed since the run",
         ));
     }
-    if stage.stage_type == StageType::Knowledge {
-        stage.merged = true;
-    }
-    stage.completed_commit = Some(result.head.clone());
-    stage.try_complete(None)
+    Ok(())
 }
 
 /// The steps after the transition, each skipped once done: retiring the

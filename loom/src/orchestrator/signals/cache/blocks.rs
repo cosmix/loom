@@ -14,16 +14,14 @@ pub(crate) const KNOWLEDGE_CONSUMPTION_CONTRACT: &str = "A repository that keeps
 /// integration-verify) push this — the IV prefix spawns review subagents
 /// (`append_review_dimension_details`) just as the standard prefix does, so
 /// it needs the same pointer.
-pub(super) const LOAD_ORCHESTRATION_SKILL: &str = "**Load `Skill(skill=\"loom-orchestration\")` first:** the delegation cost rule, briefs, file ownership, waiting on subagents, and commit timing live there.\n\n";
+pub(super) const LOAD_ORCHESTRATION_SKILL: &str = "**Load `Skill(skill=\"loom-orchestration\")` first:** delegation cost, briefs, file ownership, waiting on subagents and commit timing live there.\n\n";
 
 /// Append path boundaries table (shared by standard and integration-verify prefixes)
 pub(super) fn append_path_boundaries(content: &mut String) {
     content.push_str("### Path Boundaries\n\n");
     content.push_str("| Type | Paths |\n");
     content.push_str("|------|-------|\n");
-    content.push_str(
-        "| **ALLOWED** | `.` (this worktree), `.loom/work/` (symlink to orchestration) |\n",
-    );
+    content.push_str("| **ALLOWED** | `.` (this worktree), `.loom/work/` (orchestration) |\n");
     content.push_str(
         "| **FORBIDDEN** | `../..`, absolute paths to main repo, any path outside worktree |\n\n",
     );
@@ -39,8 +37,8 @@ pub(super) fn append_path_boundaries(content: &mut String) {
 /// and a paraphrase would drift from the hook that enforces it.
 pub(super) fn append_no_verify_block(content: &mut String) {
     content.push_str(
-        "The spawn guard prepends `loom-hooks/_subagent-preamble.txt` to a typed spawn. BLOCK-A, \
-         which the hook matches byte for byte, goes verbatim into an untyped spawn's prompt:\n\n",
+        "The spawn guard prepends `loom-hooks/_subagent-preamble.txt` to a typed spawn. Paste \
+         BLOCK-A, which the hook matches byte for byte, into an untyped spawn:\n\n",
     );
     content.push_str("VERIFICATION IS THE MAIN AGENT'S JOB - NOT YOURS:\n");
     content
@@ -62,7 +60,7 @@ pub(super) fn append_no_verify_block(content: &mut String) {
 /// real budget - both root-caused to agents inferring a ceiling instead of
 /// waiting for the hook's literal report.
 pub(super) fn append_subagent_ceiling_block(content: &mut String) {
-    content.push_str("Paste this alongside BLOCK-A, the ceiling rule:\n\n");
+    content.push_str("Also paste the ceiling rule:\n\n");
     content.push_str("CONTEXT CEILING - HOOK-REPORTED ONLY:\n");
     content.push_str("- Your ceiling is roughly 800,000 tokens, the same number your orchestrator gets - reading a handful of files never gets you close.\n");
     content.push_str("- The hook line beginning `SUBAGENT CEILING REACHED:` in your own tool output is the sole evidence you reached it. Never estimate, infer, or assume one.\n");
@@ -71,7 +69,7 @@ pub(super) fn append_subagent_ceiling_block(content: &mut String) {
 
 /// Where a standard stage's gate runs, stated as the opening line of its
 /// completion rules.
-const ORCHESTRATOR_GATE: &str = "**The gate is `loom check`**: once every implementer has returned, run the formatter, then `loom check <stage-id>` once plus the steps this stage lists outside acceptance, while the final review round runs. A fix round runs one `loom check <stage-id> --criterion <n> --criterion <n> ...` with every failed criterion plus the lint and format criteria. Never re-run a test, build or lint command the check covers.\n\n";
+const ORCHESTRATOR_GATE: &str = "**The gate is `loom check`**: once every implementer has returned, run the formatter, then `loom check <stage-id>` once plus the steps this stage lists outside acceptance, beside the final review. A fix round runs one `loom check <stage-id> --criterion <n> ...` with every failed criterion plus the lint and format criteria. Never re-run what the check covers.\n\n";
 
 /// Open a STANDARD stage's `**Completion:**` list with `ORCHESTRATOR_GATE`. The
 /// integration-verify prefix opens its list without it: that stage keeps its

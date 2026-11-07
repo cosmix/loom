@@ -352,3 +352,48 @@ fn an_unopenable_dispute_lock_is_logged_and_other_stages_apply() {
     assert!(applied_marker(&work.join("disputes"), "test-stage", 1).exists());
     assert!(!applied_marker(&work.join("disputes"), "another", 1).exists());
 }
+
+/// A plan v1 stage a verdict left held, with nothing left to apply; `held`
+/// is the operator's `loom stage hold`.
+fn verdict_held_stage(work: &std::path::Path, held: bool) -> StageStatus {
+    stage_needing_adjudication(work);
+    update_stage("test-stage", work, |stage| {
+        stage.plan_version = 1;
+        stage.held = held;
+        Ok(())
+    })
+    .unwrap();
+    let mut orchestrator = orchestrator_for(work, work.parent().unwrap());
+    orchestrator.apply_pending_verdicts().unwrap();
+    load_stage("test-stage", work).unwrap().status
+}
+
+#[test]
+fn a_held_plan_v1_stage_goes_to_a_fresh_session() {
+    let temp = handoff_work_dir();
+    let work = temp.path().join(".work");
+    assert_eq!(verdict_held_stage(&work, false), StageStatus::Queued);
+}
+
+#[test]
+fn an_operator_held_stage_goes_back_to_the_queue_and_stays_held() {
+    let temp = handoff_work_dir();
+    let work = temp.path().join(".work");
+    assert_eq!(verdict_held_stage(&work, true), StageStatus::Queued);
+    assert!(load_stage("test-stage", &work).unwrap().held);
+}
+
+#[test]
+fn a_stage_with_an_unanswered_dispute_keeps_waiting() {
+    let temp = handoff_work_dir();
+    let work = temp.path().join(".work");
+    stage_needing_adjudication(&work);
+    write_dispute_request(&work, "test-stage", 1);
+    orchestrator_for(&work, temp.path())
+        .apply_pending_verdicts()
+        .unwrap();
+    assert_eq!(
+        load_stage("test-stage", &work).unwrap().status,
+        StageStatus::NeedsAdjudication
+    );
+}

@@ -9,15 +9,25 @@
 //! The file is overwritten on every adjudicator pass — older feedback
 //! is intentionally discarded, because the agent only needs the latest
 //! verdict to make progress. Persistent history lives in the per-
-//! dispute `verdict.md` records.
+//! dispute `verdict.md` records. The one append is the failure section of
+//! the daemon's completion run after a verdict that held the stage
+//! ([`append_completion_failures`]): it follows that verdict's notice, which
+//! the fresh session still needs.
 
 use anyhow::{Context, Result};
 use std::fs;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 
-use crate::models::dispute::Citation;
+use crate::models::dispute::{truncate_to_byte_limit, Citation};
+use crate::verify::review::report::single_line;
 
 const FEEDBACK_FILENAME: &str = "feedback.md";
+
+/// Failure lines the completion section lists before it summarises the rest.
+const MAX_COMPLETION_FAILURES: usize = 20;
+/// Byte cap of one failure line; job summaries can carry whole command output.
+const MAX_FAILURE_LINE_BYTES: usize = 300;
 
 /// Path to `.loom/work/disputes/<stage>/feedback.md`. The parent directory
 /// is created on demand so the first dispute against a stage works
@@ -93,6 +103,52 @@ pub fn write_notice(work_dir: &Path, stage_id: &str, body: &str) -> Result<()> {
     let path = feedback_path(work_dir, stage_id);
     ensure_parent(&path)?;
     fs::write(&path, body).with_context(|| format!("Failed to write {}", path.display()))
+}
+
+/// Append what stopped the daemon's completion after a verdict (a failed run
+/// or an eligibility error) to the stage's feedback, creating the file when missing and keeping the verdict's
+/// notice above it. Appends nothing for an empty `failures`.
+///
+/// Each failure is flattened to one line and bulleted, so command output such
+/// as `## heading` or an escape sequence never forms a heading or reaches a
+/// terminal raw.
+pub fn append_completion_failures(
+    work_dir: &Path,
+    stage_id: &str,
+    failures: &[String],
+) -> Result<()> {
+    if failures.is_empty() {
+        return Ok(());
+    }
+    let path = feedback_path(work_dir, stage_id);
+    ensure_parent(&path)?;
+    let mut fd = fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&path)
+        .with_context(|| format!("Failed to open {}", path.display()))?;
+    fd.write_all(completion_failures_section(failures).as_bytes())
+        .with_context(|| format!("Failed to append to {}", path.display()))
+}
+
+fn completion_failures_section(failures: &[String]) -> String {
+    let mut body = String::from(
+        "\n### Completion after the verdict\n\nThe verdict changed nothing in the plan, so loom \
+         tried to complete the stage on the committed tree without a session. It did not \
+         complete:\n\n",
+    );
+    for failure in failures.iter().take(MAX_COMPLETION_FAILURES) {
+        let line = truncate_to_byte_limit(&single_line(failure), MAX_FAILURE_LINE_BYTES);
+        body.push_str(&format!("- {line}\n"));
+    }
+    if failures.len() > MAX_COMPLETION_FAILURES {
+        body.push_str(&format!(
+            "- and {} more; `loom stage complete` lists every failure\n",
+            failures.len() - MAX_COMPLETION_FAILURES
+        ));
+    }
+    body.push_str("\nAction: address these, commit, then run `loom stage complete`.\n");
+    body
 }
 
 /// Read the current feedback for a stage, if any. Returns `Ok(None)`
@@ -189,5 +245,56 @@ mod tests {
         append_questions(tmp.path(), "z", &["q".to_string()]).unwrap();
         clear_feedback(tmp.path(), "z").unwrap();
         assert!(read_feedback(tmp.path(), "z").unwrap().is_none());
+    }
+
+    #[test]
+    fn completion_failures_follow_the_verdict_notice() {
+        let tmp = temp_work();
+        let work = tmp.path();
+        write_notice(work, "s", "The adjudicator accepted your dispute.\n").unwrap();
+        append_completion_failures(work, "s", &["criterion 2 failed".to_string()]).unwrap();
+        let content = read_feedback(work, "s").unwrap().unwrap();
+        assert_eq!(
+            content,
+            "The adjudicator accepted your dispute.\n\n### Completion after the verdict\n\n\
+             The verdict changed nothing in the plan, so loom tried to complete the stage on the \
+             committed tree without a session. It did not complete:\n\n- criterion 2 failed\n\n\
+             Action: address these, commit, then run `loom stage complete`.\n"
+        );
+    }
+
+    #[test]
+    fn completion_failure_output_cannot_form_a_heading_or_escape() {
+        let tmp = temp_work();
+        let work = tmp.path();
+        append_completion_failures(work, "s", &["## x\u{1b}[2J\nnext".to_string()]).unwrap();
+        let content = read_feedback(work, "s").unwrap().unwrap();
+        assert!(!content.chars().any(|c| c.is_control() && c != '\n'));
+        assert!(!content.lines().any(|line| line.starts_with("## ")));
+        let bullets: Vec<&str> = content.lines().filter(|l| l.starts_with("- ")).collect();
+        assert_eq!(bullets, vec!["- ## x [2J next"]);
+    }
+
+    #[test]
+    fn completion_failures_list_twenty_then_count_the_rest() {
+        let tmp = temp_work();
+        let work = tmp.path();
+        let failures: Vec<String> = (1..=25).map(|n| format!("failure {n}")).collect();
+        append_completion_failures(work, "s", &failures).unwrap();
+        let content = read_feedback(work, "s").unwrap().unwrap();
+        let bullets: Vec<&str> = content.lines().filter(|l| l.starts_with("- ")).collect();
+        assert_eq!(bullets.len(), 21);
+        assert_eq!(bullets[19], "- failure 20");
+        assert_eq!(
+            bullets[20],
+            "- and 5 more; `loom stage complete` lists every failure"
+        );
+    }
+
+    #[test]
+    fn no_completion_failures_append_nothing() {
+        let tmp = temp_work();
+        append_completion_failures(tmp.path(), "s", &[]).unwrap();
+        assert!(read_feedback(tmp.path(), "s").unwrap().is_none());
     }
 }
