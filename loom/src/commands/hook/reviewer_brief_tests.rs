@@ -7,6 +7,9 @@ use std::path::Path;
 use std::process::Command;
 use tempfile::TempDir;
 
+#[path = "reviewer_brief_budget_tests.rs"]
+mod budget;
+
 const NONCE: &str = "0123456789abcdef0123456789abcdef";
 
 fn event(id: &str, kind: EventKind, detail: &[&str]) -> IntegrityEvent {

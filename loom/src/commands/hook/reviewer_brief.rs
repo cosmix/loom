@@ -105,14 +105,8 @@ fn integration_context(
     worktree: &std::path::Path,
     target: &str,
 ) -> IntegrationContext {
-    let stages = crate::verify::transitions::list_all_stages(&config.work_dir).unwrap_or_default();
-    IntegrationContext::collect(
-        &config.work_dir,
-        worktree,
-        target,
-        &stages,
-        &config.stage.id,
-    )
+    let stages = crate::verify::transitions::list_all_stages(&config.work_dir);
+    IntegrationContext::collect(&config.work_dir, worktree, target, stages, &config.stage.id)
 }
 
 /// The brief text, or `None` when there is nothing to say (no event and not an

@@ -47,7 +47,7 @@ fn freeze_rule(stage_id: &str) -> String {
          A static refusal is returned to you; it is filed as a `freeze-refusal` dispute on \
          the third static refusal in the session, or when you stay quiet 5 minutes after a \
          refusal, and any other refusal is filed at once. If you believe the stage's contract \
-         setup (its contracts or harness) or a format criterion makes the freeze impossible, \
+         setup (its contracts or harness) or a static criterion makes the freeze impossible, \
          record why with `loom memory note \"freeze-dispute: <evidence>\"`, run the freeze \
          anyway, and stop once it is filed: a filed refusal goes to an adjudicator, who reads \
          your note and decides. The freeze checks that you changed only contract files, \

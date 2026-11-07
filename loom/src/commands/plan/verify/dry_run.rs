@@ -10,7 +10,8 @@
 //! plan's `provision` entries run in it first, as `loom run` runs them in a
 //! stage worktree. A command that times out runs once more in the same
 //! checkout, whose build cache the first run warmed; a second timeout is an
-//! error.
+//! error. Checkouts an earlier run left behind are removed first, and a
+//! termination signal removes this run's own (`dry_run_cleanup.rs`).
 
 use std::path::{Path, PathBuf};
 
@@ -83,8 +84,11 @@ pub fn run_dry_run_with(
     let parent = root.join(".loom").join("dry-run");
     std::fs::create_dir_all(&parent)
         .with_context(|| format!("failed to create {}", parent.display()))?;
+    let _lock = cleanup::begin(&parent)?;
+    cleanup::retire_on_signal();
     let checkout = BaseCheckout::create_in(&parent, &root, &head)
         .context("dry run: failed to check out the committed HEAD")?;
+    let _registered = checkout.root().parent().map(cleanup::register);
     if let Err(reason) = run_provision(&metadata.loom.provision, checkout.root()) {
         let reason = cut(&reason, 300);
         let message = format!("dry run: provision failed in the base checkout: {reason}");
@@ -323,6 +327,8 @@ pub(super) fn cut(text: &str, limit: usize) -> String {
     format!("{head}...")
 }
 
+#[path = "dry_run_cleanup.rs"]
+mod cleanup;
 #[cfg(test)]
 #[path = "dry_run_real_tests.rs"]
 mod dry_run_real_tests;
