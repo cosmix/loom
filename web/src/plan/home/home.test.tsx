@@ -17,6 +17,7 @@ const standalone: StandalonePlanView = {
   path: "doc/plans/PLAN-fix-search.md",
   state: "written",
   last_change: null,
+  pressure_date: null,
   has_summary: false,
 };
 

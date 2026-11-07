@@ -187,6 +187,13 @@
   text-underline-offset: 3px;
 }
 
+.shelf-table__slugline {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
 .shelf-table__slug {
   min-width: 0;
   overflow: hidden;
@@ -195,6 +202,19 @@
   color: var(--muted-foreground);
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* The flask sits above the row's link overlay, like the checkbox, so its title tooltip shows on hover. */
+.shelf-table__pressure {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+  color: var(--tone-completed);
+}
+
+.shelf-table__pressure > svg {
+  width: 13px;
+  height: 13px;
 }
 
 /* State and date are secondary; a running plan's state stands up, finished ones stay quiet. */

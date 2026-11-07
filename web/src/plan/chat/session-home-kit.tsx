@@ -47,6 +47,7 @@ export function setup(path: string, current: SessionView | null, selected = offe
         state: "written",
         title: "Solo",
         last_change: null,
+        pressure_date: null,
         has_summary: false,
       },
     ],

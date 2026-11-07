@@ -50,3 +50,19 @@ fn feature_plan_rows_follow_metaplan_order_then_unlisted_plans() {
         .collect();
     assert_eq!(plans, [("zeta", true), ("beta", true), ("alpha", false)]);
 }
+
+#[test]
+fn a_standalone_plan_carries_its_latest_pressure_date_or_null() {
+    let temp = tempfile::tempdir().unwrap();
+    let tested =
+        "# Tested\n\n## Pressure tests\n\n- 2026-11-05: Reviewed; 1 round\n- 2026-10-01: Earlier\n";
+    put(temp.path(), "doc/plans/PLAN-tested.md", tested);
+    put(temp.path(), "doc/plans/PLAN-untested.md", "# Untested\n");
+    let snapshot = ProjectChecklistView::from(&Project::load(temp.path()).unwrap());
+    let dates: Vec<_> = snapshot
+        .standalone
+        .iter()
+        .map(|plan| (plan.slug.as_str(), plan.pressure_date.as_deref()))
+        .collect();
+    assert_eq!(dates, [("tested", Some("2026-11-05")), ("untested", None)]);
+}
