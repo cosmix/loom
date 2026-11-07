@@ -350,7 +350,7 @@ mod main;
 // Non-vacuous message-stripping check: the "&&" lives INSIDE the quoted -m
 // message, so this only passes if strip_embedded_content actually removes
 // the message body before tokenization. Without stripping, the quoted "&&"
-// re-splits into a real separator token, exposing "cargo build" as a fresh
+// re-splits into a real separator token, exposing "cargo clippy" as a fresh
 // command and blocking it - so this genuinely depends on the fix.
 // =============================================================================
 
@@ -359,13 +359,13 @@ fn subagent_git_commit_message_with_internal_separator_allowed() {
     let dir = temp_dir_no_claude();
     let hook_path = install_hook(dir.path());
 
-    let command = r#"git commit -m "x && cargo build -v""#;
+    let command = r#"git commit -m "x && cargo clippy -v""#;
     let (code, stderr) =
         run_hook_in_tree(dir.path(), &hook_path, true, &bash_payload(command), &[]);
 
     assert_eq!(
         code, 0,
-        "a git commit whose message body happens to contain '&& cargo build -v' \
+        "a git commit whose message body happens to contain '&& cargo clippy -v' \
          must not be blocked (message body is stripped before pattern matching); \
          stderr={stderr}"
     );

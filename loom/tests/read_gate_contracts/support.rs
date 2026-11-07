@@ -14,6 +14,11 @@ use tempfile::TempDir;
 
 const OVER_THE_LINE_LIMIT: usize = 500;
 const REPEAT_ALLOWED: &str = "Repeating this read is allowed";
+const FIRST_READ_TAG: &str = "[read-discipline/first-read]";
+const NO_OUTLINE: &str = "no outline is available";
+/// A `loom` whose every invocation prints one outline row the hook's row regex keeps.
+const OUTLINE_LOOM: &str = "#!/usr/bin/env bash\nprintf '%s\\n' '-> Outline: stub' \
+    '  L1-L500\tfunction\tbody' 'coverage: full'\n";
 
 /// What a hook run can see of the session above it.
 #[derive(Clone, Copy)]
@@ -49,12 +54,15 @@ impl Run {
         )
     }
 
-    /// Exit 2 with the sentence that tells the agent a repeat will pass.
+    /// Exit 2, the first non-empty stderr line opening with the rule tag, and
+    /// the sentence that tells the agent a repeat will pass.
     #[track_caller]
     pub fn assert_denied(&self, what: &str) {
         assert_eq!(self.code, 2, "{what}: {}", self.describe());
+        let first = self.stderr.lines().find(|line| !line.trim().is_empty());
         assert!(
-            self.stderr.contains(REPEAT_ALLOWED),
+            self.stderr.contains(REPEAT_ALLOWED)
+                && first.is_some_and(|line| line.starts_with(FIRST_READ_TAG)),
             "{what}: {}",
             self.describe()
         );
@@ -75,6 +83,18 @@ impl Run {
     /// Exit 0 with the queued warning naming `path`.
     #[track_caller]
     pub fn assert_warned(&self, path: &Path, what: &str) {
+        self.warning(path, what);
+    }
+
+    /// Exit 0 with the warning naming `path` and the guidance for a file with no outline.
+    #[track_caller]
+    pub fn assert_unoutlined_warned(&self, path: &Path, what: &str) {
+        let context = self.warning(path, what);
+        assert!(context.contains(NO_OUTLINE), "{what}: {}", self.describe());
+    }
+
+    #[track_caller]
+    fn warning(&self, path: &Path, what: &str) -> String {
         self.assert_allowed(what);
         let parsed: Value = serde_json::from_str(self.stdout.trim())
             .unwrap_or_else(|error| panic!("{what}: {error}: {}", self.describe()));
@@ -86,6 +106,7 @@ impl Run {
             "{what}: {}",
             self.describe()
         );
+        context.to_string()
     }
 }
 
@@ -97,11 +118,12 @@ pub struct Gate {
     pub session: &'static str,
     pub liveness: Liveness,
     pub cwd: Option<PathBuf>,
-    pub loom_bin: Option<&'static str>,
+    pub loom_bin: Option<PathBuf>,
 }
 
 impl Gate {
-    /// A live stage with no `config.toml`, so `deny_enabled` is unset.
+    /// A live stage with no `config.toml`, so `deny_enabled` is unset, and a missing `LOOM_BIN`,
+    /// so no file has an outline and rule 1 only warns.
     pub fn live() -> Self {
         let hooks = TempDir::new().expect("hook dir");
         for (name, body) in LOOM_HOOKS {
@@ -123,8 +145,28 @@ impl Gate {
         }
     }
 
+    /// [`Gate::live`] with a `LOOM_BIN` that outlines every file, so a first whole read is denied.
+    pub fn outlined() -> Self {
+        let mut gate = Gate::live();
+        let bin = gate.work_dir().join("outline-loom");
+        fs::write(&bin, OUTLINE_LOOM).expect("write outline loom");
+        fs::set_permissions(&bin, fs::Permissions::from_mode(0o755)).expect("chmod outline loom");
+        gate.loom_bin = Some(bin);
+        gate
+    }
+
     pub fn work_dir(&self) -> &Path {
         self.work.path()
+    }
+
+    /// The stage block ledger rows `loom_record_block` wrote for this gate's stage.
+    pub fn blocks(&self) -> Vec<Value> {
+        let ledger = self.work_dir().join("heartbeat/stage-1.blocks.jsonl");
+        fs::read_to_string(ledger)
+            .unwrap_or_default()
+            .lines()
+            .map(|line| serde_json::from_str(line).expect("ledger row is JSON"))
+            .collect()
     }
 
     pub fn write_config(&self, body: &str) {
@@ -173,7 +215,7 @@ impl Gate {
             .env("LOOM_SESSION_ID", self.session)
             .env("LOOM_HOME", self.work_dir().join("loom-home"))
             .env("TMPDIR", self.work_dir());
-        match self.loom_bin {
+        match &self.loom_bin {
             Some(bin) => command.env("LOOM_BIN", bin),
             None => command.env("LOOM_BIN", missing_loom),
         };
