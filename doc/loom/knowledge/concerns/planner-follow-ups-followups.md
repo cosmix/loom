@@ -57,3 +57,40 @@ The integration-verify walk of the planner-follow-ups requirements (R1-R13) foun
 ## Operator checks after the run
 
 Rebuild the summaries and open a plan summary (opening, detail, source link, fragment at rest); confirm New chat spends no tokens before the first message and a real ending shows the designed card; start a follow-up from `/new` and confirm the entry appended under `## Follow-ups` in `index.md`; run a plan whose `Implements:` names sections and read the spec-conformance lines in its run review; open the dashboard theme picker in Walnut and Graphite; open the Settings statistics block with a Claude login.
+
+## Open Items After the Trace Screens Redesign
+
+Reviewer suggestions not applied and questions left open when `PLAN-trace-screens-redesign` finished, each with the file that owns it. See [Planning Trace browser screens](../architecture/planning-trace.md#browser).
+
+### Behaviour and accessibility
+
+- `web/src/plan/concept/page-heading.tsx`: the muted document number in the title is `aria-hidden`, so heading navigation omits "04"; the breadcrumb still carries it.
+- `web/src/plan/trace/coverage-page.tsx`: "No heading matches this filter." has no status region, so a filter that empties the list is announced only through the pressed tile's description.
+- `coverage-page.tsx` and `findings-page.tsx`: an addressed row or finding is scrolled into view but not focused, so keyboard order after a coverage chip or Covered-by link starts at the top.
+- `findings-cards.tsx`: `onFold` only sets mode `fold`; with `aria-expanded` true a second press does nothing. It should close the picker.
+- `maps-findings.css`: a decided finding's status is one ellipsised line, whole only in its `title`; a long dismissal reason is unreadable by touch or keyboard at 390px.
+- `trace-settle.css`: `overflow-y: auto` on the popover surface would keep the actions reachable when the popover is clipped.
+- `settle-confirm.tsx`: the key `kind:index:quote` repeats for two My calls with the same quote; add the array position.
+- `coverage-model.ts`: a stage cover without `stage` falls back to `cover.anchor` (`stage:build`) and `stageHref` adds a second `stage:` prefix; strip it in the fallback.
+- `coverage-rows.tsx`: linked phrasing draws `SentenceText` without `IsolatedSentence` for the Entry title in an open row.
+- `loom/src/planning/trace/build/docs.rs`: the server counts `(my call` inside code fences while `settlePoints` skips fences, so a fenced marker gives a count with no quote. Align the two rules ([settle control](../architecture/planning-trace.md#browser)).
+- `page-heading.tsx`: a feature plan page with `plan_state` set but no `path` shows no pressure date and no chip; the server sets `path` for plan pages, so this is theoretical.
+- `concept/passage.tsx`: a Ledger screenshot of a changed document showed a small dashed circle after every reading sentence, while the design says reading text carries no marks at rest. The Firefox walk found none at rest; which component drew it is unconfirmed.
+
+### Comments and design record
+
+- `coverage-rows.tsx` says the toggle is a row's only control, but the Covered-by cell holds plan and stage links that are tab stops. Its header comment (and `findings-model.ts`) still says every string is drawn with `Untrusted`; entries use `SentenceText`.
+- `ui/doc-heading.css`: a comment describes a separate settle group and a "settle pill"; `page-heading.tsx` puts the settle control in one group with Edit, Discuss and Open all.
+- `ui/DESIGN.md`: the line that the menu "flips above only when less than 18rem is free below" holds only for content taller than 18rem; the Pressure-test exception names the plan's state row, but in file mode it sits on the pressure chip row; the Coverage tile's inset focus ring (`maps.css`) is not among the displaced rings the design names.
+
+### Tests
+
+- `settle-flow.test.tsx`: add a second Mark settled after Not yet, asserting a second confirm-less post and a second dialog.
+- `pages.test.tsx`: no test asserts the Fold into entry `aria-expanded`/`aria-controls` and focus landing in the fold picker on open.
+
+### Open questions
+
+- Should the spine's group counts follow the design ("n of m settled", "n done", "n running") instead of the server checklist counts? The merged spine has no Run group, because `/f/<f>/run` redirects to the Plans overview.
+- Should the chat greeting "Let's spec!" (`chat/empty-chat.tsx`, an h3 in the reading face) move to the chrome face? The design says the Hearth chat is unchanged; it is the one serif heading the font walk flags.
+- `bun run build` warns that two lazy mermaid chunks exceed 500 kB (`elk-*.js` 1.5 MB, a 629 kB shared langium parser chunk). Both load only after `mermaid-block.tsx`'s dynamic import and no entry holds them. Options: drop mermaid's ELK layout, accept the warning, or set a documented `chunkSizeWarningLimit` for lazy vendor chunks.
+- Turn footer ("Now out of step with what you settled") and Settled-line writes were not walked in a browser: a stage sandbox cannot start a session or write the `/tmp` plan lock. Walk both outside a stage.
