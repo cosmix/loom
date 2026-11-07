@@ -1,12 +1,14 @@
 //! Outcome formatting shared by the contract run and its format gate.
 
 use std::collections::BTreeSet;
+use std::os::fd::AsRawFd;
 use std::path::{Component, Path};
 
 use anyhow::{Context, Result};
 
 use super::{child, CriterionOutcome};
 use crate::daemon::ContractRunReport;
+use crate::fs::safe_fs::{safe_open_dirfd, safe_remove_in_workdir};
 use crate::git::worktree::WorktreeGit;
 use crate::host_verify::digest;
 use crate::models::dispute::truncate_to_byte_limit;
@@ -14,6 +16,10 @@ use crate::models::stage::CommandConfinement;
 use crate::verify::contracts::freeze::{check_formatting, refused_problems};
 use crate::verify::contracts::refusal::run_output_line;
 use crate::verify::contracts::site::ContractSite;
+use artefacts::GateWrites;
+
+#[path = "freeze_artefacts.rs"]
+mod artefacts;
 
 /// The summary of a contract the run classified red; `shared_from` names the
 /// contract whose failed build it took instead of running its own.
@@ -38,7 +44,7 @@ pub(super) fn verdict_line(report: &ContractRunReport, shared_from: Option<&str>
 /// `tsconfig.tsbuildinfo`); an untracked file that is not git-ignored moves
 /// the tree digest, and the freeze job compares the digest before and after
 /// the run. The untracked files the gate created are therefore removed
-/// afterwards, also when it refused.
+/// afterwards, also when it refused, but only those [`GateWrites`] covers.
 pub(super) fn format_outcome(
     site: &ContractSite,
     git: &WorktreeGit,
@@ -47,8 +53,9 @@ pub(super) fn format_outcome(
     contracts_compile: bool,
 ) -> Result<CriterionOutcome> {
     let before = digest::untracked_in(git)?;
+    let writes = GateWrites::of(site, contracts_compile);
     let gate = check_formatting(site, confinement, written, contracts_compile);
-    let removed = remove_created(git, &site.worktree_root, &before)?;
+    let removed = remove_gate_writes(git, &site.worktree_root, &before, &writes)?;
     let (passed, mut summary) = match gate {
         Ok(()) => (
             true,
@@ -68,38 +75,48 @@ pub(super) fn format_outcome(
     Ok(outcome("format".to_string(), passed, &summary))
 }
 
-/// Remove the untracked files `git` lists now that were not in `before`,
-/// below `root`. Git reports a path inside the worktree and `remove_file`
-/// does not follow a final symlink; a path with a `..` or an absolute one is
-/// skipped. A file already gone is not an error. Empty directories stay: git
-/// and the tree digest ignore them. Returns the paths removed.
-///
-/// This assumes the writer is waiting on the freeze: it writes nothing into
-/// the worktree meanwhile, so every file new since `before` came from the gate
-/// and none is a concurrent writer file.
-fn remove_created(
+/// Remove the untracked files `git` lists now that were not in `before` and
+/// that `writes` covers, below `root`; a path with a `..` or an absolute one
+/// is skipped. Every other new file stays: a writer still running may have
+/// added it, and the tree binding must refuse that change. Empty directories
+/// stay too: git and the tree digest ignore them. Returns the paths removed.
+fn remove_gate_writes(
     git: &WorktreeGit,
     root: &Path,
     before: &BTreeSet<String>,
+    writes: &GateWrites,
 ) -> Result<Vec<String>> {
-    let mut removed = Vec::new();
-    for path in digest::untracked_in(git)?.difference(before) {
-        let plain = Path::new(path)
-            .components()
-            .all(|part| matches!(part, Component::Normal(_)));
-        if !plain {
-            continue;
-        }
-        match std::fs::remove_file(root.join(path)) {
-            Ok(()) => removed.push(path.clone()),
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-            Err(error) => {
-                return Err(error)
-                    .with_context(|| format!("cannot remove {path}, a file the gate created"));
-            }
-        }
+    let created: Vec<String> = digest::untracked_in(git)?
+        .difference(before)
+        .filter(|path| {
+            Path::new(path)
+                .components()
+                .all(|part| matches!(part, Component::Normal(_)))
+                && writes.covers(path)
+        })
+        .cloned()
+        .collect();
+    remove_listed(root, &created)?;
+    Ok(created)
+}
+
+/// Remove each of `paths`, relative to `root`, through a handle on `root`
+/// that refuses a symlink at every component: the host job runs unconfined,
+/// and a directory swapped for a link while the loop runs must not move a
+/// removal outside the worktree. A file already gone is not an error.
+fn remove_listed(root: &Path, paths: &[String]) -> Result<()> {
+    if paths.is_empty() {
+        return Ok(());
     }
-    Ok(removed)
+    let root = root
+        .canonicalize()
+        .with_context(|| format!("cannot resolve {}", root.display()))?;
+    let dirfd = safe_open_dirfd(&root)?;
+    for path in paths {
+        safe_remove_in_workdir(dirfd.as_raw_fd(), Path::new(path))
+            .with_context(|| format!("cannot remove {path}, a file the gate created"))?;
+    }
+    Ok(())
 }
 
 pub(super) fn outcome(label: String, passed: bool, summary: &str) -> CriterionOutcome {

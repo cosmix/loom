@@ -1,21 +1,29 @@
 //! The rules a writer's choices pass before the daemon saves them.
 //!
 //! A chosen test, runner or directory moves where and how a host job runs a
-//! command, so each is checked against the plan first. The directory checks
-//! (the run-root markers of a `--cwd`) read the stage's base commit, never
-//! the worktree: a file the writer planted cannot make them pass. The adapter
-//! check on a `--test` reads the live worktree (`resolve_adapter`), so a
-//! planted manifest can satisfy it here; the freeze job checks the adapter
-//! again, on the read that decides how the contract runs
-//! (`host_verify::freeze_prepare`).
+//! command, so each is checked against the plan first. Not every check reads
+//! the same tree:
+//!
+//! - The stage's base commit, through git: the run-root marker a `--cwd`
+//!   must hold (`ls-tree` at the base). A marker the writer planted since the
+//!   base never counts.
+//! - The live worktree: adapter detection for a `--test` (`resolve_adapter`),
+//!   the canonical working directory (`Place::new`), and the live `--cwd`
+//!   directory, which must be a real directory and no symlink. A file the
+//!   writer planted can satisfy the adapter check here, so the freeze job
+//!   checks again on its own tree (`revalidate_saved`), and again on the read
+//!   that decides how the contract runs (`host_verify::freeze_prepare`);
+//!   `resolve_run` then refuses a run directory that resolves outside the
+//!   worktree (`inside`).
 
 use anyhow::{bail, Context, Result};
-use std::path::{Component, Path};
+use std::path::{Component, Path, PathBuf};
 
 use super::{check_value, quoted, MAX_CWD_BYTES, MAX_RUNNER_BYTES, MAX_TEST_BYTES};
 use crate::git::worktree::WorktreeGit;
 use crate::plan::schema::{ContractChoice, ContractChoices, ContractSpec};
 use crate::testrun::{registry, TestRunnerAdapter};
+use crate::verify::contracts::run_dir::canonical;
 use crate::verify::contracts::{normalize, resolve_adapter, store};
 
 /// `validate_choices_in` with git as `worktree_root`'s own `.git` directs
@@ -77,6 +85,8 @@ pub(crate) fn validate_choices_in(
 /// The stage's tree as the rules read it.
 struct Place<'a> {
     git: &'a WorktreeGit,
+    /// The worktree root, canonical.
+    root: PathBuf,
     working_dir: &'a Path,
     /// The working directory's components beneath the worktree root.
     working: Vec<String>,
@@ -95,18 +105,15 @@ impl<'a> Place<'a> {
         let inside = working
             .strip_prefix(&root)
             .context("the stage's working directory is outside its worktree")?;
+        let working = parts(&inside.to_string_lossy());
         Ok(Self {
             git,
+            root,
             working_dir,
-            working: parts(&inside.to_string_lossy()),
+            working,
             base,
         })
     }
-}
-
-fn canonical(path: &Path) -> Result<std::path::PathBuf> {
-    path.canonicalize()
-        .with_context(|| format!("failed to resolve {}", path.display()))
 }
 
 /// The rules for one contract and its merged choice.
@@ -118,9 +125,6 @@ fn check_contract(place: &Place<'_>, spec: &ContractSpec, choice: &ContractChoic
     }
     let effective = spec.with_choice(choice);
     let test = effective.required_test()?;
-    if choice.test.is_some() {
-        check_test(id, test)?;
-    }
     if let Some(runner) = effective.runner.as_deref() {
         if registry::by_name(runner).is_none() {
             let names: Vec<&str> = registry::all().iter().map(|a| a.name()).collect();
@@ -133,6 +137,9 @@ fn check_contract(place: &Place<'_>, spec: &ContractSpec, choice: &ContractChoic
         }
     }
     let adapter = resolve_adapter(&effective, place.working_dir);
+    if choice.test.is_some() {
+        check_test(id, test, adapter)?;
+    }
     if choice.test.is_some() && adapter.is_none() {
         bail!(
             "contract '{id}': --test needs a test-runner adapter, and none answers for {}: \
@@ -162,15 +169,36 @@ fn planner_set(spec: &ContractSpec, choice: &ContractChoice) -> Result<()> {
     Ok(())
 }
 
-/// A writer's test is an identifier: one line, at most [`MAX_TEST_BYTES`],
-/// and never an option (the adapters place it where a leading `-` is read
-/// as one, as `cargo test <test> -- --exact` does).
-fn check_test(id: &str, test: &str) -> Result<()> {
+/// A writer's test is one identifier: one line, at most [`MAX_TEST_BYTES`],
+/// never an option (the adapters place it where a leading `-` is read as
+/// one, as `cargo test <test> -- --exact` does), and never more than one
+/// word or command to the runner that reads it. sbt parses the quoted
+/// `testOnly <test>` itself: a `;` there starts a second sbt command and a
+/// space a second argument. A `;` is refused for every adapter, so a test
+/// checked here under one adapter cannot become a second sbt command when
+/// the freeze job detects sbt; a space stays valid elsewhere, where a full
+/// test name (vitest, jest) holds spaces.
+fn check_test(id: &str, test: &str, adapter: Option<&dyn TestRunnerAdapter>) -> Result<()> {
     let test = check_value("test", id, test, MAX_TEST_BYTES)?;
     if test.starts_with('-') {
         bail!(
             "contract '{id}': --test {id}={} starts with '-', which the runner reads as an option; \
              give the test's name",
+            quoted(test)
+        );
+    }
+    if test.contains(';') {
+        bail!(
+            "contract '{id}': --test {id}={} holds ';', which a runner such as sbt reads as the \
+             start of another command; name the test without ';' (rename the test if it has one)",
+            quoted(test)
+        );
+    }
+    if adapter.is_some_and(|adapter| adapter.name() == "sbt") && test.contains(char::is_whitespace)
+    {
+        bail!(
+            "contract '{id}': --test {id}={} holds whitespace, which sbt reads as a second test or \
+             option to testOnly; give the one fully qualified suite name",
             quoted(test)
         );
     }
@@ -217,7 +245,28 @@ fn check_cwd(
             shown(&file)
         );
     }
-    committed_marker(place, id, &dir, adapter)
+    committed_marker(place, id, &dir, adapter)?;
+    live_directory(place, id, &dir)
+}
+
+/// Refused unless every component of `dir` beneath the worktree root is a
+/// real directory in the live worktree: a symlink there would move the run
+/// to wherever it points, whatever the base commit holds.
+fn live_directory(place: &Place<'_>, id: &str, dir: &[String]) -> Result<()> {
+    let mut path = place.root.clone();
+    for part in dir {
+        path.push(part);
+        let real_dir = std::fs::symlink_metadata(&path).is_ok_and(|meta| meta.file_type().is_dir());
+        if !real_dir {
+            bail!(
+                "contract '{id}': --cwd {id}='{}' is not a directory in the worktree ('{}' is a \
+                 symlink, another file, or missing); name a real directory",
+                shown(dir),
+                part
+            );
+        }
+    }
+    Ok(())
 }
 
 /// Refused unless `adapter` has run-root markers and one of them is a
@@ -299,3 +348,7 @@ fn shown(parts: &[String]) -> String {
         parts.join("/")
     }
 }
+
+#[cfg(test)]
+#[path = "choices_validate_tests.rs"]
+mod tests;

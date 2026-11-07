@@ -248,3 +248,31 @@ fn an_operator_hold_blocks_completion_but_not_the_hand_back() {
     assert!(stage.held);
     assert_eq!(feedback::read_feedback(work, "s1").unwrap(), notice);
 }
+
+#[test]
+fn a_hand_back_whose_transition_fails_lists_no_failures_for_its_retry() {
+    use std::os::unix::fs::PermissionsExt;
+    // SAFETY: `geteuid` has no preconditions.
+    if unsafe { libc::geteuid() } == 0 {
+        return;
+    }
+    let tmp = work_dir();
+    let work = tmp.path();
+    verdict_held(work, &make_stage("s1"));
+    let notice = feedback::read_feedback(work, "s1").unwrap();
+    let stages = work.join("stages");
+    std::fs::set_permissions(&stages, std::fs::Permissions::from_mode(0o555)).unwrap();
+
+    let handed = hand_back_held_stage(work, "s1", &["criterion 1 failed".to_string()]);
+
+    std::fs::set_permissions(&stages, std::fs::Permissions::from_mode(0o755)).unwrap();
+    assert!(
+        handed.is_err(),
+        "the stage file cannot be written: {handed:?}"
+    );
+    assert_eq!(
+        load_stage("s1", work).unwrap().status,
+        StageStatus::NeedsAdjudication
+    );
+    assert_eq!(feedback::read_feedback(work, "s1").unwrap(), notice);
+}

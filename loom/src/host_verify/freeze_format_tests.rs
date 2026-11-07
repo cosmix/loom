@@ -40,6 +40,16 @@ fn digest_of(repo: &WorktreeGit) -> String {
     digest::tree_digest_in(repo).unwrap()
 }
 
+/// The cleanup of a gate whose commands redirect into no file: only the
+/// fixed tool artefacts are its writes.
+fn remove_created(
+    git: &WorktreeGit,
+    root: &Path,
+    before: &BTreeSet<String>,
+) -> Result<Vec<String>> {
+    remove_gate_writes(git, root, before, &GateWrites::default())
+}
+
 #[test]
 fn a_file_the_gate_created_is_removed_and_the_digest_is_unchanged() {
     let (_temp, repo) = repository();
@@ -164,4 +174,85 @@ fn a_failure_naming_no_written_file_passes_the_gate() {
         outcome.summary
     );
     assert!(!root.join("out.txt").exists());
+}
+
+#[test]
+fn a_new_file_that_is_no_gate_artefact_stays_for_the_tree_binding() {
+    let (_temp, repo) = repository();
+    let root = repo.work_tree().to_path_buf();
+    let before = digest::untracked_in(&repo).unwrap();
+    let digest_before = digest_of(&repo);
+    std::fs::create_dir_all(root.join("src")).unwrap();
+    std::fs::write(root.join("src/added.rs"), "fn added() {}\n").unwrap();
+    std::fs::write(root.join("tsconfig.tsbuildinfo"), "{}").unwrap();
+
+    let removed = remove_created(&repo, &root, &before).unwrap();
+
+    assert_eq!(removed, ["tsconfig.tsbuildinfo"]);
+    assert!(
+        root.join("src/added.rs").is_file(),
+        "a file a writer added while the gate ran stays"
+    );
+    assert_ne!(
+        digest_of(&repo),
+        digest_before,
+        "so the tree binding refuses the freeze"
+    );
+}
+
+#[test]
+fn a_directory_swapped_for_a_symlink_keeps_the_link_targets_file() {
+    let (_temp, repo) = repository();
+    let root = repo.work_tree().to_path_buf();
+    let outside = tempfile::tempdir().unwrap();
+    std::fs::write(outside.path().join("authorized_keys"), "key").unwrap();
+    std::os::unix::fs::symlink(outside.path(), root.join("target")).unwrap();
+
+    let result = remove_listed(&root, &["target/authorized_keys".to_string()]);
+
+    assert!(result.is_err(), "a symlinked component is refused");
+    assert!(
+        outside.path().join("authorized_keys").is_file(),
+        "the file behind the link survives"
+    );
+}
+
+#[test]
+fn gate_writes_cover_tool_artefacts_and_the_gate_commands_redirect_targets() {
+    let (_temp, repo) = repository();
+    let root = repo.work_tree().to_path_buf();
+    let mut site = failing_site(&root);
+    site.stage
+        .acceptance
+        .push(crate::models::stage::AcceptanceCriterion::Simple(
+            "cd sub && rg -n fn ../a.rs >> found.txt 2>&1".to_string(),
+        ));
+    site.stage
+        .acceptance
+        .push(crate::models::stage::AcceptanceCriterion::Simple(
+            "cargo test > tests.txt".to_string(),
+        ));
+    let writes = GateWrites::of(&site, true);
+
+    for path in [
+        "out.txt",
+        "sub/found.txt",
+        ".eslintcache",
+        "web/tsconfig.app.tsbuildinfo",
+        "Cargo.lock",
+        "target/debug/x.d",
+        "py/.ruff_cache/0.5/a",
+        "node_modules/.cache/prettier/.prettier-cache",
+    ] {
+        assert!(writes.covers(path), "{path} is a gate write");
+    }
+    for path in [
+        "src/new.rs",
+        "tests.txt",
+        "2",
+        "target",
+        "node_modules/x.js",
+    ] {
+        assert!(!writes.covers(path), "{path} is no gate write");
+    }
 }

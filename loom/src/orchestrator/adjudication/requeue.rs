@@ -149,11 +149,16 @@ pub(crate) fn is_held_for_completion(work_dir: &Path, stage: &Stage) -> bool {
     is_verdict_held(work_dir, stage) && !stage.held
 }
 
-/// Re-queue a verdict-held stage for a fresh session, appending `failures`
-/// (when any) to its feedback first. Returns whether the saved stage is
-/// `Queued`; `Ok(false)` changes nothing, because the stage is no longer
-/// verdict-held (a new dispute, a reset, a session). The operator's hold is
-/// left as it is.
+/// Re-queue a verdict-held stage for a fresh session, then append `failures`
+/// (when any) to its feedback. Returns whether the saved stage is `Queued`;
+/// `Ok(false)` changes nothing, because the stage is no longer verdict-held
+/// (a new dispute, a reset, a session). The operator's hold is left as it is.
+///
+/// The failures follow the transition, so a failed transition the caller
+/// retries never lists them twice. Every caller runs on the daemon's
+/// scheduling thread, which also spawns the fresh session, so its signal
+/// reads them. A failed append after the transition is logged: an `Err`
+/// would only have the caller retry a hand-back that already happened.
 ///
 /// Takes the stage's dispute lock, so it must never run while the caller
 /// holds that lock: two `flock` descriptors in one process conflict.
@@ -167,7 +172,6 @@ pub(crate) fn hand_back_held_stage(
     if !is_verdict_held(work_dir, &stage) {
         return Ok(false);
     }
-    feedback::append_completion_failures(work_dir, stage_id, failures)?;
     let saved = update_stage(stage_id, work_dir, |s| {
         if s.status == StageStatus::NeedsAdjudication && s.session.is_none() {
             s.try_transition(StageStatus::Queued)?;
@@ -176,6 +180,11 @@ pub(crate) fn hand_back_held_stage(
     })?;
     let moved = saved.status == StageStatus::Queued;
     if moved {
+        if let Err(error) = feedback::append_completion_failures(work_dir, stage_id, failures) {
+            tracing::warn!(target: "loom::adjudication", stage = %stage_id,
+                error = %format!("{error:#}"),
+                "the fresh session's feedback lacks the verdict completion's failures");
+        }
         tracing::info!(
             target: "loom::adjudication",
             stage = %stage_id,
