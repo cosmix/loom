@@ -161,7 +161,7 @@ fn a_gradle_compile_failure_is_shared() {
         .iter()
         .map(|id| ContractSpec {
             file: "ATest.java".to_string(),
-            test: format!("ATest.{id}"),
+            test: Some(format!("ATest.{id}")),
             runner: Some("gradle".to_string()),
             ..spec(id)
         })
@@ -196,11 +196,11 @@ fn two_contracts_in_one_scope_share_a_failed_build_and_freeze() {
     let fx = Fixture::cargo(|stage| {
         stage.contracts = vec![
             ContractSpec {
-                test: "rejects_x".to_string(),
+                test: Some("rejects_x".to_string()),
                 ..spec("a")
             },
             ContractSpec {
-                test: "rejects_y".to_string(),
+                test: Some("rejects_y".to_string()),
                 ..spec("b")
             },
         ];

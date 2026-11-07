@@ -494,8 +494,8 @@ pub fn validate(metadata: &LoomMetadata) -> Result<(), Vec<ValidationError>> {
             // is risky when it is a leaf because nothing downstream can catch missing wiring.
             if matches!(resolved_type, super::types::StageType::Standard)
                 && !stage.artifacts.is_empty()
-                && stage.wiring.is_empty()
-                && stage.wiring_tests.is_empty()
+                && stage.consumer_deferred.is_none()
+                && !stage.has_wiring_coverage()
             {
                 // A stage is a leaf if no other stage lists it in its dependencies.
                 let is_leaf =
@@ -512,9 +512,9 @@ pub fn validate(metadata: &LoomMetadata) -> Result<(), Vec<ValidationError>> {
                 if is_leaf && !any_iv_has_wiring {
                     errors.push(ValidationError {
                         message:
-                            "Standard leaf stage has artifacts but no wiring or wiring_tests. \
+                            "Standard leaf stage has artifacts but no wiring, wiring_tests, reachable or consumer_deferred. \
                                   Add wiring checks to verify the artifacts are integrated, \
-                                  or add a downstream stage that verifies integration."
+                                  add a downstream stage that verifies integration, or declare `consumer_deferred`."
                                 .to_string(),
                         stage_id: Some(stage.id.clone()),
                     });
@@ -944,7 +944,7 @@ pub fn check_cross_stage_wiring_coverage(stages: &[super::types::StageDefinition
         }
 
         // Stage itself has wiring: covered
-        if !stage.wiring.is_empty() || !stage.wiring_tests.is_empty() {
+        if stage.has_wiring_coverage() || stage.consumer_deferred.is_some() {
             continue;
         }
 
@@ -968,7 +968,7 @@ pub fn check_cross_stage_wiring_coverage(stages: &[super::types::StageDefinition
             warnings.push(format!(
                 "Stage '{}': artifacts are not covered by wiring checks in the stage itself, \
                  its dependents, or any integration-verify stage. \
-                 Add wiring checks to verify these artifacts are integrated.",
+                 Add wiring checks or `reachable`, or declare `consumer_deferred` for a later plan.",
                 stage.id
             ));
         }

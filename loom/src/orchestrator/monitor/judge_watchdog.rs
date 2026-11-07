@@ -30,7 +30,7 @@
 //! `loom check` of the disputed stage, whose worst case is the sum of the
 //! timeouts that command runs under: each acceptance criterion's (a string
 //! criterion's [`DEFAULT_COMMAND_TIMEOUT`], an extended one's `timeout_secs`
-//! or [`DEFAULT_CHECK_TIMEOUT`]), [`WIRING_TEST_TIMEOUT`] per wiring test, and
+//! or [`DEFAULT_EXTENDED_CRITERION_TIMEOUT`]), [`WIRING_TEST_TIMEOUT`] per wiring test, and
 //! [`DEAD_CODE_TIMEOUT`] for a dead-code check. `loom check` runs no
 //! `before_stage`/`after_stage` truth checks, so they add nothing. The hold
 //! ceiling is that sum plus one budget, measured from the judge's last
@@ -48,7 +48,7 @@ use colored::Colorize;
 
 use crate::models::session::{Session, SessionStatus};
 use crate::models::stage::{AcceptanceCriterion, Stage};
-use crate::verify::criteria::{DEFAULT_CHECK_TIMEOUT, DEFAULT_COMMAND_TIMEOUT};
+use crate::verify::criteria::{extended_criterion_timeout, DEFAULT_COMMAND_TIMEOUT};
 use crate::verify::goal_backward::dead_code::DEAD_CODE_TIMEOUT;
 use crate::verify::goal_backward::wiring_tests::WIRING_TEST_TIMEOUT;
 
@@ -200,7 +200,7 @@ fn check_run_limit(stage: &Stage) -> Duration {
         .iter()
         .map(|criterion| match criterion {
             AcceptanceCriterion::Simple(_) => DEFAULT_COMMAND_TIMEOUT,
-            AcceptanceCriterion::Extended(check) => check.timeout(DEFAULT_CHECK_TIMEOUT),
+            AcceptanceCriterion::Extended(check) => extended_criterion_timeout(check),
         })
         .fold(Duration::ZERO, Duration::saturating_add);
     let wiring_tests = u32::try_from(stage.wiring_tests.len()).map_or(Duration::MAX, |count| {
@@ -237,3 +237,7 @@ fn judge_last_activity(
         .filter(|heartbeat| heartbeat.session_id == session.id)
         .map_or(session.created_at, Heartbeat::effective_progress_at)
 }
+
+#[cfg(test)]
+#[path = "judge_watchdog_timeout_tests.rs"]
+mod timeout_tests;

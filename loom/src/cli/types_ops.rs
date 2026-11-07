@@ -56,6 +56,11 @@ pub enum PlanCommands {
         /// Disable ANSI color codes
         #[arg(long)]
         no_color: bool,
+
+        /// Run every criterion against a checkout of HEAD under the stage's confinement;
+        /// environment failures and timeouts are errors, an empty test selection is a note
+        #[arg(long)]
+        dry_run: bool,
     },
 
     /// Print the project checklist and every document convention problem under doc/

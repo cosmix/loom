@@ -1,7 +1,6 @@
-//! A freeze-refusal dispute's verdicts applied (`apply_freeze_refusal.rs`):
-//! each accept amends the plan and the stage before the stage is re-queued for
-//! a fresh contract writer, a reject and a needs-more-evidence re-queue it
-//! with their notice, and the amendment cap escalates instead.
+//! A freeze-refusal dispute's verdicts applied (`apply_freeze_refusal.rs`): each accept amends the
+//! plan and the stage before the stage is re-queued for a fresh contract writer, a reject and a
+//! needs-more-evidence re-queue it with their notice, and the amendment cap escalates instead.
 
 use serde_json::json;
 use std::path::PathBuf;
@@ -14,7 +13,8 @@ use crate::fs::work_dir::WorkDir;
 use crate::models::dispute::{Citation, DisputeKind, DisputeVerdict, PlanPatch};
 use crate::models::stage::{AcceptanceCriterion, Stage, StageStatus};
 use crate::plan::amendment::{apply_amendment, AmendmentField, AmendmentPatch, AmendmentRequest};
-use crate::plan::schema::ContractSpec;
+use crate::plan::schema::{ContractChoice, ContractChoices, ContractSpec};
+use crate::verify::contracts::choices;
 use crate::verify::contracts::store::load_freeze;
 use crate::verify::contracts::test_support::{contract, contract_worktree};
 #[cfg(feature = "source-graph")]
@@ -201,14 +201,38 @@ fn an_accepted_contracts_patch_names_the_old_file_to_delete() {
     assert!(notice.contains("`tests/x_contract.rs`"), "{notice}");
 }
 
+#[test]
+fn an_accepted_contracts_patch_forgets_the_saved_choice_of_a_touched_contract() {
+    let fx = fixture(PLAN);
+    let saved = |test: &str| ContractChoice {
+        test: Some(test.to_string()),
+        ..ContractChoice::default()
+    };
+    let before: ContractChoices = [("rejects-x", "w::x"), ("other", "w::o")]
+        .map(|(id, test)| (id.to_string(), saved(test)))
+        .into();
+    choices::save_choices(&fx.work, "s1", &before).unwrap();
+    let spec = "id: rejects-x\nfile: tests/y_contract.rs\ntest: tests::rejects_x\n\
+                runner: cargo-test\nscenario: x arrives\nrejects: accepting x\n";
+
+    accept(
+        &fx,
+        json!([{"field": "contracts", "op": "replace", "index": 0, "value": spec}]),
+    );
+
+    let kept = choices::load_choices(&fx.work, "s1").unwrap();
+    assert_eq!(kept.keys().collect::<Vec<_>>(), ["other"]);
+}
+
 /// The old contract sat in a module the base does not declare: the notice
 /// also lists the scaffold only that contract needed.
 #[cfg(feature = "source-graph")]
 #[test]
 fn an_accepted_contracts_patch_names_the_old_scaffold_to_delete() {
-    let plan = PLAN
-        .replace("tests/x_contract.rs", LIQUIDMON_FILE)
-        .replace("tests::rejects_x", &liquidmon_contract().test);
+    let plan = PLAN.replace("tests/x_contract.rs", LIQUIDMON_FILE).replace(
+        "tests::rejects_x",
+        liquidmon_contract().test.as_deref().unwrap(),
+    );
     let fx = fixture_with(&plan, vec![liquidmon_contract()]);
     let spec = "id: rejects-x\nfile: tests/y_contract.rs\ntest: tests::rejects_x\n\
                 runner: cargo-test\nscenario: x arrives\nrejects: accepting x\n";

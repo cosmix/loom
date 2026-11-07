@@ -89,6 +89,7 @@ fn definition_from_stage(stage: &Stage) -> StageDefinition {
         contracts: stage.contracts.clone(),
         harness: stage.harness.clone(),
         reachable: stage.reachable.clone(),
+        consumer_deferred: stage.consumer_deferred.clone(),
     }
 }
 

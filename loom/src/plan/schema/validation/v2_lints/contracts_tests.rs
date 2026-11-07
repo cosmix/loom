@@ -74,7 +74,7 @@ fn contract(file: &str, test: &str) -> ContractSpec {
     ContractSpec {
         id: "locks".to_string(),
         file: file.to_string(),
-        test: test.to_string(),
+        test: Some(test.to_string()),
         runner: Some("cargo-test".to_string()),
         cwd: None,
         scenario: "a lock is taken".to_string(),

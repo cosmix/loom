@@ -269,7 +269,7 @@ fn never_ending_contract_stage(fx: &Fixture) {
         stage.contracts = vec![ContractSpec {
             id: "never-ends".to_string(),
             file: file.to_string(),
-            test: "sleep 600".to_string(),
+            test: Some("sleep 600".to_string()),
             runner: None,
             cwd: None,
             scenario: "the contract runs".to_string(),

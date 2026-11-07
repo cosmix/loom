@@ -39,7 +39,7 @@ fn spec() -> ContractSpec {
     ContractSpec {
         id: "a".to_string(),
         file: FILE.to_string(),
-        test: "widget renders".to_string(),
+        test: Some("widget renders".to_string()),
         runner: Some("bun-test".to_string()),
         cwd: None,
         scenario: "the widget renders in a DOM set up by the web preload".to_string(),

@@ -5,8 +5,9 @@
 //! request (the caller is the stage's running `Contract` session; the stage
 //! is a v2 `standard` stage with contracts and no freeze yet, executing or
 //! waiting on the writer's `AskUserQuestion`) and queues a `Freeze` host job
-//! for the HEAD and tree the session saw. A refusal is recorded and filed as
-//! a `freeze-refusal` dispute (`verify::contracts::refusal`); nothing parks
+//! for the HEAD and tree the session saw, once the writer's `--test`, `--runner`
+//! and `--cwd` choices pass and are saved (`contracts_choices`). A refusal is
+//! answered to the writer (`verify::contracts::refusal`); nothing parks
 //! the stage. The job runs every contract on the host under loom's own
 //! confinement (`host_verify::freeze`); applying a passing job calls
 //! [`freeze_with_reports`] with the run's reports and the hashes of the files
@@ -53,24 +54,27 @@ use crate::host_verify::submit::{submit, Submission, SubmitRequest};
 use crate::host_verify::JobKind;
 use crate::models::session::SessionType;
 use crate::models::stage::{Stage, StageStatus, StageType};
+use crate::plan::schema::ContractChoices;
 use crate::relay::sha256_hex;
 use crate::testrun::registry;
 use crate::verify::contracts::frozen_set::read_frozen_set;
 use crate::verify::contracts::refusal::end_wait;
-use crate::verify::contracts::run_dir::resolve_run;
-use crate::verify::contracts::store::{
-    self, FreezeRecord, FrozenContract, FrozenFile, FREEZE_RECORD_VERSION,
-};
+use crate::verify::contracts::store::{self, FreezeRecord, FrozenFile, FREEZE_RECORD_VERSION};
 use crate::verify::contracts::{
-    changes, collection::freeze_scaffold, is_contract_or_harness, normalize, resolve_adapter,
-    site::stage_site, RED_OUTCOMES,
+    changes, choices, collection::freeze_scaffold, is_contract_or_harness, site::stage_site,
+    RED_OUTCOMES,
 };
 use crate::verify::transitions::{load_stage, update_stage};
+
+#[path = "contracts_choices.rs"]
+mod contracts_choices;
+pub(crate) use contracts_choices::{revalidate_saved, FREEZE_BUSY};
 
 /// Queue the host contract run of `stage_id` for its contract writer
 /// `session_id`, against the `head` and `tree_digest` the writer saw. A job
 /// already running for the same tree is joined; one for another tree is
-/// superseded. `Response::Ok` once queued or joined.
+/// superseded. `choices` are the writer's flags of this request, merged with
+/// the saved ones. `Response::Ok` once queued or joined.
 pub(crate) fn handle_freeze_contracts(
     work_dir: &Path,
     stage_id: &str,
@@ -78,14 +82,16 @@ pub(crate) fn handle_freeze_contracts(
     head: &str,
     tree_digest: &str,
     request_id: &str,
+    choices: &ContractChoices,
 ) -> Result<Response> {
     if let Err(error) = crate::validation::validate_id(stage_id) {
         return Ok(refused(format!("invalid stage_id: {error}")));
     }
     let work_dir = canonical(work_dir)?;
-    if let Err(error) = admit(&work_dir, stage_id, session_id) {
-        return Ok(refused(format!("{error:#}")));
-    }
+    let merged = match admit_request(&work_dir, stage_id, session_id, choices) {
+        Ok(merged) => merged,
+        Err(error) => return Ok(refused(format!("{error:#}"))),
+    };
     let request = SubmitRequest {
         stage_id,
         session_id,
@@ -100,19 +106,35 @@ pub(crate) fn handle_freeze_contracts(
     update_stage(stage_id, &work_dir, |stage| {
         submitted = Some(if !super::ownership::matches_attempt(stage, session_id) {
             Submission::Refused("request belongs to a stale stage session".into())
+        } else if let Some(busy) =
+            contracts_choices::save_admitted(&work_dir, stage, head, tree_digest, &merged)?
+        {
+            Submission::Refused(busy)
         } else {
             submit(&work_dir, &request, Utc::now())?
         });
         Ok(())
     })?;
-    Ok(
-        match submitted.expect("stage update supplies a submission") {
-            Submission::Queued(_) | Submission::Joined(_) | Submission::Superseded { .. } => {
-                Response::Ok
-            }
-            Submission::Refused(message) => refused(message),
-        },
-    )
+    let submission = submitted.expect("stage update supplies a submission");
+    Ok(match submission {
+        Submission::Queued(_) | Submission::Joined(_) | Submission::Superseded { .. } => {
+            Response::Ok
+        }
+        Submission::Refused(message) => refused(message),
+    })
+}
+
+/// The choices a freeze request of `session_id` runs under: the stage admits
+/// the request, then the merged choices pass the rules at the stage's base.
+fn admit_request(
+    work_dir: &Path,
+    stage_id: &str,
+    session_id: &str,
+    choices: &ContractChoices,
+) -> Result<ContractChoices> {
+    let stage = admit(work_dir, stage_id, session_id)?;
+    let site = locate(work_dir, &stage)?;
+    contracts_choices::admit_choices(work_dir, &stage, &site, choices)
 }
 
 /// Freeze the contracts of `stage_id` from a host run's `reports`. `verified`
@@ -197,7 +219,8 @@ fn prepare(
     reports: &[ContractRunReport],
     verified: &[(String, String)],
 ) -> Result<Prepared> {
-    let stage = admit(work_dir, stage_id, session_id)?;
+    let mut stage = admit(work_dir, stage_id, session_id)?;
+    stage.contracts = choices::effective_contracts(work_dir, &stage)?;
     check_reports(&stage, reports)?;
     let site = locate(work_dir, &stage)?;
     let base = changes::stage_base(&site.git, work_dir)?;
@@ -217,39 +240,9 @@ fn prepare(
                 sha256: sha256_hex(bytes),
             })
             .collect(),
-        contracts: frozen_contracts(&site, &stage, reports)?,
+        contracts: contracts_choices::frozen_contracts(&site, &stage, reports)?,
     };
     Ok((record, files))
-}
-
-/// Each contract's run report with its file and the directory it runs from,
-/// which the completion check then runs it from too while the contract names
-/// that file. The directory is resolved here as the host run resolved it.
-fn frozen_contracts(
-    site: &Site,
-    stage: &Stage,
-    reports: &[ContractRunReport],
-) -> Result<Vec<FrozenContract>> {
-    let mut frozen = Vec::with_capacity(stage.contracts.len());
-    for contract in &stage.contracts {
-        let Some(report) = reports.iter().find(|r| r.contract_id == contract.id) else {
-            continue;
-        };
-        let adapter = resolve_adapter(contract, &site.working_dir);
-        let run = resolve_run(
-            contract,
-            adapter,
-            &site.worktree_root,
-            &site.working_dir,
-            None,
-        )?;
-        frozen.push(FrozenContract {
-            file: Some(normalize(&contract.file)),
-            cwd: Some(run.cwd),
-            ..FrozenContract::from(report)
-        });
-    }
-    Ok(frozen)
 }
 
 fn check_stage(work_dir: &Path, stage: &Stage) -> Result<()> {

@@ -7,7 +7,7 @@ use super::{KindPromptInput, Prompt};
 use crate::models::dispute::DisputeKind;
 use crate::plan::schema::ContractSpec;
 use crate::verify::contracts::run_dir::{resolve_run, ContractRun};
-use crate::verify::contracts::{resolve_adapter, store};
+use crate::verify::contracts::{choices, resolve_adapter, store};
 
 #[path = "contract_frozen_set.rs"]
 mod frozen_set;
@@ -108,8 +108,28 @@ fn first_step(input: &KindPromptInput<'_>, record: &FreezeSnapshot) -> String {
     s
 }
 
+/// `contract` as it runs: the plan's spec with the test and runner the freeze
+/// recorded, or, before any freeze record exists, with the choices the daemon
+/// saved from earlier freeze calls. The test stays `None` when no writer named
+/// one.
+fn effective_spec(
+    input: &KindPromptInput<'_>,
+    contract: &ContractSpec,
+    record: &FreezeSnapshot,
+) -> ContractSpec {
+    if let Ok(Some(record)) = record {
+        return store::effective_contract(record, contract);
+    }
+    choices::lenient_contracts(input.work_dir, input.stage)
+        .into_iter()
+        .find(|spec| spec.id == contract.id)
+        .unwrap_or_else(|| contract.clone())
+}
+
 /// Where and how the completion check runs `contract`, from the run
-/// directory the plan gives or the freeze recorded for its file.
+/// directory the plan gives or the freeze recorded for its file, with the
+/// test the writer chose. A contract with no test cannot be run: the error
+/// says so.
 fn contract_run(
     input: &KindPromptInput<'_>,
     contract: &ContractSpec,
@@ -117,9 +137,10 @@ fn contract_run(
     record: &FreezeSnapshot,
 ) -> anyhow::Result<ContractRun> {
     let recorded = recorded_cwd(record, contract).map_err(|error| anyhow::anyhow!("{error}"))?;
-    let adapter = resolve_adapter(contract, &input.site.path);
+    let effective = effective_spec(input, contract, record);
+    let adapter = resolve_adapter(&effective, &input.site.path);
     resolve_run(
-        contract,
+        &effective,
         adapter,
         worktree,
         &input.site.path,
@@ -139,20 +160,33 @@ fn recorded_cwd<'a>(
         .and_then(|record| store::recorded_cwd(record, contract).map(str::to_string)))
 }
 
-/// The disputed contract's spec as the plan holds it, with the run directory
+/// The disputed contract's spec as the plan holds it, with the test it runs
+/// (`effective`: the writer's when the writer chose one), the run directory
 /// the plan gives and the one the freeze recorded.
-fn spec_block(contract: &ContractSpec, record: &FreezeSnapshot) -> String {
+fn spec_block(
+    contract: &ContractSpec,
+    effective: &ContractSpec,
+    record: &FreezeSnapshot,
+) -> String {
     let recorded = match recorded_cwd(record, contract) {
         Ok(Some(cwd)) => cwd,
         Ok(None) => "(none recorded)".to_string(),
         Err(error) => format!("(freeze record unreadable: {error:#})"),
     };
+    let test = effective.test.as_deref().unwrap_or("(none chosen)");
+    let writer = match (&contract.test, &effective.test) {
+        (hint, Some(_)) if *hint != effective.test => format!(
+            "writer's test: chosen when the contracts were frozen, in place of the plan's hint \
+             ({})\n",
+            hint.as_deref().unwrap_or("none")
+        ),
+        _ => String::new(),
+    };
     format!(
-        "id: {}\nfile: {}\ntest: {}\ncwd: {}\nrecorded cwd: {recorded}\nscenario: {}\n\
-         rejects: {}\n\n",
+        "id: {}\nfile: {}\ntest: {test}\n{writer}cwd: {}\nrecorded cwd: {recorded}\n\
+         scenario: {}\nrejects: {}\n\n",
         contract.id,
         contract.file,
-        contract.test,
         contract.cwd.as_deref().unwrap_or("(not set; detected)"),
         contract.scenario,
         contract.rejects
@@ -193,7 +227,8 @@ fn build_evidence(input: &KindPromptInput<'_>, record: &FreezeSnapshot) -> Strin
     let contract = spec(input);
     s.push_str("## Contract spec\n\n");
     if let Some(contract) = contract {
-        s.push_str(&spec_block(contract, record));
+        let effective = effective_spec(input, contract, record);
+        s.push_str(&spec_block(contract, &effective, record));
     } else {
         s.push_str("(contract spec unavailable for this dispute)\n\n");
     }
@@ -292,3 +327,7 @@ fn push_content(out: &mut String, heading: &str, content: &Result<String, String
 #[cfg(test)]
 #[path = "contract_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "contract_choice_tests.rs"]
+mod choice_tests;

@@ -6,7 +6,7 @@
 use std::path::Path;
 
 use crate::models::stage::{Stage, StageType};
-use crate::verify::contracts::store::load_freeze;
+use crate::verify::contracts::store::{effective_contract, load_freeze};
 
 use super::contract::table_cell;
 
@@ -27,14 +27,15 @@ pub(super) fn append_v2_section(content: &mut String, stage: &Stage, work_dir: &
 /// A standard stage's frozen contracts: what they are, that they are not to
 /// be edited, and the commands that show and restore them. Rendered once the
 /// contract session has frozen them, which is before any implementation
-/// session starts.
+/// session starts. Each contract shows the test the freeze ran (the writer's
+/// choice over the plan's hint), not the bare plan spec.
 fn append_frozen_contracts(content: &mut String, stage: &Stage, work_dir: &Path) {
     if stage.stage_type != StageType::Standard || stage.contracts.is_empty() {
         return;
     }
-    if !matches!(load_freeze(work_dir, &stage.id), Ok(Some(_))) {
+    let Ok(Some(record)) = load_freeze(work_dir, &stage.id) else {
         return;
-    }
+    };
     content.push_str("\n## Frozen Contracts\n\n");
     content.push_str(
         "A contract session wrote these tests and froze them before you started. They fail \
@@ -42,11 +43,12 @@ fn append_frozen_contracts(content: &mut String, stage: &Stage, work_dir: &Path)
     );
     content.push_str("| Contract | File | Test |\n| --- | --- | --- |\n");
     for contract in &stage.contracts {
+        let effective = effective_contract(&record, contract);
         content.push_str(&format!(
             "| `{}` | `{}` | `{}` |\n",
-            table_cell(&contract.id),
-            table_cell(&contract.file),
-            table_cell(&contract.test),
+            table_cell(&effective.id),
+            table_cell(&effective.file),
+            table_cell(effective.test.as_deref().unwrap_or("(unrecorded)")),
         ));
     }
     content.push('\n');
@@ -76,3 +78,7 @@ fn append_frozen_contracts(content: &mut String, stage: &Stage, work_dir: &Path)
 #[cfg(test)]
 #[path = "v2_section_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "v2_section_effective_tests.rs"]
+mod effective_tests;

@@ -3,7 +3,10 @@
 use super::kind::RequestKind;
 use crate::fs::memory::MemoryEntry;
 use crate::fs::stage_request::StageRequest;
+use crate::plan::schema::ContractChoices;
 use crate::telemetry::TelemetryEvent;
+use crate::validation::validate_id;
+use crate::verify::contracts::choices::MAX_CHOICE_IDS;
 use anyhow::{bail, Context, Result};
 use serde::Deserialize;
 use serde_json::Value;
@@ -138,7 +141,22 @@ fn decode_stage_request(payload: &Value, expected: &str) -> Result<StageRequest>
             request.kind()
         );
     }
+    if let StageRequest::FreezeContracts { choices, .. } = &request {
+        bound_choices(choices)?;
+    }
     Ok(request)
+}
+
+/// The cheap wire bound on a freeze's choices; the daemon checks the ids
+/// against the stage's contracts again.
+fn bound_choices(choices: &ContractChoices) -> Result<()> {
+    if choices.len() > MAX_CHOICE_IDS {
+        bail!("choices keys must be contract ids: at most {MAX_CHOICE_IDS} entries are allowed");
+    }
+    if choices.keys().any(|id| validate_id(id).is_err()) {
+        bail!("choices keys must be contract ids");
+    }
+    Ok(())
 }
 
 fn decode_empty_object(payload: &Value) -> Result<()> {

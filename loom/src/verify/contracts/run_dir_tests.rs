@@ -55,7 +55,7 @@ fn worktree(dirs: &[&str], files: &[&str]) -> TempDir {
 fn spec(file: &str, cwd: Option<&str>) -> ContractSpec {
     ContractSpec {
         file: file.to_string(),
-        test: "t".to_string(),
+        test: Some("t".to_string()),
         cwd: cwd.map(str::to_string),
         ..contract()
     }

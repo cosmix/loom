@@ -3,7 +3,7 @@
 
 use anyhow::Result;
 
-use crate::verify::contracts::store::{frozen_file_path_for_record, load_freeze};
+use crate::verify::contracts::store::{frozen_file_path_for_record, load_freeze, FrozenContract};
 
 /// `loom stage contracts show <stage-id>`.
 pub fn show(stage_id: String) -> Result<()> {
@@ -20,16 +20,7 @@ pub fn show(stage_id: String) -> Result<()> {
     println!();
     println!("Contracts:");
     for contract in &record.contracts {
-        let adapter = contract.adapter.as_deref().unwrap_or("unsupported");
-        let exit = contract
-            .exit_code
-            .map_or_else(|| "none".to_string(), |code| code.to_string());
-        let file = contract.file.as_deref().unwrap_or("unrecorded");
-        let cwd = contract.cwd.as_deref().unwrap_or("unrecorded");
-        println!(
-            "  {}  outcome={}  adapter={adapter}  exit={exit}  file={file}  cwd={cwd}",
-            contract.id, contract.outcome
-        );
+        println!("{}", contract_line(contract));
     }
     println!();
     println!(
@@ -41,6 +32,22 @@ pub fn show(stage_id: String) -> Result<()> {
         println!("{}", frozen_copy_line(&work_dir, &record, &file.path));
     }
     Ok(())
+}
+
+/// One recorded contract: how it failed at the freeze and where and with which
+/// test it ran (`unrecorded` for a field the record does not hold).
+fn contract_line(contract: &FrozenContract) -> String {
+    let adapter = contract.adapter.as_deref().unwrap_or("unsupported");
+    let exit = contract
+        .exit_code
+        .map_or_else(|| "none".to_string(), |code| code.to_string());
+    let file = contract.file.as_deref().unwrap_or("unrecorded");
+    let cwd = contract.cwd.as_deref().unwrap_or("unrecorded");
+    let test = contract.test.as_deref().unwrap_or("unrecorded");
+    format!(
+        "  {}  outcome={}  adapter={adapter}  exit={exit}  file={file}  cwd={cwd}  test={test}",
+        contract.id, contract.outcome
+    )
 }
 
 fn frozen_copy_line(
@@ -58,6 +65,22 @@ fn frozen_copy_line(
 mod tests {
     use super::*;
     use crate::verify::contracts::store::{self, FreezeRecord, FrozenFile, FREEZE_RECORD_VERSION};
+
+    #[test]
+    fn a_contract_line_names_its_recorded_test() {
+        let mut contract = FrozenContract {
+            id: "c1".into(),
+            adapter: Some("cargo-test".into()),
+            outcome: "failed".into(),
+            exit_code: Some(101),
+            file: Some("tests/a.rs".into()),
+            cwd: Some(".".into()),
+            test: Some("mod::case".into()),
+        };
+        assert!(contract_line(&contract).ends_with("cwd=.  test=mod::case"));
+        contract.test = None;
+        assert!(contract_line(&contract).ends_with("cwd=.  test=unrecorded"));
+    }
 
     #[test]
     fn show_names_the_copy_in_the_loaded_generation() {
