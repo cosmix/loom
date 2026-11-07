@@ -11,7 +11,7 @@
   min-height: 0;
   background: var(--card);
   color: var(--foreground);
-  font-family: var(--font-sans), Inter, sans-serif;
+  font-family: var(--font-sans), "Alegreya Sans", sans-serif;
   font-size: var(--type-body);
   line-height: var(--leading-body);
 }

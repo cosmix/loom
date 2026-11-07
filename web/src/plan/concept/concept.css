@@ -7,7 +7,7 @@
  * horizontal scrolling; a long token wraps rather than widening it. The route wrapper owns the
  * page gutter and its own 68ch cap, set in the chrome face. The column's 68ch is in the reading
  * face, so it stays left-aligned instead of centring, and its text lines up with the key and
- * the header at any reading size. Headings and chrome retain Inter; code and paths retain the
+ * the header at any reading size. Headings and chrome retain Alegreya Sans; code and paths retain the
  * mono face.
  */
 .concept-column {

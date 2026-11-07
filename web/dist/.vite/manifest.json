@@ -358,7 +358,27 @@
       "assets/quota-meters.css"
     ],
     "assets": [
-      "assets/inter-latin-wght-normal.woff2"
+      "assets/alegreya-sans-latin-400-normal.woff2",
+      "assets/alegreya-sans-latin-ext-400-normal.woff2",
+      "assets/alegreya-sans-greek-400-normal.woff2",
+      "assets/alegreya-sans-greek-ext-400-normal.woff2",
+      "assets/alegreya-sans-cyrillic-ext-400-normal.woff2",
+      "assets/alegreya-sans-cyrillic-400-normal.woff2",
+      "assets/alegreya-sans-vietnamese-400-normal.woff2",
+      "assets/alegreya-sans-latin-500-normal.woff2",
+      "assets/alegreya-sans-latin-ext-500-normal.woff2",
+      "assets/alegreya-sans-greek-500-normal.woff2",
+      "assets/alegreya-sans-greek-ext-500-normal.woff2",
+      "assets/alegreya-sans-cyrillic-ext-500-normal.woff2",
+      "assets/alegreya-sans-cyrillic-500-normal.woff2",
+      "assets/alegreya-sans-vietnamese-500-normal.woff2",
+      "assets/alegreya-sans-latin-700-normal.woff2",
+      "assets/alegreya-sans-latin-ext-700-normal.woff2",
+      "assets/alegreya-sans-greek-700-normal.woff2",
+      "assets/alegreya-sans-greek-ext-700-normal.woff2",
+      "assets/alegreya-sans-cyrillic-ext-700-normal.woff2",
+      "assets/alegreya-sans-cyrillic-700-normal.woff2",
+      "assets/alegreya-sans-vietnamese-700-normal.woff2"
     ]
   },
   "_react.js": {
@@ -443,10 +463,6 @@
       "assets/index.css"
     ]
   },
-  "node_modules/@fontsource-variable/inter/files/inter-latin-wght-normal.woff2": {
-    "file": "assets/inter-latin-wght-normal.woff2",
-    "src": "node_modules/@fontsource-variable/inter/files/inter-latin-wght-normal.woff2"
-  },
   "node_modules/@fontsource-variable/literata/files/literata-cyrillic-ext-wght-normal.woff2": {
     "file": "assets/literata-cyrillic-ext-wght-normal.woff2",
     "src": "node_modules/@fontsource-variable/literata/files/literata-cyrillic-ext-wght-normal.woff2"
@@ -526,6 +542,90 @@
   "node_modules/@fontsource-variable/source-serif-4/files/source-serif-4-vietnamese-wght-normal.woff2": {
     "file": "assets/source-serif-4-vietnamese-wght-normal.woff2",
     "src": "node_modules/@fontsource-variable/source-serif-4/files/source-serif-4-vietnamese-wght-normal.woff2"
+  },
+  "node_modules/@fontsource/alegreya-sans/files/alegreya-sans-cyrillic-400-normal.woff2": {
+    "file": "assets/alegreya-sans-cyrillic-400-normal.woff2",
+    "src": "node_modules/@fontsource/alegreya-sans/files/alegreya-sans-cyrillic-400-normal.woff2"
+  },
+  "node_modules/@fontsource/alegreya-sans/files/alegreya-sans-cyrillic-500-normal.woff2": {
+    "file": "assets/alegreya-sans-cyrillic-500-normal.woff2",
+    "src": "node_modules/@fontsource/alegreya-sans/files/alegreya-sans-cyrillic-500-normal.woff2"
+  },
+  "node_modules/@fontsource/alegreya-sans/files/alegreya-sans-cyrillic-700-normal.woff2": {
+    "file": "assets/alegreya-sans-cyrillic-700-normal.woff2",
+    "src": "node_modules/@fontsource/alegreya-sans/files/alegreya-sans-cyrillic-700-normal.woff2"
+  },
+  "node_modules/@fontsource/alegreya-sans/files/alegreya-sans-cyrillic-ext-400-normal.woff2": {
+    "file": "assets/alegreya-sans-cyrillic-ext-400-normal.woff2",
+    "src": "node_modules/@fontsource/alegreya-sans/files/alegreya-sans-cyrillic-ext-400-normal.woff2"
+  },
+  "node_modules/@fontsource/alegreya-sans/files/alegreya-sans-cyrillic-ext-500-normal.woff2": {
+    "file": "assets/alegreya-sans-cyrillic-ext-500-normal.woff2",
+    "src": "node_modules/@fontsource/alegreya-sans/files/alegreya-sans-cyrillic-ext-500-normal.woff2"
+  },
+  "node_modules/@fontsource/alegreya-sans/files/alegreya-sans-cyrillic-ext-700-normal.woff2": {
+    "file": "assets/alegreya-sans-cyrillic-ext-700-normal.woff2",
+    "src": "node_modules/@fontsource/alegreya-sans/files/alegreya-sans-cyrillic-ext-700-normal.woff2"
+  },
+  "node_modules/@fontsource/alegreya-sans/files/alegreya-sans-greek-400-normal.woff2": {
+    "file": "assets/alegreya-sans-greek-400-normal.woff2",
+    "src": "node_modules/@fontsource/alegreya-sans/files/alegreya-sans-greek-400-normal.woff2"
+  },
+  "node_modules/@fontsource/alegreya-sans/files/alegreya-sans-greek-500-normal.woff2": {
+    "file": "assets/alegreya-sans-greek-500-normal.woff2",
+    "src": "node_modules/@fontsource/alegreya-sans/files/alegreya-sans-greek-500-normal.woff2"
+  },
+  "node_modules/@fontsource/alegreya-sans/files/alegreya-sans-greek-700-normal.woff2": {
+    "file": "assets/alegreya-sans-greek-700-normal.woff2",
+    "src": "node_modules/@fontsource/alegreya-sans/files/alegreya-sans-greek-700-normal.woff2"
+  },
+  "node_modules/@fontsource/alegreya-sans/files/alegreya-sans-greek-ext-400-normal.woff2": {
+    "file": "assets/alegreya-sans-greek-ext-400-normal.woff2",
+    "src": "node_modules/@fontsource/alegreya-sans/files/alegreya-sans-greek-ext-400-normal.woff2"
+  },
+  "node_modules/@fontsource/alegreya-sans/files/alegreya-sans-greek-ext-500-normal.woff2": {
+    "file": "assets/alegreya-sans-greek-ext-500-normal.woff2",
+    "src": "node_modules/@fontsource/alegreya-sans/files/alegreya-sans-greek-ext-500-normal.woff2"
+  },
+  "node_modules/@fontsource/alegreya-sans/files/alegreya-sans-greek-ext-700-normal.woff2": {
+    "file": "assets/alegreya-sans-greek-ext-700-normal.woff2",
+    "src": "node_modules/@fontsource/alegreya-sans/files/alegreya-sans-greek-ext-700-normal.woff2"
+  },
+  "node_modules/@fontsource/alegreya-sans/files/alegreya-sans-latin-400-normal.woff2": {
+    "file": "assets/alegreya-sans-latin-400-normal.woff2",
+    "src": "node_modules/@fontsource/alegreya-sans/files/alegreya-sans-latin-400-normal.woff2"
+  },
+  "node_modules/@fontsource/alegreya-sans/files/alegreya-sans-latin-500-normal.woff2": {
+    "file": "assets/alegreya-sans-latin-500-normal.woff2",
+    "src": "node_modules/@fontsource/alegreya-sans/files/alegreya-sans-latin-500-normal.woff2"
+  },
+  "node_modules/@fontsource/alegreya-sans/files/alegreya-sans-latin-700-normal.woff2": {
+    "file": "assets/alegreya-sans-latin-700-normal.woff2",
+    "src": "node_modules/@fontsource/alegreya-sans/files/alegreya-sans-latin-700-normal.woff2"
+  },
+  "node_modules/@fontsource/alegreya-sans/files/alegreya-sans-latin-ext-400-normal.woff2": {
+    "file": "assets/alegreya-sans-latin-ext-400-normal.woff2",
+    "src": "node_modules/@fontsource/alegreya-sans/files/alegreya-sans-latin-ext-400-normal.woff2"
+  },
+  "node_modules/@fontsource/alegreya-sans/files/alegreya-sans-latin-ext-500-normal.woff2": {
+    "file": "assets/alegreya-sans-latin-ext-500-normal.woff2",
+    "src": "node_modules/@fontsource/alegreya-sans/files/alegreya-sans-latin-ext-500-normal.woff2"
+  },
+  "node_modules/@fontsource/alegreya-sans/files/alegreya-sans-latin-ext-700-normal.woff2": {
+    "file": "assets/alegreya-sans-latin-ext-700-normal.woff2",
+    "src": "node_modules/@fontsource/alegreya-sans/files/alegreya-sans-latin-ext-700-normal.woff2"
+  },
+  "node_modules/@fontsource/alegreya-sans/files/alegreya-sans-vietnamese-400-normal.woff2": {
+    "file": "assets/alegreya-sans-vietnamese-400-normal.woff2",
+    "src": "node_modules/@fontsource/alegreya-sans/files/alegreya-sans-vietnamese-400-normal.woff2"
+  },
+  "node_modules/@fontsource/alegreya-sans/files/alegreya-sans-vietnamese-500-normal.woff2": {
+    "file": "assets/alegreya-sans-vietnamese-500-normal.woff2",
+    "src": "node_modules/@fontsource/alegreya-sans/files/alegreya-sans-vietnamese-500-normal.woff2"
+  },
+  "node_modules/@fontsource/alegreya-sans/files/alegreya-sans-vietnamese-700-normal.woff2": {
+    "file": "assets/alegreya-sans-vietnamese-700-normal.woff2",
+    "src": "node_modules/@fontsource/alegreya-sans/files/alegreya-sans-vietnamese-700-normal.woff2"
   },
   "node_modules/@mermaid-js/parser/dist/chunks/mermaid-parser.core/architecture-WOLXFQ4H.mjs": {
     "file": "assets/architecture-WOLXFQ4H.js",

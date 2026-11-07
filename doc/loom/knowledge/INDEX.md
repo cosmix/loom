@@ -123,7 +123,7 @@
 | [model-and-effort-config](conventions/model-and-effort-config.md) |  | 143 |
 | [plan-web](conventions/plan-web.md) |  | 145 |
 | [plan-yaml-and-hooks](conventions/plan-yaml-and-hooks.md) |  | 182 |
-| [web-dashboard-typography](conventions/web-dashboard-typography.md) |  | 63 |
+| [web-dashboard-typography](conventions/web-dashboard-typography.md) |  | 67 |
 
 ### mistakes
 

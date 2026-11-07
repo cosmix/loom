@@ -82,7 +82,7 @@ describe("planner settings sections", () => {
     expect(within(dialog).queryByRole("heading", { name: "Reading toggles" })).toBeNull();
     expect(within(dialog).getByText("Remembered in this browser")).toBeTruthy();
     expect(
-      within(dialog).getByText("Document text only; titles and controls stay Inter"),
+      within(dialog).getByText("Document text only; titles and controls stay Alegreya Sans"),
     ).toBeTruthy();
     expect(screen.getByRole("radiogroup", { name: "Reading face" })).toBeTruthy();
     expect(screen.getByRole("radiogroup", { name: "Reading size" })).toBeTruthy();
