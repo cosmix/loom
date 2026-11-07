@@ -51,6 +51,7 @@ mod stage_telemetry;
 pub mod state_identity;
 mod target_hold;
 mod verdict_apply;
+mod verdict_completion;
 
 pub(crate) use crash_classification::spawn_failure_type;
 pub(crate) use merge_handler::resolver_attempts::{

@@ -73,8 +73,9 @@ fn append_dispute_commands(content: &mut String, stage: &Stage) {
         "- A finding you judge wrong can be disputed instead of fixed: \
          `loom stage dispute-findings {stage_id} --finding <id> ... --reason ...`, repeating \
          `--finding` for each finding. File every dispute from one review round in one \
-         command: each filing ends this session by design, and the daemon starts a fresh one \
-         with the verdict.\n\
+         command: each filing ends this session by design. A verdict that upholds no finding \
+         lets loom rerun the completion of the tree your latest `loom stage complete` ran on \
+         and complete the stage if it passes; any other verdict starts a fresh session.\n\
          - `loom stage complete` also fails on a test-integrity event (tests or assertions \
          removed, an assertion or ratchet file changed); `loom stage review integrity \
          {stage_id}` lists them. Revert the change behind each one, or dispute them with \

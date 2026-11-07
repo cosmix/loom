@@ -10,6 +10,7 @@ mod sandbox_config;
 mod status_display;
 mod transitions;
 mod types;
+mod verdict_completion;
 
 #[cfg(test)]
 mod tests;

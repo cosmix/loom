@@ -3,8 +3,8 @@
 //! The daemon's runner starts it for a job it has set `Running`. The child
 //! verifies the tree the request named, records each criterion's outcome as
 //! it finishes, and writes the job's result. A check runs the stage's gate, a
-//! completion its full completion run (`child_complete`), a freeze its
-//! contracts (`freeze`). The CLI wrapper prints the result summary; some
+//! completion or a verdict completion its full completion run
+//! (`child_complete`), a freeze its contracts (`freeze`). The CLI wrapper prints the result summary; some
 //! verification checks also print progress into the captured `child.log`.
 
 use std::collections::BTreeSet;
@@ -47,7 +47,7 @@ pub fn run_job(work_dir: &Path, stage_id: &str, job_id: &str) -> Result<JobResul
             let checked = check(work_dir, &record, &progress);
             finish(&record, progress.take_outcomes(), checked, None)
         }
-        JobKind::Complete => child_complete::run(work_dir, &record),
+        JobKind::Complete | JobKind::VerdictComplete => child_complete::run(work_dir, &record),
         JobKind::Freeze => freeze::run_freeze_job(work_dir, &record)
             .unwrap_or_else(|error| finish(&record, Vec::new(), Err(error), None)),
     };

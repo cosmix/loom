@@ -338,12 +338,12 @@ pub(super) fn budget_for_job(record: &JobRecord, work_dir: &Path) -> Result<(Dur
     let stage = crate::verify::transitions::load_stage(&record.stage_id, work_dir)?;
     let before = crate::handoff::completion::policy::effective_policy_hash(&stage, work_dir)?;
     let secs = match record.kind {
-        JobKind::Complete | JobKind::Check => {
+        JobKind::Complete | JobKind::VerdictComplete | JobKind::Check => {
             let definition = crate::plan::load_stage_definition_from_plan(&stage.id, work_dir)?;
             crate::verify::budget::stage_command_secs_with_plan(
                 &stage,
                 definition.as_ref(),
-                record.kind == JobKind::Complete,
+                matches!(record.kind, JobKind::Complete | JobKind::VerdictComplete),
             )
             .saturating_add(crate::orchestrator::monitor::stall_line::COMPLETION_MARGIN_SECS)
         }

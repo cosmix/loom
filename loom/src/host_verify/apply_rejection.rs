@@ -229,13 +229,18 @@ fn criteria(outcomes: &[CriterionOutcome]) -> Vec<CriterionResult> {
 /// `<label>: <first line of its summary>` for the first failed outcome.
 fn first_failure(outcomes: &[CriterionOutcome]) -> Option<String> {
     let outcome = outcomes.iter().find(|outcome| !outcome.passed)?;
-    let line = outcome
-        .summary
+    let line = first_summary_line(&outcome.summary);
+    Some(format!("{}: {line}", outcome.label))
+}
+
+/// The first non-empty line of an outcome's summary, trimmed; empty when it
+/// has none.
+pub(super) fn first_summary_line(summary: &str) -> &str {
+    summary
         .lines()
         .map(str::trim)
         .find(|line| !line.is_empty())
-        .unwrap_or_default();
-    Some(format!("{}: {line}", outcome.label))
+        .unwrap_or_default()
 }
 
 fn bounded_diagnostic(diagnostic: Option<&str>) -> Option<String> {
