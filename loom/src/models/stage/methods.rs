@@ -455,11 +455,11 @@ impl Stage {
                 || !self.reachable.is_empty())
     }
 
-    /// Begin a new execution attempt.
-    ///
-    /// Sets `attempt_started_at` to the given timestamp and initializes
-    /// `execution_secs` to 0 if not already set.
+    /// Begin a new execution attempt: bank one still open (an approved
+    /// NeedsHumanReview attempt never ended), set `attempt_started_at` and
+    /// initialize `execution_secs` to 0 if unset.
     pub fn begin_attempt(&mut self, now: DateTime<Utc>) {
+        self.accumulate_attempt_time(now);
         self.attempt_started_at = Some(now);
         if self.execution_secs.is_none() {
             self.execution_secs = Some(0);
