@@ -3,7 +3,7 @@
 //! and gives an integration-verify stage the plan-wide change.
 
 #[path = "integration/helpers.rs"]
-// only loom_cmd() is used
+// only loom_cmd() and write_main_checkout_identity() are used
 #[allow(dead_code)]
 mod helpers;
 
@@ -78,6 +78,7 @@ impl Project {
             "config.toml",
             "[plan]\nsource_path = \"doc/plans/PLAN-demo.md\"\nplan_id = \"PLAN-demo\"\nplan_name = \"Demo\"\nbase_branch = \"main\"\n",
         );
+        helpers::write_main_checkout_identity(&root, &work);
         Self {
             _temp: temp,
             root,
