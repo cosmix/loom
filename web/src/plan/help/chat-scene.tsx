@@ -52,6 +52,7 @@ function sampleSession(state: SessionView["state"]): SessionView {
     state_since: STARTED_AT,
     working_since: STARTED_AT,
     subagents_running: 0,
+    fetch_grant: false,
     last_activity: STARTED_AT,
     failure: null,
     offer: null,
@@ -125,6 +126,7 @@ function sampleTurn(): Turn {
         deny_reason: null,
         note: null,
         expires_at: new Date(Date.now() + 3_600_000).toISOString(),
+        fetch: null,
       },
     ],
   };

@@ -26,7 +26,10 @@ export const denyReasonSchema = z.enum([
   "hook_error",
   "interrupt",
   "summary_session",
+  "settings",
 ]);
+// The standing rule that answered a WebFetch request without a card.
+export const fetchRuleSchema = z.enum(["never", "always", "listed", "session"]);
 export const noticeKindSchema = z.enum([
   "interrupted",
   "compacted",
@@ -99,6 +102,8 @@ export const sessionViewSchema = z.strictObject({
   offer: z.string().nullable(),
   feature: z.string().nullable(),
   plan: z.string().nullable(),
+  // The holder allowed this session's later web fetches from a card.
+  fetch_grant: z.boolean(),
 });
 export const tokenCountsSchema = z.strictObject({
   input: u64,
@@ -110,6 +115,17 @@ export const changedFileSchema = z.strictObject({
   path: z.string(),
   before_hash: z.string().nullable(),
   by_tool: z.boolean(),
+});
+
+// A WebFetch request's URL as the fetch reads it (host in punycode, cut with a trailing "…").
+// `host` is a name, never an IP address; `listable` says it can go on the allowlist;
+// `matched` is the allowlist entry that allowed the request (rule "listed").
+export const fetchViewSchema = z.strictObject({
+  url: z.string(),
+  host: z.string().nullable(),
+  listable: z.boolean(),
+  matched: z.string().nullable(),
+  rule: fetchRuleSchema.nullable(),
 });
 
 export const itemSchema = z.discriminatedUnion("type", [
@@ -159,6 +175,7 @@ export const itemSchema = z.discriminatedUnion("type", [
     deny_reason: denyReasonSchema.nullable(),
     note: z.string().nullable(),
     expires_at: z.string(),
+    fetch: fetchViewSchema.nullable(),
   }),
   z.strictObject({
     type: z.literal("notice"),
@@ -284,6 +301,13 @@ export const chatCommandSchema = z.discriminatedUnion("command", [
     allow: z.boolean(),
     note: z.string().nullable(),
   }),
+  z.strictObject({
+    command: z.literal("allow_session_fetches"),
+    ...clientId,
+    request_id: z.string(),
+  }),
+  z.strictObject({ command: z.literal("allow_fetch_host"), ...clientId, request_id: z.string() }),
+  z.strictObject({ command: z.literal("ask_fetches_again"), ...clientId }),
   z.strictObject({ command: z.literal("interrupt"), ...clientId }),
   z.strictObject({ command: z.literal("end"), ...clientId }),
 ]);
@@ -298,6 +322,8 @@ export type Origin = z.infer<typeof originSchema>;
 export type ToolStatus = z.infer<typeof toolStatusSchema>;
 export type PermissionStatus = z.infer<typeof permissionStatusSchema>;
 export type DenyReason = z.infer<typeof denyReasonSchema>;
+export type FetchRule = z.infer<typeof fetchRuleSchema>;
+export type FetchView = z.infer<typeof fetchViewSchema>;
 export type NoticeKind = z.infer<typeof noticeKindSchema>;
 export type AttachmentKind = z.infer<typeof attachmentKindSchema>;
 export type LockedTag = z.infer<typeof lockedTagSchema>;

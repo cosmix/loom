@@ -79,6 +79,7 @@ export function waitingSessionFrame(feature: string): Obj {
       tool: "Bash",
       status: "pending",
       expires_at: "2099-01-01T00:00:00Z",
+      fetch: null,
     },
   ];
   return {

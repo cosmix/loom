@@ -15,6 +15,7 @@ import { PendingChips } from "./chips";
 import { ComposerArea } from "./composer";
 import { ConnectionBanner, useConnectionDim } from "./connection-banner";
 import { EmptyChat } from "./empty-chat";
+import { FetchGrantLine } from "./fetch-grant-line";
 import { useChatSocket } from "./model";
 import { offerErrorAtom } from "./offer-error";
 import { createOfferStarter } from "./offer-flow";
@@ -202,6 +203,7 @@ function SessionBody({ sheet }: { sheet: boolean }) {
         <PanelHead sheet={sheet} />
         <OfferError />
         {shown && <RunHeader session={shown} />}
+        {shown && <FetchGrantLine session={shown} />}
         <ConnectionBanner />
       </div>
       <div className="chat-panel-middle">

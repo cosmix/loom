@@ -7,8 +7,8 @@ use super::chat::{ChatCommand, ChatFrame};
 use super::message::{ClientMessage, PlanMessage};
 use crate::plan_session::attachments::{AttachmentInput, AttachmentKind, LockedTag};
 use crate::plan_session::model::{
-    ChatDelta, ChatSnapshot, Delivery, DenyReason, FailureKind, Item, NoticeKind, Origin,
-    PermissionStatus, SessionState, ToolStatus,
+    ChatDelta, ChatSnapshot, Delivery, DenyReason, FailureKind, FetchRule, Item, NoticeKind,
+    Origin, PermissionStatus, SessionState, ToolStatus,
 };
 
 const SNAPSHOT: &str = include_str!("../../../../web/src/plan/api/fixtures/chat-snapshot.json");
@@ -172,8 +172,16 @@ scalar_coverage!(
         ServerStopping,
         HookError,
         Interrupt,
-        SummarySession
+        SummarySession,
+        Settings
     ]
+);
+scalar_coverage!(
+    fetch_rule_variants_in_fixtures,
+    FetchRule,
+    "rule",
+    None,
+    [Never, Always, Listed, Session]
 );
 scalar_coverage!(
     notice_kind_variants_in_fixtures,
@@ -238,6 +246,9 @@ fn chat_command_variants_in_fixtures() {
             | ChatCommand::DiscardKickoff { .. }
             | ChatCommand::Withdraw { .. }
             | ChatCommand::Permission { .. }
+            | ChatCommand::AllowSessionFetches { .. }
+            | ChatCommand::AllowFetchHost { .. }
+            | ChatCommand::AskFetchesAgain { .. }
             | ChatCommand::Interrupt { .. }
             | ChatCommand::End { .. } => {}
         }
@@ -253,6 +264,9 @@ fn chat_command_variants_in_fixtures() {
             "discard_kickoff",
             "withdraw",
             "permission",
+            "allow_session_fetches",
+            "allow_fetch_host",
+            "ask_fetches_again",
             "interrupt",
             "end",
         ],

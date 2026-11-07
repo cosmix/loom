@@ -33,6 +33,7 @@ impl Session {
             offer: self.offer.clone(),
             feature: self.record.feature.clone(),
             plan: self.record.plan.clone(),
+            fetch_grant: self.flow.fetch_grant,
         }
     }
 

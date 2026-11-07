@@ -4,7 +4,8 @@
 //! The state machine's pending set drives the state; the bridge keeps one `Request` per card
 //! and closes every open card the machine no longer holds (Stop or StopFailure, interrupt
 //! record, the bound tool's result) as denied `session_ended`, with a deny answer file
-//! (px-state-05, -R03).
+//! (px-state-05, -R03). A `WebFetch` request a standing rule answers gets a closed card at once
+//! (`fetches.rs`).
 
 use std::collections::HashSet;
 
@@ -20,6 +21,7 @@ use crate::plan_session::model::{
 use crate::plan_session::permission::{Answer, Behavior};
 use crate::plan_session::spool::{SpoolEvent, TRUNCATED};
 use crate::plan_session::state::Input;
+use crate::plan_session::web_fetch::{fetch_view, FETCH_TOOL};
 
 /// The note and message of a card the session no longer waits on.
 pub(super) const GONE: &str = "the session no longer waits for this answer";
@@ -138,11 +140,16 @@ impl Session {
             .unwrap_or(Value::Null);
         let request = Request {
             tool: tool.unwrap_or("unknown").to_owned(),
+            fetch: (tool == Some(FETCH_TOOL)).then(|| fetch_view(&input)),
             input,
             expires_at: later(event.received_at, config.permission_deny_after),
             tool_use: None,
             open: true,
         };
+        if let Some(rule) = self.arrival_rule(&request_id, &request, config) {
+            self.answer_by_rule_on_arrival(request_id, request, rule, step);
+            return;
+        }
         let card = card(&request_id, &request, PermissionStatus::Pending, None, None);
         let deltas = self.mapper.add_server_item(card);
         self.emit(deltas, step);
@@ -185,6 +192,17 @@ impl Session {
         step: &mut Step,
     ) {
         self.close_card(request_id, &answer, step);
+        self.reply(request_id, answer, expired, step);
+    }
+
+    /// Leave the answer file for after the lock and tell the machine; the card is closed.
+    pub(super) fn reply(
+        &mut self,
+        request_id: &str,
+        answer: Answer,
+        expired: bool,
+        step: &mut Step,
+    ) {
         let dir = self.dir.path().to_path_buf();
         let request = request_id.to_owned();
         step.effects.push(Effect::Answer {
@@ -245,10 +263,7 @@ impl Session {
             return;
         };
         request.open = false;
-        let (status, reason) = match answer.behavior {
-            Behavior::Allow => (PermissionStatus::Allowed, None),
-            Behavior::Deny => (PermissionStatus::Denied, answer.reason),
-        };
+        let (status, reason) = shown_status(answer);
         let note = answer.message.clone();
         let card = card(request_id, request, status, reason, note);
         let deltas = self.mapper.replace_server_item(card);
@@ -256,7 +271,15 @@ impl Session {
     }
 }
 
-fn deny_answer(reason: DenyReason, message: &str) -> Answer {
+/// The status and deny reason a card shows for `answer`.
+pub(super) fn shown_status(answer: &Answer) -> (PermissionStatus, Option<DenyReason>) {
+    match answer.behavior {
+        Behavior::Allow => (PermissionStatus::Allowed, None),
+        Behavior::Deny => (PermissionStatus::Denied, answer.reason),
+    }
+}
+
+pub(super) fn deny_answer(reason: DenyReason, message: &str) -> Answer {
     Answer {
         behavior: Behavior::Deny,
         message: Some(message.to_owned()),
@@ -264,7 +287,7 @@ fn deny_answer(reason: DenyReason, message: &str) -> Answer {
     }
 }
 
-fn card(
+pub(super) fn card(
     request_id: &str,
     request: &Request,
     status: PermissionStatus,
@@ -280,13 +303,14 @@ fn card(
         deny_reason,
         note,
         expires_at: stamp(request.expires_at),
+        fetch: request.fetch.clone(),
     }
 }
 
 /// The input text a card shows, and whether it is cut: the pretty input is longer than
 /// `INPUT_CHARS` characters, or the spool already cut one of its strings. A cut input shows its
 /// first `INPUT_CHARS` characters and `CUT_LINE`.
-fn shown_input(input: &Value) -> (String, bool) {
+pub(super) fn shown_input(input: &Value) -> (String, bool) {
     let pretty = serde_json::to_string_pretty(input).unwrap_or_default();
     if pretty.chars().nth(INPUT_CHARS).is_none() && !spool_cut(input) {
         return (pretty, false);

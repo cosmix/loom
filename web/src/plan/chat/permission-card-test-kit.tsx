@@ -25,6 +25,7 @@ export function permission(fields: Partial<Permission> = {}): Permission {
     deny_reason: null,
     note: null,
     expires_at: "2026-10-28T11:00:00Z",
+    fetch: null,
     ...fields,
   };
 }

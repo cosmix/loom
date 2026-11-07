@@ -212,6 +212,21 @@ export function answerPermission(
   return sendChatCommand(store, { command: "permission", request_id: requestId, allow, note });
 }
 
+/** "Allow this session" on a WebFetch card. */
+export function allowSessionFetches(store: Store, requestId: string) {
+  return sendChatCommand(store, { command: "allow_session_fetches", request_id: requestId });
+}
+
+/** "Always allow <host>" on a WebFetch card: the server reads the host from the request. */
+export function allowFetchHost(store: Store, requestId: string) {
+  return sendChatCommand(store, { command: "allow_fetch_host", request_id: requestId });
+}
+
+/** "Ask again": the session's web fetches show a card again. */
+export function askFetchesAgain(store: Store) {
+  return sendChatCommand(store, { command: "ask_fetches_again" });
+}
+
 export function setAsideKickoff(store: Store, session: string) {
   return sendChatCommand(store, { command: "set_aside_kickoff", session });
 }

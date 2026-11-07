@@ -372,13 +372,63 @@ Sandboxed commands get no network: `strictAllowlist` with no allowed domains, no
 `allowLocalBinding`, no `allowUnixSockets`, no `allowAllUnixSockets`. The built-in web tools
 run outside the sandbox and follow permission rules:
 
-| Tool        | Authoring                         | Summary |
-| ----------- | --------------------------------- | ------- |
-| `WebSearch` | allowed                           | denied  |
-| `WebFetch`  | asks the holder, per section 07   | denied  |
+| Tool        | Authoring and pressure                                 | Summary |
+| ----------- | ------------------------------------------------------ | ------- |
+| `WebSearch` | allowed                                                | denied  |
+| `WebFetch`  | an `ask` rule; the fetch policy below, else the holder | denied  |
 
 (My call: vision brainstorming benefits from searching; fetching a page is how injected text
-reaches a session and how data leaves it, so a person approves each fetch.)
+reaches a session and how data leaves it, so by default a person approves each fetch, and any
+other answer is the holder's own choice.)
+
+**Fetch policy.** `WebFetch` stays an `ask` rule in authoring and pressure sessions; the server
+answers the hook's request itself when a standing rule covers it, in section 07's order: Never,
+Always allow, a listed host, the session's grant, then the card. The policy belongs to the project
+and lives on the server, in the runtime directory's `web-fetch.json` (written through a temp file
+and a rename, the temp file synced first; read bounded and without following a symlink). Every
+browser reads it (`GET /api/web-fetch`, with a revision); only the authoring holder changes it
+(`POST /api/web-fetch`, a holder route, the whole policy at once, naming the revision it was read
+at), from Settings → Web fetches or a card's "Always allow". A change made since that read (another
+tab, a card's "Always allow") is refused with 409 and Settings reloads the policy and says so,
+instead of overwriting it. A session cannot
+write it: the runtime directory's root is outside every session's write set. A file that cannot
+be read, or that holds an invalid entry, counts as Ask every time and is named on the terminal.
+
+| Mode                     | A fetch is                                         | What it costs                                                                                                        |
+| ------------------------ | -------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| Ask every time (default) | a card, unless the session's grant covers it       | a person approves each fetch                                                                                         |
+| Allow listed domains     | allowed when its host is listed, else a card       | injected text can send what the session read to a listed host without approval; list hosts you trust                 |
+| Always allow             | allowed, except a local or unreadable host: a card | injected text can send what the session read to any public host without approval; the transcript lines are the check |
+| Never                    | denied ("Web fetches are turned off in Settings.") | no page reaches a session, a session grant included; `WebSearch` still works                                         |
+
+A session grant ("Allow this session", section 07) costs what Always allow costs, for one session.
+
+Always allow and a session grant stop short of local targets. A fetch runs in the Claude Code
+process, outside the sandbox with the holder's network access, so a URL whose host is an IP
+address (including decimal, hex and IPv6 forms), `localhost` or any name under it, or a single
+label is answered by neither: it shows a card, and only the holder's click allows it. Cloud
+metadata endpoints (`169.254.169.254`) and services on the holder's machine or network are the
+reason. Never still denies it. A public name that resolves to a private address is not caught;
+the transcript lines are the check.
+
+**Allowlist.** The list is kept whatever the mode and applies only in Allow listed domains. An
+entry is a bare host name of two labels or more: no scheme, port, path, userinfo, wildcard,
+percent escape or IP address. It is stored lowercase with an IDN in punycode, duplicates dropped,
+at most 100 entries, and the saved policy at most 4 KiB, half the 8 KiB JSON body the POST route
+accepts, so a policy that was saved can always be sent back (even to switch to Never); an invalid
+entry, or a list past either limit, refuses the whole change with a message, and a card's "Always
+allow" refuses to grow the list past them. `localhost` and names under it are not entries either. A URL is
+listed when its `http` or `https` host, lowercase and in punycode with a trailing dot dropped,
+equals an entry or ends in `.` and the entry: `docs.rs` covers `docs.rs` and `api.docs.rs`, never
+`evildocs.rs`, on any port. A URL that does not parse, another scheme and an IP address host are
+never listed, so their fetches ask. An entry covers every subdomain, and nothing refuses a public
+suffix such as `co.uk`, so the holder lists the narrowest host they trust. (My call: a public
+suffix list would add a dependency for a case only the holder can create.)
+
+Settings → Web fetches shows the four modes as radio rows, each with its cost on one line, and
+under Allow listed domains the list, each entry with Remove, and an Add field; every change saves
+at once. Another browser sees the same rows disabled, with the line "Only the browser holding
+authoring changes these".
 
 ### No way for a session to approve itself
 
@@ -541,8 +591,9 @@ is refused by the hook at once, and section 11's record writer then finds the pl
 writes nothing.
 
 The permission mode is `auto`, as for authoring and as for the terminal driver
-(`--permission-mode auto`): `WebFetch` asks the holder, who watches the run in the chat and can
-answer (section 11, "What the chat shows"), and the classifier decides any other call that no rule
+(`--permission-mode auto`): `WebFetch` follows the fetch policy above, and asks the holder when
+no standing rule answers it; the holder watches the run in the chat and can answer (section 11,
+"What the chat shows"). The classifier decides any other call that no rule
 lists, with a block shown as a notice. `/pressure`'s teammates run in the session's own process
 (section 11), so they inherit these settings and hooks. Pressure sessions keep `SendMessage` and
 `ListAgents`, which `/pressure`'s teammates use.
@@ -680,7 +731,8 @@ does (`http.rs:154-161`). The new figures are my call.
 | A read-only browser                                        | Use the dashboard link the app offers to control a run           | Its "Open dashboard" URL carries no dashboard token (section 11); it sees what the dashboard's own rules show a tokenless browser, on loopback the dashboard without its write lanes |
 | A planning session, mistaken or steered by injected text   | Edit code, locked plans, the knowledge base or summaries directly | The write table, enforced by the OS sandbox, permission rules, and the planning hook                |
 | The same session                                           | Read credentials or the server token                             | `denyRead` for Bash; the planning hook for file tools                                               |
-| The same session                                           | Send data out                                                    | No sandbox network; `WebFetch` asks the holder; summary sessions have no web tools                  |
+| The same session                                           | Send data out                                                    | No sandbox network; `WebFetch` asks the holder unless the holder chose a fetch policy or a session grant, and every fetch shows in the chat either way; Always allow and a session grant never answer an IP address, `localhost` or a single-label host, which reach metadata endpoints and local services from outside the sandbox; summary sessions have no web tools |
+| The same session                                           | Allow its own web fetches                                        | The grant and the policy change only through the holder's browser; `web-fetch.json` is outside the write set |
 | The same session                                           | Approve its own permission requests                              | Answer files unwritable; no Unix sockets (tmux) or network (server port); bypass mode disabled      |
 | A document with escape sequences                           | Type keys into a session through an attachment                   | Control characters stripped before delivery                                                         |
 | A document or transcript with HTML, scripts, or images     | Run script in the app, track readers                             | No raw HTML, link scheme allowlist, no document images, CSP                                         |

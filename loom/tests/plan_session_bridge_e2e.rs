@@ -184,6 +184,7 @@ fn config(
         permission_deny_after: Duration::from_secs(3590),
         identity_interval: Duration::from_millis(200),
         tick: Duration::from_millis(50),
+        fetch_policy: Default::default(),
     }
 }
 

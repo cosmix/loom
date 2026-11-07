@@ -199,12 +199,7 @@ impl Bridge {
             Ok(())
         });
         self.flush();
-        match answered {
-            None => Err(BridgeError::NoSession),
-            Some((Err(refused), _)) => Err(refused),
-            Some((Ok(()), Some(failed))) => Err(BridgeError::Io(failed)),
-            Some((Ok(()), None)) => Ok(()),
-        }
+        super::fetches::io_outcome(answered)
     }
 
     /// Stop the running turn: deny what is pending, return the queue and a message not yet

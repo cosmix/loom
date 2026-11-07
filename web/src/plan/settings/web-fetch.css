@@ -1,0 +1,79 @@
+/* Settings → Web fetches (`web-fetch-section.tsx`): four radio rows, the allowlist under the
+   listed mode, and the add field. */
+
+.ps-fetch-note {
+  max-width: 48ch;
+  margin-bottom: var(--space-2);
+  font-size: var(--type-ui);
+  color: var(--muted-foreground);
+}
+
+.ps-fetch-radio {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--foreground);
+  cursor: pointer;
+}
+
+.ps-fetch-radio:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.ps-fetch-radio:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.ps-fetch-list {
+  display: grid;
+  gap: var(--space-2);
+  padding: 0 0 var(--space-3);
+}
+
+.ps-fetch-domain {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  min-height: 36px;
+}
+
+.ps-fetch-host {
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: var(--type-ui);
+  color: var(--foreground);
+  overflow-wrap: anywhere;
+}
+
+.ps-fetch-add {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+
+.ps-fetch-add > label {
+  flex-basis: 100%;
+}
+
+.ps-fetch-input {
+  flex: 1 1 12rem;
+  min-width: 0;
+  height: var(--control-height);
+  padding: 0 var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--corner-control);
+  background: var(--card);
+  color: var(--foreground);
+  font-family: var(--font-mono);
+  font-size: var(--type-ui);
+}
+
+.ps-fetch-input:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}

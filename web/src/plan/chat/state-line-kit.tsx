@@ -25,6 +25,7 @@ export function session(fields: Partial<SessionView> = {}): SessionView {
     state_since: since,
     working_since: since,
     subagents_running: 0,
+    fetch_grant: false,
     last_activity: since,
     ...fields,
   };
@@ -53,6 +54,7 @@ export function permission(tool: string, id = tool): Extract<Item, { type: "perm
     deny_reason: null,
     note: null,
     expires_at: "2026-10-28T11:00:00Z",
+    fetch: null,
   };
 }
 

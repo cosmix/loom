@@ -272,6 +272,7 @@ fn deny_text(reason: Option<DenyReason>) -> &'static str {
         Some(DenyReason::HookError) => "loom plan: the permission hook failed",
         Some(DenyReason::Interrupt) => "the request was interrupted in the loom plan chat",
         Some(DenyReason::SummarySession) => SUMMARY_DENY,
+        Some(DenyReason::Settings) => super::web_fetch::TURNED_OFF,
     }
 }
 

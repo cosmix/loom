@@ -19,3 +19,4 @@ pub mod state;
 pub mod tmux_host;
 pub mod tmux_io;
 pub mod transcript;
+pub mod web_fetch;

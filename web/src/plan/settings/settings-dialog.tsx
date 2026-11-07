@@ -12,6 +12,7 @@ import {
 import { PlannerThemeSwatch } from "./planner-swatch";
 import { ReadingFaceGroup, ReadingSizeGroup } from "./reading-sections";
 import { ReadingTogglesGroup, SettingsGroup, SummariesGroup } from "./settings-sections";
+import { WebFetchGroup } from "./web-fetch-section";
 import "./settings.css";
 
 /** The planner offers every theme; `theme-default.ts` seeds Graphite as its default. */
@@ -42,7 +43,9 @@ export function SettingsDialog({
         <DialogHeader className="ps-head">
           <SlidersHorizontalIcon aria-hidden="true" />
           <DialogTitle className="ps-title">Settings</DialogTitle>
-          <DialogDescription className="sr-only">Saved in this browser</DialogDescription>
+          <DialogDescription className="sr-only">
+            Saved in this browser; web fetches are saved for this project
+          </DialogDescription>
         </DialogHeader>
         <div className="ps-body">
           <SettingsGroup title="Theme" hint="Remembered in this browser">
@@ -57,6 +60,7 @@ export function SettingsDialog({
           <ReadingFaceGroup />
           <ReadingSizeGroup />
           <ReadingTogglesGroup />
+          <WebFetchGroup />
           <SummariesGroup />
         </div>
       </DialogContent>

@@ -277,6 +277,7 @@ fn closing_origin_and_server_item_replacement() {
         deny_reason: Some(DenyReason::Holder),
         note: None,
         expires_at: "2026-10-27T10:05:00.000Z".into(),
+        fetch: None,
     };
     mapper.add_server_item(card(PermissionStatus::Pending));
     let replaced = mapper.replace_server_item(card(PermissionStatus::Denied));

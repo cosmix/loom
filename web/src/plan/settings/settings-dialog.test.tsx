@@ -75,7 +75,8 @@ describe("planner settings sections", () => {
     renderSettings();
 
     const dialog = screen.getByRole("dialog", { name: "Settings" });
-    expect(within(dialog).getByText("Saved in this browser").className).toContain("sr-only");
+    const description = "Saved in this browser; web fetches are saved for this project";
+    expect(within(dialog).getByText(description).className).toContain("sr-only");
     for (const name of ["Theme", "Reading face", "Reading size", "Reading"]) {
       expect(within(dialog).getByRole("heading", { name })).toBeTruthy();
     }

@@ -13,6 +13,7 @@ mod denied;
 mod driver;
 mod ending;
 mod error;
+mod fetches;
 mod flow;
 pub mod host;
 mod opening;
@@ -38,6 +39,8 @@ mod harness;
 mod tests;
 #[cfg(test)]
 mod tests_end;
+#[cfg(test)]
+mod tests_fetches;
 #[cfg(test)]
 mod tests_guards;
 #[cfg(test)]
@@ -73,6 +76,7 @@ use self::registry::{transcripts_of, ChildRecord, Feeds};
 use self::session::Inner;
 use super::kind::{SessionDir, SessionKind};
 use super::model::{ChangedFile, ChatDelta, ChatSnapshot, Origin, SessionState};
+use super::web_fetch::FetchPolicyCell;
 use crate::planning::runtime::RuntimePaths;
 
 /// What a session is launched with (plan 8 supplies it through the guidance seam).
@@ -125,6 +129,8 @@ pub struct BridgeConfig {
     pub identity_interval: Duration,
     /// The driver's period (200 ms).
     pub tick: Duration,
+    /// The project's fetch policy, read at each `WebFetch` request.
+    pub fetch_policy: FetchPolicyCell,
 }
 /// What subscribers hear about sessions.
 #[derive(Debug, Clone, PartialEq)]

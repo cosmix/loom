@@ -14,6 +14,7 @@ use crate::planning::project::Project;
 
 mod draft_commands;
 mod drafts;
+mod fetches;
 mod files;
 mod kickoff;
 mod owner;

@@ -15,7 +15,8 @@ use super::{team::TeamTracker, EndMode, EndOutcome, RecoveryReport};
 use crate::plan_session::attachments::Attachment;
 use crate::plan_session::kind::{SessionDir, SessionKind};
 use crate::plan_session::model::{
-    ChangedFile, Delivery, DenyReason, EndedChat, Failure, Item, Origin, SessionState, SessionView,
+    ChangedFile, Delivery, DenyReason, EndedChat, Failure, FetchView, Item, Origin, SessionState,
+    SessionView,
 };
 use crate::plan_session::permission::Answer;
 use crate::plan_session::state::StateMachine;
@@ -129,6 +130,8 @@ pub(super) struct Request {
     /// The `tool_use_id` of the pending tool call this request is bound to.
     pub(super) tool_use: Option<String>,
     pub(super) open: bool,
+    /// A `WebFetch` request's URL, and the standing rule that answered it.
+    pub(super) fetch: Option<FetchView>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -192,6 +195,9 @@ pub(super) struct Flow {
     pub(super) agents: HashMap<String, AgentWatch>,
     /// A delivered `/compact` waiting for its idle; the instant its boundary record arrived.
     pub(super) compact: Option<Option<Instant>>,
+    /// The holder allowed this session's fetches from a card; never set by the session, never
+    /// carried into another one (a recovered session starts without it).
+    pub(super) fetch_grant: bool,
 }
 
 pub(super) struct Session {

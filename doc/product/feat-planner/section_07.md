@@ -316,12 +316,63 @@ dialog by keystrokes.
   "decision": {"behavior": "deny", "message": "Not in doc/; ask before touching code."}}}
 ```
 
-There is no "always allow". Standing rules belong to section 12, which sets them per session
-kind.
+Standing rules belong to section 12, which sets them per session kind, with one exception the
+holder controls: web fetches.
+
+**Web fetches.** A `WebFetch` request can be answered before anyone is asked, by the project's
+fetch policy (Settings → Web fetches, section 12) or by the session's own grant. The server reads
+the policy at each request, so a change applies to a running session from its next fetch. The
+first rule that matches answers:
+
+1. **Never**: denied, with the message "Web fetches are turned off in Settings."
+2. **Always allow**: allowed.
+3. **Allow listed domains**, when the URL's host is on the allowlist: allowed.
+4. **The session's grant**: allowed.
+5. Otherwise the card asks, as above.
+
+Rules 2 and 4 never reach a URL whose host is an IP address (any form the URL parser reads as
+one: dotted, decimal, hex, IPv6), `localhost` or any name under it, or a single label such as
+`intranet`, nor a URL whose host cannot be read: those fetches show a card in every mode but
+Never, which still denies. A fetch runs in Claude Code's own process, outside the sandbox, so such
+a host reaches cloud metadata endpoints and services on the holder's machine or network; only the
+holder's click on that card allows it. (The allowlist cannot hold these hosts either, section 12.)
+
+Never wins over a session grant. A fetch a rule answers shows no card and no attention ping; the
+chat shows it as one quiet transcript line with the URL and the rule ("Fetch allowed:
+<https://api.docs.rs/v1> · docs.rs is listed in Settings", naming the allowlist entry that matched;
+"Fetch refused: <https://docs.rs/serde> · Web fetches are turned off in Settings."), so the holder
+sees every fetch that left the session. The URL shows as the fetch reads it, with the host in
+punycode so a look-alike name is visible, and a URL past 2048 characters ends in "…" (the card's
+input shows the request whole). The
+hook protocol is unchanged: the server writes the answer file as soon as the request arrives. A
+request the card could not show whole, a recovered answer and an ending's denial come first, as
+above.
+
+A `WebFetch` card adds two secondary choices beside Allow and Deny, for the holder only:
+
+- **Allow this session** allows this fetch and the session's later fetches, and answers the
+  session's other open fetch cards. The chat shows "Web fetches allowed for this session" under
+  its head, with **Ask again**, which ends the grant: later fetches show a card again. The grant
+  lives in the server's memory for that one session. A new chat, the next pressure session and a
+  server restart ask again (a session the restart recovers only runs its final write). It never
+  applies to another tool or another session, and only the holder's browser sets or ends it,
+  through the same check as Allow and Deny; nothing a session writes reaches it.
+- **Always allow <host>** lists the URL's host, as the server reads it from the request, in
+  Settings, then allows this fetch and every open fetch card the list now covers. In Ask every
+  time it also switches Settings to Allow listed domains, the only mode the list applies in; the
+  button's description says so. (My call: a button that listed the host and left the next fetch
+  asking would read as broken.) It is offered only when the URL's host can be listed (the card
+  carries that as a flag of its own): an IP address, `localhost`, a single label and a name with an
+  underscore cannot, and the server refuses the command for them too.
+
+Every allow without a person has the same cost: text injected into the session can make it fetch a
+URL that carries what the session read. The transcript line keeps each such fetch visible, and Ask
+again or a Settings change is one click (section 12 states the cost of each mode).
 
 Authoring and pressure sessions run in auto mode, so a request reaches this flow only for a call
-that matches an `ask` rule in the session's settings (`WebFetch`, and the `loom knowledge` and
-`loom plan summary` commands that Kickoff and Team do not pre-allow; section 12). Everything else
+that matches an `ask` rule in the session's settings (`WebFetch`, unless a standing rule above
+answers it, and the `loom knowledge` and `loom plan summary` commands that Kickoff and Team do not
+pre-allow; section 12). Everything else
 that no allow rule covers is decided by Claude Code's classifier. When the classifier blocks a
 call, Claude Code runs `loom plan hook PermissionDenied`, the spool carries the payload's
 `tool_name` and `reason`, and the chat shows a notice item, `Auto mode blocked Bash:

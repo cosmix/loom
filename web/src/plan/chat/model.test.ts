@@ -247,6 +247,7 @@ it("two pending permissions oldest first", () => {
     deny_reason: null,
     note: null,
     expires_at: "2026-10-28T12:00:00Z",
+    fetch: null,
   };
   seed(store, {
     ...initial(),
