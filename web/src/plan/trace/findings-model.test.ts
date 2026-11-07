@@ -135,6 +135,9 @@ describe("finding actions", () => {
   it("trims a dismissal reason and refuses an empty one", () => {
     expect(dismissReason("  duplicate \n")).toBe("duplicate");
     expect(dismissReason(" \t ")).toBeNull();
+    expect(dismissReason("two\nlines\u0007 here")).toBe("two lines here");
+    expect(dismissReason("\u0000\n")).toBeNull();
+    expect(dismissReason("x".repeat(250))).toBe("x".repeat(200));
   });
 
   it("keeps the ledger under the feature's plans folder", () => {

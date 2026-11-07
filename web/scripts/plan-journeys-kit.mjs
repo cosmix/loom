@@ -307,12 +307,19 @@ export async function pageState(page, href, prev) {
 
 export const CHAT_ASIDE = 'aside[aria-label="Chat"]';
 
-/** Every visible button's label with how many copies sit outside and inside the chat aside. */
+/**
+ * Every visible button's label with how many copies sit outside and inside the chat aside.
+ * Coverage map cards (`button.maps-card`) are skipped: one card is drawn per heading and real
+ * sections share heading titles, so a repeated card label is data, not one offer drawn twice.
+ * The per-finding actions (`.maps-actions`) are skipped for the same reason: every open finding
+ * draws its own Plan this, Fold into entry and Dismiss, each acting on a different finding.
+ */
 export const BUTTON_LABELS = (chatSelector) => {
   const shown = (el) =>
     el.checkVisibility({ checkVisibilityCSS: true }) && el.getClientRects().length > 0;
   const labels = {};
   for (const b of [...document.querySelectorAll("button")].filter(shown)) {
+    if (b.matches("button.maps-card, .maps-actions button")) continue;
     const text = b.innerText.replace(/\s+/g, " ").trim();
     if (!text) continue;
     const seen = (labels[text] ??= { outside: 0, chat: 0 });

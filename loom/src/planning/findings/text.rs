@@ -85,8 +85,8 @@ pub(super) fn unescape(text: &str) -> String {
     }
 }
 
-/// A dismissal reason: one line (line breaks and tabs become spaces, other controls are dropped), trimmed, at most 200 characters. `None` when
-/// nothing is left.
+/// A dismissal reason: one line (line breaks and tabs become spaces, other controls are
+/// dropped), trimmed, at most 200 characters. `None` when nothing is left.
 pub fn reason(text: &str) -> Option<String> {
     let flat = one_line(text);
     let reason = cut(&flat, REASON_CHARS).trim_end();

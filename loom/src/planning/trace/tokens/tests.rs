@@ -10,6 +10,13 @@ fn section(number: u32, anchor: Option<&str>) -> SectionRef {
 }
 
 #[test]
+fn a_link_target_keeps_its_fragment_over_the_label() {
+    let (refs, bad) = section_refs("[section_04](section_04.md#a), [section_05](<x.md>)");
+    assert_eq!(refs, [section(4, Some("a")), section(5, None)]);
+    assert!(bad.is_empty(), "{bad:?}");
+}
+
+#[test]
 fn section_tokens_in_every_form() {
     let (refs, bad) = section_refs(
         "section_04, section_05.md, section_06#rebuild-budget, [section_07](x.md), \

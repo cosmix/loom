@@ -1,3 +1,4 @@
+import type { OfferView } from "@/plan/api/schema";
 import type {
   FindingStatus,
   NodeRef,
@@ -6,6 +7,7 @@ import type {
   TraceView,
 } from "@/plan/api/schema-trace";
 import { fileName } from "@/plan/concept/passages";
+import { PLAN_FOLLOW_UPS_ID } from "@/plan/new/follow-up-features";
 import { docOfPath } from "@/plan/trace/model";
 
 // Pure reads of the findings ledger as the trace carries it: grouping, counts, About labels and
@@ -103,4 +105,25 @@ export function nodeLabel(trace: TraceView, node: NodeRef): string {
   const entry =
     doc?.role === "metaplan" ? trace.entries.find((e) => e.anchor === node.anchor) : undefined;
   return entry?.title ?? `${doc?.title ?? fallback}#${node.anchor}`;
+}
+
+/**
+ * The Plan follow-ups offer for this feature. The server starts `plan-follow-ups` for any feature
+ * that has a metaplan, while the checklist carries the offer only once every plan is done, so the
+ * checklist's own offer wins and otherwise one is built from the trace; undefined without a metaplan.
+ */
+export function followUpsOffer(
+  checklistOffer: OfferView | undefined,
+  trace: TraceView,
+  feature: string,
+): OfferView | undefined {
+  if (checklistOffer !== undefined) return checklistOffer;
+  if (!trace.documents.some((doc) => doc.role === "metaplan")) return undefined;
+  return {
+    id: PLAN_FOLLOW_UPS_ID,
+    kind: "plan_follow_ups",
+    label: "Plan follow-ups",
+    target: null,
+    feature,
+  };
 }

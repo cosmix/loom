@@ -7,7 +7,7 @@
 use serde::Deserialize;
 
 use crate::plan_server::files::save::{
-    outcome_response, refusal_response, save_document, SaveRequest,
+    outcome_response, refusal_response, save_document, SaveOutcome, SaveRequest,
 };
 use crate::plan_server::request::{ApiRequest, ApiResponse};
 use crate::plan_server::wire::paths::to_doc_rel;
@@ -15,6 +15,8 @@ use crate::plan_server::wire::trace::{FindingKindView, FindingStatusView};
 use crate::planning::discover::read_doc;
 use crate::planning::findings::{ledger_path, reason, set_status, FindingStatus};
 use crate::planning::kinds::is_feature_name;
+use crate::planning::sections::normalized_hash;
+use crate::planning::trace::tokens::is_plan_token;
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -60,6 +62,15 @@ fn write_status(req: &ApiRequest<'_>, body: &StatusRequest, status: &FindingStat
     let Ok(text) = read_doc(req.ctx.root(), &rel) else {
         return ApiResponse::error(404, "not_found", "the feature has no findings ledger");
     };
+    // The new text is built from this read, so it must be the text the reader opened: a file that
+    // changed away and back since would otherwise take text built from the middle version.
+    let current_hash = normalized_hash(&text);
+    if current_hash != body.hash {
+        return outcome_response(SaveOutcome::Conflict {
+            current_text: text,
+            current_hash,
+        });
+    }
     let Ok(new_text) = set_status(&text, &body.id, status) else {
         return ApiResponse::error(400, "bad_request", "the ledger has no such finding");
     };
@@ -102,21 +113,6 @@ pub(super) fn status_of(
             .ok_or("a dismissal needs a reason"),
         (FindingKindView::Dismissed, None) => Err("a dismissal needs a reason"),
     }
-}
-
-/// `PLAN-<slug>.md` with a non-empty slug of letters, digits, `-`, `_` and inner dots.
-fn is_plan_token(token: &str) -> bool {
-    let Some(slug) = token
-        .strip_prefix("PLAN-")
-        .and_then(|rest| rest.strip_suffix(".md"))
-    else {
-        return false;
-    };
-    !slug.is_empty()
-        && !slug.starts_with('.')
-        && slug
-            .bytes()
-            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.'))
 }
 
 /// `metaplan#<anchor>` for an entry anchor of the feature's metaplan.
