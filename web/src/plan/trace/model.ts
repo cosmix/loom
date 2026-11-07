@@ -42,6 +42,15 @@ export function docOfPath(trace: TraceView, repoPath: string): TraceDoc | undefi
   return trace.documents.find((doc) => doc.path === repoPath);
 }
 
+/**
+ * The settle state a screen shows for a document: null for one the reader is not asked to settle
+ * (a stub, or done work, which the server marks `settleable: false`). Every mark, control, note
+ * and count of the settle flow reads the state through this.
+ */
+export function shownSettle(doc: TraceDoc | undefined): SettleState | null {
+  return doc?.settleable ? doc.settle : null;
+}
+
 function baseName(path: string): string {
   return path.split("/").at(-1) ?? path;
 }
@@ -268,7 +277,7 @@ function planChips(trace: TraceView, sentence: ChipSentence): EdgeChip[] {
         label: heading.title,
         path: heading.path,
         anchor: heading.anchor,
-        state: docOfPath(trace, heading.path)?.settle ?? null,
+        state: shownSettle(docOfPath(trace, heading.path)),
         count: null,
       });
     }
@@ -291,7 +300,8 @@ export function chipsFor(trace: TraceView, sentence: ChipSentence, pageKind: Pag
 export interface ImpactRow {
   path: string;
   title: string;
-  state: SettleState;
+  /** Null for a document the reader is not asked to settle (a done plan covering the section). */
+  state: SettleState | null;
 }
 
 export interface ImpactGroup {
@@ -331,10 +341,13 @@ function impactOf(trace: TraceView, path: string): ImpactGroup {
   const rows = new Map<string, ImpactRow>();
   const add = (doc: TraceDoc) => {
     if (doc.path !== path)
-      rows.set(doc.path, { path: doc.path, title: doc.title, state: doc.settle });
+      rows.set(doc.path, { path: doc.path, title: doc.title, state: shownSettle(doc) });
   };
   relatedDocs(trace, path)
-    .filter((doc) => MOVED.includes(doc.settle))
+    .filter((doc) => {
+      const state = shownSettle(doc);
+      return state !== null && MOVED.includes(state);
+    })
     .forEach(add);
   // A plan covering a changed section is listed in whatever state it is in: the reader decides.
   if (docOfPath(trace, path)?.role === "section") coveringPlans(trace, path).forEach(add);

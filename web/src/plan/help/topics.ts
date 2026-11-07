@@ -55,7 +55,7 @@ export const PLANNER_HELP_TOPICS: readonly PlannerHelpTopic[] = [
           },
           {
             target: 'nav[aria-label="Feature documents"]',
-            text: "The spine has five groups: Vision, Product spec, Metaplan, Plans and Run. It marks what is done, and each plan row reads Pressure-tested with a date or Not pressure-tested.",
+            text: "The spine has four groups: Vision, Product spec, Metaplan and Plans, which ends with the Findings page. It marks what is done, and each plan row reads Pressure-tested with a date or Not pressure-tested.",
           },
           {
             target: '[aria-label$="Waiting for you"]',

@@ -4,32 +4,16 @@ import { useEffect, useState } from "react";
 import type { ChecklistView } from "@/plan/api/schema";
 import { ConfigBlockNotice } from "@/plan/chat/pressure/config-block-notice";
 import { Untrusted } from "@/plan/chat/visible-controls";
-import { NoPlans, PlanPage, UnwrittenPlans } from "@/plan/feature/plan-page";
-import { PlanName, PlanStateStatus } from "@/plan/feature/plan-state";
 import { runScope, runSentence, startControl, type RunRead } from "@/plan/feature/run-scope";
 import { useFeature } from "@/plan/feature/use-feature";
 import { DashboardLink, webUrl } from "@/plan/run/dashboard-button";
 import { StartRunButton } from "@/plan/run/plan-run-actions";
 import { fetchRunState, runStateAtom, runStripAtom } from "@/plan/run/use-run";
-import { LoadState } from "@/plan/ui/load-state";
 
-function PlanRows({ checklist }: { checklist: ChecklistView }) {
-  return (
-    <ul aria-label="Plans" className="plan-list plan-page__rows">
-      {checklist.plan_rows.map((row) => (
-        <li key={row.path}>
-          <PlanName feature={checklist.feature} slug={row.slug} />
-          <span className="plan-page__side">
-            <PlanStateStatus state={row.state} />
-          </span>
-        </li>
-      ))}
-    </ul>
-  );
-}
+import "./run-panel.css";
 
 /**
- * The page's one Start a run button (`startControl`), with the Codex configuration notice under
+ * The panel's one Start a run button (`startControl`), with the Codex configuration notice under
  * it, and a dashboard link while a run of this feature (or none) is up. It is the screen's
  * primary only when the checklist's primary is the start_run offer.
  */
@@ -39,7 +23,7 @@ function RunActions({ checklist, read }: { checklist: ChecklistView; read: RunRe
   const dashboard = runScope(checklist, state) === "foreign" ? null : webUrl(state?.dashboard_url);
   if (control === null && dashboard === null) return null;
   return (
-    <div className="plan-page__actions">
+    <div className="plan-run__actions">
       {control !== null && (
         <div>
           <StartRunButton
@@ -56,7 +40,7 @@ function RunActions({ checklist, read }: { checklist: ChecklistView; read: RunRe
 }
 
 /**
- * The server pushes no run state, so the page asks for it on arrival, as the run dialog does. A
+ * The server pushes no run state, so the panel asks for it on arrival, as the run dialog does. A
  * failed request reads as failed, never as idle. An answer is applied even when a newer request
  * overtook it while no state is known (`fetchRunState`), so an answered request always ends the
  * wait, whatever happens to the newer one.
@@ -77,37 +61,28 @@ function useRunRead(): RunRead {
   return read;
 }
 
-/** `/f/:feature/run`: the run's state, the one start action and each plan's state. */
-export function RunPage() {
-  const { checklist } = useFeature();
+function Panel({ checklist }: { checklist: ChecklistView }) {
   const state = useAtomValue(runStateAtom);
   const strip = useAtomValue(runStripAtom);
   const read = useRunRead();
-  if (!checklist) return <LoadState state="loading" title="Loading the feature" />;
   const sentence = runSentence(checklist, state, strip, read);
   return (
-    <PlanPage
-      feature={checklist.feature}
-      label="run"
-      title="Run"
-      lede={
-        <span role="status">
-          <Untrusted text={sentence} />
-        </span>
-      }
-    >
-      {checklist.plan_rows.length === 0 ? (
-        <NoPlans
-          feature={checklist.feature}
-          sentence="Write a plan first. A run builds a written plan, stage by stage."
-        />
-      ) : (
-        <>
-          <RunActions checklist={checklist} read={read} />
-          <PlanRows checklist={checklist} />
-          <UnwrittenPlans checklist={checklist} />
-        </>
-      )}
-    </PlanPage>
+    <section className="plan-run" aria-label="Run">
+      <p className="plan-run__line" role="status">
+        <Untrusted text={sentence} />
+      </p>
+      <RunActions checklist={checklist} read={read} />
+    </section>
   );
+}
+
+/**
+ * The feature's run on the Plans overview: one line on the run's state, the one Start a run
+ * button and the dashboard link. A plan's state is its spine row's and its page's, so the panel
+ * lists no plans; a feature with no plan yet has no run to speak of and draws nothing.
+ */
+export function RunPanel() {
+  const { checklist } = useFeature();
+  if (!checklist || checklist.plan_rows.length === 0) return null;
+  return <Panel checklist={checklist} />;
 }

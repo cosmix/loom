@@ -95,10 +95,10 @@ const buttonsNamed = (root: HTMLElement, label: string) =>
     .queryAllByRole("button")
     .filter((button) => button.textContent?.includes(label));
 
-it("the Run page draws the start_run offer once on a read-only server", async () => {
+it("the Plans overview draws the start_run offer once on a read-only server", async () => {
   const row = planRow(ONE, "written");
   renderRoute(
-    "/f/atlas/run",
+    "/f/atlas/engineering",
     atlas({
       plan_rows: [row],
       plans: { listed: 1, total: 1, written: 1, running: 0, done: 0 },

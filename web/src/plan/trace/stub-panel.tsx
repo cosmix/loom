@@ -6,7 +6,7 @@ import { Untrusted } from "@/plan/chat/visible-controls";
 import { useKeptDoc } from "@/plan/concept/passage-doc";
 import { featureSourceHref } from "@/plan/feature/source-href";
 
-import { bundleLinks, docOfPath } from "./model";
+import { docOfPath, shownSettle } from "./model";
 import { entryText, visionRowText, type StubText } from "./stub-text";
 import { useTrace } from "./state";
 
@@ -52,38 +52,18 @@ function StubWords({
   );
 }
 
-function Briefs({ feature, doc }: { feature: string; doc: TraceDoc }): JSX.Element | null {
-  const { trace } = useTrace(feature);
-  const links = trace ? bundleLinks(trace, doc.path, feature) : [];
-  if (links.length === 0) return null;
-  return (
-    <div className="trace-briefs">
-      <p>Briefs</p>
-      <ul aria-label="Briefs">
-        {links.map((link) => (
-          <li key={link.path}>
-            <Link to={link.to}>
-              <Untrusted text={link.label} />
-            </Link>
-          </li>
-        ))}
-      </ul>
-    </div>
-  );
-}
-
 /**
- * What sets a section or a plan's scope before its body: the stub text linked to its place, a
- * note when the stub changed since the document was settled, and a plan's brief files. Text
- * from the documents is drawn as text, never as Markdown.
+ * What sets a section or a plan's scope before its body: the stub text linked to its place, with
+ * a note when the stub changed since the document was settled (never for done work, which is not
+ * settled). Text from the documents is drawn as text, never as Markdown.
  */
 export function StubPanel(props: { feature: string; path: string }): JSX.Element | null {
   const { feature, path } = props;
   const { trace } = useTrace(feature);
   const doc = trace ? docOfPath(trace, path) : undefined;
   if (!doc || (doc.role !== "section" && doc.role !== "plan")) return null;
-  const changed = doc.settle === "stub_changed";
-  if (!doc.stub && !changed && doc.bundle.length === 0) return null;
+  const changed = shownSettle(doc) === "stub_changed";
+  if (!doc.stub && !changed) return null;
   return (
     <div className="trace-stub">
       {doc.stub && <StubWords feature={feature} doc={doc} stub={doc.stub} />}
@@ -92,7 +72,6 @@ export function StubPanel(props: { feature: string; path: string }): JSX.Element
           Stub changed since settled
         </p>
       )}
-      <Briefs feature={feature} doc={doc} />
     </div>
   );
 }

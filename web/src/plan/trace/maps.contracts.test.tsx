@@ -378,7 +378,8 @@ it("the spine links Coverage and Findings with the open count", async () => {
   const coverage = await spine.findByRole("link", { name: /^Coverage\b/ });
   expect(coverage.getAttribute("href")).toBe("/f/demo/coverage");
 
-  const expand = spine.queryByRole("button", { name: "Expand Run" });
+  // Findings closes the Plans group, where the plans' run reviews feed it.
+  const expand = spine.queryByRole("button", { name: "Expand Plans" });
   if (expand) fireEvent.click(expand);
 
   // Three open findings (F-1, F-4, F-5) of four; F-2 is dismissed.

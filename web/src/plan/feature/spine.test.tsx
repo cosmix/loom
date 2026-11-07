@@ -60,7 +60,7 @@ const link = (name: string | RegExp) => within(spine()).getByRole("link", { name
 const current = () => within(spine()).getAllByRole("link", { current: "page" });
 
 describe("rows", () => {
-  it("lists the five groups in workflow order, each a link to its page", () => {
+  it("lists the four groups in workflow order, each a link to its page", () => {
     renderSpine("/f/atlas/product");
 
     const heads = within(spine())
@@ -73,7 +73,6 @@ describe("rows", () => {
       ["Product spec 0/1", "/f/atlas/product"],
       ["Metaplan done", "/f/atlas/metaplan"],
       ["Plans 1/1", "/f/atlas/engineering"],
-      ["Run optional", "/f/atlas/run"],
     ]);
   });
 
@@ -102,7 +101,7 @@ describe("rows", () => {
     renderSpine("/f/atlas/vision", atlas({ sections: [], steps: [] }));
 
     expect(link(/\bProduct spec\b/).textContent).toContain("not started");
-    for (const name of [/\bVision\b/, /\bMetaplan\b/, /\bPlans\b/, /\bRun\b/]) {
+    for (const name of [/\bVision\b/, /\bMetaplan\b/, /\bPlans\b/]) {
       expect(link(name)).toBeTruthy();
     }
   });

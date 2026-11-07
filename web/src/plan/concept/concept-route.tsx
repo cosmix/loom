@@ -281,7 +281,10 @@ function OverviewHead({ page, pageKey }: { page: ConceptPage; pageKey: string })
   );
 }
 
-/** `above` (the gaps) sits between the page's head and its document key, so the head comes first. */
+/**
+ * `above` (the gaps) sits between the page's head and an overview's document key, so the head
+ * comes first. A summary page draws no key: its heading names its document.
+ */
 function LoadedPage({
   page,
   pageKey,
@@ -296,7 +299,7 @@ function LoadedPage({
     <>
       {summary ? <PageHeading page={page} /> : <OverviewHead page={page} pageKey={pageKey} />}
       {above}
-      {page.key_chips.length > 0 && <DocumentKey page={page} pageKey={pageKey} />}
+      {!summary && page.key_chips.length > 0 && <DocumentKey page={page} pageKey={pageKey} />}
       {page.empty ? (
         <EmptyStates page={page} empty={page.empty} />
       ) : (

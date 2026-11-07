@@ -45,6 +45,9 @@ export const traceDocSchema = z.strictObject({
   title: z.string(),
   progress: progressKindSchema,
   settle: settleStateSchema,
+  /** Whether the reader is asked to settle it: done work (a locked plan, a done feature's
+   *  vision and metaplan) and stubs are not, and show no settle state anywhere. */
+  settleable: z.boolean(),
   stub: nodeRefSchema.nullable(),
   number: u32.nullable(),
   slug: z.string().nullable(),

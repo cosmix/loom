@@ -11,13 +11,12 @@ export type ViewedKind =
   | "metaplan"
   | "engineering-overview"
   | "plan"
-  | "run"
   | "file"
   | null;
 
 export type ViewedDocument = {
   kind: ViewedKind;
-  /** Repo-relative source path to attach, or null when the page has none (run). */
+  /** Repo-relative source path to attach, or null while the feature's checklist cannot name it. */
   path: string | null;
   /** Short name for the chip: "section_05", "Product overview", "metaplan". */
   name: string;
@@ -32,7 +31,7 @@ export const viewedDocumentAtom = atom<ViewedDocument>(NO_DOCUMENT);
 
 /**
  * The document the user dismissed the context line for, null while none is. `path` is null for a
- * page without a source file (run), which no other page shares. Only `ScreenSync`
+ * page whose source the checklist could not name yet. Only `ScreenSync`
  * clears it, on a route change: the dismissal follows the document, so another URL for the same
  * file keeps it and a checklist arriving on the same page does not bring the line back.
  */
@@ -151,9 +150,6 @@ function featurePageOf(segments: string[], checklist: ChecklistView | null): Vie
     }
     case "engineering":
       return engineeringPage(segments, own);
-    case "run":
-      if (rest.length > 0) return NO_DOCUMENT;
-      return { kind: "run", path: null, name: "Run" };
     default:
       return NO_DOCUMENT;
   }

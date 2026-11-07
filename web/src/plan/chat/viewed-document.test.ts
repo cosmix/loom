@@ -31,7 +31,6 @@ it.each([
     "doc/plans/atlas/IN_PROGRESS-PLAN-atlas-01-documents.md",
     "atlas-01-documents",
   ],
-  ["/f/atlas/run", "run", null, "Run"],
   ["/plans/solo", "plan", "doc/plans/PLAN-solo.md", "solo"],
   ["/files/product/atlas/notes.md", "file", "doc/product/atlas/notes.md", "notes.md"],
 ] as const)("%s is a %s with source %s", (pathname, kind, path, name) => {
@@ -74,10 +73,12 @@ it("a feature with no vision or metaplan has no document on its overview pages",
   expect(view("/f/atlas/metaplan", bare)).toEqual(NO_DOCUMENT);
 });
 
-it("run has no document by design but keeps its name with a loaded checklist", () => {
+it("pages that show no document of their own have none, whatever the checklist holds", () => {
   const bare = checklist({ has_product: false, metaplans: [], sections: [] });
   expect(view("/f/atlas/pressure", bare)).toEqual(NO_DOCUMENT);
-  expect(view("/f/atlas/run", bare)).toEqual({ kind: "run", path: null, name: "Run" });
+  // `/f/<f>/run` only redirects to the Plans overview, which names the metaplan once it lands.
+  expect(view("/f/atlas/run", bare)).toEqual(NO_DOCUMENT);
+  expect(view("/f/atlas/findings")).toEqual(NO_DOCUMENT);
 });
 
 it.each([

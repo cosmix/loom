@@ -4,7 +4,7 @@ import { useAtomValue } from "jotai/react";
 import { Link } from "react-router";
 
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { docKindOfPageKey, isOverviewKey, pageHref, parsePageKey } from "@/plan/api/page-key";
+import { docKindOfPageKey, pageHref, parsePageKey } from "@/plan/api/page-key";
 import type { ConceptPage, ImplementsView, KeyChip } from "@/plan/api/schema-concept";
 import { Untrusted } from "@/plan/chat/visible-controls";
 import { DocMark } from "@/plan/ui/doc-mark";
@@ -12,7 +12,6 @@ import { DocMark } from "@/plan/ui/doc-mark";
 import "./concept-page.css";
 import { KeyChipExtras } from "./key-chip-extras";
 import { docColour } from "./marks";
-import { pageSentences } from "./open-state";
 import { conceptPageAtom } from "./page-state";
 import { SentenceText } from "./sentence-text";
 import { outOfDateText } from "./summary-text";
@@ -181,27 +180,18 @@ function sourceNoun(chips: readonly KeyChip[]): string {
   return chips.length === 1 ? noun : `${chips.length} ${noun}s`;
 }
 
-/**
- * The key's one-line lede. An overview summarizes the key's documents; any other page summarizes
- * its own document, so there the key is only the colour legend of the feature.
- */
+/** The key's one-line lede: what the overview summarizes. */
 export function keyLede(page: ConceptPage): string {
   const chips = page.key_chips;
-  if (!isOverviewKey(page.key)) return `Key: the ${sourceNoun(chips)} of this feature`;
   return `${chips.length === 1 ? "Source" : "Sources"}: the ${sourceNoun(chips)} this overview summarizes`;
 }
 
-/** Whether any sentence on the page carries a mark, so the mark legend has something to explain. */
-function hasMarks(page: ConceptPage): boolean {
-  return pageSentences(page).some((sentence) => sentence.marks.length > 0);
-}
-
 /**
- * What the spine cannot show: which colour is which document, and what the squares after a
- * sentence mean. On the page ground: one head line holding the lede and, when the page has
- * marks, the mark legend at its end; then per document its mark, number and title on a
- * fixed-width track, the first four with "more" for the rest. No chips, no box (DESIGN.md,
- * Surfaces).
+ * An overview's sources: which documents it summarizes and which colour is which. On the page
+ * ground: the lede, then per document its mark, number and title on a fixed-width track, the
+ * first four with "more" for the rest. No chips, no box (DESIGN.md, Surfaces). A summary page
+ * draws no key: its own document is its heading, and a mark's tooltip names the document it
+ * stands for (the marks themselves are explained in Help, Legend).
  */
 export function DocumentKey({ page, pageKey }: { page: ConceptPage; pageKey: string }) {
   // Expansion belongs to one page: another page opens collapsed without remounting the key row,
@@ -211,22 +201,11 @@ export function DocumentKey({ page, pageKey }: { page: ConceptPage; pageKey: str
   const expanded = expandedOn === pageKey;
   const hidden = Math.max(0, page.key_chips.length - VISIBLE_CHIPS);
   const shown = expanded ? page.key_chips : page.key_chips.slice(0, VISIBLE_CHIPS);
-  const dashed = page.key_chips.some((chip) => chip.out_of_date !== null);
   return (
     <div className="concept-key">
-      <div className="concept-key-head">
-        <p id={ledeId} className="plan-fine concept-key-lede">
-          {keyLede(page)}
-        </p>
-        {hasMarks(page) && (
-          <p className="plan-fine concept-key-legend">
-            <span aria-hidden="true" className="concept-key-square" />
-            {dashed
-              ? "A square after a sentence names a document it draws on. Dashed means out of date."
-              : "A square after a sentence names a document it draws on."}
-          </p>
-        )}
-      </div>
+      <p id={ledeId} className="plan-fine concept-key-lede">
+        {keyLede(page)}
+      </p>
       <ul
         role="list"
         aria-label="Document key"
