@@ -15,7 +15,7 @@ use crate::testrun::languages::{self, LanguageProfile};
 use crate::verify::contracts::changes::git;
 use crate::verify::review::fingerprint::ChangeFingerprint;
 
-const MAX_TEST_FILE_BYTES: usize = 10 * 1024 * 1024;
+pub(super) const MAX_TEST_FILE_BYTES: usize = 10 * 1024 * 1024;
 
 /// A language profile's compiled line patterns.
 pub(super) struct Matchers {
@@ -139,7 +139,7 @@ pub(super) fn total_events(
         .collect())
 }
 
-fn read_current(worktree: &Path, path: &str) -> Result<Vec<u8>> {
+pub(super) fn read_current(worktree: &Path, path: &str) -> Result<Vec<u8>> {
     read_bounded(worktree, Path::new(path), MAX_TEST_FILE_BYTES)
         .with_context(|| format!("reading test file {path}"))
 }

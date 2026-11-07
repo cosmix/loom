@@ -212,6 +212,11 @@ pub enum HookCommands {
     #[command(hide = true)]
     ReviewerModel,
 
+    /// Print the test-integrity brief for a `loom-code-reviewer` spawn (spawn
+    /// guard helper).
+    #[command(hide = true)]
+    ReviewerBrief,
+
     /// Discover package-scoped project types for skill recommendations.
     #[command(hide = true)]
     ProjectTypes,

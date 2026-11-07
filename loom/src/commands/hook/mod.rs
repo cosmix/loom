@@ -13,6 +13,8 @@ pub mod relay;
 pub mod review_harvest;
 pub mod review_start;
 mod review_transcript;
+pub mod reviewer_brief;
+mod reviewer_brief_plan;
 pub mod reviewer_model;
 pub(crate) mod target;
 pub mod user_prompt;

@@ -107,7 +107,7 @@ pub(crate) fn append_adversarial_review(content: &mut String) {
     );
 }
 
-/// Append the four integration-verify review dimensions, each meant to become
+/// Append the five integration-verify review dimensions, each meant to become
 /// its own parallel subagent. `loom-code-reviewer` is READ-ONLY, so its
 /// findings go to an engineer to fix.
 pub(super) fn append_review_dimension_details(content: &mut String) {
@@ -115,7 +115,8 @@ pub(super) fn append_review_dimension_details(content: &mut String) {
     content.push_str(&format!("1. **Security** — invoke {}: OWASP Top 10, hardcoded secrets, dependency CVEs, boundary sanitization, error-message leakage.\n", crate::skills::skill_invocation("loom-security-audit")));
     content.push_str("2. **Architecture** — module coupling, swallowed errors, over/under-abstraction, naming consistency, dead code and unreachable paths.\n");
     content.push_str("3. **Build/test/sandbox** — inspect the `loom check` summaries and log pointers supplied by the orchestrator, including ALL stderr and warnings even when tests pass; any \"blocked\", \"denied\", \"connection refused\" or \"failed to download\" is a BLOCKER, not a workaround. Exit code 0 does NOT mean success.\n");
-    content.push_str("4. **Functional** — RUN the feature end-to-end on realistic inputs; confirm the output is correct and the feature is registered, mounted, and callable.\n\n");
+    content.push_str("4. **Functional** — RUN the feature end-to-end on realistic inputs; confirm the output is correct and the feature is registered, mounted, and callable.\n");
+    content.push_str("5. **Performance** — hot paths, unbounded loops or reads, N+1 queries, repeated work per request, synchronous I/O on a latency path, unbounded memory or lock hold time; reason from the plan's stated load or deployment evidence and name a measurement or a bounded-cost argument. Your reviewer brief lists the plan-wide change: review it against the plan's stage briefs, not against your own expectation.\n\n");
 }
 
 /// Append the two-bullet "Isolation Boundaries (STRICT)" block used by IV and

@@ -83,6 +83,7 @@ run_test "worktree-file-guard: the session scratchpad is open, its surroundings 
 run_test "worktree guards: an inherited LOOM_WORKTREE_PATH binds only its own session" "$SCRIPT_DIR/worktree-guards-inherited-env.sh"
 run_test "spawn-guard: agent tier falls back to ~/.claude/agents" "$SCRIPT_DIR/spawn-guard-home-agent-tier.sh"
 run_test "spawn-guard: loom-code-reviewer runs the configured model and effort" "$SCRIPT_DIR/spawn-guard-reviewer-model.sh"
+run_test "spawn-guard: reviewer brief appended once, fails open" "$SCRIPT_DIR/spawn-guard-reviewer-brief.sh"
 run_test "credential-guard: capability tokens blocked through the state-root symlink" "$SCRIPT_DIR/credential-guard-tokens.sh"
 run_test "credential-guard: sandbox denyRead gates file tools, search roots above a denial run" "$SCRIPT_DIR/credential-guard-deny-read.sh"
 run_test "credential-guard: effective session policy and aliased state root" "$SCRIPT_DIR/credential-guard-session-policy.sh"
