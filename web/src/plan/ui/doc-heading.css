@@ -63,8 +63,9 @@
 /* One bordered bar holds every control over the document, so they read as one instrument: a
    32px track (`--border` edge, control corners) whose groups (`.doc-heading-group`) are divided
    by 1px rules of the same edge. Inside, every control is a 24px row control on one centre line:
-   the view switch's segments, the settle pill, and the quiet buttons. The first group is the
-   view switch; the second the settle state and its verb; the third Edit, Discuss and Open all. A
+   the view switch's segments, the settle control, and the quiet buttons. The first group is the
+   view switch; the second the page's actions: Edit and Discuss, then the settle control, then
+   Open all on a summary page, the heading's actions on a source page. A
    control is always inside a group: a bare control in the bar would sit at its top edge, off the
    groups' centre line. A group that renders nothing collapses (`:empty`), and its rule goes with it. Under 40rem of
    heading width the bar stacks its groups as rows divided by hairlines, so nothing wraps mid
