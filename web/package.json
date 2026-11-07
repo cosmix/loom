@@ -44,6 +44,7 @@
     "lucide-react": "^1.41.0",
     "mdast-util-from-markdown": "^2.1.0",
     "mdast-util-gfm": "^3.1.0",
+    "mermaid": "^12.3.0",
     "micromark-extension-gfm": "^3.0.0",
     "radix-ui": "^1.6.7",
     "react": "19.2.8",
