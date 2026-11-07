@@ -1,11 +1,10 @@
 use anyhow::Result;
 use chrono::{DateTime, Utc};
 
-use super::DEFAULT_HUNG_TIMEOUT_SECS;
-use crate::plan::schema::{detect_stage_type, StageDefinition};
-
 use super::checks::{AcceptanceCriterion, PlanIdentity};
 use super::types::{Stage, StageOutput, StageStatus};
+use super::DEFAULT_HUNG_TIMEOUT_SECS;
+use crate::plan::schema::{detect_stage_type, StageDefinition};
 
 impl Stage {
     pub fn new(name: String, description: Option<String>) -> Self {
@@ -64,6 +63,7 @@ impl Stage {
         stage.contracts = definition.contracts.clone();
         stage.harness = definition.harness.clone();
         stage.reachable = definition.reachable.clone();
+        stage.consumer_deferred = definition.consumer_deferred.clone();
         stage
     }
 

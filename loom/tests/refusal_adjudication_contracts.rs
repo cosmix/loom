@@ -34,7 +34,7 @@ fn contract() -> ContractSpec {
     ContractSpec {
         id: "rejects-x".to_string(),
         file: "tests/x_contract.rs".to_string(),
-        test: "rejects_x".to_string(),
+        test: Some("rejects_x".to_string()),
         runner: Some("cargo-test".to_string()),
         cwd: None,
         scenario: "x arrives".to_string(),

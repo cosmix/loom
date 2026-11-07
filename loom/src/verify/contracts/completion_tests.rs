@@ -1,6 +1,5 @@
 //! Tests for the completion contract check, over a runner that replays
 //! captured `cargo test` output instead of running anything.
-
 use super::*;
 use crate::verify::contracts::frozen_set::read_frozen_set;
 use crate::verify::contracts::store::{
@@ -189,6 +188,7 @@ pub(super) fn frozen_at(cwd: &str) -> FrozenContract {
         exit_code: Some(101),
         file: Some(CONTRACT_FILE.to_string()),
         cwd: Some(cwd.to_string()),
+        test: None,
     }
 }
 
@@ -323,7 +323,7 @@ fn collect_fixture(file: &str, test: &str, files: &[(&str, &str)]) -> Fixture {
     let mut fx = fixture();
     write_files(&fx.worktree, files);
     fx.stage.contracts[0].file = file.to_string();
-    fx.stage.contracts[0].test = test.to_string();
+    fx.stage.contracts[0].test = Some(test.to_string());
     fx
 }
 

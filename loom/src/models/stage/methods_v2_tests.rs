@@ -11,7 +11,7 @@ fn v2_definition() -> StageDefinition {
         contracts: vec![ContractSpec {
             id: "rejects-empty-id".to_string(),
             file: "src/plan/tests.rs".to_string(),
-            test: "rejects_empty_id".to_string(),
+            test: Some("rejects_empty_id".to_string()),
             runner: Some("cargo".to_string()),
             cwd: None,
             scenario: "a stage whose id is empty".to_string(),

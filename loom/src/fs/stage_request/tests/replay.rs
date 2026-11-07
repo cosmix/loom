@@ -74,6 +74,7 @@ fn freeze_stage_read_failure_keeps_the_request_pending() {
     let freeze = StageRequest::FreezeContracts {
         head: "a".repeat(40),
         tree_digest: "b".repeat(64),
+        choices: Default::default(),
     };
     append_to_spool(&root, &freeze).unwrap();
     std::fs::remove_dir_all(work_dir.join("stages")).unwrap();

@@ -28,7 +28,7 @@ fn redirected(adapter: Option<&str>) -> Fixture {
     );
     let contract = &mut fx.stage.contracts[0];
     contract.file = FILE.to_string();
-    contract.test = "contract_tests::rejects_x".to_string();
+    contract.test = Some("contract_tests::rejects_x".to_string());
     contract.runner = None;
     fx
 }

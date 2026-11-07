@@ -145,7 +145,12 @@ fn dispatch_stage_output(command: OutputCommands) -> Result<()> {
 /// `loom stage contracts <subcommand>` dispatch.
 fn dispatch_stage_contracts(command: ContractsCommands) -> Result<()> {
     match command {
-        ContractsCommands::Freeze { stage_id } => stage::contracts_freeze(stage_id),
+        ContractsCommands::Freeze {
+            stage_id,
+            test,
+            runner,
+            cwd,
+        } => stage::contracts_freeze(stage_id, test, runner, cwd),
         ContractsCommands::Show { stage_id } => stage::contracts_show(stage_id),
         ContractsCommands::Restore { stage_id, contract } => {
             stage::contracts_restore(stage_id, contract)
@@ -178,6 +183,45 @@ mod tests {
             } => Ok(message),
             _ => panic!("expected StageCommands::Commit"),
         }
+    }
+
+    fn freeze_flags(argv: &[&str]) -> (Vec<String>, Vec<String>, Vec<String>) {
+        let mut full = vec!["loom", "stage", "contracts", "freeze", "s1"];
+        full.extend_from_slice(argv);
+        let cli = Cli::try_parse_from(full).unwrap();
+        let Commands::Stage {
+            command:
+                StageCommands::Contracts {
+                    command:
+                        ContractsCommands::Freeze {
+                            test, runner, cwd, ..
+                        },
+                },
+        } = cli.command
+        else {
+            panic!("freeze parsed as another command");
+        };
+        (test, runner, cwd)
+    }
+
+    #[test]
+    fn the_freeze_flags_repeat_and_keep_their_order() {
+        let (test, runner, cwd) = freeze_flags(&[
+            "--test",
+            "a=x::y",
+            "--test",
+            "b=z",
+            "--runner",
+            "a=cargo-test",
+            "--cwd",
+            "a=loom",
+        ]);
+        assert_eq!(test, ["a=x::y", "b=z"]);
+        assert_eq!(runner, ["a=cargo-test"]);
+        assert_eq!(cwd, ["a=loom"]);
+
+        let (test, runner, cwd) = freeze_flags(&["--test", "a=x"]);
+        assert_eq!((test.len(), runner.len(), cwd.len()), (1, 0, 0));
     }
 
     #[test]

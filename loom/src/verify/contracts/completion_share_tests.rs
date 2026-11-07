@@ -75,7 +75,7 @@ fn fixture_of(files: &[&str]) -> Fixture {
         .map(|(n, file)| ContractSpec {
             id: format!("c{n}"),
             file: file.to_string(),
-            test: format!("t{n}"),
+            test: Some(format!("t{n}")),
             ..contract()
         })
         .collect();
@@ -185,7 +185,7 @@ fn collection_problems_are_reported_for_a_contract_that_did_not_run() {
         .map(|id| ContractSpec {
             id: id.to_string(),
             file: "src/contract_tests.rs".to_string(),
-            test: "contract_tests::t".to_string(),
+            test: Some("contract_tests::t".to_string()),
             runner: Some("cargo-test".to_string()),
             ..contract()
         })

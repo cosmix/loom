@@ -13,7 +13,7 @@ const SECOND: &str = "beta_two";
 fn spec(adapter: &str, file: &str, test: &str) -> ContractSpec {
     ContractSpec {
         file: file.to_string(),
-        test: test.to_string(),
+        test: Some(test.to_string()),
         runner: Some(adapter.to_string()),
         ..contract()
     }
@@ -106,7 +106,7 @@ fn a_contract_without_an_adapter_has_no_build_key() {
     std::fs::write(tmp.path().join("t.sh"), "").unwrap();
     let c = ContractSpec {
         file: "t.sh".to_string(),
-        test: "./t.sh".to_string(),
+        test: Some("./t.sh".to_string()),
         runner: None,
         ..contract()
     };

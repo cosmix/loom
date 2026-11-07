@@ -166,7 +166,7 @@ fn plan_with_reference(reference: &str) -> String {
 #[test]
 fn verify_fails_without_strict_on_an_invalid_glob() {
     let temp = repo(&plan_with_reference("Read doc/plans/briefs/x**.md"));
-    let error = execute(&temp.path().join(PLAN), false, false, true).unwrap_err();
+    let error = execute(&temp.path().join(PLAN), false, false, true, false).unwrap_err();
     assert!(
         error
             .to_string()
@@ -181,8 +181,8 @@ fn verify_passes_with_an_uncommitted_present_brief() {
     write(temp.path(), BRIEF, "brief");
     // The note is not a warning: under --strict only the fixture's own warnings
     // (no distill stage, no knowledge tree) count, never the uncommitted inputs.
-    execute(&temp.path().join(PLAN), false, false, true).unwrap();
-    let strict = execute(&temp.path().join(PLAN), true, false, true).unwrap_err();
+    execute(&temp.path().join(PLAN), false, false, true, false).unwrap();
+    let strict = execute(&temp.path().join(PLAN), true, false, true, false).unwrap_err();
     assert!(
         strict.to_string().contains("(0 error(s), 3 warning(s))"),
         "{strict}"

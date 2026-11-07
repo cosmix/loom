@@ -26,6 +26,7 @@ mod registry_domains;
 mod repo_hooks;
 mod rust_filters;
 mod sandbox_capability;
+mod wiring_definition;
 
 /// What the lints read: the parsed plan, and the repository it runs against
 /// when one could be resolved.
@@ -66,6 +67,7 @@ pub(crate) fn run(ctx: &LintContext<'_>, notes: &mut Vec<String>) -> Vec<LintFin
     let mut out = Vec::new();
     loom_subcommands::check(ctx, &mut out);
     regex_patterns::check(ctx, &mut out);
+    wiring_definition::check_definition_shaped(ctx, &mut out);
     notes.extend(sandbox_capability::check(ctx, &mut out));
     knowledge_check::check(ctx, &mut out);
     contracts::check(ctx, &mut out);

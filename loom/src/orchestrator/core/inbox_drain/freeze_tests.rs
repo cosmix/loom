@@ -9,6 +9,7 @@ use super::super::Settle;
 use super::settle;
 use crate::daemon::Response;
 use crate::models::stage::StageStatus;
+use crate::stage_service::FREEZE_BUSY;
 use crate::verify::contracts::refusal::{daemon_refusal, RefusalSource};
 use crate::verify::contracts::test_support::contract_stage;
 use crate::verify::transitions::{create_stage, load_stage, update_stage};
@@ -90,4 +91,23 @@ fn a_refusal_that_cannot_be_recorded_says_so() {
         "{reason}"
     );
     assert_eq!(daemon_refusal(&work, STAGE).unwrap(), None);
+}
+
+/// A freeze that would join a running one under other flags tells the writer
+/// to wait and rerun; it is no standing refusal, so no dispute is recorded.
+#[test]
+fn a_busy_answer_is_relayed_to_the_writer_and_records_no_refusal() {
+    let (_tmp, work) = work_dir();
+    let busy = Ok(Response::Error {
+        message: FREEZE_BUSY.to_string(),
+    });
+
+    let settled = settle(&work, STAGE, OWNER, "r1", busy);
+
+    assert_eq!(settled, Settle::Refused(FREEZE_BUSY.to_string()));
+    assert_eq!(daemon_refusal(&work, STAGE).unwrap(), None);
+    assert_eq!(
+        load_stage(STAGE, &work).unwrap().status,
+        StageStatus::Executing
+    );
 }

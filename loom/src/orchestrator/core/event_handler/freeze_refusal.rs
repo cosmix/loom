@@ -10,6 +10,11 @@
 //! - a refusal the daemon recorded (`contracts/<stage>/refused.json`, written
 //!   by the inbox drain and the freeze host job's application) is filed at
 //!   once when it names the current writer, and dropped as stale otherwise;
+//! - a static refusal is returned to the writer; it is filed as a
+//!   `freeze-refusal` dispute on the third static refusal in the session, or
+//!   when the writer stays quiet 5 minutes after a refusal: a record with
+//!   `returned > 0` waits until the refusal and the session's latest heartbeat
+//!   are both [`REFUSAL_QUIET_SECS`] old and the session runs no subagent;
 //! - a refusal the writer's CLI left in its scratch directory is recorded and
 //!   filed once the file and the session's latest heartbeat are both
 //!   [`REFUSAL_QUIET_SECS`] old and the session runs no subagent: the writer
@@ -103,6 +108,12 @@ impl Orchestrator {
             return Ok(());
         };
         if refusal.declined.is_some() {
+            return Ok(());
+        }
+        // A returned refusal is the writer's to fix while it works on it.
+        if refusal.returned > 0
+            && !self.writer_is_quiet(&stage.id, &session_id, SystemTime::from(refusal.at), now)
+        {
             return Ok(());
         }
         self.file_refusal(&stage, &refusal)
@@ -333,3 +344,7 @@ fn filed_problems(refusal: &DaemonRefusal) -> Vec<String> {
 #[cfg(test)]
 #[path = "freeze_refusal_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "freeze_refusal_returned_tests.rs"]
+mod returned_tests;

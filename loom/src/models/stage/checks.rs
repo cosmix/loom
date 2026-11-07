@@ -70,7 +70,8 @@ pub struct TruthCheck {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub exit_code: Option<i32>,
     /// Seconds the command may run before it is killed and fails (default:
-    /// the runner's timeout for this kind of check)
+    /// 300 for an acceptance criterion, 30 for a `before_stage`/`after_stage`
+    /// check or a wiring check)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub timeout_secs: Option<u64>,
     /// Human-readable description of what this truth verifies

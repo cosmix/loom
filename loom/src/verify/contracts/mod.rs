@@ -15,12 +15,14 @@
 //! frozen file is the one compiled under the contract's test name.
 
 pub mod changes;
+pub mod choices;
 pub mod collection;
 pub mod completion;
 pub(crate) mod failed_builds;
 pub mod format_gate;
 pub(crate) mod freeze;
 pub mod frozen_set;
+mod record_view;
 pub mod refusal;
 pub mod run_dir;
 pub mod site;
@@ -132,7 +134,7 @@ mod tests {
         ContractSpec {
             id: "rejects-x".to_string(),
             file: file.to_string(),
-            test: "tests::rejects_x".to_string(),
+            test: Some("tests::rejects_x".to_string()),
             runner: Some("cargo-test".to_string()),
             cwd: None,
             scenario: "s".to_string(),

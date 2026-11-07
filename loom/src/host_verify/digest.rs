@@ -10,6 +10,7 @@
 //! runs a command. The command, its environment and the hashing are
 //! otherwise the same, so both sides compute the same digest for one tree.
 
+use std::collections::BTreeSet;
 use std::ffi::OsStr;
 use std::os::unix::ffi::OsStrExt;
 use std::path::Path;
@@ -69,6 +70,21 @@ pub fn knowledge_tree_digest_in(git: &WorktreeGit) -> Result<String> {
 pub fn head_in(git: &WorktreeGit) -> Result<String> {
     let out = read(git, &["rev-parse", "--verify", "HEAD"])?;
     Ok(String::from_utf8_lossy(&out).trim().to_string())
+}
+
+/// The untracked paths [`tree_digest_in`] hashes (git-ignored files and
+/// completion scaffolds are not among them), relative to the worktree root.
+pub(super) fn untracked_in(git: &WorktreeGit) -> Result<BTreeSet<String>> {
+    let checkout = git
+        .work_tree()
+        .canonicalize()
+        .with_context(|| format!("cannot resolve {}", git.work_tree().display()))?;
+    let status = porcelain(git, None)?;
+    Ok(entries(&status)?
+        .into_iter()
+        .filter(|record| record.untracked && !completion_scaffold(&record.path, &checkout))
+        .map(|record| record.path)
+        .collect())
 }
 
 fn digest(git: &WorktreeGit, scope: Option<&str>) -> Result<String> {

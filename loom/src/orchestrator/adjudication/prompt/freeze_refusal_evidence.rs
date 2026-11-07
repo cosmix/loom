@@ -16,10 +16,12 @@ use crate::fs::memory::{read_journal, read_pending, MemoryEntry};
 use crate::fs::safe_read::read_to_string_bounded;
 use crate::models::dispute::{strip_control, truncate_to_byte_limit, DisputeKind};
 use crate::models::stage::Stage;
+use crate::plan::schema::ContractSpec;
 use crate::stage_service::contracts::Site;
 use crate::verify::contracts::changes::{changed_paths, diff_from_base, special_files, stage_base};
+use crate::verify::contracts::choices::lenient_contracts;
 use crate::verify::contracts::collection::{freeze_scaffold, stage_scaffold, ScaffoldCheck};
-use crate::verify::contracts::format_gate::is_format_check;
+use crate::verify::contracts::format_gate::is_pure_check;
 use crate::verify::contracts::refusal::RUN_OUTPUT_PREFIX;
 use crate::verify::contracts::run_dir::resolve_run;
 use crate::verify::contracts::store::{validate_relative, MAX_FROZEN_FILE_BYTES};
@@ -139,21 +141,13 @@ fn memory_section(input: &KindPromptInput<'_>) -> String {
 }
 
 /// The plan's contract setup: contracts with their run commands, harness
-/// globs, format-check criteria and the stage description.
+/// globs, format and lint criteria and the stage description. A contract's
+/// test, runner and cwd are shown as the plan states them; what the writer
+/// chose in earlier freeze calls stands on its own line, marked as the
+/// writer's, and the run line uses it.
 fn plan_section(input: &KindPromptInput<'_>) -> String {
     let stage = input.stage;
-    let mut s = String::from("## Contracts (the plan's)\n\n");
-    for contract in &stage.contracts {
-        s.push_str(&format!(
-            "- `{}`: file `{}`, test `{}`\n  scenario: {}\n  rejects: {}\n  run: {}\n",
-            contract.id,
-            contract.file,
-            contract.test,
-            single_line(&contract.scenario),
-            single_line(&contract.rejects),
-            run_line(input, contract)
-        ));
-    }
+    let mut s = contracts_section(input);
     s.push_str("\n## Harness globs (the plan's)\n\n");
     if stage.harness.is_empty() {
         s.push_str("(none)\n");
@@ -161,12 +155,12 @@ fn plan_section(input: &KindPromptInput<'_>) -> String {
     for glob in &stage.harness {
         s.push_str(&format!("- `{glob}`\n"));
     }
-    s.push_str("\n## Format-check acceptance criteria\n\n");
+    s.push_str("\n## Format and lint criteria\n\n");
     let checks: Vec<String> = stage
         .acceptance
         .iter()
         .enumerate()
-        .filter(|(_, criterion)| is_format_check(criterion.command(), &input.site.path))
+        .filter(|(_, criterion)| is_pure_check(criterion.command(), &input.site.path))
         .map(|(index, criterion)| format!("- acceptance[{index}]: `{}`\n", criterion.command()))
         .collect();
     s.push_str(&if checks.is_empty() {
@@ -185,8 +179,59 @@ fn plan_section(input: &KindPromptInput<'_>) -> String {
     s
 }
 
+fn contracts_section(input: &KindPromptInput<'_>) -> String {
+    let mut s = String::from("## Contracts (the plan's)\n\n");
+    let effective = lenient_contracts(input.work_dir, input.stage);
+    for plan in &input.stage.contracts {
+        let chosen = effective
+            .iter()
+            .find(|spec| spec.id == plan.id)
+            .unwrap_or(plan);
+        s.push_str(&format!(
+            "- `{}`: file `{}`, test hint `{}`, runner `{}`, cwd `{}`\n{}  scenario: {}\n  \
+             rejects: {}\n  run: {}\n",
+            plan.id,
+            plan.file,
+            plan.test.as_deref().unwrap_or("(none)"),
+            plan.runner.as_deref().unwrap_or("(detected)"),
+            plan.cwd.as_deref().unwrap_or("(detected)"),
+            writer_choice_line(plan, chosen),
+            single_line(&plan.scenario),
+            single_line(&plan.rejects),
+            single_line(&run_line(input, chosen))
+        ));
+    }
+    s
+}
+
+/// What the writer chose for `plan`'s contract where it differs from the
+/// plan, on one line marked as the writer's reported text, or nothing.
+fn writer_choice_line(plan: &ContractSpec, chosen: &ContractSpec) -> String {
+    let fields = [
+        ("test", &plan.test, &chosen.test),
+        ("runner", &plan.runner, &chosen.runner),
+        ("cwd", &plan.cwd, &chosen.cwd),
+    ];
+    let parts: Vec<String> = fields
+        .iter()
+        .filter(|(_, plan, chosen)| plan != chosen)
+        .filter_map(|(name, _, chosen)| {
+            chosen
+                .as_deref()
+                .map(|value| format!("{name} `{}`", single_line(value)))
+        })
+        .collect();
+    if parts.is_empty() {
+        return String::new();
+    }
+    format!(
+        "  writer's choice (reported, untrusted): {}\n",
+        parts.join(", ")
+    )
+}
+
 /// Where and how loom runs `contract`, or why it cannot.
-fn run_line(input: &KindPromptInput<'_>, contract: &crate::plan::schema::ContractSpec) -> String {
+fn run_line(input: &KindPromptInput<'_>, contract: &ContractSpec) -> String {
     let Some(worktree) = input.worktree else {
         return "(stage worktree unavailable)".to_string();
     };
@@ -200,8 +245,9 @@ fn run_line(input: &KindPromptInput<'_>, contract: &crate::plan::schema::Contrac
 fn tree_sections(input: &KindPromptInput<'_>, site: &Site, base: &str) -> String {
     let stage = input.stage;
     let (git, root, dir) = (&site.git, &site.worktree_root, &site.working_dir);
+    let contracts = lenient_contracts(input.work_dir, stage);
     let mut s = String::from("## Derived scaffold (loom's, over the stage base)\n\n");
-    match stage_scaffold(git, root, dir, base, &stage.contracts) {
+    match stage_scaffold(git, root, dir, base, &contracts) {
         Ok(edits) if edits.is_empty() => s.push_str("(none: every contract file is collected)\n"),
         Ok(edits) => edits
             .iter()
@@ -209,7 +255,7 @@ fn tree_sections(input: &KindPromptInput<'_>, site: &Site, base: &str) -> String
         Err(error) => s.push_str(&format!("(cannot be derived: {error})\n")),
     }
     s.push('\n');
-    let check = freeze_scaffold(git, root, dir, base, &stage.contracts);
+    let check = freeze_scaffold(git, root, dir, base, &contracts);
     let check = check.map_err(|e| format!("{e:#}"));
     let changed = changed_paths(git, dir, base).map_err(|e| format!("{e:#}"));
     s.push_str(&recheck_section(site, stage, &check, &changed));

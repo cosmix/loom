@@ -134,7 +134,7 @@ fn the_deadline_counts_each_after_stage_timeout_and_saturates() {
         acceptance: vec![AcceptanceCriterion::Extended(check(None))],
         ..Stage::default()
     };
-    assert_eq!(job_deadline_secs(&default_acceptance), 30 + 300 + 1_800);
+    assert_eq!(job_deadline_secs(&default_acceptance), 300 + 300 + 1_800);
 }
 
 #[test]

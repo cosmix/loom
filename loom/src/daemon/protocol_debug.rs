@@ -65,6 +65,7 @@ fn debug_freeze(request: &Request, formatter: &mut fmt::Formatter<'_>) -> fmt::R
         session_id,
         head,
         tree_digest,
+        choices,
         ..
     } = request
     else {
@@ -77,6 +78,8 @@ fn debug_freeze(request: &Request, formatter: &mut fmt::Formatter<'_>) -> fmt::R
         .field("session_id", session_id)
         .field("head", head)
         .field("tree_digest", tree_digest)
+        // Writer text: only the count is logged.
+        .field("choices", &choices.len())
         .finish()
 }
 

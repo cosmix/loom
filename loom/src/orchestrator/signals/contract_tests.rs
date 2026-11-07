@@ -8,7 +8,7 @@ fn contract(id: &str, file: &str, test: &str, runner: &str) -> ContractSpec {
     ContractSpec {
         id: id.to_string(),
         file: file.to_string(),
-        test: test.to_string(),
+        test: Some(test.to_string()),
         runner: Some(runner.to_string()),
         cwd: None,
         scenario: "a symlink | a regular file".to_string(),
@@ -123,8 +123,9 @@ fn contract_rules_name_the_formatter_and_size_limits() {
     assert!(content.contains("6. Before freezing, run the repository's formatter"));
     assert!(content.contains("`cargo fmt --all`"));
     assert!(content.contains("every test function under 50 lines and every file under 400"));
-    assert!(content.contains("7. Finish with `loom stage contracts freeze s1`"));
-    assert!(content.contains("then stop. If it refuses, fix what it names"));
+    assert!(content
+        .contains("7. Finish with `loom stage contracts freeze s1 --test <id>=<identifier> ...`"));
+    assert!(content.contains("fix what it names and run it again"));
 }
 
 #[test]

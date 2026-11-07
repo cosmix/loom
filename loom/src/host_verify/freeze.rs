@@ -8,13 +8,22 @@
 //! checks the binding again: anything that moved during the run is an error.
 //! A passing run leaves `contract-reports.json` in its job directory.
 //!
+//! The job and its application overlay the stage's contracts with the
+//! writer's saved choices (`choices::load_effective_stage`), so the contracts
+//! run, bound and frozen are the ones the writer chose. The job checks its
+//! policy binding on the stage record before the overlay, as the runner
+//! computed it.
+//!
 //! Applying the job freezes the contracts from those reports only while the
-//! binding still holds, and otherwise records the refusal, which the tick
-//! step files as a `freeze-refusal` dispute: the relayed request told the
-//! writer to end its turn. A run interrupted or stopped by the daemon, or
-//! whose reports or binding cannot be read, is no one's fault, and its first
-//! problem says so (`INFRASTRUCTURE_PREFIX`). Any other cancel, and a stage
-//! already frozen, record nothing.
+//! binding still holds. The writer's freeze command waits for the job and its
+//! application: a failed job whose only red outcome is the static gate is
+//! returned to the waiting writer (`refuse_failed`), and so is a run
+//! interrupted or stopped by the daemon (`return_infrastructure`), until the
+//! session's third such refusal. Any other refusal is recorded for the tick
+//! step to file as a `freeze-refusal` dispute. A run interrupted or stopped by
+//! the daemon, or whose reports or binding cannot be read, is no one's fault,
+//! and its first problem says so (`INFRASTRUCTURE_PREFIX`). Any other cancel,
+//! and a stage already frozen, record nothing.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
@@ -24,21 +33,25 @@ use serde::{Deserialize, Serialize};
 
 use super::apply::Applied;
 use super::freeze_memo::run_memoized;
-use super::freeze_refuse::{failure_message, REFUSAL_MAX_BYTES};
+use super::freeze_prepare::prepare_planned;
+use super::freeze_refuse::{
+    failure_message, refuse, refuse_failed, refuse_infrastructure, return_infrastructure,
+};
 use super::runner::DAEMON_STOPPED;
 use super::{child, digest, store, CriterionOutcome, JobRecord, JobResult, JobState};
 use crate::daemon::ContractRunReport;
-use crate::models::dispute::truncate_to_byte_limit;
 use crate::models::stage::{CommandConfinement, Stage};
+use crate::plan::schema::ContractSpec;
 use crate::relay::sha256_hex;
-use crate::stage_service::contracts::{freeze_with_reports, locate, read_files, Site};
+use crate::stage_service::contracts::{
+    freeze_with_reports, locate, read_files, revalidate_saved, Site,
+};
 use crate::stage_service::Response;
+use crate::verify::contracts::choices::{effective_contracts, load_effective_stage};
 use crate::verify::contracts::freeze::{
-    check_site_changes, prepare_contract, run_prepared, PreparedContract,
+    check_site_changes, run_prepared, written_paths, PreparedContract, BUILD_FAILED, UNVERIFIED,
 };
-use crate::verify::contracts::refusal::{
-    problem_lines, record_job_refusal, run_output_line, JobRefusalOrigin, INFRASTRUCTURE_PREFIX,
-};
+use crate::verify::contracts::refusal::run_output_line;
 use crate::verify::contracts::site::ContractSite;
 use crate::verify::contracts::store::load_freeze;
 use crate::verify::criteria::{plan_confinement, resolve_confinement};
@@ -153,36 +166,70 @@ fn run(
     record: &JobRecord,
     outcomes: &mut Vec<CriterionOutcome>,
 ) -> Result<Option<String>> {
-    let stage = load_stage(&record.stage_id, work_dir)
+    let mut stage = load_stage(&record.stage_id, work_dir)
         .with_context(|| format!("Failed to load stage '{}'", record.stage_id))?;
+    // The runner bound the job to the stage record's policy, not the overlay.
     super::child_policy::ensure_bound_stage(&stage, work_dir)?;
+    let planned = stage.contracts.clone();
+    stage.contracts = effective_contracts(work_dir, &stage)?;
     let site = locate(work_dir, &stage)?;
-    let contract_site = ContractSite::resolved(
-        work_dir.to_path_buf(),
-        stage.clone(),
-        site.worktree_root.clone(),
-        site.working_dir.clone(),
-    );
+    let contract_site = contract_site_of(work_dir, &stage, &site);
     check_site_changes(&contract_site, &site.git)?;
     let mut before = ContractReports::capture(&site, &stage)?;
     if let Some(mismatch) = request_mismatch(&before, record) {
         bail!("the tree does not match the request: {mismatch}");
     }
+    // Admission judged the worktree as it stood then; the tree the job runs on
+    // is the request's, so the writer's choices must pass on it too.
+    revalidate_saved(work_dir, &record.stage_id, &planned, &site)?;
     let confinement = resolve_confinement(
         stage.sandbox.command_confinement,
         plan_confinement(work_dir),
     );
-    let reports = run_contracts(work_dir, record, &site, &stage, confinement, outcomes)?;
-    outcomes.push(format_outcome(&contract_site, confinement)?);
-    let reloaded = load_stage(&record.stage_id, work_dir)?;
+    let reports = run_contracts(
+        work_dir,
+        record,
+        &site,
+        &stage,
+        &planned,
+        confinement,
+        outcomes,
+    )?;
+    let gate = static_outcome(&contract_site, &site, confinement, &reports)?;
+    outcomes.push(gate);
+    let reloaded = load_effective_stage(&record.stage_id, work_dir)?;
     if let Some(change) = before.changes(&ContractReports::capture(&site, &reloaded)?) {
         return Ok(Some(change));
     }
     before.reports = reports;
-    let bytes =
-        serde_json::to_vec_pretty(&before).context("cannot serialize the contract reports")?;
-    store::save_job_file(work_dir, &record.stage_id, &record.id, REPORTS_FILE, &bytes)?;
+    save_reports(work_dir, record, &before)?;
     Ok(None)
+}
+
+fn contract_site_of(work_dir: &Path, stage: &Stage, site: &Site) -> ContractSite {
+    let (root, working) = (site.worktree_root.clone(), site.working_dir.clone());
+    ContractSite::resolved(work_dir.to_path_buf(), stage.clone(), root, working)
+}
+
+fn save_reports(work_dir: &Path, record: &JobRecord, bound: &ContractReports) -> Result<()> {
+    let bytes =
+        serde_json::to_vec_pretty(bound).context("cannot serialize the contract reports")?;
+    store::save_job_file(work_dir, &record.stage_id, &record.id, REPORTS_FILE, &bytes)
+}
+
+/// The static gate's outcome over the files the run wrote; the build must
+/// have compiled for it to be judged.
+fn static_outcome(
+    contract_site: &ContractSite,
+    site: &Site,
+    confinement: CommandConfinement,
+    reports: &[ContractRunReport],
+) -> Result<CriterionOutcome> {
+    let written = written_paths(contract_site, &site.git)?;
+    let compiles = reports
+        .iter()
+        .all(|r| r.outcome != BUILD_FAILED && r.outcome != UNVERIFIED);
+    format_outcome(contract_site, &site.git, confinement, &written, compiles)
 }
 
 fn request_mismatch(binding: &ContractReports, record: &JobRecord) -> Option<String> {
@@ -204,19 +251,21 @@ fn request_mismatch(binding: &ContractReports, record: &JobRecord) -> Option<Str
 
 /// Run every contract; each is an outcome `contract:<id>` that passes when
 /// the run is red, as the freeze requires, and is appended to the job's
-/// progress the moment it is known. Returns the red runs' reports.
+/// progress the moment it is known. Returns the red runs' reports. `planned`
+/// is the stage's contracts before the writer's choices.
 fn run_contracts(
     work_dir: &Path,
     record: &JobRecord,
     site: &Site,
     stage: &Stage,
+    planned: &[ContractSpec],
     confinement: CommandConfinement,
     outcomes: &mut Vec<CriterionOutcome>,
 ) -> Result<Vec<ContractRunReport>> {
     let mut reports = Vec::new();
     run_memoized(
         &stage.contracts,
-        |contract| prepare_contract(&site.worktree_root, &site.working_dir, contract),
+        |contract| prepare_planned(&site.worktree_root, &site.working_dir, planned, contract),
         PreparedContract::build_key,
         |contract, prepared| {
             run_prepared(
@@ -263,17 +312,18 @@ pub fn apply_freeze_result(work_dir: &Path, record: &JobRecord) -> Result<Applie
     }
     match record.state {
         JobState::Passed => apply_passed(work_dir, record),
-        JobState::Failed => refuse(work_dir, record, &failure_message(work_dir, record)),
+        JobState::Failed => refuse_failed(work_dir, record),
         JobState::Interrupted => {
             let failure = failure_message(work_dir, record);
             let message = format!("the contract run was interrupted\n{failure}");
-            refuse_infrastructure(work_dir, record, &message)
+            return_infrastructure(work_dir, record, &message)
         }
-        // The shutdown's cancel leaves no successor job, so no one else would
-        // act on the writer's ended turn: refuse like an interrupted run.
+        // The shutdown's cancel leaves no successor job: the waiting writer
+        // reads `Host job: stopped` and runs the freeze again, so the run is
+        // returned to it like an interrupted one.
         JobState::Cancelled if record.detail.as_deref() == Some(DAEMON_STOPPED) => {
             let message = "the daemon stopped during the contract run; rerun the freeze";
-            refuse_infrastructure(work_dir, record, message)
+            return_infrastructure(work_dir, record, message)
         }
         JobState::Cancelled => Ok(Applied::Ignored(format!(
             "cancelled: {}",
@@ -293,7 +343,7 @@ fn apply_passed(work_dir: &Path, record: &JobRecord) -> Result<Applied> {
             return refuse_infrastructure(work_dir, record, &message);
         }
     };
-    let moved = load_stage(&record.stage_id, work_dir)
+    let moved = load_effective_stage(&record.stage_id, work_dir)
         .and_then(|stage| ContractReports::capture(&locate(work_dir, &stage)?, &stage))
         .map(|now| reports.changes(&now));
     match moved {
@@ -338,35 +388,6 @@ fn load_reports(work_dir: &Path, record: &JobRecord) -> Result<ContractReports> 
     serde_json::from_slice(&bytes).with_context(|| format!("{REPORTS_FILE} is malformed"))
 }
 
-/// Record the refusal `message`, cut to 4 KiB, for the job's session: one
-/// problem per line. The tick step files it while that session is still the
-/// stage's contract writer, and drops it otherwise.
-fn refuse(work_dir: &Path, record: &JobRecord, message: &str) -> Result<Applied> {
-    let message = truncate_to_byte_limit(message, REFUSAL_MAX_BYTES);
-    let recorded = record_job_refusal(
-        work_dir,
-        &record.stage_id,
-        &record.session_id,
-        JobRefusalOrigin {
-            job_id: record.id.clone(),
-            submission_order: record.submission_order,
-        },
-        &problem_lines(&message),
-    )?;
-    if recorded {
-        Ok(Applied::FreezeRefused(message))
-    } else {
-        Ok(Applied::Ignored(
-            "a newer freeze refusal is recorded".to_string(),
-        ))
-    }
-}
-
-/// [`refuse`] a run that failed through no one's change.
-fn refuse_infrastructure(work_dir: &Path, record: &JobRecord, message: &str) -> Result<Applied> {
-    refuse(
-        work_dir,
-        record,
-        &format!("{INFRASTRUCTURE_PREFIX}{message}"),
-    )
-}
+#[cfg(test)]
+#[path = "tests_freeze_static.rs"]
+mod static_tests;

@@ -156,11 +156,8 @@ pub struct RegressionTest {
     pub must_contain: Vec<String>,
 }
 
-/// Allowed values for `reasoning_effort` on a stage.
-///
-/// Anchored to the set Claude Code itself accepts on its CLI. Adding a new
-/// value here requires a coordinated change in `native/mod.rs` where the
-/// effort is concatenated into the command line as `--effort <value>`.
+/// Allowed values for `reasoning_effort` on a stage: the set Claude Code accepts on its CLI.
+/// A new value needs a matching change in `native/mod.rs`, which passes it as `--effort <value>`.
 pub const ALLOWED_REASONING_EFFORTS: &[&str] = &["low", "medium", "high", "xhigh", "max"];
 
 /// Status of goal-backward verification for a stage
@@ -437,6 +434,9 @@ pub struct Stage {
     /// Files changed only through an accepted integrity review. Copied from `loom.ratchet_files`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub ratchet_files: Vec<String>,
+    /// One-line reason no consumer of this stage's new units exists. Copied from the plan's StageDefinition.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub consumer_deferred: Option<String>,
 }
 
 /// Status of a stage in the execution lifecycle.

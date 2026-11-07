@@ -1,5 +1,5 @@
 use super::*;
-use crate::models::stage::{AcceptanceCriterion, Stage};
+use crate::models::stage::{AcceptanceCriterion, Stage, TruthCheck};
 use crate::testrun::registry;
 use crate::verify::contracts::test_support::{
     contract_worktree, liquidmon_contract, pinned, write_liquidmon,
@@ -9,7 +9,7 @@ fn spec() -> ContractSpec {
     ContractSpec {
         id: "no-follow".to_string(),
         file: "tests/no_follow.rs".to_string(),
-        test: "no_follow::rejects_symlink".to_string(),
+        test: Some("no_follow::rejects_symlink".to_string()),
         runner: Some("cargo-test".to_string()),
         cwd: None,
         scenario: "a symlink planted in the path".to_string(),
@@ -126,7 +126,8 @@ fn freeze_refuses_a_contract_file_that_fails_the_formatter_check() {
     let _toolchain = crate::verify::test_support::ToolchainReadRoot::from_runner();
     let (_temp, site) = site_checking_formatting_of("pub fn  add(a:u32,b:u32)->u32{a+b}\n");
 
-    let error = check_formatting(&site, CommandConfinement::Confined).expect_err("unformatted");
+    let error =
+        check_formatting(&site, CommandConfinement::Confined, &[], true).expect_err("unformatted");
 
     let message = error.to_string();
     assert!(message.contains("Contracts not frozen"), "{message}");
@@ -145,7 +146,47 @@ fn freeze_goes_on_when_the_contract_files_are_formatted() {
     let (_temp, site) =
         site_checking_formatting_of("pub fn add(a: u32, b: u32) -> u32 {\n    a + b\n}\n");
 
-    assert!(check_formatting(&site, CommandConfinement::Confined).is_ok());
+    assert!(check_formatting(&site, CommandConfinement::Confined, &[], true).is_ok());
+}
+
+/// A formatter check in `after_stage` only, with no formatter in acceptance,
+/// still refuses the freeze when it names a file the writer wrote.
+#[test]
+#[serial_test::serial]
+fn freeze_refuses_an_unformatted_writer_file_named_by_an_after_stage_formatter() {
+    let _toolchain = crate::verify::test_support::ToolchainReadRoot::from_runner();
+    let (_temp, mut site) = site_checking_formatting_of("pub fn  add(a:u32,b:u32)->u32{a+b}\n");
+    site.stage.acceptance.clear();
+    site.stage.after_stage = vec![TruthCheck {
+        command: "rustfmt --check tests/no_follow.rs".to_string(),
+        stdout_contains: Vec::new(),
+        stdout_not_contains: Vec::new(),
+        stderr_empty: None,
+        exit_code: None,
+        timeout_secs: None,
+        description: None,
+    }];
+    let absolute = site.working_dir.join("tests/no_follow.rs");
+    let written = vec![
+        "tests/no_follow.rs".to_string(),
+        absolute.to_string_lossy().into_owned(),
+    ];
+
+    let error = check_formatting(&site, CommandConfinement::Confined, &written, true)
+        .expect_err("the writer's file is unformatted");
+
+    let problems = listed_problems(&error);
+    assert_eq!(problems.len(), 1, "{problems:?}");
+    assert!(
+        problems[0].contains("after_stage criterion `rustfmt --check"),
+        "{problems:?}"
+    );
+    assert!(problems[0].contains("tests/no_follow.rs"), "{problems:?}");
+    let unwritten = check_formatting(&site, CommandConfinement::Confined, &[], true);
+    assert!(
+        unwritten.is_ok(),
+        "a failure naming no written file is left to completion"
+    );
 }
 
 /// A liquidmon-shaped stage over a real repository: `site` plus its git.

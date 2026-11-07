@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 use super::cache;
 use super::cache_contract::{AssertionVerdict, CriterionContract};
 use super::cache_fingerprint::{self, ExecutionIdentity, InputFingerprint};
-use super::config::{CriteriaConfig, DEFAULT_CHECK_TIMEOUT};
+use super::config::{extended_criterion_timeout, CriteriaConfig};
 use super::confine::{prepare_confined, resolve_confinement, CommandSpec, PreparedCommand};
 use super::criterion_eval::{evaluate, CriterionCommand};
 use super::executor::run_prepared_with_timeout;
@@ -96,7 +96,7 @@ fn prepare_criterion<'a>(
         .unwrap_or_else(|| expanded.clone());
     let timeout = match criterion {
         AcceptanceCriterion::Simple(_) => config.command_timeout,
-        AcceptanceCriterion::Extended(check) => check.timeout(DEFAULT_CHECK_TIMEOUT),
+        AcceptanceCriterion::Extended(check) => extended_criterion_timeout(check),
     };
     let spec = CommandSpec::shell(full_command);
     let contract = CriterionContract::new(&spec, criterion, timeout, confinement)

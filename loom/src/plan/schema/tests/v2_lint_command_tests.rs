@@ -250,7 +250,7 @@ fn wiring_pattern_past_the_verifier_size_limit_is_error_in_v2() {
 #[test]
 fn ordinary_wiring_pattern_is_clean() {
     let mut clean = stage("feature", StageType::Standard, &[]);
-    clean.wiring = vec![wiring(r"fn\s+run\b", false)];
+    clean.wiring = vec![wiring(r"run\(", false)];
     let (findings, _) = lint_with_notes(&plan(vec![clean]), None);
     let wiring_findings: Vec<_> = findings
         .iter()
