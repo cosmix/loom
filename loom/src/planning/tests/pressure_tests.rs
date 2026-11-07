@@ -47,3 +47,27 @@ fn overlapping_question_sections_count_each_item_once() {
     let text = "## Open questions\n- first\n### Open questions\n- second\n";
     assert_eq!(open_questions(text), 2);
 }
+
+/// The planner reads what `loom pressure` writes: `record::append_to_text` (behind
+/// `append_record`, the one writer both drivers use) placed after a plan's metadata, a first
+/// record creating the section and a second joining it, with LF and CRLF line ends.
+#[test]
+fn records_read_what_the_pressure_pipeline_writes() {
+    use crate::pressure::record::{append_to_text, RecordLine};
+    let line = |day: u32| RecordLine {
+        date: chrono::NaiveDate::from_ymd_opt(2026, 11, day).unwrap(),
+        claude_model: "opus".into(),
+        codex_models: vec!["gpt-6-astra".into()],
+        rounds: 1,
+        missing_rounds: Vec::new(),
+    };
+    let plan = "# Plan\n\n<!-- loom METADATA -->\n\n```yaml\nloom:\n  stages:\n    - id: a\n      \
+description: |\n        ## Pressure tests\n        - 2026-01-01: inside YAML\n```\n\n\
+<!-- END loom METADATA -->\n";
+    for text in [plan.to_owned(), plan.replace('\n', "\r\n")] {
+        let once = append_to_text(&text, &line(3).render());
+        let twice = append_to_text(&once, &line(7).render());
+        let dates: Vec<_> = records(&twice).into_iter().map(|r| r.date).collect();
+        assert_eq!(dates, ["2026-11-03", "2026-11-07"], "{twice:?}");
+    }
+}

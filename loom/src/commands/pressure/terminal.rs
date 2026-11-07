@@ -29,14 +29,30 @@ pub(super) struct TerminalDriver<'a> {
 /// 130. Codex leads its own process group, so without this a Ctrl-C ends the
 /// driver and leaves Codex running. The crate allows one handler per process,
 /// and `loom pressure` installs no other.
-pub(super) fn retire_on_signal(retirement: CodexRetirement) -> Result<()> {
+///
+/// The run ends before its record step, so the handler prints `notice` (from
+/// [`interrupted_notice`]): the foreground Claude session outlives a SIGTERM
+/// or SIGHUP sent to `loom` alone (`dev-install.sh`'s `pkill -x loom`) and
+/// finishes its review, which otherwise reads as a completed run.
+pub(super) fn retire_on_signal(retirement: CodexRetirement, notice: String) -> Result<()> {
     ctrlc::set_handler(move || {
         if let Err(error) = retirement.retire() {
             eprintln!("\n{error:#}");
         }
+        eprintln!("\n{notice}");
         std::process::exit(130);
     })
     .context("failed to install the pressure run's signal handler")
+}
+
+/// What an interrupted run tells the terminal: no `## Pressure tests` record was
+/// written, and where the Codex review was left.
+pub(super) fn interrupted_notice(plan: &str, report: &Path) -> String {
+    format!(
+        "! pressure run interrupted: {plan} was not recorded as pressure-tested; \
+         the Codex review, if written, is at {}. Run `loom pressure {plan}` again to record one.",
+        report.display()
+    )
 }
 
 impl TerminalDriver<'_> {
