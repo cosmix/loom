@@ -1,8 +1,11 @@
 //! What a stage agent can ask the daemon to do on its behalf.
 
+use std::collections::BTreeMap;
+
 use serde::{Deserialize, Serialize};
 
 use crate::models::dispute::{CriterionField, DisputeKind};
+use crate::plan::schema::ContractChoices;
 
 /// One queued stage-control request, mirroring the `Request::BlockStage`,
 /// `Request::DisputeCriteria`, `Request::FileDispute` and
@@ -29,9 +32,16 @@ pub enum StageRequest {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         failure_output: Option<String>,
     },
-    /// `loom stage contracts freeze <id>`: run the contracts on the host
-    /// against the tree the session saw, then freeze them.
-    FreezeContracts { head: String, tree_digest: String },
+    /// `loom stage contracts freeze <id> [--test ..] [--runner ..] [--cwd ..]`:
+    /// run the contracts on the host against the tree the session saw, then
+    /// freeze them. `choices` holds this call's flags only; the daemon merges
+    /// them with the ones it saved.
+    FreezeContracts {
+        head: String,
+        tree_digest: String,
+        #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+        choices: ContractChoices,
+    },
     /// `loom stage dispute-findings|dispute-contract|dispute-integrity <id> ...`, and
     /// `loom stage dispute-criteria --field impact-tests --test <id> ...`.
     FileDispute {

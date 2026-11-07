@@ -14,6 +14,7 @@ use std::path::Path;
 
 use super::spool::{drain_identified, DrainOutcome};
 use super::types::StageRequest;
+use crate::plan::schema::ContractChoices;
 use crate::stage_service::{
     handle_agent_block_for_session, handle_dispute_criteria_for_session,
     handle_file_dispute_for_session, handle_freeze_contracts, Response,
@@ -81,6 +82,7 @@ fn dispatch_request(
     request_id: &str,
     session_id: &str,
 ) -> Result<Response> {
+    let ids = (session_id, request_id);
     Ok(match request {
         StageRequest::Block { reason } => {
             handle_agent_block_for_session(work_dir, stage_id, reason, Some(session_id))?
@@ -100,14 +102,11 @@ fn dispatch_request(
             failure_output.clone(),
             (Some(request_id), Some(session_id)),
         )?,
-        StageRequest::FreezeContracts { head, tree_digest } => dispatch_freeze(
-            work_dir,
-            stage_id,
-            session_id,
+        StageRequest::FreezeContracts {
             head,
             tree_digest,
-            request_id,
-        )?,
+            choices,
+        } => dispatch_freeze(work_dir, stage_id, ids, (head, tree_digest), choices)?,
         StageRequest::FileDispute {
             kind,
             reason,
@@ -126,10 +125,9 @@ fn dispatch_request(
 fn dispatch_freeze(
     work_dir: &Path,
     stage_id: &str,
-    session_id: &str,
-    head: &str,
-    tree_digest: &str,
-    request_id: &str,
+    (session_id, request_id): (&str, &str),
+    (head, tree_digest): (&str, &str),
+    choices: &ContractChoices,
 ) -> Result<Response> {
     // An unreadable stage is retryable rather than a permanent refusal.
     crate::verify::transitions::load_stage(stage_id, work_dir)?;
@@ -140,6 +138,7 @@ fn dispatch_freeze(
         head,
         tree_digest,
         request_id,
+        choices,
     )
 }
 

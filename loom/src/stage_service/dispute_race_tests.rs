@@ -111,6 +111,7 @@ pub(super) fn setup_contract(id: &str) -> (tempfile::TempDir, std::path::PathBuf
             exit_code: Some(1),
             file: None,
             cwd: None,
+            test: None,
         }],
     };
     write_freeze(&work, &record, &[]).unwrap();

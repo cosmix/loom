@@ -58,7 +58,9 @@ for expected in \
 	"LOOM CONTRACT REMINDER" \
 	"loom stage contracts freeze $STAGE_ID" \
 	"do not commit" \
-	"do not complete the stage"; do
+	"do not complete the stage" \
+	"Host job: passed" \
+	"froze the contracts"; do
 	if [[ "$OUTPUT" != *"$expected"* ]]; then
 		echo "FAIL: contract reminder is missing '$expected', got: $OUTPUT"
 		exit 1
@@ -89,9 +91,12 @@ if [[ -e "$CALLS" ]]; then
 fi
 for expected in \
 	"the latest freeze was refused: fix what it names" \
-	"loom stage contracts freeze $STAGE_ID again, or stop" \
+	"loom stage contracts freeze $STAGE_ID again with the same flags" \
+	"on the third static refusal in this session" \
 	"quiet for 5 minutes with no subagent running" \
-	"refusal goes to an adjudicator and a fresh writer starts with"; do
+	"freeze-refusal dispute, and a fresh writer starts with the" \
+	"Host job: passed" \
+	"froze the contracts"; do
 	if [[ "$OUTPUT" != *"$expected"* ]]; then
 		echo "FAIL: refused contract reminder is missing '$expected', got: $OUTPUT"
 		exit 1

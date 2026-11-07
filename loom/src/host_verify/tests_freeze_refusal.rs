@@ -139,7 +139,7 @@ fn a_contract_command_amended_after_a_passing_run_records_a_refusal() {
     let fx = Fixture::new("exit 1");
     let record = fx.passed_run();
     update_stage(STAGE, &fx.work_dir, |stage| {
-        stage.contracts[0].test = "exit 2".to_string();
+        stage.contracts[0].test = Some("exit 2".to_string());
         Ok(())
     })
     .unwrap();

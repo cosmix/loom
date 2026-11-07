@@ -199,7 +199,7 @@ impl<'a> StageTree<'a> {
         let pairs: Vec<(&str, &str)> = self
             .contracts
             .iter()
-            .map(|(contract, file)| (file.as_str(), contract.test.as_str()))
+            .filter_map(|(contract, file)| Some((file.as_str(), contract.test.as_deref()?)))
             .collect();
         let base = |path: &str| self.base_file(path);
         let edits = rust::derive_scaffold(&base, &pairs)?;
@@ -215,7 +215,12 @@ impl<'a> StageTree<'a> {
         let current = |path: &str| self.current_file(path);
         let mut problems = Vec::new();
         for (contract, file) in &self.contracts {
-            let mut found = rust::chain_problems(&current, file, &contract.test);
+            // A contract with no test yet has no chain to check; the daemon's
+            // check runs on the effective specs, which all carry one.
+            let mut found = contract
+                .test
+                .as_deref()
+                .map_or_else(Vec::new, |test| rust::chain_problems(&current, file, test));
             if let Some(cwd) = &contract.cwd {
                 found.extend(rust::run_dir_problems(&current, file, &normalize(cwd)));
             }

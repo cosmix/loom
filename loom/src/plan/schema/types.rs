@@ -2,7 +2,10 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::types_v2::{deserialize_reasoning_effort, deserialize_stage_model, ProvisionEntry};
+use super::types_v2::{
+    deserialize_consumer_deferred, deserialize_reasoning_effort, deserialize_stage_model,
+    ProvisionEntry,
+};
 
 /// Shared stage and sandbox types used by the plan schema.
 pub use crate::models::stage::{
@@ -315,9 +318,22 @@ pub struct StageDefinition {
     /// Units that must be reachable from an entry point in the code graph.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub reachable: Vec<ReachableCheck>,
+    /// The one-line reason no consumer of this stage's new units exists anywhere
+    /// in the plan; satisfies the cross-stage wiring coverage warning.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_consumer_deferred"
+    )]
+    pub consumer_deferred: Option<String>,
 }
 
 impl StageDefinition {
+    /// Whether the stage declares any wiring, wiring test or reachability check.
+    pub fn has_wiring_coverage(&self) -> bool {
+        !self.wiring.is_empty() || !self.wiring_tests.is_empty() || !self.reachable.is_empty()
+    }
+
     /// Check if this stage definition has any goal-backward verification checks defined.
     pub fn has_any_goal_checks(&self) -> bool {
         !self.artifacts.is_empty()

@@ -18,6 +18,7 @@ use crate::fs::session_files::save_session;
 use crate::fs::work_dir::WorkDir;
 use crate::models::session::{Session, SessionStatus, SessionType};
 use crate::models::stage::{Stage, StageStatus};
+use crate::plan::schema::ContractChoices;
 use crate::process::sandbox_probe::{confined_commands_runnable, skip_unless};
 use crate::stage_service::contracts::freeze_with_reports;
 use crate::stage_service::{handle_freeze_contracts, Response};
@@ -54,7 +55,7 @@ impl Fixture {
     pub(super) fn new(command: &str) -> Self {
         Self::over(shell_contract_worktree, |stage| {
             stage.contracts[0].runner = None;
-            stage.contracts[0].test = command.to_string();
+            stage.contracts[0].test = Some(command.to_string());
         })
     }
 
@@ -304,7 +305,8 @@ fn only_the_contract_writer_queues_a_freeze_job() {
     let head = digest::head(&fx.worktree).unwrap();
     let tree = digest::tree_digest(&fx.worktree).unwrap();
     let request = |session: &str, id: &str| {
-        handle_freeze_contracts(&fx.work_dir, STAGE, session, &head, &tree, id).unwrap()
+        let choices = ContractChoices::new();
+        handle_freeze_contracts(&fx.work_dir, STAGE, session, &head, &tree, id, &choices).unwrap()
     };
 
     let refused = request("someone-else", "r0");

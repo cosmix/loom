@@ -8,6 +8,7 @@ use anyhow::Result;
 use crate::daemon::Response;
 use crate::host_verify::store::job_for_request;
 use crate::models::stage::StageStatus;
+use crate::stage_service::FREEZE_BUSY;
 use crate::verify::contracts::refusal::{problem_lines, record_daemon_refusal, RefusalSource};
 use crate::verify::transitions::load_stage;
 
@@ -36,6 +37,9 @@ pub(super) fn settle(
                 named.unwrap_or_default()
             )))
         }
+        // A request that would join a running freeze under other flags is a
+        // wait-and-rerun answer; filing it would dispute a temporary state.
+        Ok(Response::Error { message }) if message == FREEZE_BUSY => Settle::Refused(message),
         Ok(Response::Error { message }) => {
             // The drain never retries a request (delivery is at most once,
             // see the `inbox_drain` module doc), so a record that cannot be
@@ -53,9 +57,10 @@ pub(super) fn settle(
     }
 }
 
-/// A relayed freeze tells its writer to end the turn, so the refusal goes to
-/// adjudication: record it for the `dispute_refused_freezes` tick step, which
-/// files it as a `freeze-refusal` dispute (`verify::contracts::refusal`).
+/// The writer's CLI refuses every choice mistake it can find before it
+/// relays, so an admission refusal recorded here is one only the daemon finds.
+/// Record it for the `dispute_refused_freezes` tick step, which files it at
+/// once as a `freeze-refusal` dispute (`verify::contracts::refusal`).
 /// `require_owner` refused every non-owner before the freeze handler ran, so
 /// this refusal is the owner's; a stage that is not `Executing` (the handler's
 /// status refusal) has no contract phase to dispute and records nothing.

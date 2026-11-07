@@ -80,7 +80,7 @@ fn verifies_a_plan_with_no_repository_root() {
                 - \"rg -q present notes.txt\"\n```\n\n<!-- END loom METADATA -->\n";
     fs::write(&plan_path, plan).unwrap();
 
-    execute(&plan_path, false, false, false).unwrap();
+    execute(&plan_path, false, false, false, false).unwrap();
     let report = base_tree::check_base_tree(&[], None);
     assert!(report.warnings.is_empty());
     assert!(report.note.is_some_and(|note| note.contains("skipped")));

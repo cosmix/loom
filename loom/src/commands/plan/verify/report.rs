@@ -175,6 +175,12 @@ pub fn verify_text(repo_root: Option<&Path>, plan_path: &Path, text: &str) -> Ve
     validate(repo_root, plan_path, text, &metadata, plan)
 }
 
+/// The `loom:` metadata of a plan's text; `None` when the block is absent or does not parse.
+pub(super) fn parse_metadata(text: &str) -> Option<LoomMetadata> {
+    let extracted = extract_yaml_metadata_with_ranges(text).ok()?;
+    crate::yaml::from_str(&extracted.yaml).ok()
+}
+
 /// Verify the plan file at `path`, with the repository root found by walking up from it.
 pub fn verify_path(path: &Path) -> Result<VerifyReport, EarlyFailure> {
     let text = read_plan(path)?;
@@ -204,7 +210,7 @@ fn read_plan(path: &Path) -> Result<String, EarlyFailure> {
 }
 
 /// The repository holding `path`, if any.
-fn plan_repo_root(path: &Path) -> Result<Option<std::path::PathBuf>, EarlyFailure> {
+pub(super) fn plan_repo_root(path: &Path) -> Result<Option<std::path::PathBuf>, EarlyFailure> {
     let absolute = std::path::absolute(path).map_err(|e| EarlyFailure {
         source: path.to_string_lossy().to_string(),
         message: format!("Failed to resolve {}: {e}", path.display()),

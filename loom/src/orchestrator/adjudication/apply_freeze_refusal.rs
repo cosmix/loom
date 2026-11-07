@@ -27,11 +27,13 @@ use crate::models::stage::Stage;
 use crate::plan::amendment::{AmendmentField, AmendmentPatch, AmendmentRequest};
 use crate::plan::schema::ContractSpec;
 use crate::verify::contracts::changes::stage_base;
+use crate::verify::contracts::choices;
 use crate::verify::contracts::collection::stage_scaffold;
 use crate::verify::contracts::normalize;
 use crate::verify::review::report::single_line;
 
 use super::apply::amend_plan;
+use super::apply_contract::amended_ids;
 use super::apply_kinds::notify_and_requeue;
 use super::prompt::scaffold_line;
 use super::verdict_freeze_refusal::{decode_patches, FreezePatch};
@@ -66,8 +68,53 @@ pub(super) fn accept(
             return Ok(());
         }
     }
+    forget_amended_choices(work_dir, stage, &patches, &before)?;
     let notice = accept_notice(work_dir, stage, dispute, &patches, &before, reasoning);
     notify_and_requeue(work_dir, stage, &notice)
+}
+
+/// Drop the saved writer choice of every contract the `contracts` patches
+/// touched: the ids they replaced, inserted, renamed away or deleted. The
+/// amended spec then governs until the next writer states its flags again.
+/// Removing an id twice is a no-op, so a retried apply is safe.
+fn forget_amended_choices(
+    work_dir: &Path,
+    stage: &Stage,
+    patches: &[FreezePatch],
+    before: &[ContractSpec],
+) -> Result<()> {
+    let mut touched: BTreeSet<String> = patches
+        .iter()
+        .filter(|entry| entry.field == AmendmentField::Contracts)
+        .flat_map(|entry| amended_ids(&entry.patch))
+        .collect();
+    let current: BTreeSet<&str> = stage.contracts.iter().map(|c| c.id.as_str()).collect();
+    touched.extend(
+        before
+            .iter()
+            .map(|contract| contract.id.clone())
+            .filter(|id| !current.contains(id.as_str())),
+    );
+    let mut saved = choices::load_choices(work_dir, &stage.id)?;
+    let held = saved.len();
+    saved.retain(|id, _| !touched.contains(id));
+    if saved.len() == held {
+        return Ok(());
+    }
+    choices::save_choices(work_dir, &stage.id, &saved)
+}
+
+/// What the next writer does to finish: the freeze command with the choice
+/// flags it needs, and how to read its wait. The wording the writer's signal
+/// (rule 7) gives.
+fn freeze_step(stage_id: &str) -> String {
+    format!(
+        "run `loom stage contracts freeze {stage_id}` with a `--test <contract>=<identifier>` \
+         for every contract that shows `(you choose)` or whose hint you replace (a later \
+         freeze keeps the flags it does not repeat); while its `Host job:` line reads \
+         `requested` or `pending`, change no file and run the same command again; stop when \
+         it reads `passed`"
+    )
 }
 
 /// The feedback for a rejected freeze refusal. `reasoning` is the stored one,
@@ -76,8 +123,9 @@ pub(super) fn reject_notice(stage_id: &str, reasoning: &str) -> String {
     format!(
         "The adjudicator rejected the refused contract freeze: the refusal stands and the \
          contract work must change.\n\n### Reasoning\n\n{}\n\nAction: change what the \
-         instructions name, then run `loom stage contracts freeze {stage_id}` and stop.\n",
-        strip_control(reasoning, &['\n', '\t']).trim()
+         instructions name, then {}.\n",
+        strip_control(reasoning, &['\n', '\t']).trim(),
+        freeze_step(stage_id)
     )
 }
 
@@ -90,9 +138,9 @@ pub(super) fn needs_more_evidence(
 ) -> Result<()> {
     let mut body = format!(
         "The adjudicator needs more evidence. Answer each question with `loom memory note \
-         \"freeze-dispute: answer <n>: <evidence>\"`, then run `loom stage contracts freeze \
-         {}` and stop; a refused freeze reaches the adjudicator again.\n\n",
-        stage.id
+         \"freeze-dispute: answer <n>: <evidence>\"`, then {}; a refused freeze reaches the \
+         adjudicator again.\n\n",
+        freeze_step(&stage.id)
     );
     for (n, question) in questions.iter().enumerate() {
         body.push_str(&format!("{}. {}\n", n + 1, single_line(question)));
@@ -123,8 +171,8 @@ fn accept_notice(
     body.push_str(&old_files_section(work_dir, stage, before));
     body.push_str(&format!(
         "Action: write the contracts as this signal's Contracts, Harness and Scaffold sections \
-         now state them, then run `loom stage contracts freeze {}` and stop.\n",
-        stage.id
+         now state them, then {}.\n",
+        freeze_step(&stage.id)
     ));
     body
 }

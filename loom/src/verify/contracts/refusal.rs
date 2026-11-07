@@ -14,8 +14,11 @@
 //! daemon's `dispute_refused_freezes` tick step files either one as a
 //! `freeze-refusal` dispute for the stage's current contract writer: the daemon
 //! record at once, the writer's file once the writer has been quiet for five
-//! minutes. Nothing parks the stage: an adjudicator decides the refusal and a
-//! fresh writer starts with the verdict.
+//! minutes. A static refusal is returned to the writer instead
+//! ([`record_static_refusal`]); it is filed as a `freeze-refusal` dispute on
+//! the third static refusal in the session, or when the writer stays quiet 5
+//! minutes after a refusal. Nothing parks the stage: an adjudicator decides
+//! the refusal and a fresh writer starts with the verdict.
 //!
 //! The scratch file is the agent's to write, so it is read as untrusted text:
 //! never through a symlink, bounded, and labelled as the writer's claim when it
@@ -69,6 +72,9 @@ pub const RUN_OUTPUT_PREFIX: &str = "run-output: ";
 const CONTRACTS_DIR: &str = "contracts";
 const DAEMON_REFUSAL_FILE: &str = "refused.json";
 const MAX_DAEMON_REFUSAL_BYTES: usize = 256 * 1024;
+
+mod static_return;
+pub use static_return::{record_static_refusal, StaticRefusal, STATIC_RETURN_LIMIT};
 
 /// Record `problems` as the outcome of the writer's latest freeze attempt.
 pub fn record(scratch_dir: &Path, problems: &[String]) -> Result<()> {
@@ -224,6 +230,14 @@ pub struct DaemonRefusal {
     /// The admission's reason when loom declined to file it; a declined
     /// refusal is never filed again.
     pub declined: Option<String>,
+    /// Static refusals of this session returned to the writer and not filed
+    /// yet ([`record_static_refusal`]); 0 for a refusal the tick files at once.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub returned: u32,
+}
+
+fn is_zero(count: &u32) -> bool {
+    *count == 0
 }
 
 /// Record a freeze refused for `session_id` of `stage_id`, replacing any
@@ -243,6 +257,7 @@ pub fn record_daemon_refusal(
         source,
         job_origin: None,
         declined: None,
+        returned: 0,
     };
     let dir = refusal_dir(work_dir, stage_id)?;
     locked_dir_update(&dir, || write_refusal(&dir, &record))
@@ -286,6 +301,7 @@ pub fn record_job_refusal(
             source: RefusalSource::Daemon,
             job_origin: Some(origin),
             declined: None,
+            returned: 0,
         };
         write_refusal(&dir, &record)?;
         Ok(true)

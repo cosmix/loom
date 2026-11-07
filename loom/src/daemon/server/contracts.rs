@@ -1,5 +1,6 @@
 //! RPC adapter for the shared stage application service.
 use crate::daemon::protocol::Response;
+use crate::plan::schema::ContractChoices;
 use anyhow::Result;
 use std::path::Path;
 
@@ -12,6 +13,7 @@ pub(crate) fn handle_freeze_contracts(
     head: &str,
     tree_digest: &str,
     request_id: &str,
+    choices: &ContractChoices,
 ) -> Result<Response> {
     crate::stage_service::handle_freeze_contracts(
         work_dir,
@@ -20,6 +22,7 @@ pub(crate) fn handle_freeze_contracts(
         head,
         tree_digest,
         request_id,
+        choices,
     )
     .map(Into::into)
 }

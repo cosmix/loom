@@ -27,6 +27,12 @@ impl PreparedContract {
     pub(crate) fn build_key(&self) -> Option<BuildKey> {
         self.resolved.build_key()
     }
+
+    /// Whether a test-runner adapter builds the command; without one the
+    /// contract's test runs as a shell command.
+    pub(crate) fn has_adapter(&self) -> bool {
+        self.adapter.is_some()
+    }
 }
 
 /// Resolve where and how `contract` runs.

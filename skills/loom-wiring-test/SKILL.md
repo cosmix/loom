@@ -33,11 +33,13 @@ Tests pass and code compiles, yet the feature is never wired up — command not 
 
 | Field | Type | Proves | Timeout |
 | ----- | ---- | ------ | ------- |
-| `acceptance` | `Vec<AcceptanceCriterion>` | Build/test/lint and observable behavior | 5 min (Simple) / 30 s (Extended) |
+| `acceptance` | `Vec<AcceptanceCriterion>` | Build/test/lint and observable behavior | 5 min (Simple and Extended; Extended takes timeout_secs up to 3600) |
 | `artifacts` | `Vec<String>` (globs) | Files exist with real implementation | — |
 | `wiring` | `Vec<WiringCheck>` | Static connection point present (regex in a file) | — |
 | `wiring_tests` | `Vec<WiringTest>` | Runtime integration: command output matches criteria | — |
 | `dead_code_check` | `Option<DeadCodeCheck>` | No orphaned code (see `/loom-dead-code-check`) | — |
+
+`after_stage` and `before_stage` checks default to 30 s and a `wiring_tests` command is capped at 30 s.
 
 `loom check <stage-id> [--suggest]` runs `acceptance` and the goal-backward layers (`artifacts`, `wiring`, `wiring_tests`, `dead_code_check`) without changing stage state. `loom stage complete` also runs acceptance before transitioning the stage.
 
@@ -51,11 +53,13 @@ Tests pass and code compiles, yet the feature is never wired up — command not 
 
 A wiring pattern that greps where a symbol is **declared / exported / imported** passes while the feature is still unwired — the exact trap, committed inside the verification field. Grep the **call / mount / render / dispatch** site that proves the symbol is USED.
 
+In a version 2 plan, prove entry-point reach with a `reachable` check (`symbol` and `from`, see the loom-plan-writer skill, `references/v2-contracts.md` Section 4): it walks the source graph from the entry point, which a regex on one file cannot. Write a wiring entry only for a seam the graph cannot see: registration by string, configuration, templates, macros, trait objects. Never start a pattern with a definition keyword (`fn`, `mod`, `struct`, `enum`, `trait`, `impl`, `type`, `def`, `class`, `function` or `interface`, with or without `pub`, `pub(crate)`, `pub(super)`, `export`, `export default` or `async`): `loom plan verify` rejects it in a version 2 plan and warns in version 1. When the consumer arrives in a later plan, declare `consumer_deferred: "<reason>"` on the stage instead of inventing a check.
+
 | ❌ Producer (exists ≠ wired) | ✅ Consumer (proves reachable) |
 | --------------------------- | ----------------------------- |
-| `pattern: "mod new_command"` | `source: "src/cli.rs", pattern: "NewCommand =>"` (dispatch arm) |
+| `pattern: "mod new_command"` | `reachable: [{symbol: NewCommand, from: main, description: ...}]` (dispatch reach) |
 | `pattern: "pub fn handler"` | `source: "src/routes.rs", pattern: "/features.*create_feature"` (route registration) |
-| `pattern: "export function Foo"` | `source: "src/pages/Home.tsx", pattern: "<Foo"` (render site) |
+| `pattern: "export function Foo"` | `reachable: [{symbol: Foo, from: App, description: ...}]` (render reach) |
 
 Pair every `wiring` entry with a behavioral `acceptance` command where one exists — observable behavior is the strongest wiring proof.
 
@@ -106,7 +110,7 @@ Use `wiring_tests` (not `acceptance`) when you want a runtime check counted as g
 ```yaml
 acceptance:
   - "cargo test"                          # Simple: exit 0, 5-min timeout
-  - command: "loom check st --suggest"    # Extended (TruthCheck): 30-s timeout
+  - command: "loom check st --suggest"    # Extended (TruthCheck): 5-min default, timeout_secs up to 3600
     stdout_contains: ["PASS"]
     stdout_not_contains: ["panic"]
     stderr_empty: false
@@ -123,10 +127,10 @@ acceptance:
   - 'myapp new-cmd --help | rg -q "usage"' # primary use case wired
 artifacts:
   - "src/commands/new_cmd.rs"
-wiring:
-  - source: "src/cli/dispatch.rs"
-    pattern: "Commands::NewCmd"            # CONSUMER: dispatch arm, not `mod new_cmd`
-    description: "Command dispatched in CLI"
+reachable:
+  - symbol: run_new_cmd                    # CONSUMER: dispatch arm, not `mod new_cmd`
+    from: main
+    description: "Command reachable from the CLI entry point"
 ```
 
 ### API endpoint
@@ -209,7 +213,7 @@ A check that passes while asserting nothing is worse than none — it reads as "
 ## Final checklist
 
 - [ ] No stale top-level `truths:` block anywhere (removed field — plan parsing rejects it)
-- [ ] Every `wiring` targets a CONSUMER site (call/mount/render/dispatch), not a declaration/export/import
+- [ ] Every `wiring` targets a CONSUMER site (call/mount/render/dispatch), not a declaration/export/import; entry-point reach is a `reachable` check in a version 2 plan, wiring is for seams the graph cannot see
 - [ ] `wiring` patterns are valid regex, metacharacters escaped, `pub.*fn` for visibility; no `!`-negation assumed
 - [ ] `artifacts` are specific implementation files that contain no stub text and aren't markdown-exempt where you needed stub detection
 - [ ] At least one `acceptance` or `wiring_tests` command exercises the primary use case end-to-end

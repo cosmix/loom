@@ -5,7 +5,7 @@
 //! and heartbeat hooks only after a Bash call that exits 0.
 
 use std::io::Write;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
@@ -164,18 +164,18 @@ fn drive(
         tree_digest(site.checkout)?
     };
     let path = state_path(site)?;
-    let state = read_state(&path).filter(|state| {
-        state.head == head
-            && state.tree_digest == digest
-            && state.no_cache == site.no_cache
-            && state.criteria.as_deref() == site.criteria
-    });
+    let state = read_state(&path).filter(|state| state_matches(site, state, &head, &digest));
     let Some(state) = state else {
         return request(site, &path, relay, out, head, digest);
     };
     let outcome = follow(site, &state)?;
     if awaits_application(site, &outcome) {
-        // The caller follows the application, reports it, then `release`s.
+        // The caller follows the application, reports it, then `release`s. A
+        // finished freeze job is reported here: the caller prints only how
+        // the daemon applied it.
+        if site.kind == JobKind::Freeze {
+            report(site, &head, &outcome, out)?;
+        }
         return Ok(outcome);
     }
     if !matches!(outcome, WaitOutcome::Pending { .. }) {
@@ -185,11 +185,54 @@ fn drive(
     Ok(outcome)
 }
 
-/// A passed completion is decided only once the daemon applies it, so its
-/// request outlives the job.
+/// Whether `state` is the request a call at `head` and `digest` follows.
+fn state_matches(site: &WaitSite<'_>, state: &RequestState, head: &str, digest: &str) -> bool {
+    state.head == head
+        && state.tree_digest == digest
+        && state.no_cache == site.no_cache
+        && state.criteria.as_deref() == site.criteria
+}
+
+/// A passed completion, and a freeze job that passed or failed, are decided
+/// only once the daemon applies them, so their request outlives the job until
+/// the caller [`release`]s it.
 fn awaits_application(site: &WaitSite<'_>, outcome: &WaitOutcome) -> bool {
-    site.kind == JobKind::Complete
-        && matches!(outcome, WaitOutcome::Finished(record, _) if record.state == JobState::Passed)
+    let WaitOutcome::Finished(record, _) = outcome else {
+        return false;
+    };
+    match site.kind {
+        JobKind::Complete => record.state == JobState::Passed,
+        JobKind::Freeze => matches!(record.state, JobState::Passed | JobState::Failed),
+        _ => false,
+    }
+}
+
+/// The request id of the state [`wait_or_request`] would follow right now (the
+/// same HEAD, tree digest, no-cache flag and criteria), or `None` when the
+/// next call would relay a new request. The freeze reads it to compare the
+/// flags a pending request was sent with before it follows that request.
+pub fn pending_request_id(site: &WaitSite<'_>) -> Result<Option<String>> {
+    let head = head(site.checkout)?;
+    let digest = if site.knowledge {
+        knowledge_tree_digest(site.checkout)?
+    } else {
+        tree_digest(site.checkout)?
+    };
+    let state = read_state(&state_path(site)?);
+    Ok(state
+        .filter(|state| state_matches(site, state, &head, &digest))
+        .map(|state| state.request_id))
+}
+
+/// The companion file beside a freeze's request state, holding the choices
+/// that request was sent with (`{"request_id": .., "choices": ..}`). The
+/// request state itself records no choices, and a rerun that matches it
+/// relays nothing, so the freeze keeps them here to refuse a rerun under
+/// other flags. The stage id is validated as `state_path` does.
+pub fn freeze_choices_path(site: &WaitSite<'_>) -> Result<PathBuf> {
+    crate::validation::validate_id(site.stage_id)?;
+    let name = format!("{}-freeze-choices.json", site.stage_id);
+    Ok(site.scratch_dir.join("host-verify").join(name))
 }
 
 /// Forget the request once the caller has reported how the daemon applied
@@ -297,3 +340,7 @@ fn poll(site: &WaitSite<'_>, state: &RequestState) -> Result<Poll> {
         result,
     ))))
 }
+
+#[cfg(test)]
+#[path = "tests_wait_freeze.rs"]
+mod freeze_tests;

@@ -73,6 +73,7 @@ pub fn resolve_run(
     recorded: Option<&str>,
 ) -> Result<ContractRun> {
     let id = &contract.id;
+    let test = contract.required_test()?;
     let root = canonical(worktree_root)?;
     let working = canonical(working_dir)?;
     if !working.starts_with(&root) {
@@ -95,15 +96,12 @@ pub fn resolve_run(
     let cwd = beneath(&run_dir, &root).unwrap_or_else(|_| ".".to_string());
     let scope = adapter
         .filter(|adapter| adapter.language() == "rust")
-        .and_then(|_| rust_scope(&root, &file, &contract.test, &cwd));
+        .and_then(|_| rust_scope(&root, &file, test, &cwd));
     let command_for = |adapter: &dyn TestRunnerAdapter, test: &str| match &scope {
         Some(scope) => adapter.scoped_test_command(scope, &relative_file, test, &dir),
         None => adapter.single_test_command(&relative_file, test, &dir),
     };
-    let command = adapter.map_or_else(
-        || contract.test.clone(),
-        |adapter| command_for(adapter, &contract.test),
-    );
+    let command = adapter.map_or_else(|| test.to_string(), |adapter| command_for(adapter, test));
     let build = adapter.map(|adapter| command_for(adapter, BUILD_PROBE_TEST));
     Ok(ContractRun {
         dir,

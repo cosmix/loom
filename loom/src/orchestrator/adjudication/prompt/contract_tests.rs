@@ -152,6 +152,7 @@ fn the_spec_block_shows_the_plan_and_recorded_cwd() {
             exit_code: Some(101),
             file: Some("tests/x_contract.rs".to_string()),
             cwd: Some(".".to_string()),
+            test: None,
         }],
     };
     store::write_freeze(&fx.work_dir, &record, &[]).unwrap();

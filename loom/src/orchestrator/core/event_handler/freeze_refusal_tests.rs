@@ -30,15 +30,15 @@ const STAGE: &str = "test-stage";
 /// An auto-mode orchestrator over a v2 standard stage executing its
 /// contract phase under the running writer `writer`, whose scratch
 /// directory lives under `scratch_root`.
-struct Fixture {
+pub(super) struct Fixture {
     _temp: TempDir,
-    work: PathBuf,
+    pub(super) work: PathBuf,
     scratch_root: PathBuf,
-    writer: Session,
+    pub(super) writer: Session,
     orchestrator: Orchestrator,
 }
 
-fn fixture() -> Fixture {
+pub(super) fn fixture() -> Fixture {
     let temp = handoff_work_dir();
     // Lifecycle evidence rejects a symlinked work dir; macOS temp dirs sit
     // under the `/var` -> `/private/var` symlink.
@@ -75,18 +75,18 @@ fn fixture() -> Fixture {
 }
 
 impl Fixture {
-    fn tick_at(&mut self, now: SystemTime) {
+    pub(super) fn tick_at(&mut self, now: SystemTime) {
         let root = self.scratch_root.clone();
         self.orchestrator
             .dispute_refused_freezes_at(Some(&root), now);
     }
 
-    fn tick(&mut self) {
+    pub(super) fn tick(&mut self) {
         self.tick_at(SystemTime::now());
     }
 
     /// A tick once a refusal written now has been quiet long enough.
-    fn tick_after_quiet(&mut self) {
+    pub(super) fn tick_after_quiet(&mut self) {
         self.tick_at(SystemTime::now() + Duration::from_secs(REFUSAL_QUIET_SECS + 1));
     }
 
@@ -124,12 +124,12 @@ impl Fixture {
         requests
     }
 
-    fn assert_nothing_filed(&self) {
+    pub(super) fn assert_nothing_filed(&self) {
         assert_eq!(self.stage().status, StageStatus::Executing);
         assert!(self.requests().is_empty(), "{:?}", self.requests());
     }
 
-    fn assert_filed_once(&self) -> String {
+    pub(super) fn assert_filed_once(&self) -> String {
         assert_eq!(self.stage().status, StageStatus::NeedsAdjudication);
         let requests = self.requests();
         assert_eq!(requests.len(), 1, "{requests:?}");

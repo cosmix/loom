@@ -19,7 +19,7 @@ pub(crate) fn contract() -> ContractSpec {
     ContractSpec {
         id: CONTRACT_ID.to_string(),
         file: CONTRACT_FILE.to_string(),
-        test: "tests::rejects_x".to_string(),
+        test: Some("tests::rejects_x".to_string()),
         runner: Some("cargo-test".to_string()),
         cwd: None,
         scenario: "x arrives".to_string(),
@@ -38,7 +38,7 @@ pub(crate) const LIQUIDMON_FILE: &str = "src/device_lock/contract_tests.rs";
 pub(crate) fn liquidmon_contract() -> ContractSpec {
     ContractSpec {
         file: LIQUIDMON_FILE.to_string(),
-        test: "device_lock::contract_tests::rejects_x".to_string(),
+        test: Some("device_lock::contract_tests::rejects_x".to_string()),
         ..contract()
     }
 }

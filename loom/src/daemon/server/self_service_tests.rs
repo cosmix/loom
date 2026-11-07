@@ -83,6 +83,7 @@ fn only_the_own_stage_requests_can_be_authorized_by_the_connection() {
             session_id: "s4".to_string(),
             head: "a".repeat(40),
             tree_digest: "b".repeat(64),
+            choices: Default::default(),
         })
     );
 

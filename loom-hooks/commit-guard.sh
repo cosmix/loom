@@ -87,8 +87,9 @@ contract_freeze_refused() {
 # Contract-phase reminder, printed in place of the commit-and-complete
 # checklist, then allow stop. The hook calls no loom command for a contract
 # session: the Stop hook fires at every turn end, background subagents
-# running included, and the daemon files a standing refusal for adjudication
-# once the session is quiet.
+# running included. The freeze command waits for its host job; the daemon
+# returns a static refusal to the writer and files it for adjudication on the
+# third one, or once the session is quiet.
 # Args: $1 = stage ID
 remind_contract_freeze() {
 	local stage_id="$1"
@@ -99,17 +100,24 @@ remind_contract_freeze() {
 	printf '%s\n' "================================================================" >&2
 	printf '%s\n' "Contract session for stage '$stage_id':" >&2
 	if contract_freeze_refused; then
-		printf '%s\n' "  - the latest freeze was refused: fix what it names and run" >&2
-		printf '%s\n' "    loom stage contracts freeze $stage_id again, or stop; once this" >&2
-		printf '%s\n' "    session is quiet for 5 minutes with no subagent running, the" >&2
-		printf '%s\n' "    refusal goes to an adjudicator and a fresh writer starts with" >&2
-		printf '%s\n' "    the verdict" >&2
+		printf '%s\n' "  - the latest freeze was refused: fix what it names, then run" >&2
+		printf '%s\n' "    loom stage contracts freeze $stage_id again with the same flags" >&2
+		printf '%s\n' "    (a static refusal is returned to you; it is filed as a" >&2
+		printf '%s\n' "    freeze-refusal dispute, and a fresh writer starts with the" >&2
+		printf '%s\n' "    verdict, on the third static refusal in this session, or when" >&2
+		printf '%s\n' "    this session is quiet for 5 minutes with no subagent running)" >&2
 	else
 		printf '%s\n' "  - finish with: loom stage contracts freeze $stage_id" >&2
 	fi
 	printf '%s\n' "  - do not commit" >&2
 	printf '%s\n' "  - do not complete the stage" >&2
-	printf '%s\n' "After the freeze request, stop; loom ends this session." >&2
+	printf '%s\n' "The freeze waits for its host job and for the daemon's application of it:" >&2
+	printf '%s\n' "  - on 'Host job: failed', fix what the output names and run" >&2
+	printf '%s\n' "    loom stage contracts freeze $stage_id again with the same flags" >&2
+	printf '%s\n' "  - the wait ends with a line that says whether a refusal was" >&2
+	printf '%s\n' "    returned to you (n of 3) or filed for an adjudicator" >&2
+	printf '%s\n' "  - once it prints 'Host job: passed' and the line 'froze the contracts'," >&2
+	printf '%s\n' "    stop; loom ends this session" >&2
 	printf '%s\n' "================================================================" >&2
 
 	exit 0

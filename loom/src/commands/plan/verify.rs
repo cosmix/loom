@@ -5,6 +5,9 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 
 mod checks;
+pub mod dry_run;
+mod dry_run_classify;
+mod dry_run_exec;
 mod human;
 mod inputs;
 pub mod report;
@@ -35,11 +38,28 @@ fn emit_json(output: &VerifyReport) {
     let _ = std::io::stdout().flush();
 }
 
-pub fn execute(path: &Path, strict: bool, json: bool, no_color: bool) -> Result<()> {
+/// `--dry-run`: run the criteria in a checkout of HEAD. A plan that already has
+/// validation errors is not run; its criteria cannot be trusted to mean anything.
+fn run_dry_run_when_sound(path: &Path, report: &mut VerifyReport) -> Result<()> {
+    if report.stopped {
+        return Ok(());
+    }
+    if !report.errors.is_empty() {
+        let note = "dry run skipped: the plan has validation errors";
+        report.notes.push(note.to_string());
+        return Ok(());
+    }
+    dry_run::run_dry_run(path, report)
+}
+
+pub fn execute(path: &Path, strict: bool, json: bool, no_color: bool, dry_run: bool) -> Result<()> {
     if no_color {
         colored::control::set_override(false);
     }
-    let report = report::verify_path(path).unwrap_or_else(VerifyReport::from);
+    let mut report = report::verify_path(path).unwrap_or_else(VerifyReport::from);
+    if dry_run {
+        run_dry_run_when_sound(path, &mut report)?;
+    }
     let total_errors = report.errors.len();
     let total_warnings = report.warnings.total();
     let failed = should_fail(total_errors, total_warnings, strict);
