@@ -341,3 +341,21 @@ fn provision_runs_before_the_criteria_and_a_failure_stops_the_run() {
         .iter()
         .any(|e| e.stage_id.is_none() && e.message.contains("provision failed")));
 }
+
+#[test]
+fn the_confinement_refusal_names_the_probe_reason_and_its_remedy() {
+    use crate::commands::plan::verify::dry_run_exec::needs_confinement;
+
+    let missing = needs_confinement("bwrap not found");
+    assert!(missing.contains("needs a shell where loom can confine commands (bwrap not found)"));
+    assert!(missing.contains("install bubblewrap"), "{missing}");
+    assert!(!missing.contains("operator's shell"), "{missing}");
+
+    let denied = needs_confinement("bwrap failed (exit status: 1: setting up uid map)");
+    assert!(denied.contains("setting up uid map"), "{denied}");
+    assert!(
+        denied.contains("run it from the operator's shell"),
+        "{denied}"
+    );
+    assert!(!denied.contains("install bubblewrap"), "{denied}");
+}

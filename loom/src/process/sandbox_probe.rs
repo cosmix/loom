@@ -155,14 +155,25 @@ pub fn home_dir_resolvable() -> bool {
 /// `bwrap` failing with its exit status and first stderr line — so the
 /// caller's `SKIP` line beside it says which, and on every test that asks.
 pub fn confined_commands_runnable() -> bool {
-    static RESULT: OnceLock<Result<(), String>> = OnceLock::new();
-    match RESULT.get_or_init(confined_command_blocker) {
-        Ok(()) => true,
-        Err(why) => {
+    match confined_commands_blocker() {
+        None => true,
+        Some(why) => {
             eprintln!("SKIP reason: confined commands cannot start: {why}");
             false
         }
     }
+}
+
+/// Why confined commands cannot start here (`bwrap` missing, or failing with
+/// its exit status and first stderr line), or `None` when they can. Memoized;
+/// prints nothing, for callers that report the reason themselves.
+pub fn confined_commands_blocker() -> Option<&'static str> {
+    static RESULT: OnceLock<Result<(), String>> = OnceLock::new();
+    RESULT
+        .get_or_init(confined_command_blocker)
+        .as_ref()
+        .err()
+        .map(String::as_str)
 }
 
 /// Run one bubblewrap-confined `true`; `Err` names why it could not.

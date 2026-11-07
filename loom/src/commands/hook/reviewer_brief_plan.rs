@@ -3,7 +3,7 @@
 //! declare no consumer yet.
 
 use anyhow::{bail, Result};
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
 use crate::git::merge::control_paths::{accepted_change_base, changed_paths, AcceptedBase};
@@ -16,10 +16,14 @@ use crate::verify::review::report::single_line;
 const MAX_LISTED_FILES: usize = 200;
 /// Stages listed under `consumer_deferred`.
 const MAX_DEFERRED_STAGES: usize = 50;
-/// Byte budgets of the two lists, so the section stays well inside the brief's
-/// cap (200 typical paths fit; pathological ones are summarised as `... n more`).
-const MAX_FILES_BYTES: usize = 7 * 1024;
+/// Byte budgets of the lists, so the section stays inside the brief's 16 KiB
+/// cap, which drops events first. Each file costs its path plus 5 bytes of list
+/// markup, so 10 KiB holds `MAX_LISTED_FILES` paths of up to about 46 bytes
+/// (this repository's typical path is 44); longer ones are cut at the budget and
+/// the rest is summarised by directory.
+const MAX_FILES_BYTES: usize = 10 * 1024;
 const MAX_DEFERRED_BYTES: usize = 2 * 1024;
+const MAX_OMITTED_DIRS_BYTES: usize = 1024;
 const MAX_PATH_BYTES: usize = 300;
 const MAX_REASON_BYTES: usize = 160;
 
@@ -97,21 +101,37 @@ pub(super) struct IntegrationContext {
 }
 
 impl IntegrationContext {
+    /// `stages` is the plan's stage listing; a failed listing makes the change
+    /// unavailable with that error, never an empty plan.
     pub(super) fn collect(
         work_dir: &Path,
         worktree: &Path,
         target: &str,
-        stages: &[Stage],
+        stages: Result<Vec<Stage>>,
         this: &str,
     ) -> Self {
+        let briefs_dir = plan_briefs_dir(work_dir, worktree);
+        let stages = match stages {
+            Ok(stages) => stages,
+            Err(error) => {
+                return Self {
+                    briefs_dir,
+                    changed: Err(clean(
+                        &format!("stage listing failed: {error:#}"),
+                        MAX_REASON_BYTES,
+                    )),
+                    deferred: Vec::new(),
+                };
+            }
+        };
         let mut deferred: Vec<(String, String)> = stages
             .iter()
             .filter_map(|stage| Some((stage.id.clone(), stage.consumer_deferred.clone()?)))
             .collect();
         deferred.sort();
         Self {
-            briefs_dir: plan_briefs_dir(work_dir, worktree),
-            changed: plan_changed_files(worktree, target, stages, this)
+            briefs_dir,
+            changed: plan_changed_files(worktree, target, &stages, this)
                 .map_err(|error| clean(&format!("{error:#}"), MAX_REASON_BYTES)),
             deferred,
         }
@@ -166,13 +186,16 @@ fn render_change(out: &mut String, change: &PlanChange) {
         change.files.len()
     ));
     let lines = change.files.iter().map(|path| clean(path, MAX_PATH_BYTES));
-    push_list(
+    let shown = push_list(
         out,
         lines,
         change.files.len(),
         MAX_LISTED_FILES,
         MAX_FILES_BYTES,
     );
+    if let Some(summary) = omitted_by_directory(&change.files[shown..]) {
+        out.push_str(&format!("  - Not listed, by directory: {summary}\n"));
+    }
     if !change.missing.is_empty() {
         out.push_str(&format!(
             "- Stages not found in the target's history: {}\n",
@@ -200,15 +223,54 @@ fn inline_list(ids: &[String]) -> String {
     shown.join(", ")
 }
 
+/// `dir (count)` for the directories (first two path components) holding the
+/// `omitted` paths, largest first and cut at `MAX_OMITTED_DIRS_BYTES`, so a
+/// reviewer can Glob what the list left out. `None` when nothing is omitted.
+fn omitted_by_directory(omitted: &[String]) -> Option<String> {
+    let mut counts: BTreeMap<String, usize> = BTreeMap::new();
+    for path in omitted {
+        let mut parts: Vec<&str> = path.split('/').collect();
+        parts.pop();
+        parts.truncate(2);
+        let dir = if parts.is_empty() {
+            "(repository root)".to_string()
+        } else {
+            parts.join("/")
+        };
+        *counts.entry(clean(&dir, MAX_PATH_BYTES)).or_default() += 1;
+    }
+    let mut ranked: Vec<(String, usize)> = counts.into_iter().collect();
+    ranked.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+    let total = ranked.len();
+    let mut shown: Vec<String> = Vec::new();
+    let mut used = 0;
+    for (dir, count) in &ranked {
+        let entry = format!("{dir} ({count})");
+        used += entry.len() + 2;
+        if used > MAX_OMITTED_DIRS_BYTES {
+            break;
+        }
+        shown.push(entry);
+    }
+    if shown.is_empty() {
+        return None;
+    }
+    if total > shown.len() {
+        shown.push(format!("... {} more directories", total - shown.len()));
+    }
+    Some(shown.join(", "))
+}
+
 /// Appends `  - <line>` per item up to `max_items` and `max_bytes`, then
-/// `  - ... <r> more` for the `total - shown` left over.
+/// `  - ... <r> more` for the `total - shown` left over. Returns the number of
+/// items shown.
 fn push_list(
     out: &mut String,
     lines: impl Iterator<Item = String>,
     total: usize,
     max_items: usize,
     max_bytes: usize,
-) {
+) -> usize {
     let mut shown = 0;
     let mut used = 0;
     for line in lines.take(max_items) {
@@ -222,4 +284,5 @@ fn push_list(
     if total > shown {
         out.push_str(&format!("  - ... {} more\n", total - shown));
     }
+    shown
 }

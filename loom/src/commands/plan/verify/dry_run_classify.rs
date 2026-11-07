@@ -23,6 +23,9 @@ pub enum DryOutcome {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DrySeverity {
     Error,
+    /// Never returned by [`severity`]: the baseline warning for a stage that
+    /// cannot tell done from not done is pushed by the caller from
+    /// [`stage_cannot_tell`].
     Warning,
     Note,
 }
