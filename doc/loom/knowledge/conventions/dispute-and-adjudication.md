@@ -117,3 +117,7 @@ run things.
   handed out.
 - `sandbox/settings.rs`'s `SENSITIVE_ENV_KEYS` still filters `ANTHROPIC_API_KEY` from agent sandbox
   environments. That remains correct hygiene and has nothing to do with adjudication.
+
+## A Dispute Answers a Wrong Check, Never a Planned Step
+
+A stage description does not order a dispute. The integrity detector compares assertion statements, cancels tests that moved to a collected file and raises a ratchet event only when a ledger loosens (see [verification-v2-gates](../architecture/verification-v2-gates.md)), so a reflow, a moved test or a tightened ratchet raises nothing. When a stage still expects an event (a test deleted because the behaviour it pinned is gone, a ledger raised on purpose), its description names the event and the reason: the stage's reviewer brief tells the final reviewer to ask for a finding only when the changed statement no longer asserts what that reason describes. The agent files `loom stage dispute-integrity` only for an event the detector raised that the description did not name. After a filed dispute the stage agent stops; an accepted integrity or impact-tests dispute, or a findings ruling that upholds nothing, lets the daemon finish a passing committed tree without a new session (see [adjudication-lifecycle](../architecture/adjudication-lifecycle.md#retirement-and-fresh-session-boundary)), and any other outcome costs a fresh stage session. An accepted event stays accepted while it gets no worse, and its pin covers the cancelling partner files.

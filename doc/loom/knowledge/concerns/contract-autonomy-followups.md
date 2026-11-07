@@ -59,3 +59,16 @@ The chain check proves which file rustc compiles under a contract's test name, n
 ## Relayed Commands Run in the Background Again
 
 `loom check`, `loom memory ...` and `loom stage commit` are relayed only when the Bash call is foreground, unredirected and bare. The mistake recurred in two stages of one plan (twice by the integration-verify main agent after the refusal-adjudication stage recorded it), on top of the earlier incident in [mistakes/memory-relay-drain-gap.md](../mistakes/memory-relay-drain-gap.md): each ended `refused: the request never reached the daemon` and cost a gate cycle. Prose has failed three times; proposal: a PreToolUse hook that denies `run_in_background: true` (and stdout redirection or a pipe) on a Bash command whose first loom subcommand is relay-eligible, naming the foreground rerun.
+
+## Writer-Chosen Contract Details and Static Freeze Gate Gaps
+
+Open items from the reviews of the freeze changes; mechanism in [contract-phase](../architecture/contract-phase.md).
+
+- `stage_service/contracts_choices.rs:45`: the daemon validates trimmed values but saves the untrimmed wire values. Save `check_value`'s trimmed result, or refuse a value whose trim differs from it.
+- `stage_service/contracts.rs:91`: transient admission errors (a `stage_base` git failure, a `choices.json` read error) are filed at once as freeze-refusal disputes. Consider the `INFRASTRUCTURE_PREFIX`.
+- `choices_validate.rs:220`: refuse a writer `cwd` whose live directory is not a real directory (`symlink_metadata`) instead of relying on the contract file's symlink-refusing read. `run_dir.rs:166`: rule-3 marker detection reads the live tree, so a git-ignored marker the writer plants is not caught by the change-set check and can move a run where the plan sets no `cwd` (predates this plan).
+- `verify/contracts/freeze.rs:185`: the absolute form of a failing path uses the uncanonicalised `working_dir`, so tools that print canonical paths (a symlinked `/tmp`) are not attributed to the writer. This fails safe and leaves those failures to completion.
+- `orchestrator/core/event_handler/freeze_refusal.rs:114`: the quiet rule files a returned refusal without checking for a newer non-terminal Freeze job of the same writer; add that guard so a writer that ends its turn mid-freeze is not disputed under a pending run.
+- `host_verify/freeze.rs` is 393 of 400 lines and `run_contracts` is 48 lines; the next edit crosses a limit, so move `run_contracts` into `freeze_prepare.rs` or another sibling.
+- `plan/schema/validation/v2_lints/wiring_definition.rs:91`: `skip_anchor` skips `^` but not `\b`, `(?m)` or an optional group such as `(pub\s+)?`, so `\bfn\s+run` and `(pub\s+)?fn run` are not flagged at plan time (completion's definition-site rule still catches them).
+- `commands/stage/contracts/show.rs:39` prints the record's test (`unrecorded` when absent) while the common brief lists `contracts show` among the readers of the effective contract; make the two agree. A test that pins that a writer-chosen runner naming a valid adapter always yields `has_adapter()` true is optional (`tests_freeze_static.rs:305`).

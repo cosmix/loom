@@ -221,3 +221,11 @@ an added line is a knowledge defect to fix.
 **Why**: the INDEX that `annotate` writes and the INDEX a regeneration produces differ for a topic with a blockquote further down. Each `annotate --blurb ""` also appends one line to the topic file, so a repeat run changes line counts.
 **Prevention**: after trimming blurbs, run `loom knowledge sync` (its index step writes `INDEX.md` before the derived-cache step that a stage sandbox refuses) and check that `INDEX.md` does not change, then run `loom knowledge check`. A topic whose body holds a `>` line needs a short non-empty blurb; only a topic without one can be blank.
 **Fix**: those 13 topics carry one-word blurbs and the rest are blank.
+
+## A CLI Probe Used a Real `loom memory resolve` With a Guessed Id and Redirected Output
+
+**What happened:** the integration-verify orchestrator ran one `loom memory resolve` with a guessed suggestion id and output sent to `/dev/null`, to learn the command's flags. The relay hook reads the command's stdout, so a real write was attempted blind and its result unseen.
+
+**Why:** probing a write command with a real call instead of `--help`.
+
+**Prevention:** read `loom memory resolve --help` first, take ids from the signal with `rg -o`, and never redirect a `loom` command (the relay reads its stdout).

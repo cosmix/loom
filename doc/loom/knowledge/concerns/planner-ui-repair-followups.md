@@ -176,3 +176,7 @@ The merge view (`codemirror.ts` `createMergeView`, used for a conflict or an old
 ## Live preview editor: file-size headroom
 
 `web/src/plan/editor/live-preview.ts` is exactly 400 lines, the file limit. The next change to it splits a module out first, as `saveKeymap` was moved to `md-commands.ts` to hold `codemirror.ts` at 392 lines.
+
+## Slash-Command UserPromptSubmit May Not Reach the Planner Bridge
+
+Unverified. In `~/.claude` transcripts for this repository, 0 of about 100 slash-command records (local `/model`, `/clear`, `/effort` and prompt-type `/pressure`, `/address`) had a `UserPromptSubmit` `hook_additional_context` attachment nearby, against 37% of ordinary prompts of 100 or more characters. If the hook does not run for slash commands, a pasted skill invocation would hit `delivery_timeout` (`plan_session/bridge/flow.rs:216-237`) and pause the queue. Revisit with a real probe of one pasted slash command, not a unit test.
