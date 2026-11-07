@@ -7,13 +7,19 @@ use crate::models::stage::{Stage, StageStatus, StatusBucket};
 /// Execution time to display: the seconds banked by finished attempts plus the
 /// attempt still in flight. `Stage::execution_secs` alone is frozen for the
 /// whole of an attempt - `accumulate_attempt_time` banks it only when the
-/// attempt ends - so an executing stage would otherwise read `0s` throughout
-/// its first attempt.
+/// attempt ends - so an open stage would otherwise read `0s` throughout its
+/// first attempt. An attempt stays open while its stage waits on an
+/// adjudicator or a person (NeedsAdjudication, NeedsHumanReview), so the
+/// open attempt counts in every status that has not completed.
 pub(super) fn execution_secs_live(stage: &Stage, now: DateTime<Utc>) -> Option<i64> {
-    if stage.status != StageStatus::Executing {
+    if stage.status.bucket() == StatusBucket::Completed {
         return stage.execution_secs;
     }
-    let start = stage.attempt_started_at.or(stage.started_at)?;
+    let start = match stage.attempt_started_at {
+        Some(start) => start,
+        None if stage.status == StageStatus::Executing => stage.started_at?,
+        None => return stage.execution_secs,
+    };
     let in_flight = now.signed_duration_since(start).num_seconds().max(0);
     Some(stage.execution_secs.unwrap_or(0).saturating_add(in_flight))
 }
@@ -76,11 +82,41 @@ mod tests {
     }
 
     #[test]
-    fn non_executing_stage_shows_banked_total_and_never_ticks() {
+    fn completed_stage_shows_banked_total_and_never_ticks() {
         let now = Utc::now();
         let mut stage = stage_with_status(StageStatus::Completed);
         stage.execution_secs = Some(42);
         stage.attempt_started_at = Some(now - Duration::hours(1));
+
+        assert_eq!(execution_secs_live(&stage, now), Some(42));
+    }
+
+    #[test]
+    fn stage_awaiting_review_keeps_counting_its_open_attempt() {
+        let now = Utc::now();
+        for status in [
+            StageStatus::NeedsHumanReview,
+            StageStatus::NeedsAdjudication,
+        ] {
+            let mut stage = stage_with_status(status);
+            stage.execution_secs = Some(0);
+            stage.attempt_started_at = Some(now - Duration::seconds(90));
+
+            assert_eq!(execution_secs_live(&stage, now), Some(90));
+            assert_eq!(
+                execution_secs_live(&stage, now + Duration::seconds(30)),
+                Some(120)
+            );
+        }
+    }
+
+    #[test]
+    fn open_stage_with_a_banked_attempt_shows_the_banked_total() {
+        let now = Utc::now();
+        let mut stage = stage_with_status(StageStatus::Blocked);
+        stage.execution_secs = Some(42);
+        stage.attempt_started_at = None;
+        stage.started_at = Some(now - Duration::hours(1));
 
         assert_eq!(execution_secs_live(&stage, now), Some(42));
     }
