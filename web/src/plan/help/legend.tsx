@@ -2,8 +2,9 @@ import { useId, type JSX } from "react";
 
 import { TooltipProvider } from "@/components/ui/tooltip";
 import "@/plan/concept/concept.css";
+import "@/plan/feature/spine-instrument.css";
 
-import { ACTIVITIES, READING, STATES, type LegendEntry } from "./legend-entries";
+import { ACTIVITIES, READING, STATES, WELLS, type LegendEntry } from "./legend-entries";
 
 /** Each entry is a 40px glyph slot with its name and meaning; `wide` slots hold a word or two marks. */
 function LegendRow({ entry }: { entry: LegendEntry }): JSX.Element {
@@ -53,6 +54,7 @@ export function PlannerLegend(): JSX.Element {
       <div className="space-y-7 font-sans">
         <LegendGroup title="Reading" entries={READING} />
         <LegendGroup title="States" entries={STATES} />
+        <LegendGroup title="Spine wells" entries={WELLS} />
         <LegendGroup title="In progress" entries={ACTIVITIES} />
       </div>
     </TooltipProvider>

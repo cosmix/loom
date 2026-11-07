@@ -228,6 +228,44 @@ export const STATES: readonly LegendEntry[] = [
   },
 ];
 
+/**
+ * A dot of a spine well's strip at about twice its size, drawn by the well's own class and
+ * `data-dot` rules (spine-instrument.css) so the specimen cannot drift from the spine.
+ */
+function WellDot({ dot }: { dot: "covered" | "uncovered" | "open" | "decided" }) {
+  return (
+    <span className="inline-flex scale-[2.4]">
+      <i className="plan-spine__instrument-dot" data-dot={dot} />
+    </span>
+  );
+}
+
+export const WELLS: readonly LegendEntry[] = [
+  {
+    name: "Covered heading",
+    meaning: "A filled dot in the Coverage well means a plan covers that heading of the spec.",
+    glyph: <WellDot dot="covered" />,
+  },
+  {
+    name: "Uncovered heading",
+    meaning:
+      "A hollow amber dot in the Coverage well means no plan covers that heading yet; the footnote names the sections.",
+    glyph: <WellDot dot="uncovered" />,
+  },
+  {
+    name: "Open finding",
+    meaning:
+      "A filled amber pip in the Findings well means a finding is waiting for your decision.",
+    glyph: <WellDot dot="open" />,
+  },
+  {
+    name: "Decided finding",
+    meaning:
+      "A hollow pip in the Findings well means a finding is planned, folded into a plan or dismissed.",
+    glyph: <WellDot dot="decided" />,
+  },
+];
+
 /** The signs that mean "your turn"; work under way draws the two rotating arrows instead. */
 const YOUR_TURN: Record<YourTurnKind, string> = {
   permission: "A session needs your permission before it can continue.",

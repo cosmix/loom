@@ -202,6 +202,24 @@ it("pins the whole spine, which holds no removed step and cannot scroll the scen
   expect(css).toMatch(/__stage\s*\{[^}]*overflow-x:\s*clip;/);
 });
 
+it("reads the Coverage and Findings wells from the sample trace", () => {
+  const { container } = render(<GettingAroundScene />);
+  const spine = within(container.querySelector<HTMLElement>(SPINE)!);
+
+  const coverage = spine.getByRole("link", {
+    name: "Coverage 10 of 12 headings covered",
+    hidden: true,
+  });
+  expect(coverage.closest("li")!.textContent).toContain("2 headings open in 03 and 04");
+  const findings = spine.getByRole("link", { name: "Findings 2 open", hidden: true });
+  expect(findings.closest("li")!.textContent).toContain("from the 01-loop review and your reviews");
+  expect(findings.closest("li")!.textContent).toContain("2 decided");
+  // Twelve headings and four findings, one dot each; the strip is for sight alone.
+  expect(container.querySelectorAll('[data-instrument="coverage"] [data-dot]')).toHaveLength(12);
+  expect(container.querySelectorAll('[data-instrument="findings"] [data-dot]')).toHaveLength(4);
+  expect(globalThis.fetch).not.toHaveBeenCalled();
+});
+
 it("keeps the scene inert without HTTP requests or a live socket", () => {
   const { container } = render(<GettingAroundScene />);
 

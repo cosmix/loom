@@ -67,6 +67,14 @@ const STATE_NAMES = [
   ...STEP_NAMES,
 ];
 
+/** The marks of the spine's Coverage and Findings wells, each drawn with the well's own dot. */
+const WELL_DOTS = [
+  ["Covered heading", "covered"],
+  ["Uncovered heading", "uncovered"],
+  ["Open finding", "open"],
+  ["Decided finding", "decided"],
+] as const;
+
 /** One sign of work in progress, then the two that mean "your turn". */
 const PROGRESS_NAMES = ["Working", "Needs permission", "Waiting for you"] as const;
 
@@ -88,15 +96,16 @@ function tileOf(group: HTMLElement, name: string): HTMLElement {
   return tile;
 }
 
-it("groups its definitions under the three headings", () => {
+it("groups its definitions under the four headings", () => {
   render(<PlannerLegend />, { wrapper: MemoryRouter });
 
   expect(screen.getAllByRole("heading").map((heading) => heading.textContent)).toEqual([
     "Reading",
     "States",
+    "Spine wells",
     "In progress",
   ]);
-  for (const title of ["Reading", "States", "In progress"]) {
+  for (const title of ["Reading", "States", "Spine wells", "In progress"]) {
     expect(screen.getByRole("region", { name: title })).toBeDefined();
   }
 });
@@ -107,6 +116,7 @@ it("lists each group's entries in order, once, with a meaning", () => {
   const groups: [string, readonly string[]][] = [
     ["Reading", READING_NAMES],
     ["States", STATE_NAMES],
+    ["Spine wells", WELL_DOTS.map(([name]) => name)],
     ["In progress", PROGRESS_NAMES],
   ];
   for (const [title, names] of groups) {
@@ -176,6 +186,17 @@ it("draws each spine mark with its glyph and the pressure timeline's check", () 
   expect(
     tileOf(states, "Finished pressure step").querySelector('[data-other-glyph="stepDone"]'),
   ).not.toBeNull();
+});
+
+it("draws each well mark with the spine well's own dot class and state", () => {
+  render(<PlannerLegend />, { wrapper: MemoryRouter });
+  const wells = screen.getByRole("region", { name: "Spine wells" });
+
+  for (const [name, dot] of WELL_DOTS) {
+    const dots = tileOf(wells, name).querySelectorAll(".plan-spine__instrument-dot");
+    expect(dots, name).toHaveLength(1);
+    expect(dots[0]!.getAttribute("data-dot"), name).toBe(dot);
+  }
 });
 
 it("sizes every legend glyph tile at 40px high", () => {
