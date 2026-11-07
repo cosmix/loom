@@ -1,4 +1,5 @@
 import type { Gap, NodeRef, SettleState, TraceDoc, TraceView } from "@/plan/api/schema-trace";
+import { fileName } from "@/plan/concept/passages";
 import { featureSourceHref } from "@/plan/feature/source-href";
 import { featureHref } from "@/plan/feature/use-feature";
 
@@ -26,13 +27,21 @@ export function shownSettle(doc: TraceDoc | undefined): SettleState | null {
   return doc?.settleable ? doc.settle : null;
 }
 
-function baseName(path: string): string {
-  return path.split("/").at(-1) ?? path;
+/**
+ * A document title without the number it opens with, when that number is `number` ("04 — Summary
+ * Engine" for 4 reads "Summary Engine"). A title that opens with another number, or none, stays
+ * whole. Pages that draw the number beside the title use this so it is not printed twice.
+ */
+export function withoutNumber(title: string, number: number | string): string {
+  const prefix = /^(\d+)\s*[—–:.-]?\s+/.exec(title);
+  return prefix !== null && Number(prefix[1]) === Number(number)
+    ? title.slice(prefix[0].length)
+    : title;
 }
 
 /** Where a heading or a section sits on the Coverage page: the section file's stem, then `:anchor`. */
 export function coverageHref(feature: string, path: string, anchor?: string | null): string {
-  const stem = baseName(path).replace(/\.md$/, "");
+  const stem = fileName(path).replace(/\.md$/, "");
   const at = anchor ? `${stem}:${anchor}` : stem;
   return `${featureHref(feature, "coverage")}#${encodeURIComponent(at)}`;
 }
@@ -91,7 +100,7 @@ function revisitHead(trace: TraceView, feature: string, gap: Gap): FrontierHead 
   const unwritten = doc?.role === "plan" ? doc.progress === "stub" : entry?.plan === null;
   if (unwritten) {
     const anchor = entry?.anchor ?? gap.node.anchor;
-    const name = entry?.title ?? doc?.title ?? baseName(gap.node.path);
+    const name = entry?.title ?? doc?.title ?? fileName(gap.node.path);
     return {
       sentence: `Revisit ${name} before writing its plan.`,
       detail: null,
@@ -101,7 +110,7 @@ function revisitHead(trace: TraceView, feature: string, gap: Gap): FrontierHead 
   }
   // A gap on a metaplan entry names the entry's written plan.
   const plan = doc?.role === "plan" || !entry?.plan ? doc : docOfPath(trace, entry.plan);
-  const title = plan?.title ?? entry?.title ?? baseName(gap.node.path);
+  const title = plan?.title ?? entry?.title ?? fileName(gap.node.path);
   return {
     sentence: `Revisit ${title} before running it.`,
     detail: null,
@@ -151,7 +160,7 @@ function flaggedPlanDetail(
 /** The head for a gap on one document: it moved since it was settled, or it waits to be settled. */
 function docHead(trace: TraceView, feature: string, gap: Gap): FrontierHead {
   const doc = docOfPath(trace, gap.node.path);
-  const title = doc?.title ?? baseName(gap.node.path);
+  const title = doc?.title ?? fileName(gap.node.path);
   const to = doc ? summaryHref(feature, doc) : featureSourceHref(feature, gap.node.path);
   const plan = doc?.slug ? shortSlug(feature, doc.slug) : title;
   if (gap.kind === "upstream_changed") {
@@ -182,7 +191,7 @@ export function frontierHead(trace: TraceView, feature: string): FrontierHead | 
   if (gap.kind === "triage") return triageHead(feature, gap.count);
   if (gap.kind === "uncovered") {
     const heading = headingsOf(trace, gap.node)[0];
-    const name = heading?.title ?? gap.node.anchor ?? baseName(gap.node.path);
+    const name = heading?.title ?? gap.node.anchor ?? fileName(gap.node.path);
     return {
       sentence: `${name} is not covered by any plan.`,
       detail: null,
@@ -205,7 +214,7 @@ export interface BundleLink {
 function bundleLabel(path: string): string {
   const [, rest = path] = path.split("/briefs/");
   const [, ...inside] = rest.split("/");
-  return inside.length > 0 ? inside.join("/") : baseName(path);
+  return inside.length > 0 ? inside.join("/") : fileName(path);
 }
 
 /** A plan's brief files, each linked to its source page; none for a document that is no plan. */

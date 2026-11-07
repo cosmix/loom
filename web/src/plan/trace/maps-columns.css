@@ -146,7 +146,9 @@
   white-space: nowrap;
 }
 
+/* Inline-block over the preflight's `svg { display: block }`, which set the glyph over its word. */
 [data-loom-plan] .coverage-mark > svg {
+  display: inline-block;
   width: 15px;
   height: 15px;
   margin-inline-end: 6px;
@@ -168,8 +170,20 @@
   --trace-tone: var(--tone-warning);
 }
 
+/* In the State column a long word ("Changed since covered") may wrap in a narrow column: the
+   glyph keeps its own track before the words, which wrap under themselves, and the mark's
+   baseline stays the words' first line, so the cell still meets the row's baseline. */
 [data-loom-plan] .coverage-cell[data-cell="state"] .coverage-mark {
+  display: inline-grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: baseline;
+  max-width: 100%;
   white-space: normal;
+}
+
+/* A grid item's glyph sits on the baseline by its foot; this drops it to the inline offset. */
+[data-loom-plan] .coverage-cell[data-cell="state"] .coverage-mark > svg {
+  transform: translateY(0.15em);
 }
 
 /* Chrome links in a row: no underline until hovered, the planner's ring on focus. */
@@ -292,7 +306,7 @@
   content: "· " / "";
 }
 
-/* An open finding: its title in Inter over the mono id (the link's column runs reversed, so the
+/* An open finding: its title in `--font-sans` over the mono id (the link's column runs reversed, so the
    id stays first in the link's name). */
 [data-loom-plan] .coverage-col[data-col="findings"] ul {
   display: grid;
@@ -323,7 +337,8 @@
 }
 
 /* Changed since covered: one line led by a ringed "!" in the warning tone (only the glyph takes
-   the tone), with See what changed in muted ink after it. */
+   the tone), with See what changed after it in the shared in-sentence look of
+   trace-heading-parts.css (the line's colour, underlined in a quiet edge). */
 [data-loom-plan] .coverage-note {
   position: relative;
   order: -1;
@@ -351,21 +366,4 @@
   font-size: 10px;
   font-weight: 700;
   line-height: 1;
-}
-
-[data-loom-plan] .coverage-note .trace-changes {
-  margin-inline-start: var(--space-1);
-  border-radius: 3px;
-  color: var(--muted-foreground);
-  text-decoration: none;
-}
-
-[data-loom-plan] .coverage-note .trace-changes:hover {
-  color: var(--foreground);
-  text-decoration: underline;
-}
-
-[data-loom-plan] .coverage-note .trace-changes:focus-visible {
-  outline: 2px solid var(--ring);
-  outline-offset: 2px;
 }

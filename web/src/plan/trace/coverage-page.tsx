@@ -4,7 +4,6 @@ import { useLocation } from "react-router";
 import type { TraceView } from "@/plan/api/schema-trace";
 import { Untrusted } from "@/plan/chat/visible-controls";
 import { hashAnchor } from "@/plan/files/address";
-import { PlanPage } from "@/plan/feature/plan-page";
 
 import { SettleMark } from "./coverage-marks";
 import {
@@ -17,6 +16,7 @@ import {
   type Filter,
 } from "./coverage-model";
 import { HeadingRow } from "./coverage-rows";
+import { MapPage } from "./map-page";
 import { TraceGate } from "./trace-gate";
 
 import "./maps.css";
@@ -34,7 +34,8 @@ function Tiles(props: {
   filter: Filter;
   onChange: (filter: Filter) => void;
 }) {
-  const idBase = useId();
+  // The visible count and word are the name ("3 Not covered"); the space between the two grid
+  // items is not drawn, but it separates them in the name.
   return (
     <div className="coverage-tiles" role="group" aria-label="Show headings">
       {TILES.map(({ id, label }) => (
@@ -44,16 +45,10 @@ function Tiles(props: {
           className="coverage-tile"
           data-tile={id}
           aria-pressed={props.filter === id}
-          aria-label={label}
-          aria-describedby={`${idBase}-${id}`}
           onClick={() => props.onChange(id)}
         >
-          <span id={`${idBase}-${id}`} className="coverage-tile__count">
-            {props.model.tiles[id]}
-          </span>
-          <span className="coverage-tile__label" aria-hidden="true">
-            {label}
-          </span>
+          <span className="coverage-tile__count">{props.model.tiles[id]}</span>{" "}
+          <span className="coverage-tile__label">{label}</span>
         </button>
       ))}
     </div>
@@ -190,9 +185,13 @@ function CoverageMap({ trace, feature }: { trace: TraceView; feature: string }) 
   return (
     <div className="coverage">
       <Tiles model={model} filter={filter} onChange={setFilter} />
+      {/* Always in the DOM (a block of no height while empty, outside the body's grid gaps), so an
+          emptied filter is announced when the words appear. */}
+      <div role="status">
+        {shown.length === 0 && <p className="plan-empty">No heading matches this filter.</p>}
+      </div>
       {/* The arrow keys act on a focused row toggle only; the handler ignores events from anywhere else. */}
       <div className="coverage-body" onKeyDown={moveBetweenRows}>
-        {shown.length === 0 && <p className="plan-empty">No heading matches this filter.</p>}
         {shown.map((section) => (
           <SectionBlock
             key={section.id}
@@ -212,9 +211,9 @@ export function CoveragePage() {
   return (
     <TraceGate noun="the coverage">
       {(trace, feature) => (
-        <PlanPage feature={feature} label="coverage" title="Coverage" lede={STANDFIRST}>
+        <MapPage feature={feature} page="coverage" title="Coverage" lede={STANDFIRST}>
           <CoverageMap trace={trace} feature={feature} />
-        </PlanPage>
+        </MapPage>
       )}
     </TraceGate>
   );

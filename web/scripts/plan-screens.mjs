@@ -85,6 +85,9 @@ function watchErrors(page, errors) {
 async function bootstrap(page, tokenUrl) {
   await page.goto(tokenUrl, { waitUntil: "load" });
   await page.waitForSelector("#root > *", { timeout: ROOT_TIMEOUT_MS });
+  // Leaving the page while a web font still loads aborts it, and Firefox logs the abort as a
+  // console error ("downloadable font: download failed ... status=2152398850") that fails the shot.
+  await page.evaluate(() => document.fonts.ready);
   return new URL(page.url()).origin;
 }
 

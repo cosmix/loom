@@ -38,10 +38,15 @@ function PopoverSurface(props: SurfaceProps & { button: RefObject<HTMLElement | 
   const { label, showTitle, closeFocus, button, children } = props;
   const attributes = useRootAttributes();
   return (
+    // Under the button first: the surface's height is capped to the room Radix measures on its
+    // side (`--radix-popover-content-available-height`, trace-settle.css), inside a 16px margin
+    // of the viewport, so it flips above only when too little room is left below.
     <PopoverContent
       {...attributes}
       aria-label={label}
+      side="bottom"
       align="start"
+      collisionPadding={16}
       className="trace-surface w-[min(28rem,calc(100vw-2rem))]"
       onCloseAutoFocus={closeFocus}
       onInteractOutside={(event) => {

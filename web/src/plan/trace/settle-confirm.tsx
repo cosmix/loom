@@ -84,9 +84,10 @@ function ConfirmPoints(props: {
     <>
       {shown.length > 0 && (
         <ul className="trace-confirm__points">
-          {shown.map((point) => (
+          {shown.map((point, position) => (
             <PointRow
-              key={`${point.kind}:${point.index}:${point.quote}`}
+              // Every My call has index 0, so two with the same quote need their position.
+              key={`${position}:${point.kind}:${point.index}:${point.quote}`}
               point={point}
               feature={feature}
               path={path}

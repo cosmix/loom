@@ -28,6 +28,7 @@ import { HeadingActions, usePressureActive } from "@/plan/files/doc-heading-view
 import { LockNotice } from "@/plan/files/lock-notice";
 import { PressureTestAction, PressureTestDetail } from "@/plan/run/plan-run-actions";
 import { useTraceChips } from "@/plan/trace/heading-chips";
+import { withoutNumber } from "@/plan/trace/model";
 import { PlanExtras } from "@/plan/trace/plan-extras";
 import { ScopeLine } from "@/plan/trace/scope-line";
 import { docIsLocked, SettleControl } from "@/plan/trace/settle-control";
@@ -186,7 +187,14 @@ export function OpenAllButton({ page }: { page: ConceptPage }): JSX.Element {
   const foldAll = useFoldAll(page);
   const Icon = allOpen ? FoldVertical : UnfoldVertical;
   return (
-    <button type="button" {...HEADING_BUTTON} onClick={allOpen ? foldAll : openAll}>
+    // Beside the settle control the button shows its glyph alone (trace-heading.css), so the
+    // tooltip carries the words a sighted reader would otherwise lose.
+    <button
+      type="button"
+      {...HEADING_BUTTON}
+      title={allOpen ? "Fold all" : "Open all"}
+      onClick={allOpen ? foldAll : openAll}
+    >
       <Icon aria-hidden="true" />
       {allOpen ? "Fold all" : "Open all"}
     </button>
@@ -265,11 +273,7 @@ function numberedTitle(page: ConceptPage): ReactNode {
   if (number === null) return null;
   // A section's title already opens with its number ("04 — Summary Engine"); the muted number
   // replaces that prefix instead of doubling it.
-  const prefix = /^(\d+)\s*[—–:.-]?\s+/.exec(page.title);
-  const name =
-    prefix !== null && Number(prefix[1]) === Number(number)
-      ? page.title.slice(prefix[0].length)
-      : page.title;
+  const name = withoutNumber(page.title, number);
   return (
     <>
       <span className="doc-heading-number" aria-hidden="true">
