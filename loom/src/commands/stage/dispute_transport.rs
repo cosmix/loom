@@ -136,6 +136,15 @@ impl Dispute {
                 "DisputeCriteria",
                 RequestKind::Dispute,
             ),
+            DisputeKind::Findings { .. }
+            | DisputeKind::Integrity { .. }
+            | DisputeKind::ImpactTests { .. } => (
+                "with the verdict applied, unless the verdict accepts this dispute (for findings: upholds \
+                 none) and loom's rerun of the completion of the tree your latest `loom stage complete` ran \
+                 on passes, when loom completes the stage without one",
+                "FileDispute",
+                RequestKind::FileDispute,
+            ),
             _ => (
                 "with the verdict applied",
                 "FileDispute",
