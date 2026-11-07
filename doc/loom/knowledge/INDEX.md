@@ -25,7 +25,7 @@
 | [adjudication-lifecycle](architecture/adjudication-lifecycle.md) |  | 150 |
 | [codex-concurrency](architecture/codex-concurrency.md) | Limits | 110 |
 | [codex-plugin](architecture/codex-plugin.md) |  | 378 |
-| [completion-recovery](architecture/completion-recovery.md) |  | 38 |
+| [completion-recovery](architecture/completion-recovery.md) | Proof | 38 |
 | [config-value-types](architecture/config-value-types.md) |  | 85 |
 | [context-ceiling](architecture/context-ceiling.md) |  | 111 |
 | [context-retrieval](architecture/context-retrieval.md) |  | 396 |
@@ -40,7 +40,7 @@
 | [directory-structure](architecture/directory-structure.md) | Tree | 50 |
 | [execution-containment](architecture/execution-containment.md) |  | 395 |
 | [hook-system](architecture/hook-system.md) |  | 309 |
-| [knowledge-bootstrap](architecture/knowledge-bootstrap.md) |  | 83 |
+| [knowledge-bootstrap](architecture/knowledge-bootstrap.md) | KB | 83 |
 | [knowledge-hierarchy](architecture/knowledge-hierarchy.md) | KB fs | 264 |
 | [live-preview-editor](architecture/live-preview-editor.md) | Editor | 28 |
 | [loom-ask](architecture/loom-ask.md) |  | 75 |
@@ -237,10 +237,10 @@
 | [sandbox-and-confinement-gaps](concerns/sandbox-and-confinement-gaps.md) |  | 363 |
 | [session-tmpdir-deny](concerns/session-tmpdir-deny.md) |  | 7 |
 | [source-graph-known-gaps](concerns/source-graph-known-gaps.md) | Limits | 90 |
-| [source-graph-review-backlog](concerns/source-graph-review-backlog.md) | Backlog | 306 |
+| [source-graph-review-backlog](concerns/source-graph-review-backlog.md) | Todo | 306 |
 | [state-confinement-gaps](concerns/state-confinement-gaps.md) | Caches | 21 |
 | [token-accounting-and-proof-defects](concerns/token-accounting-and-proof-defects.md) |  | 334 |
 | [typed-config-values](concerns/typed-config-values.md) | Gaps | 22 |
 | [verification-v2-followups](concerns/verification-v2-followups.md) |  | 176 |
-| [web-dashboard-latent-issues](concerns/web-dashboard-latent-issues.md) | Themes | 96 |
+| [web-dashboard-latent-issues](concerns/web-dashboard-latent-issues.md) | UI | 96 |
 | [worktree-build-cold-start](concerns/worktree-build-cold-start.md) | Cold | 136 |
