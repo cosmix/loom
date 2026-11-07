@@ -10,7 +10,7 @@ import { plural } from "@/plan/ui/plural";
 
 import { BriefsCard } from "./briefs-card";
 import { implementedHeadings, pressureRecordText, settleWords } from "./doc-model";
-import { shownSettle } from "./model";
+import { shownSettle, withoutNumber } from "./model";
 import { SettleGlyph } from "./settle-glyph";
 import { useTrace } from "./state";
 
@@ -56,6 +56,11 @@ function sectionNumber(section: TraceDoc | undefined): string | null {
   return String(section.number).padStart(2, "0");
 }
 
+/** The section's name without the number the row already shows in mono. */
+function sectionName(section: TraceDoc): string {
+  return section.number === null ? section.title : withoutNumber(section.title, section.number);
+}
+
 /** "3 spec headings in 2 sections". */
 function implementsCount(headings: number, sections: number): string {
   return `${plural(headings, "spec heading")} in ${plural(sections, "section")}`;
@@ -89,7 +94,7 @@ function Implements(props: { feature: string; path: string }): JSX.Element | nul
                 {section && (
                   <span className="trace-implements__section">
                     {" · "}
-                    <Untrusted text={section.title} />
+                    <Untrusted text={sectionName(section)} />
                   </span>
                 )}
               </Link>

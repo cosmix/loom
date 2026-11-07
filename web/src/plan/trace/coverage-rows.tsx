@@ -4,6 +4,7 @@ import { Link } from "react-router";
 
 import { Untrusted } from "@/plan/chat/visible-controls";
 import { useKeptDoc } from "@/plan/concept/passage-doc";
+import { SentenceText } from "@/plan/concept/sentence-text";
 import { featureSourceHref } from "@/plan/feature/source-href";
 import { featureHref } from "@/plan/feature/use-feature";
 
@@ -14,11 +15,14 @@ import { summaryHref } from "./model";
 import { visionRowText } from "./stub-text";
 
 // The heading rows of the coverage page and what a row opens to. Every string from the documents
-// is drawn as text (`Untrusted`). The look is `maps.css` and `maps-columns.css`.
+// is drawn as text (`Untrusted`), except the titles `Linked` draws with `phrasing`, which
+// `SentenceText` reads as Markdown phrasing (code spans, emphasis). The look is `maps.css` and
+// `maps-columns.css`.
 
-/** Agent-written text, linked once `to` is known. */
-function Linked({ to, text }: { to: string | null; text: string }) {
-  const label = <Untrusted text={text} />;
+/** Agent-written text, linked once `to` is known; `phrasing` reads it as Markdown (code spans). */
+function Linked(props: { to: string | null; text: string; phrasing?: boolean }) {
+  const { to, text, phrasing } = props;
+  const label = phrasing ? <SentenceText text={text} /> : <Untrusted text={text} />;
   return to === null ? label : <Link to={to}>{label}</Link>;
 }
 
@@ -116,7 +120,7 @@ function How({ chains }: { chains: Chain[] }) {
             <>
               <dt>Entry</dt>
               <dd>
-                <Linked to={chain.entryHref} text={chain.entry} />
+                <Linked to={chain.entryHref} text={chain.entry} phrasing />
               </dd>
             </>
           )}
@@ -203,7 +207,8 @@ function Detail(props: {
 
 /**
  * One heading: a toggle named after it, then its cells on the page's shared grid. The toggle is
- * the only control, so the keyboard reaches a row once and Enter opens it.
+ * the row's one button, covering the whole line, so Enter opens the row from it; the Covered by
+ * cell's plan and stage links follow it in tab order.
  */
 export function HeadingRow(props: {
   row: CoverageRow;

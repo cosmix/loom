@@ -9,11 +9,12 @@ import {
 } from "@/plan/api/schema-trace";
 import { fileName } from "@/plan/concept/passages";
 import { PLAN_FOLLOW_UPS_ID } from "@/plan/new/follow-up-features";
-import { docOfPath } from "@/plan/trace/model";
+import { docOfPath, shortSlug } from "@/plan/trace/model";
 
 // Pure reads of the findings ledger as the trace carries it: grouping, counts, About labels and
 // which metaplan entries a finding may be folded into. Finding text is agent-written; callers
-// render every string here as text.
+// render the ledger's strings as text (`Untrusted`) and a metaplan entry's title as Markdown
+// phrasing (`IsolatedSentence`).
 
 /** The group of findings that came from no run review: a person's own review. */
 export const REVIEWS_LABEL = "Reviews";
@@ -152,12 +153,33 @@ export function statusText(status: FindingStatus): string {
   }
 }
 
-/** What an About chip reads: the heading, entry or document the node names. */
-export function nodeLabel(trace: TraceView, node: NodeRef): string {
+/**
+ * The metaplan entry a folded finding went into: its status detail is `metaplan#<anchor>` and the
+ * trace holds that entry. Undefined for any other status or a detail the trace does not know.
+ */
+export function foldedEntry(trace: TraceView, status: FindingStatus): TraceEntry | undefined {
+  if (status.kind !== "folded") return undefined;
+  const anchor = /^metaplan#(.+)$/.exec(status.detail ?? "")?.[1];
+  return anchor === undefined ? undefined : trace.entries.find((entry) => entry.anchor === anchor);
+}
+
+/** A plan stage token (`stage:build`) read as `<short slug> › build`; null for any other node. */
+function stageLabel(trace: TraceView, feature: string, node: NodeRef): string | null {
+  const stage = /^stage:(.+)$/.exec(node.anchor ?? "")?.[1];
+  const doc = docOfPath(trace, node.path);
+  if (stage === undefined || doc?.role !== "plan") return null;
+  const slug = doc.slug ?? shortRun(fileName(node.path).replace(/\.md$/, ""), feature);
+  return `${shortSlug(feature, slug)} › ${stage}`;
+}
+
+/** What an About chip reads: the heading, entry, plan stage or document the node names. */
+export function nodeLabel(trace: TraceView, node: NodeRef, feature: string): string {
   const fallback = fileName(node.path);
   if (node.anchor === null) return docOfPath(trace, node.path)?.title ?? fallback;
   const heading = trace.headings.find((h) => h.path === node.path && h.anchor === node.anchor);
   if (heading) return heading.title;
+  const stage = stageLabel(trace, feature, node);
+  if (stage !== null) return stage;
   const doc = docOfPath(trace, node.path);
   const entry =
     doc?.role === "metaplan" ? trace.entries.find((e) => e.anchor === node.anchor) : undefined;

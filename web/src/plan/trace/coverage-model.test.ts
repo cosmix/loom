@@ -43,6 +43,14 @@ describe("buildCoverage sections", () => {
     expect(sections[1]!.settle).toBe("revised");
   });
 
+  it("leaves the number out of a section's title, which the header draws beside it", () => {
+    const view = demo();
+    view.documents.find((doc) => doc.path === S01)!.title = "01 — Alpha";
+    const [first, second] = buildCoverage(view, "demo").sections;
+    expect([first!.number, first!.title]).toEqual(["01", "Alpha"]);
+    expect(second!.title).toBe("Beta");
+  });
+
   it("keeps a section that is not written as a section with no rows", () => {
     const gamma = buildCoverage(demo(), "demo").sections[2]!;
     expect(gamma).toMatchObject({ title: "Gamma", written: false, rows: [], settle: null });
@@ -77,6 +85,15 @@ describe("buildCoverage rows", () => {
     const chains = rowsOf(view).get("two")!.chains;
     expect(chains.map((chain) => [chain.plan, chain.stage])).toEqual([["first", "build"]]);
     expect(chains[0]!.stageHref).toBe("/f/demo/source/plans/demo/PLAN-first.md#stage%3Abuild");
+  });
+
+  it("names a stage cover that carries no stage name by its anchor, without its prefix", () => {
+    const view = demo();
+    const two = view.headings.find((heading) => heading.anchor === "two")!;
+    for (const cover of two.covered_by) if (cover.kind === "stage") cover.stage = null;
+    const [chain] = rowsOf(view).get("two")!.chains;
+    expect(chain!.stage).toBe("build");
+    expect(chain!.stageHref).toBe("/f/demo/source/plans/demo/PLAN-first.md#stage%3Abuild");
   });
 
   it("reads a covering entry whose plan is not written as planned, with its slug", () => {

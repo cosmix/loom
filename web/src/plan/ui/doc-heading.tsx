@@ -98,7 +98,8 @@ export function ToolbarGroup({ children }: { children: ReactNode }): JSX.Element
   return <span className="doc-heading-group">{children}</span>;
 }
 
-function Breadcrumbs({ crumbs }: { crumbs: readonly HeadingCrumb[] }): JSX.Element {
+/** The trail over a document's title, and over the feature's map pages (`trace/map-page.tsx`). */
+export function Breadcrumbs({ crumbs }: { crumbs: readonly HeadingCrumb[] }): JSX.Element {
   return (
     <nav aria-label="Breadcrumb" className="plan-fine">
       <ol className="flex flex-wrap items-center gap-1.5">
