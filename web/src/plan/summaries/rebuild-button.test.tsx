@@ -7,9 +7,11 @@ import { initClient } from "@/plan/api/client";
 import helloFixture from "@/plan/api/fixtures/hello.json";
 import panelFixture from "@/plan/api/fixtures/summary-panel.json";
 import { serverInfoSchema } from "@/plan/api/schema";
+import { summaryPanelSchema } from "@/plan/api/schema-summaries";
 import { authoringAtom, serverInfoAtom, youAtom } from "@/plan/state/atoms";
 
 import { RebuildButton } from "./rebuild-button";
+import { panelLoadAtom } from "./state";
 
 type Who = "holder" | "other" | "read_only";
 
@@ -17,7 +19,7 @@ const ADA = { public_id: "0123456789abcdef", name: "Ada" };
 const DANA = { public_id: "bbbbbbbbbbbbbbbb", name: "Dana" };
 const fetchMock = vi.fn<typeof fetch>();
 
-function show(who: Who = "holder", ids = ["overview/demo/product"]) {
+function show(who: Who = "holder", ids = ["overview/demo/product"], rebuilding = false) {
   const store = createStore();
   initClient(store);
   store.set(youAtom, ADA);
@@ -36,15 +38,18 @@ function show(who: Who = "holder", ids = ["overview/demo/product"]) {
   store.set(authoringAtom, {
     holder: holder && { ...holder, away_since: null, frees_at: null },
   });
-  return render(
+  render(
     <Provider store={store}>
-      <RebuildButton ids={ids} />
+      <RebuildButton ids={ids} rebuilding={rebuilding} />
     </Provider>,
   );
+  return { store };
 }
 
-function panelResponse() {
-  return new Response(JSON.stringify(panelFixture), {
+/** The fixture runs `overview/demo/product`; `idle` is the panel once that rebuild has finished. */
+function panelResponse(idle = true) {
+  const panel = idle ? { ...panelFixture, running: null, queue: [] } : panelFixture;
+  return new Response(JSON.stringify(panel), {
     status: 202,
     headers: { "content-type": "application/json" },
   });
@@ -120,6 +125,46 @@ it("ignores another press while pending and accepts one after completion", async
     fireEvent.click(button);
   });
   expect(fetchMock).toHaveBeenCalledTimes(2);
+});
+
+it("reads Rebuilding and stays inert while its summary runs, then turns back into Rebuild", async () => {
+  let finish: (response: Response) => void = () => {
+    throw new Error("Request has not started");
+  };
+  fetchMock.mockImplementationOnce(
+    () =>
+      new Promise<Response>((resolve) => {
+        finish = resolve;
+      }),
+  );
+  const { store } = show();
+  const button = screen.getByRole("button", { name: "Rebuild" });
+  act(() => fireEvent.click(button));
+  // In flight: the label changes at once, before the server answers.
+  expect(button.textContent).toBe("Rebuilding…");
+  expect(button.getAttribute("aria-disabled")).toBe("true");
+  expect(button.querySelector(".plan-busy-text svg")).not.toBeNull();
+  // The server queued it: the panel keeps it busy after the request returns.
+  await act(async () => finish(panelResponse(false)));
+  expect(button.textContent).toBe("Rebuilding…");
+  fireEvent.click(button);
+  expect(fetchMock).toHaveBeenCalledOnce();
+  // The push that drops the id ends it.
+  act(() =>
+    store.set(panelLoadAtom, {
+      status: "ready",
+      panel: summaryPanelSchema.parse({ ...panelFixture, running: null, queue: [] }),
+    }),
+  );
+  expect(button.textContent).toBe("Rebuild");
+  expect(button.getAttribute("aria-disabled")).toBeNull();
+});
+
+it("reads Rebuilding while the page reports its summary rebuilding", () => {
+  show("holder", ["overview/demo/product"], true);
+  const button = screen.getByRole("button", { name: "Rebuilding…" });
+  expect(button.getAttribute("aria-disabled")).toBe("true");
+  expect(screen.queryByText("Read-only")).toBeNull();
 });
 
 it("shows a server error and clears it as soon as the next press starts", async () => {
