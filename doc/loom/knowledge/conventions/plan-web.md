@@ -131,7 +131,7 @@ The editor's design is in [the live preview editor](../architecture/live-preview
 
 ## State word marks and item marks
 
-A mark followed by a state word ("Running", "Drafting", "Rebuilding", "Working", "In progress") is the two rotating arrows: `ArrowSpinner` (lucide `RefreshCw`, two arrows; a single-arrow icon is never used), via `StateMark`, `ActivityTile` for state-word kinds, `PLAN_STATE_WORD_GLYPHS` and `BusyText`. A mark followed by the item or action itself (a named plan, document, pressure test, chat) is the pulsing dot: `ActivityGlyph`, `PLAN_STATE_GLYPHS`. The roundel marks only the header's activity pill. Pick by what follows the mark; `ui/DESIGN.md`, Status, holds the full rule.
+A mark followed by a state word ("Running", "Drafting", "Rebuilding", "Working", "In progress") is the two rotating arrows: `ArrowSpinner` (lucide `RefreshCw`, two arrows; a single-arrow icon is never used), via `StateMark`, `ActivityTile` for state-word kinds, `PLAN_STATE_WORD_GLYPHS` and `BusyText`. A mark followed by the item or action itself (a named plan, document, pressure test, chat) is the pulsing dot: `ActivityGlyph`, `PLAN_STATE_GLYPHS`. The roundel marks only the header's activity pill and the spine's running plan row. Pick by what follows the mark; `ui/DESIGN.md`, Status, holds the full rule.
 
 ## Planning Trace Page Rules
 
@@ -143,3 +143,27 @@ A mark followed by a state word ("Running", "Drafting", "Rebuilding", "Working",
 - **Pinned wording.** A frozen contract can pin words the brief leaves open ("Upstream changed", a dialog saying "My call" with a confirm button named "settle", links named after the document title); the contract writer records them as a decision so the implementer reads them.
 - **Size check.** The last step of a web stage runs `wc -l` over every web file the stage touched, tests included (compare with the plan base). A per-stage list misses test files that grew across stages and files outside the stage's own list.
 - **Trace pages in a stage.** `loom plan` from PATH runs read-only without a Claude login, so settle, Dismiss and Fold are refused (403 for a curl POST without an `Origin` header matching the server). A fixture for the `revised` state is a well-formed `Settled: <12 hex> stub <12 hex>` line with stale hashes. Headless Chromium blocks `ws://127.0.0.1` with `ERR_BLOCKED_BY_LOCAL_NETWORK_ACCESS_CHECKS` unless launched with `--disable-features=LocalNetworkAccessChecks`; the Vite dev server answers SPA routes with the dashboard `index.html`, so `page.route` must answer document requests with `/plan.html`. A subagent's Bash hook blocks `bun run build` and `cargo build`; the fallback is the Vite dev server (`bun run dev`, proxying `/api` to a running `loom plan`), which serves source CSS without a build. In a stage sandbox the settle, findings-status and save routes also fail on the read-only `/tmp` plan lock (`fs/locking.rs`).
+
+## Titles and the Reading Face
+
+No title or heading on a planner screen uses the reading face. Page titles, section headers, row headings and card titles are `--font-sans` (the chrome face, Alegreya Sans) at 500 to 600; `--font-reading` is for running prose only: summary sentences, the scope standfirst, quotes and finding text. Sizes and tracking are in `web/src/plan/ui/DESIGN.md`. The serif exception is the chat's empty-state greeting ([open question](../concerns/planner-follow-ups-followups.md#open-questions)). A brief that names a face by family ("Inter") is checked against the tokens: `web/src/aurora-ui` tokens define `--font-sans` as Inter, but the planner's `web/src/index.css` redefines it as Alegreya Sans, and the screens use the planner token.
+
+## Checking Screens in the User's Browser
+
+The user's browser is Firefox; a Chromium-only pass missed an overflowing spine, leaked chips and misaligned rows ([the mistake](../mistakes/planner-design-brainstorm.md#trace-mockups-showed-every-concept-at-once-and-were-checked-only-in-chrome)). Shoot with `scripts/plan-screens.sh --browser=firefox <loom-binary> <out-dir> <route>...`, at 1440 and 390 in Ledger and Walnut, and compare each shot with the approved screenshot in `doc/plans/mockups/<plan>/`.
+
+- `playwright-core` pins one Firefox build; `plan-screens.mjs` falls back to the newest cached build through `executablePath` when the pinned one is absent. `--browser=` is looked up with `Object.hasOwn`.
+- The bootstrap awaits `document.fonts.ready` before the first navigation: an aborted web-font load logs a Firefox console error (`NS_BINDING_ABORTED`) that failed the preflight on about one run in three.
+- A walk drives one page. A second browser context is a second viewer and is read-only ("Viewer 1 holds authoring"); switch themes through `localStorage` and a reload.
+- Wait for server state by polling from Node (a loop of `page.evaluate(fetch)` until the state matches). `page.waitForFunction(async () => fetch(...))` resolves at once because the predicate's Promise is truthy ([the mistake](../mistakes/planner-design-brainstorm.md#a-walk-driver-waited-on-an-async-predicate)). An edit under `doc/` took about 8.5 s to reach `/api/trace` on the debug binary.
+- A subagent cannot produce what it would shoot: the PreToolUse hook blocks `bun run build` and `cargo build` there, and `web/dist` plus the PATH `loom` are built at HEAD. The orchestrator builds web and loom after the look workers return, then shoots.
+- Screens a stage sandbox cannot show are said so in the review: a turn footer needs a chat session (tmux socket denied, no Claude login), and Settled writes fail on the `/tmp` plan lock.
+
+## Trace Screen Layout and Test Gotchas
+
+- Tailwind preflight sets `svg { display: block }`, so a bare lucide `<svg>` beside a word inside an inline mark stacks over the word; give it `display: inline-block` or lay the mark out as `inline-grid`.
+- `StatusCard` always mounts `.doc-heading-row__detail` (its component may render null), so a `flex-basis: 100%` detail sat between a chip and its action and pushed the buttons to a third line; hide `:empty` details and order them last.
+- Contract tests read `textContent` with `\b`, so adjacent block elements and spans need a text separator (a space or punctuation): a settle confirm's counts, a plan's number, an impact row's title and state, a coverage row's Why and How headings (`WhyHow` otherwise).
+- Plan detection on a summary page uses the page key's scope (`engineering`), never `plan_state`: a fixture summary has `plan_state` null.
+- A redesign that contradicts frozen tests removes or updates them in the main agent and names them in one `loom stage dispute-integrity` filing; the replacement contracts live in `trace/trace-ui.contracts.test.tsx`, and the surviving old contracts keep passing unchanged. Each moved import (`OPEN_DIALOG` to `web/src/lib/open-dialog.ts`) is a one-line edit made where the deleted module was imported.
+- Visual edits go through a worker briefed to invoke `frontend-design:frontend-design` first, or the main agent loads it before editing, however small the edit.
