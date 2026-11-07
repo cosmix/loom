@@ -9,6 +9,7 @@ import { addAttachmentAtom, pendingAttachmentsAtom } from "@/plan/attachments";
 import { activeFeatureAtom, authoringAtom } from "@/plan/state/atoms";
 import { endChat, startChat } from "./commands";
 import { focusComposerAtom } from "./composer-hooks";
+import { snapshotAtom } from "./model";
 import { offerErrorAtom } from "./offer-error";
 import { createOfferStarter } from "./offer-flow";
 import { screenOfPath, startOwnerAtom } from "./session-home";
@@ -106,11 +107,42 @@ it("navigating between a session's feature and another moves it in and out of th
   expect(within(panel()).getByRole("log")).toBeTruthy();
 });
 
-it("a concluded session from another feature leaves a plain empty state, with no notice", () => {
-  setup("/f/beta/product", session({ state: "ended" }));
+it.each([
+  ["another feature", session({ state: "ended" })],
+  [
+    "another plan's pressure test",
+    session({ kind: "pressure", feature: null, plan: "solo", state: "ended" }),
+  ],
+])("a concluded session from %s leaves a fresh chat with a composer and no notice", (_, ended) => {
+  setup("/f/beta/product", ended);
   expect(within(panel()).queryByRole("log")).toBeNull();
   expect(within(panel()).queryByRole("link")).toBeNull();
-  expect(within(panel()).queryByRole("button", { name: "New chat" })).toBeNull();
+  expect(within(panel()).getByText("Composer")).toBeTruthy();
+});
+
+it("a pressure test concluded into `previous` leaves another plan's screen a composer", () => {
+  const { store } = setup("/f/beta/product", null);
+  const ended = session({ kind: "pressure", feature: null, plan: "solo", state: "ended" });
+  act(() =>
+    store.set(snapshotAtom, {
+      session: null,
+      turns: [],
+      queue: [],
+      previous: { session: ended, turns: [] },
+    }),
+  );
+  expect(within(panel()).getByText("Composer")).toBeTruthy();
+  cleanup();
+  const own = setup("/plans/solo", null);
+  act(() =>
+    own.store.set(snapshotAtom, {
+      session: null,
+      turns: [],
+      queue: [],
+      previous: { session: ended, turns: [] },
+    }),
+  );
+  expect(within(panel()).getByRole("log")).toBeTruthy();
 });
 
 it("a chat started for no feature belongs to the project and shows on every screen", () => {
@@ -308,8 +340,13 @@ const draft = {
 
 it("a pending attachment shows its chip on a screen with no open chat, not beside an open foreign one", () => {
   const ended = setup("/f/beta/product", session({ state: "ended" }));
+  render(
+    <Provider store={ended.store}>
+      <RouterProvider router={createMemoryRouter([{ path: "*", element: <RealComposerArea /> }])} />
+    </Provider>,
+  );
   act(() => ended.store.set(addAttachmentAtom, draft));
-  expect(within(panel()).getByLabelText("Pending attachments")).toBeTruthy();
+  expect(screen.getByLabelText("Pending attachments")).toBeTruthy();
   cleanup();
   const open = setup("/f/beta/product", session());
   act(() => open.store.set(pendingAttachmentsAtom, [draft]));
