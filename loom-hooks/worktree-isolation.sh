@@ -264,27 +264,19 @@ print_traversal_warning() {
         '{hookSpecificOutput:{hookEventName:"PreToolUse",additionalContext:$ctx}}'
 }
 
-# Pattern 3 (token path): .worktrees/ access outside the current stage. No
-# single helper call covers "block unless it names MY worktree", so this
-# walks LOOM_TOKENS directly - guarded for bash 3.2 `set -u` on an empty
-# array the same way loom-control-complete.sh's is_completion_command does.
-# A word-shaped token counts if it CONTAINS ".worktrees/" anywhere (same
-# reasoning as Pattern 2's original check): a prose mention of another
-# stage's directory inside a quoted brief is not a real access attempt, and
-# a real path/flag argument is always whitespace-free. A whitespace-bearing
-# token additionally counts, but only if it STARTS WITH ".worktrees/" - the
-# same narrower prefix exception Pattern 2 uses to close the analogous hole
-# for a real path argument that happens to contain a space
-# (`cat ".worktrees/other-stage/some notes.md"`), without reintroducing the
-# false positive for prose that merely mentions ".worktrees/" mid-sentence.
-# Returns 0 when this pattern is present (a token names some OTHER stage's
-# worktree; a token naming CURRENT_STAGE's own worktree, or a path under it,
-# is exempt and does not trigger a block on its own).
+# Pattern 3 (token path): returns 0 when a token names another stage's
+# worktree. A word token counts when it CONTAINS ".worktrees/"; a
+# whitespace-bearing one (quoted prose) only when it STARTS with it, so
+# `cat ".worktrees/other/some notes.md"` blocks while a brief mentioning the
+# path mid-sentence does not. Exempt: tokens naming CURRENT_STAGE's worktree,
+# and an absolute token with a known cwd resolving to class worktree or
+# scratch (a scratch dir whose parent path holds a .worktrees/ component).
+# The empty-array guard keeps bash 3.2 `set -u` quiet.
 check_cross_worktree_tokens() {
     local n=${#LOOM_TOKENS[@]}
     ((n > 0)) || return 1
     local own_re="${LOOM_POLICY_WORKTREE_MARKER}${CURRENT_STAGE}(/|\$)"
-    local i tok prefix="^$LOOM_POLICY_WORKTREE_MARKER"
+    local i tok abs cwd prefix="^$LOOM_POLICY_WORKTREE_MARKER"
     for ((i = 0; i < n; i++)); do
         tok="${LOOM_TOKENS[$i]}"
         if loom_token_is_word "$tok"; then
@@ -293,6 +285,10 @@ check_cross_worktree_tokens() {
             [[ "$tok" =~ $prefix ]] || continue
         fi
         [[ "$tok" =~ $own_re ]] && continue
+        cwd="${LOOM_TOKEN_CWD[$i]:-}"
+        if [[ "$tok" == /* && -n "$cwd" ]] && abs=$(loom_normalize_word "$cwd" "$tok"); then
+            case "$(loom_path_class "$abs")" in worktree | scratch) continue ;; esac
+        fi
         return 0
     done
     return 1

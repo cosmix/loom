@@ -27,7 +27,11 @@ WT="$REPO/.worktrees/stage"
 S="$TMP/scratch"
 mkdir -p "$REPO/.loom/work" "$REPO/.git" "$REPO/.worktrees/stage-x" \
     "$WT/loom" "$WT/a/b" "$WT/.loom" "$TMP/tmpdir" "$TMP/work" "$S/clone"
-chmod 700 "$S" "$TMP/tmpdir"
+# A scratch dir whose parent path holds a .worktrees/ component (as when the
+# temp root sits inside a real checkout's worktree).
+NS="$TMP/outer/.worktrees/hold/scratch"
+mkdir -p "$NS/clone" "$REPO/.worktrees/other-stage"
+chmod 700 "$S" "$NS" "$TMP/tmpdir"
 ln -s ../../../.loom/work "$WT/.loom/work"
 ln -s "$REPO" "$S/link"
 
@@ -63,18 +67,21 @@ block() {
     first=$(printf '%s\n' "$ERR" | awk 'NF { print; exit }')
     if [[ $CODE -ne 2 ]]; then
         fail "expected a block from $1: $2 (exit $CODE) $OUT"
-    elif [[ "$first" != "[worktree-isolation/git-override]"* ]]; then
-        fail "block of $2 lacks the git-override tag: $first"
+    elif [[ "$first" != "[worktree-isolation/$RULE]"* ]]; then
+        fail "block of $2 lacks the $RULE tag: $first"
     fi
 }
 
 SCR="LOOM_SCRATCH_DIR=$S"
+RULE=git-override
 
 # --- allowed ---
 allow "$WT" 'git -C . status'
 allow "$WT" "git -C $WT/loom log"
 allow "$WT" "git -C $S/clone status" "$SCR"
 allow "$WT" 'git -C "$LOOM_SCRATCH_DIR/clone" status' "$SCR"
+allow "$WT" "git -C $NS/clone status" "LOOM_SCRATCH_DIR=$NS"
+allow "$WT" 'git -C "$LOOM_SCRATCH_DIR/clone" status' "LOOM_SCRATCH_DIR=$NS"
 allow "$WT" 'git rev-parse --git-dir'
 allow "$WT" 'git log -C'
 allow "$WT" 'git grep -C 3 x'
@@ -97,6 +104,7 @@ block "$WT" 'LOOM_SCRATCH_DIR=/abs/repo git -C "$LOOM_SCRATCH_DIR" status' "$SCR
 block "$WT" "export LOOM_SCRATCH_DIR=$REPO; git -C \"\$LOOM_SCRATCH_DIR\" status" "$SCR"
 block "$WT" 'git -C "$LOOM_SCRATCH_DIR/clone" status'
 block "$WT" "git -C $S/clone status"
+block "$WT" "git -C $NS/clone status"
 block "$WT" 'git -C "$HOME" status'
 block "$WT" 'GIT_DIR=x git log'
 block "$WT" 'eval "git log"'
@@ -114,6 +122,12 @@ block "$WT" "git -C $S/{clone,x} status" "$SCR"
 block "$WT" "git -C '$S/clone\\x' status" "$SCR"
 block "$WT" "git -C $S/$ANSI/repo status" "$SCR"
 block "$WT" "git --git-dir=$S/cl*/.git log" "$SCR"
+# The scratch exemption from the .worktrees/ check covers scratch only.
+RULE=cross-worktree
+block "$WT" "cat $REPO/.worktrees/other-stage/f"
+block "$WT" "cat $REPO/.worktrees/other-stage/f" "LOOM_SCRATCH_DIR=$NS"
+block "$WT" "cat $TMP/outer/.worktrees/hold/f" "LOOM_SCRATCH_DIR=$NS"
+RULE=git-override
 
 # One block appends one ledger line carrying the rule.
 run_hook "$WT" "git -C $REPO status" LOOM_WORK_DIR="$TMP/work" LOOM_STAGE_ID=stage LOOM_SESSION_ID=x
