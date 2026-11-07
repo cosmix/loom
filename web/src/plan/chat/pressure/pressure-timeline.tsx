@@ -26,7 +26,7 @@ const ROW_TEXT: Record<PressureStepKind, string> = {
   claude_pressure: "Claude reviews the plan",
   claude_address: "Claude addresses both reviews",
 };
-const RECORD_TEXT = "Write the record line";
+const RECORD_TEXT = "Log the run at the end of the plan";
 
 function editAddress(snapshot: ChatSnapshot, step: PressureStepView, path: string): string {
   if (!step.session_id) return toAddress(path);
@@ -78,20 +78,23 @@ function Row({
 }): JSX.Element {
   return (
     <>
-      <span className="flex justify-center">{glyph}</span>
-      <span className="min-w-0">
+      <span className="flex min-h-6 items-center justify-center">{glyph}</span>
+      <span className="flex min-h-6 min-w-0 items-center">
         {text}
         <span className="sr-only">{state}</span>
       </span>
-      <span className="font-mono text-xs text-muted-foreground">{time}</span>
-      {children && (
-        <div className="col-start-2 col-end-4 grid min-w-0 gap-1.5 pb-1">{children}</div>
-      )}
+      <span className="flex min-h-6 items-center font-mono text-xs text-muted-foreground">
+        {time}
+      </span>
+      {children && <div className="col-start-2 col-end-4 grid min-w-0 gap-1 pb-1">{children}</div>}
     </>
   );
 }
 
 const ROW_GRID = "grid grid-cols-[20px_minmax(0,1fr)_auto] items-center gap-x-2 gap-y-1 text-xs";
+// Rows inside a round, and the larger gap that separates one round from the next.
+const ROUND_GAP = "gap-1";
+const TIMELINE_GAP = "gap-3";
 // The server accepts 1 to 10 rounds (the form offers 1 to 3); the cap keeps a malformed count in
 // a snapshot from queuing placeholder rows without end.
 const MAX_QUEUED_ROUNDS = 10;
@@ -115,7 +118,7 @@ function StepRow({ step }: { step: PressureStepView }): JSX.Element {
         {hasExtras && (
           <>
             {step.kind === "codex" && step.codex && (
-              <CodexStatusItem status={step.codex} startedMs={step.started_ms} />
+              <CodexStatusItem status={step.codex} />
             )}
             {step.edits.map((path) => {
               const address = editAddress(snapshot, step, path);
@@ -162,13 +165,15 @@ function RoundRows({
   round,
   steps,
   queue,
+  footer,
 }: {
   round: number;
   steps: PressureStepView[];
   queue: boolean;
+  footer?: ReactNode;
 }): JSX.Element {
   return (
-    <section data-pressure-round={round} className="grid gap-0.5">
+    <section data-pressure-round={round} className={`grid ${ROUND_GAP}`}>
       <p className="text-xs font-semibold tracking-[0.12em] text-muted-foreground uppercase">
         Round {round}
       </p>
@@ -179,6 +184,7 @@ function RoundRows({
         }
         return queue ? [<QueuedRow key={`${round}/${kind}`} text={ROW_TEXT[kind]} />] : [];
       })}
+      {footer}
     </section>
   );
 }
@@ -212,14 +218,20 @@ export function StepTimeline({ run }: { run: PressureRunView }): JSX.Element {
       if (!byRound.has(round)) byRound.set(round, []);
     }
   }
+  const rounds = [...byRound].sort(([left], [right]) => left - right);
+  // The record row closes the last round so it shares the step rhythm; with no rounds it stands alone.
   return (
-    <div data-pressure-timeline className="grid gap-2.5">
-      {[...byRound]
-        .sort(([left], [right]) => left - right)
-        .map(([round, steps]) => (
-          <RoundRows key={round} round={round} steps={steps} queue={live && round >= run.round} />
-        ))}
-      <RecordRow run={run} />
+    <div data-pressure-timeline className={`grid ${TIMELINE_GAP}`}>
+      {rounds.map(([round, steps], index) => (
+        <RoundRows
+          key={round}
+          round={round}
+          steps={steps}
+          queue={live && round >= run.round}
+          footer={index === rounds.length - 1 ? <RecordRow run={run} /> : null}
+        />
+      ))}
+      {rounds.length === 0 && <RecordRow run={run} />}
     </div>
   );
 }

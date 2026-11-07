@@ -58,16 +58,13 @@ it.each(PRESSURE_SCENES)("gives $title nonempty sentence notes", ({ notes }) => 
   }
 });
 
-it("draws the run in the chat: run head with Stop, a Codex card and a Claude step", () => {
+it("draws the run in the chat: run head with Stop, a Codex row and a Claude step", () => {
   const { container } = render(<PressureRunScene />);
 
   expect(container.querySelector("[data-session-id] button")?.textContent).toContain("Stop");
-  expect(container.querySelector('[aria-label="Round 1 Codex"]')?.textContent).toContain(
-    "reviewing the plan in the background",
-  );
-  expect(container.querySelector('[aria-label="Round 1 Codex"]')?.textContent).toContain(
-    "gpt-6.1-terra",
-  );
+  const codex = container.querySelector('[aria-label="Round 1 Codex"]');
+  expect(codex?.textContent).toContain("gpt-6.1-terra");
+  expect(codex?.querySelector(".activity-tile")).toBeNull();
   expect(PRESSURE_SCENES[0]?.panel).toBe(true);
   expect(container.querySelector('[aria-label="Round 1 /pressure"]')).not.toBeNull();
 });
