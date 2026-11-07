@@ -7,6 +7,7 @@ import { dismissReason, foldSeed, ledgerPath, planSeed } from "./findings-action
 import {
   foldableEntries,
   foldChoices,
+  foldedEntry,
   groupFindings,
   groupTitle,
   nodeLabel,
@@ -182,12 +183,51 @@ describe("statusText and nodeLabel", () => {
   it("names a heading, an entry and a document", () => {
     const view = demo();
     const section = "doc/product/demo/section_01.md";
-    expect(nodeLabel(view, { path: section, anchor: "two" })).toBe("Two");
-    expect(nodeLabel(view, { path: section, anchor: null })).toBe("Alpha");
+    expect(nodeLabel(view, { path: section, anchor: "two" }, "demo")).toBe("Two");
+    expect(nodeLabel(view, { path: section, anchor: null }, "demo")).toBe("Alpha");
     expect(
-      nodeLabel(view, { path: "doc/plans/demo/index.md", anchor: "2-second-plan-secondmd" }),
+      nodeLabel(
+        view,
+        { path: "doc/plans/demo/index.md", anchor: "2-second-plan-secondmd" },
+        "demo",
+      ),
     ).toBe("2. Second (`PLAN-second.md`)");
-    expect(nodeLabel(view, { path: "doc/plans/demo/other.md", anchor: null })).toBe("other.md");
+    expect(nodeLabel(view, { path: "doc/plans/demo/other.md", anchor: null }, "demo")).toBe(
+      "other.md",
+    );
+  });
+});
+
+describe("folded finding and plan stage labels", () => {
+  it("finds the metaplan entry a fold names, and nothing for another status or an unknown anchor", () => {
+    const view = demo();
+    const [first] = view.entries;
+    const folded = (detail: string | null) => ({ kind: "folded" as const, detail });
+    expect(foldedEntry(view, folded(`metaplan#${first!.anchor}`))).toBe(first);
+    expect(foldedEntry(view, folded("metaplan#nope"))).toBeUndefined();
+    expect(foldedEntry(view, folded("PLAN-first.md"))).toBeUndefined();
+    expect(foldedEntry(view, folded(null))).toBeUndefined();
+    expect(
+      foldedEntry(view, { kind: "planned", detail: `metaplan#${first!.anchor}` }),
+    ).toBeUndefined();
+  });
+
+  it("reads a plan stage as the short slug and the stage, and a whole plan by its title", () => {
+    const view = demo();
+    const plan = view.documents.find((doc) => doc.path === "doc/plans/demo/PLAN-first.md")!;
+    plan.slug = "demo-first";
+    const node = { path: plan.path, anchor: "stage:build" };
+    expect(nodeLabel(view, node, "demo")).toBe("first › build");
+    expect(nodeLabel(view, { path: plan.path, anchor: null }, "demo")).toBe(plan.title);
+  });
+
+  it("falls back to the file's stem when the plan has no slug yet", () => {
+    const view = demo();
+    const plan = view.documents.find((doc) => doc.path === "doc/plans/demo/PLAN-first.md")!;
+    plan.slug = null;
+    expect(nodeLabel(view, { path: plan.path, anchor: "stage:build" }, "demo")).toBe(
+      "first › build",
+    );
   });
 });
 
