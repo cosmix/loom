@@ -1,6 +1,8 @@
 import { cleanup, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
+import { pressureWhen } from "@/plan/files/heading-parts";
+
 import { ImpactRows } from "./impact-rows";
 import {
   FIRST_PLAN,
@@ -94,7 +96,7 @@ it("a plan with a pressure record shows its date, its text and a link to it", as
   const card = (await screen.findByRole("heading", { name: "Pressure record" })).closest(
     "section",
   )!;
-  expect(card.textContent).toContain("Pressure-tested 2026-10-20");
+  expect(card.textContent).toContain(`Pressure-tested ${pressureWhen("2026-10-20")}`);
   await waitFor(() => expect(card.textContent).toContain(RECORD));
   const link = within(card).getByRole("link", { name: "Read the record" });
   expect(link.getAttribute("href")).toBe("/f/demo/source/plans/demo/PLAN-first.md#pressure-tests");

@@ -91,8 +91,9 @@
 /* The chip row: the status card's rows set as compact chips on one line, with no card, edge or
    rule: the summary's freshness with Rebuild after its words, the settle state, the coverage. A
    row's detail line (a waiting rebuild's sentence) goes under its words and action, and a row
-   that has one takes the row's whole width. Rows past the line's room (a plan's state with
-   Pressure-test and its blocked reason, the open questions) wrap to a line of their own. */
+   that has one takes the row's whole width. Rows past the line's room (a plan's state with its
+   pressure status, Pressure-test and its blocked reason, the open questions) wrap to a line of
+   their own. */
 .concept-page-column .doc-heading-status {
   display: flex;
   flex-wrap: wrap;
@@ -157,6 +158,18 @@
 .concept-page-column .doc-heading .doc-heading-chip__glyph svg {
   width: 16px;
   height: 16px;
+}
+
+/* A written plan's state row goes on with its pressure status and Pressure-test
+   (`concept/page-heading.tsx`, `PlanPressure`): one unit, so the status and its action wrap with
+   "Written" and never onto a line of their own. The status sits a chip's gap after the state. */
+.concept-page-column .trace-plan-pressure {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-2);
+  min-width: 0;
+  margin-inline-start: var(--space-2);
 }
 
 /* The facts (Built by, Implements): one quiet line under the chip row. */

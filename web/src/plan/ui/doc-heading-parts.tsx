@@ -92,7 +92,7 @@ function ChipWords({ chip }: { chip: HeadingChip }): JSX.Element {
  * chip without a glyph too, so every row's words share one left edge; only the glyph takes a
  * tone, and no fill or pill is drawn (DESIGN.md, Status).
  */
-function Chip({ chip }: { chip: HeadingChip }): JSX.Element {
+export function Chip({ chip }: { chip: HeadingChip }): JSX.Element {
   const tone = chip.tone ?? "neutral";
   const shared = { title: hoverTitle(chip.title), "data-chip": "", "data-tone": tone };
   const content = (

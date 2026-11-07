@@ -6,6 +6,11 @@ import { pressureDialogAtom } from "@/plan/offers/actions-pressure";
 import { runDialogAtom } from "@/plan/offers/actions-run";
 import { authorBlockReasonAtom, isHolderAtom } from "@/plan/state/atoms";
 import { type ButtonLook, DisabledReason } from "@/plan/ui/disabled-reason";
+import { OTHER_GLYPHS } from "@/plan/ui/glyphs";
+
+import "./pressure-test-action.css";
+
+const Flask = OTHER_GLYPHS.pressureTested;
 
 /**
  * The Start a run button for one plan (null opens the dialog on its own choice). Pressure start
@@ -39,23 +44,28 @@ export function StartRunButton({
 }
 
 /**
- * The Pressure-test control at the end of a written plan's pressure status row (`pressureChip`'s
- * `action`, DESIGN.md, Status). A blocked start draws its reason beside the button, on the row.
+ * The Pressure-test control, the action of a written plan's pressure status (`pressureChip`'s
+ * `action`; DESIGN.md, Buttons): a quiet `sm` button led by the flask that reads as a button at
+ * rest (`pressure-test-action.css`). `again` words it as a re-run for a plan already tested. A
+ * blocked start draws its reason beside the button, on the row.
  */
-export function PressureTestAction({ path }: { path: string }) {
+export function PressureTestAction({ path, again = false }: { path: string; again?: boolean }) {
   const options = usePressureOptions();
   const reason = useStartReason(options?.ok ? options.value : null);
   const setPressure = useSetAtom(pressureDialogAtom);
   return (
-    <DisabledReason
-      look="quiet"
-      size="sm"
-      reasonPlacement="inline"
-      reason={reason}
-      onClick={() => setPressure({ open: true, plan: path })}
-    >
-      Pressure-test
-    </DisabledReason>
+    <span className="pressure-test-action">
+      <DisabledReason
+        look="quiet"
+        size="sm"
+        reasonPlacement="inline"
+        reason={reason}
+        onClick={() => setPressure({ open: true, plan: path })}
+      >
+        <Flask aria-hidden="true" />
+        <span>{again ? "Pressure-test again" : "Pressure-test"}</span>
+      </DisabledReason>
+    </span>
   );
 }
 

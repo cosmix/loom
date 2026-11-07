@@ -1,0 +1,40 @@
+/* Pressure-test (`PressureTestAction`): a quiet `sm` `.plan-button` beside a status, which at rest
+   would read as one more muted status word. It keeps the quiet button's size and corners and takes
+   a resting affordance: the flask and words in `--foreground` on a `--muted` fill, drawing no edge,
+   because inside the status card (a `.plan-surface`) nothing draws a border (DESIGN.md, Surfaces).
+   On a summary page the chip row stands on the page ground, so the button takes the hairline edge
+   of the action row under it (`trace-heading.css`) in place of the fill. */
+.pressure-test-action {
+  display: inline-flex;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.pressure-test-action .plan-button {
+  background: var(--muted);
+  color: var(--foreground);
+}
+
+.pressure-test-action .plan-button:hover {
+  background: color-mix(in oklch, var(--foreground) 8%, var(--muted));
+}
+
+.pressure-test-action .plan-button:is([aria-disabled="true"], :disabled):hover {
+  background: var(--muted);
+  color: var(--foreground);
+}
+
+.concept-page-column .pressure-test-action .plan-button {
+  border-color: var(--border);
+  background: transparent;
+}
+
+.concept-page-column .pressure-test-action .plan-button:hover {
+  background: var(--muted);
+}
+
+.concept-page-column
+  .pressure-test-action
+  .plan-button:is([aria-disabled="true"], :disabled):hover {
+  background: transparent;
+}

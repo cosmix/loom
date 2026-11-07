@@ -130,8 +130,8 @@ function planChips(
 ): HeadingChip[] {
   return [
     planStateChip(plan.state),
-    ...implementsChip(plan),
     pressureChip(plan.pressure_date, active, plan.state === "written" ? path : null),
+    ...implementsChip(plan),
     ...(plan.validation === null ? [] : [validationChip(plan.validation, open, toggle)]),
     ...(plan.last_change === null ? [] : [changedChip(plan.last_change, now)]),
   ];

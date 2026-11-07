@@ -84,6 +84,7 @@ it("leads the status card with the summary's state, then the plan's state, and s
   expect(chips.map((chip) => chip.querySelector(".doc-heading-chip__label")?.textContent)).toEqual([
     "Summary current",
     "Written",
+    "Not pressure-tested",
   ]);
   // Every row draws its glyph column first, so the words share one left edge.
   for (const chip of chips) {
@@ -149,46 +150,70 @@ it.each([
   },
 );
 
-it("leaves the pressure record off the chip row: a plan's card under the heading draws it", () => {
-  show({ last_pressure: "2026-10-20" });
-  expect(screen.queryByText("Pressure-tested 2026-10-20")).toBeNull();
-  cleanup();
+const PLAN = {
+  key: "demo/engineering/a",
+  path: "plans/demo/PLAN-a.md",
+  plan_state: "written",
+} as const;
+const STANDALONE = { key: "plans/my-plan", feature: null, path: "plans/PLAN-my-plan.md" } as const;
 
-  show({ key: "demo/engineering/a", plan_state: "written", last_pressure: null });
+/** The pressure status carried by the Written row, and the Pressure-test button after it. */
+function writtenRow(): HTMLElement {
+  return screen.getByText("Written").closest(".doc-heading-row") as HTMLElement;
+}
+
+it("leaves the pressure record off a section's chip row", () => {
+  show({ last_pressure: "2026-10-20" });
   expect(screen.queryByText(/pressure-tested/i)).toBeNull();
 });
 
-it("draws a feature plan's pressure date once, in its card", () => {
-  show({
-    key: "demo/engineering/a",
-    feature: "demo",
-    path: "plans/demo/PLAN-a.md",
-    plan_state: "written",
-    last_pressure: "2026-10-20",
-  });
-  const dates = screen.getAllByText(/pressure-tested 2026-10-20/i);
+it("sets an untested plan's warning status and Pressure-test on its Written row", () => {
+  show({ ...PLAN, last_pressure: null });
+  const row = writtenRow();
+  const status = within(row).getByText("Not pressure-tested").closest("[data-chip]");
+  expect(status?.getAttribute("data-tone")).toBe("warning");
+  expect(status?.querySelector("svg.lucide-gauge")).not.toBeNull();
+  const button = within(row).getByRole("button", { name: "Pressure-test" });
+  // A button at rest: the flask, and the class that gives it its edge on the summary page.
+  expect(button.querySelector("svg.lucide-flask-conical")).not.toBeNull();
+  expect(button.classList.contains("plan-button")).toBe(true);
+  expect(button.closest(".pressure-test-action")).not.toBeNull();
+  // The status precedes its action inside the row's one unit.
+  const unit = row.querySelector(".trace-plan-pressure") as HTMLElement;
+  expect(unit.contains(status!) && unit.contains(button)).toBe(true);
+  expect(status!.compareDocumentPosition(button) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+});
+
+it("draws a feature plan's pressure date once, in its card, and offers a re-run", () => {
+  show({ ...PLAN, feature: "demo", last_pressure: "2026-10-20" });
+  const dates = screen.getAllByText(/pressure-tested/i);
   expect(dates.map((node) => node.className)).toEqual(["trace-pressure__when"]);
+  expect(within(writtenRow()).getByRole("button", { name: "Pressure-test again" })).toBeTruthy();
 });
 
-it("keeps a standalone plan's pressure date on its facts line", () => {
-  show({
-    key: "plans/my-plan",
-    feature: null,
-    path: "plans/PLAN-my-plan.md",
-    plan_state: "written",
-    last_pressure: "2026-10-20",
-  });
-  expect(screen.getByText(/pressure-tested 2026-10-20/i)).toBeTruthy();
+it("sets a standalone written plan's tested status, flask first, on its Written row", () => {
+  show({ ...STANDALONE, plan_state: "written", last_pressure: "2026-10-20" });
+  const row = writtenRow();
+  const status = within(row)
+    .getByText(/^Pressure-tested /)
+    .closest("[data-chip]");
+  expect(status?.getAttribute("data-tone")).toBe("ok");
+  expect(status?.getAttribute("title")).toBe("2026-10-20");
+  expect(status?.firstElementChild?.querySelector("svg.lucide-flask-conical")).not.toBeNull();
+  expect(within(row).getByRole("button", { name: "Pressure-test again" })).toBeTruthy();
+  expect(document.querySelector(".doc-heading-facts")?.textContent ?? "").not.toMatch(/pressure/i);
 });
 
-it("ends a written plan's state row in Pressure-test, and only a written plan's", () => {
-  show({ key: "demo/engineering/a", path: "plans/demo/PLAN-a.md", plan_state: "written" });
-  const row = screen.getByText("Written").closest(".doc-heading-row") as HTMLElement;
-  expect(within(row).getByRole("button", { name: "Pressure-test" })).toBeTruthy();
-  cleanup();
+it("keeps a standalone done plan's test date as a status, with no Pressure-test", () => {
+  show({ ...STANDALONE, plan_state: "done", last_pressure: "2026-10-20" });
+  const status = screen.getByText(/^Pressure-tested /).closest("[data-chip]");
+  expect(status?.closest(".doc-heading-status")).not.toBeNull();
+  expect(screen.queryByRole("button", { name: /^Pressure-test/ })).toBeNull();
+});
 
-  show({ key: "demo/engineering/a", path: "plans/demo/PLAN-a.md", plan_state: "running" });
-  expect(screen.queryByRole("button", { name: "Pressure-test" })).toBeNull();
+it("ends only a written plan's state row in Pressure-test", () => {
+  show({ ...PLAN, plan_state: "running" });
+  expect(screen.queryByRole("button", { name: /^Pressure-test/ })).toBeNull();
 });
 
 it("leaves the pressure chip off a section summary with no test date", () => {
