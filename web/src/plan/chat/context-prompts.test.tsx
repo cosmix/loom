@@ -34,7 +34,6 @@ const PROMPTS: Array<[NonNullable<ViewedKind>, string[]]> = [
       "Change this plan so that",
     ],
   ],
-  ["run", ["What did the build change compared to the spec?"]],
 ];
 
 function mount(kind: ViewedKind, state: "idle" | "ended" | null = null) {

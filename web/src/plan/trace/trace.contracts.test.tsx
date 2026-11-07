@@ -68,7 +68,7 @@ function requestUrl(input: RequestInfo | URL): URL {
 /** The fixture trace, with section 03 written so it is a draft summary page like any other. */
 function baseTrace(): TraceView {
   const view = traceViewSchema.parse(structuredClone(traceFixture));
-  patchDoc(view, S03, { progress: "written" });
+  patchDoc(view, S03, { progress: "written", settleable: true });
   return view;
 }
 

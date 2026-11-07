@@ -92,6 +92,14 @@ describe("summary page header", () => {
     expect(link.getAttribute("href")).toBe("/f/demo/source/product/demo/section_01.md");
     expect(extras.header).toHaveBeenCalled();
   });
+  it("a summary page draws no document key, though its page carries key chips", async () => {
+    serveOverview();
+    renderAt("/f/demo/product/section_01");
+    await screen.findByRole("heading", { level: 1, name: "Planning" });
+    await readingColumn();
+    expect(screen.queryByRole("list", { name: "Document key" })).toBeNull();
+    expect(screen.queryByText(/^Key: /)).toBeNull();
+  });
   it("the summary header shares the page column's edges", async () => {
     serveOverview();
     renderAt("/f/demo/product/section_01");

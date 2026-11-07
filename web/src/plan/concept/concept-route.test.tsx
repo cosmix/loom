@@ -331,12 +331,18 @@ describe("wiring", () => {
     expect(conceptPageLabel("/f/demo/product/a%2Fb")).toBeNull();
     expect(conceptPageLabel("/files/doc/x.md")).toBeNull();
   });
-  it("PageHeaderExtras, SummaryAction and KeyChipExtras mounted", async () => {
+  it("PageHeaderExtras and SummaryAction mounted on a summary page, which draws no key", async () => {
     serveOverview();
     renderAt("/f/demo/product/section_01");
     await screen.findByRole("heading", { level: 1, name: "Planning" });
     expect(extras.header).toHaveBeenCalled();
     expect(extras.action).toHaveBeenCalled();
+    expect(extras.chip).not.toHaveBeenCalled();
+  });
+  it("KeyChipExtras mounted in an overview's key", async () => {
+    serveOverview();
+    renderAt("/f/demo/product");
+    await readingColumn();
     expect(extras.chip).toHaveBeenCalled();
   });
 });

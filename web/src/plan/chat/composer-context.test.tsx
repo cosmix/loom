@@ -112,7 +112,14 @@ it("a dismissed context is not fetched or sent", async () => {
 
 it("a page with no source file adds nothing and fetches nothing", async () => {
   const h = setup("idle");
-  act(() => h.store.set(viewedDocumentAtom, { kind: "run", path: null, name: "Run" }));
+  // An overview whose feature's checklist has not named its source yet.
+  act(() =>
+    h.store.set(viewedDocumentAtom, {
+      kind: "engineering-overview",
+      path: null,
+      name: "Engineering overview",
+    }),
+  );
   await deliver(h, sender(h));
   expect(pathsAt(h, 0)).toEqual([]);
   expect(docServer.asked).toEqual([]);

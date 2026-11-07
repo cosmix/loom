@@ -15,6 +15,7 @@ import {
   frontierLinks,
   impactFor,
   settleLabel,
+  shownSettle,
   type EdgeChip,
 } from "./model";
 
@@ -70,6 +71,26 @@ describe("docOfPath", () => {
   it("finds a document by its repository path", () => {
     expect(docOfPath(fixture(), S02)?.title).toBe("Beta");
     expect(docOfPath(fixture(), "doc/product/demo/missing.md")).toBeUndefined();
+  });
+});
+
+describe("shownSettle", () => {
+  it("shows the state of a settleable document and none for done work, a stub or nothing", () => {
+    const trace = fixture();
+    expect(shownSettle(docOfPath(trace, S02))).toBe("revised");
+    // The fixture's section 03 is a stub, which the server marks unsettleable.
+    expect(shownSettle(docOfPath(trace, S03))).toBeNull();
+    docOfPath(trace, S02)!.settleable = false;
+    expect(shownSettle(docOfPath(trace, S02))).toBeNull();
+    expect(shownSettle(undefined)).toBeNull();
+  });
+
+  it("gives a plan page's spec chip no state when its section is done work", () => {
+    const trace = fixture();
+    docOfPath(trace, S01)!.settleable = false;
+    const chips = chipsFor(trace, sentence([[FIRST, ""]], [[FIRST, "stage:build"]]), "plan");
+    expect(chips.length).toBeGreaterThan(0);
+    expect(chips.every((chip) => chip.state === null)).toBe(true);
   });
 });
 
@@ -258,10 +279,20 @@ describe("impactFor", () => {
 
   it("lists sections whose stub row moved or that were revised when the vision changed", () => {
     const trace = fixture();
+    // Section 03 written and settled before its vision row moved; the fixture lists it unwritten.
+    Object.assign(docOfPath(trace, S03)!, { progress: "written", settleable: true });
     setSettle(trace, S03, "stub_changed");
     expect(impactFor(trace, [VISION])[0]!.rows).toEqual([
       { path: S02, title: "Beta", state: "revised" },
       { path: S03, title: "Gamma", state: "stub_changed" },
+    ]);
+  });
+
+  it("leaves out a related document that moved but is not asked to be settled", () => {
+    const trace = fixture();
+    setSettle(trace, S03, "stub_changed");
+    expect(impactFor(trace, [VISION])[0]!.rows).toEqual([
+      { path: S02, title: "Beta", state: "revised" },
     ]);
   });
 

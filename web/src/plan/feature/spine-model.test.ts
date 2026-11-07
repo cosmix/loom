@@ -13,23 +13,23 @@ it.each([
   ["/f/atlas/product/section_01", "product"],
   ["/f/atlas/engineering/atlas-01", "plans"],
   ["/f/atlas/metaplan", "metaplan"],
-  ["/f/atlas/run", "run"],
   ["/f/atlas/coverage", "product"],
-  ["/f/atlas/findings", "run"],
+  ["/f/atlas/findings", "plans"],
 ])("selects the group of %s", (pathname, group) => {
   expect(groupOfPathname(pathname)).toBe(group);
 });
 
-it("selects no group for the removed Pressure page", () => {
+it("selects no group for the removed Pressure and Run pages", () => {
   expect(groupOfPathname("/f/atlas/pressure")).toBeNull();
+  expect(groupOfPathname("/f/atlas/run")).toBeNull();
 });
 
 it.each([
   ["/f/atlas/source/product/atlas/index.md", "vision"],
   ["/f/atlas/source/product/atlas/section_02.md", "product"],
   ["/f/atlas/source/plans/atlas/index.md", "metaplan"],
-  ["/f/atlas/source/plans/atlas/archive/REVIEW-DONE-PLAN-x.md", "run"],
-  ["/f/atlas/source/plans/atlas/archive/REVIEW-PLAN-x.md", "run"],
+  ["/f/atlas/source/plans/atlas/archive/REVIEW-DONE-PLAN-x.md", "plans"],
+  ["/f/atlas/source/plans/atlas/archive/REVIEW-PLAN-x.md", "plans"],
   ["/f/atlas/source/plans/atlas/PLAN-x.md", "plans"],
   ["/f/atlas/source/plans/atlas/IN_PROGRESS-PLAN-x.md", "plans"],
   ["/f/atlas/source/plans/atlas/DONE-PLAN-x.md", "plans"],
@@ -123,9 +123,17 @@ describe("the trace pages' rows", () => {
     expect(group("product").children[0]!.name).toBe("Overview");
   });
 
-  it("lists Findings in the Run group with the open count as its note", () => {
-    expect(group("run").children).toMatchObject([
-      { name: "Findings", to: "/f/atlas/findings", note: "1 open" },
+  it("closes the Plans group with Findings, the open count as its note, and draws no Run group", () => {
+    expect(group("plans").children.at(-1)).toMatchObject({
+      name: "Findings",
+      to: "/f/atlas/findings",
+      note: "1 open",
+    });
+    expect(spineGroups(atlas(), trace).map((candidate) => candidate.id)).toEqual([
+      "vision",
+      "product",
+      "metaplan",
+      "plans",
     ]);
   });
 
@@ -134,7 +142,11 @@ describe("the trace pages' rows", () => {
     for (const { finding } of settled.findings) {
       finding.status = { kind: "dismissed", detail: "x" };
     }
-    expect(group("run", settled).children[0]!.note).toBeNull();
-    expect(spineGroups(atlas()).find((g) => g.id === "run")!.children[0]!.note).toBeNull();
+    expect(group("plans", settled).children.at(-1)!.note).toBeNull();
+    expect(
+      spineGroups(atlas())
+        .find((g) => g.id === "plans")!
+        .children.at(-1)!.note,
+    ).toBeNull();
   });
 });

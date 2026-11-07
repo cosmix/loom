@@ -6,10 +6,10 @@ import { featureOfDocPath } from "@/plan/feature/source-href";
 import { featureHref } from "@/plan/feature/use-feature";
 import { decode, docRel } from "@/plan/files/address";
 import { openCount } from "@/plan/trace/findings-model";
-import { docOfPath } from "@/plan/trace/model";
+import { docOfPath, shownSettle } from "@/plan/trace/model";
 import { PLAN_STATE_GLYPHS, type Glyph, type PlanState } from "@/plan/ui/glyphs";
 
-export type GroupId = "vision" | "product" | "metaplan" | "plans" | "run";
+export type GroupId = "vision" | "product" | "metaplan" | "plans";
 
 /** How a document's name is set: section names are Markdown phrasing, plan names are slugs. */
 export type NameStyle = "markdown" | "mono" | "plain";
@@ -60,7 +60,6 @@ const GROUPS: { id: GroupId; label: string; step: number; page: string }[] = [
   { id: "product", label: "Product spec", step: STEP.product, page: "product" },
   { id: "metaplan", label: "Metaplan", step: STEP.metaplan, page: "metaplan" },
   { id: "plans", label: "Plans", step: STEP.plans, page: "engineering" },
-  { id: "run", label: "Run", step: STEP.run, page: "run" },
 ];
 
 /** The server labels a count's unit ("Untested", "Done"); a label equal to the name names no unit. */
@@ -75,15 +74,15 @@ const GROUP_OF_PAGE: Record<string, GroupId> = {
   ...Object.fromEntries(GROUPS.map((group) => [group.page, group.id])),
   // The trace pages sit under the group whose row links them.
   coverage: "product",
-  findings: "run",
+  findings: "plans",
 };
 
 /** A plan file name, lifecycle prefix included (`PLAN-x.md`, `IN_PROGRESS-PLAN-x.md`). */
 const PLAN_FILE = /^(?:[A-Z_]+-)?PLAN-/;
 
 /**
- * A run review file (`REVIEW-PLAN-x.md`, `REVIEW-DONE-PLAN-x.md`), which the Run group shows.
- * Tested before `PLAN_FILE`, whose optional prefix also matches `REVIEW-`.
+ * A run review file (`REVIEW-PLAN-x.md`, `REVIEW-DONE-PLAN-x.md`), which belongs to the Plans group
+ * with the plan it reviews. `PLAN_FILE` alone misses `REVIEW-DONE-PLAN-`: its prefix has no dash.
  */
 const REVIEW_FILE = /^REVIEW-/;
 
@@ -97,8 +96,7 @@ function groupOfDocPath(repoPath: string): GroupId | null {
   const file = rest.at(-1) ?? "";
   if (root === "product") return rest.length === 1 && file === "index.md" ? "vision" : "product";
   if (root !== "plans") return null;
-  if (REVIEW_FILE.test(file)) return "run";
-  if (PLAN_FILE.test(file)) return "plans";
+  if (REVIEW_FILE.test(file) || PLAN_FILE.test(file)) return "plans";
   return rest.length === 1 && file === "index.md" ? "metaplan" : null;
 }
 
@@ -119,10 +117,9 @@ export function groupOfPathname(pathname: string): GroupId | null {
   return page === "source" ? groupOfSource(pathname) : (GROUP_OF_PAGE[page] ?? null);
 }
 
-/** The settle state of a written document; a listed-only document has nothing to settle. */
+/** The settle state a row shows: none for a listed-only document or done work (`shownSettle`). */
 function settleOf(trace: TraceView | null, repoPath: string): SettleState | null {
-  const doc = trace ? docOfPath(trace, repoPath) : undefined;
-  return doc && doc.progress !== "stub" ? doc.settle : null;
+  return trace ? shownSettle(docOfPath(trace, repoPath)) : null;
 }
 
 function overviewChild(feature: string, page: string): SpineChild {
@@ -263,11 +260,13 @@ function childrenOf(
     ];
   }
   if (id === "plans") {
-    return [overviewChild(checklist.feature, page), ...planChildren(checklist, trace)];
-  }
-  if (id === "run") {
+    // Findings come from reviewing the plans' runs, so their ledger closes the Plans group.
     const open = trace === null ? 0 : openCount(trace);
-    return [tracePageChild(checklist.feature, "findings", open > 0 ? `${open} open` : null)];
+    return [
+      overviewChild(checklist.feature, page),
+      ...planChildren(checklist, trace),
+      tracePageChild(checklist.feature, "findings", open > 0 ? `${open} open` : null),
+    ];
   }
   return [];
 }
@@ -275,7 +274,7 @@ function childrenOf(
 /** The settle state of the vision or metaplan row: the trace's one document of that role. */
 function groupSettle(id: GroupId, trace: TraceView | null): SettleState | null {
   const role = id === "vision" || id === "metaplan" ? id : null;
-  return role ? (trace?.documents.find((doc) => doc.role === role)?.settle ?? null) : null;
+  return role ? shownSettle(trace?.documents.find((doc) => doc.role === role)) : null;
 }
 
 /**
