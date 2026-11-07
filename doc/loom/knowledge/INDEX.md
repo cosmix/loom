@@ -121,7 +121,7 @@
 | [git-and-build-workflow](conventions/git-and-build-workflow.md) |  | 237 |
 | [guidance-channels-and-plugin-scope](conventions/guidance-channels-and-plugin-scope.md) |  | 139 |
 | [model-and-effort-config](conventions/model-and-effort-config.md) |  | 143 |
-| [plan-web](conventions/plan-web.md) |  | 169 |
+| [plan-web](conventions/plan-web.md) |  | 173 |
 | [plan-yaml-and-hooks](conventions/plan-yaml-and-hooks.md) |  | 182 |
 | [web-dashboard-typography](conventions/web-dashboard-typography.md) |  | 67 |
 
