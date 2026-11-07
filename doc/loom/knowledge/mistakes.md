@@ -173,7 +173,7 @@ A metaplan that denied the `Workflow` tool every ultracode stage runs on, a sibl
 
 ## Contract Autonomy Delivery
 
-A chain check that read attributes by position and refused by deny-list (a `cfg` bypass), recording-time verdict validation that skipped the apply's per-patch order, escaping names where only refusal fails closed, worker checks that missed shared-fixture consumers and the maintainability test, and a package-free fixture base: [contract-autonomy-delivery](mistakes/contract-autonomy-delivery.md).
+A chain check that read attributes by position and refused by deny-list (a `cfg` bypass), recording-time verdict validation that skipped the apply's per-patch order, escaping names where only refusal fails closed, worker checks that missed shared-fixture consumers and the maintainability test, a package-free fixture base, frozen contracts that failed the stage's own lint because the freeze ran only the format gate, a reviewer-brief fixture without a checkout identity, and tests added inside an assertion statement's span: [contract-autonomy-delivery](mistakes/contract-autonomy-delivery.md). Plans that forced definition-shaped wiring checks on stages whose consumer came later, ordered a ritual integrity dispute that cost a fresh session, or stated brief premises the tree contradicted: [plan-authoring](mistakes/plan-authoring.md). A growth budget that ignored the stable-prefix ceiling and a compile signal the subagent hook refuses: [briefs-and-bug-reports](mistakes/briefs-and-bug-reports.md).
 
 ## Web Dashboard Layout
 

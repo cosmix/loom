@@ -175,3 +175,42 @@ The subcommand lint resolves stage file and artifact entries against `working_di
 - **`--resolved` ignores the requesting session.** `inbox_drain/merge_resolved.rs::resolve_merge_from_inbox` takes `_session`, so a dead resolver's queued request can cancel a newer resolver's check. Requests drained after a resolver exits are deliberate, so a fix has to keep that case.
 - **Plan locks outside unit tests.** `fs/locking.rs::plan_lock_dir` uses `temp_dir()` only under `cfg(test)`. Integration tests that reach `lock_plan` (`plan_amendment_integration`, `adjudication_e2e`, `pressure_pipeline_contracts`, `refusal_adjudication_contracts`) still need a writable `/tmp` and fail inside a session sandbox, and `loom pressure` run by hand in a session fails the same way.
 - **Unproven end to end.** No real resolver has run `loom check` through a daemon from its capsule, and the kill-ordering test in `inbox_drain/tests_merge_check.rs` has not been run against the mutations it is meant to catch.
+
+## Fewer-Disputes Follow-Ups: Integrity, Reviewer Brief, Dry Run, Verdict Completion
+
+Open items from the reviews of the fewer-disputes plan, each unimplemented at the time of writing. Mechanisms: [verification-v2-gates](../architecture/verification-v2-gates.md), [hook-system](../architecture/hook-system.md), [plan-lifecycle-and-fields](../architecture/plan-lifecycle-and-fields.md), [adjudication-lifecycle](../architecture/adjudication-lifecycle.md).
+
+**Integrity detector** (`verify/integrity/`)
+
+- `moves_collect.rs::collected` checks collection per file: a destination function inside `#[cfg(any())] mod dead {}` or a Python non-`Test*` class still cancels; Go returns `true` unconditionally, so a destination with a `//go:build <tag>` or `// +build` header (or under `testdata`, `_`, `.` directories) cancels although `go test` skips it. Revisit: check enclosing-scope attributes and class names, and treat a build-constraint header as uncollected.
+- `moves.rs::normalize` drops indentation, so for Python a moved function whose assert was re-indented under an empty loop keeps the same identity. Revisit: keep relative indentation in Python identity.
+- `moves_tests.rs::tree` duplicates `verify/contracts/collection/rust/mod.rs:127`, and `moves_collect.rs::parent` duplicates `rust/mod.rs:86`; share them once file ownership allows.
+- Scan cost on a large stage: the Rust collection cache is keyed by (path, scope) and each distinct moved function repeats about six `chain_problems` calls (key it by destination file); `extract_functions` runs for a delta even when no other delta of the language added or lost statements; each changed base test file is fetched by two `git cat-file blob` processes (`edits.rs`, `count.rs`) and head files are read twice (share one read or use `git cat-file --batch`). The reviewer brief bounds the scan at 5 s.
+- Integrity prompt text: none open; the judge prompt passes event id, path and language through `single_line`.
+
+**Reviewer brief** (`commands/hook/reviewer_brief*.rs`, `loom-hooks/_spawn_policy.sh`)
+
+- One lost statement whose cleaned text starts with `<!-- loom-` (possible for Kotlin and Scala, whose `statement_start` begins at the line's first non-whitespace character) suppresses the whole brief silently. Revisit: prefix or indent each fence line.
+- A reviewer-brief timeout, failure or bad envelope is reported only through `loom_debug`, while the signal tells the orchestrator not to paste the brief. Add an `additionalContext` warning as `loom_reviewer_model_override` does with `WARN_REVIEWER`.
+- `loom_reviewer_brief` appends even when the prompt already holds a `<!-- loom-reviewer-brief` marker, so a pasted brief doubles the prompt. Skip when the marker is present, or have the guard drop caller-supplied marker lines; today the agent file only says the last section is loom's.
+- The sentence "For every lost assertion statement below, report a finding" also covers accepted events, while the next sentence says they are context only; the wording is pinned by the plan, so change it there.
+- `NO_RECORD` (`reviewer_brief.rs`) must equal the literal `not accepted` in `verify/integrity/gate.rs::shortfall`. Export one constant or return a distinct shortfall variant.
+- `render` reserves but does not cap the integration section; its byte budgets sum to about 16 KiB, so a pathological plan can exceed `MAX_BRIEF_BYTES`. The 10 KiB path budget lists about 190 of this plan's 223 files and summarises the rest by directory; the "typical path is 44 bytes" comment in `reviewer_brief_plan.rs` holds only for short early paths.
+- `plan_changed_files` spawns three git processes per completed stage; one `git rev-list --first-parent --merges --parents <target>` would locate every stage's merge. `cut()` (`dry_run.rs`) and `clean()` (`reviewer_brief_plan.rs`) are near-identical one-line-then-truncate helpers.
+
+**`loom plan verify --dry-run`** (`commands/plan/verify/`)
+
+- `dry_run_cleanup.rs::kill_processes_in` SIGKILLs every process whose cwd is inside a stale `loom-dry-run-*` directory, an operator shell included, with a pid-reuse gap between `read_link` and `kill`; the kill path and the signal handler are untested. Revisit: kill only the run's recorded process group, or use pidfd.
+- `dry_run_exec.rs` reads, parses and builds the plan into stages twice (also `dry_run.rs:73-82`); pass the parsed metadata and stages through.
+
+**Verdict completion** (`orchestrator/core/verdict_completion.rs`, `host_verify/verdict_complete.rs`)
+
+- `start_verdict_completions`: one unreadable stage file aborts the whole sweep every tick, stranding every held stage until it is fixed; tolerate it per stage. Operator-held `NeedsAdjudication` stages with open disputes take the bounded dispute lock every tick only to return `Ok(false)`; check for unapplied disputes before locking.
+- A `submit_verdict_completion` error (for example an unreadable `current.json`) hands the stage back at once even when a job may be running, so a fresh session can start beside a running host child. The doc comment makes this deliberate. Revisit if a fresh session is ever seen running beside a host child.
+- `readable_record` is the third copy of the job-record identity check (`apply_retry.rs:49`, `store/order.rs:32`); move one helper into `host_verify/store`. The Completed-resume strings repeat `apply.rs::resume_completed`, and a crash-resumed application writes the marker `already completed` instead of the completion note (cosmetic).
+- `latest_completion_head` is a `#[cfg(test)]`-only wrapper; the child test module can call the private `latest_completion` directly.
+- A `VerdictComplete` that finishes or hands back the stage is logged only through tracing; the operator sees no line for the outcome.
+- Test gaps: the reverse ordering in `verdict_hold_tests.rs` (a requeue-kind sibling verdict applied first, then a holding last verdict; safety relies on the gates refusing at application), and an error from the later eligibility checks (`uncounted_run`, `effective_policy_hash`), since the injected failure in `core/verdict_completion/tests.rs` hits `deciding_job`'s `load_current` first.
+- Doctrine text in `orchestrator/signals/helpers.rs` `STAGE_EXIT_RULES`: "Before a dispute, run `loom stage complete` on that commit" has no antecedent in the paragraph now that "Commit before filing either" is dropped (consider "on your committed tree"), and "your last-completed tree" can read as the last tree that passed (the unambiguous form is "the tree your last `loom stage complete` ran on"). `BLOCK_F` in `tests_doctrine_v2.rs` changes in step.
+
+**Rule 17 debt in the plan's changed files**, all recorded in `loom/maintainability-baseline.txt` at unchanged values: `plan/schema/validation.rs` 1063 lines (`validate` 357, `validate_structural_preflight` 196, `check_cross_stage_wiring_coverage` 66), `models/stage/types.rs` 591, `orchestrator/signals/cache.rs` 511 (`generate_knowledge_distill_stable_prefix` 74), `models/stage/methods.rs` 492, `models/stage/defaults.rs` `default` 76, `cli/dispatch.rs` `dispatch` 57.
