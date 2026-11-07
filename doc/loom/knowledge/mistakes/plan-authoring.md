@@ -84,3 +84,31 @@
 **Why:** Each scenario was written from the behaviour wanted, not from the preconditions of the function it calls.
 **Prevention:** For every contract, read the called function's early returns and name each precondition in the scenario (manifest, layout, validation, preamble). Diff each PUBLIC SURFACE rule against the Decision and the contract scenario that test it. A contract plan text must itself pass `loom plan verify`.
 **Fix:** The plan's PUBLIC SURFACE now states each fixture precondition, and the scenarios were rewritten to satisfy them.
+
+## The Leaf Rule Forced Definition-Shaped Wiring Checks on Stages Whose Consumer Came Later
+
+**What happened:** Over 31 days to 2026-11-07, six disputes came from `wiring` patterns such as `fn run_gate` that match only a definition. A stage that adds a unit whose consumer arrives in a later stage, or outside the plan, has nothing to wire. The cross-stage wiring-coverage warning (and the leaf rule in `version: 1`) still asked for a check, so under `--strict` the author invented one that matched the declaration. It passed while the unit had no caller, and completion's definition-site rule then rejected it.
+
+**Why:** the only way to satisfy the coverage rule was to write a `wiring` entry, and the cheapest entry to write is the definition line. `reachable` was the right proof but doctrine did not prefer it.
+
+**Prevention:** declare `consumer_deferred: "<reason>"` on a stage whose units have no consumer in the plan; prove reach with `reachable`; `loom plan verify` rejects a definition-shaped pattern (`v2_lints/wiring_definition.rs`). Never invent a check to satisfy a coverage warning: a check that cannot fail is a defect (see [tests-that-cannot-fail](tests-that-cannot-fail.md)).
+
+**Fix:** `consumer_deferred`, the lint, and doctrine in `skills/loom-plan-writer`; see [conventions/config-plan-and-gate-rules](../conventions/config-plan-and-gate-rules.md#prove-reach-with-reachable-wiring-is-for-seams-the-graph-cannot-see). The lint skips `^` but not `\b`, `(?m)` or `(pub\s+)?`, so those shapes are still caught only at completion.
+
+## A Plan Ordered a Ritual Integrity Dispute Whose Verdict Cost a Fresh Stage Session
+
+**What happened:** about 49 integrity disputes in 31 days were filed for test edits the plan itself ordered: the stage description said "file one dispute-integrity" for a known event. Each filing retired the stage session, ran a judge, accepted, and re-queued the stage for a fresh session that did nothing but run the gates again. A further ~22 came from detector noise (reflows, multi-line asserts, moved or split tests, tightened ratchets).
+
+**Why:** the detector compared lines and any change to a ratchet file, so ordinary edits raised events, and an accepted verdict always re-queued. A ritual dispute was the only route to a green stage.
+
+**Prevention:** a plan does not order a dispute. It names the expected event and its reason in the stage description; the final reviewer sees the event in `loom hook reviewer-brief` and judges it. The detector compares statements and cancels moves; the daemon finishes a stage whose accepted integrity or impact-tests dispute left a passing committed tree ([adjudication-lifecycle](../architecture/adjudication-lifecycle.md#retirement-and-fresh-session-boundary)). A new recurring cause of filings belongs in a detector fix or a hook proposal in `concerns`, not a plan instruction.
+
+**Fix:** Decisions 8 to 11 of the fewer-disputes plan; [verification-v2-gates](../architecture/verification-v2-gates.md) and [conventions/dispute-and-adjudication](../conventions/dispute-and-adjudication.md#a-dispute-answers-a-wrong-check-never-a-planned-step).
+
+## A Brief Premise Taken From the Plan Did Not Match the Tree
+
+**What happened:** three briefs in the fewer-disputes plan stated a premise the tree contradicted. (a) A brief said the skill's contracts row listed `test` as required; it already read as an optional hint, and another brief asked for a leaf-rule sentence and a README "30 s" statement that were not in the files. (b) The plan's run-order section and every stage description named the plan under its `PLAN-` file name; the worktree held it under the `IN_PROGRESS-PLAN-` name, so commands naming the `PLAN-` path failed with file-not-found. (c) A stage premise said the installed spawn guard predates `loom hook reviewer-brief` and appends nothing; it appended a second brief, so the reviewer's prompt held two.
+
+**Why:** briefs were written from the plan text, not from the tree the worker would edit, and the plan's file is renamed when the run starts.
+
+**Prevention:** a worker verifies each premise it can check cheaply (`rg` the sentence it is told to edit) and reports a mismatch instead of inventing the edit; a plan names the file it will have at run time (`IN_PROGRESS-`); a stage whose behaviour depends on the installed hooks checks the installed copy.

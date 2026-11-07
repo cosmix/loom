@@ -106,7 +106,7 @@ Where every `loom status` field comes from, the 13 `StageStatus` variants, and w
 
 ## Adjudication Persistence and Stage Resumption [DETAILED]
 
-Durable artifact chain under `.loom/work/disputes/`, materialization into stage state, and what a fresh successor session receives.
+Durable artifact chain under `.loom/work/disputes/`, materialization into stage state, and what a fresh successor session receives. An accepted integrity or impact-tests dispute, or a findings ruling that upholds nothing, holds the stage with no session and the daemon finishes a passing committed tree through `JobKind::VerdictComplete`.
 
 → [Adjudication Persistence and Stage Resumption](architecture/adjudication-lifecycle.md)
 
@@ -238,7 +238,7 @@ Typed value read-path replacing the old stringly `UserConfig::value_of`. See [Ty
 `loom.version: 2` turns on contracts (tests written and frozen by a separate `Contract` session before the
 implementer starts), the zero-test guard, wiring v2 and `reachable`, test integrity, impact-selected tests, and a
 recorded review gate, all read from `stage.plan_version == 2`. Disputes gain five kinds (findings, contract,
-integrity, impact tests, and the loom-filed freeze refusal). Rust contracts are proven compiled under their test name by the scaffold and chain check ([contract-collection](architecture/contract-collection.md)); a refused freeze goes to adjudication, never to the operator. Detail: [contract-phase](architecture/contract-phase.md), [verification-v2-gates](architecture/verification-v2-gates.md),
+integrity, impact tests, and the loom-filed freeze refusal). Rust contracts are proven compiled under their test name by the scaffold and chain check ([contract-collection](architecture/contract-collection.md)); a refused freeze goes to adjudication, never to the operator. The contract writer names each test (and a runner or directory the plan left open) at freeze, and the freeze runs the stage's formatters, lints and `rg` checks on the writer's files, returning a failure that names a writer file to the live writer session ([contract-phase](architecture/contract-phase.md#writer-chosen-contract-details)). The integrity gate compares assertion statements, cancels tests moved to a collected file and raises a ratchet event only when a ledger loosens; `loom hook reviewer-brief` hands every reviewer the stage's events ([hook-system](architecture/hook-system.md#reviewer-brief-hook-loom-hook-reviewer-brief)). `loom plan verify --dry-run` runs every criterion at the base tree, and `consumer_deferred` replaces an invented wiring check. Detail: [contract-phase](architecture/contract-phase.md), [verification-v2-gates](architecture/verification-v2-gates.md),
 [test-runner-adapters](architecture/test-runner-adapters.md), [plan fields and lints, provision, freeze formatter gate](architecture/plan-lifecycle-and-fields.md),
 [adjudication-lifecycle](architecture/adjudication-lifecycle.md).
 
