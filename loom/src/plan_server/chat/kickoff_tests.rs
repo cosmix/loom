@@ -297,55 +297,6 @@ fn clear_only_removes_the_matching_session() {
 }
 
 #[test]
-fn a_rename_is_applied_to_every_view_and_survives_a_later_block() {
-    let mut tracker = KickoffTracker::default();
-    tracker.observe("session", &block(r#"{"name":"agent-one","problem":"A"}"#));
-
-    let renamed = tracker.rename("session", "mine").unwrap();
-    let later = tracker
-        .observe("session", &block(r#"{"name":"agent-two","problem":"B"}"#))
-        .unwrap();
-
-    assert_eq!(renamed.shape.name.as_deref(), Some("mine"));
-    assert_eq!(later.shape.name.as_deref(), Some("mine"));
-    assert_eq!(tracker.view().unwrap().shape.name.as_deref(), Some("mine"));
-    assert_eq!(
-        tracker.raw_shape().unwrap().name.as_deref(),
-        Some("agent-two")
-    );
-}
-
-#[test]
-fn a_repeated_block_is_still_unchanged_after_a_rename() {
-    let mut tracker = KickoffTracker::default();
-    let body = r#"{"name":"agent-one","problem":"A"}"#;
-    tracker.observe("session", &block(body));
-    tracker.rename("session", "mine").unwrap();
-
-    assert_eq!(tracker.observe("session", &block(body)), None);
-}
-
-#[test]
-fn a_rename_needs_a_shape_and_an_unconfirmed_session() {
-    let mut tracker = KickoffTracker::default();
-    assert_eq!(
-        tracker.rename("session", "mine"),
-        Err("Nothing to rename yet")
-    );
-    tracker.observe("session", &block("{}"));
-    assert_eq!(
-        tracker.rename("other", "mine"),
-        Err("Nothing to rename yet")
-    );
-    tracker.confirm("session", "doc/plans/PLAN-mine.md");
-    assert_eq!(
-        tracker.rename("session", "mine"),
-        Err("The name is fixed once the work is confirmed")
-    );
-    assert_eq!(tracker.view().unwrap().shape.name, None);
-}
-
-#[test]
 fn a_seeded_session_shows_its_shape_and_name_before_any_block() {
     let mut tracker = KickoffTracker::default();
     let shape = KickoffShape {
@@ -355,11 +306,11 @@ fn a_seeded_session_shows_its_shape_and_name_before_any_block() {
         ..KickoffShape::default()
     };
 
-    let seeded = tracker.seed("new", shape.clone(), Some("mine".into()));
+    let seeded = tracker.seed("new", shape.clone());
 
     assert_eq!(seeded.session, "new");
-    assert_eq!(seeded.shape.name.as_deref(), Some("mine"));
-    assert_eq!(tracker.raw_shape(), Some(shape.clone()));
+    assert_eq!(seeded.shape, shape);
+    assert_eq!(tracker.view().map(|view| view.shape), Some(shape));
     let repeated = r#"{"size":"plan","name":"agent-name","problem":"P"}"#;
     assert_eq!(tracker.observe("new", &block(repeated)), None);
     tracker.clear("new");

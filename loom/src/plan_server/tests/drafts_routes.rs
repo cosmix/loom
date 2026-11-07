@@ -1,5 +1,5 @@
-//! `GET /api/kickoffs/<session>`: one stored draft with its shape and the user's messages, the
-//! rename applied as the shape's name, and a 404 for an id that names no draft.
+//! `GET /api/kickoffs/<session>`: one stored draft with its shape and the user's messages, and a
+//! 404 for an id that names no draft.
 
 use std::fs;
 
@@ -10,17 +10,16 @@ use crate::planning::runtime::{create_runtime_dir, server_runtime_paths};
 
 const SESSION: &str = "11111111-1111-4111-8111-111111111111";
 
-/// The stored file of [`SESSION`]: renamed, with a shape, and flagged live as a crash leaves it.
+/// The stored file of [`SESSION`]: with a shape, and flagged live as a crash leaves it.
 fn draft_json() -> serde_json::Value {
     json!({
         "session": SESSION,
         "started_at": "2026-11-04T10:47:11Z",
         "updated_at": "2026-11-04T10:50:00Z",
         "messages": ["first idea", "second idea"],
-        "shape": {"size": "plan", "name": "agent-name", "proposal": false,
+        "shape": {"size": "plan", "name": "my-plan", "proposal": false,
             "problem": "A problem", "decisions": ["Use one VM."],
             "questions": [], "sections": []},
-        "name_override": "my-plan",
         "live": true
     })
 }
@@ -35,10 +34,7 @@ fn assert_detail(found: &str) {
         detail["draft"]["live"], false,
         "no session runs after a restart"
     );
-    assert_eq!(
-        detail["shape"]["name"], "my-plan",
-        "the rename is the shape's name"
-    );
+    assert_eq!(detail["shape"]["name"], "my-plan");
     assert_eq!(detail["shape"]["decisions"], json!(["Use one VM."]));
     assert_eq!(detail["messages"], json!(["first idea", "second idea"]));
 }

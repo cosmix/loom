@@ -164,7 +164,7 @@ fn confirmation_arms_one_target_sends_one_message_and_publishes_the_target() {
     let tab = f.connect(&browser());
     let s = ready_proposal(&f, &tab);
     let expected =
-        "The user confirmed the feature \"fresh\". You may now create doc/product/fresh/index.md";
+        "The user confirmed the feature \"fresh\" and asked you to write it now. You may now create doc/product/fresh/index.md";
 
     assert_eq!(
         f.command(&tab, confirm(KickoffSize::Feature, "fresh")),
@@ -239,7 +239,7 @@ fn a_standalone_plan_confirmation_names_its_document_and_brief_bundle() {
         f.host.delivered_to(&s.socket).len() == 2
     });
     assert_eq!(f.host.delivered_to(&s.socket)[1],
-        "The user confirmed the standalone plan \"fresh\". You may now create doc/plans/PLAN-fresh.md and files inside doc/plans/briefs/fresh/");
+        "The user confirmed the standalone plan \"fresh\" and asked you to write it now. You may now create doc/plans/PLAN-fresh.md and files inside doc/plans/briefs/fresh/");
     assert!(scope::load(&s.dir)
         .unwrap()
         .allows_write(std::path::Path::new(

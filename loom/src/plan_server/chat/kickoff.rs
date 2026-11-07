@@ -102,19 +102,15 @@ pub(super) fn within_limits(shape: &KickoffShape) -> bool {
     sanitize(shape.clone()) == *shape
 }
 
-pub(super) const NOTHING_TO_RENAME: &str = "Nothing to rename yet";
-pub(super) const NAME_FIXED: &str = "The name is fixed once the work is confirmed";
-
 /// Latest taking-shape state of the running chat.
 ///
 /// `current` holds the agent's shape exactly as parsed, so `observe` can tell a repeated block
-/// from a new one. The user's rename sits beside it in `name_override` and is applied to every
-/// view handed out, so a later agent block cannot replace it.
+/// from a new one. The user names the work in the conversation and the agent writes the name into
+/// its block, so the name is only ever the agent's.
 #[derive(Default)]
 pub(super) struct KickoffTracker {
     session: Option<String>,
     current: Option<KickoffView>,
-    name_override: Option<String>,
 }
 
 impl KickoffTracker {
@@ -123,7 +119,6 @@ impl KickoffTracker {
         if self.session.as_deref() != Some(session) {
             self.session = Some(session.to_owned());
             self.current = None;
-            self.name_override = None;
         }
         let shape = parse_shape(markdown)?;
         if self
@@ -140,7 +135,7 @@ impl KickoffTracker {
             target,
         };
         self.current = Some(view.clone());
-        Some(self.shown(view))
+        Some(view)
     }
 
     /// Record the repository-relative target for the current session's view.
@@ -150,42 +145,11 @@ impl KickoffTracker {
             .as_mut()
             .filter(|view| view.session == session)?;
         view.target = Some(target.to_owned());
-        let view = view.clone();
-        Some(self.shown(view))
+        Some(view.clone())
     }
 
-    /// The work of `session` can be renamed: not before a shape exists, and not once it is
-    /// confirmed (the write grant was armed for the old name).
-    pub(super) fn renamable(&self, session: &str) -> Result<KickoffView, &'static str> {
-        let view = self
-            .current
-            .clone()
-            .filter(|view| view.session == session)
-            .ok_or(NOTHING_TO_RENAME)?;
-        match view.target {
-            Some(_) => Err(NAME_FIXED),
-            None => Ok(view),
-        }
-    }
-
-    /// Replace the work's name for `session`, under the rules of [`Self::renamable`].
-    pub(super) fn rename(
-        &mut self,
-        session: &str,
-        name: &str,
-    ) -> Result<KickoffView, &'static str> {
-        let view = self.renamable(session)?;
-        self.name_override = Some(name.to_owned());
-        Ok(self.shown(view))
-    }
-
-    /// Start `session` from an earlier draft's shape and name.
-    pub(super) fn seed(
-        &mut self,
-        session: &str,
-        shape: KickoffShape,
-        name_override: Option<String>,
-    ) -> KickoffView {
+    /// Start `session` from an earlier draft's shape.
+    pub(super) fn seed(&mut self, session: &str, shape: KickoffShape) -> KickoffView {
         let view = KickoffView {
             session: session.to_owned(),
             shape,
@@ -193,32 +157,18 @@ impl KickoffTracker {
         };
         self.session = Some(session.to_owned());
         self.current = Some(view.clone());
-        self.name_override = name_override;
-        self.shown(view)
+        view
     }
 
     pub(super) fn view(&self) -> Option<KickoffView> {
-        self.current.clone().map(|view| self.shown(view))
-    }
-
-    /// The agent's last shape, without the user's rename.
-    pub(super) fn raw_shape(&self) -> Option<KickoffShape> {
-        self.current.as_ref().map(|view| view.shape.clone())
+        self.current.clone()
     }
 
     pub(super) fn clear(&mut self, session: &str) {
         if self.session.as_deref() == Some(session) {
             self.session = None;
             self.current = None;
-            self.name_override = None;
         }
-    }
-
-    fn shown(&self, mut view: KickoffView) -> KickoffView {
-        if let Some(name) = &self.name_override {
-            view.shape.name = Some(name.clone());
-        }
-        view
     }
 }
 

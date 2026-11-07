@@ -69,15 +69,10 @@ pub(super) fn observe_kickoff(
             .chat_session_id()
             .filter(|id| is_kickoff(ctx, state, id))
         {
-            let (view, raw) = {
-                let mut tracker = lock(&state.kickoff);
-                (tracker.observe(&id, markdown), tracker.raw_shape())
-            };
+            let view = lock(&state.kickoff).observe(&id, markdown);
             if let Some(view) = view {
                 // The draft first: a browser that hears the shape finds it stored.
-                if let Some(shape) = raw {
-                    draft_cmd::on_shape(ctx, state, &id, shape);
-                }
+                draft_cmd::on_shape(ctx, state, &id, view.shape.clone());
                 ctx.hub().broadcast(&PlanMessage::Kickoff(Box::new(view)));
             }
         }

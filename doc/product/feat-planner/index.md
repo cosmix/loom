@@ -279,7 +279,7 @@ Each becomes `doc/product/<feature>/section_NN.md`. Order is a first proposal fo
   stay within the target and a standalone plan's brief bundle; `loom knowledge` and `loom plan summary`
   commands other than read-only `status` still ask the holder. Writing a vision opens `/f/<name>`.
   A kickoff persists as a draft that outlives its session and a server restart: `/new` always
-  starts a fresh one, Home lists the rest as "Unfinished", and a draft can be renamed, set aside,
+  starts a fresh one, Home lists the rest as "Unfinished", and a draft can be set aside,
   continued (a new kickoff carrying its name, size, shape and attachments) or discarded.
 - **Draft all (09; D10).** One authoring session leads an agent team of up to five to draft all
   sections or plans. The drafters coordinate so the documents stay consistent.

@@ -1,4 +1,4 @@
-//! The four draft commands: what each accepts and what each refuses.
+//! The draft commands: what each accepts and what each refuses.
 
 use std::fs;
 
@@ -8,51 +8,17 @@ use super::super::drafts;
 use super::super::tests::{browser, ok_result, wait_for};
 use super::super::ChatState;
 use super::drafts::{
-    continue_cmd, discard_cmd, draft_file, idle, rename_cmd, set_aside_cmd, start_cmd,
-    start_kickoff, stored, working, write_draft, OLD,
+    continue_cmd, discard_cmd, draft_file, set_aside_cmd, start_cmd, start_kickoff, stored,
+    working, write_draft, OLD,
 };
-use super::kickoff::{block, confirm};
+use super::kickoff::block;
 use super::{fixture, record_guidance, refused};
 use crate::plan_server::authoring::Refusal;
-use crate::plan_session::scope::{ArmRefusal, KickoffSize};
 
 const UNKNOWN: &str = "There is no such unfinished kickoff";
 
 #[test]
-fn rename_refuses_a_bad_name_a_missing_shape_and_a_confirmed_kickoff() {
-    let f = fixture(false);
-    let tab = f.connect(&browser());
-    let s = start_kickoff(&f, &tab, start_cmd("kickoff", None, Vec::new()));
-    working(&f, &s);
-
-    assert_eq!(
-        f.command(&tab, rename_cmd("mine")),
-        refused("Nothing to rename yet")
-    );
-    block(
-        &f,
-        &s,
-        &tab,
-        json!({"size": "feature", "name": "fresh", "problem": "P"}),
-    );
-    idle(&f, &s);
-    let invalid = ArmRefusal::InvalidName("Bad Name".into());
-    assert_eq!(f.command(&tab, rename_cmd("Bad Name")), refused(invalid));
-    assert_eq!(f.command(&tab, rename_cmd("mine")), ok_result());
-    assert_eq!(
-        f.command(&tab, confirm(KickoffSize::Feature, "mine")),
-        ok_result()
-    );
-
-    assert_eq!(
-        f.command(&tab, rename_cmd("other")),
-        refused("The name is fixed once the work is confirmed")
-    );
-    assert_eq!(super::drafts::stored(&f, &s.id)["name_override"], "mine");
-}
-
-#[test]
-fn rename_is_refused_for_a_browser_that_does_not_hold_authoring() {
+fn discard_is_refused_for_a_browser_that_does_not_hold_authoring() {
     let f = fixture(false);
     let holder = f.connect(&browser());
     let observer = f.connect(&browser());
@@ -63,12 +29,8 @@ fn rename_is_refused_for_a_browser_that_does_not_hold_authoring() {
         holder: holder.conn.public_id.clone(),
     });
 
-    assert_eq!(f.command(&observer, rename_cmd("mine")), refused(&error));
     assert_eq!(f.command(&observer, discard_cmd(&s.id)), refused(&error));
-    assert_eq!(
-        super::drafts::stored(&f, &s.id)["name_override"],
-        json!(null)
-    );
+    assert!(draft_file(&f, &s.id).exists());
 }
 
 #[test]
@@ -149,7 +111,7 @@ fn a_full_draft_continues_within_the_delivery_limit() {
 }
 
 #[test]
-fn an_unrenamed_draft_continues_without_pinning_the_agents_name() {
+fn a_continued_draft_follows_the_agents_later_name() {
     let f = fixture(false);
     let tab = f.connect(&browser());
     write_draft(&f, OLD, json!({}));
@@ -157,13 +119,12 @@ fn an_unrenamed_draft_continues_without_pinning_the_agents_name() {
     assert_eq!(f.command(&tab, continue_cmd(OLD)), ok_result());
 
     let id = wait_for("the continuation", || f.bridge.chat_session_id());
-    assert!(stored(&f, &id)["name_override"].is_null());
     let spec = f.launched(&id);
     working(&f, &spec);
     let later = json!({"size": "feature", "name": "agent-two", "problem": "B"});
     let frame = block(&f, &spec, &tab, later);
     assert_eq!(frame["shape"]["name"], "agent-two", "the broadcast view");
-    assert!(stored(&f, &id)["name_override"].is_null());
+    assert_eq!(stored(&f, &id)["shape"]["name"], "agent-two");
 }
 
 #[test]

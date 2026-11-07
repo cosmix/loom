@@ -5,7 +5,9 @@ description: Load when a planning session starts new work, settles its size and 
 
 # Start new work
 
-Decide the size of the work with the user before writing:
+The user chose the size of the work before the conversation started: this skill came from
+the feature offer or from the standalone-plan offer. Work in that size and do not ask them to
+choose again:
 
 - A feature has a vision, product sections, a metaplan and plans, under
   `doc/product/<name>/` and `doc/plans/<name>/`.
@@ -14,8 +16,8 @@ Decide the size of the work with the user before writing:
   and no metaplan.
 
 Use lowercase kebab-case names for features and plan slugs. Do not use `archive`,
-`briefs`, `plans`, or `overview`. A standalone-plan opening suggests small work;
-if the conversation grows into a feature, say so and let the user decide.
+`briefs`, `plans`, or `overview`. If the work looks bigger than a standalone plan, or smaller
+than a feature, say so in prose; the app has no control to change the size.
 
 ## Discuss the work
 
@@ -32,9 +34,9 @@ section as settled, being worded or open as the discussion develops.
 
 ## When the user renames the work
 
-The user can rename the work in the app. It arrives as a user message, "I renamed this work to
-`<name>`. Use that name from now on." Use that name in the `name` field of every later
-`loom-kickoff` block and in the confirmation, even when you would have chosen another.
+The user names or renames the work in the conversation. Put the new name in the `name` field of
+your next `loom-kickoff` block and keep it in every later block, even when you would have chosen
+another. The app only displays the name; it has no rename control.
 
 ## When a draft continues
 
@@ -47,7 +49,8 @@ draft, carrying the same name.
 
 ## Ask before writing
 
-Nothing is written under doc/ until the user confirms the size and the name.
+Nothing is written under doc/ until the user confirms the work by pressing the app's Write
+button.
 The planning hook refuses every write under `doc/` before that confirmation.
 Afterwards it allows exactly one target:
 
@@ -59,15 +62,14 @@ Never try other paths or try to work around a refusal. The target must be new;
 an existing name is refused. These limits also apply when another skill would
 normally write related documents, knowledge or summaries.
 
-When ready, ask the user to confirm the size and name. Emit the proposal form
-below with `proposal: true`, `size`, `name` and, for a feature, its proposed
-`sections`. Say in prose that they can pick Use this, Rename, Change sections
-or Make it standalone for a feature; for a plan, offer Use this, Rename or
-Make it a feature. Keep the proposal current when the user changes it.
-
-The user's confirmation causes the app to send a message naming the size,
-the name and the exact path the session may create. Wait for that message;
-agreement in the conversation alone is not a write grant. Only then:
+When ready, ask in prose whether the name is right and, for a feature, whether
+the sections are. Emit the proposal form below with `proposal: true`, `size`,
+`name` and, for a feature, its proposed `sections`. The user can rename the work
+or change the sections in the conversation; keep the proposal current when they
+do. When it is settled, the user presses Write the vision (a feature) or Write
+the plan (a standalone plan). That click causes the app to send a message naming
+the size, the name and the exact path the session may create. Wait for that
+message; agreement in the conversation alone is not a write grant. Only then:
 
 - For a feature, load `loom-plan:vision` and write the confirmed
   `doc/product/<name>/index.md` with the settled content and open questions.
@@ -96,9 +98,9 @@ state, rather than only the fields that changed; do not put prose after it.
 - `sections`: features only; an array of objects with only `title` (a string)
   and `state` (`"settled"`, `"wording"` or `"open"`). Omit it for a plan.
 
-For example, after discussing a shared-notes feature, ask: “Use this feature
-name and section list? You can pick Use this, Rename, Change sections or
-Make it standalone.” End that reply with:
+For example, after discussing a shared-notes feature, ask: “Is `shared-notes` the right name,
+and do these sections look right? Tell me what to change, or press Write the vision when it
+is settled.” End that reply with:
 
 ```loom-kickoff
 {

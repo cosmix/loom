@@ -52,11 +52,6 @@ pub enum ChatCommand {
         size: KickoffSize,
         name: String,
     },
-    /// Replace the agent's name for the running kickoff's work.
-    RenameKickoff {
-        client_id: Option<String>,
-        name: String,
-    },
     /// End a running kickoff and keep its draft.
     SetAsideKickoff {
         client_id: Option<String>,

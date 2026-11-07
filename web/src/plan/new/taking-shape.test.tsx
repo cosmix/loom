@@ -1,12 +1,8 @@
-import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
-import { Provider } from "jotai";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { cleanup, render, screen, within } from "@testing-library/react";
+import { afterEach, describe, expect, it } from "vitest";
 
 import type { KickoffShape } from "@/plan/api/schema-kickoff";
-import type { connectPlanSocket } from "@/plan/api/socket";
-import { storeFor } from "@/plan/chat/panel-test-kit";
 import { TakingShape } from "@/plan/new/taking-shape";
-import { planSocketAtom } from "@/plan/state/atoms";
 
 afterEach(cleanup);
 
@@ -36,7 +32,6 @@ describe("TakingShape", () => {
         "Nothing yet. The shape appears here as the conversation settles it.",
       ),
     ).toBeTruthy();
-    expect(within(panel).getByText("Not decided yet")).toBeTruthy();
     expect(within(panel).getByText("Not named yet")).toBeTruthy();
     expect(within(panel).getByText("Not stated yet")).toBeTruthy();
     expect(within(panel).getByText("Nothing settled yet")).toBeTruthy();
@@ -49,12 +44,6 @@ describe("TakingShape", () => {
   it("shows a full feature and all three section states with distinct icons", () => {
     render(<TakingShape shape={featureShape} target={null} />);
 
-    expect(screen.getByRole("button", { name: "Feature" }).getAttribute("aria-pressed")).toBe(
-      "true",
-    );
-    expect(
-      screen.getByRole("button", { name: "Standalone plan" }).getAttribute("aria-pressed"),
-    ).toBe("false");
     expect(screen.getByText("planner-search").parentElement?.classList.contains("font-mono")).toBe(
       true,
     );
@@ -84,9 +73,6 @@ describe("TakingShape", () => {
   it("hides proposed sections for a standalone plan", () => {
     render(<TakingShape shape={{ ...featureShape, size: "plan" }} target={null} />);
 
-    expect(
-      screen.getByRole("button", { name: "Standalone plan" }).getAttribute("aria-pressed"),
-    ).toBe("true");
     expect(screen.getByRole("button", { name: "Write the plan" })).toBeTruthy();
     expect(screen.queryByRole("heading", { name: "Sections" })).toBeNull();
     expect(screen.queryByText("Search scope")).toBeNull();
@@ -102,18 +88,18 @@ describe("TakingShape", () => {
     expect(target.closest("code")).not.toBeNull();
   });
 
-  it("drops the path from the notice and blocks writing while no name is settled", () => {
+  it("drops the path from the notice and blocks writing for a reader without authoring", () => {
     render(<TakingShape shape={featureShape} target={null} />);
 
     expect(screen.getByText(/Nothing is written yet/).textContent).toBe(
-      "Nothing is written yet. 'Write the vision' creates the vision with the open questions in it.",
+      "Nothing is written yet. 'Write the vision' confirms the name and creates the vision with the open questions in it.",
     );
     expect(
       screen.getByRole("button", { name: "Write the vision" }).getAttribute("aria-disabled"),
     ).toBe("true");
   });
 
-  it("keeps the Size row the first section and renders a proposal slot above the rows", () => {
+  it("starts at the Name row and renders a proposal slot above the rows", () => {
     render(
       <TakingShape shape={featureShape} target={null}>
         <div role="region" aria-label="Proposal" />
@@ -121,8 +107,9 @@ describe("TakingShape", () => {
     );
 
     const panel = screen.getByRole("complementary", { name: "Taking shape" });
-    expect(panel.querySelector(":scope > section:nth-of-type(1) h3")?.textContent).toBe("Size");
-    expect(panel.querySelector(":scope > section:nth-of-type(6) h3")?.textContent).toBe("Sections");
+    expect(panel.querySelector(":scope > section:nth-of-type(1) h3")?.textContent).toBe("Name");
+    expect(panel.querySelector(":scope > section:nth-of-type(5) h3")?.textContent).toBe("Sections");
+    expect(within(panel).queryByRole("heading", { name: "Size" })).toBeNull();
     expect(
       panel
         .querySelector('[aria-label="Proposal"]')!
@@ -144,7 +131,6 @@ describe("TakingShape", () => {
 
     render(<TakingShape shape={shape} target={null} />);
 
-    expect(screen.getByText("Not decided yet")).toBeTruthy();
     expect(screen.getByText("Not named yet")).toBeTruthy();
     expect(screen.getByText("Not stated yet")).toBeTruthy();
     expect(screen.getByText("Nothing settled yet")).toBeTruthy();
@@ -186,83 +172,27 @@ describe("TakingShape", () => {
 });
 
 describe("the Name row", () => {
-  function mountRename(shape: KickoffShape | null, target: string | null = null) {
-    const store = storeFor();
-    const listeners: Array<(message: unknown) => void> = [];
-    const send = vi.fn((_message: unknown) => true);
-    const socket = {
-      send,
-      subscribe: (type: string, handler: (message: unknown) => void) => {
-        if (type === "chat") listeners.push(handler);
-        return () => {};
-      },
-      onResync: () => () => {},
-      dispose: () => {},
-    };
-    store.set(planSocketAtom, socket as unknown as ReturnType<typeof connectPlanSocket>);
-    render(
-      <Provider store={store}>
-        <TakingShape shape={shape} target={target} />
-      </Provider>,
-    );
-    const answer = async (error: string | null) => {
-      const sent = send.mock.calls.at(-1)?.[0] as { client_id: string };
-      const frame = { type: "chat", frame: "result", client_id: sent.client_id };
-      const result = { ...frame, ok: !error, error };
-      await act(async () => listeners.forEach((handler) => handler(result)));
-    };
-    return { send, answer };
-  }
+  it("only displays the name: nothing to rename, name or change size with", () => {
+    for (const [shape, target] of [
+      [null, null],
+      [featureShape, null],
+      [{ ...featureShape, name: null }, null],
+      [featureShape, "doc/product/planner-search/index.md"],
+    ] as const) {
+      render(<TakingShape shape={shape} target={target} />);
+      const panel = within(screen.getByRole("complementary", { name: "Taking shape" }));
+      expect(panel.queryByRole("button", { name: /^(Rename|Name it|Use this)$/ })).toBeNull();
+      expect(panel.queryByRole("button", { name: /^(Feature|Standalone plan)$/ })).toBeNull();
+      expect(panel.queryByRole("textbox")).toBeNull();
+      cleanup();
+    }
+  });
 
-  it("offers Rename once a shape exists and Name it while the name is empty", () => {
-    mountRename(featureShape);
-    expect(screen.getByRole("button", { name: "Rename" })).toBeTruthy();
+  it("shows the name as a chip, and a placeholder while there is none", () => {
+    render(<TakingShape shape={featureShape} target={null} />);
+    expect(screen.getByText("planner-search").closest(".kickoff-chip")).not.toBeNull();
     cleanup();
-    mountRename({ ...featureShape, name: null });
-    expect(screen.getByRole("button", { name: "Name it" })).toBeTruthy();
-  });
-
-  it("offers nothing before any shape and nothing once the work is confirmed", () => {
-    mountRename(null);
-    expect(screen.queryByRole("button", { name: /^(Rename|Name it)$/ })).toBeNull();
-    cleanup();
-    mountRename(featureShape, "doc/product/planner-search/index.md");
-    expect(screen.queryByRole("button", { name: /^(Rename|Name it)$/ })).toBeNull();
-  });
-
-  it("sends rename_kickoff for a valid name and closes the field when it is accepted", async () => {
-    const { send, answer } = mountRename(featureShape);
-    fireEvent.click(screen.getByRole("button", { name: "Rename" }));
-    fireEvent.change(screen.getByRole("textbox"), { target: { value: "better-name" } });
-    fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
-    expect(send).toHaveBeenCalledExactlyOnceWith(
-      expect.objectContaining({ command: "rename_kickoff", name: "better-name" }),
-    );
-    await answer(null);
-    expect(screen.queryByRole("textbox")).toBeNull();
-  });
-
-  it("refuses an invalid name and cancels on Escape", () => {
-    const { send } = mountRename(featureShape);
-    fireEvent.click(screen.getByRole("button", { name: "Rename" }));
-    fireEvent.change(screen.getByRole("textbox"), { target: { value: "Not A Name" } });
-    expect(screen.getByRole("alert")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
-    expect(send).not.toHaveBeenCalled();
-    fireEvent.keyDown(screen.getByRole("textbox"), { key: "Escape" });
-    expect(screen.queryByRole("textbox")).toBeNull();
-    expect(screen.getByRole("button", { name: "Rename" })).toBeTruthy();
-  });
-
-  it("keeps the field open and shows the server's refusal", async () => {
-    const { answer } = mountRename(featureShape);
-    fireEvent.click(screen.getByRole("button", { name: "Rename" }));
-    fireEvent.change(screen.getByRole("textbox"), { target: { value: "better-name" } });
-    fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
-    await answer("The name is fixed once the work is confirmed");
-    expect(screen.getByRole("status").textContent).toBe(
-      "The name is fixed once the work is confirmed",
-    );
-    expect(screen.getByRole("textbox")).toBeTruthy();
+    render(<TakingShape shape={{ ...featureShape, name: null }} target={null} />);
+    expect(screen.getByText("Not named yet")).toBeTruthy();
   });
 });

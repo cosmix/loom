@@ -233,7 +233,6 @@ fn chat_command_variants_in_fixtures() {
             ChatCommand::Start { .. }
             | ChatCommand::Send { .. }
             | ChatCommand::ConfirmKickoff { .. }
-            | ChatCommand::RenameKickoff { .. }
             | ChatCommand::SetAsideKickoff { .. }
             | ChatCommand::ContinueKickoff { .. }
             | ChatCommand::DiscardKickoff { .. }
@@ -249,7 +248,6 @@ fn chat_command_variants_in_fixtures() {
         &[
             "start",
             "send",
-            "rename_kickoff",
             "set_aside_kickoff",
             "continue_kickoff",
             "discard_kickoff",

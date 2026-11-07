@@ -167,26 +167,22 @@ export const FEATURES_SCENES: readonly PlannerHelpScene[] = [
     notes: [
       {
         target: 'aside[aria-label="Taking shape"] > section:nth-of-type(1)',
-        text: "Size shows whether the conversation is shaping a feature or a standalone plan.",
-      },
-      {
-        target: 'aside[aria-label="Taking shape"] > section:nth-of-type(2)',
         text: "Name shows the proposed name for the feature.",
       },
       {
-        target: 'aside[aria-label="Taking shape"] > section:nth-of-type(3)',
+        target: 'aside[aria-label="Taking shape"] > section:nth-of-type(2)',
         text: "Problem summarizes the need that the feature addresses.",
       },
       {
-        target: 'aside[aria-label="Taking shape"] > section:nth-of-type(4)',
+        target: 'aside[aria-label="Taking shape"] > section:nth-of-type(3)',
         text: "Settled decisions lists the choices already agreed in the conversation.",
       },
       {
-        target: 'aside[aria-label="Taking shape"] > section:nth-of-type(5)',
+        target: 'aside[aria-label="Taking shape"] > section:nth-of-type(4)',
         text: "Open questions lists what still needs to be decided.",
       },
       {
-        target: 'aside[aria-label="Taking shape"] > section:nth-of-type(6)',
+        target: 'aside[aria-label="Taking shape"] > section:nth-of-type(5)',
         text: "Sections shows the proposed sections and whether each is settled, being worded, or open.",
       },
     ],

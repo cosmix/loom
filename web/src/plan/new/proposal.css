@@ -1,5 +1,6 @@
 /* The proposal block above the shape rows in Taking shape: hairlines above and below, no box, no
-   tint. Its "Use this" is the screen's primary until a target is settled (write-kickoff.tsx). */
+   tint. The Write button is the screen's primary once the conversation has named the work
+   (write-kickoff.tsx). */
 
 [data-loom-plan] .kickoff-proposal {
   display: grid;
@@ -38,10 +39,4 @@
   flex-wrap: wrap;
   align-items: flex-start;
   gap: var(--space-2);
-}
-
-[data-loom-plan] .kickoff-proposal__form {
-  display: grid;
-  gap: var(--space-2);
-  font-size: var(--type-ui);
 }

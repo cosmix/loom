@@ -212,10 +212,6 @@ export function answerPermission(
   return sendChatCommand(store, { command: "permission", request_id: requestId, allow, note });
 }
 
-export function renameKickoff(store: Store, name: string) {
-  return sendChatCommand(store, { command: "rename_kickoff", name });
-}
-
 export function setAsideKickoff(store: Store, session: string) {
   return sendChatCommand(store, { command: "set_aside_kickoff", session });
 }

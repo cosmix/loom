@@ -28,7 +28,6 @@ use crate::plan_server::wire::kickoff::{KickoffDraftView, KickoffShape};
 use crate::plan_server::wire::message::PlanMessage;
 use crate::plan_session::attachments::{AttachmentInput, MAX_ATTACHMENTS};
 use crate::plan_session::bridge::Bridge;
-use crate::planning::kinds::is_feature_name;
 use crate::planning::paths::check_relpath_syntax;
 
 /// The directory of the draft files, inside the runtime directory.
@@ -60,14 +59,12 @@ pub(super) struct Draft {
     /// The texts the user typed, oldest first.
     #[serde(default)]
     pub(super) messages: Vec<String>,
-    /// The agent's last shape, without the user's rename.
+    /// The agent's last shape.
     #[serde(default)]
     pub(super) shape: Option<KickoffShape>,
     /// The start command's attachments, as the browser sent them.
     #[serde(default)]
     pub(super) attachments: Vec<AttachmentInput>,
-    #[serde(default)]
-    pub(super) name_override: Option<String>,
     /// The confirmed document's repository path.
     #[serde(default)]
     pub(super) target: Option<String>,
@@ -81,7 +78,6 @@ pub(super) struct Seed {
     pub(super) messages: Vec<String>,
     pub(super) attachments: Vec<AttachmentInput>,
     pub(super) shape: Option<KickoffShape>,
-    pub(super) name_override: Option<String>,
 }
 
 /// A lowercase hyphenated uuid: the id becomes a file name.
@@ -103,7 +99,6 @@ impl Draft {
             messages: Vec::new(),
             shape: seed.shape,
             attachments: seed.attachments,
-            name_override: seed.name_override,
             target: None,
             live: true,
         };
@@ -126,17 +121,9 @@ impl Draft {
         }
     }
 
-    /// The user's rename, else the agent's name.
+    /// The agent's name for the work.
     pub(super) fn name(&self) -> Option<&str> {
-        let proposed = self.shape.as_ref().and_then(|shape| shape.name.as_deref());
-        self.name_override.as_deref().or(proposed)
-    }
-
-    /// The agent's shape with the rename applied as its name.
-    pub(super) fn effective_shape(&self) -> Option<KickoffShape> {
-        let mut shape = self.shape.clone()?;
-        shape.name = self.name().map(str::to_owned);
-        Some(shape)
+        self.shape.as_ref().and_then(|shape| shape.name.as_deref())
     }
 
     fn view(&self, live: bool) -> KickoffDraftView {
@@ -164,7 +151,6 @@ impl Draft {
             .shape
             .as_ref()
             .is_none_or(super::kickoff::within_limits);
-        let name_ok = self.name_override.as_deref().is_none_or(is_feature_name);
         let target_ok = self
             .target
             .as_deref()
@@ -178,7 +164,6 @@ impl Draft {
             && parse_time(&self.started_at).is_some()
             && parse_time(&self.updated_at).is_some()
             && shape_ok
-            && name_ok
             && target_ok
     }
 }
