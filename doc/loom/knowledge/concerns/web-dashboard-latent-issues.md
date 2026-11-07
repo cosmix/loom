@@ -3,7 +3,7 @@
 >
 >
 >
-> Themes
+> UI
 
 1. **Mutex poisoning cascade.** `loom/src/commands/status/web/broadcast.rs` calls
    `.expect()` on its lock in several places; a panic inside any of those critical sections

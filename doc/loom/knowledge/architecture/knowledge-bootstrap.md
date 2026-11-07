@@ -1,6 +1,6 @@
 # Knowledge Bootstrap
 
-> Digest
+> KB
 
 ## Deterministic Phase
 
