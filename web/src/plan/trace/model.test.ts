@@ -8,7 +8,15 @@ import {
   type TraceView,
 } from "@/plan/api/schema-trace";
 
-import { bundleLinks, docOfPath, frontierHead, impactFor, shortSlug, shownSettle } from "./model";
+import {
+  bundleLinks,
+  docOfPath,
+  frontierHead,
+  impactFor,
+  shortSlug,
+  shownSettle,
+  withoutNumber,
+} from "./model";
 
 const VISION = "doc/product/demo/index.md";
 const S01 = "doc/product/demo/section_01.md";
@@ -34,6 +42,20 @@ function gap(
 ): Gap {
   return { kind, node: { path, anchor }, count };
 }
+
+describe("withoutNumber", () => {
+  it("drops the number a title opens with when it is the shown one", () => {
+    expect(withoutNumber("04 — Summary Engine", "04")).toBe("Summary Engine");
+    expect(withoutNumber("6. File Mode", 6)).toBe("File Mode");
+    expect(withoutNumber("06: The store", "06")).toBe("The store");
+  });
+
+  it("keeps a title that opens with another number or with none", () => {
+    expect(withoutNumber("04 — Summary Engine", "05")).toBe("04 — Summary Engine");
+    expect(withoutNumber("Summary Engine", "04")).toBe("Summary Engine");
+    expect(withoutNumber("2026 roadmap", "04")).toBe("2026 roadmap");
+  });
+});
 
 describe("shortSlug", () => {
   it("strips the feature prefix and leaves any other slug whole", () => {

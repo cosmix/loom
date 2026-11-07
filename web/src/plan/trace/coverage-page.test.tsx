@@ -56,30 +56,26 @@ const toggle = (name: RegExp) => toggles().find((button) => name.test(button.tex
 describe("the coverage page tiles", () => {
   it("count the headings and filter the rows to the one picked", async () => {
     await drawn(uncoveredTrace());
-    const all = await screen.findByRole("button", { name: "All headings" });
-    const tiles = ["All headings", "Not covered", "Changed since covered", "With open findings"];
-    expect(
-      screen.getAllByRole("button", { name: new RegExp(`^(${tiles.join("|")})$`) }),
-    ).toHaveLength(4);
-    // Five headings, one of them uncovered, one with an open finding, none changed.
-    const count = (name: string) =>
-      document.getElementById(
-        screen.getByRole("button", { name }).getAttribute("aria-describedby")!,
-      )!.textContent;
-    expect(tiles.map(count)).toEqual(["5", "1", "0", "1"]);
+    // Each tile is named by its visible count and word. Five headings, one of them uncovered, one
+    // with an open finding, none changed.
+    const all = await screen.findByRole("button", { name: "5 All headings" });
+    const tiles = ["1 Not covered", "0 Changed since covered", "1 With open findings"];
+    for (const name of tiles) expect(screen.getByRole("button", { name })).toBeTruthy();
     expect(all.getAttribute("aria-pressed")).toBe("true");
     expect(toggles()).toHaveLength(5);
 
-    fireEvent.click(screen.getByRole("button", { name: "Not covered" }));
+    fireEvent.click(screen.getByRole("button", { name: "1 Not covered" }));
     expect(all.getAttribute("aria-pressed")).toBe("false");
     expect(toggles().map((button) => button.textContent)).toEqual(["Five"]);
 
-    fireEvent.click(screen.getByRole("button", { name: "With open findings" }));
+    fireEvent.click(screen.getByRole("button", { name: "1 With open findings" }));
     expect(toggles().map((button) => button.textContent)).toEqual(["Two"]);
 
-    fireEvent.click(screen.getByRole("button", { name: "Changed since covered" }));
+    fireEvent.click(screen.getByRole("button", { name: "0 Changed since covered" }));
     expect(toggles()).toEqual([]);
-    expect(screen.getByText("No heading matches this filter.")).toBeTruthy();
+    // In a live region, so the emptied filter is announced.
+    const empty = screen.getByText("No heading matches this filter.");
+    expect(empty.closest('[role="status"]')).toBeTruthy();
   });
 });
 
@@ -148,7 +144,7 @@ describe("the coverage page rows", () => {
 
   it("leave the arrow keys alone when the focus is not on a row toggle", async () => {
     await drawn();
-    const tile = screen.getByRole("button", { name: "Not covered" });
+    const tile = screen.getByRole("button", { name: /^\d+ Not covered$/ });
     tile.focus();
     expect(fireEvent.keyDown(tile, { key: "ArrowDown" })).toBe(true);
     expect(document.activeElement).toBe(tile);

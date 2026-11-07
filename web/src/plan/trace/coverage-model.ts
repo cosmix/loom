@@ -9,7 +9,7 @@ import type {
 import { fileName } from "@/plan/concept/passages";
 import { featureSourceHref } from "@/plan/feature/source-href";
 import { featureHref } from "@/plan/feature/use-feature";
-import { docOfPath, shortSlug, shownSettle, summaryHref } from "@/plan/trace/model";
+import { docOfPath, shortSlug, shownSettle, summaryHref, withoutNumber } from "@/plan/trace/model";
 
 // The coverage page as data: the spec grouped by section, one row per heading with the plans and
 // stages that cover it, the four counts that double as filters. Pure reads of the trace;
@@ -101,6 +101,10 @@ function isDone(doc: TraceDoc | undefined): boolean {
   return doc?.progress === "done" || doc?.progress === "built";
 }
 
+function stageId(anchor: string | null): string | null {
+  return anchor === null ? null : anchor.replace(/^stage:/, "");
+}
+
 function chainOf(
   trace: TraceView,
   feature: string,
@@ -112,7 +116,8 @@ function chainOf(
       : trace.entries.find((candidate) => candidate.plan === cover.path);
   const planPath = cover.kind === "entry" ? (entry?.plan ?? null) : cover.path;
   const doc = planPath === null ? undefined : docOfPath(trace, planPath);
-  const stage = cover.kind === "stage" ? (cover.stage ?? cover.anchor) : null;
+  // A stage cover without its name falls back to the anchor, which already reads `stage:<id>`.
+  const stage = cover.kind === "stage" ? (cover.stage ?? stageId(cover.anchor)) : null;
   const slug = doc?.slug ?? cover.slug ?? entry?.slug ?? fileName(planPath ?? cover.path);
   return {
     entry: entry?.title ?? null,
@@ -182,7 +187,7 @@ function sectionOf(trace: TraceView, feature: string, doc: TraceDoc): CoverageSe
   return {
     id: fileName(doc.path).replace(/\.md$/, ""),
     number: doc.number === null ? null : String(doc.number).padStart(2, "0"),
-    title: doc.title,
+    title: doc.number === null ? doc.title : withoutNumber(doc.title, doc.number),
     path: doc.path,
     doc,
     settle: shownSettle(doc),

@@ -1,0 +1,149 @@
+/*
+ * The trace's own parts of a feature document's heading, on the summary and the source route: the
+ * scope standfirst, the source route's head and the settle control. The summary page's layout of
+ * the heading is trace-heading.css, which imports this sheet; what the control opens is
+ * trace-settle.css. Tokens and scales only.
+ */
+
+/* ── Scope standfirst ──────────────────────────────────────────────────────── */
+
+/* The stub's words in the reading face, a step over the body, ending in a small muted link to
+   their place; an amber note under them when the stub changed since settling. */
+[data-loom-plan] .trace-standfirst {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+[data-loom-plan] .trace-scope {
+  margin: 0;
+  color: var(--foreground);
+  font-family: var(--font-reading);
+  font-size: calc(var(--reading-size) * 1.1);
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+  text-wrap: pretty;
+}
+
+[data-loom-plan] .trace-scope__from {
+  margin-inline-start: var(--space-1);
+  border-radius: 3px;
+  color: var(--muted-foreground);
+  font-family: var(--font-sans);
+  font-size: var(--type-ui);
+  font-weight: 500;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+[data-loom-plan] .trace-scope__from:hover {
+  color: var(--foreground);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+[data-loom-plan] .trace-scope__note {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-2);
+  margin: 0;
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  font-size: var(--type-body);
+  line-height: var(--leading-ui);
+}
+
+/* See what changed inside a sentence: a link in the line's colour, underlined in a quiet edge. */
+[data-loom-plan] a.trace-changes:not(.plan-button) {
+  border-radius: 3px;
+  color: inherit;
+  font-weight: 500;
+  text-decoration: underline;
+  text-decoration-color: var(--border);
+  text-underline-offset: 3px;
+}
+
+[data-loom-plan] a.trace-changes:not(.plan-button):hover {
+  text-decoration-color: currentColor;
+}
+
+[data-loom-plan] .trace-scope__from:focus-visible,
+[data-loom-plan] a.trace-changes:not(.plan-button):focus-visible,
+[data-loom-plan] .trace-confirm__where a:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+/* On the source route the standfirst, the settle control and a plan's briefs sit over the reading
+   column's heading, on its inset. The box is gone when none renders. */
+[data-loom-plan] .trace-source-head {
+  display: grid;
+  gap: var(--space-4);
+  padding: var(--space-5) var(--space-5) 0;
+}
+
+[data-loom-plan] .trace-source-head:empty {
+  display: none;
+}
+
+/* ── Settle control ────────────────────────────────────────────────────────── */
+
+/* The settle button, See what changed, a blocked reason and a note, on one wrapping line. */
+[data-loom-plan] .trace-settle-control {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  font-family: var(--font-sans);
+  font-size: var(--type-ui);
+  line-height: var(--leading-ui);
+}
+
+/* A locked document's state: its glyph and words alone, on the buttons' line. */
+[data-loom-plan] .trace-settle-state {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 32px;
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  font-size: var(--type-body);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+[data-loom-plan] .trace-settle-state > .trace-glyph > svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* A note is one --type-ui line in --foreground led by a 7px dot: the blocked tone for an alert,
+   muted for a status. */
+[data-loom-plan] .trace-settle-note {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  margin: 0;
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  font-size: var(--type-ui);
+  font-weight: 400;
+  line-height: var(--leading-ui);
+}
+
+[data-loom-plan] .trace-settle-note::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--muted-foreground);
+}
+
+[data-loom-plan] .trace-settle-note[role="alert"]::before {
+  background: var(--tone-blocked);
+}

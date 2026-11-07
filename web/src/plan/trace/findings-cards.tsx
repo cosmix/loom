@@ -4,8 +4,9 @@ import { useEffect, useId, useRef, useState } from "react";
 import { Link, useLocation } from "react-router";
 
 import type { OfferView } from "@/plan/api/schema";
-import type { NodeRef, TraceFinding, TraceView } from "@/plan/api/schema-trace";
+import type { FindingStatus, NodeRef, TraceFinding, TraceView } from "@/plan/api/schema-trace";
 import { Untrusted } from "@/plan/chat/visible-controls";
+import { IsolatedSentence } from "@/plan/concept/sentence-text";
 import { hashAnchor } from "@/plan/files/address";
 import { featureSourceHref } from "@/plan/feature/source-href";
 import { runOffer } from "@/plan/offers/actions";
@@ -25,6 +26,7 @@ import { FoldPicker } from "./findings-fold";
 import {
   foldChoices,
   groupTitle,
+  foldedEntry,
   nodeLabel,
   statusText,
   type FindingGroup,
@@ -61,7 +63,7 @@ function AboutChips(props: { trace: TraceView; feature: string; nodes: NodeRef[]
             className="maps-chip"
             to={featureSourceHref(feature, node.path, { anchor: node.anchor })}
           >
-            <Untrusted text={nodeLabel(trace, node)} />
+            <Untrusted text={nodeLabel(trace, node, feature)} />
           </Link>{" "}
         </span>
       ))}
@@ -148,6 +150,8 @@ function useRestoreFocus(mode: Mode) {
 function ActionButtons(props: {
   /** Names each button after its finding: the same three buttons are drawn on every open card. */
   findingId: string;
+  /** The id of the fold picker while it is drawn, null while it is closed. */
+  foldPicker: string | null;
   offerBlock: string | null;
   authorBlock: string | null;
   onPlan: () => void;
@@ -174,6 +178,8 @@ function ActionButtons(props: {
         reasonId={reasonId}
         look="secondary"
         label={`${FOLD_LABEL} ${findingId}`}
+        expanded={props.foldPicker !== null}
+        controls={props.foldPicker ?? undefined}
         onClick={props.onFold}
       >
         <CornerDownRight aria-hidden="true" />
@@ -233,6 +239,7 @@ function Actions(props: Context & { entry: TraceFinding; onDismissed: () => void
   const [failure, setFailure] = useState<string | null>(null);
   const authorBlock = useAtomValue(authorBlockReasonAtom);
   const { root, remember } = useRestoreFocus(mode);
+  const pickerId = useId();
   const offerBlock = offer === undefined ? NO_OFFER : authorBlock;
 
   const close = () => {
@@ -258,6 +265,7 @@ function Actions(props: Context & { entry: TraceFinding; onDismissed: () => void
       ) : (
         <ActionButtons
           findingId={entry.finding.id}
+          foldPicker={mode === "fold" ? pickerId : null}
           offerBlock={offerBlock}
           authorBlock={authorBlock}
           onPlan={() => start(planSeed(entry.finding))}
@@ -267,6 +275,7 @@ function Actions(props: Context & { entry: TraceFinding; onDismissed: () => void
       )}
       {mode === "fold" && (
         <FoldPicker
+          id={pickerId}
           choices={foldChoices(trace, entry.about)}
           onPick={(chosen) => start(foldSeed(entry.finding, chosen))}
           onCancel={close}
@@ -274,6 +283,30 @@ function Actions(props: Context & { entry: TraceFinding; onDismissed: () => void
       )}
       {failure !== null && <ActionError message={failure} />}
     </div>
+  );
+}
+
+/**
+ * The outcome in words; a fold names the entry by its title, drawn as Markdown phrasing. One span
+ * either way: the status line is a flex row, and the words must flow as one run beside the glyph,
+ * not as separate flex items. A decided line cuts that span with an ellipsis, so it carries the
+ * whole outcome as its `title`.
+ */
+function StatusWords(props: { trace: TraceView; status: FindingStatus }) {
+  const { trace, status } = props;
+  const entry = foldedEntry(trace, status);
+  if (entry === undefined) {
+    const words = statusText(status);
+    return (
+      <span title={status.kind === "open" ? undefined : words}>
+        <Untrusted text={words} />
+      </span>
+    );
+  }
+  return (
+    <span title={`Folded into ${entry.title}`}>
+      Folded into <IsolatedSentence text={entry.title} />
+    </span>
   );
 }
 
@@ -305,7 +338,7 @@ function FindingCard(props: Context & { entry: TraceFinding }) {
           <Untrusted text={finding.title} />
         </h3>
         <p className="plan-fine maps-finding-status">
-          <Untrusted text={statusText(finding.status)} />
+          <StatusWords trace={trace} status={finding.status} />
         </p>
       </div>
       {open && (

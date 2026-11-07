@@ -24,28 +24,3 @@ export function PageHead({
     </header>
   );
 }
-
-/**
- * The frame of a feature's own pages (Coverage, Findings): the feature slug and page label as the
- * eyebrow, the page title, and an optional sentence under it, then the page's content.
- */
-export function PlanPage({
-  feature,
-  label,
-  title,
-  lede,
-  children,
-}: {
-  feature: string;
-  label: string;
-  title: string;
-  lede?: ReactNode;
-  children: ReactNode;
-}) {
-  return (
-    <div className="plan-page">
-      <PageHead eyebrow={`${feature} · ${label}`} title={title} lede={lede} />
-      {children}
-    </div>
-  );
-}

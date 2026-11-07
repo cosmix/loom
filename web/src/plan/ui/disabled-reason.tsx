@@ -42,6 +42,8 @@ export function DisabledReason({
   reasonPlacement = "below",
   describedBy,
   label,
+  expanded,
+  controls,
   children,
 }: {
   /** Text is untrusted; an element is the caller's own markup (e.g. `BusyText`). */
@@ -61,6 +63,10 @@ export function DisabledReason({
   describedBy?: string;
   /** The accessible name when it must say more than the visible text; it starts with that text. */
   label?: string;
+  /** For a button that opens a region inline: whether it is open (`aria-expanded`). */
+  expanded?: boolean;
+  /** The id of the region it opens (`aria-controls`); pass it only while that region is drawn. */
+  controls?: string;
   children: ReactNode;
 }) {
   const ownId = useId();
@@ -81,6 +87,8 @@ export function DisabledReason({
         className="plan-button aria-disabled:cursor-not-allowed aria-disabled:opacity-50"
         aria-disabled={blocked || undefined}
         aria-label={label}
+        aria-expanded={expanded}
+        aria-controls={controls}
         aria-describedby={described === "" ? undefined : described}
         onClick={blocked ? undefined : onClick}
       >

@@ -4,7 +4,6 @@ import { useLocation } from "react-router";
 import type { TraceView } from "@/plan/api/schema-trace";
 import { hashAnchor } from "@/plan/files/address";
 import { offerOfKind } from "@/plan/feature/page-offer";
-import { PlanPage } from "@/plan/feature/plan-page";
 import { useFeature } from "@/plan/feature/use-feature";
 import { OfferButton } from "@/plan/offers/offer-button";
 import { LoadState } from "@/plan/ui/load-state";
@@ -12,6 +11,7 @@ import { LoadState } from "@/plan/ui/load-state";
 import { Group } from "./findings-cards";
 import { followUpsOffer, groupFindings, tally } from "./findings-model";
 import { useLedgerHash } from "./ledger-hash";
+import { MapPage } from "./map-page";
 import { useTrace } from "./state";
 import { TraceGate } from "./trace-gate";
 
@@ -80,7 +80,7 @@ export function FindingsPage() {
   const reviewLook = checklist.primary?.kind === "review_feature" ? "primary" : "secondary";
   const counts = trace === null ? "" : tally(trace.findings);
   return (
-    <PlanPage feature={checklist.feature} label="findings" title="Findings" lede={STANDFIRST}>
+    <MapPage feature={checklist.feature} page="findings" title="Findings" lede={STANDFIRST}>
       {(counts !== "" || review) && (
         <div className="maps-findings-head">
           {counts !== "" && <p className="maps-findings-tally">{counts}</p>}
@@ -90,6 +90,6 @@ export function FindingsPage() {
       <TraceGate noun="the findings">
         {(loaded, feature) => <FindingsBody trace={loaded} feature={feature} />}
       </TraceGate>
-    </PlanPage>
+    </MapPage>
   );
 }
