@@ -61,7 +61,7 @@ Note: truths.rs module and verify_truth_checks() are retained for before_stage/a
 - Calls `crate::verify::before_after::run_before_stage_checks(&stage.before_stage, &check_dir)`
 - On failure gaps: stage becomes `Blocked` (FailureType::TestFailure), session NOT spawned. `TestFailure` is not auto-retryable (`should_auto_retry`), so the stage rests Blocked until an operator runs `loom stage retry`
 - On errors (infrastructure): prints warning, continues anyway (advisory)
-- TruthCheck timeout: 30 seconds (hardcoded in `verify/goal_backward/truths.rs`)
+- TruthCheck timeout: the check's `timeout_secs` (1-3600), else `DEFAULT_CHECK_TIMEOUT`, 30 seconds (`verify/criteria/config.rs`, applied in `verify/goal_backward/truths.rs:25`)
 
 **`after_stage` execution (`commands/stage/complete_verification.rs`, called from `loom stage complete`):**
 
