@@ -238,3 +238,7 @@ Operator checks no stage sandbox can run (a rebuilt metaplan summary, a real Sto
 ## Planner Follow-ups Follow-ups
 
 Open items from the plan-summary levels and fragment column, the three-theme palette, the Hearth chat (client `userWrote` mirror, closing block limits), the spine and run reviews, the requirement walk's "could not check here" lines and the operator checks no stage sandbox can run. → [Planner follow-ups open items](concerns/planner-follow-ups-followups.md)
+
+## Trace Screens Follow-ups
+
+Unapplied review suggestions on the trace screens (focus and status regions on the Coverage and Findings pages, popover overflow, comment and DESIGN.md drift, two missing tests), a server/browser mismatch on `(my call` inside code fences, four open questions (spine group counts, the chat greeting's face, mermaid chunk warnings) and two screens no stage sandbox can walk. → [Trace Screens Follow-ups](concerns/planner-follow-ups-followups.md)
