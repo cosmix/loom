@@ -219,3 +219,47 @@ fn accepted_event_passes_until_it_worsens() {
     );
     assert!(!worse.contains("TI-edit-"), "{worse}");
 }
+
+/// Commits `base` at `path` on `main`, writes `edited` on the branch, and
+/// returns the integrity events.
+fn events_after_edit(path: &str, base: &str, edited: &str) -> Vec<IntegrityEvent> {
+    let repo = Repo::new(&[(path, base)]);
+    repo.write(path, edited);
+    repo.events(&[])
+}
+
+#[test]
+fn reflowed_rust_assertion_is_not_an_integrity_event() {
+    let base = "#[test]\nfn adds() {\n    assert_eq!(compute(1, 2), 3);\n}\n";
+    let reflowed =
+        "#[test]\nfn adds() {\n    assert_eq!(\n        compute(1, 2),\n        3,\n    );\n}\n";
+    assert_eq!(events_after_edit(TESTS_FILE, base, reflowed), Vec::new());
+}
+
+#[test]
+fn reflowed_typescript_assertion_is_not_an_integrity_event() {
+    let base = "it(\"x\", () => {\n  expect(spineGroups(atlas()).find((g) => g.id === \"plans\")!\
+                .children.at(-1)!.note).toBeNull();\n});\n";
+    let reflowed = "it(\"x\", () => {\n  expect(\n    spineGroups(atlas())\n      \
+                    .find((g) => g.id === \"plans\")!\n      .children.at(-1)!.note,\n  \
+                    ).toBeNull();\n});\n";
+    let events = events_after_edit("web/src/a.test.ts", base, reflowed);
+    assert_eq!(events, Vec::new());
+}
+
+#[test]
+fn reflow_that_changes_a_value_is_an_integrity_event() {
+    let base = "#[test]\nfn adds() {\n    assert_eq!(compute(1, 2), 3);\n}\n";
+    let edited =
+        "#[test]\nfn adds() {\n    assert_eq!(\n        compute(1, 2),\n        4,\n    );\n}\n";
+    let events = events_after_edit(TESTS_FILE, base, edited);
+    assert_eq!(ids(&events), [format!("TI-edit-{TESTS_FILE}")]);
+}
+
+#[test]
+fn whitespace_change_inside_a_string_is_an_integrity_event() {
+    let base = "#[test]\nfn joins() {\n    assert_eq!(join(), \"a b\");\n}\n";
+    let edited = "#[test]\nfn joins() {\n    assert_eq!(join(), \"ab\");\n}\n";
+    let events = events_after_edit(TESTS_FILE, base, edited);
+    assert_eq!(ids(&events), [format!("TI-edit-{TESTS_FILE}")]);
+}

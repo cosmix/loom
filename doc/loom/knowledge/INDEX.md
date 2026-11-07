@@ -160,7 +160,7 @@
 | [memory-relay-drain-gap](mistakes/memory-relay-drain-gap.md) |  | 39 |
 | [merge-cleanup-boundary](mistakes/merge-cleanup-boundary.md) |  | 205 |
 | [merge-in-operator-checkout](mistakes/merge-in-operator-checkout.md) |  | 70 |
-| [merge-resolver-sandbox](mistakes/merge-resolver-sandbox.md) |  | 25 |
+| [merge-resolver-sandbox](mistakes/merge-resolver-sandbox.md) |  | 35 |
 | [parallel-worktree-shared-state](mistakes/parallel-worktree-shared-state.md) | Shared | 358 |
 | [phantom-merges](mistakes/phantom-merges.md) | Merges | 351 |
 | [pinned-literals-ledgers-and-wiring](mistakes/pinned-literals-ledgers-and-wiring.md) | Pins | 332 |
