@@ -227,7 +227,7 @@ the worktree. A contract that is itself wrong is disputed, never edited:
    closes it; `uphold` leaves it open.
 4. Dispute a round in one command:
    `loom stage dispute-findings <stage-id> --finding <id> ... --reason "..."`.
-   Filing ends the session; the daemon restarts with the verdict. Allow three disputes per kind (findings, contract, integrity, impact tests); one more means `NeedsHumanReview`.
+   Filing ends the session; a verdict that upholds no finding lets the daemon complete a passing tree. Three disputes per kind; a fourth means `NeedsHumanReview`.
 
 **Review order (plan v2):** run `loom check` once beside the final review. One fix worker handles all findings and failed criteria; re-check failures with `loom check <stage-id> --criterion <n>`, then one re-review on the follow-up model, then complete. After the final round, code edits including formatting need re-review. Comment-only lines, blank lines, and prose markdown outside skills/, agents/, commands/, loom-hooks/, tests and fixtures need none; the base must be unchanged. Block comments and every other edit need re-review. Commits do not change it.
 
