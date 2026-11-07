@@ -397,3 +397,10 @@ sibling's files.
 ## Check schema bounds before publishing review examples
 
 **What happened:** an intermediate review example used an after-stage timeout of 7200 seconds; schema validation caps it at 3600. The confirmed host-deadline defect remains reproducible with the allowed 3600-second value against a 2700-second host budget. **Why:** runtime behavior was traced before schema bounds. **Prevention:** validate concrete review inputs against parsing and schema constraints before reporting reachable scenarios. **Fix:** the review uses 3600 seconds and retains the deadline mismatch finding.
+
+## A brief named a file from a grep hit without reading it
+
+**What happened:** Planner UI fix briefs sent the summary-body spacing bug to `src/plan/summaries/summary-panel.*` (the Settings statistics panel) and claimed mermaid handling existed in `src/plan/markdown/code-block.tsx`. That file's only mermaid mention was a comment saying mermaid fences render as source. Both subagents spent a spawn discovering that the premise was wrong.
+**Why:** The orchestrator took file names from `rg -l` matches on a keyword ("summary", "mermaid") and wrote them into the brief as the owner without opening the matched lines.
+**Prevention:** Before a brief names a file as the site of a bug or of existing behavior, read the matching lines (`rg -n`, not `-l`). In the planner, `summaries/summary-panel.*` is the Settings statistics panel; a document's reading body lives under `files/reading-column.tsx` and `ui/doc-heading.css`.
+**Fix:** The subagents were re-briefed with the correct owners.

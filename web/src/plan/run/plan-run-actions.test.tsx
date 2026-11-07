@@ -3,9 +3,7 @@ import { createStore, Provider } from "jotai";
 import { afterEach, expect, it, vi } from "vitest";
 
 import { initClient } from "@/plan/api/client";
-import fixture from "@/plan/api/fixtures/checklist.json";
 import hello from "@/plan/api/fixtures/hello.json";
-import { checklistViewSchema, type OfferView } from "@/plan/api/schema";
 import { pressureDialogAtom } from "@/plan/offers/actions-pressure";
 import { runDialogAtom } from "@/plan/offers/actions-run";
 import optionsFixture from "@/plan/api/fixtures/pressure-options.json";
@@ -14,10 +12,20 @@ import {
   installPressureSubscription,
   pressureOptionsAtom,
 } from "@/plan/chat/pressure/use-pressure";
-import { authoringAtom, checklistAtom, serverInfoAtom, youAtom } from "@/plan/state/atoms";
-import { PlanRunActions } from "./plan-run-actions";
+import { authoringAtom, serverInfoAtom, youAtom } from "@/plan/state/atoms";
+import { PressureTestAction, PressureTestDetail, StartRunButton } from "./plan-run-actions";
 
 const path = "doc/plans/PLAN-example.md";
+
+/** The pressure row's end: the control and the detail line under the words. */
+function PressureRow() {
+  return (
+    <>
+      <PressureTestAction path={path} />
+      <PressureTestDetail />
+    </>
+  );
+}
 const blocked = {
   reason: "Codex changed session configuration: AGENTS.md",
   changed: ["AGENTS.md"],
@@ -37,18 +45,16 @@ function optionsWith(overrides: Record<string, unknown>) {
   return pressureOptionsSchema.parse({ ...optionsFixture, config_block: null, ...overrides });
 }
 
-it("opens the dialogs for a written plan and respects authoring restrictions", () => {
+it("opens the pressure dialog and respects authoring restrictions", () => {
   const store = createStore();
   render(
     <Provider store={store}>
-      <PlanRunActions path={path} state="written" />
+      <PressureRow />
     </Provider>,
   );
   fireEvent.click(screen.getByRole("button", { name: "Pressure-test" }));
   expect(store.get(pressureDialogAtom)).toEqual({ open: true, plan: path });
   act(() => holdAuthoring(store));
-  fireEvent.click(screen.getByRole("button", { name: "Start a run" }));
-  expect(store.get(runDialogAtom)).toEqual({ open: true, plan: path });
   act(() =>
     store.set(authoringAtom, {
       holder: { public_id: "other", name: "Ada", away_since: null, frees_at: null },
@@ -57,9 +63,18 @@ it("opens the dialogs for a written plan and respects authoring restrictions", (
   expect(
     screen.getByRole("button", { name: "Pressure-test", description: "Ada holds authoring" }),
   ).toBeTruthy();
-  expect(
-    screen.getByRole("button", { name: "Start a run", description: "Ada holds authoring" }),
-  ).toBeTruthy();
+});
+
+it("opens the run dialog from StartRunButton for the authoring holder", () => {
+  const store = createStore();
+  holdAuthoring(store);
+  render(
+    <Provider store={store}>
+      <StartRunButton path={path} />
+    </Provider>,
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Start a run" }));
+  expect(store.get(runDialogAtom)).toEqual({ open: true, plan: path });
 });
 
 it("disables Pressure-test with the server reason when the options say unavailable", () => {
@@ -74,7 +89,7 @@ it("disables Pressure-test with the server reason when the options say unavailab
   });
   render(
     <Provider store={store}>
-      <PlanRunActions path={path} state="written" />
+      <PressureRow />
     </Provider>,
   );
   fireEvent.click(screen.getByRole("button", { name: "Pressure-test" }));
@@ -82,9 +97,6 @@ it("disables Pressure-test with the server reason when the options say unavailab
     screen.getByRole("button", { name: "Pressure-test", description: "Codex is not installed" }),
   ).toBeTruthy();
   expect(store.get(pressureDialogAtom).open).toBe(false);
-  act(() => holdAuthoring(store));
-  fireEvent.click(screen.getByRole("button", { name: "Start a run" }));
-  expect(store.get(runDialogAtom).open).toBe(true);
 });
 
 it("disables Start a run for a browser that does not hold authoring, since the run routes need the holder", () => {
@@ -94,7 +106,8 @@ it("disables Start a run for a browser that does not hold authoring, since the r
   store.set(authoringAtom, { holder: null });
   render(
     <Provider store={store}>
-      <PlanRunActions path={path} state="written" />
+      <StartRunButton path={path} />
+      <PressureRow />
     </Provider>,
   );
 
@@ -118,7 +131,7 @@ it("falls back to a generic reason when the server is unavailable without giving
   });
   render(
     <Provider store={store}>
-      <PlanRunActions path={path} state="written" />
+      <PressureRow />
     </Provider>,
   );
 
@@ -138,7 +151,7 @@ it("shows control characters in the options reason as visible markers", () => {
   });
   render(
     <Provider store={store}>
-      <PlanRunActions path={path} state="written" />
+      <PressureRow />
     </Provider>,
   );
 
@@ -169,7 +182,7 @@ it("re-enables Pressure-test once the holder who blocked it releases authoring",
   try {
     render(
       <Provider store={store}>
-        <PlanRunActions path={path} state="written" />
+        <PressureRow />
       </Provider>,
     );
 
@@ -206,7 +219,7 @@ it("shows the config block beside the actions and re-enables Pressure-test after
   vi.stubGlobal("fetch", fetch);
   render(
     <Provider store={store}>
-      <PlanRunActions path={path} state="written" />
+      <PressureRow />
     </Provider>,
   );
   expect(
@@ -224,36 +237,4 @@ it("shows the config block beside the actions and re-enables Pressure-test after
     "/api/pressure/confirm-config",
     expect.objectContaining({ method: "POST" }),
   );
-});
-
-// The follow-ups offer of a finished feature belongs to the feature, never to one plan's row.
-it("draws no follow-up for a done plan, whatever the checklist offers", () => {
-  const store = createStore();
-  const followUps: OfferView = {
-    id: "plan-follow-ups",
-    kind: "plan_follow_ups",
-    label: "Plan follow-ups",
-    target: null,
-  };
-  store.set(checklistAtom, {
-    ...checklistViewSchema.parse(fixture.checklists[0]),
-    primary: null,
-    secondary: [followUps],
-  });
-  const { container } = render(
-    <Provider store={store}>
-      <PlanRunActions path="doc/plans/demo/PLAN-example.md" state="done" />
-    </Provider>,
-  );
-  expect(container.innerHTML).toBe("");
-  expect(screen.queryByRole("button")).toBeNull();
-});
-
-it.each(["running", "retired", "done"] as const)("renders no actions for a %s plan", (state) => {
-  const { container } = render(
-    <Provider store={createStore()}>
-      <PlanRunActions path={path} state={state} />
-    </Provider>,
-  );
-  expect(container.innerHTML).toBe("");
 });

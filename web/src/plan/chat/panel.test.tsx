@@ -139,15 +139,15 @@ it("sheet below lg", () => {
   expect(store.get(chatSheetOpenAtom)).toBe(false);
 });
 
-it("the header button shows the attachment count while the sheet is closed", () => {
+it("the header button names no pending attachment and draws no count for them", () => {
   media(false);
   const store = storeFor();
   store.set(pendingAttachmentsAtom, [draft]);
   mount(store);
   expect(store.get(chatSheetOpenAtom)).toBe(false);
-  expect(screen.getByRole("button", { name: "Open chat, 1 attachment" }).textContent).toContain(
-    "1",
-  );
+  const button = screen.getByRole("button", { name: "Open chat" });
+  expect(button.querySelector(".chat-count-badge")).toBeNull();
+  expect(button.textContent).toBe("Chat");
   expect(screen.queryByRole("dialog")).toBeNull();
 });
 

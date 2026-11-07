@@ -7,6 +7,7 @@ import { planStateText, summaryStatus } from "@/plan/concept/summary-text";
 import { sourceHref } from "@/plan/feature/source-href";
 import { repoRel, toAddress } from "@/plan/files/address";
 import { openQuestionsAtom } from "@/plan/review/live";
+import { PressureTestAction, PressureTestDetail } from "@/plan/run/plan-run-actions";
 import { featuresAtom } from "@/plan/state/atoms";
 import type { HeadingChip, HeadingCrumb } from "@/plan/ui/doc-heading";
 import {
@@ -88,20 +89,45 @@ export const NOT_PRESSURE_TESTED = "Not pressure-tested";
 export const pressureIcon = (date: string | null) =>
   date === null ? Gauge : OTHER_GLYPHS.pressureTested;
 
-/** "Not pressure-tested" (warn), "Pressure-tested <date>" (ok), or the live run (go). */
-export function pressureChip(date: string | null, active: boolean): HeadingChip {
+/**
+ * "Not pressure-tested" (warn), "Pressure-tested <date>" (ok), or the live run (go). A written
+ * plan passes its `path`, which sets the Pressure-test control at the end of the row, with the
+ * Codex configuration notice as the row's detail.
+ */
+export function pressureChip(
+  date: string | null,
+  active: boolean,
+  path: string | null = null,
+): HeadingChip {
   const Icon = pressureIcon(date);
+  const control =
+    path === null
+      ? {}
+      : { action: <PressureTestAction path={path} />, detail: <PressureTestDetail /> };
   if (active) {
-    return { key: "pressure", label: "Being pressure-tested", icon: <Gauge />, tone: "accent" };
+    return {
+      key: "pressure",
+      label: "Being pressure-tested",
+      icon: <Gauge />,
+      tone: "accent",
+      ...control,
+    };
   }
   if (date === null) {
-    return { key: "pressure", label: NOT_PRESSURE_TESTED, icon: <Icon />, tone: "warning" };
+    return {
+      key: "pressure",
+      label: NOT_PRESSURE_TESTED,
+      icon: <Icon />,
+      tone: "warning",
+      ...control,
+    };
   }
   return {
     key: "pressure",
     label: `${PRESSURE_TESTED} ${date === today() ? "today" : date}`,
     icon: <Icon />,
     tone: "ok",
+    ...control,
   };
 }
 

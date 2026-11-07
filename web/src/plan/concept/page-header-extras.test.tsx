@@ -76,7 +76,7 @@ it.each([
   );
 });
 
-it("leaves Rebuild out of the extras, which render nothing without plan actions", () => {
+it("leaves Rebuild out of the extras, which render nothing without a build marker", () => {
   show("overview/demo/product");
   expect(screen.getByTestId("extras").textContent).toBe("");
   expect(

@@ -125,7 +125,7 @@ it("draws the views as one segmented control inside the bordered toolbar bar, th
     ".doc-heading-toolbar { display: flex; flex-wrap: wrap; align-items: stretch; min-width: 0; border: 1px solid var(--border);",
   );
   expect(css).toContain(
-    ".doc-heading-views { display: inline-flex; flex: none; align-items: stretch; gap: 2px; height: var(--control-height-sm); }",
+    ".doc-heading-views { display: inline-flex; flex: none; align-items: center; gap: 2px; height: var(--control-height-sm); }",
   );
   expect(css).toContain(
     ".doc-heading-group + .doc-heading-group { border-inline-start: 1px solid var(--border); }",

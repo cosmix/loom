@@ -158,6 +158,16 @@ it("leaves the pressure record off the chip row: a plan's card under the heading
   expect(screen.queryByText(/pressure-tested/i)).toBeNull();
 });
 
+it("ends a written plan's state row in Pressure-test, and only a written plan's", () => {
+  show({ key: "demo/engineering/a", path: "plans/demo/PLAN-a.md", plan_state: "written" });
+  const row = screen.getByText("Written").closest(".doc-heading-row") as HTMLElement;
+  expect(within(row).getByRole("button", { name: "Pressure-test" })).toBeTruthy();
+  cleanup();
+
+  show({ key: "demo/engineering/a", path: "plans/demo/PLAN-a.md", plan_state: "running" });
+  expect(screen.queryByRole("button", { name: "Pressure-test" })).toBeNull();
+});
+
 it("leaves the pressure chip off a section summary with no test date", () => {
   show();
 

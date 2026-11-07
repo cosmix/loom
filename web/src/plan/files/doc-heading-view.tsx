@@ -11,7 +11,8 @@ import { useState, type JSX } from "react";
 import { Link, useSearchParams } from "react-router";
 
 import { useNow } from "@/components/hooks/use-now";
-import { pageHref, summaryKey } from "@/plan/api/page-key";
+import { pageHref } from "@/plan/api/page-key";
+import type { ConceptPage } from "@/plan/api/schema-concept";
 import type { DocView, EntryKind, PlanView, ValidationView } from "@/plan/api/schema-files";
 import { addAttachmentAtom, docAttachment } from "@/plan/attachments";
 import { focusComposerAtom } from "@/plan/chat/composer-hooks";
@@ -29,6 +30,7 @@ import {
   HEADING_BUTTON,
   type HeadingChip,
   type HeadingCrumb,
+  ToolbarGroup,
 } from "@/plan/ui/doc-heading";
 import type { DocKind } from "@/plan/ui/glyphs";
 import { plural } from "@/plan/ui/plural";
@@ -45,9 +47,8 @@ import {
   useFeatureFacts,
 } from "./heading-parts";
 import { LockNotice } from "./lock-notice";
-import { PlanActionsExtras } from "./plan/plan-actions-extras";
 import { ValidationList, warningCount } from "./plan/validation-list";
-import { docSummaryKey, stemOf, useDocChips } from "./section-chips";
+import { hasSummary, stemOf, summaryPageKey, useDocChips, useSummaryPage } from "./section-chips";
 
 function docKind(kind: EntryKind): DocKind | null {
   switch (kind) {
@@ -84,15 +85,9 @@ function documentCrumb(doc: DocView, sections: number | null): HeadingCrumb {
   return { label: section ?? doc.title.replaceAll("`", "") };
 }
 
-function summaryTarget(doc: DocView): string | null {
-  if (doc.kind === "plan") {
-    return doc.plan === null
-      ? null
-      : pageHref(summaryKey(doc.feature, "engineering", doc.plan.slug));
-  }
-  if (doc.feature === null) return null;
-  const key = docSummaryKey(doc);
-  return key ? pageHref(key) : null;
+/** The Summary view's address, null while the document has no summary page to open. */
+function summaryTarget(key: string | null, page: ConceptPage | null): string | null {
+  return key !== null && hasSummary(page) ? pageHref(key) : null;
 }
 
 function validationChip(validation: ValidationView, open: boolean, toggle: () => void) {
@@ -127,6 +122,7 @@ function implementsChip(plan: PlanView): HeadingChip[] {
 
 function planChips(
   plan: PlanView,
+  path: string,
   now: number,
   active: boolean,
   open: boolean,
@@ -135,7 +131,7 @@ function planChips(
   return [
     planStateChip(plan.state),
     ...implementsChip(plan),
-    pressureChip(plan.pressure_date, active),
+    pressureChip(plan.pressure_date, active, plan.state === "written" ? path : null),
     ...(plan.validation === null ? [] : [validationChip(plan.validation, open, toggle)]),
     ...(plan.last_change === null ? [] : [changedChip(plan.last_change, now)]),
   ];
@@ -239,14 +235,15 @@ export function HeadingActions({
 export function FileDocHeading({ doc }: { doc: DocView }): JSX.Element {
   const now = useNow(60_000);
   const facts = useFeatureFacts(doc.feature);
-  const docChips = useDocChips(doc, now);
+  const summaryPage = useSummaryPage(summaryPageKey(doc));
+  const docChips = useDocChips(doc, now, summaryPage);
   const pressureActive = usePressureActive(doc);
   const [validationPath, setValidationPath] = useState<string | null>(null);
   const validationOpen = validationPath === doc.path;
   const chips =
     doc.plan === null
       ? docChips
-      : planChips(doc.plan, now, pressureActive, validationOpen, () =>
+      : planChips(doc.plan, doc.path, now, pressureActive, validationOpen, () =>
           setValidationPath((path) => (path === doc.path ? null : doc.path)),
         );
   const breadcrumb: HeadingCrumb[] = [
@@ -264,16 +261,19 @@ export function FileDocHeading({ doc }: { doc: DocView }): JSX.Element {
       views={{
         current: "source",
         sourceTo: sourceHref(doc.path),
-        summaryTo: summaryTarget(doc),
+        summaryTo: summaryTarget(summaryPageKey(doc), summaryPage),
       }}
-      actions={<HeadingActions doc={doc} pressureActive={pressureActive} />}
+      actions={
+        <ToolbarGroup>
+          <HeadingActions doc={doc} pressureActive={pressureActive} />
+        </ToolbarGroup>
+      }
       chips={chips}
     >
       {doc.lock && <LockNotice notice={doc.lock.notice} />}
       {validationOpen && doc.plan?.validation && (
         <ValidationList validation={doc.plan.validation} />
       )}
-      {doc.plan && <PlanActionsExtras plan={doc.plan} path={doc.path} />}
     </DocHeading>
   );
 }
