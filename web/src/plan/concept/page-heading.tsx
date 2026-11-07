@@ -24,6 +24,7 @@ import {
 } from "@/plan/files/heading-parts";
 import { HeadingActions, usePressureActive } from "@/plan/files/doc-heading-view";
 import { LockNotice } from "@/plan/files/lock-notice";
+import { BriefsCard } from "@/plan/trace/briefs-card";
 import { docIsLocked, SettleControl } from "@/plan/trace/settle-control";
 import { StubPanel } from "@/plan/trace/stub-panel";
 import {
@@ -196,10 +197,16 @@ function TraceSettle({ page }: { page: ConceptPage }): JSX.Element | null {
   return <SettleOfSource key={document.path} feature={document.feature} path={document.path} />;
 }
 
+/** The document's stub, then a plan's briefs in a card of their own. */
 function TraceExtras({ page }: { page: ConceptPage }): JSX.Element | null {
   const document = tracedDocument(page);
   if (!document) return null;
-  return <StubPanel feature={document.feature} path={document.path} />;
+  return (
+    <>
+      <StubPanel feature={document.feature} path={document.path} />
+      <BriefsCard feature={document.feature} path={document.path} />
+    </>
+  );
 }
 
 /** Summary metadata and navigation adapted to the shared document heading. */

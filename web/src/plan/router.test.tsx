@@ -1,4 +1,4 @@
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import { getDefaultStore } from "jotai";
 import { createMemoryRouter, RouterProvider } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -25,7 +25,6 @@ vi.mock("@/plan/files/reading-column", () => ({
     <div>{`Source of ${path} at ${anchor}`}</div>
   ),
 }));
-vi.mock("@/plan/feature/run-page", () => ({ RunPage: () => <div>Run page</div> }));
 vi.mock("@/plan/new/kickoff-route", () => ({ KickoffRoute: () => <div>Kickoff page</div> }));
 
 // vi.mock factories are hoisted above the JSX runtime import, so the element is built from an
@@ -66,9 +65,13 @@ function seedFeature(patch: Record<string, unknown>) {
 }
 
 function renderRoute(path: string) {
+  return renderRouter(path).shell;
+}
+
+function renderRouter(path: string) {
   const router = createMemoryRouter(routes, { initialEntries: [path] });
   const view = render(<RouterProvider router={router} />);
-  return view.container.querySelector<HTMLElement>("[data-loom-plan]");
+  return { router, shell: view.container.querySelector<HTMLElement>("[data-loom-plan]") };
 }
 
 describe("plan routes", () => {
@@ -84,10 +87,10 @@ describe("plan routes", () => {
     expect(within(shell!).getByText("Feature landing")).toBeTruthy();
   });
 
-  it("routes /f/demo/run to its page inside the feature layout", () => {
-    const shell = renderRoute("/f/demo/run");
-    expect(within(shell!).getByText("Feature page")).toBeTruthy();
-    expect(within(shell!).getByText("Run page")).toBeTruthy();
+  it("sends an old /f/demo/run link to the Plans overview, which holds the run", async () => {
+    const { router, shell } = renderRouter("/f/demo/run");
+    await waitFor(() => expect(router.state.location.pathname).toBe("/f/demo/engineering"));
+    expect(within(shell!).getByText("Concept page")).toBeTruthy();
     expect(within(shell!).queryByText("No such page")).toBeNull();
   });
 

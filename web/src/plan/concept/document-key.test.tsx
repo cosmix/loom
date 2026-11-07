@@ -95,27 +95,18 @@ it("draws a plan by its label as sent", () => {
   const link = showChip(chip);
 
   expect(link.querySelector(".concept-key-label")?.textContent).toBe("feat-planner-13");
+  // A long slug gives way, so a "changed" after its link stays inside the track.
+  const css = pageSheet.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\s+/g, " ");
+  expect(css).toMatch(/\.concept-key-label \{ flex: 0 1 auto; min-width: 4ch;/);
+  expect(css).toMatch(/\.concept-key-title \{ flex: 0 100 auto; min-width: 0;/);
 });
 
-it("leads the key with a lede describing the list, and the mark legend only over marks", () => {
+it("leads the key with a lede describing the list, and leaves the marks to Help's legend", () => {
   showChip(chipOf());
   const lede = screen.getByText("Source: the section this overview summarizes");
   expect(lede.classList.contains("plan-fine")).toBe(true);
   expect(screen.getByRole("list", { name: "Document key" }).getAttribute("aria-describedby")).toBe(
     lede.id,
-  );
-  expect(screen.getByText(/A square after a sentence/)).toBeTruthy();
-  cleanup();
-
-  const page = conceptPageSchema.parse({ ...overviewFixture, key_chips: [chipOf()], blocks: [] });
-  render(
-    <Provider store={createStore()}>
-      <MemoryRouter>
-        <TooltipProvider>
-          <DocumentKey page={page} pageKey={page.key} />
-        </TooltipProvider>
-      </MemoryRouter>
-    </Provider>,
   );
   expect(screen.queryByText(/A square after a sentence/)).toBeNull();
 });
@@ -258,35 +249,14 @@ describe("keyLede", () => {
       "Sources: the 3 plans this overview summarizes",
     ],
     [
-      "demo/product/section_01",
+      "overview/demo/product",
       ["demo/product/section_01", "demo/engineering/a"],
-      "Key: the 2 documents of this feature",
-    ],
-    ["demo/engineering/a", ["demo/product/section_02"], "Key: the section of this feature"],
-    [
-      "demo/product/section_05",
-      Array.from(
-        { length: 12 },
-        (_, i) => `demo/product/section_${String(i + 1).padStart(2, "0")}`,
-      ),
-      "Key: the 12 sections of this feature",
+      "Sources: the 2 documents this overview summarizes",
     ],
     [
-      "demo/product/vision",
-      ["demo/product/section_01", "demo/product/section_02"],
-      "Key: the 2 sections of this feature",
-    ],
-    [
-      "demo/engineering/a",
-      [
-        "demo/engineering/a",
-        "demo/engineering/b",
-        "demo/engineering/c",
-        "demo/engineering/d",
-        "demo/engineering/e",
-        "demo/engineering/f",
-      ],
-      "Key: the 6 plans of this feature",
+      "overview/demo/engineering",
+      ["demo/engineering/a"],
+      "Source: the plan this overview summarizes",
     ],
   ])("names the documents of %s", (key, pages, expected) => {
     expect(keyLede(pageWith(key, pages))).toBe(expected);

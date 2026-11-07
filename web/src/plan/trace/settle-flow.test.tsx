@@ -68,7 +68,8 @@ beforeEach(() => {
   hold = null;
   trace = traceViewSchema.parse(structuredClone(traceFixture));
   const draft = trace.documents.find((entry) => entry.path === S03);
-  if (draft) draft.settle = "draft";
+  // Settled here as a written draft; the fixture lists it unwritten, which nothing settles.
+  if (draft) Object.assign(draft, { settle: "draft", progress: "written", settleable: true });
   vi.stubGlobal("fetch", (input: RequestInfo | URL, init?: RequestInit) => {
     const raw = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
     const url = new URL(raw, "http://localhost");

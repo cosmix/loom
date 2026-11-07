@@ -39,7 +39,7 @@ const WIDE_QUERY = "(min-width: 1024px)";
 const SECTION_NAMES = { "01": "Workflow model", "02": "Command surface", "03": "Review path" };
 
 /** Case-sensitive, so a row may carry a mark or a count beside its name. */
-const SPINE_ROWS = [/\bVision\b/, /\bProduct spec\b/, /\bMetaplan\b/, /\bPlans\b/, /\bRun\b/];
+const SPINE_ROWS = [/\bVision\b/, /\bProduct spec\b/, /\bMetaplan\b/, /\bPlans\b/];
 
 let unregister: (() => void)[] = [];
 

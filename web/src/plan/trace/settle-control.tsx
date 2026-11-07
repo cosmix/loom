@@ -15,24 +15,12 @@ import { authorBlockReasonAtom } from "@/plan/state/atoms";
 import { DisabledReason } from "@/plan/ui/disabled-reason";
 import { plural } from "@/plan/ui/plural";
 
-import { docOfPath, settleLabel } from "./model";
+import { docOfPath, settleLabel, shownSettle } from "./model";
 import { useSettle, type SettlePhase } from "./settle-flow";
 import { ChangesSinceSettled } from "./settled-changes";
 import { useTrace } from "./state";
 
 import "./trace.css";
-
-/**
- * The lock used only until the document has loaded (callers pass no `locked` yet): a plan that
- * starts running or is done or retired, or a file in the archive. Once loaded, callers pass
- * `locked`, which carries the server's answer (read_only paths included).
- */
-const LOCKED_NAME = /^(?:IN_PROGRESS|DONE|RETIRED)-/;
-
-function isLocked(path: string): boolean {
-  const parts = path.split("/");
-  return LOCKED_NAME.test(parts.at(-1) ?? "") || parts.slice(0, -1).includes("archive");
-}
 
 /** "1 My call and 2 open questions": only the kinds the document holds. */
 function pointsText(myCalls: number, openQuestions: number): string {
@@ -114,8 +102,8 @@ function SettleBody({
   const confirmed = useRef(false);
   const working = flow.phase.kind === "working";
   const reason = working ? "Working" : blocked;
-  // Locked documents, and a document whose hash has not loaded, show the state alone.
-  const shown = !(locked ?? isLocked(doc.path)) && hash !== null ? offerFor(doc) : null;
+  // A locked document, and one whose hash has not loaded, show the state alone.
+  const shown = !locked && hash !== null ? offerFor(doc) : null;
   const buttons = shown !== null && (shown.settle || shown.unsettle);
   const focusState = () => state.current?.focus();
   // A confirmed, written settle removes the button, so focus goes to the pill; cancel and Escape
@@ -188,8 +176,9 @@ export function docIsLocked(
 /**
  * A document's settle state with the controls that change it. `path` is the repository path and
  * `hash` the opened document's save hash and `locked` the server's answer for it (`lock !== null`
- * or not `editable`); left out, the name rule decides. Renders nothing for a path the trace does not know
- * (a brief, a file outside the feature's documents).
+ * or not `editable`). Renders nothing for a path the trace does not know (a brief, a file outside
+ * the feature's documents) or for done work, which is never settled (`shownSettle`: a locked
+ * plan, a done feature's vision and metaplan).
  */
 export function SettleControl(props: {
   feature: string;
@@ -199,7 +188,7 @@ export function SettleControl(props: {
 }): JSX.Element | null {
   const { trace } = useTrace(props.feature);
   const doc = trace ? docOfPath(trace, props.path) : undefined;
-  if (!doc) return null;
+  if (!doc || shownSettle(doc) === null) return null;
   // Keyed by document: a phase or lookup in flight for one must not show under the next.
   return (
     <SettleBody

@@ -16,6 +16,7 @@ import { traceViewSchema, type TraceDoc, type TraceView } from "@/plan/api/schem
 import { docChangedAtom } from "@/plan/files/atoms";
 import { authoringAtom, serverInfoAtom } from "@/plan/state/atoms";
 
+import { BriefsCard } from "./briefs-card";
 import { EdgeChips } from "./edge-chips";
 import { ImpactRows } from "./impact-rows";
 import { SettleControl } from "./settle-control";
@@ -129,6 +130,8 @@ beforeEach(() => {
   settleAnswers = [];
   settledCommit = COMMIT;
   trace = traceViewSchema.parse(structuredClone(traceFixture));
+  // The control tests settle section 03 as a written draft; the fixture lists it unwritten.
+  patchDoc(S03, { progress: "written", settleable: true });
   vi.stubGlobal("fetch", (input: RequestInfo | URL, init?: RequestInit) => {
     const raw = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
     const url = new URL(raw, "http://localhost");
@@ -189,10 +192,14 @@ for (const [state, label, expected, link] of STATES) {
   });
 }
 
-it("a locked document shows its state and no controls", async () => {
+it("done work shows no settle state and no controls, even when it moved", async () => {
   const locked = "doc/plans/demo/DONE-PLAN-first.md";
-  patchDoc(FIRST_PLAN, { path: locked, settle: "settled" });
-  await control(locked);
+  patchDoc(FIRST_PLAN, { path: locked, settle: "revised", settleable: false });
+  mount(<SettleControl feature="demo" path={locked} hash={HASH} />);
+  await waitFor(() =>
+    expect(calls.some((call) => call.url.pathname === "/api/trace/demo")).toBe(true),
+  );
+  expect(screen.queryByText(/^(Draft|Revised|Settled)$/)).toBeNull();
   expect(buttons()).toEqual([]);
   expect(screen.queryByRole("link", { name: "Changes since settled" })).toBeNull();
 });
@@ -303,6 +310,23 @@ it("impact rows list the plan covering a changed section with its state", async 
   expect(list.textContent).toMatch(/First.*Upstream changed/);
 });
 
+it("impact rows list a done plan covering a changed section without a settle state", async () => {
+  patchDoc(FIRST_PLAN, { settle: "upstream_changed", settleable: false });
+  mount(<ImpactRows path={S01} />);
+  const list = await screen.findByRole("list", { name: "Affected documents" });
+  expect(list.textContent).toBe("First");
+  expect(list.querySelector("[data-settle]")).toBeNull();
+});
+
+it("impact rows leave out a related document that moved but is done work", async () => {
+  patchDoc(S01, { settle: "revised", settleable: false });
+  mount(<ImpactRows path={FIRST_PLAN} />);
+  await waitFor(() =>
+    expect(calls.some((call) => call.url.pathname === "/api/trace/demo")).toBe(true),
+  );
+  expect(screen.queryByRole("list", { name: "Affected documents" })).toBeNull();
+});
+
 it("impact rows list a section that moved when its plan changed", async () => {
   patchDoc(S01, { settle: "revised" });
   mount(<ImpactRows path={FIRST_PLAN} />);
@@ -315,11 +339,21 @@ it("impact rows draw nothing for a document outside every feature", async () => 
   expect(screen.queryByRole("list")).toBeNull();
 });
 
-it("a plan page lists its briefs, each linked to its source", async () => {
-  mount(<StubPanel feature="demo" path={FIRST_PLAN} />);
-  const list = await screen.findByRole("list", { name: "Briefs" });
+it("a plan page lists its briefs in their own card, each linked to its source", async () => {
+  mount(
+    <>
+      <StubPanel feature="demo" path={FIRST_PLAN} />
+      <BriefsCard feature="demo" path={FIRST_PLAN} />
+    </>,
+  );
+  const card = await screen.findByRole("region", { name: "Briefs" });
+  const list = within(card).getByRole("list", { name: "Briefs" });
   const link = within(list).getByRole("link", { name: "build/r1.md" });
   expect(link.getAttribute("href")).toBe("/f/demo/source/plans/demo/briefs/first/build/r1.md");
+  // The stub card holds the stub alone.
+  const stub = document.querySelector(".trace-stub")!;
+  expect(stub.contains(card)).toBe(false);
+  expect(within(stub as HTMLElement).queryByRole("list")).toBeNull();
 });
 
 it("a plan stub shows its metaplan entry's heading and first paragraph as text", async () => {
@@ -339,6 +373,13 @@ it("a section stub shows its vision row, and a changed stub says so", async () =
   expect(screen.getByRole("link", { name: "Stub in the vision" }).getAttribute("href")).toContain(
     "/f/demo/source/product/demo/index.md",
   );
+});
+
+it("a done plan's changed stub asks nothing: the stub shows, the note does not", async () => {
+  patchDoc(FIRST_PLAN, { settle: "stub_changed", settleable: false });
+  mount(<StubPanel feature="demo" path={FIRST_PLAN} />);
+  await screen.findByRole("link", { name: "Stub in the metaplan" });
+  expect(screen.queryByRole("note")).toBeNull();
 });
 
 it("the vision and the metaplan show no stub", async () => {

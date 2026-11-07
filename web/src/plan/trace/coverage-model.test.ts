@@ -60,6 +60,14 @@ describe("buildCoverage", () => {
     ]);
   });
 
+  it("flags no done work, even when it moved since it was settled", () => {
+    const view = demo();
+    const plan = view.documents.find((doc) => doc.path === PLAN)!;
+    Object.assign(plan, { settle: "upstream_changed", settleable: false });
+    const card = model(view).byKey.get(`plan:${PLAN}`)!;
+    expect([card.state, card.description]).toEqual(["plain", null]);
+  });
+
   it("opens each node where it lives", () => {
     const hrefs = Object.fromEntries(model().cards.map((card) => [card.key, card.href]));
     expect(hrefs[`vision:${S01}`]).toBe("/f/demo/product/section_01");

@@ -29,7 +29,7 @@ import {
 } from "@/plan/state/atoms";
 import type { Store } from "@/state/store";
 
-/** Test kit for the Run page: a feature `atlas` and a page mounted on its route. */
+/** Test kit for the run panel and the feature pages: a feature `atlas` and a page on its route. */
 
 export function offer(
   kind: OfferKind,

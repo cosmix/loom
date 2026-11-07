@@ -133,9 +133,8 @@
 }
 
 /* A row's side (state, date, action): pushed to the row's end, wrapping under the name when the
-   row is narrow. The queues and the plan pages share it. */
-[data-loom-plan] .plan-queue__side,
-[data-loom-plan] .plan-page__side {
+   row is narrow. */
+[data-loom-plan] .plan-queue__side {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -146,23 +145,17 @@
 
 /* A row's name link keeps the text's colour; links in chrome underline on hover only (DESIGN.md,
    Focus and hover). */
-[data-loom-plan] .plan-queue__name a,
-[data-loom-plan] .plan-page__name a,
-[data-loom-plan] .plan-page__link {
+[data-loom-plan] .plan-queue__name a {
   color: inherit;
   text-decoration: none;
 }
 
-[data-loom-plan] .plan-queue__name a:hover,
-[data-loom-plan] .plan-page__name a:hover,
-[data-loom-plan] .plan-page__link:hover {
+[data-loom-plan] .plan-queue__name a:hover {
   text-decoration: underline;
   text-underline-offset: 3px;
 }
 
-[data-loom-plan] .plan-queue__name a:focus-visible,
-[data-loom-plan] .plan-page__name a:focus-visible,
-[data-loom-plan] .plan-page__link:focus-visible {
+[data-loom-plan] .plan-queue__name a:focus-visible {
   outline: 2px solid var(--ring);
   outline-offset: 2px;
 }
