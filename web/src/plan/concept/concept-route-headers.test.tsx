@@ -14,6 +14,7 @@ import questionFixture from "@/plan/api/fixtures/summary-question.json";
 import { conceptPageSchema, type ConceptPage } from "@/plan/api/schema-concept";
 import { summaryPanelSchema } from "@/plan/api/schema-summaries";
 import { authorStore, makeDoc } from "@/plan/files/doc-heading-kit";
+import { pressureWhen } from "@/plan/files/heading-parts";
 import { authoringAtom, checklistAtom, youAtom } from "@/plan/state/atoms";
 import { panelLoadAtom } from "@/plan/summaries/state";
 import headingSheet from "@/plan/ui/doc-heading.css?raw";
@@ -124,7 +125,7 @@ describe("summary page header", () => {
     renderAt("/f/demo/engineering/a");
     await screen.findByRole("heading", { level: 1, name: "Plan a" });
     expect(screen.getByText("Written").closest("[data-chip]")).not.toBeNull();
-    expect(text()).toContain("Pressure-tested 2026-10-20");
+    expect(text()).toContain(`Pressure-tested ${pressureWhen("2026-10-20")}`);
   });
   it("locked notice on a done plan", async () => {
     pages = { "demo/engineering/a": planPage({ key: "demo/engineering/a", plan_state: "done" }) };

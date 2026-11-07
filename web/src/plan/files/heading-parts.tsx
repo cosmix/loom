@@ -17,6 +17,7 @@ import {
   type PlanState,
 } from "@/plan/ui/glyphs";
 import { plural } from "@/plan/ui/plural";
+import { ArrowSpinner } from "@/plan/ui/spinner";
 
 const OpenQuestionsIcon = OTHER_GLYPHS.openQuestions;
 const STATE_LABELS: Record<PlanState, string> = {
@@ -74,13 +75,21 @@ export function planStateChip(state: PlanState): HeadingChip {
   };
 }
 
-function today(): string {
-  const now = new Date();
-  return [
-    now.getFullYear(),
-    String(now.getMonth() + 1).padStart(2, "0"),
-    String(now.getDate()).padStart(2, "0"),
-  ].join("-");
+const DAY_MONTH = new Intl.DateTimeFormat(undefined, { day: "numeric", month: "short" });
+const DAY_MONTH_YEAR = new Intl.DateTimeFormat(undefined, { dateStyle: "medium" });
+
+/**
+ * When a plan was pressure-tested, from its `YYYY-MM-DD` record: "today", "5 Nov" this year,
+ * "5 Nov 2025" from another. A date in any other shape is shown as sent.
+ */
+export function pressureWhen(date: string, now: Date = new Date()): string {
+  const parts = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date);
+  if (parts === null) return date;
+  const day = new Date(Number(parts[1]), Number(parts[2]) - 1, Number(parts[3]));
+  if (Number.isNaN(day.getTime())) return date;
+  if (day.toDateString() === now.toDateString()) return "today";
+  const format = day.getFullYear() === now.getFullYear() ? DAY_MONTH : DAY_MONTH_YEAR;
+  return format.format(day);
 }
 
 /** The words and glyph of a plan's pressure record, shared by the page chip and the spine badge. */
@@ -90,29 +99,33 @@ export const pressureIcon = (date: string | null) =>
   date === null ? Gauge : OTHER_GLYPHS.pressureTested;
 
 /**
- * "Not pressure-tested" (warn), "Pressure-tested <date>" (ok), or the live run (go). A written
- * plan passes its `path`, which sets the Pressure-test control at the end of the row, with the
- * Codex configuration notice as the row's detail.
+ * "Not pressure-tested" (warn, the gauge), "Pressure-tested <when>" (ok, the flask, the record's
+ * date as its tooltip), or "Being pressure-tested" (go, the rotating arrows: a state word). A
+ * written plan passes its `path`, which sets the Pressure-test control as the row's action
+ * ("Pressure-test again" once tested), with the Codex configuration notice as the row's detail.
  */
 export function pressureChip(
   date: string | null,
   active: boolean,
   path: string | null = null,
 ): HeadingChip {
-  const Icon = pressureIcon(date);
   const control =
     path === null
       ? {}
-      : { action: <PressureTestAction path={path} />, detail: <PressureTestDetail /> };
+      : {
+          action: <PressureTestAction path={path} again={date !== null} />,
+          detail: <PressureTestDetail />,
+        };
   if (active) {
     return {
       key: "pressure",
       label: "Being pressure-tested",
-      icon: <Gauge />,
+      icon: <ArrowSpinner />,
       tone: "accent",
       ...control,
     };
   }
+  const Icon = pressureIcon(date);
   if (date === null) {
     return {
       key: "pressure",
@@ -124,7 +137,8 @@ export function pressureChip(
   }
   return {
     key: "pressure",
-    label: `${PRESSURE_TESTED} ${date === today() ? "today" : date}`,
+    label: `${PRESSURE_TESTED} ${pressureWhen(date)}`,
+    title: date,
     icon: <Icon />,
     tone: "ok",
     ...control,

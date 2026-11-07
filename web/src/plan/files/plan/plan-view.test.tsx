@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import planFixture from "@/plan/api/fixtures/files-doc-plan.json";
 import { docViewSchema, type DocView } from "@/plan/api/schema-files";
 import { FileDocHeading } from "@/plan/files/doc-heading-view";
+import { pressureWhen } from "@/plan/files/heading-parts";
 import { PlanView } from "@/plan/files/plan/plan-view";
 
 const TEXT = [
@@ -148,7 +149,7 @@ describe("PlanView", () => {
     vi.setSystemTime(new Date("2026-10-20T12:00:00Z"));
     const doc = makeDoc();
     renderPlan(doc);
-    expect(screen.getByText("Pressure-tested 2026-10-17")).toBeTruthy();
+    expect(screen.getByText(`Pressure-tested ${pressureWhen("2026-10-17")}`)).toBeTruthy();
     const changed = screen.getByText("Changed 2 d ago");
     expect(changed).toBeTruthy();
     expect(

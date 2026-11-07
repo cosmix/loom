@@ -9,6 +9,7 @@ import {
   parsePageKey,
 } from "@/plan/api/page-key";
 import type { ConceptPage } from "@/plan/api/schema-concept";
+import { usePressureRun } from "@/plan/chat/pressure/use-pressure";
 import { Untrusted } from "@/plan/chat/visible-controls";
 import { featureOfDocPath, featureSourceHref } from "@/plan/feature/source-href";
 import {
@@ -26,12 +27,12 @@ import {
 } from "@/plan/files/heading-parts";
 import { HeadingActions, usePressureActive } from "@/plan/files/doc-heading-view";
 import { LockNotice } from "@/plan/files/lock-notice";
-import { PressureTestAction, PressureTestDetail } from "@/plan/run/plan-run-actions";
 import { useTraceChips } from "@/plan/trace/heading-chips";
 import { withoutNumber } from "@/plan/trace/model";
 import { PlanExtras } from "@/plan/trace/plan-extras";
 import { ScopeLine } from "@/plan/trace/scope-line";
 import { docIsLocked, SettleControl } from "@/plan/trace/settle-control";
+import { Chip } from "@/plan/ui/doc-heading-parts";
 import {
   DocHeading,
   HEADING_BUTTON,
@@ -115,9 +116,12 @@ function statusChips(page: ConceptPage, rebuilding: boolean): HeadingChip[] {
   }));
 }
 
-/** A standalone plan has no pressure record card, so its test date stays on the facts line. */
+/**
+ * A standalone plan has no pressure record card, so a plan past written (whose row carries no
+ * pressure status of its own) keeps its test date as a status beside its state.
+ */
 function standalonePressure(page: ConceptPage): HeadingChip[] {
-  return page.last_pressure === null ? [] : [fact(pressureChip(page.last_pressure, false))];
+  return page.last_pressure === null ? [] : [pressureChip(page.last_pressure, false)];
 }
 
 /** A relationship reads on the facts line, not in the status card. */
@@ -126,13 +130,38 @@ function fact(chip: HeadingChip): HeadingChip {
 }
 
 /**
- * A plan's state row. A written plan's row ends in Pressure-test, with the Codex configuration
- * notice as its detail: the pressure record itself is the card under the heading.
+ * What a written plan's state row goes on with: its pressure status (glyph and words), then
+ * Pressure-test, one unit after "Written" so the action stays on the line of the state it acts on.
  */
-function planRow(plan: NonNullable<ConceptPage["plan_state"]>, path: string | null): HeadingChip {
+function PlanPressure(props: { status: HeadingChip | null; action: ReactNode }): JSX.Element {
+  return (
+    <span className="trace-plan-pressure">
+      {props.status && <Chip chip={props.status} />}
+      {props.action}
+    </span>
+  );
+}
+
+/**
+ * A plan's state row. A written plan's row goes on with its pressure status and Pressure-test, the
+ * Codex configuration notice as its detail. A feature plan's test date is drawn once, in the
+ * pressure record card under the heading (`PlanExtras`), so its row leaves the date out; "Not
+ * pressure-tested" and a running test have no card, so they stay.
+ */
+function planRow(
+  page: ConceptPage,
+  plan: NonNullable<ConceptPage["plan_state"]>,
+  pressureActive: boolean,
+): HeadingChip {
   const chip = planStateChip(plan);
-  if (plan !== "written" || path === null) return chip;
-  return { ...chip, action: <PressureTestAction path={path} />, detail: <PressureTestDetail /> };
+  if (plan !== "written" || page.path === null) return chip;
+  const pressure = pressureChip(page.last_pressure, pressureActive, page.path);
+  const inCard = tracedPlan(page) !== null && page.last_pressure !== null && !pressureActive;
+  return {
+    ...chip,
+    action: <PlanPressure status={inCard ? null : pressure} action={pressure.action} />,
+    detail: pressure.detail,
+  };
 }
 
 /**
@@ -144,16 +173,17 @@ function planRow(plan: NonNullable<ConceptPage["plan_state"]>, path: string | nu
 function pageChips(
   page: ConceptPage,
   rebuilding: boolean,
-  questions: HeadingChip[],
-  trace: HeadingChip[],
+  pressureActive: boolean,
+  attention: { questions: HeadingChip[]; trace: HeadingChip[] },
 ) {
   const plan = page.plan_state;
+  const { questions, trace } = attention;
   return [
     ...statusChips(page, rebuilding),
     ...trace,
     ...questions,
-    ...(plan === null ? [] : [planRow(plan, page.path)]),
-    ...(plan === null || tracedPlan(page) ? [] : standalonePressure(page)),
+    ...(plan === null ? [] : [planRow(page, plan, pressureActive)]),
+    ...(plan === null || plan === "written" || tracedPlan(page) ? [] : standalonePressure(page)),
     ...implementsChips(page).map(fact),
     ...builtByChips(page).map(fact),
   ];
@@ -291,6 +321,8 @@ export function PageHeading({ page }: { page: ConceptPage }): JSX.Element {
   const document = tracedDocument(page);
   const trace = useTraceChips(document?.feature ?? null, document?.path ?? null);
   const rebuilding = isRebuilding(page);
+  const run = usePressureRun();
+  const pressureActive = page.path !== null && run?.plan === page.path && run.ended === null;
   const notice = page.plan_state === null ? null : LOCKED_NOTICES[page.plan_state];
   const numbered = numberedTitle(page);
   return (
@@ -317,7 +349,7 @@ export function PageHeading({ page }: { page: ConceptPage }): JSX.Element {
             {hasOpenable(page) && <OpenAllButton page={page} />}
           </ToolbarGroup>
         }
-        chips={pageChips(page, rebuilding, questions, trace)}
+        chips={pageChips(page, rebuilding, pressureActive, { questions, trace })}
       >
         {notice && <LockNotice notice={notice} />}
         <PageHeaderExtras page={page} />
