@@ -4,9 +4,28 @@
  * bottom sheet below 760px. Imported by trace-heading.css; tokens and scales only.
  */
 /* A popover under the settle button (`settle-surface.tsx`): the menu narrow and tight, the
-   confirmation wider with room around it. Both carry the `[data-loom-plan]` root themselves. */
+   confirmation wider with room around it. Both carry the `[data-loom-plan]` root themselves.
+   It never leaves the viewport: its height is the room Radix measures on its side, less 2px so
+   a rounding never reads as a collision. Before Radix has measured, the 18rem fallback lets it
+   open under the button whenever that much room is free there; with less, Radix flips it above.
+   The confirmation's points scroll inside it (below), so the title, the counts and the buttons
+   stay in view. With less room than the parts that do not shrink (a phone held sideways), the
+   surface itself scrolls, so Settle anyway and Not yet are always reachable. */
 .trace-surface[data-loom-plan]:not([data-sheet]) {
+  max-height: calc(var(--radix-popover-content-available-height, 18rem) - 2px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
   font-family: var(--font-sans);
+}
+
+/* The menu and the confirmation give up height inside the capped popover or sheet; only the
+   menu's items and the confirmation's points scroll. */
+.trace-surface[data-loom-plan] > :is(.trace-menu, .trace-confirm) {
+  min-height: 0;
+}
+
+.trace-surface[data-loom-plan] > .trace-menu {
+  overflow-y: auto;
 }
 
 .trace-surface[data-loom-plan]:not([data-sheet]):has(> .trace-menu) {
@@ -20,12 +39,16 @@
   padding: var(--space-5);
 }
 
-/* Below 760px the same content rises from the foot as a sheet, scrolling inside itself. */
+/* Below 760px the same content rises from the foot as a sheet, at most 85% of the viewport; as in
+   the popover, the points scroll inside it and the buttons stay at its foot, and the sheet itself
+   scrolls when even the parts that do not shrink overflow it. */
 .trace-sheet[data-sheet] {
-  display: grid;
+  display: flex;
+  flex-direction: column;
   gap: var(--space-3);
   max-height: 85dvh;
   overflow-y: auto;
+  overscroll-behavior: contain;
   padding: var(--space-5) var(--page-gutter) calc(var(--space-5) + env(safe-area-inset-bottom, 0px));
   border: 1px solid var(--hairline);
   border-bottom: 0;
@@ -53,7 +76,9 @@
 }
 
 /* A menu item: the verb over its note, the whole item the button's hit area and hover wash, and
-   the focus ring drawn round the item (the button draws none of its own). */
+   the focus ring drawn round the item (the button draws none of its own). The ring is inset: the
+   menu is a scroll box and each item spans its width, so a ring outside the item would be
+   clipped at the edges. */
 [data-loom-plan] .trace-menu {
   display: grid;
   gap: 2px;
@@ -77,7 +102,7 @@
 
 [data-loom-plan] .trace-menu__item:has(> .plan-button:focus-visible) {
   outline: 2px solid var(--ring);
-  outline-offset: 0;
+  outline-offset: -2px;
 }
 
 [data-loom-plan] .trace-menu__item > .plan-button {
@@ -109,9 +134,14 @@
 /* The confirmation: the counts, a muted lede, each open point as its glyph in a --muted disc
    beside a quote in the reading face and where it is, then Settle anyway and Not yet. */
 [data-loom-plan] .trace-confirm {
-  display: grid;
+  display: flex;
+  flex-direction: column;
   gap: var(--space-3);
   min-width: 0;
+}
+
+[data-loom-plan] .trace-confirm > * {
+  flex: none;
 }
 
 [data-loom-plan] :is(.trace-confirm__counts, .trace-confirm__lede, .trace-confirm__more) {
@@ -131,11 +161,17 @@
   line-height: var(--leading-body);
 }
 
-[data-loom-plan] .trace-confirm__points {
+/* The one part that gives up height: it scrolls inside the surface. Its 4px inset (taken back by
+   the margin) keeps the links' focus rings inside the scroll box's clip. */
+[data-loom-plan] .trace-confirm > .trace-confirm__points {
   display: grid;
+  flex: 0 1 auto;
   gap: var(--space-4);
-  margin: var(--space-1) 0 0;
-  padding: 0;
+  min-height: 0;
+  margin: 0 calc(-1 * var(--space-1));
+  padding: var(--space-1);
+  overflow-y: auto;
+  overscroll-behavior: contain;
   list-style: none;
 }
 

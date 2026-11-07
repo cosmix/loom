@@ -10,14 +10,12 @@ import type {
 import { featureOfDocPath } from "@/plan/feature/source-href";
 import { featureHref } from "@/plan/feature/use-feature";
 
+import { fileName } from "@/plan/concept/passages";
+
 import { docOfPath, shortSlug, summaryHref } from "./model";
 
 // Pure reads of a feature's trace for the document heading, the plan page, an opened passage and
 // the settle confirmation. Nothing here fetches or renders.
-
-function baseName(path: string): string {
-  return path.split("/").at(-1) ?? path;
-}
 
 // ---- Settle words ----------------------------------------------------------------------------
 
@@ -127,7 +125,7 @@ export function coverageOfHeading(
     }
     const stages = cover.kind === "stage" && cover.stage ? [cover.stage] : [];
     plans.set(key, {
-      slug: shortSlug(feature, cover.slug ?? baseName(cover.path)),
+      slug: shortSlug(feature, cover.slug ?? fileName(cover.path)),
       to: planLink(trace, feature, cover),
       stages,
     });
@@ -183,9 +181,18 @@ export interface SettlePoint {
 type DocText = Pick<DocView, "text" | "sections">;
 
 const MAX_QUOTE = 160;
-const MARKER = /\s*\(my call[^)]*\)\.?/gi;
+// The marker and the explanation it may carry, wherever a hard wrap put the line breaks (the
+// caller joins a block's lines first). Group 1 is what follows the words: `: why` or `.`.
+const MARKER = /\s*\(my call([^)]*)\)\.?/gi;
 const LIST_ITEM = /^\s*(?:[-*+]|\d+[.)])\s+(.*\S)/;
-const FENCE = /^\s*(?:```|~~~)/;
+// An open question as the server counts one (`planning/pressure.rs` `is_list_item`): a top-level
+// `- `, `* ` or `N. ` item, at the very start of its line. Nested, `+` and `N)` items are not.
+const QUESTION_ITEM = /^(?:[-*]|\d+\.) (.*)$/s;
+// A fence mark (`fs/knowledge/scanner.rs`): up to three spaces, then three or more backticks or
+// tildes, then the rest of the line.
+const FENCE_RUN = /^ {0,3}(`{3,}|~{3,})(.*)$/s;
+const HEADING = /^\s*#{1,6}\s/;
+const SENTENCE_END = /[.?!]["')\]]*\s+/g;
 
 function plain(line: string): string {
   const text = line
@@ -206,43 +213,115 @@ function sectionAt(doc: DocText, line: number): SettlePoint["where"] {
   return section ? { title: section.title, anchor: section.anchor } : null;
 }
 
+/**
+ * Which lines are fence marks or inside a fence, by the server's rules: a backtick opener's info
+ * string holds no backtick, and a fence closes only on a run of its own character at least as long
+ * with nothing after it but blanks. An unclosed fence runs to the end.
+ */
+function fenceMask(lines: string[]): boolean[] {
+  let open = "";
+  return lines.map((line) => {
+    const [, marks = "", rest = ""] = FENCE_RUN.exec(line) ?? [];
+    if (open !== "") {
+      const closes = marks[0] === open[0] && marks.length >= open.length && /^[ \t\r]*$/.test(rest);
+      if (closes) open = "";
+      return true;
+    }
+    if (marks === "" || (marks[0] === "`" && rest.includes("`"))) return false;
+    open = marks;
+    return true;
+  });
+}
+
 /** Lines outside code fences, with their 1-based numbers. */
 function proseLines(text: string): { line: number; text: string }[] {
-  let fenced = false;
-  const lines: { line: number; text: string }[] = [];
-  text.split("\n").forEach((raw, index) => {
-    if (FENCE.test(raw)) fenced = !fenced;
-    else if (!fenced) lines.push({ line: index + 1, text: raw });
+  const lines = text.split("\n");
+  const fenced = fenceMask(lines);
+  return lines.flatMap((raw, index) => (fenced[index] ? [] : [{ line: index + 1, text: raw }]));
+}
+
+/** A paragraph or list item: its lines joined with spaces, and where each line starts in that text. */
+interface Block {
+  text: string;
+  starts: { line: number; offset: number }[];
+}
+
+/**
+ * The prose blocks of a document: consecutive non-blank lines outside code fences, joined with
+ * spaces. A list item, a heading and a line after a fence each begin a block of their own.
+ */
+function proseBlocks(lines: { line: number; text: string }[]): Block[] {
+  const blocks: Block[] = [];
+  let open: Block | null = null;
+  let previous = 0;
+  for (const { line, text } of lines) {
+    const item = LIST_ITEM.exec(text)?.[1];
+    const heading = HEADING.test(text);
+    const body = (item ?? text.replace(/^\s*(?:#{1,6}|>)\s+/, "")).trim();
+    const adjacent = line === previous + 1;
+    previous = line;
+    if (body === "") {
+      open = null;
+      continue;
+    }
+    const block: Block =
+      open === null || item !== undefined || heading || !adjacent ? { text: "", starts: [] } : open;
+    if (block !== open) blocks.push(block);
+    block.starts.push({ line, offset: block.text === "" ? 0 : block.text.length + 1 });
+    block.text = block.text === "" ? body : `${block.text} ${body}`;
+    open = heading ? null : block;
+  }
+  return blocks;
+}
+
+/** The last sentence of `text`: from the previous sentence end (". ", "? ", "! ") to the end. */
+function lastSentence(text: string): string {
+  const trimmed = text.trim();
+  let start = 0;
+  for (const end of trimmed.matchAll(SENTENCE_END)) start = (end.index ?? 0) + end[0].length;
+  return trimmed.slice(start);
+}
+
+/**
+ * The My call points of one block. Each quotes the sentence that ends right before its marker; a
+ * marker that opens its block (or follows another marker) quotes its own explanation instead.
+ */
+function callsOf(doc: DocText, block: Block): SettlePoint[] {
+  let from = 0;
+  return [...block.text.matchAll(MARKER)].map((match): SettlePoint => {
+    const index = match.index ?? 0;
+    const before = lastSentence(block.text.slice(from, index));
+    from = index + match[0].length;
+    const at = index + match[0].indexOf("(");
+    const line = block.starts.findLast((start) => start.offset <= at)?.line ?? 0;
+    const own = (match[1] ?? "").replace(/^[\s:.,;-]+/, "").trim();
+    return {
+      kind: "call",
+      quote: plain(before || own || block.text) || "My call",
+      where: sectionAt(doc, line),
+      index: 0,
+    };
   });
-  return lines;
 }
 
 /**
  * The My call lines and the open questions a document holds, in reading order, as the settle
- * confirmation quotes them. The server counts the same two things; this reads their text.
+ * confirmation quotes them. The server counts the same two things; this reads their text. The
+ * questions follow the server's count exactly: top-level items under a heading titled
+ * "Open questions" (any letter case), outside fences, each line counted once even where two such
+ * sections nest.
  */
 export function settlePoints(doc: DocText): SettlePoint[] {
   const lines = proseLines(doc.text);
-  const calls: SettlePoint[] = lines
-    .filter(({ text }) => /\(my call/i.test(text))
-    .map(({ line, text }) => ({
-      kind: "call",
-      quote: plain(text),
-      where: sectionAt(doc, line),
-      index: 0,
-    }));
-  const asked = doc.sections.filter((section) => /^open questions?$/i.test(section.title.trim()));
-  const questions: SettlePoint[] = asked.flatMap((section) =>
-    lines
-      .filter(({ line }) => line > section.start_line && line <= section.end_line)
-      .flatMap(({ text }) => LIST_ITEM.exec(text)?.[1] ?? [])
-      .map((item) => ({
-        kind: "question" as const,
-        quote: plain(item),
-        where: { title: section.title, anchor: section.anchor },
-        index: 0,
-      })),
-  );
+  const calls = proseBlocks(lines).flatMap((block) => callsOf(doc, block));
+  const asked = doc.sections.filter((section) => /^open questions$/i.test(section.title.trim()));
+  const questions = lines.flatMap(({ line, text }): SettlePoint[] => {
+    const section = asked.findLast((open) => line > open.start_line && line <= open.end_line);
+    const item = section === undefined ? undefined : QUESTION_ITEM.exec(text)?.[1];
+    if (section === undefined || item === undefined) return [];
+    const where = { title: section.title, anchor: section.anchor };
+    return [{ kind: "question", quote: plain(item), where, index: 0 }];
+  });
   return [...calls, ...questions.map((point, index) => ({ ...point, index: index + 1 }))];
 }
 

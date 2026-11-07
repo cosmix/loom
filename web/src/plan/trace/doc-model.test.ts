@@ -170,17 +170,91 @@ describe("settlePoints", () => {
     });
   });
 
-  it("skips code fences and reads every list item under Open questions in order", () => {
+  it("skips code fences and reads the top-level items under Open questions in order", () => {
     expect(points.map((point) => [point.kind, point.quote, point.index])).toEqual([
       ["call", "Coverage reads the metaplan Covers.", 0],
       ["question", "Should it come back?", 1],
-      ["question", "nested question", 2],
-      ["question", "Numbered one", 3],
+      ["question", "Numbered one", 2],
+    ]);
+  });
+
+  it("counts open questions by the server's rules", () => {
+    const text = [
+      "## Open questions",
+      "- Q1",
+      "  - sub-point",
+      "+ plus item",
+      "1) paren item",
+      "* Star item",
+      "~~~",
+      "- fenced",
+      "~~~",
+      "```js `x`",
+      "- after an inline code line",
+      "## Open question",
+      "- singular heading",
+    ].join("\n");
+    const sections = [
+      { level: 2, title: "Open questions", anchor: "open-questions", start_line: 1, end_line: 11 },
+      { level: 2, title: "Open question", anchor: "open-question", start_line: 12, end_line: 13 },
+    ];
+    expect(settlePoints({ text, sections }).map((point) => point.quote)).toEqual([
+      "Q1",
+      "Star item",
+      "after an inline code line",
     ]);
   });
 
   it("has nothing for a document with neither", () => {
     expect(settlePoints({ text: "# Doc\n\nPlain.", sections: [] })).toEqual([]);
+  });
+});
+
+describe("settlePoints quotes whole sentences", () => {
+  const quotes = (text: string, sections: Parameters<typeof settlePoints>[0]["sections"] = []) =>
+    settlePoints({ text, sections }).map((point) => point.quote);
+
+  it("quotes the sentence before a marker that a hard wrap left on the next line", () => {
+    const text =
+      "Earlier sentence. Coverage reads the metaplan's Covers: lines, never\nthe plan YAML. (My call.)";
+    expect(quotes(text)).toEqual([
+      "Coverage reads the metaplan's Covers: lines, never the plan YAML.",
+    ]);
+  });
+
+  it("strips a My call that runs onto the next line and keeps the sentence before it", () => {
+    const text = [
+      "Code is not writable at all. Changes go through `loom run`. (My call: a planning session",
+      "that edits code produces changes no stage reviewed.)",
+      "",
+      "Next paragraph.",
+    ].join("\n");
+    expect(quotes(text)).toEqual(["Changes go through loom run."]);
+  });
+
+  it("quotes the explanation of a marker that opens its list item", () => {
+    const text = [
+      "- (My call: a plan's open questions",
+      "  matter as much as a section's.)",
+      "- Plain item.",
+    ].join("\n");
+    expect(quotes(text)).toEqual(["a plan's open questions matter as much as a section's."]);
+  });
+
+  it("reads two markers of one paragraph as two points, each with its own sentence", () => {
+    const text = "First is so. (My call.) Second is so (My call: because). Third stands.";
+    expect(quotes(text)).toEqual(["First is so.", "Second is so"]);
+  });
+
+  it("puts a marker on the heading its own line sits under", () => {
+    const sections = [
+      { level: 2, title: "One", anchor: "one", start_line: 1, end_line: 3 },
+      { level: 2, title: "Two", anchor: "two", start_line: 4, end_line: 7 },
+    ];
+    const text = "## One\nAbove.\n\n## Two\nA sentence that wraps\nonto a second line. (My call.)";
+    const [point] = settlePoints({ text, sections });
+    expect(point?.where).toEqual({ title: "Two", anchor: "two" });
+    expect(point?.quote).toBe("A sentence that wraps onto a second line.");
   });
 });
 
