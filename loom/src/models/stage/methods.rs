@@ -208,7 +208,7 @@ impl Stage {
     /// # Returns
     /// `Ok(())` if the transition succeeded, `Err` if invalid
     pub fn try_complete(&mut self, reason: Option<String>) -> Result<()> {
-        self.try_transition(StageStatus::Completed)?;
+        self.try_transition_to_completed()?;
         self.close_reason = reason;
         self.stamp_completed();
         Ok(())

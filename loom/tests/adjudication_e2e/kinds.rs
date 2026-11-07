@@ -99,7 +99,7 @@ fn findings_dispute_round_trip() {
     assert_eq!(rulings[0].dispute, 1);
     assert!(store::open_findings(work, "s1").unwrap().is_empty());
     let after = loom::verify::transitions::load_stage("s1", work).unwrap();
-    assert_eq!(after.status, StageStatus::Queued);
+    assert_eq!(after.status, StageStatus::NeedsAdjudication);
     assert!(applied_marker(&work.join("disputes"), "s1", 1).exists());
 }
 
