@@ -124,7 +124,7 @@ it("an unresolved answer for a document left behind does not open a dialog on th
   fireEvent.click(await screen.findByRole("button", { name: "Mark settled" }));
   await waitFor(() => expect(posts).toHaveLength(1));
   view.rerender(settle(S02));
-  await screen.findByText(/^(Draft|Revised|Stub changed|Upstream changed|Settled)$/);
+  await screen.findByRole("button", { name: "Changed since you settled it" });
   hold?.release();
   await new Promise((resolve) => setTimeout(resolve, 20));
   expect(screen.queryByRole("dialog")).toBeNull();
@@ -146,34 +146,46 @@ it("a summary page posts the source document's hash, not its summary file's", as
   expect(posts[0]!.get("hash")).toBe(HASH);
 });
 
-it("focus moves to the settle state once Mark settled removes the button", async () => {
+it("focus stays on the button once Mark settled turns it into Settled", async () => {
   mount(settle(S03));
-  const pill = await screen.findByText("Draft");
-  fireEvent.click(screen.getByRole("button", { name: "Mark settled" }));
-  await screen.findByText("Settled");
-  await waitFor(() => expect(document.activeElement).toBe(pill));
+  const button = await screen.findByRole("button", { name: "Mark settled" });
+  fireEvent.click(button);
+  await screen.findByRole("button", { name: "Settled" });
   expect(screen.queryByRole("button", { name: "Mark settled" })).toBeNull();
+  await waitFor(() => expect(document.activeElement).toBe(button));
 });
 
-it("focus moves to the settle state after a confirmed settle closes the dialog", async () => {
+it("focus stays on the button after a confirmed settle closes the popover", async () => {
   settleAnswers = [{ status: 409, body: UNRESOLVED }];
   mount(settle(S03));
-  const pill = await screen.findByText("Draft");
-  fireEvent.click(screen.getByRole("button", { name: "Mark settled" }));
-  const dialog = await screen.findByRole("dialog");
+  const button = await screen.findByRole("button", { name: "Mark settled" });
+  fireEvent.click(button);
+  const dialog = await screen.findByRole("dialog", { name: "Settle with open items?" });
   fireEvent.click(within(dialog).getByRole("button", { name: "Settle anyway" }));
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-  await waitFor(() => expect(document.activeElement).toBe(pill));
+  await waitFor(() => expect(document.activeElement).toBe(button));
   expect(posts.map((params) => params.get("confirm"))).toEqual([null, "1"]);
 });
 
-it("cancelling the dialog returns focus to the Mark settled button that opened it", async () => {
+it("Not yet closes the popover and returns focus to the Mark settled button", async () => {
   settleAnswers = [{ status: 409, body: UNRESOLVED }];
   mount(settle(S03));
   const opener = await screen.findByRole("button", { name: "Mark settled" });
   fireEvent.click(opener);
   const dialog = await screen.findByRole("dialog");
-  fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+  fireEvent.click(within(dialog).getByRole("button", { name: "Not yet" }));
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  await waitFor(() => expect(document.activeElement).toBe(opener));
+  expect(posts).toHaveLength(1);
+});
+
+it("Escape dismisses the confirmation and returns focus to the button", async () => {
+  settleAnswers = [{ status: 409, body: UNRESOLVED }];
+  mount(settle(S03));
+  const opener = await screen.findByRole("button", { name: "Mark settled" });
+  fireEvent.click(opener);
+  const dialog = await screen.findByRole("dialog");
+  fireEvent.keyDown(dialog, { key: "Escape" });
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   await waitFor(() => expect(document.activeElement).toBe(opener));
   expect(posts).toHaveLength(1);

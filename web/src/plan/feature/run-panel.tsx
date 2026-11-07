@@ -1,14 +1,17 @@
 import { useAtomValue, useStore } from "jotai/react";
 import { useEffect, useState } from "react";
+import { Link } from "react-router";
 
 import type { ChecklistView } from "@/plan/api/schema";
 import { ConfigBlockNotice } from "@/plan/chat/pressure/config-block-notice";
 import { Untrusted } from "@/plan/chat/visible-controls";
 import { runScope, runSentence, startControl, type RunRead } from "@/plan/feature/run-scope";
-import { useFeature } from "@/plan/feature/use-feature";
+import { featureHref, useFeature } from "@/plan/feature/use-feature";
 import { DashboardLink, webUrl } from "@/plan/run/dashboard-button";
 import { StartRunButton } from "@/plan/run/plan-run-actions";
 import { fetchRunState, runStateAtom, runStripAtom } from "@/plan/run/use-run";
+import { openCount } from "@/plan/trace/findings-model";
+import { useTrace } from "@/plan/trace/state";
 
 import "./run-panel.css";
 
@@ -61,6 +64,17 @@ function useRunRead(): RunRead {
   return read;
 }
 
+/** The way to the Findings page, with what still waits there; drawn once the ledger holds any. */
+function FindingsLink({ feature }: { feature: string }) {
+  const { trace } = useTrace(feature);
+  if (trace === null || trace.findings.length === 0) return null;
+  return (
+    <p className="plan-run__findings">
+      <Link to={featureHref(feature, "findings")}>Findings · {openCount(trace)} open</Link>
+    </p>
+  );
+}
+
 function Panel({ checklist }: { checklist: ChecklistView }) {
   const state = useAtomValue(runStateAtom);
   const strip = useAtomValue(runStripAtom);
@@ -72,14 +86,16 @@ function Panel({ checklist }: { checklist: ChecklistView }) {
         <Untrusted text={sentence} />
       </p>
       <RunActions checklist={checklist} read={read} />
+      <FindingsLink feature={checklist.feature} />
     </section>
   );
 }
 
 /**
  * The feature's run on the Plans overview: one line on the run's state, the one Start a run
- * button and the dashboard link. A plan's state is its spine row's and its page's, so the panel
- * lists no plans; a feature with no plan yet has no run to speak of and draws nothing.
+ * button and the dashboard link, then the Findings link while the feature's ledger has any
+ * finding. A plan's state is its spine row's and its page's, so the panel lists no plans; a
+ * feature with no plan yet has no run to speak of and draws nothing.
  */
 export function RunPanel() {
   const { checklist } = useFeature();

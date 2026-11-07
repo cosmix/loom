@@ -124,12 +124,12 @@ export const PLANNER_HELP_TOPICS: readonly PlannerHelpTopic[] = [
   },
   {
     id: "coverage",
-    label: "Coverage map",
-    description: "Read the map from vision rows to plans, find gaps and follow a card's lineage.",
+    label: "Coverage",
+    description: "See which spec headings plans cover, find the gaps and open a row to see why.",
     Icon: WaypointsIcon,
     hue: 7,
     intro:
-      "The Coverage page lays a feature out in five columns, from the vision's rows to the findings about them. Select a card to see why it exists and how it is delivered.",
+      "The Coverage page lists every heading of the spec by section, with the plans and stages that cover it. The four tiles count the rows and filter them; open a row to see why the heading exists and how it is delivered.",
     scenes: [],
     Body: CoverageHelp,
     tips: COVERAGE_TIPS,

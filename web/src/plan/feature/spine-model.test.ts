@@ -3,9 +3,9 @@ import { describe, expect, it } from "vitest";
 import checklistFixture from "@/plan/api/fixtures/checklist.json";
 import traceFixture from "@/plan/api/fixtures/trace.json";
 import { checklistViewSchema, type ChecklistView } from "@/plan/api/schema";
-import { traceViewSchema } from "@/plan/api/schema-trace";
+import { traceViewSchema, type DocRole, type SettleState } from "@/plan/api/schema-trace";
 
-import { groupOfPathname, spineGroups, summaryPathnameOfSource } from "./spine-model";
+import { groupOfPathname, rowGlyph, spineGroups, summaryPathnameOfSource } from "./spine-model";
 
 it.each([
   ["/f/atlas/vision", "vision"],
@@ -112,41 +112,70 @@ it("maps a metaplan file the checklist does not list to no summary route", () =>
   expect(summaryPathnameOfSource(atlas(), "/f/atlas/source/plans/atlas/round%202.md")).toBeNull();
 });
 
-describe("the trace pages' rows", () => {
-  const trace = traceViewSchema.parse(structuredClone(traceFixture));
-  const group = (id: string, view = trace) =>
-    spineGroups(atlas(), view).find((candidate) => candidate.id === id)!;
+describe("the row glyph", () => {
+  const glyph = (
+    planState: string | null,
+    settle: SettleState | null,
+    written = true,
+    role: DocRole = "section",
+  ) => rowGlyph({ planState, settle, written, role });
 
-  it("lists Coverage after the sections of the Product spec group", () => {
-    const coverage = group("product").children.at(-1)!;
-    expect(coverage).toMatchObject({ name: "Coverage", to: "/f/atlas/coverage", note: null });
-    expect(group("product").children[0]!.name).toBe("Overview");
+  it("goes by precedence: running, attention, settled, done, not written, draft", () => {
+    expect(glyph("running", "settled")).toEqual({ kind: "running", word: "Running" });
+    expect(glyph(null, "settled")).toEqual({ kind: "settled", word: "Settled" });
+    expect(glyph("done", null)).toEqual({ kind: "done", word: "Done" });
+    expect(glyph(null, null, false)).toEqual({ kind: "not-written", word: null });
+    expect(glyph(null, "draft")).toEqual({ kind: "draft", word: "Draft" });
   });
 
-  it("closes the Plans group with Findings, the open count as its note, and draws no Run group", () => {
-    expect(group("plans").children.at(-1)).toMatchObject({
-      name: "Findings",
-      to: "/f/atlas/findings",
-      note: "1 open",
+  it("turns amber, with the state's own words, for a document that moved since settling", () => {
+    expect(glyph(null, "revised")).toEqual({
+      kind: "attention",
+      word: "Changed since you settled it",
     });
-    expect(spineGroups(atlas(), trace).map((candidate) => candidate.id)).toEqual([
-      "vision",
-      "product",
-      "metaplan",
-      "plans",
-    ]);
+    expect(glyph(null, "stub_changed").word).toBe("Changed since you settled it");
+    expect(glyph("written", "upstream_changed", true, "plan")).toEqual({
+      kind: "attention",
+      word: "Spec changed since you settled it",
+    });
+    // A moved settle state outranks a plan's own done check.
+    expect(glyph("done", "revised").kind).toBe("attention");
   });
 
-  it("counts only open findings, and says nothing without any or without a trace", () => {
-    const settled = structuredClone(trace);
-    for (const { finding } of settled.findings) {
-      finding.status = { kind: "dismissed", detail: "x" };
-    }
-    expect(group("plans", settled).children.at(-1)!.note).toBeNull();
-    expect(
-      spineGroups(atlas())
-        .find((g) => g.id === "plans")!
-        .children.at(-1)!.note,
-    ).toBeNull();
+  it("names a draft only once the trace says so, and a retired plan before anything else", () => {
+    expect(glyph("written", null)).toEqual({ kind: "draft", word: null });
+    expect(glyph("retired", "settled")).toEqual({ kind: "retired", word: "Retired" });
+  });
+
+  it("gives each spine row exactly one glyph, from the trace", () => {
+    const trace = traceViewSchema.parse(structuredClone(traceFixture));
+    const rows = spineGroups(atlas(), trace);
+    const product = rows.find((group) => group.id === "product")!;
+    expect(product.children[0]!.glyph).toBeNull();
+    expect(product.children[1]!.glyph?.kind).toBe("draft");
+    expect(product.children[2]!.glyph).toEqual({ kind: "not-written", word: null });
+    expect(rows.find((group) => group.id === "vision")!.glyph).not.toBeNull();
+    expect(product.glyph).toBeNull();
+  });
+});
+
+describe("a plan row's slug", () => {
+  it("drops the feature prefix from a plan's slug and keeps the full slug in the row's title", () => {
+    const row = { ...atlas().plan_rows[0]!, slug: "atlas-03", state: "written" };
+    const plans = spineGroups(atlas({ plan_rows: [row] })).find((group) => group.id === "plans")!;
+    expect(plans.children.at(-1)).toMatchObject({ name: "03", title: "atlas-03" });
+  });
+});
+
+describe("the trace pages", () => {
+  const trace = traceViewSchema.parse(structuredClone(traceFixture));
+
+  it("have no row: the Product spec and Plans groups list only their own documents", () => {
+    const rows = spineGroups(atlas(), trace);
+    const names = rows.flatMap((group) => group.children.map((child) => child.name));
+    expect(names).not.toContain("Coverage");
+    expect(names).not.toContain("Findings");
+    expect(rows.map((group) => group.id)).toEqual(["vision", "product", "metaplan", "plans"]);
+    expect(rows.find((group) => group.id === "plans")!.children.at(-1)!.name).not.toBe("Findings");
   });
 });

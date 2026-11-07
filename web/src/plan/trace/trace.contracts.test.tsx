@@ -1,12 +1,11 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { createStore } from "jotai";
 import { Provider } from "jotai/react";
-import { createMemoryRouter, MemoryRouter, RouterProvider } from "react-router";
+import { createMemoryRouter, RouterProvider } from "react-router";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import { initClient } from "@/plan/api/client";
 import authoringFixture from "@/plan/api/fixtures/authoring.json";
-import snapshot from "@/plan/api/fixtures/chat-snapshot.json";
 import checklistFixture from "@/plan/api/fixtures/checklist.json";
 import overviewFixture from "@/plan/api/fixtures/concept-overview.json";
 import summaryFixture from "@/plan/api/fixtures/concept-summary.json";
@@ -20,9 +19,7 @@ import {
   serverInfoSchema,
   type ChecklistView,
 } from "@/plan/api/schema";
-import { chatSnapshotSchema, type Turn } from "@/plan/api/schema-chat";
 import { traceViewSchema, type TraceDoc, type TraceView } from "@/plan/api/schema-trace";
-import { TurnFooter } from "@/plan/chat/turn-footer";
 import { routes } from "@/plan/router";
 import { activeFeatureAtom, authoringAtom, projectAtom, serverInfoAtom } from "@/plan/state/atoms";
 
@@ -41,7 +38,6 @@ const S01 = "doc/product/demo/section_01.md";
 const S02 = "doc/product/demo/section_02.md";
 const S03 = "doc/product/demo/section_03.md";
 const FIRST_PLAN = "doc/plans/demo/PLAN-first.md";
-const SECOND_PLAN = "doc/plans/demo/PLAN-second.md";
 /** The opened document's save hash: the source view and the summary page both carry it. */
 const HASH = "sha256:5e771ed0c0ffee";
 const SETTLED_COMMIT = "0a1b2c3d4e5f60718293a4b5c6d7e8f901234567";
@@ -197,16 +193,6 @@ function renderRoutes(path: string): void {
   );
 }
 
-/** The closed sentence's wrap: its text, then whatever the page draws after it. */
-async function sentenceWrap(id: string): Promise<HTMLElement> {
-  await screen.findByRole("document", { name: "Reading column" });
-  return waitFor(() => {
-    const element = document.querySelector<HTMLElement>(`[data-sentence-id="${id}"]`);
-    if (!element?.parentElement) throw new Error(`sentence ${id} is not drawn`);
-    return element.parentElement;
-  });
-}
-
 beforeEach(() => {
   window.localStorage.clear();
   calls = [];
@@ -269,83 +255,4 @@ it("an unresolved answer asks before settling with confirm=1", async () => {
   expect(resent.get("confirm")).toBe("1");
   expect(resent.get("path")).toBe("product/demo/section_03.md");
   expect(resent.get("hash")).toBe(HASH);
-});
-
-it("a revised document links to its changes since settled", async () => {
-  // Section 02 reads `revised` in the trace fixture.
-  renderRoutes("/f/demo/product/section_02");
-
-  const link = await screen.findByRole("link", { name: "Changes since settled" });
-  expect(link.getAttribute("href")).toBeTruthy();
-});
-
-it("frontier hints are at most five links", async () => {
-  // Seven documents, each a gap of its own, with titles nothing else on the page draws.
-  trace.documents.forEach((doc, index) => {
-    doc.title = `Frontier doc ${index + 1}`;
-  });
-  trace.frontier = trace.documents.slice(0, 7).map((doc) => ({
-    kind: "settle" as const,
-    node: { path: doc.path, anchor: null },
-    count: null,
-  }));
-  expect(trace.frontier).toHaveLength(7);
-  renderRoutes("/f/demo/product");
-  await screen.findByRole("navigation", { name: SPINE });
-
-  const hints = () => screen.queryAllByRole("link", { name: /Frontier doc \d/ });
-  await waitFor(() => expect(hints().length).toBeGreaterThan(0));
-  expect(hints()).toHaveLength(5);
-});
-
-it("a sentence shows the plans covering the headings it rests on", async () => {
-  // Heading `one` is covered by plan first; heading `two` of the same section by plan second only.
-  trace.headings = trace.headings.map((heading) =>
-    heading.path === S01 && heading.anchor === "two"
-      ? {
-          ...heading,
-          covered_by: [
-            { kind: "plan", path: SECOND_PLAN, anchor: null, slug: "second", stage: null },
-          ],
-        }
-      : heading,
-  );
-  renderRoutes("/f/demo/product/section_01");
-
-  const restsOnOne = await sentenceWrap("s1");
-  const restsOnTwo = await sentenceWrap("s2");
-  await waitFor(() => expect(restsOnOne.textContent).toMatch(/\bfirst\b/));
-  expect(restsOnOne.textContent).not.toMatch(/\bsecond\b/);
-  await waitFor(() => expect(restsOnTwo.textContent).toMatch(/\bsecond\b/));
-  expect(restsOnTwo.textContent).not.toMatch(/\bfirst\b/);
-});
-
-function changedTurn(path: string): Turn {
-  const fixture = chatSnapshotSchema.parse(snapshot).turns[0]!;
-  return {
-    ...fixture,
-    id: "t2",
-    open: false,
-    changed_files: [{ path, before_hash: "before", by_tool: true }],
-    summaries_rebuilding: [],
-  };
-}
-
-it("the turn footer lists settled plans downstream of a changed section", async () => {
-  // Plan first covers section 01's headings and its spec moved since it was settled.
-  patchDoc(trace, FIRST_PLAN, { settle: "upstream_changed" });
-  render(
-    <Provider store={storeWithProject()}>
-      <MemoryRouter>
-        <TurnFooter turn={changedTurn(S01)} sessionId="session one" />
-      </MemoryRouter>
-    </Provider>,
-  );
-
-  const footer = await screen.findByRole("group", { name: "Turn 2 changes" });
-  const [chip] = await within(footer).findAllByText("section_01.md");
-  const item = chip!.closest("li");
-  if (!item) throw new Error("the changed section has no row of its own");
-  await waitFor(() => expect(item.textContent).toMatch(/upstream changed/i));
-  expect(item.textContent).toMatch(/\bfirst\b/i);
 });

@@ -1,27 +1,33 @@
 #!/usr/bin/env bash
 # Screenshot planner routes in a headless browser against a real `loom plan` server.
 #
-# Usage: scripts/plan-screens.sh [--worktree-doc] [--themes=<id>,<id>] <loom-binary> <out-dir> <route>...
+# Usage: scripts/plan-screens.sh [--worktree-doc] [--themes=<id>,<id>] [--browser=chromium|firefox] <loom-binary> <out-dir> <route>...
 #   e.g. scripts/plan-screens.sh loom/target/debug/loom "$LOOM_SCRATCH_DIR/screens" / /f/feat-planner
 #
 # Run from the worktree root after `cd web && bun run build` and `cargo build` (the binary embeds
 # web/dist). Serves a shallow scratch clone of HEAD's doc/ so the operator commits nothing;
 # --worktree-doc copies the worktree's current doc/ over it so uncommitted docs show. Shoots each
 # route at 1440x900 and 390x844 in Ledger and Walnut, or the --themes ids (ledger, walnut,
-# graphite); exits non-zero on a console error or a route that does not render. Loopback
+# graphite), in Chromium unless --browser=firefox (the user's browser: use it for every visual check;
+# the host's Playwright Firefox build must already be installed, nothing is downloaded). The leading
+# flags may come in any order; exits non-zero on a console error or a route that does not render. Loopback
 # is per Bash call, so the server and browser run here.
 set -euo pipefail
 
 worktree_doc=0
-if [[ "${1:-}" == "--worktree-doc" ]]; then
-  worktree_doc=1
+# Flags the browser script reads (--themes=, --browser=), passed through in the order given.
+shoot_flags=()
+while [[ "${1:-}" == --* ]]; do
+  case "$1" in
+    --worktree-doc) worktree_doc=1 ;;
+    --themes=* | --browser=*) shoot_flags+=("$1") ;;
+    *)
+      echo "unknown flag: $1" >&2
+      exit 2
+      ;;
+  esac
   shift
-fi
-themes=()
-if [[ "${1:-}" == --themes=* ]]; then
-  themes=("$1")
-  shift
-fi
+done
 if [[ $# -lt 3 ]]; then
   sed -n '3,4p' "$0" >&2
   exit 2
@@ -78,4 +84,4 @@ if [[ -z "$url" ]]; then
   exit 1
 fi
 
-node "$mjs" ${themes[@]+"${themes[@]}"} "$url" "$out_dir" "$@"
+node "$mjs" ${shoot_flags[@]+"${shoot_flags[@]}"} "$url" "$out_dir" "$@"

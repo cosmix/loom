@@ -1,9 +1,10 @@
 import { useAtomValue, useStore } from "jotai/react";
+import { CornerDownRight, FilePlus2, X } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 import { Link, useLocation } from "react-router";
 
 import type { OfferView } from "@/plan/api/schema";
-import type { NodeRef, TraceEntry, TraceFinding, TraceView } from "@/plan/api/schema-trace";
+import type { NodeRef, TraceFinding, TraceView } from "@/plan/api/schema-trace";
 import { Untrusted } from "@/plan/chat/visible-controls";
 import { hashAnchor } from "@/plan/files/address";
 import { featureSourceHref } from "@/plan/feature/source-href";
@@ -20,7 +21,14 @@ import {
   REASON_MAX,
   setFindingStatus,
 } from "./findings-actions";
-import { foldableEntries, nodeLabel, statusText, type FindingGroup } from "./findings-model";
+import { FoldPicker } from "./findings-fold";
+import {
+  foldChoices,
+  groupTitle,
+  nodeLabel,
+  statusText,
+  type FindingGroup,
+} from "./findings-model";
 import { ledgerBlock, type LedgerHash } from "./ledger-hash";
 import { loadTrace } from "./state";
 
@@ -50,7 +58,7 @@ function AboutChips(props: { trace: TraceView; feature: string; nodes: NodeRef[]
       {nodes.map((node) => (
         <span key={`${node.path}#${node.anchor ?? ""}`}>
           <Link
-            className="trace-chip maps-chip"
+            className="maps-chip"
             to={featureSourceHref(feature, node.path, { anchor: node.anchor })}
           >
             <Untrusted text={nodeLabel(trace, node)} />
@@ -58,34 +66,6 @@ function AboutChips(props: { trace: TraceView; feature: string; nodes: NodeRef[]
         </span>
       ))}
     </p>
-  );
-}
-
-/** Picks the metaplan entry a finding folds into: only entries whose plan has not started. */
-function FoldPicker(props: {
-  entries: TraceEntry[];
-  onPick: (entry: TraceEntry) => void;
-  onCancel: () => void;
-}) {
-  return (
-    <div role="group" aria-label="Fold into which entry" className="maps-picker">
-      {props.entries.length === 0 ? (
-        <p className="plan-fine">No metaplan entry is waiting for its plan.</p>
-      ) : (
-        <ul>
-          {props.entries.map((entry) => (
-            <li key={entry.anchor}>
-              <DisabledReason reason={null} look="quiet" onClick={() => props.onPick(entry)}>
-                <Untrusted text={entry.title} />
-              </DisabledReason>
-            </li>
-          ))}
-        </ul>
-      )}
-      <DisabledReason reason={null} look="quiet" onClick={props.onCancel}>
-        Cancel
-      </DisabledReason>
-    </div>
   );
 }
 
@@ -106,7 +86,7 @@ function DismissForm(props: {
   const blocked =
     authorBlock ??
     ledgerBlock(props.ledger) ??
-    (reason === null ? "Write a reason" : null) ??
+    (reason === null ? "Write a reason first" : null) ??
     (props.busy ? "Saving the dismissal" : null);
   const confirm = () => {
     if (blocked === null && reason !== null) props.onConfirm(reason);
@@ -182,28 +162,31 @@ function ActionButtons(props: {
       <DisabledReason
         reason={offerBlock}
         reasonId={reasonId}
-        look="quiet"
+        look="secondary"
         label={`Plan this ${findingId}`}
         onClick={props.onPlan}
       >
+        <FilePlus2 aria-hidden="true" />
         Plan this
       </DisabledReason>
       <DisabledReason
         reason={offerBlock}
         reasonId={reasonId}
-        look="quiet"
+        look="secondary"
         label={`${FOLD_LABEL} ${findingId}`}
         onClick={props.onFold}
       >
+        <CornerDownRight aria-hidden="true" />
         {FOLD_LABEL}
       </DisabledReason>
       <DisabledReason
         label={`${DISMISS_LABEL} ${findingId}`}
         reason={authorBlock}
         reasonId={dismissShares ? reasonId : undefined}
-        look="quiet"
+        look="secondary"
         onClick={props.onDismiss}
       >
+        <X aria-hidden="true" />
         {DISMISS_LABEL}
       </DisabledReason>
       {offerBlock !== null && (
@@ -284,7 +267,7 @@ function Actions(props: Context & { entry: TraceFinding; onDismissed: () => void
       )}
       {mode === "fold" && (
         <FoldPicker
-          entries={foldableEntries(trace)}
+          choices={foldChoices(trace, entry.about)}
           onPick={(chosen) => start(foldSeed(entry.finding, chosen))}
           onCancel={close}
         />
@@ -294,9 +277,15 @@ function Actions(props: Context & { entry: TraceFinding; onDismissed: () => void
   );
 }
 
+/**
+ * One finding. An open one shows its text, the nodes it is about and its actions; a decided one
+ * folds to its heading and the outcome in words. The heading element is the same in both, so the
+ * focus a dismissal leaves there survives the reload that turns the card into a decided line.
+ */
 function FindingCard(props: Context & { entry: TraceFinding }) {
   const { entry, trace, feature, ...context } = props;
   const { finding } = entry;
+  const open = finding.status.kind === "open";
   const { hash } = useLocation();
   const heading = useRef<HTMLHeadingElement>(null);
   // `data-addressed` washes the card the address names; `:target` does not follow router pushes.
@@ -315,22 +304,24 @@ function FindingCard(props: Context & { entry: TraceFinding }) {
         <h3 className="maps-finding-title" ref={heading} tabIndex={-1}>
           <Untrusted text={finding.title} />
         </h3>
+        <p className="plan-fine maps-finding-status">
+          <Untrusted text={statusText(finding.status)} />
+        </p>
       </div>
-      <p className="plan-fine maps-finding-status">
-        <Untrusted text={statusText(finding.status)} />
-      </p>
-      <p className="maps-finding-text">
-        <Untrusted text={finding.text} />
-      </p>
-      <AboutChips trace={trace} feature={feature} nodes={entry.about} />
-      {finding.status.kind === "open" && (
-        <Actions
-          entry={entry}
-          trace={trace}
-          feature={feature}
-          {...context}
-          onDismissed={() => heading.current?.focus()}
-        />
+      {open && (
+        <>
+          <AboutChips trace={trace} feature={feature} nodes={entry.about} />
+          <p className="maps-finding-text">
+            <Untrusted text={finding.text} />
+          </p>
+          <Actions
+            entry={entry}
+            trace={trace}
+            feature={feature}
+            {...context}
+            onDismissed={() => heading.current?.focus()}
+          />
+        </>
       )}
     </li>
   );
@@ -341,8 +332,8 @@ export function Group(props: Context & { group: FindingGroup }) {
   const { group, ...rest } = props;
   return (
     <section className="maps-finding-group" data-run={group.run ?? undefined}>
-      <h2 className="plan-eyebrow">
-        <Untrusted text={group.label} />
+      <h2 className="maps-finding-group__title">
+        <Untrusted text={groupTitle(group, rest.feature)} />
       </h2>
       <ul className="maps-findings-list">
         {group.findings.map((entry) => (

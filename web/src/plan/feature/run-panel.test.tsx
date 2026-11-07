@@ -1,7 +1,8 @@
-import { cleanup, fireEvent, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { act } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
+import traceFixture from "@/plan/api/fixtures/trace.json";
 import {
   atlas,
   offer,
@@ -162,9 +163,10 @@ it("leaves the checking line when the first of two overlapping requests answers"
   const answers: ((response: Response) => void)[] = [];
   vi.stubGlobal(
     "fetch",
-    () =>
+    (input: RequestInfo | URL) =>
       new Promise<Response>((resolve) => {
-        answers.push(resolve);
+        // The Findings link reads the trace too; it is not one of the run state requests.
+        if (String(input).includes("/api/run/state")) answers.push(resolve);
       }),
   );
   const { store } = renderPage(<RunPanel />, PATH, written, { holder: "me" });
@@ -270,4 +272,35 @@ it("draws nothing for a feature with no plan: the overview's queue offers writin
 
   expect(screen.queryByRole("region", { name: "Run" })).toBeNull();
   expect(screen.queryByRole("status")).toBeNull();
+});
+
+/** Serves the run state and the given trace, and counts the trace requests. */
+function serveWithTrace(trace: unknown): { traceRequests: () => number } {
+  let traces = 0;
+  vi.stubGlobal("fetch", (input: RequestInfo | URL) => {
+    if (!String(input).includes("/api/trace/")) {
+      return Promise.resolve(json(runState({ workspace: "done", active_plan: null })));
+    }
+    traces += 1;
+    return Promise.resolve(json(trace));
+  });
+  return { traceRequests: () => traces };
+}
+
+it("links the Findings page with the number still open", async () => {
+  // The trace fixture holds two findings, one of them open.
+  serveWithTrace(traceFixture);
+  renderPage(<RunPanel />, PATH, written, { holder: "me" });
+
+  const link = await screen.findByRole("link", { name: "Findings · 1 open" });
+  expect(link.getAttribute("href")).toBe("/f/atlas/findings");
+});
+
+it("draws no Findings link while the ledger is empty", async () => {
+  const served = serveWithTrace({ ...traceFixture, findings: [] });
+  renderPage(<RunPanel />, PATH, written, { holder: "me" });
+
+  await waitFor(() => expect(served.traceRequests()).toBeGreaterThan(0));
+  await screen.findByText("Nothing is running.");
+  expect(screen.queryByRole("link", { name: /Findings/ })).toBeNull();
 });

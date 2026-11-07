@@ -1,5 +1,5 @@
 import { FoldVertical, UnfoldVertical } from "lucide-react";
-import type { JSX } from "react";
+import type { JSX, ReactNode } from "react";
 
 import {
   VISION_DOC,
@@ -9,24 +9,26 @@ import {
   parsePageKey,
 } from "@/plan/api/page-key";
 import type { ConceptPage } from "@/plan/api/schema-concept";
+import { Untrusted } from "@/plan/chat/visible-controls";
 import { featureOfDocPath, featureSourceHref } from "@/plan/feature/source-href";
 import {
   builtByChips,
   featureCrumb,
   isRebuilding,
   planStateChip,
-  pressureChip,
   sectionLabel,
   sectionNumberLabel,
+  slugNumber,
   summaryChips,
   useFeatureFacts,
   useOpenQuestionChips,
 } from "@/plan/files/heading-parts";
 import { HeadingActions, usePressureActive } from "@/plan/files/doc-heading-view";
 import { LockNotice } from "@/plan/files/lock-notice";
-import { BriefsCard } from "@/plan/trace/briefs-card";
+import { useTraceChips } from "@/plan/trace/heading-chips";
+import { PlanExtras } from "@/plan/trace/plan-extras";
+import { ScopeLine } from "@/plan/trace/scope-line";
 import { docIsLocked, SettleControl } from "@/plan/trace/settle-control";
-import { StubPanel } from "@/plan/trace/stub-panel";
 import {
   DocHeading,
   HEADING_BUTTON,
@@ -117,17 +119,22 @@ function fact(chip: HeadingChip): HeadingChip {
 
 /**
  * The status card's rows, what needs attention first (the summary's state with its Rebuild, the
- * open questions, a plan's state and pressure record), then the facts line: what the document
- * implements and the plans that build it.
+ * document's settle state and coverage, the open questions, a plan's state), then the facts line:
+ * what the document implements and the plans that build it. A plan's pressure record has a card of
+ * its own under the heading (`PlanExtras`).
  */
-function pageChips(page: ConceptPage, rebuilding: boolean, questions: HeadingChip[]) {
+function pageChips(
+  page: ConceptPage,
+  rebuilding: boolean,
+  questions: HeadingChip[],
+  trace: HeadingChip[],
+) {
   const plan = page.plan_state;
-  const showPressure = plan !== null || page.last_pressure !== null;
   return [
     ...statusChips(page, rebuilding),
+    ...trace,
     ...questions,
     ...(plan === null ? [] : [planStateChip(plan)]),
-    ...(showPressure ? [pressureChip(page.last_pressure, false)] : []),
     ...implementsChips(page).map(fact),
     ...builtByChips(page).map(fact),
   ];
@@ -169,8 +176,9 @@ export function OpenAllButton({ page }: { page: ConceptPage }): JSX.Element {
 }
 
 /**
- * The settle state and stub of a document's summary page. Overviews are not documents of their
- * own (they summarise the vision or the metaplan), so only a summary page carries them.
+ * The document behind a summary page, for its settle state, scope and plan extras. Overviews are
+ * not documents of their own (they summarise the vision or the metaplan), so only a summary page
+ * carries them.
  */
 function tracedDocument(page: ConceptPage): { feature: string; path: string } | null {
   if (page.feature === null || !page.path || parsePageKey(page.key)?.kind !== "summary") {
@@ -190,21 +198,60 @@ function SettleOfSource({ feature, path }: { feature: string; path: string }): J
   return <SettleControl feature={feature} path={path} hash={doc?.hash ?? null} locked={locked} />;
 }
 
-/** The settle control is the toolbar's second group, after the Summary / Source switch. */
+/** The settle control is the last of the toolbar's actions on the document. */
 function TraceSettle({ page }: { page: ConceptPage }): JSX.Element | null {
   const document = tracedDocument(page);
   if (!document) return null;
   return <SettleOfSource key={document.path} feature={document.feature} path={document.path} />;
 }
 
-/** The document's stub, then a plan's briefs in a card of their own. */
-function TraceExtras({ page }: { page: ConceptPage }): JSX.Element | null {
+/** The scope standfirst under the title: the document's stub, with its changed note. */
+function TraceScope({ page }: { page: ConceptPage }): JSX.Element | null {
   const document = tracedDocument(page);
   if (!document) return null;
+  return <ScopeLine feature={document.feature} path={document.path} />;
+}
+
+/** A plan's pressure record, what it implements and its briefs, under its heading. */
+function TracePlan({ page }: { page: ConceptPage }): JSX.Element | null {
+  const document = tracedDocument(page);
+  const key = parsePageKey(page.key);
+  // A plan is a summary page of the engineering scope; `plan_state` is not set on every plan page.
+  if (!document || key?.kind !== "summary" || key.scope !== "engineering") return null;
+  return (
+    <PlanExtras feature={document.feature} path={document.path} pressure={page.last_pressure} />
+  );
+}
+
+/**
+ * The title of a section or plan summary page led by its document number (`01`, `13`), which the
+ * heading draws in muted ink (`trace-heading.css`) in place of a document mark. Null for any other
+ * page, which keeps its plain title and mark.
+ */
+function numberedTitle(page: ConceptPage): ReactNode {
+  const parts = parsePageKey(page.key);
+  if (parts?.kind !== "summary") return null;
+  let number: string | null = null;
+  if (parts.scope === "product" && parts.doc !== VISION_DOC) {
+    const digits = /^section_(\d+)$/.exec(parts.doc)?.[1];
+    number = digits === undefined ? null : digits.padStart(2, "0");
+  } else if (parts.scope === "engineering") {
+    number = slugNumber(parts.doc);
+  }
+  if (number === null) return null;
+  // A section's title already opens with its number ("04 — Summary Engine"); the muted number
+  // replaces that prefix instead of doubling it.
+  const prefix = /^(\d+)\s*[—–:.-]?\s+/.exec(page.title);
+  const name =
+    prefix !== null && Number(prefix[1]) === Number(number)
+      ? page.title.slice(prefix[0].length)
+      : page.title;
   return (
     <>
-      <StubPanel feature={document.feature} path={document.path} />
-      <BriefsCard feature={document.feature} path={document.path} />
+      <span className="doc-heading-number" aria-hidden="true">
+        {number}
+      </span>{" "}
+      <Untrusted text={name} />
     </>
   );
 }
@@ -213,40 +260,41 @@ function TraceExtras({ page }: { page: ConceptPage }): JSX.Element | null {
 export function PageHeading({ page }: { page: ConceptPage }): JSX.Element {
   const facts = useFeatureFacts(page.feature);
   const questions = useOpenQuestionChips(page.path, true);
+  const document = tracedDocument(page);
+  const trace = useTraceChips(document?.feature ?? null, document?.path ?? null);
   const rebuilding = isRebuilding(page);
   const notice = page.plan_state === null ? null : LOCKED_NOTICES[page.plan_state];
+  const numbered = numberedTitle(page);
   return (
-    <DocHeading
-      breadcrumb={breadcrumb(page, facts)}
-      kind={docKindOfPageKey(page.key)}
-      title={page.title}
-      rebuilding={rebuilding}
-      path={null}
-      changes={null}
-      views={{
-        current: "summary",
-        summaryTo: null,
-        sourceTo: page.path ? sourceAddress(page.path) : null,
-      }}
-      actions={
-        // Two groups of the toolbar bar after the view switch: the settle state with its verb,
-        // then the actions over the text. Either group is hidden by CSS when nothing renders
-        // inside it.
-        <>
-          <ToolbarGroup>
-            <TraceSettle page={page} />
-          </ToolbarGroup>
+    <>
+      <DocHeading
+        breadcrumb={breadcrumb(page, facts)}
+        kind={numbered === null ? docKindOfPageKey(page.key) : null}
+        title={numbered ?? page.title}
+        rebuilding={rebuilding}
+        path={null}
+        changes={null}
+        views={{
+          current: "summary",
+          summaryTo: null,
+          sourceTo: page.path ? sourceAddress(page.path) : null,
+        }}
+        standfirst={<TraceScope page={page} />}
+        actions={
+          // One group after the view switch: Edit and Discuss over the page's source, then the
+          // settle control, then Open all. The group is hidden by CSS when nothing renders in it.
           <ToolbarGroup>
             {page.path && <SourceActions key={page.path} path={page.path} />}
+            <TraceSettle page={page} />
             {hasOpenable(page) && <OpenAllButton page={page} />}
           </ToolbarGroup>
-        </>
-      }
-      chips={pageChips(page, rebuilding, questions)}
-    >
-      {notice && <LockNotice notice={notice} />}
-      <TraceExtras page={page} />
-      <PageHeaderExtras page={page} />
-    </DocHeading>
+        }
+        chips={pageChips(page, rebuilding, questions, trace)}
+      >
+        {notice && <LockNotice notice={notice} />}
+        <PageHeaderExtras page={page} />
+      </DocHeading>
+      <TracePlan page={page} />
+    </>
   );
 }

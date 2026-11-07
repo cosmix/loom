@@ -3,10 +3,11 @@
  * outrank the utilities a shared component carries.
  *
  * The heading is one column of blocks on one left edge, read top to bottom: the breadcrumb, the
- * title, the toolbar bar, the status card, the facts line, then the stub and the page's own rows,
- * over the hairline that ends it. The heading is a size container, so its blocks read the
- * heading's width, not the viewport's: the spine and the chat panel narrow the column without a
- * breakpoint.
+ * title, a document's scope standfirst, the toolbar bar, the status card, the facts line, then the
+ * page's own rows, over the hairline that ends it. The heading is a size container, so its blocks
+ * read the heading's width, not the viewport's: the spine and the chat panel narrow the column
+ * without a breakpoint. A feature document's summary page lays the same blocks out its own way
+ * (trace/trace-heading.css).
  */
 .doc-heading {
   container-type: inline-size;
@@ -291,26 +292,6 @@ button.doc-heading-chip:hover .doc-heading-chip__label {
 .doc-heading-fact a:hover {
   text-decoration: underline;
   text-underline-offset: 2px;
-}
-
-/* ── Stub ─────────────────────────────────────────────────────────────────── */
-
-/* In the heading, the stub panel (`trace/stub-panel.tsx`, `.trace-stub`) is a `--muted` wash
-   with the surface corners and no edge: the words that set the document's scope, read before the
-   body and apart from it, with its place ("Stub in the vision") as a fine muted label over them.
-   A deliberate exception: DESIGN.md, Status. */
-[data-loom-plan] .doc-heading .trace-stub {
-  max-width: none;
-  padding: var(--space-3);
-  border: 0;
-  border-radius: var(--corner-surface);
-  background: var(--muted);
-}
-
-[data-loom-plan] .doc-heading .trace-stub-text > a {
-  font-size: var(--type-fine);
-  font-weight: 500;
-  color: var(--muted-foreground);
 }
 
 /* ── Extras ───────────────────────────────────────────────────────────────── */

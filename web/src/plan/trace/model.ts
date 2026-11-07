@@ -1,41 +1,16 @@
-import type { Sentence } from "@/plan/api/schema-concept";
-import type {
-  CoverRef,
-  Gap,
-  NodeRef,
-  SettleState,
-  TraceDoc,
-  TraceHeading,
-  TraceView,
-} from "@/plan/api/schema-trace";
+import type { Gap, NodeRef, SettleState, TraceDoc, TraceView } from "@/plan/api/schema-trace";
 import { featureSourceHref } from "@/plan/feature/source-href";
 import { featureHref } from "@/plan/feature/use-feature";
-import { plural } from "@/plan/ui/plural";
 
-// Pure reads of a feature's trace for the browser: labels, links, edge chips and turn impact.
+// Pure reads of a feature's trace for the browser: labels, links, the spine head and turn impact.
 // Nothing here fetches or renders; `state.ts` holds the trace and the components draw these.
-
-/** The most hints the spine shows (the server already caps the frontier at five). */
-export const FRONTIER_CAP = 5;
-
-/** Which kind of page a summary sentence sits on: chips read different edges on each. */
-export type PageKind = "product" | "plan";
-
-const SETTLE_LABELS: Record<SettleState, string> = {
-  draft: "Draft",
-  revised: "Revised",
-  stub_changed: "Stub changed",
-  upstream_changed: "Upstream changed",
-  settled: "Settled",
-};
-
-/** The word for a settle state, as the spine, headings and turn footer read it. */
-export function settleLabel(state: SettleState): string {
-  return SETTLE_LABELS[state];
-}
 
 /** The states that mean a settled document moved since the reader settled it. */
 const MOVED: readonly SettleState[] = ["revised", "stub_changed", "upstream_changed"];
+
+export function isMoved(state: SettleState): boolean {
+  return MOVED.includes(state);
+}
 
 /** The trace's document at a repository path (`doc/product/<f>/section_01.md`). */
 export function docOfPath(trace: TraceView, repoPath: string): TraceDoc | undefined {
@@ -53,6 +28,13 @@ export function shownSettle(doc: TraceDoc | undefined): SettleState | null {
 
 function baseName(path: string): string {
   return path.split("/").at(-1) ?? path;
+}
+
+/** Where a heading or a section sits on the Coverage page: the section file's stem, then `:anchor`. */
+export function coverageHref(feature: string, path: string, anchor?: string | null): string {
+  const stem = baseName(path).replace(/\.md$/, "");
+  const at = anchor ? `${stem}:${anchor}` : stem;
+  return `${featureHref(feature, "coverage")}#${encodeURIComponent(at)}`;
 }
 
 /**
@@ -82,9 +64,18 @@ function headingsOf(trace: TraceView, ref: { path: string; anchor: string | null
 
 // ---- Frontier ------------------------------------------------------------------------------
 
-export interface FrontierLink {
-  text: string;
+/** What the spine head says: a sentence, an optional muted line, and the one button after them. */
+export interface FrontierHead {
+  sentence: string;
+  detail: string | null;
+  label: string;
   to: string;
+}
+
+/** A plan's slug without its feature prefix (`feat-planner-05-trace` is `05-trace` in `feat-planner`). */
+export function shortSlug(feature: string, slug: string): string {
+  const prefix = `${feature}-`;
+  return slug.startsWith(prefix) && slug.length > prefix.length ? slug.slice(prefix.length) : slug;
 }
 
 function entryAt(trace: TraceView, node: NodeRef) {
@@ -94,59 +85,112 @@ function entryAt(trace: TraceView, node: NodeRef) {
 }
 
 /** "Revisit <entry> before writing its plan", or "<plan> before running it" once it is written. */
-function revisitLink(trace: TraceView, feature: string, gap: Gap): FrontierLink {
+function revisitHead(trace: TraceView, feature: string, gap: Gap): FrontierHead {
   const doc = docOfPath(trace, gap.node.path);
   const entry = entryAt(trace, gap.node);
   const unwritten = doc?.role === "plan" ? doc.progress === "stub" : entry?.plan === null;
   if (unwritten) {
     const anchor = entry?.anchor ?? gap.node.anchor;
+    const name = entry?.title ?? doc?.title ?? baseName(gap.node.path);
     return {
-      text: `Revisit ${entry?.title ?? doc?.title ?? baseName(gap.node.path)} before writing its plan`,
+      sentence: `Revisit ${name} before writing its plan.`,
+      detail: null,
+      label: "Open the metaplan",
       to: `${featureHref(feature, "metaplan")}${anchor ? `#${encodeURIComponent(anchor)}` : ""}`,
     };
   }
   // A gap on a metaplan entry names the entry's written plan.
   const plan = doc?.role === "plan" || !entry?.plan ? doc : docOfPath(trace, entry.plan);
   const title = plan?.title ?? entry?.title ?? baseName(gap.node.path);
-  const to = plan ? summaryHref(feature, plan) : featureHref(feature, "metaplan");
-  return { text: `Revisit ${title} before running it`, to };
-}
-
-/** The sentence a document gap reads as, keyed by the gap kind. */
-const DOC_GAP_TEXT: Partial<Record<Gap["kind"], (title: string) => string>> = {
-  revised: (title) => `${title} changed since you settled it`,
-  stub_changed: (title) => `${title}'s stub changed since you settled it`,
-  upstream_changed: (title) => `The spec under ${title} changed since you settled it`,
-  settle: (title) => `Read ${title} and settle it`,
-};
-
-function frontierLink(trace: TraceView, feature: string, gap: Gap): FrontierLink {
-  if (gap.kind === "revisit") return revisitLink(trace, feature, gap);
-  if (gap.kind === "triage") {
-    const count = gap.count ?? 0;
-    return {
-      text: plural(count, "open finding"),
-      to: featureHref(feature, "findings"),
-    };
-  }
-  if (gap.kind === "uncovered") {
-    const heading = headingsOf(trace, gap.node)[0];
-    return {
-      text: `${heading?.title ?? gap.node.anchor ?? baseName(gap.node.path)} is not covered by any plan`,
-      to: featureSourceHref(feature, gap.node.path, { anchor: gap.node.anchor }),
-    };
-  }
-  const doc = docOfPath(trace, gap.node.path);
-  const title = doc?.title ?? baseName(gap.node.path);
   return {
-    text: DOC_GAP_TEXT[gap.kind]!(title),
-    to: doc ? summaryHref(feature, doc) : featureSourceHref(feature, gap.node.path),
+    sentence: `Revisit ${title} before running it.`,
+    detail: null,
+    label: plan?.slug ? `Open ${shortSlug(feature, plan.slug)}` : "Open the metaplan",
+    to: plan ? summaryHref(feature, plan) : featureHref(feature, "metaplan"),
   };
 }
 
-/** The frontier as at most five hints, one link each, in the server's order. */
-export function frontierLinks(trace: TraceView, feature: string): FrontierLink[] {
-  return trace.frontier.slice(0, FRONTIER_CAP).map((gap) => frontierLink(trace, feature, gap));
+/** Counts up to twenty read as words ("Three findings"); a larger count stays a number. */
+const COUNT_WORDS = (
+  "Zero One Two Three Four Five Six Seven Eight Nine Ten Eleven Twelve Thirteen Fourteen " +
+  "Fifteen Sixteen Seventeen Eighteen Nineteen Twenty"
+).split(" ");
+
+/** The sentence for `count` findings waiting; a gap that carries no count gets a generic one. */
+function triageSentence(count: number | null): string {
+  if (count === null) return "Findings from the last run are waiting for you.";
+  const words = COUNT_WORDS[count] ?? String(count);
+  return count === 1
+    ? `${words} finding from the last run is waiting for you.`
+    : `${words} findings from the last run are waiting for you.`;
+}
+
+function triageHead(feature: string, count: number | null): FrontierHead {
+  return {
+    sentence: triageSentence(count),
+    detail: null,
+    label: "Triage findings",
+    to: featureHref(feature, "findings"),
+  };
+}
+
+/** The settled plan, if any, that covers a revised section and so reads `upstream_changed`. */
+function flaggedPlanDetail(
+  trace: TraceView,
+  feature: string,
+  doc: TraceDoc | undefined,
+): string | null {
+  if (doc?.role !== "section") return null;
+  const plan = coveringPlans(trace, doc.path).find(
+    (candidate) => candidate.slug !== null && shownSettle(candidate) === "upstream_changed",
+  );
+  if (!plan?.slug) return null;
+  return `Plan ${shortSlug(feature, plan.slug)} implements it, so it is flagged too.`;
+}
+
+/** The head for a gap on one document: it moved since it was settled, or it waits to be settled. */
+function docHead(trace: TraceView, feature: string, gap: Gap): FrontierHead {
+  const doc = docOfPath(trace, gap.node.path);
+  const title = doc?.title ?? baseName(gap.node.path);
+  const to = doc ? summaryHref(feature, doc) : featureSourceHref(feature, gap.node.path);
+  const plan = doc?.slug ? shortSlug(feature, doc.slug) : title;
+  if (gap.kind === "upstream_changed") {
+    return {
+      sentence: `The spec under ${plan} changed since you settled it.`,
+      detail: null,
+      label: `Review ${plan}`,
+      to,
+    };
+  }
+  if (gap.kind === "stub_changed") {
+    const sentence = `${title}'s stub changed since you settled it.`;
+    return { sentence, detail: null, label: `Review ${title}`, to };
+  }
+  if (gap.kind === "revised") {
+    const sentence = `${title} changed since you settled it.`;
+    const detail = flaggedPlanDetail(trace, feature, doc);
+    return { sentence, detail, label: `Review ${title}`, to };
+  }
+  return { sentence: `Read ${title} and settle it.`, detail: null, label: `Read ${title}`, to };
+}
+
+/** The trace's first frontier gap as the spine head says it; null when nothing needs attention. */
+export function frontierHead(trace: TraceView, feature: string): FrontierHead | null {
+  const gap = trace.frontier[0];
+  if (!gap) return null;
+  if (gap.kind === "revisit") return revisitHead(trace, feature, gap);
+  if (gap.kind === "triage") return triageHead(feature, gap.count);
+  if (gap.kind === "uncovered") {
+    const heading = headingsOf(trace, gap.node)[0];
+    const name = heading?.title ?? gap.node.anchor ?? baseName(gap.node.path);
+    return {
+      sentence: `${name} is not covered by any plan.`,
+      detail: null,
+      label: "Open coverage",
+      to: coverageHref(feature, gap.node.path, gap.node.anchor),
+    };
+  }
+  return docHead(trace, feature, gap);
 }
 
 // ---- Brief bundle --------------------------------------------------------------------------
@@ -172,127 +216,6 @@ export function bundleLinks(trace: TraceView, planPath: string, feature: string)
     label: bundleLabel(path),
     to: featureSourceHref(feature, path),
   }));
-}
-
-// ---- Edge chips ----------------------------------------------------------------------------
-
-export interface EdgeChip {
-  key: string;
-  /** `entry`, `plan` and `stage` cover a spec heading; `spec` is a heading a plan implements. */
-  kind: "entry" | "plan" | "stage" | "spec" | "findings";
-  label: string;
-  /** The document (and heading) the chip opens; null for the findings count. */
-  path: string | null;
-  anchor: string | null;
-  /** A spec chip's section settle state; null for every other chip. */
-  state: SettleState | null;
-  /** The findings chip's open count; null for every other chip. */
-  count: number | null;
-}
-
-type ChipSentence = Pick<Sentence, "rests_on" | "citations">;
-
-function coverChip(trace: TraceView, cover: CoverRef): EdgeChip {
-  const slug = cover.slug ?? baseName(cover.path);
-  const label =
-    cover.kind === "entry"
-      ? (trace.entries.find((entry) => entry.anchor === cover.anchor)?.title ?? slug)
-      : cover.kind === "stage"
-        ? `${slug} · ${cover.stage ?? cover.anchor ?? ""}`
-        : slug;
-  return {
-    key: `${cover.kind}:${cover.path}#${cover.anchor ?? ""}`,
-    kind: cover.kind,
-    label,
-    path: cover.path,
-    anchor: cover.anchor,
-    state: null,
-    count: null,
-  };
-}
-
-function openFindings(trace: TraceView, headings: TraceHeading[]): number {
-  const ids = new Set(headings.flatMap((heading) => heading.findings));
-  return trace.findings.filter(
-    ({ finding }) => ids.has(finding.id) && finding.status.kind === "open",
-  ).length;
-}
-
-function productChips(trace: TraceView, sentence: ChipSentence): EdgeChip[] {
-  const headings = sentence.rests_on.flatMap((ref) => headingsOf(trace, ref));
-  const chips = new Map<string, EdgeChip>();
-  for (const cover of headings.flatMap((heading) => heading.covered_by)) {
-    const chip = coverChip(trace, cover);
-    chips.set(chip.key, chip);
-  }
-  const open = openFindings(trace, headings);
-  const list = [...chips.values()];
-  if (open > 0) {
-    const label = plural(open, "open finding");
-    list.push({
-      key: "findings",
-      kind: "findings",
-      label,
-      path: null,
-      anchor: null,
-      state: null,
-      count: open,
-    });
-  }
-  return list;
-}
-
-/** The plans a plan-page sentence is about, with the stage ids it cites in each. */
-function citedPlans(trace: TraceView, sentence: ChipSentence): Map<string, string[]> {
-  const plans = new Map<string, string[]>();
-  const add = (path: string) => {
-    if (docOfPath(trace, path)?.role === "plan" && !plans.has(path)) plans.set(path, []);
-  };
-  sentence.rests_on.forEach((ref) => add(ref.path));
-  for (const citation of sentence.citations) {
-    if (citation.kind !== "source") continue;
-    add(citation.path);
-    if (citation.anchor.startsWith("stage:")) {
-      plans.get(citation.path)?.push(citation.anchor.slice("stage:".length));
-    }
-  }
-  return plans;
-}
-
-/** Whether a heading's cover is what the plan, or only its cited stages, implements. */
-function implementedBy(cover: CoverRef, plan: string, stages: string[]): boolean {
-  if (cover.path !== plan || cover.kind === "entry") return false;
-  return stages.length === 0 || (cover.kind === "stage" && stages.includes(cover.stage ?? ""));
-}
-
-function planChips(trace: TraceView, sentence: ChipSentence): EdgeChip[] {
-  const chips = new Map<string, EdgeChip>();
-  for (const [plan, stages] of citedPlans(trace, sentence)) {
-    for (const heading of trace.headings) {
-      if (!heading.covered_by.some((cover) => implementedBy(cover, plan, stages))) continue;
-      const key = `spec:${heading.path}#${heading.anchor}`;
-      chips.set(key, {
-        key,
-        kind: "spec",
-        label: heading.title,
-        path: heading.path,
-        anchor: heading.anchor,
-        state: shownSettle(docOfPath(trace, heading.path)),
-        count: null,
-      });
-    }
-  }
-  return [...chips.values()];
-}
-
-/**
- * The chips a summary sentence shows. On a product page: the entries, plans and stages covering
- * the headings it rests on (an empty anchor means the whole section), then the open findings on
- * them. On a plan page: the spec headings the cited stage (`stage:<id>` anchor) or the plan
- * implements, each with its section's settle state.
- */
-export function chipsFor(trace: TraceView, sentence: ChipSentence, pageKind: PageKind): EdgeChip[] {
-  return pageKind === "product" ? productChips(trace, sentence) : planChips(trace, sentence);
 }
 
 // ---- Turn impact ---------------------------------------------------------------------------
@@ -346,7 +269,7 @@ function impactOf(trace: TraceView, path: string): ImpactGroup {
   relatedDocs(trace, path)
     .filter((doc) => {
       const state = shownSettle(doc);
-      return state !== null && MOVED.includes(state);
+      return state !== null && isMoved(state);
     })
     .forEach(add);
   // A plan covering a changed section is listed in whatever state it is in: the reader decides.

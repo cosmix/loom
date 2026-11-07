@@ -1,332 +1,218 @@
-import { useId, useMemo, useRef, useState, type ReactNode } from "react";
-import { Link, useNavigate } from "react-router";
+import { useEffect, useId, useMemo, useState, type KeyboardEvent } from "react";
+import { useLocation } from "react-router";
 
 import type { TraceView } from "@/plan/api/schema-trace";
 import { Untrusted } from "@/plan/chat/visible-controls";
+import { hashAnchor } from "@/plan/files/address";
 import { PlanPage } from "@/plan/feature/plan-page";
-import { plural } from "@/plan/ui/plural";
 
-import { handleCoverageKey } from "./coverage-keys";
+import { SettleMark } from "./coverage-marks";
 import {
   buildCoverage,
-  COLUMNS,
-  FILTERS,
-  lineage,
-  visibleKeys,
-  type Card,
-  type ColumnId,
+  filterRows,
+  findAnchor,
+  TILES,
   type CoverageModel,
+  type CoverageSection,
   type Filter,
 } from "./coverage-model";
+import { HeadingRow } from "./coverage-rows";
 import { TraceGate } from "./trace-gate";
 
 import "./maps.css";
 
-// `/f/<feature>/coverage`: the vision rows, spec headings, metaplan entries, plans and findings
-// side by side. Selecting a card marks what it descends from and what follows from it, and opens
-// the focus panel. The look is `maps.css`; this file writes the structure and the data attributes
-// it reads (`data-state`, `data-lineage`, `data-column`).
+// `/f/<feature>/coverage`: the spec grouped by section, one row per heading with the plans and
+// stages that cover it. The four tiles count the rows and filter them. A row opens to why the
+// heading exists, how it is delivered and what was found about it (`coverage-rows.tsx`). The look
+// is `maps.css`; this file writes the structure and the `data-*` attributes it reads.
 
-type Mark = "self" | "up" | "down";
+const STANDFIRST =
+  "Which parts of the spec are covered by planned work, and what is uncovered or changed.";
 
-interface CardView {
-  card: Card;
-  /** The id of the element holding the card's accessible description. */
-  descriptionId: string;
-  tabbable: boolean;
-  mark: Mark | undefined;
+function Tiles(props: {
+  model: CoverageModel;
+  filter: Filter;
+  onChange: (filter: Filter) => void;
+}) {
+  const idBase = useId();
+  return (
+    <div className="coverage-tiles" role="group" aria-label="Show headings">
+      {TILES.map(({ id, label }) => (
+        <button
+          key={id}
+          type="button"
+          className="coverage-tile"
+          data-tile={id}
+          aria-pressed={props.filter === id}
+          aria-label={label}
+          aria-describedby={`${idBase}-${id}`}
+          onClick={() => props.onChange(id)}
+        >
+          <span id={`${idBase}-${id}`} className="coverage-tile__count">
+            {props.model.tiles[id]}
+          </span>
+          <span className="coverage-tile__label" aria-hidden="true">
+            {label}
+          </span>
+        </button>
+      ))}
+    </div>
+  );
 }
 
-function CardButton(props: {
-  view: CardView;
-  onSelect: (key: string) => void;
-  register: (key: string, element: HTMLButtonElement | null) => void;
-}) {
-  const { view, onSelect, register } = props;
-  const { card } = view;
+function SectionHead({ section, titleId }: { section: CoverageSection; titleId: string }) {
   return (
-    <li className="maps-card-item">
-      <button
-        type="button"
-        className="maps-card"
-        data-key={card.key}
-        ref={(element) => register(card.key, element)}
-        tabIndex={view.tabbable ? 0 : -1}
-        data-state={card.state}
-        data-lineage={view.mark}
-        aria-current={view.mark === "self" ? "true" : undefined}
-        aria-describedby={card.description === null ? undefined : view.descriptionId}
-        onClick={() => onSelect(card.key)}
-      >
-        <Untrusted text={card.title} />
-      </button>
-      {card.description !== null && (
-        <span id={view.descriptionId} className="sr-only">
-          {card.description}
+    <header className="coverage-section__head">
+      {section.number !== null && (
+        <span className="coverage-section__number">{section.number}</span>
+      )}
+      <h2 id={titleId} className="coverage-section__title">
+        <Untrusted text={section.title} />
+      </h2>
+      {section.settle !== null && <SettleMark state={section.settle} />}
+      {section.written && section.total > 0 && (
+        <span className="coverage-section__count">
+          {section.covered} of {section.total} covered
         </span>
       )}
-    </li>
+    </header>
   );
 }
 
-/** The cards of one column; the spec column sets each section's headings under its title. */
-function groupsOf(views: CardView[]): { group: string | null; views: CardView[] }[] {
-  const groups: { group: string | null; views: CardView[] }[] = [];
-  for (const view of views) {
-    const last = groups.at(-1);
-    if (last && last.group === view.card.group) last.views.push(view);
-    else groups.push({ group: view.card.group, views: [view] });
-  }
-  return groups;
-}
-
-/**
- * One run of cards under its section title. Section titles repeat across the spec column, so the
- * list is named by its title: a screen reader hears which section a card belongs to.
- */
-function CardGroup(props: {
-  group: string | null;
-  views: CardView[];
-  onSelect: (key: string) => void;
-  register: (key: string, element: HTMLButtonElement | null) => void;
+function SectionRows(props: {
+  section: CoverageSection;
+  titleId: string;
+  feature: string;
+  open: Set<string>;
+  onToggle: (key: string) => void;
 }) {
-  const { group, views, onSelect, register } = props;
-  const titleId = useId();
+  const { section, titleId, feature, open, onToggle } = props;
   return (
-    <div className="maps-group">
-      {group !== null && (
-        <h3 id={titleId} className="plan-fine maps-group-title">
-          <Untrusted text={group} />
-        </h3>
-      )}
-      <ul className="maps-cards" aria-labelledby={group === null ? undefined : titleId}>
-        {views.map((view) => (
-          <CardButton key={view.card.key} view={view} onSelect={onSelect} register={register} />
+    <>
+      <div className="coverage-cols" aria-hidden="true">
+        <span>Heading</span>
+        <span>Covered by</span>
+        <span>Findings</span>
+        <span>State</span>
+      </div>
+      <ul className="coverage-rows" aria-labelledby={titleId}>
+        {section.rows.map((row) => (
+          <HeadingRow
+            key={row.key}
+            row={row}
+            section={section}
+            feature={feature}
+            open={open.has(row.key)}
+            onToggle={onToggle}
+          />
         ))}
       </ul>
-    </div>
+    </>
   );
 }
 
-function Column(props: {
-  id: ColumnId;
-  label: string;
-  views: CardView[];
-  onSelect: (key: string) => void;
-  register: (key: string, element: HTMLButtonElement | null) => void;
+function SectionBlock(props: {
+  section: CoverageSection;
+  feature: string;
+  open: Set<string>;
+  onToggle: (key: string) => void;
 }) {
-  const { id, label, views, onSelect, register } = props;
+  const { section, feature, open, onToggle } = props;
   const titleId = useId();
   return (
-    <section className="maps-column" data-column={id} aria-labelledby={titleId}>
-      <h2 id={titleId} className="plan-eyebrow maps-column-title">
-        {label}
-      </h2>
-      {views.length === 0 && <p className="plan-fine maps-empty">None</p>}
-      {groupsOf(views).map(({ group, views: inGroup }, index) => (
-        <CardGroup
-          key={`${index}-${group ?? ""}`}
-          group={group}
-          views={inGroup}
-          onSelect={onSelect}
-          register={register}
-        />
-      ))}
-    </section>
-  );
-}
-
-function Related(props: { heading: string; cards: Card[] }): ReactNode {
-  const headingId = useId();
-  return (
-    <section className="maps-related" aria-labelledby={headingId}>
-      <h3 id={headingId} className="plan-eyebrow">
-        {props.heading}
-      </h3>
-      {props.cards.length === 0 ? (
-        <p className="plan-fine maps-empty">None</p>
-      ) : (
-        <ul>
-          {props.cards.map((card) => (
-            <li key={card.key} data-column={card.column}>
-              <Link to={card.href}>
-                <Untrusted text={card.title} />
-              </Link>
-            </li>
-          ))}
-        </ul>
-      )}
-    </section>
-  );
-}
-
-/** The selected node: what it descends from (Why), what delivers it (How) and what was found. */
-function FocusPanel({ model, card }: { model: CoverageModel; card: Card | null }) {
-  const { up, down } = card ? lineage(model, card.key) : { up: [], down: [] };
-  const cards = (keys: string[]) => keys.map((key) => model.byKey.get(key)!);
-  const isFinding = (entry: Card) => entry.column === "findings";
-  const titleId = useId();
-  return (
-    <aside className="maps-focus" aria-labelledby={titleId}>
-      <h2 id={titleId} className="maps-focus-title">
-        {card ? <Untrusted text={card.title} /> : "Nothing selected"}
-      </h2>
-      {card === null ? (
-        <p className="plan-fine">Select a card to see why it exists and how it is delivered.</p>
-      ) : (
-        <>
-          <Related heading="Why" cards={cards(up).filter((entry) => !isFinding(entry))} />
-          <Related heading="How" cards={cards(down).filter((entry) => !isFinding(entry))} />
-          <Related heading="Findings" cards={cards([...up, ...down]).filter(isFinding)} />
-          <Link className="maps-open" to={card.href}>
-            Open
-          </Link>
-        </>
-      )}
-    </aside>
-  );
-}
-
-function FilterBar(props: { filter: Filter; onChange: (filter: Filter) => void }) {
-  const name = useId();
-  return (
-    <fieldset className="maps-filter">
-      <legend className="sr-only">Show</legend>
-      {FILTERS.map(({ id, label }) => (
-        <label key={id} className="maps-filter-option">
-          <input
-            type="radio"
-            name={name}
-            checked={props.filter === id}
-            onChange={() => props.onChange(id)}
-          />
-          <span>{label}</span>
-        </label>
-      ))}
-    </fieldset>
-  );
-}
-
-/** The lineage marks of the selected card, and the card elements that `focus` moves focus to. */
-function useCardFocus(model: CoverageModel, current: string | null, select: (key: string) => void) {
-  const cardElements = useRef(new Map<string, HTMLButtonElement>());
-  const related = useMemo(() => {
-    const marks = new Map<string, Mark>();
-    if (current === null) return marks;
-    const { up, down } = lineage(model, current);
-    up.forEach((key) => marks.set(key, "up"));
-    down.forEach((key) => marks.set(key, "down"));
-    return marks.set(current, "self");
-  }, [model, current]);
-  const register = (key: string, element: HTMLButtonElement | null) => {
-    if (element) cardElements.current.set(key, element);
-    else cardElements.current.delete(key);
-  };
-  const focus = (key: string) => {
-    select(key);
-    cardElements.current.get(key)?.focus();
-  };
-  return { related, register, focus };
-}
-
-interface ColumnsProps {
-  model: CoverageModel;
-  visible: Set<string>;
-  shown: Card[];
-  tabbable: string | null;
-  related: Map<string, Mark>;
-  focus: (key: string) => void;
-  register: (key: string, element: HTMLButtonElement | null) => void;
-}
-
-function CoverageColumns({
-  model,
-  visible,
-  shown,
-  tabbable,
-  related,
-  focus,
-  register,
-}: ColumnsProps) {
-  const idBase = useId();
-  const navigate = useNavigate();
-  const viewOf = (entry: Card): CardView => ({
-    card: entry,
-    descriptionId: `${idBase}-${model.index.get(entry.key)}`,
-    tabbable: entry.key === tabbable,
-    mark: related.get(entry.key),
-  });
-  return (
-    // The keys act on the focused card only; the handler ignores events from anywhere else.
-    <div
-      className="maps-columns"
-      onKeyDown={(event) =>
-        handleCoverageKey(event, { model, visible, focus, open: (href) => void navigate(href) })
-      }
+    <section
+      id={section.id}
+      className="coverage-section"
+      aria-labelledby={titleId}
+      data-written={section.written ? "true" : "false"}
     >
-      {COLUMNS.map(({ id, label }) => (
-        <Column
-          key={id}
-          id={id}
-          label={label}
-          views={shown.filter((entry) => entry.column === id).map(viewOf)}
-          onSelect={focus}
-          register={register}
+      <SectionHead section={section} titleId={titleId} />
+      {section.written ? (
+        <SectionRows
+          section={section}
+          titleId={titleId}
+          feature={feature}
+          open={open}
+          onToggle={onToggle}
         />
-      ))}
-    </div>
+      ) : (
+        <p className="plan-fine coverage-section__quiet">Not written yet.</p>
+      )}
+    </section>
   );
+}
+
+/** Up and Down move between the row toggles in page order; Enter and Space open a row. */
+function moveBetweenRows(event: KeyboardEvent<HTMLElement>): void {
+  const step = event.key === "ArrowDown" ? 1 : event.key === "ArrowUp" ? -1 : 0;
+  const from = event.target as HTMLElement;
+  if (step === 0 || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+  if (!from.hasAttribute("data-row-toggle")) return;
+  const toggles = [...event.currentTarget.querySelectorAll<HTMLElement>("[data-row-toggle]")];
+  event.preventDefault();
+  toggles[toggles.indexOf(from) + step]?.focus();
+}
+
+/** Opens and scrolls to the section or heading the address names, once the page is drawn. */
+function useAddressedRow(model: CoverageModel, open: (key: string) => void): void {
+  const { hash } = useLocation();
+  const drawn = model.sections.length > 0;
+  useEffect(() => {
+    const anchor = hashAnchor(hash);
+    const target = drawn && anchor !== null ? findAnchor(model, anchor) : null;
+    if (target === null) return;
+    if (target.rowKey !== null) open(target.rowKey);
+    document.getElementById(target.elementId)?.scrollIntoView?.();
+    // The address is the trigger: a refreshed trace must not scroll the reader back to it.
+  }, [hash, drawn]);
 }
 
 function CoverageMap({ trace, feature }: { trace: TraceView; feature: string }) {
   const model = useMemo(() => buildCoverage(trace, feature), [trace, feature]);
   const [filter, setFilter] = useState<Filter>("all");
-  const [selected, setSelected] = useState<string | null>(null);
-  const visible = useMemo(() => visibleKeys(model, filter), [model, filter]);
-  // A card the filter hides is no longer selected.
-  const current = selected !== null && visible.has(selected) ? selected : null;
-  const { related, register, focus } = useCardFocus(model, current, setSelected);
+  const [open, setOpen] = useState<Set<string>>(new Set());
+  const toggle = (key: string) =>
+    setOpen((was) => {
+      const next = new Set(was);
+      if (!next.delete(key)) next.add(key);
+      return next;
+    });
+  useAddressedRow(model, (key) => setOpen((was) => new Set(was).add(key)));
 
-  const shown = model.cards.filter((entry) => visible.has(entry.key));
-  const tabbable = current ?? shown[0]?.key ?? null;
-
-  if (model.cards.length === 0) {
+  if (model.sections.length === 0) {
     return (
       <p className="plan-empty">
         Nothing to map yet. Write the vision and its sections first; they are the left of the map.
       </p>
     );
   }
+  const shown = filterRows(model, filter);
   return (
-    <div className="maps-coverage">
-      <FilterBar filter={filter} onChange={setFilter} />
-      <div className="maps-body">
-        <CoverageColumns
-          model={model}
-          visible={visible}
-          shown={shown}
-          tabbable={tabbable}
-          related={related}
-          focus={focus}
-          register={register}
-        />
-        <FocusPanel model={model} card={current === null ? null : model.byKey.get(current)!} />
+    <div className="coverage">
+      <Tiles model={model} filter={filter} onChange={setFilter} />
+      {/* The arrow keys act on a focused row toggle only; the handler ignores events from anywhere else. */}
+      <div className="coverage-body" onKeyDown={moveBetweenRows}>
+        {shown.length === 0 && <p className="plan-empty">No heading matches this filter.</p>}
+        {shown.map((section) => (
+          <SectionBlock
+            key={section.id}
+            section={section}
+            feature={feature}
+            open={open}
+            onToggle={toggle}
+          />
+        ))}
       </div>
     </div>
   );
 }
 
-function lede(trace: TraceView): string {
-  const uncovered = trace.headings.filter((heading) => heading.covered_by.length === 0).length;
-  return `${plural(trace.headings.length, "spec heading")}, ${uncovered} not covered by any plan.`;
-}
-
-/** `/f/:feature/coverage`: the map from vision to plans, with its gaps. */
+/** `/f/:feature/coverage`: which headings of the spec are covered, by what, and which are not. */
 export function CoveragePage() {
   return (
     <TraceGate noun="the coverage">
       {(trace, feature) => (
-        <PlanPage feature={feature} label="coverage" title="Coverage" lede={lede(trace)}>
+        <PlanPage feature={feature} label="coverage" title="Coverage" lede={STANDFIRST}>
           <CoverageMap trace={trace} feature={feature} />
         </PlanPage>
       )}

@@ -189,14 +189,19 @@ it("the metaplan route shows the metaplan summary with Source one click away", a
   ).toBe(true);
 });
 
-it("plan rows carry the pressure record and the spine has no Pressure test row", async () => {
+it("plan rows read the pressure record aloud and the spine has no Pressure test row", async () => {
   renderRoutes("/f/atlas/engineering", pressureChecklist());
 
   const spine = await screen.findByRole("navigation", { name: SPINE });
   const rows = within(spine);
-  const tested = rows.getByRole("link", { name: /\batlas-tested\b/ });
-  const open = rows.getByRole("link", { name: /\batlas-open\b/ });
+  // The spine shortens "atlas-tested" to "tested" and keeps the full slug in the row's title.
+  const tested = rows.getByTitle("atlas-tested");
+  const open = rows.getByTitle("atlas-open");
+  expect(tested.querySelector(".plan-spine__name")?.textContent).toBe("tested");
+  expect(open.querySelector(".plan-spine__name")?.textContent).toBe("open");
   expect(tested.textContent).toContain("Pressure-tested 2026-10-20");
   expect(open.textContent).toContain("Not pressure-tested");
+  // Read aloud only: the spine draws no flask or badge.
+  expect(spine.querySelector(".plan-spine__badge")).toBeNull();
   expect(rows.queryAllByRole("link", { name: /^Pressure test\b/ })).toEqual([]);
 });

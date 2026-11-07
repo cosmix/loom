@@ -6,18 +6,26 @@ import { traceViewSchema, type TraceFinding, type TraceView } from "@/plan/api/s
 import { dismissReason, foldSeed, ledgerPath, planSeed } from "./findings-actions";
 import {
   foldableEntries,
+  foldChoices,
   groupFindings,
+  groupTitle,
   nodeLabel,
   openCount,
   runOf,
+  shortRun,
   statusText,
+  tally,
 } from "./findings-model";
 
 function demo(): TraceView {
   return traceViewSchema.parse(structuredClone(traceFixture));
 }
 
-function entryOf(id: string, source: string | null, kind: "open" | "dismissed" = "open") {
+function entryOf(
+  id: string,
+  source: string | null,
+  kind: "open" | "dismissed" = "open",
+): TraceFinding {
   const [first] = demo().findings;
   return {
     finding: {
@@ -28,7 +36,7 @@ function entryOf(id: string, source: string | null, kind: "open" | "dismissed" =
       status: { kind, detail: kind === "open" ? null : "no" },
     },
     about: [],
-  } satisfies TraceFinding;
+  };
 }
 
 describe("runOf", () => {
@@ -43,7 +51,7 @@ describe("runOf", () => {
 });
 
 describe("groupFindings", () => {
-  it("puts the run whose newest finding is latest first and the reviews last", () => {
+  it("puts the run whose first finding is latest first and the reviews last", () => {
     const groups = groupFindings([
       entryOf("F-1", "REVIEW-PLAN-a.md#open-findings (s, 1)"),
       entryOf("F-2", null),
@@ -51,18 +59,54 @@ describe("groupFindings", () => {
       entryOf("F-4", "REVIEW-PLAN-a.md#open-findings (s, 3)"),
       entryOf("F-5", "review 2026-11-06"),
     ]);
+    // Run a's first finding precedes run b's, so b is the newer run although a has the last finding.
     expect(groups.map((group) => group.label)).toEqual([
-      "REVIEW-PLAN-a",
       "REVIEW-PLAN-b",
+      "REVIEW-PLAN-a",
       "Reviews",
     ]);
-    expect(groups[0]!.findings.map(({ finding }) => finding.id)).toEqual(["F-1", "F-4"]);
+    expect(groups[1]!.findings.map(({ finding }) => finding.id)).toEqual(["F-1", "F-4"]);
     expect(groups[2]).toMatchObject({ run: null });
     expect(groups[2]!.findings.map(({ finding }) => finding.id)).toEqual(["F-2", "F-5"]);
   });
 
   it("makes no group for no findings", () => {
     expect(groupFindings([])).toEqual([]);
+  });
+});
+
+describe("group titles", () => {
+  it.each([
+    ["REVIEW-PLAN-demo-03-summaries", "03-summaries"],
+    ["REVIEW-PLAN-first", "first"],
+    ["REVIEW-DONE-PLAN-first", "first"],
+    ["REVIEW-demo-x", "x"],
+  ])("shortens %s to %s", (run, short) => {
+    expect(shortRun(run, "demo")).toBe(short);
+  });
+
+  it("titles a run by its short slug and the rest Reviews", () => {
+    const [run, reviews] = groupFindings([
+      entryOf("F-1", "REVIEW-PLAN-demo-03-summaries.md#open-findings (s, 1)"),
+      entryOf("F-2", null),
+    ]);
+    expect(groupTitle(run!, "demo")).toBe("Run of 03-summaries");
+    expect(groupTitle(reviews!, "demo")).toBe("Reviews");
+  });
+});
+
+describe("tally", () => {
+  it("counts each status in words and leaves out the zeros", () => {
+    const planned = entryOf("F-3", null);
+    planned.finding.status = { kind: "planned", detail: "PLAN-x.md" };
+    const all = [
+      entryOf("F-1", null),
+      entryOf("F-2", null),
+      planned,
+      entryOf("F-4", null, "dismissed"),
+    ];
+    expect(tally(all)).toBe("2 open · 1 planned · 1 dismissed");
+    expect(tally([])).toBe("");
   });
 });
 
@@ -89,6 +133,41 @@ describe("foldableEntries", () => {
       withPlan("RETIRED-PLAN-c.md"),
     ];
     expect(foldableEntries(view)).toEqual([first, second]);
+  });
+});
+
+describe("foldChoices", () => {
+  const section = "doc/product/demo/section_01.md";
+
+  it("puts the entry covering most of the finding's About nodes first", () => {
+    const view = demo();
+    const [first, second] = view.entries;
+    // Entry two covers all of section 02, entry one only heading one of section 01.
+    const about = [
+      { path: "doc/product/demo/section_02.md", anchor: "three" },
+      { path: "doc/product/demo/section_02.md", anchor: null },
+    ];
+    const choices = foldChoices(view, about);
+    expect(choices.suggested).toBe(second);
+    expect(choices.entries).toEqual([second, first]);
+    expect(choices.leftOut).toEqual([]);
+  });
+
+  it("suggests nothing when no entry covers what the finding is about", () => {
+    const view = demo();
+    const choices = foldChoices(view, [{ path: section, anchor: "two" }]);
+    expect(choices.suggested).toBeNull();
+    expect(choices.entries).toEqual(view.entries);
+  });
+
+  it("names the entries left out because their plan has started", () => {
+    const view = demo();
+    const [first, second] = view.entries;
+    view.entries = [{ ...first!, plan: "doc/plans/demo/IN_PROGRESS-PLAN-first.md" }, second!];
+    const choices = foldChoices(view, [{ path: section, anchor: "one" }]);
+    expect(choices.leftOut.map((entry) => entry.anchor)).toEqual([first!.anchor]);
+    expect(choices.entries).toEqual([second]);
+    expect(choices.suggested).toBeNull();
   });
 });
 
