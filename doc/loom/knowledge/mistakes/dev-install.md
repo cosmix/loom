@@ -35,3 +35,10 @@
 **Why:** the review's scope argument was applied without weighing the failure the kill exists to prevent: any daemon left running keeps the old binary and refuses spawns on hook drift (see the 2026-10-27 entry above). Killing every repository's daemon is the intended behaviour for a dev install.
 **Prevention:** a review finding that reverses a behaviour recorded in a mistakes entry needs the operator's decision before it is applied. Keep installer behaviour changes in their own commit.
 **Fix:** the post-install `pkill -x loom` block is restored; `scripts/tests/test_dev_install.py` asserts it runs after a successful install and never after a failed build or install.
+
+## dev-install.sh ended a running loom pressure and the plan read as untested
+
+**What happened:** Plans pressure-tested from the terminal on 2026-11-07 (`fewer-disputes`, `autonomous-recovery`) showed as Not pressure-tested in the planner. Their `loom pressure` runs had been killed by `dev-install.sh`'s `pkill -x loom` partway through. The signal handler exited 130 before `/address` and the record step, left `codex-PLAN-*.md` behind, and the orphaned foreground Claude `/pressure` session finished on screen, so the run looked complete.
+**Why:** `pkill -x loom` stops every loom process, foreground drivers included, and the handler exited silently.
+**Prevention:** Do not run `dev-install.sh` during a `loom pressure` run. The terminal driver's signal handler (`commands/pressure/terminal.rs` `retire_on_signal`) prints that the plan was not recorded and where the Codex review is. A leftover `doc/plans/codex-PLAN-<slug>.md` with no `## Pressure tests` section in the plan marks an interrupted run.
+**Fix:** Re-run `loom pressure <plan>`.

@@ -146,7 +146,7 @@
 | [daemon-fork-after-threads](mistakes/daemon-fork-after-threads.md) | Fork | 38 |
 | [daemon-singleton](mistakes/daemon-singleton.md) |  | 141 |
 | [detached-spawn-in-tests](mistakes/detached-spawn-in-tests.md) |  | 55 |
-| [dev-install](mistakes/dev-install.md) | Daemon | 37 |
+| [dev-install](mistakes/dev-install.md) | Daemon | 44 |
 | [doctrine-and-acceptance](mistakes/doctrine-and-acceptance.md) |  | 392 |
 | [frontmatter-boundary](mistakes/frontmatter-boundary.md) |  | 13 |
 | [hooks-shell-portability](mistakes/hooks-shell-portability.md) |  | 362 |
