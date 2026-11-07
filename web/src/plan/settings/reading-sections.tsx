@@ -42,7 +42,10 @@ export function ReadingFaceGroup(): ReactElement {
   const [selected, setSelected] = useAtom(readingFaceAtom);
   const name = useId();
   return (
-    <SettingsGroup title="Reading face" hint="Document text only; titles and controls stay Inter">
+    <SettingsGroup
+      title="Reading face"
+      hint="Document text only; titles and controls stay Alegreya Sans"
+    >
       <ReadingPreview />
       <div role="radiogroup" aria-label="Reading face" className="ps-faces">
         {READING_FACES.map((face) => (

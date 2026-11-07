@@ -17,7 +17,7 @@ export const themeSpec = {
     outline: "1px solid var(--ring)",
   },
   // Without drawSelection the browser draws the caret and the selection itself.
-  // The editor edits source text, so `-->` and `=>` must show as typed, not as Inter's arrow
+  // The editor edits source text, so `-->` and `=>` must show as typed, not as arrow
   // ligatures (calt); this covers source and live preview alike.
   ".cm-content": {
     caretColor: "var(--foreground)",

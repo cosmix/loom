@@ -13,7 +13,7 @@ Rules for every planner surface. The scales and primitives are in `design.css` (
 
 ## Type
 
-Chrome is Inter (`--font-sans`); reading prose keeps `--font-reading`; paths, ids and code keep `--font-mono`. Sentence case everywhere; the `eyebrow` utility is the only uppercase.
+Chrome is Alegreya Sans (`--font-sans`); reading prose keeps `--font-reading`; paths, ids and code keep `--font-mono`. Sentence case everywhere; the `eyebrow` utility is the only uppercase.
 
 | Token          | Size                            | Use                                                                                                                 |
 | -------------- | ------------------------------- | ------------------------------------------------------------------------------------------------------------------- |

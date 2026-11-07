@@ -1,6 +1,6 @@
 /* The chat panel's look, the hearth: one warm continuous surface where hierarchy comes from type,
- * space and the one hairline on the panel's start edge. Chrome is Inter at --type-body in
- * --muted-foreground; the user's words are Inter in --foreground; the assistant's prose is the
+ * space and the one hairline on the panel's start edge. Chrome is Alegreya Sans at --type-body in
+ * --muted-foreground; the user's words are Alegreya Sans in --foreground; the assistant's prose is the
  * reading face. The transcript, the decision band, the composer, the chips and the notices have
  * their own files, imported below. All of them are unlayered on purpose: they override the utility
  * classes of the shared Button. chat.css keeps the panel's frame, whose test pins that the frame

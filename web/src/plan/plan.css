@@ -5,7 +5,7 @@
 
 /*
  * Reading face: body text of rendered documents and concept prose. Chrome and titles stay in
- * `--font-sans` (Inter); code, paths and ids stay in `--font-mono` (Commit Mono Cosmix).
+ * `--font-sans` (Alegreya Sans); code, paths and ids stay in `--font-mono` (Commit Mono Cosmix).
  * Settings picks the face and size through `data-reading-face` / `data-reading-size` on the
  * shell root; Source Serif 4 at 19px is the default.
  */
