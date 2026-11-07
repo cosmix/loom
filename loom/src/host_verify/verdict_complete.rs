@@ -23,7 +23,9 @@ use crate::git::worktree::{stage_worktree_path, WorktreeGit};
 use crate::handoff::completion::content::committed_content;
 use crate::handoff::completion::policy::effective_policy_hash;
 use crate::models::stage::{Stage, StageStatus};
-use crate::orchestrator::adjudication::{hand_back_held_stage, is_held_for_completion};
+use crate::orchestrator::adjudication::{
+    hand_back_held_stage, is_held_for_completion, is_verdict_held,
+};
 use crate::verify::completion::IMPACT_TESTS_LABEL;
 use crate::verify::contracts::refusal::run_output_line;
 use crate::verify::transitions::{load_stage, update_stage};
@@ -34,10 +36,14 @@ pub(crate) const STAGE_BOUND_SESSION: &str = "daemon";
 pub(crate) const VERDICT_REQUEST_ID: &str = "verdict-completion";
 
 const NOT_HELD: &str = "the stage is no longer held for its verdict completion";
+const ON_HOLD: &str = "it is on hold, so loom does not run its completion";
 
 /// What submitting a held stage's completion did.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum VerdictStart {
+    /// The stage is not verdict-held (a reset, a new dispute, a session):
+    /// nothing was queued, and no hand-back is owed.
+    NotHeld,
     /// The stage's verdict completion job, not yet finished or applied.
     Waiting(String),
     /// The job queued for the stage.
@@ -46,16 +52,25 @@ pub(crate) enum VerdictStart {
     Ineligible(String),
 }
 
-/// Queue the completion run of the held `stage` at its committed HEAD, unless
-/// a job already decides it or the stage cannot be completed without a
-/// session (`Ineligible`).
+/// Queue the completion run of the verdict-held `stage` at its committed
+/// HEAD, unless it is not verdict-held, a job already decides it, or the
+/// stage cannot be completed without a session (`Ineligible`), as when the
+/// operator holds it. A deciding job is waited for even under the operator's
+/// hold: its child still runs in the worktree, so the stage goes back only
+/// once the job's application is recorded.
 pub(crate) fn submit_verdict_completion(
     work_dir: &Path,
     stage: &Stage,
     now: DateTime<Utc>,
 ) -> Result<VerdictStart> {
+    if !is_verdict_held(work_dir, stage) {
+        return Ok(VerdictStart::NotHeld);
+    }
     if let Some(job) = deciding_job(work_dir, &stage.id)? {
         return Ok(VerdictStart::Waiting(job));
+    }
+    if stage.held {
+        return Ok(VerdictStart::Ineligible(ON_HOLD.to_string()));
     }
     if !crate::verify::review::gate::covers(stage) {
         return Ok(VerdictStart::Ineligible(format!(

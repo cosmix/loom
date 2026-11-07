@@ -39,6 +39,10 @@ use crate::verify::criteria::{CriteriaConfig, CriteriaProbe, ProbeRunner};
 use crate::verify::review::fingerprint::local_git;
 use crate::verify::review::report::single_line;
 
+/// Name prefix of a dry-run checkout's scratch directory, which the dry run's
+/// sweep of earlier runs' leftovers matches on.
+pub(crate) const DRY_RUN_PREFIX: &str = "loom-dry-run-";
+
 /// Hex digits of the base commit a note shows.
 const SHORT_COMMIT: usize = 12;
 
@@ -99,7 +103,7 @@ impl BaseCheckout {
     /// builds gigabytes of artifacts keeps them on a disk that can hold them.
     pub(crate) fn create_in(parent: &Path, worktree: &Path, commit: &str) -> Result<Self> {
         let dir = tempfile::Builder::new()
-            .prefix("loom-dry-run-")
+            .prefix(DRY_RUN_PREFIX)
             .tempdir_in(parent)
             .with_context(|| format!("failed to create a checkout under {}", parent.display()))?;
         Self::check_out(dir, worktree, commit)

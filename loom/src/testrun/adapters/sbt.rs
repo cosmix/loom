@@ -93,6 +93,10 @@ impl TestRunnerAdapter for Sbt {
             && !tasks.iter().any(|word| is_filtered_task(word))
     }
 
+    /// sbt parses the quoted `testOnly <test>` as its own command line, where
+    /// `;` starts another sbt command and whitespace another argument: a
+    /// writer's test holding either is refused before it reaches here
+    /// (`verify::contracts::choices_validate::check_test`).
     fn single_test_command(&self, _file: &str, test: &str, _package_dir: &Path) -> String {
         format!("sbt {}", shell_quote(&format!("testOnly {test}")))
     }

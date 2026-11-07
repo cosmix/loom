@@ -9,6 +9,7 @@
 
 mod chain;
 mod items;
+mod path_mods;
 mod run_dir;
 mod scaffold;
 mod scope;
@@ -16,6 +17,8 @@ mod targets;
 
 use super::{FileSource, ScaffoldEdit};
 use crate::testrun::TargetScope;
+
+pub(crate) use path_mods::path_modules;
 
 /// What a build without tree-sitter reports instead of a verdict (fail
 /// closed: the chain cannot be proven without parsing Rust).
@@ -83,7 +86,7 @@ pub(super) fn join(dir: &str, name: &str) -> String {
 }
 
 /// The directory holding `path`, "" for a path at the source root.
-fn parent(path: &str) -> &str {
+pub(crate) fn parent(path: &str) -> &str {
     path.rsplit_once('/').map_or("", |(dir, _)| dir)
 }
 

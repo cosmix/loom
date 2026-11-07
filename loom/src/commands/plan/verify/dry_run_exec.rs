@@ -12,16 +12,25 @@ use super::dry_run::{run_dry_run_with, skip, stages_of, DryCommand};
 use super::report::{parse_metadata, VerifyError, VerifyReport};
 use crate::models::stage::{CommandConfinement, Stage};
 use crate::plan::schema::StageDefinition;
-use crate::process::sandbox_probe::confined_commands_runnable;
+use crate::process::sandbox_probe::confined_commands_blocker;
 use crate::verify::criteria::assertions::{evaluate, AssertionSpec};
 use crate::verify::criteria::{
     resolve_confinement, run_acceptance_with_config, run_spec_in_optional_tree, AcceptanceResult,
     CommandSpec, CriteriaConfig, CriterionResult,
 };
 
-const NEEDS_CONFINEMENT: &str = "loom plan verify --dry-run needs a shell where loom can \
-     confine commands (bubblewrap cannot create its namespaces here); run it from the \
-     operator's shell";
+/// The refusal for a shell where confined commands cannot start, naming the
+/// probe's `why` and the remedy that fits it.
+pub(super) fn needs_confinement(why: &str) -> String {
+    let remedy = if why.contains("not found") {
+        "install bubblewrap (bwrap)"
+    } else {
+        "run it from the operator's shell, where bubblewrap can create its namespaces"
+    };
+    format!(
+        "loom plan verify --dry-run needs a shell where loom can confine commands ({why}); {remedy}"
+    )
+}
 
 type Ran = Result<(CriterionResult, Vec<String>)>;
 type StageTable<'a> = HashMap<&'a str, (&'a StageDefinition, &'a Stage)>;
@@ -42,10 +51,10 @@ pub(super) fn run(path: &Path, report: &mut VerifyReport) -> Result<()> {
                 resolve_confinement(stage.sandbox.command_confinement, Some(plan_confinement));
             level == CommandConfinement::Confined
         });
-    if confined && !confined_commands_runnable() {
+    if let Some(why) = confined.then(confined_commands_blocker).flatten() {
         report.errors.push(VerifyError {
             stage_id: None,
-            message: NEEDS_CONFINEMENT.to_string(),
+            message: needs_confinement(why),
         });
         report.valid = false;
         return Ok(());
