@@ -44,6 +44,7 @@ export function DisabledReason({
   label,
   expanded,
   controls,
+  busy = false,
   children,
 }: {
   /** Text is untrusted; an element is the caller's own markup (e.g. `BusyText`). */
@@ -67,10 +68,13 @@ export function DisabledReason({
   expanded?: boolean;
   /** The id of the region it opens (`aria-controls`); pass it only while that region is drawn. */
   controls?: string;
+  /** Work this button started is running: it stays focusable but inert, and draws no reason (its label says so). */
+  busy?: boolean;
   children: ReactNode;
 }) {
   const ownId = useId();
   const blocked = reason !== null;
+  const inert = blocked || busy;
   const described = [blocked ? (reasonId ?? ownId) : undefined, describedBy]
     .filter((id): id is string => id !== undefined && id !== "")
     .join(" ");
@@ -85,12 +89,13 @@ export function DisabledReason({
         data-look={look}
         data-shape={shape}
         className="plan-button aria-disabled:cursor-not-allowed aria-disabled:opacity-50"
-        aria-disabled={blocked || undefined}
+        aria-disabled={inert || undefined}
+        aria-busy={busy || undefined}
         aria-label={label}
         aria-expanded={expanded}
         aria-controls={controls}
         aria-describedby={described === "" ? undefined : described}
-        onClick={blocked ? undefined : onClick}
+        onClick={inert ? undefined : onClick}
       >
         {children}
       </Button>

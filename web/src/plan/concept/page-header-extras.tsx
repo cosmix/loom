@@ -4,6 +4,7 @@ import type { JSX } from "react";
 import { parsePageKey } from "@/plan/api/page-key";
 import type { ConceptPage } from "@/plan/api/schema-concept";
 import { summaryIdOfKey } from "@/plan/concept/column-context";
+import { isRebuilding } from "@/plan/files/heading-parts";
 import { BuiltMarker } from "@/plan/review/built-marker";
 import { ApprovalAnswer, ApprovalSentence } from "@/plan/summaries/approval-notice";
 import { RebuildButton } from "@/plan/summaries/rebuild-button";
@@ -18,7 +19,9 @@ export function SummaryAction({ page }: { page: ConceptPage }): JSX.Element | nu
   const question = useAtomValue(summaryQuestionAtom);
   if (page.path === null) return null;
   if (question !== null) return <ApprovalAnswer look="quiet" />;
-  return <RebuildButton ids={[summaryIdOfKey(page.key)]} look="quiet" />;
+  return (
+    <RebuildButton ids={[summaryIdOfKey(page.key)]} look="quiet" rebuilding={isRebuilding(page)} />
+  );
 }
 
 /**
