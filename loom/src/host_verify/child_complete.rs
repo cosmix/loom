@@ -1,4 +1,4 @@
-//! The host child's completion run (`JobKind::Complete`): what
+//! The host child's completion run (`JobKind::Complete` and `JobKind::VerdictComplete`): what
 //! `loom stage complete` verifies, run by the daemon on the host for the
 //! committed content the request named.
 //!

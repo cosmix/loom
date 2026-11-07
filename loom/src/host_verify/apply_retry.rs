@@ -7,7 +7,7 @@ use std::path::Path;
 use anyhow::{ensure, Context, Result};
 
 use super::apply::{apply_finished, APPLIED_MARKER};
-use super::{bounded_detail, store, JobKind, JobRecord};
+use super::{bounded_detail, store, verdict_complete, JobKind, JobRecord};
 use crate::fs::session_files::load_session_exact;
 use crate::models::session::SessionType;
 use crate::models::stage::StageStatus;
@@ -136,6 +136,9 @@ fn give_up(work_dir: &Path, record: &JobRecord, reason: &str) -> Result<()> {
         "host job could not be applied after {MAX_APPLY_ATTEMPTS} attempts");
     if record.kind == JobKind::Freeze {
         record_freeze_failure(work_dir, record, reason)?;
+    }
+    if record.kind == JobKind::VerdictComplete {
+        verdict_complete::give_up(work_dir, record, reason)?;
     }
     let marker = bounded_detail(&format!("apply failed: {}", run_output_line(reason)));
     store::save_job_file(
