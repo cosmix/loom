@@ -207,7 +207,7 @@
 | [verification-harness](mistakes/verification-harness.md) |  | 399 |
 | [verification-v2-delivery](mistakes/verification-v2-delivery.md) | v2 | 396 |
 | [visibility-and-reachability](mistakes/visibility-and-reachability.md) |  | 141 |
-| [web-dashboard](mistakes/web-dashboard.md) | UI | 137 |
+| [web-dashboard](mistakes/web-dashboard.md) | UI | 144 |
 | [web-dashboard-server](mistakes/web-dashboard-server.md) | Races | 278 |
 | [web-terminal](mistakes/web-terminal.md) | TTY | 135 |
 | [writer-reader-address](mistakes/writer-reader-address.md) | Keys | 115 |

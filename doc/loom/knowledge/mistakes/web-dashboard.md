@@ -135,3 +135,10 @@
 **Prevention**: Capture the actual cumulative model deltas and existing rate over a full fixed interval; explain the arithmetic with evidence before claiming resolution.
 
 **Fix**: Compare live 30-second token increases against the chart while leaving the pie and its legend unchanged.
+
+## web/src fixes committed without rebuilding web/dist
+
+**What happened**: two planner fixes (concluded-chat home, Rebuild busy state) were committed from web/src alone and reported done, with the dist rebuild left to the user.
+**Why**: the commit step treated web/dist as a deploy artifact, though the binary embeds it at compile time and the knowledge says to rebuild it with every web/src change.
+**Prevention**: a web/src commit is not complete until `cd web && bun run build` has run and web/dist is committed beside it.
+**Fix**: rebuilt web/dist and committed it as its own build commit.
