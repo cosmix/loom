@@ -93,7 +93,7 @@ mod stage {
         ContractSpec {
             id: "rejects-x".to_string(),
             file: FILE.to_string(),
-            test: "device_lock::contract_tests::rejects_x".to_string(),
+            test: Some("device_lock::contract_tests::rejects_x".to_string()),
             runner: Some(runner.to_string()),
             cwd: None,
             scenario: "s".to_string(),

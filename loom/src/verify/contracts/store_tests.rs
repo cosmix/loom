@@ -2,6 +2,7 @@
 //! budget, and each contract's recorded run directory.
 
 use super::*;
+use crate::plan::schema::ContractSpec;
 use tempfile::TempDir;
 
 fn record(stage_id: &str, path: &str, sha256: &str) -> FreezeRecord {
@@ -157,6 +158,7 @@ fn red(cwd: Option<&str>) -> FrozenContract {
         exit_code: Some(1),
         file: None,
         cwd: cwd.map(str::to_string),
+        test: None,
     }
 }
 
@@ -232,8 +234,37 @@ fn a_refreeze_adds_a_contract_the_record_did_not_list() {
         exit_code: None,
         file: Some("a.rs".to_string()),
         cwd: Some("apps/web".to_string()),
+        test: None,
     };
     assert_eq!(loaded.contracts, vec![red(Some(".")), added]);
+}
+
+#[test]
+fn a_refreeze_records_the_test_identifier_for_existing_and_new_entries() {
+    let tmp = TempDir::new().unwrap();
+    let mut frozen = record("s1", "a.rs", "x");
+    frozen.contracts = vec![red(None)];
+    write_freeze(tmp.path(), &frozen, &[]).unwrap();
+    let files = vec![("a.rs".to_string(), b"new".to_vec())];
+    let with_test = |id: &str| RefrozenContract {
+        test: Some("a::b".to_string()),
+        ..refrozen(id, "apps/web")
+    };
+
+    refreeze_set(
+        tmp.path(),
+        "s1",
+        &files,
+        &[with_test("rejects-x"), with_test("rejects-y")],
+    )
+    .unwrap();
+
+    let loaded = load_freeze(tmp.path(), "s1").unwrap().unwrap();
+    let tests: Vec<Option<String>> = loaded.contracts.iter().map(|c| c.test.clone()).collect();
+    assert_eq!(
+        tests,
+        vec![Some("a::b".to_string()), Some("a::b".to_string())]
+    );
 }
 
 #[test]
@@ -279,6 +310,7 @@ fn refrozen(id: &str, cwd: &str) -> RefrozenContract {
         adapter: Some("bun-test".to_string()),
         file: "a.rs".to_string(),
         cwd: cwd.to_string(),
+        test: None,
     }
 }
 

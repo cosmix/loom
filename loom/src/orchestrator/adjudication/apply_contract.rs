@@ -11,11 +11,13 @@
 //! amendment cap, exactly as for a criterion dispute.
 
 use anyhow::{bail, Result};
+use std::collections::BTreeSet;
 use std::path::Path;
 
 use crate::models::dispute::PlanPatch;
 use crate::models::stage::Stage;
-use crate::plan::amendment::{AmendmentField, AmendmentRequest};
+use crate::plan::amendment::{AmendmentField, AmendmentPatch, AmendmentRequest};
+use crate::plan::schema::ContractSpec;
 use crate::stage_service::contracts::Site;
 use crate::verify::contracts::changes::harness_files;
 use crate::verify::contracts::frozen_set::read_frozen_set;
@@ -46,7 +48,12 @@ pub(super) fn accept(
     plan_patch: &PlanPatch,
 ) -> Result<Option<String>> {
     let mut recorded: Vec<String> = contract_file(stage, contract_id).into_iter().collect();
-    if let Some(request) = contracts_amendment(&stage.id, plan_patch, dispute)? {
+    let request = contracts_amendment(&stage.id, plan_patch, dispute)?;
+    let amended = request
+        .as_ref()
+        .map(|request| amended_ids(&request.patch))
+        .unwrap_or_default();
+    if let Some(request) = request {
         if !amend_plan(work_dir, stage, request)? {
             return Ok(None);
         }
@@ -64,7 +71,7 @@ pub(super) fn accept(
     }
     recorded.extend(record.files.iter().map(|file| file.path.clone()));
     let site = super::locate_stage_site(work_dir, stage)?;
-    let contracts = refrozen_contracts(stage, &record, contract_id, &site)?;
+    let contracts = refrozen_contracts(stage, &record, contract_id, &amended, &site)?;
     let harness = harness_files(&site.git, &site.working_dir, &stage.harness)?;
     let files = read_frozen_set(&site.working_dir, &stage.contracts, &harness, &recorded)?;
     let dropped = contract_store::refreeze_set(work_dir, &stage.id, &files, &contracts)?;
@@ -139,11 +146,14 @@ fn contracts_amendment(
 /// directory the record holds for its file (`store::recorded_cwd`), so a
 /// runner config planted since cannot move a contract whose file is
 /// unchanged. The choice reads only the record, which `refreeze_set` rewrites
-/// last, so a retry after a partial failure makes the same one.
+/// last, so a retry after a partial failure makes the same one. `amended`
+/// holds the ids the verdict's patch replaced or inserted (see
+/// [`refrozen_spec`] for the test each one records).
 fn refrozen_contracts(
     stage: &Stage,
     record: &FreezeRecord,
     contract_id: &str,
+    amended: &BTreeSet<String>,
     site: &Site,
 ) -> Result<Vec<RefrozenContract>> {
     let (worktree_root, working_dir) = (site.worktree_root.as_path(), site.working_dir.as_path());
@@ -153,17 +163,48 @@ fn refrozen_contracts(
         if contract.id != contract_id && is_recorded(record, &contract.id, &file) {
             continue;
         }
-        let adapter = resolve_adapter(contract, working_dir);
+        let effective = refrozen_spec(record, contract, amended);
+        let adapter = resolve_adapter(&effective, working_dir);
         let recorded = contract_store::recorded_cwd(record, contract);
-        let run = resolve_run(contract, adapter, worktree_root, working_dir, recorded)?;
+        let run = resolve_run(&effective, adapter, worktree_root, working_dir, recorded)?;
         refrozen.push(RefrozenContract {
             id: contract.id.clone(),
             adapter: adapter.map(|adapter| adapter.name().to_string()),
             file,
             cwd: run.cwd,
+            test: effective.test,
         });
     }
     Ok(refrozen)
+}
+
+/// `contract` as the re-freeze runs and records it: the record's view of it
+/// ([`contract_store::effective_contract`]: the test the freeze ran, the
+/// adapter it used), except that a contract the verdict's patch replaced or
+/// inserted takes its amended spec's `test` when that names one. An amendment
+/// that names no test leaves the writer's.
+fn refrozen_spec(
+    record: &FreezeRecord,
+    contract: &ContractSpec,
+    amended: &BTreeSet<String>,
+) -> ContractSpec {
+    let mut effective = contract_store::effective_contract(record, contract);
+    if amended.contains(&contract.id) && contract.test.is_some() {
+        effective.test = contract.test.clone();
+    }
+    effective
+}
+
+/// The id of the contract a replace or insert patch carries; a delete, or a
+/// value that is not a contract, names none (the amendment itself rejects it).
+pub(super) fn amended_ids(patch: &AmendmentPatch) -> BTreeSet<String> {
+    let value = match patch {
+        AmendmentPatch::Replace { value, .. } | AmendmentPatch::Insert { value, .. } => value,
+        AmendmentPatch::Delete { .. } => return BTreeSet::new(),
+    };
+    crate::yaml::from_str::<ContractSpec>(value)
+        .map(|spec| BTreeSet::from([spec.id]))
+        .unwrap_or_default()
 }
 
 /// Whether `record` holds an entry for contract `id` naming `file` with a run
@@ -185,3 +226,7 @@ fn recorded_file(record: &FreezeRecord, id: &str) -> Option<String> {
         .find(|entry| entry.id == id)
         .and_then(|entry| entry.file.clone())
 }
+
+#[cfg(test)]
+#[path = "apply_contract_choice_tests.rs"]
+mod choice_tests;

@@ -153,8 +153,12 @@ fn check_collection(
         if !adapter.is_some_and(|adapter| adapter.language() == "rust") {
             continue;
         }
+        // The writer names the test at freeze; a plan-time hint is optional.
+        let Some(test) = contract.test.as_deref() else {
+            continue;
+        };
         let file = join(&prefix, &normalize(&contract.file));
-        if let Err(error) = derive_scaffold(&source, &[(file.as_str(), contract.test.as_str())]) {
+        if let Err(error) = derive_scaffold(&source, &[(file.as_str(), test)]) {
             let message = format!("contract {}: {error}", contract.id);
             let blocking = stage.dependencies.is_empty();
             out.push(LintFinding::in_stage(stage, message, blocking));

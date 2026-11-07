@@ -62,8 +62,11 @@ fn check_with(
     };
     let mut rejected = FailedBuilds::default();
     for contract in &stage.contracts {
+        // The contract as the freeze ran it: the recorded test and adapter
+        // fill what the plan left open.
+        let effective = store::effective_contract(&record, contract);
         let recorded = store::recorded_cwd(&record, contract);
-        let found = run_contract(contract, recorded, &place, runner, &mut rejected)?;
+        let found = run_contract(&effective, recorded, &place, runner, &mut rejected)?;
         failures.extend(found);
     }
     if failures.is_empty() {
@@ -88,7 +91,9 @@ struct Place<'a> {
     worktree_root: &'a Path,
 }
 
-/// Run `contract` from its run directory (its plan `cwd`, else the one
+/// Run `contract`, the effective spec (`store::effective_contract`: the
+/// recorded test and adapter fill what the plan left open), from its run
+/// directory (its plan `cwd`, else the one
 /// `recorded` for its file by the freeze, else resolved as the freeze
 /// resolves it) and say why it does not pass, if it
 /// does not. A contract that cannot be resolved is a failure of its own, so
@@ -199,7 +204,8 @@ fn collection_problems(
     } else {
         format!("{prefix}/{file}")
     };
-    let mut problems = chain_problems(&source, &file, &contract.test);
+    // `resolve_run` has already required the test.
+    let mut problems = chain_problems(&source, &file, contract.required_test()?);
     problems.extend(run_dir_problems(&source, &file, run_cwd));
     Ok(problems
         .into_iter()
@@ -265,7 +271,7 @@ fn judge(
         }
         Some(RunOutcome::NotSelected) => Some(format!(
             "contract '{id}': contract test not selected; `{command}` ran no test named '{}'",
-            contract.test
+            contract.test.as_deref().unwrap_or_default()
         )),
         Some(RunOutcome::Unparsed) | None => judge_exit_code(id, adapter, command, run.exit_code),
     }
@@ -286,7 +292,7 @@ fn judge_cached(
     match cached.tests_executed {
         Some(0) => Some(format!(
             "contract '{id}': contract test not selected; `{command}` ran no test named '{}'",
-            contract.test
+            contract.test.as_deref().unwrap_or_default()
         )),
         Some(_) if exit_code == Some(0) => None,
         _ => judge_exit_code(id, adapter, command, exit_code),

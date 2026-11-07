@@ -69,7 +69,8 @@ mod tests;
 // Re-export public types and functions
 pub use cache::CachePolicy;
 pub use config::{
-    CriteriaConfig, CriterionObserver, DEFAULT_CHECK_TIMEOUT, DEFAULT_COMMAND_TIMEOUT,
+    extended_criterion_timeout, CriteriaConfig, CriterionObserver, DEFAULT_CHECK_TIMEOUT,
+    DEFAULT_COMMAND_TIMEOUT, DEFAULT_EXTENDED_CRITERION_TIMEOUT,
 };
 #[cfg(test)]
 pub(crate) use confine::host_launcher;
@@ -86,3 +87,4 @@ pub(in crate::verify) use probe::{CachedRun, CriteriaProbe, ProbeRun, ProbeRunne
 pub use result::{AcceptanceResult, CriterionResult};
 pub use runner::{run_acceptance, run_acceptance_with_config};
 pub use spawn_observer::{set_spawn_observer, GroupAnchor, SpawnObserver, SpawnObserverGuard};
+pub(crate) use zero_tests::has_test_summary;

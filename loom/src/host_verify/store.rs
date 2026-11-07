@@ -167,9 +167,11 @@ pub fn read_progress(
 }
 
 pub fn save_result(work_dir: &Path, stage_id: &str, result: &JobResult) -> Result<()> {
-    let rel = job_rel(stage_id, &result.job_id)?.join(RESULT_FILE);
+    let job = job_rel(stage_id, &result.job_id)?;
     let bytes = serde_json::to_vec_pretty(result).context("cannot encode the job result")?;
-    write_atomic(&open_root(work_dir)?, &rel, &bytes)
+    let root = open_root(work_dir)?;
+    create_dirs(&root, &job)?;
+    write_atomic(&root, &job.join(RESULT_FILE), &bytes)
 }
 
 pub fn load_result(work_dir: &Path, stage_id: &str, job_id: &str) -> Result<Option<JobResult>> {
@@ -217,7 +219,9 @@ pub fn save_job_file(
         bytes.len() <= MAX_LOG_BYTES,
         "job file {name} exceeds {MAX_LOG_BYTES} bytes"
     );
-    write_atomic(&open_root(work_dir)?, &rel, bytes)
+    let root = open_root(work_dir)?;
+    create_dirs(&root, &job_rel(stage_id, job_id)?)?;
+    write_atomic(&root, &rel, bytes)
 }
 
 pub fn load_job_file(

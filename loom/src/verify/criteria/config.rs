@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use anyhow::{bail, ensure, Result};
 
-use crate::models::stage::{CommandConfinement, Stage};
+use crate::models::stage::{CommandConfinement, Stage, TruthCheck};
 
 use super::cache::CachePolicy;
 use super::result::CriterionResult;
@@ -16,9 +16,20 @@ use super::result::CriterionResult;
 /// Default timeout for command execution (5 minutes)
 pub const DEFAULT_COMMAND_TIMEOUT: Duration = Duration::from_secs(300);
 
-/// Default timeout for an extended acceptance criterion or a truth check
-/// that sets no `timeout_secs` (30 seconds)
+/// Default timeout for a `before_stage` or `after_stage` truth check that sets
+/// no `timeout_secs` (30 seconds)
 pub const DEFAULT_CHECK_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// Default timeout for an extended acceptance criterion that sets no
+/// `timeout_secs` (5 minutes): such a criterion runs a build or a test suite
+/// as often as a quick check.
+pub const DEFAULT_EXTENDED_CRITERION_TIMEOUT: Duration = Duration::from_secs(300);
+
+/// The timeout an extended acceptance criterion runs under: its own
+/// `timeout_secs`, else [`DEFAULT_EXTENDED_CRITERION_TIMEOUT`].
+pub fn extended_criterion_timeout(check: &TruthCheck) -> Duration {
+    check.timeout(DEFAULT_EXTENDED_CRITERION_TIMEOUT)
+}
 
 /// Configuration for acceptance criteria execution
 #[derive(Debug, Clone)]

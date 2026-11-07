@@ -69,7 +69,7 @@ pub(crate) fn create_valid_metadata_v2() -> LoomMetadata {
     stage.contracts = vec![ContractSpec {
         id: "parses-v2-plan".to_string(),
         file: "tests/plan_v2.rs".to_string(),
-        test: "parses_v2_plan".to_string(),
+        test: Some("parses_v2_plan".to_string()),
         runner: Some("cargo-test".to_string()),
         cwd: None,
         scenario: "a plan file declaring version 2 is parsed".to_string(),

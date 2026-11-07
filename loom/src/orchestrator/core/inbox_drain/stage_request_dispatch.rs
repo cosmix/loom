@@ -4,6 +4,7 @@ use super::super::{freeze, Settle};
 use crate::daemon::{handle_freeze_contracts, Response};
 use crate::fs::stage_request::StageRequest;
 use crate::models::session::Session;
+use crate::plan::schema::ContractChoices;
 use std::path::Path;
 
 pub(super) fn dispatch_stage_request(
@@ -59,8 +60,8 @@ pub(super) fn settle_freeze(
     stage_id: &str,
     session_id: &str,
     request_id: &str,
-    head: &str,
-    tree_digest: &str,
+    (head, tree_digest): (&str, &str),
+    choices: &ContractChoices,
 ) -> Settle {
     let queued = handle_freeze_contracts(
         work_dir,
@@ -69,6 +70,7 @@ pub(super) fn settle_freeze(
         head,
         tree_digest,
         request_id,
+        choices,
     );
     freeze::settle(work_dir, stage_id, session_id, request_id, queued)
 }

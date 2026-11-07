@@ -1,9 +1,10 @@
 //! The contract-testing state of a stage whose writer has frozen its contracts.
 //!
-//! `loom stage contracts freeze` ends the writer's own work: the daemon then
-//! runs every contract as a host job that is a child of the daemon, not of the
-//! writer's terminal. The writer is blocked on that job for minutes and shows
-//! nothing, so the status surfaces read the job's progress to say so.
+//! `loom stage contracts freeze` asks the daemon to run every contract as a
+//! host job that is a child of the daemon, not of the writer's terminal, and
+//! waits for that job and for the daemon's application of it. The writer is
+//! blocked on the job for minutes and shows nothing, so the status surfaces
+//! read the job's progress to say so.
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};

@@ -67,6 +67,7 @@ fn requests_from_a_previous_attempt_and_legacy_records_are_discarded() {
         &StageRequest::FreezeContracts {
             head: "a".repeat(40),
             tree_digest: "b".repeat(64),
+            choices: Default::default(),
         },
     )
     .unwrap();

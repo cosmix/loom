@@ -1,6 +1,8 @@
 //! Shared contract freeze preparation, validation, and judgment.
 
 use anyhow::{bail, Result};
+use std::collections::BTreeSet;
+use std::path::PathBuf;
 use std::time::Duration;
 
 use crate::daemon::ContractRunReport;
@@ -8,11 +10,13 @@ use crate::git::worktree::WorktreeGit;
 use crate::models::stage::CommandConfinement;
 use crate::plan::schema::ContractSpec;
 use crate::testrun::{classify, RunOutcome, RunSummary, TestRunnerAdapter};
-use crate::verify::contracts::changes::{changed_paths, stage_base};
-use crate::verify::contracts::collection::{freeze_scaffold, ScaffoldCheck};
-use crate::verify::contracts::format_gate::format_problems;
-use crate::verify::contracts::is_contract_or_harness;
+use crate::verify::contracts::changes::{changed_paths, harness_files, stage_base};
+use crate::verify::contracts::collection::{
+    freeze_scaffold, stage_scaffold, ScaffoldCheck, ScaffoldEdit,
+};
+use crate::verify::contracts::format_gate::{format_problems, static_problems};
 use crate::verify::contracts::site::ContractSite;
+use crate::verify::contracts::{is_contract_or_harness, normalize};
 
 /// How long one contract test may run.
 const CONTRACT_TIMEOUT: Duration = Duration::from_secs(300);
@@ -97,7 +101,8 @@ pub(crate) fn judge_run(
             return Err(format!(
                 "contract `{id}`: the runner did not select the test `{}` in {}; its name \
                  must be exactly the one the runner filters by",
-                contract.test, contract.file
+                contract.test.as_deref().unwrap_or(""),
+                contract.file
             ))
         }
         Some(RunOutcome::Unparsed) | None if exit != Some(0) => UNVERIFIED,
@@ -153,21 +158,88 @@ pub(crate) fn check_site_changes(site: &ContractSite, repo: &WorktreeGit) -> Res
     )
 }
 
-/// The formatter gate: a frozen file cannot change, so a contract or harness file
-/// that fails one of the stage's formatter checks is refused before the freeze.
-pub(crate) fn check_formatting(site: &ContractSite, confinement: CommandConfinement) -> Result<()> {
+/// Every file the contract session wrote or the freeze adds, in the forms a
+/// tool names it by: relative to the working directory, relative to the
+/// worktree root, and absolute; sorted and deduplicated. That is the changed
+/// paths since the stage base, every contract file and every existing harness
+/// file. An existing file whose only change is a scaffold declaration is
+/// loom's edit, not the writer's, so it is left out.
+pub(crate) fn written_paths(site: &ContractSite, repo: &WorktreeGit) -> Result<Vec<String>> {
     let stage = &site.stage;
-    let unformatted = format_problems(
+    let base = stage_base(repo, &site.work_dir)?;
+    let declared = declared_paths(site, repo, &base);
+    let mut files: BTreeSet<String> = changed_paths(repo, &site.working_dir, &base)?
+        .into_iter()
+        .filter(|path| !declared.contains(path))
+        .collect();
+    files.extend(stage.contracts.iter().map(|c| normalize(&c.file)));
+    files.extend(harness_files(repo, &site.working_dir, &stage.harness)?);
+    let prefix = site.working_dir_prefix();
+    let text = |path: PathBuf| path.to_string_lossy().into_owned();
+    let forms: BTreeSet<String> = files
+        .iter()
+        .flat_map(|file| {
+            [
+                file.clone(),
+                text(prefix.join(file)),
+                text(site.working_dir.join(file)),
+            ]
+        })
+        .collect();
+    Ok(forms.into_iter().collect())
+}
+
+/// The existing files the scaffold edits only by declaring a module in them,
+/// relative to the working directory. A scaffold that cannot be derived
+/// leaves none: the change check reports that problem.
+fn declared_paths(site: &ContractSite, repo: &WorktreeGit, base: &str) -> BTreeSet<String> {
+    let edits = stage_scaffold(
+        repo,
+        &site.worktree_root,
+        &site.working_dir,
+        base,
+        &site.stage.contracts,
+    );
+    edits
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|edit| match edit {
+            ScaffoldEdit::Declare { path, .. } => Some(path),
+            ScaffoldEdit::CreateRoot { .. } => None,
+        })
+        .collect()
+}
+
+/// The static gate: a frozen file cannot change, so a contract or harness file
+/// that fails one of the stage's formatter checks, or that a lint or search
+/// check names (`static_problems`), is refused before the freeze.
+/// `contracts_compile` lets the compiler-backed lints run.
+pub(crate) fn check_formatting(
+    site: &ContractSite,
+    confinement: CommandConfinement,
+    written: &[String],
+    contracts_compile: bool,
+) -> Result<()> {
+    let stage = &site.stage;
+    let mut problems = format_problems(
         &stage.acceptance,
         &stage.setup,
         &site.worktree_root,
         &site.working_dir,
         confinement,
     )?;
+    problems.extend(static_problems(
+        stage,
+        &site.worktree_root,
+        &site.working_dir,
+        confinement,
+        written,
+        contracts_compile,
+    )?);
     refuse(
         &stage.id,
-        unformatted,
-        "Every contract file and harness file must pass the stage's formatter checks before it is frozen: run the repository's formatter over them (for Rust, `cargo fmt --all`), then",
+        problems,
+        "Every contract file and harness file must pass the stage's formatter checks, and no lint or search check of the stage may name a file you wrote: run the repository's formatter over them (for Rust, `cargo fmt --all`), fix what the checks name, then",
     )
 }
 

@@ -115,6 +115,7 @@ fn cell_payload(fx: &Fixture, kind: RequestKind) -> serde_json::Value {
             serde_json::to_value(StageRequest::FreezeContracts {
                 head: digest::head(&worktree).unwrap(),
                 tree_digest: digest::tree_digest(&worktree).unwrap(),
+                choices: Default::default(),
             })
             .unwrap()
         }

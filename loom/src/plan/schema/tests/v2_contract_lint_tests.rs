@@ -15,7 +15,7 @@ fn contract(file: &str, runner: Option<&str>) -> ContractSpec {
     ContractSpec {
         id: "greets-by-name".to_string(),
         file: file.to_string(),
-        test: "greets_by_name".to_string(),
+        test: Some("greets_by_name".to_string()),
         runner: runner.map(str::to_string),
         cwd: None,
         scenario: "a greeting is built for Ada".to_string(),

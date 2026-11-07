@@ -205,7 +205,7 @@ describe("suite", () => {{
         // Both siblings would fail, yet neither satisfies the freeze's red phase.
         let spec = crate::plan::schema::ContractSpec {
             file: "collision.test.ts".to_string(),
-            test: "suite value (a)+".to_string(),
+            test: Some("suite value (a)+".to_string()),
             runner: Some("bun-test".to_string()),
             ..crate::verify::contracts::test_support::contract()
         };

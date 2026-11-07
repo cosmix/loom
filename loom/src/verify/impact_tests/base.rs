@@ -87,13 +87,29 @@ pub(crate) struct BaseCheckout {
 impl BaseCheckout {
     /// Check out `commit` of the repository holding `worktree`.
     pub(crate) fn create(worktree: &Path, commit: &str) -> Result<Self> {
-        let common_dir = ["rev-parse", "--path-format=absolute", "--git-common-dir"];
-        let common = git(&local_git(worktree)?, &common_dir)?;
-        let common = String::from_utf8(common).context("the git common directory is not UTF-8")?;
         let dir = tempfile::Builder::new()
             .prefix("loom-impact-base-")
             .tempdir()
             .context("failed to create a scratch directory for the base checkout")?;
+        Self::check_out(dir, worktree, commit)
+    }
+
+    /// Like [`Self::create`], with the scratch directory made inside `parent`
+    /// instead of the system temporary directory: a caller whose checkout
+    /// builds gigabytes of artifacts keeps them on a disk that can hold them.
+    pub(crate) fn create_in(parent: &Path, worktree: &Path, commit: &str) -> Result<Self> {
+        let dir = tempfile::Builder::new()
+            .prefix("loom-dry-run-")
+            .tempdir_in(parent)
+            .with_context(|| format!("failed to create a checkout under {}", parent.display()))?;
+        Self::check_out(dir, worktree, commit)
+    }
+
+    /// The shared clone and detached checkout both constructors make in `dir`.
+    fn check_out(dir: TempDir, worktree: &Path, commit: &str) -> Result<Self> {
+        let common_dir = ["rev-parse", "--path-format=absolute", "--git-common-dir"];
+        let common = git(&local_git(worktree)?, &common_dir)?;
+        let common = String::from_utf8(common).context("the git common directory is not UTF-8")?;
         let root = dir.path().join("checkout");
         let target = root
             .to_str()
@@ -124,7 +140,7 @@ impl Drop for BaseCheckout {
             tracing::warn!(
                 path = %path.display(),
                 %error,
-                "failed to remove the impact-test base checkout"
+                "failed to remove a temporary checkout"
             );
         }
     }

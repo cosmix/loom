@@ -91,7 +91,8 @@ fn dispatch_plan(command: Option<PlanCommands>, serve: PlanServeArgs) -> Result<
             strict,
             json,
             no_color,
-        }) => plan::verify::execute(&path, strict, json, no_color),
+            dry_run,
+        }) => plan::verify::execute(&path, strict, json, no_color, dry_run),
         Some(PlanCommands::Check { json }) => crate::commands::plan::check::execute(json),
         Some(PlanCommands::Hook { event, session_dir }) => {
             crate::commands::plan::hook::execute(&event, &session_dir)

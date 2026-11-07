@@ -13,6 +13,12 @@ pub(super) fn tests_executed(command: &str, cwd: &Path, result: &CriterionResult
     recognized_summary(command, cwd, result).and_then(|(_, summary)| summary.executed)
 }
 
+/// Whether an adapter recognises `command` and reads an executed-test count
+/// from `result`: the run reached a test summary, so its text is the tests' own.
+pub(crate) fn has_test_summary(command: &str, cwd: &Path, result: &CriterionResult) -> bool {
+    tests_executed(command, cwd, result).is_some()
+}
+
 /// `selected zero tests (<adapter>)` when the adapter recognising `command`
 /// reads a run of zero tests from `result`.
 pub(super) fn zero_test_failure(

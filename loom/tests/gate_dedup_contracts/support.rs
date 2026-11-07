@@ -159,7 +159,7 @@ fn stage() -> Stage {
         contracts: vec![ContractSpec {
             id: CONTRACT.to_string(),
             file: CONTRACT_FILE.to_string(),
-            test: "c1".to_string(),
+            test: Some("c1".to_string()),
             runner: Some("cargo-test".to_string()),
             cwd: None,
             scenario: "x arrives".to_string(),
@@ -192,6 +192,7 @@ fn freeze(work: &Path) {
             exit_code: Some(101),
             file: Some(CONTRACT_FILE.to_string()),
             cwd: Some(".".to_string()),
+            test: None,
         }],
     };
     let copies: Vec<(String, Vec<u8>)> = files

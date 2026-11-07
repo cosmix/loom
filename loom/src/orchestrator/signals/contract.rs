@@ -3,8 +3,9 @@
 //! A v2 standard stage with contracts runs a `Contract` session before its
 //! `Stage` session (DESIGN D8): it writes the stage's contract tests, proves
 //! each one fails, and freezes them with `loom stage contracts freeze`. Its
-//! signal carries the contracts with the adapter and command that run each
-//! one, the harness globs, the stage description as context only, the
+//! signal carries the contracts (the plan's specs overlaid with the choices
+//! earlier freezes of the stage saved) with the adapter and command that run
+//! each one once its test is named, the harness globs, the stage description as context only, the
 //! knowledge brief, the language skills, and the rules of the phase. It
 //! carries no acceptance criteria and no completion step: the stage belongs to
 //! the implementation session that follows.
@@ -23,23 +24,31 @@ use crate::plan::schema::ContractSpec;
 use crate::skills::{skill_invocation, SkillIndex};
 use crate::testrun::{languages, TestRunnerAdapter};
 use crate::verify::contracts::changes::stage_base;
+use crate::verify::contracts::choices::lenient_contracts;
 use crate::verify::contracts::collection::{stage_scaffold, ScaffoldEdit, ScaffoldModule};
 use crate::verify::contracts::resolve_adapter;
 use crate::verify::contracts::run_dir::{resolve_run, ContractRun};
 
 use super::format::{format_skill_recommendations, format_stage_brief};
 use super::generate::declared_and_recommended_skills;
-use super::helpers::CONTEXT_CEILING_HANDOFF;
 use super::retrieval::STAGE_QUERY_INPUTS;
 use super::types::EmbeddedContext;
 
+mod choose;
+mod rules;
+use choose::{append_choices, test_cell};
+use rules::append_rules;
+
 /// One contract with the adapter and the run loom runs it with, or why it
 /// cannot be run: the same `loom stage contracts freeze` and the completion
-/// check resolve.
+/// check resolve. `run` is `None` while no test is named for the contract: the
+/// writer names it with the freeze, and loom builds the command from it.
 struct ResolvedContract<'a> {
     spec: &'a ContractSpec,
     adapter: Option<&'static dyn TestRunnerAdapter>,
-    run: Result<ContractRun, String>,
+    run: Option<Result<ContractRun, String>>,
+    /// The test came from a choice an earlier freeze saved, not from the plan.
+    test_saved: bool,
 }
 
 impl ResolvedContract<'_> {
@@ -83,17 +92,12 @@ pub fn generate_contract_signal(
         ..EmbeddedContext::default()
     };
     let stage_root = stage_root(stage, &worktree.path);
-    let contracts: Vec<ResolvedContract<'_>> = stage
-        .contracts
+    let overlaid = lenient_contracts(work_dir, stage);
+    let contracts: Vec<ResolvedContract<'_>> = overlaid
         .iter()
-        .map(|spec| {
-            let adapter = resolve_adapter(spec, &stage_root);
-            let run = resolve_run(spec, adapter, &worktree.path, &stage_root, None)
-                .map_err(|error| format!("{error:#}"));
-            ResolvedContract { spec, adapter, run }
-        })
+        .map(|spec| resolve_contract(stage, spec, &worktree.path, &stage_root))
         .collect();
-    let scaffold = scaffold_for(stage, work_dir, &worktree.path, &stage_root, &contracts);
+    let scaffold = scaffold_for(work_dir, &worktree.path, &stage_root, &overlaid, &contracts);
     // No `has_disputes` gate (unlike the stage signal): the notice here comes
     // from a refused freeze, which the old dispute tallies do not count, and
     // only the adjudication apply clears it.
@@ -111,6 +115,29 @@ pub fn generate_contract_signal(
     );
 
     super::helpers::publish_signal(&session.id, &content, work_dir, stage, &embedded_context)
+}
+
+/// `spec` (the plan's, overlaid with the saved choices) with the adapter and
+/// run loom resolves for it. A spec with no test is not resolved: its run
+/// needs the test the writer will name.
+fn resolve_contract<'a>(
+    stage: &Stage,
+    spec: &'a ContractSpec,
+    worktree: &Path,
+    stage_root: &Path,
+) -> ResolvedContract<'a> {
+    let adapter = resolve_adapter(spec, stage_root);
+    let run = spec.test.as_ref().map(|_| {
+        resolve_run(spec, adapter, worktree, stage_root, None).map_err(|error| format!("{error:#}"))
+    });
+    let planned = stage.contracts.iter().find(|plan| plan.id == spec.id);
+    let test_saved = spec.test.is_some() && planned.is_none_or(|plan| plan.test != spec.test);
+    ResolvedContract {
+        spec,
+        adapter,
+        run,
+        test_saved,
+    }
 }
 
 /// `value` as the text of one markdown table cell: a `|` would end the cell
@@ -155,6 +182,7 @@ fn format_contract_signal(
     }
     append_stage_context(&mut content, stage);
     append_contracts(&mut content, contracts);
+    append_choices(&mut content, &stage.contracts);
     append_harness(&mut content, &stage.harness);
     append_scaffold(&mut content, scaffold);
     append_skills(
@@ -196,10 +224,10 @@ fn append_contracts(content: &mut String, contracts: &[ResolvedContract<'_>]) {
             .adapter
             .map_or("unsupported", |adapter| adapter.name());
         content.push_str(&format!(
-            "| `{}` | `{}` | `{}` | {adapter} | {} | {} |\n",
+            "| `{}` | `{}` | {} | {adapter} | {} | {} |\n",
             table_cell(&spec.id),
             table_cell(&spec.file),
-            table_cell(&spec.test),
+            test_cell(contract),
             table_cell(&spec.scenario),
             table_cell(&spec.rejects),
         ));
@@ -212,8 +240,14 @@ fn append_contracts(content: &mut String, contracts: &[ResolvedContract<'_>]) {
     for contract in contracts {
         let id = &contract.spec.id;
         match &contract.run {
-            Ok(run) => content.push_str(&format!("- `{id}` in `{}`: `{}`\n", run.cwd, run.command)),
-            Err(error) => content.push_str(&format!("- `{id}`: cannot be run: {error}\n")),
+            Some(Ok(run)) => {
+                content.push_str(&format!("- `{id}` in `{}`: `{}`\n", run.cwd, run.command))
+            }
+            Some(Err(error)) => content.push_str(&format!("- `{id}`: cannot be run: {error}\n")),
+            None => content.push_str(&format!(
+                "- `{id}`: name its test with `--test {id}=<identifier>`; loom builds the \
+                 command from it\n"
+            )),
         }
         if let Some(reason) = contract.unsupported_reason() {
             content.push_str(&format!(
@@ -242,10 +276,10 @@ fn append_harness(content: &mut String, harness: &[String]) {
 /// stage base and never over the worktree, which already holds the writer's
 /// edits. `Err` is the sentence the signal prints in the section's place.
 fn scaffold_for(
-    stage: &Stage,
     work_dir: &Path,
     worktree_root: &Path,
     stage_root: &Path,
+    specs: &[ContractSpec],
     contracts: &[ResolvedContract<'_>],
 ) -> Result<Vec<ScaffoldEdit>, String> {
     let has_rust = contracts
@@ -260,7 +294,7 @@ fn scaffold_for(
     let repo = WorktreeGit::pinned_in_project_of(work_dir, worktree_root)
         .map_err(|error| unknown(format!("{error:#}")))?;
     let base = stage_base(&repo, work_dir).map_err(|error| unknown(format!("{error:#}")))?;
-    stage_scaffold(&repo, worktree_root, stage_root, &base, &stage.contracts).map_err(|error| {
+    stage_scaffold(&repo, worktree_root, stage_root, &base, specs).map_err(|error| {
         format!("Scaffold derivation failed: {error}\n\nThe freeze will refuse this stage's contracts until that is fixed.")
     })
 }
@@ -341,48 +375,10 @@ fn append_skills(
     }
 }
 
-fn append_rules(content: &mut String, stage_id: &str) {
-    content.push_str("## Your Job\n\n");
-    content.push_str(
-        "1. Write each contract test above in its file. You may also write files matching \
-         the harness globs and make the scaffold edits listed above. Implement nothing: no \
-         production code, no fixes, no refactors.\n\
-         2. Each test sets up its scenario and must fail on the wrong implementation its \
-         Rejects column names.\n\
-         3. Every contract test must fail now, before the implementation exists. A compile \
-         or collection failure counts as failing.\n\
-         4. Do not commit and do not run `loom stage complete`: the stage belongs to the \
-         implementation session after you.\n\
-         5. Record mistakes, decisions and surprises with `loom memory note` and \
-         `loom memory decision`, as any stage does.\n\
-         6. Before freezing, run the repository's formatter over every file you wrote (for \
-         Rust, `cargo fmt --all`), and keep every test function under 50 lines and every \
-         file under 400 (CLAUDE.md Rule 17): the freeze runs the stage's formatter checks, \
-         and a frozen file cannot change afterwards.\n",
-    );
-    content.push_str(&format!(
-        "7. Finish with `loom stage contracts freeze {stage_id}`, then stop. If it refuses, \
-         fix what it names and run it again. If you believe the stage's contract setup (its \
-         contracts or harness) or a format criterion makes the freeze impossible, record why \
-         with `loom memory note \"freeze-dispute: <evidence>\"`, run the freeze anyway, and \
-         stop: every refused freeze goes to an adjudicator, who reads your note and decides. \
-         The freeze checks that you changed only contract files, harness files and the \
-         scaffold edits, then asks the daemon to run every contract on the host and freeze \
-         them.\n\
-         8. If the Adjudicator Feedback section asks questions, answer each with `loom memory \
-         note \"freeze-dispute: answer <n>: <evidence>\"`, then run the freeze and stop; \
-         that is your follow-up. Do not commit.\n\
-         9. You cannot change the plan, and neither can the operator's answer to a question: \
-         do not ask the operator to amend contracts, harness or criteria, or to run commands \
-         for you. A refused freeze reaches the adjudicator on its own. Ask the operator only \
-         what only a person can decide.\n\
-         10. If the work needs something only a person can provide (a credential, a host \
-         install), run `loom stage block {stage_id} \"<what and why>\"`.\n\n"
-    ));
-    content.push_str("- Stay inside this worktree.\n");
-    content.push_str(CONTEXT_CEILING_HANDOFF);
-}
-
 #[cfg(test)]
 #[path = "contract_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "contract/choices_tests.rs"]
+mod choices_tests;

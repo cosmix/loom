@@ -159,14 +159,19 @@ fn stage_request(
     if let Err(reason) = require_owner(work_dir, stage_id, record) {
         return Settle::Refused(reason);
     }
-    if let StageRequest::FreezeContracts { head, tree_digest } = &request {
+    if let StageRequest::FreezeContracts {
+        head,
+        tree_digest,
+        choices,
+    } = &request
+    {
         return settle_freeze(
             work_dir,
             stage_id,
             &record.id,
             request_id,
-            head,
-            tree_digest,
+            (head, tree_digest),
+            choices,
         );
     }
     settle_response(dispatch_stage_request(

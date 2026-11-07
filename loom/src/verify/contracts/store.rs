@@ -30,12 +30,12 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::path::{Component, Path, PathBuf};
 
-use super::normalize;
 use crate::daemon::ContractRunReport;
 use crate::fs::locking::{atomic_write_locked, locked_dir_update};
 use crate::fs::safe_read::{is_not_found, read_bounded};
-use crate::plan::schema::ContractSpec;
 use crate::relay::sha256_hex;
+
+pub use super::record_view::{effective_contract, recorded_cwd};
 
 pub const FREEZE_RECORD_VERSION: u32 = 1;
 const GENERATION_RECORD_VERSION: u32 = 2;
@@ -90,6 +90,10 @@ pub struct FrozenContract {
     /// leaves the completion check to resolve it as the freeze would.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cwd: Option<String>,
+    /// The test identifier the freeze ran; `None` for a record that predates the
+    /// field or a refrozen contract that never ran.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub test: Option<String>,
 }
 
 /// The outcome a re-freeze records for a contract the record did not list (one
@@ -106,6 +110,7 @@ pub struct RefrozenContract {
     pub adapter: Option<String>,
     pub file: String,
     pub cwd: String,
+    pub test: Option<String>,
 }
 
 /// The report's run, with no file or run directory recorded: the freeze
@@ -119,31 +124,9 @@ impl From<&ContractRunReport> for FrozenContract {
             exit_code: report.exit_code,
             file: None,
             cwd: None,
+            test: None,
         }
     }
-}
-
-/// The run directory `record` holds for `contract`, read from the entry that
-/// still describes the contract's file: the entry with its id and file, else
-/// any entry with its file (an amendment renamed the contract), else an entry
-/// with its id that predates recording files. `None` when no entry describes
-/// the contract or the one that does recorded no run directory; the caller
-/// then resolves the directory from the plan.
-pub fn recorded_cwd<'a>(record: &'a FreezeRecord, contract: &ContractSpec) -> Option<&'a str> {
-    let file = normalize(&contract.file);
-    let same_file = |entry: &&FrozenContract| entry.file.as_deref() == Some(file.as_str());
-    let entries = &record.contracts;
-    entries
-        .iter()
-        .filter(same_file)
-        .find(|entry| entry.id == contract.id)
-        .or_else(|| entries.iter().find(same_file))
-        .or_else(|| {
-            entries
-                .iter()
-                .find(|entry| entry.id == contract.id && entry.file.is_none())
-        })
-        .and_then(|entry| entry.cwd.as_deref())
 }
 
 /// Refuse a path that is empty, absolute, or has any component other than a
@@ -314,6 +297,7 @@ fn upsert_contract(frozen: &mut Vec<FrozenContract>, contract: &RefrozenContract
             existing.adapter = contract.adapter.clone();
             existing.file = file;
             existing.cwd = cwd;
+            existing.test = contract.test.clone();
         }
         None => frozen.push(FrozenContract {
             id: contract.id.clone(),
@@ -322,6 +306,7 @@ fn upsert_contract(frozen: &mut Vec<FrozenContract>, contract: &RefrozenContract
             exit_code: None,
             file,
             cwd,
+            test: contract.test.clone(),
         }),
     }
 }
@@ -373,7 +358,7 @@ fn read_attempts(root: &Path, stage_id: &str) -> Result<u32> {
         .with_context(|| format!("invalid contract attempts count for stage '{stage_id}'"))
 }
 
-fn stage_dir(work_dir: &Path, stage_id: &str) -> PathBuf {
+pub(crate) fn stage_dir(work_dir: &Path, stage_id: &str) -> PathBuf {
     work_dir.join(CONTRACTS_DIR).join(stage_id)
 }
 

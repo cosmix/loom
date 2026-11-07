@@ -15,7 +15,7 @@ pub(crate) mod observer;
 pub(crate) mod ownership;
 mod receipts;
 mod types;
-pub(crate) use contracts::handle_freeze_contracts;
+pub(crate) use contracts::{handle_freeze_contracts, FREEZE_BUSY};
 pub(crate) use control_block::{apply_block, handle_agent_block_for_session, handle_block_stage};
 pub use dispute::handle_dispute_criteria;
 pub(crate) use dispute::handle_dispute_criteria_for_session;

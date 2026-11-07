@@ -8,8 +8,8 @@
 //!   `contracts`, `harness` or `acceptance`, replayed in array order over a
 //!   copy of the stage's fields, so each index is read against the field as
 //!   the earlier entries left it, as the apply reads it;
-//! - an `acceptance` entry only replaces a format-check criterion with
-//!   another format check that sets no output expectation (`exit_code`,
+//! - an `acceptance` entry only replaces a pure check (format, lint, search)
+//!   with another pure check that sets no output expectation (`exit_code`,
 //!   `stdout_contains`, `stdout_not_contains`, `stderr_empty`), since one
 //!   would change what the gate accepts;
 //! - a harness glob matches no production source among the worktree's files
@@ -35,7 +35,7 @@ use crate::plan::schema::ContractSpec;
 use crate::stage_service::contracts::Site;
 use crate::verify::contracts::changes::{harness_files, stage_base};
 use crate::verify::contracts::collection::{harness_source_matches, stage_scaffold, ScaffoldEdit};
-use crate::verify::contracts::format_gate::is_format_check;
+use crate::verify::contracts::format_gate::is_pure_check;
 
 use super::plan_patch::decode_patch;
 use super::verdict::{
@@ -252,23 +252,23 @@ impl Replay {
 
     fn replace_format_check(&mut self, patch: &AmendmentPatch, cwd: &Path) -> Result<(), String> {
         let AmendmentPatch::Replace { index, value } = patch else {
-            return Err("an acceptance entry may only replace a format-check criterion".into());
+            return Err("an acceptance entry may only replace a pure check".into());
         };
         let Some(current) = self.acceptance.get(*index) else {
             return Err(out_of_range(*index, self.acceptance.len()));
         };
-        if !is_format_check(current.command(), cwd) {
+        if !is_pure_check(current.command(), cwd) {
             return Err(format!(
-                "acceptance[{index}] `{}` is not a format check; only a format-check criterion \
-                 may be replaced",
+                "acceptance[{index}] `{}` is not a format check, lint or search (a pure check); \
+                 only a pure check may be replaced",
                 current.command()
             ));
         }
         let replacement: AcceptanceCriterion = crate::yaml::from_str(value)
             .map_err(|e| format!("value is not an acceptance criterion: {e}"))?;
-        if !is_format_check(replacement.command(), cwd) {
+        if !is_pure_check(replacement.command(), cwd) {
             return Err(format!(
-                "the replacement `{}` is not a format check",
+                "the replacement `{}` is not a format check, lint or search (a pure check)",
                 replacement.command()
             ));
         }
@@ -276,7 +276,7 @@ impl Replay {
             return Err(format!(
                 "the replacement `{}` sets an output expectation (exit_code, stdout_contains, \
                  stdout_not_contains or stderr_empty), which changes what the gate accepts; a \
-                 format check passes on exit status 0 alone",
+                 pure check passes on exit status 0 alone",
                 replacement.command()
             ));
         }
@@ -312,7 +312,7 @@ impl Replay {
 }
 
 /// Whether an extended criterion judges more than the command's exit status 0:
-/// only `command` and `timeout_secs` leave the format-check gate as it was.
+/// only `command` and `timeout_secs` leave the static gate as it was.
 fn expects_output(criterion: &AcceptanceCriterion) -> bool {
     let AcceptanceCriterion::Extended(check) = criterion else {
         return false;

@@ -23,6 +23,7 @@ mod child_watchdog;
 pub mod digest;
 pub mod freeze;
 mod freeze_memo;
+mod freeze_prepare;
 mod freeze_refuse;
 pub mod runner;
 mod signals;
