@@ -126,8 +126,7 @@ the daemon starts (bubblewrap on Linux, `sandbox-exec` on macOS), not in the ses
 
 - No network, ever. The plan's `network.allowed_domains` reaches only the agent's session.
 - Git metadata is read-only; `/tmp` and `/var/tmp` are private to the run.
-- A string criterion gets 300 s. The extended form `{command: ..., timeout_secs: N}` defaults to
-  30 s and takes `timeout_secs` from 1 to 3600: set it for a slow suite.
+- A string criterion gets 300 s. The extended form `{command: ..., timeout_secs: N}` defaults to 300 s too and takes `timeout_secs` from 1 to 3600: set it for a slow suite. An `after_stage` or `before_stage` check defaults to 30 s and a `wiring_tests` command is capped at 30 s.
 - A tool a criterion needs comes from a `provision` entry (provision has network); the criterion
   calls the installed binary by its path in the tree, such as `node_modules/.bin/<tool>` after a
   Bun or npm install or `.venv/bin/<tool>` after `uv sync`. Never `bunx`, `npx`, `uvx`,
@@ -140,6 +139,8 @@ the daemon starts (bubblewrap on Linux, `sandbox-exec` on macOS), not in the ses
 `loom check <stage-id>` runs the criteria in the same host job, so a mismatch shows before
 completion (`--criterion <n>` re-runs only the named, 0-based criteria); its first line `Host job: <state>` is the result (`requested` and `pending` are not:
 run it again).
+
+`loom plan verify --dry-run` runs the same commands against a checkout of HEAD before any stage exists, after running the plan's provision entries there. It needs a shell where bubblewrap can create namespaces; a stage session's own sandbox refuses nested bubblewrap.
 
 **Granting the session's network.** Think hard about `network.allowed_domains`: list every fetch the
 stage's own work does by reading the repo's manifests, lockfiles, scripts and hooks, and grant exactly
