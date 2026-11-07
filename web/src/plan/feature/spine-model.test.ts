@@ -163,19 +163,63 @@ describe("a plan row's slug", () => {
   it("drops the feature prefix from a plan's slug and keeps the full slug in the row's title", () => {
     const row = { ...atlas().plan_rows[0]!, slug: "atlas-03", state: "written" };
     const plans = spineGroups(atlas({ plan_rows: [row] })).find((group) => group.id === "plans")!;
-    expect(plans.children.at(-1)).toMatchObject({ name: "03", title: "atlas-03" });
+    // The last child is the Findings instrument; the plan rows come before it.
+    expect(plans.children.at(-2)).toMatchObject({ name: "03", title: "atlas-03" });
   });
 });
 
-describe("the trace pages", () => {
+describe("the instrument rows", () => {
   const trace = traceViewSchema.parse(structuredClone(traceFixture));
+  const groupOf = (rows: ReturnType<typeof spineGroups>, id: string) =>
+    rows.find((group) => group.id === id)!;
 
-  it("have no row: the Product spec and Plans groups list only their own documents", () => {
+  it("close their groups: Coverage ends Product spec and Findings ends Plans", () => {
     const rows = spineGroups(atlas(), trace);
-    const names = rows.flatMap((group) => group.children.map((child) => child.name));
-    expect(names).not.toContain("Coverage");
-    expect(names).not.toContain("Findings");
     expect(rows.map((group) => group.id)).toEqual(["vision", "product", "metaplan", "plans"]);
-    expect(rows.find((group) => group.id === "plans")!.children.at(-1)!.name).not.toBe("Findings");
+    const coverage = groupOf(rows, "product").children.at(-1)!;
+    expect(coverage).toMatchObject({
+      key: "coverage",
+      name: "Coverage",
+      to: "/f/atlas/coverage",
+      style: "plain",
+      glyph: null,
+      instrument: { id: "coverage" },
+    });
+    const findings = groupOf(rows, "plans").children.at(-1)!;
+    expect(findings).toMatchObject({
+      key: "findings",
+      name: "Findings",
+      to: "/f/atlas/findings",
+      glyph: null,
+      instrument: { id: "findings" },
+    });
+    // A document row reads no instrument.
+    const documents = rows.flatMap((group) => group.children.slice(0, -1));
+    expect(documents.every((child) => child.instrument === null)).toBe(true);
+    expect(groupOf(rows, "vision").children).toEqual([]);
+    expect(groupOf(rows, "metaplan").children).toEqual([]);
+  });
+
+  it("read the trace's figures, and nothing before the trace loads", () => {
+    const loaded = spineGroups(atlas(), trace);
+    // The fixture: four headings, all covered; one open finding (F-1) and one dismissed (F-2).
+    expect(groupOf(loaded, "product").children.at(-1)!.instrument).toMatchObject({
+      id: "coverage",
+      reading: { covered: 4, total: 4, gaps: [] },
+    });
+    expect(groupOf(loaded, "plans").children.at(-1)!.instrument).toMatchObject({
+      id: "findings",
+      reading: { open: 1, decided: 1 },
+    });
+
+    const waiting = spineGroups(atlas());
+    expect(groupOf(waiting, "product").children.at(-1)!.instrument).toEqual({
+      id: "coverage",
+      reading: null,
+    });
+    expect(groupOf(waiting, "plans").children.at(-1)!.instrument).toEqual({
+      id: "findings",
+      reading: null,
+    });
   });
 });

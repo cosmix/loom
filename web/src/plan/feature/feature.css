@@ -33,36 +33,32 @@
   display: none;
 }
 
-/* The two entry links to the map pages: Coverage over the product overview's gaps
-   (`gaps.tsx`) and Findings under the run's actions (`run-panel.tsx`). A chrome link at the body
-   size with a muted arrow after it (empty alternative text), underlined on hover only. */
-[data-loom-plan] :is(.plan-gaps-link, .plan-run__findings) {
+/* The Findings link under the run's actions (`run-panel.tsx`), with the open count the spine's
+   Findings row also reads. A chrome link at the body size with a muted arrow after it (empty
+   alternative text), underlined on hover only. */
+[data-loom-plan] .plan-run__findings {
   margin: 0;
   font-size: var(--type-body);
   font-weight: 500;
   line-height: var(--leading-ui);
 }
 
-[data-loom-plan] .plan-gaps-link {
-  margin-bottom: var(--space-4);
-}
-
-[data-loom-plan] :is(.plan-gaps-link, .plan-run__findings) > a {
+[data-loom-plan] .plan-run__findings > a {
   border-radius: 3px;
   color: var(--foreground);
   text-decoration: none;
 }
 
-[data-loom-plan] :is(.plan-gaps-link, .plan-run__findings) > a::after {
+[data-loom-plan] .plan-run__findings > a::after {
   content: " →" / "";
   color: var(--muted-foreground);
 }
 
-[data-loom-plan] :is(.plan-gaps-link, .plan-run__findings) > a:hover {
+[data-loom-plan] .plan-run__findings > a:hover {
   text-decoration: underline;
 }
 
-[data-loom-plan] :is(.plan-gaps-link, .plan-run__findings) > a:focus-visible {
+[data-loom-plan] .plan-run__findings > a:focus-visible {
   outline: 2px solid var(--ring);
   outline-offset: 2px;
 }

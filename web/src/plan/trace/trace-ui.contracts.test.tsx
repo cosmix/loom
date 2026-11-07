@@ -239,16 +239,50 @@ it("plan slugs drop the feature prefix in the spine", async () => {
   expect(titles).toContain("demo-trace");
 });
 
-it("the spine has no Coverage or Findings rows", async () => {
-  // Finding F-1 is open in the trace fixture.
+it("the spine ends Product spec with Coverage and Plans with Findings, reading the trace", async () => {
+  // The trace fixture: four headings, all covered; finding F-1 open, F-2 dismissed.
   renderRoutes("/f/demo/product");
   const spine = within(await spineNav());
   await spine.findByRole("link", { name: /\bAlpha\b/ });
   const expand = spine.queryByRole("button", { name: "Expand Plans" });
   if (expand) fireEvent.click(expand);
   await spine.findAllByRole("link", { name: /\bfirst\b/ });
-  expect(spine.queryAllByRole("link", { name: /^Coverage\b/ })).toEqual([]);
-  expect(spine.queryAllByRole("link", { name: /^Findings\b/ })).toEqual([]);
+
+  const coverage = await spine.findByRole("link", {
+    name: "Coverage 4 of 4 headings covered",
+    description: "every heading has a plan",
+  });
+  expect(coverage.getAttribute("href")).toBe("/f/demo/coverage");
+  const coverageWell = coverage.closest("li")!;
+  expect(coverageWell.getAttribute("data-instrument")).toBe("coverage");
+  expect(coverageWell.parentElement?.lastElementChild).toBe(coverageWell);
+  expect(coverageWell.querySelector("[data-tone]")).toBeNull();
+  // One dot per heading, grouped by the two written sections.
+  expect(coverageWell.querySelectorAll(".plan-spine__instrument-section")).toHaveLength(2);
+  expect(coverageWell.querySelectorAll("[data-dot='covered']")).toHaveLength(4);
+
+  const findings = await spine.findByRole("link", {
+    name: "Findings 1 open",
+    description: "from the first review and your reviews · 1 decided",
+  });
+  expect(findings.getAttribute("href")).toBe("/f/demo/findings");
+  const findingsWell = findings.closest("li")!;
+  expect(findingsWell.parentElement?.lastElementChild).toBe(findingsWell);
+  expect(
+    findingsWell.querySelector(".plan-spine__instrument-mark")?.getAttribute("data-tone"),
+  ).toBe("warning");
+});
+
+it("the Findings row says nothing loud once every finding is decided", async () => {
+  for (const { finding } of trace.findings) {
+    finding.status = { kind: "dismissed", detail: "settled elsewhere" };
+  }
+  renderRoutes("/f/demo/engineering");
+  const spine = within(await spineNav());
+  await spine.findAllByRole("link", { name: /\bfirst\b/ });
+  const findings = await spine.findByRole("link", { name: "Findings all clear" });
+  expect(findings.closest("li")?.querySelector("[data-tone]")).toBeNull();
+  expect(findings.closest("li")?.querySelectorAll("[data-dot='decided']")).toHaveLength(2);
 });
 
 it("the spine head names the top attention item", async () => {
@@ -261,7 +295,13 @@ it("the spine head names the top attention item", async () => {
   expect(review[0]!.getAttribute("href")).toBe("/f/demo/product/section_02");
   expect(deepestHolding(nav, "Beta changed since you settled it.")).not.toEqual([]);
   expect(nav.textContent).not.toMatch(/Revisit|findings from the last run|Triage|metaplan\b/);
-  expect(within(nav).queryAllByRole("link").filter(hrefIs("/f/demo/findings"))).toEqual([]);
+  // The head links the top item alone; the Findings row below it is the spine's own.
+  const head = nav.querySelector(".plan-spine-next")!;
+  expect(
+    within(head as HTMLElement)
+      .queryAllByRole("link")
+      .filter(hrefIs("/f/demo/findings")),
+  ).toEqual([]);
 });
 
 it("a changed document offers See what changed", async () => {
@@ -388,9 +428,16 @@ it("findings group by run and fold decided ones", async () => {
   expect(within(folded!).queryAllByRole("button", { name: /^Dismiss\b/ })).toEqual([]);
 });
 
-it("the product overview links Coverage and the Run page links Findings", async () => {
+it("the product overview draws no Coverage link of its own; the Run page links Findings", async () => {
   renderRoutes("/f/demo/product");
-  await pageLink((name) => /^Coverage\b/.test(name), "/f/demo/coverage");
+  const nav = await spineNav();
+  await screen.findAllByRole("link", { name: /^Coverage\b/ });
+  // The spine's row is the one way to Coverage from the overview.
+  const outside = screen
+    .queryAllByRole("link")
+    .filter(hrefIs("/f/demo/coverage"))
+    .filter((link) => !nav.contains(link));
+  expect(outside).toEqual([]);
   cleanup();
   // Finding F-1 is open in the trace fixture.
   renderRoutes("/f/demo/run");

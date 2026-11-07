@@ -4,6 +4,7 @@ import { featurePage } from "@/plan/feature/page-offer";
 import { STEP } from "@/plan/feature/steps";
 import { featureOfDocPath } from "@/plan/feature/source-href";
 import { featureHref } from "@/plan/feature/use-feature";
+import { instrumentChild, type Instrument } from "@/plan/feature/spine-instruments";
 import { decode, docRel } from "@/plan/files/address";
 import { settleWords } from "@/plan/trace/doc-model";
 import { docOfPath, isMoved, shortSlug, shownSettle } from "@/plan/trace/model";
@@ -75,8 +76,11 @@ export interface SpineChild {
   note: string | null;
   /** A plan's pressure record, read aloud only; null for every other child and a retired plan. */
   pressure: PlanPressure | null;
-  /** The row's leading glyph; null for the overview row, which stands for the group itself. */
+  /** The row's leading glyph; null for the overview row, which stands for the group itself, and
+   *  for an instrument row, which leads with the instrument's own mark. */
   glyph: RowGlyph | null;
+  /** The ledger the row reads (Coverage, Findings); null for a document row. */
+  instrument: Instrument | null;
 }
 
 export interface SpineGroup {
@@ -115,7 +119,7 @@ function unitOf(server: StepView | undefined, count: string | null): string | nu
 /** The page segment each group lives under, for finding the group of a pathname. */
 const GROUP_OF_PAGE: Record<string, GroupId> = {
   ...Object.fromEntries(GROUPS.map((group) => [group.page, group.id])),
-  // The trace pages have no row; each lights the group it is reached from.
+  // The instrument rows close the group they read: Coverage the Product spec, Findings the Plans.
   coverage: "product",
   findings: "plans",
 };
@@ -176,6 +180,7 @@ function overviewChild(feature: string, page: string): SpineChild {
     note: null,
     pressure: null,
     glyph: null,
+    instrument: null,
   };
 }
 
@@ -191,6 +196,7 @@ function sectionChildren(checklist: ChecklistView, trace: TraceView | null): Spi
     title: null,
     note: section.written ? null : "not written",
     pressure: null,
+    instrument: null,
     glyph: rowGlyph({
       written: section.written,
       role: "section",
@@ -212,6 +218,7 @@ function planChildren(checklist: ChecklistView, trace: TraceView | null): SpineC
     title: plan.slug,
     note: null,
     pressure: plan.state === "retired" ? null : { date: plan.pressure_date },
+    instrument: null,
     glyph: rowGlyph({
       written: true,
       role: "plan",
@@ -289,11 +296,20 @@ function childrenOf(
   page: string,
   trace: TraceView | null,
 ): SpineChild[] {
+  // Each group's instrument closes it: the ledger read over the documents above it.
   if (id === "product") {
-    return [overviewChild(checklist.feature, page), ...sectionChildren(checklist, trace)];
+    return [
+      overviewChild(checklist.feature, page),
+      ...sectionChildren(checklist, trace),
+      instrumentChild("coverage", checklist.feature, trace),
+    ];
   }
   if (id === "plans") {
-    return [overviewChild(checklist.feature, page), ...planChildren(checklist, trace)];
+    return [
+      overviewChild(checklist.feature, page),
+      ...planChildren(checklist, trace),
+      instrumentChild("findings", checklist.feature, trace),
+    ];
   }
   return [];
 }
