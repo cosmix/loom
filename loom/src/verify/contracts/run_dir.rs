@@ -146,7 +146,8 @@ fn beneath(path: &Path, dir: &Path) -> Result<String> {
     }
 }
 
-fn canonical(path: &Path) -> Result<PathBuf> {
+/// `path` with every symlink resolved; the error names it.
+pub(crate) fn canonical(path: &Path) -> Result<PathBuf> {
     path.canonicalize()
         .with_context(|| format!("failed to resolve {}", path.display()))
 }
