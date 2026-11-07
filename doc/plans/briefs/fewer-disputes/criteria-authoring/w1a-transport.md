@@ -8,7 +8,9 @@ Tier: sonnet. Wave 2, with W1b, W2 and W3. Read `common.md` first. Frozen contra
 The contract writer passes `--test`, `--runner` and `--cwd` on `loom stage contracts freeze`. The request
 reaches the daemon by three routes (relay ticket, socket RPC, spool file) that all end in
 `handle_freeze_contracts`. You carry a `ContractChoices` map along each route and call the handler with it.
-W1b writes `choices.rs` (`parse_choices`) and the handler body; you code against the signatures in `common.md`.
+W1b writes `choices.rs` (`parse_choices`, `prune_choices`, `merge_choices`, `validate_choices`,
+`overlay_with_saved`) and the handler body; you code against the signatures in `common.md` and, for
+`prune_choices`, `w1b-core.md`.
 
 ## Files you own
 
@@ -18,7 +20,7 @@ the existing `freeze_tests.rs` and `freeze_run_dir_tests.rs`), `src/stage_servic
 `src/daemon/server/stage_control.rs`, `src/daemon/server/contracts.rs`, `src/daemon/server/self_service_tests.rs`,
 `src/relay/payload.rs`, `src/fs/stage_request/apply.rs`, `src/fs/stage_request/tests/apply.rs`,
 `src/fs/stage_request/tests/replay.rs`, `src/orchestrator/core/inbox_drain/apply.rs`,
-`src/orchestrator/core/inbox_drain/stage_request_dispatch.rs`,
+`src/orchestrator/core/inbox_drain/freeze.rs`, `src/orchestrator/core/inbox_drain/stage_request_dispatch.rs`,
 `src/orchestrator/core/inbox_drain/tests_matrix.rs`, `src/orchestrator/core/inbox_drain/test_support.rs`,
 `src/commands/stage/contracts/freeze_follow.rs` (new), `src/commands/stage/contracts/freeze_follow_tests.rs` (new),
 `src/host_verify/wait.rs`, `src/host_verify/tests_wait_freeze.rs` (new),
@@ -34,14 +36,27 @@ the existing `freeze_tests.rs` and `freeze_run_dir_tests.rs`), `src/stage_servic
 2. `commands::stage::contracts::freeze::freeze` (and `run_freeze`, `request_run`) take the three `Vec<String>`s.
    `request_run` calls `crate::verify::contracts::choices::parse_choices(&test, &runner, &cwd)` right after
    `ContractSite::load`, so a malformed flag is a CLI refusal in the writer's own session (it goes through
-   `session_refusal` and `keep_outcome` like any other CLI refusal). It then sets `site.stage.contracts =
-   choices::overlay_with_saved(&site.work_dir, stage_id, &site.stage.contracts, &parsed)?` (W1b writes it:
-   read-only load of the daemon's saved `choices.json`, merged with this call's flags, laid over the plan's
-   specs), so `check_site_changes` derives the scaffold from the tests the writer named in this call AND in
-   earlier freezes: a later freeze that repeats no `--test` keeps them. A contract with neither a hint nor a
-   saved or passed test is skipped by the scaffold check (the daemon's check is authoritative). Then
+   `session_refusal` and `keep_outcome` like any other CLI refusal).
+   **The CLI validates the choices before it relays anything.** A refusal the daemon makes at admission is
+   recorded by `inbox_drain/freeze.rs::record_refused_freeze` as a standing daemon refusal, which the tick files
+   at once as a `freeze-refusal` dispute, so every writer mistake the CLI can catch must stop here. Keep the
+   plan's specs (`plan_specs = site.stage.contracts.clone()`), then: `saved = choices::prune_choices(&plan_specs,
+   &choices::load_choices(&site.work_dir, stage_id)?)` (W1b: drops saved ids that name no contract and saved
+   `runner`/`cwd` fields the plan now sets), `merged = choices::merge_choices(&saved, &parsed)`, and
+   `choices::validate_choices(&plan_specs, &merged, &site.worktree_root, &site.working_dir, &base)?` where `base =
+   crate::verify::contracts::changes::stage_base(&WorktreeGit::discovered(&site.worktree_root), &site.work_dir)?`.
+   A refusal is an `Err` like any other pre-check: it prints the `Host job: refused` first line and the problems,
+   exits 1, and relays nothing. The daemon validates again with its pinned git (W1b); a refusal only the daemon
+   finds is filed as today.
+   It then sets `site.stage.contracts = choices::overlay_with_saved(&site.work_dir, stage_id, &plan_specs,
+   &parsed)?` (W1b writes it: read-only load of the daemon's saved `choices.json`, pruned, merged with this call's
+   flags, laid over the plan's specs), so `check_site_changes` derives the scaffold from the tests the writer named
+   in this call AND in earlier freezes: a later freeze that repeats no `--test` keeps them. `validate_choices` has
+   already refused a contract left without a test, so the scaffold check sees a test for every contract. Then
    `check_site_changes`, HEAD, and `send_freeze` with the PARSED map of this call only (the daemon merges it
-   with the saved ones; never send the merged map).
+   with the saved ones; never send the merged map). Factor the steps from `load_choices` to the overlay into one
+   function in `freeze.rs` (`checked_overlay(site, &parsed) -> Result<Vec<ContractSpec>>`) so a test calls it
+   directly; the literal calls `validate_choices(` and `overlay_with_saved(` stay in `freeze.rs` (stage wiring).
 3. `send_freeze` (`src/commands/stage/contracts.rs`) gains `choices: &ContractChoices` and puts it on
    `StageRequest::FreezeContracts { head, tree_digest, choices }` and `Request::FreezeContracts { .., choices }`.
    The relay payload serialises `StageRequest` already, so the ticket carries it with no further change; the
@@ -49,11 +64,18 @@ the existing `freeze_tests.rs` and `freeze_run_dir_tests.rs`), `src/stage_servic
 4. `StageRequest::FreezeContracts` (`src/stage_service/types.rs`) and `Request::FreezeContracts`
    (`src/daemon/protocol.rs`) gain `#[serde(default, skip_serializing_if = "BTreeMap::is_empty")] choices:
    ContractChoices`. Update `protocol_debug.rs` (`debug_freeze` prints `choices` as a count only; the values are
-   writer text). Update the match arms and constructors: `daemon/server/stage_control.rs`
+   writer text). Rewrite the `protocol.rs` doc sentence "State-transition requests carry no command, path, or
+   privileged flags" to current behaviour: the freeze request's `choices` map carries writer-chosen test
+   identifiers and run directories, which the daemon validates against the stage's base commit before it uses
+   them. Update the match arms and constructors: `daemon/server/stage_control.rs`
    (`serve_freeze_contracts` takes `choices: &ContractChoices`; it generates the request id as today),
    `daemon/server/contracts.rs` (the RPC adapter forwards the new last argument),
    `fs/stage_request/apply.rs` (`dispatch_freeze` forwards it), `orchestrator/core/inbox_drain/apply.rs` and
-   `stage_request_dispatch.rs` (`settle_freeze` forwards it), and the test constructors in
+   `stage_request_dispatch.rs` (`settle_freeze` forwards it), `orchestrator/core/inbox_drain/freeze.rs` (rewrite
+   the doc comment of `record_refused_freeze`, "A relayed freeze tells its writer to end the turn, so the refusal
+   goes to adjudication", to current behaviour: the writer's CLI refuses every choice mistake it can find before
+   it relays, so an admission refusal recorded here is one only the daemon finds, and the tick files it at once),
+   and the test constructors in
    `src/daemon/server/self_service_tests.rs`, `src/fs/stage_request/tests/{apply,replay}.rs`,
    `src/orchestrator/core/inbox_drain/{tests_matrix,test_support}.rs`, `src/relay/payload.rs` (its decode test).
    Every call of `handle_freeze_contracts` ends with the new `&choices` argument (W1b changes the handler).
@@ -75,12 +97,32 @@ the existing `freeze_tests.rs` and `freeze_run_dir_tests.rs`), `src/stage_servic
    `line.id`; `end_turn` is `false` because the session waits, as in `loom check`; the notice would otherwise tell it to end its turn), then `wait::wait_or_request(&site, &mut relay, out)`, `sink.publish_request(..)` on `Requested`,
    and `std::process::exit(wait::exit_code(&outcome))` after flushing. Keep `RelayMode::Operator` (socket RPC,
    `handle_freeze_response`) and the spool route as they are. The pre-checks (`context.check`, `ContractSite::load`,
-   `parse_choices`, `check_site_changes`, HEAD and tree digest) still run first and still end through
-   `session_refusal` and `keep_outcome`; once the ticket is sent the attempt reached the daemon, so call
-   `refusal::clear(scratch_dir)` there and not `refusal::record` for the host run's own failure.
+   `parse_choices`, `checked_overlay`, `check_site_changes`, HEAD and tree digest) still run first and still end
+   through `session_refusal` and `keep_outcome`; once `wait_or_request` runs, the attempt reached the daemon (a
+   ticket sent) or follows a job that did, so call `refusal::clear(scratch_dir)` there and not `refusal::record`
+   for the host run's own failure.
    The `Host job: requested` lines `wait_or_request` prints replace `RUN_REQUESTED` in the relay route (the
    relay line stays the last line of the first call's stdout); `RUN_REQUESTED` stays, unchanged, for the
-   operator and spool routes, which have no waiting session.
+   operator and spool routes, which have no waiting session. An `Interrupted` job and a daemon-stopped
+   `Cancelled` one keep `wait::exit_code` (4) and the report's existing "Run the same command again to request a
+   new run" line: W1b returns those refusals to the writer, so the writer's rerun is the way on.
+
+   **The request state records the choices it was sent with.** `wait.rs` follows a request state that matches
+   HEAD and the tree digest without relaying anything, so a rerun with other flags would follow the job run
+   under the old ones and its flags would never reach the daemon. The state itself (`RequestState`,
+   `host_verify/wait_state.rs`) and the other `WaitSite` builders (`commands/verify_relay.rs`,
+   `commands/stage/complete_relay.rs`) are not yours, so the freeze keeps the choices in a companion file beside
+   the state: add to `wait.rs` `pub fn pending_request_id(site: &WaitSite<'_>) -> Result<Option<String>>` (the
+   request id of the state `drive` would follow: the same HEAD, tree digest, `no_cache` and `criteria`) and
+   `pub fn freeze_choices_path(site: &WaitSite<'_>) -> Result<PathBuf>` (`<scratch>/host-verify/<stage>-freeze-choices.json`,
+   the stage id validated as `state_path` does). On `Requested { request_id }` the freeze writes
+   `{"request_id": .., "choices": <this call's parsed map>}` there atomically (a temp file in the same directory,
+   renamed over), before `publish_request`. Before it calls `wait_or_request`, the freeze reads
+   `pending_request_id`; when it is `Some(id)` and the companion file holds that id with choices `sent`, and
+   `merge_choices(&sent, &parsed) != sent` (this call adds or changes a value; repeating the same flags, or a
+   subset, changes nothing), it refuses locally with `a freeze under other flags is pending; wait for its Host job
+   result, then rerun with the new flags` (exit 1, nothing relayed, recorded through `keep_outcome`). A companion
+   file that is missing, unreadable or names another request id refuses nothing.
 
    **The wait follows the daemon's application of the job.** The writer must be able to tell a refusal returned
    to it from one that was filed, and only the application (the daemon's `apply_freeze_result`, which writes the
@@ -131,10 +173,10 @@ the existing `freeze_tests.rs` and `freeze_run_dir_tests.rs`), `src/stage_servic
 ## Traps
 
 - The wait's request state is keyed by HEAD and tree digest, so a rerun with the same tree while the first job is
-  pending follows the first job; the daemon refuses a rerun whose flags differ from the saved ones while that
-  job is non-terminal (W1b), so the follow never reports a job run under other flags. The state now outlives a
-  finished freeze job until `follow_application` releases it. Say this in the doc comment of the new function;
-  do not try to key the state on the flags.
+  pending follows the first job without relaying anything; the companion choices file (item 6) is what lets the
+  CLI refuse a rerun that asks for other flags, so the follow never reports a job run under other flags than the
+  ones the writer asked for. The state now outlives a finished freeze job until `follow_application` releases
+  it. Say this in the doc comments of the new functions; do not change `RequestState` or `WaitSite`.
 - The follow runs in the writer's sandbox: it only reads the job directory under the state root (as `loom
   check` does) and the relay scratch directory.
 
@@ -143,8 +185,9 @@ the existing `freeze_tests.rs` and `freeze_run_dir_tests.rs`), `src/stage_servic
   whose contracts all carry a hint is unchanged.
 - The CLI must not print or echo a flag value into the relay line (the relay line stays the last line of the
   first call's stdout).
-- Do not validate `--cwd` or `--runner` here (the daemon owns that, with the base commit); `parse_choices`
-  only splits and bounds.
+- `parse_choices` only splits and bounds; `validate_choices` (item 2) is the check of `--test`, `--runner` and
+  `--cwd`, run here with the writer's own git (`WorktreeGit::discovered`, as `check_site_changes` uses it) and
+  again by the daemon with its pinned git. Never relay choices that `validate_choices` refused.
 - `src/commands/stage/contracts/freeze.rs` has `#[cfg(test)]` imports of `ContractSpec` and friends: keep them.
 - `wait.rs` serves `loom check` and `loom stage complete` too: the `Check` and `Complete` paths must behave as
   before (tests in `tests_wait*.rs` and `complete_relay` must stay green; do not edit them).
@@ -162,12 +205,18 @@ the existing `freeze_tests.rs` and `freeze_run_dir_tests.rs`), `src/stage_servic
   trips, and a line with a `choices` key decodes through `decode_payload(RequestKind::FreezeContracts, ..)`.
 - 65 entries and a key `../x` are refused by the relay decode.
 - Re-freeze without repeating `--test` (`freeze_choices_tests.rs`): a work-directory fixture with a saved
-  `choices.json` holding a test for a contract that has no plan hint; the pre-check path (factor the overlay of
-  `request_run` into a small function the test calls) derives its scaffold from the saved test, and a second
-  call with a flag for another contract keeps the first's test.
+  `choices.json` holding a test for a contract that has no plan hint; `checked_overlay` derives its scaffold from
+  the saved test, and a second call with a flag for another contract keeps the first's test.
+- Local refusal (`freeze_choices_tests.rs`, a git fixture as `common.md` describes): `checked_overlay` refuses a
+  contract with no hint and no saved or passed test, and a `--test` of `--help`, and leaves nothing to relay; a
+  saved choice for a contract id the plan no longer has is pruned, not refused.
+- Pending under other flags (`freeze_choices_tests.rs`): with a request state and a companion file holding
+  `{a: test x}` for the same request id, a call passing `--test a=y` is refused with the pending message, and a
+  call passing `--test a=x`, or no flag, follows.
 - `tests_wait_freeze.rs` (wired from `wait.rs` with `#[cfg(test)] #[path = "tests_wait_freeze.rs"] mod
   freeze_tests;`): a finished `Failed` freeze job leaves the request state in place, prints `Host job: failed`
-  and the failing output; a finished `Check` job and a failed `Complete` job still remove it; `release` removes it.
+  and the failing output; a finished `Check` job and a failed `Complete` job still remove it; `release` removes it;
+  `pending_request_id` names the state's request id for the same HEAD and tree and `None` for another tree.
 - `freeze_follow_tests.rs`: with a marker `froze the contracts (2 files)` the function returns 0 and releases;
   `refused the contract run: returned to the contract writer (1 of 3): ..` returns 1 with no filing line; any
   other note returns 1 with the filing line; no marker and a zero budget prints the `pending` heading and

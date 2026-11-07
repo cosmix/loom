@@ -47,7 +47,9 @@ mod tests;`), `src/verify/contracts/mod.rs`.
      "Option::is_none")]`, "Copied from the plan's StageDefinition."). `Stage::from_definition` copies it.
      `Stage::default` sets `None`. `stage_loading.rs` rebuilds the definition with it.
    - Ledger: see the table in `common.md`. `types.rs` must stay at 591 lines, `methods.rs` at 492, the
-     `default` function at 76. Count with `wc -l` after editing and fix the difference.
+     `default` function at 76 (the values at `e6680a9d`; when a sibling plan merged first, the merged
+     `loom/maintainability-baseline.txt` row is the value to keep). Count with `wc -l` before and after editing
+     and fix the difference.
 4. `src/verify/contracts/store.rs` (399 lines today; it may not cross 400)
    - `FrozenContract` gains `test: Option<String>` (`#[serde(default, skip_serializing_if =
      "Option::is_none")]`, "The test identifier the freeze ran; `None` for a record that predates the
@@ -75,8 +77,10 @@ mod tests;`), `src/verify/contracts/mod.rs`.
 - `ContractSpec` is `deny_unknown_fields`; a plan YAML that gives `test` still parses, and one that omits it
   now parses too.
 - `check_definition_hash` hashes `stage.contracts`; this brief adds no `Stage` field it reads.
-- Other literals of `ContractSpec { .. }` and `FrozenContract { .. }` in test files are W0b's; the literals in
-  non-test files are owned by W1b (`stage_service/contracts.rs`) and are not yours.
+- Other literals of `ContractSpec { .. }`, `FrozenContract { .. }` and `RefrozenContract { .. }` in test files
+  are W0b's (W2's in `commands/stage/contracts/freeze_tests.rs`, W3's in `signals/contract_tests.rs`); the
+  literals in non-test files are owned by W1b (`stage_service/contracts.rs`) and W3
+  (`orchestrator/adjudication/apply_contract.rs`) and are not yours.
 - `Stage` is also stored as stage-file YAML: `#[serde(default)]` lets a stage file written without the new
   key load. The round-trip tests for `consumer_deferred` (in `src/fs/tests_stage_loading_round_trip.rs`) and
   for `FrozenContract.test` and `RefrozenContract.test` (in `src/verify/contracts/store_tests.rs`) are W0b's.

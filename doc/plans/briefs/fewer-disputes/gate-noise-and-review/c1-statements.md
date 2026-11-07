@@ -1,9 +1,10 @@
 # gate-noise-and-review C1: assertion-statement extraction (codex unit)
 
 Lane: codex terra (`--model gpt-6.1-terra --effort xhigh`), foreground, Bash timeout 1560000 ms.
-Wave 1, in the same message as C2. Read `doc/plans/briefs/fewer-disputes/gate-noise-and-review/common.md`
-first. Do not run git or touch `.loom/`. Compile-only check: `cargo build --lib` (warnings about
-unused items are expected until the detector is wired).
+Wave 1, in the same message as C2. Read `common.md` in the directory that holds this brief first.
+Source paths below are relative to the worktree's `loom/` directory (the package root). Do not run
+git or touch `.loom/`. Compile-only check: `cargo build --lib` (warnings about unused items are
+expected until the detector is wired).
 
 ## Files
 
@@ -28,12 +29,13 @@ use regex::Regex;
 /// One assertion statement of a test file.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct Statement {
-    /// The statement's code, comments removed, every run of whitespace that holds a line break
-    /// replaced by one space, trimmed. It includes the terminating `;` when that ended it.
+    /// The statement's code, comments removed, every run of whitespace outside string literals
+    /// that holds a line break replaced by one space, trimmed; a line break inside a string
+    /// literal is kept as written. It includes the terminating `;` when that ended it.
     pub text: String,
     /// `super::edits::normalize(&code, profile)` over the same code: the comparison key.
     pub key: String,
-    /// Byte offset in `content` where the assertion match starts.
+    /// Byte offset in `content` where the statement starts (rule 1).
     pub start: usize,
     /// Byte offset in `content` one past the last byte the statement covers (after the `;`, or at
     /// the line break / closing bracket that ended it).
@@ -47,9 +49,14 @@ pub(super) fn assertion_statements(content: &str, assertion: &Regex, profile: &s
 
 ## Rules (apply exactly; they are the decided values)
 
-1. Cursor starts at 0. Find the next regex match at or after the cursor (`Regex::find_at`). Scan
-   forward from the MATCH START. After the statement ends at `end`, the cursor is `end`; a match
-   nested inside the statement is part of it and yields no second statement.
+1. Cursor starts at 0. Find the next regex match at or after the cursor (`Regex::find_at`). The
+   statement starts at the MATCH START, except for `kotlin` and `scala`: their infix matchers
+   (`\bshould\w+\b`, `\bshould(?:Be|Equal|EqualTo)\b`) match mid-line, so a statement starts at
+   the latest of the first non-blank character of the match's line, the cursor, and one past the
+   last `;` outside strings between that line start and the match (an earlier statement on the
+   line); `x shouldBe 1` is then one statement with its subject. Scan forward from the start. After
+   the statement ends at `end`, the cursor is `end`; a match nested inside the statement is part of
+   it and yields no second statement.
 2. Scanning tracks bracket `depth` (`(`, `[`, `{` add one, `)`, `]`, `}` subtract one) outside
    strings and comments, and an optional open string.
 3. The statement ENDS at the first of:
@@ -72,8 +79,9 @@ pub(super) fn assertion_statements(content: &str, assertion: &Regex, profile: &s
    counts as a break. Block comments are not handled (residual risk, documented in a comment).
 6. `text` is the code with comments removed; `key` is `normalize(code_before_whitespace_collapse,
    profile)` computed over the same comment-free code (so a comment edit next to an assertion
-   changes nothing). Whitespace collapse for `text` applies to runs that contain a line break only;
-   a run of spaces inside one line stays as written.
+   changes nothing). Whitespace collapse for `text` applies only to runs outside string literals
+   that contain a line break; a run of spaces inside one line stays as written, and a string
+   literal keeps its line breaks (the reviewer-brief hook flattens them with `single_line`).
 7. A match inside a string or a comment still starts a statement (the regex is lexical, as the
    count code is). Do not try to be smarter.
 
@@ -98,6 +106,11 @@ pub(super) fn assertion_statements(content: &str, assertion: &Regex, profile: &s
    - python: `assert x == (1,\n 2)` is one statement; `assert x == 1\nassert y == 2` is two;
      backslash continuation joins two lines; a trailing comma in `(1,)` is kept in `key`;
    - python triple-quoted string spanning lines inside an assert stays one statement;
+   - rust `assert_eq!(s, "a\nb");` written with a real line break inside the literal keeps that
+     line break in `text`;
+   - kotlin: `    x shouldBe 1` yields text `x shouldBe 1`; `x shouldBe 1` and `y shouldBe 1` have
+     different keys; `val r = f(); r shouldBe 1` yields `r shouldBe 1`; scala `x shouldEqual 2`
+     yields `x shouldEqual 2`;
    - unterminated statement at end of content ends at the end;
    - empty content and content with no match yield an empty vector.
 3. `cargo build --lib` (the only check you may run besides your tests; if the sandbox allows it,

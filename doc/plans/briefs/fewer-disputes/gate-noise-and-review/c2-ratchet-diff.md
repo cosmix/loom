@@ -1,9 +1,10 @@
 # gate-noise-and-review C2: ratchet-file loosening rule (codex unit)
 
 Lane: codex terra (`--model gpt-6.1-terra --effort xhigh`), foreground, Bash timeout 1560000 ms.
-Wave 1, in the same message as C1. Read `doc/plans/briefs/fewer-disputes/gate-noise-and-review/common.md`
-first. Do not run git or touch `.loom/`. Compile-only check: `cargo build --lib` (unused-item
-warnings are expected until the detector is wired).
+Wave 1, in the same message as C1. Read `common.md` in the directory that holds this brief first.
+Source paths below are relative to the worktree's `loom/` directory (the package root); `../` is
+the repository root. Do not run git or touch `.loom/`. Compile-only check: `cargo build --lib`
+(unused-item warnings are expected until the detector is wired).
 
 ## Files
 
@@ -12,8 +13,9 @@ declared `mod ratchet_diff;` in `src/verify/integrity/mod.rs`) and
 `src/verify/integrity/ratchet_diff_tests.rs`. Never edit any other file. Read, for the formats this
 parses: `maintainability-baseline.txt` (repository path `loom/maintainability-baseline.txt`; lines
 `file <path> <lines>` and `function <path> <name> <lines>`, `#` comments) and
-`../doc/loom/knowledge/check-baseline.txt` (lines `<kind> <file> [<detail>]`, no trailing integer:
-it must NOT parse, see rule 4).
+`../doc/loom/knowledge/check-baseline.txt` (issue lines `<kind> <file> [<detail>]` with no trailing
+integer, which do NOT parse, see rule 4; the file holds only `#` comment lines today, so its first
+issue line raises as a new key or an unparsable line).
 
 ## Why
 

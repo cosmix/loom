@@ -17,7 +17,7 @@ that no longer own the stage are gone. Your hold keeps that true because the sta
 
 - `src/models/stage/mod.rs` (one `mod verdict_completion;` line)
 - `src/models/stage/transitions.rs`
-- `src/models/stage/methods.rs` (ONE line replaced in place; ledgered at exactly 492 lines)
+- `src/models/stage/methods.rs` (ONE line replaced in place; its line count stays at its ledger row)
 - `src/models/stage/merge_block.rs` (one line replaced in place)
 - `src/models/stage/verdict_completion.rs` (new, with its unit tests in a `#[cfg(test)] mod tests`)
 - `src/orchestrator/adjudication/mod.rs`
@@ -34,10 +34,12 @@ Read-only for you: everything else, including `src/orchestrator/adjudication/app
 
 ## Step 1. The transition edge and its guards (`models/stage`)
 
-1. `transitions.rs::outgoing_edges`: `NeedsAdjudication => &[Queued, NeedsHumanReview]` becomes
-   `&[Queued, Completed, NeedsHumanReview]`. In `exhaustive_policy_tests`, the `outgoing` row for
-   `NeedsAdjudication` (last entry, `2050`) becomes `2058` (bit 3 is `Completed`). Change nothing
-   else in that test.
+1. `transitions.rs::outgoing_edges`: add `Completed` to the slice the `NeedsAdjudication` row
+   holds, keeping every target already there (`&[Queued, NeedsHumanReview]` at `e6680a9d`, so
+   `&[Queued, Completed, NeedsHumanReview]` there; a sibling plan may have added `Blocked`). Never
+   copy a literal slice. In `exhaustive_policy_tests`, the `outgoing` entry for
+   `NeedsAdjudication` (the last one) becomes its current value + 8 (bit 3 is `Completed`; 2050
+   becomes 2058 at `e6680a9d`). Change nothing else in that test.
 2. New `src/models/stage/verdict_completion.rs` with the two methods `common.md` pins:
    - `try_transition_to_completed`: `bail!` when `self.status == StageStatus::NeedsAdjudication`
      with `stage '<id>' is awaiting adjudication; only the completion run after its verdict
@@ -48,7 +50,7 @@ Read-only for you: everything else, including `src/orchestrator/adjudication/app
      `self.stamp_completed()` (it is `pub(super)` in `methods.rs`, reachable from this sibling).
 3. `methods.rs::try_complete`: replace exactly the line `self.try_transition(StageStatus::Completed)?;`
    with `self.try_transition_to_completed()?;`. Run `wc -l src/models/stage/methods.rs`: it must
-   still print 492.
+   still print the count of its `loom/maintainability-baseline.txt` row (492 at `e6680a9d`).
 4. `merge_block.rs::try_complete_merge`: replace its `self.try_transition(StageStatus::Completed)?;`
    with `self.try_transition_to_completed()?;`.
 
@@ -81,12 +83,18 @@ and `close_reason` cleared.
    `tracing::info!(target: "loom::adjudication", stage = %stage.id, "holding stage for the daemon's completion run")`.
    It changes no field: `persist_verdict_result` (`apply.rs`) then records only the verdict
    receipt, so the stage on disk is `NeedsAdjudication`, sessionless, with every dispute applied.
-3. Add `is_held_for_completion` and `hand_back_held_stage` as `common.md` pins them. In
-   `hand_back_held_stage`, the closure passed to `crate::verify::transitions::update_stage`
-   re-checks `s.status == NeedsAdjudication && s.session.is_none()` and calls
-   `s.try_transition(StageStatus::Queued)` only then; the function returns whether the saved
-   stage is `Queued`. Write the feedback (step 3) before the stage update, inside the lock.
-   Log `tracing::info!` with the stage id and the failure count when it moves the stage.
+3. Add `is_held_for_completion` and `hand_back_held_stage` as `common.md` pins them, on a
+   private `fn verdict_held(work_dir: &Path, stage: &Stage) -> bool` (`NeedsAdjudication`, no
+   session, `unapplied_open_disputes == 0`). `is_held_for_completion` is
+   `verdict_held(..) && !stage.held`: `Stage.held` is the operator's `loom stage hold`, and a
+   stage the operator holds is never completed by the daemon. `hand_back_held_stage` guards on
+   `verdict_held` alone, so the sweep can hand back a stage the operator holds; it never touches
+   `held`. In `hand_back_held_stage`, the closure passed to
+   `crate::verify::transitions::update_stage` re-checks `s.status == NeedsAdjudication &&
+   s.session.is_none()` and calls `s.try_transition(StageStatus::Queued)` only then; the function
+   returns whether the saved stage is `Queued`. Write the feedback (step 3) before the stage
+   update, inside the lock. Log `tracing::info!` with the stage id and the failure count when it
+   moves the stage.
 4. `adjudication/mod.rs`: `mod requeue;` stays private; add
    `pub(crate) use requeue::{hand_back_held_stage, is_held_for_completion};` beside the other
    re-exports, and `#[cfg(test)] mod verdict_hold_tests;` beside the other test modules. Keep the
@@ -162,6 +170,9 @@ Use `super::tests::{make_stage, write_stage, write_request, write_verdict, rejec
   feedback holds the verdict notice followed by the two bullets.
 - `hand_back_held_stage` returns false and changes neither stage nor feedback for: a stage with an
   open dispute, a stage naming a session, a `Queued` stage.
+- A verdict-held stage with `held: true` (the operator's hold): `is_held_for_completion` is
+  false; `hand_back_held_stage` with no failures returns true and leaves it `Queued` with `held`
+  still true.
 
 ## Traps
 
@@ -172,7 +183,8 @@ Use `super::tests::{make_stage, write_stage, write_request, write_verdict, rejec
   field in the hold path.
 - `dispute_is_orphaned` excludes requests no filing published; keep using it through the shared
   count so a crashed filing never holds a stage forever.
-- `methods.rs` line count: 492 exactly, or `cargo test --test maintainability` fails.
+- `methods.rs` line count: exactly its ledger row (492 at `e6680a9d`), or
+  `cargo test --test maintainability` fails.
 
 ## Done
 

@@ -15,7 +15,7 @@ Knowledge to read first (sections only): `doc/loom/knowledge/mistakes/completion
 - `src/host_verify/mod.rs`
 - `src/host_verify/child.rs`
 - `src/host_verify/child_complete.rs` (module comment only)
-- `src/host_verify/runner.rs` (two lines edited in place; the file is at 400 lines)
+- `src/host_verify/runner.rs` (two lines edited in place; its line count stays as at the stage base, 400 at `e6680a9d`)
 - `src/host_verify/apply.rs`
 - `src/host_verify/apply_rejection.rs`
 - `src/host_verify/apply_retry.rs`
@@ -25,6 +25,7 @@ Knowledge to read first (sections only): `doc/loom/knowledge/mistakes/completion
 - `src/orchestrator/core/verdict_apply.rs`
 - `src/orchestrator/core/verdict_apply_tests.rs`
 - `src/orchestrator/core/verdict_completion.rs` (new)
+- `tests/daemon_completion_contracts.rs` (one match arm in `variant`; nothing else in the file)
 
 Read-only: `submit.rs` (no change needed: a `VerdictComplete` request joins only a
 `VerdictComplete` job through `covers`' last arm, a `Check` behind it is refused by the existing
@@ -34,28 +35,38 @@ kind; `awaits_application` stays `Complete`-only), `store.rs`, everything W1 own
 ## Blast radius of the widened `JobKind` (settled; apply all of it)
 
 Compiler-caught, add the arm: `mod.rs::JobKind::name`, `child.rs::run_job`, `apply.rs::apply_finished`,
-`runner.rs::budget_for_job`. SILENT, edit by hand:
+`runner.rs::budget_for_job`. In every arm and `matches!` that names `Complete`, `VerdictComplete`
+goes directly after `Complete`, whatever else a sibling plan put in that arm. The new
+`Applied::HandedBack` (step 3) is compiler-caught too: `tests/daemon_completion_contracts.rs::variant`
+matches `Applied` exhaustively and gains `Applied::HandedBack(_) => "HandedBack",`. SILENT, edit
+by hand:
 
-- `runner.rs::budget_for_job`: the arm `JobKind::Complete | JobKind::Check =>` becomes
-  `JobKind::Complete | JobKind::VerdictComplete | JobKind::Check =>`, and its
+- `runner.rs::budget_for_job`: `JobKind::VerdictComplete` joins the arm that holds
+  `JobKind::Complete`, directly after it (`JobKind::Complete | JobKind::Check =>` becomes
+  `JobKind::Complete | JobKind::VerdictComplete | JobKind::Check =>` at `e6680a9d`), and its
   `record.kind == JobKind::Complete,` (the `include_after` flag) becomes
-  `record.kind != JobKind::Check,`. Without the second edit the job gets a check's deadline and
-  times out on `after_stage` and wiring tests. Both edits keep the line count at 400.
+  `matches!(record.kind, JobKind::Complete | JobKind::VerdictComplete),`. Never write
+  `record.kind != JobKind::Check`: a kind a sibling plan adds would join it without a compiler
+  error. Without the second edit the job gets a check's deadline and times out on `after_stage`
+  and wiring tests. Both edits keep the line count unchanged.
 - `apply_retry.rs::give_up`: a `VerdictComplete` job whose application gave up must re-queue the
   held stage, or the stage waits forever (step 4).
 - No other consumer compares kinds: `rg -n 'JobKind::' src` lists `wait.rs`, `submit.rs`,
   `status/data/contract_testing.rs`, `stage_service/contracts.rs` and test fixtures, none of which
-  needs this kind. The web client never sees job kinds.
+  needs this kind. `rg -n 'Applied::' src tests` finds no other exhaustive match on `Applied`.
+  The web client never sees job kinds.
 
 ## Step 1. The kind and the child
 
-1. `mod.rs`: add `VerdictComplete` after `Freeze`, `Self::VerdictComplete => "verdict_complete"`;
-   the `JobKind` and `name()` doc comments name all four kinds ("... or the completion the daemon
-   runs for a stage a verdict left held"). Declare `pub(crate) mod verdict_complete;` with the
-   other modules. Keep the contract scaffold line `#[cfg(test)] mod verdict_complete_contract_tests;`.
-2. `child.rs::run_job`: `JobKind::Complete => child_complete::run(work_dir, &record),` becomes
+1. `mod.rs`: add `VerdictComplete` to the enum and `Self::VerdictComplete => "verdict_complete"`
+   directly after the `Complete` arm of `name()`; the `JobKind` and `name()` doc comments name
+   every kind, with no count ("... or the completion the daemon runs for a stage a verdict left
+   held"). Declare `pub(crate) mod verdict_complete;` with the other modules. Keep the contract
+   scaffold line `#[cfg(test)] mod verdict_complete_contract_tests;`.
+2. `child.rs::run_job`: `VerdictComplete` joins the arm that holds `Complete`, directly after it:
+   `JobKind::Complete => child_complete::run(work_dir, &record),` becomes
    `JobKind::Complete | JobKind::VerdictComplete => child_complete::run(work_dir, &record),`
-   (keep that exact text on one line). Mention the kind in the module comment's job list, in place.
+   (keep it on one line). Mention the kind in the module comment's job list, in place.
    The child is unchanged otherwise: for a non-knowledge stage `child_complete::verify` never reads
    `stage.session` or `record.session_id`.
 3. `child_complete.rs`: the module comment's first line names both kinds.
@@ -73,12 +84,24 @@ Constants and `VerdictStart` as `common.md` pins them.
 2. `!crate::verify::review::gate::covers(stage)` -> `Ineligible("stage '<id>' is not a plan v2
    standard or integration-verify stage")`.
 3. `latest_completion(work_dir, &stage.id)?` (the newest `Complete` record, defined below) is `None`
-   -> `Ineligible("no `loom stage complete` request of the stage is on record")`. Its `state` is not
-   `JobState::Passed` (the record's own `state` field in `host_verify/mod.rs`, set when the child's
-   run passed acceptance and every completion check) -> `Ineligible("the stage's latest `loom stage
-   complete` run did not pass")`. A failed, cancelled, interrupted or missing newest record re-queues
-   at once: no VerdictComplete job is submitted. The daemon-applied gates (step 3a) still refuse a
-   passed run later, as before.
+   -> `Ineligible("no `loom stage complete` request of the stage is on record")`. Then judge that
+   record's run in a private helper (each check an `Ineligible` reason):
+   - `store::load_result(work_dir, &stage.id, &record.id)?` is `None` -> "the stage's latest
+     `loom stage complete` run left no result".
+   - The run counts when `record.state` is `JobState::Passed`, or when it is `JobState::Failed`,
+     `result.error` is `None`, at least one outcome failed and every failed `CriterionOutcome` is
+     labelled `crate::verify::completion::IMPACT_TESTS_LABEL` (impact tests run in the child, so
+     the run an accepted impact-tests dispute follows is always `Failed`; the rerun counts the
+     accepted failure as a note). Any other state, a failed outcome with another label, or a
+     pipeline error -> "the stage's latest `loom stage complete` run failed more than its impact
+     tests".
+   - `result.policy_hash` is not
+     `Some(crate::handoff::completion::policy::effective_policy_hash(stage, work_dir)?)` -> "the
+     stage's check definition changed since its latest `loom stage complete` run". A sibling
+     verdict in the same batch that amended criteria, re-froze contracts or changed the plan
+     moves the hash, so the stage needs a session that reads the new policy.
+   No VerdictComplete job is submitted for an ineligible record. The daemon-applied gates (step 3a)
+   still refuse an eligible run later, as before.
 4. Repo root: `crate::fs::work_dir::WorkDir::new(work_dir)?.main_project_root().context(...)`.
    `crate::handoff::completion::content::committed_content(stage, &repo_root)`: an `Err` ->
    `Ineligible(format!("the stage's worktree is not committed and clean: {error:#}"))` (it also
@@ -115,7 +138,8 @@ arm returns; do not write it yourself.
    `completed_commit == Some(record.head)`, else `Ignored("the stage was completed from other content")`.
    Nothing else to settle: there is no session.
 2. `!is_held_for_completion(work_dir, &stage)` -> `Ignored("the stage is no longer held for its
-   verdict completion")`. This covers a dispute filed meanwhile, a retry, a reset, a session.
+   verdict completion")`. This covers a dispute filed meanwhile, a reset, a session and the
+   operator's hold (`Stage.held`; the next sweep hands that stage back).
 3. The stage's current job is a different, non-terminal record -> `Ignored(format!("host job {id}
    decides the stage"))`.
 4. By state: `Passed` -> step 3a; `Failed` -> hand back with `failure_lines`; `Cancelled` and
@@ -161,7 +185,9 @@ as `pub(super) fn first_summary_line(summary: &str) -> &str`. Sanitising and cap
 
 `apply.rs`: add `Applied::HandedBack(String)` with a doc comment ("the stage went back to a fresh
 session, for the reason given") and its `describe` arm; update the module comment. Keep the file
-under 400 lines.
+under 400 lines. In `tests/daemon_completion_contracts.rs::variant` add
+`Applied::HandedBack(_) => "HandedBack",` after the `Applied::Ignored(_)` arm; change nothing else
+in that file.
 
 ## Step 4. Giving up
 
@@ -180,16 +206,22 @@ next tick retries the hand-back, as `record_freeze_failure` does.
   scan. Update the method's doc comment: it ends by starting the completion of every held stage.
 - `verdict_completion.rs`, `impl Orchestrator`:
   - `pub(super) fn start_verdict_completions(&mut self)`: `crate::verify::transitions::list_all_stages(&work_dir)`
-    (a failure is a `tracing::warn!` and a return); for each stage with status
-    `NeedsAdjudication` and `is_held_for_completion`, call a private per-stage helper. Use the stage
-    files, never `self.graph`: the graph's statuses are synced earlier in the tick, before this
-    pass applied the verdicts.
+    (a failure is a `tracing::warn!` and a return). For each stage with status `NeedsAdjudication`
+    and no session: when `stage.held` is set (the operator's `loom stage hold`), hand it back with
+    `hand_back_held_stage(&work_dir, &stage.id, &[])` (it guards on the verdict hold alone, so a
+    stage with an open dispute is left as it is, and the stage stays operator-held); else, when
+    `is_held_for_completion`, call a private per-stage helper. Use the stage files, never
+    `self.graph`: the graph's statuses are synced earlier in the tick, before this pass applied
+    the verdicts.
   - Per stage: `submit_verdict_completion(&work_dir, &stage, Utc::now())` (import it with `use`).
     `Waiting` -> nothing. `Submitted(id)` -> `clear_status_line(); eprintln!("Stage '{id}': the
     verdict changed nothing in the plan; loom runs its completion on the committed tree (host job
     {job})")`. `Ineligible(reason)` -> `hand_back_held_stage(&work_dir, &stage.id, &[])`; on
-    `Ok(true)` print `"Stage '{id}': {reason}; a fresh session starts with the verdict"`. Any
-    `Err` -> `tracing::warn!` and the next tick retries.
+    `Ok(true)` print `"Stage '{id}': {reason}; a fresh session starts with the verdict"`. An `Err`
+    from `submit_verdict_completion` is `Ineligible` with the error's first line
+    (`run_output_line(&format!("{error:#}"))`) and hands the stage back with that line as its one
+    failure (`&[line]`), so a persistent error never strands the stage. An `Err` from
+    `hand_back_held_stage` itself is a `tracing::warn!`, and the next tick retries.
 - Because `initialize_run` calls `apply_pending_verdicts` after `report_host_job_recovery`, the
   sweep also runs at startup, after interrupted jobs were applied. Do not add a second call site.
 
@@ -203,10 +235,13 @@ The contracts cover the headline cases; add:
 
 - `latest_completion_head` picks the newest `Complete` by submission order and ignores `Check`
   and `VerdictComplete` records; returns `None` with no `verification/<stage>` directory.
-- A newest `Complete` record that failed acceptance requeues at once and submits no VerdictComplete
-  job: on a held plan v2 stage whose newest `Complete` record has `state: JobState::Failed` and
-  HEAD equal to the worktree, `submit_verdict_completion` is `Ineligible` and `store::load_current`
-  finds no `VerdictComplete` record.
+- A newest `Complete` record whose run cannot count requeues at once and submits no
+  VerdictComplete job: on a held plan v2 stage at the record's HEAD,
+  `submit_verdict_completion` is `Ineligible` and `store::load_current` finds no `VerdictComplete`
+  record for each of: `fx.finished(JobKind::Complete, JobState::Failed, &[("contracts", false),
+  ("impact-tests", false)])`; a `Failed` record whose result, saved with `store::save_result`,
+  has `error: Some(..)` and only passing outcomes; a `Passed` record saved with `fx.record` (no
+  result).
 - Submission on a plan v1 stage and on a knowledge stage is `Ineligible` and queues nothing.
 - A passed job on a held plan v2 stage with no review round: the gates refuse, the stage is
   `Queued`, the feedback names `completion gates`.
@@ -223,8 +258,9 @@ The contracts cover the headline cases; add:
   `save_job_file(.., "apply-attempts", b"10")` line.
 `src/orchestrator/core/verdict_apply_tests.rs` (keep it under 400 lines; reuse its
 `orchestrator_for` and `stage_needing_adjudication`): a held plan v1 stage is re-queued by
-`apply_pending_verdicts` with nothing to apply; a `NeedsAdjudication` stage with an open dispute
-request and no verdict is left as it is.
+`apply_pending_verdicts` with nothing to apply; a held stage with `held: true` is re-queued and
+keeps `held: true`; a `NeedsAdjudication` stage with an open dispute request and no verdict is
+left as it is.
 
 ## Traps
 
@@ -233,10 +269,12 @@ request and no verdict is left as it is.
   waits for the first.
 - `submit` prunes old job directories (`KEPT_JOB_DIRS` = 3). Read `latest_completion_head` before
   you submit, never after.
-- `Fixture::record` saves `submission_order: 0`; order ties fall back to `queued_at`.
+- `Fixture::record` saves `submission_order: 0`; order ties fall back to `queued_at`. It saves no
+  result, so an eligible `Complete` record needs `fx.finished(..)` with outcomes (its result
+  carries the stage's current policy hash); `fx.amend_policy()` makes that hash stale.
 - `apply_finished` is re-entered after a crash between the stage write and the marker: step 3.1's
   `Completed` branch is that resume; it must not hand back or error.
-- `runner.rs` must stay at 400 lines; `child.rs` and `apply.rs` under 400.
+- `runner.rs` keeps its line count (400 at `e6680a9d`); `child.rs` and `apply.rs` stay under 400.
 
 ## Done
 

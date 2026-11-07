@@ -27,9 +27,9 @@ lines", "Code rules" last bullets). You write prose only; no Rust.
    insert: `Then run loom plan verify --strict --dry-run doc/plans/PLAN-<name>.md from a shell where loom can
    confine commands (a stage session cannot nest bubblewrap): it runs the plan's
    loom.provision entries in a checkout of HEAD, then every acceptance, after_stage and wiring_tests command
-   once, and names environment failures, timeouts and empty test selections as errors before any stage runs.
-   A criterion that fails there only because its stage has not built anything yet is a note and expected;
-   one that errors is a planning defect to fix.` (Wrap the command in
+   once, and names environment failures and timeouts as errors before any stage runs. An empty test
+   selection, and a criterion that fails there only because its stage has not built anything yet, is a note
+   and expected; one that errors is a planning defect to fix.` (Wrap the command in
    backticks.) Add the same one-clause reminder to the "Pre-STOP checklist" bullet that ends "`loom plan
    verify --strict` passes": `...; loom plan verify --strict --dry-run reports no error.`
 2. Section 6 table: the `contracts` (v2) row says `test` is an optional hint the contract writer replaces;
@@ -61,8 +61,9 @@ lines", "Code rules" last bullets). You write prose only; no Rust.
 5. Section 9, first paragraph: before "Filing a dispute ends the stage session by design", insert `Run loom
    plan verify --strict --dry-run before handing a plan over: it executes every criterion against HEAD under
    the confinement completion uses, so a command that needs a socket, the network or a tool the confined
-   runner lacks, a criterion that times out, and a test filter that selects nothing show up as errors before
-   a stage spends a dispute on them.` Leave the sentence that follows untouched.
+   runner lacks, or a criterion that times out, shows up as an error before a stage spends a dispute on it; a
+   test filter that selects nothing at base is a note, since the tests it names may be the stage's own.`
+   Leave the sentence that follows untouched.
 
 ### `references/v2-contracts.md` (Sections 1-4 only)
 
@@ -79,8 +80,9 @@ lines", "Code rules" last bullets). You write prose only; no Rust.
 3. Section 3, the sequence list, step 2: say the writer runs `loom stage contracts freeze <stage-id> --test
    <id>=<identifier> [--runner <id>=<adapter>] [--cwd <id>=<dir>]` (each flag repeats; a later freeze keeps
    the earlier flags it does not repeat), and that the freeze also refuses when a pure check of the stage
-   fails on a file the writer wrote: a formatter check, a lint (`eslint`, `biome lint`, `ruff check`, and
-   `cargo clippy`, `tsc --noEmit`, `go vet`, `golangci-lint run` once every contract compiles) or a simple
+   fails on a file the writer wrote (a contract file, a harness file or a file the freeze adds): a formatter
+   check, a lint (`eslint`, `biome lint`, `biome check`, `ruff check`, and `cargo clippy`, `go vet`,
+   `golangci-lint run` once every contract compiles; `tsc --noEmit` never runs at freeze) or a simple
    `rg`/`grep` command, reported with the failing output the way a format refusal is. A build failure stays
    an accepted red outcome. The freeze waits for the host run and for the daemon's application of it, like loom check: a refusal that
    names a file the writer wrote comes back as Host job: failed with the failing output and a line that says
@@ -99,7 +101,7 @@ lines", "Code rules" last bullets). You write prose only; no Rust.
    the leaf rule ("Standard leaf stage has artifacts but no wiring", which only version 1 plans meet), reaches
    the stage signal and integration-verify's reviewers, and waives nothing else: reachable, the unwired-file detection and the
    definition-site rule still apply. Also state in the `reachable` subsection that a non-empty `reachable` list
-   satisfies the coverage warning (and the version 1 leaf rule).
+   satisfies the coverage warning.
 
 ### `references/verification-rules.md`
 

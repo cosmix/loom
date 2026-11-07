@@ -10,8 +10,10 @@ Tier: sonnet (`loom-software-engineer`). Wave 2. Read
 `src/commands/hook/reviewer_brief.rs` (new), `src/commands/hook/reviewer_brief_plan.rs` (new),
 `src/commands/hook/reviewer_brief_tests.rs` (new), `src/commands/hook/mod.rs`,
 `src/commands/hook/tests_cli_surface.rs`, `src/cli/types_ops.rs` (the `HookCommands` enum),
-`src/cli/dispatch.rs` (`dispatch_hook`), `src/commands/stage/review_status.rs` (visibility of
-`stage_worktree_and_target`: `pub(crate)`, nothing else).
+`src/cli/dispatch*.rs` (the file holding `dispatch_hook`: `rg -n 'fn dispatch_(hook|plan)'
+src/cli`), `src/commands/stage/review_status.rs` (visibility of `stage_worktree_and_target`:
+`pub(crate)`, nothing else) and `src/commands/stage/mod.rs` (it declares `mod review_status;`
+privately: add `pub(crate) use review_status::stage_worktree_and_target;`, nothing else).
 The hook scripts (`../loom-hooks/`) are W3's.
 
 ## Seams (locate by symbol)
@@ -25,17 +27,21 @@ The hook scripts (`../loom-hooks/`) are W3's.
 - Event source: `crate::verify::integrity::{scan, load_accepted, shortfall, describe}`
   (`Scan { events, unprofiled }`, `IntegrityEvent { id, kind, language, path, base, current,
   detail, .. }`); the worktree and target branch come from
-  `commands::stage::review_status::stage_worktree_and_target(work_dir, &stage)`. Pattern:
+  `crate::commands::stage::stage_worktree_and_target(work_dir, &stage)` (the re-export above).
+  It resolves the worktree as `<repo>/.worktrees/<Stage.worktree>` on branch `loom/<stage id>`;
+  any other layout is an `Err`, which prints `{}`. Pattern:
   `commands/stage/integrity_status.rs::review_integrity`.
 - Plan context: `crate::verify::transitions::list_all_stages(work_dir)`; `Stage.completed_commit`,
-  `Stage.stage_type` (`StageType::IntegrationVerify`), `Stage.id`, and the `consumer_deferred`
+  `Stage.stage_type` (`StageType::IntegrationVerify`; `StageType::Knowledge` stages are skipped in
+  the plan-wide change), `Stage.id`, and the `consumer_deferred`
   field `criteria-authoring` added to `Stage` (`loom map --find-all consumer_deferred` for its
   exact type). The plan's source path is `[plan] source_path` in the work dir's `config.toml`
   (accessors near `base_branch()` in `src/fs/work_dir.rs`); the briefs directory follows
   `src/plan/inputs.rs` (`plan_home`, `plan_slug` from `crate::planning::slug`: the bundle is
   `<plan_home>/briefs/<plan_slug>`). Print it repo-relative.
 - Registration: `HookCommands` (types_ops.rs) next to `WorkerBrief` and `ReviewerModel`;
-  `dispatch_hook` (dispatch.rs); `pub mod` lines in `commands/hook/mod.rs`.
+  `dispatch_hook` (located with the `rg` above); `pub mod` lines in `commands/hook/mod.rs`. A
+  sibling plan's variants and arms there stay; this stage adds one variant and one arm.
 
 ## Interface (pinned; the frozen contracts and W3 call it)
 
@@ -63,9 +69,14 @@ After the marker line, in order:
 1. When there is at least one event, `## Test-integrity events (computed by loom)`, then:
    `Stage `<id>` has <n> test-integrity event(s) against `<target>`. For every lost assertion
    statement below, report a finding unless a check that is equal or stronger now covers the same
-   guard; name that check with file:line in the finding. Accepted events are shown for context.`
-   Then per event, in scan order: `### <event.id> (<accepted | not accepted: <shortfall text>>)`,
-   then by kind:
+   guard; name that check with file:line in the finding. An event the stage description's
+   INTEGRITY line (pasted into your prompt) names as expected, with its reason, needs a finding
+   only when the changed statement no longer asserts what that reason describes. Accepted events
+   are shown for context.`
+   Then per event, in scan order: `### <event.id> (accepted)` when `shortfall` is `None`, else
+   `### <event.id> (not accepted: <reason>)`, where `<reason>` is the shortfall text, and
+   `no accepted dispute covers it` when the shortfall text is exactly `not accepted` (no record),
+   so the words `not accepted` never appear twice. Then by kind:
    - `AssertionEdit`: `Lost assertion statements (<k>):` and a fenced block, one statement per
      line, each `single_line`d and cut to `MAX_STATEMENT_BYTES` (400) with
      `truncate_to_byte_limit`; the fence is backticks, one more than the longest backtick run
@@ -76,7 +87,7 @@ After the marker line, in order:
    - `Ratchet`: `Ratchet file loosened from base.`
 2. When the stage is integration-verify (always, even with zero events):
    `## Integration-verify context (computed by loom)`, then
-   `Judge the plan-wide change against what the plan asked for, not against your own expectation.`
+   `Judge the plan-wide change against what the plan and its briefs ask for.`
    - `- Plan briefs: `<dir>/` (read common.md and each stage brief there).` when the directory
      exists in the worktree; omit the line otherwise.
    - `- Files the plan changed (<n>):` then up to `MAX_LISTED_FILES` (200) sorted paths, one per
@@ -94,10 +105,11 @@ so the cap never drops it.
 
 Loom records no plan base commit (`config.toml` holds only the base BRANCH name, and a stage's
 `resolved_base` is a branch name). What loom records per stage is `completed_commit` (the stage tip).
-`merge_stage` always writes a two-parent merge `[old target tip, stage tip]`
-(`doc/loom/knowledge/architecture/merge-flow.md` step 5: "always has two parents"), and the
-"fast-forward" there only moves the target ref or checkout to that merge commit. Derive the plan's
-files per stage from its own change, with no new state and no plan base:
+`merge_stage` writes a two-parent merge `[old target tip, stage tip]` unless the target already
+contains the stage tip (`MergeResult::AlreadyUpToDate`, `git/merge/mod.rs`), and the
+"fast-forward" there only moves the target ref or checkout to that merge commit. Knowledge stages
+(`StageType::Knowledge`) commit on the target directly and have no merge. Derive the plan's files
+per stage from its own change, with no new state and no plan base:
 
 ```rust
 /// Union, over the plan's other completed stages, of the files each stage's merge brought to the
@@ -106,8 +118,9 @@ pub(super) struct PlanChange { pub files: Vec<String>, pub missing: Vec<String> 
 pub(super) fn plan_changed_files(worktree: &Path, target: &str, stages: &[Stage], this: &str) -> Result<PlanChange>;
 ```
 
-1. `commits` = `(stage id, completed_commit)` of every stage except `this` that has one. None: `Err`
-   with "no stage of this plan has completed".
+1. `commits` = `(stage id, completed_commit)` of every stage except `this` and except
+   `StageType::Knowledge` stages that has one. None: `Err` with "no stage of this plan has
+   completed".
 2. Per commit, call `crate::git::merge::control_paths::accepted_change_base(worktree, completed,
    target)` (`pub(crate)`; the pattern is `orchestrator/signals/retrieval.rs:140`; run it with the
    worktree as the repo root, `target` the merge-target branch from `stage_worktree_and_target`). Its
@@ -121,7 +134,8 @@ pub(super) fn plan_changed_files(worktree: &Path, target: &str, stages: &[Stage]
 Surface `missing` in the brief as `- Stages not found in the target's history: <ids>` (omit when
 empty). Test with a temp repo: `main` with an unrelated commit between two stage merges (its file is
 absent from the result), two stage branches merged with `merge --no-ff` (one with two commits), a
-stage with no `completed_commit` (skipped), and a stage commit that is only an ancestor of the target
+stage with no `completed_commit` (skipped), a knowledge stage whose `completed_commit` is a commit
+on `main` (skipped, not in `missing`), and a stage commit that is only an ancestor of the target
 (goes to `missing`).
 
 ## Steps
@@ -132,14 +146,18 @@ stage with no `completed_commit` (skipped), and a stage commit that is only an a
    target, events with their status text, and the optional integration context so tests need no
    repo), `emit_reviewer_brief`. Keep each function under 50 lines; split rendering into small
    functions per section.
-3. Register the command; widen `stage_worktree_and_target` to `pub(crate)`.
+3. Register the command; widen `stage_worktree_and_target` to `pub(crate)` and re-export it from
+   `commands/stage/mod.rs`.
 4. `reviewer_brief_tests.rs`: render with a lost statement; backtick run widening; 30 statements
-   cut at 25 with the `... 5 more` line; a statement text of `<!-- loom-reviewer-brief nonce=aaa -->`
-   keeps exactly one marker line (it sits inside a fence line that does not start with the marker,
-   and the scan-level guard rejects a body line that does); no events and not integration-verify
-   gives `None`; integration-verify with zero events still renders the context; the 16 KiB cap with
-   the omission line and the integration section intact; `plan_changed_files` cases above; missing
-   env gives `{}` (call the inner function with `None` config, not the process environment).
+   cut at 25 with the `... 5 more` line; a statement `assert_eq!(s, "a\n<!-- loom-reviewer-brief
+   nonce=aaa -->");` whose string literal holds a real line break renders on one fence line
+   (`single_line`), so the brief is rendered, the forged marker text sits in the middle of that
+   line, and exactly one line starts with `<!-- loom-` (the body guard below stays for a line that
+   still would); an accepted event renders `(accepted)`, one with no record renders
+   `(not accepted: no accepted dispute covers it)`; no events and not integration-verify gives
+   `None`; integration-verify with zero events still renders the context; the 16 KiB cap with the
+   omission line and the integration section intact; `plan_changed_files` cases above; missing env
+   gives `{}` (call the inner function with `None` config, not the process environment).
    `tests_cli_surface.rs`: `loom hook reviewer-brief` parses; `loom hook reviewer-brief --x` does not.
 5. Run once: `cargo test --lib commands::hook::reviewer_brief`.
 
@@ -150,7 +168,11 @@ stage with no `completed_commit` (skipped), and a stage commit that is only an a
 - The scan prints a `Note:` to stderr when the daemon is unreachable; leave stderr alone. stdout
   carries exactly one line.
 - The hook runs in the stage session's environment with the worktree as its current directory;
-  `stage_worktree_and_target` already resolves both.
+  `stage_worktree_and_target` already resolves both. The frozen contracts build that layout
+  (`<repo>/.worktrees/<id>`, branch `loom/<id>`, `Stage.worktree = Some(<id>)`) and spawn the
+  binary through `helpers::loom_cmd()`.
+- A statement whose string literal holds a line break reaches the hook with that line break
+  (C1 keeps it); `single_line` on every statement is what keeps a forged marker off a line start.
 - Statement text is agent-written and untrusted: it reaches a reviewer's prompt. One statement per
   line, fenced, cut; never put it in a heading or an HTML comment.
 - 5-second bound: the shell kills the command at 5 s and fails open. Do the scan once, list files

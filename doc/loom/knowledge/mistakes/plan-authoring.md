@@ -77,3 +77,10 @@
 **Prevention:** for every behaviour a plan changes (route, accessible name, label text, component output, struct field), run rg for that literal over the frozen test files: web contract files, Rust contract_tests modules and the tests/ contract targets with their support directories. Then either keep the frozen behaviour or list the edit, file and owner in a "Planned edits of frozen tests" table. For a new struct field, also run rg for its literal sites ("TypeName {") and give every site to one worker.
 
 **Fix:** the plan kept the Home tab, the button trigger and the whole `SummaryPanel`, and listed the remaining edits in common.md "Planned edits of frozen tests".
+
+## Frozen contracts specced against preconditions nobody checked
+
+**What happened:** A pressure test of PLAN-fewer-disputes found four frozen contracts that no correct implementation could pass: a PUBLIC SURFACE rule (ZeroTests gives Error) contradicting its Decision and its own contract; a lint contract whose plan texts failed `plan::schema::validate`, so the lint never ran; move fixtures with no `Cargo.toml`, so `collection::rust::chain_problems` found no package; a reviewer-brief fixture whose worktree was not `.worktrees/<id>` on branch `loom/<id>`, which `stage_worktree_and_target` requires.
+**Why:** Each scenario was written from the behaviour wanted, not from the preconditions of the function it calls.
+**Prevention:** For every contract, read the called function's early returns and name each precondition in the scenario (manifest, layout, validation, preamble). Diff each PUBLIC SURFACE rule against the Decision and the contract scenario that test it. A contract plan text must itself pass `loom plan verify`.
+**Fix:** The plan's PUBLIC SURFACE now states each fixture precondition, and the scenarios were rewritten to satisfy them.

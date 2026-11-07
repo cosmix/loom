@@ -24,8 +24,13 @@ the new script, next to the `spawn-guard-reviewer-model.sh` line).
   is added, so no registration changes.
 - Test pattern: `../loom-hooks/tests/spawn-guard-reviewer-model.sh` (temp dir, a stub `LOOM_BIN`
   that answers `hook ...`, `spawn <type>` helper, `fail` helper, `env -i` run). Add what it lacks:
-  the gate environment (`LOOM_STAGE_ID`, `LOOM_MAIN_AGENT_PID=$$`, `LOOM_WORK_DIR`,
-  `LOOM_SESSION_ID`) and a calls log. Do NOT copy its `unset LOOM_STAGE_ID ...` line.
+  the gate environment (`LOOM_STAGE_ID`, `LOOM_MAIN_AGENT_PID=$$`, `LOOM_WORK_DIR` set to a
+  directory under the test's temp dir, never the inherited one (CONTRIBUTING.md: hook tests run
+  inside stage sessions), `LOOM_SESSION_ID`) and a calls log. Do NOT copy its
+  `unset LOOM_STAGE_ID ...` line; the `env -i` run already drops the inherited values.
+- The frozen guard contract's prompt starts with the first line of `_subagent-preamble.txt`, so
+  the guard adds no preamble; a prompt without that line gets the preamble and a blank line
+  prepended first (`spawn-guard.sh`), and the briefs follow the prompt either way.
 - The Rust spawn-guard cases in `tests/integration/hooks_spawn_guard_gate.rs` (stub
   `install_worker_brief_stub`) must stay green; they only stub `worker-brief`.
 
@@ -35,9 +40,11 @@ already hold at the base commit and a frozen contract must fail before the work.
 
 ## Behaviour (decided)
 
-1. New function `loom_reviewer_brief GATE_PASSED AGENT_TYPE_REQ` in `_spawn_policy.sh` sets
-   `LOOM_SPAWN_REVIEWER_BRIEF_JSON` (empty when none). It runs only when `GATE_PASSED` is 1,
-   `AGENT_TYPE_REQ` is exactly `loom-code-reviewer`, and the binary exists. The call is
+1. New function `loom_reviewer_brief TOOL_INPUT GATE_PASSED AGENT_TYPE_REQ` in `_spawn_policy.sh`
+   sets `LOOM_SPAWN_REVIEWER_BRIEF_JSON` (empty when none). It runs only when `GATE_PASSED` is 1,
+   `AGENT_TYPE_REQ` is exactly `loom-code-reviewer`, the binary exists, and `TOOL_INPUT` passes the
+   same `jq -e 'type == "object" and (.prompt | type == "string")'` check `loom_worker_brief`
+   makes (a non-string prompt cannot take the append). The call is
    `loom_run_bounded 5 "${LOOM_BIN:-loom}" hook reviewer-brief </dev/null 2>/dev/null`: stdin is
    `/dev/null` because the command reads none, and piping a payload into a command that never reads
    it dies of SIGPIPE under `pipefail`.
@@ -67,6 +74,8 @@ already hold at the base commit and a frozen contract must fail before the work.
    - worker brief and reviewer brief together: worker first, reviewer last, both once;
    - `loom-software-engineer` and `Explore` spawns: the stub's calls log has no `hook
      reviewer-brief`, prompt has no reviewer marker;
+   - a `loom-code-reviewer` payload whose `prompt` is not a string: no `hook reviewer-brief` call,
+     the spawn is still allowed;
    - no gate environment: no call at all;
    - bad envelopes (marker nonce differs from `nonce`, an extra key, two lines, nonce not 32 hex,
      empty brief, not JSON): prompt unchanged, output still allows the spawn;

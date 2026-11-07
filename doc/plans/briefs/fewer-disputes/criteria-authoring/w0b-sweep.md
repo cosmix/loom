@@ -4,9 +4,10 @@ Tier: haiku. Wave 1, with W0, W4 and W5. Read `common.md` first (sections "Owner
 
 ## What changed
 
-`ContractSpec.test` is now `Option<String>` and `FrozenContract` has a new field `test: Option<String>`
-(W0 writes both types). Every test file that builds either with a struct literal, or reads `.test`, needs a
-mechanical edit. You change nothing else.
+`ContractSpec.test` is now `Option<String>`, `FrozenContract` and `RefrozenContract` each have a new field
+`test: Option<String>`, and `StageDefinition` has `consumer_deferred: Option<String>` (W0 writes these types).
+Every test file that builds one with a struct literal, or reads or assigns `.test`, needs a mechanical edit. You
+change nothing else.
 
 ## Files you own and the edit in each
 
@@ -17,8 +18,11 @@ Edit B = in a `FrozenContract { .. }` literal that does not end in `..FrozenCont
 None,` after the last field.
 Edit C = an assertion or comparison that reads a spec's `.test` as a `String` (`assert_eq!(spec.test,
 "x")`) becomes `Some("x".to_string())` or `.as_deref()` against `Some("x")`.
+Edit D = an assignment to a spec's `test` (`stage.contracts[0].test = "exit 2".to_string()`) wraps the value:
+`stage.contracts[0].test = Some("exit 2".to_string())`.
+Edit E = in a `RefrozenContract { .. }` literal that does not end in `..`, add `test: None,` after the last field.
 
-Find the sites with `rg -n 'ContractSpec \{|FrozenContract \{|\.test\b' <file>` in each file:
+Find the sites with `rg -n 'ContractSpec \{|FrozenContract \{|RefrozenContract \{|\.test\b' <file>` in each file:
 
 | File | Edits |
 | --- | --- |
@@ -27,26 +31,26 @@ Find the sites with `rg -n 'ContractSpec \{|FrozenContract \{|\.test\b' <file>` 
 | `tests/gate_dedup_contracts/support.rs` | A, B |
 | `tests/adjudication_e2e/kinds.rs` | A |
 | `src/verify/contracts/run_dir_build_tests.rs` | A (two literals; helper `spec(adapter, file, test)`) |
-| `src/verify/contracts/store_tests.rs` | A, B (four `FrozenContract` literals) |
+| `src/verify/contracts/store_tests.rs` | A, B (four `FrozenContract` literals), E (the `refrozen()` helper; the `bad` literal ends in `..refrozen(..)` and needs nothing) |
 | `src/verify/contracts/completion_share_tests.rs` | A (two) |
-| `src/verify/contracts/completion_tests.rs` | B (four) |
-| `src/verify/contracts/completion_adapter_tests.rs` | B |
+| `src/verify/contracts/completion_tests.rs` | B (four), D (`fx.stage.contracts[0].test = ..`) |
+| `src/verify/contracts/completion_adapter_tests.rs` | B, D (`contract.test = ..`) |
 | `src/verify/contracts/collection/tests.rs` | A |
 | `src/verify/contracts/test_support.rs` | A (two: `contract()` and `liquidmon_contract()`) |
 | `src/verify/contracts/run_dir_tests.rs` | A |
 | `src/plan/schema/validation/v2_lints/contracts_tests.rs` | A |
 | `src/plan/schema/tests/v2_contract_lint_tests.rs` | A |
-| `src/plan/schema/tests/v2_tests.rs` | A |
+| `src/plan/schema/tests/v2_tests.rs` | A, D (`blank.test = " ".to_string()`) |
 | `src/plan/schema/tests/mod.rs` | A |
 | `src/models/stage/methods_v2_tests.rs` | A |
 | `src/host_verify/tests_freeze_memo.rs` | A (four) |
 | `src/commands/stage/contracts/freeze_run_dir_tests.rs` | A, B (two) |
-| `src/commands/stage/contracts/freeze_tests.rs` | A |
 | `src/orchestrator/adjudication/apply_contract_tests.rs` | A (two), B |
 | `src/orchestrator/adjudication/prompt/contract_tests.rs` | B |
 | `src/stage_service/dispute_race_tests.rs` | B |
-| `src/fs/tests_stage_loading_round_trip.rs` | A, plus the new test below |
+| `src/fs/tests_stage_loading_round_trip.rs` | A; the exhaustive `build_full_stage_definition` literal gains `consumer_deferred: Some("the consumer is planned for a later plan".to_string())`; plus the new test below |
 | `src/testrun/adapters/bun_test.rs` | A (one literal inside its test module) |
+| `src/host_verify/tests_freeze_refusal.rs` | D (`stage.contracts[0].test = "exit 2".to_string()`) |
 
 ## Two small tests to add (the only additions)
 
@@ -62,6 +66,7 @@ Find the sites with `rg -n 'ContractSpec \{|FrozenContract \{|\.test\b' <file>` 
 - Do not change a test's meaning, delete an assertion or rename anything. Do not touch a file not in the table.
 - `src/verify/contracts/mod.rs`, `src/plan/schema/types_v2.rs` and `src/stage_service/contracts.rs` hold
   literals too but belong to W0 and W1b; `src/orchestrator/signals/contract_tests.rs` belongs to W3, which
-  rewrites the rule text it pins and wraps its `test` values itself.
+  rewrites the rule text it pins and wraps its `test` values itself; `src/commands/stage/contracts/freeze_tests.rs`
+  belongs to W2, which wraps its `test` value and changes its `check_formatting` calls in wave 2.
 - Report every assertion line you changed (file:line) so the orchestrator can file the integrity dispute.
 - Run no check: the crate cannot compile until wave 2.
