@@ -56,8 +56,8 @@
 | [planner-web-shell](architecture/planner-web-shell.md) | Shell | 108 |
 | [planning-document-model](architecture/planning-document-model.md) | Docs | 183 |
 | [planning-guidance](architecture/planning-guidance.md) |  | 35 |
-| [planning-session-bridge](architecture/planning-session-bridge.md) |  | 264 |
-| [planning-session-sandbox](architecture/planning-session-sandbox.md) |  | 146 |
+| [planning-session-bridge](architecture/planning-session-bridge.md) |  | 284 |
+| [planning-session-sandbox](architecture/planning-session-sandbox.md) |  | 148 |
 | [planning-trace](architecture/planning-trace.md) |  | 91 |
 | [pressure](architecture/pressure.md) |  | 42 |
 | [quota-poller](architecture/quota-poller.md) |  | 37 |
