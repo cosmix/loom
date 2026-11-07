@@ -246,3 +246,7 @@ Why `dev-install.sh` stops every loom process after the install, the review find
 
 - A spec section adds an action, button or skill only when the vision names it; integration-verify's spec-conformance duty aligns spec and build. See [spec sections invented product features](mistakes/planner-design-brainstorm.md#spec-sections-invented-product-features-the-vision-never-asked-for).
 - Feature run reviews land at the top of `doc/plans/`, and the readers search the plan's home, its `archive/` and the top of `doc/plans/`. See [a feature plan's run review](mistakes/planner-design-brainstorm.md#a-feature-plans-run-review-is-written-where-nothing-looks-for-it).
+
+## Test-Integrity Gate and Formatters
+
+The integrity gate once read a formatter reflow of an unchanged assertion as a changed assertion, so a resolver that ran the formatter to pass `oxfmt --check` was handed back. Reformat-only hunks are now exempt. → [test-integrity-gate](mistakes/test-integrity-gate.md)
