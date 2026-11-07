@@ -67,6 +67,10 @@ mod tests_criterion_field;
 mod tests_retry_budget;
 #[cfg(test)]
 mod tests_verdicts;
+#[cfg(test)]
+mod verdict_hold_contract_tests;
+#[cfg(test)]
+mod verdict_hold_tests;
 
 use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
@@ -83,6 +87,7 @@ pub(crate) use closed_disputes::{close_open_disputes_except_locked, lock_stage_d
 #[cfg(test)]
 pub(crate) use closed_disputes::{close_open_disputes_locked, fail_close_once};
 pub use escalation::Escalation;
+pub(crate) use requeue::{hand_back_held_stage, is_held_for_completion, is_verdict_held};
 pub(crate) use scan::dispute_ids;
 pub use session::{
     attempt_count, persist_verdict, read_request, resolve_model, scratch_verdict_draft,

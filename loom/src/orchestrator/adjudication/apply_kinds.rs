@@ -6,6 +6,13 @@
 //! [`requeue_or_hold_for_remaining_disputes`], so sibling disputes still hold
 //! it until every one has a verdict.
 //!
+//! Three verdicts change nothing the agent must act on, so as the last open
+//! dispute they hold the stage in `NeedsAdjudication` with no session for the
+//! daemon's completion run instead
+//! ([`hold_for_completion_or_remaining_disputes`]): an integrity `accept`, an
+//! impact-tests `accept`, and findings `rulings` that are non-empty and all
+//! close (dismiss or defer). Every other verdict re-queues.
+//!
 //! * findings `rulings`: appended to `reviews/<stage>/rulings.json`; each
 //!   `defer` also carries its finding to `reviews/<target>/carried.json`. A
 //!   `defer` whose target is missing, completed or not downstream of the
@@ -41,7 +48,9 @@ use crate::verify::transitions::list_all_stages;
 
 use super::apply::{apply_needs_more_evidence, apply_reject};
 use super::apply_accept::apply_accept;
-use super::requeue::requeue_or_hold_for_remaining_disputes;
+use super::requeue::{
+    hold_for_completion_or_remaining_disputes, requeue_or_hold_for_remaining_disputes,
+};
 use super::{apply_contract, apply_freeze_refusal, apply_impact, feedback};
 
 /// Apply `record` to `stage` by the kind of the dispute it answers.
@@ -78,7 +87,7 @@ pub(super) fn apply_by_kind(
             } => apply_integrity_accept(work_dir, stage, dispute, event_ids, evidence),
             DisputeKind::ImpactTests { test_ids, evidence } => {
                 let body = apply_impact::accept(work_dir, stage, dispute, test_ids, evidence)?;
-                notify_and_requeue(work_dir, stage, &body)
+                notify_and_hold(work_dir, stage, &body)
             }
             DisputeKind::FreezeRefusal { .. } => {
                 apply_freeze_refusal::accept(work_dir, stage, dispute, plan_patch, reasoning)
@@ -127,6 +136,11 @@ pub(super) fn notify_and_requeue(work_dir: &Path, stage: &mut Stage, body: &str)
     requeue_or_hold_for_remaining_disputes(work_dir, stage)
 }
 
+fn notify_and_hold(work_dir: &Path, stage: &mut Stage, body: &str) -> Result<()> {
+    feedback::write_notice(work_dir, &stage.id, body)?;
+    hold_for_completion_or_remaining_disputes(work_dir, stage)
+}
+
 fn apply_rulings(
     work_dir: &Path,
     stage: &mut Stage,
@@ -156,7 +170,13 @@ fn apply_rulings(
         })
         .collect();
     verdict_records::append_rulings(work_dir, &stage.id, &recorded)?;
-    notify_and_requeue(work_dir, stage, &rulings_notice(rulings))
+    let body = rulings_notice(rulings);
+    // An empty list upholds nothing only vacuously, so it re-queues.
+    if !rulings.is_empty() && rulings.iter().all(|r| r.ruling.closes()) {
+        notify_and_hold(work_dir, stage, &body)
+    } else {
+        notify_and_requeue(work_dir, stage, &body)
+    }
 }
 
 /// Every `defer` ruling with its target stage.
@@ -337,7 +357,7 @@ fn apply_integrity_accept(
          change that makes one of them worse needs a new dispute.\n",
         event_ids.join(", ")
     );
-    notify_and_requeue(work_dir, stage, &body)
+    notify_and_hold(work_dir, stage, &body)
 }
 
 fn integrity_reject_notice(stage_id: &str, event_ids: &[String], reasoning: &str) -> String {

@@ -134,7 +134,7 @@ fn dismiss_ruling_closes_finding() {
     apply(work, "s1");
 
     assert!(open_ids(work, "s1").is_empty());
-    assert_eq!(status(work, "s1"), StageStatus::Queued);
+    assert_eq!(status(work, "s1"), StageStatus::NeedsAdjudication);
 }
 
 #[test]
@@ -158,7 +158,7 @@ fn defer_ruling_carries_finding_to_target() {
     assert_eq!(carried[0].origin_stage, "s1");
     assert_eq!(open_ids(work, "s2"), ["s1/F-1-1"]);
     assert!(open_ids(work, "s1").is_empty());
-    assert_eq!(status(work, "s1"), StageStatus::Queued);
+    assert_eq!(status(work, "s1"), StageStatus::NeedsAdjudication);
 }
 
 #[test]
@@ -350,5 +350,5 @@ fn integrity_accept_records_counts() {
     assert_eq!(accepted[0].base, Some(120));
     assert_eq!(accepted[0].accepted_current, Some(118));
     assert_eq!(accepted[0].dispute, 1);
-    assert_eq!(status(work, "s1"), StageStatus::Queued);
+    assert_eq!(status(work, "s1"), StageStatus::NeedsAdjudication);
 }

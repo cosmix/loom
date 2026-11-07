@@ -61,7 +61,7 @@ impl StageStatus {
             ],
             MergeBlocked => &[Queued, Executing, Completed, MergeConflict],
             NeedsHumanReview => &[Executing, Completed, Blocked, Queued],
-            NeedsAdjudication => &[Queued, NeedsHumanReview],
+            NeedsAdjudication => &[Queued, Completed, NeedsHumanReview],
         }
     }
 }
@@ -89,7 +89,7 @@ mod exhaustive_policy_tests {
             NeedsAdjudication,
         ];
         // Bit j of row i permits the non-self edge states[i] -> states[j].
-        let outgoing: [u16; 13] = [66, 84, 8120, 0, 98, 2, 0, 4, 24, 7438, 270, 30, 2050];
+        let outgoing: [u16; 13] = [66, 84, 8120, 0, 98, 2, 0, 4, 24, 7438, 270, 30, 2058];
         for (i, from) in states.iter().enumerate() {
             assert!(
                 !from.valid_transitions().contains(from),
