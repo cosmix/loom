@@ -1,19 +1,11 @@
 import { useAtomValue, useSetAtom } from "jotai";
 
-import type { PlanStateView } from "@/plan/api/schema-files";
 import { ConfigBlockNotice } from "@/plan/chat/pressure/config-block-notice";
 import { usePressureOptions, useStartReason } from "@/plan/chat/pressure/use-pressure";
 import { pressureDialogAtom } from "@/plan/offers/actions-pressure";
 import { runDialogAtom } from "@/plan/offers/actions-run";
 import { authorBlockReasonAtom, isHolderAtom } from "@/plan/state/atoms";
 import { type ButtonLook, DisabledReason } from "@/plan/ui/disabled-reason";
-
-/**
- * A written plan's Pressure-test and Start a run. A done plan has nothing here.
- */
-export function PlanRunActions({ path, state }: { path: string; state: PlanStateView }) {
-  return state === "written" ? <WrittenPlanActions path={path} /> : null;
-}
 
 /**
  * The Start a run button for one plan (null opens the dialog on its own choice). Pressure start
@@ -46,22 +38,28 @@ export function StartRunButton({
   );
 }
 
-function WrittenPlanActions({ path }: { path: string }) {
+/**
+ * The Pressure-test control at the end of a written plan's pressure status row (`pressureChip`'s
+ * `action`, DESIGN.md, Status). A blocked start draws its reason beside the button, on the row.
+ */
+export function PressureTestAction({ path }: { path: string }) {
   const options = usePressureOptions();
-  const pressureReason = useStartReason(options?.ok ? options.value : null);
+  const reason = useStartReason(options?.ok ? options.value : null);
   const setPressure = useSetAtom(pressureDialogAtom);
   return (
-    <div className="space-y-2">
-      <div className="flex flex-wrap gap-2">
-        <DisabledReason
-          reason={pressureReason}
-          onClick={() => setPressure({ open: true, plan: path })}
-        >
-          Pressure-test
-        </DisabledReason>
-        <StartRunButton path={path} />
-      </div>
-      <ConfigBlockNotice context="plan" />
-    </div>
+    <DisabledReason
+      look="quiet"
+      size="sm"
+      reasonPlacement="inline"
+      reason={reason}
+      onClick={() => setPressure({ open: true, plan: path })}
+    >
+      Pressure-test
+    </DisabledReason>
   );
+}
+
+/** The pressure row's detail line: the Codex configuration notice, drawn only while one blocks. */
+export function PressureTestDetail() {
+  return <ConfigBlockNotice context="plan" />;
 }

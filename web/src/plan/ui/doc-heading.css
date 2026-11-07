@@ -14,6 +14,10 @@
   row-gap: var(--space-3);
   min-width: 0;
   padding-block: var(--space-4) var(--space-5);
+  /* The body's first line sits `--space-5` below the hairline. The heading owns this space, so
+     every host (the file view's pane, a summary's column) gets the same gap and none sets a top
+     padding of its own on the body. */
+  margin-block-end: var(--space-5);
   border-bottom: 1px solid var(--hairline);
   background: var(--background);
   font-family: var(--font-sans);
@@ -60,7 +64,8 @@
    by 1px rules of the same edge. Inside, every control is a 24px row control on one centre line:
    the view switch's segments, the settle pill, and the quiet buttons. The first group is the
    view switch; the second the settle state and its verb; the third Edit, Discuss and Open all. A
-   group that renders nothing collapses (`:empty`), and its rule goes with it. Under 40rem of
+   control is always inside a group: a bare control in the bar would sit at its top edge, off the
+   groups' centre line. A group that renders nothing collapses (`:empty`), and its rule goes with it. Under 40rem of
    heading width the bar stacks its groups as rows divided by hairlines, so nothing wraps mid
    group and nothing scrolls sideways. */
 .doc-heading-toolbar {
@@ -80,6 +85,9 @@
   display: flex;
   flex: 0 1 auto;
   flex-wrap: wrap;
+  /* Every group's first line starts at the same offset from the bar's top, so a group that wraps
+     (or stretches to a taller neighbour) never moves its controls off the others' centre line. */
+  align-content: flex-start;
   align-items: center;
   gap: var(--space-1);
   min-width: 0;
@@ -117,14 +125,9 @@
 .doc-heading-views {
   display: inline-flex;
   flex: none;
-  align-items: stretch;
+  align-items: center;
   gap: 2px;
   height: var(--control-height-sm);
-}
-
-.doc-heading-views > .plan-button {
-  height: auto;
-  border: 0;
 }
 
 .doc-heading-views > .plan-button:hover {

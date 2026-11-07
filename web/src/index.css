@@ -47,6 +47,13 @@
   --tone-control: oklch(0.55 0.21 27);
   --tone-neutral: var(--foreground);
   --tone-contract: oklch(0.53 0.18 300);
+  /* The four token components of Settings' statistics (fresh input, cache reads, cache writes,
+   * output): four hues at least 60 degrees apart, lightness staggered so they also differ without
+   * hue, each at least 3.2:1 on every light theme's `--muted` track. */
+  --stat-fresh: oklch(0.5 0.17 258);
+  --stat-read: oklch(0.54 0.12 160);
+  --stat-write: oklch(0.59 0.14 62);
+  --stat-output: oklch(0.57 0.19 352);
   /* Document colours of concept mode (section 05). Hues stay clear of the amber
    * accent (~80) and the warning orange (50-58). Contrast against the Ledger
    * --background, measured by OKLCH to sRGB relative luminance:
@@ -98,6 +105,11 @@
 }
 
 .dark {
+  /* Same four hues, lifted: at least 5.8:1 on the Walnut, Graphite and Aubergine `--muted`. */
+  --stat-fresh: oklch(0.7 0.14 255);
+  --stat-read: oklch(0.78 0.13 158);
+  --stat-write: oklch(0.82 0.13 80);
+  --stat-output: oklch(0.72 0.16 350);
   --tone-executing: oklch(0.77 0.12 245);
   --tone-completed: oklch(0.77 0.13 152);
   --tone-blocked: oklch(0.72 0.16 22);

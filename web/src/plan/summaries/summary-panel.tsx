@@ -84,7 +84,9 @@ function idleLine(last: CostLine | null, now: number): string {
 }
 
 /** The three components of the last rebuild's cost line; cache writes stay in the cards' legends. */
-const COST_COMPONENTS = COMPONENTS.filter(({ key }) => key !== "cache_write");
+const COST_COMPONENTS = COMPONENTS.flatMap((component, ramp) =>
+  component.key === "cache_write" ? [] : [{ ...component, ramp }],
+);
 
 /**
  * The wire carries no duration and no success flag for the last rebuild: the row shows none, and
@@ -120,8 +122,8 @@ function LastRebuild({
         </span>
       </p>
       <dl className="sp-cost">
-        {COST_COMPONENTS.map(({ key, label }) => (
-          <TokenFigure key={key} label={label} value={last.tokens[key]} />
+        {COST_COMPONENTS.map(({ key, label, ramp }) => (
+          <TokenFigure key={key} label={label} value={last.tokens[key]} ramp={ramp} />
         ))}
       </dl>
     </div>

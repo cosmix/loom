@@ -2,6 +2,7 @@ import { atom, useAtomValue, useStore } from "jotai";
 import { useEffect } from "react";
 
 import { isConceptPageKey, summaryKey, VISION_DOC } from "@/plan/api/page-key";
+import type { ConceptPage } from "@/plan/api/schema-concept";
 import type { DocView } from "@/plan/api/schema-files";
 import {
   conceptPageAtom,
@@ -9,6 +10,7 @@ import {
   useConceptSubscription,
   type ConceptPageState,
 } from "@/plan/concept/page-state";
+import { planSocketAtom } from "@/plan/state/atoms";
 import type { HeadingChip } from "@/plan/ui/doc-heading";
 
 import {
@@ -50,21 +52,55 @@ function stemSummaryKey(feature: string, scope: "product" | "metaplan", path: st
   return isConceptPageKey(key) ? key : null;
 }
 
+/** The key of the summary page the Summary view opens: a plan's own page, else `docSummaryKey`. */
+export function summaryPageKey(doc: DocView): string | null {
+  if (doc.kind !== "plan") return docSummaryKey(doc);
+  return doc.plan === null ? null : summaryKey(doc.feature, "engineering", doc.plan.slug);
+}
+
+/** Whether a summary page holds a summary: the server marks a page whose file is absent `missing`. */
+export function hasSummary(page: ConceptPage | null): boolean {
+  return page !== null && page.state !== null && page.state.state !== "missing";
+}
+
 /**
- * The chips of a document. A section or the vision also carries its summary's state and its
- * builders (read from the summary page the "Summary" view opens) and when its file last changed;
- * the open questions come first for every document kind.
+ * The summary page for `key`, loaded and kept current: the subscription refetches a loaded page
+ * on each `concept_changed`, so a build that finishes while the document is open reaches the
+ * page atom. A key the server answered 404 for holds no page for the subscription to refetch, so
+ * a delta naming it, or a resync, loads it here.
  */
-export function useDocChips(doc: DocView, now: number): HeadingChip[] {
+export function useSummaryPage(key: string | null): ConceptPage | null {
   const store = useStore();
-  const questions = useOpenQuestionChips(doc.path);
-  const key = docSummaryKey(doc);
+  const socket = useAtomValue(planSocketAtom);
   useConceptSubscription();
   useEffect(() => {
     if (key !== null) void loadConceptPage(store, key);
   }, [store, key]);
-  const page = useAtomValue(key === null ? NO_PAGE : conceptPageAtom(key)).page;
-  if (key === null) return questions;
+  useEffect(() => {
+    if (key === null || !socket) return;
+    const loadIfAbsent = () => {
+      if (store.get(conceptPageAtom(key)).page === null) void loadConceptPage(store, key);
+    };
+    const off = socket.subscribe("concept_changed", (message) => {
+      if (message.pages.includes(key)) loadIfAbsent();
+    });
+    const offResync = socket.onResync(loadIfAbsent);
+    return () => {
+      off();
+      offResync();
+    };
+  }, [store, socket, key]);
+  return useAtomValue(key === null ? NO_PAGE : conceptPageAtom(key)).page;
+}
+
+/**
+ * The chips of a document. A section or the vision also carries its summary's state and its
+ * builders (read from the summary page the "Summary" view opens, `page`) and when its file last
+ * changed; the open questions come first for every document kind.
+ */
+export function useDocChips(doc: DocView, now: number, page: ConceptPage | null): HeadingChip[] {
+  const questions = useOpenQuestionChips(doc.path);
+  if (docSummaryKey(doc) === null) return questions;
   return [
     ...(page ? summaryChips(page, isRebuilding(page)) : []),
     ...questions,

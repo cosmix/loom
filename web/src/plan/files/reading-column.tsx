@@ -141,7 +141,7 @@ function StaleNotice({ refresh }: { refresh: StaleRefresh }) {
   return (
     <div
       role="alert"
-      className="flex flex-wrap items-center gap-x-3 px-6 pt-2 text-[13px] text-muted-foreground"
+      className="flex flex-wrap items-center gap-x-3 px-6 pb-4 text-[13px] text-muted-foreground"
     >
       <span>
         This document changed, but the new text could not be loaded ({refresh.message}). The text
@@ -171,14 +171,14 @@ function Notices({
     <>
       {refresh && <StaleNotice refresh={refresh} />}
       {previous?.path === doc.path && (
-        <p className="px-6 pt-2 text-[13px] text-muted-foreground">
+        <p className="px-6 pb-4 text-[13px] text-muted-foreground">
           <Link to={openDiff("open", doc.path)} className="underline">
             changed just now
           </Link>
         </p>
       )}
       {missingAnchor && (
-        <p className="px-6 pt-2 text-[13px] text-muted-foreground">
+        <p className="px-6 pb-4 text-[13px] text-muted-foreground">
           Section #{anchor} is not in this document any more
         </p>
       )}
@@ -274,7 +274,7 @@ function DocPane({
         <LazyEditMode doc={doc} />
       ) : (
         <>
-          <div ref={container} data-doc-container className="min-w-0 px-6 py-4">
+          <div ref={container} data-doc-container className="min-w-0 px-6 pb-4">
             <DocBody doc={doc} tree={tree} marks={marks} />
           </div>
           <SelectionAttach
