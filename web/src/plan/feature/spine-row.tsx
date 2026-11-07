@@ -1,15 +1,22 @@
-import { ArrowDownToLine, BadgeCheck, ChevronRight, Circle, Pencil, Replace } from "lucide-react";
+import { Archive, Check, ChevronRight, CircleDashed } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { Link } from "react-router";
 
+import { BusyRoundel } from "@/aurora-ui/feedback/BusyRoundel";
 import { Button } from "@/components/ui/button";
-import type { SettleState } from "@/plan/api/schema-trace";
 import { Untrusted, visibleControls } from "@/plan/chat/visible-controls";
 import { SentenceText } from "@/plan/concept/sentence-text";
-import { NOT_PRESSURE_TESTED, PRESSURE_TESTED, pressureIcon } from "@/plan/files/heading-parts";
-import type { NameStyle, PlanPressure, SpineChild, SpineGroup } from "@/plan/feature/spine-model";
-import { settleLabel } from "@/plan/trace/model";
-import { type Glyph as GlyphIcon, STEP_MARK_GLYPHS } from "@/plan/ui/glyphs";
+import { NOT_PRESSURE_TESTED, PRESSURE_TESTED } from "@/plan/files/heading-parts";
+import type {
+  GlyphKind,
+  NameStyle,
+  PlanPressure,
+  RowGlyph,
+  SpineChild,
+  SpineGroup,
+} from "@/plan/feature/spine-model";
+import { SEAL_ICONS } from "@/plan/trace/settle-glyph";
+import { STEP_MARK_GLYPHS } from "@/plan/ui/glyphs";
 
 import "@/plan/trace/trace.css";
 
@@ -20,73 +27,63 @@ export function Name({ name, style }: { name: string; style: NameStyle }) {
   return style === "mono" ? <span className="plan-spine__mono">{text}</span> : text;
 }
 
+/** The row glyphs: the settle seals are the shared `SEAL_ICONS`, the rest are the row's own. */
+const GLYPH_ICONS: Record<Exclude<GlyphKind, "running">, LucideIcon> = {
+  ...SEAL_ICONS,
+  done: Check,
+  "not-written": CircleDashed,
+  retired: Archive,
+};
+
 /**
- * A glyph shown in place of its word: the word is read (`.sr-only`, so the link's name and text
- * keep it) and a hover shows it as the browser's tooltip. The wrapper is hidden from assistive
- * technology, so its `title` adds no second announcement. A plan's state glyph carries the state
- * as `data-state`, which spine.css reads to light the done check.
+ * The glyph that leads a row, chosen once in `rowGlyph` (`data-glyph` names the kind for the
+ * stylesheet). It is hidden from assistive technology and its tooltip is the word; `GlyphWord`
+ * reads the word after the row's name, so the link's name still starts with it. A running plan
+ * draws the planner's roundel, the one the header pill draws (ui/DESIGN.md, Status).
  */
-function Glyph({ icon: Icon, word, state }: { icon: GlyphIcon; word: string; state?: string }) {
+function GlyphMark({ glyph }: { glyph: RowGlyph }) {
+  const Icon = glyph.kind === "running" ? null : GLYPH_ICONS[glyph.kind];
+  return (
+    <span
+      className="plan-spine__glyph"
+      data-glyph={glyph.kind}
+      title={glyph.word ?? undefined}
+      aria-hidden="true"
+    >
+      {Icon ? <Icon /> : <BusyRoundel busy size="100%" busyLabel="" idleLabel="" />}
+    </span>
+  );
+}
+
+/** The glyph's word, read after the row's name: "Settled", "Changed since you settled it". */
+function GlyphWord({ glyph }: { glyph: RowGlyph | null }) {
+  if (!glyph?.word) return null;
   return (
     <>
-      <span className="plan-spine__glyph" title={word} aria-hidden="true" data-state={state}>
-        <Icon />
-      </span>
-      <span className="sr-only">{word}</span>
+      {" "}
+      <span className="sr-only">{glyph.word}</span>
     </>
   );
 }
 
-const SETTLE_GLYPHS: Record<SettleState, LucideIcon> = {
-  draft: Circle,
-  revised: Pencil,
-  stub_changed: Replace,
-  upstream_changed: ArrowDownToLine,
-  settled: BadgeCheck,
-};
-
-/** A document's settle state beside its other glyphs: the glyph shows, the word is read. */
-export function SettleMark({ state }: { state: SettleState }) {
-  return (
-    <span className="trace-settle" data-settle={state}>
-      <Glyph icon={SETTLE_GLYPHS[state]} word={settleLabel(state)} />
-    </span>
-  );
-}
-
-/** The plan's pressure record, in the same words as the plan page's chip (`pressureChip`). */
-function PressureBadge({ pressure }: { pressure: PlanPressure }) {
+/** The plan's pressure record, read aloud only: the plan page draws it (the spine draws no flask). */
+function PressureWord({ pressure }: { pressure: PlanPressure }) {
   const { date } = pressure;
   // The date is the schema's string; `visibleControls` keeps the word readable as text.
   const word = date === null ? NOT_PRESSURE_TESTED : `${PRESSURE_TESTED} ${visibleControls(date)}`;
   return (
-    <span className="plan-spine__badge plan-fine" data-tested={date !== null}>
-      <Glyph icon={pressureIcon(date)} word={word} />
-    </span>
-  );
-}
-
-/**
- * A note with a glyph (a plan's state) shows the glyph alone, so the slug keeps the row's width
- * (ui/DESIGN.md, Status); a note with none (a section's "not written") stays a word. Only plan
- * rows have a glyph, so the note it carries is one of the `PlanState` names.
- */
-function Note({ icon, note }: { icon: GlyphIcon | null; note: string }) {
-  return (
-    <span className="plan-status plan-fine">
-      {icon ? (
-        <Glyph icon={icon} word={visibleControls(note)} state={note} />
-      ) : (
-        <Untrusted text={note} />
-      )}
-    </span>
+    <>
+      {" "}
+      <span className="sr-only">{word}</span>
+    </>
   );
 }
 
 function ChildRow({ child, pathname }: { child: SpineChild; pathname: string }) {
   const body = (
     <>
-      {/* The spaces keep the spans apart in the link's accessible name ("01 Name", "slug done"). */}
+      {child.glyph !== null && <GlyphMark glyph={child.glyph} />}
+      {/* The spaces keep the spans apart in the link's accessible name ("01 Name", "slug Done"). */}
       {child.number !== null && (
         <>
           <span className="plan-spine__number">
@@ -97,31 +94,31 @@ function ChildRow({ child, pathname }: { child: SpineChild; pathname: string }) 
       <span className="plan-spine__name">
         <Name name={child.name} style={child.style} />
       </span>
-      {child.settle !== null && (
-        <>
-          {" "}
-          <SettleMark state={child.settle} />
-        </>
-      )}
+      <GlyphWord glyph={child.glyph} />
       {child.note !== null && (
         <>
           {" "}
-          <Note icon={child.icon} note={child.note} />
+          <span className="plan-status plan-fine">
+            <Untrusted text={child.note} />
+          </span>
         </>
       )}
-      {child.pressure !== null && (
-        <>
-          {" "}
-          <PressureBadge pressure={child.pressure} />
-        </>
-      )}
+      {child.pressure !== null && <PressureWord pressure={child.pressure} />}
     </>
   );
-  if (child.to === null) return <li className="plan-spine__child">{body}</li>;
+  const title = child.title ?? undefined;
+  if (child.to === null) {
+    return (
+      <li className="plan-spine__child" title={title}>
+        {body}
+      </li>
+    );
+  }
   return (
     <li>
       <Link
         to={child.to}
+        title={title}
         aria-current={pathname === child.to ? "page" : undefined}
         className="plan-spine__link plan-spine__child"
       >
@@ -133,19 +130,17 @@ function ChildRow({ child, pathname }: { child: SpineChild; pathname: string }) 
 
 function GroupHead({ group, selected }: { group: SpineGroup; selected: boolean }) {
   const Mark = STEP_MARK_GLYPHS[group.mark];
+  const own = group.glyph;
   return (
     <Link
       to={group.to}
       aria-current={selected ? "page" : undefined}
       className="plan-spine__link plan-spine__head"
     >
-      <Mark className="plan-spine__mark" aria-hidden="true" />
-      <span className="plan-spine__name">{group.label}</span>{" "}
-      {group.settle !== null && (
-        <>
-          <SettleMark state={group.settle} />{" "}
-        </>
-      )}
+      {/* The vision and metaplan lead with their own glyph; the other groups with the step's mark. */}
+      {own ? <GlyphMark glyph={own} /> : <Mark className="plan-spine__mark" aria-hidden="true" />}
+      <span className="plan-spine__name">{group.label}</span>
+      <GlyphWord glyph={own} />{" "}
       {group.count !== null ? (
         <>
           <span className="plan-fine">
@@ -155,7 +150,8 @@ function GroupHead({ group, selected }: { group: SpineGroup; selected: boolean }
           {group.unit === null && <span className="sr-only">, {group.word}</span>}
         </>
       ) : (
-        <span className="plan-fine">{group.word}</span>
+        // The glyph's word already says "Settled" or "Draft"; the step's word stays where it adds.
+        !own?.word && <span className="plan-fine">{group.word}</span>
       )}
     </Link>
   );

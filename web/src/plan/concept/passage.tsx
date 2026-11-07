@@ -8,6 +8,7 @@ import type { DocView } from "@/plan/api/schema-files";
 import { Untrusted } from "@/plan/chat/visible-controls";
 import { featureOfDocPath, featureSourceHref } from "@/plan/feature/source-href";
 import { Markdown } from "@/plan/markdown";
+import { PassageCoverage } from "@/plan/trace/passage-coverage";
 import { BusyText } from "@/plan/ui/busy-text";
 
 import { passageKey, useColumn } from "./column-context";
@@ -76,8 +77,9 @@ function SamePassageLine({ goFirst }: { goFirst: () => void }): JSX.Element {
  * One source passage: a heading section of a file under `doc/`, flowing inline in the opened
  * run after a chip naming its file and heading, with no card or border. Its body goes through
  * file mode's Markdown renderer as an excerpt (line offset, no heading ids), so a cut never
- * claims another section's id. `leading` opens the chip line and `trailing` follows the body:
- * the run's fold caps, so they sit in the text rather than on rows of their own.
+ * claims another section's id. The body ends with the line saying what covers the heading it
+ * quotes (`PassageCoverage`). `leading` opens the chip line and `trailing` follows the body: the
+ * run's fold caps, so they sit in the text rather than on rows of their own.
  */
 export function PassageBlock({
   parent,
@@ -122,7 +124,10 @@ export function PassageBlock({
       {goFirst ? (
         <SamePassageLine goFirst={goFirst} />
       ) : passage && doc ? (
-        <PassageBody anchor={anchor} passage={passage} doc={doc} />
+        <>
+          <PassageBody anchor={anchor} passage={passage} doc={doc} />
+          <PassageCoverage path={anchor.path} anchor={anchor.anchor} />
+        </>
       ) : (
         <p className="concept-muted">{missingText(failed, doc)}</p>
       )}

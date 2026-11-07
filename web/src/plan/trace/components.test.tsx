@@ -1,27 +1,23 @@
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { createStore } from "jotai";
-import { Provider } from "jotai/react";
-import type { ReactNode } from "react";
-import { MemoryRouter } from "react-router";
+import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
-import { initClient } from "@/plan/api/client";
-import authoringFixture from "@/plan/api/fixtures/authoring.json";
-import docFixture from "@/plan/api/fixtures/files-doc.json";
-import serverInfoFixture from "@/plan/api/fixtures/server-info.json";
-import traceFixture from "@/plan/api/fixtures/trace.json";
-import { authoringViewSchema, serverInfoSchema } from "@/plan/api/schema";
-import { sentenceSchema } from "@/plan/api/schema-concept";
-import { traceViewSchema, type TraceDoc, type TraceView } from "@/plan/api/schema-trace";
 import { docChangedAtom } from "@/plan/files/atoms";
-import { authoringAtom, serverInfoAtom } from "@/plan/state/atoms";
 
-import { BriefsCard } from "./briefs-card";
-import { EdgeChips } from "./edge-chips";
-import { ImpactRows } from "./impact-rows";
+import {
+  CURRENT_TEXT,
+  FIRST_PLAN,
+  HASH,
+  S01,
+  S02,
+  S03,
+  VISION_TEXT,
+  kit,
+  mount,
+  patchDoc,
+  resetKit,
+  settlePosts,
+} from "./components-kit";
 import { SettleControl } from "./settle-control";
-import { traceAtom } from "./state";
-import { StubPanel } from "./stub-panel";
 
 // The comparison's diff view loads CodeMirror; these tests read the two texts it is given.
 vi.mock("@/plan/diff/diff-view", () => ({
@@ -30,367 +26,209 @@ vi.mock("@/plan/diff/diff-view", () => ({
   ),
 }));
 
-const VISION = "doc/product/demo/index.md";
-const S01 = "doc/product/demo/section_01.md";
-const S02 = "doc/product/demo/section_02.md";
-const S03 = "doc/product/demo/section_03.md";
-const METAPLAN = "doc/plans/demo/index.md";
-const FIRST_PLAN = "doc/plans/demo/PLAN-first.md";
-const HASH = "sha256:5e771ed0c0ffee";
-const COMMIT = "0a1b2c3d4e5f60718293a4b5c6d7e8f901234567";
-
-type Call = { url: URL; method: string };
-type Answer = { status: number; body: unknown };
-
-let calls: Call[];
-let trace: TraceView;
-let settleAnswers: Answer[];
-let settledCommit: string | null;
-
-const CURRENT_TEXT = "current text";
-const VISION_TEXT = [
-  "# Demo vision",
-  "",
-  "| #   | Section | Covers                |",
-  "| --- | ------- | --------------------- |",
-  "| 02  | Beta    | What beta promises    |",
-].join("\n");
-const METAPLAN_TEXT = [
-  "# Metaplan",
-  "",
-  "## 1. First (`PLAN-first.md`)",
-  "",
-  "Covers: section_01#one",
-  "",
-  "Build the first plan",
-  "from one idea.",
-  "",
-  "## 2. Second (`PLAN-second.md`)",
-].join("\n");
-const METAPLAN_SECTIONS = [
-  {
-    level: 2,
-    title: "1. First (`PLAN-first.md`)",
-    anchor: "1-first-plan-firstmd",
-    start_line: 3,
-    end_line: 9,
-  },
-  {
-    level: 2,
-    title: "2. Second (`PLAN-second.md`)",
-    anchor: "2-second-plan-secondmd",
-    start_line: 10,
-    end_line: 10,
-  },
-];
-
-function json(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { "content-type": "application/json" },
-  });
-}
-
-function docAnswer(rel: string): unknown {
-  const text =
-    rel === "product/demo/index.md"
-      ? VISION_TEXT
-      : rel === "plans/demo/index.md"
-        ? METAPLAN_TEXT
-        : CURRENT_TEXT;
-  const sections = rel === "plans/demo/index.md" ? METAPLAN_SECTIONS : [];
-  return { ...docFixture, path: `doc/${rel}`, hash: HASH, text, sections };
-}
-
-function answer(url: URL, method: string): Response {
-  const { pathname, searchParams } = url;
-  if (pathname === "/api/trace/demo") return json(trace);
-  if (pathname === "/api/settle" && method === "POST") {
-    const next = settleAnswers.shift();
-    return next
-      ? json(next.body, next.status)
-      : json({ result: "saved", hash: "sha256:after", validation: null });
-  }
-  if (pathname === "/api/settled-version") return json({ commit: settledCommit });
-  if (pathname === "/api/at-commit") {
-    return json({ path: searchParams.get("path"), text: "settled text" });
-  }
-  if (pathname === "/api/doc") return json(docAnswer(searchParams.get("path") ?? ""));
-  return json({ error: "not_found", message: "no such route" }, 404);
-}
-
-function patchDoc(path: string, patch: Partial<TraceDoc>): void {
-  const found = trace.documents.find((doc) => doc.path === path);
-  if (!found) throw new Error(`the trace fixture holds no ${path}`);
-  Object.assign(found, patch);
-}
-
-beforeEach(() => {
-  calls = [];
-  settleAnswers = [];
-  settledCommit = COMMIT;
-  trace = traceViewSchema.parse(structuredClone(traceFixture));
-  // The control tests settle section 03 as a written draft; the fixture lists it unwritten.
-  patchDoc(S03, { progress: "written", settleable: true });
-  vi.stubGlobal("fetch", (input: RequestInfo | URL, init?: RequestInit) => {
-    const raw = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
-    const url = new URL(raw, "http://localhost");
-    const method = init?.method ?? "GET";
-    calls.push({ url, method });
-    return Promise.resolve(answer(url, method));
-  });
-});
+beforeEach(resetKit);
 
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
 });
 
-function mount(ui: ReactNode, route = "/") {
-  const store = createStore();
-  initClient(store);
-  store.set(serverInfoAtom, serverInfoSchema.parse({ ...serverInfoFixture, read_only: [] }));
-  store.set(authoringAtom, authoringViewSchema.parse({ ...authoringFixture, holder: null }));
-  // Chips read the trace the feature layout's spine loads; the other parts fetch it themselves.
-  store.set(traceAtom("demo"), { trace, error: null });
-  render(
-    <Provider store={store}>
-      <MemoryRouter initialEntries={[route]}>{ui}</MemoryRouter>
-    </Provider>,
-  );
-  return store;
-}
-
-const settlePosts = () =>
-  calls
-    .filter((call) => call.method === "POST" && call.url.pathname === "/api/settle")
-    .map((call) => call.url.searchParams);
-
 const buttons = () => screen.queryAllByRole("button").map((button) => button.textContent);
+const seeChanged = () => screen.queryByRole("link", { name: "See what changed" });
 
-async function control(path: string) {
+async function control(path: string, name: string | RegExp) {
   const store = mount(<SettleControl feature="demo" path={path} hash={HASH} />);
-  await screen.findByText(/^(Draft|Revised|Stub changed|Upstream changed|Settled)$/);
+  await screen.findByRole("button", { name });
   return store;
 }
 
 const STATES = [
-  ["draft", "Draft", ["Mark settled"], false],
-  ["revised", "Revised", ["Mark settled", "Unsettle"], true],
-  ["stub_changed", "Stub changed", ["Mark settled", "Unsettle"], false],
-  ["upstream_changed", "Upstream changed", ["Mark settled", "Unsettle"], false],
-  ["settled", "Settled", ["Unsettle"], false],
+  ["draft", "Mark settled", false],
+  ["revised", "Changed since you settled it", true],
+  ["stub_changed", "Changed since you settled it", true],
+  ["upstream_changed", "Upstream changed since you settled it", false],
+  ["settled", "Settled", false],
 ] as const;
 
-for (const [state, label, expected, link] of STATES) {
-  it(`a ${state} document shows ${label} and offers ${expected.join(" and ")}`, async () => {
+for (const [state, label, link] of STATES) {
+  it(`a ${state} section reads "${label}" and ${link ? "offers" : "has no"} See what changed`, async () => {
     patchDoc(S03, { settle: state });
-    await control(S03);
-    expect(screen.getByText(label)).toBeTruthy();
-    expect(buttons()).toEqual(expected);
-    expect(screen.queryByRole("link", { name: "Changes since settled" }) !== null).toBe(link);
+    await control(S03, label);
+    expect(buttons()).toEqual([label]);
+    expect(seeChanged() !== null).toBe(link);
+    expect(screen.queryByRole("link", { name: "Changes since settled" })).toBeNull();
   });
 }
+
+it("a plan whose spec moved says so and compares the revised section it covers", async () => {
+  patchDoc(FIRST_PLAN, { settle: "upstream_changed" });
+  patchDoc(S01, { settle: "revised" });
+  await control(FIRST_PLAN, "Spec changed since you settled this plan");
+  fireEvent.click(seeChanged()!);
+  await screen.findByTestId("diff");
+  const settled = kit.calls.find((call) => call.url.pathname === "/api/settled-version");
+  expect(settled?.url.searchParams.get("path")).toBe("product/demo/section_01.md");
+});
 
 it("done work shows no settle state and no controls, even when it moved", async () => {
   const locked = "doc/plans/demo/DONE-PLAN-first.md";
   patchDoc(FIRST_PLAN, { path: locked, settle: "revised", settleable: false });
   mount(<SettleControl feature="demo" path={locked} hash={HASH} />);
   await waitFor(() =>
-    expect(calls.some((call) => call.url.pathname === "/api/trace/demo")).toBe(true),
+    expect(kit.calls.some((call) => call.url.pathname === "/api/trace/demo")).toBe(true),
   );
-  expect(screen.queryByText(/^(Draft|Revised|Settled)$/)).toBeNull();
+  expect(screen.queryByText(/^(Draft|Changed since you settled it|Settled)$/)).toBeNull();
   expect(buttons()).toEqual([]);
-  expect(screen.queryByRole("link", { name: "Changes since settled" })).toBeNull();
+  expect(seeChanged()).toBeNull();
 });
 
-it("Unsettle posts clear=1 with the document and its hash", async () => {
+it("a settled document's button opens a menu holding Unsettle, which posts clear=1", async () => {
   patchDoc(S03, { settle: "settled" });
-  await control(S03);
-  fireEvent.click(screen.getByRole("button", { name: "Unsettle" }));
+  await control(S03, "Settled");
+  const trigger = screen.getByRole("button", { name: "Settled" });
+  expect(trigger.getAttribute("aria-expanded")).toBe("false");
+  fireEvent.click(trigger);
+  const menu = await screen.findByRole("dialog", { name: "Settled" });
+  expect(within(menu).queryByRole("button", { name: "Settle this version" })).toBeNull();
+  fireEvent.click(within(menu).getByRole("button", { name: "Unsettle" }));
   await waitFor(() => expect(settlePosts()).toHaveLength(1));
   const [params] = settlePosts();
   expect(params!.get("clear")).toBe("1");
   expect(params!.get("path")).toBe("product/demo/section_03.md");
   expect(params!.get("hash")).toBe(HASH);
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
 });
 
-it("the unresolved dialog counts both kinds, and cancelling resends nothing", async () => {
-  settleAnswers = [
+it("a changed document's menu settles this version or unsettles it", async () => {
+  patchDoc(S03, { settle: "revised" });
+  await control(S03, "Changed since you settled it");
+  fireEvent.click(screen.getByRole("button", { name: "Changed since you settled it" }));
+  const menu = await screen.findByRole("dialog");
+  expect(
+    within(menu)
+      .getAllByRole("button")
+      .map((button) => button.textContent),
+  ).toEqual(["Settle this version", "Unsettle"]);
+  fireEvent.click(within(menu).getByRole("button", { name: "Settle this version" }));
+  await waitFor(() => expect(settlePosts()).toHaveLength(1));
+  expect(settlePosts()[0]!.get("clear")).toBeNull();
+});
+
+it("Escape closes the menu and returns focus to the button", async () => {
+  patchDoc(S03, { settle: "settled" });
+  await control(S03, "Settled");
+  const trigger = screen.getByRole("button", { name: "Settled" });
+  fireEvent.click(trigger);
+  const menu = await screen.findByRole("dialog");
+  fireEvent.keyDown(menu, { key: "Escape" });
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  await waitFor(() => expect(document.activeElement).toBe(trigger));
+});
+
+it("a narrow screen opens the menu as a bottom sheet", async () => {
+  const narrow = (query: string) =>
+    Object.assign(new EventTarget(), { media: query, matches: query.includes("max-width") });
+  vi.stubGlobal("matchMedia", narrow);
+  patchDoc(S03, { settle: "settled" });
+  await control(S03, "Settled");
+  fireEvent.click(screen.getByRole("button", { name: "Settled" }));
+  const sheet = await screen.findByRole("dialog");
+  expect(sheet.hasAttribute("data-sheet")).toBe(true);
+  expect(within(sheet).getByRole("button", { name: "Unsettle" })).toBeTruthy();
+});
+
+it("the confirmation counts both kinds and quotes each with where it is", async () => {
+  kit.docs["product/demo/section_03.md"] = {
+    text: [
+      "# Gamma",
+      "",
+      "## Coverage",
+      "Every heading is covered or a gap. (My call.)",
+      "",
+      "## Open questions",
+      "",
+      "- Should a dismissed finding come back?",
+    ].join("\n"),
+    sections: [
+      { level: 2, title: "Coverage", anchor: "coverage", start_line: 3, end_line: 5 },
+      { level: 2, title: "Open questions", anchor: "open-questions", start_line: 6, end_line: 8 },
+    ],
+  };
+  kit.settleAnswers = [
+    {
+      status: 409,
+      body: { error: "unresolved", message: "unresolved points", my_calls: 1, open_questions: 1 },
+    },
+  ];
+  await control(S03, "Mark settled");
+  fireEvent.click(screen.getByRole("button", { name: "Mark settled" }));
+  const dialog = await screen.findByRole("dialog", { name: "Settle with open items?" });
+  expect(dialog.textContent).toContain("1 My call and 1 open question");
+  await waitFor(() => expect(dialog.textContent).toContain("Every heading is covered or a gap."));
+  expect(dialog.textContent).not.toContain("(My call");
+  expect(within(dialog).getByRole("link", { name: "Coverage" }).getAttribute("href")).toBe(
+    "/f/demo/source/product/demo/section_03.md#coverage",
+  );
+  expect(dialog.textContent).toContain("Should a dismissed finding come back?");
+  expect(dialog.textContent).toContain("Open question 1");
+});
+
+it("the confirmation shows the counts alone while the text is not loaded", async () => {
+  kit.settleAnswers = [
     {
       status: 409,
       body: { error: "unresolved", message: "unresolved points", my_calls: 2, open_questions: 1 },
     },
   ];
-  await control(S03);
+  await control(S03, "Mark settled");
   fireEvent.click(screen.getByRole("button", { name: "Mark settled" }));
   const dialog = await screen.findByRole("dialog");
   expect(dialog.textContent).toContain("2 My calls and 1 open question");
-  fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+  expect(within(dialog).queryByRole("list")).toBeNull();
+  fireEvent.click(within(dialog).getByRole("button", { name: "Not yet" }));
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   expect(settlePosts()).toHaveLength(1);
 });
 
 it("a conflict reloads the document and the trace and asks to settle again", async () => {
-  settleAnswers = [
+  kit.settleAnswers = [
     { status: 409, body: { result: "conflict", current_text: "x", current_hash: "sha256:newer" } },
   ];
-  const store = await control(S03);
+  const store = await control(S03, "Mark settled");
   fireEvent.click(screen.getByRole("button", { name: "Mark settled" }));
   await screen.findByText(/changed while you were reading it/);
   expect(store.get(docChangedAtom)).toEqual({ [S03]: "sha256:newer" });
   // The trace was fetched on mount and again after the answer.
   await waitFor(() =>
-    expect(calls.filter((call) => call.url.pathname === "/api/trace/demo")).toHaveLength(2),
+    expect(kit.calls.filter((call) => call.url.pathname === "/api/trace/demo")).toHaveLength(2),
   );
 });
 
 it("a settled line that was never committed says so and opens no comparison", async () => {
-  settledCommit = null;
+  kit.settledCommit = null;
   patchDoc(S02, { settle: "revised" });
-  await control(S02);
-  fireEvent.click(screen.getByRole("link", { name: "Changes since settled" }));
+  await control(S02, "Changed since you settled it");
+  fireEvent.click(screen.getByRole("link", { name: "See what changed" }));
   await screen.findByText("The settled version is not committed");
   expect(screen.queryByRole("dialog")).toBeNull();
 });
 
-it("changes since settled compares the settled commit with the file now", async () => {
+it("See what changed compares the settled commit with the file now", async () => {
   patchDoc(S02, { settle: "revised" });
-  await control(S02);
-  fireEvent.click(screen.getByRole("link", { name: "Changes since settled" }));
+  await control(S02, "Changed since you settled it");
+  fireEvent.click(screen.getByRole("link", { name: "See what changed" }));
   const diff = await screen.findByTestId("diff");
   expect(diff.textContent).toBe(`settled text => ${CURRENT_TEXT}`);
-  const atCommit = calls.find((call) => call.url.pathname === "/api/at-commit");
-  expect(atCommit?.url.searchParams.get("commit")).toBe(COMMIT);
+  const atCommit = kit.calls.find((call) => call.url.pathname === "/api/at-commit");
+  expect(atCommit?.url.searchParams.get("commit")).toBe(kit.settledCommit);
 });
 
-function sentenceOf(path: string, anchor: string) {
-  const at = { path, anchor };
-  return sentenceSchema.parse({
-    id: "s1",
-    text: "A sentence.",
-    marks: [],
-    citations: [{ kind: "source", ...at }],
-    rests_on: [at],
-    plans: [],
-  });
-}
-
-it("a product sentence shows the plans and entries covering its headings and open findings", async () => {
-  mount(<EdgeChips sentence={sentenceOf(S01, "two")} summary="demo/product/section_01" />);
-  const group = await screen.findByRole("group", { name: "Related documents" });
-  const links = within(group).getAllByRole("link");
-  expect(links.map((link) => link.textContent)).toEqual(["first · build", "1 open finding"]);
-  expect(links[0]!.getAttribute("href")).toBe(
-    "/f/demo/source/plans/demo/PLAN-first.md#stage%3Abuild",
-  );
-  expect(links[1]!.getAttribute("href")).toBe("/f/demo/findings");
-});
-
-it("a plan sentence shows the spec headings the cited stage implements, with their state", async () => {
-  mount(
-    <EdgeChips sentence={sentenceOf(FIRST_PLAN, "stage:build")} summary="plans/first" />,
-    "/f/demo/engineering/first",
-  );
-  const group = await screen.findByRole("group", { name: "Related documents" });
-  const [chip] = within(group).getAllByRole("link");
-  expect(chip!.textContent).toBe("Two Settled");
-  expect(chip!.getAttribute("href")).toBe("/f/demo/source/product/demo/section_01.md#two");
-});
-
-it("a sentence with nothing around it draws no chips", () => {
-  mount(<EdgeChips sentence={sentenceOf(S03, "none")} summary="demo/product/section_03" />);
-  expect(screen.queryByRole("group", { name: "Related documents" })).toBeNull();
-});
-
-it("impact rows list the plan covering a changed section with its state", async () => {
-  patchDoc(FIRST_PLAN, { settle: "upstream_changed" });
-  mount(<ImpactRows path={S01} />);
-  const list = await screen.findByRole("list", { name: "Affected documents" });
-  expect(list.textContent).toMatch(/First.*Upstream changed/);
-});
-
-it("impact rows list a done plan covering a changed section without a settle state", async () => {
-  patchDoc(FIRST_PLAN, { settle: "upstream_changed", settleable: false });
-  mount(<ImpactRows path={S01} />);
-  const list = await screen.findByRole("list", { name: "Affected documents" });
-  expect(list.textContent).toBe("First");
-  expect(list.querySelector("[data-settle]")).toBeNull();
-});
-
-it("impact rows leave out a related document that moved but is done work", async () => {
-  patchDoc(S01, { settle: "revised", settleable: false });
-  mount(<ImpactRows path={FIRST_PLAN} />);
-  await waitFor(() =>
-    expect(calls.some((call) => call.url.pathname === "/api/trace/demo")).toBe(true),
-  );
-  expect(screen.queryByRole("list", { name: "Affected documents" })).toBeNull();
-});
-
-it("impact rows list a section that moved when its plan changed", async () => {
-  patchDoc(S01, { settle: "revised" });
-  mount(<ImpactRows path={FIRST_PLAN} />);
-  const list = await screen.findByRole("list", { name: "Affected documents" });
-  expect(list.textContent).toMatch(/Revised/);
-});
-
-it("impact rows draw nothing for a document outside every feature", async () => {
-  mount(<ImpactRows path="doc/loom/knowledge/notes.md" />);
-  expect(screen.queryByRole("list")).toBeNull();
-});
-
-it("a plan page lists its briefs in their own card, each linked to its source", async () => {
-  mount(
-    <>
-      <StubPanel feature="demo" path={FIRST_PLAN} />
-      <BriefsCard feature="demo" path={FIRST_PLAN} />
-    </>,
-  );
-  const card = await screen.findByRole("region", { name: "Briefs" });
-  const list = within(card).getByRole("list", { name: "Briefs" });
-  const link = within(list).getByRole("link", { name: "build/r1.md" });
-  expect(link.getAttribute("href")).toBe("/f/demo/source/plans/demo/briefs/first/build/r1.md");
-  // The stub card holds the stub alone.
-  const stub = document.querySelector(".trace-stub")!;
-  expect(stub.contains(card)).toBe(false);
-  expect(within(stub as HTMLElement).queryByRole("list")).toBeNull();
-});
-
-it("a plan stub shows its metaplan entry's heading and first paragraph as text", async () => {
-  mount(<StubPanel feature="demo" path={FIRST_PLAN} />);
-  const link = await screen.findByRole("link", { name: "Stub in the metaplan" });
-  expect(link.getAttribute("href")).toBe("/f/demo/source/plans/demo/index.md#1-first-plan-firstmd");
-  await screen.findByText("Build the first plan from one idea.");
-  expect(screen.getByText("1. First (`PLAN-first.md`)")).toBeTruthy();
-});
-
-it("a section stub shows its vision row, and a changed stub says so", async () => {
+it("a changed stub compares the vision file, against the section's settled commit", async () => {
   patchDoc(S02, { settle: "stub_changed" });
-  mount(<StubPanel feature="demo" path={S02} />);
-  await screen.findByText("What beta promises");
-  expect(screen.getByText("Beta")).toBeTruthy();
-  expect(screen.getByRole("note").textContent).toBe("Stub changed since settled");
-  expect(screen.getByRole("link", { name: "Stub in the vision" }).getAttribute("href")).toContain(
-    "/f/demo/source/product/demo/index.md",
-  );
-});
-
-it("a done plan's changed stub asks nothing: the stub shows, the note does not", async () => {
-  patchDoc(FIRST_PLAN, { settle: "stub_changed", settleable: false });
-  mount(<StubPanel feature="demo" path={FIRST_PLAN} />);
-  await screen.findByRole("link", { name: "Stub in the metaplan" });
-  expect(screen.queryByRole("note")).toBeNull();
-});
-
-it("the vision and the metaplan show no stub", async () => {
-  mount(
-    <>
-      <StubPanel feature="demo" path={VISION} />
-      <StubPanel feature="demo" path={METAPLAN} />
-    </>,
-  );
-  await waitFor(() =>
-    expect(calls.some((call) => call.url.pathname === "/api/trace/demo")).toBe(true),
-  );
-  expect(screen.queryByRole("link")).toBeNull();
+  await control(S02, "Changed since you settled it");
+  fireEvent.click(screen.getByRole("link", { name: "See what changed" }));
+  const diff = await screen.findByTestId("diff");
+  expect(diff.textContent).toBe(`settled text => ${VISION_TEXT}`);
+  const settled = kit.calls.find((call) => call.url.pathname === "/api/settled-version");
+  expect(settled?.url.searchParams.get("path")).toBe("product/demo/section_02.md");
 });

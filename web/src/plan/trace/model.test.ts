@@ -8,16 +8,7 @@ import {
   type TraceView,
 } from "@/plan/api/schema-trace";
 
-import {
-  bundleLinks,
-  chipsFor,
-  docOfPath,
-  frontierLinks,
-  impactFor,
-  settleLabel,
-  shownSettle,
-  type EdgeChip,
-} from "./model";
+import { bundleLinks, docOfPath, frontierHead, impactFor, shortSlug, shownSettle } from "./model";
 
 const VISION = "doc/product/demo/index.md";
 const S01 = "doc/product/demo/section_01.md";
@@ -44,26 +35,12 @@ function gap(
   return { kind, node: { path, anchor }, count };
 }
 
-function sentence(restsOn: [string, string][], citations: [string, string][] = []) {
-  return {
-    rests_on: restsOn.map(([path, anchor]) => ({ path, anchor })),
-    citations: citations.map(([path, anchor]) => ({ kind: "source" as const, path, anchor })),
-  };
-}
-
-function labels(chips: EdgeChip[]): string[] {
-  return chips.map((chip) => `${chip.kind}:${chip.label}`);
-}
-
-describe("settleLabel", () => {
-  it.each([
-    ["draft", "Draft"],
-    ["revised", "Revised"],
-    ["stub_changed", "Stub changed"],
-    ["upstream_changed", "Upstream changed"],
-    ["settled", "Settled"],
-  ] as const)("reads %s as %s", (state, word) => {
-    expect(settleLabel(state)).toBe(word);
+describe("shortSlug", () => {
+  it("strips the feature prefix and leaves any other slug whole", () => {
+    expect(shortSlug("feat-planner", "feat-planner-05-trace")).toBe("05-trace");
+    expect(shortSlug("feat-planner", "other-05-trace")).toBe("other-05-trace");
+    expect(shortSlug("feat-planner", "feat-planner")).toBe("feat-planner");
+    expect(shortSlug("feat-planner", "feat-planner-")).toBe("feat-planner-");
   });
 });
 
@@ -84,176 +61,115 @@ describe("shownSettle", () => {
     expect(shownSettle(docOfPath(trace, S02))).toBeNull();
     expect(shownSettle(undefined)).toBeNull();
   });
-
-  it("gives a plan page's spec chip no state when its section is done work", () => {
-    const trace = fixture();
-    docOfPath(trace, S01)!.settleable = false;
-    const chips = chipsFor(trace, sentence([[FIRST, ""]], [[FIRST, "stage:build"]]), "plan");
-    expect(chips.length).toBeGreaterThan(0);
-    expect(chips.every((chip) => chip.state === null)).toBe(true);
-  });
 });
 
-describe("frontierLinks", () => {
-  function linkOf(gapOf: Gap) {
+describe("frontierHead", () => {
+  function headOf(gapOf: Gap, edit: (trace: TraceView) => void = () => {}) {
     const trace = fixture();
     trace.frontier = [gapOf];
-    return frontierLinks(trace, "demo")[0]!;
+    edit(trace);
+    return frontierHead(trace, "demo");
   }
 
   it.each([
-    [gap("revised", S02), "Beta changed since you settled it", "/f/demo/product/section_02"],
+    [
+      gap("revised", S02),
+      "Beta changed since you settled it.",
+      "Review Beta",
+      "/f/demo/product/section_02",
+    ],
     [
       gap("stub_changed", FIRST),
-      "First's stub changed since you settled it",
+      "First's stub changed since you settled it.",
+      "Review First",
       "/f/demo/engineering/first",
     ],
     [
       gap("upstream_changed", FIRST),
-      "The spec under First changed since you settled it",
+      "The spec under first changed since you settled it.",
+      "Review first",
       "/f/demo/engineering/first",
     ],
-    [gap("settle", S01), "Read Alpha and settle it", "/f/demo/product/section_01"],
-    [gap("settle", VISION), "Read Demo and settle it", "/f/demo/vision"],
-    [gap("settle", METAPLAN), "Read Engineering and settle it", "/f/demo/metaplan"],
-    [
-      gap("revisit", FIRST, null, 1),
-      "Revisit First before running it",
-      "/f/demo/engineering/first",
-    ],
+    [gap("settle", S01), "Read Alpha and settle it.", "Read Alpha", "/f/demo/product/section_01"],
+    [gap("settle", VISION), "Read Demo and settle it.", "Read Demo", "/f/demo/vision"],
     [
       gap("revisit", METAPLAN, "2-second-plan-secondmd", 1),
-      "Revisit 2. Second (`PLAN-second.md`) before writing its plan",
+      "Revisit 2. Second (`PLAN-second.md`) before writing its plan.",
+      "Open the metaplan",
       "/f/demo/metaplan#2-second-plan-secondmd",
     ],
     [
-      gap("uncovered", S01, "two"),
-      "Two is not covered by any plan",
-      "/f/demo/source/product/demo/section_01.md#two",
+      gap("revisit", FIRST, null, 1),
+      "Revisit First before running it.",
+      "Open first",
+      "/f/demo/engineering/first",
     ],
-    [gap("triage", "doc/plans/demo/findings.md", null, 1), "1 open finding", "/f/demo/findings"],
-    [gap("triage", "doc/plans/demo/findings.md", null, 3), "3 open findings", "/f/demo/findings"],
-  ])("words %j", (gapOf, text, to) => {
-    expect(linkOf(gapOf)).toEqual({ text, to });
+    [
+      gap("uncovered", S01, "two"),
+      "Two is not covered by any plan.",
+      "Open coverage",
+      "/f/demo/coverage#section_01%3Atwo",
+    ],
+    [
+      gap("triage", "doc/plans/demo/findings.md", null, 1),
+      "One finding from the last run is waiting for you.",
+      "Triage findings",
+      "/f/demo/findings",
+    ],
+    [
+      gap("triage", "doc/plans/demo/findings.md", null, null),
+      "Findings from the last run are waiting for you.",
+      "Triage findings",
+      "/f/demo/findings",
+    ],
+    [
+      gap("triage", "doc/plans/demo/findings.md", null, 3),
+      "Three findings from the last run are waiting for you.",
+      "Triage findings",
+      "/f/demo/findings",
+    ],
+    [
+      gap("triage", "doc/plans/demo/findings.md", null, 21),
+      "21 findings from the last run are waiting for you.",
+      "Triage findings",
+      "/f/demo/findings",
+    ],
+  ])("words %j", (gapOf, sentence, label, to) => {
+    expect(headOf(gapOf)).toEqual({ sentence, detail: null, label, to });
   });
 
   it("names a written plan reached through its metaplan entry", () => {
-    const link = linkOf(gap("revisit", METAPLAN, "1-first-plan-firstmd", 1));
-    expect(link).toEqual({
-      text: "Revisit First before running it",
+    expect(headOf(gap("revisit", METAPLAN, "1-first-plan-firstmd", 1))).toMatchObject({
+      sentence: "Revisit First before running it.",
       to: "/f/demo/engineering/first",
     });
   });
 
   it("falls back to the file name for a document the trace does not hold", () => {
-    expect(linkOf(gap("revised", "doc/product/demo/section_09.md")).text).toBe(
-      "section_09.md changed since you settled it",
+    expect(headOf(gap("revised", "doc/product/demo/section_09.md"))?.sentence).toBe(
+      "section_09.md changed since you settled it.",
     );
   });
 
-  it("keeps the server's order and stops at five", () => {
-    const trace = fixture();
-    trace.frontier = [S01, S02, S03, FIRST, VISION, METAPLAN, "doc/plans/demo/PLAN-second.md"].map(
-      (path) => gap("settle", path),
-    );
-    const links = frontierLinks(trace, "demo");
-    expect(links).toHaveLength(5);
-    expect(links.map((link) => link.text)).toEqual([
-      "Read Alpha and settle it",
-      "Read Beta and settle it",
-      "Read Gamma and settle it",
-      "Read First and settle it",
-      "Read Demo and settle it",
-    ]);
+  it("says which settled plan a revised section flags, by its short slug", () => {
+    // Plan first covers section 01's headings; the fixture's plan slug is `first`.
+    const head = headOf(gap("revised", S01), (trace) => {
+      docOfPath(trace, FIRST)!.settle = "upstream_changed";
+      docOfPath(trace, FIRST)!.settleable = true;
+      docOfPath(trace, FIRST)!.slug = "demo-05-trace";
+    });
+    expect(head?.detail).toBe("Plan 05-trace implements it, so it is flagged too.");
   });
 
-  it("is empty when the frontier is", () => {
+  it("adds no detail when no settled plan is flagged", () => {
+    expect(headOf(gap("revised", S01))?.detail).toBeNull();
+  });
+
+  it("reads only the first gap, and nothing when the frontier is empty", () => {
     const trace = fixture();
+    expect(frontierHead(trace, "demo")?.sentence).toBe("Beta changed since you settled it.");
     trace.frontier = [];
-    expect(frontierLinks(trace, "demo")).toEqual([]);
-  });
-});
-
-describe("chipsFor on a product page", () => {
-  it("looks up the covers of the heading a sentence rests on", () => {
-    const chips = chipsFor(fixture(), sentence([[S01, "one"]]), "product");
-    expect(labels(chips)).toEqual(["entry:1. First (`PLAN-first.md`)", "plan:first"]);
-    expect(chips[1]).toMatchObject({ path: FIRST, state: null, count: null });
-  });
-
-  it("reads an empty anchor as the whole section, with its stages and open findings", () => {
-    const chips = chipsFor(fixture(), sentence([[S01, ""]]), "product");
-    expect(labels(chips)).toEqual([
-      "entry:1. First (`PLAN-first.md`)",
-      "plan:first",
-      "stage:first · build",
-      "findings:1 open finding",
-    ]);
-    expect(chips.at(-1)).toMatchObject({ path: null, count: 1 });
-  });
-
-  it("counts only open findings", () => {
-    const chips = chipsFor(fixture(), sentence([[S02, ""]]), "product");
-    expect(labels(chips)).toEqual(["entry:2. Second (`PLAN-second.md`)"]);
-  });
-
-  it("lists a cover once when several headings share it", () => {
-    const chips = chipsFor(
-      fixture(),
-      sentence([
-        [S02, "three"],
-        [S02, "four"],
-      ]),
-      "product",
-    );
-    expect(chips).toHaveLength(1);
-  });
-
-  it("is empty for a heading nothing covers or the trace does not hold", () => {
-    expect(
-      chipsFor(
-        fixture(),
-        sentence([
-          [S03, ""],
-          [S01, "missing"],
-        ]),
-        "product",
-      ),
-    ).toEqual([]);
-  });
-});
-
-describe("chipsFor on a plan page", () => {
-  it("reads the stage from a Source citation's stage anchor", () => {
-    const chips = chipsFor(fixture(), sentence([], [[FIRST, "stage:build"]]), "plan");
-    expect(chips).toEqual([
-      {
-        key: `spec:${S01}#two`,
-        kind: "spec",
-        label: "Two",
-        path: S01,
-        anchor: "two",
-        state: "settled",
-        count: null,
-      },
-    ]);
-  });
-
-  it("falls back to everything the plan implements when no stage is cited", () => {
-    const chips = chipsFor(fixture(), sentence([[FIRST, "intro"]]), "plan");
-    expect(labels(chips)).toEqual(["spec:One", "spec:Two"]);
-  });
-
-  it("carries the section's current settle state", () => {
-    const trace = fixture();
-    setSettle(trace, S01, "revised");
-    const chips = chipsFor(trace, sentence([], [[FIRST, ""]]), "plan");
-    expect(chips.map((chip) => chip.state)).toEqual(["revised", "revised"]);
-  });
-
-  it("is empty for a stage that implements nothing, and for a citation of no plan", () => {
-    expect(chipsFor(fixture(), sentence([], [[FIRST, "stage:other"]]), "plan")).toEqual([]);
-    expect(chipsFor(fixture(), sentence([], [[S01, "one"]]), "plan")).toEqual([]);
+    expect(frontierHead(trace, "demo")).toBeNull();
   });
 });
 

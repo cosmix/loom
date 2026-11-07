@@ -17,7 +17,7 @@ import {
   type SpineGroup,
 } from "@/plan/feature/spine-model";
 import { useFeature } from "@/plan/feature/use-feature";
-import { FrontierHints } from "@/plan/trace/frontier-hints";
+import { SpineHead } from "@/plan/trace/spine-head";
 import { useTrace } from "@/plan/trace/state";
 
 import "./spine.css";
@@ -101,12 +101,12 @@ function MenuButton({
 }
 
 /**
- * The feature's documents in workflow order, with the frontier hints at its head: the only place the
- * screen draws a feature's progress. Below 760px the list sits behind a "Documents" control that
+ * The feature's documents in workflow order, with the trace's top attention item at its head: the
+ * only place the screen draws a feature's progress. Below 760px the list sits behind a "Documents" control that
  * names the current row; the list stays in the document either way (CSS hides it), so it never
  * scrolls sideways.
  *
- * `sample` draws the spine for a Help scene: it makes no trace request and shows no frontier hints.
+ * `sample` draws the spine for a Help scene: it makes no trace request and shows no head.
  */
 export function Spine({ sample = false }: { sample?: boolean }) {
   const { checklist } = useFeature();
@@ -141,7 +141,7 @@ export function Spine({ sample = false }: { sample?: boolean }) {
         onClick={() => setMenuOpen(!menuOpen)}
       />
       <div id={bodyId} className="plan-spine__body">
-        {!sample && <FrontierHints feature={checklist.feature} />}
+        {!sample && <SpineHead feature={checklist.feature} />}
         <ol className="plan-spine__groups">
           {groups.map((group) => (
             <GroupRow

@@ -4,6 +4,7 @@ import { Link, useLocation, useNavigate } from "react-router";
 
 import { Kbd } from "@/components/ui/kbd";
 import { isTyping } from "@/lib/is-typing";
+import { OPEN_DIALOG } from "@/lib/open-dialog";
 import {
   featureOfKey,
   isOverviewKey,
@@ -22,7 +23,6 @@ import { Untrusted, visibleControls } from "@/plan/chat/visible-controls";
 import { PageHead } from "@/plan/feature/plan-page";
 import { activeFeatureAtom, canAuthorAtom, featuresAtom } from "@/plan/state/atoms";
 import { PendingApprovalNotice } from "@/plan/summaries/approval-notice";
-import { OPEN_DIALOG } from "@/plan/trace/coverage-keys";
 import { LoadState } from "@/plan/ui/load-state";
 import type { Store } from "@/state/store";
 
@@ -88,13 +88,14 @@ function useOverviewEyebrow(pageKey: string, pathname: string): string | null {
   return `${feature} · ${label.toLowerCase()}`;
 }
 
-/** `g p` and `g e` go to the overviews; ignored while typing. */
+/** `g p` and `g e` go to the overviews; ignored while typing or while a dialog is open. */
 function useGoKeys(feature: string | null): void {
   const navigate = useNavigate();
   const pressedAt = useRef<number | null>(null);
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.altKey || event.ctrlKey || event.metaKey || isTyping(event.target)) return;
+      if (document.querySelector(OPEN_DIALOG)) return;
       const armed =
         pressedAt.current !== null && event.timeStamp - pressedAt.current < GO_KEY_WINDOW_MS;
       const target = GO_TARGETS[event.key];

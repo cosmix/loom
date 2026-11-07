@@ -57,6 +57,8 @@ function renderSpine(path: string, checklist: ChecklistView = atlas()) {
 
 const spine = () => screen.getByRole("navigation", { name: "Feature documents" });
 const link = (name: string | RegExp) => within(spine()).getByRole("link", { name });
+/** A plan's row: the spine shows the short slug and keeps the full one in the row's `title`. */
+const planRow = (slug: string) => within(spine()).getByTitle(slug);
 const current = () => within(spine()).getAllByRole("link", { current: "page" });
 
 describe("rows", () => {
@@ -106,14 +108,16 @@ describe("rows", () => {
     }
   });
 
-  it("names a feature's plans by slug and states each plan's state", () => {
+  it("names a feature's plans by short slug and states each plan's state", () => {
     renderSpine("/f/atlas/engineering");
 
-    const first = link(/atlas-01/);
+    const first = planRow("atlas-01");
     expect(first.getAttribute("href")).toBe("/f/atlas/engineering/atlas-01");
-    expect(first.textContent).toContain("done");
-    expect(link(/atlas-02/).getAttribute("href")).toBe("/f/atlas/engineering/atlas-02");
-    expect(link(/atlas-02/).textContent).toContain("running");
+    expect(first.querySelector(".plan-spine__name")?.textContent).toBe("01");
+    expect(link(/^01 Done\b/)).toBe(first);
+    const second = planRow("atlas-02");
+    expect(second.getAttribute("href")).toBe("/f/atlas/engineering/atlas-02");
+    expect(link(/^02 Running\b/)).toBe(second);
   });
 
   it("links written sections and lists a missing one as dim text with no link", () => {
@@ -165,7 +169,7 @@ describe("groups", () => {
   it("expands the route's group and collapses the rest", () => {
     renderSpine("/f/atlas/product");
 
-    expect(within(spine()).queryByRole("link", { name: /atlas-01/ })).toBeNull();
+    expect(within(spine()).queryByTitle("atlas-01")).toBeNull();
     expect(within(spine()).getByRole("link", { name: "Overview" })).toBeTruthy();
     expect(within(spine()).queryByRole("button", { name: "Collapse Product spec" })).toBeNull();
   });
@@ -173,13 +177,13 @@ describe("groups", () => {
   it("expands another group on request and remembers it for this feature", () => {
     const first = renderSpine("/f/atlas/product");
     fireEvent.click(within(spine()).getByRole("button", { name: "Expand Plans" }));
-    expect(link(/atlas-01/)).toBeTruthy();
+    expect(planRow("atlas-01")).toBeTruthy();
     first.unmount();
 
     renderSpine("/f/atlas/product");
-    expect(link(/atlas-01/)).toBeTruthy();
+    expect(planRow("atlas-01")).toBeTruthy();
     fireEvent.click(within(spine()).getByRole("button", { name: "Collapse Plans" }));
-    expect(within(spine()).queryByRole("link", { name: /atlas-01/ })).toBeNull();
+    expect(within(spine()).queryByTitle("atlas-01")).toBeNull();
   });
 });
 
@@ -244,11 +248,7 @@ describe("a document's source", () => {
       "01 The Run loop",
       "/f/atlas/product/section_01",
     ],
-    [
-      "/f/atlas/source/plans/atlas/PLAN-atlas-02.md",
-      "atlas-02 running",
-      "/f/atlas/engineering/atlas-02",
-    ],
+    ["/f/atlas/source/plans/atlas/PLAN-atlas-02.md", "02 Running", "/f/atlas/engineering/atlas-02"],
   ])("marks the row of the document shown at %s as the one current link", (path, name, href) => {
     renderSpine(path);
     const [only, ...rest] = current();

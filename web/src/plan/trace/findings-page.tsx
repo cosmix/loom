@@ -8,14 +8,14 @@ import { PlanPage } from "@/plan/feature/plan-page";
 import { useFeature } from "@/plan/feature/use-feature";
 import { OfferButton } from "@/plan/offers/offer-button";
 import { LoadState } from "@/plan/ui/load-state";
-import { plural } from "@/plan/ui/plural";
 
 import { Group } from "./findings-cards";
-import { followUpsOffer, groupFindings, openCount } from "./findings-model";
+import { followUpsOffer, groupFindings, tally } from "./findings-model";
 import { useLedgerHash } from "./ledger-hash";
 import { useTrace } from "./state";
 import { TraceGate } from "./trace-gate";
 
+import "./maps.css";
 import "./maps-findings.css";
 import "./trace.css";
 
@@ -46,7 +46,7 @@ function FindingsBody({ trace, feature }: { trace: TraceView; feature: string })
   );
   if (groups.length === 0) {
     return (
-      <p className="plan-empty">
+      <p className="plan-empty maps-findings">
         No findings yet. A run review adds its open findings here, and a review of the feature adds
         the ones you record.
       </p>
@@ -68,6 +68,9 @@ function FindingsBody({ trace, feature }: { trace: TraceView; feature: string })
   );
 }
 
+const STANDFIRST =
+  "What reviews found about this feature, and what became of each finding: planned, folded into an entry or dismissed.";
+
 /** `/f/:feature/findings`: the ledger, its run groups and the actions on each open finding. */
 export function FindingsPage() {
   const { checklist } = useFeature();
@@ -75,15 +78,13 @@ export function FindingsPage() {
   if (!checklist) return <LoadState state="loading" title="Loading the feature" />;
   const review = offerOfKind(checklist, "review_feature");
   const reviewLook = checklist.primary?.kind === "review_feature" ? "primary" : "secondary";
-  const lede =
-    trace === null
-      ? undefined
-      : `${openCount(trace)} open of ${plural(trace.findings.length, "finding")}.`;
+  const counts = trace === null ? "" : tally(trace.findings);
   return (
-    <PlanPage feature={checklist.feature} label="findings" title="Findings" lede={lede}>
-      {review && (
+    <PlanPage feature={checklist.feature} label="findings" title="Findings" lede={STANDFIRST}>
+      {(counts !== "" || review) && (
         <div className="maps-findings-head">
-          <OfferButton offer={review} look={reviewLook} />
+          {counts !== "" && <p className="maps-findings-tally">{counts}</p>}
+          {review && <OfferButton offer={review} look={reviewLook} />}
         </div>
       )}
       <TraceGate noun="the findings">

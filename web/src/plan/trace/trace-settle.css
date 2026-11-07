@@ -1,0 +1,221 @@
+/*
+ * What the settle control opens (`settle-surface.tsx`, `settle-menu.tsx`, `settle-confirm.tsx`):
+ * a popover under the settle button holding the menu or the confirmation, or the same content in a
+ * bottom sheet below 760px. Imported by trace-heading.css; tokens and scales only.
+ */
+/* A popover under the settle button (`settle-surface.tsx`): the menu narrow and tight, the
+   confirmation wider with room around it. Both carry the `[data-loom-plan]` root themselves. */
+.trace-surface[data-loom-plan]:not([data-sheet]) {
+  font-family: var(--font-sans);
+}
+
+.trace-surface[data-loom-plan]:not([data-sheet]):has(> .trace-menu) {
+  width: min(20rem, calc(100vw - 2rem));
+  gap: 0;
+  padding: var(--space-2);
+}
+
+.trace-surface[data-loom-plan]:not([data-sheet]):has(> .trace-confirm) {
+  gap: var(--space-3);
+  padding: var(--space-5);
+}
+
+/* Below 760px the same content rises from the foot as a sheet, scrolling inside itself. */
+.trace-sheet[data-sheet] {
+  display: grid;
+  gap: var(--space-3);
+  max-height: 85dvh;
+  overflow-y: auto;
+  padding: var(--space-5) var(--page-gutter) calc(var(--space-5) + env(safe-area-inset-bottom, 0px));
+  border: 1px solid var(--hairline);
+  border-bottom: 0;
+  border-radius: 16px 16px 0 0;
+  background: var(--popover);
+  color: var(--popover-foreground);
+  box-shadow: var(--dialog-shadow);
+  font-family: var(--font-sans);
+}
+
+.trace-sheet[data-sheet]:has(> .trace-menu) {
+  padding-top: var(--space-3);
+  padding-inline: var(--space-2);
+}
+
+[data-loom-plan] .trace-surface__title {
+  margin: 0;
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  font-size: 22px;
+  font-weight: 600;
+  line-height: 1.25;
+  letter-spacing: -0.02em;
+  text-wrap: balance;
+}
+
+/* A menu item: the verb over its note, the whole item the button's hit area and hover wash, and
+   the focus ring drawn round the item (the button draws none of its own). */
+[data-loom-plan] .trace-menu {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+[data-loom-plan] .trace-menu__item {
+  position: relative;
+  display: grid;
+  gap: 2px;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--corner-control);
+  transition: background-color 120ms;
+}
+
+[data-loom-plan] .trace-menu__item:hover {
+  background: var(--muted);
+}
+
+[data-loom-plan] .trace-menu__item:has(> .plan-button:focus-visible) {
+  outline: 2px solid var(--ring);
+  outline-offset: 0;
+}
+
+[data-loom-plan] .trace-menu__item > .plan-button {
+  position: static;
+  justify-content: flex-start;
+  height: auto;
+  padding: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--foreground);
+  font-size: var(--type-body);
+}
+
+[data-loom-plan] .trace-menu__item > .plan-button::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+}
+
+[data-loom-plan] .trace-menu__note {
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: var(--type-ui);
+  line-height: var(--leading-ui);
+}
+
+/* The confirmation: the counts, a muted lede, each open point as its glyph in a --muted disc
+   beside a quote in the reading face and where it is, then Settle anyway and Not yet. */
+[data-loom-plan] .trace-confirm {
+  display: grid;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+[data-loom-plan] :is(.trace-confirm__counts, .trace-confirm__lede, .trace-confirm__more) {
+  margin: 0;
+}
+
+[data-loom-plan] .trace-confirm__counts {
+  color: var(--foreground);
+  font-size: var(--type-title);
+  font-weight: 500;
+  line-height: var(--leading-ui);
+}
+
+[data-loom-plan] .trace-confirm__lede {
+  color: var(--muted-foreground);
+  font-size: var(--type-body);
+  line-height: var(--leading-body);
+}
+
+[data-loom-plan] .trace-confirm__points {
+  display: grid;
+  gap: var(--space-4);
+  margin: var(--space-1) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+[data-loom-plan] .trace-confirm__point {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  column-gap: var(--space-3);
+  row-gap: 2px;
+  min-width: 0;
+}
+
+[data-loom-plan] .trace-confirm__icon {
+  display: inline-flex;
+  grid-row: span 2;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--muted);
+  color: var(--muted-foreground);
+}
+
+[data-loom-plan] .trace-confirm__point[data-kind="question"] .trace-confirm__icon {
+  color: var(--tone-warning);
+}
+
+[data-loom-plan] .trace-confirm__icon > svg {
+  width: 13px;
+  height: 13px;
+}
+
+[data-loom-plan] .trace-confirm__quote {
+  color: var(--foreground);
+  font-family: var(--font-reading);
+  font-size: calc(var(--reading-size) * 0.9);
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+[data-loom-plan] :is(.trace-confirm__where, .trace-confirm__more) {
+  color: var(--muted-foreground);
+  font-size: var(--type-ui);
+  line-height: var(--leading-ui);
+}
+
+[data-loom-plan] .trace-confirm__where a {
+  border-radius: 3px;
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+[data-loom-plan] .trace-confirm__where a:hover {
+  color: var(--foreground);
+}
+
+[data-loom-plan] .trace-confirm__more {
+  padding-inline-start: calc(24px + var(--space-3));
+}
+
+[data-loom-plan] .trace-confirm__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+[data-loom-plan] .trace-confirm__actions > .plan-button {
+  height: 32px;
+  padding: 0 var(--space-4);
+  font-size: var(--type-body);
+}
+
+.trace-sheet[data-sheet] .trace-confirm__actions > .plan-button {
+  flex: 1 1 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-loom-plan] .trace-menu__item {
+    transition: none;
+  }
+}

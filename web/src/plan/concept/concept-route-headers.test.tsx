@@ -86,7 +86,9 @@ describe("summary page header", () => {
     const crumbs = within(header).getByRole("navigation", { name: "Breadcrumb" });
     expect(within(crumbs).getAllByRole("listitem")[0]?.textContent).toBe("demo");
     expect(within(crumbs).getByRole("link", { name: "demo" }).getAttribute("href")).toBe("/f/demo");
-    expect((title.previousElementSibling as HTMLElement).style.color).toBe("var(--doc-2)");
+    // A section's head leads with its number, not a document mark.
+    expect(title.previousElementSibling).toBeNull();
+    expect(title.querySelector(".doc-heading-number")?.textContent).toBe("01");
     expect(within(header).getByText("Out of date: the source changed")).toBeTruthy();
     const link = within(header).getByRole("link", { name: "Source" });
     expect(link.getAttribute("href")).toBe("/f/demo/source/product/demo/section_01.md");

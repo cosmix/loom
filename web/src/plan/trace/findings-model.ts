@@ -1,10 +1,11 @@
 import type { OfferView } from "@/plan/api/schema";
-import type {
-  FindingStatus,
-  NodeRef,
-  TraceEntry,
-  TraceFinding,
-  TraceView,
+import {
+  FINDING_KINDS,
+  type FindingStatus,
+  type NodeRef,
+  type TraceEntry,
+  type TraceFinding,
+  type TraceView,
 } from "@/plan/api/schema-trace";
 import { fileName } from "@/plan/concept/passages";
 import { PLAN_FOLLOW_UPS_ID } from "@/plan/new/follow-up-features";
@@ -30,7 +31,7 @@ export function openFindings(trace: TraceView): TraceFinding[] {
   return trace.findings.filter(({ finding }) => finding.status.kind === "open");
 }
 
-/** The number the spine's Findings row and the page header show. */
+/** The number the Run panel's Findings link shows. */
 export function openCount(trace: TraceView): number {
   return openFindings(trace).length;
 }
@@ -45,11 +46,37 @@ export function runOf(source: string | null): string | null {
 }
 
 /**
- * Findings grouped by run review, the run whose newest finding sits latest in the (append-only)
- * ledger first, then the Reviews group. Findings keep their file order inside a group.
+ * What a run review's stem reads as on the page: `REVIEW-PLAN-feat-x-03-summaries` in feature
+ * `feat-x` gives `03-summaries`; a plan's lifecycle prefix (`DONE-`) comes off with `PLAN-`.
+ */
+export function shortRun(run: string, feature: string): string {
+  const stem = run.replace(/^REVIEW-/, "").replace(/^(?:(?:IN_PROGRESS|DONE|RETIRED)-)?PLAN-/, "");
+  return stem.startsWith(`${feature}-`) ? stem.slice(feature.length + 1) : stem;
+}
+
+/** A group's heading: `Run of 03-summaries`, or `Reviews`. */
+export function groupTitle(group: FindingGroup, feature: string): string {
+  return group.run === null ? REVIEWS_LABEL : `Run of ${shortRun(group.run, feature)}`;
+}
+
+/** The header's tally: `3 open · 2 planned · 1 folded · 1 dismissed`, leaving out zero counts. */
+export function tally(findings: TraceFinding[]): string {
+  return FINDING_KINDS.map((kind) => ({
+    kind,
+    count: findings.filter(({ finding }) => finding.status.kind === kind).length,
+  }))
+    .filter(({ count }) => count > 0)
+    .map(({ kind, count }) => `${count} ${kind}`)
+    .join(" · ");
+}
+
+/**
+ * Findings grouped by run review, newest run first, then the Reviews group. A run is newer when
+ * its first finding sits later in the ledger, which an import appends to; the `Source:` line has
+ * no date. Findings keep their file order inside a group.
  */
 export function groupFindings(findings: TraceFinding[]): FindingGroup[] {
-  const runs = new Map<string, { last: number; findings: TraceFinding[] }>();
+  const runs = new Map<string, { first: number; findings: TraceFinding[] }>();
   const reviews: TraceFinding[] = [];
   findings.forEach((entry, index) => {
     const run = runOf(entry.finding.source);
@@ -57,13 +84,12 @@ export function groupFindings(findings: TraceFinding[]): FindingGroup[] {
       reviews.push(entry);
       return;
     }
-    const group = runs.get(run) ?? { last: index, findings: [] };
-    group.last = index;
+    const group = runs.get(run) ?? { first: index, findings: [] };
     group.findings.push(entry);
     runs.set(run, group);
   });
   const groups: FindingGroup[] = [...runs]
-    .sort(([, a], [, b]) => b.last - a.last)
+    .sort(([, a], [, b]) => b.first - a.first)
     .map(([run, group]) => ({ label: run, run, findings: group.findings }));
   if (reviews.length > 0) groups.push({ label: REVIEWS_LABEL, run: null, findings: reviews });
   return groups;
@@ -78,6 +104,37 @@ export function foldableEntries(trace: TraceView): TraceEntry[] {
     if (entry.plan === null) return true;
     return !STARTED_PLAN.test(fileName(entry.plan));
   });
+}
+
+export interface FoldChoices {
+  /** The entries a finding may be folded into, the suggested one first. */
+  entries: TraceEntry[];
+  /** The entry covering most of what the finding is about; null when none covers any of it. */
+  suggested: TraceEntry | null;
+  /** The entries not offered because their plan is running, done or retired. */
+  leftOut: TraceEntry[];
+}
+
+/** An entry covers a node when it names the node's file whole or the node's own heading. */
+function covers(entry: TraceEntry, node: NodeRef): boolean {
+  return entry.covers.some(
+    (cover) => cover.path === node.path && (cover.anchor === null || cover.anchor === node.anchor),
+  );
+}
+
+/** The picker's entries for a finding about `about`: the best match first, then file order. */
+export function foldChoices(trace: TraceView, about: NodeRef[]): FoldChoices {
+  const open = foldableEntries(trace);
+  const score = (entry: TraceEntry) => about.filter((node) => covers(entry, node)).length;
+  const best = open.reduce<TraceEntry | null>(
+    (top, entry) => (score(entry) > (top === null ? 0 : score(top)) ? entry : top),
+    null,
+  );
+  return {
+    entries: best === null ? open : [best, ...open.filter((entry) => entry !== best)],
+    suggested: best,
+    leftOut: trace.entries.filter((entry) => !open.includes(entry)),
+  };
 }
 
 /** The words a status reads as on a finding card. */
