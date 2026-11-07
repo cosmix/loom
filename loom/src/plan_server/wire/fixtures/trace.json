@@ -6,6 +6,7 @@
       "title": "Demo",
       "progress": "written",
       "settle": "draft",
+      "settleable": true,
       "stub": null,
       "number": null,
       "slug": null,
@@ -24,6 +25,7 @@
       "title": "Alpha",
       "progress": "planned",
       "settle": "settled",
+      "settleable": true,
       "stub": {
         "path": "doc/product/demo/index.md",
         "anchor": "specification-sections"
@@ -45,6 +47,7 @@
       "title": "Beta",
       "progress": "planned",
       "settle": "revised",
+      "settleable": true,
       "stub": {
         "path": "doc/product/demo/index.md",
         "anchor": "specification-sections"
@@ -66,6 +69,7 @@
       "title": "Gamma",
       "progress": "stub",
       "settle": "draft",
+      "settleable": false,
       "stub": {
         "path": "doc/product/demo/index.md",
         "anchor": "specification-sections"
@@ -87,6 +91,7 @@
       "title": "Engineering",
       "progress": "written",
       "settle": "draft",
+      "settleable": true,
       "stub": null,
       "number": null,
       "slug": null,
@@ -105,6 +110,7 @@
       "title": "First",
       "progress": "written",
       "settle": "draft",
+      "settleable": true,
       "stub": {
         "path": "doc/plans/demo/index.md",
         "anchor": "1-first-plan-firstmd"
@@ -128,6 +134,7 @@
       "title": "2. Second (`PLAN-second.md`)",
       "progress": "stub",
       "settle": "draft",
+      "settleable": false,
       "stub": {
         "path": "doc/plans/demo/index.md",
         "anchor": "2-second-plan-secondmd"

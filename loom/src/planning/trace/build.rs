@@ -16,6 +16,7 @@ mod tests;
 use std::path::{Path, PathBuf};
 
 use super::Trace;
+use crate::planning::checklist::{Step, StepMark};
 use crate::planning::kinds::{plans_dir, section_path, DocKind};
 use crate::planning::metaplan::MetaplanEntry;
 use crate::planning::project::{Feature, Project};
@@ -101,6 +102,13 @@ impl<'a> Cx<'a> {
     fn unlocked(&self, rel: &Path) -> bool {
         let doc = self.project.docs.get(rel);
         doc.is_some_and(|doc| doc.lock.is_none())
+    }
+
+    /// Whether every plan the feature's metaplans name is done or retired: the checklist's Run
+    /// step reads done (`Facts::run_mark`), whatever earlier step still has a gap.
+    fn all_done(&self) -> bool {
+        let steps = &self.feature.checklist.steps;
+        steps.contains(&(Step::Run, StepMark::Done))
     }
 }
 

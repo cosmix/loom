@@ -58,6 +58,11 @@ pub struct TraceDoc {
     pub progress: Progress,
     /// Its own `Settled:` line compared with `current`.
     pub settle: SettleState,
+    /// Whether the reader is asked to settle it: a written, unlocked document, other than the
+    /// vision and metaplan of a feature whose plans are all done (its Run step reads done). Done work is final, so it
+    /// carries no settle state, gap or control; the product sections stay settleable because a
+    /// follow-up plan can still change what they promise.
+    pub settleable: bool,
     /// Where its stub lives: the vision's sections table, or its metaplan entry.
     pub stub: Option<NodeRef>,
     /// A section's number.

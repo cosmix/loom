@@ -58,6 +58,7 @@ impl From<&TraceDoc> for TraceDocView {
             title: doc.title.clone(),
             progress: doc.progress.into(),
             settle: doc.settle.into(),
+            settleable: doc.settleable,
             stub: doc.stub.as_ref().map(Into::into),
             number: doc.number,
             slug: doc.slug.clone(),
