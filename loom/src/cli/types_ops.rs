@@ -175,6 +175,17 @@ pub enum ContextCommands {
 
 #[derive(Subcommand)]
 pub enum HookCommands {
+    /// Summarize the guard blocks recorded by loom's hooks under
+    /// `$LOOM_WORK_DIR/heartbeat/<stage>.blocks.jsonl`.
+    Blocks {
+        /// Only count blocks recorded in the last N hours
+        #[arg(long, default_value_t = 168)]
+        since_hours: u64,
+        /// Group the blocks by guard and rule instead of listing recent ones
+        #[arg(long)]
+        by_rule: bool,
+    },
+
     /// UserPromptSubmit entry point: emit a retrieval brief, or nothing
     UserPrompt,
 
