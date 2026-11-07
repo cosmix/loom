@@ -46,6 +46,22 @@ fn embedded_font_is_served_without_a_cookie() {
 }
 
 #[test]
+fn plan_favicon_is_served_as_svg() {
+    if skip("plan_favicon_is_served_as_svg") {
+        return;
+    }
+    let project = project();
+    let server = start(options(&project)).expect("start the planning server");
+
+    let response = get(&server, "/favicon-plan.svg", "");
+
+    assert_eq!(status(&response), 200);
+    assert!(response.contains("\r\nContent-Type: image/svg+xml\r\n"));
+    assert!(body(&response).contains("<svg"));
+    server.stop().expect("stop");
+}
+
+#[test]
 fn missing_font_returns_plain_not_found() {
     if skip("missing_font_returns_plain_not_found") {
         return;
