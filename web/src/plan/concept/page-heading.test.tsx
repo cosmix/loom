@@ -149,7 +149,16 @@ it.each([
   },
 );
 
-it("leaves the pressure record off a feature plan's chip rows: its card draws it", () => {
+it("leaves the pressure record off the chip row: a plan's card under the heading draws it", () => {
+  show({ last_pressure: "2026-10-20" });
+  expect(screen.queryByText("Pressure-tested 2026-10-20")).toBeNull();
+  cleanup();
+
+  show({ key: "demo/engineering/a", plan_state: "written", last_pressure: null });
+  expect(screen.queryByText(/pressure-tested/i)).toBeNull();
+});
+
+it("draws a feature plan's pressure date once, in its card", () => {
   show({
     key: "demo/engineering/a",
     feature: "demo",
@@ -159,10 +168,6 @@ it("leaves the pressure record off a feature plan's chip rows: its card draws it
   });
   const dates = screen.getAllByText(/pressure-tested 2026-10-20/i);
   expect(dates.map((node) => node.className)).toEqual(["trace-pressure__when"]);
-  cleanup();
-
-  show({ key: "demo/engineering/a", plan_state: "written", last_pressure: null });
-  expect(screen.queryByText(/pressure-tested/i)).toBeNull();
 });
 
 it("keeps a standalone plan's pressure date on its facts line", () => {
