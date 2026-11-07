@@ -11,14 +11,14 @@ use tempfile::TempDir;
 const TESTS_FILE: &str = "src/calc_tests.rs";
 const STAGE: &str = "s1";
 
-struct Repo {
-    tmp: TempDir,
-    root: PathBuf,
+pub(super) struct Repo {
+    pub(super) tmp: TempDir,
+    pub(super) root: PathBuf,
 }
 
 impl Repo {
     /// `files` committed on `main`, then branch `feature` checked out.
-    fn new(files: &[(&str, &str)]) -> Self {
+    pub(super) fn new(files: &[(&str, &str)]) -> Self {
         let tmp = TempDir::new().unwrap();
         let root = tmp.path().join("repo");
         std::fs::create_dir_all(&root).unwrap();
@@ -33,11 +33,11 @@ impl Repo {
         repo
     }
 
-    fn git(&self, args: &[&str]) -> String {
+    pub(super) fn git(&self, args: &[&str]) -> String {
         run_git_checked(args, &self.root).unwrap()
     }
 
-    fn commit(&self, message: &str) {
+    pub(super) fn commit(&self, message: &str) {
         self.git(&[
             "-c",
             "user.name=t",
@@ -52,22 +52,22 @@ impl Repo {
         ]);
     }
 
-    fn write(&self, path: &str, content: &str) {
+    pub(super) fn write(&self, path: &str, content: &str) {
         let file = self.root.join(path);
         std::fs::create_dir_all(file.parent().unwrap()).unwrap();
         std::fs::write(file, content).unwrap();
     }
 
-    fn events(&self, ratchet_files: &[String]) -> Vec<IntegrityEvent> {
+    pub(super) fn events(&self, ratchet_files: &[String]) -> Vec<IntegrityEvent> {
         current_events(&self.root, "main", ratchet_files).unwrap()
     }
 }
 
-fn ids(events: &[IntegrityEvent]) -> Vec<&str> {
+pub(super) fn ids(events: &[IntegrityEvent]) -> Vec<&str> {
     events.iter().map(|event| event.id.as_str()).collect()
 }
 
-fn sha256_hex(content: &str) -> String {
+pub(super) fn sha256_hex(content: &str) -> String {
     hex::encode(Sha256::digest(content.as_bytes()))
 }
 
@@ -148,7 +148,8 @@ fn moved_assertion_is_not_an_integrity_event() {
     repo.write(TESTS_FILE, moved);
     repo.commit("move an assertion");
 
-    // The diff must remove the assertion line for the edit rule to see a move.
+    // The diff removes and re-adds the assertion line; the statement rule
+    // compares statements, so the move raises nothing.
     let diff = repo.git(&["diff", "main", "--", TESTS_FILE]);
     assert!(diff.contains("\n-    assert_eq!(x, 5);"), "{diff}");
     assert!(diff.contains("\n+    assert_eq!(x, 5);"), "{diff}");

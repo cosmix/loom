@@ -1,13 +1,18 @@
 //! Test integrity (DESIGN D13): what a stage's changes did to the tests it
 //! found at its base, the merge base the review gate uses (D12). `count`
 //! compares each language's declaration and assertion totals, `edits` finds
-//! assertion lines a base test file lost and ratchet files that changed, and
-//! `gate` refuses completion until `reviews/<stage>/integrity.json` accepts
-//! every event and none got worse.
+//! assertion statements a base test file lost (`statements`) less those that
+//! moved verbatim into another collected test file (`moves`), and ratchet
+//! files that loosen (`ratchet_diff`), and `gate` refuses completion until
+//! `reviews/<stage>/integrity.json` accepts every event and none got worse.
 
 mod count;
 mod edits;
 mod gate;
+mod moves;
+mod moves_collect;
+mod ratchet_diff;
+mod statements;
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
@@ -36,8 +41,12 @@ pub struct IntegrityEvent {
     /// Count events: the language's total now.
     pub current: Option<u64>,
     /// Edit and ratchet events: the file's sha256 hex now, `None` once deleted.
+    /// An edit event whose statements partly moved into other files pins the
+    /// sha256 of the file's and those files' hashes (`edits::pinned_sha256`).
     pub current_sha256: Option<String>,
-    /// Edit events: the lost assertion lines, trimmed.
+    /// Edit events: the lost assertion statements. A string literal inside one
+    /// can hold line breaks; a renderer that prints one entry per line applies
+    /// `single_line` to it.
     pub detail: Vec<String>,
 }
 
@@ -133,8 +142,14 @@ pub fn scan_changes(
 ) -> Result<Scan> {
     let base_files = count::base_test_files(repo, &changes.base)?;
     let mut events = count::total_events(repo, changes, &base_files)?;
-    events.extend(edits::assertion_edits(repo, changes, &base_files)?);
-    events.extend(edits::ratchet_events(changes, ratchet_files));
+    let mut deltas = edits::file_deltas(repo, changes, &base_files)?;
+    let read = |path: &str| {
+        let bytes = count::read_current(repo.work_tree(), path).ok()?;
+        Some(String::from_utf8_lossy(&bytes).into_owned())
+    };
+    let partners = moves::cancel_moves(&mut deltas, &read);
+    events.extend(edits::assertion_events(changes, &deltas, &partners));
+    events.extend(edits::ratchet_events(repo, changes, ratchet_files)?);
     let unprofiled = changes
         .files
         .keys()
@@ -187,3 +202,9 @@ fn looks_like_test(path: &str) -> bool {
 
 #[cfg(test)]
 mod tests;
+#[cfg(all(test, feature = "source-graph"))]
+mod tests_moves;
+#[cfg(test)]
+mod tests_ratchet;
+#[cfg(test)]
+mod tests_statements;
