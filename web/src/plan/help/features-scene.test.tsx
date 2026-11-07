@@ -82,14 +82,7 @@ it("anchors each kickoff note to the section its text names", () => {
     return container.querySelector(selector)?.querySelector(":scope > h3")?.textContent;
   });
 
-  expect(headings).toEqual([
-    "Size",
-    "Name",
-    "Problem",
-    "Settled decisions",
-    "Open questions",
-    "Sections",
-  ]);
+  expect(headings).toEqual(["Name", "Problem", "Settled decisions", "Open questions", "Sections"]);
 });
 
 it("draws the invitation beside the feature cards and pins it first", () => {
@@ -149,7 +142,6 @@ it("renders the kickoff summary with decisions, questions, and all section state
   });
   const shape = within(panel);
 
-  expect(shape.getByText("Feature")).toBeDefined();
   expect(shape.getByText("atlas")).toBeDefined();
   expect(shape.getByText("Keep the project map beside the documents it describes.")).toBeDefined();
   expect(shape.getByText("How should archived work appear in the map?")).toBeDefined();

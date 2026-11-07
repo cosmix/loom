@@ -46,7 +46,7 @@ pub(super) fn detail(req: &ApiRequest<'_>) -> ApiResponse {
         200,
         &KickoffDraftDetail {
             draft: view,
-            shape: draft.effective_shape(),
+            shape: draft.shape,
             messages: draft.messages,
         },
     )

@@ -1,66 +1,52 @@
-import { useAtomValue, useStore } from "jotai";
+import { useAtomValue } from "jotai";
 import { Feather } from "lucide-react";
-import { useRef, useState } from "react";
 
 import type { KickoffSize } from "@/plan/api/schema-kickoff";
-import { sendMessage } from "@/plan/chat/commands";
 import { sessionAtom } from "@/plan/chat/model";
 import { Untrusted } from "@/plan/chat/visible-controls";
-import { authorBlockReasonAtom, canAuthorAtom } from "@/plan/state/atoms";
+import { useProposalActions } from "@/plan/new/proposal";
+import { canAuthorAtom } from "@/plan/state/atoms";
 import { DisabledReason } from "@/plan/ui/disabled-reason";
 
-function useKickoffWrite(size: KickoffSize | null, target: string | null) {
-  const store = useStore();
+function useKickoffWrite(size: KickoffSize | null, name: string | null, target: string | null) {
   const canAuthor = useAtomValue(canAuthorAtom);
-  const authorReason = useAtomValue(authorBlockReasonAtom);
   const session = useAtomValue(sessionAtom);
-  const inFlight = useRef(false);
-  const [pending, setPending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const actions = useProposalActions();
   const label = size === "plan" ? "Write the plan" : "Write the vision";
+  const unnamed = target === null && (size === null || name === null);
   const reason = !canAuthor
     ? "Writing requires authoring"
-    : target === null
-      ? "Settle the size and name first"
+    : unnamed
+      ? "Settle the name in the conversation first"
       : session?.state !== "idle"
         ? "Wait for the current turn to finish"
-        : pending
+        : actions.reason !== null
           ? "Sending the write request"
           : null;
-  const write = async () => {
-    if (reason !== null || !store.get(canAuthorAtom) || inFlight.current) return;
-    inFlight.current = true;
-    setPending(true);
-    setError(null);
-    try {
-      await sendMessage(store, `${label}.`);
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
-    } finally {
-      inFlight.current = false;
-      setPending(false);
-    }
+  // The first click confirms the size and name, which arms the session's one write grant; once
+  // the grant names a target, a click asks the agent to write it. Chat agreement never arms it.
+  const write = () => {
+    if (reason !== null) return;
+    if (target === null && size !== null && name !== null) actions.confirm(size, name);
+    else actions.message(`${label}.`);
   };
-  return { label, reason, authorReason: canAuthor ? null : authorReason, error, write };
+  return { label, reason, authorReason: actions.blockReason, error: actions.status, write };
 }
 
-/** The write button; blocked until the conversation has settled a target. */
+/** The write button: it confirms the named work first, then asks for the document. */
 export function WriteKickoff({
   size,
+  name,
   target,
 }: {
   size: KickoffSize | null;
+  name: string | null;
   target: string | null;
 }) {
-  const { label, reason, authorReason, error, write } = useKickoffWrite(size, target);
+  const { label, reason, authorReason, error, write } = useKickoffWrite(size, name, target);
   return (
     <div className="grid gap-2">
-      {/* The proposal's "Use this" is the primary until a target is settled. */}
-      <DisabledReason
-        reason={reason}
-        look={target === null ? "secondary" : "primary"}
-        onClick={() => void write()}
-      >
+      <DisabledReason reason={reason} look="primary" onClick={write}>
         <Feather aria-hidden="true" />
         {label}
       </DisabledReason>

@@ -1,25 +1,23 @@
 import { atom, useAtomValue, useStore } from "jotai";
-import { Check, ListPlus, Pencil, Sparkles, Wrench } from "lucide-react";
+import { ListPlus, Sparkles } from "lucide-react";
 import { Fragment, useState } from "react";
 
 import type { KickoffShape, KickoffSize } from "@/plan/api/schema-kickoff";
-import { renameKickoff, sendChatCommand, sendMessage } from "@/plan/chat/commands";
+import { sendChatCommand, sendMessage } from "@/plan/chat/commands";
 import { Untrusted } from "@/plan/chat/visible-controls";
 import { plural } from "@/plan/ui/plural";
-import { RenameForm } from "@/plan/new/rename-field";
 import { authorBlockReasonAtom, canAuthorAtom } from "@/plan/state/atoms";
 import { DisabledReason } from "@/plan/ui/disabled-reason";
 
 import "./proposal.css";
 
-type ProposedTarget = { size: KickoffSize; name: string };
-type ProposalContentProps = ProposedTarget & { sections: string[] };
+type ProposalContentProps = { size: KickoffSize; name: string; sections: string[] };
 type ProposalActions = ReturnType<typeof useProposalActions>;
 
 /**
- * Whether a proposal command waits for its answer. It belongs to the store, not to the hook: the
- * size choice (ShapeSize) and the proposal both call the hook, and a click on either must hold the
- * other until the command answers, or two controls send the same message twice.
+ * Whether a proposal command waits for its answer. It belongs to the store, not to the hook:
+ * the proposal's Change sections and the Write button both call the hook, and a click on either
+ * must hold the other until the command answers, or two controls send twice.
  */
 const commandPendingAtom = atom(false);
 
@@ -55,13 +53,6 @@ export function useProposalActions() {
     confirm: (size: KickoffSize, name: string) => {
       void run(() => sendChatCommand(store, { command: "confirm_kickoff", size, name }));
     },
-    /** Renames the work in the running kickoff (`rename_kickoff`); refused once it is confirmed. */
-    rename: (name: string, onDone?: () => void) => {
-      void run(async () => {
-        await renameKickoff(store, name);
-        onDone?.();
-      });
-    },
     message: (text: string) => {
       void run(() => sendMessage(store, text));
     },
@@ -96,7 +87,6 @@ function ProposalSummary({ name, sections }: { name: string; sections: string[] 
 
 function ProposalContent({ size, name, sections }: ProposalContentProps) {
   const actions = useProposalActions();
-  const [renaming, setRenaming] = useState(false);
   return (
     // A div, not a section: the help scene counts the panel's `section` rows.
     <div role="region" aria-label="Proposal" className="kickoff-proposal font-sans">
@@ -105,25 +95,7 @@ function ProposalContent({ size, name, sections }: ProposalContentProps) {
         Proposed: a {size === "feature" ? "feature" : "standalone plan"}
       </p>
       <ProposalSummary name={name} sections={sections} />
-      {renaming ? (
-        <RenameForm
-          key={`${size}:${name}`}
-          className="kickoff-proposal__form"
-          actionsClass="kickoff-proposal__actions"
-          name={name}
-          reason={actions.reason}
-          onConfirm={(value) => actions.confirm(size, value)}
-          onCancel={() => setRenaming(false)}
-        />
-      ) : (
-        <ProposalAcceptance
-          size={size}
-          name={name}
-          actions={actions}
-          onRename={() => setRenaming(true)}
-        />
-      )}
-      <ProposalAlternatives size={size} actions={actions} />
+      {size === "feature" && <ChangeSections actions={actions} />}
       <ProposalFeedback actions={actions} />
     </div>
   );
@@ -146,53 +118,15 @@ function ProposalFeedback({ actions }: { actions: ProposalActions }) {
   );
 }
 
-function ProposalAcceptance({
-  size,
-  name,
-  actions,
-  onRename,
-}: ProposedTarget & { actions: ProposalActions; onRename: () => void }) {
+function ChangeSections({ actions }: { actions: ProposalActions }) {
   return (
     <div className="kickoff-proposal__actions">
       <DisabledReason
         reason={actions.reason}
-        look="primary"
-        onClick={() => actions.confirm(size, name)}
+        onClick={() => actions.message("I want to change the proposed sections.")}
       >
-        <Check aria-hidden="true" />
-        Use this
-      </DisabledReason>
-      <DisabledReason reason={actions.reason} onClick={onRename}>
-        <Pencil aria-hidden="true" />
-        Rename
-      </DisabledReason>
-    </div>
-  );
-}
-
-function ProposalAlternatives({ size, actions }: { size: KickoffSize; actions: ProposalActions }) {
-  const feature = size === "feature";
-  return (
-    <div className="kickoff-proposal__actions">
-      {feature && (
-        <DisabledReason
-          reason={actions.reason}
-          onClick={() => actions.message("I want to change the proposed sections.")}
-        >
-          <ListPlus aria-hidden="true" />
-          Change sections
-        </DisabledReason>
-      )}
-      <DisabledReason
-        reason={actions.reason}
-        onClick={() =>
-          actions.message(
-            feature ? "Make this a standalone plan instead." : "Make this a feature instead.",
-          )
-        }
-      >
-        <Wrench aria-hidden="true" />
-        {feature ? "Make standalone" : "Make a feature"}
+        <ListPlus aria-hidden="true" />
+        Change sections
       </DisabledReason>
     </div>
   );

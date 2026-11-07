@@ -1,8 +1,7 @@
 /*
  * Kind of work on the empty form (kind-control.tsx): three native radios in one 28px pill track,
  * the chosen segment filled in --muted and set in --foreground at 600, with the chosen kind's hint
- * on the same line (ui/DESIGN.md, New work). The size row of Taking shape keeps its own track in
- * taking-shape.css.
+ * on the same line (ui/DESIGN.md, New work).
  */
 
 [data-loom-plan] .kickoff-kind {

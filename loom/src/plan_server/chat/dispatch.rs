@@ -52,7 +52,6 @@ pub fn dispatch(ctx: &Arc<PlanContext>, conn: &ConnCtx, cmd: ChatCommand) {
         ChatCommand::Start { client_id, .. }
         | ChatCommand::Send { client_id, .. }
         | ChatCommand::ConfirmKickoff { client_id, .. }
-        | ChatCommand::RenameKickoff { client_id, .. }
         | ChatCommand::SetAsideKickoff { client_id, .. }
         | ChatCommand::ContinueKickoff { client_id, .. }
         | ChatCommand::DiscardKickoff { client_id, .. }
@@ -84,7 +83,6 @@ fn run(ctx: &Arc<PlanContext>, conn: &ConnCtx, cmd: ChatCommand) -> Outcome {
         ChatCommand::ConfirmKickoff { size, name, .. } => {
             kickoff_cmd::confirm(ctx, conn, size, &name)
         }
-        ChatCommand::RenameKickoff { name, .. } => draft_cmd::rename(ctx, conn, &name),
         ChatCommand::SetAsideKickoff { session, .. } => draft_cmd::set_aside(ctx, conn, &session),
         ChatCommand::ContinueKickoff { session, .. } => draft_cmd::resume(ctx, conn, &session),
         ChatCommand::DiscardKickoff { session, .. } => draft_cmd::discard(ctx, conn, &session),

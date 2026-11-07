@@ -1,4 +1,4 @@
-//! Kickoff drafts through the production lifecycle: start, shapes, sends, rename, end, restart,
+//! Kickoff drafts through the production lifecycle: start, shapes, sends, end, restart,
 //! landing and continuation. Every file read here was written by the server.
 
 use std::fs;
@@ -44,7 +44,6 @@ pub(super) fn write_draft(f: &Fixture, session: &str, patch: Value) -> PathBuf {
             "problem": "A problem", "decisions": ["Use one VM."],
             "questions": ["Which hosts?"], "sections": []},
         "attachments": [],
-        "name_override": null,
         "target": null,
         "live": false
     });
@@ -69,13 +68,6 @@ pub(super) fn start_cmd(
         plan: None,
         text: text.map(str::to_owned),
         attachments,
-    }
-}
-
-pub(super) fn rename_cmd(name: &str) -> ChatCommand {
-    ChatCommand::RenameKickoff {
-        client_id: Some("c1".into()),
-        name: name.into(),
     }
 }
 
@@ -141,7 +133,7 @@ fn a_started_kickoff_writes_its_draft() {
     let input = json!({"kind": "file", "id": ID, "name": "client-name.png"});
     assert_eq!(draft["attachments"], json!([input]));
     assert_eq!(draft["live"], true);
-    for absent in ["shape", "name_override", "target"] {
+    for absent in ["shape", "target"] {
         assert_eq!(draft[absent], Value::Null, "{absent}");
     }
     let sidecar = read_sidecar(&f.ctx.runtime().attachments, ID).unwrap();
@@ -164,11 +156,7 @@ fn a_started_kickoff_writes_its_draft() {
         json!([typed, "second thought"])
     );
 
-    assert_eq!(f.command(&tab, rename_cmd("renamed-work")), ok_result());
-    let draft = stored(&f, &id);
-    assert_eq!(draft["name_override"], "renamed-work");
-    assert_eq!(draft["shape"]["name"], "agent-name", "the shape stays raw");
-    assert_eq!(draft["messages"].as_array().unwrap().len(), 2);
+    assert_eq!(stored(&f, &id)["messages"].as_array().unwrap().len(), 2);
 
     end_now(&f, &s);
     wait_until("the ended draft", || stored(&f, &id)["live"] == false);
@@ -181,40 +169,14 @@ fn assert_read_back_after_restart(f: &Fixture, id: &str, typed: &str) {
     let fresh = ChatState::default();
     let listed = drafts::list(&f.ctx, &fresh);
     assert_eq!(listed.len(), 1);
-    assert_eq!(listed[0].name.as_deref(), Some("renamed-work"));
+    assert_eq!(listed[0].name.as_deref(), Some("agent-name"));
     assert_eq!(listed[0].size, Some(KickoffSize::Feature));
     assert_eq!(listed[0].problem.as_deref(), Some("P1"));
     assert!(!listed[0].live);
     let kept = drafts::get(&f.ctx, &fresh, id).unwrap();
     assert_eq!(kept.messages, vec![typed, "second thought"]);
-    let shape: KickoffShape = kept.effective_shape().unwrap();
-    assert_eq!(shape.name.as_deref(), Some("renamed-work"));
-}
-
-#[test]
-fn a_rename_wins_over_a_later_agent_block() {
-    let f = fixture(false);
-    let tab = f.connect(&browser());
-    let s = start_kickoff(&f, &tab, start_cmd("kickoff", None, Vec::new()));
-    working(&f, &s);
-    block(&f, &s, &tab, json!({"name": "agent-one", "problem": "A"}));
-    assert_eq!(f.command(&tab, rename_cmd("mine")), ok_result());
-
-    let later = json!({"name": "agent-two", "problem": "B"});
-    let frame = block(&f, &s, &tab, later);
-
-    assert_eq!(frame["shape"]["name"], "mine", "the broadcast view");
-    let draft = stored(&f, &s.id);
-    assert_eq!(draft["name_override"], "mine");
-    assert_eq!(
-        draft["shape"]["name"], "agent-two",
-        "raw blocks stay comparable"
-    );
-    let listed = drafts::list(&f.ctx, &ChatState::default());
-    assert_eq!(listed[0].name.as_deref(), Some("mine"));
-    let reopened = f.connect(&browser()).opened;
-    let kickoff = reopened.iter().find(|frame| frame["type"] == "kickoff");
-    assert_eq!(kickoff.unwrap()["shape"]["name"], "mine", "a new tab");
+    let shape: KickoffShape = kept.shape.unwrap();
+    assert_eq!(shape.name.as_deref(), Some("agent-name"));
 }
 
 #[test]
@@ -295,31 +257,30 @@ fn every_spelling_of_a_landed_plan_counts() {
     assert!(!draft_file(&f, "22222222-2222-4222-8222-222222222222").exists());
 }
 
-/// The rename's message pasted and its turn run to Idle, as a real session takes it. The fake
-/// host never submits a paste: one left waiting for its prompt holds the closing message of a
-/// later final write back until the delivery timeout, past the fixture's final-write bound.
-fn rename_turn(f: &Fixture, s: &LaunchSpec, name: &str) {
-    let named = format!("`{name}`");
-    let notice = wait_for("the rename paste", || {
+/// A message pasted and its turn run to Idle, as a real session takes it. The fake host never
+/// submits a paste: one left waiting for its prompt holds the closing message of a later final
+/// write back until the delivery timeout, past the fixture's final-write bound.
+fn user_turn(f: &Fixture, tab: &Tab, s: &LaunchSpec, text: &str) {
+    assert_eq!(f.command(tab, send(text, Vec::new())), ok_result());
+    let notice = wait_for("the message paste", || {
         let delivered = f.host.delivered_to(&s.socket).into_iter();
-        delivered.rev().find(|text| text.contains(&named))
+        delivered.rev().find(|pasted| pasted.contains(text))
     });
     f.spool(s, "UserPromptSubmit", json!({"prompt": notice}));
     f.wait_state(s, SessionState::Working);
     idle(f, s);
 }
 
-/// A small kickoff with a file attached, shaped, renamed and set aside; returns its session.
+/// A small kickoff with a file attached, shaped and set aside; returns its session.
 fn set_aside_small_kickoff(f: &Fixture, tab: &Tab) -> LaunchSpec {
     store_file(f);
     let cmd = start_cmd("kickoff-small", None, vec![file_input(ID)]);
     let s = start_kickoff(f, tab, cmd);
     working(f, &s);
-    let shape = json!({"size": "plan", "name": "agent-plan", "problem": "P", "decisions": ["D1"]});
+    let shape = json!({"size": "plan", "name": "my-plan", "problem": "P", "decisions": ["D1"]});
     block(f, &s, tab, shape);
     idle(f, &s);
-    assert_eq!(f.command(tab, rename_cmd("my-plan")), ok_result());
-    rename_turn(f, &s, "my-plan");
+    user_turn(f, tab, &s, "keep it small");
     assert_eq!(f.command(tab, set_aside_cmd(&s.id)), ok_result());
     f.finish_final_write(&s);
     wait_until("the ended session", || !f.ended(&s.id).is_empty());
@@ -358,9 +319,8 @@ fn a_continued_draft_carries_its_name_size_and_attachments() {
     assert!(first.contains("> D1"), "{first}");
     assert!(first.contains(ID), "the file attachment travels: {first}");
     let draft = stored(&f, &id);
-    assert_eq!(draft["name_override"], "my-plan");
     assert_eq!(draft["shape"]["size"], "plan");
-    assert_eq!(draft["shape"]["name"], "agent-plan");
+    assert_eq!(draft["shape"]["name"], "my-plan");
     assert_eq!(draft["attachments"][0]["id"], ID);
     assert_eq!(draft["live"], true);
     assert!(

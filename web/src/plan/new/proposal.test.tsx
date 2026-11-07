@@ -1,15 +1,11 @@
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { Provider, createStore } from "jotai";
-import type { ReactNode } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import hello from "@/plan/api/fixtures/hello.json";
-import { serverInfoSchema } from "@/plan/api/schema";
 import type { KickoffShape } from "@/plan/api/schema-kickoff";
 import type { connectPlanSocket } from "@/plan/api/socket";
-import { FEATURE_NAME_HINT } from "@/plan/new/feature-name";
 import { Proposal } from "@/plan/new/proposal";
-import { ShapeSize } from "@/plan/new/shape-size";
 import {
   authoringAtom,
   connectionAtom,
@@ -38,7 +34,7 @@ function proposalStore() {
   return store;
 }
 
-function mount(shape = featureShape, store = proposalStore(), beside: ReactNode = null) {
+function mount(shape = featureShape, store = proposalStore()) {
   const listeners = new Map<string, Set<(message: unknown) => void>>();
   const send = vi.fn((_message: unknown) => true);
   const socket = {
@@ -58,7 +54,6 @@ function mount(shape = featureShape, store = proposalStore(), beside: ReactNode 
   const view = render(
     <Provider store={store}>
       <Proposal shape={shape} />
-      {beside}
     </Provider>,
   );
   const result = async (error: string | null = null) => {
@@ -89,8 +84,9 @@ it.each([{ proposal: false }, { name: null }, { size: null }])(
   },
 );
 
-it("confirms the proposed feature and waits for the command result", async () => {
-  const { send, result } = mount();
+it("states the proposed feature and offers only Change sections", () => {
+  mount();
+
   const section = screen.getByRole("region", { name: "Proposal" });
   expect(section.textContent).toContain("Proposed: a feature");
   expect(section.textContent).toContain("Name planner-search.");
@@ -98,203 +94,67 @@ it("confirms the proposed feature and waits for the command result", async () =>
   expect(screen.getByText("planner-search").parentElement?.classList.contains("font-mono")).toBe(
     true,
   );
-
-  fireEvent.click(screen.getByRole("button", { name: "Use this" }));
-
-  expect(send).toHaveBeenCalledExactlyOnceWith({
-    type: "chat",
-    command: "confirm_kickoff",
-    size: "feature",
-    name: "planner-search",
-    client_id: clientId,
-  });
-  for (const button of screen.getAllByRole("button")) {
-    expect(button.getAttribute("aria-disabled")).toBe("true");
-    fireEvent.click(button);
-  }
-  expect(send).toHaveBeenCalledOnce();
-  await result();
-  expect(screen.getByRole("button", { name: "Use this" }).hasAttribute("aria-disabled")).toBe(
-    false,
-  );
-  expect(screen.queryByRole("status")).toBeNull();
-  expect(screen.getByRole("region", { name: "Proposal" })).toBeTruthy();
+  expect(screen.getAllByRole("button").map((button) => button.textContent)).toEqual([
+    "Change sections",
+  ]);
 });
 
-it.each(["Planner-search", "plans"])("refuses the invalid rename %j", (name) => {
-  const { send } = mount();
-  fireEvent.click(screen.getByRole("button", { name: "Rename" }));
-  const input = screen.getByRole("textbox", { name: "Name" }) as HTMLInputElement;
-  expect(input.value).toBe("planner-search");
-  expect(document.activeElement).toBe(input);
-
-  fireEvent.change(input, { target: { value: name } });
-  fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
-  fireEvent.submit(input.closest("form")!);
-
-  expect(screen.getByRole("alert").textContent).toBe(FEATURE_NAME_HINT);
-  expect(input.getAttribute("aria-invalid")).toBe("true");
-  expect(input.getAttribute("aria-describedby")).toBe(screen.getByRole("alert").id);
-  expect(screen.getByRole("button", { name: "Confirm" }).getAttribute("aria-disabled")).toBe(
-    "true",
-  );
-  expect(send).not.toHaveBeenCalled();
-});
-
-it("confirms a valid typed name after correcting an invalid one", async () => {
-  const { send, result } = mount();
-  fireEvent.click(screen.getByRole("button", { name: "Rename" }));
-  const input = screen.getByRole("textbox", { name: "Name" });
-  fireEvent.change(input, { target: { value: "plans" } });
-  fireEvent.change(input, { target: { value: "search-v2" } });
-  expect(screen.queryByRole("alert")).toBeNull();
-
-  fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
-
-  expect(send).toHaveBeenCalledExactlyOnceWith({
-    type: "chat",
-    command: "confirm_kickoff",
-    size: "feature",
-    name: "search-v2",
-    client_id: clientId,
-  });
-  expect((input as HTMLInputElement).disabled).toBe(true);
-  expect(screen.getByRole("button", { name: "Cancel" }).getAttribute("aria-disabled")).toBe("true");
-  await result();
-  expect((input as HTMLInputElement).disabled).toBe(false);
-});
-
-it("cancels a rename without sending and restores the proposed name on reopening", () => {
-  const { send } = mount();
-  fireEvent.click(screen.getByRole("button", { name: "Rename" }));
-  fireEvent.change(screen.getByRole("textbox", { name: "Name" }), { target: { value: "other" } });
-
-  fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
-
-  expect(screen.queryByRole("textbox")).toBeNull();
-  expect(send).not.toHaveBeenCalled();
-  fireEvent.click(screen.getByRole("button", { name: "Rename" }));
-  expect((screen.getByRole("textbox", { name: "Name" }) as HTMLInputElement).value).toBe(
-    "planner-search",
-  );
-});
-
-it("offers the standalone plan label and confirms its size", async () => {
-  const { send, result } = mount({ ...featureShape, size: "plan" });
+it("states the proposed standalone plan with no control at all", () => {
+  mount({ ...featureShape, size: "plan" });
 
   expect(screen.getByRole("region", { name: "Proposal" }).textContent).toContain(
     "Proposed: a standalone plan",
   );
-  expect(screen.queryByRole("button", { name: "Change sections" })).toBeNull();
-  expect(screen.queryByRole("button", { name: "Make standalone" })).toBeNull();
-  expect(screen.getByRole("button", { name: "Make a feature" })).toBeTruthy();
-  fireEvent.click(screen.getByRole("button", { name: "Use this" }));
-
-  expect(send).toHaveBeenCalledExactlyOnceWith({
-    type: "chat",
-    command: "confirm_kickoff",
-    size: "plan",
-    name: "planner-search",
-    client_id: clientId,
-  });
-  await result();
+  expect(screen.queryAllByRole("button")).toEqual([]);
 });
 
-it.each([
-  ["feature", "Change sections", "I want to change the proposed sections."],
-  ["feature", "Make standalone", "Make this a standalone plan instead."],
-  ["plan", "Make a feature", "Make this a feature instead."],
-] as const)("sends the %s proposal's %s message", async (size, label, text) => {
-  const { send, result } = mount({ ...featureShape, size });
-
-  fireEvent.click(screen.getByRole("button", { name: label }));
-
-  expect(send).toHaveBeenCalledExactlyOnceWith({
-    type: "chat",
-    command: "send",
-    text,
-    attachments: [],
-    client_id: clientId,
-  });
-  expect(screen.getByRole("button", { name: label }).getAttribute("aria-disabled")).toBe("true");
-  await result();
-  expect(screen.getByRole("button", { name: label }).hasAttribute("aria-disabled")).toBe(false);
-});
-
-it("one click on a shape choice sends one message", async () => {
-  // Taking shape draws the size choice and the proposal side by side; both ask for the same message.
-  // A second send gets its own client id, as in the app: one id would make the guard-less path fail
-  // inside registerPending and hide a doubled send.
-  vi.mocked(crypto.randomUUID)
-    .mockReturnValueOnce(clientId)
-    .mockReturnValueOnce("00000000-0000-4000-8000-000000000002");
-  const { send, result } = mount(
-    { ...featureShape, size: "plan" },
-    undefined,
-    <ShapeSize size="plan" />,
-  );
-
-  fireEvent.click(screen.getByRole("button", { name: "Feature" }));
-  expect(send).toHaveBeenCalledExactlyOnceWith({
-    type: "chat",
-    command: "send",
-    text: "Make this a feature instead.",
-    attachments: [],
-    client_id: clientId,
-  });
-  // The first command has not answered: the proposal's equivalent button must not send it again.
-  fireEvent.click(screen.getByRole("button", { name: "Make a feature" }));
-
-  expect(send).toHaveBeenCalledOnce();
-  expect(screen.getByRole("button", { name: "Make a feature" }).getAttribute("aria-disabled")).toBe(
-    "true",
-  );
-  await result();
-  expect(screen.getByRole("button", { name: "Make a feature" }).hasAttribute("aria-disabled")).toBe(
-    false,
-  );
-});
-
-it("keeps actions blocked when the shape changes before the command result", async () => {
-  const { store, send, result, rerender } = mount();
-  fireEvent.click(screen.getByRole("button", { name: "Make standalone" }));
-
-  rerender(
-    <Provider store={store}>
-      <Proposal shape={{ ...featureShape, size: "plan", name: "smaller-search" }} />
-    </Provider>,
-  );
-  fireEvent.click(screen.getByRole("button", { name: "Use this" }));
-
-  expect(screen.getByRole("button", { name: "Use this" }).getAttribute("aria-disabled")).toBe(
-    "true",
-  );
-  expect(send).toHaveBeenCalledOnce();
-  await result();
-  expect(screen.getByRole("button", { name: "Use this" }).hasAttribute("aria-disabled")).toBe(
-    false,
-  );
-});
-
-it.each(["Use this", "Change sections"])(
-  "shows a refusal from %s and allows retry",
-  async (label) => {
-    const { send, result } = mount();
-    fireEvent.click(screen.getByRole("button", { name: label }));
-
-    await result("<b>Name\u202e refused</b>");
-
-    const status = screen.getByRole("status");
-    expect(status.textContent).toBe("<b>Name⟨U+202E⟩ refused</b>");
-    expect(status.firstElementChild?.getAttribute("style")).toContain("unicode-bidi: isolate");
-    expect(status.querySelector("b")).toBeNull();
-    expect(screen.getByRole("button", { name: label }).hasAttribute("aria-disabled")).toBe(false);
-    fireEvent.click(screen.getByRole("button", { name: label }));
-    expect(send).toHaveBeenCalledTimes(2);
-    expect(screen.queryByRole("status")).toBeNull();
-    await result();
+it.each(["Use this", "Rename", "Make standalone", "Make a feature"])(
+  "draws no %s control for either size",
+  (label) => {
+    for (const size of ["feature", "plan"] as const) {
+      const { unmount } = mount({ ...featureShape, size });
+      expect(screen.queryByRole("button", { name: label })).toBeNull();
+      unmount();
+    }
   },
 );
+
+it("sends the Change sections message once and waits for the result", async () => {
+  const { send, result } = mount();
+  const button = () => screen.getByRole("button", { name: "Change sections" });
+
+  fireEvent.click(button());
+  fireEvent.click(button());
+
+  expect(send).toHaveBeenCalledExactlyOnceWith({
+    type: "chat",
+    command: "send",
+    text: "I want to change the proposed sections.",
+    attachments: [],
+    client_id: clientId,
+  });
+  expect(button().getAttribute("aria-disabled")).toBe("true");
+  await result();
+  expect(button().hasAttribute("aria-disabled")).toBe(false);
+});
+
+it("shows a refusal from Change sections and allows retry", async () => {
+  const { send, result } = mount();
+  fireEvent.click(screen.getByRole("button", { name: "Change sections" }));
+
+  await result("<b>Name\u202e refused</b>");
+
+  const status = screen.getByRole("status");
+  expect(status.textContent).toBe("<b>Name⟨U+202E⟩ refused</b>");
+  expect(status.firstElementChild?.getAttribute("style")).toContain("unicode-bidi: isolate");
+  expect(status.querySelector("b")).toBeNull();
+  const button = screen.getByRole("button", { name: "Change sections" });
+  expect(button.hasAttribute("aria-disabled")).toBe(false);
+  fireEvent.click(button);
+  expect(send).toHaveBeenCalledTimes(2);
+  expect(screen.queryByRole("status")).toBeNull();
+  await result();
+});
 
 it("lists the proposed sections after the name, each through Untrusted", () => {
   mount({
@@ -335,23 +195,5 @@ it("shows the authoring holder's reason safely and sends nothing in read-only mo
 
   const reason = screen.getByText("Dana⟨U+202E⟩ holds authoring");
   expect(reason.style.unicodeBidi).toBe("isolate");
-  expect(screen.queryByRole("textbox")).toBeNull();
-  expect(send).not.toHaveBeenCalled();
-});
-
-it("blocks confirmation if authoring is lost while renaming", () => {
-  const { store, send } = mount();
-  fireEvent.click(screen.getByRole("button", { name: "Rename" }));
-  const input = screen.getByRole("textbox", { name: "Name" }) as HTMLInputElement;
-  act(() => {
-    store.set(authoringAtom, { holder: null });
-    store.set(serverInfoAtom, serverInfoSchema.parse(hello.server));
-  });
-
-  fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
-  fireEvent.submit(input.closest("form")!);
-
-  expect(input.disabled).toBe(true);
-  expect(screen.getByText("Read-only")).toBeTruthy();
   expect(send).not.toHaveBeenCalled();
 });

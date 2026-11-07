@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import { Provider, type ExtractAtomValue } from "jotai";
 import { createMemoryRouter, RouterProvider } from "react-router";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -144,8 +144,8 @@ it("New work shows an empty form beside an open draft", () => {
   expect(resume.getAttribute("href")).toBe("/new?session=" + S);
 });
 
-it("the Name row renames the work", async () => {
-  const { socket } = mount({
+it("the Name row shows the name and offers no rename", () => {
+  mount({
     current: session,
     view: kickoff,
     drafts: [liveDraft],
@@ -154,19 +154,9 @@ it("the Name row renames the work", async () => {
   const panel = document.querySelector<HTMLElement>('[aria-label="Taking shape"]');
   expect(panel).not.toBeNull();
   const shape = within(panel as HTMLElement);
-  fireEvent.click(shape.getByRole("button", { name: "Rename" }));
-  const field = shape.getByRole("textbox");
-  fireEvent.change(field, { target: { value: "better-name" } });
-  // A browser submits the field's form on an Enter keydown that nothing prevented.
-  const unprevented = fireEvent.keyDown(field, { key: "Enter", code: "Enter" });
-  const form = (field as HTMLInputElement).form;
-  if (unprevented && form && socket.send.mock.calls.length === 0) {
-    fireEvent.submit(form);
-  }
-  expect(socket.send).toHaveBeenCalledExactlyOnceWith(
-    expect.objectContaining({ type: "chat", command: "rename_kickoff", name: "better-name" }),
-  );
-  await act(async () => socket.result());
+  expect(shape.getByText(kickoff.shape.name as string)).toBeTruthy();
+  expect(shape.queryByRole("button", { name: "Rename" })).toBeNull();
+  expect(shape.queryByRole("textbox")).toBeNull();
 });
 
 it("Add plan opens New work with Standalone plan chosen", () => {

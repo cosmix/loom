@@ -26,7 +26,6 @@ fn body(session: &str, patch: Value) -> Value {
         "updated_at": "2026-11-04T10:50:00Z",
         "messages": ["first idea"],
         "shape": null,
-        "name_override": null,
         "live": false
     });
     for (key, value) in patch.as_object().into_iter().flatten() {
@@ -117,10 +116,6 @@ fn untrusted_files(f: &Fixture) -> Vec<PathBuf> {
         draft(
             "88888888-8888-4888-8888-888888888888",
             json!({"target": "../escape"}),
-        ),
-        draft(
-            "99999999-9999-4999-8999-999999999999",
-            json!({"name_override": "Bad Name"}),
         ),
         draft(
             "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",

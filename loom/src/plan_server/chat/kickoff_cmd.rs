@@ -83,7 +83,7 @@ fn confirmation(size: KickoffSize, name: &str) -> String {
         KickoffSize::Plan => "standalone plan",
     };
     let mut text = format!(
-        "The user confirmed the {size} \"{name}\". You may now create {}",
+        "The user confirmed the {size} \"{name}\" and asked you to write it now. You may now create {}",
         target.document.display()
     );
     if let Some(bundle) = &target.bundle {

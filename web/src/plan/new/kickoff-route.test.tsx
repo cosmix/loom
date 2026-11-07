@@ -101,12 +101,69 @@ it("shows the real transcript, composer, Taking shape and an unconfirmed proposa
   expect(within(panel).getByText("Finding plans takes too long.")).toBeTruthy();
   expect(screen.getByRole("region", { name: "Proposal" })).toBeTruthy();
   expect(screen.getByText(/^Nothing is written yet\./).textContent).toContain(
-    "'Write the vision' creates the vision with the open questions in it.",
+    "'Write the vision' confirms the name and creates the vision with the open questions in it.",
   );
+  expect(
+    screen.getByRole("button", { name: "Write the vision" }).hasAttribute("aria-disabled"),
+  ).toBe(false);
+  expect(screen.queryByText("Waiting for you")).toBeNull();
+});
+
+it("offers no control to rename the work or change its size in Taking shape", () => {
+  mount({ current: session, view: kickoff, search: LIVE });
+  const panel = within(screen.getByRole("complementary", { name: "Taking shape" }));
+  expect(panel.queryByRole("heading", { name: "Size" })).toBeNull();
+  for (const name of ["Use this", "Rename", "Name it", "Make standalone", "Make a feature"]) {
+    expect(panel.queryByRole("button", { name })).toBeNull();
+  }
+  expect(panel.queryByRole("button", { name: "Feature" })).toBeNull();
+  expect(panel.queryByRole("button", { name: "Standalone plan" })).toBeNull();
+  expect(panel.queryByRole("textbox")).toBeNull();
+});
+
+it("confirms the named work with the Write button, once, and waits for the answer", async () => {
+  const { socket } = mount({ current: session, view: kickoff, search: LIVE });
+  const write = screen.getByRole("button", { name: "Write the vision" });
+
+  fireEvent.click(write);
+  fireEvent.click(write);
+
+  expect(socket.send).toHaveBeenCalledExactlyOnceWith(
+    expect.objectContaining({
+      type: "chat",
+      command: "confirm_kickoff",
+      size: "feature",
+      name: "planner-search",
+    }),
+  );
+  expect(write.getAttribute("aria-disabled")).toBe("true");
+  await act(async () => socket.result());
+  expect(write.hasAttribute("aria-disabled")).toBe(false);
+});
+
+it("holds Write while a Change sections request waits, so one click sends once", async () => {
+  const { socket } = mount({ current: session, view: kickoff, search: LIVE });
+
+  fireEvent.click(screen.getByRole("button", { name: "Change sections" }));
+  fireEvent.click(screen.getByRole("button", { name: "Write the vision" }));
+
+  expect(socket.send).toHaveBeenCalledExactlyOnceWith(
+    expect.objectContaining({ command: "send", text: "I want to change the proposed sections." }),
+  );
+  await act(async () => socket.result());
+});
+
+it("blocks Write until the conversation has named the work", () => {
+  const { socket } = mount({
+    current: session,
+    view: { ...kickoff, shape: { ...kickoff.shape, name: null, proposal: false } },
+    search: LIVE,
+  });
   const write = screen.getByRole("button", { name: "Write the vision" });
   expect(write.getAttribute("aria-disabled")).toBe("true");
-  expect(screen.getByText("Settle the size and name first")).toBeTruthy();
-  expect(screen.queryByText("Waiting for you")).toBeNull();
+  expect(screen.getByText("Settle the name in the conversation first")).toBeTruthy();
+  fireEvent.click(write);
+  expect(socket.send).not.toHaveBeenCalled();
 });
 
 it("draws the pane's one spinner for a starting session, in the transcript and not the head", () => {
@@ -130,22 +187,6 @@ it.each([
 ])("titles an unnamed kickoff started as %s by its kind", (offer, title) => {
   mount({ current: { ...session, offer }, search: LIVE });
   expect(within(conversation()).getByRole("heading", { level: 1 }).textContent).toBe(title);
-});
-
-it("asks the session to change the size from the segmented control", async () => {
-  const { socket } = mount({ current: session, view: kickoff, search: LIVE });
-  const feature = screen.getByRole("button", { name: "Feature" });
-  const plan = screen.getByRole("button", { name: "Standalone plan" });
-  expect(feature.getAttribute("aria-pressed")).toBe("true");
-  expect(plan.getAttribute("aria-pressed")).toBe("false");
-
-  fireEvent.click(feature);
-  expect(socket.send).not.toHaveBeenCalled();
-  fireEvent.click(plan);
-  expect(socket.send).toHaveBeenCalledExactlyOnceWith(
-    expect.objectContaining({ command: "send", text: "Make this a standalone plan instead." }),
-  );
-  await act(async () => socket.result());
 });
 
 it("recognizes the addressed kickoff before its shape arrives and consumes live snapshots", () => {

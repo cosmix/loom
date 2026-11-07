@@ -170,11 +170,14 @@ sections with clear topic ownership in the proposal block the app renders.
 After each turn that changes the state, the skill ends its reply with a `loom-kickoff` fenced
 block containing the current size, name, problem, settled decisions, open questions and proposed
 sections. Each section is settled, being worded or open. The proposal uses `proposal: true`;
-the app offers Use this, Rename, Change sections and Make standalone for a feature, or
-Use this, Rename and Make a feature for a plan. The skill keeps the taking-shape block current.
+the app offers Change sections for a feature and no control for a plan. The size is the offer the
+kickoff began with, and the user names or renames the work in the conversation; the skill puts the
+name in its block, and Taking shape only displays it. The skill keeps the taking-shape block
+current.
 
-Nothing is written under `doc/` until the user confirms the size and name and the app sends the
-exact creation grant; conversational agreement alone grants no writes. For a feature, the skill
+Nothing is written under `doc/` until the user presses Write the vision or Write the plan, which
+confirms the size and name and sends the exact creation grant; conversational agreement alone
+grants no writes. For a feature, the skill
 loads `loom-plan:vision` to write `doc/product/<feature>/index.md` and continues on that target.
 For a standalone plan, it loads `loom-plan:plan` to write `doc/plans/PLAN-<slug>.md` with
 `Implements: none` and briefs under `doc/plans/briefs/<slug>/`. The granted target must be new;

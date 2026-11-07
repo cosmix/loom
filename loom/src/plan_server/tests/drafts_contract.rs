@@ -1,6 +1,6 @@
 //! Contract `drafts-survive-a-restart`: kickoff drafts stored under the runtime `kickoffs`
-//! directory are listed by a freshly started server, newest first, with the user's rename
-//! winning over the agent's name and no draft reported live without a running session.
+//! directory are listed by a freshly started server, newest first, with the agent's name and no
+//! draft reported live without a running session.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -15,7 +15,7 @@ const FIRST: &str = "11111111-1111-4111-8111-111111111111";
 const SECOND: &str = "22222222-2222-4222-8222-222222222222";
 
 /// A stored draft as the draft store writes it, flagged live as it was before the restart.
-fn draft(session: &str, updated_at: &str, name: &str, name_override: Option<&str>) -> Value {
+fn draft(session: &str, updated_at: &str, name: &str) -> Value {
     json!({
         "session": session,
         "started_at": "2026-11-04T10:47:11Z",
@@ -30,7 +30,6 @@ fn draft(session: &str, updated_at: &str, name: &str, name_override: Option<&str
             "proposal": false,
             "sections": []
         },
-        "name_override": name_override,
         "live": true
     })
 }
@@ -47,15 +46,10 @@ fn store_drafts(project: &TempDir) -> PathBuf {
     create_runtime_dir(&runtime).expect("create the runtime directory");
     let kickoffs = runtime.dir.join("kickoffs");
     fs::create_dir_all(&kickoffs).expect("create the kickoffs directory");
-    let named = draft(FIRST, "2026-11-04T10:50:00Z", "microvm-test-env", None);
-    write_draft(&kickoffs, &named);
-    let renamed = draft(
-        SECOND,
-        "2026-11-04T09:00:00Z",
-        "x-name",
-        Some("renamed-work"),
-    );
-    write_draft(&kickoffs, &renamed);
+    let newer = draft(FIRST, "2026-11-04T10:50:00Z", "microvm-test-env");
+    write_draft(&kickoffs, &newer);
+    let older = draft(SECOND, "2026-11-04T09:00:00Z", "x-name");
+    write_draft(&kickoffs, &older);
     runtime.dir
 }
 
@@ -90,9 +84,6 @@ fn a_stored_kickoff_draft_is_listed_after_a_restart() {
     );
     let second = &listed[1];
     assert_eq!(second["session"], SECOND, "{drafts}");
-    assert_eq!(
-        second["name"], "renamed-work",
-        "the rename beats the agent: {drafts}"
-    );
+    assert_eq!(second["name"], "x-name", "{drafts}");
     assert_eq!(second["live"], false, "{drafts}");
 }
