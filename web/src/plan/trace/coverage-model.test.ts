@@ -1,232 +1,195 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import traceFixture from "@/plan/api/fixtures/trace.json";
-import { traceViewSchema, type TraceView } from "@/plan/api/schema-trace";
+import { traceViewSchema, type CoverRef, type TraceView } from "@/plan/api/schema-trace";
 
-import { handleCoverageKey, moveTarget } from "./coverage-keys";
-import { buildCoverage, lineage, visibleKeys, type CoverageModel } from "./coverage-model";
+import {
+  buildCoverage,
+  filterRows,
+  findAnchor,
+  rowElementId,
+  STATE_WORDS,
+  type CoverageRow,
+} from "./coverage-model";
 
+const FIRST_PLAN = "doc/plans/demo/PLAN-first.md";
 const S01 = "doc/product/demo/section_01.md";
-const S02 = "doc/product/demo/section_02.md";
-const PLAN = "doc/plans/demo/PLAN-first.md";
 
 function demo(): TraceView {
   return traceViewSchema.parse(structuredClone(traceFixture));
 }
 
-function model(view: TraceView = demo()): CoverageModel {
-  return buildCoverage(view, "demo");
+function patchPlan(view: TraceView, patch: Partial<TraceView["documents"][number]>): void {
+  Object.assign(
+    view.documents.find((doc) => doc.path === FIRST_PLAN)!,
+    patch,
+  );
 }
 
-function titlesOf(coverage: CoverageModel, column: string): string[] {
-  return coverage.cards.filter((card) => card.column === column).map((card) => card.title);
+function rowsOf(view: TraceView, feature = "demo"): Map<string, CoverageRow> {
+  const rows = buildCoverage(view, feature).sections.flatMap((section) => section.rows);
+  return new Map(rows.map((row) => [row.anchor, row]));
 }
 
-/** The fixture with a heading nothing covers. */
-function withGap(): TraceView {
-  const view = demo();
-  view.headings.push({ path: S01, anchor: "five", title: "Five", covered_by: [], findings: [] });
-  return view;
-}
-
-describe("buildCoverage", () => {
-  it("draws the five columns from the trace", () => {
-    const coverage = model();
-    expect(titlesOf(coverage, "vision")).toEqual(["Alpha", "Beta", "Gamma"]);
-    expect(titlesOf(coverage, "spec")).toEqual(["One", "Two", "Three", "Four"]);
-    expect(titlesOf(coverage, "metaplan")).toHaveLength(2);
-    // Plan second has no file yet, so only plan first and its stage are cards.
-    expect(titlesOf(coverage, "plans")).toEqual(["First", "first · build"]);
-    expect(titlesOf(coverage, "findings")).toEqual([
-      "F-1 Rebuild ignores briefs",
-      "F-2 Rename the flag",
+describe("buildCoverage sections", () => {
+  it("orders sections by number and counts the covered headings of each", () => {
+    const { sections } = buildCoverage(demo(), "demo");
+    expect(sections.map((s) => [s.id, s.number, s.covered, s.total])).toEqual([
+      ["section_01", "01", 2, 2],
+      ["section_02", "02", 2, 2],
+      ["section_03", "03", 0, 0],
     ]);
+    expect(sections[0]!.settle).toBe("settled");
+    expect(sections[1]!.settle).toBe("revised");
   });
 
-  it("groups headings under their section's title", () => {
-    const groups = model().cards.filter((card) => card.column === "spec");
-    expect(groups.map((card) => card.group)).toEqual(["Alpha", "Alpha", "Beta", "Beta"]);
-  });
-
-  it("flags only what needs a reader's eye", () => {
-    const coverage = model(withGap());
-    const flagged = coverage.cards
-      .filter((card) => card.description !== null)
-      .map((card) => [card.title, card.state, card.description]);
-    expect(flagged).toEqual([
-      ["Beta", "revised", "Revised since settled"],
-      ["Five", "uncovered", "Not covered"],
-      ["F-1 Rebuild ignores briefs", "open", "Open finding"],
-    ]);
-  });
-
-  it("flags no done work, even when it moved since it was settled", () => {
-    const view = demo();
-    const plan = view.documents.find((doc) => doc.path === PLAN)!;
-    Object.assign(plan, { settle: "upstream_changed", settleable: false });
-    const card = model(view).byKey.get(`plan:${PLAN}`)!;
-    expect([card.state, card.description]).toEqual(["plain", null]);
-  });
-
-  it("opens each node where it lives", () => {
-    const hrefs = Object.fromEntries(model().cards.map((card) => [card.key, card.href]));
-    expect(hrefs[`vision:${S01}`]).toBe("/f/demo/product/section_01");
-    expect(hrefs[`spec:${S01}#two`]).toBe("/f/demo/source/product/demo/section_01.md#two");
-    expect(hrefs[`plan:${PLAN}`]).toBe("/f/demo/engineering/first");
-    expect(hrefs[`stage:${PLAN}#build`]).toBe(
-      "/f/demo/source/plans/demo/PLAN-first.md#stage%3Abuild",
-    );
-    expect(hrefs["finding:F-1"]).toBe("/f/demo/findings#finding-F-1");
+  it("keeps a section that is not written as a section with no rows", () => {
+    const gamma = buildCoverage(demo(), "demo").sections[2]!;
+    expect(gamma).toMatchObject({ title: "Gamma", written: false, rows: [], settle: null });
   });
 });
 
-describe("lineage", () => {
-  it("runs from the vision row through the heading to its plan, stage and findings", () => {
-    const coverage = model();
-    expect(lineage(coverage, `spec:${S01}#two`)).toEqual({
-      up: [`vision:${S01}`],
-      down: [`plan:${PLAN}`, `stage:${PLAN}#build`, "finding:F-1"],
+describe("buildCoverage rows", () => {
+  it("joins an entry and the plan it leads to into one chain, with the plan's state in words", () => {
+    const one = rowsOf(demo()).get("one")!;
+    expect(one.chains).toHaveLength(1);
+    expect(one.chains[0]).toMatchObject({
+      entry: "1. First (`PLAN-first.md`)",
+      plan: "first",
+      planState: "Written",
+      stage: null,
+      planHref: "/f/demo/engineering/first",
     });
-    const card = coverage.byKey.get(`spec:${S01}#two`)!;
-    expect(card.lineage).toEqual([
-      `vision:${S01}`,
-      `plan:${PLAN}`,
-      `stage:${PLAN}#build`,
-      "finding:F-1",
-    ]);
+    expect(one.state).toBe("planned");
   });
 
-  it("reaches a plan from the entry that names it and the headings it covers", () => {
-    const coverage = model();
-    expect(lineage(coverage, `plan:${PLAN}`).up).toEqual([
-      `vision:${S01}`,
-      `spec:${S01}#one`,
-      `spec:${S01}#two`,
-      "entry:1-first-plan-firstmd",
-    ]);
-  });
-
-  it("hangs a finding off the plan it names", () => {
+  it("names the stage that covers a heading, and drops the plan-wide cover beside it", () => {
     const view = demo();
-    view.findings[1]!.about = [{ path: PLAN, anchor: null }];
-    expect(lineage(model(view), "finding:F-2").up).toContain(`plan:${PLAN}`);
-  });
-});
-
-describe("visibleKeys", () => {
-  it("shows every card for All", () => {
-    const coverage = model();
-    expect(visibleKeys(coverage, "all").size).toBe(coverage.cards.length);
-  });
-
-  it("shows the uncovered headings with the section they sit in", () => {
-    expect([...visibleKeys(model(withGap()), "uncovered")].sort()).toEqual(
-      [`spec:${S01}#five`, `vision:${S01}`].sort(),
-    );
-  });
-
-  it("shows the documents that moved since settling and what hangs off them", () => {
-    const shown = visibleKeys(model(), "changed");
-    expect(shown.has(`vision:${S02}`)).toBe(true);
-    expect(shown.has(`spec:${S02}#three`)).toBe(true);
-    expect(shown.has("finding:F-2")).toBe(true);
-    expect(shown.has(`vision:${S01}`)).toBe(false);
-  });
-
-  it("shows the open findings with their heading and section", () => {
-    expect([...visibleKeys(model(), "open")].sort()).toEqual(
-      ["finding:F-1", `spec:${S01}#two`, `vision:${S01}`].sort(),
-    );
-  });
-});
-
-describe("moveTarget", () => {
-  const coverage = model();
-  const all = visibleKeys(coverage, "all");
-
-  it("walks a column with j and k and stops at its ends", () => {
-    expect(moveTarget(coverage, all, `spec:${S01}#one`, "j")).toBe(`spec:${S01}#two`);
-    expect(moveTarget(coverage, all, `spec:${S01}#two`, "k")).toBe(`spec:${S01}#one`);
-    expect(moveTarget(coverage, all, `spec:${S01}#one`, "k")).toBeNull();
-    expect(moveTarget(coverage, all, `spec:${S02}#four`, "j")).toBeNull();
-  });
-
-  it("goes down with l and up with h, to the first card of the lineage", () => {
-    expect(moveTarget(coverage, all, `vision:${S01}`, "l")).toBe(`spec:${S01}#one`);
-    expect(moveTarget(coverage, all, `spec:${S01}#one`, "l")).toBe("entry:1-first-plan-firstmd");
-    expect(moveTarget(coverage, all, `plan:${PLAN}`, "h")).toBe(`spec:${S01}#one`);
-    expect(moveTarget(coverage, all, `spec:${S01}#one`, "h")).toBe(`vision:${S01}`);
-    expect(moveTarget(coverage, all, `vision:${S01}`, "h")).toBeNull();
-  });
-
-  it("skips a card the filter hides", () => {
-    const shown = new Set(all);
-    shown.delete(`spec:${S01}#two`);
-    expect(moveTarget(coverage, shown, `spec:${S01}#one`, "j")).toBe(`spec:${S02}#three`);
-  });
-
-  it("ignores a card it does not know and a key it does not own", () => {
-    expect(moveTarget(coverage, all, "nope", "j")).toBeNull();
-    expect(moveTarget(coverage, all, `vision:${S01}`, "x")).toBeNull();
-  });
-});
-
-describe("handleCoverageKey", () => {
-  const coverage = model();
-  const visible = visibleKeys(coverage, "all");
-
-  afterEach(() => {
-    document.body.replaceChildren();
-  });
-
-  function press(key: string, target: Element, patch: Partial<KeyboardEvent> = {}) {
-    const event = {
-      key,
-      target,
-      altKey: false,
-      ctrlKey: false,
-      metaKey: false,
-      defaultPrevented: false,
-      preventDefault: vi.fn(),
-      ...patch,
+    const two = view.headings.find((heading) => heading.anchor === "two")!;
+    const wholePlan: CoverRef = {
+      kind: "plan",
+      path: FIRST_PLAN,
+      anchor: null,
+      slug: "first",
+      stage: null,
     };
-    const focus = vi.fn();
-    const open = vi.fn();
-    handleCoverageKey(event as never, { model: coverage, visible, focus, open });
-    return { event, focus, open };
-  }
-
-  function card(key: string): HTMLElement {
-    const button = document.createElement("button");
-    button.dataset.key = key;
-    document.body.append(button);
-    return button;
-  }
-
-  it("moves focus on l and opens the node on Enter", () => {
-    const here = card(`vision:${S01}`);
-    expect(press("l", here).focus).toHaveBeenCalledWith(`spec:${S01}#one`);
-    const entered = press("Enter", here);
-    expect(entered.open).toHaveBeenCalledWith("/f/demo/product/section_01");
-    expect(entered.event.preventDefault).toHaveBeenCalled();
+    two.covered_by.push(wholePlan);
+    const chains = rowsOf(view).get("two")!.chains;
+    expect(chains.map((chain) => [chain.plan, chain.stage])).toEqual([["first", "build"]]);
+    expect(chains[0]!.stageHref).toBe("/f/demo/source/plans/demo/PLAN-first.md#stage%3Abuild");
   });
 
-  it("stays out of the way while typing, with a modifier or with a dialog open", () => {
-    const here = card(`vision:${S01}`);
-    const field = document.createElement("input");
-    document.body.append(field);
-    expect(press("l", field).focus).not.toHaveBeenCalled();
-    expect(press("l", here, { ctrlKey: true }).focus).not.toHaveBeenCalled();
-    const dialog = document.createElement("div");
-    dialog.setAttribute("role", "alertdialog");
-    document.body.append(dialog);
-    expect(press("l", here).focus).not.toHaveBeenCalled();
-    expect(press("Enter", here).open).not.toHaveBeenCalled();
+  it("reads a covering entry whose plan is not written as planned, with its slug", () => {
+    const three = rowsOf(demo()).get("three")!;
+    expect(three.chains[0]).toMatchObject({
+      plan: "second",
+      planPath: null,
+      planHref: null,
+      planState: "Not written",
+    });
+    expect(three.state).toBe("planned");
   });
 
-  it("ignores keys it does not own and presses outside a card", () => {
-    const here = card(`vision:${S01}`);
-    expect(press("x", here).event.preventDefault).not.toHaveBeenCalled();
-    expect(press("l", document.body).focus).not.toHaveBeenCalled();
+  it("drops the feature prefix from a plan's slug", () => {
+    const view = demo();
+    patchPlan(view, { slug: "demo-first" });
+    expect(rowsOf(view).get("one")!.chains[0]!.plan).toBe("first");
+  });
+
+  it("reads built when every covering plan is done", () => {
+    const view = demo();
+    patchPlan(view, { progress: "done", settleable: false });
+    expect(rowsOf(view).get("one")!.state).toBe("built");
+    // Heading three is covered by an entry with no plan, which is not done.
+    expect(rowsOf(view).get("three")!.state).toBe("planned");
+  });
+
+  it("reads changed when a covering plan's spec moved since the plan was settled", () => {
+    const view = demo();
+    patchPlan(view, { settle: "upstream_changed" });
+    const rows = rowsOf(view);
+    expect(rows.get("one")!.state).toBe("changed");
+    expect(rows.get("one")!.chains[0]!.changed).toBe(true);
+    expect(rows.get("three")!.state).toBe("planned");
+  });
+
+  it("reads uncovered when nothing covers the heading", () => {
+    const view = demo();
+    view.headings.push({ path: S01, anchor: "five", title: "Five", covered_by: [], findings: [] });
+    const five = rowsOf(view).get("five")!;
+    expect(five.state).toBe("uncovered");
+    expect(five.chains).toEqual([]);
+    expect(Object.values(STATE_WORDS)).toContain("Not covered");
+  });
+
+  it("lists only the open findings about a heading", () => {
+    const rows = rowsOf(demo());
+    expect(rows.get("two")!.open).toEqual([{ id: "F-1", title: "Rebuild ignores briefs" }]);
+    // F-2 is dismissed.
+    expect(rows.get("three")!.open).toEqual([]);
+  });
+});
+
+describe("tiles and filters", () => {
+  function withGap(): TraceView {
+    const view = demo();
+    view.headings.push({ path: S01, anchor: "five", title: "Five", covered_by: [], findings: [] });
+    patchPlan(view, { settle: "upstream_changed" });
+    return view;
+  }
+
+  it("counts all headings, the uncovered, the changed and those with open findings", () => {
+    expect(buildCoverage(withGap(), "demo").tiles).toEqual({
+      all: 5,
+      uncovered: 1,
+      changed: 2,
+      open: 1,
+    });
+  });
+
+  it("shows only the rows a filter picks, in the sections that still hold one", () => {
+    const model = buildCoverage(withGap(), "demo");
+    const titles = (filter: Parameters<typeof filterRows>[1]) =>
+      filterRows(model, filter).map((s) => [s.id, s.rows.map((row) => row.title)]);
+    expect(titles("uncovered")).toEqual([["section_01", ["Five"]]]);
+    expect(titles("changed")).toEqual([["section_01", ["One", "Two"]]]);
+    expect(titles("open")).toEqual([["section_01", ["Two"]]]);
+    // `all` keeps every section, the one that is not written too.
+    expect(filterRows(model, "all").map((s) => s.id)).toEqual([
+      "section_01",
+      "section_02",
+      "section_03",
+    ]);
+  });
+
+  it("keeps a section's own counts whatever the filter shows", () => {
+    const [section] = filterRows(buildCoverage(withGap(), "demo"), "uncovered");
+    expect([section!.covered, section!.total]).toEqual([2, 3]);
+  });
+
+  it("counts nothing for a trace with no sections", () => {
+    const model = buildCoverage(
+      traceViewSchema.parse({ ...demo(), documents: [], headings: [] }),
+      "demo",
+    );
+    expect(model.tiles).toEqual({ all: 0, uncovered: 0, changed: 0, open: 0 });
+    expect(model.sections).toEqual([]);
+  });
+});
+
+describe("findAnchor", () => {
+  it("finds a section by its file name and a heading by its anchor, opening that row", () => {
+    const model = buildCoverage(demo(), "demo");
+    expect(findAnchor(model, "section_02")).toEqual({ elementId: "section_02", rowKey: null });
+    const row = model.sections[0]!.rows[1]!;
+    expect(findAnchor(model, "two")).toEqual({
+      elementId: rowElementId(model.sections[0]!, row),
+      rowKey: `${S01}#two`,
+    });
+    const named = { elementId: rowElementId(model.sections[0]!, row), rowKey: `${S01}#two` };
+    expect(findAnchor(model, "section_01:two")).toEqual(named);
+    expect(findAnchor(model, "section_02:two")).toBeNull();
+    expect(findAnchor(model, "nope")).toBeNull();
+    expect(findAnchor(model, "section_03")).toEqual({ elementId: "section_03", rowKey: null });
   });
 });

@@ -1,187 +1,351 @@
 /*
- * The coverage map (`coverage-page.tsx`): maps-columns.css holds the filter, the columns and the
- * cards; this sheet adds the focus panel and the width steps, after the base rules so the steps
- * win on equal specificity (a CSS @import always cascades first). The container is
- * `.maps-coverage` (maps-columns.css): under 56rem of page width the panel is a sheet stuck to
- * the foot of the scrollport; from 56rem it docks on the right; under 40rem the five columns
- * become a list of sections, each with its layers in order, so nothing scrolls sideways.
+ * The map pages' head (Coverage and Findings) and the Coverage page (`coverage-page.tsx`, and the
+ * help specimen in `help/maps-help.tsx`): the tiles, the sections and the column header here, the
+ * heading rows and an open row in maps-columns.css, imported first so the narrow steps at the end
+ * of this sheet win on equal specificity (a CSS @import always cascades first). The findings
+ * ledger is maps-findings.css. Every rule sits on the scales of ui/design.css and the tokens of
+ * index.css; nothing names a colour. ui/DESIGN.md, Page rhythm ("Map pages") and Status.
+ *
+ * Titles and headings are Inter at the feature-document step (40px page title, 24px section
+ * header, 18px heading row); prose is the reader's own face (`--font-reading`).
  */
 @import "./maps-columns.css";
 
-/* Why, How and Findings for the selected card. As a sheet: behind a hairline on an opaque
-   ground, scrolling inside itself past two fifths of the viewport. No shadow: it is in the page
-   flow, not floating over it. */
-[data-loom-plan] .maps-focus {
-  position: sticky;
-  bottom: 0;
-  z-index: 1;
-  display: grid;
-  gap: var(--space-4);
-  align-content: start;
-  min-width: 0;
-  max-height: 40vh;
-  margin-top: var(--space-5);
-  padding: var(--space-3) 0;
-  overflow-y: auto;
-  border-top: 1px solid var(--hairline);
-  background: var(--background);
+/* ── Page head ─────────────────────────────────────────────────────────────── */
+
+/* Coverage is a table of four columns, so it takes 62rem; Findings keeps a 48rem reading width. */
+[data-loom-plan] .plan-page:has(> .coverage) {
+  max-width: calc(62rem + 2 * var(--page-gutter));
 }
 
-[data-loom-plan] .maps-focus-title {
-  margin: 0;
+[data-loom-plan] .plan-page:has(> .maps-findings-head, > .maps-findings) {
+  max-width: calc(48rem + 2 * var(--page-gutter));
+}
+
+[data-loom-plan]
+  .plan-page:has(> .coverage, > .maps-findings-head, > .maps-findings)
+  > .plan-page__head {
+  gap: 0;
+  margin-bottom: var(--space-6);
+}
+
+[data-loom-plan]
+  .plan-page:has(> .coverage, > .maps-findings-head, > .maps-findings)
+  .plan-page-title {
+  margin: var(--space-4) 0 0;
   font-family: var(--font-sans);
-  font-size: var(--type-title);
+  font-size: 40px;
   font-weight: 600;
-  line-height: var(--leading-ui);
-  letter-spacing: -0.01em;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
   overflow-wrap: anywhere;
 }
 
-[data-loom-plan] .maps-focus > .plan-fine {
-  margin: 0;
+/* The standfirst: the reading face a step over the reading size, as a document's scope line. */
+[data-loom-plan]
+  .plan-page:has(> .coverage, > .maps-findings-head, > .maps-findings)
+  .plan-page__lede {
+  max-width: 46ch;
+  margin: var(--space-3) 0 0;
+  color: var(--foreground);
+  font-family: var(--font-reading);
+  font-size: calc(var(--reading-size) * 1.1);
+  line-height: 1.45;
+  text-wrap: pretty;
 }
 
-[data-loom-plan] .maps-related {
+@media (max-width: 479.98px) {
+  [data-loom-plan]
+    .plan-page:has(> .coverage, > .maps-findings-head, > .maps-findings)
+    .plan-page-title {
+    font-size: 32px;
+  }
+}
+
+/* ── Coverage ──────────────────────────────────────────────────────────────── */
+
+/* The page lays out by its own width (the spine and the chat take the viewport's), so the
+   narrow steps are a container query. The specimen in help carries `data-loom-plan` itself. */
+[data-loom-plan] .coverage,
+.coverage[data-loom-plan] {
+  --coverage-grid: minmax(0, 3.2fr) minmax(0, 3.1fr) minmax(0, 1.45fr) minmax(0, 2.25fr);
+  --coverage-indent: 28px;
+  container: coverage / inline-size;
+  min-width: 0;
+}
+
+/* Four count tiles that are the filter, in one edged band. The chosen tile is filled with --card
+   and underlined in the accent ink, a segmented choice's chosen option. The 1px gap over the
+   hairline ground draws the dividers in either layout (four across or 2×2). */
+[data-loom-plan] .coverage-tiles {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1px;
+  margin: 0 0 var(--space-7);
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--hairline);
+}
+
+[data-loom-plan] .coverage-tile {
+  position: relative;
   display: grid;
   align-content: start;
   gap: var(--space-2);
   min-width: 0;
-}
-
-[data-loom-plan] .maps-related > h3 {
   margin: 0;
-}
-
-[data-loom-plan] .maps-related ul {
-  display: grid;
-  gap: 2px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-[data-loom-plan] .maps-related li {
-  min-width: 0;
-}
-
-/* One line per related node, cut at the panel's edge; chrome links underline on hover only. */
-[data-loom-plan] .maps-related a {
-  display: block;
-  min-width: 0;
-  overflow: hidden;
-  padding: 2px 0;
-  border-radius: 3px;
-  color: var(--muted-foreground);
-  font-size: var(--type-ui);
-  line-height: var(--leading-ui);
-  text-decoration: none;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  transition: color 120ms;
-}
-
-[data-loom-plan] .maps-related a:hover {
+  padding: var(--space-5);
+  border: 0;
+  background: var(--background);
   color: var(--foreground);
-  text-decoration: underline;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+  transition: background-color 120ms;
 }
 
-/* Open is a link drawn as the secondary button (ui/design.css, `.plan-button`): the panel's one
-   action, on the button scale. */
-[data-loom-plan] .maps-open {
-  display: inline-flex;
-  justify-self: start;
-  align-items: center;
-  height: var(--control-height);
-  padding: 0 10px;
-  border: 1px solid var(--border);
-  border-radius: var(--corner-control);
-  color: var(--foreground);
-  font-family: var(--font-sans);
-  font-size: var(--type-ui);
-  font-weight: 500;
-  line-height: 1;
-  text-decoration: none;
-  transition:
-    background-color 120ms,
-    color 120ms;
-}
-
-[data-loom-plan] .maps-open:hover {
+[data-loom-plan] .coverage-tile:hover {
   background: var(--muted);
 }
 
-[data-loom-plan] .maps-related a:focus-visible,
-[data-loom-plan] .maps-open:focus-visible {
+[data-loom-plan] .coverage-tile[aria-pressed="true"] {
+  background: var(--card);
+}
+
+[data-loom-plan] .coverage-tile[aria-pressed="true"]::after {
+  content: "";
+  position: absolute;
+  inset: auto 0 0;
+  height: 3px;
+  background: var(--accent-ink);
+}
+
+/* The band clips its corners, so the ring sits inside the tile. */
+[data-loom-plan] .coverage-tile:focus-visible {
   outline: 2px solid var(--ring);
-  outline-offset: 2px;
+  outline-offset: -2px;
 }
 
-/* Between 40rem and 56rem the sheet's three lists sit side by side, so it stays short. */
-@container maps (min-width: 40rem) and (max-width: 55.99rem) {
-  [data-loom-plan] .maps-focus {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-
-  [data-loom-plan] .maps-focus > .maps-focus-title,
-  [data-loom-plan] .maps-focus > .plan-fine,
-  [data-loom-plan] .maps-focus > .maps-open {
-    grid-column: 1 / -1;
-  }
+[data-loom-plan] .coverage-tile__count {
+  font-family: var(--font-sans);
+  font-size: 40px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
 }
 
-/* From 56rem the panel docks on the right, behind a hairline on its start edge, and sticks to the
-   top of the scrollport beside the columns. */
-@container maps (min-width: 56rem) {
-  [data-loom-plan] .maps-body {
-    grid-template-columns: minmax(0, 1fr) 16rem;
-    gap: var(--space-6);
-  }
-
-  [data-loom-plan] .maps-focus {
-    top: var(--space-5);
-    bottom: auto;
-    max-height: calc(100vh - 9rem);
-    margin-top: 0;
-    padding: 0 0 var(--space-2) var(--space-5);
-    border-top: 0;
-    border-inline-start: 1px solid var(--hairline);
-    background: transparent;
-  }
+[data-loom-plan] .coverage-tile__label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 1.3;
 }
 
-/* Under 40rem the five columns become a list of sections, each with its layers in order, and the
-   filter's segments wrap as single pills. The lineage dot keeps its gutter in the page gutter. */
-@container maps (max-width: 39.99rem) {
-  [data-loom-plan] .maps-filter {
-    gap: var(--space-1);
-    padding: 0;
-    border: 0;
-    border-radius: 0;
+/* A filter tile repeats its row state's glyph before the word, drawn here as decoration (the
+   button is named by its label): a dashed ring for a gap and a ringed "!" for a change, both in
+   the warning tone, a plain ring for open findings. */
+[data-loom-plan]
+  .coverage-tile:is([data-tile="uncovered"], [data-tile="changed"], [data-tile="open"])
+  .coverage-tile__label::before {
+  content: "" / "";
+  display: grid;
+  flex: none;
+  place-items: center;
+  box-sizing: border-box;
+  width: 15px;
+  height: 15px;
+  border: 1.5px solid currentColor;
+  border-radius: 50%;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+[data-loom-plan] .coverage-tile[data-tile="uncovered"] .coverage-tile__label::before {
+  border-style: dashed;
+  border-color: var(--tone-warning);
+}
+
+[data-loom-plan] .coverage-tile[data-tile="changed"] .coverage-tile__label::before {
+  content: "!" / "";
+  border-color: var(--tone-warning);
+  color: var(--tone-warning);
+}
+
+/* ── Sections ──────────────────────────────────────────────────────────────── */
+
+[data-loom-plan] .coverage-body {
+  display: grid;
+  gap: var(--space-7);
+  min-width: 0;
+}
+
+[data-loom-plan] .coverage-section {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  scroll-margin-top: var(--space-5);
+}
+
+[data-loom-plan] .coverage-section__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-1) var(--space-3);
+  min-width: 0;
+  padding: var(--space-5) var(--space-4) var(--space-3);
+  border-bottom: 1px solid var(--hairline);
+}
+
+[data-loom-plan] .coverage-section__number {
+  flex: none;
+  min-width: 1rem;
+  color: var(--muted-foreground);
+  font-family: var(--font-mono);
+  font-size: var(--type-ui);
+}
+
+[data-loom-plan] .coverage-section__title {
+  min-width: 0;
+  margin: 0;
+  font-family: var(--font-sans);
+  font-size: 24px;
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+  overflow-wrap: anywhere;
+}
+
+[data-loom-plan] .coverage-section__head > .coverage-mark {
+  color: var(--muted-foreground);
+}
+
+[data-loom-plan] .coverage-section__count {
+  margin-inline-start: auto;
+  color: var(--muted-foreground);
+  font-size: var(--type-body);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+[data-loom-plan] .coverage-section__quiet {
+  margin: 0;
+  padding: var(--space-3) var(--space-4) 0 calc(var(--space-4) + var(--coverage-indent));
+  font-size: var(--type-body);
+}
+
+/* The column header is drawn once, above the first written section's head; the copies in the
+   sections after it stay hidden (each is aria-hidden). */
+[data-loom-plan] .coverage-cols {
+  display: grid;
+  order: -1;
+  grid-template-columns: var(--coverage-grid);
+  column-gap: var(--space-4);
+  padding: 0 var(--space-4) var(--space-3);
+  border-bottom: 1px solid var(--hairline);
+  color: var(--muted-foreground);
+  font-size: var(--type-body);
+  line-height: var(--leading-ui);
+}
+
+[data-loom-plan] .coverage-cols > :first-child {
+  padding-inline-start: var(--coverage-indent);
+}
+
+[data-loom-plan] .coverage-section[data-written="true"] ~ .coverage-section > .coverage-cols {
+  display: none;
+}
+
+/* ── Narrow: tiles 2×2, cells stacked under the heading ─────────────────────── */
+
+@container coverage (max-width: 39.99rem) {
+  [data-loom-plan] .coverage-tiles {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    margin-bottom: var(--space-6);
   }
 
-  [data-loom-plan] .maps-filter-option {
-    border: 1px solid var(--hairline);
+  [data-loom-plan] .coverage-tile {
+    padding: var(--space-4);
   }
 
-  [data-loom-plan] .maps-columns {
-    grid-template-columns: minmax(0, 1fr);
-    gap: var(--space-6);
+  [data-loom-plan] .coverage-tile__count {
+    font-size: 32px;
   }
 
-  [data-loom-plan] .maps-column,
-  [data-loom-plan] .maps-column + .maps-column {
+  [data-loom-plan] .coverage-tile__label {
+    align-items: flex-start;
+    font-size: 15px;
+  }
+
+  [data-loom-plan] .coverage-tile__label::before {
+    margin-top: 0.15em;
+  }
+
+  /* A container query styles the container's descendants only, so the indent steps here. */
+  [data-loom-plan] .coverage-section {
+    --coverage-indent: 22px;
+  }
+
+  [data-loom-plan] .coverage-section__head {
+    padding-inline: 0;
+  }
+
+  [data-loom-plan] .coverage-section__head > .coverage-mark,
+  [data-loom-plan] .coverage-section__count {
+    flex-basis: 100%;
+    margin-inline-start: 0;
+  }
+
+  [data-loom-plan] .coverage-cols {
+    display: none;
+  }
+
+  [data-loom-plan] .coverage-section__quiet {
     padding-inline-start: 0;
-    border-inline-start: 0;
   }
 
-  [data-loom-plan] .maps-column-title {
-    min-height: 0;
+  [data-loom-plan] .coverage-row__line {
+    grid-template-columns: minmax(0, 1fr);
+    row-gap: var(--space-1);
+    padding: var(--space-3) var(--space-2);
+  }
+
+  [data-loom-plan] .coverage-row__chevron {
+    left: var(--space-2);
+  }
+
+  [data-loom-plan] .coverage-row__line > .coverage-cell {
+    padding-inline-start: var(--coverage-indent);
+  }
+
+  /* No findings: the dash would take a line of its own; its words stay for assistive technology. */
+  [data-loom-plan] .coverage-cell[data-cell="findings"]:has(> [aria-hidden="true"]) {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  [data-loom-plan] .coverage-detail {
+    padding-inline: calc(var(--space-2) + var(--coverage-indent)) var(--space-2);
+  }
+
+  [data-loom-plan] .coverage-detail__cols {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  [data-loom-plan] .maps-related a,
-  [data-loom-plan] .maps-open {
+  [data-loom-plan] .coverage-tile,
+  [data-loom-plan] .coverage-row__line,
+  [data-loom-plan] .coverage-row__chevron {
     transition: none;
   }
 }

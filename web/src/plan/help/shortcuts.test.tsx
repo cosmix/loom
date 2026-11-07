@@ -11,7 +11,7 @@ describe("PlannerShortcuts", () => {
 
     expect(screen.getAllByRole("heading").map((heading) => heading.textContent)).toEqual([
       "While reading",
-      "On the coverage map",
+      "On the coverage page",
       "Anywhere",
     ]);
   });
@@ -19,14 +19,14 @@ describe("PlannerShortcuts", () => {
   it.each([
     { title: "Anywhere", action: "Save in the editor", keys: ["Ctrl", "S", "⌘", "S"] },
     {
-      title: "On the coverage map",
-      action: "Focus the first card that follows from the focused one",
-      keys: ["l"],
+      title: "On the coverage page",
+      action: "Focus the next heading row",
+      keys: ["↓"],
     },
     {
-      title: "On the coverage map",
-      action: "Open the focused card's document or passage",
-      keys: ["Enter"],
+      title: "On the coverage page",
+      action: "Open or close the focused heading row",
+      keys: ["Enter", "Space"],
     },
     { title: "Anywhere", action: "Allow the pinned permission request", keys: ["y"] },
     { title: "Anywhere", action: "Focus the chat composer", keys: ["c"] },

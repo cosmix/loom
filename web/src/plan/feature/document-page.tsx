@@ -13,13 +13,13 @@ import { missingDocumentOffer } from "@/plan/feature/page-offer";
 import { featureOfDocPath, featureSourceHref } from "@/plan/feature/source-href";
 import { useFeature } from "@/plan/feature/use-feature";
 import { BriefsCard } from "@/plan/trace/briefs-card";
+import { ScopeLine } from "@/plan/trace/scope-line";
 import { docIsLocked, SettleControl } from "@/plan/trace/settle-control";
-import { StubPanel } from "@/plan/trace/stub-panel";
 import { LoadState } from "@/plan/ui/load-state";
 
 /**
- * The document's settle state, stub and a plan's briefs, above its source; the hash is the opened
- * document's.
+ * The document's scope standfirst, settle control and a plan's briefs, above its source; the hash
+ * is the opened document's.
  */
 function SourceTrace({ feature, path }: { feature: string; path: string }) {
   const open = useAtomValue(openDocAtom);
@@ -27,8 +27,8 @@ function SourceTrace({ feature, path }: { feature: string; path: string }) {
   const locked = docIsLocked(doc);
   return (
     <div className="trace-source-head">
+      <ScopeLine feature={feature} path={path} />
       <SettleControl feature={feature} path={path} hash={doc?.hash ?? null} locked={locked} />
-      <StubPanel feature={feature} path={path} />
       <BriefsCard feature={feature} path={path} />
     </div>
   );

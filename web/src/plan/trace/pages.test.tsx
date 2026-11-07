@@ -103,10 +103,12 @@ describe("the findings page with no ledger", () => {
   it("groups the ledger by run and review, with actions on open findings only", async () => {
     served = { status: 200, body: traceFixture };
     renderPage(<FindingsPage />, "/f/atlas/findings", atlas({}));
-    const run = await screen.findByRole("heading", { name: "REVIEW-PLAN-first" });
+    const run = await screen.findByRole("heading", { name: "Run of first" });
     expect(run).toBeTruthy();
     const reviews = screen.getByRole("heading", { name: "Reviews" });
     expect(reviews).toBeTruthy();
+    // F-1 is open and F-2 dismissed, and no finding is planned or folded.
+    expect(screen.getByText("1 open · 1 dismissed")).toBeTruthy();
     // F-1 is open and F-2 dismissed: one set of actions, and the reason shows on the dismissed one.
     expect(screen.getAllByRole("button", { name: /^Dismiss/ })).toHaveLength(1);
     const dismissed = screen.getByText("Rename the flag").closest("li")!;
@@ -158,7 +160,7 @@ describe("Plan this and Fold into entry on a feature with a metaplan", () => {
 
       fireEvent.click(screen.getByRole("button", { name: /^Fold into entry\b/ }));
       const picker = screen.getByRole("group", { name: "Fold into which entry" });
-      expect(within(picker).getByRole("button", { name: /First/ })).toBeTruthy();
+      expect(within(picker).getByRole("radio", { name: /First/ })).toBeTruthy();
     } finally {
       unregister();
     }
@@ -221,7 +223,7 @@ describe("the findings page header", () => {
   it("survives an address whose fragment is not a valid escape", async () => {
     served = { status: 200, body: traceFixture };
     renderPage(<FindingsPage />, "/f/atlas/findings#%E0", atlas({}));
-    expect(await screen.findByRole("heading", { name: "REVIEW-PLAN-first" })).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: "Run of first" })).toBeTruthy();
   });
 
   it("marks the finding the address names", async () => {
@@ -266,6 +268,18 @@ describe("dismissing a finding", () => {
     expect(posts[0]).toMatchObject({ id: "F-1", hash: "sha256:shown" });
   });
 
+  it("asks for a reason first, and takes the confirm once one is written", async () => {
+    served = { status: 200, body: traceFixture };
+    docHash = "sha256:shown";
+    const reason = await openForm();
+    const confirm = screen.getByRole("button", { name: "Confirm dismissal" });
+    expect(screen.getByText("Write a reason first")).toBeTruthy();
+    expect(confirm.getAttribute("aria-disabled")).toBe("true");
+    fireEvent.change(reason, { target: { value: "duplicate" } });
+    await waitFor(() => expect(confirm.getAttribute("aria-disabled")).toBeNull());
+    expect(screen.queryByText("Write a reason first")).toBeNull();
+  });
+
   it("takes focus when the form opens and gives it back to Dismiss when it closes", async () => {
     served = { status: 200, body: traceFixture };
     const reason = await openForm();
@@ -294,29 +308,62 @@ describe("after a dismissal is saved", () => {
   });
 });
 
-describe("the coverage page", () => {
-  it("selects a clicked card, focuses it, and names the focus panel after it", async () => {
-    served = { status: 200, body: traceFixture };
-    renderPage(<CoveragePage />, "/f/atlas/coverage", atlas({}));
-    const finding = await screen.findByRole("button", { name: /Rebuild ignores briefs/ });
-    fireEvent.click(finding);
-    expect(document.activeElement).toBe(finding);
-    expect(screen.getByRole("complementary", { name: /Rebuild ignores briefs/ })).toBeTruthy();
+describe("folding a finding into an entry", () => {
+  /** Both entries have no plan yet; finding F-1 is about section 02, which entry two covers. */
+  function twoEntries(): TraceView {
+    const trace = structuredClone(traceFixture) as TraceView;
+    trace.entries = trace.entries.map((entry) => ({ ...entry, plan: null }));
+    trace.findings[0]!.about = [{ path: "doc/product/demo/section_02.md", anchor: "three" }];
+    return trace;
+  }
+
+  async function openPicker(trace: TraceView): Promise<HTMLElement> {
+    served = { status: 200, body: trace };
+    renderPage(<FindingsPage />, "/f/atlas/findings", atlas({}));
+    fireEvent.click(await screen.findByRole("button", { name: /^Fold into entry\b/ }));
+    return screen.findByRole("group", { name: "Fold into which entry" });
+  }
+
+  it("lists the suggested entry first, chosen, and names it on the confirm", async () => {
+    const picker = await openPicker(twoEntries());
+    const radios = within(picker).getAllByRole("radio");
+    expect(radios.map((radio) => (radio as HTMLInputElement).checked)).toEqual([true, false]);
+    expect(radios[0]!.closest("label")!.textContent).toMatch(/2\. Second.*Suggested/);
+    expect(within(picker).getByRole("button", { name: /^Fold into 2\. Second/ })).toBeTruthy();
   });
 
-  it("names each section's card list after the section title", async () => {
-    served = { status: 200, body: traceFixture };
-    renderPage(<CoveragePage />, "/f/atlas/coverage", atlas({}));
-    await screen.findByRole("button", { name: /Rebuild ignores briefs/ });
-    const titles = screen
-      .getAllByRole("heading", { level: 3 })
-      .filter((title) => title.classList.contains("maps-group-title"));
-    expect(titles.length).toBeGreaterThan(0);
-    for (const title of titles) {
-      const list = title.nextElementSibling;
-      expect(list?.tagName).toBe("UL");
-      expect(list?.getAttribute("aria-labelledby")).toBe(title.id);
-      expect(title.id).not.toBe("");
+  it("starts the seeded session for the entry picked", async () => {
+    const started: { seed: string | undefined }[] = [];
+    const unregister = registerOfferAction("plan_follow_ups", (_offer, seed) => {
+      started.push({ seed });
+    });
+    try {
+      const picker = await openPicker(twoEntries());
+      fireEvent.click(within(picker).getByRole("radio", { name: /1\. First/ }));
+      fireEvent.click(within(picker).getByRole("button", { name: /^Fold into 1\. First/ }));
+      expect(started).toHaveLength(1);
+      expect(started[0]!.seed).toMatch(/^Fold finding F-1 into metaplan entry 1\. First/);
+    } finally {
+      unregister();
     }
+  });
+
+  it("offers nothing to confirm until an entry is chosen, when none is suggested", async () => {
+    const trace = twoEntries();
+    trace.findings[0]!.about = [];
+    const picker = await openPicker(trace);
+    const confirm = within(picker).getByRole("button", { name: "Fold into the chosen entry" });
+    expect(confirm.getAttribute("aria-disabled")).toBe("true");
+    expect(within(picker).getByText("Pick an entry first")).toBeTruthy();
+  });
+
+  it("names the entries left out because their plan is running or done", async () => {
+    const trace = twoEntries();
+    trace.entries[0]!.plan = "doc/plans/demo/IN_PROGRESS-PLAN-first.md";
+    const picker = await openPicker(trace);
+    expect(within(picker).getAllByRole("radio")).toHaveLength(1);
+    expect(
+      within(picker).getByText(/Not offered, because their plan is running or done/).textContent,
+    ).toMatch(/1\. First/);
   });
 });

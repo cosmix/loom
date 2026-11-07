@@ -1,18 +1,60 @@
 import type { ChecklistView, MarkView, StepView } from "@/plan/api/schema";
-import type { SettleState, TraceView } from "@/plan/api/schema-trace";
+import type { DocRole, SettleState, TraceView } from "@/plan/api/schema-trace";
 import { featurePage } from "@/plan/feature/page-offer";
 import { STEP } from "@/plan/feature/steps";
 import { featureOfDocPath } from "@/plan/feature/source-href";
 import { featureHref } from "@/plan/feature/use-feature";
 import { decode, docRel } from "@/plan/files/address";
-import { openCount } from "@/plan/trace/findings-model";
-import { docOfPath, shownSettle } from "@/plan/trace/model";
-import { PLAN_STATE_GLYPHS, type Glyph, type PlanState } from "@/plan/ui/glyphs";
+import { settleWords } from "@/plan/trace/doc-model";
+import { docOfPath, isMoved, shortSlug, shownSettle } from "@/plan/trace/model";
 
 export type GroupId = "vision" | "product" | "metaplan" | "plans";
 
 /** How a document's name is set: section names are Markdown phrasing, plan names are slugs. */
 export type NameStyle = "markdown" | "mono" | "plain";
+
+/**
+ * The one glyph that leads a row. `attention` is a settled document that moved since the reader
+ * settled it; `retired` is a plan out of the workflow.
+ */
+export type GlyphKind =
+  | "running"
+  | "attention"
+  | "settled"
+  | "done"
+  | "not-written"
+  | "draft"
+  | "retired";
+
+export interface RowGlyph {
+  kind: GlyphKind;
+  /** The glyph's word, for its tooltip and `.sr-only` text; null where the row says it itself. */
+  word: string | null;
+}
+
+/**
+ * The glyph of a row, by precedence: running, attention (amber), settled, a done plan, not written,
+ * else draft. A plan out of the workflow (`retired`) comes first. A draft names itself only once the
+ * trace says so, so a row never claims "Draft" before the trace loads.
+ */
+export function rowGlyph(input: {
+  written: boolean;
+  settle: SettleState | null;
+  /** The kind of document the row stands for; its words depend on it (`settleWords`). */
+  role: DocRole;
+  /** A plan row's state from the checklist; null for any other row. */
+  planState: string | null;
+}): RowGlyph {
+  const { written, settle, role, planState } = input;
+  const word = settle === null ? null : settleWords(settle, role).chip;
+  if (planState === "retired") return { kind: "retired", word: "Retired" };
+  if (planState === "running") return { kind: "running", word: "Running" };
+  if (settle !== null && isMoved(settle)) return { kind: "attention", word };
+  if (settle === "settled") return { kind: "settled", word };
+  if (planState === "done") return { kind: "done", word: "Done" };
+  if (!written) return { kind: "not-written", word: null };
+  return { kind: "draft", word: settle === "draft" ? word : null };
+}
 
 /** A plan's pressure-test record: the date of the last test, null while it was never tested. */
 export interface PlanPressure {
@@ -27,13 +69,14 @@ export interface SpineChild {
   style: NameStyle;
   /** A section's number, set in mono before its name. */
   number: string | null;
-  /** The word beside the name: a plan's state, or "not written". */
+  /** The full name when `name` is shortened (a plan's slug without its feature prefix). */
+  title: string | null;
+  /** The word beside the name where the glyph carries none: "not written". */
   note: string | null;
-  icon: Glyph | null;
-  /** A plan's pressure record; null for every other child and for a retired plan. */
+  /** A plan's pressure record, read aloud only; null for every other child and a retired plan. */
   pressure: PlanPressure | null;
-  /** The document's settle state from the trace; null for a document with no body to settle. */
-  settle: SettleState | null;
+  /** The row's leading glyph; null for the overview row, which stands for the group itself. */
+  glyph: RowGlyph | null;
 }
 
 export interface SpineGroup {
@@ -48,8 +91,8 @@ export interface SpineGroup {
    *  label is only the step's name. */
   unit: string | null;
   children: SpineChild[];
-  /** The settle state of the vision and metaplan rows; null for every other group. */
-  settle: SettleState | null;
+  /** The glyph of the vision and metaplan rows, which have no count; null for every other group. */
+  glyph: RowGlyph | null;
   /** Whether the first child is the group's own overview page, which shares the group's target. */
   overview: boolean;
 }
@@ -72,7 +115,7 @@ function unitOf(server: StepView | undefined, count: string | null): string | nu
 /** The page segment each group lives under, for finding the group of a pathname. */
 const GROUP_OF_PAGE: Record<string, GroupId> = {
   ...Object.fromEntries(GROUPS.map((group) => [group.page, group.id])),
-  // The trace pages sit under the group whose row links them.
+  // The trace pages have no row; each lights the group it is reached from.
   coverage: "product",
   findings: "plans",
 };
@@ -129,10 +172,10 @@ function overviewChild(feature: string, page: string): SpineChild {
     name: "Overview",
     style: "plain",
     number: null,
+    title: null,
     note: null,
-    icon: null,
     pressure: null,
-    settle: null,
+    glyph: null,
   };
 }
 
@@ -145,12 +188,17 @@ function sectionChildren(checklist: ChecklistView, trace: TraceView | null): Spi
     name: section.name,
     style: "markdown",
     number: section.number,
+    title: null,
     note: section.written ? null : "not written",
-    icon: null,
     pressure: null,
-    settle: section.written
-      ? settleOf(trace, `doc/product/${checklist.feature}/section_${section.number}.md`)
-      : null,
+    glyph: rowGlyph({
+      written: section.written,
+      role: "section",
+      planState: null,
+      settle: section.written
+        ? settleOf(trace, `doc/product/${checklist.feature}/section_${section.number}.md`)
+        : null,
+    }),
   }));
 }
 
@@ -158,15 +206,18 @@ function planChildren(checklist: ChecklistView, trace: TraceView | null): SpineC
   return checklist.plan_rows.map((plan) => ({
     key: plan.slug,
     to: featureHref(checklist.feature, `engineering/${encodeURIComponent(plan.slug)}`),
-    name: plan.slug,
+    name: shortSlug(checklist.feature, plan.slug),
     style: "mono",
     number: null,
-    note: plan.state,
-    icon: Object.hasOwn(PLAN_STATE_GLYPHS, plan.state)
-      ? PLAN_STATE_GLYPHS[plan.state as PlanState]
-      : null,
+    title: plan.slug,
+    note: null,
     pressure: plan.state === "retired" ? null : { date: plan.pressure_date },
-    settle: settleOf(trace, plan.path),
+    glyph: rowGlyph({
+      written: true,
+      role: "plan",
+      planState: plan.state,
+      settle: settleOf(trace, plan.path),
+    }),
   }));
 }
 
@@ -232,20 +283,6 @@ export function currentPathname(checklist: ChecklistView, pathname: string): str
   return summaryPathnameOfSource(checklist, pathname) ?? pathname;
 }
 
-/** A row for one of the trace pages: a plain name, and for Findings the open count as its note. */
-function tracePageChild(
-  feature: string,
-  page: "coverage" | "findings",
-  note: string | null,
-): SpineChild {
-  return {
-    ...overviewChild(feature, page),
-    key: page,
-    name: page === "coverage" ? "Coverage" : "Findings",
-    note,
-  };
-}
-
 function childrenOf(
   id: GroupId,
   checklist: ChecklistView,
@@ -253,28 +290,19 @@ function childrenOf(
   trace: TraceView | null,
 ): SpineChild[] {
   if (id === "product") {
-    return [
-      overviewChild(checklist.feature, page),
-      ...sectionChildren(checklist, trace),
-      tracePageChild(checklist.feature, "coverage", null),
-    ];
+    return [overviewChild(checklist.feature, page), ...sectionChildren(checklist, trace)];
   }
   if (id === "plans") {
-    // Findings come from reviewing the plans' runs, so their ledger closes the Plans group.
-    const open = trace === null ? 0 : openCount(trace);
-    return [
-      overviewChild(checklist.feature, page),
-      ...planChildren(checklist, trace),
-      tracePageChild(checklist.feature, "findings", open > 0 ? `${open} open` : null),
-    ];
+    return [overviewChild(checklist.feature, page), ...planChildren(checklist, trace)];
   }
   return [];
 }
 
-/** The settle state of the vision or metaplan row: the trace's one document of that role. */
-function groupSettle(id: GroupId, trace: TraceView | null): SettleState | null {
-  const role = id === "vision" || id === "metaplan" ? id : null;
-  return role ? shownSettle(trace?.documents.find((doc) => doc.role === role)) : null;
+/** The glyph of the vision or metaplan row: the trace's one document of that role, if written. */
+function groupGlyph(id: GroupId, mark: MarkView, trace: TraceView | null): RowGlyph | null {
+  if (id !== "vision" && id !== "metaplan") return null;
+  const doc = trace?.documents.find((candidate) => candidate.role === id);
+  return rowGlyph({ written: mark !== "gap", role: id, planState: null, settle: shownSettle(doc) });
 }
 
 /**
@@ -300,7 +328,7 @@ export function spineGroups(
       count,
       unit: unitOf(server, count),
       children: childrenOf(id, checklist, page, trace),
-      settle: groupSettle(id, trace),
+      glyph: groupGlyph(id, mark, trace),
       overview: id === "product" || id === "plans",
     };
   });

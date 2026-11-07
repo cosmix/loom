@@ -71,7 +71,7 @@ it("sets the summary action at the end of its status row and its detail under th
   expect(row.lastElementChild?.textContent).toBe("Summary action");
 });
 
-it("leads the status card with the summary's state, then the plan's state and record, and sets Built by on the facts line", () => {
+it("leads the status card with the summary's state, then the plan's state, and sets Built by on the facts line", () => {
   show({
     key: "demo/engineering/my-plan",
     plan_state: "written",
@@ -84,7 +84,6 @@ it("leads the status card with the summary's state, then the plan's state and re
   expect(chips.map((chip) => chip.querySelector(".doc-heading-chip__label")?.textContent)).toEqual([
     "Summary current",
     "Written",
-    "Not pressure-tested",
   ]);
   // Every row draws its glyph column first, so the words share one left edge.
   for (const chip of chips) {
@@ -97,17 +96,16 @@ it("leads the status card with the summary's state, then the plan's state and re
   expect(within(card).queryByText("Built by", { exact: false })).toBeNull();
 });
 
-it("groups the toolbar: the view switch, the settle state, then Edit, Discuss and Open all", () => {
+it("groups the toolbar: the view switch, then Edit, Discuss, the settle control and Open all", () => {
   const { container } = show();
 
   const toolbar = container.querySelector(".doc-heading-toolbar") as HTMLElement;
   expect(toolbar.previousElementSibling?.querySelector("h1")).not.toBeNull();
   const groups = [...toolbar.children];
-  expect(groups.map((group) => group.className)).toEqual(Array(3).fill("doc-heading-group"));
+  expect(groups.map((group) => group.className)).toEqual(Array(2).fill("doc-heading-group"));
   expect(groups[0]?.contains(screen.getByRole("group", { name: "View" }))).toBe(true);
-  // No trace is loaded, so the settle group renders nothing and CSS collapses it.
-  expect(groups[1]?.childElementCount).toBe(0);
-  expect(groups[2]?.lastElementChild).toBe(screen.getByRole("button", { name: "Open all" }));
+  // No trace is loaded, so no settle control renders: Open all closes the group.
+  expect(groups[1]?.lastElementChild).toBe(screen.getByRole("button", { name: "Open all" }));
 });
 
 it("omits summary status when no state is available", () => {
@@ -151,18 +149,13 @@ it.each([
   },
 );
 
-it("renders the last pressure test as an ok chip and an untested plan as a warning", () => {
+it("leaves the pressure record off the chip row: a plan's card under the heading draws it", () => {
   show({ last_pressure: "2026-10-20" });
-
-  const tested = screen.getByText("Pressure-tested 2026-10-20").closest("[data-chip]");
-  expect(tested?.getAttribute("data-tone")).toBe("ok");
-  expect(tested?.querySelector("svg.lucide-flask-conical")).not.toBeNull();
+  expect(screen.queryByText("Pressure-tested 2026-10-20")).toBeNull();
   cleanup();
 
   show({ key: "demo/engineering/a", plan_state: "written", last_pressure: null });
-  const untested = screen.getByText("Not pressure-tested").closest("[data-chip]");
-  expect(untested?.getAttribute("data-tone")).toBe("warning");
-  expect(untested?.querySelector("svg.lucide-gauge")).not.toBeNull();
+  expect(screen.queryByText(/pressure-tested/i)).toBeNull();
 });
 
 it("leaves the pressure chip off a section summary with no test date", () => {
@@ -265,7 +258,6 @@ it("disables the source view when there is no source path", () => {
 it.each([
   ["overview/demo/product", "telescope"],
   ["overview/demo/engineering", "map"],
-  ["demo/product/section_03", "book-open"],
   ["demo/engineering/my-plan", "list-checks"],
   ["plans/my-plan", "list-checks"],
 ] as const)("takes the document kind from %s regardless of tint", (key, glyph) => {
@@ -275,6 +267,17 @@ it.each([
     expect(container.querySelector(`svg.lucide-${glyph}`)).not.toBeNull();
     unmount();
   }
+});
+
+it.each([
+  ["demo/product/section_03", "03"],
+  ["demo/engineering/feat-planner-13", "13"],
+])("leads the title of %s with its muted number and draws no document mark", (key, number) => {
+  const { container } = show({ key, title: "Planning" });
+
+  const heading = screen.getByRole("heading", { level: 1, name: "Planning" });
+  expect(heading.querySelector(".doc-heading-number")?.textContent).toBe(number);
+  expect(container.querySelector("svg.lucide-book-open, svg.lucide-list-checks")).toBeNull();
 });
 
 it("keeps standalone plan breadcrumbs unlinked", () => {
@@ -299,7 +302,7 @@ it.each([
   { state: "rebuilding", out_of_date: null },
   { state: "current", out_of_date: { reason: "rebuilding", detail: null } },
 ] as const)("shows a rebuilding mark for $state / $out_of_date", (state) => {
-  const { container } = show({ colour: 5, state });
+  const { container } = show({ key: "demo/engineering/my-plan", colour: 5, state });
 
   expect(container.querySelector('[data-kind="summaries"]')).not.toBeNull();
   expect(container.querySelector("svg.lucide-list-checks")).toBeNull();

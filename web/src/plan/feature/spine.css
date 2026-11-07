@@ -1,10 +1,10 @@
 /*
- * The feature spine: the documents of one feature in workflow order, with the frontier hints at
- * its head. Chrome set in --type-body and --muted-foreground, with its mono ids, counts and notes at
- * --type-ui (one step above the rest of the chrome, ui/DESIGN.md Type), the current row in
- * --foreground; the accent marks the current group's glyph and the current document's dot, and
- * nothing else. Groups divide by hairlines, children sit under their group with no rule of their
- * own.
+ * The feature spine: the documents of one feature in workflow order, with the trace's top
+ * attention item at its head. Chrome set in --type-body and --muted-foreground, with its mono ids,
+ * counts and notes at --type-ui (one step above the rest of the chrome, ui/DESIGN.md Type), the
+ * current row in --foreground on the --muted wash at 600. Every row leads with one 14px glyph.
+ * The accent is spent only on the head's one primary button. Groups divide by hairlines, children
+ * sit under their group with no rule of their own.
  */
 [data-loom-plan] .plan-spine {
   position: sticky;
@@ -102,11 +102,13 @@
   color: var(--foreground);
 }
 
+/* The current page: the hover's --muted wash kept at rest, at 600. No dot and no accent. */
 [data-loom-plan] .plan-spine__link[aria-current="page"] {
+  background: var(--muted);
   font-weight: 600;
 }
 
-/* A mark is a glyph; the word beside it says what it means, so colour never carries it alone. */
+/* A step's mark (the product and plans heads); the word beside it says what it means. */
 [data-loom-plan] .plan-spine__mark {
   width: 14px;
   height: 14px;
@@ -115,28 +117,6 @@
 
 [data-loom-plan] .plan-spine__group[data-mark="done"] > .plan-spine__row .plan-spine__mark {
   color: var(--tone-completed);
-}
-
-/* The accent marks the group the route is in, and the current document inside it with a dot set in
-   the gutter under the group's mark, so no row's text moves. */
-[data-loom-plan] .plan-spine__group[data-here] > .plan-spine__row .plan-spine__mark {
-  color: var(--primary);
-}
-
-[data-loom-plan] a.plan-spine__child[aria-current="page"] {
-  position: relative;
-}
-
-[data-loom-plan] a.plan-spine__child[aria-current="page"]::before {
-  content: "";
-  position: absolute;
-  top: 50%;
-  left: calc(-1 * var(--space-2) - 2px);
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--primary);
-  transform: translateY(-50%);
 }
 
 [data-loom-plan] .plan-spine__name {
@@ -185,7 +165,12 @@
 }
 
 [data-loom-plan] .plan-spine__child {
-  min-height: 30px;
+  min-height: 32px;
+}
+
+/* A group's overview row draws no glyph; its number starts where the other rows' numbers do. */
+[data-loom-plan] a.plan-spine__child:not(:has(> .plan-spine__glyph)) {
+  padding-inline-start: calc(var(--space-2) + 14px + var(--space-2));
 }
 
 /* A document not yet written is plain text beside the links, in plain --muted-foreground at weight
@@ -208,21 +193,20 @@
   font-weight: 500;
 }
 
-/* A plan row is one line (ui/DESIGN.md, Status): the mono slug, then its state and its pressure
-   record as glyphs alone, each 14px and keeping its width, so the slug has the rest of the row and
-   takes an end ellipsis only when it is longer than that. The words stay in the DOM for the
-   link's name (`.sr-only`, spine-row.tsx) and show on hover as the glyph's tooltip. The glyphs sit
-   in --muted-foreground, quieter than the slug. Two take --tone-completed, the colour of finished
-   work: the state glyph of a done plan (`data-state="done"`) and the tested flask; the running
-   roundel, the written pencil, the retired glyph and the untested gauge stay muted. */
+/* One glyph leads every row (`data-glyph`, spine-row.tsx; ui/DESIGN.md, Status), in a 14px box
+   that keeps its width, so the number and the name start on one edge down the list. Its word is in
+   the link in `.sr-only` and is the glyph's tooltip. Quiet chrome by default (a draft's empty seal,
+   the dashed circle of a document not written, a retired plan); finished work takes
+   --tone-completed (a settled seal, a done plan's check); a document that moved since it was
+   settled takes --tone-warning, the one amber "look again". */
 [data-loom-plan] .plan-spine__glyph {
   display: inline-flex;
   flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
   color: var(--muted-foreground);
-}
-
-[data-loom-plan] .plan-spine__glyph[data-state="done"] {
-  color: var(--tone-completed);
 }
 
 [data-loom-plan] .plan-spine__glyph > svg {
@@ -230,14 +214,58 @@
   height: 14px;
 }
 
-[data-loom-plan] .plan-spine__badge {
-  display: inline-flex;
-  align-items: center;
-  flex: none;
+[data-loom-plan] .plan-spine__glyph[data-glyph="done"],
+[data-loom-plan] .plan-spine__glyph[data-glyph="settled"] {
+  color: var(--tone-completed);
 }
 
-[data-loom-plan] .plan-spine__badge[data-tested="true"] > .plan-spine__glyph {
-  color: var(--tone-completed);
+[data-loom-plan] .plan-spine__glyph[data-glyph="attention"] {
+  color: var(--tone-warning);
+}
+
+/* A running plan draws the header pill's roundel at the pill's size: the disc is 86% of the
+   pill's 1.15em glyph box at 13px (ui/activity-glyphs.css), about 13px. */
+[data-loom-plan] .plan-spine__glyph[data-glyph="running"] > .aurora-roundel-wrap {
+  width: 13px;
+  height: 13px;
+}
+
+/* ── Head ─────────────────────────────────────────────────────────────────── */
+
+/* The trace's top attention item (`trace/spine-head.tsx`): one sentence in the reading face, a
+   muted second line when a plan is flagged with it, and the screen's one primary button. */
+[data-loom-plan] .plan-spine-next {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-2);
+  min-width: 0;
+  padding: var(--space-1) var(--space-2) 0;
+}
+
+[data-loom-plan] .plan-spine-next__sentence {
+  margin: 0;
+  color: var(--foreground);
+  font-family: var(--font-reading);
+  font-size: calc(var(--reading-size) * 0.9);
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+  text-wrap: pretty;
+}
+
+[data-loom-plan] .plan-spine-next__detail {
+  margin: calc(-1 * var(--space-1)) 0 0;
+  overflow-wrap: anywhere;
+}
+
+[data-loom-plan] .plan-spine-next__action {
+  height: auto;
+  min-height: 32px;
+  margin-top: var(--space-1);
+  padding: var(--space-1) var(--space-3);
+  font-size: var(--type-body);
+  line-height: 1.3;
+  text-align: left;
+  white-space: normal;
 }
 
 /* On a document's source (`data-view="source"`, set by spine.tsx) the current row says "Source" on

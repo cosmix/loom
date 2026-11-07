@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import { createStore } from "jotai";
 import { Provider } from "jotai/react";
 import { MemoryRouter } from "react-router";
@@ -52,48 +52,36 @@ describe("briefGroups", () => {
   it("puts the bundle's own files first, then each folder, both in natural order", () => {
     const files = ["web/c10.md", "web/c2.md", "server/w1.md", "common.md", "notes.txt"];
     const groups = briefGroups(bundleLinks(traceWith(files), PLAN, "demo"));
-    expect(groups.map((group) => [group.folder, group.briefs.map((brief) => brief.stem)])).toEqual([
-      ["", ["common", "notes.txt"]],
-      ["server", ["w1"]],
-      ["web", ["c2", "c10"]],
+    expect(groups.map((group) => [group.folder, group.briefs.map((brief) => brief.name)])).toEqual([
+      ["", ["common.md", "notes.txt"]],
+      ["server", ["w1.md"]],
+      ["web", ["c2.md", "c10.md"]],
     ]);
   });
 });
 
 describe("BriefsCard", () => {
-  it("draws a short bundle open, grouped by folder, with its count and no toggle", () => {
-    mount(["common.md", "build/r1.md", "build/r2.md"]);
+  it("lists every brief by its mono name, grouped by stage folder, with a count", () => {
+    mount(["common.md", "build/r1.md", "build/r2.md", "verify/v1.md"]);
     const card = screen.getByRole("region", { name: "Briefs" });
-    expect(within(card).getByText("3 briefs")).toBeTruthy();
-    expect(within(card).queryByRole("button")).toBeNull();
+    expect(within(card).getByText("4 files in 2 stages")).toBeTruthy();
     const list = within(card).getByRole("list", { name: "Briefs" });
     const names = within(list)
       .getAllByRole("link")
       .map((link) => link.textContent);
-    expect(names).toEqual(["common.md", "build/r1.md", "build/r2.md"]);
-    // A chip shows the stem; the folder and the extension are read, not shown.
-    expect(within(list).getByRole("link", { name: "build/r1.md" }).getAttribute("title")).toBe(
-      "build/r1.md",
+    expect(names).toEqual(["common.md", "r1.md", "r2.md", "v1.md"]);
+    expect(within(list).getAllByRole("link")[1]!.getAttribute("href")).toBe(
+      "/f/demo/source/plans/demo/briefs/first/build/r1.md",
     );
-    // One folder label, with its count; the top-level files have none.
+    expect(list.querySelectorAll("code.trace-brief__name")).toHaveLength(4);
+    // One folder heading per stage; the top-level files have none.
     const folders = [...card.querySelectorAll(".trace-briefs__folder")].map((el) => el.textContent);
-    expect(folders).toEqual(["build2"]);
+    expect(folders).toEqual(["build", "verify"]);
   });
 
-  it("folds a bundle of more than six behind its count, naming its folders, and opens in place", () => {
-    const files = Array.from({ length: 7 }, (_, index) => `chat-web/c${index + 1}.md`);
-    mount([...files, "common.md"]);
-    const card = screen.getByRole("region", { name: "Briefs" });
-    const toggle = within(card).getByRole("button", { name: "8 briefs" });
-    expect(toggle.getAttribute("aria-expanded")).toBe("false");
-    expect(within(card).queryByRole("list", { name: "Briefs" })).toBeNull();
-    expect(card.textContent).toContain("common · chat-web 7");
-
-    fireEvent.click(toggle);
-    expect(toggle.getAttribute("aria-expanded")).toBe("true");
-    const list = within(card).getByRole("list", { name: "Briefs" });
-    expect(toggle.getAttribute("aria-controls")).toBe(list.id);
-    expect(within(list).getAllByRole("link")).toHaveLength(8);
+  it("counts files alone when the bundle has no stage folders", () => {
+    mount(["common.md"]);
+    expect(screen.getByText("1 file")).toBeTruthy();
   });
 
   it("draws nothing for a plan with no briefs", () => {

@@ -23,49 +23,59 @@ afterEach(() => {
 });
 
 describe("the coverage specimen", () => {
-  it("draws the five columns in the page's own markup, inert, with one card selected", () => {
+  it("draws the tiles, a section and its rows in the page's own markup, inert", () => {
     const { container } = render(<CoverageSpecimen />);
 
-    // The map's own element is the inert planner root: it is the container its width steps query.
-    const map = container.querySelector("[data-loom-plan][inert].maps-coverage");
-    expect(map).not.toBeNull();
+    // The specimen's root is the inert planner root: the container the page's width steps query.
+    const page = container.querySelector("[data-loom-plan][inert].coverage");
+    expect(page).not.toBeNull();
     expect(
-      [...map!.querySelectorAll(".maps-column")].map((column) =>
-        column.getAttribute("data-column"),
+      [...page!.querySelectorAll(".coverage-tile")].map(
+        (tile) => tile.querySelector(".coverage-tile__label")?.textContent,
       ),
-    ).toEqual(["vision", "spec", "metaplan", "plans", "findings"]);
-    expect(
-      map!.querySelectorAll('.maps-card[aria-current="true"][data-lineage="self"]'),
-    ).toHaveLength(1);
-    expect(map!.querySelector('.maps-card[data-lineage="self"]')?.textContent).toBe("Stops");
+    ).toEqual(["All headings", "Not covered", "Changed since covered", "With open findings"]);
+    expect(page!.querySelectorAll('.coverage-tile[aria-pressed="true"]')).toHaveLength(1);
+    expect(page!.querySelector(".coverage-section__title")?.textContent).toBe("Trip planning");
+    expect(page!.querySelector(".coverage-section__count")?.textContent).toBe("2 of 3 covered");
   });
 
-  it("shows a gap, a moved document and an open finding, each as a card state", () => {
+  it("shows each row state in words and one row open to Why, How and Findings", () => {
     const { container } = render(<CoverageSpecimen />);
 
-    const states = [...container.querySelectorAll(".maps-card")].map((card) =>
-      card.getAttribute("data-state"),
+    const states = [...container.querySelectorAll(".coverage-row")].map((row) =>
+      row.getAttribute("data-state"),
     );
-    expect(states).toContain("uncovered");
-    expect(states).toContain("revised");
-    expect(states).toContain("open");
-    expect(container.querySelector(".maps-group-title")?.textContent).toBe("Trip planning");
+    expect(states).toEqual(["built", "changed", "uncovered"]);
+    const open = container.querySelectorAll('.coverage-row__toggle[aria-expanded="true"]');
+    expect(open).toHaveLength(1);
+    const detail = container.querySelector(".coverage-detail");
+    expect([...detail!.querySelectorAll("h3")].map((title) => title.textContent)).toEqual([
+      "Why",
+      "How",
+      "Findings",
+    ]);
+    expect(container.querySelector(".coverage-nothing")?.textContent).toBe("Nothing yet");
   });
 });
 
 describe("the coverage topic body", () => {
-  it("names the columns, the marks, the filters and the keys without live data", async () => {
+  it("names the tiles, the row parts, the states and the keys without live data", async () => {
     render(<CoverageHelp />);
     await Promise.resolve();
 
-    for (const title of ["The columns", "Marks on a card", "Filters", COVERAGE_SHORTCUTS.title]) {
+    for (const title of [
+      "The tiles",
+      "A heading row",
+      "States",
+      "An open row",
+      COVERAGE_SHORTCUTS.title,
+    ]) {
       expect(screen.getByRole("heading", { name: title })).toBeTruthy();
     }
-    for (const name of ["Vision rows", "Spec headings", "Metaplan entries", "Plans and stages"]) {
+    for (const name of ["All headings", "Covered by", "Built", "Planned"]) {
       expect(screen.getAllByText(name).length).toBeGreaterThan(0);
     }
-    expect(screen.getByText("Not covered")).toBeTruthy();
-    expect(screen.getByText("Changed since settled")).toBeTruthy();
+    expect(screen.getAllByText("Changed since covered").length).toBeGreaterThan(0);
     const keys = screen
       .getByRole("heading", { name: COVERAGE_SHORTCUTS.title })
       .closest("section")!;
@@ -78,7 +88,7 @@ describe("the coverage topic body", () => {
 });
 
 describe("the finding specimen", () => {
-  it("draws one open finding with its id, status, text, About chips and three quiet actions", () => {
+  it("draws an open finding with its id, status, text, About chips and three secondary actions", () => {
     const { container } = render(<FindingSpecimen />);
 
     const card = container.querySelector(
@@ -86,6 +96,9 @@ describe("the finding specimen", () => {
     );
     expect(card).not.toBeNull();
     expect(card!.querySelector(".maps-finding-id")?.textContent).toBe("F-3");
+    expect(card!.querySelector("h3.maps-finding-title")?.textContent).toBe(
+      "Stops have no time window",
+    );
     expect(card!.querySelector(".maps-finding-status")?.textContent).toBe("Open");
     expect(card!.querySelectorAll(".maps-about .maps-chip")).toHaveLength(2);
     const actions = [...card!.querySelectorAll(".maps-actions button")];
@@ -94,7 +107,17 @@ describe("the finding specimen", () => {
       "Fold into entry",
       "Dismiss",
     ]);
-    expect(actions.every((button) => button.getAttribute("data-look") === "quiet")).toBe(true);
+    expect(actions.every((button) => button.getAttribute("data-look") === "secondary")).toBe(true);
+  });
+
+  it("folds a decided finding to its heading and the outcome in words", () => {
+    const { container } = render(<FindingSpecimen />);
+
+    const decided = container.querySelector('.maps-finding[data-status="dismissed"]');
+    expect(decided!.querySelector(".maps-finding-status")?.textContent).toBe(
+      "Dismissed: not needed",
+    );
+    expect(decided!.querySelector("button")).toBeNull();
   });
 });
 
@@ -103,6 +126,7 @@ describe("the findings topic body", () => {
     render(<FindingsHelp />);
     await Promise.resolve();
 
+    expect(screen.getByRole("heading", { name: "Groups" })).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Deciding a finding" })).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Status" })).toBeTruthy();
     for (const name of ["Plan this", "Fold into entry", "Dismiss", "Review the feature"]) {

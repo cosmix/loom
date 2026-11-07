@@ -1,16 +1,19 @@
 // Screenshot planner routes in a real browser.
 //
-// Usage: node web/scripts/plan-screens.mjs [--themes=<id>,<id>] <token-url> <out-dir> <route>...
+// Usage: node web/scripts/plan-screens.mjs [--themes=<id>,<id>] [--browser=chromium|firefox]
+//        <token-url> <out-dir> <route>...
 //
 // Each route is shot at 1440x900 and 390x844, in Ledger (light) and Walnut (dark) unless
-// --themes names others from THEMES, full page, to <out-dir>/<route-slug>-<width>-<theme>.png.
+// --themes names others from THEMES, full page, to <out-dir>/<route-slug>-<width>-<theme>.png,
+// in Chromium unless --browser=firefox. The leading flags may come in any order.
 // Exit 1 on any console error, page error, HTTP status >= 400 on a route, or a navigation that
 // never renders #root.
 // Driven by scripts/plan-screens.sh, which starts the server (loopback is per Bash call).
 
-import { mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync } from "node:fs";
+import { homedir } from "node:os";
 import { join } from "node:path";
-import { chromium } from "playwright-core";
+import { chromium, firefox } from "playwright-core";
 
 const VIEWPORTS = [
   { width: 1440, height: 900 },
@@ -25,6 +28,30 @@ const THEMES = {
   graphite: { name: "graphite", scheme: "dark", dark: "gray" },
 };
 const DEFAULT_THEMES = ["ledger", "walnut"];
+
+/**
+ * The Firefox build to launch. The one playwright-core pins is used when it is installed; else the
+ * newest `firefox-<n>` build in the Playwright cache, so a host that updated its browsers without
+ * this package still shoots. Nothing is downloaded. Returns undefined when no build exists.
+ */
+function firefoxExecutable() {
+  const pinned = firefox.executablePath();
+  if (existsSync(pinned)) return pinned;
+  const cache = process.env.PLAYWRIGHT_BROWSERS_PATH || join(homedir(), ".cache", "ms-playwright");
+  if (!existsSync(cache)) return undefined;
+  const builds = readdirSync(cache)
+    .map((name) => /^firefox-(\d+)$/.exec(name))
+    .filter((match) => match !== null)
+    .sort((a, b) => Number(b[1]) - Number(a[1]));
+  const found = builds.map((match) => join(cache, match[0], "firefox", "firefox"));
+  return found.find((path) => existsSync(path));
+}
+
+// `--no-sandbox` is a Chromium switch; Firefox launches with its own defaults.
+const BROWSERS = {
+  chromium: () => ({ type: chromium, options: { args: ["--no-sandbox"] } }),
+  firefox: () => ({ type: firefox, options: { executablePath: firefoxExecutable() } }),
+};
 
 const ROOT_TIMEOUT_MS = 15_000;
 const SETTLE_MS = 400;
@@ -126,21 +153,43 @@ async function shootTheme(browser, theme, viewport, ctx) {
   return errors;
 }
 
+/** Takes the leading `--name=value` flags off `args`, in any order; the rest is positional. */
+function takeFlags(args) {
+  const flags = {};
+  while (args[0]?.startsWith("--")) {
+    const [name, value = ""] = args.shift().slice(2).split(/=(.*)/s);
+    flags[name] = value;
+  }
+  return flags;
+}
+
 async function main() {
   const args = process.argv.slice(2);
-  const themeIds = args[0]?.startsWith("--themes=")
-    ? args.shift().slice("--themes=".length).split(",")
-    : DEFAULT_THEMES;
-  const themes = themeIds.map((id) => THEMES[id]);
+  const flags = takeFlags(args);
+  const themes = (flags.themes ? flags.themes.split(",") : DEFAULT_THEMES).map((id) =>
+    Object.hasOwn(THEMES, id) ? THEMES[id] : undefined,
+  );
+  const browserName = flags.browser ?? "chromium";
+  // `hasOwn`: a name like `constructor` must not resolve to an inherited property.
+  const makeEngine = Object.hasOwn(BROWSERS, browserName) ? BROWSERS[browserName] : undefined;
+  const unknown = Object.keys(flags).filter((name) => name !== "themes" && name !== "browser");
   const [tokenUrl, outDir, ...routes] = args;
-  if (themes.includes(undefined) || !tokenUrl || !outDir || routes.length === 0) {
+  if (
+    unknown.length > 0 ||
+    makeEngine === undefined ||
+    themes.includes(undefined) ||
+    !tokenUrl ||
+    !outDir ||
+    routes.length === 0
+  ) {
     console.error(
-      `usage: node web/scripts/plan-screens.mjs [--themes=<id>,<id>] <token-url> <out-dir> <route>...; themes: ${Object.keys(THEMES).join(", ")}`,
+      `usage: node web/scripts/plan-screens.mjs [--themes=<id>,<id>] [--browser=chromium|firefox] <token-url> <out-dir> <route>...; themes: ${Object.keys(THEMES).join(", ")}`,
     );
     process.exit(2);
   }
   mkdirSync(outDir, { recursive: true });
-  const browser = await chromium.launch({ args: ["--no-sandbox"] });
+  const engine = makeEngine();
+  const browser = await engine.type.launch(engine.options);
   const failures = [];
   try {
     for (const theme of themes) {
