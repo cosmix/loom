@@ -18,6 +18,11 @@ import {
   section,
 } from "@/plan/markdown/render-test-utils";
 
+// The gfm fixture holds a mermaid fence; the real module is never loaded here.
+vi.mock("mermaid", () => ({
+  default: { initialize: vi.fn(), render: vi.fn(() => new Promise(() => {})) },
+}));
+
 const writeText = vi.fn<(text: string) => Promise<void>>();
 
 beforeEach(() => {
@@ -70,14 +75,11 @@ describe("Markdown GFM rendering", () => {
       "noopener noreferrer",
     );
 
+    // The rust fence is source; the mermaid fence goes to the diagram renderer (mermaid-block.test.tsx).
     const blocks = Array.from(container.querySelectorAll(".md-code"));
-    expect(blocks.map((block) => block.querySelector(".md-code-lang")?.textContent)).toEqual([
-      "rust",
-      "mermaid",
-    ]);
+    expect(blocks[0]?.querySelector(".md-code-lang")?.textContent).toBe("rust");
     expect(blocks[0]?.querySelector("pre > code")?.textContent).toBe("fn main() {}");
-    expect(blocks[1]?.querySelector("pre > code")?.textContent).toContain("graph TD");
-    expect(container.querySelector("svg.mermaid, [data-mermaid]")).toBeNull();
+    expect(blocks[1]?.querySelector(".md-code-lang")?.textContent).toBe("mermaid");
   });
 
   it("copies a code block's text", async () => {

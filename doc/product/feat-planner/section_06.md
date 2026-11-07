@@ -127,9 +127,11 @@ the raw text anyway for the editor and diffs.)
 - **Code blocks** render in the monospace face on a muted ground, with the fence's language as
   a small label and a copy control, and scroll sideways when long. There is no syntax colouring
   in the reading view. (My call: colouring would pull a highlighter into the entry bundle for
-  text the reader mostly skims; the editor colours source when opened.) A `mermaid` block shows
-  its source as a code block; diagrams are not drawn. (My call: the plan view draws the stage
-  graph from the YAML instead, below.)
+  text the reader mostly skims; the editor colours source when opened.) A `mermaid` block is
+  drawn as a diagram in the active theme's colours and redrawn when the theme changes; the
+  source shows while the renderer loads, and stays as a code block with a muted note when the
+  diagram does not parse. (My call: the renderer loads on the first diagram, so documents
+  without one never pay for it.)
 - **Inline code** that is exactly the path of a document file mode can open (for example
   `` `doc/plans/briefs/token-flow/common.md` ``, the form plans use) becomes a link to it.
   (My call: plans and briefs name each other this way far more often than with Markdown links.)

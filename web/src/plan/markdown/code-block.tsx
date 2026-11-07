@@ -1,29 +1,13 @@
-import { CopyIcon } from "lucide-react";
-import { type JSX, useRef } from "react";
+import type { JSX } from "react";
 
-import { CopyButton, selectContents } from "@/plan/markdown/copy-button";
+import { MermaidBlock } from "@/plan/markdown/mermaid-block";
+import { PlainCodeBlock } from "@/plan/markdown/plain-code-block";
 
 /**
- * A fenced or indented block as plain monospace text. No highlighting, and a
- * `mermaid` fence is shown as its source like any other language.
+ * A fenced or indented block. A `mermaid` fence is drawn as a diagram (mermaid is loaded on first
+ * use); every other language is plain monospace text with no highlighting.
  */
 export function CodeBlock({ value, lang }: { value: string; lang: string | null }): JSX.Element {
-  const code = useRef<HTMLElement>(null);
-  return (
-    <div className="md-code">
-      <div className="md-code-bar">
-        {lang ? <span className="md-code-lang">{lang}</span> : <span />}
-        <CopyButton
-          text={value}
-          label={lang ? `Copy ${lang} code` : "Copy code"}
-          icon={CopyIcon}
-          onFailed={() => selectContents(code.current)}
-        />
-      </div>
-      {/* Focusable so a keyboard can scroll a long line sideways. */}
-      <pre tabIndex={0}>
-        <code ref={code}>{value}</code>
-      </pre>
-    </div>
-  );
+  if (lang === "mermaid") return <MermaidBlock source={value} />;
+  return <PlainCodeBlock value={value} lang={lang} />;
 }
