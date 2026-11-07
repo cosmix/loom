@@ -148,8 +148,9 @@ fn moved_assertion_is_not_an_integrity_event() {
     repo.write(TESTS_FILE, moved);
     repo.commit("move an assertion");
 
-    // The diff removes and re-adds the assertion line; the statement rule
-    // compares statements, so the move raises nothing.
+    // The textual diff shows the assertion line removed and added again; the
+    // scan matches statements by key rather than by diff line, so the moved
+    // statement is found on both sides and nothing is raised.
     let diff = repo.git(&["diff", "main", "--", TESTS_FILE]);
     assert!(diff.contains("\n-    assert_eq!(x, 5);"), "{diff}");
     assert!(diff.contains("\n+    assert_eq!(x, 5);"), "{diff}");

@@ -4,8 +4,10 @@
 //! decoration) and the runner still collects the destination. Recomputed on
 //! every scan from the file contents, never stored.
 
+use std::cell::OnceCell;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
+use std::str::Lines;
 
 use super::edits::normalize;
 use super::moves_collect::Collector;
@@ -41,11 +43,22 @@ struct Node {
     start: usize,
     end: usize,
     scope: Vec<String>,
+    /// [`identity`] of the node, built on first use: it walks the decoration
+    /// block above the function and copies its body, and a scan compares one
+    /// node against many candidates.
+    identity: OnceCell<Option<String>>,
+}
+
+impl Node {
+    fn identity(&self, content: &str, profile: &str) -> Option<&str> {
+        self.identity
+            .get_or_init(|| identity(content, self, profile))
+            .as_deref()
+    }
 }
 
 /// The function nodes of a delta's two sides, empty for a side with nothing
 /// to match.
-#[derive(Default)]
 struct Functions {
     base: Vec<Node>,
     head: Vec<Node>,
@@ -73,7 +86,8 @@ fn cancel_with(
     }
     let functions: Vec<Functions> = deltas
         .iter()
-        .map(|delta| extract_functions(extractors, delta))
+        .enumerate()
+        .map(|(index, delta)| extract_functions(extractors, deltas, index, delta))
         .collect();
     let mut collector = Collector::new(head);
     let mut lost_gone = vec![BTreeSet::new(); deltas.len()];
@@ -126,7 +140,7 @@ fn find_partner(
 ) -> Option<(usize, usize)> {
     let from = &deltas[source];
     let node = innermost(&functions[source].base, statement.start)?;
-    let wanted = identity(&from.base, node, from.profile.name)?;
+    let wanted = node.identity(&from.base, from.profile.name)?;
     for (index, dest) in deltas.iter().enumerate() {
         if index == source || dest.profile.name != from.profile.name {
             continue;
@@ -139,7 +153,7 @@ fn find_partner(
                 continue;
             };
             let same = found.scope.last() == node.scope.last()
-                && identity(&dest.head, found, dest.profile.name).as_deref() == Some(&wanted);
+                && found.identity(&dest.head, dest.profile.name) == Some(wanted);
             if same && collector.collected(dest, &found.scope) {
                 return Some((index, added));
             }
@@ -156,10 +170,22 @@ fn innermost(nodes: &[Node], offset: usize) -> Option<&Node> {
         .min_by_key(|node| node.end - node.start)
 }
 
-/// The symbol-level function nodes of the sides of `delta` that have
-/// statements to match; a file the extractors cannot read symbol by symbol
-/// (no grammar, parse error, oversized) has none.
-fn extract_functions(extractors: &[BoxedExtractor], delta: &FileDelta) -> Functions {
+/// The symbol-level function nodes of the sides of `delta` (`deltas[at]`)
+/// that can take part in a match; a file the extractors cannot read symbol by
+/// symbol (no grammar, parse error, oversized) has none. A side matters only
+/// when it has statements and another delta of the language holds the
+/// opposite kind: lost statements pair with added ones in other files.
+fn extract_functions(
+    extractors: &[BoxedExtractor],
+    deltas: &[FileDelta],
+    at: usize,
+    delta: &FileDelta,
+) -> Functions {
+    let elsewhere = |holds: fn(&FileDelta) -> bool| {
+        deltas.iter().enumerate().any(|(index, other)| {
+            index != at && other.profile.name == delta.profile.name && holds(other)
+        })
+    };
     let nodes = |content: &str, wanted: bool| {
         if !wanted || content.is_empty() {
             return Vec::new();
@@ -173,12 +199,19 @@ fn extract_functions(extractors: &[BoxedExtractor], delta: &FileDelta) -> Functi
                 start: node.span.start_byte,
                 end: node.span.end_byte,
                 scope: node.scope,
+                identity: OnceCell::new(),
             })
             .collect()
     };
     Functions {
-        base: nodes(&delta.base, !delta.lost.is_empty()),
-        head: nodes(&delta.head, !delta.added.is_empty()),
+        base: nodes(
+            &delta.base,
+            !delta.lost.is_empty() && elsewhere(|other| !other.added.is_empty()),
+        ),
+        head: nodes(
+            &delta.head,
+            !delta.added.is_empty() && elsewhere(|other| !other.lost.is_empty()),
+        ),
     }
 }
 
@@ -205,29 +238,60 @@ fn identity(content: &str, node: &Node, profile: &str) -> Option<String> {
 /// decorations and the function, are walked over and left out of the block;
 /// any other code line ends the walk.
 fn decoration_prefix(above: &str) -> String {
-    let lines: Vec<&str> = above.lines().collect();
+    let mut lines = Upward::new(above);
     let mut blocks: Vec<String> = Vec::new();
-    let mut top = lines.len();
-    while top > 0 {
-        let text = lines[top - 1].trim();
+    let mut top = 0;
+    while let Some(line) = lines.get(top) {
+        let text = line.trim();
         if text.is_empty() || is_comment(text) {
-            top -= 1;
+            top += 1;
             continue;
         }
         let (closers, openers) = brackets(text);
         let start = if closers > openers {
-            block_start(&lines[..top])
+            block_start(&mut lines, top)
         } else if is_decoration(text) {
-            Some(top - 1)
+            Some(top)
         } else {
             None
         };
         let Some(start) = start else { break };
-        blocks.push(lines[start..top].join("\n"));
-        top = start;
+        blocks.push(lines.block(top, start));
+        top = start + 1;
     }
     blocks.reverse();
     blocks.join("\n")
+}
+
+/// The lines above a function read from the nearest one upward, so a walk
+/// that ends at the first code line never touches the rest of the file.
+struct Upward<'a> {
+    rest: std::iter::Rev<Lines<'a>>,
+    seen: Vec<&'a str>,
+}
+
+impl<'a> Upward<'a> {
+    fn new(above: &'a str) -> Self {
+        Self {
+            rest: above.lines().rev(),
+            seen: Vec::new(),
+        }
+    }
+
+    /// The line `distance` lines above the function (0 is the nearest).
+    fn get(&mut self, distance: usize) -> Option<&'a str> {
+        while self.seen.len() <= distance {
+            self.seen.push(self.rest.next()?);
+        }
+        Some(self.seen[distance])
+    }
+
+    /// Lines `from..=to` (distances), in source order.
+    fn block(&self, from: usize, to: usize) -> String {
+        let mut block: Vec<&str> = self.seen[from..=to].to_vec();
+        block.reverse();
+        block.join("\n")
+    }
 }
 
 /// A whole-line comment: `//`, `#` (not an attribute `#[` or `#!`) or a
@@ -238,15 +302,17 @@ fn is_comment(text: &str) -> bool {
         || (text.starts_with("/*") && text.ends_with("*/"))
 }
 
-/// The line opening the bracket group that the last of `lines` closes, when
-/// that line is a decoration and the group is at most [`MAX_BLOCK_LINES`] long.
-fn block_start(lines: &[&str]) -> Option<usize> {
+/// The distance of the line opening the bracket group that the line at
+/// distance `from` closes, when that line is a decoration and the group is at
+/// most [`MAX_BLOCK_LINES`] long.
+fn block_start(lines: &mut Upward<'_>, from: usize) -> Option<usize> {
     let mut depth: i64 = 0;
-    for (index, line) in lines.iter().enumerate().rev().take(MAX_BLOCK_LINES) {
-        let (closers, openers) = brackets(line.trim());
+    for distance in from..from + MAX_BLOCK_LINES {
+        let line = lines.get(distance)?.trim();
+        let (closers, openers) = brackets(line);
         depth += closers as i64 - openers as i64;
         if depth <= 0 {
-            return is_decoration(line.trim()).then_some(index);
+            return is_decoration(line).then_some(distance);
         }
     }
     None
