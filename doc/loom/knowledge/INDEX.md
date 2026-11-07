@@ -168,7 +168,7 @@
 | [plan-server-delivery](mistakes/plan-server-delivery.md) | Slips | 374 |
 | [planner-design-brainstorm](mistakes/planner-design-brainstorm.md) | Stubs | 94 |
 | [planner-follow-ups-delivery](mistakes/planner-follow-ups-delivery.md) | Slips | 146 |
-| [planner-polish](mistakes/planner-polish.md) | Polish | 100 |
+| [planner-polish](mistakes/planner-polish.md) | Polish | 107 |
 | [planner-redesign](mistakes/planner-redesign.md) |  | 80 |
 | [planner-review-fixes](mistakes/planner-review-fixes.md) |  | 48 |
 | [planner-ui-repair](mistakes/planner-ui-repair.md) | Repair | 131 |

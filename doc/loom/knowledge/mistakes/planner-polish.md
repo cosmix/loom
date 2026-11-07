@@ -98,3 +98,10 @@
 **Prevention:** check the type against the six allowed before every `loom stage commit`; a bundle-size fix is `fix`.
 
 **Fix:** none; rewriting history is forbidden inside a stage, and later commits use allowed types.
+
+## Stage token lanes dismissed as not monitoring
+
+**What happened:** Investigating background-activity visibility for the planner chat, a survey called the stage modal's token lanes token accounting only and concluded that no web UI monitors subagents. The user corrected it: the lanes show how many subagents and codex jobs a stage started, with each one's model, live/idle state, token total and rate.
+**Why:** The survey judged the lanes by what they lack (agent content, lifecycle state) and missed what they show.
+**Prevention:** When asked whether existing UI covers a need, list what it shows field by field before judging fit. Per-agent count, model, tokens, rate and liveness are monitoring data even without transcript content.
+**Fix:** PLAN-planner-background-activity-and-skills reuses the token-flow pipeline (tokens/ reader and flow builder, AgentFlow and agentFlowSchema) for plan sessions.
