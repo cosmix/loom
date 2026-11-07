@@ -5,8 +5,7 @@ use std::path::Path;
 use super::{count, metaplan_path, Cx};
 use crate::planning::findings::{ledger_path, FindingStatus};
 use crate::planning::trace::{
-    DocRole, Gap, GapKind, NodeRef, Progress, SettleState, TraceDoc, TraceEntry, TraceFinding,
-    TraceHeading,
+    DocRole, Gap, GapKind, NodeRef, SettleState, TraceDoc, TraceEntry, TraceFinding, TraceHeading,
 };
 
 /// How many gaps the frontier shows.
@@ -27,11 +26,8 @@ pub(super) fn gaps(
     entries: &[TraceEntry],
     findings: &[TraceFinding],
 ) -> Vec<Gap> {
-    // Only a written, unlocked document can be settled again, so only its state is a gap.
-    let settleable: Vec<&TraceDoc> = documents
-        .iter()
-        .filter(|doc| doc.progress != Progress::Stub && cx.unlocked(&doc.path))
-        .collect();
+    // Only a document the reader is asked to settle has its settle state as a gap.
+    let settleable: Vec<&TraceDoc> = documents.iter().filter(|doc| doc.settleable).collect();
     let mut found = Vec::new();
     for (state, kind) in CHANGED {
         let changed = settleable.iter().filter(|doc| doc.settle == state);

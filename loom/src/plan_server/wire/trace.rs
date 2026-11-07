@@ -123,6 +123,9 @@ pub struct TraceDocView {
     pub title: String,
     pub progress: ProgressView,
     pub settle: SettleStateView,
+    /// Whether the reader is asked to settle it (`TraceDoc::settleable`); a document that is not
+    /// shows no settle state anywhere.
+    pub settleable: bool,
     /// Where the document's stub lives: a vision row or a metaplan entry.
     pub stub: Option<NodeRefView>,
     pub number: Option<u32>,

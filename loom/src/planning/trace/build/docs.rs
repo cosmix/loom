@@ -216,6 +216,7 @@ fn span_hash(cx: &Cx, path: &Path, anchor: &str) -> Option<String> {
 
 /// The document as the trace shows it, with the line settling would write now.
 fn finish(cx: &Cx, seed: Seed) -> TraceDoc {
+    let settleable = settleable(cx, &seed);
     let doc = cx.project.docs.get(&seed.path);
     let text = cx.text(&seed.path);
     let bundle = match (seed.role, seed.progress) {
@@ -224,7 +225,36 @@ fn finish(cx: &Cx, seed: Seed) -> TraceDoc {
         }
         _ => Vec::new(),
     };
-    // A brief without text (non-Markdown, unreadable or oversized) is hashed by its fingerprint.
+    let (stub, stub_hash) = seed.stub.unzip();
+    let current = SettledLine {
+        body: bundle_body_hash(cx, text.unwrap_or_default(), &bundle),
+        stub: stub_hash,
+        upstream: seed.upstream,
+    };
+    let settle = state(text.and_then(settled_line).as_ref(), &current);
+    // A stub has no document yet: it shows its vision row's or entry heading's name.
+    let title = doc.map(|doc| doc.title.clone()).or(seed.title);
+    let open_questions = doc.map_or(0, |doc| doc.open_questions);
+    TraceDoc {
+        title: title.unwrap_or_default(),
+        role: seed.role,
+        progress: seed.progress,
+        settle,
+        settleable,
+        stub,
+        number: seed.number,
+        slug: seed.slug,
+        bundle,
+        my_calls: count(text.map_or(0, |text| text.to_lowercase().matches("(my call").count())),
+        open_questions: count(open_questions),
+        current,
+        path: seed.path,
+    }
+}
+
+/// The body hash of a document's text and its brief bundle. A brief without text (non-Markdown,
+/// unreadable or oversized) is hashed by its fingerprint.
+fn bundle_body_hash(cx: &Cx, text: &str, bundle: &[PathBuf]) -> String {
     let prints: Vec<Option<String>> = bundle
         .iter()
         .map(|path| match cx.text(path) {
@@ -240,30 +270,15 @@ fn finish(cx: &Cx, seed: Seed) -> TraceDoc {
             (path.as_path(), content.unwrap_or_default())
         })
         .collect();
-    let (stub, stub_hash) = seed.stub.unzip();
-    let current = SettledLine {
-        body: body_hash(text.unwrap_or_default(), &briefs),
-        stub: stub_hash,
-        upstream: seed.upstream,
-    };
-    let settle = state(text.and_then(settled_line).as_ref(), &current);
-    // A stub has no document yet: it shows its vision row's or entry heading's name.
-    let title = doc.map(|doc| doc.title.clone()).or(seed.title);
-    let open_questions = doc.map_or(0, |doc| doc.open_questions);
-    TraceDoc {
-        title: title.unwrap_or_default(),
-        role: seed.role,
-        progress: seed.progress,
-        settle,
-        stub,
-        number: seed.number,
-        slug: seed.slug,
-        bundle,
-        my_calls: count(text.map_or(0, |text| text.to_lowercase().matches("(my call").count())),
-        open_questions: count(open_questions),
-        current,
-        path: seed.path,
-    }
+    body_hash(text, &briefs)
+}
+
+/// Whether the reader is asked to settle the document (`TraceDoc::settleable`). A locked plan
+/// (running, done, retired or archived) cannot be settled; the vision and metaplan of a feature
+/// whose plans are all done are final too, while its sections stay open to follow-up plans.
+fn settleable(cx: &Cx, seed: &Seed) -> bool {
+    let finished = matches!(seed.role, DocRole::Vision | DocRole::Metaplan) && cx.all_done();
+    seed.progress != Progress::Stub && cx.unlocked(&seed.path) && !finished
 }
 
 /// `settled-duplicate` and `settled-bad` for an unlocked document's `Settled:` lines: a locked
