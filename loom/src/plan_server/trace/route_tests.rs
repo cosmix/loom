@@ -247,6 +247,34 @@ fn settled_version_names_the_commit_holding_the_line() {
 }
 
 #[test]
+fn settled_version_skips_a_newer_commit_that_removed_the_line() {
+    if skip("settled_version_skips_a_newer_commit_that_removed_the_line") {
+        return;
+    }
+    let dir = demo(&[]);
+    let server = serve(&dir);
+    let cookies = bootstrap(&server);
+    let original = read(&dir, SECTION_01);
+    let hash = normalized_hash(&original);
+    let saved = settle(&server, &cookies, SECTION_REL, &hash, "");
+    assert_eq!(status(&saved), 200, "{saved}");
+    git(dir.path(), &["add", SECTION_01]);
+    git(dir.path(), &["commit", "-q", "-m", "settle"]);
+    let holding = git(dir.path(), &["rev-parse", "HEAD"]);
+    let settled = read(&dir, SECTION_01);
+    // A later commit clears the line; the same line is then written again, uncommitted.
+    put(dir.path(), SECTION_01, &original);
+    git(dir.path(), &["add", SECTION_01]);
+    git(dir.path(), &["commit", "-q", "-m", "clear"]);
+    put(dir.path(), SECTION_01, &settled);
+    assert_eq!(
+        settled_version(&server, &cookies, SECTION_REL)["commit"],
+        holding.as_str()
+    );
+    server.stop().unwrap();
+}
+
+#[test]
 fn settled_version_rejects_a_bad_or_unknown_path() {
     if skip("settled_version_rejects_a_bad_or_unknown_path") {
         return;

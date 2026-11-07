@@ -39,11 +39,12 @@ anything.
      files (`briefs/<slug>/<stage-id>/...`); cite `common.md` and the other brief files where
      the plan relies on them. Cite every Markdown brief file listed under Sources at least once:
      the seal refuses a plan summary that leaves one out. A brief with no Markdown text, such
-     as a JSON mockup, may be read but is not cited. No heading after the opening level. At
-     most 8 opening and 15 detail sentences. An opening sentence says what its paragraphs add
-     up to; it never repeats a detail sentence. Write the detail level first and seal: the
-     refusal lists each detail sentence's id. Then add the opening level above it, citing
-     those ids, and seal again.
+     as a JSON mockup, may be read but is not cited. No heading after the opening level. Stay
+     within the caps the rebuild brief states (8 to 12 opening, 15 to 60 detail, scaled to the
+     plan and its briefs). An opening sentence says what its paragraphs add up to; it never
+     repeats a detail sentence. Write the detail level first and seal: the refusal lists each
+     detail sentence's id. Then add the opening level above it, citing those ids, and seal
+     again.
    - A sentence compresses its cited section; never copy a sentence of the source.
    - Use only `#` and `##` headings to group prose; headings carry no links.
    - End every sentence with one or more plain Markdown links to heading sections of this

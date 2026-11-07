@@ -99,6 +99,21 @@ pub fn stage_lines(text: &str) -> Vec<StageLine> {
     found
 }
 
+/// `PLAN-<slug>.md` alone: one plan token with no anchor and no lifecycle prefix, whose slug
+/// holds letters, digits, `-`, `_` and inner dots.
+pub fn is_plan_token(token: &str) -> bool {
+    let (found, bad) = tokens(token);
+    let [Token::Plan { slug, anchor: None }] = found.as_slice() else {
+        return false;
+    };
+    bad.is_empty()
+        && token == format!("PLAN-{slug}.md")
+        && !slug.starts_with('.')
+        && slug
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.'))
+}
+
 fn collect<T: PartialEq>(value: &str, pick: impl Fn(Token) -> Option<T>) -> (Vec<T>, Vec<String>) {
     let (mut found, mut bad) = (Vec::new(), Vec::new());
     for raw in value.split(',').map(str::trim) {
@@ -118,11 +133,13 @@ fn parse_token(raw: &str) -> Option<Token> {
     }
 }
 
-/// `label](target)`: the label wins, then the target's file name and fragment.
+/// `label](target)`: the target's file name and fragment win, then the label.
 fn parse_link(link: &str) -> Option<Token> {
     let (label, target) = link.split_once("](")?;
     let target = target.strip_suffix(')')?;
-    parse_plain(label.trim()).or_else(|| parse_plain(&target_name(target)?))
+    target_name(target)
+        .and_then(|name| parse_plain(&name))
+        .or_else(|| parse_plain(label.trim()))
 }
 
 fn target_name(target: &str) -> Option<String> {

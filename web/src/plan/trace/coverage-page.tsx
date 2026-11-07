@@ -80,6 +80,34 @@ function groupsOf(views: CardView[]): { group: string | null; views: CardView[] 
   return groups;
 }
 
+/**
+ * One run of cards under its section title. Section titles repeat across the spec column, so the
+ * list is named by its title: a screen reader hears which section a card belongs to.
+ */
+function CardGroup(props: {
+  group: string | null;
+  views: CardView[];
+  onSelect: (key: string) => void;
+  register: (key: string, element: HTMLButtonElement | null) => void;
+}) {
+  const { group, views, onSelect, register } = props;
+  const titleId = useId();
+  return (
+    <div className="maps-group">
+      {group !== null && (
+        <h3 id={titleId} className="plan-fine maps-group-title">
+          <Untrusted text={group} />
+        </h3>
+      )}
+      <ul className="maps-cards" aria-labelledby={group === null ? undefined : titleId}>
+        {views.map((view) => (
+          <CardButton key={view.card.key} view={view} onSelect={onSelect} register={register} />
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 function Column(props: {
   id: ColumnId;
   label: string;
@@ -96,18 +124,13 @@ function Column(props: {
       </h2>
       {views.length === 0 && <p className="plan-fine maps-empty">None</p>}
       {groupsOf(views).map(({ group, views: inGroup }, index) => (
-        <div key={`${index}-${group ?? ""}`} className="maps-group">
-          {group !== null && (
-            <h3 className="plan-fine maps-group-title">
-              <Untrusted text={group} />
-            </h3>
-          )}
-          <ul className="maps-cards">
-            {inGroup.map((view) => (
-              <CardButton key={view.card.key} view={view} onSelect={onSelect} register={register} />
-            ))}
-          </ul>
-        </div>
+        <CardGroup
+          key={`${index}-${group ?? ""}`}
+          group={group}
+          views={inGroup}
+          onSelect={onSelect}
+          register={register}
+        />
       ))}
     </section>
   );

@@ -30,7 +30,10 @@ export function ledgerBlock(ledger: LedgerHash): string | null {
  */
 export function useLedgerHash(feature: string, trace: TraceView): LedgerHash {
   const [held, setHeld] = useState<{ trace: TraceView; value: LedgerHash } | null>(null);
+  const hasFindings = trace.findings.length > 0;
   useEffect(() => {
+    // Without findings there is nothing to change, and a missing ledger would log a 404 each visit.
+    if (!hasFindings) return;
     let current = true;
     void fetchDoc(ledgerPath(feature)).then((result) => {
       if (!current) return;
@@ -42,6 +45,6 @@ export function useLedgerHash(feature: string, trace: TraceView): LedgerHash {
     return () => {
       current = false;
     };
-  }, [feature, trace]);
+  }, [feature, trace, hasFindings]);
   return held !== null && held.trace === trace ? held.value : READING;
 }

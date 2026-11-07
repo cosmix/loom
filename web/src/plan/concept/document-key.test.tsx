@@ -253,7 +253,11 @@ describe("keyLede", () => {
       ["demo/product/section_01", "demo/engineering/a"],
       "Sources: the 2 documents this overview summarizes",
     ],
-    ["overview/demo/engineering", ["demo/engineering/a"], "Source: the plan this overview summarizes"],
+    [
+      "overview/demo/engineering",
+      ["demo/engineering/a"],
+      "Source: the plan this overview summarizes",
+    ],
   ])("names the documents of %s", (key, pages, expected) => {
     expect(keyLede(pageWith(key, pages))).toBe(expected);
   });

@@ -11,7 +11,7 @@ import { LoadState } from "@/plan/ui/load-state";
 import { plural } from "@/plan/ui/plural";
 
 import { Group } from "./findings-cards";
-import { groupFindings, openCount } from "./findings-model";
+import { followUpsOffer, groupFindings, openCount } from "./findings-model";
 import { useLedgerHash } from "./ledger-hash";
 import { useTrace } from "./state";
 import { TraceGate } from "./trace-gate";
@@ -39,7 +39,11 @@ function FindingsBody({ trace, feature }: { trace: TraceView; feature: string })
   const ledger = useLedgerHash(feature, trace);
   const groups = groupFindings(trace.findings);
   useScrollToHash(groups.length > 0);
-  const followUps = checklist ? offerOfKind(checklist, "plan_follow_ups") : undefined;
+  const followUps = followUpsOffer(
+    checklist ? offerOfKind(checklist, "plan_follow_ups") : undefined,
+    trace,
+    feature,
+  );
   if (groups.length === 0) {
     return (
       <p className="plan-empty">

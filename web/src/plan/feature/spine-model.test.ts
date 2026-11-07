@@ -143,6 +143,10 @@ describe("the trace pages' rows", () => {
       finding.status = { kind: "dismissed", detail: "x" };
     }
     expect(group("plans", settled).children.at(-1)!.note).toBeNull();
-    expect(spineGroups(atlas()).find((g) => g.id === "plans")!.children.at(-1)!.note).toBeNull();
+    expect(
+      spineGroups(atlas())
+        .find((g) => g.id === "plans")!
+        .children.at(-1)!.note,
+    ).toBeNull();
   });
 });

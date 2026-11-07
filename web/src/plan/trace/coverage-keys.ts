@@ -12,7 +12,7 @@ import type { CoverageModel } from "@/plan/trace/coverage-model";
 const CARD_KEY = "[data-key]";
 
 /** An open Radix dialog or an alert dialog; the same test the reading column uses for Escape. */
-const OPEN_DIALOG = '[role="dialog"][data-state="open"], [role="alertdialog"]';
+export const OPEN_DIALOG = '[role="dialog"][data-state="open"], [role="alertdialog"]';
 
 export interface KeyContext {
   model: CoverageModel;

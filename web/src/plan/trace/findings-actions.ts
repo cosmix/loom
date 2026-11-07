@@ -26,10 +26,21 @@ export function ledgerPath(feature: string): string {
   return `doc/plans/${feature}/findings.md`;
 }
 
-/** A dismissal reason as the route takes it: trimmed, and never empty. */
+/** The longest dismissal reason the route takes. */
+export const REASON_MAX = 200;
+
+/**
+ * A dismissal reason as the route takes it: one line (line breaks and tabs become spaces, as the
+ * server does), other control characters removed, trimmed, at most `REASON_MAX` characters, and
+ * never empty.
+ */
 export function dismissReason(input: string): string | null {
-  const reason = input.trim();
-  return reason === "" ? null : reason;
+  const reason = input
+    .replace(/[\n\r\t]/g, " ")
+    .replace(/\p{Cc}/gu, "")
+    .trim();
+  const cut = [...reason].slice(0, REASON_MAX).join("").trim();
+  return cut === "" ? null : cut;
 }
 
 /** What a failed or refused status change tells the reader; null when the ledger was written. */

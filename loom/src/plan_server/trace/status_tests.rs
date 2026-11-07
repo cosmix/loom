@@ -141,6 +141,22 @@ fn a_stale_ledger_hash_conflicts_and_an_unknown_feature_is_not_found() {
 }
 
 #[test]
+fn a_stale_hash_conflicts_before_the_new_text_is_built() {
+    if skip("a_stale_hash_conflicts_before_the_new_text_is_built") {
+        return;
+    }
+    let dir = demo(&[(LEDGER, TEXT)]);
+    let server = serve(&dir);
+    let cookies = bootstrap(&server);
+    // An unknown id would be a 400 if the text were built before the hash is compared.
+    let dismissal = json!({ "kind": "dismissed", "detail": "no" });
+    let stale = post_status(&server, &cookies, "F-9", &normalized_hash("old"), dismissal);
+    assert_eq!(status(&stale), 409, "{stale}");
+    assert_eq!(read(&dir, LEDGER), TEXT);
+    server.stop().unwrap();
+}
+
+#[test]
 fn a_feature_without_a_ledger_is_not_found() {
     if skip("a_feature_without_a_ledger_is_not_found") {
         return;

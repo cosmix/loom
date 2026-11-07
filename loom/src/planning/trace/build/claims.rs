@@ -11,8 +11,13 @@ use crate::planning::slug::PlanEntry;
 use crate::planning::trace::tokens::{stage_lines, SectionRef};
 use crate::planning::trace::{CoverKind, CoverRef, TraceHeading};
 
-/// Section anchors that are not spec content and need no cover.
-const UNCOVERABLE: [&str; 2] = ["open-questions", "out-of-scope"];
+/// Section anchors that are not spec content and need no cover: `## Open questions` and the
+/// section skill's `## Out of scope for this section` (plain `## Out of scope` too).
+const UNCOVERABLE: [&str; 3] = [
+    "open-questions",
+    "out-of-scope",
+    "out-of-scope-for-this-section",
+];
 
 /// One section or heading an edge line names.
 pub(super) struct Claim {

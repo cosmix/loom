@@ -260,13 +260,14 @@
 
 /* ── Edge chips ────────────────────────────────────────────────────────────── */
 
-/* Mono --type-fine pills on --muted after a sentence (a mono id in the reading column, ui/DESIGN.md
-   Page rhythm). They rest at 55% so they never compete with the measure and come up whole while
-   their sentence is hovered or holds focus, while a chip has focus, and inside an opened run.
-   Opacity, never display: the chips keep their place in the accessibility tree and the tab order. */
+/* Mono --type-fine pills on --muted after a sentence (ui/DESIGN.md Page rhythm). They rest at 70%
+   and come up whole while their sentence is hovered or focused, a chip has focus, or inside an
+   opened run. Opacity, never display: the chips stay in the accessibility tree and tab order.
+   70% keeps the chip's --foreground words at 4.5:1 (WCAG 1.4.3) over the page ground: Ledger
+   5.7:1, Walnut 6.9:1, Graphite 6.9:1, Aubergine 7.6:1 (55% measured 3.6:1 on Ledger). */
 [data-loom-plan] .trace-chips {
   margin-inline-start: 0.15em;
-  opacity: 0.55;
+  opacity: 0.7;
   transition: opacity 120ms;
 }
 
@@ -307,13 +308,14 @@
   text-decoration: underline;
 }
 
-/* A section's settle state inside a plan page's chip: the dot in the tone, then the word. */
+/* A section's settle state inside a plan page's chip: the dot in the tone, then the word. The
+   word keeps the chip's --foreground (ui/DESIGN.md, Status: only the glyph takes a tone); in
+   --muted-foreground it measured 2.2:1 to 3:1 on the resting chip and only 4.9:1 on Ledger whole. */
 [data-loom-plan] .trace-chip-state {
   display: inline-flex;
   flex: none;
   align-items: center;
   gap: 0.4em;
-  color: var(--muted-foreground);
 }
 
 /* ── Turn footer: impact rows ──────────────────────────────────────────────── */

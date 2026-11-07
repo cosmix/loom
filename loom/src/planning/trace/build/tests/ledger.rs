@@ -190,3 +190,30 @@ fn a_folded_status_naming_no_metaplan_entry_is_a_problem() {
     let trace = &project.feature("demo").unwrap().trace;
     assert_eq!(trace.entries[0].revisit, ["F-4"]);
 }
+
+#[test]
+fn a_planned_status_naming_no_plan_token_is_a_problem() {
+    let ledger = format!(
+        "# Findings\n\n{}",
+        [
+            entry("F-1", "Prose", "vision", "planned soon"),
+            entry("F-2", "Anchored", "vision", "planned PLAN-first.md#a"),
+            entry("F-3", "Prefixed", "vision", "planned DONE-PLAN-first.md"),
+            entry("F-4", "Fine", "vision", "planned PLAN-first.md"),
+        ]
+        .concat()
+    );
+    let fx = Fixture::new(&[
+        (VISION, &vision(&[1])),
+        (&section(1), "# S1\n"),
+        (LEDGER, &ledger),
+    ]);
+    let project = fx.load();
+    let lines: Vec<Option<usize>> = project
+        .problems
+        .iter()
+        .filter(|p| p.code == "findings-bad-status")
+        .map(|p| p.line)
+        .collect();
+    assert_eq!(lines, [Some(3), Some(10), Some(17)]);
+}

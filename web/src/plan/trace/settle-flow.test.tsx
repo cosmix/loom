@@ -166,3 +166,21 @@ it("focus moves to the settle state after a confirmed settle closes the dialog",
   await waitFor(() => expect(document.activeElement).toBe(pill));
   expect(posts.map((params) => params.get("confirm"))).toEqual([null, "1"]);
 });
+
+it("cancelling the dialog returns focus to the Mark settled button that opened it", async () => {
+  settleAnswers = [{ status: 409, body: UNRESOLVED }];
+  mount(settle(S03));
+  const opener = await screen.findByRole("button", { name: "Mark settled" });
+  fireEvent.click(opener);
+  const dialog = await screen.findByRole("dialog");
+  fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  await waitFor(() => expect(document.activeElement).toBe(opener));
+  expect(posts).toHaveLength(1);
+});
+
+it("a locked prop hides the controls whatever the file name says", async () => {
+  mount(<SettleControl feature="demo" path={S03} hash={HASH} locked />);
+  await screen.findByText("Draft");
+  expect(screen.queryByRole("button", { name: "Mark settled" })).toBeNull();
+});
