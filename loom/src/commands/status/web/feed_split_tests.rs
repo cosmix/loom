@@ -188,3 +188,20 @@ fn stage_set_immutable_and_full_only_changes_need_a_full() {
     assert!(needs_full(&base, &split(&terminals)));
     assert!(!needs_full(&base, &split(&fixture())));
 }
+
+#[test]
+fn a_busy_line_appearing_or_clearing_needs_a_full() {
+    let idle = fixture();
+    let mut busy = fixture();
+    busy.busy = Some(crate::commands::status::web::model::WebBusy {
+        op: "brief-generation".to_owned(),
+        what: "generating the brief for server".to_owned(),
+        stage_id: "server".to_owned(),
+        started_at: idle.generated_at,
+        ceiling_secs: 300,
+        global_ceiling_secs: 1800,
+    });
+    assert!(needs_full(&split(&idle), &split(&busy)));
+    assert!(needs_full(&split(&busy), &split(&idle)));
+    assert!(!needs_full(&split(&busy), &split(&busy)));
+}

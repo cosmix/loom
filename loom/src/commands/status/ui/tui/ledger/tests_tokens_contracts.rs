@@ -7,6 +7,7 @@ use super::super::LedgerView;
 use crate::commands::status::data::{StageSummary, StatusData};
 use crate::commands::status::render::attention_model::attention_entries;
 use crate::commands::status::ui::tui::state::TuiActivityLog;
+use crate::orchestrator::busy::LoopState;
 use crate::plan::graph::levels;
 use crate::quota::{ProviderQuota, QuotaSnapshot, QuotaWindow, WindowKind};
 use crate::tokens::{
@@ -133,7 +134,7 @@ fn rows(data: &StatusData, width: u16, height: u16, show_tokens: bool) -> Vec<St
         spinner: '⠋',
         scroll_y: 0,
         legend_open: false,
-        tick_age_secs: Some(2),
+        loop_state: LoopState::Ticking { age_secs: 2 },
         last_error: None,
         now_epoch: NOW,
         scrollable: false,

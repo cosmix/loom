@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { StageStatus, StageSummary } from "@/api/schema";
+import { snapshotSchema, type Busy, type StageStatus, type StageSummary } from "@/api/schema";
 import {
   contextUsage,
   daemonLine,
@@ -16,6 +16,7 @@ import {
   type Tone,
 } from "@/lib/format";
 import { fixture, stage, stages } from "./format-kit";
+import fixtureJson from "@/api/fixtures/snapshot.json";
 
 describe("TUI formatter ports", () => {
   it.each([
@@ -162,7 +163,85 @@ describe("TUI formatter ports", () => {
       { text: "daemon unknown", detail: "no data for 45s", tone: "dimmed" },
     ],
   ] as const)("formats daemon %s (tick %s, stale %s)", (daemon, tickAge, staleSecs, expected) => {
-    expect(daemonLine(daemon, tickAge, staleSecs)).toEqual(expected);
+    expect(daemonLine(daemon, tickAge, staleSecs, null, Date.now())).toEqual(expected);
+  });
+
+  describe("daemonLine with a busy operation", () => {
+    const now = Date.parse("2026-11-08T12:00:00.000Z");
+    const busy: Busy = {
+      op: "merge-verification",
+      what: "verifying the merge of stage-a",
+      stage_id: "stage-a",
+      started_at: new Date(now - 90_000).toISOString(),
+      ceiling_secs: 1200,
+      global_ceiling_secs: 1800,
+    };
+
+    it("never shows a leftover busy line for a stopped or half-alive daemon", () => {
+      expect(daemonLine("not-running", 2, null, busy, now)).toEqual({
+        text: "daemon stopped",
+        tone: "dimmed",
+      });
+      expect(daemonLine("process-only", 2, null, busy, now)).toEqual({
+        text: "daemon process alive, socket missing",
+        tone: "warning",
+      });
+    });
+
+    it("prints the tick age, not the operation's elapsed time, for a stale tick", () => {
+      expect(daemonLine("running", 75, null, busy, now)).toEqual({
+        text: "loop stalled 1m15s",
+        tone: "warning",
+      });
+    });
+
+    it("keeps the unreachable detail ahead of the busy detail", () => {
+      expect(daemonLine("unreachable", 2, null, busy, now)).toEqual({
+        text: "daemon running",
+        detail: "socket unreachable",
+        tone: "warning",
+      });
+    });
+
+    it("shows the operation and its elapsed time while the tick is fresh", () => {
+      expect(daemonLine("running", 2, null, busy, now)).toEqual({
+        text: "daemon running",
+        detail: "busy verifying the merge of stage-a 1m30s",
+        tone: "completed",
+      });
+    });
+
+    it("treats an unparseable started_at as just started", () => {
+      const line = daemonLine("running", 2, null, { ...busy, started_at: "garbage" }, now);
+      expect(line.detail).toBe("busy verifying the merge of stage-a 0s");
+    });
+  });
+
+  describe("snapshot busy field", () => {
+    const wire = {
+      op: "merge-verification",
+      what: "verifying the merge of stage-a",
+      stage_id: "stage-a",
+      started_at: "2026-11-07T13:51:08.120Z",
+      ceiling_secs: 1200,
+      global_ceiling_secs: 1800,
+    };
+
+    it("round-trips the daemon's busy object", () => {
+      const parsed = snapshotSchema.parse({ ...fixtureJson, busy: wire });
+      expect(parsed.busy).toEqual(wire);
+    });
+
+    it("parses a snapshot without the key to busy null", () => {
+      const { busy: _omitted, ...withoutBusy } = { ...fixtureJson, busy: null };
+      expect(snapshotSchema.parse(withoutBusy).busy).toBeNull();
+    });
+
+    it("rejects an unknown operation", () => {
+      expect(
+        snapshotSchema.safeParse({ ...fixtureJson, busy: { ...wire, op: "napping" } }).success,
+      ).toBe(false);
+    });
   });
 
   describe("formatClock / formatStamp", () => {

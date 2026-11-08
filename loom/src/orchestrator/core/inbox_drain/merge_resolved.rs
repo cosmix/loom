@@ -16,6 +16,8 @@
 use crate::git::merge::check_resolved_worktree;
 use crate::models::session::Session;
 use crate::models::stage::{Stage, StageStatus};
+use crate::orchestrator::busy::{self, BusyOp};
+use crate::orchestrator::tick::Phase;
 
 use super::super::merge_handler::{trace_verification_output, Landing};
 use super::super::persistence::Persistence;
@@ -52,11 +54,20 @@ impl Orchestrator {
         if let Err(reason) = self.stop_running_check(stage_id) {
             return Settle::Refused(reason);
         }
-        if let Err(error) = crate::verify::completion::resolved::verify_resolved_completion(
-            &stage,
+        let verified = busy::while_busy(
             &self.config.work_dir,
-            trace_verification_output,
-        ) {
+            Phase::Sync,
+            BusyOp::MergeVerification,
+            stage_id,
+            || {
+                crate::verify::completion::resolved::verify_resolved_completion(
+                    &stage,
+                    &self.config.work_dir,
+                    trace_verification_output,
+                )
+            },
+        );
+        if let Err(error) = verified {
             return self.settle_failed_verification(&stage, stage_id, &error);
         }
         self.land_verified_merge(stage_id)

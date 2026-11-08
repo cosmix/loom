@@ -22,7 +22,9 @@ use crate::commands::status::render::print_completion_summary;
 use crate::daemon::{
     read_auth_token, write_message, CompletionSummary, Request, Response, ResponseFrameReader,
 };
+use crate::orchestrator::busy;
 use crate::orchestrator::scheduling_report::{self, Alert};
+use crate::orchestrator::tick::{self, Tick};
 
 #[cfg(test)]
 #[path = "app_tests.rs"]
@@ -58,7 +60,7 @@ pub struct TuiApp {
     activity_log: TuiActivityLog,
     legend_open: bool,
     show_tokens: bool,
-    tick_age_secs: Option<i64>,
+    tick: Option<Tick>,
     terminal_guard: TerminalGuard,
     exiting: bool,
     completion_summary: Option<CompletionSummary>,
@@ -88,7 +90,7 @@ impl TuiApp {
             activity_log: TuiActivityLog::new(),
             legend_open: false,
             show_tokens: false,
-            tick_age_secs: None,
+            tick: None,
             terminal_guard,
             exiting: false,
             completion_summary: None,
@@ -155,10 +157,7 @@ impl TuiApp {
 
         // The TUI only runs against a live daemon, so the stall check applies.
         self.alerts = scheduling_report::alerts(work_path, true);
-        self.tick_age_secs = crate::orchestrator::tick::read(work_path)
-            .ok()
-            .flatten()
-            .map(|tick| tick.age_secs(Utc::now()));
+        self.tick = tick::read(work_path).ok().flatten();
         self.alerts_refreshed_at = Some(Instant::now());
     }
 
@@ -352,7 +351,8 @@ impl TuiApp {
             scroll_y: self.graph_state.scroll_y,
             legend_open: self.legend_open,
             show_tokens: self.show_tokens,
-            tick_age_secs: self.tick_age_secs,
+            // Per frame, so the elapsed time advances between alert refreshes.
+            loop_state: busy::loop_state(self.tick.as_ref(), Utc::now()),
             last_error: self.last_error.as_deref(),
             now_epoch: Utc::now().timestamp(),
             // The previous frame's viewport; one frame of lag is fine.
