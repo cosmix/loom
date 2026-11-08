@@ -12,8 +12,10 @@ use super::feed_split::{CLOCK_STAGE_KEYS, IMMUTABLE_STAGE_KEYS};
 use crate::models::failure::FailureType;
 use crate::models::session::{SessionExitReason, SessionType};
 use crate::models::stage::{StageStatus, StageType};
+use crate::orchestrator::busy::BusyOp;
 
 const SCHEMA_TS: &str = include_str!("../../../../../web/src/api/schema.ts");
+const BUSY_SCHEMA_TS: &str = include_str!("../../../../../web/src/api/busy-schema.ts");
 const FRAMES_TS: &str = include_str!("../../../../../web/src/api/frames.ts");
 
 fn all_session_types() -> Vec<SessionType> {
@@ -135,6 +137,17 @@ fn all_session_exit_reasons() -> Vec<SessionExitReason> {
     ]
 }
 
+fn all_busy_ops() -> Vec<BusyOp> {
+    match BusyOp::BriefGeneration {
+        BusyOp::BriefGeneration | BusyOp::MergeVerification | BusyOp::Provisioning => {}
+    }
+    vec![
+        BusyOp::BriefGeneration,
+        BusyOp::MergeVerification,
+        BusyOp::Provisioning,
+    ]
+}
+
 /// Assert every serialized value in `values` appears in `SCHEMA_TS` as a
 /// double-quoted string literal.
 fn assert_all_in_schema<T: serde::Serialize + std::fmt::Debug>(values: &[T], enum_name: &str) {
@@ -175,6 +188,23 @@ fn failure_type_wire_values_are_in_web_schema() {
 #[test]
 fn session_exit_reason_wire_values_are_in_web_schema() {
     assert_all_in_schema(&all_session_exit_reasons(), "SessionExitReason");
+}
+
+/// `BusyOp` is not `Serialize`; its wire value is `as_str`, and the zod enum
+/// lives in `busy-schema.ts`, re-exported by `schema.ts`.
+#[test]
+fn busy_op_wire_values_are_in_web_schema() {
+    for op in all_busy_ops() {
+        let needle = format!("\"{}\"", op.as_str());
+        assert!(
+            BUSY_SCHEMA_TS.contains(&needle),
+            "web/src/api/busy-schema.ts is missing BusyOp variant {op:?} (wire value {needle}); add it to the zod enum"
+        );
+    }
+    assert!(
+        SCHEMA_TS.contains("busy-schema"),
+        "web/src/api/schema.ts must re-export busySchema from busy-schema.ts"
+    );
 }
 
 /// The `/ws` delta protocol's key split is written twice: in `feed_split.rs`

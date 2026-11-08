@@ -23,6 +23,8 @@ use std::path::{Path, PathBuf};
 
 #[path = "scheduling_report_guard.rs"]
 mod guard;
+#[path = "scheduling_report_loop.rs"]
+mod loop_alert;
 
 /// File name inside `.loom/work/` holding the report.
 const REPORT_FILE: &str = "scheduling.json";
@@ -192,7 +194,7 @@ pub fn alerts(work_dir: &Path, daemon_running: bool) -> Vec<Alert> {
 
     let now = Utc::now();
 
-    if let Some(alert) = stalled_alert(work_dir, now) {
+    if let Some(alert) = loop_alert::loop_alert(work_dir, now) {
         alerts.push(alert);
     }
 
@@ -222,27 +224,6 @@ pub fn alerts(work_dir: &Path, daemon_running: bool) -> Vec<Alert> {
     }
 
     alerts
-}
-
-fn stalled_alert(work_dir: &Path, now: DateTime<Utc>) -> Option<Alert> {
-    let tick = crate::orchestrator::tick::read(work_dir).ok().flatten()?;
-    if !tick.is_stalled(now) {
-        return None;
-    }
-
-    let phase = tick
-        .phase
-        .map(|p| format!(", stuck in {}", p.as_str()))
-        .unwrap_or_default();
-    Some(Alert {
-        severity: Severity::Critical,
-        text: format!(
-            "orchestrator loop stalled: no tick for {}s{} — restart with \
-             `loom stop`, then `loom run`",
-            tick.age_secs(now),
-            phase
-        ),
-    })
 }
 
 #[cfg(test)]
@@ -350,29 +331,6 @@ mod tests {
         let reason = BlockReason::OwnershipUncertain { detail };
         assert!(!reason.self_resolving());
         assert_eq!(reason.describe(), "session ownership is uncertain");
-    }
-
-    #[test]
-    fn test_stall_alert_requires_a_running_daemon() {
-        let temp = TempDir::new().unwrap();
-        crate::orchestrator::tick::record(temp.path(), crate::orchestrator::tick::Phase::Events);
-
-        // Backdate the tick well past the stall threshold.
-        std::fs::write(
-            temp.path().join("orchestrator.tick"),
-            format!(
-                "{}\nevents\n",
-                (Utc::now() - Duration::hours(10)).to_rfc3339()
-            ),
-        )
-        .unwrap();
-
-        assert!(alerts(temp.path(), false).is_empty(), "stopped daemon");
-
-        let running = alerts(temp.path(), true);
-        assert_eq!(running.len(), 1);
-        assert_eq!(running[0].severity, Severity::Critical);
-        assert!(running[0].text.contains("stuck in events"));
     }
 
     #[test]

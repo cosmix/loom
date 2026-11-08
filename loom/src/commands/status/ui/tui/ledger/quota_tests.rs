@@ -9,6 +9,7 @@ use super::*;
 use crate::commands::status::data::{StageSummary, StatusData};
 use crate::commands::status::render::attention_model::attention_entries;
 use crate::commands::status::ui::tui::state::TuiActivityLog;
+use crate::orchestrator::busy::LoopState;
 use crate::plan::graph::levels;
 use crate::tokens::{QuotaLeft, QuotaProvider};
 
@@ -75,7 +76,7 @@ fn with_view<T>(data: &StatusData, scrollable: bool, draw: impl FnOnce(&LedgerVi
         spinner: '⠋',
         scroll_y: 0,
         legend_open: false,
-        tick_age_secs: Some(2),
+        loop_state: LoopState::Ticking { age_secs: 2 },
         last_error: None,
         now_epoch: NOW,
         scrollable,

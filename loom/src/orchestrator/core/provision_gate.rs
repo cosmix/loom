@@ -3,8 +3,6 @@
 
 use std::collections::HashSet;
 use std::path::Path;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::{Duration, Instant};
 
 use anyhow::Result;
 use chrono::Utc;
@@ -12,16 +10,13 @@ use chrono::Utc;
 use crate::git::worktree::WorktreeGit;
 use crate::models::failure::{FailureInfo, FailureType};
 use crate::models::stage::{Stage, StageStatus};
+use crate::orchestrator::busy::{self, BusyOp};
 use crate::orchestrator::provision::{display_safe, read_provision_snapshot, run_provision};
-use crate::orchestrator::tick::{self, Phase};
+use crate::orchestrator::tick::Phase;
 use crate::plan::schema::ProvisionEntry;
 
 use super::persistence::Persistence;
 use super::Orchestrator;
-
-/// How often the provision thread re-stamps the daemon tick. It stays well under
-/// `tick::STALL_THRESHOLD_SECS`, so `loom status` never reads an install as a stall.
-const TICK_INTERVAL: Duration = Duration::from_secs(10);
 
 /// Most paths a "left files git does not ignore" reason names.
 const MAX_REPORTED_PATHS: usize = 10;
@@ -61,7 +56,7 @@ impl Orchestrator {
             stage.id,
             entries.len()
         );
-        match provision_worktree(&self.config.work_dir, &entries, worktree_path) {
+        match provision_worktree(&self.config.work_dir, &stage.id, &entries, worktree_path) {
             Ok(()) => Ok(true),
             Err(reason) => self.block_for_provision(&stage.id, reason),
         }
@@ -88,13 +83,27 @@ impl Orchestrator {
 
 /// Run `entries` in `worktree_path`, then check they left no file git does not ignore.
 /// `Err` is the stage's block reason.
+///
+/// Each entry runs in its own [`busy::while_busy`] wrap, so the daemon tick stays fresh
+/// and names the install for `stage_id`. `PROVISION_TIMEOUT` bounds one command, so one
+/// wrap per entry keeps every wrap inside the provisioning ceiling, where a single wrap
+/// around all entries would let several healthy slow ones read as a stall.
 fn provision_worktree(
     work_dir: &Path,
+    stage_id: &str,
     entries: &[ProvisionEntry],
     worktree_path: &Path,
 ) -> Result<(), String> {
     let before = status_entries(work_dir, worktree_path);
-    run_with_fresh_tick(work_dir, entries, worktree_path)?;
+    entries.iter().try_for_each(|entry| {
+        busy::while_busy(
+            work_dir,
+            Phase::Spawning,
+            BusyOp::Provisioning,
+            stage_id,
+            || run_provision(std::slice::from_ref(entry), worktree_path),
+        )
+    })?;
     // A listing that failed (a plain directory, a worktree that cannot be pinned) skips the
     // comparison, as `find_prior_stage_work` does.
     let (Some(before), Some(after)) = (before, status_entries(work_dir, worktree_path)) else {
@@ -110,53 +119,6 @@ fn provision_worktree(
         Ok(())
     } else {
         Err(unignored_reason(&added))
-    }
-}
-
-/// [`run_provision`] with a second thread that re-stamps the daemon tick: the tick is
-/// stamped before the stage loop, and a stale one makes `loom status` tell the operator
-/// to restart the daemon mid-install.
-fn run_with_fresh_tick(
-    work_dir: &Path,
-    entries: &[ProvisionEntry],
-    worktree_path: &Path,
-) -> Result<(), String> {
-    let done = AtomicBool::new(false);
-    std::thread::scope(|scope| {
-        let ticker = scope.spawn(|| keep_tick_fresh(work_dir, &done));
-        // The guard stops the ticker even when `run_provision` panics; otherwise the
-        // scope would wait on it forever and hang the daemon.
-        let _stop = StopTicker {
-            done: &done,
-            ticker: ticker.thread(),
-        };
-        run_provision(entries, worktree_path)
-    })
-}
-
-/// Sets the ticker's stop flag and wakes it when dropped.
-struct StopTicker<'a> {
-    done: &'a AtomicBool,
-    ticker: &'a std::thread::Thread,
-}
-
-impl Drop for StopTicker<'_> {
-    fn drop(&mut self) {
-        self.done.store(true, Ordering::Release);
-        self.ticker.unpark();
-    }
-}
-
-/// Stamp the tick now, then every [`TICK_INTERVAL`] until `done` is set.
-fn keep_tick_fresh(work_dir: &Path, done: &AtomicBool) {
-    tick::record(work_dir, Phase::Spawning);
-    let mut stamped = Instant::now();
-    while !done.load(Ordering::Acquire) {
-        std::thread::park_timeout(Duration::from_secs(1));
-        if stamped.elapsed() >= TICK_INTERVAL {
-            tick::record(work_dir, Phase::Spawning);
-            stamped = Instant::now();
-        }
     }
 }
 
