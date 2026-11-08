@@ -232,40 +232,106 @@
 
 /* ── Head ─────────────────────────────────────────────────────────────────── */
 
-/* The trace's top attention item (`trace/spine-head.tsx`): one sentence in the reading face, a
-   muted second line when a plan is flagged with it, and the screen's one primary button. */
+/* The trace's top attention item (`trace/spine-head.tsx`): one link drawn as a well like the
+   instruments (spine-instrument.css) and in the rows' type, sans chrome with slugs in mono. A
+   "Next" label in the instruments' uppercase style, then a glyph, the verb at 600 and the name on
+   one line cut by an ellipsis, then the reason, which may wrap. It is not the screen's primary. */
 [data-loom-plan] .plan-spine-next {
   display: grid;
-  justify-items: start;
+  gap: 2px;
+  min-width: 0;
+  margin: var(--space-1) 0 0;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--card);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  text-decoration: none;
+  transition:
+    background-color 120ms,
+    border-color 120ms;
+}
+
+[data-loom-plan] .plan-spine-next:hover {
+  background: var(--muted);
+}
+
+[data-loom-plan] .plan-spine-next:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+[data-loom-plan] .plan-spine-next__label {
+  color: var(--muted-foreground);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  line-height: 1.3;
+  text-transform: uppercase;
+}
+
+[data-loom-plan] .plan-spine-next__what {
+  display: flex;
+  align-items: center;
   gap: var(--space-2);
   min-width: 0;
-  padding: var(--space-1) var(--space-2) 0;
+  font-size: var(--type-body);
+  line-height: 1.4;
 }
 
-[data-loom-plan] .plan-spine-next__sentence {
-  margin: 0;
-  color: var(--foreground);
-  font-family: var(--font-reading);
-  font-size: calc(var(--reading-size) * 0.9);
+[data-loom-plan] .plan-spine-next__glyph {
+  display: inline-flex;
+  flex: none;
+  width: 14px;
+  height: 14px;
+  color: var(--muted-foreground);
+}
+
+[data-loom-plan] .plan-spine-next__glyph > svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* Attention turns the glyph amber: a moved document, waiting findings, a heading no plan covers. */
+[data-loom-plan]
+  .plan-spine-next__glyph:is(
+    [data-glyph="attention"],
+    [data-glyph="findings"],
+    [data-glyph="not-written"]
+  ) {
+  color: var(--tone-warning);
+}
+
+[data-loom-plan] .plan-spine-next__verb {
+  flex: none;
+  font-weight: 600;
+}
+
+[data-loom-plan] .plan-spine-next__name {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+[data-loom-plan] .plan-spine-next__name[data-slug] {
+  font-family: var(--font-mono);
+  font-size: var(--type-ui);
+}
+
+[data-loom-plan] .plan-spine-next__reason {
+  color: var(--muted-foreground);
+  font-size: var(--type-ui);
   line-height: 1.35;
   overflow-wrap: anywhere;
-  text-wrap: pretty;
 }
 
-[data-loom-plan] .plan-spine-next__detail {
-  margin: calc(-1 * var(--space-1)) 0 0;
-  overflow-wrap: anywhere;
-}
-
-[data-loom-plan] .plan-spine-next__action {
-  height: auto;
-  min-height: 32px;
-  margin-top: var(--space-1);
-  padding: var(--space-1) var(--space-3);
-  font-size: var(--type-body);
-  line-height: 1.3;
-  text-align: left;
-  white-space: normal;
+@media (prefers-reduced-motion: reduce) {
+  [data-loom-plan] .plan-spine-next {
+    transition: none;
+  }
 }
 
 /* On a document's source (`data-view="source"`, set by spine.tsx) the current row says "Source" on

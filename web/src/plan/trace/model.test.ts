@@ -93,84 +93,104 @@ describe("frontierHead", () => {
     return frontierHead(trace, "demo");
   }
 
+  const attention = "attention" as const;
   it.each([
     [
       gap("revised", S02),
-      "Beta changed since you settled it.",
-      "Review Beta",
+      { verb: "Review", name: "Beta", reason: "Changed since you settled it", glyph: attention },
       "/f/demo/product/section_02",
     ],
     [
       gap("stub_changed", FIRST),
-      "First's stub changed since you settled it.",
-      "Review First",
+      {
+        verb: "Review",
+        name: "First",
+        reason: "Its stub changed since you settled it",
+        glyph: attention,
+      },
       "/f/demo/engineering/first",
     ],
     [
       gap("upstream_changed", FIRST),
-      "The spec under first changed since you settled it.",
-      "Review first",
+      {
+        verb: "Review",
+        name: "first",
+        nameIsSlug: true,
+        reason: "Its spec changed since you settled it",
+        glyph: attention,
+      },
       "/f/demo/engineering/first",
     ],
-    [gap("settle", S01), "Read Alpha and settle it.", "Read Alpha", "/f/demo/product/section_01"],
-    [gap("settle", VISION), "Read Demo and settle it.", "Read Demo", "/f/demo/vision"],
+    [
+      gap("settle", S01),
+      { verb: "Read", name: "Alpha", reason: "Not settled yet", glyph: "draft" },
+      "/f/demo/product/section_01",
+    ],
+    [
+      gap("settle", VISION),
+      { verb: "Read", name: "Demo", reason: "Not settled yet", glyph: "draft" },
+      "/f/demo/vision",
+    ],
     [
       gap("revisit", METAPLAN, "2-second-plan-secondmd", 1),
-      "Revisit 2. Second (`PLAN-second.md`) before writing its plan.",
-      "Open the metaplan",
+      {
+        verb: "Revisit",
+        name: "2. Second (`PLAN-second.md`)",
+        reason: "Before writing its plan",
+        glyph: attention,
+      },
       "/f/demo/metaplan#2-second-plan-secondmd",
     ],
     [
       gap("revisit", FIRST, null, 1),
-      "Revisit First before running it.",
-      "Open first",
+      {
+        verb: "Revisit",
+        name: "first",
+        nameIsSlug: true,
+        reason: "Before running it",
+        glyph: attention,
+      },
       "/f/demo/engineering/first",
     ],
     [
       gap("uncovered", S01, "two"),
-      "Two is not covered by any plan.",
-      "Open coverage",
+      { verb: "Cover", name: "Two", reason: "No plan covers this heading", glyph: "not-written" },
       "/f/demo/coverage#section_01%3Atwo",
     ],
     [
       gap("triage", "doc/plans/demo/findings.md", null, 1),
-      "One finding from the last run is waiting for you.",
-      "Triage findings",
+      { verb: "Triage", name: "one finding", reason: "From the last run", glyph: "findings" },
       "/f/demo/findings",
     ],
     [
       gap("triage", "doc/plans/demo/findings.md", null, null),
-      "Findings from the last run are waiting for you.",
-      "Triage findings",
+      { verb: "Triage", name: "findings", reason: "From the last run", glyph: "findings" },
       "/f/demo/findings",
     ],
     [
       gap("triage", "doc/plans/demo/findings.md", null, 3),
-      "Three findings from the last run are waiting for you.",
-      "Triage findings",
+      { verb: "Triage", name: "three findings", reason: "From the last run", glyph: "findings" },
       "/f/demo/findings",
     ],
     [
       gap("triage", "doc/plans/demo/findings.md", null, 21),
-      "21 findings from the last run are waiting for you.",
-      "Triage findings",
+      { verb: "Triage", name: "21 findings", reason: "From the last run", glyph: "findings" },
       "/f/demo/findings",
     ],
-  ])("words %j", (gapOf, sentence, label, to) => {
-    expect(headOf(gapOf)).toEqual({ sentence, detail: null, label, to });
+  ])("words %j", (gapOf, said, to) => {
+    expect(headOf(gapOf)).toEqual({ nameIsSlug: false, detail: null, ...said, to });
   });
 
   it("names a written plan reached through its metaplan entry", () => {
     expect(headOf(gap("revisit", METAPLAN, "1-first-plan-firstmd", 1))).toMatchObject({
-      sentence: "Revisit First before running it.",
+      verb: "Revisit",
+      name: "first",
       to: "/f/demo/engineering/first",
     });
   });
 
   it("falls back to the file name for a document the trace does not hold", () => {
-    expect(headOf(gap("revised", "doc/product/demo/section_09.md"))?.sentence).toBe(
-      "section_09.md changed since you settled it.",
-    );
+    expect(headOf(gap("revised", "doc/product/demo/section_09.md"))?.name).toBe("section_09.md");
   });
 
   it("says which settled plan a revised section flags, by its short slug", () => {
@@ -189,7 +209,7 @@ describe("frontierHead", () => {
 
   it("reads only the first gap, and nothing when the frontier is empty", () => {
     const trace = fixture();
-    expect(frontierHead(trace, "demo")?.sentence).toBe("Beta changed since you settled it.");
+    expect(frontierHead(trace, "demo")).toMatchObject({ verb: "Review", name: "Beta" });
     trace.frontier = [];
     expect(frontierHead(trace, "demo")).toBeNull();
   });

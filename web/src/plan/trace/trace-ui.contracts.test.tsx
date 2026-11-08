@@ -210,10 +210,13 @@ afterEach(() => {
 it("a changed document's spine row names its state", async () => {
   renderRoutes("/f/demo/product");
   // Section 02 (Beta) reads `revised` in the trace fixture.
-  const row = await within(await spineNav()).findByRole("link", {
+  const links = await within(await spineNav()).findAllByRole("link", {
     name: (name) => /\bBeta\b/.test(name) && /changed since you settled it/i.test(name),
   });
-  expect(row.querySelectorAll("[data-glyph]")).toHaveLength(1);
+  // The spine head says the same of Beta; the row is the other link.
+  const [row] = links.filter((link) => !link.classList.contains("plan-spine-next"));
+  expect(links).toHaveLength(2);
+  expect(row!.querySelectorAll("[data-glyph]")).toHaveLength(1);
 });
 
 it("a running plan's spine row shows the activity roundel", async () => {
@@ -290,18 +293,21 @@ it("the spine head names the top attention item", async () => {
   expect(trace.frontier.length).toBeGreaterThan(2);
   renderRoutes("/f/demo/product");
   const nav = await spineNav();
-  const review = await within(nav).findAllByRole("link", { name: "Review Beta" });
+  const name = "Review Beta Changed since you settled it";
+  const review = await within(nav).findAllByRole("link", { name });
   expect(review).toHaveLength(1);
   expect(review[0]!.getAttribute("href")).toBe("/f/demo/product/section_02");
-  expect(deepestHolding(nav, "Beta changed since you settled it.")).not.toEqual([]);
+  // The whole head is the one link: no primary button, and the reason sits inside it.
+  const head = nav.querySelector<HTMLElement>(".plan-spine-next")!;
+  expect(head).toBe(review[0]);
+  expect(head.hasAttribute("data-look")).toBe(false);
+  expect(head.classList.contains("plan-button")).toBe(false);
+  expect(head.querySelector(".plan-spine-next__reason")?.textContent).toBe(
+    "Changed since you settled it",
+  );
   expect(nav.textContent).not.toMatch(/Revisit|findings from the last run|Triage|metaplan\b/);
   // The head links the top item alone; the Findings row below it is the spine's own.
-  const head = nav.querySelector(".plan-spine-next")!;
-  expect(
-    within(head as HTMLElement)
-      .queryAllByRole("link")
-      .filter(hrefIs("/f/demo/findings")),
-  ).toEqual([]);
+  expect(within(head).queryAllByRole("link").filter(hrefIs("/f/demo/findings"))).toEqual([]);
 });
 
 it("a changed document offers See what changed", async () => {
