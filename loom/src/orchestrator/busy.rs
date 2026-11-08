@@ -12,7 +12,7 @@ use std::time::{Duration, Instant};
 
 use chrono::{DateTime, Utc};
 
-use super::tick::{self, Phase, Tick, STALL_THRESHOLD_SECS};
+use super::tick::{self, Phase, Tick};
 
 pub const BRIEF_GENERATION_CEILING_SECS: i64 = 300;
 pub const MERGE_VERIFICATION_CEILING_SECS: i64 = 1_200;
@@ -95,6 +95,10 @@ impl Busy {
 /// [`REFRESH_INTERVAL`] with the same `started_at`. When `f` returns or unwinds the
 /// helper is stopped and joined, and only then is the plain two-line tick for
 /// `phase` written.
+///
+/// Wraps must not nest, and `f` must not write the tick: the caller and the helper
+/// share one temp file (`orchestrator.tick.tmp`), and an inner clearing write would
+/// drop the outer busy line until the next re-stamp.
 pub fn while_busy<T>(
     work_dir: &Path,
     phase: Phase,
@@ -128,10 +132,19 @@ pub fn while_busy_every<T>(
     let _clear = ClearBusy { work_dir, phase };
     let done = AtomicBool::new(false);
     std::thread::scope(|scope| {
-        // A failed spawn leaves the synchronous stamp standing and runs `f` anyway:
-        // the scheduler must not panic over a diagnostic thread.
+        // A failed spawn leaves the synchronous stamp standing and runs `f` anyway,
+        // with a warning: the scheduler must not panic over a diagnostic thread, but
+        // the tick goes stale while `f` runs.
         let helper = std::thread::Builder::new()
             .spawn_scoped(scope, || restamp(work_dir, phase, &busy, interval, &done));
+        if let Err(error) = &helper {
+            tracing::warn!(
+                op = op.as_str(),
+                stage_id,
+                %error,
+                "Cannot start the tick re-stamp thread; the tick will go stale while the operation runs"
+            );
+        }
         // Stops the helper even when `f` panics; otherwise the scope would wait on
         // it forever and hang the daemon.
         let _stop = helper.as_ref().ok().map(|helper| StopHelper {
@@ -213,7 +226,7 @@ pub fn loop_state(tick: Option<&Tick>, now: DateTime<Utc>) -> LoopState {
     let age_secs = tick.age_secs(now);
     let elapsed_secs = tick.busy.as_ref().map(|busy| busy.elapsed_secs(now));
     let past_global = elapsed_secs.is_some_and(|secs| secs >= GLOBAL_BUSY_CEILING_SECS);
-    if age_secs >= STALL_THRESHOLD_SECS || past_global {
+    if tick.is_stalled(now) || past_global {
         return LoopState::Stalled {
             age_secs,
             busy: tick.busy.clone(),
