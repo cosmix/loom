@@ -111,5 +111,7 @@ it("renders failed text under the model line without a card or tile", () => {
   );
 
   expect(container.querySelector("p")?.textContent).toBe(`${status.model} · Codex failed`);
-  expect(container.querySelector(".activity-tile, .activity-glyph, .plan-arrow-spinner")).toBeNull();
+  expect(
+    container.querySelector(".activity-tile, .activity-glyph, .plan-arrow-spinner"),
+  ).toBeNull();
 });

@@ -217,6 +217,62 @@ describe("TUI formatter ports", () => {
     });
   });
 
+  describe("daemonLine busy boundaries", () => {
+    const now = Date.parse("2026-11-08T12:00:00.000Z");
+    const busyWith = (startedAt: string, ceilingSecs = 1200): Busy => ({
+      op: "merge-verification",
+      what: "verifying the merge of stage-a",
+      stage_id: "stage-a",
+      started_at: startedAt,
+      ceiling_secs: ceilingSecs,
+      global_ceiling_secs: 1800,
+    });
+    const agoMs = (ms: number) => new Date(now - ms).toISOString();
+
+    it("reports the global ceiling ahead of an unreachable socket", () => {
+      expect(daemonLine("unreachable", 2, null, busyWith(agoMs(1_900_000)), now)).toEqual({
+        text: "loop stalled 31m40s",
+        tone: "warning",
+      });
+    });
+
+    it("turns warning exactly at the operation's ceiling", () => {
+      const at = daemonLine("running", 2, null, busyWith(agoMs(1_200_000)), now);
+      const under = daemonLine("running", 2, null, busyWith(agoMs(1_199_000)), now);
+      expect(at).toEqual({
+        text: "daemon running",
+        detail: "busy verifying the merge of stage-a 20m0s",
+        tone: "warning",
+      });
+      expect(under).toEqual({
+        text: "daemon running",
+        detail: "busy verifying the merge of stage-a 19m59s",
+        tone: "completed",
+      });
+    });
+
+    it("reports stalled exactly at the global ceiling, not one second before", () => {
+      expect(daemonLine("running", 2, null, busyWith(agoMs(1_800_000)), now)).toEqual({
+        text: "loop stalled 30m0s",
+        tone: "warning",
+      });
+      expect(daemonLine("running", 2, null, busyWith(agoMs(1_799_000)), now).text).toBe(
+        "daemon running",
+      );
+    });
+
+    it("truncates a fractional second like the daemon", () => {
+      const line = daemonLine("running", 2, null, busyWith(agoMs(299_600), 300), now);
+      expect(line.detail).toBe("busy verifying the merge of stage-a 4m59s");
+      expect(line.tone).toBe("completed");
+    });
+
+    it("reads a nanosecond-precision started_at", () => {
+      const line = daemonLine("running", 2, null, busyWith("2026-11-08T11:58:30.123456789Z"), now);
+      expect(line.detail).toBe("busy verifying the merge of stage-a 1m29s");
+    });
+  });
+
   describe("snapshot busy field", () => {
     const wire = {
       op: "merge-verification",
