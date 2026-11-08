@@ -105,3 +105,53 @@ match.
 **Prevention:** Use host-owned checkpoints keyed by session and verified PID/start identity, with the same bounded CPU-progress and wall-window decision for both consumers; transcript data supplies display text only.
 
 **Fix:** Share the foreground observation store and verify equal-clock growth and no-growth cases across monitor and status.
+
+## Interrupted Promotion Must Reconcile Before Widening
+
+**What happened:** an interrupted promotion left the same job in both current and pending; widening the pending entry could lose newly requested criteria or produce a false pass.
+
+**Why:** submission treated the duplicate pending entry as independently widenable before reconciling the interrupted promotion.
+
+**Prevention:** reconcile duplicate current and pending job identities before widening criteria.
+
+**Fix:** the host verification submission path reconciles the interrupted promotion before deciding whether a request joins or widens a pending job.
+
+## Reset snapshots must include waiting verification jobs
+
+**What happened:** A reset captured only current job A; the runner could promote pre-existing waiting job B before cancellation, leaving work from the stopped session live.
+
+**Why:** The reset snapshot and host-job promotion use different locks, and current-only cancellation misses both promotion and terminal-current windows.
+
+**Prevention:** Capture both live slot identities under the host-job lock; cancel those exact jobs after reset. Test promotion between capture and cancellation while preserving later replacements.
+
+**Fix:** Reset cancellation tracks the captured current and waiting job IDs.
+
+## Pause concurrent workers before stashing for an operator merge
+
+**What happened:** The operator corrected an announced integration merge: it had not happened yet, and requested stopping and stashing.
+
+**Why:** Active workers could continue writing while the checkout was prepared for the merge.
+
+**Prevention:** Stop every writer and its checks before stashing; verify HEAD instead of assuming the merge occurred.
+
+**Fix:** Workers stopped; unfinished reset-race and cache-fixture work remains explicitly recorded for resumption.
+
+## Keep operator documentation edits from blocking distillation merges
+
+**What happened:** Reviewed documentation remained uncommitted in the main checkout while a long code gate ran, blocking knowledge-distill from merging overlapping files.
+
+**Why:** Code and documentation were held for one final commit despite independent verification needs and another active writer.
+
+**Prevention:** Commit reviewed prose independently when it blocks an authorized merge; keep the code gate and code commit separate.
+
+**Fix:** Commit the overlapping documentation first, then finish the running Rust gate and commit implementation.
+
+## Account for function budgets when adding boundary normalization
+
+**What happened:** The final pre-commit maintainability check found that criterion normalization added one line to an existing function already at its recorded 63-line limit.
+
+**Why:** File-size checks passed, but the existing function budget was not checked before handback.
+
+**Prevention:** Inspect both function and file budgets for touched ledgered units; preserve their measured limits without increasing the ledger.
+
+**Fix:** Keep the adjacent normalization and relay setup together by removing their separating blank line; re-run the maintainability gate.
