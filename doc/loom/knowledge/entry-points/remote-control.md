@@ -1,10 +1,6 @@
 # Remote Control
->
-> RC
->
->
 
->
+> RC
 
 ## Remote Control & Permission Mode Integration Points
 

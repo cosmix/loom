@@ -2,14 +2,8 @@
 ---
 
 # Security And Isolation
->
-> Deny
->
->
->
->
 
->
+> Deny
 
 ## Worktree Isolation (4-Layer Defense)
 

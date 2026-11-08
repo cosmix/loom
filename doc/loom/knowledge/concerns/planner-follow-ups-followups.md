@@ -1,7 +1,4 @@
 # Planner Follow Ups Followups
->
-
->
 
 ## Summary levels and fragments
 

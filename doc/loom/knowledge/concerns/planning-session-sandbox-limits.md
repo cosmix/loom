@@ -1,7 +1,4 @@
 # Planning Session Sandbox Limits
->
-
->
 
 ## Planning Session Sandbox Limits
 

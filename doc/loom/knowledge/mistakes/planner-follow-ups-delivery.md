@@ -1,8 +1,6 @@
 # Planner Follow Ups Delivery
->
-> Slips
 
->
+> Slips
 
 ## A component that owns a live region was mounted a second time
 

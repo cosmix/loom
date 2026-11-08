@@ -1,14 +1,6 @@
 # Source Graph Review Backlog
->
+
 > Todo
->
->
->
->
->
-
->
-
 Reviewer suggestions from the source-graph plan that no stage implemented. Each is a small local change or a
 test to add; none blocks the contract. Larger limits are in [Known Gaps](source-graph-known-gaps.md).
 Anchors are `path:line` at merge time; locate by symbol (`loom map --find-all`).

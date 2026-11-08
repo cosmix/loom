@@ -1,8 +1,6 @@
 # Automatic Knowledge Source Graph Followups
->
-> Gaps
 
->
+> Gaps
 
 ## Open Items From the Automatic-Knowledge Plan
 

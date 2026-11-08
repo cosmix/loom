@@ -1,8 +1,4 @@
 # Summary Store
->
->
-
->
 
 ## Store Layout and Ids
 

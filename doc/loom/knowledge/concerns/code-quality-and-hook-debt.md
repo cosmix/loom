@@ -1,12 +1,6 @@
 # Code Quality And Hook Debt
->
-> Debt
->
->
->
->
 
->
+> Debt
 
 ## Oversized Rust Units Remain Controlled Debt
 
