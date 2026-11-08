@@ -1,12 +1,13 @@
 const LIGHTNESS = [0.6, 0.72, 0.84] as const;
 const CHROMA = 0.16;
-/// Hue steps tried when a model's own hue is too close to one already in use.
-const HUE_STEP = 15;
-/// Minimum `distance` between two models' colors before one is nudged.
-const MIN_DISTANCE = 45;
-/// Degrees of hue a full unit of lightness is worth in `distance`.
-const LIGHTNESS_WEIGHT = 250;
-const STORAGE_KEY = "loom.model-colors";
+/// Hue step of the candidate grid a crowded model is moved onto.
+const HUE_STEP = 5;
+/// Gap (OKLab distance) a model's color should keep from every other model's.
+/// A hue gap of about 65 degrees at one lightness, or one lightness step plus a
+/// hue gap of about 45 degrees. Placement stops caring once this is met, so a
+/// model stays near its hash color; below it, the farthest candidate wins.
+const TARGET_GAP = 0.18;
+const STORAGE_KEY = "loom.model-colors.v2";
 
 export interface ModelSwatch {
   hue: number;
@@ -35,7 +36,10 @@ function hash(text: string): number {
 /// from a second slice, one of three lightness steps.
 export function preferredSwatch(model: string): ModelSwatch {
   const h = hash(model);
-  return { hue: h % 360, lightness: LIGHTNESS[Math.floor(h / 360) % LIGHTNESS.length]! };
+  return {
+    hue: h % 360,
+    lightness: LIGHTNESS[Math.floor(h / 360) % LIGHTNESS.length]!,
+  };
 }
 
 export function swatchColor({ hue, lightness }: ModelSwatch): string {
@@ -47,11 +51,16 @@ export function modelColor(model: string): string {
   return swatchColor(preferredSwatch(model));
 }
 
-/// Perceptual-ish gap between two swatches: the shorter way round the hue
-/// circle, combined with lightness scaled to the same unit.
+/// Gap between two swatches as the distance between their OKLab points: the
+/// hue circle becomes a chord at the shared chroma and lightness adds in the
+/// same unit, so "far apart on the color disc" means one thing for both axes.
 export function distance(a: ModelSwatch, b: ModelSwatch): number {
-  const gap = Math.abs(a.hue - b.hue) % 360;
-  return Math.hypot(Math.min(gap, 360 - gap), (a.lightness - b.lightness) * LIGHTNESS_WEIGHT);
+  const rad = Math.PI / 180;
+  return Math.hypot(
+    a.lightness - b.lightness,
+    CHROMA * (Math.cos(a.hue * rad) - Math.cos(b.hue * rad)),
+    CHROMA * (Math.sin(a.hue * rad) - Math.sin(b.hue * rad)),
+  );
 }
 
 function nearest(swatch: ModelSwatch, taken: readonly ModelSwatch[]): number {
@@ -60,32 +69,40 @@ function nearest(swatch: ModelSwatch, taken: readonly ModelSwatch[]): number {
   return min;
 }
 
-/// `preferred`, or the closest candidate to it that sits at least MIN_DISTANCE
-/// from every swatch in `taken`. Candidates walk outward in hue (+15, -15, +30,
-/// ...) at each lightness step, nearest first, so the result is deterministic
-/// and stays near the preferred color. When nothing clears the bar, the
-/// candidate farthest from its nearest neighbour wins.
-export function spread(preferred: ModelSwatch, taken: readonly ModelSwatch[]): ModelSwatch {
-  if (taken.length === 0 || nearest(preferred, taken) >= MIN_DISTANCE) return preferred;
+const GRID: readonly ModelSwatch[] = LIGHTNESS.flatMap((lightness) =>
+  Array.from({ length: 360 / HUE_STEP }, (_, index) => ({
+    hue: index * HUE_STEP,
+    lightness,
+  })),
+);
+
+/// `preferred`, or the best swatch in its place when it crowds a neighbour.
+/// Candidates are `preferred` plus a grid of every hue step at every lightness.
+/// Each is scored by its gap to the nearest swatch in `taken`, capped at
+/// TARGET_GAP; the highest score wins and ties go to the candidate closest to
+/// `preferred`. A model with room keeps its hash color, a crowded one moves to
+/// the nearest spot with room, and when no spot has room the farthest-from-all
+/// spot wins (farthest-point placement, so the palette fills the disc evenly).
+/// Deterministic: equal scores resolve by candidate order.
+export function spread(
+  preferred: ModelSwatch,
+  taken: readonly ModelSwatch[],
+): ModelSwatch {
+  if (taken.length === 0 || nearest(preferred, taken) >= TARGET_GAP)
+    return preferred;
   let best = preferred;
-  let bestGap = nearest(preferred, taken);
-  const steps = 360 / HUE_STEP;
-  for (let step = 1; step <= steps / 2; step++) {
-    for (const sign of [1, -1]) {
-      const hue = (((preferred.hue + sign * step * HUE_STEP) % 360) + 360) % 360;
-      const lightnesses = [
-        preferred.lightness,
-        ...LIGHTNESS.filter((l) => l !== preferred.lightness),
-      ];
-      for (const lightness of lightnesses) {
-        const candidate = { hue, lightness };
-        const gap = nearest(candidate, taken);
-        if (gap >= MIN_DISTANCE) return candidate;
-        if (gap > bestGap) {
-          best = candidate;
-          bestGap = gap;
-        }
-      }
+  let bestScore = nearest(preferred, taken);
+  let bestPull = 0;
+  for (const candidate of GRID) {
+    const score = Math.min(nearest(candidate, taken), TARGET_GAP);
+    const pull = distance(candidate, preferred);
+    if (
+      score > bestScore + 1e-9 ||
+      (score > bestScore - 1e-9 && pull < bestPull)
+    ) {
+      best = candidate;
+      bestScore = score;
+      bestPull = pull;
     }
   }
   return best;
@@ -125,7 +142,9 @@ function load(): Map<string, ModelSwatch> {
     const raw: unknown = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "{}");
     if (typeof raw !== "object" || raw === null) return new Map();
     return new Map(
-      Object.entries(raw).filter((entry): entry is [string, ModelSwatch] => isSwatch(entry[1])),
+      Object.entries(raw).filter((entry): entry is [string, ModelSwatch] =>
+        isSwatch(entry[1]),
+      ),
     );
   } catch {
     return new Map();
@@ -134,7 +153,10 @@ function load(): Map<string, ModelSwatch> {
 
 function save(swatches: ReadonlyMap<string, ModelSwatch>): void {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(Object.fromEntries(swatches)));
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify(Object.fromEntries(swatches)),
+    );
   } catch {
     // Storage can be blocked or full; colors then stay stable for this page only.
   }
@@ -146,14 +168,19 @@ let known: Map<string, ModelSwatch> | undefined;
 /// localStorage, so a model keeps its color across renders, new models and
 /// reloads in this browser. A model seen for the first time is spread away from
 /// the swatches already given out.
-export function stickyModelColors(models: readonly string[]): Map<string, string> {
+export function stickyModelColors(
+  models: readonly string[],
+): Map<string, string> {
   known ??= load();
   const fresh = models.filter((model) => !known!.has(model));
   if (fresh.length > 0) {
-    for (const [model, swatch] of assignSwatches(models, known)) known.set(model, swatch);
+    for (const [model, swatch] of assignSwatches(models, known))
+      known.set(model, swatch);
     save(known);
   }
-  return new Map(models.map((model) => [model, swatchColor(known!.get(model)!)]));
+  return new Map(
+    models.map((model) => [model, swatchColor(known!.get(model)!)]),
+  );
 }
 
 /// Forgets every remembered swatch; tests use it to start from a clean page.
