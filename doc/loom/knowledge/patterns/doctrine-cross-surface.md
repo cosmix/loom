@@ -31,7 +31,7 @@ and `tests_doctrine_waiting.rs`, and the skill also into `tests_doctrine_v2.rs` 
 `tests_doctrine_prefixes.rs` separately pins the stable-prefix generators' byte ceilings — see
 [signal-generation.md](../architecture/signal-generation.md)), so moving either file is a COMPILE
 error and a change to either is checked against every block in one pass.
-`tests_size.rs` caps the template at `CLAUDE_MD_TEMPLATE_MAX_BYTES` (20,138, the measured size) and the skill at its own `ORCHESTRATION_SKILL_MAX_BYTES` (20,530).
+`tests_size.rs` caps the template at `CLAUDE_MD_TEMPLATE_MAX_BYTES` (20,131, the measured size) and the skill at its own `ORCHESTRATION_SKILL_MAX_BYTES` (20,530).
 
 `tests_guidance_manifest.rs` is the relocation manifest for text moved out of the template or the skill. It lists each relocated item with its new home and a literal needle (`RELOCATIONS`, homes loaded with `include_str!` or the stable-prefix generator) and freezes the template's `###` headings and rule bullets (`FROZEN_LINES`): every frozen line stays in the template or appears in the manifest, so deleting guidance fails a test instead of passing silently. Move or reword a relocated item and the manifest needle changes with it. A needle must occur only in its home, or the test passes after the home loses the text.
 

@@ -30,9 +30,9 @@ Session identity, liveness routing, spawn-site coverage, the struct-literal blas
 
 ## Hooks: Shell Command Matchers (2026-07-28)
 
-Token-based Bash matchers repeatedly shipped with bypasses because separators that are _glued_ to a neighbour never become tokens. Also: forgeable `glob | head -1` privilege lookups, env leakage into simulated process trees, three Bash parsing traps, and cross-platform portability traps (gawk extensions on BSD awk, non-portable `timeout`, redirect order, `cmd | head` under `pipefail` killing the producer with SIGPIPE).
+Token-based Bash matchers repeatedly shipped with bypasses because separators that are _glued_ to a neighbour never become tokens. Also: forgeable `glob | head -1` privilege lookups, env leakage into simulated process trees, three Bash parsing traps, and cross-platform portability traps (gawk extensions on BSD awk, non-portable `timeout`, redirect order, `cmd | head` under `pipefail` killing the producer with SIGPIPE). Lexical guards also blocked 435 mostly legitimate calls in one week and agents rewrote commands until they passed: a guard blocks only what it decides soundly, names the sanctioned route, rewrites the commands loom owns, ships each relaxation with its hostile test, resolves paths physically and never keys on `TMPDIR`.
 
-→ [Shell Command Matchers](mistakes/shell-command-matchers.md), [Hooks: Shell Portability](mistakes/hooks-shell-portability.md)
+→ [Shell Command Matchers](mistakes/shell-command-matchers.md), [Hooks: Shell Portability](mistakes/hooks-shell-portability.md), [Lexical Hooks Blocked Legitimate Work](mistakes/shell-command-matchers.md#lexical-hooks-blocked-legitimate-work-and-were-routed-around), [Hook-Guard Delivery Slips](mistakes/shell-command-matchers.md#hook-guard-delivery-slips-ledger-parser-template-trim-gate-coverage-spawner-list)
 
 ## Doctrine, Acceptance Criteria, and Cross-Surface Drift (2026-07-28)
 

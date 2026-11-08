@@ -244,3 +244,52 @@ pass/fail exit code cannot distinguish "handled correctly" from "never reached".
 **Fix:** three patterns in `loom-hooks/codex-forward-guard.sh`; round-trip cases (apostrophe idiom,
 `\$`, `\"`, `\\`, trailing lone backslash) in `loom-hooks/tests/codex-forward-guard-quoting.sh`, which
 asserts the parsed word content, not merely the hook's exit code.
+
+## Lexical Hooks Blocked Legitimate Work and Were Routed Around
+
+**What happened:** between 2026-10-31 and 2026-11-07 loom's PreToolUse guards blocked 435 deduplicated tool calls across 1,037 sessions, 197 of them in subagents, and almost all were legitimate. Counts by guard and rule:
+
+| Blocks | Guard and rule | Legitimate | What the agent did next |
+| --- | --- | --- | --- |
+| 123 | `worktree-isolation.sh` path traversal | ~all | same command with absolute paths |
+| 96 | `loom-control-complete.sh` exact pinned command (`loom stage complete X 2>&1 \| tail -30`) | yes | the pinned command |
+| 33 | `loom-control-complete.sh` bare `loom stage complete X`, the form the rules and signals print | yes | the pinned command |
+| 70 | `worktree-file-guard.sh` Read outside the worktree (harness `tool-results/*.txt`, `$TMPDIR/*.log`) | yes | `cat`/`sed` of the same file in Bash |
+| 42 | `subagent-verify-guard.sh` (`cargo check`, `cargo build`, `bun run build`, `tsc --noEmit`) | yes | `rustfmt` per file, or code left uncompiled |
+| 37 | `worktree-isolation.sh` git override (`git -C .`, `git -C "$SCRATCH/clone"`) | 36 of 37 | dropped `-C`; one `eval` loop became a Python `subprocess` loop |
+| 19 | `_read_discipline.sh` large read | yes | identical retry |
+| 6 | `commit-filter.sh` subagent git in a scratch fixture repo | yes | rearranged commands |
+| 4 | `subagent-verify-guard.sh` gate-once, `cargo test --lib --no-run` | yes | filtered test |
+| 3 | `commit-filter.sh` isolation bypass (`unset LOOM_MAIN_AGENT_PID`) | no | correct block |
+
+The 42 verify-guard blocks left one stage's wave-2 code uncompiled at the gate, which then found six failures. The capsule was active and was the real write boundary (71 `Read-only file system` denials in the same window).
+
+**Why:** three causes. (1) Lexical matching with no working directory: `worktree-isolation.sh` matched `../` and `git -C` as text, so `cd <wt>/web/src && sed ../../doc/plans/x` blocked though it resolves inside the worktree. (2) Doctrine printed a command the hook rejected: the rules and signals tell the agent to run `loom stage complete <id>`, and `loom-control-complete.sh` refused that spelling and every `| tail` form. (3) A policy withheld compiler feedback: the verify guard blocked every runner that compiles, so subagents wrote code they never compiled. Each block named no sanctioned route, so agents learned to rewrite the command until it passed, which also trained them to treat guards as obstacles.
+
+**Prevention:**
+
+- A guard blocks only what it decides soundly. Where it cannot decide (unknown cwd after a subshell or splice) it warns, or fails closed only for a write-capable target such as `git -C`.
+- Every block message names the sanctioned route, and the rules a hook enforces print only commands the hook accepts.
+- Where loom owns the exact command, rewrite it (the completion pin) instead of rejecting it.
+- Each relaxation ships with its hostile test: the contract tests assert the hostile variants block, not only that the legitimate form passes.
+- Resolve paths physically (`cd -P` on existing prefixes), because every worktree's `.loom/work` is a symlink into the main checkout.
+- Never key a hook decision on `TMPDIR`: hooks inherit the daemon's environment, the Bash tool exports `TMPDIR=/tmp/claude-<uid>` only inside each command, and a uid-owned test TMPDIR would class every fixture as scratch. Scratch is `LOOM_SCRATCH_DIR` only.
+- Record every block (`loom_record_block`, `loom hook blocks`) so the next false-positive wave is counted, not mined from transcripts.
+
+**Fix:** the hook-false-positives plan: physical resolver and cwd tracking in `_containment.sh`, the completion rewrite, harness-output reads, subagent compile commands, the scratch-repo exemption, the unoutlined-read warning and the block ledger. See [Hook Guard Containment](../architecture/hook-system.md).
+
+## Hook-Guard Delivery Slips: Ledger Parser, Template Trim, Gate Coverage, Spawner List
+
+**What happened:** five slips in one plan.
+
+1. The first ledger parser treated a single blank line as an empty file, because it stripped the final newline before testing for empty input.
+2. A codex job trimmed `CLAUDE.md.template` to save bytes and reworded the commit-timing sentence, breaking the `tests_commit_timing` pins; the brief said "trim wording" without listing the pinned phrases.
+3. `loom check` passed while completion failed: the gate runs the acceptance criteria only, not the frozen contract tests or the plan's `after_stage` truth checks. A byte trim had dropped a phrase an `after_stage` `rg` required, and the contract temp root sat inside the worktree path.
+4. `loom check integration-verify` was run with `run_in_background`; it printed PENDING RELAY and `loom request status` showed the ticket never picked up, because the relay hook reads the `LOOM_RELAY_V1` line only from a foreground command's stdout. Re-running `loom check` while a fix worker still wrote the tree submitted a new host job against a half-edited tree.
+5. `loom/tests/hook_false_positive_contracts/ledger.rs` spawned the loom binary directly without registering in `SANCTIONED_SPAWNERS`, so the full suite failed `binary_spawn_guard`; the stage gate had run only filtered test targets.
+
+**Why:** (1) empty input was tested after stripping line terminators; (2) the brief omitted the pinned phrases; (3) the gate's coverage is narrower than completion's; (4) a long gate was treated like a long build; (5) filtered targets never reached the guard test.
+
+**Prevention:** (1) distinguish empty byte input before stripping terminators and cover blank lines in tests. (2) Brief codex trims with the pinned phrases or have it `rg` for pins; run `orchestrator::signals::` after any template edit. (3) Before committing, run the frozen contract test with a non-claude `TMPDIR` and the plan's `after_stage` commands by hand. (4) Run `loom check`, `loom stage complete` and `loom memory` in the foreground; re-run the same command to keep waiting, but only once the tree is settled (wait on subagents with `loom subagents watch` while anyone edits). (5) Register a new test file that spawns the loom binary in `SANCTIONED_SPAWNERS` and its doc comment in the same change, and run `cargo test --test integration binary_spawn_guard`.
+
+**Fix:** each slip was corrected in the same plan; the spawner is registered in `loom/tests/integration/binary_spawn_guard.rs`.

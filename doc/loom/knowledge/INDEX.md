@@ -14,7 +14,7 @@
 | [conventions.md](conventions.md) | Coding conventions discovered in the codebase | 250 |
 | [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 248 |
 | [stack.md](stack.md) | Dependencies, frameworks, and tooling used in the project | 115 |
-| [concerns.md](concerns.md) | Technical debt, warnings, and issues to address | 244 |
+| [concerns.md](concerns.md) | Technical debt, warnings, and issues to address | 250 |
 
 ## Tier 2 — Topics
 
@@ -39,7 +39,7 @@
 | [daemon-owned-commits](architecture/daemon-owned-commits.md) |  | 151 |
 | [directory-structure](architecture/directory-structure.md) | Tree | 50 |
 | [execution-containment](architecture/execution-containment.md) |  | 395 |
-| [hook-system](architecture/hook-system.md) |  | 319 |
+| [hook-system](architecture/hook-system.md) |  | 359 |
 | [knowledge-bootstrap](architecture/knowledge-bootstrap.md) | KB | 83 |
 | [knowledge-hierarchy](architecture/knowledge-hierarchy.md) | KB fs | 264 |
 | [live-preview-editor](architecture/live-preview-editor.md) | Editor | 28 |
@@ -61,7 +61,7 @@
 | [planning-trace](architecture/planning-trace.md) |  | 91 |
 | [pressure](architecture/pressure.md) |  | 42 |
 | [quota-poller](architecture/quota-poller.md) |  | 37 |
-| [read-gate](architecture/read-gate.md) |  | 146 |
+| [read-gate](architecture/read-gate.md) |  | 153 |
 | [remote-control](architecture/remote-control.md) |  | 81 |
 | [run-handoff](architecture/run-handoff.md) |  | 52 |
 | [security-and-isolation](architecture/security-and-isolation.md) | Deny | 202 |
@@ -91,7 +91,7 @@
 | [cli-and-plan-pipeline](entry-points/cli-and-plan-pipeline.md) | CLI | 197 |
 | [context-and-source-graph](entry-points/context-and-source-graph.md) |  | 80 |
 | [filesystem-and-integration-modules](entry-points/filesystem-and-integration-modules.md) |  | 135 |
-| [hooks](entry-points/hooks.md) |  | 143 |
+| [hooks](entry-points/hooks.md) |  | 145 |
 | [orchestrator-daemon-and-sessions](entry-points/orchestrator-daemon-and-sessions.md) |  | 250 |
 | [remote-control](entry-points/remote-control.md) | RC | 100 |
 
@@ -189,7 +189,7 @@
 | [schema-reuse-and-silent-skips](mistakes/schema-reuse-and-silent-skips.md) |  | 130 |
 | [session-identity-env](mistakes/session-identity-env.md) | Env | 126 |
 | [sessions-and-liveness](mistakes/sessions-and-liveness.md) |  | 382 |
-| [shell-command-matchers](mistakes/shell-command-matchers.md) |  | 246 |
+| [shell-command-matchers](mistakes/shell-command-matchers.md) |  | 295 |
 | [source-graph-delivery](mistakes/source-graph-delivery.md) | Misses | 172 |
 | [spurious-waiting-for-input](mistakes/spurious-waiting-for-input.md) | Idle | 43 |
 | [status-broadcast-hardening](mistakes/status-broadcast-hardening.md) |  | 75 |
@@ -218,7 +218,7 @@
 | --- | --- | --- |
 | [agent-rule-bending-hardening](concerns/agent-rule-bending-hardening.md) |  | 375 |
 | [automatic-knowledge-source-graph-followups](concerns/automatic-knowledge-source-graph-followups.md) | Gaps | 71 |
-| [code-quality-and-hook-debt](concerns/code-quality-and-hook-debt.md) | Debt | 232 |
+| [code-quality-and-hook-debt](concerns/code-quality-and-hook-debt.md) | Debt | 256 |
 | [codex-heartbeat-starvation](concerns/codex-heartbeat-starvation.md) |  | 22 |
 | [contract-autonomy-followups](concerns/contract-autonomy-followups.md) |  | 74 |
 | [handoff-followups](concerns/handoff-followups.md) |  | 57 |

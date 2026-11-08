@@ -26,7 +26,7 @@ verified: 3e22bf84e13e65479097f1a8206ca9bd0158ff61
 >
 
 The read gate redirects a whole read of a large file to `loom map --outline`. Rule 1 of
-`loom_read_discipline_check` (`loom-hooks/_read_discipline.sh`) is deny-once inside a live stage. No Rust
+`loom_read_discipline_check` (`loom-hooks/_read_discipline.sh`) is deny-once inside a live stage for an outlined file and a warning for an unoutlined one. No Rust
 delegate, intent or receipt store backs a read; why the earlier receipt path never worked:
 [Read Receipts Could Not Form](../mistakes/store-without-consumer.md#read-receipts-could-not-form-and-fixtures-wrote-the-pair-before-completion-2026-10-20).
 The measured saving at stake is small: identical same-agent rereads were 29 of 7,612 stage Read results,
@@ -45,10 +45,15 @@ inside a stage and a private `$TMPDIR/loom-reads/` directory outside one.
 
 ## Rule 1 Is Deny-Once
 
-`loom_read_deny_once` (`loom-hooks/_read_ledger.sh`) denies (exit 2) an agent's first whole read of a path
-inside a live stage and lets that agent's next whole read of the path pass. The key is the agent and the
-absolute path, so a `Read` and a Bash `cat ../x` share one denial. The repeat is checked before the outline
-runs, so it never pays for `loom map --outline`.
+`loom_read_deny_once` (`loom-hooks/_read_ledger.sh`) applies rule 1 to a whole read of a large file. Inside a live stage an
+agent's FIRST whole read of a path is denied (exit 2) only when `loom map --outline` returns rows for it
+(`LOOM_RD_V1_OUTLINED=1`, `_loom_read_discipline_verdict1` in `_read_discipline.sh`); the denial carries the
+outline and that agent's next whole read of the path passes. An unoutlined first whole read only warns (exit 0,
+`additionalContext` "no outline is available", with `rg -n` advice) on every read and records no denial row: its
+message offers no route but a retry, so denying it taught nothing. The key is the agent and the absolute path, so a
+`Read` and a Bash `cat ../x` share one denial. The repeat is checked before the outline runs, so it never pays for
+`loom map --outline`. A denial is noted in the stage block ledger as `read-discipline/first-read`, under the tool
+named in `LOOM_READ_TOOL` (`read-guard.sh`: Read, `poll-guard.sh`: Bash).
 
 "Live" is `_loom_read_gate_live`: `LOOM_STAGE_ID` and `LOOM_MAIN_AGENT_PID` set, the main agent a live
 ancestor of the hook, and no `read_gate = false` under `[hooks]` in `$LOOM_WORK_DIR/config.toml`
@@ -57,7 +62,9 @@ it on). The graph's coverage and `[hooks] deny_enabled` do not decide it. Outsid
 switch off, when the denial cannot be recorded, or when the ledger is full, the message is a warning.
 Control inputs (`.loom/`, `$LOOM_WORK_DIR`, `doc/plans/`) are exempt (`_loom_is_read_gate_exempt`). The
 exemption tests the path as given, so a bare relative `cat` of a plan file from inside `doc/plans` is not exempt
-and costs one denial.
+and an outlined one costs one denial. `loom/tests/read_gate_contracts.rs` pins both halves: the deny-once
+mechanics run under `Gate::outlined` (a fake `LOOM_BIN` printing an outline row), the unoutlined warning in
+`first_unoutlined_read_warns_every_time` and `control_inputs_are_exempt`.
 
 The denial ledger is `$LOOM_WORK_DIR/hooks/read-denials/<session>/<agent>.tsv`, one row per denied call.
 `loom clean` and `loom init --clean` drop the `read_gate` setting, `loom config` does not manage it, and
