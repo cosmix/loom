@@ -6,9 +6,9 @@
  * ledger is maps-findings.css. Every rule sits on the scales of ui/design.css and the tokens of
  * index.css; nothing names a colour. ui/DESIGN.md, Page rhythm ("Map pages") and Status.
  *
- * Titles and headings are the chrome face (`--font-sans`) at the feature-document step (40px page
- * title, 32px under 480px; 24px section header; 18px heading row); prose is the reader's own face
- * (`--font-reading`).
+ * Titles, headings and the standfirst are the chrome face (`--font-sans`) at the feature-document
+ * step (40px page title, 32px under 480px; 24px section header; 18px heading row); verbatim quotes
+ * are the reading face (`--font-reading`).
  */
 @import "./maps-columns.css";
 
@@ -51,14 +51,14 @@
   font-size: var(--type-ui);
 }
 
-/* The standfirst: the reading face a step over the reading size, as a document's scope line. */
+/* The standfirst: the chrome face a step over the reading size, as a document's scope line. */
 [data-loom-plan]
   .plan-page:has(> .coverage, > .maps-findings-head, > .maps-findings)
   .plan-page__lede {
   max-width: 46ch;
   margin: var(--space-3) 0 0;
   color: var(--foreground);
-  font-family: var(--font-reading);
+  font-family: var(--font-sans);
   font-size: calc(var(--reading-size) * 1.1);
   line-height: 1.45;
   text-wrap: pretty;

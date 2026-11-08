@@ -1,6 +1,6 @@
 /*
  * The threshold: /new with no session (empty-kickoff.tsx). One centred column under a faint wash
- * of the accent: the doodle drawing its thread, the heading in the reading face, then one round
+ * of the accent: the doodle drawing its thread, the heading, then one round
  * field holding the kind switch, the words, the documents and the foot, then the starter pills
  * and the note. The page grid and the live conversation are in kickoff.css; the kind switch in
  * kind-control.css; the feature picker and the picked chip in feature-picker.css. Every colour
@@ -46,7 +46,7 @@
   color: var(--muted-foreground);
 }
 
-/* ---- Head: eyebrow, the reading-face heading, the lead -------------------------------------- */
+/* ---- Head: eyebrow, the heading, the lead -------------------------------------- */
 
 [data-loom-plan] .kickoff-threshold__head {
   gap: var(--space-2);
@@ -59,7 +59,7 @@
 
 [data-loom-plan] .kickoff-heading {
   margin: 0;
-  font-family: var(--font-reading);
+  font-family: var(--font-sans);
   font-size: 38px;
   font-weight: 500;
   line-height: 1.15;
@@ -243,9 +243,8 @@
 [data-loom-plan] .kickoff-note {
   margin: 0;
   color: var(--muted-foreground);
-  font-family: var(--font-reading);
+  font-family: var(--font-sans);
   font-size: var(--type-body);
-  font-style: italic;
   line-height: var(--leading-body);
 }
 

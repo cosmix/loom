@@ -146,7 +146,7 @@ A mark followed by a state word ("Running", "Drafting", "Rebuilding", "Working",
 
 ## Titles and the Reading Face
 
-No title or heading on a planner screen uses the reading face. Page titles, section headers, row headings and card titles are `--font-sans` (the chrome face, Alegreya Sans) at 500 to 600; `--font-reading` is for running prose only: summary sentences, the scope standfirst, quotes and finding text. Sizes and tracking are in `web/src/plan/ui/DESIGN.md`. The serif exception is the chat's empty-state greeting ([open question](../concerns/planner-follow-ups-followups.md#open-questions)). A brief that names a face by family ("Inter") is checked against the tokens: `web/src/aurora-ui` tokens define `--font-sans` as Inter, but the planner's `web/src/index.css` redefines it as Alegreya Sans, and the screens use the planner token.
+The reading face (`--font-reading`, serif) is for document text only: a rendered document's body, a summary page's sentences, and verbatim quotations of a document (the scope standfirst's stub words, the Coverage "Why" vision quote, the settle confirm's open-question points, an attached passage in chat). Everything else, including titles, chat prose, finding text, ledes, counts and the spine's head and instruments, is `--font-sans` (Alegreya Sans), or `--font-mono` for ids, slugs and paths; no chrome is italic. Titles are 500 to 600. Sizes and tracking are in `web/src/plan/ui/DESIGN.md`. A brief that names a face by family ("Inter") is checked against the tokens: `web/src/aurora-ui` tokens define `--font-sans` as Inter, but the planner's `web/src/index.css` redefines it as Alegreya Sans, and the screens use the planner token.
 
 ## Checking Screens in the User's Browser
 
