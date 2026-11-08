@@ -193,11 +193,13 @@ A stage's completion, its gate check and its contract freeze run as host jobs. T
 
 ## Job Records and State
 
-Records live under `<state root>/verification/<stage>/` (`host_verify/store.rs`): `current.json` holds the stage's current record, and each job has a directory with its record copy, `progress.jsonl`, the result, logs and a `groups` file of criterion process groups.
+Records live under `<state root>/verification/<stage>/` (`host_verify/store.rs`): `current.json` holds the stage's current record and `pending.json` holds its waiting check. Each job has a directory with its record copy, `progress.jsonl`, the result, logs and a `groups` file of criterion process groups.
 
 - Kinds (`JobKind`): `check` runs the stage gate and changes no state; `complete` runs the completion and is applied as a completion; `freeze` runs the contracts for [Contract Phase](contract-phase.md).
 - States (`JobState`): `queued` and `running` leave; `passed`, `failed`, `cancelled` and `interrupted` are terminal.
 - Every record change is a compare-and-set under the stage lock (`submit.rs`, `runner.rs`): the record is reloaded and changed only while it is still this job in the expected state.
+
+A check on the same session, head and tree as a live check joins it when covered; an uncovered request waits in the pending slot. Waiting selections are unioned with each other, not with the running selection; a full selection covers all, and a no-cache request makes the waiting job no-cache. The job copy is written before the slot and wins if they differ. Slot changes hold the stage lock.
 
 ## Components
 
@@ -207,8 +209,8 @@ Records live under `<state root>/verification/<stage>/` (`host_verify/store.rs`)
 - `host_verify/runner.rs`: starts each queued job as a `loom stage verify-host` child, polls it with `try_wait`, and ends it on cancellation, deadline or output cap. The tick blocks on a child only while retiring it, for at most the process cleanup grace.
 - `commands/stage/verify_host.rs`, `host_verify/child.rs`, `child_complete.rs`, `freeze.rs`: the child run.
 - `host_verify/apply.rs`, `apply_rejection.rs`, `freeze.rs`: the daemon's application of a finished job.
-- `host_verify/wait.rs`, `wait_state.rs`, `wait_report.rs`: the session's follow. A call with no matching request state relays a ticket and returns at once; a call that finds one waits inside its budget. Both exit 0 while nothing is decided, because Claude Code runs the relay and heartbeat hooks only after a Bash call that exits 0.
-- `host_verify/signals.rs`, `submit.rs`, `digest.rs`, `store_fs.rs`: process signalling, queueing and cancellation, the tree digest, and the no-symlink file access under the state root.
+- `host_verify/wait.rs`, `wait_state.rs`, `wait_report.rs`: the session's follow. Check wait state is keyed by criterion selection and cache flag; selections are sorted and deduplicated by `commands/verify.rs::normalized_criteria`. A call with no matching request state relays a ticket and returns at once; a call that finds one waits inside its budget. Both exit 0 while nothing is decided, because Claude Code runs the relay and heartbeat hooks only after a Bash call that exits 0.
+- `host_verify/submit.rs` queues, joins, waits or supersedes requests; `pending.rs` promotes and cancels waiting checks, and `store/slots.rs` persists current and pending slots and job copies. `signals.rs`, `digest.rs` and `store_fs.rs` handle process signalling, tree digest and no-symlink access under the state root.
 
 ## Child Run
 
@@ -219,9 +221,11 @@ Records live under `<state root>/verification/<stage>/` (`host_verify/store.rs`)
 
 ## Cancellation and Restart
 
-- Only `take_down_agents` cancels a job (`orchestrator/core/event_handler/stage_takedown.rs::cancel_host_job`). A takedown, retirement, handoff, stall requeue, park or contract hand-off all reach it through that one function.
+- Takedown, retirement, handoff, stall requeue, park and contract hand-off cancel through `take_down_agents` (`orchestrator/core/event_handler/stage_takedown.rs::cancel_host_job`). Cancel paths also cancel the waiting job; superseding a current check cancels its waiting job.
 - A cancellation is a state write. The runner kills a child whose record is no longer `running` on its next tick.
 - A cancelled job that no runner retired is found at restart by its child: the child still runs, and its command line names the job (`signals.rs::stop_children`). Elapsed time does not decide it.
+- The runner promotes a waiting job when the current job ends, even when all execution slots are busy. Restart leaves the waiting job for promotion on a later tick.
+- Stage reset snapshots live current and waiting job IDs together under the host-job lock before retiring agents, then cancels those identities in either slot. Promotion during reset is covered, and jobs submitted afterward are preserved.
 
 ## Escalation Hold
 

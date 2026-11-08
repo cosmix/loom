@@ -131,6 +131,8 @@ Keep completed review findings separate from active assignments, and replenish i
 Coordinate shared build resources and verify integrated fixtures before claiming a green gate.
 → [Review Integration Verification](mistakes/review-integration-verification.md)
 
+Full suites belong at the gate; targeted runs have no count cap. [Details](mistakes/test-sweep-and-fixture-discipline.md#duplicate-test-runs-were-framed-as-a-run-count-problem).
+
 ## Runtime and Daemon Incidents
 
 Ten incidents: merge cleanup that destroyed the evidence it needed, a tracked `<file>.tmp` symlink redirecting a locked write, a broker fallback the client could never reach, two daemons on one `.loom/work/`, the adjudication deadlock, status-broadcast eviction, live-state pollution from the tests of one stage, spurious waiting-for-input, an unbounded walk up the filesystem, and parallel worktrees sharing derived state.

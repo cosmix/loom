@@ -68,6 +68,9 @@ Open parser and command gaps found while writing the language skills, checked ag
 - **Slow hook tests** (`loom-hooks/tests/run-all.sh` is 162 s after the PATH-fixture fix): `prefer-modern-tools-missing-rg-fd.sh`
   78 s, `poll-guard-subagent-waits.sh` 63 s, and four others near 40 s.
 
+- **Waiting check verdicts cover the union.** Followers waiting for different criterion subsets share the verdict for the combined waiting selection. Revisit if reviewers misread failures from criteria they did not request.
+- **Followers of one selection share wait state.** The first follower to see the job end removes the state; a later follower can relay again. An unchanged passing tree hits the cache, while a failing criterion runs again. Revisit if field data shows repeated failing integration-verify runs.
+
 ## Provision Install Validation Gaps
 
 Plan authors are trusted, so these are author-mistake gaps, not stage-agent bypasses. The validator is `plan/schema/validation/v2_fields/provision_installs.rs`; the required forms are in [plan-environment](../architecture/plan-lifecycle-and-fields.md#plan-provision-snapshot-spawn-gate-hardening).
@@ -150,20 +153,16 @@ Reviewer suggestions from the gate-dedup and integration-verify rounds that were
 - `loom/src/orchestrator/adjudication/apply_contract.rs::accept_notice`: `accept_notice` lists every re-frozen path (up to 500) in the feedback body. Cap it at 20 paths and a count.
 - `loom/src/verify/contracts/frozen_set.rs::read_frozen_set`: re-freeze is all-or-nothing. One harness file that is a symlink or over 4 MiB, or the 501st match, fails the accept; it retries up to `MAX_APPLY_ATTEMPTS`, then escalates to a human with the accept never applied. A deleted contract file also errors the accept instead of being dropped. The judge prompt should say so.
 - `loom/src/orchestrator/adjudication/prompt/contract.rs::push_content`: the diff fence is a fixed three backticks. A bare three-backtick line in a harness file closes the fence under CommonMark. Use a fence longer than any backtick run in the diff; this also fixes the main diff fence.
-- `loom/src/commands/verify_relay.rs::request_or_wait`: the `--criterion` selection is not normalised. Wait state compares the raw Vec (`commands/attach/tests/wait.rs::classify_endpoint_failure_distinguishes_the_three_causes`), so the same set in another order requests anew. Sort and dedup once in `verify::execute`.
 - `loom/src/orchestrator/core/inbox_drain/check.rs::validate`: `validate` builds a whole `CriteriaConfig::default()` (which reads `LOOM_ACCEPTANCE_CACHE`) only to call `check_selection`; a free function over the set and stage would do. The line is probably over the rustfmt chain width of 60.
 - `loom/src/plan/schema/validation_suite.rs` (the `-p` and `--benches` cases above) and `loom/tests/gate_dedup_contracts.rs::plan_verify_flags_full_vitest_suite_in_standard_stage`: only vitest runs through the binary. A loop over `registry::all()` would pin every adapter.
 - `loom-hooks/subagent-verify-guard.sh::scan_args`: `scan_args` treats `-p`/`--package` as scoped, but `cargo_test.rs::is_full_run` treats `cargo test -p <crate>` as a full run, and `pytest -p plugin` reads as a scope. The main agent can run a whole crate with `-p`.
 - `loom-hooks/subagent-verify-guard.sh::check_command`: `timeout 300 cargo test` bypasses the hook because `timeout` is not in the prefix list. Add `timeout` and `bundle exec`/`php` prefixes. `make test` stays allowed for the main agent by design.
 - `loom-hooks/subagent-verify-guard.sh`: the main-agent branch ignores `LOOM_SESSION_TYPE` (exported by `orchestrator/terminal/native/wrapper.rs::build_wrapper_script`), so contract, adjudication and base-conflict sessions of a standard stage get the main-agent block. Low impact; unverified.
-- `loom-hooks/subagent-verify-guard.sh`: the comment lists `CLAUDE.md.template` as a byte-identical BLOCK-A copy. `block_a_agrees_across_every_surface` (`tests_doctrine.rs::block_a_agrees_across_every_surface`) pins only the two prefixes, the preamble and the guard. The same claim sits in the module doc of `orchestrator/signals/cache/blocks.rs`.
-- `loom/src/orchestrator/signals/cache.rs::INTEGRATION_VERIFY_OVERRIDE`: "Rule 5's complete-suite instruction" is a dangling reference, since template Rule 5 now says only that integration-verify keeps its own gate. Pinned by `tests_doctrine_prefixes.rs::integration_verify_prefix_assigns_one_canonical_gate_owner`.
 - `loom/src/orchestrator/signals/tests_doctrine_gate.rs::the_retired_agent_definition_does_not_exist`: the retired-agent test covers five surfaces. README, CONTRIBUTING, `spawn-guard.sh` `TYPED_AGENTS` and the plan-writer SKILL and references are not asserted. `code_reviewer_judges_criteria_intent` matches two loose words anywhere in the file.
 - `AGENTS.md.template:57`: "The orchestrator performs integration verification" should name the stage's gate (`loom check`) for standard stages.
 - `loom-hooks/tests/subagent-gate-payload.sh`: the header comment splits `LOOM_MAIN_AGENT_PID` across two lines. Case (j) sits before (f) and there is no (k).
-- `loom/tests/integration/hooks_subagent_verify_guard_cases.rs::BLOCK_CASES`: a stale comment says "expected to still fail until the concurrent hook fix lands". No cases cover `bun test`, `cargo nextest` or bare `jest` as the main agent.
+- `loom/tests/integration/hooks_subagent_verify_guard_cases.rs::BLOCK_CASES`: main-agent cases do not cover `bun test`, `cargo nextest` or bare `jest` as the main agent.
 - `loom/tests/integration/hooks_subagent_verify_guard_main.rs::write_standard_stage`: `write_standard_stage` duplicates `write_stage_file` in the carve-out module and in `gate_dedup_contracts/support.rs::write_standard_stage`.
-- `loom/src/assets/install/claude.rs::write_layout`: the installer never prunes `~/.claude/agents`, and `install.rs` has no pruning of retired agent files either. A retired verifier agent file stays installed on upgraded machines until removed by hand.
 
 ## Subcommand Lint Path Ownership
 

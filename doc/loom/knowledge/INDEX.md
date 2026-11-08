@@ -12,7 +12,7 @@
 | [entry-points.md](entry-points.md) | Key files agents should read first | 83 |
 | [patterns.md](patterns.md) | Architectural patterns discovered in the codebase | 186 |
 | [conventions.md](conventions.md) | Coding conventions discovered in the codebase | 250 |
-| [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 248 |
+| [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 250 |
 | [stack.md](stack.md) | Dependencies, frameworks, and tooling used in the project | 115 |
 | [concerns.md](concerns.md) | Technical debt, warnings, and issues to address | 250 |
 
@@ -39,7 +39,7 @@
 | [daemon-owned-commits](architecture/daemon-owned-commits.md) |  | 151 |
 | [directory-structure](architecture/directory-structure.md) | Tree | 50 |
 | [execution-containment](architecture/execution-containment.md) |  | 395 |
-| [hook-system](architecture/hook-system.md) |  | 359 |
+| [hook-system](architecture/hook-system.md) |  | 329 |
 | [knowledge-bootstrap](architecture/knowledge-bootstrap.md) | KB | 83 |
 | [knowledge-hierarchy](architecture/knowledge-hierarchy.md) | KB fs | 264 |
 | [live-preview-editor](architecture/live-preview-editor.md) | Editor | 28 |
@@ -80,7 +80,7 @@
 | [token-accounting-and-receipts](architecture/token-accounting-and-receipts.md) | Ledger | 358 |
 | [token-flow-sources](architecture/token-flow-sources.md) |  | 75 |
 | [usage-evidence](architecture/usage-evidence.md) |  | 127 |
-| [verification-v2-gates](architecture/verification-v2-gates.md) | Gates | 257 |
+| [verification-v2-gates](architecture/verification-v2-gates.md) | Gates | 261 |
 | [web-dashboard](architecture/web-dashboard.md) | Web | 133 |
 | [web-terminal](architecture/web-terminal.md) |  | 181 |
 
@@ -119,7 +119,7 @@
 | [config-plan-and-gate-rules](conventions/config-plan-and-gate-rules.md) |  | 27 |
 | [dispute-and-adjudication](conventions/dispute-and-adjudication.md) |  | 123 |
 | [git-and-build-workflow](conventions/git-and-build-workflow.md) |  | 237 |
-| [guidance-channels-and-plugin-scope](conventions/guidance-channels-and-plugin-scope.md) |  | 139 |
+| [guidance-channels-and-plugin-scope](conventions/guidance-channels-and-plugin-scope.md) |  | 134 |
 | [model-and-effort-config](conventions/model-and-effort-config.md) |  | 143 |
 | [plan-web](conventions/plan-web.md) |  | 173 |
 | [plan-yaml-and-hooks](conventions/plan-yaml-and-hooks.md) |  | 182 |
@@ -135,13 +135,13 @@
 | [ci-toolchain-and-cargo](mistakes/ci-toolchain-and-cargo.md) |  | 373 |
 | [codex-direct-mode-invisible](mistakes/codex-direct-mode-invisible.md) |  | 23 |
 | [codex-lane-rogue-wrapper](mistakes/codex-lane-rogue-wrapper.md) |  | 177 |
-| [codex-navigation](mistakes/codex-navigation.md) | Reader | 132 |
+| [codex-navigation](mistakes/codex-navigation.md) | Reader | 162 |
 | [codex-worker-briefing](mistakes/codex-worker-briefing.md) |  | 162 |
 | [completion-broker-credential](mistakes/completion-broker-credential.md) |  | 225 |
 | [completion-runner-blocks](mistakes/completion-runner-blocks.md) |  | 216 |
 | [completion-runtime](mistakes/completion-runtime.md) | Churn | 74 |
 | [computed-values-and-hidden-couplings](mistakes/computed-values-and-hidden-couplings.md) | Values | 284 |
-| [concurrency-and-locking](mistakes/concurrency-and-locking.md) |  | 107 |
+| [concurrency-and-locking](mistakes/concurrency-and-locking.md) |  | 157 |
 | [contract-autonomy-delivery](mistakes/contract-autonomy-delivery.md) | Bypass | 109 |
 | [daemon-fork-after-threads](mistakes/daemon-fork-after-threads.md) | Fork | 38 |
 | [daemon-singleton](mistakes/daemon-singleton.md) |  | 141 |
@@ -198,7 +198,7 @@
 | [subagent-liveness-and-watch](mistakes/subagent-liveness-and-watch.md) |  | 387 |
 | [subagent-orchestration](mistakes/subagent-orchestration.md) | Agents | 400 |
 | [test-concurrency-and-fixtures](mistakes/test-concurrency-and-fixtures.md) | Races | 390 |
-| [test-sweep-and-fixture-discipline](mistakes/test-sweep-and-fixture-discipline.md) |  | 358 |
+| [test-sweep-and-fixture-discipline](mistakes/test-sweep-and-fixture-discipline.md) |  | 388 |
 | [testing-and-lint](mistakes/testing-and-lint.md) |  | 398 |
 | [tests-that-cannot-fail](mistakes/tests-that-cannot-fail.md) |  | 392 |
 | [tmux-backend](mistakes/tmux-backend.md) | tmux | 164 |
@@ -241,6 +241,6 @@
 | [state-confinement-gaps](concerns/state-confinement-gaps.md) | Caches | 21 |
 | [token-accounting-and-proof-defects](concerns/token-accounting-and-proof-defects.md) |  | 334 |
 | [typed-config-values](concerns/typed-config-values.md) | Gaps | 22 |
-| [verification-v2-followups](concerns/verification-v2-followups.md) |  | 216 |
+| [verification-v2-followups](concerns/verification-v2-followups.md) |  | 215 |
 | [web-dashboard-latent-issues](concerns/web-dashboard-latent-issues.md) | UI | 96 |
 | [worktree-build-cold-start](concerns/worktree-build-cold-start.md) | Cold | 136 |

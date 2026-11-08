@@ -272,39 +272,9 @@ Set by the wrapper script before `exec claude` (`orchestrator/terminal/native/wr
 
 ### Hook Embedding (constants.rs)
 
-`LOOM_HOOKS` (`fs/permissions/constants.rs`) holds **42 entries** (earlier text said 33), each embedded via
-`include_str!()` at compile time. `install_loom_hooks()` writes them to
-`~/.claude/hooks/loom/` with mode 0o755. Hooks are NOT read from disk by loom at
-runtime.
+`LOOM_HOOKS` in `loom/src/fs/permissions/constants.rs` embeds hook assets with `include_str!`; `install_loom_hooks()` installs them under `~/.claude/hooks/loom/`. The binary uses the embedded sources, so source changes require a rebuild and asset installation. The inventory includes invoked hooks and sourced libraries; sourced libraries have no event trigger. Global and session hook registration is defined separately in `fs/permissions/hooks/config.rs` and `loom/src/hooks/config.rs`; Codex registrations are in `fs/permissions/codex_hooks.rs`.
 
-**Do not read "42 entries" as "42 hooks."** The arithmetic, verified against
-`fd . loom-hooks --max-depth 1 -t f | wc -l`, the `LOOM_HOOKS` array in
-`loom/src/fs/permissions/constants.rs`, and the script names in
-`fs/permissions/hooks/config.rs`:
-
-```text
-43 top-level files in loom-hooks/    (earlier text said 34)
- −1  git-pre-commit-hook.sh    (excluded from LOOM_HOOKS; appended to .git/hooks/pre-commit by loom init)
- ───
- 42  LOOM_HOOKS entries installed to ~/.claude/hooks/loom/    (earlier text said 33)
- −8  _common.sh, _lifecycle.sh, _codex_forward.sh, _read_discipline.sh, _read_ledger.sh,
-     _progress-classification.sh, _post-tool-heartbeat.sh, _subagent-preamble.txt
-     (sourced libraries, not registered hooks — earlier text listed only 3)
- −1  codex-forward.sh          (wrapper the codex forwarding lane invokes directly)
- −1  codex-apply-patch.sh      (Codex apply_patch bridge, registered only by codex_hooks.rs)
- ───
- 32  Claude Code hooks: 24 global, registered in fs/permissions/hooks/config.rs,
-                        + 8 session hooks emitted from HookEvent   (earlier text said 21 + 7)
-```
-
-One of the global hooks is `knowledge-orient.sh`, the only hook registered
-**globally** on `SessionStart` (`fs/permissions/hooks/config.rs`) rather than
-per-session — it points a fresh non-stage session at `doc/loom/knowledge/INDEX.md`.
-It exits silently inside a stage, on `compact`/`resume`, and when no `INDEX.md`
-exists inside the git root.
-
-Re-derive these with the commands above rather than trusting the numbers here —
-they have gone stale three times.
+`knowledge-orient.sh` is registered globally on `SessionStart` and points a fresh non-stage session to `doc/loom/knowledge/INDEX.md`. It exits silently inside a stage, on `compact` or `resume`, and when no index exists inside the git root.
 
 ## Forwarded Codex context hooks
 

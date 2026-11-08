@@ -23,15 +23,15 @@ Remote releases deliver hooks through the embedded-assets binary. `install.sh::m
 
 ## No-Verify Doctrine Block Carries Only a Rust Example
 
-The doctrine block must stay byte-identical across the signal, the template, and the hook's
-refusal message, so it carries a single scoped-command example — a `cargo` one. A blocked Python
+The doctrine block must stay byte-identical across the signal, the template, `loom-hooks/_subagent-preamble.txt`
+and the hook's refusal message, so it carries a single scoped-command example — a `cargo` one. A blocked Python
 or Go subagent is shown a Rust example. `loom-hooks/subagent-verify-guard.sh` is over the 400-line cap
 (606 lines). The fix is to append language-specific examples **after** the pinned block as
 explicitly hook-local guidance, the same way the `BLOCKED:` framing line already sits outside it.
 
 ## Subagent verification keeps a private shell scanner
 
-`subagent-verify-guard.sh` strips embedded content before scanning (`STRIPPED`, lines 136-141), normalizes shell separators, and examines command-position tokens with quote tracking (lines 528-563). Its private whitespace splitter still is not a complete shell parser; review quoted separators, wrappers, substitutions and scoped-runner options with differential adversarial fixtures before replacing it. The stage-type exemption separately greps the entire stage Markdown (`stage_declares`, lines 129-131), so it should use frontmatter-only state. Shared token helpers alone do not establish shell equivalence.
+`subagent-verify-guard.sh` strips embedded content, normalizes separators and walks command-position tokens with quote tracking; its runner-specific matchers live in the same file. The private whitespace splitter is not a complete shell parser. Review quoted separators, wrappers, substitutions and scoped-runner options with differential adversarial fixtures before replacing it. The stage-type exemption greps the entire stage Markdown, so it should use frontmatter-only state. Shared token helpers alone do not establish shell equivalence.
 
 ## Hook responsibility boundaries and file sizes
 
