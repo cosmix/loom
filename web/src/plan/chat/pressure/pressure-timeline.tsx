@@ -117,9 +117,7 @@ function StepRow({ step }: { step: PressureStepView }): JSX.Element {
       >
         {hasExtras && (
           <>
-            {step.kind === "codex" && step.codex && (
-              <CodexStatusItem status={step.codex} />
-            )}
+            {step.kind === "codex" && step.codex && <CodexStatusItem status={step.codex} />}
             {step.edits.map((path) => {
               const address = editAddress(snapshot, step, path);
               return (
