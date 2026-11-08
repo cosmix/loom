@@ -356,3 +356,33 @@ Rust test module names also need graph lookup: `orchestrator::core::tests` does 
 **Why:** Formatting ran before all workers returned.
 **Prevention:** Wait for all editing workers before the final formatting pass and gate.
 **Fix:** Format the final tree and repeat the check.
+
+## Duplicate Test Runs Were Framed as a Run-Count Problem
+
+**What happened:** asked to cut the duplicated test runs in loom stages, the main agent proposed a per-worker cap of one test run enforced by the shell guard, a block on any orchestrator test run before the first `loom check`, and a `loom check` refusal of a second full check. The operator rejected all three. Matching runners and judging narrowness by shell tokens cannot cover every language and framework loom runs in, the number of targeted runs does not matter, and the cost is the FULL suite run outside the gate.
+
+**Why:** the proposal took the existing doctrine ("AT MOST ONE narrowly-scoped check, run ONCE") as the goal and added enforcement to it, instead of asking which runs were actually wasted.
+
+**Prevention:** the waste is a full-suite run outside the gate. In a standard stage, subagents run the tests for their own code and module once they are confident the code or fix is correct, never the whole suite, and the orchestrator runs the full suite only through `loom check`. Integration-verify is exempt: its orchestrator and reviewers may run the full suite, through `loom check integration-verify`, so job joining and the pass cache dedupe it. Repeated full checks are made cheap by caching, never refused.
+
+**Fix:** `doc/plans/PLAN-full-suite-at-gate.md` carries the corrected design.
+
+## Gate Snapshot Must Follow Integration
+
+**What happened:** the integration gate requires the merged and restored working tree, including the final host verification fix.
+
+**Why:** a snapshot taken before integration completes can pass while omitting the final code.
+
+**Prevention:** take the isolated gate snapshot only after the final worker returns, and run the full suite through `loom check` against that snapshot.
+
+**Fix:** retain the prepared fixture and defer snapshot and gate execution until the integrated tree is ready.
+
+## Snapshot Excluded a Source Directory Named Target
+
+**What happened:** a gate snapshot omitted `loom/src/commands/target/`, causing Rust gate criteria to fail on a missing module.
+
+**Why:** the snapshot excluded every path component named `target` rather than only build-output directories.
+
+**Prevention:** exclude build outputs by their exact repository paths and compare selected paths with all tracked source paths before running the gate.
+
+**Fix:** limit the fixture exclusions to actual root and `loom/` build directories and restore the missing source files.
