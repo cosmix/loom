@@ -35,6 +35,7 @@ import {
 } from "@/components/ui/dialog";
 import { Kbd } from "@/components/ui/kbd";
 import type { HistoryLoader } from "@/api/terminal-history";
+import { displayState } from "@/lib/display-state";
 import { stateMeta } from "@/lib/format";
 import { attentionAtom, orderedStagesAtom, selectStage, snapshotAtom } from "@/state/atoms";
 
@@ -295,7 +296,7 @@ function BodyHead({ stage, terminalButton }: { stage: StageSummary; terminalButt
   const open = useOpenStage();
   return (
     <DialogHeader
-      className={cn("stage-modal-head gap-2 p-5", toneClass(stateMeta(stage.status).tone))}
+      className={cn("stage-modal-head gap-2 p-5", toneClass(stateMeta(displayState(stage)).tone))}
     >
       {/* Only the title row clears the dialog's close button, so everything
           below keeps the body's right edge. */}

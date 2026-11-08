@@ -9,6 +9,7 @@ import { snapshotSchema, type Attention, type Snapshot, type StageIssue } from "
 import { AttentionBody, AttentionPanel } from "@/components/attention-panel";
 import { attentionDetail, attentionHazard, attentionStatus } from "@/components/attention-status";
 import { applySnapshot } from "@/state/apply";
+import { completionBlocker } from "@/test/completion-blocker";
 
 const fixture = snapshotSchema.parse(fixtureJson);
 
@@ -114,11 +115,32 @@ describe("attentionHazard", () => {
   });
 });
 
+describe("completion pending card", () => {
+  it("wears the stage's completion state, not the entry's blocked filing", () => {
+    const entry: Attention = {
+      ...fixtureEntry("client"),
+      id: "server",
+      name: "Rust server",
+      label: "COMPLETION PENDING",
+      status: "blocked",
+      automatic: true,
+    };
+    renderPanel([entry], (snapshot) => {
+      const server = snapshot.status.stages.find((stage) => stage.id === "server")!;
+      server.completion_blocker = completionBlocker();
+    });
+
+    const card = screen.getByText("COMPLETION PENDING").closest(".bg-card");
+    expect(card?.classList.contains("tone-warning")).toBe(true);
+    expect(card?.classList.contains("tone-blocked")).toBe(false);
+  });
+});
+
 describe("attention labels", () => {
   it("lists the typed merge block under handled by loom in the merge-blocked state", () => {
     const entry = fixtureEntry("merge-gate");
     expect(entry.label).toBe("MERGE BLOCKED");
-    expect(attentionStatus(entry)).toBe("merge-blocked");
+    expect(attentionStatus(entry, "merge-blocked")).toBe("merge-blocked");
     expect(attentionHazard(entry)).toBe("warning");
 
     renderPanel([entry]);
@@ -139,7 +161,7 @@ describe("attention labels", () => {
       failure_label: null,
       evidence: [],
     };
-    expect(attentionStatus(entry)).toBe("blocked");
+    expect(attentionStatus(entry, null)).toBe("blocked");
     expect(attentionHazard(entry)).toBe("error");
 
     renderPanel([entry]);
@@ -284,7 +306,7 @@ describe("attentionDetail", () => {
 describe("the attention card", () => {
   it("uses the typed status when the human label changes", () => {
     const entry = { ...fixtureEntry("docs"), label: "new display text" };
-    expect(attentionStatus(entry)).toBe("merge-conflict");
+    expect(attentionStatus(entry, "merge-conflict")).toBe("merge-conflict");
   });
   const archived: StageIssue = {
     kind: "failure",

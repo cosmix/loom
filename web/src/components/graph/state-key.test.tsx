@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import fixture from "@/api/fixtures/snapshot.json";
 import { snapshotSchema, type StageSummary } from "@/api/schema";
 import { StateKey } from "@/components/graph/state-key";
+import { completionBlocker } from "@/test/completion-blocker";
 
 const template = snapshotSchema.parse(fixture).status.stages[0]!;
 
@@ -49,5 +50,21 @@ describe("StateKey contract chip", () => {
     renderKey([stage("a", { status: "executing", session_type: "stage" })]);
 
     expect(screen.queryByText("writing contracts")).toBeNull();
+  });
+});
+
+describe("StateKey completion chip", () => {
+  it("counts a completion-pending stage apart from the executing ones", () => {
+    renderKey([
+      stage("a", { status: "executing", session_type: "stage" }),
+      stage("b", { status: "executing", completion_blocker: completionBlocker() }),
+    ]);
+
+    const pending = screen.getByText("Completion pending").closest(".key-chip");
+    const executing = screen.getByText("Executing").closest(".key-chip");
+    expect(pending?.classList.contains("tone-warning")).toBe(true);
+    expect(pending?.querySelector(".key-count")?.textContent).toBe("1");
+    expect(executing?.classList.contains("tone-executing")).toBe(true);
+    expect(executing?.querySelector(".key-count")?.textContent).toBe("1");
   });
 });

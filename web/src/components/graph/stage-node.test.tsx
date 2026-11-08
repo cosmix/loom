@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import fixture from "@/api/fixtures/snapshot.json";
 import { snapshotSchema, type StageFlow, type StageSummary } from "@/api/schema";
 import { StageNode, type StageNodeType } from "@/components/graph/stage-node";
+import { completionBlocker } from "@/test/completion-blocker";
 
 const status = snapshotSchema.parse(fixture).status;
 const template = status.stages[0]!;
@@ -67,6 +68,46 @@ describe("StageNode contract phase", () => {
     const node = container.querySelector(".stage-node");
     expect(node?.classList.contains("tone-executing")).toBe(true);
     expect(node?.classList.contains("tone-contract")).toBe(false);
+  });
+});
+
+describe("StageNode completion blocker", () => {
+  it("draws a completion-pending executing stage as needing attention, not running", () => {
+    const { container, getByText } = renderNode(
+      stage({
+        status: "executing",
+        session_type: "stage",
+        completion_blocker: completionBlocker(),
+      }),
+    );
+
+    const node = container.querySelector(".stage-node");
+    expect(node?.classList.contains("tone-warning")).toBe(true);
+    expect(node?.classList.contains("tone-executing")).toBe(false);
+    expect(node?.hasAttribute("data-attention")).toBe(true);
+    expect(node?.getAttribute("data-hazard")).toBe("warning");
+    expect(node?.hasAttribute("data-live")).toBe(false);
+    const badge = getByText("Completion pending").parentElement;
+    expect(badge?.getAttribute("title")).toBe("completion pending: test-integrity gate failed");
+    expect(getByText("completion pending: test-integrity gate failed")).toBeTruthy();
+  });
+
+  it("draws a confirmed blocker on an executing stage in the blocked tone", () => {
+    const { container, getByText } = renderNode(
+      stage({ status: "executing", completion_blocker: completionBlocker("blocked") }),
+    );
+
+    expect(container.querySelector(".stage-node")?.getAttribute("data-hazard")).toBe("error");
+    expect(getByText("Completion blocked")).toBeTruthy();
+  });
+
+  it("keeps a plain executing stage live and without an attention ground", () => {
+    const { container, getByText } = renderNode(stage({ status: "executing" }));
+
+    const node = container.querySelector(".stage-node");
+    expect(node?.hasAttribute("data-live")).toBe(true);
+    expect(node?.hasAttribute("data-attention")).toBe(false);
+    expect(getByText("Executing").parentElement?.hasAttribute("title")).toBe(false);
   });
 });
 
