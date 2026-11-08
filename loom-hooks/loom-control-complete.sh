@@ -279,6 +279,19 @@ completion_rewrite_matches() {
 	((i == n))
 }
 
+# completion_caller_is_main - the payload positively names the main agent (its
+# transcript is <session_id>.jsonl), or names no transcript at all and the
+# process walk (loom_is_subagent) finds no subagent. An unrecognised transcript
+# shape never counts: main is not granted by elimination (_identity.sh).
+completion_caller_is_main() {
+	case "$(loom_payload_agent_verdict "$INPUT_JSON")" in
+	main) return 0 ;;
+	subagent) return 1 ;;
+	esac
+	[[ -z "$(printf '%s' "$INPUT_JSON" | jq -r '.transcript_path // empty' 2>/dev/null)" ]] || return 1
+	! loom_is_subagent "$INPUT_JSON"
+}
+
 # emit_pinned_allow <reason> - Write the completion heartbeat and print the
 # PreToolUse allow, giving <reason>, that runs PINNED_COMMAND. updatedInput
 # replaces the whole tool input, so only the model's timeout and description
@@ -345,21 +358,21 @@ PINNED_COMMAND="$LOOM_BIN stage complete $STAGE_ID"
 # A PreToolUse payload carries no result; a payload that does is a stale
 # PostToolUse registration, which this hook no longer serves.
 [[ "$(printf '%s' "$INPUT_JSON" | jq -r 'has("tool_result") or has("tool_response")')" != true ]] || exit 0
-# A subagent never completes a stage: its pinned form gets no allow (commit-filter.sh
-# refuses it) and its plain spelling keeps the refusal.
-AGENT_VERDICT=$(loom_payload_agent_verdict "$INPUT_JSON")
+# Only a positively main caller completes a stage: any other caller's pinned
+# form gets no allow (commit-filter.sh refuses a subagent's) and its plain
+# spelling keeps the refusal.
 if [[ "$COMMAND" == "$PINNED_COMMAND" ]]; then
 	# No permission rule matches the absolute pinned path (the session grants
 	# `Bash(loom *)`), so without this allow auto mode's classifier judges, and
 	# can refuse, the main agent's completion.
-	if [[ "$AGENT_VERDICT" != subagent ]]; then
+	if completion_caller_is_main; then
 		emit_pinned_allow "loom: pinned completion command"
 		exit 0
 	fi
 	loom_write_completion_heartbeat || true
 	exit 0
 fi
-if [[ "$AGENT_VERDICT" != subagent ]] && completion_rewrite_matches; then
+if completion_caller_is_main && completion_rewrite_matches; then
 	emit_pinned_allow "loom: completion rewritten to the pinned command"
 	exit 0
 fi

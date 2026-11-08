@@ -64,7 +64,7 @@ Rules for `loom_track_cwd`. A segment is the run of tokens between two `%%SEP%%`
 - `cd` with no argument, `cd -`, `cd` with an option or a third token, a target that does not normalize, `pushd` and `popd`: every later segment gets `""`.
 - Every token of a segment gets that segment's cwd; sentinel indices get `""`.
 
-Rule for `LOOM_SCRATCH_EXPAND`: 1 unless some token contains the text `LOOM_SCRATCH_DIR` not directly preceded by `$` or `${`, or some word token is exactly one of `eval`, `env`, `declare`, `typeset`, `export`, `local`, `readonly`, `read`, `unset`, `set`, `source`, `.`, `printf`, `mapfile`, `readarray`. A command that could reassign the variable never gets the expansion.
+Rule for `LOOM_SCRATCH_EXPAND`: 1 unless some token names `LOOM_SCRATCH_DIR` other than as a plain `$LOOM_SCRATCH_DIR` or `${LOOM_SCRATCH_DIR}` read (so `${LOOM_SCRATCH_DIR:=x}` counts), some word token is exactly one of `env`, `declare`, `typeset`, `export`, `local`, `readonly`, `read`, `unset`, `set`, `printf`, `mapfile`, `readarray`, or `eval`, `source` or `.` stands at a segment's command word (`loom_tokens_command_word_index`) or anywhere in a segment that follows a redirection, or the command holds a `$` bash keeps literal (`LOOM_TOKEN_LITERAL_DOLLAR`: inside single quotes, after a backslash, or followed by no name), since `'$LOOM_SCRATCH_DIR/x'` names `<cwd>/$LOOM_SCRATCH_DIR/x`. A command that could reassign the variable, or spells it literally, never gets the expansion; `git -C "$LOOM_SCRATCH_DIR/c" grep x -- .` keeps it.
 
 ## Pinned interface 2: block ledger (owner: worker F, file `loom-hooks/_common.sh`)
 

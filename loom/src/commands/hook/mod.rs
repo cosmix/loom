@@ -24,4 +24,6 @@ pub mod worker_brief;
 #[cfg(test)]
 mod tests_blocks;
 #[cfg(test)]
+mod tests_blocks_files;
+#[cfg(test)]
 mod tests_cli_surface;

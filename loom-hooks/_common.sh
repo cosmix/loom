@@ -135,6 +135,7 @@ loom_record_block() {
     [[ -n "$line" ]] || return 0
     # File safety, checked last before the append. stat reads the size
     # without opening the file, so a FIFO swapped in cannot block here.
+    # Accepted residual: a FIFO swapped in after this check hangs the >> open (bash has no O_NONBLOCK).
     if [[ -e "$file" || -L "$file" ]]; then
         [[ ! -L "$file" && -f "$file" ]] || return 0
         bytes=$(stat -c '%s' "$file" 2>/dev/null || stat -f '%z' "$file" 2>/dev/null || true)
@@ -142,6 +143,33 @@ loom_record_block() {
     fi
     (umask 077 && printf '%s\n' "$line" >>"$file") >/dev/null 2>&1 || true
     return 0
+}
+
+# _loom_hooks_setting_is <key> <value> - Return 0 when a `[hooks]` table in
+# "$LOOM_WORK_DIR/config.toml" holds `<key> = <value>` exactly (surrounding
+# whitespace ignored). LOOM_WORK_DIR unset, the file absent or unreadable, no
+# `[hooks]` table, the key outside that table, or any other value all fail.
+_loom_hooks_setting_is() {
+    local work_dir="${LOOM_WORK_DIR:-}" found
+    [[ -n "$work_dir" && -r "${work_dir}/config.toml" ]] || return 1
+    found=$(awk -v key="$1" -v value="$2" '
+        {
+            t = $0
+            sub(/^[[:space:]]+/, "", t)
+            sub(/[[:space:]]+$/, "", t)
+        }
+        t == "[hooks]" { in_hooks = 1; next }
+        t ~ /^\[/ { in_hooks = 0; next }
+        in_hooks && match(t, /^[A-Za-z0-9_-]+[[:space:]]*=[[:space:]]*/) {
+            k = t
+            sub(/[[:space:]]*=.*$/, "", k)
+            if (k == key && substr(t, RLENGTH + 1) == value) {
+                print "1"
+                exit
+            }
+        }
+    ' "${work_dir}/config.toml" 2>/dev/null || true)
+    [[ "$found" == "1" ]]
 }
 
 

@@ -242,6 +242,7 @@ check_path_traversal_resolved() {
             if [[ "$kind" == pair ]]; then TRAVERSAL_WARN+=("$tok"); fi
             continue
         fi
+        # Residual: a WIDENED glob before one `..` (`cat .loom/w*/../x`) passes; it reaches only main/.loom.
         if [[ "${part#"$scr"}" =~ $glob_re ]] || ! abs=$(loom_normalize_path "$cwd" "$part"); then
             [[ "$kind" == pair ]] || continue
             TRAVERSAL_PATH="$tok (which cannot be resolved)"

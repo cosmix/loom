@@ -71,7 +71,7 @@ loom_worktree_policy_patterns_valid() {
 # _loom_git_value_option <token> - git global options whose separate value
 # word never retargets git; the value is skipped while finding the subcommand.
 _loom_git_value_option() {
-    case "$1" in -c | --namespace | --config-env | --attr-source) return 0 ;; esac
+    case "$1" in -c | --namespace | --config-env | --attr-source | --super-prefix) return 0 ;; esac
     return 1
 }
 
@@ -126,8 +126,8 @@ _loom_git_global_overrides() {
 # the last. Fails closed (git writes refs where it is pointed): an unknown or
 # unset LOOM_TOKEN_CWD (a caller that ran no loom_track_cwd keeps the old
 # block), a failed normalization (any `$` but an expandable
-# $LOOM_SCRATCH_DIR, or glob/brace/escape text) or any other class blocks. Known limit: the tokenizer
-# drops quotes, so a single-quoted '$LOOM_SCRATCH_DIR' reads as the variable.
+# $LOOM_SCRATCH_DIR, or glob/brace/escape text) or any other class blocks. A
+# quoted or escaped '$LOOM_SCRATCH_DIR' never expands (LOOM_TOKEN_LITERAL_DOLLAR).
 _loom_git_segment_retargets() {
     local j="$1" cur value
     local -a _lg_chdirs=() _lg_targets=()
