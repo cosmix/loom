@@ -7,9 +7,9 @@ use clap::Parser;
 use serde_json::json;
 use tempfile::TempDir;
 
-use super::blocks::{render, summarize, Summary};
+use super::blocks::{ledger_dir, render, safe_field, summarize, Summary};
 
-fn now() -> DateTime<Utc> {
+pub(super) fn now() -> DateTime<Utc> {
     "2026-11-07T12:00:00Z".parse().unwrap()
 }
 
@@ -21,7 +21,7 @@ fn record(ts: &str, stage: &str, role: &str, guard: &str, rule: &str, subject: &
     .to_string()
 }
 
-fn line(ts: &str, stage: &str, subject: &str) -> String {
+pub(super) fn line(ts: &str, stage: &str, subject: &str) -> String {
     record(
         ts,
         stage,
@@ -32,7 +32,7 @@ fn line(ts: &str, stage: &str, subject: &str) -> String {
     )
 }
 
-fn write_ledger(dir: &Path, stage: &str, lines: &[String]) {
+pub(super) fn write_ledger(dir: &Path, stage: &str, lines: &[String]) {
     fs::write(
         dir.join(format!("{stage}.blocks.jsonl")),
         lines.join("\n") + "\n",
@@ -137,7 +137,13 @@ fn fifo_ledger_is_skipped_without_blocking() {
         "s",
         &[line("2026-11-07T11:00:00Z", "s", "kept")],
     );
-    let report = summarize(dir.path(), now(), 24).unwrap();
+    // On a thread, so a regressed O_NONBLOCK fails the test instead of hanging it.
+    let path = dir.path().to_path_buf();
+    let (sender, receiver) = std::sync::mpsc::channel();
+    std::thread::spawn(move || sender.send(summarize(&path, now(), 24).unwrap()));
+    let report = receiver
+        .recv_timeout(std::time::Duration::from_secs(5))
+        .expect("summarize blocked on the FIFO ledger");
     let subjects: Vec<_> = report.records.iter().map(|r| r.subject.as_str()).collect();
     assert_eq!(subjects, ["kept"]);
 }
@@ -264,6 +270,36 @@ fn only_newest_fifty_thousand_lines_are_kept() {
     let report = summarize(dir.path(), now(), 24).unwrap();
     assert_eq!(report.records.len(), 1);
     assert_eq!(report.malformed, 49_999);
+}
+
+#[test]
+fn equal_timestamps_sort_by_stage_then_subject() {
+    let dir = TempDir::new().unwrap();
+    let ts = "2026-11-07T11:00:00Z";
+    write_ledger(dir.path(), "b", &[line(ts, "b", "z")]);
+    write_ledger(dir.path(), "a", &[line(ts, "a", "x"), line(ts, "a", "y")]);
+    let report = summarize(dir.path(), now(), 24).unwrap();
+    let order: Vec<_> = report
+        .records
+        .iter()
+        .map(|r| (r.stage.as_str(), r.subject.as_str()))
+        .collect();
+    assert_eq!(order, [("a", "x"), ("a", "y"), ("b", "z")]);
+}
+
+#[test]
+fn bidi_format_characters_print_as_question_marks() {
+    let text = "a\u{202E}b\u{2066}c\u{200F}d\u{200E}e\u{2069}f\u{202A}";
+    assert_eq!(safe_field(text), "a?b?c?d?e?f?");
+    assert_eq!(safe_field("caf\u{e9} \u{2192}"), "caf\u{e9} \u{2192}");
+}
+
+#[test]
+fn ledger_dir_keeps_a_non_utf8_work_dir_verbatim() {
+    use std::os::unix::ffi::OsStringExt;
+    let root = std::ffi::OsString::from_vec(b"/w/\xffx".to_vec());
+    let dir = ledger_dir(Some(root.clone())).unwrap();
+    assert_eq!(dir, std::path::PathBuf::from(root).join("heartbeat"));
 }
 
 #[test]
