@@ -1,6 +1,7 @@
 //! Read and summarize the diagnostic ledgers written by shell guards.
 
 use std::collections::BTreeMap;
+use std::ffi::OsString;
 use std::fs::{self, File};
 use std::io::{ErrorKind, Read, Seek, SeekFrom};
 use std::os::unix::fs::OpenOptionsExt;
@@ -10,7 +11,6 @@ use anyhow::{Context, Result};
 use chrono::{DateTime, Duration, Utc};
 use serde::Deserialize;
 
-use super::target::non_empty_env;
 use crate::fs::work_dir::WorkDir;
 
 const MAX_BYTES: u64 = 4 * 1024 * 1024;
@@ -38,14 +38,12 @@ pub(crate) struct Summary {
 }
 
 pub fn blocks(since_hours: u64, by_rule: bool) -> Result<()> {
-    let dir = match non_empty_env("LOOM_WORK_DIR") {
-        Some(root) => PathBuf::from(root).join("heartbeat"),
-        None => WorkDir::new(".")?.root().join("heartbeat"),
-    };
-    println!("reading {}", dir.display());
+    let dir = ledger_dir(std::env::var_os("LOOM_WORK_DIR"))?;
+    let shown = safe_field(&dir.display().to_string());
+    println!("reading {shown}");
     match fs::metadata(&dir) {
         Err(error) if error.kind() == ErrorKind::NotFound => {
-            println!("no ledger directory at {}", dir.display());
+            println!("no ledger directory at {shown}");
             return Ok(());
         }
         result => {
@@ -57,6 +55,15 @@ pub fn blocks(since_hours: u64, by_rule: bool) -> Result<()> {
         render(&summarize(&dir, Utc::now(), since_hours)?, by_rule)
     );
     Ok(())
+}
+
+/// The heartbeat directory under a set, non-empty `LOOM_WORK_DIR` taken verbatim
+/// (non-UTF-8 included, as the hooks write it), else under `WorkDir::new(".")`.
+pub(crate) fn ledger_dir(work_dir: Option<OsString>) -> Result<PathBuf> {
+    match work_dir.filter(|root| !root.is_empty()) {
+        Some(root) => Ok(PathBuf::from(root).join("heartbeat")),
+        None => Ok(WorkDir::new(".")?.root().join("heartbeat")),
+    }
 }
 
 pub(crate) fn summarize(
@@ -90,23 +97,33 @@ pub(crate) fn summarize(
             collect_records(&read_tail(file, &path, len)?, cutoff, &mut summary);
         }
     }
-    summary
-        .records
-        .sort_by_key(|record| std::cmp::Reverse(record.ts));
+    summary.records.sort_by(|a, b| {
+        b.ts.cmp(&a.ts)
+            .then_with(|| a.stage.cmp(&b.stage))
+            .then_with(|| a.subject.cmp(&b.subject))
+    });
     Ok(summary)
 }
 
 /// Opens a ledger without following a symlink and without blocking on a FIFO,
 /// then checks the opened handle, so a file swapped in after the directory
-/// listing cannot hang the reader. `None` skips a symlink or non-regular file.
+/// listing cannot hang the reader. `None` skips a symlink, a non-regular file,
+/// or any ledger that cannot be opened (a socket's ENXIO, EACCES, ...), so one
+/// bad file never hides the others.
 fn open_ledger(path: &Path) -> Result<Option<(File, u64)>> {
     let opened = fs::OpenOptions::new()
         .read(true)
         .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
         .open(path);
     let file = match opened {
-        Err(error) if error.raw_os_error() == Some(libc::ELOOP) => return Ok(None),
-        result => result.with_context(|| format!("Opening ledger {}", path.display()))?,
+        Ok(file) => file,
+        Err(error) => {
+            if error.raw_os_error() != Some(libc::ELOOP) {
+                let shown = safe_field(&path.display().to_string());
+                eprintln!("skipping ledger {shown}: {error}");
+            }
+            return Ok(None);
+        }
     };
     let metadata = file
         .metadata()
@@ -115,15 +132,18 @@ fn open_ledger(path: &Path) -> Result<Option<(File, u64)>> {
 }
 
 fn read_tail(mut file: File, path: &Path, len: u64) -> Result<Vec<u8>> {
+    // A bounded tail also reads the byte before its window: the window starts a
+    // record exactly when that byte is a newline.
     let offset = len.saturating_sub(MAX_BYTES);
-    file.seek(SeekFrom::Start(offset))
+    let lead = u64::from(offset > 0);
+    file.seek(SeekFrom::Start(offset - lead))
         .with_context(|| format!("Seeking ledger {}", path.display()))?;
     let mut bytes = Vec::new();
-    file.take(MAX_BYTES)
+    file.take(MAX_BYTES + lead)
         .read_to_end(&mut bytes)
         .with_context(|| format!("Reading ledger {}", path.display()))?;
-    if offset > 0 {
-        // The bounded tail can start inside a record; discard that partial line.
+    if lead > 0 {
+        // Discard through the first newline: the leading byte, or a partial record.
         let start = bytes
             .iter()
             .position(|&byte| byte == b'\n')
@@ -219,10 +239,19 @@ fn render_groups(records: &[BlockRecord]) -> Vec<String> {
     lines
 }
 
-fn safe_field(value: &str) -> String {
+/// Prints control characters and Unicode bidi format characters as `?`, so a
+/// ledger line can neither replay terminal escapes nor reorder the report.
+pub(crate) fn safe_field(value: &str) -> String {
     value
         .chars()
-        .map(|ch| if ch.is_control() { '?' } else { ch })
+        .map(|ch| {
+            let bidi = matches!(ch, '\u{200E}' | '\u{200F}' | '\u{202A}'..='\u{202E}' | '\u{2066}'..='\u{2069}');
+            if ch.is_control() || bidi {
+                '?'
+            } else {
+                ch
+            }
+        })
         .collect()
 }
 
