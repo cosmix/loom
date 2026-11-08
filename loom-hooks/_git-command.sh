@@ -13,7 +13,7 @@ loom_git_runs_commit() {
 				while ((k < n)) && [[ "${LOOM_TOKENS[$k]}" == -* ]]; do
 					case "${LOOM_TOKENS[$k]}" in
 					# git.c's global options that may take their value as the next word.
-					-C | -c | --git-dir | --work-tree | --namespace | --attr-source | --config-env)
+					-C | -c | --git-dir | --work-tree | --namespace | --attr-source | --config-env | --super-prefix)
 						[[ "${LOOM_TOKENS[$((k + 1))]:-%%SEP%%}" == "%%SEP%%" ]] && break
 						k=$((k + 2))
 						;;
@@ -74,7 +74,7 @@ loom_git_targets_scratch_only() {
 			fi
 		fi
 		seps=""
-		((i == n)) || seps="${LOOM_TOKEN_SEPS[$i]:-}"
+		((i == n)) || loom_token_sep "$i" seps
 		cont=0
 		case "$seps" in
 		*[\<\>]*)
@@ -134,7 +134,7 @@ _loom_git_scratch_segment() {
 	k=$((j + 1))
 	while ((k < e)) && [[ "${LOOM_TOKENS[$k]}" == -* ]]; do
 		case "${LOOM_TOKENS[$k]}" in
-		-C | --attr-source)
+		-C | --attr-source | --super-prefix)
 			((k + 1 < e)) || return 1
 			[[ "${LOOM_TOKENS[$k]}" != -C ]] || dir="${LOOM_TOKENS[$((k + 1))]}"
 			k=$((k + 2))

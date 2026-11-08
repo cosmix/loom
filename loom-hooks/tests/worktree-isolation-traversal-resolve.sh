@@ -130,6 +130,12 @@ done
 HOOK_SCRATCH="$TMP/scratch"
 allow "$WT" 'cat ${LOOM_SCRATCH_DIR}/a/b/../../c'
 block "$WT" 'cat ${LOOM_SCRATCH_DIR}/w*/../../x'
+allow "$WT" 'cat "${LOOM_SCRATCH_DIR}/a/b/../../c"'
+# Lexically each stays inside scratch; bash first expands w* (or reads w\ork as
+# work), the symlink out of scratch, and `..` follows it physically.
+ln -s "$TMP/elsewhere/a/b" "$TMP/scratch/a/b/work"
+block "$WT" 'cat ${LOOM_SCRATCH_DIR}/a/b/w*/../../../c'
+block "$WT" 'cat ${LOOM_SCRATCH_DIR}/a/b/w\ork/../../../c'
 HOOK_SCRATCH=""
 
 if [[ $FAILED -ne 0 ]]; then exit 1; fi

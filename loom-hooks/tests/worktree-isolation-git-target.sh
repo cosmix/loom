@@ -87,7 +87,10 @@ allow "$WT" 'git log -C'
 allow "$WT" 'git grep -C 3 x'
 allow "$WT" 'git log --work-tree'
 allow "$WT/a/b" 'git -C ../.. status'
+allow "$WT" "cd loom &&"$'\n'"git -C .. status"
 allow "$WT" 'git -c x=y --no-pager -C loom --git-dir=.git log'
+# A `.` argument is no `.` builtin; the block message names exactly this form.
+allow "$WT" 'git -C "$LOOM_SCRATCH_DIR/clone" grep -n foo -- .' "$SCR"
 
 # --- blocked ---
 block "$WT" "git -C $REPO status"
@@ -122,6 +125,13 @@ block "$WT" "git -C $S/{clone,x} status" "$SCR"
 block "$WT" "git -C '$S/clone\\x' status" "$SCR"
 block "$WT" "git -C $S/$ANSI/repo status" "$SCR"
 block "$WT" "git --git-dir=$S/cl*/.git log" "$SCR"
+# A quoted or escaped `$` stays literal, so git runs in <wt>/$LOOM_SCRATCH_DIR/clone.
+block "$WT" "git -C '\$LOOM_SCRATCH_DIR/clone' status" "$SCR"
+block "$WT" "git -C \\\$LOOM_SCRATCH_DIR/clone status" "$SCR"
+# `.` in command position can reassign LOOM_SCRATCH_DIR.
+block "$WT" '. ./x && git -C "$LOOM_SCRATCH_DIR/clone" status' "$SCR"
+# --super-prefix takes a value word, so the -C after it is still a global option.
+block "$WT" "git --super-prefix x -C $REPO status"
 # The scratch exemption from the .worktrees/ check covers scratch only.
 RULE=cross-worktree
 block "$WT" "cat $REPO/.worktrees/other-stage/f"

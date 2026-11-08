@@ -7,7 +7,8 @@
 set -euo pipefail
 
 HOOK="$(cd "$(dirname "$0")/.." && pwd)/worktree-file-guard.sh"
-TMP=$(mktemp -d "${TMPDIR:-/tmp}/loom-hooktest.XXXXXX")
+source "$(dirname "$0")/_fixture_base.sh"
+TMP=$(mktemp -d "$(fixture_base)/loom-hooktest.XXXXXX")
 UID_ROOT="/tmp/claude-$(id -u)"
 CREATED_ROOT=false
 if [[ ! -d "$UID_ROOT" ]]; then

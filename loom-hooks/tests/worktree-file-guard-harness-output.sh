@@ -12,16 +12,9 @@ HOOK="$(cd "$SCRIPT_DIR/.." && pwd)/worktree-file-guard.sh"
 UID_N=$(id -u)
 UID_ROOT="/tmp/claude-$UID_N"
 
-# Fixtures must sit outside /tmp/claude-<uid>, or every one of them would be
-# readable as harness temp output; the Bash tool's own TMPDIR is that root.
-BASE=$(cd "${TMPDIR:-/tmp}" && pwd -P)
-case "$BASE/" in
-"$UID_ROOT"/* | "/private$UID_ROOT"/*)
-	BASE="$(cd "$SCRIPT_DIR/../.." && pwd -P)/loom/target/tmp"
-	mkdir -p "$BASE"
-	;;
-esac
-TMP=$(mktemp -d "$BASE/loom-harness-output.XXXXXX")
+# Fixtures must not read as harness temp output (_fixture_base.sh).
+source "$SCRIPT_DIR/_fixture_base.sh"
+TMP=$(mktemp -d "$(fixture_base)/loom-harness-output.XXXXXX")
 TMP=$(cd "$TMP" && pwd -P)
 BSD_DIR=""
 PROJECT=""

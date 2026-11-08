@@ -279,6 +279,19 @@ completion_rewrite_matches() {
 	((i == n))
 }
 
+# completion_caller_is_main - the payload positively names the main agent (its
+# transcript is <session_id>.jsonl), or names no transcript at all and the
+# process walk (loom_is_subagent) finds no subagent. An unrecognised transcript
+# shape never counts: main is not granted by elimination (_identity.sh).
+completion_caller_is_main() {
+	case "$(loom_payload_agent_verdict "$INPUT_JSON")" in
+	main) return 0 ;;
+	subagent) return 1 ;;
+	esac
+	[[ -z "$(printf '%s' "$INPUT_JSON" | jq -r '.transcript_path // empty' 2>/dev/null)" ]] || return 1
+	! loom_is_subagent "$INPUT_JSON"
+}
+
 # emit_pinned_rewrite - Write the completion heartbeat and print the PreToolUse
 # allow that replaces the command with PINNED_COMMAND. updatedInput replaces the whole tool input, so only the
 # model's timeout and description carry over; run_in_background and
@@ -349,7 +362,7 @@ if [[ "$COMMAND" == "$PINNED_COMMAND" ]]; then
 	exit 0
 fi
 # A subagent never completes a stage, so its plain spelling keeps the refusal.
-if [[ "$(loom_payload_agent_verdict "$INPUT_JSON")" != subagent ]] && completion_rewrite_matches; then
+if completion_caller_is_main && completion_rewrite_matches; then
 	emit_pinned_rewrite
 	exit 0
 fi

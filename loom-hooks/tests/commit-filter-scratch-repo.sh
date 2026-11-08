@@ -81,6 +81,8 @@ for role in subagent main; do
 	expect 0 "$role" "git init -q $S/fx3 && git -C $S/fx3 add doc && git -C $S/fx3 commit -qm x"
 	expect 0 "$role" "git add doc && git commit -qm x" "$FILTER" "$S/fx"
 	expect 0 "$role" "cd $S/fx && printf 'b\n' > doc/b.md && git add doc && git commit -qm x"
+	# `&&` then a newline continues the chain exactly as `&&` does.
+	expect 0 "$role" "git init -q $S/fx6 &&"$'\n'"git -C $S/fx6 commit -qm x"
 done
 
 # --- blocked for both roles --------------------------------------------------
@@ -119,6 +121,13 @@ for role in subagent main; do
 	for target in "$S/g*" "$S/g?" "$S/[g]x" "$S/{gx,gy}" "'$S/g\\x'" "$S/$ansi"; do
 		expect 2 "$role" "mkdir -p $S/gx && cd $target && git init -q && git commit -qm x"
 		expect 2 "$role" "git init -q $target && git -C $target commit -qm x"
+	done
+	# A single-quoted or escaped `$` stays literal: bash runs git in
+	# <wt>/$LOOM_SCRATCH_DIR/fx, inside the worktree, while $S/fx is a real repo.
+	for lit in "'\$LOOM_SCRATCH_DIR/fx'" "\\\$LOOM_SCRATCH_DIR/fx" "'\${LOOM_SCRATCH_DIR}/fx'" \
+		"\"\\\$LOOM_SCRATCH_DIR/fx\"" "\$\\LOOM_SCRATCH_DIR/fx" "\"\$\"LOOM_SCRATCH_DIR/fx"; do
+		expect 2 "$role" "mkdir -p $lit && git -C $lit commit -qm x"
+		expect 2 "$role" "cd $lit && git commit -qm x"
 	done
 	# Without a valid LOOM_SCRATCH_DIR the scratch path is just outside.
 	expect 2 "$role" "cd $S/fx && git commit -qm x" "$FILTER" "$WT" LOOM_SCRATCH_DIR=

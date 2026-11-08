@@ -41,33 +41,6 @@ loom_read_gate_enabled() {
     ! _loom_hooks_setting_is read_gate false
 }
 
-# _loom_hooks_setting_is <key> <value> - Return 0 when a `[hooks]` table in
-# "$LOOM_WORK_DIR/config.toml" holds `<key> = <value>` exactly (surrounding
-# whitespace ignored). LOOM_WORK_DIR unset, the file absent or unreadable, no
-# `[hooks]` table, the key outside that table, or any other value all fail.
-_loom_hooks_setting_is() {
-    local work_dir="${LOOM_WORK_DIR:-}" found
-    [[ -n "$work_dir" && -r "${work_dir}/config.toml" ]] || return 1
-    found=$(awk -v key="$1" -v value="$2" '
-        {
-            t = $0
-            sub(/^[[:space:]]+/, "", t)
-            sub(/[[:space:]]+$/, "", t)
-        }
-        t == "[hooks]" { in_hooks = 1; next }
-        t ~ /^\[/ { in_hooks = 0; next }
-        in_hooks && match(t, /^[A-Za-z0-9_-]+[[:space:]]*=[[:space:]]*/) {
-            k = t
-            sub(/[[:space:]]*=.*$/, "", k)
-            if (k == key && substr(t, RLENGTH + 1) == value) {
-                print "1"
-                exit
-            }
-        }
-    ' "${work_dir}/config.toml" 2>/dev/null || true)
-    [[ "$found" == "1" ]]
-}
-
 # loom_cwd_worktree - Echo the worktree root holding the current directory, or
 # return non-zero outside one. No environment variable can answer yes, so a
 # globally registered guard that must leave unrelated sessions alone uses this.
@@ -301,13 +274,25 @@ _loom_scratch_mention_unsafe() {
 }
 
 # _loom_scratch_expand_allowed <n> - 0 unless a token of LOOM_TOKENS[0..n)
-# could reassign LOOM_SCRATCH_DIR (common.md, rule for LOOM_SCRATCH_EXPAND).
+# could reassign LOOM_SCRATCH_DIR (common.md, rule for LOOM_SCRATCH_EXPAND),
+# or the command holds a `$` bash keeps literal (LOOM_TOKEN_LITERAL_DOLLAR):
+# `'$LOOM_SCRATCH_DIR/x'` names <cwd>/$LOOM_SCRATCH_DIR/x. eval, source and `.`
+# count at a command word, or anywhere in a segment behind a redirection.
 _loom_scratch_expand_allowed() {
-    local n="$1" i tok
+    local n="$1" i tok s=0 redir=0 j
+    [[ "${LOOM_TOKEN_LITERAL_DOLLAR:-1}" == 0 ]] || return 1
     for ((i = 0; i < n; i++)); do
         tok="${LOOM_TOKENS[$i]}"
         case "$tok" in
-        eval | env | declare | typeset | export | local | readonly | read | unset | set | source | . | printf | mapfile | readarray) return 1 ;;
+        env | declare | typeset | export | local | readonly | read | unset | set | printf | mapfile | readarray) return 1 ;;
+        %%SEP%%)
+            s=$((i + 1)) redir=0
+            case "${LOOM_TOKEN_SEPS[$i]:-}" in *[\<\>]*) redir=1 ;; esac
+            ;;
+        eval | source | .)
+            ((redir == 0)) || return 1
+            if j=$(loom_tokens_command_word_index "$s") && ((j == i)); then return 1; fi
+            ;;
         esac
         if _loom_scratch_mention_unsafe "$tok"; then return 1; fi
     done
@@ -386,7 +371,7 @@ loom_track_cwd() {
             continue
         fi
         next='$'
-        if ((i < n)); then next="${LOOM_TOKEN_SEPS[$i]:-}"; fi
+        if ((i < n)); then loom_token_sep "$i" next; fi
         _loom_cwd_segment "$seg" "$i" "$prev" "$next"
         if ((i < n)); then
             LOOM_TOKEN_CWD[$i]=""

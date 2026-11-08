@@ -127,6 +127,8 @@ cwd_of "CDPATH mention makes cd unknown" "CDPATH=$WT/a; cd web && cat x" "x" ""
 cwd_of "CDPATH after the cd" "cd web && cat x; echo CDPATH" "x" "$WT/web"
 cwd_of "glob cd target" "cd we* && cat x" "x" ""
 cwd_of "brace cd target" "cd {web,doc} && cat x" "x" ""
+cwd_of "cd && newline" "cd web &&"$'\n'"cat x" "x" "$WT/web"
+cwd_of "unverified cd && newline" "cd $WT/missing &&"$'\n'":; cat ../../x" ":" "$WT/missing"
 out=$(drv "$WT/web" -- cwds "" "cat x")
 expect_eq "start from pwd -P" "$(printf '%s' "$out" | sed -n 2p)" "x	$WT/web"
 out=$(drv "$WT" -- cwds "$WT/.loom/work" "cat x")
@@ -144,6 +146,19 @@ expect_eq "expand: defaulting assignment" \
     "$(expand_of ': "${LOOM_SCRATCH_DIR:=/x}"; git -C "$LOOM_SCRATCH_DIR" status')" 0
 expect_eq "expand: plain read" \
     "$(expand_of 'git -C "$LOOM_SCRATCH_DIR/clone" status')" 1
+# A `$` bash keeps literal: the token reads $LOOM_SCRATCH_DIR, the path does not.
+for lit in "'\$LOOM_SCRATCH_DIR/c'" "\\\$LOOM_SCRATCH_DIR/c" "\"\\\$LOOM_SCRATCH_DIR/c\"" \
+    "\$\\LOOM_SCRATCH_DIR/c" "\"\$\"LOOM_SCRATCH_DIR/c" "\$'\$LOOM_SCRATCH_DIR/c'"; do
+    expect_eq "expand: literal \$ in $lit" "$(expand_of "git -C $lit status")" 0
+done
+# eval, source and . count only where they run as a command.
+expect_eq "expand: . as an argument" \
+    "$(expand_of 'git -C "$LOOM_SCRATCH_DIR/clone" grep -n foo -- .')" 1
+expect_eq "expand: source as an argument" "$(expand_of 'git -C "$LOOM_SCRATCH_DIR/c" grep source')" 1
+for cmd in '. ./x' 'source ./x' 'eval x' 'builtin . ./x' 'if . ./x; then :; fi' '>/dev/null . ./x' \
+    'true | . ./x' '{ source ./x; }'; do
+    expect_eq "expand: $cmd" "$(expand_of "$cmd && git -C \"\$LOOM_SCRATCH_DIR/c\" status")" 0
+done
 
 # --- loom_normalize_path -----------------------------------------------------
 expect_eq "norm: / ../.." "$(drv "$WT" -- norm / ../..)" "/"

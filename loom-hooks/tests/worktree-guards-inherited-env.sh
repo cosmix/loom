@@ -7,7 +7,8 @@
 set -euo pipefail
 
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
-TMP=$(mktemp -d "${TMPDIR:-/tmp}/worktree-inherited.XXXXXX")
+source "$ROOT/loom-hooks/tests/_fixture_base.sh"
+TMP=$(mktemp -d "$(fixture_base)/worktree-inherited.XXXXXX")
 sleep 30 &
 BYSTANDER=$!
 trap 'kill "$BYSTANDER" 2>/dev/null || true; rm -rf "$TMP"' EXIT
