@@ -127,6 +127,7 @@ fn render_size_notice(frame: &mut Frame, area: Rect) {
 
 #[cfg(test)]
 mod tests {
+    use crate::orchestrator::busy::LoopState;
     use std::collections::HashMap;
 
     use ratatui::{backend::TestBackend, Terminal};
@@ -277,7 +278,7 @@ mod tests {
             spinner: '⠋',
             scroll_y: 0,
             legend_open: false,
-            tick_age_secs: None,
+            loop_state: LoopState::Unknown,
             last_error: None,
             now_epoch: 1_788_523_200,
             scrollable: false,

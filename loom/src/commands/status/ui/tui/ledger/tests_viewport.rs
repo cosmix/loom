@@ -11,6 +11,7 @@ use crate::commands::status::data::{MergeSummary, ProgressSummary, StageSummary,
 use crate::commands::status::render::attention_model::attention_entries;
 use crate::commands::status::ui::tui::state::TuiActivityLog;
 use crate::models::stage::StageStatus;
+use crate::orchestrator::busy::LoopState;
 use crate::plan::graph::levels;
 
 /// Like `tests::render_view`, but exposes the `scroll_y` and `last_error`
@@ -48,7 +49,7 @@ fn render_view_with(
         spinner: '⠋',
         scroll_y,
         legend_open: false,
-        tick_age_secs: Some(2),
+        loop_state: LoopState::Ticking { age_secs: 2 },
         last_error,
         now_epoch: 1_788_523_200,
         scrollable: false,
@@ -96,7 +97,7 @@ fn table_viewport_rows_matches_the_computed_table_budget() {
         spinner: '⠋',
         scroll_y: 0,
         legend_open: false,
-        tick_age_secs: None,
+        loop_state: LoopState::Unknown,
         last_error: None,
         now_epoch: 1_788_523_200,
         scrollable: false,
@@ -131,7 +132,7 @@ fn a_long_plan_at_minimum_height_overflows_the_viewport() {
         spinner: '⠋',
         scroll_y: 0,
         legend_open: false,
-        tick_age_secs: None,
+        loop_state: LoopState::Unknown,
         last_error: None,
         now_epoch: 1_788_523_200,
         scrollable: true,

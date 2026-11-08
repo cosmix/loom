@@ -22,7 +22,7 @@ fn headless_app() -> TuiApp {
         activity_log: TuiActivityLog::new(),
         legend_open: false,
         show_tokens: false,
-        tick_age_secs: None,
+        tick: None,
         terminal_guard: TerminalGuard::inactive_for_test(),
         exiting: false,
         completion_summary: None,

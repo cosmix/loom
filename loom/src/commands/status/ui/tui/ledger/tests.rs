@@ -8,6 +8,7 @@ use crate::commands::status::data::{
 use crate::commands::status::render::attention_model::attention_entries;
 use crate::commands::status::ui::tui::state::TuiActivityLog;
 use crate::models::stage::{StageStatus, StatusBucket};
+use crate::orchestrator::busy::LoopState;
 use crate::plan::graph::levels;
 
 pub(super) fn screen(width: u16, height: u16, view: &LedgerView) -> Vec<String> {
@@ -185,7 +186,7 @@ pub(super) fn render_view(
         spinner: '⠋',
         scroll_y: 0,
         legend_open,
-        tick_age_secs: Some(2),
+        loop_state: LoopState::Ticking { age_secs: 2 },
         last_error: None,
         now_epoch: 1_788_523_200,
         scrollable: false,

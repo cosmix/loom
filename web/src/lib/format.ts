@@ -1,4 +1,4 @@
-import type { DaemonState, StageStatus, StageSummary } from "@/api/schema";
+import type { Busy, DaemonState, StageStatus, StageSummary } from "@/api/schema";
 import { displayState, type DisplayState } from "@/lib/display-state";
 
 export type Tone =
@@ -147,13 +147,26 @@ export function progressPercent(completed: number, total: number): number {
   return Math.trunc((completed * 100 + Math.trunc(total / 2)) / total);
 }
 
+// An unparseable `started_at` (NaN) counts as just started.
+function busyElapsedSecs(busy: Busy, nowMs: number): number {
+  const elapsed = Math.round((nowMs - Date.parse(busy.started_at)) / 1000);
+  return Number.isNaN(elapsed) ? 0 : Math.max(0, elapsed);
+}
+
 /// `staleSecs` is null while the page has a live feed; a number is how long
 /// the page has been without one, in which case the daemon's real state is
 /// unknown and must not be reported as running.
+///
+/// `busy` is the operation the scheduler thread is wrapped in. It only shows
+/// for a daemon whose tick is fresh: a stale tick wins (and prints the tick's
+/// age), and a stopped daemon never shows a leftover busy line. Elapsed time
+/// comes from `nowMs` against the daemon's `started_at`.
 export function daemonLine(
   daemon: DaemonState,
   tickAgeSecs: number | null,
   staleSecs: number | null,
+  busy: Busy | null,
+  nowMs: number,
 ): { text: string; detail?: string; tone: Tone } {
   if (staleSecs !== null) {
     return {
@@ -174,8 +187,19 @@ export function daemonLine(
   if (tickAgeSecs !== null && tickAgeSecs >= 60) {
     return { text: `loop stalled ${formatElapsed(tickAgeSecs)}`, tone: "warning" };
   }
+  const elapsed = busy ? busyElapsedSecs(busy, nowMs) : 0;
+  if (busy && elapsed >= busy.global_ceiling_secs) {
+    return { text: `loop stalled ${formatElapsed(elapsed)}`, tone: "warning" };
+  }
   if (daemon === "unreachable") {
     return { text: "daemon running", detail: "socket unreachable", tone: "warning" };
+  }
+  if (busy) {
+    return {
+      text: "daemon running",
+      detail: `busy ${busy.what} ${formatElapsed(elapsed)}`,
+      tone: elapsed >= busy.ceiling_secs ? "warning" : "completed",
+    };
   }
   return {
     text: "daemon running",

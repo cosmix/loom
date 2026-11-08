@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use crate::daemon::{DaemonServer, DaemonStatus};
 use crate::models::failure::FailureType;
 use crate::models::stage::StageStatus;
+use crate::orchestrator::busy::{Busy, GLOBAL_BUSY_CEILING_SECS};
 use crate::orchestrator::scheduling_report::{self, Alert, Severity};
 use crate::orchestrator::tick;
 use crate::status::attention_model::failure_label;
@@ -26,6 +27,9 @@ pub struct WebSnapshot {
     pub daemon: DaemonState,
     /// Age of the most recent orchestrator tick.
     pub tick_age_secs: Option<i64>,
+    /// The long scheduler operation the tick names, whatever the daemon state;
+    /// `null` when none is wrapped. The web page decides whether to show it.
+    pub busy: Option<WebBusy>,
     /// Whether this frame came from the daemon or local files.
     pub source: SnapshotSource,
     /// Whether this server accepts browser terminal attachments (`loom status --web --terminals`).
@@ -37,6 +41,37 @@ pub struct WebSnapshot {
     pub generated_at: DateTime<Utc>,
     /// The version of the loom build serving the dashboard.
     pub version: String,
+}
+
+/// The operation a busy tick line names, as the dashboard wire carries it. The
+/// page computes elapsed time from `started_at` and its own clock.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WebBusy {
+    /// The operation's wire name (`BusyOp::as_str`).
+    pub op: String,
+    /// The operation as a phrase, e.g. `generating the brief for stage-a`.
+    pub what: String,
+    /// The stage the operation works on.
+    pub stage_id: String,
+    /// When the operation started.
+    pub started_at: DateTime<Utc>,
+    /// Seconds after which the operation is longer than expected.
+    pub ceiling_secs: i64,
+    /// Seconds after which any operation counts as a stalled loop.
+    pub global_ceiling_secs: i64,
+}
+
+impl From<&Busy> for WebBusy {
+    fn from(busy: &Busy) -> Self {
+        Self {
+            op: busy.op.as_str().to_owned(),
+            what: busy.op.describe(&busy.stage_id),
+            stage_id: busy.stage_id.clone(),
+            started_at: busy.started_at,
+            ceiling_secs: busy.op.ceiling_secs(),
+            global_ceiling_secs: GLOBAL_BUSY_CEILING_SECS,
+        }
+    }
 }
 
 /// The daemon state represented on the dashboard wire.
@@ -218,16 +253,19 @@ pub fn collect_snapshot(
         .iter()
         .map(WebAlert::from)
         .collect();
-    let tick_age_secs = tick::read(work_path)
-        .ok()
-        .flatten()
-        .map(|tick| tick.age_secs(Utc::now()));
+    let tick = tick::read(work_path).ok().flatten();
+    let tick_age_secs = tick.as_ref().map(|tick| tick.age_secs(Utc::now()));
+    let busy = tick
+        .as_ref()
+        .and_then(|tick| tick.busy.as_ref())
+        .map(WebBusy::from);
     WebSnapshot {
         status,
         attention,
         alerts,
         daemon,
         tick_age_secs,
+        busy,
         source,
         terminals,
         notice: crate::daemon::completion_diagnostics(work_path),
