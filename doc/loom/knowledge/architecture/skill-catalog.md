@@ -37,8 +37,8 @@ because of a hook interaction that would otherwise make most of the catalog unus
 `loom_read_discipline_check` (`loom-hooks/_read_discipline.sh`) applies rule 1 to an unbounded
 read of a file over `READ_GUARD_LINE_LIMIT` (400 lines): it redirects the read to
 `loom map --outline`. Inside a live stage (`LOOM_STAGE_ID` set and the main agent a live ancestor
-of the hook) the first whole read per agent and absolute path is denied with the outline and the
-agent's repeat passes, whatever the source graph covers and without `deny_enabled`
+of the hook) the first whole read per agent and absolute path is denied with the outline when one exists (an
+unoutlined file only warns) and the agent's repeat passes, whatever the source graph covers and without `deny_enabled`
 (`loom_read_deny_once`, `loom-hooks/_read_ledger.sh`). Outside a live stage, or with
 `[hooks] read_gate = false`, the same message is only a warning. See
 [Read Gate](read-gate.md).

@@ -239,7 +239,7 @@ Design and limits: [architecture/token-flow-sources.md](../architecture/token-fl
 
 | Path                                                             | Role                                                                                                                                                         |
 | ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `loom-hooks/subagent-verify-guard.sh` | PreToolUse:Bash guard: role and stage detection, block output and token walk; `_verify_matchers.sh` supplies runner matchers |
+| `loom-hooks/subagent-verify-guard.sh` | PreToolUse:Bash guard: role and stage detection, runner matching, block output and token walk in one file |
 | `loom-hooks/_common.sh`                                          | `loom_is_subagent()` — payload-first detection gate, process-tree walk as fallback; 619 lines, also over the Rule 17 cap — see [concerns.md](../concerns.md) |
 | `loom/src/orchestrator/signals/tests_doctrine.rs` | Pins doctrine blocks across signals, the subagent preamble and the guard |
 | `loom/tests/integration/hooks_subagent_verify_guard.rs`          | harness: process-tree construction, env scrubbing, payload building                                                                                          |

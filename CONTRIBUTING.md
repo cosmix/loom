@@ -93,7 +93,7 @@ and `cd web && bun run check` (typecheck, oxlint, oxfmt check, vitest) when you 
 
 When changing source extraction or a Tree-sitter grammar, also run `cargo build --no-default-features`. The default-on `source-graph` feature must degrade to file-level lexical nodes without a C toolchain. If you change a grammar pin, an embedded query, or the tree-sitter walk, bump `ExtractorIdentity` so cached extractions are not reused.
 
-When Loom drives the work, a subagent runs the tests for the code it wrote and its module, never the whole suite. The full suite runs only through `loom check`: the orchestrator's gate in a `standard` stage, and `loom check integration-verify` in an `integration-verify` stage, whose reviewers may run it too. `loom-hooks/subagent-verify-guard.sh` enforces this rule. See [Implementers Do Not Verify](README.md#implementers-do-not-verify).
+When Loom drives the work, a subagent compiles its own files freely (`cargo check`, `cargo build`, `cargo test --no-run`, `tsc --noEmit`, `<pm> run build`) and runs the tests for the code it wrote and its module, never the whole suite. The full suite runs only through `loom check`: the orchestrator's gate in a `standard` stage, and `loom check integration-verify` in an `integration-verify` stage, whose reviewers may run it too. `loom-hooks/subagent-verify-guard.sh` enforces this rule. See [Implementers Do Not Verify](README.md#implementers-do-not-verify).
 
 Why the flags matter:
 
