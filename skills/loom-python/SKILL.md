@@ -47,7 +47,7 @@ Ruff is a strong default for linting and formatting. `uv` is a capable project a
 | Add / remove dep | `uv add httpx` / `uv remove httpx` (updates `pyproject.toml` + `uv.lock`) |
 | Add dev dep | `uv add --dev pytest` |
 | Sync env from lock | `uv sync` (creates `.venv`, exact/reproducible) |
-| Run in project env | `uv run pytest` (auto-syncs first; no manual activate) |
+| Run in project env | `uv run pytest tests/test_x.py -k name` (auto-syncs first; no manual activate; bare `uv run pytest` is the stage gate's) |
 | Install a Python | `uv python install 3.12` |
 | Ephemeral tool | `uvx ruff check` (= `uv tool run`) |
 | pip shim | `uv pip install ...` (drop-in, no project file) |
@@ -622,7 +622,7 @@ class Node:
 
 - [ ] `ruff check --fix` clean and `ruff format` applied (or project equivalent)
 - [ ] `mypy --strict` (or configured strictness) passes; every `# type: ignore` has a `[code]`
-- [ ] `pytest` green; new behavior has tests (parametrized edge cases, `pytest.raises(match=)`)
+- [ ] `pytest <changed test files>` green (bare `pytest` is the stage gate's); new behavior has tests (parametrized edge cases, `pytest.raises(match=)`)
 - [ ] No mutable default args; no bare `except:`; no `assert` used for validation
 - [ ] Public functions type-hinted (abstract params in, concrete return); no unused imports/vars
 - [ ] Untrusted input goes through Pydantic/validation, not a bare dataclass

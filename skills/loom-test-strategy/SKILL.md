@@ -158,8 +158,8 @@ A flaky test destroys trust in the whole suite. Quarantine it (don't delete), th
 ```bash
 # reproduce: loop until it fails, then bisect the cause
 for i in $(seq 1 200); do npm test -- TestName || { echo "fail at $i"; break; }; done
-npm test -- --shuffle           # order dependence?
-npm test -- --maxWorkers=4      # parallel race?
+npm test -- <test-file> --shuffle           # order dependence?
+npm test -- <test-file> --maxWorkers=4      # parallel race?
 ```
 
 Always-fails-at-same-point ⇒ it's a real bug, not flaky. Then instrument (verbose logs, timing, failure artifacts), fix the root cause, and **verify by running 1000×** locally + several CI runs before un-quarantining.

@@ -116,7 +116,6 @@ fn block_a_agrees_across_every_surface() {
 
     for (label, text) in [
         ("signal stable prefix", signal_prefix.as_str()),
-        ("signal integration-verify prefix", iv_prefix.as_str()),
         (PREAMBLE_LABEL, HOOK_SUBAGENT_PREAMBLE),
         (
             "loom-hooks/subagent-verify-guard.sh",
@@ -130,6 +129,15 @@ fn block_a_agrees_across_every_surface() {
              and you must reword all of them. Expected to find:\n{BLOCK_A}"
         );
     }
+
+    // Integration-verify is exempt from the test rule: its full runs go through
+    // `loom check integration-verify`, so its prefix carries the override and
+    // never BLOCK-A.
+    assert!(
+        !iv_prefix.contains("VERIFICATION IS THE MAIN AGENT'S JOB")
+            && !iv_prefix.contains("Run the tests for the code YOU wrote"),
+        "the integration-verify prefix must not carry BLOCK-A"
+    );
 }
 
 #[test]

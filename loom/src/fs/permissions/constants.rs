@@ -2,6 +2,8 @@
 
 /// Common utilities shared across loom hooks (source guard, strip_embedded_content)
 pub const HOOK_BOUNDED: &str = include_str!("../../../../loom-hooks/_bounded.sh");
+/// Runner matchers sourced by `subagent-verify-guard.sh` (never registered as a hook directly)
+pub const HOOK_VERIFY_MATCHERS: &str = include_str!("../../../../loom-hooks/_verify_matchers.sh");
 pub const HOOK_PARSER_EXPAND: &str = include_str!("../../../../loom-hooks/_parser_expand.sh");
 pub const HOOK_PARSER_SCAN: &str = include_str!("../../../../loom-hooks/_parser_scan.sh");
 pub const HOOK_CONTAINMENT: &str = include_str!("../../../../loom-hooks/_containment.sh");
@@ -210,6 +212,7 @@ pub const LOOM_HOOKS: &[(&str, &str)] = &[
     ("_heartbeat.sh", HOOK_HEARTBEAT),
     ("_spawn_policy.sh", HOOK_SPAWN_POLICY),
     ("_bounded.sh", HOOK_BOUNDED),
+    ("_verify_matchers.sh", HOOK_VERIFY_MATCHERS),
     ("_lifecycle.sh", HOOK_LIFECYCLE),
     ("_codex_forward.sh", HOOK_CODEX_FORWARD_COMMON),
     ("_read_discipline.sh", HOOK_READ_DISCIPLINE),

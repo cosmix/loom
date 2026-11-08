@@ -42,7 +42,7 @@ The `dotnet` CLI is the build tool, package manager, test driver and formatter f
 | New solution and projects | `dotnet new sln -n Spool`, `dotnet new classlib -o src/Spool`, `dotnet new xunit -o tests/Spool.Tests` |
 | Wire them together | `dotnet sln add src/Spool/Spool.csproj`, `dotnet add tests/Spool.Tests/Spool.Tests.csproj reference src/Spool/Spool.csproj` |
 | Add a package | `dotnet add src/Spool/Spool.csproj package Polly` (never hand-edit `PackageReference`) |
-| Build / test | `dotnet build`, `dotnet test` (restores and builds first) |
+| Build / test | `dotnet build`, `dotnet test --filter "FullyQualifiedName~<ChangedClass>"` for the changed code (bare `dotnet test` is the stage gate's; it restores and builds first) |
 | Format | `dotnet format` (whitespace, code style and analyzer fixes driven by `.editorconfig`) |
 | Audit dependencies | `dotnet list package --vulnerable --include-transitive` |
 | Local tools | `dotnet tool restore` (versions pinned in `.config/dotnet-tools.json`) |
@@ -68,7 +68,7 @@ Shared settings go in `Directory.Build.props` at the repository root; every proj
 - `dotnet format` applies `.editorconfig` rules; some repositories use CSharpier for layout instead. Follow what the repository has.
 - `EnforceCodeStyleInBuild` makes IDE style rules (`IDExxxx`) build diagnostics, so the build and the IDE agree.
 
-The gate (warnings are errors through `Directory.Build.props`):
+The gate (warnings are errors through `Directory.Build.props`; the stage gate runs the `dotnet test` line, while working run `dotnet test --no-build --filter "FullyQualifiedName~<ChangedClass>"`):
 
 ```bash
 dotnet format --verify-no-changes && dotnet build && dotnet test --no-build
@@ -399,7 +399,7 @@ Quick swaps:
 **Before marking C# work done:**
 
 - [ ] `dotnet format --verify-no-changes` clean; `dotnet build` with `TreatWarningsAsErrors` has zero warnings (nullable, analyzers, NuGet audit)
-- [ ] `dotnet test` green; new behaviour has tests; contract tests are parameterless `[Fact]`/`[Test]` methods in top-level classes
+- [ ] `dotnet test --filter "FullyQualifiedName~<ChangedClass>"` green (bare `dotnet test` is the stage gate's); new behaviour has tests; contract tests are parameterless `[Fact]`/`[Test]` methods in top-level classes
 - [ ] Every `!` and `default!` has a reason visible in the surrounding lines; public entry points guard arguments with `ThrowIfNull` and its siblings
 - [ ] Records used as keys or compared in tests hold no collection members (or override equality)
 - [ ] Packages added with `dotnet add package`; central versions and `packages.lock.json` updated with them

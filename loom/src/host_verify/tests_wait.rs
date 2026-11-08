@@ -81,7 +81,11 @@ impl Fx {
     }
 
     pub(super) fn state_file(&self) -> PathBuf {
-        self.scratch.join("host-verify").join("s1-check.json")
+        self.state_file_for(false)
+    }
+
+    pub(super) fn state_file_for(&self, no_cache: bool) -> PathBuf {
+        super::wait_state::state_path(&self.site(Duration::ZERO, no_cache)).unwrap()
     }
 
     pub(super) fn job(&self, id: &str, state: JobState, requests: &[&str]) -> JobRecord {
@@ -105,7 +109,7 @@ impl Fx {
         }
     }
 
-    fn ledger(&self, id: &str, outcome: LedgerOutcome, reason: &str) {
+    pub(super) fn ledger(&self, id: &str, outcome: LedgerOutcome, reason: &str) {
         let record = LedgerRecord {
             id: id.to_string(),
             kind: RequestKind::Check,
@@ -347,7 +351,7 @@ fn a_changed_no_cache_or_tree_starts_a_new_request() {
         }
     );
     assert!(text.starts_with("Host job: requested"), "{text}");
-    assert!(std::fs::read_to_string(fx.state_file())
+    assert!(std::fs::read_to_string(fx.state_file_for(true))
         .unwrap()
         .contains("r2"));
 
@@ -359,7 +363,7 @@ fn a_changed_no_cache_or_tree_starts_a_new_request() {
             request_id: "r3".into()
         }
     );
-    assert!(std::fs::read_to_string(fx.state_file())
+    assert!(std::fs::read_to_string(fx.state_file_for(true))
         .unwrap()
         .contains("r3"));
 }

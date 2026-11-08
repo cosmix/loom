@@ -112,18 +112,19 @@ pub fn generate_stable_prefix() -> String {
     content
 }
 
-const INTEGRATION_VERIFY_OVERRIDE: &str = "⚠️ **INTEGRATION-VERIFY OVERRIDE — the no-verify rule above does NOT apply here:**\n\n\
-         The IV orchestrator runs `loom check integration-verify` ONCE; it carries the COMPLETE suite \
-         (e.g. `cargo build`, `cargo test`, `cargo clippy -- -D warnings`, `cargo fmt --check`) \
-         and the orchestrator reads all stderr for each immutable tree, environment, and criterion \
-         contract. Give reviewers the check summaries and evidence pointers. \
-         Reviewers inspect independently and run only targeted \
-         discriminating security/functional checks; targeted checks are additional evidence, never \
-         a substitute for the canonical gate. Each check summary records command, real exit, \
-         criterion verdict, input/contract identity, elapsed time, and an evidence pointer when \
-         available. A missing receipt means run the check. After any review fix, the orchestrator \
-         re-evaluates invalidated checks; only the repaired criteria cache decides reuse, and stale \
-         evidence never waives a failing gate.\n\n";
+const INTEGRATION_VERIFY_OVERRIDE: &str = "⚠️ **INTEGRATION-VERIFY OVERRIDE — the standard-stage test rule does NOT apply here:**\n\n\
+         Here every full run goes through \
+         `loom check integration-verify [--criterion <n>]`, never a bare test runner. \
+         The IV orchestrator runs `loom check integration-verify`; it carries the COMPLETE suite \
+         (`cargo build`, `cargo test`, `cargo clippy -- -D warnings`, `cargo fmt --check`). Read all \
+         stderr per immutable tree, environment, and criterion contract. Give reviewers the check summaries \
+         and evidence pointers. Reviewers inspect independently and run `loom check integration-verify` \
+         themselves, with `--criterion <n>` as needed. On one tree the first request runs; covered \
+         requests join it; later requests hit the pass cache. Add targeted checks; those are additional \
+         evidence, never a substitute for the canonical gate. Record command, real exit, criterion verdict, \
+         input/contract identity, elapsed time, and an evidence pointer when available. A missing receipt \
+         means run the check. After fixes the orchestrator re-evaluates invalidated checks; only the repaired \
+         criteria cache decides reuse, and stale evidence never waives a failing gate.\n\n";
 
 /// Stable prefix for integration-verify stages (final quality gate)
 pub fn generate_integration_verify_stable_prefix() -> String {
@@ -149,7 +150,6 @@ pub fn generate_integration_verify_stable_prefix() -> String {
 
     append_execution_rules_header(&mut content);
     content.push_str(LOAD_ORCHESTRATION_SKILL);
-    append_no_verify_block(&mut content);
     content.push_str(INTEGRATION_VERIFY_OVERRIDE);
     append_subagent_ceiling_block(&mut content);
 
@@ -378,7 +378,7 @@ mod tests {
         assert!(prefix.contains("loom knowledge context --stage"));
         // Subagent no-verify rule (implementation stages do not verify their own work)
         assert!(prefix.contains("VERIFICATION IS THE MAIN AGENT'S JOB - NOT YOURS"));
-        assert!(prefix.contains("AT MOST ONE narrowly-scoped check"));
+        assert!(prefix.contains("Run the tests for the code YOU wrote, and its module,"));
         // Subagent context-ceiling doctrine (BLOCK-D): hook-reported only, never inferred
         assert!(prefix.contains("CONTEXT CEILING - HOOK-REPORTED ONLY"));
         assert!(prefix.contains("SUBAGENT CEILING REACHED"));

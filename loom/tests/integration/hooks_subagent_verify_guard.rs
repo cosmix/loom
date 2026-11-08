@@ -107,6 +107,10 @@ fn install_hook(dir: &Path) -> PathBuf {
         &dir.join("_spawn_policy.sh"),
         loom::fs::permissions::constants::HOOK_SPAWN_POLICY,
     );
+    write_exec(
+        &dir.join("_verify_matchers.sh"),
+        loom::fs::permissions::constants::HOOK_VERIFY_MATCHERS,
+    );
     let hook_path = dir.join("subagent-verify-guard.sh");
     write_exec(&hook_path, HOOK_SUBAGENT_VERIFY_GUARD);
     hook_path
@@ -200,7 +204,7 @@ fn write_integration_verify_stage(work_dir: &Path, stage_id: &str) {
     fs::write(stages_dir.join(format!("01-{stage_id}.md")), content).expect("write stage file");
 }
 
-const BLOCK_MESSAGE_SNIPPET: &str = "AT MOST ONE narrowly-scoped check";
+const BLOCK_MESSAGE_SNIPPET: &str = "Run the tests for the code YOU wrote, and its module,";
 
 /// Every subagent-classification test below needs the SAME probe: whether
 /// this sandbox can see its own process tree, which the fake process trees

@@ -3,6 +3,8 @@
 Plan: `doc/plans/PLAN-full-suite-at-gate.md` (sections "Decision" and "Changes 1 and 3").
 Scope: prose and the Rust constants and tests that pin it. No behavior code.
 
+Implementation note: exact replacement prose below is a draft. Final wording is trimmed to fit the existing doctrine size caps; the rule and pinned surfaces remain as described here.
+
 Rule being installed, in one paragraph:
 
 - Standard stages: a subagent runs the tests for the code it wrote and its module when it is confident
@@ -35,7 +37,7 @@ Rule being installed, in one paragraph:
 
 | File | Lines now | Rule |
 | --- | --- | --- |
-| `loom/src/orchestrator/signals/cache.rs` | 511 | Over 400 and recorded exactly in `loom/maintainability-baseline.txt` line 16 (`file src/orchestrator/signals/cache.rs 511`). After editing, run `wc -l` and write the exact new count there. Lower is fine, any mismatch fails. |
+| `loom/src/orchestrator/signals/cache.rs` | 511 | Over 400 and recorded exactly in `loom/maintainability-baseline.txt` line 16 (`file src/orchestrator/signals/cache.rs 511`). The final implementation remains at 511 lines and preserves that baseline; any mismatch fails. |
 | `loom/src/orchestrator/signals/cache/blocks.rs` | 142 | Fine. Net +1 to +3 lines. |
 | `loom/src/orchestrator/signals/tests_doctrine.rs` | 369 | Keep under 400. The new assertion adds about 8 lines. |
 | `loom/src/orchestrator/signals/tests_doctrine_blocks.rs` | 155 | Fine. |

@@ -26,6 +26,7 @@ pub mod freeze;
 mod freeze_memo;
 mod freeze_prepare;
 mod freeze_refuse;
+pub(crate) mod pending;
 pub mod runner;
 mod signals;
 mod spawn;
@@ -68,11 +69,15 @@ mod tests_runner_group;
 #[cfg(test)]
 mod tests_runner_legacy;
 #[cfg(test)]
+mod tests_runner_pending;
+#[cfg(test)]
 mod tests_runner_recovery;
 #[cfg(test)]
 mod tests_store;
 #[cfg(test)]
 mod tests_submit;
+#[cfg(test)]
+mod tests_submit_pending;
 #[cfg(test)]
 mod tests_wait;
 #[cfg(test)]

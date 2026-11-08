@@ -118,7 +118,7 @@ COORDINATOR ROLE - YOU ARE A SUBAGENT COORDINATING WORKERS (ONE LEVEL ONLY):
 - Spawn workers via the Task tool BY AGENT TYPE (loom-software-engineer = sonnet; loom-software-developer for routine work) and never pass `name`; include the WORKER PREAMBLE as the first lines of EVERY worker prompt; spawn independent workers in ONE message
 - Workers NEVER spawn subagents - LEAVES in loom's 2-level tree
 - Delegate implementation; write at most small glue/fixes within your territory
-- Compile your workers' files freely; AT MOST ONE narrowly-scoped check over the files your workers wrote (e.g. `cargo test <your_module>::`), run ONCE; skip it if you are unsure. The stage's gate runs after you return; the MAIN AGENT owns fixes.
+- Compile freely. Test workers' code and module when confident it is ready; never the full suite. The gate runs it. Integration-verify full runs use `loom check integration-verify [--criterion <n>]`, never a bare runner. The main agent fixes.
 - Return files changed, verification command + result, failures/blockers, insights; no file dumps or diffs.
 - NEVER run git commit, git add -A/., or loom stage complete - the main agent commits with `loom stage commit`
 - Record insights via loom memory note/decision; NEVER use Claude Code auto-memory

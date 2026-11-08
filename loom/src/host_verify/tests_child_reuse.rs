@@ -14,6 +14,39 @@ use crate::models::stage::StageType;
 
 #[test]
 #[serial]
+fn a_waiting_selection_reuses_the_pass_the_running_check_stored() {
+    if confinement_unavailable("a_waiting_selection_reuses_the_pass_the_running_check_stored") {
+        return;
+    }
+    // Identical commands intentionally share a cache key across criteria.
+    let fx = Fixture::new(&["true", "printf second"], StageType::Standard);
+    let mut first = fx.job(JobState::Running, false);
+    first.criteria = Some(vec![0]);
+    store::save_current(&fx.work_dir, &first).unwrap();
+    assert!(fx.run(&first).passed);
+    let mut next = fx.job(JobState::Running, false);
+    next.criteria = Some(vec![0, 1]);
+    store::save_current(&fx.work_dir, &next).unwrap();
+    let result = fx.run(&next);
+    assert!(result.passed, "{result:?}");
+    let cached = result
+        .criteria
+        .iter()
+        .find(|c| c.label == "acceptance-0")
+        .unwrap();
+    assert!(cached.summary.contains("(cached)"));
+    assert_eq!(cached.log, None);
+    let ran = result
+        .criteria
+        .iter()
+        .find(|c| c.label == "acceptance-1")
+        .unwrap();
+    assert!(!ran.summary.contains("(cached)"));
+    assert!(ran.log.is_some());
+}
+
+#[test]
+#[serial]
 fn a_check_with_a_selection_runs_only_its_criteria() {
     if confinement_unavailable("a_check_with_a_selection_runs_only_its_criteria") {
         return;

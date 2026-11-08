@@ -290,7 +290,7 @@ fn write_exec(path: &Path, content: &str) {
 
 /// Install the guard and its sourced helpers into `dir`; returns the hook.
 pub fn install_guard(dir: &Path) -> PathBuf {
-    use loom::fs::permissions::constants::{HOOK_BOUNDED, HOOK_COMMON};
+    use loom::fs::permissions::constants::{HOOK_BOUNDED, HOOK_COMMON, HOOK_VERIFY_MATCHERS};
     write_exec(&dir.join("_bounded.sh"), HOOK_BOUNDED);
     write_exec(&dir.join("_common.sh"), HOOK_COMMON);
     write_exec(
@@ -325,6 +325,7 @@ pub fn install_guard(dir: &Path) -> PathBuf {
         &dir.join("_spawn_policy.sh"),
         loom::fs::permissions::constants::HOOK_SPAWN_POLICY,
     );
+    write_exec(&dir.join("_verify_matchers.sh"), HOOK_VERIFY_MATCHERS);
     let hook = dir.join("subagent-verify-guard.sh");
     let script = loom::fs::permissions::constants::HOOK_SUBAGENT_VERIFY_GUARD;
     write_exec(&hook, script);

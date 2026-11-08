@@ -51,7 +51,7 @@ Writing tests: unit/integration/e2e plus data-pipeline, ML, and infrastructure d
 
 1. **Map the unit** — public interface, dependencies/side effects, invariants, error paths, boundary values.
 2. **Pick the altitude** — unit for logic/branches; integration for real collaborators (DB, HTTP) at a boundary; e2e for user journeys. Push detail down the pyramid (`loom-test-strategy`).
-3. **Write failing test first** when practical (TDD red→green→refactor): a red test proves the test actually exercises the code; a test that never failed asserts nothing.
+3. **Write failing test first** when practical (TDD red→green→refactor): a red test proves the test actually exercises the code; a test that never failed asserts nothing. Run that one test (file or name filter) for each red and green step; the whole suite is the stage gate's.
 4. **Arrange-Act-Assert**, one logical assertion per test, deterministic inputs.
 
 ### AAA and naming

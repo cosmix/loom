@@ -305,8 +305,8 @@ You are a SUBAGENT (spawned via Task tool). Per CLAUDE.md rules:
 
 Your job is to:
 1. Write code to your assigned files
-2. Run AT MOST ONE narrowly-scoped check covering only what you changed
-   (`cargo test <filter>`, `cargo test --test <name>`) - never the full suite
+2. Run the tests for the code you wrote and its module (`cargo test <filter>`,
+   `cargo test --test <name>`) - never the full suite, the stage's gate runs it
 3. Report what you changed, and what you did NOT verify
 4. Let the main agent handle ALL git operations and the full verification run
 

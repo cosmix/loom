@@ -47,7 +47,7 @@ Idiomatic, production-grade Dart 3 and Flutter: pub packages, sound null safety,
 | Analyze | `dart analyze --fatal-infos` / `flutter analyze` |
 | Apply fixes | `dart fix --apply` |
 | Code generation | `dart run build_runner build --delete-conflicting-outputs` |
-| Test | `dart test` / `flutter test` |
+| Test, whole suite (the stage gate's) | `dart test` / `flutter test`; the changed code: `dart test test/x_test.dart` / `flutter test test/x_test.dart` |
 | Native binary | `dart compile exe bin/spool.dart -o spool` |
 
 - Use `dart pub add` so `pubspec.yaml` and `pubspec.lock` stay in step. Commit `pubspec.lock` for applications.
@@ -75,7 +75,7 @@ linter:
     - avoid_print
 ```
 
-The canonical gate (swap in `flutter analyze` and `flutter test` for Flutter packages):
+The canonical gate (swap in `flutter analyze` and `flutter test` for Flutter packages). The stage gate runs the `dart test` line; while working, pass the changed test file:
 
 ```bash
 dart format --output=none --set-exit-if-changed .
@@ -447,7 +447,7 @@ Quick swaps: `late` added only to silence the analyzer → initialize in the con
 
 - [ ] `dart format --output=none --set-exit-if-changed .` clean
 - [ ] `dart analyze --fatal-infos` (or `flutter analyze`) clean with strict casts, inference and raw types on
-- [ ] `dart test` / `flutter test` green; new behaviour has tests
+- [ ] `dart test <file>` / `flutter test <file>` green for the changed code (the bare runs are the stage gate's); new behaviour has tests
 - [ ] No `!` on values from outside the program; decoded JSON validated with patterns or typed models
 - [ ] Every future awaited or wrapped in `unawaited`; every subscription cancelled and controller closed
 - [ ] Dependencies added with `dart pub add`; generated files regenerated with `build_runner`

@@ -83,7 +83,11 @@ fn write_ticket(scratch_dir: &Path, kind: RequestKind) -> (RelayLine, Vec<u8>) {
         id: new_request_id(),
         kind,
         created_at: Utc::now(),
-        payload: json!({"content": "note"}),
+        payload: if kind == RequestKind::Check {
+            json!({"head": "a".repeat(40), "tree_digest": "b".repeat(64), "no_cache": false, "criteria": [0]})
+        } else {
+            json!({"content": "note"})
+        },
     };
     let bytes = ticket.encode();
     let line = RelayLine {
@@ -215,6 +219,19 @@ fn a_subagent_memory_request_is_attributed_to_the_subagent() {
         InboxEntry::decode(&stored).unwrap().agent,
         AgentRole::Subagent
     );
+}
+
+#[test]
+fn a_subagent_check_request_is_relayed_and_attributed_to_the_subagent() {
+    let fx = Fixture::new();
+    let (line, _) = write_ticket(&fx.env.scratch_dir, RequestKind::Check);
+    let payload = bash_payload(&line.format(), Some("general-purpose"));
+    let reply = fx.relay(&payload, &[RequestKind::Check]).unwrap();
+    assert!(reply.contains("received check"), "{reply}");
+    let stored = std::fs::read(fx.inbox().join(format!("{}.json", line.id))).unwrap();
+    let entry = InboxEntry::decode(&stored).unwrap();
+    assert_eq!(entry.kind, RequestKind::Check);
+    assert_eq!(entry.agent, AgentRole::Subagent);
 }
 
 #[test]

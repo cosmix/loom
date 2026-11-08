@@ -15,6 +15,38 @@ use crate::models::session::SessionExitReason;
 
 const STAGE: &str = "test-stage";
 
+#[test]
+fn taking_down_a_stages_agents_cancels_its_waiting_check_too() {
+    use crate::host_verify::store::{load_job_record, load_pending};
+    let temp = handoff_work_dir();
+    let work = temp.path().join(".loom").join("work");
+    executing_stage(&work);
+    let job = queue_check(&work);
+    let request = SubmitRequest {
+        stage_id: STAGE,
+        session_id: &job.session_id,
+        request_id: "r2",
+        kind: JobKind::Check,
+        head: &job.head,
+        tree_digest: &job.tree_digest,
+        no_cache: true,
+        criteria: None,
+    };
+    let waiting = match submit(&work, &request, Utc::now()).unwrap() {
+        Submission::Waiting { pending, .. } => pending,
+        other => panic!("expected a waiting job, got {other:?}"),
+    };
+    let mut orchestrator = orchestrator_for(&work, temp.path());
+    orchestrator
+        .take_down_agents(STAGE, Vec::new(), SessionExitReason::Replaced)
+        .unwrap();
+    assert_cancelled_by_takedown(&work, &job);
+    let waiting = load_job_record(&work, STAGE, &waiting.id).unwrap().unwrap();
+    assert_eq!(waiting.state, JobState::Cancelled);
+    assert_eq!(waiting.detail.as_deref(), Some("stage agents taken down"));
+    assert_eq!(load_pending(&work, STAGE).unwrap(), None);
+}
+
 fn queue_check(work: &Path) -> JobRecord {
     let request = SubmitRequest {
         stage_id: STAGE,

@@ -93,7 +93,7 @@ Commits follow Conventional Commits: `type(scope): description`, type `feat` `fi
 
 ### 5. SUBAGENT RESTRICTIONS
 
-Subagents write code and report; the main agent owns fixes and all git operations (hard stop 3). A subagent compiles its own files freely and runs at most one narrowly scoped check, once. A standard stage's gate is the main agent's single `loom check`; a fix round re-checks only the failed criteria with `--criterion <n>`; integration-verify keeps its own. `loom-hooks/spawn-guard.sh` prepends the subagent preamble, `loom-hooks/_subagent-preamble.txt` (git, verification, ceilings, memory), to every typed spawn whose prompt lacks it; never paste it. Codex subagents get theirs from `loom-hooks/codex-forward.sh`.
+Subagents code and report; the main agent fixes and owns git (hard stop 3). They compile freely and test their code and module when confident it is ready or fixed; never the full suite. The main agent runs full suites only through `loom check`; fixes select `--criterion <n>`. Integration-verify orchestrators and reviewers may run the full suite through `loom check integration-verify [--criterion <n>]`; never a bare runner. `loom-hooks/spawn-guard.sh` prepends `loom-hooks/_subagent-preamble.txt` to typed spawns that lack it; never paste it. Codex uses `loom-hooks/codex-forward.sh`.
 
 ### 6. SUBAGENTS
 

@@ -193,7 +193,7 @@ Codemod discipline:
 
 - Land the codemod result as **one dedicated commit**, separate from hand edits, so review can trust "generated + spot-checked."
 - Always dry-run and eyeball a sample of the diff — codemods misfire on shadowed names, re-exports, and dynamic access.
-- Run formatter + full test suite after; a codemod that compiles can still be semantically wrong.
+- Run the formatter and the tests for every touched module after (the whole suite is the stage gate's); a codemod that compiles can still be semantically wrong.
 - For 90%-mechanical transforms: codemod the bulk, then hand-fix the residual by hand rather than over-engineering the transform.
 
 ## Testing during migration

@@ -35,7 +35,7 @@ Each change has an implementation brief in `doc/plans/briefs/full-suite-at-gate/
 - **Review dimension 3** ("Build/test/sandbox") is assigned to a `loom-software-engineer`, because `loom-code-reviewer` has no Bash.
 - **Other copies of the rule** are updated too: `CLAUDE.md.template`, `AGENTS.md.template`, `codex-forward.sh`, `commit-filter.sh`, README, CONTRIBUTING, the agent definitions, `skills/loom-orchestration`, and `skills/loom-plan-writer/references/{parallelization,codex-implementers}.md`.
 - **Plan-writer overlap.** w1 also owns `parallelization.md:52-53` ("optional, ONE scoped check, skip if unsure"), which the skills sweep flagged but left out because it covers no plan-writer files.
-- **Line count.** `cache.rs` is recorded in `loom/maintainability-baseline.txt`; update its count.
+- **Size limits.** The final wording fits the existing doctrine byte caps and the 511-line `cache.rs` baseline; those limits remain unchanged.
 
 ### 2. Skills: `w2-skills.md`
 
@@ -45,7 +45,7 @@ There are 49 line-neutral edits across 20 skills. Each whole-suite command or "r
 
 Integration-verify's orchestrator and reviewers share one `LOOM_SESSION_ID` and run full suites through `loom check`. A subagent's `loom check` already relays, with evidence in w3 §1.1; w3 adds a test for it. Three defects are fixed:
 
-- **Cancel-and-replace.** An uncovered check on the same head, tree and session no longer cancels the live check, whether it is running or queued. It joins a new waiting job (`pending.json` beside `current.json`, `host_verify/pending.rs`, `store/slots.rs`), and that job runs the union of the waiting selections. A different tree, a different session, or a completion, freeze or verdict-completion request still supersedes, and cancels the waiting job too. Every cancel path clears the waiting slot. The runner promotes the waiting job even when every runner slot is busy.
+- **Cancel-and-replace.** An uncovered check on the same head, tree and session no longer cancels the live check, whether it is running or queued. It joins a new waiting job (`pending.json` beside `current.json`, `host_verify/pending.rs`, `store/slots.rs`), and that job runs the union of the waiting selections. A different tree, a different session, or a completion, freeze or verdict-completion request still supersedes, and cancels the waiting job too. Takedown and superseding cancellation clear the waiting slot. Reset captures both live job identities under the host-job lock and cancels those identities after retiring agents, preserving later replacements. The runner promotes the waiting job even when every runner slot is busy.
 - **Wait state.** Wait state is keyed by selection, so two reviewers in one session follow their own jobs.
 - **Criterion order.** `--criterion` is sorted and deduplicated once.
 
@@ -66,7 +66,7 @@ Two designs, with a choice between them deferred (one of them, not both):
 
 ### 6. Guard split: `w4-install-and-guard.md` Part B
 
-Guard lines 200-541 (the runner matchers) move verbatim into `loom-hooks/_verify_matchers.sh`, which is registered in `loom/src/fs/permissions/constants.rs` and in the two test fixtures that copy hook helpers. The guard drops to about 268 lines and the new file is about 356. `block()` stays in the guard. Guard behaviour is unchanged: integration-verify subagents keep full-suite access.
+Guard lines 200-541 (the runner matchers) move verbatim into `loom-hooks/_verify_matchers.sh`, which is registered in `loom/src/fs/permissions/constants.rs` and in the two test fixtures that copy hook helpers. The guard drops to about 268 lines and the new file is about 356. `block()` stays in the guard. Guard behaviour is unchanged: integration-verify subagents remain exempt from its runner block, while full suites still go through `loom check integration-verify`.
 
 ## Execution
 
@@ -95,4 +95,4 @@ Guard lines 200-541 (the runner matchers) move verbatim into `loom-hooks/_verify
 - Every brief's own acceptance section passes.
 - `rg -n "AT MOST ONE narrowly-scoped" --glob '!doc/**' --glob '!target'` finds nothing.
 - The full gate passes on the final tree.
-- **Field check:** after the next plan's stages, rerun `full_runs.py`. It should find no bare runner call by a standard-stage subagent or main agent, and no bare full-suite runner call in integration-verify: every full run there goes through `loom check`.
+- **Field check:** after the next plan's stages, rerun `full_runs.py`. It should find no bare full-suite runner call by a standard-stage subagent or main agent, and none in integration-verify: every full run there goes through `loom check`.

@@ -306,6 +306,6 @@ sibling's files.
 
 **Why:** the briefs treated a subagent's own green run as part of verification, although the main agent verifies regardless.
 
-**Prevention:** a subagent runs at most one narrowly scoped check on what it changed (CLAUDE.md Rule 5), outside a stage too. The main agent runs the full gate once on the final tree and owns the verdict.
+**Prevention:** a stage subagent runs the tests for its changed code and module when ready, without a count cap; the stage gate owns full suites. Integration-verify orchestrators and reviewers may run full checks through `loom check integration-verify`.
 
-**Fix:** briefs name one targeted command (the touched module's tests, or the touched test files); the full gate runs only in the main agent.
+**Fix:** briefs name targeted tests and the gate owns the full-suite verdict.

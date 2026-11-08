@@ -49,7 +49,7 @@ Idiomatic, production-grade Elixir on the BEAM: mix, pattern matching, processes
 
 Commit `mix.lock`. Dependencies with the `only: [:dev, :test]` and `runtime: false` options stay out of releases.
 
-**The gate:**
+**The gate** (the stage gate runs the `mix test` line; while working, run `mix test path/to/file_test.exs --warnings-as-errors`):
 
 ```bash
 mix format --check-formatted
@@ -355,7 +355,7 @@ Quick swaps:
 **Before marking Elixir work done:**
 
 - [ ] `mix format --check-formatted` clean
-- [ ] `mix compile --warnings-as-errors` and `mix test --warnings-as-errors` pass
+- [ ] `mix compile --warnings-as-errors` and `mix test path/to/file_test.exs --warnings-as-errors` pass for the changed code (bare `mix test` is the stage gate's)
 - [ ] `mix credo --strict` clean; `mix dialyzer` clean where the project uses it
 - [ ] Public functions have `@spec`; callbacks have `@impl true`
 - [ ] No `String.to_atom/1` or `binary_to_term` on external data

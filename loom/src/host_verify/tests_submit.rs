@@ -10,19 +10,19 @@ use super::store::{job_dir, load_current, load_job_record, stage_dir};
 use super::submit::{cancel, submit, Submission, SubmitRequest};
 use super::{JobKind, JobRecord, JobState};
 
-const STAGE: &str = "stage-a";
-const HEAD_A: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
-const HEAD_B: &str = "cccccccccccccccccccccccccccccccccccccccc";
-const DIGEST: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+pub(super) const STAGE: &str = "stage-a";
+pub(super) const HEAD_A: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+pub(super) const HEAD_B: &str = "cccccccccccccccccccccccccccccccccccccccc";
+pub(super) const DIGEST: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 
-fn state_root() -> (TempDir, PathBuf) {
+pub(super) fn state_root() -> (TempDir, PathBuf) {
     let dir = TempDir::new().unwrap();
     let work = dir.path().join(".loom").join("work");
     fs::create_dir_all(&work).unwrap();
     (dir, work)
 }
 
-fn request<'a>(request_id: &'a str, head: &'a str, no_cache: bool) -> SubmitRequest<'a> {
+pub(super) fn request<'a>(request_id: &'a str, head: &'a str, no_cache: bool) -> SubmitRequest<'a> {
     SubmitRequest {
         stage_id: STAGE,
         session_id: "session-a",
@@ -35,28 +35,28 @@ fn request<'a>(request_id: &'a str, head: &'a str, no_cache: bool) -> SubmitRequ
     }
 }
 
-fn subset<'a>(request_id: &'a str, criteria: &[usize]) -> SubmitRequest<'a> {
+pub(super) fn subset<'a>(request_id: &'a str, criteria: &[usize]) -> SubmitRequest<'a> {
     SubmitRequest {
         criteria: Some(criteria.to_vec()),
         ..request(request_id, HEAD_A, false)
     }
 }
 
-fn queued(submission: Submission) -> JobRecord {
+pub(super) fn queued(submission: Submission) -> JobRecord {
     match submission {
         Submission::Queued(record) => record,
         other => panic!("expected Submission::Queued, got {other:?}"),
     }
 }
 
-fn joined(submission: Submission) -> JobRecord {
+pub(super) fn joined(submission: Submission) -> JobRecord {
     match submission {
         Submission::Joined(record) => record,
         other => panic!("expected Submission::Joined, got {other:?}"),
     }
 }
 
-fn superseded(submission: Submission) -> (JobRecord, JobRecord) {
+pub(super) fn superseded(submission: Submission) -> (JobRecord, JobRecord) {
     match submission {
         Submission::Superseded { cancelled, queued } => (*cancelled, *queued),
         other => panic!("expected Submission::Superseded, got {other:?}"),
@@ -80,7 +80,7 @@ fn a_first_request_queues_a_job_with_its_directory() {
 }
 
 #[test]
-fn joined_requests_append_and_keep_the_last_sixteen() {
+pub(super) fn joined_requests_append_and_keep_the_last_sixteen() {
     let (_dir, work) = state_root();
     let first = queued(submit(&work, &request("r0", HEAD_A, false), Utc::now()).unwrap());
     let mut last = first.clone();
@@ -115,14 +115,15 @@ fn a_new_head_supersedes_and_cancels_the_old_job() {
 }
 
 #[test]
-fn an_uncached_request_supersedes_a_cached_job() {
+fn an_uncached_request_waits_behind_a_cached_job() {
     let (_dir, work) = state_root();
     let cached = queued(submit(&work, &request("r1", HEAD_A, false), Utc::now()).unwrap());
 
-    let (cancelled, uncached) =
-        superseded(submit(&work, &request("r2", HEAD_A, true), Utc::now()).unwrap());
+    let (uncached, behind) =
+        waiting(submit(&work, &request("r2", HEAD_A, true), Utc::now()).unwrap());
 
-    assert_eq!(cancelled.id, cached.id);
+    assert_eq!(behind, cached.id);
+    assert_eq!(load_current(&work, STAGE).unwrap(), Some(cached));
     assert!(uncached.no_cache);
 }
 
@@ -205,28 +206,28 @@ fn a_subset_request_joins_a_running_full_check() {
 }
 
 #[test]
-fn a_full_request_does_not_join_a_subset_job() {
+fn a_full_request_waits_behind_a_subset_job() {
     let (_dir, work) = state_root();
     let partial = queued(submit(&work, &subset("r1", &[1]), Utc::now()).unwrap());
     assert_eq!(partial.criteria, Some(vec![1]));
 
-    let (cancelled, full) =
-        superseded(submit(&work, &request("r2", HEAD_A, false), Utc::now()).unwrap());
+    let (full, behind) = waiting(submit(&work, &request("r2", HEAD_A, false), Utc::now()).unwrap());
 
-    assert_eq!(cancelled.id, partial.id);
+    assert_eq!(behind, partial.id);
+    assert_eq!(load_current(&work, STAGE).unwrap(), Some(partial));
     assert_eq!(full.criteria, None);
 }
 
 #[test]
-fn equal_subsets_join_and_a_wider_subset_supersedes() {
+fn equal_subsets_join_and_a_wider_subset_waits() {
     let (_dir, work) = state_root();
     let first = queued(submit(&work, &subset("r1", &[0, 2]), Utc::now()).unwrap());
 
     let same = joined(submit(&work, &subset("r2", &[2, 0]), Utc::now()).unwrap());
-    let (cancelled, _) = superseded(submit(&work, &subset("r3", &[0, 1]), Utc::now()).unwrap());
+    let (_, behind) = waiting(submit(&work, &subset("r3", &[0, 1]), Utc::now()).unwrap());
 
     assert_eq!(same.id, first.id);
-    assert_eq!(cancelled.id, first.id);
+    assert_eq!(behind, first.id);
 }
 
 #[test]
@@ -243,4 +244,11 @@ fn a_selection_outside_a_check_or_naming_nothing_is_refused() {
         assert!(matches!(refused, Submission::Refused(_)), "{refused:?}");
     }
     assert_eq!(load_current(&work, STAGE).unwrap(), None);
+}
+
+pub(super) fn waiting(submission: Submission) -> (JobRecord, String) {
+    match submission {
+        Submission::Waiting { pending, behind } => (*pending, behind),
+        other => panic!("expected Submission::Waiting, got {other:?}"),
+    }
 }
