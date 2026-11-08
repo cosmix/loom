@@ -149,7 +149,8 @@ export function progressPercent(completed: number, total: number): number {
 
 // An unparseable `started_at` (NaN) counts as just started.
 function busyElapsedSecs(busy: Busy, nowMs: number): number {
-  const elapsed = Math.round((nowMs - Date.parse(busy.started_at)) / 1000);
+  // Truncates like the daemon's `num_seconds`, so both sides agree on a ceiling boundary.
+  const elapsed = Math.floor((nowMs - Date.parse(busy.started_at)) / 1000);
   return Number.isNaN(elapsed) ? 0 : Math.max(0, elapsed);
 }
 
