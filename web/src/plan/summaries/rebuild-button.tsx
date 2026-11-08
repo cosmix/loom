@@ -5,11 +5,7 @@ import { Untrusted } from "@/plan/chat/visible-controls";
 import "@/plan/run/pressure-test-action.css";
 import { authorBlockReasonAtom } from "@/plan/state/atoms";
 import { BusyText } from "@/plan/ui/busy-text";
-import {
-  type ButtonLook,
-  DisabledReason,
-  INLINE_BASELINE,
-} from "@/plan/ui/disabled-reason";
+import { type ButtonLook, DisabledReason, INLINE_BASELINE } from "@/plan/ui/disabled-reason";
 
 import { summaryPanelAtom, useSummaryActions } from "./state";
 

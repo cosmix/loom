@@ -30,9 +30,7 @@
   background: transparent;
 }
 
-.concept-page-column
-  :is(.pressure-test-action, .rebuild-action)
-  .plan-button:hover {
+.concept-page-column :is(.pressure-test-action, .rebuild-action) .plan-button:hover {
   background: var(--muted);
 }
 
