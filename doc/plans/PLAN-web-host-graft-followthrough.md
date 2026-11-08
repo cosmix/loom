@@ -1,5 +1,66 @@
 # Configurable Web UI host and Graft follow-through
 
+## Status review on 2026-11-08
+
+This plan has not run. The tree moved past its baseline (`85bac617`, 2026-09-13), so do not
+execute it as written. A later session decides whether to retire it, rewrite it, or replace it
+with a smaller plan; see [Open questions](#open-questions).
+
+**Web host: shipped outside this plan.** `loom status --web --host` exists
+(`loom/src/cli/types_status_web.rs`): IP literals and `localhost`, `127.0.0.1` by default, token
+auth off loopback. Commits: 89db4e69 (configurable host with token auth, 2026-09-16), 444143fb
+(remote binds require the dashboard cookie only for settings writes and terminals), 7689914f
+(shared HTTP layer, dashboard runs as a router). Two consequences for this plan:
+
+- The behavior contract "Authenticate every remote HTTP and WS route" no longer matches the
+  code. Remote read-only dashboard routes are served without the cookie. Confirm whether that
+  narrowing was intended before reusing any web contract from this plan.
+- Worker W's file list is stale: `web/listener.rs` and `web/access.rs` do not exist, and the
+  module now has `router.rs` and `startup.rs`. Worker L2 (`access_tests.rs`) and the web half of
+  worker C have nothing left to do.
+
+**Memory preparation: partly covered.** `loom memory pending --group` (99108b21, 2026-09-19;
+`loom/src/commands/memory/handlers/pending_groups.rs`) sorts pending events into corrections,
+mistakes, decisions, suggestions and other, and both distill procedures (`commands/distill.md`
+and the knowledge-distill signal) start from it. That covers "prioritize corrections". Still
+missing from the [memory brief](briefs/web-host-graft-followthrough/delta-preparation.md): a
+`loom memory prepare` command, grouping of exact duplicates that keeps every contributing event
+ID, and token-budgeted batches with an explicit failure for an oversized first candidate.
+Worker M's file list predates the `pending --group` changes to the signal cache and doctrine
+tests.
+
+**Natural-language retrieval: still open.** Re-running the brief's reproduction on 2026-11-08,
+`loom knowledge context --query 'how is the source graph refreshed after a commit'
+--budget-tokens 1500 --explain`, gives the same failure the
+[retrieval brief](briefs/web-host-graft-followthrough/retrieval-eval.md) describes. The first
+result is the concern that quotes the question, and
+`architecture/source-graph.md#lifecycle-who-builds-it-and-when` is not in the pack. Retrieval
+work since the baseline (intent routing, abstention on unnamed prompts, protected naming terms,
+new eval cases) did not fix this question. The hermetic answer-recall tests the brief requires do
+not exist.
+
+**Sibling plans named below have changed.** `PLAN-secure-distilled-loom-v2.md` is now
+`doc/plans/archive/RETIRED-PLAN-secure-distilled-loom-v2.md`. The state-confinement plan
+no longer exists under `doc/plans/`. `IN_PROGRESS-PLAN-loop-recovery.md` is deleted in the working tree (its briefs
+remain). `PLAN-model-router-hooks.md` still exists. The scheduling constraints in
+[Sibling plans and validation limits](#sibling-plans-and-validation-limits) need re-checking.
+
+**Still valid.** The model tiers (Sol, Terra, Luna) are accepted by `loom-hooks/codex-forward.sh`.
+The [comparison audit](briefs/web-host-graft-followthrough/graft-audit.md) and the deferral
+decisions in [Report decisions](#report-decisions) were not re-examined and may still hold.
+
+## Open questions
+
+- **What to do with this plan.** Options: (a) retire it and write a new standalone plan for the
+  two open items, `loom memory prepare` built on `pending --group` and natural-language answer
+  recall with hermetic tests; (b) rewrite this plan in place, dropping the web work and
+  re-baselining the briefs and file lists; (c) retire it without replacement. Recommendation:
+  (a). The baseline commit, file lists, sibling constraints and roughly a third of the scope are
+  out of date, so a rewrite would replace most of the document anyway.
+- **Remote read-only access to the dashboard.** The shipped code leaves read-only routes
+  unauthenticated on a remote bind; this plan required authentication on every route. Decide
+  whether that is intended. If not, it belongs in whichever plan follows this one.
+
 ## Outcome
 
 Enable `loom status --web --host 0.0.0.0` with authenticated remote access;
