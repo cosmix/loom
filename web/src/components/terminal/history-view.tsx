@@ -11,6 +11,7 @@ import { BackButton, Line, Name, rise, terminalHref } from "@/components/termina
 import type { EmulatorFactory } from "@/components/terminal/use-terminal";
 import { Kbd } from "@/components/ui/kbd";
 import { toneClass } from "@/components/state-badge";
+import { displayState } from "@/lib/display-state";
 import { stateMeta } from "@/lib/format";
 
 export interface HistoryViewProps {
@@ -100,7 +101,7 @@ export function HistoryView({
 
   return (
     <div
-      className={cn("terminal-frame", toneClass(stateMeta(stage.status).tone))}
+      className={cn("terminal-frame", toneClass(stateMeta(displayState(stage)).tone))}
       data-frame={frame}
       data-mode="view"
       data-phase={WELL_PHASE[phase]}

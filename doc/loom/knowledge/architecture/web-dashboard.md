@@ -45,9 +45,7 @@ Client: `web/src/api/ws.ts` parses each message with `parseFrame` (`frames.ts`),
 
 ## Fixture contract
 
-`loom/src/commands/status/web/model_tests.rs` pins the Rust model's exact serde output against `web/src/api/fixtures/statuses.json`, which the TS `zod` schema (`web/src/api/schema.ts`) and tests consume. Changing the wire model means updating the fixture and schema in the same change, or the TS tests and the zod parse both fail. The one gap: the fixture test hardcodes the 13 `StageStatus` variants instead of deriving them from an exhaustive match, so a 14th variant compiles Rust-side and only fails at runtime on the TS side (zod rejects the whole snapshot, page renders blank).
-
-A second, independent check, `loom/src/commands/status/web/schema_parity.rs`, closes a related gap for the enums it covers (`SessionType`, `StageStatus`, `StageType`, `FailureType`, `SessionExitReason`): each opens with an exhaustive `match` with no wildcard arm, so adding a variant fails that match to compile until its hand-maintained list is updated, and the test then asserts every serialized wire value is a quoted literal somewhere in `schema.ts`. It was added after `SessionType::Contract` shipped without a `schema.ts` update and rejected every frame (mistakes/web-dashboard-server.md).
+`loom/src/commands/status/web/model_tests.rs` pins the Rust model's exact serde output against `web/src/api/fixtures/statuses.json`, which the TS `zod` schema (`web/src/api/schema.ts`) and tests consume. Changing the wire model means updating the fixture and schema in the same change, or the TS tests and the zod parse both fail. `every_stage_status` runs each listed variant through an exhaustive `match` with no wildcard arm, so a new `StageStatus` variant fails to compile there until the list and fixture are updated.
 
 ## zod and the CSP
 
@@ -129,3 +127,7 @@ Completed stage nodes, ledger rows, and stage headings use the shared `timeText`
 ## Contract and implementation activity entries
 
 The dashboard activity list renders persisted `StageEvent` records. `update_stage` records status changes and changes to a nonempty session while Executing, so contract-to-implementation handoffs emit an event even without a status transition. Events capture `session_type` from the saved session record. The shared formatter renders `contract writing started` for contract sessions and `execution started` for stage sessions at their event timestamps. Rewriting the same session does not duplicate starts. Older events lacking a session type retain the generic `started` label; historical phase boundaries cannot be reconstructed from those records.
+
+## Displayed stage state
+
+Every dashboard surface draws a stage by `displayState(stage)` (`web/src/lib/display-state.ts`), never by raw `stage.status`. An `executing` stage with a `completion_blocker` on the wire (set by `completion_blocker_summary`, the same value that lists it under "Requires Attention" in `loom status`) shows `completion-pending` (warning tone) or `completion-blocked` (blocked tone); a parked `needs-human-review` stage keeps its own state. Their metadata lives in `DISPLAY_STATES` and `DISPLAY_LEGEND` (`web/src/lib/states.ts`), outside the Rust-pinned `statuses.json`. A completion blocker's attention entry is filed with status `blocked` (`AttentionEntry::new`, `status/attention_model.rs`), so the attention, now and history cards take the stage's state through `attentionStatus(entry, displayState(stage))`. `model_tests.rs` `a_completion_pending_stage_reaches_the_wire_with_its_blocker` pins the wire half.

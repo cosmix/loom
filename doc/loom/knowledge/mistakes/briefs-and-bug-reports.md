@@ -299,3 +299,13 @@ sibling's files.
 **Why:** the hook treats a compile as project-wide verification, and the brief promised a check the hook refuses.
 
 **Prevention:** brief workers with the one check the hook allows (a lib filter) and tell them it is the only compile signal; name the arity and signature changes other files must follow so the first full compile is the main agent's gate; a fix brief that edits a function near a size limit names `cargo test --manifest-path loom/Cargo.toml --test maintainability` as the check (a worker's lib filter never runs it: the security fix worker grew `record_static_refusal` to 54 lines, caught only by the gate). That repeat of [a worker's one scoped check missing the maintainability test](contract-autonomy-delivery.md#a-workers-one-scoped-check-missed-its-consumers-and-the-maintainability-test) has a hook proposal in [concerns/code-quality-and-hook-debt](../concerns/code-quality-and-hook-debt.md).
+
+## Subagent Briefs Asked for the Full Gate the Main Agent Reruns
+
+**What happened:** outside a stage, main-agent briefs for the planner spine, help dialog, web fetch and dashboard fixes each told the subagent to run full `cargo test`, `cargo clippy`, full `vitest` and builds; the main agent then reran the same gate to verify. The operator flagged the duplicated runs.
+
+**Why:** the briefs treated a subagent's own green run as part of verification, although the main agent verifies regardless.
+
+**Prevention:** a subagent runs at most one narrowly scoped check on what it changed (CLAUDE.md Rule 5), outside a stage too. The main agent runs the full gate once on the final tree and owns the verdict.
+
+**Fix:** briefs name one targeted command (the touched module's tests, or the touched test files); the full gate runs only in the main agent.

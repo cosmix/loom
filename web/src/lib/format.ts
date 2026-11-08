@@ -1,4 +1,5 @@
 import type { DaemonState, StageStatus, StageSummary } from "@/api/schema";
+import { displayState, type DisplayState } from "@/lib/display-state";
 
 export type Tone =
   | "executing"
@@ -17,7 +18,7 @@ export interface StateMeta {
   bold: boolean;
 }
 
-const STATE_META: Record<StageStatus, StateMeta> = {
+const STATE_META: Record<DisplayState, StateMeta> = {
   "waiting-for-deps": { tone: "pending", bold: false },
   queued: { tone: "queued", bold: true },
   executing: { tone: "executing", bold: true },
@@ -31,6 +32,8 @@ const STATE_META: Record<StageStatus, StateMeta> = {
   "merge-blocked": { tone: "blocked", bold: true },
   "needs-human-review": { tone: "warning", bold: false },
   "needs-adjudication": { tone: "warning", bold: true },
+  "completion-pending": { tone: "warning", bold: true },
+  "completion-blocked": { tone: "blocked", bold: true },
 };
 
 export function formatElapsed(seconds: number): string {
@@ -43,23 +46,25 @@ export function formatElapsed(seconds: number): string {
   return `${Math.trunc(seconds / 3600)}h${Math.trunc((seconds % 3600) / 60)}m`;
 }
 
-export function stateMeta(status: StageStatus): StateMeta {
+export function stateMeta(status: DisplayState): StateMeta {
   return STATE_META[status];
 }
 
 /// Which caution tape a state wears: red for a failure the daemon could not
 /// get past, amber for a state waiting on a person or a merge, none otherwise.
-export function hazardTone(status: StageStatus): "error" | "warning" | null {
+export function hazardTone(status: DisplayState): "error" | "warning" | null {
   switch (status) {
     case "blocked":
     case "completed-with-failures":
     case "merge-blocked":
+    case "completion-blocked":
       return "error";
     case "merge-conflict":
     case "needs-human-review":
     case "needs-adjudication":
     case "waiting-for-input":
     case "needs-handoff":
+    case "completion-pending":
       return "warning";
     default:
       return null;
@@ -232,7 +237,9 @@ export function summaryCounts(
   stages: readonly StageSummary[],
   attentionCount: number,
 ): { executing: number; queued: number; waiting: number; attention: number; done: number } {
-  const count = (status: StageStatus) => stages.filter((stage) => stage.status === status).length;
+  // An executing stage held by a completion blocker counts under attention.
+  const count = (status: StageStatus) =>
+    stages.filter((stage) => displayState(stage) === status).length;
   return {
     executing: count("executing"),
     queued: count("queued"),

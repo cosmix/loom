@@ -4,16 +4,19 @@ import { useAtomValue } from "jotai/react";
 import type { StageSummary } from "@/api/schema";
 import { useOpenStage } from "@/components/stage-modal";
 import { toneClass } from "@/components/state-badge";
+import { displayState } from "@/lib/display-state";
 import { stateMeta, type Tone } from "@/lib/format";
 import { contractTesting, isContractPhase } from "@/lib/format-activity";
-import { STAGE_STATES } from "@/lib/states";
+import { DISPLAY_STATES } from "@/lib/states";
 import { orderedStagesAtom } from "@/state/atoms";
 
 /// A contract-phase segment gets its own tone and a suffixed label, so the
 /// phase reads even though the wire status stays "executing".
 function segmentMeta(stage: StageSummary): { tone: Tone; label: string } {
-  const label = STAGE_STATES[stage.status].label;
-  if (!isContractPhase(stage)) return { tone: stateMeta(stage.status).tone, label };
+  const state = displayState(stage);
+  const label = DISPLAY_STATES[state].label;
+  if (state !== "executing" || !isContractPhase(stage))
+    return { tone: stateMeta(state).tone, label };
   const phase = contractTesting(stage) === null ? "contract phase" : "testing contracts";
   return { tone: "contract", label: `${label} · ${phase}` };
 }
@@ -33,7 +36,7 @@ export function StageStrip({ className }: { className?: string }) {
             <button
               type="button"
               className="stage-strip-seg"
-              data-live={stage.status === "executing" || undefined}
+              data-live={displayState(stage) === "executing" || undefined}
               title={`${stage.name} · ${label}`}
               aria-label={`${stage.name}, ${label}`}
               onClick={() => open(stage.id)}

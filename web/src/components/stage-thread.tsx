@@ -5,9 +5,10 @@ import { useState } from "react";
 
 import type { StageSummary } from "@/api/schema";
 import { StateGlyph, toneClass } from "@/components/state-badge";
+import { displayState } from "@/lib/display-state";
 import { stateMeta } from "@/lib/format";
 import { dependentsOf } from "@/lib/graph";
-import { STAGE_STATES } from "@/lib/states";
+import { DISPLAY_STATES } from "@/lib/states";
 import { snapshotAtom } from "@/state/atoms";
 
 /// A run longer than this folds into a count and one dot per neighbour.
@@ -146,16 +147,17 @@ function ThreadRun({
 }
 
 function ThreadChip({ stage, pick }: { stage: StageSummary; pick: (id: string) => void }) {
-  const label = STAGE_STATES[stage.status].label;
+  const state = displayState(stage);
+  const label = DISPLAY_STATES[state].label;
   return (
     <button
       type="button"
-      className={cn("fulcrum-chip", toneClass(stateMeta(stage.status).tone))}
+      className={cn("fulcrum-chip", toneClass(stateMeta(state).tone))}
       title={`${stage.name} · ${label}`}
       onClick={() => pick(stage.id)}
     >
       <span aria-hidden="true" className="inline-flex">
-        <StateGlyph status={stage.status} className="text-[11px]" />
+        <StateGlyph status={state} className="text-[11px]" />
       </span>
       <span className="text-foreground">{stage.id}</span>
       <span className="sr-only">{label}</span>
@@ -167,7 +169,7 @@ function ThreadChip({ stage, pick }: { stage: StageSummary; pick: (id: string) =
 function tally(stages: StageSummary[]): string {
   const counts = new Map<string, number>();
   for (const entry of stages) {
-    const label = STAGE_STATES[entry.status].label.toLowerCase();
+    const label = DISPLAY_STATES[displayState(entry)].label.toLowerCase();
     counts.set(label, (counts.get(label) ?? 0) + 1);
   }
   return [...counts].map(([label, count]) => `${count} ${label}`).join(", ");

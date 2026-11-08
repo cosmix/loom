@@ -16,7 +16,7 @@ import { toneClass } from "@/components/state-badge";
 import { LinesBox } from "@/components/text-box";
 import { Button } from "@/components/ui/button";
 import { formatClock, formatDayUnlessToday, formatStamp, type Tone } from "@/lib/format";
-import { STAGE_STATES } from "@/lib/states";
+import { DISPLAY_STATES } from "@/lib/states";
 
 /// Every issue the stage has had, newest first on one spine: the live one
 /// marked current, the archived ones with how they ended. Shows the newest
@@ -85,7 +85,7 @@ export function HistoryCard({
 }
 
 function HistoryItem({ event, last }: { event: HistoryEvent; last: boolean }) {
-  const Icon = STAGE_STATES[event.status].icon;
+  const Icon = DISPLAY_STATES[event.status].icon;
   const loud = event.mark === "current" || event.evidence.length > 0;
   return (
     <li

@@ -6,13 +6,14 @@ import { attentionStatus } from "@/components/attention-status";
 import { Moment } from "@/components/stage-history";
 import { currentFailure } from "@/components/stage-history-model";
 import { StateGlyph, toneClass } from "@/components/state-badge";
+import { displayState } from "@/lib/display-state";
 import { stateMeta } from "@/lib/format";
-import { STAGE_STATES } from "@/lib/states";
+import { DISPLAY_STATES } from "@/lib/states";
 
 /// The state's legend from the shared state table, as a sentence about this
 /// stage: a legend's `<id>` placeholder becomes the stage's id.
 function stateSentence(stage: StageSummary): string {
-  const legend = STAGE_STATES[stage.status].legend.replaceAll("<id>", stage.id);
+  const legend = DISPLAY_STATES[displayState(stage)].legend.replaceAll("<id>", stage.id);
   return `${legend.charAt(0).toUpperCase()}${legend.slice(1)}.`;
 }
 
@@ -36,7 +37,7 @@ export function NowCard({ stage, entry }: { stage: StageSummary; entry: Attentio
   const shown = withFailure(stage, entry);
   const failure = currentFailure(stage);
   const since = shown.evidence.length > 0 ? (failure?.detected_at ?? null) : null;
-  const status = attentionStatus(entry);
+  const status = attentionStatus(entry, displayState(stage));
   return (
     <section
       aria-label="now"
