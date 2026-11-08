@@ -202,3 +202,33 @@ Each recurred after its lesson was recorded, so a check beats another paragraph:
 The unwired-file detector is graph-based (`verify/wiring_detection.rs:37-115`), with incomplete or unresolved evidence reported as uncertain. Any remaining `#[path]` false-positive report needs a fixture showing the current extractor/resolver evidence; it is not a grep-only detector.
 
 A stage's longest worker bounds its wall-clock progress. Brief balancing remains a planning consideration, with no automatic balancing policy. PTY shutdown tests using subsecond wall-clock assertions can be load-sensitive; prefer observable retirement plus a generous bounded deadline when revising those fixtures.
+
+## Busy Status Follow-Ups
+
+Open items left by the scheduler busy-status plan (`busy::while_busy`, the tick's busy line, `busy::loop_state`; see [Daemon Liveness and Loop Health](../architecture/status-data-model.md#daemon-liveness-and-loop-health)). None blocks the feature.
+
+### Derivation Duplicated Across Surfaces
+
+- The stall cause (stale tick versus global ceiling) is re-derived in `scheduling_report_loop.rs` (`age_secs < STALL_THRESHOLD_SECS`) and `ui/tui/ledger/header_daemon.rs`, so a change to a `loop_state` rule can leave surfaces disagreeing. Carry the cause in `LoopState::Stalled`, with a `stalled_by_global_ceiling()` helper that keeps the Stalled shape.
+- `tick::read` runs twice per invocation: `alerts()` and `loop_state_for()` in `commands/status.rs`, and `alerts()` and the snapshot in `commands/status/web/model.rs`. A frame crossing a boundary can show a busy payload that disagrees with its alert. Read once and pass the `Tick` to both.
+- `BusyOp` variants are listed in `parse`, `busy_tests.rs` and `schema_parity.rs`. A `BusyOp::ALL` const helps only when paired with a compile-time exhaustive match (as `schema_parity.rs` has); used alone it would hide a missing variant.
+- `valid_stage_id` in `tick.rs` overlaps `models::forward_receipt::is_safe_id`; the busy-line rule does not require an alphanumeric first byte, so the two stay separate. Keep the local one and say why in its comment if it is touched.
+
+### `while_busy` Hardening Not Enforced
+
+- No nesting, and the closure must not write the tick: documented in `busy.rs`, not checked. A `debug_assert` or thread-local depth guard in `while_busy_every` would catch a violation.
+- `while_busy_every` with interval 0 makes `park_timeout(0)` spin and rewrite the tick continuously. Floor the interval in `restamp` (for example `interval.max(10ms)`); only tests call it.
+- `record_busy` has a `debug_assert` on the stage-id rule, which panics the scheduler thread in a debug build for a hand-edited id. Ids that passed `validate_id` cannot trigger it.
+- `tick::read` uses an unbounded `read_to_string` on every TUI refresh and web frame; cap it (`take(1024)`).
+- The fixed temp name `orchestrator.tick.tmp` follows a planted symlink on write. The direct write had the same exposure; `.loom/work` is already trusted state.
+
+### Test Gaps
+
+- Only provisioning has a regression test that proves the busy line while the wrapped call runs. The other call sites have none: `stage_spawn_signal.rs`, `stage_spawn.rs`, `stage_knowledge.rs`, `merge_resolved.rs`, `resolver_exit.rs`.
+- `daemon_line.rs` `only_the_loop_state_makes_the_headline_stalled` takes no alerts, so its name overclaims; it is the only Running plus Ticking assertion, so rename it rather than delete.
+- The 64-column fallback test in `header_daemon.rs` hard-codes `64 - 19 - 12`; render through `top_line` at `MIN_COLS` so it tracks `NAME_ROOM` and logo width.
+- `provision_gate_pin_tests.rs` ordering check uses `sleep 1`. It is unnecessary while `started_at` keeps nanosecond precision (a single wrap yields an equal `started_at`, so `>` still rejects the regression); drop it, or keep at least 1 s if `started_at` ever truncates coarser.
+
+### Web Clock
+
+`web/src/lib/format.ts` computes busy elapsed time from the browser clock against the daemon's `started_at`, so a remote browser with clock skew misreports the ceiling tone; anchoring on the snapshot's `generated_at` would fix it. It truncates with `Math.floor`, matching Rust's `num_seconds`.

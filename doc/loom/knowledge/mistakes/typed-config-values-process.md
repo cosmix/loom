@@ -76,3 +76,11 @@ markdownlint fixer, leaving an unstaged edit to the plan file after every commit
 **Why:** the guard confines file tools to the worktree, and the scratch directory lies outside it. The orchestrator's own Read of a harness tool-result or temp file is blocked the same way.
 
 **Prevention:** quote `file:line` ranges in reviewer briefs, or print a scratch log through Bash; do not save a diff for a file-tool-only agent to read.
+
+## A Bare Formatter Run Touched Unrelated Files, and the Format Criterion Failed at Base (2026-11-08)
+
+**What happened:** a stage ran bare `oxfmt` in `web/` and reformatted five files it never touched (`model-color.ts`, `model-color.test.ts`, `pressure-timeline.tsx`, `codex-status.test.tsx`, `markdown/fixtures/hostile.md`). The contract writer had already filed a freeze dispute because `cd web && node_modules/.bin/oxfmt --check` failed at the stage base on those same files. The reformat never reached the merge, so integration-verify met the same failure and needed a `chore(web)` formatting commit.
+
+**Why:** the web tree was not formatted at the plan's base, and the signal said to run the formatter over the whole tree.
+
+**Prevention:** pass explicit file paths to `oxfmt`, then check `git status`. A tree-wide format criterion that fails at base is the plan author's to fix before the plan runs; the stage disputes it rather than reformatting files it does not own.

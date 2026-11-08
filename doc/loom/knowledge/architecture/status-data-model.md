@@ -4,7 +4,7 @@
 
 ## Sources of Truth
 
-Static and compact `loom status` read `StatusData`, built by `collect_status_data` (`loom/src/status/data/collector.rs`). `loom status --live` does not poll it: the TUI subscribes to the daemon's push channel over the Unix socket (`SubscribeStatus`, `loom/src/commands/status/ui/tui/daemon_client.rs`; daemon side registers the subscriber in `status_subscribers`, `loom/src/daemon/server/core.rs`). The pushed value is a `StatusData` built by the same collector, so static, compact and live all read one model; only the transport differs (file poll vs socket push). The TUI event loop separately polls terminal input every 100ms (`POLL_TIMEOUT`, `loom/src/commands/status/ui/tui/app.rs`) and re-reads scheduler alerts from files at most once a second (`ALERT_REFRESH_INTERVAL`, `app.rs`; `refresh_alerts`, `app.rs`); the same throttle also refreshes `TuiApp::tick_age_secs` from `orchestrator::tick::read`.
+Static and compact `loom status` read `StatusData`, built by `collect_status_data` (`loom/src/status/data/collector.rs`). `loom status --live` does not poll it: the TUI subscribes to the daemon's push channel over the Unix socket (`SubscribeStatus`, `loom/src/commands/status/ui/tui/daemon_client.rs`; daemon side registers the subscriber in `status_subscribers`, `loom/src/daemon/server/core.rs`). The pushed value is a `StatusData` built by the same collector, so static, compact and live all read one model; only the transport differs (file poll vs socket push). The TUI event loop separately polls terminal input every 100ms (`POLL_TIMEOUT`, `loom/src/commands/status/ui/tui/app.rs`) and re-reads scheduler alerts from files at most once a second (`ALERT_REFRESH_INTERVAL`, `app.rs`; `refresh_alerts`, `app.rs`); the same throttle also refreshes `TuiApp::tick` (the parsed `Tick`) from `orchestrator::tick::read`.
 
 Stage files `.loom/work/stages/<id>.md` and session files `.loom/work/sessions/<id>.md` are the `Stage`/`Session` structs serialized directly as frontmatter — there is no reduced on-disk schema for status (`list_all_stages` in `loom/src/verify/transitions/persistence.rs` parses each stage file with `parse_stage_from_markdown`; `load_session_from_file` in `collector.rs` parses each session file with `parse_from_markdown`).
 
@@ -134,9 +134,27 @@ reason, pane tail included, stays on the stage record.
 
 `DaemonStatus`: NotRunning, Running, ProcessOnly (process alive, socket unreachable), Unreachable (a flock proves a daemon owns the work dir, but the current sandbox denies the connect attempt — rendered as healthy).
 
-`daemon_status_line` maps that status plus loop-stall detection to a marker, message, and hint.
+`daemon_status_line` (`loom/src/commands/status/daemon_line.rs`) maps that status plus a `LoopState` to a marker, message, and hint. `loop_state_for` returns `Unknown` unless the daemon is `Running` or `Unreachable`, so a stopped daemon never shows a leftover busy line.
 
-Loop liveness is tracked by a single-slot tick file, `.loom/work/orchestrator.tick` (`loom/src/orchestrator/tick.rs`), stamped per phase and overwritten each tick. It is considered stalled at 60 seconds or more (`STALL_THRESHOLD_SECS`, `tick.rs`), and surfaced through `scheduling_report::alerts`. The orchestrator's poll interval is 5 seconds.
+**The tick file.** Loop liveness is tracked by a single-slot file, `.loom/work/orchestrator.tick` (`loom/src/orchestrator/tick.rs`). Line 1 is an RFC 3339 timestamp, line 2 the phase (`sync`, `spawning`, `events`, `idle`). Every phase entry rewrites those two lines, which also clears the busy line. An optional line 3, `busy <op> <started_at> <stage_id>`, names the long operation the scheduler thread is inside; a third line that fails validation (wrong prefix, unknown op, bad timestamp, over-long or malformed stage id) reads as "not busy" and never hides the tick. Writes go through `orchestrator.tick.tmp` and a rename, so a reader sees the old tick or the new one, never a truncated file.
+
+**`busy::while_busy`** (`loom/src/orchestrator/busy.rs`) wraps one scheduler-thread operation. It stamps the busy line on the calling thread before running the closure, re-stamps from a scoped helper thread every `REFRESH_INTERVAL` (10 s), and joins the helper before the clearing write, on return and on unwind. Wrapped call sites: brief generation (`stage_spawn.rs`, `stage_spawn_signal.rs`, `stage_knowledge.rs`), resolved-merge verification (`inbox_drain/merge_resolved.rs`, `merge_handler/resolver_exit.rs`) and each provision entry (`provision_gate.rs`). The closure must not nest another wrap and must not write the tick itself; both rules are documented, not enforced.
+
+**`busy::loop_state(tick, now)`** is the single classifier every surface calls; first matching rule wins:
+
+| Rule | State |
+| --- | --- |
+| no tick file | `Unknown` |
+| tick age at or past `STALL_THRESHOLD_SECS` (60 s, `tick.rs`; `Tick::is_stalled`), busy or not | `Stalled` |
+| wrapped operation running at or past `GLOBAL_BUSY_CEILING_SECS` (30 min) | `Stalled` |
+| wrapped operation running | `Busy { over_ceiling }` |
+| otherwise | `Ticking` |
+
+Per-operation ceilings (`BusyOp::ceiling_secs`): brief generation 5 min, merge verification 20 min, provisioning 10 min (`PROVISION_TIMEOUT`). Past its ceiling an operation is a Warning ("busy, longer than expected"); past the global ceiling, or with a stale tick, the loop is Critical with the restart advice (`loom stop`, then `loom run`). The 60-second rule therefore applies to unwrapped work only, and a stale tick stays Critical even while an operation is recorded as busy, which catches a frozen helper. The global ceiling must exceed the longest per-operation ceiling.
+
+**Surfaces.** `scheduling_report::alerts` (`scheduling_report_loop.rs`): Info after 60 s busy, Warning over the ceiling, Critical when stalled. Static and compact status: `daemon running, busy <what> (<elapsed>)`. TUI: `TuiApp::tick` holds the parsed `Tick`. Web: `WebBusy` on the snapshot (`commands/status/web/model.rs`), rendered by `web/src/lib/format.ts`, which computes elapsed time from the browser clock. The orchestrator's poll interval is 5 seconds.
+
+Known gaps: [Busy Status Follow-Ups](../concerns/platform-and-commit-gaps.md#busy-status-follow-ups). History of the 60-second rule: [The 60 s Stall Rule Reported Slow Scheduler Work as a Stalled Loop](../mistakes/sessions-and-liveness.md#the-60-s-stall-rule-reported-slow-scheduler-work-as-a-stalled-loop-2026-11-08).
 
 ## Merge State
 

@@ -380,3 +380,13 @@ test output before calling a platform test green.
 
 **Fix:** `bsd_info` passes 1; `process_start_time` now also answers for a zombie, as on Linux, and every
 caller checks `is_process_alive` first.
+
+## The 60 s Stall Rule Reported Slow Scheduler Work as a Stalled Loop (2026-11-08)
+
+**What happened:** `loom status` showed "orchestrator loop stalled" with the restart advice (`loom stop`, then `loom run`) while the scheduler was healthy and inside brief generation, resolved-merge verification or a provision entry. Following the advice would have killed the work in flight.
+
+**Why:** `STALL_THRESHOLD_SECS` (60 s, `loom/src/orchestrator/tick.rs`) assumed slow scheduler-thread work never reached 60 s. Only provisioning re-stamped the tick (a private helper in `provision_gate.rs`); every other long operation left the tick stale and read as a hung loop.
+
+**Prevention:** wrap any scheduler-thread operation that can exceed a few seconds in `busy::while_busy` (`loom/src/orchestrator/busy.rs`) with a ceiling in `BusyOp::ceiling_secs`, and keep the global ceiling above the longest per-operation one. Do not raise the 60 s constant. Shape and rules: [Daemon Liveness and Loop Health](../architecture/status-data-model.md#daemon-liveness-and-loop-health).
+
+**Fix:** the tick gained a third `busy <op> <started_at> <stage_id>` line, `busy::loop_state` became the one classifier every status surface calls, and the provision-only ticker moved into `busy.rs`.
