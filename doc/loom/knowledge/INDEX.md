@@ -12,7 +12,7 @@
 | [entry-points.md](entry-points.md) | Key files agents should read first | 83 |
 | [patterns.md](patterns.md) | Architectural patterns discovered in the codebase | 186 |
 | [conventions.md](conventions.md) | Coding conventions discovered in the codebase | 250 |
-| [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 248 |
+| [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 247 |
 | [stack.md](stack.md) | Dependencies, frameworks, and tooling used in the project | 115 |
 | [concerns.md](concerns.md) | Technical debt, warnings, and issues to address | 244 |
 
@@ -81,7 +81,7 @@
 | [token-flow-sources](architecture/token-flow-sources.md) |  | 75 |
 | [usage-evidence](architecture/usage-evidence.md) |  | 127 |
 | [verification-v2-gates](architecture/verification-v2-gates.md) | Gates | 257 |
-| [web-dashboard](architecture/web-dashboard.md) | Web | 131 |
+| [web-dashboard](architecture/web-dashboard.md) | Web | 133 |
 | [web-terminal](architecture/web-terminal.md) |  | 181 |
 
 ### entry-points
@@ -131,7 +131,7 @@
 | --- | --- | --- |
 | [adjudication-autonomy-deadlock](mistakes/adjudication-autonomy-deadlock.md) |  | 231 |
 | [ambient-filesystem-trust](mistakes/ambient-filesystem-trust.md) |  | 176 |
-| [briefs-and-bug-reports](mistakes/briefs-and-bug-reports.md) |  | 301 |
+| [briefs-and-bug-reports](mistakes/briefs-and-bug-reports.md) |  | 311 |
 | [ci-toolchain-and-cargo](mistakes/ci-toolchain-and-cargo.md) |  | 373 |
 | [codex-direct-mode-invisible](mistakes/codex-direct-mode-invisible.md) |  | 23 |
 | [codex-lane-rogue-wrapper](mistakes/codex-lane-rogue-wrapper.md) |  | 177 |
