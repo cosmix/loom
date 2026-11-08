@@ -312,7 +312,7 @@ check_cargo() {
 	sub="${TOKENS[$i]}"
 	case "$sub" in
 	clippy | fmt) [[ "$ROLE" == main ]] || block "cargo $sub" ;;
-	test) runner_args_have $((i + 1)) "--no-run" || block_unless_scoped $((i + 1)) "cargo test" ;;
+	test) runner_args_have $((i + 1)) "--no-run" -- || block_unless_scoped $((i + 1)) "cargo test" ;;
 	nextest)
 		# `r` is nextest's alias of `run`; -E/--filterset/--partition select a subset
 		case "${TOKENS[$((i + 1))]:-}" in
@@ -409,8 +409,8 @@ check_make() {
 # Options taking a separate value, so the value is not read as a test path.
 VALUE_FLAGS=" --config -c --reporter -r --project --root --configuration --framework -f --logger -l --settings -s --test-dir -C -j --parallel -pl -p --seed --exclude -e --durations "
 
-# runner_args_have <idx> <patterns> - an argument before the next separator
-# matches one of the space-separated glob patterns.
+# runner_args_have <idx> <patterns> [<stop>] - an argument before the next
+# separator (or the word <stop>) matches one of the space-separated glob patterns.
 runner_args_have() {
 	local i="$1" tok pat
 	local -a pats
@@ -418,7 +418,7 @@ runner_args_have() {
 	while [[ $i -lt $NTOK ]]; do
 		tok="${TOKENS[$i]}"
 		i=$((i + 1))
-		[[ "$tok" != ";" && "$tok" != "&&" && "$tok" != "||" && "$tok" != "|" && "$tok" != "&" ]] || break
+		[[ "$tok" != ";" && "$tok" != "&&" && "$tok" != "||" && "$tok" != "|" && "$tok" != "&" && "$tok" != "${3:-;}" ]] || break
 		for pat in "${pats[@]}"; do
 			# shellcheck disable=SC2053
 			[[ "$tok" == $pat ]] && return 0

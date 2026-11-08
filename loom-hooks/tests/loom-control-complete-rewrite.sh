@@ -36,7 +36,7 @@ fail() {
 # run_payload <payload> - Run the hook from the worktree; sets RC, OUT, ERR.
 run_payload() {
 	set +e
-	printf '%s' "$1" | (cd "$WORKTREE" && env -u LOOM_SCRATCH_DIR TMPDIR="$TMP/tmpdir" \
+	printf '%s' "$1" | (cd "$WORKTREE" && env -u LOOM_SCRATCH_DIR -u LOOM_MAIN_AGENT_PID TMPDIR="$TMP/tmpdir" \
 		PATH="$TMP/bin:/usr/bin:/bin" HOME="$TMP/home" LOOM_CONTROL_TESTING=1 \
 		LOOM_CONTROL_TEST_BIN="$TMP/bin/loom" LOOM_STAGE_ID=build-api \
 		LOOM_SESSION_ID=session-123 LOOM_WORKTREE_PATH="$WORKTREE" LOOM_WORK_DIR="$WORK" \
@@ -150,5 +150,16 @@ run_pre 'loom stage complete other-stage'
 expect_refused 'loom stage complete build-api' '{}' '{"agent_type":"loom-software-engineer"}'
 [[ "$ERR" == *"retry with the pinned command: $PINNED"* ]] || fail "subagent refusal changed: $ERR"
 tail -n 1 "$LEDGER" | jq -e '.role == "subagent"' >/dev/null || fail "subagent block recorded as main"
+
+# Only a positively identified main agent is rewritten: a transcript_path of no
+# known shape is an unknown verdict, never main by elimination.
+expect_refused 'loom stage complete build-api' '{}' '{"transcript_path":"/x/y/odd.txt","session_id":"S"}'
+[[ "$ERR" == *"retry with the pinned command: $PINNED"* ]] || fail "unknown-verdict refusal changed: $ERR"
+expect_refused 'loom stage complete build-api 2>&1 | tail -30' '{}' \
+	'{"transcript_path":"/h/.claude/projects/p/agents/agent-1.jsonl","session_id":"S"}'
+expect_rewrite 'loom stage complete build-api' '{}' '{"transcript_path":"/h/.claude/projects/p/S.jsonl","session_id":"S"}'
+# The exact pinned command from an unknown verdict is admitted with no allow output.
+run_pre "$PINNED" '{}' '{"transcript_path":"/x/y/odd.txt"}'
+[[ "$RC" == 0 && -z "$OUT" ]] || fail "pinned command, unknown verdict: rc $RC, stdout '$OUT'"
 
 echo PASS

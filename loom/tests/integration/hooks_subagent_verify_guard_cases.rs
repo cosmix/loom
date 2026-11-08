@@ -203,6 +203,10 @@ pub const BLOCK_CASES: &[(&str, &str)] = &[
     ("go test -v", "go test flags only"),
     ("bun test", "bare bun test"),
     ("jest", "bare jest"),
+    (
+        "cargo test -- --no-run",
+        "a --no-run after `--` goes to the test binary; cargo still runs the suite",
+    ),
 ];
 
 pub const ALLOW_CASES: &[(&str, &str)] = &[

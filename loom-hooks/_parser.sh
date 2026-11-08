@@ -114,7 +114,12 @@ BEGIN { inside = 0; marker = "" }
 # collapsed: at a sentinel's index it holds the raw separator characters of that
 # run as written outside quotes (`||`, `2>&1`'s `>&`), and any other index is
 # empty or unset, so read it with `${LOOM_TOKEN_SEPS[$i]:-}`. A substitution
-# opener adds no character.
+# opener adds no character. loom_token_sep reads a run with line continuations
+# dropped.
+#
+# LOOM_TOKEN_LITERAL_DOLLAR is 1 when the command holds a `$` bash keeps
+# literal (inside single quotes, after a backslash, or followed by no name), so
+# a token reading `$LOOM_SCRATCH_DIR` may be that literal text; else 0.
 #
 # Arguments:
 #   $1 - The command string to tokenize
@@ -133,9 +138,19 @@ BEGIN { inside = 0; marker = "" }
 # indexing, no `declare -n` namerefs.
 loom_tokenize_command() {
     local rc=0
+    LOOM_TOKEN_LITERAL_DOLLAR=0
     _loom_tokenize_walk "$1" || rc=1
     _loom_expand_shell_c 2 || rc=1
     return "$rc"
+}
+
+# loom_token_sep <index> <var> - set <var> to LOOM_TOKEN_SEPS[index] with its
+# newlines dropped when other separator characters remain: `&&<newline>`
+# continues the list exactly as `&&` does. A run of newlines alone stays.
+loom_token_sep() {
+    local run="${LOOM_TOKEN_SEPS[$1]:-}"
+    if [[ -n "${run//$'\n'/}" ]]; then run="${run//$'\n'/}"; fi
+    printf -v "$2" '%s' "$run"
 }
 
 # _loom_tokenize_walk <command-string> - (internal) The quote/separator state
@@ -149,7 +164,7 @@ _loom_tokenize_walk() {
     local started=0
     local last_was_sep=0
     local length=${#input}
-    local i char next entry sentinel
+    local i char next entry sentinel name_re='^[A-Za-z0-9_{?$!#@*-]'
     # Substitutions currently open, innermost last. Each entry is
     # "<kind>:<state>": the kind the close must match (`p` for `(` / `$(`,
     # `b` for a backtick) and the state to restore when it does. Bash 3.2 has
@@ -228,6 +243,7 @@ _loom_tokenize_walk() {
                 if ((i + 1 < length)); then
                     i=$((i + 1))
                     token+="${input:$i:1}"
+                    [[ "${input:$i:1}" != '$' ]] || LOOM_TOKEN_LITERAL_DOLLAR=1
                 else
                     token+='\'
                 fi
@@ -260,6 +276,7 @@ _loom_tokenize_walk() {
                     :
                     ;;
                 *)
+                    [[ "$next" =~ $name_re ]] || LOOM_TOKEN_LITERAL_DOLLAR=1
                     token+="$char"
                     started=1
                     ;;
@@ -275,6 +292,7 @@ _loom_tokenize_walk() {
             if [[ "$char" == "'" ]]; then
                 state=plain
             else
+                [[ "$char" != '$' ]] || LOOM_TOKEN_LITERAL_DOLLAR=1
                 token+="$char"
             fi
             ;;
@@ -288,6 +306,7 @@ _loom_tokenize_walk() {
                     next="${input:$((i + 1)):1}"
                     case "$next" in
                     '"' | '\' | '$' | '`')
+                        [[ "$next" != '$' ]] || LOOM_TOKEN_LITERAL_DOLLAR=1
                         token+="$next"
                         i=$((i + 1))
                         ;;
@@ -332,6 +351,7 @@ _loom_tokenize_walk() {
                     i=$((i + 1))
                     state=plain
                 else
+                    [[ "${input:$((i + 1)):1}" =~ $name_re ]] || LOOM_TOKEN_LITERAL_DOLLAR=1
                     token+="$char"
                     started=1
                 fi
