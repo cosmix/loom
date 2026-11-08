@@ -5,16 +5,17 @@
 //! functions assert against, not test logic of their own. Transitively
 //! `#[cfg(test)]`: the parent module is gated in `signals/mod.rs`.
 
-/// BLOCK-A - the no-verify rule, verbatim. Every surface must carry this text
-/// byte for byte; `loom-hooks/subagent-verify-guard.sh` prefixes it with a hook-only
+/// BLOCK-A - the no-verify rule, verbatim. Every surface except the
+/// integration-verify prefix must carry this text byte for byte;
+/// `loom-hooks/subagent-verify-guard.sh` prefixes it with a hook-only
 /// "BLOCKED" framing line, which is deliberately not part of the block.
 pub(super) const BLOCK_A: &str = "VERIFICATION IS THE MAIN AGENT'S JOB - NOT YOURS:
 - Compile the files YOU wrote as often as you need (`cargo check`,
   `cargo build`, `tsc --noEmit`, `bun run build`) and format them with
-  `rustfmt --edition 2021 <files>`. No full test suite, no linter, no
-  `cargo fmt`, and never a repeated or looping check.
-- AT MOST ONE narrowly-scoped check over the files YOU wrote (e.g.
-  `cargo test <your_module>::`), run ONCE. Skip it if you are unsure.
+  `rustfmt --edition 2021 <files>`. No linter and no `cargo fmt`.
+- Run the tests for the code YOU wrote, and its module, when you are
+  confident your code is ready or your fix is correct. Never the whole
+  test suite: the stage's gate runs it.
 - Report instead: files changed, assumptions made, anything unresolved.
   The stage's gate compiles, tests, and lints; the MAIN AGENT fixes.";
 
@@ -111,6 +112,10 @@ pub(super) const RETIRED_PHRASES: &[&str] = &[
     concat!("take the work ", "over"),
     concat!("report back ", "within"),
     concat!("hard ceiling on any", " single check"),
+    // Retired with the full-suite-at-the-gate rule: a subagent runs the tests
+    // for its own code and module, with no count limit.
+    concat!("AT MOST ONE ", "narrowly-scoped"),
+    concat!("never a repeated or ", "looping check"),
     // BLOCK-C: superseded by `loom subagents watch`'s own deadline/state.
     concat!("a check firing is NOT", " a deadline"),
     concat!("MUST carry a liveness", " signal"),

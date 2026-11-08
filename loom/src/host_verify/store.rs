@@ -1,5 +1,5 @@
 //! Host-job state under `<state root>/verification/<stage>/`: the stage's
-//! current record, its lock, and one directory per job holding the record's
+//! current and waiting records, its lock, and one directory per job holding the
 //! copy, progress, result, logs and the criterion process groups.
 //!
 //! `work_dir` may itself be a symlink (a worktree's `.loom/work`), so it is
@@ -69,7 +69,7 @@ pub fn job_dir(work_dir: &Path, stage_id: &str, job_id: &str) -> Result<PathBuf>
 }
 
 /// Take the stage's lock, creating its directory. Read-modify-write of
-/// `current.json` happens only under it.
+/// `current.json` and `pending.json` happens only under it.
 pub fn lock_stage(work_dir: &Path, stage_id: &str) -> Result<StageLock> {
     let rel = stage_rel(stage_id)?;
     let lock = rel.join(LOCK_FILE);
@@ -94,16 +94,7 @@ pub fn load_current(work_dir: &Path, stage_id: &str) -> Result<Option<JobRecord>
 /// Write `record` as its stage's current record and as `<job dir>/record.json`,
 /// creating the job directory.
 pub fn save_current(work_dir: &Path, record: &JobRecord) -> Result<()> {
-    let job = job_rel(&record.stage_id, &record.id)?;
-    let current = stage_rel(&record.stage_id)?.join(CURRENT_FILE);
-    let copy = job.join(RECORD_FILE);
-    let root = open_root(work_dir)?;
-    refuse_unsafe(&root, &current)?;
-    refuse_unsafe(&root, &copy)?;
-    create_dirs(&root, &job)?;
-    let bytes = serde_json::to_vec_pretty(record).context("cannot encode the job record")?;
-    write_atomic(&root, &copy, &bytes)?;
-    write_atomic(&root, &current, &bytes)
+    slots::save_slot(work_dir, record, Some(CURRENT_FILE))
 }
 
 /// The stage's current record when relay request `request_id` queued or
@@ -239,12 +230,14 @@ pub fn load_job_file(
 
 mod groups;
 mod order;
+mod slots;
 #[cfg(test)]
 pub(crate) use groups::append_group;
 pub use groups::load_groups;
 pub(crate) use groups::start_guarded_group;
 pub(super) use groups::{load_group_anchors, load_uncontrolled_groups};
 pub(crate) use order::next_submission_order;
+pub(crate) use slots::{clear_pending, load_pending, save_job_copy, save_pending};
 
 /// Open `<job dir>/child.log` for appending (and reading its tail), creating it.
 pub(crate) fn open_child_log(work_dir: &Path, stage_id: &str, job_id: &str) -> Result<File> {

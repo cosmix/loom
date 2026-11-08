@@ -7,6 +7,54 @@ use crate::host_verify::tests_wait::fixture;
 use crate::host_verify::wait::release;
 use crate::host_verify::{JobKind, JobState};
 
+#[test]
+fn each_check_selection_has_its_own_state_file() {
+    let fx = fixture();
+    let mut paths = std::collections::BTreeSet::new();
+    for (criteria, no_cache) in [
+        (None, false),
+        (Some(&[1][..]), false),
+        (Some(&[2][..]), false),
+        (None, true),
+    ] {
+        let site = WaitSite {
+            criteria,
+            ..fx.site(Duration::ZERO, no_cache)
+        };
+        let path = state_path(&site).unwrap();
+        assert_eq!(path.parent().unwrap().file_name().unwrap(), "host-verify");
+        let name = path.file_name().unwrap().to_str().unwrap();
+        let key = name
+            .strip_prefix("s1-check-")
+            .unwrap()
+            .strip_suffix(".json")
+            .unwrap();
+        assert_eq!(key.len(), 16);
+        assert!(key
+            .bytes()
+            .all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(&c)));
+        paths.insert(path);
+    }
+    assert_eq!(paths.len(), 4);
+}
+
+#[test]
+fn a_completion_or_freeze_keeps_one_state_file_per_kind() {
+    let fx = fixture();
+    for (kind, name) in [
+        (JobKind::Complete, "s1-complete.json"),
+        (JobKind::Freeze, "s1-freeze.json"),
+    ] {
+        for no_cache in [false, true] {
+            let site = WaitSite {
+                kind,
+                ..fx.site(Duration::ZERO, no_cache)
+            };
+            assert_eq!(state_path(&site).unwrap().file_name().unwrap(), name);
+        }
+    }
+}
+
 fn state(id: &str) -> RequestState {
     RequestState {
         request_id: id.to_owned(),

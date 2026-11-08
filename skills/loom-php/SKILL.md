@@ -63,7 +63,7 @@ Idiomatic, production-grade PHP 8.x: Composer, strict types, enums and readonly,
 
 **Upgrades:** Rector (`vendor/bin/rector process --dry-run`) automates version migrations and PHPUnit attribute conversion.
 
-**The gate:**
+**The gate** (the stage gate runs the `phpunit`/`pest` line; while working, pass the changed test file, e.g. `vendor/bin/phpunit tests/Unit/Spool/WriterTest.php`):
 
 ```bash
 composer validate --strict
@@ -429,7 +429,7 @@ Quick swaps:
 - [ ] `declare(strict_types=1);` in every new file
 - [ ] Formatter clean (`php-cs-fixer fix --dry-run --diff` or `pint --test`)
 - [ ] `phpstan analyse` (or Psalm) passes at the project's level with no new baseline entries
-- [ ] `vendor/bin/phpunit` / `vendor/bin/pest` green; new behaviour has tests using `assertSame`/`toBe`
+- [ ] `vendor/bin/phpunit <test file>` / `vendor/bin/pest <test file>` green for the changed code (the bare runs are the stage gate's); new behaviour has tests using `assertSame`/`toBe`
 - [ ] No loose comparisons on user data; `in_array`/`array_search` strict
 - [ ] `JSON_THROW_ON_ERROR` on every `json_decode`/`json_encode` of external data
 - [ ] Dependencies added with `composer require`; `composer.lock` committed; `composer audit` clean

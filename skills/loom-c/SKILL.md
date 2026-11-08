@@ -34,7 +34,7 @@ Idiomatic, defensive C17 (C23 where the toolchain supports it): who owns each al
 | --- | --- |
 | Configure (CMake) | `cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug` |
 | Build | `cmake --build build` |
-| Test | `ctest --test-dir build --output-on-failure` |
+| Test, whole suite (the stage gate's) | `ctest --test-dir build --output-on-failure` |
 | One test | `ctest --test-dir build -R '^spool_rejects_symlink$' --output-on-failure` |
 | Static analysis | `clang-tidy -p build src/*.c`, `cppcheck --enable=warning,style,performance --error-exitcode=1 src/` |
 | Format | `clang-format -i src/*.c include/*.h` |
@@ -348,7 +348,7 @@ int main(void) {
 **Before marking C work done:**
 
 - [ ] Builds with `-Wall -Wextra -Wpedantic -Wshadow -Wconversion` and no warnings; `-Werror` clean in CI
-- [ ] Tests pass under ASan and UBSan (`-fno-sanitize-recover=all`), and under `-O2`
+- [ ] The tests for the changed code pass under ASan and UBSan (`-fno-sanitize-recover=all`), and under `-O2`
 - [ ] Every allocation, `fopen`, `fclose`, `fwrite` and `snprintf` result is checked; no ignored return values
 - [ ] Each heap block has one named owner and one free; `realloc` never assigned straight back
 - [ ] No `strcpy`, `strcat`, `sprintf`, `gets`, `atoi`; every buffer write carries a size

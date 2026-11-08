@@ -194,6 +194,7 @@ fn submit_at_requested_head(
     };
     Ok(match submit(work_dir, &request, now)? {
         Submission::Queued(job) | Submission::Joined(job) => VerdictStart::Submitted(job.id),
+        Submission::Waiting { pending, .. } => VerdictStart::Submitted(pending.id),
         Submission::Superseded { queued, .. } => VerdictStart::Submitted(queued.id),
         // A refusal is deterministic: a fresh session beats retrying it every tick.
         Submission::Refused(reason) => VerdictStart::Ineligible(reason),

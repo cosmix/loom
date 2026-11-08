@@ -10,11 +10,48 @@ pub(super) fn install_files(
     claude_dir: &Path,
     agents: &[Asset],
     commands: &[Asset],
-) -> Result<(usize, usize, Vec<PathBuf>)> {
-    let (agents, mut backups) = write_assets(&claude_dir.join("agents"), agents)?;
+) -> Result<(usize, usize, Vec<PathBuf>, Vec<PathBuf>)> {
+    let agents_dir = claude_dir.join("agents");
+    let (agent_count, mut backups) = write_assets(&agents_dir, agents)?;
+    let (pruned, mut pruned_backups) = prune_stale_agents(&agents_dir, agents)?;
+    backups.append(&mut pruned_backups);
     let (commands, mut command_backups) = write_assets(&claude_dir.join("commands"), commands)?;
     backups.append(&mut command_backups);
-    Ok((agents, commands, backups))
+    Ok((agent_count, commands, backups, pruned))
+}
+
+/// Remove retired loom agents, backing up regular files and unlinking symlinks
+/// without following them. Other names, directories and backup copies survive.
+fn prune_stale_agents(agents_dir: &Path, assets: &[Asset]) -> Result<(Vec<PathBuf>, Vec<PathBuf>)> {
+    let (mut pruned, mut backups) = (Vec::new(), Vec::new());
+    for entry in fs::read_dir(agents_dir)
+        .with_context(|| format!("Failed to read {}", agents_dir.display()))?
+    {
+        let entry = entry.with_context(|| format!("Failed to inspect {}", agents_dir.display()))?;
+        let file_name = entry.file_name();
+        let Some(name) = file_name.to_str() else {
+            continue;
+        };
+        if !name.starts_with("loom-")
+            || !name.ends_with(".md")
+            || assets.iter().any(|(key, _)| *key == name)
+        {
+            continue;
+        }
+        let path = entry.path();
+        let kind = entry
+            .file_type()
+            .with_context(|| format!("Failed to inspect {}", path.display()))?;
+        if kind.is_file() {
+            backups.push(super::back_up_asset(&path)?);
+        } else if !kind.is_symlink() {
+            continue;
+        }
+        fs::remove_file(&path).with_context(|| format!("Failed to remove {}", path.display()))?;
+        pruned.push(path);
+    }
+    pruned.sort();
+    Ok((pruned, backups))
 }
 
 pub(super) fn install_skills(

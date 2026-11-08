@@ -193,12 +193,9 @@ impl HostJobRunner {
         })
     }
 
-    /// Step 3: start queued jobs, oldest first, while a slot is free.
+    /// Step 3: promote waiting jobs, then start queued jobs while a slot is free.
     fn start_queued(&mut self) -> Result<Vec<JobRecord>> {
         let mut ended = Vec::new();
-        if self.running.len() >= self.config.slots {
-            return Ok(ended);
-        }
         for record in queued_records(&self.work_dir)? {
             if self.running.len() >= self.config.slots {
                 break;
@@ -300,10 +297,13 @@ pub fn fail_queued(work_dir: &Path, detail: &str) -> Result<Vec<JobRecord>> {
     Ok(failed)
 }
 
-/// Every stage's current record that is queued, oldest first.
+/// Promote waiting jobs, then collect queued current records, oldest first.
 fn queued_records(work_dir: &Path) -> Result<Vec<JobRecord>> {
     let mut queued = Vec::new();
     for stage_id in store::stage_ids(work_dir)? {
+        if let Err(error) = super::pending::promote(work_dir, &stage_id) {
+            warn_job(&stage_id, "could not promote a waiting host job", &error);
+        }
         match store::load_current(work_dir, &stage_id) {
             Ok(Some(record)) if record.state == JobState::Queued => queued.push(record),
             Ok(_) => {}

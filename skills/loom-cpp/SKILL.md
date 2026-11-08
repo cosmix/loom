@@ -43,7 +43,7 @@ CMake describes the build, Ninja or Make runs it, CTest runs the tests. Keep the
 | Configure (out of source) | `cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON` |
 | Configure from a preset | `cmake --preset debug` (`CMakePresets.json`, checked in) |
 | Build | `cmake --build build -j` |
-| Test | `ctest --test-dir build --output-on-failure -j 8` (`--test-dir` needs CMake 3.20+) |
+| Test, whole suite (the stage gate's) | `ctest --test-dir build --output-on-failure -j 8` (`--test-dir` needs CMake 3.20+); the changed code: `ctest --test-dir build -R '<name>' --output-on-failure` |
 | List registered tests | `ctest --test-dir build -N` |
 | Format | `clang-format -i <files>`; CI: `clang-format --dry-run --Werror <files>` |
 | Lint | `run-clang-tidy -p build` (reads `compile_commands.json` and `.clang-tidy`) |
@@ -80,7 +80,7 @@ endif()
 - A generator expression holding several flags is quoted and `;`-separated. Unquoted spaces split it into broken arguments.
 - `-Werror` goes on your own targets. A global `CMAKE_CXX_FLAGS` edit also applies it to third-party code built in the tree and breaks on the next compiler upgrade.
 
-The gate:
+The gate (the stage gate runs the `ctest` line; while working, add `-R '<name>'` to it):
 
 ```bash
 clang-format --dry-run --Werror $(git ls-files '*.cpp' '*.hpp') \
@@ -413,7 +413,7 @@ Quick swaps:
 
 - [ ] `clang-format --dry-run --Werror` clean; `run-clang-tidy -p build` clean with `WarningsAsErrors` set
 - [ ] Builds warning-free with `-Wall -Wextra -Wpedantic -Wconversion -Werror` (or `/W4 /WX`) on every supported compiler
-- [ ] `ctest --output-on-failure` green, and green again in an ASan+UBSan build with `-fno-sanitize-recover=all`
+- [ ] `ctest -R '<changed tests>' --output-on-failure` green, and green again in an ASan+UBSan build with `-fno-sanitize-recover=all` (bare `ctest` is the stage gate's)
 - [ ] No owning raw pointers or bare `new`/`delete`; each class follows the rule of zero or declares all five special members
 - [ ] Views (`string_view`, `span`, ranges) never outlive their source; no view stored in a member without a documented owner
 - [ ] Moves are `noexcept`; no `std::move` on `const` objects or on returned locals

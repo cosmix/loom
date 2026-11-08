@@ -13,7 +13,7 @@
 | [patterns.md](patterns.md) | Architectural patterns discovered in the codebase | 186 |
 | [conventions.md](conventions.md) | Coding conventions discovered in the codebase | 250 |
 | [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 250 |
-| [stack.md](stack.md) | Dependencies, frameworks, and tooling used in the project | 115 |
+| [stack.md](stack.md) | Dependencies, frameworks, and tooling used in the project | 116 |
 | [concerns.md](concerns.md) | Technical debt, warnings, and issues to address | 250 |
 
 ## Tier 2 — Topics
@@ -80,7 +80,7 @@
 | [token-accounting-and-receipts](architecture/token-accounting-and-receipts.md) | Ledger | 358 |
 | [token-flow-sources](architecture/token-flow-sources.md) |  | 75 |
 | [usage-evidence](architecture/usage-evidence.md) |  | 127 |
-| [verification-v2-gates](architecture/verification-v2-gates.md) | Gates | 261 |
+| [verification-v2-gates](architecture/verification-v2-gates.md) | Gates | 258 |
 | [web-dashboard](architecture/web-dashboard.md) | Web | 133 |
 | [web-terminal](architecture/web-terminal.md) |  | 181 |
 
@@ -141,7 +141,7 @@
 | [completion-runner-blocks](mistakes/completion-runner-blocks.md) |  | 216 |
 | [completion-runtime](mistakes/completion-runtime.md) | Churn | 74 |
 | [computed-values-and-hidden-couplings](mistakes/computed-values-and-hidden-couplings.md) | Values | 284 |
-| [concurrency-and-locking](mistakes/concurrency-and-locking.md) |  | 157 |
+| [concurrency-and-locking](mistakes/concurrency-and-locking.md) |  | 207 |
 | [contract-autonomy-delivery](mistakes/contract-autonomy-delivery.md) | Bypass | 109 |
 | [daemon-fork-after-threads](mistakes/daemon-fork-after-threads.md) | Fork | 38 |
 | [daemon-singleton](mistakes/daemon-singleton.md) |  | 141 |
@@ -207,7 +207,7 @@
 | [verification-harness](mistakes/verification-harness.md) |  | 399 |
 | [verification-v2-delivery](mistakes/verification-v2-delivery.md) | v2 | 396 |
 | [visibility-and-reachability](mistakes/visibility-and-reachability.md) |  | 141 |
-| [web-dashboard](mistakes/web-dashboard.md) | UI | 144 |
+| [web-dashboard](mistakes/web-dashboard.md) | UI | 154 |
 | [web-dashboard-server](mistakes/web-dashboard-server.md) | Races | 278 |
 | [web-terminal](mistakes/web-terminal.md) | TTY | 135 |
 | [writer-reader-address](mistakes/writer-reader-address.md) | Keys | 115 |
@@ -218,7 +218,7 @@
 | --- | --- | --- |
 | [agent-rule-bending-hardening](concerns/agent-rule-bending-hardening.md) |  | 375 |
 | [automatic-knowledge-source-graph-followups](concerns/automatic-knowledge-source-graph-followups.md) | Gaps | 71 |
-| [code-quality-and-hook-debt](concerns/code-quality-and-hook-debt.md) | Debt | 256 |
+| [code-quality-and-hook-debt](concerns/code-quality-and-hook-debt.md) | Debt | 250 |
 | [codex-heartbeat-starvation](concerns/codex-heartbeat-starvation.md) |  | 22 |
 | [contract-autonomy-followups](concerns/contract-autonomy-followups.md) |  | 74 |
 | [handoff-followups](concerns/handoff-followups.md) |  | 57 |

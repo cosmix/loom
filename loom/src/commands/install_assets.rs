@@ -40,6 +40,9 @@ fn print_summary(report: &InstallReport) {
     };
     println!("  {} agents: {}", "✓".green(), report.agents);
     println!("  {} commands: {}", "✓".green(), report.commands);
+    for path in &report.pruned_agents {
+        println!("  {} removed stale agent: {}", "✓".green(), path.display());
+    }
     println!("  {} Claude hooks updated: {}", "✓".green(), report.hooks);
     println!(
         "  {} Codex hooks updated: {} (review changes with /hooks)",

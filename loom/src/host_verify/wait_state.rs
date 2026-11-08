@@ -13,10 +13,10 @@ use serde::{Deserialize, Serialize};
 
 use super::store::{load_current, load_job_record};
 use super::wait::WaitSite;
-use super::{JobRecord, JobState};
+use super::{JobKind, JobRecord, JobState};
 use crate::fs::inbox::{read_ledger, LedgerOutcome};
 
-/// The request this session last relayed for a kind of job.
+/// The request this session last relayed for a kind of job and, for a check, one selection.
 #[derive(Debug, Serialize, Deserialize)]
 pub(super) struct RequestState {
     pub(super) request_id: String,
@@ -29,8 +29,17 @@ pub(super) struct RequestState {
 
 pub(super) fn state_path(site: &WaitSite<'_>) -> Result<PathBuf> {
     crate::validation::validate_id(site.stage_id)?;
-    let name = format!("{}-{}.json", site.stage_id, site.kind.name());
+    let name = match site.kind {
+        JobKind::Check => format!("{}-check-{}.json", site.stage_id, selection_key(site)),
+        kind => format!("{}-{}.json", site.stage_id, kind.name()),
+    };
     Ok(site.scratch_dir.join("host-verify").join(name))
+}
+
+/// Bounded, dot-free identity of one selection and cache flag.
+fn selection_key(site: &WaitSite<'_>) -> String {
+    let text = format!("{:?}|{}", site.criteria, site.no_cache);
+    crate::relay::sha256_hex(text.as_bytes())[..16].to_string()
 }
 
 pub(super) fn read_state(path: &Path) -> Option<RequestState> {
@@ -49,11 +58,9 @@ pub(super) fn write_state(path: &Path, state: &RequestState) -> Result<()> {
     Ok(())
 }
 
-/// Delete the state only while it still holds `request_id`: every call of one
-/// session for a stage and kind shares the file, and a call whose tree,
-/// no-cache flag or criteria differ (a `--criterion` check beside a full one,
-/// a rerun after an edit) replaces the request, so one waiter's end must not
-/// discard a newer request another wrote.
+/// Delete only while the file still holds `request_id`. Calls of one session
+/// for a stage and check selection share the file. A changed tree replaces
+/// the request, so one waiter's end must preserve another waiter's newer request.
 pub(super) fn remove_state_if_owned(path: &Path, request_id: &str) -> Result<()> {
     remove_state_if_owned_inner(path, request_id, || {})
 }

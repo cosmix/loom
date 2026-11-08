@@ -65,6 +65,10 @@ pub(super) fn settle_submission(submission: anyhow::Result<Submission>) -> Settl
             "host job {} queued; {} cancelled",
             queued.id, cancelled.id
         ))),
+        Ok(Submission::Waiting { pending, behind }) => Settle::Applied(Some(format!(
+            "host job {} queued behind {behind}",
+            pending.id
+        ))),
         Ok(Submission::Refused(reason)) => Settle::Refused(reason),
         Err(error) => Settle::Refused(format!("could not be applied: {error:#}")),
     }
@@ -244,6 +248,38 @@ mod tests {
         let settled = settle(&fx, &record, AgentRole::Subagent, request(&head), true);
         assert!(matches!(settled, Settle::Applied(Some(_))), "{settled:?}");
         assert!(queued_check(&fx));
+    }
+
+    #[test]
+    fn a_check_waiting_behind_another_settles_with_the_waiting_job_id() {
+        use crate::host_verify::submit::{submit, Submission, SubmitRequest};
+        let tmp = tempfile::tempdir().unwrap();
+        let request = SubmitRequest {
+            stage_id: "s1",
+            session_id: "session-a",
+            request_id: "r1",
+            kind: crate::host_verify::JobKind::Check,
+            head: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            tree_digest: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            no_cache: false,
+            criteria: Some(vec![1]),
+        };
+        submit(tmp.path(), &request, Utc::now()).unwrap();
+        let request = SubmitRequest {
+            request_id: "r2",
+            criteria: Some(vec![2]),
+            ..request
+        };
+        let waiting = submit(tmp.path(), &request, Utc::now()).unwrap();
+        let expected = match &waiting {
+            Submission::Waiting { pending, behind } => {
+                format!("host job {} queued behind {behind}", pending.id)
+            }
+            other => panic!("expected a waiting job, got {other:?}"),
+        };
+        assert!(
+            matches!(super::settle_submission(Ok(waiting)), Settle::Applied(Some(note)) if note == expected)
+        );
     }
 
     #[test]

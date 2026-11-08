@@ -100,21 +100,32 @@ pub(super) fn reset_and_cancel(
     runtime: &impl ResetRuntime,
 ) -> Result<()> {
     let _admission = crate::fs::stage_admission::lock(work_dir, stage_id)?;
-    let job_id = crate::host_verify::store::load_current(work_dir, stage_id)?
-        .filter(|record| !record.state.is_terminal())
-        .map(|record| record.id);
+    let job_ids = observed_host_jobs(work_dir, stage_id)?;
     reset_under_admission(work_dir, stage_id, hard, kill_session, runtime)?;
-    let cancelled = match job_id {
-        Some(id) => {
+    for id in job_ids {
+        if let Err(error) =
             crate::host_verify::submit::cancel_if_id(work_dir, stage_id, &id, "stage reset")
-                .map(|_| ())
+        {
+            eprintln!("Warning: could not cancel the host job of stage '{stage_id}': {error:#}");
         }
-        None => Ok(()),
-    };
-    if let Err(error) = cancelled {
-        eprintln!("Warning: could not cancel the host job of stage '{stage_id}': {error:#}");
     }
     Ok(())
+}
+
+/// The runner may promote the waiting job while reset retires agents. Observe
+/// both slots together, then cancel by identity so later replacements survive.
+fn observed_host_jobs(work_dir: &Path, stage_id: &str) -> Result<Vec<String>> {
+    use crate::host_verify::store;
+    let _lock = store::lock_stage(work_dir, stage_id)?;
+    Ok([
+        store::load_current(work_dir, stage_id)?,
+        store::load_pending(work_dir, stage_id)?,
+    ]
+    .into_iter()
+    .flatten()
+    .filter(|record| !record.state.is_terminal())
+    .map(|record| record.id)
+    .collect())
 }
 
 pub(super) fn reset_under_admission(

@@ -55,6 +55,7 @@ fn assert_sourced_libraries_not_registered(hooks: &Value) {
         "_progress-classification.sh",
         "_post-tool-heartbeat.sh",
         "_subagent-preamble.txt",
+        "_verify_matchers.sh",
     ] {
         let registered_globally = hooks
             .as_object()

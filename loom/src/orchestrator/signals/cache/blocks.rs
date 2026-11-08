@@ -34,7 +34,9 @@ pub(super) fn append_path_boundaries(content: &mut String) {
 /// piece of subagent doctrine the prefix still spells out: `spawn-guard.sh`
 /// prepends the full preamble (`loom-hooks/_subagent-preamble.txt`) to typed
 /// spawns only, so an untyped spawn gets BLOCK-A from the orchestrator's paste,
-/// and a paraphrase would drift from the hook that enforces it.
+/// and a paraphrase would drift from the hook that enforces it. The standard
+/// prefix only: the integration-verify prefix carries `INTEGRATION_VERIFY_OVERRIDE`
+/// instead (`cache.rs`).
 pub(super) fn append_no_verify_block(content: &mut String) {
     content.push_str(
         "The spawn guard prepends `loom-hooks/_subagent-preamble.txt` to typed spawns. Paste \
@@ -43,10 +45,10 @@ pub(super) fn append_no_verify_block(content: &mut String) {
     content.push_str("VERIFICATION IS THE MAIN AGENT'S JOB - NOT YOURS:\n");
     content.push_str("- Compile the files YOU wrote as often as you need (`cargo check`,\n");
     content.push_str("  `cargo build`, `tsc --noEmit`, `bun run build`) and format them with\n");
-    content.push_str("  `rustfmt --edition 2021 <files>`. No full test suite, no linter, no\n");
-    content.push_str("  `cargo fmt`, and never a repeated or looping check.\n");
-    content.push_str("- AT MOST ONE narrowly-scoped check over the files YOU wrote (e.g.\n");
-    content.push_str("  `cargo test <your_module>::`), run ONCE. Skip it if you are unsure.\n");
+    content.push_str("  `rustfmt --edition 2021 <files>`. No linter and no `cargo fmt`.\n");
+    content.push_str("- Run the tests for the code YOU wrote, and its module, when you are\n");
+    content.push_str("  confident your code is ready or your fix is correct. Never the whole\n");
+    content.push_str("  test suite: the stage's gate runs it.\n");
     content.push_str("- Report instead: files changed, assumptions made, anything unresolved.\n");
     content.push_str("  The stage's gate compiles, tests, and lints; the MAIN AGENT fixes.\n\n");
 }
@@ -70,7 +72,7 @@ pub(super) fn append_subagent_ceiling_block(content: &mut String) {
 
 /// Where a standard stage's gate runs, stated as the opening line of its
 /// completion rules.
-const ORCHESTRATOR_GATE: &str = "**The gate is `loom check`**: once every implementer has returned, run the formatter, then `loom check <stage-id>` once plus the steps this stage lists outside acceptance, beside the final review. A fix round runs one `loom check <stage-id> --criterion <n> ...` with every failed criterion plus the lint and format criteria. Never re-run what the check covers.\n\n";
+const ORCHESTRATOR_GATE: &str = "**The gate is `loom check`**: after all implementers return, format and run `loom check <stage-id>` beside the final review and steps outside acceptance. Fixes run `loom check <stage-id> --criterion <n> ...` for all failed criteria, lint and format. The full suite runs only through `loom check`, never a bare runner; unchanged trees hit the pass cache on repeated checks.\n\n";
 
 /// Open a STANDARD stage's `**Completion:**` list with `ORCHESTRATOR_GATE`. The
 /// integration-verify prefix opens its list without it: that stage keeps its
@@ -113,7 +115,7 @@ pub(super) fn append_review_dimension_details(content: &mut String) {
     content.push_str("**Review Dimension Details** — spawn these as PARALLEL subagents; `loom-code-reviewer` is READ-ONLY, so hand its findings to an engineer to fix:\n\n");
     content.push_str(&format!("1. **Security** — invoke {}: OWASP Top 10, hardcoded secrets, dependency CVEs, boundary sanitization, error-message leakage.\n", crate::skills::skill_invocation("loom-security-audit")));
     content.push_str("2. **Architecture** — module coupling, swallowed errors, over/under-abstraction, naming consistency, dead code and unreachable paths.\n");
-    content.push_str("3. **Build/test/sandbox** — inspect the `loom check` summaries and log pointers supplied by the orchestrator, including ALL stderr and warnings even when tests pass; any \"blocked\", \"denied\", \"connection refused\" or \"failed to download\" is a BLOCKER, not a workaround. Exit code 0 does NOT mean success.\n");
+    content.push_str("3. **Build/test/sandbox** — spawn this one as `loom-software-engineer`, since `loom-code-reviewer` has no Bash. It runs `loom check integration-verify` (add `--criterion <n>` for the criteria it needs; never a bare test runner in the shell) and inspects the summaries and log pointers, including ALL stderr and warnings even when tests pass; any \"blocked\", \"denied\", \"connection refused\" or \"failed to download\" is a BLOCKER, not a workaround. Exit code 0 does NOT mean success.\n");
     content.push_str("4. **Functional** — RUN the feature end-to-end on realistic inputs; confirm the output is correct and the feature is registered, mounted, and callable.\n");
     content.push_str("5. **Performance** — hot paths, unbounded loops or reads, N+1 queries, repeated work per request, synchronous I/O on a latency path, unbounded memory or lock hold time; reason from the plan's stated load or deployment evidence and name a measurement or a bounded-cost argument. Your reviewer brief lists the plan-wide change: review it against the plan's stage briefs, not against your own expectation.\n\n");
 }

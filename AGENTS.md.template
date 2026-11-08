@@ -51,9 +51,9 @@ parallel stages. Stay inside the worktree.
 Never run `git` during a loom stage: no add, commit, checkout, stash, restore, or status. The
 orchestrator owns version-control operations.
 
-Do not perform verification for a loom stage. This includes full builds, test suites, linters,
-formatters, and type-checkers. Never run a repeated or looping check. At most, run one
-narrowly-scoped check over the files you changed, exactly once, and skip it when unsure. The
+Do not verify the whole tree for a loom stage. This includes full builds, whole test suites,
+linters, formatters, and type-checkers. Run the tests for the code you wrote and its module when
+you are confident it is ready, and skip a test the sandbox cannot run, saying so in your report. The
 orchestrator performs integration verification.
 
 A need only a person can meet, or a check you believe is wrong, goes in your final report; the

@@ -55,6 +55,19 @@ fn gate_block_and_orchestration_skill_state_the_check_flow() {
 }
 
 #[test]
+fn gate_block_keeps_the_full_suite_behind_loom_check() {
+    let prefix = generate_stable_prefix();
+    assert!(
+        prefix.contains("The full suite runs only through `loom check`"),
+        "the standard prefix must send the full suite through `loom check`"
+    );
+    assert!(
+        !prefix.contains("Never re-run what the check covers"),
+        "the retired re-run ban must not return: a repeated check is cheap, not refused"
+    );
+}
+
+#[test]
 fn code_reviewer_judges_criteria_intent() {
     assert!(
         CODE_REVIEWER.contains("acceptance criterion") && CODE_REVIEWER.contains("intent"),

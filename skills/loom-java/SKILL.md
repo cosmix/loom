@@ -43,7 +43,7 @@ Use the wrapper the repository ships (`./gradlew`, `./mvnw`); it pins the build 
 | --- | --- | --- |
 | Full gate | `./gradlew check` | `./mvnw -q verify` |
 | Compile main and tests | `./gradlew testClasses` | `./mvnw -q test-compile` |
-| Unit tests | `./gradlew test` | `./mvnw -q test` |
+| Unit tests, whole suite (the stage gate's) | `./gradlew test` | `./mvnw -q test` |
 | One test | `./gradlew test --tests 'com.acme.FooTest.bar'` | `./mvnw test -Dtest='FooTest#bar'` |
 | Dependency tree | `./gradlew dependencies --configuration runtimeClasspath` | `./mvnw dependency:tree` |
 | Why is X on the classpath | `./gradlew dependencyInsight --dependency jackson-databind` | `./mvnw dependency:tree -Dincludes=com.fasterxml.jackson.core` |
@@ -376,7 +376,7 @@ Quick swaps: field `@Autowired` → constructor injection with `final` fields; `
 
 **Before marking Java work done:**
 
-- [ ] `./gradlew check` or `./mvnw -q verify` passes, with `-Xlint:all -Werror` and the project's static analysis
+- [ ] `./gradlew check` or `./mvnw -q verify` passes, with `-Xlint:all -Werror` and the project's static analysis (the stage gate runs it; while working, run the touched tests and `testClasses`)
 - [ ] Formatter applied (`spotlessApply` or the project equivalent)
 - [ ] New behaviour has tests; the test report shows a non-zero count for the new classes
 - [ ] No `==` on boxed numbers or strings; `BigDecimal` compared with `compareTo`

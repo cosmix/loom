@@ -155,3 +155,53 @@ match.
 **Prevention:** Inspect both function and file budgets for touched ledgered units; preserve their measured limits without increasing the ledger.
 
 **Fix:** Keep the adjacent normalization and relay setup together by removing their separating blank line; re-run the maintainability gate.
+
+## Use operator verification outside a Loom stage
+
+**What happened:** An operator task was forced through an invented isolated loom check stage, adding snapshot omissions and shared-build identity failures that delayed commits.
+
+**Why:** Stage-specific verification doctrine was applied to a main-checkout task even after no stage context was established.
+
+**Prevention:** Honor the session boundary. Outside an orchestrated stage, run appropriate native checks directly when the operator authorizes them; do not construct a stage merely to run tests.
+
+**Fix:** The operator clarified that loom check is unnecessary here. Finish native verification in the main checkout, then commit the remaining implementation.
+
+## Knowledge Merge Restored Stale Verification Guidance
+
+**What happened:** a knowledge merge restored the old one-check restriction and said integration-verify reviewers run only targeted checks; it also restored resolved guard size and scanner-location concerns.
+
+**Why:** conflict resolution retained stale wording over the current verification doctrine.
+
+**Prevention:** recheck merged knowledge against the current doctrine before staging the integrated result.
+
+**Fix:** the current-state sections describe unrestricted targeted runs and integration-verify full checks through `loom check integration-verify`, and the extracted guard matchers and remaining hook debt.
+
+## Freeze checkout identity during build-identity tests
+
+**What happened:** Native library verification passed 12,795 tests but failed its embedded-commit check after another session moved the main branch during the run.
+
+**Why:** The compiled revision and live HEAD describe different instants in a shared checkout; a shared Cargo target can also overwrite local-package artifacts between independent checkouts.
+
+**Prevention:** Use a stable checkout and isolated local-package build artifacts for identity-sensitive tests when other sessions commit concurrently. Reuse passing test evidence and run failed or previously unrun targets.
+
+**Fix:** Verify the failed identity test and remaining integration, binary and documentation targets in an immutable copy of the final source.
+
+## Fit guidance within existing test budgets
+
+**What happened:** Four byte-budget thresholds and the 511-line `cache.rs` maintainability baseline were raised to fit expanded verification guidance. The operator then required that no tests be relaxed to pass.
+
+**Why:** Preserving a brief’s expanded wording was prioritized over the existing budget contracts.
+
+**Prevention:** Preserve test thresholds and tighten production guidance while keeping its required meaning and pinned cross-surface rules.
+
+**Fix:** Restore the original four thresholds and 511-line baseline, and shorten the template, orchestration guidance and gate text to fit them; audit all other test changes for weakened coverage.
+
+## Reconcile Documentation Against the Final Integrated Behavior
+
+**What happened:** the final implementation retained the original doctrine size budgets while later integration changed verification and installation behavior.
+
+**Why:** task briefs and earlier draft guidance could describe an intermediate implementation after the final code changed.
+
+**Prevention:** audit operator and contributor documentation against the integrated tree and confirmed size limits before staging.
+
+**Fix:** update current-state knowledge and task notes to reflect the final behavior, preserving unrelated merged documentation.

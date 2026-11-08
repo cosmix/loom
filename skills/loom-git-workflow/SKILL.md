@@ -100,12 +100,12 @@ git diff src/api.rs                # see both sides in context (<<<<<<< ======= 
 git checkout --ours   path         # keep current-branch version wholesale
 git checkout --theirs path         # take incoming version wholesale
 git add src/api.rs                 # mark resolved
-cargo test                         # ALWAYS re-test: a clean textual merge can be a semantic conflict
+cargo test <module>::              # ALWAYS re-test the resolved files' module: a clean textual merge can be a semantic conflict
 git merge --continue
 git merge --abort                  # bail out if it's the wrong approach
 ```
 
-- ⚠ **A conflict-free merge is not a correct merge.** Two branches editing different lines can still break each other's assumptions. Run tests after every resolution.
+- ⚠ **A conflict-free merge is not a correct merge.** Two branches editing different lines can still break each other's assumptions. Run the tests for the resolved files' module after every resolution; the whole suite is the stage gate's.
 - Document non-obvious resolutions in the merge commit body.
 - ⚠ `--ours`/`--theirs` mean *opposite things* under `rebase` vs `merge` (during rebase, "ours" is the branch you're rebasing *onto*). Check which operation you're in.
 

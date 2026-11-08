@@ -159,7 +159,6 @@ fn integration_verify_prefix_retains_required_quality_and_isolation_guards() {
         "warnings even when tests pass",
         "is a BLOCKER, not a workaround",
         "gate is green AGAIN after those fixes",
-        "VERIFICATION IS THE MAIN AGENT'S JOB - NOT YOURS",
         "CONTEXT CEILING - HOOK-REPORTED ONLY",
         "SUBAGENT CEILING REACHED",
         "Build/test/sandbox",
@@ -187,6 +186,7 @@ fn integration_verify_prefix_retains_required_review_and_doctrine_guards() {
         "spawn these as PARALLEL subagents",
         "OWASP Top 10",
         "**Performance**",
+        "**Build/test/sandbox** — spawn this one as `loom-software-engineer`",
         "Mini Adversarial Code Review",
         "search the WHOLE codebase",
     ] {
@@ -222,11 +222,12 @@ fn integration_verify_prefix_assigns_one_canonical_gate_owner() {
     let prefix = generate_integration_verify_stable_prefix();
 
     for needle in [
-        "runs `loom check integration-verify` ONCE",
+        "The IV orchestrator runs `loom check integration-verify`; it carries the COMPLETE suite",
+        "every full run goes through `loom check integration-verify [--criterion <n>]`, never a bare test runner",
         "immutable tree, environment, and criterion contract",
         "Give reviewers the check summaries and evidence pointers",
-        "Reviewers inspect independently and run only targeted",
-        "targeted checks are additional evidence, never a substitute",
+        "Reviewers inspect independently and run `loom check integration-verify` themselves",
+        "those are additional evidence, never a substitute",
         "command, real exit, criterion verdict, input/contract identity, elapsed time",
         "evidence pointer when available",
         "A missing receipt means run the check",
@@ -241,21 +242,26 @@ fn integration_verify_prefix_assigns_one_canonical_gate_owner() {
     }
     assert!(prefix.contains("cargo clippy -- -D warnings"));
     assert!(
+        !prefix.contains(concat!("AT MOST ONE ", "narrowly")),
+        "IV carries no standard-stage test rule"
+    );
+    assert!(
         !prefix.contains("tell every build/test/sandbox or functional verifier you spawn"),
         "the retired blanket verifier assignment must not return"
     );
 }
 
-/// The subagent preamble reaches every typed spawn, integration-verify
-/// reviewers included: it must send them to targeted checks and leave the one
-/// `loom check integration-verify` run to the orchestrator, as the prefix does.
+/// The subagent preamble reaches every typed spawn, integration-verify reviewers
+/// included: it exempts them from the test rule and routes their full runs
+/// through `loom check integration-verify`.
 #[test]
-fn subagent_preamble_limits_iv_reviewers_to_targeted_checks() {
+fn subagent_preamble_routes_iv_full_runs_through_loom_check() {
     use crate::fs::permissions::constants::HOOK_SUBAGENT_PREAMBLE;
 
     for needle in [
-        "- EXCEPTION - integration-verify stages: the orchestrator runs loom check",
-        "reviewers run only targeted checks, never",
+        "- EXCEPTION - integration-verify stages are exempt from the test rule",
+        "through `loom check integration-verify [--criterion <n>]`, never as a",
+        "- A subagent never runs the stage's gate, except in integration-verify",
     ] {
         assert!(
             HOOK_SUBAGENT_PREAMBLE.contains(needle),
@@ -264,11 +270,15 @@ fn subagent_preamble_limits_iv_reviewers_to_targeted_checks() {
     }
     assert!(
         !HOOK_SUBAGENT_PREAMBLE.contains("if you were spawned to review or"),
-        "the preamble must not tell integration-verify reviewers to run the full suite"
+        "the preamble must not restore the retired blanket verifier assignment"
+    );
+    assert!(
+        !HOOK_SUBAGENT_PREAMBLE.contains(concat!("reviewers run only ", "targeted checks")),
+        "the preamble must not limit integration-verify reviewers to targeted checks"
     );
     assert!(
         generate_integration_verify_stable_prefix().contains("loom check integration-verify"),
-        "the integration-verify prefix must name the orchestrator's one gate run"
+        "the integration-verify prefix must route full suite runs through loom check"
     );
 }
 

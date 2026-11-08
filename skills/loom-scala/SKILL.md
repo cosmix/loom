@@ -44,7 +44,7 @@ sbt is the default build. Keep one sbt shell open (or `sbt --client`) for iterat
 | --- | --- |
 | Full gate | `sbt scalafmtCheckAll scalafmtSbtCheck "scalafixAll --check" test` |
 | Compile main and tests | `sbt Test/compile` |
-| All tests | `sbt test` |
+| All tests (the stage gate's) | `sbt test` |
 | One suite | `sbt 'testOnly com.acme.FooSuite'` |
 | One ScalaTest test by substring | `sbt 'testOnly com.acme.FooSpec -- -z "rejects symlinks"'` |
 | Failed and changed tests only | `sbt testQuick` (`~testQuick` reruns on save) |
@@ -357,7 +357,7 @@ Quick swaps: `null` from Java → `Option(javaValue)`; `.head`/`.last` on a poss
 
 **Before marking Scala work done:**
 
-- [ ] `sbt scalafmtCheckAll "scalafixAll --check" test` passes, with warnings as errors (sbt-tpolecat or `-Werror`)
+- [ ] `sbt scalafmtCheckAll "scalafixAll --check" Test/compile` passes, with warnings as errors (sbt-tpolecat or `-Werror`), and `sbt 'testOnly <changed suites>'` is green (the `test` task is the stage gate's)
 - [ ] New behaviour has tests; the new suites appear in the run summary with a non-zero count
 - [ ] Every `match` over an ADT is exhaustive without guards hiding a variant; no type patterns on erased type arguments
 - [ ] No `.get`, `.head` or `asInstanceOf` on values that can be absent or of another type

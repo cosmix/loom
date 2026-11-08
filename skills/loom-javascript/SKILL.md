@@ -49,7 +49,7 @@ Use the package manager the repository's lockfile names. For new work prefer Bun
 | Type-check JSDoc | `bunx tsc --noEmit` |
 | Lint | `bunx eslint .` or `bunx biome check .` |
 | Format | `bunx biome format --write .` or `bunx prettier --write .` |
-| Test, whole suite | `bun test` / `bunx vitest run` / `node --test` |
+| Test, whole suite (the stage gate's) | `bun test` / `bunx vitest run` / `node --test`; the changed code: `bun test f.test.js -t 'name'` / `bunx vitest run f.test.js -t 'name'` / `node --test f.test.js` |
 | Audit dependencies | `bun audit` |
 
 - **Lockfile:** commit `bun.lock`. Install in CI with `bun install --frozen-lockfile`, which fails when `package.json` and the lockfile disagree.

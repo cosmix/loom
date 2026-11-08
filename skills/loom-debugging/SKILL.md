@@ -94,7 +94,7 @@ The first axis that, when copied from the working world to the broken one, flips
 
 Almost always an *environment or isolation* difference, not logic. Check in order:
 
-- **Test ordering / parallelism:** CI runs a different order or in parallel → shared-state leak. Repro locally: run the full suite (not just the one test), randomize order, and force the CI thread count (`cargo test -- --test-threads=N`, `pytest -p xdist -n N`, `jest --runInBand`).
+- **Test ordering / parallelism:** CI runs a different order or in parallel → shared-state leak. Repro locally: run the failing test's whole file or module (not just the one test), randomize order, and force the CI thread count (`cargo test <module>:: -- --test-threads=N`, `pytest <file> -p xdist -n N`, `jest <file> --runInBand`). In a loom stage the whole-suite run is the stage gate's.
 - **Ambient config leakage:** an env var / config file / global you have set locally but CI doesn't (or vice versa). Diff `env`. Your local DB has seed data CI lacks.
 - **Wall-clock / timezone / locale:** CI in UTC exposes tests that assume your local TZ; date formatting, `LANG`/`LC_*`, number/decimal separators.
 - **Filesystem:** case-sensitivity (macOS/Windows case-insensitive → Linux CI case-sensitive: `import Foo` vs `foo`), path separators, missing fixture files not committed, permissions, `/tmp` cleanup.
@@ -123,9 +123,9 @@ Flaky = non-deterministic pass/fail with no code change. Classify the cause, the
 set -o pipefail
 for i in $(seq 1 200); do cargo test flaky_name -- --nocapture 2>&1 | tee "/tmp/flaky-run-$i.log" || break; done
 
-cargo test -- --test-threads=1     # if this fixes it → shared-state/ordering isolation bug
+cargo test <module>:: -- --test-threads=1     # if this fixes it → shared-state/ordering isolation bug
 RUST_LOG=debug cargo test flaky    # expose timing/ordering
-pytest -p no:randomly / -p randomly --randomly-seed=N   # pin/vary order to bisect ordering deps
+pytest <file> -p no:randomly / -p randomly --randomly-seed=N   # pin/vary order to bisect ordering deps
 ```
 
 ## Heisenbugs — when observation changes the outcome
@@ -213,7 +213,7 @@ node --stack-trace-limit=100 ...        # deeper async traces
 
 # Rust
 RUST_BACKTRACE=full cargo run           # full trace; RUST_LOG=debug for logs
-cargo test -- --test-threads=1          # serialize to expose shared-state flakes
+cargo test <module>:: -- --test-threads=1          # serialize to expose shared-state flakes
 
 # Systems
 strace -f -e trace=file,network CMD     # syscalls (Linux) — find missing files, blocked I/O

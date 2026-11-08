@@ -41,9 +41,9 @@ pub struct CheckArgs {
 /// checks. The state directory resolves in the main repository and in a
 /// worktree (where it is a symlink); outside a loom workspace this bails.
 pub fn execute(stage_id: &str, suggest: bool, criteria: &[usize]) -> Result<()> {
+    let criteria = normalized_criteria(criteria);
     let work_dir = crate::commands::common::work_dir_path()?;
-
-    session_relay::run(stage_id, &work_dir, suggest, criteria)?;
+    session_relay::run(stage_id, &work_dir, suggest, &criteria)?;
     let stage = load_stage(stage_id, &work_dir)
         .with_context(|| format!("Failed to load stage '{stage_id}'"))?;
 
@@ -73,7 +73,7 @@ pub fn execute(stage_id: &str, suggest: bool, criteria: &[usize]) -> Result<()> 
 
     // 1. Run standard acceptance criteria first
     println!("{}", "Acceptance Criteria:".bold());
-    let only = selection(criteria);
+    let only = selection(&criteria);
     let acceptance_passed = run_selected_acceptance(
         &stage,
         stage_id,
@@ -265,4 +265,21 @@ mod tests {
         let err = ensure_passed(true, false).unwrap_err().to_string();
         assert!(err.contains("goal-backward"), "{err}");
     }
+}
+
+/// One sorted, deduplicated selection for the relay, wait state and local run.
+pub(crate) fn normalized_criteria(criteria: &[usize]) -> Vec<usize> {
+    criteria
+        .iter()
+        .copied()
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect()
+}
+
+#[test]
+fn criterion_selections_are_sorted_and_deduplicated() {
+    assert_eq!(normalized_criteria(&[2, 1]), [1, 2]);
+    assert_eq!(normalized_criteria(&[1, 2, 1]), [1, 2]);
+    assert!(normalized_criteria(&[]).is_empty());
 }

@@ -96,9 +96,9 @@ data.
 NEVER run git: not add, not commit, not checkout, not stash, not restore.
 NEVER run loom stage complete, loom stage block, or loom stage dispute-*. A need only a person can
 meet, or a check you believe is wrong, goes in your report; the orchestrator decides what to do.
-DO NOT VERIFY. No full build, no test suite, no linter, no formatter, no type-checker, and never
-a repeated or looping check. At most ONE narrowly-scoped check over the files you changed, run
-once; skip it if you are unsure. The orchestrator compiles, tests, lints, and fixes.
+DO NOT VERIFY THE WHOLE TREE. No full build, no whole test suite, no linter, no formatter, no
+type-checker. Run the tests for the code you wrote and its module when you are confident it is
+ready; skip a test the sandbox cannot run and say so. The orchestrator compiles, tests, lints, fixes.
 
 FINISH BY REPORTING: files changed, assumptions you made, anything you could not resolve.
 

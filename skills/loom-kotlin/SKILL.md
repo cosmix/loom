@@ -41,7 +41,7 @@ Gradle with the Kotlin DSL is the default build; the K2 compiler is the default 
 | --- | --- |
 | Full gate | `./gradlew check` (tests plus detekt/ktlint when their plugins are applied) |
 | Compile main and tests | `./gradlew testClasses` |
-| Unit tests | `./gradlew test` |
+| Unit tests, whole suite (the stage gate's) | `./gradlew test` |
 | One test | `./gradlew test --tests 'com.acme.FooTest.bar'` |
 | Static analysis | `./gradlew detekt` |
 | Format | `./gradlew ktlintFormat` (or `spotlessApply` with ktlint or ktfmt) |
@@ -395,7 +395,7 @@ Quick swaps: `if (x != null) x.foo() else null` → `x?.foo()`; `filter { }.firs
 
 **Before marking Kotlin work done:**
 
-- [ ] `./gradlew check` passes with `allWarningsAsErrors`; detekt and ktlint (or ktfmt) clean
+- [ ] `./gradlew check` passes with `allWarningsAsErrors`; detekt and ktlint (or ktfmt) clean (the stage gate runs `check`; while working, run the touched tests and `detekt`)
 - [ ] New behaviour has tests; the test report shows a non-zero count for the new classes
 - [ ] No `!!` on values that can be absent; Java platform types given explicit Kotlin types at the boundary
 - [ ] Public API exposes read-only collection types; no `var` in data classes used as keys

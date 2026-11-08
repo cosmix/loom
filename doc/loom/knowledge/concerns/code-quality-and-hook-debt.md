@@ -23,22 +23,17 @@ Remote releases deliver hooks through the embedded-assets binary. `install.sh::m
 
 ## No-Verify Doctrine Block Carries Only a Rust Example
 
-The doctrine block must stay byte-identical across the signal, the template, `loom-hooks/_subagent-preamble.txt`
-and the hook's refusal message, so it carries a single scoped-command example — a `cargo` one. A blocked Python
-or Go subagent is shown a Rust example. `loom-hooks/subagent-verify-guard.sh` is over the 400-line cap
-(606 lines). The fix is to append language-specific examples **after** the pinned block as
-explicitly hook-local guidance, the same way the `BLOCKED:` framing line already sits outside it.
+The shared no-verify doctrine is pinned across signals, `loom-hooks/_subagent-preamble.txt`, and the guard refusal. It carries one scoped-command example, using `cargo`; a blocked Python or Go subagent therefore sees a Rust example. Language-specific examples can be appended as hook-local guidance outside the pinned block.
 
 ## Subagent verification keeps a private shell scanner
 
-`subagent-verify-guard.sh` strips embedded content, normalizes separators and walks command-position tokens with quote tracking; its runner-specific matchers live in the same file. The private whitespace splitter is not a complete shell parser. Review quoted separators, wrappers, substitutions and scoped-runner options with differential adversarial fixtures before replacing it. The stage-type exemption greps the entire stage Markdown, so it should use frontmatter-only state. Shared token helpers alone do not establish shell equivalence.
+`subagent-verify-guard.sh` strips embedded content, normalizes separators and walks command-position tokens with quote tracking; its runner-specific matchers live in the sourced `_verify_matchers.sh`. The private whitespace splitter is not a complete shell parser. Review quoted separators, wrappers, substitutions and scoped-runner options with differential adversarial fixtures before replacing it. The stage-type exemption greps the entire stage Markdown, so it should use frontmatter-only state. Shared token helpers alone do not establish shell equivalence.
 
 ## Hook responsibility boundaries and file sizes
 
 Several shell hooks exceed the repository file-size limit. Refactor by responsibility while preserving shell sourcing order and hook registration.
 
 - `loom-hooks/credential-guard.sh` 599 lines
-- `loom-hooks/subagent-verify-guard.sh` 606 lines
 - `loom-hooks/commit-filter.sh` 463 lines
 - `loom-hooks/codex-forward.sh` 412 lines
 - `loom-hooks/prefer-modern-tools.sh` 402 lines
@@ -184,7 +179,7 @@ The route is closed in the runner and has its fixtures: `without_gitlink_recursi
 
 - `loom-hooks/loom-control-complete.sh` (PreToolUse) rejects any Bash command whose text contains a stage-complete-like phrase, such as a Python heredoc that mentions "complete" near "request" or "stage". Put the edit script in a scratch file with the Write tool, or use the Edit tool.
 - A subagent Bash command that names `src/commands/stage/complete_relay.rs` is refused as an unpinned `stage complete` call. Read such files with the Read tool.
-- `subagent-verify-guard.sh` lets a subagent compile (`cargo check`, `cargo build`, `cargo test --no-run`) but still refuses `cargo clippy`, `cargo fmt` and an unfiltered `cargo test`, even when the brief asks for them. Briefs name the compile commands and at most one scoped `cargo test` check as runnable.
+- `subagent-verify-guard.sh` lets a subagent compile (`cargo check`, `cargo build`, `cargo test --no-run`) but still refuses `cargo clippy`, `cargo fmt` and an unfiltered `cargo test`, even when the brief asks for them. Briefs may name targeted tests for the code and module without a run-count limit; full suites run through the stage gate.
 
 ## Guidance-and-Gate-Output Plan Follow-Ups
 
@@ -204,7 +199,6 @@ Reviewer suggestions and findings the plan left unimplemented, with no fix in th
 
 **Doctrine text**
 
-- **`INTEGRATION_VERIFY_OVERRIDE` (`signals/cache.rs`) says "Rule 5's complete-suite instruction"**, but template Rule 5 has no such text, and its heading "does NOT apply here" reads against `_subagent-preamble.txt` (reviewers run only targeted checks). Reword both together; `tests_doctrine_prefixes.rs` pins them.
 - **Review dimension 3 (`signals/cache/blocks.rs`) hands a reviewer "`loom check` output plus ALL stderr"** while the preamble forbids reviewers from running the gate; nothing tells the orchestrator to pass the check summary and the full-log paths to that reviewer.
 - **`ORCHESTRATOR_GATE` says "for each failed criterion"**, which reads as one run per criterion; the repeatable `--criterion <n>` survives only in `README.md` and the CLI help (`commands/verify.rs`). "One run with a repeated `--criterion <n>`" would be exact.
 - **The knowledge (bootstrap) stable prefix never carried BLOCK-F**, and template Rule 13 lacks "Filing ends this session" and "Commit before filing". Decide whether bootstrap sessions carry `STAGE_EXIT_RULES`.
@@ -233,7 +227,7 @@ A worker whose one narrow check is a lib filter never runs `tests/maintainabilit
 
 State after the hook-guards work; the guard behaviour itself is in [Hook System](../architecture/hook-system.md#what-each-changed-guard-decides).
 
-- **Two guards exceed the 400-line cap and need a split by responsibility.** `loom-hooks/subagent-verify-guard.sh` (606 lines: the token scanner against the per-runner `check_*` functions) and `loom-hooks/commit-filter.sh` (463 lines: attribution, subagent git, scratch exemption). `loom/tests/maintainability.rs` walks only Rust files, so no gate sees either.
+- **`commit-filter.sh` exceeds the 400-line cap.** Its 463 lines cover attribution, subagent git and the scratch exemption. `loom/tests/maintainability.rs` walks only Rust files, so it does not enforce the shell-hook cap.
 - **Blocks the ledger does not record.** `commit-guard.sh`, `credential-guard.sh`, `spawn-guard.sh`, `plans-path-guard.sh`, `stage-terminal-guard.sh`, `codex-forward-guard.sh` and `poll-guard.sh`'s `loom_hook_deny_or_warn` never call `loom_record_block`, so `loom hook blocks` undercounts them. Codex-lane hooks cannot write the ledger at all: their sandbox denies `<repo>/.loom` and `loom_record_block` returns early on `LOOM_CODEX_FORWARD`. Infrastructure exits are also unrecorded: `worktree-file-guard.sh:45` (policy-load and `pwd` failures) writes no line while `worktree-isolation.sh`'s `block_policy_load` records `policy-load`, an inconsistency with the rule that infrastructure exits stay out. A comparison with the transcript evidence needs a transcript re-mine, not the ledger. The ledger records `role: main` for an unknown verdict; recording `unknown` would keep the by-rule main/subagent counts exact. A subject can still carry Unicode bidi format characters (U+202A-202E, U+2066-2069), which `char::is_control` does not replace in `blocks.rs`.
 - **A `.git` gitfile in a scratch repository retargets plain git** just as in-worktree git shares refs. `loom_git_targets_scratch_only` reads repository state at hook time and rejects tokens naming a `.git` component, but a script or git hook the command runs can still reach elsewhere. The exemption is best-effort like the rest of `commit-filter.sh`; the capsule stays the write boundary. A redirected git segment (`git commit -qm x 2>&1 | tail -3`) never gets the exemption, so a subagent hits a block there; `LOOM_TOKEN_LITERAL_DOLLAR` is command-wide, so one single-quoted `$` (`-m 'cost $5'`) disables scratch expansion for the whole command. Both err toward blocking.
 - **Resolver and tokenizer limits (fail open or over-restrictive).**

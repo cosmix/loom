@@ -153,3 +153,55 @@ fn live_symlinked_command_asset_is_written_through() {
     let shipped = asset_content(crate::assets::CLAUDE_COMMANDS, "address.md");
     assert_eq!(fs::read_to_string(&target).unwrap(), shipped);
 }
+
+#[test]
+fn stale_loom_agents_are_pruned_and_other_agents_survive() {
+    let temp = TempDir::new().unwrap();
+    let paths = paths(&temp);
+    let agents = paths.claude_dir.join("agents");
+    fs::create_dir_all(&agents).unwrap();
+    let shipped = asset_content(crate::assets::CLAUDE_AGENTS, "loom-software-developer.md");
+    fs::write(agents.join("loom-foo.md"), "retired agent").unwrap();
+    fs::write(agents.join("loom-software-developer.md"), shipped).unwrap();
+    fs::write(agents.join("my-agent.md"), "operator agent").unwrap();
+    fs::create_dir(agents.join("loom-directory.md")).unwrap();
+    let target = temp.path().join("dotfiles/loom-linked.md");
+    fs::create_dir_all(target.parent().unwrap()).unwrap();
+    fs::write(&target, "kept in dotfiles").unwrap();
+    std::os::unix::fs::symlink(&target, agents.join("loom-linked.md")).unwrap();
+    std::os::unix::fs::symlink(agents.join("missing"), agents.join("loom-dangling.md")).unwrap();
+
+    let report = install_all(&paths, Some(SkillLayout::Core), false).unwrap();
+
+    assert_eq!(
+        report.pruned_agents,
+        vec![
+            agents.join("loom-dangling.md"),
+            agents.join("loom-foo.md"),
+            agents.join("loom-linked.md")
+        ]
+    );
+    assert!(!agents.join("loom-foo.md").exists());
+    assert!(agents.join("loom-linked.md").symlink_metadata().is_err());
+    assert!(agents.join("loom-dangling.md").symlink_metadata().is_err());
+    assert!(agents.join("loom-directory.md").is_dir());
+    assert_eq!(fs::read_to_string(&target).unwrap(), "kept in dotfiles");
+    assert_eq!(
+        fs::read_to_string(agents.join("loom-software-developer.md")).unwrap(),
+        shipped
+    );
+    assert_eq!(
+        fs::read_to_string(agents.join("my-agent.md")).unwrap(),
+        "operator agent"
+    );
+    assert_eq!(backup_count(&agents, "loom-foo.md"), 1);
+    assert_eq!(
+        fs::read_to_string(&report.backups[0]).unwrap(),
+        "retired agent"
+    );
+
+    let before = snapshot(temp.path());
+    let again = install_all(&paths, Some(SkillLayout::Core), false).unwrap();
+    assert!(again.pruned_agents.is_empty());
+    assert_eq!(snapshot(temp.path()), before);
+}

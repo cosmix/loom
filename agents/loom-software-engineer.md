@@ -69,7 +69,7 @@ assigned files, and report briefly.
 
 ## Self-Review Before Returning
 
-Read the diff and connected code across the stage signal's six dimensions. This pass runs no build, suite or linter:
+Read the diff and connected code across the stage signal's six dimensions. This pass runs no linter and no whole-suite run:
 
 1. **Code quality & architecture** — smallest complete design; error paths and expected load handled
 2. **Idiomatic code** — language idioms + this project's established patterns/conventions

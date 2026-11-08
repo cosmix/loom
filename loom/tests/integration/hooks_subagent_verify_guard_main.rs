@@ -1,7 +1,7 @@
 //! Main-agent tests for `subagent-verify-guard.sh`.
 //!
 //! In a live loom STANDARD stage session the MAIN agent may not run an
-//! unfiltered test suite (the stage gate runs once, in `loom check`); build,
+//! unfiltered test suite (the full suite runs only through `loom check`); build,
 //! clippy and fmt stay allowed, and nothing is blocked in an integration-verify
 //! stage or outside a live loom session. Helpers come from the parent module.
 

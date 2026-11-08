@@ -16,10 +16,7 @@ none of them.
 
 **Completion order** (`verify/completion/mod.rs::run_checks`): goal-backward checks, then `verify/completion/complete_verification_v2.rs::run_v2` for v2 stages, then `after_stage`, unwired and duplicate checks, and the aggregated integration check. The command module `commands/stage/complete_verification.rs` prints operator guidance. The host child calls the same service; daemon gates defer integrity and review checks until the daemon applies the result. The preserved test file `commands/stage/complete_verification_v2_tests.rs` is loaded through its command wrapper and tests the shared v2 service.
 
-**No gate has a verifier subagent.** Integration-verify: the orchestrator runs `loom check integration-verify`
-once, and that check carries the complete suite; reviewers run only targeted checks (`INTEGRATION_VERIFY_OVERRIDE`,
-`orchestrator/signals/cache.rs::INTEGRATION_VERIFY_OVERRIDE`). Its acceptance criteria are the full gate, and `loom stage complete` runs
-every one of them again. Beyond that check, the orchestrator runs only what completion does not: functional
+**No gate has a verifier subagent.** Integration-verify: the orchestrator and reviewers may run the full suite through `loom check integration-verify [--criterion <n>]` (`orchestrator/signals/cache.rs::INTEGRATION_VERIFY_OVERRIDE`). Concurrent matching requests join the same host job; matching completed passes use the cache, and callers wait for the result. Its acceptance criteria are the full gate, and `loom stage complete` can reuse valid cached passes. Beyond that check, the orchestrator runs only what completion does not: functional
 checks, markdownlint, flake-check, Cargo.lock and ledger diffs, and clippy, fmt and maintainability checks first.
 Standard stage: the orchestrator runs `loom check <stage-id>` once (`ORCHESTRATOR_GATE`,
 `orchestrator/signals/cache/blocks.rs::ORCHESTRATOR_GATE`), a fix round runs `loom check <stage-id> --criterion <n>`, and the

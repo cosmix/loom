@@ -116,7 +116,8 @@ fn loom_permission_constants_never_grant_a_handoff_edit_rule() {
 ///     per-session hook) -- whichever kind this hook is. A sourced LIBRARY
 ///     (`_common.sh`, `_lifecycle.sh`, `_codex_forward.sh`, `_read_discipline.sh`,
 ///     `_read_ledger.sh`, `_progress-classification.sh`,
-///     `_post-tool-heartbeat.sh`) is never invoked directly and needs no third site.
+///     `_post-tool-heartbeat.sh`, `_verify_matchers.sh`) is never invoked directly
+///     and needs no third site.
 ///
 /// `loom_hooks_config_only_names_embedded_hooks` pins site 3's global half
 /// against sites 1-2; `hooks_tests.rs::test_hook_event_scripts_are_all_embedded`

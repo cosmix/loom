@@ -42,7 +42,7 @@ Preserve the repository's version manager and lockfile. The Ruby version lives i
 | Add a dev/test dependency | `bundle add rspec --group "development, test"` |
 | Install from the lock | `bundle install`; set `BUNDLE_FROZEN=true` in CI so drift fails the build |
 | Update one gem | `bundle update --conservative faraday` (shared dependencies stay pinned) |
-| Run inside the bundle | `bundle exec rspec`, or the binstubs `bin/rails`, `bin/rspec` |
+| Run inside the bundle | `bundle exec rspec spec/foo_spec.rb` (bare `bundle exec rspec` is the stage gate's), or the binstubs `bin/rails`, `bin/rspec` |
 | Known CVEs in the lock | `bundle exec bundler-audit check --update` |
 | Deploy platforms | `bundle lock --add-platform x86_64-linux` |
 
@@ -53,7 +53,7 @@ Preserve the repository's version manager and lockfile. The Ruby version lives i
 
 **Types (gradual, optional):** RBS signatures in `sig/*.rbs` checked by Steep, or Sorbet (`# typed: strict`, `sig { params(id: Integer).returns(String) }`, `srb tc`). Follow whichever the project uses; never add a second one.
 
-**The gate:**
+**The gate** (the stage gate runs the test line; while working, run `bundle exec rspec spec/foo_spec.rb` or `bin/rails test test/foo_test.rb`):
 
 ```bash
 bundle exec rubocop                 # or: bundle exec standardrb
@@ -438,7 +438,7 @@ Ruby evaluates default arguments on every call, so Python's mutable-default trap
 
 - [ ] `bundle exec rubocop` (or `standardrb`) clean; every disable is scoped to a range and names the cop
 - [ ] Type checker clean where the project uses one (`srb tc`, `steep check`)
-- [ ] `bundle exec rspec` / `bin/rails test` green; new behaviour has tests with named error classes in `raise_error`/`assert_raises`
+- [ ] `bundle exec rspec spec/foo_spec.rb` / `bin/rails test test/foo_test.rb` green for the changed code (the bare runs are the stage gate's); new behaviour has tests with named error classes in `raise_error`/`assert_raises`
 - [ ] `# frozen_string_literal: true` in new files; no `rescue Exception`; no bare `raise_error`
 - [ ] Keyword arguments passed explicitly (`**opts`); delegation uses `...`
 - [ ] Dependencies added with `bundle add`, never by hand-editing `Gemfile.lock`

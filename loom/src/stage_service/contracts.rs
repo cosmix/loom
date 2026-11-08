@@ -117,9 +117,10 @@ pub(crate) fn handle_freeze_contracts(
     })?;
     let submission = submitted.expect("stage update supplies a submission");
     Ok(match submission {
-        Submission::Queued(_) | Submission::Joined(_) | Submission::Superseded { .. } => {
-            Response::Ok
-        }
+        Submission::Queued(_)
+        | Submission::Joined(_)
+        | Submission::Superseded { .. }
+        | Submission::Waiting { .. } => Response::Ok,
         Submission::Refused(message) => refused(message),
     })
 }

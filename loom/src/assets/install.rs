@@ -32,6 +32,7 @@ pub struct InstallPaths {
 pub struct InstallReport {
     pub agents: usize,
     pub commands: usize,
+    pub pruned_agents: Vec<PathBuf>,
     pub hooks: usize,
     pub codex_hooks: usize,
     pub skills_resident: usize,
@@ -56,7 +57,7 @@ pub fn install_all(
 ) -> Result<InstallReport> {
     ensure_distinct_dirs(&paths.claude_dir, &paths.codex_dir)?;
     let layout = layout.unwrap_or_else(|| SkillLayout::read(&paths.claude_dir));
-    let (agents, commands, mut backups) = claude::install_files(
+    let (agents, commands, mut backups, pruned_agents) = claude::install_files(
         &paths.claude_dir,
         crate::assets::CLAUDE_AGENTS,
         crate::assets::CLAUDE_COMMANDS,
@@ -82,6 +83,7 @@ pub fn install_all(
     Ok(InstallReport {
         agents,
         commands,
+        pruned_agents,
         hooks,
         codex_hooks,
         skills_resident,
