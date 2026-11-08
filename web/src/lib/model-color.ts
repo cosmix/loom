@@ -84,22 +84,15 @@ const GRID: readonly ModelSwatch[] = LIGHTNESS.flatMap((lightness) =>
 /// the nearest spot with room, and when no spot has room the farthest-from-all
 /// spot wins (farthest-point placement, so the palette fills the disc evenly).
 /// Deterministic: equal scores resolve by candidate order.
-export function spread(
-  preferred: ModelSwatch,
-  taken: readonly ModelSwatch[],
-): ModelSwatch {
-  if (taken.length === 0 || nearest(preferred, taken) >= TARGET_GAP)
-    return preferred;
+export function spread(preferred: ModelSwatch, taken: readonly ModelSwatch[]): ModelSwatch {
+  if (taken.length === 0 || nearest(preferred, taken) >= TARGET_GAP) return preferred;
   let best = preferred;
   let bestScore = nearest(preferred, taken);
   let bestPull = 0;
   for (const candidate of GRID) {
     const score = Math.min(nearest(candidate, taken), TARGET_GAP);
     const pull = distance(candidate, preferred);
-    if (
-      score > bestScore + 1e-9 ||
-      (score > bestScore - 1e-9 && pull < bestPull)
-    ) {
+    if (score > bestScore + 1e-9 || (score > bestScore - 1e-9 && pull < bestPull)) {
       best = candidate;
       bestScore = score;
       bestPull = pull;
@@ -142,9 +135,7 @@ function load(): Map<string, ModelSwatch> {
     const raw: unknown = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "{}");
     if (typeof raw !== "object" || raw === null) return new Map();
     return new Map(
-      Object.entries(raw).filter((entry): entry is [string, ModelSwatch] =>
-        isSwatch(entry[1]),
-      ),
+      Object.entries(raw).filter((entry): entry is [string, ModelSwatch] => isSwatch(entry[1])),
     );
   } catch {
     return new Map();
@@ -153,10 +144,7 @@ function load(): Map<string, ModelSwatch> {
 
 function save(swatches: ReadonlyMap<string, ModelSwatch>): void {
   try {
-    localStorage.setItem(
-      STORAGE_KEY,
-      JSON.stringify(Object.fromEntries(swatches)),
-    );
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(Object.fromEntries(swatches)));
   } catch {
     // Storage can be blocked or full; colors then stay stable for this page only.
   }
@@ -168,19 +156,14 @@ let known: Map<string, ModelSwatch> | undefined;
 /// localStorage, so a model keeps its color across renders, new models and
 /// reloads in this browser. A model seen for the first time is spread away from
 /// the swatches already given out.
-export function stickyModelColors(
-  models: readonly string[],
-): Map<string, string> {
+export function stickyModelColors(models: readonly string[]): Map<string, string> {
   known ??= load();
   const fresh = models.filter((model) => !known!.has(model));
   if (fresh.length > 0) {
-    for (const [model, swatch] of assignSwatches(models, known))
-      known.set(model, swatch);
+    for (const [model, swatch] of assignSwatches(models, known)) known.set(model, swatch);
     save(known);
   }
-  return new Map(
-    models.map((model) => [model, swatchColor(known!.get(model)!)]),
-  );
+  return new Map(models.map((model) => [model, swatchColor(known!.get(model)!)]));
 }
 
 /// Forgets every remembered swatch; tests use it to start from a clean page.
