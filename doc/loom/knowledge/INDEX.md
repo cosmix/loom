@@ -81,7 +81,7 @@
 | [token-flow-sources](architecture/token-flow-sources.md) |  | 75 |
 | [usage-evidence](architecture/usage-evidence.md) |  | 127 |
 | [verification-v2-gates](architecture/verification-v2-gates.md) | Gates | 257 |
-| [web-dashboard](architecture/web-dashboard.md) | Web | 131 |
+| [web-dashboard](architecture/web-dashboard.md) | Web | 133 |
 | [web-terminal](architecture/web-terminal.md) |  | 181 |
 
 ### entry-points
@@ -131,14 +131,14 @@
 | --- | --- | --- |
 | [adjudication-autonomy-deadlock](mistakes/adjudication-autonomy-deadlock.md) |  | 231 |
 | [ambient-filesystem-trust](mistakes/ambient-filesystem-trust.md) |  | 176 |
-| [briefs-and-bug-reports](mistakes/briefs-and-bug-reports.md) |  | 301 |
+| [briefs-and-bug-reports](mistakes/briefs-and-bug-reports.md) |  | 311 |
 | [ci-toolchain-and-cargo](mistakes/ci-toolchain-and-cargo.md) |  | 373 |
 | [codex-direct-mode-invisible](mistakes/codex-direct-mode-invisible.md) |  | 23 |
 | [codex-lane-rogue-wrapper](mistakes/codex-lane-rogue-wrapper.md) |  | 177 |
 | [codex-navigation](mistakes/codex-navigation.md) | Reader | 132 |
 | [codex-worker-briefing](mistakes/codex-worker-briefing.md) |  | 162 |
 | [completion-broker-credential](mistakes/completion-broker-credential.md) |  | 225 |
-| [completion-runner-blocks](mistakes/completion-runner-blocks.md) |  | 206 |
+| [completion-runner-blocks](mistakes/completion-runner-blocks.md) |  | 216 |
 | [completion-runtime](mistakes/completion-runtime.md) | Churn | 74 |
 | [computed-values-and-hidden-couplings](mistakes/computed-values-and-hidden-couplings.md) | Values | 284 |
 | [concurrency-and-locking](mistakes/concurrency-and-locking.md) |  | 107 |

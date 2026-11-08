@@ -13,8 +13,9 @@ import { TerminalGlyph } from "@/components/terminal/terminal-glyph";
 import { Badge } from "@/components/ui/badge";
 import { TableCell, TableRow } from "@/components/ui/table";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { displayState } from "@/lib/display-state";
 import { mergeText, modelsOf, stateMeta, timeText } from "@/lib/format";
-import { activityText } from "@/lib/format-activity";
+import { activityText, completionActivity } from "@/lib/format-activity";
 import { compactTokens, fresh, lastValues, stageFlow } from "@/lib/tokens";
 import { snapshotAtom } from "@/state/atoms";
 
@@ -28,19 +29,20 @@ export function LedgerRow({ stage, level }: { stage: StageSummary; level: number
   const time = timeText(stage);
   const models = modelsOf(stage);
   const marked = stage.held || stage.incoherence !== null;
+  const state = displayState(stage);
 
   return (
     <TableRow
       className={cn(
         // The tone class supplies `--tone` for the wash; the text stays foreground.
         "row-wash cursor-pointer align-top text-foreground",
-        toneClass(stateMeta(stage.status).tone),
+        toneClass(stateMeta(state).tone),
         marked && "border-l-2 border-l-(--tone-warning)",
       )}
       onClick={() => navigate(href)}
     >
       <TableCell data-label="state" data-span="" className="text-foreground">
-        <StateBadge status={stage.status} />
+        <StateBadge status={state} title={completionActivity(stage)?.text} />
       </TableCell>
       <TableCell data-label="stage" data-span="" className="text-foreground">
         <StageName stage={stage} level={level} href={href} />

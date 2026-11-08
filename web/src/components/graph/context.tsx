@@ -1,10 +1,10 @@
 import { createContext, useContext } from "react";
 
-import type { StageStatus } from "@/api/schema";
+import type { DisplayState } from "@/lib/display-state";
 
 /// What the canvas is emphasising: the thread through one stage (click), or
 /// every stage in one state (hovering a chip in the key).
-export type Focus = { kind: "stage"; id: string } | { kind: "status"; status: StageStatus } | null;
+export type Focus = { kind: "stage"; id: string } | { kind: "status"; status: DisplayState } | null;
 
 /// Per-node and per-edge emphasis derived from the focus.
 export type Emphasis = "plain" | "traced" | "dim";

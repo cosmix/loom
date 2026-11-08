@@ -8,6 +8,7 @@ import fixture from "@/api/fixtures/snapshot.json";
 import { snapshotSchema } from "@/api/schema";
 import { routes } from "@/router";
 import { applySnapshot } from "@/state/apply";
+import { completionBlocker } from "@/test/completion-blocker";
 
 function renderLedger(mutate?: (raw: typeof fixture) => void) {
   const raw = structuredClone(fixture);
@@ -20,6 +21,18 @@ function renderLedger(mutate?: (raw: typeof fixture) => void) {
       <RouterProvider router={router} />
     </Provider>,
   );
+}
+
+function rowOf(stageId: string): Element {
+  const row = screen
+    .getAllByRole("row")
+    .find((candidate) =>
+      Array.from(candidate.querySelectorAll('[data-label="stage"] span')).some(
+        (span) => span.textContent === stageId,
+      ),
+    );
+  if (!row) throw new Error(`the row for ${stageId} is missing`);
+  return row;
 }
 
 function tokensCell(stageId: string): Element {
@@ -81,5 +94,30 @@ describe("ledger tokens cell", () => {
     const cell = tokensCell("design");
     expect(cell.textContent).toBe("");
     expect(cell.matches(":empty")).toBe(true);
+  });
+});
+
+describe("ledger state cell", () => {
+  it("shows a completion-pending executing stage as needing attention", () => {
+    renderLedger((raw) => {
+      const server = raw.status.stages.find((stage) => stage.id === "server");
+      if (!server) throw new Error("fixture server stage is missing");
+      Object.assign(server, { completion_blocker: completionBlocker() });
+    });
+
+    const row = rowOf("server");
+    expect(row.classList.contains("tone-warning")).toBe(true);
+    expect(row.querySelector('[data-label="state"]')?.textContent).toBe("Completion pending");
+    expect(row.querySelector('[data-label="activity"]')?.textContent).toContain(
+      "completion pending: test-integrity gate failed",
+    );
+  });
+
+  it("keeps an executing stage without a blocker in the executing tone", () => {
+    renderLedger();
+
+    const row = rowOf("server");
+    expect(row.classList.contains("tone-executing")).toBe(true);
+    expect(row.querySelector('[data-label="state"]')?.textContent).toBe("Executing");
   });
 });

@@ -156,7 +156,9 @@ function adjudicationText(stage: StageSummary): { text: string; tone: Tone } {
   return { text: `dispute ${stage.dispute_count} · judge ${judge}`, tone: "warning" };
 }
 
-function completionActivity(stage: StageSummary): { text: string; tone: Tone } | null {
+/// The completion blocker's sentence, `completion pending: <reason>`, for a
+/// stage `loom status` lists under it; null otherwise.
+export function completionActivity(stage: StageSummary): { text: string; tone: Tone } | null {
   const blocker = stage.completion_blocker;
   if (!blocker || (stage.status !== "executing" && stage.status !== "needs-human-review")) {
     return null;

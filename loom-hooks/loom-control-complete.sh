@@ -292,20 +292,21 @@ completion_caller_is_main() {
 	! loom_is_subagent "$INPUT_JSON"
 }
 
-# emit_pinned_rewrite - Write the completion heartbeat and print the PreToolUse
-# allow that replaces the command with PINNED_COMMAND. updatedInput replaces the whole tool input, so only the
-# model's timeout and description carry over; run_in_background and
-# dangerouslyDisableSandbox never ride on an explicit hook allow.
-emit_pinned_rewrite() {
+# emit_pinned_allow <reason> - Write the completion heartbeat and print the
+# PreToolUse allow, giving <reason>, that runs PINNED_COMMAND. updatedInput
+# replaces the whole tool input, so only the model's timeout and description
+# carry over; run_in_background and dangerouslyDisableSandbox never ride on an
+# explicit hook allow.
+emit_pinned_allow() {
 	local out
-	out=$(jq -c --arg pinned "$PINNED_COMMAND" '{hookSpecificOutput: {
+	out=$(jq -c --arg pinned "$PINNED_COMMAND" --arg reason "$1" '{hookSpecificOutput: {
 		hookEventName: "PreToolUse",
 		permissionDecision: "allow",
-		permissionDecisionReason: "loom: completion rewritten to the pinned command",
+		permissionDecisionReason: $reason,
 		updatedInput: ({command: $pinned}
 			+ (.tool_input | {timeout, description} | with_entries(select(.value != null)))),
 		additionalContext: ("LOOM: ran the pinned completion command " + $pinned + "; its output is not piped. Read the Host job line.")}}' <<<"$INPUT_JSON") ||
-		block_not_pinned "the completion rewrite could not be built; retry with the pinned command: $PINNED_COMMAND"
+		block_not_pinned "the completion allow could not be built; retry with the pinned command: $PINNED_COMMAND"
 	loom_write_completion_heartbeat >/dev/null || true
 	printf '%s\n' "$out"
 }
@@ -357,13 +358,22 @@ PINNED_COMMAND="$LOOM_BIN stage complete $STAGE_ID"
 # A PreToolUse payload carries no result; a payload that does is a stale
 # PostToolUse registration, which this hook no longer serves.
 [[ "$(printf '%s' "$INPUT_JSON" | jq -r 'has("tool_result") or has("tool_response")')" != true ]] || exit 0
+# Only a positively main caller completes a stage: any other caller's pinned
+# form gets no allow (commit-filter.sh refuses a subagent's) and its plain
+# spelling keeps the refusal.
 if [[ "$COMMAND" == "$PINNED_COMMAND" ]]; then
+	# No permission rule matches the absolute pinned path (the session grants
+	# `Bash(loom *)`), so without this allow auto mode's classifier judges, and
+	# can refuse, the main agent's completion.
+	if completion_caller_is_main; then
+		emit_pinned_allow "loom: pinned completion command"
+		exit 0
+	fi
 	loom_write_completion_heartbeat || true
 	exit 0
 fi
-# A subagent never completes a stage, so its plain spelling keeps the refusal.
 if completion_caller_is_main && completion_rewrite_matches; then
-	emit_pinned_rewrite
+	emit_pinned_allow "loom: completion rewritten to the pinned command"
 	exit 0
 fi
 if [[ "$COMMAND" == "loom stage complete $STAGE_ID" ]]; then

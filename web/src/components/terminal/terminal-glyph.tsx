@@ -3,6 +3,7 @@ import { useAtomValue } from "jotai/react";
 
 import type { StageSummary } from "@/api/schema";
 import { toneClass } from "@/components/state-badge";
+import { displayState } from "@/lib/display-state";
 import { stateMeta } from "@/lib/format";
 import { snapshotAtom } from "@/state/atoms";
 
@@ -71,7 +72,7 @@ export function TerminalGlyph({
   return (
     <button
       type="button"
-      className={cn("terminal-glyph", toneClass(stateMeta(stage.status).tone), className)}
+      className={cn("terminal-glyph", toneClass(stateMeta(displayState(stage)).tone), className)}
       aria-label={`open terminal for ${stage.name}`}
       title="Open terminal"
       onClick={(event) => {

@@ -16,7 +16,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent }
 
 import { EmptyState } from "@/aurora-ui/feedback/EmptyState";
 
-import type { StageStatus, StageSummary, TokenFlow } from "@/api/schema";
+import type { StageSummary, TokenFlow } from "@/api/schema";
 import { GraphActionsContext, type Emphasis, type Focus } from "@/components/graph/context";
 import { RankNode, type RankNodeType } from "@/components/graph/rank-node";
 import { StageNode, type StageNodeType } from "@/components/graph/stage-node";
@@ -25,6 +25,7 @@ import { ThreadEdge, type ThreadEdgeType } from "@/components/graph/thread-edge"
 import { useOpenStage, useOpenTerminal } from "@/components/stage-modal";
 import { Kbd } from "@/components/ui/kbd";
 import { Skeleton } from "@/components/ui/skeleton";
+import { displayState, type DisplayState } from "@/lib/display-state";
 import {
   layoutGeometry,
   lineage,
@@ -126,7 +127,7 @@ function Canvas({ stages, flow }: { stages: StageSummary[]; flow: TokenFlow | un
     [open],
   );
   const onPaneClick = useCallback(() => setPinned(null), []);
-  const onPinStatus = useCallback((status: StageStatus) => {
+  const onPinStatus = useCallback((status: DisplayState) => {
     setPinned((current) =>
       current?.kind === "status" && current.status === status ? null : { kind: "status", status },
     );
@@ -199,7 +200,7 @@ function Canvas({ stages, flow }: { stages: StageSummary[]; flow: TokenFlow | un
 function tracedIds(stages: readonly StageSummary[], focus: Focus): Set<string> | null {
   if (focus === null) return null;
   if (focus.kind === "status") {
-    const traced = stages.filter((stage) => stage.status === focus.status).map((s) => s.id);
+    const traced = stages.filter((stage) => displayState(stage) === focus.status).map((s) => s.id);
     return traced.length === 0 ? null : new Set(traced);
   }
   if (!stages.some((stage) => stage.id === focus.id)) return null;

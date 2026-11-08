@@ -6,7 +6,8 @@ import { ActivityRoundel } from "@/components/activity-roundel";
 import { StageSummaryText } from "@/components/stage-detail";
 import { StateBadge, toneClass } from "@/components/state-badge";
 import { mergeText, timeText } from "@/lib/format";
-import { activityText } from "@/lib/format-activity";
+import { displayState } from "@/lib/display-state";
+import { activityText, completionActivity } from "@/lib/format-activity";
 import { compactTokens, fresh, stageFlow } from "@/lib/tokens";
 import { snapshotAtom } from "@/state/atoms";
 
@@ -19,7 +20,7 @@ export function StateLine({ stage, className }: { stage: StageSummary; className
   const flow = stageFlow(useAtomValue(snapshotAtom)?.status.tokens, stage.id);
   return (
     <div className={cn("flex flex-wrap items-center gap-x-3 gap-y-1 text-sm", className)}>
-      <StateBadge status={stage.status} />
+      <StateBadge status={displayState(stage)} title={completionActivity(stage)?.text} />
       <ActivityRoundel stage={stage} size={15} />
       {activity && (
         <span className={toneClass(activity.tone)} title={stage.completion_blocker?.next_action}>

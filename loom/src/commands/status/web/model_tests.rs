@@ -245,6 +245,47 @@ fn attention_conversion_carries_the_block_facts_and_flags_the_history() {
     assert!(!wire["note"].as_str().unwrap().contains("less -R"));
 }
 
+/// An executing stage whose `loom stage complete` failed a gate stays
+/// `executing` on the wire. The dashboard tells it from a running stage by
+/// the stage's `completion_blocker`, the summary `loom status` lists it by;
+/// its attention entry is filed under the generic blocked status.
+#[test]
+fn a_completion_pending_stage_reaches_the_wire_with_its_blocker() {
+    let stages = stages::fixture_stages();
+    let mut pending = stages.iter().find(|s| s.id == "server").unwrap().clone();
+    pending.completion_blocker = Some(crate::status::data::CompletionBlockerSummary {
+        state: crate::status::data::CompletionBlockerState::Pending,
+        fingerprint: "feedface1234".to_owned(),
+        failure_code: "daemon_rejected".to_owned(),
+        summary: Some("test-integrity gate failed".to_owned()),
+        commit: "0123456789ab".to_owned(),
+        repeat_count: 1,
+        first_observed_at: None,
+        last_observed_at: None,
+        next_action: "watching: a repeat of daemon_rejected parks this stage".to_owned(),
+    });
+    let entries = crate::status::attention_model::attention_entries(std::slice::from_ref(&pending));
+
+    let entry = serde_json::to_value(WebAttention::from(&entries[0])).unwrap();
+    let stage = serde_json::to_value(&pending).unwrap();
+
+    assert_eq!(entry["label"], "COMPLETION PENDING");
+    assert_eq!(entry["status"], "blocked");
+    assert_eq!(entry["automatic"], true);
+    assert_eq!(stage["status"], "executing");
+    assert_eq!(stage["completion_blocker"]["state"], "pending");
+    assert_eq!(
+        stage["completion_blocker"]["summary"],
+        "test-integrity gate failed"
+    );
+    let mut running = pending.clone();
+    running.completion_blocker = None;
+    assert!(serde_json::to_value(&running)
+        .unwrap()
+        .get("completion_blocker")
+        .is_none());
+}
+
 /// Every [`StageStatus`], ordered as `web/src/api/fixtures/statuses.json` lists
 /// them.
 ///

@@ -12,6 +12,7 @@ import { AttentionSteps, hasSteps } from "@/components/attention-steps";
 import { HISTORY_HASH, STAGE_PARAM, stageHref } from "@/components/stage-href";
 import { toneClass } from "@/components/state-badge";
 import { LinesBox, TextBox } from "@/components/text-box";
+import { displayState } from "@/lib/display-state";
 import { stateMeta } from "@/lib/format";
 import { attentionAtom, stageValueAtom } from "@/state/atoms";
 
@@ -27,6 +28,7 @@ export function reviewNotesFor(entry: Attention, notes: string | null | undefine
 /// not re-render the card.
 const historyLength = (stage: StageSummary | undefined) => stage?.history.length ?? 0;
 const reviewNotes = (stage: StageSummary | undefined) => stage?.review_notes ?? null;
+const shownState = (stage: StageSummary | undefined) => (stage ? displayState(stage) : null);
 
 /// One card per attention entry: the ones waiting on a person under "needs
 /// attention", the ones loom is resolving under "handled by loom". Each group
@@ -80,6 +82,7 @@ function AttentionGroup({
 function AttentionCard({ entry }: { entry: Attention }) {
   const earlier = useAtomValue(useMemo(() => stageValueAtom(entry.id, historyLength), [entry.id]));
   const notes = useAtomValue(useMemo(() => stageValueAtom(entry.id, reviewNotes), [entry.id]));
+  const shown = useAtomValue(useMemo(() => stageValueAtom(entry.id, shownState), [entry.id]));
   const detail = attentionDetail(entry);
   return (
     <HazardPanel
@@ -91,7 +94,7 @@ function AttentionCard({ entry }: { entry: Attention }) {
       headerActionClassName="min-w-0 shrink"
       className={cn(
         "min-w-0 bg-card text-foreground",
-        toneClass(stateMeta(attentionStatus(entry)).tone),
+        toneClass(stateMeta(attentionStatus(entry, shown)).tone),
       )}
       bodyClassName="flex flex-col gap-2.5 text-sm"
     >
