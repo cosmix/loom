@@ -388,3 +388,11 @@ expects to expire stays short. Reproduce a timing failure by looping the test un
 **Prevention:** Use a writable workspace TMPDIR and fully qualified test filters for direct test binaries.
 
 **Fix:** Rerun only the intended tests with workspace-backed temporary storage.
+
+## Tests That Copy the Daemon Tick Need a Work Dir Inside the Worktree (2026-11-08)
+
+**What happened:** `provision_gate` tests passed locally and failed only under the host job.
+
+**Why:** provision entries run sandboxed and see only the worktree. A test whose entry copies the daemon tick (`copy_tick_command`) from a work dir in a `/tmp` TempDir reads a path the entry cannot see under bwrap.
+
+**Prevention:** keep the work dir of such a test inside the worktree's TempDir, and run it through the host job (`loom stage complete`) before trusting a local pass.

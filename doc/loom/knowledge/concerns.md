@@ -92,7 +92,7 @@ grouped by area in the backlog.
 
 ## Platform, Commit-Relay and Stall Gaps
 
-Remaining platform/runtime questions include live macOS branch coverage, process limits on hook tests, full daemon re-exec coverage, intentionally filtered session environment, synchronous commit and login-probe costs, merge-side authorization, and status/watch evidence. Hook stdin reads use the portable bounded helper; separate direct-command timeout fallbacks remain. A dedicated Linux capsule step requires sandbox availability, while general test jobs can still skip capability-gated cases.
+Remaining platform/runtime questions include live macOS branch coverage, process limits on hook tests, full daemon re-exec coverage, intentionally filtered session environment, synchronous commit and login-probe costs, merge-side authorization, and status/watch evidence. Hook stdin reads use the portable bounded helper; separate direct-command timeout fallbacks remain. A dedicated Linux capsule step requires sandbox availability, while general test jobs can still skip capability-gated cases. Open items on the busy line and `busy::while_busy` are in [Busy Status Follow-Ups](concerns/platform-and-commit-gaps.md#busy-status-follow-ups).
 
 → [Platform and Commit Gaps](concerns/platform-and-commit-gaps.md)
 

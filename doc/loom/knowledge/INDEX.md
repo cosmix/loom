@@ -72,7 +72,7 @@
 | [source-graph-evaluation](architecture/source-graph-evaluation.md) |  | 68 |
 | [source-graph-resolution](architecture/source-graph-resolution.md) |  | 125 |
 | [source-graph-view](architecture/source-graph-view.md) |  | 78 |
-| [status-data-model](architecture/status-data-model.md) | Fields | 241 |
+| [status-data-model](architecture/status-data-model.md) | Fields | 259 |
 | [summary-store](architecture/summary-store.md) |  | 308 |
 | [target-guard](architecture/target-guard.md) | Tip | 127 |
 | [terminal-backends](architecture/terminal-backends.md) |  | 285 |
@@ -103,7 +103,7 @@
 | [doctrine-cross-surface](patterns/doctrine-cross-surface.md) | Pins | 144 |
 | [hook-content-stripping](patterns/hook-content-stripping.md) | Text | 162 |
 | [merge-and-recovery](patterns/merge-and-recovery.md) |  | 111 |
-| [orchestrator-daemon-loop](patterns/orchestrator-daemon-loop.md) | Loop | 113 |
+| [orchestrator-daemon-loop](patterns/orchestrator-daemon-loop.md) | Loop | 115 |
 | [remote-control](patterns/remote-control.md) | RC | 51 |
 | [security-sandbox-and-hooks](patterns/security-sandbox-and-hooks.md) |  | 144 |
 | [stage-daemon-channels](patterns/stage-daemon-channels.md) |  | 184 |
@@ -188,7 +188,7 @@
 | [sandbox-write-rules-inert](mistakes/sandbox-write-rules-inert.md) |  | 67 |
 | [schema-reuse-and-silent-skips](mistakes/schema-reuse-and-silent-skips.md) |  | 130 |
 | [session-identity-env](mistakes/session-identity-env.md) | Env | 126 |
-| [sessions-and-liveness](mistakes/sessions-and-liveness.md) |  | 382 |
+| [sessions-and-liveness](mistakes/sessions-and-liveness.md) |  | 392 |
 | [shell-command-matchers](mistakes/shell-command-matchers.md) |  | 295 |
 | [source-graph-delivery](mistakes/source-graph-delivery.md) | Misses | 172 |
 | [spurious-waiting-for-input](mistakes/spurious-waiting-for-input.md) | Idle | 43 |
@@ -197,12 +197,12 @@
 | [subagent-briefing](mistakes/subagent-briefing.md) |  | 386 |
 | [subagent-liveness-and-watch](mistakes/subagent-liveness-and-watch.md) |  | 387 |
 | [subagent-orchestration](mistakes/subagent-orchestration.md) | Agents | 397 |
-| [test-concurrency-and-fixtures](mistakes/test-concurrency-and-fixtures.md) | Races | 390 |
+| [test-concurrency-and-fixtures](mistakes/test-concurrency-and-fixtures.md) | Races | 398 |
 | [test-sweep-and-fixture-discipline](mistakes/test-sweep-and-fixture-discipline.md) |  | 388 |
 | [testing-and-lint](mistakes/testing-and-lint.md) |  | 398 |
 | [tests-that-cannot-fail](mistakes/tests-that-cannot-fail.md) |  | 392 |
 | [tmux-backend](mistakes/tmux-backend.md) | tmux | 164 |
-| [typed-config-values-process](mistakes/typed-config-values-process.md) | Dev | 78 |
+| [typed-config-values-process](mistakes/typed-config-values-process.md) | Dev | 86 |
 | [untrusted-value-boundaries](mistakes/untrusted-value-boundaries.md) | Trust | 252 |
 | [verification-harness](mistakes/verification-harness.md) |  | 399 |
 | [verification-v2-delivery](mistakes/verification-v2-delivery.md) | v2 | 396 |
@@ -232,7 +232,7 @@
 | [planning-document-model-followups](concerns/planning-document-model-followups.md) |  | 172 |
 | [planning-guidance-followups](concerns/planning-guidance-followups.md) |  | 42 |
 | [planning-session-sandbox-limits](concerns/planning-session-sandbox-limits.md) |  | 182 |
-| [platform-and-commit-gaps](concerns/platform-and-commit-gaps.md) |  | 204 |
+| [platform-and-commit-gaps](concerns/platform-and-commit-gaps.md) |  | 234 |
 | [runtime-and-session-safety](concerns/runtime-and-session-safety.md) |  | 137 |
 | [sandbox-and-confinement-gaps](concerns/sandbox-and-confinement-gaps.md) |  | 363 |
 | [session-tmpdir-deny](concerns/session-tmpdir-deny.md) |  | 7 |
