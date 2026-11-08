@@ -6,12 +6,17 @@ use ratatui::{
     Frame,
 };
 
+use super::header_daemon::daemon_spans;
 use super::text::{cut_line, spans_width, text_width};
 use super::tokens_pane::{compact_tokens, spark};
 use super::LedgerView;
 use crate::commands::status::ui::theme::{StatusColors, Theme};
 use crate::models::stage::StageStatus;
+use crate::orchestrator::busy::LoopState;
 use crate::tokens::{PlanFlow, TokenUsage};
+
+/// Cells the plan name keeps on the top line before the daemon span shortens.
+const NAME_ROOM: usize = 12;
 
 /// Render the four-line ledger header.
 pub fn render_header(frame: &mut Frame, area: Rect, view: &LedgerView) {
@@ -25,12 +30,7 @@ fn header_lines(view: &LedgerView, width: u16) -> Vec<Line<'static>> {
     let logos: Vec<_> = crate::LOGO.lines().collect();
     let logo = |n: usize| logos.get(n).copied().unwrap_or("");
     vec![
-        top_line(
-            logo(0),
-            data.plan_name.as_deref(),
-            view.tick_age_secs,
-            width,
-        ),
+        top_line(logo(0), data.plan_name.as_deref(), &view.loop_state, width),
         logo_line(
             logo(1),
             progress_line(
@@ -59,7 +59,7 @@ fn header_lines(view: &LedgerView, width: u16) -> Vec<Line<'static>> {
     ]
 }
 
-fn top_line(logo: &str, name: Option<&str>, age: Option<i64>, width: u16) -> Line<'static> {
+fn top_line(logo: &str, name: Option<&str>, state: &LoopState, width: u16) -> Line<'static> {
     let mut spans = logo_spans(logo);
     let left = Span::styled(
         name.unwrap_or("(no plan name)").to_owned(),
@@ -69,8 +69,8 @@ fn top_line(logo: &str, name: Option<&str>, age: Option<i64>, width: u16) -> Lin
             Theme::dimmed()
         },
     );
-    let right = daemon_spans(age);
     let room = width as usize;
+    let right = daemon_spans(state, room.saturating_sub(spans_width(&spans) + NAME_ROOM));
     let left = cut_line(
         Line::from(vec![left]),
         room.saturating_sub(spans_width(&spans) + spans_width(&right)) as u16,
@@ -222,23 +222,6 @@ fn logo_spans(logo: &str) -> Vec<Span<'static>> {
         Span::styled(logo.to_owned(), Theme::header()),
         Span::raw(" ".repeat(padding)),
     ]
-}
-
-fn daemon_spans(age: Option<i64>) -> Vec<Span<'static>> {
-    match age {
-        Some(age) if age >= 60 => vec![Span::styled(
-            format!("● loop stalled {age}s"),
-            Theme::status_warning(),
-        )],
-        Some(age) => vec![
-            Span::styled("● daemon running", Theme::status_completed()),
-            Span::styled(format!(" · tick {age}s ago"), Theme::dimmed()),
-        ],
-        None => vec![
-            Span::styled("● daemon running", Theme::status_completed()),
-            Span::styled(" · tick unknown", Theme::dimmed()),
-        ],
-    }
 }
 
 fn count_status(

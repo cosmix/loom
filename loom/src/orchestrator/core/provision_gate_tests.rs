@@ -6,8 +6,10 @@ use crate::fs::work_dir::write_terminal_config;
 use crate::models::failure::FailureType;
 use crate::models::session::{SessionBackendKind, TerminalConfig};
 use crate::models::stage::TruthCheck;
+use crate::orchestrator::busy::BusyOp;
 use crate::orchestrator::core::OrchestratorConfig;
 use crate::orchestrator::provision::write_provision_snapshot;
+use crate::orchestrator::tick::{self, Phase};
 use crate::plan::ExecutionGraph;
 use crate::verify::transitions::{load_stage, save_stage};
 use std::fs;
@@ -277,14 +279,14 @@ fn an_unignored_file_name_reaches_the_reason_without_its_escape_bytes() {
     );
 }
 
-/// Calling `run_provision` without the ticker thread writes no tick, so this fails.
+/// Calling `run_provision` outside `busy::while_busy` writes no tick, so this fails.
 #[test]
 fn provisioning_stamps_the_daemon_tick() {
     let work = TempDir::new().unwrap();
     let worktree = TempDir::new().unwrap();
     assert!(tick::read(work.path()).unwrap().is_none());
 
-    provision_worktree(work.path(), &[entry("true")], worktree.path()).unwrap();
+    provision_worktree(work.path(), "stage-a", &[entry("true")], worktree.path()).unwrap();
 
     let stamped = tick::read(work.path())
         .unwrap()

@@ -4,6 +4,8 @@ use crate::models::stage::StageStatus;
 use crate::quota::{ProviderQuota, QuotaSnapshot, QuotaWindow, WindowKind};
 use chrono::TimeZone;
 
+#[path = "model_tests_busy.rs"]
+mod busy;
 #[path = "model_tests_stages.rs"]
 mod stages;
 #[path = "model_tests_tokens.rs"]
@@ -132,6 +134,7 @@ fn fixture_snapshot() -> WebSnapshot {
         alerts: fixture_alerts(),
         daemon: DaemonState::Running,
         tick_age_secs: Some(4),
+        busy: None,
         source: SnapshotSource::Daemon,
         terminals: false,
         notice: None,

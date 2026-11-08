@@ -10,6 +10,7 @@ use crate::commands::status::render::attention_model::attention_entries;
 use crate::commands::status::ui::tui::event_handler::{handle_key_event, KeyEventResult};
 use crate::commands::status::ui::tui::state::{GraphState, TuiActivityLog};
 use crate::models::stage::StageStatus;
+use crate::orchestrator::busy::LoopState;
 use crate::plan::graph::levels;
 use crate::quota::{ProviderQuota, QuotaSnapshot, QuotaWindow, WindowKind};
 use crate::tokens::{
@@ -188,7 +189,7 @@ fn render_with_pane(data: &StatusData, height: u16) -> Vec<String> {
         spinner: '⠋',
         scroll_y: 0,
         legend_open: false,
-        tick_age_secs: Some(2),
+        loop_state: LoopState::Ticking { age_secs: 2 },
         last_error: None,
         now_epoch: NOW,
         scrollable: false,
@@ -304,7 +305,7 @@ fn render_pane_scenario(width: u16, height: u16) -> Vec<String> {
         spinner: '⠋',
         scroll_y: 0,
         legend_open: false,
-        tick_age_secs: Some(2),
+        loop_state: LoopState::Ticking { age_secs: 2 },
         last_error: None,
         now_epoch: NOW,
         scrollable: false,

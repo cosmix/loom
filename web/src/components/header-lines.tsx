@@ -41,7 +41,7 @@ export function DaemonLine({ snapshot }: { snapshot: Snapshot | null }) {
     connection.phase === "error";
   const staleSecs = stale ? Math.max(0, Math.round((now - connection.since) / 1000)) : null;
   const line = snapshot
-    ? daemonLine(snapshot.daemon, snapshot.tick_age_secs, staleSecs)
+    ? daemonLine(snapshot.daemon, snapshot.tick_age_secs, staleSecs, snapshot.busy, now)
     : CONNECTION_LINE[connection.phase];
   const diagnostics = [connection.message, snapshot?.notice].filter(Boolean).join("\n");
   return (

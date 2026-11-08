@@ -9,9 +9,11 @@ use anyhow::Result;
 use crate::git::branch::resolve_target_branch;
 use crate::git::merge::{check_resolved_worktree, verify_merge_succeeded};
 use crate::models::stage::{Stage, StageStatus, StageType};
+use crate::orchestrator::busy::{self, BusyOp};
 use crate::orchestrator::core::persistence::Persistence;
 use crate::orchestrator::core::{clear_status_line, Orchestrator};
 use crate::orchestrator::signals::remove_signal;
+use crate::orchestrator::tick::Phase;
 use crate::verify::completion::OutputStream;
 
 use super::landing::Landing;
@@ -163,11 +165,20 @@ impl Orchestrator {
                 return;
             }
         };
-        if let Err(error) = crate::verify::completion::resolved::verify_resolved_completion(
-            &stage,
+        let verified = busy::while_busy(
             &self.config.work_dir,
-            trace_verification_output,
-        ) {
+            Phase::Events,
+            BusyOp::MergeVerification,
+            stage_id,
+            || {
+                crate::verify::completion::resolved::verify_resolved_completion(
+                    &stage,
+                    &self.config.work_dir,
+                    trace_verification_output,
+                )
+            },
+        );
+        if let Err(error) = verified {
             self.settle_failed_exit_verification(&stage, &error);
             return;
         }

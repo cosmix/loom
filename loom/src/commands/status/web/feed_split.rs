@@ -54,7 +54,7 @@ pub(super) const CLOCK_TOP_KEYS: [&str; 2] = ["generated_at", "tick_age_secs"];
 
 /// Top-level keys whose change forces a `full`.
 #[cfg(test)]
-pub(super) const FULL_ONLY_KEYS: [&str; 2] = ["terminals", "version"];
+pub(super) const FULL_ONLY_KEYS: [&str; 3] = ["terminals", "version", "busy"];
 
 /// Stands in for a numeric clock value when comparing, so a count moving from
 /// one number to another is invisible while null to number is a change.

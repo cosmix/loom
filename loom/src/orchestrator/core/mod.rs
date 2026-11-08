@@ -47,6 +47,7 @@ mod stage_knowledge;
 mod stage_launch_policy;
 mod stage_preflight;
 mod stage_spawn;
+mod stage_spawn_signal;
 mod stage_telemetry;
 pub mod state_identity;
 mod target_hold;

@@ -1,7 +1,9 @@
 //! Knowledge-worker session setup and launch.
 use super::{persistence::Persistence, stage_executor::get_dependency_status, Orchestrator};
 use crate::models::{session::Session, stage::Stage};
+use crate::orchestrator::busy::{self, BusyOp};
 use crate::orchestrator::signals::generate_knowledge_signal;
+use crate::orchestrator::tick::Phase;
 use anyhow::{Context, Result};
 use std::path::Path;
 
@@ -21,13 +23,21 @@ impl Orchestrator {
         else {
             return Ok(());
         };
-        let signal = generate_knowledge_signal(
-            &session,
-            &stage,
-            &self.config.repo_root,
-            &deps,
+        let signal = busy::while_busy(
             &self.config.work_dir,
-            handoff.as_deref(),
+            Phase::Spawning,
+            BusyOp::BriefGeneration,
+            &stage_id,
+            || {
+                generate_knowledge_signal(
+                    &session,
+                    &stage,
+                    &self.config.repo_root,
+                    &deps,
+                    &self.config.work_dir,
+                    handoff.as_deref(),
+                )
+            },
         )
         .context("Failed to generate knowledge signal file")?;
         let original_id = session.id.clone();

@@ -1,4 +1,7 @@
+import { busySchema } from "@/api/busy-schema";
 import { z } from "@/api/zod";
+
+export { busySchema, type Busy } from "@/api/busy-schema";
 
 export const STAGE_STATUSES = [
   "waiting-for-deps",
@@ -327,6 +330,7 @@ export const snapshotSchema = z
     alerts: z.array(alertSchema),
     daemon: daemonStateSchema,
     tick_age_secs: z.number().int().nullable(),
+    busy: busySchema.nullable().default(null),
     source: z.enum(["daemon", "files"]),
     terminals: z.boolean(),
     notice: z.string().optional(),

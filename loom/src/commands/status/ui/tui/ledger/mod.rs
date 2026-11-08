@@ -6,6 +6,7 @@ use std::collections::HashMap;
 use crate::commands::status::data::{StageSummary, StatusData};
 use crate::commands::status::render::attention_model::AttentionEntry;
 use crate::commands::status::ui::tui::state::TuiActivityLog;
+use crate::orchestrator::busy::LoopState;
 use crate::orchestrator::scheduling_report::Alert;
 
 /// Per-cell content builders for a ledger row.
@@ -16,6 +17,8 @@ pub mod columns;
 mod entries;
 /// Ledger dashboard header rendering.
 pub mod header;
+/// The daemon span of the header's top line.
+mod header_daemon;
 /// Ledger dashboard layout rendering.
 pub mod layout;
 /// Row budget and areas of the dashboard.
@@ -107,8 +110,8 @@ pub struct LedgerView<'a> {
     pub scroll_y: u16,
     /// Whether the legend is open.
     pub legend_open: bool,
-    /// Age of `.loom/work/orchestrator.tick`, when readable.
-    pub tick_age_secs: Option<i64>,
+    /// What `.loom/work/orchestrator.tick` says the scheduler loop is doing.
+    pub loop_state: LoopState,
     /// The most recent error, if any.
     pub last_error: Option<&'a str>,
     /// Epoch seconds when this frame was built; drives quota countdowns and staleness.

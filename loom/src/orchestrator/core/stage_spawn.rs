@@ -14,13 +14,13 @@ use crate::models::failure::FailureType;
 use crate::models::session::Session;
 use crate::models::stage::{Stage, StageStatus, StageType};
 use crate::models::worktree::Worktree;
+use crate::orchestrator::busy::{self, BusyOp};
 use crate::orchestrator::merge_lifecycle::MergeLifecycle;
-use crate::orchestrator::signals::{generate_contract_signal, generate_signal_with_skills};
+use crate::orchestrator::tick::Phase;
 use crate::verify::contracts::store::load_freeze;
 
 use super::crash_classification::spawn_failure_type;
 use super::persistence::Persistence;
-use super::stage_executor::get_dependency_status;
 use super::Orchestrator;
 
 /// Which agent a stage spawn starts.
@@ -176,58 +176,6 @@ impl Orchestrator {
         Ok(Some(stage))
     }
 
-    /// Write `kind`'s signal for this spawn. Generating it can fail (e.g. an
-    /// unwritable signals dir); contain it: mark Blocked rather than
-    /// propagating and killing the daemon while the stage is Executing with
-    /// no session yet (O-11).
-    fn write_agent_signal(
-        &mut self,
-        stage: &Stage,
-        worktree: &Worktree,
-        session: &Session,
-        outgoing: Option<&str>,
-        kind: AgentKind,
-    ) -> Option<PathBuf> {
-        let generated = match kind {
-            AgentKind::Contract => generate_contract_signal(
-                session,
-                stage,
-                worktree,
-                &self.config.work_dir,
-                self.skill_index.as_ref(),
-                &self.detected_languages,
-            ),
-            AgentKind::Implementation => {
-                let deps = get_dependency_status(stage, &self.graph);
-                let handoff_file =
-                    self.continuation_handoff_or_block(&stage.id, outgoing, &session.id)?;
-                generate_signal_with_skills(
-                    session,
-                    stage,
-                    worktree,
-                    &deps,
-                    handoff_file.as_deref(),
-                    None, // git_history will be extracted from worktree in future enhancement
-                    &self.config.work_dir,
-                    self.skill_index.as_ref(),
-                    &self.detected_languages,
-                )
-            }
-        };
-        match generated {
-            Ok(path) => Some(path),
-            Err(e) => {
-                self.block_and_undo_session(
-                    &stage.id,
-                    &session.id,
-                    FailureType::InfrastructureError,
-                    format!("Failed to generate signal file: {e:#}"),
-                );
-                None
-            }
-        }
-    }
-
     /// Spawn the agent, or in manual mode print how to start it by hand.
     /// Returns `None` if the spawn failed and the stage was blocked instead.
     fn launch_agent(
@@ -367,8 +315,17 @@ impl Orchestrator {
 /// `body_hash` matches, see refresh/source_graph.rs:212-245), so steady-state
 /// cost is proportional to changed files; only the first call on a fresh
 /// worktree pays a full walk.
+///
+/// Wrapped as brief generation: on a fresh worktree the refresh walks the whole
+/// tree, and only the brief reads the overlay.
 fn refresh_stage_overlay(stage_id: &str, repo_root: &Path, work_dir: &Path) {
-    MergeLifecycle::new(stage_id, repo_root, work_dir).reconcile_overlay();
+    busy::while_busy(
+        work_dir,
+        Phase::Spawning,
+        BusyOp::BriefGeneration,
+        stage_id,
+        || MergeLifecycle::new(stage_id, repo_root, work_dir).reconcile_overlay(),
+    );
 }
 
 /// Manual mode: print how to start the agent by hand. Identity env vars are
