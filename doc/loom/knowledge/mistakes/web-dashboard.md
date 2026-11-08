@@ -142,3 +142,13 @@
 **Why**: the commit step treated web/dist as a deploy artifact, though the binary embeds it at compile time and the knowledge says to rebuild it with every web/src change.
 **Prevention**: a web/src commit is not complete until `cd web && bun run build` has run and web/dist is committed beside it.
 **Fix**: rebuilt web/dist and committed it as its own build commit.
+
+## Web checks run with guessed tools instead of the documented ones
+
+**What happened:** a CSS and component change under `web/src` was verified with `bunx eslint` and `bunx prettier --write`, then committed without `bun run build`. Prettier reflowed imports to 80 columns, which `oxfmt --check` rejects, and the committed `web/dist` bundle was stale.
+
+**Why:** the web package's tooling was assumed instead of read from `web/package.json` and the knowledge files. The project uses `oxlint` and `oxfmt`, and has no eslint or prettier config.
+
+**Prevention:** run `cd web && bun run check` (typecheck, lint, format:check, test), then `bun run build` and `git status --short dist`; commit a changed bundle on its own as `chore(web): rebuild the dashboard bundle`. Format only with `bunx oxfmt <paths>`. Read `package.json` scripts before running any lint or format tool.
+
+**Fix:** formatting redone with oxfmt and the bundle rebuilt in the commits after 2eb4100c.

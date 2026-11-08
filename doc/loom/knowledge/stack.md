@@ -36,6 +36,7 @@
 
 - **Cargo:** Standard Rust build system
 - **Preferred Package Managers:** `cargo add`, `bun add`, `uv add` (never hand-edit manifests)
+- **Web lint:** `oxlint` via `bun run lint` in `web/` (`--deny-warnings`); the web package has no eslint config
 
 ## Testing Stack
 
