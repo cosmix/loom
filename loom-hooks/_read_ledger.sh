@@ -227,8 +227,9 @@ _loom_read_sibling_request() {
 }
 
 # Deny-once read gate for rule 1 (_read_discipline.sh). Inside a live stage the
-# first whole read of a large file by one agent is denied with the outline, and
-# that agent's next whole read of the same file passes. The key is the agent
+# first whole read of a large file with an outline by one agent is denied with
+# that outline, and that agent's next whole read of the same file passes. A file
+# with no outline only warns. The key is the agent
 # and the file's absolute path, so a Bash `cat ../x` and a Read of the absolute
 # path share one denial. These functions call is_ancestor (_identity.sh),
 # loom_read_gate_enabled (_containment.sh), loom_hook_note_warn and
@@ -285,9 +286,13 @@ _loom_read_rule1_warn() {
 # to a whole read of <path> (<lines> long). Outside a live stage, or with
 # `read_gate = false`, the message is only a warning. Inside one, a repeat
 # this agent was already denied passes silently, checked before the outline
-# runs so the repeat never pays for `loom map --outline`; a first read is
-# recorded in the "read-denials" ledger and denied (exit 2). A denial that
-# cannot be recorded would deny forever, so it is a warning instead.
+# runs so the repeat never pays for `loom map --outline`. A first read with an
+# outline is recorded in the "read-denials" ledger and denied (exit 2), the
+# block noted in the stage block ledger under the tool the caller names in
+# LOOM_READ_TOOL (read-guard.sh: Read, poll-guard.sh: Bash). A first read with
+# no outline is only a warning and records no denial row, since its message
+# offers no route the agent lacks; the next read of the file warns again. A
+# denial that cannot be recorded would deny forever, so it is a warning too.
 loom_read_deny_once() {
 	local path="$1" lines="$2" agent_id="$3" fallback_sid="$4" abs ledger
 	if ! _loom_read_gate_live; then
@@ -303,11 +308,12 @@ loom_read_deny_once() {
 		return 0
 	fi
 	_loom_read_discipline_verdict1 "$path" "$lines"
-	if ! _loom_read_denial_record "$ledger" "$abs"; then
+	if [[ "${LOOM_RD_V1_OUTLINED:-0}" != 1 ]] || ! _loom_read_denial_record "$ledger" "$abs"; then
 		loom_hook_note_warn "$LOOM_RD_V1_MSG"
 		return 0
 	fi
-	printf '⛔ BLOCKED: %s\nRepeating this read is allowed if you need the whole file.\n' \
+	loom_record_block "read-discipline" "first-read" "${LOOM_READ_TOOL:-unknown}" "$path"
+	printf '[read-discipline/first-read] ⛔ BLOCKED: %s\nRepeating this read is allowed if you need the whole file.\n' \
 		"$LOOM_RD_V1_MSG" >&2
 	exit 2
 }

@@ -4,18 +4,21 @@ set -euo pipefail
 
 SOURCE="$(cd "$(dirname "$0")/.." && pwd)"
 TMP=$(mktemp -d "${TMPDIR:-/tmp}/loom-policy-test.XXXXXX")
+TMP=$(cd -P "$TMP" && pwd -P)
 trap 'rm -rf "$TMP"' EXIT
 HOOKS="$TMP/hooks"
 WORKTREE="$TMP/repo/.worktrees/policy-test"
 SHARED="$TMP/repo/.loom/work"
-mkdir -p "$HOOKS" "$WORKTREE/.loom" "$WORKTREE/src" "$SHARED/handoffs"
+mkdir -p "$HOOKS" "$WORKTREE/.loom" "$WORKTREE/src" "$SHARED/handoffs" "$TMP/tmpdir"
+chmod 700 "$TMP/tmpdir"
 cp "$SOURCE/"*.sh "$SOURCE/"*.py "$HOOKS/"
 cp "$SOURCE/worktree-policy.json" "$HOOKS/"
-ln -s "$SHARED" "$WORKTREE/.loom/work"
+ln -s ../../../.loom/work "$WORKTREE/.loom/work"
 
 expect_status() {
     local expected="$1" hook="$2" payload="$3" output status=0
-    output=$(cd "$WORKTREE" && printf '%s' "$payload" | bash "$HOOKS/$hook" 2>&1) || status=$?
+    output=$(cd "$WORKTREE" && printf '%s' "$payload" |
+        env -u LOOM_SCRATCH_DIR -u LOOM_WORK_DIR TMPDIR="$TMP/tmpdir" bash "$HOOKS/$hook" 2>&1) || status=$?
     if [[ "$status" -ne "$expected" ]]; then
         printf 'FAIL: %s expected %s, got %s: %s\n' "$hook" "$expected" "$status" "$output" >&2
         exit 1
@@ -48,9 +51,11 @@ expect_status 0 worktree-isolation.sh "$(bash_payload 'git --work-tree=/tmp stat
 change_policy '.shared_state.handoffs.live_write = "deny"'
 expect_status 2 worktree-file-guard.sh "$(file_payload '.loom/work/handoffs/proof.md')"
 
-# Changes to lexical primitives reach both live enforcement paths.
+# Changes to lexical primitives reach both live enforcement paths. The path
+# holds no `..`, so only the changed pair makes it a traversal candidate; it
+# resolves outside the worktree and blocks.
 change_policy '.parent_pair = "fixture-parent" | .parent_component = "fixture-component"'
-expect_status 2 worktree-isolation.sh "$(bash_payload 'cat fixture-parent')"
+expect_status 2 worktree-isolation.sh "$(bash_payload 'cat /x/fixture-parent')"
 expect_status 2 worktree-file-guard.sh "$(file_payload 'src/fixture-component')"
 
 for corruption in missing malformed schema invalid_regex; do

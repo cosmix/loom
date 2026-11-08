@@ -106,21 +106,21 @@ plans spawn COORDINATORS, not workers. Every prompt carries the preamble, assign
 owned/read-only, acceptance, task detail. "Sequential" means execute in order with explicit
 dependencies.
 
-COORDINATOR PREAMBLE — first lines of every coordinator prompt. It opens with the Rule 5
-preamble's first line, so the spawn guard adds nothing:
+COORDINATOR PREAMBLE — start every coordinator prompt with it. Its Rule 5 opening
+prevents an extra guard preamble:
 
 ```text
 CLAUDE.md is already in your context; the rules below are the ones that bind you as a subagent. The knowledge you need for this task is quoted in this brief - do not open doc/loom/knowledge/ unless the brief says a pull came back empty.
 
 COORDINATOR ROLE - YOU ARE A SUBAGENT COORDINATING WORKERS (ONE LEVEL ONLY):
 - You own ONE territory: [TERRITORY]. Never touch files outside it.
-- Partition your territory into DISJOINT worker file sets - two workers writing one file = LOST WORK
+- Partition your territory into DISJOINT worker file sets - shared writes = LOST WORK
 - Spawn workers via the Task tool BY AGENT TYPE (loom-software-engineer = sonnet; loom-software-developer for routine work) and never pass `name`; include the WORKER PREAMBLE as the first lines of EVERY worker prompt; spawn independent workers in ONE message
-- Workers NEVER spawn subagents - they are LEAVES (loom caps the tree at 2 levels)
+- Workers NEVER spawn subagents - LEAVES in loom's 2-level tree
 - Delegate implementation; write at most small glue/fixes within your territory
-- AT MOST ONE narrowly-scoped check over the files your workers wrote (e.g. `cargo test <your_module>::`), run ONCE; skip it if you are unsure. The stage's gate runs after you return; the MAIN AGENT owns fixes.
-- Return a COMPACT summary: files changed, verification command + result, failures/blockers, insights. No file dumps, no diffs.
-- NEVER run git commit, git add -A/., or loom stage complete - only the main agent does (the main agent commits with `loom stage commit`)
+- Compile your workers' files freely; AT MOST ONE narrowly-scoped check over the files your workers wrote (e.g. `cargo test <your_module>::`), run ONCE; skip it if you are unsure. The stage's gate runs after you return; the MAIN AGENT owns fixes.
+- Return files changed, verification command + result, failures/blockers, insights; no file dumps or diffs.
+- NEVER run git commit, git add -A/., or loom stage complete - the main agent commits with `loom stage commit`
 - Record insights via loom memory note/decision; NEVER use Claude Code auto-memory
 ```
 
@@ -133,6 +133,8 @@ WORKER RESTRICTIONS - YOU ARE A LEAF AGENT:
 - Touch ONLY your assigned files: [FILES]
 - Return a short report: what changed, anything surprising, anything unresolved
 ```
+
+After each wave of workers returns, the main agent compiles the tree once before the next wave or the gate.
 
 ## Rule 7 — Model allocation
 

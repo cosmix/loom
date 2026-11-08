@@ -14,14 +14,14 @@ pub(crate) const KNOWLEDGE_CONSUMPTION_CONTRACT: &str = "A repository that keeps
 /// integration-verify) push this — the IV prefix spawns review subagents
 /// (`append_review_dimension_details`) just as the standard prefix does, so
 /// it needs the same pointer.
-pub(super) const LOAD_ORCHESTRATION_SKILL: &str = "**Load `Skill(skill=\"loom-orchestration\")` first:** delegation cost, briefs, file ownership, waiting on subagents and commit timing live there.\n\n";
+pub(super) const LOAD_ORCHESTRATION_SKILL: &str = "**Load `Skill(skill=\"loom-orchestration\")` first:** delegation cost, briefs, file ownership, waiting and commit timing live there.\n\n";
 
 /// Append path boundaries table (shared by standard and integration-verify prefixes)
 pub(super) fn append_path_boundaries(content: &mut String) {
     content.push_str("### Path Boundaries\n\n");
     content.push_str("| Type | Paths |\n");
     content.push_str("|------|-------|\n");
-    content.push_str("| **ALLOWED** | `.` (this worktree), `.loom/work/` (orchestration) |\n");
+    content.push_str("| **ALLOWED** | `.` (this worktree), `.loom/work/` |\n");
     content.push_str(
         "| **FORBIDDEN** | `../..`, absolute paths to main repo, any path outside worktree |\n\n",
     );
@@ -37,13 +37,14 @@ pub(super) fn append_path_boundaries(content: &mut String) {
 /// and a paraphrase would drift from the hook that enforces it.
 pub(super) fn append_no_verify_block(content: &mut String) {
     content.push_str(
-        "The spawn guard prepends `loom-hooks/_subagent-preamble.txt` to a typed spawn. Paste \
-         BLOCK-A, which the hook matches byte for byte, into an untyped spawn:\n\n",
+        "The spawn guard prepends `loom-hooks/_subagent-preamble.txt` to typed spawns. Paste \
+         BLOCK-A verbatim into an untyped spawn:\n\n",
     );
     content.push_str("VERIFICATION IS THE MAIN AGENT'S JOB - NOT YOURS:\n");
-    content
-        .push_str("- Do NOT verify your work. No full build, no full test suite, no linter, no\n");
-    content.push_str("  formatter, no type-checker, and never a repeated or looping check.\n");
+    content.push_str("- Compile the files YOU wrote as often as you need (`cargo check`,\n");
+    content.push_str("  `cargo build`, `tsc --noEmit`, `bun run build`) and format them with\n");
+    content.push_str("  `rustfmt --edition 2021 <files>`. No full test suite, no linter, no\n");
+    content.push_str("  `cargo fmt`, and never a repeated or looping check.\n");
     content.push_str("- AT MOST ONE narrowly-scoped check over the files YOU wrote (e.g.\n");
     content.push_str("  `cargo test <your_module>::`), run ONCE. Skip it if you are unsure.\n");
     content.push_str("- Report instead: files changed, assumptions made, anything unresolved.\n");
