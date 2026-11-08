@@ -1,8 +1,6 @@
 # Planner Visual Feedback Shortfall
->
-> Visual
 
->
+> Visual
 
 ## Visual feedback met by contract tests while the look stayed bland
 

@@ -1,7 +1,4 @@
 # Execution Containment
->
-
->
 
 ## Read This First: What "Containment" Means In Loom
 

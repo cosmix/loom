@@ -1,8 +1,6 @@
 # Untrusted Value Boundaries
->
-> Trust
 
->
+> Trust
 
 ## Enumerate Every PRODUCER of a Rendered Field, Not Every Field
 

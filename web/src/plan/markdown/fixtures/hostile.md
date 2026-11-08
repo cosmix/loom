@@ -4,6 +4,7 @@
 
 <script>alert(1)</script>
 
+<!-- markdownlint-disable-next-line MD045 -->
 Inline <script>alert(2)</script> and <img src=x onerror=alert(1)> and <a href="javascript:alert(1)">raw</a>.
 
 <iframe src="https://evil.example"></iframe>

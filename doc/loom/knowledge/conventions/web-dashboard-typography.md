@@ -1,7 +1,4 @@
 # Web Dashboard Typography
->
-
->
 
 ## Where the Dashboard's Theme Tokens Live
 

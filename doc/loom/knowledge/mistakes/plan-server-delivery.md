@@ -1,11 +1,6 @@
 # Plan Server Delivery
->
-> Slips
->
->
->
 
->
+> Slips
 
 ## A New Test Target Spawned the Loom Binary and Failed the Spawn Guard Only in integration-verify (2026-10-27)
 
@@ -306,7 +301,7 @@ containing `git commit`, even in a scratch fixture repo, so prove a no-diff rese
 
 **Prevention:** use an ES2023 deferred; assert a hidden background element by text absence; query the authoring text node and assert the container's `textContent`; build stage fixtures with `Stage::default()` and `serialize_stage_to_markdown`; re-read a file the edit hook may have reformatted before patching it. Web contract tests are one top-level `it()` with the full name (see [run-handoff](../architecture/run-handoff.md)).
 
-# Planner UI Redesign Delivery
+## Planner UI Redesign Delivery
 >
 > Planner redesign delivery slips
 

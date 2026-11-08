@@ -1,9 +1,6 @@
 # Subagent Orchestration
->
-> Agents
->
 
->
+> Agents
 
 ## "I Wrote My Own Because I Could Not Reach Yours" Is a Defect Report
 
