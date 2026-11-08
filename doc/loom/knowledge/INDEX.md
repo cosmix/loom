@@ -232,7 +232,7 @@
 | [planning-document-model-followups](concerns/planning-document-model-followups.md) |  | 172 |
 | [planning-guidance-followups](concerns/planning-guidance-followups.md) |  | 42 |
 | [planning-session-sandbox-limits](concerns/planning-session-sandbox-limits.md) |  | 182 |
-| [platform-and-commit-gaps](concerns/platform-and-commit-gaps.md) |  | 233 |
+| [platform-and-commit-gaps](concerns/platform-and-commit-gaps.md) |  | 234 |
 | [runtime-and-session-safety](concerns/runtime-and-session-safety.md) |  | 137 |
 | [sandbox-and-confinement-gaps](concerns/sandbox-and-confinement-gaps.md) |  | 363 |
 | [session-tmpdir-deny](concerns/session-tmpdir-deny.md) |  | 7 |
