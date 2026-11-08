@@ -204,3 +204,13 @@ The unfiltered suite ran only inside host jobs.
 **Prevention:** no criterion, stage description or block may ask anyone to run tests outside loom's confinement. A test that needs the host stays `#[ignore]` and is reported unverified until loom has a confined route for it (the live-test-lane plan). A loom driver never runs with an automatic approval reviewer, or with standing allow rules for test runners, shells or network tools.
 
 **Fix:** the operator removed `approvals_reviewer` from the codex configuration, and the integration-verify stages of plans 08 to 11 defer operator tests instead of requesting host runs.
+
+## The Exact Pinned Completion Was Left to the Auto-Mode Classifier
+
+**What happened:** the hook-guards stage session typed the pinned `/home/<user>/.local/bin/loom stage complete hook-guards`; Claude Code's auto-mode classifier refused it as "Production Deploy" and the session stopped before completion.
+
+**Why:** `loom-hooks/loom-control-complete.sh` returned its own allow only for the plain spelling it rewrites; for the exact pinned form it wrote the heartbeat and exited 0 with no decision. No permission rule matches the absolute path (sessions grant `Bash(loom *)`), so the classifier decided.
+
+**Prevention:** a command a guard hook pins gets the hook's own `permissionDecision: "allow"`. A settings allow rule for it would be a second source that drifts from `resolve_trusted_loom`'s fallback.
+
+**Fix:** `emit_pinned_allow` serves the exact pinned command and the rewritten plain spelling for a main agent; `loom-hooks/tests/loom-control-complete-rewrite.sh` asserts the allow, the carried `timeout`, the dropped `run_in_background`, and no allow for a subagent.
