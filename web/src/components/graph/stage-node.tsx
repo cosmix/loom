@@ -12,7 +12,8 @@ import { StateBadge, toneClass } from "@/components/state-badge";
 import { TerminalGlyph } from "@/components/terminal/terminal-glyph";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { hazardTone, mergeText, stateMeta, timeText } from "@/lib/format";
-import { activityText, isContractPhase } from "@/lib/format-activity";
+import { displayState, type DisplayState } from "@/lib/display-state";
+import { activityText, completionActivity, isContractPhase } from "@/lib/format-activity";
 import { hasFooter, NODE_WIDTH, nodeHeight } from "@/lib/graph";
 
 export interface StageNodeData extends Record<string, unknown> {
@@ -26,8 +27,8 @@ export interface StageNodeData extends Record<string, unknown> {
 
 export type StageNodeType = Node<StageNodeData, "stage">;
 
-/// Statuses whose card gets a tinted ground so they read at a glance.
-const ATTENTION = new Set<StageSummary["status"]>([
+/// States whose card gets a tinted ground so they read at a glance.
+const ATTENTION = new Set<DisplayState>([
   "blocked",
   "completed-with-failures",
   "merge-conflict",
@@ -36,6 +37,8 @@ const ATTENTION = new Set<StageSummary["status"]>([
   "needs-adjudication",
   "waiting-for-input",
   "needs-handoff",
+  "completion-pending",
+  "completion-blocked",
 ]);
 
 /// The stage type, shown only when it is not the plain kind.
@@ -51,8 +54,9 @@ const TYPE_TAG: Partial<Record<StageSummary["stage_type"], string>> = {
 export function StageNode({ data }: NodeProps<StageNodeType>) {
   const { stage, index, emphasis, tokens } = data;
   const { open, openTerminal } = useGraphActions();
-  const tone = stateMeta(stage.status).tone;
-  const contractPhase = isContractPhase(stage);
+  const state = displayState(stage);
+  const tone = stateMeta(state).tone;
+  const contractPhase = state === "executing" && isContractPhase(stage);
   const style = {
     "--i": index,
     width: NODE_WIDTH,
@@ -64,9 +68,9 @@ export function StageNode({ data }: NodeProps<StageNodeType>) {
       className={cn("stage-node", toneClass(contractPhase ? "contract" : tone))}
       style={style}
       data-emphasis={emphasis}
-      data-live={stage.status === "executing" || undefined}
-      data-attention={ATTENTION.has(stage.status) || undefined}
-      data-hazard={hazardTone(stage.status) ?? undefined}
+      data-live={state === "executing" || undefined}
+      data-attention={ATTENTION.has(state) || undefined}
+      data-hazard={hazardTone(state) ?? undefined}
     >
       <Handle
         type="target"
@@ -74,9 +78,9 @@ export function StageNode({ data }: NodeProps<StageNodeType>) {
         isConnectable={false}
         className="stage-handle"
       />
-      <div key={stage.status} className="stage-card">
+      <div key={state} className="stage-card">
         <header className="flex items-center gap-1.5">
-          <StateBadge status={stage.status} className="text-xs" />
+          <StateBadge status={state} className="text-xs" title={completionActivity(stage)?.text} />
           {TYPE_TAG[stage.stage_type] && (
             <span className="stage-tag">{TYPE_TAG[stage.stage_type]}</span>
           )}

@@ -1,7 +1,8 @@
 import dagre from "@dagrejs/dagre";
 
-import type { StageStatus, StageSummary } from "@/api/schema";
+import type { StageSummary } from "@/api/schema";
 import { routeEdges, type Point } from "@/lib/edge-routing";
+import { displayState, type DisplayState } from "@/lib/display-state";
 import { contextUsage, mergeText, stateMeta, timeText, type Tone } from "@/lib/format";
 import { activityText } from "@/lib/format-activity";
 
@@ -55,7 +56,7 @@ export interface Thread {
   style: ThreadStyle;
 }
 
-const THREAD_STYLE: Record<StageStatus, ThreadStyle> = {
+const THREAD_STYLE: Record<DisplayState, ThreadStyle> = {
   "waiting-for-deps": "hairline",
   queued: "hairline",
   executing: "running",
@@ -69,10 +70,13 @@ const THREAD_STYLE: Record<StageStatus, ThreadStyle> = {
   "merge-blocked": "dashed",
   "needs-human-review": "dashed",
   "needs-adjudication": "dashed",
+  "completion-pending": "dashed",
+  "completion-blocked": "dashed",
 };
 
 export function threadOf(source: StageSummary): Thread {
-  return { tone: stateMeta(source.status).tone, style: THREAD_STYLE[source.status] };
+  const state = displayState(source);
+  return { tone: stateMeta(state).tone, style: THREAD_STYLE[state] };
 }
 
 export interface LaidOutNode {

@@ -34,3 +34,17 @@ describe("activity vocabulary", () => {
     expect(tips).toMatch(/a long tool call can still read stale/);
   });
 });
+
+describe("state key", () => {
+  it("lists the completion states under needs you, toned as attention", () => {
+    const { container } = render(<LegendTopic />);
+    const needsYou = screen.getByText("needs you");
+    const pending = screen.getByText("Completion pending");
+
+    expect(
+      needsYou.compareDocumentPosition(pending) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(pending.parentElement?.classList.contains("tone-warning")).toBe(true);
+    expect(container.textContent).toContain("Completion blocked");
+  });
+});

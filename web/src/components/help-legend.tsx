@@ -3,7 +3,7 @@ import { cn } from "cn";
 import { StateBadge, toneClass } from "@/components/state-badge";
 import { Separator } from "@/components/ui/separator";
 import type { Tone } from "@/lib/format";
-import { LEGEND, type StageStateMeta } from "@/lib/states";
+import { DISPLAY_LEGEND, type StageStateMeta } from "@/lib/states";
 
 /// The activity column's vocabulary (`legend.rs` `activity_lines`, plus the
 /// `crashed` cell from `cells.rs`).
@@ -46,11 +46,11 @@ export function LegendTopic() {
   return (
     <div className="space-y-5">
       <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-sm">
-        {LEGEND.slice(0, NEEDS_YOU_FROM).map((entry) => (
+        {DISPLAY_LEGEND.slice(0, NEEDS_YOU_FROM).map((entry) => (
           <LegendRow key={entry.status} entry={entry} />
         ))}
         <div className={cn("col-span-2 mt-2 eyebrow", toneClass("blocked"))}>needs you</div>
-        {LEGEND.slice(NEEDS_YOU_FROM).map((entry) => (
+        {DISPLAY_LEGEND.slice(NEEDS_YOU_FROM).map((entry) => (
           <LegendRow key={entry.status} entry={entry} />
         ))}
       </dl>

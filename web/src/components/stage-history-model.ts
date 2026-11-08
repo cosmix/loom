@@ -1,5 +1,6 @@
 import type { Attention, IssueKind, StageIssue, StageStatus, StageSummary } from "@/api/schema";
 import { attentionStatus } from "@/components/attention-status";
+import { displayState, type DisplayState } from "@/lib/display-state";
 import { stateMeta, type Tone } from "@/lib/format";
 
 /// How many events the history card shows before "Show all".
@@ -24,7 +25,7 @@ export type HistoryMark =
 export interface HistoryEvent {
   key: string;
   /// The state whose glyph the tag wears.
-  status: StageStatus;
+  status: DisplayState;
   tone: Tone;
   tag: string;
   title: string;
@@ -114,7 +115,7 @@ function archivedEvent(issue: StageIssue): HistoryEvent {
 /// so it brings no evidence of its own.
 function currentEvent(stage: StageSummary, entry: Attention): HistoryEvent {
   const kind = STATUS_KIND[stage.status];
-  const status = attentionStatus(entry);
+  const status = attentionStatus(entry, displayState(stage));
   const label = sentence(entry.label);
   return {
     key: "current",

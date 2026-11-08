@@ -1,8 +1,8 @@
 import { cn } from "cn";
 
-import type { StageStatus } from "@/api/schema";
+import type { DisplayState } from "@/lib/display-state";
 import { stateMeta, type Tone } from "@/lib/format";
-import { STAGE_STATES } from "@/lib/states";
+import { DISPLAY_STATES } from "@/lib/states";
 
 /// The one place a tone becomes a CSS class; the colours live in index.css.
 export function toneClass(tone: Tone): string {
@@ -10,8 +10,8 @@ export function toneClass(tone: Tone): string {
 }
 
 /// The state glyph alone, for lines where the label is carried by the text.
-export function StateGlyph({ status, className }: { status: StageStatus; className?: string }) {
-  const { icon: Icon, label } = STAGE_STATES[status];
+export function StateGlyph({ status, className }: { status: DisplayState; className?: string }) {
+  const { icon: Icon, label } = DISPLAY_STATES[status];
   const { tone } = stateMeta(status);
   return (
     <span
@@ -32,12 +32,22 @@ export function StateGlyph({ status, className }: { status: StageStatus; classNa
   );
 }
 
-/// Glyph plus label, toned as the TUI's STATE column.
-export function StateBadge({ status, className }: { status: StageStatus; className?: string }) {
-  const { icon: Icon, label } = STAGE_STATES[status];
+/// Glyph plus label, toned as the TUI's STATE column. `title` explains a
+/// state the label alone cannot, such as a completion blocker's reason.
+export function StateBadge({
+  status,
+  className,
+  title,
+}: {
+  status: DisplayState;
+  className?: string;
+  title?: string;
+}) {
+  const { icon: Icon, label } = DISPLAY_STATES[status];
   const { tone, bold } = stateMeta(status);
   return (
     <span
+      title={title}
       className={cn(
         "inline-flex items-center gap-1.5 whitespace-nowrap",
         toneClass(tone),
