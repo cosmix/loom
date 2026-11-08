@@ -87,13 +87,13 @@ loom stage complete <stage-id>
 
 Stage `git add <specific-files>` only, never `-A` or `.`; never run `git commit`.
 
-**When to commit — at exit.** Exception: commit before filing a block or dispute when the stage cannot finish. For completion, commits happen ONLY as the final step of the stage — never mid-stage — once every subagent returned, `loom check` is green, and the final review's findings are fixed (`loom-orchestration` skill). Completion is the session's last act: `loom stage complete` prints `Host job: <state>` first. `requested`/`pending`/`stopped`: rerun; `failed`/`rejected`/`refused`: fix, commit, rerun; `completed`: stop.
+**When to commit — at exit.** Exception: commit before filing a block or dispute when the stage cannot finish. For completion, commits happen ONLY as the final step of the stage — never mid-stage — once every subagent returned, `loom check` is green, and the final review's findings are fixed (`loom-orchestration` skill). Completion is the session's last act: `loom stage complete` prints `Host job: <state>` first. Run it alone; at most `2>&1 | tail -N` may follow it. `requested`/`pending`/`stopped`: rerun; `failed`/`rejected`/`refused`: fix, commit, rerun; `completed`: stop.
 
 Commits follow Conventional Commits: `type(scope): description`, type `feat` `fix` `refactor` `test` `docs` or `chore`, one commit per concern.
 
 ### 5. SUBAGENT RESTRICTIONS
 
-Subagents write code and report; the main agent owns fixes and all git operations (hard stop 3). A subagent runs at most one narrowly scoped check, once. A standard stage's gate is the main agent's single `loom check`; a fix round re-checks only the failed criteria with `--criterion <n>`; integration-verify keeps its own. `loom-hooks/spawn-guard.sh` prepends the subagent preamble, `loom-hooks/_subagent-preamble.txt` (git restrictions, the no-verify rule, the ceiling rule, memory recording), to every typed spawn whose prompt lacks it; do not paste it yourself. Codex subagents get their own rules from `loom-hooks/codex-forward.sh`.
+Subagents write code and report; the main agent owns fixes and all git operations (hard stop 3). A subagent compiles its own files freely and runs at most one narrowly scoped check, once. A standard stage's gate is the main agent's single `loom check`; a fix round re-checks only the failed criteria with `--criterion <n>`; integration-verify keeps its own. `loom-hooks/spawn-guard.sh` prepends the subagent preamble, `loom-hooks/_subagent-preamble.txt` (git, verification, ceilings, memory), to every typed spawn whose prompt lacks it; never paste it. Codex subagents get theirs from `loom-hooks/codex-forward.sh`.
 
 ### 6. SUBAGENTS
 
@@ -118,9 +118,9 @@ Check skills and agents before implementing; the prompt-submit hook surfaces mat
 | `loom-advisor` | Fable | Read-only advisory for debugging and repeated failures — receives full detail, returns a diagnosis and next step, writes nothing |
 | `loom-codex-forwarder` | gpt-6.1-terra; gpt-6-luna only on explicit request | Stages listing codex in `implementers`; state `--model <tier> --effort xhigh` in the prompt; haiku forwarder, foreground, never verifies; one concern per job, cohesive files, within the wrapper's 1500 s deadline; brief by absolute path; overruns exit 124 `timed_out` — re-split against the partial tree, never re-forward as is |
 
-Fable-tier work has no pinned agent type; pass the model override explicitly at spawn.
+Fable-tier work has no pinned agent type; pass the model override at spawn.
 
-Outside a loom stage `loom-codex-forwarder` is blocked; when the official Codex plugin is installed (the `codex:codex-rescue` agent type is listed), delegate codex work to that agent or `/codex:rescue`. Pick the lane per task: codex for well-specified implementation with pinned interfaces, Claude for exploration, cross-cutting changes, debugging, and work that iterates on tests.
+Outside a loom stage `loom-codex-forwarder` is blocked; when the Codex plugin is installed (the `codex:codex-rescue` agent type is listed), delegate codex work to that agent or `/codex:rescue`. Pick the lane per task: codex for well-specified implementation with pinned interfaces, Claude for exploration, cross-cutting changes, debugging, and work that iterates on tests.
 
 Model allocation, in full in the `loom-orchestration` skill. Delegation is a cost decision, tokens times model tier: the main agent makes a change itself only when it is at most 20 lines in at most 2 files already read, proven by one command, and a fable main session delegates even those. Everything else goes to as few subagents as the work allows at the cheapest capable tier, escalating one tier only after a failed attempt.
 

@@ -160,8 +160,9 @@ gate_var_unset_intent() {
 # the token path and the regex-fallback path emit identical guidance.
 block_anti_evasion() {
 	local reason="$1"
+	loom_record_block commit-filter isolation-bypass Bash "$COMMAND"
 	cat >&2 <<EOF
-⛔ BLOCKED: git/loom command uses an isolation-bypass pattern.
+[commit-filter/isolation-bypass] ⛔ BLOCKED: git/loom command uses an isolation-bypass pattern.
 Reason: $reason
 
 Run git/loom directly, without env -u / unset / eval wrappers. The main agent
@@ -238,17 +239,25 @@ is_git_commit_command() {
 	fi
 }
 
+# scratch_git_only - loom_git_targets_scratch_only (_git-command.sh), computed
+# once and only when a `git commit` / `git add` rule would otherwise fire.
+SCRATCH_GIT=""
+scratch_git_only() {
+	[[ -n "$SCRATCH_GIT" ]] || { SCRATCH_GIT=0 && loom_git_targets_scratch_only && SCRATCH_GIT=1; }
+	[[ "$SCRATCH_GIT" == 1 ]]
+}
+
 # is_subagent_git_operation - True when the command actually INVOKES `git
 # commit`, `loom stage commit`, `git add -A`/`--all` or `git add .`, or shows
 # the var-indirection evasion pattern (indirection_intent). The token path
 # scans real argv positions, so those words inside one quoted argument (a
-# brief telling a codex subagent not to touch git) never match.
+# brief telling a codex subagent not to touch git) never match. The git terms
+# lift for a command whose git work all stays in scratch repositories.
 is_subagent_git_operation() {
 	if [[ $TOKENS_OK -eq 1 ]]; then
-		is_git_commit_command ||
+		{ { is_git_commit_command || loom_tokens_cmd_has_arg_pair 'git' 'add' '-A|--all|\.'; } &&
+			! scratch_git_only; } ||
 			loom_tokens_cmd_has_arg_pair 'loom' 'stage' 'commit' ||
-			loom_tokens_cmd_has_arg_pair 'git' 'add' '-A|--all' ||
-			loom_tokens_cmd_has_arg_pair 'git' 'add' '\.' ||
 			indirection_intent
 	else
 		# Unterminated quote: the pre-tokenizing regexes, so protection is never
@@ -285,9 +294,9 @@ if loom_is_subagent "$INPUT_JSON"; then
 	# Check if this is a git commit or loom stage complete command.
 	if is_subagent_git_operation; then
 		loom_debug "DEBUG: BLOCKED - Subagent attempting git operation"
-
+		loom_record_block commit-filter subagent-git Bash "$COMMAND"
 		cat >&2 <<'EOF'
-⛔ BLOCKED: Subagent attempting git operation.
+[commit-filter/subagent-git] ⛔ BLOCKED: Subagent attempting git operation.
 
 You are a SUBAGENT (spawned via Task tool). Per CLAUDE.md rules:
 - NEVER run `git commit` - only the main agent commits
@@ -308,9 +317,9 @@ EOF
 
 	if is_stage_complete_command; then
 		loom_debug "DEBUG: BLOCKED - Subagent attempting loom stage complete"
-
+		loom_record_block commit-filter subagent-complete Bash "$COMMAND"
 		cat >&2 <<'EOF'
-⛔ BLOCKED: Subagent attempting to complete stage.
+[commit-filter/subagent-complete] ⛔ BLOCKED: Subagent attempting to complete stage.
 
 You are a SUBAGENT (spawned via Task tool). Per CLAUDE.md rules:
 - NEVER run `loom stage complete` - only the main agent completes stages
@@ -335,10 +344,11 @@ fi
 # Commits go through `loom stage commit`, which the daemon applies;
 # LOOM_HOOK_CONTEXT=1 marks loom's own hook invocations.
 if [[ -n "${LOOM_STAGE_ID:-}" && -n "${LOOM_SESSION_ID:-}" && "${LOOM_HOOK_CONTEXT:-}" != "1" ]] &&
-	is_git_commit_command; then
+	is_git_commit_command && ! scratch_git_only; then
 	loom_debug "DEBUG: BLOCKED - git commit in a stage session"
+	loom_record_block commit-filter no-git-commit Bash "$COMMAND"
 	cat >&2 <<'EOF'
-⛔ BLOCKED: no git commit in a loom stage session.
+[commit-filter/no-git-commit] ⛔ BLOCKED: no git commit in a loom stage session.
 
 Commit with `git add <specific-files>` then `loom stage commit <stage-id> -m "type(scope): description"`, and wait for it with `loom request status <id> --wait 90`; never run `git commit`.
 EOF
@@ -413,10 +423,9 @@ if is_git_commit_command || is_stage_commit_command; then
 
 	if [[ -n "$BLOCKED_REASON" ]]; then
 		loom_debug "DEBUG: BLOCKED - $BLOCKED_REASON"
-
-		# Output guidance to stderr and block
+		loom_record_block commit-filter ai-attribution Bash "$COMMAND"
 		cat >&2 <<EOF
-BLOCKED: Commit contains forbidden attribution (CLAUDE.md rule 9).
+[commit-filter/ai-attribution] BLOCKED: Commit contains forbidden attribution (CLAUDE.md rule 9).
 Reason: $BLOCKED_REASON
 
 NOTHING RAN. This hook blocks the ENTIRE Bash call, not just the commit.

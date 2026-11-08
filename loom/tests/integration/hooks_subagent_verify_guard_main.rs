@@ -69,6 +69,7 @@ fn main_agent_of_a_standard_stage_is_blocked_on_unfiltered_suites() {
 fn main_agent_of_a_standard_stage_may_filter_lint_and_format() {
     for command in [
         "cargo test --lib a::",
+        "cargo test --lib --no-run",
         "bunx vitest run src/a.test.ts",
         "cargo clippy --all-targets",
         "cargo fmt --check",

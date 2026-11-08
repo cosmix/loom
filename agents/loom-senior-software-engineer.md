@@ -84,7 +84,7 @@ subagents yourself. Design the approach, then report it in full so your caller c
 
 ## Self-Review Before Returning
 
-Before reporting work done, review the diff — not by running the build, test suite, or any linter — across the same six-dimension adversarial review the stage signal enforces: code quality & architecture (SOLID), idiomatic code, security, wiring, dead/unnecessary code, and no duplication (DRY, searching the WHOLE codebase to reuse existing utilities rather than re-implement). At most ONE narrowly-scoped check over files you touched directly, run ONCE, skipped if unsure — verification beyond that belongs to the stage's gate. For non-trivial changes, flag in your report that a read-only `loom-code-reviewer` pass is warranted, for your caller to arrange. Fix findings before returning; the stage's gate compiles, tests, and lints, and the main agent completes the stage.
+Before reporting work done, review the diff — not by running the test suite or any linter (compiling your own files is fine) — across the same six-dimension adversarial review the stage signal enforces: code quality & architecture (SOLID), idiomatic code, security, wiring, dead/unnecessary code, and no duplication (DRY, searching the WHOLE codebase to reuse existing utilities rather than re-implement). At most ONE narrowly-scoped check over files you touched directly, run ONCE, skipped if unsure — verification beyond that belongs to the stage's gate. For non-trivial changes, flag in your report that a read-only `loom-code-reviewer` pass is warranted, for your caller to arrange. Fix findings before returning; the stage's gate compiles, tests, and lints, and the main agent completes the stage.
 
 ## Context Ceiling
 

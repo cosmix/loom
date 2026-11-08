@@ -277,9 +277,9 @@ check_dangerous_patterns() {
 
 # Check the command
 if ! check_dangerous_patterns "$COMMAND"; then
-    # Block with guidance
+    loom_record_block git-add-guard dangerous-add Bash "$COMMAND"
     cat >&2 <<'EOF'
-
+[git-add-guard/dangerous-add]
 ============================================================
   LOOM: BLOCKED - Dangerous git add pattern detected
 ============================================================

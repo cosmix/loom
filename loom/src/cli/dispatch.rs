@@ -121,6 +121,10 @@ fn dispatch_context(command: ContextCommands) -> Result<()> {
 /// work, never a model call and never a network call.
 fn dispatch_hook(command: HookCommands) -> Result<()> {
     match command {
+        HookCommands::Blocks {
+            since_hours,
+            by_rule,
+        } => hook::blocks::blocks(since_hours, by_rule),
         HookCommands::UserPrompt => hook::user_prompt::user_prompt(),
         HookCommands::ReconcileGraph { cancel } => hook::reconcile_graph::reconcile_graph(cancel),
         HookCommands::PreCompact => hook::pre_compact::pre_compact(),

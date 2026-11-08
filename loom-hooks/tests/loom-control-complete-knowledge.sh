@@ -44,11 +44,14 @@ run_hook() {
 CONFINED=(LOOM_SESSION_TYPE=knowledge "LOOM_SCRATCH_DIR=$TMP/scratch/session-k")
 PINNED="$TMP/bin/loom stage complete kstage"
 
-# 1. A confined Knowledge session is held to the pinned route, end to end.
-if err=$(run_hook "$(pre 'loom stage complete kstage')" "${CONFINED[@]}" 2>&1); then
-	fail "knowledge: an unpinned completion was not refused"
-fi
-[[ "$err" == *"retry with the pinned command: $PINNED"* ]] || fail "knowledge: wrong refusal: $err"
+# rewritten_to <stdout> - The PreToolUse rewrite's command.
+rewritten_to() { jq -r '.hookSpecificOutput.updatedInput.command // empty' <<<"$1"; }
+
+# 1. A confined Knowledge session is held to the pinned route, end to end: the
+# bare form is rewritten to the pinned command.
+out=$(run_hook "$(pre 'loom stage complete kstage')" "${CONFINED[@]}" 2>/dev/null) ||
+	fail "knowledge: the bare completion was not rewritten"
+[[ "$(rewritten_to "$out")" == "$PINNED" ]] || fail "knowledge: wrong rewrite: $out"
 run_hook "$(pre "$PINNED")" "${CONFINED[@]}" >/dev/null || fail "knowledge: the pinned command was refused"
 
 # 2. Merge, adjudication and legacy (unconfined) Knowledge sessions stay out.
@@ -67,11 +70,22 @@ err=$(run_hook "$(pre 'loom stage complete kstage')" "${CONFINED[@]}" LOOM_BIN="
 [[ "$err" != *"$TMP/repo/bin/loom"* ]] || fail "knowledge: a LOOM_BIN inside the repository was trusted: $err"
 
 # 4. A stage worktree session prefers LOOM_BIN, and ignores one inside the worktree.
-err=$(run_hook "$(pre 'loom stage complete kstage')" LOOM_WORKTREE_PATH="$WORKTREE" 2>&1) &&
-	fail "stage: an unpinned completion was not refused"
-[[ "$err" == *"retry with the pinned command: $PINNED"* ]] || fail "stage: LOOM_BIN was not preferred: $err"
+out=$(run_hook "$(pre 'loom stage complete kstage')" LOOM_WORKTREE_PATH="$WORKTREE" 2>/dev/null) ||
+	fail "stage: the bare completion was not rewritten"
+[[ "$(rewritten_to "$out")" == "$PINNED" ]] || fail "stage: LOOM_BIN was not preferred: $out"
+# With a LOOM_BIN inside the worktree, the rewrite names the fixed install
+# location instead, never the worktree's binary.
+FIXED_HOME="$TMP/fixed-home"
+mkdir -p "$FIXED_HOME/.local/bin"
+printf '#!/usr/bin/env bash\nexit 0\n' >"$FIXED_HOME/.local/bin/loom"
+chmod +x "$FIXED_HOME/.local/bin/loom"
+out=$(run_hook "$(pre 'loom stage complete kstage')" LOOM_WORKTREE_PATH="$WORKTREE" \
+	LOOM_BIN="$WORKTREE/bin/loom" HOME="$FIXED_HOME" 2>/dev/null) ||
+	fail "stage: the bare completion was not rewritten with an untrusted LOOM_BIN"
+[[ "$(rewritten_to "$out")" == "$FIXED_HOME/.local/bin/loom stage complete kstage" ]] ||
+	fail "stage: a LOOM_BIN inside the worktree was trusted: $out"
 err=$(run_hook "$(pre 'loom stage complete kstage')" LOOM_WORKTREE_PATH="$WORKTREE" LOOM_BIN="$WORKTREE/bin/loom" 2>&1) &&
-	fail "stage: a refusal was expected with an untrusted LOOM_BIN"
+	fail "stage: a refusal was expected with an untrusted LOOM_BIN and no install"
 [[ "$err" != *"$WORKTREE/bin/loom"* ]] || fail "stage: a LOOM_BIN inside the worktree was trusted: $err"
 
 # 5. A heredoc body is data: a confined Knowledge session's replace-section whose
