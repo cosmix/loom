@@ -130,7 +130,7 @@ What a plugin would cost: every exact match on a bare agent or skill name change
 
 ## Implementers Do Not Verify; the Gate Is loom check
 
-Implementers do not verify. A subagent may run **at most one narrowly-scoped check** relevant to the files it just changed; project-wide builds, full test suites, and repo-wide lint or typecheck runs belong to the stage's gate.
+Implementers do not verify, but they compile. A subagent compiles the files it wrote as often as it needs (`cargo check`, `cargo build`, `cargo test --no-run`, `tsc --noEmit` without a watch flag, `<pm> run build`) and may run **at most one narrowly-scoped check** over them, once; full test suites, `cargo clippy`, every `cargo fmt` form and repo-wide lint or typecheck scripts belong to the stage's gate.
 
 Enforced by `loom-hooks/subagent-verify-guard.sh` (PreToolUse:Bash), stated in the subagent preamble `loom-hooks/_subagent-preamble.txt` (which `loom-hooks/spawn-guard.sh` prepends to every typed spawn; `CLAUDE.md.template` Rule 5 says not to paste it), and injected into stage signals by `orchestrator/signals/cache.rs` (standard and integration-verify prefixes). The `BLOCK_A` copies are pinned byte-for-byte across the two prefixes, the preamble and the guard by `tests_doctrine.rs::block_a_agrees_across_every_surface`.
 

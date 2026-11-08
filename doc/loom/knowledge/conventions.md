@@ -247,4 +247,4 @@ ends and every artifact judged by `loom usage --compare` under the net-total rul
 
 ## Implementers Do Not Verify
 
-A subagent runs at most one narrowly-scoped check. The gate is the orchestrator's `loom check <stage-id>`, run once after the implementers return. See [Guidance Channels and Plugin Scope](conventions/guidance-channels-and-plugin-scope.md).
+A subagent compiles its own files freely (`cargo check`, `cargo build`, `cargo test --no-run`, `tsc --noEmit`, `<pm> run build`) and runs at most one narrowly-scoped check, once. The gate is the orchestrator's `loom check <stage-id>`, run once after the implementers return. See [Guidance Channels and Plugin Scope](conventions/guidance-channels-and-plugin-scope.md).

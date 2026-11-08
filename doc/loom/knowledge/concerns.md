@@ -29,6 +29,12 @@ Extension-to-language lookup is shared; project manifest detection still has com
 
 → [Code Quality and Hook Debt](concerns/code-quality-and-hook-debt.md)
 
+### Hook False-Positive Plan Follow-Ups
+
+`subagent-verify-guard.sh` (606 lines) and `commit-filter.sh` (463) need a split. Seven guards and the codex lane record no blocks. The scratch-repo exemption reads repository state at hook time, and several tokenizer and resolver gaps remain (backslash-newline, `function`/`coproc`, logical `..`, `HOME`). `spawn-guard.sh`'s header still describes the old `updatedInput` behaviour.
+
+→ [Hook False-Positive Plan Follow-Ups](concerns/code-quality-and-hook-debt.md#hook-false-positive-plan-follow-ups)
+
 ## Long Codex Runs Starve the Loom Heartbeat
 
 A foreground codex-lane run is ONE blocking Bash call, so neither `PostToolUse` nor `SubagentStop`
