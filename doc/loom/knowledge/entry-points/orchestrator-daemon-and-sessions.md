@@ -239,9 +239,9 @@ Design and limits: [architecture/token-flow-sources.md](../architecture/token-fl
 
 | Path                                                             | Role                                                                                                                                                         |
 | ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `loom-hooks/subagent-verify-guard.sh`                            | PreToolUse:Bash guard — blocks project-wide verification for subagents (over the Rule 17 400-line cap — see [concerns.md](../concerns.md))                   |
+| `loom-hooks/subagent-verify-guard.sh` | PreToolUse:Bash guard: role and stage detection, block output and token walk; `_verify_matchers.sh` supplies runner matchers |
 | `loom-hooks/_common.sh`                                          | `loom_is_subagent()` — payload-first detection gate, process-tree walk as fallback; 619 lines, also over the Rule 17 cap — see [concerns.md](../concerns.md) |
-| `loom/src/orchestrator/signals/tests_doctrine.rs`                | pins the doctrine blocks byte-for-byte across signal, template, and hook                                                                                     |
+| `loom/src/orchestrator/signals/tests_doctrine.rs` | Pins doctrine blocks across signals, the subagent preamble and the guard |
 | `loom/tests/integration/hooks_subagent_verify_guard.rs`          | harness: process-tree construction, env scrubbing, payload building                                                                                          |
 | `loom/tests/integration/hooks_subagent_verify_guard_cases.rs`    | `BLOCK_CASES` / `ALLOW_CASES` table data                                                                                                                     |
 | `loom/tests/integration/hooks_subagent_verify_guard_carveout.rs` | integration-verify carve-out **refusal** directions (decoy, wrong type, missing)                                                                             |

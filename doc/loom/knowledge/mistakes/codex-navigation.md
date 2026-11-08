@@ -130,3 +130,33 @@ that lands in the tree is `100644`.
 **Prevention:** Read each exact target range after formatting before building the patch.
 
 **Fix:** Apply each extraction against the current source.
+
+## Bound combined tool output before reading briefs
+
+**What happened:** Combining complete skills and briefs into one large tool response truncated the material needed for delegation.
+
+**Why:** Per-command output budgets exceeded the combined response budget.
+
+**Prevention:** Read long briefs by their heading ranges and keep each tool response within the aggregate output budget.
+
+**Fix:** Workers read their complete assigned briefs separately; ownership excludes every sibling write set.
+
+## Retired doctrine literal matched the source sweep
+
+**What happened:** A negative doctrine test contained the retired phrase `AT MOST ONE narrowly-scoped` literally, so the plan's source sweep matched the test itself.
+
+**Why:** The test's exact runtime needle was also present as contiguous source text.
+
+**Prevention:** Split the retired literal with `concat!` before `narrowly`, preserving the exact compiled assertion while keeping the source sweep meaningful.
+
+**Fix:** The doctrine test uses the split literal.
+
+## Wait Regression Constructed the Wrong Outcome Shape
+
+**What happened:** a new wait regression constructed `WaitOutcome::Finished` as state-only, but the variant carries `(Box<JobRecord>, Option<JobResult>)`.
+
+**Why:** the test was drafted without checking the enum definition.
+
+**Prevention:** read the enum definition before constructing test outcomes.
+
+**Fix:** corrected the fixture before compiling; runtime behavior was unaffected.
