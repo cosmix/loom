@@ -209,7 +209,7 @@
   max-width: 64ch;
   margin: var(--space-1) 0 0;
   color: var(--foreground);
-  font-family: var(--font-reading);
+  font-family: var(--font-sans);
   font-size: var(--reading-size);
   line-height: 1.5;
   overflow-wrap: anywhere;

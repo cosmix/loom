@@ -5,7 +5,7 @@
  * level with no border of its own. Every size is in em, so Settings' reading size scales it all. */
 
 /* Document prose follows Settings' reading face and size (19px by default), held to 68ch.
- * Chat prose inherits its face; attachment quotes use the reading face. Tables and code
+ * Chat prose takes the chrome face (chat-transcript.css); attachment quotes use the reading face. Tables and code
  * blocks scroll inside themselves instead of widening the column. */
 .md {
   min-width: 0;

@@ -132,9 +132,8 @@
 
 [data-loom-plan] .coverage-nothing {
   color: var(--muted-foreground);
-  font-family: var(--font-reading);
+  font-family: var(--font-sans);
   font-size: 16px;
-  font-style: italic;
 }
 
 /* A state is a glyph and its word, inline so the word keeps the row's baseline; only the glyph
@@ -233,13 +232,12 @@
   line-height: var(--leading-ui);
 }
 
-/* "None open." and "No entry, plan or stage covers it.": an absence, quiet in the reading face. */
+/* "None open." and "No entry, plan or stage covers it.": an absence, quiet in the chrome face. */
 [data-loom-plan] .coverage-col > p.plan-fine:not(.coverage-links) {
   margin: 0;
   color: var(--muted-foreground);
-  font-family: var(--font-reading);
+  font-family: var(--font-sans);
   font-size: 16px;
-  font-style: italic;
   line-height: 1.5;
 }
 

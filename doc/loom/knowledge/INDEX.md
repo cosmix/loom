@@ -227,7 +227,7 @@
 | [loom-ask-and-read-gate](concerns/loom-ask-and-read-gate.md) |  | 112 |
 | [merge-and-recovery-edge-cases](concerns/merge-and-recovery-edge-cases.md) | Edges | 105 |
 | [plan-chat-followups](concerns/plan-chat-followups.md) | Chat | 40 |
-| [planner-follow-ups-followups](concerns/planner-follow-ups-followups.md) |  | 93 |
+| [planner-follow-ups-followups](concerns/planner-follow-ups-followups.md) |  | 92 |
 | [planner-ui-repair-followups](concerns/planner-ui-repair-followups.md) | Repair | 182 |
 | [planning-document-model-followups](concerns/planning-document-model-followups.md) |  | 172 |
 | [planning-guidance-followups](concerns/planning-guidance-followups.md) |  | 42 |

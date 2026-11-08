@@ -129,7 +129,7 @@
 
 .chat-left-behind h3 {
   margin: 0;
-  font-family: var(--font-reading);
+  font-family: var(--font-sans);
   font-size: 20px;
   font-weight: 500;
   letter-spacing: -0.01em;
@@ -229,7 +229,7 @@
   display: grid;
   grid-template-columns: 20px minmax(0, 1fr);
   gap: 6px;
-  font-family: var(--font-reading);
+  font-family: var(--font-sans);
   font-size: var(--type-title);
   line-height: 1.45;
 }
@@ -255,10 +255,6 @@
   content: counter(chat-decided);
   background: var(--muted);
   color: var(--muted-foreground);
-}
-
-.chat-left-behind-questions > li {
-  font-style: italic;
 }
 
 .chat-left-behind-questions > li::before {

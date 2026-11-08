@@ -4,7 +4,7 @@
  * Every size is set here, on classes the transcript carries wherever it mounts (the panel, the
  * kickoff screen, the help scene), so it never shrinks outside the panel. Chrome is --type-body,
  * secondary text (a time, a control) --type-ui, the user's words 15px and the assistant's prose
- * the reading face at 16px.
+ * the chrome face at 16px.
  */
 @import "./chat-tools.css";
 @import "./chat-cards.css";
@@ -193,10 +193,10 @@
 
 /* ── The assistant's prose ─────────────────────────────────────────────────── */
 
-/* The reading face at the reply's full width, two sizes over the chrome. */
+/* The assistant's prose at the reply's full width, two sizes over the chrome. */
 .chat-assistant-text .md {
   max-width: 100%;
-  font-family: var(--font-reading);
+  font-family: var(--font-sans);
   font-size: 16px;
   line-height: 1.55;
 }

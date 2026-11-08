@@ -88,6 +88,5 @@ Reviewer suggestions not applied and questions left open when `PLAN-trace-screen
 ### Open questions
 
 - Should the spine's group counts follow the design ("n of m settled", "n done", "n running") instead of the server checklist counts? The merged spine has no Run group, because `/f/<f>/run` redirects to the Plans overview.
-- Should the chat greeting "Let's spec!" (`chat/empty-chat.tsx`, an h3 in the reading face) move to the chrome face? The design says the Hearth chat is unchanged; it is the one serif heading the font walk flags.
 - `bun run build` warns that two lazy mermaid chunks exceed 500 kB (`elk-*.js` 1.5 MB, a 629 kB shared langium parser chunk). Both load only after `mermaid-block.tsx`'s dynamic import and no entry holds them. Options: drop mermaid's ELK layout, accept the warning, or set a documented `chunkSizeWarningLimit` for lazy vendor chunks.
 - Turn footer ("Now out of step with what you settled") and Settled-line writes were not walked in a browser: a stage sandbox cannot start a session or write the `/tmp` plan lock. Walk both outside a stage.

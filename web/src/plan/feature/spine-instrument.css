@@ -3,8 +3,8 @@
  * foot of Product spec and Findings at the foot of Plans, each a well inset to the child-row
  * column. A well stands one surface step off the spine's ground (--card on --background) inside a
  * hairline, where document rows are bare, because it is read as a ledger over the rows above it:
- * an icon, a small uppercase label, a serif old-style figure, one dot per heading or finding, and
- * an italic footnote. The link covers the whole well through its ::after and carries the focus
+ * an icon, a small uppercase label, a figure in tabular numerals, one dot per heading or finding,
+ * and an upright muted footnote. The link covers the whole well through its ::after and carries the focus
  * ring there; the current well takes the --accent wash and an edge mixed toward --foreground, as the
  * current row takes --muted. No motion beyond the rows' 120ms hover transition.
  */
@@ -107,14 +107,14 @@
   color: var(--foreground);
 }
 
-/* The figure: a reading-face old-style numeral, its unit after it in italic muted type. */
+/* The figure: a chrome-face numeral in tabular figures, its unit after it in upright muted type. */
 [data-loom-plan] .plan-spine__instrument-figure {
   flex: none;
   color: var(--foreground);
-  font-family: var(--font-reading);
+  font-family: var(--font-sans);
   font-size: 22px;
   font-weight: 600;
-  font-variant-numeric: oldstyle-nums;
+  font-variant-numeric: tabular-nums;
   letter-spacing: -0.01em;
   line-height: 1;
   white-space: nowrap;
@@ -128,16 +128,14 @@
 [data-loom-plan] .plan-spine__instrument-suffix {
   color: var(--muted-foreground);
   font-size: var(--type-ui);
-  font-style: italic;
   font-weight: 400;
 }
 
 [data-loom-plan] .plan-spine__instrument-clear {
   flex: none;
   color: var(--muted-foreground);
-  font-family: var(--font-reading);
+  font-family: var(--font-sans);
   font-size: 15px;
-  font-style: italic;
   line-height: 1;
 }
 
@@ -183,14 +181,13 @@
   box-shadow: inset 0 0 0 1.25px var(--muted-foreground);
 }
 
-/* The footnote: the reading face in italic at the spine's 13px floor, its section numbers and
-   run labels set upright in mono. */
+/* The footnote: the chrome face, upright, at the spine's 13px floor; its section numbers and
+   run labels are set in mono. */
 [data-loom-plan] .plan-spine__instrument-foot {
   margin: 7px 0 0 calc(14px + var(--space-2));
   color: var(--muted-foreground);
-  font-family: var(--font-reading);
+  font-family: var(--font-sans);
   font-size: var(--type-ui);
-  font-style: italic;
   font-weight: 400;
   line-height: 1.35;
   overflow-wrap: anywhere;

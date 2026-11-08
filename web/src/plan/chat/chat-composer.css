@@ -248,15 +248,14 @@
 
 /* ── Ending and ended ───────────────────────────────────────────────────── */
 
-/* The composer steps back to one italic line in the reading face; ended, the line shares it with
+/* The composer steps back to one upright line in the chrome face; ended, the line shares it with
  * Start a new chat, the primary pill, over the glow. */
 .chat-composer-ending,
 .chat-composer-ended {
   margin: 0;
   color: var(--muted-foreground);
-  font-family: var(--font-reading);
+  font-family: var(--font-sans);
   font-size: var(--type-title);
-  font-style: italic;
   font-weight: 400;
   line-height: 1.4;
 }

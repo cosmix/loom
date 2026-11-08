@@ -48,7 +48,7 @@ The stage dialog and stage page show "depends on" and "feeds" as one wrapping ro
 
 ## Planner reading face
 
-Body prose of rendered documents is set in a serif reading face; chrome, titles and Markdown headings stay in the sans face (`--font-sans`, Alegreya Sans), and code, paths and ids in `--font-mono` (Commit Mono Cosmix).
+Only document text (a rendered document's body, summary sentences, verbatim document quotes) is set in a serif reading face ([the rule](plan-web.md#titles-and-the-reading-face)); chrome, chat prose, titles and Markdown headings stay in the sans face (`--font-sans`, Alegreya Sans), and code, paths and ids in `--font-mono` (Commit Mono Cosmix).
 
 - `web/src/plan/plan.css` defines `--font-reading`, `--reading-size` (19px default) and `--reading-line` (1.6) on `[data-loom-plan]`; Settings overrides them through `data-reading-face` (`source-serif` default, `literata`, `piazzolla`) and `data-reading-size` (17, 19, 21) on the shell root. The choices live in `web/src/plan/settings/preferences.ts` (`READING_FACES`, `READING_SIZES`), stored per project through `projectPref` (`plan/chat/prefs.ts`); the fonts come from `@fontsource-variable/*` imports in `web/src/plan/main.tsx`.
 - `web/src/plan/markdown/markdown.css` applies the face to `[data-doc-container] .md`, `.concept-passage .md`, `.feature-pitch` and `.chat-passage`, never to bare `.md`: chat Markdown renders `.md` inside `font-sans text-sm` and stays in the sans face, so a new document surface opts in by one of those selectors. `.md h1`-`h6` keep `--font-sans` at weight 600, so reading text is serif while its headings are sans.

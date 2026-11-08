@@ -101,7 +101,7 @@
 }
 
 /* The pressure record: one surface, the tested flask in a --muted disc beside the date, the
-   record in the reading face and a quiet link to it. */
+   record in the chrome face and a quiet link to it. */
 [data-loom-plan] .trace-pressure__card {
   display: grid;
   grid-template-columns: 44px minmax(0, 1fr);
@@ -146,7 +146,7 @@
 [data-loom-plan] .trace-pressure__text {
   margin: 0;
   color: var(--foreground);
-  font-family: var(--font-reading);
+  font-family: var(--font-sans);
   font-size: calc(var(--reading-size) * 0.9);
   line-height: 1.5;
   overflow-wrap: anywhere;

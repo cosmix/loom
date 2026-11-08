@@ -1,7 +1,7 @@
 /* The chat panel's look, the hearth: one warm continuous surface where hierarchy comes from type,
  * space and the one hairline on the panel's start edge. Chrome is Alegreya Sans at --type-body in
- * --muted-foreground; the user's words are Alegreya Sans in --foreground; the assistant's prose is the
- * reading face. The transcript, the decision band, the composer, the chips and the notices have
+ * --muted-foreground; the user's words are Alegreya Sans in --foreground; the assistant's prose is
+ * Alegreya Sans too. The transcript, the decision band, the composer, the chips and the notices have
  * their own files, imported below. All of them are unlayered on purpose: they override the utility
  * classes of the shared Button. chat.css keeps the panel's frame, whose test pins that the frame
  * carries no tone, shadow or fade, so the glow and every other look is here.
@@ -206,7 +206,7 @@
 /* ── Empty state (empty-chat.tsx) ───────────────────────────────────────── */
 
 /* Before any message: a headline and a line, bottom-aligned above the composer and its prompt
- * pills, start-aligned. The title is the one reading-face line of chrome in the panel. */
+ * pills, start-aligned. The title is the panel's one display-size line of chrome. */
 .chat-empty {
   display: grid;
   flex: 1 1 auto;
@@ -222,7 +222,7 @@
 .chat-empty-title {
   max-width: 14ch;
   margin: 0;
-  font-family: var(--font-reading);
+  font-family: var(--font-sans);
   font-size: 26px;
   font-weight: 500;
   line-height: 1.2;
