@@ -1,5 +1,6 @@
 import type { Gap, NodeRef, SettleState, TraceDoc, TraceView } from "@/plan/api/schema-trace";
 import { fileName } from "@/plan/concept/passages";
+import type { GlyphKind } from "@/plan/feature/spine-model";
 import { featureSourceHref } from "@/plan/feature/source-href";
 import { featureHref } from "@/plan/feature/use-feature";
 
@@ -73,11 +74,20 @@ function headingsOf(trace: TraceView, ref: { path: string; anchor: string | null
 
 // ---- Frontier ------------------------------------------------------------------------------
 
-/** What the spine head says: a sentence, an optional muted line, and the one button after them. */
+/** The glyph that leads the spine head: a spine row's glyph kind, or the Findings instrument's icon. */
+export type HeadGlyph = Extract<GlyphKind, "not-written" | "attention" | "draft"> | "findings";
+
+/**
+ * What the spine head says: a verb and a name (a plan's short slug when `nameIsSlug`), the reason
+ * it is next, an optional further muted line, the glyph that leads it and the place it links to.
+ */
 export interface FrontierHead {
-  sentence: string;
+  verb: string;
+  name: string;
+  nameIsSlug: boolean;
+  reason: string;
   detail: string | null;
-  label: string;
+  glyph: HeadGlyph;
   to: string;
 }
 
@@ -93,52 +103,60 @@ function entryAt(trace: TraceView, node: NodeRef) {
     : trace.entries.find((entry) => entry.plan === node.path);
 }
 
-/** "Revisit <entry> before writing its plan", or "<plan> before running it" once it is written. */
+/** "Revisit <entry>" before its plan is written, or "Revisit <plan>" before running it once it is. */
 function revisitHead(trace: TraceView, feature: string, gap: Gap): FrontierHead {
   const doc = docOfPath(trace, gap.node.path);
   const entry = entryAt(trace, gap.node);
   const unwritten = doc?.role === "plan" ? doc.progress === "stub" : entry?.plan === null;
+  const base = { verb: "Revisit", detail: null, glyph: "attention" } as const;
   if (unwritten) {
     const anchor = entry?.anchor ?? gap.node.anchor;
-    const name = entry?.title ?? doc?.title ?? fileName(gap.node.path);
     return {
-      sentence: `Revisit ${name} before writing its plan.`,
-      detail: null,
-      label: "Open the metaplan",
+      ...base,
+      name: entry?.title ?? doc?.title ?? fileName(gap.node.path),
+      nameIsSlug: false,
+      reason: "Before writing its plan",
       to: `${featureHref(feature, "metaplan")}${anchor ? `#${encodeURIComponent(anchor)}` : ""}`,
     };
   }
   // A gap on a metaplan entry names the entry's written plan.
   const plan = doc?.role === "plan" || !entry?.plan ? doc : docOfPath(trace, entry.plan);
-  const title = plan?.title ?? entry?.title ?? fileName(gap.node.path);
   return {
-    sentence: `Revisit ${title} before running it.`,
-    detail: null,
-    label: plan?.slug ? `Open ${shortSlug(feature, plan.slug)}` : "Open the metaplan",
+    ...base,
+    ...planName(feature, plan, plan?.title ?? entry?.title ?? fileName(gap.node.path)),
+    reason: "Before running it",
     to: plan ? summaryHref(feature, plan) : featureHref(feature, "metaplan"),
   };
 }
 
-/** Counts up to twenty read as words ("Three findings"); a larger count stays a number. */
+/** A plan is named by its short slug; any other document, or a plan without one, by its title. */
+function planName(feature: string, doc: TraceDoc | undefined, title: string) {
+  return doc?.slug
+    ? { name: shortSlug(feature, doc.slug), nameIsSlug: true }
+    : { name: title, nameIsSlug: false };
+}
+
+/** Counts up to twenty read as words ("three findings"); a larger count stays a number. */
 const COUNT_WORDS = (
-  "Zero One Two Three Four Five Six Seven Eight Nine Ten Eleven Twelve Thirteen Fourteen " +
-  "Fifteen Sixteen Seventeen Eighteen Nineteen Twenty"
+  "zero one two three four five six seven eight nine ten eleven twelve thirteen fourteen " +
+  "fifteen sixteen seventeen eighteen nineteen twenty"
 ).split(" ");
 
-/** The sentence for `count` findings waiting; a gap that carries no count gets a generic one. */
-function triageSentence(count: number | null): string {
-  if (count === null) return "Findings from the last run are waiting for you.";
+/** "3 findings" as the head names it; a gap that carries no count says "findings". */
+function findingsName(count: number | null): string {
+  if (count === null) return "findings";
   const words = COUNT_WORDS[count] ?? String(count);
-  return count === 1
-    ? `${words} finding from the last run is waiting for you.`
-    : `${words} findings from the last run are waiting for you.`;
+  return count === 1 ? `${words} finding` : `${words} findings`;
 }
 
 function triageHead(feature: string, count: number | null): FrontierHead {
   return {
-    sentence: triageSentence(count),
+    verb: "Triage",
+    name: findingsName(count),
+    nameIsSlug: false,
+    reason: "From the last run",
     detail: null,
-    label: "Triage findings",
+    glyph: "findings",
     to: featureHref(feature, "findings"),
   };
 }
@@ -162,25 +180,33 @@ function docHead(trace: TraceView, feature: string, gap: Gap): FrontierHead {
   const doc = docOfPath(trace, gap.node.path);
   const title = doc?.title ?? fileName(gap.node.path);
   const to = doc ? summaryHref(feature, doc) : featureSourceHref(feature, gap.node.path);
-  const plan = doc?.slug ? shortSlug(feature, doc.slug) : title;
+  const titled = { name: title, nameIsSlug: false, detail: null, to };
+  const review = { verb: "Review", glyph: "attention" } as const;
   if (gap.kind === "upstream_changed") {
+    const named = { ...titled, ...planName(feature, doc, title) };
     return {
-      sentence: `The spec under ${plan} changed since you settled it.`,
-      detail: null,
-      label: `Review ${plan}`,
-      to,
+      ...review,
+      ...named,
+      reason: "Its spec changed since you settled it",
     };
   }
   if (gap.kind === "stub_changed") {
-    const sentence = `${title}'s stub changed since you settled it.`;
-    return { sentence, detail: null, label: `Review ${title}`, to };
+    return {
+      ...review,
+      ...titled,
+      reason: "Its stub changed since you settled it",
+    };
   }
   if (gap.kind === "revised") {
-    const sentence = `${title} changed since you settled it.`;
     const detail = flaggedPlanDetail(trace, feature, doc);
-    return { sentence, detail, label: `Review ${title}`, to };
+    return {
+      ...review,
+      ...titled,
+      detail,
+      reason: "Changed since you settled it",
+    };
   }
-  return { sentence: `Read ${title} and settle it.`, detail: null, label: `Read ${title}`, to };
+  return { verb: "Read", glyph: "draft", ...titled, reason: "Not settled yet" };
 }
 
 /** The trace's first frontier gap as the spine head says it; null when nothing needs attention. */
@@ -193,9 +219,12 @@ export function frontierHead(trace: TraceView, feature: string): FrontierHead | 
     const heading = headingsOf(trace, gap.node)[0];
     const name = heading?.title ?? gap.node.anchor ?? fileName(gap.node.path);
     return {
-      sentence: `${name} is not covered by any plan.`,
+      verb: "Cover",
+      name,
+      nameIsSlug: false,
+      reason: "No plan covers this heading",
       detail: null,
-      label: "Open coverage",
+      glyph: "not-written",
       to: coverageHref(feature, gap.node.path, gap.node.anchor),
     };
   }

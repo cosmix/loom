@@ -29,7 +29,7 @@ export function Name({ name, style }: { name: string; style: NameStyle }) {
 }
 
 /** The row glyphs: the settle seals are the shared `SEAL_ICONS`, the rest are the row's own. */
-const GLYPH_ICONS: Record<Exclude<GlyphKind, "running">, LucideIcon> = {
+export const GLYPH_ICONS: Record<Exclude<GlyphKind, "running">, LucideIcon> = {
   ...SEAL_ICONS,
   done: Check,
   "not-written": CircleDashed,

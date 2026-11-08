@@ -254,10 +254,17 @@ describe("the spine head", () => {
       if (!found) throw new Error("no head");
       return found;
     });
-    expect(within(head).getByText("Run loop changed since you settled it.")).toBeTruthy();
-    const link = within(head).getByRole("link", { name: "Review Run loop" });
-    expect(link.getAttribute("href")).toBe("/f/atlas/product/section_01");
-    expect(within(head).getAllByRole("link")).toHaveLength(1);
+    // The head is itself the one link: verb and name on a line, the reason under it.
+    expect(head.tagName).toBe("A");
+    expect(head.getAttribute("href")).toBe("/f/atlas/product/section_01");
+    expect(head.hasAttribute("data-look")).toBe(false);
+    expect(head.querySelector(".plan-spine-next__verb")?.textContent).toBe("Review");
+    expect(head.querySelector(".plan-spine-next__name")?.textContent).toBe("Run loop");
+    expect(within(head).getByText("Changed since you settled it")).toBeTruthy();
+    expect(within(head).queryAllByRole("link")).toHaveLength(0);
+    expect(spine.getByRole("link", { name: "Review Run loop Changed since you settled it" })).toBe(
+      head,
+    );
     expect(spine.queryByRole("list", { name: "Needs attention" })).toBeNull();
     const groups = document.querySelector(".plan-spine__groups")!;
     expect(head.compareDocumentPosition(groups) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
