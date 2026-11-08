@@ -708,6 +708,17 @@ loom plan [--port <PORT>] [--host <HOST>] [--no-open]
 
 `loom plan` serves a local web app for planning a project. You talk to a Claude Code session in a chat panel, it writes the documents under `doc/` in loom's conventions, and you read, question and settle them in the browser. It ends at a reviewed plan, a run, and the follow-up plans the run leaves behind. The files stay plain Markdown that any editor can change, and the app picks up the edits.
 
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="doc/images/planner-product-overview-dark.png">
+    <img src="doc/images/planner-product-overview.png" alt="The feature planner on a feature's product overview: the spine of documents on the left, the summary page in the middle, and the chat panel on the right" width="880">
+  </picture>
+</p>
+
+<p align="center">
+  <em>A feature's product overview: the spine, the summary page and the chat with its planning session.</em>
+</p>
+
 ### Starting it
 
 Run `loom plan` in a git repository. It prints a URL with an access token and opens it in a browser, unless you pass `--no-open`, the session is over SSH, or Linux has no display. It binds `127.0.0.1` starting at port 7272 and takes the next free port if that one is busy; `--port` binds exactly that port, and `--host` accepts the same values as the dashboard's. One planning server runs per project, and no `loom init` is needed. The app needs tmux, Claude Code and its login, and on Linux the sandbox prerequisites; without them it starts read-only and says what is missing. Details: [Plan Commands](#plan-commands).
@@ -725,6 +736,17 @@ A feature lives at `/f/<feature>`. A spine on the left lists its documents in wo
 
 Each document opens as a summary, with its source one click away. In a summary, opening a sentence replaces it with the sentences it rests on, and opening one of those shows the source passage; folding closes it again. Nobody has to read every document to form a view, and every claim traces to its text. Summaries are generated, kept in `doc/loom/summaries/`, and rebuilt when their sources change.
 
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="doc/images/planner-summary-open-dark.png">
+    <img src="doc/images/planner-summary-open.png" alt="A summary sentence opened to the spec sentences it rests on, one of them opened to its source passage" width="880">
+  </picture>
+</p>
+
+<p align="center">
+  <em>A summary sentence opened to the sentences it rests on, and one of those opened to its source passage.</em>
+</p>
+
 You mark a document settled when you agree with it. The mark is a `Settled:` line in the file. The spine flags a settled document that was revised, or whose vision row, metaplan entry or upstream section changed since.
 
 ### The chat
@@ -738,9 +760,31 @@ The chat panel is the conversation with a planning session. Loom starts the sess
 3. **Review.** When plans have run, loom writes `doc/plans/REVIEW-<plan id>.md`: spec conformance, open questions and open findings. The review is never edited. "Review the feature" starts a session with `loom-plan:review`, which records what it finds in the feature's findings ledger, `doc/plans/<feature>/findings.md`.
 4. **Follow-ups.** The Findings page groups the ledger by run review. Plan this and Fold into entry send a finding to a session that adds an entry under `## Follow-ups` in the metaplan, from which the next plan is written; Dismiss closes it with a reason. A finished feature offers "Plan follow-ups" for the same purpose.
 
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="doc/images/planner-findings-dark.png">
+    <img src="doc/images/planner-findings.png" alt="The Findings page: open findings from a run review, each with Plan this, Fold into entry and Dismiss" width="880">
+  </picture>
+</p>
+
+<p align="center">
+  <em>The Findings page: what a run left open, grouped by run review, one action away from a follow-up plan.</em>
+</p>
+
 ### File mode
 
 `/files/*` browses everything under `doc/`: product spec, metaplan, plans, briefs, run reviews and the knowledge base. It renders Markdown, searches, diffs against `HEAD` or a chat turn, and edits plain documents in an editor that validates a plan before saving. Plans that are running or done, knowledge files and the summary store are read-only. A dot marks documents that changed since you last looked.
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="doc/images/planner-files-dark.png">
+    <img src="doc/images/planner-files.png" alt="File mode: the document tree, a rendered product spec section and the chat panel" width="880">
+  </picture>
+</p>
+
+<p align="center">
+  <em>File mode: the <code>doc/</code> tree and a rendered spec section.</em>
+</p>
 
 Each planning session runs in its own tmux server named `loom-plan-<id>`, and `tmux -L <socket> attach -r` watches it read-only. Ctrl-C stops new sessions and waits for running ones to finish writing; a second Ctrl-C exits at once.
 
@@ -750,24 +794,9 @@ Each planning session runs in its own tmux server named `loom-plan-<id>`, and `t
 loom status --web [PORT] [--host HOST] [--terminals]
 ```
 
-The dashboard binds to `127.0.0.1` by default and serves the live ledger over a WebSocket in the browser; see [Web Dashboard Remote Access](#web-dashboard-remote-access) for `--host`. Two views share the same data: the graph (below) draws the plan as a dependency graph colored by stage state, and `/ledger` puts one row per stage in a table with the same columns as `loom status --live`. Both carry a "needs attention" panel naming the stages that need a person, with a suggested command for each.
+The dashboard binds to `127.0.0.1` by default and serves the live ledger over a WebSocket in the browser; see [Web Dashboard Remote Access](#web-dashboard-remote-access) for `--host`. Two views share the same data: the graph draws the plan as a dependency graph colored by stage state, and `/ledger` puts one row per stage in a table with the same columns as `loom status --live`. Both carry a "needs attention" panel naming the stages that need a person, with a suggested command for each.
 
 A daemon poller checks Claude and Codex quota roughly every 180 seconds; whenever either has data, the dashboard's sticky footer shows a percent bar and reset countdown for each, the same meter drawn above the legend in `loom status --live`.
-
-<p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="doc/images/webui-overview-dark.png">
-    <img src="doc/images/webui-overview.png" alt="The loom web dashboard showing a plan as a dependency graph of stages" width="880">
-  </picture>
-</p>
-
-<p align="center">
-  <img src="doc/images/webui-ledger.png" alt="The loom web dashboard ledger view, one row per stage" width="880">
-</p>
-
-<p align="center">
-  <em>The <code>/ledger</code> view: state, dependencies, models, activity and context for every stage.</em>
-</p>
 
 Without `PORT`, it starts at port 7373 and automatically tries the next available port when a candidate is occupied. Supplying a nonzero `PORT` requests that exact port; `PORT` 0 asks the OS for any free port. It works without the daemon by polling `.loom/work/` files directly when the daemon socket is unreachable. Besides the ledger, it exposes a settings dialog for editing loom's configuration and, with `--terminals`, a way to open a stage's terminal from the browser.
 
@@ -812,14 +841,6 @@ On the default loopback bind, the dashboard stays an unauthenticated tool for th
 ### Web Dashboard Terminals
 
 `loom status --web --terminals` (tmux backend only) adds a "Take control" view to each stage's detail dialog: an xterm.js terminal opens right in the browser, attached to that stage's live tmux session. It starts in a read-only View mode; switching to Control sends every keystroke to the running agent. Enabling `--terminals` mints a one-time token and prints it in the startup URL — open that exact link once to set an auth cookie for the dashboard; a plain `--web` link never gets the "Take control" option. With a non-loopback `--host`, the same startup token already covers the dashboard cookie; the cookie alone still never grants "Take control" — that capability comes only from passing `--terminals`.
-
-<p align="center">
-  <img src="doc/images/webui-terminal-dark.png" alt="The loom web dashboard's terminal view attached to a live stage session" width="880">
-</p>
-
-<p align="center">
-  <em>A stage's terminal, opened from its detail dialog: live output, viewable read-only or with control handed over.</em>
-</p>
 
 ## Plan Format
 
