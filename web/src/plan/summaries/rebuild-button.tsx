@@ -2,9 +2,14 @@ import { useAtomValue } from "jotai/react";
 import { useRef, useState } from "react";
 
 import { Untrusted } from "@/plan/chat/visible-controls";
+import "@/plan/run/pressure-test-action.css";
 import { authorBlockReasonAtom } from "@/plan/state/atoms";
 import { BusyText } from "@/plan/ui/busy-text";
-import { type ButtonLook, DisabledReason, INLINE_BASELINE } from "@/plan/ui/disabled-reason";
+import {
+  type ButtonLook,
+  DisabledReason,
+  INLINE_BASELINE,
+} from "@/plan/ui/disabled-reason";
 
 import { summaryPanelAtom, useSummaryActions } from "./state";
 
@@ -55,7 +60,7 @@ export function RebuildButton({
   // The wrapper stays: it holds the failure beside DisabledReason's own inline wrapper, so the
   // alert shares the baseline line instead of landing outside it.
   return (
-    <span className={INLINE_BASELINE}>
+    <span className={`rebuild-action ${INLINE_BASELINE}`}>
       <DisabledReason
         reason={reason}
         busy={busy}
