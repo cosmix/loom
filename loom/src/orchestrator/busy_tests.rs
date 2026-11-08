@@ -216,3 +216,25 @@ fn tick_writes_leave_no_temp_file_behind() {
     assert!(!dir.path().join("orchestrator.tick.tmp").exists());
     assert!(dir.path().join("orchestrator.tick").exists());
 }
+
+#[test]
+fn a_panicking_closure_stops_the_helper_and_clears_the_busy_line() {
+    let dir = TempDir::new().unwrap();
+    let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        while_busy_every(
+            dir.path(),
+            Phase::Events,
+            BusyOp::Provisioning,
+            "stage-a",
+            Duration::from_millis(50),
+            || panic!("operation failed"),
+        )
+    }));
+    assert!(outcome.is_err());
+
+    // A helper left running would re-stamp the busy line within a few intervals.
+    std::thread::sleep(Duration::from_millis(300));
+    let after = tick::read(dir.path()).unwrap().unwrap();
+    assert_eq!(after.busy, None);
+    assert_eq!(after.phase, Some(Phase::Events));
+}
