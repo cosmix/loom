@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # loom-control-complete.sh rewrites the main agent's plain completion spelling
 # (bare `loom`, optional `2>&1`, one `| tail`/`| head` line count) to the pinned
-# command through updatedInput, and still refuses, records and explains every
-# other completion-shaped command.
+# command through updatedInput, allows the main agent's exact pinned command the
+# same way, and still refuses, records and explains every other
+# completion-shaped command.
 set -euo pipefail
 
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
@@ -89,9 +90,22 @@ expect_refused() {
 		and .subject == ($c | .[0:300])' >/dev/null || fail "wrong ledger line for: $1: $(tail -n 1 "$LEDGER")"
 }
 
-# The exact pinned command is admitted silently, as before.
-run_pre "$PINNED"
-[[ "$RC" == 0 && -z "$OUT" ]] || fail "pinned command: rc $RC, stdout '$OUT'"
+# The main agent's exact pinned command gets the hook's own allow, so auto
+# mode's classifier never judges it; only timeout and description carry over.
+rm -f "$WORK/heartbeat/build-api.json"
+expect_rewrite "$PINNED" '{"timeout":300000,"description":"Complete","run_in_background":true,"dangerouslyDisableSandbox":true}'
+jq -e '.hookSpecificOutput | .permissionDecisionReason == "loom: pinned completion command"
+	and (.updatedInput | .timeout == 300000 and .description == "Complete" and (keys | length) == 3)' \
+	<<<"$OUT" >/dev/null || fail "pinned allow carried the wrong reason or fields: $OUT"
+jq -e '.activity == "Stage completion running" and .session_id == "session-123"' \
+	"$WORK/heartbeat/build-api.json" >/dev/null || fail "pinned allow did not write the heartbeat"
+
+# A subagent's exact pinned command is admitted with no allow (commit-filter.sh
+# refuses its completion), and still marks the heartbeat.
+rm -f "$WORK/heartbeat/build-api.json"
+run_pre "$PINNED" '{}' '{"agent_type":"loom-software-engineer"}'
+[[ "$RC" == 0 && -z "$OUT" ]] || fail "subagent pinned command: rc $RC, stdout '$OUT'"
+[[ -f "$WORK/heartbeat/build-api.json" ]] || fail "subagent pinned command did not write the heartbeat"
 
 expect_rewrite 'loom stage complete build-api'
 expect_rewrite 'loom stage complete build-api 2>&1 | tail -30'
