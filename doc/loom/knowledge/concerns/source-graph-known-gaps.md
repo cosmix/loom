@@ -43,7 +43,7 @@ Reviewer suggestions that are small, local fixes live in [Review Backlog](source
   snapshot 18.0 s, resolve 2.3 s, query 19 ms, render 45 ms, peak RSS 372 MiB) over 29,835 nodes and 150,964 edges,
   and every process is cold inside a stage sandbox because nothing persists. The decision between a persisted index
   and another engine waits on warm `--timings` numbers from a host run or a `TempDir` test, never from a stage.
-- **The agent-task comparison has not been run.** `doc/source-graph-evaluation.md` defines the four-mode protocol
+- **The agent-task comparison has not been run.** The evaluation protocol (no document in the tree) defines four modes
   (`rg`-first, graph alone, graph plus `rg`, current loom guidance); it needs consenting projects and live agent
   runs. No dialect or resolver capability is promoted into agent guidance until fixtures and holdouts pass.
 - **`scripts/retrieval-ab` has not been run.** It needs a pre-plan baseline binary built from another revision in a
