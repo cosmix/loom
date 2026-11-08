@@ -48,7 +48,8 @@ fn strip_whitespace(s: &str) -> String {
 /// `pressure_pipeline_contracts::support`'s `run_loom`,
 /// `plan_handoff_operator`'s `loom` closure,
 /// `plan_handoff_operator::common`'s `spawn_loom_plan`,
-/// `memory_spool_query`'s `memory_cli`, and
+/// `memory_spool_query`'s `memory_cli`,
+/// `hook_false_positive_contracts::ledger`'s `blocks_report`, and
 /// `plan_owner_watch_session`, which has no helper and scrubs inline in its
 /// test body before it spawns the `OwnerWatch` hook. A new test target that
 /// spawns the binary directly must scrub the same way and be added to this
@@ -70,6 +71,7 @@ const SANCTIONED_SPAWNERS: &[&str] = &[
     "plan_handoff_operator.rs",
     "plan_handoff_operator/common.rs",
     "memory_spool_query.rs",
+    "hook_false_positive_contracts/ledger.rs",
 ];
 
 fn rust_files_under(dir: &Path, out: &mut Vec<PathBuf>) {
