@@ -129,3 +129,10 @@
 **Why:** `after_stage` commands live in the stage file and the plan YAML, not in the signal.
 
 **Prevention:** before writing, read `.loom/work/stages/<n>-<stage-id>.md` and run `rg -n 'command:'` over it; in a knowledge stage never write a word an absence check forbids, even to say the thing is gone. A hook or `loom plan verify` check that prints `after_stage` commands and `exit_code` in the signal would end the recurrence.
+
+## Turn-end rebuild read a stale evaluation
+
+**What happened:** After a chat edit, the authoring turn's refinement subagents sealed the section and overview summaries, then a Background summary session rebuilt both again.
+**Why:** `Rebuilds::turn_ended` and `chat_idle` resumed the scheduler on `state.latest`, the last 1 s watcher batch, which predated the turn's seals; `refresh` queued and started them.
+**Prevention:** A resume that follows work done by another actor evaluates the store fresh; never decide from a cached snapshot that a concurrent writer just made stale.
+**Fix:** `Rebuilds::out_of_date_now` (`plan_server/summaries/rebuilds/evaluation.rs`); test `a_seal_made_inside_the_authoring_turn_is_seen_when_the_turn_ends` (`rebuilds/tests_ordering.rs`).

@@ -222,7 +222,11 @@ Source: `plan_server/summaries/scheduler.rs`, `scheduler/queue.rs`, `scheduler/s
   batches that arrive while it waits must not take it away. An id missing from the known set is dropped, so a pressed
   id whose document was removed cannot restart sessions without bound. A question that loses ids is re-sent with the rest and closes
   when none remain. The ids already out of date when the server starts, or when a turn or suspension ends, enter through
-  `refresh`.
+  `refresh`. At an authoring turn's end (`turn_ended`, `chat_idle` in `rebuilds/session.rs`) that set comes from a fresh
+  evaluation of the store (`Rebuilds::out_of_date_now`, `rebuilds/evaluation.rs`), made outside the state lock and never
+  stored in `state.latest`: the watcher batch showing the turn's refinement seals can arrive up to 1 s after `TurnEnded`,
+  and the cached set would start a Background session for summaries the turn just sealed. A pressure run's end and a
+  `SuspendGuard` drop still resume on the last batch's set.
 - **Decline memory.** No to a question moves its ids to `declined`. A declined id is skipped by `on_update` and `refresh`
   until a Button press (`forget` clears declined, failed and unsealed) or until it stops being out of date. A failed id
   is skipped by `refresh`, and `on_update` clears the failure of an id that is newly invalidated.

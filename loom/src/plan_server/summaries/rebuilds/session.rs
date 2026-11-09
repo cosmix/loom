@@ -56,11 +56,15 @@ impl Rebuilds {
 
     /// The authoring session went Idle or Ended: end its turn if one is still open.
     fn chat_idle(&self, id: &str) {
-        self.run(|state, spawner, now| {
+        let holds = |state: &State| {
             let open = state.open_turn.as_ref();
-            if open.is_some_and(|(session, _)| session == id) {
+            open.is_some_and(|(session, _)| session == id)
+        };
+        let fresh = self.out_of_date_now(holds);
+        self.run(|state, spawner, now| {
+            if holds(state) {
                 state.open_turn = None;
-                let out_of_date = state.out_of_date();
+                let out_of_date = fresh.unwrap_or_else(|| state.out_of_date());
                 state
                     .scheduler
                     .authoring_state_idle(id, &out_of_date, now, spawner);
@@ -87,11 +91,15 @@ impl Rebuilds {
 
     /// The turn that holds the suspension ended; any chat's turn names what it rebuilt.
     fn turn_ended(&self, bridge: &Bridge, id: &str, turn: &str) {
-        self.run(|state, spawner, now| {
+        let holds = |state: &State| {
             let open = state.open_turn.as_ref();
-            if open.is_some_and(|(session, open)| session == id && open == turn) {
+            open.is_some_and(|(session, open)| session == id && open == turn)
+        };
+        let fresh = self.out_of_date_now(holds);
+        self.run(|state, spawner, now| {
+            if holds(state) {
                 state.open_turn = None;
-                let out_of_date = state.out_of_date();
+                let out_of_date = fresh.unwrap_or_else(|| state.out_of_date());
                 state.scheduler.turn_ended(&out_of_date, now, spawner);
             }
         });
