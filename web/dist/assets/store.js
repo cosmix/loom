@@ -1,1 +1,1 @@
-import{I as e}from"./is-typing.js";var t=e();export{t};
+import{M as e}from"./is-typing.js";var t=e();export{t};
