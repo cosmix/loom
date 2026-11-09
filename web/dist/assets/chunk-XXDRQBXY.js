@@ -1,1 +1,1 @@
-import{$ as e}from"./flow.js";import{n as t}from"./chunk-Y2CYZVJY.js";var n=t((t,n)=>{let r;return n===`sandbox`&&(r=e(`#i`+t)),e(n===`sandbox`?r.nodes()[0].contentDocument.body:`body`).select(`[id="${t}"]`)},`getDiagramElement`);export{n as t};
+import{n as e}from"./chunk-Y2CYZVJY.js";import{$ as t}from"./flow.js";var n=e((e,n)=>{let r;return n===`sandbox`&&(r=t(`#i`+e)),t(n===`sandbox`?r.nodes()[0].contentDocument.body:`body`).select(`[id="${e}"]`)},`getDiagramElement`);export{n as t};
