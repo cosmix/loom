@@ -1,7 +1,7 @@
 import { createStore } from "jotai";
 import type { Atom } from "jotai";
 import { Provider } from "jotai/react";
-import { INTERNAL_getBuildingBlocksRev3 } from "jotai/vanilla/internals";
+import { INTERNAL_getBuildingBlocksRev4, INTERNAL_KEY_atomStateMap } from "jotai/vanilla/internals";
 import { useState } from "react";
 import type { JSX } from "react";
 
@@ -119,7 +119,7 @@ const OPEN_RUN: OpenRun = {
 // preload it; seed this store's cache directly. The seed reaches the reader because
 // concept/passage-doc.ts memoizes one loadable atom per path and the scene seeds that same
 // atom (`docLoadable`). This cache shape is tied to the pinned Jotai
-// 2.20.3 internal API: revisit on any Jotai major upgrade, or
+// 3.0.2 internal API: revisit on any Jotai major upgrade, or
 // when docViewAtom exposes a writable seed or Jotai a public one. openRunsAtom is seeded the
 // same way, because its setter would write sessionStorage on every mount of the dialog.
 function seedSample<Value>(
@@ -127,7 +127,7 @@ function seedSample<Value>(
   target: Atom<Value>,
   value: Value,
 ): void {
-  const [states] = INTERNAL_getBuildingBlocksRev3(store);
+  const states = INTERNAL_getBuildingBlocksRev4(store)[INTERNAL_KEY_atomStateMap];
   states.set(target, { d: new Map(), p: new Set(), n: 1, v: value });
 }
 

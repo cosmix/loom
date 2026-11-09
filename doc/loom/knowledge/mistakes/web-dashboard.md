@@ -152,3 +152,33 @@
 **Prevention:** run `cd web && bun run check` (typecheck, lint, format:check, test), then `bun run build` and `git status --short dist`; commit a changed bundle on its own as `chore(web): rebuild the dashboard bundle`. Format only with `bunx oxfmt <paths>`. Read `package.json` scripts before running any lint or format tool.
 
 **Fix:** formatting redone with oxfmt and the bundle rebuilt in the commits after 2eb4100c.
+
+## Markdown lint must use the repository configuration
+
+**What happened:** A targeted markdownlint-cli2 check from `web/` used default rules and rejected intentional hostile HTML in a renderer fixture.
+
+**Why:** The repository configuration is at the root and was not discovered from the nested working directory.
+
+**Prevention:** Run targeted markdown lint from the repository root so `.markdownlint.json` applies.
+
+**Fix:** Verify the fixture from the root with the locally installed CLI.
+
+## Production smoke must use the app router root
+
+**What happened:** A production smoke loaded `/index.html` and waited for graph nodes, while the dashboard router expects `/`.
+
+**Why:** The HTML entry filename was treated as a supported client route.
+
+**Prevention:** Load each built HTML entry with the browser location set to its supported router path before the module initializes.
+
+**Fix:** Set the initial browser path to `/` for both built app entry smoke checks.
+
+## Browser checks activate the visible radio label
+
+**What happened:** The production settings smoke tried to click the hidden Literata radio input and timed out because the visible specimen intercepted the pointer.
+
+**Why:** A screen-reader-only input was treated as the pointer target instead of its enclosing label.
+
+**Prevention:** Click the visible label containing the named radio, or activate the input with the keyboard.
+
+**Fix:** Use the radio locator to identify and click its enclosing label.

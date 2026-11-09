@@ -382,5 +382,5 @@ it("a pressure run's row carries a determinate progress bar beside its elapsed t
   const bar = within(row).getByRole("progressbar", { name: "Pressure test progress" });
   expect(bar.getAttribute("aria-valuenow")).toBe("2");
   expect(bar.getAttribute("aria-valuemax")).toBe("6");
-  expect((bar.firstElementChild as HTMLElement).style.width).toBe("33.33333333333333%");
+  expect(parseFloat((bar.firstElementChild as HTMLElement).style.width)).toBeCloseTo(100 / 3, 4);
 });

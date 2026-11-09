@@ -1,4 +1,4 @@
-import * as ts from "typescript";
+import { parse } from "@babel/parser";
 import { describe, expect, it, vi } from "vitest";
 
 import { loadCodeMirror } from "./load";
@@ -25,29 +25,37 @@ const planSources = Object.entries(allPlanSources)
 // Every static import or export-from specifier (type-only ones included) with its line, plus
 // dynamic import("...") calls when asked.
 function moduleSpecifiers(path: string, source: string, dynamic = true) {
-  const file = ts.createSourceFile(path, source, ts.ScriptTarget.Latest, true);
+  const file = parse(source, {
+    sourceFilename: path,
+    sourceType: "module",
+    plugins: ["typescript", "jsx"],
+  });
   const found: { text: string; line: number }[] = [];
-  function visit(node: ts.Node) {
-    let specifier: ts.Expression | undefined;
-    if (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) {
-      specifier = node.moduleSpecifier;
-    } else if (
-      ts.isImportEqualsDeclaration(node) &&
-      ts.isExternalModuleReference(node.moduleReference)
-    ) {
-      specifier = node.moduleReference.expression;
-    } else if (
-      dynamic &&
-      ts.isCallExpression(node) &&
-      node.expression.kind === ts.SyntaxKind.ImportKeyword
-    ) {
-      specifier = node.arguments[0];
+  function visit(value: unknown) {
+    if (!value || typeof value !== "object") return;
+    if (Array.isArray(value)) {
+      value.forEach(visit);
+      return;
     }
-    if (specifier && ts.isStringLiteral(specifier)) {
-      const line = file.getLineAndCharacterOfPosition(node.getStart(file)).line + 1;
-      found.push({ text: specifier.text, line });
+    const node = value as Record<string, unknown>;
+    let specifier: unknown;
+    if (
+      node.type === "ImportDeclaration" ||
+      node.type === "ExportNamedDeclaration" ||
+      node.type === "ExportAllDeclaration" ||
+      (dynamic && node.type === "ImportExpression")
+    ) {
+      specifier = node.source;
+    } else if (node.type === "TSImportEqualsDeclaration") {
+      const reference = node.moduleReference as Record<string, unknown>;
+      if (reference.type === "TSExternalModuleReference") specifier = reference.expression;
     }
-    ts.forEachChild(node, visit);
+    const literal = specifier as { type?: string; value?: string } | undefined;
+    if (literal?.type === "StringLiteral" && typeof literal.value === "string") {
+      const loc = node.loc as { start: { line: number } };
+      found.push({ text: literal.value, line: loc.start.line });
+    }
+    Object.values(node).forEach(visit);
   }
   visit(file);
   return found;
@@ -75,6 +83,22 @@ describe("CodeMirror lazy boundary", () => {
       import("@codemirror/search");
     `;
     expect(staticCodeMirrorImports("example.ts", source)).toHaveLength(3);
+  });
+
+  it("reports type imports, star exports and nested dynamic imports with their source lines", () => {
+    const source = [
+      '// import "@codemirror/comment";',
+      'import type { EditorState } from "@codemirror/state";',
+      'export * from "@lezer/highlight";',
+      'const view = <span>import("./ignored")</span>;',
+      'const load = () => import("./live-preview");',
+    ].join("\n");
+    expect(moduleSpecifiers("example.tsx", source)).toEqual([
+      { text: "@codemirror/state", line: 2 },
+      { text: "@lezer/highlight", line: 3 },
+      { text: "./live-preview", line: 5 },
+    ]);
+    expect(moduleSpecifiers("example.tsx", source, false)).toHaveLength(2);
   });
 
   it("keeps static CodeMirror imports in the lazy chunk", () => {

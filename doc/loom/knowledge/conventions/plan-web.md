@@ -171,3 +171,13 @@ The user's browser is Firefox; a Chromium-only pass missed an overflowing spine,
 ## Accessible Names Trim Each Span
 
 The accessible-name and accessible-description algorithms (dom-accessibility-api, used by testing-library's getByRole name/description options) trim each span's own text before joining. A separating space or word placed inside a span is lost: `<span>4</span><span class="sr-only"> headings covered</span>` reads "4headings covered". Put separators (" ", " and ", ", ") in text nodes beside the spans (`feature/spine-instrument.tsx`). The repo has no jest-dom; assert descriptions with `getByRole(role, { name, description })`.
+
+## Dependency upgrade compatibility
+
+The web package uses TypeScript 7 for checking and building. Import-boundary tests in `web/src/plan/editor/load.test.ts` parse TypeScript and JSX with `@babel/parser`; the TypeScript 7 root export has no compiler AST parsing API. Keep AST parsing in these tests so comments, re-exports, import-equals and nested dynamic imports are distinguished.
+
+The reading help scene seeds derived atoms through Jotai 3 internals (`INTERNAL_getBuildingBlocksRev4` and `INTERNAL_KEY_atomStateMap`). Its regression tests must verify every pin target, no live fetch or socket, and no session storage writes whenever Jotai changes.
+
+## Transitive dependency upgrade policy
+
+For web dependency updates, respect the versions and ranges declared by parent dependencies. Do not add overrides or force transitive versions outside those constraints to clear audit findings. Report remaining advisories separately.

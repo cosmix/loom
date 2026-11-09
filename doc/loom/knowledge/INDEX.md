@@ -121,7 +121,7 @@
 | [git-and-build-workflow](conventions/git-and-build-workflow.md) |  | 237 |
 | [guidance-channels-and-plugin-scope](conventions/guidance-channels-and-plugin-scope.md) |  | 134 |
 | [model-and-effort-config](conventions/model-and-effort-config.md) |  | 143 |
-| [plan-web](conventions/plan-web.md) |  | 173 |
+| [plan-web](conventions/plan-web.md) |  | 183 |
 | [plan-yaml-and-hooks](conventions/plan-yaml-and-hooks.md) |  | 182 |
 | [web-dashboard-typography](conventions/web-dashboard-typography.md) |  | 64 |
 
@@ -207,7 +207,7 @@
 | [verification-harness](mistakes/verification-harness.md) |  | 399 |
 | [verification-v2-delivery](mistakes/verification-v2-delivery.md) | v2 | 396 |
 | [visibility-and-reachability](mistakes/visibility-and-reachability.md) |  | 141 |
-| [web-dashboard](mistakes/web-dashboard.md) | UI | 154 |
+| [web-dashboard](mistakes/web-dashboard.md) | UI | 184 |
 | [web-dashboard-server](mistakes/web-dashboard-server.md) | Races | 278 |
 | [web-terminal](mistakes/web-terminal.md) | TTY | 135 |
 | [writer-reader-address](mistakes/writer-reader-address.md) | Keys | 115 |
