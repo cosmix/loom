@@ -4,15 +4,9 @@ Stop full test-suite runs outside the stage gate, and make repeated gate runs ch
 
 ## Status
 
-- **Changes 1, 2, 3, 5 and 6 are built.** Commit `d83c59b2` (2026-11-08, `fix(verification): deduplicate concurrent gate checks`, 84 files) implemented them outside loom. The pressure test of 2026-11-09 checked every brief step against the tree at `c424d0e4`: each one is present, a few trimmed or improved (see "Changes as built").
-- **The four briefs in `doc/plans/briefs/full-suite-at-gate/` are a historical record. Do not execute them.** Their "current text" quotes and line numbers describe the tree before `d83c59b2`, and replaying them breaks it:
-  - w4 B4.2 deletes guard lines 200-542. The guard is now 272 lines, so the delete removes the tail of `block()`, the `source` line and the walk loop, and the guard never blocks again.
-  - w2 edits 1, 24 and 26 (`loom-testing:54`, `loom-java:379`, `loom-kotlin:398`): the old text is a prefix of the new, so an Edit succeeds and appends the replacement a second time.
-  - w3 recreates `host_verify/pending.rs` and `store/slots.rs` with an older design than the one in the tree.
-  - w1's drafts 6a and 6b overflow the `tests_size.rs` byte ceilings, and two of its acceptance commands (steps 2 and 3) fail on a correct tree.
-  - Each brief opens with a banner saying this.
-- **The executable work is `## Residual work` below, and only that.** It is self-contained: an executor needs this file and the tree.
-- **This is a manual plan, not a loom plan.** It has no loom METADATA block, so `loom plan verify` and `loom run` reject it (`Error: No loom METADATA block found`) by design. One session outside any loom stage executes it: it spawns the R1-R3 workers named in the `## Residual work` table, owns R4 and R5 itself, and commits. The table is the file-ownership record; each item's acceptance block and `## Acceptance` are the gates. Converting it to a loom plan needs an explicit request and `/loom-plan-writer`.
+- **Built** in `d83c59b2` (2026-11-08) and checked against `c424d0e4` on 2026-11-09: the doctrine text, the skill edits, parallel `loom check` in one session (join, wait or supersede through the pending slot), stale-agent pruning at install, and the guard's runner matchers split into `loom-hooks/_verify_matchers.sh`.
+- **Do not execute the briefs** in `doc/plans/briefs/full-suite-at-gate/`. They record `d83c59b2`; their quotes predate it, and replaying them breaks the tree. Its two scripts, `gate_audit.py` and `full_runs.py`, stay in use.
+- **Manual plan.** It has no loom METADATA block, so `loom run` rejects it. One session outside any loom stage executes `## Residual work`: it spawns the R1-R3 workers named in the table, owns R4 and R5, and commits.
 
 ## Decision
 
@@ -23,73 +17,6 @@ Stop full test-suite runs outside the stage gate, and make repeated gate runs ch
 - **A repeated full check is never refused.** Caching makes it cheap.
 
 Rejected designs and the reasons for rejecting them are in `doc/loom/knowledge/mistakes/test-sweep-and-fixture-discipline.md`, section "Duplicate Test Runs Were Framed as a Run-Count Problem".
-
-## Evidence
-
-Two scripts in `doc/plans/briefs/full-suite-at-gate/` scan stage transcripts under `~/.claude/projects/*worktrees*`. Run either as `python3 -I <script> <days>`.
-
-- **`gate_audit.py`** (standard stages only; it skips `integration-verify` and `knowledge` project dirs), 14 days: 92 sessions with subagents.
-  - Subagents: 878 test commands, 217 compile, 78 fmt, 19 lint. The script does not separate targeted from full runs; `full_runs.py` finds 60 full runs among them over 30 days.
-  - Main agents: 215 direct test commands, 671 `loom check` calls plus 105 `loom check --criterion` calls. Most `loom check` calls are follows of one host job.
-- **`full_runs.py`**: bare full-suite runner calls over 30 days, before the rollout.
-  - 60 from subagents. Integration-verify sessions account for 30 (troofoo 14, loom 9, collaterai 7), standard stages for 30 (for example a `tui-tokens` worker running `cargo test --all-targets`).
-  - 71 from main agents. Integration-verify orchestrators account for 50 (loom 48, troofoo 2), standard stages for 21 (`vitest run` over everything, `bun run test`, `cargo test --no-fail-fast` beside clippy and fmt, typically right beside a `loom check`).
-  - The script counts attempts, including calls a guard blocked, and does not split by stage kind. Residual work R3 adds both.
-
-## Changes as built
-
-### 1. Doctrine text (brief `w1-doctrine.md`)
-
-- **BLOCK-A** is one rule, in four copies that agree byte for byte: `loom-hooks/_subagent-preamble.txt`, `loom/src/orchestrator/signals/cache/blocks.rs`, `loom/src/orchestrator/signals/tests_doctrine_blocks.rs` (`BLOCK_A`, with retired phrases built by `concat!` so the sweep cannot match them) and the guard's `block()` text in `loom-hooks/subagent-verify-guard.sh`.
-- **`ORCHESTRATOR_GATE`** (`blocks.rs`) says the orchestrator never runs the full suite outside `loom check`; pinned in `tests_doctrine_gate.rs`.
-- **Integration-verify**: the prefix no longer carries BLOCK-A. `INTEGRATION_VERIFY_OVERRIDE` (`cache.rs`), the preamble's EXCEPTION bullet and its "never runs the gate" bullet route full runs through `loom check integration-verify [--criterion <n>]`.
-- **Review dimension 3** ("Build/test/sandbox") is spawned as `loom-software-engineer`, because `loom-code-reviewer` has no Bash. Dimension 4 ("Functional") has the same need and does not say so yet: residual R2.3.
-- **Other copies** are updated: `CLAUDE.md.template`, `AGENTS.md.template`, `codex-forward.sh`, `commit-filter.sh`, README, CONTRIBUTING, `agents/loom-software-engineer.md`, `agents/loom-senior-software-engineer.md`, `skills/loom-orchestration/SKILL.md`, `skills/loom-plan-writer/references/{parallelization,codex-implementers}.md`.
-- **Size limits hold.** `cache.rs` is 511 lines, equal to `loom/maintainability-baseline.txt` (`file src/orchestrator/signals/cache.rs 511`), with no slack. `tests_size.rs` leaves 35 bytes under `CLAUDE_MD_TEMPLATE_MAX_BYTES` (20 131) and 9 bytes under `ORCHESTRATION_SKILL_MAX_BYTES` (20 530). Residual work touches neither capped file.
-
-### 2. Skills (brief `w2-skills.md`)
-
-All 49 one-line edits across 20 skills are in the tree; adds equal deletes in every file, and frontmatter is unchanged. Each whole-suite command or "rerun until green" line is labelled as the gate's and points to the targeted form. `loom-rust` and `loom-typescript` have no such lines. Skill bodies are **embedded in the binary**: `loom/build/assets.rs` generates the `SKILLS` table with `include_bytes!`, and `loom install-assets` installs from it. No test pins skill body text. A skill edit reaches `~/.claude` only after a rebuild and install; `dev-install.sh` does both.
-
-### 3. Parallel `loom check` in one session (brief `w3-host-jobs.md`)
-
-Integration-verify's orchestrator and reviewers share one `LOOM_SESSION_ID`. A subagent's `loom check` relays (test `a_subagent_check_request_is_relayed_and_attributed_to_the_subagent` in `commands/hook/relay/tests.rs`).
-
-- **Join, wait or supersede** (`host_verify/submit.rs::submit`). A covered request joins the live job whatever its session (`covers`). Residual R1.5 adds one exception: a merge resolver's check never reads the pass cache (`child_policy.rs::check_cache_policy` gives a `SessionType::Merge` job `CachePolicy::Bypass`), but as built its request carries the caller's `no_cache`, so it can join another session's cache-reading check and take that job's cached answer. An uncovered check of the same session, head and tree joins or creates the stage's waiting job (`pending.json` beside `current.json`; `host_verify/pending.rs`, `host_verify/store/slots.rs`), which runs the union of the waiting selections (`waits_behind`, `widen`). A check behind a live completion, freeze or verdict-completion job is refused (`CHECK_BEHIND_RUN`). Any other request supersedes the live job and cancels the waiting one first.
-- **Cancellation.** `submit::cancel` (every takedown, retry, cleanup and `merge --resolved`) clears both slots. Stage reset (`commands/stage/state/loop_recovery/mod.rs::observed_host_jobs`) captures both live job ids under the stage lock, then cancels by id (`submit::cancel_if_id`): a replacement from another session or tree survives, and a check that waits behind a captured job is cancelled with it.
-- **Promotion.** The runner promotes the waiting job on its next tick even when every runner slot is busy; starts stay gated by the slot count. Every write to either slot holds `store::lock_stage`. Shutdown and restart keep the waiting job; a waiting job on a changed tree fails fast in the child.
-- **Wait state** is keyed by selection (`host_verify/wait_state.rs`), so reviewers with different selections follow their own requests; reviewers waiting together follow one waiting job.
-- **`--criterion`** is sorted and deduplicated once, in `commands/verify.rs::execute` (`normalized_criteria`). The daemon keeps ticket order, which is harmless: `covers` tests containment and `union` sorts.
-
-### 4. Finer caching: later
-
-Two designs, with a choice between them deferred (one of them, not both):
-
-- **Per-criterion `inputs:` globs:** narrow the content manifest in a criterion's key to the files it reads. Simple, but a missing input gives a false pass.
-- **Incremental full suite:** reuse the last full pass and rerun only the tests the source graph and adapters select for the changed files, falling back to the full run when a changed file can't be traced.
-
-### 5. Stale installed agents (brief `w4-install-and-guard.md` Part A)
-
-`install.sh` copies no agents; it calls `loom install-assets` (`install.sh:349`, pinned by `constants_tests.rs`). `prune_stale_agents` (`loom/src/assets/install/claude.rs`) removes every `$CLAUDE_DIR/agents/loom-*.md` with no embedded source, which covers the retired `loom-verifier.md` and the renamed `loom-mechanical-engineer.md`. A regular file is first copied to `<name>.bak.<UTC stamp>` by `back_up_asset`; a symlink, dangling or not, is unlinked without being followed; a directory named `loom-*.md` is skipped. `InstallReport.pruned_agents` lists what was removed. Every install path reaches it: `install.sh`, `dev-install.sh`, `loom install-assets` and self-update. A prune error aborts `install_all` after agents are written and before commands, skills and hooks; rerunning the install recovers.
-
-### 6. Guard split (brief `w4-install-and-guard.md` Part B)
-
-The runner matchers moved verbatim into `loom-hooks/_verify_matchers.sh` (356 lines; its lines 15-356 equal the old guard's 200-541), sourced by `subagent-verify-guard.sh` (272 lines) after `block()`. The helper is registered in `LOOM_HOOKS` (`loom/src/fs/permissions/constants.rs`) and never as a hook, and the two fixtures that copy hook helpers (`loom/tests/integration/hooks_subagent_verify_guard.rs::install_hook`, `loom/tests/gate_dedup_contracts/support.rs`) copy it. Guard behaviour is unchanged, with one gap: when `_verify_matchers.sh` is missing, `source` fails under `set -euo pipefail` and the guard exits 1, which Claude Code treats as non-blocking, so every full-suite run passes. Residual R2.1 makes it fail closed.
-
-### 7. Integration-verify enforcement: later
-
-The guard exits 0 for every subagent and for the main agent of an integration-verify stage (`subagent-verify-guard.sh`, the `stage_declares standard || exit 0` / `stage_declares integration-verify` branch), so full-run routing there is doctrine only. Blocking bare suite runners there would need all of: a split of `check_command` into suite-runner blocks and lint/fmt blocks, applying only the suite blocks to integration-verify; an integration-verify wording in `block()` pointing to `loom check integration-verify`; removing the main-agent exit; flipping `subagent_in_integration_verify_stage_allowed` and adding main-agent cases; updating the preamble EXCEPTION bullet, `INTEGRATION_VERIFY_OVERRIDE` and their pin tests. Decide it from the field check (Acceptance 4): build it if bare integration-verify runs stay common next to `loom check integration-verify` calls.
-
-## Known limits
-
-Residual R4 records each of these in `doc/loom/knowledge/concerns/verification-v2-followups.md` ("Known Gaps"); the first two are there already.
-
-- A waiting job's verdict covers the whole union, so a reviewer can see exit 1 for criteria it did not select; its own criteria still show a pass, and its next call hits the cache.
-- Followers of one selection share one wait-state file.
-- A promoted waiting job keeps the `queued_at` of its first request, and `hung_latch::job_holds` (`loom/src/orchestrator/monitor/hung_latch.rs`) times an unstarted job from `queued_at`, so time spent waiting counts against its hold.
-- The `normalized_criteria` call in `commands/verify.rs::execute` is unpinned: deleting it passes every test, because relay mode exits the process.
-- Integration-verify full-run routing is doctrine only (Change 7).
-- The guard reads `cargo test -p <crate>` as scoped (`_verify_matchers.sh::scan_args`). In a single-crate repository such as loom that is the whole suite.
 
 ## Residual work
 
@@ -481,27 +408,15 @@ git ls-files '*.md' | grep -v '^doc/plans/' | grep -v '^loom/tests/fixtures/' | 
 
 This is the `CONTRIBUTING.md` "The Gate" list plus the hook suites; the web check is out (R1-R4 touch nothing under `web/`). Record each command's exit status. `cargo audit` fetches the advisory database: if it cannot (no network, sandbox denial), report it as unverified, never as passed. Every other command must exit 0. `run-all.sh` takes about three minutes. On a failure, fix it and rerun only the failed target (`cargo test --test <target> <filter>` or the one hook script), then rerun the full gate once before committing. Commit one concern per commit: `fix(verification): ...` for R1, `fix(hooks): ...` for R2, `chore(plans): ...` for R3, `docs(knowledge): ...` for R4.
 
-## Cross-plan notes
+## Ordering with sibling plans
 
-No sibling has to build anything for the residual work.
+While the residual work runs, no other stage writes a file in its ownership table; whichever change merges second rebases. Sibling plans that touch these files keep what `d83c59b2` and this work add:
 
-**Baseline and ordering (blocking for the siblings named).** `d83c59b2` plus this plan's residual work is the baseline every sibling below builds on. While the residual work runs, no sibling stage may write a file in its ownership table; a sibling that has started on one of those files finishes first, and the residual worker rebases onto it. Required sibling amendments, to be written into those plans before they run concurrently with or after this one:
-
-- **`PLAN-live-test-lane` live-checks R1** (owns `host_verify/{mod,child,submit,apply}.rs`, `commands/verify.rs`, `inbox_drain/check.rs`) and **`PLAN-autonomous-recovery` stall-recovery W2** (owns `src/host_verify/**`): the new `Live` and `Land` arms keep `Submission::Waiting`, the `pending::cancel_locked` call in `submit`'s supersede branch, `commands/verify.rs::normalized_criteria`, and R1.5's `no_cache: request.no_cache || record.session_type == SessionType::Merge` in `apply_check` (live-test-lane R1 rewrites `admit_session` and adds `job_kind_for` there). Each adds a test where its new kind supersedes a live check that has a waiting job, asserting both are cancelled and `pending.json` is cleared.
-- **`PLAN-loom-ui-mods` loom-ui W3** (owns `assets/install.rs`, `assets/install/claude.rs`, `commands/install_assets.rs`): keeps `prune_stale_agents` and the `InstallReport.pruned_agents` field that `install_all` reports.
-- **`PLAN-model-router-hooks` wiring** (owns `fs/permissions/constants.rs`): keeps `_verify_matchers.sh` in `LOOM_HOOKS` and out of every hook table.
-- **`PLAN-web-host-graft-followthrough` implement-host-and-context M/C** (signal cache, `signals/tests_doctrine*.rs`, `maintainability-baseline.txt`): keeps BLOCK-A byte-identical across its four copies and `cache.rs` at or under its 511-line baseline, which `CONTRIBUTING.md` forbids raising.
-- **Knowledge curation** (all of the above and `PLAN-planner-background-activity-and-skills`): R4 edits `verification-v2-gates.md`, `hooks.md`, `hook-system.md`, `cli-and-plan-pipeline.md` and `verification-v2-followups.md`; a sibling's knowledge stage running at the same time edits those files only after R4 commits.
-
-These sibling defects were found while checking shared seams; each belongs to that sibling's plan, and the first three block it:
-
-- **`PLAN-autonomous-recovery`**: gate-waivers W4 (`briefs/autonomous-recovery/gate-waivers/w4-doctrine.md`) adds about 239 bytes to `CLAUDE.md.template`, which has 35 bytes of headroom (`tests_size.rs`, `CLAUDE_MD_TEMPLATE_MAX_BYTES`); check-routes W5 and gate-waivers W4 add text to `skills/loom-orchestration/SKILL.md`, which has 9 bytes (`ORCHESTRATION_SKILL_MAX_BYTES`). Both must trim to fit; the ceilings say not to raise them. `d83c59b2` shrank both files, so this plan did not consume that headroom.
-- **`PLAN-live-test-lane`**: `briefs/live-test-lane/live-profile/s1-schema.md` says `host_verify/runner.rs` is 387 lines; it is 400, the limit, and the exhaustive `JobKind` match in `budget_for_job` needs new arms. R1 of the live-checks stage adds to `orchestrator/core/inbox_drain/check.rs`, now 385 lines.
-- **`PLAN-model-router-hooks`**: its wiring stage registers new hooks but omits `loom/src/fs/permissions/tests/hooks_tests.rs` from `files:`; that file asserts `pre_tool.len() == 49` and `prompt.len() == 2`.
-- **Live and Land job kinds** (`PLAN-live-test-lane` `r1-live-runs.md`, `PLAN-autonomous-recovery` stall-recovery `w2-land-job.md`): a Live or Land request supersedes a current check and cancels its waiting job (`submit.rs` supersede branch), and a check behind it is refused with `CHECK_BEHIND_RUN` ("a completion or contract run is in progress"), which misnames the job. Those briefs should say so and reword the refusal or add a reason per kind.
-- **`PLAN-loom-ui-mods`**: `PLAN-loom-ui-mods.md:160` and `briefs/loom-ui-mods/loom-ui/common.md:125` use the retired `loom-verifier`; the gate is the main agent's `loom check <stage-id>`. Its W3 (`w3-installer.md`) owns `assets/install.rs`, `assets/install/claude.rs` and `commands/install_assets.rs`, which `d83c59b2` changed for pruning; its line anchors there and in `install.sh` (364, 370 lines; now 349, 355) are stale, and it must not add a second `install-assets` line to `install.sh` (`constants_tests.rs` pins one).
-- **Integration-verify descriptions with a bare `cargo test`**: `PLAN-model-router-hooks.md` (around lines 143 and 418-445), `PLAN-loom-ui-mods.md` (around 334) and `PLAN-web-host-graft-followthrough.md` (around 344 and 373) should say "through `loom check integration-verify`".
-- **Shared files with the residual work**: `submit.rs` (R1.1 touches only fn `cancel`; the Live and Land work changes `submit` and its match arms), `inbox_drain/check.rs` (R1.5 touches one field in `apply_check`; live-test-lane R1 rewrites `admit_session` and adds `job_kind_for`) and `cache.rs` (R2.2 touches only `INTEGRATION_VERIFY_OVERRIDE`; `PLAN-web-host-graft-followthrough` worker M owns `cache.rs` and states that plan must not run as written). Whichever merges second rebases.
+- `PLAN-live-test-lane`, `PLAN-autonomous-recovery` (`host_verify/**`, `commands/verify.rs`, `inbox_drain/check.rs`): `Submission::Waiting`, the `pending::cancel_locked` call in `submit`'s supersede branch, `normalized_criteria`, and R1.5's `no_cache` line in `apply_check`.
+- `PLAN-loom-ui-mods` (`assets/install*.rs`, `commands/install_assets.rs`): `prune_stale_agents` and `InstallReport.pruned_agents`.
+- `PLAN-model-router-hooks` (`fs/permissions/constants.rs`): `_verify_matchers.sh` in `LOOM_HOOKS` and out of every hook table.
+- `PLAN-web-host-graft-followthrough` (signal cache and its doctrine tests): BLOCK-A byte-identical across its four copies, and `cache.rs` at or under its 511-line baseline.
+- Any knowledge stage edits R4's files only after R4 commits.
 
 ## Out of scope
 
@@ -516,7 +431,7 @@ These sibling defects were found while checking shared seams; each belongs to th
 3. The R5 gate passes on the final tree.
 4. **Field check (observational).** Owner: the operator, after the first loom plan run once `dev-install.sh` has installed a binary and hooks built from `d83c59b2` or later. Run `python3 -I doc/plans/briefs/full-suite-at-gate/full_runs.py <days> --since <install date>` (R3).
    - Standard stages: zero `ran` bare full-suite runs by subagents and main agents. Baseline, 30 days before the rollout: 30 subagent and 21 main hits.
-   - Integration-verify: report `ran` bare runs next to the count of `loom check integration-verify` calls. There is no zero target; this ratio decides Change 7. Baseline: 30 subagent and 50 main hits.
+   - Integration-verify: report `ran` bare runs next to the count of `loom check integration-verify` calls. There is no zero target. Baseline: 30 subagent and 50 main hits.
 
 ## Pressure tests
 
