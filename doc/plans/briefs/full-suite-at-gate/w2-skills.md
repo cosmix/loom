@@ -1,5 +1,7 @@
 # w2-skills: skill edits for "full suite only at the gate"
 
+> **Status: applied in `d83c59b2` (2026-11-08). Historical record; do not execute.** All 49 edits are in the tree. Replaying edits 1, 24 and 26 appends their replacement a second time, because the old text is a prefix of the new. The section "Are skills embedded in the binary?" is wrong: `loom/build/assets.rs` embeds every `skills/loom-*` file, so an edit reaches `~/.claude` only after a rebuild and install (`dev-install.sh`). Remaining work lives in `doc/plans/PLAN-full-suite-at-gate.md`, section "Residual work".
+
 Owner of the edits: one `loom-software-engineer` (sonnet), files under `skills/` only, excluding `skills/loom-orchestration/`, `loom-plan-writer`, `loom-wiring-test`, `loom-before-after`, `loom-dead-code-check`.
 
 Confirmed by reading: the four excluded skills use `cargo test ...` only as plan acceptance criteria and `loom plan verify` examples (`loom-wiring-test/SKILL.md:112,158,174,188`, `loom-dead-code-check/SKILL.md:134`, `loom-before-after/SKILL.md:54-185`, `loom-plan-writer/**`). Plan authors, not agent runs. Leave them.

@@ -1,5 +1,7 @@
 # W4: stale installed agents and the guard size split
 
+> **Status: applied in `d83c59b2` (2026-11-08). Historical record; do not execute.** The guard is now 272 lines, so B4.2's "delete lines 200-542" would remove `block()`'s tail, the `source` line and the walk loop. B3's claim that a missing helper "would crash every Bash call" is wrong: `source` fails under `set -euo pipefail`, the guard exits 1, and Claude Code treats exit 1 as non-blocking, so the guard fails open. B4's `shellcheck -x` needs `-P SCRIPTDIR` from the repo root, and B4.6 must diff against `d83c59b2^`, not `HEAD`. Remaining work lives in `doc/plans/PLAN-full-suite-at-gate.md`, section "Residual work".
+
 Plan: `doc/plans/PLAN-full-suite-at-gate.md` sections 5 and 6. Two independent parts; the order below keeps every step checkable on its own. All paths are relative to the repository root.
 
 ## Finding that changes Part A

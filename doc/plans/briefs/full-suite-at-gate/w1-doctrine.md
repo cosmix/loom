@@ -1,5 +1,7 @@
 # w1: Doctrine text, one rule on every surface
 
+> **Status: applied in `d83c59b2` (2026-11-08). Historical record; do not execute.** Every "current text" quote and line number below describes the tree before that commit. Drafts 6a and 6b overflow the `tests_size.rs` ceilings (the shipped lines were trimmed to fit), step 5b's contiguous assertion strings trip this brief's own sweeps (the tree uses `concat!`), and steps 2 and 3's acceptance commands fail on a correct tree. Remaining work lives in `doc/plans/PLAN-full-suite-at-gate.md`, section "Residual work".
+
 Plan: `doc/plans/PLAN-full-suite-at-gate.md` (sections "Decision" and "Changes 1 and 3").
 Scope: prose and the Rust constants and tests that pin it. No behavior code.
 

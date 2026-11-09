@@ -1,5 +1,7 @@
 # W3 brief: parallel `loom check` runs in one session dedupe on the host
 
+> **Status: applied in `d83c59b2` (2026-11-08). Historical record; do not execute.** The anchors and §4 sizes describe the tree before that commit; replaying §6 recreates `pending.rs` and `store/slots.rs` with an older design. The tree also has what this brief omits: reset captures both job ids (`loop_recovery/mod.rs::observed_host_jobs`, tests in `commands/stage/state_host_job_tests.rs`), and `cancel_if_id` cancels a waiting job named by its id. §5.10's fixture `["true","true"]` would fail (identical commands share a cache key); the tree uses distinct commands. Remaining work, including the test gaps and two small races found later, lives in `doc/plans/PLAN-full-suite-at-gate.md`, section "Residual work".
+
 Plan: `doc/plans/PLAN-full-suite-at-gate.md`, section 3 and the acceptance bullets "Job tests" and "Subagent relay".
 
 Goal: in an integration-verify stage the orchestrator and its reviewer subagents share one `LOOM_SESSION_ID` and run `loom check integration-verify [--criterion <n>]`, possibly at the same time. On one tree every request runs once, joins a job, waits behind one, or hits the pass cache. No request cancels another request of the same session on the same tree.
