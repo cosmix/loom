@@ -98,18 +98,31 @@ function StopTeam({ sessionId }: { sessionId: string }) {
   );
 }
 
-function TeamCost({ team }: { team: DraftTeamView }) {
+/** Every queued document drafted: the lead session lives on, but the team has nothing to stop. */
+function teamFinished(team: DraftTeamView) {
+  return (
+    team.documents.length > 0 &&
+    team.documents.every((path) => {
+      const teammate = team.teammates.find((candidate) => candidate.documents.includes(path));
+      return documentState(path, teammate) === "Drafted";
+    })
+  );
+}
+
+function TeamCost({ team, finished }: { team: DraftTeamView; finished: boolean }) {
   const tokens = team.teammates.reduce((sum, teammate) => sum + totalTokens(teammate.tokens), 0);
   return (
     <div className="plan-team-cost">
       <Coins className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
       <p>
         {plural(team.teammates.length, "teammate")} · {plural(team.documents.length, "document")} ·{" "}
-        {compactTokens(tokens)} tokens so far
+        {compactTokens(tokens)} tokens{finished ? "" : " so far"}
       </p>
-      <div className="plan-team-cost__stop">
-        <StopTeam key={team.session} sessionId={team.session} />
-      </div>
+      {!finished && (
+        <div className="plan-team-cost__stop">
+          <StopTeam key={team.session} sessionId={team.session} />
+        </div>
+      )}
     </div>
   );
 }
@@ -133,10 +146,13 @@ export function DraftTeamPanel({ feature }: { feature: string }) {
       : offeredBy.length === 1 && offeredBy[0]?.feature === feature;
   if (!activeSession || !inFeature) return null;
   // PaceChoice and checklist gaps own draft offers; this panel reports the running team.
+  const finished = teamFinished(team);
   return (
     <section aria-label="Draft team" className="plan-team">
-      <h2 className="plan-team__title">Drafting with a team</h2>
-      <TeamCost team={team} />
+      <h2 className="plan-team__title">
+        {finished ? "Drafted with a team" : "Drafting with a team"}
+      </h2>
+      <TeamCost team={team} finished={finished} />
       <ol aria-label="Document queue" className="plan-team__docs">
         {team.documents.map((path) => (
           <DocumentRow key={path} path={path} teammates={team.teammates} />

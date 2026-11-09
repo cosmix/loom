@@ -111,6 +111,21 @@ describe("DraftTeamPanel", () => {
     expect(queue.querySelectorAll(".lucide-book-open")).toHaveLength(3);
   });
 
+  it("drops Stop once every document is drafted while the lead session stays active", () => {
+    const team = teamView();
+    team.teammates = team.teammates.map((teammate) => ({
+      ...teammate,
+      state: "idle" as const,
+      current: null,
+    }));
+    renderPanel(storeFor(team));
+
+    const panel = screen.getByRole("region", { name: "Draft team" });
+    expect(within(panel).getByRole("heading", { name: "Drafted with a team" })).toBeTruthy();
+    expect(screen.getByText("2 teammates · 3 documents · 5.0k tokens")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Stop the team" })).toBeNull();
+  });
+
   it("shows all token counts including cached tokens without a tooltip", () => {
     renderPanel();
 
