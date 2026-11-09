@@ -26,6 +26,8 @@ has `Implements: none`, and has no metaplan.
    plain text, one question at a time. Record each settled decision immediately in
    the document it affects, with its reason when the reason is not obvious.
 4. Carry the change into every document that states the same thing in the same turn.
+   For a product section, that includes the feature's vision (`index.md` and its
+   `## Decisions`): correct any statement the change makes untrue.
    If you cannot reconcile a related document, record the conflict under its
    `## Open questions`, naming the conflicting statements, options, and your
    recommendation. If that document is locked, preserve it and record the conflict

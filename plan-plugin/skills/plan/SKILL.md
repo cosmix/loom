@@ -127,9 +127,11 @@ When every teammate has finished, the lead makes one consistency pass over
 the set: terms, cross-references, duplicated or missing topics, `Implements:`
 lines, and `loom plan verify <plan>` for each plan using its full path. Check
 that briefs agree with their plans and make corrections only within the run's
-write scope. Hand the user a review queue ordered by open-question count,
-highest first, with a note per document on what the pass changed, including
-when no changes were needed. Report anything that could not be resolved.
+write scope. Hand the user a review queue in the metaplan's order, the order
+the app's sidebar and plan queue use, and suggest starting at its first plan.
+Give each document its open-question count and a note on what the pass
+changed, including when no changes were needed. Report anything that could not
+be resolved.
 
 The lead never starts a second team. If the user says “Stop the team”, end it;
 documents already written stay.

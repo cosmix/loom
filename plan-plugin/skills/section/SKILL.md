@@ -93,9 +93,11 @@ them. Never try to work around a refusal.
 When every teammate has finished, the lead makes one consistency pass over
 the set: terms, cross-references, duplicated or missing topics, and a check of
 each document with `loom plan check`. Make corrections only within the run's
-write scope. Hand the user a review queue ordered by open-question count,
-highest first, with a note per document on what the pass changed, including
-when no changes were needed. Report anything that could not be resolved.
+write scope. Hand the user a review queue in the vision's table order, the
+order the app's sidebar and section queue use, and suggest starting at its
+first document. Give each document its open-question count and a note on what
+the pass changed, including when no changes were needed. Report anything that
+could not be resolved.
 
 The lead never starts a second team. If the user says “Stop the team”, end it;
 documents already written stay.
@@ -105,7 +107,11 @@ documents already written stay.
 Never write or edit a `Settled:` line; the app's Mark settled action writes it. When the turn
 edits a section that has one, say so in the reply ("section 04 was settled; it now reads
 revised"). The section's stub is its row in the vision's `Specification sections` table: keep
-the row a true one-line scope. When this section's scope moves past its row, update the row in
+the row a true one-line scope. After editing a section, re-read the vision (`index.md`, including
+its `## Decisions`) for statements the edit makes untrue, and correct them in the same turn; when
+the correction is a product choice, record it under the vision's `## Open questions` and ask. In
+team mode, report such statements instead of writing them. When this section's scope moves past
+its row, update the row in
 the same turn or ask.
 
 ## Close the session

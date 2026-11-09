@@ -266,7 +266,7 @@ of that kind in the feature.
 **Draft all, with a team** runs one authoring session leading up to five teammates, fewer when
 fewer documents are missing. The lead shares a brief and assigns each file one owner;
 teammates coordinate while drafting. The lead checks consistency and hands the user a review
-queue ordered by open-question count. The cost line shows assignments and model before launch;
+queue in document order, the order the sidebar uses. The cost line shows assignments and model before launch;
 "Stop the team" ends it and keeps written documents. Section 09 owns the session procedure.
 Pace belongs to the session request; it adds no stored workflow state or approval record.
 

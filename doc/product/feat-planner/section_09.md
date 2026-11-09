@@ -301,8 +301,9 @@ The shared team procedure:
   duplicated or missing topics, `Implements:` lines and agreement between briefs and plans.
   It runs `loom plan check` for sections or `loom plan verify <plan>` for each plan, and corrects
   only files within the run's scope.
-- The lead hands back a review queue ordered by open-question count, highest first, with a note
-  per document on what the pass changed, including when no changes were needed, and anything
+- The lead hands back a review queue in document order (the vision's table, or the metaplan for
+  plans), the order the sidebar and queue use, starting at the first document. Each entry gives
+  its open-question count and a note on what the pass changed, including when no changes were needed, and anything
   unresolved. It starts no second team. Stopping the team leaves written documents in place.
 
 The draft-all launch enables in-process teammates; the bridge reads their transcripts for tokens
