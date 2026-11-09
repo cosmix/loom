@@ -50,9 +50,10 @@ describe("FoldCap", () => {
 
       fireEvent.focus(cap);
 
-      expect((await screen.findByRole("tooltip")).textContent).toBe("Fold · Esc");
+      const tooltip = await screen.findByRole("tooltip");
+      expect(tooltip.textContent).toBe("Fold · Esc");
       expect(screen.getByRole("button", { name: "Fold" })).toBe(cap);
-      expect(cap.getAttribute("aria-describedby")).toBe("run-1");
+      expect(cap.getAttribute("aria-describedby")?.split(/\s+/)).toEqual(["run-1", tooltip.id]);
     },
   );
 });

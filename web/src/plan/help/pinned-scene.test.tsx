@@ -86,11 +86,11 @@ beforeEach(() => {
   vi.stubGlobal("ResizeObserver", ResizeObserverStub);
   vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(measuredRect);
   // The canvas is 600px wide in its own layout; ancestors may scale it on screen.
-  vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockImplementation(
-    function (this: HTMLElement) {
-      return this.classList.contains("planner-help-scene__canvas") ? 600 : 1;
-    },
-  );
+  vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockImplementation(function (
+    this: HTMLElement,
+  ) {
+    return this.classList.contains("planner-help-scene__canvas") ? 600 : 1;
+  });
 });
 
 afterEach(() => {

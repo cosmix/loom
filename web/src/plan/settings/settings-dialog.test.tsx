@@ -22,6 +22,13 @@ const ENGLISH_PREVIEW =
   "The app stores no workflow state and works out the current step from the earliest gap in the doc/ tree.";
 const GREEK_PREVIEW = "Η εφαρμογή δεν αποθηκεύει κατάσταση ροής εργασίας.";
 
+// Compare the CSSOM serialization, which may omit optional quotes around family names.
+function cssFontFamily(family: string): string {
+  const { style } = document.createElement("span");
+  style.fontFamily = family;
+  return style.fontFamily;
+}
+
 function stubNotifications(
   permission: NotificationPermission,
   result: NotificationPermission = permission,
@@ -111,7 +118,7 @@ describe("planner settings sections", () => {
       const card = within(group).getByRole("radio", { name: face.label }).closest("label")!;
       const specimen = within(card).getByText("Aa").parentElement!;
       expect(specimen.textContent).toBe("AaΩω");
-      expect(specimen.style.fontFamily).toBe(face.family);
+      expect(specimen.style.fontFamily).toBe(cssFontFamily(face.family));
       expect(within(card).getByText(face.label)).toBeTruthy();
       expect(within(card).getByText(face.scripts)).toBeTruthy();
     }
@@ -181,13 +188,13 @@ describe("planner settings sections", () => {
     renderSettings(store);
     const preview = screen.getByText(ENGLISH_PREVIEW).parentElement!;
 
-    expect(preview.style.fontFamily).toBe(READING_FACES[0]!.family);
+    expect(preview.style.fontFamily).toBe(cssFontFamily(READING_FACES[0]!.family));
     expect(preview.style.fontSize).toBe("19px");
     fireEvent.click(screen.getByRole("radio", { name: "Literata" }));
-    expect(preview.style.fontFamily).toBe(READING_FACES[1]!.family);
+    expect(preview.style.fontFamily).toBe(cssFontFamily(READING_FACES[1]!.family));
     expect(preview.style.fontSize).toBe("19px");
     fireEvent.click(screen.getByRole("radio", { name: "Large 21px" }));
-    expect(preview.style.fontFamily).toBe(READING_FACES[1]!.family);
+    expect(preview.style.fontFamily).toBe(cssFontFamily(READING_FACES[1]!.family));
     expect(preview.style.fontSize).toBe("21px");
     expect(preview.style.lineHeight).toBe("1.6");
     expect(screen.getByText(ENGLISH_PREVIEW).getAttribute("lang")).toBe("en");
