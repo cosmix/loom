@@ -79,7 +79,7 @@ One container per stage. Naming mirrors the existing window-title convention so 
 
 Bind mounts:
 
-```
+```text
 host                                    container
 ─────                                   ─────────
 {worktree_path}                  rw →   /workspace
@@ -123,7 +123,7 @@ Resolution at run time (highest first):
 
 Stage-level overrides can only **narrow**, not widen. A container-mode project may have stages opt out to native (a stage that needs host tooling). A native-mode project may **not** have a stage demand container — that would require a runtime and an image that the project hasn't been initialised for. `loom init` validates this and fails with an actionable error if a plan demands container mode but the project is native:
 
-```
+```text
 error: stage 'integration-verify' requires execution.backend=container,
        but project backend is native.
 
@@ -431,7 +431,7 @@ Add tests for the writer in `git/worktree/settings.rs` covering all five `Permis
 
 ### 6.1 New module layout
 
-```
+```text
 loom/src/orchestrator/terminal/
 ├── mod.rs                  (modified: add BackendType::Container)
 ├── native/                 (existing, unchanged)
@@ -870,7 +870,7 @@ The per-project `.work/config.toml` stores only a digest reference into that glo
 
 Use the platform cache directory via the `dirs` crate (already a loom dependency):
 
-```
+```text
 $LOOM_CACHE_DIR/loom/images/<fingerprint>/
 ├── Dockerfile         (generated)
 ├── firewall.sh        (generated, copied into image)
@@ -934,7 +934,7 @@ Add `sha2` and `hex` to `loom/Cargo.toml` if not already present.
 
 Extend `loom init` with two flags:
 
-```
+```bash
 loom init <plan> [--backend native|container] [--no-build]
 ```
 
@@ -957,7 +957,7 @@ The hard fail is deliberate. If the user asked for container mode, they want to 
 1. **Validate the plan.** Same parsing/validation loom already does; no changes.
 2. **Detect runtime.** Call `runtime::detect_runtime("auto")`. On failure, emit OS-specific install instructions and exit non-zero. Sample output for Linux:
 
-   ```
+   ```text
    error: container backend requested but no runtime found
 
    Install one of:
@@ -993,7 +993,7 @@ The build is blocking. Stream the runtime's native build output to stdout (`dock
 
 Typical first-time output:
 
-```
+```text
 $ loom init plan.md --backend container
 ✓ plan validated: 12 stages
 ✓ runtime detected: podman 5.2.0
@@ -1019,7 +1019,7 @@ container backend ready. Run `loom run` to start.
 
 When `--no-build` is passed and the image isn't cached, write `.work/config.toml` with `image_digest = "pending"` and emit:
 
-```
+```text
 ⚠ image not built. Run `loom container build` before `loom run`.
 ```
 
@@ -1031,7 +1031,7 @@ When `--no-build` is passed and the image isn't cached, write `.work/config.toml
 
 A small set of utility commands for managing the global cache. None of them are required for normal use; `loom init` covers the common case.
 
-```
+```text
 loom container build [--fingerprint <fp>]
     Build the image for the given fingerprint, or for the current
     project's fingerprint if omitted. Useful with --no-build init,
@@ -1058,7 +1058,7 @@ loom container shell <stage-id>
 
 Every `loom init` re-runs language detection. If the resulting fingerprint differs from the one pinned in `.work/config.toml`, loom prints a clear notice and updates the pin:
 
-```
+```text
 ⚠ project languages changed: rust → rust-typescript
   using cached image for new fingerprint (built 2 days ago)
   updated .work/config.toml
@@ -1352,7 +1352,7 @@ Apple Container reads OCI images. The same Dockerfile builds and runs unchanged.
 
 A user with a runtime already installed (Podman/Docker on Linux, Apple Container/Docker on macOS) needs only:
 
-```
+```bash
 loom init my-plan.md --backend container
 loom run
 ```
@@ -1365,7 +1365,7 @@ Once the image is built, Claude Code inside it auto-updates itself by default (t
 
 ### 11.2 No runtime installed
 
-```
+```text
 $ loom init my-plan.md --backend container
 error: container backend requested but no runtime found
 
@@ -1381,7 +1381,7 @@ No partial state is written; the user installs a runtime and re-runs the same co
 
 ### 11.3 Switching an existing project's backend
 
-```
+```bash
 loom init my-plan.md --backend native     # switch back to native
 loom init my-plan.md --backend container  # switch to container; re-pins digest
 loom init my-plan.md                      # preserves whichever was set last
