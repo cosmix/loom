@@ -112,3 +112,10 @@
 **Why:** briefs were written from the plan text, not from the tree the worker would edit, and the plan's file is renamed when the run starts.
 
 **Prevention:** a worker verifies each premise it can check cheaply (`rg` the sentence it is told to edit) and reports a mismatch instead of inventing the edit; a plan names the file it will have at run time (`IN_PROGRESS-`); a stage whose behaviour depends on the installed hooks checks the installed copy.
+
+## A Plan Carried Deferred Designs and Shipped-Work History
+
+**What happened:** PLAN-full-suite-at-gate kept a status narrative of work already built, an evidence section, a known-limits list, sibling-plan defects and a "Deferred" section of design options with no owner or trigger. The executable residual work was about 300 of its 524 lines.
+**Why:** the plan was treated as documentation of a topic, not as a list of work to do.
+**Prevention:** a plan holds only what will be done: the decision it implements, the work items, ordering constraints, acceptance. Built work gets one status line; design options, limits and revisit conditions go to doc/loom/knowledge/concerns; defects of another plan go into that plan.
+**Fix:** cut the plan down to status, decision, residual work, ordering and acceptance; deleted the Deferred section.
