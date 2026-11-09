@@ -2,9 +2,41 @@
 
 use std::time::Instant;
 
-use super::State;
+use super::{Rebuilds, State};
+use crate::plan_server::lifecycle::{line, safe};
 use crate::plan_server::summaries::scheduler::Scheduler;
-use crate::planning::summary::evaluate::{Evaluation, SummaryEval, SummaryState};
+use crate::planning::summary::claims::list_claims;
+use crate::planning::summary::evaluate::{evaluate, Evaluation, SummaryEval, SummaryState};
+
+impl Rebuilds {
+    /// When `needed` holds for the state, the ids out of date in the store as it is now.
+    ///
+    /// A turn's refinement subagents seal summaries inside the turn, and the watcher's batch
+    /// showing a seal can arrive up to a second after the turn ends: resuming on the cached
+    /// evaluation would start a session for what the turn just sealed. Only the out-of-date set
+    /// is taken: storing this evaluation could replace a newer batch's that was applied while
+    /// this one was made. It is made outside the state lock, because concept mode takes the state
+    /// lock while it holds the project's. `None` without a server context or readable claims:
+    /// the caller keeps the cached evaluation.
+    pub(super) fn out_of_date_now(&self, needed: impl Fn(&State) -> bool) -> Option<Vec<String>> {
+        let needed = needed(&self.lock());
+        if !needed {
+            return None;
+        }
+        let env = self.env.as_ref()?;
+        let ctx = env.ctx.upgrade()?;
+        let claims = match list_claims(&env.runtime) {
+            Ok(claims) => claims,
+            Err(error) => {
+                let why = safe(&format!("{error:#}"));
+                line(&format!("summaries: cannot list the claims: {why}"));
+                return None;
+            }
+        };
+        let evaluation = evaluate(&ctx.project(), &claims);
+        Some(out_of_date(&evaluation))
+    }
+}
 
 /// Every id the evaluation finds stale, incomplete or missing.
 pub(super) fn out_of_date(evaluation: &Evaluation) -> Vec<String> {

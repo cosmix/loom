@@ -5,20 +5,29 @@
 use std::thread;
 use std::time::Duration;
 
+use std::net::SocketAddr;
+
 use super::publish::Snapshot;
-use super::tests::{facade, owned, update, Row, Sent};
-use super::tests_bridge::{Rig, ID};
+use super::tests::{facade, owned, update, Probe, Row, Sent};
+use super::tests_bridge::{state, turn_ended, Rig, ID};
 use super::*;
+use crate::plan_server::context::BindInfo;
+use crate::plan_server::prereq::ReadOnly;
 use crate::plan_server::summaries::scheduler::{AnswerRight, QuestionView, NO_SEAL_TIMEOUT};
 use crate::plan_server::wire::concept::ConceptChanged;
 use crate::plan_server::wire::summaries::{FailedSummary, SummaryQuestion};
-use crate::plan_session::bridge::EndOutcome;
+use crate::plan_session::bridge::{BridgeEvent, EndOutcome};
+use crate::plan_session::kind::SessionKind;
+use crate::plan_session::model::SessionState;
 use crate::plan_session::tmux_host::TmuxHost;
+use crate::planning::runtime::create_runtime_dir;
 use crate::planning::summary::cost::Trigger;
 use crate::planning::summary::engine::EngineUpdate;
+use crate::planning::summary::evaluate::fixtures::{Fixture, ID1, PRODUCT, S1, VISION, VISION_ID};
 use crate::planning::summary::evaluate::SummaryState::{Current, Missing, Rebuilding, Stale};
 use crate::planning::summary::evaluate::{evaluate, fixtures};
 use crate::planning::summary::store::Scope;
+use crate::planning::watch::{Batch, OwnWrites};
 
 /// Regression: a launch that fails at once delivers its session's end before `start_summary`
 /// returns, while the scheduler still runs the pending placeholder. The end must fail the ids
@@ -261,4 +270,67 @@ fn a_running_summary_evaluating_missing_is_not_sealed_and_keeps_the_stall_timer(
     assert_eq!(rebuilds.building(), Some(Building { done: 1, total: 1 }));
     let stall = rebuilds.lock().scheduler.stall_due(due).map(str::to_owned);
     assert_eq!(stall, None, "a seal restarts the timer");
+}
+
+/// Seal the vision, section 1 (as one sentence, `text`) and the product overview citing it,
+/// each hashed from the sources on disk now.
+fn seal_feature(f: &Fixture, text: &str) {
+    let vision = "The vision holds.";
+    fixtures::seal_document(&f.root, VISION_ID, &[(vision, "specification-sections")]);
+    fixtures::seal_document(&f.root, ID1, &[(text, "a")]);
+    fixtures::seal_overview(&f.root, PRODUCT, &[(ID1, text)], &[]);
+}
+
+/// A facade over a server context on `f`, whose project the test refreshes as the watcher does.
+fn served(f: &Fixture) -> (Arc<PlanContext>, Arc<Probe>, Arc<Rebuilds>) {
+    create_runtime_dir(&f.paths).expect("runtime dir");
+    let bind = BindInfo::new(SocketAddr::from(([127, 0, 0, 1], 0)), "t");
+    let read_only = ReadOnly::from_problems(Vec::new());
+    let ctx = PlanContext::new(f.root.clone(), read_only, bind, OwnWrites::default());
+    let ctx = Arc::new(ctx.expect("context").with_runtime(f.paths.clone()));
+    let probe = Arc::new(Probe::default());
+    let rebuilds = Rebuilds::with_spawner(&ctx, probe.clone());
+    probe.rebuilds.set(Arc::downgrade(&rebuilds)).ok();
+    (ctx, probe, rebuilds)
+}
+
+/// Regression: the chat edits a section inside its turn, the watcher's batch invalidates the
+/// summary, and the turn's refinement subagents rebuild and seal it. The turn's end (or the chat
+/// going idle) arrives before the batch that shows the seal; the summary is current, so no
+/// background session rebuilds it a second time.
+#[test]
+fn a_seal_made_inside_the_authoring_turn_is_seen_when_the_turn_ends() {
+    let ends: [BridgeEvent; 2] = [turn_ended("chat", "t1"), state("chat", SessionState::Idle)];
+    for end in ends {
+        let rig = Rig::new(false);
+        let f = fixtures::fixture(&[
+            (VISION, &fixtures::vision(&[1])),
+            (S1, &fixtures::section(1, "Alpha.", "Beta.")),
+        ]);
+        seal_feature(&f, "Alpha holds.");
+        let (ctx, probe, rebuilds) = served(&f);
+        rebuilds.turn_started(Some(SessionKind::Authoring), "chat", "t1");
+        fixtures::put(&f.root, S1, &fixtures::section(1, "Edited.", "Beta."));
+        let batch = Batch {
+            changed: vec![S1.into()],
+            ..Batch::default()
+        };
+        ctx.project_mut().refresh(&batch).expect("refresh");
+        let edited = evaluate(&ctx.project(), &[]);
+        let invalidated = evaluation::out_of_date(&edited);
+        assert_eq!(invalidated, owned(&[ID1, PRODUCT]), "the edit");
+        rebuilds.on_update(&EngineUpdate {
+            evaluation: edited,
+            rewritten: Vec::new(),
+            deleted: Vec::new(),
+            invalidated,
+        });
+        assert_eq!(rebuilds.panel().queue, owned(&[ID1, PRODUCT]), "held");
+        seal_feature(&f, "Edited holds.");
+        let sealed = evaluate(&ctx.project(), &[]);
+        assert_eq!(evaluation::out_of_date(&sealed), Vec::<String>::new());
+        rebuilds.on_bridge_event(&rig.bridge, &end);
+        assert_eq!(probe.starts(), Vec::<Vec<String>>::new(), "{end:?}");
+        assert_eq!(rebuilds.panel().queue, Vec::<String>::new(), "{end:?}");
+    }
 }

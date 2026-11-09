@@ -129,7 +129,7 @@ fn started(id: &str, kind: SessionKind) -> BridgeEvent {
     }
 }
 
-fn state(id: &str, state: SessionState) -> BridgeEvent {
+pub(super) fn state(id: &str, state: SessionState) -> BridgeEvent {
     BridgeEvent::State {
         id: id.into(),
         state,
