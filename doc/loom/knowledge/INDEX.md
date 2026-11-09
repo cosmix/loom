@@ -73,7 +73,7 @@
 | [source-graph-resolution](architecture/source-graph-resolution.md) |  | 125 |
 | [source-graph-view](architecture/source-graph-view.md) |  | 78 |
 | [status-data-model](architecture/status-data-model.md) | Fields | 259 |
-| [summary-store](architecture/summary-store.md) |  | 308 |
+| [summary-store](architecture/summary-store.md) |  | 312 |
 | [target-guard](architecture/target-guard.md) | Tip | 127 |
 | [terminal-backends](architecture/terminal-backends.md) |  | 285 |
 | [test-runner-adapters](architecture/test-runner-adapters.md) |  | 56 |
@@ -164,14 +164,14 @@
 | [parallel-worktree-shared-state](mistakes/parallel-worktree-shared-state.md) | Shared | 351 |
 | [phantom-merges](mistakes/phantom-merges.md) | Merges | 347 |
 | [pinned-literals-ledgers-and-wiring](mistakes/pinned-literals-ledgers-and-wiring.md) | Pins | 332 |
-| [plan-authoring](mistakes/plan-authoring.md) |  | 114 |
+| [plan-authoring](mistakes/plan-authoring.md) |  | 121 |
 | [plan-server-delivery](mistakes/plan-server-delivery.md) | Slips | 369 |
 | [planner-design-brainstorm](mistakes/planner-design-brainstorm.md) | Stubs | 94 |
 | [planner-follow-ups-delivery](mistakes/planner-follow-ups-delivery.md) | Slips | 144 |
 | [planner-polish](mistakes/planner-polish.md) | Polish | 107 |
 | [planner-redesign](mistakes/planner-redesign.md) |  | 80 |
 | [planner-review-fixes](mistakes/planner-review-fixes.md) |  | 48 |
-| [planner-ui-repair](mistakes/planner-ui-repair.md) | Repair | 131 |
+| [planner-ui-repair](mistakes/planner-ui-repair.md) | Repair | 138 |
 | [planner-visual-feedback-shortfall](mistakes/planner-visual-feedback-shortfall.md) | Visual | 17 |
 | [planning-sandbox-delivery](mistakes/planning-sandbox-delivery.md) |  | 73 |
 | [pre-commit-hardening](mistakes/pre-commit-hardening.md) |  | 93 |
