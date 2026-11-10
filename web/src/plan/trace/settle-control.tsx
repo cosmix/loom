@@ -7,13 +7,16 @@ import { useId, useRef, useState, type JSX, type RefObject } from "react";
 import type { TraceDoc } from "@/plan/api/schema-trace";
 import { Untrusted } from "@/plan/chat/visible-controls";
 import { Popover } from "@/plan/header/popover";
+import { shortSha } from "@/plan/review/changed-since-parts";
 import { authorBlockReasonAtom } from "@/plan/state/atoms";
+import { BusyText } from "@/plan/ui/busy-text";
 import { HEADING_BUTTON } from "@/plan/ui/doc-heading";
 
 import { changeTarget, settleWords } from "./doc-model";
 import { docOfPath, shownSettle } from "./model";
 import { SettleConfirm } from "./settle-confirm";
-import { useSettle } from "./settle-flow";
+import { LATE_NOTICE, useSettle, type SettlePhase } from "./settle-flow";
+import type { CommitNote } from "./settle-note";
 import { SettleGlyph } from "./settle-glyph";
 import { SettleMenu } from "./settle-menu";
 import { SettleSurface, useNarrow } from "./settle-surface";
@@ -33,11 +36,13 @@ function SettleButton(props: {
   reason: string | null;
   reasonId: string;
   open: boolean;
+  phase: SettlePhase;
   onPress: () => void;
 }): JSX.Element {
-  const { doc, buttonRef, reason, reasonId, open, onPress } = props;
+  const { doc, buttonRef, reason, reasonId, open, phase, onPress } = props;
   const words = settleWords(doc.settle, doc.role);
   const menu = doc.settle !== "draft";
+  const pending = phase.kind === "working" ? (phase.clear ? "Unsettling…" : "Settling…") : null;
   // The anchor places the confirmation under the button, which no Radix trigger opens.
   return (
     <PopoverPrimitive.Anchor asChild>
@@ -47,15 +52,22 @@ function SettleButton(props: {
         {...HEADING_BUTTON}
         className={cn(HEADING_BUTTON.className, "trace-settle-button")}
         data-settle={doc.settle}
-        aria-disabled={reason !== null || undefined}
+        aria-disabled={reason !== null || pending !== null || undefined}
+        aria-busy={pending !== null || undefined}
         aria-describedby={reason !== null ? reasonId : undefined}
         aria-haspopup={menu ? "dialog" : undefined}
         aria-expanded={menu ? open : undefined}
         onClick={onPress}
       >
-        <SettleGlyph state={doc.settle} />
-        {words.button}
-        {menu && <ChevronDown aria-hidden="true" />}
+        {pending !== null ? (
+          <BusyText>{pending}</BusyText>
+        ) : (
+          <>
+            <SettleGlyph state={doc.settle} />
+            {words.button}
+            {menu && <ChevronDown aria-hidden="true" />}
+          </>
+        )}
       </button>
     </PopoverPrimitive.Anchor>
   );
@@ -122,7 +134,37 @@ function useSettleMenu(flow: Flow, button: RefObject<HTMLButtonElement | null>) 
   };
 }
 
-/** What stands beside the button: why it is disabled, the way to see what changed, a notice. */
+/** The commit note: a quiet status while it runs and for a moment once made, else an alert. */
+function CommitNoteLine({ note }: { note: CommitNote }): JSX.Element | null {
+  if (note.kind === "none") return null;
+  if (note.kind === "failed") {
+    return (
+      <span role="alert" className="trace-settle-note">
+        <Untrusted text={note.message} />
+      </span>
+    );
+  }
+  // One status element for both, so the change of words is announced.
+  return (
+    <span role="status" className="trace-settle-note">
+      {note.kind === "pending" ? (
+        "Committing…"
+      ) : (
+        <>
+          Committed <Untrusted text={shortSha(note.commit)} />
+        </>
+      )}
+    </span>
+  );
+}
+
+/** The phase's notice: why a press did nothing, or a written line the page has not caught up on. */
+function phaseNotice(phase: SettlePhase): string | null {
+  if (phase.kind === "notice") return phase.message;
+  return phase.kind === "late" ? LATE_NOTICE : null;
+}
+
+/** What stands beside the button: why it is disabled, the way to see what changed, the notes. */
 function SettleAside(props: {
   feature: string;
   doc: TraceDoc;
@@ -133,6 +175,7 @@ function SettleAside(props: {
   const { feature, doc, flow, reason, reasonId } = props;
   const { trace } = useTrace(feature);
   const target = trace ? changeTarget(trace, doc) : null;
+  const notice = phaseNotice(flow.phase);
   return (
     <>
       {reason !== null && (
@@ -143,27 +186,30 @@ function SettleAside(props: {
       {target && (
         <ChangesSinceSettled settled={target.settled} compare={target.compare} look="button" />
       )}
-      {flow.phase.kind === "notice" && (
+      {notice !== null && (
         <span role="alert" className="trace-settle-note">
-          <Untrusted text={flow.phase.message} />
+          <Untrusted text={notice} />
         </span>
       )}
+      <CommitNoteLine note={flow.note} />
     </>
   );
 }
 
 function SettleInteractive(props: { feature: string; doc: TraceDoc; hash: string }): JSX.Element {
   const { feature, doc, hash } = props;
-  const flow = useSettle(feature, doc.path, hash);
+  const flow = useSettle(feature, doc.path, hash, doc.settle);
   const blocked = useAtomValue(authorBlockReasonAtom);
   const narrow = useNarrow();
   const reasonId = useId();
   const button = useRef<HTMLButtonElement>(null);
   const menu = useSettleMenu(flow, button);
   const confirming = flow.phase.kind === "confirm";
-  const reason = flow.phase.kind === "working" ? "Working" : blocked;
+  const working = flow.phase.kind === "working";
+  // The reason line beside the button is for a block; the button's own words say it is working.
+  const reason = blocked;
   const press = () => {
-    if (reason !== null) return;
+    if (reason !== null || working) return;
     if (doc.settle === "draft") menu.run(flow.settle);
     else menu.toggleMenu();
   };
@@ -176,6 +222,7 @@ function SettleInteractive(props: { feature: string; doc: TraceDoc; hash: string
           reason={reason}
           reasonId={reasonId}
           open={menu.open}
+          phase={flow.phase}
           onPress={press}
         />
         <SettleSurface

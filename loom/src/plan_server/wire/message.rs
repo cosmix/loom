@@ -93,6 +93,8 @@ pub enum PlanMessage {
     TraceChanged {
         feature: String,
     },
+    /// How a settle's background commit ended.
+    SettleCommit(super::trace::SettleCommitView),
 }
 
 impl PlanMessage {

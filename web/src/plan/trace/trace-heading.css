@@ -223,6 +223,23 @@
   color: var(--foreground);
 }
 
+/* What stands beside the settle button and explains it (See what changed's reason, a blocked
+   reason, a notice) takes a line of its own under the action row, so the row keeps its one line
+   and Open all its place at the row's end: the control's box gives way to the row's flex. Under
+   30rem the row is a grid and the control keeps its box (below). */
+.concept-page-column .doc-heading-group:not(:has(> .doc-heading-views)) > .trace-settle-control {
+  display: contents;
+}
+
+.concept-page-column
+  .doc-heading-group
+  > .trace-settle-control
+  > :is(.plan-fine, .trace-settle-note),
+[data-loom-plan] .trace-source-head .trace-settle-control > .trace-changes-reason {
+  flex-basis: 100%;
+  order: 1;
+}
+
 /* The settle button's chevron: smaller and muted, close after the state's words. */
 [data-loom-plan] .doc-heading .trace-settle-button > svg,
 [data-loom-plan] .trace-source-head .trace-settle-button > svg {
@@ -283,7 +300,8 @@
     font-size: var(--type-body);
   }
 
-  .concept-page-column .doc-heading-group > .trace-settle-control {
+  .concept-page-column .doc-heading-group:not(:has(> .doc-heading-views)) > .trace-settle-control {
+    display: flex;
     grid-column: 1 / -1;
   }
 

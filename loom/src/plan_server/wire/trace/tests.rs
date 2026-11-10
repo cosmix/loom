@@ -264,3 +264,56 @@ fn trace_enum_wire_values_are_in_trace_schema() {
     assert_all_in_source(ts, &covers, "CoverKindView", "COVER_KINDS", None);
     assert_all_in_source(ts, &findings, "FindingKindView", "FINDING_KINDS", None);
 }
+
+#[test]
+fn settle_saved_fixture_matches_serde_output() {
+    let fixture = include_str!("../../../../../web/src/plan/api/fixtures/trace-settle-saved.json");
+    let expected: serde_json::Value = serde_json::from_str(fixture).unwrap();
+    let answer: SettleResult = serde_json::from_value(expected.clone()).unwrap();
+    assert_eq!(serde_json::to_value(&answer).unwrap(), expected);
+    let refused = SettleResult::Saved {
+        hash: "sha256:def".to_owned(),
+        validation: None,
+        commit: SettleCommitStart::NotCommitted {
+            reason: "the commit worker could not start".to_owned(),
+        },
+    };
+    let wire = serde_json::to_value(&refused).unwrap();
+    assert_eq!(
+        wire["commit"],
+        serde_json::json!({"state": "not_committed", "reason": "the commit worker could not start"})
+    );
+    let mut extra = expected;
+    extra["commit_error"] = serde_json::Value::Null;
+    assert!(serde_json::from_value::<SettleResult>(extra).is_err());
+}
+
+fn all_settle_commit_states() -> Vec<SettleCommitState> {
+    match SettleCommitState::Committed {
+        SettleCommitState::Committed
+        | SettleCommitState::Unchanged
+        | SettleCommitState::NotCommitted => {}
+    }
+    use SettleCommitState::*;
+    vec![Committed, Unchanged, NotCommitted]
+}
+
+#[test]
+fn settle_commit_message_fixture_matches_serde_output() {
+    use crate::plan_server::wire::message::PlanMessage;
+    let fixture = include_str!("../../../../../web/src/plan/api/fixtures/trace-settle-commit.json");
+    let expected: serde_json::Value = serde_json::from_str(fixture).unwrap();
+    let message: PlanMessage = serde_json::from_value(expected.clone()).unwrap();
+    assert!(matches!(&message, PlanMessage::SettleCommit(view) if view.job == "3f9a1c2e-7"));
+    assert_eq!(serde_json::to_value(&message).unwrap(), expected);
+    let mut extra = expected;
+    extra["extra"] = serde_json::json!(1);
+    assert!(serde_json::from_value::<PlanMessage>(extra).is_err());
+    assert_all_in_source(
+        SCHEMA_TRACE_TS,
+        &all_settle_commit_states(),
+        "SettleCommitState",
+        "SETTLE_COMMIT_STATES",
+        None,
+    );
+}

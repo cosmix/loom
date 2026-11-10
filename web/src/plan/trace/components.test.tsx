@@ -4,13 +4,16 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { docChangedAtom } from "@/plan/files/atoms";
 
 import {
+  COMMIT,
   CURRENT_TEXT,
   FIRST_PLAN,
   HASH,
+  JOB,
   S01,
   S02,
   S03,
   VISION_TEXT,
+  deliver,
   kit,
   mount,
   patchDoc,
@@ -32,6 +35,21 @@ afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
 });
+
+/** `fetch` that answers the first settled-version lookup with a 500, then as `fetch` does. */
+function failingVersion(fetch: typeof globalThis.fetch): typeof globalThis.fetch {
+  let failed = false;
+  return (input, init) => {
+    const raw = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+    if (!failed && raw.startsWith("/api/settled-version")) {
+      failed = true;
+      const body = JSON.stringify({ error: "internal", message: "git is busy" });
+      const headers = { "content-type": "application/json" };
+      return Promise.resolve(new Response(body, { status: 500, headers }));
+    }
+    return fetch(input, init);
+  };
+}
 
 const buttons = () => screen.queryAllByRole("button").map((button) => button.textContent);
 const seeChanged = () => screen.queryByRole("link", { name: "See what changed" });
@@ -204,13 +222,49 @@ it("a conflict reloads the document and the trace and asks to settle again", asy
   );
 });
 
-it("a settled line that was never committed says so and opens no comparison", async () => {
+it("a settled line that was never committed disables See what changed and says why", async () => {
   kit.settledCommit = null;
   patchDoc(S02, { settle: "revised" });
   await control(S02, "Changed since you settled it");
-  fireEvent.click(screen.getByRole("link", { name: "See what changed" }));
-  await screen.findByText("The settled version is not committed");
+  const reason = await screen.findByText(/was never committed, so there is nothing to compare/);
+  const link = screen.getByRole("link", { name: "See what changed" });
+  expect(link.getAttribute("aria-disabled")).toBe("true");
+  expect(link.getAttribute("aria-describedby")).toBe(reason.id);
+  expect(reason.className).toContain("plan-fine");
+  expect(reason.textContent).toContain("Settle again to record it.");
+  fireEvent.click(link);
+  await new Promise((resolve) => setTimeout(resolve, 20));
   expect(screen.queryByRole("dialog")).toBeNull();
+  expect(kit.calls.some((call) => call.url.pathname === "/api/at-commit")).toBe(false);
+});
+
+it("See what changed asks for the settled version on mount and waits disabled", async () => {
+  patchDoc(S02, { settle: "revised" });
+  await control(S02, "Changed since you settled it");
+  const link = screen.getByRole("link", { name: "See what changed" });
+  const asked = () => kit.calls.filter((call) => call.url.pathname === "/api/settled-version");
+  expect(asked()).toHaveLength(1);
+  await waitFor(() => expect(link.getAttribute("aria-disabled")).toBeNull());
+  expect(link.getAttribute("aria-describedby")).toBeNull();
+});
+
+it("a failed lookup says so quietly and asks again on a press", async () => {
+  patchDoc(S02, { settle: "revised" });
+  vi.stubGlobal("fetch", failingVersion(globalThis.fetch));
+  await control(S02, "Changed since you settled it");
+  const reason = await screen.findByText((_, node) =>
+    Boolean(node?.matches(".trace-changes-reason") && node.textContent?.includes("git is busy")),
+  );
+  expect(reason.textContent).toContain("Select See what changed to try again.");
+  const link = screen.getByRole("link", { name: "See what changed" });
+  expect(link.getAttribute("aria-disabled")).toBeNull();
+  expect(link.getAttribute("aria-describedby")).toBe(reason.id);
+  fireEvent.click(link);
+  await waitFor(() => expect(link.getAttribute("aria-describedby")).toBeNull());
+  expect(screen.queryByRole("dialog")).toBeNull();
+  await waitFor(() => expect(link.getAttribute("aria-disabled")).toBeNull());
+  fireEvent.click(link);
+  await screen.findByTestId("diff");
 });
 
 it("See what changed compares the settled commit with the file now", async () => {
@@ -231,4 +285,45 @@ it("a changed stub compares the vision file, against the section's settled commi
   expect(diff.textContent).toBe(`settled text => ${VISION_TEXT}`);
   const settled = kit.calls.find((call) => call.url.pathname === "/api/settled-version");
   expect(settled?.url.searchParams.get("path")).toBe("product/demo/section_02.md");
+});
+
+/** A `settle_commit` frame: `path`'s commit ended, committed. */
+const committedFrame = (path: string) => ({
+  type: "settle_commit",
+  job: JOB,
+  path,
+  state: "committed",
+  commit: COMMIT,
+  reason: null,
+});
+
+const versionAsks = () => kit.calls.filter((call) => call.url.pathname === "/api/settled-version");
+
+it("See what changed asks again once a settle commit of its document ends", async () => {
+  patchDoc(S02, { settle: "revised" });
+  await control(S02, "Changed since you settled it");
+  await waitFor(() => expect(versionAsks()).toHaveLength(1));
+  deliver(committedFrame(S03));
+  expect(versionAsks()).toHaveLength(1);
+  deliver(committedFrame(S02));
+  await waitFor(() => expect(versionAsks()).toHaveLength(2));
+});
+
+it("an overtaken settled-version answer never replaces the later one", async () => {
+  patchDoc(S02, { settle: "revised" });
+  kit.settledCommit = null;
+  let release = () => {};
+  kit.versionGate = new Promise((resolve) => {
+    release = resolve;
+  });
+  await control(S02, "Changed since you settled it");
+  await waitFor(() => expect(versionAsks()).toHaveLength(1));
+  kit.settledCommit = COMMIT;
+  deliver(committedFrame(S02));
+  const link = screen.getByRole("link", { name: "See what changed" });
+  await waitFor(() => expect(link.getAttribute("aria-disabled")).toBeNull());
+  release();
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  expect(link.getAttribute("aria-disabled")).toBeNull();
+  expect(screen.queryByText(/never committed/)).toBeNull();
 });

@@ -9,7 +9,7 @@ mod identity;
 mod owned;
 mod spawn;
 mod tail;
-pub(crate) use owned::OwnedProcess;
+pub(crate) use owned::{run_bounded_terminating_output, OwnedProcess};
 pub use spawn::spawn_retrying_text_busy;
 pub(crate) use tail::run_bounded_tail_output;
 #[doc(hidden)]
@@ -96,16 +96,17 @@ impl BoundedOutput {
 /// group immediately; reaping and both pipes then share a one-second cleanup
 /// deadline. A successful leader retains its status after descendants are killed.
 pub fn run_bounded(command: &mut Command, timeout: Duration) -> Result<BoundedOutput> {
-    run_bounded_with(command, timeout, tail::Stdout::Whole)
+    run_bounded_with(command, timeout, tail::Stdout::Whole, owned::Expiry::Kill)
 }
 
 fn run_bounded_with(
     command: &mut Command,
     timeout: Duration,
     stdout: tail::Stdout,
+    expiry: owned::Expiry,
 ) -> Result<BoundedOutput> {
     let overflow = Arc::new(AtomicU8::new(0));
-    let result = run_bounded_inner(command, timeout, &overflow, stdout);
+    let result = run_bounded_inner(command, timeout, &overflow, stdout, expiry);
     let streams = overflow.load(Ordering::Relaxed);
     if streams != 0 {
         return Err(ProcessOutputLimitError {
@@ -122,6 +123,7 @@ fn run_bounded_inner(
     timeout: Duration,
     overflow: &Arc<AtomicU8>,
     stdout: tail::Stdout,
+    expiry: owned::Expiry,
 ) -> Result<BoundedOutput> {
     #[cfg(unix)]
     {
@@ -148,15 +150,10 @@ fn run_bounded_inner(
             collect_output(status, stdout_reader, stderr_reader, remaining, command)
         }
         None => {
-            let deadline = child.retire();
-            let _ = recv_stream(
-                &stdout_reader,
-                deadline.saturating_duration_since(Instant::now()),
-            );
-            let _ = recv_stream(
-                &stderr_reader,
-                deadline.saturating_duration_since(Instant::now()),
-            );
+            let deadline = child.expire(expiry);
+            for reader in [&stdout_reader, &stderr_reader] {
+                let _ = recv_stream(reader, deadline.saturating_duration_since(Instant::now()));
+            }
             Ok(BoundedOutput::TimedOut)
         }
     }

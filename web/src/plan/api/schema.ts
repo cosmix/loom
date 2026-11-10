@@ -52,6 +52,7 @@ export const PLAN_MESSAGE_TYPES = [
   "draft_team",
   "kickoff_drafts",
   "trace_changed",
+  "settle_commit",
 ] as const;
 export const CLIENT_MESSAGE_TYPES = ["set_name", "reading"] as const;
 

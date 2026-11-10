@@ -146,18 +146,24 @@ export const docViewSchema = z.strictObject({
   truncated: z.boolean(),
   size: u64,
 });
+/** The save answers that wrote nothing: the file moved since it was opened, or the plan is invalid. */
+export const saveConflictSchema = z.strictObject({
+  result: z.literal("conflict"),
+  current_text: z.string(),
+  current_hash: z.string(),
+});
+export const saveInvalidSchema = z.strictObject({
+  result: z.literal("invalid"),
+  validation: validationViewSchema,
+});
 export const saveResultSchema = z.discriminatedUnion("result", [
   z.strictObject({
     result: z.literal("saved"),
     hash: z.string(),
     validation: validationViewSchema.nullable(),
   }),
-  z.strictObject({
-    result: z.literal("conflict"),
-    current_text: z.string(),
-    current_hash: z.string(),
-  }),
-  z.strictObject({ result: z.literal("invalid"), validation: validationViewSchema }),
+  saveConflictSchema,
+  saveInvalidSchema,
 ]);
 export const diffTextsSchema = z.strictObject({
   path: z.string(),

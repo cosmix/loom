@@ -221,7 +221,8 @@ fn assert_exhaustive(message: &PlanMessage) {
         | PlanMessage::RunState(_)
         | PlanMessage::RunOutput(_)
         | PlanMessage::RunStrip(_)
-        | PlanMessage::TraceChanged { .. } => {}
+        | PlanMessage::TraceChanged { .. }
+        | PlanMessage::SettleCommit(_) => {}
     }
 }
 
@@ -243,8 +244,13 @@ fn all_plan_messages() -> Vec<PlanMessage> {
     .unwrap();
     let hello = serde_json::from_str(include_str!("fixtures/hello.json")).unwrap();
     let checklist = serde_json::from_str(include_str!("fixtures/checklist-message.json")).unwrap();
+    let settle_commit = serde_json::from_str(include_str!(
+        "../../../../web/src/plan/api/fixtures/trace-settle-commit.json"
+    ))
+    .unwrap();
     vec![
         hello,
+        settle_commit,
         PlanMessage::Presence(PresenceList { entries: vec![] }),
         PlanMessage::Authoring(AuthoringView { holder: None }),
         checklist,

@@ -78,6 +78,11 @@ impl PlanHub {
         self.deliver(msg, |_, entry| entry.browser == *browser);
     }
 
+    /// Every open tab of every browser but `browser`.
+    pub fn send_to_others(&self, browser: &BrowserId, msg: &PlanMessage) {
+        self.deliver(msg, |_, entry| entry.browser != *browser);
+    }
+
     /// Every open tab of the authoring holder; dropped when there is no
     /// holder or the holder has no tab open. A returning tab gets current
     /// state from the `on_open` hooks.

@@ -9,10 +9,11 @@ use std::time::Duration;
 use anyhow::{bail, Context, Result};
 use tempfile::NamedTempFile;
 
-use crate::git::runner::{run_git_checked, REPO_REDIRECT_ENV};
+use crate::git::runner::run_git_checked;
 use crate::git::stage_commit::{
     commit_staged, validate_commit_message, CommitRequest, CommitScope,
 };
+use crate::git::user_git::user_git;
 use crate::process::run_bounded_output;
 use crate::relay::emit::{mode, EnvSnapshot, RelayContext, RelayMode, RelaySink, StdSink};
 use crate::relay::{CommitPayload, RequestKind};
@@ -121,19 +122,10 @@ fn validate_message(message: &str) -> Result<()> {
     validate_commit_message(message).map_err(anyhow::Error::msg)
 }
 
-/// Git in `cwd` that no inherited variable can point at another repository.
-/// Not a runner call: those disable hooks, and running them is the point here.
-fn git_in(cwd: &Path) -> Command {
-    let mut command = Command::new("git");
-    for variable in REPO_REDIRECT_ENV {
-        command.env_remove(variable);
-    }
-    command.current_dir(cwd);
-    command
-}
-
+/// The pre-commit and commit-msg hooks through `user_git`: not runner calls, which disable hooks,
+/// and running them is the point here.
 fn run_hooks(cwd: &Path, message: &str) -> Result<String> {
-    let mut pre_commit = git_in(cwd);
+    let mut pre_commit = user_git(cwd);
     pre_commit.args(["hook", "run", "--ignore-missing", "pre-commit"]);
     run_checked(&mut pre_commit, "pre-commit")?;
 
@@ -145,13 +137,13 @@ fn run_hooks(cwd: &Path, message: &str) -> Result<String> {
         .flush()
         .context("failed to flush commit message file")?;
     let path = message_file.path();
-    let mut commit_msg = git_in(cwd);
+    let mut commit_msg = user_git(cwd);
     commit_msg
         .args(["hook", "run", "--ignore-missing", "commit-msg", "--"])
         .arg(path);
     run_checked(&mut commit_msg, "commit-msg")?;
 
-    let mut stripspace = git_in(cwd);
+    let mut stripspace = user_git(cwd);
     stripspace.arg("stripspace").stdin(Stdio::from(
         File::open(path).context("failed to open commit message file")?,
     ));

@@ -3,22 +3,43 @@
 //!
 //! The write routes build the new text and hand it to `files::save::save_document`, so
 //! authoring, the lock, the opened-hash check, locked documents and symlinks follow the save
-//! route. This is not the source-code graph (`loom map`).
+//! route; a settle then queues the commit of what it wrote (`settle_queue`). This is not the
+//! source-code graph (`loom map`).
 
 pub mod changed;
+mod settle_commit;
+mod settle_head;
+mod settle_job;
+mod settle_queue;
 mod settle_route;
 mod status_route;
 mod version_route;
 mod view_route;
 
 #[cfg(test)]
+mod commit_route_tests;
+#[cfg(test)]
 mod contract_tests;
 #[cfg(test)]
 mod route_tests;
 #[cfg(test)]
+mod settle_commit_tests;
+#[cfg(test)]
+mod settle_head_tests;
+#[cfg(test)]
+mod settle_job_tests;
+#[cfg(test)]
 mod status_tests;
 
+use std::sync::Arc;
+
+use super::context::PlanContext;
 use super::routes::{BodyKind, Method, Role, RouteSpec};
+
+/// Install the settle commit worker's queue.
+pub fn install(ctx: &Arc<PlanContext>) {
+    settle_queue::install(ctx);
+}
 
 /// `GET /api/trace/<feature>`, `POST /api/settle`, `POST /api/findings/status` and
 /// `GET /api/settled-version`.

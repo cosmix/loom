@@ -18,6 +18,7 @@ pub mod runner;
 pub mod signing;
 pub mod stage_commit;
 pub mod target_guard;
+pub(crate) mod user_git;
 pub mod worktree;
 
 // Re-export commonly used types and functions

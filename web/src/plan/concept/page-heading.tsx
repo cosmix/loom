@@ -12,6 +12,7 @@ import type { ConceptPage } from "@/plan/api/schema-concept";
 import { usePressureRun } from "@/plan/chat/pressure/use-pressure";
 import { Untrusted } from "@/plan/chat/visible-controls";
 import { featureOfDocPath, featureSourceHref } from "@/plan/feature/source-href";
+import { repoRel } from "@/plan/files/address";
 import {
   builtByChips,
   featureCrumb,
@@ -23,6 +24,7 @@ import {
   slugNumber,
   summaryChips,
   useFeatureFacts,
+  useMyCallChips,
   useOpenQuestionChips,
 } from "@/plan/files/heading-parts";
 import { HeadingActions, usePressureActive } from "@/plan/files/doc-heading-view";
@@ -314,10 +316,26 @@ function numberedTitle(page: ConceptPage): ReactNode {
   );
 }
 
-/** Summary metadata and navigation adapted to the shared document heading. */
+/**
+ * Summary metadata and navigation adapted to the shared document heading. A page with a source
+ * reads that document for its My calls. The heading stays mounted across pages (focus and open
+ * popovers survive a navigation), so the kept document of the previous page is ignored until the
+ * new one loads.
+ */
 export function PageHeading({ page }: { page: ConceptPage }): JSX.Element {
+  if (!page.path) return <PageHeadingOf page={page} calls={[]} />;
+  return <PageHeadingWithCalls page={page} path={page.path} />;
+}
+
+function PageHeadingWithCalls({ page, path }: { page: ConceptPage; path: string }): JSX.Element {
+  const kept = useKeptDoc(path).doc;
+  const calls = useMyCallChips(path, kept?.path === repoRel(path) ? kept : null, true);
+  return <PageHeadingOf page={page} calls={calls} />;
+}
+
+function PageHeadingOf({ page, calls }: { page: ConceptPage; calls: HeadingChip[] }): JSX.Element {
   const facts = useFeatureFacts(page.feature);
-  const questions = useOpenQuestionChips(page.path, true);
+  const questions = [...useOpenQuestionChips(page.path, true), ...calls];
   const document = tracedDocument(page);
   const trace = useTraceChips(document?.feature ?? null, document?.path ?? null);
   const rebuilding = isRebuilding(page);

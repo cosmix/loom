@@ -120,7 +120,12 @@ function answer(url: URL, method: string): Response {
     const next = settleAnswers.shift();
     return next
       ? json(next.body, next.status)
-      : json({ result: "saved", hash: "sha256:after", validation: null });
+      : json({
+          result: "saved",
+          hash: "sha256:after",
+          validation: null,
+          commit: { state: "pending", job: "3f9a1c2e-1" },
+        });
   }
   if (pathname === "/api/settled-version") return json({ commit: SETTLED_COMMIT });
   if (pathname === "/api/doc") {

@@ -1,4 +1,4 @@
-import { render } from "@testing-library/react";
+import { act, render } from "@testing-library/react";
 import { createStore } from "jotai";
 import { Provider } from "jotai/react";
 import type { ReactNode } from "react";
@@ -12,12 +12,13 @@ import serverInfoFixture from "@/plan/api/fixtures/server-info.json";
 import traceFixture from "@/plan/api/fixtures/trace.json";
 import { authoringViewSchema, serverInfoSchema } from "@/plan/api/schema";
 import { traceViewSchema, type TraceDoc, type TraceView } from "@/plan/api/schema-trace";
-import { authoringAtom, serverInfoAtom } from "@/plan/state/atoms";
+import { authoringAtom, planSocketAtom, serverInfoAtom } from "@/plan/state/atoms";
 
 import { traceAtom } from "./state";
 
 // The shared harness of the trace components' tests: the trace fixture, a fetch stub that answers
-// the routes they use, and a mount that holds the trace as the feature layout's spine would.
+// the routes they use, a plan socket whose frames a test delivers, and a mount that holds the
+// trace as the feature layout's spine would.
 
 export const VISION = "doc/product/demo/index.md";
 export const S01 = "doc/product/demo/section_01.md";
@@ -27,6 +28,8 @@ export const METAPLAN = "doc/plans/demo/index.md";
 export const FIRST_PLAN = "doc/plans/demo/PLAN-first.md";
 export const HASH = "sha256:5e771ed0c0ffee";
 export const COMMIT = "0a1b2c3d4e5f60718293a4b5c6d7e8f901234567";
+/** The job the settle answer queues, led by the serving server's token. */
+export const JOB = "3f9a1c2e-1";
 export const CURRENT_TEXT = "current text";
 export const VISION_TEXT = [
   "# Demo vision",
@@ -67,6 +70,7 @@ const METAPLAN_SECTIONS = [
 export type Call = { url: URL; method: string };
 export type Answer = { status: number; body: unknown };
 type Held = { text: string; sections: unknown[] };
+type Frame = { type: string } & Record<string, unknown>;
 
 /** The mutable state of one test; `resetKit` makes it fresh. */
 export const kit = {
@@ -76,6 +80,11 @@ export const kit = {
   settledCommit: COMMIT as string | null,
   /** Documents whose text a test sets, by path relative to `doc/`. */
   docs: {} as Record<string, Held>,
+  /** When set, the next settled-version request answers (as it would have when asked) once
+   *  this resolves. */
+  versionGate: null as Promise<void> | null,
+  /** The plan socket's subscribers, by frame type. */
+  handlers: new Map<string, Set<(frame: Frame) => void>>(),
 };
 
 export function json(body: unknown, status = 200): Response {
@@ -98,16 +107,28 @@ function docAnswer(rel: string): unknown {
   return { ...docFixture, path: `doc/${rel}`, hash: HASH, text, sections };
 }
 
-function answer(url: URL, method: string): Response {
+function settledVersion(): Response | Promise<Response> {
+  const body = { commit: kit.settledCommit };
+  const gate = kit.versionGate;
+  kit.versionGate = null;
+  return gate ? gate.then(() => json(body)) : json(body);
+}
+
+function answer(url: URL, method: string): Response | Promise<Response> {
   const { pathname, searchParams } = url;
   if (pathname === "/api/trace/demo") return json(kit.trace);
   if (pathname === "/api/settle" && method === "POST") {
     const next = kit.settleAnswers.shift();
     return next
       ? json(next.body, next.status)
-      : json({ result: "saved", hash: "sha256:after", validation: null });
+      : json({
+          result: "saved",
+          hash: "sha256:after",
+          validation: null,
+          commit: { state: "pending", job: JOB },
+        });
   }
-  if (pathname === "/api/settled-version") return json({ commit: kit.settledCommit });
+  if (pathname === "/api/settled-version") return settledVersion();
   if (pathname === "/api/at-commit") {
     return json({ path: searchParams.get("path"), text: "settled text" });
   }
@@ -121,9 +142,30 @@ export function patchDoc(path: string, patch: Partial<TraceDoc>): void {
   Object.assign(found, patch);
 }
 
+/** The plan socket's handle, with only what the trace components use. */
+export function fakeSocket() {
+  return {
+    subscribe: (type: string, handler: (frame: Frame) => void) => {
+      const handlers = kit.handlers.get(type) ?? new Set();
+      handlers.add(handler);
+      kit.handlers.set(type, handlers);
+      return () => handlers.delete(handler);
+    },
+    onResync: () => () => {},
+    send: () => false,
+  };
+}
+
+/** Deliver `frame` to its subscribers, as the plan socket would. */
+export function deliver(frame: Frame): void {
+  act(() => kit.handlers.get(frame.type)?.forEach((handler) => handler(frame)));
+}
+
 /** A fresh trace and fetch stub; call from `beforeEach`. */
 export function resetKit(): void {
   kit.calls = [];
+  kit.versionGate = null;
+  kit.handlers = new Map();
   kit.settleAnswers = [];
   kit.settledCommit = COMMIT;
   kit.docs = {};
@@ -144,6 +186,7 @@ export function mount(ui: ReactNode, route = "/") {
   initClient(store);
   store.set(serverInfoAtom, serverInfoSchema.parse({ ...serverInfoFixture, read_only: [] }));
   store.set(authoringAtom, authoringViewSchema.parse({ ...authoringFixture, holder: null }));
+  store.set(planSocketAtom, fakeSocket() as never);
   // Components read the trace the feature layout's spine loads; some fetch it themselves.
   store.set(traceAtom("demo"), { trace: kit.trace, error: null });
   render(
