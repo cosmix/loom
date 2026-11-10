@@ -309,3 +309,10 @@ sibling's files.
 **Prevention:** a stage subagent runs the tests for its changed code and module when ready, without a count cap; the stage gate owns full suites. Integration-verify orchestrators and reviewers may run full checks through `loom check integration-verify`.
 
 **Fix:** briefs name targeted tests and the gate owns the full-suite verdict.
+
+## Cargo test name filters are OR-ed substrings
+
+**What happened:** A brief told a worker to run one ignored test as `cargo test --test plan_session_bridge_e2e probes:: -- --ignored rescrub_existing_fixtures`. Cargo treats every positional filter as an OR-ed substring match, so the command ran every ignored operator probe: real Claude Code sessions on a copied HOME, and token spend.
+**Why:** The brief added a narrowing word without checking how libtest combines filters.
+**Prevention:** To run one test, give its full path and pass `--exact`, as in `cargo test --test <target> -- --ignored --exact <module>::<test>`. Never combine a module filter with a name filter to narrow the run.
+**Fix:** The worker killed the run, removed the orphaned temp HOME (it held a copied `.credentials.json`), and restored the fixtures from a backup.
