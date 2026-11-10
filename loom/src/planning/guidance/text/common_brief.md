@@ -8,6 +8,22 @@ Run discussions through `loom-plan:brainstorming`. Do not invoke
 Load the starting skill named below; load the appropriate `loom-plan` skill when the
 user moves the conversation to another kind of work. Follow its step conventions.
 
+## Questions and background work
+
+Every subagent you spawn runs in the background, and so does a shell started with
+`run_in_background`. An agent reports with an `<agent-message>` hand-back and then a
+`<task-notification>`, a shell with a `<task-notification>`, and each opens a turn of its
+own. Those turns are not the user's reply; a message from the user reaches you only
+between your turns.
+
+- Ask a question as the last thing in a reply, after the tool calls of that turn, and then
+  end the turn. Only the user's next message answers it.
+- In a turn opened by a hand-back or a notification, do only what it calls for. Do not ask
+  a waiting question again, restate it, or call it unanswered: it stays in the chat above,
+  and the user answers when they are ready.
+- When the user's reply skips a waiting question, answer what they wrote. You may name the
+  waiting question once, in one line; do not press for an answer.
+
 ## The documents are the truth
 
 Assume the next session starts cold. Record each decision in the document it binds,
@@ -64,22 +80,10 @@ Section 09 gives the sessions their skills; these are the conventions the skills
 
 ## The turn-end duty
 
-After any turn that edited documents, run `loom plan check` and fix what it reports.
-Then rebuild the summaries built on what the turn changed, in two waves:
-
-1. Run `loom plan summary status --json`. Spawn one `loom-plan:summary` subagent per
-   document summary the turn made stale, incomplete or missing, in parallel. Give
-   each only its assigned ids. Have each run `loom plan summary brief <id>`, write
-   the draft and run `loom plan summary seal` until accepted.
-2. Wait for all document-summary subagents to return. Then spawn one
-   `loom-plan:overview` subagent for the overviews that cite them, following the
-   same brief, draft and seal procedure.
-
-Require each subagent to rebuild only its assigned ids, write only its draft file,
-never edit a source document, and release any claim it cannot seal. Use the model
-and effort supplied by the agent definitions; do not choose them yourself.
-Spawn nothing if the turn made no summary stale. Finish both the convention fixes
-and the summary rebuilds before ending the turn.
+After any turn that edited documents, run `loom plan check` and fix what it reports
+before writing the reply. The duty ends there: do not rebuild the summaries the turn
+made out of date. The app rebuilds them in the background once the documents have
+stayed unchanged for five minutes, and the user can press Rebuild for one at once.
 
 ## The closing message
 

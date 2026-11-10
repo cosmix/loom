@@ -25,6 +25,9 @@ const PATH_CHARS: usize = 4096;
 
 const INTERRUPT_PREFIX: &str = "[Request interrupted by user";
 const TASK_NOTIFICATION: &str = "<task-notification>";
+/// The leads of the prompts Claude Code submits itself (probe P1): a background task's
+/// `<task-notification>` and an agent's `<agent-message>` hand-back.
+pub(crate) const BACKGROUND_TAGS: [&str; 2] = [TASK_NOTIFICATION, "<agent-message"];
 const WRAPPER_TAGS: [&str; 5] = [
     "<command-",
     "<local-command-",

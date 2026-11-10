@@ -28,6 +28,8 @@ mod usage;
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::path::PathBuf;
 
+pub(crate) use records::BACKGROUND_TAGS;
+
 use chrono::{DateTime, Utc};
 
 use self::records::{cap_chars, item_id, Kind};

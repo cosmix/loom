@@ -38,6 +38,8 @@ mod harness;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]
+mod tests_background_prompt;
+#[cfg(test)]
 mod tests_end;
 #[cfg(test)]
 mod tests_fetches;

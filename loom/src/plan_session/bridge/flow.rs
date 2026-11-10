@@ -13,9 +13,17 @@ use crate::plan_session::model::{
     Activity, Delivery, FailureKind, Item, NoticeKind, Origin, SessionState,
 };
 use crate::plan_session::state::Input;
+use crate::plan_session::transcript::BACKGROUND_TAGS;
 
 /// Deliveries that timed out and may still be confirmed late.
 const UNDELIVERED_KEPT: usize = 8;
+
+/// The prompt Claude Code submits for a background task's `<task-notification>` or an
+/// agent's `<agent-message>` hand-back (probe P1), or a message that starts the same way.
+fn background_prompt(prompt: &str) -> bool {
+    let lead = prompt.trim_start();
+    BACKGROUND_TAGS.iter().any(|tag| lead.starts_with(tag))
+}
 
 /// A paste the driver claimed.
 struct Paste {
@@ -237,18 +245,20 @@ impl Session {
     }
 
     /// A `UserPromptSubmit`: the pasted message arrived, or a late one (matched by its text).
+    /// A background task's prompt confirms only a message with its text (one the user wrote
+    /// starting with the same tag): Claude Code can start that turn between the bridge's idle
+    /// and the paste, and the pasted message then waits behind it unsubmitted.
     pub(super) fn confirm_prompt(&mut self, prompt: Option<&str>, step: &mut Step) {
-        if self
-            .flow
-            .delivering
-            .as_ref()
-            .is_some_and(|d| d.sent_at.is_some())
-        {
+        let text = prompt.map(|prompt| sanitize(&parse_message(prompt).0));
+        let background = prompt.is_some_and(background_prompt);
+        let ours = |d: &Delivering| {
+            d.sent_at.is_some() && (!background || text.as_deref() == Some(&d.match_text))
+        };
+        if self.flow.delivering.as_ref().is_some_and(ours) {
             if let Some(done) = self.flow.delivering.take() {
                 self.delivered(&done.item_ids, done.closing, step);
             }
-        } else if let Some(prompt) = prompt {
-            let text = sanitize(&parse_message(prompt).0);
+        } else if let Some(text) = text {
             self.late_confirm(&text, step);
         }
     }
