@@ -30,6 +30,8 @@ use tempfile::TempDir;
 mod diagnose;
 #[path = "plan_session_bridge_e2e/operator.rs"]
 mod operator;
+#[path = "plan_session_bridge_e2e/probes.rs"]
+mod probes;
 
 const CLOSING: &str = "Write down what is still open, then stop.";
 
