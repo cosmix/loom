@@ -11,10 +11,9 @@ Write the target `doc/product/<feature>/section_<nn>.md`, plus any other editabl
 document under `doc/` that a settled decision or an open point binds. Put a decision
 that spans sections under `## Decisions` in `doc/product/<feature>/index.md`.
 Never stage, commit or branch, and never run `loom init`, `loom run` or `loom pressure`.
-Rebuild summaries only through the turn-end procedure below; never write directly under
-`doc/loom/summaries/`. Keep code, configuration, locked plans and their brief bundles,
-archived plans and `REVIEW-*.md` files read-only. Never write knowledge with a file tool;
-knowledge changes belong to `loom knowledge`.
+Never write directly under `doc/loom/summaries/`. Keep code, configuration, locked
+plans and their brief bundles, archived plans and `REVIEW-*.md` files read-only. Never
+write knowledge with a file tool; knowledge changes belong to `loom knowledge`.
 
 ## Read the constraints
 
@@ -124,8 +123,6 @@ nothing to write, reply at once.
 
 ## Finish each editing turn
 
-After any turn that edited documents, run `loom plan check` and fix what it reports;
-then run `loom plan summary status --json`. Spawn one `loom-plan:summary` subagent per
-stale, incomplete or missing document summary in parallel. Wait for them to return,
-then spawn one `loom-plan:overview` subagent for the overviews that cite them. Spawn
-nothing when nothing is stale.
+After any turn that edited documents, run `loom plan check` and fix what it reports
+before you reply. Do not rebuild summaries at the end of the turn: the app rebuilds
+them in the background once the documents stop changing.

@@ -43,15 +43,9 @@ Write only the target and affected editable documents under `doc/`, including an
 agreed new metaplan entry under `doc/plans/<feature>/`. Never edit code or configuration.
 Never write `doc/loom/knowledge/` with a file tool; use the `loom-plan:knowledge`
 skill for an agreed knowledge change. Never write `doc/loom/summaries/` directly;
-summary agents write only the runtime draft paths their briefs name and publish
-through `loom plan summary seal <id>`. Never stage, commit, branch, or run
-`loom init`, `loom run`, or `loom pressure`.
+summaries change only through `loom plan summary seal <id>`. Never stage, commit,
+branch, or run `loom init`, `loom run`, or `loom pressure`.
 
-After any turn that edited documents, run `loom plan check` and fix what it reports,
-then run `loom plan summary status --json`. Name the summaries being rebuilt and
-spawn one `loom-plan:summary` subagent per document summary the turn made stale,
-incomplete, or missing, in parallel; after they return, spawn one `loom-plan:overview`
-subagent for the overviews that cite them. Give each agent only its assigned ids;
-let its definition supply the brief, draft, seal, and release procedure. Spawn nothing
-when nothing is stale. Finish the turn only after both waves return, and report any
-summaries the agents released without sealing.
+After any turn that edited documents, run `loom plan check` and fix what it reports
+before you reply. Do not rebuild summaries at the end of the turn: the app rebuilds
+them in the background once the documents stop changing.

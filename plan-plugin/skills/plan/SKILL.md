@@ -22,8 +22,7 @@ bundles, everything under `doc/plans/<feature>/archive/` or `doc/plans/archive/`
 and all `REVIEW-*.md` files read-only. If asked to change locked work, explain the limit and offer a new
 metaplan entry through `loom-plan:metaplan` or a refinement of the product spec.
 Never write knowledge or summaries directly; knowledge changes go through
-`loom knowledge`, and summary changes go through `loom plan summary seal` using
-the turn-end delegation below.
+`loom knowledge`, and summaries change only through `loom plan summary seal`.
 
 ## Establish the app conventions
 
@@ -146,9 +145,6 @@ same turn or ask.
 
 ## Finish the turn
 
-After any turn that edited documents, run `loom plan check` and fix what it
-reports. Then run `loom plan summary status --json`; spawn one
-`loom-plan:summary` subagent per document summary the turn made stale, incomplete,
-or missing, in parallel. Wait for them to finish, then spawn one
-`loom-plan:overview` subagent for the overviews that cite those summaries. Spawn
-nothing when nothing is stale. Finish both waves before ending the turn.
+After any turn that edited documents, run `loom plan check` and fix what it reports
+before you reply. Do not rebuild summaries at the end of the turn: the app rebuilds
+them in the background once the documents stop changing.

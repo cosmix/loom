@@ -15,7 +15,7 @@ fn send(h: &Harness, s: &Sess, text: &str) -> SendOutcome {
 }
 
 /// The delivery state of the latest user item with this text.
-fn delivery(h: &Harness, text: &str) -> Option<Delivery> {
+pub(super) fn delivery(h: &Harness, text: &str) -> Option<Delivery> {
     let turns = h.bridge.chat_snapshot(true).turns;
     let items = turns.into_iter().flat_map(|turn| turn.items);
     let mut found = items.filter_map(|item| match item {

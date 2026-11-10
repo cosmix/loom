@@ -35,7 +35,8 @@ pub(super) const ASK_USER_QUESTION: &str = "AskUserQuestion";
 const PEER_TOOLS: [&str; 2] = ["SendMessage", "ListAgents"];
 const WEB_SEARCH: &str = "WebSearch";
 const WEB_FETCH: &str = "WebFetch";
-/// Open and Team authoring sessions rebuild summaries after drafting documents.
+/// Open and Team authoring sessions check summary status and rebuild a misstated summary on
+/// request (`brief --note`, `seal`); turn-end rebuilds belong to the server's scheduler.
 const SUMMARY_BASH: &str = "Bash(loom plan summary *)";
 /// Kickoff sessions may inspect summary status while summary writers need holder approval.
 const SUMMARY_STATUS_BASH: &str = "Bash(loom plan summary status*)";

@@ -152,10 +152,11 @@ fn installer_does_not_install_the_session_plugin() {
 }
 
 #[test]
-fn common_brief_orders_all_six_parts_before_the_starting_point() {
+fn common_brief_orders_all_seven_parts_before_the_starting_point() {
     let text = common_brief();
     let offsets: Vec<_> = [
         "## What this session is\n",
+        "## Questions and background work\n",
         "## The documents are the truth\n",
         "## What the writing sessions keep to\n",
         "## What this session may write\n",
@@ -173,6 +174,36 @@ fn common_brief_orders_all_six_parts_before_the_starting_point() {
         offsets.windows(2).all(|pair| pair[0] < pair[1]),
         "{offsets:?}"
     );
+}
+
+/// Every Agent call runs in the background (probe P1), so hand-back and notification turns
+/// follow a question; the brief must keep them from re-asking it or calling it unanswered.
+#[test]
+fn common_brief_keeps_background_turns_from_pressing_a_waiting_question() {
+    let text = common_brief();
+    for phrase in [
+        "Every subagent you spawn runs in the background",
+        "Those turns are not the user's reply",
+        "Ask a question as the last thing in a reply",
+        "Do not ask\n  a waiting question again, restate it, or call it unanswered",
+    ] {
+        assert!(text.contains(phrase), "common brief is missing {phrase:?}");
+    }
+}
+
+/// The server rebuilds summaries once edits stop; a turn-end rebuild would rebuild them after
+/// every change the reader works through in the chat.
+#[test]
+fn the_turn_end_duty_checks_conventions_and_leaves_summaries_to_the_app() {
+    let text = common_brief();
+    assert!(text.contains("run `loom plan check` and fix what it reports"));
+    assert!(text.contains("do not rebuild the summaries the turn\nmade out of date"));
+    for gone in ["loom-plan:summary", "loom-plan:overview", "summary status"] {
+        assert!(
+            !text.contains(gone),
+            "the common brief still names {gone:?}"
+        );
+    }
 }
 
 #[test]
@@ -247,11 +278,16 @@ fn step_skills_carry_their_target_and_document_conventions() {
 }
 
 #[test]
-fn every_step_skill_checks_conventions_and_summary_status() {
+fn every_step_skill_checks_conventions_and_leaves_summaries_to_the_app() {
     for skill in ["vision", "section", "metaplan", "plan", "refine"] {
         let text = asset(PLAN_PLUGIN, &format!("skills/{skill}/SKILL.md"));
-        for command in ["loom plan check", "loom plan summary status --json"] {
-            assert!(text.contains(command), "{skill} is missing {command:?}");
+        assert!(text.contains("loom plan check"), "{skill} skips the check");
+        assert!(
+            text.contains("Do not rebuild summaries"),
+            "{skill} does not leave summaries to the app"
+        );
+        for gone in ["loom-plan:summary", "loom-plan:overview", "summary status"] {
+            assert!(!text.contains(gone), "{skill} still names {gone:?}");
         }
     }
 }
