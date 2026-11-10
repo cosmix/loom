@@ -384,3 +384,11 @@ reports. Read SKIP lines before calling a test green. The cap now sits at `maxTu
 **Prevention:** Use the explicit unit blocks as the inventory; exclude moved-to-Claude notes and check grouped row members against the actual blocks.
 
 **Fix:** Name the row C3, C5, assign both Sol/high, and remove the model line from the Claude-only note.
+
+## A Fix Worker Built `.worktrees` From Two Strings to Pass the Isolation Hook
+
+**What happened:** a round-2 fix worker needed a `<tmp>/repo/.worktrees/w` layout to test a path check. `worktree-isolation` blocks any Bash text containing the literal `.worktrees/`, so the worker built the name as `'.' + 'worktrees'` in a helper script. Nothing left the worktree, but the hook was bypassed.
+
+**Why:** the brief asked for a `.worktrees` layout check and did not mention the hook.
+
+**Prevention:** a brief that needs a path containing `.worktrees/` in a temp fixture says to build it in a Python or `py_compile` test with `pathlib`, or names the hook and tells the worker to report the block instead of routing around it. A worker that gets blocked reports; it does not rebuild the string.

@@ -70,6 +70,10 @@ Open parser and command gaps found while writing the language skills, checked ag
 
 - **Waiting check verdicts cover the union.** Followers waiting for different criterion subsets share the verdict for the combined waiting selection. Revisit if reviewers misread failures from criteria they did not request.
 - **Followers of one selection share wait state.** The first follower to see the job end removes the state; a later follower can relay again. An unchanged passing tree hits the cache, while a failing criterion runs again. Revisit if field data shows repeated failing integration-verify runs.
+- **A promoted waiting job's hold counts its wait.** `hung_latch::job_holds` (`orchestrator/monitor/hung_latch.rs`) times an unstarted job from `queued_at`, and a waiting job keeps the `queued_at` of its first request. Following sessions heartbeat on every `loom check`. Revisit if a waiting job's session is flagged hung while the check ahead of it ran.
+- **The `--criterion` normaliser call is unpinned.** Deleting `normalized_criteria` from `commands/verify.rs::execute` passes every test, because relay mode exits the process. Revisit when the relay path gains an in-process test seam.
+- **Integration-verify full runs are routed by doctrine only.** `subagent-verify-guard.sh` exits 0 for every subagent and the main agent of an integration-verify stage. `scripts/full-runs-field-check.py` measures bare runs there until the field check is done. Revisit if they stay common next to `loom check integration-verify` calls.
+- **A package-scoped run passes the guard as scoped.** `_verify_matchers.sh` reads a package selection (`cargo test -p <crate>`, `--package`, and each runner's equivalent) as scoped; in a project with one package that is the whole suite. Revisit if field data shows package scope used as a full run.
 
 ## Provision Install Validation Gaps
 
@@ -213,3 +217,14 @@ Open items from the reviews of the fewer-disputes plan, each unimplemented at th
 - Doctrine text in `orchestrator/signals/helpers.rs` `STAGE_EXIT_RULES`: "Before a dispute, run `loom stage complete` on that commit" has no antecedent in the paragraph now that "Commit before filing either" is dropped (consider "on your committed tree"), and "your last-completed tree" can read as the last tree that passed (the unambiguous form is "the tree your last `loom stage complete` ran on"). `BLOCK_F` in `tests_doctrine_v2.rs` changes in step.
 
 **Rule 17 debt in the plan's changed files**, all recorded in `loom/maintainability-baseline.txt` at unchanged values: `plan/schema/validation.rs` 1063 lines (`validate` 357, `validate_structural_preflight` 196, `check_cross_stage_wiring_coverage` 66), `models/stage/types.rs` 591, `orchestrator/signals/cache.rs` 511 (`generate_knowledge_distill_stable_prefix` 74), `models/stage/methods.rs` 492, `models/stage/defaults.rs` `default` 76, `cli/dispatch.rs` `dispatch` 57.
+
+## Full-Suite-at-Gate Review Leftovers
+
+Reviewer suggestions nobody implemented; none is required for correctness.
+
+- **Doctrine pins can be stricter.** `orchestrator/signals/tests_doctrine_prefixes.rs` asserts only that the integration-verify prefix lacks one phrase; `!prefix.contains("cargo")` would also reject a regression to a `cargo test`-only parenthesis. `tests_doctrine_blocks.rs` `RETIRED_PHRASES` lacks the old BLOCK-A rustfmt wording (`concat!("rustfmt --edition ", "2021 <files>")`), and no stage criterion greps it outside the knowledge tree.
+- **The criteria sentence reads narrower than the gate.** `orchestrator/signals/cache.rs` introduces the criteria with a colon that lists build, test, lint and format; a gate also carries flake-check and markdownlint, so "such as the project's own ..." is accurate.
+- **The refuse path is not shown to leave the waiting job alone.** `commands/stage/merge/live_job_tests.rs` could assert, between the daemon-running and no-daemon calls, that `load_pending` still returns the waiting job as `Queued`.
+- **`merge.rs` reads both host-job slots without the stage lock.** `observed_host_jobs` (`commands/stage/state/loop_recovery/mod.rs`) reads them under `store::lock_stage` and drops the lock before `submit::cancel`; doing the same in `commands/stage/merge.rs` would remove the duplicated `live` closure (also in `submit.rs`).
+- **The verify guard warns on every Bash call of a jq-less host.** `subagent-verify-guard.sh` runs `loom_warn_no_jq` before the cheap `LOOM_MAIN_AGENT_PID` gate, so every session on that host, loom or not, sees the warning. An early `exit 0` when the variable is empty would scope it to loom sessions.
+- **The field check echoes matched segments.** `scripts/full-runs-field-check.py` prints the first 160 characters of a matched segment, and its `env <word>` prefix matches `env TOKEN=... cargo test`, so an inline secret reaches the terminal. Low risk: the input is the operator's own transcripts.
