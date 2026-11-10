@@ -6,6 +6,7 @@ use chrono::Utc;
 use crate::fs::session_files::save_session;
 use crate::host_verify::apply::{apply_finished, Applied};
 use crate::host_verify::store::{load_current, save_current};
+use crate::host_verify::submit::{submit, Submission, SubmitRequest};
 use crate::host_verify::{JobKind, JobState};
 use crate::models::session::{Session, SessionStatus, SessionType};
 use crate::models::stage::StageStatus;
@@ -125,8 +126,6 @@ fn a_passed_check_of_a_merge_changes_no_stage_state() {
 
 #[test]
 fn a_resolver_supersedes_a_cached_check_of_another_session_instead_of_joining_it() {
-    use crate::host_verify::submit::{submit, Submission, SubmitRequest};
-
     let fx = fixture();
     let head = repository(&fx);
     let record = resolver(&fx, SessionStatus::Running, "loom/s1");

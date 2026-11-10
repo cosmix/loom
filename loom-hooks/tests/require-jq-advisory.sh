@@ -4,6 +4,12 @@
 # its payload. subagent-verify-guard.sh is checked the same way below: it only
 # deters, so its own breakage never blocks a call.
 set -euo pipefail
+# prefer-modern-tools.sh sources _read_discipline.sh, which runs
+# `PATH="${LOOM_HOOK_PATH:-$PATH}"`: a live stage's LOOM_HOOK_PATH would put
+# the real jq back over the jq-less PATH built below. The LOOM_* session
+# variables are cleared too, so a run from a stage shell never writes
+# prefer-modern-tools' ledger into the live session.
+unset LOOM_WORK_DIR LOOM_SESSION_ID LOOM_STAGE_ID LOOM_SESSION_TYPE LOOM_HOOK_PATH
 HOOK="$(dirname "$0")/../prefer-modern-tools.sh"
 source "$(dirname "$0")/_path_without.sh"
 
