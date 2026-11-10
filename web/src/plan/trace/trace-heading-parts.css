@@ -68,6 +68,20 @@
   text-decoration-color: currentColor;
 }
 
+/* See what changed with nothing to open (the lookup in flight, a settle never committed): inside a
+   sentence the link drops its underline and takes the muted ink; the heading's button dims as
+   every blocked button does. Its reason follows in muted `plan-fine` words. */
+[data-loom-plan] a.trace-changes:not(.plan-button)[aria-disabled="true"] {
+  color: var(--muted-foreground);
+  text-decoration: none;
+  cursor: default;
+}
+
+[data-loom-plan] .trace-changes-reason {
+  min-width: 0;
+  color: var(--muted-foreground);
+}
+
 [data-loom-plan] .trace-scope__from:focus-visible,
 [data-loom-plan] a.trace-changes:not(.plan-button):focus-visible,
 [data-loom-plan] .trace-confirm__where a:focus-visible {

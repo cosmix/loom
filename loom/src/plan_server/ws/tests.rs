@@ -144,8 +144,8 @@ fn open_frames_arrive_first_and_in_hook_order() {
 }
 
 #[test]
-fn send_to_browser_reaches_every_tab_of_that_browser_only() {
-    if skip("send_to_browser_reaches_every_tab_of_that_browser_only") {
+fn send_to_browser_reaches_its_tabs_and_send_to_others_every_other_tab() {
+    if skip("send_to_browser_reaches_its_tabs_and_send_to_others_every_other_tab") {
         return;
     }
     let hub = Arc::new(PlanHub::new());
@@ -161,12 +161,14 @@ fn send_to_browser_reaches_every_tab_of_that_browser_only() {
     assert_eq!(hub.connections_of(&a), 2);
     assert_eq!(hub.connections_of(&b), 1);
     hub.send_to_browser(&a, &refused("for a"));
+    hub.send_to_others(&a, &refused("for all but a"));
     hub.send_to_holder(None, &refused("no holder"));
     hub.broadcast(&refused("marker"));
     for tab in &mut tabs[..2] {
         assert_eq!(next_message(&mut tab.client), refused("for a"));
         assert_eq!(next_message(&mut tab.client), refused("marker"));
     }
+    assert_eq!(next_message(&mut tabs[2].client), refused("for all but a"));
     assert_eq!(next_message(&mut tabs[2].client), refused("marker"));
 }
 

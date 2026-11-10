@@ -2,6 +2,7 @@ use super::*;
 
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
+use std::process::Command;
 
 use crate::plan_server::context::BindInfo;
 use crate::plan_server::prereq::ReadOnly;
@@ -344,5 +345,40 @@ fn commits_deletions_beside_edits_and_keeps_unrelated_staging() {
     assert_eq!(head_files(&repo), "doc/c.md\ndoc/new.md\nsrc.txt\n");
     assert_eq!(repo.git(&["show", "HEAD:doc/c.md"]), "changed\n");
     assert_eq!(repo.git(&["show", "HEAD:src.txt"]), "original\n");
+    assert_eq!(repo.git(&["diff", "--cached", "--name-only"]), "src.txt\n");
+}
+
+#[test]
+#[serial_test::serial]
+fn a_hook_that_rewrites_and_re_adds_leaves_the_index_at_head() {
+    let repo = Repo::new();
+    repo.put("doc/a.md", "changed\n");
+    repo.hook(
+        "pre-commit",
+        "#!/bin/sh\nprintf 'formatted\\n' >> doc/a.md\ngit add doc/a.md\n",
+    );
+
+    assert_eq!(repo.commit(&["doc/a.md"], "edit").unwrap(), 0);
+
+    assert_eq!(repo.git(&["show", "HEAD:doc/a.md"]), "changed\nformatted\n");
+    assert_eq!(repo.git(&["status", "--porcelain", "--", "doc"]), "");
+}
+
+#[test]
+#[serial_test::serial]
+fn a_file_a_hook_generates_and_adds_is_left_clean_beside_unrelated_staging() {
+    let repo = Repo::new();
+    repo.put("src.txt", "changed\n");
+    repo.git(&["add", "--", "src.txt"]);
+    repo.put("doc/a.md", "changed\n");
+    repo.hook(
+        "pre-commit",
+        "#!/bin/sh\nprintf 'generated\\n' > doc/gen.md\ngit add doc/gen.md\n",
+    );
+
+    assert_eq!(repo.commit(&["doc/a.md"], "edit").unwrap(), 0);
+
+    assert_eq!(repo.git(&["show", "HEAD:doc/gen.md"]), "generated\n");
+    assert_eq!(repo.git(&["status", "--porcelain", "--", "doc"]), "");
     assert_eq!(repo.git(&["diff", "--cached", "--name-only"]), "src.txt\n");
 }

@@ -7,6 +7,7 @@ use std::sync::mpsc;
 use std::time::Duration;
 
 use super::errors::{ProcessTimeoutError, OUTPUT_LIMIT};
+use super::owned::Expiry;
 use super::{run_bounded_with, BoundedOutput, ReaderHandle};
 
 /// What a run does with stdout past [`OUTPUT_LIMIT`].
@@ -27,7 +28,7 @@ pub(crate) fn run_bounded_tail_output(
     operation: impl Into<String>,
 ) -> Result<Output> {
     let operation = operation.into();
-    match run_bounded_with(command, timeout, Stdout::Tail)? {
+    match run_bounded_with(command, timeout, Stdout::Tail, Expiry::Kill)? {
         BoundedOutput::Completed(output) => Ok(output),
         BoundedOutput::TimedOut => Err(ProcessTimeoutError::new(operation, timeout).into()),
     }

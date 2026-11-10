@@ -18,6 +18,7 @@ import {
   changedChip,
   isRebuilding,
   summaryChips,
+  useMyCallChips,
   useOpenQuestionChips,
 } from "./heading-parts";
 
@@ -96,10 +97,10 @@ export function useSummaryPage(key: string | null): ConceptPage | null {
 /**
  * The chips of a document. A section or the vision also carries its summary's state and its
  * builders (read from the summary page the "Summary" view opens, `page`) and when its file last
- * changed; the open questions come first for every document kind.
+ * changed; the open questions and My calls come first for every document kind.
  */
 export function useDocChips(doc: DocView, now: number, page: ConceptPage | null): HeadingChip[] {
-  const questions = useOpenQuestionChips(doc.path);
+  const questions = [...useOpenQuestionChips(doc.path), ...useMyCallChips(doc.path, doc)];
   if (docSummaryKey(doc) === null) return questions;
   return [
     ...(page ? summaryChips(page, isRebuilding(page)) : []),

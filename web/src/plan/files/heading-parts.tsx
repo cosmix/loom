@@ -1,14 +1,17 @@
 import { useAtomValue } from "jotai/react";
-import { Clock, Gauge, Layers } from "lucide-react";
+import { Clock, Flag, Gauge, Layers } from "lucide-react";
+import { useMemo } from "react";
 
 import { pageHref, summaryKey } from "@/plan/api/page-key";
 import type { ConceptPage } from "@/plan/api/schema-concept";
+import type { DocView } from "@/plan/api/schema-files";
 import { planStateText, summaryStatus } from "@/plan/concept/summary-text";
 import { sourceHref } from "@/plan/feature/source-href";
 import { repoRel, toAddress } from "@/plan/files/address";
 import { openQuestionsAtom } from "@/plan/review/live";
 import { PressureTestAction, PressureTestDetail } from "@/plan/run/plan-run-actions";
 import { featuresAtom } from "@/plan/state/atoms";
+import { settlePoints } from "@/plan/trace/doc-model";
 import type { HeadingChip, HeadingCrumb } from "@/plan/ui/doc-heading";
 import {
   OTHER_GLYPHS,
@@ -172,6 +175,34 @@ export function useOpenQuestionChips(path: string | null, inFeature = false): He
       to: inFeature
         ? sourceHref(path, { anchor: "open-questions" })
         : toAddress(path, "open-questions"),
+    },
+  ];
+}
+
+/**
+ * "<n> My calls" (warn, the flag the settle confirmation draws for them) linking to the first one:
+ * the other kind of point settling asks about, beside the open questions. `doc` is the document's
+ * text as the page holds it; nothing while it is not loaded or holds none. `inFeature` links as
+ * `useOpenQuestionChips` does.
+ */
+export function useMyCallChips(
+  path: string | null,
+  doc: Pick<DocView, "text" | "sections"> | null,
+  inFeature = false,
+): HeadingChip[] {
+  const calls = useMemo(
+    () => (doc === null ? [] : settlePoints(doc).filter((point) => point.kind === "call")),
+    [doc],
+  );
+  if (path === null || calls.length === 0) return [];
+  const anchor = calls[0]?.where?.anchor;
+  return [
+    {
+      key: "my-calls",
+      label: plural(calls.length, "My call"),
+      icon: <Flag />,
+      tone: "warning",
+      to: inFeature ? sourceHref(path, { anchor }) : toAddress(path, anchor),
     },
   ];
 }

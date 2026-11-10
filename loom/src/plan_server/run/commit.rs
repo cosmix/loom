@@ -1,13 +1,12 @@
 //! Commit exactly the selected documentation changes, with the user's hooks and signing.
 
 use std::path::Path;
-use std::process::{Command, Stdio};
 use std::sync::{Arc, Weak};
 use std::thread;
 
 use anyhow::{ensure, Context, Result};
 
-use crate::git::runner::REPO_REDIRECT_ENV;
+use crate::git::user_git::{head, literal, user_git, IndexBefore};
 use crate::plan_server::context::PlanContext;
 use crate::plan_server::request::{ApiRequest, ApiResponse};
 use crate::plan_server::wire::run::{ChangedPath, CommitRequest, OutputStream, RunJob};
@@ -64,53 +63,49 @@ fn addable_paths<'a>(root: &Path, paths: &'a [String]) -> Vec<&'a String> {
         .collect()
 }
 
-/// Git for a step of the user's own commit. The runner's hook suppression would
-/// bypass the user's checks, so this keeps their hooks and signing and only
-/// drops what would point git at a repository other than `root`.
-fn user_git() -> Command {
-    let mut git = Command::new("git");
-    for variable in REPO_REDIRECT_ENV {
-        git.env_remove(variable);
-    }
-    git
-}
-
 fn run_sequence(
     root: &Path,
     paths: &[String],
     message: &str,
     mut on_line: impl FnMut(&str, OutputStream, &str),
 ) -> Result<i32> {
-    let mut steps = Vec::new();
+    let index = IndexBefore::read(root).context("reading the index before the commit")?;
     let addable = addable_paths(root, paths);
     if !addable.is_empty() {
-        let mut add = user_git();
-        add.args([
-            "-c",
-            "core.quotepath=off",
-            "--literal-pathspecs",
-            "add",
-            "--",
-        ])
-        .args(addable);
-        steps.push(("git add", add));
-    }
-    let mut commit = user_git();
-    // Explicit pathspecs give --only semantics, preserving everything else staged.
-    commit
-        .args(["--literal-pathspecs", "commit", "-m", message, "--"])
-        .args(paths);
-    steps.push(("git commit", commit));
-    for (name, mut cmd) in steps {
-        cmd.current_dir(root).stdin(Stdio::null());
-        let status = child::run_streamed(cmd, |stream, line| on_line(name, stream, line))
-            .with_context(|| format!("running {name}"))?;
-        let code = status.code().unwrap_or(-1);
+        let mut add = user_git(root);
+        add.args(["-c", "core.quotepath=off", "add", "--"])
+            .args(literal(&addable));
+        let code = run_step(add, "git add", &mut on_line)?;
         if code != 0 {
             return Ok(code);
         }
     }
-    Ok(0)
+    let mut commit = user_git(root);
+    // Explicit pathspecs give --only semantics, preserving everything else staged.
+    commit
+        .args(["commit", "-m", message, "--"])
+        .args(literal(paths));
+    let ran = run_step(commit, "git commit", &mut on_line);
+    // HEAD, not the exit status, says whether git made the commit (a `post-commit` hook runs
+    // after it exists); HEAD that cannot be read counts as moved. The commit stands whatever the
+    // reset does, so what it leaves to know is more lines of output.
+    if head(root).map_or(true, |after| after.as_deref() != index.head()) {
+        for note in index.reset(root, paths, "HEAD").notes() {
+            on_line("git reset", OutputStream::Stderr, &note);
+        }
+    }
+    ran
+}
+
+/// Run `cmd`, streaming its lines as step `name`; its exit code, -1 for a signal.
+fn run_step(
+    cmd: std::process::Command,
+    name: &str,
+    on_line: &mut impl FnMut(&str, OutputStream, &str),
+) -> Result<i32> {
+    let status = child::run_streamed(cmd, |stream, line| on_line(name, stream, line))
+        .with_context(|| format!("running {name}"))?;
+    Ok(status.code().unwrap_or(-1))
 }
 
 pub(super) fn post_commit(req: &ApiRequest<'_>) -> ApiResponse {

@@ -1,7 +1,8 @@
 //! `POST /api/settle?path=&hash=[&confirm=1][&clear=1]`: write or remove a document's
-//! `Settled:` line (section "Settled marks" of the planning-trace brief).
+//! `Settled:` line (section "Settled marks" of the planning-trace brief), then queue its commit
+//! (`settle_queue`) and answer at once: the commit's end arrives as a `settle_commit` message.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use serde_json::json;
 
@@ -10,6 +11,8 @@ use crate::plan_server::files::save::{
     outcome_response, refusal_response, save_document, SaveOutcome, SaveRequest,
 };
 use crate::plan_server::request::{ApiRequest, ApiResponse};
+use crate::plan_server::wire::files::ValidationView;
+use crate::plan_server::wire::trace::SettleResult;
 use crate::planning::discover::read_doc;
 use crate::planning::paths::check_relpath_syntax;
 use crate::planning::project::Project;
@@ -17,8 +20,18 @@ use crate::planning::sections::normalized_hash;
 use crate::planning::trace::settle;
 use crate::planning::trace::{Progress, SettledLine};
 
+use super::settle_job::{BriefSeen, SettleJob};
+use super::settle_queue;
+
 /// What the loaded project knows about the document being settled.
 struct Target {
+    /// The feature whose trace holds it.
+    feature: String,
+    /// A plan's brief files, which its settled hash covers.
+    bundle: Vec<PathBuf>,
+    /// The hash of the project's text of each brief, which the line's body hash covers; `None`
+    /// for a brief it holds no text for.
+    brief_texts: Vec<Option<String>>,
     /// The line settling now would write.
     current: SettledLine,
     my_calls: u32,
@@ -31,12 +44,23 @@ struct Target {
 
 /// The trace document at `rel`; a stub (no file yet) or a path outside the trace has none.
 fn target(project: &Project, rel: &Path) -> Option<Target> {
-    let doc = project
-        .features
+    let (feature, doc) = project.features.iter().find_map(|feature| {
+        let doc = feature
+            .trace
+            .documents
+            .iter()
+            .find(|doc| doc.path == rel && doc.progress != Progress::Stub)?;
+        Some((feature, doc))
+    })?;
+    let brief_texts = doc
+        .bundle
         .iter()
-        .flat_map(|feature| &feature.trace.documents)
-        .find(|doc| doc.path == rel && doc.progress != Progress::Stub)?;
+        .map(|brief| project.text(brief).map(normalized_hash))
+        .collect();
     Some(Target {
+        feature: feature.name.clone(),
+        bundle: doc.bundle.clone(),
+        brief_texts,
         current: doc.current.clone(),
         my_calls: doc.my_calls,
         open_questions: doc.open_questions,
@@ -48,7 +72,11 @@ fn target(project: &Project, rel: &Path) -> Option<Target> {
 /// The target at `path` and its text, which must be the text the reader opened: the new text is
 /// built from it, and a file that changed away and back between this read and the save would
 /// otherwise take text built from the middle version. A mismatch is the conflict response.
-fn opened(req: &ApiRequest<'_>, path: &str, hash: &str) -> Result<(Target, String), ApiResponse> {
+fn opened(
+    req: &ApiRequest<'_>,
+    path: &str,
+    hash: &str,
+) -> Result<(PathBuf, Target, String), ApiResponse> {
     let rel = check_relpath_syntax(path)
         .map_err(|error| ApiResponse::error(400, "bad_request", &error.to_string()))?;
     let Some(target) = target(&req.ctx.project(), &rel) else {
@@ -72,7 +100,7 @@ fn opened(req: &ApiRequest<'_>, path: &str, hash: &str) -> Result<(Target, Strin
             current_hash,
         }));
     }
-    Ok((target, text))
+    Ok((rel, target, text))
 }
 
 pub fn settle_route(req: &ApiRequest<'_>) -> ApiResponse {
@@ -83,7 +111,7 @@ pub fn settle_route(req: &ApiRequest<'_>) -> ApiResponse {
             "the path and hash parameters are required",
         );
     };
-    let (target, text) = match opened(req, path, hash) {
+    let (rel, target, text) = match opened(req, path, hash) {
         Ok(opened) => opened,
         Err(response) => return response,
     };
@@ -105,9 +133,56 @@ pub fn settle_route(req: &ApiRequest<'_>) -> ApiResponse {
         force: false,
     };
     match save_document(req.ctx, req.browser, save) {
+        Ok(SaveOutcome::Saved { hash, validation }) => {
+            let job = settle_job(req, rel, target, clear, &hash);
+            queued(req, job, hash, validation)
+        }
         Ok(outcome) => outcome_response(outcome),
         Err(refusal) => refusal_response(req.ctx, &refusal),
     }
+}
+
+/// The commit of the line `req` wrote (`written`, its text's hash) over the document at `rel`.
+/// The briefs are taken now, as the line's body hash covered them.
+fn settle_job(
+    req: &ApiRequest<'_>,
+    rel: PathBuf,
+    target: Target,
+    clear: bool,
+    written: &str,
+) -> SettleJob {
+    let root = req.ctx.root();
+    let seen = target
+        .bundle
+        .iter()
+        .zip(target.brief_texts)
+        .map(|(brief, text)| BriefSeen::of(root, brief, text))
+        .collect();
+    SettleJob {
+        browser: req.browser.clone(),
+        feature: target.feature,
+        doc: rel,
+        briefs: target.bundle,
+        seen,
+        clear,
+        written: written.to_owned(),
+    }
+}
+
+/// The written line's answer, once `job` is queued: the commit has not started yet.
+fn queued(
+    req: &ApiRequest<'_>,
+    job: SettleJob,
+    hash: String,
+    validation: Option<ValidationView>,
+) -> ApiResponse {
+    let commit = settle_queue::push(req.ctx, job);
+    let answer = SettleResult::Saved {
+        hash,
+        validation,
+        commit,
+    };
+    ApiResponse::json(200, &answer)
 }
 
 /// 409 when the trace has not caught up with the text the reader opened (the line it would

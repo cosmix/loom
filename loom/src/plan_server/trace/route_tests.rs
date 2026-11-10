@@ -1,10 +1,10 @@
 //! Route tests of the settle, trace and settled-version routes, over a served DEMO project in
-//! a git repository (the six route contracts live in `contract_tests.rs`).
+//! a git repository (the six route contracts live in `contract_tests.rs`, the settle's commit in
+//! `commit_route_tests.rs`).
 
 use std::path::Path;
 use std::process::Command;
 
-use serde_json::Value;
 use tempfile::TempDir;
 
 use crate::plan_server::tests::support::{
@@ -13,8 +13,10 @@ use crate::plan_server::tests::support::{
 use crate::plan_server::RunningServer;
 use crate::planning::sections::normalized_hash;
 
+use super::settle_commit_tests::configure;
+
 pub(super) const SECTION_01: &str = "doc/product/demo/section_01.md";
-const SECTION_REL: &str = "product/demo/section_01.md";
+pub(super) const SECTION_REL: &str = "product/demo/section_01.md";
 
 pub(super) fn put(root: &Path, rel: &str, content: &str) {
     std::fs::create_dir_all(root.join(rel).parent().unwrap()).unwrap();
@@ -38,7 +40,7 @@ pub(super) fn git(root: &Path, args: &[&str]) -> String {
 }
 
 /// A two-section feature with a metaplan and one plan, plus `extra` files written over it,
-/// committed once in a new git repository.
+/// committed once in a new git repository whose own configuration names the committer.
 pub(super) fn demo(extra: &[(&str, &str)]) -> TempDir {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();
@@ -70,20 +72,21 @@ pub(super) fn demo(extra: &[(&str, &str)]) -> TempDir {
         put(root, rel, text);
     }
     git(root, &["init", "-q"]);
+    configure(root);
     git(root, &["add", "-A"]);
     git(root, &["commit", "-q", "-m", "demo"]);
     dir
 }
 
-fn settle(server: &RunningServer, cookies: &str, rel: &str, hash: &str, extra: &str) -> String {
+pub(super) fn settle(
+    server: &RunningServer,
+    cookies: &str,
+    rel: &str,
+    hash: &str,
+    extra: &str,
+) -> String {
     let target = format!("/api/settle?path={rel}&hash={hash}{extra}");
     post_json(server, &target, cookies, "")
-}
-
-fn settled_version(server: &RunningServer, cookies: &str, rel: &str) -> Value {
-    let response = get(server, &format!("/api/settled-version?path={rel}"), cookies);
-    assert_eq!(status(&response), 200, "{response}");
-    json_body(&response)
 }
 
 #[test]
@@ -182,95 +185,6 @@ fn settle_refuses_a_stub_and_a_path_outside_the_trace() {
     }
     let bad = settle(&server, &cookies, "product/../x.md", &hash, "");
     assert_eq!(status(&bad), 400, "{bad}");
-    server.stop().unwrap();
-}
-
-#[test]
-fn clear_removes_the_settled_line() {
-    if skip("clear_removes_the_settled_line") {
-        return;
-    }
-    let dir = demo(&[]);
-    let server = serve(&dir);
-    let cookies = bootstrap(&server);
-    let original = read(&dir, SECTION_01);
-    let first = settle(
-        &server,
-        &cookies,
-        SECTION_REL,
-        &normalized_hash(&original),
-        "",
-    );
-    assert_eq!(status(&first), 200, "{first}");
-    let settled = read(&dir, SECTION_01);
-    assert!(settled.contains("\nSettled: "), "{settled}");
-    let cleared = settle(
-        &server,
-        &cookies,
-        SECTION_REL,
-        &normalized_hash(&settled),
-        "&clear=1",
-    );
-    assert_eq!(status(&cleared), 200, "{cleared}");
-    assert_eq!(read(&dir, SECTION_01), original);
-    server.stop().unwrap();
-}
-
-#[test]
-fn settled_version_names_the_commit_holding_the_line() {
-    if skip("settled_version_names_the_commit_holding_the_line") {
-        return;
-    }
-    let dir = demo(&[]);
-    let server = serve(&dir);
-    let cookies = bootstrap(&server);
-    assert_eq!(
-        settled_version(&server, &cookies, SECTION_REL)["commit"],
-        Value::Null
-    );
-    let hash = normalized_hash(&read(&dir, SECTION_01));
-    let saved = settle(&server, &cookies, SECTION_REL, &hash, "");
-    assert_eq!(status(&saved), 200, "{saved}");
-    // Written but not committed: no commit holds the line yet.
-    assert_eq!(
-        settled_version(&server, &cookies, SECTION_REL)["commit"],
-        Value::Null
-    );
-    git(dir.path(), &["add", SECTION_01]);
-    git(dir.path(), &["commit", "-q", "-m", "settle"]);
-    let head = git(dir.path(), &["rev-parse", "HEAD"]);
-    assert_eq!(
-        settled_version(&server, &cookies, SECTION_REL)["commit"],
-        head.as_str()
-    );
-    server.stop().unwrap();
-}
-
-#[test]
-fn settled_version_skips_a_newer_commit_that_removed_the_line() {
-    if skip("settled_version_skips_a_newer_commit_that_removed_the_line") {
-        return;
-    }
-    let dir = demo(&[]);
-    let server = serve(&dir);
-    let cookies = bootstrap(&server);
-    let original = read(&dir, SECTION_01);
-    let hash = normalized_hash(&original);
-    let saved = settle(&server, &cookies, SECTION_REL, &hash, "");
-    assert_eq!(status(&saved), 200, "{saved}");
-    git(dir.path(), &["add", SECTION_01]);
-    git(dir.path(), &["commit", "-q", "-m", "settle"]);
-    let holding = git(dir.path(), &["rev-parse", "HEAD"]);
-    let settled = read(&dir, SECTION_01);
-    // A later commit clears the line; the same line is then written again, uncommitted.
-    put(dir.path(), SECTION_01, &original);
-    git(dir.path(), &["add", SECTION_01]);
-    git(dir.path(), &["commit", "-q", "-m", "clear"]);
-    put(dir.path(), SECTION_01, &settled);
-    assert_eq!(
-        settled_version(&server, &cookies, SECTION_REL)["commit"],
-        holding.as_str()
-    );
     server.stop().unwrap();
 }
 

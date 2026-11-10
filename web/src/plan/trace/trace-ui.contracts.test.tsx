@@ -102,8 +102,13 @@ const PAGE_KEY =
 function answer(url: URL, method: string): Response {
   const { pathname } = url;
   const key = decodeURIComponent(pathname.replace("/api/concept/", ""));
-  // The only posts these contracts make are a settle and a finding status, both saved.
-  if (method === "POST") return json({ result: "saved", hash: "sha256:after", validation: null });
+  // The only posts these contracts make are a settle and a finding status, both saved; the
+  // settle's answer also names its queued commit.
+  if (method === "POST") {
+    const saved = { result: "saved", hash: "sha256:after", validation: null };
+    const queued = { state: "pending", job: "3f9a1c2e-1" };
+    return json(pathname === "/api/settle" ? { ...saved, commit: queued } : saved);
+  }
   if (pathname === "/api/tree") return json(treeFixture);
   if (pathname === "/api/trace/demo") return json(trace);
   if (pathname === "/api/settled-version") return json({ commit: "0a1b2c3d4e5f6071" });

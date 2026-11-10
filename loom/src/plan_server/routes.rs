@@ -103,6 +103,7 @@ pub fn install_all(ctx: &Arc<PlanContext>) {
     super::pressure::install(ctx);
     super::run::install(ctx);
     super::uploads::install(ctx);
+    super::trace::install(ctx);
 }
 
 /// The outcome of looking a request up in the route table.
