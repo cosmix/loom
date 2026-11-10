@@ -122,3 +122,37 @@ fn a_passed_check_of_a_merge_changes_no_stage_state() {
     assert_eq!(stage.status, StageStatus::MergeConflict);
     assert!(!stage.merged);
 }
+
+#[test]
+fn a_resolver_supersedes_a_cached_check_of_another_session_instead_of_joining_it() {
+    use crate::host_verify::submit::{submit, Submission, SubmitRequest};
+
+    let fx = fixture();
+    let head = repository(&fx);
+    let record = resolver(&fx, SessionStatus::Running, "loom/s1");
+    fx.stage(StageStatus::MergeConflict, None);
+    let tree = "0".repeat(64);
+    let ordinary = SubmitRequest {
+        stage_id: STAGE,
+        session_id: "stage-session",
+        request_id: "r1",
+        kind: JobKind::Check,
+        head: &head,
+        tree_digest: &tree,
+        no_cache: false,
+        criteria: None,
+    };
+    let Submission::Queued(cached) = submit(&fx.work_dir, &ordinary, Utc::now()).unwrap() else {
+        panic!("expected the ordinary check to queue");
+    };
+
+    let settled = relay_check(&fx, &record, &head);
+
+    assert!(matches!(settled, Settle::Applied(Some(_))), "{settled:?}");
+    let job = load_current(&fx.work_dir, STAGE).unwrap().unwrap();
+    assert_ne!(job.id, cached.id);
+    assert_eq!(
+        (job.session_id.as_str(), job.no_cache),
+        (record.id.as_str(), true)
+    );
+}

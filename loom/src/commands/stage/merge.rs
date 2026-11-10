@@ -111,7 +111,7 @@ fn refuse_live_host_job(stage_id: &str, work_dir: &Path) -> Result<()> {
 }
 
 /// With a daemon running, its runner owns the job's child and kills it on its
-/// own tick, so a live job is only waited for. Without one nothing would ever
+/// own tick, so a live (current or waiting) job is only waited for. Without one nothing would ever
 /// end the record: a queued job is withdrawn and the merge continues; a
 /// running job is withdrawn too, but its orphaned `verify-host` child still
 /// holds the worktree until `child_watchdog` sees the record is no longer
@@ -124,9 +124,16 @@ fn withdraw_or_refuse_host_job(
 ) -> Result<()> {
     use crate::host_verify::JobState;
 
-    let Some(job) = crate::host_verify::store::load_current(work_dir, stage_id)?
-        .filter(|job| !job.state.is_terminal())
-    else {
+    // A daemon shutdown cancels current and leaves its waiting job queued for
+    // the next start, so a live waiting job keeps the worktree as busy as a
+    // live current one. `submit::cancel` below withdraws both slots. Read
+    // pending BEFORE current, as `submit::cancel` does: promotion saves the
+    // waiting job as current and then clears pending, so this order sees a
+    // job moving between the slots.
+    let live = |job: &crate::host_verify::JobRecord| !job.state.is_terminal();
+    let waiting = crate::host_verify::store::load_pending(work_dir, stage_id)?.filter(live);
+    let current = crate::host_verify::store::load_current(work_dir, stage_id)?.filter(live);
+    let Some(job) = current.or(waiting) else {
         return Ok(());
     };
     if daemon_running {

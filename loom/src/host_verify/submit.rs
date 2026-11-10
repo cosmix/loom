@@ -123,8 +123,11 @@ pub fn cancel(work_dir: &Path, stage_id: &str, reason: &str) -> Result<Option<Jo
     // Most callers (every takedown, reset and retry) find no job; looking
     // first keeps them from creating the stage's directory to lock it.
     let live = |record: &JobRecord| !record.state.is_terminal();
-    if !store::load_current(work_dir, stage_id)?.is_some_and(|record| live(&record))
-        && store::load_pending(work_dir, stage_id)?.is_none()
+    // Read pending BEFORE current: promotion saves the waiting job as current
+    // and then clears pending, so this order always sees a job moving between
+    // the slots, while the reverse order can miss it and leave it live.
+    if store::load_pending(work_dir, stage_id)?.is_none()
+        && !store::load_current(work_dir, stage_id)?.is_some_and(|record| live(&record))
     {
         return Ok(None);
     }

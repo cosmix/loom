@@ -245,9 +245,19 @@ pub fn run_and_verify_stage_goal(
     )
 }
 
+/// One sorted, deduplicated selection for the relay, wait state and local run.
+pub(crate) fn normalized_criteria(criteria: &[usize]) -> Vec<usize> {
+    criteria
+        .iter()
+        .copied()
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
-    use super::ensure_passed;
+    use super::{ensure_passed, normalized_criteria};
 
     #[test]
     fn passing_gates_exit_ok() {
@@ -265,21 +275,11 @@ mod tests {
         let err = ensure_passed(true, false).unwrap_err().to_string();
         assert!(err.contains("goal-backward"), "{err}");
     }
-}
 
-/// One sorted, deduplicated selection for the relay, wait state and local run.
-pub(crate) fn normalized_criteria(criteria: &[usize]) -> Vec<usize> {
-    criteria
-        .iter()
-        .copied()
-        .collect::<BTreeSet<_>>()
-        .into_iter()
-        .collect()
-}
-
-#[test]
-fn criterion_selections_are_sorted_and_deduplicated() {
-    assert_eq!(normalized_criteria(&[2, 1]), [1, 2]);
-    assert_eq!(normalized_criteria(&[1, 2, 1]), [1, 2]);
-    assert!(normalized_criteria(&[]).is_empty());
+    #[test]
+    fn criterion_selections_are_sorted_and_deduplicated() {
+        assert_eq!(normalized_criteria(&[2, 1]), [1, 2]);
+        assert_eq!(normalized_criteria(&[1, 2, 1]), [1, 2]);
+        assert!(normalized_criteria(&[]).is_empty());
+    }
 }
