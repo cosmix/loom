@@ -203,7 +203,7 @@ reviewed and no plan records.)
 Authoring sessions have one of three scopes (`plan_session/scope.rs`):
 
 - **Open** uses the authoring column above and pre-allows `loom knowledge *` and
-  `loom plan summary *` in Bash.
+  `loom plan summary *` in Bash (status, and the correction rebuild of a misstated summary).
 - **Kickoff** starts without a target and permits no file-tool write under `doc/` until the
   holder confirms the size and name through the app. The one-time creation grant then permits
   exactly one target: `doc/product/<name>/index.md` for a feature, or
@@ -221,8 +221,10 @@ Authoring sessions have one of three scopes (`plan_session/scope.rs`):
 - **Team**, used by draft-all, permits file-tool writes only to the missing documents the run
   starts for and paths inside their plan brief bundles. Written sections and other documents
   outside that set remain unwritable. The lead and its in-process teammates share the scope
-  (section 09). Bash pre-allows `loom plan summary *` for turn-end summaries of the documents
-  it drafted; `loom knowledge *` asks the holder through an explicit ask rule.
+  (section 09). Bash pre-allows `loom plan summary *`, so the lead can read summary status and
+  rebuild a summary it finds misstating a document (`brief --note`, `seal`; section 10, "When the
+  summary is wrong"); an authoring turn does not rebuild summaries otherwise. `loom knowledge *`
+  asks the holder through an explicit ask rule.
 
 The server stores the scope and grant in `sessions/<id>/scope.json` in the runtime session
 directory. That file is outside the sandbox's writable set and the planning guard denies
@@ -334,8 +336,8 @@ Bash(loom map *)
 ```
 
 Every authoring scope keeps `loom plan verify`, `loom plan check` and `loom map` pre-allowed.
-Team also pre-allows `Bash(loom plan summary *)` for turn-end summaries of the documents it
-drafted. Kickoff pre-allows only the read-only `Bash(loom plan summary status*)` among these
+Team also pre-allows `Bash(loom plan summary *)`, for the status check and the correction
+rebuild of a misstated summary (section 10, "When the summary is wrong"). Kickoff pre-allows only the read-only `Bash(loom plan summary status*)` among these
 `doc/loom/` commands. Those commands have no allow rule, and under auto mode the classifier
 would decide them, so each gets an explicit ask rule. The rules sit in the `ask` list beside
 `WebFetch` and reach the holder through section 07's permission flow (the allow lists are

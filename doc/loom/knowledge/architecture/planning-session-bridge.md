@@ -135,6 +135,8 @@ and the driver thread never sleeps, since one tick serves every session. A lost 
 `delivery_timeout` = 10 s; otherwise the item is marked undelivered (the last `UNDELIVERED_KEPT` = 8 stay resendable).
 A failed paste of the opening fails the live session at once through `Bridge::fail_live`.
 
+**Background turns do not confirm a different message.** Every Agent call in a planning session runs in the background, and a finished subagent sends an `<agent-message>` hand-back and a `<task-notification>`, each opening a turn of its own (queued until Stop when the session is mid-turn; a mid-turn hand-back arrives as a `queued_command` attachment and still fires `UserPromptSubmit`). `confirm_prompt` (`bridge/flow.rs`) treats a prompt led by one of `transcript::BACKGROUND_TAGS` (`<task-notification>`, `<agent-message`; the same list the mapper uses to recognise these prompts) as a background prompt: it confirms the pasted delivery only when its sanitized text equals the delivery's `match_text` (a message the user wrote starting with the same tag), and otherwise only late-confirms by text (`late_confirm`). Claude Code can start such a turn between the bridge's idle and the paste, and the pasted message then waits behind it unsubmitted; it confirms by its own prompt, and when that comes after `delivery_timeout` the item shows Undelivered with Resend in the meantime ([the mistake](../mistakes/planner-ui-repair.md#a-question-was-reported-unanswered-after-a-background-turn)). Test: `tests_background_prompt.rs`.
+
 **An unsubmitted opening.** `bridge/opening.rs` covers an opening whose Enter was swallowed: `enter_again` presses Enter
 again (never pastes again; `SessionHost::press_enter`, a default no-op that `TmuxHost` and `fake_host.rs` override) every
 2 s, at most twice, inside `delivery_timeout`, and only while the session is live and `Idle` (Enter on a permission prompt
@@ -254,7 +256,7 @@ open diagnosis is post-merge work.
 
 ## Rebuilding Ids on a Turn
 
-`Bridge::set_rebuilding` (`bridge/rebuilding.rs`) stores a turn's rebuilt summary ids through `transcript::Mapper::set_summaries_rebuilding(turn_id, ids)` and publishes the returned `TurnUpdated` deltas. The mapper owns the `turns` field, so a delta alone would show the ids once and lose them on the next snapshot or `TurnUpdated` for that turn. Attribution calls it as the turn's summaries are named (`name_on_turn`).
+Attribution (`plan_server/summaries/attribution.rs`) tracks the chat session's open turn and the summaries that session claims during it. `Bridge::set_rebuilding` (`bridge/rebuilding.rs`) stores those ids on the turn through `transcript::Mapper::set_summaries_rebuilding(turn_id, ids)` and publishes the returned `TurnUpdated` deltas. The mapper owns the `turns` field, so a delta alone would show the ids once and lose them on the next snapshot or `TurnUpdated` for that turn. Attribution calls it as the turn's claimed summaries are named (`name_on_turn`). Only the correction rebuild a chat makes itself (`loom plan summary brief --note` and `seal`, product spec section 10 "When the summary is wrong") claims summaries inside a turn: an authoring turn rebuilds no other summary, so most turns carry no ids. The footer's rows read "Rebuilding" while the turn is open and "left for the background rebuild" once it ends (`chat/turn-footer-rebuilt.tsx`).
 
 ## Planner Kickoff, Draft-All Teams and the Feature Web Model
 

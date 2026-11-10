@@ -328,27 +328,36 @@ that links a stale or missing sentence.
 
 ## Who rebuilds what
 
-| Trigger                                          | Who                                                                    | Budget check |
-| ------------------------------------------------ | ---------------------------------------------------------------------- | ------------ |
-| A refinement turn edited documents               | a subagent of the authoring session, in the same turn                  | no           |
-| Outside edit, file-mode save, `git pull`, start  | a background summary session                                           | yes          |
-| The user presses rebuild on a summary or a batch | a background summary session                                           | no           |
+| Trigger                                                   | Who                                                                     | Budget check |
+| --------------------------------------------------------- | ----------------------------------------------------------------------- | ------------ |
+| A refinement turn edited documents                        | a background summary session, 5 minutes after the turn's end            | yes          |
+| Outside edit, file-mode save, `git pull`, start           | a background summary session, 5 minutes after the last change           | yes          |
+| The user presses rebuild on a summary or a batch          | a background summary session, at once                                   | no           |
+| The user answers "Rebuild all" to the question            | a background summary session, at once                                   | no           |
 
-**Refinement.** The authoring skill (section 09) ends every turn that edited documents by running
-`loom plan summary status`, then rebuilding in two waves: one `loom-plan:summary` subagent per
-document summary the turn made stale, incomplete or missing, in parallel, each running `brief`,
-rewriting, and sealing its summary; then, once they have returned, one `loom-plan:overview`
-subagent for the overviews that cite them. The turn is not over until both waves return; the chat
-names the summaries being rebuilt (vision, The
-screen). While an authoring turn runs, the scheduler starts no background session, and at the
-end of the turn whatever is still stale or incomplete goes to the background queue. (My call:
-this keeps the watcher, which sees the session's edits the moment they are written, from
-starting a background rebuild of the same summaries.)
+**Refinement.** An authoring turn rebuilds no summary: the authoring skill (section 09) ends a
+turn that edited documents with `loom plan check` alone. While an authoring turn runs, the
+scheduler starts no background session; when the turn ends, whatever it left stale or missing
+goes to the background queue, and what the turn changed waits a full quiet period from the
+turn's end (below). (My call: a reader working through open questions and "My call" items edits
+the same documents turn after turn, and a rebuild after every turn would pay for summaries the
+next turn makes stale again; the watcher also sees the session's edits the moment they are
+written, and must not start a rebuild of what the turn is still editing.)
 
-**Background.** After each watcher batch the engine collects the summaries the batch made stale,
-incomplete, or missing. Up to 5, it starts a rebuild at once; above 5 it asks first (vision,
-Rebuild budget). Turning off Settings' "Rebuild summaries automatically" in the holder's browser
-sends `POST /api/summaries/auto` and sets that limit to 0, so every batch asks first.
+**Background.** The scheduler keeps every summary the engine evaluates stale or missing in the
+background queue. An incomplete summary is out of date too, but its sentences are all still
+right, so it waits for a press. A queued summary starts once 5 minutes (its quiet period) have
+passed with no change to its inputs: its source and, for a plan, its brief bundle; for an overview, its raw
+sources and its members' inputs and sentences. An edit made during an authoring turn counts from
+the end of that turn, since the reader's next turn often edits the same document again. Settling
+a document changes no summary's inputs: every hash a summary records or compares is taken over
+the text without its `Settled:` lines (section 03, "Settled marks", defines the line). A
+summary out of date when the server starts has no change on record and waits for nothing. The
+summary panel lists the waiting summaries apart. A press or a "Rebuild all" answer starts its summaries at once, quiet period or
+not. Of the summaries that are ready, up to 5 start at once; above 5 the scheduler asks first
+(vision, Rebuild budget), and the summaries still waiting neither start with them nor count
+toward the 5. Turning off Settings' "Rebuild summaries automatically" in the holder's browser
+sends `POST /api/summaries/auto` and sets that limit to 0, so every ready batch asks first.
 One background summary session runs per project at a time, as an interactive
 Claude Code session in tmux started through the session bridge (section 07), never `claude -p`.
 It works its batch leaves first: one subagent per document summary, each running `brief` and
@@ -384,8 +393,8 @@ identity (`source_path`, `plan_id`, `plan_name`, `base_branch`); `~/.loom/config
 `[plan] <role>_model` / `<role>_effort` naming scheme section 09 uses for the authoring keys. The
 subagent tool takes no effort parameter, so the server writes the resolved model and effort into
 the `model` and `effort` frontmatter of the `loom-plan:summary` and `loom-plan:overview` agent
-definitions when the session starts (section 09), and each wave runs on its level's model
-without the authoring session choosing one. Cost is an anti-goal concern.
+definitions when the session starts (section 09), and each subagent runs on its level's model
+without the session that spawns it choosing one. Cost is an anti-goal concern.
 
 ## Asking before a large rebuild
 

@@ -343,7 +343,7 @@ browser can open them. Three kinds exist:
 to hash them anyway, section 04). When a turn starts (section 07 defines turn boundaries), it
 pins the current text of every file; when the turn ends, each file the turn changed gets a diff
 from its pinned text to its text at the end. The diff covers the whole turn, including edits
-made by subagents and summary rebuilds the turn ran. A file the turn created diffs against
+made by subagents and by a correction rebuild of a misstated summary (section 10) in the turn. A file the turn created diffs against
 nothing; a file it deleted shows its last text as removed. Turn diffs live for the server's
 lifetime and are lost on restart; the uncommitted diff still shows the work. (My call: keeping
 history in the project would be sidecar state, an anti-goal.)

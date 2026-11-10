@@ -174,16 +174,58 @@ stub changed, upstream changed or settled (section 03 defines the `Settled:` lin
 hashes). The mark is document-level; a plan is settled together with its brief bundle.
 
 - **Mark settled** writes the `Settled:` line, through the save path, covering the document's
-  text now. Only this action writes it; sessions never do (section 09, "Write limits"). Mark
-  settled needs authoring, like every write.
+  text now, then has it committed so the settled version is a commit. Only this action writes it;
+  sessions never do (section 09, "Write limits"). Mark settled needs authoring, like every write.
+- **The settle commit.** It holds the document and, for a plan, its brief bundle, and nothing
+  else: other staged or modified files stay as they were. Its message is
+  `docs(<feature>): settle <path under doc/>` (`unsettle` for Unsettle, which commits the
+  document alone), with no trailer. It is a plain `git commit` on the checked-out branch with
+  the user's identity, hooks and signing, never `--no-verify`, whatever the project's hooks are:
+  they may run for minutes, rewrite the files, refuse or commit themselves. The commit runs after
+  the settle answers, on a worker that takes one settle at a time in the order asked, so a slow
+  hook holds up only the settles queued behind it; how each ended reaches every browser, and git's
+  and the hooks' own words reach only the browser that settled. When the paths already match HEAD
+  there is no commit. A document, or a plan's brief, edited between the settle and its commit is
+  not committed, and the reader is asked to settle again. Git's exit status does not decide
+  whether the commit happened: HEAD is read before and after it, and the settle's commit is the
+  one git added on top of the old HEAD with the settle's message, whatever log encoding the
+  repository sets. Git ignores a `post-commit` hook's exit status, and one that runs past the
+  deadline, prints past the output limit or commits on top of it still leaves the settle
+  reporting its own commit; HEAD that did not move means nothing was committed. A hook that
+  rewrites a settled file into the commit leaves the line describing the text before it: the
+  commit is reported with "A commit hook changed the document after it was settled. Settle this
+  version to record it.", and the document reads changed since it was settled. A commit that holds
+  what was settled while the file changed beside it, by a hook or by the reader while the hooks
+  ran, is reported with "The document changed after it was settled. Settle this version to record
+  it.", since loom cannot tell those two apart. The line is never marked again on the reader's
+  behalf, and the commit is never amended, since after a hook HEAD may not be the settle's. A file
+  a hook adds beside the settled ones goes into the commit and its index entry is left as
+  committed, so the next commit does not undo the hook's work; a file the reader had staged that a
+  hook also committed keeps the reader's staged version, and the note names it. A commit past ten
+  minutes is stopped (git first gets the chance to release its index lock, and a lock left behind
+  is named). A merge, rebase, cherry-pick or revert in progress, or a project outside git, skips
+  the commit; a refusing hook, a timeout or a git failure before any commit leaves the line
+  written and unstages a new brief the settle had added, as does a failed commit after something
+  else moved HEAD. When the server stops, the commit in flight runs to its end and the settles
+  queued behind it end as not committed. While the commit runs the control says "Committing…"; a
+  commit then shows "Committed <short sha>" for a moment, a commit that left something to do says
+  "Settled and committed." and what is left, a line not committed says "Settled, but not
+  committed:" (or "Unsettled, …") and why, and a reconnect while the commit runs says "The commit
+  result was lost; check git log." until its end arrives, if it still does. A second press while
+  the first press's commit still runs waits for both: the note follows the second, and the first
+  one's failure still shows.
 - **Unresolved points.** A document with `(My call.)` markers or open questions is not settled
   silently: the dialog lists them and the reader confirms, or backs out.
-- **Unsettle** removes the line. A locked document (running, done, retired or archived) can be
-  neither settled nor unsettled; it keeps the line it had.
+- **Unsettle** removes the line and commits that. A locked document (running, done, retired or
+  archived) can be neither settled nor unsettled; it keeps the line it had.
 - **Changes since settled.** A document that reads revised offers the comparison with the version
   that was settled: the newest commit whose text holds the current `Settled:` line. The view is
-  the commit comparison of "Seeing what a refinement changed". When the line was never committed,
-  the page says the settled version is not committed and shows no diff. This is separate from
+  the commit comparison of "Seeing what a refinement changed". The page asks for that commit as it
+  shows the control. When the line was never committed (a settle whose commit was skipped or
+  refused), See what changed stays disabled and says the settled version was never committed, so
+  there is nothing to compare, and that settling again records it. A hook's rewrite that stayed
+  out of the settle commit shows as the change since it; one that went into it is already in that
+  commit, so the comparison shows no difference. This is separate from
   "What changed since you last looked", which is each browser's own record.
 - **Stubs.** A section or plan shows its stub, the vision row or metaplan entry, above its body,
   linked to its place, with a note when the stub changed since the document was settled. A body

@@ -305,8 +305,10 @@ digits of a SHA-256.
 - **Unresolved points.** A document that holds `(My call.)` markers or open questions asks the
   reader to confirm before it is settled, listing them. (My call.)
 - **Changes since settled.** The page for a revised document compares it with the settled
-  version: the newest commit whose version of the file holds the current Settled line. When no
-  commit holds it, the page says the settled version is not committed and shows no comparison.
+  version: the newest commit whose version of the file holds the current Settled line. Settling
+  and unsettling commit the line (section 10, "The settle commit"), so a settle normally has one.
+  When no commit holds it, the page says the settled version was never committed and shows no
+  comparison.
 - **Problems.** A Settled line that does not parse (a hash that is not 12 lowercase hex digits,
   an unknown word, words out of order) raises `settled-bad` and reads as draft. A second Settled
   line raises `settled-duplicate`.
