@@ -7,6 +7,7 @@ pub mod cost;
 pub mod engine;
 pub mod evaluate;
 pub mod format;
+pub mod hashes;
 pub mod lock;
 pub mod seal;
 pub mod status;

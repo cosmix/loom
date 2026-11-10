@@ -8,6 +8,7 @@
 
 mod config;
 mod queue;
+mod quiet;
 mod session;
 #[cfg(test)]
 mod tests;
@@ -20,7 +21,7 @@ use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 use std::time::{Duration, Instant};
 
-pub use config::{SchedulerConfig, AUTO_LIMIT, NO_SEAL_TIMEOUT};
+pub use config::{SchedulerConfig, AUTO_LIMIT, NO_SEAL_TIMEOUT, QUIET_PERIOD};
 
 /// Starts and stops summary sessions for the scheduler.
 pub trait SessionSpawner: Send + Sync {
@@ -216,6 +217,8 @@ pub struct Scheduler {
     asked: u64,
     /// Every summary the latest evaluation lists; `None` until one is given.
     known: Option<BTreeSet<String>>,
+    /// The summaries whose sources changed lately: their background rebuilds wait.
+    quiet: quiet::Quiet,
     out: Vec<SchedulerEvent>,
 }
 
@@ -237,6 +240,7 @@ impl Scheduler {
             stopping: false,
             asked: 0,
             known: None,
+            quiet: quiet::Quiet::default(),
             out: Vec::new(),
         }
     }
@@ -269,8 +273,9 @@ impl Scheduler {
         }
     }
 
-    /// The authoring turn ended: release its suspension, queue every id still out of date; a
-    /// call without an open turn (a late `TurnEnded`) changes nothing.
+    /// The authoring turn ended: release its suspension, queue every id still out of date (what
+    /// the turn changed waits its quiet period from now); a call without an open turn (a late
+    /// `TurnEnded`) changes nothing.
     pub fn turn_ended(
         &mut self,
         out_of_date: &[String],
@@ -278,6 +283,7 @@ impl Scheduler {
         spawner: &dyn SessionSpawner,
     ) {
         if let Some(token) = self.turn.take() {
+            self.restart_turn_changes(now);
             self.resume(token, out_of_date, now, spawner);
         }
     }

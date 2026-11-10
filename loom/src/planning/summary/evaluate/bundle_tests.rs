@@ -10,6 +10,7 @@ use super::cite::{cite_key, Context};
 use super::fixtures::{fixture, load, metaplan, seal_document, write_file, Fixture, META};
 use super::{evaluate, SummaryState};
 use crate::planning::summary::format::{LinkTarget, SummaryFile};
+use crate::planning::summary::hashes::SourceHashes;
 
 const ID: &str = "plans/x";
 const PX: &str = "doc/plans/demo/PLAN-x.md";
@@ -93,8 +94,8 @@ fn source(path: &str, anchor: &str) -> LinkTarget {
 /// Whether plans/x's `file` holds a citation of each target, in order.
 fn holding(f: &Fixture, file: &SummaryFile, targets: &[LinkTarget]) -> Vec<bool> {
     let project = load(&f.root);
-    let done = BTreeMap::new();
-    let ctx = Context::new(&project, &done, ID, file, Some(Path::new(PX)));
+    let (hashes, done) = (SourceHashes::new(&project), BTreeMap::new());
+    let ctx = Context::new(&hashes, &done, ID, file, Some(Path::new(PX)));
     targets.iter().map(|target| ctx.holds(target)).collect()
 }
 

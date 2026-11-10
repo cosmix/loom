@@ -102,6 +102,13 @@ it("deduplicates stale IDs across queued, failed, and questioned summaries", asy
   expect(visibleText(trigger)).toBe("4");
 });
 
+it("counts incomplete summaries as out of date", async () => {
+  setReplies([{ status: 200, body: { ...idle, queue: ["a"], incomplete: ["b"] } }]);
+  show(true);
+  const trigger = await screen.findByRole("button", { name: "Summary rebuilds: 2 out of date" });
+  expect(visibleText(trigger)).toBe("2");
+});
+
 it("keeps a trigger during loading and shows the loading state when opened", () => {
   fetchMock.mockImplementation(() => new Promise<Response>(() => {}));
   show();

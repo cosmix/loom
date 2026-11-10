@@ -12,6 +12,7 @@ use crate::planning::project::Project;
 use crate::planning::runtime::{runtime_paths_under, RuntimePaths};
 use crate::planning::summary::evaluate::{bundle_hashes, cite_key, members_hash};
 use crate::planning::summary::format::{self, FrontMatter, SummaryFile, SummaryKind};
+use crate::planning::summary::hashes::SourceHashes;
 use crate::planning::summary::seal::{seal, SealError};
 use crate::planning::summary::store;
 
@@ -128,11 +129,11 @@ pub(crate) fn write_file(root: &Path, id: &str, file: &SummaryFile) -> String {
 }
 
 fn cites_for(project: &Project, id: &str, refs: &[(PathBuf, &str)]) -> BTreeMap<String, String> {
+    let hashes = SourceHashes::new(project);
     refs.iter()
         .map(|(path, anchor)| {
-            let sections = &project.docs[path].sections;
-            let span = sections
-                .find(anchor)
+            let span = hashes
+                .span(path, anchor)
                 .unwrap_or_else(|| panic!("{id}: no anchor {anchor}"));
             (cite_key(path, anchor), span.hash.clone())
         })
@@ -190,7 +191,9 @@ pub(crate) fn seal_document_citing(
     let front = FrontMatter {
         kind: SummaryKind::Document,
         of: source.to_string_lossy().into_owned(),
-        file: project.content_hash(&source).map(str::to_string),
+        file: SourceHashes::new(&project)
+            .file_hash(&source)
+            .map(str::to_string),
         bundle: bundle_hashes(&project, &bundle_files(&project, &source)),
         cites: cites_for(&project, id, &refs),
         members: BTreeMap::new(),

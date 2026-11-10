@@ -39,6 +39,7 @@ use super::evaluate::{bundle_hashes, evaluate, members_hash, Evaluation};
 use super::format::{
     parse_draft, render, Block, FormatError, FrontMatter, SummaryBody, SummaryFile, SummaryKind,
 };
+use super::hashes::SourceHashes;
 use super::store;
 use super::write::{read_summary, write_summary_if, WriteOutcome};
 use crate::fs::safe_fs::{safe_open_dirfd, safe_remove_in_workdir};
@@ -196,8 +197,10 @@ fn sentence_count(body: &SummaryBody) -> usize {
 /// Check the links of `body` and render the summary file text; runs under the store lock.
 fn build_text(project: &Project, id: &str, body: &SummaryBody) -> Result<String, SealError> {
     let evaluation = store::is_overview(id).then(|| evaluate(project, &[]));
+    let hashes = SourceHashes::new(project);
     let rules = Rules {
         project,
+        hashes: &hashes,
         id,
         evaluation: evaluation.as_ref(),
     };
@@ -209,7 +212,7 @@ fn build_text(project: &Project, id: &str, body: &SummaryBody) -> Result<String,
     }
     let front = match &evaluation {
         Some(evaluation) => overview_front(&rules, evaluation, cited.cites),
-        None => document_front(project, id, cited.cites)?,
+        None => document_front(&hashes, id, cited.cites)?,
     };
     let file = SummaryFile {
         front,
@@ -241,16 +244,18 @@ fn overview_front(
 }
 
 /// The front matter of document summary `id`, computed from the project and never taken from
-/// the draft: `file` from the source's content hash and, for a plan, `bundle` from each brief's.
+/// the draft: `file` from the source's hash without its Settled lines and, for a plan, `bundle`
+/// from each brief's content hash.
 fn document_front(
-    project: &Project,
+    hashes: &SourceHashes<'_>,
     id: &str,
     cites: BTreeMap<String, String>,
 ) -> Result<FrontMatter, SealError> {
+    let project = hashes.project();
     let source = store::source_of(project, id)
         .ok_or_else(|| rejected(format!("{id} has no source document")))?;
-    let file = project
-        .content_hash(&source)
+    let file = hashes
+        .file_hash(&source)
         .ok_or_else(|| rejected(format!("{} cannot be read", source.display())))?;
     Ok(FrontMatter {
         kind: SummaryKind::Document,

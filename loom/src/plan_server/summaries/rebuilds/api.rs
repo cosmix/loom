@@ -71,8 +71,8 @@ impl Rebuilds {
 
     fn resume(&self, token: u64) {
         self.run(|state, spawner, now| {
-            let out_of_date = state.out_of_date();
-            state.scheduler.resume(token, &out_of_date, now, spawner);
+            let to_rebuild = state.to_rebuild();
+            state.scheduler.resume(token, &to_rebuild, now, spawner);
         });
     }
 
@@ -80,8 +80,8 @@ impl Rebuilds {
     pub fn set_auto(&self, enabled: bool) {
         self.run(|state, spawner, now| {
             state.scheduler.set_auto(enabled);
-            let out_of_date = state.out_of_date();
-            let events = state.scheduler.on_update(&[], &out_of_date, now, spawner);
+            let to_rebuild = state.to_rebuild();
+            let events = state.scheduler.on_update(&[], &to_rebuild, now, spawner);
             state.events.extend(events);
         });
     }
@@ -91,8 +91,8 @@ impl Rebuilds {
         self.run(|state, spawner, now| match trigger {
             Trigger::Button => state.scheduler.press(&ids, now, spawner),
             Trigger::Background | Trigger::Refinement => {
-                let out_of_date = state.out_of_date();
-                let events = state.scheduler.on_update(&ids, &out_of_date, now, spawner);
+                let to_rebuild = state.to_rebuild();
+                let events = state.scheduler.on_update(&ids, &to_rebuild, now, spawner);
                 state.events.extend(events);
             }
         });
@@ -147,7 +147,7 @@ impl Rebuilds {
     /// Follow one summary engine update: seals, claims and the newly invalidated summaries.
     pub fn on_update(&self, update: &EngineUpdate) {
         let eval = Arc::new(update.evaluation.clone());
-        let out_of_date = evaluation::out_of_date(&eval);
-        self.apply_evaluation(eval, &update.invalidated, &out_of_date);
+        let to_rebuild = evaluation::to_rebuild(&eval);
+        self.apply_evaluation(eval, &update.invalidated, &to_rebuild);
     }
 }

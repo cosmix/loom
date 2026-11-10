@@ -160,6 +160,22 @@ it("reads Rebuilding and stays inert while its summary runs, then turns back int
   expect(button.getAttribute("aria-disabled")).toBeNull();
 });
 
+it("stays a Rebuild press while its summary waits for edits to stop", () => {
+  const { store } = show("holder", ["demo/product/section_03"]);
+  act(() =>
+    store.set(panelLoadAtom, {
+      status: "ready",
+      panel: summaryPanelSchema.parse({
+        ...panelFixture,
+        queue: ["demo/product/section_03"],
+        waiting: ["demo/product/section_03"],
+      }),
+    }),
+  );
+  const button = screen.getByRole("button", { name: "Rebuild" });
+  expect(button.getAttribute("aria-disabled")).toBeNull();
+});
+
 it("reads Rebuilding while the page reports its summary rebuilding", () => {
   show("holder", ["overview/demo/product"], true);
   const button = screen.getByRole("button", { name: "Rebuilding…" });

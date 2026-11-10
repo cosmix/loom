@@ -274,7 +274,7 @@ fn a_running_summary_evaluating_missing_is_not_sealed_and_keeps_the_stall_timer(
 
 /// Seal the vision, section 1 (as one sentence, `text`) and the product overview citing it,
 /// each hashed from the sources on disk now.
-fn seal_feature(f: &Fixture, text: &str) {
+pub(super) fn seal_feature(f: &Fixture, text: &str) {
     let vision = "The vision holds.";
     fixtures::seal_document(&f.root, VISION_ID, &[(vision, "specification-sections")]);
     fixtures::seal_document(&f.root, ID1, &[(text, "a")]);
@@ -282,7 +282,7 @@ fn seal_feature(f: &Fixture, text: &str) {
 }
 
 /// A facade over a server context on `f`, whose project the test refreshes as the watcher does.
-fn served(f: &Fixture) -> (Arc<PlanContext>, Arc<Probe>, Arc<Rebuilds>) {
+pub(super) fn served(f: &Fixture) -> (Arc<PlanContext>, Arc<Probe>, Arc<Rebuilds>) {
     create_runtime_dir(&f.paths).expect("runtime dir");
     let bind = BindInfo::new(SocketAddr::from(([127, 0, 0, 1], 0)), "t");
     let read_only = ReadOnly::from_problems(Vec::new());
@@ -317,7 +317,7 @@ fn a_seal_made_inside_the_authoring_turn_is_seen_when_the_turn_ends() {
         };
         ctx.project_mut().refresh(&batch).expect("refresh");
         let edited = evaluate(&ctx.project(), &[]);
-        let invalidated = evaluation::out_of_date(&edited);
+        let invalidated = evaluation::to_rebuild(&edited);
         assert_eq!(invalidated, owned(&[ID1, PRODUCT]), "the edit");
         rebuilds.on_update(&EngineUpdate {
             evaluation: edited,
@@ -328,7 +328,7 @@ fn a_seal_made_inside_the_authoring_turn_is_seen_when_the_turn_ends() {
         assert_eq!(rebuilds.panel().queue, owned(&[ID1, PRODUCT]), "held");
         seal_feature(&f, "Edited holds.");
         let sealed = evaluate(&ctx.project(), &[]);
-        assert_eq!(evaluation::out_of_date(&sealed), Vec::<String>::new());
+        assert_eq!(evaluation::to_rebuild(&sealed), Vec::<String>::new());
         rebuilds.on_bridge_event(&rig.bridge, &end);
         assert_eq!(probe.starts(), Vec::<Vec<String>>::new(), "{end:?}");
         assert_eq!(rebuilds.panel().queue, Vec::<String>::new(), "{end:?}");

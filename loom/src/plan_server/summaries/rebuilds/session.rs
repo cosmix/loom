@@ -60,14 +60,14 @@ impl Rebuilds {
             let open = state.open_turn.as_ref();
             open.is_some_and(|(session, _)| session == id)
         };
-        let fresh = self.out_of_date_now(holds);
+        let fresh = self.to_rebuild_now(holds);
         self.run(|state, spawner, now| {
             if holds(state) {
                 state.open_turn = None;
-                let out_of_date = fresh.unwrap_or_else(|| state.out_of_date());
+                let to_rebuild = fresh.unwrap_or_else(|| state.to_rebuild());
                 state
                     .scheduler
-                    .authoring_state_idle(id, &out_of_date, now, spawner);
+                    .authoring_state_idle(id, &to_rebuild, now, spawner);
             }
         });
     }
@@ -95,12 +95,12 @@ impl Rebuilds {
             let open = state.open_turn.as_ref();
             open.is_some_and(|(session, open)| session == id && open == turn)
         };
-        let fresh = self.out_of_date_now(holds);
+        let fresh = self.to_rebuild_now(holds);
         self.run(|state, spawner, now| {
             if holds(state) {
                 state.open_turn = None;
-                let out_of_date = fresh.unwrap_or_else(|| state.out_of_date());
-                state.scheduler.turn_ended(&out_of_date, now, spawner);
+                let to_rebuild = fresh.unwrap_or_else(|| state.to_rebuild());
+                state.scheduler.turn_ended(&to_rebuild, now, spawner);
             }
         });
         let subagents = bridge.transcripts(id).map(|found| found.subagents);
@@ -140,8 +140,8 @@ impl Rebuilds {
             SessionKind::Authoring => self.chat_idle(id),
             SessionKind::Pressure { .. } => self.run(|state, spawner, now| {
                 if let Some(token) = state.pressure.remove(id) {
-                    let out_of_date = state.out_of_date();
-                    state.scheduler.resume(token, &out_of_date, now, spawner);
+                    let to_rebuild = state.to_rebuild();
+                    state.scheduler.resume(token, &to_rebuild, now, spawner);
                 }
             }),
         }
@@ -319,11 +319,11 @@ impl Rebuilds {
         };
         self.run(|state, _, _| state.scheduler.set_terminal_claims(terminal));
         let alive: Vec<String> = live.iter().chain(left_alone).cloned().collect();
-        let mut out_of_date = evaluation::out_of_date(&latest);
-        out_of_date.extend(evaluation::swept(&latest, &alive));
-        out_of_date.sort();
-        out_of_date.dedup();
-        self.apply_evaluation(latest, &out_of_date, &out_of_date);
+        let mut to_rebuild = evaluation::to_rebuild(&latest);
+        to_rebuild.extend(evaluation::swept(&latest, &alive));
+        to_rebuild.sort();
+        to_rebuild.dedup();
+        self.apply_evaluation(latest, &to_rebuild, &to_rebuild);
     }
 
     /// The first Ctrl-C: drop the queue and the question; plan 7's drain ends a running bridge

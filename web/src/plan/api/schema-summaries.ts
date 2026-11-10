@@ -54,6 +54,10 @@ export const summaryTurnCostSchema = z.strictObject({
 export const summaryPanelSchema = z.strictObject({
   running: runningRebuildSchema.nullable(),
   queue: z.array(z.string()),
+  /** The queued ids whose background rebuild waits for edits to their sources to stop. */
+  waiting: z.array(z.string()),
+  /** Out-of-date summaries that only leave out uncited text: rebuilt on a press, not queued. */
+  incomplete: z.array(z.string()),
   failed: z.array(failedSummarySchema),
   question: summaryQuestionSchema.nullable(),
   last: costLineSchema.nullable(),

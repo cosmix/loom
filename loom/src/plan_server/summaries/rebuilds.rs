@@ -77,6 +77,9 @@ struct State {
     /// Events of the calls that drain the scheduler's outbox themselves.
     events: Vec<SchedulerEvent>,
     latest: Option<Arc<Evaluation>>,
+    /// What each summary was built from at the last evaluation applied with a project
+    /// (`hashes::input_hashes`); a change starts the summary's quiet period.
+    inputs: Option<BTreeMap<String, String>>,
     /// Source bytes by summary id, for estimates.
     sizes: BTreeMap<String, u64>,
     /// The file of each running id at the start or its last seal.
@@ -95,11 +98,11 @@ struct State {
 }
 
 impl State {
-    /// Every id the latest evaluation finds stale, incomplete or missing.
-    fn out_of_date(&self) -> Vec<String> {
+    /// Every id the latest evaluation finds stale or missing ([`evaluation::to_rebuild`]).
+    fn to_rebuild(&self) -> Vec<String> {
         self.latest
             .as_deref()
-            .map(evaluation::out_of_date)
+            .map(evaluation::to_rebuild)
             .unwrap_or_default()
     }
 
@@ -229,6 +232,7 @@ impl Rebuilds {
             scheduler: Scheduler::new(config),
             events: Vec::new(),
             latest: None,
+            inputs: None,
             sizes: BTreeMap::new(),
             baselines: BTreeMap::new(),
             open_turn: None,
@@ -251,12 +255,16 @@ impl Rebuilds {
 
     fn apply_evaluation(&self, eval: Arc<Evaluation>, invalidated: &[String], stale: &[String]) {
         let sizes = self.source_sizes(&eval);
+        let inputs = self.source_inputs(&eval);
         if let Some(sizes) = &sizes {
             self.attribute(|attribution| attribution.set_sizes(sizes.clone()));
         }
         self.run(|state, spawner, now| {
             if let Some(sizes) = sizes {
                 state.sizes = sizes;
+            }
+            if let Some(inputs) = inputs {
+                state.note_inputs(inputs, now);
             }
             evaluation::keep_terminal_claims(&mut state.scheduler, &eval);
             evaluation::detect_seals(state, &eval, now);

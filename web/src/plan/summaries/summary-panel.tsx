@@ -176,15 +176,43 @@ function queueBesideQuestion(panel: SummaryPanelData): string[] {
   return panel.queue.filter((id) => !asked.has(id));
 }
 
-/** The running rebuild, the queue, failed rebuilds and the start error. */
+/**
+ * The running rebuild, the queue (the ids whose background rebuild waits for edits to stop listed
+ * apart), the incomplete summaries, failed rebuilds and the start error.
+ */
 export function RebuildActivity({ panel }: { panel: SummaryPanelData }) {
   const queue = queueBesideQuestion(panel);
+  const waiting = new Set(panel.waiting);
+  const ready = queue.filter((id) => !waiting.has(id));
+  const held = queue.filter((id) => waiting.has(id));
   return (
     <>
       {panel.running !== null && <RunningRebuildSection running={panel.running} />}
-      {queue.length > 0 && (
+      {ready.length > 0 && (
         <Section title="Queue">
-          <IdList ids={queue} />
+          <IdList ids={ready} />
+        </Section>
+      )}
+      {held.length > 0 && (
+        <Section title="Waiting for edits to stop">
+          <p className="sp-muted">Each rebuilds once its documents go a few minutes unedited.</p>
+          <IdList ids={held} />
+        </Section>
+      )}
+      {panel.incomplete.length > 0 && (
+        <Section title="Incomplete">
+          <p className="sp-muted">Only text no sentence cites changed; these rebuild on request.</p>
+          <ul className="plan-list sp-rows">
+            {panel.incomplete.map((id) => (
+              <ActionRow
+                key={id}
+                id={id}
+                verb="Rebuild"
+                action="rebuild"
+                canAct={panel.read_only === null}
+              />
+            ))}
+          </ul>
         </Section>
       )}
       {panel.failed.length > 0 && (

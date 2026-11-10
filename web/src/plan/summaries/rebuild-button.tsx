@@ -9,11 +9,16 @@ import { type ButtonLook, DisabledReason, INLINE_BASELINE } from "@/plan/ui/disa
 
 import { summaryPanelAtom, useSummaryActions } from "./state";
 
-/** Whether the live summary panel has any of `ids` running or queued. */
+/**
+ * Whether the live summary panel has any of `ids` running or queued to start. An id whose
+ * background rebuild waits for edits to stop is not: a press starts it now.
+ */
 function useQueued(ids: string[]): boolean {
   const panel = useAtomValue(summaryPanelAtom);
   if (panel === null) return false;
-  const queued = new Set([...(panel.running?.ids ?? []), ...panel.queue]);
+  const waiting = new Set(panel.waiting);
+  const starting = panel.queue.filter((id) => !waiting.has(id));
+  const queued = new Set([...(panel.running?.ids ?? []), ...starting]);
   return ids.some((id) => queued.has(id));
 }
 

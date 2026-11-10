@@ -127,6 +127,34 @@ it("lists queued ids", () => {
   expect(queue.getByRole("listitem").textContent).toBe("demo/product/section_03");
 });
 
+it("lists the queued ids that wait for edits to stop apart from the rest of the queue", () => {
+  show({ queue: ["demo/product/section_03", "plans/x"], waiting: ["plans/x"] });
+
+  const queue = within(screen.getByRole("region", { name: "Queue" }));
+  expect(queue.getAllByRole("listitem").map((item) => item.textContent)).toEqual([
+    "demo/product/section_03",
+  ]);
+  const waiting = within(screen.getByRole("region", { name: "Waiting for edits to stop" }));
+  expect(waiting.getAllByRole("listitem").map((item) => item.textContent)).toEqual(["plans/x"]);
+});
+
+it("lists incomplete summaries in rows that offer Rebuild", async () => {
+  const fetchMock = vi
+    .fn<typeof fetch>()
+    .mockResolvedValue(new Response(JSON.stringify(panelFixture), { status: 200 }));
+  vi.stubGlobal("fetch", fetchMock);
+  const { store } = show({ incomplete: ["demo/product/section_06"] });
+
+  const incomplete = within(screen.getByRole("region", { name: "Incomplete" }));
+  fireEvent.click(incomplete.getByRole("button", { name: "Rebuild" }));
+
+  await waitFor(() => expect(store.get(panelLoadAtom).status).toBe("ready"));
+  expect(fetchMock).toHaveBeenCalledExactlyOnceWith(
+    "/api/summaries/rebuild",
+    POST({ ids: ["demo/product/section_06"] }),
+  );
+});
+
 it("pairs each failed id with its error in a row that offers Retry", () => {
   show({
     failed: [

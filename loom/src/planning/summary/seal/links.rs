@@ -5,12 +5,12 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use crate::planning::briefs::bundle_files;
-use crate::planning::kinds::vision_path;
 use crate::planning::project::Project;
 use crate::planning::summary::evaluate::{
-    cite_key, Evaluation, SentenceEval, SentenceState, SummaryState,
+    cite_key, overview_inputs, Evaluation, SentenceEval, SentenceState, SummaryState,
 };
 use crate::planning::summary::format::{Block, FormatError, LinkTarget, Sentence, SummaryBody};
+use crate::planning::summary::hashes::SourceHashes;
 use crate::planning::summary::store;
 
 use super::restate;
@@ -30,6 +30,8 @@ pub(super) struct Cited {
 pub(super) struct Rules<'a> {
     /// The loaded project.
     pub project: &'a Project,
+    /// The project's documents as summaries hash them (without their Settled lines).
+    pub hashes: &'a SourceHashes<'a>,
     /// The summary being sealed.
     pub id: &'a str,
     /// Evaluation of the store, for overviews only.
@@ -37,40 +39,27 @@ pub(super) struct Rules<'a> {
 }
 
 impl Rules<'_> {
-    /// The documents a passage link may point at: a document summary's source, plus the brief
-    /// bundle of a plan.
+    /// The documents a passage link may point at: an overview's raw sources, or a document
+    /// summary's source plus the brief bundle of a plan.
     pub(super) fn allowed_sources(&self) -> Vec<PathBuf> {
-        let Some(scope) = store::Scope::of(self.project, self.id) else {
-            // The source first, then the brief files of a plan summary's bundle; every other
-            // summary's source is no plan, so its bundle is empty.
-            let source = store::source_of(self.project, self.id);
-            let bundle = source
-                .as_ref()
-                .map(|plan| bundle_files(self.project, plan))
-                .unwrap_or_default();
-            return source.into_iter().chain(bundle).collect();
-        };
-        if self.id.ends_with("/product") {
-            vec![vision_path(&scope.feature)]
-        } else {
-            self.project
-                .feature(&scope.feature)
-                .into_iter()
-                .flat_map(|feature| feature.metaplans.iter().map(|(path, _)| path.clone()))
-                .collect()
+        if let Some((_, sources)) = overview_inputs(self.project, self.id) {
+            return sources;
         }
+        // The source first, then the brief files of a plan summary's bundle; every other
+        // summary's source is no plan, so its bundle is empty.
+        let source = store::source_of(self.project, self.id);
+        let bundle = source
+            .as_ref()
+            .map(|plan| bundle_files(self.project, plan))
+            .unwrap_or_default();
+        source.into_iter().chain(bundle).collect()
     }
 
     /// The member summaries of an overview, in reading order.
     pub(super) fn members(&self) -> Vec<String> {
-        let Some(scope) = store::Scope::of(self.project, self.id) else {
-            return Vec::new();
-        };
-        if self.id.ends_with("/product") {
-            scope.product
-        } else {
-            scope.engineering
-        }
+        overview_inputs(self.project, self.id)
+            .map(|(members, _)| members)
+            .unwrap_or_default()
     }
 }
 
@@ -129,12 +118,7 @@ fn source_problem(
             rules.id
         ));
     }
-    let span = rules
-        .project
-        .docs
-        .get(path)
-        .and_then(|d| d.sections.find(anchor));
-    let Some(span) = span.filter(|_| rules.project.content_hash(path).is_some()) else {
+    let Some(span) = rules.hashes.span(path, anchor) else {
         return Some(format!("{} has no section #{anchor}", path.display()));
     };
     cited
