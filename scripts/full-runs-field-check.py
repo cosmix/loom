@@ -21,6 +21,15 @@ FULL = re.compile(
 )
 SCOPED_FLAGS = re.compile(r"--test\b|--lib\b|--bin\b|-p\b|--package|-k\b|-t\b|-run\b|--filter|--testNamePattern")
 BLOCKED_MARK = "[subagent-verify-guard/"
+# Claude Code names a project directory after its absolute path with every
+# non-alphanumeric character replaced by "-"; this is the prefix of the
+# directory holding the main checkout, stripped from project names for display.
+# Run from a stage worktree (<main>/.worktrees/<stage>), the main checkout is
+# two levels up, so the prefix is the same from either location.
+_ROOT = Path(__file__).resolve().parents[1]
+if _ROOT.parent.name == ".worktrees":
+    _ROOT = _ROOT.parent.parent
+PROJECT_PREFIX = re.sub(r"[^A-Za-z0-9]", "-", str(_ROOT.parent)) + "-"
 
 
 def parse_day(text):
@@ -56,7 +65,10 @@ def hit_segment(block):
     """The first command segment of a Bash tool_use that counts as a full run, or None."""
     if not (isinstance(block, dict) and block.get("type") == "tool_use" and block.get("name") == "Bash"):
         return None
-    c = (block.get("input") or {}).get("command", "")
+    tool_input = block.get("input")
+    c = tool_input.get("command", "") if isinstance(tool_input, dict) else ""
+    if not isinstance(c, str):
+        c = ""
     first = c.split("<<")[0]
     for seg in re.split(r"\n", first):
         m = FULL.search(seg.strip())
@@ -70,7 +82,7 @@ def result_text(content):
     if isinstance(content, str):
         return content
     if isinstance(content, list):
-        return "\n".join(i.get("text", "") for i in content
+        return "\n".join(i["text"] if isinstance(i.get("text"), str) else "" for i in content
                          if isinstance(i, dict) and i.get("type") == "text")
     return ""
 
@@ -79,11 +91,14 @@ def scan(path):
     """(command, outcome) for each full-run hit in one transcript, read once."""
     hits = []     # (tool_use id, command segment)
     results = {}  # tool_use_id -> result text
-    with open(path) as f:
+    with open(path, encoding="utf-8", errors="replace") as f:
         for line in f:
             try: e = json.loads(line)
             except Exception: continue
-            for b in (e.get("message") or {}).get("content") or []:
+            if not isinstance(e, dict): continue
+            msg = e.get("message")
+            content = msg.get("content") if isinstance(msg, dict) else None
+            for b in content if isinstance(content, list) else []:
                 if e.get("type") == "assistant":
                     seg = hit_segment(b)
                     if seg: hits.append((b.get("id"), seg))
@@ -100,7 +115,7 @@ def collect(root, cutoff):
         return rows
     for proj in root.iterdir():
         if "worktrees" not in proj.name: continue
-        name = proj.name.replace("-home-dkaponis-src-", "")
+        name = proj.name.replace(PROJECT_PREFIX, "")
         kind = kind_of(proj.name)
         for main in proj.glob("*.jsonl"):
             if main.stat().st_mtime < cutoff: continue
