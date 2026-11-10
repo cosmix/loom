@@ -1,7 +1,7 @@
 import { SlidersHorizontalIcon } from "lucide-react";
 import { useRef, type ReactElement } from "react";
 
-import { ThemePicker, type ThemeId } from "@/components/theme-picker";
+import { ThemePicker } from "@/components/theme-picker";
 import {
   Dialog,
   DialogContent,
@@ -14,9 +14,6 @@ import { ReadingFaceGroup, ReadingSizeGroup } from "./reading-sections";
 import { ReadingTogglesGroup, SettingsGroup, SummariesGroup } from "./settings-sections";
 import { WebFetchGroup } from "./web-fetch-section";
 import "./settings.css";
-
-/** The planner offers every theme; `theme-default.ts` seeds Graphite as its default. */
-const PLANNER_THEMES: readonly ThemeId[] = ["ledger", "aubergine", "walnut", "graphite"];
 
 export function SettingsDialog({
   open,
@@ -50,11 +47,7 @@ export function SettingsDialog({
         <div className="ps-body">
           <SettingsGroup title="Theme" hint="Remembered in this browser">
             <div className="ps-theme">
-              <ThemePicker
-                themes={PLANNER_THEMES}
-                swatch={PlannerThemeSwatch}
-                optionClassName="ps-theme-option"
-              />
+              <ThemePicker swatch={PlannerThemeSwatch} optionClassName="ps-theme-option" />
             </div>
           </SettingsGroup>
           <ReadingFaceGroup />

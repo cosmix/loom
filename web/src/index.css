@@ -105,8 +105,13 @@
   --control-shadow: 0 1px 2px oklch(0 0 0 / 0.25);
 }
 
+/* Harbor's accent is a teal that already reads as text, so accent text takes it as is. */
+:root[data-light-theme="harbor"]:not(.dark) {
+  --accent-text: var(--primary);
+}
+
 .dark {
-  /* Same four hues, lifted: at least 5.8:1 on the Walnut, Graphite and Aubergine `--muted`. */
+  /* Same four hues, lifted: at least 5.8:1 on the Graphite and Aubergine `--muted`. */
   --stat-fresh: oklch(0.7 0.14 255);
   --stat-read: oklch(0.78 0.13 158);
   --stat-write: oklch(0.82 0.13 80);
@@ -117,21 +122,21 @@
   --tone-pending: oklch(0.66 0.025 325);
   --tone-queued: oklch(0.79 0.1 205);
   /* Amber at hue 80: the dark accent is orange at hue 55, so the warning sits 25 degrees off it
-   * (8.2:1 on the Walnut card, 8.0:1 on Graphite's). */
+   * (8.0:1 on the Graphite card). */
   --tone-warning: oklch(0.77 0.15 80);
   --tone-merged: oklch(0.7 0.07 155);
   --tone-dimmed: oklch(0.55 0.025 325);
   --tone-control: oklch(0.72 0.17 25);
   --tone-contract: oklch(0.75 0.14 300);
-  /* Against the Walnut --background:
-   *   --doc-1 hue 155: 8.47:1
-   *   --doc-2 hue 200: 8.49:1
-   *   --doc-3 hue 245: 8.11:1
-   *   --doc-4 hue 285: 7.77:1
-   *   --doc-5 hue 325: 7.58:1
-   *   --doc-6 hue 355: 7.54:1
-   *   --doc-7 hue 20: 7.58:1
-   *   --doc-8 hue 175: 8.51:1
+  /* Against the Graphite --background:
+   *   --doc-1 hue 155: 8.29:1
+   *   --doc-2 hue 200: 8.31:1
+   *   --doc-3 hue 245: 7.94:1
+   *   --doc-4 hue 285: 7.61:1
+   *   --doc-5 hue 325: 7.42:1
+   *   --doc-6 hue 355: 7.38:1
+   *   --doc-7 hue 20: 7.42:1
+   *   --doc-8 hue 175: 8.32:1
    */
   --doc-1: oklch(0.74 0.13 155);
   --doc-2: oklch(0.74 0.13 200);

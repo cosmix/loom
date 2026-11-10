@@ -13,7 +13,7 @@ it("gives the planner Graphite when no dark theme was picked", () => {
 });
 
 it("keeps a dark theme the reader picked", () => {
-  localStorage.setItem("loom:dark-variant", JSON.stringify("walnut"));
+  localStorage.setItem("loom:dark-variant", JSON.stringify("aubergine"));
   const store = createStore();
   seedPlannerDarkTheme(store, localStorage);
   // The atom reads storage once at module load, so only the seed's absence is observable here.

@@ -3,10 +3,13 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { chromium } from "playwright-core";
 
-const css = await readFile(
-  new URL("../src/aurora-ui/shared/styles/tokens.css", import.meta.url),
-  "utf8",
-);
+const styles = new URL("../src/aurora-ui/shared/styles/", import.meta.url);
+// tokens.css only imports the two palette files, so the page gets them directly.
+const css = (
+  await Promise.all(
+    ["tokens-light.css", "tokens-dark.css"].map((name) => readFile(new URL(name, styles), "utf8")),
+  )
+).join("\n");
 const browser = await chromium.launch({
   executablePath: process.env.CHROME_PATH ?? "/usr/bin/google-chrome",
   args: ["--no-sandbox"],
@@ -16,8 +19,12 @@ try {
   await page.setContent(`<style>${css}</style><span class="theme-preview"></span>`);
   for (const [scheme, variant] of [
     ["light", "ledger"],
-    ["dark", "walnut"],
+    ["light", "harbor"],
+    ["dark", "aubergine"],
     ["dark", "gray"],
+    ["dark", "midnight"],
+    ["dark", "obsidian"],
+    ["dark", "indigo"],
   ]) {
     const colors = await page.evaluate(
       ([scheme, variant]) => {
@@ -27,7 +34,8 @@ try {
         preview.classList.toggle("dark", scheme === "dark");
         root.dataset.lightTheme = preview.dataset.lightTheme =
           scheme === "light" ? variant : "ledger";
-        root.dataset.darkTheme = preview.dataset.darkTheme = scheme === "dark" ? variant : "walnut";
+        root.dataset.darkTheme = preview.dataset.darkTheme =
+          scheme === "dark" ? variant : "aubergine";
         const names = [
           "background",
           "card",

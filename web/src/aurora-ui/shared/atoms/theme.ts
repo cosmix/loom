@@ -3,14 +3,20 @@
 // a separate key so light-variant and dark-variant preferences persist
 // independently from the color-scheme choice.
 
-import { atomWithStorage } from "jotai/utils";
+import { atomWithStorage, createJSONStorage } from "jotai/utils";
 
 export type ColorScheme = "light" | "dark";
-export type LightVariant = "ledger" | "gray" | "cool";
-export type DarkVariant = "aubergine" | "walnut" | "gray";
+export type LightVariant = "ledger" | "gray" | "cool" | "harbor";
+export type DarkVariant = "aubergine" | "gray" | "midnight" | "obsidian" | "indigo";
 
-export const ALL_LIGHT_VARIANTS: LightVariant[] = ["ledger", "gray", "cool"];
-export const ALL_DARK_VARIANTS: DarkVariant[] = ["aubergine", "walnut", "gray"];
+export const ALL_LIGHT_VARIANTS: LightVariant[] = ["ledger", "gray", "cool", "harbor"];
+export const ALL_DARK_VARIANTS: DarkVariant[] = [
+  "aubergine",
+  "gray",
+  "midnight",
+  "obsidian",
+  "indigo",
+];
 
 function getInitialColorScheme(): ColorScheme {
   if (typeof window === "undefined") return "light";
@@ -33,10 +39,21 @@ export const lightVariantAtom = atomWithStorage<LightVariant>(
   { getOnInit: true },
 );
 
+// A stored id that no dark variant carries (a theme since dropped) reads as the default, so the
+// root never gets a `data-dark-theme` that no rule styles.
+const jsonStorage = createJSONStorage<DarkVariant>();
+const darkVariantStorage: typeof jsonStorage = {
+  ...jsonStorage,
+  getItem: (key, initialValue) => {
+    const stored = jsonStorage.getItem(key, initialValue);
+    return ALL_DARK_VARIANTS.includes(stored) ? stored : initialValue;
+  },
+};
+
 export const darkVariantAtom = atomWithStorage<DarkVariant>(
   "loom:dark-variant",
   "aubergine",
-  undefined,
+  darkVariantStorage,
   { getOnInit: true },
 );
 

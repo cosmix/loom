@@ -1,10 +1,14 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, expect, it } from "vitest";
 
-import tokensCss from "@/aurora-ui/shared/styles/tokens.css?raw";
+import tokensDark from "@/aurora-ui/shared/styles/tokens-dark.css?raw";
+import tokensLight from "@/aurora-ui/shared/styles/tokens-light.css?raw";
 import { ActivityGlyph } from "./activity-glyphs";
 import { BusyText } from "./busy-text";
 import { LoadState } from "./load-state";
+
+// The palettes, light themes first as the stylesheet imports them.
+const tokensCss = `${tokensLight}\n${tokensDark}`;
 
 afterEach(cleanup);
 

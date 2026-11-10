@@ -8,7 +8,7 @@ import {
 } from "@/state/notifications";
 
 const WEBUI_HAYSTACK =
-  "dashboard theme appearance colour color light dark gray grey ledger aubergine walnut graphite notifications desktop alerts browser localstorage";
+  "dashboard theme appearance colour color light dark gray grey ledger harbor aubergine graphite midnight obsidian indigo night notifications desktop alerts browser localstorage";
 
 export function webuiMatches(query: string): boolean {
   const normalized = query.trim().toLowerCase();

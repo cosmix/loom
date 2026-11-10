@@ -21,7 +21,14 @@ export interface ThemePalette {
   primaryForeground: string;
 }
 
-export type ThemeId = "ledger" | "aubergine" | "walnut" | "graphite";
+export type ThemeId =
+  | "ledger"
+  | "harbor"
+  | "aubergine"
+  | "graphite"
+  | "midnight"
+  | "obsidian"
+  | "indigo";
 
 export interface ThemeOption {
   id: ThemeId;
@@ -54,6 +61,15 @@ export const THEME_OPTIONS: readonly ThemeOption[] = [
     palette: PALETTE_VARIABLES,
   },
   {
+    id: "harbor",
+    label: "Harbor",
+    caption: "light · cool blue-white",
+    scheme: "light",
+    lightVariant: "harbor",
+    darkVariant: null,
+    palette: PALETTE_VARIABLES,
+  },
+  {
     id: "aubergine",
     label: "Aubergine",
     caption: "dark · hue 325",
@@ -63,21 +79,39 @@ export const THEME_OPTIONS: readonly ThemeOption[] = [
     palette: PALETTE_VARIABLES,
   },
   {
-    id: "walnut",
-    label: "Walnut",
-    caption: "dark · warm brown-black",
-    scheme: "dark",
-    lightVariant: null,
-    darkVariant: "walnut",
-    palette: PALETTE_VARIABLES,
-  },
-  {
     id: "graphite",
     label: "Graphite",
     caption: "dark · neutral charcoal",
     scheme: "dark",
     lightVariant: null,
     darkVariant: "gray",
+    palette: PALETTE_VARIABLES,
+  },
+  {
+    id: "midnight",
+    label: "Midnight",
+    caption: "dark · deep navy",
+    scheme: "dark",
+    lightVariant: null,
+    darkVariant: "midnight",
+    palette: PALETTE_VARIABLES,
+  },
+  {
+    id: "obsidian",
+    label: "Obsidian",
+    caption: "dark · near-black OLED",
+    scheme: "dark",
+    lightVariant: null,
+    darkVariant: "obsidian",
+    palette: PALETTE_VARIABLES,
+  },
+  {
+    id: "indigo",
+    label: "Indigo Night",
+    caption: "dark · blue-violet ink",
+    scheme: "dark",
+    lightVariant: null,
+    darkVariant: "indigo",
     palette: PALETTE_VARIABLES,
   },
 ];
@@ -222,24 +256,18 @@ function ThemeSwatch(palette: ThemePalette): ReactElement {
 export function ThemePicker({
   swatch = ThemeSwatch,
   optionClassName,
-  themes,
 }: {
   swatch?: (palette: ThemePalette) => ReactElement;
   /** Added to every option button, for a caller whose stylesheet restyles the cards. */
   optionClassName?: string;
-  /** The themes to offer; every theme when omitted. */
-  themes?: readonly ThemeId[];
 } = {}): ReactElement {
   const [scheme, setScheme] = useAtom(themeAtom);
   const [lightVariant, setLightVariant] = useAtom(lightVariantAtom);
   const [darkVariant, setDarkVariant] = useAtom(darkVariantAtom);
-  const options = themes
-    ? THEME_OPTIONS.filter((option) => themes.includes(option.id))
-    : THEME_OPTIONS;
 
   return (
     <div role="group" aria-label="theme" className="flex flex-wrap gap-3">
-      {options.map((option) => {
+      {THEME_OPTIONS.map((option) => {
         const active =
           option.scheme === scheme &&
           (option.scheme === "light"

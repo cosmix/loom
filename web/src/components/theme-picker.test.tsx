@@ -7,7 +7,15 @@ import { darkVariantAtom, lightVariantAtom, themeAtom } from "@/aurora-ui/shared
 import { ThemeProvider } from "@/aurora-ui/theme/ThemeProvider";
 import { THEME_OPTIONS, ThemePicker } from "@/components/theme-picker";
 
-const THEME_LABELS = ["Ledger", "Aubergine", "Walnut", "Graphite"] as const;
+const THEME_LABELS = [
+  "Ledger",
+  "Harbor",
+  "Aubergine",
+  "Graphite",
+  "Midnight",
+  "Obsidian",
+  "Indigo Night",
+] as const;
 
 const APPLIED_THEMES = [
   {
@@ -27,19 +35,43 @@ const APPLIED_THEMES = [
     storageKey: "loom:dark-variant",
   },
   {
-    label: "Walnut",
-    scheme: "dark",
-    dark: true,
-    datasetKey: "darkTheme",
-    variant: "walnut",
-    storageKey: "loom:dark-variant",
-  },
-  {
     label: "Graphite",
     scheme: "dark",
     dark: true,
     datasetKey: "darkTheme",
     variant: "gray",
+    storageKey: "loom:dark-variant",
+  },
+  {
+    label: "Harbor",
+    scheme: "light",
+    dark: false,
+    datasetKey: "lightTheme",
+    variant: "harbor",
+    storageKey: "loom:light-variant",
+  },
+  {
+    label: "Midnight",
+    scheme: "dark",
+    dark: true,
+    datasetKey: "darkTheme",
+    variant: "midnight",
+    storageKey: "loom:dark-variant",
+  },
+  {
+    label: "Obsidian",
+    scheme: "dark",
+    dark: true,
+    datasetKey: "darkTheme",
+    variant: "obsidian",
+    storageKey: "loom:dark-variant",
+  },
+  {
+    label: "Indigo Night",
+    scheme: "dark",
+    dark: true,
+    datasetKey: "darkTheme",
+    variant: "indigo",
     storageKey: "loom:dark-variant",
   },
 ] as const;
@@ -63,10 +95,10 @@ afterEach(() => {
 });
 
 describe("ThemePicker", () => {
-  it("renders four buttons with the option names", () => {
+  it("renders seven buttons with the option names", () => {
     renderThemePicker();
 
-    expect(screen.getAllByRole("button")).toHaveLength(4);
+    expect(screen.getAllByRole("button")).toHaveLength(7);
     for (const label of THEME_LABELS) {
       expect(screen.getByRole("button", { name: `${label} theme` })).toBeTruthy();
     }
@@ -97,7 +129,7 @@ describe("ThemePicker", () => {
       </Provider>,
     );
 
-    expect(screen.getAllByText("Custom swatch")).toHaveLength(4);
+    expect(screen.getAllByText("Custom swatch")).toHaveLength(7);
     for (const option of THEME_OPTIONS) {
       const button = screen.getByRole("button", { name: `${option.label} theme` });
       const swatch = button.querySelector("[data-testid='custom-swatch']");
@@ -137,24 +169,24 @@ describe("ThemePicker", () => {
         <ThemePicker swatch={() => <span>Custom swatch</span>} />
       </Provider>,
     );
-    const walnut = screen.getByRole("button", { name: "Walnut theme" });
+    const graphite = screen.getByRole("button", { name: "Graphite theme" });
 
-    fireEvent.click(walnut);
+    fireEvent.click(graphite);
 
     expect(store.get(themeAtom)).toBe("dark");
-    expect(store.get(darkVariantAtom)).toBe("walnut");
-    expect(walnut.getAttribute("aria-pressed")).toBe("true");
+    expect(store.get(darkVariantAtom)).toBe("gray");
+    expect(graphite.getAttribute("aria-pressed")).toBe("true");
   });
 
-  it("selects the Walnut dark variant from the light scheme", () => {
+  it("selects the Graphite dark variant from the light scheme", () => {
     const store = createStore();
     store.set(themeAtom, "light");
     renderThemePicker(store);
 
-    fireEvent.click(screen.getByRole("button", { name: "Walnut theme" }));
+    fireEvent.click(screen.getByRole("button", { name: "Graphite theme" }));
 
     expect(store.get(themeAtom)).toBe("dark");
-    expect(store.get(darkVariantAtom)).toBe("walnut");
+    expect(store.get(darkVariantAtom)).toBe("gray");
   });
 
   it("selects the Ledger light variant", () => {
@@ -181,19 +213,6 @@ describe("ThemePicker", () => {
     expect(pressed).toEqual([graphite]);
   });
 
-  it("offers only the themes it is given", () => {
-    render(
-      <Provider store={createStore()}>
-        <ThemePicker themes={["ledger", "graphite"]} />
-      </Provider>,
-    );
-
-    expect(screen.getAllByRole("button").map((b) => b.getAttribute("aria-label"))).toEqual([
-      "Ledger theme",
-      "Graphite theme",
-    ]);
-  });
-
   it("does not expose radio controls", () => {
     renderThemePicker();
 
@@ -214,12 +233,11 @@ describe("ThemePicker", () => {
   it("exports complete palettes backed by scoped CSS variables", () => {
     const paletteValues = THEME_OPTIONS.flatMap((option) => Object.values(option.palette));
 
-    expect(paletteValues).toHaveLength(28);
+    expect(paletteValues).toHaveLength(49);
     expect(paletteValues.every((value) => value.startsWith("var(--"))).toBe(true);
   });
 
-  it("does not mark an unoffered dark variant as active", () => {
-    // A variant stored by an earlier build: the store reads it as is (no migration), no card claims it.
+  it("reads a stored dark variant no card offers as the default, Aubergine", () => {
     localStorage.setItem("loom:dark-variant", JSON.stringify("retired-variant"));
     const store = createStore();
     store.set(themeAtom, "dark");
@@ -228,7 +246,7 @@ describe("ThemePicker", () => {
     const pressed = screen
       .getAllByRole("button")
       .filter((button) => button.getAttribute("aria-pressed") === "true");
-    expect(pressed).toHaveLength(0);
+    expect(pressed.map((button) => button.getAttribute("aria-label"))).toEqual(["Aubergine theme"]);
   });
 
   it.each(APPLIED_THEMES)(

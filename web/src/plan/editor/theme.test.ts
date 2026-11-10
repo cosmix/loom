@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import tokensSheet from "@/aurora-ui/shared/styles/tokens.css?raw";
+import tokensDark from "@/aurora-ui/shared/styles/tokens-dark.css?raw";
+import tokensLight from "@/aurora-ui/shared/styles/tokens-light.css?raw";
 import indexSheet from "@/index.css?raw";
 import themeSource from "./theme.ts?raw";
 import { themeSpec } from "./theme";
@@ -30,7 +31,7 @@ describe("editor theme", () => {
 
 describe("editor theme tokens", () => {
   it("uses only variables that the dashboard's token sheets define", () => {
-    const sheets = [indexSheet, tokensSheet].join("\n");
+    const sheets = [indexSheet, tokensLight, tokensDark].join("\n");
     expect(sheets).toContain("--foreground:");
     const used = [...themeSource.matchAll(/var\((--[\w-]+)\)/g)].map((match) => match[1]!);
     expect(used.length).toBeGreaterThan(10);

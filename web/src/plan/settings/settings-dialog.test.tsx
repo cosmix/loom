@@ -96,13 +96,21 @@ describe("planner settings sections", () => {
     expect(screen.getByRole("radiogroup", { name: "Reading size" })).toBeTruthy();
   });
 
-  it("uses all four planner swatches at 120 by 76, hidden from assistive technology", () => {
+  it("uses all seven planner swatches at 120 by 76, hidden from assistive technology", () => {
     renderSettings();
 
     const theme = screen.getByRole("group", { name: "theme" });
     const swatches = theme.querySelectorAll('svg[width="120"][height="76"][aria-hidden="true"]');
-    expect(swatches).toHaveLength(4);
-    for (const label of ["Ledger", "Aubergine", "Walnut", "Graphite"]) {
+    expect(swatches).toHaveLength(7);
+    for (const label of [
+      "Ledger",
+      "Harbor",
+      "Aubergine",
+      "Graphite",
+      "Midnight",
+      "Obsidian",
+      "Indigo Night",
+    ]) {
       const card = within(theme).getByRole("button", { name: `${label} theme` });
       expect(card.querySelector("svg")?.getAttribute("viewBox")).toBe("0 0 120 76");
       expect(card.querySelector('[data-region="spine"]')).toBeTruthy();
