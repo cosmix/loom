@@ -119,3 +119,21 @@
 **Why:** the plan was treated as documentation of a topic, not as a list of work to do.
 **Prevention:** a plan holds only what will be done: the decision it implements, the work items, ordering constraints, acceptance. Built work gets one status line; design options, limits and revisit conditions go to doc/loom/knowledge/concerns; defects of another plan go into that plan.
 **Fix:** cut the plan down to status, decision, residual work, ordering and acceptance; deleted the Deferred section.
+
+## A Markdown-Lint Criterion Must Run From the Repository Root
+
+**What happened:** `web/node_modules/.bin/markdownlint-cli2` run with cwd `web/` does not apply the repository-root `.markdownlint.json`, so MD013 line-length errors appeared on `web/src/plan/ui/DESIGN.md`.
+
+**Prevention:** a criterion that lints markdown changes to the repository root first, then calls the binary by its `web/node_modules/.bin/` path.
+
+## Plan Authoring in a Main Checkout With Old `.loom/work` State Has No Dry Run or Source Graph
+
+**What happened:** `loom plan verify --strict --dry-run` in the main checkout failed before running any criterion when `.loom/work` existed without `main-checkout-identity.json` ("dry run: failed to check out the committed HEAD ... checkout identity missing or unreadable"). `loom map --outline` failed the same way.
+
+**Prevention:** the operator archives the old state and runs `loom init` before plan authoring there; until then the plan author has neither a dry run nor the source graph, and says so in the plan instead of citing an unrun dry run.
+
+## A Wire-Type Change Breaks Parity Tests Across the Rust/Web Boundary
+
+**What happened:** the planner bridge's `Item::User`, `SessionView` and `PlanMessage` changes broke the Rust parity test `tests_chat.rs` (it reads web fixtures) and the tag parity test `plan_message_wire_values_are_in_plan_schema` (it reads `web/src/plan/api/schema.ts`).
+
+**Prevention:** a plan gives the web fixture edits to the worker that changes the Rust type, and tells the Rust wire worker which tag-parity failure to expect until the web worker adds the tag. [New PlanMessage Variants Need Both Schema Arms](../conventions/plan-web.md#new-planmessage-variants-need-both-schema-arms) holds the schema half.

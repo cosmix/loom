@@ -365,7 +365,7 @@ Rust test module names also need graph lookup: `orchestrator::core::tests` does 
 
 **Prevention:** the waste is a full-suite run outside the gate. In a standard stage, subagents run the tests for their own code and module once they are confident the code or fix is correct, never the whole suite, and the orchestrator runs the full suite only through `loom check`. Integration-verify is exempt: its orchestrator and reviewers may run the full suite, through `loom check integration-verify`, so job joining and the pass cache dedupe it. Repeated full checks are made cheap by caching, never refused.
 
-**Fix:** `doc/plans/PLAN-full-suite-at-gate.md` carries the corrected design.
+**Fix:** full runs go through `loom check` only: BLOCK-A in `loom-hooks/_subagent-preamble.txt`, the `subagent-verify-guard.sh` matchers and `orchestrator/signals/cache.rs::INTEGRATION_VERIFY_OVERRIDE` state it, and [Implementers Do Not Verify](../conventions/guidance-channels-and-plugin-scope.md#implementers-do-not-verify-the-gate-is-loom-check) is the convention.
 
 ## Gate Snapshot Must Follow Integration
 

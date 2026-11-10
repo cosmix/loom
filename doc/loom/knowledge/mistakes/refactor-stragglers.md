@@ -327,3 +327,9 @@ before the parent's import can go.
 **Prevention:** Report the destination, test-name and assertion parity, and verification status before removing a test path in a shared checkout. Keep the old path until the replacement is wired and a focused test passes when practical.
 
 **Fix:** Paused further deletions and reported both moved destinations and unchanged test assertions. Focused VER-03 verification remains pending until the extraction is stable.
+
+## A Moved Test Left a Helper After `mod tests`
+
+**What happened:** a plan step moved a module-level `#[test]` into `mod tests` in `commands/verify.rs` and left `normalized_criteria` below the test module. `clippy::items_after_test_module` fails under `-D warnings`.
+
+**Prevention:** keep non-test items above `#[cfg(test)] mod tests`; a plan step that moves a test says so.
