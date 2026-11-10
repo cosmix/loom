@@ -9,6 +9,11 @@
 # (main or subagent) and TEST_ASSIGNED (a TEST=/TESTOPTS= assignment precedes
 # the command word). Matching is token-based and conservative: an unrecognised
 # command is allowed.
+#
+# Keep this file to definitions and assignments only. The guard sources it with
+# `source ... || { ...; exit 1; }`, which disables `set -e` for the sourced
+# body, so a failing top-level command would be swallowed or misreported as
+# "missing or unreadable".
 if [[ "${_LOOM_VERIFY_MATCHERS_LOADED:-}" == 1 ]]; then return 0; fi
 _LOOM_VERIFY_MATCHERS_LOADED=1
 

@@ -31,10 +31,9 @@
 # any subagent of an integration-verify stage, because that stage keeps its own
 # gate (its orchestrator and reviewers run the full suite through
 # `loom check integration-verify`, which is doctrine in the subagent preamble,
-# not enforced here). There
-# is deliberately NO escape-hatch env var - an opt-out would defeat the whole
-# purpose (commit-filter.sh already treats unsetting the detection gate as
-# evasion).
+# not enforced here). There is deliberately NO escape-hatch env var - an
+# opt-out would defeat the whole purpose (commit-filter.sh already treats
+# unsetting the detection gate as evasion).
 #
 # SECURITY NOTE (best-effort, defense-in-depth): matching is token-based, not a
 # shell parser, so a runner hidden in a quoted string (`bash -c "cargo test"`)
@@ -46,7 +45,9 @@
 #
 # Input: JSON from stdin - {"tool_name": "Bash", "tool_input": {"command": ...}}
 # Exit codes: 0 = allow, 2 = block with guidance on stderr. A missing jq or
-# _verify_matchers.sh exits 1: the call proceeds with a warning.
+# _verify_matchers.sh exits 1: the call proceeds with a warning. A missing
+# _common.sh, _bounded.sh or any helper _common.sh sources also exits 1, through
+# `set -e` with bash's own message.
 
 set -euo pipefail
 
