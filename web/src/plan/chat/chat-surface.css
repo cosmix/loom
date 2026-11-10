@@ -6,6 +6,7 @@
  * classes of the shared Button. chat.css keeps the panel's frame, whose test pins that the frame
  * carries no tone, shadow or fade, so the glow and every other look is here.
  */
+@import "./chat-column.css";
 @import "./chat-transcript.css";
 @import "./chat-decision.css";
 @import "./chat-composer.css";
@@ -209,12 +210,10 @@
  * pills, start-aligned. The title is the panel's one display-size line of chrome. */
 .chat-empty {
   display: grid;
-  flex: 1 1 auto;
   align-content: safe end;
   overflow-y: auto;
   justify-items: start;
   gap: var(--space-3);
-  min-height: 0;
   padding: 0 var(--chat-gutter) var(--space-2);
   animation: hearth-rise 460ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }

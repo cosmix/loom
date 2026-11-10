@@ -5,13 +5,10 @@
  * text's last line; it is the drop target for files. Under the box one fine line: Send's reason
  * while it is blocked, else a hint, then the composer's notes. Imported by chat-surface.css; see
  * its header for why these rules are unlayered. The rows inside the box are in chat-chips.css.
+ * How tall each part is, and which of them shrink or scroll, is in chat-column.css alone.
  */
 
 .chat-composer {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  min-height: 0;
-  flex-shrink: 0;
   gap: var(--space-3);
   padding: var(--space-2) var(--chat-gutter) var(--space-4);
   font-size: var(--type-body);
@@ -19,39 +16,23 @@
   animation: hearth-rise 460ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
-/* The queue strip and the suggestion cards; empty, they take no row of the grid. */
+/* The queue strip and the suggestion cards; empty, they take no room in the column. */
 .chat-composer-extras {
   display: grid;
   gap: var(--space-2);
-  min-height: 0;
-  max-height: 33vh;
-  overflow-y: auto;
 }
 
 .chat-composer-extras:empty {
   display: none;
 }
 
-.chat-composer-input {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  min-width: 0;
-  gap: var(--space-3);
-}
-
 /* ── The box ────────────────────────────────────────────────────────────── */
 
-/* Two columns: the text, and the tools on its last line. The attached rows span both above. The
- * edge sits on the gutter, so it lines up with the transcript. */
+/* The attached rows, then one line: the text, and the tools at the end of its last line. The edge
+ * sits on the gutter, so it lines up with the transcript. */
 .chat-composer-box {
   position: relative;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  grid-template-areas:
-    "attached attached"
-    "text tools";
-  gap: var(--space-1) var(--space-2);
-  align-items: end;
+  gap: var(--space-1);
   box-sizing: border-box;
   min-width: 0;
   padding: 10px 8px 8px 16px;
@@ -65,7 +46,7 @@
 /* Focus in the text: the one ring stands off the box's resting edge, as on every focusable thing
  * (DESIGN.md, Focus and hover); the edge itself never recolours, which drew a second ring inside
  * the first. Keyed on the field, not `:focus-within`, so a focused tool keeps its own ring alone. */
-.chat-composer-box:has(> .chat-composer-field:focus-visible) {
+.chat-composer-box:has(.chat-composer-field:focus-visible) {
   outline: 2px solid var(--ring);
   outline-offset: 2px;
 }
@@ -97,14 +78,10 @@
 /* The text itself: no edge of its own, the box draws it. It is set at the user's size, the same
  * as the user's turns in the transcript, so the words do not change size when sent. */
 .chat-composer-field {
-  grid-area: text;
   display: block;
   box-sizing: border-box;
-  width: 100%;
-  min-height: 44px;
   margin: 0;
   padding: var(--space-1) 0;
-  overflow-y: auto;
   border: 0;
   background: transparent;
   color: inherit;
@@ -122,16 +99,12 @@
 }
 
 /* What the next message carries, as rows above the text; empty, it takes no space. The area
- * caps at about four rows and scrolls inside the box, so the field never leaves the panel. */
+ * scrolls inside the box (chat-column.css). */
 .chat-composer-attached {
-  grid-area: attached;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: 0;
   min-width: 0;
-  max-height: 7.5rem;
-  overflow-y: auto;
-  overscroll-behavior: contain;
 }
 
 .chat-composer-attached:empty {
@@ -148,7 +121,6 @@
 /* One centre line at the end of the text's last line: the paperclip, then New chat (after a
  * concluded chat), Stop (while a turn runs) and Send, each a 32px round or pill. */
 .chat-composer-actions {
-  grid-area: tools;
   display: flex;
   align-items: center;
   gap: var(--space-1);
@@ -233,13 +205,16 @@
   line-height: var(--leading-ui);
 }
 
-/* Messages the server has not confirmed: each with its own Resend. */
+/* Messages the server has not confirmed: each with its own Resend. With none, the list takes
+ * no room, and no gap, under the foot. */
 .chat-unconfirmed {
   display: grid;
   gap: var(--space-2);
-  max-height: 6rem;
-  overflow-y: auto;
   font-size: var(--type-ui);
+}
+
+.chat-unconfirmed:empty {
+  display: none;
 }
 
 .chat-unconfirmed p {

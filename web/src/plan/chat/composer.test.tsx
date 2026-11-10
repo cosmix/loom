@@ -210,7 +210,8 @@ it("grows to eight rows", () => {
   expect(box().rows).toBe(3);
   type("line\n".repeat(20));
   expect(box().rows).toBe(8);
-  expect(box().style.maxHeight).toBe("186px");
+  // No cap of its own: the line it sits on is the field's one cap (chat-column.css).
+  expect(box().style.maxHeight).toBe("");
 });
 it("c focuses composer", () => {
   const h = setup();

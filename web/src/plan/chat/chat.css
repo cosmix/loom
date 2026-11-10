@@ -16,13 +16,10 @@
   line-height: var(--leading-body);
 }
 
-/* minmax(0, 1fr): a bare 1fr track grows with the transcript and pushes it under the head. The
- * column is held the same way, so a long unbroken line (a chip's quote) never widens the panel. */
+/* The panel is as tall as the page's row and no taller. How its parts share that height is in
+ * chat-column.css. */
 .chat-panel {
   position: relative;
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto;
-  grid-template-columns: minmax(0, 1fr);
   height: 100%;
   border-inline-start: 1px solid var(--hairline);
 }

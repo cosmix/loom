@@ -206,10 +206,8 @@ function SessionBody({ sheet }: { sheet: boolean }) {
         {shown && <FetchGrantLine session={shown} />}
         <ConnectionBanner />
       </div>
-      <div className="chat-panel-middle">
-        {dim && <p className="chat-last-update">{dim}</p>}
-        {shown ? <Transcript /> : <EmptyChat />}
-      </div>
+      {dim && <p className="chat-last-update">{dim}</p>}
+      {shown ? <Transcript /> : <EmptyChat />}
       <ComposerArea />
     </>
   );

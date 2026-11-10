@@ -113,7 +113,6 @@ function MessageBox({
       value={draft.text}
       aria-describedby={describedBy}
       className="chat-composer-field font-sans"
-      style={{ maxHeight: "186px" }}
       onChange={(event) => store.set(draftAtom, (old) => ({ ...old, text: event.target.value }))}
       onKeyDown={(event) => {
         if (event.key !== "Enter" || event.shiftKey || event.nativeEvent.isComposing) return;
@@ -126,9 +125,9 @@ function MessageBox({
 
 /**
  * The bordered box the user types in: what the next message carries (the context chip, the
- * pending chips) above the text, and the drop target. Files dropped or pasted anywhere on it
- * attach. While a file is dragged over it, "Drop to attach" covers the box inside its own edge,
- * so nothing around it moves.
+ * pending chips) above the line that holds the text and the tools, and the drop target. Files
+ * dropped or pasted anywhere on it attach. While a file is dragged over it, "Drop to attach"
+ * covers the box inside its own edge, so nothing around it moves.
  */
 function ComposerBox({ children }: { children: ReactNode }) {
   const { dragging, ...intake } = useFileIntake();
@@ -138,7 +137,7 @@ function ComposerBox({ children }: { children: ReactNode }) {
         <ContextLine />
         <PendingChips />
       </div>
-      {children}
+      <div className="chat-composer-line">{children}</div>
       {dragging && (
         <p className="chat-drop-target">
           <Paperclip size={16} aria-hidden="true" />
