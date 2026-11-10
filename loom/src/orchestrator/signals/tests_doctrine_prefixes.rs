@@ -187,6 +187,7 @@ fn integration_verify_prefix_retains_required_review_and_doctrine_guards() {
         "OWASP Top 10",
         "**Performance**",
         "**Build/test/sandbox** — spawn this one as `loom-software-engineer`",
+        "**Functional** — spawn this one as `loom-software-engineer`",
         "Mini Adversarial Code Review",
         "search the WHOLE codebase",
     ] {
@@ -234,13 +235,18 @@ fn integration_verify_prefix_assigns_one_canonical_gate_owner() {
         "orchestrator re-evaluates invalidated checks",
         "only the repaired criteria cache decides reuse",
         "stale evidence never waives a failing gate",
+        "its verdict can list criteria it did not select",
     ] {
         assert!(
             prefix.contains(needle),
             "IV ownership doctrine lost: {needle}"
         );
     }
-    assert!(prefix.contains("cargo clippy -- -D warnings"));
+    assert!(prefix.contains("every acceptance criterion the plan gives this stage"));
+    assert!(
+        !prefix.contains("cargo clippy"),
+        "the IV prefix names no language's gate commands"
+    );
     assert!(
         !prefix.contains(concat!("AT MOST ONE ", "narrowly")),
         "IV carries no standard-stage test rule"

@@ -48,7 +48,9 @@ pub(super) fn apply_check(
             kind: JobKind::Check,
             head: &request.head,
             tree_digest: &request.tree_digest,
-            no_cache: request.no_cache,
+            // A resolver's job never reads the pass cache (child_policy.rs), so
+            // its request must not join a job that does.
+            no_cache: request.no_cache || record.session_type == SessionType::Merge,
             criteria: request.criteria.clone(),
         },
         Utc::now(),

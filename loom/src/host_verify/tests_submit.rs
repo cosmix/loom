@@ -80,7 +80,7 @@ fn a_first_request_queues_a_job_with_its_directory() {
 }
 
 #[test]
-pub(super) fn joined_requests_append_and_keep_the_last_sixteen() {
+fn joined_requests_append_and_keep_the_last_sixteen() {
     let (_dir, work) = state_root();
     let first = queued(submit(&work, &request("r0", HEAD_A, false), Utc::now()).unwrap());
     let mut last = first.clone();
