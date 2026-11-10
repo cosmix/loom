@@ -75,6 +75,12 @@ pub struct SummaryPanel {
     pub running: Option<RunningRebuild>,
     /// Summary identifiers waiting to rebuild.
     pub queue: Vec<String>,
+    /// The queued identifiers whose background rebuild waits for edits to their sources to
+    /// stop (the scheduler's quiet period); a subset of `queue`.
+    pub waiting: Vec<String>,
+    /// Out-of-date summaries that only leave out changed text no sentence cites: neither queued
+    /// nor running, rebuilt on a press.
+    pub incomplete: Vec<String>,
     /// Summaries whose rebuilds failed.
     pub failed: Vec<FailedSummary>,
     /// Approval question currently awaiting an answer.

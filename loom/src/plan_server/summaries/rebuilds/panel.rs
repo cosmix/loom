@@ -2,12 +2,13 @@
 
 use std::collections::BTreeMap;
 use std::path::Path;
+use std::time::Instant;
 
 use chrono::Local;
 
 use super::{lock, Rebuilds, State};
 use crate::plan_server::summaries::attribution::level_of;
-use crate::plan_server::summaries::scheduler::QuestionView;
+use crate::plan_server::summaries::scheduler::{QuestionView, SchedulerView};
 use crate::plan_server::wire::summaries::{
     FailedSummary, RunningRebuild, SummaryPanel, SummaryQuestion,
 };
@@ -25,11 +26,13 @@ pub(super) type Pending = Vec<(String, Level, u64)>;
 impl Rebuilds {
     /// The summary panel: the scheduler's state, the cost log's last line and totals, quota.
     pub fn panel(&self) -> SummaryPanel {
-        let (view, started_at, pending) = {
+        let (view, started_at, pending, waiting, incomplete) = {
             let state = self.lock();
             let view = state.scheduler.panel_state();
             let pending = view.question.as_ref().map(|open| state.pending(&open.ids));
-            (view, state.started_at.clone(), pending)
+            let waiting = state.scheduler.waiting(Instant::now());
+            let incomplete = state.incomplete(&view);
+            (view, state.started_at.clone(), pending, waiting, incomplete)
         };
         let (last, totals, question) = {
             let log = lock(&self.log);
@@ -54,6 +57,8 @@ impl Rebuilds {
         SummaryPanel {
             running,
             queue: view.queue,
+            waiting,
+            incomplete,
             failed: failed
                 .map(|(id, error)| FailedSummary { id, error })
                 .collect(),
@@ -121,6 +126,26 @@ impl Rebuilds {
 }
 
 impl State {
+    /// The incomplete summaries of the latest evaluation that nothing queues, runs or failed:
+    /// out of date, but rebuilt on a press only (`SummaryState::rebuilds_in_background`).
+    fn incomplete(&self, view: &SchedulerView) -> Vec<String> {
+        let Some(latest) = &self.latest else {
+            return Vec::new();
+        };
+        let running = view.running.as_ref().map(|(_, ids)| ids.as_slice());
+        let listed = |id: &String| {
+            view.queue.contains(id)
+                || running.unwrap_or_default().contains(id)
+                || view.failed.iter().any(|(failed, _)| failed == id)
+        };
+        let summaries = latest.summaries.values();
+        let incomplete = summaries.filter(|eval| eval.state == SummaryState::Incomplete);
+        incomplete
+            .map(|eval| eval.id.clone())
+            .filter(|id| !listed(id))
+            .collect()
+    }
+
     /// `ids` with their level and source bytes, for an estimate.
     pub(super) fn pending(&self, ids: &[String]) -> Pending {
         let bytes = |id: &String| self.sizes.get(id).copied().unwrap_or(0);

@@ -2,7 +2,7 @@
 //!
 //! Each batch: rewrite the paths of document summaries whose source was renamed with its
 //! content unchanged, delete the summaries no expected id owns any more, evaluate, and report
-//! which summaries newly went out of date.
+//! which summaries newly went stale or missing.
 
 #[cfg(test)]
 mod tests;
@@ -15,6 +15,7 @@ use anyhow::Result;
 use super::claims::list_claims;
 use super::evaluate::{self, cite_key, evaluate, same_source, Evaluation, SummaryState};
 use super::format::{self, Block, LinkTarget, SummaryFile, SummaryKind};
+use super::hashes::SourceHashes;
 use super::store;
 use super::write::{delete_summary, read_summary, write_summary_if, WriteOutcome};
 use crate::planning::project::Project;
@@ -31,7 +32,9 @@ pub struct EngineUpdate {
     pub rewritten: Vec<String>,
     /// Ids whose summary file was deleted because their source is gone.
     pub deleted: Vec<String>,
-    /// Ids that became stale, incomplete or missing in this batch.
+    /// Ids that became stale or missing in this batch, the states rebuilt in the background
+    /// (`SummaryState::rebuilds_in_background`); an incomplete summary is not listed until it
+    /// stales.
     pub invalidated: Vec<String>,
 }
 
@@ -70,8 +73,9 @@ impl SummaryEngine {
             .summaries
             .iter()
             .filter(|(id, eval)| {
-                let before = self.previous.get(*id).is_some_and(|s| s.is_out_of_date());
-                eval.state.is_out_of_date() && !before
+                let before = self.previous.get(*id);
+                let before = before.is_some_and(|s| s.rebuilds_in_background());
+                eval.state.rebuilds_in_background() && !before
             })
             .map(|(id, _)| id.clone())
             .collect();
@@ -89,9 +93,10 @@ impl SummaryEngine {
     }
 
     fn rewrite_renamed(&self, project: &Project) -> Vec<String> {
+        let hashes = SourceHashes::new(project);
         let mut rewritten = Vec::new();
         for id in store::expected_ids(project) {
-            match self.rewrite_one(project, &id) {
+            match self.rewrite_one(&hashes, &id) {
                 Ok(true) => rewritten.push(id),
                 Ok(false) => {}
                 Err(error) => {
@@ -103,11 +108,11 @@ impl SummaryEngine {
     }
 
     /// Rewrite summary `id` when its source moved with unchanged content; true when written.
-    fn rewrite_one(&self, project: &Project, id: &str) -> Result<bool> {
-        let Some(source) = store::source_of(project, id) else {
+    fn rewrite_one(&self, hashes: &SourceHashes<'_>, id: &str) -> Result<bool> {
+        let Some(source) = store::source_of(hashes.project(), id) else {
             return Ok(false);
         };
-        let Some(hash) = project.content_hash(&source) else {
+        let Some(hash) = hashes.file_hash(&source) else {
             return Ok(false);
         };
         let Some(text) = read_summary(&self.root, id)? else {

@@ -8,6 +8,13 @@ use super::Scheduler;
 pub const AUTO_LIMIT: usize = 5;
 /// How long a summary session may go without a seal before it is stopped.
 pub const NO_SEAL_TIMEOUT: Duration = Duration::from_secs(10 * 60);
+/// How long a summary's sources must stay unchanged, after the authoring turn that changed them
+/// ended, before the summary is rebuilt in the background. Working through a document's
+/// "My call" markers and open questions is a run of edits and chat turns a minute or two
+/// apart; five minutes lets one rebuild follow the run instead of one per edit, and still
+/// rebuilds soon after the reader moves on. Revisit when rebuilds still start between the edits
+/// of one pass, or when readers wait on summaries after they stop editing.
+pub const QUIET_PERIOD: Duration = Duration::from_secs(5 * 60);
 
 /// The scheduler's configuration.
 #[derive(Debug, Clone, PartialEq, Eq)]

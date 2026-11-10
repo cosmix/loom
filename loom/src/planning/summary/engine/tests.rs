@@ -192,7 +192,7 @@ fn deleted_source_deletes_its_summary_and_stales_the_overview_citing_it() {
 }
 
 #[test]
-fn invalidated_lists_only_newly_out_of_date_ids() {
+fn invalidated_lists_only_summaries_newly_stale_or_missing() {
     let fx = two_sections();
     seal_document(&fx.root, ID1, &[("Alpha holds.", "a")]);
     seal_document(&fx.root, ID2, &[("Alpha holds.", "a")]);
@@ -215,10 +215,21 @@ fn invalidated_lists_only_newly_out_of_date_ids() {
     let third = batch(&fx.root);
     assert_eq!(
         third.invalidated,
-        vec![ID2.to_string()],
-        "an incomplete summary; ID1 still stale"
+        Vec::<String>::new(),
+        "an incomplete summary waits for a press; ID1 still stale"
+    );
+    assert_eq!(
+        third.evaluation.summaries[ID2].state,
+        SummaryState::Incomplete
     );
     assert_eq!(third.evaluation.summaries[ID1].state, SummaryState::Stale);
+    put(&fx.root, S2, &section(2, "Alpha edited.", "Beta edited."));
+    let fourth = batch(&fx.root);
+    assert_eq!(
+        fourth.invalidated,
+        vec![ID2.to_string()],
+        "incomplete, then stale"
+    );
 }
 
 #[test]

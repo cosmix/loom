@@ -167,11 +167,12 @@ impl Scheduler {
     }
 
     /// Stop a session that sealed nothing for the timeout, releasing its claims; its unsealed
-    /// ids fail with the last seal error.
+    /// ids fail with the last seal error. Then start what a quiet period that ran out held.
     pub fn tick(&mut self, now: Instant, spawner: &dyn SessionSpawner) -> Vec<SchedulerEvent> {
         if self.stall_due(now).is_some() {
             self.stall(spawner);
         }
+        self.wake_quiet(now, spawner);
         self.take_events()
     }
 

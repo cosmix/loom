@@ -41,6 +41,9 @@ pub struct ProjectDoc {
     pub title: String,
     /// Heading sections and hashes (empty for a non-Markdown or unreadable document).
     pub sections: DocSections,
+    /// The sections of the text without its `Settled:` lines, which summaries hash; `None` when
+    /// it holds none (`sections` stand).
+    pub unsettled: Option<DocSections>,
     /// List items under `Open questions` headings.
     pub open_questions: usize,
     /// Cross-references the document makes.

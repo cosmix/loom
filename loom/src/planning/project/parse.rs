@@ -1,6 +1,7 @@
 //! The parsing steps of `derive`: each document's view, every plan's declarations, and each
 //! feature's vision, metaplans, sections and checklist.
 
+use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
@@ -13,6 +14,7 @@ use crate::planning::metaplan;
 use crate::planning::paths::LockedSet;
 use crate::planning::pressure;
 use crate::planning::sections::sections_of;
+use crate::planning::trace::settle::unsettled;
 use crate::planning::trace::Trace;
 use crate::planning::vision::{parse_sections_table, VisionProblem};
 use crate::planning::xref::{references, Reference};
@@ -143,11 +145,16 @@ fn project_doc(
     let sections = sections_of(text);
     let h1 = sections.headings.iter().find(|heading| heading.level == 1);
     let title = h1.map_or_else(|| file_name(&doc.path), |heading| heading.title.clone());
+    let unsettled = match unsettled(text) {
+        Cow::Borrowed(_) => None,
+        Cow::Owned(text) => Some(sections_of(&text)),
+    };
     ProjectDoc {
         doc: doc.clone(),
         title,
         open_questions: pressure::open_questions(text),
         sections,
+        unsettled,
         references: Vec::new(),
         lock: locked.lock_reason(&doc.path),
         read_error,

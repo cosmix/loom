@@ -10,6 +10,7 @@
 #[cfg(test)]
 mod tests;
 
+use std::borrow::Cow;
 use std::path::Path;
 
 use super::SettleState;
@@ -87,22 +88,35 @@ pub fn mark(text: &str, line: &SettledLine) -> String {
 
 /// `text` without its `Settled:` lines, each with the blank line `mark` put beside it.
 pub fn clear(text: &str) -> String {
+    unsettled(text).into_owned()
+}
+
+/// `text` as every hash that must not move when a reader settles a document takes it: without
+/// its `Settled:` lines ([`clear`]), borrowed when it holds none. The body hash and the source
+/// hashes summaries record (`planning::summary::hashes`) both read it, so writing, replacing or
+/// clearing the line changes neither.
+pub fn unsettled(text: &str) -> Cow<'_, str> {
     let lines = split(text);
     let marks = mark_indices(&lines);
     if marks.is_empty() {
-        return text.to_owned();
+        return Cow::Borrowed(text);
     }
+    Cow::Owned(without_marks(&lines, &marks))
+}
+
+/// The text of `lines` without the lines at `marks` and the blank line `mark` put beside each.
+fn without_marks(lines: &[Line], marks: &[usize]) -> String {
     let blank = |index: usize| {
         lines
             .get(index)
             .is_some_and(|l| l.content.trim().is_empty())
     };
     let mut dropped = vec![false; lines.len()];
-    for at in marks {
+    for &at in marks {
         dropped[at] = true;
         if at > 0 && blank(at - 1) {
             dropped[at - 1] = true;
-        } else if (at == 0 || filled(&lines, at - 1)) && blank(at + 1) {
+        } else if (at == 0 || filled(lines, at - 1)) && blank(at + 1) {
             // The mark was written at the top, or tight under its anchor (see `insert`).
             dropped[at + 1] = true;
         }
@@ -114,7 +128,7 @@ pub fn clear(text: &str) -> String {
         .zip(&dropped)
         .filter_map(|(line, dropped)| (!dropped).then_some(line))
         .collect();
-    let mut out = String::with_capacity(text.len());
+    let mut out = String::new();
     for (index, line) in kept.iter().enumerate() {
         out.push_str(line.content);
         if !(unterminated && index + 1 == kept.len()) {
@@ -124,10 +138,10 @@ pub fn clear(text: &str) -> String {
     out
 }
 
-/// The body hash: `normalized_hash` of `text` without its `Settled:` line, then for a plan, in
-/// path order, each brief's repository path and text.
+/// The body hash: `normalized_hash` of `text` without its `Settled:` line ([`unsettled`]), then
+/// for a plan, in path order, each brief's repository path and text.
 pub fn body_hash(text: &str, bundle: &[(&Path, &str)]) -> String {
-    let own = normalized_hash(&clear(text));
+    let own = normalized_hash(&unsettled(text));
     if bundle.is_empty() {
         return short_hash(&own);
     }

@@ -15,6 +15,10 @@ impl Scheduler {
     /// Drop every queued, declined, failed, unsealed and asked id that is no longer out of
     /// date, except a pressed id whose summary is still known: a press rebuilds a current
     /// summary too, and the batches that arrive while it waits must not take it away.
+    ///
+    /// A quiet record goes only with its summary: a summary the running session claimed
+    /// evaluates `Rebuilding`, and when that session ends without sealing it the requeued id
+    /// must still wait for the edit made meanwhile. Expiry bounds the records.
     pub(super) fn prune(&mut self, out_of_date: &[String]) {
         let keep: BTreeSet<&str> = out_of_date.iter().map(String::as_str).collect();
         let known = self.known.as_ref();
@@ -30,6 +34,9 @@ impl Scheduler {
             .filter(|id| keep.contains(id.as_str()) || self.keeps_mark(id))
             .collect();
         self.retain_asked(|id| keep.contains(id.as_str()));
+        let known = self.known.as_ref();
+        self.quiet
+            .retain(|id| known.is_none_or(|known| known.contains(id)));
     }
 
     /// An unsealed mark outlives a batch that lists its summary current while the summary is
@@ -171,40 +178,56 @@ impl Scheduler {
         batch.unwrap_or(self.queue.len())
     }
 
-    /// Start the queue when nothing blocks it: all of it within the limit or when every id
-    /// skips the limit, else the Button and approved ids alone, else ask about the queue. An
-    /// open question holds the batch only: a press never waits for an answer about other ids.
+    /// Start the ready part of the queue when nothing blocks it: all of it within the limit or
+    /// when every id skips the limit, else the Button and approved ids alone, else ask about it.
+    /// A background id is ready once its quiet period ran out; Button and approved ids always
+    /// are. An open question holds the batch only: a press never waits for an answer about
+    /// other ids.
     pub(super) fn try_start(&mut self, now: Instant, spawner: &dyn SessionSpawner) {
         let blocked = self.config.read_only.is_some()
             || self.stopping
             || !self.suspensions.is_empty()
             || self.running.is_some();
-        if blocked || self.queue.is_empty() {
+        if blocked {
             return;
         }
-        let all: Vec<String> = self.queue.iter().map(|queued| queued.id.clone()).collect();
+        let is_ready =
+            |queued: &&Queued| queued.via != Via::Batch || !self.quiet.waits(&queued.id, now);
+        let ready: Vec<String> = self
+            .queue
+            .iter()
+            .filter(is_ready)
+            .map(|q| q.id.clone())
+            .collect();
+        if ready.is_empty() {
+            return;
+        }
         let front: Vec<String> = self.queue[..self.batch_start()]
             .iter()
             .map(|queued| queued.id.clone())
             .collect();
         let asking = self.question.is_some();
-        let ids = if !asking && (all.len() <= self.config.limit || front.len() == all.len()) {
-            all
+        let ids = if !asking && (ready.len() <= self.config.limit || front.len() == ready.len()) {
+            ready
         } else if !front.is_empty() {
             front
-        } else if asking {
-            return;
+        } else if !asking {
+            return self.ask(ready);
         } else {
-            self.asked += 1;
-            let question = QuestionView {
-                id: format!("q{}", self.asked),
-                ids: all,
-            };
-            self.question = Some(question.clone());
-            self.out.push(SchedulerEvent::Asked(question));
             return;
         };
         self.start(ids, now, spawner);
+    }
+
+    /// Open a question naming `ids`.
+    fn ask(&mut self, ids: Vec<String>) {
+        self.asked += 1;
+        let question = QuestionView {
+            id: format!("q{}", self.asked),
+            ids,
+        };
+        self.question = Some(question.clone());
+        self.out.push(SchedulerEvent::Asked(question));
     }
 
     /// Start one session for `ids`; on an error they stay queued and the panel shows why.

@@ -8,6 +8,8 @@
     "log_path": null
   },
   "queue": ["demo/product/section_03"],
+  "waiting": [],
+  "incomplete": [],
   "failed": [{ "id": "plans/loom-planner-ui", "error": "no seal in 10 minutes" }],
   "question": null,
   "last": {

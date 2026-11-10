@@ -18,6 +18,7 @@ mod tests;
 #[cfg(test)]
 mod vision_tests;
 
+pub(crate) use cite::overview_inputs;
 pub use cite::{bundle_hashes, cite_key};
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -25,6 +26,7 @@ use std::path::{Path, PathBuf};
 
 use super::claims::Claim;
 use super::format::{self, Block, FormatError, LinkTarget, Sentence, SummaryFile, SummaryKind};
+use super::hashes::SourceHashes;
 use super::store::{self, Scope};
 use super::write::{read_summary, stored_ids};
 use crate::planning::kinds::{classify, DocKind};
@@ -79,12 +81,12 @@ impl SummaryState {
         }
     }
 
-    /// True for the states that need a rebuild: stale, incomplete and missing.
-    pub fn is_out_of_date(self) -> bool {
-        matches!(
-            self,
-            SummaryState::Stale | SummaryState::Incomplete | SummaryState::Missing
-        )
+    /// True for the states the server rebuilds without a press: stale and missing. An
+    /// incomplete summary is out of date too, but says nothing its sources contradict: it only
+    /// leaves out text no sentence cites (an edited "Open questions" list, a new paragraph), so
+    /// it waits for a press, or for an edit of what it cites that stales it.
+    pub fn rebuilds_in_background(self) -> bool {
+        matches!(self, SummaryState::Stale | SummaryState::Missing)
     }
 }
 
@@ -152,10 +154,11 @@ pub fn evaluate(project: &Project, claims: &[Claim]) -> Evaluation {
     let expected = store::expected_ids(project);
     let (overviews, documents): (Vec<&String>, Vec<&String>) =
         expected.iter().partition(|id| store::is_overview(id));
+    let hashes = SourceHashes::new(project);
     let mut summaries = BTreeMap::new();
     for id in documents.into_iter().chain(overviews) {
         let claim = claims.iter().find(|c| &c.summary == id).cloned();
-        let eval = evaluate_one(project, &summaries, id, claim);
+        let eval = evaluate_one(&hashes, &summaries, id, claim);
         summaries.insert(id.clone(), eval);
     }
     let orphans = orphans_among(project, &expected);
@@ -203,11 +206,12 @@ pub fn sentences_of(file: &SummaryFile) -> impl Iterator<Item = &Sentence> {
 }
 
 fn evaluate_one(
-    project: &Project,
+    hashes: &SourceHashes<'_>,
     done: &BTreeMap<String, SummaryEval>,
     id: &str,
     claim: Option<Claim>,
 ) -> SummaryEval {
+    let project = hashes.project();
     let source = store::source_of(project, id);
     let mut eval = SummaryEval {
         id: id.to_string(),
@@ -225,7 +229,7 @@ fn evaluate_one(
             return eval;
         }
     };
-    let ctx = cite::Context::new(project, done, id, &file, source.as_deref());
+    let ctx = cite::Context::new(hashes, done, id, &file, source.as_deref());
     let own = own_current(id, &file, &ctx);
     let ctx = ctx.with_own(own);
     eval.sentences = sentences_of(&file)

@@ -8,6 +8,7 @@ use crate::planning::briefs::bundle_files;
 use crate::planning::kinds::{classify, doc_id, vision_path};
 use crate::planning::project::Project;
 use crate::planning::summary::format::{FrontMatter, LinkTarget, SummaryFile};
+use crate::planning::summary::hashes::SourceHashes;
 use crate::planning::summary::store::Scope;
 
 /// What a summary's citations are judged against.
@@ -30,6 +31,8 @@ enum Kind<'a> {
 /// The judging context of one summary.
 pub(super) struct Context<'a> {
     project: &'a Project,
+    /// The source hashes citations and `file` are judged against.
+    hashes: &'a SourceHashes<'a>,
     id: &'a str,
     front: &'a FrontMatter,
     kind: Kind<'a>,
@@ -38,28 +41,35 @@ pub(super) struct Context<'a> {
     own: BTreeSet<String>,
 }
 
+/// The members and raw sources of overview `id`: a product overview's sections and its feature's
+/// vision, an engineering overview's plans and its feature's metaplans. `None` for an id that
+/// names no overview of a known feature.
+pub(crate) fn overview_inputs(project: &Project, id: &str) -> Option<(Vec<String>, Vec<PathBuf>)> {
+    let scope = Scope::of(project, id)?;
+    if id.ends_with("/product") {
+        return Some((scope.product, vec![vision_path(&scope.feature)]));
+    }
+    let sources = project
+        .feature(&scope.feature)
+        .into_iter()
+        .flat_map(|feature| feature.metaplans.iter().map(|(path, _)| path.clone()))
+        .collect();
+    Some((scope.engineering, sources))
+}
+
 impl<'a> Context<'a> {
     /// The context of summary `id` holding `file`; `source` is set for a document summary.
     /// `done` holds the evaluations of the document summaries an overview may cite. No link to
     /// the summary's own sentences holds until [`Context::with_own`] names them.
     pub(super) fn new(
-        project: &'a Project,
+        hashes: &'a SourceHashes<'a>,
         done: &'a BTreeMap<String, SummaryEval>,
         id: &'a str,
         file: &'a SummaryFile,
         source: Option<&'a Path>,
     ) -> Self {
-        let kind = if let Some(scope) = Scope::of(project, id) {
-            let (members, sources) = if id.ends_with("/product") {
-                (scope.product, vec![vision_path(&scope.feature)])
-            } else {
-                let sources = project
-                    .feature(&scope.feature)
-                    .into_iter()
-                    .flat_map(|feature| feature.metaplans.iter().map(|(path, _)| path.clone()))
-                    .collect();
-                (scope.engineering, sources)
-            };
+        let project = hashes.project();
+        let kind = if let Some((members, sources)) = overview_inputs(project, id) {
             Kind::Overview {
                 members,
                 sources,
@@ -80,6 +90,7 @@ impl<'a> Context<'a> {
         };
         Context {
             project,
+            hashes,
             id,
             front: &file.front,
             kind,
@@ -136,14 +147,7 @@ impl<'a> Context<'a> {
     /// Whether the span `anchor` of the readable document `doc` hashes as the first of `keys`
     /// that `cites` records. A missing `cites` entry or anchor does not hold.
     fn span_matches(&self, doc: &Path, anchor: &str, keys: &[String]) -> bool {
-        if self.project.content_hash(doc).is_none() {
-            return false;
-        }
-        let span = self
-            .project
-            .docs
-            .get(doc)
-            .and_then(|d| d.sections.find(anchor));
+        let span = self.hashes.span(doc, anchor);
         let recorded = keys.iter().find_map(|key| self.front.cites.get(key));
         matches!((span, recorded), (Some(span), Some(hash)) if &span.hash == hash)
     }
@@ -155,7 +159,7 @@ impl<'a> Context<'a> {
         match &self.kind {
             Kind::Document { source, bundle } => {
                 let file = self.front.file.as_deref();
-                file.is_some_and(|f| Some(f) == self.project.content_hash(source))
+                file.is_some_and(|f| Some(f) == self.hashes.file_hash(source))
                     && bundle_hashes(self.project, bundle) == self.front.bundle
             }
             Kind::Overview { members, done, .. } => {
@@ -223,8 +227,8 @@ mod tests {
             .cites
             .insert(cite_key(Path::new(other), "a"), hash);
         let project = load(&f.root);
-        let done = BTreeMap::new();
-        let ctx = Context::new(&project, &done, ID1, &file, Some(Path::new(S1)));
+        let (hashes, done) = (SourceHashes::new(&project), BTreeMap::new());
+        let ctx = Context::new(&hashes, &done, ID1, &file, Some(Path::new(S1)));
         for (path, expected) in [
             (S1, true),
             ("product/demo/section_01", true),
@@ -280,8 +284,8 @@ mod tests {
         ]);
         let file = seal_document(&f.root, "plans/x", &[("X holds.", "plan-x")]);
         let project = load(&f.root);
-        let done = BTreeMap::new();
-        let ctx = Context::new(&project, &done, "plans/x", &file, Some(Path::new(current)));
+        let (hashes, done) = (SourceHashes::new(&project), BTreeMap::new());
+        let ctx = Context::new(&hashes, &done, "plans/x", &file, Some(Path::new(current)));
         let citation = LinkTarget::Source {
             path: "doc/plans/demo/PLAN-x.md".into(),
             anchor: "plan-x".into(),

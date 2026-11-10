@@ -18,7 +18,8 @@ import { RebuildActivity } from "./summary-panel";
 
 function staleCount(panel: Panel): number {
   const questionIds = new Set(panel.question?.ids ?? []);
-  const ids = new Set([...panel.queue, ...panel.failed.map(({ id }) => id), ...questionIds]);
+  const failed = panel.failed.map(({ id }) => id);
+  const ids = new Set([...panel.queue, ...panel.incomplete, ...failed, ...questionIds]);
   // Count each ID once across lists, retaining any question count beyond its listed IDs.
   return ids.size + Math.max(0, (panel.question?.count ?? 0) - questionIds.size);
 }
