@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # A blocking guard (plans-path-guard.sh) must fail closed - exit 2, not
 # exit 0 - when jq is not on PATH, since it can no longer parse its payload.
-# subagent-verify-guard.sh is advisory and is covered by require-jq-advisory.sh.
+# subagent-verify-guard.sh exits 1 without jq instead, because it only deters;
+# require-jq-advisory.sh covers it.
 set -euo pipefail
 HOOK="$(dirname "$0")/../plans-path-guard.sh"
 source "$(dirname "$0")/_path_without.sh"

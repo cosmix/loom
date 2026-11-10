@@ -26,6 +26,8 @@ loom_jq_missing_message() {
 # cannot parse its payload must not silently allow, so when jq is absent this
 # prints the shared message on stderr and exits 2 (deny). Returns 0 when jq
 # is present. Call it right after sourcing this file, before reading stdin.
+# Exception: subagent-verify-guard.sh blocks runner calls (exit 2) but calls
+# loom_warn_no_jq, because it is a deterrent whose own failure must not stop work.
 loom_require_jq() {
     command -v jq &>/dev/null && return 0
     loom_jq_missing_message "$1" >&2

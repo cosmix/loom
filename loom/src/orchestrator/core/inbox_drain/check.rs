@@ -293,6 +293,9 @@ mod tests {
         let settled = settle(&fx, &judge, AgentRole::Main, request(&head), true);
         assert!(matches!(settled, Settle::Applied(Some(_))), "{settled:?}");
         assert!(queued_check(&fx));
+        // Only a merge resolver forces a fresh run; a judge keeps the request's policy.
+        let job = load_current(&fx.work_dir, STAGE).unwrap().unwrap();
+        assert!(!job.no_cache);
     }
 
     #[test]
