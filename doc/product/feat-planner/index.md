@@ -330,10 +330,12 @@ Each becomes `doc/product/<feature>/section_NN.md`. Order is a first proposal fo
   changes a body also updates its stub in the same turn, or asks; no agent judges in the
   background whether a body has outgrown its stub (my call).
 
-- **Refinement (04, 05, 10).** A refinement edits only the documents under `doc/`. In the same
-  turn, the session that made the edit has subagents rebuild the summaries built on the changed
-  passages and the overviews that cite them. The background summary sessions handle edits made
-  outside the app (an editor, a `git pull`). The reader's view updates where it stands: an open
+- **Refinement (04, 05, 10).** A refinement edits only the documents under `doc/`. The turn
+  ends with `loom plan check` and rebuilds no summary: the background summary sessions rebuild the
+  summaries built on the changed passages, and the overviews that cite them, once the inputs have
+  been unchanged for five minutes counted from the turn's end (the same path handles edits made
+  outside the app, an editor or a `git pull`). The chat rebuilds a summary itself only to correct
+  one that misstates a document. The reader's view updates where it stands: an open
   source passage changes as soon as its file changes; a summary sentence awaiting its rebuild
   stays readable and is marked out of date, and its replacement flashes once on arrival. Open
   passages are keyed to the source section they came from, so they stay open across a rebuild;
@@ -374,9 +376,11 @@ Each becomes `doc/product/<feature>/section_NN.md`. Order is a first proposal fo
 - **Command (02).** Bare `loom plan` starts the app; the existing `loom plan` subcommand
   (`verify`) keeps working unchanged. It opens the browser unless it runs headless
   (no display, for example over SSH on a VM), in which case it prints the URL.
-- **Rebuild budget (04).** Rebuilds after changes made outside the app run automatically up to a
-  threshold of 5 summaries; above it the app shows how many summaries are stale and asks before
-  starting the rebuild sessions. Turning off Settings' "Rebuild summaries automatically" in the
+- **Rebuild budget (04).** A stale or missing summary is rebuilt in the background once its inputs
+  have been unchanged for a quiet period of 5 minutes (an edit made in an authoring turn counts
+  from the turn's end); a summary that is only incomplete waits for a press. Of the summaries
+  that are ready, up to 5 start automatically; above it the app shows how many are ready and asks
+  before starting the rebuild sessions. A press on Rebuild or "Rebuild all" starts at once. Turning off Settings' "Rebuild summaries automatically" in the
   holder's browser sends `POST /api/summaries/auto` and sets the threshold to 0, so every batch
   asks first.
 - **One authoring session per project (07, 08).** At most one session can edit a project's

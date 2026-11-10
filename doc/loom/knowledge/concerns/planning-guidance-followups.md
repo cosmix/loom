@@ -17,6 +17,7 @@ Open points in `planning::guidance`, `plan_server::guidance` and `plan-plugin/` 
 - `GuidanceModels::load` never returns `Err` (`read_plan_config` and `UserConfig::load` are infallible), so the warn-and-default branch in `install` is unreachable; its body also copies `SummaryModels::load` line for line.
 - `GET /api/session/brief` answers 404 `unknown_session` for a missing `session` parameter; 400 would be accurate.
 - `plugin.rs` writes by path (safe against a final-component symlink and a fresh uuid session directory, so not session-exploitable: `sessions/` is writable by no session kind); the dirfd-anchored `safe_fs` helpers `blocks.rs` uses would also close an intermediate-directory race. `blocks.rs` reads `config-block.json` with an unbounded `serde_json::from_reader`, and no test covers its FIFO, non-regular and symlink refusals (a `mkfifo` test would catch a dropped `O_NONBLOCK`).
+- A pasted message held behind a background turn (a subagent hand-back or task notification the bridge ignores for confirmation) confirms by its own prompt, late when that turn runs past `delivery_timeout` (10 s); meanwhile it shows Undelivered with Resend, and pressing Resend then sends the text twice. Nothing suppresses Resend while a background turn is running.
 
 ## Text and skills
 

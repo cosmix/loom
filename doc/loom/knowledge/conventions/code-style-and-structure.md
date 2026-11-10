@@ -281,3 +281,7 @@ to 401 lines. `loom/src/assets/tests.rs` avoided that with a bare `mod skill_ref
 non-`mod.rs` parent, and reserve `#[path]` for a sibling that must keep its flat `tests_*.rs` name. The stage-completion
 unwired-file detector reads a `#[path]` include as unreferenced (see
 [code-quality-and-hook-debt](../concerns/code-quality-and-hook-debt.md)); the bare form does not have that problem.
+
+## Imports and child test modules
+
+A child test module that starts with `use super::*;` sees only what its parent imports. An import that only the tests use looks unused in a normal build, and removing it breaks the tests without touching their file; `cargo check` without `--tests` does not show that. After removing an import from a module, compile with `cargo check --tests` before finishing.

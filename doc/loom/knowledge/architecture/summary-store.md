@@ -64,7 +64,18 @@ sentence can ask whether the member sentence it cites is current (`evaluate/cite
 | Summary | `incomplete` | all sentences current, but a document's `file` hash differs from its source's, a plan summary's `bundle` map differs from `evaluate::bundle_hashes` of its briefs now (a brief added, removed or edited; `evaluate/cite.rs` `Context::complete`), or an overview's `members` map differs from the members' hashes now. A cited brief span that changed stales its sentence (`Context::holds`, `Kind::Document.bundle`) |
 | Summary | `current` | none of the above |
 
-`is_out_of_date` is stale, incomplete or missing. A deleted source drops its member summary and stales the overview
+A summary is out of date in the UI when it is stale, incomplete or missing, but the server rebuilds only the stale and
+missing ones without a press: `SummaryState::rebuilds_in_background` (`evaluate.rs`) names them. An incomplete summary
+says nothing its sources contradict (it only leaves out text no sentence cites), so it waits for a press or for a later
+stale. Every hash a summary records or compares goes through `settle::unsettled` (`planning/summary/hashes.rs`):
+`SourceHashes` is a stateless view over the loaded `Project` that gives the sections and the file hash of each document
+over its text without Settled lines: `ProjectDoc::unsettled` (`planning/project.rs`) holds the sections of a document
+that has Settled lines, computed once when the document is loaded or refreshed (`planning/project/parse.rs`), and any
+other document keeps the loaded sections. `input_hashes(project, evaluation)`
+gives one hash per summary over what it is built from. Evaluate (`cite::Context::new(&SourceHashes, ...)`), seal
+(`Rules.hashes`, `document_front`) and the engine's `rewrite_one` all hash through it, and `cite::overview_inputs`
+serves it and `seal/links.rs` alike, so settling or unsettling a document changes no summary state
+([Settled Line](planning-trace.md#settled-line), [the mistake](../mistakes/planner-ui-repair.md#settling-a-document-invalidated-its-summaries-and-rebuilds-started-on-every-batch)). A deleted source drops its member summary and stales the overview
 sentences citing it: seal requires every member cited, so the member-removed route to `incomplete` is reachable only by a
 hand edit (`engine/tests.rs` pins the stale direction). A summary file that cannot be read (symlink, invalid UTF-8, oversize)
 counts as missing for evaluation. `Evaluation.orphans` lists store files no expected id owns.
@@ -180,7 +191,7 @@ ninth test stub named `start_summary` silently cut the dyn-call path from `insta
 
 ## Rebuilds and Cost
 
-The planning server rebuilds out-of-date summaries on its own, one summary session at a time, and logs what each
+The planning server rebuilds stale and missing summaries on its own, once their sources have been quiet for 5 minutes, one summary session at a time, and logs what each
 rebuild spends. Code: `loom/src/plan_server/summaries/` (`scheduler.rs` and `scheduler/` hold the pure rules,
 `rebuilds.rs` and `rebuilds/` the facade, `spawner.rs` the real session start, `attribution.rs` claim attribution and
 cost lines, `routes.rs` the four `/api/summaries/{panel,rebuild,release,answer}` routes) and
@@ -215,7 +226,8 @@ Source: `plan_server/summaries/scheduler.rs`, `scheduler/queue.rs`, `scheduler/s
   evaluation counts like any other, so a repository with more than five missing summaries asks first. Yes promotes the ids
   as approved and starts them with no second check; a Button press never asks.
 - **Auto-rebuild switch.** `POST /api/summaries/auto {enabled}` (`summaries/routes.rs`; holder-only, refused in read-only mode) sets the scheduler's start-without-asking limit to `AUTO_LIMIT` or 0; with it off every background batch opens the question first. The Settings toggle "Rebuild summaries automatically" is a per-browser preference (`web/src/plan/summaries/state.ts`) that the holder's browser posts after `hello` and on every change, because a browser-only preference cannot change a server-side rebuild.
-- **Newly invalidated counting.** `on_update` queues only the `invalidated` ids (newly out of date in this batch), minus
+- **Newly invalidated counting.** `on_update` queues only the `invalidated` ids (newly stale or missing in this batch,
+  by `rebuilds_in_background`; `engine.rs`), minus
   the declined, the running session's pending ids and the queued ones, and first drops every id no longer out of date from
   the queue, declined, failed, unsealed and question sets, except a pressed id whose summary the latest evaluation still
   lists (`Scheduler::set_known`, fed by `Rebuilds::apply_evaluation`): a press rebuilds a current summary too, so the
@@ -223,10 +235,28 @@ Source: `plan_server/summaries/scheduler.rs`, `scheduler/queue.rs`, `scheduler/s
   id whose document was removed cannot restart sessions without bound. A question that loses ids is re-sent with the rest and closes
   when none remain. The ids already out of date when the server starts, or when a turn or suspension ends, enter through
   `refresh`. At an authoring turn's end (`turn_ended`, `chat_idle` in `rebuilds/session.rs`) that set comes from a fresh
-  evaluation of the store (`Rebuilds::out_of_date_now`, `rebuilds/evaluation.rs`), made outside the state lock and never
-  stored in `state.latest`: the watcher batch showing the turn's refinement seals can arrive up to 1 s after `TurnEnded`,
-  and the cached set would start a Background session for summaries the turn just sealed. A pressure run's end and a
+  evaluation of the store (`Rebuilds::to_rebuild_now`, `rebuilds/evaluation.rs`), made outside the state lock and never
+  stored in `state.latest`. A chat can seal a summary inside its turn (the correction rebuild of product spec section 10,
+  "When the summary is wrong"), and the watcher batch showing that seal can arrive up to 1 s after `TurnEnded`: the cached
+  set would queue what the turn just sealed, and a summary with no change on record would start at once. A pressure run's end and a
   `SuspendGuard` drop still resume on the last batch's set.
+- **Quiet period.** A background rebuild waits for the edits to stop. `QUIET_PERIOD` is 5 minutes (`scheduler/config.rs`;
+  not a `SchedulerConfig` field, because the frozen `plan_summary_rebuild_contracts.rs` builds that struct by literal),
+  the rules are in `scheduler/quiet.rs`. The facade diffs `summary::hashes::input_hashes` on every batch
+  (`State::note_inputs`, `rebuilds/evaluation.rs`; the first record is a baseline and reports nothing) and calls
+  `Scheduler::sources_changed(ids, now)`. A Batch id then waits until 5 minutes after its last change, measured from the
+  end of the authoring turn for an id changed while a turn was open (`restart_turn_changes` in `turn_ended`). `tick`
+  (`wake_quiet`) starts what becomes ready, and `try_start` considers only ready ids for starting, for the limit and for
+  the question. A press and a Yes skip the wait, and an id with no recorded change (out of date at startup) does not wait.
+  The wire panel lists the queued Batch ids inside their quiet period as `waiting` and the incomplete summaries nothing
+  queues, runs or failed as `incomplete` (`wire/summaries.rs`, `rebuilds/panel.rs`); the planner shows them as the
+  sections "Waiting for edits to stop" and "Incomplete" with Rebuild rows, the status pill counts an incomplete summary
+  as out of date, and `rebuild-button.tsx` `useQueued` ignores waiting ids so a press still starts. Limits: a waiting
+  summary's concept heading reads "Out of date: the source changed" (the concept wire carries no waiting reason). Quiet
+  records (`since`, `in_turn`) are pruned only when their summary leaves the evaluated set (`Scheduler::known`, through
+  `prune`) and expire after `QUIET_PERIOD`, so a claimed (Rebuilding) summary edited mid-session still waits after an
+  unsealed end; `scheduler.rs` and
+  `rebuilds.rs` are about 396 lines each, at the 400-line limit, so the next change there splits a file first.
 - **Decline memory.** No to a question moves its ids to `declined`. A declined id is skipped by `on_update` and `refresh`
   until a Button press (`forget` clears declined, failed and unsealed) or until it stops being out of date. A failed id
   is skipped by `refresh`, and `on_update` clears the failure of an id that is newly invalidated.

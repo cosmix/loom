@@ -123,8 +123,8 @@ states, in this order:
    the step conventions below.
 4. **What this session may write** (below, "Write limits").
 5. **The turn-end duty.** After any turn that edited documents: run `loom plan check` and fix what
-   it reports; then rebuild summaries as "Summaries after a turn" below describes. The turn is not
-   over until both are done.
+   it reports, before the reply. The duty rebuilds no summary; "Summaries after a turn" below
+   says who does.
 6. **The closing message** and what to do when it arrives (below).
 
 The **starting-point block** is generated per session:
@@ -466,21 +466,21 @@ section 12 enforces them.
 
 ## Summaries after a turn
 
-Section 04 has the authoring session rebuild, in the same turn, the summaries built on what the
-turn changed. Document summaries run on one model and overviews on another, and a subagent runs
-on one model, so the rebuild is two waves:
+The authoring session leaves the summaries its turn made out of date to the server: the
+background summary session rebuilds the stale and missing ones once five minutes have passed
+from the end of the turn with no further change to their inputs, and the user's Rebuild press
+starts one at once (section 04, "Who rebuilds what"). A reader working through open questions
+and "My call" items in the chat therefore gets one rebuild after the last change, not one per
+turn. The common brief and every step skill say so: the turn ends with `loom plan check`, and the
+session spawns no summary subagent for what the turn changed.
 
-1. The session runs `loom plan summary status --json` and spawns one `loom-plan:summary` subagent
-   per document summary the turn made stale, incomplete or missing, in parallel. Each runs
-   `loom plan summary brief <id>`, writes the draft, and runs `seal` until it is accepted.
-2. When they have returned, it spawns one `loom-plan:overview` subagent for the overviews that
-   cite them, which works the same way.
-
-The two agent definitions hold the whole procedure: rebuild only the ids given, write only the
-draft file, never edit a source document, release a claim it cannot seal. Their `model` and
-`effort` frontmatter is filled from section 04's configuration when the session starts (above,
-"The plugin"), so a subagent runs on the level's model and effort without the authoring session
-choosing one. A turn whose edits made no summary stale spawns nothing.
+The authoring plugin still carries the two agents, for the one rebuild a chat makes itself: a
+summary sentence the session finds misstating a document that is right (section 10, "When the
+summary is wrong"). Their definitions hold the whole procedure: rebuild only the ids given,
+write only the draft file, never edit a source document, release a claim it cannot seal. Their
+`model` and `effort` frontmatter is filled from section 04's configuration when the session
+starts (above, "The plugin"), so a subagent runs on the level's model and effort without the
+session choosing one.
 
 ## Summary sessions
 

@@ -181,3 +181,7 @@ The reading help scene seeds derived atoms through Jotai 3 internals (`INTERNAL_
 ## Transitive dependency upgrade policy
 
 For web dependency updates, respect the versions and ranges declared by parent dependencies. Do not add overrides or force transitive versions outside those constraints to clear audit findings. Report remaining advisories separately.
+
+## Fake timers around a fetch
+
+A vitest test that fakes only `setTimeout` and `clearTimeout` (`vi.useFakeTimers({ toFake: [...] })`) and waits on a timer that starts after a `fetch` resolves needs two `advanceTimersByTimeAsync` steps inside `act`: a first, shorter one lets the fetch resolve and its body be read with real I/O, which starts the timer; a second passes the timer's delay. One long step runs before the timer exists and the test sees no timeout (`web/src/plan/trace/settle-flow.test.tsx`, "a trace that never catches up releases the button with a notice").

@@ -135,4 +135,71 @@
 **What happened:** After a chat edit, the authoring turn's refinement subagents sealed the section and overview summaries, then a Background summary session rebuilt both again.
 **Why:** `Rebuilds::turn_ended` and `chat_idle` resumed the scheduler on `state.latest`, the last 1 s watcher batch, which predated the turn's seals; `refresh` queued and started them.
 **Prevention:** A resume that follows work done by another actor evaluates the store fresh; never decide from a cached snapshot that a concurrent writer just made stale.
-**Fix:** `Rebuilds::out_of_date_now` (`plan_server/summaries/rebuilds/evaluation.rs`); test `a_seal_made_inside_the_authoring_turn_is_seen_when_the_turn_ends` (`rebuilds/tests_ordering.rs`).
+**Fix:** `Rebuilds::to_rebuild_now` (`plan_server/summaries/rebuilds/evaluation.rs`); test `a_seal_made_inside_the_authoring_turn_is_seen_when_the_turn_ends` (`rebuilds/tests_ordering.rs`).
+
+## Mark settled returned to idle before its label changed
+
+**What happened:** after a press on Mark settled the control went back to idle as soon as the post answered `saved`, while its label ("Settled", "Draft") still waited for the trace to broadcast the new state. For a moment it looked unsent and could be pressed again.
+
+**Why:** the label derives from the trace's `doc.settle`, a state the server broadcasts after the write, but the control's pending phase ended on the post answer, a different event.
+
+**Prevention:** a control whose label derives from a broadcast state stays pending until that state changes, with a timeout and a notice for the case where it never does. Guard the press with a synchronous ref as well as the phase, because a second click can arrive before React renders the first.
+
+**Fix:** `useSettle` in `web/src/plan/trace/settle-flow.ts` keeps the `working` phase after a `saved` answer until the shown state differs from the state at the press; a refusal, notice or confirm answer releases it at once, and `SETTLE_WAIT_MS` (10 s) releases it with "Saved, but this page has not caught up yet. Reload the page to see the new state." The button shows "Settling…" or "Unsettling…" with `aria-busy` and `aria-disabled` and stays the same element (`settle-control.tsx`). Tests: `settle-flow.test.tsx`.
+
+## Chat text overlapped in short windows through four rounds of one-number fixes
+
+**What happened:** the chat's transcript, queue strip, unconfirmed sends and composer box drew over each other in short windows, and each fix changed one number (a px height, a rem cap, a 33vh share) and moved the overlap to another height. Each was pinned by a regex on CSS text in jsdom, which computes no layout, so the next window height broke it unseen.
+
+**Why:** the column's height was split by rules spread over four CSS files, with caps unrelated to the column's own height. Auto grid rows starved the `1fr` transcript, and a squeezed part could neither shrink nor clip, so it painted outside its box.
+
+**Prevention:** every part of a fixed-height column states one behaviour (a capped share, shrink, or scroll inside) in `web/src/plan/chat/chat-column.css`, and the hard limits are shares of the column, never px or viewport units. A flex item's minimum never follows its children's, so write the floor out or flatten the wrapper with `display: contents`. Prove layout only in a real browser at short heights with a long draft (`web/scripts/chat-layout-test.mjs`); a regex on CSS text proves nothing about it. Gotcha: a textarea whose height a script sets in px shrinks only through `max-height: 100%` of its flex line.
+
+**Fix:** `chat-column.css` owns the budget (imported by `chat-surface.css`, so the kickoff conversation gets it); `.chat-panel-middle` is gone and the composer box holds `.chat-composer-line`. `use-follow.ts` leaves the end only on a scroll toward the start within 1 s of the reader's own input, because a layout change moves the scroll position without the reader. See [Chat home and the chat panel](../architecture/planner-web-shell.md#chat-home-and-the-chat-panel).
+
+## Settling a document invalidated its summaries and rebuilds started on every batch
+
+**What happened:** every Settle or Unsettle made the document's summaries stale and queued a rebuild, and background rebuilds started on every watcher batch with no wait, so a reader editing a document paid for a rebuild per save.
+
+**Why:** the Settled line was excluded from the trace's body and upstream hashes but not from the hashes summaries record over a document, so adding or removing the line changed them. Nothing delayed a rebuild after the edit that caused it.
+
+**Prevention:** any hash a derived artifact records over a document goes through `settle::unsettled` (`loom/src/planning/trace/settle.rs`). Background work triggered by edits waits for the edits to stop.
+
+**Fix:** `planning/summary/hashes.rs` (`SourceHashes`, `input_hashes`) hashes unsettled text for evaluate, seal and the engine's `rewrite_one`; `SummaryState::rebuilds_in_background` limits background rebuilds to stale and missing summaries; `QUIET_PERIOD` (5 minutes, `plan_server/summaries/scheduler/config.rs`) holds a Batch id until its sources stop changing. See [Rebuild Scheduler](../architecture/summary-store.md#rebuild-scheduler).
+
+## A question was reported unanswered after a background turn
+
+**What happened:** the planning session asked a question, spawned its summary subagents, and in the turn opened by a subagent's hand-back reported its question "still unanswered". The question was waiting in the chat for the user's next message, which only reaches the session between turns.
+
+**Why:** every Agent call in the planning session runs in the background, and a finished subagent sends an `<agent-message>` hand-back and a `<task-notification>`, each opening a turn of its own (queued after Stop mid-turn, or a `queued_command` that still fires `UserPromptSubmit`). The brief told the session to finish background subagent work inside one turn and had no rule for hand-back turns. The bridge's `confirm_prompt` took any `UserPromptSubmit` as the confirmation of the delivery in flight, so a hand-back turn confirmed a message it was not.
+
+**Prevention:** guidance that spawns subagents says their reports arrive as separate turns that are not user replies. Delivery confirmation matches the user's own prompt only.
+
+**Fix:** `planning/guidance/text/common_brief.md` has the section "Questions and background work" (ask last and end the turn; never re-ask or call a question unanswered in a hand-back turn) and a turn-end duty that ends the turn after spawning the first wave. `background_prompt` in `plan_session/bridge/flow.rs` makes a prompt starting with `<task-notification>` or `<agent-message` confirm nothing; test `a_background_prompt_does_not_confirm_the_pasted_message`. See [Delivery](../architecture/planning-session-bridge.md#delivery).
+
+## Settle commit design was judged against this repository's own hooks
+
+**What happened:** while designing the commit that settling makes, the main agent proposed skipping git hooks because this repository's pre-commit hook is slow and rewrites Markdown.
+
+**Why:** the trade-off was weighed against loom's own repository. Loom and the planner drive many other projects whose hooks are unknown.
+
+**Prevention:** a planner or server feature that touches the user's repository behaves as the user's own git would in any project: it runs their hooks and tolerates hooks that are slow, rewrite files, or refuse. Never design around this repository's tooling.
+
+**Fix:** the settle commit runs the project's hooks, off the request path. When a hook changes the settled document, loom does not rewrite the Settled line or amend the commit: the outcome says the hook changed the document and the reader settles the version it left ([Settle Commits](../architecture/planning-trace.md#the-job)).
+
+## A settle commit through git commit --only misbehaved under hooks
+
+**What happened:** the first settle commit ran synchronously inside `POST /api/settle` and committed the settled files with `git commit --only`. It passed the global `--literal-pathspecs`, which git exports to hooks as `GIT_LITERAL_PATHSPECS=1`; a hook that rewrote and re-added a settled file updated only git's temporary index, so the real index kept the old text; the recorded Settled line described the text from before the hook's rewrite; and a timeout kill with SIGKILL could leave `.git/index.lock` behind.
+**Why:** git's partial-commit (`--only`) and signal behaviour were not checked against hooks that rewrite files, and the commit sat on the request path where a slow hook blocked the answer.
+**Prevention:** a commit loom makes for the user runs off the request path, uses `:(literal)<path>` pathspecs per argument instead of the global flag, resets the committed paths in the index after `--only`, re-checks the document text after the hooks ran, and stops git with SIGTERM before SIGKILL so it can remove its lock.
+**Fix:** the settle route only writes the line and queues a job. The queue and job (`plan_server/trace/settle_queue.rs`, `settle_job.rs`, `settle_commit.rs`, `settle_head.rs`) run the commit on one worker through `git/user_git.rs` (`:(literal)` pathspecs, the pathspec variables removed, `reset_committed` after the commit). A commit is never re-marked or amended: the job compares the work tree and the commit with what was hashed and, when a hook changed them, ends `committed` with a reason telling the reader to settle again. Described in [Settle Commits](../architecture/planning-trace.md#settle-commits).
+
+## The full test gate ran mid-task and workers ran whole modules
+
+**What happened:** during the planner fix round the main agent ran the full Rust and web suites while fix workers were still changing code, then planned to run them again; each worker also ran module-wide test sets (683 tests for one module, 1600+ web tests) after small changes. The work took far longer than it needed.
+
+**Why:** suite runs were treated as progress checks instead of a single final gate.
+
+**Prevention:** the full gate (`cargo test`, `bun run test`, clippy) runs ONCE, after every worker has returned and the last review round is fixed. Workers run only the tests they wrote or changed plus a compile/lint of their files, never whole modules or directories.
+
+**Fix:** briefs name the exact test files to run; the main agent runs the gate once at the end.

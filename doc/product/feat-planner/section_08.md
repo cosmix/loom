@@ -214,8 +214,9 @@ demand.)
 
 **Subagents.** An `Agent` row carries the count of the subagent's own tool calls. Its nested rows (section 07: items with `subagent` set) render under
 it, indented one step, collapsed by default. Expanding the row also shows the subagent's final
-result. The summary rebuild a refinement turn runs (section 04) is one such row, labelled by its
-description.
+result. The rebuild a turn makes of a summary it found misstating a document (section 10, "When
+the summary is wrong") is one such row, labelled by its description. A turn that edited documents
+runs no summary subagent otherwise (section 09, "Summaries after a turn").
 
 ## Session states
 
@@ -489,9 +490,13 @@ their state; section 10 says what that list is for.
 A turn that changed no file shows no list.
 
 **Rebuilt summaries.** Section 07's `summaries_rebuilding`, one row per summary with a link to its
-summary page (section 05). While the turn runs the footer shows "N summaries rebuilding" and each
-row reads "Rebuilding". When the turn ends each row reads "left for the background rebuild" for a
-summary that was still stale at the turn's end (section 04, "Who rebuilds what").
+summary page (section 05). It names the summaries the chat session itself claims during the turn,
+which is the correction rebuild of section 10 ("When the summary is wrong"); an authoring turn
+rebuilds no other summary, so most turns show no such list. While the turn runs the footer shows
+"N summaries rebuilding" and each row reads "Rebuilding". When the turn ends each row reads
+"left for the background rebuild" for a summary that was still stale at the turn's end: the
+background summary session rebuilds it once its inputs have been unchanged for the quiet period,
+or at once on the reader's press (section 04, "Who rebuilds what").
 
 **Cost.** The chat shows no token counts: no duration line in the footer, no running total, no
 count on a collapsed turn or on a rebuilt-summary row. Where cost is still visible: Settings >

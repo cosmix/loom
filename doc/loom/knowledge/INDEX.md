@@ -53,12 +53,12 @@
 | [plan-server](architecture/plan-server.md) | Chat | 244 |
 | [planner-feature-screens](architecture/planner-feature-screens.md) | Spine | 48 |
 | [planner-uploads-and-drafts](architecture/planner-uploads-and-drafts.md) |  | 35 |
-| [planner-web-shell](architecture/planner-web-shell.md) | Shell | 108 |
+| [planner-web-shell](architecture/planner-web-shell.md) | Shell | 112 |
 | [planning-document-model](architecture/planning-document-model.md) | Docs | 183 |
-| [planning-guidance](architecture/planning-guidance.md) |  | 35 |
-| [planning-session-bridge](architecture/planning-session-bridge.md) |  | 284 |
+| [planning-guidance](architecture/planning-guidance.md) |  | 43 |
+| [planning-session-bridge](architecture/planning-session-bridge.md) |  | 286 |
 | [planning-session-sandbox](architecture/planning-session-sandbox.md) |  | 148 |
-| [planning-trace](architecture/planning-trace.md) |  | 91 |
+| [planning-trace](architecture/planning-trace.md) |  | 132 |
 | [pressure](architecture/pressure.md) |  | 42 |
 | [quota-poller](architecture/quota-poller.md) |  | 37 |
 | [read-gate](architecture/read-gate.md) |  | 153 |
@@ -73,7 +73,7 @@
 | [source-graph-resolution](architecture/source-graph-resolution.md) |  | 125 |
 | [source-graph-view](architecture/source-graph-view.md) |  | 78 |
 | [status-data-model](architecture/status-data-model.md) | Fields | 259 |
-| [summary-store](architecture/summary-store.md) |  | 312 |
+| [summary-store](architecture/summary-store.md) |  | 342 |
 | [target-guard](architecture/target-guard.md) | Tip | 127 |
 | [terminal-backends](architecture/terminal-backends.md) |  | 285 |
 | [test-runner-adapters](architecture/test-runner-adapters.md) |  | 56 |
@@ -114,14 +114,14 @@
 
 | Topic | Blurb | Lines |
 | --- | --- | --- |
-| [code-style-and-structure](conventions/code-style-and-structure.md) |  | 283 |
+| [code-style-and-structure](conventions/code-style-and-structure.md) |  | 287 |
 | [commits](conventions/commits.md) | Format | 24 |
 | [config-plan-and-gate-rules](conventions/config-plan-and-gate-rules.md) |  | 27 |
 | [dispute-and-adjudication](conventions/dispute-and-adjudication.md) |  | 123 |
 | [git-and-build-workflow](conventions/git-and-build-workflow.md) |  | 237 |
 | [guidance-channels-and-plugin-scope](conventions/guidance-channels-and-plugin-scope.md) |  | 134 |
 | [model-and-effort-config](conventions/model-and-effort-config.md) |  | 143 |
-| [plan-web](conventions/plan-web.md) |  | 183 |
+| [plan-web](conventions/plan-web.md) |  | 187 |
 | [plan-yaml-and-hooks](conventions/plan-yaml-and-hooks.md) |  | 182 |
 | [web-dashboard-typography](conventions/web-dashboard-typography.md) |  | 64 |
 
@@ -131,7 +131,7 @@
 | --- | --- | --- |
 | [adjudication-autonomy-deadlock](mistakes/adjudication-autonomy-deadlock.md) |  | 228 |
 | [ambient-filesystem-trust](mistakes/ambient-filesystem-trust.md) |  | 176 |
-| [briefs-and-bug-reports](mistakes/briefs-and-bug-reports.md) |  | 311 |
+| [briefs-and-bug-reports](mistakes/briefs-and-bug-reports.md) |  | 318 |
 | [ci-toolchain-and-cargo](mistakes/ci-toolchain-and-cargo.md) |  | 373 |
 | [codex-direct-mode-invisible](mistakes/codex-direct-mode-invisible.md) |  | 23 |
 | [codex-lane-rogue-wrapper](mistakes/codex-lane-rogue-wrapper.md) |  | 177 |
@@ -171,7 +171,7 @@
 | [planner-polish](mistakes/planner-polish.md) | Polish | 107 |
 | [planner-redesign](mistakes/planner-redesign.md) |  | 80 |
 | [planner-review-fixes](mistakes/planner-review-fixes.md) |  | 48 |
-| [planner-ui-repair](mistakes/planner-ui-repair.md) | Repair | 138 |
+| [planner-ui-repair](mistakes/planner-ui-repair.md) | Repair | 205 |
 | [planner-visual-feedback-shortfall](mistakes/planner-visual-feedback-shortfall.md) | Visual | 17 |
 | [planning-sandbox-delivery](mistakes/planning-sandbox-delivery.md) |  | 73 |
 | [pre-commit-hardening](mistakes/pre-commit-hardening.md) |  | 93 |
@@ -226,11 +226,11 @@
 | [knowledge-cli-gaps](concerns/knowledge-cli-gaps.md) |  | 108 |
 | [loom-ask-and-read-gate](concerns/loom-ask-and-read-gate.md) |  | 112 |
 | [merge-and-recovery-edge-cases](concerns/merge-and-recovery-edge-cases.md) | Edges | 105 |
-| [plan-chat-followups](concerns/plan-chat-followups.md) | Chat | 40 |
+| [plan-chat-followups](concerns/plan-chat-followups.md) | Chat | 41 |
 | [planner-follow-ups-followups](concerns/planner-follow-ups-followups.md) |  | 92 |
-| [planner-ui-repair-followups](concerns/planner-ui-repair-followups.md) | Repair | 182 |
+| [planner-ui-repair-followups](concerns/planner-ui-repair-followups.md) | Repair | 193 |
 | [planning-document-model-followups](concerns/planning-document-model-followups.md) |  | 172 |
-| [planning-guidance-followups](concerns/planning-guidance-followups.md) |  | 42 |
+| [planning-guidance-followups](concerns/planning-guidance-followups.md) |  | 43 |
 | [planning-session-sandbox-limits](concerns/planning-session-sandbox-limits.md) |  | 182 |
 | [platform-and-commit-gaps](concerns/platform-and-commit-gaps.md) |  | 234 |
 | [runtime-and-session-safety](concerns/runtime-and-session-safety.md) |  | 137 |
