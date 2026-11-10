@@ -14,10 +14,10 @@ Open items from the plan-summary levels, fragment merging and the reading column
 
 ## Themes and contrast
 
-- `ALL_LIGHT_VARIANTS` and `ALL_DARK_VARIANTS` (`aurora-ui/shared/atoms/theme.ts`) have no consumer, and the light `gray` and `cool` variants (`tokens.css`) are offered by no picker: delete them if nothing selects them.
-- Control edges (`--border`, `--hairline`) measure about 1.3-1.4:1 against `--card` in all three themes and the segmented control's chosen fill about 1.1:1, under 1.4.11's 3:1. A project-wide pattern older than this plan; the text colour and weight carry the state.
+- `ALL_LIGHT_VARIANTS` and `ALL_DARK_VARIANTS` (`aurora-ui/shared/atoms/theme.ts`) have no consumer, and the light `gray` and `cool` variants (`tokens-light.css`) are offered by no picker: delete them if nothing selects them.
+- Control edges (`--border`, `--hairline`) measure about 1.3-1.5:1 against `--card` in every theme and the segmented control's chosen fill about 1.1:1, under 1.4.11's 3:1. A project-wide pattern older than this plan; the text colour and weight carry the state.
 - `kind-control.css` at 390px: each kind segment has about 98px of content and "Standalone plan" at 13px/600 is about 100px, so it may clip inside the track; check the 390x844 shot.
-- Two tone tokens keep hue 325 under Walnut and Graphite ([dashboard](web-dashboard-latent-issues.md#dashboard-settings-themes-and-notifications)).
+- Two tone tokens keep hue 325 under Graphite ([dashboard](web-dashboard-latent-issues.md#dashboard-settings-themes-and-notifications)).
 - `web/src/plan/summaries/summary-status.test.tsx` is 420 lines, over the 400-line limit; split it.
 - `statistics.contracts.test.tsx` stubs `matchMedia` with `matches = query.includes('reduce')`, true for `(prefers-reduced-motion: no-preference)` too: a stub answering true to both reads as reduced motion, so the count-up animates only when no-preference matches and reduce does not.
 
@@ -53,7 +53,7 @@ The integration-verify walk of the planner-follow-ups requirements (R1-R13) foun
 
 ## Operator checks after the run
 
-Rebuild the summaries and open a plan summary (opening, detail, source link, fragment at rest); confirm New chat spends no tokens before the first message and a real ending shows the designed card; start a follow-up from `/new` and confirm the entry appended under `## Follow-ups` in `index.md`; run a plan whose `Implements:` names sections and read the spec-conformance lines in its run review; open the dashboard theme picker in Walnut and Graphite; open the Settings statistics block with a Claude login.
+Rebuild the summaries and open a plan summary (opening, detail, source link, fragment at rest); confirm New chat spends no tokens before the first message and a real ending shows the designed card; start a follow-up from `/new` and confirm the entry appended under `## Follow-ups` in `index.md`; run a plan whose `Implements:` names sections and read the spec-conformance lines in its run review; open the dashboard theme picker in Aubergine and Graphite; open the Settings statistics block with a Claude login.
 
 ## Open Items After the Trace Screens Redesign
 

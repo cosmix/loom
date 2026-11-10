@@ -354,7 +354,7 @@ Concept mode follows the dashboard's conventions:
   (`web/src/index.css:125`); no new all-caps chips.
 - **Colour.** Surfaces from `tokens.css`, dark mode through the `.dark` class, document colours
   from the new `--doc-*` tokens, flash from `--primary`, focus ring from `--ring`. The planner
-  has three themes: Ledger (light), Walnut and Graphite (dark). Light or dark starts from the
+  has seven themes: Ledger and Harbor (light); Aubergine, Graphite, Midnight, Obsidian and Indigo Night (dark). Light or dark starts from the
   desktop's setting, and the dark theme is Graphite until the reader picks another in Settings.
 - **Components.** Tooltips and `Kbd` reused from `web/`, and `LoadState` for the loading,
   empty, not-found and error states.
