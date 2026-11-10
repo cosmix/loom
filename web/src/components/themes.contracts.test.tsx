@@ -4,10 +4,14 @@ import { Provider } from "jotai/react";
 import { afterEach, beforeEach, expect, it } from "vitest";
 
 import { darkVariantAtom, themeAtom } from "@/aurora-ui/shared/atoms/theme";
-import tokensCss from "@/aurora-ui/shared/styles/tokens.css?raw";
+import tokensDark from "@/aurora-ui/shared/styles/tokens-dark.css?raw";
+import tokensLight from "@/aurora-ui/shared/styles/tokens-light.css?raw";
 import { ThemeProvider } from "@/aurora-ui/theme/ThemeProvider";
 import { ThemePicker } from "@/components/theme-picker";
 import indexCss from "@/index.css?raw";
+
+// The palettes, light themes first as the stylesheet imports them.
+const tokensCss = `${tokensLight}\n${tokensDark}`;
 
 function resetDocument() {
   localStorage.clear();
@@ -25,15 +29,20 @@ afterEach(() => {
 type Oklch = { lightness: number; chroma: number; hue: number };
 type Rule = { selectors: string[]; body: string };
 
-const GRAY = '.dark[data-dark-theme="gray"]';
+const darkVariant = (id: string) => `.dark[data-dark-theme="${id}"]`;
 const CHAINS = {
   Ledger: [":root"],
-  Walnut: [".dark", ":root"],
-  Graphite: [GRAY, ".dark", ":root"],
+  Harbor: [':root[data-light-theme="harbor"]:not(.dark)', ":root"],
+  Graphite: [darkVariant("gray"), ".dark", ":root"],
+  Midnight: [darkVariant("midnight"), ".dark", ":root"],
+  Obsidian: [darkVariant("obsidian"), ".dark", ":root"],
+  "Indigo Night": [darkVariant("indigo"), ".dark", ":root"],
 } as const;
 type Theme = keyof typeof CHAINS;
 const THEMES = Object.keys(CHAINS) as Theme[];
-const DARK_THEMES: Theme[] = ["Walnut", "Graphite"];
+const DARK_THEMES: Theme[] = ["Graphite"];
+// The dark themes with the amber accent: their warning hazard must sit off it, as Aubergine's does.
+const AMBER_DARK_THEMES: Theme[] = ["Midnight", "Obsidian", "Indigo Night"];
 
 function rules(css: string): Rule[] {
   const bare = css.replace(/\/\*[\s\S]*?\*\//g, "");
@@ -131,13 +140,6 @@ const QUIET_SURFACES = [
 ];
 
 const APPROVED: Record<string, Record<string, [number, number, number]>> = {
-  Walnut: {
-    "--background": [0.19, 0.014, 55],
-    "--card": [0.22, 0.015, 55],
-    "--border": [0.31, 0.014, 55],
-    "--foreground": [0.92, 0.012, 80],
-    "--muted-foreground": [0.71, 0.014, 60],
-  },
   Graphite: {
     "--background": [0.2, 0.003, 270],
     "--card": [0.23, 0.003, 270],
@@ -145,19 +147,59 @@ const APPROVED: Record<string, Record<string, [number, number, number]>> = {
     "--foreground": [0.93, 0.004, 80],
     "--muted-foreground": [0.71, 0.005, 270],
   },
+  Midnight: {
+    "--background": [0.17, 0.032, 255],
+    "--card": [0.2, 0.034, 255],
+    "--muted": [0.235, 0.035, 255],
+    "--border": [0.305, 0.032, 255],
+    "--foreground": [0.93, 0.012, 255],
+    "--muted-foreground": [0.72, 0.016, 255],
+    "--primary": [0.82, 0.15, 85],
+    "--primary-foreground": [0.18, 0.032, 255],
+  },
+  Obsidian: {
+    "--background": [0.13, 0.008, 260],
+    "--card": [0.16, 0.008, 260],
+    "--muted": [0.195, 0.009, 260],
+    "--border": [0.265, 0.008, 260],
+    "--foreground": [0.93, 0.006, 260],
+    "--muted-foreground": [0.72, 0.012, 260],
+    "--primary": [0.82, 0.15, 85],
+    "--primary-foreground": [0.14, 0.008, 260],
+  },
+  "Indigo Night": {
+    "--background": [0.17, 0.045, 280],
+    "--card": [0.2, 0.047, 280],
+    "--muted": [0.235, 0.049, 280],
+    "--border": [0.305, 0.045, 280],
+    "--foreground": [0.93, 0.012, 280],
+    "--muted-foreground": [0.72, 0.023, 280],
+    "--primary": [0.82, 0.15, 85],
+    "--primary-foreground": [0.18, 0.045, 280],
+  },
+  Harbor: {
+    "--background": [0.955, 0.014, 235],
+    "--card": [0.985, 0.007, 235],
+    "--muted": [0.925, 0.016, 235],
+    "--border": [0.855, 0.015, 235],
+    "--foreground": [0.22, 0.02, 235],
+    "--muted-foreground": [0.46, 0.03, 235],
+    "--primary": [0.46, 0.09, 205],
+    "--primary-foreground": [0.985, 0.01, 235],
+  },
 };
 
 const triple = ({ lightness, chroma, hue }: Oklch) => [lightness, chroma, hue];
 
-it("the theme picker offers Ledger Walnut and Graphite (the dashboard default dark is Aubergine)", async () => {
+it("the theme picker offers seven themes (the dashboard default dark is Aubergine)", async () => {
   const store = createStore();
   expect(store.get(darkVariantAtom)).toBe("aubergine");
   store.set(themeAtom, "dark");
-  store.set(darkVariantAtom, "walnut");
+  store.set(darkVariantAtom, "aubergine");
   render(
     <Provider store={store}>
       <ThemeProvider>
-        <ThemePicker themes={["ledger", "walnut", "graphite"]} />
+        <ThemePicker />
       </ThemeProvider>
     </Provider>,
   );
@@ -165,11 +207,19 @@ it("the theme picker offers Ledger Walnut and Graphite (the dashboard default da
   const labels = within(group)
     .getAllByRole("button")
     .map((button) => button.getAttribute("aria-label"));
-  expect(labels).toEqual(["Ledger theme", "Walnut theme", "Graphite theme"]);
-  const walnut = within(group).getByRole("button", { name: "Walnut theme" });
+  expect(labels).toEqual([
+    "Ledger theme",
+    "Harbor theme",
+    "Aubergine theme",
+    "Graphite theme",
+    "Midnight theme",
+    "Obsidian theme",
+    "Indigo Night theme",
+  ]);
+  const aubergine = within(group).getByRole("button", { name: "Aubergine theme" });
   const graphite = within(group).getByRole("button", { name: "Graphite theme" });
-  expect(walnut.getAttribute("aria-pressed")).toBe("true");
-  await waitFor(() => expect(document.documentElement.dataset.darkTheme).toBe("walnut"));
+  expect(aubergine.getAttribute("aria-pressed")).toBe("true");
+  await waitFor(() => expect(document.documentElement.dataset.darkTheme).toBe("aubergine"));
 
   fireEvent.click(graphite);
   await waitFor(() => {
@@ -177,7 +227,7 @@ it("the theme picker offers Ledger Walnut and Graphite (the dashboard default da
     expect(localStorage.getItem("loom:dark-variant")).toBe(JSON.stringify("gray"));
   });
   expect(graphite.getAttribute("aria-pressed")).toBe("true");
-  expect(walnut.getAttribute("aria-pressed")).not.toBe("true");
+  expect(aubergine.getAttribute("aria-pressed")).not.toBe("true");
 });
 
 it("the theme tokens give each theme readable text and the dark themes quiet surfaces and an orange accent", () => {
@@ -203,6 +253,24 @@ it("the theme tokens give each theme readable text and the dark themes quiet sur
       expect(oklch(theme, token).hue, `${theme} ${token}`).toBeGreaterThanOrEqual(70);
     }
   }
+  for (const theme of AMBER_DARK_THEMES) {
+    for (const token of ["--primary", "--ring"]) {
+      expect(triple(oklch(theme, token)), `${theme} ${token}`).toEqual([0.82, 0.15, 85]);
+    }
+    const apart = Math.abs(oklch(theme, "--hazard-warning").hue - oklch(theme, "--primary").hue);
+    expect(apart, `${theme} hazard-warning against the accent`).toBeGreaterThanOrEqual(25);
+    expect(contrast(theme, "--primary-foreground", "--primary"), theme).toBeGreaterThanOrEqual(7);
+    expect(contrast(theme, "--primary", "--background"), theme).toBeGreaterThanOrEqual(7);
+  }
+  for (const theme of ["Harbor", ...AMBER_DARK_THEMES] as Theme[]) {
+    for (const [token, expected] of Object.entries(APPROVED[theme]!)) {
+      expect(triple(oklch(theme, token)), `${theme} ${token}`).toEqual(expected);
+    }
+  }
+  expect(contrast("Harbor", "--primary-foreground", "--primary")).toBeGreaterThanOrEqual(4.5);
+  expect(contrast("Harbor", "--primary", "--background")).toBeGreaterThanOrEqual(4.5);
+  expect(oklch("Harbor", "--ring")).toEqual(oklch("Harbor", "--primary"));
+  expect(value("Harbor", "--accent-text")).toBe(value("Harbor", "--primary"));
   expect(value("Ledger", "--tone-warning")).toBe("oklch(0.55 0.15 50)");
 
   const indexRules = rules(indexCss);
@@ -216,7 +284,9 @@ it("the theme tokens give each theme readable text and the dark themes quiet sur
   expect(accentInk(":root")).toContain("var(--ring)");
   expect(accentInk(".dark")).toContain("var(--primary)");
 
-  const retired = ["blue", "green", "slate", "sand"].map((id) => `data-dark-theme="${id}"`);
+  const retired = ["blue", "green", "slate", "sand", "walnut"].map(
+    (id) => `data-dark-theme="${id}"`,
+  );
   for (const rule of [...rules(tokensCss), ...indexRules]) {
     const prelude = rule.selectors.join(",");
     for (const marker of retired) expect(prelude, prelude).not.toContain(marker);

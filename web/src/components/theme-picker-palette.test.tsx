@@ -3,8 +3,12 @@ import { createStore } from "jotai";
 import { Provider } from "jotai/react";
 import { afterEach, describe, expect, it } from "vitest";
 
-import tokensCss from "@/aurora-ui/shared/styles/tokens.css?raw";
+import tokensDark from "@/aurora-ui/shared/styles/tokens-dark.css?raw";
+import tokensLight from "@/aurora-ui/shared/styles/tokens-light.css?raw";
 import { THEME_OPTIONS, ThemePicker, type ThemeOption } from "@/components/theme-picker";
+
+// The palettes, light themes first as the stylesheet imports them.
+const tokensCss = `${tokensLight}\n${tokensDark}`;
 
 const TOKENS = {
   background: "--background",
@@ -17,12 +21,15 @@ const TOKENS = {
 } as const;
 const TOKEN_ENTRIES = Object.entries(TOKENS) as [keyof typeof TOKENS, string][];
 
-/// The tokens.css rule that owns each offered theme's palette.
+/// The tokens-light.css / tokens-dark.css rule that owns each offered theme's palette.
 const OWNING_SELECTOR: Record<ThemeOption["id"], string> = {
   ledger: ":root",
+  harbor: ':root[data-light-theme="harbor"]:not(.dark)',
   aubergine: '.dark[data-dark-theme="aubergine"]',
-  walnut: ".dark",
   graphite: '.dark[data-dark-theme="gray"]',
+  midnight: '.dark[data-dark-theme="midnight"]',
+  obsidian: '.dark[data-dark-theme="obsidian"]',
+  indigo: '.dark[data-dark-theme="indigo"]',
 };
 
 interface Rule {
@@ -54,7 +61,7 @@ function parseRules(css: string): Rule[] {
 }
 
 /// The custom properties `element` itself receives. Later rules win: the theme
-/// rules in tokens.css run from least to most specific, so source order agrees
+/// rules in the token files run from least to most specific, so source order agrees
 /// with the cascade here. `web/scripts/theme-preview-test.mjs` checks the real
 /// cascade in Chrome.
 function resolveTokens(element: Element, rules: Rule[]): Map<string, string | undefined> {
@@ -70,7 +77,7 @@ function resolveTokens(element: Element, rules: Rule[]): Map<string, string | un
 
 function owningRule(rules: Rule[], selector: string): Rule {
   const rule = rules.find((candidate) => candidate.selectors.includes(selector));
-  if (rule === undefined) throw new Error(`tokens.css has no ${selector} rule`);
+  if (rule === undefined) throw new Error(`the token files have no ${selector} rule`);
   return rule;
 }
 
@@ -88,7 +95,7 @@ function applyToRoot(option: ThemeOption): HTMLElement {
   const root = document.documentElement;
   root.classList.toggle("dark", option.scheme === "dark");
   root.dataset.lightTheme = option.lightVariant ?? "ledger";
-  root.dataset.darkTheme = option.darkVariant ?? "walnut";
+  root.dataset.darkTheme = option.darkVariant ?? "aubergine";
   return root;
 }
 
@@ -110,7 +117,7 @@ afterEach(() => {
 describe("theme picker palettes", () => {
   const rules = parseRules(tokensCss);
 
-  it.each(THEME_OPTIONS)("$label previews and applies its tokens.css palette", (option) => {
+  it.each(THEME_OPTIONS)("$label previews and applies its token-file palette", (option) => {
     renderPicker();
     const expected = palette(owningRule(rules, OWNING_SELECTOR[option.id]));
 
@@ -137,12 +144,12 @@ describe("theme picker palettes", () => {
 
   it("moves the preview and the applied theme together when the source changes", () => {
     renderPicker();
-    const walnut = THEME_OPTIONS.find((option) => option.id === "walnut")!;
+    const graphite = THEME_OPTIONS.find((option) => option.id === "graphite")!;
     const edited = parseRules(tokensCss);
-    owningRule(edited, OWNING_SELECTOR.walnut).declarations.set("--primary", "oklch(0 0 0)");
+    owningRule(edited, OWNING_SELECTOR.graphite).declarations.set("--primary", "oklch(0 0 0)");
 
-    expect(resolveTokens(previewOf(walnut), edited).get("--primary")).toBe("oklch(0 0 0)");
-    expect(resolveTokens(applyToRoot(walnut), edited).get("--primary")).toBe("oklch(0 0 0)");
+    expect(resolveTokens(previewOf(graphite), edited).get("--primary")).toBe("oklch(0 0 0)");
+    expect(resolveTokens(applyToRoot(graphite), edited).get("--primary")).toBe("oklch(0 0 0)");
   });
 
   it("detects a preview scope dropped from the light palette selector", () => {

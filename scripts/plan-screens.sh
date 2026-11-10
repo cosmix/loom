@@ -7,8 +7,8 @@
 # Run from the worktree root after `cd web && bun run build` and `cargo build` (the binary embeds
 # web/dist). Serves a shallow scratch clone of HEAD's doc/ so the operator commits nothing;
 # --worktree-doc copies the worktree's current doc/ over it so uncommitted docs show. Shoots each
-# route at 1440x900 and 390x844 in Ledger and Walnut, or the --themes ids (ledger, walnut,
-# graphite), in Chromium unless --browser=firefox (the user's browser: use it for every visual check;
+# route at 1440x900 and 390x844 in Ledger and Graphite, or the --themes ids (ledger, harbor,
+# aubergine, graphite, midnight, obsidian, indigo), in Chromium unless --browser=firefox (the user's browser: use it for every visual check;
 # the host's Playwright Firefox build must already be installed, nothing is downloaded). The leading
 # flags may come in any order; exits non-zero on a console error or a route that does not render. Loopback
 # is per Bash call, so the server and browser run here.

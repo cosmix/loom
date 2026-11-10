@@ -71,7 +71,7 @@
   background: transparent;
   color: var(--run-colour);
   /* At rest the chevron is a control, so it needs 3:1 (WCAG 1.4.11) against the page: at 0.85 the
-   * weakest doc hue gives 3.4:1 on Ledger and 4.2:1 or more on Walnut and Graphite (0.7 gave 2.7:1). */
+   * weakest doc hue gives 3.4:1 on Ledger and 4.2:1 or more on Graphite and Aubergine (0.7 gave 2.7:1). */
   opacity: 0.85;
   vertical-align: -0.35em;
   cursor: pointer;

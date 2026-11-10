@@ -1,8 +1,20 @@
 import { describe, expect, it } from "vitest";
-import tokensCss from "@/aurora-ui/shared/styles/tokens.css?raw";
+import tokensDark from "@/aurora-ui/shared/styles/tokens-dark.css?raw";
+import tokensLight from "@/aurora-ui/shared/styles/tokens-light.css?raw";
 import indexCss from "@/index.css?raw";
 
+// The palettes, light themes first as the stylesheet imports them.
+const tokensCss = `${tokensLight}\n${tokensDark}`;
+
 const themes = [":root", ".dark"] as const;
+// The `--background` each doc token set sits on: `.dark` has no background of its own, each dark
+// variant sets one.
+const backgroundSelectors: Record<(typeof themes)[number], string[]> = {
+  ":root": [":root", ':root[data-light-theme="harbor"]:not(.dark)'],
+  ".dark": ["aubergine", "gray", "midnight", "obsidian", "indigo"].map(
+    (id) => `.dark[data-dark-theme="${id}"]`,
+  ),
+};
 const docTokens = Array.from({ length: 8 }, (_, index) => `--doc-${index + 1}`);
 
 type Oklch = { lightness: number; chroma: number; hue: number };
@@ -63,20 +75,22 @@ describe("document colour tokens", () => {
     }
   });
 
-  it("contrast at least 3:1 against --background in both themes", () => {
+  it("contrast at least 3:1 against every theme's --background", () => {
     for (const theme of themes) {
-      const background = luminance(
-        parseOklch(declaration(tokensCss, theme, "--background"), `${theme} --background`),
-      );
-      for (const token of docTokens) {
-        const value = declaration(indexCss, theme, token);
-        const foreground = luminance(parseOklch(value, `${theme} ${token}`));
-        const contrast =
-          (Math.max(foreground, background) + 0.05) / (Math.min(foreground, background) + 0.05);
-        expect(
-          contrast,
-          `${theme} ${token}: ${value}, contrast ${contrast.toFixed(2)}:1`,
-        ).toBeGreaterThanOrEqual(3);
+      for (const selector of backgroundSelectors[theme]) {
+        const background = luminance(
+          parseOklch(declaration(tokensCss, selector, "--background"), `${selector} --background`),
+        );
+        for (const token of docTokens) {
+          const value = declaration(indexCss, theme, token);
+          const foreground = luminance(parseOklch(value, `${theme} ${token}`));
+          const contrast =
+            (Math.max(foreground, background) + 0.05) / (Math.min(foreground, background) + 0.05);
+          expect(
+            contrast,
+            `${selector} ${token}: ${value}, contrast ${contrast.toFixed(2)}:1`,
+          ).toBeGreaterThanOrEqual(3);
+        }
       }
     }
   });

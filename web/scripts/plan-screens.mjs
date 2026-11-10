@@ -3,7 +3,7 @@
 // Usage: node web/scripts/plan-screens.mjs [--themes=<id>,<id>] [--browser=chromium|firefox]
 //        <token-url> <out-dir> <route>...
 //
-// Each route is shot at 1440x900 and 390x844, in Ledger (light) and Walnut (dark) unless
+// Each route is shot at 1440x900 and 390x844, in Ledger (light) and Graphite (dark) unless
 // --themes names others from THEMES, full page, to <out-dir>/<route-slug>-<width>-<theme>.png,
 // in Chromium unless --browser=firefox. The leading flags may come in any order.
 // Exit 1 on any console error, page error, HTTP status >= 400 on a route, or a navigation that
@@ -23,11 +23,15 @@ const VIEWPORTS = [
 // Same ids and variants as the options in web/src/components/theme-picker.tsx; the storage keys in
 // themeInitScript match web/src/aurora-ui/shared/atoms/theme.ts (jotai atomWithStorage stores JSON).
 const THEMES = {
-  ledger: { name: "ledger", scheme: "light", dark: "walnut" },
-  walnut: { name: "walnut", scheme: "dark", dark: "walnut" },
-  graphite: { name: "graphite", scheme: "dark", dark: "gray" },
+  ledger: { name: "ledger", scheme: "light", light: "ledger", dark: "gray" },
+  harbor: { name: "harbor", scheme: "light", light: "harbor", dark: "gray" },
+  aubergine: { name: "aubergine", scheme: "dark", light: "ledger", dark: "aubergine" },
+  graphite: { name: "graphite", scheme: "dark", light: "ledger", dark: "gray" },
+  midnight: { name: "midnight", scheme: "dark", light: "ledger", dark: "midnight" },
+  obsidian: { name: "obsidian", scheme: "dark", light: "ledger", dark: "obsidian" },
+  indigo: { name: "indigo", scheme: "dark", light: "ledger", dark: "indigo" },
 };
-const DEFAULT_THEMES = ["ledger", "walnut"];
+const DEFAULT_THEMES = ["ledger", "graphite"];
 
 /**
  * The Firefox build to launch. The one playwright-core pins is used when it is installed; else the
@@ -69,7 +73,7 @@ function routeSlug(route) {
 function themeInitScript(theme) {
   return `
     localStorage.setItem("loom:theme", ${JSON.stringify(JSON.stringify(theme.scheme))});
-    localStorage.setItem("loom:light-variant", ${JSON.stringify(JSON.stringify("ledger"))});
+    localStorage.setItem("loom:light-variant", ${JSON.stringify(JSON.stringify(theme.light))});
     localStorage.setItem("loom:dark-variant", ${JSON.stringify(JSON.stringify(theme.dark))});
   `;
 }
