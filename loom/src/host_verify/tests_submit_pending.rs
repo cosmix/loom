@@ -221,3 +221,34 @@ fn a_submit_after_interrupted_promotion_creates_a_distinct_waiting_job() {
     store::save_current(&work, &ended).unwrap();
     assert_eq!(pending::promote(&work, STAGE).unwrap(), Some(next));
 }
+
+#[test]
+fn a_changed_tree_on_the_same_head_supersedes_the_check_and_its_waiting_one() {
+    let (_tmp, work) = state_root();
+    let (mut current, waiting) = pair(&work);
+    current.state = JobState::Running;
+    store::save_current(&work, &current).unwrap();
+    let digest = "d".repeat(64);
+    let edited = SubmitRequest {
+        tree_digest: &digest,
+        ..subset("r3", &[3])
+    };
+    let (_, next) = superseded(submit(&work, &edited, Utc::now()).unwrap());
+    let reason = format!("superseded by {}", next.id);
+    assert_cancelled(&work, &current, &reason);
+    assert_cancelled(&work, &waiting, &reason);
+    assert_eq!(store::load_pending(&work, STAGE).unwrap(), None);
+    assert_eq!(store::load_current(&work, STAGE).unwrap(), Some(next));
+}
+
+#[test]
+fn widening_never_narrows_a_full_waiting_job_or_drops_its_no_cache() {
+    let (_tmp, work) = state_root();
+    let current = queued(submit(&work, &subset("r1", &[1]), Utc::now()).unwrap());
+    let (full, behind) = waiting(submit(&work, &request("r2", HEAD_A, true), Utc::now()).unwrap());
+    assert_eq!(behind, current.id);
+    assert_eq!((full.criteria.clone(), full.no_cache), (None, true));
+    let (widened, _) = waiting(submit(&work, &subset("r3", &[4]), Utc::now()).unwrap());
+    assert_eq!(widened.id, full.id);
+    assert_eq!((widened.criteria, widened.no_cache), (None, true));
+}

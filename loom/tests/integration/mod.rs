@@ -17,6 +17,7 @@ pub mod helpers;
 pub mod home_isolation;
 pub mod hooks_commit_filter;
 pub mod hooks_git_add_guard;
+pub mod hooks_guard_fail_open;
 pub mod hooks_no_preexisting_failures;
 pub mod hooks_poll_guard;
 pub mod hooks_read_guard;

@@ -115,3 +115,39 @@ fn a_job_that_ended_does_not_refuse_resolved() {
 
     assert!(!error.contains(&job.id), "{error}");
 }
+
+#[test]
+#[serial]
+fn a_waiting_check_behind_an_ended_one_refuses_then_is_withdrawn() {
+    let temp = TempDir::new().unwrap();
+    let mut current = stage_with_a_queued_check(temp.path());
+    let work_dir = temp.path().join(".loom").join("work");
+    let (head, tree) = ("a".repeat(40), "b".repeat(64));
+    let uncached = SubmitRequest {
+        stage_id: STAGE,
+        session_id: "resolver",
+        request_id: "r2",
+        kind: JobKind::Check,
+        head: &head,
+        tree_digest: &tree,
+        no_cache: true,
+        criteria: None,
+    };
+    let waiting = match submit(&work_dir, &uncached, Utc::now()).unwrap() {
+        Submission::Waiting { pending, .. } => *pending,
+        other => panic!("expected a waiting check, got {other:?}"),
+    };
+    current.state = JobState::Cancelled;
+    save_current(&work_dir, &current).unwrap();
+
+    let error = format!(
+        "{:#}",
+        withdraw_or_refuse_host_job(STAGE, &work_dir, true).unwrap_err()
+    );
+    assert!(error.contains(&waiting.id), "{error}");
+    withdraw_or_refuse_host_job(STAGE, &work_dir, false).unwrap();
+    assert_eq!(
+        crate::host_verify::store::load_pending(&work_dir, STAGE).unwrap(),
+        None
+    );
+}
