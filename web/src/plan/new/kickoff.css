@@ -161,7 +161,10 @@
 /* ---- Conversation --------------------------------------------------------------------------- */
 
 /* The conversation fills the screen's height: the head on top, the transcript scrolling, the
-   composer at the foot. Below 1024px Taking shape follows under it, so the page scrolls on. */
+   composer at the foot. Below 1024px Taking shape follows under it, so the page scrolls on. The
+   column is the chat's (chat/chat-column.css shares its height between the transcript and the
+   composer). The row is at least 28rem tall below 1024px (`minmax(28rem, 100%)`) and 22rem from
+   1024px up: in a shorter window the page scrolls instead. */
 [data-loom-plan] .kickoff-page[data-state="live"] {
   height: 100%;
   grid-template-rows: minmax(28rem, 100%) auto;
@@ -176,7 +179,7 @@
 
 @media (min-width: 1024px) {
   [data-loom-plan] .kickoff-page[data-state="live"] {
-    grid-template-rows: minmax(0, 1fr);
+    grid-template-rows: minmax(22rem, 1fr);
   }
 
   [data-loom-plan] .kickoff-page[data-state="live"] .kickoff-side {

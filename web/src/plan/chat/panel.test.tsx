@@ -167,8 +167,9 @@ it("reduced motion stops the roundel", () => {
   );
 });
 
-it("the panel's rows cannot grow past it, so the transcript never slides under the head", () => {
-  expect(chatCss).toMatch(/\.chat-panel \{[^}]*grid-template-rows:\s*auto minmax\(0, 1fr\) auto/);
+it("the panel is as tall as its row, and chat-column.css alone shares that height out", () => {
+  expect(chatCss).toMatch(/\.chat-panel \{[^}]*\n\s*height: 100%;/);
+  expect(chatCss).not.toMatch(/grid-template-rows|flex:/);
 });
 
 function disconnect(store: Store) {

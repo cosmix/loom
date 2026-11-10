@@ -1,5 +1,5 @@
 import { useAtomValue } from "jotai";
-import { memo, useId, useLayoutEffect, useRef, useState, type JSX } from "react";
+import { memo, useId, useState, type JSX } from "react";
 
 import type { EndedChat, Item, SessionView, Turn } from "@/plan/api/schema-chat";
 import { plural } from "@/plan/ui/plural";
@@ -12,6 +12,7 @@ import { SessionDivider } from "./session-divider";
 import { clearedChatAtom, shownSessionAtom } from "./shown-session";
 import { groupToolRows, type ToolGroup } from "./tool-group";
 import { TurnFooter } from "./turn-footer";
+import { useFollow } from "./use-follow";
 import { Untrusted } from "./visible-controls";
 import { LeftBehindCard, StartingCard, WrapUpCard } from "./wrap-up";
 import "./chat-surface.css";
@@ -192,41 +193,6 @@ function PendingDecision(): JSX.Element | null {
   );
 }
 
-function useFollow(turns: Turn[], previous: unknown) {
-  const scroller = useRef<HTMLDivElement>(null);
-  const content = useRef<HTMLDivElement>(null);
-  const following = useRef(true);
-  const [activity, setActivity] = useState(false);
-  const follow = () => {
-    const node = scroller.current;
-    if (node) node.scrollTop = node.scrollHeight;
-    following.current = true;
-    setActivity(false);
-  };
-  const onScroll = () => {
-    const node = scroller.current;
-    if (!node) return;
-    following.current = node.scrollHeight - node.clientHeight - node.scrollTop <= 32;
-    if (following.current) setActivity(false);
-  };
-  useLayoutEffect(() => {
-    if (following.current) {
-      const node = scroller.current;
-      if (node) node.scrollTop = node.scrollHeight;
-    } else setActivity(true);
-  }, [turns, previous]);
-  useLayoutEffect(() => {
-    if (typeof ResizeObserver === "undefined" || !content.current) return;
-    const observer = new ResizeObserver(() => {
-      const node = scroller.current;
-      if (following.current && node) node.scrollTop = node.scrollHeight;
-    });
-    observer.observe(content.current);
-    return () => observer.disconnect();
-  }, []);
-  return { scroller, content, activity, follow, onScroll };
-}
-
 /**
  * The closing turn is never a turn: a card while its write runs, then what the chat left behind.
  * A closing turn still open in a chat that is not `ending` (the write was cut off) is left behind.
@@ -366,7 +332,7 @@ export function Transcript(): JSX.Element {
   // The conversation the outcome belongs to: the live session's turns, else the concluded one's.
   const chat = chronological(session ? turns : (previous?.turns ?? []));
   return (
-    <div className="relative flex min-h-0 flex-1 flex-col">
+    <div className="chat-transcript-frame">
       <div
         ref={scroll.scroller}
         onScroll={scroll.onScroll}

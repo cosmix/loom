@@ -1,0 +1,163 @@
+/* The chat column's height budget, stated once. The column is a flex column of a known height
+ * (the panel, the sheet, the kickoff conversation) and every part in it either keeps its height
+ * under a cap, shrinks, or scrolls inside itself; none can paint outside its own box. The rules:
+ *
+ *   top       rigid, at most half the column; taller, it scrolls inside itself
+ *   body      the transcript or the empty state: takes what is left and never less than its
+ *             floor, min(7rem, 30% of the column); it is the part that scrolls
+ *   composer  as tall as its content, shrinking into what the top and the body's floor leave.
+ *             The foot's notes give way first; then the extras, the unconfirmed sends and the
+ *             box shrink together, each scrolling inside itself, the box down to one attached
+ *             row and one line of text; when even the floors do not fit, the composer scrolls
+ *             as a whole
+ *
+ * The two hard limits, the top's cap and the body's floor, are shares of the column, so they fit
+ * at every size; everything else shrinks or scrolls. No part has a fixed height or a viewport
+ * unit, and the rem caps below only stop a part growing: none is needed for the parts to fit. A
+ * part added to the column states which of the three behaviours it has. Every part clips or
+ * scrolls at its own edge, so they cannot overlap at any height; from a 15rem column (19rem with
+ * the queue strip) the box and Send are in view, and under that the composer scrolls to them.
+ * scripts/chat-layout-test.mjs measures all of it in a browser.
+ *
+ * Imported by chat-surface.css, so the kickoff screen and the help scene get the same rules.
+ */
+
+.chat-panel {
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── Top ────────────────────────────────────────────────────────────────── */
+
+/* Alone in the panel (a session on another screen) it may take the whole height. */
+.chat-panel-top {
+  flex: 0 1 auto;
+  min-height: 0;
+  overflow: hidden auto;
+}
+
+.chat-panel-top:not(:last-child) {
+  flex-shrink: 0;
+  max-height: 50%;
+}
+
+/* ── Body ───────────────────────────────────────────────────────────────── */
+
+/* Basis 0: the body's content never sets its height, so a long transcript cannot push the
+ * composer down. The frame clips: its scroller keeps 24px of padding and would otherwise show a
+ * strip of text over the composer when the column is at its shortest. */
+.chat-transcript-frame,
+.chat-empty {
+  flex: 1 1 0;
+  min-height: min(7rem, 30%);
+}
+
+.chat-transcript-frame {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* ── Composer ───────────────────────────────────────────────────────────── */
+
+.chat-composer {
+  display: flex;
+  flex: 0 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden auto;
+}
+
+/* The input's parts (the box, the foot, the unconfirmed sends) are items of the composer's own
+ * column, so each one's floor counts when the composer shrinks. */
+.chat-composer-input {
+  display: contents;
+}
+
+/* The strips around the box shrink with it, in proportion to their heights, and scroll inside
+ * themselves. The queue and the suggestions are one strip, so the list inside it scrolls with
+ * the strip. Each keeps one row in view to scroll from. */
+.chat-composer-extras,
+.chat-composer-foot,
+.chat-unconfirmed {
+  flex: 0 1 auto;
+  overflow: hidden auto;
+}
+
+.chat-composer-extras {
+  min-height: var(--control-height-sm);
+  max-height: 14rem;
+}
+
+.chat-composer-extras .chat-suggestions {
+  max-height: none;
+  overflow: visible;
+}
+
+.chat-unconfirmed {
+  min-height: var(--control-height-sm);
+  max-height: 6rem;
+}
+
+/* The foot gives way before anything else (a shrink weight of 100 against 1) and keeps its
+ * first line, Send's reason or the hint; the notes under it scroll. */
+.chat-composer-foot {
+  flex-shrink: 100;
+  min-height: calc(var(--type-fine) * var(--leading-ui));
+  scrollbar-width: thin;
+}
+
+/* The box's floor is the sum of its parts' floors, written out because a flex item's own
+ * minimum never follows its children's: its padding and edge (20px, chat-composer.css), one
+ * line of text with the tools, and one attached row with the gap under it when the message
+ * carries anything. The box clips, so a floor that falls behind its parts cuts them at the
+ * box's edge and never draws them over the foot. */
+.chat-composer-box {
+  --chat-line-floor: 44px;
+  --chat-attached-floor: calc(var(--control-height-sm) + var(--space-1) + 1px);
+  display: flex;
+  flex: 0 1 auto;
+  flex-direction: column;
+  min-height: calc(20px + var(--chat-line-floor));
+  overflow: hidden;
+}
+
+.chat-composer-box:has(> .chat-composer-attached:not(:empty)) {
+  min-height: calc(20px + var(--chat-line-floor) + var(--chat-attached-floor) + var(--space-1));
+}
+
+/* What the next message carries: about four rows, fewer when the box is short, never under one
+ * row and the rule beneath it. */
+.chat-composer-attached {
+  flex: 0 1 auto;
+  min-height: var(--chat-attached-floor);
+  max-height: 7.5rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+/* The text and, on its last line, the tools. The field's own height is set from its text, eight
+ * lines at most (composer-hooks.ts); the line may be shorter than that, and the text then
+ * scrolls. The field's one cap here is the line: a second one in px would leave the line taller
+ * than the field. */
+.chat-composer-line {
+  display: flex;
+  flex: 0 1 auto;
+  align-items: flex-end;
+  gap: var(--space-2);
+  min-width: 0;
+  min-height: var(--chat-line-floor);
+}
+
+.chat-composer-field {
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: var(--chat-line-floor);
+  max-height: 100%;
+  overflow-y: auto;
+}
+
+.chat-composer-actions {
+  flex: none;
+}

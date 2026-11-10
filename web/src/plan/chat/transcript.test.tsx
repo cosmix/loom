@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import brief from "@/plan/api/fixtures/session-brief.json";
@@ -175,34 +175,6 @@ it("older turns collapse to one line and expand", () => {
   );
   fireEvent.click(toggle);
   expect(within(log).queryByText("Reply 1")).toBeNull();
-});
-
-it("pill when scrolled up, follow at bottom", () => {
-  const first = turn([item("text", { id: "first", markdown: "First reply" })]);
-  const h = mount([], { turns: [first] });
-  Object.defineProperties(h.log, {
-    scrollHeight: { configurable: true, value: 1000 },
-    clientHeight: { configurable: true, value: 200 },
-  });
-  h.log.scrollTop = 0;
-  fireEvent.scroll(h.log);
-  const second = {
-    ...first,
-    items: [...first.items, item("text", { id: "second", markdown: "Second reply" })],
-  };
-  h.update([second]);
-  expect(h.log.scrollTop).toBe(0);
-  fireEvent.click(screen.getByRole("button", { name: "New activity" }));
-  expect(h.log.scrollTop).toBe(1000);
-  expect(screen.queryByRole("button", { name: "New activity" })).toBeNull();
-  h.log.scrollTop = 800;
-  fireEvent.scroll(h.log);
-  Object.defineProperty(h.log, "scrollHeight", { configurable: true, value: 1200 });
-  h.update([
-    { ...second, items: [...second.items, item("text", { id: "third", markdown: "Third reply" })] },
-  ]);
-  expect(h.log.scrollTop).toBe(1200);
-  expect(screen.queryByRole("button", { name: "New activity" })).toBeNull();
 });
 
 it("log region announces text blocks only", () => {

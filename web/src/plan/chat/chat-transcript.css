@@ -9,13 +9,6 @@
 @import "./chat-tools.css";
 @import "./chat-cards.css";
 
-.chat-panel-middle {
-  display: flex;
-  min-width: 0;
-  min-height: 0;
-  flex-direction: column;
-}
-
 .chat-transcript {
   /* The cards' corner and the rise's curve, shared by every part of the transcript. */
   --chat-card-corner: 14px;
@@ -31,6 +24,12 @@
   font-family: var(--font-sans);
   font-size: var(--type-body);
   line-height: var(--leading-body);
+}
+
+/* The log's focus ring is drawn inside its edge: its frame clips at that edge (chat-column.css). */
+.chat-transcript:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: -2px;
 }
 
 /* The transcript is a column with one 16px gap; turns are set apart by that space alone. */
