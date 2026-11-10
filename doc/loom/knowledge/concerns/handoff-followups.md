@@ -49,7 +49,7 @@ Open items under `web/src/plan/run/` and `web/src/plan/chat/pressure/`.
 
 ## Unverified Live Behaviour
 
-The browser render of the pressure dialog, run dialog, abandon dialogs and run strip at 390 px and 1280 px in the four themes, dark-theme contrast, Radix focus timing across the two abandon steps, a real `loom pressure` run with agent-team teammates (`teammateMode` unobserved), a real Codex Stop/grace/kill, and a commit through the dialog with the user's hooks and signing were not exercised: the review sandbox has no browser (no Unix sockets, no network). They need an operator pass after merge.
+The browser render of the pressure dialog, run dialog, abandon dialogs and run strip at 390 px and 1280 px in every theme, dark-theme contrast, Radix focus timing across the two abandon steps, a real `loom pressure` run with agent-team teammates (`teammateMode` unobserved), a real Codex Stop/grace/kill, and a commit through the dialog with the user's hooks and signing were not exercised: the review sandbox has no browser (no Unix sockets, no network). They need an operator pass after merge.
 
 ## Proposed Guards
 
