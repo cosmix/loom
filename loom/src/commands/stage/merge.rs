@@ -111,12 +111,13 @@ fn refuse_live_host_job(stage_id: &str, work_dir: &Path) -> Result<()> {
 }
 
 /// With a daemon running, its runner owns the job's child and kills it on its
-/// own tick, so a live (current or waiting) job is only waited for. Without one nothing would ever
-/// end the record: a queued job is withdrawn and the merge continues; a
-/// running job is withdrawn too, but its orphaned `verify-host` child still
-/// holds the worktree until `child_watchdog` sees the record is no longer
-/// `Running` (it polls every 50 ms and kills the child's process group), so
-/// the operator reruns shortly. A record that cannot be read refuses.
+/// own tick, so a live (current or waiting) job is only waited for. Without
+/// one nothing would ever end the record: a queued job is withdrawn and the
+/// merge continues; a running job is withdrawn too, but its orphaned
+/// `verify-host` child still holds the worktree until `child_watchdog` sees
+/// the record is no longer `Running` (it polls every 50 ms and kills the
+/// child's process group), so the operator reruns shortly. A record that
+/// cannot be read refuses.
 fn withdraw_or_refuse_host_job(
     stage_id: &str,
     work_dir: &Path,
