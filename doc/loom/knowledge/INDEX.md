@@ -149,7 +149,7 @@
 | [dev-install](mistakes/dev-install.md) | Daemon | 44 |
 | [doctrine-and-acceptance](mistakes/doctrine-and-acceptance.md) |  | 392 |
 | [frontmatter-boundary](mistakes/frontmatter-boundary.md) |  | 13 |
-| [hooks-shell-portability](mistakes/hooks-shell-portability.md) |  | 362 |
+| [hooks-shell-portability](mistakes/hooks-shell-portability.md) |  | 372 |
 | [host-verify-group-containment](mistakes/host-verify-group-containment.md) |  | 23 |
 | [knowledge-base-drift](mistakes/knowledge-base-drift.md) |  | 266 |
 | [knowledge-cli-invariants](mistakes/knowledge-cli-invariants.md) | Rules | 231 |
@@ -164,10 +164,10 @@
 | [parallel-worktree-shared-state](mistakes/parallel-worktree-shared-state.md) | Shared | 351 |
 | [phantom-merges](mistakes/phantom-merges.md) | Merges | 347 |
 | [pinned-literals-ledgers-and-wiring](mistakes/pinned-literals-ledgers-and-wiring.md) | Pins | 332 |
-| [plan-authoring](mistakes/plan-authoring.md) |  | 121 |
+| [plan-authoring](mistakes/plan-authoring.md) |  | 139 |
 | [plan-server-delivery](mistakes/plan-server-delivery.md) | Slips | 369 |
 | [planner-design-brainstorm](mistakes/planner-design-brainstorm.md) | Stubs | 94 |
-| [planner-follow-ups-delivery](mistakes/planner-follow-ups-delivery.md) | Slips | 144 |
+| [planner-follow-ups-delivery](mistakes/planner-follow-ups-delivery.md) | Slips | 150 |
 | [planner-polish](mistakes/planner-polish.md) | Polish | 107 |
 | [planner-redesign](mistakes/planner-redesign.md) |  | 80 |
 | [planner-review-fixes](mistakes/planner-review-fixes.md) |  | 48 |
@@ -175,11 +175,11 @@
 | [planner-visual-feedback-shortfall](mistakes/planner-visual-feedback-shortfall.md) | Visual | 17 |
 | [planning-sandbox-delivery](mistakes/planning-sandbox-delivery.md) |  | 73 |
 | [pre-commit-hardening](mistakes/pre-commit-hardening.md) |  | 93 |
-| [refactor-stragglers](mistakes/refactor-stragglers.md) |  | 329 |
+| [refactor-stragglers](mistakes/refactor-stragglers.md) |  | 335 |
 | [release-feature-review](mistakes/release-feature-review.md) | Gaps | 13 |
 | [review-continuation-verification](mistakes/review-continuation-verification.md) | Repair | 331 |
 | [review-final-wave](mistakes/review-final-wave.md) |  | 190 |
-| [review-integration-verification](mistakes/review-integration-verification.md) |  | 168 |
+| [review-integration-verification](mistakes/review-integration-verification.md) |  | 182 |
 | [review-tracker](mistakes/review-tracker.md) |  | 353 |
 | [sandbox-and-settings](mistakes/sandbox-and-settings.md) |  | 391 |
 | [sandbox-protected-hooks-dir](mistakes/sandbox-protected-hooks-dir.md) |  | 37 |
@@ -194,7 +194,7 @@
 | [spurious-waiting-for-input](mistakes/spurious-waiting-for-input.md) | Idle | 43 |
 | [status-broadcast-hardening](mistakes/status-broadcast-hardening.md) |  | 75 |
 | [store-without-consumer](mistakes/store-without-consumer.md) | Unread | 104 |
-| [subagent-briefing](mistakes/subagent-briefing.md) |  | 386 |
+| [subagent-briefing](mistakes/subagent-briefing.md) |  | 394 |
 | [subagent-liveness-and-watch](mistakes/subagent-liveness-and-watch.md) |  | 387 |
 | [subagent-orchestration](mistakes/subagent-orchestration.md) | Agents | 397 |
 | [test-concurrency-and-fixtures](mistakes/test-concurrency-and-fixtures.md) | Races | 398 |
@@ -218,7 +218,7 @@
 | --- | --- | --- |
 | [agent-rule-bending-hardening](concerns/agent-rule-bending-hardening.md) |  | 375 |
 | [automatic-knowledge-source-graph-followups](concerns/automatic-knowledge-source-graph-followups.md) | Gaps | 69 |
-| [code-quality-and-hook-debt](concerns/code-quality-and-hook-debt.md) | Debt | 244 |
+| [code-quality-and-hook-debt](concerns/code-quality-and-hook-debt.md) | Debt | 248 |
 | [codex-heartbeat-starvation](concerns/codex-heartbeat-starvation.md) |  | 22 |
 | [contract-autonomy-followups](concerns/contract-autonomy-followups.md) |  | 74 |
 | [handoff-followups](concerns/handoff-followups.md) |  | 57 |
@@ -241,6 +241,6 @@
 | [state-confinement-gaps](concerns/state-confinement-gaps.md) | Caches | 21 |
 | [token-accounting-and-proof-defects](concerns/token-accounting-and-proof-defects.md) |  | 334 |
 | [typed-config-values](concerns/typed-config-values.md) | Gaps | 22 |
-| [verification-v2-followups](concerns/verification-v2-followups.md) |  | 215 |
+| [verification-v2-followups](concerns/verification-v2-followups.md) |  | 230 |
 | [web-dashboard-latent-issues](concerns/web-dashboard-latent-issues.md) | UI | 96 |
 | [worktree-build-cold-start](concerns/worktree-build-cold-start.md) | Cold | 136 |

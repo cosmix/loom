@@ -71,7 +71,7 @@
 Checked by `install.sh check_runtime_tools` (exits 1 if absent), `loom/src/commands/run/checks.rs::require_jq`
 (hard-fails `loom run`), and `loom/src/commands/repair/settings_checks.rs::jq_missing_issue` (reports it,
 no auto-fixer). In the hooks themselves, blocking guards call `loom_require_jq` (`loom-hooks/_common.sh`,
-exit 2, fail closed) and advisory hooks call `loom_warn_no_jq` (exit 1, non-blocking); lifecycle hooks
+exit 2, fail closed) and advisory hooks, plus the deterrent `subagent-verify-guard.sh`, call `loom_warn_no_jq` (exit 1, non-blocking); lifecycle hooks
 (`session-start.sh`, `post-tool-use.sh`, `subagent-start.sh`, `subagent-stop.sh`) keep their own
 pre-existing `command -v jq` skip instead. `rg`/`fd` are doctrine dependencies only (CLAUDE.md rule 8):
 `install.sh` and `loom run`'s `advisory_search_tools_preflight` warn when either is missing, and

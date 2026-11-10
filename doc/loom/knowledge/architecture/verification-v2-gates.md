@@ -10,7 +10,7 @@ none of them.
 
 **Completion order** (`verify/completion/mod.rs::run_checks`): goal-backward checks, then `verify/completion/complete_verification_v2.rs::run_v2` for v2 stages, then `after_stage`, unwired and duplicate checks, and the aggregated integration check. The command module `commands/stage/complete_verification.rs` prints operator guidance. The host child calls the same service; daemon gates defer integrity and review checks until the daemon applies the result. The preserved test file `commands/stage/complete_verification_v2_tests.rs` is loaded through its command wrapper and tests the shared v2 service.
 
-**No gate has a verifier subagent.** Integration-verify: the orchestrator and reviewers may run the full suite through `loom check integration-verify [--criterion <n>]` (`orchestrator/signals/cache.rs::INTEGRATION_VERIFY_OVERRIDE`). Concurrent matching requests join the same host job; matching completed passes use the cache, and callers wait for the result. Its acceptance criteria are the full gate, and `loom stage complete` can reuse valid cached passes. Beyond that check, the orchestrator runs only what completion does not: functional
+**No gate has a verifier subagent.** Integration-verify: the orchestrator and reviewers may run the full suite through `loom check integration-verify [--criterion <n>]` (`orchestrator/signals/cache.rs::INTEGRATION_VERIFY_OVERRIDE`). A covered request joins the live host job, an uncovered check from the same session waits behind it in the pending slot, completed passes are reused from the cache, and callers wait for the result. Its acceptance criteria are the full gate, and `loom stage complete` can reuse valid cached passes. Beyond that check, the orchestrator runs only what completion does not: functional
 checks, markdownlint, flake-check, Cargo.lock and ledger diffs, and clippy, fmt and maintainability checks first.
 Standard stage: the orchestrator runs `loom check <stage-id>` once (`ORCHESTRATOR_GATE`,
 `orchestrator/signals/cache/blocks.rs::ORCHESTRATOR_GATE`), a fix round runs `loom check <stage-id> --criterion <n>`, and the
@@ -190,7 +190,7 @@ Records live under `<state root>/verification/<stage>/` (`host_verify/store.rs`)
 - States (`JobState`): `queued` and `running` leave; `passed`, `failed`, `cancelled` and `interrupted` are terminal.
 - Every record change is a compare-and-set under the stage lock (`submit.rs`, `runner.rs`): the record is reloaded and changed only while it is still this job in the expected state.
 
-A check on the same session, head and tree as a live check joins it when covered; an uncovered request waits in the pending slot. Waiting selections are unioned with each other, not with the running selection; a full selection covers all, and a no-cache request makes the waiting job no-cache. The job copy is written before the slot and wins if they differ. Slot changes hold the stage lock.
+A covered check joins the live job whatever its session (`submit.rs::covers`); a merge resolver's request counts as uncached (`inbox_drain/check.rs::apply_check`), so it joins only a job that reads no pass cache; an uncovered check of the same session, head and tree waits in the pending slot (`submit.rs::waits_behind`); a check behind a live completion, freeze or verdict-completion job is refused; any other request supersedes the live job and cancels the waiting one. Waiting selections are unioned with each other, not with the running selection; a full selection covers all, and a no-cache request makes the waiting job no-cache. The job copy is written before the slot and wins if they differ. Slot changes hold the stage lock.
 
 ## Components
 
@@ -216,7 +216,7 @@ A check on the same session, head and tree as a live check joins it when covered
 - A cancellation is a state write. The runner kills a child whose record is no longer `running` on its next tick.
 - A cancelled job that no runner retired is found at restart by its child: the child still runs, and its command line names the job (`signals.rs::stop_children`). Elapsed time does not decide it.
 - The runner promotes a waiting job when the current job ends, even when all execution slots are busy. Restart leaves the waiting job for promotion on a later tick.
-- Stage reset snapshots live current and waiting job IDs together under the host-job lock before retiring agents, then cancels those identities in either slot. Promotion during reset is covered, and jobs submitted afterward are preserved.
+- Stage reset snapshots live current and waiting job IDs together under the host-job lock before retiring agents, then cancels those identities in either slot. Promotion during reset is covered. A replacement from another session or tree submitted afterward survives; a check that waits behind a captured job afterward is cancelled with it, because `submit::cancel_if_id` cancels the waiting slot when the captured current matches. `merge --resolved` treats a live waiting job as busy.
 
 ## Escalation Hold
 

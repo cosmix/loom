@@ -360,3 +360,13 @@ reaches 3.
 **Why:** The fixture did not replace its shell process with the intended stalled delegate.
 **Prevention:** Use `exec` in timeout fixtures when the test models a single stalled delegate; test descendant cleanup separately when required.
 **Fix:** Changed the fixture to `exec sleep` and reran the focused hook tests.
+
+## A Hook Fixture Copying a Subset of `loom-hooks/` Dies on `_common.sh`'s Sources
+
+**What happened:** the `guard-warns-without-jq` contract and an integration-verify functional check copied only `_common.sh`, `_bounded.sh` and `subagent-verify-guard.sh` into a temp directory. The guard exited 1 before its jq check, so stderr never named jq and the contract could not pass. With the seven helpers added but `_verify_matchers.sh` absent, a `cargo test` payload exits 0 for a dead or empty `LOOM_MAIN_AGENT_PID` and for the main agent.
+
+**Why:** `loom-hooks/_common.sh:178-184` sources `_parser`, `_parser_expand`, `_parser_scan`, `_identity`, `_stage_lookup`, `_containment` and `_heartbeat` with `|| return 1`, and the guard runs under `set -e`, so a missing helper ends the script on the `source` line, before the role check.
+
+**Prevention:** a fixture, contract or plan check that copies a hook into a temp directory copies the script plus every helper `_common.sh` sources (`rg -n 'source .*return 1' loom-hooks/_common.sh`), plus `_verify_matchers.sh` when the case reaches runner matching, and the plan's description names them.
+
+**Fix:** the contract writes the guard plus the seven helpers; `require-jq-advisory.sh` unsets `LOOM_WORK_DIR`, `LOOM_SESSION_ID`, `LOOM_STAGE_ID`, `LOOM_SESSION_TYPE` and `LOOM_HOOK_PATH`, as its sibling tests do (the recurrence of the `LOOM_HOOK_PATH` leak in [Hook Tests Inherit the Live Session's Environment](#hook-tests-inherit-the-live-sessions-environment-2026-09-19)).
