@@ -166,3 +166,17 @@ Integration failures and verification discipline for the Astra review repairs.
 **Prevention:** Run project-discovery tests with writable temporary storage outside the checkout, using the approved Cargo test environment.
 
 **Fix:** Rerun the focused tests in that environment and report the initial fixture failures separately.
+
+## An Integration-Verify Gate Started Before the Fix Round Is Voided by It
+
+**What happened:** an integration-verify host job runs in the live stage worktree and is bound to its tree digest (`host_verify/child.rs`). The gate was started before the review fix round; the fix worker's edits voided it ("the tree does not match the request"), and the job's `cargo test` held the build-directory lock the worker needed. A `loom check` on a changed tree supersedes (cancels) the running job, the only way to stop it.
+
+**Why:** the gate and the review round were treated as parallel work; the gate reads the tree the fix round is about to change.
+
+**Prevention:** run the review round first and request the full gate once the fix round is done. `loom check --criterion <n>` takes the 0-based criterion index.
+
+## A Failure Seen Only in the Session Sandbox Is Settled by the Host Job
+
+**What happened:** six `inbox_drain` tests (`tests_merge::merge_resolved_*`, `tests_merge_check::*`) failed in the session sandbox with and without the round's edits ("resolver content failed completion verification"). The host job's `cargo test --all-targets` passed all 10 criteria on the same tree. The criterion logs (`acceptance-<n>.log`) are not readable from the stage sandbox; only the `result.json` summaries under `.loom/work/verification/<stage>/<job>/` are.
+
+**Prevention:** do not chase or edit around a failure that only a shell in the session sandbox shows; settle it with the gate's host job (`loom check`), and dispute a criterion only when the host job itself fails it. `cargo audit` cannot fetch its advisory database from the sandbox (network denied, `~/.cargo/advisory-db` read-only): record it as unverified, never as passed.

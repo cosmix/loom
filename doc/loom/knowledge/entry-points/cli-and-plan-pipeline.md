@@ -139,7 +139,7 @@ Internal modules: `extraction.rs` (YAML block extraction, plan name), `validatio
 - `loom/src/user_config/keys.rs` — the `pressure.{claude,codex,address}_model` keys in `KEYS`, as `ValueKind::Enum` over the same vocabularies, so `loom config` and its TUI edit them with no per-key wiring.
 - `commands/{pressure,address,distill,changelog}.md` — vendored Claude slash commands (source for `~/.claude/commands/`).
 - `codex/skills/pressure/SKILL.md` — vendored Codex pressure skill (source for `~/.codex/skills/pressure/`).
-- `loom install-assets` (`assets/install.rs::install_all`, `assets/install/claude.rs::install_files`, `assets/install/codex.rs::install_skills`) installs both from the binary's embedded copies; `install.sh::main` runs it on the cloned-repo and `curl | bash` paths alike.
+- `loom install-assets` (`assets/install.rs::install_all`, `assets/install/claude.rs::install_files`, `assets/install/codex.rs::install_skills`) installs both from the binary's embedded copies; `install.sh::main` runs it on the cloned-repo and `curl | bash` paths alike. `install_files` also runs `prune_stale_agents` (`assets/install/claude.rs`), removing each `$CLAUDE_DIR/agents/loom-*.md` with no embedded source: a regular file is first copied to `<name>.bak.<UTC stamp>`, a symlink is unlinked unfollowed, a directory is skipped. A prune error aborts `install_all` before commands, skills and hooks; rerun the install.
 
 ## Key Config Files
 
