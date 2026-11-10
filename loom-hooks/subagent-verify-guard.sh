@@ -45,13 +45,14 @@
 # _verify_matchers.sh, sourced below; block() and the walk loop stay here.
 #
 # Input: JSON from stdin - {"tool_name": "Bash", "tool_input": {"command": ...}}
-# Exit codes: 0 = allow, 2 = block with guidance on stderr (also jq not
-# installed - fail closed)
+# Exit codes: 0 = allow, 2 = block with guidance on stderr. A missing jq or
+# _verify_matchers.sh exits 1: the call proceeds with a warning.
 
 set -euo pipefail
 
 source "$(dirname "$0")/_common.sh"
-loom_require_jq "subagent-verify-guard.sh"
+# Advisory on its own breakage: without jq the call proceeds with a warning.
+loom_warn_no_jq "subagent-verify-guard.sh"
 
 source "$(dirname "${BASH_SOURCE[0]}")/_bounded.sh"
 INPUT_JSON=$(loom_read_input 1 2>/dev/null || true)
@@ -188,9 +189,9 @@ EOF
 [subagent-verify-guard/subagent-verify] ⛔ BLOCKED: Subagent attempting project-wide verification.
 
 VERIFICATION IS THE MAIN AGENT'S JOB - NOT YOURS:
-- Compile the files YOU wrote as often as you need (`cargo check`,
-  `cargo build`, `tsc --noEmit`, `bun run build`) and format them with
-  `rustfmt --edition 2021 <files>`. No linter and no `cargo fmt`.
+- Compile the files YOU wrote as often as you need, and format them,
+  with the project's own build and formatter commands scoped to those
+  files. No linter and no formatter run over the whole project.
 - Run the tests for the code YOU wrote, and its module, when you are
   confident your code is ready or your fix is correct. Never the whole
   test suite: the stage's gate runs it.
@@ -204,7 +205,12 @@ EOF
 # NTOK, ROLE and TEST_ASSIGNED and call block() when they run, so this only
 # has to precede the walk loop below.
 # shellcheck source=_verify_matchers.sh
-source "$(dirname "${BASH_SOURCE[0]}")/_verify_matchers.sh"
+# A missing helper lets the call through (exit 1 is non-blocking): this hook
+# only raises the cost of a bare run, so its own breakage never stops work.
+source "$(dirname "${BASH_SOURCE[0]}")/_verify_matchers.sh" || {
+	echo "subagent-verify-guard.sh: _verify_matchers.sh is missing or unreadable beside this hook - test-runner checks are off for this call. Reinstall the hooks with \`loom install-assets\`." >&2
+	exit 1
+}
 
 # Walk the token stream, inspecting only tokens in COMMAND POSITION (line start
 # or just after a separator), so mentions inside arguments - `rg cargo doc/`,

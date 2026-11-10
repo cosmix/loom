@@ -116,11 +116,11 @@ const INTEGRATION_VERIFY_OVERRIDE: &str = "⚠️ **INTEGRATION-VERIFY OVERRIDE 
          Here every full run goes through \
          `loom check integration-verify [--criterion <n>]`, never a bare test runner. \
          The IV orchestrator runs `loom check integration-verify`; it carries the COMPLETE suite \
-         (`cargo build`, `cargo test`, `cargo clippy -- -D warnings`, `cargo fmt --check`). Read all \
+         (every acceptance criterion the plan gives this stage: the project's own build, test, lint and format commands, in whatever language it uses). Read all \
          stderr per immutable tree, environment, and criterion contract. Give reviewers the check summaries \
          and evidence pointers. Reviewers inspect independently and run `loom check integration-verify` \
-         themselves, with `--criterion <n>` as needed. On one tree the first request runs; covered \
-         requests join it; later requests hit the pass cache. Add targeted checks; those are additional \
+         themselves, with `--criterion <n>` as needed. On one tree the first request runs; a covered \
+         request joins it; an uncovered one from the same session waits and runs with the other waiting selections, so its verdict can list criteria it did not select; later requests hit the pass cache. Add targeted checks; those are additional \
          evidence, never a substitute for the canonical gate. Record command, real exit, criterion verdict, \
          input/contract identity, elapsed time, and an evidence pointer when available. A missing receipt \
          means run the check. After fixes the orchestrator re-evaluates invalidated checks; only the repaired \

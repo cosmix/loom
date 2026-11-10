@@ -10,9 +10,9 @@
 /// `loom-hooks/subagent-verify-guard.sh` prefixes it with a hook-only
 /// "BLOCKED" framing line, which is deliberately not part of the block.
 pub(super) const BLOCK_A: &str = "VERIFICATION IS THE MAIN AGENT'S JOB - NOT YOURS:
-- Compile the files YOU wrote as often as you need (`cargo check`,
-  `cargo build`, `tsc --noEmit`, `bun run build`) and format them with
-  `rustfmt --edition 2021 <files>`. No linter and no `cargo fmt`.
+- Compile the files YOU wrote as often as you need, and format them,
+  with the project's own build and formatter commands scoped to those
+  files. No linter and no formatter run over the whole project.
 - Run the tests for the code YOU wrote, and its module, when you are
   confident your code is ready or your fix is correct. Never the whole
   test suite: the stage's gate runs it.

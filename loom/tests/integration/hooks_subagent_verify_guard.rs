@@ -6,9 +6,9 @@
 //! agent is blocked only on an unfiltered test suite in a live standard stage
 //! (see the `main` submodule); scoped runs are still allowed; subagents running
 //! inside an `integration-verify` stage are exempted because that stage keeps
-//! its own gate (its orchestrator runs `loom check`; its reviewers run only
-//! targeted checks, which the subagent preamble states and this hook does not
-//! enforce); git commits are never blocked by this hook even
+//! its own gate (its orchestrator and reviewers run the full suite only through
+//! `loom check integration-verify`, which the subagent preamble states and this
+//! hook does not enforce); git commits are never blocked by this hook even
 //! when their message body mentions a verification command.
 //!
 //! GOTCHA 1 (temp dir): the detector matches "claude" case-insensitively
@@ -374,3 +374,6 @@ fn subagent_git_commit_message_with_internal_separator_allowed() {
          stderr={stderr}"
     );
 }
+
+#[path = "hooks_subagent_verify_guard_helper.rs"]
+mod helper;
