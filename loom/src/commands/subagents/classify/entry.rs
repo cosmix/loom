@@ -6,10 +6,11 @@ use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
 use std::path::Path;
 
 use anyhow::{Context, Result};
-use chrono::{DateTime, Utc};
 use serde_json::Value;
 
-use super::SubagentState;
+use crate::agent_state::progress::{
+    assistant_tool_name, block_text, block_type, entry_type, message_content_blocks,
+};
 
 #[cfg(test)]
 thread_local! {
@@ -86,14 +87,6 @@ fn parse_lines(content: &str) -> Vec<Value> {
         .collect()
 }
 
-pub(super) fn timestamp(entry: &Value) -> Option<DateTime<Utc>> {
-    entry
-        .get("timestamp")
-        .and_then(Value::as_str)
-        .and_then(|value| DateTime::parse_from_rfc3339(value).ok())
-        .map(|value| value.with_timezone(&Utc))
-}
-
 pub(crate) fn is_assistant(entry: &Value) -> bool {
     entry_type(entry) == Some("assistant")
 }
@@ -112,70 +105,11 @@ pub(crate) fn text_blocks(entry: &Value) -> Vec<&str> {
         .collect()
 }
 
-/// Classify one entry using the frozen table in the parent module. This emits
-/// only transcript states: lifecycle-only `Failed` and `Cancelled` are
-/// applied after exact identity lookup, and the done debounce is applied by
-/// the parent classifier.
-pub(super) fn classify_last(entry: &Value) -> SubagentState {
-    match entry_type(entry) {
-        Some("assistant") => classify_assistant(message_content_blocks(entry)),
-        Some("user") => SubagentState::Generating,
-        _ => SubagentState::Unknown,
-    }
-}
-
-fn classify_assistant(blocks: Vec<&Value>) -> SubagentState {
-    if blocks
-        .iter()
-        .any(|block| block_type(block) == Some("tool_use"))
-    {
-        SubagentState::ToolWait
-    } else if blocks.iter().any(|block| block_type(block) == Some("text")) {
-        SubagentState::Done
-    } else if blocks
-        .iter()
-        .any(|block| block_type(block) == Some("thinking"))
-    {
-        SubagentState::Generating
-    } else {
-        SubagentState::Unknown
-    }
-}
-
 /// Return the most recent tool call even when a later user result exists.
 pub(super) fn last_tool_used(entries: &[Value]) -> Option<String> {
-    entries.iter().rev().find_map(|entry| {
-        (entry_type(entry) == Some("assistant"))
-            .then(|| message_content_blocks(entry))?
-            .into_iter()
-            .rev()
-            .find(|block| block_type(block) == Some("tool_use"))
-            .and_then(block_tool_name)
-            .map(str::to_string)
-    })
-}
-
-fn entry_type(entry: &Value) -> Option<&str> {
-    entry.get("type").and_then(Value::as_str)
-}
-
-fn message_content_blocks(entry: &Value) -> Vec<&Value> {
-    entry
-        .get("message")
-        .and_then(|message| message.get("content"))
-        .and_then(Value::as_array)
-        .map(|blocks| blocks.iter().collect())
-        .unwrap_or_default()
-}
-
-fn block_type(block: &Value) -> Option<&str> {
-    block.get("type").and_then(Value::as_str)
-}
-
-fn block_text(block: &Value) -> Option<&str> {
-    block.get("text").and_then(Value::as_str)
-}
-
-fn block_tool_name(block: &Value) -> Option<&str> {
-    block.get("name").and_then(Value::as_str)
+    entries
+        .iter()
+        .rev()
+        .find_map(assistant_tool_name)
+        .map(str::to_string)
 }

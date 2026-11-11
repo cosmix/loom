@@ -27,7 +27,6 @@ impl Session {
             started_at: self.record.started_at.clone(),
             state_since: self.shown.since.clone(),
             working_since: self.shown.working_since.clone(),
-            subagents_running: self.machine.subagents_running(),
             last_activity: self.mapper.last_main_record_at().map(stamp),
             failure: self.failure.clone(),
             offer: self.offer.clone(),

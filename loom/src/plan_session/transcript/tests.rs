@@ -6,6 +6,7 @@ use std::path::PathBuf;
 use chrono::{DateTime, Duration, Utc};
 use serde_json::{json, Value};
 
+use super::notification::{parse_task_notification, BackgroundEvidence};
 use super::{Ingest, Mapper, RecordMark};
 use crate::plan_session::model::{
     ChatDelta, Delivery, Item, NoticeKind, Origin, TokenCounts, ToolStatus, Turn,
@@ -349,9 +350,15 @@ fn noise_records_produce_no_items_and_only_their_marks() {
 
     let prompt = user("u-u1", "commit these fixes.", None);
     assert_eq!(only_turn(&mapper).items, [prompt]);
+    let body = "<task-notification>\n<task-id>b3z9</task-id>\n<status>completed</status>";
+    let evidence = BackgroundEvidence::Notification(parse_task_notification(body).unwrap());
     let marks = [
         RecordMark::AgentsKilled { at: at(2) },
         RecordMark::SelfStartedTurn { at: at(3) },
+        RecordMark::Background {
+            at: at(3),
+            evidence,
+        },
         human(4, "commit these fixes."),
     ];
     assert_eq!(out.marks, marks);

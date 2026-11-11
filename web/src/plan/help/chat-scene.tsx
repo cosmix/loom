@@ -51,7 +51,6 @@ function sampleSession(state: SessionView["state"]): SessionView {
     started_at: STARTED_AT,
     state_since: STARTED_AT,
     working_since: STARTED_AT,
-    subagents_running: 0,
     fetch_grant: false,
     last_activity: STARTED_AT,
     failure: null,

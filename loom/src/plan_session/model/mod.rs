@@ -41,7 +41,6 @@ pub struct SessionView {
     pub started_at: String,
     pub state_since: String,
     pub working_since: Option<String>,
-    pub subagents_running: u32,
     pub last_activity: Option<String>,
     pub failure: Option<Failure>,
     pub offer: Option<String>,

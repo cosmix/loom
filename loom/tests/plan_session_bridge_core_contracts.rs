@@ -12,14 +12,15 @@ use std::fs;
 use std::time::Duration;
 
 use loom::plan_session::attachments::{format_message, parse_message, AttachmentKind, LockedTag};
+use loom::plan_session::bridge::background::BackgroundTasks;
 use loom::plan_session::hook_cli;
 use loom::plan_session::input::{check_delivered, check_send, sanitize, InputRefusal};
 use loom::plan_session::kind::SessionKind;
 use loom::plan_session::model::{DenyReason, Item, NoticeKind, SessionState, ToolStatus};
 use loom::plan_session::permission::{write_answer, Answer, Behavior};
-use loom::plan_session::spool::SpoolReader;
+use loom::plan_session::spool::{SpoolEvent, SpoolReader};
 use loom::plan_session::state::{Input, StateMachine};
-use loom::plan_session::transcript::Mapper;
+use loom::plan_session::transcript::{Mapper, RecordMark};
 use records::*;
 use serde_json::{json, Value};
 use support::*;
@@ -236,14 +237,19 @@ fn a_main_record_after_stop_means_working() {
     );
 }
 
+/// Apply one spool event to the machine and the background table, as the bridge does.
+fn both(machine: &mut StateMachine, tasks: &mut BackgroundTasks, event: SpoolEvent) {
+    tasks.event(&event);
+    feed(machine, event);
+}
+
 #[test]
 fn subagent_events_and_records_never_move_the_state() {
-    let mut machine = working();
+    let (mut machine, mut tasks) = (working(), BackgroundTasks::default());
     feed(&mut machine, stop(1_000));
     assert_eq!(machine.state(), SessionState::Idle);
-    let observed = |machine: &StateMachine| (machine.state(), machine.subagents_running());
-    feed(&mut machine, subagent("SubagentStart", 1_100));
-    assert_eq!(observed(&machine), (SessionState::Idle, 1));
+    both(&mut machine, &mut tasks, subagent("SubagentStart", 1_100));
+    assert_eq!((machine.state(), tasks.blocking()), (SessionState::Idle, 1));
     machine.apply(Input::Record {
         at: at(2_000),
         main: false,
@@ -253,10 +259,10 @@ fn subagent_events_and_records_never_move_the_state() {
         SessionState::Idle,
         "a subagent record after Stop"
     );
-    feed(&mut machine, subagent("SubagentStop", 2_100));
-    assert_eq!(observed(&machine), (SessionState::Idle, 0));
-    feed(&mut machine, subagent("SubagentStop", 2_200));
-    assert_eq!(observed(&machine), (SessionState::Idle, 0));
+    both(&mut machine, &mut tasks, subagent("SubagentStop", 2_100));
+    assert_eq!((machine.state(), tasks.blocking()), (SessionState::Idle, 0));
+    both(&mut machine, &mut tasks, subagent("SubagentStop", 2_200));
+    assert_eq!((machine.state(), tasks.blocking()), (SessionState::Idle, 0));
 }
 
 #[test]
@@ -285,21 +291,23 @@ fn two_pending_requests_keep_permission_until_both_are_answered() {
 }
 
 #[test]
-fn an_interrupt_or_agents_killed_resets_the_running_subagent_count() {
+fn an_interrupt_keeps_and_agents_killed_clears_the_running_subagents() {
     let two_running = || {
-        let mut machine = working();
-        feed(&mut machine, subagent("SubagentStart", 1_000));
-        feed(&mut machine, subagent("SubagentStart", 1_100));
-        assert_eq!(machine.subagents_running(), 2);
-        machine
+        let (mut machine, mut tasks) = (working(), BackgroundTasks::default());
+        both(&mut machine, &mut tasks, subagent("SubagentStart", 1_000));
+        let other = event("SubagentStart", 1_100, json!({"agent_id": "b2c4"}));
+        both(&mut machine, &mut tasks, other);
+        assert_eq!(tasks.blocking(), 2);
+        (machine, tasks)
     };
-    let mut interrupted = two_running();
-    interrupted.apply(Input::Interrupted { at: at(2_000) });
-    assert_eq!(interrupted.subagents_running(), 0, "after the interrupt");
-
-    let mut killed = two_running();
-    killed.apply(Input::AgentsKilled { at: at(2_000) });
-    assert_eq!(killed.subagents_running(), 0, "after AgentsKilled");
+    let (mut machine, mut interrupted) = two_running();
+    machine.apply(Input::Interrupted { at: at(2_000) });
+    interrupted.mark(&RecordMark::Interrupted { at: at(2_000) });
+    assert_eq!(machine.state(), SessionState::Idle);
+    assert_eq!(interrupted.blocking(), 2, "after the interrupt");
+    let (_, mut killed) = two_running();
+    killed.mark(&RecordMark::AgentsKilled { at: at(2_000) });
+    assert_eq!(killed.blocking(), 0, "after AgentsKilled");
 }
 
 #[test]

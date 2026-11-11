@@ -22,8 +22,6 @@ pub enum Input<'a> {
     RequestResolved { request_id: String },
     /// An `[Request interrupted by user` record.
     Interrupted { at: DateTime<Utc> },
-    /// The `agents_killed` system record.
-    AgentsKilled { at: DateTime<Utc> },
     /// A turn Claude Code started without a prompt (a `task-notification` record).
     SelfStartedTurn { at: DateTime<Utc> },
     /// The Claude Code process is gone.
@@ -54,7 +52,6 @@ pub struct StateMachine {
     pending: BTreeSet<String>,
     last_idle_at: Option<DateTime<Utc>>,
     last_main_at: Option<DateTime<Utc>>,
-    subagents: u32,
     compact_delivered: bool,
 }
 
@@ -76,7 +73,6 @@ impl StateMachine {
             pending: BTreeSet::new(),
             last_idle_at: None,
             last_main_at: None,
-            subagents: 0,
             compact_delivered: false,
         }
     }
@@ -98,9 +94,7 @@ impl StateMachine {
             Input::Interrupted { at } => {
                 self.idle(at);
                 self.pending.clear();
-                self.subagents = 0;
             }
-            Input::AgentsKilled { .. } => self.subagents = 0,
             Input::SelfStartedTurn { at } => {
                 self.note_main(at);
                 // A task-notification only counts after the last idle event, as a record does.
@@ -158,11 +152,6 @@ impl StateMachine {
         &self.pending
     }
 
-    /// Subagents started and not yet stopped.
-    pub fn subagents_running(&self) -> u32 {
-        self.subagents
-    }
-
     /// `received_at` (or the record's `at`) of the last idle evidence that won.
     pub fn last_idle_at(&self) -> Option<DateTime<Utc>> {
         self.last_idle_at
@@ -189,8 +178,6 @@ impl StateMachine {
                     self.pending.clear();
                 }
             }
-            "SubagentStart" => self.subagents = self.subagents.saturating_add(1),
-            "SubagentStop" => self.subagents = self.subagents.saturating_sub(1),
             "SessionEnd" => self.terminal = Some(SessionState::Ended),
             _ => {}
         }
@@ -200,18 +187,15 @@ impl StateMachine {
         match source {
             Some("startup") => {
                 self.started = true;
-                self.subagents = 0;
                 self.idle(at);
             }
             // Only a `/compact` the bridge delivered ends in Idle; an auto-compaction mid-turn
             // reports the same source and changes nothing (px-state-10).
             Some("compact") if self.compact_delivered => {
                 self.compact_delivered = false;
-                self.subagents = 0;
                 self.idle(at);
             }
-            Some("compact") | None => {}
-            Some(_) => self.subagents = 0,
+            _ => {}
         }
     }
 

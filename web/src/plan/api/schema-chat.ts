@@ -96,7 +96,6 @@ export const sessionViewSchema = z.strictObject({
   started_at: z.string(),
   state_since: z.string(),
   working_since: z.string().nullable(),
-  subagents_running: u32,
   last_activity: z.string().nullable(),
   failure: failureSchema.nullable(),
   offer: z.string().nullable(),
