@@ -6,10 +6,11 @@ use std::path::{Component, Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use chrono::{DateTime, Utc};
-use serde_json::{json, Value};
+use serde_json::Value;
 
 use super::background::Change;
 use super::commands::Step;
+use super::local::Clock;
 use super::registry::{Batch, Entry, Feed, FeedPaths, Feeds};
 use super::session::{Closing, EventKey, Phase, Session};
 use super::{denied, Bridge, BridgeConfig, BridgeEvent, EndOutcome};
@@ -19,8 +20,6 @@ use crate::plan_session::spool::SpoolEvent;
 use crate::plan_session::state::{is_idle_prompt, text, Input};
 use crate::plan_session::transcript::RecordMark;
 
-/// A delivered `/compact` whose boundary record had no Stop after it for this long is idle.
-const COMPACT_SETTLE: Duration = Duration::from_secs(2);
 impl Bridge {
     pub(super) fn tick(&self, feeds: &mut Feeds) {
         self.spawn_pending();
@@ -142,7 +141,7 @@ impl Session {
             ),
             "Notification" if wins && is_idle_prompt(&event.payload) => self.on_idle(false, step),
             "Stop" | "StopFailure" if wins => self.on_idle(true, step),
-            "PreCompact" => self.notice(NoticeKind::Info, "Compacting the context", step),
+            "PreCompact" => self.on_pre_compact(&event.payload, step),
             "SessionEnd" if self.flow.close_ready.is_none() => {
                 let confirmed = self.closing() == Some(Closing::Confirmed);
                 let outcome = if confirmed {
@@ -168,11 +167,9 @@ impl Session {
                     "ignoring a transcript path that is not this session's"),
             }
         }
-        // A delivered `/compact` is confirmed and ends here (px-state-10).
-        if text(&event.payload, "source") == Some("compact") && self.flow.compact.is_some() {
-            self.flow.compact = None;
-            self.confirm_compact(step);
-            self.end_turn(step);
+        // A delivered `/compact` is confirmed and settles from here (px-state-10).
+        if text(&event.payload, "source") == Some("compact") {
+            self.local_record("compact", None, Clock::Boundary, step);
         }
     }
     fn on_prompt(&mut self, at: DateTime<Utc>, prompt: Option<&str>, step: &mut Step) {
@@ -186,10 +183,10 @@ impl Session {
         }
     }
     /// A Stop or StopFailure, an idle prompt or an interrupt record that won: the turn is over.
-    fn on_idle(&mut self, stop: bool, step: &mut Step) {
+    pub(super) fn on_idle(&mut self, stop: bool, step: &mut Step) {
+        self.settle_now();
         self.end_turn(step);
         self.flow.paused = false;
-        self.flow.compact = None;
         if self.flow.quiet_until.take().is_some() {
             self.flow.skip_delivery = true;
         }
@@ -232,11 +229,13 @@ impl Session {
         self.publish_background(change, step);
         match mark {
             RecordMark::Main { at } => {
+                self.settle_now();
                 let fresh = self.after_idle(at) && self.flow.delivering.is_none();
                 self.machine.apply(Input::Record { at, main: true });
                 self.begin_unprompted(fresh, at, step);
             }
             RecordMark::SelfStartedTurn { at } => {
+                self.settle_now();
                 let fresh = self.after_idle(at);
                 self.machine.apply(Input::SelfStartedTurn { at });
                 self.begin_unprompted(fresh, at, step);
@@ -248,12 +247,10 @@ impl Session {
             // The table read both: a killed agent and a task's evidence move no session state.
             RecordMark::AgentsKilled { .. } | RecordMark::Background { .. } => {}
             RecordMark::CompactBoundary { .. } => {
-                self.confirm_compact(step);
-                if let Some(seen) = &mut self.flow.compact {
-                    *seen = Some(Instant::now());
-                }
+                self.local_record("compact", None, Clock::Boundary, step);
             }
             RecordMark::HumanUser { text, .. } => self.confirm_text(&text, step),
+            RecordMark::Command(mark) => self.on_command(mark, step),
         }
     }
     fn after_idle(&self, at: DateTime<Utc>) -> bool {
@@ -302,13 +299,7 @@ impl Session {
         if self.flow.quiet_until.is_some_and(|until| now >= until) {
             self.flow.quiet_until = None;
         }
-        let settled = self.flow.compact.flatten();
-        if settled.is_some_and(|seen| now.duration_since(seen) >= COMPACT_SETTLE) {
-            self.flow.compact = None;
-            let idle = synthetic("Notification", json!({"notification_type": "idle_prompt"}));
-            self.machine.apply(Input::Spool(&idle));
-            self.on_idle(false, step);
-        }
+        self.settle_due(now, step);
     }
     pub(super) fn notice(&mut self, kind: NoticeKind, text: &str, step: &mut Step) {
         let id = self.next_id("n-s");
@@ -327,7 +318,7 @@ fn event_key(event: &SpoolEvent) -> EventKey {
     (event.received_at, event.event.clone(), request, payload)
 }
 /// An event the bridge itself applies; it never enters the applied set.
-fn synthetic(event: &str, payload: Value) -> SpoolEvent {
+pub(super) fn synthetic(event: &str, payload: Value) -> SpoolEvent {
     SpoolEvent {
         received_at: Utc::now(),
         event: event.to_owned(),

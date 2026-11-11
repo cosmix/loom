@@ -1,5 +1,6 @@
 import { z } from "@/api/zod";
 import { backgroundMessageSchemas } from "./schema-background";
+import { commandsMessageSchemas } from "./schema-session-commands";
 import { chatMessageSchema, chatWireCommandSchema } from "./schema-chat";
 import { conceptMessageSchemas } from "./schema-concept";
 import { filesMessageSchemas, planStateViewSchema } from "./schema-files";
@@ -55,6 +56,7 @@ export const PLAN_MESSAGE_TYPES = [
   "trace_changed",
   "settle_commit",
   "background",
+  "commands",
 ] as const;
 export const CLIENT_MESSAGE_TYPES = ["set_name", "reading"] as const;
 
@@ -212,6 +214,7 @@ export const planMessageSchema = z.discriminatedUnion("type", [
   ...kickoffMessageSchemas,
   ...traceMessageSchemas,
   ...backgroundMessageSchemas,
+  ...commandsMessageSchemas,
 ]);
 export const clientMessageSchema = z.discriminatedUnion("type", [
   z.strictObject({ type: z.literal("set_name"), name: z.string() }),

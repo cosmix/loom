@@ -7,7 +7,7 @@ use chrono::{DateTime, Duration, Utc};
 use serde_json::{json, Value};
 
 use super::notification::{parse_task_notification, BackgroundEvidence};
-use super::{Ingest, Mapper, RecordMark};
+use super::{CommandMark, Ingest, Mapper, RecordMark};
 use crate::plan_session::model::{
     ChatDelta, Delivery, Item, NoticeKind, Origin, TokenCounts, ToolStatus, Turn,
 };
@@ -73,6 +73,7 @@ pub(super) fn user(id: &str, text: &str, origin: Option<Origin>) -> Item {
         attachments: Vec::new(),
         delivery: Delivery::Delivered,
         origin,
+        command: None,
     }
 }
 
@@ -342,18 +343,33 @@ fn compaction_and_api_errors_become_notices() {
 }
 
 #[test]
-fn noise_records_produce_no_items_and_only_their_marks() {
+fn noise_records_produce_only_local_output_notices_and_their_marks() {
     let mut mapper = mapper();
     mapper.begin_turn(at(0));
     let lines = lines("noise.jsonl");
     let out = drive(&mut mapper, &lines);
 
     let prompt = user("u-u1", "commit these fixes.", None);
-    assert_eq!(only_turn(&mapper).items, [prompt]);
+    let output = |id: &str, text: &str| notice(id, NoticeKind::Info, text);
+    let items = [
+        output("n-n15", "done"),
+        output("n-n17", "Auto-update available"),
+        prompt,
+    ];
+    assert_eq!(only_turn(&mapper).items, items);
     let body = "<task-notification>\n<task-id>b3z9</task-id>\n<status>completed</status>";
     let evidence = BackgroundEvidence::Notification(parse_task_notification(body).unwrap());
+    let (name, args) = ("model".to_owned(), String::new());
+    let model = CommandMark::Invoked {
+        name,
+        args,
+        prompt: false,
+    };
     let marks = [
+        RecordMark::Command(CommandMark::Output { run: None }),
+        RecordMark::Command(CommandMark::Output { run: None }),
         RecordMark::AgentsKilled { at: at(2) },
+        RecordMark::Command(model),
         RecordMark::SelfStartedTurn { at: at(3) },
         RecordMark::Background {
             at: at(3),

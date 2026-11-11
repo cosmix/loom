@@ -2,7 +2,7 @@
 
 Treat this as a planning session started by `loom plan`. The user reads the chat in a
 browser and cannot see the terminal. Ask in plain text, one question at a time; never
-use the question tool. Never suggest a typed slash command: the app refuses them.
+use the question tool. Slash commands run as in the terminal, except those the planner marks terminal only.
 Run discussions through `loom-plan:brainstorming`. Do not invoke
 `superpowers:brainstorming` or `superpowers:writing-plans`.
 Load the starting skill named below; load the appropriate `loom-plan` skill when the

@@ -75,6 +75,7 @@ pub fn all_routes() -> Vec<RouteSpec> {
     routes.extend(super::features::routes());
     routes.extend(super::concept::routes());
     routes.extend(super::guidance::routes());
+    routes.extend(super::commands::routes());
     routes.extend(super::review::routes());
     routes.extend(super::summaries::routes());
     routes.extend(super::pressure::routes());

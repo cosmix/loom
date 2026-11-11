@@ -1,0 +1,97 @@
+{
+  "state": "ready",
+  "generation": 1,
+  "reason": null,
+  "entries": [
+    {
+      "name": "simplify",
+      "aliases": [],
+      "description": "Review the changed code for reuse, simplification, efficiency, and altitude cleanups, then apply the fixes. Quality only — it does not hunt for bugs; use /code-review for that.",
+      "argument_hint": "[<target>]",
+      "source": "bundled",
+      "class": "run",
+      "reason": null
+    },
+    {
+      "name": "loom-plan:args",
+      "aliases": ["args"],
+      "description": "Echo the arguments back",
+      "argument_hint": "",
+      "source": "plugin",
+      "class": "run",
+      "reason": null
+    },
+    {
+      "name": "probe-personal",
+      "aliases": [],
+      "description": "Probe skill probe-personal",
+      "argument_hint": "",
+      "source": "personal",
+      "class": "run",
+      "reason": null
+    },
+    {
+      "name": "docs",
+      "aliases": ["<PLUGIN-2>:docs"],
+      "description": "docs (editable docs people share and comment on; the default for any document, named as a doc or not: a document, report, proposal, resume, cover letter, letter, contract, policy, form, template, wor…",
+      "argument_hint": "",
+      "source": "account",
+      "class": "run",
+      "reason": null
+    },
+    {
+      "name": "context",
+      "aliases": [],
+      "description": "Show current context usage",
+      "argument_hint": "",
+      "source": "built-in",
+      "class": "run-with-handling",
+      "reason": null
+    },
+    {
+      "name": "compact",
+      "aliases": [],
+      "description": "Free up context by summarizing the conversation so far",
+      "argument_hint": "<optional custom summarization instructions>",
+      "source": "built-in",
+      "class": "run-with-handling",
+      "reason": null
+    },
+    {
+      "name": "clear",
+      "aliases": ["reset", "new"],
+      "description": "Start a new session with empty context; previous session stays on disk (resumable with /resume)",
+      "argument_hint": "[name]",
+      "source": "built-in",
+      "class": "terminal-only",
+      "reason": "Changes the session outside the planner"
+    },
+    {
+      "name": "usage",
+      "aliases": ["cost", "stats"],
+      "description": "Show session cost, plan usage, and what's contributing to your limits",
+      "argument_hint": "",
+      "source": "built-in",
+      "class": "terminal-only",
+      "reason": "Opens a terminal dialog"
+    },
+    {
+      "name": "effort",
+      "aliases": [],
+      "description": "Set effort level for model usage",
+      "argument_hint": "<low|medium|high|xhigh|max|auto|ultracode [on|off]>",
+      "source": "built-in",
+      "class": "terminal-only",
+      "reason": "Saves your default for new sessions"
+    },
+    {
+      "name": "help",
+      "aliases": [],
+      "description": "Show help and the available commands",
+      "argument_hint": "",
+      "source": "built-in",
+      "class": "terminal-only",
+      "reason": "Opens a terminal dialog"
+    }
+  ]
+}

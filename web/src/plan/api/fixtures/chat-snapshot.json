@@ -99,7 +99,8 @@
             }
           ],
           "delivery": "sent",
-          "origin": "offer"
+          "origin": "offer",
+          "command": null
         },
         {
           "type": "user",
@@ -107,7 +108,8 @@
           "text": "Please update the bridge plan.",
           "attachments": [],
           "delivery": "delivered",
-          "origin": null
+          "origin": null,
+          "command": null
         },
         {
           "type": "user",
@@ -115,7 +117,8 @@
           "text": "Please update the bridge plan.",
           "attachments": [],
           "delivery": "undelivered",
-          "origin": "closing"
+          "origin": "closing",
+          "command": null
         },
         {
           "type": "thinking",
@@ -455,7 +458,8 @@
           "text": "Check the updated plan.",
           "attachments": [],
           "delivery": "sent",
-          "origin": null
+          "origin": null,
+          "command": null
         }
       ],
       "changed_files": [],

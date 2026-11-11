@@ -7,36 +7,21 @@ use shell_escape::escape;
 
 use crate::plan_session::bridge::host::LaunchSpec;
 use crate::plan_session::sandbox::{hook_command, permission_mode};
+use crate::process::agent_session_environment_from;
 
 /// Build the fresh session's launch line, with an argv opening only when explicitly supplied.
 pub fn launch_script(spec: &LaunchSpec, settings: &Path, env: &[(OsString, OsString)]) -> String {
     let mut words = vec!["exec".to_owned(), "env".to_owned(), "-i".to_owned()];
-    words.extend(environment_words(spec, env));
+    words.extend(claude_env(spec, env).into_iter().map(|(name, value)| {
+        let mut assignment = name;
+        assignment.push("=");
+        assignment.push(value);
+        escape(assignment.to_string_lossy()).into_owned()
+    }));
     words.extend(
-        [
-            spec.claude_bin.to_string_lossy(),
-            "--session-id".into(),
-            spec.id.as_str().into(),
-            "--name".into(),
-            spec.guidance.display_name.as_str().into(),
-            "--settings".into(),
-            settings.to_string_lossy(),
-            "--setting-sources".into(),
-            "user,project".into(),
-            "--model".into(),
-            spec.guidance.model.as_str().into(),
-            "--effort".into(),
-            spec.guidance.effort.as_str().into(),
-            "--permission-mode".into(),
-            permission_mode(&spec.kind).into(),
-            "--plugin-dir".into(),
-            spec.guidance.plugin_dir.to_string_lossy(),
-            "--strict-mcp-config".into(),
-            "--append-system-prompt-file".into(),
-            spec.guidance.brief_path.to_string_lossy(),
-        ]
-        .into_iter()
-        .map(|word| escape(word).into_owned()),
+        claude_argv(spec, settings)
+            .iter()
+            .map(|word| escape(word.to_string_lossy()).into_owned()),
     );
     if let Some(opening) = &spec.opening_argv {
         words.push(escape(opening.as_str().into()).into_owned());
@@ -49,7 +34,46 @@ pub fn launch_script(spec: &LaunchSpec, settings: &Path, env: &[(OsString, OsStr
     )
 }
 
-fn environment_words(spec: &LaunchSpec, env: &[(OsString, OsString)]) -> Vec<String> {
+/// The claude command line of a session, from the binary through
+/// `--append-system-prompt-file <brief>`: never an opening, which `launch_script` appends itself
+/// and a headless reuse of these words must not receive (with `-p` it is a user message).
+pub fn claude_argv(spec: &LaunchSpec, settings: &Path) -> Vec<OsString> {
+    let guidance = &spec.guidance;
+    let mut words = vec![spec.claude_bin.as_os_str().to_owned()];
+    let pairs: [(&str, &std::ffi::OsStr); 8] = [
+        ("--session-id", spec.id.as_ref()),
+        ("--name", guidance.display_name.as_ref()),
+        ("--settings", settings.as_os_str()),
+        ("--setting-sources", "user,project".as_ref()),
+        ("--model", guidance.model.as_ref()),
+        ("--effort", guidance.effort.as_ref()),
+        ("--permission-mode", permission_mode(&spec.kind).as_ref()),
+        ("--plugin-dir", guidance.plugin_dir.as_os_str()),
+    ];
+    for (flag, value) in pairs {
+        words.push(flag.into());
+        words.push(value.to_owned());
+    }
+    words.push("--strict-mcp-config".into());
+    words.push("--append-system-prompt-file".into());
+    words.push(guidance.brief_path.as_os_str().to_owned());
+    words
+}
+
+/// What a session's environment starts from, before [`claude_env`] filters and pins it: the
+/// agent allowlist of this process's environment (`PATH` included), then the start request's
+/// extras. The live session (`launch`) and its side process (the catalogue owner) share it.
+pub fn inherited_env(spec: &LaunchSpec) -> Vec<(OsString, OsString)> {
+    let mut env = agent_session_environment_from(std::env::vars_os());
+    let extra = spec.extra_env.iter();
+    env.extend(extra.map(|(name, value)| (name.into(), value.into())));
+    env
+}
+
+/// The environment `env -i` gives a session: `env` without the stage identity, the parent tmux
+/// variables and any `HOME` or planning identity, then the pinned `HOME`, `LOOM_PLAN_STATE` and
+/// `LOOM_PLAN_SESSION`.
+pub fn claude_env(spec: &LaunchSpec, env: &[(OsString, OsString)]) -> Vec<(OsString, OsString)> {
     // Pin planning identity here too: callers cannot replace it with a stage's identity, and
     // HOME is `spec.home`, the home the trust entry and the sandbox use, so no inherited or
     // `extra_env` HOME can split them from the one claude runs under.
@@ -85,12 +109,7 @@ fn environment_words(spec: &LaunchSpec, env: &[(OsString, OsString)]) -> Vec<Str
             )
         })
         .chain(planning.iter())
-        .map(|(name, value)| {
-            let mut assignment = name.clone();
-            assignment.push("=");
-            assignment.push(value);
-            escape(assignment.to_string_lossy()).into_owned()
-        })
+        .cloned()
         .collect()
 }
 

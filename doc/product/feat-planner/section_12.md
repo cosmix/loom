@@ -442,7 +442,7 @@ A session must never answer its own permission request. The channels and what cl
 - **The server's HTTP port**: loopback TCP goes through the sandbox's network filter, which
   allows nothing; the token is unreadable anyway.
 - **Mode changes**: `permissions.disableBypassPermissionsMode` is `"disable"`, and the chat
-  refuses slash commands other than `/compact` (section 07). The settings assertion pins the
+  refuses terminal-only slash commands (section 07). The settings assertion pins the
   mode of each kind (below) and refuses `bypassPermissions` and `acceptEdits` for every kind.
 - **Text the server pastes into the pane**: see "Input delivered to the pane" below.
 

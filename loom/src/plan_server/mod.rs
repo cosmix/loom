@@ -10,6 +10,7 @@ pub mod authoring;
 mod background;
 pub mod browser;
 pub mod chat;
+mod commands;
 pub mod concept;
 pub mod context;
 pub mod extensions;

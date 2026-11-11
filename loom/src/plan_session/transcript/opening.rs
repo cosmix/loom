@@ -55,6 +55,7 @@ fn user(id: String, text: String, attachments: Vec<Attachment>, origin: Option<O
         attachments,
         delivery: Delivery::Delivered,
         origin,
+        command: None,
     }
 }
 

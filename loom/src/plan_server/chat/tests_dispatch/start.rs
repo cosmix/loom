@@ -68,7 +68,10 @@ fn a_refused_start_leaves_authoring_free() {
         attachments: Vec::new(),
     };
 
-    assert_eq!(f.command(&tab, cmd), refused(InputRefusal::SlashCommand));
+    assert_eq!(
+        f.command(&tab, cmd),
+        refused(InputRefusal::Command("Opens a terminal dialog".into()))
+    );
     assert!(f.ctx.authoring().holder().is_none());
     assert!(f.bridge.chat_session_id().is_none());
 }

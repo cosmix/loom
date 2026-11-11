@@ -194,6 +194,7 @@ it("Resend is hidden during Codex alone and returns for the next Claude step", (
     attachments: [],
     delivery: "undelivered",
     origin: null,
+    command: null,
   };
   const turn = { ...initial.turns[0], items: [item] };
   store.set(snapshotAtom, (snapshot) => ({ ...snapshot, session: pressureSession, turns: [turn] }));

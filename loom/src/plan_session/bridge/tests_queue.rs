@@ -6,6 +6,7 @@ use std::time::Duration;
 use serde_json::json;
 
 use super::fake_host::*;
+use super::fixture_replay;
 use super::{BridgeError, EndCause, EndMode, EndOutcome, SendOutcome};
 use crate::plan_session::kind::SessionKind::Authoring;
 use crate::plan_session::model::{Delivery, DenyReason, Item, SessionState};
@@ -338,18 +339,21 @@ fn a_compact_confirmed_by_its_session_start_lets_the_queue_go_on() {
 
 #[test]
 fn a_compact_boundary_with_no_stop_after_it_goes_idle() {
-    let h = Harness::ready(|_| {});
-    let s = h.idle(Authoring);
+    // Probe P2's `/compact`: no UserPromptSubmit and no Stop; PreCompact, then the boundary.
+    let h = fixture_replay::harness();
+    let s = fixture_replay::session(&h);
+    let mut replay = fixture_replay::Replay::load("p2-compact", &s);
+    replay.until(&s, "2026-11-10T06:40:26.485Z");
+    h.wait_state(&s, SessionState::Idle);
     send(&h, &s, "/compact");
     wait_until("the compact", || h.sent(&s) == ["/compact"]);
-    h.spool(&s, "UserPromptSubmit", json!({"prompt": "/compact"}));
-    h.wait_state(&s, SessionState::Working);
-    h.record(
-        &s,
-        json!({"type": "system", "subtype": "compact_boundary",
-        "compactMetadata": {"trigger": "manual", "preTokens": 9, "postTokens": 3}}),
-    );
-    h.wait_state(&s, SessionState::Idle);
+    assert!(matches!(send(&h, &s, "next"), SendOutcome::Queued { .. }));
+    replay.rest(&s);
+    wait_until("compact delivered", || {
+        delivery(&h, "/compact") == Some(Delivery::Delivered)
+    });
+    wait_until("next", || h.sent(&s) == ["/compact", "next"]);
+    assert_eq!(h.state(&s), Some(SessionState::Idle));
 }
 
 #[test]

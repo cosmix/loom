@@ -3,20 +3,34 @@
 use std::fmt;
 
 use super::attachments::{unwrap_pasted, MAX_ATTACHMENTS};
+use super::commands::{CatalogueState, CommandClass, CommandTable};
 use crate::models::dispute::strip_control;
 
 /// The most a delivered message may hold, in bytes, measured after `format_message` and
 /// `sanitize` (section 12, "Request limits").
 pub const MAX_DELIVERED_BYTES: usize = 100 * 1000;
 
-/// The one slash command a chat message may start with.
-const COMPACT: &str = "/compact";
+/// The longest slash message the chat sends, in characters.
+pub const MAX_SLASH_LEN: usize = 300;
+
+/// The gate's refusals of a name the table does not list, by catalogue state.
+const UNLISTED: &str = "Not in this session's command list";
+const LOADING: &str = "Commands are still loading";
+const UNAVAILABLE: &str = "This session's command list is unavailable";
+/// A terminal-only row without a reason of its own.
+const UNVERIFIED: &str = "Not verified in the planner";
+const TOO_LONG: &str = "Too long for a command";
+const ALONE: &str = "Send a command alone, on one line";
 
 /// Why the chat refused to send a message; `Display` is the text the browser shows.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum InputRefusal {
-    SlashCommand,
-    TooLong { bytes: usize, limit: usize },
+    /// A slash message the gate refuses, with its reason.
+    Command(String),
+    TooLong {
+        bytes: usize,
+        limit: usize,
+    },
     TooManyAttachments,
     Empty,
 }
@@ -24,12 +38,7 @@ pub enum InputRefusal {
 impl fmt::Display for InputRefusal {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::SlashCommand => {
-                write!(
-                    f,
-                    "slash commands cannot be sent from the chat; only {COMPACT} is allowed"
-                )
-            }
+            Self::Command(reason) => f.write_str(reason),
             Self::TooLong { bytes, limit } => write!(
                 f,
                 "the message is {bytes} bytes with its attachments; the limit is {limit}"
@@ -61,20 +70,68 @@ pub fn match_key(text: &str) -> String {
     unwrapped.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
-/// Check the user's own text as the pane will receive it (after [`sanitize`], so a control
-/// character cannot hide a leading slash command): a slash command is refused unless it is
-/// `/compact`. A leading U+FEFF is skipped with the whitespace: it is neither a control
-/// character nor Rust whitespace, yet the browser's `String.prototype.trim` strips it.
-pub fn check_send(text: &str) -> Result<(), InputRefusal> {
+/// The text of a message that starts with `/` once leading whitespace and U+FEFF are skipped
+/// (the browser's `String.prototype.trim` strips U+FEFF, which is neither a control character
+/// nor Rust whitespace). `sanitized` has had its control characters removed.
+fn slash_text(sanitized: &str) -> Option<&str> {
+    let lead = sanitized.trim_start_matches(|c: char| c.is_whitespace() || c == '\u{feff}');
+    lead.starts_with('/').then_some(lead)
+}
+
+/// `(name, args)` of a slash message, the name without its slash and the args trimmed; `None`
+/// for a message that is no slash command. `sanitized` has had its control characters removed.
+pub fn slash_line(sanitized: &str) -> Option<(&str, &str)> {
+    let line = slash_text(sanitized)?.strip_prefix('/')?;
+    let (name, args) = line.split_once(char::is_whitespace).unwrap_or((line, ""));
+    Some((name, args.trim()))
+}
+
+/// Why `table` refuses `/name`, in the gate's words; `None` when it may be sent. A row decides
+/// by its class (`Run` and `RunWithHandling` are sent, `TerminalOnly` is not); a name the table
+/// has no row for is refused by the state of the catalogue.
+pub fn class_refusal(table: &CommandTable, name: &str) -> Option<String> {
+    match table.lookup(name) {
+        Some(entry) if entry.class == CommandClass::TerminalOnly => {
+            Some(entry.reason.as_deref().unwrap_or(UNVERIFIED).to_owned())
+        }
+        Some(_) => None,
+        None => Some(
+            match table.state() {
+                CatalogueState::Ready { .. } => UNLISTED,
+                CatalogueState::Loading => LOADING,
+                CatalogueState::Unavailable { .. } => UNAVAILABLE,
+            }
+            .to_owned(),
+        ),
+    }
+}
+
+/// Check the user's own text as the pane receives it (after [`sanitize`], so a control
+/// character cannot hide a leading slash command). A message that does not start with `/` is
+/// accepted. A slash message must be one line of at most [`MAX_SLASH_LEN`] characters whose
+/// first word `table` allows ([`class_refusal`]).
+pub fn check_send(text: &str, table: &CommandTable) -> Result<(), InputRefusal> {
     let sanitized = sanitize(text);
-    let trimmed = sanitized.trim_start_matches(|c: char| c.is_whitespace() || c == '\u{feff}');
-    if !trimmed.starts_with('/') {
+    let Some(line) = slash_text(&sanitized).map(str::trim_end) else {
         return Ok(());
+    };
+    let refuse = |reason: &str| Err(InputRefusal::Command(reason.to_owned()));
+    if line.contains('\n') {
+        return refuse(ALONE);
     }
-    match trimmed.split_whitespace().next() {
-        Some(COMPACT) => Ok(()),
-        _ => Err(InputRefusal::SlashCommand),
+    if line.chars().count() > MAX_SLASH_LEN {
+        return refuse(TOO_LONG);
     }
+    let (name, _) = slash_line(line).unwrap_or_default();
+    class_refusal(table, name).map_or(Ok(()), |reason| refuse(&reason))
+}
+
+/// A slash message carries no attachments. `sanitized` has had its control characters removed.
+pub fn check_alone(sanitized: &str, attachments: usize) -> Result<(), InputRefusal> {
+    if attachments > 0 && slash_line(sanitized).is_some() {
+        return Err(InputRefusal::Command(ALONE.to_owned()));
+    }
+    Ok(())
 }
 
 /// Check the text about to be pasted (already formatted and sanitised): at most
@@ -95,7 +152,11 @@ pub fn check_delivered(formatted: &str) -> Result<(), InputRefusal> {
 
 #[cfg(test)]
 mod tests {
+    use serde_json::json;
+
     use super::*;
+
+    const OUTSIDE: &str = "Changes the session outside the planner";
 
     #[test]
     fn sanitize_strips_controls_and_keeps_text() {
@@ -109,54 +170,89 @@ mod tests {
         assert_eq!(sanitize(clean), clean);
     }
 
+    fn ready() -> CommandTable {
+        let rows = [
+            json!({"name": "simplify", "description": "Tidy", "argumentHint": ""}),
+            json!({"name": "loom-plan:args", "description": "(loom-plan) Echo", "aliases": ["args"]}),
+        ];
+        CommandTable::from_initialize(&rows, 1)
+    }
+
+    fn refused(reason: &str) -> Result<(), InputRefusal> {
+        Err(InputRefusal::Command(reason.to_owned()))
+    }
+
     #[test]
-    fn check_send_allows_only_compact_among_slash_commands() {
-        for refused in ["/clear", "  /exit", "\n/compactx", "/", "/model opus"] {
-            assert_eq!(
-                check_send(refused),
-                Err(InputRefusal::SlashCommand),
-                "{refused:?}"
-            );
+    fn check_send_decides_a_native_command_by_its_class() {
+        let (ready, loading) = (ready(), CommandTable::loading());
+        for table in [&ready, &loading] {
+            assert_eq!(check_send("/compact", table), Ok(()));
+            assert_eq!(check_send("  /compact keep it", table), Ok(()));
+            assert_eq!(check_send("/context", table), Ok(()));
+            let dialog = refused("Opens a terminal dialog");
+            assert_eq!(check_send("/model opus", table), dialog);
+            assert_eq!(check_send("/clear", table), refused(OUTSIDE));
+            assert_eq!(check_send("  /exit", table), refused(OUTSIDE));
         }
-        for accepted in [
-            "/compact",
-            "  /compact keep it",
-            "a /clear later",
-            "",
-            "plain",
-        ] {
-            assert_eq!(check_send(accepted), Ok(()), "{accepted:?}");
+    }
+
+    #[test]
+    fn check_send_decides_a_listed_name_by_the_catalogue_state() {
+        let ready = ready();
+        assert_eq!(check_send("/simplify", &ready), Ok(()));
+        assert_eq!(check_send("/args x", &ready), Ok(()));
+        assert_eq!(check_send("/compactx", &ready), refused(UNLISTED));
+        assert_eq!(check_send("\n/compactx", &ready), refused(UNLISTED));
+        assert_eq!(check_send("/", &ready), refused(UNLISTED));
+        let loading = CommandTable::loading();
+        assert_eq!(check_send("/simplify", &loading), refused(LOADING));
+        let unavailable = CommandTable::unavailable("gone");
+        assert_eq!(check_send("/simplify", &unavailable), refused(UNAVAILABLE));
+    }
+
+    #[test]
+    fn check_send_accepts_text_that_does_not_start_with_a_slash() {
+        let table = CommandTable::unavailable("gone");
+        for accepted in ["a /clear later", "", "plain", "line\n/clear"] {
+            assert_eq!(check_send(accepted, &table), Ok(()), "{accepted:?}");
         }
     }
 
     #[test]
     fn check_send_sees_the_text_the_pane_receives() {
-        for refused in [
-            "\u{1}/clear",
-            "\x00/exit",
-            "\x7f/permissions",
-            "\u{9b}/model",
-        ] {
-            assert_eq!(
-                check_send(refused),
-                Err(InputRefusal::SlashCommand),
-                "{refused:?}"
-            );
+        let table = ready();
+        for hidden in ["\u{1}/clear", "\x00/exit", "\u{feff}/clear", "\u{85}/clear"] {
+            assert_eq!(check_send(hidden, &table), refused(OUTSIDE), "{hidden:?}");
         }
-        assert_eq!(check_send("\u{1}/compact"), Ok(()));
+        assert_eq!(
+            check_send("\u{feff} \u{feff}/exit", &table),
+            refused(OUTSIDE)
+        );
+        assert!(check_send("\x7f/permissions", &table).is_err());
+        assert_eq!(check_send("\u{1}/compact", &table), Ok(()));
+        assert_eq!(check_send("\u{feff}/compact", &table), Ok(()));
     }
 
     #[test]
-    fn check_send_skips_a_leading_byte_order_mark() {
+    fn check_send_bounds_a_slash_message() {
+        let table = ready();
+        let line = |len: usize| format!("/simplify {}", "x".repeat(len - "/simplify ".len()));
+        assert_eq!(check_send(&line(MAX_SLASH_LEN), &table), Ok(()));
         assert_eq!(
-            check_send("\u{feff}/clear"),
-            Err(InputRefusal::SlashCommand)
+            check_send(&line(MAX_SLASH_LEN + 1), &table),
+            refused(TOO_LONG)
         );
-        assert_eq!(
-            check_send("\u{feff} \u{feff}/exit"),
-            Err(InputRefusal::SlashCommand)
-        );
-        assert_eq!(check_send("\u{feff}/compact"), Ok(()));
+        assert_eq!(check_send("/simplify a\nb", &table), refused(ALONE));
+        assert_eq!(check_send("/simplify a\n  ", &table), Ok(()));
+        let long_multibyte = format!("/simplify {}", "é".repeat(MAX_SLASH_LEN - 10));
+        assert_eq!(check_send(&long_multibyte, &table), Ok(()));
+    }
+
+    #[test]
+    fn a_slash_message_takes_no_attachments() {
+        assert_eq!(check_alone("/simplify", 0), Ok(()));
+        assert_eq!(check_alone("plain", 2), Ok(()));
+        assert_eq!(check_alone(" /simplify", 1), refused(ALONE));
     }
 
     #[test]
@@ -176,7 +272,8 @@ mod tests {
     fn refusals_explain_themselves() {
         let too_long = InputRefusal::TooLong { bytes: 7, limit: 5 };
         assert!(too_long.to_string().contains('7') && too_long.to_string().contains('5'));
-        assert!(InputRefusal::SlashCommand.to_string().contains("/compact"));
+        let reason = "Opens a terminal dialog";
+        assert_eq!(InputRefusal::Command(reason.into()).to_string(), reason);
         assert!(InputRefusal::TooManyAttachments.to_string().contains("10"));
     }
 }

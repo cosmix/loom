@@ -19,6 +19,7 @@ fn sent(id: &str, text: &str, origin: Option<Origin>) -> Item {
         attachments: Vec::new(),
         delivery: Delivery::Sent,
         origin,
+        command: None,
     }
 }
 
