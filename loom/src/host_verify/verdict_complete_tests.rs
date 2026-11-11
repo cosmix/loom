@@ -293,7 +293,12 @@ fn sweep(daemon: &mut Orchestrator) {
 fn the_sweep_queues_the_completion_of_an_eligible_held_stage() {
     let fx = held(StageType::Standard, 2);
     let mut daemon = orchestrator(&fx);
-    fx.passed();
+    fx.record_review(false);
+    fx.finished(
+        JobKind::Complete,
+        JobState::Failed,
+        &[("acceptance-0", true), ("impact-tests", false)],
+    );
 
     sweep(&mut daemon);
 
@@ -343,4 +348,34 @@ fn an_unreadable_completion_result_hands_the_stage_back_with_the_error() {
     assert_eq!(fx.load_stage().status, StageStatus::Queued);
     let notes = feedback_of(&fx);
     assert!(notes.contains("malformed"), "{notes}");
+}
+
+#[test]
+fn the_sweep_completes_a_held_stage_from_its_passing_run() {
+    let fx = held(StageType::Standard, 2);
+    let mut daemon = orchestrator(&fx);
+    fx.record_review(false);
+    let passed = fx.passed();
+
+    sweep(&mut daemon);
+
+    let stage = fx.load_stage();
+    assert_eq!(stage.status, StageStatus::Completed);
+    assert_eq!(stage.completed_commit, Some(passed.head));
+    let current = store::load_current(&fx.work_dir, STAGE).expect("load the current record");
+    assert_eq!(current.map(|record| record.id), Some(passed.id));
+}
+
+#[test]
+fn the_sweep_hands_back_a_stage_the_gates_refuse_without_a_job() {
+    let fx = held(StageType::Standard, 2);
+    let mut daemon = orchestrator(&fx);
+    let passed = fx.passed();
+
+    sweep(&mut daemon);
+
+    assert_eq!(fx.load_stage().status, StageStatus::Queued);
+    assert!(feedback_of(&fx).contains("completion gates"));
+    let current = store::load_current(&fx.work_dir, STAGE).expect("load the current record");
+    assert_eq!(current.map(|record| record.id), Some(passed.id));
 }

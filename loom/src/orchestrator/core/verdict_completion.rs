@@ -1,17 +1,18 @@
 //! The sweep that ends every verdict pass: a stage the verdict left held
-//! (`NeedsAdjudication`, no session, every dispute applied) gets the daemon's
-//! completion run on its committed tree, or goes back to a fresh session when
-//! that run cannot decide it.
+//! (`NeedsAdjudication`, no session, every dispute applied) is completed from
+//! its latest `loom stage complete` run when that run passed on its committed
+//! tree, else gets the daemon's completion run there, or goes back to a fresh
+//! session when the completion gates refuse it or no run can decide it.
 //!
 //! It reads the stage files, never `self.graph`: the graph's statuses were
 //! synced earlier in the tick, before this pass applied the verdicts.
 //!
 //! Lock order, per stage: the admission lock, then the dispute lock and the
-//! stage file (a hand-back) or the host-job store (a submission), the order
-//! `loom stage reset` takes them in. `flock` descriptors in one process
-//! conflict, so the sweep runs only where none of these is held: after the
-//! verdict pass has dropped every dispute claim, from a caller holding no
-//! lock (`initialize_run`, `run_tick`).
+//! stage file (a hand-back or a completion from the stored run) or the
+//! host-job store (a submission), the order `loom stage reset` takes them in.
+//! `flock` descriptors in one process conflict, so the sweep runs only where
+//! none of these is held: after the verdict pass has dropped every dispute
+//! claim, from a caller holding no lock (`initialize_run`, `run_tick`).
 
 use std::os::fd::OwnedFd;
 use std::path::Path;
@@ -52,9 +53,9 @@ impl Orchestrator {
     }
 }
 
-/// Submit the held stage's completion run, or hand the stage back when it
-/// cannot have one. An error hands it back too, with the error as its one
-/// failure, so a lasting error never strands the stage.
+/// Submit the held stage's completion run or complete it from the run that
+/// passed, else hand the stage back. An error hands it back too, with the
+/// error as its one failure, so a lasting error never strands the stage.
 fn start_verdict_completion(work_dir: &Path, stage_id: &str) {
     let (_admission, stage) = match admitted_stage(work_dir, stage_id) {
         Ok(admitted) => admitted,
@@ -65,26 +66,9 @@ fn start_verdict_completion(work_dir: &Path, stage_id: &str) {
             return;
         }
     };
-    let (reason, failures) = match submit_verdict_completion(work_dir, &stage, Utc::now()) {
-        Ok(VerdictStart::NotHeld) => return,
-        Ok(VerdictStart::Waiting(job)) => {
-            tracing::debug!(target: "loom::adjudication", stage = %stage_id, job = %job,
-                "the verdict completion job still decides the stage");
-            return;
-        }
-        Ok(VerdictStart::Submitted(job)) => {
-            clear_status_line();
-            eprintln!(
-                "Stage '{stage_id}': the verdict changed nothing in the plan; loom runs its \
-                 completion on the committed tree (host job {job})"
-            );
-            return;
-        }
-        Ok(VerdictStart::Ineligible(reason)) => (reason, Vec::new()),
-        Err(error) => {
-            let line = run_output_line(&format!("{error:#}"));
-            (line.clone(), vec![line])
-        }
+    let started = submit_verdict_completion(work_dir, &stage, Utc::now());
+    let Some((reason, failures)) = hand_back_cause(stage_id, started) else {
+        return;
     };
     let release = if stage.held {
         " once it is released"
@@ -93,6 +77,45 @@ fn start_verdict_completion(work_dir: &Path, stage_id: &str) {
     };
     let message = format!("{reason}; a fresh session starts with the verdict{release}");
     hand_back(work_dir, stage_id, &failures, &message);
+}
+
+/// Why the stage goes back to a fresh session and the failures its feedback
+/// lists, or `None` once the submission settled it (a job decides it, or it
+/// completed) or it is no longer held.
+fn hand_back_cause(stage_id: &str, started: Result<VerdictStart>) -> Option<(String, Vec<String>)> {
+    match started {
+        Ok(VerdictStart::NotHeld) => None,
+        Ok(VerdictStart::Waiting(job)) => {
+            tracing::debug!(target: "loom::adjudication", stage = %stage_id, job = %job,
+                "the verdict completion job still decides the stage");
+            None
+        }
+        Ok(VerdictStart::Submitted(job)) => {
+            clear_status_line();
+            eprintln!(
+                "Stage '{stage_id}': the verdict changed nothing in the plan; loom runs its \
+                 completion on the committed tree (host job {job})"
+            );
+            None
+        }
+        Ok(VerdictStart::Reused { job, commit }) => {
+            clear_status_line();
+            eprintln!(
+                "Stage '{stage_id}': the verdict changed nothing in the plan; loom completed it \
+                 at {commit} from host job {job}, which passed on the same tree and checks"
+            );
+            None
+        }
+        Ok(VerdictStart::GatesRefused(refusal)) => {
+            let first = refusal.lines().next().unwrap_or_default().to_string();
+            Some((first, vec![refusal]))
+        }
+        Ok(VerdictStart::Ineligible(reason)) => Some((reason, Vec::new())),
+        Err(error) => {
+            let line = run_output_line(&format!("{error:#}"));
+            Some((line.clone(), vec![line]))
+        }
+    }
 }
 
 /// The stage's admission lock and the stage reloaded under it. `loom stage

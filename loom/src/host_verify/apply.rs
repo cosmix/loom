@@ -22,7 +22,7 @@ use super::apply_rejection::{
     receipt_recorded, record_acceptance, record_failure, record_rejection,
 };
 use super::{
-    bounded_detail, freeze, store, verdict_complete, JobKind, JobRecord, JobResult, JobState,
+    bounded_detail, freeze, gates, store, verdict_complete, JobKind, JobRecord, JobResult, JobState,
 };
 use crate::fs::locking::locked_dir_update;
 use crate::fs::session_files::load_session_exact;
@@ -219,20 +219,16 @@ fn resume_completed(
 
 /// The checks that only read, so they run outside the lock: the stage and
 /// session bindings, and the completion gates that compare against a
-/// recorded fingerprint. `Some(reason)` refuses the run; `Err` is a failure to
-/// read state. The gates report a verdict and a git or I/O failure as the same
-/// untyped error, so any gate error is a refusal (the gate re-runs in the
-/// session's next completion).
+/// recorded fingerprint (`gates::refusal`), run again here because the tree
+/// or the review can change while the run goes. `Some(reason)` refuses the
+/// run; `Err` is a failure to read state.
 fn check_outside_lock(work_dir: &Path, record: &JobRecord) -> Result<Option<String>> {
     load_stage(&record.stage_id, work_dir)?;
     load_session_exact(work_dir, &record.session_id)?;
     if let Err(error) = validate_active_identity(work_dir, &record.stage_id, &record.session_id) {
         return binding_reason(error).map(Some);
     }
-    let gates = crate::daemon::check_completion_gates(work_dir, &record.stage_id);
-    Ok(gates
-        .err()
-        .map(|error| format!("completion gates: {error:#}")))
+    Ok(gates::refusal(work_dir, &record.stage_id))
 }
 
 /// The reason of a binding failure; any other error is a failure to read or

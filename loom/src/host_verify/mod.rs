@@ -9,7 +9,9 @@
 //! saw, `wait` is the session side, and `apply` is what the daemon does with a
 //! finished job: complete the stage, record a checkpoint, or freeze contracts
 //! (`freeze`). `verdict_complete` submits and applies the completion the
-//! daemon runs for a stage a verdict left held.
+//! daemon runs for a stage a verdict left held, or completes it from the
+//! stored run that already passed (`verdict_reuse`). `gates` is the cheap
+//! completion-gate refusal every completion path checks before it queues a run.
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -26,6 +28,7 @@ pub mod freeze;
 mod freeze_memo;
 mod freeze_prepare;
 mod freeze_refuse;
+pub(crate) mod gates;
 pub(crate) mod pending;
 pub mod runner;
 mod signals;
@@ -34,6 +37,7 @@ pub mod store;
 mod store_fs;
 pub mod submit;
 pub(crate) mod verdict_complete;
+mod verdict_reuse;
 pub mod wait;
 mod wait_report;
 mod wait_state;
@@ -51,7 +55,7 @@ mod tests_child_impact;
 #[cfg(test)]
 mod tests_child_reuse;
 #[cfg(test)]
-mod tests_complete_support;
+pub(crate) mod tests_complete_support;
 #[cfg(test)]
 mod tests_digest;
 #[cfg(test)]

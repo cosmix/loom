@@ -1,5 +1,6 @@
 //! The fixture the Complete-job tests share (`tests_apply*`,
-//! `tests_child_complete`): a repository with one commit, the stage worktree
+//! `tests_child_complete`, the verdict completion tests and the relayed
+//! `complete` in `inbox_drain`): a repository with one commit, the stage worktree
 //! `.worktrees/stage-a` on `loom/stage-a` (none for a knowledge stage), the
 //! state root `<repo>/.loom/work` holding the stage, its running session, the
 //! session's signal file and a plan the state root's `config.toml` names.
@@ -21,13 +22,16 @@ use crate::handoff::{
 };
 use crate::models::session::{Session, SessionStatus, SessionType};
 use crate::models::stage::{AcceptanceCriterion, Stage, StageStatus, StageType};
+use crate::stage_service::observer::stage_worktree_and_target;
+use crate::verify::review::fingerprint;
+use crate::verify::review::store::{next_round, write_round, ReviewRound, RECORD_VERSION};
 use crate::verify::transitions::{load_stage, save_stage, update_stage};
 
-pub(super) const STAGE: &str = "stage-a";
-pub(super) const SESSION: &str = "session-a";
+pub(crate) const STAGE: &str = "stage-a";
+pub(crate) const SESSION: &str = "session-a";
 
 /// Run git in `dir` without the user's or the system's configuration.
-pub(super) fn git(dir: &Path, args: &[&str]) -> String {
+pub(crate) fn git(dir: &Path, args: &[&str]) -> String {
     let output = Command::new("git")
         .args(args)
         .current_dir(dir)
@@ -44,24 +48,24 @@ pub(super) fn git(dir: &Path, args: &[&str]) -> String {
 }
 
 /// The reason of an `Ignored` outcome; any other outcome fails the test.
-pub(super) fn ignored(applied: Applied) -> String {
+pub(crate) fn ignored(applied: Applied) -> String {
     match applied {
         Applied::Ignored(reason) => reason,
         other => panic!("expected Ignored, got {other:?}"),
     }
 }
 
-pub(super) struct Fixture {
+pub(crate) struct Fixture {
     _dir: TempDir,
-    pub(super) repo: PathBuf,
-    pub(super) work_dir: PathBuf,
-    pub(super) worktree: PathBuf,
+    pub(crate) repo: PathBuf,
+    pub(crate) work_dir: PathBuf,
+    pub(crate) worktree: PathBuf,
     stage_type: StageType,
     plan_version: u32,
 }
 
 impl Fixture {
-    pub(super) fn new(stage_type: StageType, plan_version: u32) -> Self {
+    pub(crate) fn new(stage_type: StageType, plan_version: u32) -> Self {
         let dir = TempDir::new().expect("temp dir");
         let repo = dir.path().canonicalize().expect("canonical temp dir");
         git(&repo, &["init", "-q", "-b", "main"]);
@@ -161,12 +165,12 @@ impl Fixture {
         }
     }
 
-    pub(super) fn head(&self) -> String {
+    pub(crate) fn head(&self) -> String {
         git(self.checkout(), &["rev-parse", "HEAD"])
     }
 
     /// Move HEAD (and the stage branch) with an empty commit; returns it.
-    pub(super) fn commit_empty(&self) -> String {
+    pub(crate) fn commit_empty(&self) -> String {
         git(
             self.checkout(),
             &["commit", "-q", "--allow-empty", "-m", "moved"],
@@ -176,7 +180,7 @@ impl Fixture {
 
     /// Save a current job record of `kind` for the checkout as it stands now,
     /// finished when `state` is terminal.
-    pub(super) fn record(&self, kind: JobKind, state: JobState) -> JobRecord {
+    pub(crate) fn record(&self, kind: JobKind, state: JobState) -> JobRecord {
         let tree_digest = match self.stage_type {
             StageType::Knowledge => digest::knowledge_tree_digest(&self.repo),
             _ => digest::tree_digest(&self.worktree),
@@ -207,7 +211,7 @@ impl Fixture {
 
     /// A finished job: its record, and a result with one outcome per entry of
     /// `outcomes` (none when empty) bound to the stage's current policy.
-    pub(super) fn finished(
+    pub(crate) fn finished(
         &self,
         kind: JobKind,
         state: JobState,
@@ -232,7 +236,7 @@ impl Fixture {
     }
 
     /// A job that passed one acceptance criterion.
-    pub(super) fn passed(&self) -> JobRecord {
+    pub(crate) fn passed(&self) -> JobRecord {
         self.finished(
             JobKind::Complete,
             JobState::Passed,
@@ -240,23 +244,54 @@ impl Fixture {
         )
     }
 
-    pub(super) fn policy(&self) -> String {
+    pub(crate) fn policy(&self) -> String {
         effective_policy_hash(&self.load_stage(), &self.work_dir).expect("policy hash")
     }
 
     /// Amend the plan after a job ran, so the policy its result names is stale.
-    pub(super) fn amend_policy(&self) {
+    pub(crate) fn amend_policy(&self) {
         let mut plan = fs::read_to_string(self.plan_path()).expect("read plan");
         plan.push_str("\nAmended after the run.\n");
         fs::write(self.plan_path(), plan).expect("write plan");
     }
 
-    pub(super) fn load_stage(&self) -> Stage {
+    pub(crate) fn load_stage(&self) -> Stage {
         load_stage(STAGE, &self.work_dir).expect("load stage")
     }
 
+    /// Record the next review round, well formed and without findings: at the
+    /// worktree's change fingerprint as the daemon measures it, so the review
+    /// gate passes, or at another one when `stale`, so the gate finds the
+    /// latest round stale.
+    pub(crate) fn record_review(&self, stale: bool) {
+        let (repo, target) = stage_worktree_and_target(&self.work_dir, &self.load_stage())
+            .expect("the stage's worktree and target");
+        let mut seen = fingerprint::compute_local(&repo, &target).expect("the fingerprint");
+        if stale {
+            seen.value = format!("sha256:{}", "0".repeat(64));
+            seen.base = String::new();
+            seen.behaviour.clear();
+        }
+        let round = ReviewRound {
+            version: RECORD_VERSION,
+            round: next_round(&self.work_dir, STAGE).expect("the next round"),
+            agent_id: "reviewer".to_string(),
+            harvested_at: Utc::now(),
+            fingerprint: seen.value,
+            base: seen.base,
+            behaviour: seen.behaviour,
+            files: seen.files,
+            malformed: None,
+            findings: Vec::new(),
+            resolved: Vec::new(),
+            unresolved: Vec::new(),
+            suggestion_memory_ids: Vec::new(),
+        };
+        write_round(&self.work_dir, STAGE, &round).expect("record the review round");
+    }
+
     /// Hand the stage to another session, as a handoff or a reset does.
-    pub(super) fn hand_stage_to_successor(&self) {
+    pub(crate) fn hand_stage_to_successor(&self) {
         update_stage(STAGE, &self.work_dir, |stage| {
             stage.session = Some("session-b".to_string());
             Ok(())
@@ -264,40 +299,40 @@ impl Fixture {
         .expect("hand the stage over");
     }
 
-    pub(super) fn apply(&self, record: &JobRecord) -> anyhow::Result<Applied> {
+    pub(crate) fn apply(&self, record: &JobRecord) -> anyhow::Result<Applied> {
         apply::apply_finished(&self.work_dir, record)
     }
 
-    pub(super) fn marked(&self, record: &JobRecord) -> bool {
+    pub(crate) fn marked(&self, record: &JobRecord) -> bool {
         store::load_job_file(&self.work_dir, STAGE, &record.id, APPLIED_MARKER)
             .expect("read the applied marker")
             .is_some()
     }
 
-    pub(super) fn checkpoint(&self) -> Option<CompletionCheckpoint> {
+    pub(crate) fn checkpoint(&self) -> Option<CompletionCheckpoint> {
         load_session_checkpoint(STAGE, SESSION, &self.work_dir).expect("load checkpoint")
     }
 
-    pub(super) fn latest(&self) -> CompletionAttemptEvidence {
+    pub(crate) fn latest(&self) -> CompletionAttemptEvidence {
         self.checkpoint()
             .expect("a completion checkpoint")
             .latest
             .expect("a latest attempt")
     }
 
-    pub(super) fn session_status(&self) -> SessionStatus {
+    pub(crate) fn session_status(&self) -> SessionStatus {
         load_session_exact(&self.work_dir, SESSION)
             .expect("load session")
             .expect("the session record")
             .status
     }
 
-    pub(super) fn signal_exists(&self) -> bool {
+    pub(crate) fn signal_exists(&self) -> bool {
         self.signal_path().exists()
     }
 
     /// The receipt of `record` is in the session's checkpoint.
-    pub(super) fn receipt_names(&self, record: &JobRecord) -> bool {
+    pub(crate) fn receipt_names(&self, record: &JobRecord) -> bool {
         self.checkpoint()
             .and_then(|checkpoint| checkpoint.accepted)
             .is_some_and(|receipt| {
@@ -307,7 +342,7 @@ impl Fixture {
 
     /// The latest attempt is the daemon's refusal of `record`, and the stage
     /// is untouched.
-    pub(super) fn assert_rejected(&self, record: &JobRecord) -> CompletionAttemptEvidence {
+    pub(crate) fn assert_rejected(&self, record: &JobRecord) -> CompletionAttemptEvidence {
         let latest = self.latest();
         assert_eq!(latest.phase, CompletionPhase::DaemonRejected);
         assert_eq!(

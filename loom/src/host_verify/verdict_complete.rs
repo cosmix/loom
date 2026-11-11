@@ -1,9 +1,11 @@
 //! The completion the daemon runs for a stage a verdict left held
 //! (`JobKind::VerdictComplete`): `NeedsAdjudication`, no session, every
-//! dispute applied. Submission queues one job bound to the stage when the
-//! stage's latest `loom stage complete` run still counts for its committed
-//! tree; application completes the stage from a passing run, or hands it back
-//! to a fresh session (`adjudication::hand_back_held_stage`).
+//! dispute applied. Submission refuses a stage the completion gates refuse,
+//! completes it from the stage's latest `loom stage complete` run when that
+//! run passed on its committed tree (`verdict_reuse`), and otherwise queues
+//! one job bound to the stage when that run still counts for the tree;
+//! application completes the stage from a passing run, or hands it back to a
+//! fresh session (`adjudication::hand_back_held_stage`).
 //!
 //! No session owns the job, so nothing here loads, retires or checkpoints
 //! one: the receipt of a completion is `stage.completed_commit` and the job's
@@ -17,7 +19,8 @@ use chrono::{DateTime, Utc};
 use super::apply::{binding_failed, binding_reason, verify_bound_run, Applied, APPLIED_MARKER};
 use super::apply_rejection::first_summary_line;
 use super::submit::{submit, Submission, SubmitRequest};
-use super::{digest, store, JobKind, JobRecord, JobResult, JobState};
+use super::verdict_reuse::{self, latest_of};
+use super::{digest, gates, store, JobKind, JobRecord, JobResult, JobState};
 use crate::fs::dispute_lock::lock_stage_dispute_dir_for_daemon;
 use crate::git::worktree::{stage_worktree_path, WorktreeGit};
 use crate::handoff::completion::content::committed_content;
@@ -48,6 +51,12 @@ pub(crate) enum VerdictStart {
     Waiting(String),
     /// The job queued for the stage.
     Submitted(String),
+    /// The stage was completed at `commit` from job `job`, its latest
+    /// `loom stage complete` run, which passed there; nothing was queued.
+    Reused { job: String, commit: String },
+    /// The completion gates refuse the stage, so no run could complete it;
+    /// nothing was queued, and the refusal is the fresh session's failure.
+    GatesRefused(String),
     /// Why the stage needs a fresh session instead; nothing was queued.
     Ineligible(String),
 }
@@ -78,15 +87,15 @@ pub(crate) fn submit_verdict_completion(
             stage.id
         )));
     }
-    let Some(latest) = latest_completion(work_dir, &stage.id)? else {
+    let Some(latest) = latest_of(work_dir, &stage.id, &[JobKind::Complete])? else {
         return Ok(VerdictStart::Ineligible(
             "no `loom stage complete` request of the stage is on record".to_string(),
         ));
     };
-    if let Some(reason) = uncounted_run(work_dir, stage, &latest)? {
-        return Ok(VerdictStart::Ineligible(reason.to_string()));
+    match counted_result(work_dir, stage, &latest)? {
+        Ok(result) => start_at_requested_head(work_dir, stage, &latest, &result, now),
+        Err(reason) => Ok(VerdictStart::Ineligible(reason.to_string())),
     }
-    submit_at_requested_head(work_dir, stage, &latest.head, now)
 }
 
 /// The id of the stage's current verdict completion job when it still
@@ -103,34 +112,34 @@ fn deciding_job(work_dir: &Path, stage_id: &str) -> Result<Option<String>> {
     Ok((!settled).then_some(record.id))
 }
 
-/// Why the latest completion run `record` cannot stand for a completion
-/// without a session, or `None` when it can: it left a result bound to the
-/// stage's current check definition, and it passed or failed only its impact
-/// tests. A sibling verdict that amended criteria, re-froze contracts or
-/// changed the plan moves the policy, and the stage then needs a session that
-/// reads the new one.
-fn uncounted_run(
+/// The result of the latest completion run `record` when it can stand for a
+/// completion without a session, else why it cannot: it left a result bound
+/// to the stage's current check definition, and it passed or failed only its
+/// impact tests. A sibling verdict that amended criteria, re-froze contracts
+/// or changed the plan moves the policy, and the stage then needs a session
+/// that reads the new one.
+fn counted_result(
     work_dir: &Path,
     stage: &Stage,
     record: &JobRecord,
-) -> Result<Option<&'static str>> {
+) -> Result<std::result::Result<JobResult, &'static str>> {
     let Some(result) = store::load_result(work_dir, &stage.id, &record.id)? else {
-        return Ok(Some(
+        return Ok(Err(
             "the stage's latest `loom stage complete` run left no result",
         ));
     };
     if !run_counts(record.state, &result) {
-        return Ok(Some(
+        return Ok(Err(
             "the stage's latest `loom stage complete` run failed more than its impact tests",
         ));
     }
     let policy = effective_policy_hash(stage, work_dir)?;
     if result.policy_hash.as_deref() != Some(policy.as_str()) {
-        return Ok(Some(
+        return Ok(Err(
             "the stage's check definition changed since its latest `loom stage complete` run",
         ));
     }
-    Ok(None)
+    Ok(Ok(result))
 }
 
 /// Impact tests run in the child, so the run an accepted impact-tests dispute
@@ -154,12 +163,16 @@ fn run_counts(state: JobState, result: &JobResult) -> bool {
     }
 }
 
-/// Submit the job when the stage's worktree is committed and clean at
-/// `requested`, the head of its latest completion request.
-fn submit_at_requested_head(
+/// When the stage's worktree is committed and clean at the head of `latest`,
+/// its latest completion request: refuse the stage the gates refuse, complete
+/// it from `latest` when that run decides it, else queue the job. The gates
+/// read state no run changes, so a refusal now is the one the application of
+/// a run would give.
+fn start_at_requested_head(
     work_dir: &Path,
     stage: &Stage,
-    requested: &str,
+    latest: &JobRecord,
+    result: &JobResult,
     now: DateTime<Utc>,
 ) -> Result<VerdictStart> {
     let repo_root = crate::fs::work_dir::WorkDir::new(work_dir)?
@@ -173,21 +186,39 @@ fn submit_at_requested_head(
             )));
         }
     };
-    if head != requested {
+    if head != latest.head {
         return Ok(VerdictStart::Ineligible(format!(
-            "HEAD {head} is not {requested}, the commit its latest completion request named"
+            "HEAD {head} is not {}, the commit its latest completion request named",
+            latest.head
         )));
     }
+    if let Some(refusal) = gates::refusal(work_dir, &stage.id) {
+        return Ok(VerdictStart::GatesRefused(refusal));
+    }
+    if verdict_reuse::decides(work_dir, latest, result)? {
+        return verdict_reuse::complete_from_run(work_dir, latest, result);
+    }
+    submit_at(work_dir, stage, &repo_root, &head, now)
+}
+
+/// Queue the stage-bound job at `head`.
+fn submit_at(
+    work_dir: &Path,
+    stage: &Stage,
+    repo_root: &Path,
+    head: &str,
+    now: DateTime<Utc>,
+) -> Result<VerdictStart> {
     // The digest the child compares against, computed through the same
     // pinned git (`child::JobTree`).
-    let worktree = stage_worktree_path(stage, &repo_root)?;
-    let tree_digest = digest::tree_digest_in(&WorktreeGit::pinned(&repo_root, &worktree)?)?;
+    let worktree = stage_worktree_path(stage, repo_root)?;
+    let tree_digest = digest::tree_digest_in(&WorktreeGit::pinned(repo_root, &worktree)?)?;
     let request = SubmitRequest {
         stage_id: &stage.id,
         session_id: STAGE_BOUND_SESSION,
         request_id: VERDICT_REQUEST_ID,
         kind: JobKind::VerdictComplete,
-        head: &head,
+        head,
         tree_digest: &tree_digest,
         no_cache: false,
         criteria: None,
@@ -201,43 +232,10 @@ fn submit_at_requested_head(
     })
 }
 
-/// The stage's newest `Complete` record by `(submission_order, queued_at)`,
-/// whatever its state: the agent's own `loom stage complete`, so `Check` and
-/// `VerdictComplete` records never count. A record that cannot be read is
-/// skipped. `submit` prunes old job directories, so read this before it.
-fn latest_completion(work_dir: &Path, stage_id: &str) -> Result<Option<JobRecord>> {
-    if !store::stage_dir(work_dir, stage_id)?.is_dir() {
-        return Ok(None);
-    }
-    let latest = store::job_ids(work_dir, stage_id)?
-        .into_iter()
-        .filter_map(|job_id| readable_record(work_dir, stage_id, &job_id))
-        .filter(|record| record.kind == JobKind::Complete)
-        .max_by_key(|record| (record.submission_order, record.queued_at));
-    Ok(latest)
-}
-
-fn readable_record(work_dir: &Path, stage_id: &str, job_id: &str) -> Option<JobRecord> {
-    match store::load_job_record(work_dir, stage_id, job_id) {
-        Ok(Some(record)) if record.id == job_id && record.stage_id == stage_id => Some(record),
-        Ok(Some(_)) => {
-            tracing::warn!(stage = %stage_id, job = %job_id,
-                "host job record identity does not match its directory; skipped");
-            None
-        }
-        Ok(None) => None,
-        Err(error) => {
-            tracing::warn!(stage = %stage_id, job = %job_id, error = %format!("{error:#}"),
-                "could not read a host job record; skipped");
-            None
-        }
-    }
-}
-
 /// The head of the stage's latest completion request.
 #[cfg(test)]
 pub(crate) fn latest_completion_head(work_dir: &Path, stage_id: &str) -> Result<Option<String>> {
-    Ok(latest_completion(work_dir, stage_id)?.map(|record| record.head))
+    Ok(latest_of(work_dir, stage_id, &[JobKind::Complete])?.map(|record| record.head))
 }
 
 /// Apply the finished verdict completion `record`: complete the held stage
@@ -283,34 +281,41 @@ fn not_deciding(work_dir: &Path, stage: &Stage, record: &JobRecord) -> Result<Op
 fn apply_passed(work_dir: &Path, record: &JobRecord) -> Result<Applied> {
     let result = store::load_result(work_dir, &record.stage_id, &record.id)?
         .with_context(|| format!("host job {} passed without a result", record.id))?;
-    if let Err(error) = crate::daemon::check_completion_gates(work_dir, &record.stage_id) {
-        return hand_back(
-            work_dir,
-            record,
-            vec![format!("completion gates: {error:#}")],
-        );
+    if let Some(refusal) = gates::refusal(work_dir, &record.stage_id) {
+        return hand_back(work_dir, record, vec![refusal]);
     }
-    // The claim must drop before any hand-back, which takes it again: two
-    // `flock` descriptors in one process conflict.
+    match complete_held(work_dir, record, &result)? {
+        Ok(()) => Ok(Applied::Completed {
+            commit: result.head,
+        }),
+        Err(reason) => hand_back(work_dir, record, vec![reason]),
+    }
+}
+
+/// Complete the held stage from the passing `result` of `record`, under the
+/// stage's dispute claim and its stage file. `Ok(Err(reason))` names the
+/// binding that failed; `Err` is a failure to read or write state. The claim
+/// drops before this returns, so the caller may hand the stage back, which
+/// takes it again: two `flock` descriptors in one process conflict.
+pub(super) fn complete_held(
+    work_dir: &Path,
+    record: &JobRecord,
+    result: &JobResult,
+) -> Result<std::result::Result<(), String>> {
     let completed = {
         let disputes = work_dir.join("disputes").join(&record.stage_id);
         let _claim = lock_stage_dispute_dir_for_daemon(&disputes)?;
         update_stage(&record.stage_id, work_dir, |stage| {
-            bind_and_complete_held(stage, work_dir, record, &result)
+            bind_and_complete_held(stage, work_dir, record, result)
         })
     };
     match completed {
         Ok(_) => {
-            tracing::info!(stage = %record.stage_id, commit = %result.head,
+            tracing::info!(stage = %record.stage_id, job = %record.id, commit = %result.head,
                 "completed the verdict-held stage from the daemon's run");
-            Ok(Applied::Completed {
-                commit: result.head,
-            })
+            Ok(Ok(()))
         }
-        Err(error) => {
-            let reason = binding_reason(error)?;
-            hand_back(work_dir, record, vec![reason])
-        }
+        Err(error) => binding_reason(error).map(Err),
     }
 }
 

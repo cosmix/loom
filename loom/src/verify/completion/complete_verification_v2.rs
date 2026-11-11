@@ -24,8 +24,8 @@ use std::path::Path;
 /// The test-integrity and review gates compare this worktree's change
 /// fingerprint with values the loom daemon recorded, so the daemon computes
 /// it (`fingerprint::compute`). With `daemon_gates` (the daemon's completion
-/// job) they are not run here: the daemon runs both when it applies the
-/// job's result, before it completes the stage.
+/// job) they are not run here: the daemon runs both before it queues the job
+/// and again when it applies the job's result (`host_verify::gates`).
 pub(crate) fn run_v2(
     checks: &VerificationChecks<'_>,
     target_branch: &str,

@@ -192,10 +192,11 @@ fn interrupted_verdict_run_requeues() {
 fn eligible_held_stage_gets_one_stage_bound_job() {
     assert_eq!(JobKind::VerdictComplete.name(), "verdict_complete");
     let fx = held(2);
+    fx.record_review(false);
     fx.finished(
         JobKind::Complete,
-        JobState::Passed,
-        &[("acceptance-0", true)],
+        JobState::Failed,
+        &[("acceptance-0", true), ("impact-tests", false)],
     );
 
     let id = assert_submitted(&fx);
@@ -252,6 +253,7 @@ fn failed_agent_completion_is_not_rerun() {
 #[test]
 fn impact_only_failure_is_rerun() {
     let impact_only = held(2);
+    impact_only.record_review(false);
     impact_only.finished(
         JobKind::Complete,
         JobState::Failed,
