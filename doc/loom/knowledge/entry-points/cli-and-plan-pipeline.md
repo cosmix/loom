@@ -169,7 +169,7 @@ Internal modules: `extraction.rs` (YAML block extraction, plan name), `validatio
 | `loom/src/verify/integrity/{statements,moves,moves_collect,ratchet_diff}.rs` | statement-level edit comparison, cross-file move cancellation, ratchet direction |
 | `loom/src/commands/hook/reviewer_brief.rs`, `reviewer_brief_plan.rs` | `loom hook reviewer-brief`, called by `spawn-guard.sh` |
 | `loom/src/commands/plan/verify/dry_run*.rs` | `loom plan verify --dry-run` |
-| `loom/src/orchestrator/core/verdict_completion.rs`, `host_verify/verdict_complete.rs`, `models/stage/verdict_completion.rs` | the daemon's completion of a held stage after a verdict |
+| `loom/src/orchestrator/core/verdict_completion.rs`, `host_verify/verdict_complete.rs`, `verdict_reuse.rs`, `gates.rs`, `models/stage/verdict_completion.rs` | the daemon's completion of a held stage after a verdict: gates preflight, reuse of a passing `Complete` run, the queued `VerdictComplete` job |
 | `doc/loom/knowledge/architecture/verification-v2-gates.md`                                                                                                               | current gate order, owners and runtime inputs                                                                                                                                                                                 |
 
 ## New CLI Surface

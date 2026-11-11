@@ -22,7 +22,7 @@
 
 | Topic | Blurb | Lines |
 | --- | --- | --- |
-| [adjudication-lifecycle](architecture/adjudication-lifecycle.md) |  | 164 |
+| [adjudication-lifecycle](architecture/adjudication-lifecycle.md) |  | 166 |
 | [codex-concurrency](architecture/codex-concurrency.md) | Limits | 110 |
 | [codex-plugin](architecture/codex-plugin.md) |  | 378 |
 | [completion-recovery](architecture/completion-recovery.md) | Proof | 38 |
@@ -67,7 +67,7 @@
 | [security-and-isolation](architecture/security-and-isolation.md) | Deny | 196 |
 | [signal-generation](architecture/signal-generation.md) |  | 247 |
 | [skill-catalog](architecture/skill-catalog.md) |  | 158 |
-| [source-graph](architecture/source-graph.md) |  | 371 |
+| [source-graph](architecture/source-graph.md) |  | 372 |
 | [source-graph-build](architecture/source-graph-build.md) |  | 129 |
 | [source-graph-evaluation](architecture/source-graph-evaluation.md) |  | 68 |
 | [source-graph-resolution](architecture/source-graph-resolution.md) |  | 125 |
@@ -80,7 +80,7 @@
 | [token-accounting-and-receipts](architecture/token-accounting-and-receipts.md) | Ledger | 358 |
 | [token-flow-sources](architecture/token-flow-sources.md) |  | 75 |
 | [usage-evidence](architecture/usage-evidence.md) |  | 127 |
-| [verification-v2-gates](architecture/verification-v2-gates.md) | Gates | 252 |
+| [verification-v2-gates](architecture/verification-v2-gates.md) | Gates | 257 |
 | [web-dashboard](architecture/web-dashboard.md) | Web | 133 |
 | [web-terminal](architecture/web-terminal.md) |  | 181 |
 
@@ -139,7 +139,7 @@
 | [codex-worker-briefing](mistakes/codex-worker-briefing.md) |  | 162 |
 | [completion-broker-credential](mistakes/completion-broker-credential.md) |  | 225 |
 | [completion-runner-blocks](mistakes/completion-runner-blocks.md) |  | 216 |
-| [completion-runtime](mistakes/completion-runtime.md) | Churn | 74 |
+| [completion-runtime](mistakes/completion-runtime.md) | Churn | 94 |
 | [computed-values-and-hidden-couplings](mistakes/computed-values-and-hidden-couplings.md) | Values | 284 |
 | [concurrency-and-locking](mistakes/concurrency-and-locking.md) |  | 207 |
 | [contract-autonomy-delivery](mistakes/contract-autonomy-delivery.md) | Bypass | 109 |
