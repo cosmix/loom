@@ -85,7 +85,7 @@ file). Every other outcome is the typed `DaemonUnreachable` error, and the calle
 than falling back to its own view. `loom stage review status`/`review integrity` may fall back to a locally
 computed value labelled as such, for display only, never for a value recorded or compared.
 
-A stage session cannot reach the daemon socket (its sandbox denies `AF_UNIX`, or, under `allow_all_unix_sockets`, masks the daemon socket, which `daemon/rpc.rs` classifies the same way), so a session's `loom stage complete` relays the completion and computes neither gate itself. The completion job's application runs both gates at the daemon (`daemon/server/observer.rs::check_completion_gates`) before it completes the stage, outside the session lock since both gates only read.
+A stage session cannot reach the daemon socket (its sandbox denies `AF_UNIX`, or, under `allow_all_unix_sockets`, masks the daemon socket, which `daemon/rpc.rs` classifies the same way), so a session's `loom stage complete` relays the completion and computes neither gate itself. The daemon runs both gates (`daemon/server/observer.rs::check_completion_gates`, wrapped by `host_verify/gates.rs::refusal`) twice: before it queues a completion job (`orchestrator/core/inbox_drain/complete.rs`, and the verdict sweep, see [adjudication-lifecycle](adjudication-lifecycle.md#retirement-and-fresh-session-boundary)), so a stage a gate refuses spends no job of minutes, and again when it applies the finished job, because the tree or the review can change while the job runs. Both give the same `completion gates: <error>` text; the early refusal reaches the session in full, while a post-job rejection checkpoint shows its first line. The gates run outside the session lock since both only read.
 
 **Review gate and harvest** (`verify/review/`, `commands/hook/review_harvest.rs`,
 `commands/hook/review_transcript.rs`). The `loom-code-reviewer` ends its report with a fenced `loom-review`
@@ -105,10 +105,12 @@ diffs against the latest well-formed round, not `rounds.last()`; a malformed rou
 zero findings and would tell the next reviewer nothing changed. Review order: one `loom check` beside the final
 review, one fix worker for every finding and failed criterion (failed criteria re-checked with `--criterion <n>`),
 one re-review on the follow-up model, complete. After the final round a code edit, formatting included, needs another
-round unless `gate::covers_review` accepts the tree: it accepts a round whose fingerprint differs only by whole-line comments, blank lines and prose markdown: same base,
+round unless `gate::covers_review` accepts the tree (or `gate::round_covers`, which adds the merge-base-move rule below; `loom stage review status` uses it too): `covers_review` accepts a round whose fingerprint differs only by whole-line comments, blank lines and prose markdown: same base,
 and equal non-empty `behaviour` maps (`verify/review/prose.rs`, which keeps pragma comments and markdown under `skills/`,
 `agents/`, `commands/`, `loom-hooks/`, tests and fixtures in the hash). An empty map never passes through this exemption.
 Known limit: a comment-prefixed line inside a multi-line string literal counts as a comment.
+
+**A merge-base move** changes the fingerprint value, which hashes the base, so a merge of the target into a stage makes every round differ. `gate::stale_review` calls `verify/review/base_move.rs` when the exact match and the same-base prose rule both fail and the two bases are set and differ. The round must first hash: its per-path digests must hash to its fingerprint (`fingerprint::fingerprint_value`, the one place that hashes a value), else the round is stale. Then each path is judged from committed objects only. A path the stage still changes keeps the reviewed digest, and the target branch must not have changed it between the two bases (one `git diff --name-only` between them). A reviewed path that left the stage's diff counts only when the new base's blob hashes to the reviewed digest (`git ls-tree` entry matched on name, mode and size checked; a missing path is `deleted`; symlinks, submodules, directories and oversized blobs are never accepted). Any other path makes the round stale: a different digest, a path the review never saw, a reviewed change dropped for the target's version, or reviewed bytes kept over a target change. Git runs pinned to the stage's registered git directory (`stage_service::observer::stage_worktree_and_target`), bases must be full hex object ids, and any failure (a garbage-collected base) is stale with the cause named. The stale message reads `the base commit moved from X to Y; changed since: a, b; also changed on the target branch: c`. `covers_review` stays pure and reads no git. The same-base prose exemption is not carried across a base move, so a base move plus a prose-only edit needs a re-review. Generated output proven by a passing criterion is not exempt: a rebuilt bundle makes the round stale. An exemption needs a plan field that declares the generated paths and their proving criterion, and criterion results bound to the exact tree passed into the gate.
 `STATE_READ_DIRS` (`sandbox/settings.rs`) gains `contracts` and `reviews`; it is `#[rustfmt::skip]` on one
 line to stay at the ledgered 445 lines, and two `sandbox::settings::tests` pin the exact allow list.
 
@@ -121,12 +123,13 @@ early for any other stage type. A stage that moves a call another stage's wiring
 ## Impact-Selected Tests: Selection, Base Comparison, Observed Record
 
 **Impact-selected tests** (`verify/impact_tests.rs`, `verify/impact_tests/`): tests reaching the changed nodes
-through `impact_with`, run per adapter through the criteria runner (300 s, certified cache). A test selects only
+through `ImpactOptions::impact_from` (`context/resolve/impact.rs`), run per adapter through the criteria runner (300 s, certified cache). A test selects only
 when every step of its path is a bound edge (`impact_tests/reach.rs`); one reached only through an ambiguous call's
 candidate set is a namesake note, never run. The selection set is every node in a file the
 stage changed since its merge base with the target branch (`git merge-base HEAD <target>`, via
 `verify/review/fingerprint.rs::changes_since_merge_base`), not since the nearest published graph base; the graph itself
 is still layered on that base, and a commit that lands on the target after the stage branched is not a stage change.
+The reverse walk is multi-source: `walk_tests` gathers every node of the changed files as starts and walks once, and `reached_test_nodes` does two walks per selection (selected: `min_confidence` `UNIQUE_NAME_CONFIDENCE`, no candidates; namesakes: default options), each building the node map and reverse adjacency once. `impact_with` is the single-start case. Starts are never hits, and a hit's depth counts from its nearest start.
 A runner's package comes from project detection, which skips `fixtures` directories, so test-data manifests are no
 packages. The gate names no language: each adapter declares what it needs and how it selects
 (`TestRunnerAdapter::required_environment`, `selection_names`). The JS adapters need `node_modules` when the
@@ -138,7 +141,7 @@ and so is every error the runner returns (E2BIG on an exec of thousands of names
 exec reports the OS limit): `run_group` names only its root cause. Notes cut the command at 200 bytes and list 10 names.
 Exit 127 cannot tell a missing runner from a suite that itself exits 127. Yarn PnP packages declare dependencies and
 have no `node_modules`, so they get the same note. It also selects the nodes of changed
-test files, since `impact_with` never returns its start node, but skips every test inside a contract FILE,
+test files, since a walk never returns a start node, but skips every test inside a contract FILE,
 so non-contract tests placed in a contract file run nowhere before integration-verify. Cargo targets are
 `Function` nodes named by a libtest path derived from `mod` declarations, `#[path]` included
 (`impact_tests/libtest.rs`); which files are crate roots is the cargo adapters' Cargo layout rule
@@ -146,6 +149,8 @@ so non-contract tests placed in a contract file run nowhere before integration-v
 extractor does not model macros (`context/extract/rust.rs`), so a test whose only use of the changed code
 sits inside `assert_eq!(...)` is not selected; write fixtures with the call outside the macro. No selection,
 a timeout or no `select_command` is a note, not a failure.
+
+**Cargo selections run per target.** For a runner that selects by libtest path, `TestTarget.file` is the crate root the libtest path starts at (`impact_tests/libtest.rs`), so tests in a `#[path]`-declared test module scope correctly. `impact_tests/scoped.rs::select_command` resolves each crate root with `contracts::collection::rust::target_scope` (manifest-aware, memoised per root) and asks the adapter's `TestRunnerAdapter::scoped_select_command` (`testrun/mod.rs`) for one command per target: `cargo test --lib -- --exact a::t && cargo test --test it -- --exact flow`. The default returns `None`, which means the runner cannot name a target, so the runner keeps one command over every test (`cargo-nextest` does). A test whose target is not certain stays in a plain `cargo test -- <names>` group. The groups form one `&&` chain inside one selection command, so a package selection stays one `IT-<runner>:<package>` failure (disputes, accepted records and the base re-run key on that id); a failing first group stops the chain, as cargo stops at the first failing test binary. The base re-run goes through the same `Site::run`.
 
 **Judging an impact failure** (`impact_tests/{report,accepted,base,failure}.rs`). A failed selection is
 `IT-<runner>:<package>` (`failure::failure_id`; no runner name holds `:`, so the first one splits the id whatever the
@@ -195,7 +200,7 @@ A covered check joins the live job whatever its session (`submit.rs::covers`); a
 ## Components
 
 - `commands/stage/complete_relay.rs`: the session side of completion. It relays a `complete` request, follows the job, then follows the daemon's application. A legacy session is refused; an operator's shell completes locally.
-- `orchestrator/core/inbox_drain/complete.rs`, `check.rs`, `freeze.rs`: the daemon queues a relayed request as a job and settles the ticket at once with the job id.
+- `orchestrator/core/inbox_drain/complete.rs`, `check.rs`, `freeze.rs`: the daemon queues a relayed request as a job and settles the ticket at once with the job id. A relayed `complete` first passes `host_verify/gates.rs::refusal`; a refusal settles the ticket as refused with the full `completion gates: <error>` reason (the ledger line holds up to `MAX_LEDGER_LINE_BYTES`, 4096) and queues nothing.
 - `orchestrator/core/host_jobs.rs`: the runner's tick, the startup recovery and the apply retries. The runner is `host_jobs: Option<HostJobRunner>` on `Orchestrator` (`orchestrator/core/orchestrator.rs`); the `OrchestratorResult` type lives in `orchestrator/core/orchestrator_result.rs`.
 - `host_verify/runner.rs`: starts each queued job as a `loom stage verify-host` child, polls it with `try_wait`, and ends it on cancellation, deadline or output cap. The tick blocks on a child only while retiring it, for at most the process cleanup grace.
 - `commands/stage/verify_host.rs`, `host_verify/child.rs`, `child_complete.rs`, `freeze.rs`: the child run.
@@ -208,7 +213,7 @@ A covered check joins the live job whatever its session (`submit.rs::covers`); a
 - Paths come from the state root (`JobTree::resolve`). A stage's checkout is its worktree. A knowledge stage runs in the repository root with no worktree root, so a `working_dir` below the root does not grant the whole repository. The child reads the repository through `WorkDir::main_project_root` and `resolve_acceptance_dir`; it does not call `acceptance_runner::resolve_knowledge_execution_paths`.
 - Caching follows the record. Unless the record says `no_cache`, the child sets `CachePolicy::Use` and the cache directory under the state root, so the daemon's environment never decides caching.
 - A knowledge stage's child creates the completion attestation key first (`handoff::attestation_key`), because its confinement binds over the state root's secret files.
-- Acceptance runs first. The completion checks (`complete_verification`) then each run, even after an earlier failure, so one run names every failing check. Test integrity and the review gate are not run by the child; the daemon runs them at apply.
+- Acceptance runs first. The completion checks (`complete_verification`) then each run, even after an earlier failure, so one run names every failing check. Test integrity and the review gate are not run by the child; the daemon runs them before it queues the job and again at apply.
 
 ## Cancellation and Restart
 
@@ -231,7 +236,7 @@ A covered check joins the live job whatever its session (`submit.rs::covers`); a
 
 `host_verify/apply.rs::apply_finished` runs for each finished record, and on startup for each terminal record with no `applied` marker. The `applied` marker is written last, so a crash between the transition and the marker repeats the step, and the session's waiter reads the marker before it reads the stage.
 
-- Passing `complete`: `check_outside_lock` checks ownership and runs `daemon::check_completion_gates` (`daemon/server/observer.rs`: test integrity and the review gate, against the change fingerprint). Then `bind_and_complete`, under the stage lock, requires that the stage is still `Executing` with the same session, that the run passed at the record's head, that the committed content and the check-definition hash still match the run, and then sets `completed_commit` to the run's head. A knowledge stage is also marked merged; any other stage waits for the merge flow. The session is retired and its acceptance receipt is written.
+- Passing `complete`: `check_outside_lock` checks ownership and runs the gates again through `gates::refusal` (`daemon::check_completion_gates`, `daemon/server/observer.rs`: test integrity and the review gate, against the change fingerprint), since the tree or the review can change while the job runs. Then `bind_and_complete`, under the stage lock, requires that the stage is still `Executing` with the same session, that the run passed at the record's head, that the committed content and the check-definition hash still match the run, and then sets `completed_commit` to the run's head. A knowledge stage is also marked merged; any other stage waits for the merge flow. The session is retired and its acceptance receipt is written.
 - A binding or gate refusal writes a rejection checkpoint (`apply_rejection.rs`).
 - Failing `complete`: a failure checkpoint and attempt evidence come from the failed result.
 - Cancelled or interrupted `complete`: nothing is written. A checkpoint would replace the latest attempt a block reads and spend the session's evidence.

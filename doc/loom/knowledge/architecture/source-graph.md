@@ -76,8 +76,9 @@ extraction-time state (relink uses it, see [Source Graph Resolved View](source-g
 
 **Candidate sets.** A `Syntax` edge whose target is ambiguous keeps `candidates`: sorted
 node ids, at most `MAX_CANDIDATES = 8`; with more than 8 the list stays empty and the edge is
-plain unresolved. Traversal (`impact_with`, which `impact`, `reachable` and impact-selected
-tests share) treats each candidate as a reverse edge trusted at
+plain unresolved. Traversal (`ImpactOptions::impact_from`, a multi-source reverse walk over one node map and reverse
+adjacency, and `impact_with`, its single-start case; `impact`, `reachable` and impact-selected
+tests share them) treats each candidate as a reverse edge trusted at
 `AMBIGUOUS_CANDIDATE_CONFIDENCE = 0.2`, so the hit's weakest provenance is `syntax` and it is
 flagged `via_candidates`. Retrieval expansion never follows candidates: they sit below its 0.5
 floor. A plan check that must not rest on candidates sets `min_confidence` above 0.2.
