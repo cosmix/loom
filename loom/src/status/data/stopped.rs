@@ -3,7 +3,7 @@
 //! the terminal history of its last tmux session.
 
 use crate::fs::work_dir::WorkDir;
-use crate::models::session::{Session, SessionBackendKind, SessionType};
+use crate::models::session::{Session, SessionBackendKind};
 use crate::models::stage::{Stage, StageStatus};
 use crate::orchestrator::terminal::tmux::has_history;
 
@@ -44,8 +44,8 @@ pub(super) fn blocked_acceptance(stage: &Stage) -> Vec<String> {
 /// history file. Only the newest ended session is asked: the history of an
 /// earlier attempt is not what the stage last showed.
 ///
-/// An adjudication judge is not part of the stage's own terminal, so its
-/// sessions are skipped, as they are by `loom attach`.
+/// An adjudication judge's session counts, since the judge is what the stage's
+/// terminal showed last when it ran last.
 pub(super) fn terminal_history_session(
     stage: &Stage,
     sessions: &[Session],
@@ -56,7 +56,6 @@ pub(super) fn terminal_history_session(
         .filter(|session| {
             session.stage_id.as_deref() == Some(stage.id.as_str())
                 && session.backend == SessionBackendKind::Tmux
-                && session.session_type != SessionType::Adjudication
                 && !is_live(session)
         })
         .max_by_key(|session| session.created_at)?;
@@ -66,7 +65,7 @@ pub(super) fn terminal_history_session(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::session::SessionStatus;
+    use crate::models::session::{SessionStatus, SessionType};
     use crate::models::stage::AcceptanceCriterion;
     use crate::orchestrator::terminal::tmux::write_history;
     use chrono::{Duration, Utc};
@@ -169,24 +168,36 @@ mod tests {
     }
 
     #[test]
-    fn other_stages_native_sessions_and_judges_are_not_named() {
+    fn other_stages_and_native_sessions_are_not_named() {
         let (_temp, work) = work_dir();
         let elsewhere = ended_session("client", 60);
         let mut native = ended_session("server", 60);
         native.backend = SessionBackendKind::Native;
-        let mut judge = ended_session("server", 60);
-        judge.session_type = SessionType::Adjudication;
-        for session in [&elsewhere, &native, &judge] {
+        for session in [&elsewhere, &native] {
             write_history(work.root(), &session.id, b"screen").unwrap();
         }
 
         assert_eq!(
-            terminal_history_session(
-                &stage(StageStatus::Blocked),
-                &[elsewhere, native, judge],
-                &work
-            ),
+            terminal_history_session(&stage(StageStatus::Blocked), &[elsewhere, native], &work),
             None
         );
+    }
+
+    #[test]
+    fn a_judge_that_ended_last_is_named() {
+        let (_temp, work) = work_dir();
+        let worker = ended_session("server", 600);
+        let mut judge = ended_session("server", 60);
+        judge.session_type = SessionType::Adjudication;
+        write_history(work.root(), &worker.id, b"worker").unwrap();
+        write_history(work.root(), &judge.id, b"judge").unwrap();
+
+        let named = terminal_history_session(
+            &stage(StageStatus::NeedsAdjudication),
+            &[worker, judge.clone()],
+            &work,
+        );
+
+        assert_eq!(named, Some(judge.id));
     }
 }

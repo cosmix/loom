@@ -1,5 +1,6 @@
-//! Which session speaks for a stage in a merge state, and what the resolver's
-//! activity reads as. `stage.session` keeps naming the worker that finished.
+//! Which session speaks for a stage in a merge state or awaiting adjudication,
+//! and what the resolver's or judge's activity reads as. `stage.session` keeps
+//! naming the worker that finished.
 
 use super::tests::{make_test_stage, temp_work_dir};
 use super::*;
@@ -32,6 +33,14 @@ fn live_resolver() -> Session {
     resolver.pid = Some(std::process::id());
     resolver.backend = SessionBackendKind::Tmux;
     resolver
+}
+
+/// A running tmux judge for `stage-1` whose process is this test's own.
+fn live_judge() -> Session {
+    let mut judge = live_resolver();
+    judge.id = "judge-1".to_string();
+    judge.session_type = SessionType::Adjudication;
+    judge
 }
 
 #[test]
@@ -99,6 +108,45 @@ fn a_live_resolver_does_not_replace_the_worker_outside_a_merge_state() {
     assert!(!summary.session_alive);
     assert_eq!(summary.session_type, Some(SessionType::Stage));
     assert_eq!(summary.merge_resolver_session, None);
+}
+
+#[test]
+fn a_live_judge_speaks_for_an_adjudicating_stage_whose_named_worker_ended() {
+    let (_tmp, work_dir) = temp_work_dir();
+    let (stage, worker) = merging_stage_with_ended_worker(StageStatus::NeedsAdjudication);
+
+    let summary = build_stage_summary(&stage, &[worker, live_judge()], &work_dir);
+
+    assert_eq!(summary.pid, Some(std::process::id()));
+    assert!(summary.session_alive);
+    assert_eq!(summary.session_backend, Some(SessionBackendKind::Tmux));
+    assert_eq!(summary.session_type, Some(SessionType::Adjudication));
+    assert_eq!(summary.merge_resolver_session, None);
+}
+
+#[test]
+fn the_ended_worker_still_speaks_when_no_judge_is_live() {
+    let (_tmp, work_dir) = temp_work_dir();
+    let (stage, worker) = merging_stage_with_ended_worker(StageStatus::NeedsAdjudication);
+    let mut gone = live_judge();
+    gone.status = SessionStatus::Completed;
+    gone.pid = Some(999_999_999);
+
+    let summary = build_stage_summary(&stage, &[worker, gone], &work_dir);
+
+    assert_eq!(summary.pid, Some(999_999_999));
+    assert!(!summary.session_alive);
+}
+
+#[test]
+fn a_live_judge_does_not_replace_the_worker_outside_adjudication() {
+    let (_tmp, work_dir) = temp_work_dir();
+    let (stage, worker) = merging_stage_with_ended_worker(StageStatus::Executing);
+
+    let summary = build_stage_summary(&stage, &[worker, live_judge()], &work_dir);
+
+    assert_eq!(summary.pid, Some(999_999_999));
+    assert!(!summary.session_alive);
 }
 
 #[test]

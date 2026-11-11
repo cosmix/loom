@@ -190,10 +190,11 @@ pub struct StageSummary {
     /// Effective model name for this stage (explicit override or stage-type default)
     pub model: String,
     /// The kind of the session that speaks for the stage, if any: the one
-    /// `stage.session` names, or the live merge resolver once the stage is in
-    /// a merge state and its worker has ended. An `Executing` stage whose
-    /// session is not of its own worker kind (e.g. an adjudication session)
-    /// is not describing a working agent — see `incoherence`.
+    /// `stage.session` names, or, once that session has ended, the live merge
+    /// resolver of a stage in a merge state or the live adjudication judge of a
+    /// stage in `NeedsAdjudication`. An `Executing` stage whose session is not
+    /// of its own worker kind (e.g. an adjudication session) is not describing
+    /// a working agent — see `incoherence`.
     pub session_type: Option<SessionType>,
     /// Why an `Executing` stage does not describe a working agent, if it
     /// does not. `None` for every other stage.
