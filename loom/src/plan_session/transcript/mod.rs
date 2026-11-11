@@ -6,6 +6,9 @@
 //! arrives after `end_turn` therefore opens a turn: the bridge drains the transcript before it
 //! applies a Stop.
 
+mod commands;
+#[cfg(test)]
+mod commands_contract_tests;
 mod content;
 pub mod notification;
 #[cfg(test)]
@@ -21,6 +24,8 @@ mod stop_contract_tests;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]
+mod tests_commands;
+#[cfg(test)]
 mod tests_opening;
 #[cfg(test)]
 mod tests_server;
@@ -34,6 +39,7 @@ mod user_record;
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::path::PathBuf;
 
+pub use commands::CommandMark;
 pub(crate) use records::{bounded_id, cap_chars, LINE_CHARS};
 pub(crate) use user_record::BACKGROUND_TAGS;
 
@@ -82,6 +88,8 @@ pub enum RecordMark {
         at: DateTime<Utc>,
         evidence: BackgroundEvidence,
     },
+    /// A slash command's own record: what ran, its output, a fork launch or an unknown name.
+    Command(CommandMark),
 }
 
 #[derive(Clone, Copy)]
@@ -317,6 +325,7 @@ impl Mapper {
             Kind::ApiError(text) => {
                 self.notice(uuid, at, NoticeKind::ApiError, text, &mut out.deltas);
             }
+            Kind::Command(record) => self.command(uuid, at, record, out),
             Kind::Skipped => {}
         }
     }

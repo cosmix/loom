@@ -74,9 +74,13 @@ impl Session {
         self.delivering(vec![guidance_id, typed_id], text)
     }
 
-    /// How long the pasted delivery has waited for its `UserPromptSubmit`.
+    /// How long the pasted delivery has waited for its confirmation; a confirmed local command
+    /// waits for none.
     pub(super) fn waited(&self, now: Instant) -> Option<Duration> {
-        let sent = self.flow.delivering.as_ref().and_then(|d| d.sent_at)?;
+        let delivering = self.flow.delivering.as_ref();
+        let sent = delivering
+            .filter(|d| !d.settling())
+            .and_then(|d| d.sent_at)?;
         Some(now.duration_since(sent))
     }
 

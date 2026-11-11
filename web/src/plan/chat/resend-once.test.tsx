@@ -43,6 +43,7 @@ const lost = (fields: Partial<UserItem> = {}): UserItem => ({
   attachments: [],
   delivery: "undelivered",
   origin: null,
+  command: null,
   ...fields,
 });
 const panel = (

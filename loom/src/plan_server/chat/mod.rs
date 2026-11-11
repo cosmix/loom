@@ -146,6 +146,7 @@ pub(crate) fn install_with(
     follow_authoring(ctx, &bridge);
     follow_sessions(ctx, &bridge, state, leases, runtime);
     background::install(ctx, &bridge);
+    super::commands::install(ctx, &bridge);
     let (drain, abort) = (Arc::clone(&bridge), Arc::clone(&bridge));
     ctx.shutdown().register(ShutdownHook {
         name: "chat sessions",

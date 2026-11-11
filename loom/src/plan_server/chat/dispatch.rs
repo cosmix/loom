@@ -4,7 +4,7 @@
 //! that connection only; texts an interrupt or an end take off the queue go back to it as
 //! `queue_returned` (px-state-23).
 
-use std::sync::Arc;
+use std::sync::{Arc, PoisonError};
 
 use super::guidance::{validate_feature, validate_plan, GuidanceSlot};
 use super::release::give_back;
@@ -20,7 +20,10 @@ use crate::plan_session::attachments::{
 use crate::plan_session::bridge::{
     Bridge, BridgeError, EndCause, EndMode, LaunchGuidance, StartRequest,
 };
-use crate::plan_session::input::{check_delivered, check_send, sanitize, InputRefusal};
+use crate::plan_session::commands::CommandTable;
+use crate::plan_session::input::{
+    check_alone, check_delivered, check_send, sanitize, InputRefusal,
+};
 use crate::plan_session::kind::{SessionDir, SessionKind};
 use crate::plan_session::model::Origin;
 
@@ -154,7 +157,11 @@ fn start(
     draft_cmd::writable(ctx)?;
     let text = text.unwrap_or_default();
     let draft = draft_cmd::StartDraft::of(offer.as_deref(), &text, &inputs);
-    let message = typed.then(|| checked(ctx, &text, inputs)).transpose()?;
+    // No session exists yet: its command list is still loading (B-D2).
+    let loading = CommandTable::loading();
+    let message = typed
+        .then(|| checked_against(ctx, &text, inputs, &loading))
+        .transpose()?;
     let (bridge, state) = (bridge(ctx)?, chat_state(ctx)?);
     let _starting = state.starting();
     let took = take_authoring(ctx, conn)?;
@@ -315,15 +322,38 @@ pub(super) fn chat_state(ctx: &PlanContext) -> Result<Arc<ChatState>, String> {
         .ok_or_else(|| UNAVAILABLE.to_owned())
 }
 
-/// Resolve the attachments server-side, then the send checks on what the session receives.
+/// The chat session's command table now; a send with no chat session yet starts one, whose
+/// list is still loading.
+fn chat_table(ctx: &PlanContext) -> Arc<CommandTable> {
+    let bridge = ctx.extensions().get::<Bridge>();
+    let cell = bridge.and_then(|bridge| bridge.command_cell(&bridge.chat_session_id()?));
+    let table = cell.map(|cell| Arc::clone(&cell.read().unwrap_or_else(PoisonError::into_inner)));
+    table.unwrap_or_else(|| Arc::new(CommandTable::loading()))
+}
+
+/// [`checked_against`] the chat session's command table now.
 pub(super) fn checked(
     ctx: &PlanContext,
     text: &str,
     inputs: Vec<AttachmentInput>,
 ) -> Result<Message, String> {
+    checked_against(ctx, text, inputs, &chat_table(ctx))
+}
+
+/// Resolve the attachments server-side, then the send checks on what the session receives,
+/// a slash message against `table`.
+fn checked_against(
+    ctx: &PlanContext,
+    text: &str,
+    inputs: Vec<AttachmentInput>,
+    table: &CommandTable,
+) -> Result<Message, String> {
     if inputs.len() > MAX_ATTACHMENTS {
         return Err(InputRefusal::TooManyAttachments.to_string());
     }
+    // Sanitised first: a control character before a `/` would hide the command from the checks.
+    let text = sanitize(text);
+    check_alone(&text, inputs.len()).map_err(|refusal| refusal.to_string())?;
     let resolved: Result<Vec<Attachment>, _> = {
         let (project, files) = (ctx.project(), &ctx.runtime().attachments);
         inputs
@@ -332,9 +362,7 @@ pub(super) fn checked(
             .collect()
     };
     let attachments = resolved.map_err(|error| error.to_string())?;
-    // Sanitised first: a control character before a `/` would hide the command from the check.
-    let text = sanitize(text);
-    check_send(&text).map_err(|refusal| refusal.to_string())?;
+    check_send(&text, table).map_err(|refusal| refusal.to_string())?;
     let formatted = sanitize(&format_message(&text, &attachments));
     check_delivered(&formatted).map_err(|refusal| refusal.to_string())?;
     // The block names a file's absolute path; the chips browsers get never do.

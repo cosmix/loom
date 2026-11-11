@@ -77,6 +77,7 @@ it("resend offered only for an unconfirmed send", async () => {
             attachments: [],
             delivery: "delivered",
             origin: null,
+            command: null,
           },
         ],
       },

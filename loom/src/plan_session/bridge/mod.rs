@@ -9,6 +9,7 @@
 //! thread (the driver, a command, recovery, drain) go on.
 
 pub mod background;
+mod catalogue;
 mod commands;
 mod denied;
 mod driver;
@@ -17,6 +18,7 @@ mod error;
 mod fetches;
 mod flow;
 pub mod host;
+mod local;
 mod opening;
 mod owner;
 mod publish;
@@ -40,6 +42,8 @@ mod fake_host;
 mod fixture_replay;
 #[cfg(test)]
 mod harness;
+#[cfg(test)]
+mod slash_contract_tests;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]
@@ -70,6 +74,10 @@ mod tests_rebuilding;
 mod tests_recovery;
 #[cfg(test)]
 mod tests_rewake;
+#[cfg(test)]
+mod tests_slash;
+#[cfg(test)]
+mod tests_slash_more;
 #[cfg(test)]
 mod tests_stopping;
 #[cfg(test)]

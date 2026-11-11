@@ -112,6 +112,7 @@ function sampleTurn(): Turn {
         text: "Clarify who Atlas is for using this passage.",
         delivery: "delivered",
         origin: null,
+        command: null,
         attachments: [SENT_PASSAGE],
       },
       sampleTool("help-edit", "Edit", "Clarified the audience in vision.md"),

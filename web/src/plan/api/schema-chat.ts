@@ -127,6 +127,8 @@ export const fetchViewSchema = z.strictObject({
   rule: fetchRuleSchema.nullable(),
 });
 
+export const commandRefSchema = z.strictObject({ name: z.string(), args: z.string() });
+
 export const itemSchema = z.discriminatedUnion("type", [
   z.strictObject({
     type: z.literal("user"),
@@ -135,6 +137,8 @@ export const itemSchema = z.discriminatedUnion("type", [
     attachments: z.array(attachmentSchema),
     delivery: deliverySchema,
     origin: originSchema.nullable(),
+    // Set on the user item of a prompt-type slash command; the chip shows it.
+    command: commandRefSchema.nullable(),
   }),
   z.strictObject({
     type: z.literal("thinking"),

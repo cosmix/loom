@@ -281,7 +281,14 @@ impl Session {
         let waits = self.flow.paused || self.flow.quiet_until.is_some() || self.flow.skip_delivery;
         let busy = self.flow.delivering.is_some() || self.flow.opening.is_some();
         if idle && !waits && !busy && self.flow.queue.is_empty() {
-            let delivering = self.delivery(text, attachments, None, step);
+            // Pasted at the next tick: the class check of a queued item at delivery, now.
+            let slash = match self.slash_of(&parse_unwrapped(&text).0) {
+                Some(Err(reason)) => return Err(BridgeError::Refused(reason)),
+                slash => slash.and_then(Result::ok),
+            };
+            let delivering = self
+                .delivery(text, attachments, None, step)
+                .with_slash(slash);
             let item_id = delivering.item_ids.first().cloned().unwrap_or_default();
             self.flow.delivering = Some(delivering);
             return Ok(SendOutcome::Delivering { item_id });
