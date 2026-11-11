@@ -108,7 +108,7 @@
 | [security-sandbox-and-hooks](patterns/security-sandbox-and-hooks.md) |  | 144 |
 | [stage-daemon-channels](patterns/stage-daemon-channels.md) |  | 184 |
 | [stage-lifecycle-and-verification](patterns/stage-lifecycle-and-verification.md) |  | 214 |
-| [subagent-hierarchy](patterns/subagent-hierarchy.md) |  | 101 |
+| [subagent-hierarchy](patterns/subagent-hierarchy.md) |  | 105 |
 
 ### conventions
 

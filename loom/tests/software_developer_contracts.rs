@@ -1,5 +1,5 @@
-//! Contract: the software developer agent drops the tools whose listings it exists to
-//! remove from a subagent's startup context.
+//! Contract: the software developer agent carries the `Skill` tool so it loads the skills its
+//! brief names, and stays a small file.
 
 use std::fs;
 use std::path::Path;
@@ -12,7 +12,7 @@ fn frontmatter_value<'a>(frontmatter: &'a str, key: &str) -> Option<&'a str> {
 }
 
 #[test]
-fn software_developer_carries_no_skill_tool() {
+fn software_developer_carries_the_skill_tool() {
     let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../agents/loom-software-developer.md");
     let body = fs::read_to_string(&path)
         .unwrap_or_else(|error| panic!("read {}: {error}", path.display()));
@@ -25,12 +25,16 @@ fn software_developer_carries_no_skill_tool() {
         .expect("the frontmatter has a closing marker");
 
     assert_eq!(frontmatter_value(frontmatter, "model"), Some("haiku"));
+    assert_eq!(frontmatter_value(frontmatter, "effort"), Some("high"));
     let tools: Vec<&str> = frontmatter_value(frontmatter, "tools")
         .expect("a tools line")
         .split(',')
         .map(str::trim)
         .collect();
-    assert_eq!(tools, ["Read", "Edit", "Write", "Glob", "Grep", "Bash"]);
+    assert_eq!(
+        tools,
+        ["Read", "Edit", "Write", "Glob", "Grep", "Bash", "Skill"]
+    );
     assert!(
         body.len() < 2_000,
         "the agent file is {} bytes, the limit is under 2,000",

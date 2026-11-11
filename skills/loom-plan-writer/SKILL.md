@@ -223,7 +223,7 @@ Each worker's brief is written to `doc/plans/briefs/<plan-slug>/<stage-id>/<work
 
 `Worker | Role | Tier | Files owned | Shared context | Brief path`
 
-Territories are DISJOINT; workers NEVER spawn subagents; the orchestrator spawns every worker BY AGENT TYPE, ALL in ONE message, each with a short fixed prompt plus `Your brief: <path>. Read it in full before anything else.` Execution → `loom-software-engineer` (pins sonnet), or HAIKU (loom-software-developer) for routine pieces, or `loom-codex-forwarder` for a codex unit (Tier `codex terra` or `codex luna`); judgment → `loom-senior-software-engineer`.
+Territories are DISJOINT; workers NEVER spawn subagents; the orchestrator spawns every worker BY AGENT TYPE, ALL in ONE message, each with a short fixed prompt plus `Your brief: <path>. Read it in full before anything else.` Execution → `loom-software-engineer` (pins sonnet), or HAIKU (loom-software-developer) for extremely simple or highly detailed pieces, or `loom-codex-forwarder` for a codex unit (Tier `codex terra` or `codex luna`); judgment → `loom-senior-software-engineer`.
 
 **A `Files owned` cell holds paths only.** `loom plan verify` parses the table: it splits the cell on `,` and `;`, strips one trailing `(annotation)` and backticks, and treats every remaining string as a path. Prose in the cell becomes a bogus path that warns as outside the stage's `files:`; a row with the wrong column count makes the whole table claim nothing. It also warns when two workers claim one path, and when four or more rows each own exactly one path (group them).
 
@@ -345,7 +345,7 @@ Read `references/plan-template.md` when writing YAML. It contains the complete p
 - Smallest complete scope chosen; every additional stage cites Q1–Q4; no speculative features, wrappers, dependencies or configuration.
 - Every promised capability has one owner and behavioral proof; consumer-side wiring is covered; overview agrees with YAML.
 - Bookends ordered; stages fit one session; model/effort overrides justified; summary, skills, working_dir and ownership declared.
-- Lanes chosen and confirmed once per the lane reference; grouped worker briefs use the cheapest capable tier and settle their decisions.
+- Lanes chosen and confirmed once per the lane reference; grouped worker briefs use the cheapest capable tier and settle their decisions; a highly detailed brief that settles its decisions goes to haiku.
 - v2: package adapters detected; risk-based contracts reject named wrong implementations; harness and ratchet files declared; IV runs the full suite.
 - Checks cover owned files, execute real behavior, select tests, and fail on a plausible regression; no ceremonial tests for trivial edits. Preserve mandatory v2 contracts and gates.
 - Baseline checks run in the planned worktree/sandbox; produced-artifact checks tried on good and broken fixtures; timeouts and ungrantable resources resolved.

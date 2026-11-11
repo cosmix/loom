@@ -77,7 +77,7 @@ fn push_codex_intro(content: &mut String, implementers: &Implementers) {
     }
     content.push_str(
         "Regardless of the list: YOU, the stage's main agent, keep the work needing\n\
-         architectural judgment, loom-advisor (fable) is available on a second failure,\n\
+         architectural judgment, loom-advisor (fable) diagnoses after an opus failure,\n\
          and verification never moves to codex - see below.\n\n",
     );
 }
@@ -187,8 +187,8 @@ fn push_codex_blast_radius_and_evidence(content: &mut String) {
          luna takes boilerplate/scaffolding/simple unit tests only when the user or plan asks\n\
          for it (haiku is the default for that work). Not opus work (architecture,\n\
          algorithms, cross-cutting refactors, security-sensitive code), fable work (visual/UI\n\
-         design, a bug that survived a delegated fix, hard algorithmic design), or loom-advisor's\n\
-         role on a second failure - route by what the task needs, not by what the stage lists.\n",
+         design, hard algorithmic design), or loom-advisor's\n\
+         role after an opus failure - route by what the task needs, not by what the stage lists.\n",
     );
     content.push_str(concat!(
         "- ACCEPT A REPORT ONLY WITH EVIDENCE: the report is the forwarder's FINAL MESSAGE, and a\n",

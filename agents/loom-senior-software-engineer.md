@@ -1,6 +1,6 @@
 ---
 name: loom-senior-software-engineer
-description: Use PROACTIVELY for architecture design, complex debugging, design patterns, code review, test strategy, data modeling, ML system design, UX strategy, documentation architecture, and strategic technical decisions across all domains.
+description: Implementation where a wrong design is expensive and tests will not catch it - architecture across modules, new algorithms, concurrency and distributed systems, security-sensitive code, cross-cutting refactors, and debugging a bug of unknown cause.
 tools: Read, Edit, Write, Glob, Grep, Bash, Skill, WebFetch, WebSearch, TodoWrite
 model: opus
 effort: high
