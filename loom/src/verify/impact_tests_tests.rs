@@ -187,7 +187,10 @@ fn impact_selection_runs_reached_tests() {
     let commands = recorder.commands.into_inner();
     assert_eq!(commands.len(), 1, "{commands:?}");
     let (command, package_dir) = &commands[0];
-    assert!(command.starts_with("cargo test -- "), "{command}");
+    assert!(
+        command.starts_with("cargo test --lib -- --exact "),
+        "{command}"
+    );
     assert!(command.contains("add_tests::adds_two"), "{command}");
     assert!(command.contains("tests::adds_in_unit"), "{command}");
     assert!(!command.contains("subtracts"), "{command}");

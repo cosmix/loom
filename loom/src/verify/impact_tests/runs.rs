@@ -4,6 +4,7 @@ use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 use super::failure::{failure_id, output_tail, package_label, FailureKind};
+use super::scoped;
 use super::{FULL_SUITE, IMPACT_TIMEOUT};
 use crate::testrun::{classify, RunOutcome, RunOutput, TestRunnerAdapter, TestTarget};
 use crate::verify::criteria::{ProbeRun, ProbeRunner};
@@ -42,9 +43,11 @@ pub(super) struct Failure {
 }
 
 impl Site<'_> {
-    /// Run `adapter`'s selection of `targets` in `package` and judge it. A
-    /// selection that cannot be run (the command does not spawn, for one too
-    /// long for the OS to exec) is inconclusive, never a failure.
+    /// Run `adapter`'s selection of `targets` in `package` and judge it; a
+    /// runner selecting by libtest path runs one group per cargo target
+    /// (`scoped`). A selection that cannot be run (the command does not
+    /// spawn, for one too long for the OS to exec) is inconclusive, never a
+    /// failure.
     pub(super) fn run(
         &self,
         package: &Path,
@@ -57,7 +60,7 @@ impl Site<'_> {
             let place = self.place;
             return Run::Inconclusive(format!("`{name}` has no {missing} in {place}"));
         }
-        let Some(command) = adapter.select_command(targets, &package_dir) else {
+        let Some(command) = scoped::select_command(self.root, package, adapter, targets) else {
             let runner = adapter.name();
             return Run::Inconclusive(format!("{runner} cannot select tests by file"));
         };

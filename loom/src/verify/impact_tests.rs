@@ -32,6 +32,7 @@ mod observed;
 mod reach;
 mod report;
 mod runs;
+mod scoped;
 
 use anyhow::{Context, Result};
 use std::collections::{BTreeMap, BTreeSet};
@@ -64,7 +65,7 @@ pub(crate) fn observed_impact(error: &anyhow::Error) -> ObservedImpact {
 }
 
 use base::{BaseCriteria, BaseProbe};
-use libtest::LibtestPaths;
+use libtest::{LibtestPath, LibtestPaths};
 use reach::{reached_test_nodes, TestNodes};
 use report::Report;
 use runs::Selection;
@@ -291,9 +292,9 @@ fn group_targets(
 }
 
 /// What `node` selects: its file for a runner selecting by file, a function's
-/// libtest path for one selecting by libtest path
-/// (`TestRunnerAdapter::selection_names`). `None` when such a runner cannot
-/// name it, with a note when it is a function.
+/// libtest path and the crate root it starts at for one selecting by libtest
+/// path (`TestRunnerAdapter::selection_names`). `None` when such a runner
+/// cannot name it, with a note when it is a function.
 fn target_of(
     paths: &mut LibtestPaths<'_>,
     package: &Path,
@@ -308,7 +309,7 @@ fn target_of(
     if node.kind != SourceNodeKind::Function {
         return None;
     }
-    let Some(name) = paths.of(node, package, is_crate_root) else {
+    let Some(LibtestPath { name, root }) = paths.of(node, package, is_crate_root) else {
         notes.insert(format!(
             "`{}` is not selected: its libtest path cannot be derived from the module \
              declarations in the source graph",
@@ -316,6 +317,8 @@ fn target_of(
         ));
         return None;
     };
+    // The path starts at the crate root, which names the cargo target (`scoped`).
+    let file = file_node_id(Path::new(&root).strip_prefix(package).ok()?);
     Some(TestTarget {
         file,
         name: Some(name),

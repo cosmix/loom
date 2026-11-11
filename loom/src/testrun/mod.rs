@@ -68,7 +68,7 @@ pub struct TestTarget {
 
 /// The cargo target that compiles a contract's test file. A scoped run builds
 /// and runs that one target instead of every target of the package.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum TargetScope {
     /// The package's library target (`--lib`).
     Lib,
@@ -95,9 +95,10 @@ pub enum SelectionNames {
     /// By the file declaring them: each target's `name` is unset.
     Files,
     /// By libtest path (`module::test`): [`TestRunnerAdapter::select_command`]
-    /// takes one target per test function, each with its `name` set. A path
-    /// starts at a crate root; `is_crate_root` says whether a file, relative
-    /// to its package, is one.
+    /// takes one target per test function, each with its `name` set and its
+    /// `file` the crate root the path starts at. A path starts at a crate
+    /// root; `is_crate_root` says whether a file, relative to its package,
+    /// is one.
     LibtestPaths { is_crate_root: fn(&Path) -> bool },
 }
 
@@ -167,6 +168,20 @@ pub trait TestRunnerAdapter: Sync {
     /// One shell command running every target, or `None` when the runner
     /// cannot select tests by file or name.
     fn select_command(&self, targets: &[TestTarget], package_dir: &Path) -> Option<String>;
+
+    /// [`Self::select_command`] for targets that all belong to the build
+    /// target `scope`. `None` when the runner cannot name a build target, or
+    /// none of `targets` is named; the caller then selects those targets
+    /// unscoped, together, so a runner that cannot scope still runs one
+    /// command.
+    fn scoped_select_command(
+        &self,
+        _scope: &TargetScope,
+        _targets: &[TestTarget],
+        _package_dir: &Path,
+    ) -> Option<String> {
+        None
+    }
 
     /// Read the counts and the build status from a run's output.
     fn parse(&self, out: &RunOutput<'_>) -> RunSummary;

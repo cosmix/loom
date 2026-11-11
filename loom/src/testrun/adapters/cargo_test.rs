@@ -9,7 +9,8 @@ use regex::Regex;
 
 use crate::testrun::command::{shell_word, shell_words};
 use crate::testrun::recognize::{
-    cargo_could_not_compile, cargo_target_unselected, command_args, combined_output, has_flag, pattern, positionals, split_double_dash, sum_matches,
+    cargo_could_not_compile, cargo_target_unselected, combined_output, command_args, has_flag,
+    pattern, positionals, split_double_dash, sum_matches,
 };
 use crate::testrun::{
     RunOutput, RunSummary, SelectionNames, TargetScope, TestRunnerAdapter, TestTarget,
@@ -140,11 +141,25 @@ impl TestRunnerAdapter for CargoTest {
     }
 
     fn select_command(&self, targets: &[TestTarget], _package_dir: &Path) -> Option<String> {
-        let names: Vec<&str> = targets.iter().filter_map(|t| t.name.as_deref()).collect();
-        if names.is_empty() {
-            return None;
-        }
+        let names = libtest_names(targets)?;
         Some(format!("cargo test -- {}", shell_words(names)))
+    }
+
+    /// Builds only `scope`'s target and matches whole libtest paths: an
+    /// unscoped, unexact filter compiles and visits every test binary of the
+    /// package and selects every test whose path merely contains a name.
+    fn scoped_select_command(
+        &self,
+        scope: &TargetScope,
+        targets: &[TestTarget],
+        _package_dir: &Path,
+    ) -> Option<String> {
+        let names = libtest_names(targets)?;
+        Some(format!(
+            "cargo test {} -- --exact {}",
+            scope.cargo_flags(),
+            shell_words(names)
+        ))
     }
 
     /// Sums every test binary's `running N tests` and `test result:` line.
@@ -178,6 +193,12 @@ impl TestRunnerAdapter for CargoTest {
     fn compile_rejected(&self, out: &RunOutput<'_>) -> bool {
         self.parse(out).build_failed && cargo_could_not_compile(&combined_output(out))
     }
+}
+
+/// The libtest paths of the named `targets`; `None` when none is named.
+fn libtest_names(targets: &[TestTarget]) -> Option<Vec<&str>> {
+    let names: Vec<&str> = targets.iter().filter_map(|t| t.name.as_deref()).collect();
+    (!names.is_empty()).then_some(names)
 }
 
 /// Whether `relative` (to its package) is a crate root by Cargo's layout: the
@@ -249,6 +270,31 @@ mod tests {
     }
 
     #[test]
+    fn scoped_select_command_builds_one_target_and_matches_exact_names() {
+        let dir = Path::new(".");
+        let targets = [target(Some("a::x")), target(None), target(Some("b::y"))];
+        let cases = [
+            (TargetScope::Lib, "cargo test --lib -- --exact a::x b::y"),
+            (
+                TargetScope::Test("it".into()),
+                "cargo test --test it -- --exact a::x b::y",
+            ),
+        ];
+        for (scope, expected) in cases {
+            let command = ADAPTER.scoped_select_command(&scope, &targets, dir);
+            assert_eq!(command.as_deref(), Some(expected));
+            let argv: Vec<String> = expected.split(' ').map(str::to_string).collect();
+            assert!(ADAPTER.recognizes(&argv));
+            assert!(!ADAPTER.is_full_run(&argv));
+        }
+        let unnamed = [target(None)];
+        assert_eq!(
+            ADAPTER.scoped_select_command(&TargetScope::Lib, &unnamed, dir),
+            None
+        );
+    }
+
+    #[test]
     fn hostile_test_name_stays_one_word() {
         let dir = Path::new(".");
         let command = ADAPTER.single_test_command("src/lib.rs", HOSTILE_NAME, dir);
@@ -271,9 +317,13 @@ mod tests {
             "error[E0425]: cannot find value `x`\nerror: could not compile `fx` (lib) due to 1 previous error\n",
         );
         assert!(ADAPTER.compile_rejected(&rejected));
-        let killed = stderr_only("error: process didn't exit successfully: `rustc` (signal: 9, SIGKILL)\n");
+        let killed =
+            stderr_only("error: process didn't exit successfully: `rustc` (signal: 9, SIGKILL)\n");
         assert!(ADAPTER.parse(&killed).build_failed);
-        assert!(!ADAPTER.compile_rejected(&killed), "a killed rustc is not shared");
+        assert!(
+            !ADAPTER.compile_rejected(&killed),
+            "a killed rustc is not shared"
+        );
     }
 
     /// The text cargo 1.9x prints for a target selection it does not know; a
