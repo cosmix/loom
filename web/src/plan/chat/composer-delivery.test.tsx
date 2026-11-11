@@ -3,8 +3,11 @@ import { getDefaultStore } from "jotai";
 import { expect, it } from "vitest";
 
 import suggestion from "@/plan/api/fixtures/review-suggestion.json";
+import sessionCommands from "@/plan/api/fixtures/session-commands.json";
+import { commandsViewSchema } from "@/plan/api/schema-session-commands";
 import { addAttachmentAtom } from "@/plan/attachments";
 import { authoringAtom, connectionAtom, serverInfoAtom } from "@/plan/state/atoms";
+import { commandsFrameAtom } from "@/plan/state/commands-atom";
 import {
   box,
   initial,
@@ -22,6 +25,7 @@ import {
 } from "./composer-harness";
 import { endChat } from "./commands";
 import { ComposerArea } from "./composer";
+import { composeAfterAtom } from "./composer-hooks";
 import { draftAtom } from "./drafts";
 import { snapshotAtom } from "./model";
 import { Transcript } from "./transcript";
@@ -29,6 +33,23 @@ import { chatSheetOpenAtom } from "./sheet-state";
 import { storageFullAtom } from "./storage";
 
 installComposerLifecycle();
+
+const OUTSIDE = "Changes the session outside the planner";
+
+/**
+ * Gives the chat session the fixture's ready list through the setter the plan socket hands a
+ * `commands` frame to: the harness's stand-in socket reaches subscribers only.
+ */
+function listCommands(h: ReturnType<typeof setup>): void {
+  const frame = { session: initial.session!.id, ...commandsViewSchema.parse(sessionCommands) };
+  act(() => h.store.set(commandsFrameAtom, frame));
+}
+/** Send with `reason` as its description, the foot line: the list's rows repeat the words. */
+const sendRefusedFor = (reason: string) =>
+  screen.getByRole("button", { name: "Send", description: reason });
+/** Types by the box's label: it is a combobox, not a textbox, while it holds a slash name. */
+const write = (text: string) =>
+  fireEvent.change(screen.getByLabelText("Message"), { target: { value: text } });
 
 it("draft kept when the send is rejected", async () => {
   const h = setup();
@@ -188,17 +209,37 @@ it("the texts ending a chat returns reach the draft although the concluded view 
 });
 it("slash commands and the delivered attachment byte limit block sending", () => {
   const h = setup();
+  listCommands(h);
   mount(h.store);
-  type(" /clear");
+  write(" /clear");
   expect(send().getAttribute("aria-disabled")).toBe("true");
-  expect(screen.getByText("Slash commands are not available here; `/compact` is.")).toBeTruthy();
-  type("/compact");
+  expect(sendRefusedFor(OUTSIDE)).toBeTruthy();
+  write("/compact");
   expect(send().getAttribute("aria-disabled")).toBeNull();
-  type("é".repeat(37_000) + "a".repeat(23_000));
+  write("é".repeat(37_000) + "a".repeat(23_000));
   expect(send().getAttribute("aria-disabled")).toBeNull();
   act(() => h.store.set(addAttachmentAtom, { ...source(), text: "é".repeat(50_000) }));
   expect(send().getAttribute("aria-disabled")).toBe("true");
   expect(screen.getByText(/bytes over the 100,000-byte limit/)).toBeTruthy();
+});
+it("a draft that starts a new chat is checked against the loading list, not the held one", () => {
+  const h = setup("ended");
+  listCommands(h);
+  act(() => h.store.set(composeAfterAtom, initial.session!.id));
+  mount(h.store);
+  // The server checks a chat start against the native rows alone, whatever list the old chat held.
+  write("/simplify");
+  expect(send().getAttribute("aria-disabled")).toBe("true");
+  expect(sendRefusedFor("Commands are still loading")).toBeTruthy();
+  write("/compact");
+  expect(send().getAttribute("aria-disabled")).toBeNull();
+});
+it("a draft in an active chat is checked against the chat's own list", () => {
+  const h = setup();
+  listCommands(h);
+  mount(h.store);
+  write("/simplify");
+  expect(send().getAttribute("aria-disabled")).toBeNull();
 });
 it("counts the sanitized delivered bytes and names the exact excess", () => {
   const h = setup();
@@ -214,11 +255,14 @@ it.each(["/compactly", "\u0001 /clear", "\u0085/clear", "\uFEFF/clear"])(
   "refuses disguised slash command %j",
   (text) => {
     const h = setup();
+    listCommands(h);
     mount(h.store);
     type(text);
     fireEvent.click(send());
     expect(h.sent).toEqual([]);
-    expect(screen.getByText("Slash commands are not available here; `/compact` is.")).toBeTruthy();
+    // A name the list lacks is refused as unlisted; a disguised `/clear` by its row's reason.
+    const reason = text === "/compactly" ? "Not in this session's command list" : OUTSIDE;
+    expect(sendRefusedFor(reason)).toBeTruthy();
   },
 );
 it("c opens a closed sheet, then focuses the composer of the shown panel", () => {

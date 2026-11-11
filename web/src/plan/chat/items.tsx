@@ -6,6 +6,7 @@ import { useNavigate } from "react-router";
 
 import type { Attachment, Item, Turn } from "@/plan/api/schema-chat";
 import { SentChips } from "@/plan/chat/chips";
+import { CommandChip } from "@/plan/chat/command-chip";
 import { snapshotAtom } from "@/plan/chat/model";
 import { PermissionCard } from "@/plan/chat/permission-card";
 import { ResendControl } from "@/plan/chat/resend-control";
@@ -183,9 +184,13 @@ function UserItem({ item, turn }: { item: ItemOf<"user">; turn: Turn }): JSX.Ele
             <Untrusted text={attachment.quote} />
           </blockquote>
         ))}
-        <p className="whitespace-pre-wrap break-words">
-          <Untrusted text={item.text} />
-        </p>
+        {item.command !== null ? (
+          <CommandChip command={item.command} />
+        ) : (
+          <p className="whitespace-pre-wrap break-words">
+            <Untrusted text={item.text} />
+          </p>
+        )}
       </div>
       <DeliveryState item={item} turn={turn} />
       <SentChips item={item} turn={turn} />

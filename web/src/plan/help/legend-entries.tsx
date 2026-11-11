@@ -267,7 +267,7 @@ export const WELLS: readonly LegendEntry[] = [
 ];
 
 /** The signs that mean "your turn"; work under way draws the two rotating arrows instead. */
-const YOUR_TURN: Record<YourTurnKind, string> = {
+const YOUR_TURN: Record<Exclude<YourTurnKind, "background">, string> = {
   permission: "A session needs your permission before it can continue.",
   waiting: "A session is waiting for your reply.",
 };
@@ -279,9 +279,21 @@ export const ACTIVITIES: readonly LegendEntry[] = [
       "Two rotating arrows stand before a word that says what is happening: Running, Drafting, Rebuilding. They stop when the work does. A green dot pulses before the item or action itself, such as a plan, a document or a pressure test.",
     glyph: <StateMark kind="running" className="size-4" />,
   },
-  ...(Object.keys(YOUR_TURN) as YourTurnKind[]).map((kind) => ({
+  ...(Object.keys(YOUR_TURN) as (keyof typeof YOUR_TURN)[]).map((kind) => ({
     name: ACTIVITY_LABELS[kind],
     meaning: YOUR_TURN[kind],
     glyph: <ActivityGlyph kind={kind} className="size-4" />,
   })),
+  {
+    name: "Background tasks",
+    meaning:
+      "A green dot in the header means a session waits on background agents or shells that have not ended.",
+    glyph: <ActivityGlyph kind="background" className="size-4" />,
+  },
+  {
+    name: "Background task words",
+    meaning:
+      "On a tool row and in the head's task list, running, stalled?, done, failed or stopped says where a background agent or shell stands; stalled? means it has gone quiet and may wake.",
+    glyph: <StateMark kind="running" className="size-4" />,
+  },
 ];

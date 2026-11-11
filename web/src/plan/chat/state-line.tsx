@@ -1,6 +1,7 @@
 import { useAtomValue } from "jotai/react";
 
 import type { Item, SessionView } from "@/plan/api/schema-chat";
+import { waitsOnBackground } from "./background-fold";
 import { userWrote } from "./closing";
 import { pendingPermissionsAtom, turnsAtom } from "./model";
 import { panelSessionAtom } from "./session-home";
@@ -8,7 +9,10 @@ import { Untrusted } from "./visible-controls";
 
 type Permission = Extract<Item, { type: "permission" }>;
 
-/** The words the head's sub-line shows. Idle and no session draw nothing. */
+/**
+ * The words the head's sub-line shows. Idle and no session draw nothing here; an idle chat that
+ * waits on background tasks says so through `BackgroundLine`, beside this line.
+ */
 const VISIBLE_WORDS: Partial<Record<SessionView["state"], string>> = {
   starting: "Starting",
   working: "Working",
@@ -18,9 +22,13 @@ const VISIBLE_WORDS: Partial<Record<SessionView["state"], string>> = {
   failed: "Stopped",
 };
 
-/** Whether the sub-line draws any words for this session (idle and none draw nothing). */
-export function hasStateWords(session: SessionView | null): boolean {
-  return session !== null && VISIBLE_WORDS[session.state] !== undefined;
+/**
+ * Whether the sub-line draws any words before the place: the state's own, or the background line
+ * of an idle chat that waits on `unended` tasks. No session and an idle chat with no task draw none.
+ */
+export function hasStateWords(session: SessionView | null, unended: number): boolean {
+  if (session === null) return false;
+  return VISIBLE_WORDS[session.state] !== undefined || waitsOnBackground(session, unended);
 }
 
 /**
