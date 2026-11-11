@@ -3,7 +3,7 @@
 use super::*;
 use crate::context::resolve::fixtures::*;
 use crate::context::source_graph::{
-    IMPORT_CONFIDENCE, LOCAL_NAME_CONFIDENCE, UNIQUE_NAME_CONFIDENCE, UNRESOLVED_TARGET,
+    SourceEdge, IMPORT_CONFIDENCE, LOCAL_NAME_CONFIDENCE, UNIQUE_NAME_CONFIDENCE, UNRESOLVED_TARGET,
 };
 
 /// A same-file call edge, the trustworthy baseline for traversal tests.
