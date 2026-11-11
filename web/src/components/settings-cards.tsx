@@ -91,7 +91,9 @@ function SectionCards({
   return (
     <>
       <div className="settings-cards-sec">
-        <span className="eyebrow">{section.section}</span>
+        <span className="settings-section-title" title={`config section [${section.section}]`}>
+          {section.title}
+        </span>
         {section.caption && <span className="settings-help">{section.caption}</span>}
       </div>
       {section.rows.map((row) => (

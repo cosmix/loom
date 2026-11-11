@@ -85,9 +85,9 @@ export function SettingsWebui({ query }: { query: string }): ReactElement | null
   if (!webuiMatches(query)) return null;
 
   return (
-    <section className="settings-webui border-b border-border px-[22px] py-5">
+    <section className="settings-webui border-b border-border px-[22px] pt-[14px] pb-5">
       <div className="settings-webui-heading flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-        <span className="eyebrow">dashboard</span>
+        <span className="settings-section-title">dashboard</span>
         <span className="settings-help">
           this browser only — kept in localStorage, never written to loom&apos;s config
         </span>

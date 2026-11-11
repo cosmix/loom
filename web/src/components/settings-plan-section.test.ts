@@ -9,7 +9,7 @@ const fixture = configResponseSchema.parse(fixtureJson);
 it("the plan section rows carry a caption and pair model with effort", () => {
   const plan = sectionRows(fixture.entries).find((s) => s.section === "plan");
   expect(plan).toBeDefined();
-  expect(plan?.caption).toBe("what loom plan's sessions run on");
+  expect(plan?.caption).toBe("model and effort for loom plan's sessions");
 
   const rows = plan?.rows ?? [];
   expect(rows).toHaveLength(6);
