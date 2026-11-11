@@ -216,6 +216,7 @@ EVERY non-bookend stage MUST name, in the plan prose, which of Q1-Q4 forced it i
 
 - Each subagent has EXCLUSIVE write access to its files — **two subagents writing one file = LOST WORK.**
 - **Check TYPE/import dependencies too.** If A's file DEFINES a contract B's file imports, assign it to a FOUNDATION worker that finishes BEFORE the consumers fan out; the main agent writes it only when it passes orchestration Rule 7's small-change test.
+- **Keep the worker chain parallel.** Pin the shared interface (signatures, types, file layout) in each dependant's brief so consumers start beside the foundation worker instead of after it. Flag in the plan prose any worker expected to run past ~30 minutes and any chain of 3 or more strictly sequential workers in one stage; split the long worker, or pin interfaces so its dependants can start. The stage waits for its slowest chain.
 
 ### Briefs as files
 
