@@ -19,6 +19,7 @@ import {
 const EXPECTED_KINDS = [
   "permission",
   "waiting",
+  "background",
   "running",
   "pressure",
   "codex",
@@ -43,6 +44,7 @@ describe("activity glyphs", () => {
     expect(ACTIVITY_LABELS).toEqual({
       permission: "Needs permission",
       waiting: "Waiting for you",
+      background: "background tasks",
       running: "Plan running",
       pressure: "Pressure test",
       codex: "Codex reviewing",
@@ -116,12 +118,15 @@ describe("activity glyphs", () => {
     },
   );
 
-  it.each(["pressure", "waiting"] as const)("tiles %s as the dot, not the arrows", (kind) => {
-    expect(isStateWordKind(kind)).toBe(false);
-    const { container } = render(<ActivityTile kind={kind} />);
-    expect(container.querySelector(".activity-glyph__led")).not.toBeNull();
-    expect(container.querySelector("svg")).toBeNull();
-  });
+  it.each(["pressure", "waiting", "background"] as const)(
+    "tiles %s as the dot, not the arrows",
+    (kind) => {
+      expect(isStateWordKind(kind)).toBe(false);
+      const { container } = render(<ActivityTile kind={kind} />);
+      expect(container.querySelector(".activity-glyph__led")).not.toBeNull();
+      expect(container.querySelector("svg")).toBeNull();
+    },
+  );
 
   it("draws the live dot for a running plan's state glyph, sized like an icon", () => {
     const { container } = render(<LiveDot className="size-4" size={14} />);
@@ -163,6 +168,7 @@ describe("activity glyphs", () => {
     ["pressure", "ring"],
     ["drafting", "ring"],
     ["waiting", "completed"],
+    ["background", "completed"],
     ["permission", "warning"],
   ] as const)("tiles the %s glyph in the %s tone", (kind, tone) => {
     expect(ACTIVITY_TONES[kind]).toBe(tone);

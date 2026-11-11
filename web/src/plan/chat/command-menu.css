@@ -1,0 +1,243 @@
+/* The composer's command list (command-menu.tsx), the argument hint it leaves in the text box, and
+ * the chip of a sent command (command-chip.tsx). The list is the one thing in the composer that
+ * floats, so it takes the chat's floating surface (`.chat-passage`, chat-chips.css): `--popover`,
+ * the foreground ring and a shadow. It is drawn inside the composer box at a fixed position
+ * (floating-position.ts sets `top` and `left`, the component the width and the height's cap), and
+ * the text box keeps the focus, so the highlighted entry is a `--muted` wash and the one ring
+ * stays on the box. Every colour is a theme token (ui/DESIGN.md). Unlayered, as the chat's other
+ * sheets are (chat-surface.css).
+ */
+
+.chat-commands {
+  position: fixed;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  min-width: min(17rem, calc(100vw - 16px));
+  max-width: 34rem;
+  border-radius: var(--corner-surface);
+  background: var(--popover);
+  color: var(--popover-foreground);
+  font-family: var(--font-sans);
+  font-size: var(--type-body);
+  line-height: var(--leading-ui);
+  text-align: start;
+  box-shadow:
+    0 0 0 1px color-mix(in oklch, var(--foreground) 10%, transparent),
+    var(--plan-shadow),
+    var(--popover-lift);
+  animation: chat-commands-rise 140ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* `display: flex` above would show a list the placement hid (its anchor left the viewport). */
+.chat-commands[hidden] {
+  display: none;
+}
+
+/* The entries scroll between the status line and the keys, which stay in view. It is positioned
+ * so an entry's `offsetTop` is measured from it (the highlight is kept in view by its offset). */
+.chat-commands-list {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  margin: 0;
+  padding: var(--space-1);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  list-style: none;
+  scrollbar-width: thin;
+}
+
+/* ── One entry ──────────────────────────────────────────────────────────── */
+
+/* Two lines: the name and its argument hint with the source word at the end, then what the
+ * command does. The wash's corner is the surface's less the list's padding, so the two curve
+ * together. */
+.chat-command {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 1px var(--space-3);
+  align-items: baseline;
+  padding: 6px 10px;
+  border-radius: var(--corner-control);
+  cursor: pointer;
+}
+
+.chat-command[aria-selected="true"] {
+  background: var(--muted);
+}
+
+.chat-command-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+/* The name is what the list is scanned by: mono, as every id and command is, and the row's one
+ * strong thing. It keeps its width; the hint beside it gives way first. */
+.chat-command-name {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--foreground);
+  font-family: var(--font-mono);
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-command-args {
+  flex: 0 100 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted-foreground);
+  font-family: var(--font-mono);
+  font-size: var(--type-ui);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-command-source {
+  color: var(--muted-foreground);
+  font-size: var(--type-ui);
+  white-space: nowrap;
+}
+
+.chat-command-about {
+  grid-column: 1 / -1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted-foreground);
+  font-size: var(--type-ui);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* A Terminal only entry cannot be inserted: its name, hint, source and description are dimmed,
+ * and its reason is stated at full strength where the description starts (DESIGN.md, Buttons:
+ * dim the control and state the reason). */
+.chat-command[aria-disabled="true"] {
+  cursor: default;
+}
+
+.chat-command[aria-disabled="true"]
+  :is(.chat-command-head, .chat-command-source, .chat-command-description) {
+  opacity: 0.5;
+}
+
+.chat-command-blocked > svg {
+  display: inline-block;
+  width: 13px;
+  height: 13px;
+  margin-inline-end: var(--space-1);
+  vertical-align: -2px;
+}
+
+/* ── Around the entries ─────────────────────────────────────────────────── */
+
+.chat-commands-status,
+.chat-commands-empty {
+  flex: none;
+  margin: 0;
+  padding: var(--space-2) 14px 0;
+  color: var(--muted-foreground);
+  font-size: var(--type-ui);
+}
+
+.chat-commands-empty {
+  padding-block-end: var(--space-2);
+}
+
+/* A warning is a toned glyph beside words in the text's own colour (DESIGN.md, Status). */
+.chat-commands-warning {
+  color: var(--tone-warning);
+}
+
+/* The keys, unspoken: the list's roles say the same to assistive technology. 13px, the floor of
+ * the chat's text. */
+.chat-commands-foot {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  gap: 2px var(--space-3);
+  margin: 0;
+  padding: 6px 14px 8px;
+  border-block-start: 1px solid var(--hairline);
+  color: var(--muted-foreground);
+  font-size: var(--type-ui);
+}
+
+.chat-commands-foot kbd {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--muted);
+  color: var(--foreground);
+  font-family: var(--font-mono);
+  font-size: var(--type-ui);
+  font-weight: 500;
+  line-height: 1;
+}
+
+/* ── The argument hint in the text box ──────────────────────────────────── */
+
+/* The hint is laid over the text box's first line: an unseen copy of the typed `/name `, then the
+ * hint in the placeholder's colour, in the field's own type so the two meet on one baseline. The
+ * line is its containing block; the field is the line's tallest item, so both start at its top. */
+.chat-composer-line {
+  position: relative;
+}
+
+.chat-command-ghost {
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline-start: 0;
+  overflow: hidden;
+  padding: var(--space-1) 0;
+  color: var(--muted-foreground);
+  font-family: var(--font-sans);
+  font-size: var(--type-title);
+  line-height: var(--leading-body);
+  text-overflow: ellipsis;
+  white-space: pre;
+  pointer-events: none;
+}
+
+.chat-command-ghost > [aria-hidden] {
+  visibility: hidden;
+}
+
+/* ── A sent command ─────────────────────────────────────────────────────── */
+
+/* The chip row of chat-chips.css inside the user's bubble: the command in mono, its arguments
+ * after it as the row's secondary text. The arguments give way first and are cut on the row's
+ * one line; the whole line is the row's tooltip and what Copy takes. */
+.chat-chip[data-kind="command"] > .chat-chip-label {
+  font-family: var(--font-mono);
+  font-weight: 500;
+}
+
+.chat-command-chip-args {
+  flex: 0 100 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted-foreground);
+  font-family: var(--font-mono);
+  font-size: var(--type-ui);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@keyframes chat-commands-rise {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-commands {
+    animation: none;
+  }
+}

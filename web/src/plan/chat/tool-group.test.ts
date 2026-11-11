@@ -33,13 +33,13 @@ describe("groupToolRows folding", () => {
   it("folds a single tool row, so a running turn shows one quiet line", () => {
     const only = tool("1", { status: "pending" });
 
-    expect(groupToolRows([only])).toEqual([group([only], "Used 1 tool · edited 0 files")]);
+    expect(groupToolRows([only], [])).toEqual([group([only], "Used 1 tool · edited 0 files")]);
   });
 
   it("two rows fold", () => {
     const items = [tool("1"), tool("2")];
 
-    expect(groupToolRows(items)).toEqual([group(items, "Used 2 tools · edited 0 files")]);
+    expect(groupToolRows(items, [])).toEqual([group(items, "Used 2 tools · edited 0 files")]);
   });
 
   it.each(["error", "denied"] as const)("%s in the middle splits the run in two", (status) => {
@@ -47,7 +47,7 @@ describe("groupToolRows folding", () => {
     const stopped = tool("3", { status });
     const after = [tool("4"), tool("5")];
 
-    expect(groupToolRows([...before, stopped, ...after])).toEqual([
+    expect(groupToolRows([...before, stopped, ...after], [])).toEqual([
       group(before, "Used 2 tools · edited 0 files"),
       stopped,
       group(after, "Used 2 tools · edited 0 files"),
@@ -61,7 +61,7 @@ describe("groupToolRows folding", () => {
       tool("3"),
     ];
 
-    expect(groupToolRows(items)).toEqual([group(items, "Used 3 tools · edited 2 files")]);
+    expect(groupToolRows(items, [])).toEqual([group(items, "Used 3 tools · edited 2 files")]);
   });
 });
 
@@ -70,8 +70,10 @@ describe("groupToolRows skill rows", () => {
     const skill = tool("skill", { name: "Skill", summary: "loom-plan:kickoff" });
     const rows = [tool("1"), tool("2")];
 
-    expect(groupToolRows([skill, ...rows])).toEqual([group(rows, "Used 2 tools · edited 0 files")]);
-    expect(groupToolRows([skill])).toEqual([]);
+    expect(groupToolRows([skill, ...rows], [])).toEqual([
+      group(rows, "Used 2 tools · edited 0 files"),
+    ]);
+    expect(groupToolRows([skill], [])).toEqual([]);
   });
 
   it("drops a Skill tool row that failed, and keeps the run on both sides whole", () => {
@@ -79,7 +81,7 @@ describe("groupToolRows skill rows", () => {
     const before = [tool("1")];
     const after = [tool("2")];
 
-    expect(groupToolRows([...before, skill, ...after])).toEqual([
+    expect(groupToolRows([...before, skill, ...after], [])).toEqual([
       group([...before, ...after], "Used 2 tools · edited 0 files"),
     ]);
   });
@@ -93,7 +95,7 @@ describe("groupToolRows labels", () => {
       tool("3", { input: '{"file_path":"doc/beta.md"}' }),
     ];
 
-    expect(groupToolRows(items)).toEqual([group(items, "Used 3 tools · edited 1 file")]);
+    expect(groupToolRows(items, [])).toEqual([group(items, "Used 3 tools · edited 1 file")]);
   });
 
   it.each(["{", "null", "{}", "[]", '{"file_path":7}', '{"file_path":""}'])(
@@ -101,7 +103,7 @@ describe("groupToolRows labels", () => {
     (input) => {
       const items = [tool("1", { name: "Edit", input }), tool("2"), tool("3")];
 
-      expect(groupToolRows(items)).toEqual([group(items, "Used 3 tools · edited 0 files")]);
+      expect(groupToolRows(items, [])).toEqual([group(items, "Used 3 tools · edited 0 files")]);
     },
   );
 });
@@ -112,7 +114,7 @@ describe("groupToolRows boundaries", () => {
     const text: Item = { type: "text", id: "text", markdown: "Next step" };
     const after = [tool("4"), tool("5"), tool("6")];
 
-    expect(groupToolRows([...before, text, ...after])).toEqual([
+    expect(groupToolRows([...before, text, ...after], [])).toEqual([
       group(before, "Used 3 tools · edited 0 files"),
       text,
       group(after, "Used 3 tools · edited 0 files"),
@@ -126,7 +128,7 @@ describe("groupToolRows nested and empty", () => {
     const nested = tool("nested", { subagent: "child", parent: agent.tool_use_id });
     const rest = [tool("1"), tool("2")];
 
-    expect(groupToolRows([agent, nested, ...rest])).toEqual([
+    expect(groupToolRows([agent, nested, ...rest], [])).toEqual([
       group([agent], "Used 1 tool · edited 0 files"),
       nested,
       group(rest, "Used 2 tools · edited 0 files"),
@@ -143,7 +145,7 @@ describe("groupToolRows nested and empty", () => {
     });
     const items = [tool("1"), tool("2"), tool("3")];
 
-    expect(groupToolRows([agent, nested, ...items])).toEqual([
+    expect(groupToolRows([agent, nested, ...items], [])).toEqual([
       group([agent], "Used 1 tool · edited 0 files"),
       nested,
       group(items, "Used 3 tools · edited 0 files"),
@@ -151,6 +153,6 @@ describe("groupToolRows nested and empty", () => {
   });
 
   it("preserves an empty transcript", () => {
-    expect(groupToolRows([])).toEqual([]);
+    expect(groupToolRows([], [])).toEqual([]);
   });
 });

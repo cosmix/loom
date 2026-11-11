@@ -2,6 +2,8 @@ import { useAtomValue } from "jotai";
 
 import type { SessionView } from "@/plan/api/schema-chat";
 import type { KickoffSize } from "@/plan/api/schema-kickoff";
+import { BackgroundLine, useBackgroundDisclosure } from "@/plan/chat/background-line";
+import { BackgroundList } from "@/plan/chat/background-list";
 import { sessionAtom } from "@/plan/chat/model";
 import { Untrusted, visibleControls } from "@/plan/chat/visible-controls";
 import { kindOf } from "@/plan/new/kickoff-state";
@@ -51,12 +53,14 @@ function StateWords({ state }: { state: SessionView["state"] }) {
 /**
  * The live kickoff's head, the Hearth chat head over a hairline: the work's name, else "New
  * feature" or "New standalone plan" by kind, else "New work", as the one heading, and under it
- * the state in a few words (idle says nothing). It draws no busy sign: the transcript's starting
- * card or working turn carries the pane's one.
+ * the state in a few words. Idle says nothing unless the session waits on background tasks, when
+ * the panel head's background line and its list stand here too. It draws no busy sign: the
+ * transcript's starting card or working turn carries the pane's one.
  */
 export function KickoffHead() {
   const session = useAtomValue(sessionAtom);
   const view = useAtomValue(kickoffAtom);
+  const background = useBackgroundDisclosure(session);
   const shape = view && session && view.session === session.id ? view.shape : null;
   const kind = kindOf(shape?.size ?? null, session?.offer ?? null);
   const fallback = kind ? NEW_TITLE[kind] : "New work";
@@ -68,7 +72,12 @@ export function KickoffHead() {
       >
         {shape?.name ? <Untrusted text={shape.name} /> : fallback}
       </h1>
-      <div className="kickoff-head__sub">{session && <StateWords state={session.state} />}</div>
+      {/* Nothing renders here while there is nothing to say: the line hides on `:empty`. */}
+      <div className="kickoff-head__sub">
+        {session && <StateWords state={session.state} />}
+        <BackgroundLine disclosure={background} />
+      </div>
+      <BackgroundList disclosure={background} />
     </header>
   );
 }

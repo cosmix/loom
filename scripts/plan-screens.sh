@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Screenshot planner routes in a headless browser against a real `loom plan` server.
 #
-# Usage: scripts/plan-screens.sh [--worktree-doc] [--themes=<id>,<id>] [--browser=chromium|firefox] <loom-binary> <out-dir> <route>...
+# Usage: scripts/plan-screens.sh [--worktree-doc] [--driver=<path>] [--themes=<id>,<id>] [--browser=chromium|firefox] <loom-binary> <out-dir> <route>...
 #   e.g. scripts/plan-screens.sh loom/target/debug/loom "$LOOM_SCRATCH_DIR/screens" / /f/feat-planner
 #
 # Run from the worktree root after `cd web && bun run build` and `cargo build` (the binary embeds
@@ -12,14 +12,22 @@
 # the host's Playwright Firefox build must already be installed, nothing is downloaded). The leading
 # flags may come in any order; exits non-zero on a console error or a route that does not render. Loopback
 # is per Bash call, so the server and browser run here.
+#
+# --driver=<path> runs another browser script in place of web/scripts/plan-screens.mjs, with the
+# same flags and arguments; a relative path is read from where this script is called.
+# web/scripts/plan-chat-screens.mjs is one: it plays a chat session waiting on background tasks
+# over the page's socket and shoots the chat panel, so give it a route with the panel (/files):
+#   scripts/plan-screens.sh --driver=web/scripts/plan-chat-screens.mjs loom/target/debug/loom "$LOOM_SCRATCH_DIR/chat-screens" /files
 set -euo pipefail
 
 worktree_doc=0
+driver=""
 # Flags the browser script reads (--themes=, --browser=), passed through in the order given.
 shoot_flags=()
 while [[ "${1:-}" == --* ]]; do
   case "$1" in
     --worktree-doc) worktree_doc=1 ;;
+    --driver=*) driver="${1#--driver=}" ;;
     --themes=* | --browser=*) shoot_flags+=("$1") ;;
     *)
       echo "unknown flag: $1" >&2
@@ -38,7 +46,11 @@ shift 2
 
 repo=$(git rev-parse --show-toplevel)
 script_dir=$(cd "$(dirname "$0")" && pwd)
-mjs="$script_dir/../web/scripts/plan-screens.mjs"
+mjs="${driver:-$script_dir/../web/scripts/plan-screens.mjs}"
+if [[ ! -f "$mjs" ]]; then
+  echo "no such driver: $mjs" >&2
+  exit 2
+fi
 scratch=$(mktemp -d "${TMPDIR:-/tmp}/plan-screens.XXXXXX")
 server_pid=""
 

@@ -1,18 +1,23 @@
+import { useAtomValue } from "jotai";
 import { Provider } from "jotai/react";
 import { useState } from "react";
 
+import type { BackgroundTaskView } from "@/plan/api/schema-background";
 import type { Attachment, Item, SessionView, Turn } from "@/plan/api/schema-chat";
 import type { AttachmentDraft } from "@/plan/attachments";
+import { BackgroundLine, useBackgroundDisclosure } from "@/plan/chat/background-line";
+import { BackgroundList } from "@/plan/chat/background-list";
 import { ComposerArea } from "@/plan/chat/composer";
 import { draftAtom } from "@/plan/chat/drafts";
 import { snapshotAtom } from "@/plan/chat/model";
 import { holdNoteSeenAtom } from "@/plan/chat/prefs";
+import { panelSessionAtom } from "@/plan/chat/session-home";
 import { StateLine } from "@/plan/chat/state-line";
 import { Transcript } from "@/plan/chat/transcript";
 import type { PlannerHelpScene } from "@/plan/help/pinned-scene";
 import { createSampleStore, PANEL_LOOK, SAMPLE_HOLDER } from "@/plan/help/sample";
 import { SceneRouter } from "@/plan/help/scene-router";
-import { connectionAtom } from "@/plan/state/atoms";
+import { backgroundAtom, connectionAtom } from "@/plan/state/atoms";
 
 const STARTED_AT = "2026-10-29T10:00:00Z";
 const PASSAGE: AttachmentDraft = {
@@ -180,6 +185,111 @@ export function ChatConversationScene() {
   );
 }
 
+const SPAWN_ID = "toolu_help_agent";
+
+/** Two unended tasks in the shapes the server sends: an agent launched by the chat's Agent row, and a shell. */
+function sampleTasks(): BackgroundTaskView[] {
+  const ago = (minutes: number) => new Date(Date.now() - minutes * 60_000).toISOString();
+  return [
+    {
+      id: "help-agent",
+      kind: "agent",
+      label: "Survey the release goals",
+      agent_type: "general-purpose",
+      tool_use_id: SPAWN_ID,
+      state: "running",
+      started_at: ago(4),
+      last_activity_at: ago(0),
+      steps: 12,
+      last_tool: "Read",
+      report_preview: null,
+      model: "claude-sonnet-5-5",
+      total: 48_200,
+      tokens_per_min: 3_100,
+      active: true,
+    },
+    {
+      id: "help-shell",
+      kind: "shell",
+      label: "Run the link check",
+      agent_type: null,
+      tool_use_id: null,
+      state: "running",
+      started_at: ago(2),
+      last_activity_at: ago(2),
+      steps: null,
+      last_tool: null,
+      report_preview: null,
+      model: null,
+      total: null,
+      tokens_per_min: null,
+      active: null,
+    },
+  ];
+}
+
+function backgroundTurn(): Turn {
+  return {
+    ...sampleTurn(),
+    items: [
+      {
+        type: "user",
+        id: "help-ask",
+        text: "Survey the release goals while I read the vision.",
+        delivery: "delivered",
+        origin: null,
+        command: null,
+        attachments: [],
+      },
+      {
+        ...sampleTool(SPAWN_ID, "Agent", "Survey the release goals"),
+        nested_tools: 12,
+        input: JSON.stringify({ description: "Survey the release goals" }),
+      },
+    ],
+  };
+}
+
+/**
+ * The head of an idle chat that waits on background tasks. A scene is inert, so the list is drawn
+ * open, as it looks once the reader has pressed the arrow.
+ */
+function BackgroundHead() {
+  const session = useAtomValue(panelSessionAtom);
+  const disclosure = useBackgroundDisclosure(session);
+  const open = { ...disclosure, open: disclosure.waiting };
+  return (
+    <header className="chat-head">
+      <div className="chat-head-text">
+        <h2 className="chat-head-title">{session?.name}</h2>
+        <div className="chat-head-sub">
+          <BackgroundLine disclosure={open} />
+        </div>
+        <BackgroundList disclosure={open} />
+      </div>
+    </header>
+  );
+}
+
+export function ChatBackgroundScene() {
+  const [store] = useState(() => {
+    const sample = sampleStore("idle");
+    sample.set(snapshotAtom, (snapshot) => ({ ...snapshot, turns: [backgroundTurn()] }));
+    sample.set(backgroundAtom, { session: "help-chat", tasks: sampleTasks() });
+    return sample;
+  });
+  return (
+    <Provider store={store}>
+      <SceneRouter>
+        <div data-loom-plan inert className={`${PANEL_LOOK} space-y-3 pb-3`}>
+          <BackgroundHead />
+          <Transcript />
+        </div>
+      </SceneRouter>
+    </Provider>
+  );
+}
+
 export const CHAT_SCENES: readonly PlannerHelpScene[] = [
   {
     title: "The composer",
@@ -243,10 +353,33 @@ export const CHAT_SCENES: readonly PlannerHelpScene[] = [
       },
     ],
   },
+  {
+    title: "Background tasks",
+    Scene: ChatBackgroundScene,
+    panel: true,
+    notes: [
+      {
+        target: ".chat-background-words",
+        text: "An idle chat that waits on background agents or shells says so in its head.",
+      },
+      {
+        target: ".chat-background-toggle",
+        text: "The arrow opens and closes the list of those tasks.",
+      },
+      {
+        target: ".chat-background-list",
+        text: "Each task shows its state, name and running time, and an agent adds its model and tokens.",
+      },
+      {
+        target: '[aria-label="Chat transcript"] .chat-tool-head',
+        text: "The agent's row stays out of the tool fold while it runs and shows the same state word.",
+      },
+    ],
+  },
 ];
 
 export const CHAT_TIPS: readonly string[] = [
-  "Enter sends your message, while Shift+Enter adds a new line.",
-  "If you edit the draft while a message is sending, your edits stay in the draft when it is accepted.",
-  "Stopping a turn returns its unsent queued messages to your draft.",
+  "Enter sends your message and Shift+Enter adds a new line; edits made while it sends stay in the draft, and stopping a turn returns its unsent queued messages to it.",
+  "An idle chat that waits on background agents or shells says so in its head; open the list to see each task.",
+  "Typing / as the first character opens the command list: Up and Down move, Enter or Tab insert a command, Escape closes the list, and terminal-only commands are listed but disabled, each with its reason.",
 ];

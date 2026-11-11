@@ -8,8 +8,9 @@ import {
   type DragEvent,
 } from "react";
 
-import type { AnyAttachmentInput, Attachment } from "@/plan/api/schema-chat";
+import type { AnyAttachmentInput, Attachment, SessionView } from "@/plan/api/schema-chat";
 import type { TreeEntry } from "@/plan/api/schema-files";
+import type { CommandsView } from "@/plan/api/schema-session-commands";
 import { MAX_ATTACHMENT_BYTES, type AttachmentDraft } from "@/plan/attachments";
 import { docAttachment } from "@/plan/attachments/doc-attachment";
 import { attachFiles, uploadStatusAtom } from "@/plan/attachments/intake";
@@ -17,6 +18,7 @@ import { fetchDoc } from "@/plan/files/api";
 import { treeAtom } from "@/plan/files/atoms";
 import { hashesAtom } from "@/plan/review/live";
 import { canAuthorAtom, isHolderAtom } from "@/plan/state/atoms";
+import { commandsAtom, loadingView } from "@/plan/state/commands-atom";
 import type { Store } from "@/state/store";
 import { sendMessage, startChat, toAttachmentInput } from "./commands";
 import { contextWish, recordGiven, withinLimit } from "./context-attach";
@@ -127,8 +129,21 @@ function asDelivered(input: AnyAttachmentInput): Attachment {
   return { ...rest, ...flags };
 }
 
-const problemWith = (text: string, inputs: AnyAttachmentInput[]) =>
-  messageProblem(text, inputs.map(asDelivered));
+/**
+ * The command list a send is checked against. A send with no active session starts a chat, which
+ * the server checks against its loading table (the built-in rows alone), so the rows a concluded
+ * session's list added must not decide it.
+ */
+export function commandsForSend(session: SessionView | null, commands: CommandsView): CommandsView {
+  return isActiveSession(session) ? commands : loadingView(commands);
+}
+
+const problemWith = (store: Store, text: string, inputs: AnyAttachmentInput[]) =>
+  messageProblem(
+    text,
+    inputs.map(asDelivered),
+    commandsForSend(store.get(sessionAtom), store.get(commandsAtom)),
+  );
 
 type Outgoing = { text: string; attachments: AnyAttachmentInput[]; withViewed: boolean };
 
@@ -161,9 +176,9 @@ function outgoing(
   if (retry) return { text: retry.text, attachments: retry.attachments ?? [], withViewed: false };
   const { text, attachments } = store.get(draftAtom);
   const drafted = attachments.map(toAttachmentInput);
-  if (problemWith(text, drafted) !== null) return null;
+  if (problemWith(store, text, drafted) !== null) return null;
   const withViewed = viewed && quoteFits(viewed) ? [...drafted, toAttachmentInput(viewed)] : null;
-  if (withViewed && problemWith(text, withViewed) === null) {
+  if (withViewed && problemWith(store, text, withViewed) === null) {
     return { text, attachments: withViewed, withViewed: true };
   }
   return { text, attachments: drafted, withViewed: false };

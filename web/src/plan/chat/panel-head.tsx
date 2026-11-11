@@ -2,6 +2,8 @@ import { useAtomValue, useSetAtom } from "jotai";
 import { X } from "lucide-react";
 
 import type { SessionView } from "@/plan/api/schema-chat";
+import { BackgroundLine, useBackgroundDisclosure } from "./background-line";
+import { BackgroundList } from "./background-list";
 import { CollapseChatButton } from "./panel-collapse";
 import { panelSessionAtom, sessionHomeAtom } from "./session-home";
 import { chatSheetOpenAtom } from "./sheet-state";
@@ -35,15 +37,17 @@ function usePlace(session: SessionView | null): string {
 
 /**
  * The panel's head, drawn with or without a session: the title over a sub-line (the state in a few
- * words, then the place the chat concerns), and New chat at the side beside Close chat in the
- * sheet or Collapse chat in the side panel. It has no menu: ending a chat is New chat. Both bodies
- * of panel.tsx render this head.
+ * words, or the background tasks an idle chat waits on, then the place the chat concerns), the
+ * list of those tasks under it while its disclosure is pressed, and New chat at the side beside
+ * Close chat in the sheet or Collapse chat in the side panel. It has no menu: ending a chat is New
+ * chat. Both bodies of panel.tsx render this head.
  */
 export function PanelHead({ sheet }: { sheet: boolean }) {
   const session = useAtomValue(panelSessionAtom);
   const setOpen = useSetAtom(chatSheetOpenAtom);
   const title = headTitle(session, useSessionBrief(session?.id ?? null));
   const place = usePlace(session);
+  const background = useBackgroundDisclosure(session);
   return (
     <header className="chat-head">
       <div className="chat-head-text">
@@ -60,13 +64,16 @@ export function PanelHead({ sheet }: { sheet: boolean }) {
         </h2>
         <div className="chat-head-sub">
           <StateLine />
+          <BackgroundLine disclosure={background} />
           {place && (
             <span className="chat-head-place">
-              {hasStateWords(session) && " · "}
+              {hasStateWords(session, background.unended) && " · "}
               <Untrusted text={place} />
             </span>
           )}
         </div>
+        {/* After the sub-line, which clips what it holds. */}
+        <BackgroundList disclosure={background} />
       </div>
       <div className="chat-head-side">
         <NewChatButton variant="head" />

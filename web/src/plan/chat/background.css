@@ -1,0 +1,186 @@
+/* What an idle chat waits on (background-line.tsx, background-list.tsx): one line in a head's
+ * sub-line, the chat panel's or the kickoff's, and the list it discloses under that sub-line. The
+ * list is a ledger on the panel itself: rows divided by hairlines, with no box, edge or fill of
+ * their own, their columns shared so the marks, the state words, the labels and the clocks each
+ * hold one edge down the list. Imported by background-line.tsx, so every head that draws the line
+ * has it. Unlayered, as the rest of the chat's sheets are.
+ */
+
+/* ── The line ───────────────────────────────────────────────────────────── */
+
+.chat-background-line {
+  white-space: nowrap;
+}
+
+/* The line's words take the state words' ink: the one thing in --foreground on the sub-line. */
+.chat-background-words {
+  color: var(--foreground);
+}
+
+/* The disclosure: a chevron on the words' line. Its margin box is 14px, under the line's own
+ * height, so pressing it open never moves the head. */
+.chat-background-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  width: 22px;
+  height: 16px;
+  margin-block: -1px;
+  margin-inline-start: 2px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  vertical-align: middle;
+  cursor: pointer;
+  transition:
+    background-color 120ms,
+    color 120ms;
+}
+
+.chat-background-toggle:hover,
+.chat-background-toggle[aria-expanded="true"] {
+  background: var(--muted);
+  color: var(--foreground);
+}
+
+.chat-background-toggle:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.chat-background-toggle > svg {
+  transition: transform 160ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.chat-background-toggle[aria-expanded="true"] > svg {
+  transform: rotate(180deg);
+}
+
+/* Both sub-lines clip their overflow to cut a long place with an ellipsis, and the clip would cut
+ * the disclosure's focus ring too. While the line is drawn the clip edge stands 4px out, the
+ * ring's reach; the margin takes the padding back, so the words stay where they were. */
+:is(.chat-head-sub, .kickoff-head__sub):has(> .chat-background-line) {
+  margin: -4px;
+  padding: 4px;
+}
+
+/* ── The list ───────────────────────────────────────────────────────────── */
+
+/* Four columns shared by every row: the mark, the state word, the label, the clock. */
+.chat-background-list {
+  --chat-background-columns: 14px max-content minmax(0, 1fr) max-content;
+
+  display: grid;
+  grid-template-columns: var(--chat-background-columns);
+  column-gap: var(--space-2);
+  box-sizing: border-box;
+  min-width: 0;
+  margin: var(--space-2) 0 0;
+  padding: 0;
+  list-style: none;
+  color: var(--muted-foreground);
+  font-size: var(--type-body);
+  font-variant-numeric: tabular-nums;
+  line-height: var(--leading-ui);
+}
+
+/* A row takes the list's columns. */
+.chat-background-list > li {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
+  column-gap: var(--space-2);
+  align-content: center;
+  align-items: center;
+  row-gap: 1px;
+  box-sizing: border-box;
+  min-height: 36px;
+  padding: var(--space-2) 0;
+}
+
+/* Without subgrid a row lays the same four columns out for itself, unaligned with its neighbours. */
+@supports not (grid-template-columns: subgrid) {
+  .chat-background-list > li {
+    grid-template-columns: var(--chat-background-columns);
+  }
+}
+
+.chat-background-list > li + li {
+  border-top: 1px solid var(--hairline);
+}
+
+.chat-background-glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+}
+
+.chat-background-glyph > svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* Work under way reads in --foreground; only an outcome's mark takes a tone, never its word. */
+.chat-background-glyph,
+.chat-background-state,
+.chat-background-label {
+  color: var(--foreground);
+}
+
+.chat-background-state {
+  font-weight: 500;
+}
+
+.chat-background-label {
+  overflow: hidden;
+  min-width: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* An ended task recedes behind the ones still running: muted, but for a done or failed mark. */
+.chat-background-list > li[data-ended] > span {
+  color: inherit;
+}
+
+.chat-background-list > li[data-state="done"] .chat-background-glyph {
+  color: var(--tone-completed);
+}
+
+.chat-background-list > li[data-state="failed"] .chat-background-glyph {
+  color: var(--tone-blocked);
+}
+
+.chat-background-clock {
+  justify-self: end;
+  font-size: var(--type-ui);
+}
+
+/* An agent's model and tokens: a second line under its label, wrapping between figures and never
+ * inside one. */
+.chat-background-figures {
+  grid-column: 3 / -1;
+  min-width: 0;
+  font-size: var(--type-ui);
+}
+
+.chat-background-figures > span {
+  white-space: nowrap;
+}
+
+/* "N earlier agents" stands in the labels' column. */
+.chat-background-earlier > span {
+  grid-column: 3 / -1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-background-toggle,
+  .chat-background-toggle > svg {
+    transition: none;
+  }
+}

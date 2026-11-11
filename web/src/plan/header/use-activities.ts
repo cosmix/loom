@@ -1,15 +1,18 @@
 import { useAtomValue } from "jotai/react";
 
+import type { BackgroundTaskView } from "@/plan/api/schema-background";
 import type { Item, SessionView } from "@/plan/api/schema-chat";
 import type { PressureRunView } from "@/plan/api/schema-pressure";
 import type { RunStateView, RunStrip as Strip } from "@/plan/api/schema-run";
 import type { SummaryPanel } from "@/plan/api/schema-summaries";
+import { chatBackgroundAtom, isUnended } from "@/plan/chat/background-tasks";
 import { pendingPermissionsAtom, sessionAtom } from "@/plan/chat/model";
 import { planFileName, pressureProgress, stepLabel } from "@/plan/chat/pressure/steps";
 import { pressureRunAtom } from "@/plan/chat/pressure/use-pressure";
 import { runStateAtom, runStripAtom } from "@/plan/run/use-run";
 import { kickoffAtom, kickoffDraftsAtom } from "@/plan/state/atoms";
 import { summaryPanelAtom } from "@/plan/summaries/state";
+import { plural } from "@/plan/ui/plural";
 import { ACTIVITY_KINDS, ACTIVITY_LABELS, type ActivityKind } from "@/plan/ui/activity-glyphs";
 
 export interface Activity {
@@ -40,6 +43,8 @@ export interface ActivitiesInput {
   pendingPermissions: readonly Pick<Permission, "tool">[];
   /** The session's kickoff, with the name its draft or shape carries; null for any other chat. */
   kickoff?: { name: string | null } | null;
+  /** The chat session's background tasks (`chatBackgroundAtom`); the table's own filter applies. */
+  background?: readonly Pick<BackgroundTaskView, "state" | "started_at">[];
 }
 
 function timestamp(value: string): number | null {
@@ -132,10 +137,34 @@ function sessionActivities(
   return [];
 }
 
+/**
+ * One row for the chat's background tasks that have not ended, in any session state: the user is
+ * not waiting on the main agent, so the row is a notice, not progress (`inProgress` leaves it out).
+ */
+function backgroundActivities(
+  session: SessionView | null,
+  tasks: ActivitiesInput["background"] = [],
+): Activity[] {
+  const unended = tasks.filter((task) => isUnended(task.state));
+  if (!session || unended.length === 0) return [];
+  const starts = unended
+    .map((task) => timestamp(task.started_at))
+    .filter((ms): ms is number => ms !== null);
+  const since = starts.length > 0 ? Math.min(...starts) : null;
+  const title = plural(unended.length, "background task");
+  return [activity(`background:${session.id}`, "background", null, since, title)];
+}
+
+/** What the pill counts as "in progress": every row but the background notice. */
+export function inProgress(activities: readonly Activity[]): Activity[] {
+  return activities.filter((entry) => entry.kind !== "background");
+}
+
 export function deriveActivities(input: ActivitiesInput): Activity[] {
   const activities = [
     ...pressureActivities(input.pressureRun),
     ...sessionActivities(input.session, input.pendingPermissions, input.kickoff),
+    ...backgroundActivities(input.session, input.background),
   ];
   const rebuild = input.summaryPanel?.running;
   if (rebuild) {
@@ -193,6 +222,7 @@ export function useActivities(): Activity[] {
   const session = useAtomValue(sessionAtom);
   const pendingPermissions = useAtomValue(pendingPermissionsAtom);
   const kickoff = useKickoffOf(session);
+  const background = useAtomValue(chatBackgroundAtom);
   return deriveActivities({
     summaryPanel,
     runState,
@@ -201,6 +231,7 @@ export function useActivities(): Activity[] {
     session,
     pendingPermissions,
     kickoff,
+    background,
   });
 }
 
