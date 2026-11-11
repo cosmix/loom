@@ -69,7 +69,7 @@ Two subagents never write one file; serialize in one subagent or split stages. E
 
 **Declared skills.** A stage may list `skills: [<skill-name>, ...]` (full names, such as
 `loom-rust`; `loom plan verify` rejects an unknown name). Pass declared skills and their signal-named invocation to applicable Claude briefs.
-For Codex and `loom-software-developer`, quote applicable rules in briefs; neither opens skills.
+For Codex, quote applicable rules in briefs; it does not open skills.
 
 **Sibling-read ledger.** Each agent writes its reads ledger to
 `$LOOM_WORK_DIR/hooks/reads/<LOOM_SESSION_ID>/<agent-id>.tsv` (outside a stage, a per-session
@@ -97,7 +97,7 @@ Coordinators delegate too (hard stop 6), going opus only when territory integrat
 judgment. Mix lanes under ONE ownership table. On a stage listing codex in `implementers`, a
 coordinator spawns `loom-codex-forwarder` BY AGENT TYPE (never the plugin's `codex:codex-rescue`
 directly), foreground only: gpt-6.1-terra for common implementation and integration tests.
-Boilerplate, scaffolding, and simple unit tests go to haiku (loom-software-developer); gpt-6-luna does that work only when the user or the plan asks for it.
+gpt-6-luna runs only when the user or the plan asks; haiku (loom-software-developer) is the default for its work.
 The lane is chosen per subagent,
 never per stage; the coordinator still does not verify.
 
@@ -115,7 +115,7 @@ CLAUDE.md is already in your context; the rules below are the ones that bind you
 COORDINATOR ROLE - YOU ARE A SUBAGENT COORDINATING WORKERS (ONE LEVEL ONLY):
 - You own ONE territory: [TERRITORY]. Never touch files outside it.
 - Partition your territory into DISJOINT worker file sets - shared writes = LOST WORK
-- Spawn workers via the Task tool BY AGENT TYPE (loom-software-engineer = sonnet; loom-software-developer for routine work) and never pass `name`; include the WORKER PREAMBLE as the first lines of EVERY worker prompt; spawn independent workers in ONE message
+- Spawn workers via the Task tool BY AGENT TYPE (loom-software-developer = haiku; loom-software-engineer = sonnet) and never pass `name`; include the WORKER PREAMBLE as the first lines of EVERY worker prompt; spawn independent workers in ONE message
 - Workers NEVER spawn subagents - LEAVES in loom's 2-level tree
 - Delegate implementation; write at most small glue/fixes within your territory
 - Compile freely. Test workers' code and module when confident it is ready; never the full suite. The gate runs it. Integration-verify full runs use `loom check integration-verify [--criterion <n>]`, never a bare runner. The main agent fixes.
@@ -158,17 +158,19 @@ After each wave of workers returns, the main agent compiles the tree once before
    the subagent typically finishes under about 400,000 tokens, and never split
    below what that needs: every extra spawn pays the boot cost again. Pick PER
    SUBAGENT by what that piece needs, never once for the whole stage, and
-   default downward: HAIKU (loom-software-developer) for
-   routine edits, boilerplate, scaffolding, and simple unit tests; codex
-   gpt-6-luna for that same work only when the user or the plan asks for it;
-   codex gpt-6.1-terra or SONNET (loom-software-engineer) for common
-   implementation and integration tests — most work belongs at this tier, and
-   neither lane is the default; OPUS (loom-senior-software-engineer, effort
-   high) for mainstream architecture and algorithm implementation, spawned
-   with `effort: xhigh` for hard debugging, core algorithmic or architectural
-   work, distributed systems, heavily multithreaded or parallel code, and
-   systems engineering; FABLE only for visual/UI design, a bug that survived a
-   delegated fix attempt, or extremely challenging algorithmic design. Codex
+   default downward. HAIKU (loom-software-developer, effort high): a piece
+   that is extremely simple, or whose brief is highly detailed — files,
+   exact change and acceptance stated. Never haiku: an open decision, a bug
+   of unknown cause, concurrency, security-sensitive code, a data-loss path. Codex gpt-6-luna takes boilerplate and simple
+   unit tests only when the user or the plan asks. SONNET
+   (loom-software-engineer): pieces that need exploration or the initial
+   iteration on failing tests, or are too large to brief in that detail;
+   codex gpt-6.1-terra where such a piece is well specified. OPUS
+   (loom-senior-software-engineer, effort high; `effort: xhigh` for the
+   hardest) implements where a wrong design is expensive and tests will not
+   catch it: architecture, new algorithms, concurrency, distributed systems,
+   security-sensitive code, bugs of unknown cause. FABLE implements only
+   visual/UI design and extremely challenging algorithmic design. Codex
    tiers (effort xhigh, via loom-codex-forwarder) exist only on stages listing
    codex in implementers AND when the codex CLI + plugin are installed;
    otherwise terra-tier work goes to sonnet and luna-tier work to haiku (loom
@@ -177,18 +179,18 @@ After each wave of workers returns, the main agent compiles the tree once before
    re-checks with `--criterion <n>`); an integration-verify stage runs the
    gate its own signal names. Either way the orchestrator owns fixes and the
    commit. Spawn BY AGENT TYPE.
-4. ESCALATE ON EVIDENCE, NOT ON HUNCH. Start at the cheapest plausible tier. A
-   fix that failed ONCE against clear acceptance criteria moves up exactly one
-   tier — haiku to sonnet, sonnet to opus, opus to fable — with the failed
-   attempt and its evidence in the new brief; never rerun the same tier on the
-   same bug. "This feels subtle" does not justify escalation. When a cheap
-   subagent's output is wrong, first ask whether the brief was detailed enough
-   — a vague brief is an orchestrator failure, not evidence the tier was too
-   small.
-5. DEBUGGING OR REPEATED FAILURE → spawn a `loom-advisor` (fable) subagent:
-   narrow scope, full detail supplied by the orchestrator, advice returned, no
-   writes. Its diagnosis then feeds a sonnet or opus implementer per point 2.
-   Do not let an implementer thrash on the same failure twice.
+4. FAILURE MOVES THE WORK UP ONE TIER. A failure misses clear acceptance:
+   a failing test, a correctness finding. A vague brief, or a worker that
+   stopped on an open decision, is an orchestrator failure: complete the
+   brief and respawn the same tier.
+   Settle every decision one lookup would answer before choosing a tier; one
+   left open is no reason to pick sonnet over haiku. A real failure moves up
+   one tier, haiku to sonnet to opus, with every attempt and its
+   evidence in the new brief. Never skip a tier or rerun one on the same
+   failure.
+5. THE LADDER ENDS AT `loom-advisor` (fable, read-only), RARELY: spawn it
+   only after an opus implementer failed, typically a stubborn bug, with
+   every attempt. Its diagnosis goes to an opus implementer.
 
 Keep each assignment within point 3's size; decompose via Rule 6 rather than escalating for
 context headroom. The cheaper the tier, the fuller the brief: paths, `file:line` ranges,

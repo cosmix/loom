@@ -120,33 +120,40 @@ fn declared_skills_line_names_each_skill_with_its_invocation() {
 }
 
 #[test]
-fn software_developer_gets_no_skills_line_but_the_software_engineer_does() {
+fn software_developer_and_software_engineer_both_get_the_skills_line() {
     let mut fixture = Fixture::new(true);
     fixture.config.stage.skills = vec!["loom-rust".to_string()];
     let prompt =
         "Implement the scoped worker.\n\nFiles owned (write only these):\n- `src/scoped.rs`";
     let developer = payload(prompt).replace("loom-software-engineer", "loom-software-developer");
 
-    let without = issue(&developer, &fixture.config).expect("scoped source should match");
-    let with = issue(&payload(prompt), &fixture.config).expect("scoped source should match");
+    let developer_brief = issue(&developer, &fixture.config).expect("scoped source should match");
+    let engineer_brief =
+        issue(&payload(prompt), &fixture.config).expect("scoped source should match");
 
-    assert!(
-        !without.brief.contains("Required skills for this stage"),
-        "{}",
-        without.brief
-    );
-    assert!(with.brief.contains("Required skills for this stage"));
+    for brief in [&developer_brief.brief, &engineer_brief.brief] {
+        assert!(brief.contains("Required skills for this stage"), "{brief}");
+        assert!(
+            brief.contains("Skill(skill=\"loom-skills\", args=\"loom-rust\")"),
+            "{brief}"
+        );
+    }
 }
 
 #[test]
-fn software_developer_with_an_empty_context_pack_gets_no_brief_despite_stage_skills() {
+fn software_developer_with_an_empty_context_pack_still_gets_a_brief_for_stage_skills() {
     let mut fixture = Fixture::new(false);
     fixture.config.stage.skills = vec!["loom-rust".to_string()];
     let prompt = "Implement the worker.\n\nFiles owned (write only these):\n- `src/absent.rs`";
     let developer = payload(prompt).replace("loom-software-engineer", "loom-software-developer");
 
-    assert!(issue(&developer, &fixture.config).is_none());
+    let envelope = issue(&developer, &fixture.config)
+        .expect("declared skills alone should emit a brief for the developer");
+    assert!(envelope.brief.contains("Required skills for this stage"));
     assert!(issue(&payload(prompt), &fixture.config).is_some());
+
+    fixture.config.stage.skills.clear();
+    assert!(issue(&developer, &fixture.config).is_none());
 }
 
 #[test]

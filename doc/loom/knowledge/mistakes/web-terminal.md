@@ -133,3 +133,10 @@ in the shared setup file, not per-test.
 **Why:** The bounded page path was wired only to `wheel` events. Touch never produces wheel events; xterm 6 handles touch with its own gesture listener, which scrolls only the scrollback viewport. Under tmux that viewport is empty (alternate screen), so the swipe had nothing to move.
 **Prevention:** Any View-mode scroll path for the alternate screen must cover wheel and touch input; test touch with dispatched touch events, not only wheel events.
 **Fix:** `web/src/components/terminal/viewer-touch.ts` feeds one-finger vertical swipes into the same pager as the wheel (`createViewerPager`), with `touch-action: pinch-zoom` on the View-mode host; covered by `viewer-touch.test.ts`.
+
+## The stage modal offered the worker's history while a judge was live
+
+**What happened:** during a stage's second dispute the web modal showed Terminal history while the adjudication judge ran in its own tmux session. The verdict changed nothing in the plan, the daemon completed and merged the stage, and the judge's transcript was never offered.
+**Why:** `speaking_for` substituted a live stand-in for the ended worker only in merge states, so `session_alive` described the dead worker during `NeedsAdjudication`. `terminal_history_session` skipped judge sessions on the claim that `loom attach` skips them, which the tree never did (`matches_for_stage` filters on stage id only). The status summary and the web terminal resolver chose sessions by different rules.
+**Prevention:** every session kind the daemon spawns for a stage must be covered where the summary picks the speaking session, with a test per kind that an ended worker plus a live session of that kind reports `session_alive`. Check a comment that cites another command's behaviour against that command.
+**Fix:** `speaking_for` has a `NeedsAdjudication` branch for the live judge; `terminal_history_session` counts judges; tests in `collector_resolver_tests.rs` and `stopped.rs`.

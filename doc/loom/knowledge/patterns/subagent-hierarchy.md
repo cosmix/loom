@@ -80,20 +80,24 @@ exploration and one command proves it (a fable main session delegates even those
 advisory past that size; see [hook-system.md](../architecture/hook-system.md)). Everything larger goes to subagents
 spawned by agent type across these tiers (BLOCK-B point 3):
 
-- haiku (`loom-software-developer`, `agents/loom-software-developer.md`: `model: haiku`, no `Skill`
-  tool, so its brief quotes the rules it needs): routine edits, boilerplate, scaffolding,
-  simple unit tests. Haiku 5.5 is the default for this work; codex GPT-6 Luna takes it only when
+- haiku (`loom-software-developer`, `agents/loom-software-developer.md`: `model: haiku`,
+  `effort: high`, has the `Skill` tool and loads the skills its brief names): pieces that are
+  extremely simple, or whose brief is highly detailed (files, exact change and acceptance
+  stated). It takes no open decisions, bugs of unknown cause, concurrency, security-sensitive
+  code or data-loss paths. Codex GPT-6 Luna takes boilerplate and simple unit tests only when
   the user or the plan asks for luna.
-- sonnet (`loom-software-engineer`) or GPT-6.1 Terra (`loom-codex-forwarder`): common
-  implementation and integration tests.
+- sonnet (`loom-software-engineer`): pieces that need exploration or the initial iteration on
+  failing tests, or are too large to brief in that detail. GPT-6.1 Terra
+  (`loom-codex-forwarder`) takes such a piece where it is well specified.
 - opus (`loom-senior-software-engineer`, agent-file effort `high`): mainstream architecture and
   algorithm implementation. The orchestrator spawns it with `effort: xhigh` for hard debugging,
   core algorithmic or architectural work, distributed systems, heavily multithreaded or parallel
   code, and systems engineering.
-- fable: visual/UI design, a bug that survived a delegated fix attempt, extremely challenging
-  algorithmic design; no agent type pins it, so the model override is explicit at spawn.
+- fable: visual/UI design and extremely challenging algorithmic design; no agent type pins it,
+  so the model override is explicit at spawn. Fable implements no bug fix.
 
-Escalation on a failed attempt moves one tier: haiku to sonnet, sonnet to opus, opus to fable.
+Escalation on a failed attempt moves one tier: haiku to sonnet, sonnet to opus. After an opus
+failure, `loom-advisor` (fable, read-only) diagnoses and an opus implementer applies the diagnosis; that is rare.
 The codex tiers are licensed only on stages listing codex in `implementers` and require the
 `codex` CLI and plugin; without either, terra-tier work goes to sonnet and luna-tier work to
 haiku, and `loom run` warns at startup (never aborts) — see [Codex Plugin](../architecture/codex-plugin.md).

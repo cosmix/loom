@@ -1,7 +1,8 @@
 import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 
-import type { ConfigClient, WriteResult } from "@/api/config";
+import { configResponseSchema, type ConfigClient, type WriteResult } from "@/api/config";
+import fixtureJson from "@/api/fixtures/config.json";
 import {
   filterSections,
   formatValue,
@@ -376,5 +377,16 @@ describe("settings dialog", () => {
         name: "clear ceiling_tokens at project scope",
       }),
     ).toBeNull();
+  });
+
+  it("titles the models and plan sections by what they configure, never by prefix", async () => {
+    renderAt("?settings=1", fakeClient(configResponseSchema.parse(fixtureJson)).client);
+    await screen.findByText("planning sessions", { selector: ".settings-section-title" });
+
+    const titles = [...document.querySelectorAll(".settings-section-title")].map(
+      (title) => title.textContent,
+    );
+    expect(titles).toContain("stage sessions");
+    expect(titles).not.toContain("models");
   });
 });

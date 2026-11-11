@@ -43,17 +43,19 @@ pub(super) const BLOCK_B: &str = r#"1. DELEGATION IS A COST DECISION: TOKENS TIM
    the subagent typically finishes under about 400,000 tokens, and never split
    below what that needs: every extra spawn pays the boot cost again. Pick PER
    SUBAGENT by what that piece needs, never once for the whole stage, and
-   default downward: HAIKU (loom-software-developer) for
-   routine edits, boilerplate, scaffolding, and simple unit tests; codex
-   gpt-6-luna for that same work only when the user or the plan asks for it;
-   codex gpt-6.1-terra or SONNET (loom-software-engineer) for common
-   implementation and integration tests — most work belongs at this tier, and
-   neither lane is the default; OPUS (loom-senior-software-engineer, effort
-   high) for mainstream architecture and algorithm implementation, spawned
-   with `effort: xhigh` for hard debugging, core algorithmic or architectural
-   work, distributed systems, heavily multithreaded or parallel code, and
-   systems engineering; FABLE only for visual/UI design, a bug that survived a
-   delegated fix attempt, or extremely challenging algorithmic design. Codex
+   default downward. HAIKU (loom-software-developer, effort high): a piece
+   that is extremely simple, or whose brief is highly detailed — files,
+   exact change and acceptance stated. Never haiku: an open decision, a bug
+   of unknown cause, concurrency, security-sensitive code, a data-loss path. Codex gpt-6-luna takes boilerplate and simple
+   unit tests only when the user or the plan asks. SONNET
+   (loom-software-engineer): pieces that need exploration or the initial
+   iteration on failing tests, or are too large to brief in that detail;
+   codex gpt-6.1-terra where such a piece is well specified. OPUS
+   (loom-senior-software-engineer, effort high; `effort: xhigh` for the
+   hardest) implements where a wrong design is expensive and tests will not
+   catch it: architecture, new algorithms, concurrency, distributed systems,
+   security-sensitive code, bugs of unknown cause. FABLE implements only
+   visual/UI design and extremely challenging algorithmic design. Codex
    tiers (effort xhigh, via loom-codex-forwarder) exist only on stages listing
    codex in implementers AND when the codex CLI + plugin are installed;
    otherwise terra-tier work goes to sonnet and luna-tier work to haiku (loom
@@ -62,18 +64,18 @@ pub(super) const BLOCK_B: &str = r#"1. DELEGATION IS A COST DECISION: TOKENS TIM
    re-checks with `--criterion <n>`); an integration-verify stage runs the
    gate its own signal names. Either way the orchestrator owns fixes and the
    commit. Spawn BY AGENT TYPE.
-4. ESCALATE ON EVIDENCE, NOT ON HUNCH. Start at the cheapest plausible tier. A
-   fix that failed ONCE against clear acceptance criteria moves up exactly one
-   tier — haiku to sonnet, sonnet to opus, opus to fable — with the failed
-   attempt and its evidence in the new brief; never rerun the same tier on the
-   same bug. "This feels subtle" does not justify escalation. When a cheap
-   subagent's output is wrong, first ask whether the brief was detailed enough
-   — a vague brief is an orchestrator failure, not evidence the tier was too
-   small.
-5. DEBUGGING OR REPEATED FAILURE → spawn a `loom-advisor` (fable) subagent:
-   narrow scope, full detail supplied by the orchestrator, advice returned, no
-   writes. Its diagnosis then feeds a sonnet or opus implementer per point 2.
-   Do not let an implementer thrash on the same failure twice."#;
+4. FAILURE MOVES THE WORK UP ONE TIER. A failure misses clear acceptance:
+   a failing test, a correctness finding. A vague brief, or a worker that
+   stopped on an open decision, is an orchestrator failure: complete the
+   brief and respawn the same tier.
+   Settle every decision one lookup would answer before choosing a tier; one
+   left open is no reason to pick sonnet over haiku. A real failure moves up
+   one tier, haiku to sonnet to opus, with every attempt and its
+   evidence in the new brief. Never skip a tier or rerun one on the same
+   failure.
+5. THE LADDER ENDS AT `loom-advisor` (fable, read-only), RARELY: spawn it
+   only after an opus implementer failed, typically a stubborn bug, with
+   every attempt. Its diagnosis goes to an opus implementer."#;
 
 /// BLOCK-D - the subagent context-ceiling rule, verbatim. Pinned against BOTH
 /// the subagent preamble (`loom-hooks/_subagent-preamble.txt`, which
@@ -106,8 +108,8 @@ pub(super) const RETIRED_PHRASES: &[&str] = &[
     concat!("Zero IDE ", "diagnostics"),
     concat!("haiku stays rare", " and trivial"),
     concat!("haiku (rare, trivial ", "mechanical edits)"),
-    // Retired: haiku was limited to renames and config values; it now takes
-    // boilerplate, scaffolding and simple unit tests, and luna only on request.
+    // Retired: haiku was limited to renames and config values; it takes
+    // extremely simple or highly detailed pieces, and luna runs only on request.
     concat!("mechanical edits such as a rename", " or a config value"),
     concat!("take the work ", "over"),
     concat!("report back ", "within"),
