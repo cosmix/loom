@@ -1,11 +1,13 @@
-//! Contracts for prompts Claude Code records inside a `<pasted_content id="..">` wrapper: the
-//! wrapper is removed before the attachment block, the sent item and the closing origin are
-//! matched.
+//! Contracts for prompts Claude Code records with `<pasted_content id="..">` wrappers, whole or
+//! split around the text: the wrappers are removed before the attachment block, the sent item
+//! and the closing origin are matched, and whitespace at the edges of a record does not matter.
 
 use serde_json::json;
 
+use super::records::item_id;
 use super::tests::{mapper, only_turn, user};
-use crate::plan_session::attachments::{parse_message, Attachment, AttachmentKind};
+use super::{Mapper, RecordMark};
+use crate::plan_session::attachments::{format_message, parse_message, Attachment, AttachmentKind};
 use crate::plan_session::model::{Delivery, Item, Origin};
 
 const OPENING: &str = "loom plan: no step chosen.\nAsk me what I want to work on.";
@@ -80,4 +82,83 @@ fn wrapped_closing_keeps_its_origin() {
     mapper.ingest_main(&record("u9", &wrapped("9b1c", CLOSING)));
     let expected = user("u-u9", CLOSING, Some(Origin::Closing));
     assert_eq!(only_turn(&mapper).items, [expected]);
+}
+
+fn source() -> Attachment {
+    Attachment {
+        kind: AttachmentKind::Source,
+        path: "doc/product/feat-planner/index.md".into(),
+        anchor: None,
+        lines: None,
+        stage: None,
+        summary_sentence: None,
+        rests_on: Vec::new(),
+        quote: "# Loom Plan".into(),
+        changed_since_selected: false,
+        locked: None,
+        file: None,
+    }
+}
+
+fn sent_item(text: &str, attachments: Vec<Attachment>) -> Item {
+    Item::User {
+        id: "s-1".into(),
+        text: text.into(),
+        attachments,
+        delivery: Delivery::Delivered,
+        origin: Some(Origin::Offer),
+    }
+}
+
+fn users(mapper: &Mapper) -> Vec<Item> {
+    let items = only_turn(mapper).items.iter();
+    items
+        .filter(|item| matches!(item, Item::User { .. }))
+        .cloned()
+        .collect()
+}
+
+#[test]
+fn a_paste_split_before_the_closing_tag_replaces_the_sent_item() {
+    let text = "What are the main decisions here?";
+    let attachments = vec![source()];
+    let full = format_message(text, &attachments);
+    let (head, tail) = full.rsplit_once('\n').unwrap();
+    assert_eq!(tail, "</loom-attachments>");
+    let recorded = format!(
+        "\n\n<pasted_content id=\"5193\">\n{head}\n</pasted_content id=\"5193\">\n\n{tail}"
+    );
+    let mut mapper = mapper();
+    mapper.add_server_item(sent_item(text, attachments.clone()));
+    mapper.ingest_main(&record("u1", &recorded));
+    let delivered = Item::User {
+        id: "u-u1".into(),
+        text: text.into(),
+        attachments,
+        delivery: Delivery::Delivered,
+        origin: Some(Origin::Offer),
+    };
+    assert_eq!(users(&mapper), [delivered]);
+}
+
+#[test]
+fn a_record_with_trimmed_edges_replaces_the_sent_item_and_keeps_its_text() {
+    let sent = "  padded text\n\n";
+    let mut mapper = mapper();
+    mapper.add_server_item(sent_item(sent, Vec::new()));
+    let out = mapper.ingest_main(&record("u1", "padded text"));
+    assert_eq!(users(&mapper), [user("u-u1", sent, Some(Origin::Offer))]);
+    let marked =
+        matches!(&out.marks[..], [RecordMark::HumanUser { text, .. }] if text == "padded text");
+    assert!(marked, "{:?}", out.marks);
+}
+
+#[test]
+fn a_record_that_differs_beyond_whitespace_keeps_the_sent_item() {
+    let mut mapper = mapper();
+    mapper.add_server_item(sent_item("a b", Vec::new()));
+    mapper.ingest_main(&record("u1", "ab"));
+    let kept = users(&mapper);
+    let ids: Vec<&str> = kept.iter().map(item_id).collect();
+    assert_eq!(ids, ["s-1", "u-u1"]);
 }

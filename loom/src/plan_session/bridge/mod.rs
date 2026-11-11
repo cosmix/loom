@@ -48,6 +48,8 @@ mod tests_guards;
 #[cfg(test)]
 mod tests_lifecycle;
 #[cfg(test)]
+mod tests_match_key;
+#[cfg(test)]
 mod tests_opening;
 #[cfg(test)]
 mod tests_permission;

@@ -118,7 +118,7 @@
 
 **Why:** the parsers matched text Claude Code produces, and the fixtures were written by hand in the format that existed when the code was written. Nothing compared them with a real transcript after Claude Code changed.
 
-**Prevention:** after a Claude Code upgrade, capture fixtures from real session transcripts and hook payloads and diff them against the fixtures the parsers use; test a match on Claude Code's output with a recorded wrapped case and a bare case. Unwrap only the exact whole-message shape and treat the tag id as untrusted input (`unwrap_pasted` bounds it to 32 ASCII alphanumerics, `_` and `-`). Unwrap before any length cap, or the close tag of a maximum-size delivery is lost.
+**Prevention:** after a Claude Code upgrade, capture fixtures from real session transcripts and hook payloads and diff them against the fixtures the parsers use; test a match on Claude Code's output with a recorded wrapped case and a bare case. Treat the tag id as untrusted input (`unwrap_pasted` bounds it to 32 ASCII alphanumerics, `_` and `-`). Unwrap before any length cap, or the close tag of a maximum-size delivery is lost.
 
 **Fix:** `plan_session/attachments/pasted.rs`, the transcript mapper and the hook path ([Delivery](../architecture/planning-session-bridge.md#delivery)). Contracts: `wrapped_message_parses_typed_text_and_attachments`, `wrapped_opening_replaces_the_sent_item`, `wrapped_closing_keeps_its_origin` (`transcript/paste_contract_tests.rs`). A real New chat with no markup and a message with an attached document showing a chip are operator checks ([follow-ups](../concerns/planner-ui-repair-followups.md#planner-issue-fixes-unchecked-here)).
 
@@ -203,3 +203,13 @@
 **Prevention:** the full gate (`cargo test`, `bun run test`, clippy) runs ONCE, after every worker has returned and the last review round is fixed. Workers run only the tests they wrote or changed plus a compile/lint of their files, never whole modules or directories.
 
 **Fix:** briefs name the exact test files to run; the main agent runs the gate once at the end.
+
+## A Split Paste Left Its Wrapper Around Part of the Message and the Message Showed Twice
+
+**What happened:** a chat opening with an attached document showed twice. Claude Code 2.1.321 recorded the paste as a `<pasted_content>` wrapper around all but the last line, with `</loom-attachments>` after the close tag. `unwrap_pasted` accepted only a message that was exactly one wrapper, so the record never equalled its `s-` item, which stayed beside the `u-` item. The same classifier showed a compaction summary record (`isCompactSummary`) and teammate messages (`Another Claude session sent a message:`) as messages the user wrote.
+
+**Why:** the pairing compared exact strings against text another program writes, and the previous fix hardened it to one observed shape. Record flags outside `isMeta` and `origin` were never surveyed.
+
+**Prevention:** compare sent text with Claude Code's record only through `input.rs::match_key`, on both sides. When a chat display bug is reported, scan the real transcripts under `~/.claude/projects/` for planner sessions (`customTitle` starting `loom plan`) and classify every `type: user` record shape before reading code.
+
+**Fix:** `unwrap_pasted` removes every complete expansion; `match_key` keys every sent-versus-recorded comparison; a paired record keeps the sent item's text and attachments; `transcript/user_record.rs` skips compaction summaries and marks teammate messages as self-started turns.
