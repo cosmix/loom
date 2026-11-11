@@ -7,41 +7,18 @@ fn stop_failure(millis: i64) -> SpoolEvent {
     event("StopFailure", millis, json!({"error": "server_error"}))
 }
 
+/// The bridge's background table counts subagents (`bridge/background/tests.rs`); their hook
+/// events never move the machine.
 #[test]
-fn subagent_stop_with_none_running_stays_at_zero() {
+fn subagent_events_never_move_a_working_machine() {
     let mut machine = working();
     feed(&mut machine, subagent("SubagentStop", 1_000));
     assert_eq!(machine.state(), SessionState::Working);
-    assert_eq!(machine.subagents_running(), 0);
     feed(&mut machine, subagent("SubagentStart", 1_100));
     feed(&mut machine, subagent("SubagentStop", 1_200));
     assert_eq!(machine.state(), SessionState::Working);
     feed(&mut machine, subagent("SubagentStop", 1_300));
     assert_eq!(machine.state(), SessionState::Working);
-    assert_eq!(machine.subagents_running(), 0);
-}
-
-#[test]
-fn the_subagent_count_resets_on_interrupt_agents_killed_and_session_start() {
-    let resets: [fn(&mut StateMachine); 3] = [
-        |machine| {
-            machine.apply(Input::Interrupted { at: at(2_000) });
-        },
-        |machine| {
-            machine.apply(Input::AgentsKilled { at: at(2_000) });
-        },
-        |machine| {
-            start(machine, "startup", 2_000);
-        },
-    ];
-    for reset in resets {
-        let mut machine = working();
-        feed(&mut machine, subagent("SubagentStart", 1_000));
-        feed(&mut machine, subagent("SubagentStart", 1_100));
-        assert_eq!(machine.subagents_running(), 2);
-        reset(&mut machine);
-        assert_eq!(machine.subagents_running(), 0);
-    }
 }
 
 #[test]

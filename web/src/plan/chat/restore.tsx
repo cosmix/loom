@@ -20,6 +20,7 @@ import { authorBlockReasonAtom, connectionEpochAtom, isHolderAtom } from "@/plan
 import { BusyText } from "@/plan/ui/busy-text";
 import { DisabledReason } from "@/plan/ui/disabled-reason";
 
+import { unendedBackgroundCountAtom } from "./background-tasks";
 import { snapshotAtom } from "./model";
 import type { TurnRow } from "./use-turn-texts";
 import { Untrusted } from "./visible-controls";
@@ -33,11 +34,11 @@ type ModifiedFile = { path: string; after: string | undefined };
 function useAvailable(turn: Turn): boolean {
   const holder = useAtomValue(isHolderAtom);
   const model = useAtomValue(snapshotAtom);
+  const background = useAtomValue(unendedBackgroundCountAtom);
   const session = model.session;
   const running =
     session &&
-    (["starting", "working", "permission", "ending"].includes(session.state) ||
-      session.subagents_running > 0);
+    (["starting", "working", "permission", "ending"].includes(session.state) || background > 0);
   return holder && !turn.open && !running && !model.turns.some((row) => row.open);
 }
 

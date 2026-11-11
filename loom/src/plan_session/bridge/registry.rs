@@ -25,6 +25,7 @@ use crate::tokens::tail::Line;
 #[path = "agents.rs"]
 mod agents;
 use agents::AgentFeed;
+pub use agents::{read_agent_meta, AgentMeta};
 
 /// The record schema this build writes and reads.
 pub const SCHEMA: u32 = 1;
@@ -189,6 +190,8 @@ pub(super) struct Batch {
     pub(super) agents: Vec<(String, Option<String>, Vec<String>)>,
     /// `(agent id, teammate name, lines)`; excluded from ordered chat entries.
     pub(super) teammates: Vec<(String, String, Vec<String>)>,
+    /// `(agent id, meta)` of each agent whose meta file this read classified it by.
+    pub(super) metas: Vec<(String, AgentMeta)>,
     pub(super) tokens: Vec<String>,
     pub(super) events: Vec<SpoolEvent>,
 }
@@ -297,6 +300,7 @@ impl Feed {
             main,
             agents: Vec::new(),
             teammates: Vec::new(),
+            metas: Vec::new(),
             tokens,
             events,
         };
@@ -320,6 +324,9 @@ impl Feed {
         for feed in self.agents.values_mut() {
             if !feed.classify(&dir, self.metadata_grace) {
                 continue;
+            }
+            if let Some(meta) = feed.meta.take() {
+                batch.metas.push((feed.agent_id.clone(), meta));
             }
             if feed.spawned_by.is_none() {
                 feed.spawned_by = self.spawners.get(&feed.agent_id).cloned();

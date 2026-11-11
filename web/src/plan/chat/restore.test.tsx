@@ -9,7 +9,9 @@ import fixture from "@/plan/api/fixtures/chat-snapshot.json";
 import { chatSnapshotSchema, type SessionView, type Turn } from "@/plan/api/schema-chat";
 import { requestEditAtom } from "@/plan/editor/request-edit";
 import { docChangedAtom } from "@/plan/files/atoms";
-import { authoringAtom, youAtom } from "@/plan/state/atoms";
+import background from "@/plan/api/fixtures/background.json";
+import { backgroundMessageSchemas, type BackgroundTaskView } from "@/plan/api/schema-background";
+import { authoringAtom, backgroundAtom, youAtom } from "@/plan/state/atoms";
 
 import { snapshotAtom } from "./model";
 import { RestoreAll, RestoreButton } from "./restore";
@@ -24,6 +26,9 @@ const turn: Turn = {
   open: false,
   changed_files: [path, second].map((path) => ({ path, before_hash: "before", by_tool: true })),
 };
+const runningAgent = backgroundMessageSchemas[0].parse(background).tasks[0]!;
+/** The fixture's running agent under another id. */
+const task = (id: string): BackgroundTaskView => ({ ...runningAgent, id });
 type Store = ReturnType<typeof createStore>;
 type Body = { session: string; turn: string; paths: string[]; force: boolean };
 let posts: Body[];
@@ -47,7 +52,6 @@ function setup(holder = true, session: Partial<SessionView> = {}, turns = [turn]
     session: {
       ...baseSession,
       state: "idle",
-      subagents_running: 0,
       fetch_grant: false,
       working_since: null,
       ...session,
@@ -142,7 +146,7 @@ it.each(["starting", "permission", "ending"] as const)("hidden during %s", (stat
   expect(screen.queryByRole("button", { name: /restore/i })).toBeNull();
 });
 
-it("hidden while another turn or subagent runs", () => {
+it("hidden while another turn or a background task runs", async () => {
   const store = setup(true, {}, [turn, { ...turn, id: "t2", open: true }]);
   mount(store);
   expect(screen.queryByRole("button", { name: /restore/i })).toBeNull();
@@ -151,10 +155,44 @@ it("hidden while another turn or subagent runs", () => {
     store.set(snapshotAtom, {
       ...store.get(snapshotAtom),
       turns: [turn],
-      session: { ...baseSession, state: "idle", subagents_running: 1 },
+      session: { ...baseSession, state: "idle" },
+    }),
+  );
+  expect(await screen.findByRole("button", { name: "Restore" })).toBeTruthy();
+
+  act(() => store.set(backgroundAtom, { session: baseSession.id, tasks: [task("a-run")] }));
+  expect(screen.queryByRole("button", { name: /restore/i })).toBeNull();
+});
+
+it("hidden while only an adopted shell or a stalled task is unended", () => {
+  const store = setup();
+  mount(store);
+  const shell = { ...task("bshell01"), kind: "shell" as const, tool_use_id: null };
+  act(() => store.set(backgroundAtom, { session: baseSession.id, tasks: [shell] }));
+  expect(screen.queryByRole("button", { name: /restore/i })).toBeNull();
+
+  act(() =>
+    store.set(backgroundAtom, {
+      session: baseSession.id,
+      tasks: [{ ...task("a-quiet"), state: "stalled" }],
     }),
   );
   expect(screen.queryByRole("button", { name: /restore/i })).toBeNull();
+});
+
+it("shown when every background task ended or belongs to another session", async () => {
+  const store = setup();
+  mount(store);
+  act(() =>
+    store.set(backgroundAtom, {
+      session: baseSession.id,
+      tasks: [{ ...task("a-done"), state: "done" }],
+    }),
+  );
+  expect(await screen.findByRole("button", { name: "Restore" })).toBeTruthy();
+
+  act(() => store.set(backgroundAtom, { session: "other-session", tasks: [task("a-run")] }));
+  expect(await screen.findByRole("button", { name: "Restore" })).toBeTruthy();
 });
 
 it("hidden for an open turn missing from the snapshot", () => {

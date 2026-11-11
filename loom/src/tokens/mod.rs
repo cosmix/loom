@@ -10,6 +10,9 @@ mod flow_build;
 mod messages;
 pub mod model;
 mod pass_memo;
+mod planner;
+#[cfg(test)]
+mod planner_contract_tests;
 pub mod quota_left;
 mod quota_points;
 pub(crate) mod tail;
@@ -18,4 +21,5 @@ mod tests_fixture;
 pub mod tracker;
 
 pub use model::*;
+pub use planner::{planner_pass, spawn_planner_tokens, PlannerGroup};
 pub use tracker::{scan_pass, spawn_token_tracker, CHECKPOINT_FILE, TRACKER_INTERVAL_SECS};

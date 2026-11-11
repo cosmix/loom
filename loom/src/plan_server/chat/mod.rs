@@ -1,5 +1,6 @@
 //! Chat wiring of the planning server: installs the bridge, dispatches browser chat commands and publishes chat frames.
 
+mod background;
 mod dispatch;
 mod draft_cmd;
 mod drafts;
@@ -144,6 +145,7 @@ pub(crate) fn install_with(
     open_snapshots(ctx, &bridge, &state);
     follow_authoring(ctx, &bridge);
     follow_sessions(ctx, &bridge, state, leases, runtime);
+    background::install(ctx, &bridge);
     let (drain, abort) = (Arc::clone(&bridge), Arc::clone(&bridge));
     ctx.shutdown().register(ShutdownHook {
         name: "chat sessions",

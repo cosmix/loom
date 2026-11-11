@@ -24,7 +24,6 @@ const SESSION = sessionViewSchema.parse({
   started_at: "2026-10-17T08:00:00Z",
   state_since: "2026-10-17T08:00:00Z",
   working_since: "2026-10-17T08:00:00Z",
-  subagents_running: 0,
   fetch_grant: false,
   last_activity: null,
   failure: null,

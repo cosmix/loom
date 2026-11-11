@@ -127,14 +127,8 @@ fn subagent_tool_rows_nest_under_the_spawning_call_and_add_tokens() {
         [first, expected_spawn(), expected_nested_grep(), answer]
     );
     assert_eq!(turn.tokens, tokens(4, 0, 410, 41));
-    let agent_id = "a7f3".to_owned();
-    assert_eq!(
-        marks,
-        [RecordMark::SubagentFinal {
-            agent_id,
-            at: at(6)
-        }]
-    );
+    // A subagent's records move no session state; the bridge's table reads their raw lines.
+    assert_eq!(marks, Vec::<RecordMark>::new());
 
     let crossed = mapper.ingest_main(&agent[2]);
     assert!(

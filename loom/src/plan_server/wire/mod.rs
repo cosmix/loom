@@ -1,5 +1,6 @@
 //! Wire model of the planning server: JSON bodies and WebSocket frames.
 
+pub mod background;
 pub mod chat;
 pub mod checklist;
 pub mod concept;
@@ -22,6 +23,8 @@ mod files_tests;
 mod paths_tests;
 #[cfg(test)]
 mod review_tests;
+#[cfg(test)]
+mod tests_background;
 #[cfg(test)]
 mod tests_chat;
 #[cfg(test)]

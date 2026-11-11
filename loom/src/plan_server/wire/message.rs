@@ -95,6 +95,11 @@ pub enum PlanMessage {
     },
     /// How a settle's background commit ended.
     SettleCommit(super::trace::SettleCommitView),
+    /// The chat session's background tasks with their token figures; replaces the last frame.
+    Background {
+        session: String,
+        tasks: Vec<super::background::BackgroundTaskView>,
+    },
 }
 
 impl PlanMessage {

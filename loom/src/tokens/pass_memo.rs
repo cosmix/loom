@@ -61,9 +61,10 @@ impl FileStamp {
     }
 }
 
-/// The memo of one work root, kept by the thread that runs its passes.
+/// The memo of one root, kept by the thread that runs its passes: a work root
+/// for the daemon's pass, a tokens directory for the planner's.
 pub(super) struct PassMemo {
-    work_root: PathBuf,
+    root: PathBuf,
     /// The checkpoint the last pass ended with; set only while `saved`
     /// describes the file holding its JSON.
     checkpoint: Option<Checkpoint>,
@@ -97,10 +98,10 @@ struct LastQuota {
 }
 
 impl PassMemo {
-    /// An empty memo for `work_root`, taken as given.
-    pub(super) fn new(work_root: &Path) -> Self {
+    /// An empty memo for `root`, taken as given.
+    pub(super) fn new(root: &Path) -> Self {
         Self {
-            work_root: work_root.to_path_buf(),
+            root: root.to_path_buf(),
             checkpoint: None,
             saved: None,
             flow: None,
@@ -108,10 +109,10 @@ impl PassMemo {
         }
     }
 
-    /// Whether this memo belongs to `work_root`; another path, even one
-    /// naming the same directory, gets a fresh memo.
-    pub(super) fn is_for(&self, work_root: &Path) -> bool {
-        self.work_root == work_root
+    /// Whether this memo belongs to `root`; another path, even one naming the
+    /// same directory, gets a fresh memo.
+    pub(super) fn is_for(&self, root: &Path) -> bool {
+        self.root == root
     }
 
     /// The checkpoint a pass starts from: the memo's while `checkpoint.json`

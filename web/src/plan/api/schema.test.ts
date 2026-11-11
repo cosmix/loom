@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import authoring from "@/plan/api/fixtures/authoring.json";
+import background from "@/plan/api/fixtures/background.json";
 import checklist from "@/plan/api/fixtures/checklist.json";
 import clientReading from "@/plan/api/fixtures/client-reading.json";
 import clientSetName from "@/plan/api/fixtures/client-set-name.json";
@@ -33,6 +34,7 @@ import {
 describe("planning wire schemas", () => {
   const fixtures = [
     ["authoring", authoringViewSchema, authoring],
+    ["background", planMessageSchema, background],
     ["checklist", planMessageSchema, checklist],
     ["client reading", clientMessageSchema, clientReading],
     ["client set name", clientMessageSchema, clientSetName],

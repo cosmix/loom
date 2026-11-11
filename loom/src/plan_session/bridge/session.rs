@@ -8,6 +8,7 @@ use std::time::{Duration, Instant};
 use chrono::{DateTime, SecondsFormat, Utc};
 use serde_json::Value;
 
+use super::background::BackgroundTasks;
 use super::commands::Out;
 use super::host::LaunchSpec;
 use super::registry::SessionRecord;
@@ -22,8 +23,9 @@ use crate::plan_session::permission::Answer;
 use crate::plan_session::state::StateMachine;
 use crate::plan_session::transcript::Mapper;
 
-/// A finished subagent transcript that has not grown for this long counts as stopped.
-const SUBAGENT_STALL: Duration = Duration::from_secs(30);
+/// How long a background agent's transcript may stay quiet before its task reads stalled and
+/// stops holding the session's close: the stage default of `loom subagents watch`.
+const STALL_BUDGET: Duration = Duration::from_secs(600);
 /// Sessions whose transcripts `transcripts()` still answers for after they ended.
 pub(super) const ENDED_KEPT: usize = 32;
 
@@ -47,7 +49,7 @@ pub(super) struct Inner {
     pub(super) stopping: bool,
     /// `(id, main transcript)` of the latest ended sessions.
     pub(super) ended: VecDeque<(String, Option<PathBuf>)>,
-    pub(super) stall_after: Duration,
+    pub(super) stall_budget: Duration,
 }
 
 impl Inner {
@@ -61,7 +63,7 @@ impl Inner {
             waiting: Vec::new(),
             stopping: false,
             ended: VecDeque::new(),
-            stall_after: SUBAGENT_STALL,
+            stall_budget: STALL_BUDGET,
         }
     }
 }
@@ -153,13 +155,6 @@ pub(super) struct EndPlan {
     pub(super) reason: DenyReason,
 }
 
-#[derive(Default)]
-pub(super) struct AgentWatch {
-    /// When the transcript last grew with a final assistant record as its last line.
-    pub(super) final_at: Option<Instant>,
-    pub(super) stopped: bool,
-}
-
 /// `received_at`, event, request id and a hash of the payload of an applied spool event.
 pub(super) type EventKey = (DateTime<Utc>, String, Option<String>, u64);
 
@@ -192,7 +187,8 @@ pub(super) struct Flow {
     pub(super) close_ready: Option<EndOutcome>,
     /// A recovered session: the answers its spool's requests had at recovery.
     pub(super) recovered: Option<HashMap<String, Answer>>,
-    pub(super) agents: HashMap<String, AgentWatch>,
+    /// The background table changed since its last `Background` event (one per driver tick).
+    pub(super) background_changed: bool,
     /// A delivered `/compact` waiting for its idle; the instant its boundary record arrived.
     pub(super) compact: Option<Option<Instant>>,
     /// The holder allowed this session's fetches from a card; never set by the session, never
@@ -219,6 +215,8 @@ pub(super) struct Session {
     pub(super) transcript: Option<PathBuf>,
     pub(super) token_paths: Vec<PathBuf>,
     pub(super) team: Option<TeamTracker>,
+    /// The session's background agents and shells.
+    pub(super) background: BackgroundTasks,
     pub(super) next_identity: Instant,
     pub(super) flow: Flow,
 }
@@ -247,6 +245,7 @@ impl Session {
             transcript: None,
             token_paths: Vec::new(),
             team: None,
+            background: BackgroundTasks::default(),
             next_identity: Instant::now(),
             flow: Flow::default(),
             record,

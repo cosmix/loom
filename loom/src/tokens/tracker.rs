@@ -33,14 +33,14 @@ const SLEEP_SLICE: Duration = Duration::from_millis(250);
 /// the warning of the last pass that finished, and the memo of the work root
 /// it last scanned. Thread-local, so trackers on different threads never see
 /// each other's flag or memo.
-struct TrackerLocal {
-    stop: Option<Arc<AtomicBool>>,
-    warning: Option<String>,
-    memo: Option<PassMemo>,
+pub(super) struct TrackerLocal {
+    pub(super) stop: Option<Arc<AtomicBool>>,
+    pub(super) warning: Option<String>,
+    pub(super) memo: Option<PassMemo>,
 }
 
 thread_local! {
-    static TRACKER: RefCell<TrackerLocal> = const {
+    pub(super) static TRACKER: RefCell<TrackerLocal> = const {
         RefCell::new(TrackerLocal {
             stop: None,
             warning: None,
@@ -136,7 +136,7 @@ fn run_pass(
 
 /// Reads every source until `stop` is set. Returns the `(stage id, agent key)`
 /// of each agent whose file was read, and the first file that could not be.
-fn read_sources<'a>(
+pub(super) fn read_sources<'a>(
     checkpoint: &mut Checkpoint,
     sources: &'a [Source],
     stop: &AtomicBool,
@@ -216,19 +216,23 @@ fn writes_outcome(saved: Result<Option<String>>, written: Result<bool>) -> Resul
     }
 }
 
-/// `<work_root>/tokens`, created with mode 0700. A symlink there is refused
-/// before anything is created: `create_dir` alone would accept a symlink
-/// to a directory, and `reject_symlink` checks only the last component.
+/// `<work_root>/tokens`, created with mode 0700; see [`ensure_dir`].
 fn ensure_tokens_dir(work_root: &Path) -> Result<PathBuf> {
-    let dir = work_root.join(TOKENS_DIR);
-    reject_symlink(&dir)?;
-    create_dir(&dir)?;
+    ensure_dir(&work_root.join(TOKENS_DIR))
+}
+
+/// `dir`, created with mode 0700. A symlink there is refused before anything
+/// is created: `create_dir` alone would accept a symlink to a directory, and
+/// `reject_symlink` checks only the last component.
+pub(super) fn ensure_dir(dir: &Path) -> Result<PathBuf> {
+    reject_symlink(dir)?;
+    create_dir(dir)?;
     let metadata =
-        std::fs::symlink_metadata(&dir).with_context(|| format!("inspecting {}", dir.display()))?;
+        std::fs::symlink_metadata(dir).with_context(|| format!("inspecting {}", dir.display()))?;
     if metadata.file_type().is_symlink() || !metadata.is_dir() {
         bail!("token flow path is not a directory: {}", dir.display());
     }
-    Ok(dir)
+    Ok(dir.to_path_buf())
 }
 
 /// Writes `flow` atomically when it fits [`MAX_FLOW_BYTES`] (after shedding
@@ -250,21 +254,28 @@ fn run_tracker(work_root: &Path, shutdown: Arc<AtomicBool>) {
     }
 }
 
-/// One [`scan_pass`] at the current time; the problem to log, if any. A panic
-/// is caught and reported like an error, so the thread outlives it.
+/// One [`scan_pass`] at the current time; the problem to log, if any.
 fn guarded_pass(work_root: &Path) -> Option<String> {
     let now = chrono::Utc::now().timestamp();
-    let pass = panic::catch_unwind(AssertUnwindSafe(|| scan_pass(work_root, None, now)));
-    match pass {
-        Ok(Ok(_)) => TRACKER.with_borrow_mut(|tracker| tracker.warning.take()),
-        Ok(Err(error)) => Some(format!("{error:#}")),
-        Err(_) => Some("scan pass panicked".to_string()),
+    match guarded(|| scan_pass(work_root, None, now)) {
+        Ok(_) => TRACKER.with_borrow_mut(|tracker| tracker.warning.take()),
+        Err(problem) => Some(problem),
+    }
+}
+
+/// `pass`'s value, or the problem to log. A panic is caught and reported like
+/// an error, so the thread outlives it.
+pub(super) fn guarded<T>(pass: impl FnOnce() -> Result<T>) -> std::result::Result<T, String> {
+    match panic::catch_unwind(AssertUnwindSafe(pass)) {
+        Ok(Ok(value)) => Ok(value),
+        Ok(Err(error)) => Err(format!("{error:#}")),
+        Err(_) => Err("scan pass panicked".to_string()),
     }
 }
 
 /// Logs `problem` unless it repeats the one logged last; a clean pass clears
 /// the memory, so a problem that comes back is logged again.
-fn log_change(last_logged: &mut Option<String>, problem: Option<String>) {
+pub(super) fn log_change(last_logged: &mut Option<String>, problem: Option<String>) {
     if let Some(message) = &problem {
         if last_logged.as_ref() != Some(message) {
             eprintln!("tokens: {message}");
@@ -273,7 +284,7 @@ fn log_change(last_logged: &mut Option<String>, problem: Option<String>) {
     *last_logged = problem;
 }
 
-fn sleep_unless_shutdown(shutdown: &AtomicBool, total: Duration) {
+pub(super) fn sleep_unless_shutdown(shutdown: &AtomicBool, total: Duration) {
     let deadline = Instant::now() + total;
     while !shutdown.load(Ordering::SeqCst) && Instant::now() < deadline {
         thread::sleep(SLEEP_SLICE);
