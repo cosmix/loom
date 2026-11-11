@@ -113,7 +113,7 @@ pub(super) struct Delivering {
     /// Every sent item of the delivery: one, or the guidance and the typed text of an opening.
     pub(super) item_ids: Vec<String>,
     pub(super) text: String,
-    /// The sanitised user text a transcript record of this delivery carries.
+    /// The match key ([`match_key`](crate::plan_session::input::match_key)) of the user text a transcript record of this delivery carries.
     pub(super) match_text: String,
     /// `None` until the driver pasted it.
     pub(super) sent_at: Option<Instant>,

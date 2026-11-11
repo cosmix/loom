@@ -21,20 +21,23 @@ mod tests;
 mod tests_opening;
 #[cfg(test)]
 mod tests_server;
+#[cfg(test)]
+mod tests_user_records;
 mod tools;
 mod turns;
 mod usage;
+mod user_record;
 
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::path::PathBuf;
 
-pub(crate) use records::BACKGROUND_TAGS;
+pub(crate) use user_record::BACKGROUND_TAGS;
 
 use chrono::{DateTime, Utc};
 
 use self::records::{cap_chars, item_id, Kind};
 use self::usage::MessageUsage;
-use crate::plan_session::input::sanitize;
+use crate::plan_session::input::match_key;
 use crate::plan_session::model::{ChatDelta, Item, NoticeKind, Origin, Turn};
 
 /// What one ingested line produced.
@@ -64,7 +67,7 @@ pub enum RecordMark {
     CompactBoundary {
         at: DateTime<Utc>,
     },
-    /// The sanitised user text, attachments excluded, for delivery matching.
+    /// The match key ([`match_key`]) of the user text, attachments excluded, for delivery matching.
     HumanUser {
         at: DateTime<Utc>,
         text: String,
@@ -135,9 +138,9 @@ impl Mapper {
         self.opening = Some(origin);
     }
 
-    /// A human record with this sanitised text is `Origin::Closing`.
+    /// A human record whose match key equals that of `text` is `Origin::Closing`.
     pub fn expect_closing(&mut self, text: String) {
-        self.closing = Some(sanitize(&text));
+        self.closing = Some(match_key(&text));
     }
 
     /// Opens turn `t<n>` at a UserPromptSubmit, or adopts the turn a record already opened

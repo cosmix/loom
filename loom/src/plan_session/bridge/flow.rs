@@ -8,7 +8,7 @@ use super::commands::Step;
 use super::session::{Closing, Delivering, Phase, Session};
 use super::{Bridge, BridgeConfig, EndMode};
 use crate::plan_session::attachments::{parse_message, parse_unwrapped, Attachment};
-use crate::plan_session::input::{check_delivered, sanitize};
+use crate::plan_session::input::{check_delivered, match_key, sanitize};
 use crate::plan_session::model::{
     Activity, Delivery, FailureKind, Item, NoticeKind, Origin, SessionState,
 };
@@ -184,7 +184,7 @@ impl Session {
 
     /// The delivery of the pasted `text`, whose sent items are `item_ids`.
     pub(super) fn delivering(&self, item_ids: Vec<String>, text: String) -> Delivering {
-        let match_text = sanitize(&parse_unwrapped(&text).0);
+        let match_text = match_key(&parse_unwrapped(&text).0);
         let compact = match_text.split_whitespace().next() == Some("/compact");
         Delivering {
             item_ids,
@@ -249,7 +249,7 @@ impl Session {
     /// starting with the same tag): Claude Code can start that turn between the bridge's idle
     /// and the paste, and the pasted message then waits behind it unsubmitted.
     pub(super) fn confirm_prompt(&mut self, prompt: Option<&str>, step: &mut Step) {
-        let text = prompt.map(|prompt| sanitize(&parse_message(prompt).0));
+        let text = prompt.map(|prompt| match_key(&parse_message(prompt).0));
         let background = prompt.is_some_and(background_prompt);
         let ours = |d: &Delivering| {
             d.sent_at.is_some() && (!background || text.as_deref() == Some(&d.match_text))

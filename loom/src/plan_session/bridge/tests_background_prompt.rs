@@ -1,5 +1,6 @@
-//! Bridge tests: the prompt Claude Code submits for a background task's notification or an
-//! agent's hand-back opens a turn but never confirms the message the bridge pasted.
+//! Bridge tests: the prompt Claude Code submits for a background task's notification, an
+//! agent's hand-back or a teammate's message opens a turn but never confirms the message the
+//! bridge pasted.
 
 use serde_json::{json, Value};
 
@@ -114,4 +115,19 @@ fn a_message_held_behind_a_background_turn_is_confirmed_late() {
     });
     settle();
     assert_eq!(h.sent(&s), ["A"], "A was pasted twice");
+}
+
+#[test]
+fn a_teammate_message_prompt_does_not_confirm_the_pasted_message() {
+    let prompt = "Another Claude session sent a message:\n<teammate-message teammate_id=\"slash\">\nDONE\n</teammate-message>";
+    let (h, s) = pasted_then_background_turn(prompt);
+    assert_eq!(
+        delivery(&h, "A"),
+        Some(Delivery::Sent),
+        "the teammate turn's prompt confirmed A"
+    );
+    h.spool(&s, "UserPromptSubmit", json!({"prompt": "A"}));
+    wait_until("A delivered by its own prompt", || {
+        delivery(&h, "A") == Some(Delivery::Delivered)
+    });
 }

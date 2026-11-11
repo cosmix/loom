@@ -2,7 +2,7 @@
 
 use std::fmt;
 
-use super::attachments::MAX_ATTACHMENTS;
+use super::attachments::{unwrap_pasted, MAX_ATTACHMENTS};
 use crate::models::dispute::strip_control;
 
 /// The most a delivered message may hold, in bytes, measured after `format_message` and
@@ -49,6 +49,16 @@ impl std::error::Error for InputRefusal {}
 pub fn sanitize(text: &str) -> String {
     // `char::is_control` is exactly Unicode category Cc: C0, DEL (0x7F) and C1 (U+0080-U+009F).
     strip_control(text, &['\n', '\t'])
+}
+
+/// The key a sent message and the record of its delivery are paired by: [`sanitize`]d, without
+/// Claude Code's paste wrappers wherever they sit, and with every whitespace run collapsed to one
+/// space, since Claude Code may move a wrapper or trim the edges of a prompt. Both sides of a
+/// comparison must go through it.
+pub fn match_key(text: &str) -> String {
+    let sanitized = sanitize(text);
+    let unwrapped = unwrap_pasted(&sanitized);
+    unwrapped.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 /// Check the user's own text as the pane will receive it (after [`sanitize`], so a control

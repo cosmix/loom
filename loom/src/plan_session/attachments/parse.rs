@@ -9,9 +9,9 @@ use super::stored::{extension, valid_id, MEDIA_TYPES};
 use super::{Attachment, AttachmentKind, FileMeta, LockedTag};
 
 /// The user's text and the attachments of a message Claude Code recorded (a hook prompt), after
-/// removing a pasted-content wrapper ([`unwrap_pasted`]); see [`parse_unwrapped`].
+/// removing its pasted-content wrappers ([`unwrap_pasted`]); see [`parse_unwrapped`].
 pub fn parse_message(delivered: &str) -> (String, Vec<Attachment>) {
-    parse_unwrapped(unwrap_pasted(delivered))
+    parse_unwrapped(&unwrap_pasted(delivered))
 }
 
 /// [`parse_message`] of a message already unwrapped, so a body that itself looks like a

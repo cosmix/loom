@@ -1,6 +1,7 @@
 //! A human prompt record: its delivered user item(s), and which server "sent" items it replaces.
 //!
-//! A record replaces one sent item whose sanitised text equals its own. A kickoff opening that
+//! A record replaces one sent item whose match key ([`match_key`]) equals its own, and the
+//! delivered item then shows the sent item's own text and attachments. A kickoff opening that
 //! carries typed text is sent as two items, the guidance and the typed text, which Claude Code
 //! records as one prompt joined by a blank line: that record replaces both and shows each once.
 
@@ -9,39 +10,41 @@ use chrono::{DateTime, Utc};
 use super::records::{cap_chars, item_id, USER_TEXT_CHARS};
 use super::{Ingest, Mapper, RecordMark};
 use crate::plan_session::attachments::{parse_unwrapped, unwrap_pasted, Attachment};
-use crate::plan_session::input::sanitize;
+use crate::plan_session::input::match_key;
 use crate::plan_session::model::{ChatDelta, Delivery, Item, Origin};
 
-/// What joins the guidance and the typed text of a split opening in the recorded prompt.
-const JOIN: &str = "\n\n";
-
-/// The sanitised text of a server user item (`s-<n>`), the key a record is matched by.
-fn sent_text(item: &Item) -> Option<String> {
+/// The match key of a server user item (`s-<n>`), the key a record is matched by.
+fn sent_key(item: &Item) -> Option<String> {
     match item {
-        Item::User { id, text, .. } if id.starts_with("s-") => Some(sanitize(text)),
+        Item::User { id, text, .. } if id.starts_with("s-") => Some(match_key(text)),
         _ => None,
     }
 }
 
 fn is_single(items: &[Item], clean: &str) -> bool {
-    items.first().and_then(sent_text).as_deref() == Some(clean)
+    items.first().and_then(sent_key).as_deref() == Some(clean)
 }
 
 fn is_pair(items: &[Item], clean: &str) -> bool {
     match items {
-        [guidance, typed] => match (sent_text(guidance), sent_text(typed)) {
-            (Some(guidance), Some(typed)) => format!("{guidance}{JOIN}{typed}") == clean,
+        [guidance, typed] => match (sent_key(guidance), sent_key(typed)) {
+            (Some(guidance), Some(typed)) => format!("{guidance} {typed}") == clean,
             _ => false,
         },
         _ => false,
     }
 }
 
-/// The text and origin of a removed sent item.
-fn parts(item: Item) -> (String, Option<Origin>) {
+/// The text, attachments and origin of a removed sent item.
+fn parts(item: Item) -> (String, Vec<Attachment>, Option<Origin>) {
     match item {
-        Item::User { text, origin, .. } => (text, origin),
-        _ => (String::new(), None),
+        Item::User {
+            text,
+            attachments,
+            origin,
+            ..
+        } => (text, attachments, origin),
+        _ => (String::new(), Vec::new(), None),
     }
 }
 
@@ -57,7 +60,7 @@ fn user(id: String, text: String, attachments: Vec<Attachment>, origin: Option<O
 
 impl Mapper {
     /// A human prompt: delivered user item(s) with the attachment chips, replacing the server's
-    /// "sent" item(s) of the same sanitised text.
+    /// "sent" item(s) of the same match key.
     pub(super) fn human(
         &mut self,
         uuid: &str,
@@ -65,17 +68,17 @@ impl Mapper {
         delivered: &str,
         out: &mut Ingest,
     ) {
-        let delivered = cap_chars(unwrap_pasted(delivered), USER_TEXT_CHARS);
+        let delivered = cap_chars(&unwrap_pasted(delivered), USER_TEXT_CHARS);
         let (text, attachments) = parse_unwrapped(&delivered);
-        let clean = sanitize(&text);
+        let clean = match_key(&text);
         let origin = self.take_origin(&clean);
         let mut sent = self.take_server_items(&clean, &mut out.deltas);
         let turn = self.turn_for(at, &mut out.deltas);
         let id = format!("u-{uuid}");
         let items = match (sent.pop(), sent.pop()) {
             (Some(typed), Some(guidance)) => {
-                let (guidance_text, guidance_origin) = parts(guidance);
-                let (typed_text, _) = parts(typed);
+                let (guidance_text, _, guidance_origin) = parts(guidance);
+                let (typed_text, _, _) = parts(typed);
                 vec![
                     user(
                         id.clone(),
@@ -87,8 +90,13 @@ impl Mapper {
                 ]
             }
             (Some(only), None) => {
-                let (_, server_origin) = parts(only);
-                vec![user(id, text, attachments, origin.or(server_origin))]
+                let (sent_text, sent_attachments, server_origin) = parts(only);
+                vec![user(
+                    id,
+                    sent_text,
+                    sent_attachments,
+                    origin.or(server_origin),
+                )]
             }
             _ => vec![user(id, text, attachments, origin)],
         };
@@ -109,8 +117,7 @@ impl Mapper {
     }
 
     /// Removes the server user items this record replaces, in order: the one sent item with
-    /// this sanitised text, else the two consecutive items whose texts joined by a blank line
-    /// equal it. Latest turn first. A sent item the hook already marked delivered still counts:
+    /// this match key, else the two consecutive items whose keys joined by a space equal it. Latest turn first. A sent item the hook already marked delivered still counts:
     /// the hook arrives before the record.
     fn take_server_items(&mut self, clean: &str, deltas: &mut Vec<ChatDelta>) -> Vec<Item> {
         let found = self

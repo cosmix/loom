@@ -56,7 +56,7 @@
 | [planner-web-shell](architecture/planner-web-shell.md) | Shell | 112 |
 | [planning-document-model](architecture/planning-document-model.md) | Docs | 183 |
 | [planning-guidance](architecture/planning-guidance.md) |  | 43 |
-| [planning-session-bridge](architecture/planning-session-bridge.md) |  | 290 |
+| [planning-session-bridge](architecture/planning-session-bridge.md) |  | 289 |
 | [planning-session-sandbox](architecture/planning-session-sandbox.md) |  | 148 |
 | [planning-trace](architecture/planning-trace.md) |  | 132 |
 | [pressure](architecture/pressure.md) |  | 42 |
@@ -171,7 +171,7 @@
 | [planner-polish](mistakes/planner-polish.md) | Polish | 107 |
 | [planner-redesign](mistakes/planner-redesign.md) |  | 80 |
 | [planner-review-fixes](mistakes/planner-review-fixes.md) |  | 48 |
-| [planner-ui-repair](mistakes/planner-ui-repair.md) | Repair | 205 |
+| [planner-ui-repair](mistakes/planner-ui-repair.md) | Repair | 215 |
 | [planner-visual-feedback-shortfall](mistakes/planner-visual-feedback-shortfall.md) | Visual | 17 |
 | [planning-sandbox-delivery](mistakes/planning-sandbox-delivery.md) |  | 73 |
 | [pre-commit-hardening](mistakes/pre-commit-hardening.md) |  | 93 |

@@ -8,6 +8,7 @@ use std::path::Path;
 use chrono::{DateTime, Utc};
 use serde_json::Value;
 
+use super::user_record::user;
 use super::{tools, Subagent};
 use crate::plan_session::model::{Item, ToolStatus};
 
@@ -22,19 +23,6 @@ const LINE_CHARS: usize = 500;
 /// Longest tool name, and longest `filePath` accepted as a changed path.
 const NAME_CHARS: usize = 200;
 const PATH_CHARS: usize = 4096;
-
-const INTERRUPT_PREFIX: &str = "[Request interrupted by user";
-const TASK_NOTIFICATION: &str = "<task-notification>";
-/// The leads of the prompts Claude Code submits itself (probe P1): a background task's
-/// `<task-notification>` and an agent's `<agent-message>` hand-back.
-pub(crate) const BACKGROUND_TAGS: [&str; 2] = [TASK_NOTIFICATION, "<agent-message"];
-const WRAPPER_TAGS: [&str; 5] = [
-    "<command-",
-    "<local-command-",
-    "<bash-",
-    TASK_NOTIFICATION,
-    "<system-reminder>",
-];
 
 pub(super) struct Record {
     pub(super) uuid: String,
@@ -118,7 +106,7 @@ pub(super) fn usage_of(line: &str) -> Option<(String, Value)> {
     Some((message_id, message.get_mut("usage")?.take()))
 }
 
-fn id(value: Option<&Value>) -> Option<String> {
+pub(super) fn id(value: Option<&Value>) -> Option<String> {
     let text = value?.as_str()?;
     let fits = !text.is_empty() && text.chars().count() <= ID_CHARS;
     fits.then(|| text.to_owned())
@@ -167,43 +155,8 @@ fn block(mut block: Value) -> Block {
     }
 }
 
-fn user(value: &mut Value) -> Kind {
-    let content = value
-        .get_mut("message")
-        .and_then(|message| message.get_mut("content"))
-        .map(Value::take)
-        .unwrap_or_default();
-    let texts = texts(&content);
-    let interrupted = texts.iter().any(|text| text.starts_with(INTERRUPT_PREFIX));
-    let text = texts.join("\n");
-    let results = tool_results(content);
-    if !results.is_empty() {
-        let tool_use_result = value.get_mut("toolUseResult").map(Value::take);
-        return Kind::ToolResults {
-            results,
-            tool_use_result: tool_use_result.unwrap_or_default(),
-            interrupted,
-        };
-    }
-    if interrupted {
-        return Kind::Interrupt;
-    }
-    let origin = value.pointer("/origin/kind").and_then(Value::as_str);
-    let lead = text.trim_start();
-    if origin == Some("task-notification") || lead.starts_with(TASK_NOTIFICATION) {
-        return Kind::SelfStarted;
-    }
-    let meta = value.get("isMeta").and_then(Value::as_bool) == Some(true);
-    let foreign = origin.is_some_and(|kind| kind != "human");
-    let wrapped = WRAPPER_TAGS.iter().any(|tag| lead.starts_with(tag));
-    if meta || foreign || wrapped || lead.is_empty() {
-        return Kind::Skipped;
-    }
-    Kind::Human(text)
-}
-
 /// A string content, or the text blocks of an array content.
-fn texts(content: &Value) -> Vec<&str> {
+pub(super) fn texts(content: &Value) -> Vec<&str> {
     match content {
         Value::String(text) => vec![text.as_str()],
         Value::Array(blocks) => blocks
@@ -217,26 +170,6 @@ fn texts(content: &Value) -> Vec<&str> {
 
 fn joined_text(content: &Value) -> String {
     texts(content).join("\n")
-}
-
-fn tool_results(content: Value) -> Vec<ToolResult> {
-    let Value::Array(blocks) = content else {
-        return Vec::new();
-    };
-    let result = |mut block: Value| {
-        if block.get("type").and_then(Value::as_str) != Some("tool_result") {
-            return None;
-        }
-        Some(ToolResult {
-            tool_use_id: id(block.get("tool_use_id"))?,
-            is_error: block.get("is_error").and_then(Value::as_bool) == Some(true),
-            content: block
-                .get_mut("content")
-                .map(Value::take)
-                .unwrap_or_default(),
-        })
-    };
-    blocks.into_iter().filter_map(result).collect()
 }
 
 fn system(value: &Value) -> Kind {
