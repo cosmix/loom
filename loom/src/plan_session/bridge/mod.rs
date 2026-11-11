@@ -8,6 +8,7 @@
 //! it queued. A listener that panics is logged and skipped; the others and the flushing
 //! thread (the driver, a command, recovery, drain) go on.
 
+pub mod background;
 mod commands;
 mod denied;
 mod driver;
@@ -30,13 +31,21 @@ pub mod team;
 mod turns;
 
 #[cfg(test)]
+mod background_contract_tests;
+#[cfg(test)]
 mod closing_contract_tests;
 #[cfg(test)]
 mod fake_host;
 #[cfg(test)]
+mod fixture_replay;
+#[cfg(test)]
 mod harness;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_background;
+#[cfg(test)]
+mod tests_background_more;
 #[cfg(test)]
 mod tests_background_prompt;
 #[cfg(test)]
@@ -158,9 +167,15 @@ pub enum BridgeEvent {
         turn_id: String,
         changed: Vec<ChangedFile>,
     },
+    /// An agent's first end; it is sent once per agent id.
     SubagentStopped {
         id: String,
         agent_id: String,
+    },
+    /// The session's background tasks after they changed, in `started_at` order, then by id.
+    Background {
+        id: String,
+        tasks: Vec<background::BackgroundTask>,
     },
     Team {
         id: String,

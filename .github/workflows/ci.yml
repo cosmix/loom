@@ -45,6 +45,7 @@ jobs:
               - "loom-hooks/**"
               - "web/dist/**"
               - "web/src/api/**"
+              - "web/src/plan/api/**"
               - "*.md.template"
               - "install.sh"
               - "dev-install.sh"

@@ -40,7 +40,6 @@ fn session() -> SessionView {
         started_at: "2026-10-28T09:00:00Z".into(),
         state_since: "2026-10-28T09:01:00Z".into(),
         working_since: Some("2026-10-28T09:02:00Z".into()),
-        subagents_running: 1,
         last_activity: Some("2026-10-28T09:03:00Z".into()),
         failure: Some(Failure {
             kind: FailureKind::Died,

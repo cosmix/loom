@@ -7,6 +7,9 @@
 //! applies a Stop.
 
 mod content;
+pub mod notification;
+#[cfg(test)]
+mod notification_contract_tests;
 mod opening;
 #[cfg(test)]
 mod opening_contract_tests;
@@ -31,11 +34,13 @@ mod user_record;
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::path::PathBuf;
 
+pub(crate) use records::{bounded_id, cap_chars, LINE_CHARS};
 pub(crate) use user_record::BACKGROUND_TAGS;
 
 use chrono::{DateTime, Utc};
 
-use self::records::{cap_chars, item_id, Kind};
+use self::notification::BackgroundEvidence;
+use self::records::{item_id, Kind};
 use self::usage::MessageUsage;
 use crate::plan_session::input::match_key;
 use crate::plan_session::model::{ChatDelta, Item, NoticeKind, Origin, Turn};
@@ -72,10 +77,10 @@ pub enum RecordMark {
         at: DateTime<Utc>,
         text: String,
     },
-    /// A subagent's final assistant record (`stop_reason` `end_turn`).
-    SubagentFinal {
-        agent_id: String,
+    /// A main record's evidence about a background task; it follows the record's other marks.
+    Background {
         at: DateTime<Utc>,
+        evidence: BackgroundEvidence,
     },
 }
 
@@ -105,6 +110,9 @@ pub struct Mapper {
     messages: HashMap<String, usize>,
     /// `tool_use_id` to the turn and id of its tool item.
     tools: HashMap<String, (usize, String)>,
+    /// `tool_use_id` of a main `Agent`, `Task` or `Bash` call without its result yet, to the
+    /// call's description: the label of the task its result launches.
+    descriptions: HashMap<String, String>,
     /// Thinking items waiting for the next main record's timestamp.
     thinking: Vec<(usize, String, DateTime<Utc>)>,
     opening: Option<Option<Origin>>,
@@ -124,6 +132,7 @@ impl Mapper {
             seen: HashSet::new(),
             messages: HashMap::new(),
             tools: HashMap::new(),
+            descriptions: HashMap::new(),
             thinking: Vec::new(),
             opening: None,
             closing: None,
@@ -260,8 +269,16 @@ impl Mapper {
                 if let Some(at) = at {
                     self.fill_thinking(at, &mut out.deltas);
                 }
+                // Labelled before the result completes its row and forgets the description.
+                let evidence = record
+                    .evidence
+                    .map(|evidence| evidence.labelled(|call| self.descriptions.get(call).cloned()));
                 self.apply_main(uuid, at, record.kind, &mut out);
+                if let (Some(at), Some(evidence)) = (at, evidence) {
+                    out.marks.push(RecordMark::Background { at, evidence });
+                }
             }
+            // A subagent's own launches and notifications stay inside it.
             Some(sub) => self.apply_subagent(uuid, at, record.kind, sub, &mut out),
         }
         out
@@ -315,12 +332,7 @@ impl Mapper {
     ) {
         match kind {
             Kind::Assistant(message) => {
-                let end_turn = message.end_turn;
                 self.assistant(uuid, at, message, Some(sub), &mut out.deltas);
-                if let (true, Some(at)) = (end_turn, at) {
-                    let agent_id = sub.agent_id.to_owned();
-                    out.marks.push(RecordMark::SubagentFinal { agent_id, at });
-                }
             }
             Kind::ToolResults {
                 results,

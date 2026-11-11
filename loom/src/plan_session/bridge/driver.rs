@@ -8,9 +8,10 @@ use std::time::{Duration, Instant};
 use chrono::{DateTime, Utc};
 use serde_json::{json, Value};
 
+use super::background::Change;
 use super::commands::Step;
 use super::registry::{Batch, Entry, Feed, FeedPaths, Feeds};
-use super::session::{AgentWatch, Closing, EventKey, Phase, Session};
+use super::session::{Closing, EventKey, Phase, Session};
 use super::{denied, Bridge, BridgeConfig, BridgeEvent, EndOutcome};
 use crate::plan_session::kind::SessionKind;
 use crate::plan_session::model::{Item, NoticeKind};
@@ -45,9 +46,9 @@ impl Bridge {
             let batch = feed.read();
             self.apply_batch(id, batch);
         }
-        let stall = self.lock().stall_after;
+        let stall_budget = self.lock().stall_budget;
         self.step(id, |session, config, step| {
-            session.timers(config, stall, step)
+            session.timers(config, stall_budget, step)
         });
         self.marker_step(id);
         self.identity_step(id);
@@ -72,6 +73,13 @@ impl Bridge {
                 Entry::Main(line) => session.ingest_main(line, step),
                 Entry::Agent(agent, by, line) => session.ingest_agent(agent, by, line, step),
                 Entry::Event(event) => session.apply_event(event, config, step),
+            });
+        }
+        // After the lines: a meta file read with them says what holds once they were written.
+        for (agent, meta) in &batch.metas {
+            self.step(id, |session, _, step| {
+                let change = session.background.meta(agent, meta);
+                session.publish_background(change, step);
             });
         }
         for line in &batch.tokens {
@@ -116,13 +124,12 @@ impl Session {
         if !self.flow.applied.insert(event_key(event)) {
             return;
         }
+        // The table first: a Stop's list ends tasks before the Stop's close gate reads it.
+        let change = self.background.event(event);
+        self.publish_background(change, step);
         let at = event.received_at;
         // Idle evidence loses to a main record seen later (the machine's own rule).
         let wins = self.machine.last_main_at().is_none_or(|main| main <= at);
-        if event.event == "SubagentStop" {
-            self.on_agent_stop(event, step);
-            return;
-        }
         self.machine.apply(Input::Spool(event));
         match event.event.as_str() {
             "SessionStart" => self.on_session_start(event, step),
@@ -135,14 +142,6 @@ impl Session {
             ),
             "Notification" if wins && is_idle_prompt(&event.payload) => self.on_idle(false, step),
             "Stop" | "StopFailure" if wins => self.on_idle(true, step),
-            "SubagentStart" => {
-                if let Some(agent) = text(&event.payload, "agent_id") {
-                    // Claude Code starts the same agent id again when it wakes it: count a new run.
-                    self.flow
-                        .agents
-                        .insert(agent.to_owned(), AgentWatch::default());
-                }
-            }
             "PreCompact" => self.notice(NoticeKind::Info, "Compacting the context", step),
             "SessionEnd" if self.flow.close_ready.is_none() => {
                 let confirmed = self.closing() == Some(Closing::Confirmed);
@@ -194,7 +193,7 @@ impl Session {
         if self.flow.quiet_until.take().is_some() {
             self.flow.skip_delivery = true;
         }
-        if stop && self.machine.subagents_running() == 0 && self.closes_at_stop() {
+        if stop && self.background.blocking() == 0 && self.closes_at_stop() {
             self.flow.close_ready = Some(EndOutcome::Closed);
         }
     }
@@ -212,17 +211,11 @@ impl Session {
     pub(super) fn closing(&self) -> Option<Closing> {
         self.flow.end.as_ref().map(|plan| plan.closing)
     }
-    fn on_agent_stop(&mut self, event: &SpoolEvent, step: &mut Step) {
-        let agent = text(&event.payload, "agent_id").map(str::to_owned);
-        if let Some(agent) = &agent {
-            let watch = self.flow.agents.entry(agent.clone()).or_default();
-            if watch.stopped {
-                return;
-            }
-            watch.stopped = true;
-        }
-        self.machine.apply(Input::Spool(event));
-        if let Some(agent_id) = agent {
+    /// One `SubagentStopped` per agent id that ended for the first time, at once; the table
+    /// itself goes out once per tick (`timers`), however many lines changed it.
+    fn publish_background(&mut self, change: Change, step: &mut Step) {
+        self.flow.background_changed |= change.changed;
+        for agent_id in change.stopped {
             let id = self.id.clone();
             step.event(BridgeEvent::SubagentStopped { id, agent_id });
         }
@@ -235,6 +228,8 @@ impl Session {
         }
     }
     fn apply_mark(&mut self, mark: RecordMark, step: &mut Step) {
+        let change = self.background.mark(&mark);
+        self.publish_background(change, step);
         match mark {
             RecordMark::Main { at } => {
                 let fresh = self.after_idle(at) && self.flow.delivering.is_none();
@@ -250,9 +245,8 @@ impl Session {
                 self.machine.apply(Input::Interrupted { at });
                 self.on_idle(false, step);
             }
-            RecordMark::AgentsKilled { at } => {
-                self.machine.apply(Input::AgentsKilled { at });
-            }
+            // The table read both: a killed agent and a task's evidence move no session state.
+            RecordMark::AgentsKilled { .. } | RecordMark::Background { .. } => {}
             RecordMark::CompactBoundary { .. } => {
                 self.confirm_compact(step);
                 if let Some(seen) = &mut self.flow.compact {
@@ -260,7 +254,6 @@ impl Session {
                 }
             }
             RecordMark::HumanUser { text, .. } => self.confirm_text(&text, step),
-            RecordMark::SubagentFinal { .. } => {}
         }
     }
     fn after_idle(&self, at: DateTime<Utc>) -> bool {
@@ -280,21 +273,28 @@ impl Session {
         line: &str,
         step: &mut Step,
     ) {
-        let ingest = self.mapper.ingest_subagent(agent, by, line);
-        if ingest.deltas.is_empty() && ingest.marks.is_empty() {
-            return;
+        // Every line reaches the table, also one that maps to no chat item.
+        if let Ok(entry) = serde_json::from_str::<Value>(line) {
+            let change = self.background.agent_line(agent, &entry);
+            self.publish_background(change, step);
         }
-        let last_final = ingest
-            .marks
-            .iter()
-            .any(|mark| matches!(mark, RecordMark::SubagentFinal { .. }));
+        let ingest = self.mapper.ingest_subagent(agent, by, line);
         self.emit(ingest.deltas, step);
-        let watch = self.flow.agents.entry(agent.to_owned()).or_default();
-        watch.final_at = last_final.then(Instant::now);
     }
-    pub(super) fn timers(&mut self, config: &BridgeConfig, stall: Duration, step: &mut Step) {
+    pub(super) fn timers(
+        &mut self,
+        config: &BridgeConfig,
+        stall_budget: Duration,
+        step: &mut Step,
+    ) {
         if !matches!(self.phase, Phase::Live) {
             return;
+        }
+        let change = self.background.reevaluate(Utc::now(), stall_budget);
+        self.publish_background(change, step);
+        if std::mem::take(&mut self.flow.background_changed) {
+            let (id, tasks) = (self.id.clone(), self.background.tasks());
+            step.event(BridgeEvent::Background { id, tasks });
         }
         let now = Instant::now();
         self.expire_requests(step);
@@ -308,26 +308,6 @@ impl Session {
             let idle = synthetic("Notification", json!({"notification_type": "idle_prompt"}));
             self.machine.apply(Input::Spool(&idle));
             self.on_idle(false, step);
-        }
-        self.stop_stalled(stall, now, step);
-    }
-    /// A finished subagent transcript that stopped growing gets one synthetic SubagentStop.
-    fn stop_stalled(&mut self, stall: Duration, now: Instant, step: &mut Step) {
-        let stalled: Vec<String> = self
-            .flow
-            .agents
-            .iter()
-            .filter(|(_, watch)| !watch.stopped)
-            .filter(|(_, watch)| {
-                watch
-                    .final_at
-                    .is_some_and(|at| now.duration_since(at) >= stall)
-            })
-            .map(|(agent, _)| agent.clone())
-            .collect();
-        for agent in stalled {
-            let stop = synthetic("SubagentStop", json!({ "agent_id": agent }));
-            self.on_agent_stop(&stop, step);
         }
     }
     pub(super) fn notice(&mut self, kind: NoticeKind, text: &str, step: &mut Step) {

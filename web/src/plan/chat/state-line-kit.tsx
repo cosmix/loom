@@ -24,7 +24,6 @@ export function session(fields: Partial<SessionView> = {}): SessionView {
     state: "idle",
     state_since: since,
     working_since: since,
-    subagents_running: 0,
     fetch_grant: false,
     last_activity: since,
     ...fields,

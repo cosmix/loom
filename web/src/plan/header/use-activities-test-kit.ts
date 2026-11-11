@@ -19,7 +19,6 @@ export function session(state: SessionView["state"]): SessionView {
     started_at: startedAt,
     state_since: startedAt,
     working_since: null,
-    subagents_running: 0,
     fetch_grant: false,
     last_activity: null,
     failure: null,

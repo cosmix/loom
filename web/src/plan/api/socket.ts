@@ -7,6 +7,7 @@ import {
 } from "@/plan/api/schema";
 import {
   authoringAtom,
+  backgroundAtom,
   connectionAtom,
   connectionEpochAtom,
   draftTeamAtom,
@@ -132,6 +133,7 @@ class PlanSocketConnection {
     this.store.set(stoppingAtom, message.server.stopping);
     this.store.set(kickoffAtom, null);
     this.store.set(draftTeamAtom, null);
+    this.store.set(backgroundAtom, null);
     this.attempts = 0;
     // Atoms first, then the epoch, then the resync callbacks: a callback that
     // refetches must see the new snapshot and the bumped epoch.
@@ -169,6 +171,11 @@ class PlanSocketConnection {
       case "draft_team": {
         const { type: _type, ...draftTeam } = message;
         this.store.set(draftTeamAtom, draftTeam);
+        break;
+      }
+      case "background": {
+        const { type: _type, ...frame } = message;
+        this.store.set(backgroundAtom, frame);
         break;
       }
       case "server_stopping":

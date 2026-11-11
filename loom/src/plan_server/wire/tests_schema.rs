@@ -222,22 +222,13 @@ fn assert_exhaustive(message: &PlanMessage) {
         | PlanMessage::RunOutput(_)
         | PlanMessage::RunStrip(_)
         | PlanMessage::TraceChanged { .. }
-        | PlanMessage::SettleCommit(_) => {}
+        | PlanMessage::SettleCommit(_)
+        | PlanMessage::Background { .. } => {}
     }
 }
 
 fn all_plan_messages() -> Vec<PlanMessage> {
     assert_exhaustive(&PlanMessage::ServerStopping);
-    let tree_changed: PlanMessage =
-        serde_json::from_str(include_str!("fixtures/files-tree-changed.json")).unwrap();
-    let doc_changed = serde_json::from_str(include_str!(
-        "../../../../web/src/plan/api/fixtures/files-doc-changed.json"
-    ))
-    .unwrap();
-    let validation = serde_json::from_str(include_str!(
-        "../../../../web/src/plan/api/fixtures/files-validation.json"
-    ))
-    .unwrap();
     let kickoff_drafts = serde_json::from_str(include_str!(
         "../../../../web/src/plan/api/fixtures/kickoff-drafts.json"
     ))
@@ -248,9 +239,14 @@ fn all_plan_messages() -> Vec<PlanMessage> {
         "../../../../web/src/plan/api/fixtures/trace-settle-commit.json"
     ))
     .unwrap();
-    vec![
+    let background = serde_json::from_str(include_str!(
+        "../../../../web/src/plan/api/fixtures/background.json"
+    ))
+    .unwrap();
+    let mut messages = vec![
         hello,
         settle_commit,
+        background,
         PlanMessage::Presence(PresenceList { entries: vec![] }),
         PlanMessage::Authoring(AuthoringView { holder: None }),
         checklist,
@@ -264,15 +260,33 @@ fn all_plan_messages() -> Vec<PlanMessage> {
             command: String::new(),
             reason: String::new(),
         }),
+    ];
+    messages.extend(files_messages());
+    messages.push(PlanMessage::ConceptChanged(ConceptChanged {
+        feature: None,
+        pages: vec![],
+        out_of_date: vec![],
+        sources: vec![],
+    }));
+    messages
+}
+
+/// The file-tree messages built from shared wire fixtures.
+fn files_messages() -> Vec<PlanMessage> {
+    let tree_changed: PlanMessage =
+        serde_json::from_str(include_str!("fixtures/files-tree-changed.json")).unwrap();
+    let doc_changed = serde_json::from_str(include_str!(
+        "../../../../web/src/plan/api/fixtures/files-doc-changed.json"
+    ))
+    .unwrap();
+    let validation = serde_json::from_str(include_str!(
+        "../../../../web/src/plan/api/fixtures/files-validation.json"
+    ))
+    .unwrap();
+    vec![
         tree_changed,
         PlanMessage::DocChanged(doc_changed),
         PlanMessage::Validation(validation),
-        PlanMessage::ConceptChanged(ConceptChanged {
-            feature: None,
-            pages: vec![],
-            out_of_date: vec![],
-            sources: vec![],
-        }),
     ]
 }
 

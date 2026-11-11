@@ -12,7 +12,6 @@
     "started_at": "2026-10-17T08:00:00Z",
     "state_since": "2026-10-17T08:10:00Z",
     "working_since": "2026-10-17T08:10:00Z",
-    "subagents_running": 0,
     "last_activity": "2026-10-17T08:11:00Z",
     "failure": null,
     "offer": null,
@@ -484,7 +483,6 @@
       "started_at": "2026-10-17T08:00:00Z",
       "state_since": "2026-10-17T08:10:00Z",
       "working_since": null,
-      "subagents_running": 0,
       "last_activity": "2026-10-17T08:11:00Z",
       "failure": {
         "kind": "died",

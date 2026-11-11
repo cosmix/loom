@@ -9,6 +9,7 @@ use serde_json::Value;
 use super::is_safe_id;
 use super::locator::{read_bounded_prefix, validate_task_output_path};
 use super::marker::{decode_marker_channel, MarkerChannel, MAX_PREFIX_BYTES};
+use crate::agent_state::background_task_id;
 
 mod argv;
 mod identity;
@@ -195,16 +196,7 @@ fn add_result(
         .iter()
         .find_map(|value| value.get("stdout").and_then(Value::as_str))
         .map_or_else(|| fallback.clone(), str::to_owned);
-    let background_task_id = metadata
-        .iter()
-        .find_map(|value| {
-            value
-                .get("backgroundTaskId")
-                .or_else(|| value.get("background_task_id"))
-                .and_then(Value::as_str)
-        })
-        .filter(|value| is_safe_id(value))
-        .map(str::to_owned);
+    let background_task_id = metadata.iter().find_map(|value| background_task_id(value));
     let mut task_output_path_text = vec![fallback];
     for value in metadata {
         collect_strings(value, &mut task_output_path_text);

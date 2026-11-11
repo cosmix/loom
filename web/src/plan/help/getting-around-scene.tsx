@@ -55,7 +55,6 @@ const SAMPLE_SESSION = sessionViewSchema.parse({
   started_at: "2026-10-29T10:00:00Z",
   state_since: "2026-10-29T10:00:00Z",
   working_since: null,
-  subagents_running: 0,
   fetch_grant: false,
   last_activity: null,
   failure: null,

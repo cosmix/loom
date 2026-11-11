@@ -133,6 +133,11 @@ impl Checkpoint {
             .or_insert_with(|| AgentState::new(source.kind, &source.path))
     }
 
+    /// Drops every stage whose id `keep` refuses.
+    pub(super) fn retain_stages(&mut self, keep: impl Fn(&str) -> bool) {
+        self.stages.retain(|stage_id, _| keep(stage_id));
+    }
+
     /// Drops every agent's buckets before bucket index `oldest`.
     pub(super) fn prune(&mut self, oldest: i64) {
         for agent in self

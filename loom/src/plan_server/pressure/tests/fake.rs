@@ -354,7 +354,6 @@ fn view(id: &str) -> SessionView {
         started_at: String::new(),
         state_since: String::new(),
         working_since: None,
-        subagents_running: 0,
         last_activity: None,
         failure: None,
         offer: None,

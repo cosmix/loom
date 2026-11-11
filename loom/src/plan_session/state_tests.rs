@@ -73,7 +73,6 @@ fn ids(names: &[&str]) -> BTreeSet<String> {
 fn a_spawned_session_is_starting() {
     let machine = StateMachine::new();
     assert_eq!(machine.state(), SessionState::Starting);
-    assert_eq!(machine.subagents_running(), 0);
     assert!(machine.pending_requests().is_empty());
 }
 
@@ -286,7 +285,6 @@ fn a_compact_source_without_a_delivered_compact_changes_nothing() {
     feed(&mut machine, subagent("SubagentStart", 500));
     assert_eq!(start(&mut machine, "compact", 1_000), None);
     assert_eq!(machine.state(), SessionState::Working);
-    assert_eq!(machine.subagents_running(), 1);
 
     let mut resting = idle();
     assert_eq!(start(&mut resting, "compact", 1_000), None);
