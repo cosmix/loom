@@ -10,7 +10,7 @@ use serde_json::{json, Value};
 
 use super::commands::Step;
 use super::registry::{Batch, Entry, Feed, FeedPaths, Feeds};
-use super::session::{Closing, EventKey, Phase, Session};
+use super::session::{AgentWatch, Closing, EventKey, Phase, Session};
 use super::{denied, Bridge, BridgeConfig, BridgeEvent, EndOutcome};
 use crate::plan_session::kind::SessionKind;
 use crate::plan_session::model::{Item, NoticeKind};
@@ -137,7 +137,10 @@ impl Session {
             "Stop" | "StopFailure" if wins => self.on_idle(true, step),
             "SubagentStart" => {
                 if let Some(agent) = text(&event.payload, "agent_id") {
-                    self.flow.agents.entry(agent.to_owned()).or_default();
+                    // Claude Code starts the same agent id again when it wakes it: count a new run.
+                    self.flow
+                        .agents
+                        .insert(agent.to_owned(), AgentWatch::default());
                 }
             }
             "PreCompact" => self.notice(NoticeKind::Info, "Compacting the context", step),

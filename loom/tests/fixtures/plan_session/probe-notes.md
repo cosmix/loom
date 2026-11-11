@@ -241,7 +241,7 @@ Evidence: `probe-notes/p1-interrupt.md#Interrupt with three tasks running`, `spo
 
 ### Resume and SendMessage
 
-A plan session has no `SendMessage` tool. The model made no such call when asked, the deferred-tool list (`transcripts/p1-status.jsonl`, line 12) does not name it, the launch result says `canContinueAgent: false`, and the spool has one `SubagentStart` per agent. No agent is resumed by the main agent. An agent can still notify twice for one task id (interim, then finished) without a resume.
+A plan session has no `SendMessage` tool. The model made no such call when asked, the deferred-tool list (`transcripts/p1-status.jsonl`, line 12) does not name it, the launch result says `canContinueAgent: false`, and in these probes the spool has one `SubagentStart` per agent. No agent is resumed by the main agent. An agent can still notify twice for one task id (interim, then finished) without a resume. A field session (product-media-kit, 2026-11-10) shows a background coordinator agent woken again by its own children's notifications: Claude Code fired a `SubagentStart` and a `SubagentStop` with the same `agent_id` for each of its nine wakes, so one agent id can start many times.
 
 Evidence: `probe-notes/p1-resume.md#SendMessage unavailable`.
 

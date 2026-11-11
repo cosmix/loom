@@ -112,7 +112,11 @@ States: `Starting`, `Idle`, `Working`, `Permission`, `Ending`, `Ended`, `Failed`
    `Record { main: true }`: Claude Code writes `stop_hook_summary` and `turn_duration` system records after
    the Stop hook ran, so feeding them flips every Stop back to `Working`.
 2. Only the main agent's events move the state. `SubagentStart`/`SubagentStop` change the running-subagent
-   count and never the state.
+   count and never the state. Claude Code fires a new `SubagentStart` for the same `agent_id` each time it
+   wakes an agent (a background coordinator woken by its children's notifications), so the `SubagentStart`
+   arm of `apply_event` (`bridge/driver.rs`) resets that agent's watch: the stop latch in `on_agent_stop`
+   dedupes only the synthetic and the real stop of one run. The close at the closing Stop needs a count of 0
+   ([mistake](../mistakes/spurious-waiting-for-input.md#a-re-woken-subagent-kept-the-subagent-count-up-and-the-chat-stayed-ending)).
 
 The pending permission set clears only on a main Stop or StopFailure, an interrupt record, or per-id
 removals; a main transcript record never clears it (another tool's result is a main record). The driver

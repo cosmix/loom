@@ -41,3 +41,13 @@ Two stages of PLAN-loop-recovery (`worker-evidence`, 2026-09-13T22:10:52Z; `comp
 **Why:** the state machine trusted transcript records without classifying them, and the hook list came from the spec, not from observing Claude Code 2.1.312.
 
 **Prevention:** feed `Record { main: true }` only for `user` and `assistant` records; register and handle every turn-ending hook (`Stop` and `StopFailure`); probe a hook set in a pty before freezing it. Apply the records and spool lines of one tick in time order (records first on a tie): applying them as two blocks let an interrupt record reset the subagent count before the earlier `SubagentStart` lines counted, and a final write never closed (`Batch::in_time_order`).
+
+## A Re-Woken Subagent Kept the Subagent Count Up and the Chat Stayed Ending
+
+**What happened:** an authoring chat finished its closing write ("Closing write done.", then Stop) but stayed `Ending` for 10 minutes, until `final_write_bound` tore it down. The composer showed "The composer comes back with your next chat." with no New chat button, and `reserve` refused a new chat, so the planner was blocked the whole time.
+
+**Why:** `on_agent_stop` latched `watch.stopped` on an agent's first `SubagentStop` and returned before `machine.apply` on every later stop of that `agent_id`, while every `SubagentStart` still raised the count. Claude Code fires `SubagentStart`/`SubagentStop` again each time it wakes a background coordinator agent, so each wake left the count one too high. `on_idle` closes only when `subagents_running() == 0`, nothing rechecks after the Stop, and `stop_stalled` skips latched agents. The probe notes recorded one `SubagentStart` per agent and no test started an agent id twice.
+
+**Prevention:** per-agent dedupe state is per run: reset it when that agent starts again. A field transcript beats a probe note: when a chat sticks in `Ending`, replay the session's `subagents/*.jsonl` turn boundaries against the spool before reading code.
+
+**Fix:** the `SubagentStart` arm of `apply_event` (`bridge/driver.rs`) resets the agent's watch; regression test `a_subagent_started_again_after_its_stop_still_lets_the_chat_close` (`bridge/tests_rewake.rs`).
