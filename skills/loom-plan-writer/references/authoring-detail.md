@@ -23,6 +23,7 @@ Classic mistakes:
 
 - Each subagent MUST have EXCLUSIVE write access to its files — **two subagents writing one file = LOST WORK.** Include a file-ownership table in the stage description.
 - **File-exclusivity is necessary but NOT sufficient — check TYPE/import dependencies too.** If subagent A's file DEFINES a type/signature/API that subagent B's file imports, running them in parallel is a race even with disjoint WRITE sets (B compiles against a contract A hasn't written). Assign the shared type/signature/API to a FOUNDATION worker that finishes BEFORE the consumer subagents fan out; the main agent writes it only when it passes orchestration Rule 7's small-change test.
+- **Keep the worker chain parallel.** A worker that only needs a signature or type does not need the file that defines it: pin that interface in the dependant's brief and both start at once. Flag in the plan prose any worker expected to run past ~30 minutes (one such worker held a whole stage while its siblings finished) and any chain of 3 or more strictly sequential workers in one stage; split the long worker at a seam a brief can pin, or pin the interfaces so the later workers start without waiting.
 
 ### Briefs as files
 
