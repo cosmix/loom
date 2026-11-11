@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 use crate::git::worktree::find_repo_root_from_cwd;
 use crate::models::stage::Stage;
 use crate::verify::review::fingerprint::{self, ChangeFingerprint};
-use crate::verify::review::gate::harvest_hint;
+use crate::verify::review::gate::{self, harvest_hint};
 use crate::verify::review::report::single_line;
 use crate::verify::review::store::{self, OpenFinding, ReviewRound};
 use crate::verify::transitions::load_stage;
@@ -35,7 +35,8 @@ pub fn review_status(stage_id: String) -> Result<()> {
             if let Some(note) = note {
                 println!("Note: {}", single_line(&note));
             }
-            print_freshness(&rounds, &current)
+            print_freshness(&rounds, &current);
+            print_base_move_cover(&stage, &work_dir, &rounds, &current);
         }
         Err(error) => println!(
             "Current fingerprint: unavailable ({})",
@@ -128,6 +129,27 @@ fn print_open_findings(open: &[OpenFinding]) {
 fn print_freshness(rounds: &[ReviewRound], current: &ChangeFingerprint) {
     for line in freshness_report(rounds, current) {
         println!("{line}");
+    }
+}
+
+/// A note when the latest well-formed round matches no fingerprint but still
+/// covers the worktree because only the merge base moved under the reviewed
+/// changes, so the gate accepts it (`gate::round_covers`).
+fn print_base_move_cover(
+    stage: &Stage,
+    work_dir: &Path,
+    rounds: &[ReviewRound],
+    current: &ChangeFingerprint,
+) {
+    let Some(round) = rounds.iter().rev().find(|round| round.is_well_formed()) else {
+        return;
+    };
+    if !gate::covers_review(round, current) && gate::round_covers(stage, work_dir, round, current) {
+        println!(
+            "Round {} still covers the worktree: the merge base moved, and the stage's \
+             changes are the reviewed ones.",
+            round.round
+        );
     }
 }
 

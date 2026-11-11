@@ -4,6 +4,7 @@
 //! carried findings, and [`gate`] refuses completion until the review is
 //! current and every finding is closed.
 
+mod base_move;
 pub mod fingerprint;
 pub mod gate;
 mod observer;

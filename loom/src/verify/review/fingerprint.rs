@@ -20,7 +20,7 @@ use crate::verify::tool_artifacts::is_tool_artifact;
 
 pub(crate) use super::observer::{checkout_git, local_git};
 
-const MAX_REVIEW_FILE_BYTES: usize = 10 * 1024 * 1024;
+pub(super) const MAX_REVIEW_FILE_BYTES: usize = 10 * 1024 * 1024;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ChangeFingerprint {
@@ -44,19 +44,8 @@ pub fn fingerprint_from(base: &str, entries: &[(String, Option<Vec<u8>>)]) -> Ch
         })
         .collect();
 
-    let mut hasher = Sha256::new();
-    hasher.update(b"base:");
-    hasher.update(base.as_bytes());
-    hasher.update(b"\n");
-    for (path, digest) in &files {
-        hasher.update(path.as_bytes());
-        hasher.update(b"\t");
-        hasher.update(digest.as_bytes());
-        hasher.update(b"\n");
-    }
-
     ChangeFingerprint {
-        value: format!("sha256:{}", hex::encode(hasher.finalize())),
+        value: fingerprint_value(base, &files),
         base: base.to_string(),
         files,
         behaviour: entries
@@ -67,6 +56,21 @@ pub fn fingerprint_from(base: &str, entries: &[(String, Option<Vec<u8>>)]) -> Ch
             })
             .collect(),
     }
+}
+
+/// The fingerprint value of `base` and the per-path `files` digests.
+pub(super) fn fingerprint_value(base: &str, files: &BTreeMap<String, String>) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(b"base:");
+    hasher.update(base.as_bytes());
+    hasher.update(b"\n");
+    for (path, digest) in files {
+        hasher.update(path.as_bytes());
+        hasher.update(b"\t");
+        hasher.update(digest.as_bytes());
+        hasher.update(b"\n");
+    }
+    format!("sha256:{}", hex::encode(hasher.finalize()))
 }
 
 /// The fingerprint of `worktree` against `git merge-base HEAD
@@ -178,7 +182,7 @@ pub(crate) fn changes_since_merge_base(
 }
 
 /// The NUL-separated paths git listed, each required to be UTF-8.
-fn nul_paths(listed: &[u8]) -> Result<BTreeSet<String>> {
+pub(super) fn nul_paths(listed: &[u8]) -> Result<BTreeSet<String>> {
     listed
         .split(|byte| *byte == 0)
         .filter(|path| !path.is_empty())
