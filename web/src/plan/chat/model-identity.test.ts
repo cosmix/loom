@@ -47,6 +47,7 @@ const user = (fields: Partial<UserItem> = {}): UserItem => ({
   attachments: [],
   delivery: "sent",
   origin: null,
+  command: null,
   ...fields,
 });
 

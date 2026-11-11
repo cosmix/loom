@@ -119,6 +119,27 @@ describe("chat wire boundaries", () => {
     expect(sessionViewSchema.safeParse(missingHolder).success).toBe(false);
   });
 
+  it("requires the command key on a user item and accepts a populated one", () => {
+    const user = {
+      type: "user",
+      id: "u1",
+      text: "/loom-plan:args x",
+      attachments: [],
+      delivery: "delivered",
+      origin: null,
+      command: null,
+    };
+    const command = { name: "loom-plan:args", args: "x" };
+    const { command: _command, ...missing } = user;
+
+    expect(itemSchema.parse({ ...user, command })).toEqual({ ...user, command });
+    expect(itemSchema.safeParse(missing).success).toBe(false);
+    expect(itemSchema.safeParse({ ...user, command: { name: "a" } }).success).toBe(false);
+    expect(itemSchema.safeParse({ ...user, command: { ...command, extra: 1 } }).success).toBe(
+      false,
+    );
+  });
+
   it("accepts an empty snapshot with no current or previous session", () => {
     const empty = { session: null, turns: [], queue: [], previous: null };
 

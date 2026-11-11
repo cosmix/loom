@@ -3,6 +3,7 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::path::PathBuf;
+use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
 
 use chrono::{DateTime, SecondsFormat, Utc};
@@ -14,6 +15,7 @@ use super::host::LaunchSpec;
 use super::registry::SessionRecord;
 use super::{team::TeamTracker, EndMode, EndOutcome, RecoveryReport};
 use crate::plan_session::attachments::Attachment;
+use crate::plan_session::commands::{CommandCell, CommandClass, CommandTable};
 use crate::plan_session::kind::{SessionDir, SessionKind};
 use crate::plan_session::model::{
     ChangedFile, Delivery, DenyReason, EndedChat, Failure, FetchView, Item, Origin, SessionState,
@@ -122,7 +124,36 @@ pub(super) struct Delivering {
     pub(super) closing: bool,
     /// `Some(n)`: the opening, Enter pressed again `n` times. Its failed paste fails the session.
     pub(super) opening: Option<u8>,
-    pub(super) compact: bool,
+    /// A message the user sent starting with `/`: the command it names.
+    pub(super) slash: Option<Slash>,
+    /// A local command (`/context`, `/compact`, a name Claude Code does not know, a fork skill
+    /// once it launched): it holds the delivering slot until it settles.
+    pub(super) local: Option<LocalSettle>,
+}
+
+/// The command a slash message names, classed by the session's table when it was taken for
+/// delivery.
+pub(super) struct Slash {
+    /// The canonical name (an alias resolved), without the slash.
+    pub(super) name: String,
+    /// The name as typed.
+    pub(super) typed: String,
+    /// The arguments, trimmed.
+    pub(super) args: String,
+    pub(super) class: CommandClass,
+}
+
+/// A local delivery on its way to settling: `COMPACT_SETTLE` after its last command or output
+/// record, or at once on newer main-turn evidence.
+pub(super) struct LocalSettle {
+    /// The delivery's sent item.
+    pub(super) delivery_id: String,
+    /// Its confirming record arrived.
+    pub(super) confirmed_at: Option<Instant>,
+    /// Its last command or output record; a `/compact` counts from its boundary on.
+    pub(super) last_record: Option<Instant>,
+    /// Its own `UserPromptSubmit` set busy (a fork skill): the settle is an idle.
+    pub(super) busy: bool,
 }
 
 pub(super) struct Request {
@@ -164,8 +195,11 @@ pub(super) struct Flow {
     pub(super) opening: Option<Opening>,
     pub(super) queue: VecDeque<Queued>,
     pub(super) delivering: Option<Delivering>,
-    /// `(item ids, match text, closing)` of deliveries that timed out, latest last.
-    pub(super) undelivered: Vec<(Vec<String>, String, bool)>,
+    /// Deliveries that timed out, latest last.
+    pub(super) undelivered: Vec<Delivering>,
+    /// Slash deliveries their `UserPromptSubmit` confirmed, waiting for their command record
+    /// (the chip, or a fork skill's launch), oldest first.
+    pub(super) awaiting_record: Vec<Delivering>,
     /// After a delivery timeout the queue waits for the next Stop or idle prompt.
     pub(super) paused: bool,
     /// After an Escape the queue waits for the interrupt's idle, at most until this instant.
@@ -189,8 +223,6 @@ pub(super) struct Flow {
     pub(super) recovered: Option<HashMap<String, Answer>>,
     /// The background table changed since its last `Background` event (one per driver tick).
     pub(super) background_changed: bool,
-    /// A delivered `/compact` waiting for its idle; the instant its boundary record arrived.
-    pub(super) compact: Option<Option<Instant>>,
     /// The holder allowed this session's fetches from a card; never set by the session, never
     /// carried into another one (a recovered session starts without it).
     pub(super) fetch_grant: bool,
@@ -217,6 +249,11 @@ pub(super) struct Session {
     pub(super) team: Option<TeamTracker>,
     /// The session's background agents and shells.
     pub(super) background: BackgroundTasks,
+    /// The session's command table, swapped whole by the catalogue owner. Lock order: the
+    /// bridge's lock, then this one; never the other way round.
+    pub(super) command_cell: CommandCell,
+    /// What the session was launched with, kept from the launch on.
+    pub(super) spec: Option<Box<LaunchSpec>>,
     pub(super) next_identity: Instant,
     pub(super) flow: Flow,
 }
@@ -246,6 +283,8 @@ impl Session {
             token_paths: Vec::new(),
             team: None,
             background: BackgroundTasks::default(),
+            command_cell: Arc::new(RwLock::new(Arc::new(CommandTable::loading()))),
+            spec: None,
             next_identity: Instant::now(),
             flow: Flow::default(),
             record,

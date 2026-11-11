@@ -5,15 +5,15 @@
 use std::time::Instant;
 
 use super::commands::Step;
-use super::session::{Closing, Delivering, Phase, Session};
+use super::session::{Closing, Delivering, Phase, Queued, Session, Slash};
 use super::{Bridge, BridgeConfig, EndMode};
 use crate::plan_session::attachments::{parse_message, parse_unwrapped, Attachment};
 use crate::plan_session::input::{check_delivered, match_key, sanitize};
 use crate::plan_session::model::{
-    Activity, Delivery, FailureKind, Item, NoticeKind, Origin, SessionState,
+    Activity, CommandRef, Delivery, FailureKind, Item, NoticeKind, Origin, SessionState,
 };
 use crate::plan_session::state::Input;
-use crate::plan_session::transcript::BACKGROUND_TAGS;
+use crate::plan_session::transcript::{cap_chars, BACKGROUND_TAGS, LINE_CHARS};
 
 /// Deliveries that timed out and may still be confirmed late.
 const UNDELIVERED_KEPT: usize = 8;
@@ -117,12 +117,32 @@ impl Session {
             return Some(delivering);
         }
         let skip = std::mem::take(&mut self.flow.skip_delivery);
-        if skip || self.flow.paused || self.flow.quiet_until.is_some() {
+        let waits = self.flow.paused || self.flow.quiet_until.is_some();
+        if skip || waits || self.flow.queue.is_empty() {
             return None;
         }
-        let queued = self.flow.queue.pop_front()?;
+        let taken = self.next_queued(step);
         self.publish_queue(step);
-        Some(self.delivery(queued.text, queued.attachments, None, step))
+        let (queued, slash) = taken?;
+        let delivering = self.delivery(queued.text, queued.attachments, None, step);
+        Some(delivering.with_slash(slash))
+    }
+
+    /// The queue head the session's table lets through now, with the command it names. A slash
+    /// item the table refuses now is dropped, never pasted, with a notice naming it, and the
+    /// next item is eligible at once (B-D2, "Checked again at delivery").
+    fn next_queued(&mut self, step: &mut Step) -> Option<(Queued, Option<Slash>)> {
+        while let Some(queued) = self.flow.queue.pop_front() {
+            match self.slash_of(&queued.user_text) {
+                Some(Err(reason)) => {
+                    let line = queued.user_text.lines().next().unwrap_or_default();
+                    let text = format!("Not sent ({reason}): {}", cap_chars(line, LINE_CHARS));
+                    self.notice(NoticeKind::Info, &text, step);
+                }
+                slash => return Some((queued, slash.and_then(Result::ok))),
+            }
+        }
+        None
     }
 
     /// The closing message, sanitised and bounded like every paste. One that cannot be sent is
@@ -176,6 +196,7 @@ impl Session {
             attachments,
             delivery: Delivery::Sent,
             origin,
+            command: None,
         };
         let deltas = self.mapper.add_server_item(item);
         self.emit(deltas, step);
@@ -185,7 +206,6 @@ impl Session {
     /// The delivery of the pasted `text`, whose sent items are `item_ids`.
     pub(super) fn delivering(&self, item_ids: Vec<String>, text: String) -> Delivering {
         let match_text = match_key(&parse_unwrapped(&text).0);
-        let compact = match_text.split_whitespace().next() == Some("/compact");
         Delivering {
             item_ids,
             text,
@@ -193,7 +213,8 @@ impl Session {
             sent_at: None,
             closing: false,
             opening: None,
-            compact,
+            slash: None,
+            local: None,
         }
     }
 
@@ -202,9 +223,13 @@ impl Session {
     fn pasted(&mut self, pasted: Result<(), String>, step: &mut Step) -> Option<String> {
         match pasted {
             Ok(()) => {
-                if self.flow.delivering.as_ref().is_some_and(|d| d.compact) {
+                if self
+                    .flow
+                    .delivering
+                    .as_ref()
+                    .is_some_and(Delivering::is_compact)
+                {
                     self.machine.apply(Input::CompactDelivered);
-                    self.flow.compact = Some(None);
                 }
                 None
             }
@@ -235,8 +260,7 @@ impl Session {
         }
         if let Some(late) = self.flow.delivering.take() {
             self.set_delivery(&late.item_ids, Delivery::Undelivered, step);
-            let undelivered = (late.item_ids, late.match_text, late.closing);
-            self.flow.undelivered.push(undelivered);
+            self.flow.undelivered.push(late);
             if self.flow.undelivered.len() > UNDELIVERED_KEPT {
                 self.flow.undelivered.remove(0);
             }
@@ -247,62 +271,59 @@ impl Session {
     /// A `UserPromptSubmit`: the pasted message arrived, or a late one (matched by its text).
     /// A background task's prompt confirms only a message with its text (one the user wrote
     /// starting with the same tag): Claude Code can start that turn between the bridge's idle
-    /// and the paste, and the pasted message then waits behind it unsubmitted.
+    /// and the paste, and the pasted message then waits behind it unsubmitted. A local command
+    /// fires no prompt, so none confirms it; any prompt but its own settles one that runs.
     pub(super) fn confirm_prompt(&mut self, prompt: Option<&str>, step: &mut Step) {
         let text = prompt.map(|prompt| match_key(&parse_message(prompt).0));
+        if self.own_local_prompt(text.as_deref()) {
+            return;
+        }
+        self.settle_now();
         let background = prompt.is_some_and(background_prompt);
         let ours = |d: &Delivering| {
-            d.sent_at.is_some() && (!background || text.as_deref() == Some(&d.match_text))
+            let typed = !background || text.as_deref() == Some(&d.match_text);
+            d.sent_at.is_some() && d.local.is_none() && typed
         };
         if self.flow.delivering.as_ref().is_some_and(ours) {
             if let Some(done) = self.flow.delivering.take() {
                 self.delivered(&done.item_ids, done.closing, step);
+                self.await_record(done);
             }
         } else if let Some(text) = text {
-            self.late_confirm(&text, step);
+            self.late_confirm(&text, true, step);
         }
     }
 
-    /// A `compact_boundary` record or `SessionStart { compact }` confirms a pasted `/compact`.
-    pub(super) fn confirm_compact(&mut self, step: &mut Step) {
-        if self
-            .flow
-            .delivering
-            .as_ref()
-            .is_some_and(|d| d.compact && d.sent_at.is_some())
-        {
-            if let Some(done) = self.flow.delivering.take() {
-                self.delivered(&done.item_ids, done.closing, step);
-            }
-        }
-    }
-
-    /// The transcript's user record of a delivery (the mapper already replaced its item).
+    /// The transcript's user record of a delivery (the mapper already replaced its item). A
+    /// slash delivery is left to its prompt and command records: a record body is no typed line.
     pub(super) fn confirm_text(&mut self, text: &str, step: &mut Step) {
-        let ours = |d: &Delivering| d.sent_at.is_some() && d.match_text == text;
+        let ours =
+            |d: &Delivering| d.sent_at.is_some() && d.slash.is_none() && d.match_text == text;
         if self.flow.delivering.as_ref().is_some_and(ours) {
             if let Some(done) = self.flow.delivering.take() {
                 self.delivered(&done.item_ids, done.closing, step);
             }
         } else {
-            self.late_confirm(text, step);
+            self.late_confirm(text, false, step);
         }
     }
 
-    /// A timed-out delivery confirmed after all; a late closing message still closes.
-    fn late_confirm(&mut self, text: &str, step: &mut Step) {
-        let found = self
-            .flow
-            .undelivered
-            .iter()
-            .rposition(|(_, waiting, _)| waiting == text);
+    /// A timed-out delivery confirmed after all by its text (a slash one only by its `prompt`,
+    /// a local one never); a late closing message still closes.
+    fn late_confirm(&mut self, text: &str, prompt: bool, step: &mut Step) {
+        let waiting = |d: &Delivering| {
+            let by_text = prompt || d.slash.is_none();
+            d.match_text == text && d.local.is_none() && by_text
+        };
+        let found = self.flow.undelivered.iter().rposition(waiting);
         if let Some(at) = found {
-            let (item_ids, _, closing) = self.flow.undelivered.remove(at);
-            self.delivered(&item_ids, closing, step);
+            let late = self.flow.undelivered.remove(at);
+            self.delivered(&late.item_ids, late.closing, step);
+            self.await_record(late);
         }
     }
 
-    fn delivered(&mut self, item_ids: &[String], closing: bool, step: &mut Step) {
+    pub(super) fn delivered(&mut self, item_ids: &[String], closing: bool, step: &mut Step) {
         self.set_delivery(item_ids, Delivery::Delivered, step);
         if let Some(plan) = self.flow.end.as_mut().filter(|_| closing) {
             plan.closing = Closing::Confirmed;
@@ -316,11 +337,17 @@ impl Session {
         step: &mut Step,
     ) {
         for item_id in item_ids {
-            self.set_item_delivery(item_id, delivery, step);
+            self.update_user(item_id, step, |shown, _| *shown = delivery);
         }
     }
 
-    fn set_item_delivery(&mut self, item_id: &str, delivery: Delivery, step: &mut Step) {
+    /// Change the delivery or the command of user item `item_id` and publish it.
+    pub(super) fn update_user(
+        &mut self,
+        item_id: &str,
+        step: &mut Step,
+        change: impl FnOnce(&mut Delivery, &mut Option<CommandRef>),
+    ) {
         let found = self
             .mapper
             .turns()
@@ -328,21 +355,13 @@ impl Session {
             .flat_map(|turn| &turn.items)
             .find(|item| matches!(item, Item::User { id, .. } if id == item_id))
             .cloned();
-        if let Some(Item::User {
-            id,
-            text,
-            attachments,
-            origin,
-            ..
-        }) = found
-        {
-            let item = Item::User {
-                id,
-                text,
-                attachments,
-                delivery,
-                origin,
-            };
+        if let Some(mut item) = found {
+            if let Item::User {
+                delivery, command, ..
+            } = &mut item
+            {
+                change(delivery, command);
+            }
             let deltas = self.mapper.replace_server_item(item);
             self.emit(deltas, step);
         }

@@ -19,6 +19,7 @@ fn sent(id: &str, text: &str, origin: Option<Origin>) -> Item {
         attachments: Vec::new(),
         delivery: Delivery::Sent,
         origin,
+        command: None,
     }
 }
 
@@ -112,6 +113,7 @@ fn a_sent_item_the_hook_confirmed_is_still_replaced_by_its_record() {
         attachments: Vec::new(),
         delivery: Delivery::Delivered,
         origin: None,
+        command: None,
     };
     mapper.replace_server_item(confirmed);
 

@@ -1,0 +1,1298 @@
+{
+  "cases": [
+    {
+      "expect": "Changes the session outside the planner",
+      "table": "ready",
+      "text": "/clear"
+    },
+    {
+      "expect": "Opens a terminal dialog",
+      "table": "loading",
+      "text": "/model"
+    },
+    {
+      "expect": "Opens a terminal dialog",
+      "table": "loading",
+      "text": "/model opus"
+    },
+    {
+      "expect": "Opens a terminal dialog",
+      "table": "unavailable",
+      "text": "/model opus"
+    },
+    {
+      "expect": "Saves your default for new sessions",
+      "table": "ready",
+      "text": "/effort high"
+    },
+    {
+      "expect": "Opens a terminal dialog",
+      "table": "ready",
+      "text": "/usage"
+    },
+    {
+      "expect": "Opens a terminal dialog",
+      "table": "ready",
+      "text": "/cost"
+    },
+    {
+      "expect": "ok",
+      "table": "ready",
+      "text": "/context"
+    },
+    {
+      "expect": "ok",
+      "table": "ready",
+      "text": "/compact"
+    },
+    {
+      "expect": "ok",
+      "table": "loading",
+      "text": "/compact keep the plan"
+    },
+    {
+      "expect": "Not in this session's command list",
+      "table": "ready",
+      "text": "/compactx"
+    },
+    {
+      "expect": "ok",
+      "table": "ready",
+      "text": "/loom-plan:args x"
+    },
+    {
+      "expect": "ok",
+      "table": "ready",
+      "text": "/args x"
+    },
+    {
+      "expect": "ok",
+      "table": "ready",
+      "text": "/simplify"
+    },
+    {
+      "expect": "Not in this session's command list",
+      "table": "ready",
+      "text": "/nonesuch"
+    },
+    {
+      "expect": "Changes the session outside the planner",
+      "table": "ready",
+      "text": "\u0001/clear"
+    },
+    {
+      "expect": "Changes the session outside the planner",
+      "table": "loading",
+      "text": "﻿/exit"
+    },
+    {
+      "expect": "Changes the session outside the planner",
+      "table": "ready",
+      "text": "/clear"
+    },
+    {
+      "expect": "Changes the session outside the planner",
+      "table": "ready",
+      "text": "  /clear"
+    },
+    {
+      "expect": "Commands are still loading",
+      "table": "loading",
+      "text": "/simplify"
+    },
+    {
+      "expect": "This session's command list is unavailable",
+      "table": "unavailable",
+      "text": "/simplify"
+    },
+    {
+      "expect": "Commands are still loading",
+      "table": "loading",
+      "text": "/loom-plan:args x"
+    },
+    {
+      "expect": "ok",
+      "table": "unavailable",
+      "text": "/compact"
+    },
+    {
+      "expect": "ok",
+      "table": "ready",
+      "text": "plain text"
+    },
+    {
+      "expect": "ok",
+      "table": "loading",
+      "text": "plain text"
+    },
+    {
+      "expect": "ok",
+      "table": "unavailable",
+      "text": "plain text"
+    },
+    {
+      "expect": "ok",
+      "table": "ready",
+      "text": "a /clear in the middle"
+    },
+    {
+      "expect": "Send a command alone, on one line",
+      "table": "ready",
+      "text": "/simplify a\nb"
+    },
+    {
+      "expect": "ok",
+      "table": "ready",
+      "text": "line one\n/clear"
+    },
+    {
+      "expect": "ok",
+      "table": "ready",
+      "text": "/simplify xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+    },
+    {
+      "expect": "Too long for a command",
+      "table": "ready",
+      "text": "/simplify xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+    }
+  ],
+  "tables": {
+    "loading": {
+      "entries": [
+        {
+          "aliases": [],
+          "argument_hint": "[fable|opus|sonnet|off]",
+          "class": "terminal-only",
+          "description": "Let Claude consult a stronger model at key moments",
+          "name": "advisor",
+          "reason": "Not verified in the planner",
+          "source": "built-in"
+        },
+        {
+          "aliases": [],
+          "argument_hint": "",
+          "class": "terminal-only",
+          "description": "(removed) Ask Claude to create/manage subagents, or edit .claude/agents/",
+          "name": "agents",
+          "reason": "Opens a terminal dialog",
+          "source": "built-in"
+        },
+        {
+          "aliases": [],
+          "argument_hint": "[--request-id <uuid>] (--wizard posture=… scope=… depth=… --propose | --expect-sha256 <64-hex> --apply-file <path>)",
+          "class": "terminal-only",
+          "description": "Teach auto mode about your environment, plus optional rule tweaks",
+          "name": "auto-mode-setup",
+          "reason": "Not verified in the planner",
+          "source": "built-in"
+        },
+        {
+          "aliases": [],
+          "argument_hint": "[auto|<tokens>]",
+          "class": "terminal-only",
+          "description": "Configure the auto-compact window size",
+          "name": "autocompact",
+          "reason": "Not verified in the planner",
+          "source": "built-in"
+        },
+        {
+          "aliases": ["reset", "new"],
+          "argument_hint": "[name]",
+          "class": "terminal-only",
+          "description": "Start a new session with empty context; previous session stays on disk (resumable with /resume)",
+          "name": "clear",
+          "reason": "Changes the session outside the planner",
+          "source": "built-in"
+        },
+        {
+          "aliases": [],
+          "argument_hint": "[red|blue|green|yellow|purple|orange|pink|cyan|default]",
+          "class": "terminal-only",
+          "description": "Set the prompt bar color for this session",
+          "name": "color",
+          "reason": "Not verified in the planner",
+          "source": "built-in"
+        },
+        {
+          "aliases": [],
+          "argument_hint": "<optional custom summarization instructions>",
+          "class": "run-with-handling",
+          "description": "Free up context by summarizing the conversation so far",
+          "name": "compact",
+          "reason": null,
+          "source": "built-in"
+        },
+        {
+          "aliases": ["settings"],
+          "argument_hint": "key=value",
+          "class": "terminal-only",
+          "description": "Set a setting by key",
+          "name": "config",
+          "reason": "Opens a terminal dialog",
+          "source": "built-in"
+        },
+        {
+          "aliases": [],
+          "argument_hint": "[style]",
+          "class": "terminal-only",
+          "description": "List output styles or switch to one",
+          "name": "output-style",
+          "reason": "Not verified in the planner",
+          "source": "built-in"
+        },
+        {
+          "aliases": [],
+          "argument_hint": "",
+          "class": "run-with-handling",
+          "description": "Show current context usage",
+          "name": "context",
+          "reason": null,
+          "source": "built-in"
+        },
+        {
+          "aliases": [],
+          "argument_hint": "<low|medium|high|xhigh|max|auto|ultracode [on|off]>",
+          "class": "terminal-only",
+          "description": "Set effort level for model usage",
+          "name": "effort",
+          "reason": "Saves your default for new sessions",
+          "source": "built-in"
+        },
+        {
+          "aliases": [],
+          "argument_hint": "[on|off]",
+          "class": "terminal-only",
+          "description": "Toggle fast mode (Opus 5.5)",
+          "name": "fast",
+          "reason": "Not verified in the planner",
+          "source": "built-in"
+        },
+        {
+          "aliases": [],
+          "argument_hint": "[on|off]",
+          "class": "terminal-only",
+          "description": "Toggle focus view: just your prompt, summary, and response",
+          "name": "focus",
+          "reason": "Not verified in the planner",
+          "source": "built-in"
+        },
+        {
+          "aliases": [],
+          "argument_hint": "",
+          "class": "terminal-only",
+          "description": "Dump the JS heap to the Desktop; on Linux with no Desktop folder, the home directory",
+          "name": "heapdump",
+          "reason": "Not verified in the planner",
+          "source": "built-in"
+        },
+        {
+          "aliases": [],
+          "argument_hint": "",
+          "class": "terminal-only",
+          "description": "Initialize a new CLAUDE.md file with codebase documentation",
+          "name": "init",
+          "reason": "Not verified in the planner",
+          "source": "built-in"
+        },
+        {
+          "aliases": [],
+          "argument_hint": "[reconnect|enable|disable [<server>|all]]",
+          "class": "terminal-only",
+          "description": "Manage MCP servers",
+          "name": "mcp",
+          "reason": "Opens a terminal dialog",
+          "source": "built-in"
+        },
+        {
+          "aliases": [],
+          "argument_hint": "",
+          "class": "terminal-only",
+          "description": "Import config from another AI coding agent",
+          "name": "import",
+          "reason": "Not verified in the planner",
+          "source": "built-in"
+        },
+        {
+          "aliases": [],
+          "argument_hint": "<model>",
+          "class": "terminal-only",
+          "description": "Set the AI model for Claude Code",
+          "name": "model",
+          "reason": "Opens a terminal dialog",
+          "source": "built-in"
+        },
+        {
+          "aliases": [],
+          "argument_hint": "",
+          "class": "terminal-only",
+          "description": "Run the workflow script delivered in this session environment (server-launched sessions only)",
+          "name": "__remote-workflow",
+          "reason": "Not verified in the planner",
+          "source": "built-in"
+        },
+        {
+          "aliases": [],
+          "argument_hint": "",
+          "class": "terminal-only",
+          "description": "Execute a server-launched workflow handoff (workflow_launch event sessions only)",
+          "name": "workflow-launch-exec",
+          "reason": "Not verified in the planner",
+          "source": "built-in"
+        },
+        {
+          "aliases": [],
+          "argument_hint": "[--force]",
+          "class": "terminal-only",
+          "description": "Activate pending plugin changes in the current session",
+          "name": "reload-plugins",
+          "reason": "Not verified in the planner",
+          "source": "built-in"
+        },
+        {
+          "aliases": [],
+          "argument_hint": "",
+          "class": "terminal-only",
+          "description": "Pick up skills added or changed on disk during this session",
+          "name": "reload-skills",
+          "reason": "Not verified in the planner",
+          "source": "built-in"
+        },
+        {
+          "aliases": ["name"],
+          "argument_hint": "[name]",
+          "class": "terminal-only",
+          "description": "Rename the current conversation",
+          "name": "rename",
+          "reason": "Changes the session outside the planner",
+          "source": "built-in"
+        },
+        {
+          "aliases": [],
+          "argument_hint": "",
+          "class": "terminal-only",
+          "description": "Start a cloud agent that finds and verifies bugs in your branch (~5-15 min, $5-$25 USD) · Runs in a cloud session. See https://code.claude.com/docs/en/claude-code-on-the-web",
+          "name": "ultrareview",
+          "reason": "Not verified in the planner",
+          "source": "built-in"
+        },
+        {
+          "aliases": [],
+          "argument_hint": "",
+          "class": "terminal-only",
+          "description": "Complete a security review of the pending changes on the current branch",
+          "name": "security-review",
+          "reason": "Not verified in the planner",
+          "source": "built-in"
+        },
+        {
+          "aliases": [],
+          "argument_hint": "",
+          "class": "terminal-only",
+          "description": "Configure usage credits or request them from your admin when you hit a limit",
+          "name": "usage-credits",
+          "reason": "Not verified in the planner",
+          "source": "built-in"
+        },
+        {
+          "aliases": [],
+          "argument_hint": "",
+          "class": "terminal-only",
+          "description": "Renamed to /usage-credits",
+          "name": "extra-usage",
+          "reason": "Not verified in the planner",
+          "source": "built-in"
+        },
+        {
+          "aliases": ["cost", "stats"],
+          "argument_hint": "",
+          "class": "terminal-only",
+          "description": "Show session cost, plan usage, and what's contributing to your limits",
+          "name": "usage",
+          "reason": "Opens a terminal dialog",
+          "source": "built-in"
+        },
+        {
+          "aliases": [],
+          "argument_hint": "",
+          "class": "terminal-only",
+          "description": "Generate a report analyzing your Claude Code sessions",
+          "name": "insights",
+          "reason": "Not verified in the planner",
+          "source": "built-in"
+        },
+        {
+          "aliases": [],
+          "argument_hint": "",
+          "class": "terminal-only",
+          "description": "Generate a one-line session recap now",
+          "name": "recap",
+          "reason": "Not verified in the planner",
+          "source": "built-in"
+        },
+        {
+          "aliases": [],
+          "argument_hint": "",
+          "class": "terminal-only",
+          "description": "Show which loaded skills are unused and costing context",
+          "name": "skill-doctor",
+          "reason": "Not verified in the planner",
+          "source": "built-in"
+        },
+        {
+          "aliases": [],
+          "argument_hint": "",
+          "class": "terminal-only",
+          "description": "Set a goal — keep working until the condition is met",
+          "name": "goal",
+          "reason": "Not verified in the planner",
+          "source": "built-in"
+        },
+        {
+          "aliases": [],
+          "argument_hint": "",
+          "class": "terminal-only",
+          "description": "Grant Claude agent access to your Design projects",
+          "name": "design-consent",
+          "reason": "Not verified in the planner",
+          "source": "built-in"
+        },
+        {
+          "aliases": [],
+          "argument_hint": "",
+          "class": "terminal-only",
+          "description": "Revoke Claude agent access to your Design projects",
+          "name": "design-revoke",
+          "reason": "Not verified in the planner",
+          "source": "built-in"
+        },
+        {
+          "aliases": ["peers"],
+          "argument_hint": "",
+          "class": "terminal-only",
+          "description": "List subagents, teammates, and other Claude sessions you can message",
+          "name": "list-agents",
+          "reason": "Not verified in the planner",
+          "source": "built-in"
+        },
+        {
+          "aliases": [],
+          "argument_hint": "",
+          "class": "terminal-only",
+          "description": "Help teammates ramp on Claude Code with a guide from your usage",
+          "name": "team-onboarding",
+          "reason": "Not verified in the planner",
+          "source": "built-in"
+        },
+        {
+          "aliases": [],
+          "argument_hint": "",
+          "class": "terminal-only",
+          "description": "Show help and the available commands",
+          "name": "help",
+          "reason": "Opens a terminal dialog",
+          "source": "built-in"
+        },
+        {
+          "aliases": [],
+          "argument_hint": "",
+          "class": "terminal-only",
+          "description": "Show the session status",
+          "name": "status",
+          "reason": "Opens a terminal dialog",
+          "source": "built-in"
+        },
+        {
+          "aliases": [],
+          "argument_hint": "",
+          "class": "terminal-only",
+          "description": "Manage hooks",
+          "name": "hooks",
+          "reason": "Opens a terminal dialog",
+          "source": "built-in"
+        },
+        {
+          "aliases": [],
+          "argument_hint": "",
+          "class": "terminal-only",
+          "description": "Change the terminal color theme",
+          "name": "theme",
+          "reason": "Opens a terminal dialog",
+          "source": "built-in"
+        },
+        {
+          "aliases": [],
+          "argument_hint": "",
+          "class": "terminal-only",
+          "description": "Sign in to your account",
+          "name": "login",
+          "reason": "Changes the session outside the planner",
+          "source": "built-in"
+        },
+        {
+          "aliases": [],
+          "argument_hint": "",
+          "class": "terminal-only",
+          "description": "Sign out of your account",
+          "name": "logout",
+          "reason": "Changes the session outside the planner",
+          "source": "built-in"
+        },
+        {
+          "aliases": [],
+          "argument_hint": "",
+          "class": "terminal-only",
+          "description": "Resume an earlier conversation",
+          "name": "resume",
+          "reason": "Changes the session outside the planner",
+          "source": "built-in"
+        },
+        {
+          "aliases": [],
+          "argument_hint": "",
+          "class": "terminal-only",
+          "description": "Edit memory files",
+          "name": "memory",
+          "reason": "Opens a terminal dialog",
+          "source": "built-in"
+        },
+        {
+          "aliases": [],
+          "argument_hint": "",
+          "class": "terminal-only",
+          "description": "Manage the IDE integration",
+          "name": "ide",
+          "reason": "Opens a terminal dialog",
+          "source": "built-in"
+        },
+        {
+          "aliases": [],
+          "argument_hint": "",
+          "class": "terminal-only",
+          "description": "Change the session's working directory",
+          "name": "cd",
+          "reason": "Changes the session outside the planner",
+          "source": "built-in"
+        },
+        {
+          "aliases": [],
+          "argument_hint": "",
+          "class": "terminal-only",
+          "description": "Branch the conversation",
+          "name": "branch",
+          "reason": "Changes the session outside the planner",
+          "source": "built-in"
+        },
+        {
+          "aliases": [],
+          "argument_hint": "",
+          "class": "terminal-only",
+          "description": "Fork the conversation",
+          "name": "fork",
+          "reason": "Changes the session outside the planner",
+          "source": "built-in"
+        },
+        {
+          "aliases": [],
+          "argument_hint": "",
+          "class": "terminal-only",
+          "description": "Move the session to the background",
+          "name": "background",
+          "reason": "Changes the session outside the planner",
+          "source": "built-in"
+        },
+        {
+          "aliases": [],
+          "argument_hint": "",
+          "class": "terminal-only",
+          "description": "Add a working directory",
+          "name": "add-dir",
+          "reason": "Changes the session outside the planner",
+          "source": "built-in"
+        },
+        {
+          "aliases": [],
+          "argument_hint": "",
+          "class": "terminal-only",
+          "description": "Manage tool permission rules",
+          "name": "permissions",
+          "reason": "Opens a terminal dialog",
+          "source": "built-in"
+        },
+        {
+          "aliases": [],
+          "argument_hint": "",
+          "class": "terminal-only",
+          "description": "Manage plugins",
+          "name": "plugin",
+          "reason": "Opens a terminal dialog",
+          "source": "built-in"
+        },
+        {
+          "aliases": [],
+          "argument_hint": "",
+          "class": "terminal-only",
+          "description": "Exit the session",
+          "name": "exit",
+          "reason": "Changes the session outside the planner",
+          "source": "built-in"
+        },
+        {
+          "aliases": [],
+          "argument_hint": "",
+          "class": "terminal-only",
+          "description": "Rewind the conversation to an earlier point",
+          "name": "rewind",
+          "reason": "Changes the session outside the planner",
+          "source": "built-in"
+        },
+        {
+          "aliases": [],
+          "argument_hint": "",
+          "class": "terminal-only",
+          "description": "Restart the session",
+          "name": "restart",
+          "reason": "Changes the session outside the planner",
+          "source": "built-in"
+        },
+        {
+          "aliases": [],
+          "argument_hint": "",
+          "class": "terminal-only",
+          "description": "Connect this session for remote control",
+          "name": "remote-control",
+          "reason": "Not verified in the planner",
+          "source": "built-in"
+        },
+        {
+          "aliases": [],
+          "argument_hint": "",
+          "class": "terminal-only",
+          "description": "Set up the status line",
+          "name": "statusline",
+          "reason": "Not verified in the planner",
+          "source": "built-in"
+        }
+      ],
+      "generation": null,
+      "reason": null,
+      "state": "loading"
+    },
+    "ready": {
+      "entries": [
+        {
+          "aliases": [],
+          "argument_hint": "[<target>]",
+          "class": "run",
+          "description": "Review the changed code for reuse, simplification, efficiency, and altitude cleanups, then apply the fixes. Quality only — it does not hunt for bugs; use /code-review for that.",
+          "name": "simplify",
+          "reason": null,
+          "source": "bundled"
+        },
+        {
+          "aliases": ["args"],
+          "argument_hint": "",
+          "class": "run",
+          "description": "Echo the arguments back",
+          "name": "loom-plan:args",
+          "reason": null,
+          "source": "plugin"
+        },
+        {
+          "aliases": [],
+          "argument_hint": "",
+          "class": "run",
+          "description": "Probe skill probe-personal",
+          "name": "probe-personal",
+          "reason": null,
+          "source": "personal"
+        },
+        {
+          "aliases": ["<PLUGIN-2>:docs"],
+          "argument_hint": "",
+          "class": "run",
+          "description": "docs (editable docs people share and comment on; the default for any document, named as a doc or not: a document, report, proposal, resume, cover letter, letter, contract, policy, form, template, wor…",
+          "name": "docs",
+          "reason": null,
+          "source": "account"
+        },
+        {
+          "aliases": [],
+          "argument_hint": "",
+          "class": "run-with-handling",
+          "description": "Show current context usage",
+          "name": "context",
+          "reason": null,
+          "source": "built-in"
+        },
+        {
+          "aliases": [],
+          "argument_hint": "<optional custom summarization instructions>",
+          "class": "run-with-handling",
+          "description": "Free up context by summarizing the conversation so far",
+          "name": "compact",
+          "reason": null,
+          "source": "built-in"
+        },
+        {
+          "aliases": ["reset", "new"],
+          "argument_hint": "[name]",
+          "class": "terminal-only",
+          "description": "Start a new session with empty context; previous session stays on disk (resumable with /resume)",
+          "name": "clear",
+          "reason": "Changes the session outside the planner",
+          "source": "built-in"
+        },
+        {
+          "aliases": ["cost", "stats"],
+          "argument_hint": "",
+          "class": "terminal-only",
+          "description": "Show session cost, plan usage, and what's contributing to your limits",
+          "name": "usage",
+          "reason": "Opens a terminal dialog",
+          "source": "built-in"
+        },
+        {
+          "aliases": [],
+          "argument_hint": "<low|medium|high|xhigh|max|auto|ultracode [on|off]>",
+          "class": "terminal-only",
+          "description": "Set effort level for model usage",
+          "name": "effort",
+          "reason": "Saves your default for new sessions",
+          "source": "built-in"
+        },
+        {
+          "aliases": [],
+          "argument_hint": "",
+          "class": "terminal-only",
+          "description": "Show help and the available commands",
+          "name": "help",
+          "reason": "Opens a terminal dialog",
+          "source": "built-in"
+        }
+      ],
+      "generation": 1,
+      "reason": null,
+      "state": "ready"
+    },
+    "unavailable": {
+      "entries": [
+        {
+          "aliases": [],
+          "argument_hint": "[fable|opus|sonnet|off]",
+          "class": "terminal-only",
+          "description": "Let Claude consult a stronger model at key moments",
+          "name": "advisor",
+          "reason": "Not verified in the planner",
+          "source": "built-in"
+        },
+        {
+          "aliases": [],
+          "argument_hint": "",
+          "class": "terminal-only",
+          "description": "(removed) Ask Claude to create/manage subagents, or edit .claude/agents/",
+          "name": "agents",
+          "reason": "Opens a terminal dialog",
+          "source": "built-in"
+        },
+        {
+          "aliases": [],
+          "argument_hint": "[--request-id <uuid>] (--wizard posture=… scope=… depth=… --propose | --expect-sha256 <64-hex> --apply-file <path>)",
+          "class": "terminal-only",
+          "description": "Teach auto mode about your environment, plus optional rule tweaks",
+          "name": "auto-mode-setup",
+          "reason": "Not verified in the planner",
+          "source": "built-in"
+        },
+        {
+          "aliases": [],
+          "argument_hint": "[auto|<tokens>]",
+          "class": "terminal-only",
+          "description": "Configure the auto-compact window size",
+          "name": "autocompact",
+          "reason": "Not verified in the planner",
+          "source": "built-in"
+        },
+        {
+          "aliases": ["reset", "new"],
+          "argument_hint": "[name]",
+          "class": "terminal-only",
+          "description": "Start a new session with empty context; previous session stays on disk (resumable with /resume)",
+          "name": "clear",
+          "reason": "Changes the session outside the planner",
+          "source": "built-in"
+        },
+        {
+          "aliases": [],
+          "argument_hint": "[red|blue|green|yellow|purple|orange|pink|cyan|default]",
+          "class": "terminal-only",
+          "description": "Set the prompt bar color for this session",
+          "name": "color",
+          "reason": "Not verified in the planner",
+          "source": "built-in"
+        },
+        {
+          "aliases": [],
+          "argument_hint": "<optional custom summarization instructions>",
+          "class": "run-with-handling",
+          "description": "Free up context by summarizing the conversation so far",
+          "name": "compact",
+          "reason": null,
+          "source": "built-in"
+        },
+        {
+          "aliases": ["settings"],
+          "argument_hint": "key=value",
+          "class": "terminal-only",
+          "description": "Set a setting by key",
+          "name": "config",
+          "reason": "Opens a terminal dialog",
+          "source": "built-in"
+        },
+        {
+          "aliases": [],
+          "argument_hint": "[style]",
+          "class": "terminal-only",
+          "description": "List output styles or switch to one",
+          "name": "output-style",
+          "reason": "Not verified in the planner",
+          "source": "built-in"
+        },
+        {
+          "aliases": [],
+          "argument_hint": "",
+          "class": "run-with-handling",
+          "description": "Show current context usage",
+          "name": "context",
+          "reason": null,
+          "source": "built-in"
+        },
+        {
+          "aliases": [],
+          "argument_hint": "<low|medium|high|xhigh|max|auto|ultracode [on|off]>",
+          "class": "terminal-only",
+          "description": "Set effort level for model usage",
+          "name": "effort",
+          "reason": "Saves your default for new sessions",
+          "source": "built-in"
+        },
+        {
+          "aliases": [],
+          "argument_hint": "[on|off]",
+          "class": "terminal-only",
+          "description": "Toggle fast mode (Opus 5.5)",
+          "name": "fast",
+          "reason": "Not verified in the planner",
+          "source": "built-in"
+        },
+        {
+          "aliases": [],
+          "argument_hint": "[on|off]",
+          "class": "terminal-only",
+          "description": "Toggle focus view: just your prompt, summary, and response",
+          "name": "focus",
+          "reason": "Not verified in the planner",
+          "source": "built-in"
+        },
+        {
+          "aliases": [],
+          "argument_hint": "",
+          "class": "terminal-only",
+          "description": "Dump the JS heap to the Desktop; on Linux with no Desktop folder, the home directory",
+          "name": "heapdump",
+          "reason": "Not verified in the planner",
+          "source": "built-in"
+        },
+        {
+          "aliases": [],
+          "argument_hint": "",
+          "class": "terminal-only",
+          "description": "Initialize a new CLAUDE.md file with codebase documentation",
+          "name": "init",
+          "reason": "Not verified in the planner",
+          "source": "built-in"
+        },
+        {
+          "aliases": [],
+          "argument_hint": "[reconnect|enable|disable [<server>|all]]",
+          "class": "terminal-only",
+          "description": "Manage MCP servers",
+          "name": "mcp",
+          "reason": "Opens a terminal dialog",
+          "source": "built-in"
+        },
+        {
+          "aliases": [],
+          "argument_hint": "",
+          "class": "terminal-only",
+          "description": "Import config from another AI coding agent",
+          "name": "import",
+          "reason": "Not verified in the planner",
+          "source": "built-in"
+        },
+        {
+          "aliases": [],
+          "argument_hint": "<model>",
+          "class": "terminal-only",
+          "description": "Set the AI model for Claude Code",
+          "name": "model",
+          "reason": "Opens a terminal dialog",
+          "source": "built-in"
+        },
+        {
+          "aliases": [],
+          "argument_hint": "",
+          "class": "terminal-only",
+          "description": "Run the workflow script delivered in this session environment (server-launched sessions only)",
+          "name": "__remote-workflow",
+          "reason": "Not verified in the planner",
+          "source": "built-in"
+        },
+        {
+          "aliases": [],
+          "argument_hint": "",
+          "class": "terminal-only",
+          "description": "Execute a server-launched workflow handoff (workflow_launch event sessions only)",
+          "name": "workflow-launch-exec",
+          "reason": "Not verified in the planner",
+          "source": "built-in"
+        },
+        {
+          "aliases": [],
+          "argument_hint": "[--force]",
+          "class": "terminal-only",
+          "description": "Activate pending plugin changes in the current session",
+          "name": "reload-plugins",
+          "reason": "Not verified in the planner",
+          "source": "built-in"
+        },
+        {
+          "aliases": [],
+          "argument_hint": "",
+          "class": "terminal-only",
+          "description": "Pick up skills added or changed on disk during this session",
+          "name": "reload-skills",
+          "reason": "Not verified in the planner",
+          "source": "built-in"
+        },
+        {
+          "aliases": ["name"],
+          "argument_hint": "[name]",
+          "class": "terminal-only",
+          "description": "Rename the current conversation",
+          "name": "rename",
+          "reason": "Changes the session outside the planner",
+          "source": "built-in"
+        },
+        {
+          "aliases": [],
+          "argument_hint": "",
+          "class": "terminal-only",
+          "description": "Start a cloud agent that finds and verifies bugs in your branch (~5-15 min, $5-$25 USD) · Runs in a cloud session. See https://code.claude.com/docs/en/claude-code-on-the-web",
+          "name": "ultrareview",
+          "reason": "Not verified in the planner",
+          "source": "built-in"
+        },
+        {
+          "aliases": [],
+          "argument_hint": "",
+          "class": "terminal-only",
+          "description": "Complete a security review of the pending changes on the current branch",
+          "name": "security-review",
+          "reason": "Not verified in the planner",
+          "source": "built-in"
+        },
+        {
+          "aliases": [],
+          "argument_hint": "",
+          "class": "terminal-only",
+          "description": "Configure usage credits or request them from your admin when you hit a limit",
+          "name": "usage-credits",
+          "reason": "Not verified in the planner",
+          "source": "built-in"
+        },
+        {
+          "aliases": [],
+          "argument_hint": "",
+          "class": "terminal-only",
+          "description": "Renamed to /usage-credits",
+          "name": "extra-usage",
+          "reason": "Not verified in the planner",
+          "source": "built-in"
+        },
+        {
+          "aliases": ["cost", "stats"],
+          "argument_hint": "",
+          "class": "terminal-only",
+          "description": "Show session cost, plan usage, and what's contributing to your limits",
+          "name": "usage",
+          "reason": "Opens a terminal dialog",
+          "source": "built-in"
+        },
+        {
+          "aliases": [],
+          "argument_hint": "",
+          "class": "terminal-only",
+          "description": "Generate a report analyzing your Claude Code sessions",
+          "name": "insights",
+          "reason": "Not verified in the planner",
+          "source": "built-in"
+        },
+        {
+          "aliases": [],
+          "argument_hint": "",
+          "class": "terminal-only",
+          "description": "Generate a one-line session recap now",
+          "name": "recap",
+          "reason": "Not verified in the planner",
+          "source": "built-in"
+        },
+        {
+          "aliases": [],
+          "argument_hint": "",
+          "class": "terminal-only",
+          "description": "Show which loaded skills are unused and costing context",
+          "name": "skill-doctor",
+          "reason": "Not verified in the planner",
+          "source": "built-in"
+        },
+        {
+          "aliases": [],
+          "argument_hint": "",
+          "class": "terminal-only",
+          "description": "Set a goal — keep working until the condition is met",
+          "name": "goal",
+          "reason": "Not verified in the planner",
+          "source": "built-in"
+        },
+        {
+          "aliases": [],
+          "argument_hint": "",
+          "class": "terminal-only",
+          "description": "Grant Claude agent access to your Design projects",
+          "name": "design-consent",
+          "reason": "Not verified in the planner",
+          "source": "built-in"
+        },
+        {
+          "aliases": [],
+          "argument_hint": "",
+          "class": "terminal-only",
+          "description": "Revoke Claude agent access to your Design projects",
+          "name": "design-revoke",
+          "reason": "Not verified in the planner",
+          "source": "built-in"
+        },
+        {
+          "aliases": ["peers"],
+          "argument_hint": "",
+          "class": "terminal-only",
+          "description": "List subagents, teammates, and other Claude sessions you can message",
+          "name": "list-agents",
+          "reason": "Not verified in the planner",
+          "source": "built-in"
+        },
+        {
+          "aliases": [],
+          "argument_hint": "",
+          "class": "terminal-only",
+          "description": "Help teammates ramp on Claude Code with a guide from your usage",
+          "name": "team-onboarding",
+          "reason": "Not verified in the planner",
+          "source": "built-in"
+        },
+        {
+          "aliases": [],
+          "argument_hint": "",
+          "class": "terminal-only",
+          "description": "Show help and the available commands",
+          "name": "help",
+          "reason": "Opens a terminal dialog",
+          "source": "built-in"
+        },
+        {
+          "aliases": [],
+          "argument_hint": "",
+          "class": "terminal-only",
+          "description": "Show the session status",
+          "name": "status",
+          "reason": "Opens a terminal dialog",
+          "source": "built-in"
+        },
+        {
+          "aliases": [],
+          "argument_hint": "",
+          "class": "terminal-only",
+          "description": "Manage hooks",
+          "name": "hooks",
+          "reason": "Opens a terminal dialog",
+          "source": "built-in"
+        },
+        {
+          "aliases": [],
+          "argument_hint": "",
+          "class": "terminal-only",
+          "description": "Change the terminal color theme",
+          "name": "theme",
+          "reason": "Opens a terminal dialog",
+          "source": "built-in"
+        },
+        {
+          "aliases": [],
+          "argument_hint": "",
+          "class": "terminal-only",
+          "description": "Sign in to your account",
+          "name": "login",
+          "reason": "Changes the session outside the planner",
+          "source": "built-in"
+        },
+        {
+          "aliases": [],
+          "argument_hint": "",
+          "class": "terminal-only",
+          "description": "Sign out of your account",
+          "name": "logout",
+          "reason": "Changes the session outside the planner",
+          "source": "built-in"
+        },
+        {
+          "aliases": [],
+          "argument_hint": "",
+          "class": "terminal-only",
+          "description": "Resume an earlier conversation",
+          "name": "resume",
+          "reason": "Changes the session outside the planner",
+          "source": "built-in"
+        },
+        {
+          "aliases": [],
+          "argument_hint": "",
+          "class": "terminal-only",
+          "description": "Edit memory files",
+          "name": "memory",
+          "reason": "Opens a terminal dialog",
+          "source": "built-in"
+        },
+        {
+          "aliases": [],
+          "argument_hint": "",
+          "class": "terminal-only",
+          "description": "Manage the IDE integration",
+          "name": "ide",
+          "reason": "Opens a terminal dialog",
+          "source": "built-in"
+        },
+        {
+          "aliases": [],
+          "argument_hint": "",
+          "class": "terminal-only",
+          "description": "Change the session's working directory",
+          "name": "cd",
+          "reason": "Changes the session outside the planner",
+          "source": "built-in"
+        },
+        {
+          "aliases": [],
+          "argument_hint": "",
+          "class": "terminal-only",
+          "description": "Branch the conversation",
+          "name": "branch",
+          "reason": "Changes the session outside the planner",
+          "source": "built-in"
+        },
+        {
+          "aliases": [],
+          "argument_hint": "",
+          "class": "terminal-only",
+          "description": "Fork the conversation",
+          "name": "fork",
+          "reason": "Changes the session outside the planner",
+          "source": "built-in"
+        },
+        {
+          "aliases": [],
+          "argument_hint": "",
+          "class": "terminal-only",
+          "description": "Move the session to the background",
+          "name": "background",
+          "reason": "Changes the session outside the planner",
+          "source": "built-in"
+        },
+        {
+          "aliases": [],
+          "argument_hint": "",
+          "class": "terminal-only",
+          "description": "Add a working directory",
+          "name": "add-dir",
+          "reason": "Changes the session outside the planner",
+          "source": "built-in"
+        },
+        {
+          "aliases": [],
+          "argument_hint": "",
+          "class": "terminal-only",
+          "description": "Manage tool permission rules",
+          "name": "permissions",
+          "reason": "Opens a terminal dialog",
+          "source": "built-in"
+        },
+        {
+          "aliases": [],
+          "argument_hint": "",
+          "class": "terminal-only",
+          "description": "Manage plugins",
+          "name": "plugin",
+          "reason": "Opens a terminal dialog",
+          "source": "built-in"
+        },
+        {
+          "aliases": [],
+          "argument_hint": "",
+          "class": "terminal-only",
+          "description": "Exit the session",
+          "name": "exit",
+          "reason": "Changes the session outside the planner",
+          "source": "built-in"
+        },
+        {
+          "aliases": [],
+          "argument_hint": "",
+          "class": "terminal-only",
+          "description": "Rewind the conversation to an earlier point",
+          "name": "rewind",
+          "reason": "Changes the session outside the planner",
+          "source": "built-in"
+        },
+        {
+          "aliases": [],
+          "argument_hint": "",
+          "class": "terminal-only",
+          "description": "Restart the session",
+          "name": "restart",
+          "reason": "Changes the session outside the planner",
+          "source": "built-in"
+        },
+        {
+          "aliases": [],
+          "argument_hint": "",
+          "class": "terminal-only",
+          "description": "Connect this session for remote control",
+          "name": "remote-control",
+          "reason": "Not verified in the planner",
+          "source": "built-in"
+        },
+        {
+          "aliases": [],
+          "argument_hint": "",
+          "class": "terminal-only",
+          "description": "Set up the status line",
+          "name": "statusline",
+          "reason": "Not verified in the planner",
+          "source": "built-in"
+        }
+      ],
+      "generation": null,
+      "reason": "The command list could not be started",
+      "state": "unavailable"
+    }
+  }
+}

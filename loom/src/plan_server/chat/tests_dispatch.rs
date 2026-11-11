@@ -12,6 +12,11 @@ use crate::plan_session::input::InputRefusal;
 use crate::plan_session::model::{Item, Origin, SessionState};
 use crate::planning::project::Project;
 
+const DIALOG: &str = "Opens a terminal dialog";
+const LOADING: &str = "Commands are still loading";
+const ALONE: &str = "Send a command alone, on one line";
+
+mod commands;
 mod draft_commands;
 mod drafts;
 mod fetches;
@@ -144,7 +149,26 @@ fn a_slash_command_is_refused_with_the_input_refusal_text() {
     let tab = f.connect(&browser());
     let result = f.command(&tab, send("\0  /help", Vec::new()));
 
-    assert_eq!(result, refused(InputRefusal::SlashCommand));
+    assert_eq!(result, refused(InputRefusal::Command(DIALOG.into())));
+    assert!(f.bridge.chat_session_id().is_none());
+    // No session exists, so a name only the session could list is still loading.
+    let result = f.command(&tab, send("/simplify", Vec::new()));
+    assert_eq!(result, refused(InputRefusal::Command(LOADING.into())));
+    let result = f.command(&tab, send("/compact\nmore", Vec::new()));
+    assert_eq!(result, refused(InputRefusal::Command(ALONE.into())));
+    assert!(f.bridge.chat_session_id().is_none());
+}
+
+#[test]
+fn a_slash_command_with_an_attachment_is_refused() {
+    let f = fixture(false);
+    let tab = f.connect(&browser());
+    let result = f.command(
+        &tab,
+        send("/compact", vec![attachment("doc/product/index.md")]),
+    );
+
+    assert_eq!(result, refused(InputRefusal::Command(ALONE.into())));
     assert!(f.bridge.chat_session_id().is_none());
 }
 

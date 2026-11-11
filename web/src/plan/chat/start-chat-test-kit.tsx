@@ -37,7 +37,15 @@ export const wroteTurns: Turn[] = [
   {
     ...chatSnapshotSchema.parse(snapshotFixture).turns[0]!,
     items: [
-      { type: "user", id: "wrote", text: "Hi", attachments: [], delivery: "sent", origin: null },
+      {
+        type: "user",
+        id: "wrote",
+        text: "Hi",
+        attachments: [],
+        delivery: "sent",
+        origin: null,
+        command: null,
+      },
     ],
   },
 ];

@@ -307,7 +307,7 @@ impl Session {
         match std::mem::replace(&mut self.phase, Phase::Launching) {
             Phase::Spawning(spec) => Some(Launch {
                 id: self.id.clone(),
-                spec,
+                spec: self.spec.insert(spec).clone(),
                 record: self.record.clone(),
                 opening: self
                     .flow

@@ -78,7 +78,8 @@ pub(super) fn expected_common_for(f: &Fixture, kind: &SessionKind) -> Value {
         "hooks": {"PreToolUse": [{
             "matcher": "Read|Edit|Write|MultiEdit|NotebookEdit|Grep|Glob",
             "hooks": [{"type": "command", "command": f.command("PreToolUse"), "timeout": 10}]
-        }]}
+        }]},
+        "enabledPlugins": {"loom-ui@skills-dir": false}
     })
 }
 

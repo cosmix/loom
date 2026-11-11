@@ -3,6 +3,7 @@
 pub mod background;
 pub mod chat;
 pub mod checklist;
+pub mod commands;
 pub mod concept;
 pub mod files;
 pub mod kickoff;

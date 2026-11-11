@@ -4,9 +4,12 @@
 
 pub mod attachments;
 pub mod bridge;
+pub mod commands;
 pub mod guard;
 pub mod hook_cli;
 pub mod input;
+#[cfg(test)]
+mod input_contract_tests;
 pub mod kind;
 pub mod launch;
 pub mod model;

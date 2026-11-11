@@ -54,6 +54,7 @@ it("a send carrying a file input is tracked, then confirmed by the delivered fil
     attachments: [fileChip],
     delivery: "delivered",
     origin: null,
+    command: null,
   };
   applyChatFrame(store, { frame: "delta", op: "item_added", turn_id: turnId, item: delivered });
 
@@ -74,6 +75,7 @@ it("the same words without the file are not mistaken for the file send", async (
     attachments: [],
     delivery: "delivered",
     origin: null,
+    command: null,
   };
   applyChatFrame(store, { frame: "delta", op: "item_added", turn_id: turnId, item: plain });
 

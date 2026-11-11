@@ -31,6 +31,7 @@ const said: Item = {
   attachments: [],
   delivery: "sent",
   origin: null,
+  command: null,
 };
 
 it("every state's visible words", () => {

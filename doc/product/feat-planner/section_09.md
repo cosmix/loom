@@ -112,8 +112,8 @@ states, in this order:
 
 1. **What this session is.** A planning session started by `loom plan`. The user reads the chat
    in a browser and cannot see the terminal: ask in plain text, one question at a time, never with
-   the question tool (section 07 denies it); slash commands typed by the user are refused by the
-   app, so never suggest one.
+   the question tool (section 07 denies it); slash commands run as in the terminal, except those
+   the planner marks terminal only.
 2. **The documents are the truth, and the next session starts cold.** Record each decision in the
    document it affects as soon as the user settles it, in the section that covers the topic.
    Nothing a later session needs may live only in this conversation (vision, "Sessions start
@@ -549,8 +549,8 @@ when present, then `~/.loom/config.toml`, then the built-in default
 key registry (`loom/src/user_config/keys.rs`), so `loom config` and the dashboard's settings
 dialog edit them with no extra wiring.
 
-One session keeps one model: the bridge refuses `/model` with every other slash command (section
-07). The starting step picks the model at launch; a chat that moves to another step keeps it.
+One session keeps one model: the bridge marks `/model` and `/effort` terminal only (section 07),
+because `/model` opens a terminal dialog and `/effort` saves the user's default for new sessions. The starting step picks the model at launch; a chat that moves to another step keeps it.
 
 ## The user's `CLAUDE.md` files and other ambient guidance
 

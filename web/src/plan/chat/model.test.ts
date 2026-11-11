@@ -33,6 +33,7 @@ const user = (text = "New message"): Item => ({
   attachments: [],
   delivery: "sent",
   origin: null,
+  command: null,
 });
 const turn = (items: Item[] = []): Turn => ({ ...initial().turns[0], id: "new-turn", items });
 const seed = (store: Store, snapshot = initial()): void =>

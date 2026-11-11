@@ -264,19 +264,50 @@ fn a_self_started_turn_moves_idle_to_working() {
     assert_eq!(changed, Some(SessionState::Working));
 }
 
+/// The spool of probe P2's `/compact` (`spool/p2-compact.jsonl`).
+fn compact_spool() -> Vec<SpoolEvent> {
+    let spool = include_str!("../../tests/fixtures/plan_session/spool/p2-compact.jsonl");
+    spool
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect()
+}
+
 #[test]
 fn a_delivered_compact_then_session_start_compact_is_idle() {
-    let mut machine = working();
+    // The bridge pastes `/compact` after the READY turn's Stop. Claude Code 2.1.321 sends no
+    // UserPromptSubmit for it: PreCompact, a fork's SubagentStop, then SessionStart compact.
+    let events = compact_spool();
+    let (turn, compact) = events.split_at(3);
+    let names: Vec<&str> = events.iter().map(|event| event.event.as_str()).collect();
+    assert_eq!(names[..3], ["SessionStart", "UserPromptSubmit", "Stop"]);
+    let mut machine = StateMachine::new();
+    for event in turn {
+        feed(&mut machine, event.clone());
+    }
     machine.apply(Input::CompactDelivered);
-    feed(
-        &mut machine,
-        event("UserPromptSubmit", 1_000, json!({"prompt": "/compact"})),
-    );
+    for event in compact {
+        feed(&mut machine, event.clone());
+        assert_eq!(machine.state(), SessionState::Idle, "after {}", event.event);
+    }
+    let end = compact.last().unwrap();
+    assert_eq!(text(&end.payload, "source"), Some("compact"));
     assert_eq!(
-        start(&mut machine, "compact", 2_000),
-        Some(SessionState::Idle)
+        machine.last_idle_at(),
+        Some(end.received_at),
+        "its end is idle evidence"
     );
     assert_eq!(machine.activity(), Activity::Idle);
+
+    // The delivered compact is spent: a later turn's auto-compaction leaves it working.
+    let mut later = |name: &str, payload: Value| {
+        let mut next = event(name, 0, payload);
+        next.received_at = end.received_at + Duration::seconds(5);
+        feed(&mut machine, next)
+    };
+    later("UserPromptSubmit", json!({"prompt": "go"}));
+    assert_eq!(later("SessionStart", json!({"source": "compact"})), None);
+    assert_eq!(machine.state(), SessionState::Working);
 }
 
 #[test]
