@@ -37,6 +37,7 @@ fn delivered_prompt_replaces_the_sent_item_and_carries_its_chips() {
         attachments: vec![cited()],
         delivery: Delivery::Sent,
         origin: Some(Origin::Offer),
+        command: None,
     };
     let mut mapper = mapper();
     let added = mapper.add_server_item(sent);

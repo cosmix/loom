@@ -107,6 +107,8 @@ pub enum Item {
         attachments: Vec<Attachment>,
         delivery: Delivery,
         origin: Option<Origin>,
+        /// The slash command the message ran, set from its prompt-type command record.
+        command: Option<CommandRef>,
     },
     Thinking {
         id: String,
@@ -160,6 +162,13 @@ pub enum Delivery {
     Sent,
     Delivered,
     Undelivered,
+}
+
+/// The slash command a user message ran: its canonical name, without the slash, and its args.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CommandRef {
+    pub name: String,
+    pub args: String,
 }
 
 /// The source of a generated user message.

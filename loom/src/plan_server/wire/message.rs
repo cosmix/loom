@@ -100,6 +100,15 @@ pub enum PlanMessage {
         session: String,
         tasks: Vec<super::background::BackgroundTaskView>,
     },
+    /// The chat session's command list; replaces the last frame. The fields are a
+    /// `CommandsView`'s.
+    Commands {
+        session: String,
+        state: super::commands::CatalogueWireState,
+        generation: Option<u64>,
+        reason: Option<String>,
+        entries: Vec<crate::plan_session::commands::CommandEntry>,
+    },
 }
 
 impl PlanMessage {

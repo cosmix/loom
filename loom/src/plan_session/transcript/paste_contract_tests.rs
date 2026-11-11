@@ -62,6 +62,7 @@ fn wrapped_opening_replaces_the_sent_item() {
         attachments: Vec::new(),
         delivery: Delivery::Sent,
         origin: Some(Origin::Offer),
+        command: None,
     };
     let mut mapper = mapper();
     mapper.add_server_item(sent);
@@ -107,6 +108,7 @@ fn sent_item(text: &str, attachments: Vec<Attachment>) -> Item {
         attachments,
         delivery: Delivery::Delivered,
         origin: Some(Origin::Offer),
+        command: None,
     }
 }
 
@@ -137,6 +139,7 @@ fn a_paste_split_before_the_closing_tag_replaces_the_sent_item() {
         attachments,
         delivery: Delivery::Delivered,
         origin: Some(Origin::Offer),
+        command: None,
     };
     assert_eq!(users(&mapper), [delivered]);
 }

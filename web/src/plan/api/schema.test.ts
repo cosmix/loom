@@ -14,6 +14,7 @@ import runOutput from "@/plan/api/fixtures/run-output.json";
 import runState from "@/plan/api/fixtures/run-state.json";
 import runStrip from "@/plan/api/fixtures/run-strip.json";
 import serverInfo from "@/plan/api/fixtures/server-info.json";
+import sessionCommands from "@/plan/api/fixtures/session-commands.json";
 import share from "@/plan/api/fixtures/share.json";
 import {
   CLIENT_MESSAGE_TYPES,
@@ -30,9 +31,14 @@ import {
   shareLinkSchema,
   socketMessageSchema,
 } from "./schema";
+import { commandsViewSchema } from "./schema-session-commands";
+
+const commandsFrame = { type: "commands", session: "s1", ...sessionCommands };
 
 describe("planning wire schemas", () => {
   const fixtures = [
+    ["commands view", commandsViewSchema, sessionCommands],
+    ["commands frame", planMessageSchema, commandsFrame],
     ["authoring", authoringViewSchema, authoring],
     ["background", planMessageSchema, background],
     ["checklist", planMessageSchema, checklist],

@@ -1,6 +1,7 @@
 //! Check that planning wire enum values appear in their matching TypeScript arrays.
 
 use super::checklist::{offer_view, CurrentView, MarkView, OfferKind};
+use super::commands::CatalogueWireState;
 use super::concept::ConceptChanged;
 use super::message::{ClientMessage, PlanMessage};
 use super::presence::{AuthoringView, PresenceList};
@@ -223,7 +224,8 @@ fn assert_exhaustive(message: &PlanMessage) {
         | PlanMessage::RunStrip(_)
         | PlanMessage::TraceChanged { .. }
         | PlanMessage::SettleCommit(_)
-        | PlanMessage::Background { .. } => {}
+        | PlanMessage::Background { .. }
+        | PlanMessage::Commands { .. } => {}
     }
 }
 
@@ -251,6 +253,13 @@ fn all_plan_messages() -> Vec<PlanMessage> {
         PlanMessage::Authoring(AuthoringView { holder: None }),
         checklist,
         PlanMessage::ServerStopping,
+        PlanMessage::Commands {
+            session: String::new(),
+            state: CatalogueWireState::Loading,
+            generation: None,
+            reason: None,
+            entries: vec![],
+        },
         kickoff_drafts,
         PlanMessage::PressureOptionsChanged,
         PlanMessage::TraceChanged {

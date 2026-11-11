@@ -343,14 +343,15 @@ accepts it, marked by its delivery state:
 | Delivery state | Shows                                                          |
 | -------------- | -------------------------------------------------------------- |
 | queued         | In the queue strip above the composer, not yet in the transcript |
-| sent           | In the transcript with a muted "Sending" until `UserPromptSubmit` |
+| sent           | In the transcript with a muted "Sending" until `UserPromptSubmit`; a local command such as `/context` or `/compact` until its own record or `PreCompact` arrives, holding the queue until it settles |
 | delivered      | In the transcript, no marker                                   |
 | undelivered    | "Not delivered" in `--tone-warning` with a "Resend" action     |
 
 **Limits.** The composer counts the message with its formatted attachments (section 10) against
 section 07's 100 KB cap and disables Send above it, saying by how much. A message starting with
-`/` other than `/compact` disables Send with the note "Slash commands are not available here;
-`/compact` is." The server refuses both as well (section 07).
+`/` is checked against the session's command list (section 07): Send is disabled with the
+command's reason for a terminal-only or unlisted command. A slash message carries no attachments
+and one line. The server refuses both as well (section 07).
 
 ### Queued messages
 

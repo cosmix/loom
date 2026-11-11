@@ -8,6 +8,7 @@ use std::path::Path;
 use chrono::{DateTime, Utc};
 use serde_json::Value;
 
+use super::commands::{command_record, CommandRecord};
 use super::notification::{self, BackgroundEvidence};
 use super::user_record::user;
 use super::{tools, Subagent};
@@ -50,6 +51,8 @@ pub(super) enum Kind {
     AgentsKilled,
     /// The first line of the error.
     ApiError(String),
+    /// A slash command's own record (`commands.rs`).
+    Command(CommandRecord),
     Skipped,
 }
 
@@ -93,10 +96,14 @@ pub(super) fn parse(line: &str) -> Option<Record> {
         .and_then(|text| DateTime::parse_from_rfc3339(text).ok())
         .map(|time| time.with_timezone(&Utc));
     let evidence = notification::evidence(&value);
-    let kind = match value.get("type").and_then(Value::as_str) {
-        Some("assistant") => assistant(&mut value),
-        Some("user") => user(&mut value),
-        Some("system") => system(&value),
+    let kind = match (
+        command_record(&value),
+        value.get("type").and_then(Value::as_str),
+    ) {
+        (Some(command), _) => Kind::Command(command),
+        (None, Some("assistant")) => assistant(&mut value),
+        (None, Some("user")) => user(&mut value),
+        (None, Some("system")) => system(&value),
         _ => Kind::Skipped,
     };
     Some(Record {

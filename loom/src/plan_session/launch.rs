@@ -14,7 +14,7 @@ use crate::plan_session::bridge::host::{LaunchSpec, Spawned, TeardownFailed};
 use crate::plan_session::sandbox::{write_session_sandbox, SandboxInputs};
 use crate::plan_session::spool::SPOOL_EVENTS;
 use crate::plan_session::tmux_io::pane_pid;
-use crate::process::{agent_session_environment_from, process_start_time, ProcessIdentity};
+use crate::process::{process_start_time, ProcessIdentity};
 
 /// `launch.sh` is the host's, readable and runnable by the user alone.
 const LAUNCH_SCRIPT_MODE: libc::mode_t = 0o700;
@@ -53,12 +53,9 @@ fn prepare(spec: &LaunchSpec) -> Result<PathBuf> {
     };
     let files = write_session_sandbox(&inputs, &SPOOL_EVENTS)
         .context("cannot write the planning session's sandbox")?;
-    // The agent allowlist of this process's environment, then the start request's extras;
-    // `launch_script` drops a stage identity and pins the planning variables after both, so an
-    // extra cannot replace them (`env -i` leaves nothing else).
-    let mut env = agent_session_environment_from(std::env::vars_os());
-    let extra = spec.extra_env.iter();
-    env.extend(extra.map(|(name, value)| (name.into(), value.into())));
+    // `launch_script` drops a stage identity and pins the planning variables after the
+    // inherited environment, so an extra cannot replace them (`env -i` leaves nothing else).
+    let env = script::inherited_env(spec);
     let text = script::launch_script(spec, &files.settings, &env);
     let path = spec.dir.launch_script();
     write_script(spec.dir.path(), &path, &text)?;

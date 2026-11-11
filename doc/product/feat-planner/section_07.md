@@ -289,9 +289,14 @@ escaping. (My call.)
 A queued message can be withdrawn by the holder until its delivery starts; it leaves the queue
 and the chat.
 
-Chat messages that start with `/` are refused with a note, except `/compact`. (My call: `/clear`
-and `/exit` would change the session id or end it outside the bridge, and other commands open
-terminal dialogs the browser cannot see.)
+Chat messages that start with `/` run as they do in the terminal, except the commands the planner
+marks terminal only. The composer lists the session's skills and commands when a message starts
+with `/`; a terminal-only command is listed but disabled with its reason, and a name not in the
+list is refused with a note. `/compact` and `/context` run, and their output shows in the chat.
+(My call: terminal-only commands stay off because `/clear`, `/resume` and `/exit` change the
+session outside the bridge, `/usage`, `/model` and `/help` open terminal dialogs the browser
+cannot see, and a dialog left open captures the next pasted Enter. `/effort` saves the user's
+default for new sessions, so it is terminal only too.)
 
 Planning sessions run without the question tool: `settings.json` denies `AskUserQuestion`, and
 section 09's guidance has sessions ask in plain text, which the chat shows as ordinary assistant

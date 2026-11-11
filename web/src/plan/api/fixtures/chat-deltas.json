@@ -268,7 +268,8 @@
         }
       ],
       "delivery": "delivered",
-      "origin": null
+      "origin": null,
+      "command": null
     }
   }
 ]

@@ -110,6 +110,7 @@ fn authoring_settings_match_whole_json_snapshot() -> Result<()> {
                 "timeout": 10,
             }],
         }]},
+        "enabledPlugins": {"loom-ui@skills-dir": false},
     });
 
     assert_eq!(f.settings()?, expected);

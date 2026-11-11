@@ -13,6 +13,8 @@ mod permissions;
 mod reads;
 
 #[cfg(test)]
+mod plugins_contract_tests;
+#[cfg(test)]
 mod tests;
 #[cfg(test)]
 mod tests_assert;
@@ -158,6 +160,9 @@ pub fn build_settings(
         "permissions": permissions::permissions(&build)?,
         "worktree": { "bgIsolation": "none" },
         "hooks": permissions::hooks(&build, extra_hooks)?,
+        // The planner shows background work itself, so the loom-ui plugin's panel and commands
+        // stay off in every planner session (`<name>@skills-dir` is the plugin's id).
+        "enabledPlugins": { "loom-ui@skills-dir": false },
     });
     if pressure || build.scope.peer_tools() {
         // Top-level setting: keep teammates in-process so the bridge watches every pane (section 11).

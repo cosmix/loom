@@ -84,6 +84,10 @@ fn user_item() -> Item {
         attachments: vec![attachment()],
         delivery: Delivery::Delivered,
         origin: Some(Origin::Offer),
+        command: Some(CommandRef {
+            name: "loom-plan:args".into(),
+            args: "alpha beta".into(),
+        }),
     }
 }
 
@@ -246,6 +250,18 @@ fn item_variants_round_trip_with_wire_tags() {
         round_trip(&item);
         assert_eq!(serde_json::to_value(&item).unwrap()["type"], tag);
     }
+}
+
+#[test]
+fn a_user_item_writes_its_command_and_null_without_one() {
+    let mut item = user_item();
+    let chip = serde_json::json!({"name": "loom-plan:args", "args": "alpha beta"});
+    assert_eq!(serde_json::to_value(&item).unwrap()["command"], chip);
+    if let Item::User { command, .. } = &mut item {
+        *command = None;
+    }
+    let value = serde_json::to_value(&item).unwrap();
+    assert_eq!(value.get("command"), Some(&serde_json::Value::Null));
 }
 
 #[test]
