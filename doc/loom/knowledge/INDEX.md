@@ -72,7 +72,7 @@
 | [source-graph-evaluation](architecture/source-graph-evaluation.md) |  | 68 |
 | [source-graph-resolution](architecture/source-graph-resolution.md) |  | 125 |
 | [source-graph-view](architecture/source-graph-view.md) |  | 78 |
-| [status-data-model](architecture/status-data-model.md) | Fields | 259 |
+| [status-data-model](architecture/status-data-model.md) | Fields | 267 |
 | [summary-store](architecture/summary-store.md) |  | 342 |
 | [target-guard](architecture/target-guard.md) | Tip | 127 |
 | [terminal-backends](architecture/terminal-backends.md) |  | 285 |
@@ -209,7 +209,7 @@
 | [visibility-and-reachability](mistakes/visibility-and-reachability.md) |  | 141 |
 | [web-dashboard](mistakes/web-dashboard.md) | UI | 184 |
 | [web-dashboard-server](mistakes/web-dashboard-server.md) | Races | 278 |
-| [web-terminal](mistakes/web-terminal.md) | TTY | 135 |
+| [web-terminal](mistakes/web-terminal.md) | TTY | 142 |
 | [writer-reader-address](mistakes/writer-reader-address.md) | Keys | 115 |
 
 ### concerns

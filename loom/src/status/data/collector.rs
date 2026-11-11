@@ -45,9 +45,10 @@ pub use crate::provider_data::sessions::load_all_sessions;
 /// all; [`reported_reading`] is what keeps its frozen token count off the
 /// screen.
 ///
-/// The one exception to "the named session wins outright" is a stage in a merge
-/// state whose named session has ended: its live merge resolver speaks instead
-/// ([`speaking_for`]).
+/// The exceptions to "the named session wins outright" are two, each only once
+/// the named session has ended: a stage in a merge state is spoken for by its
+/// live merge resolver, and a `NeedsAdjudication` stage by its live adjudication
+/// judge ([`speaking_for`]).
 fn session_for_stage<'a>(stage: &Stage, sessions: &'a [Session]) -> Option<&'a Session> {
     let own = || {
         sessions
@@ -109,10 +110,16 @@ fn session_facts<'a>(
 ) -> SessionFacts<'a> {
     let session = session_for_stage(stage, sessions);
     let assigned = assigned_session(stage, sessions);
-    // A resolver speaking for the stage is the session a person attaches to,
-    // so its type is the one reported; otherwise the assigned session's.
+    // A resolver or judge speaking for the stage is the session a person
+    // attaches to, so its type is the one reported; otherwise the assigned
+    // session's.
     let session_type = session
-        .filter(|s| s.session_type == SessionType::Merge)
+        .filter(|s| {
+            matches!(
+                s.session_type,
+                SessionType::Merge | SessionType::Adjudication
+            )
+        })
         .or(assigned)
         .or(session)
         .map(|s| s.session_type);
