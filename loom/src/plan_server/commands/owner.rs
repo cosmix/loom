@@ -73,7 +73,7 @@ impl Catalogue {
     pub(super) fn new() -> Self {
         let tuning = Tuning {
             deadline: STARTUP_DEADLINE,
-            build: Arc::new(side_spec),
+            build: Arc::new(|spec: &LaunchSpec| side_spec(spec)),
         };
         Self {
             sessions: Mutex::default(),
