@@ -146,15 +146,25 @@ export type SettingsRow = PairRow | SingleRow;
 
 export interface SectionRows {
   section: string;
+  /// The heading text: `SECTION_TITLES` for the section, else its prefix.
+  title: string;
   caption: string | null;
   projectAllowed: boolean;
   rows: SettingsRow[];
 }
 
+/// What a section's heading reads as; a section without an entry shows its
+/// config prefix.
+export const SECTION_TITLES: Readonly<Record<string, string>> = {
+  pressure: "pressure test",
+  models: "stage sessions",
+  plan: "planning sessions",
+};
+
 export const SECTION_CAPTIONS: Readonly<Record<string, string>> = {
   pressure: "who runs each step of loom pressure",
-  models: "model and effort per session kind",
-  plan: "what loom plan's sessions run on",
+  models: "model and effort for each kind of session a stage runs",
+  plan: "model and effort for loom plan's sessions",
 };
 
 export const ROW_CAPTIONS: Readonly<Record<string, string>> = {
@@ -204,6 +214,7 @@ export function sectionRows(entries: ConfigEntry[]): SectionRows[] {
     }
     return {
       section,
+      title: SECTION_TITLES[section] ?? section,
       caption: SECTION_CAPTIONS[section] ?? null,
       projectAllowed: sectionEntries.some((entry) => entry.scopes.includes("project")),
       rows,
@@ -220,7 +231,7 @@ export function rowLabel(row: SettingsRow): string {
 }
 
 function rowHaystack(section: SectionRows, row: SettingsRow): string {
-  const parts = [section.section, section.caption ?? "", rowLabel(row)];
+  const parts = [section.section, section.title, section.caption ?? "", rowLabel(row)];
   if (row.kind === "pair") parts.push(row.caption ?? "");
   for (const entry of rowEntries(row)) {
     parts.push(

@@ -67,7 +67,7 @@ describe("sectionRows", () => {
       "contract_writer",
     ]);
     expect(models?.rows[5]?.kind).toBe("single");
-    expect(models?.caption).toBe("model and effort per session kind");
+    expect(models?.caption).toBe("model and effort for each kind of session a stage runs");
   });
 
   it("pairs plan into six rows", () => {
@@ -113,6 +113,11 @@ describe("sectionRows", () => {
     expect(rows).toHaveLength(1);
     expect(rows[0]?.rows).toEqual([{ kind: "single", entry: lonely }]);
   });
+
+  it("titles a section from SECTION_TITLES, else from its prefix", () => {
+    expect(sections.find((s) => s.section === "models")?.title).toBe("stage sessions");
+    expect(sections.find((s) => s.section === "terminal")?.title).toBe("terminal");
+  });
 });
 
 describe("laneState / effectiveLane", () => {
@@ -154,6 +159,12 @@ describe("filterSections", () => {
 
   it("empty query returns the same array reference", () => {
     expect(filterSections(sections, "")).toBe(sections);
+  });
+
+  it("keeps the models section for its title and for its prefix", () => {
+    for (const query of ["stage sessions", "models"]) {
+      expect(filterSections(sections, query).map((s) => s.section)).toContain("models");
+    }
   });
 
   it("a nonsense query returns no sections", () => {

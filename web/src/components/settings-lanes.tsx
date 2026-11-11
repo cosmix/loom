@@ -150,7 +150,9 @@ function SectionHead({ section }: { section: SectionRows }): ReactElement {
   return (
     <tr className="settings-sech">
       <th className="settings-key">
-        <span className="eyebrow">{section.section}</span>
+        <span className="settings-section-title" title={`config section [${section.section}]`}>
+          {section.title}
+        </span>
         {section.caption && <span className="settings-help">{section.caption}</span>}
       </th>
       {paired ? (
