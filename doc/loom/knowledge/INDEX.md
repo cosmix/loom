@@ -56,7 +56,7 @@
 | [planner-web-shell](architecture/planner-web-shell.md) | Shell | 112 |
 | [planning-document-model](architecture/planning-document-model.md) | Docs | 183 |
 | [planning-guidance](architecture/planning-guidance.md) |  | 43 |
-| [planning-session-bridge](architecture/planning-session-bridge.md) |  | 286 |
+| [planning-session-bridge](architecture/planning-session-bridge.md) |  | 290 |
 | [planning-session-sandbox](architecture/planning-session-sandbox.md) |  | 148 |
 | [planning-trace](architecture/planning-trace.md) |  | 132 |
 | [pressure](architecture/pressure.md) |  | 42 |
@@ -191,7 +191,7 @@
 | [sessions-and-liveness](mistakes/sessions-and-liveness.md) |  | 392 |
 | [shell-command-matchers](mistakes/shell-command-matchers.md) |  | 295 |
 | [source-graph-delivery](mistakes/source-graph-delivery.md) | Misses | 172 |
-| [spurious-waiting-for-input](mistakes/spurious-waiting-for-input.md) | Idle | 43 |
+| [spurious-waiting-for-input](mistakes/spurious-waiting-for-input.md) | Idle | 53 |
 | [status-broadcast-hardening](mistakes/status-broadcast-hardening.md) |  | 75 |
 | [store-without-consumer](mistakes/store-without-consumer.md) | Unread | 104 |
 | [subagent-briefing](mistakes/subagent-briefing.md) |  | 394 |

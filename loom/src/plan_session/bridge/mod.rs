@@ -58,6 +58,8 @@ mod tests_rebuilding;
 #[cfg(test)]
 mod tests_recovery;
 #[cfg(test)]
+mod tests_rewake;
+#[cfg(test)]
 mod tests_stopping;
 #[cfg(test)]
 mod tests_team;
