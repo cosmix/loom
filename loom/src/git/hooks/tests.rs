@@ -2,7 +2,7 @@
 
 use super::*;
 use std::os::unix::fs::PermissionsExt;
-use std::process::Command;
+use std::process::{Command, Stdio};
 use tempfile::TempDir;
 
 fn repo_with_hook(content: &str) -> (TempDir, std::path::PathBuf) {
@@ -15,11 +15,18 @@ fn repo_with_hook(content: &str) -> (TempDir, std::path::PathBuf) {
     (repo, hook)
 }
 
+/// Runs the hook, retrying past the ETXTBSY fork/exec race on a script written moments earlier.
 fn invoke(root: &Path, hook: &Path) -> std::process::Output {
-    Command::new(hook)
+    let mut command = Command::new(hook);
+    command
         .arg("kept-argument")
         .current_dir(root)
-        .output()
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    crate::process::spawn_retrying_text_busy(&mut command)
+        .unwrap()
+        .wait_with_output()
         .unwrap()
 }
 

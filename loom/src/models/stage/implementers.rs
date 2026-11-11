@@ -10,10 +10,10 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum Implementer {
-    /// The Claude subagent lane (haiku for mechanical edits, boilerplate and simple unit tests,
-    /// sonnet for common implementation and integration tests, opus for architecture and
+    /// The Claude subagent lane (haiku for extremely simple or highly detailed pieces,
+    /// sonnet for pieces that need exploration or test iteration, opus for architecture and
     /// algorithm implementation (xhigh effort for the hardest), fable only for visual/UI
-    /// design, a bug that survived a delegated fix attempt, or very hard algorithmic design).
+    /// design or very hard algorithmic design).
     #[default]
     Claude,
     /// The codex implementation lane: spawned as `loom-codex-forwarder`, a

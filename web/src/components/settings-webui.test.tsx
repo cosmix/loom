@@ -54,7 +54,9 @@ describe("dashboard settings", () => {
   it("renders the dashboard heading and seven theme buttons", async () => {
     renderAt("?settings=1", fakeClient().client);
 
-    expect(await screen.findByText("dashboard", { selector: ".eyebrow" })).toBeTruthy();
+    expect(
+      await screen.findByText("dashboard", { selector: ".settings-section-title" }),
+    ).toBeTruthy();
     expect(screen.getByRole("group", { name: "theme" }).querySelectorAll("button")).toHaveLength(7);
   });
 
@@ -101,7 +103,7 @@ describe("dashboard settings", () => {
     });
 
     await screen.findByRole("alert");
-    expect(screen.getByText("dashboard", { selector: ".eyebrow" })).toBeTruthy();
+    expect(screen.getByText("dashboard", { selector: ".settings-section-title" })).toBeTruthy();
   });
 
   it("hides and shows the dashboard section while filtering", async () => {
@@ -111,17 +113,17 @@ describe("dashboard settings", () => {
 
     fireEvent.change(filter, { target: { value: "zzzzznotfound" } });
 
-    expect(screen.queryByText("dashboard", { selector: ".eyebrow" })).toBeNull();
+    expect(screen.queryByText("dashboard", { selector: ".settings-section-title" })).toBeNull();
     expect(screen.getByText(/^nothing matches /)).toBeTruthy();
 
     fireEvent.change(filter, { target: { value: "theme" } });
 
-    expect(screen.getByText("dashboard", { selector: ".eyebrow" })).toBeTruthy();
+    expect(screen.getByText("dashboard", { selector: ".settings-section-title" })).toBeTruthy();
     expect(screen.queryByText(/^nothing matches /)).toBeNull();
 
     fireEvent.change(filter, { target: { value: "dark" } });
 
-    expect(screen.getByText("dashboard", { selector: ".eyebrow" })).toBeTruthy();
+    expect(screen.getByText("dashboard", { selector: ".settings-section-title" })).toBeTruthy();
   });
 
   it("reconciles a stale enabled preference when permission was denied", async () => {
@@ -189,18 +191,18 @@ describe("dashboard settings", () => {
 
       fireEvent.change(filter, { target: { value: "graphite" } });
 
-      expect(screen.getByText("dashboard", { selector: ".eyebrow" })).toBeTruthy();
+      expect(screen.getByText("dashboard", { selector: ".settings-section-title" })).toBeTruthy();
       expect(screen.queryByText(/^nothing matches /)).toBeNull();
 
       fireEvent.change(filter, { target: { value: "sonnet" } });
 
-      expect(screen.queryByText("dashboard", { selector: ".eyebrow" })).toBeNull();
+      expect(screen.queryByText("dashboard", { selector: ".settings-section-title" })).toBeNull();
       expect(document.querySelectorAll(".settings-key-name").length).toBeGreaterThan(0);
       expect(screen.queryByText(/^nothing matches /)).toBeNull();
 
       fireEvent.change(filter, { target: { value: "zzzzznotfound" } });
 
-      expect(screen.queryByText("dashboard", { selector: ".eyebrow" })).toBeNull();
+      expect(screen.queryByText("dashboard", { selector: ".settings-section-title" })).toBeNull();
       expect(screen.getAllByText(/^nothing matches /)).toHaveLength(1);
     },
   );

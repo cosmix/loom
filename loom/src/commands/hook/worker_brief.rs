@@ -21,8 +21,6 @@ use super::target::non_empty_env;
 const MAX_STDIN_BYTES: u64 = 1024 * 1024;
 const QUERY_INPUTS: &str = "the stage inputs, worker task and explicitly declared paths";
 const CODEX_FORWARD_PATH: &str = "loom-hooks/codex-forward.sh";
-/// The software developer agent has no `Skill` tool, so a skills line would name a tool it lacks.
-const HAIKU_WORKER: &str = "loom-software-developer";
 
 #[derive(Deserialize)]
 struct HookPayload {
@@ -135,11 +133,7 @@ fn issue(raw: &str, config: &Config) -> Option<Envelope> {
     }
     let paths = declared_paths(&payload.tool_input.prompt);
     let pack = retrieve_pack(config, &payload, &paths)?;
-    let skills: &[String] = if payload.tool_input.subagent_type == HAIKU_WORKER {
-        &[]
-    } else {
-        &config.stage.skills
-    };
+    let skills: &[String] = &config.stage.skills;
     // Declared skills must reach the worker even with an empty context pack.
     if pack.items.is_empty() && pack.unmet_required.is_empty() && skills.is_empty() {
         return None;

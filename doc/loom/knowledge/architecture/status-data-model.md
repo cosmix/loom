@@ -257,3 +257,11 @@ commands/status/
 **Data flow (static mode):** `collect_status_data()` loads plan name, stage list (with status/context), session list, merge state, and progress counts into a single `StatusData`. Renderers receive `StatusData` and write to `impl Write`.
 
 **TUI mode:** `ui::run_tui(work_path)` subscribes to the daemon's Unix socket (`orchestrator.sock`) and re-renders on each update. Requires daemon running; errors with hint if not.
+
+## The Session That Speaks for a Stage
+
+`session_for_stage` (`status/data/collector.rs`) picks the session whose `pid`, `session_alive`, `session_backend` and activity a `StageSummary` reports. The web modal's choice between a live Terminal and Terminal history reads those fields (`web/src/components/terminal/terminal-glyph.tsx::terminalGate`), so they must describe the session the web terminal resolver attaches to. `stage.session` names the worker and wins while it is live. Once it has ended, `speaking_for` (`status/data/resolver.rs`) substitutes the newest live stand-in the daemon runs for the stage: the `Merge` resolver in `MergeConflict` or `MergeBlocked`, the `Adjudication` judge in `NeedsAdjudication`. `session_type` reports the stand-in's kind. Any other session kind the daemon runs for a stage whose worker has ended needs a branch here, or the modal offers the worker's history while that session works.
+
+`terminal_history_session` (`status/data/stopped.rs`) names the newest ended tmux session of the stage that left a history file, a judge included. A stage the daemon completes after a verdict (`JobKind::VerdictComplete`) has no session during that run, so the modal has only history to offer then.
+
+History: [mistakes/web-terminal](../mistakes/web-terminal.md#the-stage-modal-offered-the-workers-history-while-a-judge-was-live).
