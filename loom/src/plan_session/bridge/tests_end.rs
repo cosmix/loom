@@ -9,6 +9,7 @@ use chrono::{SecondsFormat, Utc};
 use serde_json::json;
 
 use super::fake_host::*;
+use super::fixture_replay::tasks;
 use super::{BridgeError, BridgeEvent, EndCause, EndMode, EndOutcome};
 use crate::plan_session::kind::SessionKind;
 use crate::plan_session::kind::SessionKind::Authoring;
@@ -66,12 +67,12 @@ fn two_subagent_starts_in_one_millisecond_both_count() {
     let mut spool = fs::OpenOptions::new().append(true).open(s.dir.events());
     spool.as_mut().unwrap().write_all(lines.as_bytes()).unwrap();
     let running = |h: &Harness| {
-        let view = h.bridge.chat_snapshot(true).session;
-        view.map(|view| view.subagents_running)
+        let ids = tasks(h, &s).into_iter().map(|task| task.id);
+        ids.collect::<Vec<_>>()
     };
-    wait_until("both subagents", || running(&h) == Some(2));
+    wait_until("both subagents", || running(&h) == ["a1", "a2"]);
     settle();
-    assert_eq!(running(&h), Some(2), "the repeated line counted again");
+    assert_eq!(running(&h), ["a1", "a2"], "the repeated line counted again");
 }
 
 #[test]
@@ -151,7 +152,7 @@ fn a_session_opened_by_the_users_typed_message_gets_the_closing_message_at_idle(
 }
 
 #[test]
-fn an_interrupt_resets_the_subagents_so_the_final_write_ends_at_the_next_stop() {
+fn an_interrupt_keeps_the_subagents_so_the_final_write_waits_for_their_end() {
     let h = Harness::ready(|_| {});
     let s = h.idle(Authoring);
     h.working(&s);
@@ -167,31 +168,13 @@ fn an_interrupt_resets_the_subagents_so_the_final_write_ends_at_the_next_stop() 
     wait_until("the closing message", || h.sent(&s) == [CLOSING]);
     h.spool(&s, "UserPromptSubmit", json!({"prompt": CLOSING}));
     h.spool(&s, "Stop", json!({}));
-    wait_until("the end", || h.ended(&s.id) == Some(EndOutcome::Closed));
-}
-
-#[test]
-fn a_stalled_finished_subagent_is_stopped_once() {
-    let h = Harness::ready(|_| {});
-    h.bridge.lock().stall_after = Duration::from_millis(300);
-    let s = h.idle(Authoring);
-    h.working(&s);
-    h.spool(&s, "SubagentStart", json!({"agent_id": "a1"}));
-    let dir = s.transcript.with_extension("").join("subagents");
-    fs::create_dir_all(&dir).unwrap();
-    let last = json!({"type": "assistant", "message": {"id": "msg_a1", "role": "assistant",
-        "content": [{"type": "text", "text": "done"}], "stop_reason": "end_turn"}});
-    append_record(&dir.join("agent-a1.jsonl"), last, &s.id);
-    let stopped = |h: &Harness| {
-        let a1 = |e: &BridgeEvent| matches!(e, BridgeEvent::SubagentStopped { agent_id, .. } if agent_id == "a1");
-        h.count_events(a1)
-    };
-    wait_until("the synthetic stop", || stopped(&h) == 1);
-    h.spool(&s, "SubagentStop", json!({"agent_id": "a1"}));
     settle();
-    assert_eq!(stopped(&h), 1, "the real stop counted again");
-    let view = h.bridge.chat_snapshot(true).session.unwrap();
-    assert_eq!(view.subagents_running, 0);
+    assert_eq!(h.ended(&s.id), None, "closed while its agents ran");
+    for agent in ["a1", "a2"] {
+        h.spool(&s, "SubagentStop", json!({"agent_id": agent}));
+    }
+    h.spool(&s, "Stop", json!({}));
+    wait_until("the end", || h.ended(&s.id) == Some(EndOutcome::Closed));
 }
 
 #[test]

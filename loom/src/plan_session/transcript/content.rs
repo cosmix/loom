@@ -3,6 +3,7 @@
 use chrono::{DateTime, Utc};
 use serde_json::Value;
 
+use super::notification::launch_label;
 use super::records::{self, cap_chars, Assistant, Block, ToolResult};
 use super::tools::repo_relative;
 use super::{Ingest, Mapper, RecordMark, Subagent};
@@ -80,6 +81,10 @@ impl Mapper {
                 input,
             } => {
                 self.tools.insert(tool_use_id.clone(), (turn, id.clone()));
+                let label = sub.is_none().then(|| launch_label(&name, &input));
+                if let Some(label) = label.flatten() {
+                    self.descriptions.insert(tool_use_id.clone(), label);
+                }
                 let tool = (tool_use_id, name, &input);
                 Some(records::tool_item(id, tool, &self.root, sub))
             }
@@ -99,6 +104,7 @@ impl Mapper {
             .then(|| records::file_change(tool_use_result))
             .flatten();
         for outcome in results {
+            self.descriptions.remove(&outcome.tool_use_id);
             let Some((turn, id)) = self.tools.get(&outcome.tool_use_id).cloned() else {
                 continue;
             };

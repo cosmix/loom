@@ -10,6 +10,7 @@ import type {
   StandalonePlanView,
   You,
 } from "@/plan/api/schema";
+import type { BackgroundFrame } from "@/plan/api/schema-background";
 import type { DraftTeamView, KickoffDraftView, KickoffView } from "@/plan/api/schema-kickoff";
 import type { connectPlanSocket } from "@/plan/api/socket";
 
@@ -34,6 +35,8 @@ export const kickoffAtom = atom<KickoffView | null>(null);
 /** Unfinished kickoffs, newest first as the server lists them; replaced whole by each frame. */
 export const kickoffDraftsAtom = atom<KickoffDraftView[]>([]);
 export const draftTeamAtom = atom<DraftTeamView | null>(null);
+/** The planner session's background tasks as the last `background` frame listed them. */
+export const backgroundAtom = atom<BackgroundFrame | null>(null);
 
 // Preserve the single-checklist seam for existing consumers and fixtures.
 export const checklistAtom = atom(

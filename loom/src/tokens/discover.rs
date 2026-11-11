@@ -137,31 +137,47 @@ fn session_sources(
     if !is_safe_id(stem) {
         return;
     }
-    sources.push(Source {
+    sources.extend(main_source(stage_id, transcript));
+    for file in list_agent_files(&path.with_file_name(stem).join("subagents")) {
+        let agent_id = agent_id_from_path(&file);
+        let agent_type = index
+            .get_metadata(&agent_id, stem)
+            .map(|metadata| inline_safe(&metadata.agent_type));
+        sources.extend(subagent_source(stage_id, &agent_id, &file, agent_type));
+    }
+}
+
+/// The source of the main transcript `transcript` of `stage_id`; `None` when
+/// its file stem is not a safe id.
+pub(super) fn main_source(stage_id: &str, transcript: &str) -> Option<Source> {
+    let stem = Path::new(transcript).file_stem()?.to_str()?;
+    is_safe_id(stem).then(|| Source {
         stage_id: stage_id.to_owned(),
         key: format!("{MAIN_PREFIX}{stem}"),
         kind: AgentKind::Main,
         path: transcript.to_owned(),
         agent_type: None,
         forwarder: None,
-    });
-    for file in list_agent_files(&path.with_file_name(stem).join("subagents")) {
-        let agent_id = agent_id_from_path(&file);
-        let Some(file_path) = file.to_str().filter(|_| is_safe_id(&agent_id)) else {
-            continue;
-        };
-        let agent_type = index
-            .get_metadata(&agent_id, stem)
-            .map(|metadata| inline_safe(&metadata.agent_type));
-        sources.push(Source {
-            stage_id: stage_id.to_owned(),
-            key: agent_id,
-            kind: AgentKind::Subagent,
-            path: file_path.to_owned(),
-            agent_type,
-            forwarder: None,
-        });
-    }
+    })
+}
+
+/// The source of subagent `agent_id`'s transcript `path`; `None` when the id
+/// is not safe or the path is not UTF-8.
+pub(super) fn subagent_source(
+    stage_id: &str,
+    agent_id: &str,
+    path: &Path,
+    agent_type: Option<String>,
+) -> Option<Source> {
+    let path = path.to_str().filter(|_| is_safe_id(agent_id))?;
+    Some(Source {
+        stage_id: stage_id.to_owned(),
+        key: agent_id.to_owned(),
+        kind: AgentKind::Subagent,
+        path: path.to_owned(),
+        agent_type,
+        forwarder: None,
+    })
 }
 
 /// `(stage id, thread id, forwarder id)` for every safe `codex_thread_id` in

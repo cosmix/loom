@@ -8,6 +8,7 @@ use std::path::Path;
 use chrono::{DateTime, Utc};
 use serde_json::Value;
 
+use super::notification::{self, BackgroundEvidence};
 use super::user_record::user;
 use super::{tools, Subagent};
 use crate::plan_session::model::{Item, ToolStatus};
@@ -18,8 +19,9 @@ pub(super) const ID_CHARS: usize = 128;
 pub(super) const ITEM_CHARS: usize = 64 * 1024;
 /// Longest user text handed to `parse_unwrapped` (a delivered message is at most 100 KB).
 pub(super) const USER_TEXT_CHARS: usize = 100_000;
-/// Longest notice text or `error_line`.
-const LINE_CHARS: usize = 500;
+/// Longest notice text or `error_line`, and longest label, summary or report kept on a
+/// background task.
+pub(crate) const LINE_CHARS: usize = 500;
 /// Longest tool name, and longest `filePath` accepted as a changed path.
 const NAME_CHARS: usize = 200;
 const PATH_CHARS: usize = 4096;
@@ -28,6 +30,8 @@ pub(super) struct Record {
     pub(super) uuid: String,
     pub(super) at: Option<DateTime<Utc>>,
     pub(super) kind: Kind,
+    /// What the record says about a background task, whatever its kind shows.
+    pub(super) evidence: Option<BackgroundEvidence>,
 }
 
 pub(super) enum Kind {
@@ -53,7 +57,6 @@ pub(super) struct Assistant {
     pub(super) message_id: Option<String>,
     pub(super) usage: Option<Value>,
     pub(super) blocks: Vec<Block>,
-    pub(super) end_turn: bool,
 }
 
 pub(super) enum Block {
@@ -89,13 +92,19 @@ pub(super) fn parse(line: &str) -> Option<Record> {
         .and_then(Value::as_str)
         .and_then(|text| DateTime::parse_from_rfc3339(text).ok())
         .map(|time| time.with_timezone(&Utc));
+    let evidence = notification::evidence(&value);
     let kind = match value.get("type").and_then(Value::as_str) {
         Some("assistant") => assistant(&mut value),
         Some("user") => user(&mut value),
         Some("system") => system(&value),
         _ => Kind::Skipped,
     };
-    Some(Record { uuid, at, kind })
+    Some(Record {
+        uuid,
+        at,
+        kind,
+        evidence,
+    })
 }
 
 /// The `message.id` and `message.usage` of a line, for usage-only ingestion.
@@ -107,7 +116,11 @@ pub(super) fn usage_of(line: &str) -> Option<(String, Value)> {
 }
 
 pub(super) fn id(value: Option<&Value>) -> Option<String> {
-    let text = value?.as_str()?;
+    bounded_id(value?.as_str()?)
+}
+
+/// `text` as an id: non-empty and at most [`ID_CHARS`] characters, else `None`.
+pub(crate) fn bounded_id(text: &str) -> Option<String> {
     let fits = !text.is_empty() && text.chars().count() <= ID_CHARS;
     fits.then(|| text.to_owned())
 }
@@ -121,7 +134,6 @@ fn assistant(value: &mut Value) -> Kind {
         let text = joined_text(&message["content"]);
         return Kind::ApiError(error_line(&text, "API error"));
     }
-    let end_turn = message.get("stop_reason").and_then(Value::as_str) == Some("end_turn");
     let blocks = match message.get_mut("content").map(Value::take) {
         Some(Value::Array(blocks)) => blocks.into_iter().map(block).collect(),
         Some(Value::String(text)) => vec![Block::Text(text)],
@@ -131,7 +143,6 @@ fn assistant(value: &mut Value) -> Kind {
         message_id: id(message.get("id")),
         usage: message.get_mut("usage").map(Value::take),
         blocks,
-        end_turn,
     })
 }
 
@@ -220,7 +231,7 @@ pub(super) fn first_line(text: &str) -> Option<String> {
 }
 
 /// `text` cut to at most `max` characters, on a char boundary.
-pub(super) fn cap_chars(text: &str, max: usize) -> String {
+pub(crate) fn cap_chars(text: &str, max: usize) -> String {
     match text.char_indices().nth(max) {
         Some((end, _)) => text[..end].to_owned(),
         None => text.to_owned(),
