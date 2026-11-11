@@ -144,7 +144,9 @@ impl Catalogue {
     /// Stop `session`'s process and forget it.
     fn end(&self, session: &str) {
         let slot = lock(&self.sessions).remove(session);
-        slot.and_then(|slot| slot.process).map(SideProcess::stop);
+        if let Some(process) = slot.and_then(|slot| slot.process) {
+            process.stop();
+        }
     }
 
     /// Stop every process.
@@ -224,7 +226,9 @@ impl Owner {
                 Ok(Request::Begin(id)) => self.begin(&id),
                 Ok(Request::End(id)) => {
                     let live = self.live();
-                    live.map(|live| live.catalogue.end(&id));
+                    if let Some(live) = live {
+                        live.catalogue.end(&id);
+                    }
                 }
                 Err(RecvTimeoutError::Timeout) => {}
                 Err(RecvTimeoutError::Disconnected) => break,
@@ -232,7 +236,9 @@ impl Owner {
         }
         // A catalogue already dropped took its processes down with it.
         let catalogue = self.catalogue.upgrade();
-        catalogue.map(|catalogue| catalogue.end_all());
+        if let Some(catalogue) = catalogue {
+            catalogue.end_all();
+        }
     }
 
     /// Start the chat session's side process, once, when its launch spec exists; any other
