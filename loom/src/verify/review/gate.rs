@@ -2,7 +2,8 @@
 //!
 //! A v2 `standard` or `integration-verify` stage completes only when a
 //! well-formed review round is recorded, the latest one saw exactly the
-//! worktree's current changes, and no finding, own or carried, is open.
+//! worktree's current changes (across a merge-base move, see `base_move`),
+//! and no finding, own or carried, is open.
 
 use anyhow::{bail, Context, Result};
 use serde_json::Value;
@@ -12,6 +13,7 @@ use std::io::Read;
 use std::os::unix::fs::OpenOptionsExt;
 use std::path::Path;
 
+use super::base_move;
 use super::fingerprint::{self, ChangeFingerprint};
 use super::report::single_line;
 use super::store::{self, OpenFinding, ReviewRound};
@@ -60,7 +62,7 @@ pub fn check(stage: &Stage, work_dir: &Path, current: &ChangeFingerprint) -> Res
     let mut problems = Vec::new();
     match rounds.iter().rev().find(|round| round.is_well_formed()) {
         None => problems.push("no well-formed review round is recorded".to_string()),
-        Some(latest) => problems.extend(stale_review(latest, current)),
+        Some(latest) => problems.extend(stale_review(stage, work_dir, latest, current)),
     }
     let open = store::open_among(&rounds, &rulings, &carried);
     problems.extend(open.iter().map(describe_open));
@@ -156,22 +158,61 @@ fn ledger_text(text: &str) -> String {
         .collect()
 }
 
-/// Why `latest` no longer covers the `current` changes, if it does not.
-fn stale_review(latest: &ReviewRound, current: &ChangeFingerprint) -> Option<String> {
+/// Why `latest` no longer covers the `current` changes, if it does not. After
+/// a merge-base move the round still covers a tree whose stage changes are the
+/// reviewed ones (`base_move`); one that cannot be compared is stale.
+fn stale_review(
+    stage: &Stage,
+    work_dir: &Path,
+    latest: &ReviewRound,
+    current: &ChangeFingerprint,
+) -> Option<String> {
     if covers_review(latest, current) {
         return None;
     }
-    let changed = fingerprint::changed_since(&latest.files, &current.files);
-    let since = if changed.is_empty() {
-        "the base commit changed".to_string()
+    let since = if base_move::moved(latest, current) {
+        let moved = format!(
+            "the base commit moved from {} to {}",
+            single_line(&latest.base),
+            single_line(&current.base)
+        );
+        match base_move::unproven_for_stage(stage, work_dir, latest, current) {
+            Ok(unproven) if unproven.is_empty() => return None,
+            Ok(unproven) => format!("{moved}; {}", unproven.describe()),
+            Err(error) => format!(
+                "{moved} and the bases could not be compared: {}",
+                single_line(&format!("{error:#}"))
+            ),
+        }
     } else {
-        let paths: Vec<String> = changed.iter().map(|path| single_line(path)).collect();
-        format!("changed since: {}", paths.join(", "))
+        same_base_changes(latest, current)
     };
     Some(format!(
         "review round {} saw {}, but the worktree is now at {} ({since})",
         latest.round, latest.fingerprint, current.value
     ))
+}
+
+/// Whether `latest` covers the `current` changes as the gate judges it, a
+/// merge-base move included; [`covers_review`] alone reads no git.
+pub fn round_covers(
+    stage: &Stage,
+    work_dir: &Path,
+    latest: &ReviewRound,
+    current: &ChangeFingerprint,
+) -> bool {
+    stale_review(stage, work_dir, latest, current).is_none()
+}
+
+/// The paths whose digests differ from what `latest` saw, or the base change.
+fn same_base_changes(latest: &ReviewRound, current: &ChangeFingerprint) -> String {
+    let changed = fingerprint::changed_since(&latest.files, &current.files);
+    if changed.is_empty() {
+        "the base commit changed".to_string()
+    } else {
+        let paths: Vec<String> = changed.iter().map(|path| single_line(path)).collect();
+        format!("changed since: {}", paths.join(", "))
+    }
 }
 
 /// Whether a round covers the current tree, allowing unprotected prose changes.
@@ -229,6 +270,10 @@ fn failure_message(
 #[cfg(test)]
 #[path = "gate_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "gate_base_move_tests.rs"]
+mod base_move_tests;
 
 #[cfg(test)]
 #[path = "gate_hint_tests.rs"]
