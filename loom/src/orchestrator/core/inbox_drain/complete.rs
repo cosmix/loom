@@ -1,14 +1,17 @@
 //! A relayed `complete`: a stage or knowledge session asks the daemon to run
 //! its stage's completion on the host. The handler validates who asked and
-//! what they saw, queues (or joins) a `Complete` host job, and settles at once
-//! with the job id, because a request left `Applying` would be settled
-//! `UnknownAfterRestart` on the next pass. The daemon completes the stage
-//! only when it applies the job's passing run (`host_verify::apply`); the
-//! session follows the job through the state directory (`host_verify::wait`).
+//! what they saw, refuses a stage the completion gates refuse
+//! (`host_verify::gates`), queues (or joins) a `Complete` host job, and
+//! settles at once with the job id, because a request left `Applying` would
+//! be settled `UnknownAfterRestart` on the next pass. The daemon completes the
+//! stage only when it applies the job's passing run (`host_verify::apply`);
+//! the session follows the job through the state directory
+//! (`host_verify::wait`).
 
 use chrono::Utc;
 
 use crate::handoff::completion::content::committed_content;
+use crate::host_verify::gates;
 use crate::host_verify::submit::{submit, SubmitRequest};
 use crate::host_verify::JobKind;
 use crate::models::session::{Session, SessionType};
@@ -32,6 +35,12 @@ pub(super) fn apply_complete(
         Err(reason) => return Settle::Refused(reason),
     };
     if let Err(reason) = validate(host, &stage, request) {
+        return Settle::Refused(reason);
+    }
+    // The gates a passing run would still have to clear take seconds, the run
+    // minutes: a refusal names what to revert, review or dispute at once. The
+    // application checks them again (`host_verify::apply`).
+    if let Some(reason) = gates::refusal(host.work_dir(), stage_id) {
         return Settle::Refused(reason);
     }
     settle_submission(submit(
@@ -88,3 +97,7 @@ fn validate(host: &dyn InboxHost, stage: &Stage, request: &HostJobRequest) -> Re
     }
     Ok(())
 }
+
+#[cfg(test)]
+#[path = "complete_tests.rs"]
+mod tests;
