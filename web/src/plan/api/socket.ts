@@ -5,6 +5,7 @@ import {
   type ClientMessage,
   type PlanMessage,
 } from "@/plan/api/schema";
+import { sessionAtom } from "@/plan/chat/model";
 import {
   authoringAtom,
   backgroundAtom,
@@ -20,6 +21,7 @@ import {
   unauthorizedAtom,
   youAtom,
 } from "@/plan/state/atoms";
+import { commandsFrameAtom, commandsResyncAtom } from "@/plan/state/commands-atom";
 import type { Store } from "@/state/store";
 
 type PlanMessageType = PlanMessage["type"];
@@ -134,6 +136,7 @@ class PlanSocketConnection {
     this.store.set(kickoffAtom, null);
     this.store.set(draftTeamAtom, null);
     this.store.set(backgroundAtom, null);
+    this.store.set(commandsResyncAtom);
     this.attempts = 0;
     // Atoms first, then the epoch, then the resync callbacks: a callback that
     // refetches must see the new snapshot and the bumped epoch.
@@ -174,8 +177,16 @@ class PlanSocketConnection {
         break;
       }
       case "background": {
+        // `backgroundAtom` holds one frame: another session's would empty the chat's task list.
+        const session = this.store.get(sessionAtom);
+        if (session !== null && session.id !== message.session) break;
         const { type: _type, ...frame } = message;
         this.store.set(backgroundAtom, frame);
+        break;
+      }
+      case "commands": {
+        const { type: _type, ...frame } = message;
+        this.store.set(commandsFrameAtom, frame);
         break;
       }
       case "server_stopping":

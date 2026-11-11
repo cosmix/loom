@@ -75,8 +75,14 @@ const WELL_DOTS = [
   ["Decided finding", "decided"],
 ] as const;
 
-/** One sign of work in progress, then the two that mean "your turn". */
-const PROGRESS_NAMES = ["Working", "Needs permission", "Waiting for you"] as const;
+/** One sign of work in progress, the two that mean "your turn", then the two of background tasks. */
+const PROGRESS_NAMES = [
+  "Working",
+  "Needs permission",
+  "Waiting for you",
+  "Background tasks",
+  "Background task words",
+] as const;
 
 afterEach(cleanup);
 
@@ -244,6 +250,11 @@ it("uses each production document, state and activity glyph", () => {
       '.activity-glyph[data-kind="waiting"] .activity-glyph__led',
     ),
   ).toHaveLength(1);
+  expect(
+    tileOf(group, "Background tasks").querySelectorAll(
+      '.activity-glyph[data-kind="background"] .activity-glyph__led',
+    ),
+  ).toHaveLength(1);
 });
 
 it("shows a state word's mark as the two rotating arrows, and no roundel", () => {
@@ -252,8 +263,8 @@ it("shows a state word's mark as the two rotating arrows, and no roundel", () =>
 
   const working = tileOf(group, "Working");
   expect(working.querySelectorAll(".lucide-refresh-cw.plan-arrow-spinner")).toHaveLength(1);
-  // Working, a running plan and a rebuilding summary: every state word is the same arrows.
-  expect(container.querySelectorAll(".lucide-refresh-cw.plan-arrow-spinner")).toHaveLength(3);
+  // Working, a running plan, a rebuilding summary and the background task words: one set of arrows.
+  expect(container.querySelectorAll(".lucide-refresh-cw.plan-arrow-spinner")).toHaveLength(4);
   // The roundel is the header pill's alone; no single-arrow icon stands in for the arrows.
   expect(container.querySelectorAll(".aurora-roundel")).toHaveLength(0);
   expect(group.querySelectorAll(".lucide-loader-circle, .lucide-rotate-cw")).toHaveLength(0);

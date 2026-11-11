@@ -1,3 +1,4 @@
+import { useAtomValue } from "jotai";
 import { useId, useState, type JSX } from "react";
 import {
   Bot,
@@ -11,8 +12,13 @@ import {
   type LucideIcon,
 } from "lucide-react";
 
+import type { BackgroundTaskView } from "@/plan/api/schema-background";
 import type { Item } from "@/plan/api/schema-chat";
+import { StateMark } from "@/plan/ui/activity-glyphs";
+import { backgroundWord } from "./background-fold";
+import { backgroundEntryAtom, isUnended } from "./background-tasks";
 import { PatchView } from "./patch-view";
+import { isSpawnTool } from "./spawn-tool";
 import { Untrusted } from "./visible-controls";
 
 type ToolItem = Extract<Item, { type: "tool" }>;
@@ -27,6 +33,7 @@ const TOOL_GLYPHS: Record<string, LucideIcon> = {
   Grep: Search,
   Glob: Search,
   Agent: Bot,
+  Task: Bot,
 };
 
 function toolGlyph(name: string): LucideIcon {
@@ -48,6 +55,22 @@ function ToolStatus({ status }: { status: ToolItem["status"] }): JSX.Element {
       {status === "error" && <X size={13} aria-hidden="true" />}
       {status === "done" && <Check size={13} aria-hidden="true" />}
       {STATUS_WORD[status]}
+    </span>
+  );
+}
+
+/**
+ * The state of the background task a row launched, in place of the row's own status: a state word
+ * before it ends, so it takes the turning arrows (still while the task is only `stalled?`), then
+ * `done`, `failed` or `stopped`.
+ */
+function BackgroundStatus({ task }: { task: BackgroundTaskView }): JSX.Element {
+  return (
+    <span className="chat-tool-status" data-status={task.state === "failed" ? "error" : task.state}>
+      {isUnended(task.state) && <StateMark kind="running" paused={task.state === "stalled"} />}
+      {task.state === "failed" && <X size={13} aria-hidden="true" />}
+      {task.state === "done" && <Check size={13} aria-hidden="true" />}
+      {backgroundWord(task.state)}
     </span>
   );
 }
@@ -155,6 +178,7 @@ function ToolHeader({
   // One line: the tool's glyph, its target (the bridge's summary names the verb), and at the end
   // the counts of a finished edit or the status word. The row is a button that opens its details.
   const Glyph = toolGlyph(item.name);
+  const task = useAtomValue(backgroundEntryAtom(item.tool_use_id));
   const counted = item.status === "done" && (item.added !== null || item.removed !== null);
   return (
     <button
@@ -174,12 +198,17 @@ function ToolHeader({
       <span className="chat-tool-target">
         <Untrusted text={item.summary} />
       </span>
-      {item.name === "Agent" && (
+      {isSpawnTool(item.name) && (
         <span className="chat-tool-extra">
           {item.nested_tools} tool {item.nested_tools === 1 ? "call" : "calls"}
         </span>
       )}
-      {counted ? (
+      {task !== null ? (
+        <>
+          {" "}
+          <BackgroundStatus task={task} />
+        </>
+      ) : counted ? (
         <ChangeCounts added={item.added} removed={item.removed} />
       ) : (
         <ToolStatus status={item.status} />
@@ -197,8 +226,9 @@ export function ToolRow({
 }): JSX.Element {
   const [expanded, setExpanded] = useState(false);
   const detailsId = useId();
-  const children =
-    item.name === "Agent" ? nested.filter((child) => child.parent === item.tool_use_id) : [];
+  const children = isSpawnTool(item.name)
+    ? nested.filter((child) => child.parent === item.tool_use_id)
+    : [];
   return (
     <div className="chat-tool" aria-live="off">
       <ToolHeader

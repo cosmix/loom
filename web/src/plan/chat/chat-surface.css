@@ -73,7 +73,8 @@
   min-width: 0;
 }
 
-/* Title over sub-line at the start, the buttons at the end, on one centre line. */
+/* Title over sub-line at the start, the buttons at the end, on one centre line. The head is a
+ * size container so the background list (background.css) can take the head's whole width. */
 .chat-head {
   display: flex;
   align-items: center;
@@ -81,11 +82,14 @@
   box-sizing: border-box;
   min-width: 0;
   padding: var(--space-4) var(--chat-gutter) var(--space-3);
+  container-type: inline-size;
 }
 
+/* One column the width of the text, whatever it holds: the background list is wider than it. */
 .chat-head-text {
   display: grid;
   flex: 1 1 auto;
+  grid-template-columns: minmax(0, 1fr);
   gap: 1px;
   min-width: 0;
 }
@@ -108,8 +112,9 @@
   font-weight: 500;
 }
 
-/* The state in a few words, then the place the chat concerns, one line cut with an ellipsis. The
- * state word is the one thing in --foreground. */
+/* The state in a few words (or, for an idle chat, the background tasks it waits on), then the
+ * place the chat concerns, one line cut with an ellipsis. The state word is the one thing in
+ * --foreground. */
 .chat-head-sub {
   overflow: hidden;
   color: var(--muted-foreground);
@@ -119,9 +124,25 @@
   white-space: nowrap;
 }
 
-/* Nothing to say (idle, no place): the line takes no height. */
-.chat-head-sub:not(:has(.chat-state-row, .chat-head-place)) {
+/* Nothing to say (idle with no background task, no place): the line takes no height. */
+.chat-head-sub:not(:has(.chat-state-row, .chat-head-place, .chat-background-line)) {
   display: none;
+}
+
+/* The open background list runs under the buttons to the head's far gutter: a list's edges are
+ * the panel's. `cqi` is the head's content width (the container above). */
+.chat-head .chat-background-list {
+  width: 100cqi;
+}
+
+/* The list makes the text taller than the buttons, which would follow the centre down. They hold
+ * the place they had beside the title and the sub-line: half of what those two lines stand over
+ * the 32px buttons. */
+.chat-head:has(.chat-background-list) .chat-head-side {
+  align-self: start;
+  margin-block-start: calc(
+    (var(--type-title) * var(--leading-ui) + 1px + var(--type-ui) * var(--leading-ui) - 32px) / 2
+  );
 }
 
 /* The state line's root is a block; in the sub-line its words run inline with the place. */
