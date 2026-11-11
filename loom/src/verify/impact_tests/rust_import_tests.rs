@@ -19,7 +19,7 @@ fn an_unresolved_package_import_is_a_note_while_bound_tests_run() {
     let (command, _) = &commands[0];
     assert_eq!(
         command,
-        "cargo test -- add_tests::adds_two tests::adds_in_unit"
+        "cargo test --lib -- --exact add_tests::adds_two tests::adds_in_unit"
     );
     assert_eq!(outcome.ran, vec![command.clone()]);
     assert_eq!(

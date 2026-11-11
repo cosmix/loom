@@ -37,12 +37,29 @@ static PATH_ATTRIBUTE: LazyLock<Regex> = LazyLock::new(|| {
 /// A package (checkout-relative) and its runner's crate-root rule.
 type Crate<'p> = (&'p Path, fn(&Path) -> bool);
 
+/// A file's place under its crate root.
+#[derive(Clone)]
+struct ModulePath {
+    /// The crate root file, checkout-relative.
+    root: String,
+    /// The modules from the root down to the file.
+    modules: Vec<String>,
+}
+
+/// A test function's libtest path and the crate root it starts at.
+pub(super) struct LibtestPath {
+    pub(super) name: String,
+    /// The crate root file, checkout-relative: the cargo target compiling the
+    /// function builds from it.
+    pub(super) root: String,
+}
+
 /// Libtest paths over one graph; each file's module path is derived once.
 pub(super) struct LibtestPaths<'a> {
     graph: &'a ResolvedGraph,
     /// The checkout the graph's paths are relative to.
     root: &'a Path,
-    memo: BTreeMap<String, Option<Vec<String>>>,
+    memo: BTreeMap<String, Option<ModulePath>>,
 }
 
 impl<'a> LibtestPaths<'a> {
@@ -63,7 +80,7 @@ impl<'a> LibtestPaths<'a> {
         node: &SourceNode,
         package: &Path,
         is_crate_root: fn(&Path) -> bool,
-    ) -> Option<String> {
+    ) -> Option<LibtestPath> {
         if node.language != NodeLanguage::Rust {
             return None;
         }
@@ -74,12 +91,16 @@ impl<'a> LibtestPaths<'a> {
         if !(1..=enclosing).all(|depth| declares_module(entry, &node.scope[..depth])) {
             return None;
         }
-        let mut path = self.module_path(&file, (package, is_crate_root), 0)?;
-        path.extend(node.scope.iter().cloned());
-        Some(path.join("::"))
+        let ModulePath { root, mut modules } =
+            self.module_path(&file, (package, is_crate_root), 0)?;
+        modules.extend(node.scope.iter().cloned());
+        Some(LibtestPath {
+            name: modules.join("::"),
+            root,
+        })
     }
 
-    fn module_path(&mut self, file: &str, krate: Crate<'_>, depth: usize) -> Option<Vec<String>> {
+    fn module_path(&mut self, file: &str, krate: Crate<'_>, depth: usize) -> Option<ModulePath> {
         if let Some(known) = self.memo.get(file) {
             return known.clone();
         }
@@ -97,14 +118,17 @@ impl<'a> LibtestPaths<'a> {
         file: &str,
         krate: Crate<'_>,
         depth: usize,
-    ) -> Option<Vec<String>> {
+    ) -> Option<ModulePath> {
         let (package, is_crate_root) = krate;
         if is_crate_root(Path::new(file).strip_prefix(package).ok()?) {
-            return Some(Vec::new());
+            return Some(ModulePath {
+                root: file.to_string(),
+                modules: Vec::new(),
+            });
         }
         let (parent, name) = self.declaring_file(file)?;
         let mut path = self.module_path(&parent, krate, depth + 1)?;
-        path.push(name);
+        path.modules.push(name);
         Some(path)
     }
 
