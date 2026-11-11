@@ -1,4 +1,19 @@
+import type { BackgroundTaskView } from "@/plan/api/schema-background";
 import type { Item } from "@/plan/api/schema-chat";
+
+import { selectAtom } from "jotai/vanilla/utils";
+
+import { chatBackgroundAtom, isUnended } from "./background-tasks";
+
+/**
+ * The chat's tasks that have not ended. The array keeps its identity while the same tool calls are
+ * unended, so the transcript regroups when a row starts or stops working, not on every refresh.
+ */
+export const unendedTasksAtom = selectAtom(
+  chatBackgroundAtom,
+  (tasks) => tasks.filter((task) => isUnended(task.state)),
+  (a, b) => a.length === b.length && a.every((task, i) => task.tool_use_id === b[i]!.tool_use_id),
+);
 
 export type ToolGroup = { kind: "group"; items: Item[]; label: string };
 
@@ -42,9 +57,16 @@ function isSkillRow(item: Item): boolean {
 /**
  * Every run of one or more plain tool rows folds into one group, while the turn is open and after
  * it ends. Errors, denials, subagent rows and everything else that is not a tool stay outside,
- * and Skill rows are dropped.
+ * and Skill rows are dropped. A row whose background task has not ended stays outside too, so the
+ * reader sees it work; once the task ends the row folds like any finished tool.
  */
-export function groupToolRows(items: Item[]): Array<Item | ToolGroup> {
+export function groupToolRows(
+  items: Item[],
+  background: readonly BackgroundTaskView[],
+): Array<Item | ToolGroup> {
+  const unended = new Set(
+    background.filter((task) => isUnended(task.state)).map((task) => task.tool_use_id),
+  );
   const rows: Array<Item | ToolGroup> = [];
   let run: ToolItem[] = [];
   for (const item of items) {
@@ -53,7 +75,8 @@ export function groupToolRows(items: Item[]): Array<Item | ToolGroup> {
       item.type === "tool" &&
       item.subagent === null &&
       item.status !== "error" &&
-      item.status !== "denied"
+      item.status !== "denied" &&
+      !unended.has(item.tool_use_id)
     ) {
       run.push(item);
     } else {

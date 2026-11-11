@@ -23,7 +23,7 @@ import { LoadState } from "@/plan/ui/load-state";
 import "./activity.css";
 import { ActivityList, RunLine, type LiveRows } from "./activity-rows";
 import { Popover, PopoverContent, PopoverTrigger } from "./popover";
-import { mostUrgent, useActivities, type Activity } from "./use-activities";
+import { inProgress, mostUrgent, useActivities, type Activity } from "./use-activities";
 
 /** The card lift plus the popover's longer drop; both layers are tokens in plan.css. */
 const POPOVER_SHADOW = "var(--plan-shadow), var(--popover-lift)";
@@ -50,6 +50,14 @@ function PillGlyph({ kind }: { kind: ActivityKind }): JSX.Element {
   );
 }
 
+/**
+ * The row the pill leads with. Background tasks are no progress, so the most urgent of the rest
+ * leads; the pill shows the background row alone only when nothing else is listed.
+ */
+function pillLead(activities: Activity[]): Activity | null {
+  return mostUrgent(inProgress(activities)) ?? mostUrgent(activities);
+}
+
 function PillBody({
   activities,
   compact,
@@ -59,16 +67,21 @@ function PillBody({
   compact: boolean;
   open: boolean;
 }): JSX.Element {
-  const urgent = mostUrgent(activities);
+  const counted = inProgress(activities);
+  const urgent = pillLead(activities);
   const Chevron = open ? ChevronUp : ChevronDown;
   return (
     <>
       {urgent ? (
         <>
           <PillGlyph kind={urgent.kind} />
-          <span className="tabular-nums">
-            {compact ? activities.length : `${activities.length} in progress`}
-          </span>
+          {counted.length > 0 ? (
+            <span className="tabular-nums">
+              {compact ? counted.length : `${counted.length} in progress`}
+            </span>
+          ) : (
+            !compact && <span>{urgent.title}</span>
+          )}
         </>
       ) : (
         <>
@@ -98,9 +111,12 @@ function Pill({
   live?: LiveRows;
   footer: ReactNode;
 }): JSX.Element {
-  const urgent = mostUrgent(activities);
+  const urgent = pillLead(activities);
+  const counted = inProgress(activities).length;
   const label = urgent
-    ? `${activities.length} in progress: ${ACTIVITY_LABELS[urgent.kind]}`
+    ? counted > 0
+      ? `${counted} in progress: ${ACTIVITY_LABELS[urgent.kind]}`
+      : urgent.title
     : "Activity: idle";
 
   return (

@@ -13,6 +13,7 @@ import overviewFixture from "@/plan/api/fixtures/concept-overview.json";
 import docFixture from "@/plan/api/fixtures/files-doc.json";
 import treeFixture from "@/plan/api/fixtures/files-tree.json";
 import helloFixture from "@/plan/api/fixtures/hello.json";
+import commandsFixture from "@/plan/api/fixtures/session-commands.json";
 import { connectPlanSocket } from "@/plan/api/socket";
 import { addAttachmentAtom, type AttachmentDraft } from "@/plan/attachments";
 import { docRel } from "@/plan/files/address";
@@ -261,16 +262,17 @@ it("chat permission denied by timeout collapses to the automatic deny line", asy
 
 it("chat composer refuses slash commands other than compact", async () => {
   const { chat } = await start("idle");
+  seed({ type: "commands", session: snapshotFixture.session.id, ...commandsFixture });
   const box = await composer(chat);
-  const note = "Slash commands are not available here";
   fireEvent.change(box, { target: { value: "/clear" } });
   expect(disabled(sendButton(chat))).toBe(true);
-  expect(text(chat)).toContain(note);
+  const outside = "Changes the session outside the planner";
+  expect(within(chat).getByRole("button", { name: "Send", description: outside })).toBeTruthy();
   fireEvent.click(sendButton(chat));
   expect(chatCommands()).toEqual([]);
   fireEvent.change(box, { target: { value: "/compact" } });
   expect(disabled(sendButton(chat))).toBe(false);
-  expect(text(chat)).not.toContain(note);
+  expect(text(chat)).not.toContain(outside);
 });
 
 it("chat composer disables send when the message with attachments exceeds the cap", async () => {

@@ -14,11 +14,13 @@ export type ActivityKind =
   | "running"
   | "starting"
   | "waiting"
+  | "background"
   | "permission";
 
 export const ACTIVITY_KINDS: readonly ActivityKind[] = [
   "permission",
   "waiting",
+  "background",
   "running",
   "pressure",
   "codex",
@@ -30,6 +32,7 @@ export const ACTIVITY_KINDS: readonly ActivityKind[] = [
 export const ACTIVITY_LABELS: Record<ActivityKind, string> = {
   permission: "Needs permission",
   waiting: "Waiting for you",
+  background: "background tasks",
   running: "Plan running",
   pressure: "Pressure test",
   codex: "Codex reviewing",
@@ -39,8 +42,10 @@ export const ACTIVITY_LABELS: Record<ActivityKind, string> = {
 };
 
 /**
- * The kinds that mean work is under way; the rest (`YourTurnKind`) mean "your turn": the waiting
- * kind draws the status dot, the permission kind its bell. A progress kind's mark follows
+ * The kinds that mean work is under way; the rest (`YourTurnKind`) are the other states of the
+ * chat: waiting means "your turn", permission "a decision is yours", and background an idle chat
+ * that waits on its own tasks, which is not your turn. Waiting and background draw the status
+ * dot, permission its bell. A progress kind's mark follows
  * `ui/DESIGN.md`, Status: the rotating arrows (`StateMark`) before a state word, the dot
  * (`ActivityGlyph`) before the item or action itself.
  */
@@ -152,6 +157,7 @@ export const ACTIVITY_TONES: Record<ActivityKind, ActivityTone> = {
   pressure: "ring",
   drafting: "ring",
   waiting: "completed",
+  background: "completed",
   permission: "warning",
 };
 

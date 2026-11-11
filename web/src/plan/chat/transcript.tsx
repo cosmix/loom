@@ -10,7 +10,8 @@ import { pendingPermissionsAtom, sessionAtom, snapshotAtom, turnsAtom } from "./
 import { PermissionCard } from "./permission-card";
 import { SessionDivider } from "./session-divider";
 import { clearedChatAtom, shownSessionAtom } from "./shown-session";
-import { groupToolRows, type ToolGroup } from "./tool-group";
+import { isSpawnTool } from "./spawn-tool";
+import { groupToolRows, unendedTasksAtom, type ToolGroup } from "./tool-group";
 import { TurnFooter } from "./turn-footer";
 import { useFollow } from "./use-follow";
 import { Untrusted } from "./visible-controls";
@@ -34,7 +35,7 @@ function chronological(turns: Turn[]): Turn[] {
 function nestedTools(turn: Turn): ToolItem[] {
   const parents = new Set(
     turn.items
-      .filter((item): item is ToolItem => item.type === "tool" && item.name === "Agent")
+      .filter((item): item is ToolItem => item.type === "tool" && isSpawnTool(item.name))
       .map((item) => item.tool_use_id),
   );
   return turn.items.filter(
@@ -98,6 +99,7 @@ function FoldedTools({
 }
 
 function TurnItems({ turn }: { turn: Turn }): JSX.Element {
+  const background = useAtomValue(unendedTasksAtom);
   const nested = nestedTools(turn);
   const nestedIds = new Set(nested.map((item) => item.id));
   // A pending request is drawn once, at the end of the transcript (PendingDecision). Thinking
@@ -110,7 +112,7 @@ function TurnItems({ turn }: { turn: Turn }): JSX.Element {
   );
   return (
     <div className="chat-turn-items">
-      {groupToolRows(items).map((row) =>
+      {groupToolRows(items, background).map((row) =>
         "items" in row ? (
           <FoldedTools key={`tools-${row.items[0]?.id}`} group={row} turn={turn} nested={nested} />
         ) : (

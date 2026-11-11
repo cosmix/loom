@@ -1,5 +1,5 @@
 import { useAtomValue, useStore } from "jotai";
-import { ArrowUp, Paperclip } from "lucide-react";
+import { ArrowUp, Paperclip, SquareSlash } from "lucide-react";
 import { useCallback, useEffect, useId, useRef, type ReactNode } from "react";
 
 import {
@@ -10,13 +10,16 @@ import {
   serverInfoAtom,
   stoppingAtom,
 } from "@/plan/state/atoms";
+import { commandsAtom } from "@/plan/state/commands-atom";
 import { DisabledReason } from "@/plan/ui/disabled-reason";
 import { AttachDocument } from "./attach-document";
 import { PendingChips } from "./chips";
+import { CommandHint, CommandMenu, useCommandMenu, type CommandMenuState } from "./command-menu";
 import { composerBlock } from "./composer-gate";
 import { ConcludedChat, DraftKept, EndingChat, NewChatBesideBox } from "./composer-concluded";
 import { ComposerFoot } from "./composer-foot";
 import {
+  commandsForSend,
   composeAfterAtom,
   focusComposerAtom,
   useClearFocusRequest,
@@ -74,22 +77,30 @@ function useBlockReasons(pending: boolean) {
   const blocked =
     composerBlock(session, { stopping, readOnly: !!server?.read_only.length, codexAlone }) ??
     authorReason;
+  const commands = useAtomValue(commandsAtom);
   const reason =
     blocked ??
     (connection.phase !== "open" ? "Not connected; the message is kept" : null) ??
-    (pending ? "Sending" : messageProblem(draft.text, attachments));
+    (pending
+      ? "Sending"
+      : messageProblem(draft.text, attachments, commandsForSend(session, commands)));
   return { reason, resendBlock: reason === "Sending" ? reason : blocked };
 }
 
-/** The text box and its placeholder, which names the page the context chip shows. */
+/**
+ * The text box and its placeholder, which names the page the context chip shows. It is the
+ * combobox of the command list (`menu`), whose keys it hands over before reading its own Enter.
+ */
 function MessageBox({
   reason,
   send,
   describedBy,
+  menu,
 }: {
   reason: string | null;
   send: () => Promise<void>;
   describedBy: string | undefined;
+  menu: CommandMenuState;
 }) {
   const store = useStore();
   const draft = useAtomValue(draftAtom);
@@ -104,22 +115,28 @@ function MessageBox({
       : inFeature
         ? "Ask about this feature"
         : undefined;
+  const described = [describedBy, menu.hint === null ? null : menu.hintId].filter(Boolean);
   return (
-    <textarea
-      ref={ref}
-      aria-label="Message"
-      placeholder={placeholder}
-      rows={Math.min(8, Math.max(1, draft.text.split("\n").length))}
-      value={draft.text}
-      aria-describedby={describedBy}
-      className="chat-composer-field font-sans"
-      onChange={(event) => store.set(draftAtom, (old) => ({ ...old, text: event.target.value }))}
-      onKeyDown={(event) => {
-        if (event.key !== "Enter" || event.shiftKey || event.nativeEvent.isComposing) return;
-        event.preventDefault();
-        if (!reason) void send();
-      }}
-    />
+    <>
+      <textarea
+        ref={ref}
+        aria-label="Message"
+        placeholder={menu.hint ?? placeholder}
+        rows={Math.min(8, Math.max(1, draft.text.split("\n").length))}
+        value={draft.text}
+        aria-describedby={described.join(" ") || undefined}
+        className="chat-composer-field font-sans"
+        {...menu.field}
+        onChange={(event) => store.set(draftAtom, (old) => ({ ...old, text: event.target.value }))}
+        onKeyDown={(event) => {
+          if (menu.onKeyDown(event)) return;
+          if (event.key !== "Enter" || event.shiftKey || event.nativeEvent.isComposing) return;
+          event.preventDefault();
+          if (!reason) void send();
+        }}
+      />
+      <CommandHint menu={menu} field={ref} />
+    </>
   );
 }
 
@@ -127,17 +144,19 @@ function MessageBox({
  * The bordered box the user types in: what the next message carries (the context chip, the
  * pending chips) above the line that holds the text and the tools, and the drop target. Files
  * dropped or pasted anywhere on it attach. While a file is dragged over it, "Drop to attach"
- * covers the box inside its own edge, so nothing around it moves.
+ * covers the box inside its own edge, so nothing around it moves. The command list hangs from it.
  */
-function ComposerBox({ children }: { children: ReactNode }) {
+function ComposerBox({ menu, children }: { menu: CommandMenuState; children: ReactNode }) {
   const { dragging, ...intake } = useFileIntake();
+  const box = useRef<HTMLDivElement>(null);
   return (
-    <div className="chat-composer-box" data-dragging={dragging || undefined} {...intake}>
+    <div ref={box} className="chat-composer-box" data-dragging={dragging || undefined} {...intake}>
       <div className="chat-composer-attached">
         <ContextLine />
         <PendingChips />
       </div>
       <div className="chat-composer-line">{children}</div>
+      <CommandMenu menu={menu} anchor={box} />
       {dragging && (
         <p className="chat-drop-target">
           <Paperclip size={16} aria-hidden="true" />
@@ -149,26 +168,41 @@ function ComposerBox({ children }: { children: ReactNode }) {
 }
 
 /**
- * The tools at the box's end, on the text's last line: the paperclip, then New chat (after a
- * concluded chat), Stop (while a turn runs; never for a pressure run, which stops from its own
- * head) and Send, round and last. Send stays enabled while a turn runs: a message sent then is
- * queued. Its reason, when blocked, is the foot line under the box (`footId`), not a line here.
+ * The tools at the box's end, on the text's last line: the paperclip and Commands, then New chat
+ * (after a concluded chat), Stop (while a turn runs; never for a pressure run, which stops from
+ * its own head) and Send, round and last. Send stays enabled while a turn runs: a message sent
+ * then is queued. Its reason, when blocked, is the foot line under the box (`footId`), not a line
+ * here.
  */
 function ComposerActions({
   afterConcluded,
   reason,
   footId,
   send,
+  menu,
 }: {
   afterConcluded: boolean;
   reason: string | null;
   footId: string;
   send: () => Promise<void>;
+  menu: CommandMenuState;
 }) {
   const session = useAtomValue(sessionAtom);
   return (
     <div className="chat-composer-actions">
       <AttachDocument />
+      {/* Opens the command list for a reader who does not type the slash. */}
+      <DisabledReason
+        reason={null}
+        look="quiet"
+        shape="round"
+        expanded={menu.open}
+        controls={menu.open ? menu.listId : undefined}
+        onClick={menu.toggle}
+      >
+        <SquareSlash aria-hidden="true" />
+        <span className="sr-only">Commands</span>
+      </DisabledReason>
       <div className="chat-composer-end">
         {afterConcluded && <NewChatBesideBox />}
         {session?.kind !== "pressure" && <StopControl />}
@@ -198,15 +232,22 @@ function ComposerInput({ afterConcluded }: { afterConcluded: boolean }) {
   const noteId = `${id}-new-chat`;
   const footId = `${id}-foot`;
   const describedBy = [afterConcluded ? noteId : null, error ? id : null].filter(Boolean).join(" ");
+  const menu = useCommandMenu();
   return (
     <div className="chat-composer-input">
-      <ComposerBox>
-        <MessageBox reason={reason} send={send} describedBy={describedBy || undefined} />
+      <ComposerBox menu={menu}>
+        <MessageBox
+          reason={reason}
+          send={send}
+          describedBy={describedBy || undefined}
+          menu={menu}
+        />
         <ComposerActions
           afterConcluded={afterConcluded}
           reason={reason}
           footId={footId}
           send={send}
+          menu={menu}
         />
       </ComposerBox>
       <ComposerFoot footId={footId} reason={reason}>
