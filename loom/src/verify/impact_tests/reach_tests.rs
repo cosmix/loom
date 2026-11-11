@@ -51,3 +51,38 @@ fn a_namesake_reached_only_through_a_candidate_is_noted_not_selected() {
         BTreeSet::from(["deps/kit/tests/kit_test.rs".to_string()])
     );
 }
+
+/// The graph index dominates selection on a large graph, so each of the two
+/// walks (selected, namesakes) builds it once, however many nodes changed.
+#[test]
+fn selection_builds_one_graph_index_per_walk_not_per_changed_node() {
+    use crate::context::resolve::fixtures::{edge_at, func_id, graph_from};
+    use crate::context::source_graph::{EdgeProvenance, SourceEdgeKind, IMPORT_CONFIDENCE};
+
+    let call = |from: &str, to: &str| {
+        vec![edge_at(
+            from,
+            to,
+            SourceEdgeKind::Calls,
+            EdgeProvenance::Import,
+            IMPORT_CONFIDENCE,
+        )]
+    };
+    let alpha = func_id("src/alpha.rs", "alpha");
+    let beta = func_id("src/beta.rs", "beta");
+    let checks = func_id("tests/flow_test.rs", "checks");
+    let graph = graph_from(vec![
+        ("src/alpha.rs", &["alpha", "helper", "other"], vec![]),
+        ("src/beta.rs", &["beta", "spare"], call(&beta, &alpha)),
+        ("tests/flow_test.rs", &["checks"], call(&checks, &beta)),
+    ]);
+    let changed = [PathBuf::from("src/alpha.rs"), PathBuf::from("src/beta.rs")];
+    let before = ImpactOptions::index_builds();
+
+    let reached = reached_test_nodes(&graph, &changed, &BTreeSet::new());
+
+    assert_eq!(ImpactOptions::index_builds() - before, 2);
+    let selected: Vec<&str> = reached.selected.keys().copied().collect();
+    assert_eq!(selected, vec![checks.as_str()]);
+    assert!(reached.namesakes.is_empty());
+}

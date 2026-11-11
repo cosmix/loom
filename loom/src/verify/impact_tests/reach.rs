@@ -4,7 +4,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
 use crate::context::graph_store::ResolvedGraph;
-use crate::context::resolve::{impact_with, ImpactOptions};
+use crate::context::resolve::ImpactOptions;
 use crate::context::source_graph::{file_node_id, SourceNode, UNIQUE_NAME_CONFIDENCE};
 use crate::testrun::languages;
 use crate::verify::goal_backward::reachable::REACHABLE_KINDS;
@@ -68,10 +68,8 @@ fn walk_tests<'g>(
     options: &ImpactOptions,
 ) -> TestNodes<'g> {
     let is_test = |file: &str| languages::for_path(file).is_some() && !contracts.contains(file);
-    // A node an earlier walk reached is not walked again: with no depth limit
-    // and a per-step filter, everything reaching it was reached by that walk too.
-    let mut seen: BTreeSet<String> = BTreeSet::new();
     let mut reached = TestNodes::new();
+    let mut starts: Vec<&str> = Vec::new();
     for file in changed.iter().map(|path| file_node_id(path)) {
         let Some(entry) = graph.files.get(&file) else {
             continue;
@@ -80,16 +78,17 @@ fn walk_tests<'g>(
             if is_test(&file) {
                 reached.insert(node.id.as_str(), node);
             }
-            if !seen.insert(node.id.clone()) {
-                continue;
-            }
-            for hit in impact_with(graph, &node.id, options).hits {
-                let path = file_node_id(&hit.path);
-                if seen.insert(hit.id.clone()) && is_test(&path) {
-                    let found = node_in(graph, &path, &hit.id);
-                    reached.extend(found.map(|found| (found.id.as_str(), found)));
-                }
-            }
+            starts.push(node.id.as_str());
+        }
+    }
+    // One walk from every changed node, so the graph index is built once
+    // however many files changed. With no depth limit and a per-step filter,
+    // its hits are exactly the union of the single-node walks' hits.
+    for hit in options.impact_from(graph, &starts).hits {
+        let path = file_node_id(&hit.path);
+        if is_test(&path) {
+            let found = node_in(graph, &path, &hit.id);
+            reached.extend(found.map(|found| (found.id.as_str(), found)));
         }
     }
     reached

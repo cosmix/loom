@@ -20,6 +20,8 @@
 //! hit whose path used one is flagged `via_candidates`. A `min_confidence` above
 //! that trust requires bound edges throughout.
 //!
+//! [`AMBIGUOUS_CANDIDATE_CONFIDENCE`]: crate::context::source_graph::AMBIGUOUS_CANDIDATE_CONFIDENCE
+//!
 //! ## What a traversal may not claim
 //!
 //! Reachability here is reachability *in the derived graph*, which is not the
@@ -27,14 +29,15 @@
 //! candidate set, are dropped before the walk rather than treated as edges to an
 //! "unresolved" hub, so an absent path means "not found", never "does not exist".
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
 use crate::context::graph_store::ResolvedGraph;
-use crate::context::source_graph::{
-    EdgeProvenance, SourceEdge, SourceEdgeKind, SourceNode, SourceNodeKind,
-    AMBIGUOUS_CANDIDATE_CONFIDENCE,
-};
+use crate::context::source_graph::{EdgeProvenance, SourceEdgeKind, SourceNode, SourceNodeKind};
+
+#[path = "impact_trust.rs"]
+mod trust;
+use trust::{Step, Trust};
 
 /// One node reached by a reverse traversal, with the trust of the weakest step.
 #[derive(Debug, Clone, PartialEq)]
@@ -69,6 +72,8 @@ pub struct ImpactOptions {
     pub provenances: Vec<EdgeProvenance>,
     /// Walk each member of an ambiguous edge's candidate set at
     /// [`AMBIGUOUS_CANDIDATE_CONFIDENCE`].
+    ///
+    /// [`AMBIGUOUS_CANDIDATE_CONFIDENCE`]: crate::context::source_graph::AMBIGUOUS_CANDIDATE_CONFIDENCE
     pub follow_candidates: bool,
 }
 
@@ -107,76 +112,33 @@ pub struct ImpactResult {
     pub filtered_out: usize,
 }
 
-/// One reverse step: an edge, walked through its target or through one member of
-/// its candidate set.
-#[derive(Debug, Clone, Copy)]
-struct Step<'a> {
-    edge: &'a SourceEdge,
-    candidate: bool,
-}
-
-impl Step<'_> {
-    /// A candidate step trusts [`AMBIGUOUS_CANDIDATE_CONFIDENCE`], whatever the
-    /// edge's own confidence says.
-    fn confidence(&self) -> f32 {
-        if self.candidate {
-            AMBIGUOUS_CANDIDATE_CONFIDENCE
-        } else {
-            self.edge.confidence
-        }
-    }
-}
-
-/// The weakest edge seen so far along one path.
-#[derive(Debug, Clone, Copy)]
-struct Trust {
-    min_confidence: f32,
-    provenance: EdgeProvenance,
-    kind: SourceEdgeKind,
-    via_candidates: bool,
-}
-
-impl Trust {
-    /// Extend a path by `step`. `None` is the start node, which has no path yet.
-    /// The candidate flag is sticky: it survives even when a later, weaker step
-    /// becomes the weakest.
-    fn extend(current: Option<Trust>, step: Step<'_>) -> Trust {
-        let confidence = step.confidence();
-        let via_candidates = step.candidate || current.is_some_and(|t| t.via_candidates);
-        match current {
-            Some(trust) if trust.min_confidence <= confidence => Trust {
-                via_candidates,
-                ..trust
-            },
-            _ => Trust {
-                min_confidence: confidence,
-                provenance: step.edge.provenance,
-                kind: step.edge.kind,
-                via_candidates,
-            },
-        }
-    }
-}
-
-impl From<&ImpactHit> for Trust {
-    fn from(hit: &ImpactHit) -> Self {
-        Trust {
-            min_confidence: hit.min_confidence,
-            provenance: hit.weakest_provenance,
-            kind: hit.weakest_kind,
-            via_candidates: hit.via_candidates,
-        }
-    }
-}
-
 type Reverse<'a> = BTreeMap<&'a str, Vec<Step<'a>>>;
 type Nodes<'a> = BTreeMap<&'a str, &'a SourceNode>;
 type Frontier<'a> = Vec<(&'a str, Option<Trust>)>;
 
-/// Incoming steps keyed by target, so a level step does not rescan the graph.
-/// An unresolved edge names no target worth walking back from, so it is indexed
-/// only under the candidates it lists, and only when they are followed.
-fn reverse_adjacency<'a>(graph: &'a ResolvedGraph, options: &ImpactOptions) -> Reverse<'a> {
+#[cfg(test)]
+thread_local! {
+    /// Graph indexes built on this thread, so a test can prove a walk builds one.
+    static INDEX_BUILDS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+impl ImpactOptions {
+    /// Graph indexes [`ImpactOptions::impact_from`] has built on this thread.
+    pub(crate) fn index_builds() -> usize {
+        INDEX_BUILDS.with(std::cell::Cell::get)
+    }
+}
+
+/// Node lookup plus incoming steps keyed by target, so a level step does not
+/// rescan the graph. An unresolved edge names no target worth walking back
+/// from, so it is indexed only under the candidates it lists, and only when
+/// they are followed. Building this dominates a walk on a large graph, which
+/// is why one walk serves every start node.
+fn index<'a>(graph: &'a ResolvedGraph, options: &ImpactOptions) -> (Nodes<'a>, Reverse<'a>) {
+    #[cfg(test)]
+    INDEX_BUILDS.with(|builds| builds.set(builds.get() + 1));
+    let nodes = graph.nodes().map(|node| (node.id.as_str(), node)).collect();
     let mut reverse: Reverse<'a> = BTreeMap::new();
     for edge in graph.edges() {
         if !edge.is_unresolved() {
@@ -196,12 +158,12 @@ fn reverse_adjacency<'a>(graph: &'a ResolvedGraph, options: &ImpactOptions) -> R
             }
         }
     }
-    reverse
+    (nodes, reverse)
 }
 
 /// Breadth-first state for one [`impact`] query.
 struct Walk<'a> {
-    start: &'a str,
+    starts: BTreeSet<&'a str>,
     hits: Vec<ImpactHit>,
     seen: BTreeMap<&'a str, usize>,
 }
@@ -224,9 +186,9 @@ impl<'a> Walk<'a> {
                     continue;
                 }
                 let from = step.edge.from.as_str();
-                // The start node is the query's subject, never a result; skipping
+                // A start node is the query's subject, never a result; skipping
                 // it is also what makes a cycle back to it terminate.
-                if from == self.start {
+                if self.starts.contains(from) {
                     continue;
                 }
                 let Some(&node) = nodes.get(from) else {
@@ -306,33 +268,42 @@ fn step_is_allowed(step: Step<'_>, options: &ImpactOptions) -> bool {
     kind_allowed && provenance_allowed && step.confidence() >= options.min_confidence
 }
 
+impl ImpactOptions {
+    /// Breadth-first reverse traversal from every one of `start_ids` at once,
+    /// over one graph index. A hit's depth counts from its nearest start, no
+    /// start is ever a hit, and the hit set is the union of the single-start
+    /// walks' hits less the starts.
+    pub fn impact_from(&self, graph: &ResolvedGraph, start_ids: &[&str]) -> ImpactResult {
+        if self.max_depth == 0 {
+            return bound(Vec::new(), self);
+        }
+        let (nodes, reverse) = index(graph, self);
+        let mut walk = Walk {
+            starts: start_ids.iter().copied().collect(),
+            hits: Vec::new(),
+            seen: BTreeMap::new(),
+        };
+
+        let mut frontier: Frontier<'_> = walk.starts.iter().map(|id| (*id, None)).collect();
+        for depth in 1..=self.max_depth {
+            let next = walk.expand(&frontier, depth, &reverse, &nodes, self);
+            if next.is_empty() {
+                break;
+            }
+            frontier = next;
+        }
+        bound(walk.finish(), self)
+    }
+}
+
 /// Breadth-first reverse traversal with edge, path, confidence, and result bounds.
 pub fn impact_with(graph: &ResolvedGraph, start_id: &str, options: &ImpactOptions) -> ImpactResult {
-    if options.max_depth == 0 {
-        return ImpactResult {
-            hits: Vec::new(),
-            suppressed: 0,
-            filtered_out: 0,
-        };
-    }
-    let nodes: Nodes<'_> = graph.nodes().map(|node| (node.id.as_str(), node)).collect();
-    let reverse = reverse_adjacency(graph, options);
-    let mut walk = Walk {
-        start: start_id,
-        hits: Vec::new(),
-        seen: BTreeMap::new(),
-    };
+    options.impact_from(graph, &[start_id])
+}
 
-    let mut frontier: Frontier<'_> = vec![(start_id, None)];
-    for depth in 1..=options.max_depth {
-        let next = walk.expand(&frontier, depth, &reverse, &nodes, options);
-        if next.is_empty() {
-            break;
-        }
-        frontier = next;
-    }
-
-    let mut hits = walk.finish();
+/// Apply [`ImpactOptions::path_prefix`] and then [`ImpactOptions::limit`] to
+/// sorted hits, counting what each removed.
+fn bound(mut hits: Vec<ImpactHit>, options: &ImpactOptions) -> ImpactResult {
     let before_filter = hits.len();
     if let Some(prefix) = &options.path_prefix {
         hits.retain(|hit| hit.path.to_string_lossy().starts_with(prefix));
@@ -372,3 +343,7 @@ pub fn impact(graph: &ResolvedGraph, start_id: &str, max_depth: usize) -> Vec<Im
 #[cfg(test)]
 #[path = "tests_impact.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "tests_impact_from.rs"]
+mod tests_from;
