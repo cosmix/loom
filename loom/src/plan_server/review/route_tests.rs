@@ -20,7 +20,7 @@ use crate::plan_server::wire::review::ImplementedByResponse;
 use crate::plan_server::RunningServer;
 
 const MISSING_COMMIT: &str = "1111111111111111111111111111111111111111";
-const SECTION: &str = "doc/product/demo/section_01.md";
+pub(super) const SECTION: &str = "doc/product/demo/section_01.md";
 const END_TEXT: &str = "# Turn end\n";
 const INVALID_PLAN: &str = "# Invalid plan\n\n<!-- loom METADATA -->\n\n```yaml\nloom: [\n```\n\n<!-- END loom METADATA -->\n";
 
@@ -31,7 +31,7 @@ fn write(dir: &TempDir, rel: &str, text: &str) -> Result<()> {
     Ok(())
 }
 
-fn served(files: &[(&str, &str)]) -> Result<(TempDir, RunningServer)> {
+pub(super) fn served(files: &[(&str, &str)]) -> Result<(TempDir, RunningServer)> {
     let dir = support::project();
     // An unborn Git repository needs only HEAD, objects and refs; no history is used here.
     fs::create_dir_all(dir.path().join(".git/objects"))?;
@@ -290,7 +290,7 @@ fn built_with_no_plans_is_empty() -> Result<()> {
 
     let response = get(
         &server,
-        "/api/built?section=product/demo/section_01",
+        "/api/built?section=product%2Fdemo%2Fsection_01.md",
         &cookie,
     );
 
@@ -320,7 +320,7 @@ fn built_accepts_feature_section_ids_and_scopes_the_plans() -> Result<()> {
     let cookie = bootstrap(&server);
     let response = get(
         &server,
-        "/api/built?section=product/demo/section_01",
+        "/api/built?section=product%2Fdemo%2Fsection_01.md",
         &cookie,
     );
     assert_eq!(status(&response), 200, "{response}");

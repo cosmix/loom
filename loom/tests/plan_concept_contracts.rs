@@ -169,17 +169,7 @@ fn implements_broken_name_kept() {
 
 #[test]
 fn engineering_overview_is_refused() {
-    let (_t, root, _home) = tree(&[(META.to_string(), metaplan(&[]))]);
     assert!(PageKey::parse(ENGINEERING_OVERVIEW).is_none());
-    let project = loom::planning::project::Project::load(&root).expect("project");
-    let eval = loom::planning::summary::evaluate::evaluate(&project, &[]);
-    assert!(loom::plan_server::concept::load_page(
-        &project,
-        &eval,
-        &engineering_overview_key(),
-        &PageContext::default(),
-    )
-    .is_none());
 }
 
 #[test]

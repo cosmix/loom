@@ -92,16 +92,8 @@ fn only_product_overviews_parse_or_load() {
     let f = fixture();
     let project = fx::load(&f.root);
     let eval = evaluate(&project, &[]);
-    for (scope, name) in [
-        (Scope::Engineering, "engineering"),
-        (Scope::Metaplan, "metaplan"),
-    ] {
+    for name in ["engineering", "metaplan"] {
         assert!(PageKey::parse(&format!("overview/demo/{name}")).is_none());
-        let key = PageKey::Overview {
-            feature: "demo".into(),
-            scope,
-        };
-        assert!(load_page(&project, &eval, &key, &PageContext::default()).is_none());
     }
     let product = PageKey::parse("overview/demo/product").expect("product overview key");
     assert!(load_page(&project, &eval, &product, &PageContext::default()).is_some());

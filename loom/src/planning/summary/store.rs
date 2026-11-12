@@ -45,12 +45,12 @@ pub const STORE_DIR: &str = "doc/loom/summaries";
 
 /// Whether `id` names a valid feature overview rather than a document summary.
 pub fn is_overview(id: &str) -> bool {
-    overview_parts(id).is_some()
+    overview_feature(id).is_some()
 }
 
-fn overview_parts(id: &str) -> Option<(&str, &str)> {
+fn overview_feature(id: &str) -> Option<&str> {
     let (feature, kind) = id.strip_prefix("overview/")?.split_once('/')?;
-    (is_feature_name(feature) && kind == "product").then_some((feature, kind))
+    (is_feature_name(feature) && kind == "product").then_some(feature)
 }
 
 /// The feature of a vision summary id `<feature>/product/vision`, else `None`.
@@ -179,7 +179,7 @@ pub struct Scope {
 impl Scope {
     /// Select a known feature by a valid overview id (the overview need not yet exist).
     pub fn of(project: &Project, overview_id: &str) -> Option<Self> {
-        let (feature, _) = overview_parts(overview_id)?;
+        let feature = overview_feature(overview_id)?;
         project.feature(feature)?;
         Some(scope(project, feature))
     }
