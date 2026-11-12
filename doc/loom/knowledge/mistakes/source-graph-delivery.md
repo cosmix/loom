@@ -170,3 +170,13 @@ nothing.
 - **Grammar quirks.** `tree-sitter-c-sharp` emits `this` and `base` as anonymous tokens, so `(_)` misses them as
   `@call.receiver`; the query uses `[(_) "this" "base"]`. Java `this`/`super` are named nodes. `tree-sitter-cpp 0.23.4`
   reports an ERROR on the common `extern "C"` header guard.
+
+## A Hook-Created State Directory Disabled the Source Graph in an Uninitialized Repo
+
+**What happened:** in a checkout where `loom init` never ran, `loom map` and the knowledge brief's source graph reported `checkout identity missing or unreadable` and indexed 0 files.
+
+**Why:** prompt and context hooks create `.loom/work/{context,memory,telemetry}`. `identity_for` (`loom/src/git/worktree/main_identity.rs`) treats the state directory's existence as "initialized" and then requires `main-checkout-identity.json`, which only `loom init` writes.
+
+**Prevention:** `loom map` and `loom knowledge` must work in a repository with no loom plan or `loom init` (user requirement). Never use the presence of a directory the read-only features themselves create as the signal that init ran.
+
+**Fix:** `identity_for` now requires the identity only for a state directory `initialized_state_of` accepts (identity file, plan config, or stage/session state via `fs::work_state::holds_orchestration_state`); otherwise git discovery. `loom map` fails non-zero when the graph is unavailable or never built.

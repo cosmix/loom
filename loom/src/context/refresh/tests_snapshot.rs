@@ -23,7 +23,7 @@ pub(super) fn git_ok(root: &Path, args: &[&str]) {
 }
 
 /// A committed repository with no loom state at all.
-fn repo_without_state() -> TempDir {
+pub(super) fn repo_without_state() -> TempDir {
     let temp = TempDir::new().unwrap();
     let root = temp.path();
     git_ok(root, &["init", "-b", "main"]);

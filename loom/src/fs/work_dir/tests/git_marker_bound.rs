@@ -107,6 +107,39 @@ fn a_temp_root_nested_in_a_checkout_never_adopts_the_checkouts_workspace() {
     );
 }
 
+/// The fallback to the repository root obeys the same bound: a base under a
+/// TMPDIR nested in a checkout with no workspace keeps its own state root,
+/// so a test's fixtures never land in the checkout's `.loom/work`.
+#[test]
+fn a_temp_root_nested_in_an_uninitialized_checkout_falls_back_to_the_base() {
+    let temp = TempDir::new().unwrap();
+    let repo_root = bare_repo(&temp);
+    let temp_root = repo_root.join("loom").join("target").join("tmp");
+    let base = temp_root.join(".tmpX");
+    fs::create_dir_all(&base).unwrap();
+    let temp_root = temp_root.canonicalize().unwrap();
+
+    let wd = WorkDir::resolve(&base, Some(&temp_root));
+    assert_eq!(wd.root(), base.join(".loom").join("work"));
+
+    // Positive control: unbounded, the same base falls back to the checkout.
+    let wd_unbounded = WorkDir::resolve(&base, None);
+    assert_eq!(
+        wd_unbounded.root(),
+        repo_root.canonicalize().unwrap().join(".loom").join("work")
+    );
+}
+
+/// The fallback at an uninitialized repository's own root keeps the spelling
+/// the caller gave it.
+#[test]
+fn an_uninitialized_repo_root_keeps_its_spelling() {
+    let temp = TempDir::new().unwrap();
+    let repo_root = bare_repo(&temp);
+    let wd = WorkDir::new(&repo_root).unwrap();
+    assert_eq!(wd.root(), repo_root.join(".loom").join("work"));
+}
+
 #[test]
 fn a_workspace_planted_inside_the_temp_root_still_resolves() {
     let temp = TempDir::new().unwrap();

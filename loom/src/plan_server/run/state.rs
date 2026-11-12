@@ -5,10 +5,10 @@ use std::path::{Path, PathBuf};
 
 use anyhow::bail;
 
-use crate::commands::init::holds_orchestration_state;
 use crate::daemon::DaemonServer;
 use crate::fs::plan_lifecycle::get_plan_source_path;
 use crate::fs::work_dir::WorkDir;
+use crate::fs::work_state::holds_orchestration_state;
 use crate::git::current_branch;
 use crate::plan_server::browser::{decide, EnvView, OpenDecision};
 use crate::plan_server::context::PlanContext;

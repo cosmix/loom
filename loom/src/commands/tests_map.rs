@@ -249,3 +249,19 @@ fn load_graph_answers_when_the_cache_directory_cannot_be_created() {
     );
     assert!(!loom_dir.join("cache").exists());
 }
+
+/// With no graph and no base to serve, `loom map` fails instead of printing
+/// empty views as if the file had no symbols.
+#[test]
+fn load_graph_fails_when_the_source_graph_is_unavailable() {
+    let temp = tempfile::TempDir::new().unwrap();
+    let root = temp.path();
+    let work_dir = WorkDir::new(root).unwrap();
+
+    let error = match load_graph(root, &work_dir, &mut Timings::default()) {
+        Ok(_) => panic!("a directory without git has no graph to answer from"),
+        Err(error) => format!("{error:#}"),
+    };
+
+    assert!(error.starts_with("source graph unavailable: "), "{error}");
+}

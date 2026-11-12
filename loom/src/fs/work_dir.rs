@@ -145,17 +145,17 @@ impl WorkDir {
         }
 
         // Search upward for a workspace, bounded at the enclosing repository
-        // and (when `base` sits under it) at the OS temp root too — a TMPDIR
-        // nested in a git checkout (e.g. a test suite's `<repo>/target/tmp`)
-        // sits below that checkout's `.git`, so the repo-root bound alone
-        // would walk into the checkout's own live workspace. See
-        // `discovery::walk_up` for the walk and both bounds in full.
+        // and (when `base` sits under it) at the OS temp root: a TMPDIR in a
+        // checkout (`<repo>/target/tmp`) sits below its `.git`, so the repo-root
+        // bound alone would walk into the checkout's workspace (`discovery::walk_up`).
+        let mut fallback = base.to_path_buf();
         if let Ok(abs) = base.canonicalize() {
             if let Some(repo_root) = discovery::nearest_git_root(&abs) {
                 let floor = temp_root.filter(|t| abs.starts_with(t));
                 if let Some((root, layout)) = discovery::walk_up(&abs, repo_root, floor) {
                     return Self { root, layout };
                 }
+                fallback = discovery::fallback_root(&abs, repo_root, floor, fallback);
             }
         }
 
@@ -167,7 +167,7 @@ impl WorkDir {
         }
 
         Self {
-            root: base.join(LOOM_DIR).join(WORK_DIR),
+            root: fallback.join(LOOM_DIR).join(WORK_DIR),
             layout: Layout::Nested,
         }
     }

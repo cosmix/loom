@@ -9,6 +9,7 @@ use std::path::{Path, PathBuf};
 
 use crate::fs::safe_read::read_to_string_bounded;
 use crate::fs::work_dir::WorkDir;
+use crate::fs::work_state::holds_orchestration_state;
 
 const FILE: &str = "main-checkout-identity.json";
 const LIMIT: usize = 16384;
@@ -118,9 +119,9 @@ pub(crate) fn require_main_identity_at(root: &Path, state: &Path) -> Result<()> 
     load(root, state).map(|_| ())
 }
 
-/// The state directory holding `root`'s checkout identity, `None` for an
-/// uninitialized standalone repository. A legacy `.work` can hold sessions even
-/// if its config is missing.
+/// The state directory that exists for `root`, in either layout, `None` when
+/// there is none. Existence alone does not mean `loom init` ran
+/// ([`initialized_state_of`]).
 pub(super) fn state_dir_of(root: &Path) -> Result<Option<PathBuf>> {
     let state = WorkDir::new(root)?;
     if state.root().exists() {
@@ -132,9 +133,23 @@ pub(super) fn state_dir_of(root: &Path) -> Result<Option<PathBuf>> {
     }
 }
 
+/// The state directory, in either layout, that `loom init` or an orchestration
+/// made: one holding a checkout identity, a plan config, or a stage or session
+/// file. A state directory holding only what read-only commands and hooks
+/// create (`context/`, `memory/`, `telemetry/`) marks nothing, so `loom map`
+/// and `loom knowledge` work in a repository that was never initialized.
+fn initialized_state_of(root: &Path) -> Result<Option<PathBuf>> {
+    let nested = WorkDir::new(root)?.root().to_path_buf();
+    Ok([nested, root.join(".work")]
+        .into_iter()
+        .find(|state| main_identity_exists(state) || holds_orchestration_state(state)))
+}
+
 /// Uninitialized standalone repositories retain their discovery-based API.
+/// Every path that starts a session requires the identity on its own
+/// (`require_main_identity`), whatever this resolves.
 pub(super) fn identity_for(root: &Path) -> Result<(PathBuf, PathBuf)> {
-    if let Some(state) = state_dir_of(root)? {
+    if let Some(state) = initialized_state_of(root)? {
         load(root, &state)
     } else if root.join(".git").exists() {
         discover(root)
