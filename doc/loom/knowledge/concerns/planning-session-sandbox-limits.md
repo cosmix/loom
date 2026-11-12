@@ -102,8 +102,7 @@ three tmux tests that print SKIP inside the stage sandbox.
   race the final write. `end` during `Preparing` is refused and the browser shows "the chat is closing".
 - `StopFailure` is assumed main-agent only; one carrying `agent_id` would idle the main session mid-turn.
 - `SessionEnd` outside `Ending` gives `Ended`, not `Failed (died)`.
-- Mutation survivor: dropping `subagents_running() == 0` from `on_idle`'s close check in `driver.rs` stays green,
-  because the contract spools `SubagentStop` before the second Stop.
+- The close gate (`BackgroundTasks::blocking() == 0` in `on_idle`, `driver.rs`) is pinned: the contract `a-summary-session-waits-for-a-launched-agent` and `tests_end.rs` fail when it is dropped.
 
 ## Transcript mapper
 
@@ -143,9 +142,26 @@ file. Recovery replay publishes `TurnStarted`/`TurnEnded` for every historical t
   entries serve worktree sessions only.
 - `session_settings/contents.rs` writes `hasTrustDialogAccepted` into the capsule settings file, which does
   nothing on Claude Code 2.1.312, and `tests_capsule_contents.rs` pins it.
+
+## Paste, slash and bang input
+
 - `paste-buffer` without `-r` turns LF into CR: if a pane has no bracketed paste, each line submits alone, so a
-  slash command on line 2 would run; `check_send` checks the first line only. Whether a pasted leading `!`
-  enters Claude Code's bash mode is unchecked.
+  slash command on line 2 of a message that does not start with `/` would run. `check_send` refuses a message
+  that starts with `/` unless it is one line, and checks only that first token otherwise ([the gate](../architecture/plan-server.md#the-send-gate)).
+  Whether a pasted leading `!` enters Claude Code's bash mode is unchecked (the P2 probes pasted no `!` line).
+- A slash message's disguises (control characters, a leading U+FEFF or U+0085) are stripped before the first
+  token is read, so they stay refused; a dialog command left open in the pane would capture the next pasted
+  Enter, which is why an unlisted name is refused rather than sent.
+- A skill's inline shell does not run at expansion: the expansion record carries `promptShellHandOff` and the
+  model runs the commands as ordinary sandboxed `Bash` calls, so a command outside the project fails with
+  `Read-only file system` (`sandboxed: true`) and the skill reports it ([probe-notes](../../../../loom/tests/fixtures/plan_session/probe-notes.md#inline-skill-shell)).
+- The suggestion menu in the pane is open for a bare name and closed for a line with arguments. In all ten
+  bare-name pastes the first row was the typed name (or its canonical name) and Enter ran it; a typed name that is a
+  prefix of another name, with the exact name not first, was not observed, so Enter might run the other command.
+- A skill's `allowed-tools` was observed only through a delegated `web-fetch` subagent whose `WebFetch`
+  raised a `PermissionRequest` that auto mode's classifier accepted; a `WebFetch` made by the main agent under the
+  skill's `allowed-tools` was not observed asking for permission.
+- The native table is pinned to Claude Code 2.1.321 ([follow-ups](planning-session-sandbox-limits.md#planner-commands-native-table-parity)).
 
 ## Operator e2e harness
 
@@ -180,3 +196,43 @@ test that fails for any struct owning a locked `File` without a `Drop` that call
   only `LOOM_TEST_REQUIRE_SANDBOX_FREE=1` turns a skip into a failure.
 - The chat dispatch race tests start the second tab's chat through `Bridge::start_session` directly; two
   dispatches cannot be ordered without timing because nothing blocks between `take_authoring` and the reserve.
+
+## Planner commands: native table parity
+
+- The native command table (`plan_session/commands/builtins.rs`) is pinned to Claude Code 2.1.321. A native command a later version adds reads as a bundled skill when the headless list marks it `builtin: true` (class Run, so a native dialog command would be pasted and could capture the next Enter), and as unlisted (refused) when the list omits it. The menu matches the terminal for that version only. Detection: after each upgrade rerun `p2_side_process_initialize_and_commands_changed` ([probes](../architecture/planning-session-bridge.md#verification)); a startup warning when an unknown `builtin: true` row's description reads like a native command would surface the drift (`commands/list.rs:169`), not built.
+- `loom-ui` is disabled by the session settings; whether an installed and enabled `loom-ui` lists `/loom-agents` was never observed (not installed in the probe HOME). A rerun that lists `/loom` or `/loom-agents` despite the setting adds them to the native table as Terminal only.
+- Listed rows named like a native alias are hidden (fail closed, `list.rs:115`). If Claude Code resolves a skill before a native alias, such a skill is unreachable from the planner; native precedence is unverified.
+- A row name `inline_safe` changes (whitespace, backtick, over 200 characters) is listed but refused as unlisted when sent (`plan_server/commands/mod.rs:73`); consider hiding such rows.
+- Not observed in P2: `/stats`, `/effort auto`, `/effort` with no argument, a confirmed `/model` switch, the project-skill description marker, an alias typed in place of a name, and a slash line of exactly 20 characters or over 300.
+
+## Planner background table open items
+
+- An agent with no transcript facts, or whose last row is a bookkeeping row (fold `Unknown`), never stalls and keeps `blocking() > 0` until a `Stop` list, a notification or a `SubagentStop` ends it (`bridge/background.rs:116`). The next `Stop` list that omits it ends it, so the exposure is one turn; a stall fallback on `last_activity_at` would bound it.
+- An unknown-id notification takes its kind from the summary wording (`starts_with("Agent ")`, `background/inputs.rs:173`); an unknown agent with another or no summary shows as a shell.
+- The module doc's read-order independence holds for ranked fields and times. `state` has no rank and depends on read order through reopen and end, and a `toolEndsTurn` line or hand-back read before any launch evidence is not remembered in `AgentFacts` (unreachable with today's feed order, `registry.rs:290-309`).
+- `clear()` keeps the agents map, and each `AgentProgress` keeps its last raw line `Value` (up to 32 MiB per agent) for the session's life; the fold is stored, so `last` could be dropped after `agent_line`. Each agent line is parsed three times on the driver (`stamp_of`, `ingest_agent`, the mapper) and deep-cloned by `observe` (`agent_state/progress.rs:115`).
+- Ended tasks stay until a clear, and every changed tick broadcasts the full table to every tab (up to 5 frames a second while an agent works), so a long session with many finished tasks makes large frames (`bridge/driver.rs:292`); the web `entries` map in `chat/background-tasks.ts` keeps one `selectAtom` per `tool_use_id` for the tab's life.
+- `read_agent_meta` runs for every subagent on every 5 s pass on the `planner-tokens` thread (`chat/background/groups.rs:24`); the bridge `Feed` already holds each agent's teammate flag and type. The literal `"tokens"` in `chat/background/mod.rs:108` is under the plan server runtime directory while `TOKENS_DIR` names the work root's; no collision.
+- `paused` is cleared by every local settle (`bridge/local.rs:241`), but it is only set with the slot empty, and only a late local or a fork refills a paused slot. A failed `/compact` that writes no output record still holds the slot (a settling local is exempt from the delivery timeout); consider an upper bound on a confirmed compact with no boundary and no output (`local.rs:268`).
+- `commands/side.rs:232`: `process_group(0)` keeps the side process out of the server's terminal signals. If the server is SIGKILLed cleanup never runs and `side-settings.json` (0600) stays in the session directory; delete a stale one before writing.
+
+## Planner background and commands test gaps
+
+- No test fails when the planner pass ignores its checkpoint offsets: with message-id dedup a pass that re-reads every source from offset 0 adds exactly the new tokens (`tokens/planner_contract_tests.rs:55`, `planner_tests.rs`'s `a_pass_reads_only_what_a_file_gained` included). A test asserting the saved offsets equal the file lengths would guard them.
+- `bridge/fixture_replay.rs:115` `spool_first` relies on a fixed 300 ms sleep and degrades silently to `rest` order under load; wait on the spool's `Background` event. The negative checks after a 300 ms `settle()` in `background_contract_tests.rs:137` can pass vacuously under load (weaker mutation detection, never a false red).
+- The bridge-level "no second `SubagentStopped`" check after a reopen (`tests_background_more.rs:83`) never ends the agent again; `background/tests.rs:206-213` is the real guard of the stopped set.
+- The socket-to-`commandsFrameAtom` path is proven by `socket-commands.test.ts` and `commands.contracts.test.tsx`; `composer-delivery.test.tsx` writes the atom directly. Six web test files each define their own `FakeSocket`; share one.
+
+## Planner chat web open items
+
+- With only `/` (or a prefix such as `/comp`) typed and the list open, the foot says "Not in this session's command list" (`chat/message-problem.ts:97`), matching the server but reading as if the typed name were unknown while the list shows it; a neutral "Choose a command" would fit.
+- A Terminal only entry's reason and description are separated by a space only (`command-menu.tsx:224`), so at 390px they read as one phrase; the menu lists `commandsAtom` rows directly, so after a concluded chat it can offer rows the gate refuses (pass `commandsForSend` to `useMenuEntries`); `placeholder={menu.hint ?? placeholder}` (`composer.tsx:124`) never shows the hint, since the text is non-empty whenever a hint exists.
+- A failed route GET gives `unavailable` with no rows (not the built-ins), so the web refuses `/compact` and `/context` that the server accepts; transient until the next frame or hello (`state/commands-atom.ts:82`).
+- `YourTurnKind` includes `background`, which is not your turn (`ui/activity-glyphs.tsx:62`); rename it. `BackgroundStatus` draws no mark for `stopped` where the list draws a muted square (`chat/tool-row.tsx:67`). `close` in `background-line.tsx:120` is recreated each render, so the Escape listener re-subscribes while the list is open.
+- `chat-rise` and `.chat-empty` keep fill `both` (`chat-transcript.css:308`, `chat-surface.css:239`); a passage chip's fixed `.chat-passage` tooltip inside a user item may be offset the way the command list was (unverified), and `container-type: inline-size` on `.chat-head` (`chat-surface.css:85`) makes the head a containing block for any fixed child added later.
+- `web/scripts/plan-chat-screens.mjs` repeats about 70 lines of `plan-screens.mjs` (`THEMES`, `firefoxExecutable`, `BROWSERS`, `routeSlug`, `themeInitScript`, `watchErrors`, `bootstrap`, `takeFlags`); a shared module would remove the "keep them in step" burden. The Walnut theme is retired (it maps to aubergine), so a brief naming it gets aubergine.
+
+## Planner chat environment
+
+- `vite build` prints the chunk-size advisory (chunks over 500 kB: `elk-*.js` 1.5 MB, `chunk-*.js` 629 kB, `plan.js` 594 kB). It predates the background and slash work (`plan.js` grew by about 16 kB); the dist criterion runs `--logLevel error`, which hides it. Code-splitting the plan bundle is open.
+- `scripts/plan-journeys.sh` in a stage sandbox, on HEAD and on the plan base alike: J1 times out at its 10 s `goto` (both binaries answer nothing for about 10 s after start, the log ending "quota: codex: codex app-server closed without replying"), J2 has no sealed summaries, J3 hits the read-only `/tmp` plan lock, J4 finds no spine nav, J5 and J8 print PENDING. At the plan base J6 also fails: `/f/feat-planner/coverage` repeats labels ("Share" twice, "The model in one paragraph" seven times, "Accessibility", "Taking a passage into chat", "Permission prompts" twice). The coverage-route duplicates and the roughly 10 s startup stall are open; an operator reruns J1 to J5 and J8 outside a stage.

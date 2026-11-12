@@ -148,3 +148,49 @@
 **What happened:** twice, a test expectation listed a `briefs/` directory entry before the plan file `PLAN-first` that sits beside it. Git lists paths bytewise, so uppercase names sort before lowercase ones.
 
 **Prevention:** in a path-order assertion put uppercase names first, or sort both sides.
+
+## The Command List Rendered Off Screen While Every jsdom Test Passed
+
+**What happened:** the composer's command list (`position: fixed`, `command-menu.css`) rendered off screen in a real browser (x=2220 at 1440 wide, y=862 at 390x844) while every jsdom test passed.
+
+**Why:** `.chat-composer` ran `hearth-rise` with fill `both`, so after the rise it held `transform: translateY(0)` (computed `matrix(1,0,0,1,0,0)`). Any non-`none` transform makes the element the containing block of its fixed descendants, so the viewport coordinates from `useFloatingPlacement` were offset by the composer's own box. jsdom computes no layout.
+
+**Prevention:** an element that holds a `position: fixed` floating child must not keep a `transform`, `filter`, `contain` or `will-change`; use fill `backwards` for entry animations. Prove floating UI in a real browser (`web/scripts/plan-chat-screens.mjs`), never in jsdom alone. Other candidates with the same shape are listed in [the follow-ups](../concerns/planning-session-sandbox-limits.md#planner-chat-web-open-items).
+
+**Fix:** `chat-composer.css` animation fill `backwards`.
+
+## A Browser Driver Was Never Run Before Integration Verification
+
+**What happened:** `plan-chat-screens.mjs` was written in a stage sandbox that could not run a browser (pinned playwright-core wants `chromium_headless_shell-1254`, the cached firefox rejects `Browser.setDownloadOptions`, system chrome dies on `socket()`), so no screenshot of the idle line, list, Agent row or command menu was taken until integration-verify. It then failed four ways: the activity popover locator `[aria-label="In progress"]` matched both the dialog and its list (strict mode); the real server answered 404 to `/api/turn-sections` and 409 to `POST /api/summaries/auto` for the played session (the played hello makes the page the authoring holder); the closed turn's user item kept the fixture's delivery `sent` and drew "Sending"; and playing the socket before the token page let `/` follow the played project to `/f/demo/product`.
+
+**Why:** a script that cannot run in the stage that writes it ships its defects to the next one; a stub that plays the socket changes what the page asks the real server.
+
+**Prevention:** when a stage cannot run a browser driver, say so in the brief of the stage that can and give that stage the fixes; `getByRole('dialog')` for a popover, stub the routes a played session adds, play frames after bootstrap, and give played items a settled delivery. The stage sandbox can run the cached 1243 headless shell under `PLAYWRIGHT_BROWSERS_PATH` ([conventions](../conventions/plan-web.md#ui-repair-test-rules)).
+
+**Fix:** `getByRole('dialog')`, two more `context.route` stubs, delivery `delivered`, `playSession` after bootstrap.
+
+## A Fetch Was Gated On An Atom That Test Harnesses Seed
+
+**What happened:** the commands fetch was gated on `planSocketAtom` being set, on the assumption that only a live page sets it. `composer-harness.tsx` sets a stand-in socket (and `youAtom`, `serverInfoAtom`, an open `connectionAtom`), so every harness-mounted composer fetched, and `composer-context.test.tsx`, whose fetch stub counts every call as `/api/doc`, failed 9 tests.
+
+**Why:** no existing atom tells a live page from a harness.
+
+**Prevention:** before adding a fetch that a mounted chat component triggers, `rg` the test kits for `vi.stubGlobal("fetch"` and check which atoms the harnesses seed.
+
+**Fix:** the socket's hello arms the fetch through a private counter atom (`commandsResyncAtom`, `state/commands-atom.ts`).
+
+## A Contract Was Briefed As Guarding What It Could Not
+
+**What happened:** the brief and a worker's memory said `a_pass_reads_only_what_a_file_gained` guards the planner pass's checkpoint offsets more strongly than the contract. Integration-verify found that with message-id dedup in place a pass that re-reads every source from offset 0 still adds exactly the new tokens, so no test fails when offsets are ignored.
+
+**Why:** dedup makes a re-read idempotent, so the offsets are a cost property that no total can show.
+
+**Prevention:** mutate before claiming a guard (the stage records a mutation note per contract); assert the property that matters, here the saved offsets equal the file lengths after a pass ([the gap](../concerns/planning-session-sandbox-limits.md#planner-background-and-commands-test-gaps)).
+
+## Workers Ran Gates Outside Their Territory
+
+**What happened:** a worker ran `cargo test --test maintainability`, `plan_server::wire`/`chat` and the core-contracts binary to double-check sizes and fixtures, and ran 5 of the 27 gate criteria early plus repeated rebuilds in a scratch copy of the tree, which slowed the whole wave. `cargo test --lib` did not build until the sibling workers landed `command_cell` and `check_send`.
+
+**Why:** the worker prompts did not name the allowed test filters.
+
+**Prevention:** every worker brief names the exact filters allowed (a frozen contract, `cargo test --lib <module>::`), allows `cargo check` to compile and forbids the whole lib suite, `--test` binaries outside its territory, clippy, doc and `loom check`; the main agent owns the gate. Check size caps with `wc -l`. A scratch copy made with `rsync --exclude target` also drops `src/commands/target/`; anchor it as `/loom/target`. `pkill -f <pattern>` kills the invoking shell, whose command line holds the pattern.

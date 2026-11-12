@@ -242,3 +242,53 @@ Slots that still render `null` and are reserved for plan 11:
 
 - `files/plan/plan-actions-extras.tsx` (`<PlanActionsExtras plan path />`, end of the plan header): "Pressure-test" for written plans and the done-plan actions. `header-extras.tsx` takes one more line from plan 11.
 - `chat/footer-extras.tsx` (`<TurnFooterExtras turn />`, end of the turn footer). The footer shows only the states `Turn` carries: `ChangedFile` has `path`, `before_hash` and `by_tool`, and `summaries_rebuilding` lists ids without per-summary outcomes.
+
+## Slash commands and skills in the planner chat
+
+A message starting with `/` is pasted into the session as typed, so the terminal's behaviour (argument substitution, `context: fork`, `allowed-tools`) is kept, when the session's command list allows its name. The list is a checked-in table of native commands plus the rows a side process reads from the same Claude Code. Facts about Claude Code 2.1.321 behind it: `loom/tests/fixtures/plan_session/probe-notes.md` ("P2. Slash commands and skills"). Code: `loom/src/plan_session/commands/` (`list.rs`, `builtins.rs`, `side.rs`, `reader.rs`), `plan_server/commands/` (`mod.rs`, `owner.rs`), `plan_session/bridge/{catalogue,local,flow}.rs`, `plan_session/input.rs`, `plan_session/transcript/commands.rs`.
+
+### The command table
+
+- `CommandTable` (`commands/list.rs`) holds `CatalogueState` (`Loading`, `Ready { generation }`, `Unavailable { reason }`) and `CommandEntry` rows: the listed rows in `initialize` order, then the native rows. In `Loading` and `Unavailable` only the native rows exist. Plain chat input is never affected by the state.
+- **Native rows** are the checked-in `builtins.rs` table, 57 rows of 2.1.321: the 36 native rows of the headless list and 21 commands it omits (`help`, `status`, `resume`, `exit`, `rewind`, ...). It is the only source for native rows, because headless mode omits the dialog commands and some of its descriptions differ from the pane's. `from_initialize` drops listed aliases and rows named like a native name or alias, so the menu never lists a row the gate would resolve to a native command (fail closed); a `builtin: true` row not in the native table is a `Bundled` skill.
+- **Source** (`CommandSource`): `BuiltIn`, `Bundled`, `Plugin` (`(<plugin>)` description prefix, `plugin:name`), `Personal` (`(user)` suffix), `Account` (`(claude.ai sync)` suffix), `Skill` (no marker). The marker is stripped from the shown description.
+- **Class** (`CommandClass`): `Run` for every side-process row (prompt-type, fork skills included: the class follows how the command runs, never where it comes from); `RunWithHandling` for `/compact` and `/context`; `TerminalOnly` for every other native row, listed but disabled with one reason each: "Changes the session outside the planner", "Opens a terminal dialog", "Saves your default for new sessions" (`/effort`), or "Not verified in the planner". `/model` and `/effort` are Terminal only with or without an argument.
+- `loom-ui` is disabled in every planner session (`enabledPlugins: {"loom-ui@skills-dir": false}` in the session settings, `sandbox/mod.rs` `build_settings`), because the planner shows background work itself.
+
+### The side process
+
+`SideProcess` (`commands/side.rs`) runs the session's own claude argv minus `--session-id`, `--name` and `--append-system-prompt-file`, plus `-p --input-format stream-json --output-format stream-json --verbose --no-session-persistence`, on a sibling `side-settings.json` (the session settings with `hooks` removed and `disableAllHooks: true`) and without `LOOM_PLAN_SESSION` and `LOOM_PLAN_STATE`. The spool does not filter by session id, so a side process with hooks would reset the live session to Idle with its `SessionStart` and end it with its `SessionEnd`. It gets one `initialize` control request and never a user message, so it makes no model request, and it replaces the table on each `system/commands_changed`. One named reader thread polls stdout plus a wake pipe; the `initialize` answer must arrive within `STARTUP_DEADLINE` (20 s), a stdout line over 1 MiB or 8 MiB in total before the answer kills it, and every exit path kills and reaps the child and deletes the settings file (`Shared::cleanup`, idempotent, also from a drop guard). A failure after the answer keeps the last `Ready` table; only a failure before it publishes `Unavailable`. Retries: none within one session; the next session starts a new process. `plan_server/commands/owner.rs` owns it, one per live chat session, on a thread under `ctx.own_worker`; a bridge listener only queues requests.
+
+### Delivery to the web
+
+`GET /api/session/commands?session=<id>` answers 200 with `{state, generation, entries}` (`wire/commands.rs` `CommandsView`/`CatalogueWireState`); an unknown or missing session gets `loading` with the native rows, never 404, and no access cookie gets 401. `PlanMessage::Commands { session, state, generation, entries }` is sent when the state or list changes and replayed by `snapshots()`. Fixtures: `web/src/plan/api/fixtures/session-commands.json` (must equal the serializer's pretty text; keep it out of the web formatter) and `slash-vectors.json`.
+
+### The send gate
+
+- `check_send(text, &CommandTable)` (`input.rs`) strips control characters and leading whitespace before it reads the first token, so `\u{1}/clear`, `\u{feff}/exit` and `\u{85}/clear` stay refused. A slash message is one line of at most `MAX_SLASH_LEN` (300) characters, "Too long for a command" past it, and carries no attachments (`check_alone`). Refusals: the class reason of a Terminal only row; "Not in this session's command list" (`Ready`); "Commands are still loading" (`Loading`); "This session's command list is unavailable" (`Unavailable`). A name `inline_safe` changes (whitespace, backtick, over 200 characters) shows in the menu but is refused as unlisted when sent: it fails closed.
+- `start` checks its text with the `Loading` table before `launch`, so a first message naming a skill is refused; the opening the server pastes does not pass `check_send`.
+- The web gate is `messageProblem(text, attachments, commands)` (`web/src/plan/chat/message-problem.ts`), fed the same list and the same vectors (`slash-vectors.json` is read by the Rust test with `include_str!` and by the web test). The server stays authoritative.
+- **Checked again at delivery.** The bridge session holds the table as a shared `Arc<RwLock<Arc<CommandTable>>>` (`CommandCell`); `flow.rs` re-runs the class check just before pasting a slash item. A now-refused item is not pasted: it leaves the queue with a notice "Not sent (<reason>): <first line>". The direct send path refuses with `BridgeError::Refused(reason)`.
+
+### Confirmation, the local barrier and the settle
+
+`bridge/local.rs` (with `transcript/commands.rs` mapping the records) confirms each class by its own evidence:
+
+- **Run:** the `UserPromptSubmit` of the paste through `confirm_prompt`, or the prompt-type `<command-name>` user record. A confirmed run delivery moves to `Flow.awaiting_record` (`AWAITING_KEPT` 8) so the later prompt-type record sets the command chip (`command: {name, args}` on the user item, rendered by `chat/command-chip.tsx`); `UserPromptSubmit` precedes the command record by about 0.17 s.
+- **`/context`:** the first `system` `local_command` record whose `commandRun.command`, or else trimmed `<command-name>`, is the delivery's canonical name.
+- **`/compact`:** `PreCompact` with `trigger: "manual"` confirms (stops the 10 s timeout) but starts no settle clock; the clock starts at the compact boundary, `SessionStart { compact }` or the first output record (`Clock::Output`), because a clock started at `PreCompact` would release the barrier mid-compaction (the boundary arrives about 9.6 s later). A failed `/compact` that writes no output record still holds the slot.
+- **A name that left the list after the check:** the `Unknown command: /x` `informational` record confirms a delivery of `/x` as a local one.
+- **Fork skill:** the `UserPromptSubmit` confirms the paste and sets busy; the fork's prompt never gets a `Stop`, so the `<forked-skill-launch>` system `local_command` record reinstalls the delivery as a local settle (busy) and the state goes Idle 2 s later. The fork is a background entry ([the background table](planning-session-bridge.md#background-tasks-in-the-planner-chat)); its notification opens the next turn. The element is matched only in the system `local_command` arm, never in user records, so a notification quoting it keeps its `SelfStarted` mark.
+- **Matching** is by canonical name through `aliases` (element text trimmed, args compared trimmed), falling back to name plus order.
+- **Barrier.** `Delivering.local: Option<LocalSettle>`; `LocalSettle.delivery_id` is the delivery's sent item id (`s-<n>`), because a direct send has no queue id. The delivering slot stays held from paste until the delivery settles, so the next queue item waits while a local command runs.
+- **Settle.** 2 s (`COMPACT_SETTLE`) after the last command or output record. If the paste set busy (a fork), only then the state goes Idle. Newer main-turn evidence (another `UserPromptSubmit`, `SelfStarted`, an assistant record, a `Stop`) settles at once and cancels the Idle: the timer never closes a turn it did not start. The window for a confirming record is the standard 10 s delivery timeout; past it the queue pauses as for any undelivered item and a later record confirms through `late_confirm`.
+- **Notices.** `<local-command-stdout>`/`-stderr` (user or system records) and `informational` records become a notice item under the command, ANSI stripped and whitespace trimmed; the `isMeta` markdown copy `/context` writes for the model stays skipped. The `local_command` text goes through `clean()` first.
+- No spool event was added: `UserPromptExpansion` and `PostModelSwitch` stay unregistered (`SPOOL_EVENTS` is `[HookSpec; 11]`), because `UserPromptSubmit` fires for the same pastes, earlier.
+
+### The composer menu
+
+Typing `/` as the first character opens a combobox over every entry; the Commands button opens the same list. The web side is in [planner-web-shell](planner-web-shell.md#background-tasks-and-the-command-list). Agent guidance (`planning/guidance/text/common_brief.md`) says slash commands run as in the terminal except those the planner marks terminal only.
+
+### Limits
+
+The native table is pinned to Claude Code 2.1.321; open items and unobserved cases: [the follow-ups](../concerns/planning-session-sandbox-limits.md#planner-commands-native-table-parity) and [planning-session-sandbox-limits](../concerns/planning-session-sandbox-limits.md#paste-slash-and-bang-input).

@@ -9,7 +9,7 @@
 | File | Description | Lines |
 | --- | --- | --- |
 | [architecture.md](architecture.md) | High-level component relationships, data flow, module dependencies | 250 |
-| [entry-points.md](entry-points.md) | Key files agents should read first | 83 |
+| [entry-points.md](entry-points.md) | Key files agents should read first | 85 |
 | [patterns.md](patterns.md) | Architectural patterns discovered in the codebase | 186 |
 | [conventions.md](conventions.md) | Coding conventions discovered in the codebase | 250 |
 | [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 250 |
@@ -50,13 +50,13 @@
 | [orchestrator-loop](architecture/orchestrator-loop.md) | Ticks | 80 |
 | [owned-waits](architecture/owned-waits.md) | Waits | 70 |
 | [plan-lifecycle-and-fields](architecture/plan-lifecycle-and-fields.md) |  | 284 |
-| [plan-server](architecture/plan-server.md) | Chat | 244 |
+| [plan-server](architecture/plan-server.md) | Chat | 294 |
 | [planner-feature-screens](architecture/planner-feature-screens.md) | Spine | 48 |
 | [planner-uploads-and-drafts](architecture/planner-uploads-and-drafts.md) |  | 35 |
-| [planner-web-shell](architecture/planner-web-shell.md) | Shell | 112 |
+| [planner-web-shell](architecture/planner-web-shell.md) | Shell | 130 |
 | [planning-document-model](architecture/planning-document-model.md) | Docs | 183 |
 | [planning-guidance](architecture/planning-guidance.md) |  | 43 |
-| [planning-session-bridge](architecture/planning-session-bridge.md) |  | 289 |
+| [planning-session-bridge](architecture/planning-session-bridge.md) |  | 349 |
 | [planning-session-sandbox](architecture/planning-session-sandbox.md) |  | 148 |
 | [planning-trace](architecture/planning-trace.md) |  | 132 |
 | [pressure](architecture/pressure.md) |  | 42 |
@@ -78,7 +78,7 @@
 | [terminal-backends](architecture/terminal-backends.md) |  | 285 |
 | [test-runner-adapters](architecture/test-runner-adapters.md) |  | 56 |
 | [token-accounting-and-receipts](architecture/token-accounting-and-receipts.md) | Ledger | 358 |
-| [token-flow-sources](architecture/token-flow-sources.md) |  | 75 |
+| [token-flow-sources](architecture/token-flow-sources.md) |  | 84 |
 | [usage-evidence](architecture/usage-evidence.md) |  | 127 |
 | [verification-v2-gates](architecture/verification-v2-gates.md) | Gates | 257 |
 | [web-dashboard](architecture/web-dashboard.md) | Web | 133 |
@@ -167,7 +167,7 @@
 | [plan-authoring](mistakes/plan-authoring.md) |  | 139 |
 | [plan-server-delivery](mistakes/plan-server-delivery.md) | Slips | 369 |
 | [planner-design-brainstorm](mistakes/planner-design-brainstorm.md) | Stubs | 94 |
-| [planner-follow-ups-delivery](mistakes/planner-follow-ups-delivery.md) | Slips | 150 |
+| [planner-follow-ups-delivery](mistakes/planner-follow-ups-delivery.md) | Slips | 196 |
 | [planner-polish](mistakes/planner-polish.md) | Polish | 107 |
 | [planner-redesign](mistakes/planner-redesign.md) |  | 80 |
 | [planner-review-fixes](mistakes/planner-review-fixes.md) |  | 48 |
@@ -231,7 +231,7 @@
 | [planner-ui-repair-followups](concerns/planner-ui-repair-followups.md) | Repair | 193 |
 | [planning-document-model-followups](concerns/planning-document-model-followups.md) |  | 172 |
 | [planning-guidance-followups](concerns/planning-guidance-followups.md) |  | 43 |
-| [planning-session-sandbox-limits](concerns/planning-session-sandbox-limits.md) |  | 182 |
+| [planning-session-sandbox-limits](concerns/planning-session-sandbox-limits.md) |  | 238 |
 | [platform-and-commit-gaps](concerns/platform-and-commit-gaps.md) |  | 234 |
 | [runtime-and-session-safety](concerns/runtime-and-session-safety.md) |  | 137 |
 | [sandbox-and-confinement-gaps](concerns/sandbox-and-confinement-gaps.md) |  | 363 |
