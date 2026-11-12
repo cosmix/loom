@@ -104,7 +104,7 @@ export function VisionPage() {
 }
 
 /**
- * `/f/:feature/metaplan`: the Plans home, with the run, gaps and bulk settle action above its
+ * `/f/:feature/metaplan`: the Plans home, with the bulk settle action, the run and gaps above its
  * summary (its Source link opens `index.md`), or the offer to write the metaplan.
  */
 export function MetaplanPage() {
@@ -123,9 +123,9 @@ export function MetaplanPage() {
     <ConceptRoute
       above={
         <>
+          <SettleAllButton feature={checklist.feature} role="plan" />
           <RunPanel />
           <Gaps scope="metaplan" />
-          <SettleAllButton feature={checklist.feature} role="plan" />
         </>
       }
     />

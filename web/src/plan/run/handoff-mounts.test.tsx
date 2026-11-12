@@ -1,6 +1,6 @@
 import { act, cleanup, render, screen } from "@testing-library/react";
 import { createStore, Provider } from "jotai";
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, expect, it, vi } from "vitest";
 
 import { initClient } from "@/plan/api/client";
 import type { OfferView, PlanMessage } from "@/plan/api/schema";
@@ -74,6 +74,10 @@ function mount() {
   );
   return { store, ...harness, ...view };
 }
+
+// The dialogs are a lazy chunk, transformed on its first import, which can outlast findBy*'s
+// 1000 ms under load. Importing it here moves that cost out of the assertions' timeout.
+beforeAll(() => import("@/plan/run/handoff-dialogs"));
 
 afterEach(() => {
   cleanup();

@@ -21,7 +21,7 @@
   align-items: center;
   gap: var(--space-1);
   padding: 4px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--popover-border);
   border-radius: 999px;
   background: var(--popover);
   color: var(--popover-foreground);
@@ -80,7 +80,7 @@
   gap: var(--space-1);
   margin: 0;
   padding: var(--space-1) var(--space-2);
-  border: 1px solid var(--border);
+  border: 1px solid var(--popover-border);
   border-radius: var(--corner-control);
   background: var(--popover);
   box-shadow: var(--plan-shadow), var(--popover-lift);

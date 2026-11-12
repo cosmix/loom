@@ -67,6 +67,86 @@ function alignBlocks(before: Block[], after: Block[]): DiffBlock[] {
   return blocks;
 }
 
+/** Two blocks pair when their words overlap at least this much (Dice coefficient, 0 to 1). */
+const PAIR_THRESHOLD = 0.5;
+/**
+ * Largest removed-by-added run the similarity pairing scores. A run past it is paired by index,
+ * which also bounds the work after an unrelated rewrite. Raise it when real runs reach it.
+ */
+const MAX_PAIRING_CELLS = 10_000;
+
+function wordsOf(text: string): Set<string> {
+  return new Set(text.toLowerCase().match(/[\p{L}\p{N}_]+/gu) ?? []);
+}
+
+function overlap(a: Set<string>, b: Set<string>): number {
+  if (a.size === 0 || b.size === 0) return 0;
+  let shared = 0;
+  for (const word of a) if (b.has(word)) shared++;
+  return (2 * shared) / (a.size + b.size);
+}
+
+/**
+ * The order-preserving pairs of removed and added blocks that maximise the total overlap, a pair
+ * counting only at or above the threshold. Each pair is [removed index, added index].
+ */
+function similarPairs(removed: string[], added: string[]): [number, number][] {
+  const removedWords = removed.map(wordsOf);
+  const addedWords = added.map(wordsOf);
+  const score = (i: number, j: number): number => {
+    const value = overlap(removedWords[i], addedWords[j]);
+    return value >= PAIR_THRESHOLD ? value : 0;
+  };
+  const best = Array.from({ length: removed.length + 1 }, () => new Float64Array(added.length + 1));
+  for (let i = removed.length - 1; i >= 0; i--) {
+    for (let j = added.length - 1; j >= 0; j--) {
+      const s = score(i, j);
+      best[i][j] = Math.max(best[i + 1][j], best[i][j + 1], s > 0 ? s + best[i + 1][j + 1] : 0);
+    }
+  }
+  const pairs: [number, number][] = [];
+  let i = 0;
+  let j = 0;
+  while (i < removed.length && j < added.length) {
+    const s = score(i, j);
+    if (s > 0 && best[i][j] === s + best[i + 1][j + 1]) pairs.push([i++, j++]);
+    else if (best[i][j] === best[i + 1][j]) i++;
+    else j++;
+  }
+  return pairs;
+}
+
+/** Blocks between two similar pairs line up by position: a rewrite reads side by side. */
+function pairByIndex(removed: string[], added: string[]): DiffBlock[] {
+  return Array.from({ length: Math.max(removed.length, added.length) }, (_, i) => ({
+    kind: i >= added.length ? "removed" : i >= removed.length ? "added" : "changed",
+    before: removed[i] ?? null,
+    after: added[i] ?? null,
+  }));
+}
+
+/**
+ * One replacement run (removed blocks, then added ones) in document order. Pairing the blocks
+ * that resemble each other first keeps an inserted paragraph from taking the place of the
+ * paragraph an edit came from.
+ */
+function pairRun(removed: string[], added: string[]): DiffBlock[] {
+  const pairs =
+    removed.length * added.length > MAX_PAIRING_CELLS ? [] : similarPairs(removed, added);
+  const result: DiffBlock[] = [];
+  let i = 0;
+  let j = 0;
+  for (const [pairedRemoved, pairedAdded] of [...pairs, [removed.length, added.length]]) {
+    result.push(...pairByIndex(removed.slice(i, pairedRemoved), added.slice(j, pairedAdded)));
+    if (pairedRemoved < removed.length) {
+      result.push({ kind: "changed", before: removed[pairedRemoved], after: added[pairedAdded] });
+    }
+    i = pairedRemoved + 1;
+    j = pairedAdded + 1;
+  }
+  return result;
+}
+
 function pairChanges(blocks: DiffBlock[]): DiffBlock[] {
   const result: DiffBlock[] = [];
   let i = 0;
@@ -75,21 +155,11 @@ function pairChanges(blocks: DiffBlock[]): DiffBlock[] {
       result.push(blocks[i++]);
       continue;
     }
-    const removedStart = i;
-    while (i < blocks.length && blocks[i].kind === "removed") i++;
-    const addedStart = i;
-    while (i < blocks.length && blocks[i].kind === "added") i++;
-    const count = Math.max(addedStart - removedStart, i - addedStart);
-    for (let offset = 0; offset < count; offset++) {
-      const removed =
-        offset < addedStart - removedStart ? blocks[removedStart + offset] : undefined;
-      const added = offset < i - addedStart ? blocks[addedStart + offset] : undefined;
-      result.push({
-        kind: removed && added ? "changed" : removed ? "removed" : "added",
-        before: removed?.before ?? null,
-        after: added?.after ?? null,
-      });
-    }
+    const removed: string[] = [];
+    const added: string[] = [];
+    for (; i < blocks.length && blocks[i].kind === "removed"; i++) removed.push(blocks[i].before!);
+    for (; i < blocks.length && blocks[i].kind === "added"; i++) added.push(blocks[i].after!);
+    result.push(...pairRun(removed, added));
   }
   return result;
 }
@@ -109,12 +179,45 @@ function indexedDiff(before: Block[], after: Block[]): DiffBlock[] {
   }));
 }
 
+/** The blocks whose keys match from the start (or, with `fromEnd`, the end) of both lists. */
+function commonRun(before: Block[], after: Block[], limit: number, fromEnd: boolean): number {
+  let run = 0;
+  while (run < limit) {
+    const b = fromEnd ? before[before.length - 1 - run] : before[run];
+    const a = fromEnd ? after[after.length - 1 - run] : after[run];
+    if (b.key !== a.key) break;
+    run++;
+  }
+  return run;
+}
+
+function sameBlocks(before: Block[], after: Block[]): DiffBlock[] {
+  return before.map((block, i) => ({ kind: "same", before: block.text, after: after[i].text }));
+}
+
+/**
+ * The common start and end of both documents are unchanged, so only the middle is aligned: a
+ * typical edit leaves the LCS a few blocks wide, and the size bound below applies to the middle.
+ */
 export function diffBlocks(before: string, after: string): DiffBlock[] {
   const beforeBlocks = blocksOf(before);
   const afterBlocks = blocksOf(after);
-  // Bound the quadratic LCS table and work for unusually large documents.
-  if (beforeBlocks.length > 2_000 || afterBlocks.length > 2_000) {
-    return indexedDiff(beforeBlocks, afterBlocks);
-  }
-  return pairChanges(alignBlocks(beforeBlocks, afterBlocks));
+  const shortest = Math.min(beforeBlocks.length, afterBlocks.length);
+  const head = commonRun(beforeBlocks, afterBlocks, shortest, false);
+  const tail = commonRun(beforeBlocks, afterBlocks, shortest - head, true);
+  const beforeMid = beforeBlocks.slice(head, beforeBlocks.length - tail);
+  const afterMid = afterBlocks.slice(head, afterBlocks.length - tail);
+  // Bound the quadratic LCS table and work for unusually large changes.
+  const middle =
+    beforeMid.length > 2_000 || afterMid.length > 2_000
+      ? indexedDiff(beforeMid, afterMid)
+      : pairChanges(alignBlocks(beforeMid, afterMid));
+  return [
+    ...sameBlocks(beforeBlocks.slice(0, head), afterBlocks.slice(0, head)),
+    ...middle,
+    ...sameBlocks(
+      beforeBlocks.slice(beforeBlocks.length - tail),
+      afterBlocks.slice(afterBlocks.length - tail),
+    ),
+  ];
 }

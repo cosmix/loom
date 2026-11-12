@@ -184,7 +184,6 @@ fn concept_pages_show_progress_and_estimate_during_a_rebuild() {
     for key in [
         PageKey::Overview {
             feature: "demo".into(),
-            scope: Scope::Product,
         },
         PageKey::Summary {
             feature: Some("demo".into()),
@@ -214,7 +213,6 @@ fn a_never_built_project_shows_an_estimate_without_running_progress() {
 
     let key = PageKey::Overview {
         feature: "demo".into(),
-        scope: Scope::Product,
     };
     let page = load_page(&project, &evaluation, &key, &ctx).expect("page");
 

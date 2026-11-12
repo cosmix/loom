@@ -1,6 +1,7 @@
 //! Overview estimates sum only the members of their own feature and document family.
 
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::path::Path;
 use std::sync::Arc;
 
 use super::*;
@@ -8,6 +9,7 @@ use crate::plan_server::context::{BindInfo, PlanContext};
 use crate::plan_server::prereq::ReadOnly;
 use crate::plan_server::summaries::spawner::RealSpawner;
 use crate::planning::summary::evaluate::{evaluate, fixtures};
+use crate::planning::summary::store::is_overview;
 use crate::planning::watch::OwnWrites;
 
 fn context(root: &Path) -> Arc<PlanContext> {

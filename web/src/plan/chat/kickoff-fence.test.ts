@@ -96,3 +96,21 @@ describe("fenceBody", () => {
     expect(fenceBody(text, "loom-closing")).toBeNull();
   });
 });
+
+describe("CRLF text", () => {
+  const crlf = (text: string) => text.replaceAll("\n", "\r\n");
+
+  it("reads a loom-done fence and hides it, as the server does", () => {
+    const text = crlf(`Done.\n${tick}loom-done\n{"a":1}\n${tick}\n`);
+
+    expect(fenceBody(text, "loom-done", true)).toBe('{"a":1}\r');
+    expect(withoutKickoffFence(text)).toBe("Done.");
+  });
+
+  it("reads a loom-closing fence and drops a streaming kickoff fence", () => {
+    expect(fenceBody(crlf(`${tick}loom-closing\n{"a":1}\n${tick}\n`), "loom-closing")).toBe(
+      '{"a":1}\r',
+    );
+    expect(withoutKickoffFence(crlf(`Hi.\n${tick}loom-kickoff\n{"problem"`))).toBe("Hi.");
+  });
+});

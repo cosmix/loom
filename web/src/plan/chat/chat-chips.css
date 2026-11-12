@@ -244,7 +244,7 @@
   line-height: var(--leading-body);
   white-space: pre-wrap;
   box-shadow:
-    0 0 0 1px color-mix(in oklch, var(--foreground) 10%, transparent),
+    0 0 0 1px var(--popover-border),
     var(--dialog-shadow);
 }
 

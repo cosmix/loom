@@ -190,6 +190,47 @@ describe("RenderedDiff scroll", () => {
   });
 });
 
+describe("RenderedDiff scroll under a sticky head", () => {
+  const blocks = diffBlocks(doc(["Stays.", "Old one."]), doc(["Stays.", "New one."]));
+  const HEAD_HEIGHT = 60;
+
+  /** The first block's scroll margins at the moment of the jump, and after it. */
+  function marginsAtJump(headPosition: "sticky" | "static"): { during: string[]; after: string[] } {
+    const heights = vi
+      .spyOn(HTMLElement.prototype, "offsetHeight", "get")
+      .mockImplementation(function (this: HTMLElement) {
+        return this.classList.contains("diff-head") ? HEAD_HEIGHT : 0;
+      });
+    const during: string[] = [];
+    scrollIntoView.mockImplementation(function (this: HTMLElement) {
+      during.push(this.style.scrollMarginTop, this.style.scrollMarginBottom);
+    });
+    render(
+      <div className="diff-view">
+        <div className="diff-head" style={{ position: headPosition }} />
+        <RenderedDiff blocks={blocks} path="doc/plans/example.md" />
+      </div>,
+    );
+    heights.mockRestore();
+    const first = document.querySelector<HTMLElement>('[data-diff-block="changed"]');
+    return {
+      during,
+      after: [first?.style.scrollMarginTop ?? "", first?.style.scrollMarginBottom ?? ""],
+    };
+  }
+
+  it("centres in what a sticky head leaves, by a top margin of its height and none below", () => {
+    const { during, after } = marginsAtJump("sticky");
+    expect(during).toEqual([`${HEAD_HEIGHT}px`, "0px"]);
+    expect(scrollIntoView).toHaveBeenCalledWith({ block: "center", behavior: "instant" });
+    expect(after).toEqual(["", ""]);
+  });
+
+  it("centres with no margin where the head does not stick over the text", () => {
+    expect(marginsAtJump("static").during).toEqual(["0px", "0px"]);
+  });
+});
+
 describe("RenderedDiff links", () => {
   const where = (): string => {
     const location = useLocation();
@@ -234,5 +275,53 @@ describe("RenderedDiff links", () => {
     renderDiff("", "Read [the notes](../notes.md).\n");
     fireEvent.click(screen.getByRole("link", { name: "the notes" }));
     expect(screen.getByRole("link", { name: "the notes" })).toBeTruthy();
+  });
+});
+
+describe("RenderedDiff reference links", () => {
+  function renderReferences(before: string, after: string) {
+    const store = createStore();
+    store.set(treeAtom, treeFixture as unknown as FileTree);
+    render(
+      <Provider store={store}>
+        <MemoryRouter>
+          <RenderedDiff blocks={diffBlocks(before, after)} path="doc/plans/example.md" />
+        </MemoryRouter>
+      </Provider>,
+    );
+  }
+
+  it("resolves a reference link in a block against the definition elsewhere in the document", () => {
+    renderReferences(
+      doc(["Read [the notes][n].", "Stays put.", "[n]: ../notes.md"]),
+      doc(["Read [the notes][n] twice.", "Stays put.", "[n]: ../notes.md"]),
+    );
+    const links = screen.getAllByRole("link", { name: "the notes" });
+    expect(links).toHaveLength(2);
+    for (const link of links) expect(link.getAttribute("title")).toBeNull();
+    expect(document.querySelectorAll("[data-diff-side] .md a")).toHaveLength(2);
+  });
+
+  it("resolves each side against its own definitions", () => {
+    renderReferences(
+      doc(["Read [the notes][n].", "[n]: ../notes.md"]),
+      doc(["Read [the notes][n] now.", "[n]: ./nope.md"]),
+    );
+    const [paragraph] = [...document.querySelectorAll('[data-diff-block="changed"]')];
+    const before = paragraph.querySelector('[data-diff-side="before"] a');
+    const after = paragraph.querySelector('[data-diff-side="after"] a');
+    expect(before?.getAttribute("title")).toBeNull();
+    expect(after?.getAttribute("title")).toBe("not found");
+  });
+
+  it("draws an unchanged definition as nothing and a changed one as its source", () => {
+    renderReferences(
+      doc(["Stays put.", "[a]: ../notes.md", "[b]: ./one.md"]),
+      doc(["Stays put.", "[a]: ../notes.md", "[b]: ./two.md"]),
+    );
+    expect(kinds()).toEqual(["same", "changed"]);
+    expect(
+      [...document.querySelectorAll(".diff-side__definition")].map((code) => code.textContent),
+    ).toEqual(["[b]: ./one.md", "[b]: ./two.md"]);
   });
 });

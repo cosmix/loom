@@ -17,7 +17,7 @@ import { toAttachmentInput } from "@/plan/chat/commands";
 import { Untrusted } from "@/plan/chat/visible-controls";
 import { docRel } from "@/plan/files/address";
 import { treeAtom } from "@/plan/files/atoms";
-import { treeDocs } from "@/plan/files/tree";
+import { treeDocs } from "@/plan/files/tree-docs";
 import { Popover, PopoverContent, PopoverTrigger } from "@/plan/header/popover";
 import { BusyText } from "@/plan/ui/busy-text";
 import type { ButtonLook, ButtonShape } from "@/plan/ui/disabled-reason";

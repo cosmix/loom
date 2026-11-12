@@ -23,7 +23,6 @@ fn vision_key() -> PageKey {
 fn overview_key() -> PageKey {
     PageKey::Overview {
         feature: "demo".into(),
-        scope: Scope::Product,
     }
 }
 

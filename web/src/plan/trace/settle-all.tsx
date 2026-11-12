@@ -9,6 +9,7 @@ import { BusyText } from "@/plan/ui/busy-text";
 import { HEADING_BUTTON } from "@/plan/ui/doc-heading";
 import { plural } from "@/plan/ui/plural";
 
+import { SkippedDocuments } from "./settle-all-skipped";
 import { postSettleAll } from "./settle-flow";
 import { loadTrace, useTrace } from "./state";
 
@@ -70,7 +71,15 @@ function BulkButton({
   );
 }
 
-function BulkNotes({ flow, reasonId }: { flow: Flow; reasonId: string }): JSX.Element {
+function BulkNotes({
+  flow,
+  reasonId,
+  feature,
+}: {
+  flow: Flow;
+  reasonId: string;
+  feature: string;
+}): JSX.Element {
   const unresolved = flow.answer?.skipped.filter((doc) => doc.reason === "unresolved").length ?? 0;
   const other = (flow.answer?.skipped.length ?? 0) - unresolved;
   return (
@@ -90,8 +99,11 @@ function BulkNotes({ flow, reasonId }: { flow: Flow; reasonId: string }): JSX.El
       )}
       {other > 0 && (
         <span role="status" className="trace-settle-note">
-          {plural(other, "document")} could not be settled. Reload and try again.
+          {plural(other, "document")} could not be settled.
         </span>
+      )}
+      {flow.answer !== null && flow.answer.skipped.length > 0 && (
+        <SkippedDocuments feature={feature} skipped={flow.answer.skipped} />
       )}
       {flow.notice !== null && (
         <span role="alert" className="trace-settle-note">
@@ -103,7 +115,7 @@ function BulkNotes({ flow, reasonId }: { flow: Flow; reasonId: string }): JSX.El
 }
 
 function BulkControl(props: Props & { count: number }): JSX.Element {
-  const { role, count } = props;
+  const { feature, role, count } = props;
   const flow = useBulkSettle(props);
   const reasonId = useId();
   return (
@@ -117,7 +129,7 @@ function BulkControl(props: Props & { count: number }): JSX.Element {
       <span className="plan-fine text-muted-foreground">
         {plural(count, role === "section" ? "spec" : "plan")} need{count === 1 ? "s" : ""} settling
       </span>
-      <BulkNotes flow={flow} reasonId={reasonId} />
+      <BulkNotes flow={flow} reasonId={reasonId} feature={feature} />
     </div>
   );
 }

@@ -31,7 +31,10 @@
       "assets/cm-view.js",
       "assets/cm-lang.js",
       "src/plan/editor/codemirror.ts",
-      "src/plan/editor/edit-mode.tsx"
+      "src/plan/editor/edit-mode.tsx",
+      "src/plan/run/handoff-dialogs.tsx",
+      "src/plan/trace/coverage-page.tsx",
+      "src/plan/trace/findings-page.tsx"
     ],
     "forbidText": [
       "xterm-helper-textarea",
@@ -39,7 +42,12 @@
       "Saved terminal history",
       "cm-editor",
       "Your kept text",
-      "took authoring. Your text is kept as a draft."
+      "took authoring. Your text is kept as a draft.",
+      "Delete branches with unmerged commits?",
+      "Could not load pressure options",
+      "Commit or stash the blocking changes first",
+      "No heading matches this filter.",
+      "This feature has no metaplan, so no Plan follow-ups can start."
     ]
   }
 }

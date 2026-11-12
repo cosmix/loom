@@ -2,7 +2,7 @@ import { useEffect, useRef } from "react";
 import { atom, useAtomValue, useStore, type PrimitiveAtom } from "jotai";
 
 import { apiGet } from "@/plan/api/client";
-import { isConceptPageKey, overviewKey, parsePageKey } from "@/plan/api/page-key";
+import { isConceptPageKey, metaplanKey, overviewKey, parsePageKey } from "@/plan/api/page-key";
 import {
   conceptPageSchema,
   type ConceptChanged,
@@ -226,9 +226,9 @@ function pagesToRefetch(store: Store, named: string[]): string[] {
   const inScope = (key: string) => {
     const parts = parsePageKey(key);
     if (parts === null || parts.kind === "standalone") return false;
-    if (parts.scope === "product") return overviews.has(overviewKey(parts.feature, parts.scope));
+    if (parts.scope === "product") return overviews.has(overviewKey(parts.feature));
     // A plan page's chips name sibling plans, which the metaplan page's delta covers.
-    return parts.scope === "engineering" && named.includes(overviewKey(parts.feature, "metaplan"));
+    return parts.scope === "engineering" && named.includes(metaplanKey(parts.feature));
   };
   return [...named.filter((key) => loaded.includes(key)), ...loaded.filter(inScope)];
 }

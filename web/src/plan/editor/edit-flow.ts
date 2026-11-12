@@ -4,7 +4,8 @@ import { useCallback, useEffect, useReducer, useRef, useState, type Dispatch } f
 import type { DocView } from "@/plan/api/schema-files";
 import { fetchDoc, saveDoc } from "@/plan/files/api";
 import { docChangedAtom, treeAtom } from "@/plan/files/atoms";
-import { renamedPlan, treeDocs } from "@/plan/files/tree";
+import { renamedPlan } from "@/plan/files/tree";
+import { treeDocs } from "@/plan/files/tree-docs";
 import type { Store } from "@/state/store";
 
 import { useDraftWriter } from "./draft-writer";
