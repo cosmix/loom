@@ -27,6 +27,8 @@ describe("ValidationPanel", () => {
     expect(screen.getByRole("region", { name: "Warnings: Sandbox" })).toBeTruthy();
     expect(screen.queryByRole("region", { name: "Warnings: Knowledge" })).toBeNull();
     expect(screen.getByText("3 stages")).toBeTruthy();
+    expect(document.querySelectorAll(".hazard-error")).toHaveLength(1);
+    expect(document.querySelectorAll(".hazard-warning")).toHaveLength(1);
   });
 
   it("jumps to the line of an error that has one", () => {

@@ -160,3 +160,43 @@ that lands in the tree is `100644`.
 **Prevention:** read the enum definition before constructing test outcomes.
 
 **Fix:** corrected the fixture before compiling; runtime behavior was unaffected.
+
+## Retrieve knowledge sections instead of paging through topic files
+
+**What happened:** during the feature planner offline-modal task, I used loom knowledge context but also paged through the planner-web-shell topic and the architecture summary directly, producing unnecessarily large reads.
+
+**Why:** I treated a relevant topic pointer as permission to read the topic broadly instead of asking a focused follow-up query.
+
+**Prevention:** after reading INDEX.md, retrieve documentation through loom knowledge context with a specific question and a bounded token budget. Narrow the query when the first answer is insufficient. Reserve direct source reads for the ranges identified by graph or literal searches.
+
+**Fix:** use targeted knowledge queries for the remaining Aurora audit and report the earlier deviation accurately.
+
+## Inspect import anchors before patching
+
+**What happened:** an Aurora styling patch failed because its source-editor import anchor did not match the file.
+
+**Why:** the patch assumed an import order from an earlier body-only source read.
+
+**Prevention:** inspect the exact import range before using it as a patch anchor.
+
+**Fix:** read each affected import block and apply the patch against the actual source.
+
+## Check the partial-staging guard before committing shared indexes
+
+**What happened:** a planner commit failed because INDEX.md contained both staged planner entries and unstaged entries from concurrent source-graph work.
+
+**Why:** the repository commit hook requires each staged path to be fully staged.
+
+**Prevention:** isolate task-owned changes to generated indexes before committing and preserve concurrent edits separately; use explicit commit pathspecs in a shared checkout.
+
+**Fix:** isolate the planner index entries, commit the task paths, and restore the unrelated index entry.
+
+## Validate task commits in isolation from concurrent work
+
+**What happened:** the planner commit hook failed because concurrent, unstaged Rust changes grew src/fs/work_dir.rs and src/fs/work_dir/tests.rs beyond their maintainability baselines.
+
+**Why:** the commit hook runs the Rust maintainability test against the entire working tree, including unstaged changes.
+
+**Prevention:** commit a task from an isolated checkout when unrelated work is active, preserving explicit task paths and running the normal hooks against the proposed commit snapshot.
+
+**Fix:** preserve concurrent edits, validate the planner-only patch in an isolated checkout, and advance the original branch only if its starting tip still matches.

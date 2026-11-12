@@ -245,6 +245,7 @@ describe("a changed document that cannot be refetched", () => {
     act(() => store.set(docChangedAtom, { [DOC_PATH]: "h2" }));
     const notice = await screen.findByRole("alert");
     expect(notice.textContent).toContain("could not be loaded (boom)");
+    expect(notice.querySelector(".hazard-warning")).toBeTruthy();
     expect(screen.getByText("old")).toBeTruthy();
     fireEvent.click(within(notice).getByRole("button", { name: "Retry" }));
     await screen.findByText("new");

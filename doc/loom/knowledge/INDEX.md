@@ -42,7 +42,7 @@
 | [hook-system](architecture/hook-system.md) |  | 329 |
 | [knowledge-bootstrap](architecture/knowledge-bootstrap.md) | KB | 83 |
 | [knowledge-hierarchy](architecture/knowledge-hierarchy.md) | KB fs | 264 |
-| [live-preview-editor](architecture/live-preview-editor.md) | Editor | 28 |
+| [live-preview-editor](architecture/live-preview-editor.md) | Editor | 32 |
 | [loom-ask](architecture/loom-ask.md) |  | 75 |
 | [memory-spool](architecture/memory-spool.md) |  | 205 |
 | [merge-checkout-state](architecture/merge-checkout-state.md) | FF | 32 |
@@ -53,7 +53,7 @@
 | [plan-server](architecture/plan-server.md) | Chat | 294 |
 | [planner-feature-screens](architecture/planner-feature-screens.md) | Spine | 48 |
 | [planner-uploads-and-drafts](architecture/planner-uploads-and-drafts.md) |  | 35 |
-| [planner-web-shell](architecture/planner-web-shell.md) | Shell | 139 |
+| [planner-web-shell](architecture/planner-web-shell.md) | Shell | 143 |
 | [planning-document-model](architecture/planning-document-model.md) | Docs | 183 |
 | [planning-guidance](architecture/planning-guidance.md) |  | 43 |
 | [planning-session-bridge](architecture/planning-session-bridge.md) |  | 351 |
@@ -135,7 +135,7 @@
 | [ci-toolchain-and-cargo](mistakes/ci-toolchain-and-cargo.md) |  | 383 |
 | [codex-direct-mode-invisible](mistakes/codex-direct-mode-invisible.md) |  | 23 |
 | [codex-lane-rogue-wrapper](mistakes/codex-lane-rogue-wrapper.md) |  | 177 |
-| [codex-navigation](mistakes/codex-navigation.md) | Reader | 162 |
+| [codex-navigation](mistakes/codex-navigation.md) | Reader | 202 |
 | [codex-worker-briefing](mistakes/codex-worker-briefing.md) |  | 162 |
 | [completion-broker-credential](mistakes/completion-broker-credential.md) |  | 225 |
 | [completion-runner-blocks](mistakes/completion-runner-blocks.md) |  | 216 |
@@ -168,7 +168,7 @@
 | [plan-server-delivery](mistakes/plan-server-delivery.md) | Slips | 369 |
 | [planner-design-brainstorm](mistakes/planner-design-brainstorm.md) | Stubs | 94 |
 | [planner-follow-ups-delivery](mistakes/planner-follow-ups-delivery.md) | Slips | 196 |
-| [planner-polish](mistakes/planner-polish.md) | Polish | 107 |
+| [planner-polish](mistakes/planner-polish.md) | Polish | 127 |
 | [planner-redesign](mistakes/planner-redesign.md) |  | 80 |
 | [planner-review-fixes](mistakes/planner-review-fixes.md) |  | 139 |
 | [planner-ui-repair](mistakes/planner-ui-repair.md) | Repair | 215 |

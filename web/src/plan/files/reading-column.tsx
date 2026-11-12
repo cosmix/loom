@@ -3,6 +3,7 @@ import { lazy, Suspense, useEffect, useRef, type JSX, type ReactNode, type RefOb
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router";
 
 import { Button } from "@/components/ui/button";
+import { HazardPanel } from "@/aurora-ui/feedback/HazardPanel";
 import type { DocView, FileTree } from "@/plan/api/schema-files";
 import { SelectionAttach } from "@/plan/attachments";
 import { openDiff } from "@/plan/diff/open-diff";
@@ -140,17 +141,16 @@ function useRenamedRedirect(doc: DocView | null, tree: FileTree | null, path: st
 
 function StaleNotice({ refresh }: { refresh: StaleRefresh }) {
   return (
-    <div
-      role="alert"
-      className="flex flex-wrap items-center gap-x-3 px-6 pb-4 text-[13px] text-muted-foreground"
-    >
-      <span>
-        This document changed, but the new text could not be loaded ({refresh.message}). The text
-        below is the earlier version.
-      </span>
-      <Button variant="ghost" size="sm" onClick={refresh.retry}>
-        Retry
-      </Button>
+    <div role="alert" className="px-6 pb-4">
+      <HazardPanel tone="warning" title="Showing an earlier version">
+        <p className="text-sm leading-relaxed">
+          This document changed, but the new text could not be loaded ({refresh.message}). The text
+          below is the earlier version.
+        </p>
+        <Button variant="outline" size="sm" className="mt-3" onClick={refresh.retry}>
+          Retry
+        </Button>
+      </HazardPanel>
     </div>
   );
 }
