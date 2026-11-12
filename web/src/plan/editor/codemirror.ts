@@ -5,7 +5,7 @@ import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import { yaml } from "@codemirror/lang-yaml";
 import { HighlightStyle, LanguageDescription, syntaxHighlighting } from "@codemirror/language";
-import { MergeView, unifiedMergeView } from "@codemirror/merge";
+import { getChunks, MergeView, unifiedMergeView } from "@codemirror/merge";
 import { search, searchKeymap, searchPanelOpen } from "@codemirror/search";
 import { Compartment, EditorState, type Extension } from "@codemirror/state";
 import { EditorView, keymap, lineNumbers } from "@codemirror/view";
@@ -34,6 +34,8 @@ export interface EditorHandle {
   searchOpen(): boolean;
   /** Moves the cursor to the start of a 1-based line (clamped) and scrolls it to the centre. */
   scrollToLine(line: number): void;
+  /** Scrolls a diff's first changed chunk to the centre; does nothing where nothing changed. */
+  scrollToFirstChange(): void;
   /**
    * The 1-based inclusive document lines a DOM range covers, or null when the range is not
    * inside an editor this handle owns (for a merge view, only the editable right side).
@@ -200,6 +202,14 @@ function scrollToLine(view: EditorView, line: number): void {
   });
 }
 
+// A chunk's B side is this view's document (the right editor of a side-by-side diff, or the
+// unified view). A chunk that removes the last line starts one past the text, hence the clamp.
+function scrollToFirstChange(view: EditorView): void {
+  const first = getChunks(view.state)?.chunks[0];
+  const { doc } = view.state;
+  if (first) scrollToLine(view, doc.lineAt(Math.min(first.fromB, doc.length)).number);
+}
+
 // The unified diff's removed lines are a block widget (.cm-deletedChunk); posAtDOM returns its
 // start, which would pin a selection in removed text on the kept line below it.
 function inDeletedChunk(node: Node): boolean {
@@ -257,6 +267,7 @@ function viewHandle(
     setText: (text) => replaceAll(view, text),
     searchOpen: () => searchPanelOpen(view.state),
     scrollToLine: (line) => scrollToLine(view, line),
+    scrollToFirstChange: () => scrollToFirstChange(view),
     rangeLines: (range) => rangeLines([view, ...others], range),
     rangeText(range) {
       const mapped = mapRange([view, ...others], range);

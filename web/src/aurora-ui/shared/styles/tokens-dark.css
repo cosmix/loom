@@ -1,6 +1,9 @@
 /*
  * Dark themes: the shared `.dark` base, then the Aubergine, Graphite, Midnight, Obsidian and
  * Indigo Night variants. Imported by tokens.css after tokens-light.css.
+ *
+ * `--popover` is the raised surface of everything that floats: about 0.04 of lightness above
+ * `--card` in each variant, because a shadow alone does not show on a near-black ground.
  */
 
 /* ── Shared dark base ──────────────────────────────────────────────────── */
@@ -19,7 +22,7 @@
   --foreground: oklch(0.94 0.012 325);
   --card: oklch(0.195 0.04 325);
   --card-foreground: oklch(0.94 0.012 325);
-  --popover: oklch(0.195 0.04 325);
+  --popover: oklch(0.235 0.045 325);
   --popover-foreground: oklch(0.94 0.012 325);
   --primary: oklch(0.83 0.165 82);
   --primary-foreground: oklch(0.2 0.04 325);
@@ -66,7 +69,7 @@
   --foreground: oklch(0.93 0.004 80);
   --card: oklch(0.23 0.003 270);
   --card-foreground: oklch(0.93 0.004 80);
-  --popover: oklch(0.23 0.003 270);
+  --popover: oklch(0.265 0.004 270);
   --popover-foreground: oklch(0.93 0.004 80);
   --primary: oklch(0.74 0.15 55);
   --primary-foreground: oklch(0.20 0.003 270);
@@ -112,7 +115,7 @@
   --foreground: oklch(0.93 0.012 255);
   --card: oklch(0.2 0.034 255);
   --card-foreground: oklch(0.93 0.012 255);
-  --popover: oklch(0.2 0.034 255);
+  --popover: oklch(0.24 0.037 255);
   --popover-foreground: oklch(0.93 0.012 255);
   --primary: oklch(0.82 0.15 85);
   --primary-foreground: oklch(0.18 0.032 255);
@@ -157,7 +160,7 @@
   --foreground: oklch(0.93 0.006 260);
   --card: oklch(0.16 0.008 260);
   --card-foreground: oklch(0.93 0.006 260);
-  --popover: oklch(0.16 0.008 260);
+  --popover: oklch(0.2 0.01 260);
   --popover-foreground: oklch(0.93 0.006 260);
   --primary: oklch(0.82 0.15 85);
   --primary-foreground: oklch(0.14 0.008 260);
@@ -202,7 +205,7 @@
   --foreground: oklch(0.93 0.012 280);
   --card: oklch(0.2 0.047 280);
   --card-foreground: oklch(0.93 0.012 280);
-  --popover: oklch(0.2 0.047 280);
+  --popover: oklch(0.24 0.05 280);
   --popover-foreground: oklch(0.93 0.012 280);
   --primary: oklch(0.82 0.15 85);
   --primary-foreground: oklch(0.18 0.045 280);

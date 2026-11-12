@@ -1,6 +1,10 @@
 /*
  * Light themes: Ledger (the bare :root), then the gray, cool and Harbor variants. Imported by
  * tokens.css, before tokens-dark.css so the dark base wins ties on specificity.
+ *
+ * `--popover` is the raised surface of everything that floats (popovers, dialogs, menus): one step
+ * lighter than `--card` in every theme, so a popover over a card is not the card's colour. On paper
+ * the step is small, the card being near white already; the edge and the shade (index.css) carry it.
  */
 
 /* ── Default light theme (ledger: stone stock, hue ~100) ──────────────── */
@@ -10,7 +14,7 @@
   --foreground: oklch(0.21 0.012 262);
   --card: oklch(0.955 0.008 102);
   --card-foreground: oklch(0.21 0.012 262);
-  --popover: oklch(0.955 0.008 102);
+  --popover: oklch(0.985 0.005 102);
   --popover-foreground: oklch(0.21 0.012 262);
   --primary: oklch(0.84 0.155 80);
   --primary-foreground: oklch(0.21 0.012 262);
@@ -61,7 +65,7 @@
   --foreground: oklch(0.20 0.005 270);
   --card: oklch(0.985 0.002 270);
   --card-foreground: oklch(0.19 0.005 270);
-  --popover: oklch(0.985 0.002 270);
+  --popover: oklch(1 0 270);
   --popover-foreground: oklch(0.19 0.005 270);
   --primary: oklch(0.22 0.005 270);
   --primary-foreground: oklch(0.985 0.002 270);
@@ -106,7 +110,7 @@
   --foreground: oklch(0.20 0.012 235);
   --card: oklch(0.987 0.004 235);
   --card-foreground: oklch(0.19 0.012 235);
-  --popover: oklch(0.987 0.004 235);
+  --popover: oklch(1 0 235);
   --popover-foreground: oklch(0.19 0.012 235);
   --primary: oklch(0.22 0.015 235);
   --primary-foreground: oklch(0.985 0.004 235);
@@ -151,7 +155,7 @@
   --foreground: oklch(0.22 0.02 235);
   --card: oklch(0.985 0.007 235);
   --card-foreground: oklch(0.22 0.02 235);
-  --popover: oklch(0.985 0.007 235);
+  --popover: oklch(1 0 235);
   --popover-foreground: oklch(0.22 0.02 235);
   --primary: oklch(0.46 0.09 205);
   --primary-foreground: oklch(0.985 0.01 235);
