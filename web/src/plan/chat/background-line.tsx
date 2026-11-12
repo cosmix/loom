@@ -52,8 +52,8 @@ function nextSaid(said: Said, table: Table): Said {
     return !said.told && said.message === "" ? { ...said, message: null } : said;
   }
   if (said.told) return said;
-  if (table.waiting) return { ...said, told: true, message: waitingWords(table.unended) };
-  // Tasks run while the chat works: the empty region is in place before its first words.
+  // Tasks exist: the empty region is in place before its first words, which useAnnouncement sets
+  // once the empty region is committed. A reader ignores a live region inserted holding its text.
   return said.message === "" ? said : { ...said, message: "" };
 }
 
@@ -67,7 +67,16 @@ function useAnnouncement(session: string | null, table: Table): string | null {
   const next = nextSaid(said.session === session ? said : { ...SILENT, session }, table);
   // State derived from the table as it changes, set while rendering so no stale frame is drawn.
   if (next !== said) setSaid(next);
-  const { message } = next;
+  const { message, told } = next;
+  const words = table.waiting ? waitingWords(table.unended) : null;
+  useEffect(() => {
+    if (words === null || told || message !== "") return;
+    const say = (now: Said): Said =>
+      now.session === session && !now.told && now.message === ""
+        ? { ...now, told: true, message: words }
+        : now;
+    setSaid(say);
+  }, [words, told, message, session]);
   useEffect(() => {
     if (!message) return;
     const clear = (now: Said): Said => (now.message === message ? { ...now, message: "" } : now);
