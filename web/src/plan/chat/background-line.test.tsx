@@ -249,6 +249,27 @@ it("the line is announced once and the last task's end once", async () => {
   expect(screen.queryAllByRole("status").length).toBe(regions - 1);
 });
 
+it("an idle chat's first frame mounts the status region empty and gives it words afterwards", async () => {
+  await mountHead(chat("idle"));
+  const observer = new MutationObserver(() => {});
+  observer.observe(document.body, { childList: true, subtree: true });
+  deliver(background());
+  const records = observer.takeRecords();
+  observer.disconnect();
+
+  const region = (node: Node): node is HTMLElement =>
+    node instanceof HTMLElement && node.matches('[role="status"].sr-only');
+  const inserted = records.findIndex((record) => [...record.addedNodes].some(region));
+  expect(inserted).toBeGreaterThanOrEqual(0);
+  const added = [...records[inserted]!.addedNodes].find(region)!;
+  // A live region inserted already holding its words is not announced: the words come after.
+  const words = records.findIndex(
+    (record, index) => index > inserted && record.target === added && record.addedNodes.length > 0,
+  );
+  expect(words).toBeGreaterThan(inserted);
+  expect(text(added)).toBe("Waiting on 3 background tasks");
+});
+
 it("a reconnect neither ends the wait aloud nor announces the line again", async () => {
   const head = await mountHead(chat("idle"));
   deliver(background());

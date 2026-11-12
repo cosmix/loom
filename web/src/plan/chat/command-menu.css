@@ -76,9 +76,12 @@
 }
 
 /* The name is what the list is scanned by: mono, as every id and command is, and the row's one
- * strong thing. It keeps its width; the hint beside it gives way first. */
+ * strong thing. It does not shrink (flex shrink is weighted by base size, so any shrink factor
+ * would still clip it by a fraction of a pixel); the hint beside it gives way first, and only a
+ * name longer than the row is cut. */
 .chat-command-name {
-  flex: 0 1 auto;
+  flex: none;
+  max-width: 100%;
   min-width: 0;
   overflow: hidden;
   color: var(--foreground);
