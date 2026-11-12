@@ -121,7 +121,7 @@
 | [git-and-build-workflow](conventions/git-and-build-workflow.md) |  | 237 |
 | [guidance-channels-and-plugin-scope](conventions/guidance-channels-and-plugin-scope.md) |  | 134 |
 | [model-and-effort-config](conventions/model-and-effort-config.md) |  | 143 |
-| [plan-web](conventions/plan-web.md) |  | 200 |
+| [plan-web](conventions/plan-web.md) |  | 204 |
 | [plan-yaml-and-hooks](conventions/plan-yaml-and-hooks.md) |  | 182 |
 | [web-dashboard-typography](conventions/web-dashboard-typography.md) |  | 64 |
 
@@ -170,7 +170,7 @@
 | [planner-follow-ups-delivery](mistakes/planner-follow-ups-delivery.md) | Slips | 196 |
 | [planner-polish](mistakes/planner-polish.md) | Polish | 107 |
 | [planner-redesign](mistakes/planner-redesign.md) |  | 80 |
-| [planner-review-fixes](mistakes/planner-review-fixes.md) |  | 132 |
+| [planner-review-fixes](mistakes/planner-review-fixes.md) |  | 139 |
 | [planner-ui-repair](mistakes/planner-ui-repair.md) | Repair | 215 |
 | [planner-visual-feedback-shortfall](mistakes/planner-visual-feedback-shortfall.md) | Visual | 17 |
 | [planning-sandbox-delivery](mistakes/planning-sandbox-delivery.md) |  | 73 |
