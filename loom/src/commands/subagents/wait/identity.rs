@@ -5,8 +5,8 @@ use std::path::{Path, PathBuf};
 use anyhow::{ensure, Context, Result};
 use uuid::Uuid;
 
+use crate::agent_state::is_safe_id;
 use crate::codex_lifecycle::CodexAuthorization;
-use crate::models::forward_receipt::is_safe_id;
 use crate::subagent_lifecycle::WorkerIdentity;
 
 use super::super::ledger::StartedAgentTypeIndex;

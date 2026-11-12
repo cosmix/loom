@@ -15,7 +15,7 @@ use serde_json::Value;
 use std::fmt;
 use std::path::{Path, PathBuf};
 
-use crate::models::forward_receipt::is_safe_id;
+use crate::agent_state::is_safe_id;
 
 #[derive(Debug, Clone, Copy)]
 pub struct ClaudeEnvironment<'a> {

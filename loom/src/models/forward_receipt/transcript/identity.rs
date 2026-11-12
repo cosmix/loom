@@ -2,7 +2,7 @@ use std::path::Path;
 
 use anyhow::{ensure, Result};
 
-use super::super::is_safe_id;
+use crate::agent_state::is_safe_id;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TranscriptIdentity {

@@ -7,9 +7,9 @@ use anyhow::{bail, ensure, Result};
 use chrono::{DateTime, Utc};
 use serde_json::{Map, Value};
 
-use super::is_safe_id;
 use super::transcript::{collect_strings, forward_argv, ForwardingInvocation, ForwardingResult};
 use crate::agent_state::background_task_id;
+use crate::agent_state::is_safe_id;
 
 /// The forward a payload describes, with its result attached.
 #[derive(Debug, Clone, PartialEq, Eq)]

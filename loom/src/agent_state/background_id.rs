@@ -2,7 +2,7 @@
 
 use serde_json::Value;
 
-use crate::models::forward_receipt::is_safe_id;
+use super::safe_id::is_safe_id;
 
 /// The task id Claude Code attaches to a backgrounded call's `toolUseResult`:
 /// the string at `backgroundTaskId`, else the one at `background_task_id`,
