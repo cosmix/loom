@@ -48,6 +48,45 @@ fn legacy_session_without_config_cannot_fall_back_to_discovery() {
     assert!(sessions.join("s.md").exists());
 }
 
+/// What the prompt and context hooks leave in a repository `loom init` never ran in.
+fn write_hook_state(state: &Path) {
+    for dir in ["context", "memory", "telemetry"] {
+        fs::create_dir_all(state.join(dir)).unwrap();
+    }
+    fs::write(state.join("memory/ad-hoc.md"), "note\n").unwrap();
+    fs::write(state.join("telemetry/events.jsonl"), "{}\n").unwrap();
+}
+
+#[test]
+fn hook_created_state_without_init_resolves_by_discovery() {
+    let (_tmp, repo, _) = setup();
+    fs::remove_dir_all(repo.join(".loom/work")).unwrap();
+    write_hook_state(&repo.join(".loom/work"));
+    let git = repo.join(".git").canonicalize().unwrap();
+    assert_eq!(identity_for(&repo).unwrap(), (git.clone(), git));
+}
+
+#[test]
+fn initialized_state_without_its_identity_fails_closed() {
+    let (_tmp, repo, _) = setup();
+    let state = repo.join(".loom/work");
+    write_hook_state(&state);
+    fs::write(state.join("config.toml"), "[plan]\nplan_id = \"p\"\n").unwrap();
+    let error = format!("{:#}", identity_for(&repo).unwrap_err());
+    assert!(error.contains("Stop all sessions"), "{error}");
+}
+
+#[test]
+fn hook_created_nested_state_does_not_hide_legacy_sessions() {
+    let (_tmp, repo, _) = setup();
+    fs::remove_dir_all(repo.join(".loom/work")).unwrap();
+    write_hook_state(&repo.join(".loom/work"));
+    let sessions = repo.join(".work/sessions");
+    fs::create_dir_all(&sessions).unwrap();
+    fs::write(sessions.join("s.md"), "session").unwrap();
+    assert!(identity_for(&repo).is_err());
+}
+
 #[test]
 fn forged_anchor_symlink_is_refused_and_preserved() {
     let (tmp, repo, _) = setup();

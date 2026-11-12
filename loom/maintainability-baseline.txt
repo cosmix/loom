@@ -10,7 +10,7 @@
 file src/commands/graph/tests.rs 425
 file src/fs/safe_fs.rs 637
 file src/fs/work_dir.rs 429
-file src/fs/work_dir/tests.rs 873
+file src/fs/work_dir/tests.rs 869
 file src/models/stage/methods.rs 492
 file src/models/stage/types.rs 591
 file src/orchestrator/signals/cache.rs 511

@@ -359,6 +359,10 @@ mod tests_states;
 mod tests_snapshot;
 
 #[cfg(test)]
+#[path = "refresh/tests_uninitialized.rs"]
+mod tests_uninitialized;
+
+#[cfg(test)]
 #[path = "refresh/tests_schema.rs"]
 mod tests_schema;
 

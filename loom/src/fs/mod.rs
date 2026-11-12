@@ -24,6 +24,7 @@ pub mod tmux_tmpdir;
 pub mod verifications;
 pub mod work_dir;
 pub mod work_integrity;
+pub(crate) mod work_state;
 pub mod worktree_files;
 
 use anyhow::Result;

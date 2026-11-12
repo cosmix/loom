@@ -72,6 +72,27 @@ pub(super) fn nearest_git_root(dir: &Path) -> Option<&Path> {
     }
 }
 
+/// Where a workspace-free `abs` below the repository root `repo_root` falls
+/// back to: the repository root, so `loom map` and `loom knowledge` run from a
+/// subdirectory of a repository `loom init` never ran in answer for the whole
+/// repository, and its hooks keep one state directory instead of one per
+/// directory they start in. `base` (the caller's spelling) is kept when `abs`
+/// is the repository root, and when `floor` excludes the repository, as it
+/// does for a temp directory inside a checkout.
+pub(super) fn fallback_root(
+    abs: &Path,
+    repo_root: &Path,
+    floor: Option<&Path>,
+    base: PathBuf,
+) -> PathBuf {
+    let below_floor = floor.is_none_or(|floor| repo_root.starts_with(floor) && repo_root != floor);
+    if repo_root != abs && below_floor {
+        repo_root.to_path_buf()
+    } else {
+        base
+    }
+}
+
 /// Apply the layout's hop count to a state-root path.
 pub(super) fn repo_root_of(root: &Path, layout: Layout) -> Option<&Path> {
     match layout {

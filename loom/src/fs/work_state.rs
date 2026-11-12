@@ -8,9 +8,11 @@ use std::path::Path;
 /// `LOOM_WORK_DIR` pin left in `.claude/settings.local.json` after its state
 /// directory was deleted can cause a hook (`commands/hook/reconcile_graph.rs`)
 /// to recreate an empty `<state-dir>/context/` + `<state-dir>/.loom/` in a
-/// repo that was never `loom init`ed. Such a directory carries no plan state
-/// at all, so `loom init` should adopt it rather than permanently refuse to
-/// run.
+/// repo that was never `loom init`ed, and the prompt and context hooks create
+/// `context/`, `memory/` and `telemetry/` in any repository. Such a directory
+/// carries no plan state at all, so `loom init` adopts it rather than refusing
+/// to run, and git there resolves by discovery
+/// (`git::worktree::main_identity::identity_for`).
 pub(crate) fn holds_orchestration_state(work_dir_path: &Path) -> bool {
     if work_dir_path.join("config.toml").exists() {
         return true;

@@ -190,7 +190,7 @@
 | [session-identity-env](mistakes/session-identity-env.md) | Env | 126 |
 | [sessions-and-liveness](mistakes/sessions-and-liveness.md) |  | 392 |
 | [shell-command-matchers](mistakes/shell-command-matchers.md) |  | 295 |
-| [source-graph-delivery](mistakes/source-graph-delivery.md) | Misses | 172 |
+| [source-graph-delivery](mistakes/source-graph-delivery.md) | Misses | 182 |
 | [spurious-waiting-for-input](mistakes/spurious-waiting-for-input.md) | Idle | 53 |
 | [status-broadcast-hardening](mistakes/status-broadcast-hardening.md) |  | 75 |
 | [store-without-consumer](mistakes/store-without-consumer.md) | Unread | 104 |

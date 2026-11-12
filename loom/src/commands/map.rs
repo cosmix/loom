@@ -9,7 +9,7 @@ use serde_json::Value;
 use crate::context::census::{self, CensusOptions};
 use crate::context::freshness::GraphState;
 use crate::context::graph_store::{GraphStore, ResolvedGraph};
-use crate::context::refresh::{ensure_snapshot, SnapshotAction, SnapshotOutcome, SnapshotPolicy};
+use crate::context::refresh::{ensure_snapshot, SnapshotAction, SnapshotPolicy};
 use crate::context::source_graph::{EdgeProvenance, SourceEdgeKind};
 use crate::context::store::ContextStore;
 use crate::context::view::ViewOrigin;
@@ -350,7 +350,16 @@ fn load_graph(project_root: &Path, work_dir: &WorkDir, timings: &mut Timings) ->
             SnapshotPolicy::LocalCurrent,
         )
     });
-    report_snapshot(&snapshot);
+    // With no graph and no older base to serve there is nothing to answer
+    // from: every view would print an empty result an agent reads as "no
+    // symbols", so the command fails like `--window` does when it cannot answer.
+    let state = snapshot.state();
+    if matches!(state, GraphState::Unavailable | GraphState::NeverBuilt) {
+        bail!("source graph {}: {}", state.as_str(), snapshot.reason);
+    }
+    if snapshot.action != SnapshotAction::Reused {
+        eprintln!("{}", snapshot.describe());
+    }
     let view_started = Instant::now();
     let overlay = snapshot
         .overlay
@@ -369,15 +378,6 @@ fn load_graph(project_root: &Path, work_dir: &WorkDir, timings: &mut Timings) ->
         stats: view.stats,
         snapshot: identity,
     })
-}
-
-/// One stderr line about the snapshot, unless it was reused untouched.
-fn report_snapshot(snapshot: &SnapshotOutcome) {
-    if snapshot.state() == GraphState::NeverBuilt {
-        eprintln!("source graph never built: {}", snapshot.reason);
-    } else if snapshot.action != SnapshotAction::Reused {
-        eprintln!("{}", snapshot.describe());
-    }
 }
 
 fn parse_edge_kind(value: &str) -> std::result::Result<SourceEdgeKind, String> {

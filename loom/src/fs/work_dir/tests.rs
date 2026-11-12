@@ -203,13 +203,9 @@ fn test_workdir_new_falls_back_when_no_work_dir() {
     let subdir = project_root.join("some/nested/dir");
     fs::create_dir_all(&subdir).unwrap();
 
-    // WorkDir::new should fall back to subdir/.loom/work
     let work_dir = WorkDir::new(&subdir).unwrap();
-    assert_eq!(
-        work_dir.root(),
-        subdir.join(".loom").join("work"),
-        "Without a workspace anywhere, should fall back to base_path/.loom/work"
-    );
+    let repo_state = project_root.canonicalize().unwrap().join(".loom/work");
+    assert_eq!(work_dir.root(), repo_state);
     assert_eq!(work_dir.layout(), Layout::Nested);
 }
 
@@ -680,7 +676,7 @@ mod resolver {
         let wd = WorkDir::new(&inner).unwrap();
         assert_eq!(
             wd.root(),
-            inner.join(".loom").join("work"),
+            repo.canonicalize().unwrap().join(".loom").join("work"),
             "a workspace above the repo root must not be adopted from inside it"
         );
     }

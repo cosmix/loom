@@ -16,7 +16,7 @@ use super::cleanup::{
 };
 use super::git_hooks;
 use super::plan_setup::{initialize_with_plan, preflight_plan, PreflightedPlan};
-use super::work_state::holds_orchestration_state;
+use crate::fs::work_state::holds_orchestration_state;
 
 /// RAII guard that cleans up the state directory on drop unless disarmed.
 /// This ensures cleanup happens on ANY failure path, not just plan parsing.
