@@ -25,7 +25,10 @@ import { ActivityList, RunLine, type LiveRows } from "./activity-rows";
 import { Popover, PopoverContent, PopoverTrigger } from "./popover";
 import { inProgress, mostUrgent, useActivities, type Activity } from "./use-activities";
 
-/** The card lift plus the popover's longer drop; both layers are tokens in plan.css. */
+/**
+ * The floating shadow every popover carries (`PopoverContent`): the halo and near drop over the
+ * longer drop, both tokens in plan.css.
+ */
 const POPOVER_SHADOW = "var(--plan-shadow), var(--popover-lift)";
 
 /** What `useQuestionPopover` returns; a sample pill supplies only the open state. */
