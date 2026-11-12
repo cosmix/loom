@@ -219,7 +219,7 @@ Claude Code began wrapping a delivered prompt in `<pasted_content id="X">` tags 
 
 ## Planner Polish
 
-A container-query component in an unsized flex item (footer meters stacked), a stop notice produced twice from one event, spine plan rows that lost their slug to badge words, layout and glyph fixes judged from a stubbed payload or one surface, and worker slips. → [Planner Polish Mistakes](mistakes/planner-polish.md)
+A container-query component in an unsized flex item (footer meters stacked), a stop notice produced twice from one event, spine plan rows that lost their slug to badge words, layout and glyph fixes judged from a stubbed payload or one surface, and worker slips. → [Planner Polish Mistakes](mistakes/planner-polish.md) Planner feedback fixes: a route test that sent the id form the web client never sends, a background hand-back that reopened activity after the closing Stop, a bulk route holding the project read guard across saves, tests removed with a page, a test file over 400 lines, `loom check` backgrounded. → [Planner Review Fixes Mistakes](mistakes/planner-review-fixes.md#a-route-test-sent-the-id-form-the-web-client-never-sends)
 
 ## Plan Amendment Strips completed_commit From a Merged Stage
 

@@ -756,7 +756,7 @@ The chat panel is the conversation with a planning session. Loom starts the sess
 ### From plan to run to follow-ups
 
 1. **Pressure test.** A written plan's page offers a pressure test, the `loom pressure` rounds with two model families. Their dated record is appended to the plan's `## Pressure tests` section, and the spine shows which plans have one.
-2. **Run.** The Plans overview has a Run panel. Start a run does `loom init` and `loom run` for the plan (only `loom run` to resume a stopped one), and Open dashboard links to the [Web Dashboard](#web-dashboard).
+2. **Run.** The metaplan page, the Plans home, has a Run panel. Start a run does `loom init` and `loom run` for the plan (only `loom run` to resume a stopped one), and Open dashboard links to the [Web Dashboard](#web-dashboard).
 3. **Review.** When plans have run, loom writes `doc/plans/REVIEW-<plan id>.md`: spec conformance, open questions and open findings. The review is never edited. "Review the feature" starts a session with `loom-plan:review`, which records what it finds in the feature's findings ledger, `doc/plans/<feature>/findings.md`.
 4. **Follow-ups.** The Findings page groups the ledger by run review. Plan this and Fold into entry send a finding to a session that adds an entry under `## Follow-ups` in the metaplan, from which the next plan is written; Dismiss closes it with a reason. A finished feature offers "Plan follow-ups" for the same purpose.
 

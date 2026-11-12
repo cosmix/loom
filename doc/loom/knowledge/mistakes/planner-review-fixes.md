@@ -46,3 +46,87 @@ Slips from the planner review-fixes plan (kickoff, chat, drafts, uploads, vision
 - **Parallel vitest runs blamed the wrong worker.** Verification workers ran `vitest` while the home worker was mid-edit, so a `useNavigate` failure in the activity tests looked like theirs. Judge failures only from a full `src/plan` run after every worker returned.
 - **A test used a feature name with a space.** `isFeatureName` rejects spaces (`new/feature-name.ts`), so a `/f/<feature>/…` test with an encoded space never reaches a document.
 - **Page text was written for one state and shown in all.** The key lede said "Sources: the 12 sections this summary draws on" on a document summary page, a never-built page listed all 12 key documents, and the app bar read "Planning · new feature" on every `/new`. The same lesson as [Page Text Was Accepted Without Reading It Against Live State](planner-redesign.md#page-text-was-accepted-without-reading-it-against-live-state): list the states a string appears in (document or overview, built or never built, empty form or live kickoff) in the brief and read the string in each.
+
+## A Route Test Sent the Id Form the Web Client Never Sends
+
+**What happened:** `/api/built` answered `notes: []` in every real server, so the Built marker dialog never rendered. The web sent `section=product/<f>/section_NN.md` (`web/src/plan/review/api.ts`), `built_inputs` looked it up with `tree.by_id` on the id form without `.md` (`plan_server/review/routes.rs`), and `route_tests.rs` sent the id form. The same functional browser run found three more defects no test caught: `useSelectedDiff` dropped a diff when `project_key` went undefined to defined mid-load; the composer chip named the viewed document while Send went out with `attachments: []` on a fresh load; every `/api` GET waited about 10 s on a debug build.
+
+**Why:** tests built their own input instead of the client's, and no stage ran the web against the real server before integration-verify.
+
+**Prevention:** a route test sends the query exactly as the web client builds it (build it with the client function or pin both against one fixture). Integration-verify runs a functional pass in a real browser; a harness against `target/debug/loom` first waits for one `/api` answer ([the timing](../conventions/plan-web.md#visual-stages-and-the-screenshot-script)).
+
+**Fix:** the route takes the document-relative path; the tests use that form.
+
+## A Background Hand-Back Reopened Activity After the Closing Stop
+
+**What happened:** the first close-gate draft for the agent end (`bridge/driver.rs`) let a background hand-back reopen main activity after the final `Stop`, so the chat never closed without another `Stop`.
+
+**Why:** peer hand-backs produce `SelfStartedTurn` marks, and the draft traced only background-table updates, not transcript activity marks.
+
+**Prevention:** trace transcript activity marks as well as table updates whenever a state check reads activity.
+
+**Fix:** after a finished closing turn, self-started background records count as table evidence; real prompts and assistant records still set activity ([the gate](../architecture/planning-session-bridge.md#interrupt-end-teardown)).
+
+## A Bulk Route Held the Project Read Guard Across Saves
+
+**What happened:** the first `settle_all_route` draft held `req.ctx.project()` while calling `save_document`, which reads the project again.
+
+**Why:** snapshot ownership was assumed instead of read from `PlanContext::project`.
+
+**Prevention:** collect candidate paths and hashes, drop the guard, then call the shared save path (the watcher may also be waiting to replace the project between documents).
+
+**Fix:** `settle_all.rs` snapshots path and hash pairs inside a block before the loop.
+
+## Removing a Page Removed Tests of Behaviour It Shared
+
+**What happened:** removing the engineering overview, a worker deleted two document-key behaviour tests together with the overview fixtures, and three later review fixes removed assertions about orphaned behaviour (non-product `PageKey::Overview`, `overviewKey` scope, a false reload promise). Integration-verify has no INTEGRITY line, so each removed assertion raised a TI-edit event.
+
+**Why:** the tests were treated as overview-only without separating shared behaviour.
+
+**Prevention:** before deleting fixtures, list what each test asserts and keep the shared behaviour on the surviving route. Where an assertion tests behaviour a review finding removed and an equal or stronger check replaces it, dispute the TI-edit event (`loom stage dispute-integrity`) instead of reverting, since reverting restores the dead code the reviewers flagged.
+
+**Fix:** four TI-edit events disputed in integration-verify; re-review confirmed each replacement.
+
+## Spine Head Tests Pinned an Amber Verdict With No Trace
+
+**What happened:** `spine-model.test.ts` ("flags written but never settled ... without a trace") and `spine.test.tsx` ("lists the four groups", "reads a shown unit once") pinned amber "Not all settled" with no trace loaded, the defect the architecture review raised, while rows already refused to claim Draft before the trace loads (`spine-model.ts`).
+
+**Why:** the tests copied an old shape in which the head read the checklist alone.
+
+**Prevention:** a state that depends on loaded data is tested with the data loaded and, separately, with it absent.
+
+**Fix:** those tests keep their `expect` lines and load a trace with no entries for the documents.
+
+## A New Test Module Pushed a Source File Past 400 Lines
+
+**What happened:** the integration-verify fix worker added `/api/built` tests to `plan_server/review/route_tests.rs` and took it to 423 lines; `loom/tests/maintainability.rs` fails any source file over 400 lines without a baseline entry.
+
+**Why:** the brief named the limit but the worker checked only production files.
+
+**Prevention:** after adding tests run `wc -l` on every touched file, test files included, and split into a sibling test module before 360 lines. A scoped file-size audit applies the limit to files the change owns, not to a long document it only edits a paragraph of.
+
+**Fix:** the tests moved to `built_route_tests.rs`.
+
+## `loom check` Run in the Background or While Workers Edit
+
+**What happened:** `loom check integration-verify` run with `run_in_background` never reached the daemon (the relay hook reads stdout of a foreground Bash call only) and the next foreground call reported `refused`. Separately, each `loom check` while workers were editing queued a new host job (new tree fingerprint, same HEAD id).
+
+**Prevention:** run `loom check` in the foreground and rerun the same command only to wait; submit it only when no worker is writing. `--criterion` takes the 0-based index from the criterion's `[criterion <n>]` label, not the 1-based number in the signal's task list.
+
+## A Plan `reachable` Entry Named a Route Handler Held as a Value
+
+**What happened:** the entry `settle_all_route from routes` could not pass: `RouteSpec.handler` holds the fn as a value and the Rust extractor emits call edges only (`context/extract/rust.rs`), so the reverse impact of every route handler is empty.
+
+**Prevention:** write `reachable` entries only for named calls; the rule and its fix are in [A `reachable` Check Fails When the Call Is a Value](verification-v2-delivery.md#a-reachable-check-fails-when-the-call-is-a-value-or-goes-through-a-re-export).
+
+## A Gate Contract Fixture Needs the Offer's Real Threshold
+
+**What happened:** the scenario text of the gate contract named two metaplan entries; with two the checklist answered `NotOffered` for `draft-all-plans` whatever the gate did (`checklist/offers.rs` offers it only when two or more plans are missing), so the fixture names three (`PLAN-f-01..03`, only 01 written).
+
+**Prevention:** read the offer's own condition before writing a fixture for a contract that asserts it.
+
+## Workers Share One Scratchpad Directory
+
+**What happened:** a design worker wrote `contrast.mjs` to the session scratchpad, a sibling worker had written a file of the same name there, and a later `cat >>` appended a block to the sibling's script (restored with Edit).
+
+**Prevention:** prefix scratch files with the worker id or use a per-worker subdirectory, and never append to a scratch file without checking it is still yours. In zsh an unquoted variable is not word-split (`F="a b"; tool $F` passes one argument): pass file paths literally or use an array. Run repository-relative edit scripts from the worktree root.

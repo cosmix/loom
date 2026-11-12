@@ -102,7 +102,7 @@ three tmux tests that print SKIP inside the stage sandbox.
   race the final write. `end` during `Preparing` is refused and the browser shows "the chat is closing".
 - `StopFailure` is assumed main-agent only; one carrying `agent_id` would idle the main session mid-turn.
 - `SessionEnd` outside `Ending` gives `Ended`, not `Failed (died)`.
-- The close gate (`BackgroundTasks::blocking() == 0` in `on_idle`, `driver.rs`) is pinned: the contract `a-summary-session-waits-for-a-launched-agent` and `tests_end.rs` fail when it is dropped.
+- The close gate (`BackgroundTasks::blocking() == 0` in `check_close`, `bridge/driver.rs`, called from `on_idle` and each tick) is pinned: the contract `a-summary-session-waits-for-a-launched-agent` and `tests_end.rs` fail when it is dropped.
 
 ## Transcript mapper
 
