@@ -320,6 +320,8 @@ function groupGlyph(
   children: SpineChild[],
 ): RowGlyph | null {
   if (id === "product" || id === "plans") {
+    // Without a trace every child glyph is a placeholder, so nothing is known to be unsettled yet.
+    if (trace === null) return null;
     const unsettled = children.some(
       ({ glyph }) => glyph !== null && !["settled", "done", "retired"].includes(glyph.kind),
     );

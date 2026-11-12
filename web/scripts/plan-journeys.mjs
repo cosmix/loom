@@ -39,6 +39,7 @@ import {
 } from "./plan-journeys-kit.mjs";
 
 const errors = [];
+const SERVER_READY_MS = 60_000;
 
 // J3 --------------------------------------------------------------------------------------------
 
@@ -194,8 +195,13 @@ async function withPage(browser, viewport, tokenUrl, body) {
   watchPage(page, errors, frames);
   try {
     await page.goto(tokenUrl, { waitUntil: "load" });
+    const origin = new URL(page.url()).origin;
+    // `loom plan` holds every /api request until its project load is ready (about 10 s for a
+    // debug build on this repo's doc tree, bounded by the server's 60 s LOAD_WAIT). Wait for it
+    // once, so a journey's first step does not spend its whole timeout on the load.
+    await page.request.get(`${origin}/api/features`, { timeout: SERVER_READY_MS });
     await page.waitForSelector("#root > *");
-    await body({ page, frames, origin: new URL(page.url()).origin });
+    await body({ page, frames, origin });
   } finally {
     await context.close();
   }

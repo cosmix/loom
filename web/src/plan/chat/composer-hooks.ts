@@ -16,12 +16,20 @@ import { docAttachment } from "@/plan/attachments/doc-attachment";
 import { attachFiles, uploadStatusAtom } from "@/plan/attachments/intake";
 import { fetchDoc } from "@/plan/files/api";
 import { treeAtom } from "@/plan/files/atoms";
+import { treeDocs } from "@/plan/files/tree-docs";
 import { hashesAtom } from "@/plan/review/live";
 import { canAuthorAtom, isHolderAtom } from "@/plan/state/atoms";
 import { commandsAtom, loadingView } from "@/plan/state/commands-atom";
 import type { Store } from "@/state/store";
 import { sendMessage, startChat, toAttachmentInput } from "./commands";
-import { contextWish, recordGiven, withinLimit } from "./context-attach";
+import {
+  awaitsContextPath,
+  contextWish,
+  pressedContext,
+  recordGiven,
+  settledContext,
+  withinLimit,
+} from "./context-attach";
 import { draftAtom, MAX_ATTACHMENTS } from "./drafts";
 import { messageProblem } from "./message-problem";
 import { sessionAtom, unconfirmedSendsAtom, type UnconfirmedSend } from "./model";
@@ -221,7 +229,10 @@ export function useSendDraft() {
       // Read at the press, as start-chat.tsx does: the screen can change during the fetch, and
       // the chat belongs to the feature or plan the user pressed Send on.
       const { feature, plan } = store.get(startOwnerAtom);
-      const wish = retry ? null : contextWish(store);
+      // The viewed page is read at the press too: a wait for its path must not attach another page.
+      const pressed = pressedContext(store);
+      if (!retry && awaitsContextPath(store)) await settledContext(store);
+      const wish = retry ? null : contextWish(store, pressed);
       const viewed = wish && !wish.held ? await fetchContext(wish.path) : null;
       const sent = outgoing(store, retry, viewed);
       if (sent === null) return;
@@ -248,10 +259,6 @@ export function useSendDraft() {
   return { pending, error, send };
 }
 
-function flattened(entries: TreeEntry[]): TreeEntry[] {
-  return entries.flatMap((entry) => [entry, ...flattened(entry.children)]);
-}
-
 function attachmentLock(path: string, entries: TreeEntry[]): Attachment["locked"] {
   if (path.startsWith("doc/loom/knowledge/")) return "knowledge";
   const entry = entries.find((item) => item.path === path);
@@ -265,7 +272,7 @@ export function useDeliveredAttachments(): Attachment[] {
   const draft = useAtomValue(draftAtom);
   const hashes = useAtomValue(hashesAtom);
   const tree = useAtomValue(treeAtom);
-  const entries = tree ? flattened(Object.values(tree).flat()) : [];
+  const entries = tree ? treeDocs(tree) : [];
   return draft.attachments.map((item) => {
     if (item.kind === "file") return asDelivered(toAttachmentInput(item));
     const input = toAttachmentInput(item);

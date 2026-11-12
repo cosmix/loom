@@ -49,7 +49,8 @@
 
 /* Where the host's page scrolls and not the diff (the diff page, the changes list on a phone) the
    head stays in view over the page ground. A dialog bounds the diff, which then scrolls inside
-   itself, and the head sits on the dialog's own surface. */
+   itself, and the head sits on the layer's own fill: inside a floating layer `--card` is that fill
+   (index.css remaps it), so the head is opaque in every host and the text never shows through. */
 .diff-head {
   position: sticky;
   top: 0;
@@ -65,22 +66,28 @@
   background: var(--background);
 }
 
-[role="dialog"] .diff-head {
-  background: none;
+:is([data-slot="dialog-content"], [data-slot="popover-content"]) .diff-head {
+  background: var(--card);
 }
 
 .diff-summary {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-1) var(--space-3);
   min-width: 0;
   margin: 0;
   font-family: var(--font-sans);
   font-size: var(--type-ui);
   line-height: var(--leading-ui);
   font-variant-numeric: tabular-nums;
-  white-space: nowrap;
   color: var(--muted-foreground);
+}
+
+/* The parts run inline, so the space between them is drawn and copied; the margin widens it. */
+.diff-summary > span {
+  display: inline-block;
+  white-space: nowrap;
+}
+
+.diff-summary > span + span {
+  margin-left: var(--space-2);
 }
 
 .diff-summary__file {
@@ -103,30 +110,6 @@
   color: var(--diff-del);
 }
 
-/* Two flush segments in an edged track. The pressed one is filled and set heavier, so the view
-   reads at rest by more than a tint. */
-.diff-toggle {
-  display: inline-flex;
-  flex: none;
-  height: var(--control-height);
-  overflow: hidden;
-  border: 1px solid var(--border);
-  border-radius: var(--corner-control);
-  font-family: var(--font-sans);
-}
-
-.diff-toggle > button {
-  display: inline-flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 0 10px;
-  font-size: var(--type-ui);
-  font-weight: 500;
-  color: var(--muted-foreground);
-}
-
-.diff-toggle > button,
 .diff-fold {
   cursor: pointer;
   transition:
@@ -134,34 +117,7 @@
     color 120ms;
 }
 
-/* The label again at the pressed weight, unseen and with no height: it holds each segment at its
-   widest, so pressing one moves nothing. */
-.diff-toggle > button::after {
-  height: 0;
-  overflow: hidden;
-  font-weight: 600;
-  visibility: hidden;
-  content: attr(data-label) / "";
-}
-
-.diff-toggle > button + button {
-  border-left: 1px solid var(--border);
-}
-
-.diff-toggle > button:hover {
-  background: color-mix(in oklch, var(--muted) 60%, transparent);
-  color: var(--foreground);
-}
-
-.diff-toggle > button[aria-pressed="true"] {
-  background: var(--muted);
-  font-weight: 600;
-  color: var(--foreground);
-}
-
-/* Inset: the track clips its corners, and the scroller clips a ring drawn outside itself or its
-   fold rows. */
-.diff-toggle > button:focus-visible,
+/* Inset: the scroller clips a ring drawn outside itself or its fold rows. */
 .diff-rendered:focus-visible,
 .diff-fold:focus-visible {
   outline: 2px solid var(--ring);
@@ -265,6 +221,15 @@
 .diff-side[data-diff-side="after"] {
   --diff-tone: var(--diff-add);
   --diff-wash: var(--diff-add-wash);
+}
+
+/* A changed definition (`[ref]: url`) draws as nothing in Markdown, so its source stands in. */
+.diff-side__definition {
+  grid-column: 2;
+  font-family: var(--font-mono);
+  font-size: 0.8em;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
 }
 
 .diff-side__mark {
@@ -392,7 +357,6 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .diff-toggle > button,
   .diff-fold,
   .diff-fold > svg {
     transition: none;

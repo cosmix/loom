@@ -132,11 +132,14 @@ function acknowledge(store: Store, path: string, seen: SeenRead): void {
  * Loads the selected diff, again whenever the document's current hash moves. A checkpoint-mode
  * diff that loads marks the document seen, unless the checkpoint was replaced (Mark all seen)
  * while it loaded. The shown sides stay as fetched when that acknowledgment moves the baseline.
- * The effect's cleanup drops a response superseded by a newer fetch of the same document.
+ * The effect's cleanup drops a response superseded by a newer fetch of the same document. The
+ * project key is an effect dependency: when it arrives or changes the diff is fetched again, so a
+ * response cut from another (or an unknown) project never renders and the load never strands.
  */
 export function useSelectedDiff({ path, ref }: Selection) {
   const store = useStore();
   const hash = useAtomValue(hashesAtom)?.docs[path];
+  const projectKey = useAtomValue(serverInfoAtom)?.project_key;
   const [load, setLoad] = useState<DiffLoad>(null);
   const [attempt, setAttempt] = useState(0);
   useEffect(() => {
@@ -153,8 +156,8 @@ export function useSelectedDiff({ path, ref }: Selection) {
     return () => {
       active = false;
     };
-    // `hash` only triggers the refetch: the live document moved.
-  }, [store, path, ref, hash, attempt]);
+    // `hash` and `projectKey` only trigger the refetch: the live document moved, or the project did.
+  }, [store, path, ref, hash, projectKey, attempt]);
   return { load, retry: () => setAttempt((n) => n + 1) };
 }
 

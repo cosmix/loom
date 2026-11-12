@@ -2,7 +2,7 @@ import { useCallback, useMemo } from "react";
 import { useNavigate } from "react-router";
 
 import type { DocView, FileTree } from "@/plan/api/schema-files";
-import { docPathsOf } from "@/plan/files/tree";
+import { docPathsOf } from "@/plan/files/tree-docs";
 
 /** The link-resolution props every `<Markdown>` of an open document takes. */
 export function useDocMarkdownProps(doc: DocView, tree: FileTree | null) {

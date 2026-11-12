@@ -6,7 +6,7 @@ import { docKindOfPageKey, pageKeyOfPath, pageKeyOfSummaryId } from "@/plan/api/
 import { docColour } from "@/plan/concept/marks";
 import { conceptPageAtom } from "@/plan/concept/page-state";
 import { openDocAtom, treeAtom } from "@/plan/files/atoms";
-import { treeDocs } from "@/plan/files/tree";
+import { treeDocs } from "@/plan/files/tree-docs";
 import { DOC_KIND_COLOUR } from "@/plan/ui/doc-mark";
 import { DOC_KIND_GLYPHS } from "@/plan/ui/glyphs";
 import { summaryIdOf, type LabelInput } from "./chip-label";

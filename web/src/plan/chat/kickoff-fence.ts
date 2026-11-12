@@ -1,7 +1,8 @@
 const KICKOFF_INFO = "loom-kickoff";
 /** The agent ends a finished chat with this fence; the card reads it and the transcript hides it. */
 export const DONE_INFO = "loom-done";
-const OPENING = /^ {0,3}(`{3,}|~{3,})(.*)$/;
+// `.` stops at `\r`, so a CRLF line takes the optional `\r` here; the server reads CRLF fences too.
+const OPENING = /^ {0,3}(`{3,}|~{3,})(.*?)\r?$/;
 
 type Fence = { marker: string; named: boolean; body: string[] };
 type Scan = { kept: string[]; blocks: Array<{ body: string[]; closed: boolean; end: number }> };

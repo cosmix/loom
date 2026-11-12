@@ -5,6 +5,7 @@ import { Link, useParams } from "react-router";
 import {
   featureOfKey,
   isOverviewKey,
+  metaplanKey,
   overviewKey,
   pageHref,
   parsePageKey,
@@ -168,16 +169,10 @@ export function ConceptNotFound({ pageKey }: { pageKey: string }) {
     <LoadState state="not_found" title="No such document" message={`${name} does not exist.`}>
       {feature !== null ? (
         <nav aria-label="Overviews" className="concept-empty-links">
-          <Link
-            to={pageHref(overviewKey(feature, "product"))}
-            className="no-underline hover:underline"
-          >
+          <Link to={pageHref(overviewKey(feature))} className="no-underline hover:underline">
             Product overview
           </Link>
-          <Link
-            to={pageHref(overviewKey(feature, "metaplan"))}
-            className="no-underline hover:underline"
-          >
+          <Link to={pageHref(metaplanKey(feature))} className="no-underline hover:underline">
             Metaplan
           </Link>
         </nav>

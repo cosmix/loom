@@ -29,7 +29,8 @@ export function FeatureLanding() {
 
 /**
  * Every `/f/:feature` page: the spine beside the routed page. Until the project arrives the page
- * renders alone, so a concept page can start loading; the spine joins it once the feature is known.
+ * renders without the spine, so a concept page can start loading, and an empty slot keeps the
+ * spine's column, so the page does not move when the spine joins it once the feature is known.
  */
 export function FeatureLayout() {
   const { name, checklist, loaded } = useFeature();
@@ -42,8 +43,8 @@ export function FeatureLayout() {
 
   if (loaded && !checklist) return <UnknownFeature name={name} />;
   return (
-    <div className="plan-layout" data-spine={checklist ? "" : undefined}>
-      {checklist && <Spine />}
+    <div className="plan-layout" data-spine="">
+      {checklist ? <Spine /> : <div className="plan-layout__spine-slot" aria-hidden="true" />}
       <div className="plan-layout__page">
         <Outlet />
       </div>

@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import { stoppingAtom } from "@/plan/state/atoms";
@@ -120,8 +120,42 @@ it("shows failed requests and skipped stale documents", async () => {
   fireEvent.click(screen.getByRole("button", { name: "Settle all specs" }));
   expect((await screen.findByRole("alert")).textContent).toBe("Could not settle documents");
   fireEvent.click(screen.getByRole("button", { name: "Settle all specs" }));
-  expect(
-    await screen.findByText("1 document could not be settled. Reload and try again."),
-  ).toBeTruthy();
+  expect(await screen.findByText("1 document could not be settled.")).toBeTruthy();
+  expect(screen.queryByText(/Reload/)).toBeNull();
   expect(screen.queryByRole("button", { name: "Settle anyway" })).toBeNull();
+});
+
+it("names each skipped document as a link with a reason the reader can act on", async () => {
+  patchDoc(S03, { progress: "stub", settleable: true });
+  answers = [
+    {
+      status: 200,
+      body: {
+        settled: [],
+        skipped: [
+          { path: S01, reason: "unresolved" },
+          { path: S02, reason: "stale" },
+          { path: S03, reason: "stub" },
+        ],
+      },
+    },
+  ];
+  mount(<SettleAllButton feature="demo" role="section" />);
+  fireEvent.click(screen.getByRole("button", { name: "Settle all specs" }));
+  const list = await screen.findByRole("list", { name: "Documents not settled" });
+  const rows = within(list).getAllByRole("listitem");
+  expect(rows).toHaveLength(3);
+  expect(within(rows[0]!).getByRole("link").getAttribute("href")).toBe(
+    "/f/demo/product/section_01",
+  );
+  expect(rows[0]!.textContent).toContain("has unresolved points");
+  expect(within(rows[1]!).getByRole("link").getAttribute("href")).toBe(
+    "/f/demo/product/section_02",
+  );
+  expect(rows[1]!.textContent).toContain("changed or could not be saved; open it to see why");
+  expect(within(rows[2]!).getByRole("link").getAttribute("href")).toBe(
+    "/f/demo/source/product/demo/section_03.md",
+  );
+  expect(rows[2]!.textContent).toContain("still a stub");
+  expect(list.textContent).not.toContain("Reload");
 });

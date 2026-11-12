@@ -156,6 +156,49 @@
   font-weight: 600;
 }
 
+/* A row's state words and its action are two cells, as `.plan-queue__side` laid them out
+   (design.css): the words wrap among themselves, and a row with no action draws no cell. */
+[data-loom-plan] .plan-queue__status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-3);
+}
+
+[data-loom-plan] .plan-queue__action:empty {
+  display: none;
+}
+
+/* Wide enough to hold them on one line, every row shares the state column and the action column
+   (subgrid), so a row's Next or button never moves its state words off the column. Narrower, the
+   side wraps under the name and the rows are free to differ. */
+@media (min-width: 1100px) {
+  [data-loom-plan] .plan-queue {
+    display: grid;
+    grid-template-columns: auto minmax(12ch, 1fr) max-content max-content;
+  }
+
+  [data-loom-plan] .plan-queue > li {
+    display: grid;
+    grid-column: 1 / -1;
+    grid-template-columns: subgrid;
+    align-items: center;
+  }
+
+  [data-loom-plan] .plan-queue__side {
+    display: contents;
+  }
+
+  [data-loom-plan] .plan-queue__status {
+    grid-column: 3;
+    justify-content: flex-start;
+  }
+
+  [data-loom-plan] .plan-queue__action {
+    grid-column: 4;
+  }
+}
+
 @media (max-width: 759.98px) {
   [data-loom-plan] .plan-layout[data-spine] {
     grid-template-columns: minmax(0, 1fr);
@@ -166,5 +209,12 @@
 
   [data-loom-plan] .plan-layout[data-spine] > .plan-layout__page {
     border-left: 0;
+  }
+
+  /* Holds the row the spine's "Documents" control takes (spine.css: the control, its 2 x space-2
+     padding and the 1px rule) until the spine replaces it, so the page does not drop when the
+     project arrives. Revisit with the control's height in spine.css. */
+  [data-loom-plan] .plan-layout__spine-slot {
+    height: calc(var(--control-height) + 2 * var(--space-2) + 1px);
   }
 }

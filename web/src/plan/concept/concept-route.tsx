@@ -8,11 +8,11 @@ import { OPEN_DIALOG } from "@/lib/open-dialog";
 import {
   featureOfKey,
   isOverviewKey,
+  metaplanKey,
   overviewKey,
   pageHref,
   pageKeyOfPath,
   parsePageKey,
-  type ConceptScope,
 } from "@/plan/api/page-key";
 import type { ConceptPage } from "@/plan/api/schema-concept";
 import { AddToChat, addAttachmentAtom, useSelectionAttachment } from "@/plan/attachments";
@@ -52,7 +52,10 @@ import { openRunsAtom } from "./view-state";
 
 /** The second key of `g p` / `g e` must follow the first within this long. */
 const GO_KEY_WINDOW_MS = 1000;
-const GO_TARGETS: Record<string, ConceptScope> = { p: "product", e: "metaplan" };
+const GO_TARGETS: Record<string, (feature: string) => string> = {
+  p: (feature) => overviewKey(feature),
+  e: metaplanKey,
+};
 
 /** The last path part as written in the URL: still encoded, so it holds no `/`. */
 function rawNameOf(pathname: string): string {
@@ -100,7 +103,7 @@ function useGoKeys(feature: string | null): void {
       const target = GO_TARGETS[event.key];
       pressedAt.current = null;
       if (event.key === "g") pressedAt.current = event.timeStamp;
-      else if (armed && target && feature) navigate(pageHref(overviewKey(feature, target)));
+      else if (armed && target && feature) navigate(pageHref(target(feature)));
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
@@ -349,8 +352,8 @@ function RouteBody({ pageKey, above }: { pageKey: string; above: ReactNode }) {
 }
 
 /**
- * The overview and summary pages of Product, Engineering and the metaplan. `above` renders in the page's column
- * under the page's head and ahead of its document key, so the feature screen can put its gaps
+ * The overview and summary pages of the product, the metaplan and the per-plan engineering docs. `above`
+ * renders in the page's column under the page's head and ahead of its document key, so the feature screen can put its gaps
  * there without a second column or scroll container.
  */
 export function ConceptRoute({ above }: { above?: ReactNode }) {
