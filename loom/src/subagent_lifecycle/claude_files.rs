@@ -5,8 +5,8 @@ use std::io::{Read, Seek, SeekFrom};
 use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
 use std::path::{Component, Path, PathBuf};
 
+use crate::agent_state::is_safe_id;
 use crate::fs::stage_files::{extract_stage_id, find_stage_file};
-use crate::models::forward_receipt::is_safe_id;
 use crate::parser::frontmatter::extract_frontmatter_field;
 
 const MAX_FINAL_RECORD_BYTES: u64 = 1024 * 1024;

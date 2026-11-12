@@ -9,9 +9,9 @@ use super::provider_types::{
     NormalizedEvent, Provider, ProviderDiagnostics, ProviderLedger, SourceKind,
 };
 use super::transcript::{Entry, Scope, Transcript};
+use crate::agent_state::is_safe_id;
 use crate::models::forward_receipt::{
-    is_safe_id, load_receipts, receipts_path, ForwardBackend, ForwardIdentity, ForwardReceipt,
-    ForwardState,
+    load_receipts, receipts_path, ForwardBackend, ForwardIdentity, ForwardReceipt, ForwardState,
 };
 
 const MAX_STAGE_RECEIPT_FILES: usize = 4_096;

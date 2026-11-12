@@ -4,7 +4,7 @@ use std::path::Path;
 use anyhow::{anyhow, ensure, Result};
 use chrono::{DateTime, Utc};
 
-use crate::models::forward_receipt::is_safe_id;
+use crate::agent_state::is_safe_id;
 use crate::models::forward_receipt::job_record::CompanionJob;
 use crate::models::session::Session;
 use crate::subagent_lifecycle::{

@@ -161,7 +161,7 @@ fn update_thread_id(value: &Value, state: &mut FileState) {
     let Some(thread_id) = value.pointer("/payload/id").and_then(Value::as_str) else {
         return;
     };
-    if !crate::models::forward_receipt::is_safe_id(thread_id) {
+    if !crate::agent_state::is_safe_id(thread_id) {
         state.thread_id_conflict = true;
         return;
     }

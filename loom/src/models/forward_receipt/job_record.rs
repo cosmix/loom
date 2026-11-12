@@ -7,7 +7,8 @@ use serde::{Deserialize, Deserializer};
 use serde_json::Value;
 
 use super::locator::read_bounded_prefix;
-use super::{is_safe_id, parse_canonical_utc_millis, ForwardState};
+use super::{parse_canonical_utc_millis, ForwardState};
+use crate::agent_state::is_safe_id;
 
 const MAX_JOB_RECORD_BYTES: usize = 1024 * 1024;
 const MAX_PATH_BYTES: usize = 4096;

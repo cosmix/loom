@@ -7,7 +7,7 @@ use std::path::{Component, Path, PathBuf};
 
 use anyhow::{bail, ensure, Context};
 
-use super::is_safe_id;
+use crate::agent_state::is_safe_id;
 
 const MAX_LOCATOR_BYTES: u64 = 1024 * 1024;
 const MAX_WORKSPACE_CHILDREN: usize = 256;

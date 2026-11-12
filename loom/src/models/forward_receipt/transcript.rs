@@ -6,10 +6,10 @@ use anyhow::{ensure, Context, Result};
 use chrono::{DateTime, Utc};
 use serde_json::Value;
 
-use super::is_safe_id;
 use super::locator::{read_bounded_prefix, validate_task_output_path};
 use super::marker::{decode_marker_channel, MarkerChannel, MAX_PREFIX_BYTES};
 use crate::agent_state::background_task_id;
+use crate::agent_state::is_safe_id;
 
 mod argv;
 mod identity;
