@@ -63,6 +63,7 @@ impl Mapper {
     ) -> Option<Item> {
         match block {
             Block::Text(text) if sub.is_none() && !text.trim().is_empty() => {
+                self.state[turn].done_fence = Some(super::done_fence::parse(&text));
                 let markdown = cap_chars(&text, records::ITEM_CHARS);
                 Some(Item::Text { id, markdown })
             }

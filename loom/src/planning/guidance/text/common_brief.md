@@ -85,9 +85,26 @@ before writing the reply. The duty ends there: do not rebuild the summaries the 
 made out of date. The app rebuilds them in the background once the documents have
 stayed unchanged for five minutes, and the user can press Rebuild for one at once.
 
+## Ending the chat
+
+End the chat when the work the user asked for is finished: the documents are written,
+`loom plan check` is clean, nothing waits on the user, and no background agent you started
+is running. First write every decision the conversation settled into the documents and
+every point still open under `## Open questions` in the document it concerns.
+
+Then end the reply with this fence as the final block of its last text item, with nothing
+but whitespace after it. Each list contains one plain sentence per decision or open point, at
+most 50 decisions and 50 questions, each at most 500 characters:
+
+```loom-done
+{"decisions": [], "questions": []}
+```
+
+Never use the fence while asking the user anything.
+
 ## The closing message
 
-Expect the following message when the session ends. Follow it and ask nothing after
+Expect the following message when the user ends the session. Follow it and ask nothing after
 it arrives; nobody will answer. If there is nothing to write, reply
 `Closing write done.` with empty lists at once and stop.
 
