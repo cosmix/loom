@@ -34,11 +34,11 @@ function sourceLabel(a: LabelInput): string {
   return `${file}${passage}${lines}`;
 }
 
-/** "Product overview" or "Engineering overview" for an overview summary, else null. */
+/** "Product overview" for an overview summary, else null. */
 function overviewName(a: LabelInput): string | null {
   const page = parsePageKey(summaryIdOf(a.path));
   if (page?.kind !== "overview") return null;
-  return page.scope === "product" ? "Product overview" : "Engineering overview";
+  return "Product overview";
 }
 
 function summaryStem(a: LabelInput): string {

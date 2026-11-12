@@ -2,12 +2,12 @@
 
 use crate::planning::kinds::is_feature_name;
 
-/// Which overview a page belongs to.
+/// The document family a page belongs to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Scope {
     /// Product sections of a feature.
     Product,
-    /// Engineering plans of a feature.
+    /// Engineering plans of a feature; no overview has this scope.
     Engineering,
     /// A feature's metaplan documents. Only a summary page has this scope; no overview does.
     Metaplan,
@@ -41,7 +41,7 @@ impl PageKey {
         match parts.as_slice() {
             ["overview", feature, scope] if is_feature_name(feature) => Some(Self::Overview {
                 feature: (*feature).to_owned(),
-                scope: parse_scope(scope).filter(|scope| *scope != Scope::Metaplan)?,
+                scope: parse_scope(scope).filter(|scope| *scope == Scope::Product)?,
             }),
             [feature, scope, doc] if is_feature_name(feature) && safe_doc(doc) => {
                 Some(Self::Summary {

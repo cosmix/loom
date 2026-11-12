@@ -32,8 +32,7 @@ afterEach(() => {
 it.each([
   ["demo/product/section_01", "Product spec", "/f/demo/product", "Section 01"],
   ["overview/demo/product", "Product spec", "/f/demo/product", "Planning"],
-  ["demo/engineering/my-plan", "Plans", "/f/demo/engineering", "my-plan"],
-  ["overview/demo/engineering", "Engineering", "/f/demo/engineering", "Planning"],
+  ["demo/engineering/my-plan", "Plans", "/f/demo/metaplan", "my-plan"],
 ] as const)("renders the area breadcrumb for %s", (key, label, to, current) => {
   show({ key });
 

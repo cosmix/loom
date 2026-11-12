@@ -134,7 +134,7 @@ fn unreadable_claims_evaluate_without_them_as_install_does() {
 }
 
 #[test]
-fn a_plan_no_metaplan_names_changes_the_engineering_overview() {
+fn an_unlisted_plan_addition_names_only_its_own_page() {
     let fixture = fixtures::fixture(&[
         (META, &fixtures::metaplan(&["PLAN-x.md"])),
         (PLAN_X, "# Plan: X\n\nDoes x.\n"),
@@ -151,10 +151,7 @@ fn a_plan_no_metaplan_names_changes_the_engineering_overview() {
         .into_iter()
         .next()
         .expect("a delta");
-    assert_eq!(
-        delta.pages,
-        ["demo/engineering/y", "overview/demo/engineering"]
-    );
+    assert_eq!(delta.pages, ["demo/engineering/y"]);
 }
 
 #[test]
@@ -216,11 +213,10 @@ fn three_plans() -> Fixture {
     ])
 }
 
-const ALL_THREE_PAGES: [&str; 4] = [
+const ALL_THREE_PAGES: [&str; 3] = [
     "demo/engineering/w",
     "demo/engineering/x",
     "demo/engineering/y",
-    "overview/demo/engineering",
 ];
 
 #[test]
@@ -265,7 +261,6 @@ fn a_key_row_change_names_the_summary_pages_of_unlisted_plans_too() {
         "demo/engineering/x",
         "demo/engineering/y",
         "demo/metaplan/index",
-        "overview/demo/engineering",
     ];
     assert_eq!(delta.pages, named);
 }

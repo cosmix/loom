@@ -8,7 +8,7 @@ import "@/plan/feature/pages.css";
 
 /**
  * Where each map page sits in its feature: Coverage under the Product spec, Findings under the
- * Plans overview, which holds the Run page.
+ * Plans home (the metaplan page), which holds the run.
  */
 const AREAS = {
   coverage: { label: "Product spec", scope: "product" },

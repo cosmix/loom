@@ -12,12 +12,19 @@ import {
   runStrip,
   stripSocket,
 } from "@/plan/feature/pages-kit";
-import { RunPanel } from "@/plan/feature/run-panel";
+import type { ReactNode } from "react";
+
+import { MetaplanPage } from "@/plan/feature/document-page";
 import { registerOfferAction } from "@/plan/offers/actions";
 import { runDialogAtom } from "@/plan/offers/actions-run";
 import { fetchRunState } from "@/plan/run/use-run";
 
-const PATH = "/f/atlas/engineering";
+// Keep the page's above slot while leaving the summary renderer out of these panel tests.
+vi.mock("@/plan/concept/concept-route", () => ({
+  ConceptRoute: ({ above }: { above?: ReactNode }) => <>{above}</>,
+}));
+
+const PATH = "/f/atlas/metaplan";
 const ONE = "doc/plans/atlas/PLAN-one.md";
 const TWO = "doc/plans/atlas/PLAN-two.md";
 const handler = vi.fn();
@@ -44,7 +51,7 @@ const written = atlas({ plan_rows: [planRow("one", "written"), planRow("two", "w
 const start = () => screen.getAllByRole("button", { name: "Start a run" });
 
 it("draws one Start a run button for the first written plan, however many are written", () => {
-  const { store } = renderPage(<RunPanel />, PATH, written, {
+  const { store } = renderPage(<MetaplanPage />, PATH, written, {
     holder: "me",
     run: runState({ workspace: "done", active_plan: null, preselected: null }),
   });
@@ -59,12 +66,12 @@ it("targets the start_run offer's plan, then the preselected one", () => {
     plan_rows: [planRow("one", "written"), planRow("two", "written")],
     primary: offer("start_run", "Start a run", TWO),
   });
-  const first = renderPage(<RunPanel />, PATH, offered, { holder: "me" });
+  const first = renderPage(<MetaplanPage />, PATH, offered, { holder: "me" });
   fireEvent.click(start()[0]!);
   expect(first.store.get(runDialogAtom).plan).toBe(TWO);
   first.unmount();
 
-  const preselected = renderPage(<RunPanel />, PATH, written, {
+  const preselected = renderPage(<MetaplanPage />, PATH, written, {
     holder: "me",
     run: runState({ workspace: "done", active_plan: null, preselected: TWO }),
   });
@@ -73,7 +80,7 @@ it("targets the start_run offer's plan, then the preselected one", () => {
 });
 
 it("ignores a preselected plan that is not a written plan of this feature", () => {
-  const { store } = renderPage(<RunPanel />, PATH, written, {
+  const { store } = renderPage(<MetaplanPage />, PATH, written, {
     holder: "me",
     run: runState({ workspace: "done", active_plan: null, preselected: "doc/plans/PLAN-x.md" }),
   });
@@ -83,26 +90,26 @@ it("ignores a preselected plan that is not a written plan of this feature", () =
 
 it("makes the start button the page's primary only when the checklist's primary is start_run", () => {
   const primary = renderPage(
-    <RunPanel />,
+    <MetaplanPage />,
     PATH,
     atlas({ plan_rows: [planRow("one", "written")], primary: offer("start_run", "Start", ONE) }),
   );
   expect(start()[0]!.getAttribute("data-look")).toBe("primary");
   primary.unmount();
 
-  renderPage(<RunPanel />, PATH, atlas({ plan_rows: [planRow("one", "written")] }));
+  renderPage(<MetaplanPage />, PATH, atlas({ plan_rows: [planRow("one", "written")] }));
   expect(start()[0]!.getAttribute("data-look")).toBe("secondary");
 });
 
 it("blocks the start button with one reason while another browser holds authoring", () => {
-  renderPage(<RunPanel />, PATH, written, { holder: "other" });
+  renderPage(<MetaplanPage />, PATH, written, { holder: "other" });
 
   expect(start()[0]!.getAttribute("aria-disabled")).toBe("true");
   expect(screen.getAllByText("Ada holds authoring")).toHaveLength(1);
 });
 
 it("draws no start button when no plan is written", () => {
-  renderPage(<RunPanel />, PATH, atlas({ plan_rows: [planRow("one", "running")] }), {
+  renderPage(<MetaplanPage />, PATH, atlas({ plan_rows: [planRow("one", "running")] }), {
     holder: "me",
   });
   expect(screen.queryByRole("button", { name: "Start a run" })).toBeNull();
@@ -110,7 +117,7 @@ it("draws no start button when no plan is written", () => {
 
 it("reads a run of this feature's plan with its merge progress", () => {
   const checklist = atlas({ plan_rows: [planRow("one", "running"), planRow("two", "written")] });
-  renderPage(<RunPanel />, PATH, checklist, {
+  renderPage(<MetaplanPage />, PATH, checklist, {
     run: runState({ workspace: "running", active_plan: ONE }),
     strip: runStrip({ plan: ONE, merged: 1, total: 3 }),
   });
@@ -120,7 +127,7 @@ it("reads a run of this feature's plan with its merge progress", () => {
 });
 
 it("does not read another feature's run as this feature's", () => {
-  renderPage(<RunPanel />, PATH, written, {
+  renderPage(<MetaplanPage />, PATH, written, {
     holder: "me",
     run: runState({ workspace: "running", active_plan: "doc/plans/other/PLAN-z.md" }),
     strip: runStrip({ plan: "doc/plans/other/PLAN-z.md", merged: 2, total: 4 }),
@@ -132,7 +139,7 @@ it("does not read another feature's run as this feature's", () => {
 });
 
 it("says nothing is running, and offers no dashboard link without a dashboard url", () => {
-  renderPage(<RunPanel />, PATH, written, {
+  renderPage(<MetaplanPage />, PATH, written, {
     run: runState({ workspace: "absent", active_plan: null, dashboard_url: null }),
   });
 
@@ -142,7 +149,7 @@ it("says nothing is running, and offers no dashboard link without a dashboard ur
 
 it("says the run state could not be read, with Start blocked, when the request fails", async () => {
   serveRunState(() => json({ error: "internal", message: "boom" }, 500));
-  renderPage(<RunPanel />, PATH, written, { holder: "me" });
+  renderPage(<MetaplanPage />, PATH, written, { holder: "me" });
 
   const status = await screen.findByRole("status");
   expect(status.textContent).toBe("Could not read the run state.");
@@ -153,7 +160,7 @@ it("says the run state could not be read, with Start blocked, when the request f
 
 it("says it is checking while the run state request is out, with Start enabled", () => {
   vi.stubGlobal("fetch", () => new Promise<Response>(() => {}));
-  renderPage(<RunPanel />, PATH, written, { holder: "me" });
+  renderPage(<MetaplanPage />, PATH, written, { holder: "me" });
 
   expect(screen.getByRole("status").textContent).toBe("Checking for a run.");
   expect(start()[0]!.getAttribute("aria-disabled")).toBeNull();
@@ -169,7 +176,7 @@ it("leaves the checking line when the first of two overlapping requests answers"
         if (String(input).includes("/api/run/state")) answers.push(resolve);
       }),
   );
-  const { store } = renderPage(<RunPanel />, PATH, written, { holder: "me" });
+  const { store } = renderPage(<MetaplanPage />, PATH, written, { holder: "me" });
   // The shell's own fetch on arrival goes out after the page's, and overtakes it.
   void fetchRunState(store);
   expect(answers).toHaveLength(2);
@@ -188,7 +195,7 @@ it("follows the run state when the strip's plan changes under an open page", asy
   serveRunState(() => json(served));
   const checklist = atlas({ plan_rows: [planRow("one", "done"), planRow("two", "written")] });
   const strip = runStrip({ plan: ONE, merged: 1, total: 3 });
-  const { store } = renderPage(<RunPanel />, PATH, checklist, { run: running, strip });
+  const { store } = renderPage(<MetaplanPage />, PATH, checklist, { run: running, strip });
   const socket = stripSocket(store);
   expect((await screen.findByRole("status")).textContent).toBe(
     "one is running: 1 of 3 stages merged.",
@@ -205,7 +212,7 @@ it("follows the run state when the strip's plan changes under an open page", asy
 
 it("does not call a plan file left as running a live run", async () => {
   const one = atlas({ plan_rows: [planRow("one", "running"), planRow("two", "written")] });
-  const first = renderPage(<RunPanel />, PATH, one, {
+  const first = renderPage(<MetaplanPage />, PATH, one, {
     run: runState({ workspace: "absent", active_plan: null }),
   });
   expect((await screen.findByRole("status")).textContent).toBe(
@@ -215,7 +222,7 @@ it("does not call a plan file left as running a live run", async () => {
   first.unmount();
 
   const several = atlas({ plan_rows: [planRow("one", "running"), planRow("two", "running")] });
-  renderPage(<RunPanel />, PATH, several, {
+  renderPage(<MetaplanPage />, PATH, several, {
     run: runState({ workspace: "done", active_plan: null }),
   });
   expect((await screen.findByRole("status")).textContent).toBe(
@@ -224,14 +231,14 @@ it("does not call a plan file left as running a live run", async () => {
 });
 
 it("keeps the plain idle line when no plan reads as running", async () => {
-  renderPage(<RunPanel />, PATH, written, {
+  renderPage(<MetaplanPage />, PATH, written, {
     run: runState({ workspace: "done", active_plan: null }),
   });
   expect((await screen.findByRole("status")).textContent).toBe("Nothing is running.");
 });
 
 it("refuses a dashboard url that is not http", () => {
-  renderPage(<RunPanel />, PATH, written, {
+  renderPage(<MetaplanPage />, PATH, written, {
     run: runState({ workspace: "absent", active_plan: null, dashboard_url: "javascript:alert(1)" }),
   });
   expect(screen.queryByRole("link", { name: "Open dashboard" })).toBeNull();
@@ -239,7 +246,7 @@ it("refuses a dashboard url that is not http", () => {
 
 it("lists no plans: the spine and the plan pages carry each plan's state", () => {
   renderPage(
-    <RunPanel />,
+    <MetaplanPage />,
     PATH,
     atlas({ plan_rows: [planRow("one", "done"), planRow("two", "written")] }),
   );
@@ -258,7 +265,7 @@ const finished = (secondary: ReturnType<typeof offer>[]) =>
   });
 
 it("says a finished feature's plans are done and draws no follow-up button", () => {
-  renderPage(<RunPanel />, PATH, finished([offer("plan_follow_ups", "Plan follow-ups")]));
+  renderPage(<MetaplanPage />, PATH, finished([offer("plan_follow_ups", "Plan follow-ups")]));
 
   expect(screen.getByRole("status").textContent).toBe("Every plan is done.");
   expect(screen.queryByRole("link", { name: /what was built/ })).toBeNull();
@@ -267,8 +274,8 @@ it("says a finished feature's plans are done and draws no follow-up button", () 
   expect(handler).not.toHaveBeenCalled();
 });
 
-it("draws nothing for a feature with no plan: the overview's queue offers writing one", () => {
-  renderPage(<RunPanel />, PATH, atlas({ plan_rows: [] }));
+it("draws nothing for a feature with no plan: the metaplan's queue offers writing one", () => {
+  renderPage(<MetaplanPage />, PATH, atlas({ plan_rows: [] }));
 
   expect(screen.queryByRole("region", { name: "Run" })).toBeNull();
   expect(screen.queryByRole("status")).toBeNull();
@@ -290,7 +297,7 @@ function serveWithTrace(trace: unknown): { traceRequests: () => number } {
 it("links the Findings page with the number still open", async () => {
   // The trace fixture holds two findings, one of them open.
   serveWithTrace(traceFixture);
-  renderPage(<RunPanel />, PATH, written, { holder: "me" });
+  renderPage(<MetaplanPage />, PATH, written, { holder: "me" });
 
   const link = await screen.findByRole("link", { name: "Findings · 1 open" });
   expect(link.getAttribute("href")).toBe("/f/atlas/findings");
@@ -298,7 +305,7 @@ it("links the Findings page with the number still open", async () => {
 
 it("draws no Findings link while the ledger is empty", async () => {
   const served = serveWithTrace({ ...traceFixture, findings: [] });
-  renderPage(<RunPanel />, PATH, written, { holder: "me" });
+  renderPage(<MetaplanPage />, PATH, written, { holder: "me" });
 
   await waitFor(() => expect(served.traceRequests()).toBeGreaterThan(0));
   await screen.findByText("Nothing is running.");

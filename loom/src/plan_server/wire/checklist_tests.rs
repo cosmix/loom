@@ -7,7 +7,7 @@ use std::fs;
 
 #[path = "checklist_plan_rows_tests.rs"]
 mod plan_rows;
-use plan_rows::{assert_offer, pitch_of, put};
+use plan_rows::{assert_offer, open_offer, pitch_of, put};
 
 #[test]
 fn pitch_joins_only_the_first_paragraph_after_the_title_and_keeps_inline_markdown() {
@@ -81,10 +81,10 @@ fn feature_checklist_converts_with_the_core_offer_fields() {
     assert_eq!(view.primary.as_ref().unwrap().kind, OfferKind::WriteSection);
     assert_eq!(
         serde_json::to_value(&view.primary).unwrap(),
-        json!({
+        open_offer(json!({
             "id": "write-section:05", "kind": "write_section", "label": "Write section 05",
             "feature": "demo", "number": 5, "target": "doc/product/demo/section_05.md"
-        })
+        }))
     );
     assert!(view.items.iter().any(|item| item.path.as_deref()
         == Some("doc/product/demo/section_05.md")
@@ -305,10 +305,10 @@ fn project_snapshot_groups_features_and_uses_winning_standalone_paths_and_titles
     );
     assert_eq!(
         serde_json::to_value(snapshot.moves).unwrap(),
-        json!([{
+        json!([open_offer(json!({
             "id":"move-into-feature:doc/product/index.md", "kind":"move_into_feature",
             "label":"Move doc/product/index.md into a feature", "target":"doc/product/index.md"
-        }])
+        }))])
     );
 }
 

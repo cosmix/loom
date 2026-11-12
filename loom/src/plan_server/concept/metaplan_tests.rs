@@ -1,5 +1,4 @@
-//! The metaplan summary page: served under `<feature>/metaplan/<stem>`, listed in no overview,
-//! while the engineering overview still cites the metaplan's passages directly.
+//! The metaplan summary page: served under `<feature>/metaplan/<stem>`, with plan key chips.
 
 use super::fixtures::{self as fx, Fixture};
 use super::page::{load_page, page_key_of, PageContext, PageKey, Scope};
@@ -7,7 +6,6 @@ use crate::plan_server::wire::concept::{Block, Citation, ConceptPage, EmptyKind,
 use crate::planning::summary::evaluate::evaluate;
 use crate::planning::summary::evaluate::fixtures::METAPLAN_ID;
 
-const ENGINEERING: &str = "overview/demo/engineering";
 const PLAN_X: &str = "doc/plans/demo/PLAN-x.md";
 const ANCHOR: &str = "sequencing";
 
@@ -90,35 +88,34 @@ fn the_metaplan_summary_page_serves_under_the_metaplan_key() {
 }
 
 #[test]
-fn the_engineering_overview_still_cites_the_metaplan_as_itself() {
+fn only_product_overviews_parse_or_load() {
     let f = fixture();
-    fx::seal_document(&f.root, "plans/x", &[("X does x.", "plan-x")]);
-    fx::seal_document(&f.root, METAPLAN_ID, &[("X comes first.", ANCHOR)]);
-    fx::seal_overview(
-        &f.root,
-        ENGINEERING,
-        &[("plans/x", "X does x.")],
-        &[(fx::META, ANCHOR)],
-    );
-    let overview = page(
-        &f,
-        &PageKey::Overview {
+    let project = fx::load(&f.root);
+    let eval = evaluate(&project, &[]);
+    for (scope, name) in [
+        (Scope::Engineering, "engineering"),
+        (Scope::Metaplan, "metaplan"),
+    ] {
+        assert!(PageKey::parse(&format!("overview/demo/{name}")).is_none());
+        let key = PageKey::Overview {
             feature: "demo".into(),
-            scope: Scope::Engineering,
-        },
-    );
-    let cited: Vec<_> = sentences(&overview)
-        .into_iter()
-        .flat_map(|one| &one.marks)
-        .filter(|mark| mark.doc.path == fx::META)
-        .collect();
-    assert_eq!(cited.len(), 1, "one mark for the metaplan");
-    assert_eq!(cited[0].doc.page, ENGINEERING);
-    assert_eq!(cited[0].doc.id, ENGINEERING);
-    assert!(cited[0].out_of_date.is_none());
-    assert!(overview
-        .key_chips
-        .iter()
-        .all(|chip| chip.doc.path != fx::META));
-    assert!(overview.unlisted.iter().all(|link| link.path != fx::META));
+            scope,
+        };
+        assert!(load_page(&project, &eval, &key, &PageContext::default()).is_none());
+    }
+    let product = PageKey::parse("overview/demo/product").expect("product overview key");
+    assert!(load_page(&project, &eval, &product, &PageContext::default()).is_some());
+}
+
+#[test]
+fn metaplan_links_and_chips_target_document_pages() {
+    let f = fixture();
+    let project = fx::load(&f.root);
+    let link = super::body::doc_link(&project, std::path::Path::new(fx::META)).unwrap();
+    assert_eq!(link.id, METAPLAN_ID);
+    assert_eq!(link.page, METAPLAN_ID);
+    let metaplan = page(&f, &PageKey::parse(METAPLAN_ID).unwrap());
+    assert_eq!(metaplan.key_chips.len(), 1);
+    assert_eq!(metaplan.key_chips[0].doc.page, "demo/engineering/x");
+    assert_eq!(metaplan.key_chips[0].doc.id, "plans/x");
 }

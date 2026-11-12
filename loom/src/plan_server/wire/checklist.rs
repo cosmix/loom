@@ -176,6 +176,8 @@ pub struct OfferView {
     pub kind: OfferKind,
     /// The human-readable action text.
     pub label: String,
+    /// Why this action cannot start now, or null when it is available.
+    pub blocked_reason: Option<String>,
     /// Repository-relative target document, when there is one.
     pub target: Option<String>,
     /// The owning feature, when the action belongs to one.
@@ -267,6 +269,7 @@ impl From<&Offer> for OfferView {
             id: offer.id(),
             kind: OfferKind::from(offer),
             label: offer.label(),
+            blocked_reason: None,
             target: offer
                 .target()
                 .map(|path| path.to_string_lossy().into_owned()),
@@ -312,6 +315,7 @@ impl From<&Project> for ProjectChecklistView {
             .iter()
             .map(|feature| {
                 let mut view = ChecklistView::from(&feature.checklist);
+                card::block_plan_offers(feature, &mut view);
                 view.pitch = pitch::feature_pitch(project, &feature.name);
                 card::card_facts(project, &feature.name, &mut view);
                 view.candidates = candidates::ledger_candidates(project, &feature.name);

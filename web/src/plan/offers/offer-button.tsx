@@ -23,7 +23,8 @@ export function OfferButton({
   look?: ButtonLook;
   size?: "sm";
 }) {
-  const reason = useAtomValue(authorBlockReasonAtom);
+  const authorReason = useAtomValue(authorBlockReasonAtom);
+  const reason = offer.blocked_reason ?? authorReason;
   if (!offerAction(offer.kind)) return <Untrusted text={offer.label} />;
   return (
     <DisabledReason reason={reason} look={look} size={size} onClick={() => runOffer(offer)}>

@@ -3,8 +3,8 @@
 use super::brief;
 use crate::planning::summary::claims::{create_claim, list_claims};
 use crate::planning::summary::evaluate::fixtures::{
-    fixture, metaplan, put, seal_document, section, two_sections, vision, write_file, ENGINEERING,
-    ID1, ID2, META, PRODUCT, S1, VISION_ID,
+    fixture, metaplan, put, seal_document, section, two_sections, vision, write_file, ID1, ID2,
+    META, PRODUCT, S1, VISION_ID,
 };
 
 #[test]
@@ -216,8 +216,6 @@ fn overview_briefs_only_list_their_features_sources_and_members() {
             "other/product/section_01.md",
             "demo/",
         ),
-        (ENGINEERING, "plans/demo.md", "other"),
-        ("overview/other/engineering", "plans/other.md", "demo"),
     ] {
         let text = brief(&f.root, &f.paths, &[id.into()], None).unwrap();
         let sources = text
@@ -230,11 +228,7 @@ fn overview_briefs_only_list_their_features_sources_and_members() {
         assert!(sources.contains(present), "{id}: {sources}");
         assert!(!sources.contains(absent), "{id}: {sources}");
         let feature = id.split('/').nth(1).unwrap();
-        let source = if id.ends_with("/product") {
-            format!("doc/product/{feature}/index.md")
-        } else {
-            format!("doc/plans/{feature}/index.md")
-        };
+        let source = format!("doc/product/{feature}/index.md");
         assert!(sources.contains(&source), "{id}: {sources}");
     }
 }

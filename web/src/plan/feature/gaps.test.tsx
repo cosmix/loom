@@ -18,6 +18,7 @@ afterEach(cleanup);
 const guided = {
   id: "write-section:05",
   kind: "write_section" as const,
+  blocked_reason: null,
   label: "Write section 05",
   target: null,
   feature: "demo",
@@ -26,6 +27,7 @@ const guided = {
 const team = {
   id: "team",
   kind: "draft_all_sections" as const,
+  blocked_reason: null,
   label: "Draft all",
   target: null,
   feature: "demo",
@@ -102,10 +104,11 @@ describe("product gaps", () => {
   });
 });
 
-describe("engineering gaps", () => {
+describe("metaplan gaps", () => {
   const writePlan = {
     id: "write-plan:demo-01",
     kind: "write_plan" as const,
+    blocked_reason: null,
     label: "Write plan",
     target: null,
     feature: "demo",
@@ -116,7 +119,7 @@ describe("engineering gaps", () => {
 
   it("draws the pace choice and the plan queue while a plan is missing", () => {
     renderGaps(
-      "engineering",
+      "metaplan",
       demo({
         primary: writePlan,
         secondary: [draftPlans],
@@ -137,7 +140,7 @@ describe("engineering gaps", () => {
   });
 
   it("does not show the section pace on the plans page", () => {
-    renderGaps("engineering", demo());
+    renderGaps("metaplan", demo());
 
     expect(pace()).toBeNull();
     expect(screen.queryByRole("list", { name: "Plan queue" })).toBeNull();

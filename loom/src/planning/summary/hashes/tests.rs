@@ -16,7 +16,7 @@ const DOCUMENTS: [&str; 4] = [VISION, S1, META, PLAN];
 
 /// Every kind of summary sealed current, each citing the level-1 span that holds the line
 /// settling writes: the vision, section 01, the metaplan, a plan implementing section 01, and
-/// both overviews.
+/// the product overview.
 fn sealed() -> Fixture {
     let f = fixture(&[
         (VISION, &vision(&[1])),
@@ -30,8 +30,6 @@ fn sealed() -> Fixture {
     seal_document(&f.root, PLAN_ID, &[("X does x.", "plan-x")]);
     let product = [(ID1, "Section one holds.")];
     seal_overview(&f.root, PRODUCT, &product, &[(VISION, "vision")]);
-    let engineering = [(PLAN_ID, "X does x.")];
-    seal_overview(&f.root, ENGINEERING, &engineering, &[(META, "metaplan")]);
     f
 }
 
@@ -42,7 +40,7 @@ fn states(f: &Fixture) -> Vec<(String, SummaryState)> {
 }
 
 fn all_current(f: &Fixture) -> Vec<(String, SummaryState)> {
-    let mut ids = [ENGINEERING, PRODUCT, METAPLAN_ID, ID1, VISION_ID, PLAN_ID];
+    let mut ids = [PRODUCT, METAPLAN_ID, ID1, VISION_ID, PLAN_ID];
     ids.sort_unstable();
     let want: Vec<(String, SummaryState)> = ids
         .iter()

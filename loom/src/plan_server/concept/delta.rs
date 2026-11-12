@@ -25,7 +25,7 @@ pub(crate) struct Snapshot {
 
 #[derive(Debug, PartialEq)]
 enum Shown {
-    Overview(Box<ConceptPage>),
+    KeyPage(Box<ConceptPage>),
     ImplementedBy(Vec<PlanLink>),
     Implements(ImplementsView),
 }
@@ -45,20 +45,7 @@ pub(crate) fn snapshot(project: &Project, eval: &Evaluation, ctx: &PageContext) 
     };
     for feature in &project.features {
         let members = store::scope(project, &feature.name);
-        for scope in [Scope::Product, Scope::Engineering] {
-            let key = PageKey::Overview {
-                feature: feature.name.clone(),
-                scope,
-            };
-            if let Some(page) = load_page(project, eval, &key, ctx) {
-                result
-                    .features
-                    .insert(key.as_key(), Some(feature.name.clone()));
-                result
-                    .shown
-                    .insert(key.as_key(), Shown::Overview(Box::new(page)));
-            }
-        }
+        snapshot_key_pages(project, eval, &feature.name, ctx, &mut result);
         for id in eval.summaries.keys() {
             let keys = page_keys(id, &members);
             if !keys.is_empty() {
@@ -68,6 +55,34 @@ pub(crate) fn snapshot(project: &Project, eval: &Evaluation, ctx: &PageContext) 
     }
     snapshot_documents(project, eval, &mut result);
     result
+}
+
+fn snapshot_key_pages(
+    project: &Project,
+    eval: &Evaluation,
+    feature: &str,
+    ctx: &PageContext,
+    result: &mut Snapshot,
+) {
+    let keys = [
+        PageKey::Overview {
+            feature: feature.into(),
+            scope: Scope::Product,
+        },
+        PageKey::Summary {
+            feature: Some(feature.into()),
+            scope: Scope::Metaplan,
+            doc: "index".into(),
+        },
+    ];
+    for key in keys {
+        if let Some(page) = load_page(project, eval, &key, ctx) {
+            result.features.insert(key.as_key(), Some(feature.into()));
+            result
+                .shown
+                .insert(key.as_key(), Shown::KeyPage(Box::new(page)));
+        }
+    }
 }
 
 fn snapshot_documents(project: &Project, eval: &Evaluation, result: &mut Snapshot) {
@@ -197,8 +212,8 @@ fn group(
         })
 }
 
-fn key_row<'a>(snapshot: &'a Snapshot, overview: &str) -> Vec<(&'a DocLink, u8, &'a str, bool)> {
-    let Some(Shown::Overview(page)) = snapshot.shown.get(overview) else {
+fn key_row<'a>(snapshot: &'a Snapshot, key: &str) -> Vec<(&'a DocLink, u8, &'a str, bool)> {
+    let Some(Shown::KeyPage(page)) = snapshot.shown.get(key) else {
         return Vec::new();
     };
     page.key_chips
@@ -209,22 +224,22 @@ fn key_row<'a>(snapshot: &'a Snapshot, overview: &str) -> Vec<(&'a DocLink, u8, 
 
 /// A changed key row invalidates the listed and unlisted pages of that feature and scope.
 fn key_row_pages(before: &Snapshot, after: &Snapshot) -> Vec<String> {
-    let overviews: BTreeSet<_> = before
-        .shown
-        .keys()
-        .chain(after.shown.keys())
-        .filter(|key| store::is_overview(key))
-        .collect();
+    let keys: BTreeSet<_> = before.shown.keys().chain(after.shown.keys()).collect();
     let mut pages = BTreeSet::new();
-    for overview in overviews {
-        if key_row(before, overview) == key_row(after, overview) {
+    for key in keys {
+        if key_row(before, key) == key_row(after, key) {
             continue;
         }
-        let Some(PageKey::Overview { feature, scope }) = PageKey::parse(overview) else {
-            continue;
+        let (feature, scope) = match PageKey::parse(key) {
+            Some(PageKey::Overview { feature, scope }) => (feature, scope),
+            Some(PageKey::Summary {
+                feature: Some(feature),
+                scope: Scope::Metaplan,
+                ..
+            }) => (feature, Scope::Engineering),
+            _ => continue,
         };
         for key in before.features.keys().chain(after.features.keys()) {
-            // A metaplan summary page embeds the engineering key row (concept/key.rs).
             if matches!(PageKey::parse(key), Some(PageKey::Summary { feature: Some(ref f), scope: s, .. })
                 if *f == feature && (s == scope
                     || (scope == Scope::Engineering && s == Scope::Metaplan)))
@@ -290,32 +305,22 @@ pub(crate) fn page_keys(id: &str, scope: &store::Scope) -> Vec<String> {
     if store::metaplan_feature(id) == Some(scope.feature.as_str()) {
         return vec![id.to_owned()];
     }
-    let (page, overview, members) = if id.starts_with(&format!("{}/product/", scope.feature)) {
-        (
-            id.to_owned(),
-            format!("overview/{}/product", scope.feature),
-            &scope.product,
-        )
-    } else if let Some(slug) = id.strip_prefix("plans/") {
-        if !scope
+    if id.starts_with(&format!("{}/product/", scope.feature)) {
+        let mut keys = vec![id.to_owned()];
+        if scope.product.iter().any(|member| member == id) {
+            keys.push(format!("overview/{}/product", scope.feature));
+        }
+        return keys;
+    }
+    if let Some(slug) = id.strip_prefix("plans/") {
+        if scope
             .engineering
             .iter()
             .chain(&scope.outside)
             .any(|member| member == id)
         {
-            return Vec::new();
+            return vec![format!("{}/engineering/{slug}", scope.feature)];
         }
-        (
-            format!("{}/engineering/{slug}", scope.feature),
-            format!("overview/{}/engineering", scope.feature),
-            &scope.engineering,
-        )
-    } else {
-        return Vec::new();
-    };
-    let mut keys = vec![page];
-    if members.contains(&id.to_owned()) {
-        keys.push(overview);
     }
-    keys
+    Vec::new()
 }

@@ -113,12 +113,10 @@ impl Rebuilds {
         let sized = documents.map(|eval| (eval.id.clone(), eval.source.as_deref().map_or(0, size)));
         let mut sizes: BTreeMap<String, u64> = sized.collect();
         for scope in evaluation.scopes.values() {
-            for (kind, members) in [
-                ("product", &scope.product),
-                ("engineering", &scope.engineering),
-            ] {
-                let total = members.iter().filter_map(|id| sizes.get(id)).sum();
-                sizes.insert(format!("overview/{}/{kind}", scope.feature), total);
+            let id = format!("overview/{}/product", scope.feature);
+            if evaluation.summaries.contains_key(&id) {
+                let total = scope.product.iter().filter_map(|id| sizes.get(id)).sum();
+                sizes.insert(id, total);
             }
         }
         Some(sizes)

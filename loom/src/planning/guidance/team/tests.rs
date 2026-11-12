@@ -35,8 +35,26 @@ pub(in crate::planning::guidance) fn fixture() -> (TempDir, Project) {
         fs::create_dir_all(path.parent().unwrap()).unwrap();
         fs::write(path, text).unwrap();
     }
+    settle_metaplan(temp.path());
     let project = Project::load(temp.path()).unwrap();
     (temp, project)
+}
+
+/// Plan drafting waits for a settled metaplan, so the fixture settles its own.
+fn settle_metaplan(root: &std::path::Path) {
+    use crate::planning::trace::{settle, DocRole};
+    let project = Project::load(root).unwrap();
+    let doc = project
+        .feature("f")
+        .unwrap()
+        .trace
+        .documents
+        .iter()
+        .find(|doc| doc.role == DocRole::Metaplan)
+        .unwrap();
+    let path = root.join("doc/plans/f/index.md");
+    let text = fs::read_to_string(&path).unwrap();
+    fs::write(&path, settle::mark(&text, &doc.current)).unwrap();
 }
 
 #[test]

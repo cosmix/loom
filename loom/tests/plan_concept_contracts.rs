@@ -1,5 +1,5 @@
 //! Contracts for the concept page data: key chips and colours, overview citations and
-//! marks, plan implements links, unlisted plans, read-only out-of-date reasons and
+//! marks, plan implements links, read-only out-of-date reasons and
 //! page key parsing.
 
 #[path = "plan_concept_contracts/support.rs"]
@@ -168,41 +168,18 @@ fn implements_broken_name_kept() {
 }
 
 #[test]
-fn unlisted_plans_listed() {
-    let (pa, ta) = plan("a", "");
-    let (pb, tb) = plan("b", "");
-    let files = [
-        (META.to_string(), metaplan(&["PLAN-a.md"])),
-        (pa, ta),
-        (pb, tb),
-    ];
-    let (_t, root, home) = tree(&files);
-    sealed(&root, &home, "plans/a", &plan_draft("a"));
-    sealed(&root, &home, "plans/b", &plan_draft("b"));
-    let link = member_link("plans/a", &plan_sentence("a"));
-    let overview = format!(
-        "# Engineering\n\nA is planned. [§]({link})\n\n\
-         The metaplan orders it. [§]({META_LINK})\n"
-    );
-    sealed(&root, &home, ENGINEERING_OVERVIEW, &overview);
-    let page = page_of(&root, &engineering_overview_key());
-    let chips = doc_paths(&page, "key_chips", "doc");
-    assert_eq!(
-        chips,
-        vec!["doc/plans/demo/PLAN-a.md"],
-        "only metaplan plans get chips"
-    );
-    let unlisted: Vec<&str> = page["unlisted"]
-        .as_array()
-        .expect("unlisted array")
-        .iter()
-        .filter_map(|d| d["path"].as_str())
-        .collect();
-    assert_eq!(
-        unlisted,
-        vec!["doc/plans/demo/PLAN-b.md"],
-        "plan b is unlisted"
-    );
+fn engineering_overview_is_refused() {
+    let (_t, root, _home) = tree(&[(META.to_string(), metaplan(&[]))]);
+    assert!(PageKey::parse(ENGINEERING_OVERVIEW).is_none());
+    let project = loom::planning::project::Project::load(&root).expect("project");
+    let eval = loom::planning::summary::evaluate::evaluate(&project, &[]);
+    assert!(loom::plan_server::concept::load_page(
+        &project,
+        &eval,
+        &engineering_overview_key(),
+        &PageContext::default(),
+    )
+    .is_none());
 }
 
 #[test]

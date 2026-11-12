@@ -15,6 +15,7 @@ function feature(patch: Record<string, unknown>): ChecklistView {
   return checklistViewSchema.parse({
     ...checklistFixture.checklists[0]!,
     feature: "atlas",
+    metaplans: [],
     ...patch,
   });
 }
@@ -43,9 +44,9 @@ it("opens a feature with a product spec and a metaplan on the product overview",
   expect(landingPath(feature({ has_product: true, metaplans: metaplan }))).toBe("/f/atlas/product");
 });
 
-it("opens a feature with a metaplan and no vision on the plans", () => {
+it("opens a feature with a metaplan and no vision on the metaplan", () => {
   expect(landingPath(feature({ has_product: false, metaplans: metaplan }))).toBe(
-    "/f/atlas/engineering",
+    "/f/atlas/metaplan",
   );
 });
 
@@ -66,7 +67,7 @@ it("opens a feature whose every plan is done where it would land unfinished", ()
       current: { kind: "ready_all_done" },
     });
   expect(landingPath(done(true))).toBe("/f/atlas/product");
-  expect(landingPath(done(false))).toBe("/f/atlas/engineering");
+  expect(landingPath(done(false))).toBe("/f/atlas/metaplan");
 });
 
 it("encodes a feature name that is not a path segment", () => {

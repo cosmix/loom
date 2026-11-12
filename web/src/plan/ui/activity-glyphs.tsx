@@ -119,8 +119,8 @@ export function StateMark({
  * The decorative glyph of an activity kind that precedes the item or action itself (a card's
  * title, an action label). The root is `aria-hidden`: the caller's label is the announcement.
  * Every kind but permission is a status dot, live (green, pulsing) while it runs and gray while
- * paused; permission is the bell. Before a state word draw `StateMark`; the roundel is the header
- * pill's alone (`header/activity.tsx`).
+ * paused; permission is the bell. Before a state word draw `StateMark`; a running spine plan uses
+ * `LiveDot`, and the roundel belongs only to the header pill (`header/activity.tsx`).
  */
 export function ActivityGlyph({
   kind,

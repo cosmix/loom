@@ -24,6 +24,7 @@ import {
   checklistViewSchema,
   clientMessageSchema,
   currentViewSchema,
+  offerViewSchema,
   planMessageSchema,
   presenceListSchema,
   refusedSchema,
@@ -36,6 +37,18 @@ import { commandsViewSchema } from "./schema-session-commands";
 const commandsFrame = { type: "commands", session: "s1", ...sessionCommands };
 
 describe("planning wire schemas", () => {
+  it("accepts a nullable blocked reason on an offer and treats its absence as open", () => {
+    const offer = checklist.checklists[0]!.primary!;
+    expect(offerViewSchema.parse(offer).blocked_reason).toBeNull();
+    expect(
+      offerViewSchema.parse({ ...offer, blocked_reason: "Settle the metaplan first" })
+        .blocked_reason,
+    ).toBe("Settle the metaplan first");
+    const { blocked_reason: _omitted, ...missing } = offer;
+    expect(offerViewSchema.parse(missing).blocked_reason).toBeUndefined();
+    expect(offerViewSchema.safeParse({ ...offer, blocked_reason: false }).success).toBe(false);
+  });
+
   const fixtures = [
     ["commands view", commandsViewSchema, sessionCommands],
     ["commands frame", planMessageSchema, commandsFrame],

@@ -186,7 +186,7 @@ function isDrafting(row: QueueRow, team: DraftTeamView | null): boolean {
   );
 }
 
-const QUEUE_SCOPE: Record<QueueKind, GapScope> = { section: "product", plan: "engineering" };
+const QUEUE_SCOPE: Record<QueueKind, GapScope> = { section: "product", plan: "metaplan" };
 
 export function Queue({ checklist, kind }: { checklist: ChecklistView; kind: QueueKind }) {
   const team = useAtomValue(draftTeamAtom);

@@ -53,9 +53,11 @@ pub fn load_page(
         project.feature(feature)?;
     }
     match key {
-        PageKey::Overview { feature, scope } => {
-            Some(overview_page(project, eval, feature, *scope, ctx))
-        }
+        PageKey::Overview {
+            feature,
+            scope: Scope::Product,
+        } => Some(overview_page(project, eval, feature, ctx)),
+        PageKey::Overview { .. } => None,
         PageKey::Summary {
             feature,
             scope,
@@ -144,20 +146,15 @@ fn overview_page(
     project: &Project,
     eval: &Evaluation,
     feature: &str,
-    scope: Scope,
     ctx: &PageContext,
 ) -> ConceptPage {
     let key = PageKey::Overview {
         feature: feature.to_owned(),
-        scope,
+        scope: Scope::Product,
     };
     let id = key.as_key();
-    let title = match scope {
-        Scope::Product => "Product overview",
-        Scope::Engineering | Scope::Metaplan => "Engineering overview",
-    };
-    let mut page = blank(&key, title.to_owned(), ctx);
-    let chips = key_chips(project, eval, feature, scope, ctx);
+    let mut page = blank(&key, "Product overview".to_owned(), ctx);
+    let chips = key_chips(project, eval, feature, Scope::Product, ctx);
     let summary = eval.summaries.get(&id);
     page.state = summary.map(|summary| state_view(&id, summary.state, ctx));
     match summary.and_then(|summary| summary.file.as_ref()) {
@@ -167,42 +164,25 @@ fn overview_page(
             page.detail = rendered.detail;
             page.file_hash = summary_file_hash(project, &id);
         }
-        None => page.empty = Some(empty_state(project, eval, feature, scope)),
+        None => page.empty = Some(empty_state(project, eval, feature)),
     }
-    page.unlisted = unlisted(project, feature, scope, page.empty.as_ref());
+    page.unlisted = unlisted(project, feature, page.empty.as_ref());
     page.key_chips = chips;
     page
 }
 
-fn unlisted(
-    project: &Project,
-    feature: &str,
-    scope: Scope,
-    empty: Option<&EmptyState>,
-) -> Vec<DocLink> {
-    if empty.is_some_and(|empty| {
-        matches!(
-            empty.kind,
-            EmptyKind::SectionsNoVision | EmptyKind::PlansNoMetaplan
-        )
-    }) {
+fn unlisted(project: &Project, feature: &str, empty: Option<&EmptyState>) -> Vec<DocLink> {
+    if empty.is_some_and(|empty| empty.kind == EmptyKind::SectionsNoVision) {
         return Vec::new();
     }
     let members = store::scope(project, feature);
-    let prefix = id_prefix(feature, scope);
+    let prefix = format!("{feature}/product/");
     members
         .outside
         .iter()
         .filter(|id| id.starts_with(&prefix))
         .filter_map(|id| summary_link(project, id))
         .collect()
-}
-
-fn id_prefix(feature: &str, scope: Scope) -> String {
-    match scope {
-        Scope::Product => format!("{feature}/product/"),
-        Scope::Engineering | Scope::Metaplan => "plans/".to_owned(),
-    }
 }
 
 fn summary_link(project: &Project, id: &str) -> Option<DocLink> {
@@ -218,7 +198,7 @@ fn summary_page(
     ctx: &PageContext,
 ) -> Option<ConceptPage> {
     let id = match scope {
-        Scope::Product => format!("{}{doc}", id_prefix(feature?, scope)),
+        Scope::Product => format!("{}/product/{doc}", feature?),
         Scope::Engineering => format!("plans/{doc}"),
         Scope::Metaplan => format!("{}/metaplan/{doc}", feature?),
     };

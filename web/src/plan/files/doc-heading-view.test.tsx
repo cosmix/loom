@@ -57,7 +57,7 @@ describe("FileDocHeading", () => {
     ["note", "Product spec"],
     ["knowledge", "Knowledge"],
     ["brief", "Briefs"],
-    ["metaplan", "Engineering"],
+    ["metaplan", "Plans"],
     ["feature", "Files"],
     ["metaplan_entry", "Files"],
     ["brief_folder", "Files"],

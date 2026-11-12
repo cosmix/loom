@@ -18,7 +18,6 @@ use loom::planning::summary::seal::{seal, SealError};
 use tempfile::TempDir;
 
 pub const PRODUCT: &str = "overview/demo/product";
-pub const ENGINEERING: &str = "overview/demo/engineering";
 pub const VISION: &str = "doc/product/demo/index.md";
 pub const S1: &str = "doc/product/demo/section_01.md";
 pub const S2: &str = "doc/product/demo/section_02.md";
@@ -26,8 +25,6 @@ pub const META: &str = "doc/plans/demo/index.md";
 pub const PLAN_X: &str = "doc/plans/demo/PLAN-x.md";
 /// Link from the product overview to the vision's sections table.
 pub const VISION_LINK: &str = "../../../../product/demo/index.md#specification-sections";
-/// Link from the engineering overview to the metaplan's title section.
-pub const META_LINK: &str = "../../../../plans/demo/index.md#metaplan";
 
 /// A git-less tree under `<tmp>/repo` holding `files`; returns the temp dir, the
 /// repository root and the loom user dir `<tmp>/home`.

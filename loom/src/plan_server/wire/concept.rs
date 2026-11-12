@@ -169,8 +169,6 @@ pub struct EmptyState {
 pub enum EmptyKind {
     NoVision,
     SectionsNoVision,
-    NoMetaplan,
-    PlansNoMetaplan,
     NeverBuilt,
     Building,
 }

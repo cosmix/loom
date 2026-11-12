@@ -12,7 +12,7 @@ describe("plan tabs", () => {
     ["/files", "files"],
     ["/files/docs/intro.md", "files"],
     ["/f/demo/product", null],
-    ["/f/demo/engineering", null],
+    ["/f/demo/metaplan", null],
     ["/plans/standalone", null],
     ["/filesystem", null],
     ["/", null],

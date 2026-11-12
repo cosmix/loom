@@ -71,7 +71,7 @@ const AREAS: Partial<Record<EntryKind, string>> = {
   vision: "Product spec",
   section: "Product spec",
   note: "Product spec",
-  metaplan: "Engineering",
+  metaplan: "Plans",
   knowledge: "Knowledge",
   brief: "Briefs",
 };

@@ -329,9 +329,10 @@ stage-specific item linking to that stage's row in the Stages panel.
 
 ## Diffs
 
-A diff in file mode shows source text, never rendered Markdown, in `@codemirror/merge`:
-side by side on wide screens, inline (unified) below 900px. Diffs are read-only and every
-browser can open them. Three kinds exist:
+A diff opens as rendered Markdown, scrolled to centre the first changed block. A **Source**
+toggle opens the `@codemirror/merge` view, scrolled to the first merge chunk, side by side on
+wide screens and inline (unified) below 900px. Source retains Add to chat. Diffs are read-only
+and every browser can open them. Three kinds exist:
 
 | Diff                | Before                                    | After               | Opened from                                                |
 | ------------------- | ----------------------------------------- | ------------------- | ---------------------------------------------------------- |

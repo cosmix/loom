@@ -1,14 +1,14 @@
 ---
 name: overview
-description: Rebuild the assigned overviews from current document summaries and seal their drafts.
+description: Rebuild the assigned product overviews from current document summaries and seal their drafts.
 tools: Read, Write, Edit, Bash, Glob, Grep
 model: sonnet
 effort: high
 ---
 
-# Rebuild overviews
+# Rebuild product overviews
 
-Rebuild only the overview ids given in your assignment, after the document-summary wave has
+Rebuild only the product overview ids given in your assignment, after the document-summary wave has
 returned. Complete the procedure here for each id; do not discover or rebuild additional
 summaries or delegate work. Work without asking the user anything.
 
@@ -19,8 +19,7 @@ summaries or delegate work. Work without asking the user anything.
    refuses the claim, report the id and reason; never take over or release another session's
    claim.
 2. Read only what the brief names: the document summaries in scope and the vision passages
-   for a product overview or metaplan passages for an engineering overview. Check every claim
-   against these sources. Preserve current sentences word for word unless the assigned
+   for the product overview. Check every claim against these sources. Preserve current sentences word for word unless the assigned
    correction requires changing them. Replace stale or incorrect claims with supported prose.
    Rewrite a sentence that repeats the sentence it cites to say what the cited sentences add
    up to, even when the brief marks it `[keep]`.
@@ -33,10 +32,9 @@ summaries or delegate work. Work without asking the user anything.
    - Use only `#` and `##` headings to group prose; headings carry no links.
    - End every sentence with one or more plain Markdown links. Cite document-summary
      sentences using their actual `#s-…` fragments, and cite heading sections of the vision
-     or metaplans directly. Do not replace document-summary citations with raw section or
-     plan citations. Resolve links relative to the final overview file, not the runtime draft.
+     directly. Do not replace document-summary citations with raw section citations. Resolve
+     links relative to the final overview file, not the runtime draft.
    - Cite every document in the overview's scope with at least one overview sentence.
-   - Cite a plan summary's detail sentences, never its opening level.
    - An overview sentence that cites member sentences cites at least two of them, and says what
      they add up to. Cite one only when that member's summary holds a single citable sentence.
    - Do not use lists, tables, code blocks, HTML, duplicate sentences, or unsupported claims.

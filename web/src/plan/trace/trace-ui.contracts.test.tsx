@@ -97,7 +97,7 @@ function docView(rel: string): unknown {
 }
 
 const PAGE_KEY =
-  /^(overview\/demo\/(product|engineering)|demo\/product\/section_0[123]|demo\/engineering\/first)$/;
+  /^(overview\/demo\/product|demo\/product\/section_0[123]|demo\/engineering\/first)$/;
 
 function answer(url: URL, method: string): Response {
   const { pathname } = url;
@@ -224,19 +224,19 @@ it("a changed document's spine row names its state", async () => {
   expect(row!.querySelectorAll("[data-glyph]")).toHaveLength(1);
 });
 
-it("a running plan's spine row shows the activity roundel", async () => {
+it("a running plan's spine row shows the live dot", async () => {
   checklist.plan_rows[0]!.state = "running";
   patchDoc(FIRST_PLAN, { progress: "running" });
-  renderRoutes("/f/demo/engineering");
+  renderRoutes("/f/demo/engineering/first");
   const row = await spineRow("/f/demo/engineering/first");
-  await waitFor(() => expect(row.querySelector(".aurora-roundel")).not.toBeNull());
-  expect(row.querySelector(".activity-glyph__led")).toBeNull();
+  await waitFor(() => expect(row.querySelector(".activity-glyph__led")).not.toBeNull());
+  expect(row.querySelector(".aurora-roundel")).toBeNull();
 });
 
 it("plan slugs drop the feature prefix in the spine", async () => {
   checklist.plan_rows[0]!.slug = "demo-trace";
   patchDoc(FIRST_PLAN, { slug: "demo-trace" });
-  renderRoutes("/f/demo/engineering");
+  renderRoutes("/f/demo/engineering/first");
   const row = await spineRow("/f/demo/engineering/demo-trace");
   // What a sighted reader sees: the row's text without its `.sr-only` parts.
   const seen = row.cloneNode(true) as HTMLElement;
@@ -285,7 +285,7 @@ it("the Findings row says nothing loud once every finding is decided", async () 
   for (const { finding } of trace.findings) {
     finding.status = { kind: "dismissed", detail: "settled elsewhere" };
   }
-  renderRoutes("/f/demo/engineering");
+  renderRoutes("/f/demo/engineering/first");
   const spine = within(await spineNav());
   await spine.findAllByRole("link", { name: /\bfirst\b/ });
   const findings = await spine.findByRole("link", { name: "Findings all clear" });
