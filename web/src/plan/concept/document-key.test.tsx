@@ -128,7 +128,6 @@ it("renders a section DocMark in the chip's colour", () => {
 
 it.each([
   ["overview/demo/product", "vision"],
-  ["overview/demo/engineering", "metaplan"],
   ["demo/engineering/feature-x", "plan"],
   ["demo/metaplan/index", "metaplan"],
   ["plans/feature-x", "plan"],
@@ -244,19 +243,9 @@ describe("keyLede", () => {
       "Sources: the 2 sections this overview summarizes",
     ],
     [
-      "overview/demo/engineering",
-      ["demo/engineering/a", "demo/engineering/b", "demo/engineering/c"],
-      "Sources: the 3 plans this overview summarizes",
-    ],
-    [
       "overview/demo/product",
       ["demo/product/section_01", "demo/engineering/a"],
       "Sources: the 2 documents this overview summarizes",
-    ],
-    [
-      "overview/demo/engineering",
-      ["demo/engineering/a"],
-      "Source: the plan this overview summarizes",
     ],
   ])("names the documents of %s", (key, pages, expected) => {
     expect(keyLede(pageWith(key, pages))).toBe(expected);

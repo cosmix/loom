@@ -1,5 +1,5 @@
 /*
- * The run on the Plans overview (`run-panel.tsx`): one chrome line on the run's state, then the
+ * The run on the metaplan page, the Plans home (`run-panel.tsx`): one chrome line on the run's state, then the
  * start button with its notice under it and the dashboard link beside it. On the page ground,
  * in no box (ui/DESIGN.md, Surfaces): a status and a button row draw no border.
  */

@@ -23,7 +23,7 @@ pub enum SummaryKind {
 pub struct FrontMatter {
     /// Whether this summarizes a document or a collection.
     pub kind: SummaryKind,
-    /// The source path or `overview/<feature>/{product,engineering}` id.
+    /// The source path or `overview/<feature>/product` id.
     pub of: String,
     /// The source document's hash, for document summaries.
     pub file: Option<String>,

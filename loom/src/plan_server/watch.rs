@@ -215,7 +215,7 @@ mod tests {
                 "moves":[{
                     "id":"move-into-feature:doc/product/index.md", "kind":"move_into_feature",
                     "label":"Move doc/product/index.md into a feature",
-                    "target":"doc/product/index.md"
+                    "blocked_reason":null, "target":"doc/product/index.md"
                 }]
             })
         );

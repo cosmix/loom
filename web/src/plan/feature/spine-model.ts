@@ -15,8 +15,8 @@ export type GroupId = "vision" | "product" | "metaplan" | "plans";
 export type NameStyle = "markdown" | "mono" | "plain";
 
 /**
- * The one glyph that leads a row. `attention` is a settled document that moved since the reader
- * settled it; `retired` is a plan out of the workflow.
+ * The one glyph that leads a row. `attention` marks a changed settled document or a done group
+ * with unsettled children; `retired` is a plan out of the workflow.
  */
 export type GlyphKind =
   | "running"
@@ -95,7 +95,7 @@ export interface SpineGroup {
    *  label is only the step's name. */
   unit: string | null;
   children: SpineChild[];
-  /** The glyph of the vision and metaplan rows, which have no count; null for every other group. */
+  /** The vision/metaplan document glyph, or attention when a done group's children need settling. */
   glyph: RowGlyph | null;
   /** Whether the first child is the group's own overview page, which shares the group's target. */
   overview: boolean;
@@ -106,7 +106,7 @@ const GROUPS: { id: GroupId; label: string; step: number; page: string }[] = [
   { id: "vision", label: "Vision", step: STEP.vision, page: "vision" },
   { id: "product", label: "Product spec", step: STEP.product, page: "product" },
   { id: "metaplan", label: "Metaplan", step: STEP.metaplan, page: "metaplan" },
-  { id: "plans", label: "Plans", step: STEP.plans, page: "engineering" },
+  { id: "plans", label: "Plans", step: STEP.plans, page: "metaplan" },
 ];
 
 /** The server labels a count's unit ("Untested", "Done"); a label equal to the name names no unit. */
@@ -118,7 +118,11 @@ function unitOf(server: StepView | undefined, count: string | null): string | nu
 
 /** The page segment each group lives under, for finding the group of a pathname. */
 const GROUP_OF_PAGE: Record<string, GroupId> = {
-  ...Object.fromEntries(GROUPS.map((group) => [group.page, group.id])),
+  vision: "vision",
+  product: "product",
+  metaplan: "metaplan",
+  engineering: "plans",
+  plans: "plans",
   // The instrument rows close the group they read: Coverage the Product spec, Findings the Plans.
   coverage: "product",
   findings: "plans",
@@ -169,10 +173,10 @@ function settleOf(trace: TraceView | null, repoPath: string): SettleState | null
   return trace ? shownSettle(docOfPath(trace, repoPath)) : null;
 }
 
-function overviewChild(feature: string, page: string): SpineChild {
+function overviewChild(feature: string): SpineChild {
   return {
     key: "overview",
-    to: featureHref(feature, page),
+    to: featureHref(feature, "product"),
     name: "Overview",
     style: "plain",
     number: null,
@@ -290,23 +294,17 @@ export function currentPathname(checklist: ChecklistView, pathname: string): str
   return summaryPathnameOfSource(checklist, pathname) ?? pathname;
 }
 
-function childrenOf(
-  id: GroupId,
-  checklist: ChecklistView,
-  page: string,
-  trace: TraceView | null,
-): SpineChild[] {
+function childrenOf(id: GroupId, checklist: ChecklistView, trace: TraceView | null): SpineChild[] {
   // Each group's instrument closes it: the ledger read over the documents above it.
   if (id === "product") {
     return [
-      overviewChild(checklist.feature, page),
+      overviewChild(checklist.feature),
       ...sectionChildren(checklist, trace),
       instrumentChild("coverage", checklist.feature, trace),
     ];
   }
   if (id === "plans") {
     return [
-      overviewChild(checklist.feature, page),
       ...planChildren(checklist, trace),
       instrumentChild("findings", checklist.feature, trace),
     ];
@@ -314,17 +312,24 @@ function childrenOf(
   return [];
 }
 
-/** The glyph of the vision or metaplan row: the trace's one document of that role, if written. */
-function groupGlyph(id: GroupId, mark: MarkView, trace: TraceView | null): RowGlyph | null {
-  if (id !== "vision" && id !== "metaplan") return null;
+/** Document glyphs for vision/metaplan; attention on done groups with unsettled children. */
+function groupGlyph(
+  id: GroupId,
+  mark: MarkView,
+  trace: TraceView | null,
+  children: SpineChild[],
+): RowGlyph | null {
+  if (id === "product" || id === "plans") {
+    const unsettled = children.some(
+      ({ glyph }) => glyph !== null && !["settled", "done", "retired"].includes(glyph.kind),
+    );
+    return mark === "done" && unsettled ? { kind: "attention", word: "Not all settled" } : null;
+  }
   const doc = trace?.documents.find((candidate) => candidate.role === id);
   return rowGlyph({ written: mark !== "gap", role: id, planState: null, settle: shownSettle(doc) });
 }
 
-/**
- * The spine's groups in workflow order. A feature with nothing yet hides no group. `trace` adds
- * each document's settle state; without it (not loaded yet) no row shows one.
- */
+/** The workflow groups; even an empty feature shows them all. `trace` adds document settle states. */
 export function spineGroups(
   checklist: ChecklistView,
   trace: TraceView | null = null,
@@ -335,6 +340,7 @@ export function spineGroups(
     );
     const mark = server?.mark ?? "gap";
     const count = id === "vision" || id === "metaplan" ? null : (server?.count ?? null);
+    const children = childrenOf(id, checklist, trace);
     return {
       id,
       label,
@@ -343,9 +349,9 @@ export function spineGroups(
       word: wordOf(id, mark, checklist),
       count,
       unit: unitOf(server, count),
-      children: childrenOf(id, checklist, page, trace),
-      glyph: groupGlyph(id, mark, trace),
-      overview: id === "product" || id === "plans",
+      children,
+      glyph: groupGlyph(id, mark, trace, children),
+      overview: id === "product",
     };
   });
 }

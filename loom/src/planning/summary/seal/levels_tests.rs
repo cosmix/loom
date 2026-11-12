@@ -1,9 +1,8 @@
-//! The seal's two-level rules for plan summaries, one test per rule, and what an overview may
-//! cite of a two-level plan summary.
+//! The seal's two-level rules for plan summaries, one test per rule.
 
 use super::SealError;
 use crate::planning::summary::evaluate::fixtures::{
-    fixture, metaplan, seal_draft, two_sections, Fixture, ENGINEERING, ID1, META,
+    fixture, metaplan, seal_draft, two_sections, Fixture, ID1, META,
 };
 use crate::planning::summary::format::sentence_id;
 
@@ -17,7 +16,6 @@ const STAGES: &str = "[s](../../../plans/demo/PLAN-x.md#stages)";
 const RISKS: &str = "[s](../../../plans/demo/PLAN-x.md#risks)";
 const ORDER: &str = "the opening level comes first: headings and opening paragraphs end where the \
                      detail level begins";
-const METAPLAN_LINK: &str = "[m](../../../../plans/demo/index.md#metaplan)";
 
 fn plan_fixture() -> Fixture {
     fixture(&[(META, &metaplan(&["PLAN-x.md"])), (PX, PLAN)])
@@ -264,51 +262,4 @@ fn an_opening_sentence_does_not_restate_what_it_opens() {
         sentence_id(D1)
     );
     assert_eq!(rejections(&f, ID, &text), [want]);
-}
-
-/// An engineering overview draft whose first sentence cites `link` into plans/x.
-fn overview(link: &str) -> String {
-    format!(
-        "# Engineering\n\nX is planned and ordered. {link}\n\nThe metaplan orders it. \
-         {METAPLAN_LINK}\n"
-    )
-}
-
-fn member(text: &str) -> String {
-    format!("[m](../../plans/x.md#{})", sentence_id(text))
-}
-
-#[test]
-fn an_overview_cites_a_plan_summarys_detail_and_never_its_opening() {
-    let f = plan_fixture();
-    sealed(&f, ID, &draft(&format!("{O1} {} {}", own(D1), own(D2))));
-    let want = [
-        "1: member summary plans/x is not cited".to_string(),
-        format!(
-            "3: sentence {} of plans/x opens to detail sentences; cite those detail sentences \
-             instead",
-            sentence_id(O1)
-        ),
-    ];
-    assert_eq!(rejections(&f, ENGINEERING, &overview(&member(O1))), want);
-    sealed(
-        &f,
-        ENGINEERING,
-        &overview(&format!("{} {}", member(D1), member(D2))),
-    );
-}
-
-#[test]
-fn an_overview_may_cite_the_single_detail_sentence_of_a_plan_summary() {
-    let f = fixture(&[
-        (META, &metaplan(&["PLAN-x.md"])),
-        (PX, "# Plan: X\n\nDoes x.\n"),
-    ]);
-    let single = "X does x.";
-    let plan = format!(
-        "# X\n\nX is planned. {}\n\n{single} [§](../../../plans/demo/PLAN-x.md#plan-x)\n",
-        own(single)
-    );
-    sealed(&f, ID, &plan);
-    sealed(&f, ENGINEERING, &overview(&member(single)));
 }

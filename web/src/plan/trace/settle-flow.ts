@@ -4,8 +4,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { z } from "@/api/zod";
 import { apiPost, type ApiResult } from "@/plan/api/client";
 import {
+  settleAllResultSchema,
   settleResultSchema,
   unresolvedSchema,
+  type SettleAllResult,
   type SettleCommitStart,
   type SettleState,
 } from "@/plan/api/schema-trace";
@@ -74,6 +76,17 @@ function postSettle(
     contentType: "text",
     resultStatuses: [409, 422],
   });
+}
+
+/** Settle one role of a feature; unresolved documents wait for an explicit confirming press. */
+export function postSettleAll(
+  feature: string,
+  role: "section" | "plan",
+  confirm: boolean,
+): Promise<ApiResult<SettleAllResult>> {
+  const query = new URLSearchParams({ feature, role });
+  if (confirm) query.set("confirm", "1");
+  return apiPost(`/api/settle-all?${query}`, "", settleAllResultSchema, { contentType: "text" });
 }
 
 /** What an answer came to: a written line and its commit, or the phase it leaves the button in. */

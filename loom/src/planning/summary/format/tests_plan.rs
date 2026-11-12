@@ -5,10 +5,7 @@ use super::*;
 #[test]
 fn a_link_into_a_metaplan_summary_is_a_sentence_and_one_into_its_source_a_passage() {
     assert_eq!(
-        classify_href(
-            "overview/alpha/engineering",
-            "../../alpha/metaplan/index.md#s-0123abcd"
-        ),
+        classify_href("plans/x", "../alpha/metaplan/index.md#s-0123abcd"),
         LinkTarget::Sentence {
             summary: "alpha/metaplan/index".into(),
             id: "s-0123abcd".into(),
@@ -25,10 +22,7 @@ fn a_link_into_a_metaplan_summary_is_a_sentence_and_one_into_its_source_a_passag
         }
     );
     assert!(matches!(
-        classify_href(
-            "overview/alpha/engineering",
-            "../../alpha/metaplan/Index.md#s-0123abcd"
-        ),
+        classify_href("plans/x", "../alpha/metaplan/Index.md#s-0123abcd"),
         LinkTarget::Unresolved(_)
     ));
 }

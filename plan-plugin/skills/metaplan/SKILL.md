@@ -44,6 +44,8 @@ recommendation before settling the direction.
 Write each settled decision into the metaplan as it settles, with its reason
 when that is not obvious. Make the document understandable without the chat.
 
+After the metaplan is agreed, tell the user to mark it settled before plans are written.
+
 ## Shape the metaplan
 
 Start a new metaplan with a level-1 title and an introduction stating the feature's

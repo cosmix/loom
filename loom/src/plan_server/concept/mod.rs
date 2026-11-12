@@ -1,4 +1,4 @@
-//! Concept mode: the product and engineering overviews and per-document summary pages, resolved
+//! Concept mode: product overviews and per-document summary pages, resolved
 //! server-side from plan 4's summary store.
 
 pub mod body;

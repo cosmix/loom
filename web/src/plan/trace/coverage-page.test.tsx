@@ -188,7 +188,7 @@ describe("the coverage page rows", () => {
 
 describe("the entry links", () => {
   // The way to Coverage is the spine's well at the foot of the Product spec group (spine-instrument.tsx).
-  it.each(["product", "engineering"] as const)(
+  it.each(["product", "metaplan"] as const)(
     "draw no Coverage link of their own on the %s overview",
     (scope) => {
       renderPage(<Gaps scope={scope} />, `/f/atlas/${scope}`, atlas({}));

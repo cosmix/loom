@@ -18,7 +18,7 @@ Never write under `doc/` or anywhere in the repository except through
 Run `loom plan summary status --json` to inspect the assigned summaries and their
 dependencies. Separate document summaries from overviews without adding ids to the
 batch. Leave another session's claims alone. A feature summary's id names its feature:
-feature ids are `overview/<feature>/product`, `overview/<feature>/engineering`,
+feature ids are `overview/<feature>/product`,
 `<feature>/product/vision`, `<feature>/product/section_<nn>`, and `<feature>/metaplan/index`
 (one per feature, for its `index.md`). Plan summary ids are
 `plans/<slug>` with repository-wide unique slugs; plan document ids remain `plan/<slug>`.
@@ -38,8 +38,7 @@ For each id, complete these steps before moving to the next id:
    every claim against its named source document and the brief's existing summary;
    for a plan summary, read the plan and every brief file listed under Sources. For an
    overview, check every claim against the document summaries in scope and the
-   vision passages for a product overview or metaplan passages for an engineering
-   overview. Preserve current sentences word for word; their text determines the
+   vision passages for the product overview. Preserve current sentences word for word; their text determines the
    sentence ids overviews cite. Replace only stale or incorrect claims, with
    supported prose. Rewrite an overview sentence that repeats the sentence it cites
    to say what the cited sentences add up to, even when the brief marks it `[keep]`.
@@ -97,10 +96,9 @@ Use this exact draft body format for overviews:
 - Use only `#` and `##` headings to group prose; headings carry no links.
 - End every sentence with one or more plain Markdown links. Cite document-summary
   sentences using their actual `#s-…` fragments, and cite heading sections of the vision
-  or metaplans directly. Do not replace document-summary citations with raw section or
-  plan citations. Resolve links relative to the final overview file, not the runtime draft.
+  directly. Do not replace document-summary citations with raw section citations. Resolve
+  links relative to the final overview file, not the runtime draft.
 - Cite every document in the overview's scope with at least one overview sentence.
-- Cite a plan summary's detail sentences, never its opening level.
 - An overview sentence that cites member sentences cites at least two of them, and says what
   they add up to. Cite one only when that member's summary holds a single citable sentence.
 - Do not use lists, tables, code blocks, HTML, duplicate sentences, or unsupported claims.

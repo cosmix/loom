@@ -223,11 +223,10 @@
   color: var(--tone-warning);
 }
 
-/* A running plan draws the header pill's roundel at the pill's size: the disc is 86% of the
-   pill's 1.15em glyph box at 13px (ui/activity-glyphs.css), about 13px. */
-[data-loom-plan] .plan-spine__glyph[data-glyph="running"] > .aurora-roundel-wrap {
-  width: 13px;
-  height: 13px;
+/* A running plan's live dot shares the row's 14px glyph box. */
+[data-loom-plan] .plan-spine__glyph[data-glyph="running"] > .activity-glyph {
+  width: 14px;
+  height: 14px;
 }
 
 /* ── Head ─────────────────────────────────────────────────────────────────── */

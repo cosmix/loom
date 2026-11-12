@@ -228,7 +228,7 @@ Rules:
 The plan-writing skill adds the line (section 09). The line sits in prose, so plan validation,
 which reads only the metadata block (`loom/src/plan/parser/extraction.rs:75`), is unaffected.
 Metaplans carry no `Implements:` lines; their entries carry `Covers:` lines (below), and section
-05 builds the links between each feature's two overviews from the edge lines only (vision,
+05 builds the links between product sections and plans from the edge lines only (vision,
 Decisions).
 
 ## Edge lines

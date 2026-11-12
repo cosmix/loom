@@ -9,7 +9,6 @@ it.each([
   ["plans/x", "/f/demo/engineering/x"],
   ["plans/y", "/plans/y"],
   ["overview/demo/product", "/f/demo/product"],
-  ["overview/demo/engineering", "/f/demo/engineering"],
 ])("maps server summary %s to %s", (id, href) => {
   expect(summaryLink(id, planFeature)).toBe(href);
 });

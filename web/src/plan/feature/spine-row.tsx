@@ -2,7 +2,6 @@ import { Archive, Check, ChevronRight, CircleDashed } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { Link } from "react-router";
 
-import { BusyRoundel } from "@/aurora-ui/feedback/BusyRoundel";
 import { Button } from "@/components/ui/button";
 import { Untrusted, visibleControls } from "@/plan/chat/visible-controls";
 import { SentenceText } from "@/plan/concept/sentence-text";
@@ -18,6 +17,7 @@ import type {
 import { InstrumentWell } from "@/plan/feature/spine-instrument";
 import { SEAL_ICONS } from "@/plan/trace/settle-glyph";
 import { STEP_MARK_GLYPHS } from "@/plan/ui/glyphs";
+import { LiveDot } from "@/plan/ui/activity-glyphs";
 
 import "@/plan/trace/trace.css";
 
@@ -40,7 +40,7 @@ export const GLYPH_ICONS: Record<Exclude<GlyphKind, "running">, LucideIcon> = {
  * The glyph that leads a row, chosen once in `rowGlyph` (`data-glyph` names the kind for the
  * stylesheet). It is hidden from assistive technology and its tooltip is the word; `GlyphWord`
  * reads the word after the row's name, so the link's name still starts with it. A running plan
- * draws the planner's roundel, the one the header pill draws (ui/DESIGN.md, Status).
+ * draws the live status dot before its name (ui/DESIGN.md, Status).
  */
 function GlyphMark({ glyph }: { glyph: RowGlyph }) {
   const Icon = glyph.kind === "running" ? null : GLYPH_ICONS[glyph.kind];
@@ -51,7 +51,7 @@ function GlyphMark({ glyph }: { glyph: RowGlyph }) {
       title={glyph.word ?? undefined}
       aria-hidden="true"
     >
-      {Icon ? <Icon /> : <BusyRoundel busy size="100%" busyLabel="" idleLabel="" />}
+      {Icon ? <Icon /> : <LiveDot />}
     </span>
   );
 }
@@ -144,7 +144,7 @@ function GroupHead({ group, selected }: { group: SpineGroup; selected: boolean }
       aria-current={selected ? "page" : undefined}
       className="plan-spine__link plan-spine__head"
     >
-      {/* The vision and metaplan lead with their own glyph; the other groups with the step's mark. */}
+      {/* Document and attention glyphs take precedence over the server's step mark. */}
       {own ? <GlyphMark glyph={own} /> : <Mark className="plan-spine__mark" aria-hidden="true" />}
       <span className="plan-spine__name">{group.label}</span>
       <GlyphWord glyph={own} />{" "}
@@ -169,13 +169,16 @@ export function GroupRow({
   group,
   pathname,
   here,
+  pinned,
   open,
   onToggle,
 }: {
   group: SpineGroup;
   pathname: string;
-  /** The route is inside this group: it stays expanded, with nothing to collapse. */
+  /** The route is inside this group. */
   here: boolean;
+  /** The route holds the group expanded (its own, or the Plans home), so it has nothing to collapse. */
+  pinned: boolean;
   open: boolean;
   onToggle: () => void;
 }) {
@@ -183,9 +186,12 @@ export function GroupRow({
   return (
     <li className="plan-spine__group" data-mark={group.mark} data-here={here ? "" : undefined}>
       <div className="plan-spine__row">
-        {/* A group with an overview child gives the current mark to that child, which shares its target. */}
-        <GroupHead group={group} selected={pathname === group.to && !group.overview} />
-        {hasChildren && !here && (
+        {/* Product selects its Overview child; the shared metaplan target selects only Metaplan. */}
+        <GroupHead
+          group={group}
+          selected={pathname === group.to && !group.overview && group.id !== "plans"}
+        />
+        {hasChildren && !pinned && (
           <Button
             type="button"
             size="sm"

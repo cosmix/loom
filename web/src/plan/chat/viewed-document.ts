@@ -9,7 +9,6 @@ export type ViewedKind =
   | "product-overview"
   | "section"
   | "metaplan"
-  | "engineering-overview"
   | "plan"
   | "file"
   | null;
@@ -116,11 +115,7 @@ function productPage(segments: string[], own: ChecklistView | null): ViewedDocum
 
 function engineeringPage(segments: string[], own: ChecklistView | null): ViewedDocument {
   const doc = segments[3];
-  if (doc === undefined) {
-    const { path } = metaplanOf(own);
-    if (own && path === null) return NO_DOCUMENT;
-    return { kind: "engineering-overview", path, name: "Engineering overview" };
-  }
+  if (doc === undefined) return NO_DOCUMENT;
   const row = own?.plan_rows.find((item) => item.slug === doc);
   if (own && !row) return NO_DOCUMENT;
   return { kind: "plan", path: row?.path ?? null, name: doc };

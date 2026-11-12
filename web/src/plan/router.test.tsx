@@ -87,10 +87,10 @@ describe("plan routes", () => {
     expect(within(shell!).getByText("Feature landing")).toBeTruthy();
   });
 
-  it("sends an old /f/demo/run link to the Plans overview, which holds the run", async () => {
+  it("sends an old /f/demo/run link to the metaplan page, which holds the run", async () => {
     const { router, shell } = renderRouter("/f/demo/run");
-    await waitFor(() => expect(router.state.location.pathname).toBe("/f/demo/engineering"));
-    expect(within(shell!).getByText("Concept page")).toBeTruthy();
+    await waitFor(() => expect(router.state.location.pathname).toBe("/f/demo/metaplan"));
+    expect(within(shell!).queryByText("Concept page")).toBeNull();
     expect(within(shell!).queryByText("No such page")).toBeNull();
   });
 

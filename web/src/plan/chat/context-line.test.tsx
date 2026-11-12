@@ -74,9 +74,9 @@ it("is not a live region, since it changes on every navigation", () => {
 
 it("follows navigation with nothing clicked, and is gone on a page with no document", async () => {
   const { router } = mount(SECTION_FIVE);
-  await go(router, "/f/atlas/engineering");
+  await go(router, "/f/atlas/metaplan");
   expect(line("section_05")).toBeNull();
-  expect(line("Engineering overview")?.textContent).toContain("About Engineering overview");
+  expect(line("metaplan")?.textContent).toContain("About metaplan");
   await go(router, "/new");
   expect(screen.queryByRole("group")).toBeNull();
 });
@@ -131,8 +131,8 @@ it("a dismissal on a page without a source ends at any navigation", async () => 
   fireEvent.click(screen.getByRole("button", { name: "Dismiss context" }));
   expect(line("Product overview")).toBeNull();
 
-  await go(router, "/f/atlas/engineering");
-  expect(line("Engineering overview")).not.toBeNull();
+  await go(router, "/f/atlas/metaplan");
+  expect(line("metaplan")).not.toBeNull();
 });
 
 it("shows a name with an invisible control character spelled out", () => {

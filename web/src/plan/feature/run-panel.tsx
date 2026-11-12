@@ -92,7 +92,7 @@ function Panel({ checklist }: { checklist: ChecklistView }) {
 }
 
 /**
- * The feature's run on the Plans overview: one line on the run's state, the one Start a run
+ * The feature's run on the metaplan page, the Plans home: one line on the run's state, the one Start a run
  * button and the dashboard link, then the Findings link while the feature's ledger has any
  * finding. A plan's state is its spine row's and its page's, so the panel lists no plans; a
  * feature with no plan yet has no run to speak of and draws nothing.

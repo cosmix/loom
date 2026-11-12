@@ -174,8 +174,13 @@ stub changed, upstream changed or settled (section 03 defines the `Settled:` lin
 hashes). The mark is document-level; a plan is settled together with its brief bundle.
 
 - **Mark settled** writes the `Settled:` line, through the save path, covering the document's
-  text now, then has it committed so the settled version is a commit. Only this action writes it;
+  text now, then has it committed so the settled version is a commit. Only settling actions write it;
   sessions never do (section 09, "Write limits"). Mark settled needs authoring, like every write.
+- **Settle all specs** on the product overview and **Settle all plans** on the metaplan page settle
+  each settleable, unsettled section or plan through the same save and commit queue. They appear
+  only when a document of that role needs settling. Stubs, stale documents and documents with
+  unresolved calls or open questions are reported as skipped; unresolved documents can be settled
+  with a second confirming press. The response lists settled paths and skipped paths with reasons.
 - **The settle commit.** It holds the document and, for a plan, its brief bundle, and nothing
   else: other staged or modified files stay as they were. Its message is
   `docs(<feature>): settle <path under doc/>` (`unsettle` for Unsettle, which commits the

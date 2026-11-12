@@ -79,7 +79,7 @@ function atlasTrace(frontier: Gap[] = []): TraceView {
   });
 }
 
-function renderSpine(path = "/f/atlas/product") {
+function renderSpine(path = "/f/atlas/product", patch: Record<string, unknown> = {}) {
   const store = createStore();
   initClient(store);
   store.set(serverInfoAtom, serverInfoSchema.parse(serverInfoFixture));
@@ -108,6 +108,7 @@ function renderSpine(path = "/f/atlas/product") {
         listed: true,
       },
     ],
+    ...patch,
   });
   store.set(projectAtom, { checklists: [checklist], standalone: [], moves: [] });
   const router = createMemoryRouter([{ path: "/f/:feature/*", element: <Spine /> }], {
@@ -139,7 +140,7 @@ function rowAt(spine: ReturnType<typeof renderSpine>, href: string): HTMLElement
 function glyphOf(row: HTMLElement): { kind: string | null; word: string | undefined } {
   return {
     kind: row.querySelector(ROW_GLYPH)?.getAttribute("data-glyph") ?? null,
-    // The roundel carries a live region of its own inside the glyph; the word is read outside it.
+    // The glyph is decorative; its word is read after the row's name.
     word: [...row.querySelectorAll(".sr-only")].find((node) => !node.closest(ROW_GLYPH))
       ?.textContent,
   };
@@ -177,7 +178,56 @@ it("shows the glyph's word as its hover title and hides the glyph from assistive
   expect(glyph.getAttribute("aria-hidden")).toBe("true");
 });
 
-it("draws the roundel on a running plan, with the plan's own state ahead of its settle state", async () => {
+it.each([
+  ["Product spec", "revised"],
+  ["Product spec", "settled"],
+  ["Plans", "revised"],
+  ["Plans", "settled"],
+] as const)("%s head reflects a %s child", async (label, settle) => {
+  const trace = atlasTrace();
+  for (const doc of trace.documents) doc.settle = settle;
+  trace.documents.push(
+    doc("doc/product/atlas/section_02.md", "section", "settled", "Second section"),
+    doc(SECOND_PLAN, "plan", "settled", "Second plan", "atlas-02"),
+  );
+  answer = { status: 200, body: trace };
+  const steps = checklistFixture.checklists[0]!.steps.map((step) => ({ ...step, mark: "done" }));
+  const spine = renderSpine("/f/atlas/product", {
+    steps,
+    sections: ["01", "02"].map((number) => ({
+      number,
+      name: `Section ${number}`,
+      written: true,
+      open_questions: 0,
+    })),
+    plan_rows: [PLAN, SECOND_PLAN].map((path, index) => ({
+      slug: `atlas-0${index + 1}`,
+      path,
+      title: `Plan ${index + 1}`,
+      state: "written",
+      pressure_date: null,
+      listed: true,
+    })),
+  });
+  const head = spine.getByRole("link", { name: new RegExp(`^${label}\\b`) });
+  await waitFor(() =>
+    expect(glyphOf(spine.getByRole("link", { name: /^Vision/ })).kind).toBe(
+      settle === "settled" ? "settled" : "attention",
+    ),
+  );
+  expect(head.closest(".plan-spine__group")?.getAttribute("data-mark")).toBe("done");
+  if (settle === "revised") {
+    expect(glyphOf(head)).toEqual({ kind: "attention", word: "Not all settled" });
+    expect(head.querySelector(".lucide-badge-alert")).not.toBeNull();
+    expect(head.querySelector(".plan-spine__mark")).toBeNull();
+    expect(head.querySelector("[data-glyph]")?.getAttribute("title")).toBe("Not all settled");
+  } else {
+    expect(head.querySelector("[data-glyph]")).toBeNull();
+    expect(head.querySelector(".plan-spine__mark.lucide-circle-check")).not.toBeNull();
+  }
+});
+
+it("draws the live dot on a running plan, with the plan's own state ahead of its settle state", async () => {
   // The trace calls plan atlas-01 `upstream_changed`, but it is running.
   answer = { status: 200, body: atlasTrace() };
   const spine = renderSpine();
@@ -188,8 +238,8 @@ it("draws the roundel on a running plan, with the plan's own state ahead of its 
   expandPlans(spine);
   const running = rowAt(spine, "/f/atlas/engineering/atlas-01");
   expect(glyphOf(running)).toEqual({ kind: "running", word: "Running" });
-  expect(running.querySelector(`${ROW_GLYPH} .aurora-roundel`)).not.toBeNull();
-  expect(running.querySelector(".activity-glyph__led")).toBeNull();
+  expect(running.querySelector(`${ROW_GLYPH} .aurora-roundel`)).toBeNull();
+  expect(running.querySelector(".activity-glyph__led")).not.toBeNull();
 });
 
 it("shortens a plan's slug in its row and keeps the full slug in the row's title", async () => {

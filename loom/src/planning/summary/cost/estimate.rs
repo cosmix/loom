@@ -31,18 +31,14 @@ pub fn source_sizes(project: &Project, evaluation: &Evaluation) -> BTreeMap<Stri
         })
         .collect();
     for scope in evaluation.scopes.values() {
-        for (kind, members) in [
-            ("product", &scope.product),
-            ("engineering", &scope.engineering),
-        ] {
-            let id = format!("overview/{}/{kind}", scope.feature);
-            if evaluation.summaries.contains_key(&id) {
-                let bytes = members
-                    .iter()
-                    .filter_map(|id| sizes.get(id))
-                    .fold(0_u64, |total, bytes| total.saturating_add(*bytes));
-                sizes.insert(id, bytes);
-            }
+        let id = format!("overview/{}/product", scope.feature);
+        if evaluation.summaries.contains_key(&id) {
+            let bytes = scope
+                .product
+                .iter()
+                .filter_map(|id| sizes.get(id))
+                .fold(0_u64, |total, bytes| total.saturating_add(*bytes));
+            sizes.insert(id, bytes);
         }
     }
     sizes

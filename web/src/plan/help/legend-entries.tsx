@@ -176,7 +176,8 @@ const STEP_MARKS: readonly (Definition & { mark: StepView["mark"] })[] = [
   {
     mark: "done",
     name: "Done step",
-    meaning: "A circled check on a spine row means its documents are all written.",
+    meaning:
+      "A circled check on a Product spec or Plans spine head means its documents are settled, done or retired; an amber seal means not all are settled.",
   },
   {
     mark: "gap",

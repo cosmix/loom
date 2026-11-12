@@ -7,6 +7,7 @@
 //! source-code graph (`loom map`).
 
 pub mod changed;
+mod settle_all;
 mod settle_commit;
 mod settle_head;
 mod settle_job;
@@ -22,6 +23,10 @@ mod commit_route_tests;
 mod contract_tests;
 #[cfg(test)]
 mod route_tests;
+#[cfg(test)]
+mod settle_all_contract_tests;
+#[cfg(test)]
+mod settle_all_tests;
 #[cfg(test)]
 mod settle_commit_tests;
 #[cfg(test)]
@@ -41,8 +46,8 @@ pub fn install(ctx: &Arc<PlanContext>) {
     settle_queue::install(ctx);
 }
 
-/// `GET /api/trace/<feature>`, `POST /api/settle`, `POST /api/findings/status` and
-/// `GET /api/settled-version`.
+/// `GET /api/trace/<feature>`, `POST /api/settle`, `POST /api/settle-all`,
+/// `POST /api/findings/status` and `GET /api/settled-version`.
 pub fn routes() -> Vec<RouteSpec> {
     vec![
         RouteSpec {
@@ -58,6 +63,13 @@ pub fn routes() -> Vec<RouteSpec> {
             body: BodyKind::None,
             role: Role::HolderOrTake,
             handler: settle_route::settle_route,
+        },
+        RouteSpec {
+            method: Method::Post,
+            path: "/api/settle-all",
+            body: BodyKind::None,
+            role: Role::HolderOrTake,
+            handler: settle_all::settle_all_route,
         },
         RouteSpec {
             method: Method::Post,

@@ -1,7 +1,6 @@
 //! Empty overview states, scoped to one feature's documents.
 
 use super::body::doc_link;
-use super::page::Scope;
 use crate::plan_server::wire::concept::{EmptyKind, EmptyState};
 use crate::planning::checklist::Offer;
 use crate::planning::kinds::{vision_path, DocKind};
@@ -10,23 +9,14 @@ use crate::planning::summary::evaluate::{Evaluation, SummaryState};
 use crate::planning::summary::store::summary_id_for;
 
 /// Why an overview without a file cannot render.
-pub(super) fn empty_state(
-    project: &Project,
-    eval: &Evaluation,
-    feature: &str,
-    scope: Scope,
-) -> EmptyState {
-    let (exists, absent, only_documents, offer) = overview_source(project, feature, scope);
+pub(super) fn empty_state(project: &Project, eval: &Evaluation, feature: &str) -> EmptyState {
+    let exists = project.tree.get(&vision_path(feature)).is_some();
     let documents: Vec<_> = project
         .docs
         .iter()
         .filter(|(_, doc)| {
             doc.doc.kind.feature() == Some(feature)
-                && matches!(
-                    (&doc.doc.kind, scope),
-                    (DocKind::ProductSection { .. }, Scope::Product)
-                        | (DocKind::Plan { .. }, Scope::Engineering)
-                )
+                && matches!(doc.doc.kind, DocKind::ProductSection { .. })
         })
         .collect();
     let mut empty = EmptyState {
@@ -36,10 +26,15 @@ pub(super) fn empty_state(
         docs: Vec::new(),
     };
     if !exists && documents.is_empty() {
-        empty.kind = absent;
-        empty.offer = Some(offer.id());
+        empty.kind = EmptyKind::NoVision;
+        empty.offer = Some(
+            Offer::StartVision {
+                feature: feature.into(),
+            }
+            .id(),
+        );
     } else if !exists {
-        empty.kind = only_documents;
+        empty.kind = EmptyKind::SectionsNoVision;
         empty.docs = documents
             .iter()
             .filter_map(|(path, _)| doc_link(project, path))
@@ -55,31 +50,4 @@ pub(super) fn empty_state(
         empty.count = Some(documents.len() as u32);
     }
     empty
-}
-
-fn overview_source(
-    project: &Project,
-    feature: &str,
-    scope: Scope,
-) -> (bool, EmptyKind, EmptyKind, Offer) {
-    match scope {
-        Scope::Product => (
-            project.tree.get(&vision_path(feature)).is_some(),
-            EmptyKind::NoVision,
-            EmptyKind::SectionsNoVision,
-            Offer::StartVision {
-                feature: feature.into(),
-            },
-        ),
-        Scope::Engineering | Scope::Metaplan => (
-            project
-                .feature(feature)
-                .is_some_and(|f| !f.metaplans.is_empty()),
-            EmptyKind::NoMetaplan,
-            EmptyKind::PlansNoMetaplan,
-            Offer::StartMetaplan {
-                feature: feature.into(),
-            },
-        ),
-    }
 }

@@ -6,6 +6,7 @@ use crate::planning::checklist::Offer;
 use crate::planning::kinds::is_feature_name;
 use crate::planning::paths::check_relpath_syntax;
 use crate::planning::project::Project;
+use crate::planning::trace::gate::metaplan_settled;
 
 mod error;
 pub use error::StartError;
@@ -74,6 +75,14 @@ impl AuthoringStart {
                 .chain(&feature.checklist.secondary)
         });
         if let Some(offer) = offers.chain(&project.moves).find(|offer| offer.id() == id) {
+            let gated = matches!(offer, Offer::WritePlan { .. } | Offer::DraftAllPlans { .. });
+            let settled = match checklist {
+                Some(feature) => metaplan_settled(feature),
+                None => false,
+            };
+            if gated && !settled {
+                return Err(StartError::MetaplanUnsettled);
+            }
             return Self::from_offer(offer);
         }
         document_start(id, project).ok_or_else(|| StartError::NotOffered(id.into()))
@@ -214,5 +223,7 @@ pub fn step_class(start: &AuthoringStart) -> StepClass {
 
 #[cfg(test)]
 mod follow_up_contract_tests;
+#[cfg(test)]
+mod gate_contract_tests;
 #[cfg(test)]
 mod tests;

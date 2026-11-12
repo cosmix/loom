@@ -25,7 +25,6 @@ const PROMPTS: Array<[NonNullable<ViewedKind>, string[]]> = [
     ],
   ],
   ["metaplan", ["Is the plan order right?", "Which plan carries the most risk?"]],
-  ["engineering-overview", ["What are the main engineering decisions?", "What could go wrong?"]],
   [
     "plan",
     [

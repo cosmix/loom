@@ -74,7 +74,7 @@ describe("Tabs", () => {
     expect(screen.getByRole("link", { name: /Home/ }).className).toBe("view-tab");
   });
 
-  it.each(["/f/demo/product", "/f/demo/engineering", "/plans/standalone"])(
+  it.each(["/f/demo/product", "/f/demo/metaplan", "/plans/standalone"])(
     "marks no view active on the feature page %s",
     (pathname) => {
       show({ pathname });

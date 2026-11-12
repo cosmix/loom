@@ -27,7 +27,7 @@ export const PLANNER_SHORTCUT_GROUPS: HelpShortcutGroup[] = [
       ["d", "Open the summary page of the first document"],
       ["a", "Attach the focused sentence or passage to the next chat message while authoring"],
       ["g p", "Go to the product overview"],
-      ["g e", "Go to the engineering overview"],
+      ["g e", "Go to the metaplan"],
     ],
   },
   COVERAGE_SHORTCUTS,

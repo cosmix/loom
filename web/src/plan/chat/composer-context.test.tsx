@@ -115,9 +115,9 @@ it("a page with no source file adds nothing and fetches nothing", async () => {
   // An overview whose feature's checklist has not named its source yet.
   act(() =>
     h.store.set(viewedDocumentAtom, {
-      kind: "engineering-overview",
+      kind: "product-overview",
       path: null,
-      name: "Engineering overview",
+      name: "Product overview",
     }),
   );
   await deliver(h, sender(h));

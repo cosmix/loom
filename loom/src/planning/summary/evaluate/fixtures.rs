@@ -21,7 +21,6 @@ pub(crate) const S1: &str = "doc/product/demo/section_01.md";
 pub(crate) const S2: &str = "doc/product/demo/section_02.md";
 pub(crate) const META: &str = "doc/plans/demo/index.md";
 pub(crate) const PRODUCT: &str = "overview/demo/product";
-pub(crate) const ENGINEERING: &str = "overview/demo/engineering";
 pub(crate) const VISION_ID: &str = "demo/product/vision";
 pub(crate) const METAPLAN_ID: &str = "demo/metaplan/index";
 pub(crate) const ID1: &str = "demo/product/section_01";
@@ -241,11 +240,7 @@ pub(crate) fn seal_overview(
 
 fn members_now(root: &Path, project: &Project, id: &str) -> BTreeMap<String, String> {
     let scope = store::Scope::of(project, id).expect("overview scope");
-    let members = if id.ends_with("/product") {
-        scope.product
-    } else {
-        scope.engineering
-    };
+    let members = scope.product;
     members
         .into_iter()
         .filter_map(|m| {

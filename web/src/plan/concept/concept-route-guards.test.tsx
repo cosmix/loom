@@ -40,7 +40,6 @@ const requested = (prefix: string) => fetched.filter((url) => url.startsWith(pre
 function serveOverview(): void {
   pages = {
     "overview/demo/product": clone(overviewFixture),
-    "overview/demo/engineering": { ...clone(overviewFixture), key: "overview/demo/engineering" },
     "demo/product/section_01": clone(summaryFixture),
     "demo/product/section_02": { ...clone(summaryFixture), key: "demo/product/section_02" },
   };
@@ -258,7 +257,12 @@ describe("keys", () => {
     await readingColumn();
     fireEvent.keyDown(document.body, { key: "g" });
     fireEvent.keyDown(document.body, { key: "e" });
-    await waitFor(() => expect(router.state.location.pathname).toBe("/f/demo/engineering"));
+    await waitFor(() => expect(router.state.location.pathname).toBe("/f/demo/metaplan"));
+  });
+  it("g p returns a plan page to product", async () => {
+    pages = { "demo/engineering/a": planPage({ key: "demo/engineering/a" }) };
+    const { router } = renderAt("/f/demo/engineering/a");
+    await readingColumn();
     fireEvent.keyDown(document.body, { key: "g" });
     fireEvent.keyDown(document.body, { key: "p" });
     await waitFor(() => expect(router.state.location.pathname).toBe("/f/demo/product"));

@@ -34,13 +34,6 @@ function copyFor(page: ConceptPage, empty: EmptyData): Copy {
         title: "No product overview yet",
         description: "The sections below have no vision to tie them together.",
       };
-    case "no_metaplan":
-      return { title: "No metaplan yet" };
-    case "plans_no_metaplan":
-      return {
-        title: "No engineering overview yet",
-        description: "Plans exist, but no metaplan names them.",
-      };
     case "never_built":
       return {
         title: "Summaries not built",
@@ -114,8 +107,7 @@ export function EmptyStates({ page, empty }: { page: ConceptPage; empty: EmptyDa
       ? page.key_chips.map((chip) => chip.doc)
       : [];
   const docs = empty.docs.length > 0 ? empty.docs : keyDocs;
-  // The server sends no offer with a plans-without-metaplan list; section 05 still offers one.
-  const offer = empty.offer ?? (empty.kind === "plans_no_metaplan" ? "start-metaplan" : null);
+  const { offer } = empty;
   let action: ReactNode = null;
   if (empty.kind !== "building" && offer) {
     action = <EmptyOffer offer={offer} checklist={checklist ?? null} />;
@@ -134,6 +126,7 @@ function sourceOf(pageKey: string): string | null {
   const key = parsePageKey(pageKey);
   if (key === null || key.kind === "overview") return null;
   if (key.kind === "standalone") return `doc/plans/PLAN-${key.doc}.md`;
+  if (key.scope === "metaplan") return `doc/plans/${key.feature}/index.md`;
   return key.scope === "product"
     ? `doc/product/${key.feature}/${key.doc}.md`
     : `doc/plans/${key.feature}/PLAN-${key.doc}.md`;
@@ -182,10 +175,10 @@ export function ConceptNotFound({ pageKey }: { pageKey: string }) {
             Product overview
           </Link>
           <Link
-            to={pageHref(overviewKey(feature, "engineering"))}
+            to={pageHref(overviewKey(feature, "metaplan"))}
             className="no-underline hover:underline"
           >
-            Engineering overview
+            Metaplan
           </Link>
         </nav>
       ) : (

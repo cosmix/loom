@@ -5,8 +5,8 @@ import { STEP } from "@/plan/feature/steps";
 
 export type PlanRow = ChecklistView["plan_rows"][number];
 
-/** The two overview pages that carry gaps above their text, and the step each one's gaps belong to. */
-const GAP_STEP = { product: STEP.product, engineering: STEP.plans } as const;
+/** The pages that carry gaps above their text, and the step each one's gaps belong to. */
+const GAP_STEP = { product: STEP.product, metaplan: STEP.plans } as const;
 export type GapScope = keyof typeof GAP_STEP;
 
 /** The feature page a pathname shows: `/f/<feature>/<page>[/<doc>]` gives `[page, doc]`. */
@@ -36,7 +36,7 @@ export function missingDocumentOffer(
   return undefined;
 }
 
-/** The ids of the offers the pace choice draws on an overview: both cards, or none without a choice. */
+/** The ids of the offers the page's pace choice draws: both cards, or none without a choice. */
 export function paceOfferIds(checklist: ChecklistView, scope: GapScope): string[] {
   const step = gapStep(checklist, scope);
   const choice = step === undefined ? null : paceChoice(checklist, step);

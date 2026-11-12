@@ -45,7 +45,7 @@ fn project() -> (TempDir, Project) {
 
 #[test]
 fn only_valid_feature_overview_ids_are_overviews() {
-    for id in ["overview/alpha/product", "overview/beta/engineering"] {
+    for id in ["overview/alpha/product", "overview/beta/product"] {
         assert!(is_overview(id), "{id}");
     }
     for id in [
@@ -59,7 +59,7 @@ fn only_valid_feature_overview_ids_are_overviews() {
         "overview/alpha/product/extra",
         "overview/../product",
         "overview/plans/product",
-        "overview/overview/engineering",
+        "overview/overview/product",
     ] {
         assert!(!is_overview(id), "{id}");
     }
@@ -158,9 +158,7 @@ fn expected_ids_cover_two_features_and_the_standalone_shelf() {
             "beta/product/section_01",
             "beta/product/section_02",
             "beta/product/vision",
-            "overview/alpha/engineering",
             "overview/alpha/product",
-            "overview/beta/engineering",
             "overview/beta/product",
             "plans/archived",
             "plans/done",
@@ -186,10 +184,6 @@ fn overview_scope_follows_each_features_source_order() {
             engineering: vec!["plans/archived".into(), "plans/running".into()],
             outside: vec!["alpha/product/section_03".into(), "plans/unlisted".into()],
         }
-    );
-    assert_eq!(
-        Scope::of(&project, "overview/alpha/engineering"),
-        Some(alpha)
     );
     assert_eq!(
         scope(&project, "beta"),
@@ -236,7 +230,6 @@ fn overview_sources_may_be_empty_or_present_on_only_one_side() {
         [
             "eng/metaplan/index",
             "lone/product/section_01",
-            "overview/eng/engineering",
             "overview/spec/product",
             "spec/product/section_01",
             "spec/product/vision",
@@ -259,14 +252,14 @@ fn overview_sources_may_be_empty_or_present_on_only_one_side() {
 fn assert_valid_summary_paths() {
     for id in [
         "overview/a/product",
-        "overview/feature-2/engineering",
+        "overview/feature-2/product",
         "a/product/section_01",
         "a/product/section_123",
         "a/product/vision",
         "0/product/section_00",
         "plans/A.b_c-1",
         "plans/product",
-        "overview/product/engineering",
+        "overview/product/product",
         "engineering/product/section_01",
     ] {
         assert!(validate_id(id).is_ok(), "{id}");
@@ -351,9 +344,9 @@ fn relative_links_round_trip_and_cannot_escape() {
             Some("s-1234abcd"),
         ),
         (
-            "overview/alpha/engineering",
-            "../../plans/a.md#s-1234abcd",
-            "doc/loom/summaries/plans/a.md",
+            "plans/a",
+            "b.md#s-1234abcd",
+            "doc/loom/summaries/plans/b.md",
             Some("s-1234abcd"),
         ),
     ];

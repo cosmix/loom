@@ -19,8 +19,6 @@ pub const PRODUCT_OVERVIEW: &str = "overview/demo/product";
 pub const ENGINEERING_OVERVIEW: &str = "overview/demo/engineering";
 /// Link from the product overview to the vision's title section.
 pub const VISION_LINK: &str = "../../../../product/demo/index.md#vision";
-/// Link from the engineering overview to the metaplan's title section.
-pub const META_LINK: &str = "../../../../plans/demo/index.md#metaplan";
 
 /// A git-less tree under `<tmp>/repo` holding `files`, with the loom user dir `<tmp>/home`.
 pub fn tree(files: &[(String, String)]) -> (TempDir, PathBuf, PathBuf) {
