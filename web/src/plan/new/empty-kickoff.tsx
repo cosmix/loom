@@ -3,6 +3,7 @@ import { ArrowUp, Paperclip } from "lucide-react";
 import { useId, useRef, useState, type RefObject } from "react";
 
 import { Untrusted, visibleControls } from "@/plan/chat/visible-controls";
+import { newId } from "@/plan/id";
 import { OpenDraftNotice } from "@/plan/new/draft-view";
 import { FeaturePicker, PickedFeature, PickFeature } from "@/plan/new/feature-picker";
 import { followUpFeatures, type FollowUpFeature } from "@/plan/new/follow-up-features";
@@ -83,7 +84,7 @@ function useKickoffDraft(initialKind: WorkKind) {
     composer.current?.focus();
   };
   const attach = (document: StarterDocument) => {
-    setDocuments((previous) => [...previous, { ...document, id: crypto.randomUUID() }]);
+    setDocuments((previous) => [...previous, { ...document, id: newId() }]);
     composer.current?.focus();
   };
   const remove = (id: string) => setDocuments((previous) => previous.filter((d) => d.id !== id));
