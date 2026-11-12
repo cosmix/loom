@@ -53,10 +53,10 @@
 | [plan-server](architecture/plan-server.md) | Chat | 294 |
 | [planner-feature-screens](architecture/planner-feature-screens.md) | Spine | 48 |
 | [planner-uploads-and-drafts](architecture/planner-uploads-and-drafts.md) |  | 35 |
-| [planner-web-shell](architecture/planner-web-shell.md) | Shell | 130 |
+| [planner-web-shell](architecture/planner-web-shell.md) | Shell | 139 |
 | [planning-document-model](architecture/planning-document-model.md) | Docs | 183 |
 | [planning-guidance](architecture/planning-guidance.md) |  | 43 |
-| [planning-session-bridge](architecture/planning-session-bridge.md) |  | 349 |
+| [planning-session-bridge](architecture/planning-session-bridge.md) |  | 351 |
 | [planning-session-sandbox](architecture/planning-session-sandbox.md) |  | 148 |
 | [planning-trace](architecture/planning-trace.md) |  | 132 |
 | [pressure](architecture/pressure.md) |  | 42 |
@@ -121,7 +121,7 @@
 | [git-and-build-workflow](conventions/git-and-build-workflow.md) |  | 237 |
 | [guidance-channels-and-plugin-scope](conventions/guidance-channels-and-plugin-scope.md) |  | 134 |
 | [model-and-effort-config](conventions/model-and-effort-config.md) |  | 143 |
-| [plan-web](conventions/plan-web.md) |  | 187 |
+| [plan-web](conventions/plan-web.md) |  | 200 |
 | [plan-yaml-and-hooks](conventions/plan-yaml-and-hooks.md) |  | 182 |
 | [web-dashboard-typography](conventions/web-dashboard-typography.md) |  | 64 |
 
@@ -170,7 +170,7 @@
 | [planner-follow-ups-delivery](mistakes/planner-follow-ups-delivery.md) | Slips | 196 |
 | [planner-polish](mistakes/planner-polish.md) | Polish | 107 |
 | [planner-redesign](mistakes/planner-redesign.md) |  | 80 |
-| [planner-review-fixes](mistakes/planner-review-fixes.md) |  | 48 |
+| [planner-review-fixes](mistakes/planner-review-fixes.md) |  | 132 |
 | [planner-ui-repair](mistakes/planner-ui-repair.md) | Repair | 215 |
 | [planner-visual-feedback-shortfall](mistakes/planner-visual-feedback-shortfall.md) | Visual | 17 |
 | [planning-sandbox-delivery](mistakes/planning-sandbox-delivery.md) |  | 73 |
@@ -228,7 +228,7 @@
 | [merge-and-recovery-edge-cases](concerns/merge-and-recovery-edge-cases.md) | Edges | 105 |
 | [plan-chat-followups](concerns/plan-chat-followups.md) | Chat | 41 |
 | [planner-follow-ups-followups](concerns/planner-follow-ups-followups.md) |  | 92 |
-| [planner-ui-repair-followups](concerns/planner-ui-repair-followups.md) | Repair | 193 |
+| [planner-ui-repair-followups](concerns/planner-ui-repair-followups.md) | UI | 214 |
 | [planning-document-model-followups](concerns/planning-document-model-followups.md) |  | 172 |
 | [planning-guidance-followups](concerns/planning-guidance-followups.md) |  | 43 |
 | [planning-session-sandbox-limits](concerns/planning-session-sandbox-limits.md) |  | 238 |
