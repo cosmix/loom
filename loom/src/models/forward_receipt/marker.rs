@@ -1,6 +1,7 @@
 use serde::Deserialize;
 
-use super::{is_safe_id, ForwardBackend, ForwardState};
+use super::{ForwardBackend, ForwardState};
+use crate::agent_state::is_safe_id;
 
 pub const START_PREFIX: &str = "LOOM-FORWARD-START ";
 pub const END_PREFIX: &str = "LOOM-FORWARD-END ";

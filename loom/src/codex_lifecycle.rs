@@ -55,7 +55,7 @@ pub(crate) fn session_invocation_ids(
     stage_id: &str,
     session_id: &str,
 ) -> Vec<String> {
-    if !crate::models::forward_receipt::is_safe_id(stage_id) {
+    if !crate::agent_state::is_safe_id(stage_id) {
         return Vec::new();
     }
     let path = work_dir
@@ -84,9 +84,7 @@ fn forward_active_at(
     now: DateTime<Utc>,
     state_root: &Path,
 ) -> Option<bool> {
-    if !crate::models::forward_receipt::is_safe_id(stage_id)
-        || !crate::models::forward_receipt::is_safe_id(session_id)
-    {
+    if !crate::agent_state::is_safe_id(stage_id) || !crate::agent_state::is_safe_id(session_id) {
         return None;
     }
     let path = work_dir

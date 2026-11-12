@@ -9,12 +9,11 @@ use std::time::{Duration, Instant};
 use anyhow::{ensure, Result};
 use serde::Serialize;
 
+use crate::agent_state::is_safe_id;
 use crate::models::forward_receipt::locator::{
     default_companion_state_roots, default_task_output_roots,
 };
-use crate::models::forward_receipt::{
-    is_safe_id, load_receipts, receipts_path, ForwardBackend, ForwardState,
-};
+use crate::models::forward_receipt::{load_receipts, receipts_path, ForwardBackend, ForwardState};
 
 use super::forward_jobs::{load_index_with_roots, receipt_state};
 

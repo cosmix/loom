@@ -3,14 +3,13 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{bail, ensure, Context, Result};
 
+use crate::agent_state::is_safe_id;
 use crate::codex_lifecycle::{
     codex_worker_identity, read_authorization_rows, read_lifecycle_records,
     receipt_matches_authorization, CodexAuthorization, LedgerRow,
 };
 use crate::models::forward_receipt::job_record::read_companion_job;
-use crate::models::forward_receipt::{
-    is_safe_id, load_receipts, receipts_path, ForwardBackend, ForwardState,
-};
+use crate::models::forward_receipt::{load_receipts, receipts_path, ForwardBackend, ForwardState};
 use crate::subagent_lifecycle::{
     replay, CodexExecution, LifecycleRecord, WorkerIdentity, WorkerOutcome,
 };

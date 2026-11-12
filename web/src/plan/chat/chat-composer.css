@@ -13,7 +13,10 @@
   padding: var(--space-2) var(--chat-gutter) var(--space-4);
   font-size: var(--type-body);
   line-height: var(--leading-body);
-  animation: hearth-rise 460ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  /* `backwards`, never `both`: a fill held after the rise keeps `transform: translateY(0)`, and
+   * any transform makes the composer the containing block of the fixed command list
+   * (command-menu.css), which then lands off screen by the composer's own offset. */
+  animation: hearth-rise 460ms cubic-bezier(0.16, 1, 0.3, 1) backwards;
 }
 
 /* The queue strip and the suggestion cards; empty, they take no room in the column. */

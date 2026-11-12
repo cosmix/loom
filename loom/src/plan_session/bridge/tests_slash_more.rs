@@ -2,7 +2,7 @@
 //! class check of a send, and the command cell and launch spec the catalogue owner reads.
 
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use serde_json::{json, Value};
 
@@ -74,6 +74,70 @@ fn a_late_local_confirmation_settles_and_releases_the_paused_queue_without_an_id
     wait_until("the queued message pasted after the settle", || {
         h.sent(&s) == ["/context", "after the context"]
     });
+}
+
+/// A `/compact` that failed: Claude Code writes the error as a `<local-command-stderr>` record
+/// and no boundary.
+fn compact_stderr() -> Value {
+    let error =
+        "<local-command-stderr>Error: Not enough messages to compact.</local-command-stderr>";
+    json!({"type": "user", "message": {"role": "user", "content": error}})
+}
+
+/// The time between a failed `/compact`'s stderr record and the queued message's paste.
+fn paste_after_stderr(h: &Harness, s: &Sess) -> Duration {
+    let wrote = Instant::now();
+    h.record(s, compact_stderr());
+    wait_until("next after the settle", || {
+        h.sent(s) == ["/compact", "next"]
+    });
+    wrote.elapsed()
+}
+
+#[test]
+fn a_compact_that_fails_after_its_pre_compact_settles_on_its_stderr_and_frees_the_queue() {
+    let h = Harness::ready(|c| c.delivery_timeout = Duration::from_millis(600));
+    h.bridge.lock().stall_budget = Duration::from_secs(100 * 365 * 86_400);
+    let s = h.idle(Authoring);
+    send(&h, &s, "/compact");
+    wait_until("pasted", || h.sent(&s) == ["/compact"]);
+    h.spool(&s, "PreCompact", json!({"trigger": "manual"}));
+    wait_until("confirmed by PreCompact", || delivered(&h, "/compact"));
+    assert!(matches!(send(&h, &s, "next"), SendOutcome::Queued { .. }));
+    // Past the delivery timeout, with no boundary: the confirmed compact still holds the slot.
+    thread::sleep(Duration::from_millis(1000));
+    assert_eq!(h.sent(&s), ["/compact"], "pasted before any evidence");
+    let waited = paste_after_stderr(&h, &s);
+    assert!(
+        waited >= Duration::from_millis(1500),
+        "pasted before the settle: {waited:?}"
+    );
+}
+
+#[test]
+fn a_compact_that_failed_before_its_pre_compact_settles_on_its_late_output() {
+    let h = Harness::ready(|c| c.delivery_timeout = Duration::from_millis(400));
+    let s = h.idle(Authoring);
+    send(&h, &s, "/compact");
+    let undelivered = [(Delivery::Undelivered, None)];
+    wait_until("timed out", || users(&h, "/compact") == undelivered);
+    assert!(matches!(send(&h, &s, "next"), SendOutcome::Queued { .. }));
+    let mut output = compact_stderr();
+    output["type"] = json!("system");
+    output["subtype"] = json!("local_command");
+    output["content"] = output["message"]["content"].take();
+    output["commandRun"] = json!({"command": "/compact", "args": ""});
+    let wrote = Instant::now();
+    h.record(&s, output);
+    wait_until("confirmed late", || delivered(&h, "/compact"));
+    wait_until("next after the settle", || {
+        h.sent(&s) == ["/compact", "next"]
+    });
+    assert!(
+        wrote.elapsed() >= Duration::from_millis(1500),
+        "{:?}",
+        wrote.elapsed()
+    );
 }
 
 #[test]

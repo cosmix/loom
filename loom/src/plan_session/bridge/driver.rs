@@ -35,6 +35,7 @@ impl Bridge {
         drop(inner);
         self.flush();
     }
+
     fn tick_session(&self, id: &str, feeds: &mut Feeds) {
         if let Some(paths) = self.feed_paths(id) {
             let events = paths.events.clone();
@@ -57,6 +58,7 @@ impl Bridge {
         self.record_step(id);
         self.flush();
     }
+
     fn feed_paths(&self, id: &str) -> Option<FeedPaths> {
         let inner = self.lock();
         let session = inner.sessions.get(id)?;
@@ -66,6 +68,7 @@ impl Bridge {
             tokens: session.token_paths.clone(),
         })
     }
+
     fn apply_batch(&self, id: &str, batch: Batch) {
         for entry in batch.in_time_order() {
             self.step(id, |session, config, step| match entry {
@@ -94,6 +97,7 @@ impl Bridge {
         }
     }
 }
+
 impl Session {
     fn ingest_teammate(
         &mut self,
@@ -113,6 +117,7 @@ impl Session {
             });
         }
     }
+
     /// One spool event; an event already applied (a replayed spool) changes nothing.
     pub(super) fn apply_event(
         &mut self,
@@ -154,6 +159,7 @@ impl Session {
             _ => {}
         }
     }
+
     fn on_session_start(&mut self, event: &SpoolEvent, step: &mut Step) {
         if let Some(path) = event.transcript_path.as_deref() {
             match checked_transcript(path, &self.id) {
@@ -172,6 +178,7 @@ impl Session {
             self.local_record("compact", None, Clock::Boundary, step);
         }
     }
+
     fn on_prompt(&mut self, at: DateTime<Utc>, prompt: Option<&str>, step: &mut Step) {
         self.confirm_prompt(prompt, step);
         if self.flow.turn.is_some() && !self.flow.prompted {
@@ -182,6 +189,7 @@ impl Session {
             self.flow.prompted = true;
         }
     }
+
     /// A Stop or StopFailure, an idle prompt or an interrupt record that won: the turn is over.
     pub(super) fn on_idle(&mut self, stop: bool, step: &mut Step) {
         self.settle_now();
@@ -194,6 +202,7 @@ impl Session {
             self.flow.close_ready = Some(EndOutcome::Closed);
         }
     }
+
     fn closes_at_stop(&self) -> bool {
         match (&self.kind, self.closing()) {
             (SessionKind::Pressure { .. }, _) => false,
@@ -205,9 +214,11 @@ impl Session {
             _ => false,
         }
     }
+
     pub(super) fn closing(&self) -> Option<Closing> {
         self.flow.end.as_ref().map(|plan| plan.closing)
     }
+
     /// One `SubagentStopped` per agent id that ended for the first time, at once; the table
     /// itself goes out once per tick (`timers`), however many lines changed it.
     fn publish_background(&mut self, change: Change, step: &mut Step) {
@@ -217,6 +228,7 @@ impl Session {
             step.event(BridgeEvent::SubagentStopped { id, agent_id });
         }
     }
+
     pub(super) fn ingest_main(&mut self, line: &str, step: &mut Step) {
         let ingest = self.mapper.ingest_main(line);
         self.emit(ingest.deltas, step);
@@ -224,6 +236,7 @@ impl Session {
             self.apply_mark(mark, step);
         }
     }
+
     fn apply_mark(&mut self, mark: RecordMark, step: &mut Step) {
         let change = self.background.mark(&mark);
         self.publish_background(change, step);
@@ -253,9 +266,11 @@ impl Session {
             RecordMark::Command(mark) => self.on_command(mark, step),
         }
     }
+
     fn after_idle(&self, at: DateTime<Utc>) -> bool {
         self.machine.last_idle_at().is_none_or(|idle| at > idle)
     }
+
     /// A turn Claude Code started without a prompt opens through the prompt path (px-state-08).
     fn begin_unprompted(&mut self, fresh: bool, at: DateTime<Utc>, step: &mut Step) {
         if fresh && self.flow.turn.is_none() {
@@ -263,6 +278,7 @@ impl Session {
             self.flow.prompted = false;
         }
     }
+
     pub(super) fn ingest_agent(
         &mut self,
         agent: &str,
@@ -278,6 +294,7 @@ impl Session {
         let ingest = self.mapper.ingest_subagent(agent, by, line);
         self.emit(ingest.deltas, step);
     }
+
     pub(super) fn timers(
         &mut self,
         config: &BridgeConfig,
@@ -301,6 +318,7 @@ impl Session {
         }
         self.settle_due(now, step);
     }
+
     pub(super) fn notice(&mut self, kind: NoticeKind, text: &str, step: &mut Step) {
         let id = self.next_id("n-s");
         let text = text.to_owned();
@@ -308,6 +326,7 @@ impl Session {
         self.emit(deltas, step);
     }
 }
+
 /// Identifies one spool line across a replayed spool: two distinct events in the same
 /// millisecond (two `SubagentStart`s with no request id) differ in their payload.
 fn event_key(event: &SpoolEvent) -> EventKey {
@@ -317,6 +336,7 @@ fn event_key(event: &SpoolEvent) -> EventKey {
     let request = event.request_id.clone();
     (event.received_at, event.event.clone(), request, payload)
 }
+
 /// An event the bridge itself applies; it never enters the applied set.
 pub(super) fn synthetic(event: &str, payload: Value) -> SpoolEvent {
     SpoolEvent {
@@ -328,6 +348,7 @@ pub(super) fn synthetic(event: &str, payload: Value) -> SpoolEvent {
         payload,
     }
 }
+
 /// An untrusted `SessionStart` path must be absolute, have plain components and name our
 /// Claude Code session's `<id>.jsonl`. Reads refuse symlinked or non-regular files.
 pub(super) fn checked_transcript(path: &Path, id: &str) -> Option<PathBuf> {

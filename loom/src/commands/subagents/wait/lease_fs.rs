@@ -12,8 +12,8 @@ use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
 use super::{TerminalOutcome, WaitIdentity, WaitLease, WAIT_SCHEMA_VERSION};
+use crate::agent_state::is_safe_id;
 use crate::fs::safe_fs;
-use crate::models::forward_receipt::is_safe_id;
 
 pub(super) fn open_lease_dir(
     scratch_root: &Path,

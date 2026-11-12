@@ -5,7 +5,7 @@ use anyhow::{bail, ensure, Context, Result};
 use chrono::{DateTime, Utc};
 use sha2::{Digest, Sha256};
 
-use crate::models::forward_receipt::is_safe_id;
+use crate::agent_state::is_safe_id;
 use crate::models::forward_receipt::job_record::{read_companion_job, CompanionJob};
 use crate::subagent_lifecycle::{CodexEvidenceOutcome, LifecycleState, WorkerOutcome};
 

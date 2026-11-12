@@ -1,3 +1,4 @@
+use crate::agent_state::is_safe_id;
 use anyhow::{ensure, Context, Result};
 use chrono::{DateTime, SecondsFormat, Utc};
 use serde::{Deserialize, Serialize};
@@ -30,15 +31,6 @@ const FORWARD_RECEIPT_FIELDS: [&str; 16] = [
     "model",
     "effort",
 ];
-pub fn is_safe_id(value: &str) -> bool {
-    let bytes = value.as_bytes();
-    (1..=128).contains(&bytes.len())
-        && bytes[0].is_ascii_alphanumeric()
-        && bytes
-            .iter()
-            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-'))
-}
-
 pub(crate) fn parse_canonical_utc_millis(value: &str) -> Result<DateTime<Utc>> {
     let parsed = DateTime::parse_from_rfc3339(value)
         .context("timestamp is not valid RFC3339")?

@@ -17,7 +17,7 @@ use crate::plan_session::state::{text, Input};
 use crate::plan_session::transcript::CommandMark;
 
 /// A local delivery settles this long after its last command or output record (a `/compact`
-/// from its boundary on), unless newer main-turn evidence settled it first.
+/// from its boundary or first output on), unless newer main-turn evidence settled it first.
 const COMPACT_SETTLE: Duration = Duration::from_secs(2);
 /// Confirmed slash deliveries kept waiting for their command record.
 const AWAITING_KEPT: usize = 8;
@@ -31,6 +31,11 @@ pub(super) enum Clock {
     Boundary,
     /// Restart it; a `/compact`'s only once its boundary started it.
     Record,
+    /// A command's output record. A `/compact` writes its output after its boundary (probe P2,
+    /// `p2-compact`), so a `/compact` with output and no boundary failed (its stderr): the clock
+    /// starts, and the slot is released after the settle window instead of waiting for evidence
+    /// that never comes.
+    Output,
 }
 
 impl Session {
@@ -42,12 +47,14 @@ impl Session {
                 args,
                 prompt: true,
             } => self.prompt_record(&name, &args, step),
-            CommandMark::Invoked { name, args, .. }
-            | CommandMark::Output {
+            CommandMark::Invoked { name, args, .. } => {
+                self.local_record(&name, Some(&args), Clock::Record, step);
+            }
+            CommandMark::Output {
                 run: Some((name, args)),
-            } => self.local_record(&name, Some(&args), Clock::Record, step),
+            } => self.local_record(&name, Some(&args), Clock::Output, step),
             CommandMark::Output { run: None } => {
-                self.confirm_local(Delivering::settling, Clock::Record, step);
+                self.confirm_local(Delivering::settling, Clock::Output, step);
             }
             CommandMark::Unknown { name } => self.unknown_record(&name, step),
             CommandMark::Forked { skill } => self.forked(&skill, step),
@@ -258,7 +265,7 @@ fn move_clock(local: &mut LocalSettle, compact: bool, clock: Clock, now: Instant
     match clock {
         Clock::Hold => {}
         Clock::Record if compact && !started => {}
-        Clock::Boundary | Clock::Record => local.last_record = Some(now),
+        Clock::Boundary | Clock::Output | Clock::Record => local.last_record = Some(now),
     }
     first
 }

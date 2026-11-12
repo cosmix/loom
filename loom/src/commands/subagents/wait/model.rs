@@ -46,7 +46,7 @@ impl FromStr for WorkerSpec {
                 "named spawns cannot be watched: spawn the subagent without `name`, or wait for its Agent-tool completion notice"
             );
         }
-        if !crate::models::forward_receipt::is_safe_id(id) {
+        if !crate::agent_state::is_safe_id(id) {
             bail!("worker id is empty or unsafe");
         }
         Ok(Self {
@@ -60,7 +60,7 @@ impl FromStr for WorkerSpec {
 /// name, which has no `agent-<id>.jsonl` transcript to follow.
 fn is_named_spawn_id(id: &str) -> bool {
     id.split_once("@session-").is_some_and(|(name, hex)| {
-        crate::models::forward_receipt::is_safe_id(name)
+        crate::agent_state::is_safe_id(name)
             && !hex.is_empty()
             && hex.bytes().all(|b| b.is_ascii_hexdigit())
     })

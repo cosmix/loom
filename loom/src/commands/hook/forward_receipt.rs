@@ -1,3 +1,4 @@
+use crate::agent_state::is_safe_id;
 use crate::models::forward_receipt::job_record::read_companion_job;
 use crate::models::forward_receipt::locator::{
     default_companion_state_roots, default_task_output_roots, resolve_companion_locator,
@@ -9,7 +10,7 @@ use crate::models::forward_receipt::transcript::{
     evidence_channel, ForwardingInvocation, ForwardingResult,
 };
 use crate::models::forward_receipt::{
-    is_safe_id, load_receipts, receipts_path, ForwardBackend, ForwardIdentity, ForwardObservation,
+    load_receipts, receipts_path, ForwardBackend, ForwardIdentity, ForwardObservation,
     ForwardState, FORWARD_RECEIPT_SCHEMA,
 };
 use anyhow::{bail, ensure, Context, Result};

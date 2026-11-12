@@ -214,6 +214,8 @@ it("a Terminal only entry shows its reason and cannot be inserted", async () => 
   expect(clear.hasAttribute("disabled")).toBe(false);
   expect(clear.getAttribute("aria-selected")).toBe("true");
   expect(text(clear)).toContain("Terminal only · Changes the session outside the planner");
+  // The reason and the description are apart: a separator, not a bare space, joins them.
+  expect(text(clear)).toMatch(/Terminal only · Changes the session outside the planner · \S/);
 
   press("Enter");
   fireEvent.click(clear);

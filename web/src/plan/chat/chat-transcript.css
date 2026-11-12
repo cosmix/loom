@@ -305,7 +305,9 @@
 .chat-left-behind,
 .chat-starting,
 .chat-typing {
-  animation: chat-rise 460ms var(--chat-ease, cubic-bezier(0.16, 1, 0.3, 1)) both;
+  /* `backwards`, never `both`, for the reason in chat-composer.css: a sent chip's fixed tooltip
+   * (.chat-passage) sits inside these items, and a held end transform would displace it. */
+  animation: chat-rise 460ms var(--chat-ease, cubic-bezier(0.16, 1, 0.3, 1)) backwards;
 }
 
 :is(.chat-turn-items, .chat-tool-fold) > :nth-child(2) {
