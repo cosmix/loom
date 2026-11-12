@@ -130,3 +130,10 @@ Slips from the planner review-fixes plan (kickoff, chat, drafts, uploads, vision
 **What happened:** a design worker wrote `contrast.mjs` to the session scratchpad, a sibling worker had written a file of the same name there, and a later `cat >>` appended a block to the sibling's script (restored with Edit).
 
 **Prevention:** prefix scratch files with the worker id or use a per-worker subdirectory, and never append to a scratch file without checking it is still yours. In zsh an unquoted variable is not word-split (`F="a b"; tool $F` passes one argument): pass file paths literally or use an array. Run repository-relative edit scripts from the worktree root.
+
+## Chat called crypto.randomUUID, which LAN HTTP does not provide
+
+**What happened:** the planner chat failed with a `crypto.randomUUID` error whenever it was opened over `http://<lan-ip>`; every chat command and kickoff document add threw.
+**Why:** `commands.ts` and `empty-kickoff.tsx` assumed a secure context. Tests run in a secure context and mock `randomUUID`, so no test saw the insecure case.
+**Prevention:** use `newId()` for browser ids; check any new browser API against secure-context requirements, since LAN binds are plain HTTP.
+**Fix:** `web/src/plan/id.ts` `newId()` with a `getRandomValues` v4 fallback, tested with `randomUUID` removed.
