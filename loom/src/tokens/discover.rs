@@ -3,9 +3,10 @@
 //! stage's forwarded jobs.
 
 use super::model::AgentKind;
+use crate::agent_state::is_safe_id;
 use crate::context::untrusted::inline_safe;
 use crate::fs::work_dir::WorkDir;
-use crate::models::forward_receipt::{is_safe_id, load_receipts, receipts_path};
+use crate::models::forward_receipt::{load_receipts, receipts_path};
 use crate::provider_data::codex_discovery::{codex_root, collect_jsonl, CodexDiscovery};
 use crate::provider_data::ledger::StartedAgentTypeIndex;
 use crate::provider_data::resolve::{agent_id_from_path, list_agent_files};

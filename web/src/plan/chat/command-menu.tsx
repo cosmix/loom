@@ -221,7 +221,8 @@ function CommandOption({ entry, id, active, onActivate, onPick }: CommandOptionP
             <SquareTerminal aria-hidden="true" />
             Terminal only · <Untrusted text={blocked} />
           </span>
-        )}{" "}
+        )}
+        {blocked !== null && entry.description !== "" ? " · " : " "}
         <span className="chat-command-description">
           <Untrusted text={entry.description} />
         </span>

@@ -9,8 +9,9 @@
 // here (Playwright's routeWebSocket, as chat-layout-kit.mjs does) from src/plan/api/fixtures:
 // hello, the chat snapshot with its session idle and one closed turn that launched the fixture's
 // running agent, background.json and a commands frame of session-commands.json. Every REST route
-// but the session's brief is the real server's, and hello names the fixture's project, so shoot a
-// route that reads no feature of its own: /files.
+// but the session's brief, its turn's sections and the auto-rebuild switch (playSession) is the
+// real server's, and hello names the fixture's project, so shoot a route that reads no feature of
+// its own: /files.
 //
 // Each route is shot at 1440x900 and 390x844, in Ledger and Graphite unless --themes names others
 // from THEMES, to <out-dir>/<route-slug>-chat-<shot>-<width>-<theme>.png. The shots, in order:
@@ -19,8 +20,9 @@
 //   open-list  the panel with the background list open
 //   agent-row  the panel with the running Agent row, which stands outside the tool fold
 //   slash      the panel with "/" typed and the command list open
-// Exit 1 on a console error, a page error, an HTTP status >= 400 on a route, or a step whose
-// element never shows; the shot is still taken, so the failure can be seen.
+// Exit 1 on a console error, a page error, an HTTP status >= 400 on a route, a step whose element
+// never shows, or a command list whose box is not inside the viewport; the shot is still taken, so
+// the failure can be seen.
 
 import { existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
@@ -133,7 +135,14 @@ function agentTurn(snapshot, agent) {
     result: "Async agent launched",
   });
   const text = "Survey the session bridge in the background while I read the plan.";
-  const user = like("user", { id: "u1", text, attachments: [], origin: null, command: null });
+  const user = like("user", {
+    id: "u1",
+    text,
+    attachments: [],
+    origin: null,
+    command: null,
+    delivery: "delivered",
+  });
   const markdown = "The survey runs in the background. I will report when it ends.";
   const items = [user, read(1), read(2), launch, like("text", { id: "a1", markdown })];
   return { ...base, id: "t1", open: false, changed_files: [], summaries_rebuilding: [], items };
@@ -163,7 +172,11 @@ function playedSession() {
   return { frames, brief, agentLabel: agent.label };
 }
 
-/** Plays the plan socket and answers the one REST route that knows the session's id. */
+/**
+ * Plays the plan socket and answers the REST routes the real server cannot: the session's brief
+ * and its turn's sections (the server knows no such session), and the auto-rebuild switch the
+ * page posts as the authoring holder that the played hello makes it.
+ */
 async function playSession(context, played) {
   await context.routeWebSocket(
     (url) => url.pathname === "/ws",
@@ -174,6 +187,17 @@ async function playSession(context, played) {
   await context.route(
     (url) => url.pathname === "/api/session/brief",
     (route) => route.fulfill({ json: played.brief }),
+  );
+  await context.route(
+    (url) => url.pathname === "/api/turn-sections",
+    (route) => {
+      const turn = new URL(route.request().url()).searchParams.get("turn") ?? "";
+      return route.fulfill({ json: { turn, files: [] } });
+    },
+  );
+  await context.route(
+    (url) => url.pathname === "/api/summaries/auto",
+    (route) => route.fulfill({ json: fixture("summary-panel") }),
   );
 }
 
@@ -213,7 +237,8 @@ async function open(page, url, errors) {
  * it), so the pill is pressed only when it is closed, and Escape puts it away afterwards.
  */
 async function shootActivity(page, file, errors) {
-  const popover = page.locator('[aria-label="In progress"]');
+  // The popover's list carries the same name, so the dialog is found by its role.
+  const popover = page.getByRole("dialog", { name: "In progress" });
   await step(errors, "the header's activity popover never opened", async () => {
     if (!(await popover.isVisible())) await page.locator(".activity-pill").click();
     await popover.waitFor({ timeout: STEP_TIMEOUT_MS });
@@ -275,10 +300,27 @@ async function shootPanel(page, panel, agentLabel, fileFor, errors) {
   });
   await shot("agent-row");
 
-  await step(errors, 'the command list never opened on "/"', async () => {
+  await step(errors, 'the command list never opened on "/" within the viewport', async () => {
     await panel.getByRole("textbox", { name: "Message" }).click(wait);
     await page.keyboard.type("/");
-    await page.getByRole("listbox", { name: "Commands" }).waitFor(wait);
+    const list = page.getByRole("listbox", { name: "Commands" });
+    await list.waitFor(wait);
+    // Visible to Playwright is not on screen: a list placed outside the viewport (the composer's
+    // held animation transform once did that) is still "visible". Read the box once it has risen.
+    await page.waitForTimeout(SETTLE_MS);
+    const box = await list.boundingBox();
+    const view = page.viewportSize();
+    const inside =
+      box &&
+      box.x >= 0 &&
+      box.y >= 0 &&
+      box.x + box.width <= view.width &&
+      box.y + box.height <= view.height;
+    if (!inside) {
+      throw new Error(
+        `the command list lies outside the ${view.width}x${view.height} viewport: ${JSON.stringify(box)}`,
+      );
+    }
   });
   await shot("slash");
 }
@@ -286,11 +328,13 @@ async function shootPanel(page, panel, agentLabel, fileFor, errors) {
 async function shootTheme(browser, theme, viewport, ctx) {
   const context = await browser.newContext({ viewport });
   await context.addInitScript(themeInitScript(theme));
-  await playSession(context, ctx.played);
   const page = await context.newPage();
   const errors = [];
   watchErrors(page, errors);
   const origin = await bootstrap(page, ctx.tokenUrl);
+  // Played only after the token page: its `/` follows the played hello's project to a feature
+  // the real server lacks, and the 404s of that page would fail the run.
+  await playSession(context, ctx.played);
   for (const route of ctx.routes) {
     const fileFor = (shot) =>
       join(ctx.outDir, `${routeSlug(route)}-chat-${shot}-${viewport.width}-${theme.name}.png`);

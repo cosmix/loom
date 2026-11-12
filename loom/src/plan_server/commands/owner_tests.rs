@@ -4,10 +4,13 @@ use std::ffi::OsString;
 use std::fs;
 use std::path::Path;
 
+use serde_json::json;
+
 use super::side_spec;
 use crate::plan_session::bridge::host::LaunchSpec;
 use crate::plan_session::bridge::LaunchGuidance;
 use crate::plan_session::kind::{SessionDir, SessionKind};
+use crate::plan_session::launch::script::claude_argv;
 use crate::planning::runtime::runtime_paths_under;
 
 fn launch_spec(base: &Path, extra_env: Vec<(String, String)>) -> LaunchSpec {
@@ -16,7 +19,9 @@ fn launch_spec(base: &Path, extra_env: Vec<(String, String)>) -> LaunchSpec {
     let runtime = runtime_paths_under(&base.join("loom-home"), &root).unwrap();
     let dir = SessionDir::new(runtime.sessions.join("session-side"));
     fs::create_dir_all(dir.path()).unwrap();
-    fs::write(dir.settings(), r#"{"hooks": {}, "permissions": {}}"#).unwrap();
+    let settings = r#"{"hooks": {"Stop": [{"hooks": []}]}, "permissions": {"allow": ["Read"]},
+        "enabledPlugins": {"loom-ui@skills-dir": false}}"#;
+    fs::write(dir.settings(), settings).unwrap();
     LaunchSpec {
         id: "session-side".into(),
         kind: SessionKind::Authoring,
@@ -65,4 +70,58 @@ fn the_side_process_gets_the_sessions_path_and_extras_without_its_identity() {
     }
     assert_eq!(side.program, spec.claude_bin);
     assert_eq!(side.cwd, spec.project_root);
+}
+
+/// The value after `flag` in `words`.
+fn value_after<'a>(words: &'a [OsString], flag: &str) -> Option<&'a OsString> {
+    let at = words.iter().position(|word| word == flag)?;
+    words.get(at + 1)
+}
+
+#[test]
+fn the_side_process_runs_on_its_own_hookless_settings_and_none_of_the_sessions_identity() {
+    let base = tempfile::tempdir().unwrap();
+    let spec = launch_spec(base.path(), Vec::new());
+    let side = side_spec(&spec).unwrap();
+
+    // Its own settings file beside the session's: no hooks, hooks disabled, the rest kept.
+    assert_eq!(
+        side.settings_path,
+        spec.dir.path().join("side-settings.json")
+    );
+    assert_ne!(side.settings_path, spec.dir.settings());
+    let expected = json!({
+        "disableAllHooks": true,
+        "permissions": {"allow": ["Read"]},
+        "enabledPlugins": {"loom-ui@skills-dir": false},
+    });
+    assert_eq!(side.settings, expected);
+    assert!(side.settings.get("hooks").is_none());
+
+    // The command line is the side one: `--settings` names the side file, the session's own
+    // settings path never appears, and the identity, name and brief flags (with their values) are
+    // gone although the session's argv holds them.
+    let session = claude_argv(&spec, &spec.dir.settings());
+    assert_eq!(
+        value_after(&side.args, "--settings"),
+        Some(&side.settings_path.clone().into_os_string())
+    );
+    assert!(!side.args.contains(&spec.dir.settings().into_os_string()));
+    for flag in ["--session-id", "--name", "--append-system-prompt-file"] {
+        let value = value_after(&session, flag).expect(flag);
+        assert!(
+            !side.args.iter().any(|word| word == flag),
+            "{flag} in {:?}",
+            side.args
+        );
+        assert!(
+            !side.args.contains(value),
+            "{flag}'s value {value:?} in {:?}",
+            side.args
+        );
+    }
+    assert!(
+        !side.args.iter().any(|word| word == &spec.claude_bin),
+        "the program is not an argument"
+    );
 }

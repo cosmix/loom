@@ -6,7 +6,8 @@ use chrono::{DateTime, Utc};
 use serde::Deserialize;
 use serde_json::Value;
 
-use crate::models::forward_receipt::{is_safe_id, parse_canonical_utc_millis};
+use crate::agent_state::is_safe_id;
+use crate::models::forward_receipt::parse_canonical_utc_millis;
 
 const MAX_PATH_BYTES: usize = 4096;
 const SUPPORTED_COMPANIONS: [&str; 1] = ["1.0.6"];
