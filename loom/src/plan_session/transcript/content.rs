@@ -4,7 +4,7 @@ use chrono::{DateTime, Utc};
 use serde_json::Value;
 
 use super::notification::launch_label;
-use super::records::{self, cap_chars, Assistant, Block, ToolResult};
+use super::records::{self, Assistant, Block, ToolResult};
 use super::tools::repo_relative;
 use super::{Ingest, Mapper, RecordMark, Subagent};
 use crate::plan_session::model::{ChatDelta, Item, NoticeKind, ToolStatus};
@@ -63,8 +63,8 @@ impl Mapper {
     ) -> Option<Item> {
         match block {
             Block::Text(text) if sub.is_none() && !text.trim().is_empty() => {
-                self.state[turn].done_fence = Some(super::done_fence::parse(&text));
-                let markdown = cap_chars(&text, records::ITEM_CHARS);
+                let (markdown, done) = super::done_fence::display(&text, records::ITEM_CHARS);
+                self.state[turn].done_fence = Some(done);
                 Some(Item::Text { id, markdown })
             }
             Block::Thinking if sub.is_none() => {

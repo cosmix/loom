@@ -77,14 +77,6 @@ pub fn page_of(root: &Path, key: &PageKey) -> Value {
 pub fn product_overview_key() -> PageKey {
     PageKey::Overview {
         feature: "demo".to_string(),
-        scope: Scope::Product,
-    }
-}
-
-pub fn engineering_overview_key() -> PageKey {
-    PageKey::Overview {
-        feature: "demo".to_string(),
-        scope: Scope::Engineering,
     }
 }
 

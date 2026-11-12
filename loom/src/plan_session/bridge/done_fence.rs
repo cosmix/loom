@@ -28,6 +28,7 @@ mod tests {
     use chrono::Utc;
     use serde_json::json;
 
+    use crate::plan_session::model::Item;
     use crate::plan_session::transcript::Mapper;
 
     const FENCE: &str = "```loom-done\n{\"decisions\":[],\"questions\":[]}\n```";
@@ -85,5 +86,26 @@ mod tests {
             {"type":"text", "text":FENCE}]}});
         mapper.ingest_subagent("a1", None, &sub.to_string());
         assert_eq!(mapper.turn_done(&turn), Ok(false));
+    }
+
+    #[test]
+    fn a_long_final_fence_stays_in_the_displayed_item() {
+        let mut mapper = Mapper::new("/project".into());
+        let (turn, _) = mapper.begin_turn(Utc::now());
+        let prefix = "x".repeat(64 * 1024);
+        reply(&mut mapper, "finished", &format!("{prefix}\n{FENCE}"));
+        assert_eq!(mapper.turn_done(&turn), Ok(true));
+        let markdown =
+            mapper
+                .turns()
+                .iter()
+                .flat_map(|turn| &turn.items)
+                .find_map(|item| match item {
+                    Item::Text { markdown, .. } => Some(markdown.clone()),
+                    _ => None,
+                });
+        let markdown = markdown.expect("the reply is shown");
+        assert!(markdown.ends_with(FENCE));
+        assert_eq!(markdown.chars().count(), 64 * 1024);
     }
 }

@@ -53,11 +53,7 @@ pub fn load_page(
         project.feature(feature)?;
     }
     match key {
-        PageKey::Overview {
-            feature,
-            scope: Scope::Product,
-        } => Some(overview_page(project, eval, feature, ctx)),
-        PageKey::Overview { .. } => None,
+        PageKey::Overview { feature } => Some(overview_page(project, eval, feature, ctx)),
         PageKey::Summary {
             feature,
             scope,
@@ -150,7 +146,6 @@ fn overview_page(
 ) -> ConceptPage {
     let key = PageKey::Overview {
         feature: feature.to_owned(),
-        scope: Scope::Product,
     };
     let id = key.as_key();
     let mut page = blank(&key, "Product overview".to_owned(), ctx);
