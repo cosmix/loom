@@ -234,7 +234,7 @@ A visual request needs a concrete design brief and a screenshot check, not only 
 
 ## Planner follow-ups delivery
 
-A live region mounted twice, a test constant that passed vitest and failed the type check, a classifier test with a name the generator never writes, a fix that broke another stage's wiring literal, a container query on its own container, a CSS reset that lost on specificity, a screenshot clone left in the worktree root, a frozen contract that matched a plan's own truth check, and a scaffold order rustfmt reversed. See [mistakes/planner-follow-ups-delivery](mistakes/planner-follow-ups-delivery.md).
+A live region mounted twice, a test constant that passed vitest and failed the type check, a classifier test with a name the generator never writes, a fix that broke another stage's wiring literal, a container query on its own container, a CSS reset that lost on specificity, a screenshot clone left in the worktree root, a frozen contract that matched a plan's own truth check, and a scaffold order rustfmt reversed; then, from the background and slash work, a `position: fixed` list inside a transformed ancestor that jsdom could not show, a browser driver never run before integration-verify, a fetch gated on an atom that test harnesses seed, a contract briefed as guarding what it could not, and workers running gates outside their territory. See [mistakes/planner-follow-ups-delivery](mistakes/planner-follow-ups-delivery.md).
 
 ## Planner design: stubs vs summaries, briefs unsummarized
 

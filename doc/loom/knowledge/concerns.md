@@ -221,7 +221,7 @@ Accepted limits of the planning sandbox (Bash writes inside `doc/loom/`, new top
 
 ## Planning Session Bridge Follow-ups
 
-Open teardown, race, transcript-mapper, chat-wire and trust-entry items from the bridge plan, the unverified operator e2e, and a recurring flock-after-drop proposal. → [Planning Session Sandbox Limits](concerns/planning-session-sandbox-limits.md#planning-session-bridge-follow-ups)
+Open teardown, race, transcript-mapper, chat-wire and trust-entry items from the bridge plan, the unverified operator e2e, and a recurring flock-after-drop proposal. The background-task and slash-command work added open items (native table pinned to Claude Code 2.1.321, an agent that never stalls, test gaps, web nits, the sandbox journeys). → [Planning Session Sandbox Limits](concerns/planning-session-sandbox-limits.md#planning-session-bridge-follow-ups)
 
 ## Plan Chat Follow-ups
 

@@ -14,12 +14,13 @@ requests and ends or recovers sessions. Contract: `doc/product/feat-planner/sect
 | --- | --- |
 | `launch.rs`, `launch/script.rs` | `prepare` (session directory, sandbox files, trust entry) and `launch_script`: a 0700 launch script that `env -i` execs `claude` with `LOOM_PLAN_STATE` and `LOOM_PLAN_SESSION` pinned after the passed env |
 | `tmux_io.rs`, `tmux_host.rs` | `pane_pid` (`#{pane_pid}:#{pane_dead}:#{pane_dead_status}`, fails on a dead pane), paste and key delivery; `TmuxHost` implements `SessionHost` over the lane's free functions in `orchestrator/terminal/tmux/` |
-| `spool.rs`, `hook_cli.rs`, `permission.rs` | the ten `SPOOL_EVENTS` registrations, the locked append, the blocking `PermissionRequest` hook |
+| `spool.rs`, `hook_cli.rs`, `permission.rs` | the eleven `SPOOL_EVENTS` registrations, the locked append, the blocking `PermissionRequest` hook |
 | `web_fetch.rs` | the `WebFetch` fetch policy (`FetchMode`, `FetchPolicy`, `FetchPolicyCell`), host parsing and allowlist validation |
 | `state.rs` | `StateMachine` over `Input::{Spool, Record, ...}` |
 | `transcript/` | the record mapper: `mod.rs` (dedup, routing), `records.rs` (classification), `content.rs`, `turns.rs`, `tools.rs`, `usage.rs` |
 | `input.rs`, `attachments/` | `check_send`, the 100 KB cap, the `<loom-attachments>` block (`format`, `parse`, `resolve`) |
-| `bridge/` | `Bridge` and `SessionHost` (`mod.rs`, `host.rs`), start path (`start.rs`), per-session state (`session.rs`), the driver tick (`driver.rs`, `registry.rs`), delivery and interrupt (`flow.rs`, `turns.rs`), cards (`requests.rs`), fetch rules and grant (`fetches.rs`), browser commands (`commands.rs`), end and teardown (`ending.rs`, `stopping.rs`), restart recovery (`recovery.rs`), test fakes (`fake_host.rs`, `harness.rs`) |
+| `bridge/` | `Bridge` and `SessionHost` (`mod.rs`, `host.rs`), start path (`start.rs`), per-session state (`session.rs`), the driver tick (`driver.rs`, `registry.rs`), delivery and interrupt (`flow.rs`, `turns.rs`), cards (`requests.rs`), fetch rules and grant (`fetches.rs`), browser commands (`commands.rs`), end and teardown (`ending.rs`, `stopping.rs`), restart recovery (`recovery.rs`), the background-task table (`background.rs`, `background/`), the slash catalogue cell and class check (`catalogue.rs`) and a local delivery's barrier and settle (`local.rs`), test fakes (`fake_host.rs`, `harness.rs`) |
+| `commands/` | the session's command table, the native table and the side process that reads the rest ([slash commands](plan-server.md#slash-commands-and-skills-in-the-planner-chat)) |
 | `plan_server/chat/` | `dispatch.rs` (start, send, interrupt, end from the browser), `fetch_cmd.rs` (the card's fetch choices, Ask again), `guidance.rs` (`GuidanceSlot`), `mod.rs` (`install`, holder fill) |
 | `plan_server/web_fetch/` | `web-fetch.json` in the runtime directory (temp file and rename), `GET`/`POST /api/web-fetch` (viewer read, holder write), the cell the bridge reads |
 
@@ -111,18 +112,17 @@ States: `Starting`, `Idle`, `Working`, `Permission`, `Ending`, `Ended`, `Failed`
    newer than the last idle event means `Working`. Only user and assistant records are fed as
    `Record { main: true }`: Claude Code writes `stop_hook_summary` and `turn_duration` system records after
    the Stop hook ran, so feeding them flips every Stop back to `Working`.
-2. Only the main agent's events move the state. `SubagentStart`/`SubagentStop` change the running-subagent
-   count and never the state. Claude Code fires a new `SubagentStart` for the same `agent_id` each time it
-   wakes an agent (a background coordinator woken by its children's notifications), so the `SubagentStart`
-   arm of `apply_event` (`bridge/driver.rs`) resets that agent's watch: the stop latch in `on_agent_stop`
-   dedupes only the synthetic and the real stop of one run. The close at the closing Stop needs a count of 0
-   ([mistake](../mistakes/spurious-waiting-for-input.md#a-re-woken-subagent-kept-the-subagent-count-up-and-the-chat-stayed-ending)).
+2. Only the main agent's events move the state. `SubagentStart`/`SubagentStop` feed the background-task
+   table and never the state. Claude Code fires a new `SubagentStart` for the same `agent_id` each time it
+   wakes an agent (a background coordinator woken by its children's notifications); the table reopens the
+   entry, ends it only on evidence and sends `SubagentStopped` once per id. The close at the closing Stop
+   needs `BackgroundTasks::blocking() == 0` ([the table](#background-tasks-in-the-planner-chat), [mistake](../mistakes/spurious-waiting-for-input.md#a-re-woken-subagent-kept-the-subagent-count-up-and-the-chat-stayed-ending)).
 
 The pending permission set clears only on a main Stop or StopFailure, an interrupt record, or per-id
 removals; a main transcript record never clears it (another tool's result is a main record). The driver
 applies the records and spool lines of one tick in time order, records first on a tie
-(`Batch::in_time_order`, `bridge/registry.rs`); applying records first or spool first as blocks lets an
-interrupt record reset the subagent count before the earlier `SubagentStart` lines count. The driver drains
+(`Batch::in_time_order`, `bridge/registry.rs`); the table's times and ends are order-robust, so a replay
+that reads the spool before the transcript builds the same table. The driver drains
 the transcript before applying a Stop, so a late record of the closing turn stays in that turn. Process
 identity is checked every `identity_interval` (2 s) through `process::{ProcessIdentity, IdentityStatus}`; a
 death outside `Ending` is `Failed` (`FailureKind::Died`), a failed spawn `FailureKind::Spawn`.
@@ -164,8 +164,9 @@ of a record with its `s-` item (`transcript/opening.rs`), `RecordMark::HumanUser
 two sent messages that differ only in whitespace share a key; a CRLF-terminated tag line is not unwrapped
 ([the mistake](../mistakes/planner-ui-repair.md#claude-code-wrapped-delivered-prompts-and-every-text-match-broke-silently-2026-11-03)).
 
-The delivered text, with the attachment block, is capped at `MAX_DELIVERED_BYTES` = 100 000. `check_send` refuses text whose
-first non-whitespace character, after skipping a leading U+FEFF, is `/`, except `/compact`. Attachments: at most 10, quotes
+**Slash messages.** `check_send(text, &CommandTable)` lets a message through whose first token the session's command table allows, as one line of at most 300 characters with no attachments; the table, the side process that fills it, the re-check just before the paste, and the confirmation, barrier and settle per command class are in [Slash commands and skills](plan-server.md#slash-commands-and-skills-in-the-planner-chat). A local command (`/compact`, `/context`, a fork skill) holds the delivering slot until it settles, so the next queued item waits.
+
+The delivered text, with the attachment block, is capped at `MAX_DELIVERED_BYTES` = 100 000. Attachments: at most 10, quotes
 cut at 2,000 characters on a line boundary with `[…N more characters; read the source]` where N is the quote's characters
 minus the shown lines joined by newlines.
 
@@ -179,10 +180,10 @@ ignored; nothing is delivered at the Idle the interrupt causes.
 
 The final write (authoring end): wait for `Idle`, return the queue, refuse new messages, deny pending and new
 requests when the end comes from the grace period or a server stop, paste the closing message, wait for its
-Stop with no subagent running, then tear down, bounded by `final_write_bound` (600 s installed; `END_SLACK`
+Stop with no blocking background agent (`BackgroundTasks::blocking() == 0`), then tear down, bounded by `final_write_bound` (600 s installed; `END_SLACK`
 5 s past it). The holder's grace period is 600 s (`plan_server::authoring::GRACE`). Pressure sessions end at
 their completion marker with no closing message and keep recorded children and `codex.log`. Summary sessions
-end at their first main Stop with no subagent. `Bridge::abort` (second Ctrl-C) tears live sessions down,
+end at their first main Stop with no blocking background agent. `Bridge::abort` (second Ctrl-C) tears live sessions down,
 gives a `Launching` session a `Teardown` end plan, and waits up to `LAUNCH_WAIT` 30 s for spawns in flight.
 A failed teardown keeps `session.json` and the session in `Failed` (`TEARDOWN_FAILED` prefix); the retry runs
 every `identity_interval`, by socket alone when the record has no pid.
@@ -246,16 +247,37 @@ runs. A direct `Bridge::start_session` caller must hold `starting` or a lease fr
 sockets) `launch_starts_claude_in_its_own_server_and_identifies_it`,
 `a_launch_whose_claude_exits_at_once_is_torn_down_and_reported` and `a_long_paste_reaches_the_pane_and_teardown_removes_the_socket`
 print SKIP and count as passed. A host run at `7adae040` passed 462 `plan_session::` and 76
-`orchestrator::terminal::tmux::` lib tests with none skipped. The operator end-to-end
-(`loom/tests/plan_session_bridge_e2e`) is **unverified and failed, never passed**: on Claude Code 2.1.312 and
-tmux 3.6 the first run stalled in `Starting` (the trust dialog, fixed), the second never drained the queue
-(`StopFailure` unregistered, fixed), the third (`a7d644c2`, after trust, `StopFailure`, pane diagnostics and
-per-round turn waits) timed out at 120 s waiting for the opening's delivery with state `Idle`; the cause is
-not diagnosed. Interrupt Stop/StopFailure, `/compact` event order, `$TMPDIR` and the pasted-slash probe were
-never reached. pty probes (outside tmux) showed a paste at the first `SessionStart` is submitted within
-0.1 s with the bridge's full launch flags, so the stall is not the paste itself. The integration-verify stage
-was completed by the operator with `--no-verify`; direct unsandboxed host test runs are not repeated. The
-open diagnosis is post-merge work.
+`orchestrator::terminal::tmux::` lib tests with none skipped.
+
+**Conformance probes.** What the bridge assumes about a real Claude Code is recorded from Claude Code 2.1.321
+(`p1-status` ran on 2.1.322) in `loom/tests/fixtures/plan_session/probe-notes.md`, with the transcripts, spool
+files and raw notes it cites under `loom/tests/fixtures/plan_session/`: P1 for background tasks (launch
+results, notification carriers and status values, `TaskStop`, `background_tasks` on `Stop`, interrupt, resume,
+compact) and P2 for slash commands and skills (per-paste matrix, record shapes per class, timing, the side
+process, row shape and built-in rows). The harness is `loom/tests/plan_session_bridge_e2e/probes.rs` and
+`probes/`: one `#[ignore]` test per probe, driving a plan session through the bridge over tmux in a throwaway
+project under a copied HOME. No stage runs them (they need a logged-in `claude` and the network). The operator
+reruns them on the host, outside any sandbox, after each Claude Code upgrade:
+
+```bash
+cd loom && cargo test --test plan_session_bridge_e2e probes:: -- --ignored --test-threads=1
+```
+
+A rerun that contradicts a decision in the planner amends the plan first; the rerun of
+`p2_side_process_initialize_and_commands_changed` shows the rows a newer native command adds, and
+`p2_side_process_max_turns_and_loom_ui` checks `loom-ui` on a host that has it. The fixtures replay offline
+through `bridge/fixture_replay.rs` and the bridge contract tests, so a stage can check the table against real
+record shapes without Claude Code. What the probes did not observe is listed under "Not observed" in the notes
+and in [the follow-ups](../concerns/planning-session-sandbox-limits.md#planner-commands-native-table-parity).
+
+**Operator end-to-end.** The older round-based end-to-end (`loom/tests/plan_session_bridge_e2e`, rounds
+outside `probes/`) last ran on Claude Code 2.1.312 and tmux 3.6: the first run stalled in `Starting` (the trust
+dialog, fixed), the second never drained the queue (`StopFailure` unregistered, fixed), the third (`a7d644c2`)
+timed out at 120 s waiting for the opening's delivery with state `Idle`; the cause was not diagnosed. Its
+interrupt Stop/StopFailure, `/compact` event order and `$TMPDIR` rounds were never reached. The 2.1.321 probes
+delivered their pastes and queued items through the same bridge, so the stall has not reproduced there, but no
+full-round run has passed since. pty probes (outside tmux) showed a paste at the first `SessionStart` is
+submitted within 0.1 s with the bridge's full launch flags.
 
 ## Rebuilding Ids on a Turn
 
@@ -287,3 +309,41 @@ A new `SessionKind` variant or new fields on `StartRequest`, `LaunchSpec`, `Sand
 - Routes: `/` home (feature cards, standalone shelf), `/f/:feature` the feature's step list and draft-team panel, `/new` the kickoff landing; concept routes are in [plan-server.md](plan-server.md#browser-routes-page-state-and-view-state).
 - Set-only server atoms (`kickoffAtom`, `draftTeamAtom`, `treeAtom`) are never cleared by the server. A consumer scopes them by session id or feature and knows who fills them (`useFileSocket` fills `treeAtom`); a component that reads one unscoped shows another session's state.
 - The Settings reading face and size are per-project preferences through `projectPref` (`plan/chat/prefs.ts`, exported for reuse); see [the reading face](../conventions/web-dashboard-typography.md#planner-reading-face).
+
+## Background tasks in the planner chat
+
+The bridge keeps one `BackgroundTasks` table per planning session (`loom/src/plan_session/bridge/background.rs`, with `background/entry.rs` for the entry and its ranked fields and `background/inputs.rs` for the evidence). It lists every background agent and shell the session launched, from launch to the evidence that ended it. `Idle` keeps its meaning (the main agent waits for input); background work is a separate model, drawn beside it. The table is never persisted: recovery re-reads the spool and the transcripts from offset 0 and rebuilds the same table. Facts about Claude Code 2.1.321 behind it: `loom/tests/fixtures/plan_session/probe-notes.md` ("P1. Background tasks").
+
+### Entries and states
+
+- `BackgroundTask`: `id` (agent id or shell task id), `kind` (`Agent`/`Shell`), `label`, `agent_type`, `tool_use_id`, `started_at`, `last_activity_at`, `state`, and for agents `steps`, last tool and a report preview. `steps` counts assistant entries (one per content block), so the column says "steps".
+- `TaskState`: `Running`, `ToolWait`, `Stalled` are unended; `Done`, `Failed`, `Stopped` are ended (`is_ended`). On the wire `Stalled` is `stalled`, the UI word is "stalled?".
+- Each field keeps the value of its highest-ranked source (`entry.rs` `Rank`): the launching call's description, else the meta's, else the `Stop` list's. `started_at` is the minimum over launch evidence and `last_activity_at` the maximum over evidence naming the task (a `Stop` list never counts, adoption only sets `started_at`), so a replay reads the spool before or after the transcript and gets the same table. A transcript file's timestamps can run backwards (a queue-operation enqueue is written before the records it precedes); `Batch::in_time_order` keys each line by a non-decreasing floor, so a fixture-replay cut-off uses the floored time.
+- Not tracked: teammates (a teammate's meta removes its id for good; `DraftTeamPanel` shows them) and a `type: "subagent"` `Stop` entry with an unknown id.
+
+### Launch evidence
+
+Each of these creates an entry or fills the fields it lacks: an `Agent`/`Task` `tool_result` with `toolUseResult.status == "async_launched"` (every Agent call launches this way); a `SubagentStart`; a `<forked-skill-launch>` system record; a `Bash` `tool_result` with `toolUseResult.backgroundTaskId`; and a `Stop` list entry of `type: "shell"` with an unknown id, which adopts a shell launched inside a subagent as a session-level shell entry (no `tool_use_id`, label from the list). Subagent transcripts are not parsed for shell launches. A `SubagentStart` stamped after an agent's end reopens it (Claude Code re-wakes one agent id many times).
+
+### A task ends only on evidence
+
+- **The `Stop` list.** Each main `Stop` payload carries `background_tasks`, the running tasks of the session; an unended entry that started before that list's `received_at` and is absent from it ends `Done`. The rule holds in either read order. A `SubagentStop` list lags (the stopping agent still lists itself) and is never read. Bridge contracts give every `Stop` a `background_tasks` list; a `Stop` without the key is never relied on to mean an empty list.
+- **The notification** gives the outcome: `<status>` `completed` is `Done`, `failed` is `Failed`, anything else `Stopped`, read from the status element and never the summary wording (`transcript/notification.rs`). It still opens the main agent's turn as `SelfStarted`; the table call sits beside that path. It sets the outcome of an entry the list already ended (`Done` becomes `Failed`) and sends no second `SubagentStopped`. An unknown id adds an ended entry. The interim agent variant ("is waiting on its own background work") ends the agent like `finished`.
+- **`TaskStop`** `tool_result` (`toolUseResult.task_id`) ends a known entry `Stopped`; a stopped shell sends no notification, so this result and the next `Stop` list are its only end evidence.
+- **Agent evidence, known ids only:** the hand-back record, the `tool_result` with `toolEndsTurn`, meta `finished: true` (read once by `AgentFeed::classify`, so it counts after a restart) and a `SubagentStop` whose `agent_id` is in the table; a `SubagentStop` for an unknown id (an internal fork, `agent_type: ""`) is ignored. A list-only (weak) end yields to `TaskStop`, agent evidence or a notification, and a reopen needs an agent assistant record or a `SubagentStart` stamped after `ended_at` (the killed agent writes user records after its `TaskStop`).
+- **Stall.** An agent with none of this evidence turns `Stalled` when its transcript has been quiet past `STALL_BUDGET` (600 s, `bridge/session.rs`); it stays in the table and later evidence ends it. Shells never stall. `BackgroundTasks::reevaluate(now, stall_budget)` runs on the driver tick, takes no debounce (the fold state is cached per agent at line time, so a tick calls no fold and allocates nothing until a stall) and is the only call that reads a clock.
+- **`SubagentStopped`** is sent once per agent id, ever (the stopped-once set survives clears), so `Attribution::on_subagent_stopped` costs the transcript once.
+- **Clearing.** One Escape proves nothing about any task. `agents_killed` clears every entry; `SessionStart` with source `startup`, `resume` or `clear` and `SessionEnd` clear the table; `compact` keeps it.
+
+### Close gate and Restore
+
+`on_idle` (`bridge/driver.rs`) closes a summary or ending session at a `Stop` only when `BackgroundTasks::blocking() == 0`: agent entries in `Running` or `ToolWait`; shell, `Stalled` and ended entries do not block. The contracts `a-summary-session-waits-for-a-launched-agent` and `closing_contract_tests.rs`/`tests_end.rs` fail when the check is dropped. Restore on the web is blocked while any entry is unended (adopted shells and `stalled?` included) because a background task can still write files.
+
+### Transport
+
+- **Bridge event.** `BridgeEvent::Background { id, tasks }` is sent when the table changes, coalesced to one per driver tick (a flag set by each change, flushed in the timers after `reevaluate`); `SubagentStopped` stays immediate. `SessionView` carries no running-subagent count; `ChatSnapshot`, `ChatDelta` and `EndedChat` carry the changed view.
+- **Plan server.** `plan_server/chat/background/` (`mod.rs`, `groups.rs`, `state.rs`) registers its own bridge listener and hub `on_open` hook for the chat session only, runs the `planner-tokens` thread (see [token-flow-sources](token-flow-sources.md#planner-token-pass)) and joins the table with the token rows by agent id outside the bridge mutex: a flow row with no table entry is dropped, a table row with no flow row shows no token figures. `PlanMessage::Background { session, tasks }` (`wire/background.rs`, fixture `web/src/plan/api/fixtures/background.json`) carries `{model, total, tokens_per_min, active}` per task, broadcasts when the table changes or an active agent's total or rate changes (at most once per 5 s pass), is replayed by `snapshots()`, and on `Ended` or an emptied table sends an empty frame. Strings from transcripts, meta files and `Stop` lists go through `inline_safe` before they leave. The web side is in [planner-web-shell](planner-web-shell.md#background-tasks-and-the-command-list).
+
+### Limits
+
+Open items from review: [the follow-ups](../concerns/planning-session-sandbox-limits.md#planner-background-table-open-items). The contracts that pin this table: `bridge/background_contract_tests.rs`, `plan_server/chat/background/contract_tests.rs`, `tokens/planner_contract_tests.rs` and the web `background.contracts.test.tsx`.
