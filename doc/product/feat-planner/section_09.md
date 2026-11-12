@@ -133,7 +133,7 @@ The **starting-point block** is generated per session:
 ## Starting point
 
 Step: 2, Product spec.
-Target: doc/product/<feature>/section_05.md, listed in the vision as "05 | Concept mode | The two overviews, …".
+Target: doc/product/<feature>/section_05.md, listed in the vision as "05 | Concept mode | The product overview, …".
 Skill: loom-plan:section.
 
 Project state at launch (it may change; re-read the files before relying on it):
@@ -264,6 +264,11 @@ The `Plan follow-ups` offer opens this skill with the message `Append follow-up 
 from (section 11, "After plans complete").
 
 ### `loom-plan:plan`: one loom plan
+
+A feature plan or draft-all session requires a settled metaplan, or one that is not settleable
+because every plan is done. Draft, revised, stub-changed and upstream-changed metaplans block
+the start; the offer says "Settle the metaplan first". A free chat asks the user to settle it
+first. Plan follow-ups are not gated.
 
 Target: `doc/plans/<feature>/PLAN-<slug>.md`, the slug the metaplan entry names. A standalone
 plan targets `doc/plans/PLAN-<slug>.md` with `Implements: none` and has no metaplan.
@@ -421,7 +426,13 @@ Sessions record each decision as it is made, so a crash loses at most the open q
 the document it binds, in plain words a reader without the chat understands, with the reason when
 the reason is not obvious.
 
-When the session ends (section 07, "Interrupt and end"), the server delivers this message:
+When an agent judges its work complete, it writes settled decisions and every open point under
+`## Open questions` in the documents, then ends its final assistant text with a fenced `loom-done`
+block containing `{"decisions": [...], "questions": [...]}`. Only the final block of the last
+assistant text counts. The chat closes at Stop after background agents drain; a queued or delivering
+user message cancels the end. The bridge sends no closing message for this end.
+
+When the user ends the session (section 07, "Interrupt and end"), the server delivers this message:
 
 ```text
 loom plan is ending this session; nobody will answer further questions.
@@ -491,7 +502,7 @@ subagent per document summary, then the overviews itself. Its opening message li
 
 ```text
 loom plan: rebuild summaries.
-Rebuild: feat-planner/product/section_03, plans/delivery-truth, overview/feat-planner/product, overview/feat-planner/engineering.
+Rebuild: feat-planner/product/section_03, plans/delivery-truth, overview/feat-planner/product.
 Load the skill loom-plan:summaries.
 ```
 

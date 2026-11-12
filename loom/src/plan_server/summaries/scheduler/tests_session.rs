@@ -17,7 +17,7 @@ fn minutes(at: Instant, minutes: u64) -> Instant {
 fn a_gap_between_claim_waves_does_not_stop_the_session() {
     let (mut s, stub, now) = setup();
     let mut batch = ids(&["d1", "d2"]);
-    batch.push("overview/demo/engineering".into());
+    batch.push("overview/demo/product".into());
     s.on_update(&batch, &batch, now, &stub);
     s.claims_changed("s1", &batch[..2], now, &stub);
     s.claims_changed("s1", &[], now, &stub);

@@ -4,12 +4,12 @@ import { PaceChoice } from "@/plan/feature/pace";
 import { hasGaps, Queue, type QueueKind } from "@/plan/feature/queue";
 import { useFeature } from "@/plan/feature/use-feature";
 
-const QUEUE_KIND: Record<GapScope, QueueKind> = { product: "section", engineering: "plan" };
+const QUEUE_KIND: Record<GapScope, QueueKind> = { product: "section", metaplan: "plan" };
 
 /**
- * What is still to write, above the overview text: the pace choice, the draft team while one is
+ * What is still to write, above the page text: the pace choice, the draft team while one is
  * working, and the queue of documents while any is missing. `ConceptRoute` renders it through its
- * `above` slot, so the overview keeps its own column and scroll container. The block stays empty
+ * `above` slot, so the page keeps its own column and scroll container. The block stays empty
  * (and hidden) when nothing is left to write; the way to Coverage is the spine's row, which the
  * Product spec group ends with.
  */

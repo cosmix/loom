@@ -30,7 +30,6 @@ const NESTED_MEMBER = /^A plan starts from a short statement of intent/;
 function serveOverview(overview: Page = clone(overviewFixture)): void {
   pages = {
     "overview/demo/product": { ...overview, key: "overview/demo/product" },
-    "overview/demo/engineering": { ...overview, key: "overview/demo/engineering" },
     "demo/product/section_01": clone(summaryFixture),
     "demo/product/section_02": {
       ...clone(summaryFixture),

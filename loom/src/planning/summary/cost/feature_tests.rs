@@ -7,12 +7,12 @@ use crate::planning::summary::evaluate::fixtures::*;
 use crate::planning::summary::store::is_overview;
 
 #[test]
-fn overview_sizes_and_starting_estimates_have_one_row_per_feature_and_kind() {
+fn overview_sizes_and_starting_estimates_have_one_row_per_feature() {
     let fx = two_features();
     put(
         &fx.root,
         S2,
-        &section(2, "Outside.", "Outside both overviews."),
+        &section(2, "Outside.", "Outside the product overview."),
     );
     let project = load(&fx.root);
     let evaluation = evaluate(&project, &[]);
@@ -28,20 +28,16 @@ fn overview_sizes_and_starting_estimates_have_one_row_per_feature_and_kind() {
     assert_eq!(
         estimate.per_summary,
         [
-            (ENGINEERING.to_string(), 150_000),
             (PRODUCT.to_string(), 150_000),
-            ("overview/other/engineering".to_string(), 150_000),
             ("overview/other/product".to_string(), 150_000),
         ]
     );
-    assert_eq!(estimate.tokens, 600_000);
+    assert_eq!(estimate.tokens, 300_000);
     assert_eq!(sizes[PRODUCT], sizes[ID1]);
-    assert_eq!(sizes[ENGINEERING], sizes["plans/x"]);
     assert_eq!(
         sizes["overview/other/product"],
         sizes["other/product/section_01"]
     );
-    assert_eq!(sizes["overview/other/engineering"], sizes["plans/y"]);
     assert_ne!(sizes[PRODUCT], sizes["overview/other/product"]);
 }
 
@@ -89,8 +85,7 @@ fn empty_overviews_have_zero_bytes_and_absent_overviews_have_no_rows() {
     let sizes = source_sizes(&project, &evaluate(&project, &[]));
 
     assert_eq!(sizes[PRODUCT], 0);
-    assert_eq!(sizes["overview/other/engineering"], 0);
-    assert!(!sizes.contains_key(ENGINEERING));
+    assert!(sizes.keys().all(|id| !id.ends_with("/engineering")));
     assert!(!sizes.contains_key("overview/other/product"));
     assert!(sizes.contains_key("plans/solo"));
 }

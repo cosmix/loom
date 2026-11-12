@@ -53,6 +53,22 @@ fn authoring_trait_rejects_a_section_offer_in_an_unknown_feature() {
 
 #[test]
 #[serial_test::serial]
+fn write_plan_is_refused_while_the_metaplan_is_unsettled() {
+    let fixture = Fixture::unsettled();
+
+    let error = fixture
+        .render(Some("write-plan:delivery"), None)
+        .unwrap_err();
+
+    assert!(
+        error.to_string().contains("Settle the metaplan first"),
+        "{error:#}"
+    );
+    assert!(!fixture.session.brief().exists());
+}
+
+#[test]
+#[serial_test::serial]
 fn selected_feature_is_written_into_the_brief() {
     let fixture = Fixture::new();
 

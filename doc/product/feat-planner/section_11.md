@@ -377,9 +377,9 @@ in a new browser tab. The dashboard picks its own port from 7373 up, as it alway
 The planning app does not monitor stages; the dashboard does (vision, Non-goals). It shows:
 
 - **Plan states from file names** (section 01, "Plans"): written, running, done, retired, in the
-  spine, in file mode, and in the engineering overview. The spine marks its Run group active while
+  spine, in file mode, and on the metaplan page. The spine marks its Run group active while
   any plan is `IN_PROGRESS-`.
-- **The Run page**, `/f/<feature>/run`: a line for the overall state (nothing running, running with
+- **The Run panel on the metaplan page** (`/f/<feature>/run` redirects there): a line for the overall state (nothing running, running with
   stages merged out of the total, or done), the action that starts a run, the dashboard link when
   the dashboard is up, and one row per plan with its state, each linking to the plan's concept
   page. The global run state covers only the active plan, so the page shows no per-plan progress
@@ -427,7 +427,7 @@ evidence; the ledger holds the triage state.
 
 A finished feature, where every metaplan entry's plan is done, has no primary offer (section
 01) and has no page of its own: it opens where an unfinished feature opens (section 05, the
-landing rule), and its Run page says every plan is done. Follow-ups start on `/new` (section 08):
+landing rule), and its metaplan page says every plan is done. Follow-ups start on `/new` (section 08):
 Follow-up with the feature picked lists the ledger's open findings and questions as suggestions
 under the field, and Start sends the typed text, with any picked suggestions, to the
 `Plan follow-ups` session (`loom-plan:metaplan`, section 09). The session appends entries to
@@ -452,7 +452,7 @@ or "revisit before running" while the plan is written and has not started. The m
 finding ids; the author reads them before the plan is written or run. An entry whose plan is
 running or done carries no mark: its follow-ups are new entries.
 
-Another offer stays on the Run page while any written plan remains:
+Another offer stays on the metaplan page while any written plan remains:
 
 - **Run the next plan** stays offered while any written plan remains: the workspace state table
   above gives `loom init <plan> --clean`.

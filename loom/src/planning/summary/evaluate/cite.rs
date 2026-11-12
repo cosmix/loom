@@ -42,19 +42,11 @@ pub(super) struct Context<'a> {
 }
 
 /// The members and raw sources of overview `id`: a product overview's sections and its feature's
-/// vision, an engineering overview's plans and its feature's metaplans. `None` for an id that
+/// vision. `None` for an id that
 /// names no overview of a known feature.
 pub(crate) fn overview_inputs(project: &Project, id: &str) -> Option<(Vec<String>, Vec<PathBuf>)> {
     let scope = Scope::of(project, id)?;
-    if id.ends_with("/product") {
-        return Some((scope.product, vec![vision_path(&scope.feature)]));
-    }
-    let sources = project
-        .feature(&scope.feature)
-        .into_iter()
-        .flat_map(|feature| feature.metaplans.iter().map(|(path, _)| path.clone()))
-        .collect();
-    Some((scope.engineering, sources))
+    Some((scope.product, vec![vision_path(&scope.feature)]))
 }
 
 impl<'a> Context<'a> {

@@ -123,11 +123,10 @@ fn concept_changes(sent: &Sent) -> Vec<ConceptChanged> {
 
 /// The `concept_changed` naming `ids` and the pages that show them.
 fn changed(ids: &[&str]) -> ConceptChanged {
-    let mut pages: Vec<String> = ids
+    let pages: Vec<String> = ids
         .iter()
         .map(|id| format!("demo/engineering/{}", id.strip_prefix("plans/").unwrap()))
         .collect();
-    pages.push("overview/demo/engineering".into());
     ConceptChanged {
         feature: Some("demo".into()),
         pages,
@@ -204,7 +203,6 @@ fn concept_changes_are_grouped_by_feature_and_exclude_standalone_plans() {
                 pages: owned(&[
                     "demo/engineering/x",
                     "demo/product/section_01",
-                    "overview/demo/engineering",
                     "overview/demo/product",
                 ]),
                 out_of_date: owned(&["demo/product/section_01", "plans/x"]),
@@ -212,7 +210,7 @@ fn concept_changes_are_grouped_by_feature_and_exclude_standalone_plans() {
             },
             ConceptChanged {
                 feature: Some("other".into()),
-                pages: owned(&["other/engineering/y", "overview/other/engineering"]),
+                pages: owned(&["other/engineering/y"]),
                 out_of_date: owned(&["plans/y"]),
                 sources: Vec::new(),
             },

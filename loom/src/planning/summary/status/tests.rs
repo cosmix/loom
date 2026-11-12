@@ -99,7 +99,7 @@ fn human_status_neutralises_a_hostile_session_name() {
 }
 
 #[test]
-fn status_has_a_row_for_each_features_overviews() {
+fn status_has_a_row_for_each_features_product_overview() {
     let fx = two_features();
     let other = "overview/other/product";
     create_claim_as(&fx.paths, other, Some("other-session".into()))
@@ -116,16 +116,13 @@ fn status_has_a_row_for_each_features_overviews() {
         .filter(|row| is_overview(row["id"].as_str().unwrap()))
         .collect();
     let ids: Vec<_> = rows.iter().map(|row| row["id"].as_str().unwrap()).collect();
-    assert_eq!(
-        ids,
-        [PRODUCT, ENGINEERING, other, "overview/other/engineering"]
-    );
+    assert_eq!(ids, [PRODUCT, other]);
     for row in &rows {
         let id = row["id"].as_str().unwrap();
         assert_eq!(row["path"], format!("doc/loom/summaries/{id}.md"));
         assert_eq!(row["source"], Value::Null);
     }
-    assert_eq!(rows[2]["claim"]["session"], "other-session");
+    assert_eq!(rows[1]["claim"]["session"], "other-session");
     assert!(rows[0]["claim"].is_null());
     let rendered = render_status(&report);
     for id in ids {

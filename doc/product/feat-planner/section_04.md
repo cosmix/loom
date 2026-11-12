@@ -23,7 +23,6 @@ command validates them and computes every hash, so no agent ever writes a hash.
 ```text
 doc/loom/summaries/
   overview/<f>/product.md          one product overview per feature with a vision
-  overview/<f>/engineering.md      one engineering overview per feature with a metaplan
   <f>/product/vision.md            one per feature's vision
   <f>/product/section_01.md         one per feature's product section, named after the section file
   <f>/metaplan/index.md            one per feature's metaplan
@@ -31,7 +30,7 @@ doc/loom/summaries/
 ```
 
 A summary's **id** is its path under `doc/loom/summaries/` without `.md`:
-`overview/<f>/product`, `overview/<f>/engineering`, `<f>/product/vision`,
+`overview/<f>/product`, `<f>/product/vision`,
 `<f>/product/section_<nn>`, `<f>/metaplan/index`, or `plans/<slug>`.
 Here `<f>` is a feature name (section 03), and `<nn>` has at least two digits. `plans` and
 `overview` are reserved feature names, so plan and overview ids cannot collide with a feature's
@@ -63,17 +62,13 @@ The vision's summary is built and rebuilt like a section summary. It is not a me
 product overview and not listed among the documents outside it: the product overview cites the
 vision's heading sections directly. A feature's metaplan, `doc/plans/<feature>/index.md`, has a document summary with id
 `<feature>/metaplan/index`, stored at `doc/loom/summaries/<feature>/metaplan/index.md`. Its
-sentences cite that metaplan's passages only. Like the vision summary it is a member of neither overview: the engineering overview
-still cites the metaplan's raw passages and the plan summaries (below).
+sentences cite that metaplan's passages only. It is not a member of the product overview.
 
 **Overview scope.** Each feature has its own scope. Its product overview covers its vision and
-the product sections that vision's table lists (section 01); its engineering overview covers
-its metaplan and the plans in that feature that the metaplan names. The product overview is
-expected only when the feature has a vision; the engineering overview only when it has a
-metaplan, even if either has no members. An unlisted section, or an eligible plan the metaplan of
-its feature does not name, is outside that feature's overview scope: it still gets its document summary,
-and section 05 lists it under the overview instead of in it. An overview's members are the
-document summaries in its scope. Standalone plans belong to no feature's overview scope.
+the product sections that vision's table lists (section 01). The product overview is expected
+when the feature has a vision, even if it has no members. An unlisted section is outside that
+scope: it still gets its document summary, and section 05 lists it under the overview. The
+overview's members are the document summaries in its scope. Plans have their own summaries.
 
 Each summary is its own file with its own manifest entry, so a git merge of two people's
 rebuilds conflicts only when both rebuilt the same summary (vision, Decisions). There is no
@@ -155,9 +150,9 @@ Rules for the body, enforced when the summary is sealed (below):
   sentences.
 - **An overview cites document-summary sentences and raw passages.** It links a document
   summary's sentence by the sentence's id as fragment (`#s-3fa9c2d1`), and links heading
-  sections of its feature's vision (product overview) or metaplan (engineering overview) directly;
+  sections of its feature's vision directly;
   the vision's own summary is not one of its members. Every document in the overview's scope must be cited by
-  at least one overview sentence, so no section or plan drops out of the overview silently.
+  at least one overview sentence, so no section drops out of the overview silently.
 - **An overview sentence draws on at least two member sentences.** A sentence that cites member
   sentences cites at least two of them and says what they add up to; the seal rejects a sentence
   that cites exactly one, unless that member's summary holds a single citable sentence.
@@ -176,7 +171,7 @@ text, a rebuild that keeps a sentence word for word keeps the overview links int
 | Key       | In       | Value                                                                                                           |
 | --------- | -------- | --------------------------------------------------------------------------------------------------------------- |
 | `kind`    | both     | `document` or `overview`                                                                                        |
-| `of`      | both     | the source file's path (document), or `overview/<f>/product` / `overview/<f>/engineering` (overview)            |
+| `of`      | both     | the source file's path (document), or `overview/<f>/product` (overview)            |
 | `file`    | document | hash of the whole source file                                                                                   |
 | `bundle`  | plan     | brief path to the hash of that whole brief file, for every file of the plan's brief bundle                      |
 | `cites`   | both     | `path#anchor` to the hash of that span, for every raw passage the body links                                    |
@@ -367,7 +362,7 @@ session that seals nothing for 10 minutes is stopped, its claims are released, a
 summaries it held are shown as failed with the last `seal` error. (My call.)
 
 **Models.** Document summaries (one per product section, one per plan) are built on Haiku at
-high effort by default. Overviews (product and engineering) and the background summary session
+high effort by default. Product overviews and the background summary session
 default to Sonnet at high effort, because an overview joins many documents. The user selects the background summary backend with
 `[plan] summary_backend`: `claude` (default) or `codex`. The Claude backend uses the interactive
 session above. The Codex backend runs `codex exec` in the background with the workspace-write

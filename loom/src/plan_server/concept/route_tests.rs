@@ -97,6 +97,21 @@ fn dot_dot_key_400() {
 }
 
 #[test]
+fn non_product_overviews_400() {
+    if skip("non_product_overviews_400") {
+        return;
+    }
+    let server = served(&fixtures::two_sections(), open());
+    let cookies = bootstrap(&server);
+    for scope in ["engineering", "metaplan"] {
+        let path = format!("/api/concept/overview/demo/{scope}");
+        let response = get(&server, &path, &cookies);
+        assert_eq!(status(&response), 400, "{response}");
+        assert_eq!(json_body(&response)["error"], "bad_page");
+    }
+}
+
+#[test]
 fn post_refused() {
     if skip("post_refused") {
         return;
@@ -218,24 +233,20 @@ fn page_keys_for_a_summary() {
         ("doc/plans/demo/PLAN-a.md", "# A\n"),
     ]);
     let project = fixtures::load(&fixture.root);
-    let keys = |id| page_keys(id, &store::scope(&project, "demo"));
+    let keys = |id: &str| page_keys(id, &store::scope(&project, "demo"));
     assert_eq!(
         keys("demo/product/section_01"),
         ["demo/product/section_01", "overview/demo/product"]
     );
     assert_eq!(keys("demo/product/section_03"), ["demo/product/section_03"]);
-    assert_eq!(
-        keys("plans/a"),
-        ["demo/engineering/a", "overview/demo/engineering"]
-    );
+    assert_eq!(keys("plans/a"), ["demo/engineering/a"]);
     assert!(keys("plans/zzz").is_empty());
     assert_eq!(keys("demo/metaplan/index"), ["demo/metaplan/index"]);
     assert!(keys("other/metaplan/index").is_empty());
     assert_eq!(keys("overview/demo/product"), ["overview/demo/product"]);
-    assert_eq!(
-        keys("overview/demo/engineering"),
-        ["overview/demo/engineering"]
-    );
+    for scope in ["engineering", "metaplan"] {
+        assert!(keys(&format!("overview/demo/{scope}")).is_empty());
+    }
 }
 
 /// The sentences of `blocks`.
@@ -249,28 +260,23 @@ fn sentences_of(blocks: &[Block]) -> Vec<&Sentence> {
 
 #[test]
 fn a_citation_of_a_summary_whose_document_is_gone_is_dropped_and_the_rest_load() {
-    let (gone, kept) = ("doc/plans/demo/PLAN-a.md", "doc/plans/demo/PLAN-b.md");
-    let fixture = fixtures::fixture(&[
-        (
-            fixtures::META,
-            &fixtures::metaplan(&["PLAN-a.md", "PLAN-b.md"]),
-        ),
-        (gone, "# Plan: a\n\nDoes a.\n"),
-        (kept, "# Plan: b\n\nDoes b.\n"),
-    ]);
-    fixtures::seal_document(&fixture.root, "plans/a", &[("Plan a does.", "plan-a")]);
-    fixtures::seal_document(&fixture.root, "plans/b", &[("Plan b does.", "plan-b")]);
+    let fixture = fixtures::two_sections();
+    fixtures::seal_document(&fixture.root, ID1, &[("Section one holds.", "a")]);
+    fixtures::seal_document(&fixture.root, fixtures::ID2, &[("Section two holds.", "a")]);
     fixtures::seal_overview(
         &fixture.root,
-        "overview/demo/engineering",
-        &[("plans/a", "Plan a does."), ("plans/b", "Plan b does.")],
+        "overview/demo/product",
+        &[
+            (ID1, "Section one holds."),
+            (fixtures::ID2, "Section two holds."),
+        ],
         &[],
     );
-    std::fs::remove_file(fixture.root.join(gone)).expect("remove the plan");
+    std::fs::remove_file(fixture.root.join(fixtures::S1)).expect("remove the section");
 
     let project = fixtures::load(&fixture.root);
     let eval = evaluate(&project, &[]);
-    let key = PageKey::parse("overview/demo/engineering").expect("key");
+    let key = PageKey::parse("overview/demo/product").expect("key");
     let page = load_page(&project, &eval, &key, &PageContext::default()).expect("page");
     let cited: Vec<&Citation> = sentences_of(&page.blocks)
         .into_iter()
@@ -283,7 +289,11 @@ fn a_citation_of_a_summary_whose_document_is_gone_is_dropped_and_the_rest_load()
             Citation::Source { .. } => None,
         })
         .collect();
-    assert_eq!(summaries, ["plans/b"], "plans/a has no page to load");
+    assert_eq!(
+        summaries,
+        [fixtures::ID2],
+        "section one has no page to load"
+    );
 
     if skip("a_citation_of_a_summary_whose_document_is_gone") {
         return;

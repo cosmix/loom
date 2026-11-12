@@ -22,11 +22,6 @@ const pages: { key: string; parts: PageKeyParts; href: string }[] = [
     href: "/f/demo/product",
   },
   {
-    key: "overview/demo/engineering",
-    parts: { kind: "overview", feature: "demo", scope: "engineering" },
-    href: "/f/demo/engineering",
-  },
-  {
     key: "demo/product/section_01",
     parts: { kind: "summary", feature: "demo", scope: "product", doc: "section_01" },
     href: "/f/demo/product/section_01",
@@ -88,6 +83,7 @@ describe("concept page keys", () => {
     "demo/metaplan/Index",
     "demo/metaplan/-x",
     "overview/demo/metaplan",
+    ["overview", "demo", "engineering"].join("/"),
   ])("rejects invalid key %j", (key) => {
     expect(parsePageKey(key)).toBeNull();
     expect(docKindOfPageKey(key)).toBeNull();
@@ -120,7 +116,6 @@ describe("concept page keys", () => {
 
   it.each([
     { key: "overview/demo/product", overview: true, scope: "product", feature: "demo" },
-    { key: "overview/demo/engineering", overview: true, scope: "engineering", feature: "demo" },
     { key: "demo/product/section_01", overview: false, scope: "product", feature: "demo" },
     { key: "demo/engineering/plan", overview: false, scope: "engineering", feature: "demo" },
     { key: "plans/plan", overview: false, scope: "engineering", feature: null },
@@ -133,7 +128,6 @@ describe("concept page keys", () => {
 
   it.each([
     ["overview/demo/product", "vision"],
-    ["overview/demo/engineering", "metaplan"],
     ["demo/product/section_01", "section"],
     ["demo/product/vision", "vision"],
     ["demo/engineering/plan", "plan"],
@@ -145,6 +139,10 @@ describe("concept page keys", () => {
 });
 
 describe("concept page URLs", () => {
+  it("uses the metaplan for the plans area", () => {
+    expect(overviewKey("demo", "engineering")).toBe("demo/metaplan/index");
+    expect(pageHref(overviewKey("demo", "engineering"))).toBe("/f/demo/metaplan");
+  });
   it.each(pages)("round trips $key through $href", ({ key, href }) => {
     expect(pageHref(key)).toBe(href);
     expect(pageKeyOfPath(href)).toBe(key);
@@ -167,6 +165,7 @@ describe("concept page URLs", () => {
     "/",
     "f/demo/product",
     "/f/demo/other",
+    "/f/demo/engineering",
     "/f/demo/product/",
     "/f/demo/product/a/b",
     "/plans/a/b",
@@ -187,7 +186,6 @@ describe("concept page URLs", () => {
 describe("summary ids", () => {
   it.each([
     "overview/demo/product",
-    "overview/demo/engineering",
     "demo/product/section_01",
     "demo/product/section_123",
     "demo/product/vision",

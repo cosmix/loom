@@ -5,8 +5,7 @@ use std::path::Path;
 
 use super::{seal, SealError};
 use crate::planning::summary::evaluate::fixtures::{
-    fixture, metaplan, put, seal_document, section, two_sections, Fixture, ENGINEERING, ID1, ID2,
-    PRODUCT,
+    fixture, metaplan, put, seal_document, section, two_sections, Fixture, ID1, ID2, PRODUCT,
 };
 use crate::planning::summary::format::{parse, sentence_id, SummaryFile};
 use crate::planning::summary::store::{link_from_summary, resolve_link, summary_path};
@@ -30,7 +29,6 @@ const A1: &str = "Alpha one holds.";
 const A2: &str = "Alpha two holds.";
 const ID3: &str = "demo/product/section_03";
 const VISION_LINK: &str = "[v](../../../../product/demo/index.md#specification-sections)";
-const METAPLAN_LINK: &str = "[m](../../../../plans/demo/index.md#metaplan)";
 
 /// `two_sections` with both document summaries sealed, so an overview draft carries only the
 /// defect under test.
@@ -38,17 +36,6 @@ fn sealed_sections() -> Fixture {
     let f = two_sections();
     seal_document(&f.root, ID1, &[(A1, "a")]);
     seal_document(&f.root, ID2, &[(A2, "a")]);
-    f
-}
-
-/// A metaplan listing `PLAN-b.md` and the sealed summary of that plan.
-fn sealed_plan() -> Fixture {
-    let meta = metaplan(&["PLAN-b.md"]);
-    let f = fixture(&[
-        ("doc/plans/demo/index.md", &meta),
-        ("doc/plans/demo/PLAN-b.md", "# Plan: B\n\nDoes b.\n"),
-    ]);
-    seal_document(&f.root, "plans/b", &[("B does b.", "plan-b")]);
     f
 }
 
@@ -276,17 +263,6 @@ fn overview_cannot_cite_a_raw_passage_outside_its_sources() {
         rejections(seal_text(&f, PRODUCT, &overview_draft(&links))),
         ["7: link target doc/product/demo/section_01.md is not a source of summary overview/demo/product"]
     );
-    // Engineering takes its passages from the metaplans, not from the plans themselves.
-    let f = sealed_plan();
-    let links = [
-        member("plans/b", "B does b."),
-        METAPLAN_LINK.to_string(),
-        "[p](../../../../plans/demo/PLAN-b.md#plan-b)".to_string(),
-    ];
-    assert_eq!(
-        rejections(seal_text(&f, ENGINEERING, &overview_draft(&links))),
-        ["7: link target doc/plans/demo/PLAN-b.md is not a source of summary overview/demo/engineering"]
-    );
 }
 
 #[test]
@@ -306,12 +282,6 @@ fn overview_must_cite_its_source_documents() {
     assert_eq!(
         rejections(seal_text(&f, PRODUCT, &overview_draft(&links))),
         ["1: source doc/product/demo/index.md is not cited"]
-    );
-    let f = sealed_plan();
-    let links = [member("plans/b", "B does b.")];
-    assert_eq!(
-        rejections(seal_text(&f, ENGINEERING, &overview_draft(&links))),
-        ["1: source doc/plans/demo/index.md is not cited"]
     );
 }
 

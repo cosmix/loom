@@ -16,7 +16,7 @@ export const FIRST_METAPLAN = "index";
 
 /** The validated components of a concept page key. */
 export type PageKeyParts =
-  | { kind: "overview"; feature: string; scope: ConceptScope }
+  | { kind: "overview"; feature: string; scope: "product" }
   | { kind: "summary"; feature: string; scope: ConceptScope; doc: string }
   | { kind: "standalone"; doc: string };
 
@@ -40,7 +40,7 @@ export function parsePageKey(key: string): PageKeyParts | null {
   }
   if (parts.length !== 3) return null;
   if (first === "overview" && isFeatureName(second)) {
-    if (third === "product" || third === "engineering") {
+    if (third === "product") {
       return { kind: "overview", feature: second, scope: third };
     }
     return null;
@@ -60,7 +60,7 @@ export function parsePageKey(key: string): PageKeyParts | null {
 export function docKindOfPageKey(key: string): DocKind | null {
   const parts = parsePageKey(key);
   if (parts === null) return null;
-  if (parts.kind === "overview") return parts.scope === "product" ? "vision" : "metaplan";
+  if (parts.kind === "overview") return "vision";
   if (parts.kind === "summary" && parts.scope === "metaplan") return "metaplan";
   if (parts.kind === "summary" && parts.scope === "product") {
     return parts.doc === VISION_DOC ? "vision" : "section";
@@ -75,7 +75,9 @@ export function isConceptPageKey(key: string): boolean {
 
 /** Format an overview key from a validated feature and scope. */
 export function overviewKey(feature: string, scope: ConceptScope): string {
-  return `overview/${feature}/${scope}`;
+  return scope === "product"
+    ? `overview/${feature}/product`
+    : summaryKey(feature, "metaplan", FIRST_METAPLAN);
 }
 
 /** Format a summary key, using plans/<doc> when the feature is absent. */

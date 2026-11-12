@@ -117,6 +117,7 @@ export const offerViewSchema = z.strictObject({
   id: z.string(),
   kind: offerKindSchema,
   label: z.string(),
+  blocked_reason: z.string().nullable().optional(),
   target: z.string().nullable(),
   feature: z.string().optional(),
   number: z.number().int().min(0).max(4294967295).optional(),

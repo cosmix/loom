@@ -152,16 +152,21 @@ export function Spine({
       <div id={bodyId} className="plan-spine__body">
         {!sample && <SpineHead feature={checklist.feature} />}
         <ol className="plan-spine__groups">
-          {groups.map((group) => (
-            <GroupRow
-              key={group.id}
-              group={group}
-              pathname={rowPath}
-              here={group.id === here}
-              open={sample || group.id === here || opened.includes(group.id)}
-              onToggle={() => toggle(group.id)}
-            />
-          ))}
+          {groups.map((group) => {
+            // The metaplan page is the Plans home, so the plan rows stand under it.
+            const pinned = group.id === here || (group.id === "plans" && here === "metaplan");
+            return (
+              <GroupRow
+                key={group.id}
+                group={group}
+                pathname={rowPath}
+                here={group.id === here}
+                pinned={pinned}
+                open={sample || pinned || opened.includes(group.id)}
+                onToggle={() => toggle(group.id)}
+              />
+            );
+          })}
         </ol>
       </div>
     </nav>

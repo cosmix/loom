@@ -20,12 +20,6 @@ it.each([
   ["/f/atlas/product/section_05", "section", "doc/product/atlas/section_05.md", "section_05"],
   ["/f/atlas/metaplan", "metaplan", "doc/plans/atlas/index.md", "metaplan"],
   [
-    "/f/atlas/engineering",
-    "engineering-overview",
-    "doc/plans/atlas/index.md",
-    "Engineering overview",
-  ],
-  [
     "/f/atlas/engineering/atlas-01-documents",
     "plan",
     "doc/plans/atlas/IN_PROGRESS-PLAN-atlas-01-documents.md",
@@ -61,6 +55,11 @@ it("a plan the loaded checklist does not list has no document, nor does a metapl
   expect(view("/f/atlas/metaplan/index.md")).toEqual(NO_DOCUMENT);
 });
 
+it("the engineering redirect has no document before navigation", () => {
+  expect(view("/f/atlas/engineering")).toEqual(NO_DOCUMENT);
+  expect(view("/f/atlas/engineering", null)).toEqual(NO_DOCUMENT);
+});
+
 it("a standalone plan nobody lists keeps its name and no path", () => {
   expect(view("/plans/unknown")).toEqual({ kind: "plan", path: null, name: "unknown" });
 });
@@ -76,7 +75,7 @@ it("a feature with no vision or metaplan has no document on its overview pages",
 it("pages that show no document of their own have none, whatever the checklist holds", () => {
   const bare = checklist({ has_product: false, metaplans: [], sections: [] });
   expect(view("/f/atlas/pressure", bare)).toEqual(NO_DOCUMENT);
-  // `/f/<f>/run` only redirects to the Plans overview, which names the metaplan once it lands.
+  // `/f/<f>/run` only redirects to the metaplan page, which names the metaplan once it lands.
   expect(view("/f/atlas/run", bare)).toEqual(NO_DOCUMENT);
   expect(view("/f/atlas/findings")).toEqual(NO_DOCUMENT);
 });
@@ -86,7 +85,6 @@ it.each([
   "/f/atlas/product",
   "/f/atlas/product/section_05",
   "/f/atlas/metaplan",
-  "/f/atlas/engineering",
   "/f/atlas/engineering/atlas-01-documents",
 ])("with no checklist %s keeps its kind and name and has no path", (pathname) => {
   const shown = view(pathname, null);
@@ -100,7 +98,6 @@ it.each([
   "/f/beta/product",
   "/f/beta/product/section_05",
   "/f/beta/metaplan",
-  "/f/beta/engineering",
   "/f/beta/engineering/atlas-01-documents",
 ])("%s reads no path from the checklist of another feature", (pathname) => {
   // checklistAtom keeps the last visited feature's checklist while the route has moved on.

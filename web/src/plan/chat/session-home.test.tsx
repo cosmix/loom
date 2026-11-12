@@ -241,7 +241,7 @@ it("Cancel on this screen's own session ends the matter: no second confirm, even
   expect(vi.mocked(window.confirm).mock.calls[0]?.[0]).toMatch(CONFIRM);
   expect(endChat).not.toHaveBeenCalled();
   await act(async () => {});
-  await act(() => router.navigate("/f/alpha/engineering"));
+  await act(() => router.navigate("/f/alpha/metaplan"));
   await act(() => router.navigate("/f/alpha/product"));
   expect(window.confirm).toHaveBeenCalledTimes(1);
   expect(startChat).not.toHaveBeenCalled();

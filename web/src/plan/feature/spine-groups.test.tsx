@@ -76,7 +76,10 @@ describe("hostile names and marks", () => {
   });
 
   it("draws a plan whose state names an Object.prototype member as a plain draft glyph", () => {
-    renderSpine("/f/atlas/engineering", atlas({ plan_rows: [plan("atlas-03", "constructor")] }));
+    renderSpine(
+      "/f/atlas/engineering/atlas-01",
+      atlas({ plan_rows: [plan("atlas-03", "constructor")] }),
+    );
 
     const glyphs = planRow("atlas-03").querySelectorAll(".plan-spine__glyph");
     // An unknown state falls back to the draft glyph; the state string is never an icon lookup.
@@ -96,7 +99,7 @@ describe("the pressure record on a plan row", () => {
       withDate("atlas-01", "written", "2026-10-20"),
       withDate("atlas-02", "written", null),
     ];
-    renderSpine("/f/atlas/engineering", atlas({ plan_rows: rows }));
+    renderSpine("/f/atlas/engineering/atlas-01", atlas({ plan_rows: rows }));
 
     expect(planRow("atlas-01").textContent).toBe("01 Pressure-tested 2026-10-20");
     expect(planRow("atlas-02").textContent).toBe("02 Not pressure-tested");
@@ -108,7 +111,7 @@ describe("the pressure record on a plan row", () => {
       withDate("atlas-02", "done", "2026-10-01"),
       withDate("atlas-03", "retired", "2026-09-01"),
     ];
-    renderSpine("/f/atlas/engineering", atlas({ plan_rows: rows }));
+    renderSpine("/f/atlas/engineering/atlas-01", atlas({ plan_rows: rows }));
 
     expect(planRow("atlas-01").textContent).toContain("Not pressure-tested");
     expect(planRow("atlas-02").textContent).toContain("Pressure-tested 2026-10-01");
@@ -116,7 +119,7 @@ describe("the pressure record on a plan row", () => {
   });
 
   it("has no Pressure test group", () => {
-    renderSpine("/f/atlas/engineering");
+    renderSpine("/f/atlas/engineering/atlas-01");
 
     expect(within(spine()).queryByRole("link", { name: /^Pressure test\b/ })).toBeNull();
   });
@@ -126,7 +129,7 @@ describe("the pressure record on a plan row", () => {
       withDate("atlas-01", "done", "2026-10-20"),
       withDate("atlas-02", "retired", null),
     ];
-    renderSpine("/f/atlas/engineering", atlas({ plan_rows: rows }));
+    renderSpine("/f/atlas/engineering/atlas-01", atlas({ plan_rows: rows }));
 
     // The glyph's tooltip is its word, the name reads it after the short slug, and the slug is the
     // row's only visible text; the pressure record has no glyph (the plan page draws the flask).
@@ -173,7 +176,7 @@ describe("the pressure record on a plan row", () => {
   });
 
   it("draws no badge on any row and reads the record on plan rows only", () => {
-    renderSpine("/f/atlas/engineering");
+    renderSpine("/f/atlas/engineering/atlas-01");
 
     const anchors = within(spine()).getAllByRole("link");
     expect(anchors.some((anchor) => anchor.querySelector(".plan-spine__badge") !== null)).toBe(

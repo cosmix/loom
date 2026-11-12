@@ -58,7 +58,7 @@ const METAPLAN_OFFER = {
 } as const;
 
 const EMPTY_METAPLAN: EmptyState = {
-  kind: "no_metaplan",
+  kind: "no_vision",
   count: null,
   offer: "start-metaplan",
   docs: [],
@@ -72,7 +72,7 @@ function writableStore() {
   return store;
 }
 
-/** The empty `no_metaplan` overview, drawn at `path` (a route with `:feature` or none at all). */
+/** The empty `no_vision` overview, drawn at `path` (a route with `:feature` or none at all). */
 function renderEmptyMetaplan(store: ReturnType<typeof createStore>, path: string) {
   const page = conceptPageSchema.parse({ ...overviewFixture, empty: EMPTY_METAPLAN });
   const element = <EmptyStates page={page} empty={EMPTY_METAPLAN} />;
@@ -126,7 +126,7 @@ it("draws the primary offer under its sentence", () => {
   const unregister = registerOfferAction("start_metaplan", vi.fn());
   showMetaplanOffer(METAPLAN_OFFER, []);
 
-  expect(screen.getByText("No metaplan yet")).toBeTruthy();
+  expect(screen.getByText("No product vision yet")).toBeTruthy();
   expect(screen.getByRole("button", { name: "Start the metaplan" })).toBeTruthy();
   unregister();
 });
@@ -229,7 +229,7 @@ it("keeps the key documents and the estimate on a never-built overview", () => {
   expect(screen.getByRole("link", { name: "Planning" })).toBeTruthy();
 });
 
-it.each(["overview/demo/product", "overview/demo/engineering"])(
+it.each(["overview/demo/product"])(
   "links back to the feature's overviews from missing page %s",
   async (pageKey) => {
     render(
@@ -240,8 +240,8 @@ it.each(["overview/demo/product", "overview/demo/engineering"])(
 
     const product = await screen.findByRole("link", { name: "Product overview" });
     expect(product.getAttribute("href")).toBe("/f/demo/product");
-    expect(screen.getByRole("link", { name: "Engineering overview" }).getAttribute("href")).toBe(
-      "/f/demo/engineering",
+    expect(screen.getByRole("link", { name: "Metaplan" }).getAttribute("href")).toBe(
+      "/f/demo/metaplan",
     );
     expect(fetchDoc).not.toHaveBeenCalled();
   },
@@ -262,8 +262,8 @@ it("links a missing section back to its feature's overviews", async () => {
 
   const product = await screen.findByRole("link", { name: "Product overview" });
   expect(product.getAttribute("href")).toBe("/f/demo/product");
-  expect(screen.getByRole("link", { name: "Engineering overview" }).getAttribute("href")).toBe(
-    "/f/demo/engineering",
+  expect(screen.getByRole("link", { name: "Metaplan" }).getAttribute("href")).toBe(
+    "/f/demo/metaplan",
   );
   expect(fetchDoc).toHaveBeenCalledWith("doc/product/demo/section_01.md");
 });

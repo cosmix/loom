@@ -191,7 +191,7 @@ it("pins the whole spine, which holds no removed step and cannot scroll the scen
   const spine = container.querySelector(SPINE)!;
   expect(container.querySelectorAll(SPINE)).toHaveLength(1);
   expect(spine.textContent).not.toContain("Plan review");
-  // Four groups: the pressure test is a plan's record and the run lives on the Plans overview.
+  // Four groups: the pressure test is a plan's record and the run lives on the metaplan page.
   expect(spine.textContent).not.toContain("Pressure test");
   for (const group of ["Vision", "Product spec", "Metaplan", "Plans"]) {
     expect(spine.textContent, group).toContain(group);

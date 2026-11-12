@@ -46,7 +46,7 @@ fn two_features_have_independent_pages_and_payload_features() {
 }
 
 #[test]
-fn engineering_overview_lists_its_feature_without_standalone_plans() {
+fn metaplan_chips_list_its_feature_without_standalone_plans() {
     let fixture = fx::fixture(&[
         (fx::META, &fx::metaplan(&["PLAN-demo-work.md"])),
         ("doc/plans/demo/PLAN-demo-work.md", "# Demo work\n"),
@@ -60,7 +60,7 @@ fn engineering_overview_lists_its_feature_without_standalone_plans() {
     let project = fx::load(&fixture.root);
     let eval = evaluate(&project, &[]);
     let ctx = PageContext::default();
-    let key = PageKey::parse("overview/demo/engineering").unwrap();
+    let key = PageKey::parse("demo/metaplan/index").unwrap();
 
     let page = load_page(&project, &eval, &key, &ctx).unwrap();
 

@@ -163,10 +163,11 @@ never shown. Its turn is drawn as the ending (below). (My call.)
 a ring spinner, "Writing down what we decided", and a tick for each document the write
 has reached. When it is done the card reads "Here's what this chat left behind": the documents
 changed with their line counts, the decisions (Decided), and the open questions (Still open),
-read from the `loom-closing` block the closing message asks for (section 09), with a link to
+read from the `loom-closing` or `loom-done` block (section 09), with a link to
 the changes when a document changed. A chat whose closing write never ran or was cut off shows
 the same card from its turns, listing the documents it changed, and only when one changed. A
-chat the user sent no message to has no closing write and no card.
+chat the user sent no message to has no closing write and no card. The raw `loom-done` fence
+is hidden, and New chat after an agent end starts immediately without a wrap-up card.
 
 **Long conversations.** The 20 most recent turns render in full. Older turns render as one line
 each ("Turn 3 · 2 files changed") that expands in place. (My call: a long
@@ -206,9 +207,9 @@ transcript"), added lines in `--tone-completed`, removed lines in `--tone-blocke
 text without loading CodeMirror. The full diff with context is the turn's diff in file mode
 (below). (My call.)
 
-**Grouping.** While a turn runs, every tool row shows as it arrives. When the turn ends, three or
-more consecutive tool rows with no text between them fold into one row, "Used 6 tools · edited 2
-files", that expands to the rows. A row in error or denied stays outside the fold. (My call: the
+**Grouping.** Consecutive tool rows fold into a closed-by-default group, including while the turn
+runs. Its summary, such as "Used 6 tools · edited 2 files", expands to the rows. A row in error
+or denied stays outside the fold. (My call: the
 reader of a finished turn wants the text and the changed files; the tool trail is there on
 demand.)
 
@@ -415,9 +416,9 @@ written into the delivered text, and read back from the transcript, is section 1
 ## Context: what the reader is viewing
 
 The panel knows which document the reader is on. Each page sets a **viewed document**: a kind
-(vision, product overview, section, metaplan, engineering overview, plan, pressure, run, file, or
+(vision, product overview, section, metaplan, plan, pressure, run, file, or
 none), a short name for the chip ("section_05", "Product overview", "metaplan"), and the
-repository-relative source path to attach. The pressure and run pages have no path. The paths:
+repository-relative source path to attach. The pressure page has no path. The paths:
 
 | Kind                 | Source path           |
 | -------------------- | --------------------- |
@@ -425,7 +426,6 @@ repository-relative source path to attach. The pressure and run pages have no pa
 | product overview     | the vision            |
 | section              | the section file      |
 | metaplan             | that metaplan         |
-| engineering overview | the first metaplan    |
 | plan                 | the plan file         |
 | file                 | the file's address    |
 
@@ -445,7 +445,6 @@ repository-relative source path to attach. The pressure and run pages have no pa
    | product overview     | What are the main decisions here? · What is still undecided?                                                  |
    | section              | What does this section decide? · What does this conflict with? · Change this section so that                  |
    | metaplan             | Is the plan order right? · Which plan carries the most risk?                                                  |
-   | engineering overview | What are the main engineering decisions? · What could go wrong?                                               |
    | plan                 | What could go wrong with this plan? · Does this cover what its sections ask for? · Change this plan so that   |
    | pressure             | Which plan should be tested first?                                                                            |
    | run                  | What did the build change compared to the spec?                                                               |
@@ -472,13 +471,13 @@ Rebuilt summaries
   section_02                       left for the background rebuild
 ```
 
-**Changed files.** One file row per entry in section 07's `changed_files`: the path relative to
+**Changed files.** The list folds into one closed-by-default summary, "Changed N files". One file row per entry in section 07's `changed_files`: the path relative to
 `doc/` as monospace text, `+a −b` line counts or "new" / "deleted", and a **Diff** link that opens
 file mode's "What a turn changed" diff for that file and turn (section 06, "Diffs"). While the turn runs the
 list builds as edit results arrive, headed "Changing" instead of "Changed", and the Diff links
 are disabled with the tooltip "Available when the turn ends", since section 06 builds the turn
-diff at the turn's end. A file the turn changed through `Bash` instead of an edit tool
-(`by_tool: false`) is listed the same way with the note "changed during this turn".
+diff at the turn's end. Files changed through `Bash` are listed the same way; the wire retains
+`by_tool` for each file.
 
 A file outside `doc/` that an edit tool changed is listed with a `--tone-warning` glyph and no
 Diff link, since file mode serves only `doc/` (section 06); the note says "outside doc/".
@@ -511,7 +510,7 @@ spending is steered, not in the conversation.)
 A chat starts in one of two ways, all from the browser that will hold authoring:
 
 1. **An offer** (section 01) on the page that owns it: a missing document's page, a queue row on the
-   product or engineering page, the Pressure test or Run page, an empty state's offer (section
+   product or metaplan page, the Pressure test page, an empty state's offer (section
    05), or a missing entry in file mode's tree (section 06). The panel offers none.
 2. **Sending a message** when no chat runs: a new refinement session whose opening message is
    the composer's text and attachments, the viewed document included (below), with the brief of
@@ -538,8 +537,11 @@ When two browsers start a chat at the same moment, the server grants the first; 
 
 ## Ending a chat
 
-The panel has no End chat control. A chat ends when the user starts a new chat, opens another
-offer, or leaves the planner (the holder's grace period, below). Starting a new chat or opening
+The panel has no End chat control. The agent ends a finished chat after recording its decisions
+and open questions in the documents (section 09), without a closing write. A queued or delivering
+user message cancels that end; background agents drain before the chat closes. A user also ends a
+chat by starting a new chat, opening another
+offer, or leaving the planner (the holder's grace period, below). Starting a new chat or opening
 an offer while a chat is live asks first (see "Starting a chat"). The session then shows Ending
 until it reaches Ended (section 07). The closing write runs only when the user sent at least one
 message (section 07); a chat without one ends at once, with no Ending card.

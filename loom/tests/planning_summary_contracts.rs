@@ -233,7 +233,6 @@ fn summary_scope_table() {
         ID,
         "demo/product/section_02",
         "demo/product/vision",
-        ENGINEERING,
         PRODUCT,
         "plans/a",
         "plans/b",
@@ -349,13 +348,6 @@ fn deleted_source_deletes_summary() {
     let y = "# Y\n\nY is planned. [d](#s-946cc169)\n\n\
              Y does y. [§](../../../plans/demo/PLAN-y.md#plan-y)\n";
     sealed(&root, &home, "plans/y", y);
-    let (sx, sy) = (sid("X does x."), sid("Y does y."));
-    let overview = format!(
-        "# Engineering\n\nX is planned. [§](../../plans/x.md#{sx})\n\nY is planned. [§](../../plans/y.md#{sy})\n\n\
-         The metaplan orders them. [§](../../../../plans/demo/index.md#notes)\n"
-    );
-    sealed(&root, &home, ENGINEERING, &overview);
-    assert_eq!(state(&eval(&root, &[]), ENGINEERING), "current");
     fs::remove_file(root.join(PLAN_X)).unwrap();
     put(&root, META, meta.replace("## 2. X (`PLAN-x.md`)\n", ""));
     let mut engine = SummaryEngine::new(root.clone(), paths(&root, &home), OwnWrites::default());
@@ -372,5 +364,5 @@ fn deleted_source_deletes_summary() {
     );
     let listed = update.deleted.contains(&"plans/x".to_string());
     assert!(listed, "not listed as deleted: {:?}", update.deleted);
-    assert_ne!(state(&update.evaluation, ENGINEERING), "current");
+    assert_eq!(state(&update.evaluation, "plans/y"), "current");
 }

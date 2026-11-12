@@ -50,7 +50,7 @@ whichever step the feature is at: vision, product sections, metaplan, plans, pre
 - **File mode.** Browse and read any document: product spec, metaplan, loom plans, briefs, and
   the knowledge base under `doc/loom/knowledge/`.
 - **Concept mode.** Start from a short overview of a feature's product (built from its vision and
-  sections) or of its engineering decisions (built from its metaplan and plans). Opening a
+  sections), or read the metaplan and plan summaries. Opening a
   sentence replaces it in place with the more detailed sentences it summarizes, set in the same
   type and flowing in the same paragraph, so the document grows where the reader is looking;
   opening one of those replaces it with the source passage it came from. Any opened passage
@@ -108,11 +108,11 @@ A feature page has one header row above three columns:
   the header breadcrumb.
 - **Spine**, on the left of every `/f/<feature>` page: a navigation named "Feature documents"
   with one row per group in workflow order (Vision, Product spec, Metaplan, Plans, Run). Each
-  row shows a glyph for its state and a count where it has one. Product spec and Plans expand
-  into an Overview row and one row per section or plan, a plan with its state and a badge,
+  row shows a glyph for its state and a count where it has one. Product spec expands
+  into an Overview row and section rows; Plans links to the metaplan and expands into plan rows, each with its state and a badge,
   "Pressure-tested <date>" or "Not pressure-tested". The
   rows open the real content, and the spine is the only place a feature's progress is drawn. Each
-  document row shows its settle state beside its glyph (draft, revised, settled; section 01).
+  document row shows its settle state beside its glyph (draft, revised, settled; section 01). A done Product spec or Plans head shows an amber "Not all settled" glyph if any child is not settled, done or retired. A running plan row pulses a green dot; the roundel marks only the header activity pill.
   Product spec also holds a Coverage row, and Run holds a Findings row with the count of open
   findings. At its head sit the **frontier hints**: at most five short lines, one link
   each, naming the documents that need attention next, such as a settled section that changed. A
@@ -136,7 +136,9 @@ user messages. Source Serif 4 sets the reading body: concept prose, rendered Mar
 lists and tables, assistant chat text, quoted chat passages and feature pitches. Settings also offers Literata and Piazzolla;
 all three reading faces cover Greek. Reading size is 17, 19 (default) or 21px, with line height
 1.6 and a measure of 68–70 characters. Code, paths and ids use Commit Mono Cosmix. The visual
-design shares the dashboard's components and colour conventions.
+design shares the dashboard's components and colour conventions. Popovers and dialogs have an
+elevated surface distinct from cards, a clear border and a soft shadow or glow in every theme.
+Modal dialogs have a backdrop; the inline Findings fold picker has the same raised surface.
 
 ### What the first screen shows
 
@@ -147,11 +149,11 @@ kickoff conversation. Opening `/f/<feature>` lands on the page where the feature
 | What exists for the feature     | The feature opens on                        |
 | ------------------------------- | ------------------------------------------- |
 | No product spec and no metaplan | The vision page, with the offer to write it |
+| A metaplan, no product spec     | The metaplan page                           |
 | A product spec                  | The product overview                        |
-| No product spec, a metaplan     | The engineering overview                    |
 
-A feature with a product spec opens on the product overview, where its reading starts. The
-offers suggest what to do and never force it; accepting an offer opens a
+A feature with a product spec opens on its product overview, whether or not it also has a
+metaplan. The offers suggest what to do and never force it; accepting an offer opens a
 new session briefed for that step. Refining is available at every step, including after
 everything exists. How "finished", "pressure-tested" and "listed sections" are detected from the
 files is for section 01 to settle.
@@ -251,7 +253,7 @@ Each becomes `doc/product/<feature>/section_NN.md`. Order is a first proposal fo
 | 02  | `loom plan` command and server   | CLI surface, flags, port 7272 and browser launch, lifetime, code shared with `loom status --web`, behaviour without `.loom/work`                                                   |
 | 03  | Document model and conventions   | Which paths hold which documents (`doc/product`, `doc/plans`, briefs, knowledge); discovery rules; how a document declares its kind and its parent; cross-references               |
 | 04  | Summary engine                   | Content hashing, the hash manifest, the invalidation graph, which agents regenerate what and on which model, the store under `doc/loom/summaries/`, cost                           |
-| 05  | Concept mode                     | The two overviews, document summaries, sentence-to-source anchoring, product-to-plan traceability, what the reviewer sees at each level                                            |
+| 05  | Concept mode                     | The product overview, document summaries, sentence-to-source anchoring, product-to-plan traceability, what the reviewer sees at each level                                            |
 | 06  | File mode                        | Navigation, rendering of Markdown and plan YAML, briefs and knowledge, the CodeMirror editor, save-time plan validation, diffs, search                                             |
 | 07  | Session bridge                   | Starting and owning Claude Code sessions in tmux; reading transcript JSONL as structured messages; delivering input; permission and waiting states; several sessions; resume       |
 | 08  | Chat interface                   | Message rendering, tool activity, session states, attaching document passages as context, showing the files a turn changed                                                         |
@@ -307,12 +309,10 @@ Each becomes `doc/product/<feature>/section_NN.md`. Order is a first proposal fo
   stay keyed by their repository-wide unique slug. (`.loom` is gitignored at
   any depth, so a store there would need a negation rule in every repository.)
 - **Summary levels (04, 05).** Two summary levels above the raw text:
-  - _Overviews_: two per feature: one for the product, built from
-    `doc/product/<feature>/index.md` and its sections; one for the engineering decisions, built
-    from its metaplan and plans.
+  - _Product overview_: one per feature with a vision, built from
+    `doc/product/<feature>/index.md` and its sections.
   - _Document summaries_: one for the vision (at most 8 sentences in at most 3 paragraphs), one per
-    product section, one for the feature's metaplan and one per plan. No overview cites a metaplan's summary: an
-    engineering overview sentence that draws on a metaplan links to its source passage. A plan's
+    product section, one for the feature's metaplan and one per plan. A plan's
     summary covers the plan's brief bundle: it has one detail paragraph per stage, citing the
     stage and the briefs that stage's work rests on.
 
@@ -348,8 +348,9 @@ Each becomes `doc/product/<feature>/section_NN.md`. Order is a first proposal fo
   grace period, so a reload or a sleeping laptop does not end the session) and when `loom plan`
   is stopped, which waits for every session to finish writing before it exits; a second Ctrl-C
   exits at once. Because a crash or a kill allows no final write, sessions also record each
-  decision in the documents as it is made (my call), so the closing write only adds the open
-  questions and anything still pending.
+  decision in the documents as it is made. An agent that finishes writes decisions and open
+  questions into the documents and ends the chat itself without a closing write; a user-ended
+  chat runs the closing write.
 - **Embedded editor (06).** File mode embeds CodeMirror 6, loaded as a lazy chunk the way the
   dashboard loads its terminal emulator: Markdown and YAML modes, a live preview mode that draws
   the Markdown styled while the user edits the text itself, with a toggle to plain source
@@ -402,7 +403,7 @@ Each becomes `doc/product/<feature>/section_NN.md`. Order is a first proposal fo
   deliver. A stage that delivers a narrower part carries an `Implements (stage:<id>): ...` line in
   the plan's prose, because stage ids live in the plan's YAML, which gains no field (my call).
   The link from a brief to its stage comes from the bundle path, `briefs/<slug>/<stage-id>/`.
-  Concept mode's links between the two overviews, and the planning trace, come only from these
+  Concept mode's product-to-plan links, and the planning trace, come only from these
   lines, never from inference.
 - **Findings (01, 10, 11).** Each feature keeps one ledger, `doc/plans/<f>/findings.md`, in plain
   Markdown. A completed plan's run review adds its open findings and open questions to it, and a

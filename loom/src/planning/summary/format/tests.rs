@@ -244,8 +244,6 @@ fn sentence_caps_depend_on_the_id() {
     assert_eq!(lines_of(&errors), vec![MAX_PLAN_SENTENCES + 3]);
     assert!(parse_draft("overview/alpha/product", &many(30)).is_ok());
     assert!(parse_draft("overview/alpha/product", &many(31)).is_err());
-    assert!(parse_draft("overview/alpha/engineering", &many(30)).is_ok());
-    assert!(parse_draft("overview/alpha/engineering", &many(31)).is_err());
 }
 
 #[test]

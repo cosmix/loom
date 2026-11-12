@@ -2,6 +2,57 @@
 
 use super::fixtures::*;
 use super::*;
+use crate::planning::summary::{brief, claims, cost::estimate, format, hashes, seal, store, write};
+
+#[test]
+fn removed_overview_ids_are_rejected_without_claiming_or_writing() {
+    let fx = two_features();
+    let project = load(&fx.root);
+    let id = ["overview", "demo", "engineering"].join("/");
+    assert!(store::validate_id(&id).is_err());
+    assert!(!store::is_overview(&id));
+    assert!(store::summary_path(&id).as_os_str().is_empty());
+    assert!(store::Scope::of(&project, &id).is_none());
+    assert!(overview_inputs(&project, &id).is_none());
+    assert!(!store::expected_ids(&project).contains(&id));
+    assert!(brief::brief(&fx.root, &fx.paths, std::slice::from_ref(&id), None).is_err());
+    assert!(claims::create_claim(&fx.paths, &id).is_err());
+    assert!(claims::list_claims(&fx.paths).unwrap().is_empty());
+    assert!(seal::seal(&fx.root, &fx.paths, &id, false).is_err());
+    assert!(write::write_summary(&fx.root, &fx.paths, &id, "# Removed\n", None).is_err());
+    assert!(format::parse_draft(&id, "# Removed\n").is_err());
+    assert!(!fx.root.join(store::STORE_DIR).exists());
+}
+
+#[test]
+fn metaplans_and_plans_add_no_engineering_overview_to_evaluation_or_estimates() {
+    let fx = two_features();
+    let project = load(&fx.root);
+    let evaluation = evaluate(&project, &[]);
+    let overviews: Vec<_> = evaluation
+        .summaries
+        .keys()
+        .filter(|id| store::is_overview(id))
+        .collect();
+    assert_eq!(overviews, [PRODUCT, "overview/other/product"]);
+    let sizes = estimate::source_sizes(&project, &evaluation);
+    let hashes = hashes::input_hashes(&project, &evaluation);
+    for id in [
+        METAPLAN_ID,
+        "other/metaplan/index",
+        "plans/x",
+        "plans/y",
+        "plans/solo",
+    ] {
+        assert!(evaluation.summaries.contains_key(id), "{id}");
+        assert!(sizes.contains_key(id), "{id}");
+        assert!(hashes.contains_key(id), "{id}");
+    }
+    assert_eq!(sizes.len(), evaluation.summaries.len());
+    assert_eq!(hashes.len(), evaluation.summaries.len());
+    assert!(sizes.keys().all(|id| !id.ends_with("/engineering")));
+    assert!(hashes.keys().all(|id| !id.ends_with("/engineering")));
+}
 
 #[test]
 fn editing_one_feature_only_invalidates_its_product_overview() {

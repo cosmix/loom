@@ -27,6 +27,13 @@ fn offer_id_lookup_uses_selected_primary_and_secondary() {
 #[test]
 fn lookup_accepts_draft_all_offers() {
     let (_temp, mut project) = fixture();
+    project.features[0]
+        .trace
+        .documents
+        .iter_mut()
+        .find(|doc| doc.role == crate::planning::trace::DocRole::Metaplan)
+        .unwrap()
+        .settle = crate::planning::trace::SettleState::Settled;
     for offer in [
         Offer::DraftAllSections {
             feature: "f".into(),

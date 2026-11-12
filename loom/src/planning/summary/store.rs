@@ -3,7 +3,7 @@
 //! Public API (paths are repository-relative):
 //! - `STORE_DIR: &str` is `doc/loom/summaries`.
 //! - `validate_id(id: &str) -> anyhow::Result<()>` accepts only
-//!   `overview/<feature>/{product,engineering}`, `<feature>/product/section_<2+ digits>`,
+//!   `overview/<feature>/product`, `<feature>/product/section_<2+ digits>`,
 //!   `<feature>/product/vision`, `<feature>/metaplan/index` and `plans/<slug>`. Features use
 //!   `kinds::is_feature_name`; slugs start with an ASCII alphanumeric, continue with
 //!   `[A-Za-z0-9._-]` and cannot contain `..`.
@@ -17,12 +17,12 @@
 //!   (`doc/plans` or `doc/plans/<feature>`) or be named by a metaplan of their own feature.
 //!   Losing copies and top-level sections are excluded.
 //! - `expected_ids(project: &Project) -> Vec<String>` includes eligible documents and
-//!   each feature's overviews with existing vision/metaplan sources, including empty ones.
+//!   each feature's product overview with an existing vision, including empty ones.
 //! - `scope(project: &Project, feature: &str) -> Scope` computes one feature's ordered
-//!   `product` and `engineering` members and sorted `outside` documents. The vision
-//!   summary (`<feature>/product/vision`) and the metaplan summary (one per feature) are in none of the three
-//!   lists. `Scope.feature` is the requested name; unknown features have empty lists. Other features and standalone
-//!   plans are excluded. Standalone plans remain in `expected_ids`.
+//!   product sections, named `engineering` plans and sorted `outside` documents. The vision
+//!   summary (`<feature>/product/vision`) and the metaplan summary are in none of the three
+//!   lists. `Scope.feature` is the requested name; unknown features have empty lists. Other
+//!   features and standalone plans are excluded. Standalone plans remain in `expected_ids`.
 //! - `Scope::of(project: &Project, overview_id: &str) -> Option<Scope>` selects that
 //!   feature's scope; invalid overview ids and unknown features yield `None`.
 //! - `link_from_summary(summary_id: &str, target_rel: &Path) -> String` builds a relative
@@ -50,8 +50,7 @@ pub fn is_overview(id: &str) -> bool {
 
 fn overview_parts(id: &str) -> Option<(&str, &str)> {
     let (feature, kind) = id.strip_prefix("overview/")?.split_once('/')?;
-    (is_feature_name(feature) && matches!(kind, "product" | "engineering"))
-        .then_some((feature, kind))
+    (is_feature_name(feature) && kind == "product").then_some((feature, kind))
 }
 
 /// The feature of a vision summary id `<feature>/product/vision`, else `None`.
@@ -164,16 +163,16 @@ pub fn summary_id_for(project: &Project, rel: &Path) -> Option<String> {
     validate_id(&id).ok().map(|()| id)
 }
 
-/// One feature's ordered overview members and documents outside either overview.
+/// One feature's ordered product sections, named plans and unlisted documents.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Scope {
-    /// The feature whose documents and overview sources are considered.
+    /// The feature whose documents are considered.
     pub feature: String,
     /// Product sections listed by the vision.
     pub product: Vec<String>,
     /// Plans listed by metaplans.
     pub engineering: Vec<String>,
-    /// Eligible documents of this feature not listed in an overview, sorted by id.
+    /// Eligible documents not listed by the vision or metaplans, sorted by id.
     pub outside: Vec<String>,
 }
 
@@ -239,7 +238,7 @@ fn engineering_members(project: &Project, feature: &Feature) -> Vec<String> {
     members
 }
 
-/// Compute one feature's overview members in source order and its other eligible documents.
+/// Compute one feature's sections and plans in source order and its other eligible documents.
 pub fn scope(project: &Project, feature: &str) -> Scope {
     let mut result = Scope {
         feature: feature.to_owned(),
@@ -266,15 +265,12 @@ pub fn scope(project: &Project, feature: &str) -> Scope {
     result
 }
 
-/// Return eligible document ids and overviews whose source documents exist.
+/// Return eligible document ids and product overviews whose visions exist.
 pub fn expected_ids(project: &Project) -> Vec<String> {
     let mut ids = document_ids(project);
     for feature in &project.features {
         if project.tree.get(&vision_path(&feature.name)).is_some() {
             ids.push(format!("overview/{}/product", feature.name));
-        }
-        if !feature.metaplans.is_empty() {
-            ids.push(format!("overview/{}/engineering", feature.name));
         }
     }
     ids

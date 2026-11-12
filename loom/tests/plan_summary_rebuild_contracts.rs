@@ -110,7 +110,7 @@ fn first_start_asks() {
         .map(|i| format!("demo/product/section_{i:02}"))
         .collect();
     all.extend(plans(8));
-    all.extend(ids(&["overview/demo/product", "overview/demo/engineering"]));
+    all.extend(ids(&["overview/demo/product"]));
     let (now, stub, mut s) = setup(None);
     let events = s.on_update(&all, &all, now, &stub);
     assert!(stub.starts().is_empty(), "missing is not free");

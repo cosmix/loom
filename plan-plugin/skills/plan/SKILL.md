@@ -5,6 +5,10 @@ description: Load when a planning session writes one or more missing loom plans 
 
 # Write a loom plan
 
+Before writing a feature plan, read its metaplan. If it has no `Settled:` line, or
+the user says it changed since settling, stop and ask the user to settle the
+metaplan first.
+
 Use the feature name given in the session's opening prompt. For a feature plan,
 write `doc/plans/<feature>/PLAN-<slug>.md`, its briefs under
 `doc/plans/<feature>/briefs/<slug>/`, and the owning metaplan entry when its scope

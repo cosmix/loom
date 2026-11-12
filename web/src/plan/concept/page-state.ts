@@ -211,23 +211,24 @@ function dashOutOfDate(store: Store, summaries: string[]): void {
 }
 
 /**
- * The pages a delta refetches: the loaded pages it names, plus every loaded page of a feature
- * and scope whose overview it names. The server names the overview when a member's summary
- * state or the key row changes. Every page of that feature and scope embeds that key row,
- * so a sibling the delta does not name is stale too. Each page shows its own fresh response, ordered by
- * its own ticket; no state is copied from one page to another (copying across keys has no
- * order, so an older response could overwrite a newer dash).
+ * The pages a delta refetches: the loaded pages it names, plus the loaded siblings whose key
+ * row embeds a chip the delta changed. The server names the product overview when a section's
+ * summary state or the key row changes, and the metaplan page when any plan chip's state
+ * changes. Every product page of that feature embeds the product key row, and every plan page
+ * of that feature embeds plan chips, so a sibling the delta does not name is stale too. Each
+ * page shows its own fresh response, ordered by its own ticket; no state is copied from one
+ * page to another (copying across keys has no order, so an older response could overwrite a
+ * newer dash).
  */
 function pagesToRefetch(store: Store, named: string[]): string[] {
   const loaded = loadedKeys(store);
   const overviews = new Set(named.filter((key) => parsePageKey(key)?.kind === "overview"));
   const inScope = (key: string) => {
     const parts = parsePageKey(key);
-    return (
-      parts !== null &&
-      parts.kind !== "standalone" &&
-      overviews.has(overviewKey(parts.feature, parts.scope))
-    );
+    if (parts === null || parts.kind === "standalone") return false;
+    if (parts.scope === "product") return overviews.has(overviewKey(parts.feature, parts.scope));
+    // A plan page's chips name sibling plans, which the metaplan page's delta covers.
+    return parts.scope === "engineering" && named.includes(overviewKey(parts.feature, "metaplan"));
   };
   return [...named.filter((key) => loaded.includes(key)), ...loaded.filter(inScope)];
 }

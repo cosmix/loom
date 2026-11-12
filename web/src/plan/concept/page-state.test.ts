@@ -176,7 +176,7 @@ describe("concept_changed", () => {
     const store = connected();
     await loadConceptPage(store, OVERVIEW);
     const stop = subscribeConcept(store);
-    deliver({ pages: ["demo/product/section_01", "overview/demo/engineering"] });
+    deliver({ pages: ["demo/product/section_01", "demo/metaplan/index"] });
     expect(fetchedKeys()).toEqual(["/api/concept/overview/demo/product"]);
     stop();
   });

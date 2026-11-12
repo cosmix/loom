@@ -12,6 +12,7 @@ it.each([
   ["/f/atlas/product", "product"],
   ["/f/atlas/product/section_01", "product"],
   ["/f/atlas/engineering/atlas-01", "plans"],
+  ["/f/atlas/plans/atlas-01", "plans"],
   ["/f/atlas/metaplan", "metaplan"],
   ["/f/atlas/coverage", "product"],
   ["/f/atlas/findings", "plans"],
@@ -166,6 +167,46 @@ describe("a plan row's slug", () => {
     // The last child is the Findings instrument; the plan rows come before it.
     expect(plans.children.at(-2)).toMatchObject({ name: "03", title: "atlas-03" });
   });
+});
+
+describe("group attention", () => {
+  it.each(["active", "gap", "optional"])(
+    "keeps the %s server mark despite unsettled children",
+    (mark) => {
+      const steps = checklistFixture.checklists[0]!.steps.map((step) => ({ ...step, mark }));
+      const groups = spineGroups(atlas({ steps }));
+      for (const id of ["product", "plans"]) {
+        expect(groups.find((group) => group.id === id)).toMatchObject({ mark, glyph: null });
+      }
+    },
+  );
+
+  it("keeps the done check when plans are done or retired, ignoring instrument rows", () => {
+    const base = atlas();
+    const plan_rows = ["done", "retired"].map((state) => ({ ...base.plan_rows[0]!, state }));
+    const steps = base.steps.map((step) => ({ ...step, mark: "done" }));
+    const group = spineGroups(atlas({ plan_rows, steps })).find((group) => group.id === "plans")!;
+    expect(group.glyph).toBeNull();
+    expect(group.children.map((child) => child.glyph?.kind ?? null)).toEqual([
+      "done",
+      "retired",
+      null,
+    ]);
+  });
+
+  it.each(["product", "plans"])(
+    "flags written but never settled %s documents without a trace",
+    (id) => {
+      const steps = checklistFixture.checklists[0]!.steps.map((step) => ({
+        ...step,
+        mark: "done",
+      }));
+      const base = atlas();
+      const plan_rows = base.plan_rows.map((plan) => ({ ...plan, state: "written" }));
+      const group = spineGroups(atlas({ plan_rows, steps })).find((group) => group.id === id)!;
+      expect(group.glyph).toEqual({ kind: "attention", word: "Not all settled" });
+    },
+  );
 });
 
 describe("the instrument rows", () => {

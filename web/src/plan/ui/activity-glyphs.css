@@ -16,8 +16,8 @@
     height: 100%;
   }
 
-  /* The header pill's roundel (`header/activity.tsx`) takes the `.activity-glyph` box: the disc
-     fills 86% of it, the reach of a lucide glyph's strokes. */
+  /* The roundel, used only by the header pill (`header/activity.tsx`), takes the `.activity-glyph`
+     box: the disc fills 86% of it, the reach of a lucide glyph's strokes. */
   .activity-glyph > .aurora-roundel-wrap {
     width: 86%;
     height: 86%;

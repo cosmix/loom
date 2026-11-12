@@ -12,7 +12,8 @@ use crate::plan_server::files::save::{
 };
 use crate::plan_server::request::{ApiRequest, ApiResponse};
 use crate::plan_server::wire::files::ValidationView;
-use crate::plan_server::wire::trace::SettleResult;
+use crate::plan_server::wire::paths::to_doc_rel;
+use crate::plan_server::wire::trace::{SettleCommitStart, SettleResult, SettleSkipReason};
 use crate::planning::discover::read_doc;
 use crate::planning::paths::check_relpath_syntax;
 use crate::planning::project::Project;
@@ -24,7 +25,7 @@ use super::settle_job::{BriefSeen, SettleJob};
 use super::settle_queue;
 
 /// What the loaded project knows about the document being settled.
-struct Target {
+pub(super) struct Target {
     /// The feature whose trace holds it.
     feature: String,
     /// A plan's brief files, which its settled hash covers.
@@ -72,7 +73,7 @@ fn target(project: &Project, rel: &Path) -> Option<Target> {
 /// The target at `path` and its text, which must be the text the reader opened: the new text is
 /// built from it, and a file that changed away and back between this read and the save would
 /// otherwise take text built from the middle version. A mismatch is the conflict response.
-fn opened(
+pub(super) fn opened(
     req: &ApiRequest<'_>,
     path: &str,
     hash: &str,
@@ -115,30 +116,105 @@ pub fn settle_route(req: &ApiRequest<'_>) -> ApiResponse {
         Ok(opened) => opened,
         Err(response) => return response,
     };
-    let clear = req.query.get("clear") == Some("1");
-    if target.editable && !clear {
-        if let Some(refusal) = refuse(req, &target, hash) {
-            return refusal;
+    let result = if req.query.get("clear") == Some("1") {
+        save_one(req, rel, target, &text, true)
+    } else {
+        settle_one(
+            req,
+            rel,
+            target,
+            &text,
+            req.query.get("confirm") == Some("1"),
+        )
+    };
+    match result {
+        Ok(saved) => saved.response(),
+        Err(refusal) => refusal.response,
+    }
+}
+
+pub(super) struct Saved {
+    hash: String,
+    validation: Option<ValidationView>,
+    commit: SettleCommitStart,
+}
+
+impl Saved {
+    fn response(self) -> ApiResponse {
+        ApiResponse::json(
+            200,
+            &SettleResult::Saved {
+                hash: self.hash,
+                validation: self.validation,
+                commit: self.commit,
+            },
+        )
+    }
+}
+
+pub(super) struct Refusal {
+    pub reason: SettleSkipReason,
+    response: ApiResponse,
+}
+
+impl Refusal {
+    fn stale(response: ApiResponse) -> Self {
+        // Other save failures also leave this snapshot unsafe to settle. Keep their exact
+        // response for the single-document route; bulk callers must reload before retrying.
+        Self {
+            reason: SettleSkipReason::Stale,
+            response,
         }
     }
+}
+
+/// Mark, save and queue one document after its opened-hash check, with the same safeguards
+/// for individual and bulk settling. Each saved document queues its own commit.
+pub(super) fn settle_one(
+    req: &ApiRequest<'_>,
+    rel: PathBuf,
+    target: Target,
+    text: &str,
+    confirm: bool,
+) -> Result<Saved, Refusal> {
+    if target.editable {
+        if let Some(refusal) = refuse(&target, &normalized_hash(text), confirm) {
+            return Err(refusal);
+        }
+    }
+    save_one(req, rel, target, text, false)
+}
+
+fn save_one(
+    req: &ApiRequest<'_>,
+    rel: PathBuf,
+    target: Target,
+    text: &str,
+    clear: bool,
+) -> Result<Saved, Refusal> {
+    let path = rel.to_string_lossy();
     let new_text = if clear {
-        settle::clear(&text)
+        settle::clear(text)
     } else {
-        settle::mark(&text, &target.current)
+        settle::mark(text, &target.current)
     };
     let save = SaveRequest {
-        path,
+        path: to_doc_rel(&path).expect("opened document is under doc/"),
         text: &new_text,
-        opened_hash: hash,
+        opened_hash: &normalized_hash(text),
         force: false,
     };
     match save_document(req.ctx, req.browser, save) {
         Ok(SaveOutcome::Saved { hash, validation }) => {
             let job = settle_job(req, rel, target, clear, &hash);
-            queued(req, job, hash, validation)
+            Ok(Saved {
+                hash,
+                validation,
+                commit: settle_queue::push(req.ctx, job),
+            })
         }
-        Ok(outcome) => outcome_response(outcome),
-        Err(refusal) => refusal_response(req.ctx, &refusal),
+        Ok(outcome) => Err(Refusal::stale(outcome_response(outcome))),
+        Err(refusal) => Err(Refusal::stale(refusal_response(req.ctx, &refusal))),
     }
 }
 
@@ -169,44 +245,31 @@ fn settle_job(
     }
 }
 
-/// The written line's answer, once `job` is queued: the commit has not started yet.
-fn queued(
-    req: &ApiRequest<'_>,
-    job: SettleJob,
-    hash: String,
-    validation: Option<ValidationView>,
-) -> ApiResponse {
-    let commit = settle_queue::push(req.ctx, job);
-    let answer = SettleResult::Saved {
-        hash,
-        validation,
-        commit,
-    };
-    ApiResponse::json(200, &answer)
-}
-
 /// 409 when the trace has not caught up with the text the reader opened (the line it would
 /// write describes an older text), or when the document holds points the reader has not
 /// confirmed.
-fn refuse(req: &ApiRequest<'_>, target: &Target, hash: &str) -> Option<ApiResponse> {
+fn refuse(target: &Target, hash: &str, confirm: bool) -> Option<Refusal> {
     if target.loaded_hash.as_deref() != Some(hash) {
-        return Some(ApiResponse::error(
+        return Some(Refusal::stale(ApiResponse::error(
             409,
             "stale",
             "the planning view is catching up with the document; try again in a moment",
-        ));
+        )));
     }
     let open = target.my_calls > 0 || target.open_questions > 0;
-    if !open || req.query.get("confirm") == Some("1") {
+    if !open || confirm {
         return None;
     }
-    Some(ApiResponse::json(
-        409,
-        &json!({
-            "error": "unresolved",
-            "message": "the document holds unresolved points; confirm to settle it anyway",
-            "my_calls": target.my_calls,
-            "open_questions": target.open_questions,
-        }),
-    ))
+    Some(Refusal {
+        reason: SettleSkipReason::Unresolved,
+        response: ApiResponse::json(
+            409,
+            &json!({
+                "error": "unresolved",
+                "message": "the document holds unresolved points; confirm to settle it anyway",
+                "my_calls": target.my_calls,
+                "open_questions": target.open_questions,
+            }),
+        ),
+    })
 }

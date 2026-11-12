@@ -11,6 +11,7 @@
 //! - `settle`: the `Settled:` line, its hashes and the settle states.
 
 mod build;
+pub mod gate;
 pub mod settle;
 pub mod tokens;
 

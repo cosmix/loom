@@ -97,6 +97,7 @@
         "id": "write-section:05",
         "kind": "write_section",
         "label": "Write section 05",
+        "blocked_reason": null,
         "target": "doc/product/demo/section_05.md",
         "feature": "demo",
         "number": 5
@@ -106,6 +107,7 @@
           "id": "start-metaplan",
           "kind": "start_metaplan",
           "label": "Start the metaplan",
+          "blocked_reason": null,
           "target": null,
           "feature": "demo"
         }
@@ -125,6 +127,7 @@
             "id": "write-section:05",
             "kind": "write_section",
             "label": "Write section 05",
+            "blocked_reason": null,
             "target": "doc/product/demo/section_05.md",
             "feature": "demo",
             "number": 5
@@ -149,6 +152,7 @@
       "id": "move-into-feature:doc/product/index.md",
       "kind": "move_into_feature",
       "label": "Move doc/product/index.md into a feature",
+      "blocked_reason": null,
       "target": "doc/product/index.md"
     }
   ]

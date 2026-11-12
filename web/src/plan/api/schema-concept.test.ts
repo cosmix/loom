@@ -27,18 +27,14 @@ describe("concept wire schemas", () => {
     },
   );
 
-  it.each([
-    "no_vision",
-    "sections_no_vision",
-    "no_metaplan",
-    "plans_no_metaplan",
-    "never_built",
-    "building",
-  ])("parses empty kind %s", (kind) => {
-    expect(emptyStateSchema.safeParse({ kind, count: null, offer: null, docs: [] }).success).toBe(
-      true,
-    );
-  });
+  it.each(["no_vision", "sections_no_vision", "never_built", "building"])(
+    "parses empty kind %s",
+    (kind) => {
+      expect(emptyStateSchema.safeParse({ kind, count: null, offer: null, docs: [] }).success).toBe(
+        true,
+      );
+    },
+  );
 
   it("validates tagged variants, integer bounds, and flattened change messages", () => {
     expect(conceptPageSchema.safeParse({ ...overview, colour: 256 }).success).toBe(false);
@@ -120,7 +116,6 @@ describe("strings the page code uses as keys", () => {
 
   it.each([
     "overview/demo/product",
-    "overview/demo/engineering",
     "demo/product/section_01",
     "demo/engineering/feat-x.v2",
     "plans/x",

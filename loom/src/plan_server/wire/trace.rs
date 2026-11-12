@@ -237,6 +237,29 @@ pub enum SettleResult {
     },
 }
 
+/// `POST /api/settle-all`: documents written, and those left for a later or confirmed press.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct SettleAllResult {
+    pub settled: Vec<String>,
+    pub skipped: Vec<SettleSkipped>,
+}
+
+/// One document the bulk settle did not write.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct SettleSkipped {
+    pub path: String,
+    pub reason: SettleSkipReason,
+}
+
+/// Why bulk settling left a document alone.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SettleSkipReason {
+    Unresolved,
+    Stale,
+    Stub,
+}
+
 /// Where a written line's commit stands when `POST /api/settle` answers.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "state", rename_all = "snake_case", deny_unknown_fields)]

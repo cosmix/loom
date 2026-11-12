@@ -3,11 +3,29 @@
 use std::collections::BTreeSet;
 
 use super::rows::document_rows;
-use super::{ChecklistView, PlanCountsView, SectionView};
+use super::{ChecklistView, OfferKind, PlanCountsView, SectionView};
 use crate::planning::checklist::{ItemStatus, ProjectState};
+use crate::planning::guidance::StartError;
 use crate::planning::kinds::{section_path, vision_path};
 use crate::planning::project::{Feature, Project};
 use crate::planning::slug::PlanState;
+use crate::planning::trace::gate::metaplan_settled;
+
+pub(super) fn block_plan_offers(feature: &Feature, view: &mut ChecklistView) {
+    if metaplan_settled(feature) {
+        return;
+    }
+    for offer in view
+        .primary
+        .iter_mut()
+        .chain(&mut view.secondary)
+        .chain(view.items.iter_mut().filter_map(|item| item.offer.as_mut()))
+    {
+        if matches!(offer.kind, OfferKind::WritePlan | OfferKind::DraftAllPlans) {
+            offer.blocked_reason = Some(StartError::MetaplanUnsettled.to_string());
+        }
+    }
+}
 
 pub(super) fn card_facts(project: &Project, feature: &str, view: &mut ChecklistView) {
     let Some(data) = project.feature(feature) else {
@@ -112,8 +130,11 @@ fn wire_count(count: usize) -> u32 {
 
 #[cfg(test)]
 mod tests {
-    use crate::plan_server::wire::checklist::{ChecklistView, ProjectChecklistView, StepView};
+    use crate::plan_server::wire::checklist::{
+        ChecklistView, OfferKind, ProjectChecklistView, StepView,
+    };
     use crate::planning::project::Project;
+    use crate::planning::trace::{settle, DocRole};
     use std::fs;
     use std::path::Path;
     use tempfile::TempDir;
@@ -143,6 +164,62 @@ mod tests {
             .iter()
             .find(|step| step.number == number)
             .unwrap()
+    }
+
+    #[test]
+    fn plan_offers_wait_for_the_current_metaplan_in_every_checklist_position() {
+        let meta = "# Metaplan\n\n## 1. Alpha (`PLAN-a.md`)\n\n## 2. Beta (`PLAN-b.md`)\n";
+        let temp = tree(&[
+            (
+                "doc/product/demo/index.md",
+                "# Demo\n\n## Specification sections\n\n\
+                | # | Section |\n| --- | --- |\n| 01 | Alpha |\n",
+            ),
+            ("doc/product/demo/section_01.md", "# Alpha\n"),
+            ("doc/plans/demo/index.md", meta),
+        ]);
+        let mut project = Project::load(temp.path()).unwrap();
+        assert_plan_blocks(&project, true);
+        let doc = project.features[0]
+            .trace
+            .documents
+            .iter()
+            .find(|doc| doc.role == DocRole::Metaplan)
+            .unwrap();
+        let path = temp.path().join("doc/plans/demo/index.md");
+        let marked = settle::mark(meta, &doc.current);
+        fs::write(&path, &marked).unwrap();
+        project = Project::load(temp.path()).unwrap();
+        assert_plan_blocks(&project, false);
+        fs::write(&path, format!("{marked}\nChanged scope.\n")).unwrap();
+        project = Project::load(temp.path()).unwrap();
+        assert_plan_blocks(&project, true);
+    }
+
+    fn assert_plan_blocks(project: &Project, blocked: bool) {
+        let view = ProjectChecklistView::from(project).checklists.remove(0);
+        let offers: Vec<_> = view
+            .primary
+            .iter()
+            .chain(&view.secondary)
+            .chain(view.items.iter().filter_map(|item| item.offer.as_ref()))
+            .collect();
+        assert!(view.primary.is_some());
+        assert!(!view.secondary.is_empty());
+        assert!(view.items.iter().any(|item| item.offer.is_some()));
+        for kind in [OfferKind::WritePlan, OfferKind::DraftAllPlans] {
+            assert!(offers.iter().any(|offer| offer.kind == kind));
+        }
+        for offer in offers {
+            let expected = (blocked
+                && matches!(offer.kind, OfferKind::WritePlan | OfferKind::DraftAllPlans))
+            .then_some("Settle the metaplan first");
+            assert_eq!(offer.blocked_reason.as_deref(), expected, "{}", offer.id);
+            assert_eq!(
+                serde_json::to_value(offer).unwrap()["blocked_reason"],
+                serde_json::json!(expected)
+            );
+        }
     }
 
     #[test]

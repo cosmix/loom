@@ -19,7 +19,17 @@ pub(super) fn pitch_of(text: &str) -> Option<String> {
         .pitch
 }
 
+/// Fills `"blocked_reason": null` into an expected offer object that omits it,
+/// since the wire always serializes the field and only the metaplan gate sets it.
+pub(super) fn open_offer(mut expected: Value) -> Value {
+    if let Some(object) = expected.as_object_mut() {
+        object.entry("blocked_reason").or_insert(Value::Null);
+    }
+    expected
+}
+
 pub(super) fn assert_offer(offer: Offer, expected: Value) {
+    let expected = open_offer(expected);
     let view = offer_view(&offer);
     assert_eq!(serde_json::to_value(&view).unwrap(), expected);
     assert_eq!(serde_json::from_value::<OfferView>(expected).unwrap(), view);
