@@ -9,6 +9,7 @@ import type {
 import type { connectPlanSocket } from "@/plan/api/socket";
 import type { AttachmentDraft, ChatAttachment, FileDraft } from "@/plan/attachments/types";
 import { repoRel } from "@/plan/files/address";
+import { newId } from "@/plan/id";
 import type { ReviewCommand, SuggestedPassage } from "@/plan/review/api";
 import { connectionAtom, planSocketAtom } from "@/plan/state/atoms";
 import type { Store } from "@/state/store";
@@ -141,7 +142,7 @@ function dispatch(store: Store, request: Request): Promise<CommandResult> {
   const socket = store.get(planSocketAtom);
   if (!socket) return Promise.reject(new Error(NOT_CONNECTED));
   const pending = pendingFor(store, socket);
-  const entry = { clientId: crypto.randomUUID(), request };
+  const entry = { clientId: newId(), request };
   const content =
     request.type === "chat" &&
     (request.command === "send" || request.command === "start") &&
