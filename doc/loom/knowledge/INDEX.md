@@ -132,7 +132,7 @@
 | [adjudication-autonomy-deadlock](mistakes/adjudication-autonomy-deadlock.md) |  | 228 |
 | [ambient-filesystem-trust](mistakes/ambient-filesystem-trust.md) |  | 176 |
 | [briefs-and-bug-reports](mistakes/briefs-and-bug-reports.md) |  | 318 |
-| [ci-toolchain-and-cargo](mistakes/ci-toolchain-and-cargo.md) |  | 373 |
+| [ci-toolchain-and-cargo](mistakes/ci-toolchain-and-cargo.md) |  | 383 |
 | [codex-direct-mode-invisible](mistakes/codex-direct-mode-invisible.md) |  | 23 |
 | [codex-lane-rogue-wrapper](mistakes/codex-lane-rogue-wrapper.md) |  | 177 |
 | [codex-navigation](mistakes/codex-navigation.md) | Reader | 162 |

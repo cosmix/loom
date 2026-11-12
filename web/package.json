@@ -41,7 +41,7 @@
     "clsx": "^2.1.1",
     "cn": "0.5.2",
     "jotai": "3.0.2",
-    "lucide-react": "^1.70.0",
+    "lucide-react": "^1.72.0",
     "mdast-util-from-markdown": "^2.1.0",
     "mdast-util-gfm": "^3.1.0",
     "mermaid": "^12.3.0",
@@ -57,7 +57,7 @@
     "zod": "4.6.7"
   },
   "devDependencies": {
-    "@babel/parser": "^8.1.0",
+    "@babel/parser": "^8.1.2",
     "@testing-library/react": "16.3.3",
     "@types/mdast": "^4.0.4",
     "@types/node": "^26.6.6",
@@ -65,12 +65,12 @@
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.3.0",
     "jsdom": "31.0.0",
-    "markdownlint-cli2": "0.24.0",
+    "markdownlint-cli2": "0.24.1",
     "oxfmt": "0.78.0",
     "oxlint": "^1.93.0",
     "playwright-core": "1.65.0",
     "typescript": "~7.0.2",
-    "vite": "^8.3.7",
+    "vite": "^8.3.8",
     "vitest": "5.1.0"
   }
 }

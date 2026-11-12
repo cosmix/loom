@@ -371,3 +371,13 @@ The sweep follow-ups on executable startup, cache coverage, hook-path navigation
 **Prevention:** Create or verify the destination directory before writing a new nested module.
 
 **Fix:** Create the directory and finish the split before verification.
+
+## Dependency upgrade scope clarification
+
+**What happened:** A dependency update request needed clarification that direct dependencies should reach their latest releases, including breaking versions.
+
+**Why:** Latest compatible lockfile updates can be confused with latest direct dependency releases.
+
+**Prevention:** Check direct dependencies against latest releases separately from transitive resolution, and respect parent constraints for transitives.
+
+**Fix:** Upgrade direct requirements using the ecosystem tool and verify the resulting dependency inventory.
