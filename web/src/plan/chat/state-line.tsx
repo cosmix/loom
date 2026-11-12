@@ -2,7 +2,7 @@ import { useAtomValue } from "jotai/react";
 
 import type { Item, SessionView } from "@/plan/api/schema-chat";
 import { waitsOnBackground } from "./background-fold";
-import { userWrote } from "./closing";
+import { endedByAgent, userWrote } from "./closing";
 import { pendingPermissionsAtom, turnsAtom } from "./model";
 import { panelSessionAtom } from "./session-home";
 import { Untrusted } from "./visible-controls";
@@ -76,8 +76,16 @@ function announcedElsewhere(session: SessionView | null): boolean {
  * work (a working turn's typing bubble, the starting or wrap-up card's Spinner). `hideWords` hides
  * the words from browse mode where the sr-only region announces them.
  */
-function StateWords({ state, hideWords }: { state: SessionView["state"]; hideWords: boolean }) {
-  const words = VISIBLE_WORDS[state];
+function StateWords({
+  state,
+  hideWords,
+  finished,
+}: {
+  state: SessionView["state"];
+  hideWords: boolean;
+  finished: boolean;
+}) {
+  const words = state === "ended" && finished ? "Finished by the planner" : VISIBLE_WORDS[state];
   if (!words) return null;
   return (
     <span className="chat-state-row" aria-hidden={hideWords || undefined}>
@@ -95,7 +103,8 @@ export function StateLine() {
   const session = useAtomValue(panelSessionAtom);
   const pending = useAtomValue(pendingPermissionsAtom);
   const turns = useAtomValue(turnsAtom);
-  const words = stateWords(session, pending, userWrote(turns));
+  // No closing write runs for a chat the planner ended itself.
+  const words = stateWords(session, pending, userWrote(turns) && !endedByAgent(turns));
   const elsewhere = announcedElsewhere(session);
   return (
     <div
@@ -106,7 +115,9 @@ export function StateLine() {
       <div role="status" aria-live="polite" aria-atomic="true" className="sr-only">
         <Untrusted text={elsewhere ? "" : words} />
       </div>
-      {session && <StateWords state={session.state} hideWords={!elsewhere} />}
+      {session && (
+        <StateWords state={session.state} hideWords={!elsewhere} finished={endedByAgent(turns)} />
+      )}
     </div>
   );
 }

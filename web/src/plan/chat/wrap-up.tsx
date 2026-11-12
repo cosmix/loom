@@ -95,13 +95,25 @@ function Documents({ documents }: { documents: LeftBehind["documents"] }): JSX.E
 }
 
 /** What an ended chat left behind: documents it changed, what it settled, what it left open. */
-export function LeftBehindCard({ summary }: { summary: LeftBehind }): JSX.Element {
+export function LeftBehindCard({
+  summary,
+  plannerFinished = false,
+}: {
+  summary: LeftBehind;
+  plannerFinished?: boolean;
+}): JSX.Element {
   const headingId = useId();
   const { documents, decisions, questions } = summary;
   const empty = documents.length + decisions.length + questions.length === 0;
   return (
     <section className="chat-left-behind" aria-labelledby={headingId}>
-      <h3 id={headingId}>Here&apos;s what this chat left behind</h3>
+      <h3 id={headingId}>
+        {plannerFinished ? (
+          "The planner finished this chat"
+        ) : (
+          <>Here&apos;s what this chat left behind</>
+        )}
+      </h3>
       <Counts summary={summary} />
       <Documents documents={documents} />
       {decisions.length > 0 && (

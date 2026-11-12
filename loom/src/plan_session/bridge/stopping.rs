@@ -55,7 +55,7 @@ impl Bridge {
                 }
                 Phase::Launching => {
                     // Torn down once its launch returns, also under a drain's final write.
-                    session.plan_end(EndMode::Teardown, None);
+                    session.plan_end(EndMode::Teardown, EndCause::Draining, None);
                     None
                 }
                 _ => None,

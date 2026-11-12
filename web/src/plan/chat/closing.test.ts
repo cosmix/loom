@@ -1,7 +1,14 @@
 import { describe, expect, it } from "vitest";
 
 import type { Item, Turn } from "@/plan/api/schema-chat";
-import { closingTicks, isClosingTurn, leftBehind, userWrote } from "./closing";
+import {
+  closingTicks,
+  doneLists,
+  endedByAgent,
+  isClosingTurn,
+  leftBehind,
+  userWrote,
+} from "./closing";
 import { item, turn } from "./transcript-test-kit";
 
 const tick = "`".repeat(3);
@@ -156,5 +163,105 @@ describe("leftBehind", () => {
 
     expect(left.documents).toEqual([{ path: "doc/a.md", added: 3, removed: 1 }]);
     expect(left.decisions).toEqual([]);
+  });
+});
+
+describe("the loom-done fence", () => {
+  const lists = { decisions: ["Keep it small"], questions: ["Who owns it?"] };
+  const fenced = (body: unknown, info = "loom-done", after = "\n") =>
+    `Finished.\n\n${tick}${info}\n${typeof body === "string" ? body : JSON.stringify(body)}\n${tick}${after}`;
+  const reply = (markdown: string) => item("text", { id: "reply", markdown });
+  const ending = (markdown: string, id = "t1") =>
+    turn([user(null), reply(markdown)], { id, open: false });
+
+  it("a fence at the end of the last text gives its trimmed lists", () => {
+    const padded = { decisions: ["  Keep it small  ", " "], questions: ["Who owns it?"] };
+
+    expect(doneLists(ending(fenced(padded)))).toEqual(lists);
+    expect(doneLists(ending(fenced(lists, "loom-done", "")))).toEqual(lists);
+    expect(doneLists(ending(fenced(lists, "loom-done", "\n\n  \n")))).toEqual(lists);
+  });
+
+  it("text after the fence, a longer info string or a different one means no fence", () => {
+    expect(doneLists(ending(`${fenced(lists)}\nOne more thing.`))).toBeNull();
+    expect(doneLists(ending(fenced(lists, "loom-done-later")))).toBeNull();
+    expect(doneLists(ending(fenced(lists, "loom-done x")))).toBeNull();
+    expect(doneLists(ending(fenced(lists, "loom-closing")))).toBeNull();
+    expect(doneLists(ending(`${tick}loom-done\n${JSON.stringify(lists)}`))).toBeNull();
+  });
+
+  it("only the final block counts, and only in the last text of the turn", () => {
+    const quoted = `${fenced({ decisions: ["Old"], questions: [] })}\nAnd again:\n${fenced(lists)}`;
+    expect(doneLists(ending(quoted))?.decisions).toEqual(["Keep it small"]);
+
+    const earlier = turn([user(null), reply(fenced(lists)), reply("Anything else?")], {
+      open: false,
+    });
+    expect(doneLists(earlier)).toBeNull();
+    expect(doneLists(undefined)).toBeNull();
+  });
+
+  it("a malformed body, a wrong shape or an over-long list refuses the whole block", () => {
+    expect(doneLists(ending(fenced("{not json")))).toBeNull();
+    expect(doneLists(ending(fenced({ decisions: "no", questions: [] })))).toBeNull();
+    expect(doneLists(ending(fenced({ decisions: ["Fine"] })))).toBeNull();
+    expect(doneLists(ending(fenced({ decisions: Array(51).fill("x"), questions: [] })))).toBeNull();
+    expect(doneLists(ending(fenced({ decisions: Array(50).fill("x"), questions: [] })))).not.toBe(
+      null,
+    );
+    expect(doneLists(ending(fenced({ decisions: ["x".repeat(501)], questions: [] })))).toBeNull();
+    expect(doneLists(ending(fenced({ decisions: ["x".repeat(500)], questions: [] })))).not.toBe(
+      null,
+    );
+  });
+
+  it("a user item holding the fence is ignored", () => {
+    const quoting = item("user", {
+      id: "u-fence",
+      text: fenced(lists),
+      origin: null,
+      attachments: [],
+      delivery: "delivered",
+    });
+    const quoted = turn([quoting], { open: false });
+
+    expect(doneLists(quoted)).toBeNull();
+    expect(endedByAgent([quoted])).toBe(false);
+    expect(leftBehind([quoted])).toMatchObject({ decisions: [], questions: [] });
+  });
+
+  it("leftBehind falls back to the fence when there is no closing turn", () => {
+    const talk = turn([user(null), edit("doc/a.md", "done", { added: 1, removed: 0 })], {
+      id: "t0",
+      open: false,
+      changed_files: changed("doc/a.md"),
+    });
+    const left = leftBehind([talk, ending(fenced(lists), "t1")]);
+
+    expect(left.documents).toEqual([{ path: "doc/a.md", added: 1, removed: 0 }]);
+    expect(left).toMatchObject(lists);
+  });
+
+  it("a closing turn wins over a fence in the last turn", () => {
+    const closed = turn([
+      user("closing"),
+      block(JSON.stringify({ decisions: ["Closing"], questions: [] })),
+    ]);
+    const left = leftBehind([closed, ending(fenced(lists), "t2")]);
+
+    expect(left.decisions).toEqual(["Closing"]);
+  });
+
+  it("endedByAgent needs a valid fence in the last turn and no closing turn", () => {
+    const fence = ending(fenced(lists));
+    const plain = ending("Finished.", "t0");
+    const closing = turn([user("closing"), reply("Done.")], { id: "t2", open: false });
+
+    expect(endedByAgent([plain, fence])).toBe(true);
+    expect(endedByAgent([fence, plain])).toBe(false);
+    expect(endedByAgent([plain])).toBe(false);
+    expect(endedByAgent([fence, closing])).toBe(false);
+    expect(endedByAgent([ending(fenced("{not json"))])).toBe(false);
+    expect(endedByAgent([])).toBe(false);
   });
 });

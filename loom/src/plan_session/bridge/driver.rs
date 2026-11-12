@@ -13,9 +13,9 @@ use super::commands::Step;
 use super::local::Clock;
 use super::registry::{Batch, Entry, Feed, FeedPaths, Feeds};
 use super::session::{Closing, EventKey, Phase, Session};
-use super::{denied, Bridge, BridgeConfig, BridgeEvent, EndOutcome};
+use super::{denied, Bridge, BridgeConfig, BridgeEvent, EndMode, EndOutcome};
 use crate::plan_session::kind::SessionKind;
-use crate::plan_session::model::{Item, NoticeKind};
+use crate::plan_session::model::{Activity, Item, NoticeKind};
 use crate::plan_session::spool::SpoolEvent;
 use crate::plan_session::state::{is_idle_prompt, text, Input};
 use crate::plan_session::transcript::RecordMark;
@@ -145,7 +145,12 @@ impl Session {
                 step,
             ),
             "Notification" if wins && is_idle_prompt(&event.payload) => self.on_idle(false, step),
-            "Stop" | "StopFailure" if wins => self.on_idle(true, step),
+            "Stop" | "StopFailure" if wins => {
+                if event.event == "Stop" {
+                    self.agent_end();
+                }
+                self.on_idle(true, step);
+            }
             "PreCompact" => self.on_pre_compact(&event.payload, step),
             "SessionEnd" if self.flow.close_ready.is_none() => {
                 let confirmed = self.closing() == Some(Closing::Confirmed);
@@ -198,20 +203,44 @@ impl Session {
         if self.flow.quiet_until.take().is_some() {
             self.flow.skip_delivery = true;
         }
-        if stop && self.background.blocking() == 0 && self.closes_at_stop() {
-            self.flow.close_ready = Some(EndOutcome::Closed);
+        if stop {
+            // A summary session still owes a turn for its agents' hand-backs, so only a
+            // Stop with the background table already drained latches its close.
+            let drained =
+                !matches!(self.kind, SessionKind::Summary) || self.background.blocking() == 0;
+            self.flow.closing_stopped = self.closing_done() && drained;
+        }
+        self.check_close();
+    }
+
+    fn closing_done(&self) -> bool {
+        let closing_done = matches!(self.closing(), Some(Closing::Confirmed | Closing::Skip));
+        match self.kind {
+            SessionKind::Pressure { .. } => false,
+            SessionKind::Summary => self.flow.opening.is_none() && self.flow.delivering.is_none(),
+            SessionKind::Authoring => {
+                closing_done
+                    && self
+                        .flow
+                        .end
+                        .as_ref()
+                        .is_some_and(|plan| plan.mode == EndMode::FinalWrite)
+            }
         }
     }
 
-    fn closes_at_stop(&self) -> bool {
-        match (&self.kind, self.closing()) {
-            (SessionKind::Pressure { .. }, _) => false,
-            (_, Some(Closing::Confirmed)) => true,
-            // A summary session ends at the first Stop after its task was delivered.
-            (SessionKind::Summary, None | Some(Closing::Skip)) => {
-                self.flow.opening.is_none() && self.flow.delivering.is_none()
-            }
-            _ => false,
+    /// Closing is a state check: background work can drain after the main Stop.
+    fn check_close(&mut self) {
+        if self.flow.closing_stopped
+            && self.closing_done()
+            && matches!(self.phase, Phase::Live)
+            && self.machine.activity() == Activity::Idle
+            && self.flow.opening.is_none()
+            && self.flow.delivering.is_none()
+            && self.background.blocking() == 0
+            && self.flow.close_ready.is_none()
+        {
+            self.flow.close_ready = Some(EndOutcome::Closed);
         }
     }
 
@@ -248,6 +277,11 @@ impl Session {
                 self.begin_unprompted(fresh, at, step);
             }
             RecordMark::SelfStartedTurn { at } => {
+                // Hand-backs after the final Stop update the table without opening a turn.
+                // A real prompt or main record still starts work and holds the close gate.
+                if self.flow.closing_stopped && self.flow.turn.is_none() {
+                    return;
+                }
                 self.settle_now();
                 let fresh = self.after_idle(at);
                 self.machine.apply(Input::SelfStartedTurn { at });
@@ -317,6 +351,7 @@ impl Session {
             self.flow.quiet_until = None;
         }
         self.settle_due(now, step);
+        self.check_close();
     }
 
     pub(super) fn notice(&mut self, kind: NoticeKind, text: &str, step: &mut Step) {

@@ -17,6 +17,7 @@ impl Session {
         let (turn, deltas) = self.mapper.begin_turn(at);
         self.emit(deltas, step);
         self.flow.pressed = false;
+        self.flow.closing_stopped = false;
         step.effects.push(Effect::BeginPins { turn: turn.clone() });
         let (id, turn_id) = (self.id.clone(), turn.clone());
         step.event(BridgeEvent::TurnStarted { id, turn_id });

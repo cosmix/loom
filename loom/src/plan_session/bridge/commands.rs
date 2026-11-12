@@ -351,14 +351,14 @@ impl Session {
         let deny_new = match cause {
             EndCause::GraceExpired => Some((DenyReason::Holder, HOLDER_GONE)),
             EndCause::Draining => Some((DenyReason::ServerStopping, STOPPING)),
-            EndCause::Holder | EndCause::Caller => None,
+            EndCause::Holder | EndCause::Caller | EndCause::Agent => None,
         };
         // A pressure session never gets a closing message: its final write is a teardown.
         let mode = match self.kind {
             SessionKind::Pressure { .. } => EndMode::Teardown,
             _ => mode,
         };
-        self.plan_end(mode, deny_new);
+        self.plan_end(mode, cause, deny_new);
         if let Some((reason, message)) = deny_new {
             self.deny_open(reason, message, step);
         }

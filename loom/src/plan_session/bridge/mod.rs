@@ -12,12 +12,14 @@ pub mod background;
 mod catalogue;
 mod commands;
 mod denied;
+mod done_fence;
 mod driver;
 mod ending;
 mod error;
 mod fetches;
 mod flow;
 pub mod host;
+mod launch;
 mod local;
 mod opening;
 mod owner;
@@ -33,6 +35,8 @@ pub mod team;
 mod turns;
 
 #[cfg(test)]
+mod agent_end_contract_tests;
+#[cfg(test)]
 mod background_contract_tests;
 #[cfg(test)]
 mod closing_contract_tests;
@@ -46,6 +50,8 @@ mod harness;
 mod slash_contract_tests;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_agent_end;
 #[cfg(test)]
 mod tests_background;
 #[cfg(test)]
@@ -94,44 +100,15 @@ use self::commands::Out;
 pub use self::ending::TEARDOWN_FAILED;
 pub use self::error::BridgeError;
 use self::host::SessionHost;
+pub use self::launch::{GuidanceFn, LaunchGuidance, StartRequest};
 pub use self::opening::OPENING_NOT_SUBMITTED;
 use self::registry::{transcripts_of, ChildRecord, Feeds};
 use self::session::Inner;
-use super::kind::{SessionDir, SessionKind};
-use super::model::{ChangedFile, ChatDelta, ChatSnapshot, Origin, SessionState};
+use super::kind::SessionKind;
+use super::model::{ChangedFile, ChatDelta, ChatSnapshot, SessionState};
 use super::web_fetch::FetchPolicyCell;
 use crate::planning::runtime::RuntimePaths;
 
-/// What a session is launched with (plan 8 supplies it through the guidance seam).
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct LaunchGuidance {
-    pub brief_path: PathBuf,
-    pub plugin_dir: PathBuf,
-    /// Pasted after the first `SessionStart`, never on the launch line (px-security-04).
-    pub opening_message: String,
-    pub model: String,
-    pub effort: String,
-    pub display_name: String,
-    /// Pass the opening as the launch line's prompt instead of pasting it; accepted only for
-    /// a command and a plan path (px-seams-R04).
-    pub opening_on_argv: bool,
-}
-/// Writes the session's guidance files into its directory and describes the launch.
-pub type GuidanceFn = Box<dyn FnOnce(&SessionDir) -> anyhow::Result<LaunchGuidance> + Send>;
-/// A request to start one session.
-pub struct StartRequest {
-    pub kind: SessionKind,
-    pub guidance: GuidanceFn,
-    /// The origin of the opening's user item.
-    pub opening_origin: Option<Origin>,
-    /// The `Offer::id` the chat started from.
-    pub offer: Option<String>,
-    /// The feature the session belongs to; `None` for a standalone or project-wide session.
-    pub feature: Option<String>,
-    /// The standalone plan's slug the session belongs to; `None` for any other session.
-    pub plan: Option<String>,
-    pub extra_env: Vec<(String, String)>,
-}
 /// The bridge's paths, programs and timings.
 #[derive(Clone)]
 pub struct BridgeConfig {
@@ -215,13 +192,15 @@ pub enum EndMode {
     Teardown,
 }
 /// Who asked for the end. `GraceExpired` and `Draining` deny every pending and new permission
-/// request at once; `Holder` and `Caller` keep them answerable.
+/// request at once; `Holder`, `Caller` and `Agent` keep them answerable.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EndCause {
     Holder,
     GraceExpired,
     Draining,
     Caller,
+    /// The authoring turn's final reply carries a valid `loom-done` fence.
+    Agent,
 }
 /// What `send` did with a message.
 #[derive(Debug, Clone, PartialEq, Eq)]

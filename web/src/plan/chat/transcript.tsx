@@ -3,7 +3,7 @@ import { memo, useId, useState, type JSX } from "react";
 
 import type { EndedChat, Item, SessionView, Turn } from "@/plan/api/schema-chat";
 import { plural } from "@/plan/ui/plural";
-import { closingTicks, isClosingTurn, leftBehind, userWrote } from "./closing";
+import { closingTicks, endedByAgent, isClosingTurn, leftBehind, userWrote } from "./closing";
 import { FailureNotice } from "./failure-notice";
 import { ItemView } from "./items";
 import { pendingPermissionsAtom, sessionAtom, snapshotAtom, turnsAtom } from "./model";
@@ -84,10 +84,8 @@ function FoldedTools({
   turn: Turn;
   nested: ToolItem[];
 }): JSX.Element {
-  // The working card: open while the turn runs, folded to its line once the turn ends. The
-  // reader's own toggle sticks until the turn's state changes, which is when `open` re-renders.
   return (
-    <details aria-live="off" className="chat-tool-fold" open={turn.open}>
+    <details aria-live="off" className="chat-tool-fold">
       <summary>
         <Untrusted text={group.label} />
       </summary>
@@ -315,8 +313,11 @@ function ChatOutcome({ turns }: { turns: Turn[] }): JSX.Element | null {
     case "failed":
       return <FailureNotice session={shown} />;
     case "ending":
-      return userWrote(turns) && !closed ? <WrapUpCard ticks={[]} /> : null;
+      // An agent-ended chat waits on background agents only; no closing write runs for it.
+      return userWrote(turns) && !closed && !endedByAgent(turns) ? <WrapUpCard ticks={[]} /> : null;
     case "ended": {
+      if (endedByAgent(turns))
+        return <LeftBehindCard summary={leftBehind(turns)} plannerFinished />;
       if (closed || !userWrote(turns)) return null;
       const summary = leftBehind(turns);
       return summary.documents.length > 0 ? <LeftBehindCard summary={summary} /> : null;
