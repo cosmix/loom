@@ -11,7 +11,7 @@ function Banner({ children }: { children: ReactNode }) {
     // --foreground (ui/DESIGN.md, Do not).
     <div
       role="status"
-      className="flex items-start gap-2 border-b border-hairline px-(--page-gutter) py-2 text-[13px] leading-[1.35] font-medium text-foreground"
+      className="flex items-start gap-2 border-t border-hairline px-(--page-gutter) py-2 text-[13px] leading-[1.35] font-medium text-foreground"
     >
       <TriangleAlertIcon
         className="mt-px size-3.5 shrink-0 text-(--tone-warning)"
@@ -30,7 +30,8 @@ function withoutTrailingStop(message: string): string {
 /**
  * Remote bind, read-only mode (one banner listing each prerequisite) and stopping. The read-only
  * banner is the one place the server's message and fix are drawn; a blocked control says
- * "Read-only" and nothing more.
+ * "Read-only" and nothing more. The shell draws these under the page: they arrive with the
+ * server's hello frame, after the page has painted, and a band above the page would push it down.
  */
 export function Banners() {
   const server = useAtomValue(serverInfoAtom);

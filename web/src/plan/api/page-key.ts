@@ -73,11 +73,14 @@ export function isConceptPageKey(key: string): boolean {
   return parsePageKey(key) !== null;
 }
 
-/** Format an overview key from a validated feature and scope. */
-export function overviewKey(feature: string, scope: ConceptScope): string {
-  return scope === "product"
-    ? `overview/${feature}/product`
-    : summaryKey(feature, "metaplan", FIRST_METAPLAN);
+/** The key of a feature's metaplan page: the Plans home. */
+export function metaplanKey(feature: string): string {
+  return summaryKey(feature, "metaplan", FIRST_METAPLAN);
+}
+
+/** Format the product overview key of a validated feature; the Plans home is `metaplanKey`. */
+export function overviewKey(feature: string): string {
+  return `overview/${feature}/product`;
 }
 
 /** Format a summary key, using plans/<doc> when the feature is absent. */
@@ -123,7 +126,7 @@ export function pageHref(key: string): string {
 /** The key of `/f/<feature>/<page>`: the vision, the metaplan, or an overview. */
 function pageKeyOf4(feature: string, page: string): string {
   if (page === VISION_DOC) return `${feature}/product/${VISION_DOC}`;
-  if (page === "metaplan") return `${feature}/metaplan/${FIRST_METAPLAN}`;
+  if (page === "metaplan") return metaplanKey(feature);
   return `overview/${feature}/${page}`;
 }
 

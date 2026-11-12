@@ -7,6 +7,7 @@ import type { EditorHandle } from "@/plan/editor/codemirror";
 import { loadCodeMirror } from "@/plan/editor/load";
 import { useEditorSelectionAttachment } from "@/plan/editor/selection-attachment";
 import { LoadState } from "@/plan/ui/load-state";
+import { SegmentedToggle } from "@/plan/ui/segmented-toggle";
 
 import { diffBlocks, type DiffBlock } from "./block-diff";
 import { diffProvenance } from "./diff-provenance";
@@ -32,9 +33,9 @@ const SIDE_BY_SIDE = "(min-width: 900px)";
 type Phase = "loading" | "ready" | "failed";
 type View = "rendered" | "source";
 
-const VIEWS: { view: View; label: string }[] = [
-  { view: "rendered", label: "Rendered" },
-  { view: "source", label: "Source" },
+const VIEWS: { value: View; label: string }[] = [
+  { value: "rendered", label: "Rendered" },
+  { value: "source", label: "Source" },
 ];
 
 /**
@@ -146,8 +147,8 @@ function Summary(props: { blocks: DiffBlock[]; created: boolean; deleted: boolea
   if (parts.length === 0) parts.push(<span key="none">No changes</span>);
   return (
     <p className="diff-summary">
-      {/* The space text nodes keep the text content from running the parts together; the flex
-          container draws none of them. */}
+      {/* The space between parts is real text: the parts are inline, so it is drawn, copied and
+          spoken as a break ("1 added 2 changed"). */}
       {parts.map((part, index) => (
         <Fragment key={part.key}>
           {index > 0 && " "}
@@ -155,25 +156,6 @@ function Summary(props: { blocks: DiffBlock[]; created: boolean; deleted: boolea
         </Fragment>
       ))}
     </p>
-  );
-}
-
-/** Two buttons, one pressed: Rendered draws the Markdown, Source shows the text as written. */
-function ViewToggle(props: { view: View; onView(view: View): void }): JSX.Element {
-  return (
-    <div role="group" aria-label="Diff view" className="diff-toggle">
-      {VIEWS.map(({ view, label }) => (
-        <button
-          key={view}
-          type="button"
-          aria-pressed={props.view === view}
-          data-label={label}
-          onClick={() => props.onView(view)}
-        >
-          {label}
-        </button>
-      ))}
-    </div>
   );
 }
 
@@ -200,7 +182,7 @@ export function DiffView({
     >
       <div className="diff-head">
         <Summary blocks={blocks} created={before === null} deleted={after === null} />
-        <ViewToggle view={view} onView={setView} />
+        <SegmentedToggle<View> label="Diff view" options={VIEWS} value={view} onChange={setView} />
       </div>
       {view === "rendered" ? (
         <RenderedDiff blocks={blocks} path={path} />

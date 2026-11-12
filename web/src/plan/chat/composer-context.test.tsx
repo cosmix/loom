@@ -2,6 +2,7 @@ import { act, waitFor } from "@testing-library/react";
 import { expect, it } from "vitest";
 
 import { docAttachment } from "@/plan/attachments/doc-attachment";
+import { projectAtom } from "@/plan/state/atoms";
 import { box, initial, installComposerLifecycle, mount, setup, source } from "./composer-harness";
 import {
   BODY,
@@ -112,6 +113,8 @@ it("a dismissed context is not fetched or sent", async () => {
 
 it("a page with no source file adds nothing and fetches nothing", async () => {
   const h = setup("idle");
+  // The project is here, so the page's missing source is final and the send does not wait for it.
+  act(() => h.store.set(projectAtom, { checklists: [], standalone: [], moves: [] }));
   // An overview whose feature's checklist has not named its source yet.
   act(() =>
     h.store.set(viewedDocumentAtom, {

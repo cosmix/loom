@@ -56,6 +56,7 @@ it("an agent-ended chat that is still ending draws no wrap-up card and promises 
   const h = ended("ending");
 
   expect(h.log.querySelector(".chat-wrap")).toBeNull();
+  expect(within(h.log).queryByRole("heading", { name: "Writing down what we decided" })).toBeNull();
   expect(within(h.log).queryByText(/final notes/i)).toBeNull();
   expect(h.log.textContent).not.toContain("loom-done");
 

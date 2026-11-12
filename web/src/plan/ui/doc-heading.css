@@ -301,7 +301,8 @@ button.doc-heading-chip:hover .doc-heading-chip__label {
 /* ── Extras ───────────────────────────────────────────────────────────────── */
 
 /* A page's own rows after the status: a plan's run actions, a section's build marker. The box
-   is gone when neither renders; the marker aligns with the status rows' words. */
+   is gone when neither renders; the marker lines sit flush on the heading's column, as the status
+   chips and the facts above them do. */
 .doc-heading-extras {
   display: grid;
   gap: var(--space-2);
@@ -313,8 +314,4 @@ button.doc-heading-chip:hover .doc-heading-chip__label {
 .doc-heading-extras:empty,
 .doc-heading-extras__marker:empty {
   display: none;
-}
-
-.doc-heading-extras__marker {
-  padding-inline-start: calc(var(--space-3) + 14px + var(--space-2));
 }

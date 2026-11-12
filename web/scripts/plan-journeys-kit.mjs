@@ -159,9 +159,15 @@ export async function visit(page, origin, path) {
 /** The spine, opened behind its "Documents" button: narrow, the nav shows with its body closed. */
 export async function openSpine(page) {
   const nav = page.locator(SPINE_SELECTOR);
-  if ((await nav.count()) === 0) {
-    throw new Error(`no ${SPINE_SELECTOR} on ${new URL(page.url()).pathname}`);
-  }
+  // The spine joins the page when the project frame arrives, after the page's own load settles.
+  const arrived = await nav
+    .first()
+    .waitFor({ timeout: 5_000 })
+    .then(
+      () => true,
+      () => false,
+    );
+  if (!arrived) throw new Error(`no ${SPINE_SELECTOR} on ${new URL(page.url()).pathname}`);
   const closed = nav.locator('.plan-spine__menu[aria-expanded="false"]:visible');
   if (await closed.count()) await closed.first().click();
   return nav.first();
@@ -309,8 +315,9 @@ export const CHAT_ASIDE = 'aside[aria-label="Chat"]';
 
 /**
  * Every visible button's label with how many copies sit outside and inside the chat aside.
- * Coverage map cards (`button.maps-card`) are skipped: one card is drawn per heading and real
- * sections share heading titles, so a repeated card label is data, not one offer drawn twice.
+ * The Coverage page's row toggles (`button.coverage-row__toggle`) are skipped: one row is drawn per
+ * heading and real sections share heading titles, so a repeated toggle label is data, not one
+ * offer drawn twice.
  * The per-finding actions (`.maps-actions`) are skipped for the same reason: every open finding
  * draws its own Plan this, Fold into entry and Dismiss, each acting on a different finding.
  */
@@ -319,7 +326,7 @@ export const BUTTON_LABELS = (chatSelector) => {
     el.checkVisibility({ checkVisibilityCSS: true }) && el.getClientRects().length > 0;
   const labels = {};
   for (const b of [...document.querySelectorAll("button")].filter(shown)) {
-    if (b.matches("button.maps-card, .maps-actions button")) continue;
+    if (b.matches("button.coverage-row__toggle, .maps-actions button")) continue;
     const text = b.innerText.replace(/\s+/g, " ").trim();
     if (!text) continue;
     const seen = (labels[text] ??= { outside: 0, chat: 0 });

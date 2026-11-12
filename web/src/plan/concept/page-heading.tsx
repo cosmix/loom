@@ -4,6 +4,7 @@ import type { JSX, ReactNode } from "react";
 import {
   VISION_DOC,
   docKindOfPageKey,
+  metaplanKey,
   overviewKey,
   pageHref,
   parsePageKey,
@@ -72,12 +73,13 @@ function breadcrumb(page: ConceptPage, facts: ReturnType<typeof useFeatureFacts>
   const product = parts.scope === "product";
   const overview = parts.kind === "overview";
   const area = product ? "Product spec" : "Plans";
+  const areaKey = product ? overviewKey(parts.feature) : metaplanKey(parts.feature);
   const last = overview
     ? { label: page.title }
     : product
       ? { label: sectionLabel(parts.doc, facts.sections) ?? page.title }
       : { label: parts.doc, mono: true };
-  return [...crumbs, { label: area, to: pageHref(overviewKey(parts.feature, parts.scope)) }, last];
+  return [...crumbs, { label: area, to: pageHref(areaKey) }, last];
 }
 
 function implementsChips(page: ConceptPage): HeadingChip[] {

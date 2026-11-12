@@ -6,10 +6,13 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import checklistFixture from "@/plan/api/fixtures/checklist.json";
 import serverInfoFixture from "@/plan/api/fixtures/server-info.json";
+import traceFixture from "@/plan/api/fixtures/trace.json";
 import { checklistViewSchema, serverInfoSchema, type ChecklistView } from "@/plan/api/schema";
+import { traceViewSchema, type TraceView } from "@/plan/api/schema-trace";
 import { isSourcePath, Spine } from "@/plan/feature/spine";
 import spineSheet from "@/plan/feature/spine.css?raw";
 import { projectAtom, serverInfoAtom } from "@/plan/state/atoms";
+import { traceAtom } from "@/plan/trace/state";
 
 beforeEach(() => window.localStorage.clear());
 afterEach(cleanup);
@@ -40,10 +43,18 @@ function atlas(patch: Record<string, unknown> = {}): ChecklistView {
   });
 }
 
-function renderSpine(path: string, checklist: ChecklistView = atlas()) {
+/** A loaded trace with no document entries: every written document is never settled. */
+const noDocumentsTrace = traceViewSchema.parse({ ...structuredClone(traceFixture), documents: [] });
+
+function renderSpine(
+  path: string,
+  checklist: ChecklistView = atlas(),
+  trace: TraceView | null = null,
+) {
   const store = createStore();
   store.set(serverInfoAtom, serverInfoSchema.parse(serverInfoFixture));
   store.set(projectAtom, { checklists: [checklist], standalone: [], moves: [] });
+  if (trace) store.set(traceAtom(checklist.feature), { trace, error: null });
   const router = createMemoryRouter([{ path: "/f/:feature/*", element: <Spine /> }], {
     initialEntries: [path],
   });
@@ -63,7 +74,7 @@ const current = () => within(spine()).getAllByRole("link", { current: "page" });
 
 describe("rows", () => {
   it("lists the four groups in workflow order, each a link to its page", () => {
-    renderSpine("/f/atlas/product");
+    renderSpine("/f/atlas/product", atlas(), noDocumentsTrace);
 
     const heads = within(spine())
       .getAllByRole("link")
@@ -92,7 +103,7 @@ describe("rows", () => {
     const steps = checklistFixture.checklists[0]!.steps.map((step) =>
       step.number === 4 ? { ...step, label: "Done" } : step,
     );
-    renderSpine("/f/atlas/product", atlas({ steps }));
+    renderSpine("/f/atlas/product", atlas({ steps }), noDocumentsTrace);
 
     // Visible "1/1 done" already names the state; a bare count ("0/1") keeps its hidden word.
     expect(link(/\bPlans\b/).textContent).toBe("Plans Not all settled 1/1 done");

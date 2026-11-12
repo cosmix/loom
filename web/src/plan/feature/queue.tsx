@@ -216,8 +216,12 @@ export function Queue({ checklist, kind }: { checklist: ChecklistView; kind: Que
             )}
           </span>
           <span className="plan-queue__side">
-            <RowStatus row={row} drafting={isDrafting(row, team)} />
-            <RowAction row={row} drawn={drawn} />
+            <span className="plan-queue__status">
+              <RowStatus row={row} drafting={isDrafting(row, team)} />
+            </span>
+            <span className="plan-queue__action">
+              <RowAction row={row} drawn={drawn} />
+            </span>
           </span>
         </li>
       ))}

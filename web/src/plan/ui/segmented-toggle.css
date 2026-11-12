@@ -1,0 +1,63 @@
+/* Flush segments in an edged track. The pressed one is filled and set heavier, so the choice reads
+   at rest by more than a tint. */
+.segmented-toggle {
+  display: inline-flex;
+  flex: none;
+  height: var(--control-height);
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--corner-control);
+  font-family: var(--font-sans);
+}
+
+.segmented-toggle > button {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 0 10px;
+  font-size: var(--type-ui);
+  font-weight: 500;
+  color: var(--muted-foreground);
+  cursor: pointer;
+  transition:
+    background-color 120ms,
+    color 120ms;
+}
+
+/* The label again at the pressed weight, unseen and with no height: it holds each segment at its
+   widest, so pressing one moves nothing. The empty alternative keeps it out of the button's name. */
+.segmented-toggle > button::after {
+  height: 0;
+  overflow: hidden;
+  font-weight: 600;
+  visibility: hidden;
+  content: attr(data-label) / "";
+}
+
+.segmented-toggle > button + button {
+  border-left: 1px solid var(--border);
+}
+
+.segmented-toggle > button:hover {
+  background: color-mix(in oklch, var(--muted) 60%, transparent);
+  color: var(--foreground);
+}
+
+.segmented-toggle > button[aria-pressed="true"] {
+  background: var(--muted);
+  font-weight: 600;
+  color: var(--foreground);
+}
+
+/* Inset: the track clips its corners, and a ring drawn outside the button would be cut off. */
+.segmented-toggle > button:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: -2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .segmented-toggle > button {
+    transition: none;
+  }
+}

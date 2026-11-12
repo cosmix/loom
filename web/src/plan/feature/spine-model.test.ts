@@ -84,6 +84,9 @@ function atlas(patch: Record<string, unknown> = {}): ChecklistView {
   });
 }
 
+/** A loaded trace with no document entries: every written document is never settled. */
+const noDocumentsTrace = traceViewSchema.parse({ ...structuredClone(traceFixture), documents: [] });
+
 it.each([
   ["/f/atlas/source/product/atlas/index.md", "/f/atlas/vision"],
   ["/f/atlas/source/product/atlas/section_01.md", "/f/atlas/product/section_01"],
@@ -203,8 +206,28 @@ describe("group attention", () => {
       }));
       const base = atlas();
       const plan_rows = base.plan_rows.map((plan) => ({ ...plan, state: "written" }));
-      const group = spineGroups(atlas({ plan_rows, steps })).find((group) => group.id === id)!;
+      const group = spineGroups(atlas({ plan_rows, steps }), noDocumentsTrace).find(
+        (group) => group.id === id,
+      )!;
       expect(group.glyph).toEqual({ kind: "attention", word: "Not all settled" });
+    },
+  );
+
+  it.each(["product", "plans"])(
+    "draws no attention on a done %s head while the trace is unknown, and does once it answers",
+    (id) => {
+      const steps = checklistFixture.checklists[0]!.steps.map((step) => ({
+        ...step,
+        mark: "done",
+      }));
+      const plan_rows = atlas().plan_rows.map((plan) => ({ ...plan, state: "written" }));
+      const checklist = atlas({ plan_rows, steps });
+      const headOf = (view: ReturnType<typeof traceViewSchema.parse> | null) =>
+        spineGroups(checklist, view).find((group) => group.id === id)!;
+
+      expect(headOf(null).glyph).toBeNull();
+      const known = traceViewSchema.parse(structuredClone(traceFixture));
+      expect(headOf(known).glyph).toEqual({ kind: "attention", word: "Not all settled" });
     },
   );
 });

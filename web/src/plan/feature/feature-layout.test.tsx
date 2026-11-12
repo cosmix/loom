@@ -141,4 +141,21 @@ describe("FeatureLayout", () => {
     expect(screen.getByText("No such feature")).toBeTruthy();
     expect(screen.getByText("bad%name")).toBeTruthy();
   });
+
+  it("keeps the spine's column while the project loads, so the page does not move when it joins", () => {
+    const { store } = renderLayout("/f/demo/anything", null);
+    const layout = document.querySelector(".plan-layout")!;
+    const page = layout.querySelector(".plan-layout__page")!;
+    const slot = layout.querySelector(".plan-layout__spine-slot");
+
+    expect(layout.hasAttribute("data-spine")).toBe(true);
+    expect(slot?.nextElementSibling).toBe(page);
+    expect(slot?.getAttribute("aria-hidden")).toBe("true");
+
+    act(() => store.set(projectAtom, projectOf(named("demo"))));
+
+    const spine = screen.getByRole("navigation", { name: "Feature documents" });
+    expect(layout.querySelector(".plan-layout__spine-slot")).toBeNull();
+    expect(spine.nextElementSibling).toBe(page);
+  });
 });

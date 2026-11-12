@@ -6,6 +6,7 @@ import {
   isConceptPageKey,
   isOverviewKey,
   isPageDoc,
+  metaplanKey,
   overviewKey,
   pageHref,
   pageKeyOfPath,
@@ -53,7 +54,7 @@ describe("concept page keys", () => {
     expect(parsePageKey(key)).toEqual(parts);
     expect(isConceptPageKey(key)).toBe(true);
     if (parts.kind === "overview") {
-      expect(overviewKey(parts.feature, parts.scope)).toBe(key);
+      expect(overviewKey(parts.feature)).toBe(key);
     } else if (parts.kind === "summary") {
       expect(summaryKey(parts.feature, parts.scope, parts.doc)).toBe(key);
     } else {
@@ -139,9 +140,16 @@ describe("concept page keys", () => {
 });
 
 describe("concept page URLs", () => {
-  it("uses the metaplan for the plans area", () => {
-    expect(overviewKey("demo", "engineering")).toBe("demo/metaplan/index");
-    expect(pageHref(overviewKey("demo", "engineering"))).toBe("/f/demo/metaplan");
+  it("names the Plans home with metaplanKey", () => {
+    expect(metaplanKey("demo")).toBe("demo/metaplan/index");
+    expect(pageHref(metaplanKey("demo"))).toBe("/f/demo/metaplan");
+    expect(parsePageKey(metaplanKey("demo"))).toEqual({
+      kind: "summary",
+      feature: "demo",
+      scope: "metaplan",
+      doc: "index",
+    });
+    expect(overviewKey("demo")).toBe("overview/demo/product");
   });
   it.each(pages)("round trips $key through $href", ({ key, href }) => {
     expect(pageHref(key)).toBe(href);
