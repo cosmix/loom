@@ -1,5 +1,5 @@
 import { useAtomValue } from "jotai/react";
-import { lazy, Suspense, useEffect, useState } from "react";
+import { lazy, useEffect, useState } from "react";
 import { Outlet, useLocation } from "react-router";
 
 import { ErrorBoundary } from "@/aurora-ui/feedback/ErrorBoundary";
@@ -13,6 +13,7 @@ import { SettingsDialog } from "@/plan/settings/settings-dialog";
 import { PlanFooter } from "@/plan/shell-footer";
 import { unauthorizedAtom } from "@/plan/state/atoms";
 import { SummaryFeedHost, useAutoRebuildSync } from "@/plan/summaries/state";
+import { OptionalChunk } from "@/plan/ui/optional-chunk";
 import { Unauthorized } from "@/plan/unauthorized";
 
 // Help is a separate chunk, fetched after the shell renders: its topics and scenes kept plan.js
@@ -37,7 +38,7 @@ function useHelpKey() {
   return [open, setOpen] as const;
 }
 
-/** Header, banners, routed page, dock and footer; a 401 replaces all of it with the sign-in notice. */
+/** Header, routed page, dock, banners and footer; a 401 replaces all of it with the sign-in notice. */
 export function PlanShell() {
   useAutoRebuildSync();
   const unauthorized = useAtomValue(unauthorizedAtom);
@@ -62,7 +63,6 @@ export function PlanShell() {
               onOpenSettings={() => setSettingsOpen(true)}
               onOpenHelp={() => setHelpOpen(true)}
             />
-            <Banners />
             <div className="flex min-h-0 flex-1">
               {/* Positioned: the page's sr-only text and other absolute content takes <main> as
                   its containing block and is clipped by its scroll, never the page's. */}
@@ -73,11 +73,12 @@ export function PlanShell() {
               </main>
               <Dock />
             </div>
+            <Banners />
             <PlanFooter />
             <SummaryFeedHost />
-            <Suspense fallback={null}>
+            <OptionalChunk>
               <PlannerHelpDialog open={helpOpen} onOpenChange={setHelpOpen} />
-            </Suspense>
+            </OptionalChunk>
             <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
           </>
         )}

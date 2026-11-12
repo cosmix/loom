@@ -329,7 +329,8 @@ stage-specific item linking to that stage's row in the Stages panel.
 
 ## Diffs
 
-A diff opens as rendered Markdown, scrolled to centre the first changed block. A **Source**
+A diff opens as rendered Markdown, scrolled to centre the first changed block (to its start when
+the block is taller than the view). A **Source**
 toggle opens the `@codemirror/merge` view, scrolled to the first merge chunk, side by side on
 wide screens and inline (unified) below 900px. Source retains Add to chat. Diffs are read-only
 and every browser can open them. Three kinds exist:

@@ -16,7 +16,7 @@ import { useSessionBrief } from "@/plan/chat/use-session-brief";
 import { Untrusted, visibleControls } from "@/plan/chat/visible-controls";
 import { resolveLink } from "@/plan/files/address";
 import { openDocAtom, treeAtom } from "@/plan/files/atoms";
-import { docPathsOf } from "@/plan/files/tree";
+import { docPathsOf } from "@/plan/files/tree-docs";
 import { CopyButton } from "@/plan/markdown/copy-button";
 import { Markdown, parseMarkdown } from "@/plan/markdown/markdown";
 

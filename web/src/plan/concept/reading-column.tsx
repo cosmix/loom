@@ -18,7 +18,7 @@ import type { Block, ConceptPage, SourceAnchor } from "@/plan/api/schema-concept
 import type { AttachmentDraft } from "@/plan/attachments/types";
 import { visibleControls } from "@/plan/chat/visible-controls";
 import { treeAtom } from "@/plan/files/atoms";
-import { docPathsOf } from "@/plan/files/tree";
+import { docPathsOf } from "@/plan/files/tree-docs";
 import { normalizeTitle } from "@/plan/markdown/render";
 import { sourceMarksAtom } from "@/plan/settings/preferences";
 import type { Store } from "@/state/store";

@@ -20,7 +20,6 @@ fn page(f: &Fixture, key: &PageKey) -> ConceptPage {
 fn product() -> PageKey {
     PageKey::Overview {
         feature: "demo".into(),
-        scope: Scope::Product,
     }
 }
 

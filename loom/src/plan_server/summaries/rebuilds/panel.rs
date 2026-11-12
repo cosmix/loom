@@ -1,7 +1,6 @@
 //! The summary panel, the question's estimate and concept mode's never-built estimate.
 
 use std::collections::BTreeMap;
-use std::path::Path;
 use std::time::Instant;
 
 use chrono::Local;
@@ -12,10 +11,9 @@ use crate::plan_server::summaries::scheduler::{QuestionView, SchedulerView};
 use crate::plan_server::wire::summaries::{
     FailedSummary, RunningRebuild, SummaryPanel, SummaryQuestion,
 };
-use crate::planning::summary::cost::estimate::{estimate, totals};
+use crate::planning::summary::cost::estimate::{estimate, source_sizes, totals};
 use crate::planning::summary::cost::{CostLine, Level};
 use crate::planning::summary::evaluate::{Evaluation, SummaryState};
-use crate::planning::summary::store::is_overview;
 
 #[cfg(test)]
 mod tests;
@@ -105,20 +103,7 @@ impl Rebuilds {
     pub(super) fn source_sizes(&self, evaluation: &Evaluation) -> Option<BTreeMap<String, u64>> {
         let ctx = self.env.as_ref()?.ctx.upgrade()?;
         let project = ctx.project();
-        let size = |path: &Path| project.tree.get(path).map_or(0, |doc| doc.size);
-        let documents = evaluation
-            .summaries
-            .values()
-            .filter(|eval| !is_overview(&eval.id));
-        let sized = documents.map(|eval| (eval.id.clone(), eval.source.as_deref().map_or(0, size)));
-        let mut sizes: BTreeMap<String, u64> = sized.collect();
-        for scope in evaluation.scopes.values() {
-            let id = format!("overview/{}/product", scope.feature);
-            if evaluation.summaries.contains_key(&id) {
-                let total = scope.product.iter().filter_map(|id| sizes.get(id)).sum();
-                sizes.insert(id, total);
-            }
-        }
+        let sizes = source_sizes(&project, evaluation);
         Some(sizes)
     }
 }

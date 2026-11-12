@@ -1,4 +1,40 @@
 {
+  "_button.js": {
+    "file": "assets/button.js",
+    "name": "button",
+    "imports": [
+      "_rolldown-runtime.js",
+      "_react.js",
+      "_zod.js"
+    ]
+  },
+  "_changed-since-parts.css": {
+    "file": "assets/changed-since-parts.css",
+    "src": "_changed-since-parts.css"
+  },
+  "_changed-since-parts.js": {
+    "file": "assets/changed-since-parts.js",
+    "name": "changed-since-parts",
+    "imports": [
+      "_rolldown-runtime.js",
+      "_react.js",
+      "_button.js",
+      "_quota-meters.js",
+      "_router.js",
+      "_zod.js",
+      "_heading-parts.js",
+      "_session-home.js",
+      "_markdown.js",
+      "_sentence-text.js"
+    ],
+    "dynamicImports": [
+      "src/plan/editor/codemirror.ts",
+      "node_modules/mermaid/dist/mermaid.core.mjs"
+    ],
+    "css": [
+      "assets/changed-since-parts.css"
+    ]
+  },
   "_chunk-2Q5K7J3B.js": {
     "file": "assets/chunk-2Q5K7J3B.js",
     "name": "chunk-2Q5K7J3B",
@@ -258,6 +294,27 @@
     "file": "assets/cm-view.js",
     "name": "cm-view"
   },
+  "_coverage-marks.js": {
+    "file": "assets/coverage-marks.js",
+    "name": "coverage-marks",
+    "imports": [
+      "_button.js",
+      "_heading-parts.js",
+      "_coverage-model.js",
+      "_trace.js",
+      "_react.js"
+    ]
+  },
+  "_coverage-model.js": {
+    "file": "assets/coverage-model.js",
+    "name": "coverage-model",
+    "imports": [
+      "_rolldown-runtime.js",
+      "_react.js",
+      "_button.js",
+      "_heading-parts.js"
+    ]
+  },
   "_cytoscape.esm.js": {
     "file": "assets/cytoscape.esm.js",
     "name": "cytoscape.esm"
@@ -267,6 +324,24 @@
     "name": "dist",
     "imports": [
       "_rolldown-runtime.js"
+    ]
+  },
+  "_doc-heading.css": {
+    "file": "assets/doc-heading.css",
+    "src": "_doc-heading.css"
+  },
+  "_doc-heading.js": {
+    "file": "assets/doc-heading.js",
+    "name": "doc-heading",
+    "imports": [
+      "_rolldown-runtime.js",
+      "_button.js",
+      "_heading-parts.js",
+      "_react.js",
+      "_router.js"
+    ],
+    "css": [
+      "assets/doc-heading.css"
     ]
   },
   "_flow.js": {
@@ -281,6 +356,24 @@
     "file": "assets/graphlib.js",
     "name": "graphlib"
   },
+  "_heading-parts.css": {
+    "file": "assets/heading-parts.css",
+    "src": "_heading-parts.css"
+  },
+  "_heading-parts.js": {
+    "file": "assets/heading-parts.js",
+    "name": "heading-parts",
+    "imports": [
+      "_rolldown-runtime.js",
+      "_react.js",
+      "_button.js",
+      "_router.js",
+      "_zod.js"
+    ],
+    "css": [
+      "assets/heading-parts.css"
+    ]
+  },
   "_help-shortcuts.css": {
     "file": "assets/help-shortcuts.css",
     "src": "_help-shortcuts.css"
@@ -291,21 +384,30 @@
     "imports": [
       "_rolldown-runtime.js",
       "_react.js",
-      "_is-typing.js",
+      "_button.js",
       "_quota-meters.js"
     ],
     "css": [
       "assets/help-shortcuts.css"
     ]
   },
-  "_is-typing.js": {
-    "file": "assets/is-typing.js",
-    "name": "is-typing",
+  "_maps-findings.css": {
+    "file": "assets/maps-findings.css",
+    "src": "_maps-findings.css"
+  },
+  "_maps-findings.js": {
+    "file": "assets/maps-findings.js",
+    "name": "maps-findings",
     "imports": [
-      "_rolldown-runtime.js",
-      "_react.js",
-      "_zod.js"
+      "_button.js"
+    ],
+    "css": [
+      "assets/maps-findings.css"
     ]
+  },
+  "_maps.css": {
+    "file": "assets/maps.css",
+    "src": "_maps.css"
   },
   "_markdown.js": {
     "file": "assets/markdown.js",
@@ -349,7 +451,7 @@
     "imports": [
       "_rolldown-runtime.js",
       "_react.js",
-      "_is-typing.js",
+      "_button.js",
       "_router.js",
       "_zod.js",
       "_flow.js"
@@ -404,11 +506,61 @@
       "_react.js"
     ]
   },
+  "_sentence-text.js": {
+    "file": "assets/sentence-text.js",
+    "name": "sentence-text",
+    "imports": [
+      "_rolldown-runtime.js",
+      "_markdown.js",
+      "_react.js",
+      "_heading-parts.js"
+    ]
+  },
+  "_session-home.js": {
+    "file": "assets/session-home.js",
+    "name": "session-home",
+    "imports": [
+      "_rolldown-runtime.js",
+      "_button.js",
+      "_heading-parts.js",
+      "_react.js"
+    ]
+  },
   "_store.js": {
     "file": "assets/store.js",
     "name": "store",
     "imports": [
-      "_is-typing.js"
+      "_button.js"
+    ]
+  },
+  "_trace-gate.js": {
+    "file": "assets/trace-gate.js",
+    "name": "trace-gate",
+    "imports": [
+      "_react.js",
+      "_button.js",
+      "_heading-parts.js",
+      "_doc-heading.js",
+      "_trace.js",
+      "plan.html"
+    ]
+  },
+  "_trace.css": {
+    "file": "assets/trace.css",
+    "src": "_trace.css"
+  },
+  "_trace.js": {
+    "file": "assets/trace.js",
+    "name": "trace",
+    "imports": [
+      "_rolldown-runtime.js",
+      "_react.js",
+      "_button.js",
+      "_zod.js",
+      "_heading-parts.js"
+    ],
+    "css": [
+      "assets/trace.css"
     ]
   },
   "_zod.js": {
@@ -423,7 +575,7 @@
     "imports": [
       "_rolldown-runtime.js",
       "_react.js",
-      "_is-typing.js",
+      "_button.js",
       "_router.js",
       "_quota-meters.js",
       "_zod.js",
@@ -1591,19 +1743,27 @@
     "isEntry": true,
     "imports": [
       "_rolldown-runtime.js",
-      "_is-typing.js",
+      "_button.js",
       "_react.js",
       "_router.js",
       "_quota-meters.js",
       "_zod.js",
+      "_heading-parts.js",
+      "_trace.js",
+      "_session-home.js",
+      "_coverage-model.js",
+      "_changed-since-parts.js",
+      "_sentence-text.js",
+      "_doc-heading.js",
       "_markdown.js",
       "_flow.js"
     ],
     "dynamicImports": [
-      "src/plan/editor/codemirror.ts",
-      "node_modules/mermaid/dist/mermaid.core.mjs",
       "src/plan/editor/edit-mode.tsx",
-      "src/plan/help/help-dialog.tsx"
+      "src/plan/run/handoff-dialogs.tsx",
+      "src/plan/help/help-dialog.tsx",
+      "src/plan/trace/coverage-page.tsx",
+      "src/plan/trace/findings-page.tsx"
     ],
     "css": [
       "assets/plan.css"
@@ -1648,11 +1808,14 @@
     "isDynamicEntry": true,
     "imports": [
       "_rolldown-runtime.js",
-      "_is-typing.js",
+      "_button.js",
       "_react.js",
       "_router.js",
+      "_changed-since-parts.js",
+      "_heading-parts.js",
       "plan.html",
-      "_store.js"
+      "_store.js",
+      "_quota-meters.js"
     ]
   },
   "src/plan/help/help-dialog.tsx": {
@@ -1662,15 +1825,82 @@
     "isDynamicEntry": true,
     "imports": [
       "_rolldown-runtime.js",
-      "_is-typing.js",
+      "_button.js",
       "_help-shortcuts.js",
       "_react.js",
       "_quota-meters.js",
+      "_heading-parts.js",
       "plan.html",
-      "_router.js"
+      "_session-home.js",
+      "_changed-since-parts.js",
+      "_router.js",
+      "_trace.js",
+      "_maps-findings.js",
+      "_coverage-marks.js",
+      "_coverage-model.js"
     ],
     "css": [
-      "assets/help-dialog.css"
+      "assets/help-dialog.css",
+      "assets/maps.css"
+    ]
+  },
+  "src/plan/run/handoff-dialogs.tsx": {
+    "file": "assets/handoff-dialogs.js",
+    "name": "handoff-dialogs",
+    "src": "src/plan/run/handoff-dialogs.tsx",
+    "isDynamicEntry": true,
+    "imports": [
+      "_rolldown-runtime.js",
+      "_button.js",
+      "_react.js",
+      "_heading-parts.js",
+      "_quota-meters.js",
+      "_session-home.js",
+      "plan.html",
+      "_doc-heading.js"
+    ]
+  },
+  "src/plan/trace/coverage-page.tsx": {
+    "file": "assets/coverage-page.js",
+    "name": "coverage-page",
+    "src": "src/plan/trace/coverage-page.tsx",
+    "isDynamicEntry": true,
+    "imports": [
+      "_rolldown-runtime.js",
+      "_react.js",
+      "_router.js",
+      "_heading-parts.js",
+      "_coverage-marks.js",
+      "_coverage-model.js",
+      "_button.js",
+      "_sentence-text.js",
+      "plan.html",
+      "_trace-gate.js"
+    ],
+    "css": [
+      "assets/maps.css"
+    ]
+  },
+  "src/plan/trace/findings-page.tsx": {
+    "file": "assets/findings-page.js",
+    "name": "findings-page",
+    "src": "src/plan/trace/findings-page.tsx",
+    "isDynamicEntry": true,
+    "imports": [
+      "_rolldown-runtime.js",
+      "_react.js",
+      "_router.js",
+      "_heading-parts.js",
+      "plan.html",
+      "_button.js",
+      "_maps-findings.js",
+      "_quota-meters.js",
+      "_sentence-text.js",
+      "_trace.js",
+      "_trace-gate.js"
+    ],
+    "css": [
+      "assets/maps.css"
     ]
   }
 }

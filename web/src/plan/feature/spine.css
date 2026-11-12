@@ -10,7 +10,7 @@
   position: sticky;
   top: 0;
   align-self: start;
-  /* Known limit: the header and banners sit above <main>, and 7.5rem is a guess at their height.
+  /* Known limit: the header sits above <main>, 7.5rem is a guess at it and the banners and footer.
      The spine scrolls inside it. The real height is <main>'s own (a flex child of the shell,
      plan/shell.tsx), which CSS here cannot name: `container-type: size` on <main> would make it
      the containing block of the reading column's `position: fixed` selection actions

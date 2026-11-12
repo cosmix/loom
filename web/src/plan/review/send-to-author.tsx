@@ -207,13 +207,15 @@ function SendDialog({
   );
 }
 
-function SendButton({
-  draft,
-  open,
-}: {
-  draft: AttachmentDraft;
-  open: (store: Store, draft: AttachmentDraft, holder: Target) => void;
-}) {
+/**
+ * The selection secondary. AddToChat calls it while it renders (see `SelectionSecondary`), so the
+ * atoms read here decide whether a button exists at all: null for a user who can author and when
+ * no one holds authoring, which keeps the pill's rule and frame from drawing around nothing.
+ */
+function useSendButton(
+  draft: AttachmentDraft,
+  open: (store: Store, draft: AttachmentDraft, holder: Target) => void,
+) {
   const store = useStore();
   const canAuthor = useAtomValue(canAuthorAtom);
   const holder = useAtomValue(authoringAtom)?.holder;
@@ -250,9 +252,8 @@ export function registerSendToAuthor(): () => void {
       </Provider>,
     );
   };
-  const unregister = registerSelectionSecondary((draft) => (
-    <SendButton draft={draft} open={open} />
-  ));
+  const useSecondary = (draft: AttachmentDraft) => useSendButton(draft, open);
+  const unregister = registerSelectionSecondary(useSecondary);
   return () => {
     unregister();
     root?.unmount();

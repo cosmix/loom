@@ -161,3 +161,22 @@
 [data-loom-plan] .trace-settle-note[role="alert"]::before {
   background: var(--tone-blocked);
 }
+
+/* The documents a bulk settle skipped: one per line under the control's row, each a link and its reason. */
+[data-loom-plan] .trace-settle-skipped {
+  flex: 1 1 100%;
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--foreground);
+  font-size: var(--type-ui);
+  line-height: var(--leading-ui);
+}
+
+[data-loom-plan] .trace-settle-skipped a {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}

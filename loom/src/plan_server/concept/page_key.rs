@@ -16,12 +16,10 @@ pub enum Scope {
 /// The page a request addresses.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PageKey {
-    /// An overview of one feature.
+    /// The product overview of one feature; no other family has an overview.
     Overview {
         /// The owning feature.
         feature: String,
-        /// The overview's document family.
-        scope: Scope,
     },
     /// A section, plan or metaplan summary; standalone plans have no feature.
     Summary {
@@ -39,10 +37,12 @@ impl PageKey {
     pub fn parse(rest: &str) -> Option<Self> {
         let parts: Vec<_> = rest.split('/').collect();
         match parts.as_slice() {
-            ["overview", feature, scope] if is_feature_name(feature) => Some(Self::Overview {
-                feature: (*feature).to_owned(),
-                scope: parse_scope(scope).filter(|scope| *scope == Scope::Product)?,
-            }),
+            // Any other scope under `overview/` is refused, not read as a summary key.
+            ["overview", feature, scope] if is_feature_name(feature) => {
+                (*scope == "product").then(|| Self::Overview {
+                    feature: (*feature).to_owned(),
+                })
+            }
             [feature, scope, doc] if is_feature_name(feature) && safe_doc(doc) => {
                 Some(Self::Summary {
                     feature: Some((*feature).to_owned()),
@@ -62,9 +62,7 @@ impl PageKey {
     /// The key as it appears in URLs and `DocLink.page`.
     pub fn as_key(&self) -> String {
         match self {
-            Self::Overview { feature, scope } => {
-                format!("overview/{feature}/{}", scope_name(*scope))
-            }
+            Self::Overview { feature } => format!("overview/{feature}/product"),
             Self::Summary {
                 feature: Some(feature),
                 scope,
@@ -81,7 +79,7 @@ impl PageKey {
     /// The owning feature, absent for a standalone plan.
     pub fn feature(&self) -> Option<&str> {
         match self {
-            Self::Overview { feature, .. } => Some(feature),
+            Self::Overview { feature } => Some(feature),
             Self::Summary { feature, .. } => feature.as_deref(),
         }
     }

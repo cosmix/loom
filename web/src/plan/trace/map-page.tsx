@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 
-import { overviewKey, pageHref, type ConceptScope } from "@/plan/api/page-key";
+import { metaplanKey, overviewKey, pageHref } from "@/plan/api/page-key";
 import { featureCrumb } from "@/plan/files/heading-parts";
 import { Breadcrumbs } from "@/plan/ui/doc-heading";
 
@@ -11,9 +11,9 @@ import "@/plan/feature/pages.css";
  * Plans home (the metaplan page), which holds the run.
  */
 const AREAS = {
-  coverage: { label: "Product spec", scope: "product" },
-  findings: { label: "Plans", scope: "engineering" },
-} as const satisfies Record<string, { label: string; scope: ConceptScope }>;
+  coverage: { label: "Product spec", home: (feature: string) => overviewKey(feature) },
+  findings: { label: "Plans", home: metaplanKey },
+} as const satisfies Record<string, { label: string; home: (feature: string) => string }>;
 
 /**
  * The frame of a feature's map pages (Coverage, Findings): the breadcrumb a document's heading
@@ -31,7 +31,7 @@ export function MapPage(props: {
   const area = AREAS[page];
   const crumbs = [
     featureCrumb(feature),
-    { label: area.label, to: pageHref(overviewKey(feature, area.scope)) },
+    { label: area.label, to: pageHref(area.home(feature)) },
     { label: title },
   ];
   return (

@@ -190,34 +190,43 @@ fn at_commit_query<'a>(
     Ok((commit, path, doc_rel))
 }
 
+/// Notes for the section document at the doc-relative `section` path (`product/f/section_01.md`),
+/// the form `/api/doc`, `/api/at-commit` and the other document routes take. A path that names no
+/// discovered document, or one outside a feature's product sections, answers no notes.
 fn built(req: &ApiRequest<'_>) -> ApiResponse {
     let section = match parameter(&req.query, "section") {
         Ok(section) => section,
         Err(error) => return error,
     };
-    let path = {
-        let project = req.ctx.project();
-        project.tree.by_id(section).map(|doc| doc.path.clone())
+    let rel = match validate_doc_path(req.ctx.root(), section) {
+        Ok(rel) => rel,
+        Err(error) => return error,
     };
-    let raw = path
-        .as_deref()
-        .and_then(|path| path.to_str())
-        .and_then(to_doc_rel)
-        .unwrap_or(section);
-    if let Err(error) = validate_doc_path(req.ctx.root(), raw) {
-        return error;
-    }
     // The guard covers only the project reads; git runs after it is dropped.
-    let inputs = built_inputs(&req.ctx.project(), section);
+    let inputs = {
+        let project = req.ctx.project();
+        let id = project.tree.get(&rel).map(|doc| doc.id.0.clone());
+        id.map(|id| built_inputs(&project, &id))
+    };
+    let Some(inputs) = inputs else {
+        return built_response(Vec::new());
+    };
     match inputs.and_then(built_from) {
-        Ok(notes) => ApiResponse::json(
-            200,
-            &BuiltResponse {
-                notes: notes.into_iter().map(built_note_wire).collect(),
-            },
-        ),
-        Err(_) => ApiResponse::error(500, "internal", "built notes could not be read"),
+        Ok(notes) => built_response(notes),
+        Err(error) => {
+            tracing::warn!("loom plan could not read built notes for {section}: {error:#}");
+            ApiResponse::error(500, "internal", "built notes could not be read")
+        }
     }
+}
+
+fn built_response(notes: Vec<BuiltNote>) -> ApiResponse {
+    ApiResponse::json(
+        200,
+        &BuiltResponse {
+            notes: notes.into_iter().map(built_note_wire).collect(),
+        },
+    )
 }
 
 fn built_note_wire(note: BuiltNote) -> BuiltNoteWire {

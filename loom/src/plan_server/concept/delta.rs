@@ -67,7 +67,6 @@ fn snapshot_key_pages(
     let keys = [
         PageKey::Overview {
             feature: feature.into(),
-            scope: Scope::Product,
         },
         PageKey::Summary {
             feature: Some(feature.into()),
@@ -231,7 +230,7 @@ fn key_row_pages(before: &Snapshot, after: &Snapshot) -> Vec<String> {
             continue;
         }
         let (feature, scope) = match PageKey::parse(key) {
-            Some(PageKey::Overview { feature, scope }) => (feature, scope),
+            Some(PageKey::Overview { feature }) => (feature, Scope::Product),
             Some(PageKey::Summary {
                 feature: Some(feature),
                 scope: Scope::Metaplan,

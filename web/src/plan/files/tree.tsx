@@ -12,6 +12,7 @@ import { toAddress } from "@/plan/files/address";
 import { searchDocs } from "@/plan/files/api";
 import { SearchBox, type SearchScope } from "@/plan/files/search-box";
 import { SearchResults } from "@/plan/files/search-results";
+import { GROUPS, treeDocs } from "@/plan/files/tree-docs";
 import { TreeEntryRow, containsPath, useDisclosure } from "@/plan/files/tree-entry";
 import { planSlug } from "@/plan/files/tree-model";
 import { TreeTabs } from "@/plan/files/tree-tabs";
@@ -20,34 +21,6 @@ import { LoadState } from "@/plan/ui/load-state";
 import "./tree.css";
 
 export { planSlug };
-
-const GROUPS = [
-  ["product", "Product"],
-  ["plans", "Plans"],
-  ["knowledge", "Knowledge"],
-  ["other", "Other"],
-  ["archive", "Archive"],
-] as const satisfies readonly (readonly [keyof FileTree, string])[];
-
-/** Every entry with a document behind it, nested ones included. */
-export function treeDocs(tree: FileTree): TreeEntry[] {
-  const found: TreeEntry[] = [];
-  const visit = (entry: TreeEntry) => {
-    if (entry.path !== null) found.push(entry);
-    entry.children.forEach(visit);
-  };
-  GROUPS.forEach(([key]) => tree[key].forEach(visit));
-  return found;
-}
-
-/** The paths a link may resolve to: every document in the tree, and the open one even if unlisted. */
-export function docPathsOf(tree: FileTree | null, own: string): Set<string> {
-  const paths = new Set([own]);
-  for (const entry of tree ? treeDocs(tree) : []) {
-    if (entry.path !== null) paths.add(entry.path);
-  }
-  return paths;
-}
 
 function matches(entry: TreeEntry, needle: string): boolean {
   return (
