@@ -6,21 +6,20 @@
 
 /* ── Fold into entry ───────────────────────────────────────────────────────── */
 
-/* Under a hairline in the card: the question, a radio row per entry (the chosen one sunk into the
-   page ground), the note on what is left out, then the confirm naming the entry. The legend
-   floats so it is a grid item, not a cut in an edge. */
-[data-loom-plan] .maps-picker,
-[data-loom-plan] .maps-dismiss {
-  min-width: 0;
-  margin: var(--space-2) 0 0;
-  padding: var(--space-4) 0 0;
-  border: 0;
-  border-top: 1px solid var(--hairline);
-}
-
+/* A raised panel in the card, the one box in a box on the page: the popover's fill and edge with no
+   shadow, because it sits in the page flow. The floating layer rule in src/index.css gives it the
+   popover's washes too. It holds the question, a radio row per entry, the note on what is left
+   out, then the confirm naming the entry. The legend floats so it is a grid item, not a cut in
+   the edge. */
 [data-loom-plan] .maps-picker {
   display: grid;
   gap: var(--space-2);
+  min-width: 0;
+  margin: var(--space-2) 0 0;
+  padding: var(--space-4);
+  border: 1px solid var(--popover-border);
+  border-radius: var(--corner-surface);
+  background: var(--popover);
 }
 
 [data-loom-plan] .maps-picker > legend {
@@ -47,8 +46,8 @@
   align-items: center;
   gap: var(--space-3);
   min-height: 48px;
-  padding: var(--space-2) var(--space-4);
-  border-radius: 10px;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--corner-control);
   font-family: var(--font-sans);
   font-size: 17px;
   font-weight: 500;
@@ -61,8 +60,13 @@
   background: var(--muted);
 }
 
+/* The chosen entry is marked in the accent, as the radio is: a tint of it on the panel and a
+   hairline of it round the row. The tint differs from the card and from the panel in hue and in
+   lightness in every theme; text on it keeps 4.5:1 (`--muted-foreground` is 4.58:1 at the
+   least, on Graphite). */
 [data-loom-plan] .maps-picker__option:has(> input:checked) {
-  background: var(--background);
+  background: color-mix(in oklab, var(--accent-ink) 16%, var(--popover));
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--accent-ink) 45%, transparent);
 }
 
 [data-loom-plan] .maps-picker__option > input {
@@ -99,9 +103,14 @@
 
 /* ── Dismiss ───────────────────────────────────────────────────────────────── */
 
-/* The reason field grows on the line, the confirm and Cancel after it; the field is the card's
-   one bordered thing. */
+/* Under a hairline in the card. The reason field grows on the line, the confirm and Cancel after
+   it; the field is the card's one bordered thing. */
 [data-loom-plan] .maps-dismiss {
+  min-width: 0;
+  margin: var(--space-2) 0 0;
+  padding: var(--space-4) 0 0;
+  border: 0;
+  border-top: 1px solid var(--hairline);
   display: flex;
   flex-wrap: wrap;
   align-items: flex-end;

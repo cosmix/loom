@@ -114,6 +114,38 @@ describe("source editor", () => {
     expect(head()).toBe(0);
   });
 
+  it("scrolls a diff to its first changed chunk on the after side", () => {
+    const before = "one\ntwo\nthree\nfour";
+    const after = "one\ntwo\nTHREE\nfour\nfive";
+    const head = (pane: HTMLElement) => viewOf(pane).state.selection.main.head;
+    const side = mount((host) => createDiffView(host, { before, after, unified: false }));
+    side.handle.scrollToFirstChange();
+    // Line 3 of the after text starts at offset 8; the before pane keeps its selection.
+    expect(panes(side.parent).map(head)).toEqual([0, 8]);
+    const unified = mount((host) => createDiffView(host, { before, after, unified: true }));
+    unified.handle.scrollToFirstChange();
+    expect(head(panes(unified.parent)[0]!)).toBe(8);
+
+    // A chunk that removes the last line starts one past the after text; the line is clamped.
+    const cut = mount((host) => createDiffView(host, { before, after: "one\ntwo", unified: true }));
+    cut.handle.scrollToFirstChange();
+    expect(head(panes(cut.parent)[0]!)).toBe(4);
+  });
+
+  it("leaves the selection alone when nothing changed or the editor is no diff", () => {
+    const head = (pane: HTMLElement) => viewOf(pane).state.selection.main.head;
+    const same = mount((host) =>
+      createDiffView(host, { before: "one\ntwo", after: "one\ntwo", unified: true }),
+    );
+    viewOf(panes(same.parent)[0]!).dispatch({ selection: { anchor: 5 } });
+    same.handle.scrollToFirstChange();
+    expect(head(panes(same.parent)[0]!)).toBe(5);
+    const { handle, pane } = source("one\ntwo");
+    viewOf(pane).dispatch({ selection: { anchor: 5 } });
+    handle.scrollToFirstChange();
+    expect(head(pane)).toBe(5);
+  });
+
   it("maps a selection to document lines and ignores one outside the editor", () => {
     const { handle, pane } = source("one\ntwo\nthree");
     const [first, second, third] = linesOf(pane);

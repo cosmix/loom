@@ -1,0 +1,400 @@
+/*
+ * The diff surface: a head (what changed, and the Rendered / Source switch) over one of two bodies.
+ * Rendered reads as the document does, in the reading face on the host's own ground, each change
+ * marked in the margin by a 2px edge and a `+` or `−` over a faint wash of the same tone.
+ * Insert is `--tone-completed` and delete `--tone-blocked`, the tones of the chat's `+N −M` counts;
+ * no hue is invented. A wash is a transparency of its tone, so it sits on any host ground (page,
+ * card, dialog), and the mark and the edge say the side, so the wash never carries it alone.
+ * Measured from the OKLCH tokens in all nine themes on `--background`, `--card` and `--popover`:
+ * text on a wash 9.3:1 or more, a tone's mark and edge on its wash 4.0:1 or more, muted and syntax
+ * inks on a wash 5.3:1 or more once deepened (below).
+ */
+.diff-view {
+  --diff-add: var(--tone-completed);
+  --diff-del: var(--tone-blocked);
+  --diff-add-wash: color-mix(in oklch, var(--diff-add) 12%, transparent);
+  --diff-del-wash: color-mix(in oklch, var(--diff-del) 10%, transparent);
+  /* The changed run inside a changed source line: a second, firmer layer of the same tone. */
+  --diff-add-mark: color-mix(in oklch, var(--diff-add) 24%, transparent);
+  --diff-del-mark: color-mix(in oklch, var(--diff-del) 24%, transparent);
+  /* Muted and syntax inks lose contrast on a wash, and the light themes' syntax inks start under
+     4.5:1, so inside the diff each is mixed toward `--foreground` by this share. */
+  --diff-deepen: var(--foreground) 45%;
+  --diff-ink-muted: color-mix(in oklab, var(--diff-deepen), var(--muted-foreground));
+  --diff-ink-1: color-mix(in oklab, var(--diff-deepen), var(--chart-1));
+  --diff-ink-2: color-mix(in oklab, var(--diff-deepen), var(--chart-2));
+  --diff-ink-3: color-mix(in oklab, var(--diff-deepen), var(--chart-3));
+  --diff-ink-4: color-mix(in oklab, var(--diff-deepen), var(--chart-4));
+  /* The margin the marks hang in; the head, the text and the fold rows share its inner edge. */
+  --diff-gutter: var(--space-6);
+  min-width: 0;
+}
+
+.diff-view,
+.diff-source {
+  display: flex;
+  flex: 1 1 0%;
+  flex-direction: column;
+  min-height: 0;
+}
+
+/* A dark ground takes a little more of the tone to show, and its inks need less deepening. */
+.dark .diff-view {
+  --diff-add-wash: color-mix(in oklch, var(--diff-add) 14%, transparent);
+  --diff-del-wash: color-mix(in oklch, var(--diff-del) 14%, transparent);
+  --diff-deepen: var(--foreground) 25%;
+}
+
+/* ── The head ─────────────────────────────────────────────────────────────── */
+
+/* Where the host's page scrolls and not the diff (the diff page, the changes list on a phone) the
+   head stays in view over the page ground. A dialog bounds the diff, which then scrolls inside
+   itself, and the head sits on the dialog's own surface. */
+.diff-head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-4);
+  padding: var(--space-2) var(--space-4) var(--space-2) var(--diff-gutter);
+  border-bottom: 1px solid var(--hairline);
+  background: var(--background);
+}
+
+[role="dialog"] .diff-head {
+  background: none;
+}
+
+.diff-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
+  min-width: 0;
+  margin: 0;
+  font-family: var(--font-sans);
+  font-size: var(--type-ui);
+  line-height: var(--leading-ui);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  color: var(--muted-foreground);
+}
+
+.diff-summary__file {
+  font-weight: 500;
+  color: var(--foreground);
+}
+
+.diff-summary__glyph {
+  margin-right: 0.35em;
+  font-family: var(--font-mono);
+  font-weight: 600;
+  color: var(--foreground);
+}
+
+[data-kind="added"] > .diff-summary__glyph {
+  color: var(--diff-add);
+}
+
+[data-kind="removed"] > .diff-summary__glyph {
+  color: var(--diff-del);
+}
+
+/* Two flush segments in an edged track. The pressed one is filled and set heavier, so the view
+   reads at rest by more than a tint. */
+.diff-toggle {
+  display: inline-flex;
+  flex: none;
+  height: var(--control-height);
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--corner-control);
+  font-family: var(--font-sans);
+}
+
+.diff-toggle > button {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 0 10px;
+  font-size: var(--type-ui);
+  font-weight: 500;
+  color: var(--muted-foreground);
+}
+
+.diff-toggle > button,
+.diff-fold {
+  cursor: pointer;
+  transition:
+    background-color 120ms,
+    color 120ms;
+}
+
+/* The label again at the pressed weight, unseen and with no height: it holds each segment at its
+   widest, so pressing one moves nothing. */
+.diff-toggle > button::after {
+  height: 0;
+  overflow: hidden;
+  font-weight: 600;
+  visibility: hidden;
+  content: attr(data-label) / "";
+}
+
+.diff-toggle > button + button {
+  border-left: 1px solid var(--border);
+}
+
+.diff-toggle > button:hover {
+  background: color-mix(in oklch, var(--muted) 60%, transparent);
+  color: var(--foreground);
+}
+
+.diff-toggle > button[aria-pressed="true"] {
+  background: var(--muted);
+  font-weight: 600;
+  color: var(--foreground);
+}
+
+/* Inset: the track clips its corners, and the scroller clips a ring drawn outside itself or its
+   fold rows. */
+.diff-toggle > button:focus-visible,
+.diff-rendered:focus-visible,
+.diff-fold:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: -2px;
+}
+
+/* ── Rendered ─────────────────────────────────────────────────────────────── */
+
+/* The scroller. A dialog portals out of the shell that sets the reading face, so plan.css's
+   defaults stand in there. Positioned, so the blocks' screen-reader labels (absolutely placed)
+   scroll with the text instead of stretching whatever the diff sits in. */
+.diff-rendered {
+  position: relative;
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  overflow: auto;
+  padding: var(--space-4) var(--space-4) var(--space-6) 0;
+  font-family: var(--font-reading, "Source Serif 4 Variable", "Source Serif 4", Georgia, serif);
+  font-size: var(--reading-size, 19px);
+  line-height: var(--reading-line, 1.6);
+}
+
+.diff-rendered .md {
+  font-family: inherit;
+  font-size: inherit;
+  line-height: inherit;
+}
+
+/* A link to a document the tree lacks keeps its "not found" title, but is not struck through: a
+   struck link would read as removed text. */
+.diff-rendered .md .md-missing {
+  text-decoration: underline;
+  text-decoration-color: var(--muted-foreground);
+  text-decoration-thickness: 1px;
+  color: inherit;
+}
+
+/* The scroll margin clears the head where it sticks: a block scrolled to its start, a fold row
+   reached with the keyboard. */
+.diff-block,
+.diff-fold {
+  display: grid;
+  flex: none;
+  min-width: 0;
+  margin-top: 0.75em;
+  scroll-margin-top: var(--space-7);
+}
+
+/* Each block is its own Markdown root, so a heading's space above comes from its block. */
+.diff-block:has(.md > :is(h1, h2, h3, h4, h5, h6, .md-heading)):not(:first-child) {
+  margin-top: 1.5em;
+}
+
+.diff-block:has(.md > :is(h1, h2, h3, h4, h5, h6, .md-heading)) + .diff-block {
+  margin-top: 0.5em;
+}
+
+/* A run of added blocks, or of removed ones, is one band. */
+.diff-block[data-diff-block="added"] + .diff-block[data-diff-block="added"],
+.diff-block[data-diff-block="removed"] + .diff-block[data-diff-block="removed"] {
+  margin-top: 0;
+}
+
+.diff-block[data-diff-block="same"] {
+  padding: 0 var(--space-3) 0 var(--diff-gutter);
+}
+
+/* A changed block: its two texts stacked as one band, or side by side from 900px (DiffView sets
+   `data-diff-layout` from the same query as the source view's layout). */
+.diff-view[data-diff-layout="split"] .diff-block[data-diff-block="changed"] {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--space-3);
+}
+
+/* One side of a change: the edge, the mark in the gutter, then the text. A border, not a shadow,
+   so the edge survives forced colours. Muted text inside takes the deepened ink. */
+.diff-side {
+  display: grid;
+  grid-template-columns: calc(var(--diff-gutter) - 2px) minmax(0, 1fr);
+  align-items: baseline;
+  min-width: 0;
+  padding: 0.35em var(--space-3) 0.35em 0;
+  border-left: 2px solid var(--diff-tone);
+  background: var(--diff-wash);
+  text-decoration: none;
+  --muted-foreground: var(--diff-ink-muted);
+}
+
+/* Inside a band a heading keeps some of its space above. */
+.diff-side:has(> .md > :is(h1, h2, h3, h4, h5, h6, .md-heading)) {
+  padding-top: 0.9em;
+}
+
+.diff-side[data-diff-side="before"] {
+  --diff-tone: var(--diff-del);
+  --diff-wash: var(--diff-del-wash);
+}
+
+.diff-side[data-diff-side="after"] {
+  --diff-tone: var(--diff-add);
+  --diff-wash: var(--diff-add-wash);
+}
+
+.diff-side__mark {
+  font-family: var(--font-mono);
+  font-size: 0.8em;
+  font-weight: 600;
+  text-align: center;
+  color: var(--diff-tone);
+  user-select: none;
+}
+
+/* A folded run of unchanged blocks: the chevron in the gutter, the count, then a rule to the edge. */
+.diff-fold {
+  grid-template-columns: var(--diff-gutter) auto minmax(0, 1fr);
+  align-items: center;
+  min-height: var(--control-height);
+  padding-right: var(--space-3);
+  font-family: var(--font-sans);
+  font-size: var(--type-ui);
+  font-weight: 500;
+  line-height: var(--leading-ui);
+  text-align: left;
+  color: var(--muted-foreground);
+}
+
+.diff-fold::after {
+  height: 1px;
+  margin-left: var(--space-3);
+  background: var(--hairline);
+  content: "";
+}
+
+.diff-fold > svg {
+  justify-self: center;
+  transition: transform 120ms;
+}
+
+.diff-fold[aria-expanded="true"] > svg {
+  transform: rotate(90deg);
+}
+
+.diff-fold:hover {
+  background: var(--muted);
+  color: var(--foreground);
+}
+
+/* ── Source ───────────────────────────────────────────────────────────────── */
+
+.diff-source__host {
+  min-height: 0;
+  overflow: auto;
+}
+
+.diff-source__host[data-ready] {
+  flex: 1 1 0%;
+}
+
+/* The text's inks, deepened for the washes its changed lines sit on; the line numbers keep the
+   plain muted ink of the gutter. */
+.diff-source .cm-content {
+  --muted-foreground: var(--diff-ink-muted);
+  --chart-1: var(--diff-ink-1);
+  --chart-2: var(--diff-ink-2);
+  --chart-3: var(--diff-ink-3);
+  --chart-4: var(--diff-ink-4);
+}
+
+/* CodeMirror mounts its sheets after the page's, so each rule here outweighs the editor's own
+   (`.cm-editor.cm-merge-a .cm-changedLine` under two theme classes) instead of relying on order.
+   The editor sits on the host's ground with a quiet gutter, as the rendered text does. */
+.diff-view .diff-source .cm-editor {
+  background: transparent;
+  font-size: var(--type-body);
+}
+
+.diff-view .diff-source .cm-editor .cm-gutters {
+  border-right: 0;
+  background: transparent;
+}
+
+.diff-view .diff-source .cm-mergeViewEditor + .cm-mergeViewEditor {
+  border-left: 1px solid var(--hairline);
+}
+
+.diff-view .diff-source .cm-editor.cm-merge-a .cm-changedLine,
+.diff-view .diff-source .cm-editor .cm-deletedChunk {
+  background: var(--diff-del-wash);
+}
+
+.diff-view .diff-source .cm-editor.cm-merge-b .cm-changedLine,
+.diff-view .diff-source .cm-editor .cm-inlineChangedLine {
+  background: var(--diff-add-wash);
+}
+
+/* The changed run is a fill, so its text takes the foreground whatever its syntax ink was. */
+.diff-view .diff-source .cm-editor :is(.cm-changedText, .cm-deletedText),
+.diff-view .diff-source .cm-editor :is(.cm-changedText, .cm-deletedText) * {
+  border-radius: 2px;
+  color: var(--foreground);
+}
+
+.diff-view .diff-source .cm-editor.cm-merge-a .cm-changedText,
+.diff-view .diff-source .cm-editor .cm-deletedChunk .cm-deletedText,
+.diff-view .diff-source .cm-editor.cm-merge-b .cm-deletedText {
+  background: var(--diff-del-mark);
+}
+
+.diff-view .diff-source .cm-editor.cm-merge-b .cm-changedText {
+  background: var(--diff-add-mark);
+}
+
+/* The gutter's change bar is the rendered view's 2px edge. */
+.diff-view .diff-source .cm-editor .cm-changeGutter {
+  width: 2px;
+  padding-left: 0;
+}
+
+.diff-view .diff-source .cm-editor.cm-merge-a .cm-changedLineGutter,
+.diff-view .diff-source .cm-editor .cm-deletedLineGutter {
+  background: var(--diff-del);
+}
+
+.diff-view .diff-source .cm-editor.cm-merge-b .cm-changedLineGutter {
+  background: var(--diff-add);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .diff-toggle > button,
+  .diff-fold,
+  .diff-fold > svg {
+    transition: none;
+  }
+}
