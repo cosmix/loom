@@ -239,7 +239,7 @@ Operator checks no stage sandbox can run (rebuilt summaries, a real image read, 
 
 ## Planner Polish Follow-ups
 
-Operator checks no stage sandbox can run (a rebuilt metaplan summary, a real Stop, journeys J3-J5 and J8) and about twenty unimplemented reviewer suggestions on chat tests, the Stop button look, roundel CSS, spine row accessibility and metaplan breadcrumbs. → [Planner UI Repair Follow-ups](concerns/planner-ui-repair-followups.md#planner-polish-unchecked-here-and-reviewer-suggestions)
+Operator checks no stage sandbox can run (a rebuilt metaplan summary, a real Stop, journeys J3-J5 and J8) and about twenty unimplemented reviewer suggestions on chat tests, the Stop button look, roundel CSS, spine row accessibility and metaplan breadcrumbs. → [Planner UI Repair Follow-ups](concerns/planner-ui-repair-followups.md#planner-polish-unchecked-here-and-reviewer-suggestions) Planner feedback fixes: the scope gap of the spine heads (Home cards, the queue and the progress strip read only the server step mark), open reviewer suggestions on bulk settle, `/api/built`, the diff view and the chat ending, layout shift, the bundle budget. → [Planner UI Repair Follow-ups](concerns/planner-ui-repair-followups.md#home-cards-the-queue-and-the-progress-strip-read-only-the-server-step-mark)
 
 ## Planner Follow-ups Follow-ups
 

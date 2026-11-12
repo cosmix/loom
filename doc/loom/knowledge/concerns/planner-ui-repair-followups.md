@@ -1,6 +1,6 @@
 # Planner UI Repair Follow-ups
 
-> Repair
+> UI
 
 Review suggestions nobody implemented and findings the stages could not close. Each item names its symbol; re-read the code before acting, because a later change may have settled it.
 
@@ -108,7 +108,7 @@ The issue-fixes plan was walked in a stage sandbox: contract tests and stubbed-W
 
 - A real New chat in Claude Code shows one opening and no markup, and a message with an attached document shows a chip, not `<loom-attachments>` (needs a Claude login; [the wrapper](../mistakes/planner-ui-repair.md#claude-code-wrapped-delivered-prompts-and-every-text-match-broke-silently-2026-11-03)).
 - A real Rebuild press starts a session within seconds and the cost ledger records `button` (the scheduler fix rests on the rig in `rebuilds/tests_press.rs`; [the press path](../architecture/summary-store.md#rebuild-scheduler)).
-- The next overview rebuild shows no restated sentence. Stored overviews keep their near-copies until then (measured at planning time: 9 of 28 product and 4 of 28 engineering sentences at word Jaccard 0.7 or more, 2 byte-identical).
+- The next overview rebuild shows no restated sentence. Stored overviews keep their near-copies until then (measured at planning time: 9 of 28 product sentences at word Jaccard 0.7 or more).
 - J3 fails in a stage sandbox because the plan lock path is under read-only `/tmp`, J4 fails at its context step, and J5 and J8 print PENDING because tmux cannot create a socket ([journeys](../conventions/plan-web.md#ui-repair-test-rules)).
 - No measured cost exists for a summary rebuild ([Cost Ledger](../architecture/summary-store.md#cost-ledger-and-estimates)).
 - `summary-panel.test.tsx:147` and `:166` pin "fresh unknown · cache reads unknown · output unknown", so an all-unknown token line still repeats three times; collapsing it to one phrase needs those assertions changed.
@@ -144,7 +144,7 @@ Suggestions nobody implemented. Re-read the code before acting.
 
 **Not checked in a stage sandbox.** Each of the plan's 15 issues has a passing contract and, where a shot could be taken, a screenshot. An operator checks the rest outside a stage:
 
-- Rebuild summaries outside a stage: each feature metaplan gains `doc/loom/summaries/<feature>/metaplan/<stem>.md`, and `overview/feat-planner/engineering` is rebuilt with no sentence opening to a single member sentence (issues 6 and 7). Until then the metaplan page reads "not built yet" with a Rebuild button.
+- Rebuild summaries outside a stage: each feature metaplan gains `doc/loom/summaries/<feature>/metaplan/index.md` (issues 6 and 7). Until then the metaplan page reads "not built yet" with a Rebuild button.
 - Press Stop during a real chat turn and confirm one notice (issue 3); the stage only showed injected frames and the Rust contract.
 - Run the journeys outside a stage: J4 fails at its context step, J5 and J8 print PENDING (tmux cannot create a socket) and J3 fails on the `/tmp` plan lock (`/api/save` 500 "Failed to open plan lock").
 
@@ -191,3 +191,24 @@ Code: `loom/src/plan_server/trace/settle_*.rs`, `loom/src/git/user_git.rs`; desi
 - A brief the project holds no text for is hashed by its bytes (`BriefSeen::Bytes`). Under `core.autocrlf` or another filter that changes the bytes on disk, the brief can read as changed since the settle.
 - `git/runner.rs` `run_git` removes only the repository-redirect variables, so an inherited `GIT_LITERAL_PATHSPECS`, `GIT_GLOB_PATHSPECS`, `GIT_NOGLOB_PATHSPECS` or `GIT_ICASE_PATHSPECS` reaches loom's other git calls. The settle and run commits go through `user_git`, `run_literal` and `IndexBefore` (`git/user_git.rs`), which neutralise them for every pathspec they pass. Route other callers through those helpers when one is next changed for pathspecs.
 - `web/src/plan/chat/turn-footer-rebuilt.tsx:43` labels every row of a closed turn "left for the background rebuild" whether or not the id sealed, because the turn wire carries no per-id outcome. Add a per-id outcome to the turn wire before changing the label.
+
+## Home cards, the queue and the progress strip read only the server step mark
+
+The Product spec and Plans group heads on the spine show amber "Not all settled" when the server mark is `done` and any child's glyph is not settled, done or retired (`feature/spine-model.ts`, needing a loaded trace). The Home cards, the queue (`feature/queue.tsx`) and the progress strip still read the server step mark alone, so a feature the spine calls unsettled reads done there. A running plan also makes a done Plans head read "Not all settled" although a locked plan was settled before it ran; the literal wording was kept. Revisit when the operator asks for the other surfaces to agree.
+
+## Open reviewer suggestions: bulk settle, the diff view and the chat ending
+
+- **Bulk settle hashes.** `plan_server/trace/settle_all.rs` settles with the server-loaded content hash, so a document revised after the reader's last view, or newly unresolved between the first press and "Settle anyway", is settled unread; sending the hashes the web counted would keep the single route's guarantee. `settle_route.rs` reports every save failure, plan validation errors included, as stale. No test observes that bulk settle enqueues commits (it goes through `settle_one`), and `settle_all_contract_tests.rs` refuses the last document, so it cannot see "stops at the first refusal" (`settle_all_tests.rs` covers it).
+- **`/api/built`.** The `built_from` error is discarded in `review/routes.rs`; log it with `tracing::warn!`. No test sends a symlinked path component (the `validate_doc_path` symlink branch is covered through other routes).
+- **Diff view.** `diff/definitions.ts` re-parses every definition of a side for each block containing `[` (fine at planner sizes). `diff/block-diff.ts` bounds the LCS at 2000 blocks per side (about 16 MB, 4M comparisons inside a render `useMemo`); bounding the product of the two lengths would cap it tighter. Non-prose nodes keep whitespace, so reformatting a table's padding shows as a changed block that renders identically. The first change opens about 24 px low at 1440 and 64 px high at 390: check whether the sticky head's height is excluded from the centring box (`diff/rendered-diff.tsx`). `scrollToFirstChange` on the base `EditorHandle` is a no-op for the source editor.
+- **Chat ending.** The web reads the display-capped markdown while the bridge validates the full text; `kickoff-fence.ts` `OPENING`'s `.` does not match `\r`, so a CRLF fence is no fence on the web while the server accepts it (`transcript/done_fence.rs`). `chat/closing.ts` `endedByAgent` infers the cause from the transcript: an agent end cancelled by a delivering message and followed by a `Draining` teardown before any new turn would read "Finished by the planner". `STATE_NAME.ending` ("Writing final notes", `chat/chat-state-glyph.tsx`; also "Wrapping up" in `kickoff-head.tsx`) is imprecise for agent-ended chats, where no closing write runs; a neutral "Ending" is the safer wording. A chat the agent already ended and that is still waiting on background work at a server restart gets a closing write on recovery (`bridge/recovery.rs` `Closing::NotSent`); Decision D6 does not cover it.
+- **Web structure.** `optional-chunk.tsx`'s error boundary has no reset key. `add-to-chat.tsx` calls hooks inside secondary render callbacks, which relies on the registration set staying constant while a selection control is shown (documented in `attachments/secondary.ts`). `ui/segmented-toggle.css` is not scoped under `[data-loom-plan]`. `composer-hooks.ts` `flattened(Object.values(tree).flat())` repeats `files/tree-docs.ts` `treeDocs`. `page-key.ts` `pageKeyOf4` rebuilds the metaplan key by hand instead of calling `metaplanKey`. `loom/src/planning/summary/store.rs` `overview_parts` returns a kind that is always `product`. `done_fence.rs` tests exercise `Mapper::turn_done` and would sit better under `transcript/`. `empty-states.test.tsx` names its fixtures `METAPLAN_OFFER` and `EMPTY_METAPLAN` although the server no longer pairs a `start-metaplan` offer with `no_vision`, and has an `it.each` with one case.
+- **Tests not written.** D9 has no test (`themes.contracts.test.tsx` could assert, for all nine themes, that `--popover` differs from `--card` and that `--popover-border` against `--popover` meets 1.9:1); `feature.css` below 760 px (the empty spine slot's single column) is CSS only and could be pinned with a `?raw` stylesheet check; `route_tests.rs` has a test named for ids that now sends the document path; `review/api.test.ts` repeats a `docRel` pin; `block-diff.test.ts:140` passes without the head and tail trim.
+
+## Layout shift and layout polish left after the integration-verify fixes
+
+Measured on a fixture clone (debug build): CLS 0.11 at 1440 and 0.18 at 390 read-only, 0.04 and 0.17 writable. Causes left: the `.doc-heading-status` list (`ui/doc-heading-parts.tsx`) grows when the trace and summary arrive (about 0.05 to 0.08 at 390), and the chat composer collapses from 259 to 40 px when the hello frame arrives on a read-only server (about 0.08 at 1440). The spine slot and the read-only banner moved below the page row removed the 0.33 and 0.28 shifts. Also: "Settle all plans" renders after the Run panel and the gaps (`feature/document-page.tsx`), off screen on a 900 px viewport, where the product overview puts "Settle all specs" under the head; "Checking for a run." (`feature/run-scope.ts`) is the permanent Run panel line in every read-only fixture shot, and a real read-only session should be checked to leave it; the queue's "Next" row pushes its status word left of the other rows' status column.
+
+## Bundle budget
+
+`plan.js` is 451 kB, held under the 500 kB warning by lazy Coverage, Findings and handoff-dialog chunks. The app code is the weight: chat 150 kB, trace 59, concept 59 and files 51 of `src/plan`'s 575 kB. Route-level lazy for `/new`, `/changes`, home and concept and a lazy settings dialog in `shell.tsx` need their synchronous test asserts (`router.test.tsx`, `shell.test.tsx:111`) rewritten first.
