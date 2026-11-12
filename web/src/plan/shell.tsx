@@ -5,6 +5,7 @@ import { Outlet, useLocation } from "react-router";
 import { ErrorBoundary } from "@/aurora-ui/feedback/ErrorBoundary";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { isTyping } from "@/lib/is-typing";
+import { PlannerConnectionDialog } from "@/plan/connection-dialog";
 import { Dock } from "@/plan/dock";
 import { Banners } from "@/plan/header/banners";
 import { PlanHeader } from "@/plan/header/header";
@@ -80,6 +81,7 @@ export function PlanShell() {
               <PlannerHelpDialog open={helpOpen} onOpenChange={setHelpOpen} />
             </OptionalChunk>
             <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
+            <PlannerConnectionDialog />
           </>
         )}
       </div>

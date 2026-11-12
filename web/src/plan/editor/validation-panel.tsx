@@ -1,5 +1,6 @@
 import type { JSX } from "react";
 
+import { HazardPanel } from "@/aurora-ui/feedback/HazardPanel";
 import { Button } from "@/components/ui/button";
 import type { ValidationItem, ValidationView } from "@/plan/api/schema-files";
 import { Untrusted } from "@/plan/chat/visible-controls";
@@ -72,6 +73,32 @@ function Group({ title, items }: { title: string; items: string[] }): JSX.Elemen
   );
 }
 
+function ValidationErrors({ validation, onJump }: Pick<Props, "validation" | "onJump">) {
+  if (validation.errors.length === 0) return null;
+  return (
+    <section aria-label="Errors">
+      <HazardPanel tone="error" title={`Errors (${validation.errors.length})`}>
+        <ul className="list-disc space-y-0.5 pl-5">
+          {validation.errors.map((item, index) => (
+            <ErrorItem key={index} item={item} onJump={onJump} />
+          ))}
+        </ul>
+      </HazardPanel>
+    </section>
+  );
+}
+
+function ValidationWarnings({ validation }: Pick<Props, "validation">) {
+  if (!BUCKETS.some(([key]) => validation.warnings[key].length > 0)) return null;
+  return (
+    <HazardPanel tone="warning" title="Warnings" bodyClassName="space-y-3">
+      {BUCKETS.map(([key, title]) => (
+        <Group key={key} title={`Warnings: ${title}`} items={validation.warnings[key]} />
+      ))}
+    </HazardPanel>
+  );
+}
+
 /** Errors, warnings by bucket and notes, as `loom plan verify` groups them. */
 export function ValidationPanel({ validation, onJump, onSaveWithErrors }: Props): JSX.Element {
   return (
@@ -80,21 +107,8 @@ export function ValidationPanel({ validation, onJump, onSaveWithErrors }: Props)
       aria-label="Plan validation"
       className="space-y-3 border-b border-hairline px-4 py-3 text-[13px]"
     >
-      {validation.errors.length > 0 && (
-        <section aria-label="Errors" className="space-y-1">
-          <h3 className="text-xs font-medium text-destructive">
-            Errors ({validation.errors.length})
-          </h3>
-          <ul className="list-disc space-y-0.5 pl-5">
-            {validation.errors.map((item, index) => (
-              <ErrorItem key={index} item={item} onJump={onJump} />
-            ))}
-          </ul>
-        </section>
-      )}
-      {BUCKETS.map(([key, title]) => (
-        <Group key={key} title={`Warnings: ${title}`} items={validation.warnings[key]} />
-      ))}
+      <ValidationErrors validation={validation} onJump={onJump} />
+      <ValidationWarnings validation={validation} />
       <Group title="Notes" items={validation.notes} />
       {onSaveWithErrors && (
         <Button type="button" variant="destructive" size="sm" onClick={onSaveWithErrors}>

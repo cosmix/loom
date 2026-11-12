@@ -35,6 +35,9 @@ Hierarchy is made with size, weight and space, in that order. A surface uses the
 
 ## Surfaces and borders
 
+- The backend unavailable modal (`connection-dialog.tsx`) uses Aurora's warning `HazardPanel`: diagonal caution stripes stay in its header, with a clean body on the shared dialog surface. The shared overlay blurs the page by 6px. It stays open through reconnect attempts and closes when the socket opens; an initial connection attempt and graceful stopping keep their existing notices until a connection fails.
+- Substantial failures and warnings use Aurora hazard surfaces: editor load failures and unreadable plan metadata use `ErrorPanel`; stale-document refresh failures use a warning `HazardPanel` with Retry. Editor and document validation group errors in one error panel and warning buckets in one warning panel, with notes outside. Stripes stay in the headers and body text uses normal ink; alert announcements, source-line jumps, stage links and save controls keep their behavior. Short inline action errors and ordinary loading and empty states retain their compact forms.
+
 - The page ground is `--background`. One level of surface exists: `.plan-surface` (`--card`, hairline edge, 10px corners) standing on the ground. Nothing inside a surface draws a border, a shadow or another surface. A box in a box is not allowed; the Findings fold picker is the one recorded exception (Floating surfaces).
 - A border is allowed around: an input, a surface standing alone on the page, a popover or dialog. A border is not allowed around: a button row, a list that sits on the page, a status, a heading, a notice.
 - Lists divide with hairlines (`.plan-list`, `.plan-rule`); their edges are the page's edges. A hairline separates; it never encloses.

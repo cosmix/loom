@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState, type JSX, type RefObject } from "react";
 
+import { ErrorPanel } from "@/aurora-ui/feedback/HazardPanel";
+
 import type { EditorHandle, EditorMode, SourceEditorHandle } from "./codemirror";
 import { loadCodeMirror } from "./load";
 
@@ -93,9 +95,9 @@ export function SourceEditor(props: SourceEditorProps): JSX.Element {
         </p>
       ) : null}
       {phase === "failed" ? (
-        <p role="alert" className="px-3 py-2 text-[13px] text-destructive">
-          The editor failed to load. Reload the page to try again.
-        </p>
+        <div role="alert" className="p-3">
+          <ErrorPanel title="The editor failed to load" message="Reload the page to try again." />
+        </div>
       ) : null}
       <div ref={host} className="min-h-0 flex-1 overflow-auto" />
     </div>

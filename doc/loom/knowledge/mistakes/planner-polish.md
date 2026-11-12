@@ -105,3 +105,23 @@
 **Why:** The survey judged the lanes by what they lack (agent content, lifecycle state) and missed what they show.
 **Prevention:** When asked whether existing UI covers a need, list what it shows field by field before judging fit. Per-agent count, model, tokens, rate and liveness are monitoring data even without transcript content.
 **Fix:** PLAN-planner-background-activity-and-skills reuses the token-flow pipeline (tokens/ reader and flow builder, AgentFlow and agentFlowSchema) for plan sessions.
+
+## Browser CLI run-code requires a callback
+
+**What happened:** a modal browser check stayed on about:blank because run-code received bare await statements and failed to parse. A later theme-switch eval also failed because it received multiple bare statements.
+
+**Why:** the Playwright CLI expects run-code as a callable function and eval as an expression or function.
+
+**Prevention:** pass async (page) => { ... } to run-code and () => { ... } for multi-statement eval. Verify the page snapshot and computed theme before taking screenshots.
+
+**Fix:** rerun the browser checks with callbacks and replace the invalid captures.
+
+## Reuse Aurora for planner failure and validation surfaces
+
+**What happened:** the user directed an Aurora styling pass after the backend unavailable modal exposed other bespoke failure and warning surfaces.
+
+**Why:** editor failures, validation and stale-document notices each carry their own styling.
+
+**Prevention:** use the existing Aurora hazard primitives for substantial failure or warning surfaces, preserving alert semantics and recovery actions; keep ordinary loading and empty states on the established LoadState convention.
+
+**Fix:** apply the frontend-skill workflow to the relevant planner components.

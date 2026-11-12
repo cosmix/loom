@@ -26,3 +26,7 @@ The file-mode editor (`web/src/plan/editor/`) has two modes over one CodeMirror 
 ## Lazy loading
 
 `EditMode` is a `React.lazy` chunk (`web/src/plan/files/reading-column.tsx`) inside a `Suspense` whose fallback is the "Loading editor" `role="status"` line, the pattern help uses. The chunk is `edit-mode.js` (about 21 kB); `plan.js` stays near 412 kB, under the 500 kB warning ([the bundle rule](../conventions/plan-web.md#live-preview-editor-rules)). A failed `edit-mode.js` fetch is not retried ([concerns](../concerns/planner-ui-repair-followups.md#live-preview-editor-reviewer-suggestions)).
+
+## Failure and validation surfaces
+
+SourceEditor and MergePanel show Aurora ErrorPanel inside role=alert when the lazy editor cannot load, retaining reload guidance. ValidationPanel groups errors into an error HazardPanel, and warning buckets into one warning HazardPanel; notes stay outside the hazards. Source-line jump buttons and the explicitly offered Save with errors action retain their behavior. In file mode, plan/validation-list.tsx applies the same grouping to the document heading validation popover, preserving stage links and location text. plan/stages-panel.tsx wraps unreadable YAML in ErrorPanel and keeps the raw metadata visible; reading-column.tsx wraps a failed document refresh in a warning HazardPanel with Retry and keeps the earlier document text visible. Stripes stay in the header; body text remains neutral. The backend unavailable modal is documented in planner-web-shell.md#backend-unavailable-modal.

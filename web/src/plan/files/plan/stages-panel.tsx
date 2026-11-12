@@ -1,5 +1,6 @@
 import { useState } from "react";
 
+import { ErrorPanel } from "@/aurora-ui/feedback/HazardPanel";
 import type { PlanView, StageRow as StageRowData } from "@/plan/api/schema-files";
 import { Untrusted } from "@/plan/chat/visible-controls";
 import { StageGraph } from "@/plan/files/plan/stage-graph";
@@ -23,28 +24,31 @@ function idSuffixes(stages: StageRowData[]): string[] {
   });
 }
 
-/// Stands in for the plan's metadata block: the stage graph and one row per
-/// stage, or the YAML itself on request.
-export function StagesPanel({ plan, links }: { plan: PlanView; links: StageLinks }) {
-  const [showYaml, setShowYaml] = useState(false);
-
+function MetadataNotice({ plan }: { plan: PlanView }) {
   if (plan.yaml_error !== null) {
     return (
       <section aria-label="Stages" className="my-4 space-y-2">
-        <p role="alert" className="text-[13px] text-destructive">
-          <Untrusted text={plan.yaml_error} />
-        </p>
+        <div role="alert">
+          <ErrorPanel
+            title="Plan metadata could not be read"
+            message={<Untrusted text={plan.yaml_error} />}
+          />
+        </div>
         {plan.yaml !== null && <pre className="overflow-x-auto font-mono text-xs">{plan.yaml}</pre>}
       </section>
     );
   }
-  if (plan.yaml === null) {
-    return (
-      <section aria-label="Stages" className="my-4 text-[13px] text-muted-foreground">
-        No metadata block yet.
-      </section>
-    );
-  }
+  return (
+    <section aria-label="Stages" className="my-4 text-[13px] text-muted-foreground">
+      No metadata block yet.
+    </section>
+  );
+}
+
+/// Stands in for the plan's metadata block: the stage graph and one row per stage, or the YAML.
+export function StagesPanel({ plan, links }: { plan: PlanView; links: StageLinks }) {
+  const [showYaml, setShowYaml] = useState(false);
+  if (plan.yaml_error !== null || plan.yaml === null) return <MetadataNotice plan={plan} />;
   const suffixes = idSuffixes(plan.stages);
   return (
     <section aria-label="Stages" className="my-6 space-y-3">

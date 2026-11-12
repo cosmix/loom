@@ -89,13 +89,14 @@ describe("PlanView", () => {
 
   it("shows the parse error and the raw block", () => {
     renderPlan(makeDoc({ yaml: "stages: [oops", yaml_error: "bad yaml at line 1" }));
-    expect(screen.getByRole("alert").textContent).toBe("bad yaml at line 1");
+    expect(screen.getByRole("alert").textContent).toContain("bad yaml at line 1");
+    expect(screen.getByRole("alert").querySelector(".hazard-error")).toBeTruthy();
     expect(screen.getByText("stages: [oops")).toBeTruthy();
   });
 
   it("shows the parse error as visible text when it carries a bidirectional override", () => {
     renderPlan(makeDoc({ yaml: "stages: [oops", yaml_error: "bad\u202e yaml" }));
-    expect(screen.getByRole("alert").textContent).toBe("bad⟨U+202E⟩ yaml");
+    expect(screen.getByRole("alert").textContent).toContain("bad⟨U+202E⟩ yaml");
   });
 
   it("toggles Show YAML", () => {
