@@ -98,10 +98,23 @@
   /* Ledger stock: blue ruling between table rows, a double rule under the heads. */
   --ledger-rule: oklch(0.8 0.045 240);
   --ledger-head-rule: 3px double oklch(0.72 0.06 240);
-  /* Dialogs float clear of the page: a deep drop under a tighter contact shadow. */
-  --dialog-shadow: 0 32px 80px -20px oklch(0 0 0 / 0.45), 0 12px 28px -12px oklch(0 0 0 / 0.3);
-  /* The scrim behind a sheet, and the contact shadow under a small raised control (a switch knob). */
-  --dialog-backdrop: oklch(0 0 0 / 0.2);
+  /* What floats (a popover, a dialog, a menu) is set off the page by its `--popover` fill and three
+   * things here. `--popover-border` is its edge, 1.9:1 against the fill in every theme.
+   * `--popover-glow` is a halo of the theme's ink all round it: a shade on paper, a glow in the
+   * dark, where a drop shadow does not show. `--popover-well` is the ground one step under the
+   * fill (see the floating layer rule below). */
+  --popover-border: color-mix(in oklab, var(--foreground) 26%, var(--popover));
+  --popover-glow: 0 0 48px -8px color-mix(in oklch, var(--foreground) 18%, transparent);
+  --popover-well: var(--card);
+  /* Dialogs float clear of the page: the halo, over a tight contact shadow and a deep drop. The
+   * halo is listed first so it is painted over the drops, which would black it out in the dark. */
+  --dialog-shadow:
+    var(--popover-glow), 0 12px 28px -12px oklch(0 0 0 / 0.3), 0 32px 80px -20px oklch(0 0 0 / 0.45);
+  /* The scrim behind a modal, in the theme's ink so the page dims without greying, and the blur
+   * the dialog primitive lays over it. A popover is not modal and draws neither. */
+  --dialog-backdrop: color-mix(in oklch, var(--foreground) 30%, transparent);
+  --dialog-backdrop-blur: 6px;
+  /* The contact shadow under a small raised control (a switch knob). */
   --control-shadow: 0 1px 2px oklch(0 0 0 / 0.25);
 }
 
@@ -159,8 +172,49 @@
   --logo: oklch(1 0 0);
   --ledger-rule: var(--hairline);
   --ledger-head-rule: 1px solid var(--hairline);
+  /* The halo is light here, so it is tighter and fainter than the shade on paper. */
+  --popover-glow: 0 0 36px -4px color-mix(in oklch, var(--foreground) 16%, transparent);
   /* A near-black ground needs a larger, fully opaque drop to show at all. */
-  --dialog-shadow: 0 40px 100px -8px oklch(0 0 0 / 1), 0 16px 40px -4px oklch(0 0 0 / 0.85);
+  --dialog-shadow:
+    var(--popover-glow), 0 16px 40px -4px oklch(0 0 0 / 0.85), 0 40px 100px -8px oklch(0 0 0 / 1);
+  /* Ink would lighten a dark page, so the scrim is black, and heavier to dim an already dark one. */
+  --dialog-backdrop: oklch(0 0 0 / 0.58);
+}
+
+/*
+ * A floating layer stands one step up the surface ramp. Its fill is `--popover`, so inside it
+ * `--card` is that raised surface and `--background` (a well in it, or the ground of a layer that
+ * paints the page colour) is the page's card. Its washes and rules are mixed from its own fill:
+ * the page's `--muted` is within 0.01 of a dark `--popover` and would not show on it. Listed are
+ * the two primitives and every other surface that paints `--popover` around a wash or a rule;
+ * `.terminal-frame` fills the terminal page's `--popover` panel and `.maps-picker` is the Findings
+ * fold picker, a raised panel inside a card. A new floating surface uses a primitive or joins
+ * the list.
+ */
+[data-slot="popover-content"],
+[data-slot="dialog-content"],
+.terminal-frame,
+.trace-sheet,
+.chat-commands,
+.add-to-chat__pill,
+.add-to-chat__note,
+.kickoff-picker,
+.maps-picker {
+  --background: var(--popover-well);
+  --card: var(--popover);
+  --muted: color-mix(in oklab, var(--foreground) 6%, var(--popover));
+  --secondary: var(--muted);
+  --accent: color-mix(in oklab, var(--foreground) 10%, var(--popover));
+  --input: color-mix(in oklab, var(--foreground) 14%, var(--popover));
+  --border: color-mix(in oklab, var(--foreground) 16%, var(--popover));
+  --hairline: color-mix(in oklch, var(--border) 85%, transparent);
+}
+
+/* The edge is the same whichever way a consumer draws it: the primitives' ring, or a border a
+ * consumer swaps in (`border border-border ring-0`). Unlayered, so it outranks the utility. */
+[data-slot="popover-content"],
+[data-slot="dialog-content"] {
+  border-color: var(--popover-border);
 }
 
 @layer base {

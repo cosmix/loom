@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type JSX } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, type JSX } from "react";
 
 import { useMediaQuery } from "@/lib/use-media-query";
 import type { SectionView } from "@/plan/api/schema-files";
@@ -8,7 +8,11 @@ import { loadCodeMirror } from "@/plan/editor/load";
 import { useEditorSelectionAttachment } from "@/plan/editor/selection-attachment";
 import { LoadState } from "@/plan/ui/load-state";
 
+import { diffBlocks, type DiffBlock } from "./block-diff";
 import { diffProvenance } from "./diff-provenance";
+import { RenderedDiff } from "./rendered-diff";
+
+import "./diff.css";
 
 export interface DiffViewProps {
   /** `null`: the file was created, so the whole text is added. */
@@ -26,14 +30,22 @@ const NO_SECTIONS: SectionView[] = [];
 const SIDE_BY_SIDE = "(min-width: 900px)";
 
 type Phase = "loading" | "ready" | "failed";
+type View = "rendered" | "source";
+
+const VIEWS: { view: View; label: string }[] = [
+  { view: "rendered", label: "Rendered" },
+  { view: "source", label: "Source" },
+];
 
 /**
  * Builds the CodeMirror diff view into `host` and rebuilds it when either text or the
- * layout changes. A load that finishes after the effect is gone is dropped.
+ * layout changes. A load that finishes after the effect is gone is dropped. The first view
+ * built scrolls to its first change; a rebuild leaves the reader where the editor puts them.
  */
 function useDiffEditor(before: string | null, after: string | null, wide: boolean) {
   const host = useRef<HTMLDivElement>(null);
   const handle = useRef<EditorHandle | null>(null);
+  const scrolled = useRef(false);
   const [phase, setPhase] = useState<Phase>("loading");
 
   useEffect(() => {
@@ -51,6 +63,8 @@ function useDiffEditor(before: string | null, after: string | null, wide: boolea
         });
         handle.current = created;
         setPhase("ready");
+        if (!scrolled.current) created.scrollToFirstChange();
+        scrolled.current = true;
       },
       () => {
         if (!cancelled) setPhase("failed");
@@ -66,30 +80,16 @@ function useDiffEditor(before: string | null, after: string | null, wide: boolea
   return { host, handle, phase };
 }
 
-/**
- * A read-only diff. The view is rebuilt when either text or the layout changes. A
- * selection on either side can be added to the chat.
- */
-export function DiffView({
-  before,
-  after,
-  path,
-  sections = NO_SECTIONS,
-}: DiffViewProps): JSX.Element {
+/** The CodeMirror diff of the two source texts. A selection on either side can be added to the chat. */
+function SourceDiff(props: Required<DiffViewProps> & { wide: boolean }): JSX.Element {
+  const { before, after, path, sections, wide } = props;
   const wrapper = useRef<HTMLDivElement>(null);
-  const wide = useMediaQuery(SIDE_BY_SIDE);
   const { host, handle, phase } = useDiffEditor(before, after, wide);
   const provenance = useMemo(() => diffProvenance(path, sections), [path, sections]);
   const attachment = useEditorSelectionAttachment(wrapper, handle, provenance);
 
   return (
-    <div
-      ref={wrapper}
-      className="flex min-h-0 flex-1 flex-col"
-      data-diff-layout={wide ? "split" : "unified"}
-      role="group"
-      aria-label={`Diff of ${path}`}
-    >
+    <div ref={wrapper} className="diff-source">
       {phase === "loading" && <LoadState state="loading" size="compact" title="Loading diff" />}
       {phase === "failed" && (
         <LoadState
@@ -101,12 +101,111 @@ export function DiffView({
       )}
       {/* The host stays mounted for the editor to build into; it takes the spare height only once
           the diff is drawn, so the state above centres in the whole view until then. */}
-      <div
-        ref={host}
-        className={phase === "ready" ? "min-h-0 flex-1 overflow-auto" : "min-h-0 overflow-auto"}
-      />
+      <div ref={host} className="diff-source__host" data-ready={phase === "ready" || undefined} />
       {attachment.draft && attachment.rect && (
         <AddToChat draft={attachment.draft} rect={attachment.rect} onAdded={attachment.clear} />
+      )}
+    </div>
+  );
+}
+
+const COUNTED = [
+  { kind: "added", glyph: "+" },
+  { kind: "removed", glyph: "−" },
+  { kind: "changed", glyph: "±" },
+] as const;
+
+/** What changed, in words: a created or deleted file, then the count of blocks of each kind. */
+function Summary(props: { blocks: DiffBlock[]; created: boolean; deleted: boolean }): JSX.Element {
+  const parts: JSX.Element[] = [];
+  if (props.created)
+    parts.push(
+      <span key="new" className="diff-summary__file">
+        New file
+      </span>,
+    );
+  if (props.deleted) {
+    parts.push(
+      <span key="deleted" className="diff-summary__file">
+        Deleted file
+      </span>,
+    );
+  }
+  for (const { kind, glyph } of COUNTED) {
+    const count = props.blocks.filter((block) => block.kind === kind).length;
+    if (count === 0) continue;
+    parts.push(
+      <span key={kind} className="diff-summary__count" data-kind={kind}>
+        <span className="diff-summary__glyph" aria-hidden="true">
+          {glyph}
+        </span>
+        {count} {kind}
+      </span>,
+    );
+  }
+  if (parts.length === 0) parts.push(<span key="none">No changes</span>);
+  return (
+    <p className="diff-summary">
+      {/* The space text nodes keep the text content from running the parts together; the flex
+          container draws none of them. */}
+      {parts.map((part, index) => (
+        <Fragment key={part.key}>
+          {index > 0 && " "}
+          {part}
+        </Fragment>
+      ))}
+    </p>
+  );
+}
+
+/** Two buttons, one pressed: Rendered draws the Markdown, Source shows the text as written. */
+function ViewToggle(props: { view: View; onView(view: View): void }): JSX.Element {
+  return (
+    <div role="group" aria-label="Diff view" className="diff-toggle">
+      {VIEWS.map(({ view, label }) => (
+        <button
+          key={view}
+          type="button"
+          aria-pressed={props.view === view}
+          data-label={label}
+          onClick={() => props.onView(view)}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * A read-only diff of one document. It opens on the rendered document with its changes marked;
+ * Source shows the CodeMirror diff of the text, which is loaded only when chosen.
+ */
+export function DiffView({
+  before,
+  after,
+  path,
+  sections = NO_SECTIONS,
+}: DiffViewProps): JSX.Element {
+  const wide = useMediaQuery(SIDE_BY_SIDE);
+  const [view, setView] = useState<View>("rendered");
+  const blocks = useMemo(() => diffBlocks(before ?? "", after ?? ""), [before, after]);
+
+  return (
+    <div
+      className="diff-view"
+      data-diff-layout={wide ? "split" : "unified"}
+      role="group"
+      aria-label={`Diff of ${path}`}
+    >
+      <div className="diff-head">
+        <Summary blocks={blocks} created={before === null} deleted={after === null} />
+        <ViewToggle view={view} onView={setView} />
+      </div>
+      {view === "rendered" ? (
+        <RenderedDiff blocks={blocks} path={path} />
+      ) : (
+        <SourceDiff before={before} after={after} path={path} sections={sections} wide={wide} />
       )}
     </div>
   );
