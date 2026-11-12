@@ -150,7 +150,8 @@ pub(super) struct LocalSettle {
     pub(super) delivery_id: String,
     /// Its confirming record arrived.
     pub(super) confirmed_at: Option<Instant>,
-    /// Its last command or output record; a `/compact` counts from its boundary on.
+    /// Its last command or output record; a `/compact` counts from its boundary or its first
+    /// output record, whichever comes first (a failed compaction writes output and no boundary).
     pub(super) last_record: Option<Instant>,
     /// Its own `UserPromptSubmit` set busy (a fork skill): the settle is an idle.
     pub(super) busy: bool,

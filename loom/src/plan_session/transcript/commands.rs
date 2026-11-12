@@ -66,7 +66,9 @@ pub(super) fn command_record(record: &Value) -> Option<CommandRecord> {
             // An `error` level record stays an API error notice (`records.rs`).
             let error = record.get("level").and_then(Value::as_str) == Some("error");
             match record.get("subtype").and_then(Value::as_str)? {
-                "local_command" => tagged(content, false, command_run(record)),
+                "local_command" => {
+                    fork_launch(content).or_else(|| tagged(content, false, command_run(record)))
+                }
                 "informational" if !error => Some(informational(content)),
                 _ => None,
             }
@@ -75,16 +77,8 @@ pub(super) fn command_record(record: &Value) -> Option<CommandRecord> {
     }
 }
 
-/// The tagged shapes: a fork launch, a `<command-name>` record, or a record that opens with an
-/// output element.
+/// The tagged shapes: a `<command-name>` record, or a record that opens with an output element.
 fn tagged(text: &str, prompt: bool, run: Option<(String, String)>) -> Option<CommandRecord> {
-    if let Some(skill) = element(text, FORK).and_then(fork_skill) {
-        let mark = CommandMark::Forked { skill };
-        return Some(CommandRecord {
-            mark,
-            notice: output(text),
-        });
-    }
     let lead = text.trim_start();
     if lead.starts_with(MESSAGE_OPEN) || lead.starts_with(&format!("<{NAME}>")) {
         let name = element(text, NAME)?;
@@ -100,6 +94,17 @@ fn tagged(text: &str, prompt: bool, run: Option<(String, String)>) -> Option<Com
     opens.then(|| CommandRecord {
         mark: CommandMark::Output { run },
         notice: output(text),
+    })
+}
+
+/// A fork skill's launch record. Only Claude Code's own `local_command` record is one: the element
+/// in a user record is text the model or a person wrote (a notification quoting a result), and
+/// naming the skill from it would let that text drive the bridge's fork handling.
+fn fork_launch(content: &str) -> Option<CommandRecord> {
+    let skill = element(content, FORK).and_then(fork_skill)?;
+    Some(CommandRecord {
+        mark: CommandMark::Forked { skill },
+        notice: output(content),
     })
 }
 
