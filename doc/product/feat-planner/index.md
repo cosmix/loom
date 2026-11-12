@@ -93,7 +93,6 @@ Logo  feat-planner ▾                     Idle   Home   Files   Settings
     Coverage           │                           │
 ✓ Metaplan             │                           │
 ✓ Plans         12/12  │                           │
-    Overview           │                           │
     01 documents  done │                           │
     …                  │                           │
 ✓ Run        12 done   │                           │
@@ -138,7 +137,8 @@ all three reading faces cover Greek. Reading size is 17, 19 (default) or 21px, w
 1.6 and a measure of 68–70 characters. Code, paths and ids use Commit Mono Cosmix. The visual
 design shares the dashboard's components and colour conventions. Popovers and dialogs have an
 elevated surface distinct from cards, a clear border and a soft shadow or glow in every theme.
-Modal dialogs have a backdrop; the inline Findings fold picker has the same raised surface.
+Modal dialogs dim and blur the page behind them; popovers are not modal and draw no backdrop. The
+inline Findings fold picker has the same raised surface.
 
 ### What the first screen shows
 

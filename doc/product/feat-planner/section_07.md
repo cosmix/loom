@@ -238,7 +238,7 @@ uses `filePath` to build each turn's list of changed files, and `originalFile` a
 `structuredPatch` only for each tool row's `+a −b` counts. A file's text before the turn, and
 its `before_hash`, come from the pin section 06 takes when the turn starts ("Turn diffs"), which
 section 08 shows as the turn's diff. Files a turn changed through `Bash` appear through the file
-watcher (section 04) as "changed during this turn" without a tool attribution.
+watcher (section 04), without a tool attribution.
 
 **Streaming granularity.** Text reaches the chat one content block at a time, as Claude Code
 writes each completed block to the transcript. Word-by-word streaming is not a goal; it would
