@@ -212,7 +212,7 @@ Open items left by the scheduler busy-status plan (`busy::while_busy`, the tick'
 - The stall cause (stale tick versus global ceiling) is re-derived in `scheduling_report_loop.rs` (`age_secs < STALL_THRESHOLD_SECS`) and `ui/tui/ledger/header_daemon.rs`, so a change to a `loop_state` rule can leave surfaces disagreeing. Carry the cause in `LoopState::Stalled`, with a `stalled_by_global_ceiling()` helper that keeps the Stalled shape.
 - `tick::read` runs twice per invocation: `alerts()` and `loop_state_for()` in `commands/status.rs`, and `alerts()` and the snapshot in `commands/status/web/model.rs`. A frame crossing a boundary can show a busy payload that disagrees with its alert. Read once and pass the `Tick` to both.
 - `BusyOp` variants are listed in `parse`, `busy_tests.rs` and `schema_parity.rs`. A `BusyOp::ALL` const helps only when paired with a compile-time exhaustive match (as `schema_parity.rs` has); used alone it would hide a missing variant.
-- `valid_stage_id` in `tick.rs` overlaps `models::forward_receipt::is_safe_id`; the busy-line rule does not require an alphanumeric first byte, so the two stay separate. Keep the local one and say why in its comment if it is touched.
+- `valid_stage_id` in `tick.rs` overlaps `agent_state::is_safe_id` (`agent_state/safe_id.rs`); the busy-line rule does not require an alphanumeric first byte, so the two stay separate. Keep the local one and say why in its comment if it is touched.
 
 ### `while_busy` Hardening Not Enforced
 

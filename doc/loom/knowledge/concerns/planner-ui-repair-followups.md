@@ -100,7 +100,7 @@ Reviewer suggestions and open questions of the planner redesign nobody implement
 - `web/scripts/bundle-rules.json`: the group chunks `assets/cm-view.js` and `assets/cm-lang.js` have no manifest `src`, so the `@codemirror` and `@lezer` globs cannot match them and only the `cm-editor` text sentinel guards; add `assets/cm-*.js` globs.
 - `loom/tests/integration/binary_spawn_guard.rs:69`: `plan_handoff_operator.rs` contains neither forbidden pattern, so its `SANCTIONED_SPAWNERS` entry only weakens the guard; remove it and fix the doc comment at line 49.
 - `plan_server/mod.rs:259`: the early-signal window has no deterministic ordering test (one `ctrlc` handler per process, no injection point between install and announce); `tests/plan_server_cli.rs:237` covers it end to end.
-- J4, J5 and J8 of `scripts/plan-journeys.sh --strict` print PENDING in a stage sandbox because tmux cannot create a socket; an operator runs them outside a stage. J5's start-command step failed once in three cold runs on one build (the form still fading in); watch it.
+- J4 of `scripts/plan-journeys.sh` fails in a stage sandbox at its context step (no spine nav on `section_05` at 1440; cause not traced), and J5 and J8 print PENDING because tmux cannot create a socket; an operator runs them outside a stage. J5's start-command step failed once in three cold runs on one build (the form still fading in); watch it.
 
 ## Planner issue fixes: unchecked here
 
@@ -109,7 +109,7 @@ The issue-fixes plan was walked in a stage sandbox: contract tests and stubbed-W
 - A real New chat in Claude Code shows one opening and no markup, and a message with an attached document shows a chip, not `<loom-attachments>` (needs a Claude login; [the wrapper](../mistakes/planner-ui-repair.md#claude-code-wrapped-delivered-prompts-and-every-text-match-broke-silently-2026-11-03)).
 - A real Rebuild press starts a session within seconds and the cost ledger records `button` (the scheduler fix rests on the rig in `rebuilds/tests_press.rs`; [the press path](../architecture/summary-store.md#rebuild-scheduler)).
 - The next overview rebuild shows no restated sentence. Stored overviews keep their near-copies until then (measured at planning time: 9 of 28 product and 4 of 28 engineering sentences at word Jaccard 0.7 or more, 2 byte-identical).
-- J3 fails in a stage sandbox because the plan lock path is under read-only `/tmp`, and J4, J5 and J8 print PENDING because tmux cannot create a socket ([journeys](../conventions/plan-web.md#ui-repair-test-rules)).
+- J3 fails in a stage sandbox because the plan lock path is under read-only `/tmp`, J4 fails at its context step, and J5 and J8 print PENDING because tmux cannot create a socket ([journeys](../conventions/plan-web.md#ui-repair-test-rules)).
 - No measured cost exists for a summary rebuild ([Cost Ledger](../architecture/summary-store.md#cost-ledger-and-estimates)).
 - `summary-panel.test.tsx:147` and `:166` pin "fresh unknown · cache reads unknown · output unknown", so an all-unknown token line still repeats three times; collapsing it to one phrase needs those assertions changed.
 
@@ -146,7 +146,7 @@ Suggestions nobody implemented. Re-read the code before acting.
 
 - Rebuild summaries outside a stage: each feature metaplan gains `doc/loom/summaries/<feature>/metaplan/<stem>.md`, and `overview/feat-planner/engineering` is rebuilt with no sentence opening to a single member sentence (issues 6 and 7). Until then the metaplan page reads "not built yet" with a Rebuild button.
 - Press Stop during a real chat turn and confirm one notice (issue 3); the stage only showed injected frames and the Rust contract.
-- Run the journeys outside a stage: J4, J5 and J8 print PENDING (tmux cannot create a socket) and J3 fails on the `/tmp` plan lock (`/api/save` 500 "Failed to open plan lock").
+- Run the journeys outside a stage: J4 fails at its context step, J5 and J8 print PENDING (tmux cannot create a socket) and J3 fails on the `/tmp` plan lock (`/api/save` 500 "Failed to open plan lock").
 
 **Reviewer suggestions nobody implemented.** Re-read the code before acting; line numbers drift.
 
@@ -179,7 +179,7 @@ The merge view (`codemirror.ts` `createMergeView`, used for a conflict or an old
 
 ## Slash-Command UserPromptSubmit May Not Reach the Planner Bridge
 
-Unverified. In `~/.claude` transcripts for this repository, 0 of about 100 slash-command records (local `/model`, `/clear`, `/effort` and prompt-type `/pressure`, `/address`) had a `UserPromptSubmit` `hook_additional_context` attachment nearby, against 37% of ordinary prompts of 100 or more characters. If the hook does not run for slash commands, a pasted skill invocation would hit `delivery_timeout` (`plan_session/bridge/flow.rs:216-237`) and pause the queue. Revisit with a real probe of one pasted slash command, not a unit test.
+`UserPromptSubmit` fires for every prompt-type command (a skill, a plugin command, a fork skill) about 0.17 s after the paste, and never for a local command, a dialog command, `/compact` or an unknown name (P2 per-paste matrix in `loom/tests/fixtures/plan_session/probe-notes.md`). The bridge confirms each class by its own evidence ([slash commands](../architecture/plan-server.md#slash-commands-and-skills-in-the-planner-chat)).
 
 ## Settle commit limits
 
