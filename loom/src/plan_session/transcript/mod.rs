@@ -10,6 +10,7 @@ mod commands;
 #[cfg(test)]
 mod commands_contract_tests;
 mod content;
+mod done_fence;
 pub mod notification;
 #[cfg(test)]
 mod notification_contract_tests;
@@ -104,6 +105,8 @@ struct TurnState {
     by_tool: BTreeSet<String>,
     /// Opened by a record or a server item, not yet adopted by `begin_turn`.
     implicit: bool,
+    /// Validated before display truncation; replaced by every main assistant text item.
+    done_fence: Option<Result<bool, &'static str>>,
 }
 
 /// Maps one session's transcripts into turns and the deltas that publish them.

@@ -1,8 +1,10 @@
 const KICKOFF_INFO = "loom-kickoff";
+/** The agent ends a finished chat with this fence; the card reads it and the transcript hides it. */
+export const DONE_INFO = "loom-done";
 const OPENING = /^ {0,3}(`{3,}|~{3,})(.*)$/;
 
 type Fence = { marker: string; named: boolean; body: string[] };
-type Scan = { kept: string[]; blocks: Array<{ body: string[]; closed: boolean }> };
+type Scan = { kept: string[]; blocks: Array<{ body: string[]; closed: boolean; end: number }> };
 
 function opening(line: string, info: string): Fence | null {
   const match = OPENING.exec(line);
@@ -24,11 +26,11 @@ function scan(markdown: string, info: string): Scan {
   const result: Scan = { kept: [], blocks: [] };
   let fence: Fence | null = null;
   let block: Scan["blocks"][number] | null = null;
-  for (const line of markdown.split("\n")) {
+  for (const [index, line] of markdown.split("\n").entries()) {
     if (fence === null) {
       fence = opening(line, info);
       if (fence?.named) {
-        block = { body: fence.body, closed: false };
+        block = { body: fence.body, closed: false, end: -1 };
         result.blocks.push(block);
       } else result.kept.push(line);
       continue;
@@ -37,7 +39,10 @@ function scan(markdown: string, info: string): Scan {
     if (!fence.named) result.kept.push(line);
     else if (!done) fence.body.push(line);
     if (done) {
-      if (block && fence.named) block.closed = true;
+      if (block && fence.named) {
+        block.closed = true;
+        block.end = index;
+      }
       fence = null;
       block = null;
     }
@@ -59,13 +64,23 @@ export function withoutFence(markdown: string, info: string): string {
   return blocks.length > 0 ? kept.join("\n").trimEnd() : markdown;
 }
 
-/** The body of the last fence whose info string is exactly `info`; null when none or still open. */
-export function fenceBody(markdown: string, info: string): string | null {
+/**
+ * The body of the last fence whose info string is exactly `info`; null when none or still open.
+ * With `final`, only a last fence with nothing but whitespace after it counts.
+ */
+export function fenceBody(markdown: string, info: string, final = false): string | null {
   if (!markdown.includes(info)) return null;
   const last = scan(markdown, info).blocks.at(-1);
-  return last?.closed ? last.body.join("\n") : null;
+  return last?.closed &&
+    (!final ||
+      markdown
+        .split("\n")
+        .slice(last.end + 1)
+        .every((line) => !line.trim()))
+    ? last.body.join("\n")
+    : null;
 }
 
 export function withoutKickoffFence(markdown: string): string {
-  return withoutFence(markdown, KICKOFF_INFO);
+  return withoutFence(withoutFence(markdown, KICKOFF_INFO), DONE_INFO);
 }

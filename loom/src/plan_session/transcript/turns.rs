@@ -8,6 +8,15 @@ use super::{Mapper, TurnState};
 use crate::plan_session::model::{ChatDelta, Item, NoticeKind, Turn};
 
 impl Mapper {
+    /// Whether this turn's last assistant text ends in a valid done fence.
+    pub(crate) fn turn_done(&self, turn_id: &str) -> Result<bool, &'static str> {
+        self.turns
+            .iter()
+            .position(|turn| turn.id == turn_id)
+            .and_then(|turn| self.state[turn].done_fence)
+            .unwrap_or(Ok(false))
+    }
+
     /// The open turn, or a turn opened implicitly at `at` (now when the record has no time).
     pub(super) fn turn_for(
         &mut self,
