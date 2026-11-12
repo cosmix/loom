@@ -228,7 +228,7 @@
 | [merge-and-recovery-edge-cases](concerns/merge-and-recovery-edge-cases.md) | Edges | 105 |
 | [plan-chat-followups](concerns/plan-chat-followups.md) | Chat | 41 |
 | [planner-follow-ups-followups](concerns/planner-follow-ups-followups.md) |  | 92 |
-| [planner-ui-repair-followups](concerns/planner-ui-repair-followups.md) | Repair | 192 |
+| [planner-ui-repair-followups](concerns/planner-ui-repair-followups.md) | Repair | 193 |
 | [planning-document-model-followups](concerns/planning-document-model-followups.md) |  | 172 |
 | [planning-guidance-followups](concerns/planning-guidance-followups.md) |  | 43 |
 | [planning-session-sandbox-limits](concerns/planning-session-sandbox-limits.md) |  | 238 |
