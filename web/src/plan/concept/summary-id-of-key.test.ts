@@ -8,7 +8,6 @@ describe("summaryIdOfKey", () => {
     ["demo/engineering/feat-x.v2", "plans/feat-x.v2"],
     ["plans/standalone", "plans/standalone"],
     ["overview/demo/product", "overview/demo/product"],
-    ["overview/demo/engineering", "overview/demo/engineering"],
     ["demo/product/section_01", "demo/product/section_01"],
   ])("maps page %s to summary %s", (key, summary) => {
     expect(summaryIdOfKey(key)).toBe(summary);

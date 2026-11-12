@@ -11,6 +11,8 @@ pub enum StartError {
     NotAuthoring(String),
     /// The selected feature does not currently offer this action.
     NotOffered(String),
+    /// Plan authoring waits for the feature's current metaplan to be settled.
+    MetaplanUnsettled,
     /// Feature authoring requires an explicit feature in the session request.
     FeatureRequired,
     /// The selected feature differs from the action's owner.
@@ -25,6 +27,7 @@ impl fmt::Display for StartError {
             Self::FileMove(id) => write!(f, "{id} is a file move, not a session"),
             Self::NotAuthoring(id) => write!(f, "{id} is not an authoring offer"),
             Self::NotOffered(id) => write!(f, "the step \"{id}\" is not offered now"),
+            Self::MetaplanUnsettled => f.write_str("Settle the metaplan first"),
             Self::FeatureRequired => f.write_str("an authoring offer requires a feature"),
             Self::FeatureMismatch(id) => write!(f, "{id} does not belong to the requested feature"),
             Self::InvalidTarget(name) => write!(f, "invalid authoring target: {name}"),

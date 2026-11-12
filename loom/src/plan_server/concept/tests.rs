@@ -24,13 +24,6 @@ fn product() -> PageKey {
     }
 }
 
-fn engineering() -> PageKey {
-    PageKey::Overview {
-        feature: "demo".into(),
-        scope: Scope::Engineering,
-    }
-}
-
 fn summary(scope: Scope, doc: &str) -> PageKey {
     PageKey::Summary {
         feature: Some("demo".into()),
@@ -72,7 +65,7 @@ fn follow_up_entries_give_chips_after_the_numbered_entries() {
         fx::metaplan(&["PLAN-b.md"])
     );
     let f = fx::fixture(&[(fx::META, &index), (&pa, &ta), (&pb, &tb), (&pc, &tc)]);
-    let chips = page(&f, &engineering()).key_chips;
+    let chips = page(&f, &summary(Scope::Metaplan, "index")).key_chips;
     let slugs: Vec<_> = chips.iter().map(|c| c.label.as_str()).collect();
     assert_eq!(slugs, ["b", "a", "c"]);
     let colours: Vec<_> = chips.iter().map(|c| c.colour).collect();
@@ -191,28 +184,11 @@ fn sections_no_vision_lists_in_file_name_order() {
 }
 
 #[test]
-fn no_vision_and_no_metaplan_offer_a_start() {
+fn no_vision_offers_a_start() {
     let f = fx::fixture(&[("doc/product/demo/notes.md", "# Notes\n")]);
     let vision = page(&f, &product()).empty.expect("empty state");
     assert_eq!(vision.kind, EmptyKind::NoVision);
     assert_eq!(vision.offer.as_deref(), Some("start-vision"));
-    let metaplan = page(&f, &engineering()).empty.expect("empty state");
-    assert_eq!(metaplan.kind, EmptyKind::NoMetaplan);
-    assert_eq!(metaplan.offer.as_deref(), Some("start-metaplan"));
-}
-
-#[test]
-fn plans_no_metaplan_lists_plans() {
-    let (pb, tb) = plan("b", "");
-    let (pa, ta) = plan("a", "");
-    let f = fx::fixture(&[(&pb, &tb), (&pa, &ta)]);
-    let empty = page(&f, &engineering()).empty.expect("empty state");
-    assert_eq!(empty.kind, EmptyKind::PlansNoMetaplan);
-    let paths: Vec<_> = empty.docs.iter().map(|d| d.path.as_str()).collect();
-    assert_eq!(
-        paths,
-        ["doc/plans/demo/PLAN-a.md", "doc/plans/demo/PLAN-b.md"]
-    );
 }
 
 #[test]
@@ -294,7 +270,7 @@ fn missing_cited_sentence_keeps_the_citation_and_dashes_its_mark() {
 fn page_keys_round_trip_and_reject_unsafe_names() {
     for key in [
         "overview/demo/product",
-        "overview/demo/engineering",
+        "demo/metaplan/index",
         "demo/product/section_04",
         "demo/engineering/my-plan",
         "plans/standalone",

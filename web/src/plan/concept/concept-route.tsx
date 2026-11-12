@@ -12,7 +12,6 @@ import {
   pageHref,
   pageKeyOfPath,
   parsePageKey,
-  scopeOfKey,
   type ConceptScope,
 } from "@/plan/api/page-key";
 import type { ConceptPage } from "@/plan/api/schema-concept";
@@ -53,7 +52,7 @@ import { openRunsAtom } from "./view-state";
 
 /** The second key of `g p` / `g e` must follow the first within this long. */
 const GO_KEY_WINDOW_MS = 1000;
-const GO_TARGETS: Record<string, ConceptScope> = { p: "product", e: "engineering" };
+const GO_TARGETS: Record<string, ConceptScope> = { p: "product", e: "metaplan" };
 
 /** The last path part as written in the URL: still encoded, so it holds no `/`. */
 function rawNameOf(pathname: string): string {
@@ -70,7 +69,7 @@ export function conceptPageLabel(pathname: string): string | null {
   const parts = key === null ? null : parsePageKey(key);
   if (parts === null) return null;
   if (parts.kind === "overview") {
-    return parts.scope === "product" ? "Product overview" : "Engineering overview";
+    return "Product overview";
   }
   if (parts.kind === "summary" && parts.scope === "metaplan") return "Metaplan summary";
   return `${parts.doc} summary`;
@@ -88,7 +87,7 @@ function useOverviewEyebrow(pageKey: string, pathname: string): string | null {
   return `${feature} · ${label.toLowerCase()}`;
 }
 
-/** `g p` and `g e` go to the overviews; ignored while typing or while a dialog is open. */
+/** `g p` and `g e` go to the product overview and metaplan; ignored while typing or while a dialog is open. */
 function useGoKeys(feature: string | null): void {
   const navigate = useNavigate();
   const pressedAt = useRef<number | null>(null);
@@ -145,7 +144,7 @@ function useEscapeKeys(pageKey: string): void {
 
 function Unlisted({ page, pageKey }: { page: ConceptPage; pageKey: string }) {
   if (page.unlisted.length === 0 || !isOverviewKey(pageKey)) return null;
-  const heading = scopeOfKey(pageKey) === "engineering" ? "Unlisted plans" : "Unlisted sections";
+  const heading = "Unlisted sections";
   return (
     <section aria-label={heading} className="pt-8">
       <h2 className="plan-eyebrow pb-2">{heading}</h2>
@@ -350,7 +349,7 @@ function RouteBody({ pageKey, above }: { pageKey: string; above: ReactNode }) {
 }
 
 /**
- * The overview and summary pages of Product and Engineering. `above` renders in the page's column
+ * The overview and summary pages of Product, Engineering and the metaplan. `above` renders in the page's column
  * under the page's head and ahead of its document key, so the feature screen can put its gaps
  * there without a second column or scroll container.
  */

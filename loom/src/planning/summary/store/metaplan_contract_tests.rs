@@ -75,7 +75,7 @@ fn a_feature_metaplan_has_a_document_summary() {
         assert!(validate_id(bad).is_err(), "{bad} is accepted");
     }
 
-    let scope = Scope::of(&project, "overview/alpha/engineering").expect("engineering scope");
+    let scope = Scope::of(&project, "overview/alpha/product").expect("product scope");
     for (name, list) in [
         ("product", &scope.product),
         ("engineering", &scope.engineering),

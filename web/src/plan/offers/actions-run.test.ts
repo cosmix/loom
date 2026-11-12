@@ -8,6 +8,7 @@ const offer: OfferView = {
   id: "offer-1",
   kind: "start_run",
   label: "Start run",
+  blocked_reason: null,
   target: "doc/plans/example.md",
 };
 

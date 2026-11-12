@@ -17,6 +17,7 @@ use crate::plan_session::kind::{SessionDir, SessionKind};
 use crate::plan_session::model::SessionState;
 use crate::plan_session::scope::{self, SessionScope};
 use crate::planning::project::Project;
+use crate::planning::trace::{settle, DocRole};
 
 pub(super) fn team_fixture() -> Fixture {
     let f = fixture(false);
@@ -33,8 +34,25 @@ pub(super) fn team_fixture() -> Fixture {
         fs::create_dir_all(path.parent().unwrap()).unwrap();
         fs::write(path, text).unwrap();
     }
+    settle_metaplan(f.ctx.root());
     *f.ctx.project_mut() = Project::load(f.ctx.root()).unwrap();
     f
+}
+
+/// Writes the demo metaplan's current `Settled:` line so plan offers can start.
+fn settle_metaplan(root: &std::path::Path) {
+    let project = Project::load(root).unwrap();
+    let doc = project
+        .feature("demo")
+        .unwrap()
+        .trace
+        .documents
+        .iter()
+        .find(|doc| doc.role == DocRole::Metaplan)
+        .unwrap();
+    let path = root.join("doc/plans/demo/index.md");
+    let text = fs::read_to_string(&path).unwrap();
+    fs::write(&path, settle::mark(&text, &doc.current)).unwrap();
 }
 
 #[test]

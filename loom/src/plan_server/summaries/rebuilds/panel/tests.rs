@@ -34,6 +34,8 @@ fn overview_sizes_use_each_features_own_members() {
     let rebuilds = Rebuilds::with_spawner(&ctx, Arc::new(RealSpawner::new(&ctx)));
 
     let sizes = rebuilds.source_sizes(&evaluation).unwrap();
+    assert_eq!(sizes.len(), evaluation.summaries.len());
+    assert!(sizes.keys().all(|id| !id.ends_with("/engineering")));
     let overviews: BTreeMap<_, _> = sizes
         .into_iter()
         .filter(|(id, _)| is_overview(id))
@@ -43,14 +45,9 @@ fn overview_sizes_use_each_features_own_members() {
             "overview/demo/product",
             fixtures::section(1, "Alpha.", "Beta.").len(),
         ),
-        ("overview/demo/engineering", "# Plan: X\n\nDoes x.\n".len()),
         (
             "overview/other/product",
             fixtures::section(1, "Other alpha.", "Other beta.").len(),
-        ),
-        (
-            "overview/other/engineering",
-            "# Plan: Y\n\nDoes y with more detail.\n".len(),
         ),
     ];
     let expected: BTreeMap<_, _> = expected

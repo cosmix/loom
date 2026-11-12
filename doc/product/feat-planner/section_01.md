@@ -246,8 +246,13 @@ Offer labels are short, and the sentence beside the button explains what it does
 | Review the feature            | `Review the feature`           |
 | Draft all sections or plans   | `Draft all with a team`        |
 
+**Plan authoring gate.** Writing a plan or drafting all missing plans requires a settled
+metaplan. A metaplan also passes when it is not settleable because every plan is done. Draft,
+revised, stub-changed and upstream-changed states block these offers and the start path; disabled
+offers say "Settle the metaplan first". Plan follow-ups remain available.
+
 **No screen draws one offer twice.** The chat panel carries no offer to start a step (section
-08). On the product and engineering pages the page owns the primary offer while its pace and
+08). On the product and metaplan pages the page owns the primary offer while its pace and
 queue show; a queue row whose offer one of the pace cards draws shows "Next" with no button.
 
 "First" follows document order: the vision's table order for sections, the metaplan's heading
@@ -306,24 +311,24 @@ Two pages join the feature's screens, each with a spine row (vision, "The screen
 
 Opening `/f/<feature>` redirects by what exists for the feature:
 
-| State                                | Opens on      |
-| ------------------------------------ | ------------- |
-| A vision exists                      | `product`     |
-| No vision, a metaplan exists         | `engineering` |
-| No vision and no metaplan            | `vision`      |
+| State                                 | Opens on   |
+| ------------------------------------- | ---------- |
+| A product spec exists                 | `product`  |
+| No product spec, a metaplan exists    | `metaplan` |
+| No product spec and no metaplan       | `vision`   |
 
-A feature with a vision opens on the product overview, where its reading starts, whether or not
-every listed section is written. The `vision` page of a feature with no vision offers to start
-one. The pages behind these routes are section 05's table.
+A feature with a product spec opens on the product overview, whether or not every listed section
+is written. A feature with only a metaplan opens on its metaplan page. The `vision` page of a
+feature with neither offers to start one. The pages behind these routes are section 05's table.
 
 ## Skipped and reordered steps
 
-Because each feature's current step is its earliest gap and nothing blocks, a feature with
+Because each feature's current step is its earliest gap, a feature with
 steps out of order reads as a normal feature with an early gap:
 
 - **Feature plans with no product spec**: the current step is 1 or 2, and the
   primary offer is to start the vision or the missing section. The plans, metaplan, and their
-  checklist lines show and work as usual. The engineering overview is available; the product
+  checklist lines show and work as usual. The metaplan page is available; the product
   overview shows its empty state.
 - **A feature spec with no vision**: section files exist but its `index.md` does not. They are
   unlisted sections; the primary offer is a vision discussion that lists them.

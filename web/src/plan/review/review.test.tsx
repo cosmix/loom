@@ -361,21 +361,19 @@ it("resync refetches the compare list", async () => {
   expect(listeners.size).toBe(0);
 });
 
-it.each([
-  "overview/demo/product",
-  "overview/demo/engineering",
-  "demo/engineering/feat-review",
-  "plans/feat-review",
-])("does not request build markers for %s", (key) => {
-  mount(<PageHeading page={{ ...page, key, feature: featureOfKey(key) }} />);
-  // The header reads its own source document for Edit and Discuss and the feature's trace for
-  // the settle state; nothing else is requested.
-  const urls = fetchMock.mock.calls.map(([url]) => String(url));
-  const other = urls.filter(
-    (url) => !url.startsWith("/api/doc?path=") && !url.startsWith("/api/trace/"),
-  );
-  expect(other).toEqual([]);
-});
+it.each(["overview/demo/product", "demo/engineering/feat-review", "plans/feat-review"])(
+  "does not request build markers for %s",
+  (key) => {
+    mount(<PageHeading page={{ ...page, key, feature: featureOfKey(key) }} />);
+    // The header reads its own source document for Edit and Discuss and the feature's trace for
+    // the settle state; nothing else is requested.
+    const urls = fetchMock.mock.calls.map(([url]) => String(url));
+    const other = urls.filter(
+      (url) => !url.startsWith("/api/doc?path=") && !url.startsWith("/api/trace/"),
+    );
+    expect(other).toEqual([]);
+  },
+);
 
 it("pathless summaries and folders have no review indicators", () => {
   const { view } = mount(

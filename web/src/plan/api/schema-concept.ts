@@ -11,14 +11,7 @@ export const OUT_OF_DATE_REASONS = [
   "cannot_rebuild",
   "failed",
 ] as const;
-export const EMPTY_KINDS = [
-  "no_vision",
-  "sections_no_vision",
-  "no_metaplan",
-  "plans_no_metaplan",
-  "never_built",
-  "building",
-] as const;
+export const EMPTY_KINDS = ["no_vision", "sections_no_vision", "never_built", "building"] as const;
 
 /** The empty-state offers the server sends (`Offer::id` of the two start offers). */
 export const EMPTY_OFFERS = ["start-vision", "start-metaplan"] as const;

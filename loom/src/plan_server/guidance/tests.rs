@@ -19,6 +19,8 @@ use crate::plan_session::bridge::LaunchGuidance;
 use crate::plan_session::kind::SessionDir;
 use crate::planning::checklist::Offer;
 use crate::planning::guidance::{GuidanceModels, ModelEffort, StartBlocks};
+use crate::planning::project::Project;
+use crate::planning::trace::{settle, DocRole};
 use crate::planning::watch::OwnWrites;
 use crate::user_config::UserConfig;
 use crate::web_server::http::parse_head;
@@ -58,13 +60,26 @@ impl Fixture {
         Self::with_files(&[])
     }
 
+    /// The default fixture with its metaplan settled, so plan offers can start.
     fn with_files(files: &[(&str, &str)]) -> Self {
+        Self::build(files, true)
+    }
+
+    /// The default fixture with the metaplan left unsettled, as a fresh metaplan is.
+    fn unsettled() -> Self {
+        Self::build(&[], false)
+    }
+
+    fn build(files: &[(&str, &str)], settled: bool) -> Self {
         let temp = tempfile::tempdir().unwrap();
         let home = HomeGuard::set(&temp.path().join("home"));
         let root = temp.path().join("project");
         project_files(&root);
         for (path, text) in files {
             put(&root, path, text);
+        }
+        if settled {
+            settle_metaplan(&root);
         }
         let bind = BindInfo::new("127.0.0.1:7272".parse().unwrap(), &"ab".repeat(32));
         let ctx = PlanContext::new(
@@ -108,6 +123,22 @@ fn project_files(root: &Path) {
         "doc/plans/demo/index.md",
         "# Metaplan\n\n## 1. Delivery (`PLAN-delivery.md`)\n\nDeliver it.\n",
     );
+}
+
+/// Writes the demo metaplan's current `Settled:` line into its file.
+fn settle_metaplan(root: &Path) {
+    let project = Project::load(root).unwrap();
+    let doc = project
+        .feature("demo")
+        .unwrap()
+        .trace
+        .documents
+        .iter()
+        .find(|doc| doc.role == DocRole::Metaplan)
+        .unwrap();
+    let path = root.join("doc/plans/demo/index.md");
+    let text = fs::read_to_string(&path).unwrap();
+    fs::write(&path, settle::mark(&text, &doc.current)).unwrap();
 }
 
 fn put(root: &Path, relative: &str, text: &str) {

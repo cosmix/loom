@@ -74,7 +74,7 @@ describe("rows", () => {
       ["Vision done", "/f/atlas/vision"],
       ["Product spec 0/1", "/f/atlas/product"],
       ["Metaplan done", "/f/atlas/metaplan"],
-      ["Plans 1/1", "/f/atlas/engineering"],
+      ["Plans Not all settled 1/1", "/f/atlas/metaplan"],
     ]);
   });
 
@@ -95,7 +95,7 @@ describe("rows", () => {
     renderSpine("/f/atlas/product", atlas({ steps }));
 
     // Visible "1/1 done" already names the state; a bare count ("0/1") keeps its hidden word.
-    expect(link(/\bPlans\b/).textContent).toBe("Plans 1/1 done");
+    expect(link(/\bPlans\b/).textContent).toBe("Plans Not all settled 1/1 done");
     expect(link(/\bProduct spec\b/).textContent).toBe("Product spec 0/1, has gaps");
   });
 
@@ -109,7 +109,7 @@ describe("rows", () => {
   });
 
   it("names a feature's plans by short slug and states each plan's state", () => {
-    renderSpine("/f/atlas/engineering");
+    renderSpine("/f/atlas/engineering/atlas-01");
 
     const first = planRow("atlas-01");
     expect(first.getAttribute("href")).toBe("/f/atlas/engineering/atlas-01");
@@ -162,7 +162,7 @@ describe("rows", () => {
   });
 
   it("sets server names through Untrusted and carries no step class", () => {
-    renderSpine("/f/atlas/engineering", atlas({ plan_rows: [plan("de‮mo", "done")] }));
+    renderSpine("/f/atlas/engineering/atlas-01", atlas({ plan_rows: [plan("de‮mo", "done")] }));
 
     expect(link(/de⟨U\+202E⟩mo/)).toBeTruthy();
     expect(spine().querySelector('[class*="plan-step"]')).toBeNull();
@@ -170,6 +170,22 @@ describe("rows", () => {
 });
 
 describe("the current row", () => {
+  it("links Plans to metaplan without an overview child and selects only Metaplan", () => {
+    const { router } = renderSpine("/f/atlas/product");
+    fireEvent.click(within(spine()).getByRole("button", { name: "Expand Plans" }));
+    const plans = link(/^Plans\b/);
+    expect(plans.getAttribute("href")).toBe("/f/atlas/metaplan");
+    const group = plans.closest<HTMLElement>(".plan-spine__group")!;
+    expect(within(group).queryByRole("link", { name: "Overview" })).toBeNull();
+
+    fireEvent.click(plans);
+    expect(router.state.location.pathname).toBe("/f/atlas/metaplan");
+    expect(current()).toEqual([link(/^Metaplan\b/)]);
+    expect(within(spine()).getByRole("button", { name: /Documents/ }).textContent).toContain(
+      "Metaplan",
+    );
+  });
+
   it("marks the overview with aria-current and no other row", () => {
     renderSpine("/f/atlas/product");
 
@@ -205,6 +221,14 @@ describe("groups", () => {
     expect(within(spine()).queryByTitle("atlas-01")).toBeNull();
     expect(within(spine()).getByRole("link", { name: "Overview" })).toBeTruthy();
     expect(within(spine()).queryByRole("button", { name: "Collapse Product spec" })).toBeNull();
+  });
+
+  it("holds Plans open on the metaplan page and draws no toggle for it", () => {
+    renderSpine("/f/atlas/metaplan");
+
+    expect(planRow("atlas-01")).toBeTruthy();
+    expect(within(spine()).queryByRole("button", { name: /(Collapse|Expand) Plans/ })).toBeNull();
+    expect(current()).toEqual([link(/^Metaplan\b/)]);
   });
 
   it("expands another group on request and remembers it for this feature", () => {

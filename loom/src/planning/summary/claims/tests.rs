@@ -254,7 +254,7 @@ fn nested_ids_round_trip_and_claims_create_draft_parents() {
         ID1,
         "other/product/section_01",
         PRODUCT,
-        "overview/other/engineering",
+        "overview/other/product",
         "plans/a__b",
     ];
     for id in ids {

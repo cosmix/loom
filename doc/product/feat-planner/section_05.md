@@ -2,7 +2,7 @@
 
 Part of the [Loom Plan product vision](index.md).
 
-This section defines what a reader sees in concept mode: the product and engineering overviews,
+This section defines what a reader sees in concept mode: the product overview,
 the document summaries under them, how a sentence opens down to the text it came from and folds
 back, how product sections and plans link to each other, how the view behaves while summaries
 are rebuilt, and the empty states. Section 04 owns how summaries are produced and stored; this
@@ -14,7 +14,7 @@ Concept mode has three levels of text, each a step closer to the files:
 
 | Level | Text                                                                                          | A sentence opens to                                        |
 | ----- | --------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
-| 0     | An overview: product, or engineering                                                          | The level 1 sentences it cites, from one or more documents |
+| 0     | The product overview                                                                           | The level 1 sentences it cites, from one or more documents |
 | 1     | A document summary: the vision, one per product section, the feature's metaplan               | The source passages it cites                               |
 | 2     | A source passage: one heading section of a file under `doc/`                                  | Nothing further; it links to file mode                     |
 
@@ -22,22 +22,18 @@ The vision has a document summary of its own: at most 8 sentences in at most 3 p
 enough to read in under a minute (vision, Decisions, "Summary levels"). The metaplan has a
 document summary of its own, read on its own page. A product overview sentence that draws on the
 vision opens straight to its source passage, one level down instead of two, and the vision's
-summary is not one of the overview's members. An engineering overview sentence that draws on a
-metaplan does the same, and no overview cites a metaplan's summary. (My call: this follows from
-the vision's two summary levels.)
+summary is not one of the overview's members.
 
 A plan's summary has two levels of its own: an opening level of about one sentence per topic,
 and a detail level of short paragraphs. A plan page reads its opening sentences, then its detail
 sentences, then the passages they cite. An opening sentence opens to the detail sentences it
-cites, in place, and a detail sentence opens to its source passages. An engineering overview's
-sentences cite a plan's detail sentences, so an overview sentence that draws on a plan opens to
-those detail sentences and then to their passages.
+cites, in place, and a detail sentence opens to its source passages.
 
 Depth is fixed at these levels. A passage is the end of the chain; the only way further is file
 mode. A reader starting from a vision, section or metaplan summary page (below) has two levels:
 summary and source. A reader starting from a plan page has three: opening, detail and source.
 
-## The two overviews
+## The overview and metaplan
 
 Concept mode is the default way to read anything that has a summary. A feature's spine
 (vision, "The screen") reaches it from its Product spec and Plans rows, and every row below them
@@ -49,32 +45,28 @@ these pages by section 01's landing rule. The routes:
 | `/f/<feature>/vision`            | the vision's summary, with **Source** on the same page                                                                                                        | Vision                 |
 | `/f/<feature>/product`           | the product overview, with the pace and section queue above it while sections are missing                                                                     | Product spec, Overview |
 | `/f/<feature>/product/<doc>`     | a section's summary                                                                                                                                           | that section           |
-| `/f/<feature>/metaplan`          | the feature's one metaplan (`doc/plans/<feature>/index.md`), a summary with **Source** one click away                                                         | Metaplan               |
-| `/f/<feature>/engineering`       | the engineering overview, with the pace and plan queue above it while plans are missing                                                                       | Plans, Overview        |
+| `/f/<feature>/metaplan`          | the metaplan summary, Run panel, plan gaps, pace and queue, with **Source** one click away                                                                    | Metaplan and Plans     |
 | `/f/<feature>/engineering/<doc>` | a plan's summary                                                                                                                                              | that plan              |
-| `/f/<feature>/run`               | run state and each plan's state; once every plan is done, its lede says so                                                                                    | Run                    |
+| `/f/<feature>/engineering` and `/f/<feature>/run` | redirect to the metaplan page                                                                                                              |                        |
 
 The metaplan route renders the summary of the feature's metaplan, `doc/plans/<feature>/index.md`; its heading's **Source** link opens the metaplan's text. A metaplan whose summary is not
 built yet shows the "not built yet" state with a Rebuild action, never the raw text. The vision's
 summary reads like a section's: its sentences open to the vision's own passages. File mode is
-section 06. Standalone plans keep `/plans/<slug>`. A feature, done or not, with a product spec
-opens on `/f/<feature>/product`; one with only a metaplan opens on `/f/<feature>/engineering`;
-any other opens on `/f/<feature>/vision`, which offers to start one. The feature switcher in the
+section 06. Standalone plans keep `/plans/<slug>`. A feature with a product spec opens on
+`/f/<feature>/product`; otherwise one with a metaplan opens on `/f/<feature>/metaplan`,
+and any other opens on `/f/<feature>/vision`, which offers to start one. The feature switcher in the
 header links each feature to `/f/<feature>`, which lands by this rule.
 
 - **Product overview**: built from `doc/product/<feature>/index.md` and the sections it names.
   Sections of that feature the vision does not name are listed under its overview as unlisted
   sections, each linking to its document summary.
-- **Engineering overview**: built from the feature's metaplan and its plans. Plans of that feature
-  no metaplan names are listed under its overview as unlisted plans, each linking to its document
-  summary. An overview summarises what the metaplan sets out to build; unlisted plans are still
-  one click away. Standalone plans
-  have their own summary pages and do not belong to a feature's overview.
+- **Metaplan page**: shows the Run panel, plan-scope gaps, pace and queue alongside the metaplan
+  summary. Unlisted plans link to their document summaries. Standalone plans have their own pages.
 
-Each overview renders the headings and paragraphs section 04 produces, in the reading column,
+The product overview renders the headings and paragraphs section 04 produces, in the reading column,
 centred, at most `70ch` wide. Above the text sits the **document key**: one compact chip per
-document the overview draws on, in document order (the vision's table order, then the metaplan's
-heading order, per section 01), each chip showing the document's colour, its number or plan slug
+document the overview draws on, in the vision's table order (section 01), each chip showing the
+document's colour and number
 in mono, then its short title without the leading `NN —`, so the number appears once. A chip
 opens that document's summary page. The key is also where the reader sees which summaries are
 out of date, without scanning the text. The spine lists the same documents; the key stays as the
@@ -214,7 +206,7 @@ The reading column is one tab stop, with a roving focus over its sentences:
 | `f`                 | Open file mode at the focused sentence's first source section               |
 | `d`                 | Open the summary page of the focused sentence's first document              |
 | `a`                 | Attach the focused sentence (or passage) to the next chat message           |
-| `g p` / `g e`       | Go to the current feature's product / engineering overview                  |
+| `g p` / `g e`       | Go to the current feature's product overview / metaplan                  |
 
 `Tab` leaves the column for the chat panel. The keys join the help dialog the `?` shortcut opens
 (`web/src/routes/shell.tsx:26-31`), set with the existing `Kbd` component. Keys are ignored while
@@ -227,7 +219,7 @@ Which runs are open is view state of one browser tab: a jotai atom per page, mir
 viewers. (My call.) The URL carries only the page (for example `/f/feat-planner/product` or
 `/f/feat-planner/engineering/redesign`), so a copied link opens the page folded.
 
-Concept page keys are `overview/<f>/product`, `overview/<f>/engineering`, `<f>/product/<doc>`,
+Concept page keys are `overview/<f>/product`, `<f>/product/<doc>`,
 `<f>/engineering/<slug>` and `plans/<slug>` (`loom/src/plan_server/concept/page_key.rs`). Here
 `<f>` is the feature name and `<doc>` the section stem; each page keeps its own view state.
 
@@ -268,7 +260,7 @@ number of sentences updated, at most once every ten seconds. (My call.)
 
 ## Product to plan links
 
-Links between each feature's two overviews come only from `Implements:` lines in plans (vision, Decisions,
+Links between each feature's product sections and plans come only from `Implements:` lines in plans (vision, Decisions,
 "Product-to-plan links"; the line format is section 03's). Concept mode never infers a link from
 text.
 
@@ -276,11 +268,10 @@ text.
   each named product section's summary page.
 - A **product section's** summary page header lists "Implemented by:" with each plan naming it,
   with its plan state. In the product key, a section that no plan implements is marked "no plan"
-  in muted text, shown only once an engineering overview exists.
+  in muted text, shown once a metaplan exists.
 - **Inside an overview**, a level 1 run from a product section ends its first sentence's marks
   with a small plan glyph when the section has implementing plans; the glyph's popover lists them
-  and each opens the plan's summary page under the engineering route. The engineering side does the
-  same in reverse. (My call: the link appears where the reader has drilled into one document, so
+  and each opens the plan's summary page under the engineering route. Plan pages link back to their implementing sections. (My call: the link appears where the reader has drilled into one document, so
   level 0 prose stays uncluttered.)
 - **Edge chips.** On a product page, a sentence also shows a small chip for each entry, plan and
   stage covering the headings it rests on (a whole-section source counts every heading of that
@@ -293,7 +284,7 @@ text.
   never a checklist gap.
 - A plan with no `Implements:` line shows "Implements: not stated".
 
-Crossing between the product and engineering pages keeps each page's open runs; the back button
+Crossing between product and plan pages keeps each page's open runs; the back button
 returns to the previous page.
 
 ## Selecting text for chat
@@ -321,12 +312,12 @@ so a load that answers at once never flashes. The partial states below are a qui
 the page with the offer under it. The states below apply to the selected feature. Offers in them are section 01's; read-only
 browsers see the same text without the offer button.
 
-| State                                                   | Product page                                                                                       | Engineering page                                                                                  |
+| State                                                   | Product page                                                                                       | Metaplan page                                                                                    |
 | ------------------------------------------------------- | -------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
 | No vision, no sections                                  | "No product vision yet", offer to start one                                                        | as below                                                                                          |
 | Sections, no vision (section 01)                        | No overview; list of section summaries in file-name order                                          | as below                                                                                          |
 | No metaplan, no plans                                   | as above                                                                                           | "No metaplan yet", offer to start one from the spec                                               |
-| Plans, no metaplan                                      | as above                                                                                           | No overview; list of plan summaries in file-name order, offer to start a metaplan                 |
+| Plans, no metaplan                                      | as above                                                                                           | List of plan summaries in file-name order, offer to start a metaplan                 |
 | Documents exist, summaries never built                  | "Summaries not built", the count, and the cost line section 04 provides; documents listed with file mode links | same                                                                                 |
 | Summaries being built                                   | "Building 4 of 12"; document summaries appear in the key as they finish and open from it; the overview appears when built | same                                                       |
 | Rebuild above the budget waiting for approval           | Overview readable with dashed marks; a notice in the key row with the stale count and, for the author, an approve button | same                                                        |

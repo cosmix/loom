@@ -4,9 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import overviewFixture from "@/plan/api/fixtures/concept-overview.json";
 import summaryFixture from "@/plan/api/fixtures/concept-summary.json";
 import filesDocFixture from "@/plan/api/fixtures/files-doc.json";
-import serverInfoFixture from "@/plan/api/fixtures/server-info.json";
 import { conceptPageSchema } from "@/plan/api/schema-concept";
-import { storageKey } from "@/plan/chat/storage";
 
 import { conceptPageLabel } from "./concept-route";
 import {
@@ -50,7 +48,6 @@ const fetched: string[] = [];
 function serveOverview(overview: Page = clone(overviewFixture)): void {
   pages = {
     "overview/demo/product": { ...overview, key: "overview/demo/product" },
-    "overview/demo/engineering": { ...overview, key: "overview/demo/engineering" },
     "demo/product/section_01": clone(summaryFixture),
     "demo/product/section_02": {
       ...clone(summaryFixture),
@@ -75,7 +72,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 describe("overviews and the document key", () => {
-  it.each(["product", "engineering"])(
+  it.each(["product"])(
     "keeps unmarked %s overview sentences free of source marks",
     async (scope) => {
       const overview = conceptPageSchema.parse(overviewFixture);
@@ -92,27 +89,6 @@ describe("overviews and the document key", () => {
       expect(sentence?.querySelector(".concept-mark")).toBeNull();
     },
   );
-  it("engineering tab renders and keeps runs", async () => {
-    serveOverview();
-    renderAt("/f/demo/engineering", canAuthor);
-    await openFirstRun();
-    const key = storageKey(serverInfoFixture.project_key, "concept:overview/demo/engineering");
-    expect(window.sessionStorage.getItem(key)).toContain("s1");
-    const eyebrows = [...document.querySelectorAll(".plan-eyebrow")].map((el) => el.textContent);
-    expect(eyebrows).toContain("Engineering overview");
-  });
-  it("unlisted list links to summary pages", async () => {
-    const overview = {
-      ...clone(overviewFixture),
-      unlisted: [doc("a", "Alpha", "demo/engineering/a")],
-    };
-    serveOverview(overview);
-    renderAt("/f/demo/engineering");
-    const section = await screen.findByRole("region", { name: "Unlisted plans" });
-    expect(within(section).getByRole("link", { name: "Alpha" }).getAttribute("href")).toBe(
-      "/f/demo/engineering/a",
-    );
-  });
   it("chip shows colour, label and title", async () => {
     serveOverview();
     renderAt("/f/demo/product");
@@ -146,7 +122,7 @@ describe("overviews and the document key", () => {
     );
     // The seeded page is one the server has: mounting refetches every cached page.
     pages["demo/engineering/a"] = loaded;
-    renderAt("/f/demo/engineering", (store) =>
+    renderAt("/f/demo/product", (store) =>
       store.set(conceptPageAtom("demo/engineering/a"), {
         page: loaded,
         previous: null,
@@ -201,22 +177,6 @@ describe("overviews and the document key", () => {
     await within(column).findByRole("group", { name: OVERVIEW_RUN });
     expect(router.state.location.pathname).toBe("/f/demo/product");
     expect(fetched).toHaveLength(before);
-  });
-  it("tab switching keeps open runs", async () => {
-    serveOverview();
-    const { router } = renderAt("/f/demo/product");
-    await openFirstRun();
-    // The header tabs are gone and no checklist is loaded here, so the spine has no rows: the
-    // switch between the two overviews goes through the router, as a spine link would.
-    await router.navigate("/f/demo/engineering");
-    await screen.findByRole("heading", { level: 1, name: "Engineering overview" });
-    await router.navigate("/f/demo/product");
-    // Wait for the engineering page to leave, or readingColumn() resolves with its stale column.
-    await waitFor(() =>
-      expect(screen.queryByRole("heading", { level: 1, name: "Engineering overview" })).toBeNull(),
-    );
-    const column = await readingColumn();
-    expect(await within(column).findByRole("group", { name: OVERVIEW_RUN })).toBeTruthy();
   });
   it("navigating to a cached page remounts the column without notes", async () => {
     serveOverview();
@@ -320,7 +280,7 @@ describe("empty and partial states", () => {
 describe("wiring", () => {
   it("conceptPageLabel names Product overview and section_04 summary", () => {
     expect(conceptPageLabel("/f/demo/product")).toBe("Product overview");
-    expect(conceptPageLabel("/f/demo/engineering")).toBe("Engineering overview");
+    expect(conceptPageLabel("/f/demo/engineering")).toBeNull();
     expect(conceptPageLabel("/f/demo/product/section_04")).toBe("section_04 summary");
     expect(conceptPageLabel("/f/demo/engineering/feat-x")).toBe("feat-x summary");
     expect(conceptPageLabel("/plans/x")).toBe("x summary");

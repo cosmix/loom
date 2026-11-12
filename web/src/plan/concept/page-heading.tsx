@@ -71,7 +71,7 @@ function breadcrumb(page: ConceptPage, facts: ReturnType<typeof useFeatureFacts>
   }
   const product = parts.scope === "product";
   const overview = parts.kind === "overview";
-  const area = product ? "Product spec" : overview ? "Engineering" : "Plans";
+  const area = product ? "Product spec" : "Plans";
   const last = overview
     ? { label: page.title }
     : product

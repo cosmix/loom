@@ -166,32 +166,6 @@ fn deletes_archived_plan_no_metaplan_names() {
 }
 
 #[test]
-fn deleted_source_deletes_its_summary_and_stales_the_overview_citing_it() {
-    let fx = fixture(&[
-        (META, &metaplan(&["PLAN-x.md"])),
-        (PLAN_X, "# Plan: X\n\nDoes x.\n"),
-    ]);
-    seal_document(&fx.root, "plans/x", &[("X does x.", "plan-x")]);
-    seal_overview(&fx.root, ENGINEERING, &[("plans/x", "X does x.")], &[]);
-    let mut engine = engine(&fx, OwnWrites::default());
-    let before = engine
-        .on_batch(&load(&fx.root), &Batch::default())
-        .expect("first batch");
-    let overview = &before.evaluation.summaries[ENGINEERING];
-    assert_eq!(overview.state, SummaryState::Current);
-    fs::remove_file(fx.root.join(PLAN_X)).unwrap();
-    let update = engine
-        .on_batch(&load(&fx.root), &Batch::default())
-        .expect("batch after the delete");
-    assert_eq!(update.deleted, vec!["plans/x".to_string()]);
-    assert!(!fx.root.join(store::summary_path("plans/x")).exists());
-    let overview = &update.evaluation.summaries[ENGINEERING];
-    assert_eq!(overview.state, SummaryState::Stale);
-    assert_eq!(overview.sentences[0].state, SentenceState::Stale);
-    assert_eq!(update.invalidated, vec![ENGINEERING.to_string()]);
-}
-
-#[test]
 fn invalidated_lists_only_summaries_newly_stale_or_missing() {
     let fx = two_sections();
     seal_document(&fx.root, ID1, &[("Alpha holds.", "a")]);
@@ -242,9 +216,7 @@ fn expected_work_includes_both_features_and_the_standalone_shelf() {
         "other/metaplan/index",
         "other/product/section_01",
         "other/product/vision",
-        ENGINEERING,
         PRODUCT,
-        "overview/other/engineering",
         "overview/other/product",
         "plans/solo",
         "plans/x",

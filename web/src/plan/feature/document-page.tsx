@@ -5,6 +5,8 @@ import { Link, useLocation, useParams } from "react-router";
 import type { ChecklistView } from "@/plan/api/schema";
 import { ConceptRoute } from "@/plan/concept/concept-route";
 import { EmptyOffer } from "@/plan/concept/empty-offer";
+import { Gaps } from "@/plan/feature/gaps";
+import { RunPanel } from "@/plan/feature/run-panel";
 import { hashAnchor, repoRel } from "@/plan/files/address";
 import { useFileSocket } from "@/plan/files/api";
 import { openDocAtom, treeAtom } from "@/plan/files/atoms";
@@ -15,6 +17,7 @@ import { useFeature } from "@/plan/feature/use-feature";
 import { BriefsCard } from "@/plan/trace/briefs-card";
 import { ScopeLine } from "@/plan/trace/scope-line";
 import { docIsLocked, SettleControl } from "@/plan/trace/settle-control";
+import { SettleAllButton } from "@/plan/trace/settle-all";
 import { LoadState } from "@/plan/ui/load-state";
 
 /**
@@ -101,8 +104,8 @@ export function VisionPage() {
 }
 
 /**
- * `/f/:feature/metaplan`: the feature's metaplan summary page (its Source link opens `index.md`),
- * or the offer to write the metaplan.
+ * `/f/:feature/metaplan`: the Plans home, with the run, gaps and bulk settle action above its
+ * summary (its Source link opens `index.md`), or the offer to write the metaplan.
  */
 export function MetaplanPage() {
   const { checklist } = useFeature();
@@ -116,7 +119,17 @@ export function MetaplanPage() {
       />
     );
   }
-  return <ConceptRoute />;
+  return (
+    <ConceptRoute
+      above={
+        <>
+          <RunPanel />
+          <Gaps scope="metaplan" />
+          <SettleAllButton feature={checklist.feature} role="plan" />
+        </>
+      }
+    />
+  );
 }
 
 /**

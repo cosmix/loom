@@ -1,11 +1,11 @@
-//! Key chips: the documents of an overview scope in reading order, with their colours.
+//! Key chips: a feature's sections or plans in reading order, with their colours.
 
 use crate::plan_server::concept::page::{page_key_of, PageContext, PageKey, Scope};
 use crate::plan_server::wire::concept::{DocLink, KeyChip};
 use crate::planning::project::Project;
 use crate::planning::summary::{evaluate::Evaluation, store};
 
-/// The ordered key chips for one feature overview.
+/// The ordered key chips for one feature's document family.
 pub(crate) fn key_chips(
     project: &Project,
     eval: &Evaluation,

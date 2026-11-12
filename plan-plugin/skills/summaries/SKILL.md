@@ -10,7 +10,7 @@ those ids; leave summaries invalidated during this session for the next batch.
 Never ask the user anything: nobody is present in a background session.
 
 For feature summaries, use the feature name given in the session's opening prompt.
-Summary ids are `overview/<feature>/product`, `overview/<feature>/engineering`,
+Summary ids are `overview/<feature>/product`,
 `<feature>/product/vision`, `<feature>/product/section_<nn>`, and `plans/<slug>`. Plan
 summary ids use the repository-wide unique slug; plan document ids remain `plan/<slug>`.
 A vision summary (`<feature>/product/vision`) takes at most 8 sentences in at most 3
@@ -51,8 +51,7 @@ Never stage, commit, branch, or run `loom init`, `loom run`, or `loom pressure`.
    sentence it cites to say what the cited sentences add up to, even when the brief
    marks it `[keep]`. An overview sentence that cites member sentences cites at least
    two of them and says what they add up to; it may cite one only when that member's
-   summary holds a single citable sentence. Cite a plan summary's detail sentences, never
-   its opening level. Write only the draft path it names.
+   summary holds a single citable sentence. Write only the draft path it names.
 5. Run `loom plan summary seal <id>`. On exit 1, read each
    `<draft path>:<line>: <message>` problem, correct the draft, and seal again.
    Seal only when every citation resolves to a current source sentence; never

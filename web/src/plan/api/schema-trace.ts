@@ -153,6 +153,17 @@ export const unresolvedSchema = z.strictObject({
   open_questions: u32,
 });
 
+/** `POST /api/settle-all`: one role's saved documents and the reasons others were skipped. */
+export const settleAllResultSchema = z.strictObject({
+  settled: z.array(z.string()),
+  skipped: z.array(
+    z.strictObject({
+      path: z.string(),
+      reason: z.enum(["unresolved", "stale", "stub"]),
+    }),
+  ),
+});
+
 /**
  * How a queued settle commit ended (`settle_commit`, sent to every browser). `commit` is the
  * settle's own commit, set for `committed` (null there when HEAD no longer shows it); `reason` says
@@ -193,6 +204,7 @@ export type TraceProblem = z.infer<typeof traceProblemSchema>;
 export type TraceView = z.infer<typeof traceViewSchema>;
 export type SettledVersion = z.infer<typeof settledVersionSchema>;
 export type SettleResult = z.infer<typeof settleResultSchema>;
+export type SettleAllResult = z.infer<typeof settleAllResultSchema>;
 export type SettleCommitStart = z.infer<typeof settleCommitStartSchema>;
 export type SettleCommitOutcome = z.infer<typeof settleCommitOutcomeSchema>;
 export type Unresolved = z.infer<typeof unresolvedSchema>;

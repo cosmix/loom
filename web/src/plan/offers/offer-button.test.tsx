@@ -21,6 +21,33 @@ function renderWith(ui: React.ReactNode, setup?: (store: ReturnType<typeof creat
 }
 
 describe("OfferButton", () => {
+  it.each(["write_plan", "draft_all_plans"] as const)(
+    "disables %s with the metaplan reason until the offer opens",
+    (kind) => {
+      const handler = vi.fn();
+      const unregister = registerOfferAction(kind, handler);
+      const open = { ...offer, kind, blocked_reason: null };
+      try {
+        const { rerender } = renderWith(
+          <OfferButton offer={{ ...open, blocked_reason: "Settle the metaplan first" }} />,
+        );
+        const button = screen.getByRole("button", {
+          name: offer.label,
+          description: "Settle the metaplan first",
+        });
+        expect(button.getAttribute("aria-disabled")).toBe("true");
+        expect(screen.getByText("Settle the metaplan first")).toBeTruthy();
+        fireEvent.click(button);
+        expect(handler).not.toHaveBeenCalled();
+        rerender(<OfferButton offer={open} />);
+        fireEvent.click(screen.getByRole("button", { name: offer.label }));
+        expect(handler).toHaveBeenCalledWith(open);
+      } finally {
+        unregister();
+      }
+    },
+  );
+
   it("reads as text until a handler is registered, then as a button", () => {
     const handler = vi.fn();
     const { rerender } = renderWith(<OfferButton offer={offer} />);

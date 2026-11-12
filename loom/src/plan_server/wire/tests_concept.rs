@@ -136,29 +136,18 @@ fn empty_kind_serializes_as_snake_case_strings() {
     match EmptyKind::NoVision {
         EmptyKind::NoVision
         | EmptyKind::SectionsNoVision
-        | EmptyKind::NoMetaplan
-        | EmptyKind::PlansNoMetaplan
         | EmptyKind::NeverBuilt
         | EmptyKind::Building => {}
     }
     let kinds = [
         EmptyKind::NoVision,
         EmptyKind::SectionsNoVision,
-        EmptyKind::NoMetaplan,
-        EmptyKind::PlansNoMetaplan,
         EmptyKind::NeverBuilt,
         EmptyKind::Building,
     ]
     .map(wire);
     assert_eq!(
         kinds,
-        [
-            "no_vision",
-            "sections_no_vision",
-            "no_metaplan",
-            "plans_no_metaplan",
-            "never_built",
-            "building"
-        ]
+        ["no_vision", "sections_no_vision", "never_built", "building"]
     );
 }

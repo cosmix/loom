@@ -144,7 +144,7 @@ fn write_heading(
 }
 
 /// What the summary is built from: a document's source (and a plan's brief bundle), or an
-/// overview's vision or metaplans and its member summaries.
+/// product overview's vision and its member summaries.
 fn sources(project: &Project, eval: &SummaryEval) -> Vec<PathBuf> {
     let Some(scope) = store::Scope::of(project, &eval.id) else {
         let briefs = eval
@@ -153,18 +153,9 @@ fn sources(project: &Project, eval: &SummaryEval) -> Vec<PathBuf> {
             .flat_map(|plan| bundle_files(project, plan));
         return eval.source.iter().cloned().chain(briefs).collect();
     };
-    if eval.id.ends_with("/product") {
-        std::iter::once(vision_path(&scope.feature))
-            .chain(scope.product.iter().map(|id| store::summary_path(id)))
-            .collect()
-    } else {
-        project
-            .feature(&scope.feature)
-            .into_iter()
-            .flat_map(|feature| feature.metaplans.iter().map(|(path, _)| path.clone()))
-            .chain(scope.engineering.iter().map(|id| store::summary_path(id)))
-            .collect()
-    }
+    std::iter::once(vision_path(&scope.feature))
+        .chain(scope.product.iter().map(|id| store::summary_path(id)))
+        .collect()
 }
 
 fn print_current(
@@ -206,7 +197,7 @@ fn one_line(text: &str) -> String {
 /// What the summary's sentences may cite; a plan's two levels cite different things.
 fn cite_rule(id: &str, overview: bool) -> &'static str {
     if overview {
-        "cite every member summary and the vision or every metaplan; member citations must point to current sentences"
+        "cite every member summary and the vision; member citations must point to current sentences"
     } else if store::is_plan(id) {
         "opening sentences cite only this summary's detail sentences, detail sentences cite only the plan and the brief files listed under Sources at valid anchors, and every Markdown brief file is cited at least once (a brief with no Markdown text, such as a JSON mockup, may be read but is not cited)"
     } else {

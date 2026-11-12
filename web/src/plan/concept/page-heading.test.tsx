@@ -315,7 +315,7 @@ it("disables the source view when there is no source path", () => {
 
 it.each([
   ["overview/demo/product", "telescope"],
-  ["overview/demo/engineering", "map"],
+  ["demo/metaplan/index", "map"],
   ["demo/engineering/my-plan", "list-checks"],
   ["plans/my-plan", "list-checks"],
 ] as const)("takes the document kind from %s regardless of tint", (key, glyph) => {

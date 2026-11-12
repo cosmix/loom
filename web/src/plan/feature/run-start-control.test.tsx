@@ -2,10 +2,17 @@ import { cleanup, fireEvent, screen } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 
 import { atlas, offer, planRow, renderPage, runState } from "@/plan/feature/pages-kit";
-import { RunPanel } from "@/plan/feature/run-panel";
+import type { ReactNode } from "react";
+
+import { MetaplanPage } from "@/plan/feature/document-page";
 import { runDialogAtom } from "@/plan/offers/actions-run";
 
-const PATH = "/f/atlas/engineering";
+// Keep the page's above slot while leaving the summary renderer out of these panel tests.
+vi.mock("@/plan/concept/concept-route", () => ({
+  ConceptRoute: ({ above }: { above?: ReactNode }) => <>{above}</>,
+}));
+
+const PATH = "/f/atlas/metaplan";
 const ONE = "doc/plans/atlas/PLAN-one.md";
 const FOREIGN = "doc/plans/other/PLAN-z.md";
 const HELD = "A run holds the workspace.";
@@ -27,7 +34,7 @@ const resume = (patch: Record<string, unknown> = {}) =>
   runState({ workspace: "stopped", active_plan: ONE, offer: "resume", preselected: ONE, ...patch });
 
 it("resumes a stopped run of this feature on its own plan, not on another written plan", () => {
-  const { store } = renderPage(<RunPanel />, PATH, held, { holder: "me", run: resume() });
+  const { store } = renderPage(<MetaplanPage />, PATH, held, { holder: "me", run: resume() });
 
   expect(only().getAttribute("aria-disabled")).toBeNull();
   fireEvent.click(only());
@@ -36,7 +43,7 @@ it("resumes a stopped run of this feature on its own plan, not on another writte
 
 it("draws the resume control for a stopped run even when no plan is written", () => {
   const checklist = atlas({ plan_rows: [planRow("one", "running")] });
-  const { store } = renderPage(<RunPanel />, PATH, checklist, { holder: "me", run: resume() });
+  const { store } = renderPage(<MetaplanPage />, PATH, checklist, { holder: "me", run: resume() });
 
   fireEvent.click(only());
   expect(store.get(runDialogAtom)).toEqual({ open: true, plan: ONE });
@@ -44,7 +51,7 @@ it("draws the resume control for a stopped run even when no plan is written", ()
 
 it("blocks Start with one reason while a run of this feature is running", () => {
   const running = runState({ workspace: "running", active_plan: ONE, offer: "none_running" });
-  renderPage(<RunPanel />, PATH, held, { run: running });
+  renderPage(<MetaplanPage />, PATH, held, { run: running });
 
   expect(only().getAttribute("aria-disabled")).toBe("true");
   expect(screen.getAllByText(HELD)).toHaveLength(1);
@@ -53,13 +60,13 @@ it("blocks Start with one reason while a run of this feature is running", () => 
 
 it("blocks Start while another plan's run is running, and while it is stopped", () => {
   const running = runState({ workspace: "running", active_plan: FOREIGN, offer: "none_running" });
-  const first = renderPage(<RunPanel />, PATH, held, { holder: "me", run: running });
+  const first = renderPage(<MetaplanPage />, PATH, held, { holder: "me", run: running });
   expect(only().getAttribute("aria-disabled")).toBe("true");
   expect(screen.getAllByText(HELD)).toHaveLength(1);
   first.unmount();
 
   const stopped = resume({ active_plan: FOREIGN, preselected: FOREIGN });
-  renderPage(<RunPanel />, PATH, held, { holder: "me", run: stopped });
+  renderPage(<MetaplanPage />, PATH, held, { holder: "me", run: stopped });
   expect(only().getAttribute("aria-disabled")).toBe("true");
   expect(screen.getAllByText(HELD)).toHaveLength(1);
 });
@@ -70,7 +77,7 @@ it("keeps a blocked Start the page's primary when the checklist's primary is sta
     primary: offer("start_run", "Start a run", "doc/plans/atlas/PLAN-two.md"),
   });
   const running = runState({ workspace: "running", active_plan: FOREIGN, offer: "none_running" });
-  renderPage(<RunPanel />, PATH, checklist, { holder: "me", run: running });
+  renderPage(<MetaplanPage />, PATH, checklist, { holder: "me", run: running });
 
   expect(only().getAttribute("aria-disabled")).toBe("true");
   expect(only().getAttribute("data-look")).toBe("primary");
@@ -79,11 +86,11 @@ it("keeps a blocked Start the page's primary when the checklist's primary is sta
 it("keeps Start enabled for a workspace that is set up or done", () => {
   const checklist = atlas({ plan_rows: [planRow("two", "written")] });
   const initialized = runState({ workspace: "initialized", active_plan: FOREIGN, offer: "start" });
-  const first = renderPage(<RunPanel />, PATH, checklist, { holder: "me", run: initialized });
+  const first = renderPage(<MetaplanPage />, PATH, checklist, { holder: "me", run: initialized });
   expect(only().getAttribute("aria-disabled")).toBeNull();
   first.unmount();
 
-  renderPage(<RunPanel />, PATH, checklist, {
+  renderPage(<MetaplanPage />, PATH, checklist, {
     holder: "me",
     run: runState({ workspace: "done", active_plan: null, offer: "start" }),
   });

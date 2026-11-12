@@ -117,6 +117,23 @@ describe("a delta that names an overview refetches the loaded pages of its scope
     expect(store.get(conceptPageAtom("demo/engineering/plan_a"))).toBe(before);
   });
 
+  it("refetches the loaded plan pages of the feature when the delta names its metaplan page", async () => {
+    const keys = ["demo/metaplan/index", "demo/engineering/plan_a", "plans/standalone"];
+    const store = loaded(keys.map((key) => pageOf(key, ["section_01"])));
+    const standalone = store.get(conceptPageAtom("plans/standalone"));
+    const unrelated = pageOf("other/engineering/plan_a", ["section_01"]);
+    store.set(conceptPageAtom(unrelated.key), { page: unrelated, previous: null, error: null });
+    for (const key of keys) served[key] = pageOf(key, []);
+
+    await deliver(store, { pages: ["demo/metaplan/index"] });
+    await vi.waitFor(() => expect(replaced(store, "demo/engineering/plan_a")).toBe(true));
+
+    expect([...requests].sort()).toEqual(["demo/engineering/plan_a", "demo/metaplan/index"]);
+    expect(chipState(store, "demo/engineering/plan_a", "section_01")).toBeNull();
+    expect(store.get(conceptPageAtom("plans/standalone"))).toBe(standalone);
+    expect(store.get(conceptPageAtom(unrelated.key)).page).toBe(unrelated);
+  });
+
   it.each(["overview/other/product", "other/product/section_01"])(
     "does not refetch another feature page %s",
     async (key) => {
@@ -134,21 +151,8 @@ describe("a delta that names an overview refetches the loaded pages of its scope
     },
   );
 
-  it("refetches engineering siblings without refetching standalone plans", async () => {
-    const keys = ["overview/demo/engineering", "demo/engineering/plan_a", "plans/standalone"];
-    const store = loaded(keys.map((key) => pageOf(key, [])));
-    const standalone = store.get(conceptPageAtom("plans/standalone"));
-    for (const key of keys) served[key] = pageOf(key, []);
-
-    await deliver(store, { pages: ["overview/demo/engineering"] });
-    await vi.waitFor(() => expect(replaced(store, "demo/engineering/plan_a")).toBe(true));
-
-    expect([...requests].sort()).toEqual(["demo/engineering/plan_a", "overview/demo/engineering"]);
-    expect(store.get(conceptPageAtom("plans/standalone"))).toBe(standalone);
-  });
-
   it("refetches a named standalone plan with no feature", async () => {
-    const store = loaded([pageOf("plans/standalone", []), pageOf("overview/demo/engineering", [])]);
+    const store = loaded([pageOf("plans/standalone", []), pageOf("demo/metaplan/index", [])]);
     served["plans/standalone"] = pageOf("plans/standalone", []);
 
     await deliver(store, { feature: null, pages: ["plans/standalone", "plans/unloaded"] });

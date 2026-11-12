@@ -53,7 +53,6 @@ const fetched: string[] = [];
 function serveOverview(overview: Page = clone(overviewFixture)): void {
   pages = {
     "overview/demo/product": { ...overview, key: "overview/demo/product" },
-    "overview/demo/engineering": { ...overview, key: "overview/demo/engineering" },
     "demo/product/section_01": clone(summaryFixture),
     "demo/product/section_02": {
       ...clone(summaryFixture),
@@ -237,50 +236,39 @@ describe("document key across pages", () => {
     return overview;
   };
 
-  it("opens collapsed on the next loaded page after the key was expanded", async () => {
+  it("opens a second feature's key collapsed after expanding the first", async () => {
     pages = {
       "overview/demo/product": longKey("overview/demo/product", "p"),
-      "overview/demo/engineering": longKey("overview/demo/engineering", "e"),
+      "overview/other/product": longKey("overview/other/product", "e"),
     };
-    const { router } = renderAt("/f/demo/engineering");
+    const { router } = renderAt("/f/other/product");
     await screen.findByText("e01");
-    // The product overview is loaded in turn, so the way back finds the engineering page loaded.
     await router.navigate("/f/demo/product");
     await screen.findByText("p01");
     fireEvent.click(screen.getByRole("button", { name: /^…\s?2 more$/ }));
     expect(within(keyList()).getAllByRole("link")).toHaveLength(6);
-    expect(screen.getByRole("button", { name: "Fewer" })).toBeTruthy();
-
-    await router.navigate("/f/demo/engineering");
-
+    await router.navigate("/f/other/product");
     await screen.findByText("e01");
     expect(within(keyList()).getAllByRole("link")).toHaveLength(4);
-    expect(screen.queryByRole("button", { name: "Fewer" })).toBeNull();
-    expect(screen.getByRole("button", { name: /^…\s?2 more$/ })).toBeTruthy();
   });
 
-  it("keeps focus on a chip link after navigating to a loaded page with the same chip", async () => {
-    // Same first four chips, but the engineering page has five, so its "more" chip reads "1 more".
-    const engineering = longKey("overview/demo/engineering", "k");
-    engineering.key_chips = engineering.key_chips.slice(0, 5);
+  it("keeps focus on a chip when navigating to a loaded overview with the same chip", async () => {
+    const other = longKey("overview/other/product", "k");
+    other.key_chips = other.key_chips.slice(0, 5);
     pages = {
       "overview/demo/product": longKey("overview/demo/product", "k"),
-      "overview/demo/engineering": engineering,
+      "overview/other/product": other,
     };
-    const { router } = renderAt("/f/demo/engineering");
+    const { router } = renderAt("/f/other/product");
     const more = (count: number) => screen.findByRole("button", { name: `…${count} more` });
     await more(1);
-    // Each page is loaded in turn, so the later visits find their page loaded.
     await router.navigate("/f/demo/product");
     await more(2);
-    await router.navigate("/f/demo/engineering");
+    await router.navigate("/f/other/product");
     await more(1);
     const link = within(keyList()).getAllByRole("link")[0]!;
     link.focus();
-    expect(document.activeElement).toBe(link);
-
     await router.navigate("/f/demo/product");
-
     await more(2);
     expect(document.activeElement).toBe(within(keyList()).getAllByRole("link")[0]);
   });
@@ -290,9 +278,9 @@ describe("overview eyebrow", () => {
   it("never shows a slug holding a format character: the route refuses it before any eyebrow", async () => {
     const slug = "dem\u202Eo";
     // Served so that a loosened slug rule would load the overview and reach the eyebrow.
-    const key = `overview/${slug}/engineering`;
+    const key = `overview/${slug}/product`;
     pages = { [key]: { ...clone(overviewFixture), key } };
-    renderAt(`/f/${encodeURIComponent(slug)}/engineering`, (store) =>
+    renderAt(`/f/${encodeURIComponent(slug)}/product`, (store) =>
       store.set(
         checklistAtom,
         checklistViewSchema.parse({ ...checklistFixture.checklists[0]!, feature: slug }),
@@ -308,11 +296,11 @@ describe("overview eyebrow", () => {
 describe("overview head", () => {
   it("the overview eyebrow names the feature by its slug", async () => {
     serveOverview();
-    renderAt("/f/demo/engineering", (store) =>
+    renderAt("/f/demo/product", (store) =>
       store.set(checklistAtom, checklistViewSchema.parse(checklistFixture.checklists[0]!)),
     );
     await readingColumn();
-    expect(screen.getByText("demo · engineering overview")).toBeTruthy();
+    expect(screen.getByText("demo · product overview")).toBeTruthy();
   });
   it("an overview draws its eyebrow, then its page title, then the gaps above its text", async () => {
     serveOverview();

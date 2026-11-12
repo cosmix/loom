@@ -46,14 +46,14 @@ it("features repair standalone shelf starts collapsed with its count", () => {
 
 it("features repair feature screen marks the row of the route as current", () => {
   const demo = checklist("demo", { sections: 3, plans: 2, current: 4 });
-  renderFeatureRoute("/f/demo/engineering", project({ checklists: [demo] }));
+  renderFeatureRoute("/f/demo/metaplan", project({ checklists: [demo] }));
 
   const nav = screen.getByRole("navigation", { name: "Feature documents" });
   const rowOf = (name: RegExp) =>
     Array.from(nav.querySelectorAll("li.plan-spine__group")).find((group) =>
       name.test(group.querySelector(".plan-spine__head")?.textContent ?? ""),
     );
-  const plans = rowOf(/\bPlans\b/);
+  const plans = rowOf(/\bMetaplan\b/);
   const productSpec = rowOf(/\bProduct spec\b/);
   expect(plans).toBeDefined();
   expect(productSpec).toBeDefined();

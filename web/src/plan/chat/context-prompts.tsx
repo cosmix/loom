@@ -17,7 +17,6 @@ const PROMPTS: Record<NonNullable<ViewedKind>, readonly string[]> = {
     "Change this section so that",
   ],
   metaplan: ["Is the plan order right?", "Which plan carries the most risk?"],
-  "engineering-overview": ["What are the main engineering decisions?", "What could go wrong?"],
   plan: [
     "What could go wrong with this plan?",
     "Does this cover what its sections ask for?",

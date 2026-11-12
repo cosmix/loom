@@ -193,7 +193,6 @@ fn lists_nested_sections_and_overviews_and_skips_unsafe_directories() {
     let expected = [
         ID1,
         "other/product/section_01",
-        "overview/demo/engineering",
         "overview/demo/product",
         "overview/other/product",
         "plans/x",

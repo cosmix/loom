@@ -95,7 +95,7 @@ const buttonsNamed = (root: HTMLElement, label: string) =>
     .queryAllByRole("button")
     .filter((button) => button.textContent?.includes(label));
 
-it("the Plans overview draws the start_run offer once on a read-only server", async () => {
+it("the metaplan page draws the start_run offer once on a read-only server", async () => {
   const row = planRow(ONE, "written");
   renderRoute(
     "/f/atlas/engineering",

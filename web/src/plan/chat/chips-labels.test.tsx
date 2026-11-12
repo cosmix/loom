@@ -145,7 +145,6 @@ it("a file chip reads its name and size, and removing it frees its thumbnail", (
 });
 
 it.each([
-  ["overview/demo/engineering", "Engineering overview"],
   ["plans/product", "Summary · product"],
   ["plans/engineering", "Summary · engineering"],
   ["demo/engineering/product", "Summary · product"],

@@ -13,9 +13,9 @@ fn feature_overviews_round_trip_with_their_member_ids() {
             "../../alpha/product/section_01.md#s-1234abcd",
         ),
         (
-            "overview/beta/engineering",
-            "plans/p",
-            "../../plans/p.md#s-1234abcd",
+            "overview/beta/product",
+            "beta/product/section_01",
+            "../../beta/product/section_01.md#s-1234abcd",
         ),
     ];
     for (id, member, href) in cases {
