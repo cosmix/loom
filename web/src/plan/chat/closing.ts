@@ -1,9 +1,10 @@
 import { z } from "@/api/zod";
 import type { Item, Turn } from "@/plan/api/schema-chat";
-import { fenceBody } from "./kickoff-fence";
+import { DONE_INFO, fenceBody } from "./kickoff-fence";
 
 type ToolItem = Extract<Item, { type: "tool" }>;
 export type ClosingTick = { path: string; state: "done" | "live" };
+type Lists = Pick<LeftBehind, "decisions" | "questions">;
 export type LeftBehind = {
   documents: Array<{ path: string; added: number | null; removed: number | null }>;
   decisions: string[];
@@ -51,23 +52,36 @@ export function closingTicks(turn: Turn): ClosingTick[] {
   return [...ticks].map(([path, state]) => ({ path, state }));
 }
 
-function closingLists(closing: Turn | undefined): Pick<LeftBehind, "decisions" | "questions"> {
-  const empty = { decisions: [], questions: [] };
+function closingLists(closing: Turn | undefined): Lists {
   const bodies = (closing?.items ?? []).flatMap((item) =>
     item.type === "text" ? [fenceBody(item.markdown, CLOSING_INFO)] : [],
   );
-  const body = bodies.filter((entry): entry is string => entry !== null).at(-1);
-  if (body === undefined) return empty;
+  const body = bodies.filter((entry): entry is string => entry !== null).at(-1) ?? null;
+  return parseLists(body) ?? { decisions: [], questions: [] };
+}
+
+function parseLists(body: string | null): Lists | null {
+  if (body === null) return null;
   let parsed: unknown;
   try {
     parsed = JSON.parse(body);
   } catch {
-    return empty;
+    return null;
   }
   const block = closingBlock.safeParse(parsed);
-  if (!block.success) return empty;
+  if (!block.success) return null;
   const clean = (entries: string[]) => entries.map((entry) => entry.trim()).filter(Boolean);
   return { decisions: clean(block.data.decisions), questions: clean(block.data.questions) };
+}
+
+/** The lists of the turn's final assistant text when it ends with a valid `loom-done` fence. */
+export function doneLists(turn: Turn | undefined): Lists | null {
+  const text = turn?.items.findLast((item) => item.type === "text");
+  return text?.type === "text" ? parseLists(fenceBody(text.markdown, DONE_INFO, true)) : null;
+}
+
+export function endedByAgent(turns: Turn[]): boolean {
+  return !turns.some(isClosingTurn) && doneLists(turns.at(-1)) !== null;
 }
 
 function lineCounts(turns: Turn[], path: string): { added: number | null; removed: number | null } {
@@ -86,5 +100,6 @@ export function leftBehind(turns: Turn[]): LeftBehind {
   const paths = new Set(turns.flatMap((turn) => turn.changed_files.map((file) => file.path)));
   const documents = [...paths].map((path) => ({ path, ...lineCounts(turns, path) }));
   const closing = turns.find(isClosingTurn);
-  return { documents, ...closingLists(closing) };
+  const lists = closing ? closingLists(closing) : doneLists(turns.at(-1));
+  return { documents, ...(lists ?? { decisions: [], questions: [] }) };
 }

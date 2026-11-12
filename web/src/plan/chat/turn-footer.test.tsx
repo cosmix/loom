@@ -53,7 +53,11 @@ it("the footer shows neither duration nor tokens", () => {
 
 it("rows and diff link", async () => {
   mount();
-  expect(screen.getByText("Changed 1 file")).toBeTruthy();
+  const fold = screen.getByText("Changed 1 file").closest("details")!;
+  expect(fold.open).toBe(false);
+  expect(fold.querySelector("summary")?.textContent).toBe("Changed 1 file");
+  fireEvent.click(screen.getByText("Changed 1 file"));
+  expect(fold.open).toBe(true);
   expect(screen.getByText("section_02.md").closest("[title]")?.getAttribute("title")).toBe(
     "product/demo/section_02.md",
   );
@@ -86,12 +90,6 @@ it("running turn disables diff", () => {
   expect(screen.getByRole("button", { name: "Diff" }).getAttribute("aria-disabled")).toBe("true");
   expect(screen.getByText("Available when the turn ends")).toBeTruthy();
   expect(restoreButton).not.toHaveBeenCalled();
-});
-
-it("by_tool false note", async () => {
-  mount(turn({ changed_files: [{ path, before_hash: "before", by_tool: false }] }));
-  expect(screen.getByText("changed during this turn")).toBeTruthy();
-  await screen.findByText("+1 −1");
 });
 
 it("plans under a changed feature section grouped by state", async () => {

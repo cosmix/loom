@@ -283,7 +283,7 @@ it("ended tools fold while errors remain visible", () => {
   expect(summary.closest("details")?.open).toBe(true);
 });
 
-it("a running turn's working card is open, folds when the turn ends, and draws no roundel", () => {
+it("a running turn's working card is closed, opens on a click, stays open, and draws no roundel", () => {
   const pending = item("tool", {
     id: "only",
     name: "Read",
@@ -294,16 +294,18 @@ it("a running turn's working card is open, folds when the turn ends, and draws n
 
   const summary = within(h.log).getByText("Used 1 tool · edited 0 files").closest("summary")!;
   const card = summary.closest("details")!;
-  expect(card.open).toBe(true);
+  expect(card.open).toBe(false);
   expect(card.className).toContain("chat-tool-fold");
   expect(summary.querySelector(".aurora-roundel")).toBeNull();
   const row = within(h.log).getByRole("button", { name: /Read notes/ });
   expect(row.closest("details")).toBe(card);
   expect(row.getAttribute("data-status")).toBe("pending");
 
-  const open = h.store.get(snapshotAtom).turns[0]!;
-  h.update([{ ...open, open: false, items: [{ ...pending, status: "done" }] }]);
-  expect(summary.closest("details")?.open).toBe(false);
+  fireEvent.click(summary);
+  expect(card.open).toBe(true);
+  const running = h.store.get(snapshotAtom).turns[0]!;
+  h.update([{ ...running, items: [{ ...pending, summary: "Read more notes" }] }]);
+  expect(summary.closest("details")?.open).toBe(true);
 });
 
 it("a finished tool row folds, and a Skill row never renders", () => {

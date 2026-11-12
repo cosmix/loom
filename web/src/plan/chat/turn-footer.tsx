@@ -95,7 +95,6 @@ function ChangedRow(props: RowProps) {
         <Untrusted text={file.path.split("/").pop() ?? file.path} />
         {label && <span className="chat-file-counts">{label}</span>}
       </span>
-      {!file.by_tool && <span>changed during this turn</span>}
       {inside ? (
         <RowActions {...props} />
       ) : (
@@ -139,10 +138,10 @@ function ChangedFiles({
   if (turn.changed_files.length === 0) return null;
   // The files are quiet chips on one wrapping row under the turn, each with its actions.
   return (
-    <div className="chat-changed">
-      <p>
+    <details className="chat-changed">
+      <summary>
         {turn.open ? "Changing" : "Changed"} {plural(turn.changed_files.length, "file")}
-      </p>
+      </summary>
       <ul className="chat-changed-files">
         {turn.changed_files.map((file) => (
           <li key={file.path}>
@@ -160,7 +159,7 @@ function ChangedFiles({
           </li>
         ))}
       </ul>
-    </div>
+    </details>
   );
 }
 

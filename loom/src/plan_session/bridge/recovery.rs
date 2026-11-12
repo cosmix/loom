@@ -17,7 +17,7 @@ use super::registry::{read_record, remove_session_dir, session_dirs};
 use super::registry::{terminate_children, write_record, SessionRecord};
 use super::requests::canonical;
 use super::session::{Phase, Recovery, Session};
-use super::{Bridge, BridgeEvent, EndMode, EndOutcome, RecoveredSession, RecoveryReport};
+use super::{Bridge, BridgeEvent, EndCause, EndMode, EndOutcome, RecoveredSession, RecoveryReport};
 use crate::fs::safe_read::read_bounded;
 use crate::orchestrator::terminal::tmux::socket_path_for;
 use crate::plan_session::kind::{SessionDir, SessionKind};
@@ -188,7 +188,7 @@ impl Bridge {
         session.transcript = recorded.and_then(|path| checked_transcript(path, &session.id));
         session.flow.recovered = Some(answers);
         let restarted = Some((DenyReason::ServerStopping, RESTARTED));
-        session.plan_end(EndMode::FinalWrite, restarted);
+        session.plan_end(EndMode::FinalWrite, EndCause::Draining, restarted);
         let mut inner = self.lock();
         let chat = inner.chat.is_none() && !matches!(session.kind, SessionKind::Summary);
         if chat {

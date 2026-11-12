@@ -170,7 +170,7 @@ pub(super) struct Request {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum Closing {
-    /// No closing message (summary and pressure sessions).
+    /// No closing message (summary, pressure or agent-ended authoring sessions).
     Skip,
     NotSent,
     Sent,
@@ -220,6 +220,8 @@ pub(super) struct Flow {
     pub(super) pressed: bool,
     pub(super) end: Option<EndPlan>,
     pub(super) close_ready: Option<EndOutcome>,
+    /// The final turn reached its Stop; background work may still hold the close gate.
+    pub(super) closing_stopped: bool,
     /// A recovered session: the answers its spool's requests had at recovery.
     pub(super) recovered: Option<HashMap<String, Answer>>,
     /// The background table changed since its last `Background` event (one per driver tick).
