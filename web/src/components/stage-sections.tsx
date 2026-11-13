@@ -25,7 +25,12 @@ import {
   type SectionSpec,
 } from "@/components/stage-detail";
 import { contextUsage, formatStamp } from "@/lib/format";
-import { contractTesting, exitReasonLabel, sessionTypeLabel } from "@/lib/format-activity";
+import {
+  contractTesting,
+  exitReasonLabel,
+  sessionTypeLabel,
+  verdictCompleting,
+} from "@/lib/format-activity";
 
 /// What each field means, in the words a person reading the ledger needs.
 const HINT = {
@@ -62,6 +67,8 @@ const HINT = {
     "The number in front of each criterion is its index for loom stage amend --index, counted from 0.",
   disputes: "Disputes the stage has filed, of every kind. A judge session settles each.",
   judge: "Time since the adjudication judge for this stage last reported in.",
+  verifying:
+    "Every dispute is ruled; no judge is running. The daemon is running the acceptance criteria and completes the stage when they pass.",
   merged:
     "Whether the stage's branch has been merged into the merge point. Assumed: an operator completed the stage with --force-unsafe --assume-merged, so loom did not perform the merge itself.",
   baseBranch:
@@ -192,8 +199,10 @@ function adjudicationRows(stage: StageSummary) {
     stage.dispute_count > 0 ||
     stage.judge_heartbeat_secs !== null;
   if (!applies) return [];
+  const verifying = verdictCompleting(stage);
   return present([
     row("disputes", HINT.disputes, String(stage.dispute_count), true),
+    row("verifying", HINT.verifying, verifying, true),
     row(
       "judge heartbeat",
       HINT.judge,

@@ -13,6 +13,7 @@ mod rounds;
 mod sanitize;
 mod stopped;
 mod timing;
+mod verdict_completion;
 
 pub use collector::{collect_status_data, load_all_sessions};
 pub use completion_view::{
@@ -22,6 +23,7 @@ pub use completion_view::{
 pub use contract_testing::ContractTesting;
 pub use criteria_results::FailingCriterion;
 pub use execution_models::execution_models_for_stage;
+pub use verdict_completion::VerdictCompleting;
 
 use serde::{Deserialize, Serialize};
 
@@ -257,6 +259,11 @@ pub struct StageSummary {
     /// queued or running.
     #[serde(default)]
     pub contract_testing: Option<ContractTesting>,
+    /// The daemon's verdict-completion job: set only while the stage awaits
+    /// adjudication with every dispute ruled and the job queued or running.
+    /// No judge is working then; the daemon is verifying the stage.
+    #[serde(default)]
+    pub verdict_completing: Option<VerdictCompleting>,
 }
 
 /// The facts about a blocked stage that the attention card lists: which
@@ -289,6 +296,14 @@ impl StageSummary {
             return None;
         }
         self.contract_testing.as_ref().map(ContractTesting::text)
+    }
+
+    /// The verdict-completion sentence while the daemon verifies a stage
+    /// whose disputes are all ruled.
+    pub fn verdict_completing_text(&self) -> Option<String> {
+        self.verdict_completing
+            .as_ref()
+            .map(VerdictCompleting::text)
     }
 
     /// The word a merged stage wears: `assumed` when an operator asserted the

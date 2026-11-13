@@ -178,6 +178,8 @@ export const stageSummarySchema = z
     terminal_history_session: z.string().optional(),
     block_detail: blockDetailSchema.optional(),
     contract_testing: contractTestingSchema.nullish(),
+    // The daemon verifying a stage whose disputes are all ruled; same shape as a freeze job.
+    verdict_completing: contractTestingSchema.nullish(),
     // Newest first by `ended_at`. The daemon always sends it; a fixture without it reads as empty.
     history: z.array(stageIssueSchema).default([]),
   })

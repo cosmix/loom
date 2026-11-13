@@ -227,7 +227,15 @@ fn blocked_label(stage: &StageSummary) -> &'static str {
         .unwrap_or("error")
 }
 
+/// A stage whose disputes are all ruled shows the daemon's verification, not
+/// a judge.
 fn adjudication_activity(stage: &StageSummary) -> Cell {
+    if let Some(text) = stage.verdict_completing_text() {
+        return Cell {
+            text,
+            style: Theme::status_completed(),
+        };
+    }
     let state = match stage.judge_heartbeat_secs {
         None => "none",
         Some(seconds) if seconds <= 300 => "working",

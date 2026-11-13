@@ -166,8 +166,8 @@ fn resolved_model(stage: &Stage, work_dir: &WorkDir) -> String {
 
 /// Build a StageSummary from a Stage and optional associated Session.
 ///
-/// `rustfmt::skip` keeps two pairs of fields that come from one value on one
-/// line each (the live timers, the completion view), holding the 47-field
+/// `rustfmt::skip` keeps three pairs of fields that come from one source on one
+/// line each (the live timers, the completion view, the merge resolver), holding the 48-field
 /// literal inside the function-length limit.
 #[rustfmt::skip]
 fn build_stage_summary(stage: &Stage, sessions: &[Session], work_dir: &WorkDir) -> StageSummary {
@@ -210,14 +210,14 @@ fn build_stage_summary(stage: &Stage, sessions: &[Session], work_dir: &WorkDir) 
         judge_heartbeat_secs: facts.heartbeat.judge_heartbeat_secs,
         session_backend: facts.session.map(|s| s.backend),
         outgoing_session_exit_reason: facts.completion_view.0, completion_blocker: facts.completion_view.1,
-        merge_resolver_session: facts.merge_resolver_session,
-        merge_resolver_attempts: facts.merge_resolver_attempts,
+        merge_resolver_session: facts.merge_resolver_session, merge_resolver_attempts: facts.merge_resolver_attempts,
         close_reason: blocked_close_reason(stage),
         acceptance: blocked_acceptance(stage),
         terminal_history_session: terminal_history_session(stage, sessions, work_dir),
         block_detail: block_detail(stage, sessions, work_dir),
         history: super::history::stage_history(stage, work_dir),
         contract_testing: contract_testing_for(stage, facts.session_type, work_dir, now),
+        verdict_completing: super::verdict_completion::verdict_completing_for(stage, work_dir.root(), now),
     }
 }
 

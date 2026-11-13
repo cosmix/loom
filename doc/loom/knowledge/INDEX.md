@@ -72,7 +72,7 @@
 | [source-graph-evaluation](architecture/source-graph-evaluation.md) |  | 68 |
 | [source-graph-resolution](architecture/source-graph-resolution.md) |  | 125 |
 | [source-graph-view](architecture/source-graph-view.md) |  | 78 |
-| [status-data-model](architecture/status-data-model.md) | Fields | 267 |
+| [status-data-model](architecture/status-data-model.md) | Fields | 268 |
 | [summary-store](architecture/summary-store.md) |  | 342 |
 | [target-guard](architecture/target-guard.md) | Tip | 127 |
 | [terminal-backends](architecture/terminal-backends.md) |  | 285 |
