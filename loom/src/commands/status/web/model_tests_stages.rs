@@ -61,6 +61,7 @@ macro_rules! stage {
             block_detail: Default::default(),
             history: Vec::new(),
             contract_testing: None,
+            verdict_completing: None,
         }
     };
 }

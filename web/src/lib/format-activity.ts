@@ -146,7 +146,20 @@ function baseActivity(stage: StageSummary): { text: string; tone: Tone } | null 
   }
 }
 
+/// The sentence for a stage whose disputes are all ruled while the daemon runs
+/// its acceptance criteria, `disputes ruled, daemon verifying 11/14 · 3m12s`;
+/// null when no verdict-completion job is queued or running.
+export function verdictCompleting(stage: StageSummary): string | null {
+  const job = stage.verdict_completing;
+  if (!job || stage.status !== "needs-adjudication") return null;
+  if (job.queued) return "disputes ruled, waiting to verify";
+  const elapsed = job.running_secs === null ? "" : ` · ${formatElapsed(job.running_secs)}`;
+  return `disputes ruled, daemon verifying ${job.done}/${job.total}${elapsed}`;
+}
+
 function adjudicationText(stage: StageSummary): { text: string; tone: Tone } {
+  const verifying = verdictCompleting(stage);
+  if (verifying !== null) return { text: verifying, tone: "executing" };
   const judge =
     stage.judge_heartbeat_secs === null
       ? "none"

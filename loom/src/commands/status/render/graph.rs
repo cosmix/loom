@@ -187,9 +187,14 @@ const ROW_INDENT: &str = "   ";
 
 /// The `[model]` tag, plus a magenta `contracts` tag when the stage is in
 /// its contract-writing phase. While the writer's frozen contracts run as a
-/// host job, the tag reads `contracts written, testing 9/11 · 6m12s` instead.
+/// host job, the tag reads `contracts written, testing 9/11 · 6m12s` instead;
+/// a stage whose ruled disputes the daemon is verifying reads
+/// `disputes ruled, daemon verifying 11/14 · 3m12s`.
 fn stage_tags(stage: &StageSummary) -> String {
     let model_tag = format!(" {}", format!("[{}]", stage.model).dimmed());
+    if let Some(text) = stage.verdict_completing_text() {
+        return format!("{model_tag} {}", text.magenta().bold());
+    }
     if !is_contract_phase(stage) {
         return model_tag;
     }

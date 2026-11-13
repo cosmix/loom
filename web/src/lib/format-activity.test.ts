@@ -305,6 +305,22 @@ describe("TUI formatter ports", () => {
     ).toEqual({ text, tone: "warning" });
   });
 
+  it.each<readonly [boolean, number | null, string]>([
+    [false, 192, "disputes ruled, daemon verifying 11/14 · 3m12s"],
+    [true, null, "disputes ruled, waiting to verify"],
+  ])("reports the daemon verifying ruled disputes (queued %s)", (queued, running, text) => {
+    expect(
+      activityText(
+        stage({
+          status: "needs-adjudication",
+          dispute_count: 4,
+          judge_heartbeat_secs: 30,
+          verdict_completing: { done: 11, total: 14, queued, running_secs: running },
+        }),
+      ),
+    ).toEqual({ text, tone: "executing" });
+  });
+
   it("leaves completed activity blank", () => {
     expect(activityText(stage({ status: "completed" }))).toBeNull();
   });

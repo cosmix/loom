@@ -204,6 +204,35 @@ fn adjudication_is_automatic() {
 }
 
 #[test]
+fn a_verifying_daemon_is_not_a_judge_ruling() {
+    let mut stage = make_stage_summary("judge", StageStatus::NeedsAdjudication);
+    stage.dispute_count = 4;
+    stage.judge_heartbeat_secs = Some(30);
+    stage.verdict_completing = Some(VerdictCompleting {
+        done: 11,
+        total: 14,
+        queued: false,
+        running_secs: Some(192),
+    });
+
+    let entry = entry_for(stage);
+
+    assert_eq!(entry.label, "VERIFYING");
+    assert_eq!(
+        guidance(&entry),
+        (
+            None,
+            Some("disputes ruled, daemon verifying 11/14 · 3m12s"),
+            true
+        )
+    );
+    assert_eq!(
+        (entry.dispute_count, entry.judge_heartbeat_secs),
+        (None, None)
+    );
+}
+
+#[test]
 fn an_executing_completion_blocker_is_automatic_prose() {
     let mut stage = make_stage_summary("writer", StageStatus::Executing);
     stage.completion_blocker = Some(completion_blocker(CompletionBlockerState::Pending));

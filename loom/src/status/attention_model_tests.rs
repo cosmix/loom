@@ -2,7 +2,9 @@ use super::*;
 use crate::models::failure::{FailureInfo, FailureType};
 use crate::models::session::SessionBackendKind;
 use crate::models::stage::StageStatus;
-use crate::status::data::{ActivityStatus, CompletionBlockerState, CompletionBlockerSummary};
+use crate::status::data::{
+    ActivityStatus, CompletionBlockerState, CompletionBlockerSummary, VerdictCompleting,
+};
 
 #[path = "blocked_guidance_tests.rs"]
 mod blocked_guidance_tests;

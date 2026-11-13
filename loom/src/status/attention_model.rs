@@ -270,7 +270,10 @@ fn completion_blocker_label(state: CompletionBlockerState) -> &'static str {
 fn status_entry(stage: &StageSummary) -> Option<AttentionEntry> {
     let (label, guidance) = status_guidance(stage)?;
     let guidance_automatic = guidance.automatic;
-    let is_adjudicating = stage.status == StageStatus::NeedsAdjudication;
+    // While the daemon verifies the ruled disputes no judge is running, so
+    // the dispute count and judge heartbeat would describe a judge that is not.
+    let is_adjudicating =
+        stage.status == StageStatus::NeedsAdjudication && stage.verdict_completing.is_none();
     let (dispute_count, judge_heartbeat_secs) = if is_adjudicating {
         (Some(stage.dispute_count), stage.judge_heartbeat_secs)
     } else {
@@ -320,9 +323,18 @@ fn status_guidance(stage: &StageSummary) -> Option<(&'static str, Guidance)> {
         },
         StageStatus::NeedsHumanReview => ("NEEDS REVIEW", Guidance::default()),
         StageStatus::WaitingForInput => ("NEEDS INPUT", Guidance::manual(INPUT_NOTE)),
-        StageStatus::NeedsAdjudication => ("ADJUDICATING", Guidance::automatic(ADJUDICATION_NOTE)),
+        StageStatus::NeedsAdjudication => adjudication_guidance(stage),
         _ => return None,
     })
+}
+
+/// `VERIFYING` while the daemon runs the acceptance criteria of a stage whose
+/// disputes are all ruled; `ADJUDICATING` while a judge rules on them.
+fn adjudication_guidance(stage: &StageSummary) -> (&'static str, Guidance) {
+    match stage.verdict_completing_text() {
+        Some(text) => ("VERIFYING", Guidance::automatic(text)),
+        None => ("ADJUDICATING", Guidance::automatic(ADJUDICATION_NOTE)),
+    }
 }
 
 /// A `Standard` stage in the contract-writer phase: an `Executing` stage
