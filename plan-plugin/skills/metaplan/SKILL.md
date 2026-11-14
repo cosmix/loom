@@ -90,31 +90,9 @@ numbered on from the last entry, with the same paragraphs. Leave the existing en
 are. The checklist then offers "Write plan <slug>" for each new entry.
 
 When a finding from `findings.md` is the reason, take the entry's `Covers:` line from the
-finding's `About:` line, keeping its spec tokens, and set the finding's `Status:` line to
-`planned PLAN-<slug>.md` once the entry exists. Each ledger entry has this shape:
-
-```text
-## F-1 Rebuild threshold ignores briefs
-
-About: PLAN-feat-planner-03-summaries.md#stage:scheduler, section_04#rebuild-budget
-Source: REVIEW-PLAN-feat-planner-03-summaries.md#open-findings (scheduler, 1a2b3c4d5e6f)
-Status: open
-
-The rebuild budget counts plan summaries but not brief changes.
-```
-
-`Status:` is `open`, `planned PLAN-<slug>.md`, `folded metaplan#<entry anchor>` or
-`dismissed: <reason>`. Change only the `Status:` line of the finding you act on.
-
-## Fold a finding into an entry
-
-When the user folds a finding into an entry whose plan has not started running (unwritten, or written with no lifecycle prefix), edit that entry so
-its paragraphs include the finding (and its `Covers:` line names the finding's spec headings),
-then set the finding's `Status:` line to `folded metaplan#<entry anchor>`, where the anchor is
-the GitHub anchor of the entry's heading. Fold only into such an entry. When its plan is already written, the plan's stub no longer
-matches the entry: the stub changes so it reads stub changed after settling, and tell the user to
-revisit the plan. A fold seed's instruction takes precedence over the Plan follow-ups opening
-target ("Append follow-up entries under ## Follow-ups").
+finding's `About:` line, keeping its spec tokens, and name the finding's id (`F-<n>`) in the
+entry's first paragraph. Never edit `findings.md`: a finding's `Status:` changes only through the
+Findings page (a dismissal) or an address session (`loom-plan:address-findings`).
 
 ## Add an unlisted plan
 

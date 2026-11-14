@@ -24,7 +24,10 @@ export const GAP_KINDS = [
   "uncovered",
   "triage",
 ] as const;
-export const FINDING_KINDS = ["open", "planned", "folded", "dismissed"] as const;
+export const FINDING_KINDS = ["open", "addressed", "unaddressed", "dismissed"] as const;
+export const SEVERITIES = ["high", "medium", "low"] as const;
+/** What the trace's checks found, first match wins in this order (`FindingCheck`). */
+export const FINDING_CHECKS = ["duplicate", "unverified", "stale", "verified"] as const;
 export const SETTLE_COMMIT_STATES = ["committed", "unchanged", "not_committed"] as const;
 
 const u32 = z.number().int().min(0).max(4294967295);
@@ -35,6 +38,8 @@ export const settleStateSchema = z.enum(SETTLE_STATES);
 export const coverKindSchema = z.enum(COVER_KINDS);
 export const gapKindSchema = z.enum(GAP_KINDS);
 export const findingKindSchema = z.enum(FINDING_KINDS);
+export const severitySchema = z.enum(SEVERITIES);
+export const findingCheckKindSchema = z.enum(FINDING_CHECKS);
 
 export const nodeRefSchema = z.strictObject({ path: z.string(), anchor: z.string().nullable() });
 export const settledLineSchema = z.strictObject({
@@ -89,13 +94,24 @@ export const findingSchema = z.strictObject({
   id: z.string(),
   title: z.string(),
   about: z.array(z.string()),
+  /** The `Evidence:` quote as written. */
+  evidence: z.string().nullable(),
+  severity: severitySchema.nullable(),
   source: z.string().nullable(),
   status: findingStatusSchema,
   text: z.string(),
 });
+/** A duplicate names the earlier entry it repeats; every other check has `duplicate_of` null. */
+export const findingCheckSchema = z.strictObject({
+  kind: findingCheckKindSchema,
+  duplicate_of: z.string().nullable(),
+});
 export const traceFindingSchema = z.strictObject({
   finding: findingSchema,
   about: z.array(nodeRefSchema),
+  check: findingCheckSchema,
+  /** For an addressed finding, the nodes its status names as changed. */
+  changed: z.array(nodeRefSchema),
 });
 export const gapSchema = z.strictObject({
   kind: gapKindSchema,
@@ -190,6 +206,8 @@ export type SettleState = z.infer<typeof settleStateSchema>;
 export type CoverKind = z.infer<typeof coverKindSchema>;
 export type GapKind = z.infer<typeof gapKindSchema>;
 export type FindingKind = z.infer<typeof findingKindSchema>;
+export type Severity = z.infer<typeof severitySchema>;
+export type FindingCheckKind = z.infer<typeof findingCheckKindSchema>;
 export type NodeRef = z.infer<typeof nodeRefSchema>;
 export type SettledLine = z.infer<typeof settledLineSchema>;
 export type TraceDoc = z.infer<typeof traceDocSchema>;

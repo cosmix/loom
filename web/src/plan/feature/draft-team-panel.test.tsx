@@ -111,6 +111,38 @@ describe("DraftTeamPanel", () => {
     expect(queue.querySelectorAll(".lucide-book-open")).toHaveLength(3);
   });
 
+  it("words an address-findings run as editing documents, not drafting them", () => {
+    const team = teamView();
+    team.teammates[1] = { ...team.teammates[1]!, documents: [] };
+    renderPanel(storeFor(team, { ...session, offer: "address-findings" }));
+
+    const panel = screen.getByRole("region", { name: "Findings team" });
+    expect(screen.queryByRole("region", { name: "Draft team" })).toBeNull();
+    expect(
+      within(panel).getByRole("heading", { name: "Addressing findings with a team" }),
+    ).toBeTruthy();
+    const rows = within(screen.getByRole("list", { name: "Document queue" })).getAllByRole(
+      "listitem",
+    );
+    expect(within(rows[0]!).getByText("Edited")).toBeTruthy();
+    expect(within(rows[1]!).getByText("Editing")).toBeTruthy();
+    expect(within(rows[2]!).getByText("Queued")).toBeTruthy();
+    expect(screen.queryByText(/Draft/)).toBeNull();
+  });
+
+  it("words a finished address-findings run as addressed", () => {
+    const team = teamView();
+    team.teammates = team.teammates.map((teammate) => ({
+      ...teammate,
+      state: "idle" as const,
+      current: null,
+    }));
+    renderPanel(storeFor(team, { ...session, offer: "address-findings" }));
+
+    expect(screen.getByRole("heading", { name: "Addressed with a team" })).toBeTruthy();
+    expect(screen.getAllByText("Edited")).toHaveLength(3);
+  });
+
   it("drops Stop once every document is drafted while the lead session stays active", () => {
     const team = teamView();
     team.teammates = team.teammates.map((teammate) => ({
@@ -187,7 +219,7 @@ describe("DraftTeamPanel", () => {
     renderPanel(storeFor({ ...teamView(), teammates: [] }));
 
     const queue = screen.getByRole("list", { name: "Document queue" });
-    expect(within(queue).getAllByText("Unassigned")).toHaveLength(3);
+    expect(within(queue).queryByText("Unassigned")).toBeNull();
     expect(within(queue).getAllByText("Queued")).toHaveLength(3);
   });
 

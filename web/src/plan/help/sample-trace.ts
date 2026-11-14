@@ -61,17 +61,22 @@ function heading(number: string, anchor: string, plan: string | null) {
   };
 }
 
+/** A verified finding with no About nodes: the spine's well reads only status and check. */
 function finding(id: string, title: string, kind: string, source: string | null) {
   return {
     finding: {
       id,
       title,
       about: [],
+      evidence: null,
+      severity: "medium",
       source,
-      status: { kind, detail: null },
+      status: { kind, detail: kind === "open" ? null : "sample" },
       text: title,
     },
     about: [],
+    check: { kind: "verified", duplicate_of: null },
+    changed: [],
   };
 }
 
@@ -100,7 +105,7 @@ export const SAMPLE_TRACE: TraceView = traceViewSchema.parse({
   findings: [
     finding("F-1", "Search ignores archived work", "open", RUN_SOURCE),
     finding("F-2", "Pinned maps lose their order", "open", RUN_SOURCE),
-    finding("F-3", "Rename the sync flag", "planned", RUN_SOURCE),
+    finding("F-3", "Rename the sync flag", "addressed", RUN_SOURCE),
     finding("F-4", "Settings copy is long", "dismissed", null),
   ],
   gaps: [],

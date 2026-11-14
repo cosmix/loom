@@ -187,9 +187,8 @@
  * paints the page colour) is the page's card. Its washes and rules are mixed from its own fill:
  * the page's `--muted` is within 0.01 of a dark `--popover` and would not show on it. Listed are
  * the two primitives and every other surface that paints `--popover` around a wash or a rule;
- * `.terminal-frame` fills the terminal page's `--popover` panel and `.maps-picker` is the Findings
- * fold picker, a raised panel inside a card. A new floating surface uses a primitive or joins
- * the list.
+ * `.terminal-frame` fills the terminal page's `--popover` panel. A new floating surface uses a
+ * primitive or joins the list.
  */
 [data-slot="popover-content"],
 [data-slot="dialog-content"],
@@ -198,8 +197,7 @@
 .chat-commands,
 .add-to-chat__pill,
 .add-to-chat__note,
-.kickoff-picker,
-.maps-picker {
+.kickoff-picker {
   --background: var(--popover-well);
   --card: var(--popover);
   --muted: color-mix(in oklab, var(--foreground) 6%, var(--popover));

@@ -137,8 +137,7 @@ all three reading faces cover Greek. Reading size is 17, 19 (default) or 21px, w
 1.6 and a measure of 68–70 characters. Code, paths and ids use Commit Mono Cosmix. The visual
 design shares the dashboard's components and colour conventions. Popovers and dialogs have an
 elevated surface distinct from cards, a clear border and a soft shadow or glow in every theme.
-Modal dialogs dim and blur the page behind them; popovers are not modal and draw no backdrop. The
-inline Findings fold picker has the same raised surface.
+Modal dialogs dim and blur the page behind them; popovers are not modal and draw no backdrop.
 
 ### What the first screen shows
 
@@ -407,11 +406,15 @@ Each becomes `doc/product/<feature>/section_NN.md`. Order is a first proposal fo
   lines, never from inference.
 - **Findings (01, 10, 11).** Each feature keeps one ledger, `doc/plans/<f>/findings.md`, in plain
   Markdown. A completed plan's run review adds its open findings and open questions to it, and a
-  Review the feature session adds what the reader saw while running or reading the feature. The
-  reader triages each finding on the Findings page: plan it, fold it into a metaplan entry whose
-  plan has not started running, or dismiss it with a reason. Run reviews stay the unchanged
-  evidence; the ledger holds the triage state. Review the feature can start at any point once a
-  plan has run (my call: it is a secondary offer, owned by the Findings page).
+  Review the feature session verifies the imported entries and adds what the reader saw while
+  running or reading the feature. Each entry quotes the text it is about and carries a severity;
+  the app marks an entry unverified, stale or a duplicate by checking the quote against the
+  documents. On the Findings page the reader dismisses a finding with a reason, reopens one that
+  could not be addressed or was dismissed, or starts Address the findings: a team session that
+  edits the specs and plans the open, verified findings are about and marks each finding
+  addressed or could not address. Run reviews stay the unchanged
+  evidence; the ledger holds where each finding stands. Review the feature can start at any point
+  once a plan has run (my call: it is a secondary offer, owned by the Findings page).
 - **Planning trace (01, 03, 05).** The trace of how the documents relate (vision rows, sections
   and their headings, metaplan entries, plans, stages, findings) is built from the edge lines,
   `Settled:` lines and ledger on every load. It stores nothing outside the documents. It is

@@ -1,20 +1,27 @@
 import { describe, expect, it } from "vitest";
 
 import traceFixture from "@/plan/api/fixtures/trace.json";
-import { traceViewSchema, type TraceFinding, type TraceView } from "@/plan/api/schema-trace";
-
-import { dismissReason, foldSeed, ledgerPath, planSeed } from "./findings-actions";
+import type { SessionView } from "@/plan/api/schema-chat";
 import {
-  foldableEntries,
-  foldChoices,
-  foldedEntry,
+  traceViewSchema,
+  type FindingCheckKind,
+  type TraceFinding,
+  type TraceView,
+} from "@/plan/api/schema-trace";
+
+import { dismissReason, ledgerPath } from "./findings-actions";
+import {
+  addressOffer,
+  addressRunLive,
+  cardState,
   groupFindings,
   groupTitle,
+  isFullCard,
   nodeLabel,
   openCount,
   runOf,
   shortRun,
-  statusText,
+  stateText,
   tally,
 } from "./findings-model";
 
@@ -25,7 +32,8 @@ function demo(): TraceView {
 function entryOf(
   id: string,
   source: string | null,
-  kind: "open" | "dismissed" = "open",
+  kind: "open" | "addressed" | "dismissed" = "open",
+  check: FindingCheckKind = "verified",
 ): TraceFinding {
   const [first] = demo().findings;
   return {
@@ -34,10 +42,17 @@ function entryOf(
       id,
       title: `Title ${id}`,
       source,
+      severity: "medium",
       status: { kind, detail: kind === "open" ? null : "no" },
     },
     about: [],
+    check: { kind: check, duplicate_of: check === "duplicate" ? "F-1" : null },
+    changed: [],
   };
+}
+
+function session(offer: string | null, feature: string | null, state = "idle"): SessionView {
+  return { offer, feature, state } as SessionView;
 }
 
 describe("runOf", () => {
@@ -97,87 +112,81 @@ describe("group titles", () => {
 });
 
 describe("tally", () => {
-  it("counts each status in words and leaves out the zeros", () => {
-    const planned = entryOf("F-3", null);
-    planned.finding.status = { kind: "planned", detail: "PLAN-x.md" };
+  it("splits open findings by their check, counts the rest by status and leaves out zeros", () => {
     const all = [
       entryOf("F-1", null),
       entryOf("F-2", null),
-      planned,
-      entryOf("F-4", null, "dismissed"),
+      entryOf("F-3", null, "open", "unverified"),
+      entryOf("F-4", null, "open", "stale"),
+      entryOf("F-5", null, "open", "duplicate"),
+      entryOf("F-6", null, "addressed"),
+      entryOf("F-7", null, "dismissed"),
     ];
-    expect(tally(all)).toBe("2 open · 1 planned · 1 dismissed");
+    expect(tally(all)).toBe("2 to address · 2 to verify · 1 addressed · 1 dismissed");
     expect(tally([])).toBe("");
   });
 });
 
-describe("openCount", () => {
-  it("counts the findings still open, not the total", () => {
+describe("openCount and the address offer", () => {
+  it("counts only open, verified findings", () => {
     const view = demo();
+    // The fixture: F-1 open and verified, F-2 dismissed.
     expect(view.findings).toHaveLength(2);
     expect(openCount(view)).toBe(1);
-    view.findings.push(entryOf("F-3", null), entryOf("F-4", null, "dismissed"));
+    view.findings.push(
+      entryOf("F-5", null),
+      entryOf("F-6", null, "open", "duplicate"),
+      entryOf("F-7", null, "open", "stale"),
+    );
     expect(openCount(view)).toBe(2);
   });
-});
 
-describe("foldableEntries", () => {
-  it("offers entries with no plan or a plan that has not started", () => {
+  it("offers Address the findings only while one is actionable", () => {
     const view = demo();
-    const [first, second] = view.entries;
-    const withPlan = (name: string) => ({ ...first!, plan: `doc/plans/demo/${name}` });
-    view.entries = [
-      first!,
-      second!,
-      withPlan("IN_PROGRESS-PLAN-a.md"),
-      withPlan("DONE-PLAN-b.md"),
-      withPlan("RETIRED-PLAN-c.md"),
-    ];
-    expect(foldableEntries(view)).toEqual([first, second]);
+    expect(addressOffer(view, "demo")).toEqual({
+      id: "address-findings",
+      kind: "address_findings",
+      label: "Address the findings",
+      target: null,
+      feature: "demo",
+    });
+    view.findings[0]!.check = { kind: "unverified", duplicate_of: null };
+    expect(addressOffer(view, "demo")).toBeUndefined();
+  });
+
+  it("reads a live address run from the open session's offer and feature", () => {
+    expect(addressRunLive(session("address-findings", "demo"), "demo")).toBe(true);
+    expect(addressRunLive(session("address-findings", "other"), "demo")).toBe(false);
+    expect(addressRunLive(session("review-feature", "demo"), "demo")).toBe(false);
+    expect(addressRunLive(session("address-findings", "demo", "ended"), "demo")).toBe(false);
+    expect(addressRunLive(null, "demo")).toBe(false);
   });
 });
 
-describe("foldChoices", () => {
-  const section = "doc/product/demo/section_01.md";
-
-  it("puts the entry covering most of the finding's About nodes first", () => {
-    const view = demo();
-    const [first, second] = view.entries;
-    // Entry two covers all of section 02, entry one only heading one of section 01.
-    const about = [
-      { path: "doc/product/demo/section_02.md", anchor: "three" },
-      { path: "doc/product/demo/section_02.md", anchor: null },
-    ];
-    const choices = foldChoices(view, about);
-    expect(choices.suggested).toBe(second);
-    expect(choices.entries).toEqual([second, first]);
-    expect(choices.leftOut).toEqual([]);
+describe("card states and nodeLabel", () => {
+  it("reads the check of an open finding and the status of any other", () => {
+    const state = (entry: TraceFinding, addressing = false) => cardState(entry, addressing);
+    expect(state(entryOf("F-1", null))).toBe("open");
+    expect(state(entryOf("F-1", null), true)).toBe("addressing");
+    expect(state(entryOf("F-1", null, "open", "stale"), true)).toBe("stale");
+    expect(state(entryOf("F-1", null, "open", "duplicate"))).toBe("duplicate");
+    expect(state(entryOf("F-1", null, "addressed"), true)).toBe("addressed");
+    expect(isFullCard("unverified")).toBe(true);
+    expect(isFullCard("duplicate")).toBe(false);
+    expect(isFullCard("addressed")).toBe(false);
   });
 
-  it("suggests nothing when no entry covers what the finding is about", () => {
-    const view = demo();
-    const choices = foldChoices(view, [{ path: section, anchor: "two" }]);
-    expect(choices.suggested).toBeNull();
-    expect(choices.entries).toEqual(view.entries);
-  });
-
-  it("names the entries left out because their plan has started", () => {
-    const view = demo();
-    const [first, second] = view.entries;
-    view.entries = [{ ...first!, plan: "doc/plans/demo/IN_PROGRESS-PLAN-first.md" }, second!];
-    const choices = foldChoices(view, [{ path: section, anchor: "one" }]);
-    expect(choices.leftOut.map((entry) => entry.anchor)).toEqual([first!.anchor]);
-    expect(choices.entries).toEqual([second]);
-    expect(choices.suggested).toBeNull();
-  });
-});
-
-describe("statusText and nodeLabel", () => {
-  it("reads every status kind", () => {
-    expect(statusText({ kind: "open", detail: null })).toBe("Open");
-    expect(statusText({ kind: "planned", detail: "PLAN-x.md" })).toBe("Planned in PLAN-x.md");
-    expect(statusText({ kind: "folded", detail: "metaplan#x" })).toBe("Folded into metaplan#x");
-    expect(statusText({ kind: "dismissed", detail: "dup" })).toBe("Dismissed: dup");
+  it("puts each state in words", () => {
+    const open = entryOf("F-1", null);
+    expect(stateText(open, "open")).toBe("Open · medium");
+    expect(stateText(open, "addressing")).toBe("Being addressed");
+    const duplicate = entryOf("F-2", null, "open", "duplicate");
+    expect(stateText(duplicate, "duplicate")).toBe("Duplicate of F-1");
+    const dismissed = entryOf("F-3", null, "dismissed");
+    expect(stateText(dismissed, "dismissed")).toBe("Dismissed: no");
+    const left = entryOf("F-4", null);
+    left.finding.status = { kind: "unaddressed", detail: "the plan is done" };
+    expect(stateText(left, "unaddressed")).toBe("Could not address: the plan is done");
   });
 
   it("names a heading, an entry and a document", () => {
@@ -198,20 +207,7 @@ describe("statusText and nodeLabel", () => {
   });
 });
 
-describe("folded finding and plan stage labels", () => {
-  it("finds the metaplan entry a fold names, and nothing for another status or an unknown anchor", () => {
-    const view = demo();
-    const [first] = view.entries;
-    const folded = (detail: string | null) => ({ kind: "folded" as const, detail });
-    expect(foldedEntry(view, folded(`metaplan#${first!.anchor}`))).toBe(first);
-    expect(foldedEntry(view, folded("metaplan#nope"))).toBeUndefined();
-    expect(foldedEntry(view, folded("PLAN-first.md"))).toBeUndefined();
-    expect(foldedEntry(view, folded(null))).toBeUndefined();
-    expect(
-      foldedEntry(view, { kind: "planned", detail: `metaplan#${first!.anchor}` }),
-    ).toBeUndefined();
-  });
-
+describe("plan stage labels", () => {
   it("reads a plan stage as the short slug and the stage, and a whole plan by its title", () => {
     const view = demo();
     const plan = view.documents.find((doc) => doc.path === "doc/plans/demo/PLAN-first.md")!;
@@ -232,25 +228,6 @@ describe("folded finding and plan stage labels", () => {
 });
 
 describe("finding actions", () => {
-  const view = demo();
-  const { finding } = view.findings[0]!;
-
-  it("seeds Plan follow-ups with the finding, its About tokens and its text", () => {
-    expect(planSeed(finding)).toBe(
-      "Plan finding F-1: Rebuild ignores briefs\n" +
-        "About: PLAN-first.md#stage:build, section_01#two\n\n" +
-        "The rebuild budget counts plans but not briefs.",
-    );
-  });
-
-  it("seeds a fold with the entry's title and anchor", () => {
-    expect(foldSeed(finding, view.entries[1]!)).toBe(
-      "Fold finding F-1 into metaplan entry 2. Second (`PLAN-second.md`) " +
-        "(metaplan#2-second-plan-secondmd): Rebuild ignores briefs\n" +
-        "About: PLAN-first.md#stage:build, section_01#two",
-    );
-  });
-
   it("trims a dismissal reason and refuses an empty one", () => {
     expect(dismissReason("  duplicate \n")).toBe("duplicate");
     expect(dismissReason(" \t ")).toBeNull();

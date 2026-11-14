@@ -187,4 +187,18 @@ describe("draft team", () => {
     expect(screen.queryByRole("region", { name: "Draft team" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Stop the team" })).toBeNull();
   });
+
+  it("lists each document once, in the queue, and offers no write or pace while the team runs", () => {
+    const { store } = renderGaps("product", demo());
+    teamAt(store);
+
+    expect(screen.queryByRole("list", { name: "Document queue" })).toBeNull();
+    const row = within(screen.getByRole("list", { name: "Section queue" })).getByRole("listitem");
+    expect(within(row).getByText("Drafting")).toBeTruthy();
+    expect(within(row).queryByText("Missing")).toBeNull();
+    expect(within(row).queryByText("Next")).toBeNull();
+    expect(within(row).queryByRole("button")).toBeNull();
+    expect(pace()).toBeNull();
+    expect(screen.getByRole("list", { name: "Teammates" })).toBeTruthy();
+  });
 });

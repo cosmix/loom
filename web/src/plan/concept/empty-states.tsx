@@ -17,16 +17,19 @@ import { toAddress } from "@/plan/files/address";
 import { fetchDoc } from "@/plan/files/api";
 import { useFeature } from "@/plan/feature/use-feature";
 import { checklistAtom } from "@/plan/state/atoms";
+import { SummaryBuildNotice } from "@/plan/summaries/build-notice";
+import { listedOutOfDate } from "@/plan/summaries/build-status";
+import { summaryPanelAtom } from "@/plan/summaries/state";
 import { plural } from "@/plan/ui/plural";
 import { LoadState } from "@/plan/ui/load-state";
 
+import { summaryIdOfKey } from "./column-context";
 import "./concept-page.css";
 import { EmptyOffer } from "./empty-offer";
 
 type Copy = { title: string; description?: string };
 
-function copyFor(page: ConceptPage, empty: EmptyData): Copy {
-  const building = page.building;
+function copyFor(empty: EmptyData): Copy | null {
   switch (empty.kind) {
     case "no_vision":
       return { title: "No product vision yet" };
@@ -36,21 +39,54 @@ function copyFor(page: ConceptPage, empty: EmptyData): Copy {
         description: "The sections below have no vision to tie them together.",
       };
     case "never_built":
-      return {
-        title: "Summaries not built",
-        // The server's estimate covers every missing summary: it describes an overview only.
-        description: `${plural(empty.count ?? 0, "document")} without a summary.${
-          page.estimate && isOverviewKey(page.key) ? ` ${visibleControls(page.estimate)}` : ""
-        }`,
-      };
     case "building":
-      return {
-        title:
-          building === null
-            ? "Building summaries"
-            : `Building ${building.done} of ${building.total}`,
-      };
+      return null;
   }
+}
+
+/** What a page without a summary shows while nothing builds it. */
+function idleCopy(page: ConceptPage, empty: EmptyData): Copy {
+  const overview = isOverviewKey(page.key);
+  if (empty.kind !== "never_built") {
+    return {
+      title: "No summary yet",
+      description: overview ? "The overview has no summary." : undefined,
+    };
+  }
+  // The server's estimate covers every missing summary: it describes an overview only.
+  const estimate = page.estimate && overview ? ` ${visibleControls(page.estimate)}` : "";
+  return {
+    title: overview ? "No summaries yet" : "No summary yet",
+    description: `${plural(empty.count ?? 0, "document")} without a summary.${estimate}`,
+  };
+}
+
+/**
+ * The build state of a page without a summary (`never_built` or `building`): an overview waits
+ * on its members too. A never-built overview's members are all missing, so its action builds
+ * them all; otherwise it builds the overview and the members the panel lists out of date.
+ */
+function BuildNotice({ page, empty }: { page: ConceptPage; empty: EmptyData }) {
+  const panel = useAtomValue(summaryPanelAtom);
+  const own = summaryIdOfKey(page.key);
+  const overview = isOverviewKey(page.key);
+  const members = overview ? page.key_chips.map((chip) => summaryIdOfKey(chip.doc.page)) : [];
+  const listed = listedOutOfDate(panel);
+  const due = empty.kind === "never_built" ? members : members.filter((id) => listed.has(id));
+  const reported = {
+    claimed: page.state?.state === "rebuilding",
+    building: empty.kind === "building",
+    progress: page.building,
+  };
+  return (
+    <SummaryBuildNotice
+      ids={[...members, own]}
+      press={[...due, own]}
+      plural={overview}
+      reported={reported}
+      idle={idleCopy(page, empty)}
+    />
+  );
 }
 
 /** Sections and plans list to their summary pages; never-built documents open in file mode. */
@@ -100,7 +136,7 @@ function useScreenChecklist() {
 /** The page's empty or partial state, with section 05's text for its kind. */
 export function EmptyStates({ page, empty }: { page: ConceptPage; empty: EmptyData }) {
   const checklist = useScreenChecklist();
-  const copy = copyFor(page, empty);
+  const copy = copyFor(empty);
   // The server lists no documents for a never-built overview; its key chips are them. A document
   // summary page lists none: its key is the whole feature, and the heading reaches its document.
   const keyDocs =
@@ -114,8 +150,8 @@ export function EmptyStates({ page, empty }: { page: ConceptPage; empty: EmptyDa
     action = <EmptyOffer offer={offer} checklist={checklist ?? null} />;
   }
   return (
-    <div className="concept-empty" role={empty.kind === "building" ? "status" : undefined}>
-      <EmptyNote {...copy} />
+    <div className="concept-empty">
+      {copy === null ? <BuildNotice page={page} empty={empty} /> : <EmptyNote {...copy} />}
       {action}
       <DocList kind={empty.kind} docs={docs} />
     </div>

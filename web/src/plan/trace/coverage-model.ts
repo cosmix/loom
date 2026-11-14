@@ -9,6 +9,7 @@ import type {
 import { fileName } from "@/plan/concept/passages";
 import { featureSourceHref } from "@/plan/feature/source-href";
 import { featureHref } from "@/plan/feature/use-feature";
+import { isActionable } from "@/plan/trace/findings-model";
 import { docOfPath, shortSlug, shownSettle, summaryHref, withoutNumber } from "@/plan/trace/model";
 
 // The coverage page as data: the spec grouped by section, one row per heading with the plans and
@@ -165,9 +166,12 @@ function stateOf(chains: Chain[]): RowState {
 
 function rowOf(trace: TraceView, feature: string, heading: TraceHeading): CoverageRow {
   const chains = chainsOf(trace, feature, heading);
+  // Open means actionable, as the Findings page counts it: unverified, stale and duplicate
+  // findings wait on a review, not on this heading's plans.
   const open = heading.findings.flatMap((id) => {
-    const found = trace.findings.find(({ finding }) => finding.id === id)?.finding;
-    return found?.status.kind === "open" ? [{ id: found.id, title: found.title }] : [];
+    const found = trace.findings.find(({ finding }) => finding.id === id);
+    if (found === undefined || !isActionable(found)) return [];
+    return [{ id: found.finding.id, title: found.finding.title }];
   });
   return {
     key: `${heading.path}#${heading.anchor}`,

@@ -2,6 +2,7 @@
 
 use std::path::PathBuf;
 
+use super::address::address_run;
 use crate::planning::checklist::Offer;
 use crate::planning::kinds::is_feature_name;
 use crate::planning::paths::check_relpath_syntax;
@@ -64,6 +65,11 @@ impl AuthoringStart {
             "kickoff" => return Ok(Self::Kickoff { small: false }),
             "kickoff-small" => return Ok(Self::Kickoff { small: true }),
             _ if id == Offer::PlanFollowUps.id() => return follow_up_start(project, feature, id),
+            _ if id == Offer::AddressFindings.id() => {
+                let feature = feature.ok_or(StartError::FeatureRequired)?;
+                address_run(project, feature)?;
+                return Ok(AuthoringStart::Offer(Offer::AddressFindings));
+            }
             _ => {}
         }
         let checklist = feature.and_then(|name| project.feature(name));
@@ -197,7 +203,8 @@ pub fn step_class(start: &AuthoringStart) -> StepClass {
             | Offer::FixVisionTable { .. }
             | Offer::AddSectionToVision { .. }
             | Offer::WriteSection { .. }
-            | Offer::DraftAllSections { .. } => StepClass::Spec,
+            | Offer::DraftAllSections { .. }
+            | Offer::AddressFindings => StepClass::Spec,
             _ => StepClass::Plan,
         },
         AuthoringStart::Refine { target, .. } => {

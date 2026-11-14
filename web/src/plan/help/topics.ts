@@ -137,11 +137,11 @@ export const PLANNER_HELP_TOPICS: readonly PlannerHelpTopic[] = [
   {
     id: "findings",
     label: "Findings",
-    description: "Triage what reviews found: plan it, fold it into an entry or dismiss it.",
+    description: "What reviews found, each with its quote, and one session to address them all.",
     Icon: INSTRUMENT_GLYPHS.findings,
     hue: 3,
     intro:
-      "The Findings page is the feature's ledger of what reviews found, grouped by the run that found it. Each open finding offers three ways to decide it. Its well closes the spine's Plans group: one pip per finding, filled while it waits for a decision, with the open count and the review it came from.",
+      "The Findings page is the feature's ledger of what reviews found, grouped by the run that found it. A finding counts once it quotes the text it is about and that quote is still there; repeats are marked as duplicates. Address the findings starts one team session for all of them. Its well closes the spine's Plans group: one pip per finding, filled while it waits to be addressed, with the open count and the review it came from.",
     scenes: [],
     Body: FindingsHelp,
     tips: FINDINGS_TIPS,

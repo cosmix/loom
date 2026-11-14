@@ -48,9 +48,20 @@ pub enum SessionScope {
     Open,
     Kickoff(KickoffScope),
     Team {
+        run: TeamRun,
         documents: Vec<PathBuf>,
         bundles: Vec<PathBuf>,
     },
+}
+
+/// Which offer a team scope was started for.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum TeamRun {
+    /// Draft all missing sections or plans: every document is new.
+    Draft,
+    /// Address the findings: existing documents, and the ledger only the lead writes.
+    Address { ledger: PathBuf },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -90,7 +101,27 @@ impl SessionScope {
         }))
     }
 
+    /// The scope of a draft-all run.
     pub fn team(documents: Vec<PathBuf>, bundles: Vec<PathBuf>) -> Result<SessionScope> {
+        Self::checked_team(TeamRun::Draft, documents, bundles)
+    }
+
+    /// The scope of an address run: the documents it may edit, `ledger` among them.
+    pub fn address(documents: Vec<PathBuf>, ledger: PathBuf) -> Result<SessionScope> {
+        Self::checked_team(TeamRun::Address { ledger }, documents, Vec::new())
+    }
+
+    fn checked_team(
+        run: TeamRun,
+        documents: Vec<PathBuf>,
+        bundles: Vec<PathBuf>,
+    ) -> Result<SessionScope> {
+        if let TeamRun::Address { ledger } = &run {
+            ensure!(
+                documents.contains(ledger),
+                "An address scope lists its ledger among its documents"
+            );
+        }
         ensure!(
             !documents.is_empty(),
             "A team scope needs at least one document"
@@ -112,7 +143,11 @@ impl SessionScope {
                 path.display()
             );
         }
-        Ok(Self::Team { documents, bundles })
+        Ok(Self::Team {
+            run,
+            documents,
+            bundles,
+        })
     }
 
     pub fn allows_write(&self, rel: &Path) -> Result<(), String> {
@@ -144,7 +179,9 @@ impl SessionScope {
                     ))
                 }
             }
-            Self::Team { documents, bundles } => {
+            Self::Team {
+                documents, bundles, ..
+            } => {
                 if documents.iter().any(|path| path == rel)
                     || bundles.iter().any(|bundle| inside(rel, bundle))
                 {
@@ -207,8 +244,12 @@ pub fn load(dir: &SessionDir) -> Result<SessionScope> {
     let scope: SessionScope = serde_json::from_value(value)
         .with_context(|| format!("{} is not a session scope", dir.scope().display()))?;
     match &scope {
-        SessionScope::Team { documents, bundles } => {
-            SessionScope::team(documents.clone(), bundles.clone())?;
+        SessionScope::Team {
+            run,
+            documents,
+            bundles,
+        } => {
+            SessionScope::checked_team(run.clone(), documents.clone(), bundles.clone())?;
         }
         SessionScope::Kickoff(KickoffScope {
             grant: Some(grant), ..

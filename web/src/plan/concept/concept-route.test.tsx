@@ -222,7 +222,7 @@ describe("empty and partial states", () => {
     ];
     pages = { "overview/demo/product": empty("never_built", { count: 3, docs: files }) };
     renderAt("/f/demo/product");
-    expect(await screen.findByText("Summaries not built")).toBeTruthy();
+    expect(await screen.findByText("No summaries yet")).toBeTruthy();
     expect(text()).toContain("3 documents");
     expect(screen.getByRole("link", { name: "Planning" }).getAttribute("href")).toBe(
       "/files/product/demo/section_01.md",
@@ -236,7 +236,7 @@ describe("empty and partial states", () => {
       },
     };
     renderAt("/f/demo/product");
-    expect((await screen.findAllByText("Building summaries")).length).toBeGreaterThan(0);
+    expect((await screen.findAllByText("Building summaries…")).length).toBeGreaterThan(0);
     expect(within(keyList()).getAllByRole("link")).toHaveLength(overviewFixture.key_chips.length);
   });
   it("read-only browser sees no offer button", async () => {

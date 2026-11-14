@@ -13,6 +13,7 @@ use crate::plan_server::context::PlanContext;
 use crate::plan_session::bridge::LaunchGuidance;
 use crate::plan_session::kind::SessionDir;
 use crate::planning::checklist::Offer;
+use crate::planning::guidance::address_run;
 use crate::planning::guidance::start::follow_ups_open;
 use crate::planning::guidance::CLOSING_MESSAGE;
 use crate::planning::kinds::{is_feature_name, plans_dir, product_dir, vision_path};
@@ -92,6 +93,9 @@ fn offered(ctx: &PlanContext, offer: &str, selected: Option<&str>) -> bool {
     let project = ctx.project();
     if offer == Offer::PlanFollowUps.id() {
         return selected.is_some_and(|feature| follow_ups_open(&project, feature));
+    }
+    if offer == Offer::AddressFindings.id() {
+        return selected.is_some_and(|feature| address_run(&project, feature).is_ok());
     }
     project
         .moves

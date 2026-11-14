@@ -1,9 +1,11 @@
-//! The missing documents and brief bundles a team drafting session may write.
+//! The missing documents and brief bundles a team drafting session may write, and the write
+//! scope of every team run.
 
 use std::path::PathBuf;
 
 use super::opening::plan_bundle;
-use super::{AuthoringStart, StartError};
+use super::{address_run, AuthoringStart, StartError};
+use crate::plan_session::scope::SessionScope;
 use crate::planning::checklist::Offer;
 use crate::planning::kinds::{plan_path, section_path};
 use crate::planning::project::Project;
@@ -66,6 +68,26 @@ pub fn draft_run(project: &Project, offer_id: &str, feature: &str) -> Result<Dra
         documents,
         bundles,
     })
+}
+
+/// The write scope of a team offer's session over `project`, `None` for an offer that runs no
+/// team. The guidance writes it with the opening and brief, from the one snapshot they read, so
+/// the opening never names a document the scope lacks.
+pub fn team_scope(
+    project: &Project,
+    offer_id: &str,
+    feature: &str,
+) -> anyhow::Result<Option<SessionScope>> {
+    if offer_id == Offer::AddressFindings.id() {
+        let run = address_run(project, feature)?;
+        let ledger = run.ledger();
+        return Ok(Some(SessionScope::address(run.documents, ledger)?));
+    }
+    if !matches!(offer_id, "draft-all-sections" | "draft-all-plans") {
+        return Ok(None);
+    }
+    let run = draft_run(project, offer_id, feature)?;
+    Ok(Some(SessionScope::team(run.documents, run.bundles)?))
 }
 
 #[cfg(test)]

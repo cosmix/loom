@@ -36,7 +36,7 @@
       "my_calls": 0,
       "open_questions": 1,
       "current": {
-        "body": "2ae79a1f9835",
+        "body": "16594f5ca5e4",
         "stub": "95ad245d46ad",
         "upstream": null
       }
@@ -125,7 +125,7 @@
       "current": {
         "body": "6c1e81b2925f",
         "stub": "4195db5d1230",
-        "upstream": "4a1e04ee203a"
+        "upstream": "50e0d0d3d051"
       }
     },
     {
@@ -265,6 +265,8 @@
           "PLAN-first.md#stage:build",
           "section_01#two"
         ],
+        "evidence": "Text two names the budget.",
+        "severity": "medium",
         "source": "REVIEW-PLAN-first.md#open-findings (build, 1a2b3c4d5e6f)",
         "status": {
           "kind": "open",
@@ -277,7 +279,12 @@
           "path": "doc/product/demo/section_01.md",
           "anchor": "two"
         }
-      ]
+      ],
+      "check": {
+        "kind": "verified",
+        "duplicate_of": null
+      },
+      "changed": []
     },
     {
       "finding": {
@@ -286,6 +293,8 @@
         "about": [
           "section_02"
         ],
+        "evidence": null,
+        "severity": null,
         "source": null,
         "status": {
           "kind": "dismissed",
@@ -298,7 +307,12 @@
           "path": "doc/product/demo/section_02.md",
           "anchor": null
         }
-      ]
+      ],
+      "check": {
+        "kind": "unverified",
+        "duplicate_of": null
+      },
+      "changed": []
     }
   ],
   "gaps": [

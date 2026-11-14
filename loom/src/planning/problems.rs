@@ -11,7 +11,8 @@
 //! `covers-bad-token`, `covers-anchor-missing`, `stray-plan-copy`, `duplicate-plan-slug`,
 //! `broken-reference`, `broken-brief-reference`, and from each feature's trace
 //! `settled-duplicate`, `settled-bad`, `about-unresolved`, `findings-bad-entry`,
-//! `findings-duplicate-id` and `findings-bad-status`.
+//! `findings-duplicate-id`, `findings-bad-status`, `findings-bad-severity` and
+//! `findings-evidence-missing`.
 
 use std::path::Path;
 use std::path::PathBuf;

@@ -1,7 +1,7 @@
 //! Building one feature's trace from the loaded project.
 //!
 //! The steps run in dependency order: the coverage claims of every entry, plan and stage line;
-//! the ledger with its `About:` tokens resolved; the headings with their covers and findings;
+//! the ledger with its `About:` tokens resolved and its findings checked; the headings with their covers and findings;
 //! the entries with what to revisit; the documents with their progress and settle state; then
 //! the gaps and the frontier.
 
@@ -9,6 +9,7 @@ mod claims;
 mod docs;
 mod gaps;
 mod ledger;
+mod verify;
 
 #[cfg(test)]
 mod tests;

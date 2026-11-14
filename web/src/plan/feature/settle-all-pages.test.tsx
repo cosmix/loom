@@ -1,18 +1,27 @@
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import { createStore } from "jotai";
 import { Provider } from "jotai/react";
 import type { ReactNode } from "react";
 import { createMemoryRouter, RouterProvider } from "react-router";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
+import snapshotFixture from "@/plan/api/fixtures/chat-snapshot.json";
 import checklistFixture from "@/plan/api/fixtures/checklist.json";
 import hello from "@/plan/api/fixtures/hello.json";
 import runStateFixture from "@/plan/api/fixtures/run-state.json";
 import serverInfoFixture from "@/plan/api/fixtures/server-info.json";
 import traceFixture from "@/plan/api/fixtures/trace.json";
 import { authoringViewSchema, checklistViewSchema, serverInfoSchema } from "@/plan/api/schema";
+import { sessionViewSchema } from "@/plan/api/schema-chat";
+import { snapshotAtom } from "@/plan/chat/model";
 import { routes } from "@/plan/router";
-import { authoringAtom, projectAtom, serverInfoAtom, youAtom } from "@/plan/state/atoms";
+import {
+  authoringAtom,
+  draftTeamAtom,
+  projectAtom,
+  serverInfoAtom,
+  youAtom,
+} from "@/plan/state/atoms";
 
 /**
  * The bulk settle action is mounted by two routes: the metaplan page (role plan) and the product
@@ -70,6 +79,11 @@ afterEach(() => {
 
 function renderRoutes(path: string) {
   const store = createStore();
+  renderWith(store, path);
+  return store;
+}
+
+function renderWith(store: ReturnType<typeof createStore>, path: string) {
   store.set(serverInfoAtom, serverInfoSchema.parse({ ...serverInfoFixture, read_only: [] }));
   store.set(youAtom, hello.you);
   store.set(authoringAtom, authoringViewSchema.parse({ holder: null }));
@@ -100,4 +114,43 @@ it("the product overview offers Settle all specs", async () => {
   );
   expect(screen.getByText("1 spec needs settling")).toBeTruthy();
   expect(screen.queryByRole("button", { name: "Settle all plans" })).toBeNull();
+});
+
+it("the product overview holds Settle all specs back while a team drafts, then offers it", async () => {
+  const path = "doc/product/demo/section_05.md";
+  const mate = (state: "working" | "idle", current: string | null) => ({
+    agent_id: "writer",
+    name: "Ada",
+    documents: [path],
+    current,
+    state,
+    tokens: { input: 0, cache_write: 0, cache_read: 0, output: 0 },
+  });
+  const store = createStore();
+  store.set(snapshotAtom, {
+    session: sessionViewSchema.parse({ ...snapshotFixture.session, id: "draft" }),
+    turns: [],
+    queue: [],
+    previous: null,
+  });
+  store.set(draftTeamAtom, {
+    session: "draft",
+    documents: [path],
+    teammates: [mate("working", path)],
+  });
+  renderWith(store, "/f/demo/product");
+
+  await screen.findByRole("region", { name: "Draft team" });
+  expect(screen.queryByRole("button", { name: "Settle all specs" })).toBeNull();
+
+  act(() =>
+    store.set(draftTeamAtom, {
+      session: "draft",
+      documents: [path],
+      teammates: [mate("idle", null)],
+    }),
+  );
+  await waitFor(() =>
+    expect(screen.getByRole("button", { name: "Settle all specs" })).toBeTruthy(),
+  );
 });

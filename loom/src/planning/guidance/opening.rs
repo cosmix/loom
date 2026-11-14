@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{anyhow, bail, Context, Result};
 
 use super::start::AuthoringStart;
-use super::{draft_run, PressureCommand, MAX_TEAMMATES};
+use super::{address_run, draft_run, PressureCommand, MAX_TEAMMATES};
 use crate::planning::checklist::Offer;
 use crate::planning::kinds::{plan_path, plans_dir, product_dir, section_path, vision_path};
 use crate::planning::project::Project;
@@ -110,6 +110,7 @@ fn offer_step_and_skill(offer: &Offer) -> Result<(&'static str, &'static str)> {
         Offer::DraftAllPlans { .. } => ("step 4, Draft all missing plans", "plan"),
         Offer::PlanFollowUps => ("done, Plan follow-ups", "metaplan"),
         Offer::ReviewFeature => ("review, Review the feature", "review"),
+        Offer::AddressFindings => ("findings, Address the findings", "address-findings"),
         _ => bail!("{} is not an authoring offer", offer.id()),
     })
 }
@@ -147,6 +148,7 @@ fn offer_target(offer: &Offer, project: &Project, feature: &str) -> Result<Strin
             "Record findings from reviewing the feature in {}/findings.md.",
             plans.display()
         ),
+        Offer::AddressFindings => address_target(project, feature)?,
         _ => bail!("{} is not an authoring offer", offer.id()),
     })
 }
@@ -206,6 +208,46 @@ fn team_target(offer: &Offer, project: &Project, feature: &str) -> Result<String
         ));
     }
     Ok(target)
+}
+
+fn address_target(project: &Project, feature: &str) -> Result<String> {
+    let run = address_run(project, feature)?;
+    let findings = run
+        .findings
+        .iter()
+        .map(|item| {
+            let documents: Vec<String> = item
+                .documents
+                .iter()
+                .map(|path| path.display().to_string())
+                .collect();
+            if documents.is_empty() {
+                format!("{} (no editable document)", item.id)
+            } else {
+                format!("{} ({})", item.id, documents.join(", "))
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("; ");
+    let ledger = run.ledger();
+    let team = match run.teammates {
+        0 => "Work alone: no finding names a document this run may edit.".to_owned(),
+        count => format!(
+            "Use the skill's team mode with {count} teammates (cap: {MAX_TEAMMATES}), one owner \
+             per document; only you write {}.",
+            ledger.display()
+        ),
+    };
+    Ok(format!(
+        "Address these findings from {}: {findings}. {team} Write nothing outside these \
+         documents: {}.",
+        ledger.display(),
+        run.documents
+            .iter()
+            .map(|path| path.display().to_string())
+            .collect::<Vec<_>>()
+            .join(", ")
+    ))
 }
 
 fn section_row(number: u32, offer: &Offer, project: &Project, feature: &str) -> Result<String> {

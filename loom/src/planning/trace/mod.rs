@@ -189,18 +189,45 @@ pub struct TraceEntry {
     pub plan: Option<PathBuf>,
     /// The nodes its `Covers:` line names.
     pub covers: Vec<NodeRef>,
-    /// For a plan not yet running: the ids of the findings folded into the entry and of the
-    /// open findings on a heading it covers or its written plan implements, in ledger order.
+    /// For a plan not yet running: the ids of the actionable findings on a heading it covers or
+    /// its written plan implements, in ledger order.
     pub revisit: Vec<String>,
 }
 
-/// A ledger finding with its `About:` tokens resolved.
+/// A ledger finding with its `About:` tokens resolved and its evidence checked.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TraceFinding {
     /// The finding as the ledger holds it.
     pub finding: Finding,
     /// The nodes its resolving `About:` tokens name, in token order.
     pub about: Vec<NodeRef>,
+    /// What the deterministic checks found.
+    pub check: FindingCheck,
+    /// For an `addressed` finding, the nodes its status names as changed, in token order.
+    pub changed: Vec<NodeRef>,
+}
+
+impl TraceFinding {
+    /// Open and verified: the findings the Findings page counts and an address session takes.
+    pub fn actionable(&self) -> bool {
+        self.finding.status.is_open() && self.check == FindingCheck::Verified
+    }
+}
+
+/// What the trace's checks say about a finding, first match wins in this order.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FindingCheck {
+    /// An earlier entry reports the same thing (`findings::same_finding`) and is open and itself
+    /// verified, or was addressed and this one brings no new evidence: this one adds nothing.
+    Duplicate(String),
+    /// No `Evidence:` quote of at least three words, no `Severity:`, or no `About:` node that
+    /// resolves: nothing has checked it against the documents yet.
+    Unverified,
+    /// Its quote is in none of the passages its `About:` nodes name: the text changed since, or
+    /// the quote was never there.
+    Stale,
+    /// The quote is in a passage it is about.
+    Verified,
 }
 
 /// Something the trace says is left to do.
@@ -229,6 +256,6 @@ pub enum GapKind {
     Settle,
     /// A spec heading nothing covers.
     Uncovered,
-    /// Open findings waiting for triage.
+    /// Actionable findings waiting to be addressed.
     Triage,
 }

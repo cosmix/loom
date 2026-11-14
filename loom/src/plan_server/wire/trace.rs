@@ -88,14 +88,41 @@ pub enum GapKindView {
     Triage,
 }
 
-/// A finding's triage state.
+/// Where a finding stands.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum FindingKindView {
     Open,
-    Planned,
-    Folded,
+    Addressed,
+    Unaddressed,
     Dismissed,
+}
+
+/// How much a finding matters.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SeverityView {
+    High,
+    Medium,
+    Low,
+}
+
+/// What the trace's checks found (`FindingCheck`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FindingCheckKindView {
+    Duplicate,
+    Unverified,
+    Stale,
+    Verified,
+}
+
+/// A finding's check: the kind and, for a duplicate, the id of the entry it repeats.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FindingCheckView {
+    pub kind: FindingCheckKindView,
+    pub duplicate_of: Option<String>,
 }
 
 /// A document, or one heading or stage of it.
@@ -192,17 +219,23 @@ pub struct FindingView {
     pub title: String,
     /// The `About:` tokens as written.
     pub about: Vec<String>,
+    /// The `Evidence:` quote as written.
+    pub evidence: Option<String>,
+    pub severity: Option<SeverityView>,
     pub source: Option<String>,
     pub status: FindingStatusView,
     pub text: String,
 }
 
-/// A ledger finding with its `About:` tokens resolved.
+/// A ledger finding with its `About:` tokens resolved and its evidence checked.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct TraceFindingView {
     pub finding: FindingView,
     pub about: Vec<NodeRefView>,
+    pub check: FindingCheckView,
+    /// For an addressed finding, the nodes its status names as changed.
+    pub changed: Vec<NodeRefView>,
 }
 
 /// Something the trace says is left to do.

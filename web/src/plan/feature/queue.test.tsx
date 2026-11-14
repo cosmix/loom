@@ -5,6 +5,9 @@ import { MemoryRouter } from "react-router";
 import { afterEach, describe, expect, it } from "vitest";
 
 import checklistFixture from "@/plan/api/fixtures/checklist.json";
+import snapshotFixture from "@/plan/api/fixtures/chat-snapshot.json";
+import { sessionViewSchema } from "@/plan/api/schema-chat";
+import { snapshotAtom } from "@/plan/chat/model";
 import { projectChecklistViewSchema, type ChecklistView } from "@/plan/api/schema";
 import { hasGaps, Queue, queueRows } from "@/plan/feature/queue";
 import { registerOfferAction } from "@/plan/offers/actions";
@@ -199,26 +202,78 @@ describe("section queue", () => {
     }
   });
 
-  it("marks a section a teammate is drafting", () => {
-    const store = createStore();
-    store.set(draftTeamAtom, {
-      session: "draft",
-      documents: ["doc/product/demo/section_05.md"],
-      teammates: [
-        {
-          agent_id: "writer",
-          name: "Ada",
-          documents: ["doc/product/demo/section_05.md"],
-          current: "doc/product/demo/section_05.md",
-          state: "working",
-          tokens: { input: 0, cache_write: 0, cache_read: 0, output: 0 },
-        },
-      ],
+  describe("during a team run", () => {
+    const PATH = "doc/product/demo/section_05.md";
+    const mate = (state: "working" | "idle", current: string | null, documents: string[]) => ({
+      agent_id: "writer",
+      name: "Ada",
+      documents,
+      current,
+      state,
+      tokens: { input: 0, cache_write: 0, cache_read: 0, output: 0 },
     });
-    renderQueue(base, "section", store);
 
-    const [row] = rowsOf("Section queue").map((item) => within(item));
-    expect(row!.getByText("Drafting…")).toBeTruthy();
-    expect(row!.queryByText("Missing")).toBeNull();
+    function teamStore(teammates: ReturnType<typeof mate>[], offer: string | null = null) {
+      const store = createStore();
+      store.set(snapshotAtom, {
+        session: sessionViewSchema.parse({ ...snapshotFixture.session, id: "draft", offer }),
+        turns: [],
+        queue: [],
+        previous: null,
+      });
+      store.set(draftTeamAtom, { session: "draft", documents: [PATH], teammates });
+      return store;
+    }
+
+    it("marks a section a teammate is drafting, with its owner", () => {
+      renderQueue(base, "section", teamStore([mate("working", PATH, [PATH])]));
+
+      const [row] = rowsOf("Section queue").map((item) => within(item));
+      expect(row!.getByText("Drafting")).toBeTruthy();
+      expect(row!.getByText("Ada")).toBeTruthy();
+      expect(row!.queryByText("Missing")).toBeNull();
+      expect(row!.queryByRole("button")).toBeNull();
+    });
+
+    it("words a row of an address run as the team panel does", () => {
+      renderQueue(base, "section", teamStore([mate("working", PATH, [PATH])], "address-findings"));
+
+      const [row] = rowsOf("Section queue").map((item) => within(item));
+      expect(row!.getByText("Editing")).toBeTruthy();
+      expect(row!.queryByText("Drafting")).toBeNull();
+    });
+
+    it("reads a section no teammate has started as Queued, never Missing with a Write button", () => {
+      renderQueue(base, "section", teamStore([]));
+
+      const [row] = rowsOf("Section queue").map((item) => within(item));
+      expect(row!.getByText("Queued")).toBeTruthy();
+      expect(row!.queryByText("Missing")).toBeNull();
+      expect(row!.queryByText("Next")).toBeNull();
+      expect(row!.queryByRole("button")).toBeNull();
+    });
+
+    it("keeps the Missing state and draws no button for a section outside the team's run", () => {
+      const store = teamStore([mate("working", PATH, [PATH])]);
+      store.set(draftTeamAtom, {
+        session: "draft",
+        documents: ["doc/product/demo/section_09.md"],
+        teammates: [],
+      });
+      renderQueue(base, "section", store);
+
+      const [row] = rowsOf("Section queue").map((item) => within(item));
+      expect(row!.getByText("Missing")).toBeTruthy();
+      expect(row!.queryByRole("button")).toBeNull();
+    });
+
+    it("ignores a team that belongs to another session", () => {
+      const store = teamStore([mate("working", PATH, [PATH])]);
+      store.set(draftTeamAtom, { session: "elsewhere", documents: [PATH], teammates: [] });
+      renderQueue(base, "section", store);
+
+      const [row] = rowsOf("Section queue").map((item) => within(item));
+      expect(row!.getByText("Missing")).toBeTruthy();
+    });
   });
 });

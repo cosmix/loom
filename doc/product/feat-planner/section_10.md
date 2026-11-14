@@ -239,18 +239,26 @@ hashes). The mark is document-level; a plan is settled together with its brief b
 
 ## Triaging findings
 
-The Findings page (section 11, "After a run") lists the feature's ledger. Each open finding offers
-three actions for the holding browser:
+The Findings page (section 11, "After a run") lists the feature's ledger. Each finding shows its
+state: open with its severity, being addressed, unverified (no quote checked against the documents
+yet), stale (its quote is no longer in the passage it is about), a duplicate of an earlier
+finding, addressed (with the nodes it changed), could not address (with the reason) or dismissed
+(with the reason). The page offers two sessions and two card actions for the holding browser:
 
-- **Plan this** starts the `Plan follow-ups` session, seeded with the finding's id, title and
-  About nodes. The session writes the follow-up entry and sets the finding to `planned`.
-- **Fold into entry** picks an entry whose plan has not started running (unwritten, or written
-  and not yet run). The session starts seeded the same way, edits the entry to include the
-  finding, and sets the finding to `folded`.
-- **Dismiss** takes a reason, required, one line of at most 200 characters, and sets the finding
-  to `dismissed: <reason>` without a session.
+- **Address the findings** starts one team session for every open, verified finding (section 09,
+  `loom-plan:address-findings`): it edits the specs and plans the findings are about and marks each
+  finding addressed or could not address. While it runs the button gives way to a status line, the
+  draft team panel shows the team, and each finding it works on reads "Being addressed".
+- **Review the feature** starts the review session that verifies imported findings and records
+  new ones (section 09, `loom-plan:review`).
+- **Dismiss**, on a finding that is open, unverified or stale, takes a reason, required, one line
+  of at most 200 characters, and sets the finding to `dismissed: <reason>` without a session.
+- **Reopen**, on a finding that could not be addressed or was dismissed, sets it back to `open`
+  without a session. An unaddressed finding stays out of every address run until it is reopened
+  (the reason is often a choice to make or a locked plan); once reopened and verified, the next
+  Address the findings run takes it. Neither action is offered while an address run works.
 
-Finding titles, text and reasons are shown as text, never as markup.
+Finding titles, text, quotes and reasons are shown as text, never as markup.
 
 ## Refinement after plans ran
 

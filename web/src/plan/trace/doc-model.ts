@@ -12,6 +12,7 @@ import { featureHref } from "@/plan/feature/use-feature";
 
 import { fileName } from "@/plan/concept/passages";
 
+import { isActionable } from "./findings-model";
 import { docOfPath, shortSlug, summaryHref } from "./model";
 
 // Pure reads of a feature's trace for the document heading, the plan page, an opened passage and
@@ -94,9 +95,7 @@ function planLink(trace: TraceView, feature: string, cover: CoverRef): string {
 
 function openFindingCount(trace: TraceView, heading: TraceHeading): number {
   const ids = new Set(heading.findings);
-  return trace.findings.filter(
-    ({ finding }) => ids.has(finding.id) && finding.status.kind === "open",
-  ).length;
+  return trace.findings.filter((entry) => ids.has(entry.finding.id) && isActionable(entry)).length;
 }
 
 /**

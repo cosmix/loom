@@ -29,8 +29,8 @@ export interface CoverageReading {
 }
 
 /**
- * The Findings well's reading: what still waits for a decision, what is decided (planned, folded
- * or dismissed), and the groups the Findings page draws, newest run first.
+ * The Findings well's reading: what still waits for a decision, what is decided (a finding whose status is
+ * no longer open: addressed, unaddressed or dismissed), and the groups the Findings page draws, newest run first.
  */
 export interface FindingsReading {
   open: number;
@@ -77,7 +77,7 @@ function findingsReading(trace: TraceView, feature: string): FindingsReading {
   const open = openCount(trace);
   return {
     open,
-    decided: trace.findings.length - open,
+    decided: trace.findings.filter(({ finding }) => finding.status.kind !== "open").length,
     sources: groupFindings(trace.findings).map((group) => ({
       run: group.run === null ? null : shortRun(group.run, feature),
     })),

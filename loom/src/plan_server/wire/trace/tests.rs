@@ -15,7 +15,8 @@ const SCHEMA_TRACE_TS: &str = include_str!("../../../../../web/src/plan/api/sche
 
 const VISION: &str = "# Demo\n\nA demo.\n\n## Specification sections\n\n| # | Section |\n\
                       | --- | --- |\n| 01 | Alpha |\n| 02 | Beta |\n| 03 | Gamma |\n";
-const SECTION_01: &str = "# Alpha\n\n## One\n\nText one.\n\n## Two\n\nText two.\n\n\
+const SECTION_01: &str =
+    "# Alpha\n\n## One\n\nText one.\n\n## Two\n\nText two names the budget.\n\n\
                           ## Open questions\n\n- Which flag?\n";
 const SECTION_02: &str = "# Beta\n\n## Three\n\nText three. (My call.)\n";
 const METAPLAN: &str =
@@ -27,6 +28,7 @@ const PLAN: &str =
                     Body.\n";
 const LEDGER: &str = "# Findings\n\n\
     ## F-1 Rebuild ignores briefs\n\nAbout: PLAN-first.md#stage:build, section_01#two\n\
+    Evidence: Text two names the budget.\nSeverity: medium\n\
     Source: REVIEW-PLAN-first.md#open-findings (build, 1a2b3c4d5e6f)\nStatus: open\n\n\
     The rebuild budget counts plans but not briefs.\n\n\
     ## F-2 Rename the flag\n\nAbout: section_02\nStatus: dismissed: not needed\n\nRename it.\n";
@@ -141,6 +143,17 @@ fn the_fixture_view_shows_each_part_of_the_trace() {
             .iter()
             .any(|c| c.kind == CoverKindView::Stage && c.stage.as_deref() == Some("build"))
     }));
+    assert!(view.documents.iter().any(|d| d.my_calls == 1));
+    assert!(view
+        .documents
+        .iter()
+        .any(|d| d.bundle == ["doc/plans/demo/briefs/first/build/r1.md"]));
+    assert!(!view.frontier.is_empty() && view.frontier.len() <= 5);
+}
+
+#[test]
+fn the_fixture_view_shows_the_findings_of_the_trace() {
+    let view = fixture_view();
     let kinds: Vec<FindingKindView> = view
         .findings
         .iter()
@@ -151,12 +164,13 @@ fn the_fixture_view_shows_each_part_of_the_trace() {
         view.findings[1].finding.status.detail.as_deref(),
         Some("not needed")
     );
-    assert!(view.documents.iter().any(|d| d.my_calls == 1));
-    assert!(view
-        .documents
-        .iter()
-        .any(|d| d.bundle == ["doc/plans/demo/briefs/first/build/r1.md"]));
-    assert!(!view.frontier.is_empty() && view.frontier.len() <= 5);
+    let checks: Vec<FindingCheckKindView> = view.findings.iter().map(|f| f.check.kind).collect();
+    use FindingCheckKindView::{Unverified, Verified};
+    assert_eq!(checks, [Verified, Unverified]);
+    assert_eq!(
+        view.findings[0].finding.severity,
+        Some(SeverityView::Medium)
+    );
 }
 
 #[test]
@@ -227,8 +241,8 @@ fn all_cover_and_finding_kinds() -> (Vec<CoverKindView>, Vec<FindingKindView>) {
         (
             CoverKindView::Entry | CoverKindView::Plan | CoverKindView::Stage,
             FindingKindView::Open
-            | FindingKindView::Planned
-            | FindingKindView::Folded
+            | FindingKindView::Addressed
+            | FindingKindView::Unaddressed
             | FindingKindView::Dismissed,
         ) => {}
     }
@@ -240,10 +254,25 @@ fn all_cover_and_finding_kinds() -> (Vec<CoverKindView>, Vec<FindingKindView>) {
         ],
         vec![
             FindingKindView::Open,
-            FindingKindView::Planned,
-            FindingKindView::Folded,
+            FindingKindView::Addressed,
+            FindingKindView::Unaddressed,
             FindingKindView::Dismissed,
         ],
+    )
+}
+
+fn all_severities_and_checks() -> (Vec<SeverityView>, Vec<FindingCheckKindView>) {
+    use FindingCheckKindView::{Duplicate, Stale, Unverified, Verified};
+    match (SeverityView::High, Verified) {
+        (
+            SeverityView::High | SeverityView::Medium | SeverityView::Low,
+            Duplicate | Unverified | Stale | Verified,
+        ) => {}
+    }
+    use SeverityView::*;
+    (
+        vec![High, Medium, Low],
+        vec![Duplicate, Unverified, Stale, Verified],
     )
 }
 
@@ -263,6 +292,9 @@ fn trace_enum_wire_values_are_in_trace_schema() {
     let (covers, findings) = all_cover_and_finding_kinds();
     assert_all_in_source(ts, &covers, "CoverKindView", "COVER_KINDS", None);
     assert_all_in_source(ts, &findings, "FindingKindView", "FINDING_KINDS", None);
+    let (severities, checks) = all_severities_and_checks();
+    assert_all_in_source(ts, &severities, "SeverityView", "SEVERITIES", None);
+    assert_all_in_source(ts, &checks, "FindingCheckKindView", "FINDING_CHECKS", None);
 }
 
 #[test]

@@ -88,53 +88,64 @@ describe("the coverage topic body", () => {
 });
 
 describe("the finding specimen", () => {
-  it("draws an open finding with its id, status, text, About chips and three secondary actions", () => {
+  it("draws an open finding with its id, state, About chip, evidence, text and Dismiss", () => {
     const { container } = render(<FindingSpecimen />);
 
     const card = container.querySelector(
-      '[data-loom-plan][inert] .maps-finding[data-status="open"]',
+      '[data-loom-plan][inert] .maps-finding[data-state="open"]',
     );
     expect(card).not.toBeNull();
     expect(card!.querySelector(".maps-finding-id")?.textContent).toBe("F-3");
     expect(card!.querySelector("h3.maps-finding-title")?.textContent).toBe(
       "Stops have no time window",
     );
-    expect(card!.querySelector(".maps-finding-status")?.textContent).toBe("Open");
-    expect(card!.querySelectorAll(".maps-about .maps-chip")).toHaveLength(2);
+    expect(card!.querySelector(".maps-finding-status")?.textContent).toBe("Open · high");
+    expect(card!.querySelectorAll('.maps-about[data-label="About"] .maps-chip')).toHaveLength(1);
+    expect(card!.querySelector(".maps-evidence blockquote")?.textContent).toMatch(/window/);
     const actions = [...card!.querySelectorAll(".maps-actions button")];
-    expect(actions.map((button) => button.textContent)).toEqual([
-      "Plan this",
-      "Fold into entry",
-      "Dismiss",
-    ]);
+    expect(actions.map((button) => button.textContent)).toEqual(["Dismiss"]);
     expect(actions.every((button) => button.getAttribute("data-look") === "secondary")).toBe(true);
   });
 
-  it("folds a decided finding to its heading and the outcome in words", () => {
+  it("folds addressed and dismissed findings to lines, an addressed one with what changed", () => {
     const { container } = render(<FindingSpecimen />);
 
-    const decided = container.querySelector('.maps-finding[data-status="dismissed"]');
-    expect(decided!.querySelector(".maps-finding-status")?.textContent).toBe(
-      "Dismissed: not needed",
-    );
-    expect(decided!.querySelector("button")).toBeNull();
+    const addressed = container.querySelector('.maps-finding[data-state="addressed"]');
+    expect(addressed!.getAttribute("data-line")).toBe("true");
+    expect(
+      addressed!.querySelectorAll('.maps-about[data-label="Changed"] .maps-chip'),
+    ).toHaveLength(1);
+    const dismissed = container.querySelector('.maps-finding[data-state="dismissed"]');
+    expect(dismissed!.querySelector(".maps-finding-status")?.textContent).toMatch(/^Dismissed: /);
+    expect(container.querySelectorAll("[data-line] button")).toHaveLength(0);
   });
 });
 
 describe("the findings topic body", () => {
-  it("names the three decisions, Review the feature and the four statuses without live data", async () => {
+  it("names the two sessions, Dismiss and every state without live data", async () => {
     render(<FindingsHelp />);
     await Promise.resolve();
 
     expect(screen.getByRole("heading", { name: "Groups" })).toBeTruthy();
-    expect(screen.getByRole("heading", { name: "Deciding a finding" })).toBeTruthy();
-    expect(screen.getByRole("heading", { name: "Status" })).toBeTruthy();
-    for (const name of ["Plan this", "Fold into entry", "Dismiss", "Review the feature"]) {
+    expect(screen.getByRole("heading", { name: "Sessions and actions" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "State" })).toBeTruthy();
+    for (const name of ["Address the findings", "Review the feature", "Dismiss"]) {
       expect(screen.getAllByText(name).length).toBeGreaterThan(0);
     }
-    for (const name of ["Planned", "Folded", "Dismissed"]) {
-      expect(screen.getByText(name)).toBeTruthy();
+    for (const name of [
+      "Open",
+      "Being addressed",
+      "Unverified",
+      "Stale",
+      "Duplicate",
+      "Addressed",
+      "Could not address",
+      "Dismissed",
+    ]) {
+      expect(screen.getAllByText(name).length).toBeGreaterThan(0);
     }
+    expect(screen.queryByText("Plan this")).toBeNull();
+    expect(screen.queryByText("Fold into entry")).toBeNull();
     expect(globalThis.fetch).not.toHaveBeenCalled();
     expect(globalThis.WebSocket).not.toHaveBeenCalled();
   });

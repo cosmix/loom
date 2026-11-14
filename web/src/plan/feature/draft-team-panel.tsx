@@ -4,51 +4,47 @@ import { useState } from "react";
 import { Link } from "react-router";
 
 import { compactTokens } from "@/lib/tokens";
-import type { DraftTeamView, TeammateStatus } from "@/plan/api/schema-kickoff";
+import type { DraftTeamView } from "@/plan/api/schema-kickoff";
 import { endChat } from "@/plan/chat/commands";
 import { sessionAtom } from "@/plan/chat/model";
 import { isActiveSession } from "@/plan/chat/session-home";
 import { Untrusted } from "@/plan/chat/visible-controls";
-import { allOffers } from "@/plan/feature/checklist-offers";
 import { plural } from "@/plan/ui/plural";
 import { TeammateCard, totalTokens } from "@/plan/feature/team-card";
+import { teamDocument, teamWords, type TeamWords } from "@/plan/feature/team-model";
+import { useActiveTeam } from "@/plan/feature/use-active-team";
 import { docRel, toAddress } from "@/plan/files/address";
-import {
-  authorBlockReasonAtom,
-  canAuthorAtom,
-  draftTeamAtom,
-  featuresAtom,
-} from "@/plan/state/atoms";
+import { authorBlockReasonAtom, canAuthorAtom } from "@/plan/state/atoms";
 import { StateMark } from "@/plan/ui/activity-glyphs";
 import { DisabledReason } from "@/plan/ui/disabled-reason";
 import { DocMark } from "@/plan/ui/doc-mark";
 
 import "./team.css";
 
-function documentState(path: string, teammate: TeammateStatus | undefined) {
-  if (!teammate) return "Queued";
-  if (teammate.state === "working" && teammate.current === path) return "Drafting";
-  if (teammate.state === "idle" && teammate.current === null) return "Drafted";
-  const currentIndex =
-    teammate.current === null ? -1 : teammate.documents.indexOf(teammate.current);
-  return teammate.documents.indexOf(path) < currentIndex ? "Drafted" : "Queued";
-}
-
-function DocumentRow({ path, teammates }: { path: string; teammates: TeammateStatus[] }) {
-  const teammate = teammates.find((candidate) => candidate.documents.includes(path));
-  const state = documentState(path, teammate);
+function DocumentRow({
+  path,
+  team,
+  words,
+}: {
+  path: string;
+  team: DraftTeamView;
+  words: TeamWords;
+}) {
+  const document = teamDocument(team, path);
   return (
     <li className="plan-team__doc">
       <DocMark kind={docRel(path).startsWith("plans/") ? "plan" : "section"} />
       <Link to={toAddress(path)} className="min-w-0 break-all font-mono text-[13px] underline">
         <Untrusted text={path} />
       </Link>
-      <span className="text-sm text-muted-foreground">
-        {teammate ? <Untrusted text={teammate.name} /> : "Unassigned"}
-      </span>
+      {document?.owner != null && (
+        <span className="text-sm text-muted-foreground">
+          <Untrusted text={document.owner} />
+        </span>
+      )}
       <span className="inline-flex items-center gap-1 text-sm">
-        {state === "Drafting" && <StateMark kind="drafting" />}
-        {state}
+        {document?.state === "Drafting" && <StateMark kind="drafting" />}
+        {words.state[document?.state ?? "Queued"]}
       </span>
     </li>
   );
@@ -98,17 +94,6 @@ function StopTeam({ sessionId }: { sessionId: string }) {
   );
 }
 
-/** Every queued document drafted: the lead session lives on, but the team has nothing to stop. */
-function teamFinished(team: DraftTeamView) {
-  return (
-    team.documents.length > 0 &&
-    team.documents.every((path) => {
-      const teammate = team.teammates.find((candidate) => candidate.documents.includes(path));
-      return documentState(path, teammate) === "Drafted";
-    })
-  );
-}
-
 function TeamCost({ team, finished }: { team: DraftTeamView; finished: boolean }) {
   const tokens = team.teammates.reduce((sum, teammate) => sum + totalTokens(teammate.tokens), 0);
   return (
@@ -127,37 +112,34 @@ function TeamCost({ team, finished }: { team: DraftTeamView; finished: boolean }
   );
 }
 
-export function DraftTeamPanel({ feature }: { feature: string }) {
-  const team = useAtomValue(draftTeamAtom);
+/**
+ * The running team. `documents` draws the per-document list; a page whose section queue already
+ * lists those documents turns it off, so each document is listed once.
+ */
+export function DraftTeamPanel({
+  feature,
+  documents = true,
+}: {
+  feature: string;
+  documents?: boolean;
+}) {
+  const active = useActiveTeam(feature);
   const session = useAtomValue(sessionAtom);
-  const features = useAtomValue(featuresAtom);
-  if (team === null) return null;
-  const activeSession = isActiveSession(session) && team.session === session.id;
-  const offeredBy = features.filter((checklist) =>
-    allOffers(checklist).some((offer) => session?.offer != null && offer.id === session.offer),
-  );
-  // Offer IDs can be shared across features; an ambiguous offer cannot identify the owner.
-  const inFeature =
-    team.documents.length > 0
-      ? team.documents.some(
-          (path) =>
-            path.startsWith(`doc/product/${feature}/`) || path.startsWith(`doc/plans/${feature}/`),
-        )
-      : offeredBy.length === 1 && offeredBy[0]?.feature === feature;
-  if (!activeSession || !inFeature) return null;
+  if (active === null) return null;
+  const { team, finished } = active;
+  const words = teamWords(session?.offer);
   // PaceChoice and checklist gaps own draft offers; this panel reports the running team.
-  const finished = teamFinished(team);
   return (
-    <section aria-label="Draft team" className="plan-team">
-      <h2 className="plan-team__title">
-        {finished ? "Drafted with a team" : "Drafting with a team"}
-      </h2>
+    <section aria-label={words.region} className="plan-team">
+      <h2 className="plan-team__title">{finished ? words.finished : words.running}</h2>
       <TeamCost team={team} finished={finished} />
-      <ol aria-label="Document queue" className="plan-team__docs">
-        {team.documents.map((path) => (
-          <DocumentRow key={path} path={path} teammates={team.teammates} />
-        ))}
-      </ol>
+      {documents && (
+        <ol aria-label="Document queue" className="plan-team__docs">
+          {team.documents.map((path) => (
+            <DocumentRow key={path} path={path} team={team} words={words} />
+          ))}
+        </ol>
+      )}
       <h3 className="plan-team__sub">Teammates</h3>
       <ul aria-label="Teammates" className="plan-team__cards">
         {team.teammates.map((teammate) => (

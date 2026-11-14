@@ -419,16 +419,17 @@ Each bullet names the stage and its id.
 
 When a plan completes, the server imports the review's `## Open Findings` and `## Open Questions`
 items into the feature's findings ledger, `doc/plans/<f>/findings.md` (a plain Markdown file of
-`## F-<n>` entries with About, Source and Status lines, section 09, "`loom-plan:review`"). An
-item already in the ledger is not added twice, and a standalone plan imports nothing. The import
+`## F-<n>` entries with About, Evidence, Severity, Source and Status lines, section 09,
+"`loom-plan:review`"). An item the ledger already holds, as the same entry or the same finding in
+other words, whatever its status, is not added twice, and a standalone plan imports nothing. The import
 runs in the host job on the main checkout, so `findings.md` is an uncommitted change there, like
 the summaries the planner rebuilds; the user commits it. The run review stays the immutable
-evidence; the ledger holds the triage state.
+evidence; the ledger holds where each finding stands.
 
 A finished feature, where every metaplan entry's plan is done, has no primary offer (section
 01) and has no page of its own: it opens where an unfinished feature opens (section 05, the
 landing rule), and its metaplan page says every plan is done. Follow-ups start on `/new` (section 08):
-Follow-up with the feature picked lists the ledger's open findings and questions as suggestions
+Follow-up with the feature picked lists the ledger's actionable findings (open and verified) and questions as suggestions
 under the field, and Start sends the typed text, with any picked suggestions, to the
 `Plan follow-ups` session (`loom-plan:metaplan`, section 09). The session appends entries to
 `doc/plans/<f>/index.md` under a `## Follow-ups` heading and leaves finished entries unchanged;
@@ -436,18 +437,20 @@ the entries keep the level-2 entry form (section 01). Once an entry has no plan,
 the rest. Work that is no follow-up of the feature is a new feature, started from the home page.
 
 **The Findings page.** `/f/<f>/findings` is the wave screen: the ledger's findings grouped by the
-run they came from, newest first, then reviews, each with its About nodes as links, its status and
-the actions of section 10, "Triaging findings" (Plan this, Fold into entry, Dismiss with a
-reason). The spine's Run group links to it with the open count.
+run they came from, newest first, then reviews, each with its About nodes as links, the evidence
+quote, its severity and its state, and the actions of section 10, "Triaging findings" (Address the
+findings, Review the feature, Dismiss with a reason, Reopen). The spine's Run group links to it with the
+count of open, verified findings.
 
 **Review the feature.** Once any plan of the feature is running or done, a secondary offer,
 `Review the feature` (`loom-plan:review`, section 09), is available at any time, not only when
-the feature is finished. The session asks what the user saw, reads code and documents without
-writing them, and appends findings to the ledger. Reviewing after wave 1 therefore feeds the plans
+the feature is finished. The session verifies the ledger's unverified entries against the
+documents, asks what the user saw, reads code and documents without writing them, and appends
+findings with evidence and severity to the ledger. Reviewing after wave 1 therefore feeds the plans
 of wave 2.
 
-**Revisit before writing.** A finding folded into an entry, and an open finding whose About names
-a heading that entry covers, mark the entry "revisit before writing" while its plan is unwritten,
+**Revisit before writing.** An open, verified finding whose About names a heading a metaplan entry covers
+marks that entry "revisit before writing" while its plan is unwritten,
 or "revisit before running" while the plan is written and has not started. The mark names the
 finding ids; the author reads them before the plan is written or run. An entry whose plan is
 running or done carries no mark: its follow-ups are new entries.

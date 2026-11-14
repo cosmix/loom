@@ -18,14 +18,15 @@ fn the_frontier_takes_gaps_by_kind_one_per_document() {
     let fx = Fixture::new(&[
         (VISION, &vision(&[1, 2])),
         (&section(1), "# S1\n\n## A\n\nText.\n\n## B\n\nText.\n"),
-        (&section(2), "# S2\n\n## C\n\nText.\n"),
+        (&section(2), "# S2\n\n## C\n\nThe C heading text.\n"),
         (
             METAPLAN,
             "# E\n\n## 1. P (`PLAN-p.md`)\n\nCovers: section_02\n",
         ),
         (
             LEDGER,
-            "# Findings\n\n## F-1 C\n\nAbout: section_02#c\nStatus: open\n\nText.\n",
+            "# Findings\n\n## F-1 C\n\nAbout: section_02#c\nEvidence: The C heading text.\n\
+             Severity: low\nStatus: open\n\nText.\n",
         ),
     ]);
     fx.settle(&section(1));

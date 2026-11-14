@@ -145,6 +145,7 @@ fn all_offers() -> Vec<Offer> {
         | Offer::StartRun
         | Offer::PlanFollowUps
         | Offer::ReviewFeature
+        | Offer::AddressFindings
         | Offer::DraftAllSections { .. }
         | Offer::DraftAllPlans { .. }
         | Offer::MoveIntoFeature { .. } => {}
@@ -155,6 +156,7 @@ fn all_offers() -> Vec<Offer> {
         Offer::StartRun,
         Offer::PlanFollowUps,
         Offer::ReviewFeature,
+        Offer::AddressFindings,
         Offer::MoveIntoFeature {
             path: "doc/product/index.md".into(),
         },
@@ -174,6 +176,7 @@ fn all_offer_kinds() -> Vec<OfferKind> {
         | OfferKind::StartRun
         | OfferKind::PlanFollowUps
         | OfferKind::ReviewFeature
+        | OfferKind::AddressFindings
         | OfferKind::DraftAllSections
         | OfferKind::DraftAllPlans
         | OfferKind::MoveIntoFeature => {}
@@ -189,6 +192,7 @@ fn all_offer_kinds() -> Vec<OfferKind> {
         OfferKind::StartRun,
         OfferKind::PlanFollowUps,
         OfferKind::ReviewFeature,
+        OfferKind::AddressFindings,
         OfferKind::DraftAllSections,
         OfferKind::DraftAllPlans,
         OfferKind::MoveIntoFeature,

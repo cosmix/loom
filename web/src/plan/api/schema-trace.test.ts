@@ -23,6 +23,8 @@ describe("trace wire schemas", () => {
     expect(view.documents.some((doc) => doc.bundle.length > 0)).toBe(true);
     expect(view.headings.some((h) => h.covered_by.some((c) => c.kind === "stage"))).toBe(true);
     expect(view.findings.map((f) => f.finding.status.kind)).toEqual(["open", "dismissed"]);
+    expect(view.findings.map((f) => f.check.kind)).toEqual(["verified", "unverified"]);
+    expect(view.findings[0]!.finding.evidence).toBe("Text two names the budget.");
     expect(view.frontier.length).toBeLessThanOrEqual(5);
   });
 
@@ -38,6 +40,7 @@ describe("trace wire schemas", () => {
     const documents = [doc, ...fixture.documents.slice(1)];
     expect(traceViewSchema.safeParse({ ...fixture, documents }).success).toBe(false);
     expect(findingStatusSchema.safeParse({ kind: "closed", detail: null }).success).toBe(false);
+    expect(findingStatusSchema.safeParse({ kind: "folded", detail: "x" }).success).toBe(false);
     expect(findingStatusSchema.safeParse({ kind: "open", detail: null }).success).toBe(true);
   });
 

@@ -1,4 +1,5 @@
 //! Candidate follow-ups: which ledger entries are listed and which run review each one names.
+//! Every entry here is verified (its quote is in the plan), so only status and checks decide.
 
 use std::path::Path;
 
@@ -8,7 +9,11 @@ use crate::plan_server::wire::checklist::ProjectChecklistView;
 use crate::planning::project::Project;
 
 const METAPLAN: &str = "# Demo\n\n## 1. One (`PLAN-one.md`)\n";
-const PLAN: (&str, &str) = ("doc/plans/demo/archive/DONE-PLAN-one.md", "# Plan: one\n");
+const PLAN: (&str, &str) = (
+    "doc/plans/demo/archive/DONE-PLAN-one.md",
+    "# Plan: one\n\nThe plan builds part F-1.\nThe plan builds part F-2.\n\
+     The plan builds part F-3.\nThe plan builds part F-4.\nThe plan builds part F-5.\n",
+);
 const LEDGER: &str = "doc/plans/demo/findings.md";
 
 fn review(stamp: &str, finding: &str) -> String {
@@ -19,13 +24,16 @@ fn review(stamp: &str, finding: &str) -> String {
     )
 }
 
-/// A ledger entry as the review import writes it, `source` being its `Source:` line.
+/// A verified ledger entry, `source` being its `Source:` line; its quote names its own id.
 fn entry(id: &str, source: Option<&str>, status: &str, text: &str) -> String {
     let source = source.map_or(String::new(), |value| format!("Source: {value}\n"));
-    format!("## {id} Title\n\nAbout: PLAN-one.md\n{source}Status: {status}\n\n{text}\n\n")
+    format!(
+        "## {id} Title\n\nAbout: PLAN-one.md\nEvidence: The plan builds part {id}.\n\
+         Severity: medium\n{source}Status: {status}\n\n{text}\n\n"
+    )
 }
 
-/// A ledger entry imported from `REVIEW-PLAN-one.md`.
+/// A ledger entry imported from `REVIEW-PLAN-one.md`, then verified by a review.
 fn imported(id: &str, section: &str, stage: &str, text: &str) -> String {
     let source = format!("REVIEW-PLAN-one.md#{section} ({stage}, 0123456789ab)");
     entry(id, Some(&source), "open", text)
@@ -120,7 +128,7 @@ fn rows_of(found: &[CandidateView]) -> Vec<Row<'_>> {
 }
 
 #[test]
-fn candidates_are_the_open_ledger_entries_in_ledger_order() {
+fn candidates_are_the_actionable_ledger_entries_in_ledger_order() {
     let temp = tempfile::tempdir().unwrap();
     let review = review("2026-11-01 10:00 UTC", "a finding");
     let ledger = format!(
@@ -128,7 +136,7 @@ fn candidates_are_the_open_ledger_entries_in_ledger_order() {
         imported("F-1", "open-findings", "stage", "Imported finding"),
         imported("F-2", "open-questions", "chat", "Imported question"),
         entry("F-3", None, "open", "Found by hand"),
-        entry("F-4", None, "planned PLAN-two.md", "Already planned"),
+        entry("F-4", None, "addressed PLAN-one.md", "Already addressed"),
         entry("F-5", None, "dismissed: no", "Dismissed"),
     );
     let files = [
@@ -168,4 +176,21 @@ fn candidates_are_the_open_ledger_entries_in_ledger_order() {
             ),
         ]
     );
+}
+
+#[test]
+fn unverified_stale_and_duplicate_entries_are_no_candidates() {
+    let temp = tempfile::tempdir().unwrap();
+    let unverified = "## F-2 Raw\n\nAbout: PLAN-one.md\nStatus: open\n\nNo quote yet.\n\n";
+    let stale = entry("F-3", None, "open", "Quoted wrong").replace("part F-3", "part nine");
+    // The same quote and the same claim: a repeat of F-1.
+    let claim = "The plan builds the part without the retry budget the spec promises.";
+    let ledger = format!(
+        "# Findings\n\n{}{unverified}{stale}{}",
+        entry("F-1", None, "open", claim),
+        entry("F-4", None, "open", claim).replace("part F-4", "part F-1"),
+    );
+    let found = candidates(temp.path(), &[(LEDGER, ledger.as_str())]);
+    let ids: Vec<&str> = found.iter().map(|c| c.id.as_str()).collect();
+    assert_eq!(ids, ["F-1"]);
 }

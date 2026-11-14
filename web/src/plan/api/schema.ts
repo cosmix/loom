@@ -29,6 +29,7 @@ export const OFFER_KINDS = [
   "draft_all_plans",
   "move_into_feature",
   "review_feature",
+  "address_findings",
 ] as const;
 export const PLAN_MESSAGE_TYPES = [
   "hello",

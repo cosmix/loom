@@ -225,10 +225,12 @@ A finished feature has no primary offer. `Plan follow-ups` is its secondary offe
 `/new` with the feature picked as a Follow-up (section 11, "After plans complete").
 
 `Review the feature` is a secondary offer on any feature with a plan running or done. It starts
-a session that asks what the reader saw (running the feature, reading code, reading a run
-review), reads code and documents without writing them, and records findings in
-`doc/plans/<f>/findings.md` (section 03). The Findings page owns the offer, so no other screen
-draws it. (My call.)
+one interactive session that verifies the findings imported from run reviews, asks what the
+reader saw (running the feature, reading code, reading a run review), reads code and documents
+without writing them, and records findings in `doc/plans/<f>/findings.md` (section 03).
+`Address the findings` starts a team session that edits the specs and plans the open, verified
+findings are about (section 09). The Findings page owns both offers, so no other screen draws
+them. (My call.)
 
 Offer labels are short, and the sentence beside the button explains what it does:
 
@@ -286,11 +288,11 @@ Hints appear in this order:
 2. A document whose stub changed since it was settled.
 3. A plan whose upstream sections changed since it was settled.
 4. A metaplan entry to revisit: its plan has not started running (unwritten, or written without a
-   lifecycle prefix), and findings were folded into it or open findings name a heading it covers
-   or its plan implements.
+   lifecycle prefix), and open, verified findings name a heading it covers or its plan
+   implements.
 5. A written draft section or plan to settle, in spine order.
 6. A heading of a settled section that no metaplan entry, plan or stage covers.
-7. One hint carrying the count of open findings, which opens the Findings page.
+7. One hint carrying the count of open, verified findings, which opens the Findings page.
 
 **The frontier starts no session.** A hint is a link; an offer is the only thing that opens a
 session, and it keeps its own owner (above). (My call.)
@@ -304,8 +306,10 @@ Two pages join the feature's screens, each with a spine row (vision, "The screen
   their stages, and the findings, in columns. Selecting a card highlights its lineage across the
   columns. Filters are All, Uncovered, Changed since settled and Open findings.
 - **Findings**, `/f/<f>/findings`, lists the ledger's findings, grouped by the run review they
-  came from (newest first) and then reviews. Each shows what it concerns, its status and the
-  actions Plan this, Fold into entry and Dismiss (with a reason).
+  came from (newest first) and then reviews. Each shows what it concerns, its quote, its severity
+  and its state (section 10, "Triaging findings"). The page's actions are Address the findings,
+  Review the feature and, on a finding, Dismiss (with a reason) or Reopen (on one that could not
+  be addressed or was dismissed).
 
 ## Where a feature opens
 

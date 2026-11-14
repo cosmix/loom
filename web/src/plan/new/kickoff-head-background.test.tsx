@@ -130,11 +130,13 @@ it("an idle kickoff that waits on background tasks shows the line and its list",
   expect(text(list.querySelector("li:last-child"))).toBe("1 earlier agent");
 });
 
-it("a working kickoff with tasks shows its state words alone", async () => {
+it("a working kickoff with tasks keeps the line beside its state words", async () => {
   const head = await mountHead(chat("working"));
   deliver(backgroundFixture);
 
-  expect(text(head.querySelector(".kickoff-head__sub"))).toBe("Working");
-  expect(head.querySelector(".chat-background-line")).toBeNull();
-  expect(screen.queryByRole("button", { name: "Background tasks" })).toBeNull();
+  expect(text(head.querySelector(".kickoff-head__sub"))).toBe(
+    "WorkingWaiting on 3 background tasks",
+  );
+  expect(head.querySelector(".chat-background-line")).not.toBeNull();
+  expect(screen.queryByRole("button", { name: "Background tasks" })).not.toBeNull();
 });

@@ -15,7 +15,8 @@ use std::path::PathBuf;
 use std::process::Command;
 use support::{files, frontmatter, listing, put, repo_file, Fixture};
 
-const SKILLS: [&str; 10] = [
+const SKILLS: [&str; 11] = [
+    "address-findings",
     "brainstorming",
     "kickoff",
     "knowledge",

@@ -190,14 +190,28 @@ it("a socket frame gives an idle chat the line and its disclosure", async () => 
   expect(line(head)).toBe("Waiting on 1 background task");
 });
 
-it("a working chat with tasks shows its state words and no line", async () => {
+it("a working chat with tasks keeps the line beside its state words", async () => {
   const head = await mountHead(chat("working"));
   deliver(background());
 
   expect(text(head.querySelector(".chat-state-row"))).toBe("Working");
+  expect(line(head)).toBe("Waiting on 3 background tasks");
+  expect(disclosure()).not.toBeNull();
+
+  // The line goes with the last task, not with the turn.
+  deliver(background(ENDED));
   expect(line(head)).toBeNull();
-  expect(disclosure()).toBeNull();
-  expect(announced()).toEqual([]);
+});
+
+it("a chat that is starting, ending or over draws no line whatever its tasks", async () => {
+  const head = await mountHead(chat("starting"));
+  deliver(background());
+  for (const state of ["starting", "ending", "ended", "failed"]) {
+    deliver(chat(state));
+    expect(line(head)).toBeNull();
+  }
+  deliver(chat("permission"));
+  expect(line(head)).toBe("Waiting on 3 background tasks");
 });
 
 it("an idle chat whose tasks have all ended shows nothing", async () => {
@@ -213,7 +227,7 @@ it("an idle chat whose tasks have all ended shows nothing", async () => {
 });
 
 it("the line is announced once and the last task's end once", async () => {
-  const head = await mountHead(chat("working"));
+  const head = await mountHead(chat("starting"));
   vi.useFakeTimers();
   deliver(background());
   // The region is in place, empty, before it has words to say.
@@ -233,8 +247,9 @@ it("the line is announced once and the last task's end once", async () => {
   act(() => vi.advanceTimersByTime(HOLD_MS));
   expect(announced()).toEqual([]);
 
-  // A turn of work and back to idle: the line returns unannounced.
+  // A turn of work and back to idle: the line stays, unannounced.
   deliver(chat("working"));
+  expect(line(head)).toBe("Waiting on 2 background tasks");
   deliver(chat("idle"));
   expect(line(head)).toBe("Waiting on 2 background tasks");
   expect(announced()).toEqual([]);
@@ -318,8 +333,11 @@ it("the open list goes with the line and is closed for a new chat", async () => 
   fireEvent.click(disclosure()!);
   expect(head.querySelector(".chat-background-list")).not.toBeNull();
 
-  // A turn of work hides the line and its list; back at idle the list is as it was left.
+  // A turn of work leaves the line and its list in place; a session that is wrapping up hides
+  // them, and back at idle the list is as it was left.
   deliver(chat("working"));
+  expect(head.querySelector(".chat-background-list")).not.toBeNull();
+  deliver(chat("ending"));
   expect(head.querySelector(".chat-background-list")).toBeNull();
   deliver(chat("idle"));
   expect(head.querySelector(".chat-background-list")).not.toBeNull();

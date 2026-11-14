@@ -17,6 +17,13 @@
   color: var(--foreground);
 }
 
+/* A working or permission-blocked chat keeps its state words before the line: the same separator
+ * the place gets. The panel head's state line root is display: contents, so its words sit beside the line. */
+.chat-state-line:has(.chat-state-row) + .chat-background-line::before,
+.chat-state-row + .chat-background-line::before {
+  content: " \00b7 ";
+}
+
 /* The disclosure: a chevron on the words' line. Its margin box is 14px, under the line's own
  * height, so pressing it open never moves the head. */
 .chat-background-toggle {

@@ -10,7 +10,7 @@ import { HomeRoute } from "@/plan/home/home";
 import { KickoffRoute } from "@/plan/new/kickoff-route";
 import { ChangesPage } from "@/plan/review/changes-page";
 import { PlanShell } from "@/plan/shell";
-import { SettleAllButton } from "@/plan/trace/settle-all";
+import { SettleAllAfterDrafting } from "@/plan/feature/settle-gate";
 import { PLAN_TAB_ROUTES } from "@/plan/tabs";
 import { LoadState } from "@/plan/ui/load-state";
 import { RouteError } from "@/routes/error";
@@ -37,7 +37,7 @@ function ProductOverview() {
       above={
         <>
           <Gaps scope="product" />
-          {checklist && <SettleAllButton feature={checklist.feature} role="section" />}
+          {checklist && <SettleAllAfterDrafting feature={checklist.feature} role="section" />}
         </>
       }
     />

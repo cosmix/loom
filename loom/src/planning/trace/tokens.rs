@@ -99,21 +99,6 @@ pub fn stage_lines(text: &str) -> Vec<StageLine> {
     found
 }
 
-/// `PLAN-<slug>.md` alone: one plan token with no anchor and no lifecycle prefix, whose slug
-/// holds letters, digits, `-`, `_` and inner dots.
-pub fn is_plan_token(token: &str) -> bool {
-    let (found, bad) = tokens(token);
-    let [Token::Plan { slug, anchor: None }] = found.as_slice() else {
-        return false;
-    };
-    bad.is_empty()
-        && token == format!("PLAN-{slug}.md")
-        && !slug.starts_with('.')
-        && slug
-            .bytes()
-            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.'))
-}
-
 fn collect<T: PartialEq>(value: &str, pick: impl Fn(Token) -> Option<T>) -> (Vec<T>, Vec<String>) {
     let (mut found, mut bad) = (Vec::new(), Vec::new());
     for raw in value.split(',').map(str::trim) {

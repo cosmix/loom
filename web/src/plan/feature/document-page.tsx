@@ -12,12 +12,12 @@ import { useFileSocket } from "@/plan/files/api";
 import { openDocAtom, treeAtom } from "@/plan/files/atoms";
 import { ReadingColumn } from "@/plan/files/reading-column";
 import { missingDocumentOffer } from "@/plan/feature/page-offer";
+import { SettleAllAfterDrafting } from "@/plan/feature/settle-gate";
 import { featureOfDocPath, featureSourceHref } from "@/plan/feature/source-href";
 import { useFeature } from "@/plan/feature/use-feature";
 import { BriefsCard } from "@/plan/trace/briefs-card";
 import { ScopeLine } from "@/plan/trace/scope-line";
 import { docIsLocked, SettleControl } from "@/plan/trace/settle-control";
-import { SettleAllButton } from "@/plan/trace/settle-all";
 import { LoadState } from "@/plan/ui/load-state";
 
 /**
@@ -123,7 +123,7 @@ export function MetaplanPage() {
     <ConceptRoute
       above={
         <>
-          <SettleAllButton feature={checklist.feature} role="plan" />
+          <SettleAllAfterDrafting feature={checklist.feature} role="plan" />
           <RunPanel />
           <Gaps scope="metaplan" />
         </>

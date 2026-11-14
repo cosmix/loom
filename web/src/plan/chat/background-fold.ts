@@ -21,10 +21,14 @@ export function backgroundWord(state: BackgroundTaskView["state"]): string {
 
 /**
  * Whether a head draws the background line. An idle chat says nothing (`ui/DESIGN.md`, Chat) unless
- * it waits on a task that has not ended; in every other state the state's own words stand.
+ * it waits on a task that has not ended. A chat that works or waits on a permission keeps the line
+ * too: a draft team's lead turns "working" each time a teammate reports, and the list of running
+ * agents must not vanish between those turns. Starting, ending, ended and failed chats leave it
+ * out, since their own words stand for the whole session.
  */
 export function waitsOnBackground(session: SessionView | null, unended: number): boolean {
-  return session?.state === "idle" && unended > 0;
+  if (unended === 0 || session === null) return false;
+  return session.state === "idle" || session.state === "working" || session.state === "permission";
 }
 
 /** One line of the head's list: a task, or the ended agents counted together. */

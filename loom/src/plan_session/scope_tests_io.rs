@@ -14,6 +14,10 @@ fn scope_file_round_trips_large_kickoff_and_replaces_with_private_permissions() 
             grant: None,
         }),
         SessionScope::team(vec!["doc/a.md".into()], vec!["doc/plans/briefs/a".into()])?,
+        SessionScope::address(
+            vec!["doc/a.md".into(), "doc/plans/f/findings.md".into()],
+            "doc/plans/f/findings.md".into(),
+        )?,
     ] {
         write(&dir, &scope)?;
         assert_eq!(load(&dir)?, scope);
@@ -35,6 +39,9 @@ fn load_refuses_malformed_unknown_fields_and_oversize_files() -> Result<()> {
         r#"{"scope":"open","extra":true}"#,
         r#"{"scope":"kickoff","existing":[],"grant":null,"extra":true}"#,
         r#"{"scope":"team","documents":[],"bundles":[]}"#,
+        r#"{"scope":"team","run":{"kind":"draft"},"documents":[],"bundles":[]}"#,
+        r#"{"scope":"team","run":{"kind":"address","ledger":"doc/plans/f/findings.md"},
+            "documents":["doc/a.md"],"bundles":[]}"#,
     ] {
         fs::write(dir.scope(), text)?;
         assert!(load(&dir).is_err(), "accepted {text}");

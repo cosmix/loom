@@ -316,40 +316,69 @@ digits of a SHA-256.
 ## The findings ledger
 
 Each feature keeps its findings in one plain Markdown file, `doc/plans/<f>/findings.md`, an
-`Other` document. Run reviews stay the unchanged evidence; the ledger holds the triage state.
+`Other` document. Run reviews stay the unchanged evidence; the ledger holds where each finding stands.
 
 ```markdown
 # Findings
 
 ## F-1 Rebuild threshold ignores briefs
 
-About: PLAN-feat-planner-03-summaries.md#stage:scheduler, section_04#rebuild-budget
-Source: REVIEW-PLAN-feat-planner-03-summaries.md#open-findings (scheduler, 1a2b3c4d5e6f)
+About: section_04#rebuild-budget
+Evidence: The rebuild budget counts plan summaries changed since the last rebuild.
+Severity: high
+Source: review 2026-11-05
 Status: open
 
-The rebuild budget counts plan summaries but not brief changes.
+The rebuild budget counts plan summaries but not brief changes, so a brief edit never triggers a rebuild.
 ```
 
 - **Entries.** An entry is a `## F-<n> <title>` heading (n is 1 or more and unique in the file),
-  then an `About:` line, an optional `Source:` line and an optional `Status:` line in any order,
-  then one paragraph of text. A heading of any other shape raises `findings-bad-entry`.
-- **Statuses.** `Status:` is `open`, `planned PLAN-<slug>.md`, `folded metaplan#<entry anchor>`
-  or `dismissed: <reason>`. A missing or unknown value reads as open and is reported.
+  then `About:`, `Evidence:`, `Severity:`, `Source:` and `Status:` lines in any order, then one
+  paragraph of text; an entry with no `Evidence:` or `Severity:` reads as unverified. A heading of
+  any other shape raises `findings-bad-entry`. `Evidence:` is one line copied verbatim from a passage an `About:` node
+  names; emphasis marks, quotation marks, case and line breaks do not count when it is compared.
+  `Severity:` is `high` (the feature would ship broken or contradict its spec), `medium` (a reader
+  or builder would trip on something missing) or `low` (wording or consistency); any other value
+  raises `findings-bad-severity`.
+- **Statuses.** `Status:` is `open`, `addressed <tokens>` (the nodes the change touched, in the
+  `About:` token forms; `addressed: <tokens>` reads the same), `unaddressed: <reason>` or
+  `dismissed: <reason>`. A missing or unknown value reads as open and is reported.
+- **Checks.** The app checks each entry against the documents, so no agent has to be trusted.
+  An entry is *unverified* when it has no `Evidence:` quote of at least three words, no
+  `Severity:` or no `About:` node that resolves; *stale* when its quote is in none of the passages
+  its `About:` nodes name; a *duplicate* when an earlier entry reports the same thing and is open
+  and verified, or addressed while this one brings no new evidence; otherwise *verified*. New
+  evidence is a quote that differs from the addressed entry's, or a quote that is in its passage
+  while the addressed entry's quote is gone, so a review can record a regression again. An
+  unaddressed or dismissed entry makes nothing a duplicate. Two entries report the same thing when
+  they point at the same place and at least five words, and three fifths of the smaller claim's
+  words, are shared. The place is the same file cited at lines at most 30 apart when both texts
+  lead with `path:line`; otherwise the same `Evidence:` quote, or (when neither cites a line) each
+  entry's first `About:` node among the other's nodes. The plan's `Implements:` tokens every
+  imported entry repeats never place two entries together, and one quote can show two problems,
+  so a shared quote alone is not enough. Only an open, verified entry is actionable: the Triage
+  count, a metaplan entry's revisit mark, the follow-up suggestions and the Address the findings
+  session count only those. An unaddressed entry waits for the reader to reopen it. An open stale
+  entry raises `findings-evidence-missing`.
 - **Import.** When a plan completes and its run review is written, each item under the review's
-  `## Open Findings` and `## Open Questions` headings is added as an open entry that is not
-  already present; importing the same review twice adds nothing. The entry's `Source:` line
-  names the review heading, the stage and a 12-hex hash of the item text, which is how a repeat
-  is recognised. Its `About:` line names the stage and then the plan's `Implements:` tokens. A
-  standalone plan, or a plan whose feature cannot be read from its path, imports nothing.
-- **Review the feature.** The same session that section 01 describes appends entries with
-  `Status: open`, an `About:` line naming the most specific nodes it can, and either no `Source:`
-  line or `Source: review <YYYY-MM-DD>`.
-- **Triage.** The reader plans a finding (a follow-up session sets `planned PLAN-<slug>.md`),
-  folds it into a metaplan entry whose plan has not started running (the session edits the entry
-  and sets `folded metaplan#<anchor>`), or dismisses it with a reason. A reason is one line of at
-  most 200 characters after control characters are removed, and cannot be empty. The metaplan
-  entry that received a folded finding reads as "revisit before writing" or "revisit before
-  running" until its plan runs.
+  `## Open Findings` and `## Open Questions` headings is added as an open entry unless the ledger
+  already holds it: the same `Source:` line (the review heading, the stage and a 12-hex hash of
+  the item text), or the same finding in other words as any entry, whatever its status, so a
+  finding already addressed or dismissed is not raised again. Importing the same review twice
+  adds nothing. Its `About:` line names the stage and then the plan's `Implements:` tokens; it has
+  no `Evidence:` or `Severity:`, so it reads as unverified until a review of the feature checks
+  it. A standalone plan, or a plan whose feature cannot be read from its path, imports nothing.
+- **Review the feature.** The session that section 01 describes verifies the unverified entries
+  against the documents (it adds `About:`, `Evidence:` and `Severity:` to one that holds, and
+  dismisses one the documents already satisfy or another entry repeats, with the reason), and
+  appends entries with `Status: open`, the most specific `About:` nodes it can, a verbatim
+  `Evidence:` quote, a `Severity:` and either no `Source:` line or `Source: review <YYYY-MM-DD>`.
+- **Triage.** The reader dismisses a finding with a reason: one line of at most 200 characters
+  after control characters are removed, never empty, and reopens an unaddressed or dismissed one,
+  which sets it back to `open`. The Address the findings session (section 09) marks the others
+  `addressed` or `unaddressed`. The metaplan entry whose plan has not started
+  running, and that covers a heading an actionable finding is about, reads as "revisit before
+  writing" or "revisit before running" until its plan runs.
 - **Untrusted text.** Item text is written by agents. The title is the first 80 characters of the
   text on one line; the paragraph is the whole text on one line, and a paragraph that starts with
   `#` gets a leading backslash, so a finding never creates a heading. The app shows finding

@@ -248,7 +248,7 @@ it("plan slugs drop the feature prefix in the spine", async () => {
 });
 
 it("the spine ends Product spec with Coverage and Plans with Findings, reading the trace", async () => {
-  // The trace fixture: four headings, all covered; finding F-1 open, F-2 dismissed.
+  // The trace fixture: four headings, all covered; finding F-1 open and verified, F-2 dismissed.
   renderRoutes("/f/demo/product");
   const spine = within(await spineNav());
   await spine.findByRole("link", { name: /\bAlpha\b/ });
@@ -425,10 +425,10 @@ it("a coverage row expands to why, how and findings", async () => {
 });
 
 it("findings group by run and fold decided ones", async () => {
-  // F-1 is a run finding and F-2 a dismissed one; F-3 comes from Review the feature.
+  // F-1 is a run finding and F-2 a dismissed one; F-9 comes from Review the feature.
   const [run] = trace.findings;
   const source = "review 2026-11-06";
-  trace.findings.push({ finding: { ...run!.finding, id: "F-3", source }, about: run!.about });
+  trace.findings.push({ ...run!, finding: { ...run!.finding, id: "F-9", source } });
   renderRoutes("/f/demo/findings");
   const [runHead] = await screen.findAllByRole("heading", { name: /^Run of/ });
   const reviews = await screen.findByRole("heading", { name: "Reviews" });
@@ -450,7 +450,7 @@ it("the product overview draws no Coverage link of its own; the Run page links F
     .filter((link) => !nav.contains(link));
   expect(outside).toEqual([]);
   cleanup();
-  // Finding F-1 is open in the trace fixture.
+  // Finding F-1 is open and verified in the trace fixture.
   renderRoutes("/f/demo/run");
   await pageLink((name) => /Findings/.test(name) && /\b\d+ open\b/.test(name), "/f/demo/findings");
 });

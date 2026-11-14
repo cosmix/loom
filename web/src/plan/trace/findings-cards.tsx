@@ -1,15 +1,12 @@
 import { useAtomValue, useStore } from "jotai/react";
-import { CornerDownRight, FilePlus2, X } from "lucide-react";
-import { useEffect, useId, useRef, useState } from "react";
+import { RotateCcw, X } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useLocation } from "react-router";
 
-import type { OfferView } from "@/plan/api/schema";
-import type { FindingStatus, NodeRef, TraceFinding, TraceView } from "@/plan/api/schema-trace";
+import type { NodeRef, TraceFinding, TraceView } from "@/plan/api/schema-trace";
 import { Untrusted } from "@/plan/chat/visible-controls";
-import { IsolatedSentence } from "@/plan/concept/sentence-text";
 import { hashAnchor } from "@/plan/files/address";
 import { featureSourceHref } from "@/plan/feature/source-href";
-import { runOffer } from "@/plan/offers/actions";
 import { authorBlockReasonAtom } from "@/plan/state/atoms";
 import { ActionError } from "@/plan/ui/action-error";
 import { DisabledReason } from "@/plan/ui/disabled-reason";
@@ -17,46 +14,46 @@ import { DisabledReason } from "@/plan/ui/disabled-reason";
 import {
   dismissReason,
   failureOf,
-  foldSeed,
-  planSeed,
   REASON_MAX,
   setFindingStatus,
+  type StatusChange,
 } from "./findings-actions";
-import { FoldPicker } from "./findings-fold";
 import {
-  foldChoices,
+  cardState,
   groupTitle,
-  foldedEntry,
+  isFullCard,
   nodeLabel,
-  statusText,
+  stateText,
+  type CardState,
   type FindingGroup,
 } from "./findings-model";
 import { ledgerBlock, type LedgerHash } from "./ledger-hash";
 import { loadTrace } from "./state";
 
-// The cards of the Findings page: one per finding, with the three ways to settle an open one.
-// Every ledger string is drawn as text (`Untrusted`).
+// The cards of the Findings page: one per finding. An open one shows what it is about, its quoted
+// evidence, its text and Dismiss; anything else folds to one line, an addressed one with the
+// headings it changed, an unaddressed or dismissed one with Reopen. Every ledger string is drawn
+// as text (`Untrusted`).
 
 /** What every finding card needs from the page. */
 export interface Context {
   trace: TraceView;
   feature: string;
-  /** The feature's Plan follow-ups offer, undefined when it has none. */
-  offer: OfferView | undefined;
   /** The ledger hash that goes with `trace`; a change is sent only with it. */
   ledger: LedgerHash;
+  /** Whether this feature's address run is live. */
+  addressing: boolean;
 }
 
-const NOT_STARTED = "The planner chat is not available, so no session started.";
-const NO_OFFER = "This feature has no metaplan, so no Plan follow-ups can start.";
-const FOLD_LABEL = "Fold into entry";
 const DISMISS_LABEL = "Dismiss";
+const REOPEN_LABEL = "Reopen";
+const ADDRESSING = "The address run is working on these findings";
 
-function AboutChips(props: { trace: TraceView; feature: string; nodes: NodeRef[] }) {
-  const { trace, feature, nodes } = props;
+function NodeChips(props: { trace: TraceView; feature: string; nodes: NodeRef[]; label: string }) {
+  const { trace, feature, nodes, label } = props;
   if (nodes.length === 0) return null;
   return (
-    <p className="maps-about" role="group" aria-label="About">
+    <p className="maps-about" data-label={label} role="group" aria-label={label}>
       {nodes.map((node) => (
         <span key={`${node.path}#${node.anchor ?? ""}`}>
           <Link
@@ -68,6 +65,19 @@ function AboutChips(props: { trace: TraceView; feature: string; nodes: NodeRef[]
         </span>
       ))}
     </p>
+  );
+}
+
+/** The quote the finding rests on, as the ledger holds it. */
+function Evidence({ quote }: { quote: string | null }) {
+  if (quote === null) return null;
+  return (
+    <figure className="maps-evidence">
+      <figcaption className="plan-fine">Evidence</figcaption>
+      <blockquote>
+        <Untrusted text={quote} />
+      </blockquote>
+    </figure>
   );
 }
 
@@ -122,164 +132,107 @@ function DismissForm(props: {
   );
 }
 
-type Mode = "idle" | "fold" | "dismiss";
-
-const OPENERS: Partial<Record<Mode, string>> = { fold: FOLD_LABEL, dismiss: DISMISS_LABEL };
-
-/**
- * Closing the picker or the form unmounts the control the keyboard was on. `remember(mode)`, called
- * as the mode goes back to idle, returns focus to the button that opened it once it is drawn again.
- */
-function useRestoreFocus(mode: Mode) {
-  const root = useRef<HTMLDivElement>(null);
-  const pending = useRef<string | null>(null);
-  useEffect(() => {
-    if (mode !== "idle" || pending.current === null) return;
-    const label = pending.current;
-    pending.current = null;
-    const buttons = [...(root.current?.querySelectorAll("button") ?? [])];
-    buttons.find((button) => button.textContent === label)?.focus();
-  }, [mode]);
-  const remember = (from: Mode) => {
-    pending.current = OPENERS[from] ?? null;
-  };
-  return { root, remember };
-}
-
-/** The three buttons; Plan this and Fold into entry share one blocked reason, drawn once. */
-function ActionButtons(props: {
-  /** Names each button after its finding: the same three buttons are drawn on every open card. */
-  findingId: string;
-  /** The id of the fold picker while it is drawn, null while it is closed. */
-  foldPicker: string | null;
-  offerBlock: string | null;
-  authorBlock: string | null;
-  onPlan: () => void;
-  onFold: () => void;
-  onDismiss: () => void;
-}) {
-  const { offerBlock, authorBlock, findingId } = props;
-  const reasonId = useId();
-  const dismissShares = authorBlock !== null && authorBlock === offerBlock;
-  return (
-    <>
-      <DisabledReason
-        reason={offerBlock}
-        reasonId={reasonId}
-        look="secondary"
-        label={`Plan this ${findingId}`}
-        onClick={props.onPlan}
-      >
-        <FilePlus2 aria-hidden="true" />
-        Plan this
-      </DisabledReason>
-      <DisabledReason
-        reason={offerBlock}
-        reasonId={reasonId}
-        look="secondary"
-        label={`${FOLD_LABEL} ${findingId}`}
-        expanded={props.foldPicker !== null}
-        controls={props.foldPicker ?? undefined}
-        onClick={props.onFold}
-      >
-        <CornerDownRight aria-hidden="true" />
-        {FOLD_LABEL}
-      </DisabledReason>
-      <DisabledReason
-        label={`${DISMISS_LABEL} ${findingId}`}
-        reason={authorBlock}
-        reasonId={dismissShares ? reasonId : undefined}
-        look="secondary"
-        onClick={props.onDismiss}
-      >
-        <X aria-hidden="true" />
-        {DISMISS_LABEL}
-      </DisabledReason>
-      {offerBlock !== null && (
-        <span id={reasonId} className="plan-fine text-muted-foreground">
-          <Untrusted text={offerBlock} />
-        </span>
-      )}
-    </>
-  );
-}
-
-/** Dismisses one finding with a reason; `close` runs only when the ledger accepted the change. */
-function useDismiss(
+/** Sets one finding's status; `set` resolves true when the ledger accepted the change. */
+function useSetStatus(
   feature: string,
   id: string,
   ledger: LedgerHash,
-  close: () => void,
   setFailure: (failure: string | null) => void,
 ) {
   const store = useStore();
   const [busy, setBusy] = useState(false);
-  const dismiss = async (reason: string) => {
-    if (ledger.hash === null) return;
+  const set = async (status: StatusChange): Promise<boolean> => {
+    if (ledger.hash === null) return false;
     setBusy(true);
-    const result = await setFindingStatus(feature, id, ledger.hash, {
-      kind: "dismissed",
-      detail: reason,
-    });
+    const result = await setFindingStatus(feature, id, ledger.hash, status);
     setBusy(false);
     const failed = failureOf(result);
     setFailure(failed);
-    // A refused change keeps the reason in the form.
-    if (failed === null) close();
     // A conflict means the ledger moved; the page shows what it holds now.
     void loadTrace(store, feature);
+    return failed === null;
   };
-  return { busy, dismiss };
+  return { busy, set };
 }
 
-/** Plan this, Fold into entry and Dismiss for one open finding. */
-function Actions(props: Context & { entry: TraceFinding; onDismissed: () => void }) {
-  const { entry, trace, feature, offer, ledger, onDismissed } = props;
-  const [mode, setMode] = useState<Mode>("idle");
+/**
+ * Reopen for an unaddressed or dismissed finding: it reads open again, and the next Address the
+ * findings run takes it while its evidence still verifies. The card turns into a full one, so
+ * focus moves to its heading (`onReopened`).
+ */
+function Reopen(props: Context & { entry: TraceFinding; onReopened: () => void }) {
+  const { entry, feature, ledger, addressing, onReopened } = props;
   const [failure, setFailure] = useState<string | null>(null);
   const authorBlock = useAtomValue(authorBlockReasonAtom);
-  const { root, remember } = useRestoreFocus(mode);
-  const pickerId = useId();
-  const offerBlock = offer === undefined ? NO_OFFER : authorBlock;
+  const { busy, set } = useSetStatus(feature, entry.finding.id, ledger, setFailure);
+  const reason =
+    authorBlock ??
+    ledgerBlock(ledger) ??
+    (addressing ? ADDRESSING : null) ??
+    (busy ? "Reopening the finding" : null);
+  const reopen = async () => {
+    if (reason === null && (await set({ kind: "open", detail: null }))) onReopened();
+  };
+  return (
+    <div className="maps-actions">
+      <DisabledReason
+        label={`${REOPEN_LABEL} ${entry.finding.id}`}
+        reason={reason}
+        look="quiet"
+        onClick={() => void reopen()}
+      >
+        <RotateCcw aria-hidden="true" />
+        {REOPEN_LABEL}
+      </DisabledReason>
+      {failure !== null && <ActionError message={failure} />}
+    </div>
+  );
+}
 
-  const close = () => {
-    remember(mode);
-    setMode("idle");
+/**
+ * Dismiss for one open finding. Cancelling the form unmounts the control the keyboard was on, so
+ * focus goes back to the Dismiss button once it is drawn again; a saved dismissal moves it to the
+ * card's heading (`onDismissed`), since the card turns into a line.
+ */
+function Actions(props: Context & { entry: TraceFinding; onDismissed: () => void }) {
+  const { entry, feature, ledger, addressing, onDismissed } = props;
+  const [open, setOpen] = useState(false);
+  const [failure, setFailure] = useState<string | null>(null);
+  const authorBlock = useAtomValue(authorBlockReasonAtom);
+  const opener = useRef<HTMLDivElement>(null);
+  const refocus = useRef(false);
+  useEffect(() => {
+    if (open || !refocus.current) return;
+    refocus.current = false;
+    opener.current?.querySelector("button")?.focus();
+  }, [open]);
+  const cancel = () => {
+    refocus.current = true;
+    setOpen(false);
   };
-  const start = (seed: string) => {
-    if (offer === undefined) return;
-    close();
-    setFailure(runOffer(offer, seed) ? null : NOT_STARTED);
-  };
-  // The card leaves the open state and this control unmounts, so focus goes to the card's heading.
   const dismissed = () => {
-    setMode("idle");
+    setOpen(false);
     onDismissed();
   };
-  const { busy, dismiss } = useDismiss(feature, entry.finding.id, ledger, dismissed, setFailure);
-
+  const { busy, set } = useSetStatus(feature, entry.finding.id, ledger, setFailure);
+  // A refused change keeps the reason in the form.
+  const dismiss = async (reason: string) => {
+    if (await set({ kind: "dismissed", detail: reason })) dismissed();
+  };
   return (
-    <div className="maps-actions" ref={root}>
-      {mode === "dismiss" ? (
-        <DismissForm busy={busy} ledger={ledger} onConfirm={dismiss} onCancel={close} />
+    <div className="maps-actions" ref={opener}>
+      {open ? (
+        <DismissForm busy={busy} ledger={ledger} onConfirm={dismiss} onCancel={cancel} />
       ) : (
-        <ActionButtons
-          findingId={entry.finding.id}
-          foldPicker={mode === "fold" ? pickerId : null}
-          offerBlock={offerBlock}
-          authorBlock={authorBlock}
-          onPlan={() => start(planSeed(entry.finding))}
-          onFold={() => setMode("fold")}
-          onDismiss={() => setMode("dismiss")}
-        />
-      )}
-      {mode === "fold" && (
-        <FoldPicker
-          id={pickerId}
-          choices={foldChoices(trace, entry.about)}
-          onPick={(chosen) => start(foldSeed(entry.finding, chosen))}
-          onCancel={close}
-        />
+        <DisabledReason
+          label={`${DISMISS_LABEL} ${entry.finding.id}`}
+          reason={authorBlock ?? (addressing ? ADDRESSING : null)}
+          look="secondary"
+          onClick={() => setOpen(true)}
+        >
+          <X aria-hidden="true" />
+          {DISMISS_LABEL}
+        </DisabledReason>
       )}
       {failure !== null && <ActionError message={failure} />}
     </div>
@@ -287,38 +240,51 @@ function Actions(props: Context & { entry: TraceFinding; onDismissed: () => void
 }
 
 /**
- * The outcome in words; a fold names the entry by its title, drawn as Markdown phrasing. One span
- * either way: the status line is a flex row, and the words must flow as one run beside the glyph,
- * not as separate flex items. A decided line cuts that span with an ellipsis, so it carries the
- * whole outcome as its `title`.
+ * The state in words. One span: the status line is a flex row, and the words must flow as one run
+ * beside the glyph. A line cuts that span with an ellipsis, so it carries the whole state as its
+ * `title`. A duplicate links to the finding it repeats.
  */
-function StatusWords(props: { trace: TraceView; status: FindingStatus }) {
-  const { trace, status } = props;
-  const entry = foldedEntry(trace, status);
-  if (entry === undefined) {
-    const words = statusText(status);
+function StateWords({ entry, state }: { entry: TraceFinding; state: CardState }) {
+  const words = stateText(entry, state);
+  const original = entry.check.duplicate_of;
+  if (state === "duplicate" && original !== null) {
     return (
-      <span title={status.kind === "open" ? undefined : words}>
-        <Untrusted text={words} />
+      <span title={words}>
+        Duplicate of <Link to={{ hash: `#finding-${original}` }}>{original}</Link>
       </span>
     );
   }
   return (
-    <span title={`Folded into ${entry.title}`}>
-      Folded into <IsolatedSentence text={entry.title} />
+    <span title={isFullCard(state) ? undefined : words}>
+      <Untrusted text={words} />
     </span>
   );
 }
 
+/** The parts of an open finding under its heading. */
+function CardBody(props: Context & { entry: TraceFinding; onDismissed: () => void }) {
+  const { entry, trace, feature } = props;
+  return (
+    <>
+      <NodeChips trace={trace} feature={feature} nodes={entry.about} label="About" />
+      <Evidence quote={entry.finding.evidence} />
+      <p className="maps-finding-text">
+        <Untrusted text={entry.finding.text} />
+      </p>
+      <Actions {...props} />
+    </>
+  );
+}
+
 /**
- * One finding. An open one shows its text, the nodes it is about and its actions; a decided one
- * folds to its heading and the outcome in words. The heading element is the same in both, so the
- * focus a dismissal leaves there survives the reload that turns the card into a decided line.
+ * One finding. The heading element is the same as a card and as a line, so the focus a dismissal
+ * leaves there survives the reload that turns the card into a line.
  */
 function FindingCard(props: Context & { entry: TraceFinding }) {
-  const { entry, trace, feature, ...context } = props;
+  const { entry, trace, feature, addressing } = props;
   const { finding } = entry;
-  const open = finding.status.kind === "open";
+  const state = cardState(entry, addressing);
+  const full = isFullCard(state);
   const { hash } = useLocation();
   const heading = useRef<HTMLHeadingElement>(null);
   // `data-addressed` washes the card the address names; `:target` does not follow router pushes.
@@ -328,6 +294,8 @@ function FindingCard(props: Context & { entry: TraceFinding }) {
       id={`finding-${finding.id}`}
       className="maps-finding"
       data-status={finding.status.kind}
+      data-state={state}
+      data-line={full ? undefined : "true"}
       data-addressed={addressed ? "true" : undefined}
     >
       <div className="maps-finding-head">
@@ -338,23 +306,15 @@ function FindingCard(props: Context & { entry: TraceFinding }) {
           <Untrusted text={finding.title} />
         </h3>
         <p className="plan-fine maps-finding-status">
-          <StatusWords trace={trace} status={finding.status} />
+          <StateWords entry={entry} state={state} />
         </p>
       </div>
-      {open && (
-        <>
-          <AboutChips trace={trace} feature={feature} nodes={entry.about} />
-          <p className="maps-finding-text">
-            <Untrusted text={finding.text} />
-          </p>
-          <Actions
-            entry={entry}
-            trace={trace}
-            feature={feature}
-            {...context}
-            onDismissed={() => heading.current?.focus()}
-          />
-        </>
+      {full && <CardBody {...props} onDismissed={() => heading.current?.focus()} />}
+      {state === "addressed" && (
+        <NodeChips trace={trace} feature={feature} nodes={entry.changed} label="Changed" />
+      )}
+      {(state === "unaddressed" || state === "dismissed") && (
+        <Reopen {...props} onReopened={() => heading.current?.focus()} />
       )}
     </li>
   );

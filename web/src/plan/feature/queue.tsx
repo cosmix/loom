@@ -4,15 +4,22 @@ import type { ReactNode } from "react";
 import { Link } from "react-router";
 
 import type { ChecklistView, OfferView } from "@/plan/api/schema";
-import type { DraftTeamView } from "@/plan/api/schema-kickoff";
+import { sessionAtom } from "@/plan/chat/model";
 import { Untrusted } from "@/plan/chat/visible-controls";
 import { SentenceText } from "@/plan/concept/sentence-text";
 import { paceOfferIds, type GapScope } from "@/plan/feature/page-offer";
+import {
+  teamDocument,
+  teamWords,
+  type TeamDocument,
+  type TeamWords,
+} from "@/plan/feature/team-model";
+import { useActiveTeam } from "@/plan/feature/use-active-team";
 import { featureHref } from "@/plan/feature/use-feature";
 import { slugNumber } from "@/plan/files/heading-parts";
 import { planSlug } from "@/plan/files/tree";
 import { OfferButton } from "@/plan/offers/offer-button";
-import { authorBlockReasonAtom, draftTeamAtom } from "@/plan/state/atoms";
+import { authorBlockReasonAtom } from "@/plan/state/atoms";
 import { StateMark } from "@/plan/ui/activity-glyphs";
 import { PLAN_STATE_WORD_GLYPHS, type Glyph, type PlanState } from "@/plan/ui/glyphs";
 import { plural } from "@/plan/ui/plural";
@@ -142,18 +149,39 @@ function Status({
   );
 }
 
-function RowStatus({ row, drafting }: { row: QueueRow; drafting: boolean }) {
+/** The glyph and word of a team document the checklist has not (yet) marked written. */
+function teamStatus(doc: TeamDocument): { icon: Glyph; tone?: string } {
+  return doc.state === "Drafted"
+    ? { icon: CircleCheck, tone: "tone-completed" }
+    : { icon: CircleDashed };
+}
+
+/**
+ * A row's state. While a team covers the document its model decides: Drafting wins even over a
+ * written file (a teammate is still editing it), and a document the checklist does not yet list
+ * as written reads Queued or Drafted, never Missing.
+ */
+function RowStatus(props: { row: QueueRow; doc: TeamDocument | null; words: TeamWords }) {
+  const { row, doc, words } = props;
+  const team = doc !== null && (doc.state === "Drafting" || !row.written) ? doc : null;
   return (
     <>
-      {drafting ? (
+      {team?.state === "Drafting" ? (
         <span className="plan-status plan-fine">
           <StateMark kind="drafting" />
-          Drafting…
+          {words.state[team.state]}
         </span>
+      ) : team ? (
+        <Status {...teamStatus(team)}>{words.state[team.state]}</Status>
       ) : (
         <Status icon={row.icon} tone={row.tone}>
           <Untrusted text={row.state} />
         </Status>
+      )}
+      {team?.owner != null && (
+        <span className="plan-fine text-muted-foreground">
+          <Untrusted text={team.owner} />
+        </span>
       )}
       {row.questions > 0 && (
         <Status icon={MessageCircleQuestion} tone="tone-warning">
@@ -166,65 +194,65 @@ function RowStatus({ row, drafting }: { row: QueueRow; drafting: boolean }) {
 
 /**
  * "Next" stands in for the button of a row whose offer the pace choice already draws, either
- * card's. While authoring is blocked a row draws no button.
+ * card's. While authoring is blocked a row draws no button, and while a team runs no row does:
+ * the team owns the documents it queued, and the server runs one chat at a time.
  */
-function RowAction({ row, drawn }: { row: QueueRow; drawn: string[] }) {
+function RowAction({ row, drawn, held }: { row: QueueRow; drawn: string[]; held: boolean }) {
   const blocked = useAtomValue(authorBlockReasonAtom) !== null;
-  if (row.offer === null) return null;
+  if (row.offer === null || held) return null;
   if (drawn.includes(row.offer.id)) return <span className="plan-queue__next">Next</span>;
   if (blocked) return null;
   return <OfferButton offer={row.offer} size="sm" />;
 }
 
-function isDrafting(row: QueueRow, team: DraftTeamView | null): boolean {
-  return (
-    row.path !== null &&
-    (team?.teammates.some(
-      (teammate) => teammate.state === "working" && teammate.current === row.path,
-    ) ??
-      false)
-  );
-}
-
-const QUEUE_SCOPE: Record<QueueKind, GapScope> = { section: "product", plan: "metaplan" };
+const QUEUE_SCOPE: Record<QueueKind, GapScope> = {
+  section: "product",
+  plan: "metaplan",
+};
 
 export function Queue({ checklist, kind }: { checklist: ChecklistView; kind: QueueKind }) {
-  const team = useAtomValue(draftTeamAtom);
+  const active = useActiveTeam(checklist.feature);
+  // The panel's words: an address run edits documents that exist, a draft run drafts them.
+  const words = teamWords(useAtomValue(sessionAtom)?.offer);
   const rows = queueRows(checklist, kind);
   if (rows.length === 0) return null;
   const drawn = paceOfferIds(checklist, QUEUE_SCOPE[kind]);
+  const running = active !== null && !active.finished;
   return (
     <ul
       aria-label={kind === "section" ? "Section queue" : "Plan queue"}
       className="plan-list plan-queue"
       data-kind={kind}
     >
-      {rows.map((row) => (
-        <li key={row.key}>
-          <span className="plan-queue__num">
-            <Untrusted text={row.number} />
-          </span>
-          <span className="plan-queue__name">
-            {row.to ? (
-              <Link to={row.to}>
-                {row.markdown ? <SentenceText text={row.name} /> : <Untrusted text={row.name} />}
-              </Link>
-            ) : row.markdown ? (
-              <SentenceText text={row.name} />
-            ) : (
-              <Untrusted text={row.name} />
-            )}
-          </span>
-          <span className="plan-queue__side">
-            <span className="plan-queue__status">
-              <RowStatus row={row} drafting={isDrafting(row, team)} />
+      {rows.map((row) => {
+        const doc = row.path !== null && active ? teamDocument(active.team, row.path) : null;
+        return (
+          <li key={row.key}>
+            <span className="plan-queue__num">
+              <Untrusted text={row.number} />
             </span>
-            <span className="plan-queue__action">
-              <RowAction row={row} drawn={drawn} />
+            <span className="plan-queue__name">
+              {row.to ? (
+                <Link to={row.to}>
+                  {row.markdown ? <SentenceText text={row.name} /> : <Untrusted text={row.name} />}
+                </Link>
+              ) : row.markdown ? (
+                <SentenceText text={row.name} />
+              ) : (
+                <Untrusted text={row.name} />
+              )}
             </span>
-          </span>
-        </li>
-      ))}
+            <span className="plan-queue__side">
+              <span className="plan-queue__status">
+                <RowStatus row={row} doc={doc} words={words} />
+              </span>
+              <span className="plan-queue__action">
+                <RowAction row={row} drawn={drawn} held={running || doc !== null} />
+              </span>
+            </span>
+          </li>
+        );
+      })}
     </ul>
   );
 }

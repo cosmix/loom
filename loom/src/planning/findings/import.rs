@@ -5,7 +5,9 @@ use std::collections::HashSet;
 use std::io::ErrorKind;
 use std::path::Path;
 
-use super::{entry_text, ledger_path, next_number, parse, FindingStatus};
+use super::{
+    entry_text, ledger_path, next_number, parse, same_finding, title, Finding, FindingStatus,
+};
 use crate::context::source_graph::body_hash;
 use crate::fs::locking::lock_plan;
 use crate::fs::safe_read::read_to_string_bounded;
@@ -33,6 +35,12 @@ struct Candidate {
 
 /// Append one entry per item of the review's `## Open Findings` and `## Open Questions` that the
 /// feature's ledger does not hold yet, and return how many were added.
+///
+/// An item the ledger holds already, as the same `Source:` or as the same finding in other words
+/// (`same_finding`, against every entry whatever its status), is skipped, so a suggestion two
+/// reviewers raised lands once and one addressed or dismissed is not raised again. Imported
+/// entries carry no `Evidence:` or `Severity:`: they stay unverified until a review of the feature
+/// checks them against the documents.
 ///
 /// `plan_rel` is the plan's repository-relative path. A standalone plan, or a path from which no
 /// feature can be read, imports nothing. An item is already present when an entry carries its
@@ -82,19 +90,25 @@ struct Plan {
     implements: Vec<String>,
 }
 
+/// Every `Source:` line of the file, so an entry the reader cannot parse still dedupes.
+fn known_sources(ledger_text: &str) -> HashSet<String> {
+    ledger_text
+        .lines()
+        .filter_map(|line| line.strip_prefix("Source:"))
+        .map(|value| value.trim().to_owned())
+        .collect()
+}
+
 /// The ledger text with the new entries appended, and how many there are. `existing` is the
 /// ledger as it is, `None` when there is no file yet.
 fn append(existing: Option<&str>, plan: &Plan, candidates: &[Candidate]) -> (String, usize) {
     let base = existing.filter(|text| !text.trim().is_empty());
     let ledger = parse(base.unwrap_or_default());
-    // Every `Source:` line of the file, so an entry the reader cannot parse still dedupes.
-    let mut known: HashSet<String> = base
-        .unwrap_or_default()
-        .lines()
-        .filter_map(|line| line.strip_prefix("Source:"))
-        .map(|value| value.trim().to_owned())
-        .collect();
+    let mut known = known_sources(base.unwrap_or_default());
+    // Every entry the ledger holds, whatever its status: an item that repeats one is a duplicate,
+    // and one that repeats an addressed or dismissed entry is not raised again.
     let mut number = next_number(&ledger);
+    let mut held = ledger.findings;
     let mut text = base.unwrap_or(LEDGER_TITLE).to_owned();
     if !text.ends_with('\n') {
         text.push('\n');
@@ -107,15 +121,29 @@ fn append(existing: Option<&str>, plan: &Plan, candidates: &[Candidate]) -> (Str
         }
         let mut about = vec![format!("{}#stage:{}", plan.file, candidate.stage_id)];
         about.extend(plan.implements.iter().cloned());
+        let probe = Finding {
+            id: format!("F-{number}"),
+            title: title(&candidate.text),
+            about,
+            evidence: None,
+            severity: None,
+            source: Some(source),
+            status: FindingStatus::Open,
+            text: candidate.text.clone(),
+        };
+        if held.iter().any(|entry| same_finding(entry, &probe)) {
+            continue;
+        }
         text.push('\n');
         text.push_str(&entry_text(
-            &format!("F-{number}"),
+            &probe.id,
             &candidate.text,
-            &about,
-            Some(&source),
+            &probe.about,
+            probe.source.as_deref(),
             &FindingStatus::Open,
             &candidate.text,
         ));
+        held.push(probe);
         number += 1;
         added += 1;
     }

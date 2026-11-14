@@ -70,6 +70,7 @@ fn rendered_authoring_plugin_installs_all_skills_including_kickoff() {
     assert_eq!(
         skills,
         [
+            "address-findings",
             "brainstorming",
             "kickoff",
             "knowledge",

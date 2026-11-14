@@ -1,4 +1,5 @@
-//! Scope setup runs after guidance and a failed write refuses the whole start.
+//! Scope setup runs after guidance, keeps a team scope the guidance wrote, and a failed write
+//! refuses the whole start.
 
 use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
@@ -57,6 +58,56 @@ fn a_scope_write_failure_refuses_kickoff_and_team_starts() {
         let state = f.ctx.extensions().get::<ChatState>().unwrap();
         assert!(lock(&state.team).is_none());
     }
+}
+
+/// A provider that writes the team scope its opening was rendered with, as the guidance engine
+/// does.
+struct ScopedGuidance(RecordingGuidance, SessionScope);
+
+impl GuidanceProvider for ScopedGuidance {
+    fn authoring(
+        &self,
+        ctx: &PlanContext,
+        dir: &SessionDir,
+        offer: Option<&str>,
+        first_message: Option<&str>,
+        feature: Option<&str>,
+    ) -> anyhow::Result<LaunchGuidance> {
+        let guidance = self.0.authoring(ctx, dir, offer, first_message, feature)?;
+        scope::write(dir, &self.1)?;
+        Ok(guidance)
+    }
+
+    fn closing_message(&self) -> String {
+        self.0.closing_message()
+    }
+}
+
+// Regression: the server built the address scope again from a later project snapshot than the
+// opening's, so the opening could name a document the scope refused. The fixture has no ledger:
+// a second build would refuse the start.
+#[test]
+fn the_team_scope_the_guidance_wrote_is_kept() {
+    let f = team_fixture();
+    let tab = f.connect(&browser());
+    let ledger = std::path::PathBuf::from("doc/plans/demo/findings.md");
+    let documents = vec!["doc/product/demo/section_01.md".into(), ledger.clone()];
+    let written = SessionScope::address(documents, ledger).unwrap();
+    f.ctx
+        .extensions()
+        .get::<GuidanceSlot>()
+        .unwrap()
+        .set(Arc::new(ScopedGuidance(
+            RecordingGuidance::default(),
+            written.clone(),
+        )));
+
+    assert_eq!(
+        f.command(&tab, offer("address-findings", Some("demo"))),
+        ok_result()
+    );
+    let id = wait_for("the chat", || f.bridge.chat_session_id());
+    assert_eq!(scope::load(&f.launched(&id).dir).unwrap(), written);
 }
 
 struct GatedGuidance {

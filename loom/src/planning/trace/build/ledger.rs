@@ -1,20 +1,24 @@
-//! The findings ledger: its findings with `About:` resolved, the headings they concern, and the
-//! entries they ask to revisit.
+//! The findings ledger: its findings with `About:` resolved and their checks, the headings they
+//! concern, and the entries they ask to revisit.
 
 use std::path::Path;
 
-use super::{metaplan_path, Cx};
-use crate::planning::findings::{self, Finding, FindingStatus};
+use super::{metaplan_path, verify, Cx};
+use crate::planning::findings::{self, split_tokens, Finding, FindingStatus};
 use crate::planning::kinds::{section_path, vision_path};
 use crate::planning::metaplan::MetaplanEntry;
 use crate::planning::slug::{PlanEntry, PlanState};
-use crate::planning::trace::tokens::{is_plan_token, tokens, Token};
+use crate::planning::trace::tokens::{tokens, Token};
 use crate::planning::trace::{
-    CoverKind, CoverRef, NodeRef, TraceEntry, TraceFinding, TraceHeading, TraceProblem,
+    CoverKind, CoverRef, FindingCheck, NodeRef, TraceEntry, TraceFinding, TraceHeading,
+    TraceProblem,
 };
 
-/// The ledger's findings in file order, its problems and those of every `About:` token that
-/// names nothing.
+/// The problem code of an open finding whose quote is in none of the passages it is about.
+pub const EVIDENCE_MISSING: &str = "findings-evidence-missing";
+
+/// The ledger's findings in file order with their checks, its problems, those of every token
+/// that names nothing, and one for each open finding whose evidence is missing.
 pub(super) fn findings(cx: &Cx, problems: &mut Vec<TraceProblem>) -> Vec<TraceFinding> {
     let path = findings::ledger_path(cx.name());
     let Some(text) = cx.text(&path) else {
@@ -27,71 +31,66 @@ pub(super) fn findings(cx: &Cx, problems: &mut Vec<TraceProblem>) -> Vec<TraceFi
         line: Some(problem.line),
         message: problem.message,
     }));
-    let found = ledger.findings.into_iter();
+    let about: Vec<Vec<NodeRef>> = ledger
+        .findings
+        .iter()
+        .map(|finding| nodes(cx, &path, finding, &finding.about, "About:", problems))
+        .collect();
+    let checks = verify::checks(cx, &ledger.findings, &about);
+    let found = ledger.findings.into_iter().zip(about).zip(checks);
     found
-        .map(|finding| resolve_finding(cx, &path, finding, problems))
+        .map(|((finding, about), check)| {
+            if finding.status.is_open() && check == FindingCheck::Stale {
+                problems.push(TraceProblem {
+                    code: EVIDENCE_MISSING,
+                    path: path.clone(),
+                    line: heading_line(cx, &path, &finding.id),
+                    message: format!(
+                        "{}: the Evidence quote is in none of the passages About: names",
+                        finding.id
+                    ),
+                });
+            }
+            let changed = match &finding.status {
+                FindingStatus::Addressed(detail) => {
+                    let named = split_tokens(detail);
+                    nodes(cx, &path, &finding, &named, "Status: addressed", problems)
+                }
+                _ => Vec::new(),
+            };
+            TraceFinding {
+                finding,
+                about,
+                check,
+                changed,
+            }
+        })
         .collect()
 }
 
-fn resolve_finding(
+/// The nodes `raw` names, each once, with a problem for each token that names nothing.
+fn nodes(
     cx: &Cx,
     ledger: &Path,
-    finding: Finding,
+    finding: &Finding,
+    raw: &[String],
+    line: &str,
     problems: &mut Vec<TraceProblem>,
-) -> TraceFinding {
-    let mut about = Vec::new();
-    for raw in &finding.about {
-        match resolve(cx, raw) {
-            Ok(node) if !about.contains(&node) => about.push(node),
+) -> Vec<NodeRef> {
+    let mut out = Vec::new();
+    for token in raw {
+        match resolve(cx, token) {
+            Ok(node) if !out.contains(&node) => out.push(node),
             Ok(_) => {}
             Err(reason) => problems.push(TraceProblem {
                 code: "about-unresolved",
                 path: ledger.to_path_buf(),
                 line: heading_line(cx, ledger, &finding.id),
-                message: format!("{}: About: token `{raw}` {reason}", finding.id),
+                message: format!("{}: {line} token `{token}` {reason}", finding.id),
             }),
         }
     }
-    if let FindingStatus::Folded(target) = &finding.status {
-        if let Err(reason) = folded_entry(cx, target) {
-            problems.push(TraceProblem {
-                code: findings::BAD_STATUS,
-                path: ledger.to_path_buf(),
-                line: heading_line(cx, ledger, &finding.id),
-                message: format!("{}: Status: folded target `{target}` {reason}", finding.id),
-            });
-        }
-    }
-    if let FindingStatus::Planned(detail) = &finding.status {
-        if !is_plan_token(detail) {
-            problems.push(TraceProblem {
-                code: findings::BAD_STATUS,
-                path: ledger.to_path_buf(),
-                line: heading_line(cx, ledger, &finding.id),
-                message: format!(
-                    "{}: Status: planned target `{detail}` is not a `PLAN-<slug>.md` token",
-                    finding.id
-                ),
-            });
-        }
-    }
-    TraceFinding { finding, about }
-}
-
-/// The metaplan entry a `folded` status names, or why it names none.
-fn folded_entry(cx: &Cx, target: &str) -> Result<NodeRef, String> {
-    let node = resolve(cx, target)?;
-    let is_entry = cx.feature.metaplans.iter().any(|(path, entries)| {
-        *path == node.path
-            && entries
-                .iter()
-                .any(|e| Some(&e.anchor) == node.anchor.as_ref())
-    });
-    if is_entry {
-        Ok(node)
-    } else {
-        Err("is not a `metaplan#<anchor>` entry".to_owned())
-    }
+    out
 }
 
 /// The 1-based line of entry `id`'s heading in the ledger.
@@ -175,7 +174,6 @@ pub(super) fn entries(
                 Vec::new()
             } else {
                 let at = Revisit {
-                    cx,
                     metaplan,
                     entry,
                     plan,
@@ -201,29 +199,21 @@ pub(super) fn entries(
 
 /// An entry whose plan has not started running, and its plan when it is written.
 struct Revisit<'a> {
-    cx: &'a Cx<'a>,
     metaplan: &'a Path,
     entry: &'a MetaplanEntry,
     plan: Option<&'a PlanEntry>,
 }
 
 impl Revisit<'_> {
-    /// The findings folded into the entry, and the open findings on a heading it covers or its
-    /// written plan implements, in ledger order.
+    /// The actionable findings on a heading it covers or its written plan implements, in ledger
+    /// order.
     fn ids(&self, headings: &[TraceHeading], findings: &[TraceFinding]) -> Vec<String> {
-        let here = NodeRef {
-            path: self.metaplan.to_path_buf(),
-            anchor: Some(self.entry.anchor.clone()),
-        };
-        let wanted = |finding: &&TraceFinding| match &finding.finding.status {
-            FindingStatus::Folded(target) => {
-                folded_entry(self.cx, target).is_ok_and(|node| node == here)
-            }
-            FindingStatus::Open => headings.iter().any(|heading| {
-                heading.findings.contains(&finding.finding.id)
-                    && heading.covered_by.iter().any(|cover| self.reaches(cover))
-            }),
-            FindingStatus::Planned(_) | FindingStatus::Dismissed(_) => false,
+        let wanted = |finding: &&TraceFinding| {
+            finding.actionable()
+                && headings.iter().any(|heading| {
+                    heading.findings.contains(&finding.finding.id)
+                        && heading.covered_by.iter().any(|cover| self.reaches(cover))
+                })
         };
         let found = findings.iter().filter(wanted);
         found.map(|finding| finding.finding.id.clone()).collect()

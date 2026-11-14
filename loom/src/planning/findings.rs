@@ -1,19 +1,26 @@
 //! The findings ledger of a feature, `doc/plans/<feature>/findings.md`.
 //!
 //! The ledger is plain Markdown: a `# Findings` title, then one `## F-<n> <title>` entry per
-//! finding with its `About:`, `Source:` and `Status:` lines, a blank line and one text paragraph.
-//! `parse` reads it without the project, `entry_text` and `set_status` write it, and
-//! `import_review` appends the open findings and questions of a finished run's review.
+//! finding with its `About:`, `Evidence:`, `Severity:`, `Source:` and `Status:` lines, a blank
+//! line and one text paragraph. `parse` reads it without the project, `entry_text` and
+//! `set_status` write it, `import_review` appends the open findings and questions of a finished
+//! run's review that the ledger does not already hold, and `same_finding` tells two entries that
+//! report one thing apart from two that do not.
 //!
 //! Finding text is agent-written. Everything written passes the sanitizers in `text` so a finding
 //! can never open a heading or a code fence of its own.
 
 mod body;
 mod import;
+mod same;
+mod status;
 mod text;
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod import_tests;
 
 use anyhow::{bail, Result};
 use std::path::PathBuf;
@@ -23,6 +30,8 @@ use crate::planning::sections::sections_of;
 use body::scan;
 
 pub use import::import_review;
+pub use same::{normalized_quote, same_finding};
+pub use status::{FindingStatus, Severity};
 pub use text::{paragraph, reason, title};
 
 /// The ledger's file name inside a feature's plan home.
@@ -34,19 +43,8 @@ pub const BAD_ENTRY: &str = "findings-bad-entry";
 pub const DUPLICATE_ID: &str = "findings-duplicate-id";
 /// The problem code of a missing or unknown `Status:` value.
 pub const BAD_STATUS: &str = "findings-bad-status";
-
-/// Where a finding stands.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum FindingStatus {
-    /// Not yet triaged.
-    Open,
-    /// Planned in the named plan, `PLAN-<slug>.md`.
-    Planned(String),
-    /// Folded into a metaplan entry, `metaplan#<entry anchor>`.
-    Folded(String),
-    /// Dismissed, with the reason.
-    Dismissed(String),
-}
+/// The problem code of a `Severity:` value that is not `high`, `medium` or `low`.
+pub const BAD_SEVERITY: &str = "findings-bad-severity";
 
 /// One ledger entry.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -57,6 +55,10 @@ pub struct Finding {
     pub title: String,
     /// The `About:` tokens as written.
     pub about: Vec<String>,
+    /// The `Evidence:` value: a verbatim quote of the text the finding is about.
+    pub evidence: Option<String>,
+    /// The `Severity:` value; `None` when absent or unknown.
+    pub severity: Option<Severity>,
     /// The `Source:` value, when present.
     pub source: Option<String>,
     /// The `Status:` value; open when missing or unknown.
@@ -68,7 +70,7 @@ pub struct Finding {
 /// A convention problem in the ledger.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LedgerProblem {
-    /// One of [`BAD_ENTRY`], [`DUPLICATE_ID`] and [`BAD_STATUS`].
+    /// One of [`BAD_ENTRY`], [`DUPLICATE_ID`], [`BAD_STATUS`] and [`BAD_SEVERITY`].
     pub code: &'static str,
     /// The 1-based line of the entry's heading.
     pub line: usize,
@@ -83,59 +85,6 @@ pub struct Ledger {
     pub findings: Vec<Finding>,
     /// What the parser skipped or defaulted.
     pub problems: Vec<LedgerProblem>,
-}
-
-impl FindingStatus {
-    /// The text after `Status:`. Details pass the same sanitizers a write applies, so a status
-    /// without a usable detail renders bare and reads back as a reported bad status.
-    pub fn render(&self) -> String {
-        match self {
-            Self::Open => "open".to_owned(),
-            Self::Planned(detail) => with_detail("planned", " ", detail),
-            Self::Folded(detail) => with_detail("folded", " ", detail),
-            Self::Dismissed(why) => {
-                with_detail("dismissed", ": ", &reason(why).unwrap_or_default())
-            }
-        }
-    }
-
-    /// Whether the status carries a usable detail (`Open` has none to carry).
-    pub fn is_valid(&self) -> bool {
-        match self {
-            Self::Open => true,
-            Self::Planned(detail) | Self::Folded(detail) => !text::one_line(detail).is_empty(),
-            Self::Dismissed(why) => reason(why).is_some(),
-        }
-    }
-
-    fn parse(value: &str) -> Option<Self> {
-        let value = value.trim();
-        if value == "open" {
-            return Some(Self::Open);
-        }
-        if let Some(why) = value.strip_prefix("dismissed:") {
-            return reason(why).map(Self::Dismissed);
-        }
-        let (word, detail) = value.split_once(' ')?;
-        let detail = detail.trim();
-        if detail.is_empty() {
-            return None;
-        }
-        match word {
-            "planned" => Some(Self::Planned(detail.to_owned())),
-            "folded" => Some(Self::Folded(detail.to_owned())),
-            _ => None,
-        }
-    }
-}
-
-fn with_detail(word: &str, separator: &str, detail: &str) -> String {
-    let detail = text::one_line(detail);
-    if detail.is_empty() {
-        word.to_owned()
-    } else {
-        format!("{word}{separator}{detail}")
-    }
 }
 
 /// The ledger's path inside a repository.
@@ -197,17 +146,31 @@ fn read_entry(
             FindingStatus::Open
         }
     };
+    let severity = body.severity.and_then(Severity::parse);
+    if body.severity.is_some() && severity.is_none() {
+        problems.push(LedgerProblem {
+            code: BAD_SEVERITY,
+            line,
+            message: format!("{id} has a Severity that is not high, medium or low"),
+        });
+    }
     Finding {
         id: id.to_owned(),
         title: title.to_owned(),
         about: body.about.map(split_tokens).unwrap_or_default(),
+        evidence: body
+            .evidence
+            .map(str::to_owned)
+            .filter(|quote| !quote.is_empty()),
+        severity,
         source: body.source.map(|s| s.trim().to_owned()),
         status,
         text: text::unescape(&lines[body.text_start..].join("\n")),
     }
 }
 
-fn split_tokens(value: &str) -> Vec<String> {
+/// The comma-separated tokens of an `About:` line or an `addressed` status, empty ones dropped.
+pub fn split_tokens(value: &str) -> Vec<String> {
     value
         .split(',')
         .map(str::trim)

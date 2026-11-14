@@ -1,4 +1,4 @@
-import { ChevronRight, CornerDownRight, FilePlus2, X } from "lucide-react";
+import { ChevronRight, X } from "lucide-react";
 import { useId, type JSX, type ReactNode } from "react";
 
 import { ShortcutGroups } from "@/components/help-shortcuts";
@@ -203,53 +203,71 @@ export function CoverageHelp(): JSX.Element {
   );
 }
 
-/** The ledger as the page draws it (`trace/findings-cards.tsx`): an open finding, then a decided one. */
+/**
+ * The ledger as the page draws it (`trace/findings-cards.tsx`): an open, verified finding, then an
+ * addressed one with what it changed and a dismissed one.
+ */
 export function FindingSpecimen(): JSX.Element {
   return (
     <div data-loom-plan inert>
       <ul className="maps-findings-list">
-        <li className="maps-finding" data-status="open">
+        <li className="maps-finding" data-status="open" data-state="open">
           <div className="maps-finding-head">
             <span className="plan-fine maps-finding-id">F-3</span>
             <h3 className="maps-finding-title">Stops have no time window</h3>
-            <p className="plan-fine maps-finding-status">Open</p>
+            <p className="plan-fine maps-finding-status">Open · high</p>
           </div>
-          <p className="maps-about">
-            <span>
-              <span className="maps-chip">
-                <span>trips · stops</span>
-              </span>
-            </span>
+          <p className="maps-about" data-label="About">
             <span>
               <span className="maps-chip">
                 <span>Stops</span>
               </span>
             </span>
           </p>
+          <figure className="maps-evidence">
+            <figcaption className="plan-fine">Evidence</figcaption>
+            <blockquote>Each stop carries the window in which the driver may arrive.</blockquote>
+          </figure>
           <p className="maps-finding-text">
             A stop stores a place and notes; the time window the spec asks for is missing from the
             record.
           </p>
           <div className="maps-actions">
             <DisabledReason reason={null} look="secondary" onClick={ignoreAction}>
-              <FilePlus2 aria-hidden="true" />
-              Plan this
-            </DisabledReason>
-            <DisabledReason reason={null} look="secondary" onClick={ignoreAction}>
-              <CornerDownRight aria-hidden="true" />
-              Fold into entry
-            </DisabledReason>
-            <DisabledReason reason={null} look="secondary" onClick={ignoreAction}>
               <X aria-hidden="true" />
               Dismiss
             </DisabledReason>
           </div>
         </li>
-        <li className="maps-finding" data-status="dismissed">
+        <li
+          className="maps-finding"
+          data-status="addressed"
+          data-state="addressed"
+          data-line="true"
+        >
+          <div className="maps-finding-head">
+            <span className="plan-fine maps-finding-id">F-4</span>
+            <h3 className="maps-finding-title">Routes never say who owns a stop</h3>
+            <p className="plan-fine maps-finding-status">Addressed</p>
+          </div>
+          <p className="maps-about" data-label="Changed">
+            <span>
+              <span className="maps-chip">
+                <span>Ownership</span>
+              </span>
+            </span>
+          </p>
+        </li>
+        <li
+          className="maps-finding"
+          data-status="dismissed"
+          data-state="dismissed"
+          data-line="true"
+        >
           <div className="maps-finding-head">
             <span className="plan-fine maps-finding-id">F-2</span>
             <h3 className="maps-finding-title">Rename the flag</h3>
-            <p className="plan-fine maps-finding-status">Dismissed: not needed</p>
+            <p className="plan-fine maps-finding-status">Dismissed: code-level note</p>
           </div>
         </li>
       </ul>
@@ -259,24 +277,30 @@ export function FindingSpecimen(): JSX.Element {
 
 const ACTIONS: readonly Definition[] = [
   [
-    "Plan this",
-    "Starts Plan follow-ups with the finding as its first message, to plan it on its own.",
+    "Address the findings",
+    "Starts one session for every open, verified finding: a team with one writer per document edits the specs and plans they are about, and the lead marks each finding addressed, with what changed, or not, with why. The team panel above the findings shows its progress.",
   ],
   [
-    "Fold into entry",
-    "Picks a metaplan entry whose plan has not started, the best match first, and starts Plan follow-ups to fold the finding into it.",
+    "Review the feature",
+    "Starts a review session that checks each unverified finding against the documents, adds its quote or dismisses it, and records what you saw with a quote of its own.",
   ],
   ["Dismiss", "Asks for a reason, then records the finding as dismissed with it."],
-  ["Review the feature", "Starts a review session that records what you saw in the ledger."],
 ];
 
 const STATUSES: readonly Definition[] = [
   [
     "Open",
-    "Waiting for a decision; counted in the page's tally and on the Run page's Findings link.",
+    "Verified and waiting to be addressed, with its severity; counted in the page's tally, on the spine and on the Run panel's Findings link.",
   ],
-  ["Planned", "A plan named in the status takes it up."],
-  ["Folded", "A metaplan entry named in the status takes it up before its plan is written or run."],
+  ["Being addressed", "An address run is working on it."],
+  [
+    "Unverified",
+    "It has no quote of the text it is about yet, as a run review's findings arrive. Review the feature verifies it.",
+  ],
+  ["Stale", "Its quote is no longer in the passage it is about: the text changed since."],
+  ["Duplicate", "An earlier finding reports the same thing; it is not counted or addressed."],
+  ["Addressed", "An address run changed the documents; the headings it changed follow."],
+  ["Could not address", "An address run left it, with the reason beside the words."],
   ["Dismissed", "Set aside, with the reason beside the word."],
 ];
 
@@ -284,8 +308,8 @@ const GROUPS: readonly Definition[] = [
   ["Run of ...", "The findings a run review added when its plan finished, the newest run first."],
   ["Reviews", "The findings you recorded with Review the feature, after the runs."],
   [
-    "Decided findings",
-    "A planned, folded or dismissed finding shrinks to one line with its outcome.",
+    "Lines",
+    "An addressed, unaddressed, dismissed or duplicate finding shrinks to one line with its state.",
   ],
 ];
 
@@ -294,8 +318,8 @@ export function FindingsHelp(): JSX.Element {
     <div className="space-y-7 font-sans">
       <FindingSpecimen />
       <Definitions title="Groups" items={GROUPS} />
-      <Definitions title="Deciding a finding" items={ACTIONS} />
-      <Definitions title="Status" items={STATUSES} />
+      <Definitions title="Sessions and actions" items={ACTIONS} />
+      <Definitions title="State" items={STATUSES} />
     </div>
   );
 }
@@ -307,7 +331,7 @@ export const COVERAGE_TIPS: readonly string[] = [
 ];
 
 export const FINDINGS_TIPS: readonly string[] = [
-  "A run review adds its open findings to the ledger when the plan completes, grouped under that run.",
-  "Findings you record with Review the feature sit under Reviews, after the runs.",
+  "A run review adds its open findings when the plan completes, unverified; one that repeats an earlier finding is not added again.",
+  "Run Review the feature before Address the findings: only verified findings are addressed.",
   "The address of a finding is its card: a link from a coverage row lands on it.",
 ];

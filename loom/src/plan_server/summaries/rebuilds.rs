@@ -13,6 +13,7 @@ mod evaluation;
 mod panel;
 mod publish;
 mod session;
+mod team;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]
@@ -88,6 +89,7 @@ struct State {
     open_turn: Option<(String, String)>,
     /// The suspension token of each live pressure session.
     pressure: HashMap<String, u64>,
+    team: team::TeamRuns,
     started_at: Option<String>,
     /// The running session's claims at the last tick or batch.
     tick_claims: Option<Vec<String>>,
@@ -237,6 +239,7 @@ impl Rebuilds {
             baselines: BTreeMap::new(),
             open_turn: None,
             pressure: HashMap::new(),
+            team: team::TeamRuns::default(),
             started_at: None,
             tick_claims: None,
             tick_gone: None,

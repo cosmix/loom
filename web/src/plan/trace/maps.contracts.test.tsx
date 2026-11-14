@@ -18,7 +18,7 @@ import {
   type ChecklistView,
 } from "@/plan/api/schema";
 import { traceViewSchema, type TraceView } from "@/plan/api/schema-trace";
-import { runOffer } from "@/plan/offers/actions";
+import { registerOfferAction, runOffer } from "@/plan/offers/actions";
 import { routes } from "@/plan/router";
 import { activeFeatureAtom, authoringAtom, projectAtom, serverInfoAtom } from "@/plan/state/atoms";
 
@@ -113,17 +113,14 @@ function offer(kind: string, label: string) {
   return { id: kind, kind, label, target: null, feature: "demo" };
 }
 
-/** The demo feature with three written sections, plan first, and its follow-up offers. */
+/** The demo feature with three written sections, plan first, and its review offer. */
 function demoChecklist(): ChecklistView {
   const base = checklistFixture.checklists[0]!;
   return checklistViewSchema.parse({
     ...base,
     sections: [section("01", "Alpha"), section("02", "Beta"), section("03", "Gamma")],
     plan_rows: [{ ...base.plan_rows[0]!, slug: "first", path: FIRST_PLAN, title: "First" }],
-    secondary: [
-      offer("plan_follow_ups", "Plan follow-ups"),
-      offer("review_feature", "Review the feature"),
-    ],
+    secondary: [offer("review_feature", "Review the feature")],
   });
 }
 
@@ -204,24 +201,73 @@ it("dismiss needs a reason and posts the status", async () => {
   });
 });
 
-it("Plan this seeds Plan follow-ups with the finding", async () => {
+it("Reopen posts an open status for an unaddressed and a dismissed finding", async () => {
+  const [first] = trace.findings;
+  trace.findings.push({
+    ...first!,
+    finding: {
+      ...first!.finding,
+      id: "F-8",
+      title: "Stopped mid-run",
+      status: { kind: "unaddressed", detail: "the team was stopped" },
+    },
+  });
+  trace.findings.push({
+    ...first!,
+    finding: {
+      ...first!.finding,
+      id: "F-9",
+      title: "Not worth it",
+      status: { kind: "dismissed", detail: "not needed" },
+    },
+  });
   renderRoutes("/f/demo/findings");
 
-  const findingOne = await waitFor(() => findingCard("Rebuild ignores briefs", /^Plan this\b/));
-  fireEvent.click(within(findingOne).getByRole("button", { name: /^Plan this\b/ }));
+  for (const [id, title] of [
+    ["F-8", "Stopped mid-run"],
+    ["F-9", "Not worth it"],
+  ] as const) {
+    const card = await waitFor(() => findingCard(title, /^Reopen\b/));
+    expect(within(card).queryByRole("button", { name: /^Dismiss\b/ })).toBeNull();
+    const reopen = within(card).getByRole("button", { name: `Reopen ${id}` });
+    // Blocked until the page holds the ledger's hash.
+    await waitFor(() => expect(reopen.getAttribute("aria-disabled")).not.toBe("true"));
+    fireEvent.click(reopen);
+    await waitFor(() =>
+      expect(statusPosts()).toContainEqual({
+        feature: "demo",
+        id,
+        hash: HASH,
+        status: { kind: "open", detail: null },
+      }),
+    );
+  }
+});
 
-  await waitFor(() => expect(vi.mocked(runOffer)).toHaveBeenCalledTimes(1));
-  const [sent, seed] = vi.mocked(runOffer).mock.calls[0]!;
-  expect(sent).toMatchObject({ kind: "plan_follow_ups", feature: "demo" });
-  expect(seed).toEqual(expect.stringContaining("F-1"));
-  expect(seed).toEqual(expect.stringContaining("Rebuild ignores briefs"));
+it("Address the findings starts the feature's address offer, with no seed", async () => {
+  const unregister = registerOfferAction("address_findings", () => {});
+  try {
+    renderRoutes("/f/demo/findings");
+    fireEvent.click(await screen.findByRole("button", { name: "Address the findings" }));
+    await waitFor(() => expect(vi.mocked(runOffer)).toHaveBeenCalledTimes(1));
+    const [sent, seed] = vi.mocked(runOffer).mock.calls[0]!;
+    expect(sent).toMatchObject({
+      id: "address-findings",
+      kind: "address_findings",
+      feature: "demo",
+    });
+    expect(seed).toBeUndefined();
+    expect(screen.queryByRole("button", { name: /^Plan this\b/ })).toBeNull();
+  } finally {
+    unregister();
+  }
 });
 
 it("finding markup renders as text", async () => {
   const [first] = trace.findings;
   trace.findings.push({
-    finding: { ...first!.finding, id: "F-3", title: MARKUP_TITLE, text: MARKUP_TEXT },
-    about: first!.about,
+    ...first!,
+    finding: { ...first!.finding, id: "F-9", title: MARKUP_TITLE, text: MARKUP_TEXT },
   });
   renderRoutes("/f/demo/findings");
 

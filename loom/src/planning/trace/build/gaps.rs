@@ -3,7 +3,7 @@
 use std::path::Path;
 
 use super::{count, metaplan_path, Cx};
-use crate::planning::findings::{ledger_path, FindingStatus};
+use crate::planning::findings::ledger_path;
 use crate::planning::trace::{
     DocRole, Gap, GapKind, NodeRef, SettleState, TraceDoc, TraceEntry, TraceFinding, TraceHeading,
 };
@@ -50,7 +50,7 @@ pub(super) fn gaps(
     }));
     let open = findings
         .iter()
-        .filter(|finding| finding.finding.status == FindingStatus::Open)
+        .filter(|finding| finding.actionable())
         .count();
     if open > 0 {
         let node = whole(&ledger_path(cx.name()));

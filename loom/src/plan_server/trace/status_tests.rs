@@ -1,13 +1,11 @@
-//! `POST /api/findings/status`: the refusals, a folded and a planned status, and the
-//! status rules on their own.
+//! `POST /api/findings/status`: the refusals, a dismissal and a reopen, and the status rules on
+//! their own.
 
 use serde_json::json;
 
 use super::route_tests::{demo, read};
 use super::status_route::status_of;
-use crate::plan_server::tests::support::{
-    bootstrap, get, json_body, post_json, serve, skip, status,
-};
+use crate::plan_server::tests::support::{bootstrap, post_json, serve, skip, status};
 use crate::plan_server::wire::trace::{FindingKindView, FindingStatusView};
 use crate::plan_server::RunningServer;
 use crate::planning::findings::FindingStatus;
@@ -35,15 +33,6 @@ fn post_status(
     post_json(server, "/api/findings/status", cookies, &body.to_string())
 }
 
-/// The first metaplan entry's anchor, as the served trace names it.
-fn first_entry(server: &RunningServer, cookies: &str) -> String {
-    let view = json_body(&get(server, "/api/trace/demo", cookies));
-    view["entries"][0]["anchor"]
-        .as_str()
-        .expect("an entry")
-        .to_owned()
-}
-
 #[test]
 fn refused_statuses_leave_the_ledger_untouched() {
     if skip("refused_statuses_leave_the_ledger_untouched") {
@@ -57,14 +46,14 @@ fn refused_statuses_leave_the_ledger_untouched() {
         ("F-9", json!({ "kind": "dismissed", "detail": "no" })),
         (
             "F-1",
-            json!({ "kind": "planned", "detail": "the next plan" }),
+            json!({ "kind": "addressed", "detail": "section_01#one" }),
         ),
-        ("F-1", json!({ "kind": "planned", "detail": "PLAN-.md" })),
+        ("F-1", json!({ "kind": "unaddressed", "detail": "no" })),
         (
             "F-1",
-            json!({ "kind": "folded", "detail": "metaplan#no-such-entry" }),
+            json!({ "kind": "planned", "detail": "PLAN-first.md" }),
         ),
-        ("F-1", json!({ "kind": "folded", "detail": null })),
+        ("F-1", json!({ "kind": "folded", "detail": "metaplan#a" })),
         ("F-1", json!({ "kind": "dismissed", "detail": " \n " })),
         ("F-1", json!({ "kind": "open", "detail": "x" })),
     ];
@@ -77,41 +66,59 @@ fn refused_statuses_leave_the_ledger_untouched() {
 }
 
 #[test]
-fn folded_and_planned_statuses_are_written_as_one_line() {
-    if skip("folded_and_planned_statuses_are_written_as_one_line") {
+fn a_dismissal_and_a_reopen_are_written_as_one_line() {
+    if skip("a_dismissal_and_a_reopen_are_written_as_one_line") {
         return;
     }
     let dir = demo(&[(LEDGER, TEXT)]);
     let server = serve(&dir);
     let cookies = bootstrap(&server);
-    let token = format!("metaplan#{}", first_entry(&server, &cookies));
-    let folded = post_status(
+    let dismissed = post_status(
         &server,
         &cookies,
         "F-1",
         &normalized_hash(TEXT),
-        json!({ "kind": "folded", "detail": token }),
+        json!({ "kind": "dismissed", "detail": "not\nneeded" }),
     );
-    assert_eq!(status(&folded), 200, "{folded}");
+    assert_eq!(status(&dismissed), 200, "{dismissed}");
     let written = read(&dir, LEDGER);
     assert!(
         written
             .lines()
-            .any(|l| l == format!("Status: folded {token}")),
+            .any(|l| l == "Status: dismissed: not needed"),
         "{written}"
     );
 
-    let planned = post_status(
+    let reopened = post_status(
         &server,
         &cookies,
         "F-1",
         &normalized_hash(&written),
-        json!({ "kind": "planned", "detail": "PLAN-first.md" }),
+        json!({ "kind": "open", "detail": null }),
     );
-    assert_eq!(status(&planned), 200, "{planned}");
-    assert!(read(&dir, LEDGER)
-        .lines()
-        .any(|l| l == "Status: planned PLAN-first.md"));
+    assert_eq!(status(&reopened), 200, "{reopened}");
+    assert_eq!(read(&dir, LEDGER), TEXT);
+    server.stop().unwrap();
+}
+
+#[test]
+fn an_unaddressed_finding_reopens() {
+    if skip("an_unaddressed_finding_reopens") {
+        return;
+    }
+    let unaddressed = TEXT.replace("Status: open", "Status: unaddressed: the team was stopped");
+    let dir = demo(&[(LEDGER, &unaddressed)]);
+    let server = serve(&dir);
+    let cookies = bootstrap(&server);
+    let reopened = post_status(
+        &server,
+        &cookies,
+        "F-1",
+        &normalized_hash(&unaddressed),
+        json!({ "kind": "open", "detail": null }),
+    );
+    assert_eq!(status(&reopened), 200, "{reopened}");
+    assert_eq!(read(&dir, LEDGER), TEXT);
     server.stop().unwrap();
 }
 
@@ -177,28 +184,11 @@ fn a_feature_without_a_ledger_is_not_found() {
 
 #[test]
 fn status_rules() {
-    let anchors = vec!["1-first".to_owned()];
-    let ok = |kind, detail| status_of(&view(kind, detail), &anchors);
+    let ok = |kind, detail| status_of(&view(kind, detail));
     assert_eq!(ok(FindingKindView::Open, None), Ok(FindingStatus::Open));
-    assert_eq!(
-        ok(FindingKindView::Planned, Some(" PLAN-a_b.c-1.md ")),
-        Ok(FindingStatus::Planned("PLAN-a_b.c-1.md".into()))
-    );
-    for bad in [
-        "PLAN-a.md\nx",
-        "DONE-PLAN-a.md",
-        "PLAN-a/b.md",
-        "PLAN-.hidden.md",
-        "plan-a.md",
-    ] {
-        assert!(ok(FindingKindView::Planned, Some(bad)).is_err(), "{bad}");
-    }
-    assert_eq!(
-        ok(FindingKindView::Folded, Some("metaplan#1-first")),
-        Ok(FindingStatus::Folded("metaplan#1-first".into()))
-    );
-    assert!(ok(FindingKindView::Folded, Some("metaplan#2-second")).is_err());
-    assert!(ok(FindingKindView::Folded, Some("1-first")).is_err());
+    assert!(ok(FindingKindView::Open, Some("x")).is_err());
+    assert!(ok(FindingKindView::Addressed, Some("section_01")).is_err());
+    assert!(ok(FindingKindView::Unaddressed, Some("no")).is_err());
     assert_eq!(
         ok(FindingKindView::Dismissed, Some("not needed\n## F-2 x")),
         Ok(FindingStatus::Dismissed("not needed ## F-2 x".into()))

@@ -58,7 +58,7 @@
 | [planning-guidance](architecture/planning-guidance.md) |  | 43 |
 | [planning-session-bridge](architecture/planning-session-bridge.md) |  | 351 |
 | [planning-session-sandbox](architecture/planning-session-sandbox.md) |  | 148 |
-| [planning-trace](architecture/planning-trace.md) |  | 132 |
+| [planning-trace](architecture/planning-trace.md) |  | 141 |
 | [pressure](architecture/pressure.md) |  | 42 |
 | [quota-poller](architecture/quota-poller.md) |  | 37 |
 | [read-gate](architecture/read-gate.md) |  | 153 |
@@ -73,7 +73,7 @@
 | [source-graph-resolution](architecture/source-graph-resolution.md) |  | 125 |
 | [source-graph-view](architecture/source-graph-view.md) |  | 78 |
 | [status-data-model](architecture/status-data-model.md) | Fields | 268 |
-| [summary-store](architecture/summary-store.md) |  | 342 |
+| [summary-store](architecture/summary-store.md) |  | 352 |
 | [target-guard](architecture/target-guard.md) | Tip | 127 |
 | [terminal-backends](architecture/terminal-backends.md) |  | 285 |
 | [test-runner-adapters](architecture/test-runner-adapters.md) |  | 56 |
@@ -227,7 +227,7 @@
 | [loom-ask-and-read-gate](concerns/loom-ask-and-read-gate.md) |  | 112 |
 | [merge-and-recovery-edge-cases](concerns/merge-and-recovery-edge-cases.md) | Edges | 105 |
 | [plan-chat-followups](concerns/plan-chat-followups.md) | Chat | 41 |
-| [planner-follow-ups-followups](concerns/planner-follow-ups-followups.md) |  | 92 |
+| [planner-follow-ups-followups](concerns/planner-follow-ups-followups.md) |  | 91 |
 | [planner-ui-repair-followups](concerns/planner-ui-repair-followups.md) | UI | 214 |
 | [planning-document-model-followups](concerns/planning-document-model-followups.md) |  | 172 |
 | [planning-guidance-followups](concerns/planning-guidance-followups.md) |  | 43 |

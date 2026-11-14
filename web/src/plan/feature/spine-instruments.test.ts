@@ -27,6 +27,30 @@ describe("the Findings instrument", () => {
     expect(instrumentOf("findings", "demo", trace).reading).toMatchObject({ open: 0, decided: 2 });
   });
 
+  it.each(["duplicate", "unverified", "stale"] as const)(
+    "does not count an open %s finding as decided",
+    (kind) => {
+      const trace = fixture();
+      trace.findings[0]!.check = { kind, duplicate_of: kind === "duplicate" ? "F-2" : null };
+      expect(instrumentOf("findings", "demo", trace).reading).toMatchObject({
+        open: 0,
+        decided: 1,
+      });
+    },
+  );
+
+  it.each(["addressed", "unaddressed", "dismissed"] as const)(
+    "counts a %s finding as decided",
+    (kind) => {
+      const trace = fixture();
+      trace.findings[0]!.finding.status = { kind, detail: "x" } as never;
+      expect(instrumentOf("findings", "demo", trace).reading).toMatchObject({
+        open: 0,
+        decided: 2,
+      });
+    },
+  );
+
   it("reads an empty ledger as nothing open, nothing decided and no source", () => {
     const trace = fixture();
     trace.findings = [];

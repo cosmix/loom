@@ -13,11 +13,12 @@ import { summaryQuestionAtom } from "@/plan/summaries/state";
 /**
  * The action at the end of the summary status row: "Rebuild all" while an above-budget rebuild
  * waits for approval, otherwise "Rebuild" for this page's summary; quiet, as every control of
- * the heading is. A page without a source path has nothing to rebuild.
+ * the heading is. A page without a source path has nothing to rebuild, and a page without a
+ * summary draws its one build action in its body (`SummaryBuildNotice`).
  */
 export function SummaryAction({ page }: { page: ConceptPage }): JSX.Element | null {
   const question = useAtomValue(summaryQuestionAtom);
-  if (page.path === null) return null;
+  if (page.path === null || page.empty !== null) return null;
   if (question !== null) return <ApprovalAnswer look="quiet" />;
   return (
     <RebuildButton ids={[summaryIdOfKey(page.key)]} look="quiet" rebuilding={isRebuilding(page)} />
@@ -30,7 +31,7 @@ export function SummaryAction({ page }: { page: ConceptPage }): JSX.Element | nu
  */
 export function SummaryDetail({ page }: { page: ConceptPage }): JSX.Element | null {
   const question = useAtomValue(summaryQuestionAtom);
-  if (page.path === null || question === null) return null;
+  if (page.path === null || page.empty !== null || question === null) return null;
   return <ApprovalSentence question={question} />;
 }
 

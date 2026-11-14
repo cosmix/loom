@@ -58,6 +58,7 @@ mod tests_table {
     fn plan_plugin_includes_required_files() {
         for key in [
             ".claude-plugin/plugin.json",
+            "skills/address-findings/SKILL.md",
             "skills/brainstorming/SKILL.md",
             "skills/vision/SKILL.md",
             "skills/section/SKILL.md",

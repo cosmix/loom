@@ -5,9 +5,11 @@ use std::path::PathBuf;
 use anyhow::{bail, Context};
 
 use crate::plan_session::kind::SessionDir;
+use crate::plan_session::scope;
 use crate::planning::project::Project;
 use crate::planning::runtime::RuntimePaths;
 
+pub mod address;
 mod blocks;
 mod brief;
 mod continuation;
@@ -17,12 +19,13 @@ mod plugin;
 pub mod start;
 pub mod team;
 
+pub use address::{address_run, AddressRun};
 pub use blocks::{ConfigBlock, StartBlocks};
 pub use continuation::{continuation_message, DraftContinuation};
 pub use models::{GuidanceModels, ModelEffort};
 pub use opening::opening_message;
 pub use start::{step_class, AuthoringStart, StartError, StepClass};
-pub use team::{draft_run, DraftRun, MAX_TEAMMATES};
+pub use team::{draft_run, team_scope, DraftRun, MAX_TEAMMATES};
 
 /// The pressure plugin command that starts the session.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -126,6 +129,14 @@ pub fn render_session_guidance(
     plugin::preflight(session_dir)?;
     plugin::write_plugin(kind, session_dir, models)?;
     plugin::write_brief(session_dir, &brief)?;
+    // From the snapshot the opening and brief read; the server keeps a team scope it finds.
+    if let (SessionGuidanceKind::Authoring(AuthoringStart::Offer(offer)), Some(feature)) =
+        (kind, feature)
+    {
+        if let Some(scope) = team::team_scope(project, &offer.id(), feature)? {
+            scope::write(session_dir, &scope)?;
+        }
+    }
     Ok(SessionGuidance {
         brief_path: session_dir.brief(),
         plugin_dir: session_dir.plugin(),

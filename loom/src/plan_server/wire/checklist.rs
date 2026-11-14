@@ -218,6 +218,8 @@ pub enum OfferKind {
     PlanFollowUps,
     /// Review what a plan built and record the findings.
     ReviewFeature,
+    /// Address the feature's actionable findings with a team.
+    AddressFindings,
     /// Draft all missing product sections with a team.
     DraftAllSections,
     /// Draft all missing plans with a team.
@@ -244,6 +246,7 @@ impl From<&Offer> for OfferKind {
             Offer::StartRun => Self::StartRun,
             Offer::PlanFollowUps => Self::PlanFollowUps,
             Offer::ReviewFeature => Self::ReviewFeature,
+            Offer::AddressFindings => Self::AddressFindings,
             Offer::DraftAllSections { .. } => Self::DraftAllSections,
             Offer::DraftAllPlans { .. } => Self::DraftAllPlans,
             Offer::MoveIntoFeature { .. } => Self::MoveIntoFeature,

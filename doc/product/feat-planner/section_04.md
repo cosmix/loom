@@ -329,6 +329,16 @@ that links a stale or missing sentence.
 | Outside edit, file-mode save, `git pull`, start           | a background summary session, 5 minutes after the last change           | yes          |
 | The user presses rebuild on a summary or a batch          | a background summary session, at once                                   | no           |
 | The user answers "Rebuild all" to the question            | a background summary session, at once                                   | no           |
+| A draft team's run settles                                | a background summary session, at once, as a press                       | no           |
+
+**Draft team.** A draft team session (Draft all missing sections or plans) settles when its lead's
+turn ends, or the session goes idle or ends, with no teammate working by then. A teammate going
+idle settles nothing on its own: it wakes the lead for a consistency turn, and the run waits for
+that turn to end. The summaries of the documents the team's scope names that are not current,
+then the overview of each feature whose sections are among them, then build as a press: no quiet
+period and no question, in one summary session. An Address the findings team edits documents
+that exist, so their summaries follow the background rule above. A refinement turn the reader
+takes later in the same chat follows the background rule too.
 
 **Refinement.** An authoring turn rebuilds no summary: the authoring skill (section 09) ends a
 turn that edited documents with `loom plan check` alone. While an authoring turn runs, the

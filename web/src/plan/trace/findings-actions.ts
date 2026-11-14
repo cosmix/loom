@@ -1,25 +1,16 @@
 import { apiPost, type ApiResult } from "@/plan/api/client";
 import { saveResultSchema, type SaveResult } from "@/plan/api/schema-files";
-import type { Finding, FindingKind, TraceEntry } from "@/plan/api/schema-trace";
+import type { FindingKind } from "@/plan/api/schema-trace";
 
-// What the Findings page does with a finding: the seeds it hands to Plan follow-ups and the
-// status change it posts. The ledger text is agent-written; seeds carry it as the user's own
-// first message, which the session treats like anything else the user typed.
+// The status changes the Findings page posts: a dismissal, and a reopen of an unaddressed or
+// dismissed finding (`addressed` and `unaddressed` are written by the address session, and the
+// route refuses them from here).
 
-const aboutTokens = (finding: Finding): string => finding.about.join(", ");
-
-/** The first message of a Plan follow-ups session that plans one finding. */
-export function planSeed(finding: Finding): string {
-  return `Plan finding ${finding.id}: ${finding.title}\nAbout: ${aboutTokens(finding)}\n\n${finding.text}`;
-}
-
-/** The first message of a Plan follow-ups session that folds one finding into a metaplan entry. */
-export function foldSeed(finding: Finding, entry: TraceEntry): string {
-  return (
-    `Fold finding ${finding.id} into metaplan entry ${entry.title} (metaplan#${entry.anchor}): ` +
-    `${finding.title}\nAbout: ${aboutTokens(finding)}`
-  );
-}
+/** A status the reader sets. */
+export type StatusChange = {
+  kind: Extract<FindingKind, "open" | "dismissed">;
+  detail: string | null;
+};
 
 /** The ledger's repository path. */
 export function ledgerPath(feature: string): string {
@@ -61,7 +52,7 @@ export function setFindingStatus(
   feature: string,
   id: string,
   hash: string,
-  status: { kind: FindingKind; detail: string },
+  status: StatusChange,
 ): Promise<ApiResult<SaveResult>> {
   return apiPost("/api/findings/status", { feature, id, hash, status }, saveResultSchema, {
     contentType: "json",

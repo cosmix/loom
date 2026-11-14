@@ -8,11 +8,15 @@ use crate::plan_session::bridge::team::TeammateStatus;
 use crate::plan_session::bridge::Bridge;
 use crate::plan_session::kind::SessionDir;
 use crate::plan_session::model::{ChatDelta, Item};
-use crate::plan_session::scope::{self, SessionScope};
-use crate::planning::guidance::draft_run;
+use crate::plan_session::scope::{self, SessionScope, TeamRun};
+use crate::planning::guidance::team_scope;
 
+/// The offers whose session runs as an agent team inside a team scope.
 fn is_team(offer: Option<&str>) -> bool {
-    matches!(offer, Some("draft-all-sections" | "draft-all-plans"))
+    matches!(
+        offer,
+        Some("draft-all-sections" | "draft-all-plans" | "address-findings")
+    )
 }
 
 pub(super) fn extra_env(
@@ -23,7 +27,7 @@ pub(super) fn extra_env(
         return Ok(Vec::new());
     }
     if feature.is_none() {
-        return Err("a draft-all run needs a feature".to_owned());
+        return Err("a team run needs a feature".to_owned());
     }
     Ok(vec![(
         crate::claude::AGENT_TEAMS_ENV.to_owned(),
@@ -31,6 +35,9 @@ pub(super) fn extra_env(
     )])
 }
 
+/// Write the session's scope after its guidance. A team scope the guidance wrote stays: it holds
+/// the documents of the project snapshot the opening named them from. A provider that wrote none
+/// gets one built here.
 pub(super) fn prepare_scope(
     ctx: &PlanContext,
     dir: &SessionDir,
@@ -38,16 +45,23 @@ pub(super) fn prepare_scope(
     feature: Option<&str>,
 ) -> anyhow::Result<()> {
     if matches!(offer, Some("kickoff" | "kickoff-small")) {
-        scope::write(dir, &SessionScope::kickoff(ctx.root())?)?;
-    } else if let Some(offer @ ("draft-all-sections" | "draft-all-plans")) = offer {
-        let feature = feature.ok_or_else(|| anyhow::anyhow!("a draft-all run needs a feature"))?;
-        let run = {
-            let project = ctx.project();
-            draft_run(&project, offer, feature)?
-        };
-        scope::write(dir, &SessionScope::team(run.documents, run.bundles)?)?;
+        return scope::write(dir, &SessionScope::kickoff(ctx.root())?);
     }
-    Ok(())
+    let Some(offer) = offer.filter(|offer| is_team(Some(offer))) else {
+        return Ok(());
+    };
+    let feature = feature.ok_or_else(|| anyhow::anyhow!("a team run needs a feature"))?;
+    if matches!(scope::load(dir)?, SessionScope::Team { .. }) {
+        return Ok(());
+    }
+    let built = {
+        let project = ctx.project();
+        team_scope(&project, offer, feature)?
+    };
+    match built {
+        Some(team) => scope::write(dir, &team),
+        None => Ok(()),
+    }
 }
 
 pub(super) fn observe_kickoff(
@@ -100,8 +114,12 @@ pub(super) fn publish_draft_team(
     teammates: &[TeammateStatus],
 ) {
     let dir = SessionDir::new(ctx.runtime().sessions.join(id));
-    let documents = match scope::load(&dir) {
-        Ok(SessionScope::Team { documents, .. }) => documents,
+    // An address run's ledger is the lead's alone: no teammate row would ever show it written.
+    let documents: Vec<_> = match scope::load(&dir) {
+        Ok(SessionScope::Team { run, documents, .. }) => match run {
+            TeamRun::Address { ledger } => documents.into_iter().filter(|p| *p != ledger).collect(),
+            TeamRun::Draft => documents,
+        },
         Ok(_) => {
             tracing::debug!(session = %id, "ignoring teammates outside a draft team scope");
             return;

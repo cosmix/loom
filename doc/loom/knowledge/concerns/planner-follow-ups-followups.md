@@ -83,7 +83,6 @@ Reviewer suggestions not applied and questions left open when `PLAN-trace-screen
 ### Tests
 
 - `settle-flow.test.tsx`: add a second Mark settled after Not yet, asserting a second confirm-less post and a second dialog.
-- `pages.test.tsx`: no test asserts the Fold into entry `aria-expanded`/`aria-controls` and focus landing in the fold picker on open.
 
 ### Open questions
 

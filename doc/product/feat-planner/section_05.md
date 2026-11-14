@@ -50,7 +50,7 @@ these pages by section 01's landing rule. The routes:
 | `/f/<feature>/engineering` and `/f/<feature>/run` | redirect to the metaplan page                                                                                                              |                        |
 
 The metaplan route renders the summary of the feature's metaplan, `doc/plans/<feature>/index.md`; its heading's **Source** link opens the metaplan's text. A metaplan whose summary is not
-built yet shows the "not built yet" state with a Rebuild action, never the raw text. The vision's
+built yet shows its build state (building, queued, failed, or "No summary yet") with one Build summary action, never the raw text. The vision's
 summary reads like a section's: its sentences open to the vision's own passages. File mode is
 section 06. Standalone plans keep `/plans/<slug>`. A feature with a product spec opens on
 `/f/<feature>/product`; otherwise one with a metaplan opens on `/f/<feature>/metaplan`,
@@ -318,7 +318,7 @@ browsers see the same text without the offer button.
 | Sections, no vision (section 01)                        | No overview; list of section summaries in file-name order                                          | as below                                                                                          |
 | No metaplan, no plans                                   | as above                                                                                           | "No metaplan yet", offer to start one from the spec                                               |
 | Plans, no metaplan                                      | as above                                                                                           | List of plan summaries in file-name order, offer to start a metaplan                 |
-| Documents exist, summaries never built                  | "Summaries not built", the count, and the cost line section 04 provides; documents listed with file mode links | same                                                                                 |
+| Documents exist, summaries never built                  | "No summaries yet", the count, the cost line section 04 provides and one Build summaries action; a queued or failed build reads "Summaries queued" with Build now or "Summaries build failed" with the error and Retry; documents listed with file mode links | same                                                                                 |
 | Summaries being built                                   | "Building 4 of 12"; document summaries appear in the key as they finish and open from it; the overview appears when built | same                                                       |
 | Rebuild above the budget waiting for approval           | Overview readable with dashed marks; a notice in the key row with the stale count and, for the author, an approve button | same                                                        |
 

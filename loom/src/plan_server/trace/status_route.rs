@@ -1,8 +1,9 @@
 //! `POST /api/findings/status`: set one ledger entry's `Status:` line.
 //!
-//! The detail is reader-typed text. A planned detail must be a `PLAN-<slug>.md` token, a
-//! folded one must name an entry of the feature's metaplan, a dismissal reason is cut to one
-//! line (`findings::reason`); the ledger write itself sanitizes again.
+//! The reader reopens or dismisses a finding here; `addressed` and `unaddressed` are written by
+//! the address session that edits the documents, so the route refuses them. A dismissal reason
+//! is reader-typed text, cut to one line (`findings::reason`); the ledger write itself sanitizes
+//! again.
 
 use serde::Deserialize;
 
@@ -16,7 +17,6 @@ use crate::planning::discover::read_doc;
 use crate::planning::findings::{ledger_path, reason, set_status, FindingStatus};
 use crate::planning::kinds::is_feature_name;
 use crate::planning::sections::normalized_hash;
-use crate::planning::trace::tokens::is_plan_token;
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -36,21 +36,10 @@ pub fn status_route(req: &ApiRequest<'_>) -> ApiResponse {
     if !is_feature_name(&body.feature) {
         return ApiResponse::error(400, "bad_request", "the feature name is invalid");
     }
-    let anchors = {
-        let project = req.ctx.project();
-        project.feature(&body.feature).map(|feature| {
-            feature
-                .trace
-                .entries
-                .iter()
-                .map(|entry| entry.anchor.clone())
-                .collect::<Vec<_>>()
-        })
-    };
-    let Some(anchors) = anchors else {
+    if req.ctx.project().feature(&body.feature).is_none() {
         return ApiResponse::error(404, "not_found", "no such feature");
-    };
-    let status = match status_of(&body.status, &anchors) {
+    }
+    let status = match status_of(&body.status) {
         Ok(status) => status,
         Err(message) => return ApiResponse::error(400, "bad_request", message),
     };
@@ -90,34 +79,17 @@ fn write_status(req: &ApiRequest<'_>, body: &StatusRequest, status: &FindingStat
 }
 
 /// The ledger status a request asks for, or the reason it is refused.
-pub(super) fn status_of(
-    view: &FindingStatusView,
-    anchors: &[String],
-) -> Result<FindingStatus, &'static str> {
+pub(super) fn status_of(view: &FindingStatusView) -> Result<FindingStatus, &'static str> {
     let detail = view.detail.as_deref().map(str::trim);
     match (view.kind, detail) {
         (FindingKindView::Open, None) => Ok(FindingStatus::Open),
         (FindingKindView::Open, Some(_)) => Err("an open status has no detail"),
-        (FindingKindView::Planned, Some(token)) if is_plan_token(token) => {
-            Ok(FindingStatus::Planned(token.to_owned()))
-        }
-        (FindingKindView::Planned, _) => Err("a planned status names a plan, PLAN-<slug>.md"),
-        (FindingKindView::Folded, Some(token)) if names_entry(token, anchors) => {
-            Ok(FindingStatus::Folded(token.to_owned()))
-        }
-        (FindingKindView::Folded, _) => {
-            Err("a folded status names an entry of the metaplan, metaplan#<anchor>")
-        }
         (FindingKindView::Dismissed, Some(why)) => reason(why)
             .map(FindingStatus::Dismissed)
             .ok_or("a dismissal needs a reason"),
         (FindingKindView::Dismissed, None) => Err("a dismissal needs a reason"),
+        (FindingKindView::Addressed | FindingKindView::Unaddressed, _) => {
+            Err("only an address session marks a finding addressed or not")
+        }
     }
-}
-
-/// `metaplan#<anchor>` for an entry anchor of the feature's metaplan.
-fn names_entry(token: &str, anchors: &[String]) -> bool {
-    token
-        .strip_prefix("metaplan#")
-        .is_some_and(|anchor| anchors.iter().any(|known| known == anchor))
 }

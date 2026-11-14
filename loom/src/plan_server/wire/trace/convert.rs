@@ -3,10 +3,10 @@
 use std::path::Path;
 
 use super::*;
-use crate::planning::findings::{Finding, FindingStatus};
+use crate::planning::findings::{Finding, FindingStatus, Severity};
 use crate::planning::trace::{
-    CoverKind, CoverRef, DocRole, Gap, GapKind, NodeRef, Progress, SettleState, SettledLine, Trace,
-    TraceDoc, TraceEntry, TraceFinding, TraceHeading, TraceProblem,
+    CoverKind, CoverRef, DocRole, FindingCheck, Gap, GapKind, NodeRef, Progress, SettleState,
+    SettledLine, Trace, TraceDoc, TraceEntry, TraceFinding, TraceHeading, TraceProblem,
 };
 
 /// `path` as a repository-relative string with `/` separators.
@@ -111,8 +111,8 @@ impl From<&FindingStatus> for FindingStatusView {
     fn from(status: &FindingStatus) -> Self {
         let (kind, detail) = match status {
             FindingStatus::Open => (FindingKindView::Open, None),
-            FindingStatus::Planned(detail) => (FindingKindView::Planned, Some(detail)),
-            FindingStatus::Folded(detail) => (FindingKindView::Folded, Some(detail)),
+            FindingStatus::Addressed(detail) => (FindingKindView::Addressed, Some(detail)),
+            FindingStatus::Unaddressed(detail) => (FindingKindView::Unaddressed, Some(detail)),
             FindingStatus::Dismissed(detail) => (FindingKindView::Dismissed, Some(detail)),
         };
         Self {
@@ -128,6 +128,8 @@ impl From<&Finding> for FindingView {
             id: finding.id.clone(),
             title: finding.title.clone(),
             about: finding.about.clone(),
+            evidence: finding.evidence.clone(),
+            severity: finding.severity.map(Into::into),
             source: finding.source.clone(),
             status: (&finding.status).into(),
             text: finding.text.clone(),
@@ -140,7 +142,31 @@ impl From<&TraceFinding> for TraceFindingView {
         Self {
             finding: (&found.finding).into(),
             about: found.about.iter().map(Into::into).collect(),
+            check: (&found.check).into(),
+            changed: found.changed.iter().map(Into::into).collect(),
         }
+    }
+}
+
+impl From<Severity> for SeverityView {
+    fn from(severity: Severity) -> Self {
+        match severity {
+            Severity::High => Self::High,
+            Severity::Medium => Self::Medium,
+            Severity::Low => Self::Low,
+        }
+    }
+}
+
+impl From<&FindingCheck> for FindingCheckView {
+    fn from(check: &FindingCheck) -> Self {
+        let (kind, duplicate_of) = match check {
+            FindingCheck::Duplicate(id) => (FindingCheckKindView::Duplicate, Some(id.clone())),
+            FindingCheck::Unverified => (FindingCheckKindView::Unverified, None),
+            FindingCheck::Stale => (FindingCheckKindView::Stale, None),
+            FindingCheck::Verified => (FindingCheckKindView::Verified, None),
+        };
+        Self { kind, duplicate_of }
     }
 }
 

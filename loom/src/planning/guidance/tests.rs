@@ -93,7 +93,7 @@ fn every_skill_has_matching_name_and_description_in_frontmatter() {
             "{path} is missing a frontmatter description"
         );
     }
-    assert_eq!(count, 10, "all ten planning skills must be checked");
+    assert_eq!(count, 11, "all eleven planning skills must be checked");
 }
 
 #[test]

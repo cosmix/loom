@@ -1,105 +1,8 @@
 /*
- * The two inline forms of an open finding (`findings-fold.tsx`, `findings-cards.tsx`): the Fold into
- * entry picker and the Dismiss reason field. maps-findings.css imports this sheet first, so its
- * narrow steps win on equal specificity.
+ * The inline form of an open finding (`findings-cards.tsx`): the Dismiss reason field, and the
+ * page's button sizes. maps-findings.css imports this sheet first, so its narrow steps win on equal
+ * specificity.
  */
-
-/* ── Fold into entry ───────────────────────────────────────────────────────── */
-
-/* A raised panel in the card, the one box in a box on the page: the popover's fill and edge with no
-   shadow, because it sits in the page flow. The floating layer rule in src/index.css gives it the
-   popover's washes too. It holds the question, a radio row per entry, the note on what is left
-   out, then the confirm naming the entry. The legend floats so it is a grid item, not a cut in
-   the edge. */
-[data-loom-plan] .maps-picker {
-  display: grid;
-  gap: var(--space-2);
-  min-width: 0;
-  margin: var(--space-2) 0 0;
-  padding: var(--space-4);
-  border: 1px solid var(--popover-border);
-  border-radius: var(--corner-surface);
-  background: var(--popover);
-}
-
-[data-loom-plan] .maps-picker > legend {
-  float: left;
-  width: 100%;
-  margin: 0 0 var(--space-1);
-  padding: 0;
-  font-family: var(--font-sans);
-  font-size: 15px;
-  font-weight: 600;
-  line-height: var(--leading-ui);
-}
-
-[data-loom-plan] .maps-picker > p {
-  margin: 0;
-  color: var(--muted-foreground);
-  font-size: var(--type-ui);
-  line-height: var(--leading-ui);
-}
-
-[data-loom-plan] .maps-picker__option {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: center;
-  gap: var(--space-3);
-  min-height: 48px;
-  padding: var(--space-2) var(--space-3);
-  border-radius: var(--corner-control);
-  font-family: var(--font-sans);
-  font-size: 17px;
-  font-weight: 500;
-  line-height: 1.3;
-  cursor: pointer;
-  transition: background-color 120ms;
-}
-
-[data-loom-plan] .maps-picker__option:hover {
-  background: var(--muted);
-}
-
-/* The chosen entry is marked in the accent, as the radio is: a tint of it on the panel and a
-   hairline of it round the row. The tint differs from the card and from the panel in hue and in
-   lightness in every theme; text on it keeps 4.5:1 (`--muted-foreground` is 4.58:1 at the
-   least, on Graphite). */
-[data-loom-plan] .maps-picker__option:has(> input:checked) {
-  background: color-mix(in oklab, var(--accent-ink) 16%, var(--popover));
-  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--accent-ink) 45%, transparent);
-}
-
-[data-loom-plan] .maps-picker__option > input {
-  width: 16px;
-  height: 16px;
-  margin: 0;
-  accent-color: var(--accent-ink);
-}
-
-[data-loom-plan] .maps-picker__option > input:focus-visible {
-  outline: 2px solid var(--ring);
-  outline-offset: 2px;
-}
-
-[data-loom-plan] .maps-picker__option > span:not(.maps-picker__suggested) {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-[data-loom-plan] .maps-picker__suggested {
-  color: var(--muted-foreground);
-  font-size: var(--type-body);
-  font-weight: 400;
-}
-
-[data-loom-plan] .maps-picker__actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-  margin-top: var(--space-2);
-}
 
 /* ── Dismiss ───────────────────────────────────────────────────────────────── */
 
@@ -147,28 +50,21 @@
 
 /* ── Buttons ───────────────────────────────────────────────────────────────── */
 
-/* Every action on the page (Review the feature, Plan this · Fold into entry · Dismiss, and the
-   forms' confirms and Cancel) is a 32px button at --type-body with a 16px glyph, and a reason
-   beside one is --type-ui: the page's chrome keeps the 13px floor. */
-[data-loom-plan]
-  :is(.maps-findings-head, .maps-actions, .maps-picker__actions, .maps-dismiss)
-  .plan-button {
+/* Every action on the page (Address the findings, Review the feature, Dismiss, and the form's
+   confirm and Cancel) is a 32px button at --type-body with a 16px glyph, and a reason beside one
+   is --type-ui: the page's chrome keeps the 13px floor. */
+[data-loom-plan] :is(.maps-findings-head, .maps-actions, .maps-dismiss) .plan-button {
   height: 32px;
   gap: var(--space-2);
   padding: 0 var(--space-3);
   font-size: var(--type-body);
 }
 
-[data-loom-plan]
-  :is(.maps-findings-head, .maps-actions, .maps-picker__actions, .maps-dismiss)
-  .plan-button
-  svg {
+[data-loom-plan] :is(.maps-findings-head, .maps-actions, .maps-dismiss) .plan-button svg {
   width: 16px;
   height: 16px;
 }
 
-[data-loom-plan]
-  :is(.maps-findings-head, .maps-actions, .maps-picker__actions, .maps-dismiss)
-  .plan-fine {
+[data-loom-plan] :is(.maps-findings-head, .maps-actions, .maps-dismiss) .plan-fine {
   font-size: var(--type-ui);
 }

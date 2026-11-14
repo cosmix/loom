@@ -65,6 +65,9 @@ pub enum Offer {
     PlanFollowUps,
     /// Review what a plan built and record the findings in the feature's ledger.
     ReviewFeature,
+    /// Address the feature's actionable findings with a team. The checklist never offers it: the
+    /// Findings page does, from the trace (`guidance::address_run`).
+    AddressFindings,
     /// Draft every missing section in one authoring session.
     DraftAllSections {
         /// The owning feature.
@@ -127,6 +130,7 @@ impl Offer {
             Offer::StartRun => "start-run",
             Offer::PlanFollowUps => "plan-follow-ups",
             Offer::ReviewFeature => "review-feature",
+            Offer::AddressFindings => "address-findings",
             Offer::DraftAllSections { .. } => "draft-all-sections",
             Offer::DraftAllPlans { .. } => "draft-all-plans",
             Offer::MoveIntoFeature { .. } => "move-into-feature",
@@ -164,6 +168,7 @@ impl Offer {
             Offer::StartRun => "Start a run".into(),
             Offer::PlanFollowUps => "Plan follow-ups".into(),
             Offer::ReviewFeature => "Review the feature".into(),
+            Offer::AddressFindings => "Address the findings".into(),
             Offer::DraftAllSections { .. } => "Draft all with a team".into(),
             Offer::DraftAllPlans { .. } => "Draft all with a team".into(),
             Offer::MoveIntoFeature { path } => {

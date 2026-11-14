@@ -31,10 +31,13 @@ export function RebuildButton({
   ids,
   look,
   rebuilding = false,
+  label = "Rebuild",
 }: {
   ids: string[];
   look?: ButtonLook;
   rebuilding?: boolean;
+  /** The idle text: "Build summary" where nothing was built yet, "Retry" after a failure. */
+  label?: string;
 }) {
   const reason = useAtomValue(authorBlockReasonAtom);
   const { rebuild } = useSummaryActions();
@@ -70,7 +73,7 @@ export function RebuildButton({
         reasonPlacement="inline"
         onClick={() => void handleRebuild()}
       >
-        {busy ? <BusyText>Rebuilding…</BusyText> : "Rebuild"}
+        {busy ? <BusyText>Rebuilding…</BusyText> : label}
       </DisabledReason>
       {error !== null && (
         <span role="alert" className="text-xs text-destructive">

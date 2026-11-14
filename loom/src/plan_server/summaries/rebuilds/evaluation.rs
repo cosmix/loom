@@ -6,6 +6,7 @@ use std::time::Instant;
 use super::{Rebuilds, State};
 use crate::plan_server::lifecycle::{line, safe};
 use crate::plan_server::summaries::scheduler::Scheduler;
+use crate::planning::project::Project;
 use crate::planning::summary::claims::list_claims;
 use crate::planning::summary::evaluate::{evaluate, Evaluation, SummaryEval, SummaryState};
 use crate::planning::summary::hashes::input_hashes;
@@ -27,6 +28,13 @@ impl Rebuilds {
         if !needed {
             return None;
         }
+        self.read_now(|_, evaluation| to_rebuild(evaluation))
+    }
+
+    /// `read` over the server's project and an evaluation of the store as it is now; `None`
+    /// without a server context or readable claims. Never called under the state lock (it takes
+    /// the project's).
+    pub(super) fn read_now<R>(&self, read: impl FnOnce(&Project, &Evaluation) -> R) -> Option<R> {
         let env = self.env.as_ref()?;
         let ctx = env.ctx.upgrade()?;
         let claims = match list_claims(&env.runtime) {
@@ -37,8 +45,9 @@ impl Rebuilds {
                 return None;
             }
         };
-        let evaluation = evaluate(&ctx.project(), &claims);
-        Some(to_rebuild(&evaluation))
+        let project = ctx.project();
+        let evaluation = evaluate(&project, &claims);
+        Some(read(&project, &evaluation))
     }
 
     /// What each summary of `evaluation` is built from, read from the server's project; `None`

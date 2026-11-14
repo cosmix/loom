@@ -333,26 +333,57 @@ status.
 ### `loom-plan:review`: reviewing the feature
 
 Target: `doc/plans/<feature>/findings.md`, the feature's findings ledger (section 11, "After a
-run"). The skill asks what the user saw (running the feature, reading code, reading a run review),
-reads code and documents read-only, and appends one entry per finding in the ledger format below.
-It writes nothing else.
+run"). The skill reads the whole ledger, then verifies each open entry that has no `Evidence:`
+(the app imports run-review items that way): it reads the cited file and the spec or plan text,
+and either completes the entry in place (`About:`, `Evidence:`, `Severity:`), or sets
+`Status: dismissed: <what it checked>` when the documents already satisfy it, it is a code-level
+note no spec or plan change would settle, or another entry reports the same thing. It then asks
+what the user saw (running the feature, reading code, reading a run review), checks each new
+finding against the exact passage it is about (the quote must show the problem; a claim that
+rests on "could" or "might" is dropped; an issue the ledger holds open is not recorded again; an
+addressed one that regressed is recorded again, after asking, only with an `Evidence:` quote of
+the passage as it reads now, since the app reads an entry repeating an addressed one's quote as
+its duplicate; an unaddressed or dismissed one is pointed out so the user can reopen it), and
+appends one entry per finding in the ledger format below. It
+reads code and documents read-only, runs `loom plan check` on the ledger and writes nothing else.
 
 ```markdown
 ## F-1 Rebuild threshold ignores briefs
 
-About: PLAN-feat-planner-03-summaries.md#stage:scheduler, section_04#rebuild-budget
-Source: REVIEW-PLAN-feat-planner-03-summaries.md#open-findings (scheduler, 1a2b3c4d5e6f)
+About: section_04#rebuild-budget
+Evidence: The rebuild budget counts plan summaries changed since the last rebuild.
+Severity: high
+Source: review 2026-11-05
 Status: open
 
-The rebuild budget counts plan summaries but not brief changes.
+The rebuild budget counts plan summaries but not brief changes, so a brief edit never triggers a rebuild.
 ```
 
-An entry is a `## F-<n> <title>` heading with the next free number, then `About:`, optional
-`Source:` and `Status:` lines, then one text paragraph. `About:` names the most specific nodes
-(`section_NN#<anchor>`, `PLAN-<slug>.md#stage:<id>`, `vision#<anchor>`, `metaplan#<anchor>`).
-`Status:` is `open`, `planned PLAN-<slug>.md`, `folded metaplan#<entry anchor>` or
-`dismissed: <reason>`. The review skill writes `Status: open` and, as `Source:`, either no line or
-`Source: review <YYYY-MM-DD>`.
+An entry is a `## F-<n> <title>` heading with the next free number, then `About:`, `Evidence:`,
+`Severity:`, optional `Source:` and `Status:` lines, then one text paragraph. `About:` names the
+most specific nodes (`section_NN#<anchor>`, `PLAN-<slug>.md#stage:<id>`, `vision#<anchor>`,
+`metaplan#<anchor>`). `Evidence:` is one line of at least three words copied verbatim from a
+passage an `About:` node names; the app compares it ignoring emphasis marks, quotation marks, case
+and line breaks, and an entry whose quote is not there reads as stale. `Severity:` is `high`,
+`medium` or `low` (section 03, "The findings ledger"). `Status:` is `open`, `addressed <tokens>`,
+`unaddressed: <reason>` or `dismissed: <reason>`; the review skill writes `open` and
+`dismissed: <reason>` only, and as `Source:` either no line or `Source: review <YYYY-MM-DD>`.
+
+### `loom-plan:address-findings`: addressing the findings
+
+Target: the documents the feature's actionable findings are about, and the ledger (section 11,
+"After a run"). The lead rechecks each finding against its passage, creates one team with one
+teammate per document (at most 5), and gives each teammate the findings whose first editable
+document it owns. A teammate edits only its own documents and only as far as its findings require;
+a choice a finding leaves open goes under the document's `## Open questions` with the options and
+a recommendation, never decided by the edit. The teammates never edit the ledger: the lead alone
+sets each finding's `Status:` to `addressed <tokens>` (the nodes the change touched) or
+`unaddressed: <reason>`, runs `loom plan check`, and reports one row per finding, naming every
+settled document the run edited and every open question a teammate added. Locked documents are
+not in the scope; a finding about locked documents only is marked `unaddressed` with the reason.
+An unaddressed finding is not taken by a later run until the reader reopens it. The run's write
+scope is built from the same project snapshot as its opening, so the opening never names a
+document the scope refuses.
 
 ### Stubs, link lines and settled documents
 
@@ -372,10 +403,9 @@ plan's stub is its metaplan entry. Every authoring skill keeps these duties:
   section. A stage that covers a narrower part adds `Implements (stage:<id>): section_NN#<anchor>,
   ...` in the plan's prose. The entry's `Covers:` and the plan's `Implements:` agree; a scope
   change updates both in the same turn.
-- **Findings.** `loom-plan:metaplan` reads `findings.md` when planning follow-ups. Planning a
-  finding: it writes the follow-up entry, then sets the finding's `Status:` line to `planned
-  PLAN-<slug>.md`. Folding a finding: it edits the entry, whose plan has not started running, so its paragraphs include the
-  finding, then sets `Status:` to `folded metaplan#<entry anchor>`.
+- **Findings.** `loom-plan:metaplan` reads `findings.md` when planning follow-ups and names a
+  finding's id in the entry it writes for it; it never edits `findings.md`. A finding's `Status:`
+  changes only through a dismissal on the Findings page or an Address the findings session.
 - **Settled lines.** No skill writes or edits a `Settled:` line. A turn that edits a document
   holding one says so in the reply.
 
@@ -399,22 +429,23 @@ Write doc/plans/<feature>/PLAN-delivery-truth.md for the entry "1. Delivery trut
 Load the skill loom-plan:plan, then begin by telling me what you read and what you plan to ask.
 ```
 
-| Offer (section 01)                     | Step | Target                                                   | Skill                 |
-| -------------------------------------- | ---- | -------------------------------------------------------- | --------------------- |
-| Start new work (feature or standalone) | new  | none until size and name are confirmed                   | `loom-plan:kickoff`   |
-| Start a vision discussion              | 1    | `doc/product/<feature>/index.md`                         | `loom-plan:vision`    |
-| Fix the vision's section list          | 1    | the `Specification sections` table                       | `loom-plan:vision`    |
-| Add an unlisted section to the vision  | 2    | the table, with the section's number                     | `loom-plan:vision`    |
-| Write a missing section                | 2    | `doc/product/<feature>/section_<nn>.md`, with its row    | `loom-plan:section`   |
-| Draft all missing sections             | 2    | the missing sections in the feature                      | `loom-plan:section`   |
-| Start a metaplan                       | 3    | `doc/plans/<feature>/index.md`                           | `loom-plan:metaplan`  |
-| Write a missing plan                   | 4    | `doc/plans/<feature>/PLAN-<slug>.md`, with its entry     | `loom-plan:plan`      |
-| Draft all missing plans                | 4    | the missing plans and their brief bundles in the feature | `loom-plan:plan`      |
-| Add an unlisted plan to a metaplan     | 4    | the metaplan, with the plan's file name                  | `loom-plan:metaplan`  |
-| Refine a document or a passage         | any  | the document, with any attached passage                  | `loom-plan:refine`    |
-| Plan follow-ups                        | done | `doc/plans/<f>/index.md` and the done plans' run reviews | `loom-plan:metaplan`  |
-| Review the feature                     | any  | `doc/plans/<f>/findings.md`                              | `loom-plan:review`    |
-| Change the knowledge base              | any  | the knowledge file, if one was open                      | `loom-plan:knowledge` |
+| Offer (section 01)                     | Step | Target                                                   | Skill                        |
+| -------------------------------------- | ---- | -------------------------------------------------------- | ---------------------------- |
+| Start new work (feature or standalone) | new  | none until size and name are confirmed                   | `loom-plan:kickoff`          |
+| Start a vision discussion              | 1    | `doc/product/<feature>/index.md`                         | `loom-plan:vision`           |
+| Fix the vision's section list          | 1    | the `Specification sections` table                       | `loom-plan:vision`           |
+| Add an unlisted section to the vision  | 2    | the table, with the section's number                     | `loom-plan:vision`           |
+| Write a missing section                | 2    | `doc/product/<feature>/section_<nn>.md`, with its row    | `loom-plan:section`          |
+| Draft all missing sections             | 2    | the missing sections in the feature                      | `loom-plan:section`          |
+| Start a metaplan                       | 3    | `doc/plans/<feature>/index.md`                           | `loom-plan:metaplan`         |
+| Write a missing plan                   | 4    | `doc/plans/<feature>/PLAN-<slug>.md`, with its entry     | `loom-plan:plan`             |
+| Draft all missing plans                | 4    | the missing plans and their brief bundles in the feature | `loom-plan:plan`             |
+| Add an unlisted plan to a metaplan     | 4    | the metaplan, with the plan's file name                  | `loom-plan:metaplan`         |
+| Refine a document or a passage         | any  | the document, with any attached passage                  | `loom-plan:refine`           |
+| Plan follow-ups                        | done | `doc/plans/<f>/index.md` and the done plans' run reviews | `loom-plan:metaplan`         |
+| Review the feature                     | any  | `doc/plans/<f>/findings.md`                              | `loom-plan:review`           |
+| Address the findings                   | any  | the documents the findings are about, and the ledger     | `loom-plan:address-findings` |
+| Change the knowledge base              | any  | the knowledge file, if one was open                      | `loom-plan:knowledge`        |
 
 New chat starts no session. The user's first message starts it, with the common brief of a
 message start (`Step: any, Refine`, skill `loom-plan:refine`) and that message as the opening.

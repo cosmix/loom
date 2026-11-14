@@ -93,104 +93,101 @@ describe("the coverage page with nothing to map", () => {
 });
 
 describe("the findings page with no ledger", () => {
-  it("says there are no findings yet", async () => {
+  it("says there are no findings yet, and offers no address run", async () => {
     served = { status: 200, body: EMPTY_TRACE };
     renderPage(<FindingsPage />, "/f/atlas/findings", atlas({}));
     expect(await screen.findByText(/No findings yet/)).toBeTruthy();
-    expect(screen.queryByRole("button", { name: /^Plan this/ })).toBeNull();
+    expect(screen.queryByText("Address the findings")).toBeNull();
   });
 
-  it("groups the ledger by run and review, with actions on open findings only", async () => {
+  it("groups the ledger by run and review, with Dismiss on open findings only", async () => {
     served = { status: 200, body: traceFixture };
     renderPage(<FindingsPage />, "/f/atlas/findings", atlas({}));
-    const run = await screen.findByRole("heading", { name: "Run of first" });
-    expect(run).toBeTruthy();
-    const reviews = screen.getByRole("heading", { name: "Reviews" });
-    expect(reviews).toBeTruthy();
-    // F-1 is open and F-2 dismissed, and no finding is planned or folded.
-    expect(screen.getByText("1 open · 1 dismissed")).toBeTruthy();
-    // F-1 is open and F-2 dismissed: one set of actions, and the reason shows on the dismissed one.
-    expect(screen.getAllByRole("button", { name: /^Dismiss/ })).toHaveLength(1);
+    expect(await screen.findByRole("heading", { name: "Run of first" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Reviews" })).toBeTruthy();
+    // F-1 is open and verified, F-2 dismissed.
+    expect(screen.getByText("1 to address · 1 dismissed")).toBeTruthy();
+    const dismissals = screen.getAllByRole("button", { name: /^Dismiss/ });
+    expect(dismissals.map((button) => button.getAttribute("aria-label"))).toEqual(["Dismiss F-1"]);
     const dismissed = screen.getByText("Rename the flag").closest("li")!;
     expect(within(dismissed).getByText("Dismissed: not needed")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /^Plan this/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Fold into/ })).toBeNull();
   });
 
-  it("blocks Plan this with a visible reason when the feature has no follow-up offer", async () => {
-    // No metaplan: the server starts Plan follow-ups only for a feature that has one.
-    const noMetaplan = {
-      ...traceFixture,
-      documents: traceFixture.documents.filter((doc) => doc.role !== "metaplan"),
+  it("shows each card's check, its quote and what an addressed finding changed", async () => {
+    const trace = structuredClone(traceFixture) as TraceView;
+    const [verified] = trace.findings;
+    const raw = structuredClone(verified!);
+    raw.finding = { ...raw.finding, id: "F-3", title: "Raw item", evidence: null, severity: null };
+    raw.check = { kind: "unverified", duplicate_of: null };
+    const done = structuredClone(verified!);
+    done.finding = {
+      ...done.finding,
+      id: "F-4",
+      title: "Heading one",
+      status: { kind: "addressed", detail: "section_01#one" },
     };
-    served = { status: 200, body: noMetaplan };
+    done.changed = [{ path: "doc/product/demo/section_01.md", anchor: "one" }];
+    trace.findings.push(raw, done);
+    served = { status: 200, body: trace };
     renderPage(<FindingsPage />, "/f/atlas/findings", atlas({}));
-    const plan = await screen.findByRole("button", { name: /^Plan this/ });
-    expect(plan.getAttribute("aria-disabled")).toBe("true");
-    // One reason for both buttons that need the offer.
-    expect(screen.getAllByText(/no Plan follow-ups/)).toHaveLength(1);
+    const open = (await screen.findByText("Rebuild ignores briefs")).closest("li")!;
+    expect(within(open).getByText("Open · medium")).toBeTruthy();
+    expect(within(open).getByText("Text two names the budget.")).toBeTruthy();
+    const unverified = screen.getByText("Raw item").closest("li")!;
+    expect(unverified.getAttribute("data-state")).toBe("unverified");
+    expect(within(unverified).getByText(/^Unverified/)).toBeTruthy();
+    expect(screen.getByText("1 to address · 1 to verify · 1 addressed · 1 dismissed")).toBeTruthy();
+    const addressed = screen.getByText("Heading one").closest("li")!;
+    expect(addressed.getAttribute("data-line")).toBe("true");
+    const changed = within(addressed).getByRole("group", { name: "Changed" });
+    expect(within(changed).getByRole("link", { name: "One" })).toBeTruthy();
+  });
+
+  it("draws a duplicate as a line that links to the finding it repeats", async () => {
+    const trace = structuredClone(traceFixture) as TraceView;
+    trace.findings[0]!.check = { kind: "duplicate", duplicate_of: "F-3" };
+    served = { status: 200, body: trace };
+    renderPage(<FindingsPage />, "/f/atlas/findings", atlas({}));
+    const line = (await screen.findByText("Rebuild ignores briefs")).closest("li")!;
+    expect(line.getAttribute("data-line")).toBe("true");
+    expect(within(line).getByRole("link", { name: "F-3" }).getAttribute("href")).toMatch(
+      /#finding-F-3$/,
+    );
+    expect(within(line).queryByRole("button")).toBeNull();
   });
 });
 
-/** The fixture trace with its first entry's plan unwritten, and the metaplan kept or dropped. */
-function unwrittenEntryTrace(withMetaplan: boolean): TraceView {
-  const trace = structuredClone(traceFixture) as TraceView;
-  trace.entries = [{ ...trace.entries[0]!, plan: null }];
-  if (!withMetaplan) trace.documents = trace.documents.filter((doc) => doc.role !== "metaplan");
-  return trace;
-}
-
-describe("Plan this and Fold into entry on a feature with a metaplan", () => {
-  it("start the seeded session although the checklist carries no follow-up offer", async () => {
-    served = { status: 200, body: unwrittenEntryTrace(true) };
-    const started: { offer: unknown; seed: string | undefined }[] = [];
-    const unregister = registerOfferAction("plan_follow_ups", (offer, seed) => {
-      started.push({ offer, seed });
-    });
+describe("Address the findings", () => {
+  it("starts the address offer for the feature from the page head", async () => {
+    served = { status: 200, body: traceFixture };
+    const started: unknown[] = [];
+    const unregister = registerOfferAction("address_findings", (run) => started.push(run));
     try {
       renderPage(<FindingsPage />, "/f/atlas/findings", atlas({}));
-      const plan = await screen.findByRole("button", { name: /^Plan this/ });
-      expect(plan.getAttribute("aria-disabled")).toBeNull();
-      fireEvent.click(plan);
-      expect(started).toHaveLength(1);
-      expect(started[0]!.offer).toMatchObject({
-        id: "plan-follow-ups",
-        kind: "plan_follow_ups",
-        feature: "atlas",
-      });
-      expect(started[0]!.seed).toMatch(/^Plan finding F-1: /);
-
-      fireEvent.click(screen.getByRole("button", { name: /^Fold into entry\b/ }));
-      const picker = screen.getByRole("group", { name: "Fold into which entry" });
-      expect(within(picker).getByRole("radio", { name: /First/ })).toBeTruthy();
+      fireEvent.click(await screen.findByRole("button", { name: "Address the findings" }));
+      expect(started).toEqual([
+        {
+          id: "address-findings",
+          kind: "address_findings",
+          label: "Address the findings",
+          target: null,
+          feature: "atlas",
+        },
+      ]);
     } finally {
       unregister();
     }
   });
 
-  it("name their finding, so two open findings' buttons are distinguishable", async () => {
-    const trace = unwrittenEntryTrace(true);
-    const second = structuredClone(trace.findings[0]!);
-    second.finding.id = "F-9";
-    trace.findings.push(second);
+  it("is not offered while no finding is open and verified", async () => {
+    const trace = structuredClone(traceFixture) as TraceView;
+    trace.findings[0]!.check = { kind: "stale", duplicate_of: null };
     served = { status: 200, body: trace };
     renderPage(<FindingsPage />, "/f/atlas/findings", atlas({}));
-    const plans = await screen.findAllByRole("button", { name: /^Plan this\b/ });
-    expect(plans.map((button) => button.getAttribute("aria-label"))).toEqual([
-      "Plan this F-1",
-      "Plan this F-9",
-    ]);
-    expect(screen.getByRole("button", { name: "Dismiss F-9" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Fold into entry F-9" })).toBeTruthy();
-  });
-
-  it("stay blocked, with the reason once, when the feature has no metaplan", async () => {
-    served = { status: 200, body: unwrittenEntryTrace(false) };
-    renderPage(<FindingsPage />, "/f/atlas/findings", atlas({}));
-    const plan = await screen.findByRole("button", { name: /^Plan this/ });
-    expect(plan.getAttribute("aria-disabled")).toBe("true");
-    expect(
-      screen.getByRole("button", { name: /^Fold into entry\b/ }).getAttribute("aria-disabled"),
-    ).toBe("true");
-    expect(screen.getAllByText(/no Plan follow-ups/)).toHaveLength(1);
+    await screen.findByRole("heading", { name: "Reviews" });
+    expect(screen.queryByText("Address the findings")).toBeNull();
   });
 });
 
@@ -239,7 +236,7 @@ describe("the findings page header", () => {
 describe("dismissing a finding", () => {
   async function openForm(): Promise<HTMLElement> {
     renderPage(<FindingsPage />, "/f/atlas/findings", atlas({}));
-    fireEvent.click(await screen.findByRole("button", { name: /^Dismiss/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "Dismiss F-1" }));
     return screen.findByRole("textbox", { name: /reason/i });
   }
 
@@ -249,7 +246,8 @@ describe("dismissing a finding", () => {
     fireEvent.change(reason, { target: { value: "duplicate" } });
     const confirm = screen.getByRole("button", { name: "Confirm dismissal" });
     expect(confirm.getAttribute("aria-disabled")).toBe("true");
-    expect(screen.getByText("Reading the ledger")).toBeTruthy();
+    // The dismissed card's Reopen is blocked for the same reason, so the reason shows on both.
+    expect(screen.getAllByText("Reading the ledger").length).toBeGreaterThan(0);
     fireEvent.click(confirm);
     expect(posts).toEqual([]);
   });
@@ -286,7 +284,7 @@ describe("dismissing a finding", () => {
     expect(document.activeElement).toBe(reason);
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     await waitFor(() =>
-      expect(document.activeElement).toBe(screen.getByRole("button", { name: /^Dismiss/ })),
+      expect(document.activeElement).toBe(screen.getByRole("button", { name: "Dismiss F-1" })),
     );
   });
 });
@@ -296,7 +294,7 @@ describe("after a dismissal is saved", () => {
     served = { status: 200, body: traceFixture };
     docHash = "sha256:shown";
     renderPage(<FindingsPage />, "/f/atlas/findings", atlas({}));
-    fireEvent.click(await screen.findByRole("button", { name: /^Dismiss/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "Dismiss F-1" }));
     fireEvent.change(await screen.findByRole("textbox", { name: /reason/i }), {
       target: { value: "duplicate" },
     });
@@ -305,65 +303,5 @@ describe("after a dismissal is saved", () => {
     fireEvent.click(confirm);
     const heading = screen.getByRole("heading", { name: "Rebuild ignores briefs" });
     await waitFor(() => expect(document.activeElement).toBe(heading));
-  });
-});
-
-describe("folding a finding into an entry", () => {
-  /** Both entries have no plan yet; finding F-1 is about section 02, which entry two covers. */
-  function twoEntries(): TraceView {
-    const trace = structuredClone(traceFixture) as TraceView;
-    trace.entries = trace.entries.map((entry) => ({ ...entry, plan: null }));
-    trace.findings[0]!.about = [{ path: "doc/product/demo/section_02.md", anchor: "three" }];
-    return trace;
-  }
-
-  async function openPicker(trace: TraceView): Promise<HTMLElement> {
-    served = { status: 200, body: trace };
-    renderPage(<FindingsPage />, "/f/atlas/findings", atlas({}));
-    fireEvent.click(await screen.findByRole("button", { name: /^Fold into entry\b/ }));
-    return screen.findByRole("group", { name: "Fold into which entry" });
-  }
-
-  it("lists the suggested entry first, chosen, and names it on the confirm", async () => {
-    const picker = await openPicker(twoEntries());
-    const radios = within(picker).getAllByRole("radio");
-    expect(radios.map((radio) => (radio as HTMLInputElement).checked)).toEqual([true, false]);
-    expect(radios[0]!.closest("label")!.textContent).toMatch(/2\. Second.*Suggested/);
-    expect(within(picker).getByRole("button", { name: /^Fold into 2\. Second/ })).toBeTruthy();
-  });
-
-  it("starts the seeded session for the entry picked", async () => {
-    const started: { seed: string | undefined }[] = [];
-    const unregister = registerOfferAction("plan_follow_ups", (_offer, seed) => {
-      started.push({ seed });
-    });
-    try {
-      const picker = await openPicker(twoEntries());
-      fireEvent.click(within(picker).getByRole("radio", { name: /1\. First/ }));
-      fireEvent.click(within(picker).getByRole("button", { name: /^Fold into 1\. First/ }));
-      expect(started).toHaveLength(1);
-      expect(started[0]!.seed).toMatch(/^Fold finding F-1 into metaplan entry 1\. First/);
-    } finally {
-      unregister();
-    }
-  });
-
-  it("offers nothing to confirm until an entry is chosen, when none is suggested", async () => {
-    const trace = twoEntries();
-    trace.findings[0]!.about = [];
-    const picker = await openPicker(trace);
-    const confirm = within(picker).getByRole("button", { name: "Fold into the chosen entry" });
-    expect(confirm.getAttribute("aria-disabled")).toBe("true");
-    expect(within(picker).getByText("Pick an entry first")).toBeTruthy();
-  });
-
-  it("names the entries left out because their plan is running or done", async () => {
-    const trace = twoEntries();
-    trace.entries[0]!.plan = "doc/plans/demo/IN_PROGRESS-PLAN-first.md";
-    const picker = await openPicker(trace);
-    expect(within(picker).getAllByRole("radio")).toHaveLength(1);
-    expect(
-      within(picker).getByText(/Not offered, because their plan is running or done/).textContent,
-    ).toMatch(/1\. First/);
   });
 });

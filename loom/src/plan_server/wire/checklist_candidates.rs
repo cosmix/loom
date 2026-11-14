@@ -1,4 +1,4 @@
-//! A feature's candidate follow-ups: the open entries of its findings ledger.
+//! A feature's candidate follow-ups: the actionable entries of its findings ledger.
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -6,7 +6,7 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 
 use crate::plan_server::review::built::{parse_generated, run_review_paths};
-use crate::planning::findings::{ledger_path, Finding, FindingStatus};
+use crate::planning::findings::{ledger_path, Finding};
 use crate::planning::project::Project;
 
 /// The anchor of the review section that holds open questions, as `Source:` lines name it.
@@ -43,7 +43,8 @@ pub struct CandidateView {
     pub review: String,
 }
 
-/// The feature's open ledger entries in ledger order, each as a candidate. An entry imported from
+/// The feature's actionable ledger entries (open and verified) in ledger order, each as a
+/// candidate. An entry imported from
 /// a run review names that review and its stage; one written by hand names the ledger.
 pub(super) fn ledger_candidates(project: &Project, feature: &str) -> Vec<CandidateView> {
     let Some(feature) = project.feature(feature) else {
@@ -54,8 +55,8 @@ pub(super) fn ledger_candidates(project: &Project, feature: &str) -> Vec<Candida
         .trace
         .findings
         .iter()
-        .map(|traced| &traced.finding)
-        .filter(|finding| finding.status == FindingStatus::Open);
+        .filter(|traced| traced.actionable())
+        .map(|traced| &traced.finding);
     // The newest review path of each plan slug, looked up once however many entries name it.
     let mut reviews: HashMap<&str, Option<String>> = HashMap::new();
     open.map(|finding| candidate(project, finding, &ledger, &mut reviews))

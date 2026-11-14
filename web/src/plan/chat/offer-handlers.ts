@@ -11,6 +11,7 @@ const authoringKinds = [
   "draft_all_plans",
   "plan_follow_ups",
   "review_feature",
+  "address_findings",
   "fix_vision_table",
 ] as const satisfies readonly OfferKind[];
 

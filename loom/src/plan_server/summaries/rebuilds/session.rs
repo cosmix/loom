@@ -4,6 +4,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use super::team::Lead;
 use super::{evaluation, Attributed, Attribution, Rebuilds, State, PENDING};
 use crate::plan_server::lifecycle::{line, safe};
 use crate::plan_server::summaries::attribution::last_seal_error;
@@ -23,6 +24,7 @@ impl Rebuilds {
             BridgeEvent::Started { id, kind } => self.chat_started(id, kind),
             BridgeEvent::State { id, state } => {
                 if matches!(state, SessionState::Idle | SessionState::Ended) {
+                    self.settle_team(id, Lead::Idle);
                     self.chat_idle(id);
                 }
             }
@@ -36,7 +38,8 @@ impl Rebuilds {
             BridgeEvent::Ended { id, kind, outcome } => {
                 self.session_gone(bridge, id, kind, outcome)
             }
-            BridgeEvent::Team { .. } | BridgeEvent::Background { .. } => {}
+            BridgeEvent::Team { id, teammates } => self.team_changed(id, teammates),
+            BridgeEvent::Background { .. } => {}
         }
     }
 
@@ -95,6 +98,7 @@ impl Rebuilds {
             let open = state.open_turn.as_ref();
             open.is_some_and(|(session, open)| session == id && open == turn)
         };
+        self.settle_team(id, Lead::TurnEnded(turn));
         let fresh = self.to_rebuild_now(holds);
         self.run(|state, spawner, now| {
             if holds(state) {
@@ -137,7 +141,10 @@ impl Rebuilds {
             SessionKind::Summary => self.run(|state, spawner, now| {
                 state.summary_ended(id, outcome, now, spawner);
             }),
-            SessionKind::Authoring => self.chat_idle(id),
+            SessionKind::Authoring => {
+                self.settle_team(id, Lead::Ended);
+                self.chat_idle(id);
+            }
             SessionKind::Pressure { .. } => self.run(|state, spawner, now| {
                 if let Some(token) = state.pressure.remove(id) {
                     let to_rebuild = state.to_rebuild();

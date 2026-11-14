@@ -8,7 +8,9 @@ use crate::plan_session::bridge::team::TeammateStatus;
 #[serde(deny_unknown_fields)]
 pub struct DraftTeamView {
     pub session: String,
-    /// The run's missing documents, repository-relative.
+    /// The documents the run's teammates write, repository-relative: a draft run's missing
+    /// documents, or the documents an address run edits (its ledger, which only the lead
+    /// writes, left out).
     pub documents: Vec<String>,
     pub teammates: Vec<TeammateStatus>,
 }

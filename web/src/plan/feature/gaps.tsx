@@ -1,7 +1,8 @@
 import { DraftTeamPanel } from "@/plan/feature/draft-team-panel";
 import { gapStep, type GapScope } from "@/plan/feature/page-offer";
 import { PaceChoice } from "@/plan/feature/pace";
-import { hasGaps, Queue, type QueueKind } from "@/plan/feature/queue";
+import { hasGaps, Queue, queueRows, type QueueKind } from "@/plan/feature/queue";
+import { useActiveTeam } from "@/plan/feature/use-active-team";
 import { useFeature } from "@/plan/feature/use-feature";
 
 const QUEUE_KIND: Record<GapScope, QueueKind> = { product: "section", metaplan: "plan" };
@@ -15,14 +16,23 @@ const QUEUE_KIND: Record<GapScope, QueueKind> = { product: "section", metaplan: 
  */
 export function Gaps({ scope }: { scope: GapScope }) {
   const { checklist } = useFeature();
+  const active = useActiveTeam(checklist?.feature ?? "");
   if (!checklist) return null;
   const step = gapStep(checklist, scope);
   const kind = QUEUE_KIND[scope];
+  const queued = hasGaps(checklist, kind);
+  // The queue lists every document the team covers, with its owner and state; the panel then
+  // keeps to the cost line and the teammates.
+  const paths = new Set(queueRows(checklist, kind).map((row) => row.path));
+  const merged = queued && (active?.team.documents.every((path) => paths.has(path)) ?? false);
   return (
     <div className="plan-gaps">
-      {step && <PaceChoice checklist={checklist} step={step} />}
-      <DraftTeamPanel feature={checklist.feature} />
-      {hasGaps(checklist, kind) && <Queue checklist={checklist} kind={kind} />}
+      {/* A running team owns the missing documents: the pace choice would start a second run. */}
+      {step && (active === null || active.finished) && (
+        <PaceChoice checklist={checklist} step={step} />
+      )}
+      <DraftTeamPanel feature={checklist.feature} documents={!merged} />
+      {queued && <Queue checklist={checklist} kind={kind} />}
     </div>
   );
 }

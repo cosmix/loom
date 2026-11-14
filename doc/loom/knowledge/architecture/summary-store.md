@@ -255,8 +255,10 @@ Source: `plan_server/summaries/scheduler.rs`, `scheduler/queue.rs`, `scheduler/s
   summary's concept heading reads "Out of date: the source changed" (the concept wire carries no waiting reason). Quiet
   records (`since`, `in_turn`) are pruned only when their summary leaves the evaluated set (`Scheduler::known`, through
   `prune`) and expire after `QUIET_PERIOD`, so a claimed (Rebuilding) summary edited mid-session still waits after an
-  unsealed end; `scheduler.rs` and
-  `rebuilds.rs` are about 396 lines each, at the 400-line limit, so the next change there splits a file first.
+  unsealed end; `scheduler.rs` (398 lines) and
+  `rebuilds.rs` (399 lines) sit at the 400-line limit, so the next change to either splits it first.
+- **Draft-team settle.** A settled team run enqueues its documents' summaries and the overview as a Button press, with
+  no quiet period and no question ([Draft-Team Settle](#draft-team-settle)).
 - **Decline memory.** No to a question moves its ids to `declined`. A declined id is skipped by `on_update` and `refresh`
   until a Button press (`forget` clears declined, failed and unsealed) or until it stops being out of date. A failed id
   is skipped by `refresh`, and `on_update` clears the failure of an id that is newly invalidated.
@@ -340,3 +342,11 @@ Source: `plan_server/summaries/scheduler.rs`, `scheduler/queue.rs`, `scheduler/s
 - **Opening submission (Claude).** A summary opening that is typed but never submitted is fixed in the bridge, not here: [Delivery](planning-session-bridge.md#delivery).
 
 No live `codex exec` has run this backend: a stage sandbox has no network and refuses nested `bwrap`, so the sandbox-write, `check_parent` and `O_RDONLY` paths rest on tests and reasoning ([follow-ups](../concerns/planner-ui-repair-followups.md#codex-summary-backend)).
+
+## Draft-Team Settle
+
+Source: `plan_server/summaries/rebuilds/team.rs` (`TeamRuns`, `run_ids`, `Rebuilds::settle_team`, `team_documents`).
+
+A team-scoped authoring session reports its teammates to `Rebuilds::team_changed`, which only records them: `TeamRuns` tracks one run per session, armed by a teammate working. The run settles once, on a report of the lead (`Lead::TurnEnded`, `Lead::Idle`, `Lead::Ended`) when no teammate works by then, or when the session Ended unless the run already settled. A `Team` event never settles it: a teammate going idle wakes the lead for its consistency turn, and the transcript tail can report that idle before the lead's `TurnStarted`, so the run waits for the end of that turn (`team/tests.rs` `a_teammate_idle_before_the_leads_next_turn_waits_for_that_turn_to_end`). The press applies only to a draft run: `team_documents` reads the documents of a `SessionScope::Team` whose `run` is `TeamRun::Draft` (Draft all missing sections or plans); an address run (`TeamRun::Address`) edits documents that exist, so its summaries take the background path, its quiet period and its large-rebuild question. `run_ids` picks the summary of each draft document that is neither current nor claimed, followed by `overview/<feature>/product` for every feature one of them is a product section of (none when nothing is due, so a run that wrote nothing rebuilds no overview).
+
+The ids enter as `enqueue(ids, Trigger::Button)`: a press, so no quiet period, no question and no limit check, and one summary session builds the sections and then the overview. A lead's turn end or Idle calls `settle_team` before the turn's suspension is released, so the ids are queued when the release tries a start. A refinement turn the reader takes later in the same chat follows the background path and its quiet period, until a teammate works again. `rebuilds.rs` is 399 lines, so the next change there splits it first.
