@@ -38,3 +38,29 @@ pub(super) fn append_empty_memory_box(content: &mut String) {
     content.push_str("└─────────────────────────────────────────────────────────────┘\n");
     content.push_str("```\n\n");
 }
+
+pub(super) fn append_execution_path_box(
+    content: &mut String,
+    execution_path: &str,
+    working_dir: &str,
+) {
+    // Execution path reminder box
+    content.push_str("```text\n");
+    content.push_str("┌────────────────────────────────────────────────────────────────────┐\n");
+    content.push_str("│  📍 WHERE COMMANDS EXECUTE                                         │\n");
+    content.push_str("│                                                                    │\n");
+    content.push_str(&format!(
+        "│  Acceptance criteria run from: {}{}│\n",
+        execution_path,
+        " ".repeat(39_usize.saturating_sub(execution_path.len()))
+    ));
+    content.push_str(&format!(
+        "│  Formula: WORKTREE + working_dir = {}{}│\n",
+        working_dir,
+        " ".repeat(29_usize.saturating_sub(working_dir.len()))
+    ));
+    content.push_str("│                                                                    │\n");
+    content.push_str("│  If cargo/npm fails with 'not found', check working_dir setting.   │\n");
+    content.push_str("└────────────────────────────────────────────────────────────────────┘\n");
+    content.push_str("```\n\n");
+}

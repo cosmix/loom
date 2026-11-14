@@ -55,6 +55,44 @@ fn ungated_untyped_spawn_warns_instead_of_blocking() {
 }
 
 #[test]
+fn ungated_untyped_spawn_without_model_pins_sonnet() {
+    let (_temp, hook) = setup_hook();
+    let (home, cwd) = (temp(), temp());
+    let input = json!({"subagent_type": "general-purpose", "prompt": "p1", "description": "d1"});
+    let out = run_hook(&hook, "Task", input, cwd.path(), home.path(), &[]);
+    assert_eq!(out.code, 0, "stderr={}", out.stderr);
+    let v: Value = serde_json::from_str(out.stdout.trim()).expect("parse stdout json");
+    let output = &v["hookSpecificOutput"];
+    assert_eq!(output["permissionDecision"], "allow");
+    assert_eq!(output["updatedInput"]["model"], "sonnet");
+    assert_eq!(output["updatedInput"]["prompt"], "p1");
+    assert_eq!(output["updatedInput"]["description"], "d1");
+    let ctx = output["additionalContext"].as_str().expect("context");
+    assert!(ctx.starts_with("LOOM_HOOK_WARN:"), "ctx={ctx}");
+    assert!(
+        ctx.contains("Untyped spawn outside a loom stage"),
+        "ctx={ctx}"
+    );
+    assert!(!ctx.contains(UNTYPED_MSG_LEAD), "ctx={ctx}");
+
+    let input = json!({"subagent_type": "general-purpose", "model": "haiku"});
+    let out = run_hook(&hook, "Task", input, cwd.path(), home.path(), &[]);
+    assert_eq!(out.code, 0, "stderr={}", out.stderr);
+    let v: Value = serde_json::from_str(out.stdout.trim()).expect("parse stdout json");
+    let output = &v["hookSpecificOutput"];
+    assert!(output.get("updatedInput").is_none());
+    assert!(output.get("permissionDecision").is_none());
+
+    let out = run_hook(&hook, "Task", json!({}), cwd.path(), home.path(), &[]);
+    assert_eq!(out.code, 0, "stderr={}", out.stderr);
+    let v: Value = serde_json::from_str(out.stdout.trim()).expect("parse stdout json");
+    assert_eq!(
+        v["hookSpecificOutput"]["updatedInput"],
+        json!({"model": "sonnet"})
+    );
+}
+
+#[test]
 fn typed_spawn_without_model_fills_in_defined_tier_and_preserves_other_keys() {
     let (_temp, hook) = setup_hook();
     let (home, cwd, work) = (temp(), temp(), temp());

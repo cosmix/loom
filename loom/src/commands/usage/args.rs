@@ -25,6 +25,10 @@ impl ProviderSelection {
 /// command owns its own surface - the same reasoning `SubagentsArgs` documents.
 #[derive(Debug, clap::Args)]
 pub struct UsageArgs {
+    /// Print the quota windows and routing line that stage signals carry, then exit
+    #[arg(long)]
+    pub quota: bool,
+
     /// Compare a bounded, offline paired-evaluation artifact
     #[arg(long, value_name = "ARTIFACT.json")]
     pub compare: Option<PathBuf>,

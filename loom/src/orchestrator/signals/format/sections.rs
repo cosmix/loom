@@ -13,7 +13,9 @@ use super::helpers::{
     format_structured_handoff,
 };
 use super::sandbox_section::format_sandbox_section;
-use super::section_boxes::{append_empty_memory_box, append_knowledge_updates_required_box};
+use super::section_boxes::{
+    append_empty_memory_box, append_execution_path_box, append_knowledge_updates_required_box,
+};
 use super::skills::format_skill_recommendations;
 
 mod acceptance;
@@ -335,25 +337,7 @@ pub(super) fn format_dynamic_section(
     content.push_str(&format!("- **Execution Path**: `{execution_path}`\n"));
     content.push('\n');
 
-    // Execution path reminder box
-    content.push_str("```text\n");
-    content.push_str("┌────────────────────────────────────────────────────────────────────┐\n");
-    content.push_str("│  📍 WHERE COMMANDS EXECUTE                                         │\n");
-    content.push_str("│                                                                    │\n");
-    content.push_str(&format!(
-        "│  Acceptance criteria run from: {}{}│\n",
-        execution_path,
-        " ".repeat(39_usize.saturating_sub(execution_path.len()))
-    ));
-    content.push_str(&format!(
-        "│  Formula: WORKTREE + working_dir = {}{}│\n",
-        working_dir,
-        " ".repeat(29_usize.saturating_sub(working_dir.len()))
-    ));
-    content.push_str("│                                                                    │\n");
-    content.push_str("│  If cargo/npm fails with 'not found', check working_dir setting.   │\n");
-    content.push_str("└────────────────────────────────────────────────────────────────────┘\n");
-    content.push_str("```\n\n");
+    append_execution_path_box(&mut content, &execution_path, working_dir);
 
     // Add worktree root directory reminder (defense-in-depth)
     content.push_str(&format!(
@@ -412,6 +396,8 @@ pub(super) fn format_dynamic_section(
         content.push_str(findings);
         content.push_str("\n\n");
     }
+
+    super::budget::push_model_budget(embedded_context.model_budget.as_deref(), &mut content);
 
     // Assignment section
     content.push_str("## Assignment\n\n");
