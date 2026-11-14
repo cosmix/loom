@@ -148,6 +148,7 @@ PATH="$BIN_DIR:$PATH" FAKE_CODEX_PID="$d/survivor.pid" \
 	FAKE_CODEX_ARGV="$d/survivor.argv" SUPERVISOR="$SUPERVISOR" python3 - <<'PY' >"$d/survivor.out"
 import importlib.util
 import os
+import subprocess
 import sys
 
 spec = importlib.util.spec_from_file_location("codex_direct", os.environ["SUPERVISOR"])
@@ -155,7 +156,11 @@ module = importlib.util.module_from_spec(spec)
 sys.modules[spec.name] = module
 sys.path.insert(0, os.path.dirname(os.environ["SUPERVISOR"]))
 spec.loader.exec_module(module)
-module.Descendants.living = lambda _self: [999999]
+# A pid that has exited and been reaped: _retire's kill finds nothing, and the
+# tracker still reports it alive. A fixed number could be a real process of ours.
+dead = subprocess.Popen(["true"])
+dead.wait()
+module.Descendants.living = lambda _self: [dead.pid]
 result = module.supervise(["codex", "exec", "--json", "--", "test"], 500, 20)
 assert result.state == "unknown"
 assert result.ownership_retained is True

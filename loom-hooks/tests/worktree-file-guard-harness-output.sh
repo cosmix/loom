@@ -18,11 +18,9 @@ TMP=$(mktemp -d "$(fixture_base)/loom-harness-output.XXXXXX")
 TMP=$(cd "$TMP" && pwd -P)
 BSD_DIR=""
 PROJECT=""
-CREATED_ROOT=false
 cleanup() {
 	rm -rf "$TMP" ${BSD_DIR:+"$BSD_DIR"} ${PROJECT:+"$PROJECT"}
 	rm -f "$UID_ROOT/loom-harness-$$.log" "$UID_ROOT/loom-harness-link-$$" "$UID_ROOT/loom-harness-leaf-$$"
-	[[ "$CREATED_ROOT" == false ]] || rmdir "$UID_ROOT" 2>/dev/null || true
 }
 trap cleanup EXIT
 PATH_PREFIX="$PATH"
@@ -139,9 +137,8 @@ jq -e -s '.[0].rule == "symlink-leaf" and .[0].tool == "Read" and .[0].guard == 
 RUN_ENV=(TMPDIR="$TMP/tmpdir")
 
 # 5. /tmp/claude-<uid>, set up as worktree-file-guard-scratchpad.sh does.
-if [[ ! -d "$UID_ROOT" ]]; then
-	mkdir -m 700 "$UID_ROOT" && CREATED_ROOT=true
-fi
+# The root is shared with concurrent runs: create it if absent, never remove it.
+[[ -d "$UID_ROOT" ]] || mkdir -m 700 "$UID_ROOT" 2>/dev/null || [[ -d "$UID_ROOT" ]]
 if ! PROJECT=$(mktemp -d "$UID_ROOT/loom-hooktest-project.XXXXXX"); then
 	PROJECT=""
 	# Seatbelt cannot give loom's confined runner a private /tmp, so there the

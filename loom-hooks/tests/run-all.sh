@@ -1,55 +1,139 @@
 #!/usr/bin/env bash
+# Runs every hook test, LOOM_HOOK_TEST_JOBS at a time (default: CPU count,
+# capped at 8). Each test runs in its own process with its output and exit
+# status in a private results directory; the report is printed afterwards in
+# the declared order, so it reads the same at any concurrency.
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PASS=0
 FAIL=0
 SKIPS=0
 ERRORS=()
+NAMES=()
+SCRIPTS=()
+RUNNING=()
 
 # LOOM_HOOK_TEST_BSD=1 runs every test with the BSD tool shims first on PATH
-# (padded wc output, BSD-only stat and date options), as on macOS.
+# (padded wc output, BSD-only stat and date options), as on macOS. The shim
+# directory is built once here and shared read-only by every job.
 source "$SCRIPT_DIR/_bsd_path.sh"
 BSD_DIR=""
+RESULTS_DIR=$(mktemp -d "${TMPDIR:-/tmp}/loom-hooktests.XXXXXX")
+cleanup() {
+	rm -rf "$RESULTS_DIR" ${BSD_DIR:+"$BSD_DIR"}
+}
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 if [[ "${LOOM_HOOK_TEST_BSD:-}" == "1" ]]; then
-    BSD_DIR=$(bsd_shim_dir)
-    trap 'rm -rf "$BSD_DIR"' EXIT
-    echo "BSD tool shims active"
+	BSD_DIR=$(bsd_shim_dir)
+	echo "BSD tool shims active"
 fi
 
+# default_jobs - CPU count (Linux getconf, macOS sysctl, else 1), capped at 8.
+default_jobs() {
+	local n
+	n=$(getconf _NPROCESSORS_ONLN 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 1)
+	[[ "$n" =~ ^[1-9][0-9]*$ ]] || n=1
+	if [[ "$n" -gt 8 ]]; then n=8; fi
+	echo "$n"
+}
+
+JOBS="${LOOM_HOOK_TEST_JOBS:-}"
+if [[ -z "$JOBS" ]]; then
+	JOBS=$(default_jobs)
+elif ! [[ "$JOBS" =~ ^[1-9][0-9]*$ ]]; then
+	echo "run-all.sh: LOOM_HOOK_TEST_JOBS must be a positive integer, got '$JOBS'" >&2
+	exit 2
+fi
+
+# run_test <name> <script> - register one test; it runs after the list is read.
 run_test() {
-    local name="$1"
-    local script="$2"
-    local path_args=()
-    if [[ -n "$BSD_DIR" ]]; then
-        path_args=(PATH="$BSD_DIR:$PATH")
-    fi
-    # A loom session exports these; inherited, they would override the stub
-    # binaries and PATHs each test hands its hooks. LOOM_HOOK_PATH in
-    # particular splices the real PATH back in over the shim directory. The
-    # session identity variables would leak into any test that does not scrub
-    # its own.
-    if output=$(env -u LOOM_HOOK_PATH -u LOOM_BIN -u LOOM_HOOK_CONTEXT \
-        -u LOOM_SCRATCH_DIR -u LOOM_SESSION_TYPE -u LOOM_STAGE_ID -u LOOM_SESSION_ID \
-        -u LOOM_WORK_DIR -u LOOM_WORKTREE_PATH -u LOOM_MAIN_AGENT_PID -u LOOM_CODEX_FORWARD \
-        ${path_args[@]+"${path_args[@]}"} \
-        bash "$script" 2>&1); then
-        echo "  PASS: $name"
-        ((PASS++)) || true
-        # A test that skipped a case still exits 0; its reason must stay visible.
-        while IFS= read -r line; do
-            case "$line" in
-            skip:* | SKIP:*)
-                echo "    $line"
-                ((SKIPS++)) || true
-                ;;
-            esac
-        done <<<"$output"
-    else
-        echo "  FAIL: $name"
-        echo "    Output: $output"
-        ((FAIL++)) || true
-        ERRORS+=("$name")
-    fi
+	NAMES+=("$1")
+	SCRIPTS+=("$2")
+}
+
+# run_job <index> - run one registered test and record <index>.out and, last
+# and atomically, <index>.rc. A job that dies before writing .rc counts as FAIL.
+run_job() {
+	local i="$1" rc=0 path_args=()
+	if [[ -n "$BSD_DIR" ]]; then
+		path_args=(PATH="$BSD_DIR:$PATH")
+	fi
+	# A loom session exports these; inherited, they would override the stub
+	# binaries and PATHs each test hands its hooks. LOOM_HOOK_PATH in
+	# particular splices the real PATH back in over the shim directory. The
+	# session identity variables would leak into any test that does not scrub
+	# its own.
+	env -u LOOM_HOOK_PATH -u LOOM_BIN -u LOOM_HOOK_CONTEXT \
+		-u LOOM_SCRATCH_DIR -u LOOM_SESSION_TYPE -u LOOM_STAGE_ID -u LOOM_SESSION_ID \
+		-u LOOM_WORK_DIR -u LOOM_WORKTREE_PATH -u LOOM_MAIN_AGENT_PID -u LOOM_CODEX_FORWARD \
+		${path_args[@]+"${path_args[@]}"} \
+		bash "${SCRIPTS[$i]}" >"$RESULTS_DIR/$i.out" 2>&1 </dev/null || rc=$?
+	echo "$rc" >"$RESULTS_DIR/$i.rc.tmp"
+	mv "$RESULTS_DIR/$i.rc.tmp" "$RESULTS_DIR/$i.rc"
+}
+
+# reap_finished - drop pids that have exited from RUNNING.
+reap_finished() {
+	local live=() pid
+	for pid in ${RUNNING[@]+"${RUNNING[@]}"}; do
+		if kill -0 "$pid" 2>/dev/null; then
+			live+=("$pid")
+		else
+			wait "$pid" 2>/dev/null || true
+		fi
+	done
+	if [[ ${#live[@]} -gt 0 ]]; then RUNNING=("${live[@]}"); else RUNNING=(); fi
+}
+
+# run_all_jobs - start every registered test, at most $JOBS at once, and wait
+# for the last. Polling (no `wait -n`) keeps this working on bash 3.2.
+run_all_jobs() {
+	local i
+	for ((i = 0; i < ${#NAMES[@]}; i++)); do
+		reap_finished
+		while [[ ${#RUNNING[@]} -ge $JOBS ]]; do
+			sleep 0.05
+			reap_finished
+		done
+		run_job "$i" &
+		RUNNING+=("$!")
+	done
+	while [[ ${#RUNNING[@]} -gt 0 ]]; do
+		sleep 0.05
+		reap_finished
+	done
+}
+
+# report_job <index> - print one test's result block and update the counters.
+report_job() {
+	local i="$1" name rc="" output="" line
+	name="${NAMES[$i]}"
+	if [[ -f "$RESULTS_DIR/$i.rc" ]]; then
+		rc=$(<"$RESULTS_DIR/$i.rc")
+		output=$(<"$RESULTS_DIR/$i.out")
+	else
+		output="job ended without an exit status (killed?)"
+	fi
+	if [[ "$rc" == "0" ]]; then
+		echo "  PASS: $name"
+		((PASS++)) || true
+		# A test that skipped a case still exits 0; its reason must stay visible.
+		while IFS= read -r line; do
+			case "$line" in
+			skip:* | SKIP:*)
+				echo "    $line"
+				((SKIPS++)) || true
+				;;
+			esac
+		done <<<"$output"
+	else
+		echo "  FAIL: $name"
+		echo "    Output: $output"
+		((FAIL++)) || true
+		ERRORS+=("$name")
+	fi
 }
 
 echo "Running hook tests..."
@@ -178,10 +262,17 @@ run_test "post-tool-use: commit reminder is tokenized - heredoc body ignored, re
 run_test "loom-relay: kind derivation per loom command segment, no control kinds for subagents" "$SCRIPT_DIR/loom-relay-kinds.sh"
 run_test "loom-relay: fast path, jq and LOOM_HOOK_PATH gates, helper call contract" "$SCRIPT_DIR/loom-relay-gates.sh"
 
+START=$SECONDS
+run_all_jobs
+for ((i = 0; i < ${#NAMES[@]}; i++)); do
+	report_job "$i"
+done
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed, $SKIPS skipped cases"
+echo "Wall time: $((SECONDS - START))s with $JOBS jobs"
 
 if [[ $FAIL -gt 0 ]]; then
-    echo "Failed tests: ${ERRORS[*]}"
-    exit 1
+	echo "Failed tests: ${ERRORS[*]}"
+	exit 1
 fi

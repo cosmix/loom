@@ -10,10 +10,10 @@ HOOK="$(cd "$(dirname "$0")/.." && pwd)/worktree-file-guard.sh"
 source "$(dirname "$0")/_fixture_base.sh"
 TMP=$(mktemp -d "$(fixture_base)/loom-hooktest.XXXXXX")
 UID_ROOT="/tmp/claude-$(id -u)"
-CREATED_ROOT=false
-if [[ ! -d "$UID_ROOT" ]]; then
-	mkdir -m 700 "$UID_ROOT" && CREATED_ROOT=true
-fi
+# worktree-file-guard.sh recognises only the literal /tmp/claude-<uid>, so the
+# fixtures must live there. Concurrent runs share the root: create it if absent
+# and never remove it.
+[[ -d "$UID_ROOT" ]] || mkdir -m 700 "$UID_ROOT" 2>/dev/null || [[ -d "$UID_ROOT" ]]
 if ! PROJECT=$(mktemp -d "$UID_ROOT/loom-hooktest-project.XXXXXX"); then
 	rm -rf "$TMP"
 	# Seatbelt cannot give loom's confined runner a private /tmp, so there the
@@ -26,7 +26,6 @@ if ! PROJECT=$(mktemp -d "$UID_ROOT/loom-hooktest-project.XXXXXX"); then
 fi
 cleanup() {
 	rm -rf "$TMP" "$PROJECT"
-	[[ "$CREATED_ROOT" == false ]] || rmdir "$UID_ROOT" 2>/dev/null || true
 }
 trap cleanup EXIT
 
