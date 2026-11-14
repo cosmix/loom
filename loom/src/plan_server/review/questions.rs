@@ -5,7 +5,8 @@ use std::collections::BTreeMap;
 use crate::planning::kinds::DocKind;
 use crate::planning::project::Project;
 
-/// Return counts for eligible documents with an `Open questions` heading.
+/// Return counts for eligible documents with an `Open questions` heading: the settleable kinds
+/// (vision, product section, metaplan, plan), whose open questions settling asks about.
 pub fn open_question_counts(project: &Project) -> BTreeMap<String, usize> {
     project
         .docs
@@ -13,7 +14,10 @@ pub fn open_question_counts(project: &Project) -> BTreeMap<String, usize> {
         .filter(|(_, doc)| {
             matches!(
                 doc.doc.kind,
-                DocKind::ProductSection { .. } | DocKind::Metaplan { .. } | DocKind::Plan { .. }
+                DocKind::Vision { .. }
+                    | DocKind::ProductSection { .. }
+                    | DocKind::Metaplan { .. }
+                    | DocKind::Plan { .. }
             ) && doc
                 .sections
                 .headings

@@ -1,4 +1,4 @@
-import { CircleHelp, Flag } from "lucide-react";
+import { Flag } from "lucide-react";
 import type { JSX } from "react";
 import { Link } from "react-router";
 
@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Untrusted } from "@/plan/chat/visible-controls";
 import { useKeptDoc } from "@/plan/concept/passage-doc";
 import { featureSourceHref } from "@/plan/feature/source-href";
+import { OTHER_GLYPHS } from "@/plan/ui/glyphs";
 import { plural } from "@/plan/ui/plural";
 
 import { settlePoints, type SettlePoint } from "./doc-model";
@@ -55,7 +56,8 @@ function PointRow(props: {
   onNavigate: () => void;
 }): JSX.Element {
   const { point } = props;
-  const Icon = point.kind === "call" ? Flag : CircleHelp;
+  // The same glyphs as the heading's open-question and My call chips.
+  const Icon = point.kind === "call" ? Flag : OTHER_GLYPHS.openQuestions;
   return (
     <li className="trace-confirm__point" data-kind={point.kind}>
       <span className="trace-confirm__icon" aria-hidden="true">

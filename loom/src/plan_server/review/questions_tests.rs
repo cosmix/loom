@@ -32,6 +32,10 @@ fn zero_count_kept_for_empty_heading() {
             "doc/plans/demo/PLAN-example.md",
             "# Plan\n\n## Open questions\n- One\n",
         ),
+        (
+            "doc/product/demo/index.md",
+            "# Vision\n\n## Open questions\n- One\n- Two\n- Three\n",
+        ),
     ]);
     let project = Project::load(temp.path()).unwrap();
 
@@ -40,6 +44,7 @@ fn zero_count_kept_for_empty_heading() {
         BTreeMap::from([
             ("doc/plans/demo/PLAN-example.md".to_string(), 1),
             ("doc/plans/demo/index.md".to_string(), 2),
+            ("doc/product/demo/index.md".to_string(), 3),
             ("doc/product/demo/section_02.md".to_string(), 0),
         ])
     );
@@ -54,10 +59,7 @@ fn documents_without_the_heading_omitted() {
             "# Metaplan\n\n## open questions\n- One\n",
         ),
         ("doc/plans/demo/PLAN-example.md", "# Plan\n"),
-        (
-            "doc/product/demo/index.md",
-            "# Vision\n\n## Open questions\n- One\n",
-        ),
+        ("doc/product/demo/index.md", "# Vision\n\n## Notes\n- One\n"),
         ("doc/other.md", "# Other\n\n## Open questions\n- One\n"),
     ]);
     let project = Project::load(temp.path()).unwrap();
