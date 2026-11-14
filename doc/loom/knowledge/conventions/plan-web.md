@@ -202,3 +202,7 @@ A vitest test that fakes only `setTimeout` and `clearTimeout` (`vi.useFakeTimers
 ## Ids Come From newId, Never crypto.randomUUID
 
 `crypto.randomUUID` exists only in secure contexts, and `loom status --web --host <lan-ip>` serves the planner over plain HTTP, where calling it throws. Browser code takes ids from `newId()` (`web/src/plan/id.ts`), which falls back to `crypto.getRandomValues` (available in insecure contexts). Any other secure-context API (Notifications, Clipboard write, Service Workers) needs the same check; see `notificationSupport()` in `state/notifications.ts`. → [mistake](../mistakes/planner-review-fixes.md#chat-called-cryptorandomuuid-which-lan-http-does-not-provide)
+
+## Settle Points Share the Heading Chips' Counts and Glyphs
+
+`open_question_counts` (`loom/src/plan_server/review/questions.rs`) covers every settleable kind: vision, product section, metaplan and plan. Dropping one leaves its heading, tree row and attention bar silent while the Mark settled dialog still lists the questions. The dialog (`web/src/plan/trace/settle-confirm.tsx`) draws open questions with `OTHER_GLYPHS.openQuestions` (MessageCircleQuestion) and My calls with `Flag`, the glyphs of the heading chips. `CircleHelp` is the app's Help glyph (`OTHER_GLYPHS.help`); never use it for an open question.
