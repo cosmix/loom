@@ -386,3 +386,13 @@ Rust test module names also need graph lookup: `orchestrator::core::tests` does 
 **Prevention:** exclude build outputs by their exact repository paths and compare selected paths with all tracked source paths before running the gate.
 
 **Fix:** limit the fixture exclusions to actual root and `loom/` build directories and restore the missing source files.
+
+## Hook Suite Slowness Blamed on Timeouts Before Per-Test Timing
+
+**What happened:** asked why `loom-hooks/tests/run-all.sh` was slow, the main agent named the serial runner and the deliberate waits in `bounded-stdin.sh` and `spawn-guard-reviewer-brief.sh` from a 42-test partial timing, and proposed cutting those waits to 1 s. The operator asked first whether the values had a reason. The full timing showed `poll-guard-subagent-waits.sh` alone took 88 s of 268 s: its `fixture_t3_list` loop runs 902 hook calls, and every call past the fifth repeats the same deny, because the deny path exits (`_read_discipline.sh` `loom_hook_deny_or_warn`) before `_loom_ledger_append`, so the 300-row ledger cap is never reached. The two waits together cost about 8 s. One protects a 5 s production stdin deadline (`worktree-file-guard.sh`, `credential-guard.sh`, `codex-apply-patch.sh`) whose reason no commit records.
+
+**Why:** the diagnosis came from a partial measurement, and the fix was chosen without checking why the timeouts held their values.
+
+**Prevention:** diagnose suite time from a complete per-test timing. Before shortening a test's timeout, find what production bound it exercises and why that bound has its value.
+
+**Fix:** none applied. A parallel run (-P 8) of the suite gave byte-identical logs to serial in both GNU and BSD modes, in about 95 s; the 88 s script bounds the wall time.
