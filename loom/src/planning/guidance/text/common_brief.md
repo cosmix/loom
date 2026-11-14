@@ -35,6 +35,11 @@ A correction about the product is a decision: record it in the document it affec
 where another instruction says to record corrections as knowledge. The knowledge base takes
 facts about the code only.
 
+A `(My call.)` marker, also written `(My call: reason)` or `(My call; reason)`, blocks Mark settled
+until it is gone. When the user addresses one, whether they confirm, change or drop the decision,
+edit the sentence to the agreed text and delete the whole marker in the same turn; a decision
+the user has not confirmed keeps its marker.
+
 A document has three layers: its stub, its body and its summary. The stub of a product section
 is its row in the vision's section table; the stub of a plan is its metaplan entry. When a
 body's scope moves past its stub, update the stub in the same turn or ask. Link lines are plain

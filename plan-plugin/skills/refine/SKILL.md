@@ -38,6 +38,12 @@ has `Implements: none`, and has no metaplan.
    document you edit has one, say so in the reply ("section 04 was settled; it now reads
    revised"). A section's stub is its vision row and a plan's stub is its metaplan entry:
    when a body's scope moves past its stub, update the stub in the same turn or ask.
+7. A `(My call.)` marker, including the forms `(My call: reason)` and `(My call; reason)`,
+   blocks Mark settled until it is gone. When the user addresses one, whether they confirm
+   the decision, change it or drop it, edit the sentence to the agreed text and delete
+   the whole marker in the same turn; when the reason is not obvious, keep it as
+   plain prose. Leave no `(My call` text in the document. A decision the user has not
+   confirmed keeps its marker.
 
 Write only the target and affected editable documents under `doc/`, including an
 agreed new metaplan entry under `doc/plans/<feature>/`. Never edit code or configuration.
