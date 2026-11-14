@@ -145,7 +145,7 @@
 | [contract-autonomy-delivery](mistakes/contract-autonomy-delivery.md) | Bypass | 109 |
 | [daemon-fork-after-threads](mistakes/daemon-fork-after-threads.md) | Fork | 38 |
 | [daemon-singleton](mistakes/daemon-singleton.md) |  | 141 |
-| [detached-spawn-in-tests](mistakes/detached-spawn-in-tests.md) |  | 55 |
+| [detached-spawn-in-tests](mistakes/detached-spawn-in-tests.md) |  | 65 |
 | [dev-install](mistakes/dev-install.md) | Daemon | 44 |
 | [doctrine-and-acceptance](mistakes/doctrine-and-acceptance.md) |  | 392 |
 | [frontmatter-boundary](mistakes/frontmatter-boundary.md) |  | 13 |
@@ -197,7 +197,7 @@
 | [subagent-briefing](mistakes/subagent-briefing.md) |  | 394 |
 | [subagent-liveness-and-watch](mistakes/subagent-liveness-and-watch.md) |  | 387 |
 | [subagent-orchestration](mistakes/subagent-orchestration.md) | Agents | 397 |
-| [test-concurrency-and-fixtures](mistakes/test-concurrency-and-fixtures.md) | Races | 408 |
+| [test-concurrency-and-fixtures](mistakes/test-concurrency-and-fixtures.md) | Races | 398 |
 | [test-sweep-and-fixture-discipline](mistakes/test-sweep-and-fixture-discipline.md) |  | 388 |
 | [testing-and-lint](mistakes/testing-and-lint.md) |  | 398 |
 | [tests-that-cannot-fail](mistakes/tests-that-cannot-fail.md) |  | 392 |
