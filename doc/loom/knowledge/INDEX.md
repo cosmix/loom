@@ -58,7 +58,7 @@
 | [planning-guidance](architecture/planning-guidance.md) |  | 43 |
 | [planning-session-bridge](architecture/planning-session-bridge.md) |  | 351 |
 | [planning-session-sandbox](architecture/planning-session-sandbox.md) |  | 148 |
-| [planning-trace](architecture/planning-trace.md) |  | 141 |
+| [planning-trace](architecture/planning-trace.md) |  | 145 |
 | [pressure](architecture/pressure.md) |  | 42 |
 | [quota-poller](architecture/quota-poller.md) |  | 37 |
 | [read-gate](architecture/read-gate.md) |  | 153 |
@@ -241,6 +241,6 @@
 | [state-confinement-gaps](concerns/state-confinement-gaps.md) | Caches | 21 |
 | [token-accounting-and-proof-defects](concerns/token-accounting-and-proof-defects.md) |  | 334 |
 | [typed-config-values](concerns/typed-config-values.md) | Gaps | 22 |
-| [verification-v2-followups](concerns/verification-v2-followups.md) |  | 230 |
+| [verification-v2-followups](concerns/verification-v2-followups.md) |  | 238 |
 | [web-dashboard-latent-issues](concerns/web-dashboard-latent-issues.md) | UI | 96 |
 | [worktree-build-cold-start](concerns/worktree-build-cold-start.md) | Cold | 136 |
