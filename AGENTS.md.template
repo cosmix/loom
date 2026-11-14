@@ -95,6 +95,10 @@ In loom repositories, place plans in `./doc/plans/`. Never put plans in `~/.clau
 When authorized to commit outside a loom-orchestrated stage, use Conventional Commits:
 `type(scope): description`.
 
+## Frontend changes
+
+Before adding a message, toast, button or component, find what already exists: the caller or a shared handler may already report the event, and the project may already have the component, string or helper. One event gets one message in one place. Follow the project's own UI conventions (component library, theme tokens, styling approach, i18n, file layout); read them from the code before writing.
+
 ## Memory and attribution
 
 When the user corrects or steers you, or you find a mistake in your own work, record it before
@@ -103,9 +107,11 @@ conversation is lost next session. Never use an editor-managed auto-memory direc
 
 Inside a loom stage, record to the stage memory and repeat it in your final report:
 
-    loom memory note "mistake: <what happened>. Why: <cause>. Prevention: <rule>"
-    loom memory decision "<choice>" --context "<why>"
-    loom memory note "stale-knowledge: <file>#<heading> claims X; the tree does Y (file:line). Correction: <text>"
+```text
+loom memory note "mistake: <what happened>. Why: <cause>. Prevention: <rule>"
+loom memory decision "<choice>" --context "<why>"
+loom memory note "stale-knowledge: <file>#<heading> claims X; the tree does Y (file:line). Correction: <text>"
+```
 
 Do not edit knowledge files during a stage unless the task assigns them. A fix that failed once is reported, never retried: the orchestrator moves it to a stronger worker.
 

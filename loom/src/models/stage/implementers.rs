@@ -12,8 +12,8 @@ use serde::{Deserialize, Serialize};
 pub enum Implementer {
     /// The Claude subagent lane (haiku for extremely simple or highly detailed pieces,
     /// sonnet for pieces that need exploration or test iteration, opus for architecture and
-    /// algorithm implementation (xhigh effort for the hardest), fable only for visual/UI
-    /// design or very hard algorithmic design).
+    /// algorithm implementation (effort medium; high after a failed attempt), fable only for
+    /// visual/UI design or very hard algorithmic design).
     #[default]
     Claude,
     /// The codex implementation lane: spawned as `loom-codex-forwarder`, a
@@ -34,10 +34,10 @@ impl std::fmt::Display for Implementer {
 
 /// The set of agent lanes a stage is licensed to spawn subagents from.
 ///
-/// A stage mixes lanes freely: routine implementation may go to codex while
-/// tests go to sonnet and an architectural call stays with opus. Order is
-/// meaningful — the FIRST lane is the one to reach for on routine
-/// implementation ([`Implementers::preferred`]) — but every listed lane is
+/// A stage mixes lanes freely: straightforward, well-specified pieces may go to
+/// codex while exploration goes to sonnet and an architectural call stays with
+/// opus. Order is informational only — [`Implementers::preferred`] reports the
+/// first-listed lane — and routing is per piece: every listed lane is
 /// available for the parts of the stage that call for it.
 ///
 /// Serialized transparently as a YAML sequence (`["codex", "claude"]`), so a
@@ -61,7 +61,7 @@ impl Implementers {
         Self(lanes)
     }
 
-    /// The lane to reach for on ROUTINE implementation work — the first listed.
+    /// The first-listed lane. Order is informational only; routing is per piece.
     ///
     /// Falls back to [`Implementer::Claude`] for an empty set. Validation
     /// rejects an explicitly empty list, so the fallback only covers a value
@@ -74,7 +74,7 @@ impl Implementers {
     ///
     /// This is the gate for the codex safety doctrine: any stage that may
     /// spawn even ONE codex subagent has to carry the blast-radius rules,
-    /// whether or not codex is its preferred lane.
+    /// whether or not codex is the first-listed lane.
     pub fn includes_codex(&self) -> bool {
         self.0.contains(&Implementer::Codex)
     }

@@ -22,6 +22,9 @@ mod types;
 mod v2_section;
 
 #[cfg(test)]
+mod allocation_contract_tests;
+
+#[cfg(test)]
 mod budget_contract_tests;
 
 #[cfg(test)]

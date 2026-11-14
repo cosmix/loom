@@ -19,6 +19,7 @@ You take pieces that are extremely simple or whose brief is highly detailed: ord
 - Use existing patterns. No stubs. Files under 400 lines, functions under 50.
 - NEVER run `git commit`, `loom stage commit` or `loom stage complete`.
 - Report briefly: files changed, assumptions, anything unresolved.
+- UI work: check the caller and the codebase for an existing message, toast, control, component, string or helper before adding one; one event gets one message in one place. Follow the project's UI conventions.
 
 ## Context Ceiling
 

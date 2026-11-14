@@ -46,20 +46,31 @@ pub(super) const BLOCK_B: &str = r#"1. DELEGATION IS A COST DECISION: TOKENS TIM
    default downward. HAIKU (loom-software-developer, effort high): a piece
    that is extremely simple, or whose brief is highly detailed — files,
    exact change and acceptance stated. Never haiku: an open decision, a bug
-   of unknown cause, concurrency, security-sensitive code, a data-loss path. Codex gpt-6-luna takes boilerplate and simple
-   unit tests only when the user or the plan asks. SONNET
-   (loom-software-engineer): pieces that need exploration or the initial
-   iteration on failing tests, or are too large to brief in that detail;
-   codex gpt-6.1-terra where such a piece is well specified. OPUS
-   (loom-senior-software-engineer, effort high; `effort: xhigh` for the
-   hardest) implements where a wrong design is expensive and tests will not
-   catch it: architecture, new algorithms, concurrency, distributed systems,
-   security-sensitive code, bugs of unknown cause. FABLE implements only
-   visual/UI design and extremely challenging algorithmic design. Codex
-   tiers (effort xhigh, via loom-codex-forwarder) exist only on stages listing
-   codex in implementers AND when the codex CLI + plugin are installed;
-   otherwise terra-tier work goes to sonnet and luna-tier work to haiku (loom
-   warns at startup when a stage lists codex it cannot use). In a standard
+   of unknown cause, concurrency, security-sensitive code, a data-loss path.
+   Spawn `Explore` with `model: haiku` for locate-only sweeps (paths, symbols,
+   call sites, where a string occurs); the default sonnet when the answer
+   requires reading behavior. CODEX (loom-codex-forwarder, effort xhigh) takes
+   straightforward, well-specified implementation (one concern, pinned
+   interfaces, mechanical acceptance, no git, no `.loom/`) when the stage lists
+   codex in implementers, the codex CLI + plugin are installed and quota has
+   room. No lane is first or default; list order means nothing. Verification,
+   review, planning, exploration, debugging and iteration on failing tests
+   stay with Claude. gpt-6.1-terra: implementation, integration tests,
+   boilerplate, scaffolding and simple unit tests; gpt-6.1-sol: a substantial
+   well-specified unit (about 4 to 6 file-sized changes) or a terra unit that
+   failed once; gpt-6-luna only when the user or the plan asks. Otherwise
+   terra- and sol-tier work goes to sonnet, and boilerplate and simple unit
+   tests to haiku. SONNET (loom-software-engineer): pieces that need exploration or the
+   initial iteration on failing tests, or are too large to brief in that
+   detail. A piece between sonnet and opus goes to sonnet.
+   OPUS (loom-senior-software-engineer, effort medium)
+   implements architecture across modules, new algorithms, concurrency,
+   distributed systems, security-sensitive code, bugs of unknown cause. It
+   takes no visual or CSS fixes, no fixes for review findings in code sonnet,
+   haiku or codex wrote (those return to the tier that wrote the piece and
+   escalate only on a failed fix), and no mainstream feature code. The
+   orchestrator passes no `effort` on a first attempt. FABLE implements only
+   visual/UI design and extremely challenging algorithmic design. In a standard
    stage the GATE is the orchestrator's single `loom check` (a fix round
    re-checks with `--criterion <n>`); an integration-verify stage runs the
    gate its own signal names. Either way the orchestrator owns fixes and the
@@ -70,12 +81,14 @@ pub(super) const BLOCK_B: &str = r#"1. DELEGATION IS A COST DECISION: TOKENS TIM
    brief and respawn the same tier.
    Settle every decision one lookup would answer before choosing a tier; one
    left open is no reason to pick sonnet over haiku. A real failure moves up
-   one tier, haiku to sonnet to opus, with every attempt and its
-   evidence in the new brief. Never skip a tier or rerun one on the same
-   failure.
+   one tier with every attempt and its evidence in the new brief: haiku,
+   sonnet, opus at effort medium, opus at `effort: high`; codex terra, sol,
+   then Claude at the tier the piece needs. Never skip a tier or rerun one on
+   the same failure.
 5. THE LADDER ENDS AT `loom-advisor` (fable, read-only), RARELY: spawn it
-   only after an opus implementer failed, typically a stubborn bug, with
-   every attempt. Its diagnosis goes to an opus implementer."#;
+   only after an opus implementer failed at effort high, typically a stubborn
+   bug, with every attempt. Its diagnosis goes to an opus implementer at
+   `effort: high`."#;
 
 /// BLOCK-D - the subagent context-ceiling rule, verbatim. Pinned against BOTH
 /// the subagent preamble (`loom-hooks/_subagent-preamble.txt`, which
@@ -159,4 +172,12 @@ pub(super) const RETIRED_PHRASES: &[&str] = &[
     // only as `loom check`.
     concat!("Verification NEVER ", "delegates"),
     concat!("verification never ", "delegates"),
+    // Retired: opus runs at effort medium by default and `high` after a failed
+    // attempt; `xhigh` is no longer a subagent setting (`agents/loom-advisor.md`
+    // keeps its own frontmatter line, written without backticks).
+    concat!("`effort: ", "xhigh`"),
+    // Retired: luna-tier work no longer falls back to haiku; terra- and
+    // sol-tier work goes to sonnet when codex is unavailable.
+    concat!("luna-tier work to", " haiku"),
+    concat!("luna-tier work will fall back to", " haiku"),
 ];

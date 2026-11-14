@@ -290,11 +290,11 @@ pub struct StageDefinition {
     /// per-stage opt-in keeps the cost decision explicit.
     #[serde(default)]
     pub ultracode: bool,
-    /// Which agent lanes this stage may spawn subagents from, in preference
-    /// order — the first is the lane to reach for on routine implementation.
+    /// Which agent lanes this stage may spawn subagents from; order is
+    /// informational, each piece is routed by its nature and quota.
     /// Defaults to `["claude"]`; list `["codex", "claude"]` for a stage that
-    /// sends routine work to codex while keeping Claude subagents available
-    /// for the parts that call for them.
+    /// sends straightforward work to codex while keeping Claude subagents
+    /// available for the parts that call for them.
     #[serde(default)]
     pub implementers: Implementers,
     /// How long (seconds) this stage's session may go without a heartbeat before

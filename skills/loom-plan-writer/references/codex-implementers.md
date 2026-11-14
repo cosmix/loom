@@ -2,15 +2,19 @@
 
 Read when: choosing each stage's implementation lanes, or a stage lists codex in `implementers`.
 
-Two lanes implement a stage's work, and neither is the default. Judge each stage against both and
-license the better fit; the stage's orchestrator still picks the lane per subagent at spawn time.
+Two lanes implement a stage's work. Codex takes implementation that is straightforward and well
+specified, when the stage licenses it, codex is available and the subscription has quota room. Claude
+takes the rest, and always does verification, review, planning, exploration, debugging and iteration
+on failing tests. No lane is first or default: judge each piece by its nature and by quota, and
+license accordingly; the stage's orchestrator picks the lane per piece at spawn time.
 
 - **Codex lane:** `loom-codex-forwarder`, a haiku forwarder of about 20,000 tokens per job whose only tool is Bash, makes one
-  foreground call to `codex-forward.sh`, which runs gpt-6.1-terra (common implementation,
-  integration tests), or gpt-6-luna (boilerplate, scaffolding, simple unit tests) only when the user
-  or the plan explicitly asks for it, always at effort xhigh.
+  foreground call to `codex-forward.sh`, which runs gpt-6.1-terra (implementation, integration
+  tests, boilerplate, scaffolding, simple unit tests), gpt-6.1-sol (a substantial well-specified unit
+  (about 4 to 6 file-sized changes) or a terra unit that failed once), or gpt-6-luna only when the
+  user or the plan explicitly asks for it, always at effort xhigh.
 - **Claude lane:** `loom-software-engineer` (sonnet), `loom-software-developer` (haiku, routine work),
-  `loom-senior-software-engineer` (opus, effort high; spawned with `effort: xhigh` for hard cases), and fable by an explicit model override.
+  `loom-senior-software-engineer` (opus, effort medium; respawned at `effort: high` after a failed attempt), and fable by an explicit model override.
 
 ## Lane comparison
 
@@ -22,9 +26,9 @@ license the better fit; the stage's orchestrator still picks the lane per subage
 | Context | A shell plus the navigation kit (`loom map --find-all`, `--outline`, `--impact`, `loom knowledge context`), each sub-second, so briefs name anchors. In a worktree the kit answers from the BASE layer and misses earlier units' edits. Doctrine is `~/.codex/AGENTS.md` plus the prompt, never CLAUDE.md | Read, Grep, and Glob on the live tree, CLAUDE.md, the subagent preamble, and loom skills through the Skill tool; fits exploring an unread seam |
 | Checks it can run | Compile-only at most: the companion sandbox mounts the stage TMPDIR read-only, so fixture-backed tests fail at setup. The orchestrator runs the unit's tests right after it | The tests for the code it wrote and its module, fixture-backed tests included, never the whole suite |
 | Guardrails | Loom's hooks never see the commands codex runs, and codex runs `workspace-write` with approval `never`: no `git` and no `.loom/` path are prose rules, backed by the orchestrator's `git status --short` after each run | Loom's hooks guard every Bash call |
-| Escalation | Two tiers. A timed-out unit is re-split, never re-forwarded as is; work that cannot fit the job limits, or needs architectural judgment, moves to Claude | Haiku to sonnet to opus on evidence, then `loom-advisor` (fable) after an opus failure |
+| Escalation | Terra, then sol, then Claude at the tier the piece needs. A timed-out unit is re-split, never re-forwarded as is; work that cannot fit the job limits, or needs architectural judgment, moves to Claude | Haiku, sonnet, opus at medium, opus at high, then `loom-advisor` (fable) after the opus failure at high |
 | Heartbeat | A forward is one long Bash call: raise `subagent_timeout_secs` and read `appears hung` as advisory | SubagentStop refreshes the parent's heartbeat |
-| Availability | Needs the codex CLI and plugin; on Linux also `exclude_slash_tmp` in `~/.codex/config.toml` (`loom repair --fix`). Missing at run time, the signal reroutes terra-tier work to sonnet and luna-tier work to haiku | Always available |
+| Availability | Needs the codex CLI and plugin; on Linux also `exclude_slash_tmp` in `~/.codex/config.toml` (`loom repair --fix`). Missing at run time, the signal reroutes terra- and sol-tier work to sonnet, and boilerplate and simple unit tests to haiku | Always available |
 
 Sources: BLOCK-A (subagent preamble), orchestration Rule 7, and knowledge
 `architecture/codex-concurrency.md`, `architecture/owned-waits.md` (unit deadline, unit verification
@@ -52,19 +56,23 @@ usually pass, and they make up a large share of implementation work.
 - the change is unknown until someone explores the code, or the design is unsettled;
 - the piece converges only by running fixture-backed tests, which a codex unit cannot run;
 - visual or UI design (fable, per orchestration Rule 7);
-- debugging, or a fix that already failed once;
-- architectural judgment (opus, whatever the list says).
+- debugging, or a fix that already failed on sol (a terra unit that failed once goes to sol first);
+- architecture, new algorithms, concurrency or security-sensitive code (opus, whatever the list says).
 
-Then write the stage's list, preferred lane first:
+Then write the stage's list. The order is informational only (the first-listed lane is where most
+of the work sits) and carries no routing meaning:
 
 | Stage's work | `implementers` |
 | --- | --- |
-| Mostly codex-fit pieces | `["codex", "claude"]` |
-| Mostly Claude-fit pieces, with a codex-fit slice | `["claude", "codex"]` |
-| No codex-fit piece, or codex unavailable | `["claude"]` |
+| Mostly straightforward, well-specified pieces | `["codex", "claude"]` |
+| Mostly Claude-fit pieces, with a straightforward slice | `["claude", "codex"]` |
+| No straightforward, well-specified piece, or codex unavailable | `["claude"]` |
 | knowledge, knowledge-distill, integration-verify | Omit the field; preflight warns on codex there |
 
-Keep `claude` in a codex-first list: a unit that cannot be cut to size moves to it. When codex is
+List codex on a stage that has a straightforward, well-specified piece; write `["claude"]` when it
+has none.
+
+Keep `claude` in every list that licenses codex: a unit that cannot be cut to size moves to it. When codex is
 available, write the list on every standard stage, `["claude"]` included, so each choice is visible;
 an omitted field parses as `["claude"]`. A listed lane is AVAILABLE, never mandatory. Never write a
 bare scalar (`implementers: codex`): it fails to parse, and an empty list fails validation.
@@ -83,8 +91,10 @@ After the stage list is settled and before writing stage YAML:
    regenerated file, not a general guarantee — user and project scope are not rewritten at all.
 3. Codex unavailable (no CLI, or the user declined the install): tell the user, plan every stage on
    Claude, and never write codex into `implementers`.
-4. Codex available: ask ONCE with AskUserQuestion, presenting each implementation stage's
-   recommended list with a one-line reason, then apply the answer:
+4. Codex available: run `loom usage --quota` first. With Claude under pressure, recommend
+   licensing codex wherever a stage has a straightforward, well-specified piece, and say so in the one-line reasons.
+   Then ask ONCE with AskUserQuestion, presenting each implementation stage's recommended list
+   with a one-line reason, and apply the answer:
 
    ```text
    Recommended implementation lanes (confirm, or name the stages to change):
@@ -94,14 +104,15 @@ After the stage list is settled and before writing stage YAML:
    ```
 
 Listing codex is safe even if the executing machine might lack it: `loom run` warns at startup and
-the stage signal reroutes terra-tier work to sonnet and luna-tier work to haiku, so the plan needs no fallback wiring.
+the stage signal reroutes terra- and sol-tier work to sonnet, and boilerplate and simple unit tests to haiku, so the plan needs no fallback wiring.
 
 ## Writing codex stages
 
 1. In each codex stage's description, name the subagent and the fan-out explicitly, e.g. "Spawn N
    `loom-codex-forwarder` subagents in the FOREGROUND, each with the tier-appropriate model —
-   `--model gpt-6.1-terra` (common implementation, integration tests) or, only when the user or plan
-   asks for luna, `--model gpt-6-luna` (boilerplate, scaffolding, simple unit tests) — always `--effort xhigh`, an explicit Bash
+   `--model gpt-6.1-terra` (implementation, integration tests, boilerplate, scaffolding, simple unit tests),
+   `--model gpt-6.1-sol` (a substantial well-specified unit or a terra unit that failed once) or, only when the user or plan
+   asks for luna, `--model gpt-6-luna` — always `--effort xhigh`, an explicit Bash
    timeout of 1560000 ms, and a DISJOINT file set; run `loom check` for the gate, then commit yourself." (The forwarder is
    loom's own shim; never spawn the plugin's `codex:codex-rescue`
    directly — plugin agents' tools restriction is ignored by design, so that wrapper runs
@@ -137,8 +148,8 @@ the stage signal reroutes terra-tier work to sonnet and luna-tier work to haiku,
    skills are for Claude workers: quote applicable rules in the Codex brief. The wrapper marks each
    forward with `LOOM_CODEX_FORWARD=1`; loom's context-injecting hooks stay silent while guard hooks still run.
 
-   **⚠️ CODEX UNITS NAME ANCHORS, NOT EXHAUSTIVE DETAIL.** A codex subagent is `gpt-6.1-terra` or
-   `gpt-6-luna` with a shell, and no Read tool — but it is not blind: loom's forwarding wrapper
+   **⚠️ CODEX UNITS NAME ANCHORS, NOT EXHAUSTIVE DETAIL.** A codex subagent is `gpt-6.1-terra`,
+   `gpt-6.1-sol` or, on request, `gpt-6-luna` with a shell, and no Read tool — but it is not blind: loom's forwarding wrapper
    hands every codex prompt the source-graph navigation kit (`loom map --find-all`, `--outline`,
    `--impact`, `loom knowledge context --query`), each answering in under a second. It looks up a
    signature, a call site, or a surrounding pattern itself, so the plan does not paste them. In a
@@ -179,9 +190,9 @@ the stage signal reroutes terra-tier work to sonnet and luna-tier work to haiku,
 
 ```text
 □ Codex availability checked; if available, ONE AskUserQuestion confirmed a per-stage lane recommendation with a one-line reason each, and every `implementers:` list matches the answer; if unavailable, the user was told and no stage lists codex
-□ Lanes follow the per-stage rule: codex-fit concerns (code, consumers and tests together, pinned interfaces, mechanical acceptance) license codex; exploration, fixture-backed test convergence, UI design, and debugging license Claude; codex never on bookend stages; every list is a non-empty YAML sequence with no repeated lane
+□ Lanes follow the per-stage rule: straightforward, well-specified concerns (code, consumers and tests together, pinned interfaces, mechanical acceptance) license codex; exploration, fixture-backed test convergence, UI design, and debugging license Claude; codex never on bookend stages; every list is a non-empty YAML sequence with no repeated lane
 □ Every codex job is one concern, possibly several files, sized by measured model rates for at most about 250,000 tokens of peak context and well inside 1500000 ms; xhigh budgets twice the high-effort time. Its brief names files owned/read, entry symbols, done condition, proof command and traps; two jobs never write one file
 □ Every forwarder prompt names an absolute brief path in ONE line, with no apostrophe, complete substring or loom stage phrase; declared skill rules are quoted in the brief; the wrapper sets LOOM_CODEX_FORWARD=1 so context-injecting hooks stay silent while guard hooks still run
-□ Every codex subagent prompt states a foreground Bash timeout of 1560000 ms alongside the tier-appropriate model — `--model gpt-6.1-terra` (common implementation, integration tests) or, only on explicit request, `--model gpt-6-luna` (boilerplate, scaffolding, simple unit tests) — always `--effort xhigh`; the wrapper cancels at 1500000 ms, exits 124, and an overrun is re-split against its partial tree
+□ Every codex subagent prompt states a foreground Bash timeout of 1560000 ms alongside the tier-appropriate model — `--model gpt-6.1-terra` (implementation, integration tests, boilerplate, scaffolding, simple unit tests), `--model gpt-6.1-sol` (a substantial well-specified unit or a terra unit that failed once) or, only on explicit request, `--model gpt-6-luna` — always `--effort xhigh`; the wrapper cancels at 1500000 ms, exits 124, and an overrun is re-split against its partial tree
 □ No wave exists only to respect the cap of 6; order work inside a job first, then use waves only for dependencies on another job's result on disk
 ```

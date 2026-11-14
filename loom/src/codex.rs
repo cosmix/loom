@@ -3,10 +3,13 @@
 use anyhow::{bail, Context, Result};
 use std::path::{Path, PathBuf};
 
-/// Codex model for common implementation and integration tests (sonnet's peer tier).
+/// Codex model for implementation, integration tests, boilerplate, scaffolding and simple unit tests (sonnet's peer tier).
 pub const CODEX_IMPLEMENTER_MODEL_TERRA: &str = "gpt-6.1-terra";
 
-/// Codex model for boilerplate, scaffolding, and simple unit tests.
+/// Codex model for a substantial well-specified unit (about 4 to 6 file-sized changes) or a terra unit that failed once.
+pub const CODEX_IMPLEMENTER_MODEL_SOL: &str = "gpt-6.1-sol";
+
+/// Codex model used only when the user or the plan asks.
 pub const CODEX_IMPLEMENTER_MODEL_LUNA: &str = "gpt-6-luna";
 
 /// Reasoning effort used for Codex implementation runs.

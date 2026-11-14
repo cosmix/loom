@@ -23,9 +23,10 @@ use super::generate::{
 /// `CLAUDE.md.template` is pasted into every session's context on every spawn,
 /// across every stage, in every plan. Rules 3 and 3b live in the hooks that
 /// print them (`tests_guidance_manifest.rs` lists every relocation). The
-/// ceiling equals the actual size, so any addition fails here: trim the
-/// template or move the text to its home instead of raising the ceiling.
-const CLAUDE_MD_TEMPLATE_MAX_BYTES: usize = 20_131;
+/// ceiling equals the actual size (20,388 bytes), so any addition fails here:
+/// trim the template or move the text to its home instead of raising the
+/// ceiling. The model-allocation plan authorized the one raise to this size.
+const CLAUDE_MD_TEMPLATE_MAX_BYTES: usize = 20_388;
 
 /// The KV-cache-stable prefix pasted into the first message of every fresh
 /// session spawned for a standard stage.
@@ -67,8 +68,9 @@ const PLAN_OVERVIEW_MAX_BYTES: usize = 4_096;
 
 /// Every stage main session loads `skills/loom-orchestration/SKILL.md`, so its
 /// bytes are paid on every later request of that session. The ceiling equals
-/// the actual size, so any addition fails here.
-const ORCHESTRATION_SKILL_MAX_BYTES: usize = 20_530;
+/// the actual size (21,794 bytes), so any addition fails here. The
+/// model-allocation plan authorized the one raise to this size.
+const ORCHESTRATION_SKILL_MAX_BYTES: usize = 21_794;
 
 const CLAUDE_MD_TEMPLATE: &str = include_str!("../../../../CLAUDE.md.template");
 const ORCHESTRATION_SKILL: &str = include_str!("../../../../skills/loom-orchestration/SKILL.md");

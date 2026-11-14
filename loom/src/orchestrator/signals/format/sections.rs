@@ -237,7 +237,7 @@ pub(super) fn format_semi_stable_section(
     }
 
     // Codex implementer doctrine (semi-stable - gated on codex being one of the
-    // stage's licensed lanes, whether or not it is the preferred one)
+    // stage's licensed lanes, whether or not it is the first one listed)
     if embedded_context.implementers.includes_codex() {
         content.push_str(&format_codex_implementers_section(
             &embedded_context.implementers,
@@ -278,7 +278,7 @@ pub(super) fn format_semi_stable_section(
             "Workflow fan-out spawns CLAUDE subagents only: the codex lane (gpt-6.1-terra /\n",
         );
         content.push_str(
-            "gpt-6-luna) is NOT addressable from a Workflow script. On a stage licensed for\n",
+            "gpt-6.1-sol / gpt-6-luna) is NOT addressable from a Workflow script. On a stage licensed for\n",
         );
         content.push_str(
             "both, codex work goes through normal `loom-codex-forwarder` Agent spawns, outside\n",

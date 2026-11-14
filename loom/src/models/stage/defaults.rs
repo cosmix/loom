@@ -100,9 +100,9 @@ impl Default for Stage {
 ///
 /// Every implementation stage's MAIN AGENT is an orchestrator: it reads
 /// context, plans the work, and delegates implementation to subagents (haiku
-/// workers for extremely simple or highly detailed pieces, sonnet or codex
-/// terra workers for pieces that need exploration or iteration on failing tests
-/// (codex luna on explicit request), opus
+/// workers for extremely simple or highly detailed pieces, codex terra/sol
+/// workers for well-specified pieces (luna on explicit request), sonnet workers
+/// for exploration or iteration on failing tests, opus
 /// workers only where architecture or algorithm judgment is required). Model
 /// choice for the actual implementation work happens at the subagent level,
 /// not here. The one exception is knowledge-distill: a single-agent sonnet
