@@ -137,3 +137,13 @@
 **What happened:** the planner bridge's `Item::User`, `SessionView` and `PlanMessage` changes broke the Rust parity test `tests_chat.rs` (it reads web fixtures) and the tag parity test `plan_message_wire_values_are_in_plan_schema` (it reads `web/src/plan/api/schema.ts`).
 
 **Prevention:** a plan gives the web fixture edits to the worker that changes the Rust type, and tells the Rust wire worker which tag-parity failure to expect until the web worker adds the tag. [New PlanMessage Variants Need Both Schema Arms](../conventions/plan-web.md#new-planmessage-variants-need-both-schema-arms) holds the schema half.
+
+## Proposed Claude Code's Advisor Tool Where loom-advisor Already Covers the Need
+
+**What happened:** a model-allocation plan proposed attaching Claude Code's advisor tool (`claude --advisor <model>`) to stage sessions and making an in-session fable consult the top of the escalation ladder, first restricting it to opus and sonnet over a Fable-consent edge case. The user rejected both: loom already has `loom-advisor`, a read-only subagent the orchestrator spawns (fable by default, model overridable at spawn), reserved for the hardest cases after the ladder fails.
+
+**Why:** a new platform feature was treated as a gap in loom's design without checking that the existing mechanism already covered the need; the feature's name matched an existing agent, which compounded the confusion.
+
+**Prevention:** before adopting a platform feature, name the loom mechanism that covers the same need and state what the feature adds that it cannot; when nothing, keep the status quo. The orchestrator follows the escalation ladder (haiku, sonnet, opus medium, opus high) and spawns `loom-advisor` only after that fails.
+
+**Fix:** the plan dropped every `--advisor` key, flag and doctrine line.

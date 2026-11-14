@@ -370,3 +370,13 @@ reaches 3.
 **Prevention:** a fixture, contract or plan check that copies a hook into a temp directory copies the script plus every helper `_common.sh` sources (`rg -n 'source .*return 1' loom-hooks/_common.sh`), plus `_verify_matchers.sh` when the case reaches runner matching, and the plan's description names them.
 
 **Fix:** the contract writes the guard plus the seven helpers; `require-jq-advisory.sh` unsets `LOOM_WORK_DIR`, `LOOM_SESSION_ID`, `LOOM_STAGE_ID`, `LOOM_SESSION_TYPE` and `LOOM_HOOK_PATH`, as its sibling tests do (the recurrence of the `LOOM_HOOK_PATH` leak in [Hook Tests Inherit the Live Session's Environment](#hook-tests-inherit-the-live-sessions-environment-2026-09-19)).
+
+## A Failed Input Redirect Printed to Hook Stderr Despite 2>/dev/null
+
+**What happened:** `forward_guard_allows_when_no_stage_evidence_exists` failed on stderr output: `_codex_forward.sh` walks ancestor PIDs and reads `/proc/<pid>/environ` with `done <"/proc/$pid/environ" 2>/dev/null`. For a same-user process that blocks reading its environment (`systemd --user`), `[[ -r ]]` passes but the open fails with EACCES, and bash printed `Permission denied` to the hook's stderr. Eleven sites across seven hooks had the same order.
+
+**Why:** bash applies redirections left to right, so a failed input open is reported before the later `2>/dev/null` takes effect. The failure depends on the machine's process tree (an affected ancestor within the guard's 12-step walk), so it passed elsewhere.
+
+**Prevention:** write `2>/dev/null` before the input redirect (`cmd 2>/dev/null <file`). `</dev/null 2>/dev/null` is safe because opening /dev/null cannot fail. This search prints nothing when the class is gone: `rg -n '(^|[^<0-9&])<[^<(&=]\S*\s+([^|;]*\s)?2>\s*/dev/null' loom-hooks | rg -v '</dev/null'`.
+
+**Fix:** every site reordered; `_codex_forward.sh` carries a comment at the first one.

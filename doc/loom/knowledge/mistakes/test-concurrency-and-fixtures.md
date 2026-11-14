@@ -396,3 +396,13 @@ expects to expire stays short. Reproduce a timing failure by looping the test un
 **Why:** provision entries run sandboxed and see only the worktree. A test whose entry copies the daemon tick (`copy_tick_command`) from a work dir in a `/tmp` TempDir reads a path the entry cannot see under bwrap.
 
 **Prevention:** keep the work dir of such a test inside the worktree's TempDir, and run it through the host job (`loom stage complete`) before trusting a local pass.
+
+## Rebinding a Just-Dropped Listener Races Concurrent Child Spawns
+
+**What happened:** `web_server::serve::tests::zero_slots_still_waits_for_the_worker_resource_owner` passed alone and failed once in the parallel lib run with `AddrInUse` when it rebound the address its dropped listener had held.
+
+**Why:** std opens listeners with `SOCK_CLOEXEC`, but a child another test thread is spawning holds a copy of every descriptor between fork and exec, so the address stays bound after this process drops its last copy. Measured: 620 of 20000 rebinds busy with four threads spawning `/bin/true` (max wait 0.9 ms), none without spawners.
+
+**Prevention:** prove release through ownership first (a completion flag or `Arc` count), then retry the rebind on `AddrInUse` with a short deadline (1 s), so a listener this process still owns fails the test.
+
+**Fix:** `rebind_when_released` in `loom/src/web_server/serve_tests.rs`.

@@ -149,7 +149,7 @@
 | [dev-install](mistakes/dev-install.md) | Daemon | 44 |
 | [doctrine-and-acceptance](mistakes/doctrine-and-acceptance.md) |  | 392 |
 | [frontmatter-boundary](mistakes/frontmatter-boundary.md) |  | 13 |
-| [hooks-shell-portability](mistakes/hooks-shell-portability.md) |  | 372 |
+| [hooks-shell-portability](mistakes/hooks-shell-portability.md) |  | 382 |
 | [host-verify-group-containment](mistakes/host-verify-group-containment.md) |  | 23 |
 | [knowledge-base-drift](mistakes/knowledge-base-drift.md) |  | 266 |
 | [knowledge-cli-invariants](mistakes/knowledge-cli-invariants.md) | Rules | 231 |
@@ -164,7 +164,7 @@
 | [parallel-worktree-shared-state](mistakes/parallel-worktree-shared-state.md) | Shared | 351 |
 | [phantom-merges](mistakes/phantom-merges.md) | Merges | 347 |
 | [pinned-literals-ledgers-and-wiring](mistakes/pinned-literals-ledgers-and-wiring.md) | Pins | 332 |
-| [plan-authoring](mistakes/plan-authoring.md) |  | 139 |
+| [plan-authoring](mistakes/plan-authoring.md) |  | 149 |
 | [plan-server-delivery](mistakes/plan-server-delivery.md) | Slips | 369 |
 | [planner-design-brainstorm](mistakes/planner-design-brainstorm.md) | Stubs | 94 |
 | [planner-follow-ups-delivery](mistakes/planner-follow-ups-delivery.md) | Slips | 196 |
@@ -197,7 +197,7 @@
 | [subagent-briefing](mistakes/subagent-briefing.md) |  | 394 |
 | [subagent-liveness-and-watch](mistakes/subagent-liveness-and-watch.md) |  | 387 |
 | [subagent-orchestration](mistakes/subagent-orchestration.md) | Agents | 397 |
-| [test-concurrency-and-fixtures](mistakes/test-concurrency-and-fixtures.md) | Races | 398 |
+| [test-concurrency-and-fixtures](mistakes/test-concurrency-and-fixtures.md) | Races | 408 |
 | [test-sweep-and-fixture-discipline](mistakes/test-sweep-and-fixture-discipline.md) |  | 388 |
 | [testing-and-lint](mistakes/testing-and-lint.md) |  | 398 |
 | [tests-that-cannot-fail](mistakes/tests-that-cannot-fail.md) |  | 392 |
