@@ -12,7 +12,10 @@ WORK_DIR="$d/work"
 COMPANION_DIR="$HOME_DIR/.claude/plugins/cache/openai-codex/codex/1.0.6/scripts"
 COMPANION="$COMPANION_DIR/codex-companion.mjs"
 LEDGER="$WORK_DIR/subagents/my-stage/codex.jsonl"
-mkdir -p "$COMPANION_DIR" "$WORKSPACE/.git" "$WORK_DIR/subagents/my-stage"
+mkdir -p "$COMPANION_DIR" "$WORK_DIR/subagents/my-stage"
+# A real repository: an empty `.git` directory is none, so the guard's
+# toplevel lookup would climb into whatever checkout holds TMPDIR.
+git init -q "$WORKSPACE"
 printf '%s\n' '// pinned fixture' >"$COMPANION"
 
 write_start() {
