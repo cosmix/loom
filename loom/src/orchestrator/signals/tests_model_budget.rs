@@ -63,3 +63,41 @@ fn recovery_signal_gates_budget_on_fresh_cache() {
     let embedded = build_embedded_context_with_stage(dir.path(), None, None);
     assert_before_assignment(&format_recovery_signal(&content, &stage, &embedded));
 }
+
+#[test]
+fn knowledge_and_contract_signals_never_carry_the_budget() {
+    let dir = tempfile::tempdir().unwrap();
+    let work_dir = dir.path().join("work");
+    fs::create_dir_all(&work_dir).unwrap();
+    write_fresh_quota(&work_dir);
+
+    let mut knowledge_stage = create_test_stage();
+    knowledge_stage.stage_type = crate::models::stage::StageType::Knowledge;
+    let knowledge = super::generate_knowledge_signal(
+        &crate::models::session::Session::new_knowledge(&knowledge_stage.id),
+        &knowledge_stage,
+        dir.path(),
+        &[],
+        &work_dir,
+        None,
+    )
+    .unwrap();
+
+    let mut contract_stage = create_test_stage();
+    contract_stage.plan_version = 2;
+    let contract = super::generate_contract_signal(
+        &crate::models::session::Session::new_contract(&contract_stage.id),
+        &contract_stage,
+        &create_test_worktree(),
+        &work_dir,
+        None,
+        &[],
+    )
+    .unwrap();
+
+    for path in [knowledge, contract] {
+        let signal = fs::read_to_string(path).unwrap();
+        assert!(!signal.is_empty());
+        assert!(!signal.contains("## Model Budget"), "{signal}");
+    }
+}

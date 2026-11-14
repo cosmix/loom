@@ -102,8 +102,9 @@ impl Default for Stage {
 /// context, plans the work, and delegates implementation to subagents (haiku
 /// workers for extremely simple or highly detailed pieces, codex terra/sol
 /// workers for well-specified pieces (luna on explicit request), sonnet workers
-/// for exploration or iteration on failing tests, opus
-/// workers only where architecture or algorithm judgment is required). Model
+/// for exploration or iteration on failing tests, opus workers only for
+/// architecture across modules, new algorithms, concurrency and distributed
+/// systems, security-sensitive code, and bugs of unknown cause). Model
 /// choice for the actual implementation work happens at the subagent level,
 /// not here. The one exception is knowledge-distill: a single-agent sonnet
 /// pass over memories that are already compact summaries — no subagents.

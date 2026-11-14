@@ -54,7 +54,7 @@ fn plan_yaml_without_implementers_defaults_to_claude_lane() {
     assert_eq!(parsed.stages.len(), 2);
     for stage in &parsed.stages {
         assert_eq!(
-            stage.implementers.preferred(),
+            stage.implementers.first_listed(),
             Implementer::Claude,
             "stage '{}' should prefer the Claude lane when the key is absent",
             stage.id
@@ -118,7 +118,7 @@ fn stage_file_without_implementers_loads_with_claude_lane() {
     let stage = load_stage("default-stage", temp.path())
         .expect("a stage file with no implementers key should load");
 
-    assert_eq!(stage.implementers.preferred(), Implementer::Claude);
+    assert_eq!(stage.implementers.first_listed(), Implementer::Claude);
     assert!(!stage.implementers.includes_codex());
     assert!(!stage.implementers.is_mixed());
 }
@@ -143,7 +143,7 @@ fn stage_file_with_mixed_implementers_round_trips() {
     assert!(stage.implementers.includes_codex());
     assert!(stage.implementers.includes_claude());
     assert_eq!(
-        stage.implementers.preferred(),
+        stage.implementers.first_listed(),
         Implementer::Codex,
         "preference order must survive the disk round-trip"
     );

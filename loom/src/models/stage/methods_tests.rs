@@ -141,7 +141,7 @@ fn from_definition_copies_all_runtime_policy_fields() {
         vec!["security".to_string(), "wiring".to_string()]
     );
     assert!(stage.ultracode);
-    assert_eq!(stage.implementers.preferred(), Implementer::Codex);
+    assert_eq!(stage.implementers.first_listed(), Implementer::Codex);
     assert_eq!(stage.subagent_timeout_secs, Some(900));
     assert_eq!(stage.skills, definition.skills);
 }

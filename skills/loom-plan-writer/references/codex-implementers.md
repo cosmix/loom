@@ -59,8 +59,7 @@ usually pass, and they make up a large share of implementation work.
 - debugging, or a fix that already failed on sol (a terra unit that failed once goes to sol first);
 - architecture, new algorithms, concurrency or security-sensitive code (opus, whatever the list says).
 
-Then write the stage's list. The order is informational only (the first-listed lane is where most
-of the work sits) and carries no routing meaning:
+Then write the stage's list. The order carries no routing meaning:
 
 | Stage's work | `implementers` |
 | --- | --- |

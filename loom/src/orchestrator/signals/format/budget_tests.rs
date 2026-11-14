@@ -96,3 +96,10 @@ fn windows_are_ordered_and_reset_times_render_correctly() {
         assert!(!text.contains("Routing:"));
     }
 }
+
+#[test]
+fn fresh_provider_without_windows_counts_as_no_reading() {
+    let mut empty = reading(80.0, None);
+    empty.windows.clear();
+    assert_eq!(format_model_budget_section(&claude(empty), NOW), None);
+}

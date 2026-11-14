@@ -130,7 +130,8 @@ fn spawn_row(input: serde_json::Value) -> String {
 fn repo_slug_decides_which_worktree_slugs_name_a_stage() {
     let temp = tempfile::tempdir().unwrap();
     let work_dir = temp.path().join("app/.loom/work");
-    fs::create_dir_all(&work_dir).unwrap();
+    fs::create_dir_all(work_dir.join("stages")).unwrap();
+    fs::write(work_dir.join("stages/foo--worktrees-bar.md"), "").unwrap();
     let repo = project_slug(&fs::canonicalize(temp.path().join("app")).unwrap());
 
     let nested = main_file(
@@ -145,10 +146,30 @@ fn repo_slug_decides_which_worktree_slugs_name_a_stage() {
 }
 
 #[test]
+fn slug_remainder_must_be_a_recorded_stage() {
+    let temp = tempfile::tempdir().unwrap();
+    let work_dir = temp.path().join("app/.loom/work");
+    fs::create_dir_all(work_dir.join("stages")).unwrap();
+    fs::write(work_dir.join("stages/01-foo.md"), "").unwrap();
+    let repo = project_slug(&fs::canonicalize(temp.path().join("app")).unwrap());
+
+    // A session started in `.worktrees/foo/loom` is a subdirectory of stage `foo`.
+    let subdirectory = main_file(temp.path(), &format!("{repo}--worktrees-foo-loom"));
+    assert_eq!(parse_one(subdirectory, Some(&work_dir)).stage_id, None);
+
+    let known = main_file(temp.path(), &format!("{repo}--worktrees-foo"));
+    assert_eq!(
+        parse_one(known, Some(&work_dir)).stage_id.as_deref(),
+        Some("foo")
+    );
+}
+
+#[test]
 fn symlinked_work_dir_resolves_to_the_main_repository() {
     let temp = tempfile::tempdir().unwrap();
     let app = fs::canonicalize(temp.path()).unwrap().join("app");
-    fs::create_dir_all(app.join(".loom/work")).unwrap();
+    fs::create_dir_all(app.join(".loom/work/stages")).unwrap();
+    fs::write(app.join(".loom/work/stages/stage-b.md"), "").unwrap();
     let worktree_loom = app.join(".worktrees/s/.loom");
     fs::create_dir_all(&worktree_loom).unwrap();
     std::os::unix::fs::symlink(app.join(".loom/work"), worktree_loom.join("work")).unwrap();

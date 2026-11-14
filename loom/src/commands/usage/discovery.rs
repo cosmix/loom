@@ -335,33 +335,39 @@ fn normalize_plan(path: &Path) -> String {
         .to_ascii_lowercase()
 }
 
+/// Ids of the stage files in `stages`, depth prefix removed (`01-core.md` is
+/// stage `core`).
+fn read_stage_ids(stages: &Path) -> std::io::Result<HashSet<String>> {
+    Ok(fs::read_dir(stages)?
+        .flatten()
+        .filter_map(|entry| {
+            let path = entry.path();
+            if path.extension().and_then(|extension| extension.to_str()) != Some("md") {
+                return None;
+            }
+            crate::fs::stage_files::extract_stage_id(path.file_name()?.to_str()?)
+        })
+        .collect())
+}
+
+/// The stage ids recorded under `work_dir`, `None` when the stage directory
+/// cannot be read (nothing to check a slug against).
+pub(super) fn recorded_stage_ids(work_dir: &Path) -> Option<HashSet<String>> {
+    read_stage_ids(&work_dir.join("stages")).ok()
+}
+
 fn stage_ids(work_dir: &Path) -> Result<Option<HashSet<String>>> {
     let stages = work_dir.join("stages");
-    let entries = match fs::read_dir(&stages) {
-        Ok(entries) => entries,
+    match read_stage_ids(&stages) {
+        Ok(ids) => Ok(Some(ids)),
         Err(error) => {
             eprintln!(
                 "plan could not be resolved: cannot read {} ({error})",
                 stages.display()
             );
-            return Ok(None);
+            Ok(None)
         }
-    };
-    Ok(Some(
-        entries
-            .flatten()
-            .filter_map(|entry| {
-                let path = entry.path();
-                (path.extension().and_then(|extension| extension.to_str()) == Some("md"))
-                    .then(|| {
-                        path.file_stem()
-                            .and_then(|stem| stem.to_str())
-                            .map(str::to_owned)
-                    })
-                    .flatten()
-            })
-            .collect(),
-    ))
+    }
 }
 
 #[cfg(test)]
