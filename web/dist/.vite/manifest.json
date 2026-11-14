@@ -8,33 +8,6 @@
       "_zod.js"
     ]
   },
-  "_changed-since-parts.css": {
-    "file": "assets/changed-since-parts.css",
-    "src": "_changed-since-parts.css"
-  },
-  "_changed-since-parts.js": {
-    "file": "assets/changed-since-parts.js",
-    "name": "changed-since-parts",
-    "imports": [
-      "_rolldown-runtime.js",
-      "_react.js",
-      "_button.js",
-      "_quota-meters.js",
-      "_router.js",
-      "_zod.js",
-      "_heading-parts.js",
-      "_session-home.js",
-      "_markdown.js",
-      "_sentence-text.js"
-    ],
-    "dynamicImports": [
-      "src/plan/editor/codemirror.ts",
-      "node_modules/mermaid/dist/mermaid.core.mjs"
-    ],
-    "css": [
-      "assets/changed-since-parts.css"
-    ]
-  },
   "_chunk-2Q5K7J3B.js": {
     "file": "assets/chunk-2Q5K7J3B.js",
     "name": "chunk-2Q5K7J3B",
@@ -344,6 +317,21 @@
       "assets/doc-heading.css"
     ]
   },
+  "_feature-mark.css": {
+    "file": "assets/feature-mark.css",
+    "src": "_feature-mark.css"
+  },
+  "_feature-mark.js": {
+    "file": "assets/feature-mark.js",
+    "name": "feature-mark",
+    "imports": [
+      "_heading-parts.js",
+      "_react.js"
+    ],
+    "css": [
+      "assets/feature-mark.css"
+    ]
+  },
   "_flow.js": {
     "file": "assets/flow.js",
     "name": "flow",
@@ -395,16 +383,6 @@
     "file": "assets/maps-findings.css",
     "src": "_maps-findings.css"
   },
-  "_maps-findings.js": {
-    "file": "assets/maps-findings.js",
-    "name": "maps-findings",
-    "imports": [
-      "_button.js"
-    ],
-    "css": [
-      "assets/maps-findings.css"
-    ]
-  },
   "_maps.css": {
     "file": "assets/maps.css",
     "src": "_maps.css"
@@ -439,6 +417,16 @@
       "node_modules/@mermaid-js/parser/dist/chunks/mermaid-parser.core/treemap-SAJKECNS.mjs",
       "node_modules/@mermaid-js/parser/dist/chunks/mermaid-parser.core/wardley-7MLQ67FV.mjs",
       "node_modules/@mermaid-js/parser/dist/chunks/mermaid-parser.core/cynefin-EF2NZ3EQ.mjs"
+    ]
+  },
+  "_page-offer.js": {
+    "file": "assets/page-offer.js",
+    "name": "page-offer",
+    "imports": [
+      "_react.js",
+      "_button.js",
+      "_zod.js",
+      "_heading-parts.js"
     ]
   },
   "_quota-meters.css": {
@@ -494,6 +482,13 @@
     "file": "assets/rolldown-runtime.js",
     "name": "rolldown-runtime"
   },
+  "_rotate-ccw.js": {
+    "file": "assets/rotate-ccw.js",
+    "name": "rotate-ccw",
+    "imports": [
+      "_button.js"
+    ]
+  },
   "_rough.esm.js": {
     "file": "assets/rough.esm.js",
     "name": "rough.esm"
@@ -506,24 +501,29 @@
       "_react.js"
     ]
   },
+  "_sentence-text.css": {
+    "file": "assets/sentence-text.css",
+    "src": "_sentence-text.css"
+  },
   "_sentence-text.js": {
     "file": "assets/sentence-text.js",
     "name": "sentence-text",
     "imports": [
       "_rolldown-runtime.js",
-      "_markdown.js",
       "_react.js",
-      "_heading-parts.js"
-    ]
-  },
-  "_session-home.js": {
-    "file": "assets/session-home.js",
-    "name": "session-home",
-    "imports": [
-      "_rolldown-runtime.js",
       "_button.js",
+      "_quota-meters.js",
+      "_router.js",
+      "_zod.js",
       "_heading-parts.js",
-      "_react.js"
+      "_markdown.js"
+    ],
+    "dynamicImports": [
+      "src/plan/editor/codemirror.ts",
+      "node_modules/mermaid/dist/mermaid.core.mjs"
+    ],
+    "css": [
+      "assets/sentence-text.css"
     ]
   },
   "_store.js": {
@@ -556,7 +556,6 @@
       "_rolldown-runtime.js",
       "_react.js",
       "_button.js",
-      "_zod.js",
       "_heading-parts.js"
     ],
     "css": [
@@ -580,6 +579,7 @@
       "_quota-meters.js",
       "_zod.js",
       "_help-shortcuts.js",
+      "_rotate-ccw.js",
       "_flow.js",
       "_store.js"
     ],
@@ -1749,12 +1749,12 @@
       "_quota-meters.js",
       "_zod.js",
       "_heading-parts.js",
-      "_trace.js",
-      "_session-home.js",
       "_coverage-model.js",
-      "_changed-since-parts.js",
       "_sentence-text.js",
+      "_page-offer.js",
       "_doc-heading.js",
+      "_trace.js",
+      "_feature-mark.js",
       "_markdown.js",
       "_flow.js"
     ],
@@ -1811,7 +1811,7 @@
       "_button.js",
       "_react.js",
       "_router.js",
-      "_changed-since-parts.js",
+      "_sentence-text.js",
       "_heading-parts.js",
       "plan.html",
       "_store.js",
@@ -1831,17 +1831,16 @@
       "_quota-meters.js",
       "_heading-parts.js",
       "plan.html",
-      "_session-home.js",
-      "_changed-since-parts.js",
+      "_sentence-text.js",
       "_router.js",
-      "_trace.js",
-      "_maps-findings.js",
       "_coverage-marks.js",
+      "_trace.js",
       "_coverage-model.js"
     ],
     "css": [
       "assets/help-dialog.css",
-      "assets/maps.css"
+      "assets/maps.css",
+      "assets/maps-findings.css"
     ]
   },
   "src/plan/run/handoff-dialogs.tsx": {
@@ -1855,7 +1854,6 @@
       "_react.js",
       "_heading-parts.js",
       "_quota-meters.js",
-      "_session-home.js",
       "plan.html",
       "_doc-heading.js"
     ]
@@ -1888,19 +1886,20 @@
     "isDynamicEntry": true,
     "imports": [
       "_rolldown-runtime.js",
+      "_button.js",
       "_react.js",
       "_router.js",
       "_heading-parts.js",
       "plan.html",
-      "_button.js",
-      "_maps-findings.js",
+      "_page-offer.js",
+      "_rotate-ccw.js",
       "_quota-meters.js",
-      "_sentence-text.js",
       "_trace.js",
       "_trace-gate.js"
     ],
     "css": [
-      "assets/maps.css"
+      "assets/maps.css",
+      "assets/maps-findings.css"
     ]
   }
 }
