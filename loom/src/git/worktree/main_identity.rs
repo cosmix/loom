@@ -138,9 +138,15 @@ pub(super) fn state_dir_of(root: &Path) -> Result<Option<PathBuf>> {
 /// file. A state directory holding only what read-only commands and hooks
 /// create (`context/`, `memory/`, `telemetry/`) marks nothing, so `loom map`
 /// and `loom knowledge` work in a repository that was never initialized.
+///
+/// The checkout's own `.loom/work` is tried first: `WorkDir::new` falls back to
+/// the enclosing repository's state when `root` has no `config.toml` and no
+/// readable `.git` (a linked checkout initialized without a plan, whose pointer
+/// was removed), and that state holds the identity of another checkout.
 fn initialized_state_of(root: &Path) -> Result<Option<PathBuf>> {
+    let own = root.join(".loom/work");
     let nested = WorkDir::new(root)?.root().to_path_buf();
-    Ok([nested, root.join(".work")]
+    Ok([own, nested, root.join(".work")]
         .into_iter()
         .find(|state| main_identity_exists(state) || holds_orchestration_state(state)))
 }
