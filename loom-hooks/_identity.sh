@@ -145,7 +145,7 @@ find_nearest_claude_ancestor() {
         local cmdline=""
         if [[ -r "/proc/$current_pid/cmdline" ]]; then
             # Linux: read cmdline (null-separated)
-            cmdline=$(tr '\0' ' ' <"/proc/$current_pid/cmdline" 2>/dev/null || true)
+            cmdline=$(tr '\0' ' ' 2>/dev/null <"/proc/$current_pid/cmdline" || true)
         else
             # macOS: use ps
             cmdline=$(ps -o command= -p "$current_pid" 2>/dev/null || true)
@@ -195,7 +195,7 @@ count_claude_processes_between() {
         # Check if this process is Claude Code (not a hook script)
         local cmdline=""
         if [[ -r "/proc/$current_pid/cmdline" ]]; then
-            cmdline=$(tr '\0' ' ' <"/proc/$current_pid/cmdline" 2>/dev/null || true)
+            cmdline=$(tr '\0' ' ' 2>/dev/null <"/proc/$current_pid/cmdline" || true)
         else
             cmdline=$(ps -o command= -p "$current_pid" 2>/dev/null || true)
         fi

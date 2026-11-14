@@ -42,7 +42,7 @@ load_payload() {
 load_authorization() {
 	local ledger="$WORK/subagents/$STAGE/codex.jsonl" bytes auth_fields
 	loom_lifecycle_plain_path "$ledger" file || return 1
-	bytes=$(wc -c <"$ledger" 2>/dev/null | tr -d "[:space:]") || return 1
+	bytes=$(wc -c 2>/dev/null <"$ledger" | tr -d "[:space:]") || return 1
 	[[ "$bytes" =~ ^[0-9]+$ ]] && ((bytes > 0 && bytes <= 4194304)) || return 1
 	AUTH_ROW=$(jq -sc --arg stage "$STAGE" --arg session "$SESSION" \
 		--arg parent "$PARENT_ID" --arg forwarder "$FORWARDER_ID" \
@@ -77,7 +77,7 @@ valid_persisted_output() {
 	case "$path" in ../* | */../* | */.. | ..) return 1 ;; esac
 	[[ "$path" == "$projects"/* && "$path" == */tool-results/* && -f "$path" && ! -L "$path" ]] || return 1
 	before=$(loom_lifecycle_stat_fingerprint "$path") || return 1
-	bytes=$(wc -c <"$path" 2>/dev/null | tr -d "[:space:]") || return 1
+	bytes=$(wc -c 2>/dev/null <"$path" | tr -d "[:space:]") || return 1
 	[[ "$bytes" =~ ^[0-9]+$ ]] && ((bytes > 0 && bytes <= 262144)) || return 1
 	newline_count=$(tail -c 1 "$path" 2>/dev/null | wc -l) || return 1
 	[[ "$newline_count" =~ ^[[:space:]]*1[[:space:]]*$ ]] || return 1

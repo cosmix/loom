@@ -154,7 +154,7 @@ loom_lifecycle_resolve_start() {
 		ledger="$dir/starts.jsonl"
 		[[ -e "$ledger" || -L "$ledger" ]] || continue
 		loom_lifecycle_plain_path "$ledger" file || return 1
-		bytes=$(wc -c <"$ledger" 2>/dev/null | tr -d "[:space:]") || return 1
+		bytes=$(wc -c 2>/dev/null <"$ledger" | tr -d "[:space:]") || return 1
 		[[ "$bytes" =~ ^[0-9]+$ ]] && ((bytes <= 4194304)) || return 1
 		while IFS= read -r row; do
 			[[ -n "${row//[[:space:]]/}" ]] || continue
@@ -196,7 +196,7 @@ loom_lifecycle_transcript_evidence() {
 	local final_bytes="" digest="" newline_count="" status=0
 	loom_lifecycle_plain_path "$path" file || return 1
 	before=$(loom_lifecycle_stat_fingerprint "$path") || return 1
-	bytes=$(wc -c <"$path" 2>/dev/null | tr -d "[:space:]") || return 1
+	bytes=$(wc -c 2>/dev/null <"$path" | tr -d "[:space:]") || return 1
 	[[ "$bytes" =~ ^[0-9]+$ ]] && ((bytes > 0)) || return 1
 	newline_count=$(tail -c 1 "$path" 2>/dev/null | wc -l) || return 1
 	[[ "$newline_count" =~ ^[[:space:]]*1[[:space:]]*$ ]] || return 1
@@ -228,7 +228,7 @@ loom_lifecycle_journal_ready() {
 	local journal="$1" bytes="" newline_count=""
 	if [[ -e "$journal" || -L "$journal" ]]; then
 		loom_lifecycle_plain_path "$journal" file || return 1
-		bytes=$(wc -c <"$journal" 2>/dev/null | tr -d "[:space:]") || return 1
+		bytes=$(wc -c 2>/dev/null <"$journal" | tr -d "[:space:]") || return 1
 		[[ "$bytes" =~ ^[0-9]+$ ]] && ((bytes <= 8388608)) || return 1
 		if ((bytes > 0)); then
 			newline_count=$(tail -c 1 "$journal" 2>/dev/null | wc -l) || return 1

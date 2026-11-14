@@ -53,7 +53,7 @@ _loom_ctx_last_usage_tokens() {
 
 	local size
 	# `wc` pads its output on some platforms; strip the whitespace.
-	size=$(wc -c <"$transcript_path" 2>/dev/null | tr -d '[:space:]' || echo 0)
+	size=$(wc -c 2>/dev/null <"$transcript_path" | tr -d '[:space:]' || echo 0)
 
 	if [[ -n "$size" ]] && [[ "$size" -gt "$LOOM_TRANSCRIPT_WINDOW_BYTES" ]]; then
 		tail -c "$LOOM_TRANSCRIPT_WINDOW_BYTES" "$transcript_path" 2>/dev/null |

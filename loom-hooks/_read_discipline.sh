@@ -81,7 +81,7 @@ _loom_is_skill_md_path() {
 # when it is not a regular file (a redirect onto a missing path is a hard
 # error even under 2>/dev/null, and this runs on every unbounded Read).
 _loom_file_line_count() {
-	[[ -f "$1" ]] && wc -l <"$1" 2>/dev/null | tr -d '[:space:]' || printf '0'
+	[[ -f "$1" ]] && wc -l 2>/dev/null <"$1" | tr -d '[:space:]' || printf '0'
 }
 
 # _loom_read_full_lines <path> - echo <path>'s line count for an UNBOUNDED

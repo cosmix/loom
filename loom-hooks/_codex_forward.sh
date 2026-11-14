@@ -153,6 +153,9 @@ _loom_pid_env_has_stage_var() {
 		;;
 	*)
 		[[ -r "/proc/$pid/environ" ]] || return 1
+		# -r passes on a same-user non-dumpable process whose open still fails
+		# with EACCES. Redirections apply left to right, so 2>/dev/null must
+		# precede the input redirect or the failed open reaches stderr.
 		while IFS= read -r -d '' entry; do
 			case "$entry" in
 			LOOM_STAGE_ID=?* | LOOM_SESSION_ID=?* | LOOM_WORK_DIR=?*)
@@ -160,7 +163,7 @@ _loom_pid_env_has_stage_var() {
 				break
 				;;
 			esac
-		done <"/proc/$pid/environ" 2>/dev/null || true
+		done 2>/dev/null <"/proc/$pid/environ" || true
 		;;
 	esac
 	return "$hit"
@@ -185,7 +188,7 @@ _loom_parent_pid() {
 				value=$rest
 				break
 			fi
-		done <"/proc/$pid/status" 2>/dev/null || true
+		done 2>/dev/null <"/proc/$pid/status" || true
 		;;
 	esac
 	[[ "$value" =~ ^[0-9]+$ ]] || return 1
@@ -238,7 +241,7 @@ _loom_confinement_evidence() {
 		# namespace, where the walk above cannot reach the host session. Pid 1
 		# of that namespace is bwrap itself; an ordinary session sees init.
 		[[ -r /proc/1/comm ]] || return 1
-		read -r comm </proc/1/comm 2>/dev/null || true
+		read -r comm 2>/dev/null </proc/1/comm || true
 		[[ "$comm" == bwrap ]] || return 1
 		printf 'sandbox confinement (bubblewrap)'
 		;;

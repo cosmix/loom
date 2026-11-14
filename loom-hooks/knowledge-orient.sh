@@ -85,7 +85,7 @@ fi
 # Byte count and row count for the nudge's parenthetical. A malformed/missing
 # read of either degrades to "0" rather than aborting - this hook must never
 # fail loudly over its own advisory numbers.
-BYTES=$(wc -c <"$INDEX_PATH" 2>/dev/null | tr -d '[:space:]')
+BYTES=$(wc -c 2>/dev/null <"$INDEX_PATH" | tr -d '[:space:]')
 [[ -n "$BYTES" ]] || BYTES=0
 ROWS=$(grep -c '^| \[' "$INDEX_PATH" 2>/dev/null || true)
 [[ -n "$ROWS" ]] || ROWS=0
