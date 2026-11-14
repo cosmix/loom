@@ -22,7 +22,13 @@ mod types;
 mod v2_section;
 
 #[cfg(test)]
+mod budget_contract_tests;
+
+#[cfg(test)]
 mod tests;
+#[cfg(test)]
+#[path = "tests_model_budget.rs"]
+mod tests_model_budget;
 
 #[cfg(test)]
 #[path = "tests_dependency_harness.rs"]
@@ -74,6 +80,7 @@ pub use adjudication::generate_adjudication_signal;
 pub(crate) use cache::stable_prefix_for;
 pub use contract::generate_contract_signal;
 pub(crate) use contract::scaffold_line;
+pub(crate) use format::budget::format_model_budget_section;
 pub(crate) use format::format_knowledge_brief;
 pub use generate::{
     build_embedded_context_with_stage, generate_signal, generate_signal_with_metrics,

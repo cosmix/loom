@@ -9,8 +9,8 @@
 # capable-tier delegation. This hook:
 #   1. ADVISES, on the first spawn of a session, loading the
 #      loom-orchestration skill.
-#   2. DENIES an untyped spawn outright (live loom stage session only; warns
-#      everywhere else - see the ENFORCEMENT GATE below).
+#   2. DENIES an untyped spawn outright (live loom stage session only; else it
+#      warns and, with no model requested, rewrites the input to model sonnet).
 #   3. FILLS IN the model from the agent's own definition (or a built-in
 #      table) when a typed spawn omits `model`, so every spawn ends up with an
 #      explicit, auditable model.
@@ -210,7 +210,7 @@ tier_rank() {
 }
 
 # --- 2. DENY: UNTYPED SPAWN --------------------------------------------------
-# Follows the ENFORCEMENT GATE only (deny when it passes, else warn-and-allow).
+# ENFORCEMENT GATE passes: deny; else warn, and with no model requested rewrite to sonnet.
 # With an explicit `model` nothing is inherited; the message says so.
 TYPED_AGENTS='loom-software-engineer (sonnet, default) / loom-senior-software-engineer (opus) / loom-software-developer (haiku) / loom-code-reviewer / loom-advisor (fable, read-only) / loom-codex-forwarder / Explore'
 if [[ -z "$MODEL_REQ" ]]; then
@@ -230,8 +230,9 @@ case "$AGENT_TYPE_REQ" in
 		} >&2
 		exit 2
 	fi
-	jq -nc --arg ctx "$(hook_context "$UNTYPED_MSG")" \
-		'{hookSpecificOutput: {hookEventName: "PreToolUse", additionalContext: $ctx}}'
+	[[ -n "$MODEL_REQ" ]] || UNTYPED_MSG="Untyped spawn outside a loom stage: loom set model sonnet so it does not inherit the spawning session's model. Pass \`model\` to choose another tier, or spawn by agent type: ${TYPED_AGENTS}."
+	printf '%s' "$TOOL_INPUT" | jq -c --arg ctx "$(hook_context "$UNTYPED_MSG")" --arg model "$MODEL_REQ" \
+		'{hookSpecificOutput: ({hookEventName: "PreToolUse", additionalContext: $ctx} + (if $model == "" then {permissionDecision: "allow", updatedInput: ((. // {}) + {model: "sonnet"})} else {} end))}'
 	exit 0
 	;;
 esac

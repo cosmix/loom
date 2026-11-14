@@ -3,6 +3,7 @@
 use crate::models::stage::Stage;
 
 use super::cache::stable_prefix_for;
+use super::format::budget::push_model_budget;
 use super::format::{
     format_codex_implementers_section, format_stage_brief, format_subagent_timeout_section,
 };
@@ -120,18 +121,8 @@ pub fn format_recovery_signal(
         signal.push_str(&format_stage_brief(pack, &stage.id, STAGE_QUERY_INPUTS));
     }
 
-    // Target information
-    signal.push_str("## Target\n\n");
-    signal.push_str(&format!("- **Session**: {}\n", content.session_id));
-    signal.push_str(&format!("- **Stage**: {}\n", content.stage_id));
-    if let Some(ref plan_id) = stage.plan_id {
-        signal.push_str(&format!("- **Plan**: {plan_id}\n"));
-    }
-    if let Some(ref worktree) = stage.worktree {
-        signal.push_str(&format!("- **Worktree**: {worktree}\n"));
-    }
-    signal.push_str(&format!("- **Branch**: loom/{}\n", content.stage_id));
-    signal.push('\n');
+    push_model_budget(embedded_context.model_budget.as_deref(), &mut signal);
+    append_target_information(&mut signal, content, stage);
 
     // Assignment from stage
     signal.push_str("## Assignment\n\n");
@@ -175,4 +166,19 @@ pub fn format_recovery_signal(
     }
 
     signal
+}
+
+fn append_target_information(signal: &mut String, content: &RecoverySignalContent, stage: &Stage) {
+    // Target information
+    signal.push_str("## Target\n\n");
+    signal.push_str(&format!("- **Session**: {}\n", content.session_id));
+    signal.push_str(&format!("- **Stage**: {}\n", content.stage_id));
+    if let Some(ref plan_id) = stage.plan_id {
+        signal.push_str(&format!("- **Plan**: {plan_id}\n"));
+    }
+    if let Some(ref worktree) = stage.worktree {
+        signal.push_str(&format!("- **Worktree**: {worktree}\n"));
+    }
+    signal.push_str(&format!("- **Branch**: loom/{}\n", content.stage_id));
+    signal.push('\n');
 }

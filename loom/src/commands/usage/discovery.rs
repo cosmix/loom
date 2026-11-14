@@ -249,6 +249,39 @@ fn add_subagents(files: &mut Vec<DiscoveredFile>, session: &Path, slug: &str) {
     }
 }
 
+const WORKTREES_DELIMITER: &str = "--worktrees-";
+
+/// The stage a worktree project slug names, or `None` when it names none.
+///
+/// A wrong stage is worse than none, because normalization marks any
+/// non-null `stage_id` known. With `repo_slug` (the slug of the project the
+/// report covers) the slug must be that project's worktree and the stage is
+/// the exact remainder, so a stage id that contains the delimiter survives.
+/// Without it the remainder after the first delimiter counts only when it
+/// holds no second one (a nested checkout is ambiguous). A remainder that is
+/// empty or holds a character outside `[A-Za-z0-9_-]`, the set stage-id
+/// validation allows, names no stage.
+pub(super) fn stage_from_project_slug<'a>(
+    slug: &'a str,
+    repo_slug: Option<&str>,
+) -> Option<&'a str> {
+    let stage = match repo_slug {
+        Some(repo) => slug.strip_prefix(repo)?.strip_prefix(WORKTREES_DELIMITER)?,
+        None => {
+            let (_, rest) = slug.split_once(WORKTREES_DELIMITER)?;
+            if rest.contains(WORKTREES_DELIMITER) {
+                return None;
+            }
+            rest
+        }
+    };
+    let valid = !stage.is_empty()
+        && stage
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-' || byte == b'_');
+    valid.then_some(stage)
+}
+
 fn filter_stages(files: Vec<DiscoveredFile>, stages: &HashSet<String>) -> Vec<DiscoveredFile> {
     files
         .into_iter()

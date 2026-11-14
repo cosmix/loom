@@ -36,10 +36,12 @@ mod cross_surface_tests;
 mod discovery;
 mod forward_join;
 mod json;
+mod parent_spawns;
 mod provider;
 mod provider_normalization;
 mod provider_report;
 mod provider_types;
+mod quota;
 mod quota_history;
 mod receipt_provider;
 mod report_types;
@@ -57,6 +59,7 @@ mod transcript_merge;
 // canonical model-sentinel constant shared with `commands::subagents`, a
 // sibling module tree that a plain `mod` declaration would not reach.
 pub(crate) mod transcript_types;
+mod work_dirs;
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
@@ -64,6 +67,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{ensure, Result};
 
 pub use args::{ProviderSelection, UsageArgs};
+use work_dirs::{project_work_dir, usage_work_dir};
 
 /// Parses every discovered transcript, warning on and skipping any file that
 /// fails to parse rather than failing the whole report.
@@ -76,6 +80,7 @@ fn parse_all(
     let started_agent_types =
         crate::commands::subagents::ledger::StartedAgentTypeIndex::load(work_dir);
     let requested_models = spawn_join::RequestedModels::load(work_dir);
+    let mut parent_spawns = parent_spawns::ParentSpawns::new(work_dir);
     let mut transcripts = Vec::with_capacity(files.len());
     for file in files {
         let metadata = file
@@ -96,10 +101,7 @@ fn parse_all(
                         })
                         .map(str::to_owned);
                 }
-                if transcript.agent_type.is_none() && file.scope == transcript::Scope::Subagent {
-                    transcript.agent_type = agent_sidecar::agent_type_from_sidecar(&file.path);
-                    transcript.agent_type_from_sidecar = transcript.agent_type.is_some();
-                }
+                parent_spawns.fill_fallbacks(&mut transcript, file);
                 forward_join.join_transcript(&mut transcript);
                 transcripts.push(transcript);
             }
@@ -109,36 +111,10 @@ fn parse_all(
     transcripts
 }
 
-/// Resolve the optional hook ledger for the project being reported. An
-/// explicit project must use its own state directory; falling back to the
-/// caller's repository would silently attach unrelated spawn metadata.
-/// `--all` likewise spans repositories and therefore has no single safe
-/// ledger.
-fn usage_work_dir(project: Option<&Path>, all: bool) -> Option<PathBuf> {
-    if all {
-        return None;
-    }
-    match project {
-        Some(project) => project_work_dir(project).filter(|candidate| candidate.is_dir()),
-        None => crate::commands::common::work_dir_path().ok(),
-    }
-}
-
-fn project_work_dir(project: &Path) -> Option<PathBuf> {
-    let project = if project.is_absolute() {
-        project.to_path_buf()
-    } else {
-        std::env::current_dir().ok()?.join(project)
-    };
-    Some(
-        crate::fs::work_dir::WorkDir::new(project)
-            .ok()?
-            .root()
-            .to_path_buf(),
-    )
-}
-
 pub fn execute(args: UsageArgs) -> Result<()> {
+    if args.quota {
+        return quota::print_model_budget(crate::commands::common::work_dir_path().ok().as_deref());
+    }
     if let Some(artifact) = args.compare.as_deref() {
         let exit_code = comparison::compare(artifact, &args)?;
         if exit_code != 0 {
@@ -394,6 +370,8 @@ mod tests;
 #[path = "forward_root_tests.rs"]
 mod forward_root_tests;
 
+#[cfg(test)]
+mod attribution_contract_tests;
 #[cfg(test)]
 #[path = "comparison_tests.rs"]
 mod comparison_tests;

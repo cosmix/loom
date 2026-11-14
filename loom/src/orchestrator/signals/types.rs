@@ -76,6 +76,8 @@ pub struct EmbeddedContext {
     /// Implementers section between the full doctrine and the route-to-sonnet
     /// fallback; the formatters never probe the machine themselves.
     pub codex_available: bool,
+    /// Fresh provider quota and routing guidance for this signal.
+    pub model_budget: Option<String>,
     /// Per-subagent response budget in seconds, when the stage sets one
     /// explicitly. `None` leaves the built-in default in force and emits
     /// nothing — the signal only spends tokens on a budget the plan chose.

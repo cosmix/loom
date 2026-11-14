@@ -75,7 +75,7 @@ pub(crate) fn read_lines(
 /// at most `max` bytes of it and consuming the rest unbuffered. Returns the
 /// bytes consumed, newline included, and whether the line was cut at `max`;
 /// `None` at an unfinished last line, which the caller must not count as read.
-fn next_line(
+pub(crate) fn next_line(
     reader: &mut impl BufRead,
     line: &mut Vec<u8>,
     max: usize,

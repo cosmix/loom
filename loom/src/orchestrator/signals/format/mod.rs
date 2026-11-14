@@ -7,6 +7,7 @@ use super::cache::{stable_prefix_for, SignalMetrics};
 use super::types::{DependencyStatus, EmbeddedContext};
 
 mod brief;
+pub(crate) mod budget;
 mod codex;
 mod helpers;
 mod sandbox_section;
