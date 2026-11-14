@@ -83,16 +83,20 @@
   outline-offset: 2px;
 }
 
-/* Floats over the transcript when new activity arrives below the fold. */
+/*
+ * Floats over the transcript when new activity arrives below the fold: a raised fill, an edge and
+ * the floating shadow, as the other floating surfaces draw them (ui/DESIGN.md, Floating surfaces).
+ */
 .chat-follow {
   position: absolute;
   inset-block-end: var(--space-3);
   inset-inline-start: 50%;
   height: var(--control-height-sm);
   padding: 0 var(--space-3);
-  border: 1px solid var(--border);
+  border: 1px solid var(--popover-border);
   border-radius: 999px;
-  background: var(--card);
+  background: var(--popover);
+  box-shadow: var(--plan-shadow), var(--popover-lift);
   color: var(--foreground);
   font-size: var(--type-body);
   font-weight: 500;
@@ -101,7 +105,7 @@
 }
 
 .chat-follow:hover {
-  background: var(--muted);
+  background: color-mix(in oklab, var(--foreground) 10%, var(--popover));
 }
 
 /* ── The user's words ──────────────────────────────────────────────────────── */

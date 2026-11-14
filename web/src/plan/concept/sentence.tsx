@@ -1,5 +1,4 @@
 import { cn } from "cn";
-import { ChevronDown } from "lucide-react";
 import { Fragment, type CSSProperties, type JSX } from "react";
 
 import type { ConceptPage, PlanLink, SectionLink, Sentence } from "@/plan/api/schema-concept";
@@ -25,19 +24,11 @@ type ClosedSentenceProps = {
   flashPage: string;
 };
 
-/** What follows the text: the marks and a chevron hint, or the muted "no source" mark. */
+/** What follows the text: the marks, or the muted "no source" mark. */
 function SentenceTail({ site, button }: { site: SentenceSite; button: boolean }): JSX.Element {
   const column = useColumn();
   if (!button) return <span className="concept-no-source">no source</span>;
-  return (
-    <>
-      <Marks marks={site.marks} onOpen={column.openPage} />
-      {/* The anchor takes no inline width; the chevron floats just after the marks. */}
-      <span aria-hidden="true" className="concept-sentence-hint">
-        <ChevronDown className="concept-sentence-chevron" />
-      </span>
-    </>
-  );
+  return <Marks marks={site.marks} onOpen={column.openPage} />;
 }
 
 /**
@@ -62,7 +53,7 @@ function FragmentText({ members, summary }: { members: Sentence[]; summary: stri
 /**
  * A summary sentence that is not open. With citations it is a button that opens in place; with
  * none it is a defect (section 05) and shows a muted "no source" mark instead of colour marks.
- * Marks, the chevron hint and the plan glyph sit after the inline text, outside the button.
+ * Marks and the plan glyph sit after the inline text, outside the button.
  * A fragment (several sentences that open to the same content) is one button with one tail;
  * its wrap carries `data-fragment` with the member count, which a single sentence's does not.
  */

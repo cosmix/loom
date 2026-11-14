@@ -1,12 +1,12 @@
 import { useAtomValue } from "jotai";
-import { memo, useId, useState, type JSX } from "react";
+import { memo, useId, useLayoutEffect, useRef, useState, type JSX } from "react";
 
-import type { EndedChat, Item, SessionView, Turn } from "@/plan/api/schema-chat";
+import type { ChatSnapshot, EndedChat, Item, SessionView, Turn } from "@/plan/api/schema-chat";
 import { plural } from "@/plan/ui/plural";
 import { closingTicks, endedByAgent, isClosingTurn, leftBehind, userWrote } from "./closing";
 import { FailureNotice } from "./failure-notice";
 import { ItemView } from "./items";
-import { pendingPermissionsAtom, sessionAtom, snapshotAtom, turnsAtom } from "./model";
+import { pendingPermissionsAtom, queueAtom, sessionAtom, snapshotAtom, turnsAtom } from "./model";
 import { PermissionCard } from "./permission-card";
 import { SessionDivider } from "./session-divider";
 import { clearedChatAtom, shownSessionAtom } from "./shown-session";
@@ -327,11 +327,36 @@ function ChatOutcome({ turns }: { turns: Turn[] }): JSX.Element | null {
   }
 }
 
+/** The messages the user sent to the chat: its user items (not the closing write's) and its queue. */
+function sentCount(turns: Turn[], queue: ChatSnapshot["queue"]): number {
+  const drawn = turns.reduce(
+    (count, turn) =>
+      count + turn.items.filter((item) => item.type === "user" && item.origin !== "closing").length,
+    0,
+  );
+  return drawn + queue.length;
+}
+
+/**
+ * A message the reader sends brings the transcript to its end, even from above the fold. A count
+ * that rises within one chat is a send; a change of chat only sets the count it is compared with.
+ */
+function useFollowSends(sent: number, sessionId: string | null, follow: () => void): void {
+  const seen = useRef<{ session: string | null; count: number } | null>(null);
+  useLayoutEffect(() => {
+    const last = seen.current;
+    seen.current = { session: sessionId, count: sent };
+    if (last?.session === sessionId && sent > last.count) follow();
+  }, [sent, sessionId, follow]);
+}
+
 export function Transcript(): JSX.Element {
   const turns = useAtomValue(turnsAtom);
   const session = useAtomValue(sessionAtom);
+  const queue = useAtomValue(queueAtom);
   const { previous } = useAtomValue(snapshotAtom);
   const scroll = useFollow(turns, previous);
+  useFollowSends(sentCount(turns, queue), session?.id ?? null, scroll.follow);
   // The conversation the outcome belongs to: the live session's turns, else the concluded one's.
   const chat = chronological(session ? turns : (previous?.turns ?? []));
   return (
