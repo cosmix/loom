@@ -16,6 +16,7 @@ import { planSlug, renamedPlan } from "@/plan/files/tree";
 import { treeDocs } from "@/plan/files/tree-docs";
 import { useDocMarkdownProps } from "@/plan/files/use-doc-markdown";
 import { Markdown } from "@/plan/markdown";
+import { useCoverLookup } from "@/plan/trace/cover-lookup";
 import { formatBytes } from "@/plan/ui/format-bytes";
 import { LoadState } from "@/plan/ui/load-state";
 
@@ -50,6 +51,7 @@ function DocMarkdown({
   marks: string[];
 }) {
   const links = useDocMarkdownProps(doc, tree);
+  const covers = useCoverLookup(doc);
   return (
     <Markdown
       source={doc.text}
@@ -57,6 +59,7 @@ function DocMarkdown({
       sections={doc.sections}
       marks={marks}
       suppressTitle={doc.title}
+      covers={covers}
       {...links}
     />
   );

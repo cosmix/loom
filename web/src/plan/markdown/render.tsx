@@ -1,8 +1,10 @@
-import type { List, ListItem, PhrasingContent, RootContent } from "mdast";
+import type { List, ListItem, Paragraph, PhrasingContent, RootContent } from "mdast";
 import { Fragment, type JSX, type ReactNode } from "react";
 
 import { CodeBlock } from "@/plan/markdown/code-block";
 import { rawHtmlText, type RenderContext } from "@/plan/markdown/context";
+import { coversValue } from "@/plan/markdown/covers";
+import { CoversBlock } from "@/plan/markdown/covers-block";
 import { Heading } from "@/plan/markdown/heading";
 import { renderInlines } from "@/plan/markdown/inline";
 import { MarkdownTable } from "@/plan/markdown/table";
@@ -49,11 +51,20 @@ function ListView({ node, context }: { node: List; context: RenderContext }): JS
   );
 }
 
+function renderParagraph(node: Paragraph, context: RenderContext, tight: boolean): ReactNode {
+  const covers = context.covers ?? null;
+  const value = covers === null ? null : coversValue(node, covers.source);
+  if (covers !== null && value !== null) {
+    return <CoversBlock value={value} covers={covers} context={context} />;
+  }
+  if (tight) return renderInlines(node.children, context);
+  return <p>{renderInlines(node.children, context)}</p>;
+}
+
 function renderBlock(node: RootContent, context: RenderContext, tight: boolean): ReactNode {
   switch (node.type) {
     case "paragraph":
-      if (tight) return renderInlines(node.children, context);
-      return <p>{renderInlines(node.children, context)}</p>;
+      return renderParagraph(node, context, tight);
     case "heading":
       return (
         <Heading

@@ -1,0 +1,128 @@
+/* A metaplan entry's `Covers:` line (`covers-block.tsx`): the spec headings it names, one row
+ * per section. Chrome face, a step under the reading text, so it reads as a reference list
+ * beside the prose; a mono section number hangs in its own column and the headings wrap under
+ * the section's title. Sizes are in em, so Settings' reading size scales the block. */
+
+.md .md-covers {
+  font-family: var(--font-sans);
+  font-size: 0.8em;
+  line-height: 1.5;
+}
+
+.md .md-covers__label {
+  margin: 0 0 0.35em;
+  color: var(--muted-foreground);
+  font-size: 0.875em;
+  font-weight: 500;
+}
+
+.md .md-covers__list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55em;
+  margin: 0;
+}
+
+/* The number takes the first column of the group's grid, and the headings line up under the
+   section's title in the second. */
+.md .md-covers__group {
+  display: grid;
+  grid-template-columns: 2.25em minmax(0, 1fr);
+  min-width: 0;
+}
+
+.md .md-covers__group > dt {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
+  align-items: baseline;
+  min-width: 0;
+  font-weight: 600;
+}
+
+.md .md-covers__group > dd {
+  grid-column: 2;
+  min-width: 0;
+  margin: 0.1em 0 0;
+}
+
+.md .md-covers__number {
+  color: var(--muted-foreground);
+  font-family: var(--font-mono);
+  font-size: 0.875em;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+  transition: color 120ms;
+}
+
+.md .md-covers__group:is(:hover, :focus-within) .md-covers__number {
+  color: var(--foreground);
+}
+
+.md .md-covers__unknown {
+  color: var(--muted-foreground);
+  font-weight: 500;
+}
+
+.md .md-covers__refs {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.md .md-covers__refs > li {
+  display: inline;
+  margin: 0;
+}
+
+/* Chrome links: ink at rest on a quiet underline that darkens on hover, as the passage's
+   "Covered by" line draws them; the line-through of a document the tree lacks stays. */
+.md .md-covers a {
+  color: var(--foreground);
+  text-decoration: underline;
+  text-decoration-color: var(--border);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+  transition: text-decoration-color 120ms;
+}
+
+.md .md-covers a:hover {
+  text-decoration-color: currentColor;
+}
+
+.md .md-covers a:focus-visible {
+  border-radius: 3px;
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.md .md-covers a.md-missing {
+  color: var(--muted-foreground);
+  text-decoration-line: line-through;
+}
+
+.md .md-covers__sep,
+.md .md-covers__refs > li[data-state="whole"] {
+  color: var(--muted-foreground);
+}
+
+/* A ref that names no heading, or one still loading, is its raw words in muted mono. */
+.md .md-covers__raw {
+  color: var(--muted-foreground);
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+  overflow-wrap: anywhere;
+}
+
+.md .md-covers__refs > li[data-state="missing"] .md-covers__raw {
+  text-decoration: underline dotted var(--muted-foreground);
+  text-underline-offset: 3px;
+  cursor: help;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .md .md-covers__number,
+  .md .md-covers a {
+    transition: none;
+  }
+}

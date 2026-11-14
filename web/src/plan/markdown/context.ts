@@ -1,6 +1,7 @@
 import type { Definition, Root, RootContent } from "mdast";
 
 import type { SectionView } from "@/plan/api/schema-files";
+import type { CoversSource } from "@/plan/markdown/covers";
 
 /** Everything a node renderer needs besides the node itself. */
 export type RenderContext = {
@@ -19,6 +20,8 @@ export type RenderContext = {
   marks: RegExp | null;
   /** Link reference definitions by normalised identifier. */
   definitions: ReadonlyMap<string, Definition>;
+  /** Set where `Covers:` lines are drawn as the spec headings they name (a metaplan). */
+  covers?: CoversSource | null;
 };
 
 export function headingAnchorLookup(

@@ -21,7 +21,8 @@ function missingProps(missing: boolean): { className?: string; title?: string } 
   return missing ? { className: "md-missing", title: "not found" } : {};
 }
 
-function DocLink(props: {
+/** A link to a document of the tree, followed in the app; a path or anchor it lacks is marked. */
+export function DocLink(props: {
   path: string;
   anchor: string | null;
   context: RenderContext;

@@ -11,6 +11,7 @@ import {
   markPattern,
   type RenderContext,
 } from "@/plan/markdown/context";
+import type { CoverLookup } from "@/plan/markdown/covers";
 import { renderBlocks } from "@/plan/markdown/render";
 
 import "@/plan/markdown/markdown.css";
@@ -35,6 +36,8 @@ export type MarkdownProps = {
   headingIds?: boolean;
   /** Hide the first top-level H1 when its plain text matches this document title. */
   suppressTitle?: string | null;
+  /** Spec sections by number; when set, `Covers:` lines are drawn as the headings they name. */
+  covers?: CoverLookup | null;
 };
 
 export function parseMarkdown(source: string): Root {
@@ -57,6 +60,7 @@ export function Markdown({
   lineOffset = 0,
   headingIds = true,
   suppressTitle,
+  covers = null,
 }: MarkdownProps): JSX.Element {
   const root = useMemo(() => parseMarkdown(source), [source]);
   const definitions = useMemo(() => collectDefinitions(root), [root]);
@@ -75,6 +79,7 @@ export function Markdown({
     suppressTitle,
     marks: marked,
     definitions,
+    covers: covers === null ? null : { lookup: covers, source },
   };
   return <div className="md">{renderBlocks(root.children, context)}</div>;
 }
