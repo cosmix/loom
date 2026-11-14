@@ -143,3 +143,7 @@ A hook that Claude Code itself invokes (a `PreToolUse` guard, a global `UserProm
   see inside a spliced `sh -c` payload (`_loom_expand_shell_c` carries the array through the splice).
 - **`loom-control-complete.sh` strips inert heredoc bodies** before deciding whether a command is a completion
   attempt; see [hook-content-stripping](../patterns/hook-content-stripping.md).
+
+## Hook Test Runner Concurrency
+
+`loom-hooks/tests/run-all.sh` runs the registered tests `LOOM_HOOK_TEST_JOBS` at a time (default: CPU count capped at 8; `1` is serial) and prints results in declared order. A new hook test must keep every write inside its own `mktemp -d`: give each hook call a private `TMPDIR` (outside a stage, ledgers fall back to `${TMPDIR:-/tmp}`), never remove a shared directory such as `/tmp/claude-<uid>`, and never kill a process it did not start.

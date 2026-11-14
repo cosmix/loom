@@ -91,7 +91,7 @@
 | [cli-and-plan-pipeline](entry-points/cli-and-plan-pipeline.md) | CLI | 197 |
 | [context-and-source-graph](entry-points/context-and-source-graph.md) |  | 80 |
 | [filesystem-and-integration-modules](entry-points/filesystem-and-integration-modules.md) |  | 135 |
-| [hooks](entry-points/hooks.md) |  | 145 |
+| [hooks](entry-points/hooks.md) |  | 149 |
 | [orchestrator-daemon-and-sessions](entry-points/orchestrator-daemon-and-sessions.md) |  | 250 |
 | [remote-control](entry-points/remote-control.md) | RC | 96 |
 
