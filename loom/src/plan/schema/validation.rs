@@ -330,15 +330,15 @@ pub fn validate(metadata: &LoomMetadata) -> Result<(), Vec<ValidationError>> {
             });
         }
 
-        // Order carries meaning (first = preferred for routine implementation),
-        // so a repeat makes the preference ambiguous rather than emphatic.
+        // Order is informational only and carries no routing meaning, so a
+        // repeat is a likely typo rather than emphasis.
         let mut seen_lanes: Vec<Implementer> = Vec::new();
         for lane in &stage.implementers {
             if seen_lanes.contains(lane) {
                 errors.push(ValidationError {
                     message: format!(
                         "implementers lists '{lane}' more than once. Each lane may appear \
-                         at most once; order sets which lane routine implementation prefers."
+                         at most once; order is informational only."
                     ),
                     stage_id: Some(stage.id.clone()),
                 });
@@ -751,7 +751,7 @@ pub fn validate_structural_preflight(
         // Licensing the codex lane on a knowledge-shaped or verification-gate stage is
         // likely unintended: those stages lean on Claude-native `loom memory`/`loom
         // knowledge` curation and adversarial review judgment, not routine delegated
-        // implementation. Warn on the lane being licensed at all, not just preferred —
+        // implementation. Warn on the lane being licensed at all, wherever it is listed —
         // an available lane on such a stage is an invitation to misroute the work.
         if stage.implementers.includes_codex() {
             let type_name = match resolved_type {

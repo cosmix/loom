@@ -105,7 +105,8 @@ loom:
       description: |
         Final verification after all stages. Verify FUNCTIONAL INTEGRATION,
         not just tests passing. NEVER Claude Code auto-memory.
-        CONTEXT: read the plan (doc/plans/), loom memory show --all,
+        CONTEXT: read the plan's Overview, any Decisions section and the
+        stage sections it concerns, by line range (doc/plans/), loom memory show --all,
         doc/loom/knowledge/INDEX.md and only the relevant sections.
         BUILD & TEST (zero tolerance — fix ALL warnings/errors): run
         `loom check integration-verify` once (full suite, lint as errors,
@@ -150,7 +151,8 @@ loom:
         SINGLE-AGENT: do NOT spawn subagents — memories are compact summaries;
         lean on them and keep code spot-reads narrow.
         START with loom memory pending --group (corrections, mistakes,
-        decisions, other); read the plan and the knowledge sections it touches.
+        decisions, other); read the plan's Overview, any Decisions section and
+        the stage sections it concerns, by line range, and the knowledge sections it touches.
         CORRECTIONS FIRST: apply every `stale-knowledge:` memory in place with
         loom knowledge replace-section <file> "<heading>" "<body>" - never with
         loom knowledge update, which appends the fix below the stale text.

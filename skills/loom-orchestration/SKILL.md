@@ -92,14 +92,14 @@ Harvest each worker's terminal report exactly once. Never re-arm the watch and n
 
 **2-level cap:** main agent → coordinators → workers. Spawn coordinators as `general-purpose` with
 a `model` override — the engineer agent types carry no Task tool and run as leaves, so
-they cannot coordinate. Spawn workers BY AGENT TYPE — untyped ones inherit the main session model.
+they cannot coordinate. Spawn workers BY AGENT TYPE — inside a stage untyped spawns are denied; outside one the spawn guard gives them `sonnet`.
 Coordinators delegate too (hard stop 6), going opus only when territory integration needs
 judgment. Mix lanes under ONE ownership table. On a stage listing codex in `implementers`, a
 coordinator spawns `loom-codex-forwarder` BY AGENT TYPE (never the plugin's `codex:codex-rescue`
-directly), foreground only: gpt-6.1-terra for common implementation and integration tests.
-gpt-6-luna runs only when the user or the plan asks; haiku (loom-software-developer) is the default for its work.
-The lane is chosen per subagent,
-never per stage; the coordinator still does not verify.
+directly), foreground only, for straightforward well-specified pieces: gpt-6.1-terra for
+implementation, integration tests, boilerplate and simple unit tests; gpt-6.1-sol for substantial
+units and a failed terra unit; gpt-6-luna only when the user or the plan asks. The lane is chosen
+per piece, never per stage; the coordinator still does not verify.
 
 With an `EXECUTION PLAN` block, parse ALL assignments and spawn ALL in ONE message; hierarchical
 plans spawn COORDINATORS, not workers. Every prompt carries the preamble, assignment, files
@@ -161,20 +161,31 @@ After each wave of workers returns, the main agent compiles the tree once before
    default downward. HAIKU (loom-software-developer, effort high): a piece
    that is extremely simple, or whose brief is highly detailed — files,
    exact change and acceptance stated. Never haiku: an open decision, a bug
-   of unknown cause, concurrency, security-sensitive code, a data-loss path. Codex gpt-6-luna takes boilerplate and simple
-   unit tests only when the user or the plan asks. SONNET
-   (loom-software-engineer): pieces that need exploration or the initial
-   iteration on failing tests, or are too large to brief in that detail;
-   codex gpt-6.1-terra where such a piece is well specified. OPUS
-   (loom-senior-software-engineer, effort high; `effort: xhigh` for the
-   hardest) implements where a wrong design is expensive and tests will not
-   catch it: architecture, new algorithms, concurrency, distributed systems,
-   security-sensitive code, bugs of unknown cause. FABLE implements only
-   visual/UI design and extremely challenging algorithmic design. Codex
-   tiers (effort xhigh, via loom-codex-forwarder) exist only on stages listing
-   codex in implementers AND when the codex CLI + plugin are installed;
-   otherwise terra-tier work goes to sonnet and luna-tier work to haiku (loom
-   warns at startup when a stage lists codex it cannot use). In a standard
+   of unknown cause, concurrency, security-sensitive code, a data-loss path.
+   Spawn `Explore` with `model: haiku` for locate-only sweeps (paths, symbols,
+   call sites, where a string occurs); the default sonnet when the answer
+   requires reading behavior. CODEX (loom-codex-forwarder, effort xhigh) takes
+   straightforward, well-specified implementation (one concern, pinned
+   interfaces, mechanical acceptance, no git, no `.loom/`) when the stage lists
+   codex in implementers, the codex CLI + plugin are installed and quota has
+   room. No lane is first or default; list order means nothing. Verification,
+   review, planning, exploration, debugging and iteration on failing tests
+   stay with Claude. gpt-6.1-terra: implementation, integration tests,
+   boilerplate, scaffolding and simple unit tests; gpt-6.1-sol: a substantial
+   well-specified unit (about 4 to 6 file-sized changes) or a terra unit that
+   failed once; gpt-6-luna only when the user or the plan asks. Otherwise
+   terra- and sol-tier work goes to sonnet, and boilerplate and simple unit
+   tests to haiku. SONNET (loom-software-engineer): pieces that need exploration or the
+   initial iteration on failing tests, or are too large to brief in that
+   detail. A piece between sonnet and opus goes to sonnet.
+   OPUS (loom-senior-software-engineer, effort medium)
+   implements architecture across modules, new algorithms, concurrency,
+   distributed systems, security-sensitive code, bugs of unknown cause. It
+   takes no visual or CSS fixes, no fixes for review findings in code sonnet,
+   haiku or codex wrote (those return to the tier that wrote the piece and
+   escalate only on a failed fix), and no mainstream feature code. The
+   orchestrator passes no `effort` on a first attempt. FABLE implements only
+   visual/UI design and extremely challenging algorithmic design. In a standard
    stage the GATE is the orchestrator's single `loom check` (a fix round
    re-checks with `--criterion <n>`); an integration-verify stage runs the
    gate its own signal names. Either way the orchestrator owns fixes and the
@@ -185,16 +196,22 @@ After each wave of workers returns, the main agent compiles the tree once before
    brief and respawn the same tier.
    Settle every decision one lookup would answer before choosing a tier; one
    left open is no reason to pick sonnet over haiku. A real failure moves up
-   one tier, haiku to sonnet to opus, with every attempt and its
-   evidence in the new brief. Never skip a tier or rerun one on the same
-   failure.
+   one tier with every attempt and its evidence in the new brief: haiku,
+   sonnet, opus at effort medium, opus at `effort: high`; codex terra, sol,
+   then Claude at the tier the piece needs. Never skip a tier or rerun one on
+   the same failure.
 5. THE LADDER ENDS AT `loom-advisor` (fable, read-only), RARELY: spawn it
-   only after an opus implementer failed, typically a stubborn bug, with
-   every attempt. Its diagnosis goes to an opus implementer.
+   only after an opus implementer failed at effort high, typically a stubborn
+   bug, with every attempt. Its diagnosis goes to an opus implementer at
+   `effort: high`.
+
+A signal's `## Model Budget` `Routing:` line directs lane choice; it never overrides `implementers`,
+the codex-unavailable instruction or the tier this rule names.
 
 Keep each assignment within point 3's size; decompose via Rule 6 rather than escalating for
 context headroom. The cheaper the tier, the fuller the brief: paths, `file:line` ranges,
-signatures, patterns, steps, per-step acceptance, decisions settled, traps named. Never paste code
+signatures, patterns, steps, per-step acceptance, decisions settled, traps named. A brief to an
+opus or fable worker names `file:line` ranges. Never paste code
 the worker can open. Plan authors: rubric in
 `/loom-plan-writer`.
 

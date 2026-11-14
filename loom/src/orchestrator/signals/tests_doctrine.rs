@@ -180,6 +180,16 @@ fn block_b_agrees_across_every_surface() {
 }
 
 #[test]
+fn block_b_names_codex_sol() {
+    assert!(
+        BLOCK_B.contains(crate::codex::CODEX_IMPLEMENTER_MODEL_SOL),
+        "BLOCK-B must name CODEX_IMPLEMENTER_MODEL_SOL ({}); update every surface \
+         when the constant changes",
+        crate::codex::CODEX_IMPLEMENTER_MODEL_SOL
+    );
+}
+
+#[test]
 fn block_d_agrees_across_every_surface() {
     let signal_prefix = generate_stable_prefix();
     let iv_prefix = generate_integration_verify_stable_prefix();

@@ -382,7 +382,7 @@ fn test_signal_codex_implementers_section_gated() {
         );
     }
 
-    // Mixed stage: codex is licensed but NOT preferred. The doctrine must still
+    // Mixed stage: codex is licensed but NOT listed first. The doctrine must still
     // appear — this is the case an `implementer == Codex` equality gate silently
     // dropped, leaving a stage that can spawn codex agents with none of the
     // rules for them — and it must tell the orchestrator to choose per subagent
@@ -611,7 +611,7 @@ fn test_recovery_signal_carries_codex_implementers_section() {
     assert!(signal.contains(CODEX_IMPLEMENTER_MODEL_LUNA));
 
     // A MIXED stage recovers with the doctrine too. The gate is "codex is
-    // licensed", not "codex is preferred" — a stage that reaches for sonnet
+    // licensed", not "codex is first-listed" — a stage that reaches for sonnet
     // first but may still spawn one codex agent needs the blast-radius rules
     // just as much, and this is the case a `== Codex` equality check dropped.
     let mut mixed_stage = create_test_stage();

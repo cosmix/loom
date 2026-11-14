@@ -405,8 +405,8 @@ pub struct Stage {
     /// (multi-agent fan-out). Copied from the plan's StageDefinition.
     #[serde(default)]
     pub ultracode: bool,
-    /// Which agent lanes this stage may spawn subagents from, in preference
-    /// order. Copied from the plan's StageDefinition.
+    /// Which agent lanes this stage may spawn subagents from, in listed
+    /// order (informational only). Copied from the plan's StageDefinition.
     #[serde(default)]
     pub implementers: Implementers,
     /// How long (seconds) this stage's session may go without a heartbeat before

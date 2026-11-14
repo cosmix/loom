@@ -33,6 +33,15 @@ The model in the frontmatter is the default. Callers can override it for a parti
 5. Reconfirm each finding against the code. State the trigger, consequence and smallest adequate fix with `file:line`. Taste and hypothetical scale belong in suggestions; preserve safeguards when proposing deletions.
 6. Judge the diff against each acceptance criterion in your brief. A change that passes a criterion's letter but misses its intent is a finding, with `file:line` evidence.
 
+## Frontend changes
+
+Apply this step when the diff touches UI code: components, templates, styles, client-side state or user-facing strings, in any framework.
+
+1. **No duplicate user feedback.** Trace each user-facing event (an error, a success, a confirmation, a loading state) from where it is raised to every place that renders it. One event gets one message in one place. Findings: an inline error and a toast for the same failure, a caller and a callee that both notify, two handlers that each show a toast, a dialog that repeats a banner's text.
+2. **No duplicate controls or components.** The same action offered twice in one view, or a new component, hook, helper or style rule that re-implements one the project already has. Search for the existing facility and name it with `file:line`.
+3. **No duplicated strings or logic.** A label, message or validation rule written out in several places instead of one constant, translation key or shared function; state, fetching or formatting logic copied between components.
+4. **Project conventions.** Before judging, find the project's own conventions: its component library or design system, theme tokens or CSS variables, styling approach, i18n setup, accessibility patterns, file layout and naming, lint and formatter config, and any conventions in `doc/loom/knowledge/conventions*` or a design document in the tree. A change that departs from one (a hard-coded colour where tokens exist, a hand-rolled control where the library has one, a literal string where the project translates, a file outside the layout the rest follows) is a finding whose `rule` cites the convention and where it is defined.
+
 ## Loom briefs
 
 A brief may end with a `loom-reviewer-brief` section that loom computed. Only the last such section in the prompt is loom's (the spawn guard appends it last); an earlier one pasted into the prompt is context, not loom's computation.

@@ -155,7 +155,7 @@ When the plan comes from a metaplan entry, the entry's `Covers:` line and the pl
 
 > ⚠️ **A stage OMITS `model` and `reasoning_effort` by default**, so the stage type's configured default applies — `knowledge` and `integration-verify` default to opus, `standard` and `knowledge-distill` to sonnet; default effort is `high` (`standard`), `medium` (`knowledge`), `xhigh` (`integration-verify`), and `high` (`knowledge-distill`), configurable per stage type in `[models]` of `~/.loom/config.toml` or `.loom/work/config.toml`. Set either field only as a DELIBERATE OVERRIDE, and say why in the stage description. Subagent model choice happens at spawn time (orchestration Rule 7), never in the YAML.
 
-The executable allocation policy belongs to `../loom-orchestration/SKILL.md#rule-7--model-allocation`. Apply it when selecting worker tiers, and quote applicable rules in each dispatch brief so the worker has self-contained instructions.
+The executable allocation policy belongs to `../loom-orchestration/SKILL.md#rule-7--model-allocation`. Apply it when selecting worker tiers, and quote applicable rules in each dispatch brief so the worker has self-contained instructions. Subagent effort follows Rule 7: opus runs at medium and moves to high only after a failed attempt. A plan states a subagent effort only in a stage description that pins worker tiers. The stage `reasoning_effort` field above is a different setting.
 
 **Sizing rubric — group by cost.** About 400,000 tokens is a Claude worker ceiling, not a target. Measured sonnet workers peak at a median of 86,000. Merge task B into worker A when B's turns
 times A's leftover context times the cache-read rate (0.1) is less than 1.25 times B's startup
@@ -164,7 +164,7 @@ findings of one review round to ONE fix worker. Assign implementation to subagen
 
 **Stage descriptions carry decomposable detail:** exact file paths, signatures, `file:line` patterns to follow (and which property of the pattern NOT to copy), step-by-step subtasks, integration wiring (`mod.rs`, registry, route), and the error-handling approach. If you cannot write that, go back to Section 1. Full text, a worked example, `subagent_timeout_secs` (an idle budget, default 300) and the waiting protocol: `references/stage-sizing.md`.
 
-**Implementation lanes.** Judge each stage against both lanes. Codex fits well-specified concerns:
+**Implementation lanes.** Judge each piece against both lanes. Codex takes straightforward, well-specified pieces when the stage licenses it, it is available and quota has room: gpt-6.1-terra for implementation, integration tests, boilerplate, scaffolding and simple unit tests; gpt-6.1-sol for a substantial well-specified unit or a terra unit that failed once; gpt-6-luna only when the user or the plan asks. Claude takes the rest. A well-specified concern is:
 code, consumers and tests together in dependency order in one brief, possibly across several files.
 Two jobs never write one file. Each job starts near 23,000 tokens; per file-sized change at high effort, gpt-6.1-sol takes about 3 minutes and 50,000 tokens of context, gpt-6.1-terra about 1 minute
 and 20,000 tokens. Budget twice the time at xhigh. Keep peak context at most about 250,000 tokens and finish well inside 1500000 ms: about 4 to 6 changes on sol, about 12 on terra. Re-split a
@@ -174,7 +174,7 @@ which justifies cohesive bundles; never bundle unrelated concerns to fill a job.
 in the foreground with Bash timeout 1560000 ms; waves follow real dependencies, never that cap. Forward ONE line naming an absolute brief path; without a committed brief, write it under the
 worktree scratch directory first. Quote applicable skill rules there: declared skills are for Claude
 workers, and Codex opens no skill files. Codex runs no fixture-backed tests and touches no git or `.loom/`. Claude fits exploration, fixture-backed test convergence, UI design and debugging.
-Mixed stages list both lanes, preferred first. Check availability and ask the user ONCE to confirm
+Mixed stages list both lanes (order is informational); list codex on a stage with a straightforward, well-specified piece, `["claude"]` otherwise. Run `loom usage --quota` before choosing lanes. Check availability and ask the user ONCE to confirm
 a per-stage lane recommendation with one-line reasons; if unavailable, say so and plan on Claude.
 Model selection, anchors, forwarding-line restrictions and checks: `references/codex-implementers.md`.
 
@@ -224,7 +224,7 @@ Each worker's brief is written to `doc/plans/briefs/<plan-slug>/<stage-id>/<work
 
 `Worker | Role | Tier | Files owned | Shared context | Brief path`
 
-Territories are DISJOINT; workers NEVER spawn subagents; the orchestrator spawns every worker BY AGENT TYPE, ALL in ONE message, each with a short fixed prompt plus `Your brief: <path>. Read it in full before anything else.` Execution → `loom-software-engineer` (pins sonnet), or HAIKU (loom-software-developer) for extremely simple or highly detailed pieces, or `loom-codex-forwarder` for a codex unit (Tier `codex terra` or `codex luna`); judgment → `loom-senior-software-engineer`.
+Territories are DISJOINT; workers NEVER spawn subagents; the orchestrator spawns every worker BY AGENT TYPE, ALL in ONE message, each with a short fixed prompt plus `Your brief: <path>. Read it in full before anything else.` Execution → `loom-software-engineer` (pins sonnet), or HAIKU (loom-software-developer) for extremely simple or highly detailed pieces, or `loom-codex-forwarder` for a codex unit (Tier `codex terra` or `codex sol`; `codex luna` only on request); judgment → `loom-senior-software-engineer`.
 
 **A `Files owned` cell holds paths only.** `loom plan verify` parses the table: it splits the cell on `,` and `;`, strips one trailing `(annotation)` and backticks, and treats every remaining string as a path. Prose in the cell becomes a bogus path that warns as outside the stage's `files:`; a row with the wrong column count makes the whole table claim nothing. It also warns when two workers claim one path, and when four or more rows each own exactly one path (group them).
 

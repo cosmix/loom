@@ -5,8 +5,8 @@ use crate::quota::{self, ProviderQuota, QuotaSnapshot, QuotaWindow, WindowKind};
 pub(crate) const QUOTA_PRESSURE_PERCENT: f64 = 75.0;
 pub(crate) const PRESSURE_MIN_SECS_TO_RESET: i64 = 1800;
 
-const CLAUDE_ROUTING: &str = "Routing: Claude quota is under pressure. Give every codex-fit piece to codex where this stage licenses codex and its Codex Implementers section says codex is available, and every piece whose brief settles every decision to haiku. Never move a piece below the tier Rule 7 names for it.";
-const CODEX_ROUTING: &str = "Routing: Codex quota is under pressure. Give codex-fit pieces to the matching Claude tier: terra- and sol-tier work to sonnet, boilerplate and simple unit tests to haiku.";
+const CLAUDE_ROUTING: &str = "Routing: Claude quota is under pressure. Give every straightforward, well-specified piece to codex where this stage licenses codex and its Codex Implementers section says codex is available, and every piece whose brief settles every decision to haiku. Never move a piece below the tier Rule 7 names for it.";
+const CODEX_ROUTING: &str = "Routing: Codex quota is under pressure. Give straightforward, well-specified pieces to the matching Claude tier: terra- and sol-tier work to sonnet, boilerplate and simple unit tests to haiku.";
 const BOTH_ROUTING: &str = "Routing: both providers are under pressure. Allocate as Rule 7 says.";
 
 fn fresh(provider: Option<&ProviderQuota>, now: i64) -> Option<&ProviderQuota> {

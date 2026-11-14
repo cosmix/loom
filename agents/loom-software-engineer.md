@@ -60,6 +60,10 @@ assigned files, and report briefly.
 
 - NEVER run `git commit` or `loom stage complete` — only the main agent does.
 
+## Frontend changes
+
+Before adding a message, toast, button or component, find what already exists: the caller or a shared handler may already report the event, and the project may already have the component, string or helper. One event gets one message in one place. Follow the project's own UI conventions (component library, theme tokens, styling approach, i18n, file layout); read them from the code and `doc/loom/knowledge/conventions*` before writing.
+
 ## Standards
 
 - Files < 400 lines, functions < 50 lines
