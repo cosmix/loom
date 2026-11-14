@@ -147,3 +147,10 @@
 **Prevention:** before adopting a platform feature, name the loom mechanism that covers the same need and state what the feature adds that it cannot; when nothing, keep the status quo. The orchestrator follows the escalation ladder (haiku, sonnet, opus medium, opus high) and spawns `loom-advisor` only after that fails.
 
 **Fix:** the plan dropped every `--advisor` key, flag and doctrine line.
+
+## A Pass-Cache Contract Whose Criterion Contains `$` Can Never Be Stored
+
+**What happened:** A plan's contract checked that the acceptance pass cache tracks a directory's contents. Its criterion was `test "$(cat "$LOOM_SHARED_CACHE/v")" = 1`, and its scenario said the first pass "is stored". `is_cacheable` refuses any command containing `$` (`verify/criteria/cache.rs:66`). So the contract was red for a correct implementation, and without the stored check it was green for every implementation.
+**Why:** The scenario was written from the cache's intent, without reading the cacheability filter.
+**Prevention:** A criterion meant to be cached contains no `$`, `~/`, `mktemp`, URL or `git`. Put the variable read in a committed shell script that the criterion runs with `sh`, as the `InputFixture` of `verify/criteria/tests/cache_input_runner_tests.rs` does. Assert a store (`cache_records() == 1`) and a cached rerun before asserting the miss.
+**Fix:** The plan's `pass-cache-tracks-shared-cache-contents` contract runs a committed script and asserts store, hit, then miss.

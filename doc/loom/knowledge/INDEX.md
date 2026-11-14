@@ -164,7 +164,7 @@
 | [parallel-worktree-shared-state](mistakes/parallel-worktree-shared-state.md) | Shared | 351 |
 | [phantom-merges](mistakes/phantom-merges.md) | Merges | 347 |
 | [pinned-literals-ledgers-and-wiring](mistakes/pinned-literals-ledgers-and-wiring.md) | Pins | 332 |
-| [plan-authoring](mistakes/plan-authoring.md) |  | 149 |
+| [plan-authoring](mistakes/plan-authoring.md) |  | 156 |
 | [plan-server-delivery](mistakes/plan-server-delivery.md) | Slips | 369 |
 | [planner-design-brainstorm](mistakes/planner-design-brainstorm.md) | Stubs | 94 |
 | [planner-follow-ups-delivery](mistakes/planner-follow-ups-delivery.md) | Slips | 196 |
@@ -234,9 +234,9 @@
 | [planning-session-sandbox-limits](concerns/planning-session-sandbox-limits.md) |  | 238 |
 | [platform-and-commit-gaps](concerns/platform-and-commit-gaps.md) |  | 234 |
 | [runtime-and-session-safety](concerns/runtime-and-session-safety.md) |  | 137 |
-| [sandbox-and-confinement-gaps](concerns/sandbox-and-confinement-gaps.md) |  | 363 |
+| [sandbox-and-confinement-gaps](concerns/sandbox-and-confinement-gaps.md) |  | 372 |
 | [session-tmpdir-deny](concerns/session-tmpdir-deny.md) |  | 7 |
-| [source-graph-known-gaps](concerns/source-graph-known-gaps.md) | Limits | 90 |
+| [source-graph-known-gaps](concerns/source-graph-known-gaps.md) | Limits | 94 |
 | [source-graph-review-backlog](concerns/source-graph-review-backlog.md) | Todo | 298 |
 | [state-confinement-gaps](concerns/state-confinement-gaps.md) | Caches | 21 |
 | [token-accounting-and-proof-defects](concerns/token-accounting-and-proof-defects.md) |  | 334 |

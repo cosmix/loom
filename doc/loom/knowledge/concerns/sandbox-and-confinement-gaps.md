@@ -361,3 +361,13 @@ What still starts cold:
 - A cache the command's environment points anywhere but the host default, which warns and uses an empty private cache.
 
 The Cargo home has its own stable reset ([execution containment](../architecture/execution-containment.md#read-this-first-what-containment-means-in-loom)).
+
+## A Read-Only Bind Inside a Writable Tree Escapes Through a Renamed Parent
+
+Measured with bwrap 0.11.1 on Linux 7.2. The test reproduced the bind layout of a knowledge stage's criteria, whose tree is the main checkout (`verify/criteria/confine_protected.rs:1-13`): the tree is bound read-write, and a nested path is `--ro-bind`'d on top of it.
+
+- Writes into the read-only path fail.
+- `mv .loom .loomx`, or `mv` of any directory between the tree and the read-only path, succeeds and lands on the host. The read-only bind moves with the renamed directory, and a recreated path at the old name is writable.
+- `Protected` ro-binds the state root `<tree>/.loom/work` this way (`confine_protected.rs:44-60`), so a knowledge stage's criterion can rename the main checkout's `.loom` on the host and plant a fresh `.loom/work`.
+- The kernel refuses to rename a mount point (`EBUSY`). Self-binding every directory strictly between the tree and the read-only path (`--bind p p`, after the tree bind and before the `--ro-bind`) makes those renames fail with `Device or resource busy`. Writes elsewhere in those directories keep working.
+- The vm-test-devices plan's `command-boundary` stage adds that pinning to `Protected`. Seatbelt on macOS is unmeasured.

@@ -88,3 +88,7 @@ Choose a `from:` inside the library (a route handler or `cli::dispatch`'s callee
 ## Two Outlines in One Call Abort in a Stage Sandbox
 
 `loom map --outline` on two files in one shell call printed `corrupted double-linked list` after the first outline when the worktree sandbox left the context cache read-only. Query one file per call, or read line ranges with the Read tool.
+
+## A Call Through a `#[path]` Module Has No Graph Edge
+
+`loom map --callees 'loom/src/verify/criteria/confine.rs#function:prepare'` lists no edge to `confine_host.rs#wrap`, although `prepare` calls `host::wrap(...)` (`confine.rs:298`). The module `host` is declared `#[path = "confine_host.rs"] mod host;` (`confine.rs:16-17`), and the only caller the graph attributes to `wrap` is a test. A `reachable` check from `run_acceptance_with_config` to anything below `wrap` (`platform_command`, `bubblewrap`, a device-grant helper) therefore fails for a correct implementation, because `verify/goal_backward/reachable.rs` walks the same edges. Before writing such a check, run `loom map --impact <symbol>` and confirm the `from` function appears. Otherwise prove the path with a contract or test.
