@@ -10,10 +10,7 @@
 //!
 //! Each test explicitly documents which fix it guards.
 
-#[path = "../../../../tests/test_support/mod.rs"]
-mod test_support;
-
-use test_support::git_checked;
+use crate::test_git::git_checked;
 
 use serial_test::serial;
 use tempfile::TempDir;

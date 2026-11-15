@@ -11,37 +11,25 @@ pub mod test_support;
 
 // Several test targets load this file through `#[path]` without using this name.
 #[allow(unused_imports)]
+pub use test_support::git_repo::{git_checked, git_unchecked, TestRepo};
+#[allow(unused_imports)]
 pub use test_support::write_main_checkout_identity;
-
-pub fn git_checked(dir: &Path, args: &[&str]) -> std::process::Output {
-    test_support::git_checked(dir, args)
-}
-
-pub fn git_unchecked(dir: &Path, args: &[&str]) -> std::process::Output {
-    test_support::git_unchecked(dir, args)
-}
 
 use loom::plan::graph::ExecutionGraph;
 use loom::plan::schema::StageDefinition;
 
 /// Test helper: Create a temporary git repository with initial commit
 pub fn init_test_repo() -> TempDir {
-    let temp_dir = TempDir::new().expect("Failed to create temp directory");
-    let repo_root = temp_dir.path();
-
-    test_support::init_git_repo(repo_root);
-    test_support::git_checked(repo_root, &["branch", "-M", "main"]);
-
-    temp_dir
+    TestRepo::new().into_temp_dir()
 }
 
 /// Test helper: Create a branch with a commit adding a file
 pub fn create_branch_with_file(name: &str, filename: &str, content: &str, repo_root: &Path) {
-    test_support::git_checked(repo_root, &["checkout", "-b", name]);
+    git_checked(repo_root, &["checkout", "-b", name]);
     fs::write(repo_root.join(filename), content).expect("Failed to write file");
-    test_support::git_checked(repo_root, &["add", filename]);
-    test_support::git_checked(repo_root, &["commit", "-m", &format!("Add {filename}")]);
-    test_support::git_checked(repo_root, &["checkout", "main"]);
+    git_checked(repo_root, &["add", filename]);
+    git_checked(repo_root, &["commit", "-m", &format!("Add {filename}")]);
+    git_checked(repo_root, &["checkout", "main"]);
 }
 
 /// Test helper: Build execution graph from stage definitions
@@ -78,8 +66,8 @@ pub fn verify_worktree_has_file(worktree_path: &Path, filename: &str) -> bool {
 
 /// Test helper: Merge a branch into main
 pub fn merge_into_main(branch: &str, repo_root: &Path) {
-    test_support::git_checked(repo_root, &["checkout", "main"]);
-    test_support::git_checked(
+    git_checked(repo_root, &["checkout", "main"]);
+    git_checked(
         repo_root,
         &["merge", "--no-ff", "-m", &format!("Merge {branch}"), branch],
     );
@@ -87,7 +75,7 @@ pub fn merge_into_main(branch: &str, repo_root: &Path) {
 
 /// Test helper: Delete a branch
 pub fn delete_branch(branch: &str, repo_root: &Path) {
-    test_support::git_checked(repo_root, &["branch", "-D", branch]);
+    git_checked(repo_root, &["branch", "-D", branch]);
 }
 
 /// Path to the `loom` binary this test run built.

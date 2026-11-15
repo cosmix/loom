@@ -37,7 +37,7 @@ pub fn isolate_git(command: &mut Command, home: &Path) {
 
 /// Run git in `dir` with ambient config neutralised; returns trimmed stdout.
 pub fn git(dir: &Path, args: &[&str]) -> String {
-    let output = test_support::git_checked(dir, args);
+    let output = test_support::git_repo::git_checked(dir, args);
     String::from_utf8_lossy(&output.stdout).trim().to_string()
 }
 

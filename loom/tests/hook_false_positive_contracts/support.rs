@@ -148,10 +148,13 @@ fn install_chain(dir: &Path) {
 fn create_repo(root: &Path, stage: &str) -> (PathBuf, PathBuf) {
     let repo = root.join("repo");
     fs::create_dir_all(&repo).expect("create repo");
-    test_support::init_git_repo(&repo);
+    test_support::git_repo::TestRepo::builder().init_in(&repo);
     let relative = format!(".worktrees/{stage}");
     let branch = format!("loom/{stage}");
-    test_support::git_checked(&repo, &["worktree", "add", "-q", "-b", &branch, &relative]);
+    test_support::git_repo::git_checked(
+        &repo,
+        &["worktree", "add", "-q", "-b", &branch, &relative],
+    );
     fs::create_dir_all(repo.join(".loom/work")).expect("create state dir");
     let wt = repo.join(relative);
     fs::create_dir_all(wt.join(".loom")).expect("create worktree .loom");

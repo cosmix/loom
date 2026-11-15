@@ -5,7 +5,8 @@ use std::path::{Path, PathBuf};
 #[path = "../../test_support/mod.rs"]
 mod test_support;
 use tempfile::TempDir;
-pub(crate) use test_support::{git_checked, write_main_checkout_identity};
+pub(crate) use test_support::git_repo::git_checked;
+pub(crate) use test_support::write_main_checkout_identity;
 
 /// Creates a temporary git repository with initial commit
 ///
@@ -13,7 +14,7 @@ pub(crate) use test_support::{git_checked, write_main_checkout_identity};
 pub fn create_temp_git_repo() -> Result<TempDir> {
     let temp = TempDir::new().context("Failed to create temp directory")?;
 
-    test_support::init_git_repo(temp.path());
+    test_support::git_repo::TestRepo::builder().init_in(temp.path());
 
     Ok(temp)
 }
