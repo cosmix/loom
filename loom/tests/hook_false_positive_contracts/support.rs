@@ -77,20 +77,26 @@ impl Run {
     }
 }
 
-/// A temporary root with no "claude" in its path. Cargo's per-target directory comes first,
-/// because the runner's `TMPDIR` may contain the name.
+/// Whether a path would change what a hook decides: a "claude" component makes the live-session
+/// detector see a Claude ancestor, and a `/.loom/` component makes `read-guard.sh` treat the path
+/// as a control input and exempt it from the read gate.
+fn confuses_hooks(path: &Path) -> bool {
+    let text = path.to_string_lossy().to_lowercase();
+    text.contains("claude") || text.contains("/.loom/")
+}
+
+/// A temporary root the hooks treat as an ordinary path. Cargo's per-target directory comes
+/// first, because the runner's `TMPDIR` may contain "claude"; it holds `/.loom/` when the suite
+/// runs in a plan dry-run checkout (`<repository>/.loom/dry-run/...`), where `TMPDIR` is the
+/// confinement's private `/tmp`.
 fn temp_dir_no_claude() -> TempDir {
-    let base = PathBuf::from(env!("CARGO_TARGET_TMPDIR"));
-    let base = if base.to_string_lossy().to_lowercase().contains("claude") {
-        std::env::temp_dir()
-    } else {
-        base
-    };
-    assert!(
-        !base.to_string_lossy().to_lowercase().contains("claude"),
-        "no temporary root without \"claude\" in its path ({})",
-        base.display()
-    );
+    let base = [
+        PathBuf::from(env!("CARGO_TARGET_TMPDIR")),
+        std::env::temp_dir(),
+    ]
+    .into_iter()
+    .find(|base| !confuses_hooks(base))
+    .unwrap_or_else(|| panic!("no temporary root the hooks treat as an ordinary path"));
     fs::create_dir_all(&base).expect("create temporary base");
     tempfile::Builder::new()
         .prefix("hook-false-positive-")
