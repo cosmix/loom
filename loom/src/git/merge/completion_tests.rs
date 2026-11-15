@@ -5,12 +5,12 @@ use crate::verify::transitions::save_stage;
 
 #[test]
 fn changed_resolver_tip_requires_new_completion_proof_even_when_clean() {
-    use super::test_support::{commit_file, git_ok};
+    use crate::test_git::{commit_file, git};
     let repo = init_repo();
     let work = lock_dir();
     stage_branch(repo.path(), "api", &[("api.rs", "verified")]);
     let verified = rev(repo.path(), "loom/api");
-    git_ok(
+    git(
         repo.path(),
         &["worktree", "add", ".worktrees/api", "loom/api"],
     );

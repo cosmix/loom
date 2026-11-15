@@ -5,7 +5,6 @@
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 use loom::context::extract::{extract_file, registry, FileExtraction};
 use loom::context::graph_store::GraphStore;
@@ -20,6 +19,7 @@ use tempfile::TempDir;
 
 #[path = "test_support/mod.rs"]
 mod test_support;
+use test_support::git_repo::TestRepo;
 
 fn extract_lib(source: &str) -> FileExtraction {
     extract_file(&registry(), Path::new("src/lib.rs"), source.as_bytes())
@@ -171,37 +171,17 @@ fn only_containment_is_certain() {
     assert!(calls > 0, "no Calls edge in any fixture");
 }
 
-fn git(root: &Path, args: &[&str]) {
-    let output = Command::new("git")
-        .args(args)
-        .current_dir(root)
-        .env("GIT_CONFIG_GLOBAL", root.join(".loom-test-no-global"))
-        .env("GIT_CONFIG_SYSTEM", root.join(".loom-test-no-system"))
-        .env("GIT_CONFIG_NOSYSTEM", "1")
-        .output()
-        .unwrap();
-    assert!(
-        output.status.success(),
-        "git {args:?} failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-}
-
 /// A temp git repo with one committed `src/lib.rs` and a `.loom/work` state dir.
 fn committed_repo() -> TempDir {
     let temp = TempDir::new().unwrap();
     let root = temp.path();
-    git(root, &["init"]);
-    git(root, &["config", "user.name", "t"]);
-    git(root, &["config", "user.email", "t@t"]);
-    std::fs::create_dir_all(root.join("src")).unwrap();
-    std::fs::write(
-        root.join("src/lib.rs"),
-        "fn helper() {}\nfn run() { helper(); }\n",
-    )
-    .unwrap();
-    git(root, &["add", "src/lib.rs"]);
-    git(root, &["commit", "-m", "seed"]);
+    TestRepo::builder()
+        .seed(
+            "src/lib.rs",
+            "fn helper() {}\nfn run() { helper(); }\n",
+            "seed",
+        )
+        .init_in(root);
     test_support::write_main_checkout_identity(root, &root.join(".loom/work"));
     temp
 }

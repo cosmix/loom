@@ -1,7 +1,6 @@
 use std::collections::BTreeSet;
 use std::fs;
 use std::path::Path;
-use std::process::Command;
 
 use tempfile::TempDir;
 
@@ -9,30 +8,17 @@ use super::subprojects::SubprojectIndex;
 use super::*;
 use crate::context::graph_store::FileEntry;
 use crate::context::source_graph::Span;
-
-pub(super) fn git(root: &Path, args: &[&str]) {
-    let output = Command::new("git")
-        .args(args)
-        .current_dir(root)
-        .env("GIT_CONFIG_GLOBAL", root.join(".loom-test-no-global"))
-        .env("GIT_CONFIG_SYSTEM", root.join(".loom-test-no-system"))
-        .env("GIT_CONFIG_NOSYSTEM", "1")
-        .output()
-        .expect("spawn git");
-    assert!(
-        output.status.success(),
-        "git {args:?} failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-}
+pub(super) use crate::test_git::git;
+use crate::test_git::TestRepo;
 
 /// A committed repo holding `files`. Nothing is created under `.loom/`.
 pub(super) fn repo(files: &[(&str, &str)]) -> TempDir {
     let temp = tempfile::tempdir().expect("tempdir");
     let root = temp.path();
-    git(root, &["init", "-q"]);
-    git(root, &["config", "user.name", "t"]);
-    git(root, &["config", "user.email", "t@t"]);
+    TestRepo::builder()
+        .identity("t", "t@t")
+        .no_seed()
+        .init_in(root);
     for (path, body) in files {
         let full = root.join(path);
         fs::create_dir_all(full.parent().expect("parent")).expect("create dirs");

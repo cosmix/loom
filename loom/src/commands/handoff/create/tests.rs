@@ -2,6 +2,7 @@
 //! transition that a sandboxed worktree session cannot always write.
 
 use super::*;
+use crate::test_git::{git, TestRepo};
 use serial_test::serial;
 
 /// Restores cwd on drop. `execute()` resolves its work dir from the process
@@ -345,23 +346,10 @@ fn modified_files_returns_unquoted_paths_and_rename_destinations() {
     let temp = tempfile::TempDir::new().unwrap();
     let root = temp.path();
     std::fs::write(root.join("old name.txt"), "tracked\n").unwrap();
-    let git = WorktreeGit::discovered(root);
-    for args in [
-        &["init", "-q"][..],
-        &["add", "."][..],
-        &[
-            "-c",
-            "user.name=T",
-            "-c",
-            "user.email=t@t",
-            "commit",
-            "-qm",
-            "base",
-        ][..],
-        &["mv", "old name.txt", "new name.txt"][..],
-    ] {
-        assert!(git.run(args).unwrap().status.success());
-    }
+    TestRepo::builder().no_seed().init_in(root);
+    git(root, &["add", "."]);
+    git(root, &["commit", "-qm", "base"]);
+    git(root, &["mv", "old name.txt", "new name.txt"]);
     std::fs::write(root.join("quote\"d.txt"), "untracked\n").unwrap();
     assert_eq!(
         modified_files_in(root).unwrap(),

@@ -42,9 +42,7 @@ const ADAPTER_NAMES: [&str; 23] = [
 /// Scenarios every adapter records; compiled runners add `build-error`.
 const REQUIRED_SCENARIOS: [&str; 4] = ["one-pass", "one-fail", "no-match", "suite"];
 
-fn words(command: &str) -> Vec<String> {
-    command.split_whitespace().map(str::to_string).collect()
-}
+use crate::testrun::fixture_support::words;
 
 fn recognized(command: &str, cwd: &Path) -> Option<&'static str> {
     registry::recognize(command, cwd).map(|adapter| adapter.name())

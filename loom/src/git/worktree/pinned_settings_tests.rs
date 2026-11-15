@@ -2,7 +2,11 @@
 //! `includeIf "gitdir:"` matches the real path, and only files a session cannot
 //! write decide them.
 
+// bespoke-git-fixture: the operator's identity and signing come from a global config file reached
+// through `GIT_CONFIG_GLOBAL`/`GIT_CONFIG_NOSYSTEM` and `includeIf`; that config handling is the subject.
+
 use super::*;
+use crate::test_git::git;
 use crate::verify::contracts::test_support::contract_worktree;
 use std::os::unix::ffi::OsStrExt;
 use std::path::PathBuf;
@@ -23,12 +27,8 @@ fn operator(extension: bool) -> Operator {
     let tmp = TempDir::new().unwrap();
     let repo = tmp.path().join("repo");
     let worktree = contract_worktree(&repo, "s1");
-    let plain = |args: &[&str]| {
-        let output = crate::git::runner::run_git(args, &repo).unwrap();
-        assert!(output.status.success(), "{args:?}: {output:?}");
-    };
     if extension {
-        plain(&["config", "extensions.worktreeConfig", "true"]);
+        git(&repo, &["config", "extensions.worktreeConfig", "true"]);
     }
     for key in ["user.name", "user.email", "commit.gpgsign"] {
         let _ = crate::git::runner::run_git(&["config", "--unset", key], &repo);

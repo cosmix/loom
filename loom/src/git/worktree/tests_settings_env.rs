@@ -2,7 +2,7 @@
 //! and the end-to-end git-based regression for the worktree gitignore fix.
 
 use super::*;
-use std::path::Path;
+use crate::test_git::{git, git_unchecked, TestRepo};
 use tempfile::TempDir;
 
 #[test]
@@ -48,33 +48,6 @@ fn test_create_worktree_settings_preserves_env_for_native() {
     );
 }
 
-/// Run git with ambient configuration neutralized, so a developer's
-/// global settings (hooks, gpg signing, default branch, aliases) cannot
-/// change what these tests exercise. Mirrors
-/// `git::cleanup::tests::isolated_git`.
-fn isolated_git(root: &Path, args: &[&str]) -> std::process::Output {
-    std::process::Command::new("git")
-        .args(args)
-        .current_dir(root)
-        .env("GIT_CONFIG_GLOBAL", root.join(".loom-test-no-global"))
-        .env("GIT_CONFIG_SYSTEM", root.join(".loom-test-no-system"))
-        .env("GIT_CONFIG_NOSYSTEM", "1")
-        .output()
-        .unwrap()
-}
-
-/// Assert a setup command succeeded. Dropping the exit status here would
-/// hide setup failures and turn them into a confusing assertion further
-/// down.
-fn git_ok(root: &Path, args: &[&str]) {
-    let out = isolated_git(root, args);
-    assert!(
-        out.status.success(),
-        "git {args:?} failed: {}",
-        String::from_utf8_lossy(&out.stderr)
-    );
-}
-
 /// End-to-end regression for defect 2: writing the excludes to
 /// `.git/worktrees/<stage-id>/info/exclude` (the previous behavior)
 /// never actually hid anything from git, because git resolves
@@ -89,16 +62,13 @@ fn test_worktree_gitignore_actually_hides_loom_runtime_paths() {
     let temp_dir = TempDir::new().unwrap();
     let repo_root = temp_dir.path().join("repo");
     std::fs::create_dir_all(&repo_root).unwrap();
-    git_ok(&repo_root, &["init"]);
-    git_ok(&repo_root, &["config", "user.email", "test@test.com"]);
-    git_ok(&repo_root, &["config", "user.name", "Test"]);
-    std::fs::write(repo_root.join("README.md"), "# Test").unwrap();
-    git_ok(&repo_root, &["add", "README.md"]);
-    git_ok(&repo_root, &["commit", "-m", "initial"]);
+    TestRepo::builder()
+        .seed("README.md", "# Test", "initial")
+        .init_in(&repo_root);
 
     let worktrees_dir = repo_root.join(".worktrees");
     std::fs::create_dir_all(&worktrees_dir).unwrap();
-    git_ok(
+    git(
         &repo_root,
         &[
             "worktree",
@@ -118,7 +88,7 @@ fn test_worktree_gitignore_actually_hides_loom_runtime_paths() {
     std::fs::write(worktree.join(".loom/cache/context-v1/catalog.json"), "{}").unwrap();
     std::fs::write(worktree.join(".loom/memory-spool.jsonl"), "").unwrap();
 
-    let check_ignore = isolated_git(
+    let check_ignore = git_unchecked(
         &worktree,
         &[
             "check-ignore",
@@ -134,7 +104,7 @@ fn test_worktree_gitignore_actually_hides_loom_runtime_paths() {
         String::from_utf8_lossy(&check_ignore.stderr)
     );
 
-    let status = isolated_git(&worktree, &["status", "--porcelain"]);
+    let status = git_unchecked(&worktree, &["status", "--porcelain"]);
     assert!(status.status.success(), "git status failed to run");
     assert!(
         String::from_utf8_lossy(&status.stdout).trim().is_empty(),

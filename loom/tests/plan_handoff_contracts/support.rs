@@ -6,10 +6,15 @@ use std::ffi::OsString;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 use loom::planning::runtime::{create_runtime_dir, runtime_paths_under, RuntimePaths};
 use tempfile::TempDir;
+
+#[path = "../test_support/mod.rs"]
+mod test_support;
+
+pub use test_support::git_repo::git;
+use test_support::git_repo::{git_checked, git_unchecked, TestRepo};
 
 /// The running plan every abandon fixture holds.
 pub const PLAN: &str = "doc/plans/IN_PROGRESS-PLAN-a.md";
@@ -39,21 +44,19 @@ impl Repo {
             root,
             loom_dir,
         };
-        repo.git(&["init", "-q"]);
-        repo.git(&["symbolic-ref", "HEAD", "refs/heads/main"]);
+        TestRepo::builder()
+            .identity("Handoff Contracts", "handoff@example.invalid")
+            .no_seed()
+            .init_in(&repo.root);
         // Only the hooks a test installs may run, whatever the user's git config says.
         let hooks = repo.root.join(".git/hooks");
         fs::remove_dir_all(&hooks).ok();
         fs::create_dir_all(&hooks).unwrap();
         let hooks_path = hooks.display().to_string();
-        for (key, value) in [
-            ("user.name", "Handoff Contracts"),
-            ("user.email", "handoff@example.invalid"),
-            ("commit.gpgsign", "false"),
-            ("core.hooksPath", hooks_path.as_str()),
-        ] {
-            repo.git(&["config", key, value]);
-        }
+        git(
+            &repo.root,
+            &["config", "core.hooksPath", hooks_path.as_str()],
+        );
         repo.put("README.md", "# Fixture\n");
         repo.commit_all("initial");
         repo
@@ -87,24 +90,6 @@ impl Repo {
         self.root.join(rel).is_file()
     }
 
-    /// Runs git in the repository, panicking on failure; returns stdout.
-    pub fn git(&self, args: &[&str]) -> String {
-        let output = Command::new("git")
-            .args(args)
-            .current_dir(&self.root)
-            .env_remove("GIT_DIR")
-            .env_remove("GIT_WORK_TREE")
-            .env_remove("GIT_INDEX_FILE")
-            .output()
-            .expect("run git");
-        assert!(
-            output.status.success(),
-            "git {args:?} failed: {}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-        String::from_utf8(output.stdout).expect("git prints UTF-8")
-    }
-
     pub fn put(&self, rel: &str, content: &str) {
         let path = self.root.join(rel);
         fs::create_dir_all(path.parent().unwrap()).unwrap();
@@ -112,26 +97,34 @@ impl Repo {
     }
 
     pub fn commit_all(&self, message: &str) {
-        self.git(&["add", "-A"]);
-        self.git(&["commit", "-q", "-m", message]);
+        git(&self.root, &["add", "-A"]);
+        git(&self.root, &["commit", "-q", "-m", message]);
     }
 
     pub fn head(&self) -> String {
-        self.git(&["rev-parse", "HEAD"]).trim().to_string()
+        git(&self.root, &["rev-parse", "HEAD"])
     }
 
     /// The paths the HEAD commit changed.
     pub fn head_files(&self) -> Vec<String> {
-        lines(&self.git(&["show", "--name-only", "--format=", "HEAD"]))
+        lines(&git(
+            &self.root,
+            &["show", "--name-only", "--format=", "HEAD"],
+        ))
     }
 
     /// The paths staged in the index.
     pub fn staged(&self) -> Vec<String> {
-        lines(&self.git(&["diff", "--cached", "--name-only"]))
+        lines(&git(&self.root, &["diff", "--cached", "--name-only"]))
     }
 
     pub fn status(&self) -> String {
-        self.git(&["status", "--porcelain", "--untracked-files=all"])
+        // Untrimmed: a leading space in the first porcelain line is data.
+        let output = git_checked(
+            &self.root,
+            &["status", "--porcelain", "--untracked-files=all"],
+        );
+        String::from_utf8(output.stdout).expect("git prints UTF-8")
     }
 
     /// Points `branch` at a chain of `ahead` new commits on top of HEAD, leaving the
@@ -141,20 +134,26 @@ impl Repo {
         for n in 0..ahead {
             let message = format!("{branch} commit {n}");
             let args = ["commit-tree", "-p", &tip, "-m", &message, "HEAD^{tree}"];
-            tip = self.git(&args).trim().to_string();
+            tip = git(&self.root, &args);
         }
-        self.git(&["update-ref", &format!("refs/heads/{branch}"), &tip]);
+        git(
+            &self.root,
+            &["update-ref", &format!("refs/heads/{branch}"), &tip],
+        );
     }
 
     pub fn has_branch(&self, branch: &str) -> bool {
-        Command::new("git")
-            .args(["rev-parse", "--verify", "--quiet"])
-            .arg(format!("refs/heads/{branch}"))
-            .current_dir(&self.root)
-            .output()
-            .expect("run git")
-            .status
-            .success()
+        git_unchecked(
+            &self.root,
+            &[
+                "rev-parse",
+                "--verify",
+                "--quiet",
+                &format!("refs/heads/{branch}"),
+            ],
+        )
+        .status
+        .success()
     }
 
     /// Writes `.loom/work/config.toml` naming `source` as the plan, merging into `main`.

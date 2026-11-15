@@ -1,21 +1,19 @@
 //! Full-verdict cache tests for the acceptance runner.
 
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::time::Duration;
 
 use serial_test::serial;
 use tempfile::TempDir;
 
 use crate::models::stage::{AcceptanceCriterion, CommandConfinement, Stage, TruthCheck};
+use crate::test_git::{git, TestRepo};
 use crate::verify::criteria::config::CriteriaConfig;
 use crate::verify::criteria::runner::{run_acceptance, run_acceptance_with_config};
 use crate::verify::criteria::{AcceptanceResult, CachePolicy};
 
-const TEST_IDENTITY: &[&str] = &["-c", "user.name=Test", "-c", "user.email=test@example.com"];
-
 struct Fixture {
-    repo: TempDir,
+    repo: TestRepo,
     cache: TempDir,
     marker: PathBuf,
     script: PathBuf,
@@ -23,16 +21,15 @@ struct Fixture {
 
 impl Fixture {
     fn new(body: &str) -> Self {
-        let repo = TempDir::new().unwrap();
+        let repo = TestRepo::builder().no_seed().create();
         let cache = TempDir::new().unwrap();
         let marker = repo.path().join(".git/executions.log");
         let script = repo.path().join("scripts/probe.sh");
         std::fs::create_dir_all(script.parent().unwrap()).unwrap();
-        git(&["init", "-q"], repo.path());
         write_probe(&script, &marker, body);
         std::fs::write(repo.path().join("source.txt"), "source\n").unwrap();
-        git(&["add", "scripts/probe.sh", "source.txt"], repo.path());
-        git(&["commit", "-q", "-m", "fixture"], repo.path());
+        git(repo.path(), &["add", "scripts/probe.sh", "source.txt"]);
+        git(repo.path(), &["commit", "-q", "-m", "fixture"]);
         Self {
             repo,
             cache,
@@ -67,17 +64,6 @@ fn write_probe(script: &Path, marker: &Path, body: &str) {
         marker.display()
     );
     std::fs::write(script, content).unwrap();
-}
-
-fn git(args: &[&str], dir: &Path) {
-    let mut full = TEST_IDENTITY.to_vec();
-    full.extend_from_slice(args);
-    let status = Command::new("git")
-        .args(&full)
-        .current_dir(dir)
-        .status()
-        .unwrap();
-    assert!(status.success(), "git {args:?} failed in {}", dir.display());
 }
 
 fn simple_stage(command: &str) -> Stage {

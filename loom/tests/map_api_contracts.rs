@@ -9,10 +9,11 @@
 #[allow(dead_code)]
 mod helpers;
 use crate::helpers::test_support;
+use test_support::git_repo::{git, TestRepo};
 
 use std::fs;
 use std::path::Path;
-use std::process::{Command, Output};
+use std::process::Output;
 
 use loom::commands::hook::reconcile_graph::wants_rebuild;
 use loom::context::freshness::Freshness;
@@ -29,34 +30,11 @@ fn scratch() -> TempDir {
         .expect("create unique scratch directory")
 }
 
-fn git_output(root: &Path, args: &[&str]) -> Output {
-    let output = Command::new("git")
-        .args(args)
-        .current_dir(root)
-        .env("GIT_CONFIG_GLOBAL", root.join(".loom-test-no-global"))
-        .env("GIT_CONFIG_SYSTEM", root.join(".loom-test-no-system"))
-        .env("GIT_CONFIG_NOSYSTEM", "1")
-        .output()
-        .expect("spawn git");
-    assert!(
-        output.status.success(),
-        "git {args:?} failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    output
-}
-
-fn git(root: &Path, args: &[&str]) {
-    git_output(root, args);
-}
-
 /// Initialises `root` as a git repo, writes and commits `files`, then creates
 /// the untracked `.loom/work` state dir so loom resolves `root` as the project.
 fn commit_repo(root: &Path, files: &[(&str, &str)]) {
     fs::create_dir_all(root).expect("create repo dir");
-    git(root, &["init"]);
-    git(root, &["config", "user.name", "t"]);
-    git(root, &["config", "user.email", "t@t"]);
+    TestRepo::builder().no_seed().init_in(root);
     for (path, body) in files {
         let full = root.join(path);
         fs::create_dir_all(full.parent().expect("file has a parent")).expect("create dirs");
@@ -132,10 +110,7 @@ fn callers_json_reports_call_site_lines() {
 #[test]
 fn map_json_carries_schema_and_snapshot() {
     let repo = lib_repo();
-    let head_output = git_output(repo.path(), &["rev-parse", "HEAD"]);
-    let head = String::from_utf8_lossy(&head_output.stdout)
-        .trim()
-        .to_string();
+    let head = git(repo.path(), &["rev-parse", "HEAD"]);
     let json = map_json(repo.path(), &["--find-all", "target", "--json"]);
 
     assert_eq!(json["schema"], "loom-map/2", "top level: {json:#}");

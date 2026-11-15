@@ -8,40 +8,21 @@ use crate::context::source_graph::{
 };
 use crate::context::store::ContextStore;
 use crate::git::runner::run_git_checked;
+use crate::test_git::git as git_ok;
+use crate::test_git::TestRepo;
 use crate::verify::contracts::test_support::{contract_worktree, plant_foreign_git_dir};
 use std::fs;
 use tempfile::TempDir;
-
-/// Run one git setup command with ambient global/system config neutralized
-/// and assert it succeeded; returns trimmed stdout.
-fn git_ok(root: &Path, args: &[&str]) -> String {
-    let output = std::process::Command::new("git")
-        .args(args)
-        .current_dir(root)
-        .env("GIT_CONFIG_GLOBAL", root.join(".loom-test-no-global"))
-        .env("GIT_CONFIG_SYSTEM", root.join(".loom-test-no-system"))
-        .env("GIT_CONFIG_NOSYSTEM", "1")
-        .output()
-        .unwrap();
-    assert!(
-        output.status.success(),
-        "git {args:?} failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    String::from_utf8_lossy(&output.stdout).trim().to_string()
-}
 
 /// A repository with `base.rs` committed and a base layer published for
 /// `HEAD` into its own `.loom/cache`.
 fn repo_with_published_base() -> TempDir {
     let temp = TempDir::new().unwrap();
     let root = temp.path();
-    git_ok(root, &["init", "-b", "main"]);
-    git_ok(root, &["config", "user.email", "t@t.com"]);
-    git_ok(root, &["config", "user.name", "t"]);
-    fs::write(root.join("base.rs"), "pub fn helper() -> u32 {\n    7\n}\n").unwrap();
-    git_ok(root, &["add", "base.rs"]);
-    git_ok(root, &["commit", "-m", "seed"]);
+    TestRepo::builder()
+        .identity("t", "t@t.com")
+        .seed("base.rs", "pub fn helper() -> u32 {\n    7\n}\n", "seed")
+        .init_in(root);
     publish_head_base(root);
     temp
 }

@@ -1,33 +1,14 @@
 use super::*;
 use crate::models::session::{Session, SessionStatus, SessionType};
 use crate::models::stage::{Stage, StageStatus, StageType};
-use std::process::Command;
+use crate::test_git::{git, git_unchecked, TestRepo};
 use tempfile::TempDir;
 
-fn run_git(args: &[&str], cwd: &Path) -> std::process::Output {
-    let out = Command::new("git")
-        .args(args)
-        .current_dir(cwd)
-        .output()
-        .unwrap();
-    assert!(
-        out.status.success(),
-        "git {args:?} failed: {}",
-        String::from_utf8_lossy(&out.stderr)
-    );
-    out
-}
-
 fn init_repo() -> TempDir {
-    let tmp = TempDir::new().unwrap();
-    let root = tmp.path();
-    run_git(&["init", "-b", "main"], root);
-    run_git(&["config", "user.email", "t@t.com"], root);
-    run_git(&["config", "user.name", "t"], root);
-    std::fs::write(root.join("README.md"), "seed").unwrap();
-    run_git(&["add", "README.md"], root);
-    run_git(&["commit", "-m", "seed"], root);
-    tmp
+    TestRepo::builder()
+        .seed("README.md", "seed", "seed")
+        .create()
+        .into_temp_dir()
 }
 
 fn make_stage(id: &str) -> Stage {
@@ -40,20 +21,16 @@ fn make_stage(id: &str) -> Stage {
 
 fn create_conflict_in_main(repo_root: &Path, stage_id: &str) {
     let branch = branch_name_for_stage(stage_id);
-    run_git(&["checkout", "-b", &branch], repo_root);
+    git(repo_root, &["checkout", "-b", &branch]);
     std::fs::write(repo_root.join("file.txt"), "branch\n").unwrap();
-    run_git(&["add", "file.txt"], repo_root);
-    run_git(&["commit", "-m", "branch"], repo_root);
-    run_git(&["checkout", "main"], repo_root);
+    git(repo_root, &["add", "file.txt"]);
+    git(repo_root, &["commit", "-m", "branch"]);
+    git(repo_root, &["checkout", "main"]);
     std::fs::write(repo_root.join("file.txt"), "main\n").unwrap();
-    run_git(&["add", "file.txt"], repo_root);
-    run_git(&["commit", "-m", "main"], repo_root);
+    git(repo_root, &["add", "file.txt"]);
+    git(repo_root, &["commit", "-m", "main"]);
     // Try to merge -- creates MERGE_HEAD with conflicts.
-    let _ = Command::new("git")
-        .args(["merge", "--no-ff", &branch])
-        .current_dir(repo_root)
-        .output()
-        .unwrap();
+    git_unchecked(repo_root, &["merge", "--no-ff", &branch]);
 }
 
 #[test]
@@ -134,8 +111,8 @@ fn merge_session_attribution_via_metadata() {
 #[test]
 fn stale_merge_session_cannot_steal_another_stages_merge() {
     let repo = init_repo();
-    run_git(&["branch", "loom/stage-a"], repo.path());
-    run_git(&["branch", "-D", "loom/stage-a"], repo.path());
+    git(repo.path(), &["branch", "loom/stage-a"]);
+    git(repo.path(), &["branch", "-D", "loom/stage-a"]);
     create_conflict_in_main(repo.path(), "stage-b");
 
     let mut old = Session::new();
@@ -166,8 +143,8 @@ fn stale_merge_session_cannot_steal_another_stages_merge() {
 fn reconciliation_never_reopens_stage_from_stale_merge_metadata() {
     let repo = init_repo();
     let root = repo.path();
-    run_git(&["branch", "loom/stage-a"], root);
-    run_git(&["branch", "-D", "loom/stage-a"], root);
+    git(root, &["branch", "loom/stage-a"]);
+    git(root, &["branch", "-D", "loom/stage-a"]);
     create_conflict_in_main(root, "stage-b");
     let work = root.join(".loom").join("work");
     crate::verify::transitions::save_stage(&make_stage("stage-a"), &work).unwrap();
@@ -197,7 +174,7 @@ fn reconciliation_never_reopens_stage_from_stale_merge_metadata() {
 fn failed_source_lookup_without_exact_evidence_is_unattributed() {
     let repo = init_repo();
     create_conflict_in_main(repo.path(), "stage-b");
-    run_git(&["branch", "-D", "loom/stage-b"], repo.path());
+    git(repo.path(), &["branch", "-D", "loom/stage-b"]);
 
     let mut old = Session::new();
     old.id = "old-merge-a".to_string();
@@ -248,26 +225,20 @@ fn completed_commit_match_attributes_when_no_branch() {
     // Build a branch and remember its HEAD as completed_commit, then
     // delete the branch. Recreate as a "loom/<id>" with same SHA so we
     // can produce MERGE_HEAD pointing at it.
-    run_git(&["checkout", "-b", "loom/stage-c"], root);
+    git(root, &["checkout", "-b", "loom/stage-c"]);
     std::fs::write(root.join("c.txt"), "branch\n").unwrap();
-    run_git(&["add", "c.txt"], root);
-    run_git(&["commit", "-m", "c"], root);
-    let stranded_sha = String::from_utf8_lossy(&run_git(&["rev-parse", "HEAD"], root).stdout)
-        .trim()
-        .to_string();
+    git(root, &["add", "c.txt"]);
+    git(root, &["commit", "-m", "c"]);
+    let stranded_sha = git(root, &["rev-parse", "HEAD"]);
 
-    run_git(&["checkout", "main"], root);
+    git(root, &["checkout", "main"]);
     std::fs::write(root.join("c.txt"), "main\n").unwrap();
-    run_git(&["add", "c.txt"], root);
-    run_git(&["commit", "-m", "main"], root);
+    git(root, &["add", "c.txt"]);
+    git(root, &["commit", "-m", "main"]);
 
-    let _ = Command::new("git")
-        .args(["merge", "--no-ff", "loom/stage-c"])
-        .current_dir(root)
-        .output()
-        .unwrap();
+    git_unchecked(root, &["merge", "--no-ff", "loom/stage-c"]);
     // Now delete the branch reference but MERGE_HEAD is set.
-    run_git(&["branch", "-D", "loom/stage-c"], root);
+    git(root, &["branch", "-D", "loom/stage-c"]);
 
     let mut stage = make_stage("stage-c");
     stage.completed_commit = Some(stranded_sha);
@@ -289,22 +260,18 @@ fn base_conflict_branch_carves_out_attribution() {
     let repo = init_repo();
     let root = repo.path();
     // Build a stage branch and bring conflict into a loom/_base branch.
-    run_git(&["checkout", "-b", "loom/feat-y"], root);
+    git(root, &["checkout", "-b", "loom/feat-y"]);
     std::fs::write(root.join("y.txt"), "y\n").unwrap();
-    run_git(&["add", "y.txt"], root);
-    run_git(&["commit", "-m", "y"], root);
+    git(root, &["add", "y.txt"]);
+    git(root, &["commit", "-m", "y"]);
 
-    run_git(&["checkout", "main"], root);
-    run_git(&["checkout", "-b", "loom/_base/composite"], root);
+    git(root, &["checkout", "main"]);
+    git(root, &["checkout", "-b", "loom/_base/composite"]);
     std::fs::write(root.join("y.txt"), "main\n").unwrap();
-    run_git(&["add", "y.txt"], root);
-    run_git(&["commit", "-m", "base seed"], root);
+    git(root, &["add", "y.txt"]);
+    git(root, &["commit", "-m", "base seed"]);
 
-    let _ = Command::new("git")
-        .args(["merge", "--no-ff", "loom/feat-y"])
-        .current_dir(root)
-        .output()
-        .unwrap();
+    git_unchecked(root, &["merge", "--no-ff", "loom/feat-y"]);
 
     let stage = make_stage("feat-y");
     let result = attribute_main_repo_merge(root, root, &[stage], &[]).unwrap();

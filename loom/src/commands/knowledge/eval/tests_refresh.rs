@@ -4,43 +4,21 @@
 use super::{ensure_local_snapshot, refresh_source_graph};
 use crate::context::freshness::GraphState;
 use crate::context::refresh::SnapshotAction;
+use crate::test_git::TestRepo;
 use serial_test::serial;
-use std::path::Path;
-use std::process::Command;
 use tempfile::TempDir;
-
-/// Run one git command with ambient global/system config neutralized, so a
-/// developer's or CI runner's `~/.gitconfig` cannot change test behavior.
-fn git(root: &Path, args: &[&str]) {
-    let output = Command::new("git")
-        .args(args)
-        .current_dir(root)
-        .env("GIT_CONFIG_GLOBAL", root.join(".loom-test-no-global"))
-        .env("GIT_CONFIG_SYSTEM", root.join(".loom-test-no-system"))
-        .env("GIT_CONFIG_NOSYSTEM", "1")
-        .output()
-        .unwrap();
-    assert!(
-        output.status.success(),
-        "git {args:?} failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-}
 
 /// A git repo, with one committed Rust file when `committed` and no HEAD at
 /// all otherwise.
 fn repo(committed: bool) -> TempDir {
-    let temp = TempDir::new().unwrap();
-    let root = temp.path();
-    git(root, &["init", "-b", "main"]);
-    git(root, &["config", "user.email", "t@t.com"]);
-    git(root, &["config", "user.name", "t"]);
+    let builder = TestRepo::builder();
     if committed {
-        std::fs::write(root.join("src.rs"), "pub fn refreshed() {}\n").unwrap();
-        git(root, &["add", "src.rs"]);
-        git(root, &["commit", "-m", "seed"]);
+        builder.seed("src.rs", "pub fn refreshed() {}\n", "seed")
+    } else {
+        builder.no_seed()
     }
-    temp
+    .create()
+    .into_temp_dir()
 }
 
 #[test]

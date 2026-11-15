@@ -4,6 +4,7 @@
 
 use super::*;
 use crate::plan::schema::AcceptanceCriterion;
+use crate::test_git::{git, TestRepo};
 use chrono::Utc;
 
 #[test]
@@ -14,24 +15,12 @@ fn briefing_lists_the_stage_worktree() {
     std::fs::create_dir_all(&work).unwrap();
     std::fs::create_dir_all(&tree).unwrap();
     std::fs::write(tree.join("only-in-worktree"), "present").unwrap();
-    let git = |args: &[&str]| {
-        let output = std::process::Command::new("git")
-            .args(args)
-            .current_dir(tmp.path())
-            .output()
-            .unwrap();
-        assert!(output.status.success());
-        String::from_utf8(output.stdout).unwrap()
-    };
-    git(&["init", "-q"]);
-    git(&["config", "user.email", "test@example.com"]);
-    git(&["config", "user.name", "Test"]);
-    std::fs::write(tmp.path().join("tracked"), "requested-content\n").unwrap();
-    git(&["add", "tracked"]);
-    git(&["commit", "-qm", "first"]);
-    let revision = git(&["rev-parse", "HEAD"]);
+    TestRepo::builder()
+        .seed("tracked", "requested-content\n", "first")
+        .init_in(tmp.path());
+    let revision = git(tmp.path(), &["rev-parse", "HEAD"]);
     std::fs::write(tmp.path().join("tracked"), "head-content\n").unwrap();
-    git(&["commit", "-qam", "second"]);
+    git(tmp.path(), &["commit", "-qam", "second"]);
     let plan = tmp.path().join("PLAN.md");
     std::fs::write(&plan, "```yaml\nwrong: fence\n```\n<!-- loom METADATA\n```yaml\nloom:\n  stages:\n    - id: demo10\n      name: wrong-stage\n    - id: 'demo'\n      name: selected-stage\n```\n<!-- END loom METADATA -->\n").unwrap();
     let stage = Stage {

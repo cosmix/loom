@@ -1,5 +1,6 @@
-use super::test_support::{commit_file, git_ok, init_repo, isolated_git};
+use super::test_support::init_repo;
 use super::*;
+use crate::test_git::{commit_file, git, git_unchecked};
 
 #[test]
 fn test_parse_merge_stats() {
@@ -20,11 +21,11 @@ fn test_parse_merge_stats_single_file() {
 }
 
 fn start_conflicting_merge(root: &Path, branch: &str, branch_text: &str, main_text: &str) {
-    git_ok(root, &["checkout", "-b", branch]);
+    git(root, &["checkout", "-b", branch]);
     commit_file(root, "a.txt", branch_text, "branch");
-    git_ok(root, &["checkout", "main"]);
+    git(root, &["checkout", "main"]);
     commit_file(root, "a.txt", main_text, "main");
-    let merge = isolated_git(root, &["merge", "--no-ff", branch]);
+    let merge = git_unchecked(root, &["merge", "--no-ff", branch]);
     assert!(
         merge_head_exists(root).unwrap(),
         "MERGE_HEAD missing; stdout={}, stderr={}",
@@ -63,11 +64,11 @@ fn merge_stage_refuses_when_merge_head_set() {
 fn merge_stage_refuses_during_cherry_pick() {
     let temp = init_repo();
     let root = temp.path();
-    git_ok(root, &["checkout", "-b", "side"]);
+    git(root, &["checkout", "-b", "side"]);
     commit_file(root, "a.txt", "side", "side");
-    git_ok(root, &["checkout", "main"]);
+    git(root, &["checkout", "main"]);
     commit_file(root, "a.txt", "main", "main");
-    let pick = isolated_git(root, &["cherry-pick", "side"]);
+    let pick = git_unchecked(root, &["cherry-pick", "side"]);
     assert!(!pick.status.success(), "cherry-pick must conflict");
     let work = super::test_support::lock_dir();
 

@@ -135,6 +135,7 @@ loom:
 
 #[path = "../test_support/mod.rs"]
 mod test_support;
+use test_support::git_repo::{git, TestRepo};
 
 /// A refused freeze in a real Git worktree with a Cargo package, plan,
 /// untracked contract, and dispute 1.
@@ -144,36 +145,25 @@ struct Refused {
     plan: PathBuf,
 }
 
-fn git(dir: &Path, args: &[&str]) {
-    let output = std::process::Command::new("git")
-        .args([
-            "-c",
-            "user.name=t",
-            "-c",
-            "user.email=t@t",
-            "-c",
-            "commit.gpgsign=false",
-        ])
-        .args(["-c", "core.hooksPath=/dev/null"])
-        .args(args)
-        .current_dir(dir)
-        .output()
-        .unwrap();
-    assert!(output.status.success(), "git {args:?}: {output:?}");
+/// The shared `git` with hooks disabled, so no hook of the host interferes.
+fn git_no_hooks(dir: &Path, args: &[&str]) -> String {
+    let mut full = vec!["-c", "core.hooksPath=/dev/null"];
+    full.extend_from_slice(args);
+    git(dir, &full)
 }
 
 fn refused_freeze() -> Refused {
     let tmp = tempfile::tempdir().unwrap();
     let repo = tmp.path().join("repo");
     std::fs::create_dir_all(repo.join("src")).unwrap();
-    git(&repo, &["init", "-q", "-b", "main"]);
+    TestRepo::builder().no_seed().init_in(&repo);
     let manifest = "[package]\nname = \"fx\"\nversion = \"0.1.0\"\nedition = \"2021\"\n";
     std::fs::write(repo.join("Cargo.toml"), manifest).unwrap();
     std::fs::write(repo.join("src/lib.rs"), "").unwrap();
     std::fs::write(repo.join("src/main.rs"), "fn main() {}\n").unwrap();
     git(&repo, &["add", "Cargo.toml", "src/lib.rs", "src/main.rs"]);
-    git(&repo, &["commit", "-q", "-m", "base"]);
-    git(
+    git_no_hooks(&repo, &["commit", "-q", "-m", "base"]);
+    git_no_hooks(
         &repo,
         &["worktree", "add", "-q", "-b", "loom/s1", ".worktrees/s1"],
     );

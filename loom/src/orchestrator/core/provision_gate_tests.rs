@@ -11,10 +11,10 @@ use crate::orchestrator::core::OrchestratorConfig;
 use crate::orchestrator::provision::write_provision_snapshot;
 use crate::orchestrator::tick::{self, Phase};
 use crate::plan::ExecutionGraph;
+use crate::test_git::{git, TestRepo};
 use crate::verify::transitions::{load_stage, save_stage};
 use std::fs;
 use std::path::PathBuf;
-use std::process::Command;
 use tempfile::TempDir;
 
 /// A `.loom/work` directory whose configured terminal lane is tmux, so
@@ -91,22 +91,6 @@ fn gate(commands: &[&str], before_stage: Vec<TruthCheck>, worktree: &Path) -> (b
     (passed, load_stage("alpha", &work).unwrap())
 }
 
-fn run_git(root: &Path, args: &[&str]) {
-    let output = Command::new("git")
-        .args(args)
-        .current_dir(root)
-        .env("GIT_CONFIG_GLOBAL", root.join(".loom-test-no-global"))
-        .env("GIT_CONFIG_SYSTEM", root.join(".loom-test-no-system"))
-        .env("GIT_CONFIG_NOSYSTEM", "1")
-        .output()
-        .unwrap();
-    assert!(
-        output.status.success(),
-        "git {args:?} failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-}
-
 /// A stage worktree the repository around it registers.
 struct StageRepo {
     _temp: TempDir,
@@ -122,7 +106,7 @@ impl StageRepo {
 /// `.worktrees/alpha` over the current commit of the repository at `temp`.
 fn with_stage_worktree(temp: TempDir) -> StageRepo {
     let root = temp.path().canonicalize().unwrap();
-    run_git(
+    git(
         &root,
         &[
             "worktree",
@@ -143,15 +127,11 @@ fn with_stage_worktree(temp: TempDir) -> StageRepo {
 
 /// A git repository committing a `.gitignore` that holds `node_modules/`.
 fn seeded_repo() -> TempDir {
-    let temp = TempDir::new().unwrap();
-    let root = temp.path();
-    run_git(root, &["init", "-q"]);
-    run_git(root, &["config", "user.name", "t"]);
-    run_git(root, &["config", "user.email", "t@t"]);
-    fs::write(root.join(".gitignore"), "node_modules/\n").unwrap();
-    run_git(root, &["add", ".gitignore"]);
-    run_git(root, &["commit", "-q", "-m", "seed"]);
-    temp
+    TestRepo::builder()
+        .identity("t", "t@t")
+        .seed(".gitignore", "node_modules/\n", "seed")
+        .create()
+        .into_temp_dir()
 }
 
 /// The stage worktree of a [`seeded_repo`].
@@ -166,8 +146,8 @@ fn repo_tracking(path: &str) -> StageRepo {
     let file = repo.path().join(path);
     fs::create_dir_all(file.parent().unwrap()).unwrap();
     fs::write(&file, "seed\n").unwrap();
-    run_git(repo.path(), &["add", path]);
-    run_git(repo.path(), &["commit", "-q", "-m", "track"]);
+    git(repo.path(), &["add", path]);
+    git(repo.path(), &["commit", "-q", "-m", "track"]);
     with_stage_worktree(repo)
 }
 

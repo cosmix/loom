@@ -122,7 +122,7 @@ fn run_hook(fx: &Fixture, output: &Output) -> Output {
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
-    isolate_git(&mut command, &fx.home);
+    isolate_git(&mut command);
     let mut child = command.spawn().expect("spawn loom-relay.sh");
     let stdin = child.stdin.take().expect("child stdin is piped");
     { stdin }

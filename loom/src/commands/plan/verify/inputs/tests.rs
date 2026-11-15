@@ -1,28 +1,12 @@
 use super::input_findings;
 use crate::commands::plan::verify::execute;
+use crate::test_git::{git, TestRepo};
 use std::fs;
 use std::path::Path;
-use std::process::Command;
 use tempfile::TempDir;
 
 const PLAN: &str = "doc/plans/PLAN-foo.md";
 const BRIEF: &str = "doc/plans/briefs/foo/a.md";
-
-fn git(root: &Path, args: &[&str]) {
-    let out = Command::new("git")
-        .args(args)
-        .current_dir(root)
-        .env("GIT_CONFIG_GLOBAL", root.join("absent-global"))
-        .env("GIT_CONFIG_SYSTEM", root.join("absent-system"))
-        .env("GIT_CONFIG_NOSYSTEM", "1")
-        .output()
-        .unwrap();
-    assert!(
-        out.status.success(),
-        "git {args:?}: {}",
-        String::from_utf8_lossy(&out.stderr)
-    );
-}
 
 fn write(root: &Path, path: &str, content: &str) {
     let path = root.join(path);
@@ -32,20 +16,12 @@ fn write(root: &Path, path: &str, content: &str) {
 
 /// A git repo with one seed commit and the plan written but not committed.
 fn repo(plan_text: &str) -> TempDir {
-    let temp = TempDir::new().unwrap();
+    let temp = TestRepo::builder()
+        .seed("seed", "seed", "seed")
+        .create()
+        .into_temp_dir();
     let root = temp.path();
-    git(root, &["init", "-b", "main"]);
-    for (key, value) in [
-        ("user.name", "Test"),
-        ("user.email", "test@example.invalid"),
-        ("commit.gpgsign", "false"),
-        ("core.hooksPath", "/dev/null"),
-    ] {
-        git(root, &["config", key, value]);
-    }
-    write(root, "seed", "seed");
-    git(root, &["add", "seed"]);
-    git(root, &["commit", "-m", "seed"]);
+    git(root, &["config", "core.hooksPath", "/dev/null"]);
     write(root, PLAN, plan_text);
     temp
 }

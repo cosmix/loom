@@ -92,6 +92,7 @@ pub(super) fn read_plan_excerpt(plan_path: &Path, stage_id: &str) -> Result<Stri
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_git::{git, TestRepo};
 
     #[test]
     fn run_git_show_rejects_non_sha_evidence_commit() {
@@ -151,28 +152,12 @@ mod tests {
     fn git_show_quotes_requested_revision() {
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path();
-        let git = |args: &[&str]| {
-            let output = Command::new("git")
-                .args(args)
-                .current_dir(root)
-                .output()
-                .unwrap();
-            assert!(
-                output.status.success(),
-                "{}",
-                String::from_utf8_lossy(&output.stderr)
-            );
-            String::from_utf8(output.stdout).unwrap()
-        };
-        git(&["init", "-q"]);
-        git(&["config", "user.email", "test@example.com"]);
-        git(&["config", "user.name", "Test"]);
-        std::fs::write(root.join("evidence"), "first revision\n").unwrap();
-        git(&["add", "evidence"]);
-        git(&["commit", "-qm", "first"]);
-        let first = git(&["rev-parse", "HEAD"]);
+        TestRepo::builder()
+            .seed("evidence", "first revision\n", "first")
+            .init_in(root);
+        let first = git(root, &["rev-parse", "HEAD"]);
         std::fs::write(root.join("evidence"), "second revision\n").unwrap();
-        git(&["commit", "-qam", "second"]);
+        git(root, &["commit", "-qam", "second"]);
         let work = root.join(".loom/work");
         std::fs::create_dir_all(&work).unwrap();
         let evidence = run_git_show(&work, first.trim()).unwrap();
@@ -194,24 +179,12 @@ mod tests {
             return;
         }
         let tmp = tempfile::tempdir().unwrap();
-        let git = |root: &Path, args: &[&str]| {
-            let output = Command::new("git")
-                .args(args)
-                .current_dir(root)
-                .output()
-                .unwrap();
-            assert!(output.status.success());
-            String::from_utf8(output.stdout).unwrap()
-        };
         let [root, other] = ["root", "other"].map(|name| tmp.path().join(name));
         for (repo, text) in [(&root, "the real evidence\n"), (&other, "unrelated\n")] {
             std::fs::create_dir_all(repo).unwrap();
-            git(repo, &["init", "-q"]);
-            git(repo, &["config", "user.email", "test@example.com"]);
-            git(repo, &["config", "user.name", "Test"]);
-            std::fs::write(repo.join("evidence"), text).unwrap();
-            git(repo, &["add", "evidence"]);
-            git(repo, &["commit", "-qm", "evidence"]);
+            TestRepo::builder()
+                .seed("evidence", text, "evidence")
+                .init_in(repo);
         }
         let commit = git(&root, &["rev-parse", "HEAD"]);
         let work = root.join(".loom/work");

@@ -4,6 +4,7 @@
 use super::*;
 use crate::context::schema::{Channel, Freshness, OmissionSummary};
 use crate::models::stage::Stage;
+use crate::test_git::{git, TestRepo};
 use serial_test::serial;
 use std::sync::atomic::Ordering;
 use tempfile::TempDir;
@@ -11,40 +12,14 @@ use tempfile::TempDir;
 use super::lock::read_lock;
 use super::tests_wants_rebuild::seed;
 
-/// Run one git command with ambient global/system config neutralized, so a
-/// developer's or CI runner's `~/.gitconfig` cannot change test behavior.
-fn isolated_git(root: &Path, args: &[&str]) -> std::process::Output {
-    std::process::Command::new("git")
-        .args(args)
-        .current_dir(root)
-        .env("GIT_CONFIG_GLOBAL", root.join(".loom-test-no-global"))
-        .env("GIT_CONFIG_SYSTEM", root.join(".loom-test-no-system"))
-        .env("GIT_CONFIG_NOSYSTEM", "1")
-        .output()
-        .unwrap()
-}
-
-fn git_ok(root: &Path, args: &[&str]) {
-    let out = isolated_git(root, args);
-    assert!(
-        out.status.success(),
-        "git {args:?} failed: {}",
-        String::from_utf8_lossy(&out.stderr)
-    );
-}
-
 /// A temp git repo with a `.loom/work/` directory and one committed file,
 /// ready for a checkout-scope reconcile.
 fn init_repo() -> TempDir {
-    let temp = TempDir::new().unwrap();
+    let temp = TestRepo::builder()
+        .seed("src.rs", "fn main() {}\n", "seed")
+        .create()
+        .into_temp_dir();
     let root = temp.path();
-    git_ok(root, &["init", "-b", "main"]);
-    git_ok(root, &["config", "user.email", "t@t.com"]);
-    git_ok(root, &["config", "user.name", "t"]);
-
-    std::fs::write(root.join("src.rs"), "fn main() {}\n").unwrap();
-    git_ok(root, &["add", "src.rs"]);
-    git_ok(root, &["commit", "-m", "seed"]);
 
     let work = root.join(".loom").join("work");
     std::fs::create_dir_all(&work).unwrap();
@@ -53,9 +28,7 @@ fn init_repo() -> TempDir {
 }
 
 fn head_sha(root: &Path) -> String {
-    let out = isolated_git(root, &["rev-parse", "HEAD"]);
-    assert!(out.status.success(), "rev-parse HEAD failed");
-    String::from_utf8_lossy(&out.stdout).trim().to_string()
+    git(root, &["rev-parse", "HEAD"])
 }
 
 /// Point this process at `root` with no stage naming it.

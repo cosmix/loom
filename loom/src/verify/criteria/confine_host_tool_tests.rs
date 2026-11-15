@@ -1,6 +1,7 @@
 //! Tool regressions use isolated repositories and optional installed tool binaries.
 use super::NetworkAccess;
 use crate::models::stage::CommandConfinement;
+use crate::test_git::{git, TestRepo};
 use crate::verify::criteria::{run_spec_with_timeout, CommandSpec};
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -225,34 +226,11 @@ fn actual_uv_lock_check_uses_private_writable_cache_offline() {
         .starts_with(".loom-")));
 }
 
-fn git(directory: &Path, args: &[&str]) {
-    let output = Command::new("git")
-        .current_dir(directory)
-        .args([
-            "-c",
-            "user.name=Fixture",
-            "-c",
-            "user.email=fixture@example.invalid",
-            "-c",
-            "commit.gpgsign=false",
-            "-c",
-            "core.hooksPath=/dev/null",
-        ])
-        .args(args)
-        .output()
-        .unwrap();
-    assert!(
-        output.status.success(),
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-}
-
 #[cfg(unix)]
 fn biome_fixture(root: &Path, tool: &Path) -> PathBuf {
     let repo = root.join("repo");
     std::fs::create_dir(&repo).unwrap();
-    git(&repo, &["init", "--initial-branch=main"]);
+    TestRepo::builder().no_seed().init_in(&repo);
     std::fs::write(
         repo.join("biome.json"),
         r#"{
@@ -269,11 +247,22 @@ fn biome_fixture(root: &Path, tool: &Path) -> PathBuf {
     .unwrap();
     std::fs::write(repo.join("source.js"), "const answer = 42;\n").unwrap();
     git(&repo, &["add", "."]);
-    git(&repo, &["commit", "-m", "fixture"]);
+    git(
+        &repo,
+        &["-c", "core.hooksPath=/dev/null", "commit", "-m", "fixture"],
+    );
     let cwd = repo.join(".worktrees/stage");
     git(
         &repo,
-        &["worktree", "add", cwd.to_str().unwrap(), "-b", "stage"],
+        &[
+            "-c",
+            "core.hooksPath=/dev/null",
+            "worktree",
+            "add",
+            cwd.to_str().unwrap(),
+            "-b",
+            "stage",
+        ],
     );
     let state = root.join("private-state");
     std::fs::create_dir(&state).unwrap();

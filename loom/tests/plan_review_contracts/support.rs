@@ -4,11 +4,15 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::time::{Duration, UNIX_EPOCH};
 
 use loom::plan_server::review::suggest::{BrowserRef, SuggestedPassage};
 use tempfile::TempDir;
+
+#[path = "../test_support/mod.rs"]
+mod test_support;
+
+use test_support::git_repo::{git, git_with_env, TestRepo};
 
 /// The product section the built-marker fixtures change, repo-relative.
 pub const SECTION_02: &str = "doc/product/demo/section_02.md";
@@ -31,39 +35,11 @@ pub fn repo() -> Repo {
         .expect("create scratch directory");
     let root = temp.path().join("repo");
     fs::create_dir_all(&root).expect("create repo dir");
-    git(&root, &["init", "-q", "-b", "main"], None);
-    git(&root, &["config", "user.name", "Review Fixture"], None);
-    git(
-        &root,
-        &["config", "user.email", "fixture@example.invalid"],
-        None,
-    );
-    git(&root, &["config", "commit.gpgsign", "false"], None);
+    TestRepo::builder()
+        .identity("Review Fixture", "fixture@example.invalid")
+        .no_seed()
+        .init_in(&root);
     Repo { _temp: temp, root }
-}
-
-/// Runs git in `root` isolated from the user's and system configuration, with author and
-/// committer dates set to `date` when given; panics on failure and returns trimmed stdout.
-pub fn git(root: &Path, args: &[&str], date: Option<&str>) -> String {
-    let mut cmd = Command::new("git");
-    cmd.args(args)
-        .current_dir(root)
-        .env("GIT_CONFIG_NOSYSTEM", "1")
-        .env("GIT_CONFIG_GLOBAL", "/dev/null");
-    if let Some(date) = date {
-        cmd.env("GIT_AUTHOR_DATE", date)
-            .env("GIT_COMMITTER_DATE", date);
-    }
-    let out = cmd.output().expect("run git");
-    assert!(
-        out.status.success(),
-        "git {args:?} failed: {}",
-        String::from_utf8_lossy(&out.stderr)
-    );
-    String::from_utf8(out.stdout)
-        .expect("git stdout is UTF-8")
-        .trim()
-        .to_owned()
 }
 
 pub fn put(root: &Path, rel: &str, content: &str) {
@@ -74,9 +50,13 @@ pub fn put(root: &Path, rel: &str, content: &str) {
 
 /// Commits everything in the tree at `date` and returns the new HEAD's 40-hex id.
 pub fn commit(root: &Path, date: &str, message: &str) -> String {
-    git(root, &["add", "-A"], None);
-    git(root, &["commit", "-q", "-m", message], Some(date));
-    git(root, &["rev-parse", "HEAD"], None)
+    git(root, &["add", "-A"]);
+    git_with_env(
+        root,
+        &["commit", "-q", "-m", message],
+        &[("GIT_AUTHOR_DATE", date), ("GIT_COMMITTER_DATE", date)],
+    );
+    git(root, &["rev-parse", "HEAD"])
 }
 
 /// Sets the file's modification time to the RFC 3339 instant `at`.

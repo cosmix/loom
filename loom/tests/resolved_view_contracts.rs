@@ -8,9 +8,10 @@
 #[path = "test_support/mod.rs"]
 mod test_support;
 
+use test_support::git_repo::{git, TestRepo};
+
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
-use std::process::Command;
 
 use loom::context::extract::{extract_file, registry};
 use loom::context::graph_store::{FileEntry, GraphStore, ResolvedGraph};
@@ -124,29 +125,14 @@ fn relink_equals_cold_build_after_target_removed() {
     );
 }
 
-fn git(root: &Path, args: &[&str]) {
-    let output = Command::new("git")
-        .args(args)
-        .current_dir(root)
-        .env("GIT_CONFIG_GLOBAL", root.join(".loom-test-no-global"))
-        .env("GIT_CONFIG_SYSTEM", root.join(".loom-test-no-system"))
-        .env("GIT_CONFIG_NOSYSTEM", "1")
-        .output()
-        .unwrap();
-    assert!(
-        output.status.success(),
-        "git {args:?} failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-}
-
 /// A temp git repo with one committed `src/lib.rs` and a `.loom/work` state dir.
 fn committed_repo() -> TempDir {
     let temp = TempDir::new().unwrap();
     let root = temp.path();
-    git(root, &["init"]);
-    git(root, &["config", "user.name", "t"]);
-    git(root, &["config", "user.email", "t@t"]);
+    TestRepo::builder()
+        .identity("t", "t@t")
+        .no_seed()
+        .init_in(root);
     std::fs::create_dir_all(root.join("src")).unwrap();
     std::fs::write(
         root.join("src/lib.rs"),

@@ -8,12 +8,13 @@ use tempfile::TempDir;
 
 use super::super::landing::Landing;
 use super::super::resolver_spawn::test_fixtures::{
-    git_ok, orchestrator_with_conflict, repo_with_stage_branches,
+    orchestrator_with_conflict, repo_with_stage_branches,
 };
 use super::watches_directory;
 use crate::git::MergeBlock;
 use crate::models::stage::{Stage, StageStatus};
 use crate::orchestrator::core::Orchestrator;
+use crate::test_git::git;
 use crate::verify::transitions::{load_stage, update_stage};
 
 const ID: &str = "s";
@@ -30,7 +31,7 @@ pub(super) fn blocked_stage() -> (TempDir, Orchestrator) {
     let root = repo.path();
     std::fs::write(root.join(".git/info/exclude"), ".loom/\n.worktrees/\n").unwrap();
     let worktree = root.join(".worktrees").join(ID);
-    git_ok(
+    git(
         root,
         &[
             "worktree",
@@ -42,8 +43,8 @@ pub(super) fn blocked_stage() -> (TempDir, Orchestrator) {
         ],
     );
     std::fs::write(worktree.join("stage.txt"), "stage").unwrap();
-    git_ok(&worktree, &["add", "stage.txt"]);
-    git_ok(&worktree, &["commit", "-q", "-m", "stage"]);
+    git(&worktree, &["add", "stage.txt"]);
+    git(&worktree, &["commit", "-q", "-m", "stage"]);
 
     let mut orchestrator = orchestrator_with_conflict(root, ID);
     update_stage(ID, &orchestrator.config.work_dir, |stage| {
@@ -104,7 +105,7 @@ fn a_cleared_block_is_retried_and_lands() {
     orchestrator.retry_blocked_merge(&on_disk(&orchestrator));
     orchestrator.retry_blocked_merge(&on_disk(&orchestrator));
 
-    git_ok(repo.path(), &["stash", "push", "-q", "--include-untracked"]);
+    git(repo.path(), &["stash", "push", "-q", "--include-untracked"]);
     orchestrator.retry_blocked_merge(&on_disk(&orchestrator));
 
     let stage = on_disk(&orchestrator);
@@ -158,7 +159,7 @@ fn a_fast_forward_refusal_is_timed_and_never_memoized() {
 fn a_refused_merge_is_not_retried_within_a_minute_and_is_after() {
     let (repo, mut orchestrator) = blocked_stage();
     let now = Instant::now();
-    git_ok(repo.path(), &["stash", "push", "-q", "--include-untracked"]);
+    git(repo.path(), &["stash", "push", "-q", "--include-untracked"]);
     orchestrator
         .refused_merge_attempts
         .insert(ID.to_string(), now);
@@ -255,7 +256,7 @@ fn an_infrastructure_error_in_a_retry_keeps_the_typed_block() {
     let before = on_disk(&orchestrator);
     let block = before.merge.block.clone().expect("the fixture is blocked");
     let tip = crate::git::get_branch_head("main", repo.path()).unwrap();
-    git_ok(repo.path(), &["update-ref", "-d", "refs/heads/main"]);
+    git(repo.path(), &["update-ref", "-d", "refs/heads/main"]);
 
     orchestrator.retry_blocked_merge(&before);
 
@@ -271,8 +272,8 @@ fn an_infrastructure_error_in_a_retry_keeps_the_typed_block() {
         0
     );
 
-    git_ok(repo.path(), &["update-ref", "refs/heads/main", &tip]);
-    git_ok(repo.path(), &["stash", "push", "-q", "--include-untracked"]);
+    git(repo.path(), &["update-ref", "refs/heads/main", &tip]);
+    git(repo.path(), &["stash", "push", "-q", "--include-untracked"]);
     orchestrator.retry_blocked_merge(&on_disk(&orchestrator));
     assert!(on_disk(&orchestrator).merged);
 }

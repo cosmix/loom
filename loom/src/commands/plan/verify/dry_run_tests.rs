@@ -3,8 +3,7 @@
 //! provision cases need bubblewrap. The real executor's tests are in
 //! `dry_run_real_tests.rs`.
 
-use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::path::PathBuf;
 use std::time::Duration;
 
 use tempfile::TempDir;
@@ -12,18 +11,7 @@ use tempfile::TempDir;
 use super::*;
 use crate::commands::plan::verify::report::verify_text;
 use crate::process::sandbox_probe::{confined_commands_runnable, skip_unless};
-
-pub(super) fn git(root: &Path, args: &[&str]) {
-    let output = Command::new("git")
-        .args(args)
-        .current_dir(root)
-        .env("GIT_CONFIG_GLOBAL", root.join(".no-global"))
-        .env("GIT_CONFIG_SYSTEM", root.join(".no-system"))
-        .env("GIT_CONFIG_NOSYSTEM", "1")
-        .output()
-        .expect("spawn git");
-    assert!(output.status.success(), "git {args:?}: {output:?}");
-}
+use crate::test_git::{git, TestRepo};
 
 /// One stage entry of a plan; `extra` holds further keys (six-space indented lines).
 pub(super) fn stage(
@@ -57,12 +45,8 @@ pub(super) fn plan(loom_extra: &str, stages: &[String]) -> String {
 
 /// A repository with `text` committed as `PLAN.md`: its directory and the plan's path.
 pub(super) fn commit_plan(text: &str) -> (TempDir, PathBuf) {
-    let tmp = TempDir::new().unwrap();
+    let tmp = TestRepo::builder().no_seed().create().into_temp_dir();
     let root = tmp.path().canonicalize().unwrap();
-    git(&root, &["init", "-q", "-b", "main"]);
-    git(&root, &["config", "user.email", "t@t.com"]);
-    git(&root, &["config", "user.name", "t"]);
-    git(&root, &["config", "commit.gpgsign", "false"]);
     std::fs::write(root.join("PLAN.md"), text).unwrap();
     git(&root, &["add", "-A"]);
     git(&root, &["commit", "-q", "-m", "plan"]);

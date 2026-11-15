@@ -203,31 +203,17 @@ mod tests;
 #[cfg(test)]
 mod branch_collision_tests {
     use super::*;
+    use crate::test_git::{git, TestRepo};
 
     #[test]
     fn stage_branch_with_same_named_tag_is_accepted() {
         let repo = tempfile::tempdir().unwrap();
-        for args in [
-            vec!["init", "-q", "-b", "loom/s1"],
-            vec![
-                "-c",
-                "user.name=T",
-                "-c",
-                "user.email=t@t",
-                "commit",
-                "--allow-empty",
-                "-qm",
-                "seed",
-            ],
-            vec!["tag", "loom/s1"],
-        ] {
-            let output = std::process::Command::new("git")
-                .args(args)
-                .current_dir(repo.path())
-                .output()
-                .unwrap();
-            assert!(output.status.success(), "{output:?}");
-        }
+        TestRepo::builder()
+            .branch("loom/s1")
+            .no_seed()
+            .init_in(repo.path());
+        git(repo.path(), &["commit", "--allow-empty", "-qm", "seed"]);
+        git(repo.path(), &["tag", "loom/s1"]);
         let stage = Stage {
             id: "s1".into(),
             ..Default::default()

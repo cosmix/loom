@@ -1,5 +1,6 @@
 use super::*;
 use crate::models::stage::Stage;
+use crate::test_git::{git, TestRepo};
 use serial_test::serial;
 use tempfile::TempDir;
 
@@ -160,20 +161,8 @@ fn test_resolve_stage_execution_paths_uses_cwd_when_matching_stage_worktree() {
 fn missing_assigned_real_worktree_never_runs_commands_in_another_stage() {
     let repo = TempDir::new().unwrap();
     let root = repo.path();
-    git(root, &["init", "-q"]);
-    git(
-        root,
-        &[
-            "-c",
-            "user.name=T",
-            "-c",
-            "user.email=t@t",
-            "commit",
-            "--allow-empty",
-            "-qm",
-            "init",
-        ],
-    );
+    TestRepo::builder().no_seed().init_in(root);
+    git(root, &["commit", "--allow-empty", "-qm", "init"]);
     git(root, &["worktree", "add", "-b", "loom/a", ".worktrees/a"]);
     git(root, &["worktree", "add", "-b", "loom/b", ".worktrees/b"]);
     std::fs::remove_dir_all(root.join(".worktrees/a")).unwrap();
@@ -201,36 +190,9 @@ fn missing_assigned_real_worktree_never_runs_commands_in_another_stage() {
     assert!(!root.join(".worktrees/b/marker").exists());
 }
 
-fn git(root: &std::path::Path, args: &[&str]) {
-    let output = std::process::Command::new("git")
-        .args(args)
-        .current_dir(root)
-        .env("GIT_CONFIG_NOSYSTEM", "1")
-        .env("GIT_CONFIG_GLOBAL", "/dev/null")
-        .output()
-        .unwrap();
-    assert!(
-        output.status.success(),
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-}
-
 fn real_worktree(root: &std::path::Path, id: &str) {
-    git(root, &["init", "-q"]);
-    git(
-        root,
-        &[
-            "-c",
-            "user.name=T",
-            "-c",
-            "user.email=t@t",
-            "commit",
-            "--allow-empty",
-            "-qm",
-            "init",
-        ],
-    );
+    TestRepo::builder().no_seed().init_in(root);
+    git(root, &["commit", "--allow-empty", "-qm", "init"]);
     git(
         root,
         &[

@@ -130,11 +130,8 @@ impl TestRunnerAdapter for BunTest {
 mod tests {
     use super::*;
     use crate::testrun::command::{assert_one_word, HOSTILE_NAME};
+    use crate::testrun::fixture_support::words;
     use crate::testrun::{classify, fixture_support, RunOutcome};
-
-    fn words(command: &str) -> Vec<String> {
-        command.split_whitespace().map(str::to_string).collect()
-    }
 
     #[test]
     fn command_selects_a_full_bun_test_name() {

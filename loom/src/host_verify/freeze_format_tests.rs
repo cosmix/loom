@@ -2,32 +2,18 @@
 //! digest the freeze job compares before and after the run.
 
 use std::path::Path;
-use std::process::Command;
 
 use tempfile::TempDir;
 
 use super::*;
 use crate::models::stage::Stage;
-
-fn git(dir: &Path, args: &[&str]) {
-    let output = Command::new("git")
-        .args(["-c", "commit.gpgsign=false", "-c", "user.name=t"])
-        .args(["-c", "user.email=t@t"])
-        .args(args)
-        .current_dir(dir)
-        .env_remove("GIT_DIR")
-        .env_remove("GIT_WORK_TREE")
-        .env_remove("GIT_INDEX_FILE")
-        .output()
-        .unwrap();
-    assert!(output.status.success(), "git {args:?}: {output:?}");
-}
+use crate::test_git::{git, TestRepo};
 
 /// A repository with a tracked `a.rs` and an ignore rule for `*.log`.
 fn repository() -> (TempDir, WorktreeGit) {
     let temp = tempfile::tempdir().unwrap();
     let dir = temp.path().canonicalize().unwrap();
-    git(&dir, &["init", "-q", "-b", "main"]);
+    TestRepo::builder().no_seed().init_in(&dir);
     std::fs::write(dir.join("a.rs"), "fn a() {}\n").unwrap();
     std::fs::write(dir.join(".gitignore"), "*.log\n").unwrap();
     git(&dir, &["add", "."]);

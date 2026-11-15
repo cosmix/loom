@@ -3,7 +3,6 @@
 //! resolver's exit to remove, and the request is refused for any other
 //! session kind or stage.
 
-use std::path::Path;
 use std::process::Command;
 
 use chrono::Utc;
@@ -14,43 +13,23 @@ use crate::models::stage::StageStatus;
 use crate::orchestrator::core::{Orchestrator, OrchestratorConfig};
 use crate::plan::ExecutionGraph;
 use crate::relay::RequestKind;
+pub(super) use crate::test_git::git;
+use crate::test_git::TestRepo;
 use crate::verify::transitions::{load_stage, update_stage};
 
 use super::test_support::{entry_for, fixture, payload_for, Fixture, STAGE};
 use super::{run_pass, Tick};
-
-/// Run `git` with ambient global and system config shut out, for this child
-/// process only.
-pub(super) fn git(root: &Path, args: &[&str]) -> String {
-    let output = Command::new("git")
-        .args(args)
-        .current_dir(root)
-        .env("GIT_CONFIG_GLOBAL", root.join(".no-global-config"))
-        .env("GIT_CONFIG_SYSTEM", root.join(".no-system-config"))
-        .env("GIT_CONFIG_NOSYSTEM", "1")
-        .env("GIT_AUTHOR_NAME", "loom-test")
-        .env("GIT_AUTHOR_EMAIL", "loom-test@example.com")
-        .env("GIT_COMMITTER_NAME", "loom-test")
-        .env("GIT_COMMITTER_EMAIL", "loom-test@example.com")
-        .output()
-        .unwrap();
-    assert!(
-        output.status.success(),
-        "git {args:?} failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    String::from_utf8_lossy(&output.stdout).trim().to_string()
-}
 
 /// A repository on `main` with the stage worktree `.worktrees/s1` on `loom/s1`,
 /// one commit ahead. The identity is set in the repository's own config,
 /// because the daemon's merge runs git without this module's environment.
 pub(super) fn repository(fx: &Fixture) {
     let root = &fx.repo_root;
-    git(root, &["init", "-q", "-b", "main"]);
+    TestRepo::builder()
+        .identity("loom-test", "loom-test@example.com")
+        .no_seed()
+        .init_in(root);
     crate::git::worktree::capture_main_identity(root, &fx.work_dir).unwrap();
-    git(root, &["config", "user.name", "loom-test"]);
-    git(root, &["config", "user.email", "loom-test@example.com"]);
     std::fs::write(root.join(".gitignore"), ".loom/\n.worktrees/\n").unwrap();
     std::fs::write(root.join("a.txt"), "a\n").unwrap();
     git(root, &["add", "."]);

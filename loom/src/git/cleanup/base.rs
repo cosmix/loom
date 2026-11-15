@@ -98,43 +98,15 @@ pub fn base_branch_exists(stage_id: &str, repo_root: &Path) -> Result<bool> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::fs;
+    use crate::test_git::TestRepo;
     use std::process::Command;
     use tempfile::TempDir;
 
     fn setup_git_repo() -> TempDir {
-        let temp_dir = TempDir::new().unwrap();
-        Command::new("git")
-            .args(["init"])
-            .current_dir(temp_dir.path())
-            .output()
-            .unwrap();
-        Command::new("git")
-            .args(["config", "user.email", "test@test.com"])
-            .current_dir(temp_dir.path())
-            .output()
-            .unwrap();
-        Command::new("git")
-            .args(["config", "user.name", "Test"])
-            .current_dir(temp_dir.path())
-            .output()
-            .unwrap();
-
-        // Create initial commit
-        let test_file = temp_dir.path().join("README.md");
-        fs::write(&test_file, "# Test").unwrap();
-        Command::new("git")
-            .args(["add", "."])
-            .current_dir(temp_dir.path())
-            .output()
-            .unwrap();
-        Command::new("git")
-            .args(["commit", "-m", "Initial commit"])
-            .current_dir(temp_dir.path())
-            .output()
-            .unwrap();
-
-        temp_dir
+        TestRepo::builder()
+            .seed("README.md", "# Test", "Initial commit")
+            .create()
+            .into_temp_dir()
     }
 
     #[test]

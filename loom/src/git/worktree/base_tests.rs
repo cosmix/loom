@@ -2,25 +2,12 @@ use super::*;
 use crate::git::run_git;
 use crate::plan::graph::ExecutionGraph;
 use crate::plan::schema::StageDefinition;
-use tempfile::TempDir;
+use crate::test_git::TestRepo;
 
-fn init_test_repo() -> TempDir {
-    let temp_dir = TempDir::new().unwrap();
-    let repo_root = temp_dir.path();
-
-    run_git(&["init"], repo_root).unwrap();
-    run_git(&["config", "user.email", "test@test.com"], repo_root).unwrap();
-    run_git(&["config", "user.name", "Test"], repo_root).unwrap();
-
-    // Create initial commit on main
-    std::fs::write(repo_root.join("README.md"), "# Test").unwrap();
-    run_git(&["add", "."], repo_root).unwrap();
-    run_git(&["commit", "-m", "Initial commit"], repo_root).unwrap();
-
-    // Rename to main if needed (some git versions default to master)
-    run_git(&["branch", "-M", "main"], repo_root).unwrap();
-
-    temp_dir
+fn init_test_repo() -> TestRepo {
+    TestRepo::builder()
+        .seed("README.md", "# Test", "Initial commit")
+        .create()
 }
 
 fn create_branch_with_commit(name: &str, file: &str, content: &str, repo_root: &Path) {

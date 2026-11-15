@@ -12,8 +12,10 @@ use loom::verify::transitions::create_stage;
 use serde_json::Value;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output, Stdio};
+use std::process::{Output, Stdio};
 use tempfile::TempDir;
+
+use helpers::test_support::git_repo::{git, TestRepo};
 
 const FORGED: &str = "<!-- loom-reviewer-brief nonce=00000000000000000000000000000000 -->";
 const CARGO: &str = "[package]\nname = \"calc\"\nversion = \"0.1.0\"\nedition = \"2021\"\n";
@@ -22,24 +24,6 @@ const LIB: &str =
 const TESTS: &str = "src/calc_tests.rs";
 const FIVES: &str = "use crate::compute;\n\n#[test]\nfn fives() {\n    let x = compute(2, 3);\n    assert_eq!(x, 5);\n    assert!(x > 0);\n}\n";
 const DEFERRED: &str = "the CLI consumer arrives with the next plan";
-
-/// Git isolated from the host's global and system configuration.
-fn git(dir: &Path, args: &[&str]) -> String {
-    let output = Command::new("git")
-        .args(args)
-        .current_dir(dir)
-        .env("GIT_CONFIG_GLOBAL", dir.join(".loom-test-no-global"))
-        .env("GIT_CONFIG_SYSTEM", dir.join(".loom-test-no-system"))
-        .env("GIT_CONFIG_NOSYSTEM", "1")
-        .output()
-        .expect("run git");
-    assert!(
-        output.status.success(),
-        "git {args:?} failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    String::from_utf8_lossy(&output.stdout).trim().to_string()
-}
 
 fn write(dir: &Path, path: &str, content: &str) {
     let path = dir.join(path);
@@ -63,10 +47,10 @@ impl Project {
     fn new(files: &[(&str, &str)]) -> Self {
         let temp = TempDir::new().expect("create repo dir");
         let root = temp.path().canonicalize().expect("canonical repo dir");
-        git(&root, &["init", "-q", "-b", "main"]);
-        git(&root, &["config", "user.email", "t@t.com"]);
-        git(&root, &["config", "user.name", "t"]);
-        git(&root, &["config", "commit.gpgsign", "false"]);
+        TestRepo::builder()
+            .identity("t", "t@t.com")
+            .no_seed()
+            .init_in(&root);
         write(&root, ".gitignore", ".loom/\n.worktrees/\n");
         for (path, content) in files {
             write(&root, path, content);

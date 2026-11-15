@@ -2,6 +2,7 @@
 //! Ancestry alone never supplies missing completion proof. Full daemon
 //! recovery coverage also lives in merge-handler and phantom-merge tests.
 use super::*;
+use crate::test_git::TestRepo;
 use std::process::Command;
 use tempfile::TempDir;
 
@@ -131,42 +132,11 @@ fn extract_stage_id_preserves_digit_leading_ids() {
 }
 
 fn init_repo() -> TempDir {
-    let tmp = TempDir::new().unwrap();
-    let root = tmp.path();
-
-    Command::new("git")
-        .args(["init", "-b", "main"])
-        .current_dir(root)
-        .output()
-        .unwrap();
-    Command::new("git")
-        .args(["config", "user.email", "test@test.com"])
-        .current_dir(root)
-        .output()
-        .unwrap();
-    Command::new("git")
-        .args(["config", "user.name", "Test"])
-        .current_dir(root)
-        .output()
-        .unwrap();
-    std::fs::write(root.join("seed.txt"), "seed").unwrap();
-    Command::new("git")
-        .args(["add", "seed.txt"])
-        .current_dir(root)
-        .output()
-        .unwrap();
-    Command::new("git")
-        .args(["commit", "-m", "seed"])
-        .current_dir(root)
-        .output()
-        .unwrap();
-    Command::new("git")
-        .args(["branch", "-M", "main"])
-        .current_dir(root)
-        .output()
-        .unwrap();
-
-    tmp
+    TestRepo::builder()
+        .identity("Test", "test@test.com")
+        .seed("seed.txt", "seed", "seed")
+        .create()
+        .into_temp_dir()
 }
 
 /// A branch tip outside the target cannot establish landed ancestry.

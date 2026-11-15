@@ -20,6 +20,11 @@ use reqwest::blocking::Client;
 use serde_json::{json, Value};
 use tempfile::TempDir;
 
+#[path = "../test_support/mod.rs"]
+mod test_support;
+
+use test_support::git_repo::{git, TestRepo};
+
 pub const PLAN: &str = "doc/plans/PLAN-operator.md";
 pub const REPORT: &str = "doc/plans/codex-PLAN-operator.md";
 pub const MISSING: &str = "claude, codex with its pressure skill, or tmux is not on PATH";
@@ -91,9 +96,10 @@ impl Scratch {
     pub fn new() -> Scratch {
         let (repo, home) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
         let root = repo.path().canonicalize().unwrap();
-        git(&root, &["init", "-q", "-b", "main"]);
-        git(&root, &["config", "user.name", "Operator"]);
-        git(&root, &["config", "user.email", "operator@example.invalid"]);
+        TestRepo::builder()
+            .identity("Operator", "operator@example.invalid")
+            .no_seed()
+            .init_in(&root);
         put(
             &root,
             "doc/product/index.md",
@@ -170,15 +176,6 @@ pub fn put(root: &Path, relative: &str, text: &str) {
     let path = root.join(relative);
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
     std::fs::write(path, text).unwrap();
-}
-
-fn git(root: &Path, args: &[&str]) {
-    let status = Command::new("git")
-        .args(args)
-        .current_dir(root)
-        .status()
-        .unwrap();
-    assert!(status.success(), "git {args:?}");
 }
 
 /// A browser session on a planning server: its cookies and origin.

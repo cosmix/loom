@@ -3,9 +3,7 @@ use super::*;
 fn foreign_filter_repo(root: &Path) -> std::path::PathBuf {
     let foreign = root.join("foreign");
     fs::create_dir(&foreign).unwrap();
-    git(&foreign, &["init", "-b", "main"]);
-    git(&foreign, &["config", "user.name", "Test"]);
-    git(&foreign, &["config", "user.email", "test@example.invalid"]);
+    TestRepo::builder().no_seed().init_in(&foreign);
     let marker = root.join("filter-ran");
     let filter = format!("sh -c 'touch \"{}\"; cat'", marker.display());
     git(&foreign, &["config", "filter.trap.clean", &filter]);

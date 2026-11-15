@@ -13,6 +13,8 @@ use tempfile::TempDir;
 #[path = "../integration/relay_scratch.rs"]
 mod relay_scratch;
 use crate::helpers::test_support;
+pub use crate::helpers::test_support::git_repo::git;
+use test_support::git_repo::TestRepo;
 
 pub const STAGE: &str = "stage-a";
 pub const SESSION: &str = "session-a";
@@ -27,18 +29,9 @@ pub struct Fixture {
     pub scratch_dir: PathBuf,
 }
 
-/// Point a command's git at missing global and system config.
-pub fn isolate_git(command: &mut Command, home: &Path) {
-    command
-        .env("GIT_CONFIG_GLOBAL", home.join("no-global-gitconfig"))
-        .env("GIT_CONFIG_SYSTEM", home.join("no-system-gitconfig"))
-        .env("GIT_CONFIG_NOSYSTEM", "1");
-}
-
-/// Run git in `dir` with ambient config neutralised; returns trimmed stdout.
-pub fn git(dir: &Path, args: &[&str]) -> String {
-    let output = test_support::git_repo::git_checked(dir, args);
-    String::from_utf8_lossy(&output.stdout).trim().to_string()
+/// Strip inherited `GIT_*` variables and ignore the host's git configuration.
+pub fn isolate_git(command: &mut Command) {
+    test_support::git_repo::isolate(command);
 }
 
 /// Capture the temporary main checkout before stage sessions use it.
@@ -50,17 +43,9 @@ pub fn capture_checkout_identity(repo: &Path, work_dir: &Path) {
 fn init_repo_with_worktree() -> (TempDir, PathBuf) {
     let repo = TempDir::new().expect("create repo dir");
     let root = repo.path().to_path_buf();
-    git(&root, &["init", "-b", "main"]);
-    for (key, value) in [
-        ("user.email", "test@test.com"),
-        ("user.name", "Test User"),
-        ("commit.gpgsign", "false"),
-    ] {
-        git(&root, &["config", key, value]);
-    }
-    fs::write(root.join(".gitignore"), ".loom/\n").expect("write .gitignore");
-    git(&root, &["add", ".gitignore"]);
-    git(&root, &["commit", "-m", "initial"]);
+    TestRepo::builder()
+        .seed(".gitignore", ".loom/\n", "initial")
+        .init_in(&root);
     let worktree = root.join(".worktrees").join(STAGE);
     let branch = format!("loom/{STAGE}");
     git(
@@ -169,7 +154,7 @@ impl Fixture {
             .env("LOOM_WORKTREE_PATH", &self.worktree)
             .env("XDG_RUNTIME_DIR", &self.xdg)
             .env("HOME", &self.home);
-        isolate_git(&mut command, &self.home);
+        isolate_git(&mut command);
         command
     }
 

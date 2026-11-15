@@ -4,7 +4,6 @@
 //! check against the accepted tip.
 
 use std::path::Path;
-use std::process::Command;
 use std::time::Duration;
 
 use serial_test::serial;
@@ -23,29 +22,11 @@ use crate::orchestrator::core::stage_executor::StageExecutor;
 use crate::orchestrator::core::{merge_resolver_attempts, Orchestrator, OrchestratorConfig};
 use crate::orchestrator::scheduling_report::{alerts, BlockReason, Severity};
 use crate::plan::{schema::StageDefinition, ExecutionGraph};
+pub(super) use crate::test_git::git;
+use crate::test_git::{commit_file, TestRepo};
 use crate::verify::transitions::{load_stage, save_stage};
 
 pub(super) const ID: &str = "s";
-
-/// Run `git` in `dir` with ambient configuration shut out, assert it
-/// succeeded, and return its trimmed stdout.
-pub(super) fn git(dir: &Path, args: &[&str]) -> String {
-    let out = Command::new("git")
-        .args(args)
-        .current_dir(dir)
-        .env("GIT_CONFIG_GLOBAL", dir.join(".loom-test-no-global"))
-        .env("GIT_CONFIG_SYSTEM", dir.join(".loom-test-no-system"))
-        .env("GIT_CONFIG_NOSYSTEM", "1")
-        .env("GIT_AUTHOR_NAME", "t")
-        .env("GIT_AUTHOR_EMAIL", "t@t.com")
-        .env("GIT_COMMITTER_NAME", "t")
-        .env("GIT_COMMITTER_EMAIL", "t@t.com")
-        .output()
-        .unwrap();
-    let stderr = String::from_utf8_lossy(&out.stderr);
-    assert!(out.status.success(), "git {args:?} failed: {stderr}");
-    String::from_utf8_lossy(&out.stdout).trim().to_string()
-}
 
 pub(super) fn tip(root: &Path, name: &str) -> String {
     git(root, &["rev-parse", name])
@@ -53,22 +34,18 @@ pub(super) fn tip(root: &Path, name: &str) -> String {
 
 /// Commit `name` holding `text` on the checked-out branch; returns the tip.
 pub(super) fn commit(dir: &Path, name: &str, text: &str) -> String {
-    let file = dir.join(name);
-    std::fs::create_dir_all(file.parent().unwrap()).unwrap();
-    std::fs::write(file, text).unwrap();
-    git(dir, &["add", name]);
-    git(dir, &["commit", "-q", "-m", name]);
-    tip(dir, "HEAD")
+    commit_file(dir, name, text, name)
 }
 
 /// A repository on `main` holding `seed.txt`, with the state directories
 /// excluded from its status as in a real project.
 pub(super) fn repo() -> TempDir {
-    let repo = TempDir::new().unwrap();
+    let repo = TestRepo::builder()
+        .identity("t", "t@t.com")
+        .no_seed()
+        .create()
+        .into_temp_dir();
     let root = repo.path();
-    git(root, &["init", "-q", "-b", "main"]);
-    git(root, &["config", "user.email", "t@t.com"]);
-    git(root, &["config", "user.name", "t"]);
     std::fs::write(root.join(".git/info/exclude"), ".loom/\n.worktrees/\n").unwrap();
     commit(root, "seed.txt", "seed");
     let work_dir = root.join(".loom").join("work");

@@ -31,9 +31,6 @@ impl Fixture {
         let repo = tmp.path().join("repo");
         let worktree = contract_worktree(&repo, "s1");
         ok(&repo, &["config", "extensions.worktreeConfig", "true"]);
-        ok(&repo, &["config", "user.name", "Test"]);
-        ok(&repo, &["config", "user.email", "test@example.invalid"]);
-        ok(&repo, &["config", "commit.gpgsign", "false"]);
         let common = repo.join(".git").canonicalize().unwrap();
         Self {
             admin: common.join("worktrees/s1"),

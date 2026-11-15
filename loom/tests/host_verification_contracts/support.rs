@@ -44,7 +44,7 @@ impl Fixture {
             .env("LOOM_VERIFY_BUDGET_POLICY", policy)
             .env("LOOM_WORK_DIR", &self.work_dir)
             .env("HOME", &self.home);
-        isolate_git(&mut command, &self.home);
+        isolate_git(&mut command);
         command
     }
 }

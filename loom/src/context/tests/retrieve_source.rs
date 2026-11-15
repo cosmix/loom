@@ -20,6 +20,7 @@ use crate::context::retrieve::{retrieve_for_stage, StageQuery};
 use crate::context::schema::*;
 use crate::context::store::ContextStore;
 use crate::fs::work_dir::WorkDir;
+use crate::test_git::TestRepo;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use tempfile::TempDir;
@@ -322,25 +323,12 @@ fn retrieve_for_stage_reports_missing_base_when_overlay_has_a_revision() {
 fn retrieval_reports_the_working_tree_stale_when_the_overlay_generation_moved() {
     let temp = project_with_knowledge();
     let root = temp.path();
-    let git = |args: &[&str]| {
-        let output = std::process::Command::new("git")
-            .args(args)
-            .current_dir(root)
-            .env("GIT_CONFIG_GLOBAL", root.join(".loom-test-no-global"))
-            .env("GIT_CONFIG_SYSTEM", root.join(".loom-test-no-system"))
-            .env("GIT_CONFIG_NOSYSTEM", "1")
-            .output()
-            .unwrap();
-        assert!(
-            output.status.success(),
-            "git {args:?} failed: {}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-    };
-    git(&["init", "-b", "main"]);
+    TestRepo::builder()
+        .identity("t", "t@t.com")
+        .no_seed()
+        .init_in(root);
     crate::git::worktree::capture_main_identity(root, &root.join(".loom/work")).unwrap();
-    git(&["config", "user.email", "t@t.com"]);
-    git(&["config", "user.name", "t"]);
+    let git = |args: &[&str]| crate::test_git::git(root, args);
     std::fs::write(root.join("src.rs"), "fn before_edit() {}\n").unwrap();
     git(&["add", "doc", "src.rs"]);
     git(&["commit", "-m", "seed"]);

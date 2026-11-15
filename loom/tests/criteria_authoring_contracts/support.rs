@@ -7,7 +7,6 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::time::Duration;
 
 use chrono::Utc;
@@ -19,23 +18,9 @@ use loom::verify::contracts::refusal::{daemon_refusal, DaemonRefusal};
 use loom::verify::criteria::CriterionResult;
 use tempfile::TempDir;
 
-/// Git isolated from the host's global and system configuration.
-pub fn git(root: &Path, args: &[&str]) -> String {
-    let output = Command::new("git")
-        .args(args)
-        .current_dir(root)
-        .env("GIT_CONFIG_GLOBAL", root.join(".loom-test-no-global"))
-        .env("GIT_CONFIG_SYSTEM", root.join(".loom-test-no-system"))
-        .env("GIT_CONFIG_NOSYSTEM", "1")
-        .output()
-        .expect("spawn git");
-    assert!(
-        output.status.success(),
-        "git {args:?} failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    String::from_utf8_lossy(&output.stdout).trim().to_string()
-}
+#[path = "../test_support/mod.rs"]
+mod test_support;
+use test_support::git_repo::{git, TestRepo};
 
 /// A git repository on branch `main` with a local identity; `root` is canonical.
 pub struct Repo {
@@ -45,16 +30,12 @@ pub struct Repo {
 
 impl Repo {
     pub fn init() -> Self {
-        let tmp = TempDir::new().expect("create the repository directory");
-        let root = tmp
-            .path()
-            .canonicalize()
-            .expect("canonical repository root");
-        git(&root, &["init", "-q", "-b", "main"]);
-        git(&root, &["config", "user.email", "t@t.com"]);
-        git(&root, &["config", "user.name", "t"]);
-        git(&root, &["config", "commit.gpgsign", "false"]);
-        Self { _tmp: tmp, root }
+        let repo = TestRepo::builder().no_seed().create();
+        let root = repo.path().to_path_buf();
+        Self {
+            _tmp: repo.into_temp_dir(),
+            root,
+        }
     }
 
     /// Write `body` at `path` (relative to the root), creating its parents.

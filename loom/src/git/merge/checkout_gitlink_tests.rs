@@ -7,6 +7,7 @@ use std::path::Path;
 use super::checkout_stash::{reset_checkout, snapshot_changes, store_unchanged};
 use super::test_support::{commit_file, git_ok, git_out, init_repo, lock_dir, stage_branch};
 use super::{merge_stage, MergeGate, MergeResult};
+use crate::test_git::TestRepo;
 
 const LINES: &str = "l1\nl2\nl3\nl4\nl5\nl6\nl7\nl8\nl9\nl10\n";
 
@@ -15,9 +16,10 @@ const LINES: &str = "l1\nl2\nl3\nl4\nl5\nl6\nl7\nl8\nl9\nl10\n";
 fn plant_repository(root: &Path, marker: &Path) -> String {
     let sub = root.join("sub");
     std::fs::create_dir(&sub).unwrap();
-    git_ok(&sub, &["init", "-q", "-b", "main"]);
-    git_ok(&sub, &["config", "user.email", "t@t.com"]);
-    git_ok(&sub, &["config", "user.name", "t"]);
+    TestRepo::builder()
+        .identity("t", "t@t.com")
+        .no_seed()
+        .init_in(&sub);
     std::fs::write(sub.join("a.bin"), "x\n").unwrap();
     std::fs::write(sub.join(".gitattributes"), "* filter=planted\n").unwrap();
     git_ok(&sub, &["add", "a.bin", ".gitattributes"]);
@@ -92,9 +94,10 @@ fn a_real_submodule_keeps_its_moved_commit_and_dirty_files_through_the_stash_pat
     let root = repo.path();
     let sub = root.join("sub");
     std::fs::create_dir(&sub).unwrap();
-    git_ok(&sub, &["init", "-q", "-b", "main"]);
-    git_ok(&sub, &["config", "user.email", "t@t.com"]);
-    git_ok(&sub, &["config", "user.name", "t"]);
+    TestRepo::builder()
+        .identity("t", "t@t.com")
+        .no_seed()
+        .init_in(&sub);
     commit_file(&sub, "a.txt", "first\n", "first");
     let first = git_out(&sub, &["rev-parse", "HEAD"]);
     gitlink_entry(root, &first);

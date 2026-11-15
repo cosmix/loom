@@ -1,57 +1,27 @@
 //! Contract tests for the shared branch, status, root and HEAD queries.
 //!
-//! Each fixture is a TempDir repository built here with plain `git`, isolated
+//! Each fixture is a TempDir repository built with the shared `git` helpers, isolated
 //! from the caller's environment and global configuration, so the queries
 //! under test see exactly the state each scenario describes.
 
-use std::path::Path;
 use std::process::Command;
 
 use tempfile::TempDir;
 
 use crate::git::status_entries::{parse_porcelain_v1_z, StatusEntry};
 use crate::git::worktree::WorktreeGit;
-
-/// Run `git` in `dir` for fixture setup, failing the test on any error.
-fn git(dir: &Path, args: &[&str]) {
-    let output = Command::new("git")
-        .args(["-c", "commit.gpgsign=false", "-c", "tag.gpgsign=false"])
-        .args(args)
-        .current_dir(dir)
-        .env_remove("GIT_DIR")
-        .env_remove("GIT_WORK_TREE")
-        .env_remove("GIT_INDEX_FILE")
-        .env_remove("GIT_COMMON_DIR")
-        .env("GIT_CONFIG_GLOBAL", "/dev/null")
-        .env("GIT_CONFIG_NOSYSTEM", "1")
-        .output()
-        .expect("git runs");
-    assert!(
-        output.status.success(),
-        "git {args:?} failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-}
+use crate::test_git::{git, TestRepo};
 
 /// A repository with a local identity and no commit.
-fn init_repo() -> TempDir {
-    let dir = TempDir::new().expect("tempdir");
-    git(dir.path(), &["init", "-q", "-b", "main"]);
-    git(dir.path(), &["config", "user.name", "Contract Test"]);
-    git(
-        dir.path(),
-        &["config", "user.email", "contract@example.invalid"],
-    );
-    dir
+fn init_repo() -> TestRepo {
+    TestRepo::builder().no_seed().create()
 }
 
 /// A repository with one commit on `main`.
-fn repo_with_commit() -> TempDir {
-    let dir = init_repo();
-    std::fs::write(dir.path().join("seed.txt"), "seed\n").expect("write seed");
-    git(dir.path(), &["add", "seed.txt"]);
-    git(dir.path(), &["commit", "-q", "-m", "seed"]);
-    dir
+fn repo_with_commit() -> TestRepo {
+    TestRepo::builder()
+        .seed("seed.txt", "seed\n", "seed")
+        .create()
 }
 
 #[test]

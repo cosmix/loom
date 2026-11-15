@@ -9,8 +9,11 @@ use loom::verify::integrity::{
 };
 use std::fs;
 use std::path::PathBuf;
-use std::process::Command;
 use tempfile::TempDir;
+
+#[path = "test_support/mod.rs"]
+mod test_support;
+use test_support::git_repo::{git, TestRepo};
 
 const TESTS: &str = "src/calc_tests.rs";
 const MORE: &str = "src/calc_more_tests.rs";
@@ -39,7 +42,7 @@ impl Repo {
         let temp = TempDir::new().expect("create repo dir");
         let root = temp.path().canonicalize().expect("canonical repo dir");
         let repo = Self { _temp: temp, root };
-        repo.git(&["init", "-q", "-b", "main"]);
+        TestRepo::builder().no_seed().init_in(&repo.root);
         repo.write("Cargo.toml", CARGO);
         repo.write("src/lib.rs", LIB);
         repo.write(TESTS, tests);
@@ -47,26 +50,8 @@ impl Repo {
             repo.write(path, content);
         }
         repo.commit("base");
-        repo.git(&["switch", "-q", "-c", "feature"]);
+        git(&repo.root, &["switch", "-q", "-c", "feature"]);
         repo
-    }
-
-    /// Git isolated from the host's global and system configuration.
-    fn git(&self, args: &[&str]) -> String {
-        let output = Command::new("git")
-            .args(args)
-            .current_dir(&self.root)
-            .env("GIT_CONFIG_GLOBAL", self.root.join(".loom-test-no-global"))
-            .env("GIT_CONFIG_SYSTEM", self.root.join(".loom-test-no-system"))
-            .env("GIT_CONFIG_NOSYSTEM", "1")
-            .output()
-            .expect("run git");
-        assert!(
-            output.status.success(),
-            "git {args:?} failed: {}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-        String::from_utf8_lossy(&output.stdout).trim().to_string()
     }
 
     fn write(&self, path: &str, content: &str) {
@@ -80,20 +65,11 @@ impl Repo {
     }
 
     fn commit(&self, message: &str) {
-        self.git(&["add", "-A"]);
-        self.git(&[
-            "-c",
-            "user.name=t",
-            "-c",
-            "user.email=t@t",
-            "-c",
-            "commit.gpgsign=false",
-            "commit",
-            "-q",
-            "--allow-empty",
-            "-m",
-            message,
-        ]);
+        git(&self.root, &["add", "-A"]);
+        git(
+            &self.root,
+            &["commit", "-q", "--allow-empty", "-m", message],
+        );
     }
 
     /// Commits the worktree, then returns its events against `main`.

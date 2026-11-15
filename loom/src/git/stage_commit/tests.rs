@@ -4,6 +4,7 @@ use std::os::unix::fs::PermissionsExt;
 use tempfile::TempDir;
 
 use crate::git::signing::tests::{fake_signer, git_in};
+use crate::test_git::TestRepo;
 
 #[path = "tests_guarded.rs"]
 mod guarded;
@@ -17,12 +18,8 @@ const BRANCH: &str = "refs/heads/loom/s1";
 /// A repository with one commit on `main`, checked out on `loom/s1`, with
 /// signing off and the openpgp format pinned repo-locally.
 fn repo() -> TempDir {
-    let temp = TempDir::new().unwrap();
+    let temp = TestRepo::builder().no_seed().create().into_temp_dir();
     let root = temp.path();
-    git_in(root, &["init", "-b", "main"]);
-    git_in(root, &["config", "user.email", "t@t.com"]);
-    git_in(root, &["config", "user.name", "t"]);
-    git_in(root, &["config", "commit.gpgsign", "false"]);
     git_in(root, &["config", "gpg.format", "openpgp"]);
     // On by default on macOS, where it would store `e` + U+0301 as `é`.
     git_in(root, &["config", "core.precomposeunicode", "false"]);

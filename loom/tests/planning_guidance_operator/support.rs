@@ -1,11 +1,14 @@
 //! Temporary feature repository for the operator guidance proof.
 
 use std::fs;
-use std::path::Path;
-use std::process::Command;
 
-use anyhow::{ensure, Result};
+use anyhow::Result;
 use tempfile::TempDir;
+
+#[path = "../test_support/mod.rs"]
+mod test_support;
+
+use test_support::git_repo::{git, TestRepo};
 
 pub fn fixture(target: &str) -> Result<TempDir> {
     let repo = tempfile::tempdir()?;
@@ -31,34 +34,21 @@ pub fn fixture(target: &str) -> Result<TempDir> {
     if root.join(target).exists() {
         fs::remove_file(root.join(target))?;
     }
-    git(root, &["init", "-q", "-b", "main"])?;
-    git(root, &["add", "doc"])?;
-    git(root, &["commit", "-q", "-m", "seed"])?;
-    Ok(repo)
-}
-
-fn git(root: &Path, args: &[&str]) -> Result<()> {
-    let output = Command::new("git")
-        .args([
-            "-c",
-            "user.name=Operator test",
-            "-c",
-            "user.email=test@example.com",
-            "-c",
-            "commit.gpgsign=false",
+    TestRepo::builder()
+        .identity("Operator test", "test@example.com")
+        .no_seed()
+        .init_in(root);
+    git(root, &["add", "doc"]);
+    git(
+        root,
+        &[
             "-c",
             "core.hooksPath=/dev/null",
-        ])
-        .args(args)
-        .current_dir(root)
-        .env_remove("GIT_DIR")
-        .env_remove("GIT_WORK_TREE")
-        .env_remove("GIT_INDEX_FILE")
-        .output()?;
-    ensure!(
-        output.status.success(),
-        "git {args:?}: {}",
-        String::from_utf8_lossy(&output.stderr)
+            "commit",
+            "-q",
+            "-m",
+            "seed",
+        ],
     );
-    Ok(())
+    Ok(repo)
 }

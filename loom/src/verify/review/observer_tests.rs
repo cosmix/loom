@@ -4,26 +4,23 @@
 //! it, and pinned to the main git directory for any other checkout.
 
 use std::path::Path;
-use std::process::Command;
 
 use tempfile::TempDir;
 
 use super::{checkout_git, local_git, source, Source};
 use crate::git::worktree::WorktreeGit;
+use crate::test_git::{git, git_with_env};
 use crate::verify::contracts::test_support::{contract_worktree, plant_foreign_git_dir};
 use crate::verify::duplicate_detection::graph::{changed_files, repository_root};
 
-fn git(dir: &Path, args: &[&str]) -> String {
-    let output = Command::new("git")
-        .args(["-c", "user.name=t", "-c", "user.email=t@t"])
-        .args(["-c", "commit.gpgsign=false"])
-        .args(args)
-        .current_dir(dir)
-        .output()
-        .unwrap();
-    assert!(output.status.success(), "git {args:?}: {output:?}");
-    String::from_utf8(output.stdout).unwrap().trim().to_string()
-}
+/// Author and committer for the commits made in repositories the shared
+/// builder did not create: the planted nested repositories and the bare clone.
+const IDENTITY: [(&str, &str); 4] = [
+    ("GIT_AUTHOR_NAME", "t"),
+    ("GIT_AUTHOR_EMAIL", "t@t"),
+    ("GIT_COMMITTER_NAME", "t"),
+    ("GIT_COMMITTER_EMAIL", "t@t"),
+];
 
 /// The positive control runs last: git that follows the repointed `.git`
 /// file reports the planted git directory's HEAD and common directory, so
@@ -36,7 +33,11 @@ fn a_repointed_git_file_moves_neither_the_toplevel_nor_the_git_directories() {
     let honest_head = git(&worktree, &["rev-parse", "HEAD"]);
     let marker = plant_foreign_git_dir(&worktree);
     let foreign = tmp.path().join("foreign.git");
-    let forged = git(&foreign, &["commit-tree", "HEAD^{tree}", "-m", "forged"]);
+    let forged = git_with_env(
+        &foreign,
+        &["commit-tree", "HEAD^{tree}", "-m", "forged"],
+        &IDENTITY,
+    );
     git(&foreign, &["update-ref", "refs/heads/loom/s1", &forged]);
     let nested = worktree.join("tests");
 
@@ -103,7 +104,7 @@ fn plant_nested_repository(dir: &Path, git_dir: Option<&Path>, marker: &Path) {
     };
     std::fs::write(dir.join("a.txt"), "base\n").unwrap();
     git(dir, &["add", "a.txt"]);
-    git(dir, &["commit", "-q", "-m", "planted"]);
+    git_with_env(dir, &["commit", "-q", "-m", "planted"], &IDENTITY);
     let filter = format!("touch '{}'; cat", marker.display());
     git(dir, &["config", "filter.evil.clean", &filter]);
     std::fs::write(dir.join(".gitattributes"), "* filter=evil\n").unwrap();

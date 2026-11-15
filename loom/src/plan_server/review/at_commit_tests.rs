@@ -9,10 +9,11 @@ use serde_json::json;
 use super::compare::{
     changed_since, discoverable, parse_name_status, text_at, BlobTooLarge, ChangedDocChange,
 };
-use super::git_tests::{commit, doc, git, init, put, repo, BEFORE};
+use super::git_tests::{commit, doc, git_at, init, put, repo, BEFORE};
 use crate::plan_server::files::doc::MAX_EDIT_BYTES;
 use crate::plan_server::start_with_routes;
 use crate::plan_server::tests::support::{self, bootstrap, get, json_body, skip, status};
+use crate::test_git::git;
 
 #[test]
 fn discoverable_applies_the_walks_skip_rules_to_every_component() {
@@ -147,16 +148,15 @@ fn text_at_refuses_a_blob_over_the_file_mode_limit() {
 fn text_at_a_directory_or_submodule_entry_is_none() {
     let repo = repo();
     put(&repo.root, "doc/product/a.md", "# A\n");
-    git(&repo.root, &["add", "-A"], None);
+    git(&repo.root, &["add", "-A"]);
     // A gitlink whose commit is not in this repository, as a submodule entry is.
     let gitlink = format!("160000,{},doc/sub", "1".repeat(40));
     git(
         &repo.root,
         &["update-index", "--add", "--cacheinfo", &gitlink],
-        None,
     );
-    git(&repo.root, &["commit", "-q", "-m", "fixture"], Some(BEFORE));
-    let head = git(&repo.root, &["rev-parse", "HEAD"], None);
+    git_at(&repo.root, &["commit", "-q", "-m", "fixture"], BEFORE);
+    let head = git(&repo.root, &["rev-parse", "HEAD"]);
 
     for path in ["product", "sub"] {
         let text = text_at(&repo.root, &head, path)

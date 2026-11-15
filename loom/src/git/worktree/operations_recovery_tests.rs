@@ -1,41 +1,13 @@
 use super::*;
 use crate::fs::permissions::scratch_home::ScratchHome;
+use crate::test_git::{git, git_command, TestRepo};
 use serial_test::serial;
 use std::os::unix::ffi::OsStringExt;
-use std::process::Command;
 
-fn git(root: &Path, args: &[&std::ffi::OsStr]) {
-    let out = Command::new("git")
-        .args(args)
-        .current_dir(root)
-        .env("GIT_CONFIG_NOSYSTEM", "1")
-        .env("GIT_CONFIG_GLOBAL", "/dev/null")
-        .env("GIT_AUTHOR_NAME", "test")
-        .env("GIT_AUTHOR_EMAIL", "test@example.com")
-        .env("GIT_COMMITTER_NAME", "test")
-        .env("GIT_COMMITTER_EMAIL", "test@example.com")
-        .output()
-        .unwrap();
-    assert!(
-        out.status.success(),
-        "git {args:?}: {}",
-        String::from_utf8_lossy(&out.stderr)
-    );
-}
-
-fn repo() -> tempfile::TempDir {
-    let root = tempfile::tempdir().unwrap();
-    git(root.path(), &["init".as_ref()]);
-    git(
-        root.path(),
-        &[
-            "commit".as_ref(),
-            "--allow-empty".as_ref(),
-            "-m".as_ref(),
-            "initial".as_ref(),
-        ],
-    );
-    root
+fn repo() -> TestRepo {
+    let repo = TestRepo::builder().no_seed().create();
+    git(repo.path(), &["commit", "--allow-empty", "-m", "initial"]);
+    repo
 }
 
 #[test]
@@ -87,15 +59,12 @@ fn listing_preserves_real_git_paths_with_newline_and_non_utf8() {
     let repo = repo();
     let name = std::ffi::OsString::from_vec(b"linked\n\xff".to_vec());
     let path = repo.path().join(name);
-    git(
-        repo.path(),
-        &[
-            "worktree".as_ref(),
-            "add".as_ref(),
-            "--detach".as_ref(),
-            path.as_os_str(),
-        ],
-    );
+    let added = git_command(repo.path())
+        .args(["worktree", "add", "--detach"])
+        .arg(&path)
+        .output()
+        .unwrap();
+    assert!(added.status.success(), "{added:?}");
     let entries = list_worktrees(repo.path()).unwrap();
     assert!(entries.iter().any(|entry| entry.path == path));
     assert!(is_valid_git_worktree(&path, repo.path()).unwrap());

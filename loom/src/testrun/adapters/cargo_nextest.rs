@@ -8,7 +8,8 @@ use regex::Regex;
 
 use crate::testrun::command::shell_quote;
 use crate::testrun::recognize::{
-    cargo_target_unselected, combined_output, cargo_could_not_compile, command_args, has_flag, last_match, pattern, positionals,
+    cargo_could_not_compile, cargo_target_unselected, combined_output, command_args, has_flag,
+    last_match, pattern, positionals,
 };
 use crate::testrun::{
     RunOutput, RunSummary, SelectionNames, TargetScope, TestRunnerAdapter, TestTarget,
@@ -205,11 +206,8 @@ impl TestRunnerAdapter for CargoNextest {
 mod tests {
     use super::*;
     use crate::testrun::command::{assert_one_word, HOSTILE_NAME};
+    use crate::testrun::fixture_support::words;
     use crate::testrun::{classify, fixture_support, RunOutcome};
-
-    fn words(command: &str) -> Vec<String> {
-        command.split_whitespace().map(str::to_string).collect()
-    }
 
     fn target(name: Option<&str>) -> TestTarget {
         TestTarget {

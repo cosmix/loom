@@ -1,9 +1,10 @@
 //! `merge_stage` consults the target guard: a held target blocks every gate
 //! mode, and loom's own merge keeps the accepted tip current.
 
-use super::test_support::{commit_count, commit_file, git_ok, init_repo, lock_dir, rev};
+use super::test_support::{commit_count, init_repo, lock_dir, rev};
 use super::*;
 use crate::git::target_guard::{accepted_tip, check, RECORD_FILE};
+use crate::test_git::{commit_file, git};
 
 /// `loom/s1` with `b.txt` from `main`, `main` checked out again.
 fn stage_branch(root: &Path) {
@@ -68,7 +69,7 @@ fn a_merge_through_update_ref_moves_the_accepted_tip() {
     let work = lock_dir();
     stage_branch(root);
     record(root, work.path());
-    git_ok(root, &["checkout", "-b", "elsewhere"]);
+    git(root, &["checkout", "-b", "elsewhere"]);
 
     let result = merge_stage("s1", "main", root, work.path(), MergeGate::Enforce).unwrap();
 

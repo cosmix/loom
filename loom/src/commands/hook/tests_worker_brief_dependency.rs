@@ -8,35 +8,16 @@ use crate::context::store::ContextStore;
 use crate::fs::work_dir::WorkDir;
 use crate::git::merge::{merge_stage, MergeGate};
 use crate::models::stage::{Stage, StageStatus};
+use crate::test_git::{git, TestRepo};
 use crate::verify::transitions::save_stage;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-/// Run git in `root` with the global and system config isolated.
-fn git(root: &Path, args: &[&str]) -> String {
-    let out = std::process::Command::new("git")
-        .args(args)
-        .current_dir(root)
-        .env("GIT_CONFIG_GLOBAL", root.join(".loom-test-no-global"))
-        .env("GIT_CONFIG_SYSTEM", root.join(".loom-test-no-system"))
-        .env("GIT_CONFIG_NOSYSTEM", "1")
-        .output()
-        .unwrap();
-    assert!(
-        out.status.success(),
-        "git {args:?} failed: {}",
-        String::from_utf8_lossy(&out.stderr)
-    );
-    String::from_utf8_lossy(&out.stdout).trim().to_string()
-}
-
 /// Make `root` a repository on `main` and merge `loom/upstream`, which
 /// changes `src/scoped_dep.rs`; return the branch tip.
 fn merged_upstream(root: &Path) -> String {
-    git(root, &["init", "-b", "main"]);
+    TestRepo::builder().no_seed().init_in(root);
     crate::git::worktree::capture_main_identity(root, &root.join(".loom/work")).unwrap();
-    git(root, &["config", "user.email", "t@t.com"]);
-    git(root, &["config", "user.name", "t"]);
     let exclude = root.join(".git/info/exclude");
     std::fs::write(exclude, ".loom/\n").unwrap();
     std::fs::write(root.join("seed.txt"), "seed").unwrap();

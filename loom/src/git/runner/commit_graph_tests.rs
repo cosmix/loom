@@ -2,7 +2,7 @@
 //! file a session could forge.
 
 use super::run_git;
-use super::tests::{isolated_git, isolated_git_ok};
+use crate::test_git::{git, git_unchecked, TestRepo};
 use std::path::Path;
 
 /// A commit-graph parent slot that names no parent (`GRAPH_PARENT_NONE`).
@@ -14,9 +14,8 @@ const CDAT_WIDTH: usize = 20 + 4 + 4 + 8;
 const OID_WIDTH: usize = 20;
 
 fn commit(root: &Path, message: &str) -> String {
-    isolated_git_ok(root, &["commit", "--allow-empty", "-m", message]);
-    let head = isolated_git(root, &["rev-parse", "HEAD"]);
-    String::from_utf8_lossy(&head.stdout).trim().to_string()
+    git(root, &["commit", "--allow-empty", "-m", message]);
+    git(root, &["rev-parse", "HEAD"])
 }
 
 fn be_u32(bytes: &[u8]) -> u32 {
@@ -61,20 +60,18 @@ fn forge_root_commit(root: &Path, commit: &str) {
 fn a_forged_commit_graph_does_not_change_ancestry() {
     let temp = tempfile::tempdir().unwrap();
     let root = temp.path();
-    isolated_git_ok(root, &["init", "-b", "main"]);
-    isolated_git_ok(root, &["config", "user.email", "t@t.com"]);
-    isolated_git_ok(root, &["config", "user.name", "t"]);
+    TestRepo::builder().no_seed().init_in(root);
     let base = commit(root, "base");
     let middle = commit(root, "middle");
     let tip = commit(root, "tip");
-    isolated_git_ok(root, &["commit-graph", "write", "--reachable"]);
+    git(root, &["commit-graph", "write", "--reachable"]);
     // git parses a commit named on its command line from its object, and a
     // commit it reaches in a walk from the graph: the forged one is between.
     forge_root_commit(root, &middle);
     let ancestry = ["merge-base", "--is-ancestor", base.as_str(), tip.as_str()];
 
     // Positive control: plain git trusts the forged graph.
-    let plain = isolated_git(root, &ancestry);
+    let plain = git_unchecked(root, &ancestry);
     assert_eq!(
         plain.status.code(),
         Some(1),

@@ -1,5 +1,6 @@
 use super::*;
-use crate::git::merge::test_support::{commit_file, git_ok, git_out, init_repo};
+use crate::git::merge::test_support::init_repo;
+use crate::test_git::{commit_file, git};
 use std::cell::Cell;
 use std::cell::RefCell;
 use std::os::unix::fs::symlink;
@@ -67,8 +68,8 @@ fn restoring_keeps_the_exec_bit_of_the_blob() {
     let repo = init_repo();
     let root = repo.path();
     commit_file(root, "run.sh", "#!/bin/sh\n", "script");
-    git_ok(root, &["update-index", "--chmod=+x", "run.sh"]);
-    git_ok(root, &["commit", "-m", "exec"]);
+    git(root, &["update-index", "--chmod=+x", "run.sh"]);
+    git(root, &["commit", "-m", "exec"]);
     commit_file(root, "plain.txt", "plain", "plain");
     let paths = vec!["run.sh".to_string(), "plain.txt".to_string()];
     remove_files(root, "HEAD", &paths).unwrap();
@@ -136,7 +137,7 @@ fn restoration_reports_a_blob_read_failure() {
     let root = repo.path();
     commit_file(root, "blob.txt", "original", "blob");
     std::fs::remove_file(root.join("blob.txt")).unwrap();
-    let oid = git_out(root, &["rev-parse", "HEAD:blob.txt"]);
+    let oid = git(root, &["rev-parse", "HEAD:blob.txt"]);
     let oid = oid.trim();
     std::fs::remove_file(root.join(".git/objects").join(&oid[..2]).join(&oid[2..])).unwrap();
 

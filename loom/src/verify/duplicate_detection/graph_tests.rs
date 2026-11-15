@@ -53,22 +53,27 @@ fn a_repointed_git_file_neither_runs_its_filter_nor_changes_the_answers() {
 #[cfg(feature = "source-graph")]
 #[test]
 fn a_moved_file_is_added_but_not_a_duplicate() {
+    use crate::test_git::{git, TestRepo};
+
     let tmp = TempDir::new().unwrap();
     let root = tmp.path();
-    let git = |args: &[&str]| run_git_checked(args, root).unwrap();
-    git(&["init", "-q", "-b", "main"]);
-    git(&["config", "user.email", "test@example.com"]);
-    git(&["config", "user.name", "Test"]);
+    TestRepo::builder().no_seed().init_in(root);
     std::fs::write(
         root.join("a.rs"),
         "pub fn normalize_settings() -> u32 { 42 }\n",
     )
     .unwrap();
-    git(&["add", "a.rs"]);
-    git(&["-c", "commit.gpgsign=false", "commit", "-q", "-m", "seed"]);
-    git(&["switch", "-q", "-c", "feature"]);
-    git(&["mv", "a.rs", "b.rs"]);
-    git(&["-c", "commit.gpgsign=false", "commit", "-q", "-m", "move"]);
+    git(root, &["add", "a.rs"]);
+    git(
+        root,
+        &["-c", "commit.gpgsign=false", "commit", "-q", "-m", "seed"],
+    );
+    git(root, &["switch", "-q", "-c", "feature"]);
+    git(root, &["mv", "a.rs", "b.rs"]);
+    git(
+        root,
+        &["-c", "commit.gpgsign=false", "commit", "-q", "-m", "move"],
+    );
 
     let added = changed_files(root, "main", true).unwrap();
     let duplicates = crate::verify::duplicate_detection::detect_duplicate_symbols(root, "main");

@@ -3,6 +3,11 @@ use loom::verify::transitions::save_stage;
 use std::path::Path;
 use std::process::{Command, Output};
 
+#[path = "test_support/mod.rs"]
+mod test_support;
+
+use test_support::git_repo::{git, isolate, TestRepo};
+
 fn run(root: &Path, program: &str, args: &[&str]) -> Output {
     let mut command = Command::new(program);
     for (key, _) in std::env::vars_os() {
@@ -10,31 +15,15 @@ fn run(root: &Path, program: &str, args: &[&str]) -> Output {
             command.env_remove(key);
         }
     }
-    command
-        .args(args)
-        .current_dir(root)
-        .env("GIT_CONFIG_NOSYSTEM", "1")
-        .env("GIT_CONFIG_GLOBAL", root.join("no-global-config"))
-        .output()
-        .unwrap()
-}
-
-fn git(root: &Path, args: &[&str]) {
-    let output = run(root, "git", args);
-    assert!(
-        output.status.success(),
-        "git {args:?}: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
+    isolate(&mut command);
+    command.args(args).current_dir(root).output().unwrap()
 }
 
 fn setup(root: &Path) -> std::path::PathBuf {
-    git(root, &["init", "-q", "-b", "main"]);
-    git(root, &["config", "user.email", "test@example.com"]);
-    git(root, &["config", "user.name", "Test"]);
-    std::fs::write(root.join("seed"), "seed").unwrap();
-    git(root, &["add", "seed"]);
-    git(root, &["commit", "-q", "-m", "seed"]);
+    TestRepo::builder()
+        .identity("Test", "test@example.com")
+        .seed("seed", "seed", "seed")
+        .init_in(root);
     let worktree = root.join(".worktrees/skipped-stage");
     git(
         root,

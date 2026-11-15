@@ -7,13 +7,17 @@
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 use loom::plan_session::kind::{SessionDir, SessionKind};
 use loom::plan_session::sandbox::{ensure_runtime_grants, write_session_sandbox, SandboxInputs};
 use loom::planning::runtime::{runtime_paths_under, RuntimePaths};
 use serde_json::Value;
 use tempfile::TempDir;
+
+#[path = "../test_support/mod.rs"]
+mod test_support;
+
+use test_support::git_repo::{git, TestRepo};
 
 /// The built loom binary. Under srt the `LOOM_*` scrub is done by `Confined::run`; this test
 /// never spawns the binary from the test process itself.
@@ -84,34 +88,18 @@ fn populate_project(root: &Path, home: &Path) {
         put(&root.join(rel), &body);
     }
     put(&home.join(".ssh/id_rsa"), SECRET);
-    git_commit(root, home);
+    git_commit(root);
 }
 
 /// `git init` and one commit of the tracked content: `loom map` needs a `HEAD`. The tokens
-/// stay untracked. A scratch `HOME` keeps the user's git configuration out.
-fn git_commit(root: &Path, home: &Path) {
-    let identity = [
-        "-c",
-        "user.name=loom-test",
-        "-c",
-        "user.email=loom@example.invalid",
-    ];
-    let steps: [&[&str]; 3] = [
-        &["init", "-q"],
-        &["add", "loom", "README.md", "doc"],
-        &["commit", "-q", "-m", "fixture"],
-    ];
-    for step in steps {
-        let output = Command::new("git")
-            .args(identity)
-            .args(step)
-            .current_dir(root)
-            .env("HOME", home)
-            .env("GIT_CONFIG_NOSYSTEM", "1")
-            .output()
-            .expect("run git");
-        assert!(output.status.success(), "git {step:?}: {output:?}");
-    }
+/// stay untracked. The shared runner keeps the user's git configuration out.
+fn git_commit(root: &Path) {
+    TestRepo::builder()
+        .identity("loom-test", "loom@example.invalid")
+        .no_seed()
+        .init_in(root);
+    git(root, &["add", "loom", "README.md", "doc"]);
+    git(root, &["commit", "-q", "-m", "fixture"]);
 }
 
 /// The runtime grants, the session directory, a deny-probe file under each runtime area and

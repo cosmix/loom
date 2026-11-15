@@ -34,22 +34,7 @@ fn workspace_naming_no_plan_is_an_initialized_start_that_needs_clean() {
 }
 
 fn commit_empty(root: &Path) {
-    git(
-        root,
-        &[
-            "-c",
-            "user.name=State Tests",
-            "-c",
-            "user.email=state@example.invalid",
-            "-c",
-            "commit.gpgsign=false",
-            "commit",
-            "--allow-empty",
-            "-q",
-            "-m",
-            "initial",
-        ],
-    );
+    git(root, &["commit", "--allow-empty", "-q", "-m", "initial"]);
 }
 
 /// The state view of a workspace whose config names no plan but which holds `kept`.

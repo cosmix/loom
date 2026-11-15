@@ -5,7 +5,6 @@
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 use chrono::Utc;
 use tempfile::TempDir;
@@ -19,37 +18,13 @@ use crate::orchestrator::core::{Orchestrator, OrchestratorConfig};
 use crate::orchestrator::merge_lifecycle::test_support::write_live_session;
 use crate::plan::ExecutionGraph;
 use crate::relay::{new_request_id, AgentRole, InboxEntry, RequestKind};
+use crate::test_git::TestRepo;
 use crate::verify::transitions::{load_stage, save_stage};
 
 pub(super) const ID: &str = "s";
 
-/// Run `git` in `dir` with ambient configuration shut out; the output is
-/// returned whatever the exit status.
-pub(super) fn git_output(dir: &Path, args: &[&str]) -> std::process::Output {
-    Command::new("git")
-        .args(args)
-        .current_dir(dir)
-        .env("GIT_CONFIG_GLOBAL", dir.join(".loom-test-no-global"))
-        .env("GIT_CONFIG_SYSTEM", dir.join(".loom-test-no-system"))
-        .env("GIT_CONFIG_NOSYSTEM", "1")
-        .env("GIT_AUTHOR_NAME", "t")
-        .env("GIT_AUTHOR_EMAIL", "t@t.com")
-        .env("GIT_COMMITTER_NAME", "t")
-        .env("GIT_COMMITTER_EMAIL", "t@t.com")
-        .output()
-        .unwrap()
-}
-
-/// Run `git` in `dir`, assert it succeeded, and return its trimmed stdout.
-pub(super) fn git(dir: &Path, args: &[&str]) -> String {
-    let out = git_output(dir, args);
-    assert!(
-        out.status.success(),
-        "git {args:?} failed: {}",
-        String::from_utf8_lossy(&out.stderr)
-    );
-    String::from_utf8_lossy(&out.stdout).trim().to_string()
-}
+pub(super) use crate::test_git::git;
+pub(super) use crate::test_git::git_unchecked as git_output;
 
 pub(super) fn commit_file(dir: &Path, name: &str, text: &str) {
     let file = dir.join(name);
@@ -68,11 +43,12 @@ pub(super) fn twenty_lines() -> String {
 /// directories excluded from its status as in a real project, and the stage
 /// worktree `.worktrees/s` on a new branch `loom/s` at `main`.
 pub(super) fn repo_with_worktree() -> TempDir {
-    let repo = TempDir::new().unwrap();
+    let repo = TestRepo::builder()
+        .identity("t", "t@t.com")
+        .no_seed()
+        .create()
+        .into_temp_dir();
     let root = repo.path();
-    git(root, &["init", "-q", "-b", "main"]);
-    git(root, &["config", "user.email", "t@t.com"]);
-    git(root, &["config", "user.name", "t"]);
     std::fs::write(root.join(".git/info/exclude"), ".loom/\n.worktrees/\n").unwrap();
     std::fs::write(root.join("seed.txt"), "seed").unwrap();
     std::fs::write(root.join("other.txt"), "other\n").unwrap();

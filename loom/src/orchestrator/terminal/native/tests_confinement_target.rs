@@ -9,6 +9,8 @@
 //! worktree's administrative directory no `HEAD` or `commondir`, so this file
 //! completes both before anything runs git.
 
+// bespoke-git-fixture: one git_env (config pointed at a missing file, NOSYSTEM, fixed author) is exported both to host git and into the srt shell command line, so the host and the capsule read the same config; the shared runner cannot be handed to the sandboxed shell.
+
 use super::tests_confinement_e2e::srt::{diagnostics, skip, write_rc, Confined, RC_PREFIX};
 use super::tests_confinement_e2e::{confine, fixture, stage, Fixture, STAGE_ID};
 use crate::git::hooks::{install_reference_transaction_hook, HookInstall};

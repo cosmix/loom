@@ -13,40 +13,20 @@ use crate::git::merge::{merge_stage, MergeGate};
 use crate::models::session::Session;
 use crate::orchestrator::signals::tests::{create_test_session, create_test_worktree};
 use crate::orchestrator::signals::{generate_contract_signal, generate_signal};
+use crate::test_git::{git, TestRepo};
 use crate::verify::transitions::save_stage;
-
-/// Run git in `root` with the global and system config isolated.
-fn git(root: &Path, args: &[&str]) -> String {
-    let out = std::process::Command::new("git")
-        .args(args)
-        .current_dir(root)
-        .env("GIT_CONFIG_GLOBAL", root.join(".loom-test-no-global"))
-        .env("GIT_CONFIG_SYSTEM", root.join(".loom-test-no-system"))
-        .env("GIT_CONFIG_NOSYSTEM", "1")
-        .output()
-        .unwrap();
-    assert!(
-        out.status.success(),
-        "git {args:?} failed: {}",
-        String::from_utf8_lossy(&out.stderr)
-    );
-    String::from_utf8_lossy(&out.stdout).trim().to_string()
-}
 
 /// A repository on `main` with one commit and `.loom/work/stages` in place.
 fn init_repo() -> TempDir {
-    let temp = TempDir::new().unwrap();
+    let temp = TestRepo::builder()
+        .seed("seed.txt", "seed", "seed")
+        .create()
+        .into_temp_dir();
     let root = temp.path();
-    git(root, &["init", "-b", "main"]);
-    git(root, &["config", "user.email", "t@t.com"]);
-    git(root, &["config", "user.name", "t"]);
     let exclude = root.join(".git/info/exclude");
     let mut text = std::fs::read_to_string(&exclude).unwrap_or_default();
     text.push_str(".loom/\n");
     std::fs::write(exclude, text).unwrap();
-    std::fs::write(root.join("seed.txt"), "seed").unwrap();
-    git(root, &["add", "seed.txt"]);
-    git(root, &["commit", "-m", "seed"]);
     std::fs::create_dir_all(root.join(".loom/work/stages")).unwrap();
     // `loom init` records this; merge's commit-signing check refuses without it.
     crate::git::worktree::capture_main_identity(root, &root.join(".loom/work")).unwrap();

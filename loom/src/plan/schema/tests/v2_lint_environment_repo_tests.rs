@@ -7,10 +7,9 @@ use tempfile::TempDir;
 
 use crate::plan::schema::tests::create_valid_metadata_v2;
 use crate::plan::schema::{validate, LoomMetadata, ProvisionEntry};
+use crate::test_git::git;
 
-use super::{
-    git_repo, isolated_git, lint, messages, network, plan, plan_allowing, stage, write, LintFinding,
-};
+use super::{git_repo, lint, messages, network, plan, plan_allowing, stage, write, LintFinding};
 
 const HOOK_MESSAGE: &str = "the repository's pre-commit hook";
 const HOOK: &str = "#!/bin/sh\n\
@@ -42,7 +41,7 @@ const SUGGESTED_INSTALLS: [(&str, &str); 6] = [
 /// the machine's global and system config, so the lint's own reads stay deterministic.
 fn hook_repo(hooks_path: &str) -> TempDir {
     let repo = git_repo();
-    isolated_git(&["config", "core.hooksPath", hooks_path], repo.path());
+    git(repo.path(), &["config", "core.hooksPath", hooks_path]);
     repo
 }
 
@@ -116,7 +115,7 @@ fn js_repo(files: &[(&str, &str)]) -> TempDir {
     for (path, body) in files {
         write(repo.path(), path, body);
     }
-    isolated_git(&["add", "-A"], repo.path());
+    git(repo.path(), &["add", "-A"]);
     repo
 }
 

@@ -1,29 +1,7 @@
 //! Tests for project root resolution.
 
-use std::path::Path;
-use std::process::Command;
-
 use super::root::resolve_project;
-
-fn git(cwd: &Path, args: &[&str]) {
-    let output = Command::new("git")
-        .args(args)
-        .current_dir(cwd)
-        .output()
-        .unwrap();
-    assert!(
-        output.status.success(),
-        "git {args:?}: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-}
-
-fn init(root: &Path) {
-    git(root, &["init", "-b", "main"]);
-    git(root, &["config", "user.email", "test@example.com"]);
-    git(root, &["config", "user.name", "Test"]);
-    git(root, &["commit", "--allow-empty", "-m", "initial"]);
-}
+use crate::test_git::{git, TestRepo};
 
 #[test]
 fn outside_repository_names_directory() {
@@ -38,7 +16,11 @@ fn subdirectory_resolves_canonical_top_level() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().join("project with space ");
     std::fs::create_dir(&root).unwrap();
-    init(&root);
+    TestRepo::builder()
+        .identity("Test", "test@example.com")
+        .no_seed()
+        .init_in(&root);
+    git(&root, &["commit", "--allow-empty", "-m", "initial"]);
     let subdir = root.join("subdir");
     std::fs::create_dir(&subdir).unwrap();
     assert_eq!(
@@ -53,7 +35,11 @@ fn stage_worktree_names_main_checkout() {
     let root = dir.path().join("main");
     let worktree = dir.path().join("stage");
     std::fs::create_dir(&root).unwrap();
-    init(&root);
+    TestRepo::builder()
+        .identity("Test", "test@example.com")
+        .no_seed()
+        .init_in(&root);
+    git(&root, &["commit", "--allow-empty", "-m", "initial"]);
     git(
         &root,
         &[

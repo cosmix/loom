@@ -147,52 +147,12 @@ pub fn resolve_target_branch(config_branch: &Option<String>, repo_root: &Path) -
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::process::Command;
-    use tempfile::TempDir;
+    use crate::test_git::{git as git_in, TestRepo};
 
-    fn init_test_repo() -> TempDir {
-        let temp_dir = TempDir::new().unwrap();
-        let repo_root = temp_dir.path();
-
-        Command::new("git")
-            .args(["init"])
-            .current_dir(repo_root)
-            .output()
-            .unwrap();
-
-        Command::new("git")
-            .args(["config", "user.email", "test@test.com"])
-            .current_dir(repo_root)
-            .output()
-            .unwrap();
-
-        Command::new("git")
-            .args(["config", "user.name", "Test"])
-            .current_dir(repo_root)
-            .output()
-            .unwrap();
-
-        // Create initial commit on main
-        std::fs::write(repo_root.join("README.md"), "# Test").unwrap();
-        Command::new("git")
-            .args(["add", "."])
-            .current_dir(repo_root)
-            .output()
-            .unwrap();
-        Command::new("git")
-            .args(["commit", "-m", "Initial commit"])
-            .current_dir(repo_root)
-            .output()
-            .unwrap();
-
-        // Rename to main if needed
-        Command::new("git")
-            .args(["branch", "-M", "main"])
-            .current_dir(repo_root)
-            .output()
-            .unwrap();
-
-        temp_dir
+    fn init_test_repo() -> TestRepo {
+        TestRepo::builder()
+            .seed("README.md", "# Test", "Initial commit")
+            .create()
     }
 
     #[test]
@@ -215,15 +175,6 @@ mod tests {
         let result = resolve_target_branch(&config_branch, repo_root);
 
         assert_eq!(result, "main");
-    }
-
-    fn git_in(repo_root: &Path, args: &[&str]) {
-        let output = Command::new("git")
-            .args(args)
-            .current_dir(repo_root)
-            .output()
-            .unwrap();
-        assert!(output.status.success(), "git {args:?} failed");
     }
 
     #[test]

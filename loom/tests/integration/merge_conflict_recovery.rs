@@ -20,7 +20,7 @@ use std::path::Path;
 use serial_test::serial;
 use tempfile::TempDir;
 
-use super::helpers::{git_checked, git_unchecked};
+use super::helpers::{git_checked, git_unchecked, TestRepo};
 use loom::commands::stage::complete::{route_complete_for_conflicts, CompleteConflictRoute};
 use loom::git::merge::{merge_head_exists, merge_stage, MergeBlock, MergeGate, MergeResult};
 use loom::models::stage::{Stage, StageStatus, StageType};
@@ -29,20 +29,11 @@ use loom::orchestrator::merge_attribution::{
 };
 use loom::verify::transitions::{load_stage, save_stage, update_stage};
 
-fn run_git(args: &[&str], cwd: &Path) {
-    git_checked(cwd, args);
-}
-
 fn init_repo() -> TempDir {
-    let tmp = TempDir::new().unwrap();
-    let root = tmp.path();
-    run_git(&["init", "-b", "main"], root);
-    run_git(&["config", "user.email", "t@t.com"], root);
-    run_git(&["config", "user.name", "t"], root);
-    fs::write(root.join("seed.txt"), "seed").unwrap();
-    run_git(&["add", "seed.txt"], root);
-    run_git(&["commit", "-m", "seed"], root);
-    tmp
+    TestRepo::builder()
+        .seed("seed.txt", "seed", "seed")
+        .create()
+        .into_temp_dir()
 }
 
 fn make_work_dir(repo_root: &Path) -> std::path::PathBuf {
@@ -62,17 +53,17 @@ fn make_stage(id: &str, status: StageStatus) -> Stage {
 
 fn create_conflict_branch(stage_id: &str, repo_root: &Path) -> String {
     let branch = format!("loom/{stage_id}");
-    run_git(&["checkout", "-b", &branch], repo_root);
+    git_checked(repo_root, &["checkout", "-b", &branch]);
     fs::write(repo_root.join("file.txt"), format!("branch-{stage_id}\n")).unwrap();
-    run_git(&["add", "file.txt"], repo_root);
-    run_git(&["commit", "-m", "branch"], repo_root);
+    git_checked(repo_root, &["add", "file.txt"]);
+    git_checked(repo_root, &["commit", "-m", "branch"]);
     let head = String::from_utf8_lossy(&git_checked(repo_root, &["rev-parse", "HEAD"]).stdout)
         .trim()
         .to_string();
-    run_git(&["checkout", "main"], repo_root);
+    git_checked(repo_root, &["checkout", "main"]);
     fs::write(repo_root.join("file.txt"), "main\n").unwrap();
-    run_git(&["add", "file.txt"], repo_root);
-    run_git(&["commit", "-m", "main"], repo_root);
+    git_checked(repo_root, &["add", "file.txt"]);
+    git_checked(repo_root, &["commit", "-m", "main"]);
     head
 }
 
@@ -154,12 +145,12 @@ fn force_unsafe_assume_merged_succeeds_when_commit_is_ancestor() {
     let work_dir = make_work_dir(root);
 
     // Create a branch and merge it into main for real.
-    run_git(&["checkout", "-b", "loom/landed"], root);
+    git_checked(root, &["checkout", "-b", "loom/landed"]);
     fs::write(root.join("a.rs"), "ok").unwrap();
-    run_git(&["add", "a.rs"], root);
-    run_git(&["commit", "-m", "feat"], root);
-    run_git(&["checkout", "main"], root);
-    run_git(&["merge", "--no-ff", "-m", "merge", "loom/landed"], root);
+    git_checked(root, &["add", "a.rs"]);
+    git_checked(root, &["commit", "-m", "feat"]);
+    git_checked(root, &["checkout", "main"]);
+    git_checked(root, &["merge", "--no-ff", "-m", "merge", "loom/landed"]);
 
     let head = loom::git::branch::get_branch_head("loom/landed", root).unwrap();
     let mut stage = make_stage("landed", StageStatus::Completed);

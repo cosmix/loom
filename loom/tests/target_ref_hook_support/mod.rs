@@ -10,26 +10,18 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 use tempfile::TempDir;
 
-/// git in `dir`; `session` sets `LOOM_SESSION_ID`, `None` removes it. Replace
-/// refs and grafts stay enabled unless a test turns them off: the hook must do
-/// that itself.
+pub use crate::test_support::git_repo::git;
+use crate::test_support::git_repo::{git_command, TestRepo};
+
+/// git in `dir` through the shared runner; `session` sets `LOOM_SESSION_ID`, `None` leaves it
+/// removed. Replace refs and grafts stay enabled unless a test turns them off: the hook must
+/// do that itself. The including crate root declares `test_support` (`crate::test_support`).
 pub fn command(dir: &Path, args: &[&str], session: Option<&str>) -> Command {
-    let mut cmd = Command::new("git");
-    cmd.args(args)
-        .current_dir(dir)
-        .env("GIT_CONFIG_GLOBAL", dir.join(".loom-test-no-global"))
-        .env("GIT_CONFIG_SYSTEM", dir.join(".loom-test-no-system"))
-        .env("GIT_CONFIG_NOSYSTEM", "1")
-        .env_remove("GIT_NO_REPLACE_OBJECTS")
-        .env_remove("GIT_GRAFT_FILE")
-        .env("GIT_AUTHOR_NAME", "t")
-        .env("GIT_AUTHOR_EMAIL", "t@t.com")
-        .env("GIT_COMMITTER_NAME", "t")
-        .env("GIT_COMMITTER_EMAIL", "t@t.com");
-    match session {
-        Some(id) => cmd.env("LOOM_SESSION_ID", id),
-        None => cmd.env_remove("LOOM_SESSION_ID"),
-    };
+    let mut cmd = git_command(dir);
+    cmd.args(args);
+    if let Some(id) = session {
+        cmd.env("LOOM_SESSION_ID", id);
+    }
     cmd
 }
 
@@ -52,16 +44,6 @@ pub fn run_with_input(dir: &Path, args: &[&str], input: &str) -> Output {
 
 pub fn stderr(out: &Output) -> String {
     String::from_utf8_lossy(&out.stderr).to_string()
-}
-
-pub fn git(dir: &Path, args: &[&str]) -> String {
-    let out = run(dir, args, None);
-    assert!(
-        out.status.success(),
-        "git {args:?} failed: {}",
-        stderr(&out)
-    );
-    String::from_utf8_lossy(&out.stdout).trim().to_string()
 }
 
 /// One commit of every one of `paths` (each file holds its own path) in the
@@ -123,7 +105,10 @@ pub struct Repo {
 pub fn repo() -> Repo {
     let dir = TempDir::new().unwrap();
     let root = dir.path().canonicalize().unwrap();
-    git(&root, &["init", "-b", "main"]);
+    TestRepo::builder()
+        .identity("t", "t@t.com")
+        .no_seed()
+        .init_in(&root);
     std::fs::write(root.join(".git/info/exclude"), ".loom/\n.worktrees/\n").unwrap();
     commit(&root, "README.md");
     let wt = root.join(".worktrees/s");

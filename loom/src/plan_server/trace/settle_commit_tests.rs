@@ -8,6 +8,7 @@ use tempfile::TempDir;
 
 use super::route_tests::{git, put};
 use super::settle_commit::{record, Limits, Recorded, SettleCommit};
+use crate::test_git::TestRepo;
 
 pub(super) const PLAN: &str = "doc/plans/demo/PLAN-first.md";
 const BRIEF: &str = "doc/plans/demo/briefs/first/common.md";
@@ -17,20 +18,18 @@ const LOOSE: &str = "doc/product/demo/loose.md";
 /// A file a commit hook writes and adds beside the settled paths.
 const GENERATED: &str = "doc/generated.md";
 
-/// A repository whose own configuration names the identity, turns signing off and points hooks
-/// at `.git/hooks`, so the user's global configuration cannot change what the tests see.
-pub(super) fn configure(root: &Path) {
-    for (key, value) in [
-        ("user.name", "Test"),
-        ("user.email", "test@example.com"),
-        ("commit.gpgsign", "false"),
-        ("core.hooksPath", ".git/hooks"),
-    ] {
-        git(root, &["config", key, value]);
-    }
+/// Initialises `root` as a repository whose own configuration names the identity, turns signing
+/// off and points hooks at `.git/hooks`, so the user's global configuration cannot change what
+/// the tests see.
+pub(super) fn init_configured(root: &Path) {
+    TestRepo::builder()
+        .identity("Test", "test@example.com")
+        .no_seed()
+        .init_in(root);
+    git(root, &["config", "core.hooksPath", ".git/hooks"]);
 }
 
-/// An executable hook `name` in `root` (configured by [`configure`]) running `script`.
+/// An executable hook `name` in `root` (configured by [`init_configured`]) running `script`.
 pub(super) fn hook(root: &Path, name: &str, script: &str) {
     let rel = format!(".git/hooks/{name}");
     put(root, &rel, &format!("#!/bin/sh\n{script}"));
@@ -57,8 +56,7 @@ pub(super) fn repo() -> TempDir {
     for rel in [PLAN, BRIEF, STAGED, LOOSE] {
         put(root, rel, "# Base\n");
     }
-    git(root, &["init", "-q"]);
-    configure(root);
+    init_configured(root);
     git(root, &["add", "-A"]);
     git(root, &["commit", "-q", "-m", "base"]);
     put(root, STAGED, "# Staged\n");
@@ -273,8 +271,7 @@ fn a_project_below_the_top_of_its_repository_leaves_the_index_at_head() {
     let top = dir.path();
     let root = top.join("project");
     put(&root, PLAN, "# Base\n");
-    git(top, &["init", "-q"]);
-    configure(top);
+    init_configured(top);
     git(top, &["add", "-A"]);
     git(top, &["commit", "-q", "-m", "base"]);
     let script = format!(

@@ -2,17 +2,16 @@
 //! pre-commit hook and JS provision lints in `repo_lints`. Each case runs
 //! through the lint entry point `run`, the path `plan verify` takes.
 
-use std::ffi::OsStr;
 use std::path::Path;
 
 use tempfile::TempDir;
 
-use crate::git::runner::run_git_with_env;
 use crate::plan::schema::validation::v2_lints::{run, LintContext, LintFinding};
 use crate::plan::schema::{
     AcceptanceCriterion, CommandConfinement, LoomConfig, LoomMetadata, NetworkConfig,
     StageDefinition, StageSandboxConfig, StageType,
 };
+use crate::test_git::{git, TestRepo};
 
 #[path = "v2_lint_environment_phase_tests.rs"]
 mod phases;
@@ -95,32 +94,13 @@ fn write(root: &Path, relative: &str, body: &str) {
     std::fs::write(path, body).expect("write file");
 }
 
-/// Run git in `dir` with the machine's global and system config pointed at missing
-/// files, so a developer's `core.hooksPath` or `init.templateDir` cannot reach the
-/// setup. The process environment is left alone.
-fn isolated_git(args: &[&str], dir: &Path) {
-    let no_global = dir.join(".no-global-config");
-    let no_system = dir.join(".no-system-config");
-    let env: [(&str, &OsStr); 3] = [
-        ("GIT_CONFIG_GLOBAL", no_global.as_os_str()),
-        ("GIT_CONFIG_SYSTEM", no_system.as_os_str()),
-        ("GIT_CONFIG_NOSYSTEM", OsStr::new("1")),
-    ];
-    let output = run_git_with_env(args, &env, dir).expect("run git");
-    assert!(
-        output.status.success(),
-        "git {args:?} failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-}
-
 /// A fresh repository whose LOCAL `core.hooksPath` names a directory that does not
 /// exist, so the hook lint finds no hook whatever the machine's global or system
 /// config says (the local scope wins). Tests that need a hook override the setting.
 fn git_repo() -> TempDir {
     let dir = TempDir::new().expect("temp dir");
-    isolated_git(&["init", "-q"], dir.path());
-    isolated_git(&["config", "core.hooksPath", "no-such-hooks"], dir.path());
+    TestRepo::builder().no_seed().init_in(dir.path());
+    git(dir.path(), &["config", "core.hooksPath", "no-such-hooks"]);
     dir
 }
 

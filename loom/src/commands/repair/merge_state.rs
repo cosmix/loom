@@ -192,29 +192,15 @@ pub(super) fn fix_phantom_merge(repo_root: &Path, stage_id: &str) -> Result<()> 
 #[cfg(test)]
 mod tests {
     use std::path::Path;
-    use std::process::Command;
-
     use tempfile::TempDir;
 
     use super::*;
-
-    fn git(root: &Path, args: &[&str]) -> String {
-        let out = Command::new("git")
-            .args(args)
-            .current_dir(root)
-            .output()
-            .expect("git");
-        assert!(out.status.success(), "git {args:?} failed");
-        String::from_utf8_lossy(&out.stdout).trim().to_string()
-    }
+    use crate::test_git::{git, TestRepo};
 
     /// A repo on `main` plus a commit on a side branch that `main` lacks.
     fn repo_with_stranded_commit() -> (TempDir, String) {
-        let dir = TempDir::new().unwrap();
+        let dir = TestRepo::builder().no_seed().create().into_temp_dir();
         let root = dir.path();
-        git(root, &["init", "-q", "-b", "main"]);
-        git(root, &["config", "user.email", "t@t.com"]);
-        git(root, &["config", "user.name", "T"]);
         git(root, &["commit", "-q", "--allow-empty", "-m", "initial"]);
         git(root, &["checkout", "-q", "-b", "side"]);
         git(root, &["commit", "-q", "--allow-empty", "-m", "stranded"]);

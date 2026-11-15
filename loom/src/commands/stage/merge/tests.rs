@@ -4,6 +4,7 @@ use super::*;
 use crate::git::get_conflicting_files;
 use crate::git::merge::merge_head_exists;
 use crate::models::stage::Stage;
+use crate::test_git::{git, TestRepo};
 use crate::verify::transitions::update_stage;
 use std::process::Command;
 use tempfile::TempDir;
@@ -156,36 +157,22 @@ fn test_find_repo_root_from_subdir() {
     );
 }
 
-fn git_in(root: &Path, args: &[&str]) {
-    let out = Command::new("git")
-        .args(args)
-        .current_dir(root)
-        .output()
-        .unwrap();
-    assert!(out.status.success(), "git {args:?}");
-}
-
 /// A repo on `main` with `loom/gated` one commit ahead, adding
 /// `.claude/settings.json`, and the stage saved as `MergeConflict`.
 fn gated_repo() -> (TempDir, std::path::PathBuf, Stage) {
     let temp_dir = TempDir::new().unwrap();
     let root = temp_dir.path();
-    git_in(root, &["init", "-b", "main"]);
-    git_in(root, &["config", "user.email", "t@t.com"]);
-    git_in(root, &["config", "user.name", "t"]);
-    std::fs::write(root.join("a.txt"), "a").unwrap();
-    git_in(root, &["add", "a.txt"]);
-    git_in(root, &["commit", "-m", "seed"]);
-    git_in(root, &["checkout", "-b", "loom/gated"]);
+    TestRepo::builder().seed("a.txt", "a", "seed").init_in(root);
+    git(root, &["checkout", "-b", "loom/gated"]);
     std::fs::create_dir_all(root.join(".claude")).unwrap();
     std::fs::write(root.join(".claude/settings.json"), "{}").unwrap();
-    git_in(root, &["add", ".claude/settings.json"]);
-    git_in(root, &["commit", "-m", "stage work"]);
-    git_in(root, &["checkout", "main"]);
+    git(root, &["add", ".claude/settings.json"]);
+    git(root, &["commit", "-m", "stage work"]);
+    git(root, &["checkout", "main"]);
     let work_dir = root.join(".loom").join("work");
     std::fs::create_dir_all(&work_dir).unwrap();
     crate::git::worktree::capture_main_identity(root, &work_dir).unwrap();
-    git_in(root, &["worktree", "add", ".worktrees/gated", "loom/gated"]);
+    git(root, &["worktree", "add", ".worktrees/gated", "loom/gated"]);
     let mut stage = create_test_stage("gated", StageStatus::MergeConflict);
     stage.completed_commit = Some(crate::git::branch::get_branch_head("loom/gated", root).unwrap());
     crate::verify::transitions::save_stage(&stage, &work_dir).unwrap();
@@ -304,13 +291,8 @@ fn record_block_leaves_a_merged_stage_alone() {
 fn zero_commit_repo(completed_commit: Option<String>) -> (TempDir, std::path::PathBuf, Stage) {
     let temp_dir = TempDir::new().unwrap();
     let root = temp_dir.path();
-    git_in(root, &["init", "-b", "main"]);
-    git_in(root, &["config", "user.email", "t@t.com"]);
-    git_in(root, &["config", "user.name", "t"]);
-    std::fs::write(root.join("a.txt"), "a").unwrap();
-    git_in(root, &["add", "a.txt"]);
-    git_in(root, &["commit", "-m", "seed"]);
-    git_in(root, &["branch", "loom/zero"]);
+    TestRepo::builder().seed("a.txt", "a", "seed").init_in(root);
+    git(root, &["branch", "loom/zero"]);
     let work_dir = root.join(".loom").join("work");
     let mut stage = create_test_stage("zero", StageStatus::MergeBlocked);
     stage.completed_commit = completed_commit;
@@ -335,12 +317,12 @@ fn a_retried_merge_of_a_zero_commit_branch_is_routed_to_review_not_merged() {
 fn completing_a_retried_merge_whose_recorded_commit_is_not_in_the_target_is_refused() {
     let (repo, work_dir, _) = zero_commit_repo(None);
     // The recorded commit lives on a side branch the target never merged.
-    git_in(repo.path(), &["checkout", "-q", "-b", "side"]);
+    git(repo.path(), &["checkout", "-q", "-b", "side"]);
     std::fs::write(repo.path().join("side.txt"), "side").unwrap();
-    git_in(repo.path(), &["add", "side.txt"]);
-    git_in(repo.path(), &["commit", "-m", "side"]);
+    git(repo.path(), &["add", "side.txt"]);
+    git(repo.path(), &["commit", "-m", "side"]);
     let side = crate::git::runner::run_git_checked(&["rev-parse", "HEAD"], repo.path()).unwrap();
-    git_in(repo.path(), &["checkout", "-q", "main"]);
+    git(repo.path(), &["checkout", "-q", "main"]);
     let stage = update_stage("zero", &work_dir, |s| {
         s.completed_commit = Some(side.clone());
         Ok(())

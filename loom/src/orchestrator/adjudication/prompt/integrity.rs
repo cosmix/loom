@@ -182,10 +182,10 @@ mod tests {
     use crate::models::dispute::DisputeRequest;
     use crate::models::stage::Stage;
     use crate::orchestrator::adjudication::prompt::ExecutionSite;
+    use crate::test_git::git;
     use crate::verify::contracts::test_support::contract_worktree;
     use chrono::Utc;
     use std::path::{Path, PathBuf};
-    use std::process::Command;
 
     fn event(id: &str, kind: EventKind, path: Option<&str>) -> IntegrityEvent {
         IntegrityEvent {
@@ -218,16 +218,6 @@ mod tests {
             fix_attempts_at_dispute: 0,
             created_at: Utc::now(),
         }
-    }
-
-    fn git(root: &Path, args: &[&str]) {
-        assert!(Command::new("git")
-            .args(["-c", "user.name=Test", "-c", "user.email=test@example.com"])
-            .args(args)
-            .current_dir(root)
-            .status()
-            .unwrap()
-            .success());
     }
 
     /// A stage worktree whose base carries `ratchet.txt` and which changes it

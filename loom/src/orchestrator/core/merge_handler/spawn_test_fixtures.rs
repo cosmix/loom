@@ -11,39 +11,23 @@ use crate::models::stage::{Stage, StageStatus};
 use crate::orchestrator::core::merge_handler::resolver_attempts::ReservedAttempt;
 use crate::orchestrator::core::{Orchestrator, OrchestratorConfig};
 use crate::plan::ExecutionGraph;
+use crate::test_git::{git, TestRepo};
 use crate::verify::transitions::save_stage;
-
-/// Run `git` in `root` with ambient global/system config neutralized, and
-/// assert it succeeded (mirrors `merge_gate_tests::git_ok`).
-pub(crate) fn git_ok(root: &Path, args: &[&str]) {
-    let out = std::process::Command::new("git")
-        .args(args)
-        .current_dir(root)
-        .env("GIT_CONFIG_GLOBAL", root.join(".loom-test-no-global"))
-        .env("GIT_CONFIG_SYSTEM", root.join(".loom-test-no-system"))
-        .env("GIT_CONFIG_NOSYSTEM", "1")
-        .output()
-        .unwrap();
-    let stderr = String::from_utf8_lossy(&out.stderr);
-    assert!(out.status.success(), "git {args:?} failed: {stderr}");
-}
 
 /// A repo with `main` at a seed commit and a `loom/<id>` branch for each of
 /// `stage_ids`, all at that commit.
 pub(crate) fn repo_with_stage_branches(stage_ids: &[&str]) -> TempDir {
-    let temp = TempDir::new().unwrap();
+    let temp = TestRepo::builder()
+        .identity("t", "t@t.com")
+        .seed("seed.txt", "seed", "seed")
+        .create()
+        .into_temp_dir();
     let root = temp.path();
-    git_ok(root, &["init", "-b", "main"]);
-    git_ok(root, &["config", "user.email", "t@t.com"]);
-    git_ok(root, &["config", "user.name", "t"]);
-    std::fs::write(root.join("seed.txt"), "seed").unwrap();
-    git_ok(root, &["add", "seed.txt"]);
-    git_ok(root, &["commit", "-m", "seed"]);
     let work_dir = root.join(".loom").join("work");
     std::fs::create_dir_all(&work_dir).unwrap();
     crate::git::worktree::capture_main_identity(root, &work_dir).unwrap();
     for stage_id in stage_ids {
-        git_ok(root, &["branch", &format!("loom/{stage_id}")]);
+        git(root, &["branch", &format!("loom/{stage_id}")]);
     }
     temp
 }
@@ -54,9 +38,9 @@ pub(crate) fn repo_with_conflicting_stage_branches(stage_ids: &[&str]) -> TempDi
     let temp = repo_with_stage_branches(&[]);
     let root = temp.path();
     for stage_id in stage_ids {
-        git_ok(root, &["checkout", "-q", "-b", &format!("loom/{stage_id}")]);
+        git(root, &["checkout", "-q", "-b", &format!("loom/{stage_id}")]);
         edit_seed(root, "stage side");
-        git_ok(root, &["checkout", "-q", "main"]);
+        git(root, &["checkout", "-q", "main"]);
     }
     edit_seed(root, "main side");
     temp
@@ -79,7 +63,7 @@ pub(crate) fn repo_with_clean_stage_branch(stage_id: &str) -> (TempDir, String) 
 /// Commit `text` as the content of `seed.txt` on the checked-out branch.
 fn edit_seed(root: &Path, text: &str) {
     std::fs::write(root.join("seed.txt"), text).unwrap();
-    git_ok(root, &["commit", "-q", "-am", text]);
+    git(root, &["commit", "-q", "-am", text]);
 }
 
 /// Replace the plain directory `orchestrator_with_conflict` made for
@@ -88,7 +72,7 @@ pub(crate) fn use_real_worktree(root: &Path, stage_id: &str) {
     let path = root.join(".worktrees").join(stage_id);
     std::fs::remove_dir(&path).unwrap();
     let branch = format!("loom/{stage_id}");
-    git_ok(
+    git(
         root,
         &["worktree", "add", "-q", path.to_str().unwrap(), &branch],
     );
@@ -96,13 +80,13 @@ pub(crate) fn use_real_worktree(root: &Path, stage_id: &str) {
 
 /// Commit `path` on `loom/<stage_id>`, leaving `main` checked out.
 pub(crate) fn commit_on_stage_branch(root: &Path, stage_id: &str, path: &str) {
-    git_ok(root, &["checkout", "-q", &format!("loom/{stage_id}")]);
+    git(root, &["checkout", "-q", &format!("loom/{stage_id}")]);
     let file = root.join(path);
     std::fs::create_dir_all(file.parent().unwrap()).unwrap();
     std::fs::write(&file, "stage work").unwrap();
-    git_ok(root, &["add", path]);
-    git_ok(root, &["commit", "-q", "-m", "stage work"]);
-    git_ok(root, &["checkout", "-q", "main"]);
+    git(root, &["add", path]);
+    git(root, &["commit", "-q", "-m", "stage work"]);
+    git(root, &["checkout", "-q", "main"]);
 }
 
 /// Run `pass` with the stage directory of `orchestrator` read-only, so no

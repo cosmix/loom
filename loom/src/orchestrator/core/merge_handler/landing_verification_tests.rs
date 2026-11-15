@@ -157,7 +157,7 @@ fn recovery_never_derives_completion_proof_from_the_branch_tip() {
             }])
             .unwrap();
         if merged {
-            git_ok(repo.path(), &["merge", "--ff-only", "loom/s"]);
+            git(repo.path(), &["merge", "--ff-only", "loom/s"]);
         }
         update_stage(ID, &orchestrator.config.work_dir, |stage| {
             stage.completed_commit = None;
@@ -185,7 +185,7 @@ fn recovery_never_derives_completion_proof_from_the_branch_tip() {
 #[test]
 fn finalization_cannot_replace_missing_or_revoked_completion_proof() {
     let (repo, mut orchestrator) = worktree_stage();
-    git_ok(repo.path(), &["merge", "--ff-only", "loom/s"]);
+    git(repo.path(), &["merge", "--ff-only", "loom/s"]);
     let mut original = on_disk(&orchestrator);
     let missing = update_stage(ID, &orchestrator.config.work_dir, |stage| {
         stage.completed_commit = None;

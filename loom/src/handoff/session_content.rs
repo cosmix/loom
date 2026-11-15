@@ -222,30 +222,11 @@ mod tests {
     fn checkout_details_preserves_rename_destination_and_unquoted_paths() {
         let tmp = tempfile::tempdir().unwrap();
         let repo = tmp.path();
-        for args in [
-            vec!["init", "-q", "-b", "main"],
-            vec!["add", "old name"],
-            vec![
-                "-c",
-                "user.name=T",
-                "-c",
-                "user.email=t@t",
-                "commit",
-                "-qm",
-                "seed",
-            ],
-            vec!["mv", "old name", "new name"],
-        ] {
-            if args[0] == "add" {
-                std::fs::write(repo.join("old name"), "content").unwrap();
-            }
-            let output = std::process::Command::new("git")
-                .args(args)
-                .current_dir(repo)
-                .output()
-                .unwrap();
-            assert!(output.status.success(), "{output:?}");
-        }
+        crate::test_git::TestRepo::builder().no_seed().init_in(repo);
+        std::fs::write(repo.join("old name"), "content").unwrap();
+        crate::test_git::git(repo, &["add", "old name"]);
+        crate::test_git::git(repo, &["commit", "-qm", "seed"]);
+        crate::test_git::git(repo, &["mv", "old name", "new name"]);
         let workspace = crate::fs::work_dir::WorkDir::new(repo).unwrap();
         workspace.initialize().unwrap();
         crate::git::worktree::capture_main_identity(repo, workspace.root()).unwrap();

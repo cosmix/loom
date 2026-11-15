@@ -1,23 +1,9 @@
 use super::annotate::{annotate_path, parse_state, Annotation};
 use crate::context::schema::LifecycleState;
 use crate::fs::knowledge::frontmatter;
+use crate::test_git::{git, TestRepo};
 use std::fs;
 use std::path::Path;
-use std::process::Command;
-
-fn git(root: &Path, args: &[&str]) -> String {
-    let output = Command::new("git")
-        .current_dir(root)
-        .args(args)
-        .output()
-        .unwrap();
-    assert!(
-        output.status.success(),
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    String::from_utf8_lossy(&output.stdout).trim().to_string()
-}
 
 #[test]
 fn annotate_writes_frontmatter_without_touching_the_body() {
@@ -54,20 +40,9 @@ fn annotate_verified_head_resolves_the_full_revision() {
     let root = temp.path();
     let path = root.join("topic.md");
     fs::write(&path, "# Topic\n\nBody.\n").unwrap();
-    git(root, &["init", "-q"]);
+    TestRepo::builder().no_seed().init_in(root);
     git(root, &["add", "topic.md"]);
-    git(
-        root,
-        &[
-            "-c",
-            "user.name=Loom Test",
-            "-c",
-            "user.email=loom@example.invalid",
-            "commit",
-            "-m",
-            "initial",
-        ],
-    );
+    git(root, &["commit", "-m", "initial"]);
     let head = git(root, &["rev-parse", "HEAD"]);
     let annotation = Annotation {
         verified: Some(super::annotate::resolve_revision(root, "HEAD").unwrap()),

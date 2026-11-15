@@ -2,12 +2,12 @@
 //! package.
 
 use std::path::Path;
-use std::process::Command;
 
 use tempfile::TempDir;
 
 use super::super::{run, LintContext, LintFinding};
 use crate::plan::schema::{ContractSpec, LoomConfig, LoomMetadata, StageDefinition};
+use crate::test_git::{git, TestRepo};
 
 #[test]
 fn integration_verify_accepts_go_benchmarks_only_when_tests_are_unfiltered() {
@@ -27,21 +27,6 @@ fn integration_verify_accepts_go_benchmarks_only_when_tests_are_unfiltered() {
     }
 }
 
-fn git(root: &Path, args: &[&str]) {
-    let output = Command::new("git")
-        .args(args)
-        .current_dir(root)
-        .env("GIT_CONFIG_GLOBAL", root.join(".no-global-config"))
-        .env("GIT_CONFIG_NOSYSTEM", "1")
-        .output()
-        .unwrap();
-    assert!(
-        output.status.success(),
-        "git {args:?} failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-}
-
 /// A repository whose one commit holds a binary package at its root.
 fn repo() -> TempDir {
     repo_in("")
@@ -52,9 +37,7 @@ fn repo() -> TempDir {
 fn repo_in(dir: &str) -> TempDir {
     let temp = TempDir::new().unwrap();
     let root = temp.path();
-    git(root, &["init", "-q", "-b", "main"]);
-    git(root, &["config", "user.email", "test@example.com"]);
-    git(root, &["config", "user.name", "Test"]);
+    TestRepo::builder().no_seed().init_in(root);
     let package = root.join(dir);
     std::fs::create_dir_all(package.join("src")).unwrap();
     std::fs::create_dir_all(root.join("tools")).unwrap();

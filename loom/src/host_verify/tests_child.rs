@@ -4,7 +4,6 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::time::{Duration, Instant};
 
 use chrono::Utc;
@@ -15,6 +14,8 @@ use super::child::run_job;
 use super::{digest, new_job_id, store, JobKind, JobRecord, JobResult, JobState};
 use crate::models::stage::{AcceptanceCriterion, Stage, StageStatus, StageType};
 use crate::process::sandbox_probe::{confined_commands_runnable, skip_unless};
+pub(super) use crate::test_git::git;
+use crate::test_git::TestRepo;
 use crate::verify::transitions::save_stage;
 
 mod invalid_requests;
@@ -27,23 +28,6 @@ pub(super) fn confinement_unavailable(test_name: &str) -> bool {
         test_name,
         "loom's confinement cannot start here",
     )
-}
-
-/// Run git in `dir` without the user's or the system's configuration.
-pub(super) fn git(dir: &Path, args: &[&str]) -> String {
-    let output = Command::new("git")
-        .args(args)
-        .current_dir(dir)
-        .env("GIT_CONFIG_GLOBAL", "/dev/null")
-        .env("GIT_CONFIG_NOSYSTEM", "1")
-        .output()
-        .expect("spawn git");
-    assert!(
-        output.status.success(),
-        "git {args:?}: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    String::from_utf8_lossy(&output.stdout).trim().to_string()
 }
 
 /// A repository with one commit, the stage worktree `.worktrees/stage-a`,
@@ -61,14 +45,7 @@ impl Fixture {
     pub(super) fn new(acceptance: &[&str], stage_type: StageType) -> Self {
         let dir = TempDir::new().expect("temp dir");
         let repo = dir.path().canonicalize().expect("canonical temp dir");
-        git(&repo, &["init", "-q", "-b", "main"]);
-        for (key, value) in [
-            ("user.email", "test@test.com"),
-            ("user.name", "Test User"),
-            ("commit.gpgsign", "false"),
-        ] {
-            git(&repo, &["config", key, value]);
-        }
+        TestRepo::builder().no_seed().init_in(&repo);
         fs::write(repo.join(".gitignore"), ".loom/\n.worktrees/\n").expect("write .gitignore");
         git(&repo, &["add", ".gitignore"]);
         git(&repo, &["commit", "-q", "-m", "initial"]);

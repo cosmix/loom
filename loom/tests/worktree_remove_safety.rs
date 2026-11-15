@@ -12,42 +12,12 @@ use loom::verify::transitions::{load_stage, save_stage, update_stage};
 use serial_test::serial;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output};
 use tempfile::TempDir;
 
-fn git(root: &Path, args: &[&str]) -> Output {
-    Command::new("git")
-        .args(args)
-        .current_dir(root)
-        .env("GIT_CONFIG_GLOBAL", root.join(".no-global-config"))
-        .env("GIT_CONFIG_SYSTEM", root.join(".no-system-config"))
-        .env("GIT_CONFIG_NOSYSTEM", "1")
-        .output()
-        .unwrap()
-}
-
-fn git_ok(root: &Path, args: &[&str]) {
-    let output = git(root, args);
-    assert!(
-        output.status.success(),
-        "git {args:?} failed: stdout={}, stderr={}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
-}
-
-fn git_stdout(root: &Path, args: &[&str]) -> String {
-    let output = git(root, args);
-    assert!(
-        output.status.success(),
-        "git {args:?} failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    String::from_utf8_lossy(&output.stdout).trim().to_string()
-}
+use test_support::git_repo::{git, git_unchecked, TestRepo};
 
 fn git_path(root: &Path, name: &str) -> PathBuf {
-    let path = PathBuf::from(git_stdout(root, &["rev-parse", "--git-path", name]));
+    let path = PathBuf::from(git(root, &["rev-parse", "--git-path", name]));
     if path.is_absolute() {
         path
     } else {
@@ -58,12 +28,10 @@ fn git_path(root: &Path, name: &str) -> PathBuf {
 fn init_repo() -> TempDir {
     let temp = TempDir::new().unwrap();
     let root = temp.path();
-    git_ok(root, &["init", "-b", "main"]);
-    git_ok(root, &["config", "user.email", "test@example.com"]);
-    git_ok(root, &["config", "user.name", "Test"]);
-    fs::write(root.join("README.md"), "base\n").unwrap();
-    git_ok(root, &["add", "README.md"]);
-    git_ok(root, &["commit", "-m", "base"]);
+    TestRepo::builder()
+        .identity("Test", "test@example.com")
+        .seed("README.md", "base\n", "base")
+        .init_in(root);
     fs::create_dir_all(root.join(".loom/work/stages")).unwrap();
     test_support::write_main_checkout_identity(root, &root.join(".loom/work"));
     fs::write(
@@ -80,11 +48,11 @@ fn create_stage(root: &Path, stage_id: &str) -> (PathBuf, String) {
     let worktree = worktrees.join(stage_id);
     let path = worktree.to_string_lossy().to_string();
     let branch = format!("loom/{stage_id}");
-    git_ok(root, &["worktree", "add", "-b", &branch, &path, "main"]);
+    git(root, &["worktree", "add", "-b", &branch, &path, "main"]);
     fs::write(worktree.join("feature.txt"), "feature\n").unwrap();
-    git_ok(&worktree, &["add", "feature.txt"]);
-    git_ok(&worktree, &["commit", "-m", "feature"]);
-    let commit = git_stdout(&worktree, &["rev-parse", "HEAD"]);
+    git(&worktree, &["add", "feature.txt"]);
+    git(&worktree, &["commit", "-m", "feature"]);
+    let commit = git(&worktree, &["rev-parse", "HEAD"]);
 
     let mut stage = Stage::new(stage_id.to_string(), Some("test stage".to_string()));
     stage.id = stage_id.to_string();
@@ -109,7 +77,7 @@ fn write_completed_stage(root: &Path, stage_id: &str, commit: String) {
 
 fn merge_stage(root: &Path, stage_id: &str) {
     let branch = format!("loom/{stage_id}");
-    git_ok(root, &["merge", "--no-ff", "-m", "merge stage", &branch]);
+    git(root, &["merge", "--no-ff", "-m", "merge stage", &branch]);
 }
 
 fn in_repo<T>(root: &Path, operation: impl FnOnce() -> T) -> T {
@@ -173,8 +141,8 @@ fn normal_remove_preserves_commit_added_after_recorded_completion() {
     let (worktree, _) = create_stage(root, "advanced");
     merge_stage(root, "advanced");
     fs::write(worktree.join("later.txt"), "later commit\n").unwrap();
-    git_ok(&worktree, &["add", "later.txt"]);
-    git_ok(&worktree, &["commit", "-m", "later work"]);
+    git(&worktree, &["add", "later.txt"]);
+    git(&worktree, &["commit", "-m", "later work"]);
 
     let error = in_repo(root, || {
         worktree_cmd::remove_with_mode("advanced".into(), false, None, RelayMode::Operator)
@@ -217,7 +185,7 @@ fn normal_remove_requires_a_retained_completed_commit() {
 fn absent_resources_never_create_a_phantom_merge() {
     let temp = init_repo();
     let root = temp.path();
-    let commit = git_stdout(root, &["rev-parse", "main"]);
+    let commit = git(root, &["rev-parse", "main"]);
     write_completed_stage(root, "absent", commit);
 
     let error = in_repo(root, || {
@@ -251,7 +219,7 @@ fn legitimately_merged_cleanup_marks_stage_only_after_removal() {
             .merged
     );
     assert!(
-        !git(root, &["show-ref", "--verify", "refs/heads/loom/merged"])
+        !git_unchecked(root, &["show-ref", "--verify", "refs/heads/loom/merged"])
             .status
             .success()
     );
@@ -298,7 +266,7 @@ fn cleanup_error_is_fatal_and_does_not_mark_stage_merged() {
     )
     .unwrap();
     assert_eq!(
-        git_stdout(
+        git(
             &worktree,
             &[
                 "status",

@@ -7,24 +7,23 @@ use std::os::unix::fs::PermissionsExt;
 use tempfile::TempDir;
 
 use super::*;
+use crate::test_git::TestRepo;
 
 /// A repository whose hooks live in `hooks/` beside the work tree files.
 fn repo() -> TempDir {
     let dir = tempfile::tempdir().unwrap();
-    git(dir.path(), &["init", "-q"]);
+    TestRepo::builder().no_seed().init_in(dir.path());
     let hooks = dir.path().join("hooks");
     fs::create_dir(&hooks).unwrap();
-    for (key, value) in [
-        ("user.name", "Index Tests"),
-        ("user.email", "index@example.invalid"),
-        ("commit.gpgsign", "false"),
-        ("core.hooksPath", hooks.to_str().unwrap()),
-    ] {
-        git(dir.path(), &["config", key, value]);
-    }
+    git(
+        dir.path(),
+        &["config", "core.hooksPath", hooks.to_str().unwrap()],
+    );
     dir
 }
 
+// bespoke-git-fixture: `git` below runs through `user_git`, the production runner under test (user
+// hooks and environment, exact stdout bytes), so the shared isolated runner cannot stand in for it.
 fn git(root: &Path, args: &[&str]) -> Vec<u8> {
     let out = user_git(root).args(args).output().unwrap();
     assert!(

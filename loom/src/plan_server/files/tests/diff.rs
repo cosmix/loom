@@ -1,37 +1,31 @@
 //! Tests for files::diff: the uncommitted diff against `HEAD` and the turn diff from pins.
 
 use std::path::Path;
-use std::process::Command;
 
 use super::doc::{context, write_files};
 use crate::plan_server::context::PlanContext;
 use crate::plan_server::files::diff::{head_texts, turn_texts};
 use crate::plan_server::files::doc::{text_store, MAX_EDIT_BYTES};
 use crate::plan_server::files::texts::{TurnId, MAX_TURNS};
-
-fn git(dir: &Path, args: &[&str]) {
-    let status = Command::new("git")
-        .args(["-c", "user.name=t", "-c", "user.email=t@example.com"])
-        .args([
-            "-c",
-            "commit.gpgsign=false",
-            "-c",
-            "core.hooksPath=/dev/null",
-        ])
-        .args(args)
-        .current_dir(dir)
-        .env_remove("GIT_DIR")
-        .env_remove("GIT_WORK_TREE")
-        .env_remove("GIT_INDEX_FILE")
-        .status()
-        .expect("run git");
-    assert!(status.success(), "git {args:?} failed");
-}
+use crate::test_git::{git, TestRepo};
 
 fn commit_all(dir: &Path) {
-    git(dir, &["init", "-q", "-b", "main"]);
+    TestRepo::builder()
+        .identity("t", "t@example.com")
+        .no_seed()
+        .init_in(dir);
     git(dir, &["add", "-A"]);
-    git(dir, &["commit", "-q", "-m", "init"]);
+    git(
+        dir,
+        &[
+            "-c",
+            "core.hooksPath=/dev/null",
+            "commit",
+            "-q",
+            "-m",
+            "init",
+        ],
+    );
 }
 
 #[test]

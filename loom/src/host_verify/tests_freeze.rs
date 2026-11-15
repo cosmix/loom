@@ -5,7 +5,6 @@
 //! skips where it cannot start.
 
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 use chrono::Utc;
 use serial_test::serial;
@@ -137,22 +136,6 @@ impl Fixture {
 
     pub(super) fn frozen(&self) -> bool {
         load_freeze(&self.work_dir, STAGE).unwrap().is_some()
-    }
-
-    pub(super) fn git(&self, args: &[&str]) {
-        let output = Command::new("git")
-            .args(["-c", "user.name=t", "-c", "user.email=t@t"])
-            .args([
-                "-c",
-                "commit.gpgsign=false",
-                "-c",
-                "core.hooksPath=/dev/null",
-            ])
-            .args(args)
-            .current_dir(&self.worktree)
-            .output()
-            .unwrap();
-        assert!(output.status.success(), "git {args:?}: {output:?}");
     }
 
     /// A passing run, not yet applied.
