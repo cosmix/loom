@@ -59,7 +59,10 @@ fn kills_a_sleeping_child_at_the_bound() {
     assert_eq!(error.to_string(), "child exceeded 30 minutes");
     assert!(started.elapsed() < Duration::from_secs(3));
     assert_eq!(
-        nix::sys::signal::kill(Pid::from_raw(pid.expect("child printed its pid")), None),
+        nix::sys::signal::kill(
+            nix::unistd::Pid::from_raw(pid.expect("child printed its pid")),
+            None
+        ),
         Err(nix::errno::Errno::ESRCH),
     );
 }

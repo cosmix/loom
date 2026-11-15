@@ -12,7 +12,7 @@ use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use anyhow::{bail, Context, Result};
-use nix::sys::signal::{killpg, Signal};
+use nix::sys::signal::Signal;
 use nix::unistd::Pid;
 
 mod guard;
@@ -174,7 +174,7 @@ impl CodexSummarySpawner {
             Ok(watcher) => watcher,
             Err(error) => {
                 if let Some(job) = lock(&self.jobs).jobs.remove(session) {
-                    let _ = killpg(job.pid, Signal::SIGKILL);
+                    crate::process::signal_group_id(job.pid.as_raw(), Signal::SIGKILL);
                 }
                 let _ = lock(&child).wait();
                 return Err(error).context("cannot start codex summary watcher");

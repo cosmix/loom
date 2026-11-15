@@ -6,9 +6,11 @@
 
 use std::process::Child;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use anyhow::Result;
+
+use crate::process::{signal_group_id, wait_with_deadline};
 
 /// Callback starts and records a guardian before the confined command spawns.
 pub struct SpawnObserver(pub Box<dyn Fn() -> Result<GroupAnchor> + Send + Sync>);
@@ -41,25 +43,17 @@ impl GroupAnchor {
         self.retired = true;
         // This direct child has not been reaped, so the kernel cannot recycle
         // its PID. Its numeric process group is safe to signal while held.
-        let mut signalled = false;
-        if let Ok(raw) = i32::try_from(self.pgid()) {
-            if raw > 1 && raw != nix::unistd::getpgrp().as_raw() {
-                signalled = nix::sys::signal::killpg(
-                    nix::unistd::Pid::from_raw(raw),
-                    nix::sys::signal::Signal::SIGKILL,
-                )
-                .is_ok();
-            }
-        }
+        let signalled = i32::try_from(self.pgid())
+            .is_ok_and(|raw| signal_group_id(raw, nix::sys::signal::Signal::SIGKILL));
         if !signalled {
             let _ = (self.stop)();
         }
-        let deadline = Instant::now() + Duration::from_secs(1);
-        while Instant::now() < deadline {
-            if self.child.try_wait().ok().flatten().is_some() {
-                return;
-            }
-            std::thread::sleep(Duration::from_millis(10));
+        if wait_with_deadline(&mut self.child, Duration::from_secs(1))
+            .ok()
+            .flatten()
+            .is_some()
+        {
+            return;
         }
         tracing::warn!(pgid = self.pgid(), "criterion group anchor did not stop");
         // A still-owned, unreaped direct child cannot have a recycled PID.

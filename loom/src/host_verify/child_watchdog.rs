@@ -45,6 +45,7 @@ pub(super) fn start(work_dir: &Path, stage_id: &str, job_id: &str) -> Option<Wat
             });
             if !still_current {
                 if !running.load(Ordering::Acquire) {
+                    // Not `process::signal_group_id`: that refuses the caller's own group, the one target here.
                     let _ = killpg(group, Signal::SIGKILL);
                 }
                 return;

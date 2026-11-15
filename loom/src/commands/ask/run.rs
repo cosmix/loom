@@ -15,11 +15,10 @@ use std::sync::mpsc::{self, Receiver};
 use std::time::{Duration, Instant};
 
 use anyhow::{bail, Context, Result};
-use nix::sys::signal::{kill, Signal};
-use nix::unistd::Pid;
+use nix::sys::signal::Signal;
 
 use crate::context::untrusted::inline_safe;
-use crate::process::OwnedProcess;
+use crate::process::{signal_group_id, OwnedProcess};
 
 /// Captured stdout past this is a failure.
 pub(crate) const STDOUT_CAP: usize = 16 * 1024 * 1024;
@@ -51,7 +50,7 @@ static INTERRUPTED: AtomicBool = AtomicBool::new(false);
 pub(crate) fn install_interrupt_handler() -> Result<()> {
     ctrlc::set_handler(|| {
         INTERRUPTED.store(true, Ordering::SeqCst);
-        kill_group(WORKER_GROUP.load(Ordering::SeqCst));
+        signal_group_id(WORKER_GROUP.load(Ordering::SeqCst), Signal::SIGKILL);
     })
     .context("failed to install the interrupt handler")
 }
@@ -59,12 +58,6 @@ pub(crate) fn install_interrupt_handler() -> Result<()> {
 /// Whether SIGINT or SIGTERM arrived.
 pub(crate) fn interrupted() -> bool {
     INTERRUPTED.load(Ordering::SeqCst)
-}
-
-fn kill_group(group: i32) {
-    if group > 0 {
-        let _ = kill(Pid::from_raw(-group), Signal::SIGKILL);
-    }
 }
 
 /// Publishes the worker's group to the handler while it runs.
@@ -76,7 +69,7 @@ impl TrackedGroup {
         WORKER_GROUP.store(group, Ordering::SeqCst);
         // A signal that landed before the store found no group to kill.
         if interrupted() {
-            kill_group(group);
+            signal_group_id(group, Signal::SIGKILL);
         }
         TrackedGroup
     }

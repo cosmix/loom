@@ -75,20 +75,8 @@ impl OwnedProcess {
         &mut self.child
     }
 
-    /// Polls instead of installing `wait_timeout`'s SIGCHLD handler. Some
-    /// sandboxes reject its signal-pipe write and abort the whole process.
     pub(crate) fn wait(&mut self, timeout: Duration) -> std::io::Result<Option<ExitStatus>> {
-        let deadline = Instant::now() + timeout;
-        loop {
-            if let Some(status) = self.child.try_wait()? {
-                return Ok(Some(status));
-            }
-            let remaining = deadline.saturating_duration_since(Instant::now());
-            if remaining.is_zero() {
-                return Ok(None);
-            }
-            std::thread::sleep(remaining.min(WAIT_POLL_INTERVAL));
-        }
+        wait_with_deadline(&mut self.child, timeout)
     }
 
     pub(crate) fn try_wait(&mut self) -> std::io::Result<Option<ExitStatus>> {
@@ -131,16 +119,51 @@ impl Drop for OwnedProcess {
     }
 }
 
-pub(super) fn kill_group(child: &mut Child) {
+/// Reaps `child` or gives up once `limit` has passed, returning `None` then.
+///
+/// Polls `try_wait` instead of installing `wait_timeout`'s SIGCHLD handler. Some
+/// sandboxes reject its signal-pipe write and abort the whole process.
+pub(crate) fn wait_with_deadline(
+    child: &mut Child,
+    limit: Duration,
+) -> std::io::Result<Option<ExitStatus>> {
+    let deadline = Instant::now() + limit;
+    loop {
+        if let Some(status) = child.try_wait()? {
+            return Ok(Some(status));
+        }
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            return Ok(None);
+        }
+        std::thread::sleep(remaining.min(WAIT_POLL_INTERVAL));
+    }
+}
+
+/// `SIGKILL` to the group `child` leads, then to `child` itself. Prefer calling
+/// it before the child is reaped: once the leader is reaped and its group is
+/// empty, its id may be reused by an unrelated group. A caller that sweeps
+/// descendants after the leader exited accepts that window.
+pub(crate) fn kill_group(child: &mut Child) {
     signal_group(child, nix::sys::signal::Signal::SIGKILL);
     let _ = child.kill();
 }
 
 fn signal_group(child: &Child, signal: nix::sys::signal::Signal) {
-    #[cfg(unix)]
     if let Ok(pid) = i32::try_from(child.id()) {
-        let _ = nix::sys::signal::kill(nix::unistd::Pid::from_raw(-pid), signal);
+        signal_group_id(pid, signal);
     }
+}
+
+/// Sends `signal` to process group `group`; returns whether `killpg` succeeded.
+///
+/// Refuses, sending nothing, a group `<= 1` (`killpg(0)` and `killpg(1)` reach
+/// the caller's group or every process) or the caller's own group.
+pub(crate) fn signal_group_id(group: i32, signal: nix::sys::signal::Signal) -> bool {
+    if group <= 1 || group == nix::unistd::getpgrp().as_raw() {
+        return false;
+    }
+    nix::sys::signal::killpg(nix::unistd::Pid::from_raw(group), signal).is_ok()
 }
 
 #[cfg(test)]

@@ -7,9 +7,6 @@ use std::sync::{mpsc, Arc, Mutex, PoisonError};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
-use nix::sys::signal::{killpg, Signal};
-use nix::unistd::Pid;
-
 use crate::plan_server::context::PlanContext;
 use crate::plan_server::wire::run::{OutputStream, RunJob, RunOutput};
 use crate::plan_server::PlanMessage;
@@ -153,10 +150,7 @@ fn collect_output(
 
 fn kill_child(child: &mut Child) {
     // Descendants can retain the output pipes, so terminate the whole child group.
-    if let Ok(pid) = i32::try_from(child.id()) {
-        let _ = killpg(Pid::from_raw(pid), Signal::SIGKILL);
-    }
-    let _ = child.kill();
+    crate::process::kill_group(child);
     let _ = child.wait();
 }
 
