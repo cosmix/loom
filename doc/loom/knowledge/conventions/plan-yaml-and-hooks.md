@@ -175,7 +175,7 @@ are unaffected.
 
 ## A Substantial Plan-Structure Change Bumps `version`
 
-`loom.version` is checked in `plan/schema/validation.rs` (only 1 is accepted today). Operator rule: a substantial change to the structure of a loom plan (new verification sections, changed stage shape) ships as the next plan version, v2, with the version check, the plan-writer skill template and the parser changed together. Additive optional fields that leave every existing plan's meaning unchanged follow the `#[serde(default)]` convention above and do not need a bump.
+`loom.version` is checked in `plan/schema/validation.rs`; versions 1 and 2 are accepted (`matches!(metadata.loom.version, 1 | 2)`). Operator rule: a substantial change to the structure of a loom plan (new verification sections, changed stage shape) ships as the next plan version, with the version check, the plan-writer skill template and the parser changed together. Additive optional fields that leave every existing plan's meaning unchanged follow the `#[serde(default)]` convention above and do not need a bump.
 
 ## Acceptance Lines Run Under sh -c
 

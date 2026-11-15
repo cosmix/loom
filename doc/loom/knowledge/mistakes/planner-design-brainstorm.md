@@ -92,3 +92,43 @@
 **Why**: `git checkout` restores to HEAD, which equals the pre-edit state only when nothing else touched the file.
 **Prevention**: Undo your own edit with the Edit tool. `git checkout` is allowed only where the brief says so (restoring `web/dist` is the one case).
 **Fix**: None needed; recorded as a recurrence risk.
+
+## Voice planner discussion constraints
+
+**What happened:** The initial voice exploration overemphasized text-provider privacy and mobile hardware, proposed separate dictate/converse experiences, and suggested speech overhead as high as 1.5 seconds.
+
+**Why:** Generic voice-assistant framing displaced the intended desktop planner experience.
+
+**Prevention:** Treat local privacy as applying to audio; provider-bound text is expected. Scope initial support to desktops and laptops. Treat Pocket TTS as the preferred candidate pending comparison with Kokoro. Target approximately 0.5 seconds of speech overhead; 1.5 seconds is likely unacceptable. Explore one conversation that accepts long user messages rather than requiring a dictation mode.
+
+**Fix:** Carry these constraints into voice research and evaluate turn completion separately from speech detection. No model choice or implementation has been finalized.
+
+## Voice exploration needs concrete alternatives
+
+**What happened:** The discussion described desired conversational behavior without sufficiently comparing available implementations for interruptions and thinking pauses.
+
+**Why:** Architecture suggestions ran ahead of the requested research and brainstorming.
+
+**Prevention:** Ground voice proposals in concrete local models, libraries, measured limitations and integration options. Compare alternatives before selecting an approach; treat barge-in and thinking pauses as core requirements.
+
+**Fix:** Research local turn detectors, interruption handling and reusable audio components, then present the tradeoffs for Loom.
+
+## Fast turn-model inference does not establish fast reliable endpointing
+
+**What happened:** Voice brainstorming treated Smart Turn inference in tens of milliseconds as encouraging evidence for a roughly 500 ms speech-overhead target without first checking end-of-turn error-versus-delay results.
+
+**Why:** Model compute time and conversational decision delay were not sufficiently separated in the feasibility assessment.
+
+**Prevention:** Compare premature cutoff rates at the desired endpointing delay, and measure TTS and harness delay separately. Attribute vendor benchmark results and verify on actual planner conversations.
+
+**Fix:** LiveKit eot-bench currently reports English SmartTurn v3.2 endpointing delay of 1384 ms at a 5 percent false-cutoff budget, versus 1124 ms for local LiveKit v1.1-mini. These are vendor-published benchmark results, not Loom measurements (https://github.com/livekit/eot-bench). Treat sub-500 ms reliable automatic turn completion as unproven.
+
+## Use the existing planner backend for local voice inference
+
+**What happened:** Voice exploration gave browser-only inference too much weight despite loom plan already starting a local backend for every planner session.
+
+**Why:** Browser deployment constraints were treated as product constraints without first tracing the planner's existing server lifecycle.
+
+**Prevention:** Treat backend-hosted inference on the user machine as the natural initial architecture. Browser capture and playback can communicate with the local planner backend; WASM support is optional rather than a model selection constraint.
+
+**Fix:** Evaluate native speech runtimes and a planner-owned helper process alongside in-process integration. Keep audio local to the user machine; remote planner deployments require an explicit placement decision. The proposal `doc/PROPOSAL-2026-11-15-local-voice-planner.md` records source evidence, candidate comparisons, integration contracts and empirical qualification gates; its recommendations are not implemented or final model selections.
