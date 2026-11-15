@@ -27,7 +27,7 @@ pub(crate) fn init_repo() -> TempDir {
 }
 
 pub(crate) fn run_git(args: &[&str], cwd: &Path) {
-    test_support::git_checked(cwd, args);
+    test_support::git_repo::git_checked(cwd, args);
 }
 
 /// Create a branch, add one commit, return the commit SHA. Leaves caller on `main`.
@@ -43,7 +43,7 @@ pub(crate) fn create_loom_branch_with_commit(
     run_git(&["add", filename], repo_root);
     run_git(&["commit", "-m", "stage work"], repo_root);
 
-    let out = test_support::git_checked(repo_root, &["rev-parse", "HEAD"]);
+    let out = test_support::git_repo::git_checked(repo_root, &["rev-parse", "HEAD"]);
     let sha = String::from_utf8_lossy(&out.stdout).trim().to_string();
 
     run_git(&["checkout", "main"], repo_root);

@@ -157,7 +157,7 @@ fn git_c_into_scratch_clone_is_allowed() {
     let scratch = fx.scratch();
     let clone = scratch.join("clone");
     fs::create_dir_all(&clone).expect("create clone");
-    test_support::git_checked(&clone, &["init", "-q"]);
+    test_support::git_repo::git_checked(&clone, &["init", "-q"]);
     let env = [("LOOM_SCRATCH_DIR", text(&scratch))];
     let isolation = |command: &str| {
         let payload = bash_payload(command, &fx.wt);
