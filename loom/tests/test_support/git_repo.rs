@@ -1,8 +1,8 @@
 //! Shared git fixtures: one isolated runner and one repository builder for every test.
 //!
-//! Every git child started here ignores the host's git configuration and any inherited
-//! `GIT_*` variable, so a developer's global hooks, default branch name or `GIT_DIR` cannot
-//! change what a fixture builds. The file depends only on `std` and `tempfile`: the library
+//! Every git child started here ignores the host's git configuration, its default global
+//! excludes and attributes files, and any inherited `GIT_*` variable, so a developer's global
+//! hooks, default branch name, ignore rules or `GIT_DIR` cannot change what a fixture builds. The file depends only on `std` and `tempfile`: the library
 //! compiles it as `test_git` and each integration crate reaches it through `test_support`.
 #![allow(dead_code)]
 
@@ -20,8 +20,12 @@ const DEFAULT_SEED_PATH: &str = "README.md";
 const DEFAULT_SEED_CONTENT: &str = "# Test Repository\n";
 const DEFAULT_SEED_MESSAGE: &str = "Initial commit";
 
-/// Strip every inherited GIT_* variable, then GIT_CONFIG_GLOBAL=/dev/null, GIT_CONFIG_NOSYSTEM=1.
-/// Call before adding the caller's own variables (env_remove also drops explicitly set ones).
+/// Strip every inherited GIT_* variable, then GIT_CONFIG_GLOBAL=/dev/null, GIT_CONFIG_NOSYSTEM=1
+/// and an XDG_CONFIG_HOME that cannot be a directory. The last one shuts out git's default
+/// `core.excludesFile` and `core.attributesFile` (`$XDG_CONFIG_HOME/git/ignore` and
+/// `git/attributes`, or under `$HOME/.config` only when the variable is unset or empty), which
+/// the config variables do not reach. Call before adding the caller's own variables
+/// (env_remove also drops explicitly set ones).
 pub fn isolate(command: &mut Command) -> &mut Command {
     for (key, _) in std::env::vars_os() {
         if key.to_string_lossy().starts_with("GIT_") {
@@ -31,12 +35,15 @@ pub fn isolate(command: &mut Command) -> &mut Command {
     command
         .env("GIT_CONFIG_NOSYSTEM", "1")
         .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .env("XDG_CONFIG_HOME", "/dev/null/loom-no-xdg-config")
 }
 
 /// `program` in `dir` under the fixture isolation: the one place the policy is written.
 fn command_for(program: &Path, dir: &Path) -> Command {
     let mut command = Command::new(program);
     isolate(&mut command);
+    // Deliberately repeats `clear_loom_env` (tests/test_support/mod.rs): the lib includes
+    // this file as `test_git` and cannot reach `super::`.
     for (key, _) in std::env::vars_os() {
         if key.to_string_lossy().starts_with("LOOM_") {
             command.env_remove(key);

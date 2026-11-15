@@ -92,11 +92,11 @@ impl Repo {
 
     /// Points `branch` at `ahead` new commits on top of HEAD.
     pub fn branch_ahead(&self, branch: &str, ahead: usize) {
-        let mut tip = git(&self.root, &["rev-parse", "HEAD"]).trim().to_string();
+        let mut tip = git(&self.root, &["rev-parse", "HEAD"]);
         for n in 0..ahead {
             let message = format!("{branch} {n}");
             let args = ["commit-tree", "-p", &tip, "-m", &message, "HEAD^{tree}"];
-            tip = git(&self.root, &args).trim().to_string();
+            tip = git(&self.root, &args);
         }
         git(
             &self.root,

@@ -15,7 +15,7 @@ fn repo() -> TempDir {
     TestRepo::builder().no_seed().init_in(dir.path());
     let hooks = dir.path().join("hooks");
     fs::create_dir(&hooks).unwrap();
-    git(
+    crate::test_git::git(
         dir.path(),
         &["config", "core.hooksPath", hooks.to_str().unwrap()],
     );

@@ -13,6 +13,7 @@
 use regex::Regex;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 
 const EXEMPT_FILES: &[&str] = &[
     "tests/test_support/git_repo.rs",
@@ -100,14 +101,16 @@ fn test_code_start(rel: &Path, lines: &[&str]) -> Option<usize> {
     inline_test_module_start(lines)
 }
 
-/// Every `path:line` of a non-exempt test-code line that `offends` matches.
-fn offenders(offends: impl Fn(&str) -> bool) -> Vec<String> {
+/// Every `path:line` of a non-exempt test-code line that `offends` matches,
+/// and how many files held test code the scan read.
+fn scan(offends: impl Fn(&str) -> bool) -> (Vec<String>, usize) {
     let root = manifest_dir();
     let mut files = Vec::new();
     collect_rs_files(&root.join("src"), &mut files);
     collect_rs_files(&root.join("tests"), &mut files);
     files.sort();
     let mut found = Vec::new();
+    let mut scanned = 0;
     for path in files {
         let rel = path.strip_prefix(&root).expect("under manifest dir");
         let rel_str = rel.to_string_lossy().replace('\\', "/");
@@ -119,13 +122,37 @@ fn offenders(offends: impl Fn(&str) -> bool) -> Vec<String> {
         let Some(start) = test_code_start(rel, &lines) else {
             continue;
         };
+        scanned += 1;
         for (idx, line) in lines.iter().enumerate().skip(start) {
             if offends(line) {
                 found.push(format!("{rel_str}:{}", idx + 1));
             }
         }
     }
-    found
+    (found, scanned)
+}
+
+/// Every `path:line` of a non-exempt test-code line that `offends` matches.
+fn offenders(offends: impl Fn(&str) -> bool) -> Vec<String> {
+    scan(offends).0
+}
+
+fn sets_up_identity(line: &str) -> bool {
+    line.contains("user.email")
+}
+
+fn defines_local_runner(line: &str) -> bool {
+    static RUNNER: OnceLock<Regex> = OnceLock::new();
+    RUNNER
+        .get_or_init(|| {
+            let pattern = format!(r"^\s*(pub(\([^)]*\))?\s+)?fn\s+({RUNNER_NAMES})\s*[<(]");
+            Regex::new(&pattern).expect("regex")
+        })
+        .is_match(line)
+}
+
+fn hand_writes_config_isolation(line: &str) -> bool {
+    line.contains("GIT_CONFIG_NOSYSTEM")
 }
 
 fn assert_no_offenders(what: &str, found: &[String]) {
@@ -140,21 +167,19 @@ fn assert_no_offenders(what: &str, found: &[String]) {
 
 #[test]
 fn identity_setup_lives_only_in_shared_helper() {
-    let found = offenders(|line| line.contains("user.email"));
+    let found = offenders(sets_up_identity);
     assert_no_offenders("set up a git identity (user.email)", &found);
 }
 
 #[test]
 fn test_code_defines_no_local_git_runner() {
-    let pattern = format!(r"^\s*(pub(\([^)]*\))?\s+)?fn\s+({RUNNER_NAMES})\s*[<(]");
-    let runner = Regex::new(&pattern).expect("regex");
-    let found = offenders(|line| runner.is_match(line));
+    let found = offenders(defines_local_runner);
     assert_no_offenders("define a local git runner function", &found);
 }
 
 #[test]
 fn git_config_isolation_lives_only_in_shared_helper() {
-    let found = offenders(|line| line.contains("GIT_CONFIG_NOSYSTEM"));
+    let found = offenders(hand_writes_config_isolation);
     assert_no_offenders(
         "hand-write git config isolation (GIT_CONFIG_NOSYSTEM)",
         &found,
@@ -188,4 +213,65 @@ fn classification_matches_stage_rules() {
         "// bespoke-git-fixture: exercises signing config"
     ));
     assert!(!is_exempt("src/a.rs", "// bespoke-git-fixture:   "));
+}
+
+#[test]
+fn guard_predicates_match_offenders_and_reject_near_misses() {
+    for line in [
+        "fn git_ok(dir: &Path) -> String {",
+        "    pub(crate) fn git<I: AsRef<OsStr>>(dir: &Path, args: I) {",
+        "fn isolated_git(dir: &Path) {",
+        "pub fn run_git(args: &[&str]) {",
+    ] {
+        assert!(defines_local_runner(line), "{line}");
+    }
+    for line in [
+        "fn git_command_x(dir: &Path) {",
+        "fn gitignore(dir: &Path) {",
+        "    let out = git(dir, &[\"status\"]);",
+        "// fn git(dir: &Path)",
+    ] {
+        assert!(!defines_local_runner(line), "{line}");
+    }
+    assert!(hand_writes_config_isolation(
+        r#"    .env("GIT_CONFIG_NOSYSTEM", "1")"#
+    ));
+    assert!(!hand_writes_config_isolation(
+        r#"    .env("GIT_CONFIG_GLOBAL", "/dev/null")"#
+    ));
+    assert!(sets_up_identity(
+        r#"    git(dir, &["config", "user.email", "a@b"]);"#
+    ));
+    assert!(!sets_up_identity(
+        r#"    git(dir, &["config", "user.name", "a"]);"#
+    ));
+}
+
+#[test]
+fn scan_visits_test_code_skips_exempt_files_and_reports_matches() {
+    let (found, scanned) = scan(|_| true);
+    assert!(scanned > 50, "scan visited only {scanned} test-code files");
+    assert!(
+        found.iter().any(|hit| hit == "tests/test_support/mod.rs:1"),
+        "a tests/ file must be scanned from line 1"
+    );
+    for exempt in EXEMPT_FILES {
+        let prefix = format!("{exempt}:");
+        assert!(
+            !found.iter().any(|hit| hit.starts_with(&prefix)),
+            "{exempt} is exempt"
+        );
+    }
+    assert!(
+        !found.iter().any(|hit| hit == "src/git/runner.rs:1"),
+        "production lines are not test code"
+    );
+    assert_eq!(
+        test_code_start(Path::new("tests/x.rs"), &["a", "b"]),
+        Some(0)
+    );
+    assert_eq!(
+        test_code_start(Path::new("src/git/runner.rs"), &["fn a() {}"]),
+        None
+    );
 }

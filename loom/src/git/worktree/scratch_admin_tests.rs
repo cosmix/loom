@@ -4,7 +4,7 @@
 
 use super::files::PRIVATE_PARENT;
 use super::*;
-use crate::git::runner::{run_git, run_git_with_env};
+use crate::git::runner::run_git_with_env;
 use crate::git::worktree::{partition_admin_dirs, WorktreeGit};
 use crate::verify::contracts::test_support::{contract_worktree, plant_foreign_git_dir};
 use std::os::unix::fs::PermissionsExt;
@@ -77,7 +77,7 @@ impl Fixture {
 }
 
 fn ok(dir: &Path, args: &[&str]) -> String {
-    let output = run_git(args, dir).unwrap();
+    let output = crate::test_git::git_unchecked(dir, args);
     assert!(output.status.success(), "git {args:?}: {output:?}");
     String::from_utf8(output.stdout).unwrap()
 }
