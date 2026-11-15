@@ -1,16 +1,15 @@
 //! Transcript token accounting and the append-only summary cost ledger.
 
+use crate::fs::safe_fs::safe_open_append;
 use crate::fs::safe_read::open_regular_no_follow;
 use crate::planning::runtime::RuntimePaths;
 use crate::tokens::accumulate::AgentState;
 use crate::tokens::tail::{self, Line};
 use crate::tokens::AgentKind;
 use anyhow::{Context, Result};
-use fs2::FileExt;
 use serde::{Deserialize, Serialize};
-use std::fs::{File, OpenOptions};
+use std::fs::File;
 use std::io::{Read, Seek, SeekFrom, Write};
-use std::os::unix::fs::OpenOptionsExt;
 use std::path::Path;
 use std::sync::atomic::AtomicBool;
 
@@ -104,35 +103,32 @@ pub fn transcript_tokens(path: &Path) -> Result<TokenVector> {
     })
 }
 
-/// Append one complete JSON record under an exclusive lock on the no-follow log.
+/// Append one complete JSON record under an exclusive lock on the no-follow, mode-0600 log.
 pub fn append(paths: &RuntimePaths, line: &CostLine) -> Result<()> {
     let mut record = serde_json::to_vec(line).context("serializing summary cost")?;
     record.push(b'\n');
-    let mut file = OpenOptions::new()
-        .append(true)
-        .create(true)
-        .custom_flags(libc::O_NOFOLLOW)
-        .mode(0o600)
-        .open(&paths.summary_cost)
+    let mut file = safe_open_append(&paths.dir, Path::new(log_relpath(paths)?))
         .context("opening summary cost log")?;
-    FileExt::lock_exclusive(&file).context("locking summary cost log")?;
     file.write_all(&record)
         .context("appending summary cost record")?;
-    FileExt::unlock(&file).context("unlocking summary cost log")?;
     Ok(())
+}
+
+/// The ledger's path beneath the runtime directory, which anchors every open of it.
+fn log_relpath(paths: &RuntimePaths) -> Result<&str> {
+    paths
+        .summary_cost
+        .strip_prefix(&paths.dir)
+        .context("summary cost log is outside the runtime directory")?
+        .to_str()
+        .context("summary cost log path is not UTF-8")
 }
 
 /// Read the last 8 MiB of the ledger, skipping malformed and unfinished records; older records
 /// fall out of estimates and totals. An absent ledger is empty; unsafe paths, other read errors
 /// and a tail holding no complete record are reported.
 pub fn read_log(paths: &RuntimePaths) -> Result<Vec<CostLine>> {
-    let relative = paths
-        .summary_cost
-        .strip_prefix(&paths.dir)
-        .context("summary cost log is outside the runtime directory")?;
-    let relative = relative
-        .to_str()
-        .context("summary cost log path is not UTF-8")?;
+    let relative = log_relpath(paths)?;
     let Some(file) = open_regular_no_follow(&paths.dir, relative, libc::O_RDONLY)? else {
         return Ok(Vec::new());
     };

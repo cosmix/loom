@@ -165,6 +165,7 @@ fn inspect_job(
 }
 
 fn companion_job_id(path: &Path) -> Result<Option<String>> {
+    // Unlike is_regular_no_follow, this check propagates metadata errors.
     if path.extension().and_then(|value| value.to_str()) != Some("json")
         || !fs::symlink_metadata(path)?.file_type().is_file()
     {

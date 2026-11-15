@@ -12,8 +12,8 @@ pub(super) use crate::language::evidence::{files_where, has_dependency, read_jso
 use regex::Regex;
 use serde_json::Value;
 
-use super::markers::regular_file;
 use crate::fs::safe_read;
+use crate::fs::safe_read::is_regular_no_follow;
 
 const MAX_FILE_BYTES: usize = 256 * 1024;
 /// Whether a line of `path` that is not a `#` comment matches `pattern`; a
@@ -47,7 +47,7 @@ pub(crate) fn declares_dependencies(root: &Path, package_dir: &Path) -> bool {
 /// symlink and non-regular-file checks even if the path changes after this filter.
 fn read_bounded(root: &Path, path: &Path) -> Option<Vec<u8>> {
     let relative = path.strip_prefix(root).ok()?;
-    if !regular_file(path) {
+    if !is_regular_no_follow(path) {
         return None;
     }
     safe_read::read_bounded(root, relative, MAX_FILE_BYTES).ok()

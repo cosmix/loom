@@ -1,4 +1,6 @@
 use crate::agent_state::is_safe_id;
+use crate::fs::jsonl_spool::read_complete_lines;
+use crate::fs::safe_fs::safe_open_append;
 use crate::models::forward_receipt::job_record::read_companion_job;
 use crate::models::forward_receipt::locator::{
     default_companion_state_roots, default_task_output_roots, resolve_companion_locator,
@@ -300,26 +302,17 @@ fn same_fact(old: &ForwardObservation, new: &ForwardObservation) -> bool {
 
 fn append_receipts(path: &Path, append: &str) -> Result<()> {
     let was_missing = !path.exists();
-    let mut file = OpenOptions::new()
-        .append(true)
-        .create(true)
-        .mode(0o600)
-        .custom_flags(libc::O_NOFOLLOW)
-        .open(path)
-        .context("opening forward receipts")?;
-    ensure!(
-        file.metadata()?.is_file(),
-        "forward receipts are not a regular file"
-    );
+    let (Some(parent), Some(name)) = (path.parent(), path.file_name()) else {
+        bail!("forward receipts path has no parent");
+    };
+    let mut file = safe_open_append(parent, Path::new(name)).context("opening forward receipts")?;
     file.set_permissions(fs::Permissions::from_mode(0o600))?;
     file.write_all(append.as_bytes())
         .context("appending forward receipts")?;
     file.sync_data().context("syncing forward receipts")?;
     if was_missing {
-        if let Some(parent) = path.parent() {
-            if let Ok(directory) = fs::File::open(parent) {
-                let _ = directory.sync_all();
-            }
+        if let Ok(directory) = fs::File::open(parent) {
+            let _ = directory.sync_all();
         }
     }
     Ok(())
@@ -353,19 +346,16 @@ fn reject_non_regular(path: &Path) -> Result<()> {
         Err(error) => Err(error.into()),
     }
 }
+/// The receipts already on disk. `load_receipts` has bounded the line count and
+/// refused malformed or torn content before this runs.
 fn read_existing(path: &Path) -> Result<Vec<ForwardObservation>> {
-    if !path.exists() {
-        return Ok(Vec::new());
-    }
-    let mut file = OpenOptions::new()
-        .read(true)
-        .custom_flags(libc::O_NOFOLLOW)
-        .open(path)?;
-    let mut input = String::new();
-    Read::by_ref(&mut file)
-        .take(MAX_EXISTING_BYTES)
-        .read_to_string(&mut input)?;
-    input.lines().map(ForwardObservation::decode_line).collect()
+    read_complete_lines(path, MAX_EXISTING_BYTES, usize::MAX)?
+        .iter()
+        .map(|line| {
+            let line = std::str::from_utf8(line).context("forward receipt is not UTF-8")?;
+            ForwardObservation::decode_line(line)
+        })
+        .collect()
 }
 #[cfg(test)]
 #[path = "tests_forward_receipt.rs"]

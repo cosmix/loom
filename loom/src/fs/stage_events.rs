@@ -8,7 +8,7 @@
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use super::jsonl_spool;
 use crate::models::session::SessionType;
@@ -61,15 +61,25 @@ impl StageEvent {
     }
 }
 
+/// `work_dir` with its own symlinks resolved. Inside a worktree `.loom/work` is
+/// a trusted symlink to the shared state directory, and the spool refuses a
+/// symlink as the root's last component. The resolved directory is the root; the
+/// log file and anything below it are still opened without following a link.
+/// An unresolvable path is passed through so the spool reports the failure.
+fn state_root(work_dir: &Path) -> PathBuf {
+    std::fs::canonicalize(work_dir).unwrap_or_else(|_| work_dir.to_path_buf())
+}
+
 /// Append `event` to the log under `work_dir`.
 pub fn append_event(work_dir: &Path, event: &StageEvent) -> anyhow::Result<()> {
-    jsonl_spool::append(work_dir, EVENTS_FILE, event, RECORD_LIMIT)
+    jsonl_spool::append(&state_root(work_dir), EVENTS_FILE, event, RECORD_LIMIT)
 }
 
 /// The last `limit` events in file order; a missing or unreadable log is empty
 /// and unparseable lines are skipped.
 pub fn read_recent(work_dir: &Path, limit: usize) -> Vec<StageEvent> {
-    let mut events: Vec<StageEvent> = jsonl_spool::read(work_dir, EVENTS_FILE).unwrap_or_default();
+    let mut events: Vec<StageEvent> =
+        jsonl_spool::read(&state_root(work_dir), EVENTS_FILE).unwrap_or_default();
     events.drain(..events.len().saturating_sub(limit));
     events
 }

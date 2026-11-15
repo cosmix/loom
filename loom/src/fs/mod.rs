@@ -1,3 +1,5 @@
+#[cfg(test)]
+mod append_contract_tests;
 pub(crate) mod cache_io;
 pub(crate) mod daemon_state;
 pub(crate) mod dispute_lock;

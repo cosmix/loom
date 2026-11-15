@@ -21,7 +21,7 @@ use nix::sys::stat::fstatat;
 
 use super::store_fs::{
     append_locked, create_dirs, ends_with, open_root, read_in, read_json, refuse_unsafe,
-    remove_job_dir, write_atomic, FILE_MODE,
+    remove_job_dir, replace_file, FILE_MODE,
 };
 use super::{CriterionOutcome, JobRecord, JobResult, JobState};
 use crate::fs::safe_fs::{self, MAX_LOG_BYTES};
@@ -162,7 +162,7 @@ pub fn save_result(work_dir: &Path, stage_id: &str, result: &JobResult) -> Resul
     let bytes = serde_json::to_vec_pretty(result).context("cannot encode the job result")?;
     let root = open_root(work_dir)?;
     create_dirs(&root, &job)?;
-    write_atomic(&root, &job.join(RESULT_FILE), &bytes)
+    replace_file(&root, &job.join(RESULT_FILE), &bytes)
 }
 
 pub fn load_result(work_dir: &Path, stage_id: &str, job_id: &str) -> Result<Option<JobResult>> {
@@ -191,7 +191,7 @@ pub fn save_criterion_log(
         "{name} is a store file"
     );
     let rel = job_rel(stage_id, job_id)?.join(&name);
-    write_atomic(&open_root(work_dir)?, &rel, &capped_log(bytes))?;
+    replace_file(&open_root(work_dir)?, &rel, &capped_log(bytes))?;
     Ok(name)
 }
 
@@ -212,7 +212,7 @@ pub fn save_job_file(
     );
     let root = open_root(work_dir)?;
     create_dirs(&root, &job_rel(stage_id, job_id)?)?;
-    write_atomic(&root, &rel, bytes)
+    replace_file(&root, &rel, bytes)
 }
 
 pub fn load_job_file(

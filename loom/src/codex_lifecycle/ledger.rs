@@ -1,11 +1,9 @@
-use std::fs::OpenOptions;
-use std::io::Read;
-use std::os::unix::fs::OpenOptionsExt;
 use std::path::Path;
 
-use anyhow::{ensure, Context, Result};
+use anyhow::{Context, Result};
 use serde_json::Value;
 
+use crate::fs::jsonl_spool::read_complete_lines;
 use crate::subagent_lifecycle::LifecycleRecord;
 
 use super::CodexAuthorization;
@@ -53,37 +51,13 @@ fn read_json_lines(
     max_rows: usize,
     missing_is_error: bool,
 ) -> Result<Vec<std::result::Result<Value, String>>> {
-    let mut file = match OpenOptions::new()
-        .read(true)
-        .custom_flags(libc::O_NOFOLLOW)
-        .open(path)
-    {
-        Ok(file) => file,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound && !missing_is_error => {
-            return Ok(Vec::new())
-        }
-        Err(error) => return Err(error.into()),
-    };
-    ensure!(
-        file.metadata()?.is_file(),
-        "JSONL ledger is not a regular file"
-    );
-    let mut bytes = Vec::new();
-    file.by_ref().take(max_bytes + 1).read_to_end(&mut bytes)?;
-    ensure!(
-        u64::try_from(bytes.len())? <= max_bytes,
-        "JSONL ledger exceeds read cap"
-    );
-    let terminated = bytes.last() == Some(&b'\n');
-    let parts: Vec<_> = bytes.split(|byte| *byte == b'\n').collect();
-    let mut rows = Vec::new();
-    for (index, line) in parts.iter().enumerate() {
-        let final_part = index + 1 == parts.len();
-        if line.is_empty() || (!terminated && final_part) {
-            continue;
-        }
-        ensure!(rows.len() < max_rows, "JSONL ledger exceeds row cap");
-        rows.push(serde_json::from_slice(line).map_err(|error| error.to_string()));
+    if missing_is_error {
+        // Surfaces a missing ledger as NotFound, which the shared reader maps to empty.
+        std::fs::symlink_metadata(path)?;
     }
-    Ok(rows)
+    let lines = read_complete_lines(path, max_bytes, max_rows).context("reading JSONL ledger")?;
+    Ok(lines
+        .iter()
+        .map(|line| serde_json::from_slice(line).map_err(|error| error.to_string()))
+        .collect())
 }

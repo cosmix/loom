@@ -5,11 +5,10 @@ pub(crate) use super::codex_evidence::codex_event_id;
 use super::codex_evidence::codex_records_outcome;
 use super::model::{LifecycleRecord, WorkerIdentity, WorkerOutcome};
 use super::validation::{fold_states, validate_record, validate_safe_id, Validation};
+use crate::fs::jsonl_spool::read_complete_lines;
 use anyhow::{ensure, Context, Result};
 use std::collections::{HashMap, HashSet};
-use std::fs::{self, OpenOptions};
-use std::io::Read;
-use std::os::unix::fs::OpenOptionsExt;
+use std::fs;
 use std::path::{Path, PathBuf};
 
 const MAX_JOURNAL_BYTES: u64 = 8 * 1024 * 1024;
@@ -328,41 +327,25 @@ fn load_stage_records(
     Ok(Some(loaded))
 }
 
+/// Every record on a complete line of the journal. A missing journal is an
+/// `io::Error` of kind `NotFound` (see [`is_not_found`]); blank lines and a
+/// torn final line are skipped; a malformed complete line is an error.
 pub(super) fn read_journal(path: &Path) -> Result<Vec<LifecycleRecord>> {
-    let mut file = OpenOptions::new()
-        .read(true)
-        .custom_flags(libc::O_NOFOLLOW)
-        .open(path)?;
-    let metadata = file.metadata()?;
-    ensure!(
-        metadata.is_file(),
-        "lifecycle journal is not a regular file"
-    );
-    ensure!(
-        metadata.len() <= MAX_JOURNAL_BYTES,
-        "lifecycle journal exceeds read cap"
-    );
-    let mut bytes = Vec::with_capacity(usize::try_from(metadata.len())?);
-    file.by_ref()
-        .take(MAX_JOURNAL_BYTES + 1)
-        .read_to_end(&mut bytes)?;
-    let terminated = bytes.last() == Some(&b'\n');
-    ensure!(
-        u64::try_from(bytes.len())? <= MAX_JOURNAL_BYTES,
-        "lifecycle journal grew beyond read cap"
-    );
-    let parts: Vec<_> = bytes.split(|byte| *byte == b'\n').collect();
-    let mut records = Vec::new();
-    for (index, line) in parts.iter().enumerate() {
-        let final_part = index + 1 == parts.len();
-        if (!terminated && final_part) || (terminated && final_part && line.is_empty()) {
-            continue;
-        }
-        let value = serde_json::from_slice::<serde_json::Value>(line)
-            .context("malformed complete lifecycle line")?;
-        let record = serde_json::from_value(value)
-            .context("invalid lifecycle schema on complete JSON line")?;
-        records.push(record);
-    }
-    Ok(records)
+    // Surfaces a missing journal as NotFound, which the shared reader maps to empty.
+    fs::symlink_metadata(path)?;
+    // The byte cap bounds the journal; `stage_records` applies the row cap.
+    let lines = read_complete_lines(path, MAX_JOURNAL_BYTES, usize::MAX)
+        .context("reading lifecycle journal")?;
+    lines
+        .iter()
+        .map(|line| {
+            let value = serde_json::from_slice::<serde_json::Value>(line)
+                .context("malformed complete lifecycle line")?;
+            serde_json::from_value(value).context("invalid lifecycle schema on complete JSON line")
+        })
+        .collect()
 }
+
+#[cfg(test)]
+#[path = "store_read_tests.rs"]
+mod read_tests;

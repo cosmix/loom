@@ -22,7 +22,7 @@ pub(crate) fn next_submission_order(work_dir: &Path, stage_id: &str) -> Result<u
     let next = stored
         .checked_add(1)
         .context("host job submission order exhausted")?;
-    write_atomic(&open_root(work_dir)?, &rel, next.to_string().as_bytes())?;
+    replace_file(&open_root(work_dir)?, &rel, next.to_string().as_bytes())?;
     Ok(next)
 }
 

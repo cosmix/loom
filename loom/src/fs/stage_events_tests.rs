@@ -63,3 +63,35 @@ fn wire_form_is_kebab_case_and_reason_only_for_blocked() {
     assert_eq!(other.reason, None);
     assert_eq!(serde_json::to_value(&other).unwrap()["to"], "needs-handoff");
 }
+
+#[test]
+fn symlinked_work_dir_resolves_to_its_target() {
+    let dir = TempDir::new().unwrap();
+    let target = dir.path().join("shared");
+    std::fs::create_dir(&target).unwrap();
+    let link = dir.path().join("work");
+    std::os::unix::fs::symlink(&target, &link).unwrap();
+
+    append_event(&link, &event("s1", StageStatus::Executing)).unwrap();
+
+    assert!(target.join(EVENTS_FILE).is_file());
+    let ids: Vec<_> = read_recent(&link, 10)
+        .into_iter()
+        .map(|e| e.stage_id)
+        .collect();
+    assert_eq!(ids, ["s1"]);
+}
+
+#[test]
+fn symlink_planted_at_the_events_file_is_refused() {
+    let dir = TempDir::new().unwrap();
+    let work = dir.path().join("work");
+    std::fs::create_dir(&work).unwrap();
+    let outside = dir.path().join("outside.jsonl");
+    std::fs::write(&outside, "").unwrap();
+    std::os::unix::fs::symlink(&outside, work.join(EVENTS_FILE)).unwrap();
+
+    assert!(append_event(&work, &event("s1", StageStatus::Executing)).is_err());
+    assert_eq!(std::fs::read_to_string(&outside).unwrap(), "");
+    assert!(read_recent(&work, 10).is_empty());
+}

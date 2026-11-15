@@ -33,8 +33,10 @@ pub(crate) fn publish(path: &Path, content: &str) -> Result<Option<anyhow::Error
     let name = path
         .file_name()
         .context("publication path has no filename")?;
-    // Some cache owners allow their directory itself to be a symlink. Open it
-    // once, then anchor the temporary file and rename to that directory.
+    // Some cache owners, and the `locking` writers under a worktree's symlinked
+    // `.loom/work`, allow the directory itself to be a symlink, so this open
+    // follows it, unlike `safe_replace::open_parent`. Open it once, then anchor
+    // the temporary file and rename to that directory.
     let dir = std::fs::File::open(parent)
         .with_context(|| format!("cannot open directory {}", parent.display()))?;
     if !dir.metadata()?.is_dir() {

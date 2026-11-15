@@ -8,9 +8,10 @@
 //!
 //! # Crash atomicity vs. advisory-lock identity
 //!
-//! Writes use a unique sibling temporary file, `fsync` it, and rename it over
-//! the target. The directory sync is best effort after publication; failure is
-//! logged because the replacement has already happened.
+//! Writes go through `cache_io::atomic_write`: a unique sibling temporary file,
+//! `fsync`ed and renamed over the target. The directory sync is best effort
+//! after publication; failure is logged because the replacement has already
+//! happened.
 //!
 //! `flock` identity is tied to an inode, but `rename` swaps the target's inode,
 //! so a lock taken on the *data file* would not exclude a reader that opened the
@@ -145,20 +146,6 @@ fn lock_parent_dir(path: &Path, exclusive: bool) -> Result<File> {
     Ok(dir_file)
 }
 
-/// Crash-atomically write through a sibling temporary file. The caller holds
-/// the parent-directory lock across publication and any surrounding read.
-fn atomic_write(path: &Path, content: &str) -> Result<()> {
-    let name = path.file_name().context("write target has no filename")?;
-    let parent = path
-        .parent()
-        .filter(|p| !p.as_os_str().is_empty())
-        .unwrap_or(Path::new("."));
-    let dir = File::open(parent)
-        .with_context(|| format!("Failed to open directory: {}", parent.display()))?;
-    let dir = std::os::fd::OwnedFd::from(dir);
-    super::safe_replace::publish_in_dir(&dir, name, content.as_bytes(), 0o666, false)
-}
-
 /// Acquire an exclusive advisory lock on `dir` for the duration of `f`.
 ///
 /// This is the multi-file analogue of [`locked_update`]: it locks a *directory*
@@ -193,7 +180,7 @@ where
 /// lock reintroduces the lost-update/torn-read races these helpers exist to
 /// prevent.
 pub fn atomic_write_locked(path: &Path, content: &str) -> Result<()> {
-    atomic_write(path, content)
+    super::cache_io::atomic_write(path, content)
 }
 
 /// Read file contents with a shared (read) lock.
@@ -255,23 +242,22 @@ where
     };
 
     let new_content = modify(content)?;
-    atomic_write(path, &new_content)
+    super::cache_io::atomic_write(path, &new_content)
 }
 
 /// Write file contents crash-atomically with an exclusive (write) lock.
 ///
-/// Acquires an exclusive lock on the parent directory, then writes to a sibling
-/// `<file>.tmp`, `fsync`s it, and `rename`s it over the target. A crash at any
-/// point leaves either the old file intact or the fully-written new file — never
-/// a truncated/partial file (the failure mode of the old `set_len(0)` +
-/// write-in-place approach).
+/// Acquires an exclusive lock on the parent directory, then writes a unique
+/// sibling temporary file, `fsync`s it, and `rename`s it over the target. A
+/// crash at any point leaves either the old file intact or the fully-written
+/// new file, never a truncated one.
 ///
 /// The directory lock (not a lock on the data file) is what keeps a concurrent
 /// [`locked_read`] excluded across the `rename`, since `rename` swaps the data
 /// file's inode and would otherwise break `flock` identity — see the module docs.
 pub fn locked_write(path: &Path, content: &str) -> Result<()> {
     let _dir_lock = lock_parent_dir(path, true)?;
-    atomic_write(path, content)
+    super::cache_io::atomic_write(path, content)
 }
 
 #[cfg(test)]

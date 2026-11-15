@@ -21,6 +21,8 @@
 use anyhow::{bail, Context, Result};
 use std::path::{Path, PathBuf};
 
+use crate::fs::safe_read::is_regular_no_follow;
+
 use super::collection::rust::target_scope;
 use super::failed_builds::BuildKey;
 use super::{normalize, store};
@@ -186,16 +188,12 @@ fn has_marker(dir: &Path, markers: &[&str]) -> bool {
                     .flatten()
                     .any(|entry| {
                         let path = entry.path();
-                        path.extension().is_some_and(|ext| ext == extension) && is_regular(&path)
+                        path.extension().is_some_and(|ext| ext == extension)
+                            && is_regular_no_follow(&path)
                     })
             }
-            None => is_regular(&dir.join(marker)),
+            None => is_regular_no_follow(&dir.join(marker)),
         })
-}
-
-/// Whether `path` is a regular file, without following a symlink.
-fn is_regular(path: &Path) -> bool {
-    std::fs::symlink_metadata(path).is_ok_and(|meta| meta.file_type().is_file())
 }
 
 #[cfg(test)]

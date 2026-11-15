@@ -178,7 +178,7 @@ fn deny_worktree_admin_dirs(
         // replaces the file; `git::runner` looks again ahead of each command.
         for name in ["HEAD", "index"] {
             let path = common.join(name);
-            if std::fs::symlink_metadata(&path).is_ok_and(|meta| meta.is_file()) {
+            if crate::fs::safe_read::is_regular_no_follow(&path) {
                 denies.absolute(&path, false)?;
             }
         }

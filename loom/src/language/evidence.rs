@@ -6,6 +6,8 @@ use std::path::{Path, PathBuf};
 
 use serde_json::Value;
 
+use crate::fs::safe_read::is_regular_no_follow;
+
 const MAX_FILE_BYTES: usize = 256 * 1024;
 const MAX_LISTED_ENTRIES: usize = 4_096;
 
@@ -96,7 +98,10 @@ pub(crate) fn detect(dir: &Path) -> BTreeSet<LanguageEvidence> {
         return found;
     }
     for (language, names) in MARKERS {
-        if names.iter().any(|name| regular_file(&dir.join(name))) {
+        if names
+            .iter()
+            .any(|name| is_regular_no_follow(&dir.join(name)))
+        {
             found.insert(*language);
         }
     }
@@ -125,7 +130,7 @@ fn add_extensions(dir: &Path, found: &mut BTreeSet<LanguageEvidence>) {
 }
 
 fn add_package(dir: &Path, found: &mut BTreeSet<LanguageEvidence>) {
-    if regular_file(&dir.join("package.json")) {
+    if is_regular_no_follow(&dir.join("package.json")) {
         if read_json(dir, &dir.join("package.json")).is_some_and(|package| {
             has_dependency(
                 &package,
@@ -141,14 +146,9 @@ fn add_package(dir: &Path, found: &mut BTreeSet<LanguageEvidence>) {
     }
 }
 
-pub(crate) fn regular_file(path: &Path) -> bool {
-    path.symlink_metadata()
-        .is_ok_and(|meta| meta.file_type().is_file())
-}
-
 pub(crate) fn read_json(root: &Path, path: &Path) -> Option<Value> {
     let relative = path.strip_prefix(root).ok()?;
-    if !regular_file(path) {
+    if !is_regular_no_follow(path) {
         return None;
     }
     let bytes = crate::fs::safe_read::read_bounded(root, relative, MAX_FILE_BYTES).ok()?;
@@ -174,7 +174,7 @@ pub(crate) fn files_where(
         .flatten()
         .take(MAX_LISTED_ENTRIES)
         .flatten()
-        .filter(|entry| entry.file_type().is_ok_and(|kind| kind.is_file()))
+        .filter(|entry| is_regular_no_follow(&entry.path()))
         .filter(move |entry| matches(&entry.file_name().to_string_lossy()))
         .map(|entry| entry.path())
 }
