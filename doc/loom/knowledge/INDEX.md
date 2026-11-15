@@ -9,7 +9,7 @@
 | File | Description | Lines |
 | --- | --- | --- |
 | [architecture.md](architecture.md) | High-level component relationships, data flow, module dependencies | 250 |
-| [entry-points.md](entry-points.md) | Key files agents should read first | 85 |
+| [entry-points.md](entry-points.md) | Key files agents should read first | 86 |
 | [patterns.md](patterns.md) | Architectural patterns discovered in the codebase | 186 |
 | [conventions.md](conventions.md) | Coding conventions discovered in the codebase | 250 |
 | [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 250 |
@@ -24,7 +24,7 @@
 | --- | --- | --- |
 | [adjudication-lifecycle](architecture/adjudication-lifecycle.md) |  | 166 |
 | [codex-concurrency](architecture/codex-concurrency.md) | Limits | 110 |
-| [codex-plugin](architecture/codex-plugin.md) |  | 378 |
+| [codex-plugin](architecture/codex-plugin.md) |  | 384 |
 | [completion-recovery](architecture/completion-recovery.md) | Proof | 38 |
 | [config-value-types](architecture/config-value-types.md) |  | 85 |
 | [context-ceiling](architecture/context-ceiling.md) |  | 111 |
@@ -39,7 +39,7 @@
 | [daemon-owned-commits](architecture/daemon-owned-commits.md) |  | 151 |
 | [directory-structure](architecture/directory-structure.md) | Tree | 50 |
 | [execution-containment](architecture/execution-containment.md) |  | 392 |
-| [hook-system](architecture/hook-system.md) |  | 329 |
+| [hook-system](architecture/hook-system.md) |  | 338 |
 | [knowledge-bootstrap](architecture/knowledge-bootstrap.md) | KB | 83 |
 | [knowledge-hierarchy](architecture/knowledge-hierarchy.md) | KB fs | 264 |
 | [live-preview-editor](architecture/live-preview-editor.md) | Editor | 32 |
@@ -60,12 +60,12 @@
 | [planning-session-sandbox](architecture/planning-session-sandbox.md) |  | 148 |
 | [planning-trace](architecture/planning-trace.md) |  | 145 |
 | [pressure](architecture/pressure.md) |  | 42 |
-| [quota-poller](architecture/quota-poller.md) |  | 37 |
+| [quota-poller](architecture/quota-poller.md) |  | 41 |
 | [read-gate](architecture/read-gate.md) |  | 153 |
 | [remote-control](architecture/remote-control.md) |  | 81 |
 | [run-handoff](architecture/run-handoff.md) |  | 52 |
 | [security-and-isolation](architecture/security-and-isolation.md) | Deny | 196 |
-| [signal-generation](architecture/signal-generation.md) |  | 247 |
+| [signal-generation](architecture/signal-generation.md) |  | 257 |
 | [skill-catalog](architecture/skill-catalog.md) |  | 158 |
 | [source-graph](architecture/source-graph.md) |  | 372 |
 | [source-graph-build](architecture/source-graph-build.md) |  | 129 |
@@ -79,7 +79,7 @@
 | [test-runner-adapters](architecture/test-runner-adapters.md) |  | 56 |
 | [token-accounting-and-receipts](architecture/token-accounting-and-receipts.md) | Ledger | 358 |
 | [token-flow-sources](architecture/token-flow-sources.md) |  | 84 |
-| [usage-evidence](architecture/usage-evidence.md) |  | 127 |
+| [usage-evidence](architecture/usage-evidence.md) |  | 136 |
 | [verification-v2-gates](architecture/verification-v2-gates.md) | Gates | 257 |
 | [web-dashboard](architecture/web-dashboard.md) | Web | 133 |
 | [web-terminal](architecture/web-terminal.md) |  | 181 |
@@ -92,7 +92,7 @@
 | [context-and-source-graph](entry-points/context-and-source-graph.md) |  | 80 |
 | [filesystem-and-integration-modules](entry-points/filesystem-and-integration-modules.md) |  | 135 |
 | [hooks](entry-points/hooks.md) |  | 149 |
-| [orchestrator-daemon-and-sessions](entry-points/orchestrator-daemon-and-sessions.md) |  | 250 |
+| [orchestrator-daemon-and-sessions](entry-points/orchestrator-daemon-and-sessions.md) |  | 251 |
 | [remote-control](entry-points/remote-control.md) | RC | 96 |
 
 ### patterns
@@ -108,7 +108,7 @@
 | [security-sandbox-and-hooks](patterns/security-sandbox-and-hooks.md) |  | 144 |
 | [stage-daemon-channels](patterns/stage-daemon-channels.md) |  | 184 |
 | [stage-lifecycle-and-verification](patterns/stage-lifecycle-and-verification.md) |  | 214 |
-| [subagent-hierarchy](patterns/subagent-hierarchy.md) |  | 105 |
+| [subagent-hierarchy](patterns/subagent-hierarchy.md) |  | 143 |
 
 ### conventions
 
@@ -120,7 +120,7 @@
 | [dispute-and-adjudication](conventions/dispute-and-adjudication.md) |  | 123 |
 | [git-and-build-workflow](conventions/git-and-build-workflow.md) |  | 237 |
 | [guidance-channels-and-plugin-scope](conventions/guidance-channels-and-plugin-scope.md) |  | 134 |
-| [model-and-effort-config](conventions/model-and-effort-config.md) |  | 143 |
+| [model-and-effort-config](conventions/model-and-effort-config.md) |  | 145 |
 | [plan-web](conventions/plan-web.md) |  | 208 |
 | [plan-yaml-and-hooks](conventions/plan-yaml-and-hooks.md) |  | 182 |
 | [web-dashboard-typography](conventions/web-dashboard-typography.md) |  | 64 |
@@ -164,7 +164,7 @@
 | [parallel-worktree-shared-state](mistakes/parallel-worktree-shared-state.md) | Shared | 351 |
 | [phantom-merges](mistakes/phantom-merges.md) | Merges | 347 |
 | [pinned-literals-ledgers-and-wiring](mistakes/pinned-literals-ledgers-and-wiring.md) | Pins | 332 |
-| [plan-authoring](mistakes/plan-authoring.md) |  | 156 |
+| [plan-authoring](mistakes/plan-authoring.md) |  | 218 |
 | [plan-server-delivery](mistakes/plan-server-delivery.md) | Slips | 369 |
 | [planner-design-brainstorm](mistakes/planner-design-brainstorm.md) | Stubs | 94 |
 | [planner-follow-ups-delivery](mistakes/planner-follow-ups-delivery.md) | Slips | 196 |
@@ -179,7 +179,7 @@
 | [release-feature-review](mistakes/release-feature-review.md) | Gaps | 13 |
 | [review-continuation-verification](mistakes/review-continuation-verification.md) | Repair | 331 |
 | [review-final-wave](mistakes/review-final-wave.md) |  | 190 |
-| [review-integration-verification](mistakes/review-integration-verification.md) |  | 182 |
+| [review-integration-verification](mistakes/review-integration-verification.md) |  | 263 |
 | [review-tracker](mistakes/review-tracker.md) |  | 353 |
 | [sandbox-and-settings](mistakes/sandbox-and-settings.md) |  | 391 |
 | [sandbox-protected-hooks-dir](mistakes/sandbox-protected-hooks-dir.md) |  | 37 |
@@ -218,7 +218,7 @@
 | --- | --- | --- |
 | [agent-rule-bending-hardening](concerns/agent-rule-bending-hardening.md) |  | 375 |
 | [automatic-knowledge-source-graph-followups](concerns/automatic-knowledge-source-graph-followups.md) | Gaps | 69 |
-| [code-quality-and-hook-debt](concerns/code-quality-and-hook-debt.md) | Debt | 248 |
+| [code-quality-and-hook-debt](concerns/code-quality-and-hook-debt.md) | Debt | 310 |
 | [codex-heartbeat-starvation](concerns/codex-heartbeat-starvation.md) |  | 22 |
 | [contract-autonomy-followups](concerns/contract-autonomy-followups.md) |  | 74 |
 | [handoff-followups](concerns/handoff-followups.md) |  | 57 |

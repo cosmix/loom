@@ -15,6 +15,7 @@ The full hook roster — every script in `loom-hooks/`, the event it binds to, w
 
 - `loom/src/commands/usage/mod.rs` — `loom usage` dispatch; args in `args.rs` (`UsageArgs`, `has_explicit_selection`); providers in `provider_types.rs`; the `reads` section (`sections/reads.rs`) measures rereads from transcripts
 - `loom/src/commands/usage/completeness.rs`, `codex_scope.rs`, `spawn_join.rs` — `measured`/`partial` reasons and session-record inventory, receipt-scoped Codex rows, hook spawn requests joined to Claude starts
+- `loom/src/commands/usage/parent_spawns.rs`, `quota.rs` — stage and requested-model attribution without a hook ledger ([Usage Evidence](architecture/usage-evidence.md#attribution-without-a-hook-ledger)); `loom usage --quota` printing the `## Model Budget` section
 - `loom/src/commands/usage/comparison.rs`, `comparison_net.rs`, `comparison_latency.rs`, `run_evidence.rs` (+ `run_evidence_stages.rs`) — `--compare`, the declared net-total rule, declared latency tolerance, and `--run-evidence` run-evidence producer
 - `loom/tests/signal_replay.rs` — signal replay harness ([Signal Generation](architecture/signal-generation.md))
 - `loom/src/verify/criteria/cache_contract.rs` — certified criterion-cache contract

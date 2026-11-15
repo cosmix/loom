@@ -154,3 +154,65 @@
 **Why:** The scenario was written from the cache's intent, without reading the cacheability filter.
 **Prevention:** A criterion meant to be cached contains no `$`, `~/`, `mktemp`, URL or `git`. Put the variable read in a committed shell script that the criterion runs with `sh`, as the `InputFixture` of `verify/criteria/tests/cache_input_runner_tests.rs` does. Assert a store (`cache_records() == 1`) and a cached rerun before asserting the miss.
 **Fix:** The plan's `pass-cache-tracks-shared-cache-contents` contract runs a committed script and asserts store, hit, then miss.
+
+## Opus Took Visual and Review-Finding Fixes, and Untyped Spawns Inherited Opus (2026-11-14)
+
+**What happened:** `loom usage --since 14d` over plan worktrees showed opus taking 48% of
+plan-execution tokens. Sonnet orchestrators made 22 `loom-senior-software-engineer` spawns at
+`effort: medium` for visual fixes ("V2 visual fix round 2", "Changes page") and review-finding
+fixes ("Fix review findings round 1"). Outside stages, `general-purpose` spawns inherited the
+parent's opus: 70M weighted tokens. Every usage row reported `stage_id: null` and requested model
+`unknown`, so the table had to be grouped by hand from worktree directory names.
+
+**Why:** the doctrine said opus for "complex debugging and cross-cutting work" with no exclusion
+for visual or CSS fixes or for fixes to code a cheaper tier wrote, so any hard-looking fix went up
+a tier. An untyped spawn inherits the spawning session's model, and no hook set one outside a
+stage. Attribution existed only through hook ledgers, which plain sessions do not write.
+
+**Prevention:** opus takes architecture across modules, new algorithms, concurrency, distributed
+systems, security-sensitive code and bugs of unknown cause; a fix for a review finding returns to
+the tier that wrote the piece and escalates one tier only on a failed fix; a piece between sonnet
+and opus goes to sonnet. Spawn by agent type; the spawn guard rewrites an untyped spawn outside a
+stage to `model: sonnet` and denies it inside one
+([hook-system](../architecture/hook-system.md#spawn-guard-untyped-spawns-loom-hooksspawn-guardsh)).
+When tokens look misallocated, run `loom usage --since <d> --stage <id> --json` and read
+`agents.by_agent_model`: a requested model of `unknown` or `default` marks a spawn that inherited
+([attribution](../architecture/usage-evidence.md#attribution-without-a-hook-ledger)).
+
+**Fix:** doctrine in `skills/loom-orchestration/SKILL.md` Rule 7, `CLAUDE.md.template` Rule 7 and
+the agent files ([Model Playbook](../patterns/subagent-hierarchy.md#model-playbook-orchestration-model-is-per-stage-type-configurable));
+the senior agent's frontmatter effort is `medium`.
+
+## Doctrine Surfaces Wrote Codex as the Default Lane (2026-11-14)
+
+**What happened:** the plan said "codex first" and the doctrine workers wrote "codex is the default
+lane for every codex-fit piece" on every surface. The user corrected it: the goal is codex WHEN
+APPROPRIATE.
+
+**Why:** a worker copies the plan's wording, and the plan wording was a routing order, not a
+description of what codex is good at.
+
+**Prevention:** state codex as a lane chosen per piece by its nature and by quota, never as a
+default, first or preferred lane, on every surface (templates, skills, agent files, Rust doc and
+warning text, signal text). Claude keeps verification, review, planning, exploration, debugging
+and anything that iterates on failing tests; codex takes straightforward, well-specified
+implementation. After a doctrine change, `rg -n 'preferred|first|default lane'` over the surfaces
+in the keyword table; the reviewer found three leftovers of this kind (`preferred()` in the
+public API, "preferred lane first" in the plan-writer skill, "the first-listed lane is where most
+of the work sits").
+
+**Fix:** `Implementers::preferred` became `first_listed` and every surface says list order means
+nothing ([codex-plugin](../architecture/codex-plugin.md)).
+
+## An Unscoped Doctrine Rewrite Orphaned the README and the Cap (2026-11-14)
+
+**What happened:** the doctrine stage rewrote Rule 7 across the skill, template and agent files
+while `README.md:327` and `README.md:1187-1199` kept the old opus effort, terra/luna fallback and
+"untyped subagent silently inherits" text, and the size caps (`tests_size.rs`) had to be raised
+twice (`CLAUDE.md.template` 20,131 to 20,388 bytes, the skill 20,530 to 21,794).
+
+**Why:** the README restates Rule 7 and no test pins it; the byte caps measure the new doctrine
+and the plan authorized a raise only to a stated ceiling.
+
+**Prevention:** a plan that changes Rule 7 lists `README.md` among the surfaces and gives
+knowledge-distill the rewrite, or the stage changes it. Raise a cap to the measured size, no more.

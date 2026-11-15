@@ -134,7 +134,7 @@ Changes per **stage type**, not per session. Sub-sections, in order:
 - **`## Knowledge Management`** (Knowledge, KnowledgeDistill): with `knowledge_tree_empty` a "KNOWLEDGE BASE IS EMPTY" warning and the exploration order, otherwise "Extend the knowledge base as you work"; then the `loom knowledge update` command table. KnowledgeDistill adds `loom review` and the DOCUMENTATION UPDATE REQUIRED box.
 - **`## Stage Memory`** (Standard, IntegrationVerify): the SESSION MEMORY REQUIRED table (`mistake:`, `found:` and `gotcha:` notes, decisions, changes, questions, with `--evidence`), "NEVER use 'loom knowledge' in this stage — knowledge-distill curates memory into knowledge." and the auto-memory prohibition (`format_semi_stable_section` in `orchestrator/signals/format/sections.rs`).
 - **Codex implementers** (`format/codex.rs::format_codex_implementers_section`): only when `implementers` includes codex.
-- **`## Ultracode Mode`**: only when `embedded_context.ultracode`. It licenses the Workflow tool and states that Workflow fan-out spawns Claude subagents only: the codex lane (`gpt-6.1-terra`/`gpt-6-luna`) is not addressable from a Workflow script, so on a stage licensed for both, codex-tier work goes through ordinary `loom-codex-forwarder` Agent spawns outside the Workflow.
+- **`## Ultracode Mode`**: only when `embedded_context.ultracode`. It licenses the Workflow tool and states that Workflow fan-out spawns Claude subagents only: the codex lane (`gpt-6.1-terra`/`gpt-6.1-sol`/`gpt-6-luna`) is not addressable from a Workflow script, so on a stage licensed for both, codex-tier work goes through ordinary `loom-codex-forwarder` Agent spawns outside the Workflow.
 - **Sandbox restrictions** (`format/sandbox_section.rs::format_sandbox_section`): when a sandbox summary exists. With the sandbox enabled it always carries `append_package_cache_note()`, the package-manager-cache carve-out, after the filesystem deny/allow-write block and before the network section.
 - **Skill recommendations** (`format/skills.rs::format_skill_recommendations`): skill-index matches, when there are any.
 
@@ -142,7 +142,17 @@ The semi-stable section carries no delegation guidance of its own.
 
 ### Dynamic Section (`format/sections.rs::format_dynamic_section`)
 
-Per-session content: Target (session, stage and plan ids, working_dir, execution path), Worktree Isolation, Plan Overview, the cross-stage summary (IntegrationVerify and KnowledgeDistill only), the Dependency Findings section (every stage with eligible direct dependencies, KnowledgeDistill excluded), Assignment, Dependencies Status and Dependency Outputs, the previous session's handoff (structured, prose, or a pointer to `.loom/work/handoffs/<file>.md`), Acceptance Criteria, Goal-Backward Verification (artifacts, wiring, wiring_tests, dead_code; `format/sections/goal_backward_section.rs`) and Files to Modify.
+Per-session content: Target (session, stage and plan ids, working_dir, execution path), Worktree Isolation, Plan Overview, the cross-stage summary (IntegrationVerify and KnowledgeDistill only), the Dependency Findings section (every stage with eligible direct dependencies, KnowledgeDistill excluded), the `## Model Budget` section when a provider has a fresh quota reading (below), Assignment, Dependencies Status and Dependency Outputs, the previous session's handoff (structured, prose, or a pointer to `.loom/work/handoffs/<file>.md`), Acceptance Criteria, Goal-Backward Verification (artifacts, wiring, wiring_tests, dead_code; `format/sections/goal_backward_section.rs`) and Files to Modify.
+
+### Model Budget Section (`format/budget.rs`)
+
+`## Model Budget` carries each provider's fresh 5h and 7d quota windows and at most one `Routing:` line. It is spliced between the dependency findings and `## Assignment` by `push_model_budget` (`format/sections.rs:400`, and `recovery_format.rs` for a recovered stage), so standard, integration-verify and recovery signals carry it; knowledge-bootstrap and contract-session signals never render it (`signals/knowledge.rs` does not call `format_dynamic_section`).
+
+- **Source.** `current_model_budget(work_dir)` (`budget.rs:78`) reads `quota::read_snapshot` at the wall clock and formats it with `format_model_budget_section(&QuotaSnapshot, now)`. `generate/context.rs:38` stores the string on `EmbeddedContext::model_budget`. `usage --quota` calls the same `current_model_budget` through the `signals` re-export (`signals/mod.rs:86`), so a plan author sees the text an agent would. A wiring entry on that re-export pins it: read the entry in `.loom/work/stages/<NN>-<stage>.md`, which human review may have amended, before changing the symbol.
+- **Freshness.** `fresh()` keeps a provider only when it has no `error`, at least one window, and `age_secs < quota::STALE_AFTER_SECS` (600 s). With no fresh provider the function returns `None` and the section is absent.
+- **Pressure.** A provider is under pressure when any window has `used_percent >= 75` (`QUOTA_PRESSURE_PERCENT`) and does not reset within 1800 s (`PRESSURE_MIN_SECS_TO_RESET`; a window with no `resets_at` counts). `under_pressure` compares the raw percent, while the display prints `{:.0}`, so 74.6% prints "75% used" with no routing line.
+- **Routing line.** Claude under pressure: codex-fit pieces go to codex where the stage licenses it and the `## Codex Implementers` section says it is available, fully briefed pieces to haiku. Codex under pressure: terra- and sol-tier work to sonnet, boilerplate and simple unit tests to haiku. Both: "Allocate as Rule 7 says." The line carries its own licensing condition because the formatter takes no lane context, and it never moves a piece below the tier Rule 7 names, overrides `implementers`, or overrides the codex-unavailable instruction.
+- **Tests.** `tests_model_budget.rs` and `budget_tests.rs`; mutation-checked cases: stale readings omitted, reset-proximity window respected. No test pins that knowledge and contract signals omit the section ([model-allocation-followups.md](../concerns/code-quality-and-hook-debt.md)).
 
 ### Product Sections block (integration-verify only)
 
@@ -173,7 +183,7 @@ pub struct EmbeddedContext {
     pub cross_stage_summary: Option<String>,  // IV/KnowledgeDistill only
     pub dependency_findings: Option<String>,  // relevant findings of the accepted direct dependencies
     pub ultracode: bool,
-    pub implementers: Implementers,           // Licensed lanes, in preference order
+    pub implementers: Implementers,           // Licensed lanes; order carries no routing meaning
     pub codex_available: bool,                // codex CLI + plugin installed; resolved once at build time
     pub subagent_timeout_secs: Option<u64>,   // Per-stage override; None emits nothing
 }
