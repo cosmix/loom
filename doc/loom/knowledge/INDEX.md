@@ -131,7 +131,7 @@
 | Topic | Blurb | Lines |
 | --- | --- | --- |
 | [adjudication-autonomy-deadlock](mistakes/adjudication-autonomy-deadlock.md) |  | 228 |
-| [ambient-filesystem-trust](mistakes/ambient-filesystem-trust.md) |  | 176 |
+| [ambient-filesystem-trust](mistakes/ambient-filesystem-trust.md) |  | 186 |
 | [briefs-and-bug-reports](mistakes/briefs-and-bug-reports.md) |  | 360 |
 | [ci-toolchain-and-cargo](mistakes/ci-toolchain-and-cargo.md) |  | 383 |
 | [codex-direct-mode-invisible](mistakes/codex-direct-mode-invisible.md) |  | 23 |

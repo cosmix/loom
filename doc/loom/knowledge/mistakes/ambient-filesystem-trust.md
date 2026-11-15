@@ -174,3 +174,13 @@ which this bound was added to fix.
 **Prevention:** Pass mode zero when O_CREAT and O_TMPFILE are absent and exercise both open paths.
 
 **Fix:** Select the mode alongside the flags and retain the read and append regressions.
+
+## Hook fixture under CARGO_TARGET_TMPDIR failed only in the plan dry-run checkout
+
+**What happened:** `loom plan verify --dry-run` reported `cargo test --all-targets` failing at HEAD while the suite passed in the main checkout. The one failing test was `first_large_unoutlined_read_warns_instead_of_blocking` (`loom/tests/hook_false_positive_contracts.rs`): `read-guard.sh` printed nothing where the test expects a "no outline is available" warning.
+
+**Why:** the dry run checks HEAD out under `<repository>/.loom/dry-run/<run>/checkout/` (`loom/src/commands/plan/verify/dry_run.rs`), and the fixture root came from `CARGO_TARGET_TMPDIR`, which lies inside that checkout. `_loom_path_is_control_input` in `loom-hooks/_read_discipline.sh` exempts every `*/.loom/*` path from the read gate, so the hook treated the fixture file as a control input. Two reproductions misled the diagnosis: a scratch worktree under `/tmp` fails a different test (`tmux::tests_spawn::a_failed_spawn_aborts_and_leaves_no_pid_file`, because `/tmp` is a session-writable root), and pointing `CARGO_TARGET_DIR` at the main checkout removes `/.loom/` from the path and hides the failure.
+
+**Prevention:** a test that feeds a path to a hook picks a fixture root the hook treats as ordinary: no `claude` component and no `/.loom/` component. Reproduce a dry-run failure at the dry run location, a HEAD worktree under `.loom/dry-run/` with its own target directory, never under `/tmp`. The dry-run report carries no test output; the checkout is deleted when the run ends, so copy a log out of `.loom/dry-run/*/checkout/loom/` while the run is live.
+
+**Fix:** `temp_dir_no_claude` in `loom/tests/hook_false_positive_contracts/support.rs` takes the first of `CARGO_TARGET_TMPDIR` and `std::env::temp_dir()` that `confuses_hooks` accepts.
