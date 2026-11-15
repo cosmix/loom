@@ -10,9 +10,9 @@ use std::sync::LazyLock;
 
 use super::{current_sha256, EventKind, IntegrityEvent};
 use crate::fs::safe_read::read_bounded;
+use crate::git::changes::read_only;
 use crate::git::worktree::WorktreeGit;
 use crate::testrun::languages::{self, LanguageProfile};
-use crate::verify::contracts::changes::git;
 use crate::verify::review::fingerprint::ChangeFingerprint;
 
 pub(super) const MAX_TEST_FILE_BYTES: usize = 10 * 1024 * 1024;
@@ -51,7 +51,7 @@ pub(super) struct BaseTestFile {
 /// Every regular file of `base`'s tree that `languages::for_path` maps to a
 /// profile. Symlinks and submodules hold no test lines.
 pub(super) fn base_test_files(repo: &WorktreeGit, base: &str) -> Result<Vec<BaseTestFile>> {
-    let listing = git(repo, &["ls-tree", "-r", "-z", "--full-tree", base])?;
+    let listing = read_only(repo, &["ls-tree", "-r", "-z", "--full-tree", base])?;
     Ok(listing
         .split(|byte| *byte == 0)
         .filter_map(|entry| {
@@ -112,7 +112,7 @@ pub(super) fn total_events(
         let changed = changes.files.contains_key(&file.path);
         let content = if changed {
             let object = format!("{}:{}", changes.base, file.path);
-            git(repo, &["cat-file", "blob", &object])?
+            read_only(repo, &["cat-file", "blob", &object])?
         } else {
             read_current(worktree, &file.path)?
         };

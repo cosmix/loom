@@ -117,6 +117,28 @@ fn worktree_graph_includes_uncommitted_new_file() {
     assert_eq!(tree_bytes(&cache), before, "the cache was written to");
 }
 
+#[test]
+fn changed_paths_preserve_names_and_index_bytes_and_ignore_stat_only_changes() {
+    let temp = repo_with_published_base();
+    let root = temp.path();
+    let path = " leading.rs ";
+    fs::write(root.join(path), "committed\n").unwrap();
+    git_ok(root, &["add", "--", path]);
+    git_ok(root, &["commit", "-m", "leading path"]);
+    fs::write(root.join(path), "changed\n").unwrap();
+    let file = fs::File::open(root.join("base.rs")).unwrap();
+    let modified = file.metadata().unwrap().modified().unwrap();
+    file.set_modified(modified + std::time::Duration::from_secs(3600))
+        .unwrap();
+    let index = root.join(".git/index");
+    let before = fs::read(&index).unwrap();
+    let changed = changed_paths(&WorktreeGit::discovered(root), "HEAD").unwrap();
+    assert_eq!(changed, vec![PathBuf::from(path)]);
+    let tree = crate::plan::schema::validation::base_tree::HeadTree::new(root).unwrap();
+    assert_eq!(tree.content(path).unwrap(), b"committed\n");
+    assert_eq!(fs::read(index).unwrap(), before);
+}
+
 /// Rewrite the published base for `HEAD` in place, the way an older build left it.
 fn rewrite_base(root: &Path, edit: impl FnOnce(&mut GraphLayer)) {
     let revision = git_ok(root, &["rev-parse", "HEAD"]);

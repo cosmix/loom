@@ -30,6 +30,7 @@ use crate::models::stage::{
 };
 use crate::orchestrator::provision::run_provision;
 use crate::plan::schema::{detect_stage_type, StageDefinition};
+use crate::utils::truncate_for_display;
 use crate::verify::criteria::{
     extended_criterion_timeout, has_test_summary, resolve_confinement, CriterionResult,
     DEFAULT_CHECK_TIMEOUT, DEFAULT_COMMAND_TIMEOUT,
@@ -91,7 +92,7 @@ pub fn run_dry_run_with(
         .context("dry run: failed to check out the committed HEAD")?;
     let _registered = checkout.root().parent().map(cleanup::register);
     if let Err(reason) = run_provision(&metadata.loom.provision, checkout.root()) {
-        let reason = cut(&reason, 300);
+        let reason = truncate_for_display(&reason, 300);
         let message = format!("dry run: provision failed in the base checkout: {reason}");
         report.errors.push(VerifyError {
             stage_id: None,
@@ -219,7 +220,10 @@ fn settled(execute: &mut DryExecutor<'_>, command: &DryCommand) -> DryOutcome {
         "dry run: {} {} {}",
         command.stage_id, command.field, command.index
     );
-    eprintln!("{label} `{}`", cut(&command.command, MAX_QUOTED));
+    eprintln!(
+        "{label} `{}`",
+        truncate_for_display(&command.command, MAX_QUOTED)
+    );
     let first = outcome_of(execute, command);
     settle_timeout(first, &mut || {
         eprintln!("{label} timed out; running it once more");
@@ -255,7 +259,7 @@ fn record(
         command.stage_id,
         command.field,
         command.index,
-        cut(&command.command, MAX_QUOTED)
+        truncate_for_display(&command.command, MAX_QUOTED)
     );
     match level {
         Some(DrySeverity::Error) => report.errors.push(VerifyError {
@@ -318,16 +322,6 @@ fn covering_token(definition: &StageDefinition, command: &str) -> Option<String>
         .map(str::to_string)
 }
 
-/// `text` on one line, cut to `limit` characters.
-pub(super) fn cut(text: &str, limit: usize) -> String {
-    let line = text.split_whitespace().collect::<Vec<_>>().join(" ");
-    if line.chars().count() <= limit {
-        return line;
-    }
-    let head: String = line.chars().take(limit).collect();
-    format!("{head}...")
-}
-
 #[path = "dry_run_cleanup.rs"]
 mod cleanup;
 #[cfg(test)]
@@ -336,3 +330,27 @@ mod dry_run_real_tests;
 #[cfg(test)]
 #[path = "dry_run_tests.rs"]
 mod dry_run_tests;
+
+#[cfg(test)]
+mod display_tests {
+    use super::*;
+
+    #[test]
+    fn findings_collapse_whitespace_and_include_ellipsis_in_character_budget() {
+        let stage = dry_run_tests::stage("s", "standard", &[], &["true"], "");
+        let text = dry_run_tests::plan("", &[stage]);
+        let mut metadata = parse_metadata(&text).unwrap();
+        let definition = &mut metadata.loom.stages[0];
+        let command = format!(" \t echo  {}\n", "é".repeat(MAX_QUOTED));
+        definition.acceptance = vec![AcceptanceCriterion::Simple(command)];
+        let commands = stage_commands(definition, Default::default(), Path::new("."));
+        let mut report = super::super::report::verify_text(None, Path::new("PLAN.md"), &text);
+        record(&mut report, definition, &commands[0], &DryOutcome::Passed);
+        let quote = format!("echo {}…", "é".repeat(MAX_QUOTED - 6));
+        assert_eq!(quote.chars().count(), MAX_QUOTED);
+        assert_eq!(
+            report.notes.last().unwrap(),
+            &format!("dry run: s acceptance 0 `{quote}` already passes at the base commit")
+        );
+    }
+}

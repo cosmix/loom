@@ -1,13 +1,9 @@
 //! The source graph of a worktree as it stands on disk, built in memory.
 //!
-//! Verification judges the tree a stage leaves behind, which no published
-//! layer describes: a base layer is a committed revision, and a stage sandbox
-//! cannot write the shared cache or an overlay. [`build_for_worktree`]
-//! therefore reads the published base layer nearest to `HEAD` among its
-//! ancestors, re-extracts every file that differs from it, and resolves the
-//! result. Nothing is written: no `ensure_snapshot`, `publish_base` or
-//! `save_overlay`, and only git commands that never refresh the index.
-//!
+//! [`build_for_worktree`] reads the published base layer nearest to `HEAD`
+//! among its ancestors, re-extracts changed files, and resolves the result.
+//! It writes neither the shared cache nor the worktree's index: change
+//! listings refresh a private copy of the index.
 //! Without a usable base layer it extracts every source file under the
 //! working directory instead and says so in [`WorktreeGraph::degraded`].
 
@@ -25,6 +21,8 @@ use crate::context::source_graph::FileCoverage;
 use crate::context::store::CACHE_RELATIVE_DIR;
 use crate::context::view::{build_cold, relink, ResolvedView, ViewIdentity};
 use crate::fs::work_dir::WorkDir;
+use crate::git::changes::{changed_names, untracked_names, DiffNames};
+use crate::git::revision::require_head_commit;
 use crate::git::worktree::{is_worktree_scaffold_path, WorktreeGit};
 use crate::verify::review::fingerprint::checkout_git;
 
@@ -47,16 +45,11 @@ pub struct WorktreeGraph {
 }
 
 /// Build the graph of the worktree containing `working_dir`, with read-only
-/// git through `checkout_git`: as the worktree's own `.git` directs it, or,
-/// for a stage worktree, pinned to the git directory the project registered
-/// for it. Verification runs outside the stage's sandbox, where a `.git` file
-/// the stage repointed would otherwise choose the toplevel, the base revision
-/// and the changed set, and run the configuration of the directory it names.
+/// git through `checkout_git`, pinned to the registered git directory for a
+/// stage worktree so a repointed `.git` cannot redirect verification.
 ///
-/// The worktree is the checkout's root; the project root, where the shared
-/// cache lives, is the parent of the absolute `--git-common-dir`; the base
-/// revision is the published base layer nearest to `HEAD` among its
-/// ancestors, or `HEAD` itself when there is none (which then degrades).
+/// The project root is the parent of the absolute `--git-common-dir`. Without a
+/// published ancestor base, it uses `HEAD` and degrades to scratch extraction.
 pub fn build_for_worktree(working_dir: &Path) -> Result<WorktreeGraph> {
     let git = checkout_git(working_dir)?;
     let common_dir =
@@ -68,7 +61,7 @@ pub fn build_for_worktree(working_dir: &Path) -> Result<WorktreeGraph> {
     let base_dir = read_only_store(project_root)?.base_dir();
     let base_revision = match nearest_ancestor_base(&base_dir, &git)? {
         Some(revision) => revision,
-        None => git.run_checked(&["rev-parse", "HEAD"])?.trim().to_string(),
+        None => require_head_commit(&git)?,
     };
     let changed = changed_paths(&git, &base_revision)?;
     build_worktree_graph(project_root, &git, working_dir, &base_revision, &changed)
@@ -239,17 +232,19 @@ fn is_object_id(value: &str) -> bool {
 }
 
 /// Worktree-relative paths that differ from `base_revision`, minus the
-/// worktree scaffold: committed, staged and unstaged changes, then untracked
-/// files. Plumbing `diff-index` never refreshes the index, so it writes
-/// nothing; the cost is that a stat-dirty but unchanged file is listed too.
-/// Without rename detection a move lists both its old and its new path.
+/// worktree scaffold. Stat-only changes are excluded without writing the
+/// worktree's index; a move lists both its old and its new path.
 fn changed_paths(git: &WorktreeGit, base_revision: &str) -> Result<Vec<PathBuf>> {
-    let diff = git.run_checked(&["diff-index", "--name-only", "-z", base_revision, "--"])?;
-    let untracked = git.run_checked(&["ls-files", "-z", "--others", "--exclude-standard"])?;
-    let paths: BTreeSet<&str> = nul_separated(&diff)
-        .chain(nul_separated(&untracked))
-        .filter(|path| !is_worktree_scaffold_path(path))
-        .collect();
+    let query = DiffNames {
+        from: base_revision,
+        to: None,
+        filter: None,
+        all_submodules: false,
+        pathspecs: &[],
+    };
+    let mut paths = changed_names(git, &query)?;
+    paths.extend(untracked_names(git, &[])?);
+    paths.retain(|path| !is_worktree_scaffold_path(path));
     Ok(paths.into_iter().map(PathBuf::from).collect())
 }
 

@@ -14,9 +14,9 @@ use sha2::{Digest, Sha256};
 
 use super::observer::{self, DaemonUnreachable, Source};
 use crate::fs::safe_read::{is_not_found, read_bounded};
-use crate::git::worktree::{is_worktree_scaffold_path, WorktreeGit};
-use crate::verify::contracts::changes::{changed_names, git};
-use crate::verify::tool_artifacts::is_tool_artifact;
+use crate::git::changes::{changes_since, merge_base};
+use crate::git::worktree::WorktreeGit;
+use crate::utils::sha256_hex;
 
 pub(crate) use super::observer::{checkout_git, local_git};
 
@@ -38,7 +38,7 @@ pub fn fingerprint_from(base: &str, entries: &[(String, Option<Vec<u8>>)]) -> Ch
         .map(|(path, content)| {
             let digest = content
                 .as_ref()
-                .map(|bytes| hex::encode(Sha256::digest(bytes)))
+                .map(|bytes| sha256_hex(bytes))
                 .unwrap_or_else(|| "deleted".to_string());
             (path.clone(), digest)
         })
@@ -133,15 +133,17 @@ pub fn compute_or_local(
 /// The fingerprint of `repo`'s worktree against `git merge-base HEAD
 /// <target_branch>` in this process's own view: every path changed since the
 /// base, plus every untracked file git does not ignore, less worktree
-/// scaffolding and sandbox artifacts (`verify::tool_artifacts`). Git runs
-/// through `repo`, read-only, without index writes or an fsmonitor command
-/// (`contracts::changes::git`); the daemon pins `repo` to the stage's
+/// scaffolding and sandbox artifacts (`crate::git::changes::changes_since`).
+/// Git runs through `repo`, read-only, without index writes or an fsmonitor
+/// command; the daemon pins `repo` to the stage's
 /// registered git directory ([`WorktreeGit::pinned`]) because it runs git in
 /// a worktree an agent controls. The daemon's observer code calls this;
 /// anything else calls [`compute`].
 pub fn compute_local(repo: &WorktreeGit, target_branch: &str) -> Result<ChangeFingerprint> {
     let worktree = repo.work_tree();
-    let (base, paths) = changes_since_merge_base(repo, target_branch)?;
+    let base = merge_base(repo, "HEAD", target_branch)
+        .with_context(|| format!("finding merge base with {target_branch}"))?;
+    let paths = changes_since(repo, &base)?;
     let mut entries = Vec::new();
     for path in paths {
         let content = match read_bounded(worktree, Path::new(&path), MAX_REVIEW_FILE_BYTES) {
@@ -154,44 +156,6 @@ pub fn compute_local(repo: &WorktreeGit, target_branch: &str) -> Result<ChangeFi
         entries.push((path, content));
     }
     Ok(fingerprint_from(&base, &entries))
-}
-
-/// The merge base of `HEAD` and `target_branch`, and every worktree-relative path changed
-/// since it: committed on the branch, changed in the index or working tree, or untracked
-/// and not ignored; worktree scaffolding and untracked sandbox artifacts left out.
-pub(crate) fn changes_since_merge_base(
-    repo: &WorktreeGit,
-    target_branch: &str,
-) -> Result<(String, BTreeSet<String>)> {
-    let worktree = repo.work_tree();
-    let merge_base = git(repo, &["merge-base", "HEAD", target_branch])
-        .with_context(|| format!("finding merge base with {target_branch}"))?;
-    let base = String::from_utf8_lossy(&merge_base).trim().to_string();
-    let mut paths = nul_paths(&changed_names(repo, &base, None)?)?;
-    let untracked = nul_paths(&git(
-        repo,
-        &["ls-files", "--others", "--exclude-standard", "-z"],
-    )?)?;
-    paths.extend(
-        untracked
-            .into_iter()
-            .filter(|path| !is_tool_artifact(worktree, path)),
-    );
-    paths.retain(|path| !is_worktree_scaffold_path(path));
-    Ok((base, paths))
-}
-
-/// The NUL-separated paths git listed, each required to be UTF-8.
-pub(super) fn nul_paths(listed: &[u8]) -> Result<BTreeSet<String>> {
-    listed
-        .split(|byte| *byte == 0)
-        .filter(|path| !path.is_empty())
-        .map(|path| {
-            std::str::from_utf8(path)
-                .context("git returned a non-UTF-8 path")
-                .map(str::to_owned)
-        })
-        .collect()
 }
 
 /// Sorted paths whose content hashes differ, including one-sided paths.

@@ -9,6 +9,9 @@
 //! - Git hook installation for .loom/work protection
 
 pub mod branch;
+pub(crate) mod changes;
+#[cfg(test)]
+mod changes_contract_tests;
 pub mod cleanup;
 pub mod hooks;
 mod init_blockers;
