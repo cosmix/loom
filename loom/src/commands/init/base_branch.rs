@@ -24,27 +24,15 @@ pub(super) fn checked_out_branch(repo_root: &Path) -> Result<String> {
 mod tests {
     use super::*;
     use crate::git::runner::run_git_checked;
+    use crate::test_git::{git, TestRepo};
 
     fn repo() -> tempfile::TempDir {
-        let tmp = tempfile::TempDir::new().unwrap();
-        let root = tmp.path();
-        run_git_checked(&["init", "-q", "-b", "main"], root).unwrap();
-        run_git_checked(
-            &[
-                "-c",
-                "user.name=t",
-                "-c",
-                "user.email=t@t",
-                "commit",
-                "-q",
-                "--allow-empty",
-                "-m",
-                "init",
-            ],
-            root,
-        )
-        .unwrap();
-        tmp
+        let repo = TestRepo::builder().branch("main").no_seed().create();
+        git(
+            repo.path(),
+            &["commit", "-q", "--allow-empty", "-m", "init"],
+        );
+        repo.into_temp_dir()
     }
 
     #[test]
@@ -55,8 +43,11 @@ mod tests {
 
     #[test]
     fn refuses_a_branch_with_no_commit() {
-        let tmp = tempfile::TempDir::new().unwrap();
-        run_git_checked(&["init", "-q", "-b", "main"], tmp.path()).unwrap();
+        let tmp = TestRepo::builder()
+            .branch("main")
+            .no_seed()
+            .create()
+            .into_temp_dir();
         let error = checked_out_branch(tmp.path()).unwrap_err();
         assert!(
             error

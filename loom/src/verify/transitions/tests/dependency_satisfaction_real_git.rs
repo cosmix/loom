@@ -10,10 +10,9 @@
 //!
 //! Each test explicitly documents which fix it guards.
 
-use crate::test_git::git_checked;
+use crate::test_git::{git_checked, TestRepo};
 
 use serial_test::serial;
-use tempfile::TempDir;
 
 use crate::models::stage::{StageStatus, StageType};
 use crate::verify::transitions::{
@@ -24,21 +23,11 @@ use crate::verify::transitions::{
 use super::create_test_stage;
 
 /// Initialize a real temporary git repo with an initial commit on `main`.
-/// Returns the TempDir so callers can keep it alive for the duration of the test.
-fn init_repo_with_main() -> TempDir {
-    let temp_dir = TempDir::new().expect("Failed to create temp directory");
-    let repo_root = temp_dir.path();
-
-    git_checked(repo_root, &["init", "-b", "main"]);
-    git_checked(repo_root, &["config", "user.email", "test@test.com"]);
-    git_checked(repo_root, &["config", "user.name", "Test"]);
-    git_checked(repo_root, &["config", "commit.gpgsign", "false"]);
-    std::fs::write(repo_root.join("README.md"), "initial\n").expect("write README");
-    git_checked(repo_root, &["add", "README.md"]);
-    git_checked(repo_root, &["commit", "-m", "initial"]);
-    git_checked(repo_root, &["branch", "-M", "main"]);
-
-    temp_dir
+/// Returns the repo so callers can keep it alive for the duration of the test.
+fn init_repo_with_main() -> TestRepo {
+    TestRepo::builder()
+        .seed("README.md", "initial\n", "initial")
+        .create()
 }
 
 /// Create a branch at the current HEAD, add a commit with a new file, and

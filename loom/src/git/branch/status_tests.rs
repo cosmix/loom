@@ -1,44 +1,14 @@
 //! Tests for working tree status checks, against real temporary repositories.
 
 use super::*;
+use crate::test_git::TestRepo;
 use std::process::Command;
 use tempfile::TempDir;
 
-fn init_test_repo() -> TempDir {
-    let temp_dir = TempDir::new().unwrap();
-    let repo_path = temp_dir.path();
-
-    Command::new("git")
-        .args(["init"])
-        .current_dir(repo_path)
-        .output()
-        .unwrap();
-
-    Command::new("git")
-        .args(["config", "user.email", "test@test.com"])
-        .current_dir(repo_path)
-        .output()
-        .unwrap();
-    Command::new("git")
-        .args(["config", "user.name", "Test"])
-        .current_dir(repo_path)
-        .output()
-        .unwrap();
-
-    // Create initial commit
-    std::fs::write(repo_path.join("file1.txt"), "content1").unwrap();
-    Command::new("git")
-        .args(["add", "file1.txt"])
-        .current_dir(repo_path)
-        .output()
-        .unwrap();
-    Command::new("git")
-        .args(["commit", "-m", "Initial commit"])
-        .current_dir(repo_path)
-        .output()
-        .unwrap();
-
-    temp_dir
+fn init_test_repo() -> TestRepo {
+    TestRepo::builder()
+        .seed("file1.txt", "content1", "Initial commit")
+        .create()
 }
 
 #[test]

@@ -3,6 +3,8 @@
 //! index and the work tree and then lost the ref update leaves a tree a later
 //! `git add` and `loom stage commit` would commit, reversing the stage's work.
 
+// bespoke-git-fixture: the scripts run host git inside a bwrap capsule with their own `-c user.*`
+// identity; that command line is the behaviour under test and the shared runner never runs in a capsule.
 use super::tests_ref_store_denies::{git, repo, skip, Repo};
 use super::*;
 use crate::git::stage_commit::{CommitRequest, CommitScope, Committer};

@@ -112,6 +112,7 @@ fn validate(base: &Path, current: &Path) -> Result<()> {
 mod tests {
     use super::super::knowledge_baseline as baseline;
     use super::*;
+    use crate::test_git::{git, TestRepo};
     use std::fs;
     use std::path::PathBuf;
 
@@ -127,19 +128,6 @@ mod tests {
             index::generate_index(root).unwrap(),
         )
         .unwrap();
-    }
-
-    fn git(root: &Path, args: &[&str]) {
-        let result = std::process::Command::new("git")
-            .args(args)
-            .current_dir(root)
-            .output()
-            .unwrap();
-        assert!(
-            result.status.success(),
-            "{}",
-            String::from_utf8_lossy(&result.stderr)
-        );
     }
 
     #[test]
@@ -186,9 +174,7 @@ mod tests {
         let work = temp.join("work");
         fs::create_dir_all(&repo).unwrap();
         fs::create_dir_all(&work).unwrap();
-        git(&repo, &["init", "-q"]);
-        git(&repo, &["config", "user.email", "test@example.com"]);
-        git(&repo, &["config", "user.name", "test"]);
+        TestRepo::builder().no_seed().init_in(&repo);
         let root = repo.join(KNOWLEDGE);
         seed(&root, ORIGINAL);
         git(&repo, &["add", "."]);

@@ -69,7 +69,7 @@ fn check_criterion_runs_only_named_criteria() {
     for var in ["LOOM_SESSION_ID", "LOOM_STAGE_ID", "LOOM_SESSION_TYPE"] {
         command.env_remove(var);
     }
-    hv_support::isolate_git(&mut command, &fx.home);
+    hv_support::isolate_git(&mut command);
     let output = command.output().unwrap();
     let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
     let stderr = String::from_utf8_lossy(&output.stderr);

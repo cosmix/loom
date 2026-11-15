@@ -3,7 +3,6 @@
 //! `commit_route_tests.rs`).
 
 use std::path::Path;
-use std::process::Command;
 
 use tempfile::TempDir;
 
@@ -13,7 +12,8 @@ use crate::plan_server::tests::support::{
 use crate::plan_server::RunningServer;
 use crate::planning::sections::normalized_hash;
 
-use super::settle_commit_tests::configure;
+use super::settle_commit_tests::init_configured;
+pub(super) use crate::test_git::git;
 
 pub(super) const SECTION_01: &str = "doc/product/demo/section_01.md";
 pub(super) const SECTION_REL: &str = "product/demo/section_01.md";
@@ -25,18 +25,6 @@ pub(super) fn put(root: &Path, rel: &str, content: &str) {
 
 pub(super) fn read(dir: &TempDir, rel: &str) -> String {
     std::fs::read_to_string(dir.path().join(rel)).unwrap()
-}
-
-/// Run git in `root`; the output is the trimmed stdout.
-pub(super) fn git(root: &Path, args: &[&str]) -> String {
-    let output = Command::new("git")
-        .args(["-c", "user.name=Test", "-c", "user.email=test@example.com"])
-        .args(args)
-        .current_dir(root)
-        .output()
-        .expect("run git");
-    assert!(output.status.success(), "git {args:?}: {output:?}");
-    String::from_utf8_lossy(&output.stdout).trim().to_owned()
 }
 
 /// A two-section feature with a metaplan and one plan, plus `extra` files written over it,
@@ -71,8 +59,7 @@ pub(super) fn demo(extra: &[(&str, &str)]) -> TempDir {
     for (rel, text) in files.iter().chain(extra) {
         put(root, rel, text);
     }
-    git(root, &["init", "-q"]);
-    configure(root);
+    init_configured(root);
     git(root, &["add", "-A"]);
     git(root, &["commit", "-q", "-m", "demo"]);
     dir

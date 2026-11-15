@@ -1,5 +1,6 @@
 use super::*;
 use crate::models::stage::{AcceptanceCriterion, Stage, TruthCheck};
+use crate::test_git::git;
 use crate::testrun::registry;
 use crate::verify::contracts::test_support::{
     contract_worktree, liquidmon_contract, pinned, write_liquidmon,
@@ -230,25 +231,19 @@ fn liquidmon(base_lib: &str) -> Liquidmon {
 /// on the stage branch and move `main` (the stage base) there.
 fn commit_base_lib(worktree: &std::path::Path, content: &str) {
     std::fs::write(worktree.join("src/lib.rs"), content).unwrap();
-    for args in [
-        vec!["add", "src/lib.rs"],
-        vec!["commit", "-q", "-m", "lib"],
-        vec!["update-ref", "refs/heads/main", "HEAD"],
-    ] {
-        let mut git = vec![
-            "-c",
-            "user.name=t",
-            "-c",
-            "user.email=t@t",
-            "-c",
-            "commit.gpgsign=false",
+    git(worktree, &["add", "src/lib.rs"]);
+    git(
+        worktree,
+        &[
             "-c",
             "core.hooksPath=/dev/null",
-        ];
-        git.extend(args);
-        let output = crate::git::runner::run_git(&git, worktree).unwrap();
-        assert!(output.status.success(), "git {git:?}: {output:?}");
-    }
+            "commit",
+            "-q",
+            "-m",
+            "lib",
+        ],
+    );
+    git(worktree, &["update-ref", "refs/heads/main", "HEAD"]);
 }
 
 fn refusal_of(fx: &Liquidmon) -> String {

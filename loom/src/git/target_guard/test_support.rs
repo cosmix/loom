@@ -1,13 +1,15 @@
 //! Repository fixtures for tests of the target guard and its callers:
-//! scratch repositories with ambient git config shut out, the stand-in hook
+//! scratch repositories on the shared git fixtures, the stand-in hook
 //! that turns attestation on, and a recorded target held by an operator move.
 
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use tempfile::TempDir;
 
 use super::{attestation_mode, check, AttestationMode, GuardState, HOOK_MARKER};
+use crate::test_git::{git_with_env, TestRepo};
+
+pub(crate) use crate::test_git::git;
 
 /// A scratch repository on `main` and its state directory `root/.loom/work`.
 pub(crate) struct Repo {
@@ -19,43 +21,13 @@ pub(crate) struct Repo {
 /// Trimmed stdout of a git command that must succeed, with ambient config and
 /// `LOOM_SESSION_ID` shut out and `envs` added.
 pub(super) fn git_env(dir: &Path, args: &[&str], envs: &[(&str, &Path)]) -> String {
-    let out = Command::new("git")
-        .args(args)
-        .current_dir(dir)
-        .env_remove("LOOM_SESSION_ID")
-        .env("GIT_CONFIG_GLOBAL", dir.join(".loom-test-no-global"))
-        .env("GIT_CONFIG_SYSTEM", dir.join(".loom-test-no-system"))
-        .env("GIT_CONFIG_NOSYSTEM", "1")
-        .env("GIT_AUTHOR_NAME", "t")
-        .env("GIT_AUTHOR_EMAIL", "t@t.com")
-        .env("GIT_COMMITTER_NAME", "t")
-        .env("GIT_COMMITTER_EMAIL", "t@t.com")
-        .envs(envs.iter().copied())
-        .output()
-        .unwrap();
-    assert!(
-        out.status.success(),
-        "git {args:?} failed: {}",
-        String::from_utf8_lossy(&out.stderr)
-    );
-    String::from_utf8_lossy(&out.stdout).trim().to_string()
+    git_with_env(dir, args, envs)
 }
 
-/// Trimmed stdout of a git command that must succeed, with ambient config
-/// shut out.
-pub(crate) fn git(dir: &Path, args: &[&str]) -> String {
-    git_env(dir, args, &[])
-}
-
-/// Write `path` (relative to `dir`) with `text`, commit it, and return the
-/// new commit.
+/// Write `path` (relative to `dir`) with `text`, commit it with the path as
+/// the message, and return the new commit.
 pub(crate) fn commit_file(dir: &Path, path: &str, text: &str) -> String {
-    let file = dir.join(path);
-    std::fs::create_dir_all(file.parent().unwrap()).unwrap();
-    std::fs::write(&file, text).unwrap();
-    git(dir, &["add", path]);
-    git(dir, &["commit", "-m", path]);
-    git(dir, &["rev-parse", "HEAD"])
+    crate::test_git::commit_file(dir, path, text, path)
 }
 
 /// A repository on `main` with `README.md` committed, `.loom/` and
@@ -63,13 +35,13 @@ pub(crate) fn commit_file(dir: &Path, path: &str, text: &str) -> String {
 /// set in the repository's own config, because the code under test runs git
 /// without this module's environment.
 pub(crate) fn repo() -> Repo {
-    let dir = TempDir::new().unwrap();
-    let root = dir.path().canonicalize().unwrap();
-    git(&root, &["init", "-q", "-b", "main"]);
-    git(&root, &["config", "user.name", "t"]);
-    git(&root, &["config", "user.email", "t@t.com"]);
+    let repo = TestRepo::builder()
+        .identity("t", "t@t.com")
+        .seed("README.md", "readme\n", "README.md")
+        .create();
+    let root = repo.path().to_path_buf();
+    let dir = repo.into_temp_dir();
     std::fs::write(root.join(".git/info/exclude"), ".loom/\n.worktrees/\n").unwrap();
-    commit_file(&root, "README.md", "readme\n");
     let work = root.join(".loom/work");
     std::fs::create_dir_all(&work).unwrap();
     crate::git::worktree::capture_main_identity(&root, &work).unwrap();

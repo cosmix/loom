@@ -3,7 +3,6 @@
 //! inside a git repository.
 
 use std::path::Path;
-use std::process::Command;
 use std::time::Instant;
 
 use serde_json::{json, Value};
@@ -15,6 +14,7 @@ use crate::plan_server::tests::support::{
 };
 use crate::plan_server::RunningServer;
 use crate::planning::sections::normalized_hash;
+use crate::test_git::{git, TestRepo};
 
 const SECTION_01: &str = "doc/product/demo/section_01.md";
 const SECTION_02: &str = "doc/product/demo/section_02.md";
@@ -27,16 +27,6 @@ fn put(root: &Path, rel: &str, content: &str) {
 
 fn read(dir: &TempDir, rel: &str) -> String {
     std::fs::read_to_string(dir.path().join(rel)).unwrap()
-}
-
-fn git(root: &Path, args: &[&str]) {
-    let output = Command::new("git")
-        .args(["-c", "user.name=Test", "-c", "user.email=test@example.com"])
-        .args(args)
-        .current_dir(root)
-        .output()
-        .expect("run git");
-    assert!(output.status.success(), "git {args:?}: {output:?}");
 }
 
 /// The DEMO tree of `loom/tests/planning_trace_contracts.rs` with `extra` files written over
@@ -74,7 +64,10 @@ fn demo(extra: &[(&str, &str)]) -> TempDir {
             put(root, rel, text);
         }
     }
-    git(root, &["init", "-q"]);
+    TestRepo::builder()
+        .identity("Test", "test@example.com")
+        .no_seed()
+        .init_in(root);
     git(root, &["add", "-A"]);
     git(root, &["commit", "-q", "-m", "demo"]);
     dir

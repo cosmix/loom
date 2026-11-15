@@ -2,7 +2,6 @@
 //! cannot run.
 
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 use tempfile::TempDir;
 
@@ -10,23 +9,10 @@ use super::*;
 use crate::context::graph_store::GraphStore;
 use crate::context::store::CACHE_RELATIVE_DIR;
 use crate::plan::schema::AcceptanceCriterion;
+use crate::test_git::{git, TestRepo};
 use crate::verify::transitions::save_stage;
 
 const STAGE: &str = "s1";
-
-fn git(dir: &Path, args: &[&str]) -> String {
-    let output = Command::new("git")
-        .args(args)
-        .current_dir(dir)
-        .output()
-        .unwrap();
-    assert!(
-        output.status.success(),
-        "git {args:?}: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    String::from_utf8(output.stdout).unwrap().trim().to_owned()
-}
 
 /// A stage worktree in merge resolution with committed work. A regular file
 /// sits where the source graph's base layers are listed: the merge and
@@ -34,10 +20,8 @@ fn git(dir: &Path, args: &[&str]) -> String {
 fn resolved_stage_with_broken_detector(root: &Path) -> (Stage, PathBuf) {
     let work_dir = root.join(".loom/work");
     std::fs::create_dir_all(work_dir.join("stages")).unwrap();
-    git(root, &["init", "-q", "-b", "main"]);
+    TestRepo::builder().no_seed().init_in(root);
     crate::git::worktree::capture_main_identity(root, &work_dir).unwrap();
-    git(root, &["config", "user.name", "loom-test"]);
-    git(root, &["config", "user.email", "loom-test@example.com"]);
     std::fs::write(root.join(".gitignore"), ".loom/\n.worktrees/\n").unwrap();
     git(root, &["add", "."]);
     git(root, &["commit", "-q", "-m", "base"]);

@@ -7,37 +7,8 @@ use crate::models::session::{Session, SessionExitReason, SessionStatus, SessionT
 use crate::models::stage::{Stage, StageStatus};
 use crate::orchestrator::core::OrchestratorConfig;
 use crate::plan::ExecutionGraph;
+use crate::test_git::{git, git_unchecked, TestRepo};
 use serial_test::serial;
-
-/// Run `git` in `root` with ambient global/system config neutralized.
-///
-/// Mirrors `git::merge::mod::tests::isolated_git`: a global
-/// `commit.gpgsign=true` with no configured key (or other ambient config) can
-/// break a fresh-repo commit; pinning `GIT_CONFIG_GLOBAL`/`GIT_CONFIG_SYSTEM`
-/// to nonexistent paths makes this test depend only on the repo's own local
-/// config.
-fn isolated_git(root: &std::path::Path, args: &[&str]) -> std::process::Output {
-    std::process::Command::new("git")
-        .args(args)
-        .current_dir(root)
-        .env("GIT_CONFIG_GLOBAL", root.join(".loom-test-no-global"))
-        .env("GIT_CONFIG_SYSTEM", root.join(".loom-test-no-system"))
-        .env("GIT_CONFIG_NOSYSTEM", "1")
-        .output()
-        .unwrap()
-}
-
-/// Run a setup `git` command and assert it succeeded, surfacing stderr on
-/// failure rather than letting it silently fall through to a confusing
-/// assertion several lines down.
-fn git_ok(root: &std::path::Path, args: &[&str]) {
-    let out = isolated_git(root, args);
-    assert!(
-        out.status.success(),
-        "git {args:?} failed: {}",
-        String::from_utf8_lossy(&out.stderr)
-    );
-}
 
 /// `Orchestrator::new` eagerly constructs a `NativeBackend`, so it fails on a
 /// headless CI runner with no terminal emulator installed. Pinning
@@ -66,9 +37,9 @@ fn merge_probe_failure_does_not_consume_resolver_attempt_budget() {
     // lists the conflicting files fails; both branches and the worktree exist.
     let repo = repo_with_stage_branches(&[]);
     let root = repo.path();
-    git_ok(root, &["checkout", "-q", "--orphan", "loom/probe"]);
-    git_ok(root, &["commit", "-q", "-m", "unrelated root"]);
-    git_ok(root, &["checkout", "-q", "main"]);
+    git(root, &["checkout", "-q", "--orphan", "loom/probe"]);
+    git(root, &["commit", "-q", "-m", "unrelated root"]);
+    git(root, &["checkout", "-q", "main"]);
     let mut orchestrator = orchestrator_with_conflict(root, "probe");
     let work_dir = orchestrator.config.work_dir.clone();
 
@@ -217,19 +188,16 @@ fn repo_with_unmerged_stage_branch(
     stage_id: &str,
     with_extra_commit: bool,
 ) -> (tempfile::TempDir, std::path::PathBuf) {
-    let temp = tempfile::tempdir().unwrap();
+    let temp = TestRepo::builder()
+        .identity("t", "t@t.com")
+        .seed("a.txt", "seed", "seed")
+        .create()
+        .into_temp_dir();
     let root = temp.path();
-
-    git_ok(root, &["init", "-b", "main"]);
-    git_ok(root, &["config", "user.email", "t@t.com"]);
-    git_ok(root, &["config", "user.name", "t"]);
-    std::fs::write(root.join("a.txt"), "seed").unwrap();
-    git_ok(root, &["add", "a.txt"]);
-    git_ok(root, &["commit", "-m", "seed"]);
 
     let worktree_path = root.join(".worktrees").join(stage_id);
     let branch = format!("loom/{stage_id}");
-    git_ok(
+    git(
         root,
         &[
             "worktree",
@@ -243,8 +211,8 @@ fn repo_with_unmerged_stage_branch(
         // Commit on the stage branch that never made it to `main` — the branch
         // is now provably ahead of the target.
         std::fs::write(worktree_path.join("b.txt"), "unmerged work").unwrap();
-        git_ok(&worktree_path, &["add", "b.txt"]);
-        git_ok(&worktree_path, &["commit", "-m", "unmerged work"]);
+        git(&worktree_path, &["add", "b.txt"]);
+        git(&worktree_path, &["commit", "-m", "unmerged work"]);
     }
 
     (temp, worktree_path)
@@ -305,7 +273,7 @@ fn already_merged_short_circuit_refuses_cleanup_for_unmerged_branch() {
          not provably in 'main'"
     );
     assert!(
-        isolated_git(
+        git_unchecked(
             root,
             &["rev-parse", "--verify", &format!("refs/heads/{branch}")]
         )
@@ -328,7 +296,7 @@ fn failed_auto_merge_moves_completed_stage_to_merge_blocked() {
     // touching the checkout.
     std::fs::write(root.join("b.txt"), "conflicting untracked content").unwrap();
     save_completed_unmerged_stage(stage_id, &work_dir);
-    let head_before = isolated_git(root, &["rev-parse", "main"]).stdout;
+    let head_before = git_unchecked(root, &["rev-parse", "main"]).stdout;
     let mut orchestrator = orchestrator_for(root, &work_dir);
 
     assert!(!orchestrator.try_auto_merge(stage_id));
@@ -343,13 +311,13 @@ fn failed_auto_merge_moves_completed_stage_to_merge_blocked() {
     let info = reloaded.failure_info.expect("a block records failure_info");
     assert_eq!(info.failure_type, FailureType::InfrastructureError);
     assert!(!info.evidence.is_empty(), "failure_info carries the reason");
-    let head_after = isolated_git(root, &["rev-parse", "main"]).stdout;
+    let head_after = git_unchecked(root, &["rev-parse", "main"]).stdout;
     assert_eq!(
         head_before, head_after,
         "a blocked merge must not move 'main'"
     );
     let branch_ref = format!("refs/heads/loom/{stage_id}");
-    let branch = isolated_git(root, &["rev-parse", "--verify", &branch_ref]);
+    let branch = git_unchecked(root, &["rev-parse", "--verify", &branch_ref]);
     assert!(branch.status.success(), "the stage branch must survive");
 }
 

@@ -5,7 +5,9 @@ use std::sync::LazyLock;
 
 use regex::Regex;
 
-use crate::testrun::command::{distinct_files, regex_literal, shell_quote, shell_word, shell_words};
+use crate::testrun::command::{
+    distinct_files, regex_literal, shell_quote, shell_word, shell_words,
+};
 use crate::testrun::recognize::{
     combined_output, command_args, count_matches, has_flag, last_match, pattern, positionals,
     summary_from_counts,
@@ -113,11 +115,8 @@ impl TestRunnerAdapter for NodeTest {
 mod tests {
     use super::*;
     use crate::testrun::command::{assert_one_word, HOSTILE_NAME};
+    use crate::testrun::fixture_support::words;
     use crate::testrun::{classify, fixture_support, RunOutcome};
-
-    fn words(command: &str) -> Vec<String> {
-        command.split_whitespace().map(str::to_string).collect()
-    }
 
     #[test]
     fn command_filters_the_full_test_name() {

@@ -3,40 +3,23 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 use tempfile::TempDir;
 
 use super::uncommitted_reasons;
+use crate::test_git::{git, TestRepo};
 
 const SPACED: &str = "doc/plans/briefs/a b.md";
 const MOVED: &str = "doc/plans/briefs/d e.md";
 const KEPT: &str = "doc/plans/briefs/c.md";
 const UNTRACKED: &str = "not committed (untracked, ignored, or staged only)";
 
-fn git(top: &Path, args: &[&str]) {
-    let output = Command::new("git")
-        .args(args)
-        .current_dir(top)
-        .env("GIT_CONFIG_GLOBAL", top.join(".no-global-config"))
-        .env("GIT_CONFIG_NOSYSTEM", "1")
-        .output()
-        .unwrap();
-    assert!(
-        output.status.success(),
-        "git {args:?} failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-}
-
 /// A repository whose one commit tracks `SPACED` and `KEPT` under `<top>/<below>`, with that
 /// directory as the project root. `below` is empty for a project at the top level.
 fn repo(below: &str) -> (TempDir, PathBuf) {
     let temp = TempDir::new().unwrap();
     let top = temp.path();
-    git(top, &["init", "-q", "-b", "main"]);
-    git(top, &["config", "user.email", "test@example.com"]);
-    git(top, &["config", "user.name", "Test"]);
+    TestRepo::builder().no_seed().init_in(top);
     let root = top.join(below);
     for rel in [SPACED, KEPT] {
         fs::create_dir_all(root.join(rel).parent().unwrap()).unwrap();

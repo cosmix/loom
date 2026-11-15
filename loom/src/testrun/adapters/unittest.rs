@@ -136,11 +136,8 @@ mod tests {
     use super::*;
     use crate::testrun::command::{assert_one_word, HOSTILE_NAME};
     use crate::testrun::fixture_support;
+    use crate::testrun::fixture_support::words;
     use crate::testrun::{classify, RunOutcome};
-
-    fn words(command: &str) -> Vec<String> {
-        command.split_whitespace().map(str::to_string).collect()
-    }
 
     #[test]
     fn commands_use_python_or_uv_for_dotted_test_names() {

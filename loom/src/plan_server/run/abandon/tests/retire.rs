@@ -11,6 +11,7 @@ use super::super::retire::rename_to_retired;
 use super::super::{finish_abandon, stranded_plan, AbandonOutcome};
 use super::{Repo, PLAN, RETIRED};
 use crate::planning::runtime::RuntimePaths;
+use crate::test_git::git;
 
 fn plan_a() -> RunningPlan {
     RunningPlan {
@@ -99,7 +100,7 @@ fn finish_abandon_refuses_a_leftover_branch_then_renames() {
     let repo = stranded_repo();
     let runtime = repo.runtime();
     write_marker(&repo, &runtime);
-    repo.git(&["branch", "loom/s1"]);
+    git(&repo.root, &["branch", "loom/s1"]);
     assert_eq!(stranded_plan(&repo.root, &runtime), None);
     let outcome = finish_abandon(&repo.root, &runtime).unwrap();
     match &outcome {
@@ -108,7 +109,7 @@ fn finish_abandon_refuses_a_leftover_branch_then_renames() {
     }
     assert!(repo.has(PLAN));
 
-    repo.git(&["branch", "-D", "-q", "loom/s1"]);
+    git(&repo.root, &["branch", "-D", "-q", "loom/s1"]);
     assert_eq!(stranded_plan(&repo.root, &runtime).as_deref(), Some(PLAN));
     let outcome = finish_abandon(&repo.root, &runtime).unwrap();
     assert_eq!(

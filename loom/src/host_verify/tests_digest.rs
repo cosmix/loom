@@ -1,26 +1,12 @@
 //! Tree digest against real repositories.
 
 use std::path::Path;
-use std::process::Command;
 
 use sha2::Digest as _;
 use tempfile::TempDir;
 
 use super::digest::{knowledge_tree_digest, tree_digest};
-
-fn git(dir: &Path, args: &[&str]) {
-    let output = Command::new("git")
-        .args(["-c", "commit.gpgsign=false", "-c", "user.name=t"])
-        .args(["-c", "user.email=t@t"])
-        .args(args)
-        .current_dir(dir)
-        .env_remove("GIT_DIR")
-        .env_remove("GIT_WORK_TREE")
-        .env_remove("GIT_INDEX_FILE")
-        .output()
-        .unwrap();
-    assert!(output.status.success(), "git {args:?}: {output:?}");
-}
+use crate::test_git::{git, TestRepo};
 
 fn write(dir: &Path, name: &str, content: &str) {
     let path = dir.join(name);
@@ -33,7 +19,7 @@ fn write(dir: &Path, name: &str, content: &str) {
 fn repository() -> TempDir {
     let tmp = tempfile::tempdir().unwrap();
     let dir = tmp.path();
-    git(dir, &["init", "-q", "-b", "main"]);
+    TestRepo::builder().no_seed().init_in(dir);
     write(dir, "a.txt", "one\n");
     write(dir, ".gitignore", "*.log\n");
     write(dir, "doc/loom/knowledge/note.md", "note\n");

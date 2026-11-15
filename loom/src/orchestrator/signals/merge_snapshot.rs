@@ -51,16 +51,14 @@ pub(crate) fn load_merge_snapshot(work_dir: &Path, session_id: &str) -> Result<S
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::git::signing::tests::git_in;
+    use crate::test_git::{git, TestRepo};
 
     #[test]
     fn snapshot_is_immutable_and_refuses_symlink_reads() {
         let temp = tempfile::tempdir().unwrap();
         let root = temp.path();
-        git_in(root, &["init", "-b", "main"]);
-        git_in(root, &["config", "user.name", "test"]);
-        git_in(root, &["config", "user.email", "test@example.com"]);
-        git_in(root, &["commit", "--allow-empty", "-m", "first"]);
+        TestRepo::builder().no_seed().init_in(root);
+        git(root, &["commit", "--allow-empty", "-m", "first"]);
         let id = "session-test";
         let snapshot = publish_merge_snapshot(root, root, id, "main").unwrap();
         assert!(publish_merge_snapshot(root, root, id, "main").is_err());

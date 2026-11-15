@@ -63,7 +63,7 @@ impl OverlayScope {
 mod tests {
     use super::*;
     use crate::context::graph_store::{FileEntry, GraphLayer, GraphStore};
-    use std::process::Command;
+    use crate::test_git::{git, TestRepo};
 
     #[test]
     fn overlay_digest_is_stable() {
@@ -73,35 +73,11 @@ mod tests {
         );
     }
 
-    fn git(root: &Path, args: &[&str]) {
-        let output = Command::new("git")
-            .current_dir(root)
-            .args(args)
-            .output()
-            .unwrap();
-        assert!(
-            output.status.success(),
-            "git {args:?}: {}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-    }
-
     fn create_worktrees(root: &Path) {
-        git(root, &["init", "repo"]);
         let repo = root.join("repo");
-        git(
-            &repo,
-            &[
-                "-c",
-                "user.name=Test",
-                "-c",
-                "user.email=test@example.com",
-                "commit",
-                "--allow-empty",
-                "-m",
-                "base",
-            ],
-        );
+        std::fs::create_dir_all(&repo).unwrap();
+        TestRepo::builder().no_seed().init_in(&repo);
+        git(&repo, &["commit", "--allow-empty", "-m", "base"]);
         std::fs::create_dir_all(root.join("a")).unwrap();
         std::fs::create_dir_all(root.join("b")).unwrap();
         git(&repo, &["worktree", "add", "--detach", "../a/shared"]);

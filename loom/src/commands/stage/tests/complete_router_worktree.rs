@@ -6,10 +6,13 @@ use super::*;
 /// about a merge in it can be read through pinned git, and that is a refusal.
 #[test]
 fn a_stage_worktree_the_repository_does_not_register_refuses_completion() {
-    let repo = init_repo();
+    let repo = TestRepo::builder()
+        .seed("seed.txt", "seed", "seed")
+        .create();
     let work_dir = make_work_dir(repo.path());
     crate::git::worktree::capture_main_identity(repo.path(), &work_dir).unwrap();
-    run_git(
+    git(
+        repo.path(),
         &[
             "worktree",
             "add",
@@ -18,7 +21,6 @@ fn a_stage_worktree_the_repository_does_not_register_refuses_completion() {
             "loom/other",
             ".worktrees/other",
         ],
-        repo.path(),
     );
     std::fs::create_dir_all(repo.path().join(".worktrees/st")).unwrap();
     let stage = make_stage("st", StageStatus::Executing);
@@ -45,12 +47,14 @@ fn a_stage_worktree_the_repository_does_not_register_refuses_completion() {
 /// this rule.
 #[test]
 fn a_registered_stage_worktree_with_no_merge_is_not_refused() {
-    let repo = init_repo();
+    let repo = TestRepo::builder()
+        .seed("seed.txt", "seed", "seed")
+        .create();
     let work_dir = make_work_dir(repo.path());
     crate::git::worktree::capture_main_identity(repo.path(), &work_dir).unwrap();
-    run_git(
-        &["worktree", "add", "-q", "-b", "loom/st", ".worktrees/st"],
+    git(
         repo.path(),
+        &["worktree", "add", "-q", "-b", "loom/st", ".worktrees/st"],
     );
     let stage = make_stage("st", StageStatus::Executing);
 

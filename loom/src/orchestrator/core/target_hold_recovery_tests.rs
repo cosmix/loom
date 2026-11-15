@@ -19,29 +19,10 @@ use crate::orchestrator::core::recovery::Recovery;
 use crate::orchestrator::core::{Orchestrator, OrchestratorConfig};
 use crate::orchestrator::scheduling_report::BlockReason;
 use crate::plan::{schema::StageDefinition, ExecutionGraph};
+use crate::test_git::{git, TestRepo};
 use crate::verify::transitions::{load_stage, save_stage};
 
 const ID: &str = "s";
-
-/// Run `git` in `dir` with ambient configuration shut out, assert it
-/// succeeded, and return its trimmed stdout.
-fn git(dir: &Path, args: &[&str]) -> String {
-    let out = Command::new("git")
-        .args(args)
-        .current_dir(dir)
-        .env("GIT_CONFIG_GLOBAL", dir.join(".loom-test-no-global"))
-        .env("GIT_CONFIG_SYSTEM", dir.join(".loom-test-no-system"))
-        .env("GIT_CONFIG_NOSYSTEM", "1")
-        .env("GIT_AUTHOR_NAME", "t")
-        .env("GIT_AUTHOR_EMAIL", "t@t.com")
-        .env("GIT_COMMITTER_NAME", "t")
-        .env("GIT_COMMITTER_EMAIL", "t@t.com")
-        .output()
-        .unwrap();
-    let stderr = String::from_utf8_lossy(&out.stderr);
-    assert!(out.status.success(), "git {args:?} failed: {stderr}");
-    String::from_utf8_lossy(&out.stdout).trim().to_string()
-}
 
 /// Commit `name` holding `text` on the checked-out branch; returns the tip.
 fn commit(dir: &Path, name: &str, text: &str) -> String {
@@ -54,11 +35,12 @@ fn commit(dir: &Path, name: &str, text: &str) -> String {
 /// A repository on `main` holding `seed.txt`, with the state directories
 /// excluded from its status as in a real project.
 fn repo() -> TempDir {
-    let repo = TempDir::new().unwrap();
+    let repo = TestRepo::builder()
+        .identity("t", "t@t.com")
+        .no_seed()
+        .create()
+        .into_temp_dir();
     let root = repo.path();
-    git(root, &["init", "-q", "-b", "main"]);
-    git(root, &["config", "user.email", "t@t.com"]);
-    git(root, &["config", "user.name", "t"]);
     std::fs::write(root.join(".git/info/exclude"), ".loom/\n.worktrees/\n").unwrap();
     commit(root, "seed.txt", "seed");
     repo

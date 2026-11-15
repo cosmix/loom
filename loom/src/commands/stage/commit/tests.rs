@@ -9,6 +9,7 @@ use tempfile::TempDir;
 
 use crate::models::session::SessionType;
 use crate::relay::emit::test_support::{context_for, RelayFixture};
+use crate::test_git::{git, TestRepo};
 
 #[derive(Default)]
 struct VecSink {
@@ -26,36 +27,11 @@ impl RelaySink for VecSink {
     }
 }
 
-fn git(root: &Path, args: &[&str]) -> String {
-    let output = Command::new("git")
-        .args(args)
-        .current_dir(root)
-        .env("GIT_CONFIG_GLOBAL", root.join("no-global-config"))
-        .env("GIT_CONFIG_SYSTEM", root.join("no-system-config"))
-        .env("GIT_CONFIG_NOSYSTEM", "1")
-        .output()
-        .unwrap();
-    assert!(
-        output.status.success(),
-        "git {args:?} failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    String::from_utf8_lossy(&output.stdout).trim().to_string()
-}
-
 fn init_repo(root: &Path) {
-    git(root, &["init", "-b", "main"]);
-    for (key, value) in [
-        ("user.name", "Tester"),
-        ("user.email", "tester@example.com"),
-        ("commit.gpgsign", "false"),
-        ("core.hooksPath", ".git/hooks"),
-    ] {
-        git(root, &["config", key, value]);
-    }
-    fs::write(root.join("a.txt"), "base\n").unwrap();
-    git(root, &["add", "a.txt"]);
-    git(root, &["commit", "-m", "base"]);
+    TestRepo::builder()
+        .seed("a.txt", "base\n", "base")
+        .init_in(root);
+    git(root, &["config", "core.hooksPath", ".git/hooks"]);
 }
 
 fn stage(root: &Path) {

@@ -10,7 +10,6 @@ use std::ffi::OsString;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 use serial_test::serial;
 use tempfile::TempDir;
@@ -18,6 +17,7 @@ use tempfile::TempDir;
 use super::sequence::CLEAN_LEFT_STATE;
 use super::{run_abandon, stranded_plan, AbandonOutcome};
 use crate::planning::runtime::{create_runtime_dir, runtime_paths_under, RuntimePaths};
+use crate::test_git::{git, TestRepo};
 
 const PLAN: &str = "doc/plans/IN_PROGRESS-PLAN-a.md";
 const RETIRED: &str = "doc/plans/archive/RETIRED-PLAN-a.md";
@@ -55,19 +55,16 @@ impl Repo {
         fs::write(fake.join("loom"), FAKE_LOOM).unwrap();
         fs::set_permissions(fake.join("loom"), fs::Permissions::from_mode(0o755)).unwrap();
         let repo = Repo { temp, root, fake };
-        repo.git(&["init", "-q"]);
-        repo.git(&["symbolic-ref", "HEAD", "refs/heads/main"]);
+        TestRepo::builder()
+            .identity("Abandon Tests", "abandon@example.invalid")
+            .no_seed()
+            .init_in(&repo.root);
         let hooks = repo.temp.path().join("hooks");
         fs::create_dir_all(&hooks).unwrap();
-        let hooks = hooks.display().to_string();
-        for (key, value) in [
-            ("user.name", "Abandon Tests"),
-            ("user.email", "abandon@example.invalid"),
-            ("commit.gpgsign", "false"),
-            ("core.hooksPath", hooks.as_str()),
-        ] {
-            repo.git(&["config", key, value]);
-        }
+        git(
+            &repo.root,
+            &["config", "core.hooksPath", &hooks.display().to_string()],
+        );
         repo.put("README.md", "# Fixture\n");
         repo.commit_all("initial");
         repo
@@ -82,20 +79,6 @@ impl Repo {
         repo
     }
 
-    pub fn git(&self, args: &[&str]) -> String {
-        let output = Command::new("git")
-            .args(args)
-            .current_dir(&self.root)
-            .env_remove("GIT_DIR")
-            .env_remove("GIT_WORK_TREE")
-            .env_remove("GIT_INDEX_FILE")
-            .output()
-            .unwrap();
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        assert!(output.status.success(), "git {args:?}: {stderr}");
-        String::from_utf8(output.stdout).unwrap()
-    }
-
     pub fn put(&self, rel: &str, content: &str) {
         let path = self.root.join(rel);
         fs::create_dir_all(path.parent().unwrap()).unwrap();
@@ -103,19 +86,22 @@ impl Repo {
     }
 
     pub fn commit_all(&self, message: &str) {
-        self.git(&["add", "-A"]);
-        self.git(&["commit", "-q", "-m", message]);
+        git(&self.root, &["add", "-A"]);
+        git(&self.root, &["commit", "-q", "-m", message]);
     }
 
     /// Points `branch` at `ahead` new commits on top of HEAD.
     pub fn branch_ahead(&self, branch: &str, ahead: usize) {
-        let mut tip = self.git(&["rev-parse", "HEAD"]).trim().to_string();
+        let mut tip = git(&self.root, &["rev-parse", "HEAD"]).trim().to_string();
         for n in 0..ahead {
             let message = format!("{branch} {n}");
             let args = ["commit-tree", "-p", &tip, "-m", &message, "HEAD^{tree}"];
-            tip = self.git(&args).trim().to_string();
+            tip = git(&self.root, &args).trim().to_string();
         }
-        self.git(&["update-ref", &format!("refs/heads/{branch}"), &tip]);
+        git(
+            &self.root,
+            &["update-ref", &format!("refs/heads/{branch}"), &tip],
+        );
     }
 
     /// `.loom/work/config.toml` naming `source` as the plan, merging into `base`.

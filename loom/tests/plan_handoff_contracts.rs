@@ -211,12 +211,12 @@ fn finish_abandon_renames_a_stranded_plan() {
     assert!(repo.has(PLAN));
 
     repo.write_marker(&runtime);
-    repo.git(&["branch", "loom/s1"]);
+    git(&repo.root, &["branch", "loom/s1"]);
     let outcome = finish_abandon(&repo.root, &runtime).expect("with a branch left");
     assert_refused(&outcome, "loom/s1 left");
     assert!(repo.has(PLAN));
 
-    repo.git(&["branch", "-D", "loom/s1"]);
+    git(&repo.root, &["branch", "-D", "loom/s1"]);
     let other_state = tempfile::tempdir().expect("another state directory");
     let outcome = {
         let _env = EnvGuard::set("LOOM_PLAN_STATE", other_state.path());
@@ -234,7 +234,7 @@ fn finish_abandon_renames_a_stranded_plan() {
 fn commit_commits_only_ticked_paths() {
     let repo = Repo::committed(&[("src.txt", "1\n"), ("doc/x.md", "1\n"), ("doc/y.md", "1\n")]);
     repo.put("src.txt", "2\n");
-    repo.git(&["add", "src.txt"]);
+    git(&repo.root, &["add", "src.txt"]);
     repo.put_all(&[("doc/x.md", "2\n"), ("doc/y.md", "2\n")]);
     let code = commit(&repo, &["doc/x.md"], "Edit x").expect("commit doc/x.md");
     assert_eq!(code, 0);

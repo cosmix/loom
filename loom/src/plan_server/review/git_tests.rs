@@ -2,7 +2,6 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 use chrono::{TimeZone, Utc};
 use tempfile::TempDir;
@@ -10,6 +9,7 @@ use tempfile::TempDir;
 use super::built::{built_notes, parse_generated, BuiltNote};
 use super::compare::{changed_since, commit_exists, text_at, ChangedDoc, ChangedDocChange};
 use crate::planning::project::Project;
+use crate::test_git::{git, git_with_env, TestRepo};
 
 const SECTION: &str = "doc/product/demo/section_02.md";
 const SECTION_ARG: &str = "product/demo/section_02";
@@ -24,26 +24,13 @@ pub(super) struct Repo {
     pub(super) root: PathBuf,
 }
 
-pub(super) fn git(root: &Path, args: &[&str], date: Option<&str>) -> String {
-    let mut cmd = Command::new("git");
-    cmd.args(args)
-        .current_dir(root)
-        .env("GIT_CONFIG_NOSYSTEM", "1")
-        .env("GIT_CONFIG_GLOBAL", "/dev/null");
-    if let Some(date) = date {
-        cmd.env("GIT_AUTHOR_DATE", date)
-            .env("GIT_COMMITTER_DATE", date);
-    }
-    let out = cmd.output().expect("run git");
-    assert!(
-        out.status.success(),
-        "git {args:?} failed: {}",
-        String::from_utf8_lossy(&out.stderr)
-    );
-    String::from_utf8(out.stdout)
-        .expect("git stdout is UTF-8")
-        .trim()
-        .to_owned()
+/// Run git with author and committer dates pinned to `date`; trimmed stdout.
+pub(super) fn git_at(root: &Path, args: &[&str], date: &str) -> String {
+    git_with_env(
+        root,
+        args,
+        &[("GIT_AUTHOR_DATE", date), ("GIT_COMMITTER_DATE", date)],
+    )
 }
 
 pub(super) fn repo() -> Repo {
@@ -56,14 +43,10 @@ pub(super) fn repo() -> Repo {
 
 /// A repository at `root` on branch `main` with a fixture identity and no signing.
 pub(super) fn init(root: &Path) {
-    git(root, &["init", "-q", "-b", "main"], None);
-    git(root, &["config", "user.name", "Review Fixture"], None);
-    git(
-        root,
-        &["config", "user.email", "fixture@example.invalid"],
-        None,
-    );
-    git(root, &["config", "commit.gpgsign", "false"], None);
+    TestRepo::builder()
+        .identity("Review Fixture", "fixture@example.invalid")
+        .no_seed()
+        .init_in(root);
 }
 
 pub(super) fn put(root: &Path, rel: &str, content: &str) {
@@ -73,9 +56,9 @@ pub(super) fn put(root: &Path, rel: &str, content: &str) {
 }
 
 pub(super) fn commit(root: &Path, date: &str) -> String {
-    git(root, &["add", "-A"], None);
-    git(root, &["commit", "-q", "-m", "fixture"], Some(date));
-    git(root, &["rev-parse", "HEAD"], None)
+    git(root, &["add", "-A"]);
+    git_at(root, &["commit", "-q", "-m", "fixture"], date);
+    git(root, &["rev-parse", "HEAD"])
 }
 
 pub(super) fn doc(path: &str, change: ChangedDocChange) -> ChangedDoc {
@@ -131,7 +114,7 @@ fn rename_shows_removed_plus_added() {
         "# A\n\nSame text for rename detection.\n",
     );
     let head = commit(&repo.root, BEFORE);
-    git(&repo.root, &["mv", "doc/a.md", "doc/b.md"], None);
+    git(&repo.root, &["mv", "doc/a.md", "doc/b.md"]);
     let docs = changed_since(&repo.root, &head).expect("changed since");
     assert_eq!(
         docs,
@@ -196,7 +179,7 @@ fn text_at_missing_path_is_none() {
     put(&repo.root, "doc/a.md", "# A\n");
     let head = commit(&repo.root, BEFORE);
     put(&repo.root, "doc/later.md", "# Later\n");
-    git(&repo.root, &["add", "doc/later.md"], None);
+    git(&repo.root, &["add", "doc/later.md"]);
     assert_eq!(
         text_at(&repo.root, &head, "a.md").expect("text at"),
         Some("# A\n".to_owned())
@@ -281,7 +264,7 @@ fn commit_exists_false_for_an_unknown_commit() {
     let repo = repo();
     put(&repo.root, "doc/a.md", "# A\n");
     let head = commit(&repo.root, BEFORE);
-    let tree = git(&repo.root, &["rev-parse", "HEAD^{tree}"], None);
+    let tree = git(&repo.root, &["rev-parse", "HEAD^{tree}"]);
     assert!(commit_exists(&repo.root, &head));
     assert!(!commit_exists(&repo.root, &"0".repeat(40)));
     assert!(!commit_exists(&repo.root, &tree), "a tree is not a commit");

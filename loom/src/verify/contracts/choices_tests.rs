@@ -3,11 +3,11 @@
 //! enforces, against real repositories with a committed `pkg/Cargo.toml`.
 
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 use tempfile::TempDir;
 
 use super::*;
+use crate::test_git::{git, TestRepo};
 
 const CARGO_TOML: &str = "[package]\nname = \"fixture\"\nversion = \"0.1.0\"\n";
 
@@ -20,26 +20,12 @@ struct Repo {
 
 impl Repo {
     fn init() -> Self {
-        let tmp = TempDir::new().unwrap();
-        let root = tmp.path().canonicalize().unwrap();
-        let repo = Self { _tmp: tmp, root };
-        repo.git(&["init", "-q", "-b", "main"]);
-        repo.git(&["config", "user.email", "t@t"]);
-        repo.git(&["config", "user.name", "t"]);
-        repo
-    }
-
-    fn git(&self, args: &[&str]) -> String {
-        let output = Command::new("git")
-            .args(args)
-            .current_dir(&self.root)
-            .env("GIT_CONFIG_GLOBAL", self.root.join(".no-global"))
-            .env("GIT_CONFIG_SYSTEM", self.root.join(".no-system"))
-            .env("GIT_CONFIG_NOSYSTEM", "1")
-            .output()
-            .unwrap();
-        assert!(output.status.success(), "git {args:?}: {output:?}");
-        String::from_utf8(output.stdout).unwrap()
+        let created = TestRepo::builder().no_seed().create();
+        let root = created.path().to_path_buf();
+        Self {
+            _tmp: created.into_temp_dir(),
+            root,
+        }
     }
 
     fn write(&self, path: &str, body: &str) {
@@ -50,16 +36,19 @@ impl Repo {
 
     /// Commit every file and return the commit.
     fn commit(&self, message: &str) -> String {
-        self.git(&["add", "-A"]);
-        self.git(&[
-            "commit",
-            "-q",
-            "--no-gpg-sign",
-            "--allow-empty",
-            "-m",
-            message,
-        ]);
-        self.git(&["rev-parse", "HEAD"]).trim().to_string()
+        git(&self.root, &["add", "-A"]);
+        git(
+            &self.root,
+            &[
+                "commit",
+                "-q",
+                "--no-gpg-sign",
+                "--allow-empty",
+                "-m",
+                message,
+            ],
+        );
+        git(&self.root, &["rev-parse", "HEAD"])
     }
 }
 

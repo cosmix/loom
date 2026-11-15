@@ -5,6 +5,7 @@
 
 use super::*;
 use crate::process::sandbox_probe::{confined_commands_runnable, skip_unless};
+use crate::test_git::TestRepo;
 use std::process::Command;
 use tempfile::TempDir;
 
@@ -16,17 +17,7 @@ pub(super) struct Repo {
     pub(super) common: PathBuf,
 }
 
-pub(super) fn git(dir: &Path, args: &[&str]) -> std::process::Output {
-    let output = Command::new("git")
-        .args(["-c", "user.name=T", "-c", "user.email=t@example.invalid"])
-        .args(["-c", "commit.gpgsign=false"])
-        .args(args)
-        .current_dir(dir)
-        .output()
-        .unwrap();
-    assert!(output.status.success(), "git {args:?}: {output:?}");
-    output
-}
+pub(super) use crate::test_git::git_checked as git;
 
 pub(super) fn repo() -> Repo {
     let tmp = TempDir::new().unwrap();
@@ -34,10 +25,10 @@ pub(super) fn repo() -> Repo {
     let outside = tmp.path().join("outside");
     std::fs::create_dir_all(&repo).unwrap();
     std::fs::create_dir_all(&outside).unwrap();
-    git(&repo, &["init", "-q", "-b", "main"]);
-    git(&repo, &["config", "user.name", "T"]);
-    git(&repo, &["config", "user.email", "t@example.invalid"]);
-    git(&repo, &["config", "commit.gpgsign", "false"]);
+    TestRepo::builder()
+        .identity("T", "t@example.invalid")
+        .no_seed()
+        .init_in(&repo);
     std::fs::write(repo.join("a.txt"), "a\n").unwrap();
     git(&repo, &["add", "a.txt"]);
     git(&repo, &["commit", "-qm", "base"]);

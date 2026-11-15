@@ -13,30 +13,13 @@ use crate::context::retrieve::{retrieve_for_stage, StageQuery};
 use crate::context::schema::ContextPack;
 use crate::context::store::ContextStore;
 use crate::fs::work_dir::WorkDir;
+use crate::test_git::{git, TestRepo};
 use serial_test::serial;
 use std::path::Path;
-use std::process::Command;
 use tempfile::TempDir;
 
 const PLAN: &str = "plan";
 const STAGE: &str = "stage";
-
-fn git(root: &Path, args: &[&str]) -> String {
-    let output = Command::new("git")
-        .args(args)
-        .current_dir(root)
-        .env("GIT_CONFIG_GLOBAL", root.join(".loom-test-no-global"))
-        .env("GIT_CONFIG_SYSTEM", root.join(".loom-test-no-system"))
-        .env("GIT_CONFIG_NOSYSTEM", "1")
-        .output()
-        .unwrap();
-    assert!(
-        output.status.success(),
-        "git {args:?}: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    String::from_utf8(output.stdout).unwrap().trim().to_string()
-}
 
 fn commit_all(root: &Path, message: &str) -> String {
     git(root, &["add", "doc", "src"]);
@@ -48,9 +31,10 @@ fn commit_all(root: &Path, message: &str) -> String {
 fn repository() -> TempDir {
     let temp = project_with_knowledge();
     let root = temp.path();
-    git(root, &["init", "-q", "-b", "main"]);
-    git(root, &["config", "user.email", "t@t.com"]);
-    git(root, &["config", "user.name", "t"]);
+    TestRepo::builder()
+        .identity("t", "t@t.com")
+        .no_seed()
+        .init_in(root);
     write_source(root, "src/kept.rs", "pub fn kept_zorble() {\n}\n");
     write_source(root, "src/edited.rs", "pub fn edited_zorble() {\n}\n");
     commit_all(root, "seed");

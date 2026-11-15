@@ -3,9 +3,8 @@ use super::super::reviewer_brief_plan::{
 };
 use super::*;
 use crate::models::stage::StageStatus;
+use crate::test_git::{git, TestRepo};
 use std::path::Path;
-use std::process::Command;
-use tempfile::TempDir;
 
 #[path = "reviewer_brief_budget_tests.rs"]
 mod budget;
@@ -232,23 +231,6 @@ fn missing_environment_prints_the_empty_object() {
     assert_eq!(brief_line(None), "{}");
 }
 
-fn git(dir: &Path, args: &[&str]) -> String {
-    let output = Command::new("git")
-        .args(args)
-        .current_dir(dir)
-        .env("GIT_CONFIG_GLOBAL", dir.join(".no-global"))
-        .env("GIT_CONFIG_SYSTEM", dir.join(".no-system"))
-        .env("GIT_CONFIG_NOSYSTEM", "1")
-        .output()
-        .expect("run git");
-    assert!(
-        output.status.success(),
-        "git {args:?}: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    String::from_utf8_lossy(&output.stdout).trim().to_string()
-}
-
 fn commit_file(dir: &Path, file: &str) -> String {
     let path = dir.join(file);
     std::fs::create_dir_all(path.parent().expect("parent")).expect("dirs");
@@ -283,12 +265,8 @@ fn done(id: &str, commit: Option<&str>, stage_type: StageType) -> Stage {
 
 #[test]
 fn plan_change_is_the_union_of_each_stage_merge() {
-    let temp = TempDir::new().expect("tempdir");
-    let dir = temp.path();
-    git(dir, &["init", "-q", "-b", "main"]);
-    git(dir, &["config", "user.email", "t@t.com"]);
-    git(dir, &["config", "user.name", "t"]);
-    git(dir, &["config", "commit.gpgsign", "false"]);
+    let repo = TestRepo::builder().no_seed().create();
+    let dir = repo.path();
     commit_file(dir, "base.txt");
     let a = merged_stage(dir, "stage-a", &["src/a1.rs", "src/a2.rs"]);
     let unrelated = commit_file(dir, "notes/unrelated.txt");

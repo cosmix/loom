@@ -2,46 +2,22 @@
 //! scenarios are in `changes_contract_tests.rs`.
 
 use std::path::Path;
-use std::process::Command;
 
 use tempfile::TempDir;
 
 use super::*;
-
-fn git(dir: &Path, args: &[&str]) {
-    let output = Command::new("git")
-        .args(["-c", "commit.gpgsign=false"])
-        .args(args)
-        .current_dir(dir)
-        .env_remove("GIT_DIR")
-        .env_remove("GIT_WORK_TREE")
-        .env_remove("GIT_INDEX_FILE")
-        .env("GIT_CONFIG_GLOBAL", "/dev/null")
-        .env("GIT_CONFIG_NOSYSTEM", "1")
-        .env("GIT_AUTHOR_NAME", "Changes Test")
-        .env("GIT_AUTHOR_EMAIL", "changes@example.invalid")
-        .env("GIT_COMMITTER_NAME", "Changes Test")
-        .env("GIT_COMMITTER_EMAIL", "changes@example.invalid")
-        .output()
-        .expect("git runs");
-    assert!(
-        output.status.success(),
-        "git {args:?}: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-}
+use crate::test_git::{git, TestRepo};
 
 /// A repository with `a.txt` and `doc/b.md` committed on `main`.
-fn repo() -> TempDir {
-    let dir = TempDir::new().expect("tempdir");
-    let root = dir.path();
-    git(root, &["init", "-q", "-b", "main"]);
+fn repo() -> TestRepo {
+    let repo = TestRepo::builder().no_seed().create();
+    let root = repo.path();
     std::fs::create_dir_all(root.join("doc")).unwrap();
     std::fs::write(root.join("a.txt"), "a\n").unwrap();
     std::fs::write(root.join("doc/b.md"), "b\n").unwrap();
     git(root, &["add", "."]);
     git(root, &["commit", "-q", "-m", "base"]);
-    dir
+    repo
 }
 
 fn set(paths: &[&str]) -> BTreeSet<String> {

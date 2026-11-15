@@ -24,6 +24,7 @@ use crate::models::stage::{AcceptanceCriterion, StageType};
 use crate::orchestrator::monitor::heartbeat::{write_heartbeat, Heartbeat};
 use crate::orchestrator::monitor::stall_line::COMPLETION_ACTIVITY;
 use crate::orchestrator::terminal::native::write_test_pid_identity;
+use crate::test_git::{git, TestRepo};
 use crate::verify::transitions::{load_stage, update_stage};
 use std::path::Path;
 
@@ -55,23 +56,11 @@ pub(super) fn stalled_stage(work: &Path) -> (Session, u32) {
 }
 
 fn init_checkpoint_repo(repo: &Path) -> String {
-    crate::git::runner::run_git_checked(&["init", "-q"], repo).unwrap();
-    std::fs::write(repo.join("seed"), "seed\n").unwrap();
-    crate::git::runner::run_git_checked(&["add", "seed"], repo).unwrap();
-    crate::git::runner::run_git_checked(
-        &[
-            "-c",
-            "user.name=Loom Test",
-            "-c",
-            "user.email=loom@example.invalid",
-            "commit",
-            "-qm",
-            "seed",
-        ],
-        repo,
-    )
-    .unwrap();
-    crate::git::runner::run_git_checked(&["rev-parse", "HEAD"], repo).unwrap()
+    TestRepo::builder()
+        .identity("Loom Test", "loom@example.invalid")
+        .seed("seed", "seed\n", "seed")
+        .init_in(repo);
+    git(repo, &["rev-parse", "HEAD"])
 }
 
 /// A slow agent is not a dead one. One budget of silence buys a warning and

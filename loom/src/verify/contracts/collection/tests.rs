@@ -37,35 +37,15 @@ fn collection_fails_closed_without_source_graph() {
 mod stage {
     use std::collections::BTreeSet;
     use std::path::Path;
-    use std::process::Command;
-
-    use tempfile::TempDir;
 
     use super::super::{freeze_scaffold, stage_scaffold, ScaffoldCheck, ScaffoldEdit};
     use crate::git::worktree::WorktreeGit;
     use crate::plan::schema::ContractSpec;
+    use crate::test_git::{git, TestRepo};
 
     const MANIFEST: &str = "[package]\nname = \"fx\"\nversion = \"0.1.0\"\nedition = \"2021\"\n";
     const FILE: &str = "src/device_lock/contract_tests.rs";
     const DECLARED_MAIN: &str = "mod device_lock;\nmod devices;\n\nfn main() {}\n";
-
-    fn git(root: &Path, args: &[&str]) {
-        let output = Command::new("git")
-            .args(["-c", "user.name=t", "-c", "user.email=t@t"])
-            .args([
-                "-c",
-                "commit.gpgsign=false",
-                "-c",
-                "core.hooksPath=/dev/null",
-            ])
-            .args(args)
-            .current_dir(root)
-            .env("GIT_CONFIG_GLOBAL", root.join(".no-global-config"))
-            .env("GIT_CONFIG_NOSYSTEM", "1")
-            .output()
-            .unwrap();
-        assert!(output.status.success(), "git {args:?}: {output:?}");
-    }
 
     fn write(root: &Path, path: &str, content: &str) {
         let path = root.join(path);
@@ -76,15 +56,24 @@ mod stage {
     /// A repository whose package lives in `pkg/`, the stage working
     /// directory, committed in the liquidmon shape, with the contract file
     /// written and untracked.
-    fn repo() -> TempDir {
-        let temp = TempDir::new().unwrap();
+    fn repo() -> TestRepo {
+        let temp = TestRepo::builder().no_seed().create();
         let root = temp.path();
-        git(root, &["init", "-q", "-b", "main"]);
         write(root, "pkg/Cargo.toml", MANIFEST);
         write(root, "pkg/src/main.rs", "mod devices;\n\nfn main() {}\n");
         write(root, "pkg/src/devices.rs", "");
         git(root, &["add", "pkg"]);
-        git(root, &["commit", "-q", "-m", "base"]);
+        git(
+            root,
+            &[
+                "-c",
+                "core.hooksPath=/dev/null",
+                "commit",
+                "-q",
+                "-m",
+                "base",
+            ],
+        );
         write(root, &format!("pkg/{FILE}"), "#[test]\nfn rejects_x() {}\n");
         temp
     }

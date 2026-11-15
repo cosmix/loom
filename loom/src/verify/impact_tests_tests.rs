@@ -5,6 +5,7 @@ use super::*;
 use crate::context::graph_store::GraphStore;
 use crate::context::refresh::{reconcile_source_graph, SourceGraphScope};
 use crate::context::store::{ContextStore, CACHE_RELATIVE_DIR};
+use crate::test_git::TestRepo;
 use crate::verify::criteria::ProbeRun;
 use crate::verify::impact_tests::base::BaseRunner;
 use std::cell::RefCell;
@@ -108,23 +109,7 @@ fn select(
     run_with(&check, graph, changed).unwrap()
 }
 
-/// Run git in `root` with ambient config neutralised; returns trimmed stdout.
-pub(super) fn git(root: &Path, args: &[&str]) -> String {
-    let output = std::process::Command::new("git")
-        .args(args)
-        .current_dir(root)
-        .env("GIT_CONFIG_GLOBAL", root.join(".loom-test-no-global"))
-        .env("GIT_CONFIG_SYSTEM", root.join(".loom-test-no-system"))
-        .env("GIT_CONFIG_NOSYSTEM", "1")
-        .output()
-        .unwrap();
-    assert!(
-        output.status.success(),
-        "git {args:?} failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    String::from_utf8_lossy(&output.stdout).trim().to_string()
-}
+pub(super) use crate::test_git::git;
 
 fn write(root: &Path, path: &str, content: &str) {
     let path = root.join(path);
@@ -137,9 +122,7 @@ fn write(root: &Path, path: &str, content: &str) {
 fn repo_with_base(manifest: (&str, &str), extra: Option<(&str, &str)>) -> TempDir {
     let temp = TempDir::new().unwrap();
     let root = temp.path();
-    git(root, &["init", "-b", "main"]);
-    git(root, &["config", "user.email", "t@t.com"]);
-    git(root, &["config", "user.name", "t"]);
+    TestRepo::builder().no_seed().init_in(root);
     let files = [
         manifest,
         ("src/lib.rs", LIB),
@@ -226,9 +209,7 @@ const WEB_TEST: &str = "import { test } from \"vitest\";\n\
 fn web_repo(manifest: &str) -> (TempDir, PathBuf) {
     let temp = TempDir::new().unwrap();
     let root = temp.path().canonicalize().unwrap();
-    git(&root, &["init", "-b", "main"]);
-    git(&root, &["config", "user.email", "t@t.com"]);
-    git(&root, &["config", "user.name", "t"]);
+    TestRepo::builder().no_seed().init_in(&root);
     write(&root, "README.md", "probe\n");
     git(&root, &["add", "."]);
     git(&root, &["commit", "-m", "seed"]);
@@ -328,9 +309,7 @@ fn stage(id: &str) -> Stage {
 fn committed_stage_repo() -> (TempDir, PathBuf) {
     let temp = TempDir::new().unwrap();
     let root = temp.path().canonicalize().unwrap();
-    git(&root, &["init", "-b", "main"]);
-    git(&root, &["config", "user.email", "t@t.com"]);
-    git(&root, &["config", "user.name", "t"]);
+    TestRepo::builder().no_seed().init_in(&root);
     write(&root, "web/package.json", VITEST_MANIFEST);
     write(&root, "web/src/a.test.ts", WEB_TEST);
     git(&root, &["add", "."]);

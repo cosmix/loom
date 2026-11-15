@@ -5,7 +5,6 @@
 //! real git.
 
 use std::path::Path;
-use std::process::Command;
 use std::time::Duration;
 
 use super::merge_lifecycle_e2e_tests_support::*;
@@ -21,6 +20,7 @@ use crate::orchestrator::core::Orchestrator;
 use crate::orchestrator::scheduling_report::{alerts, Severity};
 use crate::plan::schema::StageDefinition;
 use crate::plan::ExecutionGraph;
+use crate::test_git::git_with_env;
 use crate::verify::transitions::{save_stage, update_stage};
 
 fn guard(orchestrator: &mut Orchestrator) -> Option<Hold> {
@@ -62,18 +62,8 @@ fn crafted_commit(root: &Path, name: &str, text: &str) -> String {
     let blob_file = root.join(".git/crafted-blob");
     std::fs::write(&blob_file, text).unwrap();
     let blob = git(root, &["hash-object", "-w", blob_file.to_str().unwrap()]);
-    let indexed = |args: &[&str]| -> String {
-        let out = Command::new("git")
-            .args(args)
-            .current_dir(root)
-            .env("GIT_INDEX_FILE", &index)
-            .env("GIT_CONFIG_GLOBAL", root.join(".loom-test-no-global"))
-            .env("GIT_CONFIG_NOSYSTEM", "1")
-            .output()
-            .unwrap();
-        assert!(out.status.success(), "git {args:?} failed");
-        String::from_utf8_lossy(&out.stdout).trim().to_string()
-    };
+    let indexed =
+        |args: &[&str]| -> String { git_with_env(root, args, &[("GIT_INDEX_FILE", &index)]) };
     indexed(&["read-tree", "main"]);
     let info = format!("100644,{blob},{name}");
     indexed(&["update-index", "--add", "--cacheinfo", &info]);

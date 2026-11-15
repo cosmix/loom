@@ -24,6 +24,7 @@ use loom::verify::contracts::store::{
 };
 use tempfile::TempDir;
 
+use crate::helpers::test_support::git_repo::TestRepo;
 use crate::hv_support;
 
 pub const STAGE: &str = "stage-a";
@@ -115,14 +116,7 @@ impl Refreeze {
 
 fn repo_with_worktree(repo: &Path) -> PathBuf {
     fs::create_dir_all(repo.join("tests/support")).unwrap();
-    hv_support::git(repo, &["init", "-q", "-b", "main"]);
-    for (key, value) in [
-        ("user.email", "test@test.com"),
-        ("user.name", "Test User"),
-        ("commit.gpgsign", "false"),
-    ] {
-        hv_support::git(repo, &["config", key, value]);
-    }
+    TestRepo::builder().no_seed().init_in(repo);
     fs::write(repo.join(".gitignore"), ".loom/\n.worktrees/\n").unwrap();
     fs::write(repo.join(CONTRACT_FILE), CONTRACT_BYTES).unwrap();
     fs::write(repo.join(HELPER_FILE), HELPER_BYTES).unwrap();

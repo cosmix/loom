@@ -3,7 +3,7 @@
 //! daemon does.
 
 use super::*;
-use crate::git::run_git_checked;
+use crate::test_git::{git, git_with_env, TestRepo};
 use crate::verify::tool_artifacts::NAMES;
 
 #[test]
@@ -121,33 +121,29 @@ fn daemon_response_preserves_behaviour_hashes() {
     }
 }
 
-fn git_ok(root: &Path, args: &[&str]) -> Result<()> {
-    run_git_checked(args, root)?;
-    Ok(())
-}
-
 /// A repository on `main` with `files` committed, switched to `feature`.
-fn repo_on_feature(root: &Path, files: &[(&str, &str)]) -> Result<()> {
-    git_ok(root, &["init", "-b", "main"])?;
-    git_ok(root, &["config", "user.email", "review-test@example.com"])?;
-    git_ok(root, &["config", "user.name", "Review Test"])?;
+fn repo_on_feature(root: &Path, files: &[(&str, &str)]) {
+    TestRepo::builder()
+        .identity("Review Test", "review-test@example.com")
+        .no_seed()
+        .init_in(root);
     for &(path, content) in files {
-        std::fs::write(root.join(path), content)?;
-        git_ok(root, &["add", "-f", path])?;
+        std::fs::write(root.join(path), content).unwrap();
+        git(root, &["add", "-f", path]);
     }
-    git_ok(root, &["commit", "-m", "initial"])?;
-    git_ok(root, &["switch", "-c", "feature"])
+    git(root, &["commit", "-m", "initial"]);
+    git(root, &["switch", "-c", "feature"]);
 }
 
 #[test]
 fn fingerprint_ignores_commits() -> Result<()> {
     let temp = tempfile::tempdir()?;
     let root = temp.path();
-    repo_on_feature(root, &[("file.txt", "initial")])?;
+    repo_on_feature(root, &[("file.txt", "initial")]);
 
     std::fs::write(root.join("file.txt"), b"first change")?;
     let a = compute(root, "main")?;
-    git_ok(root, &["commit", "-am", "x"])?;
+    git(root, &["commit", "-am", "x"]);
     let b = compute(root, "main")?;
     assert_eq!(a.value, b.value);
     assert_eq!(a.files, b.files);
@@ -165,7 +161,7 @@ fn fingerprint_ignores_commits() -> Result<()> {
 fn fingerprint_leaves_out_sandbox_artifacts() -> Result<()> {
     let temp = tempfile::tempdir()?;
     let root = temp.path();
-    repo_on_feature(root, &[("file.txt", "initial")])?;
+    repo_on_feature(root, &[("file.txt", "initial")]);
     nix::unistd::mkfifo(&root.join(".bashrc"), nix::sys::stat::Mode::S_IRWXU)?;
     std::fs::write(root.join(".gitconfig"), b"")?;
     std::fs::write(root.join(".profile"), b"export EDITOR=vi\n")?;
@@ -186,7 +182,7 @@ fn fingerprint_leaves_out_sandbox_artifacts() -> Result<()> {
 fn a_listed_name_tracked_at_base_stays_a_change() -> Result<()> {
     let temp = tempfile::tempdir()?;
     let root = temp.path();
-    repo_on_feature(root, &[(".gitconfig", "[core]\n")])?;
+    repo_on_feature(root, &[(".gitconfig", "[core]\n")]);
     std::fs::write(root.join(".gitconfig"), b"")?;
 
     let fingerprint = compute(root, "main")?;
@@ -202,7 +198,7 @@ fn a_listed_name_tracked_at_base_stays_a_change() -> Result<()> {
 fn placeholders_do_not_split_a_round_from_its_completion() -> Result<()> {
     let temp = tempfile::tempdir()?;
     let root = temp.path();
-    repo_on_feature(root, &[("file.txt", "initial")])?;
+    repo_on_feature(root, &[("file.txt", "initial")]);
     std::fs::write(root.join("file.txt"), b"reviewed change")?;
 
     for name in NAMES {
@@ -225,15 +221,15 @@ fn placeholders_do_not_split_a_round_from_its_completion() -> Result<()> {
 fn a_commit_on_the_target_after_the_branch_point_is_not_a_stage_change() -> Result<()> {
     let temp = tempfile::tempdir()?;
     let root = temp.path();
-    repo_on_feature(root, &[("file.txt", "initial")])?;
+    repo_on_feature(root, &[("file.txt", "initial")]);
     std::fs::write(root.join("stage.txt"), b"from the stage")?;
-    git_ok(root, &["add", "stage.txt"])?;
-    git_ok(root, &["commit", "-m", "the stage's commit"])?;
-    git_ok(root, &["switch", "main"])?;
+    git(root, &["add", "stage.txt"]);
+    git(root, &["commit", "-m", "the stage's commit"]);
+    git(root, &["switch", "main"]);
     std::fs::write(root.join("landed.txt"), b"from another stage")?;
-    git_ok(root, &["add", "landed.txt"])?;
-    git_ok(root, &["commit", "-m", "landed on main"])?;
-    git_ok(root, &["switch", "feature"])?;
+    git(root, &["add", "landed.txt"]);
+    git(root, &["commit", "-m", "landed on main"]);
+    git(root, &["switch", "feature"]);
 
     let fingerprint = compute(root, "main")?;
 
@@ -241,31 +237,20 @@ fn a_commit_on_the_target_after_the_branch_point_is_not_a_stage_change() -> Resu
     Ok(())
 }
 
-/// `git` in `root` with fixed identity and dates and no global or system
-/// configuration, so every object id it writes is the same on every run.
+/// `git` in `root` with fixed identity and dates, so every object id it writes
+/// is the same on every run.
 fn fixed_git(root: &Path, args: &[&str]) {
-    let output = std::process::Command::new("git")
-        .args(["-c", "commit.gpgsign=false"])
-        .args(args)
-        .current_dir(root)
-        .env_remove("GIT_DIR")
-        .env_remove("GIT_WORK_TREE")
-        .env_remove("GIT_INDEX_FILE")
-        .env("GIT_CONFIG_GLOBAL", "/dev/null")
-        .env("GIT_CONFIG_NOSYSTEM", "1")
-        .env("GIT_AUTHOR_NAME", "Pin Test")
-        .env("GIT_AUTHOR_EMAIL", "pin@example.invalid")
-        .env("GIT_COMMITTER_NAME", "Pin Test")
-        .env("GIT_COMMITTER_EMAIL", "pin@example.invalid")
-        .env("GIT_AUTHOR_DATE", "2026-01-01T00:00:00Z")
-        .env("GIT_COMMITTER_DATE", "2026-01-01T00:00:00Z")
-        .output()
-        .expect("git runs");
-    assert!(
-        output.status.success(),
-        "git {args:?}: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
+    const PINNED: [(&str, &str); 6] = [
+        ("GIT_AUTHOR_NAME", "Pin Test"),
+        ("GIT_AUTHOR_EMAIL", "pin@example.invalid"),
+        ("GIT_COMMITTER_NAME", "Pin Test"),
+        ("GIT_COMMITTER_EMAIL", "pin@example.invalid"),
+        ("GIT_AUTHOR_DATE", "2026-01-01T00:00:00Z"),
+        ("GIT_COMMITTER_DATE", "2026-01-01T00:00:00Z"),
+    ];
+    let mut full = vec!["-c", "commit.gpgsign=false"];
+    full.extend_from_slice(args);
+    git_with_env(root, &full, &PINNED);
 }
 
 /// The review gate compares fingerprints across rounds, so the value for one

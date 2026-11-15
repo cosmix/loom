@@ -4,12 +4,15 @@
 //! and `GIT_CONFIG_SYSTEM` in the child's environment only: set in this
 //! process, they would turn attestation off for every test running beside it.
 
+// bespoke-git-fixture: the subject is how `loom target status` reads GIT_CONFIG_GLOBAL, GIT_CONFIG_SYSTEM and GIT_CONFIG_NOSYSTEM in the child environment; the shared runner would strip or fix those variables.
 #[path = "integration/helpers.rs"]
 #[allow(dead_code)]
 mod helpers;
 #[path = "target_ref_hook_support/mod.rs"]
 #[allow(dead_code)]
 mod support;
+// the support module reaches the shared git module as `crate::test_support`
+use helpers::test_support;
 
 use std::path::{Path, PathBuf};
 use support::{repo, Repo};

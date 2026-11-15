@@ -7,33 +7,17 @@
 #[allow(dead_code)]
 mod helpers;
 use crate::helpers::test_support;
+use test_support::git_repo::{git, TestRepo};
 
 use std::fs;
 use std::path::Path;
-use std::process::{Command, Output};
+use std::process::Output;
 
 use serde_json::Value;
 use tempfile::{Builder, TempDir};
 
 const LIB_RS: &str = "pub fn target() {}\npub fn caller() {\n    let _x = 1;\n    target();\n}\n";
 const TOOL_PY: &str = "def target():\n    return 1\n";
-
-fn git(root: &Path, args: &[&str]) -> Output {
-    let output = Command::new("git")
-        .args(args)
-        .current_dir(root)
-        .env("GIT_CONFIG_GLOBAL", root.join(".loom-test-no-global"))
-        .env("GIT_CONFIG_SYSTEM", root.join(".loom-test-no-system"))
-        .env("GIT_CONFIG_NOSYSTEM", "1")
-        .output()
-        .expect("spawn git");
-    assert!(
-        output.status.success(),
-        "git {args:?} failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    output
-}
 
 /// A committed git repo holding `files`, with the untracked `.loom/work` dir
 /// that makes loom resolve it as the project.
@@ -43,9 +27,7 @@ fn repo(files: &[(&str, &str)]) -> TempDir {
         .tempdir_in(std::env::temp_dir())
         .expect("create unique scratch directory");
     let root = temp.path();
-    git(root, &["init"]);
-    git(root, &["config", "user.name", "t"]);
-    git(root, &["config", "user.email", "t@t"]);
+    TestRepo::builder().no_seed().init_in(root);
     for (path, body) in files {
         let full = root.join(path);
         fs::create_dir_all(full.parent().expect("file has a parent")).expect("create dirs");
@@ -85,9 +67,7 @@ fn parse_json(args: &[&str], output: &Output) -> Value {
 #[test]
 fn window_of_a_node_prints_exactly_its_lines() {
     let repo = repo(&[("src/lib.rs", LIB_RS)]);
-    let head = String::from_utf8_lossy(&git(repo.path(), &["rev-parse", "HEAD"]).stdout)
-        .trim()
-        .to_string();
+    let head = git(repo.path(), &["rev-parse", "HEAD"]);
 
     let output = run_map(repo.path(), &["--window", "src/lib.rs#function:caller"]);
 

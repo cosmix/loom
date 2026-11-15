@@ -1,5 +1,6 @@
 use super::*;
-use crate::git::merge::test_support::{commit_file, git_ok, init_repo, rev, stage_branch};
+use crate::git::merge::test_support::{init_repo, rev, stage_branch};
+use crate::test_git::{commit_file, git};
 use std::os::unix::fs::symlink;
 
 fn overlap(paths: &[&str]) -> MergeBlock {
@@ -111,7 +112,7 @@ fn an_include_for_this_git_directory_shapes_the_files_the_fast_forward_writes() 
     let include = root.join(".git/operator-include");
     std::fs::write(&include, "[core]\n\tautocrlf = true\n").unwrap();
     let key = format!("includeIf.gitdir:{}/.git.path", root.display());
-    git_ok(&root, &["config", &key, include.to_str().unwrap()]);
+    git(&root, &["config", &key, include.to_str().unwrap()]);
 
     let advance = fast_forward(&root, (&old, &new), &[], None).unwrap();
 
@@ -137,7 +138,7 @@ fn a_refusal_without_paths_is_fast_forward_refused() {
         panic!("expected FastForwardRefused, got {advance:?}");
     };
     assert!(detail.contains("fast-forward"), "{detail}");
-    git_ok(root, &["status", "--porcelain"]);
+    git(root, &["status", "--porcelain"]);
 }
 
 #[test]
@@ -188,7 +189,7 @@ fn refused_with_a_stash_and_a_blocked_rollback(pop_fails: bool) -> (tempfile::Te
     stage_branch(root, "s1", &[("new.txt", "branch")]);
     let (old, new) = (rev(root, "main"), rev(root, "loom/s1"));
     std::fs::write(root.join("f.txt"), "edited\n").unwrap();
-    git_ok(root, &["stash", "push", "-q"]);
+    git(root, &["stash", "push", "-q"]);
     std::fs::write(root.join("new.txt"), "operator").unwrap();
     let _guard = failpoint::inject(failpoint::Failures {
         fast_forward: true,

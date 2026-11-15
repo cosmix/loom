@@ -7,7 +7,6 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 use chrono::Utc;
 use tempfile::TempDir;
@@ -23,29 +22,14 @@ use crate::handoff::{
 use crate::models::session::{Session, SessionStatus, SessionType};
 use crate::models::stage::{AcceptanceCriterion, Stage, StageStatus, StageType};
 use crate::stage_service::observer::stage_worktree_and_target;
+pub(crate) use crate::test_git::git;
+use crate::test_git::TestRepo;
 use crate::verify::review::fingerprint;
 use crate::verify::review::store::{next_round, write_round, ReviewRound, RECORD_VERSION};
 use crate::verify::transitions::{load_stage, save_stage, update_stage};
 
 pub(crate) const STAGE: &str = "stage-a";
 pub(crate) const SESSION: &str = "session-a";
-
-/// Run git in `dir` without the user's or the system's configuration.
-pub(crate) fn git(dir: &Path, args: &[&str]) -> String {
-    let output = Command::new("git")
-        .args(args)
-        .current_dir(dir)
-        .env("GIT_CONFIG_GLOBAL", "/dev/null")
-        .env("GIT_CONFIG_NOSYSTEM", "1")
-        .output()
-        .expect("spawn git");
-    assert!(
-        output.status.success(),
-        "git {args:?}: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    String::from_utf8_lossy(&output.stdout).trim().to_string()
-}
 
 /// The reason of an `Ignored` outcome; any other outcome fails the test.
 pub(crate) fn ignored(applied: Applied) -> String {
@@ -68,14 +52,7 @@ impl Fixture {
     pub(crate) fn new(stage_type: StageType, plan_version: u32) -> Self {
         let dir = TempDir::new().expect("temp dir");
         let repo = dir.path().canonicalize().expect("canonical temp dir");
-        git(&repo, &["init", "-q", "-b", "main"]);
-        for (key, value) in [
-            ("user.email", "test@test.com"),
-            ("user.name", "Test User"),
-            ("commit.gpgsign", "false"),
-        ] {
-            git(&repo, &["config", key, value]);
-        }
+        TestRepo::builder().no_seed().init_in(&repo);
         fs::write(repo.join(".gitignore"), ".loom/\n.worktrees/\n").expect("write .gitignore");
         git(&repo, &["add", ".gitignore"]);
         git(&repo, &["commit", "-q", "-m", "initial"]);

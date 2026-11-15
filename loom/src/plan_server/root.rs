@@ -70,30 +70,13 @@ fn safe_path(path: &Path) -> String {
 
 #[cfg(test)]
 mod branch_collision_tests {
+    use crate::test_git::TestRepo;
+
     #[test]
     fn stage_branch_with_same_named_tag_is_refused() {
-        let repo = tempfile::tempdir().unwrap();
-        for args in [
-            vec!["init", "-q", "-b", "loom/s1"],
-            vec![
-                "-c",
-                "user.name=T",
-                "-c",
-                "user.email=t@t",
-                "commit",
-                "--allow-empty",
-                "-qm",
-                "seed",
-            ],
-            vec!["tag", "loom/s1"],
-        ] {
-            let output = std::process::Command::new("git")
-                .args(args)
-                .current_dir(repo.path())
-                .output()
-                .unwrap();
-            assert!(output.status.success(), "{output:?}");
-        }
+        let repo = TestRepo::builder().branch("loom/s1").no_seed().create();
+        repo.git(&["commit", "--allow-empty", "-qm", "seed"]);
+        repo.git(&["tag", "loom/s1"]);
         let error = super::resolve_project(repo.path()).unwrap_err().to_string();
         assert!(error.contains("loom stage worktree"), "{error}");
     }

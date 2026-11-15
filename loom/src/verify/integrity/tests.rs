@@ -2,8 +2,8 @@
 //! repository with a base commit on `main` and the stage's work on a branch.
 
 use super::*;
-use crate::git::runner::run_git_checked;
 use crate::models::stage::{Stage, StageType};
+use crate::test_git::{git, TestRepo};
 use sha2::{Digest, Sha256};
 use std::path::PathBuf;
 use tempfile::TempDir;
@@ -22,34 +22,19 @@ impl Repo {
         let tmp = TempDir::new().unwrap();
         let root = tmp.path().join("repo");
         std::fs::create_dir_all(&root).unwrap();
+        TestRepo::builder().no_seed().init_in(&root);
         let repo = Self { tmp, root };
-        repo.git(&["init", "-q", "-b", "main"]);
         for &(path, content) in files {
             repo.write(path, content);
-            repo.git(&["add", "--", path]);
+            git(&repo.root, &["add", "--", path]);
         }
         repo.commit("base");
-        repo.git(&["switch", "-q", "-c", "feature"]);
+        git(&repo.root, &["switch", "-q", "-c", "feature"]);
         repo
     }
 
-    pub(super) fn git(&self, args: &[&str]) -> String {
-        run_git_checked(args, &self.root).unwrap()
-    }
-
     pub(super) fn commit(&self, message: &str) {
-        self.git(&[
-            "-c",
-            "user.name=t",
-            "-c",
-            "user.email=t@t",
-            "-c",
-            "commit.gpgsign=false",
-            "commit",
-            "-q",
-            "-am",
-            message,
-        ]);
+        git(&self.root, &["commit", "-q", "-am", message]);
     }
 
     pub(super) fn write(&self, path: &str, content: &str) {
@@ -151,7 +136,7 @@ fn moved_assertion_is_not_an_integrity_event() {
     // The textual diff shows the assertion line removed and added again; the
     // scan matches statements by key rather than by diff line, so the moved
     // statement is found on both sides and nothing is raised.
-    let diff = repo.git(&["diff", "main", "--", TESTS_FILE]);
+    let diff = git(&repo.root, &["diff", "main", "--", TESTS_FILE]);
     assert!(diff.contains("\n-    assert_eq!(x, 5);"), "{diff}");
     assert!(diff.contains("\n+    assert_eq!(x, 5);"), "{diff}");
     assert_eq!(repo.events(&[]), Vec::new());

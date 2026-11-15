@@ -2,31 +2,14 @@ use super::{mark_plan_in_progress, require_committed_plan};
 use crate::fs::{plan_lifecycle, work_dir::WorkDir};
 use crate::git::target_guard::test_support::activate;
 use crate::git::target_guard::{check, GuardState, LEDGER_FILE};
+use crate::test_git::{git, TestRepo};
 use std::fs;
 use std::path::Path;
-use std::process::Command;
 use tempfile::TempDir;
 
 const PLAN: &str = "doc/plans/PLAN-demo.md";
 const ACTIVE: &str = "doc/plans/IN_PROGRESS-PLAN-demo.md";
 const BRIEF: &str = "doc/plans/briefs/demo/worker.md";
-
-fn git(root: &Path, args: &[&str]) -> String {
-    let result = Command::new("git")
-        .args(args)
-        .current_dir(root)
-        .env("GIT_CONFIG_GLOBAL", root.join("absent-global"))
-        .env("GIT_CONFIG_SYSTEM", root.join("absent-system"))
-        .env("GIT_CONFIG_NOSYSTEM", "1")
-        .output()
-        .unwrap();
-    assert!(
-        result.status.success(),
-        "git {args:?}: {}",
-        String::from_utf8_lossy(&result.stderr)
-    );
-    String::from_utf8(result.stdout).unwrap().trim().to_string()
-}
 
 fn write(root: &Path, path: &str, content: &str) {
     let path = root.join(path);
@@ -37,18 +20,10 @@ fn write(root: &Path, path: &str, content: &str) {
 fn fixture() -> (TempDir, WorkDir) {
     let temp = TempDir::new().unwrap();
     let root = temp.path();
-    git(root, &["init", "-b", "main"]);
-    for (key, value) in [
-        ("user.name", "Test"),
-        ("user.email", "test@example.invalid"),
-        ("commit.gpgsign", "false"),
-        ("core.hooksPath", "/dev/null"),
-    ] {
-        git(root, &["config", key, value]);
-    }
-    write(root, "seed", "seed");
-    git(root, &["add", "seed"]);
-    git(root, &["commit", "-m", "seed"]);
+    TestRepo::builder()
+        .seed("seed", "seed", "seed")
+        .init_in(root);
+    git(root, &["config", "core.hooksPath", "/dev/null"]);
     write(root, PLAN, &format!("# Plan\nRead `{BRIEF}`.\n"));
     write(root, BRIEF, "# Implement the stage\n");
     let work = WorkDir::new(root).unwrap();
@@ -315,6 +290,7 @@ fn rename_does_not_commit_unrelated_staged_changes() {
     assert_eq!(git(root, &["diff", "--cached", "--name-only"]), "seed");
 }
 
+// bespoke-git-fixture: commit_failure_keeps_plan_recoverable_and_stops_startup blanks user.email and user.name to prove a failed rename commit leaves the plan recoverable
 #[test]
 fn commit_failure_keeps_plan_recoverable_and_stops_startup() {
     let (temp, work) = fixture();

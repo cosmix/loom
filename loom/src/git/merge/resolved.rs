@@ -192,7 +192,8 @@ fn unmerged_paths(listing: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::git::merge::test_support::{commit_file, git_ok, git_out, init_repo};
+    use crate::git::merge::test_support::init_repo;
+    use crate::test_git::{commit_file, git};
     use std::path::PathBuf;
     use tempfile::TempDir;
 
@@ -203,12 +204,12 @@ mod tests {
         let repo = init_repo();
         let root = repo.path();
         let wt = root.join(".worktrees").join("s");
-        git_ok(
+        git(
             root,
             &["worktree", "add", "-b", "loom/s", wt.to_str().unwrap()],
         );
         commit_file(&wt, "stage.txt", "stage", "stage work");
-        let commit = git_out(&wt, &["rev-parse", "HEAD"]);
+        let commit = git(&wt, &["rev-parse", "HEAD"]);
         (repo, wt, commit)
     }
 
@@ -224,7 +225,7 @@ mod tests {
     fn a_merged_clean_worktree_passes_and_untracked_files_are_allowed() {
         let (repo, wt, commit) = repo_with_worktree();
         commit_file(repo.path(), "m.txt", "main", "main work");
-        git_ok(&wt, &["merge", "main", "-m", "merge main"]);
+        git(&wt, &["merge", "main", "-m", "merge main"]);
         assert_eq!(check(&repo, &commit), Ok(()));
         std::fs::write(wt.join("stub.txt"), "sandbox stub").unwrap();
         assert_eq!(check(&repo, &commit), Ok(()));
@@ -236,7 +237,7 @@ mod tests {
         commit_file(&wt, "more.txt", "more", "plain work");
         assert_eq!(has_merge_commit_since(repo.path(), "s", &commit), Ok(false));
         commit_file(repo.path(), "m.txt", "main", "main work");
-        git_ok(&wt, &["merge", "main", "-m", "merge main"]);
+        git(&wt, &["merge", "main", "-m", "merge main"]);
         assert_eq!(has_merge_commit_since(repo.path(), "s", &commit), Ok(true));
         assert!(has_merge_commit_since(repo.path(), "s", "not-a-commit").is_err());
     }
@@ -245,7 +246,7 @@ mod tests {
     fn a_target_that_moved_after_the_resolution_is_not_refused() {
         let (repo, wt, commit) = repo_with_worktree();
         commit_file(repo.path(), "m.txt", "main", "main work");
-        git_ok(&wt, &["merge", "main", "-m", "merge main"]);
+        git(&wt, &["merge", "main", "-m", "merge main"]);
         commit_file(repo.path(), "later.txt", "later", "unrelated work");
         assert_eq!(check(&repo, &commit), Ok(()));
     }
@@ -254,21 +255,21 @@ mod tests {
     fn a_rebase_that_drops_the_completed_commit_is_refused() {
         let (repo, wt, commit) = repo_with_worktree();
         commit_file(repo.path(), "m.txt", "main", "main work");
-        git_ok(&wt, &["rebase", "main"]);
+        git(&wt, &["rebase", "main"]);
         assert!(refusal(&repo, &commit).contains("no longer in the branch history"));
     }
 
     #[test]
     fn an_amend_that_rewrites_the_completed_commit_is_refused() {
         let (repo, wt, commit) = repo_with_worktree();
-        git_ok(&wt, &["commit", "--amend", "-m", "squashed"]);
+        git(&wt, &["commit", "--amend", "-m", "squashed"]);
         assert!(refusal(&repo, &commit).contains("no longer in the branch history"));
     }
 
     #[test]
     fn a_reset_to_the_target_is_refused() {
         let (repo, wt, commit) = repo_with_worktree();
-        git_ok(&wt, &["reset", "--hard", "main"]);
+        git(&wt, &["reset", "--hard", "main"]);
         assert!(refusal(&repo, &commit).contains("no longer in the branch history"));
     }
 
@@ -292,11 +293,11 @@ mod tests {
     #[test]
     fn sparse_keys_in_config_worktree_pass_and_other_keys_are_refused() {
         let (repo, wt, commit) = repo_with_worktree();
-        git_ok(
+        git(
             repo.path(),
             &["config", "extensions.worktreeConfig", "true"],
         );
-        let admin = git_out(&wt, &["rev-parse", "--absolute-git-dir"]);
+        let admin = git(&wt, &["rev-parse", "--absolute-git-dir"]);
         let file = Path::new(&admin).join("config.worktree");
         std::fs::write(&file, "[core]\n\tsparseCheckout = true\n").unwrap();
         assert_eq!(check(&repo, &commit), Ok(()));
@@ -314,7 +315,7 @@ mod tests {
     #[test]
     fn a_worktree_on_another_branch_is_refused() {
         let (repo, wt, commit) = repo_with_worktree();
-        git_ok(&wt, &["checkout", "-b", "other"]);
+        git(&wt, &["checkout", "-b", "other"]);
         assert!(refusal(&repo, &commit).contains("not on loom/s"));
     }
 
@@ -326,7 +327,7 @@ mod tests {
         let merge = crate::git::runner::run_git(&["merge", "main"], &wt).unwrap();
         assert!(!merge.status.success(), "the merge must conflict");
         assert!(refusal(&repo, &commit).contains("MERGE_HEAD"));
-        let git_dir = git_out(&wt, &["rev-parse", "--absolute-git-dir"]);
+        let git_dir = git(&wt, &["rev-parse", "--absolute-git-dir"]);
         std::fs::remove_file(Path::new(&git_dir).join("MERGE_HEAD")).unwrap();
         assert!(refusal(&repo, &commit).contains("unmerged paths remain: a.txt"));
     }
@@ -341,7 +342,7 @@ mod tests {
     #[test]
     fn a_corrupt_index_is_refused_with_git_error() {
         let (repo, wt, commit) = repo_with_worktree();
-        let admin = git_out(&wt, &["rev-parse", "--absolute-git-dir"]);
+        let admin = git(&wt, &["rev-parse", "--absolute-git-dir"]);
         std::fs::write(Path::new(&admin).join("index"), b"corrupt index").unwrap();
         let reason = refusal(&repo, &commit);
         assert!(reason.contains("git ls-files -u failed"), "{reason}");

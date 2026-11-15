@@ -269,17 +269,12 @@ fn commit_base_lib(worktree: &Path, content: &str) {
     ] {
         let mut git = vec![
             "-c",
-            "user.name=t",
-            "-c",
-            "user.email=t@t",
-            "-c",
             "commit.gpgsign=false",
             "-c",
             "core.hooksPath=/dev/null",
         ];
         git.extend(args);
-        let output = crate::git::runner::run_git(&git, worktree).unwrap();
-        assert!(output.status.success(), "git {git:?}: {output:?}");
+        crate::test_git::git(worktree, &git);
     }
 }
 

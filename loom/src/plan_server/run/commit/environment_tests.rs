@@ -60,10 +60,10 @@ fn a_commit_ignores_inherited_pathspec_variables() {
         "the commit followed the inherited pathspec variables"
     );
     assert_eq!(
-        repo.git(&["show", "--format=", "--name-only", "HEAD"]),
+        repo.git_text(&["show", "--format=", "--name-only", "HEAD"]),
         format!("{path}\n")
     );
-    assert_eq!(repo.git(&["ls-files", "--", "doc/ab.md"]), "");
+    assert_eq!(repo.git_text(&["ls-files", "--", "doc/ab.md"]), "");
     let seen = std::fs::read_to_string(repo.0.path().join("hook-env")).unwrap();
     assert_eq!(seen, UNSET);
 }
@@ -92,8 +92,8 @@ fn a_commit_ignores_an_inherited_repository_redirect() {
     let repo = Repo::new();
     let other = Repo::new();
     repo.put("doc/a.md", "changed\n");
-    let head = repo.git(&["rev-parse", "HEAD"]);
-    let other_head = other.git(&["rev-parse", "HEAD"]);
+    let head = repo.git_text(&["rev-parse", "HEAD"]);
+    let other_head = other.git_text(&["rev-parse", "HEAD"]);
 
     let status = Command::new(std::env::current_exe().unwrap())
         .args([
@@ -110,9 +110,9 @@ fn a_commit_ignores_an_inherited_repository_redirect() {
         .unwrap();
 
     assert!(status.success(), "the commit followed GIT_DIR");
-    assert_eq!(other.git(&["rev-parse", "HEAD"]), other_head);
-    assert_ne!(repo.git(&["rev-parse", "HEAD"]), head);
-    assert_eq!(repo.git(&["log", "-1", "--format=%s"]), "edit\n");
+    assert_eq!(other.git_text(&["rev-parse", "HEAD"]), other_head);
+    assert_ne!(repo.git_text(&["rev-parse", "HEAD"]), head);
+    assert_eq!(repo.git_text(&["log", "-1", "--format=%s"]), "edit\n");
 }
 
 /// The child's half: commit the new file at `path` in `root`, the index reset after it.

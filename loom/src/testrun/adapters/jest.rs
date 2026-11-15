@@ -133,12 +133,9 @@ impl TestRunnerAdapter for Jest {
 mod tests {
     use super::*;
     use crate::testrun::command::{assert_one_word, HOSTILE_NAME};
+    use crate::testrun::fixture_support::words;
     use crate::testrun::{classify, fixture_support, RunOutcome};
     use std::fs;
-
-    fn words(command: &str) -> Vec<String> {
-        command.split_whitespace().map(str::to_string).collect()
-    }
 
     #[test]
     fn command_uses_the_available_package_launcher() {

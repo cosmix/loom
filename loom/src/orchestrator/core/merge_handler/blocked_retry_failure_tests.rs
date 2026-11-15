@@ -1,16 +1,16 @@
 //! A retry of a typed block that fails over a cause no tick can clear hands the
 //! stage to the operator; any other failure keeps the block and names itself.
 
-use super::super::resolver_spawn::test_fixtures::git_ok;
 use super::tests::{blocked_stage, on_disk};
 use crate::models::stage::StageStatus;
+use crate::test_git::git;
 
 const ID: &str = "s";
 
 #[test]
 fn a_deleted_stage_branch_routes_the_typed_block_to_review() {
     let (repo, mut orchestrator) = blocked_stage();
-    git_ok(repo.path(), &["update-ref", "-d", "refs/heads/loom/s"]);
+    git(repo.path(), &["update-ref", "-d", "refs/heads/loom/s"]);
 
     orchestrator.retry_blocked_merge(&on_disk(&orchestrator));
 
@@ -25,7 +25,7 @@ fn a_deleted_stage_branch_routes_the_typed_block_to_review() {
 fn a_branch_that_moved_after_verification_routes_the_typed_block_to_review() {
     let (repo, mut orchestrator) = blocked_stage();
     let worktree = repo.path().join(".worktrees").join(ID);
-    git_ok(
+    git(
         &worktree,
         &["commit", "-q", "--allow-empty", "-m", "after verification"],
     );
@@ -44,7 +44,7 @@ fn a_branch_that_moved_after_verification_routes_the_typed_block_to_review() {
 #[test]
 fn a_repeated_failure_is_recorded_once() {
     let (repo, mut orchestrator) = blocked_stage();
-    git_ok(repo.path(), &["update-ref", "-d", "refs/heads/main"]);
+    git(repo.path(), &["update-ref", "-d", "refs/heads/main"]);
 
     orchestrator.retry_blocked_merge(&on_disk(&orchestrator));
     let first = on_disk(&orchestrator);

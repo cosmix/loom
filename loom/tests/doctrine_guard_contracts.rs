@@ -9,7 +9,6 @@ mod helpers;
 
 use std::fs;
 use std::path::Path;
-use std::process::{Command, Output};
 
 use loom::models::session::Session;
 use loom::models::stage::{Stage, StageType};
@@ -20,22 +19,7 @@ use loom::plan::LoomMetadata;
 use serde_json::Value;
 use tempfile::TempDir;
 
-fn git(root: &Path, args: &[&str]) -> Output {
-    let output = Command::new("git")
-        .args(args)
-        .current_dir(root)
-        .env("GIT_CONFIG_GLOBAL", root.join(".loom-test-no-global"))
-        .env("GIT_CONFIG_SYSTEM", root.join(".loom-test-no-system"))
-        .env("GIT_CONFIG_NOSYSTEM", "1")
-        .output()
-        .expect("spawn git");
-    assert!(
-        output.status.success(),
-        "git {args:?} failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    output
-}
+use helpers::test_support::git_repo::{self, git, TestRepo};
 
 fn write_file(root: &Path, path: &str, body: &str) {
     let full = root.join(path);
@@ -47,9 +31,7 @@ fn write_file(root: &Path, path: &str, body: &str) {
 fn repo(files: &[(&str, &str)]) -> TempDir {
     let temp = TempDir::new().expect("create repo dir");
     let root = temp.path();
-    git(root, &["init", "-q"]);
-    git(root, &["config", "user.name", "t"]);
-    git(root, &["config", "user.email", "t@t"]);
+    TestRepo::builder().no_seed().init_in(root);
     for (path, body) in files {
         write_file(root, path, body);
     }
@@ -100,14 +82,12 @@ fn plan(stages: &[String]) -> String {
 /// Run `loom plan verify --json PLAN.md` from `root`, require exit 1, and
 /// return `(stage_id, message)` for every entry of its `errors`.
 fn verify(root: &Path) -> Vec<(String, String)> {
-    let output = helpers::loom_cmd()
+    let mut command = helpers::loom_cmd();
+    command
         .args(["plan", "verify", "--json", "PLAN.md"])
-        .current_dir(root)
-        .env("GIT_CONFIG_GLOBAL", root.join(".loom-test-no-global"))
-        .env("GIT_CONFIG_SYSTEM", root.join(".loom-test-no-system"))
-        .env("GIT_CONFIG_NOSYSTEM", "1")
-        .output()
-        .expect("spawn loom plan verify");
+        .current_dir(root);
+    git_repo::isolate(&mut command);
+    let output = command.output().expect("spawn loom plan verify");
     let stdout = String::from_utf8_lossy(&output.stdout);
     let json: Value = serde_json::from_str(stdout.trim()).unwrap_or_else(|e| {
         panic!(

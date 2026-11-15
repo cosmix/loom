@@ -225,25 +225,8 @@ mod tests {
         let repo = temp.path().join("repo");
         let worktree = crate::verify::contracts::test_support::contract_worktree(&repo, "s1");
         std::fs::write(worktree.join("README.md"), "committed\n").unwrap();
-        for args in [
-            ["add", "README.md"].as_slice(),
-            ["commit", "-m", "work"].as_slice(),
-        ] {
-            let output = std::process::Command::new("git")
-                .args([
-                    "-c",
-                    "user.name=t",
-                    "-c",
-                    "user.email=t@t",
-                    "-c",
-                    "commit.gpgsign=false",
-                ])
-                .args(args)
-                .current_dir(&worktree)
-                .output()
-                .unwrap();
-            assert!(output.status.success(), "{output:?}");
-        }
+        crate::test_git::git(&worktree, &["add", "README.md"]);
+        crate::test_git::git(&worktree, &["commit", "-m", "work"]);
         assert!(finished_in_worktree(&worktree, "loom/s1", "main"));
         let marker = crate::verify::contracts::test_support::plant_foreign_git_dir(&worktree);
         assert!(!finished_in_worktree(&worktree, "loom/s1", "main"));

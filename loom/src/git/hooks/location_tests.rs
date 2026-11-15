@@ -2,25 +2,12 @@
 //! loom must not write there, and never writing through a link at a hook path.
 
 use super::*;
+use crate::test_git::{git, TestRepo};
 use std::os::unix::fs::symlink;
-use std::process::Command;
 use tempfile::TempDir;
 
-/// `git` with no `-c core.hooksPath` override: what it answers is what a commit
-/// in this repository would do.
-fn git(root: &Path, args: &[&str]) -> String {
-    let output = Command::new("git")
-        .args(args)
-        .current_dir(root)
-        .output()
-        .unwrap();
-    assert!(output.status.success(), "git {args:?}");
-    String::from_utf8_lossy(&output.stdout).trim().to_string()
-}
-
 fn repo_with_hooks_path(configured: &str) -> TempDir {
-    let repo = TempDir::new().unwrap();
-    git(repo.path(), &["init", "-q", "-b", "main"]);
+    let repo = TestRepo::builder().no_seed().create().into_temp_dir();
     git(repo.path(), &["config", "core.hooksPath", configured]);
     repo
 }
@@ -168,9 +155,8 @@ fn a_hooks_path_outside_the_repository_is_reported_and_left_alone() {
 #[test]
 fn a_hook_already_in_an_outside_directory_counts_as_installed() {
     let shared = TempDir::new().unwrap();
-    let repo = TempDir::new().unwrap();
+    let repo = TestRepo::builder().no_seed().create().into_temp_dir();
     let root = repo.path();
-    git(root, &["init", "-q", "-b", "main"]);
     install_pre_commit_hook(root).unwrap();
     install_reference_transaction_hook(root).unwrap();
     for name in ["pre-commit", "reference-transaction"] {
@@ -218,8 +204,6 @@ fn a_home_relative_hooks_path_is_not_a_directory_in_the_checkout() {
 fn a_tracked_hooks_directory_is_reported_and_left_alone() {
     let repo = repo_with_hooks_path(".githooks");
     let root = repo.path();
-    git(root, &["config", "user.email", "t@t.com"]);
-    git(root, &["config", "user.name", "t"]);
     let tracked = root.join(".githooks/pre-commit");
     fs::create_dir_all(tracked.parent().unwrap()).unwrap();
     fs::write(&tracked, "#!/bin/sh\nexit 0\n").unwrap();

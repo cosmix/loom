@@ -83,7 +83,9 @@ fn the_named_remedy_restores_the_work_from_the_backup_ref() {
     let repo = init_repo();
     let root = repo.path();
 
-    let stash = landed(root, |repo| git_ok(repo, &["stash", "clear"]));
+    let stash = landed(root, |repo| {
+        git_ok(repo, &["stash", "clear"]);
+    });
 
     assert!(stash
         .notice()

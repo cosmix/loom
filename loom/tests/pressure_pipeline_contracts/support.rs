@@ -10,6 +10,11 @@ use loom::pressure::record::RecordLine;
 use loom::pressure::{PressureDriver, PressureResult, StepVerdict};
 use tempfile::TempDir;
 
+#[path = "../test_support/mod.rs"]
+mod test_support;
+
+use test_support::git_repo::{isolate, TestRepo};
+
 /// The end-of-metadata marker line every plan's metadata block closes with.
 pub const END_MARKER: &str = "<!-- END loom METADATA -->";
 
@@ -162,13 +167,7 @@ pub fn record_line(codex_models: &[&str], rounds: u32, missing_rounds: &[u32]) -
 pub fn git_repo_with_plan(plan: &str) -> (TempDir, PathBuf, PathBuf) {
     let temp = tempfile::tempdir().expect("create scratch directory");
     let root = temp.path().canonicalize().expect("canonical scratch root");
-    let status = Command::new("git")
-        .args(["init", "-q", "."])
-        .current_dir(&root)
-        .env("GIT_CONFIG_NOSYSTEM", "1")
-        .status()
-        .expect("spawn git init");
-    assert!(status.success(), "git init failed: {status}");
+    TestRepo::builder().no_seed().init_in(&root);
     let plan_path = root.join("doc/plans/PLAN-x.md");
     fs::create_dir_all(plan_path.parent().unwrap()).unwrap();
     fs::write(&plan_path, plan).unwrap();
@@ -184,10 +183,10 @@ pub fn run_loom(root: &Path, args: &[&str]) -> Output {
             command.env_remove(key);
         }
     }
+    isolate(&mut command);
     command
         .args(args)
         .current_dir(root)
-        .env("GIT_CONFIG_NOSYSTEM", "1")
         .output()
         .expect("spawn loom")
 }

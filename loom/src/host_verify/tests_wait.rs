@@ -3,8 +3,7 @@
 
 use std::cell::RefCell;
 use std::io::Write;
-use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::path::PathBuf;
 use std::rc::Rc;
 use std::time::Duration;
 
@@ -17,6 +16,7 @@ use super::wait::{exit_code, wait_or_request, WaitOutcome, WaitSite};
 use super::{CriterionOutcome, JobKind, JobRecord, JobResult, JobState};
 use crate::fs::inbox::{append_ledger, LedgerOutcome, LedgerRecord};
 use crate::relay::RequestKind;
+use crate::test_git::{git, TestRepo};
 
 const STAGE: &str = "s1";
 const SESSION: &str = "session-1";
@@ -30,20 +30,6 @@ pub(super) struct Fx {
     scratch: PathBuf,
 }
 
-fn git(dir: &Path, args: &[&str]) {
-    let output = Command::new("git")
-        .args(["-c", "commit.gpgsign=false", "-c", "user.name=t"])
-        .args(["-c", "user.email=t@t"])
-        .args(args)
-        .current_dir(dir)
-        .env_remove("GIT_DIR")
-        .env_remove("GIT_WORK_TREE")
-        .env_remove("GIT_INDEX_FILE")
-        .output()
-        .unwrap();
-    assert!(output.status.success(), "git {args:?}: {output:?}");
-}
-
 pub(super) fn fixture() -> Fx {
     let tmp = tempfile::tempdir().unwrap();
     let checkout = tmp.path().join("checkout");
@@ -52,7 +38,7 @@ pub(super) fn fixture() -> Fx {
     for dir in [&checkout, &work_dir, &scratch] {
         std::fs::create_dir_all(dir).unwrap();
     }
-    git(&checkout, &["init", "-q", "-b", "main"]);
+    TestRepo::builder().no_seed().init_in(&checkout);
     std::fs::write(checkout.join("a.txt"), "one\n").unwrap();
     git(&checkout, &["add", "."]);
     git(&checkout, &["commit", "-q", "-m", "base"]);

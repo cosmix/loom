@@ -4,7 +4,7 @@ use std::io::{BufRead, BufReader};
 use std::net::{SocketAddr, TcpListener};
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
-use std::process::{Child, Command, Output, Stdio};
+use std::process::{Child, Command, Stdio};
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
@@ -13,30 +13,21 @@ use nix::sys::signal::{kill, Signal};
 use nix::unistd::Pid;
 use tempfile::TempDir;
 
-fn git(repo: &Path, args: &[&str]) -> Output {
-    Command::new("git")
-        .args(["-c", "user.name=t", "-c", "user.email=t@example.com"])
-        .args(args)
-        .current_dir(repo)
-        .env_remove("GIT_DIR")
-        .env_remove("GIT_WORK_TREE")
-        .output()
-        .expect("run git")
-}
+#[path = "test_support/mod.rs"]
+mod test_support;
+
+use test_support::git_repo::{git, git_unchecked, TestRepo};
 
 fn repo() -> TempDir {
     let repo = tempfile::tempdir().unwrap();
-    for args in [
-        &["init", "-q", "-b", "main"][..],
+    TestRepo::builder()
+        .identity("t", "t@example.com")
+        .no_seed()
+        .init_in(repo.path());
+    git(
+        repo.path(),
         &["commit", "-q", "--allow-empty", "-m", "init"],
-    ] {
-        let output = git(repo.path(), args);
-        assert!(
-            output.status.success(),
-            "{}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-    }
+    );
     repo
 }
 
@@ -240,7 +231,7 @@ fn runtime_is_private_ignores_session_state_and_sigint_stops_cleanly() {
         stderr.contains("LOOM_PLAN_STATE") && stderr.contains("ignored"),
         "{stderr}"
     );
-    let status = git(repo.path(), &["status", "--porcelain"]);
+    let status = git_unchecked(repo.path(), &["status", "--porcelain"]);
     assert!(status.status.success());
     assert!(
         status.stdout.is_empty(),

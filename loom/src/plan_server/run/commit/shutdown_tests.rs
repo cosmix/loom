@@ -31,14 +31,14 @@ fn singleton_held(path: &std::path::Path) -> bool {
 fn repo_with_blocking_hook() -> (Repo, String) {
     let repo = Repo::new();
     repo.put("doc/product/index.md", "# Original\n");
-    repo.git(&["add", "--", "doc/product/index.md"]);
-    repo.git(&["commit", "-q", "-m", "product baseline"]);
+    repo.git_text(&["add", "--", "doc/product/index.md"]);
+    repo.git_text(&["commit", "-q", "-m", "product baseline"]);
     repo.put("doc/product/index.md", "# Updated\n");
     repo.hook(
         "pre-commit",
         "#!/bin/sh\nprintf entered > hook-entered\nn=0\nwhile [ ! -e hook-release ]; do\n  n=$((n + 1))\n  [ \"$n\" -lt 600 ] || exit 1\n  sleep 0.02\ndone\n",
     );
-    let head = repo.git(&["rev-parse", "HEAD"]);
+    let head = repo.git_text(&["rev-parse", "HEAD"]);
     (repo, head)
 }
 
@@ -83,7 +83,7 @@ fn accepted_http_commit_keeps_port_and_singleton_through_bounded_stop() {
     let lock_path = repo.0.path().join("server.lock");
     retain_singleton(&server, &lock_path);
     start_blocked_commit(&server, &repo);
-    assert_eq!(repo.git(&["rev-parse", "HEAD"]), original_head);
+    assert_eq!(repo.git_text(&["rev-parse", "HEAD"]), original_head);
 
     let pending = server
         .stop()
@@ -100,14 +100,14 @@ fn accepted_http_commit_keeps_port_and_singleton_through_bounded_stop() {
         singleton_held(&lock_path),
         "singleton released during commit"
     );
-    assert_eq!(repo.git(&["rev-parse", "HEAD"]), original_head);
+    assert_eq!(repo.git_text(&["rev-parse", "HEAD"]), original_head);
 
     repo.put("hook-release", "go\n");
     assert!(pending.wait(http::WAIT), "commit did not drain");
     assert_eq!(pending.completion_error(), None);
-    assert_eq!(repo.git(&["log", "-1", "--format=%s"]), "Save docs\n");
+    assert_eq!(repo.git_text(&["log", "-1", "--format=%s"]), "Save docs\n");
     assert_eq!(
-        repo.git(&["show", "HEAD:doc/product/index.md"]),
+        repo.git_text(&["show", "HEAD:doc/product/index.md"]),
         "# Updated\n"
     );
     assert!(!singleton_held(&lock_path), "singleton stayed held");

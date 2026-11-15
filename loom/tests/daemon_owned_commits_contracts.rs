@@ -6,7 +6,6 @@
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 use loom::git::merge::commit_merge;
 use loom::git::stage_commit::{commit_staged, CommitRequest, CommitScope};
@@ -14,25 +13,11 @@ use loom::models::session::SessionType;
 use loom::relay::{verdict, MatrixVerdict, RequestKind};
 use tempfile::TempDir;
 
-const BRANCH: &str = "refs/heads/loom/s1";
+#[path = "test_support/mod.rs"]
+mod test_support;
+use test_support::git_repo::{git, TestRepo};
 
-/// Run git in `root` with ambient config neutralised; returns trimmed stdout.
-fn git(root: &Path, args: &[&str]) -> String {
-    let output = Command::new("git")
-        .args(args)
-        .current_dir(root)
-        .env("GIT_CONFIG_GLOBAL", root.join(".loom-test-no-global"))
-        .env("GIT_CONFIG_SYSTEM", root.join(".loom-test-no-system"))
-        .env("GIT_CONFIG_NOSYSTEM", "1")
-        .output()
-        .unwrap();
-    assert!(
-        output.status.success(),
-        "git {args:?} failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    String::from_utf8_lossy(&output.stdout).trim().to_string()
-}
+const BRANCH: &str = "refs/heads/loom/s1";
 
 fn write(root: &Path, path: &str, content: &str) {
     let path = root.join(path);
@@ -51,17 +36,13 @@ fn write_executable(path: &Path, content: &str) {
 fn repo() -> TempDir {
     let temp = TempDir::new().unwrap();
     let root = temp.path();
-    git(root, &["init", "-b", "main"]);
-    git(root, &["config", "user.email", "t@t.com"]);
-    git(root, &["config", "user.name", "t"]);
-    git(root, &["config", "commit.gpgsign", "false"]);
+    TestRepo::builder()
+        .seed("README.md", "base\n", "init")
+        .init_in(root);
     git(root, &["config", "gpg.format", "openpgp"]);
     let hooks = root.join(".git").join("hooks");
     fs::create_dir_all(&hooks).unwrap();
     git(root, &["config", "core.hooksPath", hooks.to_str().unwrap()]);
-    write(root, "README.md", "base\n");
-    git(root, &["add", "README.md"]);
-    git(root, &["commit", "-m", "init"]);
     git(root, &["checkout", "-b", "loom/s1"]);
     temp
 }

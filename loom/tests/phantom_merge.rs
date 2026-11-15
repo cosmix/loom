@@ -26,8 +26,8 @@ use loom::models::stage::{Stage, StageStatus, StageType};
 use loom::verify::transitions::{load_stage, save_stage};
 
 use support::{
-    assert_hooks_installed_under, create_loom_branch_with_commit, init_repo, init_work_dir,
-    isolate_home, run_git, with_cwd, write_phantom_stage,
+    assert_hooks_installed_under, create_loom_branch_with_commit, git, init_repo, init_work_dir,
+    isolate_home, with_cwd, write_phantom_stage,
 };
 
 /// Fix 13 (detect) + Fix 13 (revert):
@@ -124,9 +124,9 @@ fn repair_does_not_flag_legitimately_merged_stage() {
 
     let sha = create_loom_branch_with_commit("legit-stage", "ok.rs", "ok", repo_root);
     // Merge it into main for real.
-    run_git(
-        &["merge", "--no-ff", "-m", "merge legit", "loom/legit-stage"],
+    git(
         repo_root,
+        &["merge", "--no-ff", "-m", "merge legit", "loom/legit-stage"],
     );
 
     write_phantom_stage("legit-stage", true, Some(sha.clone()), &work_dir);

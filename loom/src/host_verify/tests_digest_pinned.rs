@@ -17,6 +17,7 @@ use super::digest::{head, head_in, tree_digest, tree_digest_in};
 use super::{new_job_id, JobKind, JobRecord, JobState};
 use crate::git::worktree::WorktreeGit;
 use crate::models::stage::{Stage, StageStatus, StageType};
+use crate::test_git::git_unchecked;
 use crate::verify::contracts::test_support::{contract_worktree, plant_foreign_git_dir};
 
 const STAGE: &str = "s1";
@@ -150,24 +151,13 @@ fn session_and_host_reads_agree_on_an_honest_tree() {
 }
 
 /// Whether `git` succeeded in `dir`: a conflicting merge fails on purpose.
-fn run_git(dir: &Path, args: &[&str]) -> bool {
-    Command::new("git")
-        .args(["-c", "commit.gpgsign=false", "-c", "user.name=t"])
-        .args(["-c", "user.email=t@t"])
-        .args(args)
-        .current_dir(dir)
-        .env_remove("GIT_DIR")
-        .env_remove("GIT_WORK_TREE")
-        .env_remove("GIT_INDEX_FILE")
-        .output()
-        .unwrap()
-        .status
-        .success()
+fn git_succeeds(dir: &Path, args: &[&str]) -> bool {
+    git_unchecked(dir, args).status.success()
 }
 
 fn commit_readme(dir: &Path, text: &str) {
     fs::write(dir.join("README.md"), text).unwrap();
-    assert!(run_git(dir, &["commit", "-q", "-am", text]));
+    assert!(git_succeeds(dir, &["commit", "-q", "-am", text]));
 }
 
 /// A merge resolver's check names a tree with `MERGE_HEAD` set: unmerged paths,
@@ -181,8 +171,14 @@ fn session_and_host_reads_agree_on_a_merge_in_progress() {
     commit_readme(&worktree, "stage\n");
     commit_readme(&repo, "target\n");
     let merge = ["merge", "--no-commit", "--no-ff", "main"];
-    assert!(!run_git(&worktree, &merge), "the fixture must conflict");
-    assert!(run_git(&worktree, &["rev-parse", "--verify", "MERGE_HEAD"]));
+    assert!(
+        !git_succeeds(&worktree, &merge),
+        "the fixture must conflict"
+    );
+    assert!(git_succeeds(
+        &worktree,
+        &["rev-parse", "--verify", "MERGE_HEAD"]
+    ));
     let pinned = WorktreeGit::pinned(&repo, &worktree).unwrap();
     let stage_tip = head(&worktree).unwrap();
 
@@ -190,16 +186,19 @@ fn session_and_host_reads_agree_on_a_merge_in_progress() {
     assert_eq!(conflicted, tree_digest_in(&pinned).unwrap());
 
     fs::write(worktree.join("README.md"), "resolved\n").unwrap();
-    assert!(run_git(&worktree, &["add", "README.md"]));
+    assert!(git_succeeds(&worktree, &["add", "README.md"]));
     let staged = tree_digest(&worktree).unwrap();
     assert_eq!(staged, tree_digest_in(&pinned).unwrap());
     assert_ne!(staged, conflicted);
 
     fs::write(worktree.join("README.md"), "resolved otherwise\n").unwrap();
-    assert!(run_git(&worktree, &["add", "README.md"]));
+    assert!(git_succeeds(&worktree, &["add", "README.md"]));
     assert_ne!(tree_digest_in(&pinned).unwrap(), staged);
     assert_eq!(head_in(&pinned).unwrap(), stage_tip);
-    assert!(run_git(&worktree, &["rev-parse", "--verify", "MERGE_HEAD"]));
+    assert!(git_succeeds(
+        &worktree,
+        &["rev-parse", "--verify", "MERGE_HEAD"]
+    ));
 }
 
 const XDG_CONFIG_HOME: &str = "XDG_CONFIG_HOME";

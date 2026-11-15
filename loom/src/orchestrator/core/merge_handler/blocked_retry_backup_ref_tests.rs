@@ -19,8 +19,8 @@ fn a_block_with_the_operator_work_in_a_backup_stash_is_not_retried_until_the_ref
     let (repo, mut orchestrator) = blocked_stage();
     let root = repo.path();
     // The cause of the block is gone: only the backup ref holds the retry.
-    git_ok(root, &["stash", "push", "-q", "--include-untracked"]);
-    git_ok(root, &["update-ref", BACKUP_REF, "HEAD"]);
+    git(root, &["stash", "push", "-q", "--include-untracked"]);
+    git(root, &["update-ref", BACKUP_REF, "HEAD"]);
     update_stage(ID, &orchestrator.config.work_dir, |stage| {
         stage.block_merge(MergeBlock::StashNotRestored {
             backup_ref: BACKUP_REF.to_string(),
@@ -41,7 +41,7 @@ fn a_block_with_the_operator_work_in_a_backup_stash_is_not_retried_until_the_ref
     assert_eq!(stash_list(root), stashes);
     assert_eq!(on_disk(&orchestrator).status, StageStatus::MergeBlocked);
 
-    git_ok(root, &["update-ref", "-d", BACKUP_REF]);
+    git(root, &["update-ref", "-d", BACKUP_REF]);
     orchestrator.retry_blocked_merge(&on_disk(&orchestrator));
 
     let stage = on_disk(&orchestrator);
@@ -56,8 +56,8 @@ fn a_refused_reset_is_not_retried_until_its_spare_ref_is_gone() {
     let (repo, mut orchestrator) = blocked_stage();
     let root = repo.path();
     // The cause of the block is gone: only the spare ref holds the retry.
-    git_ok(root, &["stash", "push", "-q", "--include-untracked"]);
-    git_ok(root, &["update-ref", BACKUP_REF, "HEAD"]);
+    git(root, &["stash", "push", "-q", "--include-untracked"]);
+    git(root, &["update-ref", BACKUP_REF, "HEAD"]);
     update_stage(ID, &orchestrator.config.work_dir, |stage| {
         stage.block_merge(MergeBlock::StashResetRefused {
             backup_ref: BACKUP_REF.to_string(),
@@ -77,7 +77,7 @@ fn a_refused_reset_is_not_retried_until_its_spare_ref_is_gone() {
     assert_eq!(stage_file_text(&orchestrator), stage_file);
     assert_eq!(stash_list(root), stashes);
 
-    git_ok(root, &["update-ref", "-d", BACKUP_REF]);
+    git(root, &["update-ref", "-d", BACKUP_REF]);
     orchestrator.retry_blocked_merge(&on_disk(&orchestrator));
 
     assert_eq!(on_disk(&orchestrator).status, StageStatus::Completed);
@@ -86,8 +86,8 @@ fn a_refused_reset_is_not_retried_until_its_spare_ref_is_gone() {
 #[test]
 fn a_stage_with_an_unrestored_backup_ref_that_still_exists_is_not_retried() {
     let (repo, mut orchestrator) = blocked_stage();
-    git_ok(repo.path(), &["stash", "push", "-q", "--include-untracked"]);
-    git_ok(repo.path(), &["update-ref", BACKUP_REF, "HEAD"]);
+    git(repo.path(), &["stash", "push", "-q", "--include-untracked"]);
+    git(repo.path(), &["update-ref", BACKUP_REF, "HEAD"]);
     let mut stage = on_disk(&orchestrator);
     stage.merge.unrestored.push(BACKUP_REF.to_string());
 

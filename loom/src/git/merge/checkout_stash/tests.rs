@@ -12,6 +12,7 @@ use super::*;
 use crate::git::merge::test_support::{
     commit_file, git_ok, git_out, init_repo, isolated_git, stage_branch,
 };
+use crate::test_git::TestRepo;
 
 mod end_to_end;
 
@@ -148,9 +149,10 @@ fn index_version_4(root: &Path) {
 fn gitlink_moved(root: &Path) {
     let sub = root.join("sub");
     fs::create_dir(&sub).unwrap();
-    git_ok(&sub, &["init", "-q", "-b", "main"]);
-    git_ok(&sub, &["config", "user.email", "t@t.com"]);
-    git_ok(&sub, &["config", "user.name", "t"]);
+    TestRepo::builder()
+        .identity("t", "t@t.com")
+        .no_seed()
+        .init_in(&sub);
     commit_file(&sub, "s.txt", "1\n", "one");
     git_ok(root, &["add", "sub"]);
     git_ok(root, &["commit", "-m", "gitlink"]);
@@ -204,7 +206,7 @@ const CASES: &[Shape] = &[
         fs::remove_file(root.join("f.txt")).unwrap();
     }),
     ("staged removal", |root| {
-        git_ok(root, &["rm", "-q", "f.txt"])
+        git_ok(root, &["rm", "-q", "f.txt"]);
     }),
     ("staged removal, file kept", |root| {
         git_ok(root, &["rm", "-q", "--cached", "f.txt"]);

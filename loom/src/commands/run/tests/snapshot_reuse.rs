@@ -55,7 +55,7 @@ fn a_documentation_only_commit_publishes_a_new_base_reusing_every_source_entry()
     let root = temp.path();
     let (_work_dir, store, graph_store) = snapshot_stores(root);
     ensure(root, &store, &graph_store, SnapshotPolicy::BaseOnly);
-    run_git(
+    git(
         root,
         &["commit", "--allow-empty", "-m", "documentation only"],
     );
@@ -77,8 +77,8 @@ fn a_source_commit_parses_only_the_changed_file() {
     let (_work_dir, store, graph_store) = snapshot_stores(root);
     ensure(root, &store, &graph_store, SnapshotPolicy::BaseOnly);
     fs::write(root.join("src.rs"), "fn changed_symbol() {}\n").unwrap();
-    run_git(root, &["add", "src.rs"]);
-    run_git(root, &["commit", "-m", "source change"]);
+    git(root, &["add", "src.rs"]);
+    git(root, &["commit", "-m", "source change"]);
 
     let outcome = ensure(root, &store, &graph_store, SnapshotPolicy::BaseOnly);
 

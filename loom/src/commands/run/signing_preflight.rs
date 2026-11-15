@@ -91,14 +91,15 @@ fn cache_caveat_applies(format: Option<&str>) -> bool {
 mod tests {
     use super::*;
     use crate::git::signing::tests::{fake_signer, git_in, isolated_env};
+    use crate::test_git::TestRepo;
     use tempfile::TempDir;
 
     fn repo() -> TempDir {
-        let temp = TempDir::new().unwrap();
-        git_in(temp.path(), &["init", "-b", "main"]);
-        git_in(temp.path(), &["config", "user.email", "t@t.com"]);
-        git_in(temp.path(), &["config", "user.name", "t"]);
-        temp
+        TestRepo::builder()
+            .identity("t", "t@t.com")
+            .no_seed()
+            .create()
+            .into_temp_dir()
     }
 
     /// `isolated_env` with `commit.gpgsign=true` set through the

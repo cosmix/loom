@@ -25,6 +25,7 @@ use super::super::progressive_complete::{
     attempt_progressive_merge, complete_with_merge, should_defer_cleanup, Landing, MergeOutcome,
 };
 use crate::models::stage::{Stage, StageStatus};
+use crate::test_git::TestRepo;
 use crate::verify::transitions::{load_stage, save_stage};
 
 /// Build a real git repo with a `.loom/work` directory and a `config.toml` that
@@ -33,25 +34,9 @@ fn init_repo_with_work_dir() -> TempDir {
     let temp_dir = TempDir::new().expect("tempdir");
     let repo_root = temp_dir.path();
 
-    let run_git = |args: &[&str]| {
-        let output = Command::new("git")
-            .args(args)
-            .current_dir(repo_root)
-            .output()
-            .unwrap();
-        assert!(
-            output.status.success(),
-            "git {args:?}: {}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-    };
-    run_git(&["init", "-b", "main"]);
-    run_git(&["config", "user.email", "test@test.com"]);
-    run_git(&["config", "user.name", "Test"]);
-    std::fs::write(repo_root.join("README.md"), "r").expect("write README");
-    run_git(&["add", "README.md"]);
-    run_git(&["commit", "-m", "initial"]);
-    run_git(&["branch", "-M", "main"]);
+    TestRepo::builder()
+        .seed("README.md", "r", "initial")
+        .init_in(repo_root);
 
     // Create a minimal state directory with config.toml so `get_merge_point`
     // can resolve to "main".

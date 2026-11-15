@@ -11,6 +11,8 @@ use loom::git::target_guard::{attestation_mode, AttestationMode, REFS_FILE};
 #[path = "target_ref_hook_support/mod.rs"]
 #[allow(dead_code)]
 mod support;
+#[path = "test_support/mod.rs"]
+mod test_support;
 use support::{
     commit, git, ledger, ledger_dir_is_empty, make_ledger_unwritable, move_main_to_stage_tip, repo,
     run, run_with_input, stderr, tip, Repo,

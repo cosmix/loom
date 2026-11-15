@@ -10,25 +10,21 @@ use loom::git::target_guard::{
     attestation_mode, check, AttestationMode, GuardState, LEDGER_FILE, REFS_FILE,
 };
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output};
+use std::process::Output;
 use tempfile::TempDir;
 
-/// Run git in `dir`; `session` sets `LOOM_SESSION_ID`, `None` removes it.
+#[path = "test_support/mod.rs"]
+mod test_support;
+
+use test_support::git_repo::{git, git_command, TestRepo};
+
+/// Run git in `dir`; `session` sets `LOOM_SESSION_ID`, `None` leaves it removed.
 fn run(dir: &Path, args: &[&str], session: Option<&str>) -> Output {
-    let mut cmd = Command::new("git");
-    cmd.args(args)
-        .current_dir(dir)
-        .env("GIT_CONFIG_GLOBAL", dir.join(".loom-test-no-global"))
-        .env("GIT_CONFIG_SYSTEM", dir.join(".loom-test-no-system"))
-        .env("GIT_CONFIG_NOSYSTEM", "1")
-        .env("GIT_AUTHOR_NAME", "t")
-        .env("GIT_AUTHOR_EMAIL", "t@t.com")
-        .env("GIT_COMMITTER_NAME", "t")
-        .env("GIT_COMMITTER_EMAIL", "t@t.com");
-    match session {
-        Some(id) => cmd.env("LOOM_SESSION_ID", id),
-        None => cmd.env_remove("LOOM_SESSION_ID"),
-    };
+    let mut cmd = git_command(dir);
+    cmd.args(args);
+    if let Some(id) = session {
+        cmd.env("LOOM_SESSION_ID", id);
+    }
     cmd.output().unwrap()
 }
 
@@ -40,10 +36,6 @@ fn git_as(dir: &Path, args: &[&str], session: Option<&str>) -> String {
         String::from_utf8_lossy(&out.stderr)
     );
     String::from_utf8_lossy(&out.stdout).trim().to_string()
-}
-
-fn git(dir: &Path, args: &[&str]) -> String {
-    git_as(dir, args, None)
 }
 
 /// Commit `path` in the checkout at `dir` as `session`.
@@ -66,9 +58,10 @@ fn tip(root: &Path) -> String {
 fn fixture() -> (TempDir, PathBuf, PathBuf) {
     let dir = TempDir::new().unwrap();
     let root = dir.path().canonicalize().unwrap();
-    git(&root, &["init", "-b", "main"]);
-    git(&root, &["config", "user.name", "t"]);
-    git(&root, &["config", "user.email", "t@t.com"]);
+    TestRepo::builder()
+        .identity("t", "t@t.com")
+        .no_seed()
+        .init_in(&root);
     std::fs::write(root.join(".git/info/exclude"), ".loom/\n.worktrees/\n").unwrap();
     commit(&root, "README.md", None);
     let work = root.join(".loom/work");

@@ -26,6 +26,11 @@ use tempfile::TempDir;
 use tungstenite::client::IntoClientRequest;
 use tungstenite::{Message, WebSocket};
 
+#[path = "../test_support/mod.rs"]
+mod test_support;
+
+use test_support::git_repo::{git, TestRepo};
+
 pub const TARGET: &str = "doc/product/demo/section_01.md";
 pub const SOURCE: &str = "# Notes\n\nCreate, edit and delete plain-text notes stored locally.\n";
 pub type Socket = WebSocket<TcpStream>;
@@ -161,39 +166,23 @@ pub fn fixture() -> Result<TempDir> {
     ] {
         fs::write(repo.path().join(path), text)?;
     }
-    git(repo.path(), &["init", "-q", "-b", "main"])?;
-    git(repo.path(), &["add", "--", "doc"])?;
+    TestRepo::builder()
+        .identity("Operator test", "test@example.com")
+        .no_seed()
+        .init_in(repo.path());
+    git(repo.path(), &["add", "--", "doc"]);
     git(
         repo.path(),
-        &["commit", "-q", "-m", "seed operator fixture"],
-    )?;
-    Ok(repo)
-}
-
-fn git(root: &Path, args: &[&str]) -> Result<()> {
-    let output = Command::new("git")
-        .args([
-            "-c",
-            "user.name=Operator test",
-            "-c",
-            "user.email=test@example.com",
-            "-c",
-            "commit.gpgsign=false",
+        &[
             "-c",
             "core.hooksPath=/dev/null",
-        ])
-        .args(args)
-        .current_dir(root)
-        .env_remove("GIT_DIR")
-        .env_remove("GIT_WORK_TREE")
-        .env_remove("GIT_INDEX_FILE")
-        .output()?;
-    ensure!(
-        output.status.success(),
-        "fixture git {args:?}: {}",
-        String::from_utf8_lossy(&output.stderr)
+            "commit",
+            "-q",
+            "-m",
+            "seed operator fixture",
+        ],
     );
-    Ok(())
+    Ok(repo)
 }
 
 pub fn http_client() -> Result<Client> {

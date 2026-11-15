@@ -2,8 +2,8 @@
 //! session, and the refusal of a pinned run under a file git would act on.
 
 use super::*;
-use crate::git::runner::run_git;
 use crate::git::worktree::WorktreeGit;
+use crate::test_git::git;
 use crate::verify::contracts::test_support::contract_worktree;
 use tempfile::TempDir;
 
@@ -13,11 +13,6 @@ fn repository() -> (TempDir, PathBuf, PathBuf) {
     let repo = tmp.path().join("repo");
     let worktree = contract_worktree(&repo, "s1");
     (tmp, repo, worktree)
-}
-
-fn git(dir: &Path, args: &[&str]) {
-    let output = run_git(args, dir).unwrap();
-    assert!(output.status.success(), "git {args:?}: {output:?}");
 }
 
 fn admin_dir(repo: &Path) -> PathBuf {

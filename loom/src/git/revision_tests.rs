@@ -5,38 +5,10 @@ use std::process::Command;
 use tempfile::TempDir;
 
 use super::*;
+use crate::test_git::TestRepo;
 
-fn git(dir: &Path, args: &[&str]) {
-    let output = Command::new("git")
-        .args(["-c", "commit.gpgsign=false"])
-        .args(args)
-        .current_dir(dir)
-        .env_remove("GIT_DIR")
-        .env_remove("GIT_WORK_TREE")
-        .env_remove("GIT_INDEX_FILE")
-        .env("GIT_CONFIG_GLOBAL", "/dev/null")
-        .env("GIT_CONFIG_NOSYSTEM", "1")
-        .output()
-        .expect("git runs");
-    assert!(
-        output.status.success(),
-        "git {args:?}: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-}
-
-fn init_repo() -> TempDir {
-    let dir = TempDir::new().expect("tempdir");
-    git(dir.path(), &["init", "-q", "-b", "main"]);
-    git(dir.path(), &["config", "user.name", "Revision Test"]);
-    git(dir.path(), &["config", "user.email", "rev@example.invalid"]);
-    dir
-}
-
-fn commit(dir: &Path) {
-    std::fs::write(dir.join("a.txt"), "a\n").expect("write");
-    git(dir, &["add", "a.txt"]);
-    git(dir, &["commit", "-q", "-m", "a"]);
+fn init_repo() -> TestRepo {
+    TestRepo::builder().no_seed().create()
 }
 
 #[test]
@@ -106,7 +78,7 @@ fn branch_naming_a_missing_object_is_an_error_not_unborn() {
 #[test]
 fn committed_head_gives_its_id() {
     let repo = init_repo();
-    commit(repo.path());
+    repo.commit_file("a.txt", "a\n", "a");
     let git = WorktreeGit::discovered(repo.path());
 
     let id = head_commit(&git).expect("head").expect("a commit");

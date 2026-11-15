@@ -143,9 +143,6 @@ fn checkout_head(host: &dyn InboxHost, stage: &Stage) -> Result<String, String> 
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-    use std::process::Command;
-
     use chrono::Utc;
     use serde_json::{json, Value};
 
@@ -155,29 +152,18 @@ mod tests {
     use crate::models::session::{Session, SessionStatus, SessionType};
     use crate::models::stage::StageStatus;
     use crate::relay::{AgentRole, RequestKind};
+    use crate::test_git::{git, TestRepo};
 
     use super::super::test_support::{entry_for, fixture, Fixture, STAGE};
     use super::super::{run_pass, Settle};
 
-    fn git(dir: &Path, args: &[&str]) -> String {
-        let output = Command::new("git")
-            .args(["-c", "commit.gpgsign=false", "-c", "user.name=t"])
-            .args(["-c", "user.email=t@t"])
-            .args(args)
-            .current_dir(dir)
-            .env_remove("GIT_DIR")
-            .env_remove("GIT_WORK_TREE")
-            .env_remove("GIT_INDEX_FILE")
-            .output()
-            .unwrap();
-        assert!(output.status.success(), "git {args:?}: {output:?}");
-        String::from_utf8_lossy(&output.stdout).trim().to_string()
-    }
-
     /// A repository at the fixture's repo root with `s1`'s registered
     /// worktree; returns the worktree's HEAD.
     pub(super) fn repository(fx: &Fixture) -> String {
-        git(&fx.repo_root, &["init", "-q", "-b", "main"]);
+        TestRepo::builder()
+            .identity("t", "t@t")
+            .no_seed()
+            .init_in(&fx.repo_root);
         crate::git::worktree::capture_main_identity(&fx.repo_root, &fx.work_dir).unwrap();
         git(
             &fx.repo_root,

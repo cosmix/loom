@@ -140,29 +140,14 @@ fn resolve_worktree_paths(stage_id: &str, cwd: &Path) -> Result<(PathBuf, PathBu
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn git(root: &Path, args: &[&str]) {
-        let output = std::process::Command::new("git")
-            .args(args)
-            .current_dir(root)
-            .output()
-            .unwrap();
-        assert!(
-            output.status.success(),
-            "git {args:?}: {}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-    }
+    use crate::test_git::{git, TestRepo};
 
     fn retry_fixture() -> (tempfile::TempDir, PathBuf) {
         let temp = tempfile::tempdir().unwrap();
         let root = temp.path();
-        git(root, &["init", "-b", "main"]);
-        git(root, &["config", "user.email", "test@example.com"]);
-        git(root, &["config", "user.name", "Test"]);
-        std::fs::write(root.join("seed"), "seed").unwrap();
-        git(root, &["add", "seed"]);
-        git(root, &["commit", "-m", "seed"]);
+        TestRepo::builder()
+            .seed("seed", "seed", "seed")
+            .init_in(root);
         git(
             root,
             &[

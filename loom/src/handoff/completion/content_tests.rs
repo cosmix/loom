@@ -1,24 +1,14 @@
 use super::{committed_content, completion_scaffold};
 use crate::models::stage::Stage;
+pub(super) use crate::test_git::git;
+use crate::test_git::TestRepo;
 
 // Use public Git operations through a disposable repository; no process cwd or
 // environment changes, so these tests can run alongside completion fixtures.
 pub(super) fn fixture() -> (tempfile::TempDir, Stage, std::path::PathBuf) {
     let repo = tempfile::TempDir::new().unwrap();
-    git(repo.path(), &["init", "-b", "main"]);
-    git(
-        repo.path(),
-        &[
-            "-c",
-            "user.name=T",
-            "-c",
-            "user.email=t@t",
-            "commit",
-            "--allow-empty",
-            "-qm",
-            "seed",
-        ],
-    );
+    TestRepo::builder().no_seed().init_in(repo.path());
+    git(repo.path(), &["commit", "--allow-empty", "-qm", "seed"]);
     git(
         repo.path(),
         &["worktree", "add", "-b", "loom/api", ".worktrees/api"],
@@ -32,15 +22,6 @@ pub(super) fn fixture() -> (tempfile::TempDir, Stage, std::path::PathBuf) {
     (repo, stage, checkout)
 }
 
-pub(super) fn git(root: &std::path::Path, args: &[&str]) {
-    let output = crate::git::runner::run_git(args, root).unwrap();
-    assert!(
-        output.status.success(),
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-}
-
 pub(super) fn write(root: &std::path::Path, path: &str) {
     let path = root.join(path);
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
@@ -48,18 +29,7 @@ pub(super) fn write(root: &std::path::Path, path: &str) {
 }
 
 pub(super) fn commit(checkout: &std::path::Path, message: &str) {
-    git(
-        checkout,
-        &[
-            "-c",
-            "user.name=T",
-            "-c",
-            "user.email=t@t",
-            "commit",
-            "-qm",
-            message,
-        ],
-    );
+    git(checkout, &["commit", "-qm", message]);
 }
 
 /// Commit `rules` as the checkout's root `.gitignore`.

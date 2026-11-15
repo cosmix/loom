@@ -2,7 +2,6 @@ use super::*;
 
 use std::fs;
 use std::net::SocketAddr;
-use std::process::Command;
 
 use tempfile::TempDir;
 
@@ -12,6 +11,7 @@ use crate::plan_server::prereq::ReadOnly;
 use crate::plan_server::wire::run::RunJob;
 use crate::plan_server::wire::run::{RunOffer as O, WorkspaceState as W};
 use crate::planning::watch::OwnWrites;
+use crate::test_git::{git, TestRepo};
 use crate::web_server::http::RequestHead;
 
 #[path = "tests_workspace.rs"]
@@ -19,22 +19,12 @@ mod workspace_gaps;
 
 fn repo() -> TempDir {
     let dir = tempfile::tempdir().unwrap();
-    git(dir.path(), &["init", "-q", "--initial-branch=main"]);
+    TestRepo::builder()
+        .identity("State Tests", "state@example.invalid")
+        .no_seed()
+        .init_in(dir.path());
     put(dir.path(), ".gitignore", "/.loom/\n");
     dir
-}
-
-fn git(root: &Path, args: &[&str]) {
-    let output = Command::new("git")
-        .args(args)
-        .current_dir(root)
-        .output()
-        .unwrap();
-    assert!(
-        output.status.success(),
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
 }
 
 fn put(root: &Path, rel: &str, text: &str) {

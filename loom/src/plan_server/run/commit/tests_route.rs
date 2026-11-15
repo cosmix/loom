@@ -86,7 +86,7 @@ fn route_refuses_read_only() {
     repo.put("doc/a.md", "changed\n");
     let ctx = repo.context(true);
     assert_refusal(request(&ctx, &["doc/a.md"], "edit"), 403, "read_only");
-    assert_eq!(repo.git(&["diff", "--cached", "--name-only"]), "");
+    assert_eq!(repo.git_text(&["diff", "--cached", "--name-only"]), "");
 }
 
 #[test]
@@ -97,7 +97,7 @@ fn route_refuses_a_concurrent_job() {
     let ctx = repo.context(false);
     let _guard = child::jobs(&ctx).begin(RunJob::Start).unwrap();
     assert_refusal(request(&ctx, &["doc/a.md"], "edit"), 409, "busy");
-    assert_eq!(repo.git(&["diff", "--cached", "--name-only"]), "");
+    assert_eq!(repo.git_text(&["diff", "--cached", "--name-only"]), "");
 }
 
 #[test]
@@ -110,7 +110,7 @@ fn route_accepts_and_emits_output_then_failure_done() {
     let frames = ctx
         .hub()
         .register(&ctx.conn_ctx(BrowserId::mint().unwrap()));
-    let head = repo.git(&["rev-parse", "HEAD"]);
+    let head = repo.git_text(&["rev-parse", "HEAD"]);
 
     assert_eq!(request(&ctx, &["doc/a.md"], "edit").status, 202);
 
@@ -129,7 +129,7 @@ fn route_accepts_and_emits_output_then_failure_done() {
     // Both hook streams arrive whatever order the two pipes were drained in.
     lines.sort();
     assert_eq!(lines, ["err", "out"]);
-    assert_eq!(repo.git(&["rev-parse", "HEAD"]), head);
+    assert_eq!(repo.git_text(&["rev-parse", "HEAD"]), head);
 }
 
 #[test]
@@ -144,7 +144,7 @@ fn route_refuses_a_nul_in_the_message() {
         "invalid_message",
     );
     assert_eq!(child::jobs(&ctx).current(), None);
-    assert_eq!(repo.git(&["diff", "--cached", "--name-only"]), "");
+    assert_eq!(repo.git_text(&["diff", "--cached", "--name-only"]), "");
 }
 
 #[test]
@@ -156,7 +156,7 @@ fn worker_recomputes_the_allowlist_and_reports_a_vanished_path() {
     let frames = ctx
         .hub()
         .register(&ctx.conn_ctx(BrowserId::mint().unwrap()));
-    let head = repo.git(&["rev-parse", "HEAD"]);
+    let head = repo.git_text(&["rev-parse", "HEAD"]);
     repo.put("doc/a.md", "original\n");
 
     commit_worker(
@@ -177,5 +177,5 @@ fn worker_recomputes_the_allowlist_and_reports_a_vanished_path() {
     assert_eq!(lines.len(), 1);
     assert_eq!(lines[0]["stream"], "stderr");
     assert_eq!(lines[0]["line"], "invalid documentation paths");
-    assert_eq!(repo.git(&["rev-parse", "HEAD"]), head);
+    assert_eq!(repo.git_text(&["rev-parse", "HEAD"]), head);
 }

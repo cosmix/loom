@@ -60,6 +60,7 @@ pub fn parse_worktree_list(output: &[u8]) -> Result<Vec<WorktreeInfo>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_git::{git, git_command, TestRepo};
 
     #[test]
     fn parses_nul_records_and_rejects_incomplete_output() {
@@ -91,33 +92,16 @@ mod tests {
         let root = repo.path();
         let linked = tempfile::TempDir::new().unwrap();
         let path = linked.path().join("bad");
-        let git = |args: &[&std::ffi::OsStr]| {
-            let output = std::process::Command::new("git")
-                .args(["-c", "user.name=t", "-c", "user.email=t@t.com"])
-                .args(args)
-                .current_dir(root)
-                .output()
-                .unwrap();
-            assert!(output.status.success(), "{args:?}");
-        };
-        let os = std::ffi::OsStr::new;
-        git(&[os("init"), os("-q"), os("-b"), os("main")]);
-        git(&[
-            os("commit"),
-            os("-q"),
-            os("--allow-empty"),
-            os("-m"),
-            os("seed"),
-        ]);
+        TestRepo::builder().no_seed().init_in(root);
+        git(root, &["commit", "-q", "--allow-empty", "-m", "seed"]);
         let branch = std::ffi::OsStr::from_bytes(b"loom/b\xffd");
-        git(&[
-            os("worktree"),
-            os("add"),
-            os("-q"),
-            os("-b"),
-            branch,
-            path.as_os_str(),
-        ]);
+        let added = git_command(root)
+            .args(["worktree", "add", "-q", "-b"])
+            .arg(branch)
+            .arg(path.as_os_str())
+            .output()
+            .unwrap();
+        assert!(added.status.success(), "{added:?}");
 
         let worktrees = crate::git::worktree::list_worktrees(root).unwrap();
 

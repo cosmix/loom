@@ -9,7 +9,7 @@ use std::time::Duration;
 use super::route_tests::{git, put};
 use super::settle_commit::{record, Limits, Recorded, SettleCommit};
 use super::settle_commit_tests::{
-    assert_left_staged, assert_untouched, configure, head, hook, plan_commit, pre_commit,
+    assert_left_staged, assert_untouched, head, hook, init_configured, plan_commit, pre_commit,
     refusal_of, repo, NEW_BRIEF, PLAN,
 };
 
@@ -144,8 +144,7 @@ fn a_settle_on_an_unborn_branch_reports_the_root_commit() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();
     put(root, PLAN, "# Plan\n\nSettled: body=abc\n");
-    git(root, &["init", "-q"]);
-    configure(root);
+    init_configured(root);
     let (commit, note) = made(record(root, &plan_commit(&[], false), Limits::STANDARD));
     assert_eq!(commit, Some(head(root)));
     assert_eq!(note, None);

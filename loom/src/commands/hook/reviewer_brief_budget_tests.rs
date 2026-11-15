@@ -1,6 +1,7 @@
 //! Brief tests for the integration file-list budget and a failed stage listing.
 
 use super::*;
+use tempfile::TempDir;
 
 fn realistic_paths(count: usize) -> Vec<String> {
     (0..count)

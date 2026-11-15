@@ -5,51 +5,19 @@ use crate::git::cleanup::{
     cleanup_after_merge, cleanup_branch, cleanup_worktree, needs_cleanup, prune_worktrees,
     CleanupConfig, CleanupResult,
 };
+use crate::test_git::TestRepo;
 use serial_test::serial;
 use std::fs;
-use std::path::Path;
 use std::process::Command;
 use tempfile::TempDir;
 
-/// Run git with ambient configuration neutralized, so a developer's global
-/// settings (hooks, gpg signing, default branch, aliases) cannot change what
-/// these tests exercise. Mirrors
-/// `orchestrator::merge_lifecycle::tests::isolated_git`.
-fn isolated_git(root: &Path, args: &[&str]) -> std::process::Output {
-    Command::new("git")
-        .args(args)
-        .current_dir(root)
-        .env("GIT_CONFIG_GLOBAL", root.join(".loom-test-no-global"))
-        .env("GIT_CONFIG_SYSTEM", root.join(".loom-test-no-system"))
-        .env("GIT_CONFIG_NOSYSTEM", "1")
-        .output()
-        .unwrap()
-}
-
-/// Assert a setup command succeeded. Dropping the exit status here would hide
-/// setup failures and turn them into a confusing assertion further down.
-pub(super) fn git_ok(root: &Path, args: &[&str]) {
-    let out = isolated_git(root, args);
-    assert!(
-        out.status.success(),
-        "git {args:?} failed: {}",
-        String::from_utf8_lossy(&out.stderr)
-    );
-}
+pub(super) use crate::test_git::git as git_ok;
 
 pub(super) fn setup_git_repo() -> TempDir {
-    let temp_dir = TempDir::new().unwrap();
-    git_ok(temp_dir.path(), &["init"]);
-    git_ok(temp_dir.path(), &["config", "user.email", "test@test.com"]);
-    git_ok(temp_dir.path(), &["config", "user.name", "Test"]);
-
-    // Create initial commit
-    let test_file = temp_dir.path().join("README.md");
-    fs::write(&test_file, "# Test").unwrap();
-    git_ok(temp_dir.path(), &["add", "."]);
-    git_ok(temp_dir.path(), &["commit", "-m", "Initial commit"]);
-
-    temp_dir
+    TestRepo::builder()
+        .seed("README.md", "# Test", "Initial commit")
+        .create()
+        .into_temp_dir()
 }
 
 #[test]

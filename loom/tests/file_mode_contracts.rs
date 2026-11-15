@@ -3,7 +3,7 @@
 
 use std::io::{Read, Write};
 use std::net::{IpAddr, Ipv4Addr, TcpStream};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::Command;
 use std::time::Duration;
 
@@ -17,22 +17,14 @@ use loom::plan_server::{start, RunningServer, ServerOptions};
 use loom::planning::sections::normalized_hash;
 use tempfile::TempDir;
 
-fn git(dir: &Path, args: &[&str]) {
-    let status = Command::new("git")
-        .args(["-c", "user.name=t", "-c", "user.email=t@example.com"])
-        .args(args)
-        .current_dir(dir)
-        .env_remove("GIT_DIR")
-        .env_remove("GIT_WORK_TREE")
-        .status()
-        .expect("run git");
-    assert!(status.success(), "git {args:?} failed");
-}
+#[path = "test_support/mod.rs"]
+mod test_support;
+use test_support::git_repo::{git, TestRepo};
 
 /// A temp git repository on `main` holding `doc/product/index.md` and `files`, committed.
 fn repo(files: &[(&str, &str)]) -> TempDir {
     let dir = tempfile::tempdir().expect("tempdir");
-    git(dir.path(), &["init", "-q", "-b", "main"]);
+    TestRepo::builder().no_seed().init_in(dir.path());
     let mut all = vec![("doc/product/index.md", "# Demo\n")];
     all.extend_from_slice(files);
     for (rel, text) in all {

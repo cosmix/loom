@@ -7,36 +7,23 @@ use crate::context::source_graph::GRAPH_SCHEMA_VERSION;
 use crate::context::store::ContextStore;
 use crate::context::view::{build_cold, ViewIdentity};
 use crate::fs::work_dir::WorkDir;
+use crate::test_git::{git, TestRepo};
 use std::path::Path;
-use std::process::Command;
 
 fn entry(path: &str, source: &str) -> FileEntry {
     let parsed = extract_file(&registry(), Path::new(path), source.as_bytes());
     FileEntry::from_extraction(source.as_bytes(), parsed)
 }
 
-fn git(root: &Path, args: &[&str]) -> String {
-    let output = Command::new("git")
-        .args(args)
-        .current_dir(root)
-        .output()
-        .unwrap();
-    assert!(
-        output.status.success(),
-        "git {args:?}: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    String::from_utf8(output.stdout).unwrap().trim().to_string()
-}
-
 #[test]
 fn checkout_head_selects_its_base_without_an_overlay() {
     let temp = project_with_knowledge();
     let root = temp.path();
-    git(root, &["init", "-q"]);
+    TestRepo::builder()
+        .identity("Test", "test@example.invalid")
+        .no_seed()
+        .init_in(root);
     crate::git::worktree::capture_main_identity(root, &root.join(".loom/work")).unwrap();
-    git(root, &["config", "user.email", "test@example.invalid"]);
-    git(root, &["config", "user.name", "Test"]);
     std::fs::write(root.join("source.rs"), "pub fn alpha_unique() {}\n").unwrap();
     git(root, &["add", "source.rs"]);
     git(root, &["commit", "-qm", "first"]);

@@ -134,12 +134,8 @@ impl TestRunnerAdapter for Rspec {
 mod tests {
     use super::*;
     use crate::testrun::command::{assert_one_word, HOSTILE_NAME};
-    use crate::testrun::fixture_support::{load, scenarios};
+    use crate::testrun::fixture_support::{load, scenarios, words};
     use crate::testrun::{classify, RunOutcome};
-
-    fn words(command: &str) -> Vec<String> {
-        command.split_whitespace().map(str::to_string).collect()
-    }
 
     #[test]
     fn example_command_uses_bundle_when_gemfile_exists() {

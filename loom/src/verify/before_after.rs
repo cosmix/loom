@@ -129,51 +129,25 @@ mod tests;
 #[cfg(test)]
 mod prior_work_tests {
     use super::*;
-    use std::process::Command;
-    use tempfile::TempDir;
+    use crate::test_git::{git, TestRepo};
 
     const STAGE_BRANCH: &str = "loom/add-feature";
 
-    fn git(args: &[&str], dir: &Path) {
-        let output = Command::new("git")
-            .args(args)
-            .current_dir(dir)
-            .output()
-            .unwrap_or_else(|e| panic!("git {args:?} failed to run: {e}"));
-        assert!(
-            output.status.success(),
-            "git {args:?} failed: {}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-    }
+    /// Repo with one commit; returns the repo and its base branch name.
+    fn init_repo() -> (TestRepo, String) {
+        let repo = TestRepo::builder()
+            .seed("README.md", "base", "Initial commit")
+            .create();
+        let base = git(repo.path(), &["rev-parse", "--abbrev-ref", "HEAD"]);
 
-    /// Repo with one commit; returns the temp dir and its base branch name.
-    fn init_repo() -> (TempDir, String) {
-        let temp_dir = TempDir::new().unwrap();
-        let path = temp_dir.path();
-
-        git(&["init"], path);
-        git(&["config", "user.email", "test@test.com"], path);
-        git(&["config", "user.name", "Test"], path);
-        std::fs::write(path.join("README.md"), "base").unwrap();
-        git(&["add", "README.md"], path);
-        git(&["commit", "-m", "Initial commit"], path);
-
-        let head = Command::new("git")
-            .args(["rev-parse", "--abbrev-ref", "HEAD"])
-            .current_dir(path)
-            .output()
-            .unwrap();
-        let base = String::from_utf8_lossy(&head.stdout).trim().to_string();
-
-        (temp_dir, base)
+        (repo, base)
     }
 
     #[test]
     fn test_no_prior_work_in_pristine_workspace() {
         let (temp_dir, base) = init_repo();
         let path = temp_dir.path();
-        git(&["branch", STAGE_BRANCH], path);
+        git(path, &["branch", STAGE_BRANCH]);
 
         assert_eq!(
             find_prior_stage_work(STAGE_BRANCH, &base, path, path),
@@ -195,7 +169,7 @@ mod prior_work_tests {
     fn test_untracked_file_counts_as_prior_work() {
         let (temp_dir, base) = init_repo();
         let path = temp_dir.path();
-        git(&["branch", STAGE_BRANCH], path);
+        git(path, &["branch", STAGE_BRANCH]);
 
         // The common shape of an interrupted attempt: a new module written but
         // never committed.
@@ -213,7 +187,7 @@ mod prior_work_tests {
     fn test_loom_worktree_scaffolding_is_not_prior_work() {
         let (temp_dir, base) = init_repo();
         let path = temp_dir.path();
-        git(&["branch", STAGE_BRANCH], path);
+        git(path, &["branch", STAGE_BRANCH]);
 
         // What `create_worktree` plants in a repo that does not gitignore it.
         // Counting these would skip the gate on the very first spawn.
@@ -235,11 +209,11 @@ mod prior_work_tests {
         let (temp_dir, base) = init_repo();
         let path = temp_dir.path();
 
-        git(&["checkout", "-b", STAGE_BRANCH], path);
+        git(path, &["checkout", "-b", STAGE_BRANCH]);
         std::fs::write(path.join("feature.rs"), "pub fn feature() {}").unwrap();
-        git(&["add", "feature.rs"], path);
-        git(&["commit", "-m", "feat: add feature"], path);
-        git(&["checkout", &base], path);
+        git(path, &["add", "feature.rs"]);
+        git(path, &["commit", "-m", "feat: add feature"]);
+        git(path, &["checkout", &base]);
 
         // Working tree is clean again, but the commit is still on the branch.
         let evidence = find_prior_stage_work(STAGE_BRANCH, &base, path, path)

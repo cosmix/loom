@@ -1,6 +1,7 @@
 //! Cwd-dependent command tests run in their own process. Rust's serial test
 //! attribute does not protect other, unannotated tests from a cwd change.
 
+use crate::test_git::TestRepo;
 use std::env;
 use std::io::{Read, Write as _};
 use std::ops::Deref;
@@ -93,16 +94,7 @@ impl Deref for RepoFixture {
 pub(super) fn init_git_repo() -> RepoFixture {
     let cwd = CwdRestorer::new();
     let temp_dir = isolated_temp_dir();
-    let run_git = |args: &[&str]| {
-        Command::new("git")
-            .args(args)
-            .current_dir(temp_dir.path())
-            .output()
-            .unwrap()
-    };
-    run_git(&["init", "--initial-branch=main"]);
-    run_git(&["config", "user.email", "test@test.com"]);
-    run_git(&["config", "user.name", "Test"]);
+    TestRepo::builder().no_seed().init_in(temp_dir.path());
     RepoFixture {
         _cwd: cwd,
         dir: temp_dir,

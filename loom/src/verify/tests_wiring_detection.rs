@@ -77,25 +77,18 @@ fn unreadable_sibling_preserves_positive_reference_evidence() {
 #[cfg(feature = "source-graph")]
 #[test]
 fn nested_package_invocation_uses_repository_wiring_coordinates() {
-    use crate::git::runner::run_git_checked;
+    use crate::test_git::{git, TestRepo};
     let temp = tempfile::tempdir().unwrap();
     let root = temp.path();
-    for args in [
-        vec!["init", "-b", "main"],
-        vec!["config", "user.email", "test@example.com"],
-        vec!["config", "user.name", "Test"],
-    ] {
-        run_git_checked(&args, root).unwrap();
-    }
+    TestRepo::builder().no_seed().init_in(root);
     let package = root.join("package");
     std::fs::create_dir_all(package.join("src")).unwrap();
     std::fs::write(package.join("src/lib.rs"), "// seed\n").unwrap();
-    run_git_checked(&["add", "."], root).unwrap();
-    run_git_checked(
-        &["-c", "commit.gpgsign=false", "commit", "-m", "seed"],
+    git(root, &["add", "."]);
+    git(
         root,
-    )
-    .unwrap();
+        &["-c", "commit.gpgsign=false", "commit", "-m", "seed"],
+    );
     std::fs::write(
         package.join("src/store.rs"),
         "pub fn normalize_settings() {}\n",

@@ -14,6 +14,7 @@ use crate::plan_server::routes::Role;
 use crate::plan_server::run::child::{install_jobs, jobs};
 use crate::plan_server::wire::run::{RunJob, UnmergedBranch};
 use crate::planning::watch::OwnWrites;
+use crate::test_git::git;
 use crate::verify::transitions::create_stage;
 use crate::web_server::http::parse_head;
 
@@ -125,9 +126,11 @@ fn stage(id: &str, status: StageStatus, commit: Option<String>) -> Stage {
 #[serial]
 fn view_lists_merged_and_unmerged_stages_and_branches() {
     let repo = Repo::running();
-    let head = repo.git(&["rev-parse", "HEAD"]).trim().to_string();
+    let head = git(&repo.root, &["rev-parse", "HEAD"]).trim().to_string();
     repo.branch_ahead("loom/s2", 1);
-    let s2_tip = repo.git(&["rev-parse", "loom/s2"]).trim().to_string();
+    let s2_tip = git(&repo.root, &["rev-parse", "loom/s2"])
+        .trim()
+        .to_string();
     let work = repo.root.join(".loom/work");
     create_stage(&stage("s1", StageStatus::Completed, Some(head)), &work).unwrap();
     create_stage(&stage("s2", StageStatus::Completed, Some(s2_tip)), &work).unwrap();

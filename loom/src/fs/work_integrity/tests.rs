@@ -183,20 +183,12 @@ fn test_is_work_dir_git_ignored_false_when_pair_does_not_match_layout() {
 
 /// Initialise `temp` as a git repository isolated from the host's git config
 fn git_repo(temp: &Path) {
-    let run = |args: &[&str]| {
-        let status = std::process::Command::new("git")
-            .args(args)
-            .current_dir(temp)
-            .env("GIT_CONFIG_GLOBAL", temp.join("missing-global"))
-            .env("GIT_CONFIG_SYSTEM", temp.join("missing-system"))
-            .env("GIT_CONFIG_NOSYSTEM", "1")
-            .status()
-            .unwrap();
-        assert!(status.success(), "git {args:?} failed");
-    };
-    run(&["init", "-q"]);
+    crate::test_git::TestRepo::builder().no_seed().init_in(temp);
     let excludes = temp.join("no-global-excludes");
-    run(&["config", "core.excludesFile", excludes.to_str().unwrap()]);
+    crate::test_git::git(
+        temp,
+        &["config", "core.excludesFile", excludes.to_str().unwrap()],
+    );
 }
 
 #[test]

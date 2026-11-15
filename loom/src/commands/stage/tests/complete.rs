@@ -7,6 +7,7 @@ use super::{create_test_stage, save_test_stage, setup_work_dir};
 use crate::models::stage::{StageStatus, StageType};
 use crate::plan::schema::AcceptanceCriterion;
 use crate::relay::emit::{RelayContext, RelayMode};
+use crate::test_git::{git, TestRepo};
 use crate::verify::transitions::load_stage;
 use anyhow::Result;
 use serial_test::serial;
@@ -36,27 +37,13 @@ fn write_admin_token(work_dir: &Path, content: &str) {
 }
 
 fn initialize_zero_commit_repo(repo: &Path) {
-    let run_git = |args: &[&str]| {
-        let output = std::process::Command::new("git")
-            .args(args)
-            .current_dir(repo)
-            .output()
-            .unwrap();
-        assert!(
-            output.status.success(),
-            "git {args:?}: {}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-    };
-    run_git(&["init", "--initial-branch=main"]);
-    run_git(&["config", "user.email", "test@test.com"]);
-    run_git(&["config", "user.name", "Test"]);
+    TestRepo::builder().no_seed().init_in(repo);
     std::fs::write(repo.join("README.md"), "x").unwrap();
     // `setup_work_dir` scaffolds the knowledge files, which a real project has
     // committed; completion refuses them as untracked inputs otherwise.
-    run_git(&["add", "README.md", "doc"]);
-    run_git(&["commit", "-m", "initial"]);
-    run_git(&["branch", "loom/test-stage"]);
+    git(repo, &["add", "README.md", "doc"]);
+    git(repo, &["commit", "-m", "initial"]);
+    git(repo, &["branch", "loom/test-stage"]);
     crate::git::worktree::capture_main_identity(repo, &repo.join(".loom/work")).unwrap();
 }
 

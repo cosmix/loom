@@ -19,22 +19,18 @@ use loom::plan_server::{start, RunningServer, ServerOptions};
 use reqwest::blocking::{Client, Response};
 use tempfile::TempDir;
 
-fn git(dir: &Path, args: &[&str]) {
-    let status = Command::new("git")
-        .args(["-c", "user.name=t", "-c", "user.email=t@example.com"])
-        .args(args)
-        .current_dir(dir)
-        .env_remove("GIT_DIR")
-        .env_remove("GIT_WORK_TREE")
-        .status()
-        .expect("run git");
-    assert!(status.success(), "git {args:?} failed");
-}
+#[path = "test_support/mod.rs"]
+mod test_support;
+
+use test_support::git_repo::{git, TestRepo};
 
 /// A temp git repository on branch `main` with one commit and `doc/product/index.md`.
 fn project_repo() -> TempDir {
     let dir = tempfile::tempdir().expect("tempdir");
-    git(dir.path(), &["init", "-q", "-b", "main"]);
+    TestRepo::builder()
+        .identity("t", "t@example.com")
+        .no_seed()
+        .init_in(dir.path());
     std::fs::create_dir_all(dir.path().join("doc/product")).unwrap();
     std::fs::write(dir.path().join("doc/product/index.md"), "# Demo\n").unwrap();
     git(dir.path(), &["add", "."]);

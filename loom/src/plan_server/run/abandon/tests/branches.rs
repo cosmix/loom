@@ -7,6 +7,7 @@ use serial_test::serial;
 use super::super::AbandonOutcome;
 use super::{EnvGuard, Repo, CLEAN_REMOVES_WORK, PLAN, RETIRED};
 use crate::commands::clean::unmerged_loom_branches;
+use crate::test_git::git;
 
 /// Makes every later git command in the repository fail: git refuses a repository format it
 /// does not know.
@@ -96,7 +97,10 @@ fn a_stop_that_commits_on_a_loom_branch_ends_before_clean() {
 #[serial]
 fn a_branch_listing_error_is_reported_not_an_empty_list() {
     let repo = Repo::running();
-    repo.git(&["config", "core.repositoryformatversion", "99"]);
+    git(
+        &repo.root,
+        &["config", "core.repositoryformatversion", "99"],
+    );
     let listing = unmerged_loom_branches(&repo.root);
     assert!(listing.branches.is_empty(), "{:?}", listing.branches);
     assert!(listing.listing_error.is_some());
@@ -106,7 +110,10 @@ fn a_branch_listing_error_is_reported_not_an_empty_list() {
 #[serial]
 fn a_branch_listing_error_before_stop_runs_nothing() {
     let repo = Repo::running();
-    repo.git(&["config", "core.repositoryformatversion", "99"]);
+    git(
+        &repo.root,
+        &["config", "core.repositoryformatversion", "99"],
+    );
     let runtime = repo.runtime();
     assert_listing_refused(&repo.abandon(&runtime, &[]));
     assert!(repo.calls().is_empty(), "{:?}", repo.calls());
@@ -143,7 +150,7 @@ fn a_branch_whose_ahead_count_fails_counts_as_unmerged() {
     let repo = Repo::running();
     // The workspace names a target branch that does not exist.
     repo.workspace(PLAN, "no-such-branch");
-    repo.git(&["branch", "loom/s1"]);
+    git(&repo.root, &["branch", "loom/s1"]);
     let listing = unmerged_loom_branches(&repo.root);
     assert_eq!(listing.target_branch, "no-such-branch");
     assert_eq!(listing.branches, vec![("loom/s1".to_string(), 1)]);

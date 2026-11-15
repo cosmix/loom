@@ -10,6 +10,7 @@ use std::path::Path;
 use tempfile::TempDir;
 
 use super::helpers::init_test_repo;
+use super::helpers::test_support::git_repo::git;
 use super::knowledge_bootstrap_support::{
     combined, core_util_files, leftover_briefs, numbered, receipt_ids, success, table_ids,
     table_rows, Sandbox, COMPLETING_FAKE, EXIT_1, LOG_AND_EXIT, MARKER_THEN_EXIT,
@@ -27,7 +28,7 @@ fn structural_only_scaffolds_and_reports() {
     assert!(stdout.contains("structural-only"), "{stdout}");
     assert!(repo.path().join("doc/loom/knowledge/INDEX.md").exists());
     assert!(repo.path().join(".loom/.gitignore").exists());
-    let status = sandbox.git(repo.path(), &["status", "--porcelain"]);
+    let status = git(repo.path(), &["status", "--porcelain"]);
     assert!(
         !status.lines().any(|line| line.contains(".loom")),
         "{status}"
@@ -90,7 +91,7 @@ fn session_completion_writes_receipt_and_refresh_is_idempotent() {
 
     let edited = "pub fn edited() -> usize {\n    7\n}\n";
     fs::write(repo.path().join("src/util/a.rs"), edited).expect("edit a.rs");
-    sandbox.git(repo.path(), &["commit", "-qam", "edit util"]);
+    git(repo.path(), &["commit", "-qam", "edit util"]);
     let stdout = success(&sandbox.bootstrap(repo.path(), &["--refresh", "--dry-run"]));
     let statuses: Vec<String> = table_rows(&stdout)
         .into_iter()
@@ -159,7 +160,7 @@ fn refuses_outside_git() {
 fn refuses_without_commits() {
     let sandbox = Sandbox::new(LOG_AND_EXIT);
     let dir = TempDir::new().expect("temp dir");
-    sandbox.git(dir.path(), &["init", "-q"]);
+    git(dir.path(), &["init", "-q"]);
     let output = sandbox.bootstrap(dir.path(), &[]);
     assert!(!output.status.success());
     let text = combined(&output);
@@ -180,8 +181,8 @@ fn removal_only_refresh_briefs_removed_cluster() {
         [".", "a", "b", "c"]
     );
 
-    sandbox.git(repo.path(), &["rm", "-rq", "c"]);
-    sandbox.git(repo.path(), &["commit", "-qm", "drop c"]);
+    git(repo.path(), &["rm", "-rq", "c"]);
+    git(repo.path(), &["commit", "-qm", "drop c"]);
     success(&sandbox.bootstrap(repo.path(), &["--refresh"]));
     assert_eq!(sandbox.invocations(), 2);
     assert!(sandbox.briefs().contains("- removed: c"));
@@ -205,8 +206,8 @@ fn refresh_is_current_after_commit_and_in_clone() {
     let sandbox = Sandbox::new(COMPLETING_FAKE);
     let repo = sandbox.fixture(&core_util_files());
     success(&sandbox.bootstrap(repo.path(), &[]));
-    sandbox.git(repo.path(), &["add", "-A"]);
-    sandbox.git(repo.path(), &["commit", "-qm", "k"]);
+    git(repo.path(), &["add", "-A"]);
+    git(repo.path(), &["commit", "-qm", "k"]);
     let stdout = success(&sandbox.bootstrap(repo.path(), &["--refresh"]));
     assert!(stdout.contains("knowledge is current"), "{stdout}");
 
@@ -214,7 +215,7 @@ fn refresh_is_current_after_commit_and_in_clone() {
     let clone = clones.path().join("clone");
     let source = repo.path().to_str().expect("utf-8 path");
     let target = clone.to_str().expect("utf-8 path");
-    sandbox.git(clones.path(), &["clone", "-q", source, target]);
+    git(clones.path(), &["clone", "-q", source, target]);
     let stdout = success(&sandbox.bootstrap(&clone, &["--refresh"]));
     assert!(stdout.contains("knowledge is current"), "{stdout}");
     assert_eq!(sandbox.invocations(), 1);

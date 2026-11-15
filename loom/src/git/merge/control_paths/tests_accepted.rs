@@ -2,10 +2,9 @@
 //! stage merge brought to the target starts.
 
 use super::super::merge_stage;
-use super::super::test_support::{
-    commit_file, git_ok, git_out, init_repo, lock_dir, rev, stage_branch,
-};
+use super::super::test_support::{init_repo, lock_dir, rev, stage_branch};
 use super::*;
+use crate::test_git::{commit_file, git};
 
 fn merge(root: &Path, id: &str) {
     let lock = lock_dir();
@@ -46,9 +45,9 @@ fn a_target_merged_into_the_stage_branch_is_not_its_change() {
     stage_branch(root, "s", &[("s1.txt", "a")]);
     commit_file(root, "other.txt", "o", "other");
     let x = rev(root, "main");
-    git_ok(root, &["checkout", "loom/s"]);
-    git_ok(root, &["merge", "--no-edit", "main"]);
-    git_ok(root, &["checkout", "main"]);
+    git(root, &["checkout", "loom/s"]);
+    git(root, &["merge", "--no-edit", "main"]);
+    git(root, &["checkout", "main"]);
     commit_file(root, "third.txt", "t", "third");
     let completed = rev(root, "loom/s");
     merge(root, "s");
@@ -67,7 +66,7 @@ fn an_unmerged_stage_uses_the_merge_base_with_the_target() {
     stage_branch(root, "s", &[("s1.txt", "a")]);
     commit_file(root, "other.txt", "o", "other");
     let completed = rev(root, "loom/s");
-    let expected = git_out(root, &["merge-base", &completed, "main"]);
+    let expected = git(root, &["merge-base", &completed, "main"]);
     assert_eq!(
         accepted_change_base(root, &completed, "main").unwrap(),
         AcceptedBase::Unmerged { base: expected }
@@ -80,7 +79,7 @@ fn a_value_that_is_not_a_commit_id_is_refused() {
     let root = temp.path();
     assert!(accepted_change_base(root, "--all", "main").is_err());
     assert!(accepted_change_base(root, "abc", "main").is_err());
-    git_ok(root, &["branch", &"g".repeat(40)]);
+    git(root, &["branch", &"g".repeat(40)]);
     // Values git itself accepts as revisions: only the commit-id guard refuses them.
     assert!(accepted_change_base(root, "HEAD", "main").is_err());
     assert!(accepted_change_base(root, "main", "main").is_err());
@@ -97,7 +96,7 @@ fn a_later_stage_merge_is_skipped() {
     merge(root, "s");
     stage_branch(root, "t", &[("t1.txt", "c")]);
     merge(root, "t");
-    let s_merge = git_out(root, &["rev-parse", "main^1"]);
+    let s_merge = git(root, &["rev-parse", "main^1"]);
     let AcceptedBase::Merged { merge, base } =
         accepted_change_base(root, &completed, "main").unwrap()
     else {
@@ -114,7 +113,7 @@ fn a_fast_forwarded_commit_has_no_merge() {
     let root = temp.path();
     stage_branch(root, "s", &[("s1.txt", "a")]);
     let completed = rev(root, "loom/s");
-    git_out(root, &["merge", "--ff-only", "loom/s"]);
+    git(root, &["merge", "--ff-only", "loom/s"]);
     assert_eq!(
         accepted_change_base(root, &completed, "main").unwrap(),
         AcceptedBase::Unmerged { base: completed }

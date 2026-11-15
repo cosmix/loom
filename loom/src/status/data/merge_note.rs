@@ -43,38 +43,20 @@ pub(super) fn stash_warning(stage: &Stage, work_dir: &WorkDir) -> Option<String>
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::git::runner::run_git_checked;
     use crate::git::{MergeBlock, StashReapply};
     use crate::models::stage::MergeRecord;
-    use std::path::Path;
+    use crate::test_git::{git, TestRepo};
 
     const BACKUP: &str = "refs/loom/autostash/s-1";
 
     /// A repository with one commit and the stage state directory in it.
     fn repo_work_dir() -> (tempfile::TempDir, WorkDir) {
         let tmp = tempfile::TempDir::new().unwrap();
-        git(tmp.path(), &["init", "-q", "-b", "main"]);
-        git(
-            tmp.path(),
-            &[
-                "-c",
-                "user.name=t",
-                "-c",
-                "user.email=t@t",
-                "commit",
-                "-q",
-                "--allow-empty",
-                "-m",
-                "init",
-            ],
-        );
+        TestRepo::builder().no_seed().init_in(tmp.path());
+        git(tmp.path(), &["commit", "-q", "--allow-empty", "-m", "init"]);
         let work_dir = WorkDir::new(tmp.path()).unwrap();
         work_dir.initialize().unwrap();
         (tmp, work_dir)
-    }
-
-    fn git(root: &Path, args: &[&str]) {
-        run_git_checked(args, root).unwrap();
     }
 
     fn stage_with_stash(restored: bool) -> Stage {

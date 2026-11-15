@@ -3,11 +3,11 @@
 //! `permissions.deny` for the native file tools).
 
 use super::*;
-use crate::git::runner::run_git;
 use crate::models::session::SessionType;
 use crate::orchestrator::terminal::native::tests_session_settings::{
     checkout, read_capsule, sandbox_with, strings, write_capsule,
 };
+use crate::test_git::{git, TestRepo};
 
 const DENY_WRITE: &str = "/sandbox/filesystem/denyWrite";
 const DENY_RULES: &str = "/permissions/deny";
@@ -99,30 +99,10 @@ fn kinds_with_cwd(repo: &Path, worktree: &Path) -> [(SessionType, PathBuf); 6] {
     ]
 }
 
-fn git(dir: &Path, args: &[&str]) {
-    let output = run_git(args, dir).unwrap();
-    assert!(output.status.success(), "git {args:?}: {output:?}");
-}
-
 /// Make `repo` a git repository with the registered worktrees `s1` and `s2`.
 fn register_worktrees(repo: &Path) {
-    git(repo, &["init", "-q", "-b", "main"]);
-    git(
-        repo,
-        &[
-            "-c",
-            "user.email=t@t",
-            "-c",
-            "user.name=t",
-            "-c",
-            "commit.gpgsign=false",
-            "commit",
-            "-q",
-            "--allow-empty",
-            "-m",
-            "base",
-        ],
-    );
+    TestRepo::builder().no_seed().init_in(repo);
+    git(repo, &["commit", "-q", "--allow-empty", "-m", "base"]);
     git(
         repo,
         &["worktree", "add", "-q", "-b", "loom/s1", ".worktrees/s1"],

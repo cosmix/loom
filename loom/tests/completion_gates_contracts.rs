@@ -28,23 +28,9 @@ use loom::verify::impact_tests::{run, stage_changes};
 use loom::verify::transitions::{load_stage, save_stage};
 use tempfile::TempDir;
 
-/// Git isolated from the host's global and system configuration.
-fn git(root: &Path, args: &[&str]) -> String {
-    let output = std::process::Command::new("git")
-        .args(args)
-        .current_dir(root)
-        .env("GIT_CONFIG_GLOBAL", root.join(".loom-test-no-global"))
-        .env("GIT_CONFIG_SYSTEM", root.join(".loom-test-no-system"))
-        .env("GIT_CONFIG_NOSYSTEM", "1")
-        .output()
-        .unwrap();
-    assert!(
-        output.status.success(),
-        "git {args:?} failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    String::from_utf8_lossy(&output.stdout).trim().to_string()
-}
+#[path = "test_support/mod.rs"]
+mod test_support;
+use test_support::git_repo::{git, TestRepo};
 
 fn write(root: &Path, path: &str, content: &str) {
     let path = root.join(path);
@@ -54,12 +40,9 @@ fn write(root: &Path, path: &str, content: &str) {
 
 /// An empty repository on branch `main`, returned with its canonical root.
 fn repo() -> (TempDir, PathBuf) {
-    let temp = TempDir::new().unwrap();
-    let root = temp.path().canonicalize().unwrap();
-    git(&root, &["init", "-b", "main"]);
-    git(&root, &["config", "user.email", "t@t.com"]);
-    git(&root, &["config", "user.name", "t"]);
-    (temp, root)
+    let repo = TestRepo::builder().no_seed().create();
+    let root = repo.path().to_path_buf();
+    (repo.into_temp_dir(), root)
 }
 
 fn commit(root: &Path, message: &str) {

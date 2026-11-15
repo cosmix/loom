@@ -1,32 +1,16 @@
 //! In-progress merge detection in the main repository and in stage worktrees.
 
 use super::*;
+use crate::test_git::{git, TestRepo};
 use std::process::Command;
 use tempfile::TempDir;
 
-fn run_git(args: &[&str], cwd: &Path) {
-    let out = Command::new("git")
-        .args(args)
-        .current_dir(cwd)
-        .output()
-        .unwrap();
-    assert!(
-        out.status.success(),
-        "git {args:?} failed: {}",
-        String::from_utf8_lossy(&out.stderr)
-    );
-}
-
 fn init_repo() -> TempDir {
-    let tmp = TempDir::new().unwrap();
-    let root = tmp.path();
-    run_git(&["init", "-b", "main"], root);
-    run_git(&["config", "user.email", "t@t.com"], root);
-    run_git(&["config", "user.name", "t"], root);
-    std::fs::write(root.join("README.md"), "seed").unwrap();
-    run_git(&["add", "README.md"], root);
-    run_git(&["commit", "-m", "seed"], root);
-    tmp
+    TestRepo::builder()
+        .identity("t", "t@t.com")
+        .seed("README.md", "seed", "seed")
+        .create()
+        .into_temp_dir()
 }
 
 #[test]
@@ -40,14 +24,14 @@ fn merge_head_exists_returns_true_when_active() {
     let tmp = init_repo();
     let root = tmp.path();
     // Build a conflicting branch.
-    run_git(&["checkout", "-b", "feature"], root);
+    git(root, &["checkout", "-b", "feature"]);
     std::fs::write(root.join("a.txt"), "branch").unwrap();
-    run_git(&["add", "a.txt"], root);
-    run_git(&["commit", "-m", "branch"], root);
-    run_git(&["checkout", "main"], root);
+    git(root, &["add", "a.txt"]);
+    git(root, &["commit", "-m", "branch"]);
+    git(root, &["checkout", "main"]);
     std::fs::write(root.join("a.txt"), "main").unwrap();
-    run_git(&["add", "a.txt"], root);
-    run_git(&["commit", "-m", "main"], root);
+    git(root, &["add", "a.txt"]);
+    git(root, &["commit", "-m", "main"]);
 
     // Try to merge — produces MERGE_HEAD with conflict.
     let out = Command::new("git")
@@ -64,14 +48,14 @@ fn merge_head_exists_returns_true_when_active() {
 fn detect_returns_unmerged_paths_state_when_conflicts_present() {
     let tmp = init_repo();
     let root = tmp.path();
-    run_git(&["checkout", "-b", "feature"], root);
+    git(root, &["checkout", "-b", "feature"]);
     std::fs::write(root.join("file.txt"), "feature\n").unwrap();
-    run_git(&["add", "file.txt"], root);
-    run_git(&["commit", "-m", "feature"], root);
-    run_git(&["checkout", "main"], root);
+    git(root, &["add", "file.txt"]);
+    git(root, &["commit", "-m", "feature"]);
+    git(root, &["checkout", "main"]);
     std::fs::write(root.join("file.txt"), "main\n").unwrap();
-    run_git(&["add", "file.txt"], root);
-    run_git(&["commit", "-m", "main"], root);
+    git(root, &["add", "file.txt"]);
+    git(root, &["commit", "-m", "main"]);
 
     let _ = Command::new("git")
         .args(["merge", "--no-ff", "feature"])
@@ -94,14 +78,14 @@ fn detect_returns_unmerged_paths_state_when_conflicts_present() {
 fn detect_returns_resolved_but_uncommitted_when_paths_staged() {
     let tmp = init_repo();
     let root = tmp.path();
-    run_git(&["checkout", "-b", "feature"], root);
+    git(root, &["checkout", "-b", "feature"]);
     std::fs::write(root.join("file.txt"), "feature\n").unwrap();
-    run_git(&["add", "file.txt"], root);
-    run_git(&["commit", "-m", "feature"], root);
-    run_git(&["checkout", "main"], root);
+    git(root, &["add", "file.txt"]);
+    git(root, &["commit", "-m", "feature"]);
+    git(root, &["checkout", "main"]);
     std::fs::write(root.join("file.txt"), "main\n").unwrap();
-    run_git(&["add", "file.txt"], root);
-    run_git(&["commit", "-m", "main"], root);
+    git(root, &["add", "file.txt"]);
+    git(root, &["commit", "-m", "main"]);
 
     let _ = Command::new("git")
         .args(["merge", "--no-ff", "feature"])
@@ -111,7 +95,7 @@ fn detect_returns_resolved_but_uncommitted_when_paths_staged() {
 
     // Resolve by writing one side and staging.
     std::fs::write(root.join("file.txt"), "resolved\n").unwrap();
-    run_git(&["add", "file.txt"], root);
+    git(root, &["add", "file.txt"]);
 
     let merge = detect_in_progress_merge_at(root).unwrap().unwrap();
     assert_eq!(merge.state, ActiveMergeState::ResolvedButUncommitted);

@@ -6,7 +6,6 @@
 //! defines every field. Only the fields the harness reads are typed here.
 
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::time::Instant;
 
 use serde::Deserialize;
@@ -18,6 +17,7 @@ use crate::context::refresh::{ensure_snapshot, SnapshotPolicy};
 use crate::context::store::ContextStore;
 use crate::fs::work_dir::WorkDir;
 use crate::models::stage::{Stage, StageStatus, StageType, WiringCheck};
+use crate::test_git::git;
 use crate::verify::transitions::save_stage;
 
 #[derive(Deserialize)]
@@ -152,31 +152,6 @@ impl Successor {
     }
 }
 
-/// Run git with the isolated configuration `git/merge/test_support.rs`
-/// uses, so no user or system setting changes what the clone does.
-fn git(dir: &Path, config_root: &Path, args: &[&str]) -> String {
-    let output = Command::new("git")
-        .args(args)
-        .current_dir(dir)
-        .env(
-            "GIT_CONFIG_GLOBAL",
-            config_root.join(".loom-test-no-global"),
-        )
-        .env(
-            "GIT_CONFIG_SYSTEM",
-            config_root.join(".loom-test-no-system"),
-        )
-        .env("GIT_CONFIG_NOSYSTEM", "1")
-        .output()
-        .unwrap_or_else(|error| panic!("spawn git {args:?}: {error}"));
-    assert!(
-        output.status.success(),
-        "git {args:?} failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    String::from_utf8_lossy(&output.stdout).trim().to_string()
-}
-
 /// A shared, detached-from-origin clone at the successor's base commit, with
 /// both stage records, the dependency's journal and a current base graph.
 pub(super) struct Scratch {
@@ -189,12 +164,10 @@ pub(super) struct Scratch {
 impl Scratch {
     pub(super) fn prepare(pair: &Pair) -> Scratch {
         let temp = TempDir::new().expect("temp dir");
-        let config_root = temp.path().to_path_buf();
         let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
-        let toplevel = git(manifest, &config_root, &["rev-parse", "--show-toplevel"]);
+        let toplevel = git(manifest, &["rev-parse", "--show-toplevel"]);
         git(
             temp.path(),
-            &config_root,
             &[
                 "clone",
                 "--quiet",
@@ -206,14 +179,10 @@ impl Scratch {
         );
         let repo = temp.path().join("repo");
         let base = pair.successor.base_commit.as_str();
-        git(
-            &repo,
-            &config_root,
-            &["checkout", "--quiet", "-B", "main", base],
-        );
+        git(&repo, &["checkout", "--quiet", "-B", "main", base]);
         // The clone's origin/HEAD names the stage worktree's branch, which
         // `git::branch::default_branch` would otherwise return as the target.
-        git(&repo, &config_root, &["remote", "remove", "origin"]);
+        git(&repo, &["remote", "remove", "origin"]);
         let work_dir = write_state(&repo, pair);
         Scratch {
             _temp: temp,

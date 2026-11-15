@@ -2,25 +2,13 @@
 //! redirection. `GIT_DIR` is process-wide, so each case runs in its own process.
 
 use super::*;
+use crate::test_git::{git, TestRepo};
 use std::process::Command;
 
 const REPO: &str = "LOOM_BATCH_TEST_REPO";
 
-fn git(dir: &Path, args: &[&str]) {
-    let output = Command::new("git")
-        .args(["-c", "user.name=t", "-c", "user.email=t@t.com"])
-        .args(args)
-        .current_dir(dir)
-        .env_remove("GIT_DIR")
-        .env_remove("GIT_WORK_TREE")
-        .output()
-        .unwrap();
-    assert!(output.status.success(), "git {args:?}: {output:?}");
-}
-
-fn repository() -> tempfile::TempDir {
-    let repo = tempfile::TempDir::new().unwrap();
-    git(repo.path(), &["init", "-q", "-b", "main"]);
+fn repository() -> TestRepo {
+    let repo = TestRepo::builder().no_seed().create();
     git(
         repo.path(),
         &["commit", "-q", "--allow-empty", "-m", "seed"],

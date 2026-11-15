@@ -11,7 +11,7 @@ use super::super::resolver_attempts::{
     MAX_MERGE_RESOLVER_ATTEMPTS,
 };
 use super::test_fixtures::{
-    commit_on_stage_branch, git_ok, orchestrator_with_conflict, repo_with_clean_stage_branch,
+    commit_on_stage_branch, orchestrator_with_conflict, repo_with_clean_stage_branch,
     repo_with_conflicting_stage_branches, repo_with_stage_branches, use_real_worktree,
     with_read_only_stages,
 };
@@ -19,6 +19,7 @@ use crate::models::session::{Session, SessionType};
 use crate::models::stage::{Stage, StageStatus};
 use crate::orchestrator::core::recovery_guards::ORPHAN_PROBE_GRACE_SECS;
 use crate::orchestrator::core::Orchestrator;
+use crate::test_git::git;
 use crate::verify::transitions::{load_stage, save_stage, update_stage};
 
 /// Run one spawn-loop pass, which must spawn nothing, record no resolver
@@ -193,14 +194,14 @@ fn a_conflict_that_became_clean_is_landed_without_a_resolver() {
 #[test]
 fn a_clean_merge_with_no_proof_of_the_recorded_commit_goes_to_review() {
     let (repo, _head) = repo_with_clean_stage_branch("unproven");
-    git_ok(repo.path(), &["checkout", "-q", "--orphan", "side"]);
-    git_ok(
+    git(repo.path(), &["checkout", "-q", "--orphan", "side"]);
+    git(
         repo.path(),
         &["commit", "-q", "--allow-empty", "-m", "elsewhere"],
     );
     let elsewhere =
         crate::git::runner::run_git_checked(&["rev-parse", "HEAD"], repo.path()).unwrap();
-    git_ok(repo.path(), &["checkout", "-q", "-f", "main"]);
+    git(repo.path(), &["checkout", "-q", "-f", "main"]);
     let mut orchestrator = orchestrator_with_conflict(repo.path(), "unproven");
     update_stage("unproven", &orchestrator.config.work_dir, |stage| {
         stage.completed_commit = Some(elsewhere.clone());

@@ -1,6 +1,7 @@
 use super::*;
 use crate::git::branch::pinned_uncommitted_changes;
 use crate::git::worktree::capture_main_identity;
+use crate::test_git::{git, TestRepo};
 use crate::verify::contracts::test_support::{contract_worktree, plant_foreign_git_dir};
 use std::fs;
 use tempfile::TempDir;
@@ -49,15 +50,9 @@ fn startup_preserves_linked_checkout_identity_after_pointer_forgery() {
 fn startup_bootstrap_preserves_preexisting_staged_content() {
     let tmp = TempDir::new().unwrap();
     let root = tmp.path();
-    let git = WorktreeGit::discovered(root);
-    git.run_checked(&["init"]).unwrap();
-    git.run_checked(&["config", "user.name", "Test"]).unwrap();
-    git.run_checked(&["config", "user.email", "test@example.com"])
-        .unwrap();
-    git.run_checked(&["config", "commit.gpgsign", "false"])
-        .unwrap();
+    TestRepo::builder().no_seed().init_in(root);
     fs::write(root.join("pending.txt"), "pending\n").unwrap();
-    git.run_checked(&["add", "pending.txt"]).unwrap();
+    git(root, &["add", "pending.txt"]);
     anchor(root);
 
     let result = ensure_pinned_repo_ready(root).unwrap();

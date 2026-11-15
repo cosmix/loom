@@ -1,35 +1,32 @@
 //! End-to-end cache-input eligibility and stability tests.
 
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::time::Duration;
 
 use serial_test::serial;
 use tempfile::TempDir;
 
 use crate::models::stage::{AcceptanceCriterion, Stage, TruthCheck};
+use crate::test_git::{git, TestRepo};
 use crate::verify::criteria::executor::OUTPUT_TRUNCATED_MARKER;
 use crate::verify::criteria::{run_acceptance_with_config, CachePolicy, CriteriaConfig};
 
-const TEST_IDENTITY: &[&str] = &["-c", "user.name=Test", "-c", "user.email=test@example.com"];
-
 struct InputFixture {
-    repo: TempDir,
+    repo: TestRepo,
     cache: TempDir,
     marker: PathBuf,
 }
 
 impl InputFixture {
     fn new(script_body: &str) -> Self {
-        let repo = TempDir::new().unwrap();
+        let repo = TestRepo::builder().no_seed().create();
         let cache = TempDir::new().unwrap();
         let marker = repo.path().join(".git/executions.log");
-        git(&["init", "-q"], repo.path());
         std::fs::create_dir_all(repo.path().join("scripts")).unwrap();
         write_probe(repo.path(), &marker, script_body);
         std::fs::write(repo.path().join("source.txt"), "source\n").unwrap();
-        git(&["add", "scripts/probe.sh", "source.txt"], repo.path());
-        git(&["commit", "-q", "-m", "fixture"], repo.path());
+        git(repo.path(), &["add", "scripts/probe.sh", "source.txt"]);
+        git(repo.path(), &["commit", "-q", "-m", "fixture"]);
         Self {
             repo,
             cache,
@@ -64,17 +61,6 @@ fn write_probe(repo: &Path, marker: &Path, body: &str) {
         marker.display()
     );
     std::fs::write(repo.join("scripts/probe.sh"), content).unwrap();
-}
-
-fn git(args: &[&str], dir: &Path) {
-    let mut full = TEST_IDENTITY.to_vec();
-    full.extend_from_slice(args);
-    let status = Command::new("git")
-        .args(&full)
-        .current_dir(dir)
-        .status()
-        .unwrap();
-    assert!(status.success(), "git {args:?} failed in {}", dir.display());
 }
 
 fn extended(command: &str, required: &str) -> Stage {
@@ -203,8 +189,8 @@ fn untracked_content_hit_has_neighboring_byte_mutation_miss() {
 fn ignored_and_external_inputs_bypass_and_reexecute_after_mutation() {
     let fixture = InputFixture::new(":");
     std::fs::write(fixture.repo.path().join(".gitignore"), "ignored.dat\n").unwrap();
-    git(&["add", ".gitignore"], fixture.repo.path());
-    git(&["commit", "-q", "-m", "ignore"], fixture.repo.path());
+    git(fixture.repo.path(), &["add", ".gitignore"]);
+    git(fixture.repo.path(), &["commit", "-q", "-m", "ignore"]);
     let ignored = fixture.repo.path().join("ignored.dat");
     std::fs::write(&ignored, "alpha").unwrap();
     let ignored_stage = with_counter_setup(extended("cat ignored.dat", "alpha"));
@@ -242,10 +228,10 @@ fn tracked_source_symlink_change_bypasses_and_reexecutes() {
     std::fs::write(fixture.repo.path().join("bravo.dat"), "bravo").unwrap();
     symlink("alpha.dat", fixture.repo.path().join("source.link")).unwrap();
     git(
-        &["add", "alpha.dat", "bravo.dat", "source.link"],
         fixture.repo.path(),
+        &["add", "alpha.dat", "bravo.dat", "source.link"],
     );
-    git(&["commit", "-q", "-m", "symlink"], fixture.repo.path());
+    git(fixture.repo.path(), &["commit", "-q", "-m", "symlink"]);
     let stage = with_counter_setup(extended("cat source.link", "alpha"));
     let first = run(&fixture, &stage);
     std::fs::remove_file(fixture.repo.path().join("source.link")).unwrap();

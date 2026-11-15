@@ -60,7 +60,7 @@ function src/fs/session_files.rs find_session_file 55
 function src/fs/work_integrity.rs validate_work_dir_state 60
 function src/git/worktree/base.rs resolve_base_branch 90
 function src/git/worktree/discovery.rs find_worktree_by_prefix 55
-function src/git/worktree/tests_settings_env.rs test_worktree_gitignore_actually_hides_loom_runtime_paths 57
+function src/git/worktree/tests_settings_env.rs test_worktree_gitignore_actually_hides_loom_runtime_paths 54
 function src/models/stage/defaults.rs default 76
 function src/models/stage/methods_tests.rs from_definition_copies_all_runtime_policy_fields 118
 function src/orchestrator/core/event_handler.rs handle_one_event 116

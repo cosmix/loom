@@ -2,6 +2,7 @@
 
 use super::tests::planted_gitlink;
 use super::*;
+use crate::test_git::{git, TestRepo};
 
 /// A global option before the subcommand hides nothing: the same comparisons
 /// with every global option the host passes. Each prefix's control is git
@@ -77,37 +78,21 @@ fn a_planted_link_in_the_checkouts_git_directory_stops_the_command() {
     let tmp = tempfile::TempDir::new().unwrap();
     let repo = tmp.path().join("repo");
     std::fs::create_dir(&repo).unwrap();
-    let plain = |args: &[&str]| {
-        let output = std::process::Command::new("git")
-            .args(["-c", "user.name=T", "-c", "user.email=t@example.invalid"])
-            .args(args)
-            .current_dir(&repo)
-            .output()
-            .unwrap();
-        assert!(output.status.success(), "{args:?}: {output:?}");
-    };
-    plain(&["init", "-q", "-b", "main"]);
-    plain(&["commit", "-q", "--allow-empty", "-m", "base"]);
+    TestRepo::builder().no_seed().init_in(&repo);
+    git(&repo, &["commit", "-q", "--allow-empty", "-m", "base"]);
     let victim = tmp.path().join("victim");
     std::fs::write(&victim, "orig\n").unwrap();
     let link = repo.join(".git/COMMIT_EDITMSG");
     std::fs::remove_file(&link).unwrap();
     std::os::unix::fs::symlink(&victim, &link).unwrap();
 
-    let args = [
-        "-c",
-        "user.name=T",
-        "-c",
-        "user.email=t@example.invalid",
-        "commit",
-    ];
-    let args = [&args[..], &["-q", "--allow-empty", "-m", "through"]].concat();
+    let args = ["commit", "-q", "--allow-empty", "-m", "through"];
     let error = run_git(&args, &repo).unwrap_err();
 
     assert!(format!("{error:#}").contains("symbolic link"), "{error:#}");
     assert_eq!(std::fs::read_to_string(&victim).unwrap(), "orig\n");
 
-    plain(&["commit", "-q", "--allow-empty", "-m", "through"]);
+    git(&repo, &["commit", "-q", "--allow-empty", "-m", "through"]);
     let reached = std::fs::read_to_string(&victim).unwrap();
     assert!(
         reached.contains("through"),

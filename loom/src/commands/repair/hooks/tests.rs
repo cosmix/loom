@@ -10,6 +10,7 @@ use crate::commands::repair::{fix_issue, workspace::WorkspaceFix, RepairAction};
 use crate::git::hooks::{
     install_reference_transaction_hook, is_reference_transaction_hook_installed,
 };
+use crate::test_git::{git, TestRepo};
 
 const FOREIGN_HOOK: &str = "#!/bin/sh\necho another tool\n";
 
@@ -93,7 +94,7 @@ fn a_hooks_path_outside_the_repository_is_reported_and_repair_writes_nothing() {
     let shared = TempDir::new().unwrap();
     let repo = TempDir::new().unwrap();
     let root = repo.path();
-    git(root, &["init", "-q", "-b", "main"]);
+    TestRepo::builder().no_seed().init_in(root);
     let configured = shared.path().to_str().unwrap();
     git(root, &["config", "core.hooksPath", configured]);
     install_reference_transaction_hook(root).unwrap_err();
@@ -120,7 +121,7 @@ fn a_hooks_path_outside_the_repository_is_reported_and_repair_writes_nothing() {
 fn a_hooks_path_inside_the_repository_is_where_repair_installs() {
     let repo = TempDir::new().unwrap();
     let root = repo.path();
-    git(root, &["init", "-q", "-b", "main"]);
+    TestRepo::builder().no_seed().init_in(root);
     git(root, &["config", "core.hooksPath", ".git/custom-hooks"]);
 
     let issue = super::reference_transaction_issue(root).unwrap();
@@ -131,15 +132,6 @@ fn a_hooks_path_inside_the_repository_is_where_repair_installs() {
         .is_file());
     assert!(!hook_path(root).exists());
     assert!(hook_issues(root).is_empty());
-}
-
-fn git(root: &Path, args: &[&str]) {
-    let output = std::process::Command::new("git")
-        .args(args)
-        .current_dir(root)
-        .output()
-        .unwrap();
-    assert!(output.status.success(), "git {args:?}");
 }
 
 #[test]
