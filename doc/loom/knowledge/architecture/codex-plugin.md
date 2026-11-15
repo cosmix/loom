@@ -180,44 +180,40 @@ this instance follows.
 
 ## The loom-codex-forwarder lane
 
-Loom's doctrine spawns `subagent_type: "loom-codex-forwarder"` for all codex implementation
-work, never the plugin agent directly. The rogue-wrapper incident (see
-[Codex Lane Rogue Wrapper](../mistakes/codex-lane-rogue-wrapper.md)) showed the plugin agent's
-`tools: Bash` frontmatter is not enforced for in-process subagents: a wrapper holding a codex
-prompt implemented all the edits itself on sonnet and nothing surfaced it. Three shipped layers:
+Loom stages spawn `subagent_type: "loom-codex-forwarder"`. The agent definition
+(`agents/loom-codex-forwarder.md`) selects haiku and Bash; the shim forwards one
+brief-path task through `~/.claude/hooks/loom/codex-forward.sh task ...`, preserving
+model, effort and unit id. It never implements or verifies.
 
-1. **`agents/loom-codex-forwarder.md`** — loom-owned forwarding shim (haiku, `tools: Bash`),
-   installed by `install.sh` with the other `loom-*` agents. Unlike the plugin wrapper, its
-   `tools:` allowlist IS hard-enforced — user-scope agents enforce the field, plugin agents
-   ignore it by design (code.claude.com/docs/en/sub-agents#available-tools) — so Edit/Read are
-   blocked at the harness level and the hook only has to police Bash-shaped escapes. Contract: resolve the companion by
-   glob (`~/.claude/plugins/cache/openai-codex/codex/*/scripts/codex-companion.mjs`, highest
-   version — `${CLAUDE_PLUGIN_ROOT}` is unset outside plugin agents), ONE Bash call, `--write`
-   plus `--model`/`--effort` exactly as the prompt states, stdout verbatim followed by a
-   `--- LOOM-CODEX-EVIDENCE ---` trailer (`exit:`, `mode:`, then either the newest
-   `state/*/jobs/*.json` paths in companion mode or the `session:` rollout path in direct mode —
-   see the macOS section below).
-   On failure: report verbatim prefixed `LOOM-CODEX-FORWARD-ERROR`, never implement.
-2. **`loom-hooks/codex-forward-guard.sh`** — PreToolUse on Bash/Edit/Write/Read/Task/Agent. Primary
-   gate: payload `agent_type` ∈ {`loom-codex-forwarder`, `codex:codex-rescue`} → only the exact
-   `~/.claude/hooks/loom/codex-forward.sh task ...` wrapper invocation passes
-   (`is_exact_forward_command`, `codex-forward-guard.sh::valid_identity_id`); everything else exits 2 with
-   forwarding doctrine on stderr. Every block first runs `require_stage_evidence`, so without
-   stage evidence the guard enforces nothing and the stock plugin runs untouched. Fallback gate: `transcript_path` under `*/subagents/agent-*.jsonl` whose
-   opening bytes carry `LOOM-CODEX-FORWARD-ONLY`. Fail-open everywhere else. `loom_is_subagent`
-   was unusable here — it is process-tree based and returns false for in-process subagents.
-3. **Signal doctrine** (`format_codex_implementers_section`, also emitted on the recovery path):
-   spawn the forwarder by type, put `CODEX_FORWARD_SENTINEL` (`loom/src/codex.rs`) as the codex
-   prompt's FIRST line, and accept a codex report only with the evidence trailer — verify the
-   newest listed job record for the worktree exists with `phase: done`, or, for `mode: direct`,
-   that the listed session rollout exists and postdates the spawn. A report without the
-   trailer, or edits with no matching record, is a failed delegation: revert and respawn, or
-   keep only after a full review.
+The shim does not resolve a highest-version companion glob. The trusted wrapper
+selects the pinned companion version or its direct supervisor backend
+(`loom-hooks/codex-forward.sh:265-326`). The guard injects the invocation id and
+permits one exact forwarding command per forwarder transcript.
 
-Cross-surface pins: `tests_doctrine.rs::codex_forward_sentinel_agrees_across_surfaces` ties the
-sentinel constant to the hook script and the agent definition, and requires CLAUDE.md.template
-and the plan-writer SKILL to name the forwarder; `tests_cache.rs` pins the generated section to
-carry the sentinel, the trailer name, and the `loom-codex-forwarder` spawn line.
+`codex-forward-guard.sh` identifies the typed forwarder and stock plugin rescue
+agent, with a transcript sentinel fallback. Enforcement requires stage evidence.
+The signal doctrine in `orchestrator/signals/format/codex.rs` emits the sentinel,
+brief-path protocol, unit identity, wrapper command and lifecycle rules.
+Completion requires correlated wrapper START/END evidence and the evidence trailer;
+a newest-job guess or a rollout merely postdating spawn is insufficient.
+
+The forwarding agent requests a 1560000 ms foreground Bash timeout. Its definition
+instructs it to end with plain final text after background acknowledgement and to
+relay a later notification without more tools. Claude Code 2.1.325 transcripts
+require SubagentHandback instead; this conflicts with the definition's assertion
+that the final text alone is harvested. The mismatch can add an enforcement turn.
+
+Forwarding carries substantial Claude context even for a brief-path prompt.
+The November transcript sample contains 24 forwarders with one Bash call each,
+all observed assistant responses at high effort, median 20663.5 cache-write
+tokens and 3608 output tokens per forwarder. Twelve receive handback enforcement.
+These are transcript token counts, not prices or subscription quota conversions.
+The direct wrapper prints up to the final 65536 bytes of provider JSON output,
+which can exceed the harness output limit and hide the trailing evidence behind
+a persisted-output preview. Raw provider output is not a compact final report.
+
+Cross-surface tests pin the sentinel, forwarding type and evidence names
+(`tests_doctrine.rs`, `tests_cache.rs`).
 
 ## The sandbox must grant codex its state dirs
 

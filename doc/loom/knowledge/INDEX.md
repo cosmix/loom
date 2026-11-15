@@ -24,7 +24,7 @@
 | --- | --- | --- |
 | [adjudication-lifecycle](architecture/adjudication-lifecycle.md) |  | 166 |
 | [codex-concurrency](architecture/codex-concurrency.md) | Limits | 110 |
-| [codex-plugin](architecture/codex-plugin.md) |  | 384 |
+| [codex-plugin](architecture/codex-plugin.md) |  | 380 |
 | [completion-recovery](architecture/completion-recovery.md) | Proof | 38 |
 | [config-value-types](architecture/config-value-types.md) |  | 85 |
 | [context-ceiling](architecture/context-ceiling.md) |  | 111 |
@@ -77,7 +77,7 @@
 | [target-guard](architecture/target-guard.md) | Tip | 127 |
 | [terminal-backends](architecture/terminal-backends.md) |  | 285 |
 | [test-runner-adapters](architecture/test-runner-adapters.md) |  | 56 |
-| [token-accounting-and-receipts](architecture/token-accounting-and-receipts.md) | Ledger | 358 |
+| [token-accounting-and-receipts](architecture/token-accounting-and-receipts.md) | Ledger | 355 |
 | [token-flow-sources](architecture/token-flow-sources.md) |  | 84 |
 | [usage-evidence](architecture/usage-evidence.md) |  | 136 |
 | [verification-v2-gates](architecture/verification-v2-gates.md) | Gates | 261 |
@@ -132,7 +132,7 @@
 | --- | --- | --- |
 | [adjudication-autonomy-deadlock](mistakes/adjudication-autonomy-deadlock.md) |  | 228 |
 | [ambient-filesystem-trust](mistakes/ambient-filesystem-trust.md) |  | 176 |
-| [briefs-and-bug-reports](mistakes/briefs-and-bug-reports.md) |  | 318 |
+| [briefs-and-bug-reports](mistakes/briefs-and-bug-reports.md) |  | 360 |
 | [ci-toolchain-and-cargo](mistakes/ci-toolchain-and-cargo.md) |  | 383 |
 | [codex-direct-mode-invisible](mistakes/codex-direct-mode-invisible.md) |  | 23 |
 | [codex-lane-rogue-wrapper](mistakes/codex-lane-rogue-wrapper.md) |  | 177 |
@@ -153,7 +153,7 @@
 | [hooks-shell-portability](mistakes/hooks-shell-portability.md) |  | 382 |
 | [host-verify-group-containment](mistakes/host-verify-group-containment.md) |  | 23 |
 | [knowledge-base-drift](mistakes/knowledge-base-drift.md) |  | 266 |
-| [knowledge-cli-invariants](mistakes/knowledge-cli-invariants.md) | Rules | 231 |
+| [knowledge-cli-invariants](mistakes/knowledge-cli-invariants.md) | Rules | 241 |
 | [knowledge-write-channel](mistakes/knowledge-write-channel.md) | Writes | 134 |
 | [ledger-tui-rendering](mistakes/ledger-tui-rendering.md) |  | 84 |
 | [live-state-pollution](mistakes/live-state-pollution.md) |  | 133 |
@@ -165,7 +165,7 @@
 | [parallel-worktree-shared-state](mistakes/parallel-worktree-shared-state.md) | Shared | 351 |
 | [phantom-merges](mistakes/phantom-merges.md) | Merges | 347 |
 | [pinned-literals-ledgers-and-wiring](mistakes/pinned-literals-ledgers-and-wiring.md) | Pins | 332 |
-| [plan-authoring](mistakes/plan-authoring.md) |  | 218 |
+| [plan-authoring](mistakes/plan-authoring.md) |  | 230 |
 | [plan-server-delivery](mistakes/plan-server-delivery.md) | Slips | 369 |
 | [planner-design-brainstorm](mistakes/planner-design-brainstorm.md) | Stubs | 94 |
 | [planner-follow-ups-delivery](mistakes/planner-follow-ups-delivery.md) | Slips | 196 |

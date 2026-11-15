@@ -281,18 +281,15 @@ claude:<agent-id> --worker codex:<unit-id> --timeout 3600` — one `--worker` pe
   (`loom/src/commands/subagents/mod.rs`), and `codex-companion.mjs status --all` is never used. Exit
   2 (deadline passed) is not proof any worker died — see
   [\Subagent Hierarchy](../patterns/subagent-hierarchy.md).
-- **Status overlay.** For a `loom-codex-forwarder`, the daemon-reconciled Codex lifecycle outcome
-  alone decides `SubagentState`, via an intermediate `ForwardOverlay`
-  (`loom/src/commands/subagents/forward_jobs.rs::marker_overlay`/`overlay_from_state`):
-  `Queued`/`Running` -> `ForwardWait`; `Succeeded` -> `Done` if the transcript itself is done, else
-  `ForwardWait`; `Failed`, `Canceled` and `TimedOut` all collapse to one `ForwardFailed`; `Unknown`
-  -> `ForwardUnknown`. `classify_forward.rs::state_for` then maps that overlay 1:1 to
-  `SubagentState::{Done,ForwardWait,ForwardFailed,ForwardUnknown}` — there is no direct
-  `Failed->Failed`/`Cancelled->Cancelled` case. The legacy receipt/marker overlay applied after
-  structural transcript classification survives only as the diagnostic `forward` field, and does not
-  decide state. A damaged receipt index is an unresolved observation, never a partial success.
-  Poll-guard counts repeated `loom subagents list` and names the exact wait when receipts exist
-  (`poll-guard.sh`).
+- **Status overlay.** Correlated lifecycle evidence owns forwarder state through
+  `commands/subagents/classify/lifecycle.rs::Evidence::apply`: Succeeded becomes Done
+  immediately, Failed becomes Failed, and Cancelled becomes Cancelled, with terminal
+  reasons retained. Active and Unknown become ForwardWait and ForwardUnknown.
+  `commands/subagents/classify_forward.rs::apply_evidence` preserves these states;
+  receipt metadata remains diagnostic. The claim that lifecycle success also requires
+  a done transcript, or that lifecycle failure and cancellation collapse to ForwardFailed,
+  is incorrect: those legacy overlay mappings do not override exact lifecycle evidence.
+  A damaged receipt index remains unresolved evidence, never a partial success.
 
 ## Worker Brief Lifecycle
 

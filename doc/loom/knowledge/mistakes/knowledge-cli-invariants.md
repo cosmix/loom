@@ -229,3 +229,13 @@ an added line is a knowledge defect to fix.
 **Why:** probing a write command with a real call instead of `--help`.
 
 **Prevention:** read `loom memory resolve --help` first, take ids from the signal with `rg -o`, and never redirect a `loom` command (the relay reads its stdout).
+
+## Leading-hyphen knowledge section bodies need stdin
+
+**What happened:** A proposal audit passed a replacement body beginning with a Markdown list directly as a CLI positional argument, and clap rejected it as an option.
+
+**Why:** Argument-list execution prevents shell expansion but does not disable CLI option parsing.
+
+**Prevention:** Send arbitrary knowledge content through stdin using the documented dash argument.
+
+**Fix:** Use subprocess input with loom knowledge replace-section <topic> <heading> -.

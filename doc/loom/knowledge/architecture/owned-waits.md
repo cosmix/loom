@@ -49,7 +49,7 @@ The daemon computes the OS value when it writes a session wrapper (`launch/host.
 
 ## Known limitation: the deadline race window
 
-`codex-forward.sh` reports `timed_out` whenever the 540000 ms `status --wait` returns with the job still `queued`/`running`; it does not re-check whether the job completed in the instant between that return and its bounded `cancel` call. A job finishing inside that window is reported timed out and cancelled, though its edits stay in the tree. Deliberate: closing it needs a second non-wait `status` call, which every test stub (`loom-hooks/tests/codex-forward-wrapper.sh`, `loom/tests/codex_evidence/fake_companion.rs`) pins against. The re-split guidance remains correct at that boundary.
+`codex-forward.sh` reports `timed_out` whenever the 1500000 ms `status --wait` returns with the job still `queued`/`running`; it does not re-check whether the job completed in the instant between that return and its bounded `cancel` call. A job finishing inside that window is reported timed out and cancelled, though its edits stay in the tree. Deliberate: closing it needs a second non-wait `status` call, which every test stub (`loom-hooks/tests/codex-forward-wrapper.sh`, `loom/tests/codex_evidence/fake_companion.rs`) pins against. The re-split guidance remains correct at that boundary.
 
 `loom knowledge update`/`replace-section` resolve `doc/loom/knowledge/` from the shell's working directory: run from `loom/` they scaffold a second tree under `loom/doc/` and write there. Run them from the repository root.
 

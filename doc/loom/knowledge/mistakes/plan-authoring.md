@@ -216,3 +216,15 @@ and the plan authorized a raise only to a stated ceiling.
 
 **Prevention:** a plan that changes Rule 7 lists `README.md` among the surfaces and gives
 knowledge-distill the rewrite, or the stage changes it. Raise a cap to the measured size, no more.
+
+## Plans remain independent of the invoking harness
+
+**What happened:** The Codex-primary proposal audit initially suggested explicit driver selection in plans or session-start controls. The user requires one plan to run seamlessly from either Codex or Claude Code without choosing a driver.
+
+**Why:** The initial design conflated the harness running Loom with a plan's role/model policy.
+
+**Prevention:** Keep plan semantics harness-neutral. Resolve the invoking harness at runtime; configure model and effort defaults by harness and role/stage type. Plans may override models/effort for roles or stages without requiring a driver field. Persist effective harness identity for recovery and evidence rather than asking the plan author to select it.
+
+**Fix:** Revise doc/PROPOSAL-2026-11-15-codex-as-driver.md around automatic harness binding, per-harness defaults and optional compatible plan overrides; define ambiguous standalone launches and resume behavior explicitly.
+
+**Proposal decision:** An omitted implementers key should mean the active harness lane, preserving the intent documented in loom/src/models/stage/implementers.rs:45. Explicit lists remain exact restrictions. Preserve omission through parsing/init; recover old run provenance from the pinned plan when available and do not reinterpret already authorized workers.

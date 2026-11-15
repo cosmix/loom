@@ -316,3 +316,45 @@ sibling's files.
 **Why:** The brief added a narrowing word without checking how libtest combines filters.
 **Prevention:** To run one test, give its full path and pass `--exact`, as in `cargo test --test <target> -- --ignored --exact <module>::<test>`. Never combine a module filter with a name filter to narrow the run.
 **Fix:** The worker killed the run, removed the orphaned temp HOME (it held a copied `.credentials.json`), and restored the fixtures from a backup.
+
+## Native-worker proposal needs proven ownership and ingress mechanisms
+
+**What happened:** A native-worker proposal draft treated process ownership, caller isolation and synchronous admission as consequences of a process group, a host credential and a post-tool relay. Review also found ambiguous clarification/wait continuation and cancel-versus-fork semantics.
+**Why:** Desired guarantees were described before their enforcement and acknowledgement boundaries were fully specified.
+**Prevention:** Separate provider outcome from process quiescence; specify recoverable lifetime-boundary creation before fork, serialized launch/cancel, exact caller/attempt binding, all-writer reservations and uncertain delivery. A PostToolUse relay runs after the submitting CLI returns, so host acceptance requires a later status call. Never assume a same-UID secret is isolated or an old binary understands a new compatibility record.
+**Fix:** Tighten the proposal's qualification gates and operation ordering, require released ownership before reallocation, use immutable briefs and two-phase submissions, and make clarification responses and resumable attention waits explicit.
+
+## Native-worker schema and integration qualification
+
+**What happened:** Pressure testing the native-worker proposal exposed missing distinctions between blocking and nonblocking input, experimental schema availability and runtime support, existing journal locks versus a shared writer fence, and existing text-status exits versus proposed machine-status exits.
+**Why:** Interface names and intended safety properties can look like implemented contracts without tracing their producers and consumers.
+**Prevention:** Inspect the installed schema and exact code owners; require field-level protocol fixtures and explicit new-work seams. A resolved server request need not mean an answer was accepted, and a disabled-plugin list need not enforce capability removal. Preserve legacy request-status behavior when adding native JSON receipts; current nonwaiting text status succeeds for refused and unknown outcomes (loom/src/commands/request/status.rs:201).
+**Fix:** Keep native supervision as the proposal direction, document a qualified exclusive first-release mode with explicit writer handoff, and separate later mixed-writer and attention support from baseline launch/cancel/result correctness. Preserve uncertain ownership and delivery rather than infer success.
+
+## Worker-writable provider history is not acceptance evidence
+
+**What happened:** The native-worker proposal allowed supported persisted provider history to settle uncertain message delivery without requiring protection from worker mutation.
+**Why:** Thread attribution and JSON schema validity were conflated with authentic provider acceptance; the worker boundary deliberately grants Codex state writes.
+**Prevention:** Treat worker-writable rollouts as diagnostic/accounting data with explicit coverage. Hashing them after a crash cannot authenticate past events. Only qualified host-captured correlated events, or separately authenticated immutable provider history, can settle delivery uncertainty; neither substitutes for host process-quiescence evidence.
+**Fix:** Require response-origin isolation, durable host capture before acknowledging delivery, and negative tests for forged history and protocol-FD injection in the native-worker proposal.
+
+## Read back proposal sentences after mechanical edits
+
+**What happened:** A proposal sentence replacement briefly joined incompatible fragments around the no-git worker instruction. A later consolidation check also required an obsolete literal phrase even though the qualification remained in different wording.
+**Why:** Mechanical boundaries and exact-string checks were mistaken for semantic validation.
+**Prevention:** Read changed sentences and validate retained meaning after consolidation; do not require obsolete phrasing when equivalent qualified wording is present.
+**Fix:** Correct the sentence and inspect the retained qualification before adjusting the check.
+
+## Reconcile summary tables with qualified contracts
+
+**What happened:** A proposal revision retained unqualified wording about effective settings, historical acceptance evidence and six-worker rollout gates, plus an unnecessary review-provenance sentence.
+**Why:** Detailed qualification rules were updated without applying them consistently to summary rows and metadata.
+**Prevention:** Review summary tables, metadata and rollout gates against the detailed contract; keep process provenance out of deliverables when attribution is prohibited.
+**Fix:** Require observed settings and protected evidence explicitly, scope resource qualification to the enabled concurrency, and remove unnecessary provenance.
+
+## Keep a single-file proposal review in the requested file
+
+**What happened:** A review requested for one proposal produced an additional implementation annex; the user corrected the deliverable scope.
+**Why:** Splitting detailed guidance to satisfy file-length limits was treated as permission to create a second deliverable.
+**Prevention:** Keep revisions in the requested proposal. Consolidate overlapping material and use the line budget efficiently rather than adding an unsolicited annex.
+**Fix:** Merge the useful annex content into the original proposal and remove the extra file.
