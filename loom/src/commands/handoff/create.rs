@@ -1,12 +1,12 @@
 use anyhow::{Context, Result};
 use std::env;
 use std::path::Path;
-use std::process::Command;
 
 use crate::commands::common::work_dir_path;
 use crate::fs::memory::format_memory_for_handoff;
 use crate::git::branch::current_branch;
-use crate::git::runner::NO_HOOKS_ARGS;
+use crate::git::status_entries::{parse_porcelain_v1_z, PORCELAIN_V1_Z};
+use crate::git::worktree::WorktreeGit;
 use crate::handoff::generator::{merge_session_handoff, HandoffContent, MergeOutcome};
 use crate::handoff::session_content::CEILING_TRIGGER;
 use crate::handoff::HandoffOrigin;
@@ -304,33 +304,20 @@ fn resolve_session_id(session_arg: &Option<String>) -> Result<String> {
 
 /// Get list of modified files from git status
 fn get_modified_files() -> Result<Vec<String>> {
-    let output = Command::new("git")
-        .args(NO_HOOKS_ARGS)
-        .args(["status", "--short"])
-        .output()
+    modified_files_in(&std::env::current_dir().context("Failed to get current directory")?)
+}
+
+fn modified_files_in(dir: &Path) -> Result<Vec<String>> {
+    let output = WorktreeGit::discovered(dir)
+        .run(&PORCELAIN_V1_Z)
         .context("Failed to run git status")?;
-
-    if output.status.success() {
-        let status_output =
-            String::from_utf8(output.stdout).context("Invalid UTF-8 in git output")?;
-
-        let files: Vec<String> = status_output
-            .lines()
-            .filter_map(|line| {
-                // Git status --short format: "XY filename"
-                // Where X is staged status, Y is unstaged status
-                if line.len() >= 3 {
-                    Some(line[3..].trim().to_string())
-                } else {
-                    None
-                }
-            })
-            .collect();
-
-        Ok(files)
-    } else {
-        Ok(Vec::new())
+    if !output.status.success() {
+        return Ok(Vec::new());
     }
+    Ok(parse_porcelain_v1_z(&output.stdout)?
+        .into_iter()
+        .map(|entry| entry.path)
+        .collect())
 }
 
 #[cfg(test)]

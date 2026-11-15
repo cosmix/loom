@@ -55,7 +55,9 @@ pub(super) fn snapshot_changes(repo: &Path) -> Result<Option<ChangesSnapshot>> {
     if trees.index == head_tree && trees.work == head_tree {
         return Ok(None);
     }
-    let branch = run_git_checked(&["symbolic-ref", "--short", "HEAD"], repo)?;
+    let git = crate::git::worktree::WorktreeGit::discovered(repo);
+    let branch = crate::git::branch::checked_out_branch_with(&git)?
+        .unwrap_or_else(|| "(no branch)".to_string());
     let subject = run_git_checked(&["log", "-1", "--format=%h %s", &head], repo)?;
     let index_message = format!("index on {branch}: {subject}");
     let index_commit = run_git_checked(

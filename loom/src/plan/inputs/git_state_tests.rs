@@ -82,3 +82,12 @@ fn a_project_below_the_top_level_reads_status_paths_relative_to_itself() {
         ]
     );
 }
+
+#[test]
+fn changed_paths_keeps_both_rename_paths_with_spaces_below_the_top_level() {
+    let (_temp, root) = repo("my project");
+    stage_rename(&root);
+    let git = crate::git::worktree::WorktreeGit::discovered(&root);
+    let changed = super::git_state::changed_paths(&git, &["doc/plans/briefs".to_owned()]).unwrap();
+    assert_eq!(changed, [SPACED.to_owned(), MOVED.to_owned()].into());
+}

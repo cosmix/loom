@@ -2,6 +2,7 @@
 use std::path::{Path, PathBuf};
 
 use crate::fs::{safe_fs, safe_read};
+use crate::git::revision::require_head_commit;
 use crate::verify::review::fingerprint::checkout_git;
 use anyhow::{ensure, Context, Result};
 
@@ -29,10 +30,8 @@ pub(crate) fn capture(
     let hash = match previous {
         Some(id) => read(work_dir, id)
             .context("previous knowledge session lacks a trusted starting commit")?,
-        None => checkout_git(repo)?
-            .run_checked(&["rev-parse", "HEAD"])?
-            .trim()
-            .to_owned(),
+        None => require_head_commit(&checkout_git(repo)?)
+            .context("cannot read the knowledge session's starting commit")?,
     };
     write(work_dir, session, &hash)
 }

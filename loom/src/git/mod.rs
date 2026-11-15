@@ -13,10 +13,14 @@ pub mod cleanup;
 pub mod hooks;
 mod init_blockers;
 pub mod merge;
+#[cfg(test)]
+mod queries_contract_tests;
 pub mod repository;
+pub(crate) mod revision;
 pub mod runner;
 pub mod signing;
 pub mod stage_commit;
+pub(crate) mod status_entries;
 pub mod target_guard;
 pub(crate) mod user_git;
 pub mod worktree;

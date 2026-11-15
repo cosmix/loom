@@ -73,7 +73,10 @@ fn a_leftover_branch_with_nothing_beyond_the_start_point_is_recreated_at_it() {
         "the branch was not recreated at the start point"
     );
     assert_eq!(tip(&worktree.path, "HEAD"), accepted);
-    assert_eq!(git(&worktree.path, &["branch", "--show-current"]), BRANCH);
+    assert_eq!(
+        git(&worktree.path, &["rev-parse", "--abbrev-ref", "HEAD"]),
+        BRANCH
+    );
     assert_eq!(tip(root, "main"), live, "the live base moved");
 }
 
@@ -130,5 +133,8 @@ fn a_start_point_that_does_not_resolve_keeps_the_leftover_branch() {
         "the branch was deleted or moved"
     );
     assert_eq!(tip(&worktree_path, "HEAD"), leftover);
-    assert_eq!(git(&worktree_path, &["branch", "--show-current"]), BRANCH);
+    assert_eq!(
+        git(&worktree_path, &["rev-parse", "--abbrev-ref", "HEAD"]),
+        BRANCH
+    );
 }

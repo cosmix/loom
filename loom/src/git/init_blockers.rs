@@ -79,7 +79,9 @@ pub(super) fn back_up_unreadable_config(repo_root: &Path) -> Result<bool> {
 mod tests {
     use super::*;
     use crate::git::repository::ensure_repo_ready_with_config;
+    use crate::git::revision::has_commits;
     use crate::git::runner::run_git_checked;
+    use crate::git::worktree::WorktreeGit;
     use std::process::Command;
     use tempfile::TempDir;
 
@@ -208,11 +210,7 @@ mod tests {
         assert!(result.removed_stale_git_locks);
         assert!(!result.backed_up_git_config);
 
-        assert!(
-            !run_git_checked(&["rev-parse", "--verify", "HEAD"], repo_root)
-                .unwrap()
-                .is_empty()
-        );
+        assert!(has_commits(&WorktreeGit::discovered(repo_root)).unwrap());
         assert!(!git_dir.join("config.lock").exists());
         assert!(!git_dir.join("HEAD.lock").exists());
         assert_eq!(
@@ -232,11 +230,7 @@ mod tests {
         let result = ensure_repo_ready_with_config(repo_root, TEST_IDENTITY).unwrap();
 
         assert!(result.backed_up_git_config);
-        assert!(
-            !run_git_checked(&["rev-parse", "--verify", "HEAD"], repo_root)
-                .unwrap()
-                .is_empty()
-        );
+        assert!(has_commits(&WorktreeGit::discovered(repo_root)).unwrap());
 
         let backups: Vec<_> = fs::read_dir(&git_dir)
             .unwrap()

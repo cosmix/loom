@@ -2,17 +2,15 @@
 
 use std::path::Path;
 
-use anyhow::{ensure, Context};
+use anyhow::ensure;
 
 use crate::git::runner::run_git;
+use crate::git::status_entries::{parse_porcelain_v1_z, PORCELAIN_V1_Z};
 use crate::plan_server::wire::run::ChangedPath;
 
 /// Return documentation changes and tracked changes that block starting a run.
 pub fn split_changes(root: &Path) -> anyhow::Result<(Vec<ChangedPath>, Vec<ChangedPath>)> {
-    let output = run_git(
-        &["status", "--porcelain=v1", "-z", "--untracked-files=all"],
-        root,
-    )?;
+    let output = run_git(&PORCELAIN_V1_Z, root)?;
     ensure!(
         output.status.success(),
         "git status failed ({}): {}",
@@ -23,51 +21,19 @@ pub fn split_changes(root: &Path) -> anyhow::Result<(Vec<ChangedPath>, Vec<Chang
 }
 
 fn parse_changes(output: &[u8]) -> anyhow::Result<(Vec<ChangedPath>, Vec<ChangedPath>)> {
-    // Lossy decoding could put a different filename in the commit allowlist.
-    let output = std::str::from_utf8(output).context("git status contains a non-UTF-8 path")?;
-    ensure!(
-        output.is_empty() || output.ends_with('\0'),
-        "git status record lacks a terminating NUL"
-    );
     let (mut docs, mut blocking) = (Vec::new(), Vec::new());
-    let mut records = output.split_terminator('\0');
-    while let Some(record) = records.next() {
-        let (status, path) = parse_record(record)?;
-        classify(path, status, &mut docs, &mut blocking);
-        if status.bytes().any(|byte| matches!(byte, b'R' | b'C')) {
-            // Porcelain -z emits the destination first, then the source alone.
-            let source = records
-                .next()
-                .context("git status rename/copy lacks a source")?;
-            ensure!(!source.is_empty(), "git status rename/copy source is empty");
+    for entry in parse_porcelain_v1_z(output)? {
+        let status = entry.code_str();
+        classify(&entry.path, status, &mut docs, &mut blocking);
+        if let Some(source) = &entry.origin {
             // A rename removes its tracked source, so a source outside doc/ blocks a run;
             // a copy leaves its source unchanged, so only a doc/ source is listed.
-            if status.contains('R') || is_doc_path(source) {
+            if entry.code.contains(&b'R') || is_doc_path(source) {
                 classify(source, status, &mut docs, &mut blocking);
             }
         }
     }
     Ok((docs, blocking))
-}
-
-fn parse_record(record: &str) -> anyhow::Result<(&str, &str)> {
-    let status = record
-        .get(..2)
-        .context("git status record lacks an XY status")?;
-    ensure!(
-        status != "  "
-            && status.bytes().all(|byte| {
-                matches!(
-                    byte,
-                    b' ' | b'M' | b'A' | b'D' | b'R' | b'C' | b'U' | b'T' | b'?' | b'!'
-                )
-            })
-            && record.as_bytes().get(2) == Some(&b' '),
-        "invalid git status record header"
-    );
-    let path = record.get(3..).context("git status record lacks a path")?;
-    ensure!(!path.is_empty(), "git status path is empty");
-    Ok((status, path))
 }
 
 fn classify(

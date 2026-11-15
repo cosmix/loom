@@ -119,11 +119,8 @@ fn resolve_worktree_paths(stage_id: &str, cwd: &Path) -> Result<(PathBuf, PathBu
     // Find repo root (parent of .worktrees)
     let repo_root = super::find_repo_root(cwd)?;
 
-    // Resolve worktree root from cwd. `git rev-parse --show-toplevel` returns
-    // the top of the working tree, which for a worktree is its root.
-    let worktree_root = crate::git::run_git_checked(&["rev-parse", "--show-toplevel"], cwd)
-        .map(std::path::PathBuf::from)
-        .unwrap_or_else(|_| cwd.to_path_buf());
+    let worktree_root =
+        crate::git::revision::toplevel(cwd).context("failed to resolve worktree root")?;
 
     // Refuse if either main repo or the worktree has an active merge — running
     // a programmatic merge over an in-progress resolution would clobber the

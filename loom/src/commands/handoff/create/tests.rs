@@ -339,3 +339,32 @@ fn an_adjudication_session_is_refused_before_any_ticket_is_written() {
         0
     );
 }
+
+#[test]
+fn modified_files_returns_unquoted_paths_and_rename_destinations() {
+    let temp = tempfile::TempDir::new().unwrap();
+    let root = temp.path();
+    std::fs::write(root.join("old name.txt"), "tracked\n").unwrap();
+    let git = WorktreeGit::discovered(root);
+    for args in [
+        &["init", "-q"][..],
+        &["add", "."][..],
+        &[
+            "-c",
+            "user.name=T",
+            "-c",
+            "user.email=t@t",
+            "commit",
+            "-qm",
+            "base",
+        ][..],
+        &["mv", "old name.txt", "new name.txt"][..],
+    ] {
+        assert!(git.run(args).unwrap().status.success());
+    }
+    std::fs::write(root.join("quote\"d.txt"), "untracked\n").unwrap();
+    assert_eq!(
+        modified_files_in(root).unwrap(),
+        ["new name.txt", "quote\"d.txt"]
+    );
+}

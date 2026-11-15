@@ -9,6 +9,7 @@ use anyhow::{bail, Context, Result};
 use std::path::Path;
 
 use crate::git::init_blockers;
+use crate::git::revision::has_commits;
 use crate::git::runner::{run_git, run_git_bool, run_git_checked};
 use crate::git::worktree::{check_git_available, WorktreeGit};
 
@@ -53,11 +54,7 @@ pub(crate) fn ensure_pinned_repo_ready(repo_root: &Path) -> Result<RepoBootstrap
     let inside = git.run_checked(&["rev-parse", "--is-inside-work-tree"])?;
     anyhow::ensure!(inside.trim() == "true", "Loom requires a non-bare checkout");
     let mut result = RepoBootstrapResult::default();
-    if !git
-        .run(&["rev-parse", "--verify", "HEAD"])?
-        .status
-        .success()
-    {
+    if !has_commits(&git)? {
         create_bootstrap_commit(&git, &[])?;
         result.created_initial_commit = true;
     }
@@ -112,6 +109,7 @@ fn initialize_repo(repo_root: &Path, git_config_args: &[&str]) -> Result<()> {
 }
 
 fn has_head_commit(repo_root: &Path, git_config_args: &[&str]) -> bool {
+    // Unlike revision::has_commits, this probe carries caller-supplied git config.
     let args = configured_args(git_config_args, &["rev-parse", "--verify", "HEAD"]);
     run_git_bool(&args, repo_root)
 }
@@ -215,11 +213,7 @@ mod tests {
             }
         );
         assert!(repo_root.join(".git").exists());
-        assert!(
-            !run_git_checked(&["rev-parse", "--verify", "HEAD"], repo_root)
-                .unwrap()
-                .is_empty()
-        );
+        assert!(has_commits(&WorktreeGit::discovered(repo_root)).unwrap());
         assert_eq!(
             run_git_checked(&["show", "HEAD:README.md"], repo_root).unwrap(),
             "# temp"
@@ -246,11 +240,7 @@ mod tests {
                 backed_up_git_config: false,
             }
         );
-        assert!(
-            !run_git_checked(&["rev-parse", "--verify", "HEAD"], repo_root)
-                .unwrap()
-                .is_empty()
-        );
+        assert!(has_commits(&WorktreeGit::discovered(repo_root)).unwrap());
         assert!(repo_root.join("README.md").exists());
         assert_eq!(fs::read_to_string(repo_root.join("README.md")).unwrap(), "");
         assert_eq!(

@@ -7,8 +7,10 @@
 
 use std::path::Path;
 
+use crate::git::revision::head_commit;
 use crate::git::runner::run_git;
-use crate::git::user_git::{head, run_literal, IndexBefore};
+use crate::git::user_git::{run_literal, IndexBefore};
+use crate::git::worktree::WorktreeGit;
 
 use super::settle_commit::{refusal, Recorded};
 
@@ -63,7 +65,8 @@ pub(super) struct Made<'a> {
 pub(super) fn after_commit(root: &Path, made: &Made<'_>, ran: Result<(), String>) -> Recorded {
     let before = made.index.head();
     // HEAD that cannot be read counts as moved: nothing is unstaged on a guess.
-    let moved = head(root).map_or(true, |after| after.as_deref() != before);
+    let moved = head_commit(&WorktreeGit::discovered(root))
+        .map_or(true, |after| after.as_deref() != before);
     if !moved {
         let reason = ran.err().unwrap_or_else(|| {
             "git commit exited with 0, but HEAD is where it was: a hook may have undone the commit"

@@ -41,14 +41,7 @@ pub(crate) fn resolve_stage_execution_paths(stage: &Stage) -> Result<StageExecut
         root.display()
     );
     let git = crate::git::worktree::WorktreeGit::pinned(&repo_root, &root)?;
-    let branch = git.run(&["symbolic-ref", "--short", "HEAD"])?;
-    anyhow::ensure!(
-        branch.status.success()
-            && String::from_utf8_lossy(&branch.stdout).trim()
-                == crate::git::branch::branch_name_for_stage(&stage.id),
-        "Assigned worktree does not belong to stage '{}'",
-        stage.id
-    );
+    verify_stage_branch(stage, &git)?;
     let worktree_root = Some(root);
 
     let acceptance_dir =
@@ -58,6 +51,16 @@ pub(crate) fn resolve_stage_execution_paths(stage: &Stage) -> Result<StageExecut
         worktree_root,
         acceptance_dir,
     })
+}
+
+fn verify_stage_branch(stage: &Stage, git: &crate::git::worktree::WorktreeGit) -> Result<()> {
+    let branch = crate::git::branch::checked_out_branch_with(git)?;
+    anyhow::ensure!(
+        branch == Some(crate::git::branch::branch_name_for_stage(&stage.id)),
+        "Assigned worktree does not belong to stage '{}'",
+        stage.id
+    );
+    Ok(())
 }
 
 /// Resolve execution paths for knowledge stages in main repository context.
@@ -196,3 +199,40 @@ pub(crate) fn print_acceptance_failure_guidance(stage_id: &str) {
 #[cfg(test)]
 #[path = "acceptance_runner_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+mod branch_collision_tests {
+    use super::*;
+
+    #[test]
+    fn stage_branch_with_same_named_tag_is_accepted() {
+        let repo = tempfile::tempdir().unwrap();
+        for args in [
+            vec!["init", "-q", "-b", "loom/s1"],
+            vec![
+                "-c",
+                "user.name=T",
+                "-c",
+                "user.email=t@t",
+                "commit",
+                "--allow-empty",
+                "-qm",
+                "seed",
+            ],
+            vec!["tag", "loom/s1"],
+        ] {
+            let output = std::process::Command::new("git")
+                .args(args)
+                .current_dir(repo.path())
+                .output()
+                .unwrap();
+            assert!(output.status.success(), "{output:?}");
+        }
+        let stage = Stage {
+            id: "s1".into(),
+            ..Default::default()
+        };
+        let git = crate::git::worktree::WorktreeGit::discovered(repo.path());
+        verify_stage_branch(&stage, &git).unwrap();
+    }
+}

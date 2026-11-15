@@ -1,26 +1,16 @@
 //! Terminal-only repository, log and marker paths for pressure runs.
 
-use crate::git::runner::NO_HOOKS_ARGS;
 use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
 
-/// Resolve the repository root: `git rev-parse --show-toplevel`, else cwd.
+/// Resolve the repository root containing the current directory.
 pub(super) fn resolve_repo_root() -> Result<PathBuf> {
-    if let Ok(output) = std::process::Command::new("git")
-        .args(NO_HOOKS_ARGS)
-        .args(["rev-parse", "--show-toplevel"])
-        .output()
-    {
-        if output.status.success() {
-            if let Ok(s) = String::from_utf8(output.stdout) {
-                let trimmed = s.trim();
-                if !trimmed.is_empty() {
-                    return Ok(PathBuf::from(trimmed));
-                }
-            }
-        }
-    }
-    std::env::current_dir().context("failed to determine current directory")
+    let cwd = std::env::current_dir().context("failed to determine current directory")?;
+    resolve_repo_root_in(&cwd)
+}
+
+fn resolve_repo_root_in(dir: &Path) -> Result<PathBuf> {
+    crate::git::revision::toplevel(dir)
 }
 
 /// Temp path Codex's captured output is written to (per driver process).
@@ -42,4 +32,15 @@ pub(super) fn claude_marker_path(repo_root: &Path) -> PathBuf {
         .join("work")
         .join("pressure")
         .join(format!("claude-{}.done", std::process::id()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::resolve_repo_root_in;
+
+    #[test]
+    fn rejects_directory_outside_repository() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(resolve_repo_root_in(dir.path()).is_err());
+    }
 }

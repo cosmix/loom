@@ -84,8 +84,8 @@ pub fn stage_head_commit(stage_id: &str, repo_root: &Path) -> Result<String> {
 
 pub fn worktree_head_commit(worktree: &Path) -> Result<String> {
     let git = crate::verify::review::fingerprint::checkout_git(worktree)?;
-    let commit = git.run_checked(&["rev-parse", "HEAD"])?;
-    validated_commit(commit.trim())
+    let commit = crate::git::revision::require_head_commit(&git)?;
+    validated_commit(&commit)
 }
 
 pub fn expected_stage_commit(stage: &Stage, repo_root: &Path) -> Result<String> {

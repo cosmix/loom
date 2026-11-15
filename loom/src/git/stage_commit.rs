@@ -227,6 +227,10 @@ impl<'a> Committer<'a> {
     }
 
     /// HEAD is a symbolic ref to exactly `reference`.
+    ///
+    /// Kept beside `git::branch::checked_out_branch_with`: this compares the full
+    /// `refs/heads/` ref against the stage branch and returns this caller's own error type
+    /// and messages.
     fn require_branch(&self, reference: &str) -> Result<(), CommitRefusal> {
         let args = ["symbolic-ref", "--quiet", "HEAD"];
         let output = self.run(&args)?;

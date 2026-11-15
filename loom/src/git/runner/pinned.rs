@@ -55,10 +55,8 @@ fn pinned_command(
     stdin: Option<File>,
     repo_root: &Path,
 ) -> Command {
+    // `git_command` already removes every `REPO_REDIRECT_ENV` variable.
     let mut command = git_command(program, exec_args, &[], repo_root);
-    for variable in REPO_REDIRECT_ENV {
-        command.env_remove(variable);
-    }
     if let Some(input) = stdin {
         command.stdin(input);
     }

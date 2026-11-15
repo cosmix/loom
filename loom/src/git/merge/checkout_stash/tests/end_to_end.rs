@@ -107,3 +107,15 @@ fn a_sparse_index_ends_where_git_stash_ends() {
 fn a_skip_worktree_staged_path_ends_where_git_stash_ends() {
     assert_same_result("skip-worktree marked by hand", staged_skip_worktree);
 }
+
+#[test]
+fn detached_snapshot_uses_git_stash_branch_name() {
+    let repo = repo();
+    let root = repo.path();
+    git_ok(root, &["checkout", "--detach", "-q"]);
+    write(root, "f.txt", "changed\n");
+    let snapshot = snapshot_changes(root).unwrap().unwrap();
+    assert!(snapshot.message.starts_with("WIP on (no branch): "));
+    let theirs = git_out(root, &["stash", "create"]);
+    assert_eq!(shape(root, &snapshot.commit), shape(root, &theirs));
+}

@@ -1,7 +1,8 @@
 //! The branch `loom init` records as the plan's merge target.
 
 use crate::git::branch::current_branch;
-use crate::git::runner::run_git_bool;
+use crate::git::revision::has_commits;
+use crate::git::worktree::WorktreeGit;
 use anyhow::{bail, Context, Result};
 use std::path::Path;
 
@@ -13,7 +14,7 @@ pub(super) fn checked_out_branch(repo_root: &Path) -> Result<String> {
     if branch == "HEAD" {
         bail!("loom init needs a checked-out branch to merge stages into; HEAD is detached");
     }
-    if !run_git_bool(&["rev-parse", "--verify", "--quiet", "HEAD"], repo_root) {
+    if !has_commits(&WorktreeGit::discovered(repo_root))? {
         bail!("loom init needs at least one commit on {branch}");
     }
     Ok(branch)
@@ -61,6 +62,23 @@ mod tests {
             error
                 .to_string()
                 .contains("loom init needs at least one commit on main"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn surfaces_corrupt_head_objects() {
+        let tmp = repo();
+        let root = tmp.path();
+        let head = run_git_checked(&["rev-parse", "HEAD"], root).unwrap();
+        let head = head.trim();
+        let object = root.join(".git/objects").join(&head[..2]).join(&head[2..]);
+        std::fs::remove_file(&object).unwrap();
+        std::fs::write(object, "corrupt\n").unwrap();
+
+        let error = checked_out_branch(root).unwrap_err();
+        assert!(
+            error.to_string().contains("git rev-parse HEAD failed"),
             "{error}"
         );
     }

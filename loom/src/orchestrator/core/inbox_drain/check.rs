@@ -7,6 +7,7 @@
 
 use chrono::Utc;
 
+use crate::git::revision::require_head_commit;
 use crate::git::worktree::WorktreeGit;
 use crate::host_verify::submit::{is_lower_hex, submit, Submission, SubmitRequest};
 use crate::host_verify::JobKind;
@@ -136,16 +137,8 @@ fn checkout_head(host: &dyn InboxHost, stage: &Stage) -> Result<String, String> 
     } else {
         pinned_worktree(host.repo_root(), stage)?
     };
-    let output = git
-        .run(&["rev-parse", "HEAD"])
-        .map_err(|error| format!("the checkout's HEAD could not be read: {error:#}"))?;
-    if !output.status.success() {
-        return Err(format!(
-            "the checkout's HEAD could not be read: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
-        ));
-    }
-    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+    require_head_commit(&git)
+        .map_err(|error| format!("the checkout's HEAD could not be read: {error:#}"))
 }
 
 #[cfg(test)]

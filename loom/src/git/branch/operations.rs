@@ -34,17 +34,26 @@ pub fn current_branch(repo_root: &Path) -> Result<String> {
 }
 
 pub(crate) fn current_branch_with(git: &crate::git::worktree::WorktreeGit) -> Result<String> {
+    Ok(checked_out_branch_with(git)?.unwrap_or_else(|| "HEAD".into()))
+}
+
+/// The branch checked out in `git`'s worktree, `None` on a detached HEAD.
+///
+/// A branch ref has `refs/heads/` stripped; a symbolic HEAD outside
+/// `refs/heads/` is returned whole. Any git failure other than the detached
+/// HEAD's exit 1 is an error naming git's stderr.
+pub(crate) fn checked_out_branch_with(
+    git: &crate::git::worktree::WorktreeGit,
+) -> Result<Option<String>> {
     let output = git.run(&["symbolic-ref", "-q", "HEAD"])?;
     if output.status.success() {
         let head = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        return Ok(head
-            .strip_prefix("refs/heads/")
-            .unwrap_or(&head)
-            .to_string());
+        let branch = head.strip_prefix("refs/heads/").unwrap_or(&head);
+        return Ok(Some(branch.to_string()));
     }
     // `-q` exits 1 with no output on a detached HEAD; anything else is a failure.
     if output.status.code() == Some(1) {
-        return Ok("HEAD".to_string());
+        return Ok(None);
     }
     anyhow::bail!(
         "git symbolic-ref HEAD failed: {}",

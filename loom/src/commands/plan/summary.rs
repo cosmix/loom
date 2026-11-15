@@ -58,11 +58,8 @@ fn claim_error(error: anyhow::Error) -> CommandError {
 
 fn root() -> Result<PathBuf> {
     let cwd = std::env::current_dir().context("cannot determine current directory")?;
-    // `run_git_records` keeps the output untrimmed: a repository path may begin or end with a
-    // space, which `run_git_checked` would strip.
-    let output = crate::git::runner::run_git_records(&["rev-parse", "--show-toplevel"], &cwd)
-        .with_context(|| format!("{} is not inside a git repository", cwd.display()))?;
-    Ok(PathBuf::from(output.trim_end_matches('\n')))
+    crate::git::revision::toplevel(&cwd)
+        .with_context(|| format!("{} is not inside a git repository", cwd.display()))
 }
 
 fn run(command: SummaryCommands, root: &Path, paths: &RuntimePaths) -> Result<(), CommandError> {

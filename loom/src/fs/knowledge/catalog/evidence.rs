@@ -302,7 +302,11 @@ fn parse_diff_paths(bytes: &[u8]) -> BTreeSet<String> {
     paths
 }
 
-/// Unlike `loom/src/context/refresh/source_graph/generation.rs::parse_status`, this parses raw bytes because that parser takes `run_git_checked`'s trimmed `String`; both rely on porcelain v1 `-z` rename records listing destination first and the source in the next NUL field.
+/// Paths of a porcelain v1 `-z` listing, destination and source of a rename or copy alike.
+///
+/// Kept beside `crate::git::status_entries::parse_porcelain_v1_z`: this parses the raw bytes
+/// lossily and never fails, so a non-UTF-8 path is still compared as evidence, where that
+/// parser rejects the whole listing.
 fn parse_status_paths(bytes: &[u8]) -> BTreeSet<String> {
     let mut fields = bytes.split(|byte| *byte == b'\0');
     let mut paths = BTreeSet::new();
