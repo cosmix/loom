@@ -18,6 +18,7 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 
 use super::store::{self, STORE_DIR};
+use crate::parser::frontmatter::split_frontmatter_raw;
 pub use body::{render_body, sentence_id};
 pub use front::{FrontMatter, SummaryKind};
 pub use levels::{cites_own, split_levels, Levels, MAX_OPENING_PARAGRAPH};
@@ -235,19 +236,16 @@ fn id_of(summary_rel: &Path) -> Option<String> {
 }
 
 /// Splits `text` into the front matter lines and the number of lines before the body.
-fn split_front(text: &str) -> Result<(String, usize), Vec<FormatError>> {
-    let mut lines = text.lines();
-    if lines.next().map(str::trim_end) != Some("---") {
-        return Err(one_error(1, "missing front matter"));
-    }
-    let mut yaml = Vec::new();
-    for (index, line) in lines.enumerate() {
-        if line.trim_end() == "---" {
-            return Ok((yaml.join("\n"), index + 2));
-        }
-        yaml.push(line);
-    }
-    Err(one_error(1, "front matter is not closed by `---`"))
+fn front_matter_and_offset(text: &str) -> Result<(String, usize), Vec<FormatError>> {
+    let (yaml, body) = split_frontmatter_raw(text).map_err(|error| {
+        let message = match error.to_string().as_str() {
+            "No frontmatter delimiter found at start of content" => "missing front matter",
+            _ => "front matter is not closed by `---`",
+        };
+        one_error(1, message)
+    })?;
+    let body_offset = text[..text.len() - body.len()].matches('\n').count();
+    Ok((yaml.to_string(), body_offset))
 }
 
 /// Parses a sealed summary at repository-relative `summary_rel` (under the
@@ -260,7 +258,7 @@ pub fn parse(summary_rel: &Path, text: &str) -> Result<SummaryFile, Vec<FormatEr
     let Some(id) = id_of(summary_rel) else {
         return Err(one_error(1, "path is not a file of the summary store"));
     };
-    let (yaml, body_offset) = split_front(text)?;
+    let (yaml, body_offset) = front_matter_and_offset(text)?;
     let front = front::parse_front(&yaml, 2, &id)?;
     let limit = sentence_limit(&id);
     let body_text = text

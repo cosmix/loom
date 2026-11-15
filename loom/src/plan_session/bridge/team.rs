@@ -1,10 +1,11 @@
 //! Visible progress of in-process teammates, without publishing their chat messages.
 
 use std::collections::HashMap;
-use std::path::{Component, Path, PathBuf};
+use std::path::{Path, PathBuf};
 
 use serde_json::Value;
 
+use crate::fs::lexical::normalize_lexically;
 use crate::plan_session::model::TokenCounts;
 use crate::plan_session::transcript::Mapper;
 use crate::tokens::tail::MAX_LINE_BYTES;
@@ -40,7 +41,7 @@ pub struct TeamTracker {
 impl TeamTracker {
     pub fn new(project_root: PathBuf) -> TeamTracker {
         Self {
-            project_root: normalize(&project_root).unwrap_or(project_root),
+            project_root: normalize_lexically(&project_root).unwrap_or(project_root),
             teammates: HashMap::new(),
         }
     }
@@ -143,28 +144,12 @@ fn document(root: &Path, block: &Value) -> Option<String> {
         return None;
     }
     let path = Path::new(block.pointer("/input/file_path")?.as_str()?);
-    let absolute = normalize(&root.join(path))?;
+    let absolute = normalize_lexically(&root.join(path))?;
     let relative = absolute.strip_prefix(root).ok()?;
     if !relative.starts_with("doc") || relative.components().count() < 2 {
         return None;
     }
     Some(relative.to_str()?.to_owned())
-}
-
-fn normalize(path: &Path) -> Option<PathBuf> {
-    let mut normalized = PathBuf::new();
-    for component in path.components() {
-        match component {
-            Component::CurDir => {}
-            Component::ParentDir => {
-                if !normalized.pop() {
-                    return None;
-                }
-            }
-            other => normalized.push(other.as_os_str()),
-        }
-    }
-    Some(normalized)
 }
 
 #[cfg(test)]

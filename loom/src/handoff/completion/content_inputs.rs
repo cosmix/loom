@@ -1,4 +1,5 @@
 //! Declared verification inputs override completion exemptions.
+use crate::fs::lexical::normalize_lexically;
 use crate::models::stage::Stage;
 use anyhow::{Context, Result};
 use std::collections::BTreeSet;
@@ -40,7 +41,8 @@ pub(super) fn named_inputs(stage: &Stage, path: &str) -> Result<BTreeSet<String>
 
 /// Every declaration, normalized against both bases. Some declarations are
 /// repository-relative, others are relative to working_dir; checking both is
-/// conservative for exemptions.
+/// conservative for exemptions. A declaration that climbs out of the repository
+/// from a base names nothing inside it, so it marks no file inside as a declared input.
 fn declared_patterns(stage: &Stage) -> impl Iterator<Item = PathBuf> + '_ {
     let working_dir = stage.working_dir.as_deref().unwrap_or(".");
     stage
@@ -59,7 +61,9 @@ fn declared_patterns(stage: &Stage) -> impl Iterator<Item = PathBuf> + '_ {
         .chain(stage.wiring.iter().map(|check| check.source.as_str()))
         .chain(stage.regression_test.iter().map(|test| test.file.as_str()))
         .flat_map(move |pattern| {
-            [".", working_dir].map(|base| normalize(&Path::new(base).join(pattern)))
+            [".", working_dir]
+                .into_iter()
+                .filter_map(move |base| normalize_lexically(&Path::new(base).join(pattern)))
         })
 }
 
@@ -87,16 +91,6 @@ fn is_wildcard(component: &str) -> bool {
     component.chars().all(|ch| ch == '*')
 }
 
-fn normalize(path: &Path) -> PathBuf {
-    let mut normalized = PathBuf::new();
-    for component in path.components() {
-        match component {
-            Component::CurDir => {}
-            Component::ParentDir => {
-                normalized.pop();
-            }
-            other => normalized.push(other.as_os_str()),
-        }
-    }
-    normalized
-}
+#[cfg(test)]
+#[path = "content_inputs_tests.rs"]
+mod tests;

@@ -92,8 +92,9 @@ fn persist_verdict_writes_a_parseable_record() {
     .unwrap();
     let path = verdict_file(&work.join("disputes"), "s1", 1);
     let content = std::fs::read_to_string(&path).unwrap();
-    let record: DisputeVerdictRecord = super::super::scan::parse_yaml_frontmatter(&content)
-        .expect("verdict.md must parse back as a record");
+    let (yaml, _) = crate::parser::frontmatter::split_frontmatter_raw(&content).unwrap();
+    let record: DisputeVerdictRecord =
+        crate::yaml::from_str(yaml).expect("verdict.md must parse back as a record");
     assert_eq!(record.adjudicator_attempt_count, 2);
     assert_eq!(record.model, "opus");
     assert_eq!(record.session_id.as_deref(), Some("session-xyz"));

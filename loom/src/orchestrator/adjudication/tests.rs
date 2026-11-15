@@ -4,7 +4,7 @@
 //! `feedback.rs`.
 
 use super::plan_patch::build_amendment_requests;
-use super::scan::{parse_yaml_frontmatter, scan_pending_requests};
+use super::scan::scan_pending_requests;
 use super::session::{attempt_count, MAX_ADJUDICATION_ATTEMPTS};
 use super::{feedback, AdjudicatorRegistry, MAX_EVIDENCE_ROUNDS};
 use crate::models::dispute::{
@@ -357,7 +357,7 @@ fn feedback_signal_only_when_dispute_count_positive() {
 }
 
 #[test]
-fn parse_yaml_frontmatter_round_trips() {
+fn dispute_frontmatter_round_trips() {
     let req = DisputeRequest {
         id: 7,
         stage_id: "x".to_string(),
@@ -370,7 +370,8 @@ fn parse_yaml_frontmatter_round_trips() {
     };
     let yaml = crate::yaml::to_string(&req).unwrap();
     let body = format!("---\n{yaml}---\n\n# X\n");
-    let parsed: DisputeRequest = parse_yaml_frontmatter(&body).unwrap();
+    let (yaml, _) = crate::parser::frontmatter::split_frontmatter_raw(&body).unwrap();
+    let parsed: DisputeRequest = crate::yaml::from_str(yaml).unwrap();
     assert_eq!(parsed.id, 7);
     assert_eq!(parsed.stage_id, "x");
 }

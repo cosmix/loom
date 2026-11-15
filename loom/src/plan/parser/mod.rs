@@ -10,7 +10,7 @@ mod validation;
 pub use extraction::{
     extract_plan_name, extract_yaml_metadata, extract_yaml_metadata_with_ranges, ExtractedMetadata,
 };
-pub use validation::parse_and_validate;
+pub use validation::{parse_and_validate, parse_metadata};
 
 /// Result of parsing a plan document
 #[derive(Debug)]
@@ -75,10 +75,20 @@ pub fn load_stage_definition_from_plan(
         None => return Ok(None),
     };
 
-    let plan = parse_plan(&plan_path)
-        .with_context(|| format!("Failed to parse plan: {}", plan_path.display()))?;
+    std::fs::read_to_string(&plan_path)
+        .with_context(|| format!("Failed to read plan file: {}", plan_path.display()))
+        .and_then(|content| stage_definition_in(&content, stage_id))
+        .with_context(|| format!("Failed to parse plan: {}", plan_path.display()))
+}
 
-    Ok(plan.stages.into_iter().find(|s| s.id == stage_id))
+/// Find a stage by id in a plan's extracted and validated metadata.
+pub fn stage_definition_in(
+    content: &str,
+    stage_id: &str,
+) -> Result<Option<crate::plan::schema::StageDefinition>> {
+    let yaml_content = extraction::extract_yaml_metadata(content)?;
+    let metadata = parse_and_validate(&yaml_content)?;
+    Ok(metadata.loom.stages.into_iter().find(|s| s.id == stage_id))
 }
 
 #[cfg(test)]
@@ -126,6 +136,10 @@ loom:
         assert_eq!(parsed.stages.len(), 2);
         assert_eq!(parsed.stages[0].id, "stage-1");
         assert_eq!(parsed.stages[1].dependencies, vec!["stage-1"]);
+        let stage = stage_definition_in(content, "stage-2").unwrap().unwrap();
+        assert_eq!(stage.id, "stage-2");
+        assert_eq!(stage.name, "Stage Two");
+        assert!(stage_definition_in(content, "unknown").unwrap().is_none());
     }
 
     #[test]
@@ -219,6 +233,8 @@ this is: not: valid: yaml:::
 "#;
         let path = PathBuf::from("test.md");
         assert!(parse_plan_content(content, &path).is_err());
+        assert!(stage_definition_in(content, "stage-1").is_err());
+        assert!(stage_definition_in("no metadata", "stage-1").is_err());
     }
 
     #[test]
@@ -242,6 +258,7 @@ loom:
 "#;
         let path = PathBuf::from("test.md");
         let result = parse_plan_content(content, &path);
+        assert!(stage_definition_in(content, "stage-1").is_err());
         assert!(result.is_err());
         assert!(result
             .unwrap_err()

@@ -111,6 +111,40 @@ fn worker_table_wildcard_claim_inside_and_outside_declared_files() {
 }
 
 #[test]
+fn worker_table_claim_climbing_out_of_declared_files_is_outside() {
+    let stages = vec![stage(
+        "context-admission",
+        &["loom/src/**", "**"],
+        Some(
+            "| Worker | Files owned |\n\
+             | Terra | loom/src/../../outside.rs; ../escape.rs |",
+        ),
+    )];
+
+    let warnings = check_file_ownership(&stages);
+
+    assert_eq!(warnings.len(), 1, "{warnings:?}");
+    assert!(warnings[0].contains("'../escape.rs'"), "{warnings:?}");
+}
+
+#[test]
+fn worker_table_claim_folding_out_of_a_declared_directory_is_outside() {
+    let stages = vec![stage(
+        "context-admission",
+        &["loom/src/**"],
+        Some(
+            "| Worker | Files owned |\n\
+             | Terra | loom/src/../build.rs |",
+        ),
+    )];
+
+    let warnings = check_file_ownership(&stages);
+
+    assert_eq!(warnings.len(), 1, "{warnings:?}");
+    assert!(warnings[0].contains("'loom/build.rs'"), "{warnings:?}");
+}
+
+#[test]
 fn trailing_new_annotation_is_stripped_from_path() {
     let stages = vec![stage(
         "context-admission",

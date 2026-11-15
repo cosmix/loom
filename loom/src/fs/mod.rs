@@ -5,6 +5,9 @@ pub(crate) mod git_marker;
 pub mod inbox;
 pub(crate) mod jsonl_spool;
 pub mod knowledge;
+pub(crate) mod lexical;
+#[cfg(test)]
+mod lexical_contract_tests;
 pub mod locking;
 pub mod memory;
 pub mod permissions;
