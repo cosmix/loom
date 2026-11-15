@@ -3,6 +3,7 @@
 use std::path::{Component, Path, PathBuf};
 
 use crate::fs::knowledge::splice::fence_mask;
+use crate::fs::lexical::normalize_lexically;
 use crate::plan::schema::extract_prefixed_paths;
 use crate::planning::discover::{DocTree, SUMMARIES};
 use crate::planning::kinds::DocId;
@@ -129,21 +130,13 @@ fn link_path(doc_rel: &Path, raw: &str) -> Option<PathBuf> {
     if path.starts_with('/') || path.starts_with("//") || path.contains(':') {
         return None;
     }
-    let mut result = if path.is_empty() {
+    let joined = if path.is_empty() {
         doc_rel.to_path_buf()
     } else {
-        doc_rel.parent()?.to_path_buf()
+        doc_rel.parent()?.join(path)
     };
-    for component in Path::new(path).components() {
-        match component {
-            Component::Normal(part) => result.push(part),
-            Component::CurDir => {}
-            Component::ParentDir => {
-                result.pop();
-            }
-            _ => return None,
-        }
-    }
+    // A link climbing above the repository root names no document.
+    let result = normalize_lexically(&joined)?;
     result.starts_with("doc").then_some(result)
 }
 
@@ -221,3 +214,7 @@ fn backticked_plans(text: &str) -> Vec<String> {
     }
     result
 }
+
+#[cfg(test)]
+#[path = "xref_link_tests.rs"]
+mod link_tests;

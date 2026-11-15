@@ -31,10 +31,11 @@
 //!   rejecting paths outside the repository.
 
 use std::collections::BTreeSet;
-use std::path::{Component, Path, PathBuf};
+use std::path::{Path, PathBuf};
 
 use anyhow::{bail, Result};
 
+use crate::fs::lexical::normalize_lexically;
 use crate::planning::briefs::bundle_files;
 use crate::planning::kinds::{is_feature_name, plans_dir, vision_path, DocKind};
 use crate::planning::project::{Feature, Project};
@@ -302,29 +303,15 @@ pub fn plan_caps(project: &Project, id: &str) -> PlanCaps {
     PlanCaps::for_source_lines(total)
 }
 
-fn normalized(path: &Path) -> Option<PathBuf> {
-    let mut result = PathBuf::new();
-    for component in path.components() {
-        match component {
-            Component::Normal(part) => result.push(part),
-            Component::CurDir => {}
-            Component::ParentDir => {
-                if !result.pop() {
-                    return None;
-                }
-            }
-            _ => return None,
-        }
-    }
-    Some(result)
-}
-
 /// Build a relative link from a summary file to a repository-relative target.
 pub fn link_from_summary(summary_id: &str, target_rel: &Path) -> String {
     if validate_id(summary_id).is_err() {
         return String::new();
     }
-    let Some(target) = normalized(target_rel) else {
+    if target_rel.is_absolute() {
+        return String::new();
+    }
+    let Some(target) = normalize_lexically(target_rel) else {
         return String::new();
     };
     let path = summary_path(summary_id);
@@ -360,7 +347,7 @@ pub fn resolve_link(summary_id: &str, href: &str) -> Option<(PathBuf, Option<Str
     } else {
         summary.parent()?.join(link)
     };
-    Some((normalized(&resolved)?, fragment))
+    Some((normalize_lexically(&resolved)?, fragment))
 }
 
 #[cfg(test)]

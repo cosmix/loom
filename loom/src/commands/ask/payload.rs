@@ -8,6 +8,7 @@ use std::path::{Component, Path, PathBuf};
 use anyhow::{anyhow, ensure, Context, Result};
 
 use crate::context::untrusted::inline_safe;
+use crate::fs::lexical::normalize_lexically;
 use crate::fs::permissions::state_root::{
     CODEX_AUTH_DENY_READ_PATH, CREDENTIAL_DENY_READ_PATHS, CREDENTIAL_FILE_DENY_READ_PATHS,
 };
@@ -80,7 +81,8 @@ pub(crate) fn read_documents(root: &Path, paths: &[PathBuf]) -> Result<Vec<Docum
 /// canonical form and to its path relative to `root`.
 ///
 /// The relative path comes from the lexically normalised argument (`.` and
-/// `..` folded without touching the filesystem), because the no-follow read
+/// `..` folded without touching the filesystem, refused when a `..` climbs
+/// above `/`), because the no-follow read
 /// rejects a `..` component. It must equal the canonical relative path: when
 /// they differ, a symlink sits somewhere on the way and the argument is
 /// refused, so a link never redirects a read.
@@ -93,7 +95,9 @@ pub(crate) fn locate(root: &Path, arg: &Path) -> Result<(PathBuf, PathBuf)> {
         .map_err(|_| anyhow!("{} is outside the project", shown(arg)))?;
     let absolute =
         std::path::absolute(arg).with_context(|| format!("cannot make {} absolute", shown(arg)))?;
-    let lexical = lexical_normal(&absolute);
+    // A `..` above `/` names no path lexically, whatever the kernel makes of it.
+    let lexical =
+        normalize_lexically(&absolute).ok_or_else(|| anyhow!("cannot resolve {}", shown(arg)))?;
     ensure!(
         lexical.strip_prefix(root) == Ok(real),
         "{} goes through a symlink; name the file by its real path",
@@ -101,22 +105,6 @@ pub(crate) fn locate(root: &Path, arg: &Path) -> Result<(PathBuf, PathBuf)> {
     );
     let relative = real.to_path_buf();
     Ok((canonical, relative))
-}
-
-/// Fold `.` and `..` components of an absolute path without reading the
-/// filesystem; a `..` at the root stays at the root.
-fn lexical_normal(path: &Path) -> PathBuf {
-    let mut normal = PathBuf::new();
-    for part in path.components() {
-        match part {
-            Component::CurDir => {}
-            Component::ParentDir => {
-                normal.pop();
-            }
-            other => normal.push(other.as_os_str()),
-        }
-    }
-    normal
 }
 
 /// Whether `canonical` is a path loom's own sandbox denies every session, with

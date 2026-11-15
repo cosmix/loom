@@ -1,6 +1,7 @@
 //! Read and update the leading YAML frontmatter of a knowledge document.
 
 use crate::context::schema::LifecycleState;
+use crate::parser::frontmatter::split_frontmatter_raw;
 use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
@@ -182,7 +183,7 @@ impl Frontmatter {
 /// Parse frontmatter for readers. Malformed YAML is stripped but contributes
 /// no metadata, preserving the chunker's long-standing best-effort behavior.
 pub(crate) fn split_frontmatter(text: &str) -> (Frontmatter, &str) {
-    let Some((raw, body)) = raw_frontmatter(text) else {
+    let Some((raw, body)) = split_frontmatter_raw(text).ok() else {
         return (Frontmatter::default(), text);
     };
     let metadata = Frontmatter::parse(raw).unwrap_or_else(|_| {
@@ -221,7 +222,7 @@ where
                 path.display()
             );
         }
-        let (mut frontmatter, body, had_block) = match raw_frontmatter(&content) {
+        let (mut frontmatter, body, had_block) = match split_frontmatter_raw(&content).ok() {
             Some((raw, body)) => (Frontmatter::parse(raw)?, body, true),
             None => (Frontmatter::default(), content.as_str(), false),
         };
@@ -236,110 +237,6 @@ where
     Ok(rendered)
 }
 
-fn raw_frontmatter(text: &str) -> Option<(&str, &str)> {
-    let (first_end, first_line) = line_at(text, 0)?;
-    if first_line != "---" {
-        return None;
-    }
-    let mut offset = first_end;
-    while let Some((line_end, line)) = line_at(text, offset) {
-        if line == "---" {
-            return Some((&text[first_end..offset], &text[line_end..]));
-        }
-        offset = line_end;
-    }
-    None
-}
-
-fn line_at(text: &str, start: usize) -> Option<(usize, &str)> {
-    if start >= text.len() {
-        return None;
-    }
-    let end = text[start..]
-        .find('\n')
-        .map_or(text.len(), |position| start + position + 1);
-    Some((end, text[start..end].trim_end_matches(['\n', '\r'])))
-}
-
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use std::fs;
-
-    #[test]
-    fn update_preserves_unknown_yaml_and_body() {
-        let temp = tempfile::tempdir().unwrap();
-        let path = temp.path().join("topic.md");
-        let body = "# Topic\n\nBody.\n";
-        fs::write(
-            &path,
-            format!("---\nowner:\n  team: docs\nstate: draft\n---\n{body}"),
-        )
-        .unwrap();
-
-        update_file(&path, |frontmatter| {
-            frontmatter.state = Some(LifecycleState::Active);
-            Ok(())
-        })
-        .unwrap();
-
-        let updated = fs::read_to_string(path).unwrap();
-        let (raw, _) = raw_frontmatter(&updated).unwrap();
-        let mapping: Value = crate::yaml::from_str(raw).unwrap();
-        assert_eq!(mapping["owner"]["team"], "docs");
-        assert_eq!(mapping["state"], "active");
-        assert!(updated.ends_with(body));
-    }
-
-    #[test]
-    fn update_preserves_flow_and_complex_unknown_values() {
-        for raw in [
-            "{state: draft, owner: docs}\n",
-            "state: draft\n'owner: team':\n  nested: [one, two]\nnotes: |\n  first\n  second\n",
-        ] {
-            let temp = tempfile::tempdir().unwrap();
-            let path = temp.path().join("topic.md");
-            let body = "# Topic\r\n\r\nBody.\r\n";
-            fs::write(&path, format!("---\n{raw}---\n{body}")).unwrap();
-            let mut expected: Map<String, Value> = crate::yaml::from_str(raw).unwrap();
-            expected.insert("state".into(), Value::String("active".into()));
-
-            update_file(&path, |frontmatter| {
-                frontmatter.state = Some(LifecycleState::Active);
-                Ok(())
-            })
-            .unwrap();
-
-            let updated = fs::read_to_string(path).unwrap();
-            let (rendered, actual_body) = raw_frontmatter(&updated).unwrap();
-            let actual: Map<String, Value> = crate::yaml::from_str(rendered).unwrap();
-            assert_eq!(actual, expected);
-            assert_eq!(actual_body, body);
-        }
-    }
-
-    #[test]
-    fn unsupported_mapping_is_left_unchanged() {
-        let temp = tempfile::tempdir().unwrap();
-        let path = temp.path().join("topic.md");
-        for raw in [
-            "state: draft\nowner:\n  ? [complex, key]\n  : value\n",
-            "state: draft\nowner: !custom docs\n",
-            "state: draft\nowner: [!custom docs]\n",
-            "state: draft\nowner: .nan\n",
-        ] {
-            let original = format!("---\n{raw}---\n# Topic\n");
-            fs::write(&path, &original).unwrap();
-
-            assert!(
-                update_file(&path, |frontmatter| {
-                    frontmatter.state = Some(LifecycleState::Active);
-                    Ok(())
-                })
-                .is_err(),
-                "accepted {raw}"
-            );
-            assert_eq!(fs::read_to_string(&path).unwrap(), original);
-        }
-    }
-}
+#[path = "frontmatter_tests.rs"]
+mod tests;

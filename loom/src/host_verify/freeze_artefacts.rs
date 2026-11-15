@@ -4,8 +4,9 @@
 //! while the gate ran.
 
 use std::collections::BTreeSet;
-use std::path::{Component, Path, PathBuf};
+use std::path::{Path, PathBuf};
 
+use crate::fs::lexical::normalize_lexically;
 use crate::plan::schema::validation::shell_lex::{lex, Token};
 use crate::verify::contracts::format_gate::runs_at_freeze;
 use crate::verify::contracts::site::ContractSite;
@@ -129,17 +130,7 @@ fn writes_file(op: &str, target: &str) -> bool {
 /// `target` relative to `root` with `.` and `..` resolved lexically, as git
 /// lists a path; `None` outside `root`.
 fn tree_path(root: &Path, target: &Path) -> Option<String> {
-    let relative = target.strip_prefix(root).ok()?;
-    let mut parts: Vec<&str> = Vec::new();
-    for part in relative.components() {
-        match part {
-            Component::Normal(name) => parts.push(name.to_str()?),
-            Component::CurDir => {}
-            Component::ParentDir => {
-                parts.pop()?;
-            }
-            Component::RootDir | Component::Prefix(_) => return None,
-        }
-    }
-    (!parts.is_empty()).then(|| parts.join("/"))
+    let relative = normalize_lexically(target.strip_prefix(root).ok()?)?;
+    let path = relative.to_str()?;
+    (!path.is_empty()).then(|| path.to_owned())
 }

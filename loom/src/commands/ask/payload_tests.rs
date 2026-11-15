@@ -171,6 +171,16 @@ fn dot_dot_inside_the_root_is_read() {
 }
 
 #[test]
+fn an_absolute_path_climbing_above_the_filesystem_root_is_refused() {
+    let (_dir, root) = project();
+    fs::write(root.join("a.md"), "alpha\n").expect("write a.md");
+    let below_root = root.strip_prefix("/").expect("absolute project root");
+    let climbing = Path::new("/..").join(below_root).join("a.md");
+    let message = refusal(&root, &[climbing]);
+    assert!(message.contains("cannot resolve"), "{message}");
+}
+
+#[test]
 fn a_non_utf8_file_is_refused() {
     let (_dir, root) = project();
     fs::write(root.join("bin.dat"), [0xff, 0xfe]).expect("write bin.dat");

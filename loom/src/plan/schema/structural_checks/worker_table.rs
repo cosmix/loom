@@ -1,15 +1,18 @@
 //! Advisory ownership checks for the optional worker table in a description.
 
 use std::collections::HashMap;
-use std::path::{Component, Path};
+use std::path::{Path, PathBuf};
 
 use super::super::types::StageDefinition;
+use crate::fs::lexical::normalize_lexically;
 
 #[derive(Debug)]
 struct WorkerClaim {
     worker: String,
     path: String,
     row: usize,
+    /// The path climbs out of the repository, so no declared pattern contains it.
+    escapes: bool,
 }
 
 pub(super) fn check_worker_table_ownership(stages: &[StageDefinition]) -> Vec<String> {
@@ -152,11 +155,12 @@ fn table_claims(
         if worker.is_empty() {
             continue;
         }
-        claims.extend(row[files_column].split([',', ';']).filter_map(|path| {
-            normalize_path(path).map(|path| WorkerClaim {
+        claims.extend(row[files_column].split([',', ';']).filter_map(|cell| {
+            claim_path(cell).map(|(path, escapes)| WorkerClaim {
                 worker: worker.to_string(),
                 path,
                 row: row_index,
+                escapes,
             })
         }));
     }
@@ -164,26 +168,33 @@ fn table_claims(
     Some(claims)
 }
 
-fn normalize_path(path: &str) -> Option<String> {
-    let path = strip_trailing_annotation(path.trim());
-    let path = path.trim().trim_matches('`').trim();
-    let mut normalized = String::new();
-
-    for component in Path::new(path).components() {
-        match component {
-            Component::CurDir => {}
-            Component::RootDir => normalized.push('/'),
-            Component::ParentDir => append_component(&mut normalized, ".."),
-            Component::Normal(component) => {
-                append_component(&mut normalized, &component.to_string_lossy());
-            }
-            Component::Prefix(prefix) => {
-                append_component(&mut normalized, &prefix.as_os_str().to_string_lossy());
-            }
-        }
+/// A claimed path, lexically normalized; `None` for an empty cell. A path climbing out of
+/// the repository keeps its spelling and is flagged as escaping.
+fn claim_path(cell: &str) -> Option<(String, bool)> {
+    let path = cell_path(cell);
+    match normalize_lexically(Path::new(path)) {
+        Some(normal) => non_empty(normal).map(|normal| (normal, false)),
+        None => Some((path.to_owned(), true)),
     }
+}
 
-    (!normalized.is_empty()).then_some(normalized)
+/// A declared pattern, lexically normalized; `None` when empty or climbing out of the
+/// repository, so such a pattern contains no claim.
+fn normalize_path(cell: &str) -> Option<String> {
+    normalize_lexically(Path::new(cell_path(cell))).and_then(non_empty)
+}
+
+fn non_empty(path: PathBuf) -> Option<String> {
+    let path = path.to_string_lossy().into_owned();
+    (!path.is_empty()).then_some(path)
+}
+
+/// A cell's path without its trailing annotation and backticks.
+fn cell_path(cell: &str) -> &str {
+    strip_trailing_annotation(cell.trim())
+        .trim()
+        .trim_matches('`')
+        .trim()
 }
 
 /// Strip a trailing parenthesised annotation like `` `path.rs` (new) `` or
@@ -198,13 +209,6 @@ fn strip_trailing_annotation(path: &str) -> &str {
         }
     }
     trimmed
-}
-
-fn append_component(path: &mut String, component: &str) {
-    if !path.is_empty() && !path.ends_with('/') {
-        path.push('/');
-    }
-    path.push_str(component);
 }
 
 fn duplicate_claim_warnings(stage_id: &str, claims: &[WorkerClaim]) -> Vec<String> {
@@ -236,7 +240,7 @@ fn outside_files_warnings(
 ) -> Vec<String> {
     claims
         .iter()
-        .filter(|claim| !matches_declared_files(&claim.path, declared_files))
+        .filter(|claim| claim.escapes || !matches_declared_files(&claim.path, declared_files))
         .map(|claim| {
             format!(
                 "Stage '{}': worker '{}' claims write ownership of '{}', which is outside the stage's declared files patterns",

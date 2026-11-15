@@ -8,8 +8,8 @@ use std::path::Path;
 use chrono::{DateTime, SecondsFormat, Utc};
 
 use crate::fs::safe_fs::{open_safely, safe_open_dirfd};
-use crate::plan::parser::extract_yaml_metadata;
-use crate::plan::schema::{detect_stage_type, LoomMetadata, StageDefinition, StageType};
+use crate::plan::parser::{extract_yaml_metadata, parse_metadata};
+use crate::plan::schema::{detect_stage_type, StageDefinition, StageType};
 use crate::plan_server::wire::files::{
     ImplementsLink, PlanStateView, PlanView, StageRow, ValidationView,
 };
@@ -20,7 +20,8 @@ use crate::planning::pressure;
 use crate::planning::sections::DocSections;
 use crate::planning::slug::{plan_slug, plan_state, PlanState};
 
-/// Build a plan panel from the same metadata parser used by plan verification.
+/// Build a plan panel using the verifier's schema parse, leaving validation to
+/// [`ValidationView`] so stages remain visible when validation fails.
 /// `product_sections` (from [`product_sections`]) resolves the `Implements:` links.
 pub fn plan_view(
     root: &Path,
@@ -61,8 +62,11 @@ pub fn plan_view(
 }
 
 fn parse_stages(yaml: Option<&str>, sections: &DocSections) -> (Vec<StageRow>, Option<String>) {
-    match yaml.map(crate::yaml::from_str::<LoomMetadata>) {
-        Some(Ok(metadata)) => (
+    let Some(yaml) = yaml else {
+        return (Vec::new(), None);
+    };
+    match parse_metadata(yaml) {
+        Ok(metadata) => (
             metadata
                 .loom
                 .stages
@@ -71,8 +75,7 @@ fn parse_stages(yaml: Option<&str>, sections: &DocSections) -> (Vec<StageRow>, O
                 .collect(),
             None,
         ),
-        Some(Err(error)) => (Vec::new(), Some(format!("YAML parse error: {error}"))),
-        None => (Vec::new(), None),
+        Err(error) => (Vec::new(), Some(format!("YAML parse error: {error:#}"))),
     }
 }
 

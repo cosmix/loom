@@ -13,7 +13,7 @@ use std::path::Path;
 
 use crate::fs::safe_fs;
 use crate::plan::parser::{
-    extract_yaml_metadata_with_ranges, parse_and_validate, ExtractedMetadata,
+    extract_yaml_metadata_with_ranges, parse_and_validate, stage_definition_in, ExtractedMetadata,
 };
 use crate::plan::schema::{LoomMetadata, StageDefinition};
 
@@ -35,7 +35,9 @@ pub(super) fn reconcile_amended_field(
 ) -> Result<bool, &'static str> {
     let live_content = fs::read_to_string(plan_path).map_err(|_| "cannot read live plan")?;
     let (extracted, mut live_metadata) = parse_live_plan(&live_content)?;
-    let snap_stage = find_stage_def(snapshot_content, stage_id)
+    let snap_stage = stage_definition_in(snapshot_content, stage_id)
+        .ok()
+        .flatten()
         .ok_or("stage missing from snapshot, or snapshot metadata unparseable")?;
     let live_idx = live_metadata
         .loom
@@ -76,20 +78,13 @@ pub(super) fn warn_skip(plan_path: &Path, stage_id: &str, reason: &str) {
 
 /// Parse the live plan's metadata block, keeping the extracted fence range
 /// (needed to splice a correction back in) alongside the parsed metadata.
+// Unlike stage_definition_in, this keeps the fence ranges for rewriting the live plan.
 fn parse_live_plan(content: &str) -> Result<(ExtractedMetadata, LoomMetadata), &'static str> {
     let extracted = extract_yaml_metadata_with_ranges(content)
         .map_err(|_| "live plan metadata is not parseable")?;
     let metadata = parse_and_validate(&extracted.yaml)
         .map_err(|_| "live plan metadata failed schema validation")?;
     Ok((extracted, metadata))
-}
-
-/// Parse `content`'s metadata and return the stage definition matching
-/// `stage_id`, or `None` if either step fails.
-fn find_stage_def(content: &str, stage_id: &str) -> Option<StageDefinition> {
-    let extracted = extract_yaml_metadata_with_ranges(content).ok()?;
-    let metadata = parse_and_validate(&extracted.yaml).ok()?;
-    metadata.loom.stages.into_iter().find(|s| s.id == stage_id)
 }
 
 /// True when `field` holds the same value on both stage definitions.

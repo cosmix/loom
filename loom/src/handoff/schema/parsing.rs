@@ -1,6 +1,7 @@
 //! Handoff parsing logic supporting both V2 and V1 formats.
 
 use super::v2::HandoffV2;
+use crate::parser::frontmatter::split_frontmatter_raw;
 
 /// Result of attempting to parse a handoff file.
 ///
@@ -57,19 +58,8 @@ impl ParsedHandoff {
 fn extract_yaml_from_handoff(content: &str) -> Option<String> {
     let trimmed = content.trim();
 
-    // Delimiters occupy complete, unindented lines. An indented `---` can
-    // belong to a YAML block scalar, and embedded hyphens are ordinary text.
-    if let Some((opening, after_first)) = trimmed.split_once('\n') {
-        if opening.trim_end() == "---" {
-            let mut offset = 0;
-            for line in after_first.split_inclusive('\n') {
-                if line.trim_end() == "---" {
-                    return Some(after_first[..offset].trim_start().to_string());
-                }
-                offset += line.len();
-            }
-            return None;
-        }
+    if let Ok((yaml, _)) = split_frontmatter_raw(trimmed) {
+        return Some(yaml.trim_start().to_string());
     }
 
     // Check if the file is pure YAML (starts with version:)
@@ -145,9 +135,10 @@ context_tokens: 120000
 
     #[test]
     fn frontmatter_requires_exact_unindented_delimiter_lines() {
-        let content = "---\r\nversion: 2\r\nsession_id: test\r\nstage_id: test\r\nnotes: |\r\n  ---\r\n  before---after\r\n---suffix\r\n---\r\n# body";
+        let content = "---\r\nversion: 2\r\nsession_id: test\r\nstage_id: test\r\nnotes: |\r\n  ---\r\n  before---after\r\n----\r\n---suffix\r\n---  \r\n# body";
         let yaml = extract_yaml_from_handoff(content).unwrap();
         assert!(yaml.contains("  ---\r\n"));
+        assert!(yaml.contains("----\r\n"));
         assert!(yaml.contains("---suffix\r\n"));
         assert!(!yaml.contains("# body"));
     }

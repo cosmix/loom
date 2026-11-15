@@ -11,6 +11,7 @@ use anyhow::{bail, ensure, Context, Result};
 
 use super::{GuidanceModels, SessionGuidanceKind};
 use crate::assets::{Asset, CLAUDE_COMMANDS, PLAN_PLUGIN};
+use crate::parser::frontmatter::split_frontmatter_raw;
 use crate::plan_session::kind::SessionDir;
 
 type RenderedAsset = (&'static str, Cow<'static, str>);
@@ -117,19 +118,16 @@ fn embedded(assets: &[Asset], key: &str) -> Result<&'static str> {
 }
 
 fn rewrite_agent(source: &str, model: &str, effort: &str) -> Result<String> {
+    let (yaml, _) = split_frontmatter_raw(source).map_err(|error| {
+        anyhow::anyhow!(match error.to_string().as_str() {
+            "No frontmatter delimiter found at start of content" => {
+                "agent has no opening frontmatter delimiter"
+            }
+            _ => "agent has no closing frontmatter delimiter",
+        })
+    })?;
     let lines: Vec<_> = source.split_inclusive('\n').collect();
-    ensure!(
-        lines
-            .first()
-            .is_some_and(|line| line.trim_end_matches(['\r', '\n']) == "---"),
-        "agent has no opening frontmatter delimiter"
-    );
-    let end = lines
-        .iter()
-        .enumerate()
-        .skip(1)
-        .find_map(|(index, line)| (line.trim_end_matches(['\r', '\n']) == "---").then_some(index))
-        .context("agent has no closing frontmatter delimiter")?;
+    let end = yaml.lines().count() + 1;
     for key in ["model:", "effort:"] {
         ensure!(
             lines[1..end]

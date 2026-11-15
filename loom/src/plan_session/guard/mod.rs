@@ -30,7 +30,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{ensure, Context, Result};
 use serde_json::{json, Value};
 
-use self::paths::{inside, normalize, ReadRules};
+use self::paths::{absolute_lexical, inside, ReadRules};
 use crate::fs::safe_read::read_to_string_bounded;
 use crate::plan_session::kind::{SessionDir, SessionKind};
 use crate::plan_session::sandbox::filesystem::OMISSIONS;
@@ -302,7 +302,7 @@ fn claude_tmp_dir() -> Option<PathBuf> {
         .map(PathBuf::from)
         .filter(|tmp| tmp.is_absolute())
         .unwrap_or_else(|| PathBuf::from("/tmp"));
-    let base = normalize(&base).ok()?;
+    let base = absolute_lexical(&base).ok()?;
     if base.file_name() == Some(std::ffi::OsStr::new(&name)) {
         return Some(base);
     }

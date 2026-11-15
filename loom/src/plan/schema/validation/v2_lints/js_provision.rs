@@ -5,8 +5,9 @@
 //! is v2-only.
 
 use std::collections::BTreeSet;
-use std::path::{Component, Path, PathBuf};
+use std::path::{Path, PathBuf};
 
+use crate::fs::lexical::normalize_lexically;
 use crate::git::run_git_checked;
 use crate::skills::project::{declares_dependencies, PackageDetail, ProjectProfile};
 use crate::testrun::registry::by_name;
@@ -44,10 +45,10 @@ pub(super) fn check(ctx: &LintContext<'_>, out: &mut Vec<LintFinding>) -> Vec<St
     }
     let profile = ProjectProfile::discover(root);
     let covers = |package: &Path| {
-        provision.iter().any(|entry| {
-            let dir = normalized(Path::new(&entry.working_dir));
-            normalized(package).starts_with(dir)
-        })
+        covered(
+            package,
+            provision.iter().map(|entry| entry.working_dir.as_str()),
+        )
     };
     let tracked = tracked_manifests(root);
     for package in profile.package_details() {
@@ -70,6 +71,17 @@ pub(super) fn check(ctx: &LintContext<'_>, out: &mut Vec<LintFinding>) -> Vec<St
     } else {
         Vec::new()
     }
+}
+
+/// Whether one of `working_dirs` is `package` or an ancestor of it, compared lexically:
+/// `.` and `""` both name the root and `./web` equals `web`. A directory or package that
+/// climbs out of the repository covers or is covered by nothing.
+fn covered<'a>(package: &Path, mut working_dirs: impl Iterator<Item = &'a str>) -> bool {
+    let Some(package) = normalize_lexically(package) else {
+        return false;
+    };
+    working_dirs
+        .any(|dir| normalize_lexically(Path::new(dir)).is_some_and(|dir| package.starts_with(dir)))
 }
 
 fn plan_finding(message: String) -> LintFinding {
@@ -132,10 +144,6 @@ fn install_command(package_dir: &Path) -> Option<&'static str> {
         .map(|(_, command)| *command)
 }
 
-/// `path` without its `.` components, so `.` and `""` both name the root and
-/// `./web` equals `web`.
-fn normalized(path: &Path) -> PathBuf {
-    path.components()
-        .filter(|component| *component != Component::CurDir)
-        .collect()
-}
+#[cfg(test)]
+#[path = "js_provision_tests.rs"]
+mod tests;

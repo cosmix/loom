@@ -8,6 +8,7 @@ use std::path::{Component, Path, PathBuf};
 use serde_json::Value;
 
 use super::GuardPolicy;
+use crate::fs::lexical::normalize_lexically;
 use crate::fs::permissions::state_root::resolve_state_root;
 use crate::plan_session::kind::{SessionDir, SessionKind};
 use crate::plan_session::sandbox::read_denies;
@@ -47,7 +48,7 @@ pub(super) fn tool_path(
         return Err(format!("{raw} starts with ~"));
     }
     let joined = base.join(raw);
-    let normal = normalize(&joined)?;
+    let normal = absolute_lexical(&joined)?;
     if pseudo(&normal) {
         return Err(format!("{} is under /proc or /dev/fd", normal.display()));
     }
@@ -59,28 +60,18 @@ pub(super) fn tool_path(
     Ok(normal)
 }
 
-/// Lexical normalisation of an absolute path: `.` dropped, `..` pops a component, a `..` above
-/// `/` is an error.
-pub(super) fn normalize(path: &Path) -> Result<PathBuf, String> {
+/// [`normalize_lexically`] of an absolute path, with the guard's reason when it is refused.
+pub(super) fn absolute_lexical(path: &Path) -> Result<PathBuf, String> {
     if !path.is_absolute() {
         return Err(format!("{} is not absolute", path.display()));
     }
-    let mut out = PathBuf::new();
-    for part in path.components() {
-        match part {
-            Component::RootDir => out.push(Component::RootDir),
-            Component::CurDir => {}
-            Component::ParentDir => {
-                if out.parent().is_none() {
-                    return Err(format!("{} climbs above /", path.display()));
-                }
-                out.pop();
-            }
-            Component::Normal(name) => out.push(name),
-            Component::Prefix(_) => return Err(format!("{} has a prefix", path.display())),
+    normalize_lexically(path).ok_or_else(|| {
+        if matches!(path.components().next(), Some(Component::Prefix(_))) {
+            format!("{} has a prefix", path.display())
+        } else {
+            format!("{} climbs above /", path.display())
         }
-    }
-    Ok(out)
+    })
 }
 
 /// `path` equals `base` or lies below it, compared by component: `/a/bc` is not inside `/a/b`.
@@ -108,7 +99,7 @@ pub(super) fn canonical_of(path: &Path) -> Result<PathBuf, String> {
                 let mut out = fs::canonicalize(current)
                     .map_err(|e| format!("cannot resolve {}: {e}", current.display()))?;
                 out.extend(tail.iter().rev());
-                return normalize(&out);
+                return absolute_lexical(&out);
             }
             Err(error) if error.kind() == ErrorKind::NotFound => {
                 let last = current.components().next_back();
@@ -239,7 +230,7 @@ fn rule_path(entry: &str, home: &Path) -> Option<PathBuf> {
         Some(rest) => home.join(rest),
         None => PathBuf::from(entry),
     };
-    normalize(&path).ok()
+    absolute_lexical(&path).ok()
 }
 
 /// A grant in its lexical form and with its parent canonicalized. The grant's own last

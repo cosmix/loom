@@ -143,13 +143,18 @@ mod tests {
     #[test]
     fn frontmatter_boundary_matches_canonical_scan() {
         let content =
-            "---\r\nid: session-1\r\nnotes: |\r\n  ---\r\n--- # closing comment\r\n# Body\r\n";
+            "---\r\nid: session-1\r\nnotes: |\r\n  ---\r\n  --- # not a closer\r\n---  \r\n# Body\r\n";
         let fields = parse_frontmatter_strings(content).unwrap();
         assert_eq!(fields.get("id").map(String::as_str), Some("session-1"));
         let document = MarkdownDocument::parse(content).unwrap();
         assert_eq!(document.sections.len(), 1);
         assert_eq!(document.sections[0].title, "Body");
         assert!(parse_frontmatter_strings("---\nid: session-1\n...\n").is_err());
+        let (yaml, body) =
+            crate::parser::frontmatter::split_frontmatter_raw("---\nid: a\n--- # c\n---\n# Body\n")
+                .unwrap();
+        assert_eq!(yaml, "id: a\n--- # c\n");
+        assert_eq!(body, "# Body\n");
     }
 
     #[test]

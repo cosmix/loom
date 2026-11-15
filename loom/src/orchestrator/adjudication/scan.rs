@@ -8,6 +8,7 @@ use anyhow::{Context, Result};
 use std::path::Path;
 
 use crate::models::dispute::{DisputeRequest, DisputeVerdictRecord};
+use crate::parser::frontmatter::split_frontmatter_raw;
 
 use super::{is_closed, AdjudicatorRegistry};
 
@@ -188,26 +189,41 @@ pub(crate) fn dispute_ids(stage_dir: &Path) -> Vec<u32> {
 pub(super) fn read_dispute_request(path: &Path) -> Result<DisputeRequest> {
     let content =
         std::fs::read_to_string(path).with_context(|| format!("read {}", path.display()))?;
-    parse_yaml_frontmatter::<DisputeRequest>(&content)
+    split_frontmatter_raw(&content)
+        .and_then(|(yaml, _)| crate::yaml::from_str(yaml).context("yaml deserialization"))
         .with_context(|| format!("parse dispute request {}", path.display()))
 }
 
 pub(super) fn read_verdict_record(path: &Path) -> Result<DisputeVerdictRecord> {
     let content =
         std::fs::read_to_string(path).with_context(|| format!("read {}", path.display()))?;
-    parse_yaml_frontmatter::<DisputeVerdictRecord>(&content)
+    split_frontmatter_raw(&content)
+        .and_then(|(yaml, _)| crate::yaml::from_str(yaml).context("yaml deserialization"))
         .with_context(|| format!("parse verdict record {}", path.display()))
 }
 
-/// Pull the YAML frontmatter out of a markdown file and deserialize it.
-pub(super) fn parse_yaml_frontmatter<T: serde::de::DeserializeOwned>(content: &str) -> Result<T> {
-    let trimmed = content.trim_start();
-    let body = trimmed.strip_prefix("---").unwrap_or(trimmed);
-    let body = body.trim_start_matches('\n');
-    let end = body
-        .find("\n---")
-        .ok_or_else(|| anyhow::anyhow!("missing closing '---'"))?;
-    let yaml = &body[..end];
-    let parsed: T = crate::yaml::from_str(yaml).context("yaml deserialization")?;
-    Ok(parsed)
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn record_readers_require_opening_delimiters() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("record.md");
+        std::fs::write(&path, "id: 1\n---\n# body").unwrap();
+        for (error, context) in [
+            (
+                read_dispute_request(&path).unwrap_err(),
+                "parse dispute request",
+            ),
+            (
+                read_verdict_record(&path).unwrap_err(),
+                "parse verdict record",
+            ),
+        ] {
+            let rendered = format!("{error:#}");
+            assert!(rendered.contains(context));
+            assert!(rendered.contains("No frontmatter delimiter found at start of content"));
+        }
+    }
 }
