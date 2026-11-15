@@ -58,6 +58,7 @@
 - `orchestrator/signals/cache.rs` - Stable prefix generation (4 stage-type variants, SHA-256 hash)
 - `orchestrator/signals/format/mod.rs` - Full signal formatting (Manus 4-section KV-cache pattern)
 - `orchestrator/signals/format/sections.rs` - Section formatters (stable, semi-stable, dynamic, recitation)
+- `orchestrator/signals/format/budget.rs` - `## Model Budget` section: fresh quota windows plus one routing line ([Signal Generation](../architecture/signal-generation.md#model-budget-section-formatbudgetrs))
 - `orchestrator/signals/format/skills.rs` - Recommended Skills section: per-skill invocations plus one combined `loom-skills` loader call
 - `orchestrator/signals/helpers.rs` - write_signal_file() (disk I/O)
 - `orchestrator/signals/types.rs` - EmbeddedContext, DependencyStatus, SandboxSummary

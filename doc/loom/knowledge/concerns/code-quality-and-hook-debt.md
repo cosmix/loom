@@ -246,3 +246,65 @@ State after the hook-guards work; the guard behaviour itself is in [Hook System]
 ## Hook Tests That Rebuild PATH Keep Leaking `LOOM_HOOK_PATH`
 
 `LOOM_HOOK_PATH` leaked into a hook test a second time: `loom-hooks/tests/require-jq-advisory.sh` printed `FAIL: expected exit 1 when jq is missing, got 0` from a live stage shell, because `_read_discipline.sh` restores `PATH="${LOOM_HOOK_PATH:-$PATH}"` over the test's `path_without` PATH (it passed in the host job, where the variable is unset). Each new test must remember its own `unset`. Proposal: `loom-hooks/tests/_path_without.sh` unsets `LOOM_HOOK_PATH` itself, or `run-all.sh` runs every test under `env -u LOOM_HOOK_PATH -u LOOM_WORK_DIR -u LOOM_SESSION_ID -u LOOM_STAGE_ID`, so no test can forget. The mistake is in [Hook Tests Inherit the Live Session's Environment](../mistakes/hooks-shell-portability.md#hook-tests-inherit-the-live-sessions-environment-2026-09-19).
+
+## Rule 6 Coordinators Contradict the Spawn Guard
+
+`skills/loom-orchestration/SKILL.md` Rule 6 says a coordinator is spawned as `general-purpose` with a
+`model` override, because the engineer agent types carry no Task tool. The spawn guard
+(`loom-hooks/spawn-guard.sh:223`) denies every `general-purpose` spawn inside a gated stage session,
+and the same skill says inside a stage untyped spawns are denied. A stage main agent therefore cannot
+spawn a 2-level coordinator as written. Decide in a follow-up plan between allowing a typed
+coordinator agent (with the Task tool) and removing the 2-level hierarchy from stage sessions.
+
+## Budget and Routing Followups
+
+- **Rounding.** `budget.rs` prints `{:.0}` (half to even) while `under_pressure` compares the raw
+  percent, so 74.6% shows "75% used" with no routing line. Rounding once and comparing the rounded
+  value flips the unfrozen `budget_tests.rs:48` case (74.9, 1801 s, false); decide whether the 75%
+  threshold applies to the raw or the displayed value first.
+- **Future readings.** `fresh()` treats an `observed_at` in the future as fresh indefinitely
+  (negative age); `quota/cache.rs` `sanitize` does not clamp it. Only constant routing text is
+  affected. Treat `observed_at` beyond now plus a skew as stale.
+- **No omission test.** Knowledge and contract signals read the quota cache for a `model_budget`
+  they never render (`signals/knowledge.rs:33`), and no test pins that they omit `## Model Budget`.
+- **`first_listed()`** (`models/stage/implementers.rs:70`) has only test callers; remove it or mark
+  it test-only. `implementer_tests.rs:36,60-64` still names "preference order" in a test name and
+  comments; rename to listed-order wording.
+
+## Usage Attribution Limits
+
+- `discovery.rs::filter_stages` matches `ends_with("-worktrees-<stage>")`, so `--stage b` also
+  selects the slug of stage `a-b`; reuse `stage_from_project_slug` for one rule.
+- With `--all` or no readable work dir `ParentSpawns` holds no stage set, so `.worktrees/foo/loom`
+  yields stage `foo-loom`, marked known (`parent_spawns.rs:52`). Leave the stage null when
+  `work_dir` is `None`, or document the limit at `:31-35`; revisit if `--all` gains per-repo stage
+  lists.
+- A transcript from a session started in a worktree subdirectory has slug
+  `<repo>--worktrees-<stage>-loom`; the recorded-stage check turns it into no stage. If Claude Code
+  maps `_` to `-` in slugs (unverified), `a_b` parses as `a-b`.
+- The 10-byte-needle byte-window `contains` in `parent_spawns.rs:125` and `git/hooks.rs:214` is the
+  same idiom; share a helper only if a third caller appears.
+
+## Spawn Guard and Hook Fixture Edges
+
+- A non-object `tool_input` makes the `. + {model}` merge in `spawn-guard.sh:235` fail; the hook
+  exits non-zero and fails open without the sonnet rewrite. Claude Code always sends an object.
+- `loom-hooks/tests/_fixture_base.sh:25`: `mkdir -p` in the `/tmp/claude-<uid>` branch has no
+  explicit failure check, and inside a command substitution `errexit` may not propagate. Add
+  `|| return 1`.
+- The prefer-modern-tools hook warns after a `grep` inside `bash -c` has run. A blocking check on
+  the wrapper form would stop the recurrence recorded in
+  [review-integration-verification](../mistakes/review-integration-verification.md).
+- `dispute-criteria --field wiring` indexes only the filing stage's own wiring list, so an
+  aggregated failure of another stage's entry has no direct index.
+
+## Other Open Observations
+
+- Adjudication prompt builders re-inline the `## Dispute` header: `push_dispute_header`
+  (`orchestrator/adjudication/prompt/criterion.rs:310`) exists, but `findings.rs:64`, `impact.rs:66`,
+  `integrity.rs:61`, `contract.rs:252` and `freeze_refusal_evidence.rs:62` do not call it.
+- The planner spine's Findings well counts `decided = findings.length - openCount`
+  (`web/src/plan/feature/spine-instruments.ts:79`), so unverified, stale and duplicate open
+  findings read as decided once `openCount` counts only actionable ones.
+- The design record for the chat background line (`ui/DESIGN.md`, Chat) was not in this tree to
+  check against the widened `waitsOnBackground` condition; compare it when the file is next edited.

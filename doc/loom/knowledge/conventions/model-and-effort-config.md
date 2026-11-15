@@ -75,6 +75,8 @@ A plan stage omits `model` and `reasoning_effort` by default, so the stage type'
 default applies. Set either field only as a deliberate override, and state why in the stage
 description.
 
+Subagent effort is not a `[models]` key: `loom-senior-software-engineer` carries `effort: medium` and `loom-advisor` `effort: xhigh` in their agent-file frontmatter, and an orchestrator passes `effort: high` only to respawn a failed opus attempt ([Model Playbook](../patterns/subagent-hierarchy.md#model-playbook-orchestration-model-is-per-stage-type-configurable)).
+
 ## Value Types Are a Separate Concern
 
 This file's `[pressure]`/`[models]` keys are string-valued (model names, effort levels) and

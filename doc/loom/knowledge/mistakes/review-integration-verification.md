@@ -180,3 +180,84 @@ Integration failures and verification discipline for the Astra review repairs.
 **What happened:** six `inbox_drain` tests (`tests_merge::merge_resolved_*`, `tests_merge_check::*`) failed in the session sandbox with and without the round's edits ("resolver content failed completion verification"). The host job's `cargo test --all-targets` passed all 10 criteria on the same tree. The criterion logs (`acceptance-<n>.log`) are not readable from the stage sandbox; only the `result.json` summaries under `.loom/work/verification/<stage>/<job>/` are.
 
 **Prevention:** do not chase or edit around a failure that only a shell in the session sandbox shows; settle it with the gate's host job (`loom check`), and dispute a criterion only when the host job itself fails it. `cargo audit` cannot fetch its advisory database from the sandbox (network denied, `~/.cargo/advisory-db` read-only): record it as unverified, never as passed.
+
+## The Gate Ran on a Tree the Next Edit Would Change (2026-11-14)
+
+**What happened:** three stages ran `loom check` or `loom check integration-verify` at the wrong time.
+(1) Beside the first review round, before the reviewer's findings were fixed, so the result described a
+tree the fixes would change. (2) Calling the integration-verify gate while a fix worker was still
+editing queued a new host job per changed tree, stacking full-suite runs behind the final one.
+(3) A full integration-verify run on the final tree, seconds before the stage's completion command,
+which runs every acceptance criterion itself (a user correction). (4) `loom check` through
+`run_in_background`: the relay hook never saw its `LOOM_RELAY_V1` line and refused it; the next
+foreground call recovered it.
+
+**Why:** "run `loom check` beside the final review" was read as "beside any review" and as a step
+separate from completion. The background-relay failure recurs from
+[plan-server-delivery](plan-server-delivery.md).
+
+**Prevention:** run the gate once, in the foreground, beside the re-review that follows the fix
+round, after the fix worker has returned. After the last fix, re-check only the repaired criterion
+(`loom check <stage-id> --criterion <n>`), or nothing when the fixer verified it, then commit and
+complete the stage. A proposal for a check: have `loom check` refuse a submission while a queued
+job for an older tree of the same stage is still pending, so a stacked run cannot start.
+
+## A Wiring Entry Was Read From the Plan File, Not the Live Stage File (2026-11-15)
+
+**What happened:** a fix swapped the `signals` re-export to `format_model_budget_section` to satisfy
+`allocation-runtime` wiring[3] as `IN_PROGRESS-PLAN-model-allocation.md:336` words it. During human
+review the operator had amended that entry in `.loom/work/stages/01-allocation-runtime.md:119-124` to
+`pub(crate) use format::budget::current_model_budget;`, so the swap broke aggregated-wiring. A
+dispute by wiring index could not name it either: `dispute-criteria --field wiring` indexes only the
+filing stage's own list, so an aggregated failure of another stage's entry has no direct index.
+
+**Why:** `amend` writes to the stage file, never to the plan file, and the daemon checks the stage
+file.
+
+**Prevention:** before changing code for a goal-backward or aggregated check, read the entry in
+`.loom/work/stages/<NN>-<stage>.md`. The tree exports `current_model_budget`
+(`signals/mod.rs:86`).
+
+## Hook-Test Fixtures Inside the Verified Worktree Resolved the Real Checkout (2026-11-14)
+
+**What happened:** integration-verify's hook criterion sets `TMPDIR=$PWD/target/tmp`, inside
+`.worktrees/<id>`, so a fixture under TMPDIR sat in the live worktree. `loom_cwd_worktree` (a greedy
+`.worktrees` regex) treated its cwd as that worktree, `git rev-parse` climbed from a fake `.git`
+directory into the real checkout, and the `loom` binary resolved a nested fixture project to the
+enclosing project's `.loom/work`. Separately, `_loom_git_no_repo` (`loom-hooks/_git-command.sh:217`)
+set `GIT_CEILING_DIRECTORIES` to the scratch root, but git never applies a ceiling to its starting
+directory, so a search starting at the scratch root climbed into any repository that held
+`LOOM_SCRATCH_DIR` and refused a legitimate `mkdir $S/x && cd $S/x && git init && git commit`. A
+fixture that creates a transient path inside the worktree can also fail the completion run with
+"untracked completion input": `reject_untracked` (`handoff/completion/content.rs:57-71`) pairs
+`git ls-files --others` with a separate ignored-output listing, so a path that appears or vanishes
+between the two reads counts as untracked
+(`worktree-isolation-traversal-resolve.sh:136` creates and removes a symlink under `target/tmp`).
+
+**Why:** a fixture's location decided the project, repository and worktree the code under test saw.
+
+**Prevention:** build a neutral fixture under `fixture_base` (`loom-hooks/tests/_fixture_base.sh`),
+which moves a worktree-located base to `/tmp/claude-<uid>/loom-fixtures/<closed uuid>`; a fixture
+repository is a real `git init`, never `mkdir .git`. The ceiling is the scratch root's parent when
+the search starts at the root (regression case `commit-filter-scratch-repo.sh`, "scratch directory
+inside another repository"). Run `loom-hooks/tests/run-all.sh` from a neutral copy when judging a
+hook change: inside a stage worktree it fails six cases from ambient `LOOM_*` env and the commit
+filter, and the same three cases fail at HEAD. Judge a host-only failure, such as
+`cache_input_runner_tests::unreadable_and_over_budget_inputs_bypass` (a `chmod 000` input the agent
+sandbox cannot reproduce), from the daemon's host run.
+
+## Tool and Template Slips of One Line Each (2026-11-14)
+
+- **`grep` instead of `rg`**, twice, once inside a `bash -c` block, where the prefer-modern-tools
+  hook warned after the call ran. Use `rg -n` for every content search, including JSON manifests.
+- **`git rm` staged a deletion.** Subagents delete with `rm` and leave the index alone; staging is
+  the main agent's. `git restore --staged <file>` undoes it.
+- **A no-op `Edit`** (`old_string` equal to `new_string`) written as a verification step. Verify
+  with `rg`.
+- **`AGENTS.md.template` failed MD046** at HEAD: three `loom memory note` lines sat in an indented
+  code block under "Inside a loom stage". Fenced as `text`, wording unchanged. Run
+  `markdownlint-cli2` on a template after editing it.
+- **The contract signal said "No scaffold edits: every contract file is already collected"**, but
+  the freeze refused until `signals/mod.rs` declared the `#[cfg(test)] mod`
+  (`allocation_contract_tests`). Declare a contract test file in its parent `mod.rs` first
+  ([code-quality-and-hook-debt](../concerns/code-quality-and-hook-debt.md)).

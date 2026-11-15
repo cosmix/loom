@@ -83,17 +83,20 @@ Three moving parts:
    (`plan/schema/types.rs`) and `Stage` (`models/stage/types.rs`), both `#[serde(default)]`; copied
    at `commands/init/plan_setup.rs` and onto the signal's `EmbeddedContext` at
    `orchestrator/signals/generate.rs`. Query it through `includes_codex()` / `includes_claude()` /
-   `preferred()` / `is_mixed()` — never by comparing the whole list, which is what made the original
-   scalar design wrong.
-2. **ORDER IS THE PREFERENCE, MEMBERSHIP IS THE LICENSE.** These are two different questions and
-   the code must not conflate them:
-   - `preferred()` (first element) = the lane routine implementation reaches for.
+   `first_listed()` / `is_mixed()` — never by comparing the whole list, which is what made the
+   original scalar design wrong.
+2. **MEMBERSHIP IS THE LICENSE; ORDER CARRIES NO ROUTING MEANING.** These are two different
+   questions and the code must not conflate them:
+   - `first_listed()` (first element, `models/stage/implementers.rs`) reports the first lane and
+     nothing more. No lane is first, preferred or default: the orchestrator picks a lane per piece by
+     its nature and by quota ([Codex when appropriate](../patterns/subagent-hierarchy.md#model-playbook-orchestration-model-is-per-stage-type-configurable)).
+     Only tests call it.
    - `includes_codex()` = whether the codex safety doctrine must be emitted.
 
-   Gating doctrine on the _preference_ rather than on _membership_ is a real bug: a stage listing
-   `["claude", "codex"]` may still spawn a codex subagent, and would then run with none of the
-   blast-radius rules. That is exactly the hole the original `implementer == Codex` equality check
-   left, and `tests_cache.rs` now pins both the mixed-signal and mixed-recovery cases against it.
+   Gating doctrine on the first-listed lane rather than on _membership_ is a real bug: a stage
+   listing `["claude", "codex"]` may still spawn a codex subagent, and would then run with none of
+   the blast-radius rules. That is exactly the hole the original `implementer == Codex` equality
+   check left, and `tests_cache.rs` pins both the mixed-signal and mixed-recovery cases against it.
 
    Validation (`plan/schema/validation.rs`) REJECTS an empty list and a repeated lane (order would
    be ambiguous), and WARNS when codex is listed on a knowledge, knowledge-distill, or
@@ -108,18 +111,21 @@ Three moving parts:
    (`cache.rs`). The recovery path emits it too (`recovery_format.rs`), which was a real gap fixed
    by `d1530e0c`; without it a recovered or retried codex stage loses its whole doctrine block.
    Model/effort are interpolated from `CODEX_IMPLEMENTER_MODEL_TERRA = "gpt-6.1-terra"`,
-   `CODEX_IMPLEMENTER_MODEL_LUNA = "gpt-6-luna"`, and `CODEX_IMPLEMENTER_EFFORT = "xhigh"`
-   (`loom/src/codex.rs`) rather than hardcoded, and `tests_doctrine.rs` asserts BLOCK-B contains
-   all three — so changing `codex.rs` without updating the prose surfaces fails the build. Terra is
-   the tier for common implementation and integration tests; luna does boilerplate, scaffolding,
-   and simple unit tests only when the user or plan asks for it; haiku takes that work by default.
+   `CODEX_IMPLEMENTER_MODEL_SOL = "gpt-6.1-sol"`, `CODEX_IMPLEMENTER_MODEL_LUNA = "gpt-6-luna"`,
+   and `CODEX_IMPLEMENTER_EFFORT = "xhigh"` (`loom/src/codex.rs:7-16`) rather than hardcoded, and
+   `tests_doctrine.rs` asserts BLOCK-B contains all four — so changing `codex.rs` without
+   updating the prose surfaces fails the build. Tiers: terra takes well-specified implementation,
+   integration tests, boilerplate, scaffolding and simple unit tests; sol takes a substantial
+   well-specified unit (about 4 to 6 file-sized changes) or a terra unit that failed once; luna
+   runs only when the user or plan asks for it. The failure ladder is terra, sol, then Claude at
+   the tier the piece needs. The section sits in `format/codex.rs`, not `format/sections.rs`.
 4. **Settings carry-forward.** `PRESERVED_SETTINGS_KEYS` / `preserve_unowned_keys`
    (`loom/src/sandbox/settings.rs`) — see the scope section below.
 
-Do NOT confuse the two implementer-lane tiers — `gpt-6.1-terra` and `gpt-6-luna` (both
-`codex.rs`) — with the `loom pressure` review model: `gpt-6.1-sol` by default
-(`DEFAULT_PRESSURE_CODEX_MODEL` in `codex.rs`), falling back to `gpt-6-sol` when the account
-lacks it. The forwarder lane never falls back. `CODEX_MODELS` in `codex.rs` lists every id.
+Do NOT confuse the implementer-lane tiers (`CODEX_IMPLEMENTER_MODEL_*` in `codex.rs`) with the
+`loom pressure` review model: `gpt-6.1-sol` by default (`DEFAULT_PRESSURE_CODEX_MODEL` in
+`codex.rs`), falling back to `gpt-6-sol` when the account lacks it. The forwarder lane never falls
+back. `CODEX_MODELS` in `codex.rs` lists every id.
 
 ## Install scope: user or project, not local
 
@@ -174,7 +180,7 @@ this instance follows.
 
 ## The loom-codex-forwarder lane
 
-Loom's doctrine now spawns `subagent_type: "loom-codex-forwarder"` for all codex implementation
+Loom's doctrine spawns `subagent_type: "loom-codex-forwarder"` for all codex implementation
 work, never the plugin agent directly. The rogue-wrapper incident (see
 [Codex Lane Rogue Wrapper](../mistakes/codex-lane-rogue-wrapper.md)) showed the plugin agent's
 `tools: Bash` frontmatter is not enforced for in-process subagents: a wrapper holding a codex
@@ -278,7 +284,7 @@ directory find a phantom repository.
 Stage licensing (`implementers` listing `codex`) permits the lane; availability additionally requires a resolvable Codex CLI and a regular, non-symlink companion file at the version pinned by `loom-hooks/codex-forward.sh`. `loom/src/codex.rs` reads that same embedded wrapper pin and `codex_lane_available()` caches the result for the daemon lifetime. The check conservatively requires the companion even where the direct lane can run.
 
 - `commands/run/` emits an advisory warning when the lane is unavailable; it does not block a run.
-- Signal generation supplies fallback guidance instead of licensing `loom-codex-forwarder` when the lane is unavailable.
+- Signal generation supplies fallback guidance instead of licensing `loom-codex-forwarder` when the lane is unavailable: terra- and sol-tier work goes to sonnet (`loom-software-engineer`), boilerplate, scaffolding and simple unit tests to haiku (`loom-software-developer`) (`format/codex.rs:51-52`).
 - The check does not mutate stage state or the `implementers` list.
 
 ## What Codex Actually Reads
