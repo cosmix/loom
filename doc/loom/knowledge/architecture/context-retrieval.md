@@ -328,8 +328,9 @@ consumer means calling that function, not reimplementing the pipeline.
 ## Layering
 
 `context` uses the neutral filesystem, model, language and Git layers. Source graph
-refresh reads scalar Git values through `run_git_checked`, NUL-delimited records
-through `run_git_records`, and committed source bytes through `run_git_stream`.
+refresh reads Git values and NUL-delimited records through `WorktreeGit::run_checked`,
+parses status through `git::status_entries::parse_porcelain_v1_z`, and reads committed
+source bytes through `run_git_stream`.
 `context::worktree_graph` also uses branch/worktree helpers and byte-preserving
 record readers. `source_graph::read::SourceRead` hashes the complete input through
 a fixed buffer while retaining at most the extraction cap.

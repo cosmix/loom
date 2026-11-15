@@ -69,8 +69,6 @@ Robustness:
   summary and never appears in `status`.
 - `seal.rs:93` rebuilds `drafts/<id>.md` while `brief` prints `claims::draft_path` (`paths.drafts`); derive both from one
   helper before `RuntimePaths.drafts` can change.
-- `commands/plan/summary.rs` `root()` runs `output.trim()` on the repository path; `run_git_checked` already trims
-  (`git/runner.rs:193`), so only `run_git_records` (untrimmed, `pub(crate)`) would preserve a path with edge whitespace.
 - `fs/work_dir/config_sections/plan_config.rs` `read_plan_config` drops the whole `[planning]` table without a log line on
   one bad key; a `warn` would help.
 - `SummaryModels::load` returns `Result` but never errors and its only caller is `tests/planning_summary_cli_contracts.rs`;

@@ -57,8 +57,9 @@ drives the same builder.
   (`refresh/source_graph.rs`), matched against the FIRST path segment only, applied to
   enumerated, untracked and dirty paths alike. `.loom` and `.work` are two separate
   top-level entries; there is no compound `.loom/work` entry.
-- Git scalar results use `run_git_checked`; NUL-delimited enumeration and status
-  use untrimmed `run_git_records`. Dirty base blobs use `run_git_stream` and
+- Git results, scalar and NUL-delimited enumeration, go through `WorktreeGit::run_checked`;
+  status listings parse untrimmed through `git::status_entries::parse_porcelain_v1_z`.
+  Dirty base blobs use `run_git_stream` and
   `SourceRead::read`, preserving leading/trailing whitespace and non-UTF8 bytes.
   On-disk refresh and verification graph reads share `source_graph::read`:
   fixed-buffer full-input hashes and line counts, with at most 512 KiB retained.

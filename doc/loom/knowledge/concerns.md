@@ -225,13 +225,11 @@ Open teardown, race, transcript-mapper, chat-wire and trust-entry items from the
 
 ## Plan Chat Follow-ups
 
-The chat plan left the live-session operator test unrun, a SHA-256 ref gap and git edge cases in the review server, reconnect, draft and layout-state defects in the chat model, accessibility notes, and a list of duplicated helpers and missing tests, each with its file. → [Plan Chat Follow-ups](concerns/plan-chat-followups.md) The planner UI repair left the Codex summary backend unrun live, raw server strings outside the Untrusted rule, duplicated helpers and unshot layout details. → [Planner UI Repair Follow-ups](concerns/planner-ui-repair-followups.md) The planner redesign left the pressure mark split between the spine and the Rust step mark, owner-watch limits (one start, one kill attempt, children not terminated), chat context-attach edges, journey-script and bundle-rule gaps, and tracked-bundle and sealed-summary rebuilds, in the same file under "Planner redesign follow-ups". Claude Code's TMPDIR is read-only in sandboxed sessions, which breaks Bash exit codes and relayed loom commands. → [Session Deny on TMPDIR](concerns/session-tmpdir-deny.md)
+The chat plan left the live-session operator test unrun, a SHA-256 ref gap and git edge cases in the review server, reconnect, draft and layout-state defects in the chat model, accessibility notes, and a list of duplicated helpers and missing tests, each with its file. → [Plan Chat Follow-ups](concerns/plan-chat-followups.md) The planner UI repair left the Codex summary backend unrun live, raw server strings outside the Untrusted rule, duplicated helpers and unshot layout details. → [Planner UI Repair Follow-ups](concerns/planner-ui-repair-followups.md) The planner redesign left the pressure mark split between the spine and the Rust step mark, owner-watch limits (one start, one kill attempt, children not terminated), chat context-attach edges, journey-script and bundle-rule gaps, and tracked-bundle and sealed-summary rebuilds, in the same file under "Planner redesign follow-ups". Claude Code's TMPDIR stays writable in sandboxed sessions because a deny would break Bash exit codes and relayed loom commands. → [State Confinement Gaps](concerns/state-confinement-gaps.md)
 
 ## macOS Window Teardown Closes by Title and Is Unverified (GitHub #7)
 
-Teardown closes an iTerm2 or Terminal.app window by its title. The iTerm2 spawn arm names the window and spawn and teardown address the same application name, but no macOS run of the close is on record, and Terminal.app's displayed title may not match.
-
-Full detail: [iterm2-window-teardown.md](concerns/iterm2-window-teardown.md).
+Teardown closes an iTerm2 or Terminal.app window by its title. The iTerm2 spawn arm names the window and spawn and teardown address the same application name, but no macOS run of the close is on record, and Terminal.app's displayed title may not match. Full detail: [iterm2-window-teardown.md](concerns/iterm2-window-teardown.md).
 
 ## Planner Review Fixes Follow-ups
 
@@ -243,8 +241,8 @@ Operator checks no stage sandbox can run (a rebuilt metaplan summary, a real Sto
 
 ## Planner Follow-ups Follow-ups
 
-Open items from the plan-summary levels and fragment column, the three-theme palette, the Hearth chat (client `userWrote` mirror, closing block limits), the spine and run reviews, the requirement walk's "could not check here" lines and the operator checks no stage sandbox can run. → [Planner follow-ups open items](concerns/planner-follow-ups-followups.md)
+Open items from the plan-summary levels and fragment column, the three-theme palette, the Hearth chat (client `userWrote` mirror, closing block limits), the spine and run reviews, the requirement walk's "could not check here" lines and the operator checks no stage sandbox can run. → [Planner follow-ups open items](concerns/planner-follow-ups-followups.md) Trace screens: unapplied review suggestions on the trace screens (focus and status regions on the Coverage and Findings pages, popover overflow, comment and DESIGN.md drift, two missing tests), a server/browser mismatch on `(my call` inside code fences, four open questions (spine group counts, the chat greeting's face, mermaid chunk warnings) and two screens no stage sandbox can walk. → [Trace Screens Follow-ups](concerns/planner-follow-ups-followups.md)
 
-## Trace Screens Follow-ups
+## Open Items After the Helper Consolidation
 
-Unapplied review suggestions on the trace screens (focus and status regions on the Coverage and Findings pages, popover overflow, comment and DESIGN.md drift, two missing tests), a server/browser mismatch on `(my call` inside code fences, four open questions (spine group counts, the chat greeting's face, mermaid chunk warnings) and two screens no stage sandbox can walk. → [Trace Screens Follow-ups](concerns/planner-follow-ups-followups.md)
+Symlink, FIFO and size-cap gaps in writers the consolidation left alone, remaining private-index and read-only-runner copies, process-group diagnostics, frontmatter and path edge cases, and a proposal to make `loom subagents watch` wait for codex forwarder registration. See [consolidation-followups](concerns/consolidation-followups.md).

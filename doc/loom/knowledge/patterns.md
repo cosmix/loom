@@ -184,3 +184,7 @@ under `node_modules/` — the Read tool's worktree guard opens images by path, a
 Dependencies merge to main before dependents start; `MergeLock` serializes concurrent merges. Covers the merge-conflict recovery flow (anti-respawn signal, attribution-aware recovery via `attribute_main_repo_merge`, the pure `route_complete_for_conflicts` routing helper), the three-file dispute authority split, and the plan-amendment atomic write.
 
 → [Merge & Recovery](patterns/merge-and-recovery.md)
+
+## Canonical Helpers
+
+One implementation per cluster: current branch, repo root and HEAD, change listings, status parsing, stage blocking, appends and JSONL reads, atomic writes, bounded reads, frontmatter boundary, lexical paths, text, hash and time helpers, process groups. The table, the kept copies with their reasons, and the git helper properties are in [canonical-helpers](patterns/canonical-helpers.md); the drift bugs the consolidation fixed are in [consolidation-drift](mistakes/consolidation-drift.md).
