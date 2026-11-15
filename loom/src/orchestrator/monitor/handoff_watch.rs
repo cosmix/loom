@@ -31,6 +31,7 @@ use crate::fs::safe_read::read_bounded;
 use crate::handoff::HandoffOrigin;
 use crate::models::session::Session;
 use crate::models::stage::{Stage, StageStatus};
+use crate::parser::frontmatter::split_frontmatter_raw;
 
 use super::events::MonitorEvent;
 
@@ -228,20 +229,21 @@ fn frontmatter_head(root: &Path, filename: &str) -> Result<Option<String>> {
     }
     let head = String::from_utf8_lossy(&document[..document.len().min(FRONTMATTER_SCAN_BYTES + 1)]);
     let trimmed = head.trim_start();
-    let Some(body) = trimmed.strip_prefix("---\n") else {
-        if trimmed.starts_with("---") {
-            bail!("Handoff frontmatter is incomplete");
+    match split_frontmatter_raw(trimmed) {
+        Ok((yaml, _)) => Ok(Some(yaml.to_string())),
+        Err(_)
+            if trimmed
+                .lines()
+                .next()
+                .is_some_and(|line| line.trim() == "---") =>
+        {
+            bail!("Handoff frontmatter is incomplete or exceeds {FRONTMATTER_SCAN_BYTES} bytes")
         }
-        return Ok(None);
-    };
-    let Some(end) = body
-        .find("\n---\n")
-        .or_else(|| body.strip_suffix("\n---").map(|s| s.len()))
-    else {
-        bail!("Handoff frontmatter is incomplete or exceeds {FRONTMATTER_SCAN_BYTES} bytes");
-    };
-    Ok(Some(body[..end].to_string()))
+        Err(_) => Ok(None),
+    }
 }
 
+#[cfg(test)]
+mod frontmatter_tests;
 #[cfg(test)]
 mod tests;

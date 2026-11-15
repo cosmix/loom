@@ -4,7 +4,7 @@
 use std::collections::HashSet;
 use std::path::Path;
 
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 
 use crate::git::status_entries::{parse_porcelain_v1_z, StatusEntry, PORCELAIN_V1_Z};
 use crate::git::worktree::WorktreeGit;
@@ -69,7 +69,9 @@ impl Orchestrator {
 
     /// Block the stage with `reason`. Recording `failure_info` keeps `loom status` from
     /// reading the block as an agent's; an infrastructure error is never auto-retried.
-    /// `Ok(false)` whether or not the block persisted: the stage must not spawn either way.
+    /// `Ok(false)` once the block persisted; `Err` naming the stage when it did not, so
+    /// the scheduling report records the stage as ownership-uncertain instead of
+    /// leaving it Queued with no visible reason.
     fn block_for_provision(&mut self, stage_id: &str, reason: String) -> Result<bool> {
         eprintln!("Provisioning failed for '{stage_id}': {reason}");
         let evidence = reason.lines().map(str::to_string).collect();
@@ -77,7 +79,11 @@ impl Orchestrator {
             close_reason: Some(reason),
             ..StageBlock::new(FailureType::InfrastructureError, evidence)
         };
-        self.block_stage(stage_id, block);
+        if !self.block_stage(stage_id, block) {
+            return Err(anyhow!(
+                "provision failed for stage '{stage_id}' and the Blocked state could not be persisted"
+            ));
+        }
         Ok(false)
     }
 }

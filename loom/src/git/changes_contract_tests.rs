@@ -92,8 +92,8 @@ fn rename_lists_both_paths() {
     git(repo.path(), &["mv", "a.rs", "b.rs"]);
     git(repo.path(), &["commit", "-q", "-m", "move"]);
 
-    let listed =
-        changes_since(&WorktreeGit::discovered(repo.path()), &base).expect("listing succeeds");
+    let listed = changes_since(&WorktreeGit::discovered(repo.path()), &base, None)
+        .expect("listing succeeds");
 
     assert_eq!(listed, names(&["a.rs", "b.rs"]));
 }
@@ -107,8 +107,8 @@ fn changes_since_skips_scaffold() {
     std::fs::create_dir_all(repo.path().join("src")).expect("mkdir src");
     std::fs::write(repo.path().join("src/new.rs"), "fn new() {}\n").expect("write new.rs");
 
-    let listed =
-        changes_since(&WorktreeGit::discovered(repo.path()), &base).expect("listing succeeds");
+    let listed = changes_since(&WorktreeGit::discovered(repo.path()), &base, None)
+        .expect("listing succeeds");
 
     assert_eq!(listed, names(&["src/new.rs"]));
 }

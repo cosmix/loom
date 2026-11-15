@@ -9,9 +9,7 @@ use std::os::unix::fs::PermissionsExt;
 use tempfile::TempDir;
 
 use crate::commands::self_update::client::create_http_client;
-use crate::commands::self_update::signature::{
-    compute_sha256_checksum, minisign_public_key, verify_binary_signature,
-};
+use crate::commands::self_update::signature::{minisign_public_key, verify_binary_signature};
 use crate::commands::self_update::{
     asset_download_url, latest_release_url, release_asset_for_target, run_asset_install,
     signature_asset_name,
@@ -51,21 +49,6 @@ fn test_rejects_malformed_public_key() {
 #[test]
 fn embedded_public_key_parses() {
     assert!(minisign_verify::PublicKey::from_base64(minisign_public_key()).is_ok());
-}
-
-#[test]
-fn test_compute_sha256_checksum_consistency() {
-    let checksum = compute_sha256_checksum(b"test data");
-    assert_eq!(checksum, compute_sha256_checksum(b"test data"));
-    assert_eq!(checksum.len(), 64);
-}
-
-#[test]
-fn test_compute_sha256_checksum_different_data() {
-    assert_ne!(
-        compute_sha256_checksum(b"original"),
-        compute_sha256_checksum(b"modified")
-    );
 }
 
 #[test]

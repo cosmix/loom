@@ -214,7 +214,7 @@ fn the_view_shows_the_url_as_parsed_and_cut_to_a_bound() {
     assert_eq!(homograph.host.as_deref(), Some("xn--pple-43d.com"));
     assert_eq!(fetch("not a url").url, "not a url");
     let long = fetch(&format!("https://docs.rs/{}", "a".repeat(5000)));
-    assert_eq!(long.url.chars().count(), MAX_SHOWN_URL_CHARS + 1);
+    assert_eq!(long.url.chars().count(), MAX_SHOWN_URL_CHARS);
     assert!(long.url.starts_with("https://docs.rs/aaa") && long.url.ends_with('…'));
     assert_eq!(long.host.as_deref(), Some("docs.rs"));
 }

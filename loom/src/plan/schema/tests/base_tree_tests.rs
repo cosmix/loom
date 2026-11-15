@@ -162,3 +162,18 @@ fn skips_with_one_note_when_head_does_not_resolve() {
     assert!(report.warnings.is_empty());
     assert!(report.note.is_some_and(|note| note.contains("HEAD")));
 }
+
+/// A git failure inside a directory that claims a repository is named in the note, not read as
+/// "no HEAD".
+#[test]
+fn a_git_failure_is_named_in_the_skip_note() {
+    let temp = TempDir::new().unwrap();
+    std::fs::create_dir(temp.path().join(".git")).unwrap();
+    let stage = standard_stage(vec![simple("rg -q present src/lib.rs")]);
+
+    let report = check_base_tree(&[stage], Some(temp.path()));
+
+    assert!(report.warnings.is_empty());
+    let note = report.note.expect("a skipped check leaves a note");
+    assert!(note.contains("git cannot read HEAD"), "{note}");
+}

@@ -1,10 +1,8 @@
 //! Shared repository coordinates, changed inputs, and coverage reporting.
 use crate::context::source_graph::FileCoverage;
 use crate::context::worktree_graph::{build_for_worktree, WorktreeGraph};
-use crate::git::changes::{changed_names, merge_base, untracked_names, DiffNames};
-use crate::git::worktree::is_worktree_scaffold_path;
+use crate::git::changes::{changes_since, merge_base};
 use crate::verify::review::fingerprint::checkout_git;
-use crate::verify::tool_artifacts::is_tool_artifact;
 use anyhow::Result;
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
@@ -27,21 +25,7 @@ pub(crate) fn repository_root(directory: &Path) -> Result<PathBuf> {
 pub(crate) fn changed_files(root: &Path, base: &str, added_only: bool) -> Result<BTreeSet<String>> {
     let git = checkout_git(root)?;
     let fork = merge_base(&git, base, "HEAD")?;
-    let query = DiffNames {
-        from: &fork,
-        to: None,
-        filter: Some(if added_only { "A" } else { "ACMRT" }),
-        all_submodules: false,
-        pathspecs: &[],
-    };
-    let mut paths = changed_names(&git, &query)?;
-    paths.extend(
-        untracked_names(&git, &[])?
-            .into_iter()
-            .filter(|path| !is_tool_artifact(git.work_tree(), path)),
-    );
-    paths.retain(|path| !is_worktree_scaffold_path(path));
-    Ok(paths)
+    changes_since(&git, &fork, Some(if added_only { "A" } else { "ACMRT" }))
 }
 
 pub(crate) fn graph(root: &Path) -> Result<WorktreeGraph> {

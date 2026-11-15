@@ -3,19 +3,14 @@
 //! Every read names an anchor `root` and resolves the path beneath it through
 //! `crate::fs::safe_read`, which opens each component below `root` without
 //! following a symlink. A symlink, a non-regular file, a path outside `root`,
-//! or a file over `MAX_FILE_BYTES` reads as absent, so a checkout cannot
+//! or a file over 256 KiB (`language::evidence::MAX_FILE_BYTES`) reads as absent, so a checkout cannot
 //! redirect discovery outside itself or stall a prompt hook on a huge file.
 
 use std::path::Path;
 
-pub(super) use crate::language::evidence::{files_where, has_dependency, read_json};
+pub(super) use crate::language::evidence::{files_where, has_dependency, read_bounded, read_json};
 use regex::Regex;
 use serde_json::Value;
-
-use crate::fs::safe_read;
-use crate::fs::safe_read::is_regular_no_follow;
-
-const MAX_FILE_BYTES: usize = 256 * 1024;
 /// Whether a line of `path` that is not a `#` comment matches `pattern`; a
 /// missing, unreadable or oversized file never matches.
 pub(super) fn has_line(root: &Path, path: &Path, pattern: &Regex) -> bool {
@@ -41,14 +36,4 @@ pub(crate) fn declares_dependencies(root: &Path, package_dir: &Path) -> bool {
             .and_then(Value::as_object)
             .is_some_and(|entries| !entries.is_empty())
     })
-}
-
-/// Filter obvious non-files early; the anchored reader enforces the actual
-/// symlink and non-regular-file checks even if the path changes after this filter.
-fn read_bounded(root: &Path, path: &Path) -> Option<Vec<u8>> {
-    let relative = path.strip_prefix(root).ok()?;
-    if !is_regular_no_follow(path) {
-        return None;
-    }
-    safe_read::read_bounded(root, relative, MAX_FILE_BYTES).ok()
 }

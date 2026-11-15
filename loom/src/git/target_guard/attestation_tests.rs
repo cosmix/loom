@@ -224,3 +224,37 @@ fn pending_hold_walks_the_ledger_while_latched() {
     assert!(matches!(&hold.reasons[..], [HoldReason::Unattested { .. }]));
     assert_eq!(recorded_hold(&repo.work, "main").unwrap(), None);
 }
+
+/// A worktree's `.loom/work` is a symlink to the main work directory; the ledger
+/// must be created in the real directory through it.
+#[test]
+fn a_ledger_created_through_a_work_dir_symlink_lands_in_the_real_directory() {
+    let temp = tempfile::TempDir::new().unwrap();
+    let main_work = temp.path().join("main_work");
+    let link_work = temp.path().join("link_work");
+    std::fs::create_dir(&main_work).unwrap();
+    std::os::unix::fs::symlink(&main_work, &link_work).unwrap();
+
+    create_ledger(&link_work).unwrap();
+
+    let ledger = main_work.join(LEDGER_FILE);
+    assert!(std::fs::symlink_metadata(&ledger)
+        .unwrap()
+        .file_type()
+        .is_file());
+}
+
+/// A symlink planted at the ledger sends no attestation line into its target.
+#[test]
+fn a_planted_ledger_symlink_is_refused() {
+    let repo = repo();
+    let outside = tempfile::TempDir::new().unwrap();
+    let target = outside.path().join("target");
+    std::fs::write(&target, "untouched\n").unwrap();
+    std::os::unix::fs::symlink(&target, repo.work.join(LEDGER_FILE)).unwrap();
+    let id = "a".repeat(40);
+
+    assert!(append_attestation(&repo.work, "refs/heads/main", &id, &id).is_err());
+    assert!(create_ledger(&repo.work).is_err());
+    assert_eq!(std::fs::read_to_string(&target).unwrap(), "untouched\n");
+}

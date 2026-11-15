@@ -36,6 +36,7 @@ use std::path::Path;
 use crate::context::extract::dialect::{dialect_for_path, DialectSpec};
 use crate::context::graph_store::ResolvedGraph;
 use crate::context::source_graph::SourceNodeKind;
+use crate::fs::lexical::normalize_lexically;
 
 /// Families whose files declare a namespace or package in a `Module` node.
 const NAMESPACE_FAMILIES: [&str; 3] = ["java", "csharp", "php"];
@@ -334,25 +335,15 @@ fn join(directory: &str, relative: &str) -> String {
     }
 }
 
-/// Collapse `.` and `..` segments. `None` when a `..` climbs above the root.
-fn normalize(path: &str) -> Option<String> {
-    let mut kept: Vec<&str> = Vec::new();
-    for segment in path.split('/') {
-        match segment {
-            "" | "." => {}
-            ".." => {
-                kept.pop()?;
-            }
-            other => kept.push(other),
-        }
-    }
-    Some(kept.join("/"))
-}
-
 /// `spec` resolved against the directory of `from`, for a spec written relative
-/// to the importing file.
+/// to the importing file. `None` when it climbs above the repository root or, from a
+/// file at the root, names an absolute path (which no repository-relative index holds).
 fn relative_to(from: &str, spec: &str) -> Option<String> {
-    normalize(&join(directory_of(from), spec))
+    let normal = normalize_lexically(Path::new(&join(directory_of(from), spec)))?;
+    if normal.has_root() {
+        return None;
+    }
+    normal.to_str().map(str::to_owned)
 }
 
 /// `path` and then, dropping one trailing segment at a time, each shorter prefix
@@ -368,4 +359,27 @@ fn prefixes(path: &str, min_segments: usize) -> impl Iterator<Item = &str> {
             .filter(|head| head.split('/').count() >= min_segments);
         Some(current)
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::relative_to;
+
+    #[test]
+    fn a_spec_folds_against_the_importing_files_directory() {
+        assert_eq!(
+            relative_to("src/a/b.php", "../lib/x.php").as_deref(),
+            Some("src/lib/x.php")
+        );
+        assert_eq!(
+            relative_to("index.php", "./x.php").as_deref(),
+            Some("x.php")
+        );
+    }
+
+    #[test]
+    fn a_spec_that_climbs_above_the_root_or_is_absolute_does_not_resolve() {
+        assert_eq!(relative_to("src/a.php", "../../x.php"), None);
+        assert_eq!(relative_to("index.php", "/etc/x.php"), None);
+    }
 }

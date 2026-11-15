@@ -94,6 +94,8 @@ pub use store::{replay, AppendOutcome, LifecycleIndex};
 pub(crate) use claude_files::reject_symlink_components;
 
 #[cfg(test)]
+mod codex_event_id_tests;
+#[cfg(test)]
 mod store_append_tests;
 #[cfg(test)]
 mod tests;

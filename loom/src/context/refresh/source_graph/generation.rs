@@ -6,6 +6,7 @@ use std::path::Path;
 use super::excluded;
 use crate::context::source_graph::body_hash;
 use crate::context::source_graph::read::read_source;
+use crate::git::revision::require_head_commit;
 use crate::git::status_entries::{parse_porcelain_v1_z, StatusEntry, PORCELAIN_V1_Z};
 use crate::git::worktree::WorktreeGit;
 
@@ -19,7 +20,7 @@ pub(crate) struct WorkingTree {
 
 pub(crate) fn working_tree(project_root: &Path) -> Result<WorkingTree> {
     let git = WorktreeGit::pinned_checkout(project_root)?;
-    let head = git.run_checked(&["rev-parse", "HEAD"])?.trim().to_string();
+    let head = require_head_commit(&git)?;
     let status = git.run_checked(&PORCELAIN_V1_Z)?;
     let dirty = dirty_paths(parse_porcelain_v1_z(status.as_bytes())?);
     let generation = generation(project_root, &head, &dirty)?;

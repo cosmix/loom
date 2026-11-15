@@ -9,11 +9,12 @@
 
 use anyhow::{ensure, Context, Result};
 use nix::unistd::{access, AccessFlags};
-use std::fs::{File, OpenOptions};
+use std::fs::File;
 use std::io::{ErrorKind, Write};
 use std::path::{Path, PathBuf};
 
 use super::{HOOK_MARKER, LEDGER_FILE};
+use crate::fs::safe_fs::safe_open_append;
 use crate::git::hooks::{configured_hooks_path, installable_hooks_dir};
 use crate::git::runner::run_git_checked;
 
@@ -116,12 +117,14 @@ fn common_dir(repo_root: &Path) -> Result<PathBuf> {
 }
 
 fn open_ledger(work_dir: &Path) -> Result<File> {
-    let path = work_dir.join(LEDGER_FILE);
-    OpenOptions::new()
-        .append(true)
-        .create(true)
-        .open(&path)
-        .with_context(|| format!("Failed to open {}", path.display()))
+    let ledger = work_dir.join(LEDGER_FILE);
+    // A worktree's `.loom/work` is a symlink to the main work directory; resolve
+    // the anchor so the no-follow open applies to the ledger file itself.
+    let anchor = work_dir
+        .canonicalize()
+        .with_context(|| format!("Failed to open {}", ledger.display()))?;
+    safe_open_append(&anchor, Path::new(LEDGER_FILE))
+        .with_context(|| format!("Failed to open {}", ledger.display()))
 }
 
 /// Create the ledger, empty, unless it exists.

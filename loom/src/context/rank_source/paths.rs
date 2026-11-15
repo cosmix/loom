@@ -7,6 +7,8 @@ use crate::context::config::RetrievalConfig;
 use crate::context::lexical::{contains_whole_term, ExactGate, TermEvidence};
 use crate::context::rank::RankQuery;
 use crate::context::schema::SourceNode;
+use crate::fs::lexical::normalize_lexically;
+use std::path::Path;
 
 /// How the query named the node's file, when it did at all.
 pub(super) enum PathMatch {
@@ -97,17 +99,9 @@ pub fn join_working_dir(working_dir: Option<&str>, path: &str) -> Option<String>
     if base.starts_with('/') {
         return None;
     }
-    let mut segments: Vec<&str> = Vec::new();
-    for segment in base.split('/').chain(path.split('/')) {
-        match segment {
-            "" | "." => {}
-            ".." => {
-                segments.pop()?;
-            }
-            other => segments.push(other),
-        }
-    }
-    (!segments.is_empty()).then(|| segments.join("/"))
+    let joined = normalize_lexically(&Path::new(&base).join(&path))?;
+    let joined = joined.to_str()?;
+    (!joined.is_empty()).then(|| joined.to_owned())
 }
 
 /// Multiply a test file's score by `test_path_factor`.

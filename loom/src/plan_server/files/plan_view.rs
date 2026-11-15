@@ -8,7 +8,7 @@ use std::path::Path;
 use chrono::{DateTime, SecondsFormat, Utc};
 
 use crate::fs::safe_fs::{open_safely, safe_open_dirfd};
-use crate::plan::parser::{extract_yaml_metadata, parse_metadata};
+use crate::plan::parser::{extract_yaml_metadata, parse_error_text, parse_metadata};
 use crate::plan::schema::{detect_stage_type, StageDefinition, StageType};
 use crate::plan_server::wire::files::{
     ImplementsLink, PlanStateView, PlanView, StageRow, ValidationView,
@@ -75,7 +75,7 @@ fn parse_stages(yaml: Option<&str>, sections: &DocSections) -> (Vec<StageRow>, O
                 .collect(),
             None,
         ),
-        Err(error) => (Vec::new(), Some(format!("YAML parse error: {error:#}"))),
+        Err(error) => (Vec::new(), Some(parse_error_text(&error))),
     }
 }
 

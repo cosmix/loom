@@ -15,6 +15,7 @@ use serde_json::Value;
 use url::{Host, Url};
 
 use super::model::{FetchRule, FetchView};
+use crate::utils::truncate_for_display;
 use crate::web_server::http::MAX_BODY_BYTES;
 
 /// The tool these rules answer for; every other tool keeps its card.
@@ -178,15 +179,11 @@ pub fn fetch_view(input: &Value) -> FetchView {
 }
 
 /// The URL as the fetch will read it, the host in punycode so a look-alike shows as one, cut
-/// at `MAX_SHOWN_URL_CHARS`; text that is not a URL shows as it is.
+/// within `MAX_SHOWN_URL_CHARS` (the ellipsis included); text that is not a URL shows with its
+/// whitespace collapsed.
 fn shown_url(url: &str) -> String {
     let shown = Url::parse(url).map_or_else(|_| url.to_owned(), String::from);
-    if shown.chars().nth(MAX_SHOWN_URL_CHARS).is_none() {
-        return shown;
-    }
-    let mut cut: String = shown.chars().take(MAX_SHOWN_URL_CHARS).collect();
-    cut.push('…');
-    cut
+    truncate_for_display(&shown, MAX_SHOWN_URL_CHARS)
 }
 
 /// A name that reaches this machine or its own network instead of the internet: a single

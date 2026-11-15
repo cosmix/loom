@@ -12,6 +12,7 @@ use std::path::Path;
 use super::types::{StageDefinition, StageType};
 use crate::testrun::recognize::{has_flag, invocations, split_double_dash, strip_prefixes};
 use crate::testrun::{registry, TestRunnerAdapter};
+use crate::utils::truncate_for_display;
 
 /// Flags that select tests the adapter's full run does not execute, so a
 /// filtered run using them proves something the full-suite criterion does
@@ -268,7 +269,7 @@ pub(super) fn warn_full_suite_outside_integration_verify(
         let Some(run) = classify(command).filter(|run| run.full) else {
             continue;
         };
-        let head: String = command.chars().take(80).collect();
+        let head = truncate_for_display(command, 80);
         warnings.push(format!(
             "Stage '{}': Acceptance criterion #{} runs the whole test suite ({}) ('{}'); prove \
              this stage's own code with 'cargo test --lib <module>::' or a filtered run, and \

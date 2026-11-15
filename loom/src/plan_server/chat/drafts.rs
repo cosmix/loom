@@ -20,6 +20,7 @@ use serde::{Deserialize, Serialize};
 use self::store::Files;
 use super::{lock, ChatState};
 use crate::fs::safe_fs::{safe_create_dir_all, safe_replace_outside_workdir};
+use crate::models::dispute::truncate_to_byte_limit;
 use crate::plan_server::context::PlanContext;
 use crate::plan_server::request::{ApiRequest, ApiResponse};
 use crate::plan_server::routes::{BodyKind, Method, Role, RouteSpec};
@@ -173,11 +174,10 @@ fn cut(text: &str) -> String {
     if text.len() <= MAX_MESSAGE_BYTES {
         return text.to_owned();
     }
-    let mut end = MAX_MESSAGE_BYTES - CUT.len();
-    while !text.is_char_boundary(end) {
-        end -= 1;
-    }
-    format!("{}{CUT}", &text[..end])
+    format!(
+        "{}{CUT}",
+        truncate_to_byte_limit(text, MAX_MESSAGE_BYTES - CUT.len())
+    )
 }
 
 fn drafts_lock(state: &ChatState) -> MutexGuard<'_, ()> {
