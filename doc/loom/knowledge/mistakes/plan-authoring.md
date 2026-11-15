@@ -238,3 +238,13 @@ knowledge-distill the rewrite, or the stage changes it. Raise a cap to the measu
 **Prevention:** several libtest filters go after `--` (`cargo test --lib -- a:: b::`; the adapter sums `running N tests`). Read every dry-run Note for a criterion that should already pass, and run a new cargo command line once before writing it into a plan.
 
 **Fix:** the plan and briefs use the `--` form.
+
+## Stating one codex lane mode as the whole lane
+
+**What happened:** While pressure-testing the native Codex worker proposal (2026-11-15), the planner told the user that the legacy codex lane runs `danger-full-access` and relies on the session sandbox alone. The user corrected it: on Linux the lane normally runs through the companion, where Codex applies its own nested bubblewrap `workspace-write` sandbox; only the direct fallback (always on macOS) runs `codex exec --sandbox danger-full-access`.
+
+**Why:** An exploration report described `_codex-direct.py` only, and the planner generalised it without reading `architecture/execution-containment.md` (the lane table) or `loom-hooks/codex-forward.sh` (mode selection).
+
+**Prevention:** Before describing how the codex lane is confined, read the mode table in `architecture/execution-containment.md` and name the mode (companion or direct) with every claim. A design that replaces the lane states its sandbox choice per mode.
+
+**Fix:** The plan keeps Codex's `workspace-write` sandbox when bubblewrap nests inside the worker boundary and falls back to the external-sandbox policy otherwise (PLAN-native-codex-workers, Decision 4).
