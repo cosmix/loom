@@ -347,15 +347,23 @@ pub(super) fn apply_reject(
     Ok(())
 }
 
-/// What a criterion dispute contested, as `apply_reject`'s review reason names it.
-fn disputed_entry(kind: &DisputeKind) -> &'static str {
-    match kind {
-        DisputeKind::Criterion { field, .. } => match field {
-            CriterionField::Acceptance => "acceptance criterion",
-            CriterionField::Wiring => "wiring check",
-            CriterionField::WiringTests => "wiring test",
-        },
-        _ => "criterion",
+/// What a criterion dispute contested, as `apply_reject`'s review reason names
+/// it: `wiring check`, or `wiring check of stage 'a'` for another stage's.
+fn disputed_entry(kind: &DisputeKind) -> String {
+    let DisputeKind::Criterion {
+        field, owner_stage, ..
+    } = kind
+    else {
+        return "criterion".to_string();
+    };
+    let entry = match field {
+        CriterionField::Acceptance => "acceptance criterion",
+        CriterionField::Wiring => "wiring check",
+        CriterionField::WiringTests => "wiring test",
+    };
+    match owner_stage {
+        Some(owner) => format!("{entry} of stage '{owner}'"),
+        None => entry.to_string(),
     }
 }
 

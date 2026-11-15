@@ -139,6 +139,10 @@ pub enum Request {
         field: CriterionField,
         /// The disputed entries; the daemon sorts them and drops repeats.
         criterion_indices: Vec<usize>,
+        /// The completed stage whose `wiring` list the indices name, for an
+        /// integration-verify stage's aggregated wiring re-verification.
+        #[serde(default)]
+        owner_stage: Option<String>,
         reason: String,
         evidence_commit: Option<String>,
         failure_output: Option<String>, // pre-truncated to 4KB by the CLI

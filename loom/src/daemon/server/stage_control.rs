@@ -6,7 +6,7 @@
 use std::path::Path;
 
 use crate::daemon::protocol::{Request, Response};
-use crate::models::dispute::{CriterionField, DisputeKind};
+use crate::models::dispute::{CriterionTarget, DisputeKind};
 use crate::plan::schema::ContractChoices;
 
 /// Serve one `DisputeCriteria`.
@@ -19,7 +19,7 @@ fn serve_dispute_criteria(
     work_dir: &Path,
     stage_id: &str,
     session_id: &str,
-    criteria: (CriterionField, Vec<usize>),
+    criteria: CriterionTarget,
     reason: String,
     evidence_commit: Option<String>,
     failure_output: Option<String>,
@@ -121,6 +121,7 @@ pub(super) fn serve_stage_control(work_dir: &Path, request: Request) -> Response
             session_id,
             field,
             criterion_indices,
+            owner_stage,
             reason,
             evidence_commit,
             failure_output,
@@ -129,7 +130,11 @@ pub(super) fn serve_stage_control(work_dir: &Path, request: Request) -> Response
             work_dir,
             &stage_id,
             &session_id,
-            (field, criterion_indices),
+            CriterionTarget {
+                field,
+                criterion_indices,
+                owner_stage,
+            },
             reason,
             evidence_commit,
             failure_output,

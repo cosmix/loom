@@ -18,19 +18,11 @@ fn dispatch_dispute_criteria(args: DisputeCriteriaArgs) -> Result<()> {
     match CriteriaDispute::try_from(args)? {
         CriteriaDispute::Entry {
             stage_id,
-            field,
-            criterion_indices,
+            target,
             reason,
             evidence_commit,
             failure_output,
-        } => stage::dispute_criteria(
-            stage_id,
-            field,
-            criterion_indices,
-            reason,
-            evidence_commit,
-            failure_output,
-        ),
+        } => stage::dispute_criteria(stage_id, target, reason, evidence_commit, failure_output),
         CriteriaDispute::ImpactTests(filing) => stage::file_dispute(filing),
     }
 }

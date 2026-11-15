@@ -157,11 +157,15 @@ pub fn build(plan_path: &Path, stage: &Stage, dispute: &DisputeRequest, work_dir
         DisputeKind::Criterion {
             criterion_indices,
             field,
+            owner_stage,
         } => match field {
             CriterionField::Acceptance => criterion::build(&input, plan_path, criterion_indices),
-            CriterionField::Wiring => {
-                criterion_entry::build_wiring(&input, plan_path, criterion_indices)
-            }
+            CriterionField::Wiring => criterion_entry::build_wiring(
+                &input,
+                plan_path,
+                criterion_indices,
+                owner_stage.as_deref(),
+            ),
             CriterionField::WiringTests => {
                 criterion_entry::build_wiring_test(&input, plan_path, criterion_indices)
             }
@@ -201,3 +205,6 @@ mod tests_golden;
 
 #[cfg(test)]
 mod tests_kinds;
+
+#[cfg(test)]
+mod tests_owner;

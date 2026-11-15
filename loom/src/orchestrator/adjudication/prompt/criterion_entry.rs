@@ -12,10 +12,12 @@ use super::criterion::{
     push_failure_context, push_plan_and_listing, run_before_judging, schema_json, verdict_rules,
     what_the_run_decides, worktree_gone_warning, PATCHES_RULE,
 };
+use super::execution_site::ExecutionSite;
 use super::{KindPromptInput, Prompt};
 use crate::models::dispute::CriterionField;
-use crate::models::stage::{WiringCheck, WiringTest};
+use crate::models::stage::{Stage, WiringCheck, WiringTest};
 use crate::testrun::command::shell_quote;
+use crate::verify::transitions::load_stage;
 
 /// How a plan version 2 stage reads a wiring check (`verify/goal_backward/wiring_v2.rs`).
 const V2_RULES: &str = "\
@@ -50,25 +52,74 @@ struct Entry {
     observe: Vec<(usize, Option<String>)>,
     /// One line per entry of the list.
     lines: Vec<String>,
+    /// The completed stage that owns the list, when the integration-verify
+    /// stage disputes an entry its aggregated wiring re-verification failed.
+    owner: Option<String>,
 }
 
-/// The briefing for wiring checks `indices` (0-based) of the stage's `wiring`.
+impl Entry {
+    /// `the stage's` or `stage 'a''s`, before the list's name.
+    fn whose(&self) -> String {
+        match &self.owner {
+            Some(owner) => format!("stage '{owner}''s"),
+            None => "the stage's".to_string(),
+        }
+    }
+}
+
+/// The briefing for wiring checks `indices` (0-based) of the stage's
+/// `wiring`, or of `owner`'s when the integration-verify stage disputes a
+/// completed stage's entry. An owner that cannot be read degrades to an
+/// empty list, so every index reads as gone.
 pub(super) fn build_wiring(
     input: &KindPromptInput<'_>,
     plan_path: &Path,
     indices: &[usize],
+    owner: Option<&str>,
 ) -> Prompt {
-    let wiring = &input.stage.wiring;
+    let owner_stage = owner.and_then(|id| load_stage(id, input.work_dir).ok());
+    let wiring = match (owner, &owner_stage) {
+        (None, _) => input.stage.wiring.clone(),
+        (Some(_), Some(owner_stage)) => owner_stage.wiring.clone(),
+        (Some(_), None) => Vec::new(),
+    };
+    let owner_site = owner_stage.as_ref().map(|o| owner_site(input.site, o));
+    // The filing stage still records the verdict; only where its entries are
+    // observed moves to the owner's directory.
+    let observed = KindPromptInput {
+        site: owner_site.as_ref().unwrap_or(input.site),
+        ..*input
+    };
     let entry = Entry {
         field: CriterionField::Wiring,
         noun: "wiring check",
         list: "wiring",
         value_type: "`WiringCheck` (keys `source`, `pattern`, `description`, optional `literal`)",
         indices: indices.to_vec(),
-        observe: observe_each(indices, |i| wiring.get(i).map(|c| observe_check(input, c))),
+        observe: observe_each(indices, |i| {
+            wiring.get(i).map(|c| observe_check(&observed, c))
+        }),
         lines: wiring.iter().map(check_line).collect(),
+        owner: owner.map(str::to_string),
     };
-    assemble(input, plan_path, &entry)
+    assemble(&observed, plan_path, &entry)
+}
+
+/// Where the aggregated re-verification runs `owner`'s wiring: the
+/// integration-verify worktree root joined with the OWNER's `working_dir`, the
+/// directory its `source` paths are relative to.
+fn owner_site(site: &ExecutionSite, owner: &Stage) -> ExecutionSite {
+    let working_dir = owner.working_dir.clone().unwrap_or_else(|| ".".into());
+    let path = if working_dir == "." {
+        site.root.clone()
+    } else {
+        site.root.join(&working_dir)
+    };
+    ExecutionSite {
+        path,
+        working_dir,
+        ..site.clone()
+    }
 }
 
 /// The briefing for wiring tests `indices` (0-based) of the stage's
@@ -88,6 +139,7 @@ pub(super) fn build_wiring_test(
         indices: indices.to_vec(),
         observe: observe_each(indices, |i| tests.get(i).map(|t| observe_test(input, t))),
         lines: tests.iter().map(test_line).collect(),
+        owner: None,
     };
     assemble(input, plan_path, &entry)
 }
@@ -116,24 +168,20 @@ fn build_instructions(input: &KindPromptInput<'_>, entry: &Entry) -> String {
     let mut s = String::from("## Your Job\n\n");
     s.push_str(&format!(
         "You are the adjudication session for the disputed {noun}s: entries {} of\n\
-         the stage's `{}` list. The stage agent could not satisfy them and filed a\n\
+         {} `{}` list. The stage agent could not satisfy them and filed a\n\
          dispute saying each is itself wrong. You decide, entry by entry, whether it\n\
          is. Below, \"the criterion\" means each disputed {noun}.\n\n",
         index_list(&entry.indices),
+        entry.whose(),
         entry.list
     ));
     s.push_str(&judge_not_fix());
     s.push_str(&format!("## Step 1 — RUN THE {}S\n\n", noun.to_uppercase()));
     s.push_str(&run_before_judging());
-    s.push_str(&format!(
-        "First run `loom check {} --no-cache` from {} and inspect the reported\n\
-         results; it runs them in a daemon host job, so run it again while its first line\n\
-         reads `Host job: requested` or `pending`. Use the direct checks below to\n\
-         diagnose differences.\n\n",
-        input.stage.id,
-        shell_quote(&input.site.path.to_string_lossy())
-    ));
-    s.push_str(&judge_every_failing(noun));
+    s.push_str(&match &entry.owner {
+        Some(owner) => owner_run_note(&input.stage.id, owner),
+        None => own_run_note(input, noun),
+    });
     for (index, observe) in &entry.observe {
         match observe {
             Some(observe) => {
@@ -154,6 +202,40 @@ fn build_instructions(input: &KindPromptInput<'_>, entry: &Entry) -> String {
     s
 }
 
+/// How to run the stage's own entries: `loom check` runs them, then every
+/// failing entry is judged.
+fn own_run_note(input: &KindPromptInput<'_>, noun: &str) -> String {
+    let mut s = format!(
+        "First run `loom check {} --no-cache` from {} and inspect the reported\n\
+         results; it runs them in a daemon host job, so run it again while its first line\n\
+         reads `Host job: requested` or `pending`. Use the direct checks below to\n\
+         diagnose differences.\n\n",
+        input.stage.id,
+        shell_quote(&input.site.path.to_string_lossy())
+    );
+    s.push_str(&judge_every_failing(noun));
+    s
+}
+
+/// How to observe a completed stage's wiring the integration-verify stage
+/// re-verifies: `loom check` never runs that re-verification, so its green
+/// result decides nothing about these entries, and the failing entries to
+/// judge are the ones the re-verification reports.
+fn owner_run_note(stage_id: &str, owner: &str) -> String {
+    format!(
+        "These entries belong to completed stage '{owner}'. Integration-verify stage\n\
+         '{stage_id}' re-verifies them on its merged tree only inside `loom stage complete`\n\
+         (aggregated wiring re-verification); `loom check {stage_id}` does NOT run them,\n\
+         so a passing `loom check` says nothing about these entries. Judge each from the\n\
+         direct search below, run in the integration-verify worktree.\n\n\
+         Judge every disputed wiring check AND every other check of stage '{owner}'\n\
+         the re-verification reports failing, each a `{owner}: [wiring n]` line of\n\
+         `loom stage complete` (quoted under Failure output when the agent attached\n\
+         it); a verdict may patch any of them. The aggregate command exit status\n\
+         decides nothing.\n\n"
+    )
+}
+
 /// Step 1's body for a wiring check: the entry, the search that does what the
 /// check does, and the rules the stage's plan version applies.
 fn observe_check(input: &KindPromptInput<'_>, check: &WiringCheck) -> String {
@@ -169,8 +251,8 @@ fn observe_check(input: &KindPromptInput<'_>, check: &WiringCheck) -> String {
     s.push_str(&search_command(check, glob, v2 && check.literal));
     s.push_str("\necho \"exit: $?\"\n```\n\n");
     s.push_str(&format!(
-        "`source` is relative to that directory, the stage's worktree root joined with\n\
-         its `working_dir` (`{}`). The check reads each file whole, so a pattern that\n\
+        "`source` is relative to that directory, the worktree root joined with the\n\
+         `working_dir` (`{}`) of the stage that owns the check. The check reads each file whole, so a pattern that\n\
          spans lines needs `rg -U` to match as it does.\n\n",
         input.site.working_dir
     ));
@@ -223,10 +305,12 @@ fn verdict_schema(entry: &Entry) -> String {
     let field = entry.field.as_str();
     let mut s = schema_json(&format!("\"{field}\""));
     s.push_str(&format!(
-        "`field` must be `\"{field}\"`: a verdict on this dispute may amend only the\n\
-         stage's `{}` list. `index` is a 0-based index into that list, and `value` is\n\
+        "`field` must be `\"{field}\"`: a verdict on this dispute may amend only\n\
+         {} `{}` list. `index` is a 0-based index into that list, and `value` is\n\
          YAML text deserialized into a {}.\n\n",
-        entry.list, entry.value_type
+        entry.whose(),
+        entry.list,
+        entry.value_type
     ));
     s.push_str(PATCHES_RULE);
     s
@@ -240,17 +324,24 @@ fn build_evidence(input: &KindPromptInput<'_>, plan_path: &Path, entry: &Entry) 
         entry.field.as_str(),
         index_list(&entry.indices)
     );
+    if let Some(owner) = &entry.owner {
+        disputed.push_str(&format!("Owner stage: {owner}\n"));
+    }
     for &index in &entry.indices {
         if let Some(line) = entry.lines.get(index) {
             disputed.push_str(&format!("Disputed {} {index}: {line}\n", entry.noun));
         }
     }
-    let heading = format!("Stage {}s (all)", entry.noun);
+    let heading = match &entry.owner {
+        Some(owner) => format!("Stage '{owner}' {}s (all)", entry.noun),
+        None => format!("Stage {}s (all)", entry.noun),
+    };
     let mut u = String::new();
     push_dispute_header(&mut u, input, &disputed);
     push_entry_list(&mut u, &heading, &entry.indices, &entry.lines);
     push_failure_context(&mut u, input.request, input.work_dir);
-    push_plan_and_listing(&mut u, input, plan_path, "Plan stage source");
+    let excerpt_stage = entry.owner.as_deref().unwrap_or(&input.stage.id);
+    push_plan_and_listing(&mut u, input, plan_path, excerpt_stage, "Plan stage source");
     u
 }
 

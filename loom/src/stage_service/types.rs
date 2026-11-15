@@ -26,6 +26,9 @@ pub enum StageRequest {
     Dispute {
         field: CriterionField,
         criterion_indices: Vec<usize>,
+        /// See `Request::DisputeCriteria::owner_stage`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        owner_stage: Option<String>,
         reason: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         evidence_commit: Option<String>,

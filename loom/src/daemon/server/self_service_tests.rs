@@ -21,6 +21,7 @@ fn dispute(session_id: &str) -> Request {
         session_id: session_id.to_string(),
         field: crate::models::dispute::CriterionField::Acceptance,
         criterion_indices: vec![0],
+        owner_stage: None,
         reason: "r".to_string(),
         evidence_commit: None,
         failure_output: None,

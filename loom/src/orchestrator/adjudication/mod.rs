@@ -64,6 +64,8 @@ mod tests;
 #[cfg(test)]
 mod tests_criterion_field;
 #[cfg(test)]
+mod tests_owner_wiring;
+#[cfg(test)]
 mod tests_retry_budget;
 #[cfg(test)]
 mod tests_verdicts;

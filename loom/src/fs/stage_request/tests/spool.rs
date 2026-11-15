@@ -16,6 +16,7 @@ fn dispute(criterion_index: usize) -> StageRequest {
     StageRequest::Dispute {
         field: crate::models::dispute::CriterionField::Acceptance,
         criterion_indices: vec![criterion_index],
+        owner_stage: None,
         reason: "the criterion names a binary this stage never builds".to_string(),
         evidence_commit: Some("abc1234".to_string()),
         failure_output: Some("command not found".to_string()),

@@ -37,9 +37,10 @@ use std::path::Path;
 use super::dispute_store::{file_under_stage_lock, lock_stage_disputes};
 use super::Response;
 use crate::models::dispute::{
-    truncate_to_byte_limit, CriterionField, DisputeKind, DisputeRequest, FAILURE_OUTPUT_MAX_BYTES,
+    truncate_to_byte_limit, CriterionField, CriterionTarget, DisputeKind, DisputeRequest,
+    FAILURE_OUTPUT_MAX_BYTES,
 };
-use crate::models::stage::Stage;
+use crate::models::stage::{Stage, StageStatus, StageType};
 #[cfg(test)]
 use crate::verify::transitions::update_stage;
 
@@ -55,7 +56,7 @@ pub fn handle_dispute_criteria(
     handle_dispute_criteria_identified(
         work_dir,
         stage_id,
-        (field, criterion_indices),
+        CriterionTarget::own(field, criterion_indices),
         reason,
         evidence_commit,
         failure_output,
@@ -66,7 +67,7 @@ pub fn handle_dispute_criteria(
 pub(crate) fn handle_dispute_criteria_identified(
     work_dir: &Path,
     stage_id: &str,
-    criterion: (CriterionField, Vec<usize>),
+    criterion: CriterionTarget,
     reason: String,
     evidence_commit: Option<String>,
     failure_output: Option<String>,
@@ -86,20 +87,17 @@ pub(crate) fn handle_dispute_criteria_identified(
 pub(crate) fn handle_dispute_criteria_for_session(
     work_dir: &Path,
     stage_id: &str,
-    criterion: (CriterionField, Vec<usize>),
+    criterion: CriterionTarget,
     reason: String,
     evidence_commit: Option<String>,
     failure_output: Option<String>,
     identity: (Option<&str>, Option<&str>),
 ) -> Result<Response> {
     let (request_id, session_id) = identity;
-    let (field, mut criterion_indices) = criterion;
-    // The wire carries any list: the record keeps it sorted and distinct.
-    criterion_indices.sort_unstable();
-    criterion_indices.dedup();
     if let Some(invalid) = invalid_stage_id(stage_id) {
         return Ok(invalid);
     }
+    let (target, owner_len) = prepare(work_dir, stage_id, criterion);
 
     // Per-stage lock: serialises concurrent filings (id allocation + transition).
     let locked = lock_stage_disputes(work_dir, stage_id)?;
@@ -115,12 +113,12 @@ pub(crate) fn handle_dispute_criteria_for_session(
         if let Some(existing) = super::receipts::existing(s, request_id)? {
             return Ok(existing);
         }
-        if let Some(refused) = refusal(s, field, &criterion_indices, &reason) {
+        if let Some(refused) = refusal(s, &target, owner_len.as_ref(), &reason) {
             return Ok(refused);
         }
         #[cfg(test)]
         super::dispute_race_tests::after_admission();
-        let kind = DisputeKind::criterion(field, criterion_indices);
+        let kind = DisputeKind::from_target(target.clone());
         let record = build_record(s, kind, reason.clone(), evidence_commit, failure_output);
         let id = publication.write(record)?;
         s.dispute_count = s.dispute_count.saturating_add(1);
@@ -131,6 +129,26 @@ pub(crate) fn handle_dispute_criteria_for_session(
         super::dispute_race_tests::after_publication();
         Ok(Response::DisputeCreated { id })
     })
+}
+
+/// `target` with its indices sorted and distinct (the wire carries any list),
+/// and the owner's wiring length when it names one.
+///
+/// The owner is read BEFORE the stage lock: `update_stage` holds the stage
+/// store lock, and loading another stage inside it would wait on that lock.
+/// The owner is a completed stage, so its wiring cannot move under the filing.
+fn prepare(
+    work_dir: &Path,
+    stage_id: &str,
+    mut target: CriterionTarget,
+) -> (CriterionTarget, Option<Result<usize, String>>) {
+    target.criterion_indices.sort_unstable();
+    target.criterion_indices.dedup();
+    let owner_len = target
+        .owner_stage
+        .as_deref()
+        .map(|owner| owner_wiring_len(work_dir, stage_id, target.field, owner));
+    (target, owner_len)
 }
 
 /// The refusal for a malformed `stage_id`, checked BEFORE any FS touch. The
@@ -145,38 +163,102 @@ fn invalid_stage_id(stage_id: &str) -> Option<Response> {
 }
 
 /// The refusal that stops `stage` from filing this dispute, if any: no index,
-/// an index outside the field's list, an exhausted budget, or a status that
-/// cannot move to `NeedsAdjudication`. Nothing has been written when it
-/// returns one.
+/// an owner stage it may not dispute, an index outside the named list, an
+/// exhausted budget, or a status that cannot move to `NeedsAdjudication`.
+/// Nothing has been written when it returns one.
 fn refusal(
     stage: &mut Stage,
-    field: CriterionField,
-    criterion_indices: &[usize],
+    target: &CriterionTarget,
+    owner_len: Option<&Result<usize, String>>,
     reason: &str,
 ) -> Option<Response> {
-    let len = match field {
-        CriterionField::Acceptance => stage.acceptance.len(),
-        CriterionField::Wiring => stage.wiring.len(),
-        CriterionField::WiringTests => stage.wiring_tests.len(),
-    };
-    if criterion_indices.is_empty() {
-        return Some(Response::Error {
-            message: format!("--field {} needs --criterion-index", field.as_str()),
-        });
+    let field = target.field;
+    if target.criterion_indices.is_empty() {
+        return Some(error(format!(
+            "--field {} needs --criterion-index",
+            field.as_str()
+        )));
     }
-    if let Some(index) = criterion_indices.iter().find(|&&index| index >= len) {
-        return Some(Response::Error {
-            message: format!(
-                "criterion index {index} out of range for --field {} \
-                 (stage has {len} entries)",
-                field.as_str()
-            ),
-        });
+    let len = match owner_len {
+        None => match field {
+            CriterionField::Acceptance => stage.acceptance.len(),
+            CriterionField::Wiring => stage.wiring.len(),
+            CriterionField::WiringTests => stage.wiring_tests.len(),
+        },
+        Some(_) if stage.stage_type != StageType::IntegrationVerify => {
+            return Some(error(format!(
+                "stage '{}' is not an integration-verify stage; only one re-verifies another \
+                 stage's wiring, so only one disputes it with --owner-stage",
+                stage.id
+            )));
+        }
+        Some(Ok(len)) => *len,
+        Some(Err(message)) => return Some(error(message.clone())),
+    };
+    let owner = target
+        .owner_stage
+        .as_ref()
+        .map_or_else(|| "stage".to_string(), |owner| format!("stage '{owner}'"));
+    if let Some(index) = target.criterion_indices.iter().find(|&&index| index >= len) {
+        return Some(error(format!(
+            "criterion index {index} out of range for --field {} ({owner} has {len} entries)",
+            field.as_str()
+        )));
     }
     if stage.dispute_budget_exhausted() {
         return Some(exhausted_refusal(stage));
     }
     transition_refusal(stage, reason)
+}
+
+fn error(message: String) -> Response {
+    Response::Error { message }
+}
+
+/// The length of `owner`'s wiring list, which the filing stage may dispute
+/// only as the integration-verify stage whose aggregated wiring
+/// re-verification runs it (checked by [`refusal`]): `owner` is another stage
+/// of the plan, already `Completed` and merged, and the field is `wiring`. `Err` is the
+/// refusal message.
+fn owner_wiring_len(
+    work_dir: &Path,
+    filing_stage: &str,
+    field: CriterionField,
+    owner: &str,
+) -> Result<usize, String> {
+    if field != CriterionField::Wiring {
+        return Err(
+            "--owner-stage names another stage's wiring list; use it with --field wiring".into(),
+        );
+    }
+    if let Err(invalid) = crate::validation::validate_id(owner) {
+        return Err(format!("invalid --owner-stage: {invalid}"));
+    }
+    if owner == filing_stage {
+        return Err(
+            "--owner-stage names the filing stage; dispute its own wiring without it".into(),
+        );
+    }
+    let owner_stage = crate::verify::transitions::load_stage(owner, work_dir)
+        .map_err(|error| format!("--owner-stage '{owner}': {error:#}"))?;
+    if owner_stage.status != StageStatus::Completed {
+        return Err(format!(
+            "stage '{owner}' is {}, not completed; aggregated wiring re-verification runs only \
+             completed stages' wiring",
+            owner_stage.status
+        ));
+    }
+    // An accepted verdict amends the owner's wiring, and amending a stage that
+    // has not landed clears its `completed_commit`, which the merge needs. An
+    // unmerged owner's code is not in the merged tree either, so its gap is
+    // the merge's to close, never a wrong check.
+    if !(owner_stage.merged || owner_stage.merge_assumed) {
+        return Err(format!(
+            "stage '{owner}' is completed but not merged; its wiring is disputed only once \
+             its work is in the merged tree"
+        ));
+    }
+    Ok(owner_stage.wiring.len())
 }
 
 /// The refusal when `stage` cannot move to `NeedsAdjudication`. The transition

@@ -132,7 +132,7 @@ fn the_notice_caps_the_reasoning() {
         &PlanPatch {
             inner: serde_json::json!({"field": "wiring", "patch": {"op": "delete", "index": 2}}),
         },
-        4,
+        "4",
     )
     .unwrap();
 

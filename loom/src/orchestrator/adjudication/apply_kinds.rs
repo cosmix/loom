@@ -92,7 +92,10 @@ pub(super) fn apply_by_kind(
             DisputeKind::FreezeRefusal { .. } => {
                 apply_freeze_refusal::accept(work_dir, stage, dispute, plan_patch, reasoning)
             }
-            _ => apply_accept(work_dir, stage, plan_patch, dispute, reasoning),
+            _ => {
+                let amended = kind.amended_stage(&stage.id).to_string();
+                apply_accept(work_dir, stage, &amended, plan_patch, dispute, reasoning)
+            }
         },
         DisputeVerdict::Reject {
             reasoning,

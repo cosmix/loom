@@ -16,7 +16,7 @@ use crate::daemon::{
     current_session_id, try_send_request, user_credential, DaemonReach, Request, Response,
 };
 use crate::fs::stage_request::{append_to_spool, spool_path, spool_target_from_cwd, StageRequest};
-use crate::models::dispute::{CriterionField, DisputeKind};
+use crate::models::dispute::{CriterionField, CriterionTarget, DisputeKind};
 use crate::relay::emit::{RelayContext, RelayMode, RelaySink};
 use crate::relay::RequestKind;
 
@@ -36,15 +36,14 @@ impl Dispute {
     /// `loom stage dispute-criteria`.
     pub(super) fn criterion(
         stage_id: String,
-        field: CriterionField,
-        criterion_indices: Vec<usize>,
+        target: CriterionTarget,
         reason: String,
         evidence_commit: Option<String>,
         failure_output: Option<String>,
     ) -> Self {
         Self {
             stage_id,
-            kind: DisputeKind::criterion(field, criterion_indices),
+            kind: DisputeKind::from_target(target),
             reason,
             evidence_commit,
             failure_output,
@@ -76,9 +75,11 @@ impl Dispute {
             DisputeKind::Criterion {
                 criterion_indices,
                 field,
+                owner_stage,
             } => StageRequest::Dispute {
                 field: *field,
                 criterion_indices: criterion_indices.clone(),
+                owner_stage: owner_stage.clone(),
                 reason,
                 evidence_commit,
                 failure_output: self.failure_output.clone(),
@@ -107,12 +108,14 @@ impl Dispute {
             DisputeKind::Criterion {
                 criterion_indices,
                 field,
+                owner_stage,
             } => Request::DisputeCriteria {
                 auth_token,
                 stage_id,
                 session_id,
                 field: *field,
                 criterion_indices: criterion_indices.clone(),
+                owner_stage: owner_stage.clone(),
                 reason,
                 evidence_commit,
                 failure_output: self.failure_output.clone(),
@@ -167,8 +170,9 @@ impl Dispute {
             DisputeKind::Criterion {
                 criterion_indices,
                 field,
+                owner_stage,
             } => (
-                criterion_subject(*field, criterion_indices),
+                criterion_subject(*field, criterion_indices, owner_stage.as_deref()),
                 "The criterion stands",
                 "stage dispute-criteria",
             ),
@@ -203,13 +207,17 @@ impl Dispute {
     }
 }
 
-/// `criterion 13`, `criteria 13, 14`, `wiring 1, 2`.
-fn criterion_subject(field: CriterionField, indices: &[usize]) -> String {
+/// `criterion 13`, `criteria 13, 14`, `wiring 1, 2`, or `stage 'a' wiring 3`
+/// for another stage's wiring.
+fn criterion_subject(field: CriterionField, indices: &[usize], owner: Option<&str>) -> String {
     let list = indices
         .iter()
         .map(usize::to_string)
         .collect::<Vec<_>>()
         .join(", ");
+    if let Some(owner) = owner {
+        return format!("stage '{owner}' {} {list}", field.as_str());
+    }
     match field {
         CriterionField::Acceptance if indices.len() == 1 => format!("criterion {list}"),
         CriterionField::Acceptance => format!("criteria {list}"),

@@ -322,7 +322,7 @@ fn build_amendment_request_decodes_plan_patch() {
             "reason": "criterion was wrong"
         }),
     };
-    let req = build_amendment_requests("s1", &plan_patch, 1)
+    let req = build_amendment_requests("s1", &plan_patch, "1")
         .unwrap()
         .remove(0);
     assert_eq!(req.stage_id, "s1");
@@ -337,7 +337,7 @@ fn build_amendment_request_rejects_unknown_field() {
     let plan_patch = PlanPatch {
         inner: serde_json::json!({"field": "bogus", "patch": {}}),
     };
-    assert!(build_amendment_requests("s1", &plan_patch, 1).is_err());
+    assert!(build_amendment_requests("s1", &plan_patch, "1").is_err());
 }
 
 #[test]

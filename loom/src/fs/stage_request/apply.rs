@@ -14,6 +14,7 @@ use std::path::Path;
 
 use super::spool::{drain_identified, DrainOutcome};
 use super::types::StageRequest;
+use crate::models::dispute::CriterionTarget;
 use crate::plan::schema::ContractChoices;
 use crate::stage_service::{
     handle_agent_block_for_session, handle_dispute_criteria_for_session,
@@ -90,13 +91,14 @@ fn dispatch_request(
         StageRequest::Dispute {
             field,
             criterion_indices,
+            owner_stage,
             reason,
             evidence_commit,
             failure_output,
         } => handle_dispute_criteria_for_session(
             work_dir,
             stage_id,
-            (*field, criterion_indices.clone()),
+            CriterionTarget::new(*field, criterion_indices.clone(), owner_stage.clone()),
             reason.clone(),
             evidence_commit.clone(),
             failure_output.clone(),

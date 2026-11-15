@@ -101,6 +101,7 @@ fn dispute_request(stage_id: &str, session_id: &str) -> Request {
         session_id: session_id.to_string(),
         field: crate::models::dispute::CriterionField::Acceptance,
         criterion_indices: vec![0],
+        owner_stage: None,
         reason: "criterion 41 contradicts its own data source".to_string(),
         evidence_commit: None,
         failure_output: None,

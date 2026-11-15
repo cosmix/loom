@@ -109,7 +109,7 @@ fn wiring_gaps(
 
 /// `gaps` of entry `index` of `field`'s list, each description prefixed with
 /// `[<label> <index>]`.
-fn indexed_gaps(
+pub(crate) fn indexed_gaps(
     field: CriterionField,
     index: usize,
     gaps: Vec<VerificationGap>,

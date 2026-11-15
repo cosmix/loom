@@ -25,13 +25,14 @@ pub(super) fn dispatch_stage_request(
         StageRequest::Dispute {
             field,
             criterion_indices,
+            owner_stage,
             reason,
             evidence_commit,
             failure_output,
         } => crate::stage_service::handle_dispute_criteria_for_session(
             work_dir,
             stage_id,
-            (field, criterion_indices),
+            crate::models::dispute::CriterionTarget::new(field, criterion_indices, owner_stage),
             reason,
             evidence_commit,
             failure_output,

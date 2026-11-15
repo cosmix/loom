@@ -258,20 +258,27 @@ fn build_evidence(input: &KindPromptInput<'_>, plan_path: &Path, indices: &[usiz
     let mut u = String::new();
     push_dispute_summary(&mut u, input, indices);
     push_failure_context(&mut u, input.request, input.work_dir);
-    push_plan_and_listing(&mut u, input, plan_path, "Plan acceptance criteria source");
+    push_plan_and_listing(
+        &mut u,
+        input,
+        plan_path,
+        &input.stage.id,
+        "Plan acceptance criteria source",
+    );
     u
 }
 
-/// `## <heading> (from plan file)` quoting the stage's block of the plan,
+/// `## <heading> (from plan file)` quoting `stage_id`'s block of the plan,
 /// then the 3-deep listing of the tree.
 pub(super) fn push_plan_and_listing(
     u: &mut String,
     input: &KindPromptInput<'_>,
     plan_path: &Path,
+    stage_id: &str,
     heading: &str,
 ) {
     u.push_str(&format!("## {heading} (from plan file)\n\n"));
-    let plan_excerpt = read_plan_excerpt(plan_path, &input.stage.id)
+    let plan_excerpt = read_plan_excerpt(plan_path, stage_id)
         .unwrap_or_else(|_| "(plan file not available)".to_string());
     u.push_str(&super::fenced("yaml", &plan_excerpt));
 

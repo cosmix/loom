@@ -8,6 +8,9 @@ use tempfile::TempDir;
 #[path = "dispute_multi_tests.rs"]
 mod multi;
 
+#[path = "dispute_owner_tests.rs"]
+mod owner;
+
 fn setup(stage_status: StageStatus, acceptance_len: usize) -> (TempDir, std::path::PathBuf) {
     let tmp = TempDir::new().unwrap();
     let wd = WorkDir::new(tmp.path()).unwrap();

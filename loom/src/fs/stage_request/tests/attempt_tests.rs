@@ -11,7 +11,10 @@ fn a_prechecked_old_session_cannot_file_against_a_new_attempt() {
     let response = crate::stage_service::handle_dispute_criteria_for_session(
         &work_dir,
         "stage-disp",
-        (crate::models::dispute::CriterionField::Acceptance, vec![0]),
+        crate::models::dispute::CriterionTarget::own(
+            crate::models::dispute::CriterionField::Acceptance,
+            vec![0],
+        ),
         "stale".into(),
         None,
         None,

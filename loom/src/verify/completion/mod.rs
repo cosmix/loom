@@ -2,9 +2,9 @@
 //! operator's `loom stage complete` on the host, and by the daemon's
 //! completion job (`host_verify::child_complete`).
 
-use crate::models::stage::{Stage, StageStatus, StageType, TruthCheck};
+use crate::models::stage::{Stage, StageType, TruthCheck};
 use crate::plan::parser::{parse_plan, ParsedPlan};
-use crate::plan::schema::{CommandConfinement, StageDefinition};
+use crate::plan::schema::CommandConfinement;
 use crate::verify::criteria::{plan_confinement, resolve_confinement};
 use crate::verify::duplicate_detection::detect_duplicate_symbols;
 use crate::verify::goal_backward::plan::{self, LoadedGoal};
@@ -13,6 +13,8 @@ use crate::verify::wiring_detection::{detect_unwired_files, UnwiredFile};
 use anyhow::{bail, Context, Result};
 use std::path::Path;
 
+mod aggregated;
+pub(crate) use aggregated::completed_definitions;
 pub(crate) mod complete_verification_v2;
 pub(crate) mod knowledge;
 pub(crate) mod knowledge_baseline;
@@ -96,7 +98,7 @@ pub(crate) fn run_checks(checks: &VerificationChecks<'_>, sink: &mut CheckSink<'
             OutputStream::Stdout,
             "Running aggregated wiring re-verification...",
         );
-        let checked = aggregated_wiring(checks, worktree_root);
+        let checked = aggregated::aggregated_wiring(checks, worktree_root);
         sink("aggregated-wiring", checked)?;
     }
     Ok(())
@@ -265,72 +267,6 @@ fn run_duplicate_check(
         );
     }
     Ok(())
-}
-
-/// Re-verify the wiring of every completed stage. Every stage of one plan
-/// shares `plan_version`, so the finishing stage's version applies to all.
-fn aggregated_wiring(checks: &VerificationChecks<'_>, worktree_root: &Path) -> Result<()> {
-    let mut all_gaps = Vec::new();
-    for definition in completed_definitions(checks.work_dir)? {
-        all_gaps.extend(stage_wiring_gaps(checks, &definition, worktree_root)?);
-    }
-    if !all_gaps.is_empty() {
-        bail!(
-            "Aggregated wiring re-verification failed with {} issue(s)",
-            all_gaps.len()
-        );
-    }
-    (checks.emit)(
-        OutputStream::Stdout,
-        "Aggregated wiring re-verification passed!",
-    );
-    Ok(())
-}
-
-/// The plan definition of every `Completed` stage, in stage-list order.
-fn completed_definitions(work_dir: &Path) -> Result<Vec<StageDefinition>> {
-    let stages = crate::verify::transitions::list_all_stages(work_dir)?;
-    let Some(plan) = load_parsed_plan(work_dir)? else {
-        bail!("Could not load plan for aggregated re-verification");
-    };
-    let definitions = &plan.metadata.loom.stages;
-    Ok(stages
-        .iter()
-        .filter(|stage| stage.status == StageStatus::Completed)
-        .filter_map(|stage| definitions.iter().find(|item| item.id == stage.id).cloned())
-        .collect())
-}
-
-fn stage_wiring_gaps(
-    checks: &VerificationChecks<'_>,
-    definition: &StageDefinition,
-    worktree_root: &Path,
-) -> Result<Vec<VerificationGap>> {
-    if definition.wiring.is_empty() {
-        return Ok(Vec::new());
-    }
-    let stage_id = &definition.id;
-    (checks.emit)(
-        OutputStream::Stdout,
-        &format!("  Re-verifying wiring from stage '{stage_id}'..."),
-    );
-    let working_dir = if definition.working_dir == "." {
-        worktree_root.to_path_buf()
-    } else {
-        worktree_root.join(&definition.working_dir)
-    };
-    let gaps = crate::verify::goal_backward::verify_wiring(
-        &definition.wiring,
-        &working_dir,
-        checks.stage.plan_version,
-    )?;
-    for gap in &gaps {
-        (checks.emit)(
-            OutputStream::Stderr,
-            &format!("    ✗ {stage_id}: {}", gap.description),
-        );
-    }
-    Ok(gaps)
 }
 
 fn fail_closed_or_warn(

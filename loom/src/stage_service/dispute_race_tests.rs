@@ -81,7 +81,7 @@ fn try_file(work: &Path, id: &str) -> Result<Response> {
     dispute::handle_dispute_criteria_identified(
         work,
         id,
-        (CriterionField::Acceptance, vec![0]),
+        crate::models::dispute::CriterionTarget::own(CriterionField::Acceptance, vec![0]),
         "reason".into(),
         None,
         None,
