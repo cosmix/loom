@@ -103,3 +103,37 @@ only under `cargo check --tests`.
 **Prevention:** Keep the YAML start and post-delimiter body start as separate named offsets; test both returned slices with indented delimiters and CRLF.
 
 **Fix:** Renamed the post-delimiter offset to `remainder_start`, retained the original `body_start` for YAML, and added wrapper boundary tests.
+
+## A Fixture Method Named `git` Cannot Keep Its Call Text Through a Sweep
+
+**What happened:** the git fixture sweep deleted local runners, and the guard in `loom/tests/test_git_guard_contracts.rs` matches `fn git`, `fn run_git` and `fn isolated_git` on methods too. A fixture method such as `repo.git(..)`, or a bool-returning `run_git`, could not stay, so assertions calling it changed text (`repo.git` to `git_text`, `run_git` to `git_succeeds`) in `plan_server/run/commit/*`, `relay_commit_e2e` and `host_verify/tests_digest_pinned`. The test-integrity check raised TI-edit events; the sweep stage disputed them and the verdict accepted (`.loom/work/disputes/test-git-sweep/1`).
+
+**Why:** the brief said "delete the local runner" without asking whether callers sit inside assertion lines. Test integrity compares assertion statements, so any rename inside one is an event.
+
+**Prevention:** a brief that removes a runner names every caller that sits inside an `assert*` line and says how its text survives: a free function keeps its name through `use shared::git as git_out`. A method or bool-returning helper cannot be aliased; list it in the integrity dispute up front as setup-only renames. Assertions are byte-identical unless a decision says otherwise.
+
+**Fix:** aliases kept for free functions; renamed callers listed in the accepted dispute.
+
+## A Worker's New Contract Test Broke the Function Cap Its Filtered Runs Never Checked
+
+**What happened:** a fix worker added `ambient_default_excludes_and_attributes_do_not_reach_fixture_git` to `loom/tests/test_git_contracts.rs` at 66 lines. `loom/tests/maintainability.rs` caps a function at 50 lines and failed in the integration-verify gate.
+
+**Why:** the worker's verify list held filtered runs of the new test and its file, never `--test maintainability`.
+
+**Prevention:** a brief that adds or edits a test names the 50-line function and 400-line file caps and puts `cargo test --test maintainability` in the worker's verify list.
+
+**Fix:** the test was split into helpers.
+
+## Libtest Hides SKIP Lines of Passing Tests
+
+**What happened:** the integration-verify host-job log held no `SKIP` line, which looked like proof that no migrated test skipped on a probe.
+
+**Why:** libtest captures stderr of passing tests, so `skip_unless` output appears only for failing tests or under `--nocapture`.
+
+**Prevention:** a log without SKIP lines proves nothing about skips. To count them run the suspect targets with `-- --nocapture`. This narrows the rule in [subagent-briefing](subagent-briefing.md) to read SKIP lines before calling a test green.
+
+**Fix:** none needed; the gate result stands on the pass.
+
+## Recurrences in This Plan
+
+`loom check` run with `run_in_background` (relay refusal, [plan-server-delivery](plan-server-delivery.md)), a reviewer round recorded malformed because the `loom-review` block sat only in the final message (see [subagent-orchestration](subagent-orchestration.md)) and a subagent's `cargo clippy` blocked by the verify guard (`cargo check --all-targets` stands in; the gate runs clippy) each recurred. Proposals for a hook or a `loom plan verify` check are in [consolidation-followups](../concerns/consolidation-followups.md).

@@ -99,7 +99,8 @@ helper` resolves only to `__init__.py`, so a namespace package refuses instead o
   prototypes and headers, Java and C# globs and namespace changes, and unreadable-to-readable transitions. The
   memory-fallback tests (`graph_store/fallback_tests.rs`, `view/tests_store.rs`) skip when 0o555 is not enforced
   (root, some sandboxes) and pass without asserting; a fallback seam that does not depend on file modes would fix it.
-  `refresh/tests_source_graph/mod.rs` duplicates `git_ok`, `init_repo` and the stores from `tests_snapshot.rs`, and
+  `refresh/tests_source_graph/mod.rs` still duplicates the stores from `tests_snapshot.rs` (its git helpers come from
+  `crate::test_git`), and
   `layer_reuse.rs::a_base_holding_a_gap_dialect_file_is_reused` returns early when wave B is compiled, so it needs a
   non-vacuous variant.
 
@@ -268,10 +269,6 @@ README.md` that already passes at HEAD: a pattern starting with `--` after `-F -
 ## Knowledge-Stage Checkout Rule Repeated
 
 - The rule `repository root, else stage worktree` is still written inline in `loom/src/host_verify/child.rs`; the suggestion also lists `verify_relay.rs`, `complete_relay.rs`, `inbox_drain/check.rs` and `handoff/completion/content.rs`. Open.
-
-## Daemon-Completion Fixture Duplicates Helpers
-
-- `loom/tests/daemon_completion_contracts/support.rs` says the file is copied from the host-verification contracts fixture; `isolate_git`, `git`, `init_repo_with_worktree`, `Fixture`, `build_fixture` and `state_root` are duplicated. Open.
 
 ## Spawn Observer Warns Only On Group Store Failure
 

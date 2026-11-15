@@ -245,4 +245,4 @@ Open items from the plan-summary levels and fragment column, the three-theme pal
 
 ## Open Items After the Helper Consolidation
 
-Symlink, FIFO and size-cap gaps in writers the consolidation left alone, remaining private-index and read-only-runner copies, process-group diagnostics, frontmatter and path edge cases, and a proposal to make `loom subagents watch` wait for codex forwarder registration. See [consolidation-followups](concerns/consolidation-followups.md).
+Symlink, FIFO and size-cap gaps in writers the consolidation left alone, remaining private-index and read-only-runner copies, process-group diagnostics, frontmatter and path edge cases, and a proposal to make `loom subagents watch` wait for codex forwarder registration. See [consolidation-followups](concerns/consolidation-followups.md). Guard gaps and leftover unisolated git calls in tests: [consolidation-followups](concerns/consolidation-followups.md).

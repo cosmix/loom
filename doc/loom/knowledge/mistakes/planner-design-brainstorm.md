@@ -121,7 +121,7 @@
 
 **Prevention:** Compare premature cutoff rates at the desired endpointing delay, and measure TTS and harness delay separately. Attribute vendor benchmark results and verify on actual planner conversations.
 
-**Fix:** LiveKit eot-bench currently reports English SmartTurn v3.2 endpointing delay of 1384 ms at a 5 percent false-cutoff budget, versus 1124 ms for local LiveKit v1.1-mini. These are vendor-published benchmark results, not Loom measurements (https://github.com/livekit/eot-bench). Treat sub-500 ms reliable automatic turn completion as unproven.
+**Fix:** LiveKit eot-bench currently reports English SmartTurn v3.2 endpointing delay of 1384 ms at a 5 percent false-cutoff budget, versus 1124 ms for local LiveKit v1.1-mini. These are vendor-published benchmark results, not Loom measurements (<https://github.com/livekit/eot-bench>). Treat sub-500 ms reliable automatic turn completion as unproven.
 
 ## Use the existing planner backend for local voice inference
 
@@ -131,4 +131,4 @@
 
 **Prevention:** Treat backend-hosted inference on the user machine as the natural initial architecture. Browser capture and playback can communicate with the local planner backend; WASM support is optional rather than a model selection constraint.
 
-**Fix:** Evaluate native speech runtimes and a planner-owned helper process alongside in-process integration. Keep audio local to the user machine; remote planner deployments require an explicit placement decision. The proposal `doc/PROPOSAL-2026-11-15-local-voice-planner.md` records source evidence, candidate comparisons, integration contracts and empirical qualification gates; its recommendations are not implemented or final model selections.
+**Fix:** Evaluate native speech runtimes and a planner-owned helper process alongside in-process integration. Keep audio local to the user machine; remote planner deployments require an explicit placement decision. The local voice planner proposal records source evidence, candidate comparisons, integration contracts and empirical qualification gates; its recommendations are not implemented or final model selections.
