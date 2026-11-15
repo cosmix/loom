@@ -40,10 +40,6 @@ Open parser and command gaps found while writing the language skills, checked ag
   Approval does not retain the exhausted contract budget.
 - **Continuation writer.** After a ceiling handoff the replacement contract writer gets a fresh contract signal without
   its predecessor's handoff (`generate_contract_signal` takes no handoff file).
-- **Stale wiring pin from another stage.** Integration-verify has no self-service channel for it: `dispute-criteria` takes an
-  acceptance index and the daemon admits a dispute only for the caller's own stage (`daemon/server/self_service.rs::ownership_to_enforce`).
-  The repair is an operator `loom stage amend --field wiring`. Consider a dispute kind for aggregated wiring gaps, or
-  have the aggregated check name the amend command.
 - **Target-branch resolution differs.** `commands/hook/review_harvest.rs::review_harvest` resolves from the stage worktree, completion
   and both `loom stage review` commands from the CWD repo root. They agree while the CWD is inside the repo; share
   `commands/stage/review_status.rs::stage_worktree_and_target`.

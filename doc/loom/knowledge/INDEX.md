@@ -80,7 +80,7 @@
 | [token-accounting-and-receipts](architecture/token-accounting-and-receipts.md) | Ledger | 358 |
 | [token-flow-sources](architecture/token-flow-sources.md) |  | 84 |
 | [usage-evidence](architecture/usage-evidence.md) |  | 136 |
-| [verification-v2-gates](architecture/verification-v2-gates.md) | Gates | 257 |
+| [verification-v2-gates](architecture/verification-v2-gates.md) | Gates | 261 |
 | [web-dashboard](architecture/web-dashboard.md) | Web | 133 |
 | [web-terminal](architecture/web-terminal.md) |  | 181 |
 
@@ -147,7 +147,7 @@
 | [daemon-singleton](mistakes/daemon-singleton.md) |  | 141 |
 | [detached-spawn-in-tests](mistakes/detached-spawn-in-tests.md) |  | 65 |
 | [dev-install](mistakes/dev-install.md) | Daemon | 44 |
-| [doctrine-and-acceptance](mistakes/doctrine-and-acceptance.md) |  | 392 |
+| [doctrine-and-acceptance](mistakes/doctrine-and-acceptance.md) |  | 406 |
 | [frontmatter-boundary](mistakes/frontmatter-boundary.md) |  | 13 |
 | [hooks-shell-portability](mistakes/hooks-shell-portability.md) |  | 382 |
 | [host-verify-group-containment](mistakes/host-verify-group-containment.md) |  | 23 |
@@ -218,7 +218,7 @@
 | --- | --- | --- |
 | [agent-rule-bending-hardening](concerns/agent-rule-bending-hardening.md) |  | 375 |
 | [automatic-knowledge-source-graph-followups](concerns/automatic-knowledge-source-graph-followups.md) | Gaps | 69 |
-| [code-quality-and-hook-debt](concerns/code-quality-and-hook-debt.md) | Debt | 310 |
+| [code-quality-and-hook-debt](concerns/code-quality-and-hook-debt.md) | Debt | 308 |
 | [codex-heartbeat-starvation](concerns/codex-heartbeat-starvation.md) |  | 22 |
 | [contract-autonomy-followups](concerns/contract-autonomy-followups.md) |  | 74 |
 | [handoff-followups](concerns/handoff-followups.md) |  | 57 |
@@ -241,6 +241,6 @@
 | [state-confinement-gaps](concerns/state-confinement-gaps.md) | Caches | 21 |
 | [token-accounting-and-proof-defects](concerns/token-accounting-and-proof-defects.md) |  | 334 |
 | [typed-config-values](concerns/typed-config-values.md) | Gaps | 22 |
-| [verification-v2-followups](concerns/verification-v2-followups.md) |  | 238 |
+| [verification-v2-followups](concerns/verification-v2-followups.md) |  | 234 |
 | [web-dashboard-latent-issues](concerns/web-dashboard-latent-issues.md) | UI | 96 |
 | [worktree-build-cold-start](concerns/worktree-build-cold-start.md) | Cold | 136 |

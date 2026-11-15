@@ -390,3 +390,17 @@ put the doc edits in the implementation brief.
 **Prevention:** For the Brig proposal, compare Linux with Apple Silicon macOS; do not treat Intel Mac support as an adoption requirement.
 
 **Fix:** Scope the brig-support proposal and its platform evaluation to Linux and Apple Silicon macOS.
+
+## Integration-verify disputed its own wiring for another stage's stale entry
+
+**What happened:** an integration-verify fix moved a re-export, so allocation-runtime's wiring[3] failed the aggregated re-verification. The agent filed `dispute-criteria --field wiring --criterion-index 0`, which indexes integration-verify's OWN wiring list. The adjudicator judged that entry, found it passing (and trusted a green `loom check`, which never runs aggregated wiring), and rejected; the stage went to human review.
+**Why:** dispute-criteria had no way to name another stage's list, and the adjudicator briefing presented `loom check` as authoritative for wiring.
+**Prevention:** an aggregated wiring gap is disputed with `--owner-stage <stage>`, which the aggregated output prints with the `[wiring n]` index; the owner briefing tells the adjudicator `loom check` does not run these entries.
+**Fix:** `CriterionTarget.owner_stage` through CLI, RPC, spool and admission; accepted verdicts amend the owner (`DisputeKind::amended_stage`). The operator repaired the live incident with `loom stage amend allocation-runtime --field wiring --op replace --index 3`.
+
+## A cross-stage verdict reused the owner's amendment audit key
+
+**What happened:** the first owner-stage dispute implementation keyed its amendment audit rows `<dispute>.<k>` against the OWNER stage. Dispute numbers are per filing stage, so integration-verify's dispute 1 collided with the owner's own dispute 1; `apply_amendment` treats a matching `(stage_id, dispute_id)` row as already applied and skipped the amendment.
+**Why:** `plan/amendment/apply.rs` matches idempotency rows by the amended stage, while dispute ids are allocated per filing stage.
+**Prevention:** a verdict that amends another stage keys its rows `<filing stage>:<dispute>.<k>` (`adjudication/plan_patch.rs::audit_key`). Owner-stage disputes also require the owner merged: amending an unmerged stage clears its `completed_commit` (`plan/amendment_fields.rs::sync_stage_from_definition`).
+**Fix:** review round before commit; regression test `tests_owner_wiring.rs::an_owner_verdict_is_not_mistaken_for_the_owners_own_dispute_of_the_same_id`.

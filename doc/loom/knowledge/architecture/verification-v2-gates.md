@@ -116,8 +116,12 @@ line to stay at the ledgered 445 lines, and two `sandbox::settings::tests` pin t
 
 **Aggregated wiring in integration-verify** (`run_aggregated_check`) re-reads every completed stage's `wiring`
 from the plan file and re-runs it on the merged tree, and re-verifies every v2 stage's `reachable`. It returns
-early for any other stage type. A stage that moves a call another stage's wiring pins must amend that wiring
-(operator `loom stage amend --field wiring`), leave the call in place, or name it in a comment at its new site
+early for any other stage type. Each gap prints as `<stage>: [wiring n] ...` (`verify/completion/aggregated.rs`), and
+integration-verify disputes it with `loom stage dispute-criteria <iv> --field wiring --owner-stage <stage>
+--criterion-index n`: the daemon admits it only from an integration-verify stage, for a `Completed`, merged owner, with each
+index inside the owner's list, and an accepted verdict amends the owner's wiring and re-queues integration-verify.
+`loom check` does not run this re-verification; only `loom stage complete` does. A stage that moves a call another
+stage's wiring pins must dispute or amend that wiring, leave the call in place, or name it in a comment at its new site
 ([pinned literals](../mistakes/pinned-literals-ledgers-and-wiring.md)); pin wiring to the entry module or use `reachable`.
 
 ## Impact-Selected Tests: Selection, Base Comparison, Observed Record

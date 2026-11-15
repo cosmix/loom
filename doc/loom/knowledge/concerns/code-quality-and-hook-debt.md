@@ -295,8 +295,6 @@ coordinator agent (with the Task tool) and removing the 2-level hierarchy from s
 - The prefer-modern-tools hook warns after a `grep` inside `bash -c` has run. A blocking check on
   the wrapper form would stop the recurrence recorded in
   [review-integration-verification](../mistakes/review-integration-verification.md).
-- `dispute-criteria --field wiring` indexes only the filing stage's own wiring list, so an
-  aggregated failure of another stage's entry has no direct index.
 
 ## Other Open Observations
 
