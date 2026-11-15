@@ -20,7 +20,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use crate::models::dispute::{truncate_to_byte_limit, Citation};
-use crate::verify::review::report::single_line;
+use crate::utils::text::single_line;
 
 const FEEDBACK_FILENAME: &str = "feedback.md";
 

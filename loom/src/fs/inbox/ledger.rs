@@ -9,6 +9,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 use super::paths::validate_request_id;
+use crate::models::dispute::truncate_to_byte_limit;
 use crate::relay::RequestKind;
 use crate::validation::validate_id;
 
@@ -76,7 +77,7 @@ fn encode_ledger_line(record: &LedgerRecord) -> Result<String> {
     let mut budget = reason.len();
     loop {
         let mut candidate = record.clone();
-        candidate.reason = Some(truncate_to_byte_budget(&reason, budget));
+        candidate.reason = Some(truncate_to_byte_limit(&reason, budget));
         let line = serde_json::to_string(&candidate).context("ledger record did not serialize")?;
         if line.len() < MAX_LEDGER_LINE_BYTES {
             return Ok(format!("{line}\n"));
@@ -89,17 +90,6 @@ fn encode_ledger_line(record: &LedgerRecord) -> Result<String> {
         }
         budget /= 2;
     }
-}
-
-fn truncate_to_byte_budget(s: &str, budget: usize) -> String {
-    if s.len() <= budget {
-        return s.to_string();
-    }
-    let mut end = budget;
-    while end > 0 && !s.is_char_boundary(end) {
-        end -= 1;
-    }
-    s[..end].to_string()
 }
 
 /// Read every ledger record for `session_id`, tolerating a torn last line (a

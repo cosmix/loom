@@ -258,7 +258,9 @@ fn render_adjudication_reason<W: Write>(w: &mut W, entry: &AttentionEntry) -> st
     };
     let reason = match entry.judge_heartbeat_secs {
         Some(heartbeat_secs) => {
-            format!("{dispute_count} disputes filed; judge heartbeat {heartbeat_secs}s ago")
+            let elapsed =
+                crate::utils::format_elapsed(heartbeat_secs.try_into().unwrap_or(i64::MAX));
+            format!("{dispute_count} disputes filed; judge heartbeat {elapsed} ago")
         }
         None => format!("{dispute_count} disputes filed"),
     };
@@ -298,3 +300,38 @@ fn render_cleanup_warning<W: Write>(w: &mut W, entry: &AttentionEntry) -> std::i
 #[cfg(test)]
 #[path = "attention_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+mod heartbeat_duration_tests {
+    use super::*;
+    use crate::models::stage::StageStatus;
+    use crate::testrun::recognize::strip_ansi;
+
+    #[test]
+    fn judge_heartbeat_uses_compact_durations_without_overflow() {
+        for (seconds, expected) in [
+            (42, "42s"),
+            (60, "1m0s"),
+            (90, "1m30s"),
+            (3661, "1h1m"),
+            (u64::MAX, "2562047788015215h30m"),
+        ] {
+            let stage = StageSummary {
+                id: "adjudication".to_owned(),
+                name: "adjudication".to_owned(),
+                status: StageStatus::NeedsAdjudication,
+                dispute_count: 2,
+                judge_heartbeat_secs: Some(seconds),
+                ..Default::default()
+            };
+            let mut output = Vec::new();
+            render_attention(&mut output, &[stage], false).unwrap();
+            let output = String::from_utf8(output).unwrap();
+            let output = strip_ansi(&output);
+            assert!(
+                output.contains(&format!("2 disputes filed; judge heartbeat {expected} ago")),
+                "output: {output}"
+            );
+        }
+    }
+}

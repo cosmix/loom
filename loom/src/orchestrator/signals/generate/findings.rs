@@ -18,8 +18,8 @@ use crate::orchestrator::signals::format::REFERENCE_DATA_SENTENCE;
 #[cfg(test)]
 use crate::orchestrator::signals::retrieval::dependency_changes;
 use crate::orchestrator::signals::retrieval::DependencyChange;
+use crate::utils::text::single_line;
 use crate::utils::truncate_for_display;
-use crate::verify::review::report::single_line;
 
 mod paths;
 use paths::path_candidates;

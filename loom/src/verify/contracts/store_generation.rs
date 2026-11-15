@@ -23,7 +23,7 @@ use crate::fs::safe_fs::{
 };
 use crate::fs::safe_read::{is_not_found, read_bounded};
 use crate::fs::safe_replace::publish_in_dir;
-use crate::relay::sha256_hex;
+use crate::utils::sha256_hex;
 
 const GENERATIONS: &str = "generations";
 const READY: &[u8] = b"complete\n";

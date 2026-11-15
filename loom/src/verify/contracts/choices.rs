@@ -27,7 +27,7 @@ use crate::fs::safe_read::{is_not_found, read_bounded};
 use crate::models::dispute::truncate_to_byte_limit;
 use crate::models::stage::Stage;
 use crate::plan::schema::{ContractChoice, ContractChoices, ContractSpec};
-use crate::verify::review::report::single_line;
+use crate::utils::text::single_line;
 use crate::verify::transitions::load_stage;
 
 #[path = "choices_validate.rs"]

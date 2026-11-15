@@ -34,10 +34,10 @@ use super::runs::{Failed, Run, Site};
 use super::FULL_SUITE;
 use crate::git::runner::run_git_checked;
 use crate::models::stage::Stage;
+use crate::utils::text::single_line;
 use crate::verify::contracts::changes::git;
 use crate::verify::criteria::{CriteriaConfig, CriteriaProbe, ProbeRunner};
 use crate::verify::review::fingerprint::local_git;
-use crate::verify::review::report::single_line;
 
 /// Name prefix of a dry-run checkout's scratch directory, which the dry run's
 /// sweep of earlier runs' leftovers matches on.

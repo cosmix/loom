@@ -9,8 +9,6 @@
 
 use std::collections::{BTreeMap, HashMap};
 
-use sha2::{Digest, Sha256};
-
 /// Final id and `symbol_key` for every `(base id, signature)`, in input order.
 ///
 /// A base id no other definition of the file shares is kept, with an empty
@@ -60,6 +58,12 @@ pub(super) fn disambiguate(definitions: &[(String, &str)]) -> Vec<(String, Strin
 /// one space.
 fn sig8(signature: &str) -> String {
     let collapsed = signature.split_whitespace().collect::<Vec<_>>().join(" ");
-    let digest = hex::encode(Sha256::digest(collapsed.as_bytes()));
+    let digest = crate::utils::sha256_hex(collapsed.as_bytes());
     digest[..8].to_string()
+}
+
+#[cfg(test)]
+#[test]
+fn signature_digest_is_stable() {
+    assert_eq!(sig8("fn  example()"), "ae17070f");
 }

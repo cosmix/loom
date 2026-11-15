@@ -116,13 +116,7 @@ fn contract_path(contract_file: &str) -> Result<String, String> {
 /// `text` on one line, whitespace runs collapsed and cut at 120 characters,
 /// for quoting source in a problem.
 fn quote(text: &str) -> String {
-    const LIMIT: usize = 120;
-    let line = text.split_whitespace().collect::<Vec<_>>().join(" ");
-    if line.chars().count() <= LIMIT {
-        return line;
-    }
-    let cut: String = line.chars().take(LIMIT).collect();
-    format!("{cut}...")
+    crate::utils::truncate_for_display(text, 120)
 }
 
 /// An in-memory source tree for the unit tests: `path -> content`.

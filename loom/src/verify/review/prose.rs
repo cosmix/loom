@@ -1,6 +1,6 @@
 //! Behaviour hashes exclude unprotected prose, but retain source bytes exactly.
 
-use sha2::{Digest, Sha256};
+use crate::utils::sha256_hex;
 use std::path::Path;
 
 pub fn behaviour_digest(path: &str, content: Option<&[u8]>) -> Option<String> {
@@ -11,11 +11,7 @@ pub fn behaviour_digest(path: &str, content: Option<&[u8]>) -> Option<String> {
         return Some("v2:deleted".to_string());
     };
     // Prefix the evidence so older, normalized hashes cannot authorize an exemption.
-    Some(format!("v2:{}", hash(content)))
-}
-
-fn hash(content: &[u8]) -> String {
-    hex::encode(Sha256::digest(content))
+    Some(format!("v2:{}", sha256_hex(content)))
 }
 
 fn is_prose(path: &str) -> bool {

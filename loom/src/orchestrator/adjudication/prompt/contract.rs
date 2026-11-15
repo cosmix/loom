@@ -103,14 +103,15 @@ fn first_step(input: &KindPromptInput<'_>, record: &FreezeSnapshot) -> String {
                 "{NO_ADAPTER_FOR_WRITER_TEST}; report what evidence is missing\n\n"
             )),
             Ok(Some(run)) => {
-                let quoted_dir = run.dir.display().to_string().replace('\'', "'\\''");
+                let quoted_dir =
+                    crate::testrun::command::shell_quote(&run.dir.display().to_string());
                 s.push_str(&format!(
                     "Run from the contract's run directory (`{}` in the stage's worktree), \
                      where the completion check runs it:\n\n",
                     run.cwd
                 ));
                 s.push_str(&format!(
-                    "```bash\ncd -- '{quoted_dir}'\n{}\necho \"exit: $?\"\n```\n\n",
+                    "```bash\ncd -- {quoted_dir}\n{}\necho \"exit: $?\"\n```\n\n",
                     run.command
                 ));
             }

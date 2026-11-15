@@ -10,7 +10,6 @@ use anyhow::{bail, Context, Result};
 use nix::errno::Errno;
 use nix::fcntl::{readlinkat, AtFlags};
 use nix::sys::stat::fstatat;
-use sha2::{Digest, Sha256};
 
 use crate::fs::safe_fs::{open_safely, safe_open_dirfd};
 use crate::fs::safe_read::{kind_of_mode, list_dir_no_follow, read_bounded, EntryKind};
@@ -251,7 +250,7 @@ impl<'a> Walker<'a> {
             return Ok(known.clone());
         }
         let bytes = read_bounded(self.root, real, MAX_CONFIG_BYTES)?;
-        let digest = hex::encode(Sha256::digest(&bytes));
+        let digest = crate::utils::sha256_hex(&bytes);
         self.digests.insert(real.to_path_buf(), digest.clone());
         Ok(digest)
     }

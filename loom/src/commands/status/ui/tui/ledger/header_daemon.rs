@@ -16,7 +16,9 @@ use crate::utils::format_elapsed;
 pub(super) fn daemon_spans(state: &LoopState, max_width: usize) -> Vec<Span<'static>> {
     match state {
         LoopState::Unknown => running(" · tick unknown".to_owned()),
-        LoopState::Ticking { age_secs } => running(format!(" · tick {age_secs}s ago")),
+        LoopState::Ticking { age_secs } => {
+            running(format!(" · tick {} ago", format_elapsed(*age_secs)))
+        }
         LoopState::Busy {
             busy,
             elapsed_secs,
@@ -120,6 +122,21 @@ mod tests {
         assert_eq!(text(&ticking), "● daemon running · tick 4s ago");
         let unknown = daemon_spans(&LoopState::Unknown, 100);
         assert_eq!(text(&unknown), "● daemon running · tick unknown");
+    }
+
+    #[test]
+    fn ticking_age_uses_compact_durations() {
+        for (age_secs, expected) in [(60, "1m0s"), (90, "1m30s"), (3661, "1h1m")] {
+            let spans = daemon_spans(&LoopState::Ticking { age_secs }, 100);
+            assert_eq!(
+                text(&spans),
+                format!("● daemon running · tick {expected} ago")
+            );
+            assert_eq!(
+                styles(&spans),
+                vec![Theme::status_completed(), Theme::dimmed()]
+            );
+        }
     }
 
     #[test]

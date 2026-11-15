@@ -18,7 +18,7 @@ pub fn prepare_repo_for_run(repo_root: &Path) -> Result<()> {
     require_jq()?;
 
     let repo_bootstrap = crate::git::repository::ensure_pinned_repo_ready(repo_root)?;
-    print_repo_bootstrap(repo_bootstrap);
+    print_repo_bootstrap(repo_bootstrap, None);
 
     // Stale per-session identity in the MAIN repo's settings env shadows the
     // wrapper exports of every session this run will spawn (Claude Code
@@ -180,32 +180,40 @@ fn preflight_snapshot(repo_root: &Path, work_dir: &WorkDir) -> Result<SnapshotOu
     ))
 }
 
-fn print_repo_bootstrap(result: crate::git::RepoBootstrapResult) {
+/// Print the git bootstrap status lines, or nothing when the repository was unchanged.
+/// With a heading, print it above a dimmed rule and indent each status line by two spaces.
+pub(crate) fn print_repo_bootstrap(result: crate::git::RepoBootstrapResult, heading: Option<&str>) {
     if !result.changed() {
         return;
     }
 
+    if let Some(h) = heading {
+        println!("\n{}", h.bold());
+        println!("{}", "─".repeat(40).dimmed());
+    }
+    let indent = if heading.is_some() { "  " } else { "" };
+
     if result.initialized_repo {
-        println!("{} Initialized git repository", "✓".green().bold());
+        println!("{indent}{} Initialized git repository", "✓".green().bold());
     }
 
     if result.created_initial_commit {
         println!(
-            "{} Created bootstrap commit for worktree support",
+            "{indent}{} Created bootstrap commit for worktree support",
             "✓".green().bold()
         );
     }
 
     if result.removed_stale_git_locks {
         println!(
-            "{} Removed stale .git lock files that blocked git init",
+            "{indent}{} Removed stale .git lock files that blocked git init",
             "✓".green().bold()
         );
     }
 
     if result.backed_up_git_config {
         println!(
-            "{} Moved unreadable .git/config aside (kept as .git/config.loom-backup-*)",
+            "{indent}{} Moved unreadable .git/config aside (kept as .git/config.loom-backup-*)",
             "!".yellow().bold()
         );
     }

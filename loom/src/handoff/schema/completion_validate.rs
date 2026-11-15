@@ -41,6 +41,7 @@ pub(super) fn validate_text(field: &str, value: &str, max: usize, required: bool
 }
 
 pub(super) fn parse_utc_timestamp(field: &str, value: &str) -> Result<DateTime<Utc>> {
+    // Kept beside crate::utils::parse_rfc3339_utc: this validates a zero UTC offset, which the helper normalizes away.
     let parsed = DateTime::parse_from_rfc3339(value)
         .map_err(|_| anyhow::anyhow!("{field} is not RFC3339"))?;
     ensure!(parsed.offset().local_minus_utc() == 0, "{field} is not UTC");

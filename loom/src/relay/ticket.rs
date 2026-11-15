@@ -6,7 +6,6 @@ use anyhow::{bail, Context, Result};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use sha2::{Digest, Sha256};
 
 /// Wire version this module reads and writes. [`Ticket::decode`] refuses
 /// anything else.
@@ -42,13 +41,6 @@ impl Ticket {
         }
         Ok(ticket)
     }
-}
-
-/// Lowercase hex SHA-256, matching the `sha256=` field of a relay line.
-pub fn sha256_hex(bytes: &[u8]) -> String {
-    let mut hasher = Sha256::new();
-    hasher.update(bytes);
-    hex::encode(hasher.finalize())
 }
 
 #[cfg(test)]
@@ -94,13 +86,5 @@ mod tests {
     #[test]
     fn decode_refuses_malformed_json() {
         assert!(Ticket::decode(b"not json").is_err());
-    }
-
-    #[test]
-    fn sha256_hex_matches_the_known_empty_digest() {
-        assert_eq!(
-            sha256_hex(b""),
-            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-        );
     }
 }

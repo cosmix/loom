@@ -104,7 +104,7 @@ fn relay_mode_writes_exactly_one_ticket_with_truncated_failure_output() {
             .unwrap(),
     )
     .unwrap();
-    assert_eq!(line.sha256, crate::relay::sha256_hex(&bytes));
+    assert_eq!(line.sha256, crate::utils::sha256_hex(&bytes));
 }
 
 #[test]

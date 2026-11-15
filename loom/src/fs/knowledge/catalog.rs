@@ -3,7 +3,6 @@
 use crate::fs::knowledge::chunker::{self, KnowledgeChunk};
 use anyhow::Context;
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 use std::fs;
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
@@ -296,7 +295,7 @@ fn revision_for(chunks: &[KnowledgeChunk]) -> String {
         .map(|chunk| format!("{}:{}\n", chunk.id, chunk.content_hash))
         .collect();
     lines.sort();
-    hex::encode(Sha256::digest(lines.concat().as_bytes()))
+    crate::utils::sha256_hex(lines.concat().as_bytes())
 }
 
 fn generic_blurb(content: &str, relative_path: &Path) -> Option<String> {

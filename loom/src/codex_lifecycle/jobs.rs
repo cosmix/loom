@@ -3,7 +3,6 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{bail, ensure, Context, Result};
 use chrono::{DateTime, Utc};
-use sha2::{Digest, Sha256};
 
 use crate::agent_state::is_safe_id;
 use crate::models::forward_receipt::job_record::{read_companion_job, CompanionJob};
@@ -153,7 +152,7 @@ pub(super) fn workspace_state_dir(state_root: &Path, workspace: &Path) -> Result
         .and_then(|value| value.to_str())
         .unwrap_or("workspace");
     let slug = workspace_slug(basename);
-    let hash = hex::encode(Sha256::digest(canonical.as_bytes()));
+    let hash = crate::utils::sha256_hex(canonical.as_bytes());
     Ok(state_root.join(format!("{slug}-{}", &hash[..16])))
 }
 

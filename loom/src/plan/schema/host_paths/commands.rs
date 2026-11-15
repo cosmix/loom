@@ -58,7 +58,11 @@ fn format_issue(
     command: &str,
     issue: &HostPathIssue,
 ) -> String {
-    let locator = format_locator(label, indices, &truncate_command(command));
+    let locator = format_locator(
+        label,
+        indices,
+        &crate::utils::truncate_for_display(command, 80),
+    );
     match issue {
         HostPathIssue::TmpdirOverride(value) => format!(
             "Stage '{stage_id}': {locator} overrides TMPDIR to '{value}'; \
@@ -93,15 +97,6 @@ fn format_locator(label: &str, indices: &[usize], echoed: &str) -> String {
             format!("{label} {list} (first: `{echoed}`)")
         }
     }
-}
-
-fn truncate_command(command: &str) -> String {
-    const MAX: usize = 80;
-    if command.chars().count() <= MAX {
-        return command.to_string();
-    }
-    let truncated: String = command.chars().take(MAX).collect();
-    format!("{truncated}…")
 }
 
 /// Tokenises `command` and walks it tracking simple-command boundaries,

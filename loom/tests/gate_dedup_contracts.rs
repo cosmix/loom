@@ -17,7 +17,7 @@ use std::fs;
 use chrono::Utc;
 use loom::host_verify::submit::{submit, Submission, SubmitRequest};
 use loom::host_verify::JobKind;
-use loom::relay::sha256_hex;
+use loom::utils::sha256_hex;
 use serial_test::serial;
 use tempfile::TempDir;
 

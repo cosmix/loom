@@ -25,9 +25,15 @@ use validation::validate_markdown_files;
 fn print_scheduler_alerts(alerts: &[Alert]) {
     for alert in alerts {
         let (marker, text) = match alert.severity {
-            Severity::Critical => ("✖".red(), alert.text.as_str().red()),
-            Severity::Warning => ("!".yellow(), alert.text.as_str().yellow()),
-            Severity::Info => ("·".dimmed(), alert.text.as_str().dimmed()),
+            Severity::Critical => (alert.severity.marker().red(), alert.text.as_str().red()),
+            Severity::Warning => (
+                alert.severity.marker().yellow(),
+                alert.text.as_str().yellow(),
+            ),
+            Severity::Info => (
+                alert.severity.marker().dimmed(),
+                alert.text.as_str().dimmed(),
+            ),
         };
         println!("   {marker} {text}");
     }

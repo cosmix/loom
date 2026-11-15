@@ -26,11 +26,11 @@ use crate::models::dispute::{strip_control, PlanPatch};
 use crate::models::stage::Stage;
 use crate::plan::amendment::{AmendmentField, AmendmentPatch, AmendmentRequest};
 use crate::plan::schema::ContractSpec;
+use crate::utils::text::single_line;
 use crate::verify::contracts::changes::stage_base;
 use crate::verify::contracts::choices;
 use crate::verify::contracts::collection::stage_scaffold;
 use crate::verify::contracts::normalize;
-use crate::verify::review::report::single_line;
 
 use super::apply::amend_plan;
 use super::apply_contract::amended_ids;

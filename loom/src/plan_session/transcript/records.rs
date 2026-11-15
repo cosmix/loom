@@ -93,8 +93,7 @@ pub(super) fn parse(line: &str) -> Option<Record> {
     let at = value
         .get("timestamp")
         .and_then(Value::as_str)
-        .and_then(|text| DateTime::parse_from_rfc3339(text).ok())
-        .map(|time| time.with_timezone(&Utc));
+        .and_then(crate::utils::parse_rfc3339_utc);
     let evidence = notification::evidence(&value);
     let kind = match (
         command_record(&value),
@@ -238,6 +237,7 @@ pub(super) fn first_line(text: &str) -> Option<String> {
 }
 
 /// `text` cut to at most `max` characters, on a char boundary.
+// Unlike crate::utils::truncate, adds no marker and respects done-fence room below 3 chars.
 pub(crate) fn cap_chars(text: &str, max: usize) -> String {
     match text.char_indices().nth(max) {
         Some((end, _)) => text[..end].to_owned(),

@@ -15,7 +15,7 @@ use crate::models::dispute::{
     Citation, DisputeKind, DisputeVerdict, FindingRuling, FindingSnapshot, PlanPatch,
 };
 use crate::models::stage::{Stage, StageStatus, StageType};
-use crate::relay::sha256_hex;
+use crate::utils::sha256_hex;
 use crate::verify::contracts::store::{
     self as contract_store, FreezeRecord, FrozenContract, FrozenFile,
 };

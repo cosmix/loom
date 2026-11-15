@@ -2,7 +2,6 @@ use crate::agent_state::is_safe_id;
 use anyhow::{ensure, Context, Result};
 use chrono::{DateTime, SecondsFormat, Utc};
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
 pub mod job_record;
 mod load;
@@ -127,7 +126,7 @@ impl ForwardIdentity {
             self.stage_id,
             self.loom_session_id
         );
-        hex::encode(Sha256::digest(canonical.as_bytes()))
+        crate::utils::sha256_hex(canonical.as_bytes())
     }
     fn validate(&self) -> Result<()> {
         let values = [
@@ -177,6 +176,7 @@ impl ForwardObservation {
             }),
             "forward receipt fields are incomplete"
         );
+        // Kept beside crate::utils::parse_rfc3339_utc: this validates a zero UTC offset, which the helper normalizes away.
         let timestamp = value
             .get("observed_at")
             .and_then(serde_json::Value::as_str)

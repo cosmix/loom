@@ -340,6 +340,7 @@ fn sort_observations(observations: &mut [NonceObservation]) -> Result<()> {
 }
 
 fn timestamp(value: &str) -> Result<DateTime<Utc>> {
+    // Kept beside crate::utils::parse_rfc3339_utc: callers surface chrono's parse error text, which the Option helper drops.
     Ok(DateTime::parse_from_rfc3339(value)?.with_timezone(&Utc))
 }
 

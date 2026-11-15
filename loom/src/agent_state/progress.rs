@@ -210,8 +210,7 @@ pub(crate) fn timestamp(entry: &Value) -> Option<DateTime<Utc>> {
     entry
         .get("timestamp")
         .and_then(Value::as_str)
-        .and_then(|value| DateTime::parse_from_rfc3339(value).ok())
-        .map(|value| value.with_timezone(&Utc))
+        .and_then(crate::utils::parse_rfc3339_utc)
 }
 
 pub(crate) fn entry_type(entry: &Value) -> Option<&str> {

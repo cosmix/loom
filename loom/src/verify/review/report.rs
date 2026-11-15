@@ -1,8 +1,6 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
-use crate::context::format_chars::is_format;
-
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Finding {
     pub severity: String,
@@ -26,20 +24,6 @@ pub struct ParsedReview {
     pub suggestions: Vec<Suggestion>,
     pub resolved: Vec<String>,
     pub unresolved: Vec<String>,
-}
-
-/// `text` on one line: control characters and whitespace runs become single
-/// spaces, and Unicode format (Cf) characters are dropped, so agent-authored
-/// text can neither span journal lines, steer a terminal, nor read reordered
-/// (a U+202E bidi override) or hide a zero-width character. Every renderer of
-/// a review value goes through this.
-pub fn single_line(text: &str) -> String {
-    let visible: String = text.chars().filter(|&c| !is_format(c)).collect();
-    visible
-        .split(|c: char| c.is_whitespace() || c.is_control())
-        .filter(|word| !word.is_empty())
-        .collect::<Vec<_>>()
-        .join(" ")
 }
 
 /// Err(reason) = malformed: no block, or the last block is not the D12 JSON shape.
@@ -203,20 +187,7 @@ fn parse_suggestion(value: &Value) -> Result<Suggestion, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_review, single_line, Finding, Suggestion};
-
-    #[test]
-    fn single_line_flattens_control_characters_and_whitespace() {
-        assert_eq!(single_line(" a\n\tb\u{1b}[31m  c \r\n"), "a b [31m c");
-    }
-
-    #[test]
-    fn single_line_drops_bidi_overrides_and_zero_width_characters() {
-        assert_eq!(
-            single_line("ok\u{202E}gnp.exe \u{200B}\u{FEFF} a\u{2066}b\u{E0041}"),
-            "okgnp.exe ab"
-        );
-    }
+    use super::{parse_review, Finding, Suggestion};
 
     #[test]
     fn parses_loom_review_block() {

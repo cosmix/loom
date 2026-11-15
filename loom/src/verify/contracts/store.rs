@@ -33,7 +33,7 @@ use std::path::{Component, Path, PathBuf};
 use crate::daemon::ContractRunReport;
 use crate::fs::locking::{atomic_write_locked, locked_dir_update};
 use crate::fs::safe_read::{is_not_found, read_bounded};
-use crate::relay::sha256_hex;
+use crate::utils::sha256_hex;
 
 pub use super::record_view::{effective_contract, recorded_cwd};
 

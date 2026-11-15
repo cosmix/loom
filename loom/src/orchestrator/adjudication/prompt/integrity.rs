@@ -5,9 +5,9 @@ use std::path::{Component, Path};
 use super::{KindPromptInput, Prompt};
 use crate::git::worktree::WorktreeGit;
 use crate::models::dispute::DisputeKind;
+use crate::utils::text::single_line;
 use crate::verify::contracts::changes::diff_from_base;
 use crate::verify::integrity::{EventKind, IntegrityEvent};
-use crate::verify::review::report::single_line;
 
 pub(super) fn build(input: &KindPromptInput<'_>) -> Prompt {
     Prompt {

@@ -22,7 +22,6 @@
 //! it, and tools there can certify results (Go's test cache) that verification
 //! must produce itself. Revisit if a stage-unwritable location becomes available.
 use anyhow::{Context, Result};
-use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -248,8 +247,8 @@ fn private_temporary_directory(tree: &Path) -> Result<tempfile::TempDir> {
 
 /// `.loom-cargo-<digest of the canonical tree>` under the first scratch root.
 fn stable_cargo_home(tree: &Path) -> Result<PathBuf> {
-    let digest = Sha256::digest(tree.as_os_str().as_encoded_bytes());
-    let name = format!(".loom-cargo-{}", hex::encode(&digest[..12]));
+    let digest = crate::utils::sha256_hex(tree.as_os_str().as_encoded_bytes());
+    let name = format!(".loom-cargo-{}", &digest[..24]);
     scratch_roots(tree)
         .next()
         .map(|root| root.join(name))
@@ -343,3 +342,13 @@ fn overlay_supported(scratch: &Path, name: &str, source: &Path) -> bool {
 #[cfg(all(test, target_os = "linux"))]
 #[path = "confine_scratch/cache_tests.rs"]
 mod cache_tests;
+
+#[cfg(test)]
+#[test]
+fn stable_cargo_home_digest_is_stable() {
+    let path = stable_cargo_home(Path::new("/loom-test-tree")).unwrap();
+    assert_eq!(
+        path.file_name().unwrap(),
+        ".loom-cargo-c4173759b16a543fccc72bcd"
+    );
+}

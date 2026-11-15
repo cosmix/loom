@@ -22,7 +22,6 @@
 
 use anyhow::{Context, Result};
 use fs2::FileExt;
-use sha2::Digest;
 use std::fs::File;
 use std::io::{BufReader, Read};
 use std::os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt};
@@ -45,7 +44,7 @@ pub fn lock_plan(path: &Path) -> Result<File> {
     let mut identity = parent.as_os_str().as_encoded_bytes().to_vec();
     identity.push(0);
     identity.extend_from_slice(name.as_encoded_bytes());
-    let digest = hex::encode(sha2::Sha256::digest(identity));
+    let digest = crate::utils::sha256_hex(&identity);
     let lock_path = plan_lock_dir()?.join(format!("{digest}.lock"));
     let file = std::fs::OpenOptions::new()
         .read(true)
@@ -277,3 +276,16 @@ pub fn locked_write(path: &Path, content: &str) -> Result<()> {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+#[test]
+fn plan_lock_digest_is_stable() {
+    let file = lock_plan(Path::new("/loom-digest-pin-plan.md")).unwrap();
+    let path = plan_lock_dir()
+        .unwrap()
+        .join("77553b3c3a11657788ffe34664201d56526bbd4e0e9d4bdbd4cfdc0a08d35aa6.lock");
+    assert_eq!(
+        file.metadata().unwrap().ino(),
+        std::fs::metadata(path).unwrap().ino()
+    );
+}

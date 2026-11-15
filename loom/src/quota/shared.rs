@@ -14,7 +14,6 @@ use crate::context::untrusted::inline_safe;
 use anyhow::{Context, Result};
 use fs2::FileExt;
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 use std::fs::{File, OpenOptions};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
@@ -123,7 +122,13 @@ pub(super) fn shared_dir(home: &Path) -> PathBuf {
 
 /// First 16 hex chars of the token's SHA-256; never reveals the token.
 pub(super) fn token_key(token: &str) -> String {
-    hex::encode(&Sha256::digest(token.as_bytes())[..8])
+    crate::utils::sha256_hex(token.as_bytes())[..16].to_owned()
+}
+
+#[cfg(test)]
+#[test]
+fn token_key_digest_is_pinned() {
+    assert_eq!(token_key("secret-token"), "930bbdc51b6aed5c");
 }
 
 /// Take the account's lock, then either adopt the state another daemon left

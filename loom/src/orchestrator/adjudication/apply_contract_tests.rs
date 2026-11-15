@@ -14,7 +14,7 @@ use crate::fs::work_dir::WorkDir;
 use crate::models::dispute::{Citation, DisputeKind, DisputeVerdict, PlanPatch};
 use crate::models::stage::Stage;
 use crate::plan::schema::ContractSpec;
-use crate::relay::sha256_hex;
+use crate::utils::sha256_hex;
 use crate::verify::contracts::store::{
     self as contract_store, FreezeRecord, FrozenContract, FrozenFile, REFROZEN_OUTCOME,
 };

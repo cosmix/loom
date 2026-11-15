@@ -159,12 +159,19 @@ fn validate_request(
     Ok(())
 }
 
-fn validate_path(path: Option<&Path>, name: &str) -> anyhow::Result<()> {
+pub(crate) fn validate_path(path: Option<&Path>, name: &str) -> anyhow::Result<()> {
     let path = path.with_context(|| format!("missing companion {name}"))?;
     let text = path
         .to_str()
         .with_context(|| format!("companion {name} is not UTF-8"))?;
     ensure!(path.is_absolute(), "companion {name} is not absolute");
+    ensure!(
+        !path.components().any(|part| matches!(
+            part,
+            std::path::Component::CurDir | std::path::Component::ParentDir
+        )),
+        "companion {name} is not normalized"
+    );
     validate_text(text, MAX_PATH_BYTES, name)
 }
 
@@ -173,7 +180,7 @@ fn validate_bounded(value: Option<&str>, max: usize, name: &str) -> anyhow::Resu
     validate_text(value, max, name)
 }
 
-fn validate_text(value: &str, max: usize, name: &str) -> anyhow::Result<()> {
+pub(crate) fn validate_text(value: &str, max: usize, name: &str) -> anyhow::Result<()> {
     ensure!(
         (1..=max).contains(&value.len()),
         "invalid companion {name} length"
@@ -201,3 +208,66 @@ where
 #[cfg(test)]
 #[path = "job_record_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+mod validation_tests {
+    use super::*;
+
+    fn valid_job() -> CompanionJob {
+        serde_json::from_value(serde_json::json!({
+            "id": "job-1",
+            "status": "running",
+            "phase": "starting",
+            "sessionId": "session-1",
+            "workspaceRoot": "/workspace",
+            "jobClass": "task",
+            "write": true,
+            "request": {
+                "cwd": "/workspace",
+                "model": "model",
+                "effort": "high",
+                "write": true,
+                "resumeLast": false,
+                "jobId": "job-1"
+            }
+        }))
+        .expect("valid companion job")
+    }
+
+    #[test]
+    fn job_paths_reject_parent_components() {
+        let mut job = valid_job();
+        job.validate_v1_0_6().expect("valid companion job");
+        job.workspace_root = Some(PathBuf::from("/workspace/../elsewhere"));
+        assert_eq!(
+            job.validate_v1_0_6().unwrap_err().to_string(),
+            "companion workspaceRoot is not normalized"
+        );
+        job.workspace_root = Some(PathBuf::from("/workspace"));
+        job.request.as_mut().expect("request").cwd = PathBuf::from("/workspace/../elsewhere");
+        assert_eq!(
+            job.validate_v1_0_6().unwrap_err().to_string(),
+            "companion request.cwd is not normalized"
+        );
+    }
+
+    #[test]
+    fn shared_paths_preserve_existing_validation() {
+        use std::ffi::OsStr;
+        use std::os::unix::ffi::OsStrExt;
+
+        let at_cap = format!("/{}", "x".repeat(MAX_PATH_BYTES - 1));
+        let over_cap = format!("{at_cap}x");
+        validate_path(Some(Path::new(&at_cap)), "path").expect("path at byte cap");
+        for path in [
+            None,
+            Some(Path::new("")),
+            Some(Path::new("relative")),
+            Some(Path::new("/workspace\0tail")),
+            Some(Path::new(&over_cap)),
+            Some(Path::new(OsStr::from_bytes(b"/bad\xff"))),
+        ] {
+            assert!(validate_path(path, "path").is_err(), "accepted {path:?}");
+        }
+    }
+}

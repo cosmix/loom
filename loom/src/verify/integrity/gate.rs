@@ -6,9 +6,9 @@ use std::path::Path;
 use super::{load_accepted, scan_changes, Accepted, EventKind, IntegrityEvent};
 use crate::git::worktree::WorktreeGit;
 use crate::models::stage::Stage;
+use crate::utils::text::single_line;
 use crate::verify::review::fingerprint::{self, ChangeFingerprint};
 use crate::verify::review::gate::covers;
-use crate::verify::review::report::single_line;
 
 /// [`check_changes`] against the worktree's fingerprint from the loom daemon
 /// that owns it (`fingerprint::compute`), for a stage the review gate covers

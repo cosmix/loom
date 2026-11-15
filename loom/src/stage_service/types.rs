@@ -90,6 +90,6 @@ impl QueuedRequest {
     pub fn identity(&self) -> String {
         let payload = serde_json::to_vec(&self.payload).expect("serializable stage request");
         let session = self.session_id.as_deref().unwrap_or_default().as_bytes();
-        crate::relay::sha256_hex(&[self.request_id.as_bytes(), session, &payload].concat())
+        crate::utils::sha256_hex(&[self.request_id.as_bytes(), session, &payload].concat())
     }
 }

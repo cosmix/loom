@@ -2,7 +2,6 @@
 
 use crate::context::schema::LifecycleState;
 use regex::Regex;
-use sha2::{Digest, Sha256};
 use std::path::{Component, Path, PathBuf};
 use std::sync::LazyLock;
 
@@ -40,7 +39,7 @@ fn build_chunk(
 
     let (references, symbols) = references::references_in(&body);
     let source_paths = live_source_paths(index, references, frontmatter);
-    let content_hash = format!("sha256:{}", hex::encode(Sha256::digest(body.as_bytes())));
+    let content_hash = format!("sha256:{}", crate::utils::sha256_hex(body.as_bytes()));
     // This is an estimate, not a tokenizer count.
     let estimated_tokens = crate::context::schema::estimate_tokens(&body);
     let links = links_in(&body);
@@ -306,4 +305,20 @@ fn category_for(path: &Path) -> Option<String> {
         })
         .collect();
     components.get(components.len().checked_sub(2)?).cloned()
+}
+
+#[cfg(test)]
+#[test]
+fn chunk_and_empty_catalog_digests_are_stable() {
+    let chunks = chunk_file(Path::new("notes.md"), b"## Title\nBody\n").unwrap();
+    assert_eq!(
+        chunks[0].content_hash,
+        "sha256:29087886ceb102c198849ee96215362945dc9f42d4dc40053b12f5bb50aab8be"
+    );
+    let root = tempfile::tempdir().unwrap();
+    let catalog = crate::fs::knowledge::catalog::build(root.path()).unwrap();
+    assert_eq!(
+        catalog.revision,
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    );
 }

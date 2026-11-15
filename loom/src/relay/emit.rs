@@ -29,9 +29,10 @@ pub use sink::{RelaySink, StdSink};
 
 use crate::models::session::SessionType;
 use crate::relay::{
-    new_request_id, sha256_hex, validate_session_dir, verdict, MatrixVerdict, RelayLine,
-    RequestKind, Ticket, MAX_TICKET_BYTES,
+    new_request_id, validate_session_dir, verdict, MatrixVerdict, RelayLine, RequestKind, Ticket,
+    MAX_TICKET_BYTES,
 };
+use crate::utils::sha256_hex;
 use anyhow::{bail, Context, Result};
 use chrono::Utc;
 use serde_json::Value;

@@ -24,16 +24,15 @@
 //! depend on the reader's view of the worktree.
 
 use anyhow::{ensure, Context, Result};
-use sha2::{Digest, Sha256};
 use std::collections::BTreeSet;
 use std::path::Path;
 
 use super::fingerprint::{fingerprint_value, nul_paths, ChangeFingerprint, MAX_REVIEW_FILE_BYTES};
-use super::report::single_line;
 use super::store::ReviewRound;
 use crate::git::worktree::WorktreeGit;
 use crate::models::stage::Stage;
 use crate::stage_service::observer::stage_worktree_and_target;
+use crate::utils::text::single_line;
 use crate::verify::contracts::changes::{changed_names, git};
 
 /// The paths that keep a round from covering the tree after a base move.
@@ -173,7 +172,7 @@ fn committed_digest(repo: &WorktreeGit, commit: &str, path: &str) -> Result<Opti
         return Ok(None);
     }
     let blob = git(repo, &["cat-file", "blob", oid])?;
-    Ok(Some(hex::encode(Sha256::digest(&blob))))
+    Ok(Some(crate::utils::sha256_hex(&blob)))
 }
 
 /// `base` when it is a full hexadecimal object id, so it can never reach git

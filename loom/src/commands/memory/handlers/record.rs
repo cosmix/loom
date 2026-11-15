@@ -198,7 +198,8 @@ pub fn question(text: String, evidence: Vec<String>, stage_id: Option<String>) -
 #[cfg(test)]
 mod relay_tests {
     use super::*;
-    use crate::relay::{sha256_hex, RelayLine, Ticket};
+    use crate::relay::{RelayLine, Ticket};
+    use crate::utils::sha256_hex;
     use std::fs;
     use std::io::Write;
     use std::os::unix::fs::PermissionsExt;

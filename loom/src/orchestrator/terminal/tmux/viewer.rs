@@ -11,7 +11,6 @@
 //! and cleanup on the same repository socket.
 
 use anyhow::Result;
-use sha2::{Digest, Sha256};
 use std::borrow::Cow;
 use std::os::unix::ffi::OsStrExt;
 use std::path::Path;
@@ -59,14 +58,17 @@ pub fn viewer_socket_name(work_dir: &Path) -> String {
         .and_then(|wd| wd.project_root().map(Path::to_path_buf))
         .unwrap_or_else(|| canonical.clone());
 
-    let mut hasher = Sha256::new();
-    hasher.update(repo_root.as_os_str().as_bytes());
-    let digest = hasher.finalize();
-    let hex = hex::encode(digest);
+    let hex = crate::utils::sha256_hex(repo_root.as_os_str().as_bytes());
 
     // `/tmp/tmux-<uid>/loom-view-xxxxxxxx` is ~31 bytes, far inside the
     // 104-byte AF_UNIX `sun_path` limit.
     format!("loom-view-{}", &hex[..8])
+}
+
+#[cfg(test)]
+#[test]
+fn viewer_socket_digest_is_stable() {
+    assert_eq!(viewer_socket_name(Path::new("/")), "loom-view-8a5edab2");
 }
 
 /// Identity for loom's alphanumeric/dash ids; defence in depth because the

@@ -8,6 +8,7 @@
 
 use super::contract::{CURRENT_CONTENT_HEADING, DIFF_HEADING, FROZEN_CONTENT_HEADING};
 use super::{Prompt, MAX_PROMPT_BYTES};
+use crate::models::dispute::truncate_to_byte_limit;
 
 pub(super) const TRUNCATION_MARKER: &str = "\n... [truncated] ...\n";
 
@@ -61,9 +62,7 @@ fn halve_section(evidence: &mut String, header: &str) -> bool {
     let body_len = body_end - body_start;
     // Keep the first half; replace the rest with the marker.
     let keep = body_len / 2;
-    let mut new_body = String::with_capacity(keep + TRUNCATION_MARKER.len());
-    let kept_slice = utf8_safe_prefix(&evidence[body_start..body_end], keep);
-    new_body.push_str(kept_slice);
+    let mut new_body = truncate_to_byte_limit(&evidence[body_start..body_end], keep);
     if !new_body.ends_with('\n') {
         new_body.push('\n');
     }
@@ -118,20 +117,8 @@ fn truncate_string(s: &mut String, max_bytes: usize) {
         return;
     }
     let allowance = max_bytes.saturating_sub(TRUNCATION_MARKER.len());
-    let prefix = utf8_safe_prefix(s, allowance).to_string();
-    *s = prefix;
+    *s = truncate_to_byte_limit(s, allowance);
     s.push_str(TRUNCATION_MARKER);
-}
-
-fn utf8_safe_prefix(s: &str, max_bytes: usize) -> &str {
-    if max_bytes >= s.len() {
-        return s;
-    }
-    let mut idx = max_bytes;
-    while idx > 0 && !s.is_char_boundary(idx) {
-        idx -= 1;
-    }
-    &s[..idx]
 }
 
 #[cfg(test)]
@@ -139,12 +126,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn utf8_safe_prefix_does_not_split_multibyte() {
-        let s = "héllo wörld";
+    fn hard_truncation_keeps_utf8_prefix_and_marker_within_budget() {
+        let mut s = "héllo wörld".repeat(10);
         // 1 byte past the start of 'é' (UTF-8 2-byte char) — must back up.
-        let prefix = utf8_safe_prefix(s, 2);
-        assert!(s.starts_with(prefix));
-        assert_eq!(prefix.len(), 1, "got: {prefix:?}");
+        let max_bytes = TRUNCATION_MARKER.len() + 2;
+        truncate_string(&mut s, max_bytes);
+        assert_eq!(s, format!("h{TRUNCATION_MARKER}"));
+        assert!(s.len() <= max_bytes);
     }
 
     #[test]
