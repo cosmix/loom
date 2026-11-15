@@ -1,4 +1,5 @@
 //! Final launch-time revalidation, after pure snapshot candidate selection.
+use super::stage_block::StageBlock;
 use super::{
     stage_executor::{StageExecutor, StartDisposition},
     Orchestrator,
@@ -52,14 +53,10 @@ impl Orchestrator {
         let id = stage.id.clone();
         if let Err(error) = self.start_knowledge_stage(stage) {
             let detail = format!("{error:#}");
-            if self
-                .persist_blocked_stage(&id, FailureType::InfrastructureError, vec![detail])
-                .is_ok()
-            {
-                let _ = self
-                    .graph
-                    .mark_status(&id, crate::models::stage::StageStatus::Blocked);
-            }
+            self.block_stage(
+                &id,
+                StageBlock::new(FailureType::InfrastructureError, vec![detail]),
+            );
         }
         Ok(if self.active_sessions.contains_key(&id) {
             StartDisposition::Launched

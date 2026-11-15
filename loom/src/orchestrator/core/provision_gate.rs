@@ -5,21 +5,26 @@ use std::collections::HashSet;
 use std::path::Path;
 
 use anyhow::Result;
-use chrono::Utc;
 
+use crate::git::status_entries::{parse_porcelain_v1_z, StatusEntry, PORCELAIN_V1_Z};
 use crate::git::worktree::WorktreeGit;
-use crate::models::failure::{FailureInfo, FailureType};
-use crate::models::stage::{Stage, StageStatus};
+use crate::models::failure::FailureType;
+use crate::models::stage::Stage;
 use crate::orchestrator::busy::{self, BusyOp};
 use crate::orchestrator::provision::{display_safe, read_provision_snapshot, run_provision};
 use crate::orchestrator::tick::Phase;
 use crate::plan::schema::ProvisionEntry;
 
-use super::persistence::Persistence;
+use super::stage_block::StageBlock;
 use super::Orchestrator;
 
 /// Most paths a "left files git does not ignore" reason names.
 const MAX_REPORTED_PATHS: usize = 10;
+
+/// The block reason when the after-provision listing does not parse but the
+/// before-provision one did: the provision named a file git cannot list as UTF-8.
+const NON_UTF8_REASON: &str = "provision left a file whose name is not UTF-8 in the worktree; \
+                               a provision command may write only files git ignores";
 
 impl Orchestrator {
     /// Run the stage's `before_stage` gate on the pristine worktree, then provision it.
@@ -64,19 +69,15 @@ impl Orchestrator {
 
     /// Block the stage with `reason`. Recording `failure_info` keeps `loom status` from
     /// reading the block as an agent's; an infrastructure error is never auto-retried.
+    /// `Ok(false)` whether or not the block persisted: the stage must not spawn either way.
     fn block_for_provision(&mut self, stage_id: &str, reason: String) -> Result<bool> {
         eprintln!("Provisioning failed for '{stage_id}': {reason}");
-        self.update_stage(stage_id, |current| {
-            current.try_mark_blocked()?;
-            current.failure_info = Some(FailureInfo {
-                failure_type: FailureType::InfrastructureError,
-                detected_at: Utc::now(),
-                evidence: reason.lines().map(str::to_string).collect(),
-            });
-            current.close_reason = Some(reason.clone());
-            Ok(())
-        })?;
-        let _ = self.graph.mark_status(stage_id, StageStatus::Blocked);
+        let evidence = reason.lines().map(str::to_string).collect();
+        let block = StageBlock {
+            close_reason: Some(reason),
+            ..StageBlock::new(FailureType::InfrastructureError, evidence)
+        };
+        self.block_stage(stage_id, block);
         Ok(false)
     }
 }
@@ -104,16 +105,24 @@ fn provision_worktree(
             || run_provision(std::slice::from_ref(entry), worktree_path),
         )
     })?;
-    // A listing that failed (a plain directory, a worktree that cannot be pinned) skips the
-    // comparison, as `find_prior_stage_work` does.
-    let (Some(before), Some(after)) = (before, status_entries(work_dir, worktree_path)) else {
+    // A listing git could not produce (a plain directory, a worktree that cannot be
+    // pinned) skips the comparison, as `find_prior_stage_work` does; so does a
+    // before-listing that does not parse, since the provision did not cause it.
+    let Some(Ok(before)) = before else {
         return Ok(());
     };
-    let known: HashSet<&str> = before.iter().map(String::as_str).collect();
-    let added: Vec<&str> = after
+    let after = match status_entries(work_dir, worktree_path) {
+        None => return Ok(()),
+        Some(Err(error)) => {
+            tracing::warn!(worktree = %worktree_path.display(), "{error:#}");
+            return Err(NON_UTF8_REASON.to_string());
+        }
+        Some(Ok(after)) => after,
+    };
+    let known: HashSet<_> = before.iter().map(entry_key).collect();
+    let added: Vec<&StatusEntry> = after
         .iter()
-        .map(String::as_str)
-        .filter(|entry| !known.contains(entry))
+        .filter(|entry| !known.contains(&entry_key(entry)))
         .collect();
     if added.is_empty() {
         Ok(())
@@ -122,29 +131,34 @@ fn provision_worktree(
     }
 }
 
+/// A status entry's identity for the before/after comparison.
+fn entry_key(entry: &StatusEntry) -> ([u8; 2], &str, Option<&str>) {
+    (entry.code, &entry.path, entry.origin.as_deref())
+}
+
 /// The worktree's `git status` entries, untracked files listed one by one and ignored
-/// files not at all. `None` when git cannot list them. Pinned: this runs on the host,
-/// and the stage controls the worktree's `.git` file.
-fn status_entries(work_dir: &Path, worktree_path: &Path) -> Option<Vec<String>> {
-    let args = ["status", "--porcelain=v1", "-z", "--untracked-files=all"];
-    let listed =
-        WorktreeGit::pinned_in_project_of(work_dir, worktree_path).and_then(|git| git.run(&args));
+/// files not at all. `None` when git cannot list them; `Some(Err)` when the listing is
+/// not strict porcelain (a non-UTF-8 name). Pinned: this runs on the host, and the stage
+/// controls the worktree's `.git` file.
+fn status_entries(
+    work_dir: &Path,
+    worktree_path: &Path,
+) -> Option<anyhow::Result<Vec<StatusEntry>>> {
+    let listed = WorktreeGit::pinned_in_project_of(work_dir, worktree_path)
+        .and_then(|git| git.run(&PORCELAIN_V1_Z));
     // Raw output: a trimmed listing would eat the leading space of a first ` M <path>`
     // entry and shift every column after it.
-    let output = match listed {
-        Ok(output) if output.status.success() => output,
+    match listed {
+        Ok(output) if output.status.success() => Some(parse_porcelain_v1_z(&output.stdout)),
         Ok(output) => {
             warn_status_unreadable(worktree_path, &String::from_utf8_lossy(&output.stderr));
-            return None;
+            None
         }
         Err(e) => {
             warn_status_unreadable(worktree_path, &format!("{e:#}"));
-            return None;
+            None
         }
-    };
-    Some(split_status_entries(&String::from_utf8_lossy(
-        &output.stdout,
-    )))
+    }
 }
 
 fn warn_status_unreadable(worktree_path: &Path, error: &str) {
@@ -155,34 +169,12 @@ fn warn_status_unreadable(worktree_path: &Path, error: &str) {
     );
 }
 
-/// Split `git status --porcelain=v1 -z` output into one string per entry. A rename or
-/// copy (`R`/`C` in either status column) is followed by a second NUL-separated field,
-/// the origin path with no `XY ` prefix; it belongs to the same entry.
-fn split_status_entries(listing: &str) -> Vec<String> {
-    let mut fields = listing.split('\0').filter(|field| !field.is_empty());
-    let mut entries = Vec::new();
-    while let Some(field) = fields.next() {
-        let origin = if field.get(..2).is_some_and(|xy| xy.contains(['R', 'C'])) {
-            fields.next()
-        } else {
-            None
-        };
-        entries.push(match origin {
-            Some(origin) => format!("{field}\0{origin}"),
-            None => field.to_string(),
-        });
-    }
-    entries
-}
-
 /// The block reason naming the files a provision left that git does not ignore. Each
 /// name is [`display_safe`]: `git status -z` prints it raw, and a stage chooses it.
-fn unignored_reason(added: &[&str]) -> String {
-    // A status entry is "XY <path>", plus "\0<origin>" for a rename or copy.
+fn unignored_reason(added: &[&StatusEntry]) -> String {
     let shown: Vec<String> = added
         .iter()
-        .map(|&entry| entry.get(3..).unwrap_or(entry))
-        .map(|path| display_safe(path.split('\0').next().unwrap_or(path)))
+        .map(|entry| display_safe(&entry.path))
         .take(MAX_REPORTED_PATHS)
         .collect();
     let mut listed = shown.join(", ");

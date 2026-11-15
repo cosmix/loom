@@ -3,7 +3,6 @@
 use anyhow::Result;
 use chrono::Utc;
 
-use crate::models::failure::{FailureInfo, FailureType};
 use crate::models::stage::{Stage, StageStatus, StageType};
 use crate::orchestrator::scheduling_report::{self, BlockReason, BlockedStage, SchedulingReport};
 use crate::orchestrator::signals::DependencyStatus;
@@ -13,24 +12,6 @@ use super::session_adoption::AdoptionResult;
 use super::Orchestrator;
 
 impl Orchestrator {
-    pub(super) fn persist_blocked_stage(
-        &self,
-        stage_id: &str,
-        failure_type: FailureType,
-        evidence: Vec<String>,
-    ) -> Result<()> {
-        self.update_stage(stage_id, |current| {
-            current.try_mark_blocked()?;
-            current.failure_info = Some(FailureInfo {
-                failure_type,
-                detected_at: Utc::now(),
-                evidence,
-            });
-            Ok(())
-        })?;
-        Ok(())
-    }
-
     fn adoption_disposition(&mut self, stage_id: &str) -> Result<Option<StartDisposition>> {
         Ok(match self.adopt_live_session_if_present(stage_id)? {
             AdoptionResult::Adopted => Some(StartDisposition::Adopted),

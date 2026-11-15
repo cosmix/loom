@@ -1,5 +1,6 @@
 //! Worktree spawn preflight and hook gates.
 use super::persistence::Persistence;
+use super::stage_block::StageBlock;
 use super::stage_executor::install_required_hooks;
 use super::Orchestrator;
 use crate::git;
@@ -76,10 +77,9 @@ impl Orchestrator {
             let err_msg = format!(
                 "Failed to write contract session record ahead of spawn for {stage_id}: {e:#}"
             );
-            let _ = self.persist_blocked_stage(
+            self.block_stage(
                 stage_id,
-                FailureType::InfrastructureError,
-                vec![err_msg],
+                StageBlock::new(FailureType::InfrastructureError, vec![err_msg]),
             );
             return None;
         }
@@ -129,10 +129,10 @@ impl Orchestrator {
                     "Before-stage verification failed for '{stage_id}' - pre-conditions not met"
                 );
 
-                let _ = self.persist_blocked_stage(
+                let evidence = gaps.iter().map(|gap| gap.description.clone()).collect();
+                self.block_stage(
                     &stage_id,
-                    FailureType::TestFailure,
-                    gaps.iter().map(|gap| gap.description.clone()).collect(),
+                    StageBlock::new(FailureType::TestFailure, evidence),
                 );
                 Ok(false)
             }

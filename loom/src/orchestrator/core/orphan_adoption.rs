@@ -123,6 +123,7 @@ fn route_orphaned_stage(
         }
     } else {
         if stage.status == StageStatus::Executing {
+            // A step toward Queued on an in-memory record, not a block (`block_stage`).
             let _ = stage.try_mark_blocked();
         }
         if let Err(error) = stage.try_mark_queued() {

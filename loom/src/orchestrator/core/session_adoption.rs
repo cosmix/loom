@@ -13,6 +13,7 @@ use crate::orchestrator::coherence::live_worker_sessions;
 use crate::orchestrator::scheduling_report::BlockReason;
 
 use super::persistence::Persistence;
+use super::stage_block::StageBlock;
 use super::Orchestrator;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -129,22 +130,10 @@ impl Orchestrator {
              already tracks '{existing_id}' for it; two agents may be working the same \
              worktree — take one down with 'loom stage reset {stage_id} --kill-session'"
         );
-        match self.persist_blocked_stage(
+        self.block_stage(
             stage_id,
-            FailureType::InfrastructureError,
-            vec![reason.clone()],
-        ) {
-            Ok(()) => {
-                let _ = self.graph.mark_status(stage_id, StageStatus::Blocked);
-            }
-            Err(error) => {
-                tracing::error!(
-                    stage_id = %stage_id,
-                    %error,
-                    "Failed to persist Blocked state while escalating an adoption conflict"
-                );
-            }
-        }
+            StageBlock::new(FailureType::InfrastructureError, vec![reason.clone()]),
+        );
         super::clear_status_line();
         eprintln!("{reason}");
     }

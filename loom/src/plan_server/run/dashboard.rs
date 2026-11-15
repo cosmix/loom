@@ -9,9 +9,6 @@ use std::sync::{mpsc, Arc, Mutex, PoisonError};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use nix::sys::signal::{killpg, Signal};
-use nix::unistd::Pid;
-
 use crate::models::session::SessionBackendKind;
 use crate::plan_server::browser::EnvView;
 use crate::plan_server::context::PlanContext;
@@ -52,10 +49,7 @@ impl DashboardChild {
 impl Drop for DashboardChild {
     fn drop(&mut self) {
         // Descendants may retain stdout: kill the child's entire process group.
-        if let Ok(pid) = i32::try_from(self.process.id()) {
-            let _ = killpg(Pid::from_raw(pid), Signal::SIGKILL);
-        }
-        let _ = self.process.kill();
+        crate::process::kill_group(&mut self.process);
         let _ = self.process.wait();
     }
 }

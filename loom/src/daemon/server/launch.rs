@@ -27,7 +27,8 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 mod child;
-use child::{core_dumping, describe_exit, terminate, wait_for_exit};
+use crate::process::wait_with_deadline;
+use child::{core_dumping, describe_exit, terminate, DAEMON_CHILD_CHECK};
 
 /// Written by the daemon child once its socket is bound.
 pub(super) const READY_BYTE: u8 = 0x01;
@@ -222,7 +223,7 @@ fn watch_until_ready(
 /// its exit when it follows within [`EOF_EXIT_WAIT`], else terminate it.
 /// Always an error.
 fn closed_before_ready(child: &mut Child, pipe: &PipeState, log_path: &Path) -> Result<()> {
-    if let Some(status) = wait_for_exit(child, EOF_EXIT_WAIT)? {
+    if let Some(status) = wait_with_deadline(child, EOF_EXIT_WAIT).context(DAEMON_CHILD_CHECK)? {
         return Err(pipe.exit_failure(status, log_path));
     }
     terminate(child);
@@ -243,7 +244,7 @@ fn ready_unless_dumping(
     if !core_dumping(child) {
         return Ok(());
     }
-    if let Some(status) = wait_for_exit(child, timing.deadline)? {
+    if let Some(status) = wait_with_deadline(child, timing.deadline).context(DAEMON_CHILD_CHECK)? {
         pipe.drain(reader)?;
         return Err(pipe.exit_failure(status, log_path));
     }

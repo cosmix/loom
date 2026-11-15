@@ -22,6 +22,7 @@ impl Orchestrator {
     /// while the stage is Blocked and clears `stage.session` only if it still is: a stage
     /// retried in between keeps its new session. `close_reason` is never written here.
     pub(super) fn on_stage_blocked(&mut self, stage_id: &str) -> Result<()> {
+        // The block is already persisted; only the graph follows (no `block_stage`).
         self.graph.mark_status(stage_id, StageStatus::Blocked)?;
 
         let stage = self.load_stage(stage_id)?;

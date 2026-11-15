@@ -54,30 +54,19 @@ fn a_directory_no_repository_registers_skips_the_comparison() {
     assert!(worktree.path().join("provisioned").exists());
 }
 
-#[test]
-fn status_entries_keep_their_leading_space_and_rename_origins() {
-    let listing = " M web/bun.lock\0R  new.txt\0old.txt\0?? added\0";
-
-    assert_eq!(
-        split_status_entries(listing),
-        [" M web/bun.lock", "R  new.txt\0old.txt", "?? added"]
-    );
-}
-
-#[test]
-fn a_rename_in_the_worktree_column_keeps_its_origin_in_one_entry() {
-    assert_eq!(
-        split_status_entries(" R new.txt\0old.txt\0"),
-        [" R new.txt\0old.txt"]
-    );
-}
-
+/// The listing's column and rename parsing is `parse_porcelain_v1_z`'s; the reason
+/// names a rename by its destination only.
 #[test]
 fn a_renamed_file_is_reported_by_its_new_path() {
-    assert_eq!(
-        unignored_reason(&["R  new.txt\0old.txt"]),
-        unignored_reason(&["R  new.txt"])
-    );
+    let renamed = StatusEntry {
+        code: *b"R ",
+        path: "new.txt".into(),
+        origin: Some("old.txt".into()),
+    };
+    let reason = unignored_reason(&[&renamed]);
+
+    assert!(reason.contains("worktree: new.txt;"), "{reason}");
+    assert!(!reason.contains("old.txt"), "{reason}");
 }
 
 /// A work directory inside `worktree`: a provision entry runs sandboxed and sees only the

@@ -136,16 +136,10 @@ pub(crate) fn run_foreground(
 /// line limit.
 fn terminate_idle_session(child: &mut Child) -> Result<()> {
     send_sigterm(child.id());
-    let grace_polls = TERM_GRACE_MS / POLL_INTERVAL_MS;
-    let mut reaped = false;
-    for _ in 0..grace_polls {
-        thread::sleep(Duration::from_millis(POLL_INTERVAL_MS));
-        if child.try_wait().context("failed to poll claude")?.is_some() {
-            reaped = true;
-            break;
-        }
-    }
-    if !reaped {
+    let grace = Duration::from_millis(TERM_GRACE_MS);
+    let reaped =
+        crate::process::wait_with_deadline(child, grace).context("failed to poll claude")?;
+    if reaped.is_none() {
         let _ = child.kill();
         let _ = child.wait();
     }

@@ -5,7 +5,7 @@ use super::*;
 use crate::fs::work_dir::write_terminal_config;
 use crate::models::failure::FailureType;
 use crate::models::session::{SessionBackendKind, TerminalConfig};
-use crate::models::stage::TruthCheck;
+use crate::models::stage::{StageStatus, TruthCheck};
 use crate::orchestrator::busy::BusyOp;
 use crate::orchestrator::core::OrchestratorConfig;
 use crate::orchestrator::provision::write_provision_snapshot;
@@ -377,6 +377,23 @@ fn a_pre_existing_modified_tracked_file_is_not_a_new_entry() {
 
     assert!(passed);
     assert_eq!(stage.status, StageStatus::Queued);
+}
+
+/// A lossy decode reads the name as `bad\u{FFFD}name`, a new entry it then blocks on
+/// under a different name; a skipped comparison lets the stage spawn.
+#[test]
+fn a_provision_that_writes_a_non_utf8_name_blocks_the_stage() {
+    let repo = repo_ignoring_node_modules();
+
+    let (passed, stage) = gate(
+        &["touch \"$(printf 'bad\\377name')\""],
+        Vec::new(),
+        repo.path(),
+    );
+
+    assert!(!passed);
+    let reason = stage.close_reason.expect("the block records its reason");
+    assert_eq!(reason, NON_UTF8_REASON);
 }
 
 #[path = "provision_gate_pin_tests.rs"]

@@ -41,6 +41,7 @@ mod session_adoption;
 mod session_lifecycle;
 mod spawn_setup;
 mod spool_drain;
+mod stage_block;
 mod stage_executor;
 mod stage_handoff;
 mod stage_knowledge;
@@ -344,5 +345,7 @@ name: Test Stage
     }
 }
 
+#[cfg(test)]
+mod block_contract_tests;
 #[cfg(test)]
 mod lifecycle_regression_tests;

@@ -111,7 +111,7 @@ fn pid(root: &Path) -> i32 {
 
 fn assert_dead(pid: i32) {
     assert_eq!(
-        nix::sys::signal::kill(Pid::from_raw(pid), None),
+        nix::sys::signal::kill(nix::unistd::Pid::from_raw(pid), None),
         Err(nix::errno::Errno::ESRCH)
     );
 }

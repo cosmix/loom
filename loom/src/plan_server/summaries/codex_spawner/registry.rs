@@ -15,6 +15,7 @@ use nix::unistd::Pid;
 use super::FORCE_AFTER;
 use crate::plan_server::lifecycle::{line, safe};
 use crate::plan_server::pressure::config_guard::ConfigSnapshot;
+use crate::process::signal_group_id;
 
 #[cfg(test)]
 mod tests;
@@ -61,17 +62,16 @@ pub(super) fn register(jobs: &Jobs, session: &str, job: Job) -> bool {
 
 /// End a process group that was spawned but never registered, and reap it.
 pub(super) fn discard(pid: Pid, child: &mut Child) {
-    let _ = killpg(pid, Signal::SIGKILL);
+    signal_group_id(pid.as_raw(), Signal::SIGKILL);
     let _ = child.wait();
 }
 
 fn ask_to_stop(session: &str, job: &mut Job) {
     job.stopping = true;
-    if let Err(error) = killpg(job.pid, Signal::SIGTERM) {
+    if !signal_group_id(job.pid.as_raw(), Signal::SIGTERM) {
         line(&format!(
-            "summaries: cannot stop session {}: {}",
-            safe(session),
-            safe(&error.to_string())
+            "summaries: cannot stop session {}: its process group took no SIGTERM",
+            safe(session)
         ));
     }
 }
@@ -91,17 +91,6 @@ fn take_group(jobs: &Jobs, group: Pid) -> bool {
         .is_some()
 }
 
-/// SIGKILL `group`. A group whose last member has exited answers ESRCH, which means done.
-fn kill_group(group: Pid) {
-    match killpg(group, Signal::SIGKILL) {
-        Ok(()) | Err(Errno::ESRCH) => {}
-        Err(error) => line(&format!(
-            "summaries: cannot force the stop of process group {group}: {}",
-            safe(&error.to_string())
-        )),
-    }
-}
-
 /// Force `group` after [`FORCE_AFTER`], unless a shutdown took it first. The job may have left
 /// the registry by then: its leader's exit says nothing of the other members of the group. The
 /// id is still safe to signal, since the kernel reuses no pid while a process group of that id
@@ -114,7 +103,8 @@ fn force_later(jobs: &Jobs, group: Pid) {
         .spawn(move || {
             thread::sleep(FORCE_AFTER);
             if take_group(&registry, group) {
-                kill_group(group);
+                // A group whose last member has exited takes no signal, which means done.
+                signal_group_id(group.as_raw(), Signal::SIGKILL);
             }
         });
     if let Err(error) = forced {
@@ -164,12 +154,13 @@ pub(super) fn force_stopped(jobs: &Jobs, grace: Duration, aborted: &AtomicBool) 
     }
     let groups = std::mem::take(&mut lock(jobs).stopped_groups);
     for group in groups {
-        kill_group(group);
+        signal_group_id(group.as_raw(), Signal::SIGKILL);
     }
 }
 
 fn any_group_left(jobs: &Jobs) -> bool {
     let registry = lock(jobs);
+    // A null-signal liveness probe, which `process::signal_group_id` (a real signal) does not send.
     let gone = |group: &Pid| matches!(killpg(*group, None::<Signal>), Err(Errno::ESRCH));
     !registry.stopped_groups.iter().all(gone)
 }

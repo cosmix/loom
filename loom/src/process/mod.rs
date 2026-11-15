@@ -9,7 +9,9 @@ mod identity;
 mod owned;
 mod spawn;
 mod tail;
-pub(crate) use owned::{run_bounded_terminating_output, OwnedProcess};
+pub(crate) use owned::{
+    kill_group, run_bounded_terminating_output, signal_group_id, wait_with_deadline, OwnedProcess,
+};
 pub use spawn::spawn_retrying_text_busy;
 pub(crate) use tail::run_bounded_tail_output;
 #[doc(hidden)]
@@ -21,11 +23,9 @@ use nix::sys::signal::{kill, Signal};
 use nix::unistd::Pid;
 use std::io::Read;
 use std::process::{Child, Command, ExitStatus, Output, Stdio};
+use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::mpsc::{self, Receiver};
-use std::sync::{
-    atomic::{AtomicU8, Ordering},
-    Arc,
-};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use errors::OUTPUT_LIMIT;
@@ -390,6 +390,8 @@ pub fn is_process_alive(pid: u32) -> bool {
     exists() && !identity::process_is_zombie(pid) && exists()
 }
 
+#[cfg(test)]
+mod group_contract_tests;
 #[cfg(test)]
 mod tests;
 

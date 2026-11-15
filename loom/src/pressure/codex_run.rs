@@ -78,6 +78,7 @@ fn cancel_groups(control: &Mutex<RunControl>) -> Result<()> {
         .unwrap_or_else(|poisoned| poisoned.into_inner());
     state.cancelled = true;
     let mut failure = None;
+    // Not `process::signal_group_id`: its bool cannot tell an empty group (drop it) from a failure.
     state
         .groups
         .retain(|&group| match killpg(group, Signal::SIGKILL) {
