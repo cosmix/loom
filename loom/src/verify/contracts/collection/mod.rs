@@ -8,8 +8,7 @@
 //! for it: the base through read-only git (`git cat-file blob`, never
 //! `git show`, which lists a directory and may apply textconv) and the
 //! worktree through bounded reads that follow no symlink. It is the one base
-//! reader callers outside `crate::verify` use, since `changes::git` is
-//! private to `crate::verify`.
+//! reader callers outside `crate::verify` use.
 
 mod harness;
 pub mod rust;
@@ -19,10 +18,10 @@ use std::cell::RefCell;
 use std::collections::{BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 
-use super::changes::git;
 use super::store::{validate_relative, MAX_FROZEN_FILE_BYTES};
 use super::{normalize, resolve_adapter};
 use crate::fs::safe_read::read_to_string_bounded;
+use crate::git::changes::read_only;
 use crate::git::worktree::WorktreeGit;
 use crate::plan::schema::ContractSpec;
 use rust::join;
@@ -263,7 +262,7 @@ fn check_base(repo: &WorktreeGit, base: &str) -> Result<()> {
         bail!("stage base '{base}' is not a revision");
     }
     let commit = format!("{base}^{{commit}}");
-    git(repo, &["rev-parse", "--verify", "--quiet", &commit])
+    read_only(repo, &["rev-parse", "--verify", "--quiet", &commit])
         .with_context(|| format!("stage base '{base}' is not a commit"))?;
     Ok(())
 }
@@ -271,7 +270,7 @@ fn check_base(repo: &WorktreeGit, base: &str) -> Result<()> {
 /// The blob at `path` in `base`: `None` when git has none there (absent, or
 /// a directory), or it is over the frozen-file limit or not UTF-8.
 fn read_base(repo: &WorktreeGit, base: &str, path: &str) -> Option<String> {
-    let blob = git(repo, &["cat-file", "blob", &format!("{base}:{path}")]).ok()?;
+    let blob = read_only(repo, &["cat-file", "blob", &format!("{base}:{path}")]).ok()?;
     if blob.len() > MAX_FROZEN_FILE_BYTES {
         return None;
     }

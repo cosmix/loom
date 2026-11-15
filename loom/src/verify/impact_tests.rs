@@ -42,12 +42,13 @@ use std::time::Duration;
 use crate::context::graph_store::ResolvedGraph;
 use crate::context::source_graph::{file_node_id, SourceNode, SourceNodeKind};
 use crate::context::worktree_graph::{build_for_worktree, WorktreeGraph};
+use crate::git::changes::{changes_since, merge_base};
 use crate::models::stage::{CommandConfinement, Stage};
 use crate::skills::project::ProjectProfile;
 use crate::testrun::{registry, SelectionNames, TestRunnerAdapter, TestTarget};
 use crate::verify::contracts::{normalize, owning_package};
 use crate::verify::criteria::{CriteriaConfig, CriteriaProbe, ProbeRunner};
-use crate::verify::review::fingerprint::{changes_since_merge_base, checkout_git, local_git};
+use crate::verify::review::fingerprint::{checkout_git, local_git};
 
 pub(in crate::verify) use accepted::ACCEPTED_FILE;
 pub use accepted::{load_accepted, AcceptedFailure, AcceptedImpact};
@@ -165,7 +166,10 @@ pub fn stage_changes(worktree: &Path, target_branch: &str) -> Result<Vec<PathBuf
 
 /// The merge base [`stage_changes`] measures from, and those changes.
 fn merge_base_changes(worktree: &Path, target_branch: &str) -> Result<(String, Vec<PathBuf>)> {
-    let (base, paths) = changes_since_merge_base(&local_git(worktree)?, target_branch)?;
+    let git = local_git(worktree)?;
+    let base = merge_base(&git, "HEAD", target_branch)
+        .with_context(|| format!("finding merge base with {target_branch}"))?;
+    let paths = changes_since(&git, &base)?;
     Ok((base, paths.into_iter().map(PathBuf::from).collect()))
 }
 

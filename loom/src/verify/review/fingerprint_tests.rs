@@ -240,3 +240,80 @@ fn a_commit_on_the_target_after_the_branch_point_is_not_a_stage_change() -> Resu
     assert_eq!(fingerprint.files.keys().collect::<Vec<_>>(), ["stage.txt"]);
     Ok(())
 }
+
+/// `git` in `root` with fixed identity and dates and no global or system
+/// configuration, so every object id it writes is the same on every run.
+fn fixed_git(root: &Path, args: &[&str]) {
+    let output = std::process::Command::new("git")
+        .args(["-c", "commit.gpgsign=false"])
+        .args(args)
+        .current_dir(root)
+        .env_remove("GIT_DIR")
+        .env_remove("GIT_WORK_TREE")
+        .env_remove("GIT_INDEX_FILE")
+        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .env("GIT_AUTHOR_NAME", "Pin Test")
+        .env("GIT_AUTHOR_EMAIL", "pin@example.invalid")
+        .env("GIT_COMMITTER_NAME", "Pin Test")
+        .env("GIT_COMMITTER_EMAIL", "pin@example.invalid")
+        .env("GIT_AUTHOR_DATE", "2026-01-01T00:00:00Z")
+        .env("GIT_COMMITTER_DATE", "2026-01-01T00:00:00Z")
+        .output()
+        .expect("git runs");
+    assert!(
+        output.status.success(),
+        "git {args:?}: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+/// The review gate compares fingerprints across rounds, so the value for one
+/// tree is pinned: committed, staged, unstaged, moved, deleted and untracked
+/// changes, a sandbox placeholder and worktree scaffolding.
+#[test]
+fn fingerprint_of_a_fixed_tree_is_pinned() -> Result<()> {
+    let temp = tempfile::tempdir()?;
+    let root = temp.path();
+    fixed_git(root, &["init", "-q", "-b", "main"]);
+    for (path, content) in [
+        ("kept.txt", "kept\n"),
+        ("moved.rs", "fn m() {}\n"),
+        ("gone.txt", "x\n"),
+    ] {
+        std::fs::write(root.join(path), content)?;
+    }
+    fixed_git(root, &["add", "."]);
+    fixed_git(root, &["commit", "-q", "-m", "base"]);
+    fixed_git(root, &["switch", "-q", "-c", "feature"]);
+    fixed_git(root, &["mv", "moved.rs", "src.rs"]);
+    fixed_git(root, &["rm", "-q", "gone.txt"]);
+    fixed_git(root, &["commit", "-q", "-m", "stage work"]);
+    std::fs::write(root.join("kept.txt"), "kept, edited\n")?;
+    std::fs::write(root.join("staged.txt"), "staged\n")?;
+    fixed_git(root, &["add", "staged.txt"]);
+    std::fs::write(root.join("new.txt"), "untracked\n")?;
+    std::fs::write(root.join(".gitconfig"), "")?;
+    std::fs::create_dir_all(root.join(".claude"))?;
+    std::fs::write(root.join(".claude/settings.json"), "{}\n")?;
+
+    let fingerprint = compute_local(&WorktreeGit::discovered(root), "main")?;
+
+    assert_eq!(fingerprint.base, "ff5952ec9fe4288e8b38bf0bba005f6f2ac54706");
+    assert_eq!(
+        fingerprint.value,
+        "sha256:46ca41d297b0555e2d47d923fdaf14f1233cf6202000623822c712f920e46a89"
+    );
+    assert_eq!(
+        fingerprint.files.keys().collect::<Vec<_>>(),
+        [
+            "gone.txt",
+            "kept.txt",
+            "moved.rs",
+            "new.txt",
+            "src.rs",
+            "staged.txt"
+        ]
+    );
+    Ok(())
+}

@@ -70,7 +70,7 @@ impl EvidenceCollector {
             verified: verified.to_string(),
             sources: sources
                 .iter()
-                .map(|source| normalize_path(source))
+                .map(|source| forward_slashes(source))
                 .collect(),
         };
         self.groups.entry(key).or_default().push(EvidenceRequest {
@@ -146,7 +146,7 @@ impl EvidenceCollector {
                 request
                     .sources
                     .iter()
-                    .filter(|source| paths.contains(&normalize_path(source)))
+                    .filter(|source| paths.contains(&forward_slashes(source)))
                     .map(|source_path| CatalogIssue::EvidenceChanged {
                         file: request.file.clone(),
                         source_path: source_path.clone(),
@@ -207,6 +207,7 @@ fn validate_revision(project_root: &Path, verified: &str) -> Result<(), Evidence
         .ok_or(EvidenceUnavailableReason::InvalidRevision)
 }
 
+// Unlike crate::git::changes::changed_names, evidence caps output and keeps rename semantics.
 fn committed_paths(
     project_root: &Path,
     key: &EvidenceKey,
@@ -229,6 +230,7 @@ fn committed_paths(
         .ok_or(EvidenceUnavailableReason::CommandFailed)
 }
 
+// Unlike crate::git::changes::{changed_names, untracked_names}, status keeps the output cap and staged edits.
 fn working_tree_paths(
     project_root: &Path,
     key: &EvidenceKey,
@@ -289,13 +291,13 @@ fn parse_diff_paths(bytes: &[u8]) -> BTreeSet<String> {
         let Some(path) = fields.next() else {
             break;
         };
-        paths.insert(normalize_bytes(path));
+        paths.insert(forward_slashes_lossy(path));
         if status
             .first()
             .is_some_and(|code| matches!(*code, b'R' | b'C'))
         {
             if let Some(other_path) = fields.next() {
-                paths.insert(normalize_bytes(other_path));
+                paths.insert(forward_slashes_lossy(other_path));
             }
         }
     }
@@ -315,10 +317,10 @@ fn parse_status_paths(bytes: &[u8]) -> BTreeSet<String> {
             continue;
         }
         if let Some((destination, source)) = status_rename_paths(record, &mut fields) {
-            paths.insert(normalize_bytes(destination));
-            paths.insert(normalize_bytes(source));
+            paths.insert(forward_slashes_lossy(destination));
+            paths.insert(forward_slashes_lossy(source));
         } else {
-            paths.insert(normalize_bytes(&record[3..]));
+            paths.insert(forward_slashes_lossy(&record[3..]));
         }
     }
     paths
@@ -345,11 +347,11 @@ fn literal_pathspec(source: &str) -> String {
     format!(":(literal){source}")
 }
 
-fn normalize_bytes(path: &[u8]) -> String {
-    normalize_path(&String::from_utf8_lossy(path))
+fn forward_slashes_lossy(path: &[u8]) -> String {
+    forward_slashes(&String::from_utf8_lossy(path))
 }
 
-fn normalize_path(path: &str) -> String {
+fn forward_slashes(path: &str) -> String {
     path.replace('\\', "/")
 }
 

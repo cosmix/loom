@@ -46,3 +46,33 @@ fn a_repointed_git_file_neither_runs_its_filter_nor_changes_the_answers() {
     run_git_checked(&old_diff, &worktree).unwrap();
     assert!(marker.exists(), "the fixture's filter never runs");
 }
+
+/// Rename detection is off, so a moved file is listed as added at its new
+/// path; with its old path gone it has no copy to match, so the move is no
+/// duplicate.
+#[cfg(feature = "source-graph")]
+#[test]
+fn a_moved_file_is_added_but_not_a_duplicate() {
+    let tmp = TempDir::new().unwrap();
+    let root = tmp.path();
+    let git = |args: &[&str]| run_git_checked(args, root).unwrap();
+    git(&["init", "-q", "-b", "main"]);
+    git(&["config", "user.email", "test@example.com"]);
+    git(&["config", "user.name", "Test"]);
+    std::fs::write(
+        root.join("a.rs"),
+        "pub fn normalize_settings() -> u32 { 42 }\n",
+    )
+    .unwrap();
+    git(&["add", "a.rs"]);
+    git(&["-c", "commit.gpgsign=false", "commit", "-q", "-m", "seed"]);
+    git(&["switch", "-q", "-c", "feature"]);
+    git(&["mv", "a.rs", "b.rs"]);
+    git(&["-c", "commit.gpgsign=false", "commit", "-q", "-m", "move"]);
+
+    let added = changed_files(root, "main", true).unwrap();
+    let duplicates = crate::verify::duplicate_detection::detect_duplicate_symbols(root, "main");
+
+    assert_eq!(added.into_iter().collect::<Vec<_>>(), ["b.rs"]);
+    assert!(duplicates.unwrap().is_empty());
+}

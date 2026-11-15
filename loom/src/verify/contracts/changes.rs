@@ -18,12 +18,10 @@ use std::path::{Component, Path, PathBuf};
 use super::special_walk::{escaped, special_paths};
 use super::{harness_matches, store};
 use crate::fs::work_dir::WorkDir;
+use crate::git::changes::{changed_names, merge_base, read_only, DiffNames};
+use crate::git::status_entries::{parse_porcelain_v1_z, PORCELAIN_V1_Z};
 use crate::git::worktree::{is_worktree_scaffold_path, WorktreeGit};
 use crate::verify::tool_artifacts::is_tool_artifact;
-
-/// Global options for every git call here: no index refresh written back,
-/// and no fsmonitor command taken from a config the stage can edit.
-const READ_ONLY: [&str; 3] = ["--no-optional-locks", "-c", "core.fsmonitor=false"];
 
 /// The commit the stage branch forked from: the merge base of `HEAD` and the
 /// merge target configured in the state directory `work_dir`, a default
@@ -34,12 +32,8 @@ pub fn stage_base(repo: &WorktreeGit, work_dir: &Path) -> Result<String> {
         .repo_root()
         .context("cannot resolve the repository root of the state directory")?;
     let target = crate::fs::resolve_target_branch_from_config(work_dir, project)?;
-    let output = git(repo, &["merge-base", &target, "HEAD"])?;
-    let base = String::from_utf8_lossy(&output).trim().to_string();
-    if base.is_empty() {
-        bail!("no merge base between HEAD and '{target}'");
-    }
-    Ok(base)
+    merge_base(repo, &target, "HEAD")
+        .with_context(|| format!("no merge base between HEAD and '{target}'"))
 }
 
 /// `git diff` of `pathspec` from the stage base ([`stage_base`]) to the
@@ -47,7 +41,7 @@ pub fn stage_base(repo: &WorktreeGit, work_dir: &Path) -> Result<String> {
 /// content shown as text: evidence an adjudicator reads.
 pub fn diff_from_base(repo: &WorktreeGit, work_dir: &Path, pathspec: &str) -> Result<String> {
     let base = stage_base(repo, work_dir).context("stage base failed")?;
-    let diff = git(
+    let diff = read_only(
         repo,
         &[
             "diff",
@@ -66,60 +60,47 @@ pub fn diff_from_base(repo: &WorktreeGit, work_dir: &Path, pathspec: &str) -> Re
 /// Every path changed since `base`: committed on the branch, changed in the
 /// working tree or index, or untracked and not ignored. Worktree scaffolding
 /// and untracked sandbox artifacts ([`is_tool_artifact`]) are left out. A
-/// changed name that cannot be shown as text fails the call (`listed_name`),
-/// unless it lies under worktree scaffolding, which is dropped first.
+/// changed name that is not UTF-8 fails the call, scaffolding or not; one
+/// holding a control character fails it (`listed_name`) unless it lies under
+/// worktree scaffolding, which is dropped first.
 pub fn changed_paths(repo: &WorktreeGit, working_dir: &Path, base: &str) -> Result<Vec<String>> {
     let worktree_root = repo.work_tree();
     let prefix = working_dir_prefix(worktree_root, working_dir)?;
-    let committed = changed_names(repo, base, Some("HEAD"))?;
-    let status = git(
-        repo,
-        &["status", "--porcelain", "-z", "-uall", "--no-renames"],
-    )?;
-    let mut paths = nul_separated(&committed)
-        .filter_map(listed_unless_scaffold)
-        .collect::<Result<BTreeSet<String>>>()?;
-    for path in status_paths(worktree_root, &status) {
-        paths.insert(path?);
+    let committed = DiffNames {
+        from: base,
+        to: Some("HEAD"),
+        filter: None,
+        all_submodules: false,
+        pathspecs: &[],
+    };
+    let mut paths = BTreeSet::new();
+    for path in changed_names(repo, &committed)? {
+        if !is_worktree_scaffold_path(&path) {
+            paths.insert(listed_name(path.as_bytes())?);
+        }
     }
+    let mut status_args = PORCELAIN_V1_Z.to_vec();
+    status_args.push("--no-renames");
+    paths.extend(status_paths(
+        worktree_root,
+        &read_only(repo, &status_args)?,
+    )?);
     Ok(relative_to(&prefix, paths))
 }
 
-/// The NUL-separated paths `git diff --name-only` lists between the commit
-/// `from` and the commit `to`, or the working tree when `to` is `None`, with
-/// neither rename detection nor an external diff driver.
-pub(in crate::verify) fn changed_names(
-    repo: &WorktreeGit,
-    from: &str,
-    to: Option<&str>,
-) -> Result<Vec<u8>> {
-    let mut args = vec![
-        "diff",
-        "--name-only",
-        "-z",
-        "--no-renames",
-        "--no-ext-diff",
-        from,
-    ];
-    args.extend(to);
-    args.push("--");
-    git(repo, &args)
-}
-
-/// The repository-relative paths of porcelain v1 `-z` status entries
-/// (`XY <path>`), without the untracked sandbox artifacts.
-fn status_paths<'a>(
-    worktree_root: &'a Path,
-    status: &'a [u8],
-) -> impl Iterator<Item = Result<String>> + 'a {
-    nul_separated(status).filter_map(move |entry| {
-        let path = entry.get(3..).and_then(listed_unless_scaffold)?;
-        let placeholder = entry.starts_with(b"??")
-            && path
-                .as_ref()
-                .is_ok_and(|path| is_tool_artifact(worktree_root, path));
-        (!placeholder).then_some(path)
-    })
+/// The repository-relative paths of a porcelain v1 `-z` status listing,
+/// without worktree scaffolding and untracked sandbox artifacts.
+fn status_paths(worktree_root: &Path, status: &[u8]) -> Result<Vec<String>> {
+    let mut paths = Vec::new();
+    for entry in parse_porcelain_v1_z(status)? {
+        if is_worktree_scaffold_path(&entry.path)
+            || (entry.is_untracked() && is_tool_artifact(worktree_root, &entry.path))
+        {
+            continue;
+        }
+        paths.push(listed_name(entry.path.as_bytes())?);
+    }
+    Ok(paths)
 }
 
 /// Every FIFO, socket and device node in the worktree, relative to the
@@ -152,7 +133,7 @@ pub fn special_files(repo: &WorktreeGit, working_dir: &Path) -> Result<Vec<Strin
 /// The worktree-relative paths git ignores, a wholly ignored directory as
 /// one entry.
 fn ignored_paths(repo: &WorktreeGit) -> Result<BTreeSet<PathBuf>> {
-    let listed = git(
+    let listed = read_only(
         repo,
         &[
             "ls-files",
@@ -195,7 +176,7 @@ pub fn harness_files(
     if !prefix.is_empty() {
         args.extend(["--", scope.as_str()]);
     }
-    let listed = git(repo, &args)?;
+    let listed = read_only(repo, &args)?;
     let mut matches = BTreeSet::new();
     for entry in nul_separated(&listed) {
         let shown = String::from_utf8_lossy(entry);
@@ -210,22 +191,6 @@ pub fn harness_files(
         matches.insert(path);
     }
     Ok(matches.into_iter().collect())
-}
-
-/// `git <args>` through `repo`, read-only (`READ_ONLY`), its stdout on
-/// success.
-pub(in crate::verify) fn git(repo: &WorktreeGit, args: &[&str]) -> Result<Vec<u8>> {
-    let argv: Vec<&str> = READ_ONLY.iter().chain(args).copied().collect();
-    let output = repo.run(&argv)?;
-    if !output.status.success() {
-        bail!(
-            "git {} failed in {}: {}",
-            args.join(" "),
-            repo.work_tree().display(),
-            String::from_utf8_lossy(&output.stderr).trim()
-        );
-    }
-    Ok(output.stdout)
 }
 
 fn nul_separated(bytes: &[u8]) -> impl Iterator<Item = &[u8]> {
@@ -248,17 +213,6 @@ fn listed_name(entry: &[u8]) -> Result<String> {
             escaped(entry)
         ),
     }
-}
-
-/// [`listed_name`] of `entry`, or `None` for a worktree scaffold path: loom's
-/// own scaffolding is never a change, so an odd name under it cannot refuse a
-/// freeze. The scaffold test reads the lossy text, which keeps every scaffold
-/// prefix intact.
-fn listed_unless_scaffold(entry: &[u8]) -> Option<Result<String>> {
-    if is_worktree_scaffold_path(&String::from_utf8_lossy(entry)) {
-        return None;
-    }
-    Some(listed_name(entry))
 }
 
 /// The working directory's components beneath the worktree root.

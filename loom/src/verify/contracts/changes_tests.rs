@@ -63,7 +63,7 @@ fn untracked_sandbox_artifacts_are_not_changes() {
     nix::unistd::mkfifo(&root.join("pipe"), nix::sys::stat::Mode::S_IRWXU).unwrap();
     let status = b"?? .bashrc\0?? .mcp.json\0?? pipe\0 M .gitconfig\0";
 
-    let listed: Vec<String> = status_paths(root, status).collect::<Result<_>>().unwrap();
+    let listed = status_paths(root, status).unwrap();
 
     assert_eq!(listed, vec![".mcp.json", "pipe", ".gitconfig"]);
 }
@@ -140,7 +140,7 @@ fn a_changed_name_with_a_newline_is_refused_escaped() {
     std::fs::create_dir_all(worktree.join("tests/fixtures")).unwrap();
     std::fs::write(worktree.join("tests/fixtures").join(FORGED_NAME), "").unwrap();
     let repo = pinned(&worktree);
-    let head = git(&repo, &["rev-parse", "HEAD"]).unwrap();
+    let head = read_only(&repo, &["rev-parse", "HEAD"]).unwrap();
     let base = String::from_utf8(head).unwrap();
 
     let error = changed_paths(&repo, &worktree, base.trim()).unwrap_err();

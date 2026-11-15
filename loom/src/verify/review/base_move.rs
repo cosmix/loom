@@ -27,13 +27,13 @@ use anyhow::{ensure, Context, Result};
 use std::collections::BTreeSet;
 use std::path::Path;
 
-use super::fingerprint::{fingerprint_value, nul_paths, ChangeFingerprint, MAX_REVIEW_FILE_BYTES};
+use super::fingerprint::{fingerprint_value, ChangeFingerprint, MAX_REVIEW_FILE_BYTES};
 use super::store::ReviewRound;
+use crate::git::changes::{changed_names, read_only, DiffNames};
 use crate::git::worktree::WorktreeGit;
 use crate::models::stage::Stage;
 use crate::stage_service::observer::stage_worktree_and_target;
 use crate::utils::text::single_line;
-use crate::verify::contracts::changes::{changed_names, git};
 
 /// The paths that keep a round from covering the tree after a base move.
 #[derive(Debug, Default, PartialEq)]
@@ -104,7 +104,14 @@ pub(super) fn unproven(
         latest.round
     );
     let (old, new) = (object_id(&latest.base)?, object_id(&current.base)?);
-    let between = nul_paths(&changed_names(repo, old, Some(new))?)?;
+    let range = DiffNames {
+        from: old,
+        to: Some(new),
+        filter: None,
+        all_submodules: false,
+        pathspecs: &[],
+    };
+    let between = changed_names(repo, &range)?;
     let mut unproven = Unproven::default();
     for (path, now) in &current.files {
         match latest.files.get(path) {
@@ -149,7 +156,7 @@ fn carried_by_base(
 /// symlink, a submodule, a directory, a blob over the size limit).
 fn committed_digest(repo: &WorktreeGit, commit: &str, path: &str) -> Result<Option<String>> {
     // ls-tree matches its paths literally: it supports no wildcard.
-    let listed = git(
+    let listed = read_only(
         repo,
         &["ls-tree", "-z", "-l", "--full-tree", commit, "--", path],
     )?;
@@ -171,7 +178,7 @@ fn committed_digest(repo: &WorktreeGit, commit: &str, path: &str) -> Result<Opti
     if !regular || size > MAX_REVIEW_FILE_BYTES {
         return Ok(None);
     }
-    let blob = git(repo, &["cat-file", "blob", oid])?;
+    let blob = read_only(repo, &["cat-file", "blob", oid])?;
     Ok(Some(crate::utils::sha256_hex(&blob)))
 }
 

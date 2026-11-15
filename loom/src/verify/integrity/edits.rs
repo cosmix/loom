@@ -12,10 +12,10 @@ use super::moves::FileDelta;
 use super::ratchet_diff::ratchet_loosens;
 use super::statements::{assertion_statements, Statement};
 use super::{current_sha256, EventKind, IntegrityEvent};
+use crate::git::changes::read_only;
 use crate::git::worktree::WorktreeGit;
 use crate::models::dispute::truncate_to_byte_limit;
 use crate::testrun::languages;
-use crate::verify::contracts::changes::git;
 use crate::verify::review::fingerprint::ChangeFingerprint;
 
 /// Longest detail text kept per lost statement.
@@ -39,7 +39,7 @@ pub(super) fn file_deltas(
         let existed_at_base = at_base.contains(path.as_str());
         let base = if existed_at_base {
             let object = format!("{}:{path}", changes.base);
-            lossy(&git(repo, &["cat-file", "blob", &object])?)
+            lossy(&read_only(repo, &["cat-file", "blob", &object])?)
         } else {
             String::new()
         };
@@ -116,7 +116,7 @@ fn rust_siblings(
         if !dir.is_empty() {
             args.extend(["--", &spec]);
         }
-        let listing = git(repo, &args)?;
+        let listing = read_only(repo, &args)?;
         let names = listing
             .split(|byte| *byte == 0)
             .filter_map(|name| std::str::from_utf8(name).ok())
@@ -215,7 +215,7 @@ pub(super) fn ratchet_events(
 /// The content of the regular file `path` in the tree of `base`; `None` when
 /// the tree has no regular file there.
 fn base_blob(repo: &WorktreeGit, base: &str, path: &str) -> Result<Option<Vec<u8>>> {
-    let listing = git(repo, &["ls-tree", "-z", "--full-tree", base, "--", path])?;
+    let listing = read_only(repo, &["ls-tree", "-z", "--full-tree", base, "--", path])?;
     let regular = listing.split(|byte| *byte == 0).any(|entry| {
         std::str::from_utf8(entry)
             .ok()
@@ -227,7 +227,7 @@ fn base_blob(repo: &WorktreeGit, base: &str, path: &str) -> Result<Option<Vec<u8
     if !regular {
         return Ok(None);
     }
-    git(repo, &["cat-file", "blob", &format!("{base}:{path}")]).map(Some)
+    read_only(repo, &["cat-file", "blob", &format!("{base}:{path}")]).map(Some)
 }
 
 /// `text` without whitespace outside string literals and without trailing

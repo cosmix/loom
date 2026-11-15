@@ -18,7 +18,9 @@ use super::super::detect::detect_stage_type;
 use super::super::types::{AcceptanceCriterion, StageDefinition, StageType};
 use super::search_args::SearchArgs;
 use super::shell_lex::{lex, Token, Word};
+use crate::git::changes::{changed_names, DiffNames};
 use crate::git::runner::{run_git, run_git_bool, run_git_checked};
+use crate::git::worktree::WorktreeGit;
 
 /// The only short options an evaluable criterion may use.
 const EVALUABLE_FLAGS: &str = "qFinwe";
@@ -270,14 +272,19 @@ fn exit_status(matched: bool, missing: bool, quiet: bool) -> i32 {
     }
 }
 
-/// Paths whose checkout may differ from HEAD, staged or not. Plumbing
-/// `diff-index` never refreshes the index, so verification writes nothing; a
-/// stat-dirty but unchanged file is listed and read through `git show`.
+/// Paths whose checkout differs from HEAD, staged or not, without writing
+/// the worktree's index. Stat-only changes are excluded.
 fn changed_paths(root: &Path) -> Option<HashSet<String>> {
-    let args = ["diff-index", "--name-only", "-z", "HEAD", "--"];
-    let listing = run_git_checked(&args, root).ok()?;
-    let paths = listing.split('\0').filter(|p| !p.is_empty());
-    Some(paths.map(str::to_string).collect())
+    let query = DiffNames {
+        from: "HEAD",
+        to: None,
+        filter: None,
+        all_submodules: false,
+        pathspecs: &[],
+    };
+    changed_names(&WorktreeGit::discovered(root), &query)
+        .ok()
+        .map(|paths| paths.into_iter().collect())
 }
 
 /// Whether any line of `bytes` matches, the way `rg` reads lines. Binary

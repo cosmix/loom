@@ -5,13 +5,17 @@ use std::path::Path;
 use anyhow::{bail, Context, Result};
 
 use crate::fs::knowledge::{catalog, index, INDEX_FILENAME};
+use crate::git::changes::{changed_names, changes_since, merge_base, untracked_names, DiffNames};
 use crate::verify::impact_tests::base::BaseCheckout;
-use crate::verify::review::fingerprint::{changes_since_merge_base, checkout_git};
+use crate::verify::review::fingerprint::checkout_git;
 
 const KNOWLEDGE: &str = "doc/loom/knowledge";
 
 pub(super) fn check(worktree: &Path, target: &str) -> Result<()> {
-    let (base, paths) = changes_since_merge_base(&checkout_git(worktree)?, target)?;
+    let git = checkout_git(worktree)?;
+    let base = merge_base(&git, "HEAD", target)
+        .with_context(|| format!("finding merge base with {target}"))?;
+    let paths = changes_since(&git, &base)?;
     if !paths
         .iter()
         .any(|p| p == KNOWLEDGE || p.starts_with(&format!("{KNOWLEDGE}/")))
@@ -41,16 +45,14 @@ pub(crate) fn check_session(repo: &Path, work_dir: &Path, session: &str) -> Resu
     let git = checkout_git(repo)?;
     git.run_checked(&["merge-base", "--is-ancestor", &base, "HEAD"])
         .context("knowledge starting commit is no longer an ancestor of HEAD")?;
-    let changed = git.run_checked(&["diff", "--name-only", "-z", &base, "--", KNOWLEDGE])?;
-    let untracked = git.run_checked(&[
-        "ls-files",
-        "--others",
-        "--exclude-standard",
-        "-z",
-        "--",
-        KNOWLEDGE,
-    ])?;
-    if changed.is_empty() && untracked.is_empty() {
+    let query = DiffNames {
+        from: &base,
+        to: None,
+        filter: None,
+        all_submodules: false,
+        pathspecs: &[KNOWLEDGE],
+    };
+    if changed_names(&git, &query)?.is_empty() && untracked_names(&git, &[KNOWLEDGE])?.is_empty() {
         return Ok(());
     }
     check_against(repo, &base)

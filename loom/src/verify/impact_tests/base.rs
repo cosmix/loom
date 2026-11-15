@@ -32,10 +32,10 @@ use tempfile::TempDir;
 use super::failure::ImpactFailure;
 use super::runs::{Failed, Run, Site};
 use super::FULL_SUITE;
+use crate::git::changes::read_only;
 use crate::git::runner::run_git_checked;
 use crate::models::stage::Stage;
 use crate::utils::text::single_line;
-use crate::verify::contracts::changes::git;
 use crate::verify::criteria::{CriteriaConfig, CriteriaProbe, ProbeRunner};
 use crate::verify::review::fingerprint::local_git;
 
@@ -112,7 +112,7 @@ impl BaseCheckout {
     /// The shared clone and detached checkout both constructors make in `dir`.
     fn check_out(dir: TempDir, worktree: &Path, commit: &str) -> Result<Self> {
         let common_dir = ["rev-parse", "--path-format=absolute", "--git-common-dir"];
-        let common = git(&local_git(worktree)?, &common_dir)?;
+        let common = read_only(&local_git(worktree)?, &common_dir)?;
         let common = String::from_utf8(common).context("the git common directory is not UTF-8")?;
         let root = dir.path().join("checkout");
         let target = root
