@@ -4,14 +4,14 @@
 //! only to a field the ledger join left `None`, so the ledger stays
 //! authoritative.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::io::BufReader;
 use std::path::{Path, PathBuf};
 
 use serde_json::Value;
 
 use super::agent_sidecar::{read_sidecar, Sidecar};
-use super::discovery::{stage_from_project_slug, DiscoveredFile};
+use super::discovery::{recorded_stage_ids, stage_from_project_slug, DiscoveredFile};
 use super::transcript::{Scope, Transcript};
 use crate::fs::safe_read::open_regular_no_follow;
 use crate::fs::work_dir::WorkDir;
@@ -28,6 +28,11 @@ const DEFAULT_MODEL: &str = "default";
 /// once per run.
 pub(super) struct ParentSpawns {
     repo_slug: Option<String>,
+    /// Stage ids recorded under the work directory, read once. A slug remainder
+    /// outside this set (a session started in `.worktrees/foo/loom` has slug
+    /// remainder `foo-loom`) names no stage. `None` when there is no readable
+    /// stage directory, so the slug parse stands unchecked.
+    stages: Option<HashSet<String>>,
     /// Parent transcript path -> (`tool_use` id -> requested model).
     parents: HashMap<PathBuf, HashMap<String, String>>,
 }
@@ -44,6 +49,7 @@ impl ParentSpawns {
         });
         Self {
             repo_slug,
+            stages: work_dir.and_then(recorded_stage_ids),
             parents: HashMap::new(),
         }
     }
@@ -55,6 +61,11 @@ impl ParentSpawns {
         if transcript.stage_id.is_none() {
             transcript.stage_id =
                 stage_from_project_slug(&file.project_slug, self.repo_slug.as_deref())
+                    .filter(|stage| {
+                        self.stages
+                            .as_ref()
+                            .is_none_or(|known| known.contains(*stage))
+                    })
                     .map(str::to_owned);
         }
         if file.scope != Scope::Subagent

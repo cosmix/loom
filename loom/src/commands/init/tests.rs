@@ -104,7 +104,7 @@ fn stage_definition_preserves_runtime_options() {
     // preserving preference ORDER — the first lane is what routine work reaches
     // for, so a reordering here would silently retarget every stage's subagents.
     assert_eq!(
-        stage.implementers.preferred(),
+        stage.implementers.first_listed(),
         Implementer::Claude,
         "implementers defaults to the Claude lane"
     );
@@ -119,7 +119,7 @@ fn stage_definition_preserves_runtime_options() {
         mixed_stage.implementers.is_mixed(),
         "a mixed lane list must survive definition → stage"
     );
-    assert_eq!(mixed_stage.implementers.preferred(), Implementer::Codex);
+    assert_eq!(mixed_stage.implementers.first_listed(), Implementer::Codex);
     assert!(mixed_stage.implementers.includes_claude());
 
     // The subagent response budget propagates the same way. Omitted stays None

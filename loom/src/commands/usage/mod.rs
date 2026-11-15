@@ -113,7 +113,8 @@ fn parse_all(
 
 pub fn execute(args: UsageArgs) -> Result<()> {
     if args.quota {
-        return quota::print_model_budget(crate::commands::common::work_dir_path().ok().as_deref());
+        quota::print_model_budget(crate::commands::common::work_dir_path().ok().as_deref());
+        return Ok(());
     }
     if let Some(artifact) = args.compare.as_deref() {
         let exit_code = comparison::compare(artifact, &args)?;

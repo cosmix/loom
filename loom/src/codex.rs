@@ -289,7 +289,7 @@ fn codex_companion_installed_in(home: &std::path::Path) -> bool {
     std::fs::symlink_metadata(path).is_ok_and(|metadata| metadata.is_file())
 }
 
-/// Combined availability check for the codex implementation lanes (terra, luna).
+/// Combined availability check for the codex implementation lanes (terra, sol, luna).
 ///
 /// `Ok(())` iff BOTH the codex CLI is resolvable (see [`find_codex_path`]) AND
 /// the codex plugin's companion runtime is installed. `Err` carries a short,

@@ -611,7 +611,7 @@ fn test_recovery_signal_carries_codex_implementers_section() {
     assert!(signal.contains(CODEX_IMPLEMENTER_MODEL_LUNA));
 
     // A MIXED stage recovers with the doctrine too. The gate is "codex is
-    // licensed", not "codex is first-listed" — a stage that reaches for sonnet
+    // licensed", not "codex is first-listed" — a stage that lists claude
     // first but may still spawn one codex agent needs the blast-radius rules
     // just as much, and this is the case a `== Codex` equality check dropped.
     let mut mixed_stage = create_test_stage();
@@ -620,7 +620,7 @@ fn test_recovery_signal_carries_codex_implementers_section() {
     assert!(
         signal.contains("## Codex Implementers"),
         "a recovered MIXED stage must receive the codex doctrine even though \
-         codex is not its preferred lane"
+         codex is not listed first"
     );
     assert!(
         signal.contains(".loom/work/") && signal.contains("git status --short"),

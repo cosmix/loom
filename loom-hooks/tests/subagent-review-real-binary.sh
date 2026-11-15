@@ -24,7 +24,10 @@ for source_file in "$ROOT"/loom/src/commands/hook/review_{start,harvest}.rs; do
 	fi
 done
 
-TMP=$(mktemp -d "${TMPDIR:-/tmp}/subagent-review-real.XXXXXX")
+# A fixture project under a `.worktrees/<id>` checkout resolves to the
+# enclosing project's state root, so the base sits outside any worktree.
+source "$ROOT/loom-hooks/tests/_fixture_base.sh"
+TMP=$(mktemp -d "$(fixture_base)/subagent-review-real.XXXXXX")
 trap 'rm -rf -- "$TMP"' EXIT
 # The stop hook refuses paths that cross a symlink.
 TMP=$(cd "$TMP" && pwd -P)

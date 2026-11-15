@@ -36,9 +36,9 @@ impl std::fmt::Display for Implementer {
 ///
 /// A stage mixes lanes freely: straightforward, well-specified pieces may go to
 /// codex while exploration goes to sonnet and an architectural call stays with
-/// opus. Order is informational only — [`Implementers::preferred`] reports the
-/// first-listed lane — and routing is per piece: every listed lane is
-/// available for the parts of the stage that call for it.
+/// opus. Order carries no routing meaning — [`Implementers::first_listed`]
+/// reports the first-listed lane and nothing more — and routing is per piece:
+/// every listed lane is available for the parts of the stage that call for it.
 ///
 /// Serialized transparently as a YAML sequence (`["codex", "claude"]`), so a
 /// stage declares lanes the same way it declares any other list. An omitted
@@ -61,12 +61,13 @@ impl Implementers {
         Self(lanes)
     }
 
-    /// The first-listed lane. Order is informational only; routing is per piece.
+    /// The first-listed lane. The order of the list carries no routing meaning;
+    /// routing is per piece.
     ///
     /// Falls back to [`Implementer::Claude`] for an empty set. Validation
     /// rejects an explicitly empty list, so the fallback only covers a value
     /// constructed in code rather than parsed from a plan.
-    pub fn preferred(&self) -> Implementer {
+    pub fn first_listed(&self) -> Implementer {
         self.0.first().copied().unwrap_or_default()
     }
 

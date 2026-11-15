@@ -9,9 +9,14 @@ const CLAUDE_ROUTING: &str = "Routing: Claude quota is under pressure. Give ever
 const CODEX_ROUTING: &str = "Routing: Codex quota is under pressure. Give straightforward, well-specified pieces to the matching Claude tier: terra- and sol-tier work to sonnet, boilerplate and simple unit tests to haiku.";
 const BOTH_ROUTING: &str = "Routing: both providers are under pressure. Allocate as Rule 7 says.";
 
+/// A reading counts only when it is recent, error-free and carries at least one
+/// window: pollers write `windows: []` for a provider that reports none, and a
+/// section holding only the heading would tell the agent nothing.
 fn fresh(provider: Option<&ProviderQuota>, now: i64) -> Option<&ProviderQuota> {
     provider.filter(|p| {
-        p.error.is_none() && now.saturating_sub(p.observed_at) < quota::STALE_AFTER_SECS
+        p.error.is_none()
+            && !p.windows.is_empty()
+            && quota::age_secs(p.observed_at, now) < quota::STALE_AFTER_SECS
     })
 }
 
@@ -38,7 +43,7 @@ fn format_window(window: &QuotaWindow, now: i64) -> String {
 }
 
 fn append_provider(out: &mut String, name: &str, provider: Option<&ProviderQuota>, now: i64) {
-    if let Some(provider) = provider.filter(|p| !p.windows.is_empty()) {
+    if let Some(provider) = provider {
         let windows = [WindowKind::FiveHour, WindowKind::SevenDay]
             .into_iter()
             .flat_map(|kind| provider.windows.iter().filter(move |w| w.kind == kind))

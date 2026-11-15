@@ -19,7 +19,7 @@ fail() {
 	exit 1
 }
 
-mkdir -p "$HOME_DIR/.claude/agents" "$CWD/.claude/agents"
+mkdir -p "$HOME_DIR/.claude/agents" "$CWD/.claude/agents" "$d/tmpdir"
 printf -- '---\nname: loom-code-reviewer\nmodel: haiku\n---\n' >"$CWD/.claude/agents/loom-code-reviewer.md"
 printf -- '---\nname: other-agent\nmodel: haiku\n---\n' >"$CWD/.claude/agents/other-agent.md"
 
@@ -41,7 +41,10 @@ spawn() {
 	local payload
 	payload=$(jq -nc --arg t "$1" --arg m "${2:-}" \
 		'{tool_name:"Task",tool_input:({subagent_type:$t,description:"d",prompt:"p"} + (if $m != "" then {model:$m} else {} end))}')
-	(cd "$CWD" && printf '%s' "$payload" | env -i PATH="$PATH" HOME="$HOME_DIR" LOOM_BIN="$STUB" bash "$HOOK" 2>/dev/null) || true
+	# The hook keeps the reviewer-model stderr in a TMPDIR file; with none it
+	# falls back to /tmp, which a sandboxed caller may not be able to write.
+	(cd "$CWD" && printf '%s' "$payload" | env -i PATH="$PATH" HOME="$HOME_DIR" LOOM_BIN="$STUB" \
+		TMPDIR="$d/tmpdir" bash "$HOOK" 2>/dev/null) || true
 }
 field() { jq -r "$1 // empty"; }
 

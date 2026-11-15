@@ -213,14 +213,22 @@ _loom_git_repo_in_scratch() {
 # _loom_git_no_repo <dir> - the nearest existing ancestor of <dir> (itself
 # when it exists) is class scratch and git finds no repository there, looking
 # no higher than the scratch root. Only git's own "not a repository" status
-# (128) counts: a timeout is no proof.
+# (128) counts: a timeout is no proof. Git never applies a ceiling to its
+# starting directory, so a search starting at the root itself takes the root's
+# parent as its ceiling; a ceiling at the root let it climb into a repository
+# holding the scratch directory.
 _loom_git_no_repo() {
-	local a="$1" root rc=0
+	local a="$1" root ceiling rc=0
 	while [[ -n "$a" && ! -d "$a" ]]; do a="${a%/*}"; done
 	[[ -n "$a" && "$(loom_path_class "$a")" == scratch ]] || return 1
 	root=$(_loom_scratch_root) || return 1
+	ceiling=$root
+	if [[ "$a" == "$root" ]]; then
+		ceiling="${root%/*}"
+		ceiling="${ceiling:-/}"
+	fi
 	loom_run_bounded 2 env -u GIT_DIR -u GIT_WORK_TREE -u GIT_COMMON_DIR \
-		GIT_CEILING_DIRECTORIES="$root" git -C "$a" rev-parse --git-dir \
+		GIT_CEILING_DIRECTORIES="$ceiling" git -C "$a" rev-parse --git-dir \
 		>/dev/null 2>&1 </dev/null || rc=$?
 	((rc == 128))
 }

@@ -26,7 +26,7 @@ loom:
 "#;
     let parsed: LoomMetadata = crate::yaml::from_str(yaml).expect("implementers: [codex] parses");
     let lanes = &parsed.loom.stages[0].implementers;
-    assert_eq!(lanes.preferred(), Implementer::Codex);
+    assert_eq!(lanes.first_listed(), Implementer::Codex);
     assert!(lanes.includes_codex());
     assert!(!lanes.includes_claude());
     assert!(!lanes.is_mixed());
@@ -50,7 +50,7 @@ loom:
     assert!(lanes.includes_codex());
     assert!(lanes.includes_claude());
     assert_eq!(
-        lanes.preferred(),
+        lanes.first_listed(),
         Implementer::Codex,
         "the FIRST listed lane is the one routine implementation prefers"
     );
@@ -74,10 +74,10 @@ loom:
 "#;
     let parsed: LoomMetadata = crate::yaml::from_str(yaml).expect("mixed implementers parse");
     let lanes = &parsed.loom.stages[0].implementers;
-    assert_eq!(lanes.preferred(), Implementer::Claude);
+    assert_eq!(lanes.first_listed(), Implementer::Claude);
     assert!(
         lanes.includes_codex(),
-        "codex is licensed even when it is not preferred"
+        "codex is licensed even when it is not first-listed"
     );
 }
 
@@ -94,7 +94,7 @@ loom:
 "#;
     let parsed: LoomMetadata = crate::yaml::from_str(yaml).expect("plan should parse");
     let lanes = &parsed.loom.stages[0].implementers;
-    assert_eq!(lanes.preferred(), Implementer::Claude);
+    assert_eq!(lanes.first_listed(), Implementer::Claude);
     assert!(!lanes.includes_codex());
     assert!(!lanes.is_mixed());
 }
@@ -202,7 +202,7 @@ fn codex_lane_on_knowledge_stage_warns_in_preflight() {
 #[test]
 fn codex_warns_on_knowledge_stage_even_when_only_secondary() {
     // The advisory is about the lane being AVAILABLE on a stage whose work is
-    // curation, not about which lane is preferred — a knowledge stage that
+    // curation, not about which lane is first-listed — a knowledge stage that
     // merely lists codex can still misroute its work to it.
     let mut stage = make_stage("explore", "Explore Codebase");
     stage.stage_type = Some(StageType::Knowledge);

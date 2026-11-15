@@ -85,6 +85,20 @@ for role in subagent main; do
 	expect 0 "$role" "git init -q $S/fx6 &&"$'\n'"git -C $S/fx6 commit -qm x"
 done
 
+# A scratch directory inside another repository: the chain's own `git init`
+# still makes the repository its commit reaches, while a commit with no init
+# would land in the enclosing repository and stays blocked.
+NS="$TMP/outer/scratch"
+mkdir -p "$NS"
+chmod 700 "$NS"
+git_q -C "$TMP/outer" init -q
+for role in subagent main; do
+	expect 0 "$role" "mkdir -p $NS/fx && cd $NS/fx && git init -q && git add doc && git commit -qm x" \
+		"$FILTER" "$WT" LOOM_SCRATCH_DIR="$NS"
+	expect 2 "$role" "cd $NS && git commit -qm x" "$FILTER" "$WT" LOOM_SCRATCH_DIR="$NS"
+	expect 2 "$role" "mkdir -p $NS/fy && cd $NS/fy && git commit -qm x" "$FILTER" "$WT" LOOM_SCRATCH_DIR="$NS"
+done
+
 # --- blocked for both roles --------------------------------------------------
 for role in subagent main; do
 	for command in \
