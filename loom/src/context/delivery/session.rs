@@ -5,6 +5,7 @@
 
 use super::{delivery_dir, validate_recipient_id, DeliveryRecord};
 use crate::fs::locking::locked_dir_update;
+use crate::utils::sha256_hex;
 use anyhow::{Context, Result};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeSet;
@@ -44,10 +45,7 @@ pub fn worker_recipient_id(stage: &str, parent_session: &str, nonce: &str) -> St
 /// from `[0-9a-f]`. Same two-step shape as
 /// [`crate::context::retrieve::context_epoch`]'s own digest.
 fn session8(value: &str) -> String {
-    let mut hasher = Sha256::new();
-    hasher.update(value.as_bytes());
-    let result = hasher.finalize();
-    hex::encode(&result[..8])
+    sha256_hex(value.as_bytes())[..16].to_string()
 }
 
 /// Delivered pairs in this epoch for the hook recipient and, when applicable,
@@ -107,6 +105,14 @@ mod tests {
             }],
             written_at: chrono::Utc::now(),
         }
+    }
+
+    #[test]
+    fn a_session_id_hashes_to_the_first_sixteen_hex_digits_of_its_sha256() {
+        assert_eq!(
+            hook_recipient_id("scope", Some("abc")),
+            "prompt-scope-ba7816bf8f01cfea"
+        );
     }
 
     #[test]

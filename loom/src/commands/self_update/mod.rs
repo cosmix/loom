@@ -24,7 +24,7 @@ use client::{
     validate_response_status,
 };
 use install::install_binary;
-use signature::{compute_sha256_checksum, verify_binary_signature};
+use signature::verify_binary_signature;
 
 // Repository and version constants
 const CURRENT_VERSION: &str = env!("LOOM_VERSION");
@@ -277,7 +277,7 @@ fn verify_and_install_binary(binary: &[u8], signature: &str) -> Result<PathBuf> 
     println!(
         "  {} SHA-256: {}",
         "ℹ".blue(),
-        compute_sha256_checksum(binary).dimmed()
+        crate::utils::sha256_hex(binary).dimmed()
     );
 
     // Capture this before the swap: Linux then points /proc/self/exe at the replaced inode.

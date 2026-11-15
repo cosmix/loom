@@ -96,13 +96,19 @@ pub(crate) fn untracked_names(git: &WorktreeGit, pathspecs: &[&str]) -> Result<B
 /// Every worktree-relative path changed since `base`: committed on the
 /// branch, changed in the index or working tree, or untracked and not
 /// ignored. Untracked sandbox artifacts ([`is_tool_artifact`]) and worktree
-/// scaffolding ([`is_worktree_scaffold_path`]) are left out.
-pub(crate) fn changes_since(git: &WorktreeGit, base: &str) -> Result<BTreeSet<String>> {
+/// scaffolding ([`is_worktree_scaffold_path`]) are left out. `filter` is a
+/// `--diff-filter` value limiting the tracked changes (untracked files are
+/// listed either way); `None` lists every kind.
+pub(crate) fn changes_since(
+    git: &WorktreeGit,
+    base: &str,
+    filter: Option<&str>,
+) -> Result<BTreeSet<String>> {
     let worktree = git.work_tree();
     let query = DiffNames {
         from: base,
         to: None,
-        filter: None,
+        filter,
         all_submodules: false,
         pathspecs: &[],
     };

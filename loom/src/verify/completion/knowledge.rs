@@ -15,7 +15,7 @@ pub(super) fn check(worktree: &Path, target: &str) -> Result<()> {
     let git = checkout_git(worktree)?;
     let base = merge_base(&git, "HEAD", target)
         .with_context(|| format!("finding merge base with {target}"))?;
-    let paths = changes_since(&git, &base)?;
+    let paths = changes_since(&git, &base, None)?;
     if !paths
         .iter()
         .any(|p| p == KNOWLEDGE || p.starts_with(&format!("{KNOWLEDGE}/")))

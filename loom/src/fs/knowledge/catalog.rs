@@ -1,6 +1,7 @@
 //! Build a deterministic catalog over the whole knowledge tree.
 
 use crate::fs::knowledge::chunker::{self, KnowledgeChunk};
+use crate::fs::lexical::normalize_lexically;
 use anyhow::Context;
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -339,25 +340,8 @@ fn contained_link_target(root: &Path, relative_path: &Path, target: &str) -> Opt
     }
 
     let start = relative_path.parent().unwrap_or(Path::new(""));
-    let mut normalized = PathBuf::new();
-    for component in start.components().chain(Path::new(target).components()) {
-        match component {
-            std::path::Component::CurDir => {}
-            std::path::Component::ParentDir => {
-                if !normalized.pop() {
-                    // Popped past the knowledge root itself: the target
-                    // escapes the tree.
-                    return None;
-                }
-            }
-            std::path::Component::Normal(part) => normalized.push(part),
-            // `target` is already confirmed relative above, and `start` is
-            // always relative (it comes from a knowledge-relative file
-            // path), so neither a root nor a Windows prefix component can
-            // occur here.
-            std::path::Component::RootDir | std::path::Component::Prefix(_) => return None,
-        }
-    }
+    // `None` when the target climbs past the knowledge root itself.
+    let normalized = normalize_lexically(&start.join(target))?;
 
     Some(root.join(normalized))
 }

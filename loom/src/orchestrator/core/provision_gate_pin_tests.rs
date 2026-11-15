@@ -149,3 +149,36 @@ fn a_failing_entry_stops_the_run_and_clears_the_busy_line() {
     assert!(!worktree.path().join("second").exists());
     assert_eq!(tick::read(work.path()).unwrap().unwrap().busy, None);
 }
+
+/// A block that cannot persist (no stage file) is an error, not a quiet `Ok(false)`: the
+/// scheduler records it, where a Queued stage would re-run its provision every tick.
+#[test]
+fn a_block_that_cannot_persist_is_an_error_naming_the_stage() {
+    let temp = TempDir::new().unwrap();
+    let work = prepare_work_dir(temp.path());
+    let mut orchestrator = orchestrator_for(&work, temp.path());
+
+    let error = orchestrator
+        .block_for_provision("ghost", "provision failed".to_string())
+        .expect_err("no stage file to block");
+
+    assert!(format!("{error:#}").contains("ghost"), "{error:#}");
+}
+
+#[test]
+fn a_persisted_block_answers_false() {
+    let temp = TempDir::new().unwrap();
+    let work = prepare_work_dir(temp.path());
+    queued_stage(&work, Vec::new());
+    let mut orchestrator = orchestrator_for(&work, temp.path());
+
+    let spawned = orchestrator
+        .block_for_provision("alpha", "provision failed".to_string())
+        .unwrap();
+
+    assert!(!spawned);
+    assert_eq!(
+        load_stage("alpha", &work).unwrap().status,
+        StageStatus::Blocked
+    );
+}

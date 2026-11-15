@@ -12,6 +12,8 @@ mod human;
 mod inputs;
 pub mod report;
 #[cfg(test)]
+mod report_tests;
+#[cfg(test)]
 mod tests;
 
 use report::VerifyReport;

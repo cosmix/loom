@@ -9,8 +9,9 @@ use std::time::Duration;
 use anyhow::{Context, Result};
 
 use super::dry_run::{run_dry_run_with, skip, stages_of, DryCommand};
-use super::report::{parse_metadata, VerifyError, VerifyReport};
+use super::report::{VerifyError, VerifyReport};
 use crate::models::stage::{CommandConfinement, Stage};
+use crate::plan::parser::parse_plan_metadata;
 use crate::plan::schema::StageDefinition;
 use crate::process::sandbox_probe::confined_commands_blocker;
 use crate::verify::criteria::assertions::{evaluate, AssertionSpec};
@@ -39,7 +40,7 @@ type StageTable<'a> = HashMap<&'a str, (&'a StageDefinition, &'a Stage)>;
 pub(super) fn run(path: &Path, report: &mut VerifyReport) -> Result<()> {
     let text = std::fs::read_to_string(path)
         .with_context(|| format!("failed to read {}", path.display()))?;
-    let Some(metadata) = parse_metadata(&text) else {
+    let Ok(metadata) = parse_plan_metadata(&text) else {
         return skip(report, "the plan metadata does not parse");
     };
     let loom = &metadata.loom;

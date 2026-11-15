@@ -161,7 +161,13 @@ impl Orchestrator {
     fn escalate_incoherent_stage(&mut self, work_dir: &Path, stage_id: &str, reason: &str) {
         match block_incoherent_stage(work_dir, stage_id, reason) {
             Ok(Some(_)) => {
-                let _ = self.graph.mark_status(stage_id, StageStatus::Blocked);
+                if let Err(error) = self.graph.mark_status(stage_id, StageStatus::Blocked) {
+                    tracing::warn!(
+                        stage_id = %stage_id,
+                        %error,
+                        "stage persisted Blocked but graph not marked"
+                    );
+                }
                 self.active_sessions.remove(stage_id);
                 clear_status_line();
                 eprintln!(

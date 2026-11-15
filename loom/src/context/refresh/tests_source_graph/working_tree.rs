@@ -186,3 +186,19 @@ fn an_untracked_symlink_to_a_device_does_not_hang_the_generation() {
         .expect("working_tree must not fail on a refused symlink");
     assert!(!generation.is_empty());
 }
+
+/// An unborn branch fails with the shared HEAD reader's message, not git's "ambiguous argument".
+#[test]
+fn an_unborn_branch_has_no_working_tree_head() {
+    let temp = tempfile::TempDir::new().unwrap();
+    git_ok(temp.path(), &["init", "-q", "-b", "main"]);
+
+    let error = working_tree(temp.path())
+        .err()
+        .expect("no HEAD commit to read");
+
+    assert!(
+        format!("{error:#}").contains("HEAD has no commit"),
+        "{error:#}"
+    );
+}

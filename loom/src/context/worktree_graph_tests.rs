@@ -134,7 +134,9 @@ fn changed_paths_preserve_names_and_index_bytes_and_ignore_stat_only_changes() {
     let before = fs::read(&index).unwrap();
     let changed = changed_paths(&WorktreeGit::discovered(root), "HEAD").unwrap();
     assert_eq!(changed, vec![PathBuf::from(path)]);
-    let tree = crate::plan::schema::validation::base_tree::HeadTree::new(root).unwrap();
+    let tree = crate::plan::schema::validation::base_tree::HeadTree::new(root)
+        .unwrap()
+        .unwrap();
     assert_eq!(tree.content(path).unwrap(), b"committed\n");
     assert_eq!(fs::read(index).unwrap(), before);
 }

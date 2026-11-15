@@ -16,6 +16,7 @@ use anyhow::{ensure, Context, Result};
 
 use crate::git::runner::run_git;
 use crate::git::user_git::{literal, run_literal, user_git, IndexBefore};
+use crate::models::dispute::truncate_to_byte_limit;
 use crate::process::{run_bounded_terminating_output, ProcessTimeoutError};
 
 use super::settle_head::{after_commit, unstage, Made};
@@ -280,11 +281,8 @@ pub(super) fn refusal(step: &str, output: &Output) -> String {
         reason.push_str(&tail);
     }
     if reason.len() > REFUSAL_BYTES {
-        let cut = (0..=REFUSAL_BYTES)
-            .rev()
-            .find(|index| reason.is_char_boundary(*index))
-            .unwrap_or(0);
-        reason.truncate(cut);
+        // The ellipsis counts toward the byte budget.
+        reason = truncate_to_byte_limit(&reason, REFUSAL_BYTES - '…'.len_utf8());
         reason.push('…');
     }
     reason
@@ -293,6 +291,25 @@ pub(super) fn refusal(step: &str, output: &Output) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_long_refusal_fits_its_byte_budget_ellipsis_included() {
+        use std::os::unix::process::ExitStatusExt;
+        let output = Output {
+            status: std::process::ExitStatus::from_raw(1 << 8),
+            stdout: Vec::new(),
+            stderr: "é".repeat(500).into_bytes(),
+        };
+
+        let reason = refusal("git commit", &output);
+
+        assert!(reason.len() <= REFUSAL_BYTES, "{} bytes", reason.len());
+        assert!(reason.ends_with('…'), "{reason}");
+        assert!(
+            reason.starts_with("git commit exited with 1: é"),
+            "{reason}"
+        );
+    }
 
     #[test]
     fn a_lock_left_behind_by_a_timeout_is_named() {

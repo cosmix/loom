@@ -109,6 +109,8 @@ pub fn load_assigned_session(work_dir: &Path, stage: &Stage) -> Result<Option<Se
 /// Escalate an incoherent Executing stage: Blocked with an infrastructure
 /// failure naming the reason, session pointer cleared. Returns `None` if the
 /// stage was no longer Executing under the lock.
+// Kept beside `Orchestrator::block_stage` (core/stage_block.rs): a free function with no
+// orchestrator or graph, and a conditional transition (only while still Executing).
 pub fn block_incoherent_stage(
     work_dir: &Path,
     stage_id: &str,

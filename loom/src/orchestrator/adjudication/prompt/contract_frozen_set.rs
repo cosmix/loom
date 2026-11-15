@@ -8,6 +8,7 @@ use std::path::Path;
 
 use super::KindPromptInput;
 use crate::fs::safe_read::{is_not_found, read_bounded};
+use crate::models::dispute::truncate_to_byte_limit;
 use crate::orchestrator::adjudication::prompt::diff::unified_diff;
 use crate::plan::schema::ContractSpec;
 use crate::stage_service::contracts::locate;
@@ -185,11 +186,7 @@ fn cut(text: &mut String, what: &str) {
     if text.len() <= MAX_FROZEN_SET_DIFF_BYTES {
         return;
     }
-    let mut end = MAX_FROZEN_SET_DIFF_BYTES;
-    while !text.is_char_boundary(end) {
-        end -= 1;
-    }
-    text.truncate(end);
+    *text = truncate_to_byte_limit(text, MAX_FROZEN_SET_DIFF_BYTES);
     text.push_str(&format!("\n... [{what} truncated] ...\n"));
 }
 

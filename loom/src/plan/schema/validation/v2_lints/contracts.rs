@@ -20,7 +20,19 @@ use crate::verify::contracts::{detected_adapter, normalize};
 use super::{LintContext, LintFinding};
 
 pub(super) fn check(ctx: &LintContext<'_>, out: &mut Vec<LintFinding>) {
-    let head = ctx.repo_root.and_then(HeadTree::new);
+    let head = match ctx.repo_root.map(HeadTree::new).transpose() {
+        Ok(head) => head.flatten(),
+        Err(error) => {
+            out.push(LintFinding {
+                stage_id: None,
+                message: format!(
+                    "contract collection checks skipped: git cannot read HEAD: {error:#}"
+                ),
+                error_in_v2: false,
+            });
+            None
+        }
+    };
     let listing = OnceCell::new();
     let mut adapters = Adapters::default();
     for stage in &ctx.metadata.loom.stages {

@@ -1,6 +1,7 @@
 //! Skill recommendation section of a stage signal: per-skill invocations plus one combined loader call.
 
 use crate::skills::{is_core_skill, skill_invocation, SkillMatch};
+use crate::utils::truncate;
 
 /// Format skill recommendations for inclusion in signals.
 pub fn format_skill_recommendations(skills: &[SkillMatch]) -> String {
@@ -92,14 +93,7 @@ fn format_advisory_skills(advisory: &[&SkillMatch]) -> String {
 
     for skill in advisory {
         // Truncate description if too long for table (UTF-8 safe)
-        let desc = if skill.description.chars().count() > 60 {
-            format!(
-                "{}...",
-                skill.description.chars().take(57).collect::<String>()
-            )
-        } else {
-            skill.description.clone()
-        };
+        let desc = truncate(&skill.description, 60);
         // Escape pipe characters in description and name
         let desc = desc.replace('|', "\\|");
         let invoke = skill_invocation(&skill.name);

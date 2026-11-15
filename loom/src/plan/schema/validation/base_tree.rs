@@ -19,7 +19,8 @@ use super::super::types::{AcceptanceCriterion, StageDefinition, StageType};
 use super::search_args::SearchArgs;
 use super::shell_lex::{lex, Token, Word};
 use crate::git::changes::{changed_names, DiffNames};
-use crate::git::runner::{run_git, run_git_bool, run_git_checked};
+use crate::git::revision::has_commits;
+use crate::git::runner::{run_git, run_git_checked};
 use crate::git::worktree::WorktreeGit;
 
 /// The only short options an evaluable criterion may use.
@@ -45,8 +46,10 @@ pub(crate) fn check_base_tree(
     let Some(root) = repo_root else {
         return skipped("no git repository contains the plan file");
     };
-    let Some(tree) = HeadTree::new(root) else {
-        return skipped("HEAD does not resolve to a commit");
+    let tree = match HeadTree::new(root) {
+        Ok(Some(tree)) => tree,
+        Ok(None) => return skipped("HEAD does not resolve to a commit"),
+        Err(error) => return skipped(&format!("git cannot read HEAD: {error:#}")),
     };
     let mut report = BaseTreeReport::default();
     for stage in stages {
@@ -171,18 +174,19 @@ pub(crate) struct HeadTree<'a> {
 }
 
 impl<'a> HeadTree<'a> {
-    /// HEAD of the repository at `root`; `None` when HEAD is no commit.
-    pub(crate) fn new(root: &'a Path) -> Option<Self> {
+    /// HEAD of the repository at `root`; `None` when HEAD is no commit, an error when git
+    /// cannot say (`root` is already known to be inside a repository).
+    pub(crate) fn new(root: &'a Path) -> anyhow::Result<Option<Self>> {
         let root = if root.as_os_str().is_empty() {
             Path::new(".")
         } else {
             root
         };
-        let resolves = run_git_bool(&["rev-parse", "--verify", "--quiet", "HEAD^{commit}"], root);
-        resolves.then(|| HeadTree {
+        let resolves = has_commits(&WorktreeGit::discovered(root))?;
+        Ok(resolves.then(|| HeadTree {
             root,
             changed: OnceCell::new(),
-        })
+        }))
     }
 
     /// Push the warnings `search` earns against HEAD.

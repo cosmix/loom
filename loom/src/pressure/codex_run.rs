@@ -170,6 +170,8 @@ impl CodexJob {
             model,
             &self.effort,
         )?;
+        // Kept beside `crate::process::signal_group_id`: a null-signal liveness probe that
+        // drops dead groups, not a kill, so it must not go through the refusing signaller.
         state.groups.retain(|&group| killpg(group, None).is_ok());
         state.groups.push(Pid::from_raw(child.id() as i32));
         self.pid.store(child.id(), Ordering::Release);

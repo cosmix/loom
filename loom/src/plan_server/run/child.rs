@@ -7,6 +7,7 @@ use std::sync::{mpsc, Arc, Mutex, PoisonError};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
+use crate::models::dispute::truncate_to_byte_limit;
 use crate::plan_server::context::PlanContext;
 use crate::plan_server::wire::run::{OutputStream, RunJob, RunOutput};
 use crate::plan_server::PlanMessage;
@@ -109,13 +110,8 @@ fn read_capped_line(reader: &mut impl BufRead) -> io::Result<Option<String>> {
             break;
         }
     }
-    let mut line = String::from_utf8_lossy(&prefix).into_owned();
-    let mut end = line.len().min(MAX_LINE_BYTES);
-    while !line.is_char_boundary(end) {
-        end -= 1;
-    }
-    line.truncate(end);
-    Ok(Some(line))
+    let line = String::from_utf8_lossy(&prefix);
+    Ok(Some(truncate_to_byte_limit(&line, MAX_LINE_BYTES)))
 }
 
 fn collect_output(

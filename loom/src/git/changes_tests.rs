@@ -133,7 +133,33 @@ fn changes_since_drops_only_untracked_tool_artifacts() {
     std::fs::write(root.join(".profile"), "export A=1\n").unwrap();
     std::fs::write(root.join(".gitconfig"), "").unwrap();
 
-    assert_eq!(changes_since(&git_repo, &base).unwrap(), set(&[".profile"]));
+    assert_eq!(
+        changes_since(&git_repo, &base, None).unwrap(),
+        set(&[".profile"])
+    );
+}
+
+/// The filter limits the tracked changes only: a modified file drops out of an
+/// `A` listing, an untracked file stays in it.
+#[test]
+fn changes_since_filter_limits_tracked_changes_not_untracked_files() {
+    let dir = repo();
+    let root = dir.path();
+    let git_repo = WorktreeGit::discovered(root);
+    let base = merge_base(&git_repo, "HEAD", "main").unwrap();
+    std::fs::write(root.join("a.txt"), "changed\n").unwrap();
+    std::fs::write(root.join("doc/staged.md"), "s\n").unwrap();
+    git(root, &["add", "doc/staged.md"]);
+    std::fs::write(root.join("new.txt"), "n\n").unwrap();
+
+    assert_eq!(
+        changes_since(&git_repo, &base, Some("A")).unwrap(),
+        set(&["doc/staged.md", "new.txt"])
+    );
+    assert_eq!(
+        changes_since(&git_repo, &base, None).unwrap(),
+        set(&["a.txt", "doc/staged.md", "new.txt"])
+    );
 }
 
 /// The listing reads a private copy of the index: a stat-dirty file is no

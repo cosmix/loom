@@ -7,7 +7,8 @@ use std::path::Path;
 
 use super::{checks, find_repo_root, inputs};
 use crate::plan::parser::{
-    extract_plan_name, extract_yaml_metadata_with_ranges, ExtractedMetadata,
+    extract_plan_name, extract_yaml_metadata_with_ranges, parse_error_text, parse_metadata,
+    ExtractedMetadata,
 };
 use crate::plan::schema::{base_tree, LoomMetadata, ValidationError};
 
@@ -153,15 +154,18 @@ pub fn verify_text(repo_root: Option<&Path>, plan_path: &Path, text: &str) -> Ve
             }
         }
     };
-    let metadata: LoomMetadata = match crate::yaml::from_str(&extracted.yaml) {
+    let metadata = match parse_metadata(&extracted.yaml) {
         Ok(metadata) => metadata,
         Err(e) => {
+            // A retired-field error carries the guidance text but no parser location.
+            let location = e
+                .downcast_ref::<serde_saphyr::Error>()
+                .and_then(serde_saphyr::Error::location);
             return VerifyReport {
-                yaml_location: e
-                    .location()
+                yaml_location: location
                     .map(|at| file_location(text, &extracted, at.line(), at.column())),
-                ..VerifyReport::stopped(source, format!("YAML parse error: {e}"))
-            }
+                ..VerifyReport::stopped(source, parse_error_text(&e))
+            };
         }
     };
     let plan = VerifyPlan {
@@ -173,12 +177,6 @@ pub fn verify_text(repo_root: Option<&Path>, plan_path: &Path, text: &str) -> Ve
         source,
     };
     validate(repo_root, plan_path, text, &metadata, plan)
-}
-
-/// The `loom:` metadata of a plan's text; `None` when the block is absent or does not parse.
-pub(super) fn parse_metadata(text: &str) -> Option<LoomMetadata> {
-    let extracted = extract_yaml_metadata_with_ranges(text).ok()?;
-    crate::yaml::from_str(&extracted.yaml).ok()
 }
 
 /// Verify the plan file at `path`, with the repository root found by walking up from it.

@@ -169,7 +169,7 @@ fn merge_base_changes(worktree: &Path, target_branch: &str) -> Result<(String, V
     let git = local_git(worktree)?;
     let base = merge_base(&git, "HEAD", target_branch)
         .with_context(|| format!("finding merge base with {target_branch}"))?;
-    let paths = changes_since(&git, &base)?;
+    let paths = changes_since(&git, &base, None)?;
     Ok((base, paths.into_iter().map(PathBuf::from).collect()))
 }
 

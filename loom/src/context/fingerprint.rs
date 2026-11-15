@@ -6,6 +6,7 @@
 //! are a pure function of file bytes, so copying or touching a file without
 //! changing its contents never triggers a rebuild.
 
+use crate::context::source_graph::body_hash;
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -42,13 +43,9 @@ pub fn fingerprint_file(knowledge_root: &Path, path: &Path) -> Result<FileFinger
 }
 
 fn fingerprint_bytes(path: PathBuf, bytes: &[u8]) -> FileFingerprint {
-    let mut hasher = Sha256::new();
-    hasher.update(bytes);
-    let content_hash = format!("sha256:{}", hex::encode(hasher.finalize()));
-
     FileFingerprint {
         path,
-        content_hash,
+        content_hash: body_hash(bytes),
         size: bytes.len() as u64,
     }
 }

@@ -147,12 +147,20 @@ fn add_package(dir: &Path, found: &mut BTreeSet<LanguageEvidence>) {
 }
 
 pub(crate) fn read_json(root: &Path, path: &Path) -> Option<Value> {
+    serde_json::from_slice(&read_bounded(root, path)?).ok()
+}
+
+/// The bytes of `path` beneath `root`, up to `MAX_FILE_BYTES`; `None` for a path outside
+/// `root`, a symlink, a non-regular file, an oversized file or a failed read.
+///
+/// Filters obvious non-files early; the anchored reader enforces the actual symlink and
+/// non-regular-file checks even if the path changes after this filter.
+pub(crate) fn read_bounded(root: &Path, path: &Path) -> Option<Vec<u8>> {
     let relative = path.strip_prefix(root).ok()?;
     if !is_regular_no_follow(path) {
         return None;
     }
-    let bytes = crate::fs::safe_read::read_bounded(root, relative, MAX_FILE_BYTES).ok()?;
-    serde_json::from_slice(&bytes).ok()
+    crate::fs::safe_read::read_bounded(root, relative, MAX_FILE_BYTES).ok()
 }
 
 pub(crate) fn has_dependency(manifest: &Value, sections: &[&str], name: &str) -> bool {

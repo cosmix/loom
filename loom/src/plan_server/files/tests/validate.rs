@@ -119,11 +119,7 @@ fn a_yaml_error_is_located_in_the_file_and_matches_the_stages_panel() {
     let panel_error = panel
         .yaml_error
         .expect("the panel reports the same parse failure");
-    // The panel shares the verifier's schema step, whose context line precedes the parser text.
-    assert_eq!(
-        panel_error.strip_prefix("YAML parse error: Failed to parse YAML metadata: "),
-        error.message.strip_prefix("YAML parse error: ")
-    );
+    assert_eq!(panel_error, error.message);
 }
 
 /// Every message of a view: errors, warnings and notes.

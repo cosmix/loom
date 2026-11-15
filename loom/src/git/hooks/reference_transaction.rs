@@ -6,9 +6,9 @@ use anyhow::{bail, Context, Result};
 use std::fs;
 use std::path::Path;
 
-use super::{
-    active_hooks_dir, has_installed_mode, hooks_dir_for_install, make_executable, path_occupied,
-};
+use super::{active_hooks_dir, has_installed_mode, hooks_dir_for_install, path_occupied};
+use crate::fs::safe_fs::safe_open_dirfd;
+use crate::fs::safe_replace::publish_in_dir;
 use crate::git::target_guard::HOOK_MARKER;
 
 /// The hook script, embedded from `loom-hooks/git-reference-transaction-hook.sh`.
@@ -94,23 +94,19 @@ fn read_existing(hook_path: &Path) -> Result<Option<Vec<u8>>> {
     }
 }
 
-/// Whether the hook has the mode [`write_script`] gives it (git skips a hook
-/// without the executable bit).
-/// Write [`SCRIPT`] beside `hook_path`, make it executable, then rename it
-/// into place: git never runs a partly written or non-executable hook. A
-/// failure removes the staged file.
+/// Publish [`SCRIPT`] as `hook_path` with mode 0755 (git skips a hook without the
+/// executable bit): a temporary file beside it is filled, synced and renamed into place,
+/// so git never runs a partly written or non-executable hook and a symlink planted at a
+/// fixed temporary name is never written through. The hooks directory itself may be a
+/// symlink (a shared hooks directory); it is resolved before it is opened.
 pub(super) fn write_script(hook_path: &Path) -> Result<()> {
-    let staged = hook_path.with_extension("loom-new");
-    let installed = fs::write(&staged, SCRIPT)
-        .with_context(|| format!("Failed to write hook: {}", staged.display()))
-        .and_then(|()| make_executable(&staged))
-        .and_then(|()| {
-            fs::rename(&staged, hook_path)
-                .with_context(|| format!("Failed to install hook: {}", hook_path.display()))
-        });
-    if installed.is_err() {
-        // Best effort: the error that matters is the one in `installed`.
-        let _ = fs::remove_file(&staged);
-    }
-    installed
+    let name = hook_path
+        .file_name()
+        .context("A hook path has no file name")?;
+    let parent = hook_path.parent().context("A hook path has no parent")?;
+    let parent = fs::canonicalize(parent)
+        .with_context(|| format!("Failed to resolve hooks directory: {}", parent.display()))?;
+    let dir = safe_open_dirfd(&parent)?;
+    publish_in_dir(&dir, name, SCRIPT.as_bytes(), 0o755, true)
+        .with_context(|| format!("Failed to install hook: {}", hook_path.display()))
 }

@@ -2,8 +2,10 @@
 //! check: a moved test that no runner picks up is a weakened test.
 
 use std::collections::HashMap;
+use std::path::Path;
 
 use super::moves::FileDelta;
+use crate::fs::lexical::normalize_lexically;
 use crate::verify::contracts::collection::rust::{chain_problems, parent, path_modules};
 use crate::verify::contracts::collection::FileSource;
 
@@ -119,17 +121,8 @@ fn resolve(dir: &str, relative: &str) -> Option<String> {
     if relative.starts_with('/') {
         return None;
     }
-    let mut parts: Vec<&str> = dir.split('/').filter(|part| !part.is_empty()).collect();
-    for segment in relative.split('/') {
-        match segment {
-            "" | "." => {}
-            ".." => {
-                parts.pop()?;
-            }
-            name => parts.push(name),
-        }
-    }
-    Some(parts.join("/"))
+    let joined = normalize_lexically(&Path::new(dir).join(relative))?;
+    joined.to_str().map(str::to_owned)
 }
 
 #[cfg(test)]

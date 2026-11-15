@@ -89,7 +89,7 @@ fn foreign_hook_is_left_untouched() {
 }
 
 #[test]
-fn failed_rename_removes_the_staged_file() {
+fn failed_publish_leaves_no_staged_file() {
     let (_temp, hook) = repo();
     // A directory at the hook's path makes the rename fail. The installer reads
     // that path first and stops on a directory, so call `write_script` directly.
@@ -100,7 +100,11 @@ fn failed_rename_removes_the_staged_file() {
 
     let message = format!("{error:#}");
     assert!(message.contains("Failed to install hook"), "{message}");
-    assert!(!hook.with_extension("loom-new").exists());
+    let entries: Vec<_> = fs::read_dir(hook.parent().unwrap())
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name())
+        .collect();
+    assert_eq!(entries, [hook.file_name().unwrap()], "{entries:?}");
     assert!(occupant.is_dir());
 }
 
@@ -113,4 +117,19 @@ fn refuses_without_a_git_directory() {
     assert!(result.is_err());
     assert!(!temp.path().join(".git").exists());
     assert!(!is_reference_transaction_hook_installed(temp.path()));
+}
+
+#[test]
+fn a_symlink_at_the_old_staging_name_is_not_written_through() {
+    let (temp, hook) = repo();
+    fs::create_dir_all(hook.parent().unwrap()).unwrap();
+    let outside = temp.path().join("outside");
+    fs::write(&outside, "untouched").unwrap();
+    std::os::unix::fs::symlink(&outside, hook.with_extension("loom-new")).unwrap();
+
+    write_script(&hook).unwrap();
+
+    assert_eq!(fs::read_to_string(&outside).unwrap(), "untouched");
+    assert_eq!(fs::read(&hook).unwrap(), SCRIPT.as_bytes());
+    assert_eq!(mode(&hook), 0o755);
 }

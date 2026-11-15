@@ -143,7 +143,7 @@ pub fn compute_local(repo: &WorktreeGit, target_branch: &str) -> Result<ChangeFi
     let worktree = repo.work_tree();
     let base = merge_base(repo, "HEAD", target_branch)
         .with_context(|| format!("finding merge base with {target_branch}"))?;
-    let paths = changes_since(repo, &base)?;
+    let paths = changes_since(repo, &base, None)?;
     let mut entries = Vec::new();
     for path in paths {
         let content = match read_bounded(worktree, Path::new(&path), MAX_REVIEW_FILE_BYTES) {

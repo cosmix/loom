@@ -51,6 +51,7 @@ use crate::fs::memory::{
 };
 use crate::fs::work_dir::WorkDir;
 use crate::git::get_worktree_path;
+use crate::models::dispute::truncate_to_byte_limit;
 use crate::models::stage::Stage;
 use crate::utils::text::single_line;
 use crate::validation::validate_id;
@@ -335,21 +336,14 @@ fn suggestion_entry(suggestion: &Suggestion, round: u32) -> Result<Option<Memory
         (false, Some(line)) => format!("{file}:{line} {text}"),
         (false, None) => format!("{file} {text}"),
     };
-    let entry = MemoryEntry::new(MemoryEntryType::Suggestion, clip(content, MAX_ENTRY_BYTES))
-        .with_evidence(vec![format!("review round {round}")]);
+    let entry = MemoryEntry::new(
+        MemoryEntryType::Suggestion,
+        truncate_to_byte_limit(&content, MAX_ENTRY_BYTES),
+    )
+    .with_evidence(vec![format!("review round {round}")]);
     validate_content(&entry.content)?;
     validate_evidence(&entry.evidence)?;
     Ok(Some(entry))
-}
-
-/// `text` cut to at most `max` bytes on a character boundary.
-fn clip(mut text: String, max: usize) -> String {
-    let mut end = max.min(text.len());
-    while !text.is_char_boundary(end) {
-        end -= 1;
-    }
-    text.truncate(end);
-    text
 }
 
 /// The stage's worktree in the project that holds `work_dir`.

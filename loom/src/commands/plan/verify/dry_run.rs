@@ -22,13 +22,14 @@ pub use super::dry_run_classify::{
     classify, settle_timeout, severity, stage_cannot_tell, DryOutcome, DrySeverity,
 };
 use super::dry_run_exec;
-use super::report::{parse_metadata, plan_repo_root, VerifyError, VerifyReport};
+use super::report::{plan_repo_root, VerifyError, VerifyReport};
 use crate::git::revision::require_head_commit;
 use crate::git::worktree::WorktreeGit;
 use crate::models::stage::{
     AcceptanceCriterion, CommandConfinement, PlanIdentity, Stage, StageType,
 };
 use crate::orchestrator::provision::run_provision;
+use crate::plan::parser::parse_plan_metadata;
 use crate::plan::schema::{detect_stage_type, StageDefinition};
 use crate::utils::truncate_for_display;
 use crate::verify::criteria::{
@@ -75,7 +76,7 @@ pub fn run_dry_run_with(
 ) -> Result<()> {
     let text = std::fs::read_to_string(path)
         .with_context(|| format!("failed to read {}", path.display()))?;
-    let Some(metadata) = parse_metadata(&text) else {
+    let Ok(metadata) = parse_plan_metadata(&text) else {
         return skip(report, "the plan metadata does not parse");
     };
     let (root, head) = match committed_head(path) {
@@ -339,7 +340,7 @@ mod display_tests {
     fn findings_collapse_whitespace_and_include_ellipsis_in_character_budget() {
         let stage = dry_run_tests::stage("s", "standard", &[], &["true"], "");
         let text = dry_run_tests::plan("", &[stage]);
-        let mut metadata = parse_metadata(&text).unwrap();
+        let mut metadata = parse_plan_metadata(&text).unwrap();
         let definition = &mut metadata.loom.stages[0];
         let command = format!(" \t echo  {}\n", "é".repeat(MAX_QUOTED));
         definition.acceptance = vec![AcceptanceCriterion::Simple(command)];

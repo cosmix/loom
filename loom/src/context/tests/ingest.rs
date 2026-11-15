@@ -275,3 +275,16 @@ fn a_project_with_no_prose_root_still_fingerprints() {
     assert!(!first.is_empty());
     assert_eq!(first, second, "revision must be stable with no prose root");
 }
+
+#[test]
+fn fingerprint_file_hashes_the_bytes_as_prefixed_sha256() {
+    let temp = TempDir::new().unwrap();
+    write_file(temp.path(), "abc.md", "abc");
+
+    let fingerprint = fingerprint_file(temp.path(), Path::new("abc.md")).unwrap();
+
+    assert_eq!(
+        fingerprint.content_hash,
+        "sha256:ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+    );
+}

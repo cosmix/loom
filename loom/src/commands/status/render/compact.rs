@@ -5,6 +5,10 @@ use std::io::Write;
 
 use crate::commands::status::data::StatusData;
 use crate::orchestrator::{context_health, ContextHealth};
+use crate::utils::truncate_for_display;
+
+/// Most characters of one blocker line.
+const MAX_LINE_CHARS: usize = 160;
 
 /// Render single-line compact status (for scripting/monitoring)
 /// Format: [4/12] ●2 ○6 ✗1 ⟳1 | ctx:100000/150000 | conflicts:0
@@ -89,17 +93,7 @@ fn render_completion_blockers<W: Write>(w: &mut W, data: &StatusData) -> std::io
             blocker.activity_text(),
             blocker.next_action
         );
-        writeln!(w, "{}", bounded_line(&line))?;
+        writeln!(w, "{}", truncate_for_display(&line, MAX_LINE_CHARS))?;
     }
     Ok(())
-}
-
-fn bounded_line(line: &str) -> String {
-    const MAX_CHARS: usize = 160;
-    if line.chars().count() <= MAX_CHARS {
-        return line.to_owned();
-    }
-    let mut bounded = line.chars().take(MAX_CHARS - 1).collect::<String>();
-    bounded.push('…');
-    bounded
 }

@@ -48,6 +48,13 @@ pub fn parse_metadata(yaml_content: &str) -> Result<LoomMetadata> {
     }
 }
 
+/// The failure text for a [`parse_metadata`] error, shared by the plan panel and
+/// `loom plan verify`: the parser's own message (with any retired-field guidance), without
+/// the "Failed to parse YAML metadata" context line.
+pub fn parse_error_text(error: &anyhow::Error) -> String {
+    format!("YAML parse error: {}", error.root_cause())
+}
+
 /// Parse and validate YAML metadata
 /// Returns the full LoomMetadata to allow callers to access sandbox config, etc.
 pub fn parse_and_validate(yaml_content: &str) -> Result<LoomMetadata> {

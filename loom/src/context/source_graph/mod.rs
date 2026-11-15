@@ -125,10 +125,7 @@ pub fn node_id(path: &std::path::Path, kind: SourceNodeKind, scope: &[String]) -
 
 /// `sha256:<hex>` over arbitrary bytes — the one definition of a `body_hash`.
 pub fn body_hash(bytes: &[u8]) -> String {
-    use sha2::{Digest, Sha256};
-    let mut hasher = Sha256::new();
-    hasher.update(bytes);
-    format!("sha256:{}", hex::encode(hasher.finalize()))
+    format!("sha256:{}", crate::utils::sha256_hex(bytes))
 }
 
 #[cfg(test)]

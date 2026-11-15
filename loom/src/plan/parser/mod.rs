@@ -10,7 +10,7 @@ mod validation;
 pub use extraction::{
     extract_plan_name, extract_yaml_metadata, extract_yaml_metadata_with_ranges, ExtractedMetadata,
 };
-pub use validation::{parse_and_validate, parse_metadata};
+pub use validation::{parse_and_validate, parse_error_text, parse_metadata};
 
 /// Result of parsing a plan document
 #[derive(Debug)]
@@ -21,6 +21,11 @@ pub struct ParsedPlan {
     pub stages: Vec<crate::plan::schema::StageDefinition>,
     /// Full metadata including sandbox config (for recommendations/validation)
     pub metadata: crate::plan::schema::LoomMetadata,
+}
+
+/// The schema-parsed `loom:` metadata of a plan's text, without validation.
+pub fn parse_plan_metadata(content: &str) -> Result<crate::plan::schema::LoomMetadata> {
+    parse_metadata(&extraction::extract_yaml_metadata(content)?)
 }
 
 /// Parse a plan document and extract loom metadata

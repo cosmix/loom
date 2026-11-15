@@ -170,6 +170,8 @@ fn block_for_session(
 /// earlier attempt's crash evidence would re-arm auto-retry and hide this
 /// block from attention and from the daemon's retirement of the session,
 /// and a review reason would describe a wait the block ended.
+// Kept beside `Orchestrator::block_stage` (orchestrator/core/stage_block.rs): this mutates
+// a `Stage` the caller persists, with no orchestrator or graph, and retires issue history.
 pub(crate) fn apply_block(stage: &mut Stage, reason: &str) -> Result<()> {
     stage.try_mark_blocked()?;
     stage.close_reason = Some(reason.to_string());
