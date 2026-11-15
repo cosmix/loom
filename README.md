@@ -25,6 +25,7 @@ Loom is for engineers who would rather spend their own judgment than someone els
 ## Why Loom
 
 - **Your expertise where it counts, tokens everywhere else** — you do the thinking and put it into the plan. Loom executes it unattended and comes back to you only when a stage needs a person; you can monitor, steer, or take over whenever you like. ([Human Expertise Where It Matters](#human-expertise-where-it-matters))
+- **Plan in the browser** — `loom plan` is a feature planner: a chat with a planning session writes a feature's vision, product spec, metaplan and plans, and every document opens as a summary you can follow down to its source and settle. ([Feature Planner](#feature-planner))
 - **It learns your project** — every session records what it got wrong and what it decided. Each plan ends by distilling that into a knowledge base in your repo, so every plan starts from what the earlier ones learned. ([It Learns From Every Plan](#it-learns-from-every-plan))
 - **Parallel by default** — stages form a dependency graph, everything independent runs at once in its own git worktree, and each stage merges back as it finishes. ([Parallel execution and progressive merge](#parallel-execution-and-progressive-merge))
 - **Done means verified** — loom runs each stage's acceptance criteria itself and inspects the tree for stubs, unwired code, and code nothing calls. The agent's own account of its work does not count. Once every stage has merged, an `integration-verify` stage reviews and tests the combined work as one system. ([Verification Model](#verification-model))
@@ -46,7 +47,18 @@ You need `git`, the `claude` CLI, and `jq`, plus `minisign` for release download
 
 ### 2. Write a plan
 
-Plans are how loom knows what to build. Open Claude Code in your target project and use the `/loom-plan-writer` skill to create one:
+Plans are how loom knows what to build. You can write one in the browser, with the Feature Planner, or in Claude Code, with the `/loom-plan-writer` skill.
+
+**In the browser.** Run `loom plan` in your project:
+
+```bash
+cd /path/to/project
+loom plan
+```
+
+It opens the [Feature Planner](#feature-planner), where a chat with a planning session writes a feature's vision, product spec, metaplan and plans. You read each one as a summary that opens down to its source, settle the ones you agree with, then pressure-test a plan and start its run from the same page. The next section shows it in full.
+
+**In Claude Code.** Open Claude Code in your target project and use the skill to create the plan:
 
 ```bash
 cd /path/to/project
@@ -59,15 +71,13 @@ Inside the Claude Code session:
 2. Describe what you want to build and discuss with Claude, as you would in plan mode.
 3. When done, Claude will write the plan to `doc/plans/PLAN-<name>.md`.
 
-Validate the draft before you spend anything on it:
+However you wrote it, validate the plan file before you spend anything on it:
 
 ```bash
 loom plan verify doc/plans/PLAN-<name>.md
 ```
 
 Then read it yourself and check that it captured your intent in enough detail. For longer plans, `loom pressure doc/plans/PLAN-<name>.md` has two model families (Claude and Codex) review it adversarially and harden it. Without the `codex` CLI, run `/pressure doc/plans/PLAN-<name>.md` inside a Claude Code session for a Claude-only pressure test.
-
-Prefer a browser? `loom plan` opens the [Feature Planner](#feature-planner), where you write and review a feature's vision, product spec, metaplan and plans in a chat with a planning session, then pressure-test a plan and start its run.
 
 ### 3. Run it
 
@@ -78,19 +88,75 @@ loom status --live
 loom stop
 ```
 
-`loom init` parses the plan, creates stage state, and installs the project hook wiring. `loom run` starts the daemon and orchestrator. `loom status --live` follows the run in your terminal, and `loom status --web` puts it in a browser. Add `--terminals` (tmux backend only) to watch or take over the Claude Code sessions from the browser. `--host <addr>` binds the dashboard to an address other than `127.0.0.1`; read [Web Dashboard Remote Access](#web-dashboard-remote-access) first, since a non-loopback bind serves plain HTTP.
+`loom init` parses the plan, creates stage state, and installs the project hook wiring. `loom run` starts the daemon and orchestrator. (The Feature Planner's Run panel does both for you.) `loom status --live` follows the run in your terminal, and `loom status --web` puts it in a browser. Add `--terminals` (tmux backend only) to watch or take over the Claude Code sessions from the browser. `--host <addr>` binds the dashboard to an address other than `127.0.0.1`; read [Web Dashboard Remote Access](#web-dashboard-remote-access) first, since a non-loopback bind serves plain HTTP.
 
 `loom stop` stops the daemon, and the orchestrator with it.
 
-Next: the two ideas loom is built on, [human expertise where it matters](#human-expertise-where-it-matters) and [learning from every plan](#it-learns-from-every-plan). Then [How It Works](#how-it-works) and the [Feature Tour](#feature-tour), a map of everything below.
+Next: the [Feature Planner](#feature-planner) in detail. After it come the two ideas loom is built on, [human expertise where it matters](#human-expertise-where-it-matters) and [learning from every plan](#it-learns-from-every-plan), then [How It Works](#how-it-works) and the [Feature Tour](#feature-tour), a map of everything below.
+
+## Feature Planner
+
+```bash
+loom plan [--port <PORT>] [--host <HOST>] [--no-open]
+```
+
+`loom plan` serves a local web app for planning a project. You talk to a Claude Code session in a chat panel, it writes the documents under `doc/` in loom's conventions, and you read, question and settle them in the browser. It ends at a reviewed plan, a run, and the follow-up plans the run leaves behind. The files stay plain Markdown that any editor can change, and the app picks up the edits.
+
+<p align="center">
+  <img src="doc/images/loom-planner.gif" alt="The feature planner on one feature: the planning session writes the vision, product spec, metaplan and plans in the chat; each document opens as a summary whose sentences open to the sentences they rest on and to the source passage, then fold closed; the Coverage ledger; and the settings dialog switching the theme from Ledger to Aubergine" width="880">
+</p>
+
+<p align="center">
+  <em>One feature from vision to plans: each document as a summary that opens down to its source and folds back, the Coverage ledger, and a theme change in Settings.</em>
+</p>
+
+### Starting it
+
+Run `loom plan` in a git repository. It prints a URL with an access token and opens it in a browser, unless you pass `--no-open`, the session is over SSH, or Linux has no display. It binds `127.0.0.1` starting at port 7272 and takes the next free port if that one is busy; `--port` binds exactly that port, and `--host` accepts the same values as the dashboard's. One planning server runs per project, and no `loom init` is needed. The app needs tmux, Claude Code and its login, and on Linux the sandbox prerequisites; without them it starts read-only and says what is missing. Details: [Plan Commands](#plan-commands).
+
+The home page lists the project's features, each with its progress and what needs you. `/new` is the kickoff: describe the work, and the session settles whether it is a feature or a standalone plan before it writes anything.
+
+### One feature, four documents
+
+A feature lives at `/f/<feature>`. A spine on the left lists its documents in workflow order and is the only place its progress is drawn:
+
+1. **Vision**: what the product is, and which sections its spec needs.
+2. **Product spec**: one numbered section per topic, under `doc/product/<feature>/`. A Coverage ledger shows which spec headings the metaplan, plans and stages cover.
+3. **Metaplan**: one entry per loom plan, in `doc/plans/<feature>/index.md`.
+4. **Plans**: the loom plans, plus a Findings ledger for what runs leave open.
+
+Each document opens as a summary, with its source one click away. In a summary, opening a sentence replaces it with the sentences it rests on, and opening one of those shows the source passage; folding closes it again. Nobody has to read every document to form a view, and every claim traces to its text. Summaries are generated, kept in `doc/loom/summaries/`, and rebuilt when their sources change.
+
+You mark a document settled when you agree with it. The mark is a `Settled:` line in the file. The spine flags a settled document that was revised, or whose vision row, metaplan entry or upstream section changed since.
+
+### The chat
+
+The chat panel is the conversation with a planning session. Loom starts the session in tmux under your Claude Code login, and `loom-plan:*` skills from `plan-plugin/` (vision, section, metaplan, plan, refine, review) give it loom's conventions for the step at hand. Offers on empty pages and the New chat control start one. The panel knows which document you are viewing, attaches a passage or a summary sentence to your next message, shows permission prompts as cards, and lists the files each turn changed with a diff and a Restore. An idle chat shows the background tasks it waits on, and `/` opens a list of the session's skills and commands with the terminal-only ones disabled and the reason shown. One browser holds the authoring seat at a time; other viewers read.
+
+### From plan to run to follow-ups
+
+1. **Pressure test.** A written plan's page offers a pressure test, the `loom pressure` rounds with two model families. Their dated record is appended to the plan's `## Pressure tests` section, and the spine shows which plans have one.
+2. **Run.** The metaplan page, the Plans home, has a Run panel. Start a run does `loom init` and `loom run` for the plan (only `loom run` to resume a stopped one), and Open dashboard links to the [Web Dashboard](#web-dashboard).
+3. **Review.** When plans have run, loom writes `doc/plans/REVIEW-<plan id>.md`: spec conformance, open questions and open findings. The review is never edited. "Review the feature" starts a session with `loom-plan:review`, which records what it finds in the feature's findings ledger, `doc/plans/<feature>/findings.md`.
+4. **Follow-ups.** The Findings page groups the ledger by run review. Plan this and Fold into entry send a finding to a session that adds an entry under `## Follow-ups` in the metaplan, from which the next plan is written; Dismiss closes it with a reason. A finished feature offers "Plan follow-ups" for the same purpose.
+
+### File mode
+
+`/files/*` browses everything under `doc/`: product spec, metaplan, plans, briefs, run reviews and the knowledge base. It renders Markdown, searches, diffs against `HEAD` or a chat turn, and edits plain documents in an editor that validates a plan before saving. Plans that are running or done, knowledge files and the summary store are read-only. A dot marks documents that changed since you last looked.
+
+### Planning sessions
+
+Each planning session runs in its own tmux server named `loom-plan-<id>`, and `tmux -L <socket> attach -r` watches it read-only. Ctrl-C stops new sessions and waits for running ones to finish writing; a second Ctrl-C exits at once.
 
 ## Human Expertise Where It Matters
+
+Writing the plan, in the planner or in Claude Code, is your part of the work. This section is about why it comes first.
 
 Loop engineering presents itself as the end of the story: give an agent a high-level goal, let it try, fail, read the error, and try again until the checks pass, and finished software comes out. It does produce software, at a high price and with little elegance. Every wrong turn is paid for in tokens, and much of what those tokens buy is the rediscovery of something an engineer on the team already knew. A frontier lab can afford that. Most organisations cannot.
 
 Human engineers have a lot to offer: experience, judgment, and a working theory of the system that no loop recovers cheaply. Loom puts that first and spends tokens on the rest:
 
-- **Up front, in the plan.** You discuss the design, form theories and test them, explore the code, and decide what gets built, how it splits into stages, and what proves each stage is done. `loom plan verify` and `loom pressure` find the weak spots before anything is spent on execution. This is where an hour of your time saves the most tokens.
+- **Up front, in the plan.** In the [Feature Planner](#feature-planner) or in Claude Code, you discuss the design, form theories and test them, explore the code, and decide what gets built, how it splits into stages, and what proves each stage is done. `loom plan verify` and `loom pressure` find the weak spots before anything is spent on execution. This is where an hour of your time saves the most tokens.
 - **During the run, only when needed.** A stage that needs a person says so: `WaitingForInput` when an agent asks a question, `NeedsHumanReview` when it is escalated, a criteria dispute when an agent believes a check is wrong. Everything else runs unattended.
 - **Whenever you choose to look.** The terminal dashboard (`loom status --live`) and the web dashboard (`loom status --web`) show every stage, what it is doing, which models it is running, and how much context it has used. You can open any session, from tmux with `loom attach` or from a terminal in the browser, and watch it or take the keyboard and steer it.
 
@@ -245,6 +311,7 @@ Everything loom does, one line each, grouped by what you are doing at the time. 
 
 - [Why Loom](#why-loom)
 - [Quick Start](#quick-start)
+- [Feature Planner](#feature-planner)
 - [Human Expertise Where It Matters](#human-expertise-where-it-matters)
 - [It Learns From Every Plan](#it-learns-from-every-plan)
 - [How It Works](#how-it-works)
@@ -254,7 +321,6 @@ Everything loom does, one line each, grouped by what you are doing at the time. 
 - [Installation](#installation)
 - [CLI Reference](#cli-reference)
 - [Configuration](#configuration)
-- [Feature Planner](#feature-planner)
 - [Web Dashboard](#web-dashboard)
 - [Plan Format](#plan-format)
 - [Verification Model](#verification-model)
@@ -700,94 +766,6 @@ Inside a live stage, an agent's first whole read of a file over 400 lines is den
 The gate is an operator decision with no replay behind it. After install, compare the `reads` section and the Attribution `read:*` rows for 14 days before and after, and count the rows under `.loom/work/hooks/read-denials/`. Each row is a denied call that cost one request, and `same_transcript_rereads` counts the retry. Turn the gate off unless the `read:*` cost falls by more than those denied calls cost, about 15K units each at 150K resident.
 
 To turn it off, set `read_gate = false` under `[hooks]` in `.loom/work/config.toml` after `loom init` and before `loom run`. `loom clean` and `loom init --clean` drop the setting, `loom config` does not manage it, and editing the file during a host job fails that job with `verification policy changed`.
-
-## Feature Planner
-
-```bash
-loom plan [--port <PORT>] [--host <HOST>] [--no-open]
-```
-
-`loom plan` serves a local web app for planning a project. You talk to a Claude Code session in a chat panel, it writes the documents under `doc/` in loom's conventions, and you read, question and settle them in the browser. It ends at a reviewed plan, a run, and the follow-up plans the run leaves behind. The files stay plain Markdown that any editor can change, and the app picks up the edits.
-
-<p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="doc/images/planner-product-overview-dark.png">
-    <img src="doc/images/planner-product-overview.png" alt="The feature planner on a feature's product overview: the spine of documents on the left, the summary page in the middle, and the chat panel on the right" width="880">
-  </picture>
-</p>
-
-<p align="center">
-  <em>A feature's product overview: the spine, the summary page and the chat with its planning session.</em>
-</p>
-
-### Starting it
-
-Run `loom plan` in a git repository. It prints a URL with an access token and opens it in a browser, unless you pass `--no-open`, the session is over SSH, or Linux has no display. It binds `127.0.0.1` starting at port 7272 and takes the next free port if that one is busy; `--port` binds exactly that port, and `--host` accepts the same values as the dashboard's. One planning server runs per project, and no `loom init` is needed. The app needs tmux, Claude Code and its login, and on Linux the sandbox prerequisites; without them it starts read-only and says what is missing. Details: [Plan Commands](#plan-commands).
-
-The home page lists the project's features, each with its progress and what needs you. `/new` is the kickoff: describe the work, and the session settles whether it is a feature or a standalone plan before it writes anything.
-
-### One feature, four documents
-
-A feature lives at `/f/<feature>`. A spine on the left lists its documents in workflow order and is the only place its progress is drawn:
-
-1. **Vision**: what the product is, and which sections its spec needs.
-2. **Product spec**: one numbered section per topic, under `doc/product/<feature>/`. A Coverage ledger shows which spec headings the metaplan, plans and stages cover.
-3. **Metaplan**: one entry per loom plan, in `doc/plans/<feature>/index.md`.
-4. **Plans**: the loom plans, plus a Findings ledger for what runs leave open.
-
-Each document opens as a summary, with its source one click away. In a summary, opening a sentence replaces it with the sentences it rests on, and opening one of those shows the source passage; folding closes it again. Nobody has to read every document to form a view, and every claim traces to its text. Summaries are generated, kept in `doc/loom/summaries/`, and rebuilt when their sources change.
-
-<p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="doc/images/planner-summary-open-dark.png">
-    <img src="doc/images/planner-summary-open.png" alt="A summary sentence opened to the spec sentences it rests on, one of them opened to its source passage" width="880">
-  </picture>
-</p>
-
-<p align="center">
-  <em>A summary sentence opened to the sentences it rests on, and one of those opened to its source passage.</em>
-</p>
-
-You mark a document settled when you agree with it. The mark is a `Settled:` line in the file. The spine flags a settled document that was revised, or whose vision row, metaplan entry or upstream section changed since.
-
-### The chat
-
-The chat panel is the conversation with a planning session. Loom starts the session in tmux under your Claude Code login, and `loom-plan:*` skills from `plan-plugin/` (vision, section, metaplan, plan, refine, review) give it loom's conventions for the step at hand. Offers on empty pages and the New chat control start one. The panel knows which document you are viewing, attaches a passage or a summary sentence to your next message, shows permission prompts as cards, and lists the files each turn changed with a diff and a Restore. An idle chat shows the background tasks it waits on, and `/` opens a list of the session's skills and commands with the terminal-only ones disabled and the reason shown. One browser holds the authoring seat at a time; other viewers read.
-
-### From plan to run to follow-ups
-
-1. **Pressure test.** A written plan's page offers a pressure test, the `loom pressure` rounds with two model families. Their dated record is appended to the plan's `## Pressure tests` section, and the spine shows which plans have one.
-2. **Run.** The metaplan page, the Plans home, has a Run panel. Start a run does `loom init` and `loom run` for the plan (only `loom run` to resume a stopped one), and Open dashboard links to the [Web Dashboard](#web-dashboard).
-3. **Review.** When plans have run, loom writes `doc/plans/REVIEW-<plan id>.md`: spec conformance, open questions and open findings. The review is never edited. "Review the feature" starts a session with `loom-plan:review`, which records what it finds in the feature's findings ledger, `doc/plans/<feature>/findings.md`.
-4. **Follow-ups.** The Findings page groups the ledger by run review. Plan this and Fold into entry send a finding to a session that adds an entry under `## Follow-ups` in the metaplan, from which the next plan is written; Dismiss closes it with a reason. A finished feature offers "Plan follow-ups" for the same purpose.
-
-<p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="doc/images/planner-findings-dark.png">
-    <img src="doc/images/planner-findings.png" alt="The Findings page: open findings from a run review, each with Plan this, Fold into entry and Dismiss" width="880">
-  </picture>
-</p>
-
-<p align="center">
-  <em>The Findings page: what a run left open, grouped by run review, one action away from a follow-up plan.</em>
-</p>
-
-### File mode
-
-`/files/*` browses everything under `doc/`: product spec, metaplan, plans, briefs, run reviews and the knowledge base. It renders Markdown, searches, diffs against `HEAD` or a chat turn, and edits plain documents in an editor that validates a plan before saving. Plans that are running or done, knowledge files and the summary store are read-only. A dot marks documents that changed since you last looked.
-
-<p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="doc/images/planner-files-dark.png">
-    <img src="doc/images/planner-files.png" alt="File mode: the document tree, a rendered product spec section and the chat panel" width="880">
-  </picture>
-</p>
-
-<p align="center">
-  <em>File mode: the <code>doc/</code> tree and a rendered spec section.</em>
-</p>
-
-Each planning session runs in its own tmux server named `loom-plan-<id>`, and `tmux -L <socket> attach -r` watches it read-only. Ctrl-C stops new sessions and waits for running ones to finish writing; a second Ctrl-C exits at once.
 
 ## Web Dashboard
 
