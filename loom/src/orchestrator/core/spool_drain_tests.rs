@@ -65,11 +65,13 @@ fn worktree_dir(repo_root: &Path, stage_id: &str) -> PathBuf {
 /// Append one note-type entry directly to a worktree's spool file, as the
 /// sandboxed CLI fallback would.
 fn spool_note(worktree_root: &Path, content: &str) {
+    std::fs::create_dir_all(worktree_root).unwrap();
     let entry = MemoryEntry::new(MemoryEntryType::Note, content.to_string());
     memory::append_to_spool(worktree_root, &entry).unwrap();
 }
 
 fn spool_telemetry(worktree_root: &Path, event: TelemetryEvent) {
+    std::fs::create_dir_all(worktree_root).unwrap();
     telemetry::spool::append_to_spool(
         worktree_root,
         &TelemetryRecord {
@@ -216,6 +218,7 @@ fn an_invalid_entry_is_skipped_without_blocking_a_valid_entry_and_the_spool_is_t
     let stage_id = "mixed-spool";
     save_stage_with_status(&work_dir, stage_id, StageStatus::Executing);
     let worktree_root = worktree_dir(temp.path(), stage_id);
+    std::fs::create_dir_all(&worktree_root).unwrap();
     let invalid = MemoryEntry::new(MemoryEntryType::Note, "x".repeat(2001));
     crate::fs::jsonl_spool::append(
         &worktree_root,
@@ -247,6 +250,7 @@ fn an_invalid_entry_is_skipped_without_blocking_a_valid_entry_and_the_spool_is_t
 /// Append one block request directly to a worktree's request spool, as the
 /// sandboxed CLI fallback would when its socket syscalls are denied.
 fn spool_block(worktree_root: &Path, reason: &str) {
+    std::fs::create_dir_all(worktree_root).unwrap();
     stage_request::append_to_spool_for_session(
         worktree_root,
         &stage_request::StageRequest::Block {
