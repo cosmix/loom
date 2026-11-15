@@ -6,11 +6,12 @@
 use anyhow::Result;
 use chrono::Utc;
 
-use crate::models::failure::{FailureInfo, FailureType};
+use crate::models::failure::FailureType;
 use crate::models::session::Session;
-use crate::models::stage::{Stage, StageStatus};
+use crate::models::stage::Stage;
 
 use super::persistence::Persistence;
+use super::stage_block::StageBlock;
 use super::Orchestrator;
 
 impl Orchestrator {
@@ -48,10 +49,9 @@ impl Orchestrator {
         if let Err(e) = self.save_session(&session) {
             let err_msg =
                 format!("Failed to write session record ahead of spawn for {stage_id}: {e:#}");
-            let _ = self.persist_blocked_stage(
+            self.block_stage(
                 stage_id,
-                FailureType::InfrastructureError,
-                vec![err_msg],
+                StageBlock::new(FailureType::InfrastructureError, vec![err_msg]),
             );
             return None;
         }
@@ -89,10 +89,9 @@ impl Orchestrator {
             let err_msg = format!(
                 "Failed to write session record ahead of spawn for knowledge stage {stage_id}: {e:#}"
             );
-            let _ = self.persist_blocked_stage(
+            self.block_stage(
                 stage_id,
-                FailureType::InfrastructureError,
-                vec![err_msg],
+                StageBlock::new(FailureType::InfrastructureError, vec![err_msg]),
             );
             return Ok(None);
         }
@@ -132,14 +131,11 @@ impl Orchestrator {
     /// logged, not propagated.
     pub(super) fn block_stranded_stage(&mut self, stage_id: &str, err_msg: String) {
         eprintln!("Stage '{stage_id}' blocked due to spawn-setup failure: {err_msg}");
-        match self.persist_blocked_stage(stage_id, FailureType::InfrastructureError, vec![err_msg])
-        {
-            Ok(()) => {
-                let _ = self.graph.mark_status(stage_id, StageStatus::Blocked);
-            }
-            Err(error) => {
-                eprintln!("Failed to persist Blocked state for '{stage_id}': {error:#}");
-            }
+        if !self.block_stage(
+            stage_id,
+            StageBlock::new(FailureType::InfrastructureError, vec![err_msg]),
+        ) {
+            eprintln!("Failed to persist Blocked state for '{stage_id}'");
         }
     }
 
@@ -176,23 +172,12 @@ impl Orchestrator {
                 eprintln!("Warning: failed to remove stranded session record '{session_id}': {e}");
             }
         }
-        let result = self.update_stage(stage_id, |current| {
-            current.try_mark_blocked()?;
-            current.failure_info = Some(FailureInfo {
-                failure_type,
-                detected_at: Utc::now(),
-                evidence: vec![err_msg.clone()],
-            });
-            current.release_session();
-            Ok(())
-        });
-        match result {
-            Ok(_) => {
-                let _ = self.graph.mark_status(stage_id, StageStatus::Blocked);
-            }
-            Err(error) => {
-                eprintln!("Failed to persist Blocked state for '{stage_id}': {error:#}");
-            }
+        let block = StageBlock {
+            release_session: true,
+            ..StageBlock::new(failure_type, vec![err_msg])
+        };
+        if !self.block_stage(stage_id, block) {
+            eprintln!("Failed to persist Blocked state for '{stage_id}'");
         }
     }
 

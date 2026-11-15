@@ -13,6 +13,7 @@ use crate::models::failure::FailureType;
 use crate::models::stage::Stage;
 use crate::orchestrator::scheduling_report::BlockReason;
 
+use super::stage_block::StageBlock;
 use super::Orchestrator;
 
 impl Orchestrator {
@@ -98,10 +99,9 @@ impl Orchestrator {
                 eprintln!("Stage '{stage_id}' blocked due to worktree error: {err_msg}");
 
                 // Stage is Queued here and may transition directly to Blocked.
-                let _ = self.persist_blocked_stage(
+                self.block_stage(
                     stage_id,
-                    FailureType::InfrastructureError,
-                    vec![err_msg],
+                    StageBlock::new(FailureType::InfrastructureError, vec![err_msg]),
                 );
                 return Ok(None);
             }
@@ -169,10 +169,9 @@ impl Orchestrator {
                 eprintln!(
                     "Knowledge stage '{stage_id}' blocked: invalid sandbox config at spawn: {err_msg}"
                 );
-                let _ = self.persist_blocked_stage(
+                self.block_stage(
                     stage_id,
-                    FailureType::SandboxSetupFailure,
-                    vec![err_msg],
+                    StageBlock::new(FailureType::SandboxSetupFailure, vec![err_msg]),
                 );
                 return Ok(false);
             }

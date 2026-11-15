@@ -6,6 +6,7 @@
 use super::*;
 use crate::fs::session_files::save_session;
 use crate::fs::work_dir::write_terminal_config;
+use crate::models::failure::FailureType;
 use crate::models::session::{Session, SessionBackendKind, SessionStatus, TerminalConfig};
 use crate::orchestrator::core::OrchestratorConfig;
 use crate::orchestrator::terminal::native::write_test_pid_identity;

@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use crate::models::failure::{FailureInfo, FailureType};
 use crate::models::session::Session;
 use crate::models::stage::{Stage, StageStatus};
-use crate::orchestrator::retry::{calculate_backoff, should_auto_retry};
+use crate::orchestrator::retry::{crash_backoff, should_auto_retry};
 
 use super::crash_classification::{
     is_remote_control_fast_fail, is_startup_refusal, ordinary_crash, startup_refusal_crash,
@@ -279,6 +279,7 @@ impl Orchestrator {
     ///
     /// A fresh owner and crash-applicable status are checked under the stage
     /// lock. A failed read or write leaves the event and active handle retryable.
+    /// Not `block_stage`: the transition is conditional and also bumps `retry_count`.
     fn persist_blocked_crash(
         &mut self,
         sid: &str,
@@ -366,7 +367,7 @@ fn announce_crash_outcome(
 ) {
     let max = updated.max_retries.unwrap_or(3);
     if should_auto_retry(failure_type, updated.retry_count, max) {
-        let backoff = calculate_backoff(updated.retry_count, 30, 300);
+        let backoff = crash_backoff(updated.retry_count);
         clear_status_line();
         eprintln!(
             "Stage '{}' crashed (attempt {}/{}). Will retry in {}s...",

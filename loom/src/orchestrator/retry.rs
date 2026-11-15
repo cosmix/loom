@@ -20,6 +20,17 @@ pub fn should_auto_retry(failure_type: &FailureType, retry_count: u32, max_retri
     )
 }
 
+/// Base delay of the crash auto-retry backoff, in seconds.
+pub const CRASH_BACKOFF_BASE_SECS: u64 = 30;
+/// Cap of the crash auto-retry backoff, in seconds.
+pub const CRASH_BACKOFF_MAX_SECS: u64 = 300;
+
+/// The delay before auto-retrying a crashed stage: [`calculate_backoff`] with
+/// [`CRASH_BACKOFF_BASE_SECS`] and [`CRASH_BACKOFF_MAX_SECS`].
+pub fn crash_backoff(retry_count: u32) -> Duration {
+    calculate_backoff(retry_count, CRASH_BACKOFF_BASE_SECS, CRASH_BACKOFF_MAX_SECS)
+}
+
 /// Calculates exponential backoff duration for retry attempts.
 ///
 /// Formula: base_secs * 2^(retry_count-1), capped at max_secs
@@ -190,6 +201,19 @@ mod tests {
         assert!(!should_auto_retry(&FailureType::UserBlocked, 0, 3));
         assert!(!should_auto_retry(&FailureType::MergeConflict, 0, 3));
         assert!(!should_auto_retry(&FailureType::Unknown, 0, 3));
+    }
+
+    #[test]
+    fn crash_backoff_uses_the_crash_constants() {
+        assert_eq!(
+            crash_backoff(1),
+            Duration::from_secs(CRASH_BACKOFF_BASE_SECS)
+        );
+        assert_eq!(
+            crash_backoff(20),
+            Duration::from_secs(CRASH_BACKOFF_MAX_SECS)
+        );
+        assert_eq!(crash_backoff(2), Duration::from_secs(60));
     }
 
     #[test]

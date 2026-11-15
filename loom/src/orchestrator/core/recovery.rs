@@ -9,7 +9,7 @@ use super::recovery_guards;
 #[cfg(test)]
 use crate::models::session::Session;
 use crate::models::stage::{Stage, StageStatus};
-use crate::orchestrator::retry::{calculate_backoff, is_backoff_elapsed, should_auto_retry};
+use crate::orchestrator::retry::{crash_backoff, is_backoff_elapsed, should_auto_retry};
 use crate::orchestrator::session_registry::orphan_evidence;
 
 use super::persistence::Persistence;
@@ -128,7 +128,7 @@ pub(super) fn check_retry_eligibility(stage: &Stage) -> bool {
     }
 
     // Calculate backoff: base 30s, max 300s (5 minutes)
-    let backoff = calculate_backoff(stage.retry_count, 30, 300);
+    let backoff = crash_backoff(stage.retry_count);
     is_backoff_elapsed(stage.last_failure_at, backoff)
 }
 
