@@ -108,11 +108,9 @@ fn detect_dependencies(dir: &Path, types: &mut BTreeSet<String>) {
 }
 
 pub(super) fn any_file(dir: &Path, names: &[&str]) -> bool {
-    names.iter().any(|name| regular_file(&dir.join(name)))
-}
-
-pub(super) fn regular_file(path: &Path) -> bool {
-    evidence::regular_file(path)
+    names
+        .iter()
+        .any(|name| crate::fs::safe_read::is_regular_no_follow(&dir.join(name)))
 }
 
 pub(super) fn plain_directory(path: &Path) -> bool {

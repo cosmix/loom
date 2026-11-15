@@ -29,10 +29,6 @@ use super::busy::{Busy, BusyOp};
 /// File name inside `.loom/work/` holding the last loop tick.
 const TICK_FILE: &str = "orchestrator.tick";
 
-/// Scratch name each write goes through, so a reader sees the old tick or the
-/// new one, never a truncated file.
-const TICK_TMP_FILE: &str = "orchestrator.tick.tmp";
-
 /// Longest stage id, in bytes, a busy line may carry.
 const MAX_STAGE_ID_BYTES: usize = 128;
 
@@ -129,7 +125,10 @@ pub fn record_busy(work_dir: &Path, phase: Phase, busy: &Busy) {
     write_tick(work_dir, phase, Some(busy));
 }
 
-/// Write the tick through [`TICK_TMP_FILE`] and rename it into place.
+/// Publish the tick through `safe_replace::publish_in_dir_reporting`, so a
+/// reader sees the old tick or the new one and a planted symlink is replaced,
+/// never written through. `work_dir` may itself be a symlink (a worktree's
+/// `.loom/work`); it is resolved once and opened without following links.
 fn write_tick(work_dir: &Path, phase: Phase, busy: Option<&Busy>) {
     let mut content = format!("{}\n{}\n", Utc::now().to_rfc3339(), phase.as_str());
     if let Some(busy) = busy {
@@ -140,10 +139,21 @@ fn write_tick(work_dir: &Path, phase: Phase, busy: Option<&Busy>) {
             busy.stage_id
         ));
     }
-    let tmp = work_dir.join(TICK_TMP_FILE);
-    if std::fs::write(&tmp, content).is_ok() {
-        let _ = std::fs::rename(&tmp, tick_path(work_dir));
-    }
+    let Ok(dir) = work_dir
+        .canonicalize()
+        .map_err(anyhow::Error::from)
+        .and_then(|dir| crate::fs::safe_fs::safe_open_dirfd(&dir))
+    else {
+        return;
+    };
+    // A directory-sync failure is dropped with any other error: see `record`.
+    let _ = crate::fs::safe_replace::publish_in_dir_reporting(
+        &dir,
+        std::ffi::OsStr::new(TICK_FILE),
+        content.as_bytes(),
+        0o666,
+        false,
+    );
 }
 
 /// Whether `id` may appear in a busy line: non-empty, at most
@@ -221,6 +231,25 @@ mod tests {
 
         assert_eq!(tick.phase, Some(Phase::Spawning));
         assert!(tick.age_secs(Utc::now()) < 5);
+    }
+
+    #[test]
+    fn test_record_replaces_a_planted_symlink_and_follows_a_symlinked_work_dir() {
+        let temp = TempDir::new().unwrap();
+        let work = temp.path().join("work");
+        std::fs::create_dir(&work).unwrap();
+        let victim = temp.path().join("victim");
+        std::fs::write(&victim, "keep").unwrap();
+        std::os::unix::fs::symlink(&victim, work.join(TICK_FILE)).unwrap();
+        let link = temp.path().join("link");
+        std::os::unix::fs::symlink(&work, &link).unwrap();
+
+        record(&link, Phase::Idle);
+
+        assert_eq!(std::fs::read_to_string(&victim).unwrap(), "keep");
+        let meta = std::fs::symlink_metadata(work.join(TICK_FILE)).unwrap();
+        assert!(meta.is_file(), "the planted link is replaced by the tick");
+        assert_eq!(read(&work).unwrap().unwrap().phase, Some(Phase::Idle));
     }
 
     #[test]

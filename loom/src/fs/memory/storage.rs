@@ -3,6 +3,7 @@
 use super::constants::MEMORY_HEADER;
 use super::parser::{format_entry, parse_journal};
 use super::types::{MemoryEntry, MemoryJournal};
+use crate::fs::safe_fs::safe_open_append;
 use anyhow::{Context, Result};
 use chrono::Utc;
 use fs2::FileExt;
@@ -17,7 +18,11 @@ pub fn memory_dir(work_dir: &Path) -> PathBuf {
 
 /// Get the path to a stage's memory file
 pub fn memory_file_path(work_dir: &Path, stage_id: &str) -> PathBuf {
-    memory_dir(work_dir).join(format!("{stage_id}.md"))
+    memory_dir(work_dir).join(journal_name(stage_id))
+}
+
+fn journal_name(stage_id: &str) -> String {
+    format!("{stage_id}.md")
 }
 
 /// Initialize the memory directory
@@ -57,20 +62,17 @@ pub fn create_journal(work_dir: &Path, stage_id: &str) -> Result<PathBuf> {
     Ok(file_path)
 }
 
-/// Append an entry to a stage's memory journal
+/// Append an entry to a stage's memory journal, writing the journal header
+/// first when the locked file is empty. The journal is created with mode 0600
+/// and must be a plain, single-link file.
 pub fn append_entry(work_dir: &Path, stage_id: &str, entry: &MemoryEntry) -> Result<()> {
     entry.validate()?;
     init_memory_dir(work_dir)?;
     let file_path = memory_file_path(work_dir, stage_id);
     let formatted = format_entry(entry);
 
-    let mut file = fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&file_path)
+    let mut file = safe_open_append(&memory_dir(work_dir), Path::new(&journal_name(stage_id)))
         .with_context(|| format!("Failed to open memory journal: {}", file_path.display()))?;
-    file.lock_exclusive()
-        .with_context(|| format!("Failed to lock memory journal: {}", file_path.display()))?;
 
     if file
         .metadata()
@@ -120,3 +122,7 @@ pub fn read_journal(work_dir: &Path, stage_id: &str) -> Result<MemoryJournal> {
 
     parse_journal(&content, stage_id)
 }
+
+#[cfg(test)]
+#[path = "storage_tests.rs"]
+mod tests;

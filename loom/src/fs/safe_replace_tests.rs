@@ -4,8 +4,8 @@ use std::path::Path;
 use tempfile::TempDir;
 
 use super::{
-    c_name, create_temp, open_parent, publish, publish_in_dir, replace_no_follow, replace_private,
-    restore_no_follow, temp_name, FAIL_DIR_SYNC, NAME_MAX,
+    c_name, create_temp, is_publish_temp, open_parent, publish, publish_in_dir, replace_no_follow,
+    replace_private, restore_no_follow, temp_name, FAIL_DIR_SYNC, NAME_MAX,
 };
 
 /// A root holding `dir/a.md` with `text`.
@@ -205,6 +205,24 @@ fn a_temp_name_fits_the_limit_and_stays_valid_utf8() {
         assert!(tmp.len() <= NAME_MAX, "{}", tmp.len());
         assert!(std::str::from_utf8(&tmp).is_ok());
         assert!(tmp.ends_with(b".tmp"));
+        assert!(is_publish_temp(&tmp), "{}", String::from_utf8_lossy(&tmp));
+    }
+}
+
+#[test]
+fn only_the_publish_temp_shape_is_recognized() {
+    assert!(is_publish_temp(b".a.json.0123456789abcdef.tmp"));
+    for name in [
+        &b"a.json"[..],
+        b"..0123456789abcdef.tmp",
+        b".a.json.0123456789ABCDEF.tmp",
+        b".a.json.0123456789abcde.tmp",
+        b".a.json-0123456789abcdef.tmp",
+        b"a.json.0123456789abcdef.tmp",
+        b".a.json.0123456789abcdef",
+        b".tmp",
+    ] {
+        assert!(!is_publish_temp(name), "{}", String::from_utf8_lossy(name));
     }
 }
 

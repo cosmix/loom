@@ -16,9 +16,9 @@ pub(super) fn save_slot(work_dir: &Path, record: &JobRecord, slot: Option<&str>)
     refuse_unsafe(&root, &copy)?;
     create_dirs(&root, &job)?;
     let bytes = serde_json::to_vec_pretty(record).context("cannot encode the job record")?;
-    write_atomic(&root, &copy, &bytes)?;
+    replace_file(&root, &copy, &bytes)?;
     if let Some(target) = target {
-        write_atomic(&root, &target, &bytes)?;
+        replace_file(&root, &target, &bytes)?;
     }
     Ok(())
 }

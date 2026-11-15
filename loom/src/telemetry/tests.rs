@@ -94,7 +94,10 @@ fn drain_moves_spooled_lines_and_truncates() {
     spool::append_to_spool(worktree.path(), &expected).unwrap();
     let path = spool::spool_path(worktree.path());
     writeln!(
-        OpenOptions::new().append(true).open(&path).unwrap(),
+        std::fs::OpenOptions::new()
+            .append(true)
+            .open(&path)
+            .unwrap(),
         "not-json"
     )
     .unwrap();
@@ -298,4 +301,17 @@ fn relay_mode_refusal_is_silent_and_never_fails_the_caller() {
     assert!(result.is_ok());
     assert!(sink.stdout.is_empty());
     assert!(sink.stderr.is_empty());
+}
+
+#[test]
+fn append_record_refuses_a_symlinked_events_file() {
+    let work_dir = TempDir::new().unwrap();
+    let outside = TempDir::new().unwrap();
+    let target = outside.path().join("target.jsonl");
+    std::fs::write(&target, "untouched\n").unwrap();
+    std::fs::create_dir(work_dir.path().join("telemetry")).unwrap();
+    std::os::unix::fs::symlink(&target, events_path(work_dir.path())).unwrap();
+
+    assert!(append_record(work_dir.path(), &record(10, delivered("stage-a"))).is_err());
+    assert_eq!(std::fs::read_to_string(&target).unwrap(), "untouched\n");
 }

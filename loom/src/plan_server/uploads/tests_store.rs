@@ -243,3 +243,41 @@ fn the_sweep_does_not_follow_a_symlinked_store_directory() {
     assert_eq!(swept, Swept::default());
     assert!(victim.is_file(), "a file behind the symlink was removed");
 }
+
+#[test]
+fn the_stored_id_of_fixed_bytes_is_pinned() {
+    let rt = runtime();
+    let id = stored(put(rt.path(), "sketch.png", "image/png", &PNG, 1));
+    assert_eq!(id, "4353a1de7e0dcc4e");
+}
+
+#[test]
+fn the_sweep_removes_an_old_temp_a_crashed_publish_left() {
+    let rt = runtime();
+    let dir = store_dir(&rt);
+    fs::create_dir_all(&dir).unwrap();
+    let temp = dir.join(".0123456789abcdef.png.0123456789abcdef.tmp");
+    fs::write(&temp, PNG).unwrap();
+    fs::write(dir.join(".stranger.tmp"), "mine").unwrap();
+    assert_eq!(sweep(&dir, super::store::now()), Swept::default());
+    let far = super::store::now() + KEEP_SECONDS + 10;
+    let swept = sweep(&dir, far);
+    assert_eq!((swept.removed, swept.failed), (1, 0));
+    assert!(!temp.exists(), "the crashed publish's temp is swept");
+    assert!(dir.join(".stranger.tmp").exists());
+}
+
+#[test]
+fn a_symlink_named_like_a_stored_file_is_replaced_not_followed() {
+    let rt = runtime();
+    let dir = store_dir(&rt);
+    fs::create_dir_all(&dir).unwrap();
+    let victim = rt.path().join("victim");
+    fs::write(&victim, "keep").unwrap();
+    let link = dir.join(format!("{}.png", id_of(&PNG)));
+    std::os::unix::fs::symlink(&victim, &link).unwrap();
+    stored(put(rt.path(), "sketch.png", "image/png", &PNG, 1));
+    assert_eq!(fs::read_to_string(&victim).unwrap(), "keep");
+    assert!(fs::symlink_metadata(&link).unwrap().is_file());
+    assert_eq!(fs::read(&link).unwrap(), PNG);
+}

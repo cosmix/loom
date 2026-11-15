@@ -1,35 +1,94 @@
 //! Bounded, locked JSONL storage. Domain validation belongs to the sink.
-use anyhow::{bail, Context, Result};
+use anyhow::{bail, ensure, Context, Result};
 use fs2::FileExt;
 use serde::{de::DeserializeOwned, Serialize};
 use std::fs::{File, OpenOptions};
 use std::io::{Read, Write};
+use std::os::unix::fs::OpenOptionsExt;
 use std::path::Path;
+
+use super::safe_fs::{safe_create_dir_all, safe_open_append};
 
 pub(crate) const MAX_BYTES: u64 = 1024 * 1024;
 
+/// Append one record to `relative` beneath `root`, refusing a symlink at any
+/// component below `root` and `root` itself being one, as `read` and `drain`
+/// do. The byte cap is checked under the append lock.
 pub(crate) fn append<T: Serialize>(
     root: &Path,
     relative: &str,
     value: &T,
     record_limit: usize,
 ) -> Result<()> {
-    let line = serde_json::to_string(value)?;
+    let mut line = serde_json::to_vec(value)?;
     if line.len() > record_limit {
         bail!("Spool record exceeds {record_limit}-byte limit");
     }
-    let path = root.join(relative);
-    std::fs::create_dir_all(path.parent().context("Missing spool parent")?)?;
-    let mut file = OpenOptions::new().create(true).append(true).open(&path)?;
-    file.lock_exclusive()?;
+    let relpath = Path::new(relative);
+    if let Some(parent) = relpath.parent().filter(|p| !p.as_os_str().is_empty()) {
+        safe_create_dir_all(root, parent, 0o755)?;
+    }
+    let mut file = safe_open_append(root, relpath)?;
     if file.metadata()?.len().saturating_add(line.len() as u64 + 1) > MAX_BYTES {
         bail!(
             "Spool {} has reached its {MAX_BYTES}-byte cap",
-            path.display()
+            root.join(relative).display()
         );
     }
-    writeln!(file, "{line}")?;
+    line.push(b'\n');
+    file.write_all(&line)?;
     Ok(())
+}
+
+/// Every complete, non-empty line of the JSONL file at `path`, without the
+/// newline. The open is `O_NOFOLLOW` and the file must be regular; a missing
+/// file is empty. A final part without a terminating newline is a torn write
+/// and is skipped. More than `max_bytes` or more than `max_rows` lines is an
+/// error. Parsing belongs to the caller.
+pub(crate) fn read_complete_lines(
+    path: &Path,
+    max_bytes: u64,
+    max_rows: usize,
+) -> Result<Vec<Vec<u8>>> {
+    let file = match OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
+        .open(path)
+    {
+        Ok(file) => file,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(error) => {
+            return Err(error).with_context(|| format!("Failed to open {}", path.display()))
+        }
+    };
+    ensure!(
+        file.metadata()?.is_file(),
+        "{} is not a regular file",
+        path.display()
+    );
+    let mut bytes = Vec::new();
+    file.take(max_bytes.saturating_add(1))
+        .read_to_end(&mut bytes)
+        .with_context(|| format!("Failed to read {}", path.display()))?;
+    ensure!(
+        bytes.len() as u64 <= max_bytes,
+        "{} exceeds its {max_bytes}-byte read cap",
+        path.display()
+    );
+    let mut parts: Vec<&[u8]> = bytes.split(|byte| *byte == b'\n').collect();
+    // The part after the last newline is empty, or a torn write.
+    parts.pop();
+    let lines: Vec<Vec<u8>> = parts
+        .into_iter()
+        .filter(|line| !line.is_empty())
+        .map(<[u8]>::to_vec)
+        .collect();
+    ensure!(
+        lines.len() <= max_rows,
+        "{} exceeds its {max_rows}-row cap",
+        path.display()
+    );
+    Ok(lines)
 }
 
 fn contents(file: &File) -> Result<String> {
@@ -108,5 +167,24 @@ mod tests {
             "oversized input reached sink"
         ))
         .is_err());
+    }
+
+    #[test]
+    fn complete_lines_enforce_byte_and_row_caps_and_treat_missing_as_empty() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("rows.jsonl");
+        assert!(read_complete_lines(&path, 64, 2).unwrap().is_empty());
+        std::fs::write(&path, "a\nb\nc\n").unwrap();
+        assert!(read_complete_lines(&path, 64, 2).is_err());
+        assert!(read_complete_lines(&path, 5, 10).is_err());
+        assert_eq!(read_complete_lines(&path, 6, 3).unwrap().len(), 3);
+    }
+
+    #[test]
+    fn append_creates_a_missing_parent_beneath_root() {
+        let root = tempfile::tempdir().unwrap();
+        append(root.path(), "nested/spool.jsonl", &"x", 64).unwrap();
+        let body = std::fs::read_to_string(root.path().join("nested/spool.jsonl")).unwrap();
+        assert_eq!(body, "\"x\"\n");
     }
 }

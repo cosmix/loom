@@ -11,7 +11,7 @@ use std::fs::{File, Permissions};
 use std::io::{self, Write};
 use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::PermissionsExt;
-use std::os::unix::io::{AsRawFd, FromRawFd, OwnedFd};
+use std::os::unix::io::{AsFd, AsRawFd, BorrowedFd, FromRawFd, OwnedFd};
 use std::path::{Component, Path};
 
 use anyhow::{bail, Context, Result};
@@ -24,7 +24,7 @@ mod tests;
 
 #[cfg(test)]
 thread_local! {
-    static FAIL_DIR_SYNC: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    pub(crate) static FAIL_DIR_SYNC: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 
 /// Replace the regular file `rel` (relative to `root`, no `..`) with `bytes`, keeping its
@@ -149,14 +149,21 @@ pub(crate) fn publish_in_dir_reporting(
 }
 
 /// The directory holding `rel`, opened from `root` without following any symlink.
-fn open_parent(root: &Path, rel: &Path) -> Result<OwnedFd> {
-    let root_fd = safe_open_dirfd(root)?;
+pub(crate) fn open_parent(root: &Path, rel: &Path) -> Result<OwnedFd> {
+    open_parent_at(safe_open_dirfd(root)?.as_fd(), rel)
+}
+
+/// The directory holding `rel`, opened beneath the open directory `root` without following any
+/// symlink; a `rel` with no parent gets a duplicate of `root`.
+pub(crate) fn open_parent_at(root: BorrowedFd<'_>, rel: &Path) -> Result<OwnedFd> {
     let parent = rel.parent().unwrap_or(Path::new(""));
     if parent.as_os_str().is_empty() {
-        return Ok(root_fd);
+        return root
+            .try_clone_to_owned()
+            .context("cannot duplicate the directory fd");
     }
     let flags = libc::O_DIRECTORY | libc::O_RDONLY;
-    open_safely(root_fd.as_raw_fd(), parent, flags, 0)
+    open_safely(root.as_raw_fd(), parent, flags, 0)
         .with_context(|| format!("refusing to open the directory {}", parent.display()))
 }
 
@@ -179,6 +186,26 @@ fn temp_name(name: &[u8]) -> Vec<u8> {
     tmp.extend_from_slice(&random.as_bytes()[..16]);
     tmp.extend_from_slice(b".tmp");
     tmp
+}
+
+/// Whether `name` has the shape [`temp_name`] gives: `.`, a non-empty name, `.`, 16 lowercase
+/// hex digits and `.tmp`. A directory sweeper uses it to find what a crashed publish left.
+pub(crate) fn is_publish_temp(name: &[u8]) -> bool {
+    let Some(inner) = name
+        .strip_prefix(b".")
+        .and_then(|rest| rest.strip_suffix(b".tmp"))
+    else {
+        return false;
+    };
+    let Some(split) = inner.len().checked_sub(17) else {
+        return false;
+    };
+    let (target, random) = inner.split_at(split);
+    !target.is_empty()
+        && random[0] == b'.'
+        && random[1..]
+            .iter()
+            .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'))
 }
 
 /// The length of the longest prefix of `name` within `max` bytes that does not end inside a

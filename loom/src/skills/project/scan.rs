@@ -99,7 +99,7 @@ fn resolve_nested_cmake(
     path: &Path,
     cpp_package_roots: &mut Vec<PathBuf>,
 ) {
-    let cmake = markers::regular_file(&dir.join("CMakeLists.txt"));
+    let cmake = crate::fs::safe_read::is_regular_no_follow(&dir.join("CMakeLists.txt"));
     let nested_cmake = cmake
         && cpp_package_roots
             .iter()

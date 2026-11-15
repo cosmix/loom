@@ -24,6 +24,9 @@ use std::path::{Component, Path};
 #[cfg(target_os = "linux")]
 use std::sync::atomic::{AtomicU8, Ordering};
 
+mod append;
+pub(crate) use append::safe_open_append;
+
 /// Maximum bytes accepted in one write or append call. Append callers must
 /// enforce any total-file or retention bound separately.
 pub const MAX_LOG_BYTES: usize = 4 * 1024 * 1024;
@@ -351,14 +354,7 @@ pub fn safe_locked_write_in_workdir(dirfd: RawFd, relpath: &Path, content: &[u8]
 /// appenders cannot interleave its partial writes.
 pub fn safe_append_in_workdir(dirfd: RawFd, relpath: &Path, content: &[u8]) -> Result<()> {
     let content = enforce_size_limit(content)?;
-    let fd = open_locked_regular(
-        dirfd,
-        relpath,
-        libc::O_WRONLY | libc::O_APPEND | libc::O_CREAT,
-        0o600,
-    )?;
-    write_all_at(&fd, content, relpath)?;
-    Ok(())
+    write_all_at(&append::open_append_at(dirfd, relpath)?, content, relpath)
 }
 
 /// Create `relpath` under `dirfd` with `O_EXCL`: fails if the file already

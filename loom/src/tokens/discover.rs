@@ -193,7 +193,7 @@ fn stage_threads(work_root: &Path, stages: &BTreeSet<&str>) -> Vec<StageThread> 
         let Ok(path) = receipts_path(work_root, stage_id) else {
             continue;
         };
-        if !std::fs::symlink_metadata(&path).is_ok_and(|m| m.is_file()) {
+        if !crate::fs::safe_read::is_regular_no_follow(&path) {
             continue;
         }
         let Ok(load) = load_receipts(&path) else {

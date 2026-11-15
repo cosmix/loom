@@ -19,6 +19,7 @@ use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
+use crate::fs::safe_fs::safe_open_append;
 use crate::models::dispute::{truncate_to_byte_limit, Citation};
 use crate::utils::text::single_line;
 
@@ -122,10 +123,8 @@ pub fn append_completion_failures(
     }
     let path = feedback_path(work_dir, stage_id);
     ensure_parent(&path)?;
-    let mut fd = fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&path)
+    let dir = path.parent().context("feedback path has no parent")?;
+    let mut fd = safe_open_append(dir, Path::new(FEEDBACK_FILENAME))
         .with_context(|| format!("Failed to open {}", path.display()))?;
     fd.write_all(completion_failures_section(failures).as_bytes())
         .with_context(|| format!("Failed to append to {}", path.display()))
@@ -289,6 +288,20 @@ mod tests {
             bullets[20],
             "- and 5 more; `loom stage complete` lists every failure"
         );
+    }
+
+    #[test]
+    fn completion_failures_refuse_a_symlinked_feedback_file() {
+        let tmp = temp_work();
+        let outside = temp_work();
+        let target = outside.path().join("target.md");
+        fs::write(&target, "untouched\n").unwrap();
+        let path = feedback_path(tmp.path(), "s");
+        ensure_parent(&path).unwrap();
+        std::os::unix::fs::symlink(&target, &path).unwrap();
+
+        assert!(append_completion_failures(tmp.path(), "s", &["x".to_string()]).is_err());
+        assert_eq!(fs::read_to_string(&target).unwrap(), "untouched\n");
     }
 
     #[test]

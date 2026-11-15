@@ -184,6 +184,7 @@ fn remove_sandbox_stubs(worktree_path: &Path, tracked: &HashSet<String>) -> Resu
             continue;
         }
         let path = worktree_path.join(name);
+        // Unlike is_regular_no_follow, one metadata snapshot must also prove the file is empty.
         if matches!(std::fs::symlink_metadata(&path), Ok(m) if m.is_file() && m.len() == 0) {
             std::fs::remove_file(&path)
                 .with_context(|| format!("Failed to remove sandbox stub {}", path.display()))?;
@@ -217,6 +218,7 @@ fn remove_drained_spool(
         return Ok(());
     }
     let spool_path = worktree_path.join(spool_relpath);
+    // Unlike is_regular_no_follow, one metadata snapshot must also prove the spool is empty.
     match std::fs::symlink_metadata(&spool_path) {
         Ok(metadata) if metadata.is_file() => {
             anyhow::ensure!(

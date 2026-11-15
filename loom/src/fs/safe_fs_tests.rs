@@ -252,3 +252,22 @@ fn safe_remove_drops_file() {
     // Removing again returns Ok (idempotent for ENOENT).
     safe_remove_in_workdir(dirfd.as_raw_fd(), Path::new("d.txt")).unwrap();
 }
+
+#[test]
+fn safe_open_append_refuses_a_hard_linked_file_and_creates_private() {
+    let tmp = TempDir::new().unwrap();
+    let outside = TempDir::new().unwrap();
+    let target = outside.path().join("target");
+    std::fs::write(&target, b"untouched").unwrap();
+    std::fs::hard_link(&target, tmp.path().join("linked")).unwrap();
+
+    assert!(safe_open_append(tmp.path(), Path::new("linked")).is_err());
+    assert_eq!(read_file(&target), b"untouched");
+
+    drop(safe_open_append(tmp.path(), Path::new("fresh")).unwrap());
+    let mode = std::fs::metadata(tmp.path().join("fresh"))
+        .unwrap()
+        .permissions()
+        .mode();
+    assert_eq!(mode & 0o777, 0o600);
+}

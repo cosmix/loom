@@ -5,14 +5,14 @@
 //! denied direct write falls back to a per-worktree spool which the daemon
 //! drains into the canonical event file.
 
-use std::fs::OpenOptions;
 use std::io::{Read as _, Write as _};
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
-use fs2::FileExt;
 use serde::{Deserialize, Serialize};
+
+use crate::fs::safe_fs::safe_open_append;
 
 use crate::relay::emit::{mode, EnvSnapshot, RelayContext, RelayMode, RelaySink, StdSink};
 use crate::relay::RequestKind;
@@ -67,8 +67,11 @@ pub struct TelemetryRecord {
     pub event: TelemetryEvent,
 }
 
+const TELEMETRY_DIR: &str = "telemetry";
+const EVENTS_FILE: &str = "events.jsonl";
+
 pub(crate) fn events_path(work_dir: &Path) -> PathBuf {
-    work_dir.join("telemetry").join("events.jsonl")
+    work_dir.join(TELEMETRY_DIR).join(EVENTS_FILE)
 }
 
 /// Append `event` to the canonical event file, or its worktree spool when the
@@ -137,23 +140,20 @@ fn relay_telemetry(
     let _ = context.emit_quiet(RequestKind::Telemetry, payload, sink);
 }
 
-/// Append one already-timestamped record under an exclusive lock.
+/// Append one already-timestamped record under an exclusive lock. The events
+/// file is created with mode 0600 and must be a plain, single-link file; the
+/// append is anchored at the telemetry directory, so a worktree's
+/// `.loom/work` symlink above it is followed.
 pub(crate) fn append_record(work_dir: &Path, record: &TelemetryRecord) -> Result<()> {
-    let path = events_path(work_dir);
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).with_context(|| {
-            format!("Failed to create telemetry directory: {}", parent.display())
-        })?;
-    }
-    let mut file = OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&path)
+    let dir = work_dir.join(TELEMETRY_DIR);
+    let path = dir.join(EVENTS_FILE);
+    std::fs::create_dir_all(&dir)
+        .with_context(|| format!("Failed to create telemetry directory: {}", dir.display()))?;
+    let mut line = serde_json::to_vec(record).context("Failed to serialize telemetry record")?;
+    line.push(b'\n');
+    let mut file = safe_open_append(&dir, Path::new(EVENTS_FILE))
         .with_context(|| format!("Failed to open telemetry events: {}", path.display()))?;
-    file.lock_exclusive()
-        .with_context(|| format!("Failed to lock telemetry events: {}", path.display()))?;
-    let line = serde_json::to_string(record).context("Failed to serialize telemetry record")?;
-    writeln!(file, "{line}")
+    file.write_all(&line)
         .with_context(|| format!("Failed to append telemetry event: {}", path.display()))?;
     Ok(())
 }
@@ -178,6 +178,7 @@ pub fn read_events(work_dir: &Path) -> Result<Vec<TelemetryRecord>> {
     };
     file.lock_shared()
         .with_context(|| format!("Failed to lock telemetry events: {}", path.display()))?;
+    // Uncapped and locked, unlike `jsonl_spool::read_complete_lines`: this log only grows, so a cap would turn its size into a read failure.
     let mut content = String::new();
     (&file)
         .read_to_string(&mut content)

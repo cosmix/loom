@@ -27,9 +27,10 @@ pub(super) fn agent(path: &Path, name: &str) -> bool {
     let Some((_, body)) = CLAUDE_AGENTS.iter().find(|(key, _)| *key == prefixed) else {
         return false;
     };
-    fs::symlink_metadata(path).is_ok_and(|meta| meta.is_file())
+    crate::fs::safe_read::is_regular_no_follow(path)
         && fs::read(path)
             .is_ok_and(|bytes| matches_shipped(&bytes, body, name, &prefixed[..prefixed.len() - 3]))
+        // Unlike is_regular_no_follow, the replacement may be a symlink to a file.
         && path.with_file_name(prefixed).is_file()
         && path.with_file_name(old) == path
 }

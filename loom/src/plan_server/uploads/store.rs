@@ -1,26 +1,24 @@
 //! Writing the upload store `<runtime>/attachments`: content-addressed files, a sidecar each,
 //! a total-size cap, `touch` and the expiry sweep.
 //!
-//! Every write goes through `safe_fs`: the directory is 0700, a file is written under a temp
-//! name opened `O_CREAT|O_EXCL|O_NOFOLLOW` at 0600 and renamed into place. One process-wide
-//! lock orders the cap check with the write, `touch` and the sweep.
+//! The directory is 0700 and opened without following symlinks; every file is written at 0600
+//! through `safe_replace::publish_in_dir` (a temp file renamed into place, then a directory
+//! sync). One process-wide lock orders the cap check with the write, `touch` and the sweep.
 
 use std::collections::HashMap;
-use std::fs::{self, File};
-use std::io::{self, Write};
+use std::ffi::OsStr;
+use std::fs;
+use std::io;
 use std::os::fd::{AsRawFd, OwnedFd};
 use std::path::Path;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, MutexGuard, PoisonError};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result};
-use sha2::{Digest, Sha256};
 
-use crate::fs::safe_fs::{
-    open_safely, safe_create_dir_all, safe_open_dirfd, safe_remove_in_workdir,
-    safe_rename_in_workdir,
-};
+use crate::fs::safe_fs::{safe_create_dir_all, safe_open_dirfd, safe_remove_in_workdir};
+use crate::fs::safe_read::is_regular_no_follow;
+use crate::fs::safe_replace::{is_publish_temp, publish_in_dir};
 use crate::plan_session::attachments::stored::{
     self, extension, sidecar_name, Sidecar, ID_LEN, MEDIA_TYPES,
 };
@@ -33,11 +31,10 @@ pub(super) const MAX_STORE_BYTES: u64 = 256 * 1024 * 1024;
 /// A file and its sidecar are kept this long after their `stored_at`.
 pub(super) const KEEP_SECONDS: u64 = 30 * 24 * 60 * 60;
 
-/// Prefix of the temp files a write renames into place.
-const TEMP_PREFIX: &str = "tmp-";
+/// Mode of every stored file and sidecar.
+const FILE_MODE: u32 = 0o600;
 
 static STORE_LOCK: Mutex<()> = Mutex::new(());
-static TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 fn lock() -> MutexGuard<'static, ()> {
     STORE_LOCK.lock().unwrap_or_else(PoisonError::into_inner)
@@ -90,15 +87,16 @@ pub(super) fn put_within(
     safe_create_dir_all(runtime_dir, Path::new(ATTACHMENTS_DIR), 0o700)?;
     let dir = runtime_dir.join(ATTACHMENTS_DIR);
     let dirfd = safe_open_dirfd(&dir)?;
-    let id = hex::encode(Sha256::digest(body))[..ID_LEN].to_owned();
+    let id = crate::utils::sha256_hex(body)[..ID_LEN].to_owned();
     let data_name = format!("{id}.{ext}");
-    let present = fs::symlink_metadata(dir.join(&data_name)).is_ok_and(|meta| meta.is_file());
+    let present = is_regular_no_follow(&dir.join(&data_name));
     if !present {
         let used = stored_bytes(&dir).context("cannot measure the attachment store")?;
         if used.saturating_add(body.len() as u64) > cap {
             return Err(StoreError::Full);
         }
-        write_atomic(&dirfd, &data_name, body)?;
+        publish_in_dir(&dirfd, OsStr::new(&data_name), body, FILE_MODE, true)
+            .with_context(|| format!("cannot write {data_name}"))?;
     }
     let sidecar = Sidecar {
         name: name.to_owned(),
@@ -136,7 +134,9 @@ pub(super) fn touch_at(runtime_dir: &Path, id: &str, now: u64) -> io::Result<boo
 
 fn write_sidecar(dirfd: &OwnedFd, id: &str, sidecar: &Sidecar) -> Result<()> {
     let json = serde_json::to_vec(sidecar).context("cannot encode the sidecar")?;
-    write_atomic(dirfd, &sidecar_name(id), &json)
+    let name = sidecar_name(id);
+    publish_in_dir(dirfd, OsStr::new(&name), &json, FILE_MODE, true)
+        .with_context(|| format!("cannot write {name}"))
 }
 
 /// The bytes of the regular files in `dir` (temp files included).
@@ -149,26 +149,6 @@ fn stored_bytes(dir: &Path) -> io::Result<u64> {
         }
     }
     Ok(total)
-}
-
-/// Write `bytes` to a new temp file in the directory, then rename it to `name`.
-fn write_atomic(dirfd: &OwnedFd, name: &str, bytes: &[u8]) -> Result<()> {
-    let raw = dirfd.as_raw_fd();
-    let count = TEMP_COUNTER.fetch_add(1, Ordering::Relaxed);
-    let temp = format!("{TEMP_PREFIX}{}-{count}-{name}", std::process::id());
-    let flags = libc::O_WRONLY | libc::O_CREAT | libc::O_EXCL;
-    let fd = open_safely(raw, Path::new(&temp), flags, 0o600)?;
-    let mut file = File::from(fd);
-    let written = file.write_all(bytes).and_then(|()| file.sync_all());
-    drop(file);
-    let placed = written
-        .with_context(|| format!("cannot write {temp}"))
-        .and_then(|()| safe_rename_in_workdir(raw, Path::new(&temp), Path::new(name)));
-    if placed.is_err() {
-        // Best effort: a leftover temp is swept by age.
-        let _ = safe_remove_in_workdir(raw, Path::new(&temp));
-    }
-    placed
 }
 
 /// What one sweep did.
@@ -196,13 +176,19 @@ pub(super) fn sweep(dir: &Path, now: u64) -> Swept {
     for entry in entries.flatten() {
         let name = entry.file_name().to_string_lossy().into_owned();
         let is_file = entry.file_type().is_ok_and(|kind| kind.is_file());
-        if !is_file || !is_ours(&name) {
+        if !is_file {
             continue;
         }
-        let id = name.split('.').next().unwrap_or("").to_owned();
-        let stamp = *stamps
-            .entry(id.clone())
-            .or_insert_with(|| stored::read_sidecar(dir, &id).map(|sidecar| sidecar.stored_at));
+        let stamp = if is_publish_temp(name.as_bytes()) {
+            None
+        } else if is_stored(&name) {
+            let id = name.split('.').next().unwrap_or("").to_owned();
+            *stamps
+                .entry(id.clone())
+                .or_insert_with(|| stored::read_sidecar(dir, &id).map(|sidecar| sidecar.stored_at))
+        } else {
+            continue;
+        };
         let stamp = stamp.or_else(|| modified(&entry)).unwrap_or(now);
         if now.saturating_sub(stamp) <= KEEP_SECONDS {
             continue;
@@ -218,11 +204,8 @@ pub(super) fn sweep(dir: &Path, now: u64) -> Swept {
     swept
 }
 
-/// A store file (`<id>.<ext>` or `<id>.json` for a valid id) or one of its temp files.
-fn is_ours(name: &str) -> bool {
-    if name.starts_with(TEMP_PREFIX) {
-        return true;
-    }
+/// A store file: `<id>.<ext>` or `<id>.json` for a valid id.
+fn is_stored(name: &str) -> bool {
     let Some((id, ext)) = name.split_once('.') else {
         return false;
     };

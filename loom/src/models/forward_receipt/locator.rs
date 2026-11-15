@@ -12,6 +12,7 @@ use crate::agent_state::is_safe_id;
 const MAX_LOCATOR_BYTES: u64 = 1024 * 1024;
 const MAX_WORKSPACE_CHILDREN: usize = 256;
 
+// Unlike safe_read::read_bounded, this checks effective-user ownership on the read fd.
 pub fn read_bounded_prefix(path: &Path, max_bytes: usize) -> anyhow::Result<String> {
     let file = OpenOptions::new()
         .read(true)

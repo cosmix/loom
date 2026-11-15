@@ -286,7 +286,7 @@ fn codex_companion_installed_in(home: &std::path::Path) -> bool {
         .join(".claude/plugins/cache/openai-codex/codex")
         .join(version)
         .join("scripts/codex-companion.mjs");
-    std::fs::symlink_metadata(path).is_ok_and(|metadata| metadata.is_file())
+    crate::fs::safe_read::is_regular_no_follow(&path)
 }
 
 /// Combined availability check for the codex implementation lanes (terra, sol, luna).

@@ -1,45 +1,35 @@
 //! Atomically writes one relay ticket into a session's scratch directory.
 
 use anyhow::{Context, Result};
-use std::fs::{self, OpenOptions};
-use std::io::Write;
-use std::os::unix::fs::OpenOptionsExt;
+use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
+
+use crate::fs::safe_fs::safe_open_dirfd;
+use crate::fs::safe_replace::publish_in_dir;
 
 const TICKET_MODE: u32 = 0o600;
 
-/// Write `bytes` to `<scratch_dir>/.<id>.tmp` (`O_CREAT|O_EXCL`, mode 0600),
-/// fsync it, then rename it to `<scratch_dir>/<id>.req`.
+/// Publish `bytes` as `<scratch_dir>/<id>.req` (mode 0600) through
+/// `safe_replace::publish_in_dir`. The scratch directory is resolved once and
+/// opened without following links; a planted symlink at the ticket name is
+/// replaced, never written through.
 pub(super) fn write_ticket(scratch_dir: &Path, id: &str, bytes: &[u8]) -> Result<PathBuf> {
-    let tmp_path = scratch_dir.join(format!(".{id}.tmp"));
-    let final_path = scratch_dir.join(format!("{id}.req"));
-
-    let mut file = OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .mode(TICKET_MODE)
-        .open(&tmp_path)
-        .with_context(|| format!("failed to create {}", tmp_path.display()))?;
-    file.write_all(bytes)
-        .with_context(|| format!("failed to write {}", tmp_path.display()))?;
-    file.sync_all()
-        .with_context(|| format!("failed to sync {}", tmp_path.display()))?;
-    drop(file);
-
-    fs::rename(&tmp_path, &final_path).with_context(|| {
-        format!(
-            "failed to rename {} to {}",
-            tmp_path.display(),
-            final_path.display()
-        )
-    })?;
-
+    let name = format!("{id}.req");
+    let final_path = scratch_dir.join(&name);
+    let dir = scratch_dir
+        .canonicalize()
+        .map_err(anyhow::Error::from)
+        .and_then(|dir| safe_open_dirfd(&dir))
+        .with_context(|| format!("failed to open {}", scratch_dir.display()))?;
+    publish_in_dir(&dir, OsStr::new(&name), bytes, TICKET_MODE, false)
+        .with_context(|| format!("failed to write {}", final_path.display()))?;
     Ok(final_path)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
     use std::os::unix::fs::PermissionsExt;
     use tempfile::TempDir;
 
@@ -51,6 +41,21 @@ mod tests {
         let metadata = fs::metadata(&path).unwrap();
         assert_eq!(metadata.permissions().mode() & 0o777, TICKET_MODE);
         assert_eq!(fs::read(&path).unwrap(), b"{\"v\":1}");
-        assert!(!dir.path().join(".abc123.tmp").exists());
+        let names: Vec<_> = fs::read_dir(dir.path()).unwrap().collect();
+        assert_eq!(names.len(), 1, "no temp file is left");
+    }
+
+    #[test]
+    fn a_planted_symlink_at_the_ticket_name_is_replaced_not_followed() {
+        let root = TempDir::new().unwrap();
+        let scratch = root.path().join("scratch");
+        fs::create_dir(&scratch).unwrap();
+        let victim = root.path().join("victim");
+        fs::write(&victim, "keep").unwrap();
+        std::os::unix::fs::symlink(&victim, scratch.join("abc123.req")).unwrap();
+        let path = write_ticket(&scratch, "abc123", b"{}").unwrap();
+        assert_eq!(fs::read_to_string(&victim).unwrap(), "keep");
+        assert!(fs::symlink_metadata(&path).unwrap().is_file());
+        assert_eq!(fs::read(&path).unwrap(), b"{}");
     }
 }

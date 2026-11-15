@@ -348,3 +348,16 @@ fn read_payload_reads_exactly_the_limit_and_refuses_one_byte_more() {
     let error = read_payload("secret-payload".as_bytes(), 13).unwrap_err();
     assert!(!format!("{error:#}").contains("secret-payload"));
 }
+
+#[test]
+fn append_receipts_refuses_a_symlinked_receipt_file() {
+    let dir = TempDir::new().unwrap();
+    let outside = TempDir::new().unwrap();
+    let target = outside.path().join("target.jsonl");
+    fs::write(&target, "untouched\n").unwrap();
+    let path = dir.path().join("receipts.jsonl");
+    symlink(&target, &path).unwrap();
+
+    assert!(append_receipts(&path, "{}\n").is_err());
+    assert_eq!(fs::read_to_string(&target).unwrap(), "untouched\n");
+}
