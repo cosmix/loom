@@ -10,11 +10,11 @@
 | --- | --- | --- |
 | [architecture.md](architecture.md) | High-level component relationships, data flow, module dependencies | 250 |
 | [entry-points.md](entry-points.md) | Key files agents should read first | 86 |
-| [patterns.md](patterns.md) | Architectural patterns discovered in the codebase | 186 |
+| [patterns.md](patterns.md) | Architectural patterns discovered in the codebase | 190 |
 | [conventions.md](conventions.md) | Coding conventions discovered in the codebase | 250 |
 | [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 250 |
 | [stack.md](stack.md) | Dependencies, frameworks, and tooling used in the project | 116 |
-| [concerns.md](concerns.md) | Technical debt, warnings, and issues to address | 250 |
+| [concerns.md](concerns.md) | Technical debt, warnings, and issues to address | 248 |
 
 ## Tier 2 — Topics
 
@@ -28,7 +28,7 @@
 | [completion-recovery](architecture/completion-recovery.md) | Proof | 38 |
 | [config-value-types](architecture/config-value-types.md) |  | 85 |
 | [context-ceiling](architecture/context-ceiling.md) |  | 111 |
-| [context-retrieval](architecture/context-retrieval.md) |  | 396 |
+| [context-retrieval](architecture/context-retrieval.md) |  | 397 |
 | [context-retrieval-corpus](architecture/context-retrieval-corpus.md) | BM25 | 178 |
 | [context-retrieval-routing](architecture/context-retrieval-routing.md) |  | 75 |
 | [context-retrieval-state](architecture/context-retrieval-state.md) | Layers | 179 |
@@ -68,7 +68,7 @@
 | [signal-generation](architecture/signal-generation.md) |  | 257 |
 | [skill-catalog](architecture/skill-catalog.md) |  | 158 |
 | [source-graph](architecture/source-graph.md) |  | 372 |
-| [source-graph-build](architecture/source-graph-build.md) |  | 129 |
+| [source-graph-build](architecture/source-graph-build.md) |  | 130 |
 | [source-graph-evaluation](architecture/source-graph-evaluation.md) |  | 68 |
 | [source-graph-resolution](architecture/source-graph-resolution.md) |  | 125 |
 | [source-graph-view](architecture/source-graph-view.md) |  | 78 |
@@ -99,6 +99,7 @@
 
 | Topic | Blurb | Lines |
 | --- | --- | --- |
+| [canonical-helpers](patterns/canonical-helpers.md) |  | 61 |
 | [cli-process-and-conventions](patterns/cli-process-and-conventions.md) |  | 239 |
 | [doctrine-cross-surface](patterns/doctrine-cross-surface.md) | Pins | 144 |
 | [hook-content-stripping](patterns/hook-content-stripping.md) | Text | 162 |
@@ -114,7 +115,7 @@
 
 | Topic | Blurb | Lines |
 | --- | --- | --- |
-| [code-style-and-structure](conventions/code-style-and-structure.md) |  | 287 |
+| [code-style-and-structure](conventions/code-style-and-structure.md) |  | 297 |
 | [commits](conventions/commits.md) | Format | 24 |
 | [config-plan-and-gate-rules](conventions/config-plan-and-gate-rules.md) |  | 27 |
 | [dispute-and-adjudication](conventions/dispute-and-adjudication.md) |  | 123 |
@@ -142,13 +143,13 @@
 | [completion-runtime](mistakes/completion-runtime.md) | Churn | 94 |
 | [computed-values-and-hidden-couplings](mistakes/computed-values-and-hidden-couplings.md) | Values | 284 |
 | [concurrency-and-locking](mistakes/concurrency-and-locking.md) |  | 207 |
+| [consolidation-drift](mistakes/consolidation-drift.md) |  | 105 |
 | [contract-autonomy-delivery](mistakes/contract-autonomy-delivery.md) | Bypass | 109 |
 | [daemon-fork-after-threads](mistakes/daemon-fork-after-threads.md) | Fork | 38 |
 | [daemon-singleton](mistakes/daemon-singleton.md) |  | 141 |
 | [detached-spawn-in-tests](mistakes/detached-spawn-in-tests.md) |  | 65 |
 | [dev-install](mistakes/dev-install.md) | Daemon | 44 |
-| [doctrine-and-acceptance](mistakes/doctrine-and-acceptance.md) |  | 406 |
-| [frontmatter-boundary](mistakes/frontmatter-boundary.md) |  | 13 |
+| [doctrine-and-acceptance](mistakes/doctrine-and-acceptance.md) |  | 392 |
 | [hooks-shell-portability](mistakes/hooks-shell-portability.md) |  | 382 |
 | [host-verify-group-containment](mistakes/host-verify-group-containment.md) |  | 23 |
 | [knowledge-base-drift](mistakes/knowledge-base-drift.md) |  | 266 |
@@ -176,10 +177,9 @@
 | [planning-sandbox-delivery](mistakes/planning-sandbox-delivery.md) |  | 73 |
 | [pre-commit-hardening](mistakes/pre-commit-hardening.md) |  | 93 |
 | [refactor-stragglers](mistakes/refactor-stragglers.md) |  | 335 |
-| [release-feature-review](mistakes/release-feature-review.md) | Gaps | 13 |
 | [review-continuation-verification](mistakes/review-continuation-verification.md) | Repair | 331 |
-| [review-final-wave](mistakes/review-final-wave.md) |  | 190 |
-| [review-integration-verification](mistakes/review-integration-verification.md) |  | 263 |
+| [review-final-wave](mistakes/review-final-wave.md) |  | 200 |
+| [review-integration-verification](mistakes/review-integration-verification.md) |  | 283 |
 | [review-tracker](mistakes/review-tracker.md) |  | 353 |
 | [sandbox-and-settings](mistakes/sandbox-and-settings.md) |  | 391 |
 | [sandbox-protected-hooks-dir](mistakes/sandbox-protected-hooks-dir.md) |  | 37 |
@@ -220,6 +220,7 @@
 | [automatic-knowledge-source-graph-followups](concerns/automatic-knowledge-source-graph-followups.md) | Gaps | 69 |
 | [code-quality-and-hook-debt](concerns/code-quality-and-hook-debt.md) | Debt | 308 |
 | [codex-heartbeat-starvation](concerns/codex-heartbeat-starvation.md) |  | 22 |
+| [consolidation-followups](concerns/consolidation-followups.md) |  | 129 |
 | [contract-autonomy-followups](concerns/contract-autonomy-followups.md) |  | 74 |
 | [handoff-followups](concerns/handoff-followups.md) |  | 57 |
 | [iterm2-window-teardown](concerns/iterm2-window-teardown.md) |  | 15 |
@@ -229,13 +230,12 @@
 | [plan-chat-followups](concerns/plan-chat-followups.md) | Chat | 41 |
 | [planner-follow-ups-followups](concerns/planner-follow-ups-followups.md) |  | 91 |
 | [planner-ui-repair-followups](concerns/planner-ui-repair-followups.md) | UI | 214 |
-| [planning-document-model-followups](concerns/planning-document-model-followups.md) |  | 172 |
+| [planning-document-model-followups](concerns/planning-document-model-followups.md) |  | 170 |
 | [planning-guidance-followups](concerns/planning-guidance-followups.md) |  | 43 |
 | [planning-session-sandbox-limits](concerns/planning-session-sandbox-limits.md) |  | 238 |
 | [platform-and-commit-gaps](concerns/platform-and-commit-gaps.md) |  | 234 |
 | [runtime-and-session-safety](concerns/runtime-and-session-safety.md) |  | 137 |
 | [sandbox-and-confinement-gaps](concerns/sandbox-and-confinement-gaps.md) |  | 373 |
-| [session-tmpdir-deny](concerns/session-tmpdir-deny.md) |  | 7 |
 | [source-graph-known-gaps](concerns/source-graph-known-gaps.md) | Limits | 94 |
 | [source-graph-review-backlog](concerns/source-graph-review-backlog.md) | Todo | 298 |
 | [state-confinement-gaps](concerns/state-confinement-gaps.md) | Caches | 21 |

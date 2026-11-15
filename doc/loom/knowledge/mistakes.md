@@ -147,7 +147,7 @@ Eight lessons: a store shipped without its consumer, a strict schema attribute b
 
 A frontmatter split must keep the YAML start and post-delimiter body start as
 separate offsets; tests should assert both slices across line-ending variants.
-→ [Frontmatter boundary offsets](mistakes/frontmatter-boundary.md)
+→ [Frontmatter boundary offsets](mistakes/consolidation-drift.md#a-frontmatter-split-shadowed-the-yaml-start-offset)
 
 ## Agent and Process Lessons
 
@@ -219,7 +219,7 @@ Claude Code began wrapping a delivered prompt in `<pasted_content id="X">` tags 
 
 ## Planner Polish
 
-A container-query component in an unsized flex item (footer meters stacked), a stop notice produced twice from one event, spine plan rows that lost their slug to badge words, layout and glyph fixes judged from a stubbed payload or one surface, and worker slips. → [Planner Polish Mistakes](mistakes/planner-polish.md) Planner feedback fixes: a route test that sent the id form the web client never sends, a background hand-back that reopened activity after the closing Stop, a bulk route holding the project read guard across saves, tests removed with a page, a test file over 400 lines, `loom check` backgrounded. → [Planner Review Fixes Mistakes](mistakes/planner-review-fixes.md#a-route-test-sent-the-id-form-the-web-client-never-sends)
+A container-query component in an unsized flex item (footer meters stacked), a stop notice produced twice from one event, spine plan rows that lost their slug to badge words, layout and glyph fixes judged from a stubbed payload or one surface, and worker slips. → [Planner Polish Mistakes](mistakes/planner-polish.md) Planner feedback fixes: a route test that sent the id form the web client never sends, a background hand-back that reopened activity after the closing Stop, a bulk route holding the project read guard across saves, tests removed with a page, a test file over 400 lines, `loom check` backgrounded. → [Planner Review Fixes Mistakes](mistakes/planner-review-fixes.md#a-route-test-sent-the-id-form-the-web-client-never-sends) A visual request needs a concrete design brief and a screenshot check, not only DOM-presence tests. → [Planner Visual Feedback Shortfall](mistakes/planner-visual-feedback-shortfall.md)
 
 ## Plan Amendment Strips completed_commit From a Merged Stage
 
@@ -227,10 +227,6 @@ A container-query component in an unsized flex item (footer meters stacked), a s
 **Why:** clearing `completed_commit` forces re-verification of an in-flight stage, but a merged stage cannot re-verify. The amendment broke the merged-implies-commit invariant that the scheduler relies on.
 **Prevention:** an amendment must never clear `completed_commit` on a stage with `merged` or `merge_assumed`; integration-verify legitimately amends earlier stages' wiring.
 **Fix:** operator recreated `loom/chat-and-shell-visual` at its merged tip and ran `loom stage complete chat-and-shell-visual --force-unsafe --assume-merged`.
-
-## Visual requests reduced to DOM tests
-
-A visual request needs a concrete design brief and a screenshot check, not only DOM-presence tests. See [mistakes/planner-visual-feedback-shortfall](mistakes/planner-visual-feedback-shortfall.md).
 
 ## Planner follow-ups delivery
 
@@ -248,3 +244,7 @@ Why `dev-install.sh` stops every loom process after the install, the review find
 
 - A spec section adds an action, button or skill only when the vision names it; integration-verify's spec-conformance duty aligns spec and build. See [spec sections invented product features](mistakes/planner-design-brainstorm.md#spec-sections-invented-product-features-the-vision-never-asked-for).
 - Feature run reviews land at the top of `doc/plans/`, and the readers search the plan's home, its `archive/` and the top of `doc/plans/`. See [a feature plan's run review](mistakes/planner-design-brainstorm.md#a-feature-plans-run-review-is-written-where-nothing-looks-for-it).
+
+## Copies of One Helper Drifted Into Bugs
+
+A tag named like a stage branch broke stage detection, blocks left the scheduler graph stale, spool appends followed a planted symlink, a saturating normalizer exempted files, and trimmed NUL listings lost edge whitespace. Routing a writer through a stricter opener broke callers whose anchor directory did not exist or was the `.loom/work` symlink, and briefs that deleted a helper without listing its callers broke builds. Rules: [consolidation-drift](mistakes/consolidation-drift.md); helpers: [canonical-helpers](patterns/canonical-helpers.md).

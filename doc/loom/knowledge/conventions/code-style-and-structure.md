@@ -285,3 +285,13 @@ unwired-file detector reads a `#[path]` include as unreferenced (see
 ## Imports and child test modules
 
 A child test module that starts with `use super::*;` sees only what its parent imports. An import that only the tests use looks unused in a normal build, and removing it breaks the tests without touching their file; `cargo check` without `--tests` does not show that. After removing an import from a module, compile with `cargo check --tests` before finishing.
+
+## No Private Copy of a Canonical Helper
+
+Each cluster in [canonical-helpers](../patterns/canonical-helpers.md) has one implementation. A change that needs git change listings, status parsing, stage blocking, an append, an atomic write, a bounded read, frontmatter splitting, lexical path normalization, truncation, a hash, an RFC 3339 parse or a process-group kill calls that helper.
+
+- A site that must differ keeps its copy and says so in a one-line comment naming the canonical helper and the reason (an output cap, a different error contract, a null-signal probe). A copy without the comment is a defect the review finds.
+- A copy that changes behaviour gets a regression test that fails on the old behaviour. A safety property (symlink refusal, locking, size cap, UTF-8 strictness, bidi stripping) is never weakened to route a caller.
+- Deleting a helper deletes its re-exports and wrappers too; list every caller file before the change, because a caller in a file nobody owns breaks the build.
+- A function renamed to dodge a one-definition check (`absolute_lexical`, `forward_slashes`) is a kept adapter or a distinct function, never a disguised copy; its doc names the canonical helper.
+- Test helpers run git with `GIT_DIR`, `GIT_WORK_TREE`, `GIT_INDEX_FILE` and `GIT_COMMON_DIR` removed, `GIT_CONFIG_GLOBAL=/dev/null`, `GIT_CONFIG_NOSYSTEM=1` and signing off; a test that expects "not a repository" first asserts its `TempDir` is outside any repository (`git/queries_contract_tests.rs`).
