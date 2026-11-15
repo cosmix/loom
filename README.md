@@ -103,11 +103,11 @@ loom plan [--port <PORT>] [--host <HOST>] [--no-open]
 `loom plan` serves a local web app for planning a project. You talk to a Claude Code session in a chat panel, it writes the documents under `doc/` in loom's conventions, and you read, question and settle them in the browser. It ends at a reviewed plan, a run, and the follow-up plans the run leaves behind. The files stay plain Markdown that any editor can change, and the app picks up the edits.
 
 <p align="center">
-  <img src="doc/images/loom-planner.gif" alt="The feature planner on one feature: the planning session writes the vision, product spec, metaplan and plans in the chat; each document opens as a summary whose sentences open to the sentences they rest on and to the source passage, then fold closed; the Coverage ledger; and the settings dialog switching the theme from Ledger to Aubergine" width="880">
+  <img src="doc/images/loom-planner.gif" alt="The feature planner from a new idea to plans: describing the work on the New work page, the planning session settling it as a feature, then the vision, product spec, metaplan and plans each created with a button; each document opens as a summary whose sentences open to the sentences they rest on and to the source passage, then fold closed; revising a document by attaching a sentence to the chat; and the settings dialog switching the theme from Ledger to Aubergine" width="880">
 </p>
 
 <p align="center">
-  <em>One feature from vision to plans: each document as a summary that opens down to its source and folds back, the Coverage ledger, and a theme change in Settings.</em>
+  <em>One feature from the first description to plans: each document as a summary that opens down to its source and folds back, a revision made by attaching a sentence to the chat, and a theme change in Settings.</em>
 </p>
 
 ### Starting it
