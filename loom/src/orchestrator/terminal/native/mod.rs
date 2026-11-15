@@ -36,6 +36,15 @@ pub(crate) use build_cache::sccache_status_line;
 // Re-exported so `super::session_capsule(...)` keeps resolving from `launch`.
 pub(crate) use capsule::{session_capsule, SessionCapsule};
 pub use detection::detect_terminal;
+/// A test's stand-in for the daemon binary that `launch::host::host_facts`
+/// hands to `accepted_loom_bin`, taking precedence over the recorded daemon
+/// binary. A unit test binary built under `/tmp` lies under a
+/// session-writable root the preflight refuses, so a test that must get past
+/// the preflight points this at a binary in a trusted root. Set only from
+/// `#[serial]` tests, which restore it to `None`.
+#[cfg(test)]
+pub(crate) static TEST_LOOM_BIN: std::sync::Mutex<Option<std::path::PathBuf>> =
+    std::sync::Mutex::new(None);
 pub(crate) use launch::{prepare_session_launch, record_daemon_binary, run_host_facts};
 pub(crate) use pid_guard::{
     pid_only_is_alive, pid_only_terminate, session_process_status, SessionProcessStatus,

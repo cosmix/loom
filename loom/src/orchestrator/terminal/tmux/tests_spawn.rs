@@ -173,11 +173,38 @@ impl Drop for ClaudeOnPathGuard {
     }
 }
 
-/// Installs this build's hook scripts into a fresh directory under this
-/// runner-owned trusted root (or `target/` for direct Cargo), then points
-/// `LOOM_HOOKS_DIR` at it for the duration
-/// of the guard, restoring the previous value (or clearing it) on drop —
-/// including on a panic, mirroring [`ClaudeOnPathGuard`].
+/// A fixture root outside every session-writable root the sandbox preflight
+/// refuses: `/tmp` and `$TMPDIR` (`session_writable_roots`). That is the
+/// runner-owned trusted root when `LOOM_TEST_ROOT` names one, else the
+/// crate's `target/` — unless the checkout itself lives under `/tmp` or
+/// `$TMPDIR`, where `target/` would be refused too and a private directory
+/// under `/var/tmp` stands in.
+fn trusted_fixture_root() -> PathBuf {
+    if let Some(root) = std::env::var_os("LOOM_TEST_ROOT") {
+        return PathBuf::from(root).join("trusted");
+    }
+    let target = Path::new(env!("CARGO_MANIFEST_DIR")).join("target");
+    let session_writable = |path: &Path| {
+        let tmpdir = std::env::temp_dir();
+        let tmpdir = tmpdir.canonicalize().unwrap_or(tmpdir);
+        let path = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+        path.starts_with("/tmp") || path.starts_with(&tmpdir)
+    };
+    if !session_writable(Path::new(env!("CARGO_MANIFEST_DIR"))) {
+        return target;
+    }
+    use std::os::unix::fs::DirBuilderExt;
+    // SAFETY: `getuid` has no preconditions and cannot fail.
+    let uid = unsafe { libc::getuid() };
+    let root = PathBuf::from(format!("/var/tmp/loom-tests-{uid}"));
+    let _ = std::fs::DirBuilder::new().mode(0o700).create(&root);
+    root.join("trusted")
+}
+
+/// Installs this build's hook scripts into a fresh directory under
+/// [`trusted_fixture_root`], then points `LOOM_HOOKS_DIR` at it for the
+/// duration of the guard, restoring the previous value (or clearing it) on
+/// drop — including on a panic, mirroring [`ClaudeOnPathGuard`].
 ///
 /// The sandbox preflight now runs on every spawn: check 2 refuses a host with
 /// no verified hooks directory, or one whose scripts have drifted from this
@@ -186,24 +213,17 @@ impl Drop for ClaudeOnPathGuard {
 /// (absent on CI, and drifted from this build whenever the hooks change)
 /// would make this test flaky or wrongly refused before it ever reaches the
 /// tmux step it exists to pin — this guard gives it a directory that always
-/// verifies. The trusted root must be outside `/tmp` and `$TMPDIR`: each is a
-/// session-writable root (`session_writable_roots` includes it), which check
-/// 3 would refuse.
+/// verifies.
 struct LoomHooksDirGuard {
     _dir: tempfile::TempDir,
     original: Option<std::ffi::OsString>,
 }
 
 impl LoomHooksDirGuard {
-    fn install() -> Self {
-        let target_dir = std::env::var_os("LOOM_TEST_ROOT")
-            .map(PathBuf::from)
-            .map(|root| root.join("trusted"))
-            .unwrap_or_else(|| Path::new(env!("CARGO_MANIFEST_DIR")).join("target"));
-        std::fs::create_dir_all(&target_dir).unwrap();
+    fn install(root: &Path) -> Self {
         let dir = tempfile::Builder::new()
             .prefix("tmux-abort-hooks-")
-            .tempdir_in(&target_dir)
+            .tempdir_in(root)
             .expect("trusted fixture root must accept a temp dir");
         crate::fs::permissions::install_loom_hooks_to(dir.path())
             .expect("installing this build's hook scripts must succeed");
@@ -226,46 +246,53 @@ impl Drop for LoomHooksDirGuard {
     }
 }
 
-/// Strips group/world write from the running test binary for the duration of
-/// the guard, restoring its original mode on drop — including on a panic.
+/// Points the launch's `LOOM_BIN` at a stub binary under the trusted fixture
+/// root for the duration of the guard, clearing the override on drop —
+/// including on a panic.
 ///
-/// `LaunchHost::from_env` resolves `LOOM_BIN` from `std::env::current_exe()`,
-/// and the preflight's `accepted_loom_bin` refuses a binary that is group- or
-/// world-writable. A permissive umask (e.g. `002`) leaves a compiled test
-/// binary at mode 775, which would fail every launch through this test at
-/// that check instead of at the tmux step the test exists to pin.
-struct LoomBinModeGuard {
-    path: PathBuf,
-    original: std::fs::Permissions,
+/// `LaunchHost::from_env` otherwise resolves `LOOM_BIN` from
+/// `std::env::current_exe()`, and the preflight's `accepted_loom_bin` refuses
+/// a binary that is group- or world-writable (a permissive umask leaves a
+/// compiled test binary at mode 775) or that lies under `/tmp` (any checkout
+/// there). Either would fail the launch at that check instead of at the tmux
+/// step the test exists to pin. The spawn fails before any hook runs, so the
+/// stub is never executed.
+struct LoomBinGuard {
+    _dir: tempfile::TempDir,
 }
 
-impl LoomBinModeGuard {
-    fn strip_group_and_world_write() -> Self {
+impl LoomBinGuard {
+    fn install(root: &Path) -> Self {
         use std::os::unix::fs::PermissionsExt;
-        let path = std::env::current_exe().expect("the running test binary must resolve");
-        let original = std::fs::metadata(&path)
-            .expect("the running test binary must be statable")
-            .permissions();
-        let mode = original.mode() & !0o022;
-        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(mode))
-            .expect("stripping group/world write from the test binary must succeed");
-        Self { path, original }
+        let dir = tempfile::Builder::new()
+            .prefix("tmux-abort-bin-")
+            .tempdir_in(root)
+            .expect("trusted fixture root must accept a temp dir");
+        let bin = dir.path().join("loom");
+        std::fs::write(&bin, "#!/bin/sh\nexit 1\n").unwrap();
+        std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
+        *native::TEST_LOOM_BIN.lock().unwrap() = Some(bin);
+        Self { _dir: dir }
     }
 }
 
-impl Drop for LoomBinModeGuard {
+impl Drop for LoomBinGuard {
     fn drop(&mut self) {
-        let _ = std::fs::set_permissions(&self.path, self.original.clone());
+        if let Ok(mut bin) = native::TEST_LOOM_BIN.lock() {
+            *bin = None;
+        }
     }
 }
 
 /// Installs both host-readiness guards a real launch attempt needs before it
-/// can reach the tmux step: a writable hooks directory and a test binary
-/// with group/world write stripped.
-fn host_ready_for_real_launch() -> (LoomHooksDirGuard, LoomBinModeGuard) {
+/// can reach the tmux step: a verified hooks directory and an accepted
+/// `LOOM_BIN`, both outside every session-writable root.
+fn host_ready_for_real_launch() -> (LoomHooksDirGuard, LoomBinGuard) {
+    let root = trusted_fixture_root();
+    std::fs::create_dir_all(&root).unwrap();
     (
-        LoomHooksDirGuard::install(),
-        LoomBinModeGuard::strip_group_and_world_write(),
+        LoomHooksDirGuard::install(&root),
+        LoomBinGuard::install(&root),
     )
 }
 

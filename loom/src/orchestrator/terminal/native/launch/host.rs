@@ -159,7 +159,15 @@ fn host_facts(
     uid: u32,
     home: Option<&Path>,
 ) -> Result<HostFacts> {
-    let exe = binary_to_accept(DAEMON_BINARY.get().map(PathBuf::as_path))?;
+    #[cfg(test)]
+    let recorded = crate::orchestrator::terminal::native::TEST_LOOM_BIN
+        .lock()
+        .unwrap()
+        .clone()
+        .or_else(|| DAEMON_BINARY.get().cloned());
+    #[cfg(not(test))]
+    let recorded = DAEMON_BINARY.get().cloned();
+    let exe = binary_to_accept(recorded.as_deref())?;
     let roots = writable_roots(work_dir, repo_root, scratch_root, home);
     let path_var = std::env::var_os("PATH").unwrap_or_default();
     let loom_bin = accepted_loom_bin(&exe, uid, &roots)
