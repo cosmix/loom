@@ -1,12 +1,17 @@
 use std::path::Path;
 
-use crate::orchestrator::signals::current_model_budget;
+use crate::orchestrator::signals::format_model_budget_section;
 
 const NO_DATA: &str = "No fresh quota data: loom polls quota while the daemon (loom run) or the planning server (loom plan) is running.";
 
 fn render_model_budget(work_dir: Option<&Path>) -> String {
     work_dir
-        .and_then(current_model_budget)
+        .and_then(|dir| {
+            format_model_budget_section(
+                &crate::quota::read_snapshot(dir),
+                chrono::Utc::now().timestamp(),
+            )
+        })
         .unwrap_or_else(|| NO_DATA.to_string())
 }
 
