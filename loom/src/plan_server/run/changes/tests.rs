@@ -231,3 +231,17 @@ fn non_utf8_paths_fail_instead_of_using_replacement_characters() {
     assert!(parse_changes(b" M doc/\xff.md\0").is_err());
     assert!(parse_changes(b"R  doc/new.md\0doc/\xff.md\0").is_err());
 }
+
+#[test]
+fn rename_with_spaces_preserves_both_paths_and_the_following_change() {
+    let input = b"R  doc/new name.md\0src/old name.md\0 M src/next file.rs\0";
+    let (docs, blocking) = parse_changes(input).unwrap();
+    assert_eq!(docs, vec![change("doc/new name.md", "R ")]);
+    assert_eq!(
+        blocking,
+        vec![
+            change("src/old name.md", "R "),
+            change("src/next file.rs", " M")
+        ]
+    );
+}

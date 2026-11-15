@@ -4,7 +4,8 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use crate::git::runner::run_git;
+use crate::git::revision::head_commit;
+use crate::git::worktree::WorktreeGit;
 use crate::plan_server::concept::links::implemented_by as section_plans;
 use crate::plan_server::context::PlanContext;
 use crate::plan_server::request::{ApiRequest, ApiResponse, QueryParams};
@@ -70,28 +71,13 @@ fn hashes(req: &ApiRequest<'_>) -> ApiResponse {
             })
             .collect()
     };
-    let head = match head_commit(req.ctx.root()) {
+    let head = match head_commit(&WorktreeGit::discovered(req.ctx.root())) {
         Ok(head) => head,
-        Err(error) => return error,
+        Err(_) => {
+            return ApiResponse::error(500, "internal", "the current commit could not be read");
+        }
     };
     ApiResponse::json(200, &HashesResponse { head, docs })
-}
-
-fn head_commit(root: &Path) -> Result<Option<String>, ApiResponse> {
-    let output = run_git(&["rev-parse", "--verify", "--quiet", "HEAD"], root)
-        .map_err(|_| ApiResponse::error(500, "internal", "the current commit could not be read"))?;
-    if !output.status.success() {
-        return Ok(None);
-    }
-    let commit = String::from_utf8_lossy(&output.stdout).trim().to_owned();
-    if !is_commit_id(&commit) {
-        return Err(ApiResponse::error(
-            500,
-            "internal",
-            "the current commit is invalid",
-        ));
-    }
-    Ok(Some(commit))
 }
 
 fn reference(req: &ApiRequest<'_>) -> ApiResponse {

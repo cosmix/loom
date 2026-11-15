@@ -171,12 +171,50 @@ fn test_list_working_tree_changes_omits_untracked_sandbox_artifacts() {
     std::fs::write(root.join(".zshrc"), "").unwrap();
     std::fs::write(root.join(".profile"), "").unwrap();
     std::fs::write(root.join(".ripgreprc"), "--hidden\n").unwrap();
-    let porcelain = "?? .zshrc\n?? .ripgreprc\n?? new_module.rs\n M .profile\n";
+    let porcelain = b"?? .zshrc\0?? .ripgreprc\0?? new_module.rs\0 M .profile\0";
 
     assert_eq!(
-        working_tree_changes(root, porcelain),
+        working_tree_changes(root, porcelain).unwrap(),
         vec![".ripgreprc", "new_module.rs", ".profile"]
     );
+}
+
+#[test]
+fn test_list_working_tree_changes_names_paths_unquoted() {
+    let temp_dir = init_test_repo();
+    let repo_path = temp_dir.path();
+
+    std::fs::write(repo_path.join("quote\"d.txt"), "x\n").unwrap();
+
+    assert_eq!(
+        list_working_tree_changes(repo_path).unwrap(),
+        vec!["quote\"d.txt".to_string()]
+    );
+}
+
+#[test]
+fn test_list_working_tree_changes_refuses_malformed_listing() {
+    let temp_dir = TempDir::new().unwrap();
+
+    assert!(working_tree_changes(temp_dir.path(), b" M unterminated").is_err());
+}
+
+#[test]
+fn test_get_uncommitted_changes_summary_names_rename_destination() {
+    let temp_dir = init_test_repo();
+    let repo_path = temp_dir.path();
+
+    Command::new("git")
+        .args(["mv", "file1.txt", "renamed.txt"])
+        .current_dir(repo_path)
+        .output()
+        .unwrap();
+
+    assert_eq!(
+        get_uncommitted_changes_summary(repo_path).unwrap(),
+        "Staged: renamed.txt\n"
+    );
+    assert!(has_uncommitted_changes(repo_path).unwrap());
 }
 
 #[test]

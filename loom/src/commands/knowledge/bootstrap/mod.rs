@@ -34,7 +34,9 @@ use crate::cli::BootstrapArgs;
 use crate::context::graph_store::ResolvedGraph;
 use crate::context::store::ContextStore;
 use crate::fs::knowledge::{templates, KnowledgeDir, KnowledgeFile};
-use crate::git::runner::{run_git, run_git_bool, run_git_checked};
+use crate::git::revision::{has_commits, toplevel};
+use crate::git::runner::{run_git_bool, run_git_checked};
+use crate::git::worktree::WorktreeGit;
 use crate::models::stage::StageType;
 use crate::user_config::UserConfig;
 use clusters::{Cluster, KNOWLEDGE_PREFIX};
@@ -140,13 +142,9 @@ fn guard_not_in_stage() -> Result<()> {
 /// `git rev-parse --show-toplevel` from the cwd, with no cwd fallback, and a
 /// `HEAD` the source graph can enumerate.
 fn resolve_repo_root() -> Result<PathBuf> {
-    let output = run_git(&["rev-parse", "--show-toplevel"], Path::new("."))?;
-    let root = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    if !output.status.success() || root.is_empty() {
-        bail!("loom knowledge bootstrap must run inside a git repository");
-    }
-    let root = PathBuf::from(root);
-    if !run_git_bool(&["rev-parse", "--verify", "--quiet", "HEAD"], &root) {
+    let root = toplevel(Path::new("."))
+        .context("loom knowledge bootstrap must run inside a git repository")?;
+    if !has_commits(&WorktreeGit::discovered(&root))? {
         bail!("loom knowledge bootstrap needs at least one commit");
     }
     Ok(root)

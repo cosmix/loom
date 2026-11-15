@@ -99,21 +99,11 @@ fn checkout_details(work_dir: &Path, checkout: &Path) -> Result<(Option<String>,
     } else {
         WorktreeGit::pinned(root, &checkout)?
     };
-    let branch = git.run_checked(&["branch", "--show-current"])?;
-    let branch = Some(
-        if branch.trim().is_empty() {
-            "HEAD"
-        } else {
-            branch.trim()
-        }
-        .to_string(),
-    );
-    let status = git.run_checked(&["status", "--short"])?;
-    let files = status
-        .lines()
-        .filter_map(|line| line.get(3..))
-        .map(|path| path.trim().to_string())
-        .filter(|path| !path.is_empty())
+    let branch = Some(crate::git::branch::current_branch_with(&git)?);
+    let status = git.run_checked(&crate::git::status_entries::PORCELAIN_V1_Z)?;
+    let files = crate::git::status_entries::parse_porcelain_v1_z(status.as_bytes())?
+        .into_iter()
+        .map(|entry| entry.path)
         .collect();
     Ok((branch, files))
 }
@@ -226,6 +216,43 @@ mod tests {
 
         assert_eq!(path, work.join("handoffs").join("s1-handoff-001.md"));
         assert!(std::fs::read_to_string(path).unwrap().contains(&session.id));
+    }
+
+    #[test]
+    fn checkout_details_preserves_rename_destination_and_unquoted_paths() {
+        let tmp = tempfile::tempdir().unwrap();
+        let repo = tmp.path();
+        for args in [
+            vec!["init", "-q", "-b", "main"],
+            vec!["add", "old name"],
+            vec![
+                "-c",
+                "user.name=T",
+                "-c",
+                "user.email=t@t",
+                "commit",
+                "-qm",
+                "seed",
+            ],
+            vec!["mv", "old name", "new name"],
+        ] {
+            if args[0] == "add" {
+                std::fs::write(repo.join("old name"), "content").unwrap();
+            }
+            let output = std::process::Command::new("git")
+                .args(args)
+                .current_dir(repo)
+                .output()
+                .unwrap();
+            assert!(output.status.success(), "{output:?}");
+        }
+        let workspace = crate::fs::work_dir::WorkDir::new(repo).unwrap();
+        workspace.initialize().unwrap();
+        crate::git::worktree::capture_main_identity(repo, workspace.root()).unwrap();
+        let (branch, files) = checkout_details(workspace.root(), repo).unwrap();
+        assert_eq!(branch.as_deref(), Some("main"));
+        assert!(files.contains(&"new name".to_string()), "{files:?}");
+        assert!(!files.iter().any(|path| path.contains("old name")));
     }
 
     #[test]

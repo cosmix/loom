@@ -6,6 +6,7 @@ use anyhow::{ensure, Context, Result};
 use std::collections::{HashMap, HashSet};
 use std::ffi::OsStr;
 
+use crate::git::status_entries::{parse_porcelain_v1_z, PORCELAIN_V1_Z};
 use crate::git::worktree::WorktreeGit;
 
 /// The object HEAD records at each of `pathspecs`, by path. `ls-tree` prints paths relative to
@@ -36,18 +37,10 @@ pub(super) fn changed_paths(git: &WorktreeGit, pathspecs: &[String]) -> Result<H
         .trim()
         .to_string();
     let status = status_records(git, pathspecs)?;
-    let mut records = status.split('\0').filter(|record| !record.is_empty());
     let mut changed = HashSet::new();
-    while let Some(record) = records.next() {
-        let (code, path) = record
-            .split_at_checked(3)
-            .context("malformed git status record")?;
-        changed.extend(path.strip_prefix(prefix.as_str()).map(str::to_owned));
-        if code.contains(['R', 'C']) {
-            let source = records
-                .next()
-                .and_then(|from| from.strip_prefix(prefix.as_str()));
-            changed.extend(source.map(str::to_owned));
+    for entry in parse_porcelain_v1_z(status.as_bytes())? {
+        for path in std::iter::once(&entry.path).chain(entry.origin.iter()) {
+            changed.extend(path.strip_prefix(prefix.as_str()).map(str::to_owned));
         }
     }
     Ok(changed)
@@ -57,13 +50,8 @@ pub(super) fn changed_paths(git: &WorktreeGit, pathspecs: &[String]) -> Result<H
 /// `GIT_OPTIONAL_LOCKS=0`: refreshing the index would take `.git/index.lock` and block the
 /// operator's own git every time the server revalidates.
 fn status_records(git: &WorktreeGit, pathspecs: &[String]) -> Result<String> {
-    let mut args = vec![
-        "status",
-        "--porcelain=v1",
-        "-z",
-        "--untracked-files=all",
-        "--",
-    ];
+    let mut args = PORCELAIN_V1_Z.to_vec();
+    args.push("--");
     args.extend(pathspecs.iter().map(String::as_str));
     let env = [("GIT_OPTIONAL_LOCKS", OsStr::new("0"))];
     let output = git.read_isolated(&args, &env)?;

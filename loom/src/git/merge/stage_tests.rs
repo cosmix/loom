@@ -169,7 +169,10 @@ fn target_not_checked_out_is_advanced_with_update_ref() {
 
     assert!(matches!(merge(root, &work), MergeResult::Success { .. }));
 
-    assert_eq!(git_out(root, &["branch", "--show-current"]), "other");
+    assert_eq!(
+        git_out(root, &["rev-parse", "--abbrev-ref", "HEAD"]),
+        "other"
+    );
     assert_eq!(rev(root, "HEAD"), head);
     assert_eq!(snapshot(root), before);
     assert_eq!(parent_count(root, "main"), 2);

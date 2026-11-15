@@ -281,12 +281,6 @@ pub fn run_git_checked_bytes(args: &[&str], repo_root: &Path) -> Result<Vec<u8>>
     bytes_of_success(args, run_git(args, repo_root)?, repo_root)
 }
 
-/// Checked UTF-8 records without trimming; invalid path encodings are explicit errors.
-pub(crate) fn run_git_records(args: &[&str], repo_root: &Path) -> Result<String> {
-    String::from_utf8(run_git_checked_bytes(args, repo_root)?)
-        .context("git records contain a non-UTF-8 path")
-}
-
 fn stdout_of_success(args: &[&str], output: Output, repo_root: &Path) -> Result<String> {
     Ok(
         String::from_utf8_lossy(&bytes_of_success(args, output, repo_root)?)

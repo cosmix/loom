@@ -9,11 +9,13 @@ use std::time::Duration;
 use anyhow::{bail, Context, Result};
 use tempfile::NamedTempFile;
 
+use crate::git::revision::{require_head_commit, toplevel};
 use crate::git::runner::run_git_checked;
 use crate::git::stage_commit::{
     commit_staged, validate_commit_message, CommitRequest, CommitScope,
 };
 use crate::git::user_git::user_git;
+use crate::git::worktree::WorktreeGit;
 use crate::process::run_bounded_output;
 use crate::relay::emit::{mode, EnvSnapshot, RelayContext, RelayMode, RelaySink, StdSink};
 use crate::relay::{CommitPayload, RequestKind};
@@ -98,14 +100,14 @@ fn commit_in_process(
 ) -> Result<()> {
     let message = run_hooks(cwd, message)?;
     let (expected_head, expected_tree) = staged_state(cwd)?;
-    let top = run_git_checked(&["rev-parse", "--show-toplevel"], cwd)?;
+    let top = toplevel(cwd)?;
     let request = CommitRequest {
         message,
         expected_head,
         expected_tree,
     };
     let commit = commit_staged(
-        Path::new(&top),
+        &top,
         &CommitScope::StageBranch {
             stage_id: stage_id.to_string(),
         },
@@ -155,7 +157,7 @@ fn run_hooks(cwd: &Path, message: &str) -> Result<String> {
 }
 
 fn staged_state(cwd: &Path) -> Result<(String, String)> {
-    let head = run_git_checked(&["rev-parse", "HEAD"], cwd)?;
+    let head = require_head_commit(&WorktreeGit::discovered(cwd))?;
     let tree = run_git_checked(&["write-tree"], cwd)?;
     Ok((head, tree))
 }

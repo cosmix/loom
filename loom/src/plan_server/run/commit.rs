@@ -6,7 +6,9 @@ use std::thread;
 
 use anyhow::{ensure, Context, Result};
 
-use crate::git::user_git::{head, literal, user_git, IndexBefore};
+use crate::git::revision::head_commit;
+use crate::git::user_git::{literal, user_git, IndexBefore};
+use crate::git::worktree::WorktreeGit;
 use crate::plan_server::context::PlanContext;
 use crate::plan_server::request::{ApiRequest, ApiResponse};
 use crate::plan_server::wire::run::{ChangedPath, CommitRequest, OutputStream, RunJob};
@@ -89,7 +91,9 @@ fn run_sequence(
     // HEAD, not the exit status, says whether git made the commit (a `post-commit` hook runs
     // after it exists); HEAD that cannot be read counts as moved. The commit stands whatever the
     // reset does, so what it leaves to know is more lines of output.
-    if head(root).map_or(true, |after| after.as_deref() != index.head()) {
+    if head_commit(&WorktreeGit::discovered(root))
+        .map_or(true, |after| after.as_deref() != index.head())
+    {
         for note in index.reset(root, paths, "HEAD").notes() {
             on_line("git reset", OutputStream::Stderr, &note);
         }

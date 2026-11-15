@@ -74,6 +74,8 @@ pub fn has_merge_commit_since(
 /// tracked change.
 fn check_branch_and_index(git: &WorktreeGit, stage_id: &str) -> Result<(), String> {
     let branch = branch_name_for_stage(stage_id);
+    // Kept beside `git::branch::checked_out_branch_with`: the full `refs/heads/` name is
+    // compared, so a tag named like the branch cannot match.
     let head_ref = query_optional(git, &["symbolic-ref", "-q", "HEAD"])?.unwrap_or_default();
     if head_ref != format!("refs/heads/{branch}") {
         return Err(format!(

@@ -35,12 +35,8 @@ pub fn committed_content(stage: &Stage, repo_root: &Path) -> Result<String> {
     }
     reject_untracked(stage, &git)?;
     verify_checkout_branch(stage, &git)?;
-    let output = git.run(&["rev-parse", "HEAD"])?;
-    ensure!(
-        output.status.success(),
-        "cannot read completion checkout HEAD"
-    );
-    let head = String::from_utf8(output.stdout)?.trim().to_owned();
+    let head = crate::git::revision::require_head_commit(&git)
+        .context("cannot read completion checkout HEAD")?;
     ensure!(
         head == super::identity::expected_stage_commit(stage, repo_root)?,
         "assigned checkout HEAD differs from stage branch"
@@ -113,11 +109,9 @@ fn verify_checkout_branch(stage: &Stage, git: &WorktreeGit) -> Result<()> {
     if stage.stage_type == StageType::Knowledge {
         return Ok(());
     }
-    let branch = git.run(&["symbolic-ref", "--short", "HEAD"])?;
+    let branch = crate::git::branch::checked_out_branch_with(git)?;
     ensure!(
-        branch.status.success()
-            && String::from_utf8_lossy(&branch.stdout).trim()
-                == crate::git::branch::branch_name_for_stage(&stage.id),
+        branch == Some(crate::git::branch::branch_name_for_stage(&stage.id)),
         "assigned checkout does not belong to the stage branch"
     );
     Ok(())
@@ -186,3 +180,16 @@ mod tests;
 #[cfg(test)]
 #[path = "content_ignore_tests.rs"]
 mod ignore_tests;
+
+#[cfg(test)]
+mod branch_collision_tests {
+    use super::*;
+
+    #[test]
+    fn stage_branch_with_same_named_tag_is_accepted() {
+        let (repo, stage, checkout) = super::tests::fixture();
+        super::tests::git(repo.path(), &["tag", "loom/api"]);
+        let git = WorktreeGit::pinned(repo.path(), &checkout).unwrap();
+        verify_checkout_branch(&stage, &git).unwrap();
+    }
+}

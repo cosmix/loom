@@ -67,6 +67,9 @@ pub fn knowledge_tree_digest_in(git: &WorktreeGit) -> Result<String> {
 }
 
 /// [`head`] of `git`'s worktree, with git run through `git`.
+///
+/// Kept beside `git::revision::require_head_commit`: the read runs under
+/// `DIGEST_ENV`, so the session and the daemon see the same repository state.
 pub fn head_in(git: &WorktreeGit) -> Result<String> {
     let out = read(git, &["rev-parse", "--verify", "HEAD"])?;
     Ok(String::from_utf8_lossy(&out).trim().to_string())

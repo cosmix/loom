@@ -10,6 +10,7 @@ use anyhow::{bail, Context, Result};
 use std::path::Path;
 
 use crate::fs::{plan_lifecycle, work_dir::WorkDir};
+use crate::git::revision::require_head_commit;
 use crate::git::worktree::WorktreeGit;
 use crate::plan::inputs::{collect_inputs, uncommitted_reason_pinned};
 
@@ -87,7 +88,7 @@ pub(super) fn mark_plan_in_progress(work_dir: &WorkDir) -> Result<()> {
 /// index, so a failure with the branch moved lost only that publication, to a
 /// concurrent git: the commit stands and still needs its attestation.
 fn commit_paths(git: &WorktreeGit, paths: &[String; 2]) -> Result<()> {
-    let before = git.run_checked(&["rev-parse", "HEAD"])?;
+    let before = require_head_commit(git)?;
     let committed = git.run_checked(&[
         "commit",
         "--only",
@@ -100,7 +101,7 @@ fn commit_paths(git: &WorktreeGit, paths: &[String; 2]) -> Result<()> {
     let Err(error) = committed else {
         return Ok(());
     };
-    if git.run_checked(&["rev-parse", "HEAD"])? == before {
+    if require_head_commit(git)? == before {
         return Err(error);
     }
     tracing::warn!("the plan rename committed, but its index update was lost: {error:#}");

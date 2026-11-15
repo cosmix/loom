@@ -362,3 +362,20 @@ fn verified_cleanup_refuses_sandbox_stub_name_with_content() {
     assert!(worktree.join(".zshrc").exists());
     assert!(branch_exists_strict("loom/stub-content", root).unwrap());
 }
+
+#[test]
+fn verified_cleanup_names_an_untracked_path_with_quotes_and_non_ascii_unquoted() {
+    let temp = init_repo();
+    let root = temp.path();
+    let (worktree, commit) = create_stage_worktree(root, "odd-name");
+    merge_stage(root, "odd-name");
+    let name = "caf\u{e9} \"q\".txt";
+    fs::write(worktree.join(name), "keep me\n").unwrap();
+
+    let error = cleanup_verified_stage("odd-name", &commit, "main", root).unwrap_err();
+    assert!(
+        error.to_string().contains(&format!("?? {name}")),
+        "the listing must carry the raw path: {error}"
+    );
+    assert!(worktree.join(name).exists());
+}

@@ -11,6 +11,7 @@ use crate::fs::{resolve_target_branch_from_config, work_dir::WorkDir};
 use crate::git::branch::branch_ref;
 use crate::git::merge::lock::MergeLock;
 use crate::git::merge::operator_operation;
+use crate::git::revision::require_head_commit;
 use crate::git::runner::{run_git_checked, run_git_with_env};
 use crate::git::signing;
 use crate::git::target_guard;
@@ -33,7 +34,7 @@ pub(super) fn commit_post_completion_changes(
     let target = resolve_target_branch_from_config(work_dir.root(), repo_root)?;
     let reference = branch_ref(&target);
     require_branch(repo_root, &reference)?;
-    let before = run_git_checked(&["rev-parse", "--verify", "HEAD"], repo_root)?;
+    let before = require_head_commit(&crate::git::worktree::WorktreeGit::discovered(repo_root))?;
     let old = old_plan_path.to_str().context("plan path is not UTF-8")?;
     let new = new_plan_path.to_str().context("plan path is not UTF-8")?;
     let tree = completion_tree(work_dir.root(), repo_root, &before, old, new)?;
@@ -127,6 +128,8 @@ fn move_completion_ref(
     .map(|_| ())
 }
 
+// Kept beside `git::branch::checked_out_branch_with`: this compares the full `refs/heads/` ref
+// against the completion target and returns this caller's own error message.
 fn require_branch(repo: &Path, reference: &str) -> Result<()> {
     if let Some(operation) = operator_operation(repo)? {
         bail!("cannot commit completion during operator operation {operation}");
@@ -195,7 +198,7 @@ pub(crate) fn attest_plan_commit(
     crate::git::worktree::require_main_identity(repo_root)?;
     let git = crate::git::worktree::WorktreeGit::pinned_main(repo_root)?;
     // `HEAD` is read after the commit: a read before it can be stale.
-    let after = git.run_checked(&["rev-parse", "HEAD"])?.trim().to_string();
+    let after = require_head_commit(&git)?;
     let from = git
         .run_checked(&["rev-parse", &format!("{after}^")])?
         .trim()

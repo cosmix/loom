@@ -11,7 +11,9 @@ use std::process::{Command, Output, Stdio};
 
 use anyhow::{Context, Error, Result};
 
+use super::revision::head_commit;
 use super::runner::{run_git, run_git_with_env, REPO_REDIRECT_ENV};
+use super::worktree::WorktreeGit;
 
 /// Variables that change how git reads every pathspec. Inherited from loom's environment they
 /// would make git read a `:(literal)` pathspec as a file name (`GIT_LITERAL_PATHSPECS`), match it
@@ -71,13 +73,6 @@ fn run_pathspecs(root: &Path, args: &[&str], pathspecs: &[String]) -> Result<Out
     run_git_with_env(&argv, &env, root)
 }
 
-/// HEAD's commit, or `None` on an unborn branch (or one git cannot resolve).
-pub(crate) fn head(root: &Path) -> Result<Option<String>> {
-    let output = run_git(&["rev-parse", "-q", "--verify", "HEAD^{commit}"], root)?;
-    let id = String::from_utf8_lossy(&output.stdout).trim().to_owned();
-    Ok((output.status.success() && !id.is_empty()).then_some(id))
-}
-
 /// The index as a user's commit found it: HEAD then, and the paths the user had staged.
 ///
 /// A commit given pathspecs has `--only` semantics: git builds a temporary index from HEAD and
@@ -108,7 +103,7 @@ pub(crate) struct IndexReset {
 impl IndexBefore {
     /// Read through loom's own git before a user's commit in `root`, before anything is staged.
     pub(crate) fn read(root: &Path) -> Result<IndexBefore> {
-        let head = head(root)?;
+        let head = head_commit(&WorktreeGit::discovered(root))?;
         let shown = checked(
             "git rev-parse",
             run_git(&["rev-parse", "--show-prefix"], root),

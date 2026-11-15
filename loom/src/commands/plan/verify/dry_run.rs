@@ -23,7 +23,8 @@ pub use super::dry_run_classify::{
 };
 use super::dry_run_exec;
 use super::report::{parse_metadata, plan_repo_root, VerifyError, VerifyReport};
-use crate::git::runner::run_git_checked;
+use crate::git::revision::require_head_commit;
+use crate::git::worktree::WorktreeGit;
 use crate::models::stage::{
     AcceptanceCriterion, CommandConfinement, PlanIdentity, Stage, StageType,
 };
@@ -137,9 +138,9 @@ fn committed_head(path: &Path) -> Result<(PathBuf, String), String> {
     let root = plan_repo_root(path)
         .map_err(|failure| failure.message)?
         .ok_or("the plan is not inside a git repository")?;
-    let head = run_git_checked(&["rev-parse", "HEAD"], &root)
-        .map_err(|_| "the repository has no commit".to_string())?;
-    Ok((root, head.trim().to_string()))
+    let head = require_head_commit(&WorktreeGit::discovered(&root))
+        .map_err(|error| format!("cannot read the repository's HEAD commit: {error:#}"))?;
+    Ok((root, head))
 }
 
 /// The commands of `definition` in run order: acceptance, `after_stage`, `wiring_tests`.

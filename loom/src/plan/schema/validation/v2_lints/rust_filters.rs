@@ -13,6 +13,7 @@ use crate::context::graph_store::{GraphLayer, GraphStore};
 use crate::context::resolve::node_names;
 use crate::context::store::ContextStore;
 use crate::fs::work_dir::WorkDir;
+use crate::git::worktree::WorktreeGit;
 use crate::plan::schema::StageDefinition;
 
 use super::super::shell_lex::Word;
@@ -203,8 +204,8 @@ fn directory_prefixes(literal: &str) -> impl Iterator<Item = &str> {
 /// The base layer for the repository's HEAD, read without building one.
 fn head_base_layer(repo_root: Option<&Path>) -> Result<GraphLayer, String> {
     let root = repo_root.ok_or("no repository root was found")?;
-    let head = crate::git::run_git_checked(&["rev-parse", "--verify", "HEAD"], root)
-        .map_err(|_| "the repository has no HEAD commit".to_string())?;
+    let head = crate::git::revision::require_head_commit(&WorktreeGit::discovered(root))
+        .map_err(|error| format!("cannot read the repository's HEAD commit: {error:#}"))?;
     let short = head.get(..12).unwrap_or(&head);
     let work_dir = WorkDir::new(root).map_err(|error| format!("{error:#}"))?;
     let store = ContextStore::open(&work_dir).map_err(|error| format!("{error:#}"))?;

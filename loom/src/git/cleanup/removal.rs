@@ -6,6 +6,7 @@ use super::branch::branch_exists_strict;
 use super::config::{CleanupConfig, CleanupResult};
 use super::worktree::worktree_directory_exists;
 use crate::git::branch::{branch_name_for_stage, branch_ref, is_ancestor_of};
+use crate::git::status_entries::{parse_porcelain_v1_z, StatusEntry, PORCELAIN_V1_Z};
 use crate::git::worktree::{is_worktree_scaffold_path, WorktreeGit};
 use crate::verify::tool_artifacts::is_tool_artifact;
 use anyhow::{bail, Context, Result};
@@ -126,12 +127,14 @@ fn require_clean_worktree(resources: &StageResources, repo_root: &Path) -> Resul
     }
     let git = WorktreeGit::pinned(repo_root, &resources.worktree_path)
         .context("Failed to pin worktree for cleanliness check")?;
-    let changes = git
-        .run_checked(&["status", "--porcelain=v1", "--untracked-files=all"])
+    let listing = git
+        .run_checked(&PORCELAIN_V1_Z)
         .context("Failed to verify worktree cleanliness")?;
-    let unsafe_changes: Vec<&str> = changes
-        .lines()
-        .filter(|line| !is_disposable_untracked(&resources.worktree_path, line))
+    let unsafe_changes: Vec<String> = parse_porcelain_v1_z(listing.as_bytes())
+        .context("Failed to verify worktree cleanliness")?
+        .into_iter()
+        .filter(|entry| !is_disposable_untracked(&resources.worktree_path, entry))
+        .map(|entry| format!("{} {}", entry.code_str(), entry.path))
         .collect();
     if !unsafe_changes.is_empty() {
         bail!(
@@ -143,14 +146,13 @@ fn require_clean_worktree(resources: &StageResources, repo_root: &Path) -> Resul
     Ok(())
 }
 
-/// Untracked status lines that never block removal: loom's own scaffold and
-/// the empty stubs a sandbox leaves at the worktree root. Ignored paths are not
-/// listed at all (`git worktree remove` deletes them). Every other line, tracked
-/// modifications included, still blocks.
-fn is_disposable_untracked(worktree: &Path, status_line: &str) -> bool {
-    status_line
-        .strip_prefix("?? ")
-        .is_some_and(|path| is_worktree_scaffold_path(path) || is_tool_artifact(worktree, path))
+/// Untracked entries that never block removal: loom's own scaffold and the
+/// empty stubs a sandbox leaves at the worktree root. Ignored paths are not
+/// listed at all (`git worktree remove` deletes them). Every other entry,
+/// tracked modifications included, still blocks.
+fn is_disposable_untracked(worktree: &Path, entry: &StatusEntry) -> bool {
+    entry.is_untracked()
+        && (is_worktree_scaffold_path(&entry.path) || is_tool_artifact(worktree, &entry.path))
 }
 
 fn require_merged_history(

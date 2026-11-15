@@ -1,7 +1,7 @@
 //! `loom plan check`: the planning checklist and the problems of the doc/ tree.
 
 use std::fmt::Write as _;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use anyhow::Result;
 use serde::Serialize;
@@ -126,12 +126,13 @@ pub fn execute(json: bool) -> Result<()> {
             std::process::exit(2);
         }
     };
-    let root = match crate::git::runner::run_git_checked(&["rev-parse", "--show-toplevel"], &cwd) {
-        Ok(root) => PathBuf::from(root.trim()),
-        Err(_) => {
+    let root = match crate::git::revision::toplevel(&cwd) {
+        Ok(root) => root,
+        Err(error) => {
             eprintln!(
-                "loom plan check: {} is not inside a git repository",
-                inline_safe(&cwd.to_string_lossy())
+                "loom plan check: {} is not inside a git repository ({})",
+                inline_safe(&cwd.to_string_lossy()),
+                inline_safe(&format!("{error:#}"))
             );
             std::process::exit(2);
         }
