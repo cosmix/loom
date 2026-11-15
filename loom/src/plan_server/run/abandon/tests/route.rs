@@ -126,11 +126,9 @@ fn stage(id: &str, status: StageStatus, commit: Option<String>) -> Stage {
 #[serial]
 fn view_lists_merged_and_unmerged_stages_and_branches() {
     let repo = Repo::running();
-    let head = git(&repo.root, &["rev-parse", "HEAD"]).trim().to_string();
+    let head = git(&repo.root, &["rev-parse", "HEAD"]);
     repo.branch_ahead("loom/s2", 1);
-    let s2_tip = git(&repo.root, &["rev-parse", "loom/s2"])
-        .trim()
-        .to_string();
+    let s2_tip = git(&repo.root, &["rev-parse", "loom/s2"]);
     let work = repo.root.join(".loom/work");
     create_stage(&stage("s1", StageStatus::Completed, Some(head)), &work).unwrap();
     create_stage(&stage("s2", StageStatus::Completed, Some(s2_tip)), &work).unwrap();

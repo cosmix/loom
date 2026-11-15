@@ -3,6 +3,9 @@
 
 use crate::test_git::{git, git_unchecked, TestRepo};
 // The merge tests keep their historical helper names; each is the shared fixture.
+// About 34 assertion statements under src/git/merge call these names, and the
+// test-integrity rule keeps assertions byte-identical, so the aliases stay.
+// Revisit: drop them once those assertion callers may be renamed.
 pub(super) use crate::test_git::{
     commit_file, git as git_ok, git as git_out, git_unchecked as isolated_git,
 };

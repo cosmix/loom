@@ -24,7 +24,7 @@ use serial_test::serial;
 use shell_escape::escape;
 use std::borrow::Cow;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 
 /// The session id every sandboxed git runs under, as a loom session's shell
 /// carries one: the hook refuses a move it cannot attest only in a session.
@@ -67,9 +67,8 @@ fn git_env(f: &Fixture) -> Vec<(&'static str, String)> {
 /// Run `git` on the host in `dir`, assert it succeeded, and return its
 /// trimmed stdout.
 fn git(f: &Fixture, dir: &Path, args: &[&str]) -> String {
-    let output = Command::new("git")
+    let output = crate::test_git::git_command(dir)
         .args(args)
-        .current_dir(dir)
         .envs(git_env(f))
         .stdin(Stdio::null())
         .output()

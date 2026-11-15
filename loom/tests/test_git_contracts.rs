@@ -123,6 +123,84 @@ fn ambient_global_config_does_not_reach_fixture_git() {
     );
 }
 
+/// Writes `<root>/<rel>` with `body`, creating parent directories.
+fn write_ambient(root: &Path, rel: &str, body: &str) {
+    let file = root.join(rel);
+    fs::create_dir_all(file.parent().expect("ambient parent")).expect("create ambient dir");
+    fs::write(file, body).expect("write ambient file");
+}
+
+/// Runs `status`, `check-ignore`, `check-attr` and `add` on the two planted
+/// files in `repo`, with an ambient `$XDG_CONFIG_HOME/git/{ignore,attributes}`
+/// and `$HOME/.config/git/{ignore,attributes}` that list them.
+fn git_under_ambient_defaults(repo: &Path) -> [std::process::Output; 4] {
+    let xdg = tempfile::tempdir().unwrap();
+    let home = tempfile::tempdir().unwrap();
+    write_ambient(xdg.path(), "git/ignore", "xdg-ignored.txt\n");
+    write_ambient(xdg.path(), "git/attributes", "xdg-ignored.txt text\n");
+    write_ambient(home.path(), ".config/git/ignore", "home-ignored.txt\n");
+    write_ambient(
+        home.path(),
+        ".config/git/attributes",
+        "home-ignored.txt text\n",
+    );
+    for name in ["xdg-ignored.txt", "home-ignored.txt"] {
+        fs::write(repo.join(name), "x\n").unwrap();
+    }
+
+    let mut env = EnvGuard::new();
+    env.set("XDG_CONFIG_HOME", xdg.path());
+    env.set("HOME", home.path());
+    let files = ["xdg-ignored.txt", "home-ignored.txt"];
+    let outputs = [
+        git_unchecked(repo, &["status", "--porcelain"]),
+        git_unchecked(repo, &["check-ignore", files[0], files[1]]),
+        git_unchecked(repo, &["check-attr", "text", files[0], files[1]]),
+        git_unchecked(repo, &["add", "--", files[0], files[1]]),
+    ];
+    drop(env);
+    outputs
+}
+
+#[test]
+#[serial]
+fn ambient_default_excludes_and_attributes_do_not_reach_fixture_git() {
+    let repo = TestRepo::new();
+    let [status, ignored, attrs, added] = git_under_ambient_defaults(repo.path());
+
+    let stdout =
+        |output: &std::process::Output| String::from_utf8_lossy(&output.stdout).to_string();
+    let status_text = stdout(&status);
+    assert!(
+        status_text.contains("?? xdg-ignored.txt") && status_text.contains("?? home-ignored.txt"),
+        "ambient default excludes must not hide files: {status_text}"
+    );
+    assert_eq!(
+        ignored.status.code(),
+        Some(1),
+        "check-ignore must match nothing: {}",
+        stdout(&ignored)
+    );
+    let attr_text = stdout(&attrs);
+    assert_eq!(
+        attr_text.matches("text: unspecified").count(),
+        2,
+        "{attr_text}"
+    );
+    assert!(
+        added.status.success() && added.stderr.is_empty(),
+        "git add must succeed without warnings: {}",
+        String::from_utf8_lossy(&added.stderr)
+    );
+    for output in [&status, &ignored, &attrs] {
+        assert!(
+            output.stderr.is_empty(),
+            "isolation must not make git warn: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+}
+
 #[test]
 #[serial]
 fn git_command_environment_is_pinned() {

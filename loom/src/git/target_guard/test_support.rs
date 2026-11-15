@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use tempfile::TempDir;
 
 use super::{attestation_mode, check, AttestationMode, GuardState, HOOK_MARKER};
-use crate::test_git::{git_with_env, TestRepo};
+use crate::test_git::TestRepo;
 
 pub(crate) use crate::test_git::git;
 
@@ -18,11 +18,9 @@ pub(crate) struct Repo {
     pub(crate) work: PathBuf,
 }
 
-/// Trimmed stdout of a git command that must succeed, with ambient config and
-/// `LOOM_SESSION_ID` shut out and `envs` added.
-pub(super) fn git_env(dir: &Path, args: &[&str], envs: &[(&str, &Path)]) -> String {
-    git_with_env(dir, args, envs)
-}
+// Trimmed stdout of a git command that must succeed, with ambient config and
+// `LOOM_SESSION_ID` shut out and the given variables added.
+pub(super) use crate::test_git::git_with_env as git_env;
 
 /// Write `path` (relative to `dir`) with `text`, commit it with the path as
 /// the message, and return the new commit.

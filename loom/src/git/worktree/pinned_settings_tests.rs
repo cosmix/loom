@@ -31,7 +31,7 @@ fn operator(extension: bool) -> Operator {
         git(&repo, &["config", "extensions.worktreeConfig", "true"]);
     }
     for key in ["user.name", "user.email", "commit.gpgsign"] {
-        let _ = crate::git::runner::run_git(&["config", "--unset", key], &repo);
+        crate::test_git::git_unchecked(&repo, &["config", "--unset", key]);
     }
     let common = repo.join(".git").canonicalize().unwrap();
     let included = tmp.path().join("included.cfg");
