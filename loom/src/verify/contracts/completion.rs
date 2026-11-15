@@ -18,8 +18,8 @@ use super::{normalize, resolve_adapter};
 use crate::fs::safe_read::{is_not_found, read_bounded};
 use crate::models::stage::Stage;
 use crate::plan::schema::ContractSpec;
-use crate::relay::sha256_hex;
 use crate::testrun::{classify, registry, RunOutcome, RunOutput, TestRunnerAdapter};
+use crate::utils::sha256_hex;
 use crate::verify::criteria::{
     plan_confinement, CachedRun, CriteriaConfig, CriteriaProbe, ProbeRun, ProbeRunner,
 };

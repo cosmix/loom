@@ -52,9 +52,10 @@ use crate::fs::memory::{
 use crate::fs::work_dir::WorkDir;
 use crate::git::get_worktree_path;
 use crate::models::stage::Stage;
+use crate::utils::text::single_line;
 use crate::validation::validate_id;
 use crate::verify::review::fingerprint::{self, ChangeFingerprint};
-use crate::verify::review::report::{single_line, ParsedReview, Suggestion};
+use crate::verify::review::report::{ParsedReview, Suggestion};
 use crate::verify::review::store::{
     self, RecordedFinding, ReviewRound, RoundDecision, RECORD_VERSION,
 };

@@ -24,6 +24,7 @@ pub(super) struct Scope<'a> {
     pub(super) key: &'a str,
 }
 
+// Kept beside crate::utils::text::single_line: causes are joined with "; ", so each line break becomes a separator, not a space.
 /// `error` with its causes on one line.
 pub(super) fn one_line(error: &anyhow::Error) -> String {
     format!("{error:#}")

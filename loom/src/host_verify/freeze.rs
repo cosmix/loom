@@ -42,11 +42,11 @@ use super::{child, digest, store, CriterionOutcome, JobRecord, JobResult, JobSta
 use crate::daemon::ContractRunReport;
 use crate::models::stage::{CommandConfinement, Stage};
 use crate::plan::schema::ContractSpec;
-use crate::relay::sha256_hex;
 use crate::stage_service::contracts::{
     freeze_with_reports, locate, read_files, revalidate_saved, Site,
 };
 use crate::stage_service::Response;
+use crate::utils::sha256_hex;
 use crate::verify::contracts::choices::{effective_contracts, load_effective_stage};
 use crate::verify::contracts::freeze::{
     check_site_changes, run_prepared, written_paths, PreparedContract, BUILD_FAILED, UNVERIFIED,

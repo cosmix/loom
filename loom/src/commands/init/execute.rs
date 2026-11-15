@@ -122,7 +122,7 @@ fn prepare_workspace(repo_root: &Path, clean: bool, no_repair: bool) -> Result<(
     validate_work_dir_state(repo_root)?;
 
     print_header();
-    print_repo_bootstrap(repo_bootstrap);
+    crate::commands::run::checks::print_repo_bootstrap(repo_bootstrap, Some("Git"));
     for line in startup_repair_lines(&repairs) {
         println!("{line}");
     }
@@ -322,41 +322,6 @@ fn warn_on_long_socket_path(work_dir_path: &Path) -> Option<String> {
     println!("  {} {problem}", "!".yellow().bold());
     Some(problem)
 }
-
-fn print_repo_bootstrap(repo_bootstrap: crate::git::RepoBootstrapResult) {
-    if !repo_bootstrap.changed() {
-        return;
-    }
-
-    println!("\n{}", "Git".bold());
-    println!("{}", "─".repeat(40).dimmed());
-
-    if repo_bootstrap.initialized_repo {
-        println!("  {} Initialized git repository", "✓".green().bold());
-    }
-
-    if repo_bootstrap.created_initial_commit {
-        println!(
-            "  {} Created bootstrap commit for worktree support",
-            "✓".green().bold()
-        );
-    }
-
-    if repo_bootstrap.removed_stale_git_locks {
-        println!(
-            "  {} Removed stale .git lock files that blocked git init",
-            "✓".green().bold()
-        );
-    }
-
-    if repo_bootstrap.backed_up_git_config {
-        println!(
-            "  {} Moved unreadable .git/config aside (kept as .git/config.loom-backup-*)",
-            "!".yellow().bold()
-        );
-    }
-}
-
 /// Print the loom init header
 fn print_header() {
     crate::utils::print_logo_header("Initializing...");

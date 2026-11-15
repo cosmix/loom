@@ -165,6 +165,17 @@ pub enum Severity {
     Critical,
 }
 
+impl Severity {
+    /// The glyph both dashboards put before an alert of this severity.
+    pub fn marker(self) -> &'static str {
+        match self {
+            Severity::Critical => "\u{2716}",
+            Severity::Warning => "!",
+            Severity::Info => "\u{00b7}",
+        }
+    }
+}
+
 /// A display-ready line for either dashboard.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Alert {
@@ -354,5 +365,12 @@ mod tests {
     fn test_missing_report_yields_no_alerts() {
         let temp = TempDir::new().unwrap();
         assert!(alerts(temp.path(), true).is_empty());
+    }
+
+    #[test]
+    fn test_severity_markers() {
+        assert_eq!(Severity::Critical.marker(), "\u{2716}");
+        assert_eq!(Severity::Warning.marker(), "!");
+        assert_eq!(Severity::Info.marker(), "\u{00b7}");
     }
 }

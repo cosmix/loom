@@ -15,8 +15,8 @@ use crate::fs::work_dir::WorkDir;
 use crate::host_verify::{digest, new_job_id, store as jobs, JobKind, JobRecord, JobState};
 use crate::models::session::{Session, SessionStatus, SessionType};
 use crate::plan::schema::{ContractChoice, ContractChoices};
-use crate::relay::sha256_hex;
 use crate::stage_service::Response;
+use crate::utils::sha256_hex;
 use crate::verify::contracts::choices::{load_choices, load_effective_stage, save_choices};
 use crate::verify::contracts::store::load_freeze;
 use crate::verify::contracts::test_support::{

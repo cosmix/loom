@@ -13,7 +13,8 @@ use std::path::{Path, PathBuf};
 use anyhow::{bail, Context, Result};
 
 use crate::fs::safe_read::open_regular_no_follow;
-use crate::relay::{sha256_hex, RelayLine, Ticket, MAX_TICKET_BYTES};
+use crate::relay::{RelayLine, Ticket, MAX_TICKET_BYTES};
+use crate::utils::sha256_hex;
 
 /// `<id>.req`, the name the CLI writes a ticket under.
 fn ticket_file_name(id: &str) -> String {

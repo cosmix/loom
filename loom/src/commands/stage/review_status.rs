@@ -8,9 +8,9 @@ use std::path::{Path, PathBuf};
 
 use crate::git::worktree::find_repo_root_from_cwd;
 use crate::models::stage::Stage;
+use crate::utils::text::single_line;
 use crate::verify::review::fingerprint::{self, ChangeFingerprint};
 use crate::verify::review::gate::{self, harvest_hint};
-use crate::verify::review::report::single_line;
 use crate::verify::review::store::{self, OpenFinding, ReviewRound};
 use crate::verify::transitions::load_stage;
 

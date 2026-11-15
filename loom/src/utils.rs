@@ -3,8 +3,26 @@ use std::path::{Path, PathBuf};
 use std::sync::{Once, OnceLock};
 
 use colored::Colorize;
+use sha2::{Digest, Sha256};
 
 mod terminal_recovery;
+pub mod text;
+#[cfg(test)]
+mod text_contract_tests;
+
+/// Lowercase hex SHA-256 of the given bytes.
+pub fn sha256_hex(bytes: &[u8]) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(bytes);
+    hex::encode(hasher.finalize())
+}
+
+/// Parse an RFC 3339 timestamp with any offset and normalize it to UTC.
+pub fn parse_rfc3339_utc(value: &str) -> Option<chrono::DateTime<chrono::Utc>> {
+    chrono::DateTime::parse_from_rfc3339(value)
+        .ok()
+        .map(|value| value.with_timezone(&chrono::Utc))
+}
 
 /// Print the loom logo with a subtitle for human-facing commands.
 pub fn print_logo_header(subtitle: &str) {
@@ -260,12 +278,11 @@ pub fn truncate(s: &str, max_chars: usize) -> String {
 
 /// Truncate a string for display, using UTF-8 safe character-based truncation.
 ///
-/// This converts multi-line strings to single lines and truncates by character
-/// count (not byte count) to avoid breaking UTF-8 encoding.
-/// Uses "…" ellipsis (1 character) when truncating.
+/// Collapses every whitespace run to one space, trims surrounding whitespace,
+/// and truncates by character count to avoid breaking UTF-8 encoding.
+/// The "…" ellipsis counts toward `max_len` when truncating.
 pub fn truncate_for_display(s: &str, max_len: usize) -> String {
-    // First, collapse multi-line strings to single line
-    let single_line: String = s.lines().collect::<Vec<_>>().join(" ");
+    let single_line = s.split_whitespace().collect::<Vec<_>>().join(" ");
 
     // Use character-based truncation to be UTF-8 safe
     if single_line.chars().count() <= max_len {
@@ -281,118 +298,4 @@ pub fn truncate_for_display(s: &str, max_len: usize) -> String {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn format_thousands_groups_from_the_right() {
-        assert_eq!(format_thousands(0), "0");
-        assert_eq!(format_thousands(999), "999");
-        assert_eq!(format_thousands(1_000), "1,000");
-        assert_eq!(format_thousands(147_000), "147,000");
-        assert_eq!(format_thousands(1_234_567), "1,234,567");
-    }
-
-    #[test]
-    fn control_sequences_are_withheld_from_a_stdout_that_is_not_a_terminal() {
-        let mut redirected = Vec::new();
-        write_terminal_sequence(&mut redirected, false, ATTR_RESET.as_bytes());
-        assert!(redirected.is_empty(), "a redirected stdout carries payload");
-
-        let mut terminal = Vec::new();
-        write_terminal_sequence(&mut terminal, true, ATTR_RESET.as_bytes());
-        assert_eq!(terminal, ATTR_RESET.as_bytes());
-    }
-
-    #[test]
-    fn test_format_elapsed_seconds() {
-        assert_eq!(format_elapsed(0), "0s");
-        assert_eq!(format_elapsed(30), "30s");
-        assert_eq!(format_elapsed(59), "59s");
-    }
-
-    #[test]
-    fn test_format_elapsed_minutes() {
-        assert_eq!(format_elapsed(60), "1m0s");
-        assert_eq!(format_elapsed(90), "1m30s");
-        assert_eq!(format_elapsed(3599), "59m59s");
-    }
-
-    #[test]
-    fn test_format_elapsed_hours() {
-        assert_eq!(format_elapsed(3600), "1h0m");
-        assert_eq!(format_elapsed(3661), "1h1m");
-        assert_eq!(format_elapsed(7200), "2h0m");
-    }
-
-    #[test]
-    fn test_format_elapsed_verbose_seconds() {
-        assert_eq!(format_elapsed_verbose(0), "0s");
-        assert_eq!(format_elapsed_verbose(30), "30s");
-        assert_eq!(format_elapsed_verbose(59), "59s");
-    }
-
-    #[test]
-    fn test_format_elapsed_verbose_minutes() {
-        assert_eq!(format_elapsed_verbose(60), "1m 0s");
-        assert_eq!(format_elapsed_verbose(90), "1m 30s");
-        assert_eq!(format_elapsed_verbose(3599), "59m 59s");
-    }
-
-    #[test]
-    fn test_format_elapsed_verbose_hours() {
-        assert_eq!(format_elapsed_verbose(3600), "1h 0m 0s");
-        assert_eq!(format_elapsed_verbose(3661), "1h 1m 1s");
-        assert_eq!(format_elapsed_verbose(7200), "2h 0m 0s");
-    }
-
-    #[test]
-    fn test_truncate() {
-        assert_eq!(truncate("hello", 10), "hello");
-        assert_eq!(truncate("hello world", 8), "hello...");
-        assert_eq!(truncate("12345", 5), "12345");
-        assert_eq!(truncate("12345", 6), "12345");
-    }
-
-    #[test]
-    fn test_truncate_utf8() {
-        let emoji_str = "Hello 🦀 world";
-        let result = truncate(emoji_str, 10);
-        assert_eq!(result, "Hello 🦀...");
-        assert!(result.is_char_boundary(result.len()));
-    }
-
-    #[test]
-    fn test_truncate_very_short() {
-        assert_eq!(truncate("hello", 3), "...");
-        assert_eq!(truncate("hello", 2), "...");
-    }
-
-    #[test]
-    fn test_truncate_for_display() {
-        assert_eq!(truncate_for_display("short", 10), "short");
-        assert_eq!(
-            truncate_for_display("this is a longer string", 10),
-            "this is a…"
-        );
-        assert_eq!(
-            truncate_for_display("line1\nline2\nline3", 20),
-            "line1 line2 line3"
-        );
-    }
-
-    #[test]
-    fn test_truncate_for_display_utf8() {
-        let emoji_str = "Hello 🦀 world!";
-        let result = truncate_for_display(emoji_str, 10);
-        assert_eq!(result, "Hello 🦀 w…");
-        assert!(result.is_char_boundary(result.len()));
-    }
-
-    #[test]
-    fn test_truncate_for_display_exact_length() {
-        let s = "12345";
-        assert_eq!(truncate_for_display(s, 5), "12345");
-        assert_eq!(truncate_for_display(s, 6), "12345");
-    }
-}
+mod tests;

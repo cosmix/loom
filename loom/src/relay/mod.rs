@@ -26,7 +26,7 @@ pub use scratch::{
     ensure_dir_0700, scratch_root, scratch_root_from_env, session_dir, validate_session_dir,
     Platform,
 };
-pub use ticket::{sha256_hex, Ticket};
+pub use ticket::Ticket;
 
 /// Bound on one relay line: `LOOM_RELAY_V1 kind=... id=... sha256=... bytes=...`.
 pub const MAX_LINE_BYTES: usize = 160;

@@ -26,9 +26,7 @@ pub(super) fn sorted_dispute_ids(stage_dir: &Path) -> Vec<u32> {
 }
 
 pub(super) fn timestamp(value: Option<&Value>) -> Option<DateTime<Utc>> {
-    DateTime::parse_from_rfc3339(value?.as_str()?)
-        .ok()
-        .map(|at| at.with_timezone(&Utc))
+    crate::utils::parse_rfc3339_utc(value?.as_str()?)
 }
 
 pub(super) fn text(value: Option<&Value>) -> Option<String> {

@@ -6,7 +6,7 @@ use crate::models::dispute::DisputeRequest;
 use crate::models::stage::Stage;
 use crate::orchestrator::adjudication::prompt::truncate::truncate_to_budget;
 use crate::orchestrator::adjudication::prompt::{ExecutionSite, MAX_PROMPT_BYTES};
-use crate::relay::sha256_hex;
+use crate::utils::sha256_hex;
 use crate::verify::contracts::test_support::{contract, contract_worktree};
 use chrono::Utc;
 use std::path::{Path, PathBuf};

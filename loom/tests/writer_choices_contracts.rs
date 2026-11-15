@@ -12,7 +12,7 @@ use std::collections::BTreeMap;
 
 use chrono::Utc;
 use loom::plan::schema::{ContractChoice, ContractChoices, ContractSpec};
-use loom::relay::sha256_hex;
+use loom::utils::sha256_hex;
 use loom::verify::contracts::choices::{
     load_choices, merge_choices, overlay_with_saved, parse_choices, save_choices, validate_choices,
 };

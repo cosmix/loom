@@ -12,7 +12,7 @@ use std::path::Path;
 use crate::fs::safe_fs::{safe_create_dir_all_in_workdir, safe_open_dirfd};
 use crate::fs::safe_read::read_bounded;
 use crate::fs::safe_replace::restore_no_follow;
-use crate::relay::sha256_hex;
+use crate::utils::sha256_hex;
 use crate::verify::contracts::normalize;
 use crate::verify::contracts::store::{
     frozen_file_path_for_record, load_freeze, FreezeRecord, MAX_FROZEN_FILE_BYTES,

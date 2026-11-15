@@ -2,6 +2,7 @@
 
 use super::body::META_KEYS;
 use crate::fs::knowledge::splice::strip_closing_sequence;
+use crate::utils::text::single_line;
 
 /// The longest title, in characters.
 const TITLE_CHARS: usize = 80;
@@ -20,24 +21,11 @@ fn cut(text: &str, max: usize) -> &str {
     }
 }
 
-/// `text` on one line: whitespace controls become spaces, other controls are dropped.
-pub(super) fn one_line(text: &str) -> String {
-    text.chars()
-        .filter_map(|c| match c {
-            '\n' | '\r' | '\t' => Some(' '),
-            c if c.is_control() => None,
-            c => Some(c),
-        })
-        .collect::<String>()
-        .trim()
-        .to_owned()
-}
-
 /// A heading title: the text's first 80 characters on one line. A trailing CommonMark closing
 /// sequence is dropped (`Fix ###` becomes `Fix`, `C#` stays) so the heading reads back the same
 /// title, using the helper the section reader applies.
 pub fn title(text: &str) -> String {
-    let flat = one_line(text);
+    let flat = single_line(text);
     let mut head = cut(&flat, TITLE_CHARS).trim_end();
     // The section reader strips a closing sequence from the written heading too, so strip until
     // nothing changes: the title then reads back unchanged.
@@ -67,7 +55,7 @@ fn opens_structure(text: &str) -> bool {
 /// The text paragraph: the whole text on one line, with a leading backslash when it starts with
 /// something `opens_structure` names, so a finding never changes the ledger's structure.
 pub fn paragraph(text: &str) -> String {
-    let flat = one_line(text);
+    let flat = single_line(text);
     if opens_structure(&flat) {
         format!("\\{flat}")
     } else {
@@ -85,10 +73,54 @@ pub(super) fn unescape(text: &str) -> String {
     }
 }
 
-/// A dismissal reason: one line (line breaks and tabs become spaces, other controls are
-/// dropped), trimmed, at most 200 characters. `None` when nothing is left.
+/// A dismissal reason: format characters dropped, controls and whitespace collapsed,
+/// trimmed, at most 200 characters. `None` when nothing is left.
 pub fn reason(text: &str) -> Option<String> {
-    let flat = one_line(text);
+    let flat = single_line(text);
     let reason = cut(&flat, REASON_CHARS).trim_end();
     (!reason.is_empty()).then(|| reason.to_owned())
+}
+
+#[cfg(test)]
+mod normalization_tests {
+    use super::{paragraph, reason, title};
+    use crate::planning::findings::{entry_text, FindingStatus};
+
+    #[test]
+    fn finding_fields_drop_format_characters_and_collapse_whitespace() {
+        let value = "  a\u{202e}\u{200b}\n\t  b\u{7}c  ";
+        assert_eq!(title(value), "a b c");
+        assert_eq!(paragraph(value), "a b c");
+        assert_eq!(reason(value).as_deref(), Some("a b c"));
+        assert_eq!(title("a\nb\r\nc"), "a b c");
+        assert_eq!(
+            reason("too\u{7} late\n now").as_deref(),
+            Some("too late now")
+        );
+        assert_eq!(paragraph("\u{200b}# Heading"), "\\# Heading");
+        let rendered = entry_text(
+            "F-1",
+            value,
+            &[value.into()],
+            Some(value),
+            &FindingStatus::Addressed(value.into()),
+            value,
+        );
+        assert_eq!(
+            rendered,
+            "## F-1 a b c\n\nAbout: a b c\nSource: a b c\n\
+             Status: addressed a b c\n\na b c\n"
+        );
+    }
+
+    #[test]
+    fn format_only_status_details_are_invalid() {
+        for status in [
+            FindingStatus::Addressed("\u{202e}\u{200b}".into()),
+            FindingStatus::Unaddressed("\u{202e}\u{200b}".into()),
+            FindingStatus::Dismissed("\u{202e}\u{200b}".into()),
+        ] {
+            assert!(!status.is_valid());
+        }
+    }
 }

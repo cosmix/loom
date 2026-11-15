@@ -3,8 +3,8 @@
 
 use anyhow::Result;
 
+use crate::utils::text::single_line;
 use crate::verify::integrity;
-use crate::verify::review::report::single_line;
 use crate::verify::transitions::load_stage;
 
 use super::review_status::stage_worktree_and_target;

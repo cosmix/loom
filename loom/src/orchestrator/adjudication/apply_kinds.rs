@@ -40,8 +40,8 @@ use crate::models::dispute::{
     IntegritySnapshot,
 };
 use crate::models::stage::{Stage, StageStatus, StageType};
+use crate::utils::text::single_line;
 use crate::verify::integrity::AcceptedEvent;
-use crate::verify::review::report::single_line;
 use crate::verify::review::store::{CarriedFinding, Ruling, RulingKind};
 use crate::verify::review::verdict_records;
 use crate::verify::transitions::list_all_stages;

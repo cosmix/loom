@@ -142,7 +142,7 @@ impl Draft {
     }
 
     pub(super) fn updated(&self) -> DateTime<Utc> {
-        parse_time(&self.updated_at).unwrap_or(DateTime::UNIX_EPOCH)
+        crate::utils::parse_rfc3339_utc(&self.updated_at).unwrap_or(DateTime::UNIX_EPOCH)
     }
 
     /// The limits a draft this server wrote keeps; a file that breaks one is not shown.
@@ -161,17 +161,11 @@ impl Draft {
                 .iter()
                 .all(|text| text.len() <= MAX_MESSAGE_BYTES)
             && self.attachments.len() <= MAX_ATTACHMENTS
-            && parse_time(&self.started_at).is_some()
-            && parse_time(&self.updated_at).is_some()
+            && crate::utils::parse_rfc3339_utc(&self.started_at).is_some()
+            && crate::utils::parse_rfc3339_utc(&self.updated_at).is_some()
             && shape_ok
             && target_ok
     }
-}
-
-fn parse_time(text: &str) -> Option<DateTime<Utc>> {
-    DateTime::parse_from_rfc3339(text)
-        .ok()
-        .map(|at| at.to_utc())
 }
 
 /// `text` within [`MAX_MESSAGE_BYTES`], cut at a char boundary and marked.

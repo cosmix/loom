@@ -15,9 +15,9 @@ use std::path::Path;
 
 use super::base_move;
 use super::fingerprint::{self, ChangeFingerprint};
-use super::report::single_line;
 use super::store::{self, OpenFinding, ReviewRound};
 use crate::models::stage::{Stage, StageType};
+use crate::utils::text::single_line;
 
 /// Whether the review gate and the test-integrity gate cover `stage`: a v2
 /// `standard` or `integration-verify` stage.

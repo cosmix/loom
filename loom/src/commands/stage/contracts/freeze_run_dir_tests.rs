@@ -7,7 +7,7 @@
 
 use super::*;
 use crate::models::stage::Stage;
-use crate::relay::sha256_hex;
+use crate::utils::sha256_hex;
 use crate::verify::contracts::run_dir::resolve_run;
 use crate::verify::contracts::store::{
     write_freeze, FreezeRecord, FrozenContract, FrozenFile, FREEZE_RECORD_VERSION,

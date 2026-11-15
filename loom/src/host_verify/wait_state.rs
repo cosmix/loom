@@ -39,7 +39,7 @@ pub(super) fn state_path(site: &WaitSite<'_>) -> Result<PathBuf> {
 /// Bounded, dot-free identity of one selection and cache flag.
 fn selection_key(site: &WaitSite<'_>) -> String {
     let text = format!("{:?}|{}", site.criteria, site.no_cache);
-    crate::relay::sha256_hex(text.as_bytes())[..16].to_string()
+    crate::utils::sha256_hex(text.as_bytes())[..16].to_string()
 }
 
 pub(super) fn read_state(path: &Path) -> Option<RequestState> {

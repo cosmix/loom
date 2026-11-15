@@ -1,6 +1,7 @@
 //! A finding's `Status:` and `Severity:` values.
 
-use super::text::{one_line, reason};
+use super::text::reason;
+use crate::utils::text::single_line;
 
 /// Where a finding stands.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -36,7 +37,7 @@ impl FindingStatus {
     pub fn is_valid(&self) -> bool {
         match self {
             Self::Open => true,
-            Self::Addressed(changed) => !one_line(changed).is_empty(),
+            Self::Addressed(changed) => !single_line(changed).is_empty(),
             Self::Unaddressed(why) | Self::Dismissed(why) => reason(why).is_some(),
         }
     }
@@ -70,7 +71,7 @@ impl FindingStatus {
 }
 
 fn with_detail(word: &str, separator: &str, detail: &str) -> String {
-    let detail = one_line(detail);
+    let detail = single_line(detail);
     if detail.is_empty() {
         word.to_owned()
     } else {

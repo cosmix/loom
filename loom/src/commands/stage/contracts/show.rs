@@ -93,7 +93,7 @@ mod tests {
             base: "base".into(),
             files: vec![FrozenFile {
                 path: "test.rs".into(),
-                sha256: crate::relay::sha256_hex(b"old"),
+                sha256: crate::utils::sha256_hex(b"old"),
             }],
             contracts: Vec::new(),
         };

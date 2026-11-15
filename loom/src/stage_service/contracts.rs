@@ -55,8 +55,8 @@ use crate::host_verify::JobKind;
 use crate::models::session::SessionType;
 use crate::models::stage::{Stage, StageStatus, StageType};
 use crate::plan::schema::ContractChoices;
-use crate::relay::sha256_hex;
 use crate::testrun::registry;
+use crate::utils::sha256_hex;
 use crate::verify::contracts::frozen_set::read_frozen_set;
 use crate::verify::contracts::refusal::end_wait;
 use crate::verify::contracts::store::{self, FreezeRecord, FrozenFile, FREEZE_RECORD_VERSION};
@@ -185,7 +185,7 @@ fn admit(work_dir: &Path, stage_id: &str, session_id: &str) -> Result<Stage> {
     Ok(stage)
 }
 
-fn refused(message: String) -> Response {
+pub(super) fn refused(message: String) -> Response {
     Response::Error { message }
 }
 

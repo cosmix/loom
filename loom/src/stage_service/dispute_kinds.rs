@@ -34,6 +34,7 @@ use std::path::Path;
 #[path = "dispute_admission.rs"]
 mod admission;
 
+use super::contracts::refused;
 use super::dispute::transition_refusal;
 use super::dispute_store::{
     escalate_to_human_review, file_under_stage_lock, lock_stage_disputes, Publication,
@@ -187,7 +188,7 @@ fn normalized_problems(problems: &[String]) -> Vec<String> {
 /// The request receipt for `request_key`: a receipt key must be a plain id,
 /// and a refusal's key carries a timestamp, so it is named by its hash.
 fn receipt_key(request_key: &str) -> String {
-    let digest = crate::relay::sha256_hex(request_key.as_bytes());
+    let digest = crate::utils::sha256_hex(request_key.as_bytes());
     format!("freeze-refusal-{}", &digest[..32])
 }
 
@@ -271,10 +272,6 @@ fn file_on_locked_stage(
     #[cfg(test)]
     super::dispute_race_tests::after_publication();
     Ok(Response::DisputeCreated { id })
-}
-
-fn refused(message: String) -> Response {
-    Response::Error { message }
 }
 
 /// The refusal for a spent budget. A freeze refusal only refuses: escalating

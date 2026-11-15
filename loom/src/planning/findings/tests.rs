@@ -140,7 +140,7 @@ fn bad_and_duplicate_headings_are_reported_and_skipped() {
 fn reasons_flatten_whitespace_controls_and_stop_at_200_chars() {
     assert_eq!(
         reason("  too\u{7} late\n now \t").as_deref(),
-        Some("too late  now")
+        Some("too late now")
     );
     assert_eq!(reason(" \n\u{1b}\t "), None);
     // A line break stays a word break: the reason cannot open a ledger heading.
@@ -155,7 +155,7 @@ fn reasons_flatten_whitespace_controls_and_stop_at_200_chars() {
 #[test]
 fn titles_cut_on_a_char_boundary_and_paragraphs_never_open_blocks() {
     assert_eq!(title(&"日".repeat(100)), "日".repeat(80));
-    assert_eq!(title("a\nb\r\nc"), "a b  c");
+    assert_eq!(title("a\nb\r\nc"), "a b c");
     assert_eq!(title("Fix C# ###"), "Fix C#");
     assert_eq!(title("###"), "Untitled finding");
     assert_eq!(title("Port the parser to C#"), "Port the parser to C#");

@@ -15,8 +15,8 @@ use super::tests_freeze::{
 use super::{store, JobRecord, JobState};
 use crate::daemon::ContractRunReport;
 use crate::models::stage::StageStatus;
-use crate::relay::sha256_hex;
 use crate::stage_service::contracts::{locate, read_files};
+use crate::utils::sha256_hex;
 use crate::verify::contracts::refusal::{daemon_refusal, RefusalSource, INFRASTRUCTURE_PREFIX};
 use crate::verify::contracts::test_support::{red_reports, CONTRACT_FILE};
 use crate::verify::transitions::{load_stage, update_stage};

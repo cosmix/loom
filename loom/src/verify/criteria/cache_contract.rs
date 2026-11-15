@@ -2,7 +2,6 @@
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 use std::time::Duration;
 
 use super::assertions::{self, AssertionSpec};
@@ -101,7 +100,7 @@ impl CriterionContract {
 
     pub(super) fn digest(&self) -> Option<String> {
         let encoded = serde_json::to_vec(self).ok()?;
-        Some(hex::encode(Sha256::digest(encoded)))
+        Some(crate::utils::sha256_hex(&encoded))
     }
 
     pub(super) fn expected_exit(&self) -> i32 {
@@ -269,4 +268,29 @@ fn diagnostic_tail(value: &str) -> (String, bool) {
 
 fn millis(duration: Duration) -> u64 {
     u64::try_from(duration.as_millis()).unwrap_or(u64::MAX)
+}
+
+#[cfg(test)]
+mod digest_tests {
+    use super::*;
+
+    #[test]
+    fn contract_digest_is_stable() {
+        let contract = CriterionContract {
+            command: ContractCommand::Shell("echo ok".into()),
+            kind: CriterionKind::Simple,
+            expected_exit: 0,
+            stdout_contains: vec![],
+            stdout_not_contains: vec![],
+            stderr_must_be_empty: false,
+            timeout_secs: 1,
+            timeout_nanos: 0,
+            confinement: CommandConfinement::Confined,
+            zero_test_guard: false,
+        };
+        assert_eq!(
+            contract.digest().as_deref(),
+            Some("878de22bba82a06ce24282f1a356c9fe62d5f08a6e096019b8c74c1cea91cf96")
+        );
+    }
 }

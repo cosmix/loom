@@ -108,15 +108,23 @@ fn other_formats_and_invalid_utf8_keep_the_plain_hash() {
         );
         assert_eq!(
             digest(path, "run\n"),
-            Some(format!("v2:{}", hash(b"run\n")))
+            Some(format!("v2:{}", sha256_hex(b"run\n")))
         );
     }
     assert_eq!(
         behaviour_digest("a.rs", Some(b"//\xff\n")),
-        Some(format!("v2:{}", hash(b"//\xff\n")))
+        Some(format!("v2:{}", sha256_hex(b"//\xff\n")))
     );
     assert_eq!(
         behaviour_digest("a.rs", None).as_deref(),
         Some("v2:deleted")
+    );
+}
+
+#[test]
+fn digest_of_a_fixed_input_is_pinned() {
+    assert_eq!(
+        behaviour_digest("a.rs", Some(b"run\n")),
+        Some("v2:b5004f26a852b0d60ec1237432c1a33c2307ff2458c374d9d99749d045c7feb9".to_string())
     );
 }

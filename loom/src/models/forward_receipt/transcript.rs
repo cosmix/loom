@@ -137,9 +137,7 @@ fn scan_entry(
 }
 
 fn timestamp(value: &Value) -> Option<DateTime<Utc>> {
-    DateTime::parse_from_rfc3339(value.get("timestamp")?.as_str()?)
-        .ok()
-        .map(|value| value.with_timezone(&Utc))
+    crate::utils::parse_rfc3339_utc(value.get("timestamp")?.as_str()?)
 }
 
 fn content(row: &Value) -> Option<&[Value]> {

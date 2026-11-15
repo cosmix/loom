@@ -12,7 +12,7 @@ use crate::fs::memory::{
     list_journals, read_journal, read_staged_entries, settled_ids, MemoryEntry, MemoryEntryType,
 };
 use crate::models::stage::{Stage, StageType};
-use crate::verify::review::report::single_line;
+use crate::utils::text::single_line;
 use crate::verify::review::store::load_carried;
 
 /// DESIGN D16 BLOCK-E, byte for byte. doctrine-v2 pins it against the

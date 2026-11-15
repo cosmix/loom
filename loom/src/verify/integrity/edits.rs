@@ -5,7 +5,6 @@
 
 use anyhow::Result;
 use regex::Regex;
-use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use super::count::{self, matchers, BaseTestFile};
@@ -186,7 +185,7 @@ fn pinned_sha256(
     for partner in partners {
         text.push_str(&format!("{partner}\t{}\n", sha(partner)));
     }
-    Some(hex::encode(Sha256::digest(text.as_bytes())))
+    Some(crate::utils::sha256_hex(text.as_bytes()))
 }
 
 /// One event per listed ratchet file the worktree changed in a way that
@@ -293,7 +292,24 @@ fn file_event(
 
 #[cfg(test)]
 mod tests {
-    use super::normalize;
+    use super::{normalize, pinned_sha256};
+    use crate::verify::review::fingerprint::ChangeFingerprint;
+    use std::collections::{BTreeMap, BTreeSet};
+
+    #[test]
+    fn partner_pin_digest_is_stable() {
+        let changes = ChangeFingerprint {
+            value: String::new(),
+            base: String::new(),
+            files: BTreeMap::from([("own.rs".into(), "own".into())]),
+            behaviour: BTreeMap::new(),
+        };
+        let partners = BTreeSet::from(["partner.rs".to_string()]);
+        assert_eq!(
+            pinned_sha256(&changes, "own.rs", Some(&partners)).as_deref(),
+            Some("3e17248a13cfd5a205544bc2ae2b3b89e000b852dcd1a8945d47bfda4ec38e6d")
+        );
+    }
 
     #[test]
     fn python_keeps_trailing_commas_other_languages_drop_them() {

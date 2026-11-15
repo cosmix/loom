@@ -1,5 +1,5 @@
 use super::claude_event::{
-    make_idle_record, make_stop_record, verify_idle_event_id, verify_stop_event_id,
+    make_idle_record, make_stop_record, malformed, verify_idle_event_id, verify_stop_event_id,
 };
 use super::claude_files::{
     expected_parent_transcript, plain_absolute, transcript_evidence, validate_current_binding,
@@ -363,8 +363,4 @@ fn evidence<T: for<'de> Deserialize<'de>>(
     record: &LifecycleRecord,
 ) -> Result<T, ClaudeEvidenceError> {
     serde_json::from_value(record.evidence.clone()).map_err(malformed)
-}
-
-fn malformed(error: impl fmt::Display) -> ClaudeEvidenceError {
-    ClaudeEvidenceError::Malformed(error.to_string())
 }

@@ -86,11 +86,7 @@ fn write_execution_graph<W: Write>(w: &mut W, stages: &[StageCompletionInfo]) ->
             let stage_names: Vec<String> = level_stages
                 .iter()
                 .map(|s| {
-                    let short_id = if s.id.len() > 20 {
-                        format!("{}...", &s.id[..17])
-                    } else {
-                        s.id.clone()
-                    };
+                    let short_id = crate::utils::truncate(&s.id, 20);
                     format!("[{short_id}]")
                 })
                 .collect();
@@ -134,6 +130,23 @@ mod tests {
         let mut out = Vec::new();
         write_completion_summary(&mut out, summary).unwrap();
         String::from_utf8(out).unwrap()
+    }
+
+    #[test]
+    fn execution_graph_truncates_multibyte_stage_ids_by_character() {
+        let stages = [stage(&"é".repeat(25), StageStatus::Completed, &[])];
+        let mut out = Vec::new();
+        write_execution_graph(&mut out, &stages).unwrap();
+        let text = String::from_utf8(out).unwrap();
+        let short_id = text
+            .trim()
+            .strip_prefix('[')
+            .unwrap()
+            .strip_suffix(']')
+            .unwrap();
+        assert_eq!(short_id.chars().count(), 20);
+        assert!(short_id.ends_with("..."));
+        assert_eq!(short_id, format!("{}...", "é".repeat(17)));
     }
 
     #[test]

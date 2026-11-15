@@ -18,17 +18,17 @@ pub fn render_scheduler_alerts(frame: &mut Frame, area: Rect, alerts: &[Alert]) 
     let lines: Vec<Line> = alerts
         .iter()
         .map(|alert| {
-            let (marker, color) = match alert.severity {
-                Severity::Critical => ("\u{2716} ", StatusColors::BLOCKED),
-                Severity::Warning => ("! ", StatusColors::PENDING),
-                Severity::Info => ("\u{00b7} ", StatusColors::EXECUTING),
+            let color = match alert.severity {
+                Severity::Critical => StatusColors::BLOCKED,
+                Severity::Warning => StatusColors::PENDING,
+                Severity::Info => StatusColors::EXECUTING,
             };
             let style = match alert.severity {
                 Severity::Critical => Style::default().fg(color).add_modifier(Modifier::BOLD),
                 _ => Style::default().fg(color),
             };
             Line::from(vec![
-                Span::styled(format!("   {marker}"), style),
+                Span::styled(format!("   {} ", alert.severity.marker()), style),
                 Span::styled(alert.text.clone(), style),
             ])
         })
@@ -128,15 +128,7 @@ pub fn render_completion(frame: &mut Frame, area: Rect, summary: &CompletionSumm
                 .map(format_elapsed)
                 .unwrap_or_else(|| "-".to_string());
 
-            // UTF-8-safe truncation (fixes byte-slice panic on multi-byte IDs)
-            let id_display = {
-                let truncated: String = stage.id.chars().take(27).collect();
-                if truncated.len() < stage.id.chars().count() {
-                    format!("{truncated}...")
-                } else {
-                    stage.id.clone()
-                }
-            };
+            let id_display = crate::utils::truncate(&stage.id, 30);
 
             Row::new(vec![
                 icon.to_string(),
@@ -169,6 +161,62 @@ pub fn render_completion(frame: &mut Frame, area: Rect, summary: &CompletionSumm
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::daemon::StageCompletionInfo;
+    use crate::models::stage::StageStatus;
+    use ratatui::{backend::TestBackend, Terminal};
+
+    fn completion_summary(id: &str) -> CompletionSummary {
+        CompletionSummary {
+            total_duration_secs: 90,
+            stages: vec![StageCompletionInfo {
+                id: id.to_owned(),
+                name: id.to_owned(),
+                status: StageStatus::Completed,
+                duration_secs: Some(90),
+                execution_secs: Some(90),
+                retry_count: 0,
+                merged: true,
+                dependencies: Vec::new(),
+            }],
+            success_count: 1,
+            failure_count: 0,
+            plan_path: "plan.md".to_owned(),
+        }
+    }
+
+    fn completion_screen(id: &str) -> String {
+        let mut terminal = Terminal::new(TestBackend::new(120, 24)).unwrap();
+        terminal
+            .draw(|frame| {
+                let area = frame.area();
+                render_completion(frame, area, &completion_summary(id));
+            })
+            .unwrap();
+        terminal
+            .backend()
+            .buffer()
+            .content
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect()
+    }
+
+    #[test]
+    fn completion_ids_use_a_thirty_character_budget() {
+        for ch in ["x", "é"] {
+            for length in [27, 28, 29, 30] {
+                let id = ch.repeat(length);
+                let screen = completion_screen(&id);
+                assert!(screen.contains(&id), "output: {screen}");
+                assert!(!screen.contains("..."), "output: {screen}");
+            }
+            let id = ch.repeat(31);
+            let expected = format!("{}...", ch.repeat(27));
+            let screen = completion_screen(&id);
+            assert!(screen.contains(&expected), "output: {screen}");
+            assert!(!screen.contains(&id), "output: {screen}");
+        }
+    }
 
     #[test]
     fn test_format_elapsed() {

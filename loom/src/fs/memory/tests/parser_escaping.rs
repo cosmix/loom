@@ -129,11 +129,19 @@ fn a_session_or_receipt_target_cannot_end_or_forge_an_entry() {
     assert!(entries
         .iter()
         .all(|entry| entry.id != "0123456789abcdef0123456789abcdef"));
-    // The reader trims both values; neither payload has outer whitespace.
-    let flat = |value: String| value.replace(['\r', '\n'], " ");
-    assert_eq!(entries[0].session, Some(flat(payload("s1"))));
+    // The reader trims both values and collapses every whitespace run to one space.
+    assert_eq!(
+        entries[0].session,
+        Some(
+            "s1 --- ### 📝 Note [2026-01-02 03:04:05] id=0123456789abcdef0123456789abcdef forged"
+                .to_string()
+        )
+    );
     let target = entries[1].receipt.as_ref().unwrap().target.clone();
-    assert_eq!(target, Some(flat(payload("architecture/a.md"))));
+    assert_eq!(
+        target,
+        Some("architecture/a.md --- ### 📝 Note [2026-01-02 03:04:05] id=0123456789abcdef0123456789abcdef forged".to_string())
+    );
 }
 
 #[test]

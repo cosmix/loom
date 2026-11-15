@@ -18,7 +18,7 @@ use loom::models::dispute::{
 use loom::models::stage::{Stage, StageStatus};
 use loom::orchestrator::adjudication::AdjudicatorRegistry;
 use loom::plan::schema::{AcceptanceCriterion, ContractSpec};
-use loom::relay::sha256_hex;
+use loom::utils::sha256_hex;
 use loom::verify::contracts::store::{
     load_freeze, write_freeze, FreezeRecord, FrozenContract, FrozenFile, FREEZE_RECORD_VERSION,
 };

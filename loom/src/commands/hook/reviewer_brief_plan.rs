@@ -10,7 +10,7 @@ use crate::git::merge::control_paths::{accepted_change_base, changed_paths, Acce
 use crate::models::dispute::truncate_to_byte_limit;
 use crate::models::stage::{Stage, StageType};
 use crate::planning::slug::{plan_home, plan_slug};
-use crate::verify::review::report::single_line;
+use crate::utils::text::single_line;
 
 /// Files listed in the brief before the remainder is summarised.
 const MAX_LISTED_FILES: usize = 200;

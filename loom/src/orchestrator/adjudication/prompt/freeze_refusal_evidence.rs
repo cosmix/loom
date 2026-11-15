@@ -21,6 +21,7 @@ use crate::models::dispute::{strip_control, truncate_to_byte_limit, DisputeKind}
 use crate::models::stage::Stage;
 use crate::plan::schema::ContractSpec;
 use crate::stage_service::contracts::Site;
+use crate::utils::text::single_line;
 use crate::verify::contracts::changes::{changed_paths, diff_from_base, special_files, stage_base};
 use crate::verify::contracts::choices::lenient_contracts;
 use crate::verify::contracts::collection::{freeze_scaffold, stage_scaffold, ScaffoldCheck};
@@ -29,7 +30,6 @@ use crate::verify::contracts::refusal::RUN_OUTPUT_PREFIX;
 use crate::verify::contracts::run_dir::resolve_run;
 use crate::verify::contracts::store::{validate_relative, MAX_FROZEN_FILE_BYTES};
 use crate::verify::contracts::{harness_matches, normalize, resolve_adapter};
-use crate::verify::review::report::single_line;
 
 /// The newest memory entries the briefing quotes, and the most of each.
 const MAX_MEMORY_ENTRIES: usize = 30;

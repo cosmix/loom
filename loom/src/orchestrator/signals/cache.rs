@@ -1,4 +1,4 @@
-use sha2::{Digest, Sha256};
+use crate::utils::sha256_hex;
 
 use super::helpers::{
     append_commit_timing_rules, append_completion_rules, append_knowledge_commit_bullet,
@@ -63,10 +63,7 @@ impl SignalMetrics {
 
 /// Compute SHA-256 hash of content, returning first 16 hex characters
 pub fn compute_hash(content: &str) -> String {
-    let mut hasher = Sha256::new();
-    hasher.update(content.as_bytes());
-    let result = hasher.finalize();
-    hex::encode(&result[..8])
+    sha256_hex(content.as_bytes())[..16].to_owned()
 }
 
 // ── Shared content blocks ────────────────────────────────────────────
@@ -317,7 +314,7 @@ mod tests {
         let hash1 = compute_hash(content);
         let hash2 = compute_hash(content);
         assert_eq!(hash1, hash2);
-        assert_eq!(hash1.len(), 16);
+        assert_eq!(hash1, "6ae8a75555209fd6");
     }
 
     #[test]

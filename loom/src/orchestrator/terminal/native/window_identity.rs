@@ -1,6 +1,5 @@
 //! Exact native window identity, separate from the stage label used by tmux.
 
-use sha2::{Digest, Sha256};
 use std::path::Path;
 
 use crate::models::session::Session;
@@ -14,11 +13,8 @@ pub(super) fn native_window_title(work_dir: &Path, session: &Session) -> Option<
     let project_path = work_dir
         .canonicalize()
         .unwrap_or_else(|_| work_dir.to_path_buf());
-    let digest = Sha256::digest(project_path.as_os_str().as_encoded_bytes());
-    let project = digest[..8]
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect::<String>();
+    let digest = crate::utils::sha256_hex(project_path.as_os_str().as_encoded_bytes());
+    let project = &digest[..16];
     Some(format!("{tracking_key}-{project}-{}", session.id))
 }
 
@@ -37,6 +33,15 @@ mod tests {
         let mut session = Session::new();
         session.assign_to_stage(stage_id.to_string());
         session
+    }
+
+    #[test]
+    fn window_project_digest_is_stable() {
+        let session = stage_session("pin");
+        assert_eq!(
+            native_window_title(Path::new("/"), &session).unwrap(),
+            format!("loom-v2-stage-pin-8a5edab282632443-{}", session.id)
+        );
     }
 
     #[test]

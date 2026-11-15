@@ -27,6 +27,7 @@ use std::path::PathBuf;
 
 use crate::planning::kinds;
 use crate::planning::sections::sections_of;
+use crate::utils::text::single_line;
 use body::scan;
 
 pub use import::import_review;
@@ -222,11 +223,11 @@ pub fn entry_text(
 ) -> String {
     let mut out = format!("## {id} {}\n\n", self::title(title));
     if !about.is_empty() {
-        let tokens: Vec<String> = about.iter().map(|t| text::one_line(t)).collect();
+        let tokens: Vec<String> = about.iter().map(|t| single_line(t)).collect();
         out.push_str(&format!("About: {}\n", tokens.join(", ")));
     }
     if let Some(source) = source {
-        out.push_str(&format!("Source: {}\n", text::one_line(source)));
+        out.push_str(&format!("Source: {}\n", single_line(source)));
     }
     out.push_str(&format!(
         "Status: {}\n\n{}\n",

@@ -3,7 +3,6 @@
 //! stage's overlay or the immutable base layer. The dirty-tree fallback in
 //! `context::refresh::semantic` already shares this same address.
 
-use sha2::{Digest, Sha256};
 use std::path::Path;
 
 /// Plan name for the graph overlay the CLI reads and writes for the working
@@ -21,8 +20,10 @@ pub fn local_overlay_stage_name(project_root: &Path) -> String {
     let canonical = project_root
         .canonicalize()
         .unwrap_or_else(|_| project_root.to_path_buf());
-    let digest = Sha256::digest(canonical.as_os_str().as_encoded_bytes());
-    format!("map-{}", hex::encode(digest))
+    format!(
+        "map-{}",
+        crate::utils::sha256_hex(canonical.as_os_str().as_encoded_bytes())
+    )
 }
 
 /// The full `(plan, stage)` address of this checkout's working-tree overlay.
@@ -63,6 +64,14 @@ mod tests {
     use super::*;
     use crate::context::graph_store::{FileEntry, GraphLayer, GraphStore};
     use std::process::Command;
+
+    #[test]
+    fn overlay_digest_is_stable() {
+        assert_eq!(
+            local_overlay_stage_name(Path::new("/")),
+            "map-8a5edab282632443219e051e4ade2d1d5bbc671c781051bf1437897cbdfea0f1"
+        );
+    }
 
     fn git(root: &Path, args: &[&str]) {
         let output = Command::new("git")

@@ -12,10 +12,12 @@ use super::lock::with_store_lock;
 use super::store::{self, validate_id};
 use super::write::read_summary;
 use crate::context::untrusted::terminal_safe;
+use crate::parser::frontmatter::split_frontmatter_raw;
 use crate::planning::briefs::bundle_files;
 use crate::planning::kinds::vision_path;
 use crate::planning::project::Project;
 use crate::planning::runtime::RuntimePaths;
+use crate::utils::text::single_line;
 
 /// Claim the requested summaries and produce instructions for rebuilding them.
 pub fn brief(
@@ -101,7 +103,7 @@ fn write_summary_brief(
     });
     if matched.is_none() {
         if let Some(note) = note {
-            writeln!(out, "Note: {}", one_line(note))?;
+            writeln!(out, "Note: {}", single_line(&terminal_safe(note)))?;
         }
     }
     writeln!(out, "Current summary:")?;
@@ -165,12 +167,8 @@ fn print_current(
     matched: Option<&str>,
     note: Option<&str>,
 ) -> Result<()> {
-    let body_start = text
-        .lines()
-        .enumerate()
-        .skip(1)
-        .find(|(_, line)| line.trim_end() == "---")
-        .map(|(i, _)| i + 1)
+    let body_start = split_frontmatter_raw(text)
+        .map(|(_, body)| text[..text.len() - body.len()].lines().count())
         .unwrap_or(0);
     for (index, line) in text.lines().enumerate().skip(body_start) {
         let sentence = eval.sentences.iter().find(|s| s.line == index + 1);
@@ -182,16 +180,11 @@ fn print_current(
         writeln!(out, "{prefix}{}", terminal_safe(line))?;
         if sentence.is_some_and(|s| Some(s.id.as_str()) == matched) {
             if let Some(note) = note {
-                writeln!(out, "Note: {}", one_line(note))?;
+                writeln!(out, "Note: {}", single_line(&terminal_safe(note)))?;
             }
         }
     }
     Ok(())
-}
-
-/// Neutralize `text` for the terminal and keep it on one line.
-fn one_line(text: &str) -> String {
-    terminal_safe(text).replace(['\n', '\t'], " ")
 }
 
 /// What the summary's sentences may cite; a plan's two levels cite different things.
@@ -239,3 +232,86 @@ fn write_rules(out: &mut String, project: &Project, id: &str, overview: bool) ->
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod rendering_tests {
+    use super::print_current;
+    use crate::planning::summary::evaluate::{
+        SentenceEval, SentenceState, SummaryEval, SummaryState,
+    };
+
+    fn evaluated_sentences(stale_line: usize, keep_line: usize) -> SummaryEval {
+        SummaryEval {
+            id: "test".into(),
+            source: None,
+            state: SummaryState::Stale,
+            file: None,
+            sentences: [
+                (stale_line, SentenceState::Stale),
+                (keep_line, SentenceState::Current),
+            ]
+            .into_iter()
+            .map(|(line, state)| SentenceEval {
+                id: format!("s-{line:08x}"),
+                text: String::new(),
+                line,
+                state,
+                citations: Vec::new(),
+            })
+            .collect(),
+            claim: None,
+            error: None,
+        }
+    }
+
+    #[test]
+    fn three_line_frontmatter_preserves_sentence_markers() {
+        let text = "---\nid: test\n---\n# Summary\nOld sentence.\nCurrent sentence.\n";
+        let mut rendered = String::new();
+        print_current(&mut rendered, text, &evaluated_sentences(5, 6), None, None).unwrap();
+        assert_eq!(
+            rendered,
+            "# Summary\n[stale] Old sentence.\n[keep] Current sentence.\n"
+        );
+    }
+
+    #[test]
+    fn invalid_frontmatter_prints_from_the_first_line() {
+        for text in ["# Summary\n---\nText.\n", "---\nid: test\nText.\n"] {
+            let mut rendered = String::new();
+            print_current(&mut rendered, text, &evaluated_sentences(8, 9), None, None).unwrap();
+            assert_eq!(rendered, text);
+        }
+    }
+
+    #[test]
+    fn frontmatter_without_trailing_newline_prints_no_delimiter() {
+        let mut rendered = String::new();
+        print_current(
+            &mut rendered,
+            "---\nid: test\n---",
+            &evaluated_sentences(5, 6),
+            None,
+            None,
+        )
+        .unwrap();
+        assert_eq!(rendered, "");
+    }
+
+    #[test]
+    fn matched_notes_collapse_whitespace_and_strip_invisible_characters() {
+        let mut rendered = String::new();
+        print_current(
+            &mut rendered,
+            "Old sentence.\nCurrent sentence.\n",
+            &evaluated_sentences(1, 2),
+            Some("s-00000001"),
+            Some("  a\u{202e}\u{200b}\n\t b\u{1b}[31m  "),
+        )
+        .unwrap();
+        assert_eq!(
+            rendered,
+            "[stale] Old sentence.\nNote: a b\u{fffd}[31m\n[keep] Current sentence.\n"
+        );
+    }
+}

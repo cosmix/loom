@@ -9,28 +9,18 @@ use std::path::Path;
 use anyhow::Result;
 
 use super::{DetectedIssue, RepairAction, Severity};
-use crate::fs::work_dir::WorkDir;
+use crate::commands::common::resolve_state_dir;
 use crate::orchestrator::coherence::{
     block_incoherent_stage, executing_stage_incoherence, load_assigned_session,
 };
 use crate::verify::transitions::list_all_stages;
-
-/// Resolve the state directory for `repo_root` the same way `repair.rs`'s
-/// other checks do: `WorkDir` when it can be determined, falling back to the
-/// nested `.loom/work` layout otherwise. Never assumes the legacy `.work`
-/// path — the state root moved to `.loom/work`.
-fn resolve_work_dir(repo_root: &Path) -> std::path::PathBuf {
-    WorkDir::new(repo_root)
-        .map(|wd| wd.root().to_path_buf())
-        .unwrap_or_else(|_| repo_root.join(".loom").join("work"))
-}
 
 /// An `Executing` stage that does not name a live worker session of its own
 /// kind, for every stage under `repo_root`'s state directory. Mirrors the
 /// "Phantom merge" check in `repair.rs`: an unreadable stages directory
 /// produces one INFO issue rather than failing the whole repair run.
 pub(super) fn check_incoherent_executing_stages(repo_root: &Path) -> Vec<DetectedIssue> {
-    let work_dir = resolve_work_dir(repo_root);
+    let work_dir = resolve_state_dir(repo_root);
     if !work_dir.is_dir() {
         return Vec::new();
     }
@@ -75,7 +65,7 @@ pub(super) fn fix_incoherent_executing_stage(
     stage_id: &str,
     reason: &str,
 ) -> Result<bool> {
-    let work_dir = resolve_work_dir(repo_root);
+    let work_dir = resolve_state_dir(repo_root);
     let fixed = block_incoherent_stage(&work_dir, stage_id, reason)?;
     Ok(fixed.is_some())
 }
