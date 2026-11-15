@@ -10,7 +10,7 @@
 | --- | --- | --- |
 | [architecture.md](architecture.md) | High-level component relationships, data flow, module dependencies | 250 |
 | [entry-points.md](entry-points.md) | Key files agents should read first | 86 |
-| [patterns.md](patterns.md) | Architectural patterns discovered in the codebase | 190 |
+| [patterns.md](patterns.md) | Architectural patterns discovered in the codebase | 194 |
 | [conventions.md](conventions.md) | Coding conventions discovered in the codebase | 250 |
 | [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 250 |
 | [stack.md](stack.md) | Dependencies, frameworks, and tooling used in the project | 116 |
@@ -99,7 +99,7 @@
 
 | Topic | Blurb | Lines |
 | --- | --- | --- |
-| [canonical-helpers](patterns/canonical-helpers.md) |  | 61 |
+| [canonical-helpers](patterns/canonical-helpers.md) |  | 72 |
 | [cli-process-and-conventions](patterns/cli-process-and-conventions.md) |  | 239 |
 | [doctrine-cross-surface](patterns/doctrine-cross-surface.md) | Pins | 144 |
 | [hook-content-stripping](patterns/hook-content-stripping.md) | Text | 162 |
@@ -115,7 +115,7 @@
 
 | Topic | Blurb | Lines |
 | --- | --- | --- |
-| [code-style-and-structure](conventions/code-style-and-structure.md) |  | 297 |
+| [code-style-and-structure](conventions/code-style-and-structure.md) |  | 298 |
 | [commits](conventions/commits.md) | Format | 24 |
 | [config-plan-and-gate-rules](conventions/config-plan-and-gate-rules.md) |  | 27 |
 | [dispute-and-adjudication](conventions/dispute-and-adjudication.md) |  | 123 |
@@ -143,7 +143,7 @@
 | [completion-runtime](mistakes/completion-runtime.md) | Churn | 94 |
 | [computed-values-and-hidden-couplings](mistakes/computed-values-and-hidden-couplings.md) | Values | 284 |
 | [concurrency-and-locking](mistakes/concurrency-and-locking.md) |  | 207 |
-| [consolidation-drift](mistakes/consolidation-drift.md) |  | 105 |
+| [consolidation-drift](mistakes/consolidation-drift.md) |  | 139 |
 | [contract-autonomy-delivery](mistakes/contract-autonomy-delivery.md) | Bypass | 109 |
 | [daemon-fork-after-threads](mistakes/daemon-fork-after-threads.md) | Fork | 38 |
 | [daemon-singleton](mistakes/daemon-singleton.md) |  | 141 |
@@ -220,7 +220,7 @@
 | [automatic-knowledge-source-graph-followups](concerns/automatic-knowledge-source-graph-followups.md) | Gaps | 69 |
 | [code-quality-and-hook-debt](concerns/code-quality-and-hook-debt.md) | Debt | 308 |
 | [codex-heartbeat-starvation](concerns/codex-heartbeat-starvation.md) |  | 22 |
-| [consolidation-followups](concerns/consolidation-followups.md) |  | 129 |
+| [consolidation-followups](concerns/consolidation-followups.md) |  | 148 |
 | [contract-autonomy-followups](concerns/contract-autonomy-followups.md) |  | 74 |
 | [handoff-followups](concerns/handoff-followups.md) |  | 57 |
 | [iterm2-window-teardown](concerns/iterm2-window-teardown.md) |  | 15 |
@@ -237,7 +237,7 @@
 | [runtime-and-session-safety](concerns/runtime-and-session-safety.md) |  | 137 |
 | [sandbox-and-confinement-gaps](concerns/sandbox-and-confinement-gaps.md) |  | 373 |
 | [source-graph-known-gaps](concerns/source-graph-known-gaps.md) | Limits | 94 |
-| [source-graph-review-backlog](concerns/source-graph-review-backlog.md) | Todo | 298 |
+| [source-graph-review-backlog](concerns/source-graph-review-backlog.md) | Todo | 295 |
 | [state-confinement-gaps](concerns/state-confinement-gaps.md) | Caches | 21 |
 | [token-accounting-and-proof-defects](concerns/token-accounting-and-proof-defects.md) |  | 334 |
 | [typed-config-values](concerns/typed-config-values.md) | Gaps | 22 |

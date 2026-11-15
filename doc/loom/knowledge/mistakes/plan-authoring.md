@@ -231,7 +231,7 @@ knowledge-distill the rewrite, or the stage changes it. Raise a cap to the measu
 
 ## A Two-Filter Cargo Criterion Passed Plan Verification (2026-11-15)
 
-**What happened:** `PLAN-test-git-support.md` shipped the foundation criterion `cargo test --lib test_git:: verify::transitions::` and seven brief verify lines in the same form; `loom plan verify --strict --dry-run` reported 0 errors and 0 warnings. Cargo rejects the second filter (`error: unexpected argument`), so the criterion could never pass. A pressure test found it.
+**What happened:** The test-git-support plan shipped the foundation criterion `cargo test --lib test_git:: verify::transitions::` and seven brief verify lines in the same form; `loom plan verify --strict --dry-run` reported 0 errors and 0 warnings. Cargo rejects the second filter (`error: unexpected argument`), so the criterion could never pass. A pressure test found it.
 
 **Why:** the cargo adapter reads the usage error as a build failure (`src/testrun/adapters/cargo_test.rs` `BUILD_ERROR`), and the dry-run reports any red criterion only as a Note (`src/commands/plan/verify/dry_run_classify.rs`). The rule in [subagent-briefing](subagent-briefing.md) covered briefs, not acceptance lines.
 

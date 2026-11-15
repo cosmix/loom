@@ -54,7 +54,7 @@ each copy stays are in [canonical-helpers](../patterns/canonical-helpers.md). Pa
 - `git/stage_commit.rs:231` and `fs/plan_lifecycle/commit.rs:131` justify the kept copy by saying
   the canonical helper cannot tell detached from a git failure; it can. The reason is the full-ref
   comparison and the commit refusal types.
-- `git/merge/stage_tests.rs:173` and `operations_start_point_tests.rs:77,137` assert through
+- `git/merge/stage_tests.rs:173` and `operations_start_point_tests.rs:55,115` assert through
   `rev-parse --abbrev-ref HEAD`; compare `symbolic-ref -q HEAD` with `refs/heads/<name>`.
 - `commands/plan/check.rs:131` drops the `toplevel` error, so a git timeout prints "not inside a git
   repository"; include `{error:#}` as `plan_server/root.rs` does.
@@ -127,3 +127,22 @@ jobs, and the mistakes files already record it eight or more times
 ([subagent-liveness-and-watch](../mistakes/subagent-liveness-and-watch.md)). Proposal: the command
 retries the worker resolution for a short window after a forwarder spawn instead of exiting 5, so no
 agent has to learn the ordering.
+
+## Git Fixture Guard Gaps
+
+- `loom/tests/test_git_guard_contracts.rs`: a `bespoke-git-fixture` marker exempts the whole file from all three rules (identity, runner, isolation), so later plain setup in a marked file passes unchecked. Scoping the exemption per rule or to the lines near the marker would close it.
+- Rule 3 (inline test module) misses `#[cfg(test)] mod tests {` on one line and an attribute such as `#[allow]` between `#[cfg(test)]` and `mod`; no current file hides this way.
+- The guard matches `fn <name>` definitions only: a `use ... as git_ok` alias (`src/git/merge/test_support.rs`, `git/cleanup/tests.rs:14`, `context/refresh/tests_snapshot.rs:5`, `tests_freshness.rs:7`, `tests_source_graph/mod.rs:10`, `context/tests/overlay_key.rs:27`, `context/worktree_graph_tests.rs:11`) keeps a deleted runner name. Callers can import `git` directly once assertion text may change; merge tests mix `git_ok`/`git_out` aliases with direct `test_git::git` imports.
+- `failed_git_mutation_reports_command_and_output` (`tests/test_support/git_repo.rs`) runs in the lib, `main.rs` and each integration crate that includes the module; cheap but redundant.
+- `isolate_git` in `tests/host_job_fixture/mod.rs:33` is a one-line pass-through to `git_repo::isolate`; callers could use `isolate` directly. `tests/target_ref_hook_contracts.rs:31` `git_as` re-implements `git_with_env` for the `LOOM_SESSION_ID` case. `git_with_env` builds through `git_command` plus `run_command`, not `git_with_program`, so the env is applied after the isolation.
+- `.branch("main")` repeats the builder default in `commands/init/base_branch.rs:30,46`. `verify/criteria/tests/runner_tests.rs:24` and `cache_input_runner_tests.rs:22` use `no_seed()`; confirm against `git show 3b9756d02` that the old fixtures had no seed.
+- Unisolated `Command::new("git")` remains outside the guard's name list: `orchestrator/core/recovery_tests.rs:149`, `git/branch/status_tests.rs:28`, `git/branch/ancestry.rs:189`, and bare `git init` helpers in `tests/subagent_owned_wait/support.rs:293`, `planning_check_cli_contracts.rs:31`, `planning_summary_support/mod.rs:49`, `planning_guidance_contracts.rs:311`, `integration/plan_verify.rs:606`, `plan_session_bridge_e2e/probes/setup.rs:60`. Host `init.templateDir` and `init.defaultBranch` reach them; the candidate is `TestRepo::builder().no_seed().init_in`.
+- `src/git/worktree/pinned_settings_tests.rs:34` and `src/git/user_git_tests.rs:18` run some setup through production wrappers; `crate::test_git::git_unchecked` and `git` fit.
+- `host_verify/tests_digest_pinned.rs:157`: six setup assertions were renamed from `run_git` to `git_succeeds`.
+- `orchestrator/core/merge_lifecycle_e2e_tests_support.rs:180` `checkout()` stores a trimmed porcelain status; equality comparisons are unaffected, but compare with the old runner if the untrimmed text is ever read.
+
+## Recurring Process Failures Awaiting a Mechanical Check
+
+- `loom check` with `run_in_background` or redirected output recurs across plans ([plan-server-delivery](../mistakes/plan-server-delivery.md), [test-git-support-delivery](../mistakes/consolidation-drift.md)). A PreToolUse hook that refuses `run_in_background` on a `loom check` or `loom stage complete` command would end it.
+- A `loom-code-reviewer` round recorded malformed when the report held no `loom-review` block recurs. The brief must say the `SubagentHandback` report itself ends with the fenced block; a `loom plan verify` or hook check on the review brief template is the mechanical fix.
+- `adjudication_e2e` (amendment, `dispute_amendment_is_idempotent_under_repeat_apply`, `amendment_cap_exceeded_*`, `kinds::freeze_refusal_accept_*`) failed six tests in the sweep stage sandbox at the base tree as well; the integration-verify full-suite host job passed. The cause is probably the writable-`/tmp` lock path in [verification-v2-followups](verification-v2-followups.md), not the fixture migration; unverified.

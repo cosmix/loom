@@ -188,3 +188,7 @@ Dependencies merge to main before dependents start; `MergeLock` serializes concu
 ## Canonical Helpers
 
 One implementation per cluster: current branch, repo root and HEAD, change listings, status parsing, stage blocking, appends and JSONL reads, atomic writes, bounded reads, frontmatter boundary, lexical paths, text, hash and time helpers, process groups. The table, the kept copies with their reasons, and the git helper properties are in [canonical-helpers](patterns/canonical-helpers.md); the drift bugs the consolidation fixed are in [consolidation-drift](mistakes/consolidation-drift.md).
+
+## Shared Git Test Fixtures
+
+Tests that need a repository or run git use `loom/tests/test_support/git_repo.rs` (`crate::test_git` in the lib): isolation written once, `TestRepo::builder()`, checked runners, and a guard test that rejects local copies unless a file carries a `bespoke-git-fixture` marker. See [canonical-helpers](patterns/canonical-helpers.md#shared-git-test-fixtures).
