@@ -133,12 +133,12 @@
 | --- | --- | --- |
 | [adjudication-autonomy-deadlock](mistakes/adjudication-autonomy-deadlock.md) |  | 228 |
 | [ambient-filesystem-trust](mistakes/ambient-filesystem-trust.md) |  | 186 |
-| [briefs-and-bug-reports](mistakes/briefs-and-bug-reports.md) |  | 370 |
+| [briefs-and-bug-reports](mistakes/briefs-and-bug-reports.md) |  | 378 |
 | [ci-toolchain-and-cargo](mistakes/ci-toolchain-and-cargo.md) |  | 383 |
 | [codex-direct-mode-invisible](mistakes/codex-direct-mode-invisible.md) |  | 23 |
 | [codex-lane-rogue-wrapper](mistakes/codex-lane-rogue-wrapper.md) |  | 187 |
 | [codex-navigation](mistakes/codex-navigation.md) | Reader | 202 |
-| [codex-worker-briefing](mistakes/codex-worker-briefing.md) |  | 240 |
+| [codex-worker-briefing](mistakes/codex-worker-briefing.md) |  | 258 |
 | [completion-broker-credential](mistakes/completion-broker-credential.md) |  | 225 |
 | [completion-runner-blocks](mistakes/completion-runner-blocks.md) |  | 216 |
 | [completion-runtime](mistakes/completion-runtime.md) | Churn | 94 |
@@ -181,7 +181,7 @@
 | [review-final-wave](mistakes/review-final-wave.md) |  | 200 |
 | [review-integration-verification](mistakes/review-integration-verification.md) |  | 283 |
 | [review-tracker](mistakes/review-tracker.md) |  | 353 |
-| [sandbox-and-settings](mistakes/sandbox-and-settings.md) |  | 399 |
+| [sandbox-and-settings](mistakes/sandbox-and-settings.md) |  | 391 |
 | [sandbox-protected-hooks-dir](mistakes/sandbox-protected-hooks-dir.md) |  | 37 |
 | [sandbox-state-channels](mistakes/sandbox-state-channels.md) |  | 299 |
 | [sandbox-tooling-and-network](mistakes/sandbox-tooling-and-network.md) |  | 387 |
@@ -226,7 +226,7 @@
 | [knowledge-cli-gaps](concerns/knowledge-cli-gaps.md) |  | 108 |
 | [loom-ask-and-read-gate](concerns/loom-ask-and-read-gate.md) |  | 112 |
 | [merge-and-recovery-edge-cases](concerns/merge-and-recovery-edge-cases.md) | Edges | 105 |
-| [native-codex-qualification](concerns/native-codex-qualification.md) |  | 94 |
+| [native-codex-qualification](concerns/native-codex-qualification.md) |  | 103 |
 | [plan-chat-followups](concerns/plan-chat-followups.md) | Chat | 41 |
 | [planner-follow-ups-followups](concerns/planner-follow-ups-followups.md) |  | 91 |
 | [planner-ui-repair-followups](concerns/planner-ui-repair-followups.md) | UI | 214 |

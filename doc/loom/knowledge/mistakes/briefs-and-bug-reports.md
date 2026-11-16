@@ -368,3 +368,11 @@ sibling's files.
 **Prevention:** a small follow-up tweak during operator review goes to the cheapest capable tier with file:line pointers, runs only the tests of the touched files, skips skill loads and screenshot reshoots, and relies on the running hot-reload mock for review.
 
 **Fix:** verification in later briefs was limited to the touched files' tests.
+
+## A Size-Limit Claim Covered File Length Only (2026-11-16)
+
+**What happened:** a brief named both limits (files 400 lines, functions 50), the engineer reported the files under 400 and the orchestrator accepted that as both. `boundary/linux.rs::command` was 52 lines; the operator caught it.
+
+**Why:** the brief's proof list had no command that checks function length, so the claim rested on a manual line count of files.
+
+**Prevention:** every Rust brief's proof list includes `cargo test --test maintainability`, which checks both limits against `maintainability-baseline.txt`; a report that the limits hold without that test's result is not evidence.

@@ -89,6 +89,15 @@ Reviewer findings nobody implemented, grouped by area. File paths are under `loo
 
 Two throwaway smoke runs on 2026-11-16 each sent one terra/xhigh unit adding one test to `native_worker/ids_tests.rs`. In the second, the unit ran a full Codex thread in `workspace_write` mode: admitted, thread started 5 s later, one turn of 18 s, report stored, outcome `succeeded`, ownership released; the edit was exactly the briefed one and touched no other file. That covers the `WorkspaceWrite` half of item 2; the `External` mode and the `loom usage` attribution are unchecked, and items 3 to 8 have not been run.
 
-Inside the boundary a Codex unit cannot link a test binary: its report said the linker could not create a temporary file on the read-only filesystem. The boundary sets `TMPDIR=/tmp` (`boundary/linux.rs`) and mounts no writable `/tmp`; whether Codex's own inner sandbox also denies it is unconfirmed. Until that changes, a native unit proves nothing by running tests, and the stage's lead runs each unit's tests after it.
+That unit could not link its test binary. Units now get a writable `$TMPDIR` ([Boundary and Proxy](../architecture/native-codex-workers.md#boundary-and-proxy)), but no real Codex job has yet confirmed a unit can build and run its tests; the next smoke run should brief a unit to run one.
 
-The first run failed before any thread on the proxy socket directory mode: see [Native Proxy Socket Dir Umask](../mistakes/sandbox-and-settings.md#native-proxy-socket-dir-umask).
+The first run failed before any thread on the proxy socket directory mode: see [Native Proxy Socket Dir Umask](../mistakes/codex-worker-briefing.md#native-proxy-socket-dir-umask).
+
+## Open Boundary Hardening
+
+Raised by the 2026-11-16 boundary review, not fixed:
+
+- **External mode Cargo home:** when `nested_sandbox_supported()` is false the policy is `externalSandbox` and commands get the boundary's own writes, including the Linked Cargo home (`/tmp/.loom-cargo-<digest(tree)>`, `boundary/linux.rs` `linked_cargo_home` bind), which persists per tree on the host. A planted Cargo config with `build.rustc-wrapper` would run in the next worker and the confined gate for that tree, without showing in the diff. Fix options: a per-boundary Linked home, or stripping the Cargo config files in `confine_scratch.rs` `populate`.
+- **Bind targets under `/tmp/loom-tmp`:** a worktree, HOME, Codex home or host TMPDIR whose path lies under `BOUNDARY_TMPDIR` would have bwrap-created ancestors inside the writable `$TMPDIR`. Refuse such paths in `Plan::real`/`Plan::payload`.
+- **Unbounded tmpfs:** `/tmp` and `/var/tmp` take the kernel default (half of RAM) per boundary; `--size` needs bubblewrap 0.10.
+- **Proxy socket and `networkAccess: false` (unverified):** a sandboxed command may be able to `connect()` to `/loom-proxy/proxy.sock` directly and reach the allowlisted domains despite the turn policy denying network.

@@ -389,11 +389,3 @@ commands (e.g. `loom map`'s overlay). See `concerns/sandbox-and-confinement-gaps
 **Why:** the metaplan is untracked prose written at an earlier commit; each claim was a reading of code that later changed.
 
 **Prevention:** a stage keeps a "Deviations from the metaplan (the tree wins)" list and re-verifies each code-grounded claim at run time. The ref-denies reason that survives is "nobody measured a `refs/` deny under the current grant" ([Agent Rule-Bending Hardening](../concerns/agent-rule-bending-hardening.md), G2). **Fix:** `mandatory_deny_read(codex_licensed)` replaced the alias.
-
-## Native Proxy Socket Dir Umask
-
-**What happened:** the first native codex smoke run admitted its unit, then the supervisor failed before any thread with `proxy socket directory /tmp/loom-nw-<rand> has mode 775, expected 700`. The distill stage then recorded the 775 as unexplained, on the belief that tempfile creates directories 0700.
-
-**Why:** `supervisor/mod.rs` created the directory with `tempfile::Builder::new().prefix("loom-nw-").tempdir()`. tempfile 3.27 creates a directory as 0777 less the process umask unless `permissions` is set, so umask 002 gave 0775 and `require_private_dir` refused it. The proxy tests chmod'ed their directories to 0700 by hand, so none exercised the creation path.
-
-**Prevention:** pass the mode to the creating call whenever a later check demands an exact mode, and have the tests build their fixture through the production constructor. Read the dependency's source for its default mode; never recall it. **Fix:** `proxy::socket_dir` passes `Permissions::from_mode(SOCKET_DIR_MODE)`; the supervisor and every proxy test use it; `socket_dir_is_private_under_any_umask` fails on any umask other than 077 without the mode.

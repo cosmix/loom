@@ -238,3 +238,21 @@ exists, or pin the interface inline in the brief so codex does not wait for it.
 **Why:** each stage tested its own seam against a hand-built record.
 
 **Prevention:** when stages build consecutive seams of one lifecycle, the integration stage adds one test that drives the first seam's real output into the last seam's reader.
+
+## Native Proxy Socket Dir Umask
+
+**What happened:** the first native codex smoke run admitted its unit, then the supervisor failed before any thread with `proxy socket directory /tmp/loom-nw-<rand> has mode 775, expected 700`. The distill stage then recorded the 775 as unexplained, on the belief that tempfile creates directories 0700.
+
+**Why:** `supervisor/mod.rs` created the directory with `tempfile::Builder::new().prefix("loom-nw-").tempdir()`. tempfile 3.27 creates a directory as 0777 less the process umask unless `permissions` is set, so umask 002 gave 0775 and `require_private_dir` refused it. The proxy tests chmod'ed their directories to 0700 by hand, so none exercised the creation path.
+
+**Prevention:** pass the mode to the creating call whenever a later check demands an exact mode, and have the tests build their fixture through the production constructor. Read the dependency's source for its default mode; never recall it. **Fix:** `proxy::socket_dir` passes `Permissions::from_mode(SOCKET_DIR_MODE)`; the supervisor and every proxy test use it; `socket_dir_is_private_under_any_umask` fails on any umask other than 077 without the mode.
+
+## Native Worker Temp Dir
+
+**What happened:** a native Codex unit could not link a test binary ("could not create a temporary file on the read-only filesystem"). A first fix assumed the bubblewrap `/tmp` was read-only; it was already a private writable tmpfs. The real block was the turn policy (`protocol/wire.rs`) sending `excludeSlashTmp` and `excludeTmpdirEnvVar` true with `TMPDIR=/tmp`. Flipping both to false was then rejected by security review: with `/tmp` writable to sandboxed commands, a nested host TMPDIR let a command rename the bwrap-created ancestors of the proxy socket directory and plant its own `proxy.sock`, and the persistent Linked Cargo home under `/tmp` became plantable.
+
+**Why:** the brief guessed the mount layer; Codex's own sandbox policy is a second layer that decides writability inside the boundary. Opening a whole shared parent (`/tmp`) exposes everything bound below it to rename-and-replace.
+
+**Prevention:** check the Codex turn `sandboxPolicy` as well as the bwrap argv before changing writability. Grant sandboxed commands a dedicated empty directory, never a parent that holds other mounts, and keep sockets and launchers at fixed paths on the read-only root.
+
+**Fix:** `TMPDIR=/tmp/loom-tmp` created 0700 on the private tmpfs, `excludeSlashTmp: true`, `excludeTmpdirEnvVar: false`, proxy directory bound read-only at `/loom-proxy` (`boundary/tmp_tests.rs` pins all of it).
