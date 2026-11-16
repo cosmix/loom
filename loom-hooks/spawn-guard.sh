@@ -114,102 +114,6 @@ fi
 
 if loom_native_lane_spawn "$AGENT_TYPE_REQ" "$GATE_PASSED"; then exit 2; fi # header item 2
 
-# --- Model resolution helpers ------------------------------------------------
-
-# read_frontmatter_model <path> - Echo the `model:` value from <path>'s YAML
-# frontmatter (between the first `---` line and the next `---` line). Returns
-# 1 when the file is missing/unreadable, has no frontmatter, or no `model:`
-# key appears inside it.
-read_frontmatter_model() {
-	local file="$1"
-	[[ -n "$file" && -f "$file" && -r "$file" ]] || return 1
-
-	# Capped: this bash loop is on every spawn's critical path, and frontmatter
-	# not closed within the cap counts as no frontmatter at all - unresolvable.
-	local max_lines=100
-	local line first=1 in_fm=0 model_val="" count=0
-	while IFS= read -r line || [[ -n "$line" ]]; do
-		count=$((count + 1))
-		if [[ $first -eq 1 ]]; then
-			first=0
-			[[ "$line" == "---" ]] || return 1
-			in_fm=1
-			continue
-		fi
-		if [[ $in_fm -eq 1 ]]; then
-			[[ "$line" == "---" ]] && break
-			if [[ "$line" =~ ^model:[[:space:]]*(.*)$ ]]; then
-				model_val="${BASH_REMATCH[1]}"
-				model_val="${model_val%\"}"
-				model_val="${model_val#\"}"
-				model_val="${model_val%\'}"
-				model_val="${model_val#\'}"
-				model_val="${model_val%$'\r'}"
-			fi
-		fi
-		((count >= max_lines)) && return 1
-	done <"$file"
-
-	[[ -n "$model_val" ]] || return 1
-	printf '%s' "$model_val"
-}
-
-# resolve_defined_tier <agent-type> - Resolve the model tier from the agent's
-# definition file (<cwd>/.claude/agents/<type>.md, then ~/.claude/agents/),
-# else a built-in table. On success sets RESOLVED_TIER (the model) and
-# RESOLVE_SOURCE ("definition" or "table") and returns 0; on failure both are
-# "" and it returns 1, and callers must not warn: the tier cannot be known.
-# Globals, not an echo: callers need both values, and a `$(...)` call runs in
-# a subshell whose globals never reach the caller - so never wrap it in one.
-resolve_defined_tier() {
-	local agent_type="$1" val
-	RESOLVED_TIER=""
-	RESOLVE_SOURCE=""
-
-	# agent_type is caller-controlled and becomes a path component below, so
-	# an unsafe segment fails resolution BEFORE interpolation (the guard
-	# LOOM_STAGE_ID gets in record_spawn) - never a deny, never a substitute.
-	case "$agent_type" in
-	*[!A-Za-z0-9._-]* | "")
-		loom_debug "spawn-guard: agent_type is not a safe path component, skipping definition lookup: $agent_type"
-		return 1
-		;;
-	esac
-
-	if val=$(read_frontmatter_model "$(pwd)/.claude/agents/${agent_type}.md" 2>/dev/null) && [[ -n "$val" ]]; then
-		RESOLVED_TIER="$val"
-		RESOLVE_SOURCE="definition"
-		return 0
-	fi
-	if val=$(read_frontmatter_model "${HOME:-}/.claude/agents/${agent_type}.md" 2>/dev/null) && [[ -n "$val" ]]; then
-		RESOLVED_TIER="$val"
-		RESOLVE_SOURCE="definition"
-		return 0
-	fi
-
-	case "$agent_type" in
-	Explore | claude-code-guide)
-		RESOLVED_TIER="sonnet"
-		RESOLVE_SOURCE="table"
-		return 0
-		;;
-	esac
-
-	return 1
-}
-
-# tier_rank <model> - Echo the rank on haiku < sonnet < opus < fable, or -1 for
-# an unrecognized string (a raw model ID): "cannot compare", not lowest tier.
-tier_rank() {
-	case "$1" in
-	haiku) echo 0 ;;
-	sonnet) echo 1 ;;
-	opus) echo 2 ;;
-	fable) echo 3 ;;
-	*) echo -1 ;;
-	esac
-}
-
 # --- 2. DENY: UNTYPED SPAWN --------------------------------------------------
 # ENFORCEMENT GATE passes: deny; else warn, and with no model requested rewrite to sonnet.
 # With an explicit `model` nothing is inherited; the message says so.
@@ -372,6 +276,13 @@ record_spawn() {
 		return 0
 	fi
 
+	# The effort the subagent runs at: the reviewer's configured effort (which
+	# replaces the caller's in the rewritten input), else the caller's, else the
+	# agent definition's default; empty when none is known.
+	local effort="${EFFORT:-}"
+	[[ -n "$effort" ]] || effort=$(printf '%s' "$TOOL_INPUT" | jq -r '.effort | strings' 2>/dev/null || true)
+	[[ -n "$effort" ]] || effort=$(resolve_defined_effort "$AGENT_TYPE_REQ" || true)
+
 	local ts line
 	ts=$(date -u +"%Y-%m-%dT%H:%M:%S.000Z")
 	line=$(jq -nc \
@@ -382,8 +293,9 @@ record_spawn() {
 		--arg agent_type "$AGENT_TYPE_REQ" \
 		--arg model "${MODEL:-}" \
 		--arg model_source "${MODEL_SOURCE:-}" \
+		--arg effort "$effort" \
 		--arg description "${DESCRIPTION:-}" \
-		'{ts: $ts, stage_id: $stage_id, session_id: $session_id, caller: $caller, agent_type: $agent_type, model: $model, model_source: $model_source, description: $description}' \
+		'{ts: $ts, stage_id: $stage_id, session_id: $session_id, caller: $caller, agent_type: $agent_type, model: $model, model_source: $model_source, effort: $effort, description: $description}' \
 		2>/dev/null || true)
 
 	if [[ -n "$line" ]]; then
