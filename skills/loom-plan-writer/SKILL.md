@@ -168,15 +168,14 @@ findings of one review round to ONE fix worker. Assign implementation to subagen
 code, consumers and tests together in dependency order in one brief, possibly across several files.
 Two jobs never write one file. Each job starts near 23,000 tokens; per file-sized change at high effort, gpt-6.1-sol takes about 3 minutes and 50,000 tokens of context, gpt-6.1-terra about 1 minute
 and 20,000 tokens. Budget twice the time at xhigh. Keep peak context at most about 250,000 tokens and finish well inside 1500000 ms: about 4 to 6 changes on sol, about 12 on terra. Re-split a
-timeout against its partial tree. A haiku forwarder costs about 20,000 tokens per job plus
-orchestrator turns. Every turn re-reads the context, making cost grow with its length squared: 4 jobs of 6 changes cost about 1.8 times the Codex tokens of 24 jobs of one. Claude quota is scarcer,
+timeout against its partial tree. Each job costs orchestrator turns. Every turn re-reads the context, making cost grow with its length squared: 4 jobs of 6 changes cost about 1.8 times the Codex tokens of 24 jobs of one. Claude quota is scarcer,
 which justifies cohesive bundles; never bundle unrelated concerns to fill a job. Up to 6 jobs run
-in the foreground with Bash timeout 1560000 ms; waves follow real dependencies, never that cap. Forward ONE line naming an absolute brief path; without a committed brief, write it under the
+at once; waves follow real dependencies, never that cap. Hand each unit an absolute brief path; without a committed brief, write it under the
 worktree scratch directory first. Quote applicable skill rules there: declared skills are for Claude
 workers, and Codex opens no skill files. Codex runs no fixture-backed tests and touches no git or `.loom/`. Claude fits exploration, fixture-backed test convergence, UI design and debugging.
 Mixed stages list both lanes (order is informational); list codex on a stage with a straightforward, well-specified piece, `["claude"]` otherwise. Run `loom usage --quota` before choosing lanes. Check availability and ask the user ONCE to confirm
-a per-stage lane recommendation with one-line reasons; if unavailable, say so and plan on Claude. Under `codex.backend = native` (`loom config -k codex.backend` or the project's `[codex] backend`; default `legacy`) the stage's main agent starts each unit with `loom subagents start --provider codex` and spawns no forwarder: lists, sizing and brief rules are unchanged, and the description says "start N codex units" with no Bash timeout.
-Model selection, anchors, forwarding-line restrictions and checks: `references/codex-implementers.md`.
+a per-stage lane recommendation with one-line reasons; if unavailable, say so and plan on Claude. A plan names `codex` as the implementer and never the mechanism: descriptions say "start N codex units" and wave tables say `codex`, with no agent type, plugin command or Bash timeout. The `codex.backend` setting (default `native`) picks the launch and the stage signal carries its commands.
+Model selection, anchors, brief-path restrictions and checks: `references/codex-implementers.md`.
 
 ### Context ceiling (`context_ceiling_tokens`)
 

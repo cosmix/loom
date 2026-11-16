@@ -31,10 +31,11 @@ description: |
   full before anything else."
   This stage licenses both lanes (implementers ["codex", "claude"]). Each
   handler is one concern with its consumers and tests in dependency order,
-  so A1-A3 and B1-B3 are codex jobs. Coordinators spawn haiku
-  loom-codex-forwarder workers in the FOREGROUND, up to six at once,
-  passing ONE line naming each absolute brief path. The test rows stay on
-  Claude because their work needs fixture-backed test convergence.
+  so A1-A3 and B1-B3 are codex jobs. The main agent starts them as codex
+  units, up to six at once, each with its absolute brief path; only the
+  main agent can start a codex unit, so the coordinators own the Claude rows
+  alone. The test rows stay on Claude because their work needs
+  fixture-backed test convergence.
 
   | Worker | Role | Tier | Files owned | Shared context | Brief path |
   | ------ | ---- | ---- | ------------ | --------------- | ---------- |
@@ -57,4 +58,4 @@ description: |
   for it.
 ```
 
-Under `codex.backend = native` a coordinator cannot start codex workers (only the stage's main agent can run `loom subagents start --provider codex`), so in a hierarchical plan the main agent starts the codex units directly and the worker table gives them no coordinator.
+A coordinator cannot start codex units (only the stage's main agent can), so in a hierarchical plan the main agent starts the codex units directly and the worker table gives them no coordinator. The plan names them `codex`, never a launch mechanism; the `codex.backend` setting picks it.
