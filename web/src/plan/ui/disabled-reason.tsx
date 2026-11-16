@@ -42,6 +42,7 @@ export function DisabledReason({
   reasonPlacement = "below",
   describedBy,
   label,
+  title,
   expanded,
   controls,
   busy = false,
@@ -64,6 +65,8 @@ export function DisabledReason({
   describedBy?: string;
   /** The accessible name when it must say more than the visible text; it starts with that text. */
   label?: string;
+  /** A tooltip saying what a press does, for a button whose visible words are a state. */
+  title?: string;
   /** For a button that opens a region inline: whether it is open (`aria-expanded`). */
   expanded?: boolean;
   /** The id of the region it opens (`aria-controls`); pass it only while that region is drawn. */
@@ -92,6 +95,7 @@ export function DisabledReason({
         aria-disabled={inert || undefined}
         aria-busy={busy || undefined}
         aria-label={label}
+        title={title}
         aria-expanded={expanded}
         aria-controls={controls}
         aria-describedby={described === "" ? undefined : described}

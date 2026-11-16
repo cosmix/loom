@@ -46,3 +46,8 @@ export function featureSourceHref(
 export function sourceHref(repoPath: string, options: SourceOptions = {}): string {
   return featureSourceHref(featureOfDocPath(repoPath), repoPath, options);
 }
+
+/** A feature plan's pressure record: the "Pressure tests" heading of its source. */
+export function pressureRecordHref(feature: string, repoPath: string): string {
+  return featureSourceHref(feature, repoPath, { anchor: "pressure-tests" });
+}

@@ -1,7 +1,8 @@
 /*
- * What the settle control opens (`settle-surface.tsx`, `settle-menu.tsx`, `settle-confirm.tsx`):
- * a popover under the settle button holding the menu or the confirmation, or the same content in a
- * bottom sheet below 760px. Imported by trace-heading.css; tokens and scales only.
+ * What a state button opens (`state-menu.tsx`, `settle-surface.tsx`, `settle-menu.tsx`,
+ * `settle-confirm.tsx`): a popover under the settle button holding the menu or the confirmation,
+ * or under a plan's Pressure-test holding its menu, and the same content in a bottom sheet below
+ * 760px. Imported by trace-heading.css; tokens and scales only.
  */
 /* A popover under the settle button (`settle-surface.tsx`): the menu narrow and tight, the
    confirmation wider with room around it. Both carry the `[data-loom-plan]` root themselves.
@@ -96,16 +97,18 @@
   transition: background-color 120ms;
 }
 
-[data-loom-plan] .trace-menu__item:hover {
+[data-loom-plan] .trace-menu__item:not(:has([aria-disabled="true"])):hover {
   background: var(--muted);
 }
 
-[data-loom-plan] .trace-menu__item:has(> .plan-button:focus-visible) {
+[data-loom-plan] .trace-menu__item:has(.plan-button:focus-visible) {
   outline: 2px solid var(--ring);
   outline-offset: -2px;
 }
 
-[data-loom-plan] .trace-menu__item > .plan-button {
+/* The button may stand inside `DisabledReason`'s wrapper, which stays unpositioned, so the hit
+   area below is still the item's. A blocked choice's reason follows the verb in the note's place. */
+[data-loom-plan] .trace-menu__item .plan-button {
   position: static;
   justify-content: flex-start;
   height: auto;
@@ -117,11 +120,16 @@
   font-size: var(--type-body);
 }
 
-[data-loom-plan] .trace-menu__item > .plan-button::after {
+[data-loom-plan] .trace-menu__item .plan-button::after {
   content: "";
   position: absolute;
   inset: 0;
   border-radius: inherit;
+}
+
+[data-loom-plan] .trace-menu__item .plan-fine {
+  font-size: var(--type-ui);
+  line-height: var(--leading-ui);
 }
 
 [data-loom-plan] .trace-menu__note {
@@ -248,6 +256,15 @@
 
 .trace-sheet[data-sheet] .trace-confirm__actions > .plan-button {
   flex: 1 1 0;
+}
+
+/* The chevron of a state button that opens a menu (`state-menu.tsx`): smaller and muted, close
+   after the state's words, whatever tone the button's glyph takes. */
+[data-loom-plan] .plan-button[aria-haspopup] > svg.trace-menu-chevron {
+  width: 14px;
+  height: 14px;
+  margin-inline-start: -2px;
+  color: var(--muted-foreground);
 }
 
 @media (prefers-reduced-motion: reduce) {

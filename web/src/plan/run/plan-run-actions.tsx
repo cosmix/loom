@@ -2,15 +2,15 @@ import { useAtomValue, useSetAtom } from "jotai";
 
 import { ConfigBlockNotice } from "@/plan/chat/pressure/config-block-notice";
 import { usePressureOptions, useStartReason } from "@/plan/chat/pressure/use-pressure";
+import { visibleControls } from "@/plan/chat/visible-controls";
+import { pressureStatus, READ_PRESSURE_RECORD } from "@/plan/files/pressure-words";
 import { pressureDialogAtom } from "@/plan/offers/actions-pressure";
 import { runDialogAtom } from "@/plan/offers/actions-run";
 import { authorBlockReasonAtom, isHolderAtom } from "@/plan/state/atoms";
+import { StateMenu, StateMenuItem, StateMenuLink } from "@/plan/trace/state-menu";
 import { type ButtonLook, DisabledReason } from "@/plan/ui/disabled-reason";
-import { OTHER_GLYPHS } from "@/plan/ui/glyphs";
 
 import "./pressure-test-action.css";
-
-const Flask = OTHER_GLYPHS.pressureTested;
 
 /**
  * The Start a run button for one plan (null opens the dialog on its own choice). Pressure start
@@ -43,28 +43,58 @@ export function StartRunButton({
   );
 }
 
+/** Why the menu's own choice is blocked while a test runs on the plan. */
+const TEST_RUNNING = "A pressure test is running on this plan.";
+
 /**
- * The Pressure-test control, the action of a written plan's pressure status (`pressureChip`'s
- * `action`; DESIGN.md, Buttons): a quiet `sm` button led by the flask that reads as a button at
- * rest (`pressure-test-action.css`). `again` words it as a re-run for a plan already tested. A
- * blocked start draws its reason beside the button, on the row.
+ * The Pressure-test control of a written plan (DESIGN.md, Buttons): one state button, as the
+ * settle button is. Its label is the plan's pressure state ("Not pressure-tested",
+ * "Pressure-tested 5 Nov", "Being pressure-tested"), led by the state's toned glyph, and a press
+ * opens a menu under it (`StateMenu`). The menu's choice opens the pressure dialog on the plan;
+ * its note says so, after the record's date as sent. A blocked start, or a test already running,
+ * disables the choice and draws the reason in the note's place. `recordHref` is where the plan's
+ * pressure record reads, for a tested plan that has such a place: it adds a link to it.
  */
-export function PressureTestAction({ path, again = false }: { path: string; again?: boolean }) {
+export function PressureTestAction(props: {
+  path: string;
+  date: string | null;
+  active?: boolean;
+  recordHref?: string | null;
+}) {
+  const { path, date, active = false, recordHref = null } = props;
   const options = usePressureOptions();
-  const reason = useStartReason(options?.ok ? options.value : null);
+  const startReason = useStartReason(options?.ok ? options.value : null);
   const setPressure = useSetAtom(pressureDialogAtom);
+  const { label, Icon, tone } = pressureStatus(date, active);
   return (
-    <span className="pressure-test-action">
-      <DisabledReason
-        look="quiet"
-        size="sm"
-        reasonPlacement="inline"
-        reason={reason}
-        onClick={() => setPressure({ open: true, plan: path })}
-      >
-        <Flask aria-hidden="true" />
-        <span>{again ? "Pressure-test again" : "Pressure-test"}</span>
-      </DisabledReason>
+    <span className="pressure-test-action" data-tone={tone}>
+      <StateMenu label={label} glyph={<Icon aria-hidden="true" />}>
+        {(close) => (
+          <>
+            <StateMenuItem
+              label={date === null ? "Pressure-test this plan" : "Pressure-test this plan again"}
+              note={
+                date === null
+                  ? "Opens the pressure test, where you start it."
+                  : `Tested ${visibleControls(date)}. Opens the pressure test, where you start it.`
+              }
+              reason={active ? TEST_RUNNING : startReason}
+              onChoose={() => {
+                close();
+                setPressure({ open: true, plan: path });
+              }}
+            />
+            {date !== null && recordHref !== null && (
+              <StateMenuLink
+                label={READ_PRESSURE_RECORD}
+                note="The plan's Pressure tests heading, in its source."
+                to={recordHref}
+                onChoose={close}
+              />
+            )}
+          </>
+        )}
+      </StateMenu>
     </span>
   );
 }

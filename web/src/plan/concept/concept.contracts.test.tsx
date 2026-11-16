@@ -243,7 +243,7 @@ it("concept plan page shows implements not stated and broken section names", asy
   const first = renderAt("/f/demo/engineering/a");
   await readingColumn();
   const text = () => (document.body.textContent ?? "").replace(/\s+/g, " ");
-  await waitFor(() => expect(text()).toMatch(/Implements:\s*not stated/));
+  await waitFor(() => expect(text()).toMatch(/Implements\s*Not stated/));
   first.view.unmount();
   const links = [
     { number: 1, name: "section_01", doc: clone(summaryFixture.key_chips[0]!.doc) },
@@ -252,7 +252,7 @@ it("concept plan page shows implements not stated and broken section names", asy
   pages = { "demo/engineering/a": { ...plan, implements: { kind: "sections", links } } };
   const second = renderAt("/f/demo/engineering/a");
   await readingColumn();
-  await waitFor(() => expect(text()).toContain("Implements:"));
+  await waitFor(() => expect(text()).toContain("Implements"));
   const broken = screen.getAllByText(/section_99/);
   expect(broken.length).toBeGreaterThan(0);
   expect(broken.every((element) => element.closest("a") === null)).toBe(true);

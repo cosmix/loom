@@ -1,9 +1,13 @@
-/* Pressure-test (`PressureTestAction`) and Rebuild (`RebuildButton`, `.rebuild-action`): a quiet `sm` `.plan-button` beside a status, which at rest
-   would read as one more muted status word. It keeps the quiet button's size and corners and takes
-   a resting affordance: the flask and words in `--foreground` on a `--muted` fill, drawing no edge,
-   because inside the status card (a `.plan-surface`) nothing draws a border (DESIGN.md, Surfaces).
-   On a summary page the chip row stands on the page ground, so the button takes the hairline edge
-   of the action row under it (`trace-heading.css`) in place of the fill. */
+/* Pressure-test (`PressureTestAction`) and Rebuild (`RebuildButton`, `.rebuild-action`): a quiet
+   `sm` `.plan-button` in a status row, which at rest would read as one more muted status word. It
+   keeps the quiet button's size and corners and takes a resting affordance: the glyph and words in
+   `--foreground` on a `--muted` fill, drawing no edge, because inside the status card (a
+   `.plan-surface`) nothing draws a border (DESIGN.md, Surfaces). Pressure-test's label is the
+   plan's pressure state, so its glyph takes the state's tone, and it opens a menu (`StateMenu`):
+   the chevron stays muted (trace-settle.css) and the open button keeps its hover fill. On a
+   summary page Rebuild stands on
+   the page ground and takes a hairline edge in place of the fill, and Pressure-test is a state
+   button of the state row (`trace-heading.css`). */
 :is(.pressure-test-action, .rebuild-action) {
   display: inline-flex;
   min-width: 0;
@@ -15,7 +19,8 @@
   color: var(--foreground);
 }
 
-:is(.pressure-test-action, .rebuild-action) .plan-button:hover {
+:is(.pressure-test-action, .rebuild-action) .plan-button:hover,
+.pressure-test-action .plan-button[aria-expanded="true"] {
   background: color-mix(in oklch, var(--foreground) 8%, var(--muted));
 }
 
@@ -25,17 +30,28 @@
   color: var(--foreground);
 }
 
-.concept-page-column :is(.pressure-test-action, .rebuild-action) .plan-button {
-  border-color: var(--border);
-  background: transparent;
+.pressure-test-action[data-tone="warning"] .plan-button > svg {
+  color: var(--tone-warning);
 }
 
-.concept-page-column :is(.pressure-test-action, .rebuild-action) .plan-button:hover {
+.pressure-test-action[data-tone="ok"] .plan-button > svg {
+  color: var(--tone-completed);
+}
+
+.pressure-test-action[data-tone="accent"] .plan-button > svg {
+  color: var(--tone-executing);
+}
+
+.concept-page-column .rebuild-action .plan-button {
+  border-color: var(--border);
+  background: transparent;
+  font-size: var(--type-ui);
+}
+
+.concept-page-column .rebuild-action .plan-button:hover {
   background: var(--muted);
 }
 
-.concept-page-column
-  :is(.pressure-test-action, .rebuild-action)
-  .plan-button:is([aria-disabled="true"], :disabled):hover {
+.concept-page-column .rebuild-action .plan-button:is([aria-disabled="true"], :disabled):hover {
   background: transparent;
 }

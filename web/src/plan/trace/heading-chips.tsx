@@ -1,42 +1,29 @@
-import type { HeadingChip, HeadingTone } from "@/plan/ui/doc-heading";
+import type { HeadingChip } from "@/plan/ui/doc-heading";
 import { INSTRUMENT_GLYPHS } from "@/plan/ui/glyphs";
 
-import { sectionCoverage, settleWords } from "./doc-model";
-import { coverageHref, docOfPath, isMoved, shownSettle } from "./model";
-import { SettleGlyph } from "./settle-glyph";
+import { sectionCoverage } from "./doc-model";
+import { coverageHref, docOfPath } from "./model";
 import { useTrace } from "./state";
 
 const CoverageGlyph = INSTRUMENT_GLYPHS.coverage;
 
 /**
- * The chips a summary page's heading draws from the trace: the document's settle state as glyph
- * and words, and for a section "n of m headings covered", linking to Coverage at the section.
- * Nothing for a page with no document in the trace, or for done work, which is never settled.
+ * The chip a section's summary page draws from the trace: "n of m headings covered", linking to
+ * Coverage at the section. The document's settle state is not a chip: the settle control's button
+ * is the state (`settle-control.tsx`), so the words stand once. Nothing for any other document.
  */
 export function useTraceChips(feature: string | null, path: string | null): HeadingChip[] {
   const { trace } = useTrace(feature ?? "");
   const doc = trace && path !== null ? docOfPath(trace, path) : undefined;
-  if (!trace || !doc || feature === null) return [];
-  const state = shownSettle(doc);
-  const moved = state !== null && isMoved(state);
-  const tone: HeadingTone = state === "settled" ? "ok" : moved ? "warning" : "neutral";
-  const chips: HeadingChip[] = [];
-  if (state !== null) {
-    chips.push({
-      key: "settle",
-      label: settleWords(state, doc.role).chip,
-      icon: <SettleGlyph state={state} />,
-      tone,
-    });
-  }
+  if (!trace || !doc || feature === null || doc.role !== "section") return [];
   const { covered, total } = sectionCoverage(trace, doc.path);
-  if (doc.role === "section" && total > 0) {
-    chips.push({
+  if (total === 0) return [];
+  return [
+    {
       key: "coverage",
       label: `${covered} of ${total} headings covered`,
       icon: <CoverageGlyph />,
       to: coverageHref(feature, doc.path),
-    });
-  }
-  return chips;
+    },
+  ];
 }

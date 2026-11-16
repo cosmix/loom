@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { createStore, Provider } from "jotai";
 import { afterEach, expect, it, vi } from "vitest";
 
@@ -18,13 +18,26 @@ import { PressureTestAction, PressureTestDetail, StartRunButton } from "./plan-r
 const path = "doc/plans/PLAN-example.md";
 
 /** The pressure row's end: the control and the detail line under the words. */
-function PressureRow() {
+function PressureRow(props: { active?: boolean }) {
   return (
     <>
-      <PressureTestAction path={path} />
+      <PressureTestAction path={path} date={null} active={props.active} />
       <PressureTestDetail />
     </>
   );
+}
+
+const START = "Pressure-test this plan";
+
+/** Opens the menu from the state button and returns it. */
+async function openMenu(name: string | RegExp = "Not pressure-tested") {
+  fireEvent.click(screen.getByRole("button", { name }));
+  return within(await screen.findByRole("dialog", { name }));
+}
+
+/** The menu's start choice; `description` is its note, or the reason that blocks it. */
+async function startChoice(description?: string) {
+  return (await openMenu()).getByRole("button", { name: START, description });
 }
 const blocked = {
   reason: "Codex changed session configuration: AGENTS.md",
@@ -45,24 +58,81 @@ function optionsWith(overrides: Record<string, unknown>) {
   return pressureOptionsSchema.parse({ ...optionsFixture, config_block: null, ...overrides });
 }
 
-it("opens the pressure dialog and respects authoring restrictions", () => {
+it("opens a menu from the state button, whose choice starts the test", async () => {
   const store = createStore();
   render(
     <Provider store={store}>
       <PressureRow />
     </Provider>,
   );
-  fireEvent.click(screen.getByRole("button", { name: "Pressure-test" }));
-  expect(store.get(pressureDialogAtom)).toEqual({ open: true, plan: path });
-  act(() => holdAuthoring(store));
-  act(() =>
-    store.set(authoringAtom, {
-      holder: { public_id: "other", name: "Ada", away_since: null, frees_at: null },
+  const trigger = screen.getByRole("button", { name: "Not pressure-tested" });
+  expect(trigger.getAttribute("aria-haspopup")).toBe("dialog");
+  expect(trigger.getAttribute("aria-expanded")).toBe("false");
+  expect(trigger.querySelector("svg.trace-menu-chevron")).not.toBeNull();
+
+  fireEvent.click(trigger);
+  // The press opens the menu; it starts nothing by itself.
+  expect(store.get(pressureDialogAtom).open).toBe(false);
+  expect(trigger.getAttribute("aria-expanded")).toBe("true");
+  const menu = within(await screen.findByRole("dialog", { name: "Not pressure-tested" }));
+  expect(menu.getAllByRole("button").map((item) => item.textContent)).toEqual([START]);
+
+  fireEvent.click(
+    menu.getByRole("button", {
+      name: START,
+      description: "Opens the pressure test, where you start it.",
     }),
   );
-  expect(
-    screen.getByRole("button", { name: "Pressure-test", description: "Ada holds authoring" }),
-  ).toBeTruthy();
+  expect(store.get(pressureDialogAtom)).toEqual({ open: true, plan: path });
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  expect(trigger.getAttribute("aria-expanded")).toBe("false");
+});
+
+it("Escape closes the pressure menu and returns focus to the state button", async () => {
+  render(
+    <Provider store={createStore()}>
+      <PressureRow />
+    </Provider>,
+  );
+  const trigger = screen.getByRole("button", { name: "Not pressure-tested" });
+  fireEvent.click(trigger);
+  fireEvent.keyDown(await screen.findByRole("dialog"), { key: "Escape" });
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  expect(document.activeElement).toBe(trigger);
+});
+
+it("blocks the menu's choice with the authoring reason", async () => {
+  const store = createStore();
+  holdAuthoring(store);
+  store.set(authoringAtom, {
+    holder: { public_id: "other", name: "Ada", away_since: null, frees_at: null },
+  });
+  render(
+    <Provider store={store}>
+      <PressureRow />
+    </Provider>,
+  );
+  const choice = await startChoice("Ada holds authoring");
+  expect(choice.getAttribute("aria-disabled")).toBe("true");
+  fireEvent.click(choice);
+  expect(store.get(pressureDialogAtom).open).toBe(false);
+});
+
+it("blocks the menu's choice while a test runs on the plan", async () => {
+  const store = createStore();
+  render(
+    <Provider store={store}>
+      <PressureRow active />
+    </Provider>,
+  );
+  const menu = await openMenu("Being pressure-tested");
+  const choice = menu.getByRole("button", {
+    name: START,
+    description: "A pressure test is running on this plan.",
+  });
+  expect(choice.getAttribute("aria-disabled")).toBe("true");
+  fireEvent.click(choice);
+  expect(store.get(pressureDialogAtom).open).toBe(false);
 });
 
 it("opens the run dialog from StartRunButton for the authoring holder", () => {
@@ -77,7 +147,7 @@ it("opens the run dialog from StartRunButton for the authoring holder", () => {
   expect(store.get(runDialogAtom)).toEqual({ open: true, plan: path });
 });
 
-it("disables Pressure-test with the server reason when the options say unavailable", () => {
+it("disables Pressure-test with the server reason when the options say unavailable", async () => {
   const store = createStore();
   store.set(pressureOptionsAtom, {
     ok: true,
@@ -92,14 +162,13 @@ it("disables Pressure-test with the server reason when the options say unavailab
       <PressureRow />
     </Provider>,
   );
-  fireEvent.click(screen.getByRole("button", { name: "Pressure-test" }));
-  expect(
-    screen.getByRole("button", { name: "Pressure-test", description: "Codex is not installed" }),
-  ).toBeTruthy();
+  const choice = await startChoice("Codex is not installed");
+  expect(choice.getAttribute("aria-disabled")).toBe("true");
+  fireEvent.click(choice);
   expect(store.get(pressureDialogAtom).open).toBe(false);
 });
 
-it("disables Start a run for a browser that does not hold authoring, since the run routes need the holder", () => {
+it("disables Start a run for a browser that does not hold authoring, since the run routes need the holder", async () => {
   const store = createStore();
   store.set(serverInfoAtom, { ...hello.server, read_only: [] });
   store.set(youAtom, hello.you);
@@ -119,11 +188,11 @@ it("disables Start a run for a browser that does not hold authoring, since the r
 
   expect(store.get(runDialogAtom).open).toBe(false);
   // Pressure start takes free authoring itself, so it stays available.
-  fireEvent.click(screen.getByRole("button", { name: "Pressure-test" }));
+  fireEvent.click(await startChoice());
   expect(store.get(pressureDialogAtom).open).toBe(true);
 });
 
-it("falls back to a generic reason when the server is unavailable without giving one", () => {
+it("falls back to a generic reason when the server is unavailable without giving one", async () => {
   const store = createStore();
   store.set(pressureOptionsAtom, {
     ok: true,
@@ -135,15 +204,10 @@ it("falls back to a generic reason when the server is unavailable without giving
     </Provider>,
   );
 
-  expect(
-    screen.getByRole("button", {
-      name: "Pressure-test",
-      description: "Pressure-testing is unavailable",
-    }),
-  ).toBeTruthy();
+  expect(await startChoice("Pressure-testing is unavailable")).toBeTruthy();
 });
 
-it("shows control characters in the options reason as visible markers", () => {
+it("shows control characters in the options reason as visible markers", async () => {
   const store = createStore();
   store.set(pressureOptionsAtom, {
     ok: true,
@@ -155,12 +219,7 @@ it("shows control characters in the options reason as visible markers", () => {
     </Provider>,
   );
 
-  expect(
-    screen.getByRole("button", {
-      name: "Pressure-test",
-      description: "Codex changed: .claude/⟨U+202E⟩x",
-    }),
-  ).toBeTruthy();
+  expect(await startChoice("Codex changed: .claude/⟨U+202E⟩x")).toBeTruthy();
 });
 
 it("re-enables Pressure-test once the holder who blocked it releases authoring", async () => {
@@ -186,12 +245,15 @@ it("re-enables Pressure-test once the holder who blocked it releases authoring",
       </Provider>,
     );
 
+    const menu = await openMenu();
+    expect(
+      menu.getByRole("button", { name: START, description: "Ada holds authoring" }),
+    ).toBeTruthy();
+
     act(() => store.set(authoringAtom, { holder: null }));
 
     await waitFor(() =>
-      expect(
-        screen.getByRole("button", { name: "Pressure-test" }).getAttribute("aria-disabled"),
-      ).toBeNull(),
+      expect(menu.getByRole("button", { name: START }).getAttribute("aria-disabled")).toBeNull(),
     );
     expect(screen.queryByText("Another browser holds authoring.")).toBeNull();
   } finally {
@@ -222,17 +284,14 @@ it("shows the config block beside the actions and re-enables Pressure-test after
       <PressureRow />
     </Provider>,
   );
-  expect(
-    screen.getByRole("button", { name: "Pressure-test", description: blocked.reason }),
-  ).toBeTruthy();
   expect(screen.getByRole("region", { name: "Codex configuration change (plan)" })).toBeTruthy();
+  const menu = await openMenu();
+  expect(menu.getByRole("button", { name: START, description: blocked.reason })).toBeTruthy();
 
   fireEvent.click(screen.getByRole("button", { name: "I have checked these files" }));
 
   await waitFor(() => expect(screen.queryByRole("region")).toBeNull());
-  expect(
-    screen.getByRole("button", { name: "Pressure-test" }).getAttribute("aria-disabled"),
-  ).toBeNull();
+  expect(menu.getByRole("button", { name: START }).getAttribute("aria-disabled")).toBeNull();
   expect(fetch).toHaveBeenCalledWith(
     "/api/pressure/confirm-config",
     expect.objectContaining({ method: "POST" }),

@@ -4,66 +4,46 @@
  * trace's parts of the heading (the standfirst, the settle control) are trace-heading-parts.css and
  * what the control opens is trace-settle.css, both imported first. Imported by trace.css.
  *
- * A summary page's heading is the one inside the concept page column. Read top to bottom: the
- * breadcrumb with the Summary / Source switch at its end, the title at the document step (40px
- * in the chrome face, `--font-sans`, ui/DESIGN.md Type), the standfirst, the chip row, the facts line, the action row of 32px
- * bordered buttons, then the hairline. The toolbar bar of the shared heading dissolves (`display:
- * contents`), so its two groups take their own places in the heading's grid, and `order` sets the
- * chip row before the action row whatever their DOM order.
+ * A summary page's heading is the one inside the concept page column. Read top to bottom, it is
+ * four bands: the identity (the breadcrumb, the title at the document step, the standfirst); the
+ * state row (the buttons whose labels are the document's state: the settle control with See what
+ * changed, a written plan's Pressure-test); the ledger (hairline-divided rows under an eyebrow
+ * label each: Status, Implements, Built by); and the view bar (the Summary / Source switch at its
+ * start, Edit, Discuss and Open all at its end) over the hairline that ends the heading. The
+ * toolbar bar of the shared heading dissolves (`display: contents`), so its two groups take their
+ * places in the heading's grid, and `order` sets the bands whatever their DOM order.
  */
 @import "./trace-settle.css";
 @import "./trace-heading-parts.css";
 
 .concept-page-column .doc-heading {
+  --ledger-label: 6.5rem;
   grid-template-columns: minmax(0, 1fr) auto;
   column-gap: var(--space-4);
   row-gap: 0;
+  padding-block-end: var(--space-3);
 }
 
+/* A page's own rows (a locked plan's notice, a section's build marker) follow the state row. */
 .concept-page-column .doc-heading > * {
   grid-column: 1 / -1;
-  order: 6;
-  margin-top: var(--space-3);
+  order: 4;
+  margin-top: var(--space-4);
 }
 
+/* ── Identity ─────────────────────────────────────────────────────────────── */
+
 .concept-page-column .doc-heading > nav {
-  grid-column: 1;
   order: 0;
-  align-self: center;
   min-width: 0;
   margin: 0;
   font-size: var(--type-ui);
 }
 
-.concept-page-column .doc-heading-toolbar {
-  display: contents;
-}
-
-/* The view switch: a hairline-edged track at the breadcrumb's end, its segments at --type-ui (the
-   heading's chrome keeps the 13px floor). */
-.concept-page-column .doc-heading-group:has(> .doc-heading-views) {
-  grid-column: 2;
-  order: 0;
-  align-self: center;
-  min-height: 0;
-  padding: 2px;
-  border: 1px solid var(--border);
-  border-radius: var(--corner-control);
-}
-
-.concept-page-column .doc-heading-views > .plan-button {
-  font-size: var(--type-ui);
-}
-
-.concept-page-column .doc-heading-views > .plan-button svg {
-  width: 14px;
-  height: 14px;
-}
-
 .concept-page-column .doc-heading-title-row {
   --heading-line: 46px;
   order: 1;
-  margin: var(--space-4) 0 0;
+  margin: var(--space-3) 0 0;
 }
 
 .concept-page-column .doc-heading-title-row .plan-page-title {
@@ -86,24 +66,110 @@
 
 .concept-page-column .doc-heading > .trace-standfirst {
   order: 2;
+  margin-top: var(--space-3);
 }
 
-/* The chip row: the status card's rows set as compact chips on one line, with no card, edge or
-   rule: the summary's freshness with Rebuild after its words, the settle state, the coverage. A
-   row's detail line (a waiting rebuild's sentence) goes under its words and action, and a row
-   that has one takes the row's whole width. Rows past the line's room (a plan's state with its
-   pressure status, Pressure-test and its blocked reason, the open questions) wrap to a line of
-   their own. */
-.concept-page-column .doc-heading-status {
+/* ── State row ────────────────────────────────────────────────────────────── */
+
+/* The buttons whose labels are the document's state, on one wrapping line: the settle button,
+   See what changed, then a written plan's Pressure-test. Their wrappers dissolve, so the buttons
+   are the row's own items and what explains one (See what changed's reason, a blocked reason, a
+   commit note, the Codex configuration notice) takes a line of its own under the row. The row is
+   gone while nothing renders in it. */
+.concept-page-column .doc-heading-state {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   order: 3;
-  gap: var(--space-2) var(--space-4);
+  gap: 6px;
+  min-width: 0;
   margin-top: var(--space-5);
+}
+
+.concept-page-column .doc-heading-state:empty,
+.concept-page-column .doc-heading-state__detail:empty {
+  display: none;
+}
+
+.concept-page-column .doc-heading-state :is(.trace-settle-control, .pressure-test-action) {
+  display: contents;
+}
+
+.concept-page-column
+  .doc-heading-state
+  :is(.plan-fine, .trace-settle-note, .trace-changes-reason, .doc-heading-state__detail),
+[data-loom-plan] .trace-source-head .trace-settle-control > .trace-changes-reason {
+  flex-basis: 100%;
+  order: 1;
+}
+
+/* A state button, on the summary page and over the source: 32px, a `--border` edge, the state's
+   16px glyph in its tone and the words in `--foreground` at `--type-body`. The settle button, See
+   what changed and Pressure-test share the one look; a button that opens a menu ends in the
+   chevron of trace-settle.css. */
+.concept-page-column .doc-heading-state .plan-button,
+[data-loom-plan] .trace-source-head .trace-settle-control .plan-button {
+  height: 32px;
+  gap: 5px;
+  padding: 0 8px;
+  border-color: var(--border);
+  background: var(--card);
+  color: var(--foreground);
+  font-size: var(--type-body);
+}
+
+.concept-page-column .doc-heading-state .plan-button:hover,
+[data-loom-plan] .trace-source-head .trace-settle-control .plan-button:hover,
+.concept-page-column .doc-heading-state .plan-button[aria-expanded="true"] {
+  background: var(--muted);
+}
+
+.concept-page-column .doc-heading-state .plan-button:is([aria-disabled="true"], :disabled):hover,
+[data-loom-plan]
+  .trace-source-head
+  .trace-settle-control
+  .plan-button:is([aria-disabled="true"], :disabled):hover {
+  background: var(--card);
+}
+
+.concept-page-column .doc-heading-state .plan-button svg,
+[data-loom-plan] .trace-source-head .trace-settle-control .plan-button svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* ── Ledger ───────────────────────────────────────────────────────────────── */
+
+/* The status row: the chips on one wrapping line after the row's label, which is the list's own
+   accessible name set in the eyebrow style. No card, edge or fill: a hairline over the row. A
+   chip's detail line (a waiting rebuild's sentence) goes under its words and action, and a chip
+   that has one takes the row's whole width. */
+.concept-page-column .doc-heading-status {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  order: 5;
+  gap: var(--space-2) var(--space-5);
+  margin-top: var(--space-5);
+  padding: var(--space-3) 0 var(--space-3) var(--ledger-label);
   border: 0;
+  border-top: 1px solid var(--hairline);
   border-radius: 0;
   background: transparent;
+}
+
+.concept-page-column .doc-heading-status::before {
+  content: attr(aria-label);
+  position: absolute;
+  inset-block-start: var(--space-3);
+  inset-inline-start: 0;
+  color: var(--muted-foreground);
+  font-size: 10.5px;
+  font-weight: 600;
+  line-height: 22px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
 }
 
 .concept-page-column .doc-heading-row {
@@ -141,10 +207,6 @@
   padding: 0;
 }
 
-.concept-page-column .doc-heading-row__action :is(.plan-button, .plan-fine) {
-  font-size: var(--type-ui);
-}
-
 .concept-page-column .doc-heading-chip {
   grid-template-columns: 16px minmax(0, 1fr);
   font-size: var(--type-body);
@@ -160,153 +222,133 @@
   height: 16px;
 }
 
-/* A written plan's state row goes on with its pressure status and Pressure-test
-   (`concept/page-heading.tsx`, `PlanPressure`): one unit, so the status and its action wrap with
-   "Written" and never onto a line of their own. The status sits a chip's gap after the state. */
-.concept-page-column .trace-plan-pressure {
-  display: inline-flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-1) var(--space-2);
-  min-width: 0;
-  margin-inline-start: var(--space-2);
-}
-
-/* The facts (Built by, Implements): one quiet line under the chip row. */
+/* The facts (Implements, Built by): a ledger row each, the eyebrow label in the label column and
+   the link chips wrapping after it. The first row closes up on the status row above it. */
 .concept-page-column .doc-heading-facts {
-  order: 4;
-  margin-top: var(--space-2);
+  order: 6;
+  margin-top: 0;
   padding-inline: 0;
 }
 
-/* The action row: Edit · Discuss · the settle control, real 32px buttons in one bordered style, on
-   one line beside the chat panel (a 680px column holds "Spec changed since you settled this plan"
-   with See what changed). See what changed stays a quiet button beside the settle button. On the
-   source route the settle button over the source takes the same look. */
-.concept-page-column .doc-heading-group:not(:has(> .doc-heading-views)) {
-  grid-column: 1 / -1;
-  order: 5;
-  gap: var(--space-2);
+.concept-page-column .doc-heading-fact {
+  grid-template-columns: var(--ledger-label) minmax(0, 1fr);
+  column-gap: 0;
+  padding-block: var(--space-3);
+  border-top: 1px solid var(--hairline);
+}
+
+/* On the page ground a link chip takes the `--card` fill inside a `--border` hairline. */
+.concept-page-column .doc-heading-fact a.doc-heading-link {
+  border-color: var(--border);
+  background: var(--card);
+}
+
+.concept-page-column .doc-heading-fact a.doc-heading-link:hover {
+  background: var(--muted);
+}
+
+/* Facts with no status row over them open the ledger themselves. */
+.concept-page-column .doc-heading:not(:has(> .doc-heading-status)) .doc-heading-facts {
+  margin-top: var(--space-5);
+}
+
+/* ── View bar ─────────────────────────────────────────────────────────────── */
+
+/* The last band, over the heading's closing hairline: the Summary / Source switch at its start
+   (a `--border`-edged track) and the document's tools (Edit, Discuss, Open all) at its end, quiet
+   28px buttons in `--foreground`. A hairline divides the bar from the ledger. */
+.concept-page-column .doc-heading-toolbar {
+  display: contents;
+}
+
+.concept-page-column .doc-heading-group {
+  order: 7;
+  align-self: center;
   min-height: 0;
-  margin-top: var(--space-4);
+  margin-top: 0;
   padding: 0;
   border: 0;
 }
 
-.concept-page-column .doc-heading-group:not(:has(> .doc-heading-views)) .plan-button,
-[data-loom-plan] .trace-source-head .trace-settle-control .plan-button {
-  height: 32px;
-  gap: 6px;
-  padding: 0 10px;
-  border-color: var(--border);
-  color: var(--foreground);
-  font-size: var(--type-body);
+.concept-page-column .doc-heading-group:has(> .doc-heading-views) {
+  grid-column: 1;
+  justify-self: start;
+  margin-block: var(--space-3) 0;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: var(--corner-control);
 }
 
-.concept-page-column .doc-heading-group:not(:has(> .doc-heading-views)) .plan-button svg,
-[data-loom-plan] .trace-source-head .trace-settle-control .plan-button svg {
-  width: 16px;
-  height: 16px;
+.concept-page-column .doc-heading-group:not(:has(> .doc-heading-views)) {
+  grid-column: 2;
+  justify-content: flex-end;
+  gap: var(--space-1);
+  margin-block: var(--space-3) 0;
+  border: 0;
 }
 
-.concept-page-column .doc-heading-group:not(:has(> .doc-heading-views)) .plan-button.trace-changes,
-[data-loom-plan] .trace-source-head .trace-settle-control .plan-button.trace-changes {
-  padding-inline: var(--space-2);
-  border-color: transparent;
-  color: var(--muted-foreground);
+/* The bar's top rule: drawn by whichever ledger row or state row precedes it, so it never doubles.
+   With a ledger over the bar the ledger's last row carries the rule as its bottom edge. */
+.concept-page-column .doc-heading-status:not(:has(~ .doc-heading-facts)),
+.concept-page-column .doc-heading-facts {
+  border-bottom: 1px solid var(--hairline);
 }
 
-.concept-page-column
-  .doc-heading-group:not(:has(> .doc-heading-views))
-  .plan-button.trace-changes:hover,
-[data-loom-plan] .trace-source-head .trace-settle-control .plan-button.trace-changes:hover {
-  color: var(--foreground);
+.concept-page-column .doc-heading-views > .plan-button {
+  font-size: var(--type-ui);
 }
 
-/* What stands beside the settle button and explains it (See what changed's reason, a blocked
-   reason, a notice) takes a line of its own under the action row, so the row keeps its one line
-   and Open all its place at the row's end: the control's box gives way to the row's flex. Under
-   30rem the row is a grid and the control keeps its box (below). */
-.concept-page-column .doc-heading-group:not(:has(> .doc-heading-views)) > .trace-settle-control {
-  display: contents;
-}
-
-.concept-page-column
-  .doc-heading-group
-  > .trace-settle-control
-  > :is(.plan-fine, .trace-settle-note),
-[data-loom-plan] .trace-source-head .trace-settle-control > .trace-changes-reason {
-  flex-basis: 100%;
-  order: 1;
-}
-
-/* The settle button's chevron: smaller and muted, close after the state's words. */
-[data-loom-plan] .doc-heading .trace-settle-button > svg,
-[data-loom-plan] .trace-source-head .trace-settle-button > svg {
+.concept-page-column .doc-heading-views > .plan-button svg {
   width: 14px;
   height: 14px;
-  margin-inline-start: -2px;
+}
+
+.concept-page-column .doc-heading-group:not(:has(> .doc-heading-views)) .plan-button {
+  height: var(--control-height);
+  gap: 6px;
+  padding: 0 var(--space-2);
+  color: var(--foreground);
+  font-size: var(--type-ui);
+}
+
+.concept-page-column .doc-heading-group:not(:has(> .doc-heading-views)) .plan-button svg {
+  width: 14px;
+  height: 14px;
   color: var(--muted-foreground);
 }
 
-/* Open all beside the settle control is its 32px square glyph at the row's end: with its words the
-   row would not hold beside the chat panel. Its words stay in the button for its accessible name;
-   without a settle control (an overview) it keeps them. */
-.concept-page-column .doc-heading-group > .trace-settle-control ~ .plan-button {
-  width: 32px;
-  margin-inline-start: auto;
-  padding: 0;
-  gap: 0;
-  font-size: 0;
-}
-
-/* Under 30rem of heading width (a phone): the switch leads, the breadcrumb under it; the title
-   steps down; Edit and Discuss share a row and the settle control takes the next whole. Open all
-   takes a cell with its words. */
+/* Under 30rem of heading width (a phone): the title steps down, every state button takes the
+   row's width, a ledger row sets its label over its values, and the view bar stacks the switch
+   over the tools. */
 @container (max-width: 30rem) {
-  .concept-page-column .doc-heading-group:has(> .doc-heading-views) {
-    grid-column: 1 / -1;
-    order: -1;
-    justify-self: start;
-  }
-
-  .concept-page-column .doc-heading > nav {
-    grid-column: 1 / -1;
-    margin-top: var(--space-3);
-  }
-
   .concept-page-column .doc-heading-title-row {
     --heading-line: 36px;
-    margin-top: var(--space-3);
   }
 
   .concept-page-column .doc-heading-title-row .plan-page-title {
     font-size: 30px;
   }
 
-  .concept-page-column .doc-heading-group:not(:has(> .doc-heading-views)) {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .concept-page-column .doc-heading-group:not(:has(> .doc-heading-views)) .plan-button {
-    width: 100%;
-  }
-
-  .concept-page-column .doc-heading-group > .trace-settle-control ~ .plan-button {
-    margin-inline-start: 0;
-    padding: 0 10px;
-    gap: 6px;
-    font-size: var(--type-body);
-  }
-
-  .concept-page-column .doc-heading-group:not(:has(> .doc-heading-views)) > .trace-settle-control {
-    display: flex;
-    grid-column: 1 / -1;
-  }
-
-  .concept-page-column .doc-heading .trace-settle-button {
+  .concept-page-column .doc-heading-state .plan-button {
     flex: 1 1 100%;
+    justify-content: flex-start;
+  }
+
+  .concept-page-column .doc-heading-status {
+    padding-inline-start: 0;
+    padding-block-start: calc(var(--space-3) + 22px + var(--space-1));
+  }
+
+  .concept-page-column .doc-heading-fact {
+    grid-template-columns: minmax(0, 1fr);
+    row-gap: var(--space-2);
+  }
+
+  .concept-page-column .doc-heading-group:not(:has(> .doc-heading-views)) {
+    grid-column: 1 / -1;
+    justify-content: flex-start;
+    margin-block-start: var(--space-2);
+    margin-inline-start: calc(-1 * var(--space-2));
   }
 }
 

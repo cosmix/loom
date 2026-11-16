@@ -160,9 +160,13 @@ it("renders chip links after the label, plain when a target is missing", () => {
       {
         key: "built",
         label: "Built by",
-        linksSeparator: " · ",
         links: [
-          { label: "05", to: "/plans/a" },
+          {
+            label: "05",
+            name: "Concept mode",
+            state: { label: "Done", tone: "ok" },
+            to: "/plans/a",
+          },
           { label: "09", to: "/plans/b" },
         ],
       },
@@ -170,13 +174,17 @@ it("renders chip links after the label, plain when a target is missing", () => {
   });
 
   const implemented = screen.getByText("Implements", { exact: false }).closest("[data-chip]");
-  expect(implemented?.textContent).toBe("Implements §05, §99 (not found)");
+  expect(implemented?.textContent).toBe("Implements §05 §99 (not found)");
   expect(screen.getByRole("link", { name: "§05" }).getAttribute("title")).toBe("Concept mode");
   const missing = screen.getByText("§99", { exact: false });
   expect(missing.closest("a")).toBeNull();
   expect(missing.closest("[title]")?.getAttribute("title")).toBe("not found");
   expect(screen.getByText("Built by", { exact: false }).closest("[data-chip]")?.textContent).toBe(
-    "Built by 05 · 09",
+    "Built by 05 Concept mode Done 09",
   );
+  // A number before a title is its muted lead; alone it is the chip's own words.
+  const lead = screen.getByRole("link", { name: "05 Concept mode Done" });
+  expect(lead.querySelector(".doc-heading-link__label")?.hasAttribute("data-lead")).toBe(true);
+  expect(lead.querySelector(".doc-heading-link__state")?.getAttribute("data-tone")).toBe("ok");
   expect(screen.getByRole("link", { name: "09" }).getAttribute("href")).toBe("/plans/b");
 });

@@ -3,8 +3,8 @@
  * outrank the utilities a shared component carries.
  *
  * The heading is one column of blocks on one left edge, read top to bottom: the breadcrumb, the
- * title, a document's scope standfirst, the toolbar bar, the status card, the facts line, then the
- * page's own rows, over the hairline that ends it. The heading is a size container, so its blocks
+ * title, a document's scope standfirst, the state row, the toolbar bar, the status card, the facts,
+ * then the page's own rows, over the hairline that ends it. The heading is a size container, so its blocks
  * read the heading's width, not the viewport's: the spine and the chat panel narrow the column
  * without a breakpoint. A feature document's summary page lays the same blocks out its own way
  * (trace/trace-heading.css).
@@ -56,6 +56,23 @@
 
 .doc-heading-title-row .plan-page-title {
   line-height: var(--heading-line);
+}
+
+/* ── State row ────────────────────────────────────────────────────────────── */
+
+/* The controls whose labels are the document's state (`state`), on one wrapping line under the
+   standfirst. Gone while nothing renders in it. A summary page sets the buttons' look
+   (trace/trace-heading.css). */
+.doc-heading-state {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.doc-heading-state:empty {
+  display: none;
 }
 
 /* ── Toolbar ──────────────────────────────────────────────────────────────── */
@@ -252,50 +269,6 @@ button.doc-heading-chip:hover .doc-heading-chip__label {
 .doc-heading-chip__label {
   min-width: 0;
   overflow-wrap: anywhere;
-}
-
-/* ── Facts ────────────────────────────────────────────────────────────────── */
-
-/* What the document relates to, as one quiet line of label and value pairs: "Built by 05 · 09",
-   "Implements §01, §03". Labels are muted, values keep the text's colour and link where they
-   can. The line wraps pair by pair. */
-.doc-heading-facts {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-1) var(--space-5);
-  min-width: 0;
-  margin: 0;
-  padding-inline: var(--space-3);
-  font-size: var(--type-ui);
-  line-height: 20px;
-}
-
-.doc-heading-fact {
-  display: inline-flex;
-  flex-wrap: wrap;
-  gap: 0 var(--space-2);
-  min-width: 0;
-  color: var(--foreground);
-}
-
-.doc-heading-fact > dt {
-  color: var(--muted-foreground);
-}
-
-.doc-heading-fact > dd {
-  min-width: 0;
-  margin: 0;
-  overflow-wrap: anywhere;
-}
-
-.doc-heading-fact a {
-  color: inherit;
-  text-decoration: none;
-}
-
-.doc-heading-fact a:hover {
-  text-decoration: underline;
-  text-underline-offset: 2px;
 }
 
 /* ── Extras ───────────────────────────────────────────────────────────────── */

@@ -1,7 +1,4 @@
-import { cn } from "cn";
 import { useAtomValue } from "jotai/react";
-import { ChevronDown } from "lucide-react";
-import { Popover as PopoverPrimitive } from "radix-ui";
 import { useId, useRef, useState, type JSX, type RefObject } from "react";
 
 import type { TraceDoc } from "@/plan/api/schema-trace";
@@ -10,7 +7,6 @@ import { Popover } from "@/plan/header/popover";
 import { shortSha } from "@/plan/review/changed-since-parts";
 import { authorBlockReasonAtom } from "@/plan/state/atoms";
 import { BusyText } from "@/plan/ui/busy-text";
-import { HEADING_BUTTON } from "@/plan/ui/doc-heading";
 
 import { changeTarget, settleWords } from "./doc-model";
 import { docOfPath, shownSettle } from "./model";
@@ -22,6 +18,7 @@ import { SettleMenu } from "./settle-menu";
 import { SettleSurface, useNarrow } from "./settle-surface";
 import { ChangesSinceSettled } from "./settled-changes";
 import { useTrace } from "./state";
+import { StateMenuButton } from "./state-menu";
 
 import "./trace.css";
 
@@ -43,33 +40,28 @@ function SettleButton(props: {
   const words = settleWords(doc.settle, doc.role);
   const menu = doc.settle !== "draft";
   const pending = phase.kind === "working" ? (phase.clear ? "Unsettling…" : "Settling…") : null;
-  // The anchor places the confirmation under the button, which no Radix trigger opens.
+  // The button anchors the confirmation too, which no menu press opens.
   return (
-    <PopoverPrimitive.Anchor asChild>
-      <button
-        ref={buttonRef}
-        type="button"
-        {...HEADING_BUTTON}
-        className={cn(HEADING_BUTTON.className, "trace-settle-button")}
-        data-settle={doc.settle}
-        aria-disabled={reason !== null || pending !== null || undefined}
-        aria-busy={pending !== null || undefined}
-        aria-describedby={reason !== null ? reasonId : undefined}
-        aria-haspopup={menu ? "dialog" : undefined}
-        aria-expanded={menu ? open : undefined}
-        onClick={onPress}
-      >
-        {pending !== null ? (
-          <BusyText>{pending}</BusyText>
-        ) : (
-          <>
-            <SettleGlyph state={doc.settle} />
-            {words.button}
-            {menu && <ChevronDown aria-hidden="true" />}
-          </>
-        )}
-      </button>
-    </PopoverPrimitive.Anchor>
+    <StateMenuButton
+      buttonRef={buttonRef}
+      className="trace-settle-button"
+      menu={menu}
+      open={open}
+      busy={pending !== null}
+      data-settle={doc.settle}
+      aria-disabled={reason !== null || pending !== null || undefined}
+      aria-describedby={reason !== null ? reasonId : undefined}
+      onClick={onPress}
+    >
+      {pending !== null ? (
+        <BusyText>{pending}</BusyText>
+      ) : (
+        <>
+          <SettleGlyph state={doc.settle} />
+          {words.button}
+        </>
+      )}
+    </StateMenuButton>
   );
 }
 

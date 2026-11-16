@@ -120,10 +120,10 @@ function SettledDiff({ path, commit }: { path: string; commit: string }): JSX.El
 function SettledDialog(props: {
   path: string;
   commit: string;
-  link: RefObject<HTMLAnchorElement | null>;
+  opener: RefObject<HTMLElement | null>;
   onClose: () => void;
 }): JSX.Element {
-  const { path, commit, link, onClose } = props;
+  const { path, commit, opener, onClose } = props;
   return (
     <Dialog
       open
@@ -135,7 +135,7 @@ function SettledDialog(props: {
         className="flex max-h-[90vh] flex-col overflow-auto sm:max-w-5xl motion-reduce:animate-none"
         onCloseAutoFocus={(event) => {
           event.preventDefault();
-          returnFocusTo(link.current);
+          returnFocusTo(opener.current);
         }}
       >
         <DialogTitle>Since this document was settled</DialogTitle>
@@ -149,12 +149,20 @@ function SettledDialog(props: {
   );
 }
 
+/** What a press of See what changed does, by what the lookup came to. */
+function pressOf(lookup: Lookup, open: () => void, retry: () => void): () => void {
+  return () => {
+    if (lookup.kind === "commit") open();
+    else if (lookup.kind === "failed") retry();
+  };
+}
+
 /**
- * "See what changed": a link to the commit comparison of `compare` (default: the same document)
+ * "See what changed": opens the commit comparison of `compare` (default: the same document)
  * against the commit holding `settled`'s current Settled line, which it asks for as it mounts. It
  * stays disabled while it asks; a line that was never committed has no version to compare with,
- * so the link stays disabled and says why beside it; a lookup that failed says so and asks again
- * on a press. `look` is a quiet heading button, or a plain link inside a sentence.
+ * so it stays disabled and says why beside it; a lookup that failed says so and asks again on a
+ * press. `look` is a heading button beside the settle button, or a plain link inside a sentence.
  */
 export function ChangesSinceSettled(props: {
   settled: string;
@@ -164,39 +172,51 @@ export function ChangesSinceSettled(props: {
   const { settled, compare = settled, look } = props;
   const { lookup, retry } = useSettledVersion(settled);
   const [open, setOpen] = useState(false);
-  const link = useRef<HTMLAnchorElement>(null);
+  const opener = useRef<HTMLElement | null>(null);
   const reasonId = useId();
-  const anchorProps =
-    look === "button"
-      ? { ...HEADING_BUTTON, className: `${HEADING_BUTTON.className} trace-changes` }
-      : { className: "trace-changes" };
   const explained = lookup.kind === "uncommitted" || lookup.kind === "failed";
-  const disabled = lookup.kind === "asking" || lookup.kind === "uncommitted";
+  const press = pressOf(lookup, () => setOpen(true), retry);
+  const shared = {
+    ref: (node: HTMLElement | null) => {
+      opener.current = node;
+    },
+    "aria-disabled": lookup.kind === "asking" || lookup.kind === "uncommitted" || undefined,
+    "aria-busy": lookup.kind === "asking" || undefined,
+    "aria-describedby": explained ? reasonId : undefined,
+  };
 
   return (
     <>
-      <a
-        ref={link}
-        href={sourceHref(compare)}
-        {...anchorProps}
-        aria-disabled={disabled || undefined}
-        aria-busy={lookup.kind === "asking" || undefined}
-        aria-describedby={explained ? reasonId : undefined}
-        onClick={(event) => {
-          event.preventDefault();
-          if (lookup.kind === "commit") setOpen(true);
-          else if (lookup.kind === "failed") retry();
-        }}
-      >
-        {look === "button" && <FileDiff aria-hidden="true" />}
-        See what changed
-      </a>
+      {look === "button" ? (
+        <button
+          type="button"
+          {...HEADING_BUTTON}
+          className={`${HEADING_BUTTON.className} trace-changes`}
+          {...shared}
+          onClick={press}
+        >
+          <FileDiff aria-hidden="true" />
+          See what changed
+        </button>
+      ) : (
+        <a
+          href={sourceHref(compare)}
+          className="trace-changes"
+          {...shared}
+          onClick={(event) => {
+            event.preventDefault();
+            press();
+          }}
+        >
+          See what changed
+        </a>
+      )}
       <LookupReason lookup={lookup} id={reasonId} look={look} />
       {open && lookup.kind === "commit" && (
         <SettledDialog
           path={compare}
           commit={lookup.commit}
-          link={link}
+          opener={opener}
           onClose={() => setOpen(false)}
         />
       )}

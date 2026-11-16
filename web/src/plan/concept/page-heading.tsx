@@ -12,7 +12,11 @@ import {
 import type { ConceptPage } from "@/plan/api/schema-concept";
 import { usePressureRun } from "@/plan/chat/pressure/use-pressure";
 import { Untrusted } from "@/plan/chat/visible-controls";
-import { featureOfDocPath, featureSourceHref } from "@/plan/feature/source-href";
+import {
+  featureOfDocPath,
+  featureSourceHref,
+  pressureRecordHref,
+} from "@/plan/feature/source-href";
 import { repoRel } from "@/plan/files/address";
 import {
   builtByChips,
@@ -30,12 +34,12 @@ import {
 } from "@/plan/files/heading-parts";
 import { HeadingActions, usePressureActive } from "@/plan/files/doc-heading-view";
 import { LockNotice } from "@/plan/files/lock-notice";
+import { PressureTestAction, PressureTestDetail } from "@/plan/run/plan-run-actions";
 import { useTraceChips } from "@/plan/trace/heading-chips";
 import { withoutNumber } from "@/plan/trace/model";
 import { PlanExtras } from "@/plan/trace/plan-extras";
 import { ScopeLine } from "@/plan/trace/scope-line";
 import { docIsLocked, SettleControl } from "@/plan/trace/settle-control";
-import { Chip } from "@/plan/ui/doc-heading-parts";
 import {
   DocHeading,
   HEADING_BUTTON,
@@ -86,19 +90,19 @@ function implementsChips(page: ConceptPage): HeadingChip[] {
   const view = page.implements;
   if (!view) return [];
   if (view.kind === "not_stated") {
-    return [{ key: "implements", label: "Implements: not stated" }];
+    return [{ key: "implements", label: "Implements", links: [{ label: "Not stated" }] }];
   }
   if (view.links.length === 0) return [];
   return [
     {
       key: "implements",
-      label: "Implements:",
+      label: "Implements",
       links: view.links.map((link) =>
         link.doc && link.number !== null
           ? {
               label: sectionNumberLabel(link.number),
+              name: withoutNumber(link.doc.title, link.number),
               to: pageHref(link.doc.page),
-              title: link.doc.title,
             }
           : { label: link.name },
       ),
@@ -120,64 +124,52 @@ function statusChips(page: ConceptPage, rebuilding: boolean): HeadingChip[] {
   }));
 }
 
-/**
- * A standalone plan has no pressure record card, so a plan past written (whose row carries no
- * pressure status of its own) keeps its test date as a status beside its state.
- */
-function standalonePressure(page: ConceptPage): HeadingChip[] {
+/** A plan past written keeps its test date as a status beside its state. */
+function testedPressure(page: ConceptPage): HeadingChip[] {
   return page.last_pressure === null ? [] : [pressureChip(page.last_pressure, false)];
 }
 
-/** A relationship reads on the facts line, not in the status card. */
+/** A relationship reads as a labelled row of the facts, not in the status card. */
 function fact(chip: HeadingChip): HeadingChip {
   return { ...chip, kind: "fact" };
 }
 
 /**
- * What a written plan's state row goes on with: its pressure status (glyph and words), then
- * Pressure-test, one unit after "Written" so the action stays on the line of the state it acts on.
+ * A written plan's Pressure-test, on the state row beside the settle control: the button's label
+ * is the plan's pressure state, so "Not pressure-tested" stands once, and it opens the menu that
+ * starts a test. The Codex configuration
+ * notice follows it on a line of its own while one blocks.
  */
-function PlanPressure(props: { status: HeadingChip | null; action: ReactNode }): JSX.Element {
+function PlanPressure(props: { page: ConceptPage; active: boolean }): JSX.Element | null {
+  const { page, active } = props;
+  if (page.plan_state !== "written" || page.path === null) return null;
+  // The record's link goes where the plan's Pressure record card goes, so only a traced plan has it.
+  const traced = tracedPlan(page);
   return (
-    <span className="trace-plan-pressure">
-      {props.status && <Chip chip={props.status} />}
-      {props.action}
-    </span>
+    <>
+      <PressureTestAction
+        path={page.path}
+        date={page.last_pressure}
+        active={active}
+        recordHref={traced && pressureRecordHref(traced.feature, traced.path)}
+      />
+      <div className="doc-heading-state__detail plan-fine">
+        <PressureTestDetail />
+      </div>
+    </>
   );
 }
 
 /**
- * A plan's state row. A written plan's row goes on with its pressure status and Pressure-test, the
- * Codex configuration notice as its detail. A feature plan's test date is drawn once, in the
- * pressure record card under the heading (`PlanExtras`), so its row leaves the date out; "Not
- * pressure-tested" and a running test have no card, so they stay.
- */
-function planRow(
-  page: ConceptPage,
-  plan: NonNullable<ConceptPage["plan_state"]>,
-  pressureActive: boolean,
-): HeadingChip {
-  const chip = planStateChip(plan);
-  if (plan !== "written" || page.path === null) return chip;
-  const pressure = pressureChip(page.last_pressure, pressureActive, page.path);
-  const inCard = tracedPlan(page) !== null && page.last_pressure !== null && !pressureActive;
-  return {
-    ...chip,
-    action: <PlanPressure status={inCard ? null : pressure} action={pressure.action} />,
-    detail: pressure.detail,
-  };
-}
-
-/**
- * The status card's rows, what needs attention first (the summary's state with its Rebuild, the
- * document's settle state and coverage, the open questions, a plan's state with a written plan's
- * Pressure-test), then the facts line: what the document implements and the plans that build it.
- * A plan's pressure record has a card of its own under the heading (`PlanExtras`).
+ * The status row's chips (the summary's state with its Rebuild, a section's coverage, the open
+ * questions, a plan's state), then the facts: what the document implements and the plans that
+ * build it. The settle state and a written plan's pressure state are the buttons of the state row,
+ * not chips. A feature plan's pressure record has a card of its own under the heading
+ * (`PlanExtras`), so only a standalone plan past written keeps its test date as a chip.
  */
 function pageChips(
   page: ConceptPage,
   rebuilding: boolean,
-  pressureActive: boolean,
   attention: { questions: HeadingChip[]; trace: HeadingChip[] },
 ) {
   const plan = page.plan_state;
@@ -186,8 +178,8 @@ function pageChips(
     ...statusChips(page, rebuilding),
     ...trace,
     ...questions,
-    ...(plan === null ? [] : [planRow(page, plan, pressureActive)]),
-    ...(plan === null || plan === "written" || tracedPlan(page) ? [] : standalonePressure(page)),
+    ...(plan === null ? [] : [planStateChip(plan)]),
+    ...(plan === null || plan === "written" || tracedPlan(page) ? [] : testedPressure(page)),
     ...implementsChips(page).map(fact),
     ...builtByChips(page).map(fact),
   ];
@@ -221,14 +213,7 @@ export function OpenAllButton({ page }: { page: ConceptPage }): JSX.Element {
   const foldAll = useFoldAll(page);
   const Icon = allOpen ? FoldVertical : UnfoldVertical;
   return (
-    // Beside the settle control the button shows its glyph alone (trace-heading.css), so the
-    // tooltip carries the words a sighted reader would otherwise lose.
-    <button
-      type="button"
-      {...HEADING_BUTTON}
-      title={allOpen ? "Fold all" : "Open all"}
-      onClick={allOpen ? foldAll : openAll}
-    >
+    <button type="button" {...HEADING_BUTTON} onClick={allOpen ? foldAll : openAll}>
       <Icon aria-hidden="true" />
       {allOpen ? "Fold all" : "Open all"}
     </button>
@@ -258,7 +243,7 @@ function SettleOfSource({ feature, path }: { feature: string; path: string }): J
   return <SettleControl feature={feature} path={path} hash={doc?.hash ?? null} locked={locked} />;
 }
 
-/** The settle control is the last of the toolbar's actions on the document. */
+/** The settle control leads the state row: its button's label is the document's settle state. */
 function TraceSettle({ page }: { page: ConceptPage }): JSX.Element | null {
   const document = tracedDocument(page);
   if (!document) return null;
@@ -360,16 +345,21 @@ function PageHeadingOf({ page, calls }: { page: ConceptPage; calls: HeadingChip[
           sourceTo: page.path ? sourceAddress(page.path) : null,
         }}
         standfirst={<TraceScope page={page} />}
+        state={
+          <>
+            <TraceSettle page={page} />
+            <PlanPressure page={page} active={pressureActive} />
+          </>
+        }
         actions={
-          // One group after the view switch: Edit and Discuss over the page's source, then the
-          // settle control, then Open all. The group is hidden by CSS when nothing renders in it.
+          // One group after the view switch: Edit and Discuss over the page's source, then Open
+          // all. The group is hidden by CSS when nothing renders in it.
           <ToolbarGroup>
             {page.path && <SourceActions key={page.path} path={page.path} />}
-            <TraceSettle page={page} />
             {hasOpenable(page) && <OpenAllButton page={page} />}
           </ToolbarGroup>
         }
-        chips={pageChips(page, rebuilding, pressureActive, { questions, trace })}
+        chips={pageChips(page, rebuilding, { questions, trace })}
       >
         {notice && <LockNotice notice={notice} />}
         <PageHeaderExtras page={page} />

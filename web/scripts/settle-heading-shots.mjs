@@ -128,7 +128,7 @@ async function shoot(browser, origin, outDir, { scenario, viewport, view }) {
   page.on("pageerror", (error) => errors.push(error.message));
   await mock(page, origin, scenario, unanswered);
   await page.goto(origin + view.route, { waitUntil: "load" });
-  await page.waitForSelector("a.trace-changes:not([aria-busy])");
+  await page.waitForSelector(".trace-changes:not([aria-busy])");
   await page.evaluate(() => document.fonts.ready);
   await settle(page);
   const head = page.locator(view.shot).first();

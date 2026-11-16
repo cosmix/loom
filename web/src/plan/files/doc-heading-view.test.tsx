@@ -86,7 +86,7 @@ describe("FileDocHeading", () => {
     const { container } = mount();
 
     const chip = screen.getByText("Implements", { exact: false }).closest("[data-chip]");
-    expect(chip?.textContent).toBe("Implements §06, §07 (not found)");
+    expect(chip?.textContent).toBe("Implements §06 §07 (not found)");
     expect(screen.getByRole("link", { name: "§06" }).getAttribute("href")).toBe(
       "/files/product/demo/section_06.md",
     );
@@ -167,38 +167,48 @@ describe("FileDocHeading", () => {
     [null, "Not pressure-tested"],
     ["2026-10-17", `Pressure-tested ${pressureWhen("2026-10-17")}`],
     ["2026-10-29", "Pressure-tested today"],
-  ])("labels the pressure date %s", (pressure_date, label) => {
+  ])("labels the Pressure-test button with the pressure date %s", (pressure_date, label) => {
     mount(makeDoc({}, { pressure_date }));
 
-    const chip = screen.getByText(label).closest("[data-chip]");
-    expect(chip?.getAttribute("data-tone")).toBe(pressure_date === null ? "warning" : "ok");
+    // The state stands once, as the button's own words.
+    expect(screen.getAllByText(label)).toHaveLength(1);
+    const button = screen.getByRole("button", { name: label });
+    const action = button.closest(".pressure-test-action");
+    expect(action?.getAttribute("data-tone")).toBe(pressure_date === null ? "warning" : "ok");
     expect(
-      chip?.querySelector(pressure_date === null ? "svg.lucide-gauge" : "svg.lucide-flask-conical"),
+      button.querySelector(
+        pressure_date === null ? "svg.lucide-gauge" : "svg.lucide-flask-conical",
+      ),
     ).not.toBeNull();
   });
 
-  it("sets Pressure-test at the end of the pressure status row, right after the plan's state", () => {
+  it("sets the Pressure-test button as the pressure row, right after the plan's state", async () => {
     mount(makeDoc({}, { pressure_date: null }));
-    const row = screen.getByText("Not pressure-tested").closest("li");
-    const button = screen.getByRole("button", { name: "Pressure-test" });
-    expect(row?.contains(button)).toBe(true);
-    expect(button.closest(".doc-heading-row__action")).not.toBeNull();
-    // A button at rest: the flask and the class that fills it inside the card.
-    expect(button.querySelector("svg.lucide-flask-conical")).not.toBeNull();
-    expect(button.closest(".pressure-test-action")).not.toBeNull();
+    const button = screen.getByRole("button", { name: "Not pressure-tested" });
+    const row = button.closest("li");
+    expect(row?.classList.contains("doc-heading-row")).toBe(true);
+    expect(row?.firstElementChild?.classList.contains("pressure-test-action")).toBe(true);
+    expect(button.getAttribute("aria-haspopup")).toBe("dialog");
     expect(row?.previousElementSibling?.textContent).toContain("Written");
     cleanup();
     mount(makeDoc({}, { pressure_date: "2026-10-17" }));
-    const tested = screen.getByText(`Pressure-tested ${pressureWhen("2026-10-17")}`);
-    expect(tested.closest("[title]")?.getAttribute("title")).toBe("2026-10-17");
+    const tested = screen.getByRole("button", {
+      name: `Pressure-tested ${pressureWhen("2026-10-17")}`,
+    });
+    fireEvent.click(tested);
+    const menu = within(await screen.findByRole("dialog"));
     expect(
-      tested.closest("li")?.contains(screen.getByRole("button", { name: "Pressure-test again" })),
-    ).toBe(true);
+      menu.getByRole("button", {
+        name: "Pressure-test this plan again",
+        description: "Tested 2026-10-17. Opens the pressure test, where you start it.",
+      }),
+    ).toBeTruthy();
+    expect(menu.queryByRole("link")).toBeNull();
   });
 
   it("draws no Pressure-test for a plan that is not written", () => {
     mount(makeDoc({}, { state: "running" }));
-    expect(screen.queryByRole("button", { name: /^Pressure-test/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /pressure-test/i })).toBeNull();
   });
 
   it("prioritizes an active pressure run and hides Edit until the run ends", () => {
@@ -207,7 +217,7 @@ describe("FileDocHeading", () => {
     const run = pressureRunSchema.parse({ ...runFixture, plan: doc.path });
     store.set(pressureRunAtom, run);
     mount(doc, store);
-    const running = screen.getByText("Being pressure-tested").closest("[data-chip]");
+    const running = screen.getByRole("button", { name: "Being pressure-tested" });
     // "Being pressure-tested" is a state word: the rotating arrows lead it.
     expect(running?.querySelector("svg.plan-arrow-spinner")).not.toBeNull();
     expect(screen.queryByText(`Pressure-tested ${pressureWhen("2026-10-17")}`)).toBeNull();
@@ -244,7 +254,7 @@ describe("FileDocHeading", () => {
     const changed = screen.getByText("Changed 2 h ago").closest("[title]");
     expect(changed?.getAttribute("title")).toBe("2026-10-29T20:51:53Z");
     expect(changed?.querySelector("svg.lucide-clock")).not.toBeNull();
-    expect(screen.getByRole("button", { name: "Pressure-test again" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /^Pressure-tested / })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Start a run" })).toBeNull();
   });
 
@@ -321,7 +331,7 @@ describe("FileDocHeading", () => {
     expect(screen.queryByText("Written")).toBeNull();
     expect(screen.queryByText(/pressure-tested/)).toBeNull();
     expect(screen.queryByText(/^Changed /)).toBeNull();
-    expect(screen.queryByRole("button", { name: "Pressure-test" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /pressure-test/i })).toBeNull();
     expect(screen.queryByRole("button", { name: "Discuss" })).toBeNull();
     expect(screen.queryByRole("note")).toBeNull();
   });

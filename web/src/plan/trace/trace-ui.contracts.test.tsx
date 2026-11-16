@@ -325,6 +325,19 @@ it("a changed document offers See what changed", async () => {
   expect(named("Changes since settled")).toEqual([]);
 });
 
+it("a changed document says so once, on the settle button, with See what changed on its row", async () => {
+  renderRoutes("/f/demo/product/section_02");
+  const settle = await screen.findByRole("button", { name: "Changed since you settled it" });
+  const header = settle.closest("header") as HTMLElement;
+  // The state is the button's label: no chip or line of the heading repeats it.
+  expect(within(header).getAllByText(/changed since you settled it/i)).toHaveLength(1);
+  const row = settle.closest(".doc-heading-state") as HTMLElement;
+  const changes = await within(row).findByRole("button", { name: "See what changed" });
+  expect(changes.className).toBe(
+    settle.className.replace(" trace-settle-button", " trace-changes"),
+  );
+});
+
 it("the scope shows as a standfirst linking its stub", async () => {
   renderRoutes("/f/demo/product/section_03");
   const settle = await screen.findByRole("button", { name: "Mark settled" });

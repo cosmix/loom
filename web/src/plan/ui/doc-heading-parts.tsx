@@ -4,7 +4,8 @@ import { Link } from "react-router";
 
 import { Untrusted, visibleControls } from "@/plan/chat/visible-controls";
 
-import type { HeadingChip, HeadingTone } from "./doc-heading";
+import type { HeadingChip, HeadingChipLink, HeadingTone } from "./doc-heading";
+import "./doc-heading-links.css";
 
 export const FOCUS =
   "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring";
@@ -45,33 +46,72 @@ function hoverTitle(title: string | undefined): string | undefined {
   return title === undefined ? undefined : visibleControls(title);
 }
 
-function ChipLinks({ chip }: { chip: HeadingChip }): JSX.Element {
-  const separator = chip.linksSeparator ?? ", ";
+/** A link chip's words: the number or title, the title after a number, then the state. */
+function LinkWords({ link }: { link: HeadingChipLink }): JSX.Element {
+  const tone = link.state?.tone ?? "neutral";
   return (
     <>
+      <span
+        className="doc-heading-link__label"
+        data-lead={link.name === undefined ? undefined : ""}
+      >
+        <Described label={link.label} description={link.description} />
+      </span>
+      {link.name !== undefined && (
+        <>
+          {" "}
+          <span className="doc-heading-link__name">
+            <Untrusted text={link.name} />
+          </span>
+        </>
+      )}
+      {link.state && (
+        <>
+          {" "}
+          <span className="doc-heading-link__state" data-tone={tone}>
+            {link.state.icon && (
+              <span aria-hidden="true" className={cn("doc-heading-link__glyph", CHIP_ICON[tone])}>
+                {link.state.icon}
+              </span>
+            )}
+            <Untrusted text={link.state.label} />
+          </span>
+        </>
+      )}
+    </>
+  );
+}
+
+/**
+ * A chip's links, each a small chip of its own (`.doc-heading-link`): a link where it has a
+ * target, plain and dashed where it has none (a section the plan names that does not exist).
+ */
+function ChipLinks({ chip }: { chip: HeadingChip }): JSX.Element {
+  return (
+    <span className="doc-heading-links">
       {chip.links?.map((link, index) => (
-        <span key={`${index}:${link.label}`}>
-          {index > 0 && <span aria-hidden="true">{separator}</span>}
+        <span key={`${index}:${link.label}`} className="doc-heading-links__item">
+          {index > 0 && " "}
           {link.to === undefined ? (
-            <span title={hoverTitle(link.title)}>
-              <Described label={link.label} description={link.description} />
+            <span className="doc-heading-link" title={hoverTitle(link.title)}>
+              <LinkWords link={link} />
             </span>
           ) : (
             <Link
               to={link.to}
               title={hoverTitle(link.title)}
-              className={cn(FOCUS, "rounded underline-offset-2 hover:underline")}
+              className={cn("doc-heading-link", FOCUS)}
             >
-              <Described label={link.label} description={link.description} />
+              <LinkWords link={link} />
             </Link>
           )}
         </span>
       ))}
-    </>
+    </span>
   );
 }
 
-/** The chip's words: its label, then its inline links. */
+/** The chip's words: its label, then its link chips. */
 function ChipWords({ chip }: { chip: HeadingChip }): JSX.Element {
   return (
     <span className="doc-heading-chip__label">
@@ -132,14 +172,15 @@ export function Chip({ chip }: { chip: HeadingChip }): JSX.Element {
 
 /**
  * The status card (`.doc-heading-status`, `doc-heading.css`): one row per chip, in the order
- * given, each row its status, then its detail line under the words and its action at the end.
+ * given, each row its status (or the control that stands for it), then its detail line under
+ * the words and its action at the end.
  */
 export function StatusCard({ chips }: { chips: readonly HeadingChip[] }): JSX.Element {
   return (
     <ul className="doc-heading-status plan-surface" aria-label="Status">
       {chips.map((chip) => (
         <li key={chip.key} className="doc-heading-row" data-action={chip.action ? "" : undefined}>
-          <Chip chip={chip} />
+          {chip.control ?? <Chip chip={chip} />}
           {chip.detail && <div className="doc-heading-row__detail plan-fine">{chip.detail}</div>}
           {chip.action && <div className="doc-heading-row__action">{chip.action}</div>}
         </li>
@@ -149,11 +190,11 @@ export function StatusCard({ chips }: { chips: readonly HeadingChip[] }): JSX.El
 }
 
 /**
- * The facts line (`.doc-heading-facts`): what the document relates to, as label and value pairs
- * ("Built by 05 · 09", "Implements §01, §03"). A fact keeps the chip's tooltip and tone attributes
- * on its pair, so its text and links read as the chip's do.
+ * The facts (`.doc-heading-facts`): what the document relates to, one labelled row per relation
+ * ("Implements" with a chip per section, "Built by" with a chip per plan and its state). A row
+ * keeps the chip's tooltip and tone attributes, so its text and links read as the chip's do.
  */
-export function FactsLine({ chips }: { chips: readonly HeadingChip[] }): JSX.Element {
+export function Facts({ chips }: { chips: readonly HeadingChip[] }): JSX.Element {
   return (
     <dl className="doc-heading-facts">
       {chips.map((chip) => (
@@ -164,7 +205,7 @@ export function FactsLine({ chips }: { chips: readonly HeadingChip[] }): JSX.Ele
           data-chip=""
           data-tone={chip.tone ?? "neutral"}
         >
-          <dt>
+          <dt className="plan-eyebrow">
             <Described label={chip.label} description={chip.description} />
           </dt>
           {chip.links && chip.links.length > 0 && (

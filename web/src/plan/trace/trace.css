@@ -1,7 +1,7 @@
 /*
  * The planning trace in the browser: the settle glyph and its tones, a plan page's pressure record
  * and what it implements, an opened passage's coverage line and the turn footer's "Now out of step"
- * block. The document heading's parts (standfirst, chip row, action row, settle surfaces) are
+ * block. The document heading's parts (standfirst, state row, ledger, view bar, settle surfaces) are
  * trace-heading.css, imported first; a plan's briefs are briefs.css. Every rule sits on the scales
  * of ui/design.css and the tokens of index.css; nothing names a colour.
  *

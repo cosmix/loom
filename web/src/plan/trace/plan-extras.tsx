@@ -4,8 +4,9 @@ import { Link } from "react-router";
 import type { TraceDoc } from "@/plan/api/schema-trace";
 import { Untrusted } from "@/plan/chat/visible-controls";
 import { useKeptDoc } from "@/plan/concept/passage-doc";
-import { featureSourceHref } from "@/plan/feature/source-href";
+import { featureSourceHref, pressureRecordHref } from "@/plan/feature/source-href";
 import { pressureChip, pressureIcon } from "@/plan/files/heading-parts";
+import { READ_PRESSURE_RECORD } from "@/plan/files/pressure-words";
 import { plural } from "@/plan/ui/plural";
 
 import { BriefsCard } from "./briefs-card";
@@ -39,11 +40,8 @@ function PressureRecord(props: { feature: string; path: string; date: string }):
               <Untrusted text={record} />
             </p>
           )}
-          <Link
-            className="trace-pressure__link"
-            to={featureSourceHref(feature, path, { anchor: "pressure-tests" })}
-          >
-            Read the record
+          <Link className="trace-pressure__link" to={pressureRecordHref(feature, path)}>
+            {READ_PRESSURE_RECORD}
           </Link>
         </div>
       </div>

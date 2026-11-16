@@ -7,7 +7,7 @@ import { Untrusted } from "@/plan/chat/visible-controls";
 import { CopyButton, selectContents } from "@/plan/markdown/copy-button";
 
 import "./doc-heading.css";
-import { FactsLine, FOCUS, StatusCard } from "./doc-heading-parts";
+import { Facts, FOCUS, StatusCard } from "./doc-heading-parts";
 import { DocMark } from "./doc-mark";
 import type { DocKind } from "./glyphs";
 
@@ -24,7 +24,12 @@ export { CHIP_FILL, CHIP_ICON } from "./doc-heading-parts";
 export type HeadingTone = "neutral" | "ok" | "warning" | "danger" | "accent";
 
 export interface HeadingChipLink {
+  /** What the linked document goes by: a number ("05", "§03"), or its title when it has none. */
   label: string;
+  /** The document's title after a number, which then reads as its muted lead. */
+  name?: string;
+  /** The linked document's state, as a toned glyph and its word at the chip's end. */
+  state?: { label: string; icon?: ReactNode; tone?: HeadingTone };
   /** Without a target the link renders plain, with no strike-through. */
   to?: string;
   title?: string;
@@ -34,9 +39,8 @@ export interface HeadingChipLink {
 export interface HeadingChip {
   key: string;
   label: string;
-  /** Inline links after the label: "Implements §05, §09". */
+  /** Link chips after the label: "Implements" §05 §09. */
   links?: readonly HeadingChipLink[];
-  linksSeparator?: string;
   icon?: ReactNode;
   tone?: HeadingTone;
   title?: string;
@@ -44,13 +48,18 @@ export interface HeadingChip {
   to?: string;
   onClick?: () => void;
   pressed?: boolean;
+  /**
+   * The status drawn as a control of its own in place of the glyph and words: a button whose label
+   * is the state (a written plan's Pressure-test). `label` still names the chip.
+   */
+  control?: ReactNode;
   /** The control that acts on this status, set at its row's end: the summary's Rebuild. */
   action?: ReactNode;
   /** One fine line under the words: the approval sentence a rebuild waits on. */
   detail?: ReactNode;
   /**
-   * `status` (the default) is a row of the status card: what needs attention. `fact` is a pair
-   * on the facts line under it: what the document relates to (Built by, Implements).
+   * `status` (the default) is a row of the status card: what needs attention. `fact` is a
+   * labelled row of the facts under it: what the document relates to (Built by, Implements).
    */
   kind?: "status" | "fact";
 }
@@ -74,6 +83,11 @@ export interface DocHeadingProps {
   changes?: { to: string } | null;
   /** The document's scope, set under the title and before the toolbar. */
   standfirst?: ReactNode;
+  /**
+   * The controls whose labels are the document's state (the settle control, a plan's
+   * Pressure-test), on a row of their own. The row is hidden by CSS while nothing renders in it.
+   */
+  state?: ReactNode;
   children?: ReactNode;
 }
 
@@ -282,9 +296,10 @@ export function DocHeading(props: DocHeadingProps): JSX.Element {
       <Breadcrumbs crumbs={breadcrumb} />
       <TitleRow {...props} />
       {props.standfirst}
+      {props.state !== undefined && <div className="doc-heading-state">{props.state}</div>}
       <Toolbar {...props} />
       {status.length > 0 && <StatusCard chips={status} />}
-      {facts.length > 0 && <FactsLine chips={facts} />}
+      {facts.length > 0 && <Facts chips={facts} />}
       {path && <PathRow key={path} path={path} changes={changes} />}
       {children}
     </header>

@@ -149,9 +149,8 @@ describe("summary page header", () => {
     await screen.findByRole("heading", { level: 1, name: "Planning" });
     expect(text()).toContain("Built by");
     expect(
-      screen.getByRole("link", { name: "05 (Concept mode, in progress)" }).getAttribute("href"),
+      screen.getByRole("link", { name: "05 Concept mode in progress" }).getAttribute("href"),
     ).toBe("/f/demo/engineering/feat-planner-05-concept-mode");
-    expect(text()).toContain("in progress)");
   });
   it("the Open all header button opens the page's runs", async () => {
     serveOverview();

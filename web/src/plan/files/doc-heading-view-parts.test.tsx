@@ -121,7 +121,7 @@ describe("FileDocHeading chips and crumbs", () => {
       expect(chips.map((chip) => chip.textContent)).toEqual([
         label,
         "2 open questions",
-        "Built by 05 (Concept mode, in progress) · 09 (Reading, done)",
+        "Built by 05 Concept mode in progress 09 Reading Done",
         "Changed 3 d ago",
       ]);
       expect(chips[0]?.getAttribute("data-tone")).toBe(tone);

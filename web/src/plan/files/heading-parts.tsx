@@ -1,5 +1,5 @@
 import { useAtomValue } from "jotai/react";
-import { Clock, Flag, Gauge, Layers } from "lucide-react";
+import { Clock, Flag, Layers } from "lucide-react";
 import { useMemo } from "react";
 
 import { pageHref, summaryKey } from "@/plan/api/page-key";
@@ -12,7 +12,7 @@ import { openQuestionsAtom } from "@/plan/review/live";
 import { PressureTestAction, PressureTestDetail } from "@/plan/run/plan-run-actions";
 import { featuresAtom } from "@/plan/state/atoms";
 import { settlePoints } from "@/plan/trace/doc-model";
-import type { HeadingChip, HeadingCrumb } from "@/plan/ui/doc-heading";
+import type { HeadingChip, HeadingChipLink, HeadingCrumb } from "@/plan/ui/doc-heading";
 import {
   OTHER_GLYPHS,
   PLAN_STATE_WORD_GLYPHS,
@@ -20,7 +20,8 @@ import {
   type PlanState,
 } from "@/plan/ui/glyphs";
 import { plural } from "@/plan/ui/plural";
-import { ArrowSpinner } from "@/plan/ui/spinner";
+
+import { pressureStatus } from "./pressure-words";
 
 const OpenQuestionsIcon = OTHER_GLYPHS.openQuestions;
 const STATE_LABELS: Record<PlanState, string> = {
@@ -78,73 +79,27 @@ export function planStateChip(state: PlanState): HeadingChip {
   };
 }
 
-const DAY_MONTH = new Intl.DateTimeFormat(undefined, { day: "numeric", month: "short" });
-const DAY_MONTH_YEAR = new Intl.DateTimeFormat(undefined, { dateStyle: "medium" });
+export { NOT_PRESSURE_TESTED, PRESSURE_TESTED, pressureIcon, pressureWhen } from "./pressure-words";
 
 /**
- * When a plan was pressure-tested, from its `YYYY-MM-DD` record: "today", "5 Nov" this year,
- * "5 Nov 2025" from another. A date in any other shape is shown as sent.
- */
-export function pressureWhen(date: string, now: Date = new Date()): string {
-  const parts = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date);
-  if (parts === null) return date;
-  const day = new Date(Number(parts[1]), Number(parts[2]) - 1, Number(parts[3]));
-  if (Number.isNaN(day.getTime())) return date;
-  if (day.toDateString() === now.toDateString()) return "today";
-  const format = day.getFullYear() === now.getFullYear() ? DAY_MONTH : DAY_MONTH_YEAR;
-  return format.format(day);
-}
-
-/** The words and glyph of a plan's pressure record, shared by the page chip and the spine badge. */
-export const PRESSURE_TESTED = "Pressure-tested";
-export const NOT_PRESSURE_TESTED = "Not pressure-tested";
-export const pressureIcon = (date: string | null) =>
-  date === null ? Gauge : OTHER_GLYPHS.pressureTested;
-
-/**
- * "Not pressure-tested" (warn, the gauge), "Pressure-tested <when>" (ok, the flask, the record's
- * date as its tooltip), or "Being pressure-tested" (go, the rotating arrows: a state word). A
- * written plan passes its `path`, which sets the Pressure-test control as the row's action
- * ("Pressure-test again" once tested), with the Codex configuration notice as the row's detail.
+ * A plan's pressure record as a heading status. A written plan passes its `path`: the status is
+ * then the Pressure-test button itself, whose label is the state (`PressureTestAction`), with the
+ * Codex configuration notice as the row's detail. Without a path it is the state's glyph and
+ * words alone, the record's date as its tooltip.
  */
 export function pressureChip(
   date: string | null,
   active: boolean,
   path: string | null = null,
 ): HeadingChip {
-  const control =
-    path === null
-      ? {}
-      : {
-          action: <PressureTestAction path={path} again={date !== null} />,
-          detail: <PressureTestDetail />,
-        };
-  if (active) {
-    return {
-      key: "pressure",
-      label: "Being pressure-tested",
-      icon: <ArrowSpinner />,
-      tone: "accent",
-      ...control,
-    };
-  }
-  const Icon = pressureIcon(date);
-  if (date === null) {
-    return {
-      key: "pressure",
-      label: NOT_PRESSURE_TESTED,
-      icon: <Icon />,
-      tone: "warning",
-      ...control,
-    };
-  }
+  const { label, Icon, tone } = pressureStatus(date, active);
+  const chip: HeadingChip = { key: "pressure", label, icon: <Icon />, tone };
+  if (date !== null && !active) chip.title = date;
+  if (path === null) return chip;
   return {
-    key: "pressure",
-    label: `${PRESSURE_TESTED} ${pressureWhen(date)}`,
-    title: date,
-    icon: <Icon />,
-    tone: "ok",
-    ...control,
+    ...chip,
+    control: <PressureTestAction path={path} date={date} active={active} />,
+    detail: <PressureTestDetail />,
   };
 }
 
@@ -217,25 +172,34 @@ export function slugNumber(slug: string): string | null {
   return /(?:^|[^0-9])(\d{2})(?![0-9])/.exec(slug)?.[1] ?? null;
 }
 
-/** The number a plan goes by in "Built by 05 · 09": its two-digit part, else its title. */
-function planNumber(slug: string, title: string): string {
-  return slugNumber(slug) ?? title;
+/** A plan's state as the mark of its chip: the state word's glyph and tone, then the word. */
+function planLinkState(state: string): HeadingChipLink["state"] {
+  if (!Object.hasOwn(STATE_LABELS, state)) return { label: planStateText(state) };
+  const known = state as PlanState;
+  const StateGlyph = PLAN_STATE_WORD_GLYPHS[known];
+  return {
+    label: STATE_LABELS[known],
+    icon: <StateGlyph />,
+    tone: known === "running" ? "accent" : known === "done" ? "ok" : "neutral",
+  };
 }
 
-/** "Built by 05 · 09": the plans that implement a summary's document, each linked to its page. */
+/**
+ * "Built by": the plans that implement a summary's document, each a chip of its two-digit number,
+ * its title and its state, linked to its page. A plan whose slug carries no number goes by its
+ * title alone.
+ */
 export function builtByChips(page: ConceptPage): HeadingChip[] {
   if (page.implemented_by.length === 0) return [];
   return [
     {
       key: "built-by",
       label: "Built by",
-      linksSeparator: " · ",
       links: page.implemented_by.map((plan) => {
-        const label = planNumber(plan.slug, plan.title);
-        const state = planStateText(plan.state);
+        const number = slugNumber(plan.slug);
         return {
-          label,
-          description: label === plan.title ? state : `${plan.title}, ${state}`,
+          ...(number === null ? { label: plan.title } : { label: number, name: plan.title }),
+          state: planLinkState(plan.state),
           to: pageHref(summaryKey(page.feature, "engineering", plan.slug)),
         };
       }),

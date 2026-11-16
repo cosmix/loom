@@ -71,7 +71,7 @@ it("sets the summary action at the end of its status row and its detail under th
   expect(row.lastElementChild?.textContent).toBe("Summary action");
 });
 
-it("leads the status card with the summary's state, then the plan's state, and sets Built by on the facts line", () => {
+it("leads the status card with the summary's state, then the plan's state, and sets Built by as a row of the facts", () => {
   show({
     key: "demo/engineering/my-plan",
     plan_state: "written",
@@ -84,7 +84,6 @@ it("leads the status card with the summary's state, then the plan's state, and s
   expect(chips.map((chip) => chip.querySelector(".doc-heading-chip__label")?.textContent)).toEqual([
     "Summary current",
     "Written",
-    "Not pressure-tested",
   ]);
   // Every row draws its glyph column first, so the words share one left edge.
   for (const chip of chips) {
@@ -92,20 +91,22 @@ it("leads the status card with the summary's state, then the plan's state, and s
   }
   const facts = card.nextElementSibling as HTMLElement;
   expect(facts.className).toBe("doc-heading-facts");
-  expect(facts.textContent).toBe("Built by 09 (Other, done)");
-  expect(within(facts).getByRole("link", { name: "09 (Other, done)" })).toBeTruthy();
+  expect(facts.textContent).toBe("Built by 09 Other Done");
+  expect(within(facts).getByRole("link", { name: "09 Other Done" })).toBeTruthy();
   expect(within(card).queryByText("Built by", { exact: false })).toBeNull();
 });
 
-it("groups the toolbar: the view switch, then Edit, Discuss, the settle control and Open all", () => {
+it("groups the toolbar after the state row: the view switch, then Edit, Discuss and Open all", () => {
   const { container } = show();
 
   const toolbar = container.querySelector(".doc-heading-toolbar") as HTMLElement;
-  expect(toolbar.previousElementSibling?.querySelector("h1")).not.toBeNull();
+  const state = toolbar.previousElementSibling as HTMLElement;
+  expect(state.className).toBe("doc-heading-state");
+  expect(state.previousElementSibling?.querySelector("h1")).not.toBeNull();
   const groups = [...toolbar.children];
   expect(groups.map((group) => group.className)).toEqual(Array(2).fill("doc-heading-group"));
   expect(groups[0]?.contains(screen.getByRole("group", { name: "View" }))).toBe(true);
-  // No trace is loaded, so no settle control renders: Open all closes the group.
+  // The settle control is on the state row, never in the toolbar: Open all closes the group.
   expect(groups[1]?.lastElementChild).toBe(screen.getByRole("button", { name: "Open all" }));
 });
 
@@ -157,9 +158,9 @@ const PLAN = {
 } as const;
 const STANDALONE = { key: "plans/my-plan", feature: null, path: "plans/PLAN-my-plan.md" } as const;
 
-/** The pressure status carried by the Written row, and the Pressure-test button after it. */
-function writtenRow(): HTMLElement {
-  return screen.getByText("Written").closest(".doc-heading-row") as HTMLElement;
+/** The state row, where a written plan's Pressure-test stands. */
+function stateRow(): HTMLElement {
+  return document.querySelector(".doc-heading-state") as HTMLElement;
 }
 
 it("leaves the pressure record off a section's chip row", () => {
@@ -167,40 +168,51 @@ it("leaves the pressure record off a section's chip row", () => {
   expect(screen.queryByText(/pressure-tested/i)).toBeNull();
 });
 
-it("sets an untested plan's warning status and Pressure-test on its Written row", () => {
+it("makes an untested plan's pressure state the label of its Pressure-test button", () => {
   show({ ...PLAN, last_pressure: null });
-  const row = writtenRow();
-  const status = within(row).getByText("Not pressure-tested").closest("[data-chip]");
-  expect(status?.getAttribute("data-tone")).toBe("warning");
-  expect(status?.querySelector("svg.lucide-gauge")).not.toBeNull();
-  const button = within(row).getByRole("button", { name: "Pressure-test" });
-  // A button at rest: the flask, and the class that gives it its edge on the summary page.
-  expect(button.querySelector("svg.lucide-flask-conical")).not.toBeNull();
+  // The words stand once: on the button, not as a status beside it.
+  const words = screen.getAllByText("Not pressure-tested");
+  expect(words).toHaveLength(1);
+  const button = within(stateRow()).getByRole("button", { name: "Not pressure-tested" });
+  expect(button.contains(words[0]!)).toBe(true);
+  expect(button.getAttribute("aria-haspopup")).toBe("dialog");
+  expect(button.querySelector("svg.lucide-gauge")).not.toBeNull();
   expect(button.classList.contains("plan-button")).toBe(true);
-  expect(button.closest(".pressure-test-action")).not.toBeNull();
-  // The status precedes its action inside the row's one unit.
-  const unit = row.querySelector(".trace-plan-pressure") as HTMLElement;
-  expect(unit.contains(status!) && unit.contains(button)).toBe(true);
-  expect(status!.compareDocumentPosition(button) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(button.closest(".pressure-test-action")?.getAttribute("data-tone")).toBe("warning");
+  expect(screen.getByText("Written").closest(".doc-heading-row")?.contains(button)).toBe(false);
 });
 
-it("draws a feature plan's pressure date once, in its card, and offers a re-run", () => {
+it("draws a feature plan's pressure date on its button and in its card, and offers a re-run", async () => {
   show({ ...PLAN, feature: "demo", last_pressure: "2026-10-20" });
   const dates = screen.getAllByText(/pressure-tested/i);
-  expect(dates.map((node) => node.className)).toEqual(["trace-pressure__when"]);
-  expect(within(writtenRow()).getByRole("button", { name: "Pressure-test again" })).toBeTruthy();
+  expect(dates.map((node) => node.closest("button") !== null || node.className)).toEqual([
+    true,
+    "trace-pressure__when",
+  ]);
+  const button = within(stateRow()).getByRole("button", { name: /^Pressure-tested / });
+  fireEvent.click(button);
+  const menu = within(await screen.findByRole("dialog", { name: /^Pressure-tested / }));
+  expect(
+    menu.getByRole("button", {
+      name: "Pressure-test this plan again",
+      description: "Tested 2026-10-20. Opens the pressure test, where you start it.",
+    }),
+  ).toBeTruthy();
+  // The record's link goes where the card's goes.
+  expect(menu.getByRole("link", { name: "Read the record" }).getAttribute("href")).toBe(
+    document.querySelector(".trace-pressure__link")?.getAttribute("href"),
+  );
 });
 
-it("sets a standalone written plan's tested status, flask first, on its Written row", () => {
+it("sets a standalone written plan's tested state, flask first, on its button", async () => {
   show({ ...STANDALONE, plan_state: "written", last_pressure: "2026-10-20" });
-  const row = writtenRow();
-  const status = within(row)
-    .getByText(/^Pressure-tested /)
-    .closest("[data-chip]");
-  expect(status?.getAttribute("data-tone")).toBe("ok");
-  expect(status?.getAttribute("title")).toBe("2026-10-20");
-  expect(status?.firstElementChild?.querySelector("svg.lucide-flask-conical")).not.toBeNull();
-  expect(within(row).getByRole("button", { name: "Pressure-test again" })).toBeTruthy();
+  const button = within(stateRow()).getByRole("button", { name: /^Pressure-tested / });
+  expect(button.closest(".pressure-test-action")?.getAttribute("data-tone")).toBe("ok");
+  expect(button.firstElementChild?.matches("svg.lucide-flask-conical")).toBe(true);
+  expect(screen.getAllByText(/^Pressure-tested /)).toHaveLength(1);
+  // A standalone plan has no record card, so its menu has no link to one.
+  fireEvent.click(button);
+  expect(within(await screen.findByRole("dialog")).queryByRole("link")).toBeNull();
   expect(document.querySelector(".doc-heading-facts")?.textContent ?? "").not.toMatch(/pressure/i);
 });
 
@@ -208,12 +220,12 @@ it("keeps a standalone done plan's test date as a status, with no Pressure-test"
   show({ ...STANDALONE, plan_state: "done", last_pressure: "2026-10-20" });
   const status = screen.getByText(/^Pressure-tested /).closest("[data-chip]");
   expect(status?.closest(".doc-heading-status")).not.toBeNull();
-  expect(screen.queryByRole("button", { name: /^Pressure-test/ })).toBeNull();
+  expect(screen.queryByRole("button", { name: /pressure-test/i })).toBeNull();
 });
 
-it("ends only a written plan's state row in Pressure-test", () => {
+it("offers Pressure-test only for a written plan", () => {
   show({ ...PLAN, plan_state: "running" });
-  expect(screen.queryByRole("button", { name: /^Pressure-test/ })).toBeNull();
+  expect(screen.queryByRole("button", { name: /pressure-test/i })).toBeNull();
 });
 
 it("leaves the pressure chip off a section summary with no test date", () => {
@@ -222,10 +234,12 @@ it("leaves the pressure chip off a section summary with no test date", () => {
   expect(screen.queryByText(/pressure-tested/i)).toBeNull();
 });
 
-it("renders unstated implements metadata as one chip", () => {
+it("renders unstated implements metadata as one row with a plain chip", () => {
   show({ implements: { kind: "not_stated" } });
 
-  expect(screen.getByText("Implements: not stated").closest("[data-chip]")).not.toBeNull();
+  const row = screen.getByText("Implements").closest("[data-chip]");
+  expect(row?.textContent).toBe("Implements Not stated");
+  expect(screen.getByText("Not stated").closest("a")).toBeNull();
 });
 
 it("links implemented sections and keeps unresolved section names unlinked", () => {
@@ -249,10 +263,9 @@ it("links implemented sections and keeps unresolved section names unlinked", () 
   });
 
   const chip = screen.getByText("Implements", { exact: false }).closest("[data-chip]");
-  expect(chip?.textContent).toBe("Implements: §01, section_99");
-  const link = screen.getByRole("link", { name: "§01" });
+  expect(chip?.textContent).toBe("Implements §01 Planning section_99");
+  const link = screen.getByRole("link", { name: "§01 Planning" });
   expect(link.getAttribute("href")).toBe("/f/demo/product/section_01");
-  expect(link.getAttribute("title")).toBe("Planning");
   const unresolved = screen.getByText("section_99");
   expect(unresolved.closest("a")).toBeNull();
   expect(unresolved.closest("[title]")).toBeNull();
@@ -273,14 +286,17 @@ it("chips the implementing plans as Built by their numbers, each linked with its
   });
 
   const chip = screen.getByText("Built by", { exact: false }).closest("[data-chip]");
-  expect(chip?.textContent).toBe(
-    "Built by 05 (Concept mode, in progress) · 09 (Second plan, done)",
-  );
-  const link = screen.getByRole("link", { name: "05 (Concept mode, in progress)" });
+  // No separators: each plan is a chip of its number, its title and its state.
+  expect(chip?.textContent).toBe("Built by 05 Concept mode in progress 09 Second plan Done");
+  const link = screen.getByRole("link", { name: "05 Concept mode in progress" });
   expect(link.getAttribute("href")).toBe("/f/demo/engineering/feat-planner.05");
-  expect(screen.getByRole("link", { name: "09 (Second plan, done)" }).getAttribute("href")).toBe(
-    "/f/demo/engineering/feat-planner-09-reading",
-  );
+  const done = screen.getByRole("link", { name: "09 Second plan Done" });
+  expect(done.getAttribute("href")).toBe("/f/demo/engineering/feat-planner-09-reading");
+  // A known state draws its glyph in its tone; a state the client does not know is words alone.
+  const state = done.querySelector(".doc-heading-link__state");
+  expect(state?.getAttribute("data-tone")).toBe("ok");
+  expect(state?.querySelector("svg")).not.toBeNull();
+  expect(link.querySelector(".doc-heading-link__state svg")).toBeNull();
 });
 
 it("opens every sentence from the quiet Open all heading button", () => {
@@ -351,7 +367,7 @@ it("links a standalone implementing plan", () => {
     implemented_by: [{ slug: "my-plan", title: "My plan", state: "written" }],
   });
 
-  expect(screen.getByRole("link", { name: "My plan (written)" }).getAttribute("href")).toBe(
+  expect(screen.getByRole("link", { name: "My plan Written" }).getAttribute("href")).toBe(
     "/plans/my-plan",
   );
 });
