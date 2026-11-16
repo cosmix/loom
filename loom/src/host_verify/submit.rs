@@ -11,6 +11,8 @@ use std::path::Path;
 use anyhow::Result;
 use chrono::{DateTime, Utc};
 
+use crate::native_worker::index::stage_disposition;
+
 use super::{bounded_detail, new_job_id, pending, store, JobKind, JobRecord, JobState};
 
 /// Relay request ids a record keeps; the oldest goes first.
@@ -64,6 +66,9 @@ pub fn submit(
 ) -> Result<Submission> {
     if let Some(problem) = invalid_binding(request) {
         return Ok(Submission::Refused(problem.to_string()));
+    }
+    if let Some(blocker) = stage_disposition(work_dir, request.stage_id).blocker(request.stage_id) {
+        return Ok(Submission::Refused(blocker));
     }
     let lock = store::lock_stage(work_dir, request.stage_id)?;
     let Some(mut current) = live_current(&lock, work_dir, request.stage_id)? else {
@@ -307,4 +312,62 @@ fn add_request(record: &mut JobRecord, request_id: &str) {
     }
     let excess = record.requests.len().saturating_sub(MAX_REQUESTS);
     record.requests = record.requests.split_off(excess);
+}
+
+#[cfg(test)]
+pub(crate) mod native_hold_tests {
+    use super::*;
+    use crate::native_worker::model::{NativeManifest, NATIVE_DEADLINE_SECS};
+    use crate::native_worker::store::create_invocation;
+
+    pub(crate) struct ProcessGuard(pub(crate) u32);
+
+    impl Drop for ProcessGuard {
+        fn drop(&mut self) {
+            let _ = crate::process::terminate(self.0);
+        }
+    }
+
+    pub(crate) fn seed(work: &Path, stage: &str) -> std::path::PathBuf {
+        let manifest = NativeManifest {
+            v: 1,
+            stage_id: stage.into(),
+            unit_id: "worker".into(),
+            invocation_id: "inv-0123456789abcdef0123456789abcdef".into(),
+            owner_session_id: "another-session".into(),
+            workspace_root: work.to_path_buf(),
+            brief_path: work.join("brief.md"),
+            brief_sha256: crate::utils::sha256_hex(b"brief"),
+            model: "gpt-6.1-terra".into(),
+            effort: "xhigh".into(),
+            deadline_secs: NATIVE_DEADLINE_SECS,
+            created_at: Utc::now(),
+        };
+        create_invocation(work, &manifest, b"brief").unwrap()
+    }
+
+    #[test]
+    fn submit_refuses_while_a_native_worker_holds_the_stage() {
+        use crate::host_verify::tests_submit::{request, state_root, HEAD_A, STAGE};
+        let (_dir, work) = state_root();
+        seed(&work, STAGE);
+        let result = submit(&work, &request("r1", HEAD_A, false), Utc::now()).unwrap();
+        assert!(
+            matches!(result, Submission::Refused(text) if text.contains("running native Codex workers"))
+        );
+        assert!(store::load_current(&work, STAGE).unwrap().is_none());
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn a_passing_run_is_rejected_while_a_native_worker_holds_the_stage() {
+        use crate::host_verify::apply::Applied;
+        use crate::host_verify::tests_complete_support::{Fixture, STAGE};
+        use crate::models::stage::StageType;
+        let fx = Fixture::new(StageType::Standard, 1);
+        let record = fx.passed();
+        seed(&fx.work_dir, STAGE);
+        assert!(matches!(fx.apply(&record), Ok(Applied::Recorded)));
+        fx.assert_rejected(&record);
+    }
 }

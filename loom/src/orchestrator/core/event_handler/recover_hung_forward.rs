@@ -3,6 +3,7 @@
 use chrono::{DateTime, Utc};
 
 use crate::models::session::Session;
+use crate::native_worker::index::stage_disposition;
 use crate::orchestrator::monitor::foreground::foreground_forward_holds;
 use crate::orchestrator::monitor::heartbeat::Heartbeat;
 use crate::orchestrator::monitor::never_worked::never_worked;
@@ -47,6 +48,9 @@ impl Orchestrator {
                 && !self.monitor.observed_foreground_command(&session.id)
                 && never_worked(session, heartbeat, now, report.timeout_secs)
         });
-        (never_started, foreground_held)
+        let native_held = stage_disposition(&self.config.work_dir, stage_id)
+            .blocker(stage_id)
+            .is_some();
+        (never_started, foreground_held || native_held)
     }
 }

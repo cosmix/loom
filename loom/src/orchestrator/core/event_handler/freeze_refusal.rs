@@ -40,7 +40,7 @@ use crate::models::stage::{dispute_budgets, Stage, StageStatus, StageType};
 use crate::orchestrator::monitor::heartbeat::{heartbeat_path, read_heartbeat};
 use crate::relay::scratch_root_from_env;
 use crate::stage_service::{escalate_freeze_refusal, file_freeze_refusal, FreezeRefusalFiling};
-use crate::subagent_lifecycle::store::{replay, ChildDisposition};
+use crate::subagent_lifecycle::store::ChildDisposition;
 use crate::verify::contracts::refusal::{
     daemon_refusal, local_refusal, mark_declined, record_daemon_refusal, take_daemon_refusal,
     DaemonRefusal, RefusalSource, WRITER_PREFIX,
@@ -220,9 +220,7 @@ impl Orchestrator {
         if !aged(written) || heartbeat.is_some_and(|hb| !aged(SystemTime::from(hb.timestamp))) {
             return false;
         }
-        let children = replay(work_dir)
-            .map(|index| index.session_child_disposition(stage_id, session_id))
-            .unwrap_or_else(|error| ChildDisposition::Unknown(format!("{error:#}")));
+        let children = self.session_child_disposition(stage_id, session_id);
         self.note_child_disposition(stage_id, session_id, &children);
         children == ChildDisposition::NoChildren
     }

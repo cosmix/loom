@@ -18,6 +18,7 @@ mod integrity_status;
 mod knowledge_complete;
 mod merge;
 mod merge_resolver;
+pub(crate) mod native_gate;
 #[cfg(test)]
 pub(crate) use merge_resolver::{
     spawn_merge_resolver as test_spawn_merge_resolver, MergeResolverResult,
@@ -32,6 +33,8 @@ mod skip_retry;
 mod state;
 pub(crate) mod verify_host;
 
+#[cfg(test)]
+mod native_gate_contract_tests;
 #[cfg(test)]
 mod tests;
 

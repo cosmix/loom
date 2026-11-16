@@ -49,6 +49,7 @@ fn retry_in(work_dir: &Path, stage_id: String, force: bool, context: Option<Stri
     let mut stage = load_stage(&stage_id, work_dir)?;
     let original_status = stage.status.clone();
     let original_session = stage.session.clone();
+    crate::commands::stage::native_gate::ensure_no_native_workers(work_dir, &stage_id)?;
 
     // A confirmed dead session does not block retry. Unknown ownership does,
     // unless the operator explicitly requests the force override.
@@ -336,3 +337,24 @@ mod tests;
 #[cfg(test)]
 #[path = "skip_retry_host_job_tests.rs"]
 mod host_job_tests;
+
+#[cfg(test)]
+mod native_gate_tests {
+    use super::*;
+    use crate::models::stage::Stage;
+    use crate::verify::transitions::create_stage;
+
+    #[test]
+    fn retry_force_refuses_without_a_session() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let work = temp.path();
+        let mut stage = Stage::new("s1".into(), None);
+        stage.id = "s1".into();
+        stage.status = StageStatus::Blocked;
+        create_stage(&stage, work).unwrap();
+        crate::commands::stage::native_gate::tests::seed_active_worker(work, "s1", "unit");
+        let error = retry_in(work, "s1".into(), true, None).unwrap_err();
+        assert!(format!("{error:#}").contains("running native Codex workers"));
+        assert_eq!(load_stage("s1", work).unwrap().status, StageStatus::Blocked);
+    }
+}

@@ -4,6 +4,7 @@ mod evidence;
 mod identity;
 mod lease;
 mod model;
+mod native;
 mod output;
 mod parent_scan;
 mod stall;
@@ -16,6 +17,10 @@ mod engine_tests;
 mod lease_boot_tests;
 #[cfg(test)]
 mod lease_tests;
+#[cfg(test)]
+mod native_contract_tests;
+#[cfg(test)]
+mod native_tests;
 #[cfg(test)]
 mod tests;
 

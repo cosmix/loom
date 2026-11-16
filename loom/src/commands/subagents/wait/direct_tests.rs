@@ -53,7 +53,8 @@ fn bound_worker(identity: WorkerIdentity, authorization: CodexAuthorization) -> 
             kind: WorkerKind::Codex,
             id: authorization.unit_id.clone(),
         },
-        lifecycle_identity: identity,
+        lifecycle_identity: Some(identity),
+        native_invocation: None,
         authority: Some(CodexAuthority::from(authorization)),
         evidence: Vec::new(),
     }
@@ -72,7 +73,12 @@ fn wait(fixture: &Fixture, worker: &BoundWorker, timeout: Duration) -> EngineRes
     let identity = WaitIdentity {
         canonical_repo: "/repo".into(),
         canonical_worktree: "/repo/worktree".into(),
-        stage_id: worker.lifecycle_identity.stage_id().to_owned(),
+        stage_id: worker
+            .lifecycle_identity
+            .as_ref()
+            .map(WorkerIdentity::stage_id)
+            .unwrap_or("stage-a")
+            .to_owned(),
         loom_session_id: "loom-a".into(),
         parent_session_id: "parent-a".into(),
         workers: vec![worker.clone()],

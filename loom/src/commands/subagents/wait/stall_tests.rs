@@ -153,14 +153,15 @@ fn detect_names_the_claude_worker_in_its_detail() {
             kind: WorkerKind::Claude,
             id: "worker-a".into(),
         },
-        lifecycle_identity: WorkerIdentity::ClaudeSubagent {
+        lifecycle_identity: Some(WorkerIdentity::ClaudeSubagent {
             stage_id: "stage-a".into(),
             loom_session_id: "loom-a".into(),
             parent_session_id: "parent-a".into(),
             agent_id: "worker-a".into(),
             agent_type: "loom-software-engineer".into(),
             transcript_path: transcript,
-        },
+        }),
+        native_invocation: None,
         authority: None,
         evidence: Vec::new(),
     };
@@ -182,13 +183,14 @@ fn identities_without_progress_evidence_are_left_active() {
             kind: WorkerKind::Claude,
             id: "mate-a".into(),
         },
-        lifecycle_identity: WorkerIdentity::ClaudeTeammate {
+        lifecycle_identity: Some(WorkerIdentity::ClaudeTeammate {
             stage_id: "stage-a".into(),
             loom_session_id: "loom-a".into(),
             parent_session_id: "parent-a".into(),
             team_name: "team-a".into(),
             teammate_name: "mate-a".into(),
-        },
+        }),
+        native_invocation: None,
         authority: None,
         evidence: Vec::new(),
     };

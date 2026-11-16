@@ -90,6 +90,8 @@ pub fn complete(
     let stage = load_stage(&stage_id, work_dir)?;
     bypass_acceptance_cache(no_cache);
     if stage.stage_type == StageType::Knowledge {
+        // Knowledge completion skips `complete_stage`, which holds the same gate for other stages.
+        super::native_gate::ensure_no_native_workers(work_dir, &stage.id)?;
         return complete_knowledge_stage(&stage.id, session_id.as_deref(), no_verify, force_unsafe);
     }
     complete_pipeline::complete_stage(

@@ -39,6 +39,7 @@ use crate::verify::transitions::update_stage;
 /// # Ok::<(), anyhow::Error>(())
 /// ```
 pub fn skip_stage(stage_id: &str, reason: Option<String>, work_dir: &Path) -> Result<()> {
+    crate::commands::stage::native_gate::ensure_no_native_workers(work_dir, stage_id)?;
     update_stage(stage_id, work_dir, |stage| {
         if !matches!(
             stage.status,
@@ -64,6 +65,18 @@ mod tests {
         stage.id = id.to_string();
         stage.status = status;
         stage
+    }
+
+    #[test]
+    fn skip_refuses_active_worker() {
+        let temp = TempDir::new().unwrap();
+        let work = temp.path();
+        let stage = create_test_stage("s1", "stage", StageStatus::Blocked);
+        create_stage(&stage, work).unwrap();
+        crate::commands::stage::native_gate::tests::seed_active_worker(work, "s1", "unit");
+        let error = skip_stage("s1", None, work).unwrap_err();
+        assert!(format!("{error:#}").contains("running native Codex workers"));
+        assert_eq!(load_stage("s1", work).unwrap().status, StageStatus::Blocked);
     }
 
     #[test]

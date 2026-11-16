@@ -137,7 +137,6 @@ impl Fixture {
         std::fs::read_to_string(&requests[0]).unwrap()
     }
 }
-
 #[test]
 #[serial]
 fn a_daemon_record_is_filed_in_the_same_tick() {
@@ -154,7 +153,6 @@ fn a_daemon_record_is_filed_in_the_same_tick() {
     assert!(!request.contains(WRITER_PREFIX), "{request}");
     assert_eq!(fx.stage().tally.freeze_refusal_disputes, 1);
 }
-
 #[test]
 #[serial]
 fn a_record_for_another_session_is_dropped_and_nothing_is_filed() {
@@ -166,7 +164,6 @@ fn a_record_for_another_session_is_dropped_and_nothing_is_filed() {
     fx.assert_nothing_filed();
     assert_eq!(daemon_refusal(&fx.work, STAGE).unwrap(), None);
 }
-
 #[test]
 #[serial]
 fn a_local_refusal_is_filed_only_once_it_has_been_quiet() {
@@ -184,7 +181,6 @@ fn a_local_refusal_is_filed_only_once_it_has_been_quiet() {
         "{request}"
     );
 }
-
 #[test]
 #[serial]
 fn a_local_refusal_waits_while_the_writer_still_heartbeats() {
@@ -198,7 +194,6 @@ fn a_local_refusal_waits_while_the_writer_still_heartbeats() {
 
     fx.assert_nothing_filed();
 }
-
 #[test]
 #[serial]
 fn a_local_refusal_waits_while_the_writer_runs_a_subagent() {
@@ -208,6 +203,15 @@ fn a_local_refusal_waits_while_the_writer_runs_a_subagent() {
 
     fx.tick_after_quiet();
 
+    fx.assert_nothing_filed();
+}
+#[test]
+#[serial]
+fn freeze_refusal_waits_for_a_native_worker() {
+    let mut fx = fixture();
+    fx.refuse_locally();
+    crate::host_verify::submit::native_hold_tests::seed(&fx.work, STAGE);
+    fx.tick_after_quiet();
     fx.assert_nothing_filed();
 }
 
@@ -241,7 +245,6 @@ fn a_local_refusal_waits_while_the_writers_children_are_unknown() {
     fx.assert_filed_once();
     assert!(!fx.orchestrator.spool_drain_error_logged.contains(&key));
 }
-
 #[test]
 #[serial]
 fn the_fourth_refusal_retires_the_writer_and_escalates() {
@@ -284,7 +287,6 @@ fn the_fourth_refusal_retires_the_writer_and_escalates() {
     assert!(fx.requests().is_empty(), "no dispute is pending");
     assert_eq!(daemon_refusal(&fx.work, STAGE).unwrap(), None);
 }
-
 #[test]
 #[serial]
 fn a_declined_filing_is_marked_and_never_retried() {
@@ -303,7 +305,6 @@ fn a_declined_filing_is_marked_and_never_retried() {
     let record = daemon_refusal(&fx.work, STAGE).unwrap().unwrap();
     assert_eq!(record.declined.as_deref(), Some("not admitted"));
 }
-
 #[test]
 #[serial]
 fn an_admission_read_error_after_the_initial_read_retries() {
@@ -323,7 +324,6 @@ fn an_admission_read_error_after_the_initial_read_retries() {
     fx.assert_filed_once();
     assert_eq!(fx.stage().tally.freeze_refusal_disputes, 1);
 }
-
 #[test]
 #[serial]
 fn a_tick_retried_after_a_failed_filing_writes_one_request() {
@@ -392,7 +392,7 @@ fn active_child(work: &Path, workspace: &Path, session_id: &str) {
         append_locked(work, &record).unwrap();
     }
     assert_eq!(
-        replay(work)
+        crate::subagent_lifecycle::replay(work)
             .unwrap()
             .session_child_disposition(STAGE, session_id),
         ChildDisposition::Active

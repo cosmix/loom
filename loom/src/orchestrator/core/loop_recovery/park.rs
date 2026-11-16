@@ -6,6 +6,7 @@ use crate::fs::session_files::{load_session_exact, mark_session_terminal_reason}
 use crate::handoff::{current_blocker, load_trusted_session_checkpoint, short_fingerprint};
 use crate::models::session::{Session, SessionExitReason, SessionStatus};
 use crate::models::stage::{Stage, StageStatus};
+use crate::native_worker::index::{stage_disposition, NativeDisposition};
 use crate::orchestrator::monitor::events::CompletionEscalation;
 use crate::orchestrator::signals::remove_signal;
 use crate::orchestrator::terminal::native::{session_process_status, SessionProcessStatus};
@@ -41,10 +42,7 @@ impl Orchestrator {
             );
             return Ok(());
         }
-        match replay(&self.config.work_dir)
-            .map(|index| index.session_child_disposition(stage_id, session_id))
-            .unwrap_or_else(|error| ChildDisposition::Unknown(error.to_string()))
-        {
+        match self.session_child_disposition(stage_id, session_id) {
             ChildDisposition::Active => {
                 tracing::warn!(
                     stage_id,
@@ -64,6 +62,27 @@ impl Orchestrator {
                 repeat_count,
                 &failure_code,
             ),
+        }
+    }
+
+    /// A stage's native workers and the session's journaled subagents hold its lead.
+    pub(crate) fn session_child_disposition(
+        &self,
+        stage_id: &str,
+        session_id: &str,
+    ) -> ChildDisposition {
+        let native = stage_disposition(&self.config.work_dir, stage_id);
+        if let NativeDisposition::Unverified(reason) = native {
+            return ChildDisposition::Unknown(reason);
+        }
+        let journal = replay(&self.config.work_dir)
+            .map(|index| index.session_child_disposition(stage_id, session_id))
+            .unwrap_or_else(|error| ChildDisposition::Unknown(error.to_string()));
+        match (journal, native) {
+            (ChildDisposition::NoChildren, NativeDisposition::Active(_)) => {
+                ChildDisposition::Active
+            }
+            (journal, _) => journal,
         }
     }
 

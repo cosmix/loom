@@ -9,6 +9,7 @@ use crate::fs::work_dir::WorkDir;
 use crate::models::constants::STALENESS_THRESHOLD_SECS;
 use crate::models::session::{Session, SessionStatus};
 use crate::models::stage::{Stage, StageStatus, StatusBucket};
+use crate::native_worker::index::stage_disposition;
 use crate::orchestrator::monitor::foreground::{
     foreground_command_active, foreground_forward_holds,
 };
@@ -266,6 +267,9 @@ fn active_foreground(
                 now,
             )
         })
+        || stage_disposition(work_dir.root(), &stage.id)
+            .blocker(&stage.id)
+            .is_some()
 }
 
 #[cfg(test)]
@@ -275,3 +279,22 @@ mod tests;
 #[cfg(all(test, target_os = "linux"))]
 #[path = "heartbeat_foreground_tests.rs"]
 mod foreground_tests;
+
+#[cfg(test)]
+mod native_hold_tests {
+    use super::*;
+
+    #[test]
+    fn native_worker_makes_the_lead_busy() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let work = WorkDir::new(temp.path().join(".loom/work")).unwrap();
+        work.initialize().unwrap();
+        let stage = Stage {
+            id: "s1".into(),
+            ..Stage::default()
+        };
+        assert!(!active_foreground(&work, &stage, None, None, Utc::now()));
+        crate::host_verify::submit::native_hold_tests::seed(work.root(), &stage.id);
+        assert!(active_foreground(&work, &stage, None, None, Utc::now()));
+    }
+}

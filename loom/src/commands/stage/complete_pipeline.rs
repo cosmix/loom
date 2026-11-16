@@ -124,6 +124,7 @@ pub(super) fn complete_stage(
     assume_merged: bool,
     work_dir: &Path,
 ) -> Result<()> {
+    crate::commands::stage::native_gate::ensure_no_native_workers(work_dir, &stage.id)?;
     if force_unsafe && no_verify {
         eprintln!("Note: --force-unsafe runs no checks, so --no-verify adds nothing.");
     }
@@ -179,4 +180,28 @@ fn verify_acceptance(
 ) -> Result<()> {
     let result = run_acceptance_phase(stage, &stage.id, no_verify, paths, work_dir)?;
     ensure_acceptance_passed(result, &stage.id)
+}
+
+#[cfg(test)]
+mod native_gate_tests {
+    use super::*;
+    use crate::models::stage::StageStatus;
+    use crate::verify::transitions::{create_stage, load_stage};
+
+    #[test]
+    fn operator_completion_refuses_active_worker() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let work = temp.path();
+        let mut stage = Stage::new("s1".into(), None);
+        stage.id = "s1".into();
+        stage.status = StageStatus::Executing;
+        create_stage(&stage, work).unwrap();
+        crate::commands::stage::native_gate::tests::seed_active_worker(work, "s1", "unit");
+        let error = complete_stage(stage, None, false, true, false, work).unwrap_err();
+        assert!(format!("{error:#}").contains("running native Codex workers"));
+        assert_eq!(
+            load_stage("s1", work).unwrap().status,
+            StageStatus::Executing
+        );
+    }
 }

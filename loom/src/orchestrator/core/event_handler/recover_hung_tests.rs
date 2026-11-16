@@ -44,6 +44,29 @@ pub(super) fn report(session_id: &str, stale_duration_secs: u64) -> HungReport<'
     }
 }
 
+#[test]
+#[serial_test::serial]
+fn forward_facts_hold_for_a_native_worker() {
+    let temp = handoff_work_dir();
+    let work = temp.path().join(".loom").join("work");
+    let (session, agent_pid) = stalled_stage(&work);
+    let _process = crate::host_verify::submit::native_hold_tests::ProcessGuard(agent_pid);
+    let mut orchestrator = orchestrator_for(&work, temp.path());
+    orchestrator.graph.mark_executing("test-stage").unwrap();
+    orchestrator
+        .active_sessions
+        .insert("test-stage".to_string(), session.clone());
+    crate::host_verify::submit::native_hold_tests::seed(&work, "test-stage");
+    orchestrator
+        .on_session_hung(report(&session.id, ESCALATING_SILENCE_SECS))
+        .unwrap();
+    assert!(crate::process::is_process_alive(agent_pid));
+    assert_eq!(
+        load_stage("test-stage", &work).unwrap().status,
+        StageStatus::Executing
+    );
+}
+
 /// A stage executing behind a live agent, exactly as the executor leaves it.
 pub(super) fn stalled_stage(work: &Path) -> (Session, u32) {
     executing_stage(work);
