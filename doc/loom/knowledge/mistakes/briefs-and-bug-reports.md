@@ -358,3 +358,13 @@ sibling's files.
 **Why:** Splitting detailed guidance to satisfy file-length limits was treated as permission to create a second deliverable.
 **Prevention:** Keep revisions in the requested proposal. Consolidate overlapping material and use the line budget efficiently rather than adding an unsolicited annex.
 **Fix:** Merge the useful annex content into the original proposal and remove the extra file.
+
+## Follow-up UI Tweak Briefed as a Full Redesign Pass
+
+**What happened:** after a header redesign, the operator asked for one follow-up (make the pressure-test button a dropdown like the settle button). The main agent spawned a fresh fable subagent that had to load the frontend-design skill, rediscover the files, run tsc, lint, format and the whole `src/plan` vitest folder (4,600+ tests), and reshoot every screenshot. A few-second change took many minutes.
+
+**Why:** the brief reused the heavy verification and screenshot steps of the first pass, and chose fable plus a fresh boot for a contained edit.
+
+**Prevention:** a small follow-up tweak during operator review goes to the cheapest capable tier with file:line pointers, runs only the tests of the touched files, skips skill loads and screenshot reshoots, and relies on the running hot-reload mock for review.
+
+**Fix:** verification in later briefs was limited to the touched files' tests.
