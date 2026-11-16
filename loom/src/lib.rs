@@ -19,6 +19,7 @@ pub mod host_verify;
 pub mod language;
 pub mod map;
 pub mod models;
+pub mod native_worker;
 pub mod orchestrator;
 pub mod parser;
 pub mod plan;
