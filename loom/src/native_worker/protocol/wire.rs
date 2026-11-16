@@ -87,9 +87,14 @@ pub fn turn_start(
         .map(|text| json!({"type": "text", "text": text}))
         .collect();
     let policy = match mode {
+        // Codex adds `$TMPDIR` of its own process environment to the writable
+        // roots. The boundary sets it to `BOUNDARY_TMPDIR`, a private empty
+        // directory linkers and compilers need. `/tmp` itself stays read-only
+        // to sandboxed commands: binds below it (the Linked Cargo home, a
+        // worktree under `/tmp`) must not be renamed away and replaced.
         SandboxMode::WorkspaceWrite => {
             json!({"type": "workspaceWrite", "writableRoots": [worktree.to_string_lossy()],
-            "networkAccess": false, "excludeSlashTmp": true, "excludeTmpdirEnvVar": true})
+            "networkAccess": false, "excludeSlashTmp": true, "excludeTmpdirEnvVar": false})
         }
         SandboxMode::External => json!({"type": "externalSandbox", "networkAccess": "restricted"}),
     };

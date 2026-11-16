@@ -5,6 +5,11 @@
 //! worktree is the only writable project path; `.loom`, `.git` and `.claude`
 //! inside it stay read-only. The Codex home is a private tmpfs on which only
 //! `sessions/`, the auth files and `AGENTS.md` are bound from the host.
+//! `/tmp` is a private tmpfs mounted under every bind; the boundary's
+//! `TMPDIR` is `BOUNDARY_TMPDIR`, an empty directory on it, and the Codex
+//! turn policy makes only the worktree and `TMPDIR` writable to sandboxed
+//! commands, never `/tmp` itself. The proxy socket directory is bound
+//! read-only at `/loom-proxy` on the read-only root.
 use std::path::PathBuf;
 
 #[cfg(target_os = "linux")]
@@ -15,6 +20,11 @@ mod quiescence;
 pub use probe::{native_backend_qualified, nested_sandbox_supported};
 pub(crate) use quiescence::identity_for;
 pub use quiescence::verify_quiescent;
+
+/// The boundary's `TMPDIR`, `TMP` and `TEMP`: a 0700 directory on the
+/// private `/tmp` tmpfs, the only temporary directory sandboxed commands may
+/// write.
+pub(crate) const BOUNDARY_TMPDIR: &str = "/tmp/loom-tmp";
 
 /// What one real boundary runs and exposes.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -379,3 +389,6 @@ mod codex_home_tests;
 
 #[cfg(all(test, target_os = "linux"))]
 mod policy_tests;
+
+#[cfg(all(test, target_os = "linux"))]
+mod tmp_tests;

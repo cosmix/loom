@@ -15,7 +15,7 @@ use std::time::Duration;
 use anyhow::{anyhow, Context, Result};
 
 use super::mounts::{self, codex_package, CodexPackage};
-use super::{BoundarySpec, SpawnedBoundary};
+use super::{BoundarySpec, SpawnedBoundary, BOUNDARY_TMPDIR};
 use crate::process::{spawn_retrying_text_busy, OwnedProcess};
 use crate::verify::criteria::{
     bind_read_roots, bubblewrap, read_roots, CargoScratch, NetworkAccess,
@@ -23,12 +23,16 @@ use crate::verify::criteria::{
 
 /// Where the launcher is mounted inside the boundary.
 const LOOM_BIN: &str = "/loom-bin/loom";
+/// Where the proxy socket directory is mounted inside the boundary: on the
+/// read-only root, so no sandboxed command can rename it or an ancestor and
+/// plant its own socket in its place.
+const PROXY_DIR: &str = "/loom-proxy";
 /// How long bubblewrap may take to report its namespace.
 const INFO_TIMEOUT: Duration = Duration::from_secs(5);
 /// Bound on the stderr kept from a boundary that failed to start.
 const STDERR_TAIL_BYTES: u64 = 2048;
 
-/// The real boundary's launcher and proxy socket directory.
+/// The real boundary's launcher and host proxy socket directory.
 struct Launch {
     loom_program: PathBuf,
     proxy_dir: PathBuf,
@@ -60,10 +64,14 @@ impl Plan {
             .filter(|dir| !dir.as_os_str().is_empty())
             .context("the proxy socket path has no parent directory")?
             .to_path_buf();
+        let socket_name = spec
+            .proxy_socket
+            .file_name()
+            .context("the proxy socket path has no file name")?;
         let mut args: Vec<OsString> = ["subagents", "worker-exec", "--proxy-socket"]
             .map(OsString::from)
             .into();
-        args.extend([spec.proxy_socket.clone().into(), "--".into()]);
+        args.extend([Path::new(PROXY_DIR).join(socket_name).into(), "--".into()]);
         args.push(package.program.clone().into());
         args.extend(["app-server", "--listen", "stdio://"].map(OsString::from));
         Ok(Self {
@@ -143,9 +151,9 @@ pub(super) fn environment(
     let fixed = [
         ("LANG", "C.UTF-8"),
         ("TERM", "dumb"),
-        ("TMPDIR", "/tmp"),
-        ("TMP", "/tmp"),
-        ("TEMP", "/tmp"),
+        ("TMPDIR", BOUNDARY_TMPDIR),
+        ("TMP", BOUNDARY_TMPDIR),
+        ("TEMP", BOUNDARY_TMPDIR),
         ("GIT_CONFIG_GLOBAL", "/dev/null"),
         ("LOOM_CODEX_FORWARD", "1"),
     ];
@@ -170,7 +178,7 @@ fn host_cargo_home(host: &[(OsString, OsString)]) -> Option<PathBuf> {
 
 /// The environment `CargoScratch::prepare` reads: `env` without `HOME`, the
 /// host Cargo home named. Without `HOME` it probes no uv or bun cache for an
-/// overlay; the boundary mounts none (its `TMPDIR` is `/tmp` and no cache
+/// overlay; the boundary mounts none (its `TMPDIR` is private and no cache
 /// variable points into the scratch), so that probe would be wasted work.
 pub(super) fn scratch_probe(
     program: &OsStr,
@@ -202,6 +210,10 @@ pub(super) fn command(
     let mut probe = Command::new(&plan.program);
     probe.env_clear().envs(env.iter().map(|(k, v)| (k, v)));
     let mut command = bubblewrap(NetworkAccess::Denied)?;
+    // The only writable temporary directory, on the private `/tmp` tmpfs.
+    // `/tmp` itself stays outside the Codex turn policy's writable roots, so a
+    // sandboxed command cannot rename anything bound below it.
+    command.args(["--perms", "0700", "--dir", BOUNDARY_TMPDIR]);
     command.env_clear().envs(env.iter().map(|(k, v)| (k, v)));
     let scratch_env = scratch_probe(&plan.program, &env, host);
     let scratch = CargoScratch::prepare(&scratch_env, &plan.worktree, true)?;
@@ -222,19 +234,23 @@ pub(super) fn command(
         mounts::codex_home(&mut command, codex_home, package_root)?;
     }
     if let Some(launch) = &plan.launch {
-        command
-            .arg("--ro-bind")
-            .arg(&launch.loom_program)
-            .arg(LOOM_BIN);
-        command
-            .arg("--ro-bind")
-            .arg(&launch.proxy_dir)
-            .arg(&launch.proxy_dir);
+        bind_launch(&mut command, &launch.loom_program, &launch.proxy_dir);
     }
     command.arg("--chdir").arg(&plan.worktree);
     command.args(["--remount-ro", "/", "--"]);
     command.arg(&plan.program).args(&plan.args);
     Ok((command, scratch))
+}
+
+/// The launcher and the proxy socket directory, read-only at fixed paths on the
+/// read-only root, so no sandboxed command can rename or replace them.
+fn bind_launch(
+    command: &mut Command,
+    loom_program: impl AsRef<OsStr>,
+    proxy_dir: impl AsRef<OsStr>,
+) {
+    command.arg("--ro-bind").arg(loom_program).arg(LOOM_BIN);
+    command.arg("--ro-bind").arg(proxy_dir).arg(PROXY_DIR);
 }
 
 /// A start that failed after bubblewrap was spawned. Retiring the outer

@@ -52,7 +52,7 @@ fn turn_start_frame_workspace_write_policy() {
             SandboxMode::WorkspaceWrite,
             Path::new("/work")
         ),
-        json!({"id":3,"method":"turn/start","params":{"threadId":"t","input":[{"type":"text","text":"hello"}],"effort":"high","sandboxPolicy":{"type":"workspaceWrite","writableRoots":["/work"],"networkAccess":false,"excludeSlashTmp":true,"excludeTmpdirEnvVar":true}}})
+        json!({"id":3,"method":"turn/start","params":{"threadId":"t","input":[{"type":"text","text":"hello"}],"effort":"high","sandboxPolicy":{"type":"workspaceWrite","writableRoots":["/work"],"networkAccess":false,"excludeSlashTmp":true,"excludeTmpdirEnvVar":false}}})
     );
 }
 

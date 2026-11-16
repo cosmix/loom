@@ -60,6 +60,16 @@ impl RealFixture {
         let host = host(&self.home);
         argv(&Plan::real(&self.spec, &host).unwrap(), &host)
     }
+
+    /// Host directory of the proxy socket, bound into the boundary.
+    pub(super) fn proxy_dir(&self) -> &Path {
+        self.spec.proxy_socket.parent().unwrap()
+    }
+
+    /// The fixture's own host directories: HOME, the worktree and the package.
+    pub(super) fn host_dirs(&self) -> [&Path; 3] {
+        [&self.home, &self.w, self.proxy_dir().parent().unwrap()]
+    }
 }
 
 #[test]
