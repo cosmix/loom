@@ -26,7 +26,7 @@ mod protected;
 mod developer_tools;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub(super) enum NetworkAccess {
+pub(crate) enum NetworkAccess {
     Denied,
     Provision,
 }
@@ -128,7 +128,7 @@ pub(super) fn cargo_home(command: &Command) -> Option<PathBuf> {
         .or_else(|| environment_path(command, "HOME").map(|home| home.join(".cargo")))
 }
 
-fn read_roots(command: &Command) -> Vec<PathBuf> {
+pub(crate) fn read_roots(command: &Command) -> Vec<PathBuf> {
     let mut roots: Vec<PathBuf> = [
         "/usr",
         "/bin",
@@ -287,7 +287,7 @@ fn platform_command(
 
 /// The launcher with its namespaces and private system mounts, before any bind.
 #[cfg(target_os = "linux")]
-fn bubblewrap(network: NetworkAccess) -> Result<Command> {
+pub(crate) fn bubblewrap(network: NetworkAccess) -> Result<Command> {
     let launcher =
         which::which("bwrap").context("confined verification requires bubblewrap (bwrap)")?;
     let mut command = Command::new(launcher);
@@ -316,7 +316,7 @@ fn bubblewrap(network: NetworkAccess) -> Result<Command> {
 /// Cargo's sources go read-only over that home, so they bind after it, and the
 /// home binds after every other root in case one contains it.
 #[cfg(target_os = "linux")]
-fn bind_read_roots(command: &mut Command, original: &Command, scratch: &CargoScratch) {
+pub(crate) fn bind_read_roots(command: &mut Command, original: &Command, scratch: &CargoScratch) {
     let mount = scratch.cargo_mount();
     let (cargo_roots, roots): (Vec<_>, Vec<_>) = read_roots(original)
         .into_iter()

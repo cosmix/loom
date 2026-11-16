@@ -36,21 +36,21 @@ const MAX_POINTER_BYTES: usize = 4 * 1024;
 
 /// The Git directories a command confined to a tree uses.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(in crate::verify::criteria) struct GitDirs {
+pub(crate) struct GitDirs {
     /// The tree's own Git directory: `HEAD` and the index.
     pub(in crate::verify::criteria) admin: PathBuf,
     /// The repository's shared directory: refs and objects.
     pub(in crate::verify::criteria) common: PathBuf,
     /// Canonical paths outside the tree to expose read-only; empty when the
     /// tree holds its own Git directory.
-    pub(in crate::verify::criteria) roots: Vec<PathBuf>,
+    pub(crate) roots: Vec<PathBuf>,
 }
 
 /// The Git directories of the canonical `tree` for a command denied the
 /// network. `None` under provisioning, whose network access could carry the
 /// repository's objects and config away, for a tree without `.git`, and for a
 /// linked worktree that fails verification.
-pub(super) fn git_dirs(tree: &Path, network: NetworkAccess) -> Option<GitDirs> {
+pub(crate) fn git_dirs(tree: &Path, network: NetworkAccess) -> Option<GitDirs> {
     if network != NetworkAccess::Denied {
         return None;
     }

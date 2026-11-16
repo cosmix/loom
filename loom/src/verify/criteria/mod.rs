@@ -74,6 +74,12 @@ pub use config::{
 };
 #[cfg(test)]
 pub(crate) use confine::host_launcher;
+#[cfg(target_os = "linux")]
+pub(crate) use confine::{
+    git_dirs,
+    host::{bind_read_roots, bubblewrap, read_roots, NetworkAccess},
+    CargoScratch,
+};
 pub use confine::{
     plan_confinement, resolve_confinement, spawn_confined, CommandSpec, ConfinedChild,
 };

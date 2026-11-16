@@ -14,11 +14,15 @@
 //! caller has to reimplement the precedence.
 
 #[path = "confine_host.rs"]
-mod host;
+pub(super) mod host;
 #[path = "confine_scratch.rs"]
 mod scratch;
 
+#[cfg(target_os = "linux")]
+pub(crate) use host::git_roots::git_dirs;
 pub(super) use host::git_roots::GitDirs;
+#[cfg(target_os = "linux")]
+pub(crate) use scratch::CargoScratch;
 
 /// The OS sandbox launcher tests need, when installed.
 #[cfg(test)]
