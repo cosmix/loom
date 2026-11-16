@@ -85,6 +85,7 @@ relay_kind_at() {
 	stage:adjudicate) echo verdict ;;
 	stage:contracts) [[ "${LOOM_TOKENS[$((j + 3))]:-}" == freeze ]] && echo freeze-contracts ;;
 	knowledge:context) echo telemetry ;;
+	subagents:start | subagents:message | subagents:cancel) echo subagents:control ;;
 	check:*) echo check ;;
 	handoff:*) echo handoff ;;
 	esac
@@ -122,7 +123,7 @@ drop_control_kinds() {
 	local kind kept="" IFS=,
 	for kind in $1; do
 		case "$kind" in
-		block | commit | complete | dispute | handoff | merge-resolved | verdict | freeze-contracts | file-dispute) ;;
+		block | commit | complete | dispute | handoff | merge-resolved | verdict | freeze-contracts | file-dispute | subagents:control) ;;
 		*) kept=${kept:+$kept,}$kind ;;
 		esac
 	done

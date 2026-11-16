@@ -329,10 +329,9 @@ fn to_toml_string_renders_every_key_resolved() {
 
 #[test]
 fn value_of_has_an_arm_for_every_registered_key() {
-    // `value_of`'s match on `spec.name` has an `unreachable!()` fallback arm
-    // that nothing checks at compile time - a key added to `keys::KEYS`
-    // without a matching arm would panic `loom config --list` at runtime.
-    // Looping over the real registry catches that panic here before runtime.
+    // `value_of`'s match on `spec.name` has an `unreachable!()` fallback arm that
+    // nothing checks at compile time: a key added to `keys::KEYS` without an arm
+    // would panic `loom config --list`. Looping over the registry catches it here.
     let config = UserConfig::default();
     for key in keys::KEYS {
         let (value, origin) = config.value_of(key);
@@ -342,6 +341,7 @@ fn value_of_has_an_arm_for_every_registered_key() {
             "update.check" => assert_eq!(value, "true"),
             "update.check_interval_hours" => assert_eq!(value, "24"),
             "terminal.backend" => assert_eq!(value, "tmux"),
+            "codex.backend" => assert_eq!(value, "legacy"),
             "context.ceiling_tokens" => {
                 assert_eq!(value, DEFAULT_CONTEXT_CEILING_TOKENS.to_string())
             }

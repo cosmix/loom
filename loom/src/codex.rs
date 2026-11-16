@@ -289,16 +289,16 @@ fn codex_companion_installed_in(home: &std::path::Path) -> bool {
     crate::fs::safe_read::is_regular_no_follow(&path)
 }
 
-/// Combined availability check for the codex implementation lanes (terra, sol, luna).
+/// Combined availability check for the legacy forwarder lane (terra, sol, luna).
 ///
 /// `Ok(())` iff BOTH the codex CLI is resolvable (see [`find_codex_path`]) AND
 /// the codex plugin's companion runtime is installed. `Err` carries a short,
 /// human-readable reason naming what is missing, for the advisory startup
 /// warning and the stage-signal fallback text - this never signals a hard
-/// failure, only that the codex lanes are unavailable on this machine.
+/// failure, only that the legacy forwarder lane is unavailable on this machine.
 pub fn codex_lane_status() -> Result<()> {
     if find_codex_path().is_err() {
-        bail!("codex CLI not found in PATH or common install locations");
+        bail!(CODEX_CLI_MISSING);
     }
     if !codex_companion_installed() {
         bail!(
@@ -308,7 +308,7 @@ pub fn codex_lane_status() -> Result<()> {
     Ok(())
 }
 
-/// Memoized [`codex_lane_status`], process-lifetime cached.
+/// Memoized legacy forwarder lane [`codex_lane_status`], process-lifetime cached.
 ///
 /// Installation state (the codex CLI and plugin) is invariant for the
 /// lifetime of a daemon process, exactly like Remote Control's
@@ -317,6 +317,12 @@ pub fn codex_lane_available() -> bool {
     static CACHE: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *CACHE.get_or_init(|| codex_lane_status().is_ok())
 }
+
+const CODEX_CLI_MISSING: &str = "codex CLI not found in PATH or common install locations";
+
+#[path = "codex_backend.rs"]
+mod backend;
+pub use backend::{codex_lane, configured_backend, CodexBackend, CodexLane};
 
 #[cfg(test)]
 #[path = "codex_tests.rs"]

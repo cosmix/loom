@@ -140,7 +140,7 @@ fn keeps_plan_domains_and_does_not_duplicate_codex_ones() {
     let mut config = config();
     config.implementers = Implementers::new(vec![Implementer::Codex]);
     config.network.allowed_domains = vec!["crates.io".to_string(), "chatgpt.com".to_string()];
-    let network = network_settings(&config).unwrap();
+    let network = network_settings(&config, CodexBackend::Legacy).unwrap();
     let domains: Vec<&str> = network["allowedDomains"]
         .as_array()
         .unwrap()
@@ -173,7 +173,7 @@ fn enabled_claude_only_network_is_strict_without_domains() {
     config.network.allowed_domains = Vec::new();
     config.network.additional_domains = Vec::new();
 
-    let network = network_settings(&config).unwrap();
+    let network = network_settings(&config, CodexBackend::Legacy).unwrap();
 
     assert_eq!(network["strictAllowlist"], json!(true));
     assert!(
@@ -190,7 +190,7 @@ fn claude_only_stages_do_not_receive_codex_domains() {
     config.network.allowed_domains = Vec::new();
     config.network.additional_domains = Vec::new();
 
-    let network = network_settings(&config).unwrap();
+    let network = network_settings(&config, CodexBackend::Legacy).unwrap();
     let domains = network["allowedDomains"].as_array();
     for expected in CODEX_SANDBOX_DOMAINS {
         assert!(
@@ -209,7 +209,7 @@ fn codex_licensed_stages_receive_codex_domains() {
     config.network.allowed_domains = Vec::new();
     config.network.additional_domains = Vec::new();
 
-    let network = network_settings(&config).unwrap();
+    let network = network_settings(&config, CodexBackend::Legacy).unwrap();
     let domains = network["allowedDomains"].as_array().unwrap();
     for expected in CODEX_SANDBOX_DOMAINS {
         assert!(
@@ -224,7 +224,7 @@ fn claude_only_allow_write_is_plan_paths_then_package_caches() {
     let mut config = config();
     config.filesystem.allow_write = vec!["src/**".to_string()];
 
-    let filesystem = filesystem_settings(&config).unwrap();
+    let filesystem = filesystem_settings(&config, CodexBackend::Legacy).unwrap();
     let allow_write: Vec<&str> = filesystem["allowWrite"]
         .as_array()
         .unwrap()
@@ -287,7 +287,7 @@ fn codex_licensed_allow_write_appends_codex_state_paths() {
     config.implementers = Implementers::new(vec![Implementer::Codex, Implementer::Claude]);
     config.filesystem.allow_write = vec!["src/**".to_string()];
 
-    let filesystem = filesystem_settings(&config).unwrap();
+    let filesystem = filesystem_settings(&config, CodexBackend::Legacy).unwrap();
 
     let mut expected: Vec<&str> = vec!["src/**"];
     expected.extend(PACKAGE_MANAGER_CACHE_WRITE_PATHS);
@@ -301,7 +301,7 @@ fn every_stage_gets_the_package_caches_even_with_no_plan_entries() {
     assert!(config.filesystem.allow_write.is_empty());
     assert!(!config.implementers.includes_codex());
 
-    let filesystem = filesystem_settings(&config).unwrap();
+    let filesystem = filesystem_settings(&config, CodexBackend::Legacy).unwrap();
 
     assert_eq!(
         filesystem["allowWrite"],

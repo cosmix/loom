@@ -14,6 +14,7 @@ use shell_escape::escape;
 use std::borrow::Cow;
 use std::path::{Path, PathBuf};
 
+use crate::codex::CodexBackend;
 use crate::hooks::{session_event_rules, HookEvent};
 use crate::models::session::SessionType;
 use crate::sandbox::control_surfaces::SessionDenies;
@@ -23,6 +24,8 @@ use crate::sandbox::{MergedSandboxConfig, SettingsTarget};
 const RELAY_SCRIPT: &str = "loom-relay.sh";
 /// The completion pin hook (PreToolUse); only the kinds that complete through it keep it.
 const CONTROL_COMPLETE_SCRIPT: &str = "loom-control-complete.sh";
+/// The native worker pin hook (PreToolUse); only a Stage session relays worker control.
+const CONTROL_SUBAGENTS_SCRIPT: &str = "loom-control-subagents.sh";
 /// Tools that run in the Claude Code process, not under the Bash sandbox: the
 /// LSP plugins' servers index the worktree and can run its build scripts and
 /// proc macros; RemoteTrigger starts work off the machine; CronCreate and
@@ -98,29 +101,34 @@ fn capsule_deny_rules(inputs: &CapsuleInputs<'_>) -> Vec<String> {
 /// grant, the approved list, the session's write denies and tool-route denies
 /// ([`SESSION_TOOL_DENIES`], and `Workflow` unless licensed), the hidden terminal
 /// histories, the hidden host sockets and the kind's hooks.
-/// With the codex lane it also allows the home-expanded forwarding wrapper
-/// path, which must not be committed in the project's `settings.json`.
+/// With the legacy codex lane it also allows the home-expanded forwarding
+/// wrapper path, which must not be committed in the project's `settings.json`;
+/// with `codex.backend = native` the session gets none of that lane's grants.
 /// The config must pass `sandbox::validate_config` first. It never carries
 /// an `env` block: `LOOM_WORK_DIR` and every identity variable come from the
 /// wrapper alone.
 pub(super) fn capsule_settings(inputs: &CapsuleInputs<'_>) -> Result<Value> {
     crate::sandbox::validate_config(inputs.sandbox)?;
     let no_checkout_settings = json!({});
-    let mut settings = crate::sandbox::build_settings(
+    let backend = crate::codex::configured_backend(inputs.state_root);
+    let legacy_codex =
+        inputs.sandbox.implementers.includes_codex() && backend == CodexBackend::Legacy;
+    let mut settings = crate::sandbox::settings::build_settings_for_backend(
         inputs.sandbox,
         &SettingsTarget {
             is_worktree: inputs.worktree_rooted,
             state_root: Some(utf8(inputs.state_root)?),
             existing: inputs.checkout_settings.unwrap_or(&no_checkout_settings),
-            carry_plugin_keys: inputs.sandbox.implementers.includes_codex(),
+            carry_plugin_keys: legacy_codex,
             cwd: Some(inputs.cwd),
         },
+        backend,
     )?;
     let plans = inputs.repo_root.join("doc").join("plans");
     let plans_read = format!("Read(/{}/**)", utf8(&plans)?);
     extend_strings(&mut settings, &["permissions", "allow"], &[plans_read]);
     add_scratch_grant(&mut settings, inputs.scratch_dir)?;
-    if inputs.sandbox.implementers.includes_codex() {
+    if legacy_codex {
         let forward = crate::fs::permissions::settings::codex_forward_home_allow_entry();
         extend_strings(&mut settings, &["permissions", "allow"], forward.as_slice());
     }
@@ -180,7 +188,8 @@ fn add_scratch_grant(settings: &mut Value, scratch_dir: &Path) -> Result<()> {
 }
 
 /// The kind's `hooks` block: loom's global guard set for every kind (the
-/// completion pin hook only for Stage, Contract and Knowledge), every
+/// completion pin hook only for Stage, Contract and Knowledge, the native
+/// worker pin hook only for Stage), every
 /// session hook event for those three but only the PostToolUse heartbeat for
 /// the others, and the relay hook for every kind.
 fn capsule_hooks(
@@ -196,6 +205,9 @@ fn capsule_hooks(
     let mut hooks = crate::fs::permissions::guard_hooks_config(&hooks_dir.display().to_string());
     if !completes_stages {
         drop_script(&mut hooks, CONTROL_COMPLETE_SCRIPT);
+    }
+    if kind != SessionType::Stage {
+        drop_script(&mut hooks, CONTROL_SUBAGENTS_SCRIPT);
     }
     let events: &[HookEvent] = if completes_stages {
         HookEvent::all()

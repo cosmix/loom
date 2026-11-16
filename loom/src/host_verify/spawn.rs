@@ -142,6 +142,6 @@ fn with_log_tail(prefix: &str, log: &File) -> String {
 }
 
 /// Whether the child must not inherit `key` from the daemon's environment.
-pub(super) fn is_session_variable(key: &str) -> bool {
+pub(crate) fn is_session_variable(key: &str) -> bool {
     key.starts_with("LOOM_SESSION") || STRIPPED_ENV.contains(&key)
 }

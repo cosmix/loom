@@ -1,4 +1,5 @@
 use super::config::MergedSandboxConfig;
+use crate::codex::CodexBackend;
 use crate::fs::permissions::state_root::token_deny_paths;
 use crate::plan::schema::PermissionMode;
 use anyhow::Result;
@@ -124,9 +125,21 @@ pub(crate) struct SettingsTarget<'a> {
 /// and reads the filesystem only to resolve those entries' symlinks: the
 /// session capsule and the `build_settings_for` test helper both build
 /// through it.
+#[cfg(test)]
 pub(crate) fn build_settings(
     config: &MergedSandboxConfig,
     target: &SettingsTarget<'_>,
+) -> Result<Value> {
+    build_settings_for_backend(config, target, CodexBackend::Legacy)
+}
+
+/// [`build_settings`] for the configured codex `backend`: with
+/// [`CodexBackend::Native`] the document carries none of the legacy codex
+/// lane's grants (`policy::sandbox_settings_for`).
+pub(crate) fn build_settings_for_backend(
+    config: &MergedSandboxConfig,
+    target: &SettingsTarget<'_>,
+    backend: CodexBackend,
 ) -> Result<Value> {
     policy::validate_emittable(config)?;
     let mut config = config.clone();
@@ -139,7 +152,7 @@ pub(crate) fn build_settings(
             .allow_write
             .retain(|entry| !super::grant_paths::is_inside_cwd(entry, cwd));
     }
-    let mut settings = generate_settings_json(&config);
+    let mut settings = settings_json_for(&config, backend);
     if let Some(state_root) = target.state_root {
         add_resolved_state_root_rules(&mut settings, state_root);
     }
@@ -208,20 +221,60 @@ pub(super) fn push_missing(
 
 /// Generate Claude Code settings JSON from sandbox config
 pub fn generate_settings_json(config: &MergedSandboxConfig) -> Value {
-    let mut settings = json!({});
-    settings["sandbox"] = policy::sandbox_settings(config);
+    settings_json_for(config, CodexBackend::Legacy)
+}
 
-    // Build permissions block for file tool restrictions (Read/Write/Edit prompting)
-    // These still work for prompting even though they don't provide OS-level isolation
-    //
-    // No `Read(...)` deny is ever emitted here — read denial is entirely the
-    // OS sandbox's job (`sandbox.filesystem.denyRead`, above) plus
+/// [`generate_settings_json`] for the configured codex `backend`.
+fn settings_json_for(config: &MergedSandboxConfig, backend: CodexBackend) -> Value {
+    let mut settings = json!({});
+    settings["sandbox"] = policy::sandbox_settings_for(config, backend);
+
+    // No `Read(...)` deny is ever emitted in the permissions block: read denial is
+    // entirely the OS sandbox's job (`sandbox.filesystem.denyRead`, above) plus
     // `loom-hooks/credential-guard.sh` for the native file tools. See
-    // `add_resolved_state_root_rules` for why a `Read(` deny rule of any
-    // shape is unacceptable.
+    // `add_resolved_state_root_rules` for why a `Read(` deny rule of any shape is
+    // unacceptable.
+    let permissions = permissions_block(config);
+    if permissions.as_object().is_some_and(|o| !o.is_empty()) {
+        settings["permissions"] = permissions;
+    }
+
+    // Always emit defaultMode so Claude Code uses the resolved permission mode
+    // for this stage rather than its built-in default.
+    apply_default_mode(&mut settings, config.permission_mode)
+        .expect("settings is a JSON object built above");
+
+    // Disable Claude Code's own worktree isolation for this session.
+    //
+    // Loom already runs each stage inside its own git worktree
+    // (.worktrees/<stage-id>/). Claude Code's default bgIsolation ("worktree")
+    // blocks Edit/Write in the checkout until EnterWorktree is called, which
+    // would push subagents into *nested* worktrees on top of loom's — creating
+    // stray branches and a tangle of checkouts. "none" lets the session and its
+    // subagents edit the loom worktree directly, which is exactly what loom
+    // expects. (Claude Code v2.1.143+; older versions ignore the key.)
+    settings["worktree"] = json!({ "bgIsolation": "none" });
+
+    settings
+}
+
+/// File tool restrictions (Read/Write/Edit prompting). They still prompt even
+/// though they provide no OS-level isolation.
+fn permissions_block(config: &MergedSandboxConfig) -> Value {
     let mut permissions = json!({});
+    let deny = edit_deny_rules(config);
+    let allow = allow_rules(config);
+    if !allow.is_empty() {
+        permissions["allow"] = json!(allow);
+    }
+    if !deny.is_empty() {
+        permissions["deny"] = json!(deny);
+    }
+    permissions
+}
+
+fn edit_deny_rules(config: &MergedSandboxConfig) -> Vec<Value> {
     let mut deny: Vec<Value> = Vec::new();
-    let mut allow: Vec<Value> = Vec::new();
 
     // Add deny_write paths (prompts before allowing Write/Edit tools on these).
     //
@@ -258,6 +311,11 @@ pub fn generate_settings_json(config: &MergedSandboxConfig) -> Value {
         }
         deny.push(json!(super::grant_paths::edit_rule(path)));
     }
+    deny
+}
+
+fn allow_rules(config: &MergedSandboxConfig) -> Vec<Value> {
+    let mut allow: Vec<Value> = Vec::new();
 
     // Add allow_write paths as exceptions (same Write->Edit reasoning as above).
     super::grant_paths::push_allow_write_rules(&mut allow, config);
@@ -284,36 +342,11 @@ pub fn generate_settings_json(config: &MergedSandboxConfig) -> Value {
             allow.push(json!(format!("Read({base}/{dir}/**)")));
         }
     }
-
-    if !allow.is_empty() {
-        permissions["allow"] = json!(allow);
-    }
-    if !deny.is_empty() {
-        permissions["deny"] = json!(deny);
-    }
-    if permissions.as_object().is_some_and(|o| !o.is_empty()) {
-        settings["permissions"] = permissions;
-    }
-
-    // Always emit defaultMode so Claude Code uses the resolved permission mode
-    // for this stage rather than its built-in default.
-    apply_default_mode(&mut settings, config.permission_mode)
-        .expect("settings is a JSON object built above");
-
-    // Disable Claude Code's own worktree isolation for this session.
-    //
-    // Loom already runs each stage inside its own git worktree
-    // (.worktrees/<stage-id>/). Claude Code's default bgIsolation ("worktree")
-    // blocks Edit/Write in the checkout until EnterWorktree is called, which
-    // would push subagents into *nested* worktrees on top of loom's — creating
-    // stray branches and a tangle of checkouts. "none" lets the session and its
-    // subagents edit the loom worktree directly, which is exactly what loom
-    // expects. (Claude Code v2.1.143+; older versions ignore the key.)
-    settings["worktree"] = json!({ "bgIsolation": "none" });
-
-    settings
+    allow
 }
 
+#[cfg(test)]
+mod native_backend_contract_tests;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]

@@ -172,6 +172,8 @@ pub struct Orchestrator {
     /// The host-job runner `tick_host_jobs` drives; `None` when it could not
     /// be built, which leaves host jobs disabled for this run.
     pub(super) host_jobs: Option<crate::host_verify::runner::HostJobRunner>,
+    /// Starts, reaps and settles native worker supervisors.
+    pub(super) native_workers: crate::native_worker::runner::NativeRunner,
 }
 
 impl Orchestrator {
@@ -193,6 +195,8 @@ impl Orchestrator {
         let detected_languages = detect_project_languages(&config.repo_root);
         Self::reconcile_plan_amendments(&config);
         let host_jobs = super::host_jobs::daemon_runner(&config.work_dir);
+        let native_workers =
+            crate::native_worker::runner::NativeRunner::new(config.work_dir.clone());
 
         Ok(Self {
             config,
@@ -221,6 +225,7 @@ impl Orchestrator {
             merge_probe_error: None,
             remote_control_active: crate::remote_control::resolve,
             host_jobs,
+            native_workers,
         })
     }
 

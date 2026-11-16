@@ -29,7 +29,7 @@ pub(super) fn check(repo_root: &Path) -> Vec<DetectedIssue> {
         });
     }
 
-    issues.extend(codex_slash_tmp_issue());
+    issues.extend(codex_slash_tmp_issue(repo_root));
     issues.extend(hook_scripts_issue());
     issues.extend(jq_missing_issue());
     issues.extend(identity_drift_issues(repo_root));
@@ -186,8 +186,17 @@ fn loom_written_keys_issue(repo_root: &Path) -> Option<DetectedIssue> {
 /// /tmp/.git: Read-only file system` before the model runs a single command.
 /// Only checked when the lane is installed; the config is irrelevant without
 /// it. See `crate::codex` for the full story.
-fn codex_slash_tmp_issue() -> Option<DetectedIssue> {
-    if cfg!(target_os = "linux") && crate::codex::codex_lane_status().is_ok() {
+fn codex_slash_tmp_issue(repo_root: &Path) -> Option<DetectedIssue> {
+    let work_dir = crate::fs::work_dir::WorkDir::new(repo_root)
+        .ok()?
+        .root()
+        .to_path_buf();
+    if cfg!(target_os = "linux")
+        && matches!(
+            crate::codex::codex_lane(&work_dir),
+            crate::codex::CodexLane::Legacy
+        )
+    {
         return codex_slash_tmp_issue_for(crate::codex::codex_config_path().as_deref());
     }
     None

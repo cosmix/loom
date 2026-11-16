@@ -26,6 +26,12 @@ mod wait;
 // `pub(crate)` rather than private: `commands::usage` reuses this module's
 // transcript-layout rules (`list_agent_files`, `agent_id_from_path`) so the two
 // commands cannot disagree about where Claude Code keeps its transcripts.
+mod native_args;
+#[cfg(test)]
+mod native_cli_tests;
+mod native_control;
+mod native_start;
+mod native_view;
 pub(crate) mod resolve;
 mod summary;
 mod table;
@@ -161,6 +167,18 @@ pub enum SubagentsCommand {
         #[arg(last = true, required = true)]
         command: Vec<std::ffi::OsString>,
     },
+    /// Start a native Codex worker from a stage session.
+    Start(native_args::StartArgs),
+    /// Send text to a native Codex worker.
+    Message(native_args::MessageArgs),
+    /// Request cancellation of a native Codex worker.
+    Cancel(native_args::CancelArgs),
+    /// Release ownership after a native worker is proven stopped.
+    Release(native_args::ReleaseArgs),
+    /// Show the recorded state of a native Codex worker.
+    Status(native_args::StatusArgs),
+    /// Print the stored report of a native Codex worker.
+    Result(native_args::ResultArgs),
 }
 
 /// Dispatch to the requested diagnostic or bounded wait.
@@ -203,5 +221,19 @@ pub fn execute(args: SubagentsArgs) -> Result<()> {
             proxy_socket,
             command,
         } => native_hidden::worker_exec(proxy_socket, command),
+        SubagentsCommand::Start(args) => finish(native_start::run_start(args)?),
+        SubagentsCommand::Message(args) => finish(native_start::run_message(args)?),
+        SubagentsCommand::Cancel(args) => finish(native_control::run_cancel(args)?),
+        SubagentsCommand::Release(args) => finish(native_control::run_release(args)?),
+        SubagentsCommand::Status(args) => finish(native_view::run_status(args)?),
+        SubagentsCommand::Result(args) => finish(native_view::run_result(args)?),
+    }
+}
+
+fn finish(code: i32) -> Result<()> {
+    if code == 0 {
+        Ok(())
+    } else {
+        std::process::exit(code)
     }
 }

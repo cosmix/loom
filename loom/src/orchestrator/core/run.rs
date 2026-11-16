@@ -21,6 +21,7 @@ impl Orchestrator {
         // Every way out of the loop, an error included, stops the host jobs:
         // no waiter may wait on a child this daemon no longer runs.
         self.stop_host_jobs();
+        self.stop_native_workers();
         let spawned = looped?;
         // Clear liveness even when the final snapshot cannot be read.
         tick::clear(&self.config.work_dir);
@@ -60,6 +61,7 @@ impl Orchestrator {
         // No daemon holds a child of a job left running: settle those first.
         let recovered = crate::host_verify::runner::recover_after_restart(&self.config.work_dir);
         self.report_host_job_recovery(recovered);
+        self.recover_native_workers();
         // Ahead of reconcile, the sync and the spawn pass, which can all merge.
         self.start_target_guard();
         self.reconcile_and_update_graph()
@@ -108,6 +110,7 @@ impl Orchestrator {
         self.drain_stage_spools();
         self.drain_session_inboxes();
         self.tick_host_jobs();
+        self.tick_native_workers();
         self.sweep_merged_leftovers();
         tick::record(&self.config.work_dir, tick::Phase::Spawning);
         self.dispute_refused_freezes();

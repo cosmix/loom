@@ -25,6 +25,7 @@ mod merge_handler;
 #[cfg(test)]
 #[path = "merge_lifecycle_e2e_tests.rs"]
 mod merge_lifecycle_e2e_tests;
+mod native_workers;
 mod orchestrator;
 mod orchestrator_result;
 mod orphan_adoption;

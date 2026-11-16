@@ -73,6 +73,7 @@ pub enum RequestPayload {
     Commit(CommitPayload),
     Check(HostJobRequest),
     Complete(HostJobRequest),
+    WorkerControl(super::payload_native::WorkerControlPayload),
 }
 
 /// Decode `payload` under the shape `kind` promises. `block`, `dispute`,
@@ -106,6 +107,7 @@ pub fn decode_payload(kind: RequestKind, payload: &Value) -> Result<RequestPaylo
         RequestKind::Commit => Ok(RequestPayload::Commit(decode(payload, "commit")?)),
         RequestKind::Check => Ok(RequestPayload::Check(decode_check(payload)?)),
         RequestKind::Complete => Ok(RequestPayload::Complete(decode_completion(payload)?)),
+        RequestKind::WorkerControl => decode(payload, "worker").map(RequestPayload::WorkerControl),
     }
 }
 
