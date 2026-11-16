@@ -164,6 +164,14 @@ fn install_forward_companion(fixture: &HookFixture) {
 }
 
 fn install_forward_start(fixture: &HookFixture) {
+    // The forward wrapper is the legacy lane. Unpinned, the guard runs
+    // `${LOOM_BIN:-loom} hook codex-backend` (LOOM_BIN is inherited), whose
+    // default with no user config (native) refuses it.
+    fs::write(
+        fixture.work_dir.join("config.toml"),
+        "[codex]\nbackend = \"legacy\"\n",
+    )
+    .unwrap();
     let directory = fixture.work_dir.join("subagents/policy-stage");
     fs::create_dir_all(&directory).unwrap();
     let row = json!({"agent_id":"policy-forwarder","agent_type":"loom-codex-forwarder",

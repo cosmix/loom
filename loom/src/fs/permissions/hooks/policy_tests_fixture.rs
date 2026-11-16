@@ -18,7 +18,7 @@ pub(super) struct HookFixture {
 
 impl HookFixture {
     pub(super) fn new() -> Self {
-        let temp = TempDir::new().unwrap();
+        let temp = TempDir::new_in(fixture_base()).unwrap();
         let repo = temp.path().join("repo");
         let home = temp.path().join("home");
         // The default install location: the forward guard accepts the
@@ -54,6 +54,47 @@ impl HookFixture {
         fs::write(&path, contents).unwrap();
         path
     }
+}
+
+/// Session id of the closed-session directory; no payload in these tests
+/// carries it as its session_id.
+const FIXTURE_CLOSED_SESSION: &str = "00000000-0000-4000-8000-000000000000";
+
+/// Base directory for a fixture root, a Rust port of `loom-hooks/tests/_fixture_base.sh`.
+/// The base is the temp dir, unless it lies under `/tmp/claude-<uid>` (the Bash tool's
+/// TMPDIR, where `allow_tmpdir` lets Read open our plain files, so a credentials block
+/// could not be tested) or inside a checkout under `.worktrees/<id>` (where a fixture
+/// project would resolve to the enclosing project's live `.loom/work`). Both cases use
+/// the closed-session directory that `allow_tmpdir` keeps shut.
+fn fixture_base() -> PathBuf {
+    // SAFETY: `getuid` has no preconditions and cannot fail.
+    let uid = unsafe { libc::getuid() };
+    let uid_root = PathBuf::from(format!("/tmp/claude-{uid}"));
+    let closed = uid_root.join("loom-fixtures").join(FIXTURE_CLOSED_SESSION);
+    let base = std::env::temp_dir()
+        .canonicalize()
+        .unwrap_or_else(|_| std::env::temp_dir());
+    let private_root = PathBuf::from(format!("/private{}", uid_root.display()));
+    if base.starts_with(&uid_root) || base.starts_with(&private_root) {
+        let target = if base.starts_with("/private") {
+            PathBuf::from("/private").join(closed.strip_prefix("/").unwrap())
+        } else {
+            closed
+        };
+        fs::create_dir_all(&target).unwrap();
+        return target;
+    }
+    let base_str = format!("{}/", base.display());
+    let in_worktree = base_str
+        .match_indices("/.worktrees/")
+        .any(|(index, marker)| {
+            let rest = &base_str[index + marker.len()..];
+            rest.find('/').is_some_and(|slash| slash > 0)
+        });
+    if in_worktree && fs::create_dir_all(&closed).is_ok() {
+        return closed.canonicalize().unwrap_or(closed);
+    }
+    base
 }
 
 pub(super) fn run_hook(
