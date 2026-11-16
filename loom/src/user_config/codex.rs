@@ -22,9 +22,9 @@ impl CodexSection {
 }
 
 impl UserConfig {
-    /// Configured backend, defaulting to legacy forwarders.
+    /// Configured backend, defaulting to native workers.
     pub fn codex_backend(&self) -> &str {
-        self.codex_backend_set().unwrap_or("legacy")
+        self.codex_backend_set().unwrap_or("native")
     }
 
     /// The backend explicitly set in the user config, if any.
@@ -56,17 +56,17 @@ mod tests {
     use crate::user_config::{keys::spec, parse_document};
 
     #[test]
-    fn default_backend_is_legacy() {
+    fn default_backend_is_native() {
         let config = UserConfig::default();
-        assert_eq!(config.codex_backend(), "legacy");
+        assert_eq!(config.codex_backend(), "native");
         assert_eq!(config.codex_backend_set(), None);
     }
 
     #[test]
-    fn native_is_parsed_and_marked_set() {
-        let config = parse_document("[codex]\nbackend = \"native\"\n").unwrap();
-        assert_eq!(config.codex_backend(), "native");
-        assert_eq!(config.codex_backend_set(), Some("native"));
+    fn legacy_is_parsed_and_marked_set() {
+        let config = parse_document("[codex]\nbackend = \"legacy\"\n").unwrap();
+        assert_eq!(config.codex_backend(), "legacy");
+        assert_eq!(config.codex_backend_set(), Some("legacy"));
         assert_eq!(
             config.value_of(spec("codex.backend").unwrap()).1,
             Origin::Set
@@ -84,7 +84,7 @@ mod tests {
     #[test]
     fn to_toml_string_renders_the_section_first() {
         let text = UserConfig::default().to_toml_string();
-        assert!(text.starts_with("[codex]\nbackend = \"legacy\"\n"));
+        assert!(text.starts_with("[codex]\nbackend = \"native\"\n"));
         assert!(text.find("[codex]").unwrap() < text.find("[context]").unwrap());
     }
 }

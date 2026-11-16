@@ -116,3 +116,19 @@ loom_append_brief() {
 		loom_debug "spawn-guard: brief append failed"
 	fi
 }
+
+# loom_native_lane_spawn AGENT_TYPE_REQ GATE_PASSED - spawn-guard's Codex lane
+# check. Succeeds, after printing the refusal, when a live stage session
+# (GATE_PASSED 1) spawns a forwarder or Codex plugin agent while codex.backend
+# resolves to native: that is the legacy backend's mechanism, and only the
+# config picks the backend. The lane helpers it calls live in _common.sh,
+# shared with codex-forward-guard.sh.
+loom_native_lane_spawn() {
+	[[ "$2" -eq 1 ]] || return 1
+	case "$1" in
+	loom-codex-forwarder | codex:*) ;;
+	*) return 1 ;;
+	esac
+	loom_native_codex_lane || return 1
+	loom_native_lane_refusal "a ${1} spawn"
+}

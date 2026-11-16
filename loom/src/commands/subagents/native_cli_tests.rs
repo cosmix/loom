@@ -218,10 +218,16 @@ start_refusal!(unknown_model, "--model", |h, a| {
 start_refusal!(unknown_effort, "--effort", |h, a| {
     a.effort = "unknown".into();
 });
-start_refusal!(legacy_backend, "codex.backend", |h, a| {
+#[test]
+fn legacy_backend() {
+    let mut h = Harness::new();
+    let mut a = h.start_args();
     h.native_backend = false;
     a.unit = "unit".into();
-});
+    assert_eq!(h.run(SubagentsCommand::Start(a)), EXIT_REFUSED);
+    h.refused("codex.backend");
+    assert!(String::from_utf8_lossy(&h.err).contains("loom-codex-forwarder"));
+}
 start_refusal!(relative_brief, "--brief", |h, a| {
     a.brief = "brief.md".into();
 });

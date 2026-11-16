@@ -5,6 +5,7 @@
 //! may make a model call or a network call.
 
 pub mod blocks;
+pub mod codex_backend;
 pub mod context_ceilings;
 pub mod forward_receipt;
 pub mod pre_compact;

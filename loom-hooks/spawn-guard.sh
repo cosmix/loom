@@ -10,20 +10,19 @@
 #   1. ADVISES, on the first spawn of a session, loading the
 #      loom-orchestration skill.
 #   2. DENIES an untyped spawn outright (live loom stage session only; else it
-#      warns and, with no model requested, rewrites the input to model sonnet).
+#      warns and, with no model requested, rewrites the input to model sonnet),
+#      and a loom-codex-forwarder or codex:* spawn on the native Codex lane.
 #   3. FILLS IN the model from the agent's own definition (or a built-in
 #      table) when a typed spawn omits `model`, so every spawn ends up with an
 #      explicit, auditable model.
 #   4. WARNS (never denies) when an explicit `model` escalates above the
 #      agent's defined tier.
 #   5. PREPENDS _subagent-preamble.txt to a typed spawn's prompt that lacks
-#      it, in every session (except loom-codex-forwarder and codex:* spawns);
-#      inside a stage (the GATE_PASSED gate) also APPENDS an optional worker
-#      brief, except to loom-codex-forwarder and codex:* spawns; a
-#      loom-code-reviewer spawn also gets the reviewer brief appended last.
+#      it, in every session; inside a stage (the GATE_PASSED gate) also APPENDS
+#      an optional worker brief (neither for loom-codex-forwarder or codex:*);
+#      a loom-code-reviewer spawn also gets the reviewer brief appended last.
 #   6. RECORDS every typed spawn to $LOOM_WORK_DIR/subagents/<stage-id>/spawns.jsonl
-#      (the state directory - .loom/work, or the legacy .work) so
-#      `loom subagents` can report on model usage across a stage.
+#      (.loom/work, or the legacy .work) for `loom subagents` model reports.
 #
 # Input: JSON from stdin - {"tool_name": "Task"|"Agent", "tool_input": {...},
 #        "agent_id": ..., "agent_type": ..., "session_id": ...}
@@ -112,6 +111,8 @@ GATE_PASSED=0
 if [[ -n "${LOOM_STAGE_ID:-}" && -n "${LOOM_MAIN_AGENT_PID:-}" ]] && is_ancestor "$LOOM_MAIN_AGENT_PID"; then
 	GATE_PASSED=1
 fi
+
+if loom_native_lane_spawn "$AGENT_TYPE_REQ" "$GATE_PASSED"; then exit 2; fi # header item 2
 
 # --- Model resolution helpers ------------------------------------------------
 

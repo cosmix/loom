@@ -341,7 +341,7 @@ fn value_of_has_an_arm_for_every_registered_key() {
             "update.check" => assert_eq!(value, "true"),
             "update.check_interval_hours" => assert_eq!(value, "24"),
             "terminal.backend" => assert_eq!(value, "tmux"),
-            "codex.backend" => assert_eq!(value, "legacy"),
+            "codex.backend" => assert_eq!(value, "native"),
             "context.ceiling_tokens" => {
                 assert_eq!(value, DEFAULT_CONTEXT_CEILING_TOKENS.to_string())
             }

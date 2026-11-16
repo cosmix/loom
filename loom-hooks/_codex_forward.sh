@@ -31,6 +31,18 @@ loom_is_forward_wrapper() {
 	[[ "$word" == "$home_hooks/codex-forward.sh" ]]
 }
 
+# loom_native_lane_forward <tool-name> <payload> - Succeed when <payload> is a
+# Bash call of the forwarding wrapper and codex.backend resolves to native
+# (loom_native_codex_lane, _common.sh), where no forward runs. A payload that
+# never names the wrapper returns before the jq and parser work.
+loom_native_lane_forward() {
+	[[ "$1" == Bash ]] || return 1
+	[[ "$2" == *codex-forward.sh* ]] || return 1
+	parse_shell_words "$(printf '%s' "$2" | jq -r '.tool_input.command // empty' 2>/dev/null || true)" || return 1
+	loom_is_forward_wrapper "${PARSED_WORDS[0]:-}" "$PARSED_WORD0_PLAIN" || return 1
+	loom_native_codex_lane
+}
+
 # parse_shell_words <command> - Fill PARSED_WORDS; PARSED_WORD0_PLAIN is 1 when
 # word 0 contained no quote or backslash (so bash would tilde-expand it).
 parse_shell_words() {

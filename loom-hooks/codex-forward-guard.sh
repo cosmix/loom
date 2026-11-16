@@ -377,6 +377,15 @@ block_quoted_invocation() {
 
 refuse_quoted_invocation
 
+# The native Codex lane runs no forward, whoever calls the wrapper. The refusal
+# matches only the wrapper as word 0 of a simple command: it steers the agent
+# and is not a security boundary. The native session's capsule grants no
+# wrapper or ~/.codex access (orchestrator/terminal/native/session_settings/
+# contents.rs, sandbox/settings/policy.rs::codex_granted).
+if loom_native_lane_forward "$TOOL_NAME" "$INPUT_JSON"; then
+	require_stage_evidence && loom_native_lane_refusal 'a codex-forward.sh call' && exit 2
+fi
+
 # A hook payload without either authoritative agent type or transcript metadata
 # cannot establish that the caller is not a forwarder. This fail-closed check
 # stays local rather than folding into loom_codex_forwarder_verdict below:

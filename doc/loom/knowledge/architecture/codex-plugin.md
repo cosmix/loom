@@ -180,7 +180,7 @@ this instance follows.
 
 ## The loom-codex-forwarder lane
 
-This section describes the Legacy lane (`codex.backend = legacy`, the default). The Native lane runs no forwarder and no plugin: see [Native Codex Workers](native-codex-workers.md).
+This section describes the Legacy lane (`codex.backend = legacy`; the default is native). The Native lane runs no forwarder and no plugin: see [Native Codex Workers](native-codex-workers.md).
 
 On the Legacy lane loom stages spawn `subagent_type: "loom-codex-forwarder"`. The agent definition
 (`agents/loom-codex-forwarder.md`) selects haiku and Bash; the shim forwards one

@@ -189,6 +189,7 @@ run_test "subagent review: a job that builds the binary cannot skip the real-bin
 run_test "codex-forward-guard: blocks Edit by a forwarder" "$SCRIPT_DIR/codex-forward-guard-blocks-edit.sh"
 run_test "codex-forward-guard: companion Bash allowed, other Bash blocked" "$SCRIPT_DIR/codex-forward-guard-bash-companion-only.sh"
 run_test "codex-forward-guard: plain subagents, main sessions, no-path all untouched" "$SCRIPT_DIR/codex-forward-guard-ignores-others.sh"
+run_test "codex-forward-guard: a native codex.backend refuses every forward and names loom subagents start" "$SCRIPT_DIR/codex-forward-guard-native-lane.sh"
 run_test "codex-forward-guard: only the guard may place a minted invocation id in a command" "$SCRIPT_DIR/codex-forward-guard-quoted-invocation.sh"
 run_test "codex-forward-guard: authorized forwards record requested model" "$SCRIPT_DIR/codex-forward-records-model.sh"
 run_test "codex-forward-guard: tests isolate ambient live identity" "$SCRIPT_DIR/codex-forward-guard-live-identity.sh"

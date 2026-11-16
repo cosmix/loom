@@ -188,15 +188,15 @@ fn configured_backend_resolves_project_and_user_tiers() {
     let dir = tempfile::tempdir().unwrap();
     let workspace = dir.path().join("workspace");
     std::fs::create_dir(&workspace).unwrap();
-    assert_eq!(configured_backend(&workspace), CodexBackend::Legacy);
+    assert_eq!(configured_backend(&workspace), CodexBackend::Native);
     let config = workspace.join("config.toml");
-    std::fs::write(&config, "[codex]\nbackend = \"native\"\n").unwrap();
-    assert_eq!(configured_backend(&workspace), CodexBackend::Native);
-    let user = dir.path().join("user.toml");
-    std::fs::write(&user, "[codex]\nbackend = \"native\"\n").unwrap();
-    let _redirect = crate::user_config::redirect_user_config(user);
-    std::fs::write(&config, "[codex]\nbackend = \"bogus\"\n").unwrap();
-    assert_eq!(configured_backend(&workspace), CodexBackend::Native);
     std::fs::write(&config, "[codex]\nbackend = \"legacy\"\n").unwrap();
     assert_eq!(configured_backend(&workspace), CodexBackend::Legacy);
+    let user = dir.path().join("user.toml");
+    std::fs::write(&user, "[codex]\nbackend = \"legacy\"\n").unwrap();
+    let _redirect = crate::user_config::redirect_user_config(user);
+    std::fs::write(&config, "[codex]\nbackend = \"bogus\"\n").unwrap();
+    assert_eq!(configured_backend(&workspace), CodexBackend::Legacy);
+    std::fs::write(&config, "[codex]\nbackend = \"native\"\n").unwrap();
+    assert_eq!(configured_backend(&workspace), CodexBackend::Native);
 }

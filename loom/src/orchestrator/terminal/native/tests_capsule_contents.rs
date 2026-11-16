@@ -64,6 +64,11 @@ fn try_build(
     worktree_rooted: bool,
 ) -> anyhow::Result<Value> {
     let denies = denies(worktree_rooted, config.implementers.includes_codex());
+    // `/repo/.loom/work` holds no config, so the user tier picks the lane: the
+    // legacy lane these tests pin, over the native default.
+    let user = tempfile::NamedTempFile::new()?;
+    std::fs::write(user.path(), "[codex]\nbackend = \"legacy\"\n")?;
+    let _legacy = crate::user_config::redirect_user_config(user.path().to_path_buf());
     capsule_settings(&CapsuleInputs {
         kind,
         sandbox: config,

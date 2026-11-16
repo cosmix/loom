@@ -80,7 +80,11 @@ fn start_payload(args: StartArgs, native_backend: bool) -> Result<WorkerControlP
         bail!("unknown --effort '{}'", args.effort);
     }
     if !native_backend {
-        bail!("codex.backend is legacy; set it to native in .loom/work/config.toml or ~/.loom/config.toml");
+        bail!(
+            "codex.backend is legacy, so this unit runs through a `loom-codex-forwarder` subagent \
+             spawned as the stage signal's Codex Implementers section describes; `loom subagents \
+             start` runs only when codex.backend is native"
+        );
     }
     if !args.brief.is_absolute() {
         bail!("--brief must be an absolute path");

@@ -767,23 +767,23 @@
     },
     {
       "name": "codex.backend",
-      "help": "Codex worker lane for stage leads: legacy forwarders or native workers (default: legacy)",
+      "help": "Codex worker lane for stage leads: native workers or legacy forwarders (default: native)",
       "kind": {
         "type": "enum",
         "variants": ["legacy", "native"]
       },
       "scopes": ["user", "project"],
-      "default": "legacy",
+      "default": "native",
       "user": {
-        "value": "legacy",
+        "value": "native",
         "set": false
       },
       "project": {
-        "value": "legacy",
+        "value": "native",
         "set": false
       },
       "effective": {
-        "value": "legacy",
+        "value": "native",
         "source": "default"
       }
     }

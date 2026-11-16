@@ -4,7 +4,7 @@
 
 ## Qualification Items
 
-No criterion could run a real Codex job (acceptance is confined: no network, no `~/.codex`), so `codex.backend = native` stays opt-in until an operator qualifies it on a disposable worktree. The eight items, in the order to run them ([backend design](../architecture/native-codex-workers.md)):
+No criterion could run a real Codex job (acceptance is confined: no network, no `~/.codex`), so `codex.backend = native`, the default, is unqualified against real jobs; an operator qualifies it on a disposable worktree. The eight items, in the order to run them ([backend design](../architecture/native-codex-workers.md)):
 
 1. `codex --version` matches `0.169.0`; otherwise re-measure the method table in `doc/plans/briefs/native-codex-workers/common.md` section 8.
 2. One real job per sandbox mode (`WorkspaceWrite` and `External`): the report arrives, `git status` shows only the briefed files, and `loom usage` attributes the thread.
@@ -30,7 +30,7 @@ The boundary loads no operator Codex configuration, and a reviewed profile of wh
 
 ## macOS Support
 
-Not supported. macOS has no pid namespace, so `native_backend_qualified` fails there and the lane is `Unavailable` with the reason; a stage on macOS keeps the legacy lane when the plugin is installed.
+Not supported. macOS has no pid namespace, so `native_backend_qualified` fails there and the lane is `Unavailable` with the reason; a macOS host that wants Codex sets `codex.backend = legacy` and installs the plugin.
 
 ## Unimplemented Review Suggestions
 

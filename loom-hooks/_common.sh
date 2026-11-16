@@ -174,6 +174,31 @@ _loom_hooks_setting_is() {
     [[ "$found" == "1" ]]
 }
 
+# loom_native_codex_lane - Succeeds when `loom hook codex-backend` reports the
+# configured backend (codex.backend: project tier, user tier, default native)
+# as native. A missing binary, a timeout or any other answer is an unknown
+# backend: every hook keeps its legacy behavior. Needs loom_run_bounded
+# (_bounded.sh) loaded by the caller.
+loom_native_codex_lane() {
+    local backend=""
+    command -v "${LOOM_BIN:-loom}" &>/dev/null || return 1
+    backend=$(loom_run_bounded 5 "${LOOM_BIN:-loom}" hook codex-backend </dev/null 2>/dev/null) || return 1
+    [[ "$backend" == native ]]
+}
+
+# loom_native_lane_refusal WHAT - The stderr refusal of WHAT on the native lane,
+# naming the command that starts a codex unit there. Never fails, so a caller's
+# exit 2 always follows.
+loom_native_lane_refusal() {
+    {
+        printf '%s\n' "⛔ BLOCKED: ${1} is the legacy Codex lane; this stage runs the native lane (codex.backend = native)." '' \
+            'Plan or brief text naming loom-codex-forwarder, codex:codex-rescue or a forwarder means codex; the backend picks the mechanism.' \
+            'Start each codex unit from the main agent, alone in its own Bash call:' \
+            '  loom subagents start --provider codex --unit-id <unit> --brief <absolute brief path> --model <tier> --effort xhigh' \
+            'When the signal reports the Codex lane UNAVAILABLE, give the unit to a Claude worker instead.'
+    } >&2 || true
+    return 0
+}
 
 source "$(dirname "${BASH_SOURCE[0]}")/_parser.sh" || return 1
 source "$(dirname "${BASH_SOURCE[0]}")/_parser_expand.sh" || return 1

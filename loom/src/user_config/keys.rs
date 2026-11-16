@@ -304,7 +304,7 @@ pub const KEYS: &[KeySpec] = &[
         section: "codex",
         field: "backend",
         kind: ValueKind::Enum(super::codex::CODEX_BACKENDS),
-        help: "Codex worker lane for stage leads: legacy forwarders or native workers (default: legacy)",
+        help: "Codex worker lane for stage leads: native workers or legacy forwarders (default: native)",
     },
 ];
 

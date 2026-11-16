@@ -223,6 +223,11 @@ pub enum HookCommands {
     #[command(hide = true)]
     ReviewerModel,
 
+    /// Print the configured Codex backend, `native` or `legacy`, for the
+    /// spawn and forward guards.
+    #[command(hide = true)]
+    CodexBackend,
+
     /// Print the test-integrity brief for a `loom-code-reviewer` spawn (spawn
     /// guard helper).
     #[command(hide = true)]

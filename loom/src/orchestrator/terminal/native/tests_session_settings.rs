@@ -187,6 +187,12 @@ pub(super) fn checkout() -> Checkout {
     for dir in [&worktree, &work_dir, &hooks_dir, &home] {
         std::fs::create_dir_all(dir).unwrap();
     }
+    // The capsule tests pin the legacy lane's grants; native is the default.
+    std::fs::write(
+        work_dir.join("config.toml"),
+        "[codex]\nbackend = \"legacy\"\n",
+    )
+    .unwrap();
     Checkout {
         _temp: temp,
         repo,

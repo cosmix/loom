@@ -22,6 +22,14 @@ fn state_dir(temp: &TempDir) -> std::path::PathBuf {
     work_dir
 }
 
+/// A state dir pinned to the legacy backend, for tests of the forwarder doctrine.
+pub(super) fn legacy_state_dir(temp: &TempDir) -> std::path::PathBuf {
+    let work_dir = state_dir(temp);
+    let config = "[codex]\nbackend = \"legacy\"\n";
+    fs::write(work_dir.join("config.toml"), config).unwrap();
+    work_dir
+}
+
 fn codex_signal(work_dir: &Path) -> String {
     let mut stage = create_test_stage();
     stage.implementers = Implementers::new(vec![Implementer::Codex]);

@@ -132,6 +132,7 @@ fn dispatch_hook(command: HookCommands) -> Result<()> {
         HookCommands::ForwardReceipt => hook::forward_receipt::forward_receipt(),
         HookCommands::WorkerBrief => hook::worker_brief::worker_brief(),
         HookCommands::ReviewerModel => hook::reviewer_model::reviewer_model(),
+        HookCommands::CodexBackend => hook::codex_backend::codex_backend(),
         HookCommands::ReviewerBrief => emit_reviewer_brief(),
         HookCommands::ProjectTypes => hook::project_types::execute(),
         HookCommands::Relay { allowed_kinds } => hook::relay::relay(&allowed_kinds),

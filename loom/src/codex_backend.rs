@@ -8,8 +8,8 @@ use crate::user_config::UserConfig;
 /// Configured Codex worker backend.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum CodexBackend {
-    #[default]
     Legacy,
+    #[default]
     Native,
 }
 
@@ -27,15 +27,17 @@ impl Default for CodexLane {
     }
 }
 
-/// Resolve the project setting over the user setting and built-in default.
+/// Resolve the project setting over the user setting and the built-in
+/// default, native: an unset or invalid project value defers to the user tier;
+/// the resolved value maps to native unless it is `legacy`.
 pub fn configured_backend(work_dir: &Path) -> CodexBackend {
     let backend = crate::fs::work_dir::config_sections::read_codex_config(work_dir)
         .backend()
         .map(str::to_owned)
         .unwrap_or_else(|| UserConfig::load().codex_backend().to_owned());
     match backend.as_str() {
-        "native" => CodexBackend::Native,
-        _ => CodexBackend::Legacy,
+        "legacy" => CodexBackend::Legacy,
+        _ => CodexBackend::Native,
     }
 }
 
