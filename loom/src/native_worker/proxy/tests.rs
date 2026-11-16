@@ -150,12 +150,19 @@ fn public_address_table() {
     }
 }
 
-/// A 0700 directory holding the socket path.
+/// The production socket directory, holding the socket path.
 fn socket_dir() -> (TempDir, PathBuf) {
-    let dir = TempDir::new().expect("tempdir");
-    fs::set_permissions(dir.path(), fs::Permissions::from_mode(0o700)).expect("chmod");
+    let dir = super::socket_dir().expect("socket dir");
     let path = dir.path().join("proxy.sock");
     (dir, path)
+}
+
+#[test]
+fn socket_dir_is_private_under_any_umask() {
+    // Fails on any umask other than 077 if the mode is left to tempfile's default.
+    let (dir, _) = socket_dir();
+    let mode = fs::metadata(dir.path()).expect("stat").permissions().mode() & 0o777;
+    assert_eq!(mode, 0o700, "{:o}", mode);
 }
 
 /// A one-connection echo server on loopback.

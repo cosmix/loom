@@ -146,6 +146,16 @@ fn bind_listener(socket: &Path) -> Result<UnixListener> {
     Ok(listener)
 }
 
+/// Creates a fresh directory for the proxy socket that passes `require_private_dir`.
+/// tempfile creates directories with 0777 less the process umask, so a umask such as 002
+/// would yield 0775; the mode is passed explicitly.
+pub(super) fn socket_dir() -> io::Result<tempfile::TempDir> {
+    tempfile::Builder::new()
+        .prefix("loom-nw-")
+        .permissions(Permissions::from_mode(SOCKET_DIR_MODE))
+        .tempdir()
+}
+
 fn require_private_dir(dir: &Path) -> Result<()> {
     let metadata = fs::symlink_metadata(dir)
         .with_context(|| format!("reading proxy socket directory {}", dir.display()))?;

@@ -229,7 +229,7 @@ pub fn run_from_dir(dir: &Path) -> Result<ExitCode> {
         Ok(tools) => tools,
         Err(reason) => return Ok(settle_unspawned(dir, &reason)),
     };
-    let socket_dir = match tempfile::Builder::new().prefix("loom-nw-").tempdir() {
+    let socket_dir = match proxy::socket_dir() {
         Ok(socket_dir) => socket_dir,
         Err(e) => return Ok(settle_unspawned(dir, &format!("socket directory: {e}"))),
     };
