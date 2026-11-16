@@ -6,6 +6,7 @@ pub mod boot_id;
 mod environment;
 mod errors;
 mod identity;
+pub(crate) mod lines;
 mod owned;
 mod spawn;
 mod tail;

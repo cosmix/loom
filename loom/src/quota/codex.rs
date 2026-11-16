@@ -1,10 +1,11 @@
 //! Codex quota polling over the `codex app-server` JSON-RPC subprocess.
 
 use crate::context::untrusted::inline_safe;
+use crate::process::lines::read_bounded_line;
 use crate::process::OwnedProcess;
 use crate::quota::model::{self, ProviderQuota, QuotaWindow, WindowKind};
 use anyhow::{anyhow, Context, Result};
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufReader, Write};
 use std::path::Path;
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -207,37 +208,6 @@ fn spawn_reader(stdout: ChildStdout) -> (mpsc::Receiver<String>, mpsc::Receiver<
         let _ = done.send(());
     });
     (receiver, finished)
-}
-
-/// Read one newline-terminated line, capping retained bytes at `max_bytes`
-/// and discarding (without buffering) whatever overruns the cap - so an
-/// over-long line still drains from the pipe instead of blocking the writer.
-/// `Ok(false)` at EOF with nothing pending.
-fn read_bounded_line<R: BufRead>(
-    reader: &mut R,
-    buf: &mut Vec<u8>,
-    max_bytes: usize,
-) -> std::io::Result<bool> {
-    buf.clear();
-    loop {
-        let available = reader.fill_buf()?;
-        if available.is_empty() {
-            return Ok(false);
-        }
-        if let Some(newline_pos) = available.iter().position(|&b| b == b'\n') {
-            let line_part = &available[..newline_pos];
-            let room = max_bytes.saturating_sub(buf.len());
-            buf.extend_from_slice(&line_part[..line_part.len().min(room)]);
-            let consumed = newline_pos + 1;
-            reader.consume(consumed);
-            return Ok(true);
-        }
-        let room = max_bytes.saturating_sub(buf.len());
-        let take = available.len().min(room);
-        buf.extend_from_slice(&available[..take]);
-        let consumed = available.len();
-        reader.consume(consumed);
-    }
 }
 
 fn await_reply(
