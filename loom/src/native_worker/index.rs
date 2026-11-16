@@ -318,22 +318,41 @@ pub fn stage_disposition(work_dir: &Path, stage_id: &str) -> NativeDisposition {
     }
 }
 
+/// The readable invocations of one stage with their events, loaded once so several
+/// projections ([`threads_in`], [`jobs_in`]) share one directory walk.
+#[derive(Default)]
+pub struct StageRecords(Vec<LoadedUnit>);
+
+pub fn load_stage(work_dir: &Path, stage_id: &str) -> StageRecords {
+    StageRecords(
+        load_all(work_dir, stage_id)
+            .into_iter()
+            .filter_map(Result::ok)
+            .collect(),
+    )
+}
+
 pub fn stage_threads(work_dir: &Path, stage_id: &str) -> Vec<NativeThread> {
-    load_all(work_dir, stage_id)
-        .into_iter()
-        .filter_map(Result::ok)
+    threads_in(&load_stage(work_dir, stage_id))
+}
+
+/// The Codex threads `records` started, in the records' order.
+pub fn threads_in(records: &StageRecords) -> Vec<NativeThread> {
+    records
+        .0
+        .iter()
         .filter_map(|(unit, events)| {
-            let thread_id = unit.thread_id?;
+            let thread_id = unit.thread_id.clone()?;
             let started_at = events.iter().rev().find_map(|record| match &record.event {
                 NativeEvent::ThreadStarted { thread_id: id } if id == &thread_id => Some(record.at),
                 _ => None,
             })?;
             Some(NativeThread {
                 thread_id,
-                unit_id: unit.manifest.unit_id,
-                invocation_id: unit.manifest.invocation_id,
-                requested_model: unit.manifest.model,
-                requested_effort: unit.manifest.effort,
+                unit_id: unit.manifest.unit_id.clone(),
+                invocation_id: unit.manifest.invocation_id.clone(),
+                requested_model: unit.manifest.model.clone(),
+                requested_effort: unit.manifest.effort.clone(),
                 started_at,
             })
         })
@@ -359,9 +378,17 @@ pub fn stages(work_dir: &Path) -> Vec<String> {
     stages
 }
 
+#[path = "index_jobs.rs"]
+mod jobs;
+pub use jobs::{jobs_in, NativeJob};
+
 #[cfg(test)]
 #[path = "index_tests_damage.rs"]
 mod damage_tests;
+
+#[cfg(test)]
+#[path = "index_tests_jobs.rs"]
+mod jobs_tests;
 
 #[cfg(test)]
 #[path = "index_tests.rs"]

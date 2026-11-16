@@ -55,6 +55,8 @@ export function toSummary(row: StageRow): StageSummary {
     pid: null,
     session_alive: false,
     model: "",
+    effort: "",
+    codex_jobs: [],
     session_type: null,
     incoherence: null,
     execution_models: [],

@@ -59,6 +59,8 @@ fn flow() -> TokenFlow {
     let total = usage(120_000, 1_800_000, 26_000_000, 310_000);
     let rate = usage(2_000, 36_000, 600_000, 5_200);
     let main = AgentFlow {
+        effort: None,
+        unit_id: None,
         id: "main-01ed9f4c".to_owned(),
         kind: AgentKind::Main,
         agent_type: None,

@@ -67,7 +67,7 @@ describe("StageTokens", () => {
     expect(lanes).toHaveLength(3);
     expect(lanes.filter((lane) => lane.textContent?.includes("codex"))).toHaveLength(1);
     expect(lanes[0]?.textContent).toContain("main session");
-    expect(lanes[0]?.textContent).toContain("claude-opus-5-5 · main-01ed9f4c");
+    expect(lanes[0]?.textContent).toContain("claude-opus-5-5/high · main-01ed9f4c");
     expect(lanes[0]?.textContent).not.toMatch(/\b(live|idle)\b/);
     const dot = within(lanes[0] as HTMLElement).getByRole("img", { name: "live" });
     expect(dot.dataset.state).toBe("live");
@@ -78,7 +78,7 @@ describe("StageTokens", () => {
     renderTokens("server");
 
     const lane = within(screen.getAllByTestId("token-lane")[0] as HTMLElement);
-    const model = lane.getByText("claude-opus-5-5", { exact: true });
+    const model = lane.getByText("claude-opus-5-5/high", { exact: true });
     const id = lane.getByText("main-01ed9f4c", { exact: true });
     expect(model.compareDocumentPosition(id) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(model.classList).toContain("shrink-0");
@@ -114,6 +114,7 @@ describe("StageTokens", () => {
         ...structuredClone(forwarder),
         id: "a0forwarder",
         agent_type: "loom-codex-forwarder",
+        unit_id: null,
       });
       const job = agents?.[2];
       if (!job) throw new Error("fixture codex job is missing");
@@ -124,14 +125,14 @@ describe("StageTokens", () => {
     const inCluster = within(cluster).getAllByTestId("token-lane");
     expect(inCluster).toHaveLength(2);
     expect(inCluster[0]?.textContent).toContain("loom-codex-forwarder");
-    expect(inCluster[0]?.textContent).toContain("claude-sonnet-5-5 · a0forwarder");
-    expect(inCluster[1]?.textContent).toContain("codex job");
+    expect(inCluster[0]?.textContent).toContain("claude-sonnet-5-5/medium · a0forwarder");
+    expect(inCluster[1]?.textContent).toContain("hex-test");
     const all = screen.getAllByTestId("token-lane");
     expect(all).toHaveLength(4);
     expect(all.slice(0, 2).every((lane) => !cluster.contains(lane))).toBe(true);
   });
 
-  it("gives each forwarder and its codex job a cluster of their own", () => {
+  it("gives each forwarder and its codex job a cluster of their own, apart from native jobs", () => {
     renderTokens("server", (raw) => {
       const agents = raw.status.tokens.stages[0]?.agents;
       const forwarder = agents?.[1];
@@ -142,6 +143,7 @@ describe("StageTokens", () => {
           ...structuredClone(forwarder),
           id: `a0fwd${n}`,
           agent_type: "loom-codex-forwarder",
+          unit_id: null,
         });
         agents.push({
           ...structuredClone(job),
@@ -158,14 +160,15 @@ describe("StageTokens", () => {
         .getAllByTestId("token-lane")
         .map((lane) => lane.textContent ?? ""),
     );
-    expect(texts).toHaveLength(3);
-    expect(texts[0]).toHaveLength(1);
-    expect(texts[0]?.[0]).toContain("codex-01a1396b");
-    expect(texts[1]).toHaveLength(2);
-    expect(texts[1]?.[0]).toContain("a0fwd1");
-    expect(texts[1]?.[1]).toContain("codex-job1");
-    expect(texts[2]?.[0]).toContain("a0fwd2");
-    expect(texts[2]?.[1]).toContain("codex-job2");
+    expect(texts).toHaveLength(2);
+    expect(texts[0]).toHaveLength(2);
+    expect(texts[0]?.[0]).toContain("a0fwd1");
+    expect(texts[0]?.[1]).toContain("codex-job1");
+    expect(texts[1]?.[0]).toContain("a0fwd2");
+    expect(texts[1]?.[1]).toContain("codex-job2");
+    const native = within(screen.getByTestId("codex-native")).getAllByTestId("token-lane");
+    expect(native).toHaveLength(1);
+    expect(native[0]?.textContent).toContain("codex-01a1396b");
   });
 
   it("keeps every strip at one width of 60 to 120 cells, newest on the right", () => {

@@ -8,10 +8,13 @@ use std::path::Path;
 
 use serde_json::Value;
 
+use super::codex_jobs::native_records;
 use super::sanitize::valid_stage_id;
+use crate::commands::common::model_display::model_with_effort;
 use crate::context::untrusted::inline_safe;
 use crate::fs::safe_read::open_regular_no_follow;
 use crate::fs::work_dir::WorkDir;
+use crate::native_worker::index::{threads_in, StageRecords};
 
 /// Most of one ledger the collector reads.
 ///
@@ -30,6 +33,15 @@ const MAX_EXECUTION_MODELS: usize = 8;
 
 /// Return distinct execution model display names recorded for one stage.
 pub fn execution_models_for_stage(work_dir: &WorkDir, stage_id: &str) -> Vec<String> {
+    execution_models_in(work_dir, stage_id, &native_records(work_dir, stage_id))
+}
+
+/// As [`execution_models_for_stage`], with the stage's native records already loaded.
+pub(super) fn execution_models_in(
+    work_dir: &WorkDir,
+    stage_id: &str,
+    native: &StageRecords,
+) -> Vec<String> {
     if !valid_stage_id(stage_id) {
         return Vec::new();
     }
@@ -56,10 +68,10 @@ pub fn execution_models_for_stage(work_dir: &WorkDir, stage_id: &str) -> Vec<Str
         &mut seen,
         &mut models,
     );
-    for thread in crate::native_worker::index::stage_threads(&root, stage_id) {
-        let name = format!("{} (requested)", normalize_model(&thread.requested_model));
+    for thread in threads_in(native) {
         if models.len() < MAX_EXECUTION_MODELS {
-            append_model(&name, &mut seen, &mut models);
+            let name = display_name(&thread.requested_model, Some(&thread.requested_effort));
+            append_model(&requested(&name), &mut seen, &mut models);
         }
     }
     models
@@ -76,32 +88,37 @@ fn append_codex_models(
         if models.len() >= MAX_EXECUTION_MODELS {
             return;
         }
-        let model = if row.get("v").and_then(Value::as_u64) == Some(2) {
+        let model_effort = if row.get("v").and_then(Value::as_u64) == Some(2) {
             correlated_requested_model(work_dir, stage_id, &row)
         } else {
             row.get("model")
                 .and_then(Value::as_str)
                 .filter(|model| (1..=128).contains(&model.len()) && !model.as_bytes().contains(&0))
-                .map(str::to_owned)
+                .map(|model| (model.to_owned(), None))
         };
-        let Some(model) = model else {
+        let Some((model, effort)) = model_effort else {
             continue;
         };
-        let normalized = normalize_model(&inline_safe(&model));
-        if !normalized.is_empty() {
-            append_model(&format!("{normalized} (requested)"), seen, models);
+        let name = display_name(&model, effort.as_deref());
+        if !name.is_empty() {
+            append_model(&requested(&name), seen, models);
         }
     }
 }
 
-fn correlated_requested_model(work_dir: &Path, stage_id: &str, row: &Value) -> Option<String> {
+/// The model and effort a v2 authorization requested, when its lifecycle is correlated.
+fn correlated_requested_model(
+    work_dir: &Path,
+    stage_id: &str,
+    row: &Value,
+) -> Option<(String, Option<String>)> {
     let authorization = crate::codex_lifecycle::CodexAuthorization::from_v2_value(row).ok()?;
     if authorization.stage_id != stage_id
         || !crate::codex_lifecycle::has_correlated_lifecycle(work_dir, &authorization)
     {
         return None;
     }
-    Some(authorization.model)
+    Some((authorization.model, Some(authorization.effort)))
 }
 
 fn append_models(
@@ -128,6 +145,7 @@ fn append_models(
         let Some(model) = row.get("model").and_then(Value::as_str) else {
             continue;
         };
+        let effort = row.get("effort").and_then(Value::as_str);
 
         // Flatten BEFORE the dedup key is taken. The renderers only ever show
         // the flattened form, so `"sonnet\u{200B}"` and `"sonnet "` are one
@@ -135,8 +153,23 @@ fn append_models(
         // rows reading `sonnet`. Flattening first also trims, and keeps a
         // trailing zero-width character from hiding a `-YYYYMMDD` date stamp
         // from model-name normalization.
-        append_model(&normalize_model(&inline_safe(model)), seen, models);
+        append_model(&display_name(model, effort), seen, models);
     }
+}
+
+/// `model/effort`, or the model alone when no effort is known. Both parts are flattened and
+/// the model normalized first, so the dedup key is the string the renderers show.
+fn display_name(model: &str, effort: Option<&str>) -> String {
+    let model = normalize_model(&inline_safe(model));
+    if model.is_empty() {
+        return model;
+    }
+    let effort = effort.map(inline_safe);
+    model_with_effort(&model, effort.as_deref())
+}
+
+fn requested(name: &str) -> String {
+    format!("{name} (requested)")
 }
 
 fn append_model(display_name: &str, seen: &mut HashSet<String>, models: &mut Vec<String>) {

@@ -100,6 +100,11 @@ export function modelsOf(stage: StageSummary): { model: string; execution: strin
   return { model: stage.model, execution: [...stage.execution_models] };
 }
 
+/// "model/effort", or the model alone while no effort is known.
+export function modelWithEffort(model: string, effort: string | null | undefined): string {
+  return effort ? `${model}/${effort}` : model;
+}
+
 export function timeText(stage: StageSummary): string | null {
   if (stage.status === "waiting-for-deps" || stage.status === "queued") {
     return null;

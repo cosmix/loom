@@ -1,5 +1,5 @@
 use super::{build_flow, fit_flow};
-use crate::tokens::accumulate::{AgentState, StageAgents};
+use crate::tokens::accumulate::{AgentState, NativeUnit, StageAgents};
 use crate::tokens::model::{
     AgentKind, ModelUsage, TokenUsage, BUCKET_SECS, MAX_FLOW_BYTES, MAX_MODEL_ROWS, OTHER_MODEL,
     PLAN_SERIES_LEN, STAGE_SERIES_LEN,
@@ -307,4 +307,39 @@ fn small_flow_is_serialized_whole() {
     assert_eq!(flow, before);
     assert_eq!(json, serde_json::to_string(&before).expect("serialize"));
     assert_eq!(flow.stages[0].rate, TokenUsage::default());
+}
+
+#[test]
+fn effort_prefers_the_transcript_and_a_native_unit_falls_back_to_its_own() {
+    let unit = NativeUnit {
+        unit_id: "hex-test".into(),
+        effort: "xhigh".into(),
+    };
+    let mut named = agent(AgentKind::Codex, Some(1), &[]);
+    named.effort = Some("high".into());
+    named.unit = Some(unit.clone());
+    let mut fallback = agent(AgentKind::Codex, Some(2), &[]);
+    fallback.unit = Some(unit);
+    let plain = agent(AgentKind::Codex, Some(3), &[]);
+    let stages = one_stage(vec![
+        ("codex-aaaaaaaa-1", named),
+        ("codex-bbbbbbbb-2", fallback),
+        ("codex-cccccccc-3", plain),
+    ]);
+    let flow = build_flow(&stages, NOW);
+    let seen: Vec<_> = flow.stages[0]
+        .agents
+        .iter()
+        .map(|a| (a.effort.as_deref(), a.unit_id.as_deref()))
+        .collect();
+    assert_eq!(
+        seen,
+        [
+            (Some("high"), Some("hex-test")),
+            (Some("xhigh"), Some("hex-test")),
+            (None, None)
+        ]
+    );
+    let json = serde_json::to_value(&flow.stages[0].agents[2]).unwrap();
+    assert!(json["effort"].is_null() && json["unit_id"].is_null());
 }

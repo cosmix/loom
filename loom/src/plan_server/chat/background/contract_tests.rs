@@ -55,6 +55,8 @@ fn the_background_frame_flattens_transcript_text() {
         output: 20,
     };
     let flow = AgentFlow {
+        effort: None,
+        unit_id: None,
         id: "a1".to_owned(),
         kind: AgentKind::Subagent,
         agent_type: Some("Explore".to_owned()),

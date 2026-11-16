@@ -11,8 +11,10 @@ use crate::plan::parser::extract_plan_name;
 use crate::status::merge_status::build_merge_report;
 use crate::verify::transitions::list_all_stages;
 
+use super::codex_jobs::{codex_jobs_in, native_records, CodexJob};
 use super::completion_view::collect_completion_view;
 use super::criteria_results::failing_criteria;
+use super::execution_models::execution_models_in;
 use super::heartbeat_facts::{heartbeat_facts, HeartbeatFacts};
 use super::merge_note::{merge_block_text, stash_warning};
 use super::resolver::{merge_resolver_facts, speaking_for};
@@ -20,8 +22,8 @@ use super::sanitize::{flow_is_fresh, neutralize, sanitize_stage_summary, sanitiz
 use super::stopped::{blocked_acceptance, blocked_close_reason, terminal_history_session};
 use super::timing::{elapsed_secs_live, execution_secs_live};
 use super::{
-    execution_models_for_stage, BlockDetail, CompletionBlockerSummary, ContractTesting,
-    MergeSummary, ProgressSummary, SessionExitReason, StageSummary, StatusData,
+    BlockDetail, CompletionBlockerSummary, ContractTesting, MergeSummary, ProgressSummary,
+    SessionExitReason, StageSummary, StatusData,
 };
 
 #[cfg(test)]
@@ -148,30 +150,44 @@ fn session_facts<'a>(
     }
 }
 
-/// The model this stage's session actually launches on.
+/// The model and reasoning effort this stage's session actually launches on.
 ///
 /// `Stage::effective_model()` stops at the plan-field/stage-type tier and
 /// ignores both config tiers, so it would show the dashboard a name the real
 /// spawn (`native::launch::model_and_effort`) has already overridden — use
 /// the same resolver that spawn calls instead.
-fn resolved_model(stage: &Stage, work_dir: &WorkDir) -> String {
+fn resolved_model_effort(stage: &Stage, work_dir: &WorkDir) -> (String, String) {
     crate::fs::work_dir::resolve_stage_model_effort(
         work_dir.root(),
         stage.stage_type,
         stage.model.as_deref(),
         stage.reasoning_effort.as_deref(),
     )
-    .0
+}
+
+/// The native-worker values of a stage summary: the model and effort the stage
+/// launches on, the models its executions ran on, and its codex jobs. One read
+/// of the stage's native records feeds the models and the jobs.
+fn native_fields(
+    stage: &Stage,
+    work_dir: &WorkDir,
+) -> (String, String, Vec<String>, Vec<CodexJob>) {
+    let (model, effort) = resolved_model_effort(stage, work_dir);
+    let native = native_records(work_dir, &stage.id);
+    let execution_models = execution_models_in(work_dir, &stage.id, &native);
+    (model, effort, execution_models, codex_jobs_in(&native))
 }
 
 /// Build a StageSummary from a Stage and optional associated Session.
 ///
-/// `rustfmt::skip` keeps three pairs of fields that come from one source on one
-/// line each (the live timers, the completion view, the merge resolver), holding the 48-field
-/// literal inside the function-length limit.
+/// `rustfmt::skip` keeps the field pairs that come from one source on one line
+/// each (the live timers, the completion view, the merge resolver, the native
+/// values, the pid and liveness), holding the 48-field literal inside the
+/// function-length limit.
 #[rustfmt::skip]
 fn build_stage_summary(stage: &Stage, sessions: &[Session], work_dir: &WorkDir) -> StageSummary {
     let (facts, now) = (session_facts(stage, sessions, work_dir), Utc::now());
+    let (model, effort, execution_models, codex_jobs) = native_fields(stage, work_dir);
     StageSummary {
         id: stage.id.clone(),
         name: stage.name.clone(),
@@ -200,12 +216,11 @@ fn build_stage_summary(stage: &Stage, sessions: &[Session], work_dir: &WorkDir) 
         held: stage.held,
         retry_count: stage.retry_count,
         max_retries: stage.max_retries,
-        pid: facts.pid,
-        session_alive: facts.session_alive,
-        model: resolved_model(stage, work_dir),
+        pid: facts.pid, session_alive: facts.session_alive,
+        model, effort,
         session_type: facts.session_type,
         incoherence: facts.incoherence,
-        execution_models: execution_models_for_stage(work_dir, &stage.id),
+        execution_models, codex_jobs,
         dispute_count: crate::models::stage::dispute_budgets::filed_total(stage),
         judge_heartbeat_secs: facts.heartbeat.judge_heartbeat_secs,
         session_backend: facts.session.map(|s| s.backend),
@@ -331,8 +346,12 @@ pub use snapshot::collect_status_data;
 #[path = "collector_activity_tests.rs"]
 mod activity_tests;
 #[cfg(test)]
+#[path = "collector_codex_tests.rs"]
+mod codex_tests;
+#[cfg(test)]
 #[path = "collector_history_tests.rs"]
 mod history_tests;
+
 #[cfg(test)]
 #[path = "collector_resolver_tests.rs"]
 mod resolver_tests;

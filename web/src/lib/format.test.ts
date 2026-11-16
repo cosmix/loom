@@ -128,7 +128,7 @@ describe("TUI formatter ports", () => {
   it("preserves the primary and execution model lists", () => {
     expect(modelsOf(stages.get("server")!)).toEqual({
       model: "opus",
-      execution: ["sonnet", "gpt-6.1-terra"],
+      execution: ["sonnet/medium", "gpt-6.1-terra/xhigh (requested)"],
     });
   });
 

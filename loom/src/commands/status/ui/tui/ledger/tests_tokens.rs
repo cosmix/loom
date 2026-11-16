@@ -39,6 +39,8 @@ fn plan_rate() -> TokenUsage {
 
 fn agent(id: &str, kind: AgentKind, model: &str, usages: [TokenUsage; 2], per: u64) -> AgentFlow {
     AgentFlow {
+        effort: None,
+        unit_id: None,
         id: id.to_owned(),
         kind,
         agent_type: None,

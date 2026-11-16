@@ -16,6 +16,8 @@ fn usage_of(value: u64) -> TokenUsage {
 
 fn flow_of(value: u64, series: Vec<u64>) -> TokenFlow {
     let agent = AgentFlow {
+        effort: None,
+        unit_id: None,
         id: "main-01ed9f4c".into(),
         kind: AgentKind::Main,
         agent_type: Some("loom-software-engineer".into()),
@@ -124,6 +126,8 @@ fn every_string_is_flattened() {
     agent.id = evil("main");
     agent.agent_type = Some(evil("type"));
     agent.model = Some(evil("model"));
+    agent.effort = Some(evil("effort"));
+    agent.unit_id = Some(evil("unit\u{1b}]0;title\u{7}"));
 
     sanitize_token_flow(&mut flow);
 
@@ -134,10 +138,25 @@ fn every_string_is_flattened() {
         &agent.id,
         agent.agent_type.as_ref().expect("agent_type"),
         agent.model.as_ref().expect("model"),
+        agent.effort.as_ref().expect("effort"),
+        agent.unit_id.as_ref().expect("unit_id"),
     ];
     for text in strings {
-        assert!(!text.contains(['\u{1b}', '\u{202e}', '\n']), "{text:?}");
+        assert!(
+            !text.contains(['\u{1b}', '\u{7}', '\u{202e}', '\n']),
+            "{text:?}"
+        );
     }
+}
+
+#[test]
+fn an_agent_effort_that_flattens_to_nothing_becomes_absent() {
+    let mut flow = flow_of(1, vec![1]);
+    flow.stages[0].agents[0].effort = Some(" \u{1b}\n\u{202e} ".into());
+
+    sanitize_token_flow(&mut flow);
+
+    assert_eq!(flow.stages[0].agents[0].effort, None);
 }
 
 fn model_entry(model: &str, effort: Option<&str>, value: u64) -> ModelUsage {

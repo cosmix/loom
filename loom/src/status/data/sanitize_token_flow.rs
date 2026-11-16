@@ -52,6 +52,9 @@ pub(crate) fn sanitize_token_flow(flow: &mut TokenFlow) {
             flatten(&mut agent.id);
             agent.agent_type.iter_mut().for_each(flatten);
             agent.model.iter_mut().for_each(flatten);
+            agent.unit_id.iter_mut().for_each(flatten);
+            agent.effort.iter_mut().for_each(flatten);
+            agent.effort = agent.effort.take().filter(|effort| !effort.is_empty());
             clamp_usage(&mut agent.total);
             clamp_usage(&mut agent.rate);
             bound_series(&mut agent.series, STAGE_SERIES_LEN);

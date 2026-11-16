@@ -40,8 +40,8 @@ fn pane_lines(view: &LedgerView, width: u16, live_only: bool) -> Vec<Line<'stati
         return Vec::new();
     }
     match view.data.tokens.as_ref() {
-        Some(flow) if live_only => live_lines(flow, width),
-        Some(flow) => tokens_pane_lines(flow, width, PANE_MAX_ROWS),
+        Some(flow) if live_only => live_lines(flow, &view.data.stages, width),
+        Some(flow) => tokens_pane_lines(flow, &view.data.stages, width, PANE_MAX_ROWS),
         None => no_data_lines(width, PANE_MAX_ROWS),
     }
 }

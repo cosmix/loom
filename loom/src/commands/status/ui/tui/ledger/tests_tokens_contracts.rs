@@ -27,6 +27,8 @@ fn usage(input: u64, cache_write: u64, cache_read: u64, output: u64) -> TokenUsa
 
 fn agent(id: &str, kind: AgentKind, model: &str, usages: [TokenUsage; 2], per: u64) -> AgentFlow {
     AgentFlow {
+        effort: None,
+        unit_id: None,
         id: id.to_owned(),
         kind,
         agent_type: None,

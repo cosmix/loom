@@ -39,6 +39,8 @@ fn flow(id: &str, total: u64, active: bool) -> AgentFlow {
         output,
     };
     AgentFlow {
+        effort: None,
+        unit_id: None,
         id: id.to_owned(),
         kind: AgentKind::Subagent,
         agent_type: None,

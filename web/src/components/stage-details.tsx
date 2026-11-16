@@ -5,7 +5,7 @@ import type { StageSummary } from "@/api/schema";
 import { ContextMeter } from "@/components/context-meter";
 import { tokens, yesNo } from "@/components/stage-detail";
 import { MERGE_STATES, StageSectionGrid } from "@/components/stage-sections";
-import { formatElapsed } from "@/lib/format";
+import { formatElapsed, modelWithEffort } from "@/lib/format";
 
 interface Fact {
   label: string;
@@ -17,7 +17,7 @@ function facts(stage: StageSummary, level: number | null): Fact[] {
   const all: (Fact | null)[] = [
     { label: "type", value: stage.stage_type },
     level === null ? null : { label: "level", value: String(level) },
-    { label: "model", value: stage.model },
+    { label: "model", value: modelWithEffort(stage.model, stage.effort) },
     stage.context_tokens === null
       ? null
       : {

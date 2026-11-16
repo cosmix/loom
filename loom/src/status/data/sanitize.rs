@@ -16,12 +16,12 @@
 //! column bounds nothing. Flattening here, at the collector boundary, covers
 //! the ledger TUI, the static renderer and the wire in one place.
 
-use super::{BlockDetail, StageSummary};
+use super::{BlockDetail, CodexJob, StageSummary};
 use crate::context::untrusted::{inline_safe, multiline_safe, whole_safe};
 
 #[path = "sanitize_token_flow.rs"]
 mod token_flow;
-pub(super) use token_flow::{flow_is_fresh, sanitize_token_flow};
+pub(super) use token_flow::{flow_is_fresh, sanitize_token_flow, MAX_SAFE_INTEGER};
 
 /// Longest close reason a status payload carries.
 ///
@@ -59,7 +59,9 @@ pub(super) fn sanitize_stage_summary(summary: &mut StageSummary) {
             .join("\n");
     }
     flatten(&mut summary.model);
+    flatten(&mut summary.effort);
     summary.execution_models.iter_mut().for_each(flatten);
+    summary.codex_jobs.iter_mut().for_each(CodexJob::flatten);
     summary.last_tool.iter_mut().for_each(flatten);
     summary.last_activity.iter_mut().for_each(flatten);
     summary.review_reason.iter_mut().for_each(flatten);

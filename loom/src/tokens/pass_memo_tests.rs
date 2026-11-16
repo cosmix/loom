@@ -143,6 +143,7 @@ fn over_cap_checkpoint(now: i64) -> (Checkpoint, Vec<Source>) {
             path: format!("/t/{key}.jsonl"),
             agent_type: None,
             forwarder: None,
+            unit: None,
         })
         .into();
     for source in &sources {

@@ -112,7 +112,7 @@ export function stageFlow(flow: TokenFlow | undefined, stageId: string): StageFl
 
 export function agentLabel(a: AgentFlow): string {
   if (a.kind === "main") return "main session";
-  if (a.kind === "codex") return "codex job";
+  if (a.kind === "codex") return a.unit_id ?? "codex job";
   return a.agent_type ?? "subagent";
 }
 

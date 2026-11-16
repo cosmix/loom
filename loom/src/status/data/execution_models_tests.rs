@@ -213,3 +213,31 @@ fn symlinked_stage_is_refused_and_regular_ledgers_keep_the_byte_cap() {
     std::fs::write(stage_dir.join("spawns.jsonl"), ledger).unwrap();
     assert_eq!(execution_models_for_stage(&work_dir, "s1"), ["sonnet"]);
 }
+
+#[test]
+fn spawn_rows_show_their_effort_and_dedup_on_the_display_string() {
+    let (_temp, work_dir) = test_work_dir();
+    let stage_dir = work_dir.root().join("subagents").join("s1");
+    std::fs::create_dir_all(&stage_dir).unwrap();
+    std::fs::write(
+        stage_dir.join("spawns.jsonl"),
+        concat!(
+            r#"{"model":"sonnet","effort":"medium"}"#,
+            "\n",
+            r#"{"model":"sonnet","effort":"medium"}"#,
+            "\n",
+            r#"{"model":"sonnet","effort":"high"}"#,
+            "\n",
+            r#"{"model":"sonnet","effort":""}"#,
+            "\n",
+            r#"{"model":"claude-opus-5-20251001","effort":"high\u200b"}"#,
+            "\n",
+        ),
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution_models_for_stage(&work_dir, "s1"),
+        ["sonnet/medium", "sonnet/high", "sonnet", "opus-5/high"]
+    );
+}

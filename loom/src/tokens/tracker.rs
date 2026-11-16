@@ -183,6 +183,9 @@ fn read_source(
     if source.forwarder.is_some() {
         agent.forwarder.clone_from(&source.forwarder);
     }
+    if source.unit.is_some() {
+        agent.unit.clone_from(&source.unit);
+    }
     let file = &agent.file;
     if file.path != source.path || file.inode != stat.inode || stat.len < file.offset {
         agent.restart(&source.path, stat.inode);

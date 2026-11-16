@@ -20,6 +20,15 @@ pub(super) use super::messages::MESSAGE_TABLE_CAP;
 /// A stage's agents by agent key.
 pub(super) type StageAgents = BTreeMap<String, AgentState>;
 
+/// The native worker unit a Codex agent's thread belongs to.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(super) struct NativeUnit {
+    pub(super) unit_id: String,
+    /// The reasoning effort the unit was admitted with: the fallback for an
+    /// agent whose rollout names none.
+    pub(super) effort: String,
+}
+
 /// One agent's accumulated usage and the state of reading its file.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct AgentState {
@@ -27,6 +36,8 @@ pub(crate) struct AgentState {
     pub(super) agent_type: Option<String>,
     /// For a codex agent: the id of the forwarder subagent that forwarded to it.
     pub(super) forwarder: Option<String>,
+    /// For a codex agent started by a native worker: that worker's unit.
+    pub(super) unit: Option<NativeUnit>,
     pub(super) model: Option<String>,
     /// The last reasoning effort a line named.
     pub(super) effort: Option<String>,
@@ -60,6 +71,7 @@ impl AgentState {
             kind,
             agent_type: None,
             forwarder: None,
+            unit: None,
             model: None,
             effort: None,
             first_seen: None,
@@ -75,13 +87,15 @@ impl AgentState {
     }
 
     /// Forgets everything read from the file, to read `path` (inode `inode`)
-    /// again from offset 0. The ledger's agent type and forwarder are kept.
+    /// again from offset 0. The ledger's agent type, forwarder and native unit are kept.
     pub(super) fn restart(&mut self, path: &str, inode: u64) {
         let agent_type = self.agent_type.take();
         let forwarder = self.forwarder.take();
+        let unit = self.unit.take();
         *self = Self {
             agent_type,
             forwarder,
+            unit,
             ..Self::new(self.kind, path)
         };
         self.file.inode = inode;

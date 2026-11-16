@@ -1,4 +1,5 @@
 mod busy;
+mod codex_jobs;
 mod collector;
 pub(crate) mod completion_view;
 mod contract_testing;
@@ -15,6 +16,7 @@ mod stopped;
 mod timing;
 mod verdict_completion;
 
+pub use codex_jobs::{codex_jobs_for_stage, CodexJob};
 pub use collector::{collect_status_data, load_all_sessions};
 pub use completion_view::{
     completion_blocker_summary, outgoing_exit_reason, CompletionBlockerState,
@@ -206,6 +208,14 @@ pub struct StageSummary {
     /// subagent spawns.
     #[serde(default)]
     pub execution_models: Vec<String>,
+    /// The reasoning effort the stage's session launches with
+    /// (`resolve_stage_model_effort`, the pair of `model`).
+    #[serde(default)]
+    pub effort: String,
+    /// Native Codex worker invocations of this stage, oldest first; empty when
+    /// the stage has none.
+    #[serde(default)]
+    pub codex_jobs: Vec<CodexJob>,
     /// Disputes the stage has filed, of every kind (`dispute_budgets::filed_total`):
     /// while it adjudicates, the one-based number of its latest dispute.
     #[serde(default)]

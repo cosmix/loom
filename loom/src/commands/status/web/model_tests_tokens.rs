@@ -15,12 +15,15 @@ fn usage(input: u64, cache_write: u64, cache_read: u64, output: u64) -> TokenUsa
 
 /// One agent of the token-flow fixture; `series` is `value` repeated 120 times.
 fn fixture_agent(
-    (id, kind, agent_type, model): (&str, AgentKind, Option<&str>, &str),
+    (id, kind, agent_type, model, effort): (&str, AgentKind, Option<&str>, &str, &str),
+    unit_id: Option<&str>,
     total: TokenUsage,
     rate: TokenUsage,
     value: u64,
 ) -> AgentFlow {
     AgentFlow {
+        effort: Some(effort.to_owned()),
+        unit_id: unit_id.map(str::to_owned),
         id: id.to_owned(),
         kind,
         agent_type: agent_type.map(str::to_owned),
@@ -37,7 +40,14 @@ fn fixture_agent(
 fn fixture_agents() -> Vec<AgentFlow> {
     vec![
         fixture_agent(
-            ("main-01ed9f4c", AgentKind::Main, None, "claude-opus-5-5"),
+            (
+                "main-01ed9f4c",
+                AgentKind::Main,
+                None,
+                "claude-opus-5-5",
+                "high",
+            ),
+            None,
             usage(40_000, 600_000, 9_000_000, 100_000),
             usage(600, 12_000, 200_000, 1_600),
             7_100,
@@ -48,13 +58,22 @@ fn fixture_agents() -> Vec<AgentFlow> {
                 AgentKind::Subagent,
                 Some("loom-software-engineer"),
                 "claude-sonnet-5-5",
+                "medium",
             ),
+            None,
             usage(50_000, 900_000, 13_000_000, 160_000),
             usage(1_200, 21_000, 350_000, 3_000),
             12_600,
         ),
         fixture_agent(
-            ("codex-01a1396b", AgentKind::Codex, None, "gpt-6.1-sol"),
+            (
+                "codex-01a1396b",
+                AgentKind::Codex,
+                None,
+                "gpt-6.1-sol",
+                "xhigh",
+            ),
+            Some("hex-test"),
             usage(30_000, 300_000, 4_000_000, 50_000),
             usage(200, 3_000, 50_000, 600),
             1_900,

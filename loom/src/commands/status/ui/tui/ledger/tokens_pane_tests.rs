@@ -1,5 +1,6 @@
 //! Token pane formatting and rendering contracts.
 
+use super::super::tokens_columns::{shrink, SLOT_MIN, STATE_MIN};
 use super::*;
 use crate::tokens::{PlanFlow, QuotaProvider, TokenUsage};
 
@@ -14,6 +15,8 @@ fn usage(input: u64, cache_write: u64, cache_read: u64, output: u64) -> TokenUsa
 
 fn agent(id: &str, kind: AgentKind, model: &str, total: TokenUsage, rate: TokenUsage) -> AgentFlow {
     AgentFlow {
+        effort: None,
+        unit_id: None,
         id: id.into(),
         kind,
         agent_type: None,
@@ -161,7 +164,7 @@ fn test_quota_left_text_reset_precedes_duration_and_unknown_is_absent() {
 
 #[test]
 fn test_pane_fixture_renders_title_stage_and_three_agents() {
-    let lines = tokens_pane_lines(&fixture(), 132, PANE_MAX_ROWS);
+    let lines = tokens_pane_lines(&fixture(), &[], 132, PANE_MAX_ROWS);
     let text: Vec<_> = lines.iter().map(ToString::to_string).collect();
 
     assert_eq!(lines.len(), 5);
@@ -185,8 +188,8 @@ fn test_pane_fixture_renders_title_stage_and_three_agents() {
 #[test]
 fn test_pane_row_limits_are_respected() {
     let flow = fixture();
-    assert_eq!(tokens_pane_lines(&flow, 132, 2).len(), 2);
-    assert!(tokens_pane_lines(&flow, 132, 0).is_empty());
+    assert_eq!(tokens_pane_lines(&flow, &[], 132, 2).len(), 2);
+    assert!(tokens_pane_lines(&flow, &[], 132, 0).is_empty());
 }
 
 #[test]
@@ -196,7 +199,7 @@ fn test_pane_narrow_and_unicode_lines_fit() {
     flow.stages[0].agents[1].agent_type = Some("loom-界".repeat(80));
     flow.stages[0].agents[2].id = "codex-é界ab".into();
     for width in [0, 1, 7, 64] {
-        let lines = tokens_pane_lines(&flow, width, PANE_MAX_ROWS);
+        let lines = tokens_pane_lines(&flow, &[], width, PANE_MAX_ROWS);
         assert_eq!(lines.len(), 5);
         assert!(lines.iter().all(|line| line.width() <= usize::from(width)));
     }
@@ -208,7 +211,7 @@ fn test_pane_idle_agent_keeps_empty_strip_and_total() {
     flow.stages[0].agents[0].active = false;
     flow.stages[0].agents[0].series.clear();
 
-    let lines = tokens_pane_lines(&flow, 132, PANE_MAX_ROWS);
+    let lines = tokens_pane_lines(&flow, &[], 132, PANE_MAX_ROWS);
     let main = lines[2].to_string();
     assert!(main.starts_with("  main"));
     assert!(main.contains(&format!("idle {}", " ".repeat(48))));
@@ -221,10 +224,10 @@ fn test_pane_stage_visibility_uses_active_flag() {
     for agent in &mut flow.stages[0].agents {
         agent.active = false;
     }
-    assert_eq!(tokens_pane_lines(&flow, 132, PANE_MAX_ROWS).len(), 1);
+    assert_eq!(tokens_pane_lines(&flow, &[], 132, PANE_MAX_ROWS).len(), 1);
     flow.stages[0].agents[0].active = true;
     flow.stages[0].agents[0].series.clear();
-    assert_eq!(tokens_pane_lines(&flow, 132, PANE_MAX_ROWS).len(), 5);
+    assert_eq!(tokens_pane_lines(&flow, &[], 132, PANE_MAX_ROWS).len(), 5);
 }
 
 /// `len` empty buckets whose newest holds `newest`.
@@ -254,7 +257,7 @@ fn test_columns_shrink_the_model_then_the_strip_then_the_label() {
         (80, (30, 39), (30, 8, 27)),
         (64, (30, 23), (29, 8, 12)),
     ] {
-        let columns = Columns::fit(width, SLOT_MIN, SLOT_MIN);
+        let columns = Columns::fit(width, SLOT_MIN, SLOT_MIN, STATE_MIN);
         assert_eq!((columns.stage_id, columns.spark), stage, "stage at {width}");
         assert_eq!(
             (columns.label, columns.model, columns.strip),
@@ -274,7 +277,7 @@ fn test_pane_keeps_the_newest_cells_and_the_state_down_to_64_columns() {
     flow.stages[0].agents[0].active = false;
 
     for width in [64, 80, 100, 132] {
-        let lines = tokens_pane_lines(&flow, width, PANE_MAX_ROWS);
+        let lines = tokens_pane_lines(&flow, &[], width, PANE_MAX_ROWS);
         let text: Vec<_> = lines.iter().map(ToString::to_string).collect();
 
         assert_eq!(lines.len(), 5);
@@ -313,7 +316,7 @@ fn test_pane_sizes_the_total_and_rate_slots_to_the_widest_number() {
         flow.stages[0].agents[0].active = false;
 
         for width in [64, 80, 100] {
-            let lines = tokens_pane_lines(&flow, width, PANE_MAX_ROWS);
+            let lines = tokens_pane_lines(&flow, &[], width, PANE_MAX_ROWS);
             let text: Vec<_> = lines.iter().map(ToString::to_string).collect();
 
             assert_eq!(lines.len(), 5);
@@ -345,7 +348,7 @@ fn test_pane_without_active_agents_or_data_says_so() {
     for agent in &mut flow.stages[0].agents {
         agent.active = false;
     }
-    let lines = tokens_pane_lines(&flow, 132, PANE_MAX_ROWS);
+    let lines = tokens_pane_lines(&flow, &[], 132, PANE_MAX_ROWS);
     assert_eq!(lines.len(), 1);
     assert!(lines[0].to_string().ends_with("t close"));
     let note = lines[0]
@@ -354,14 +357,14 @@ fn test_pane_without_active_agents_or_data_says_so() {
         .find(|span| span.content.contains("no active agent"));
     assert_eq!(note.map(|span| span.style), Some(Theme::dimmed()));
     for width in [64, 70] {
-        let line = tokens_pane_lines(&flow, width, PANE_MAX_ROWS).remove(0);
+        let line = tokens_pane_lines(&flow, &[], width, PANE_MAX_ROWS).remove(0);
         let text = line.to_string();
         assert!(text.contains("no active agent"), "{text:?} at {width}");
         assert!(text.ends_with("t close"), "{text:?} at {width}");
         assert_eq!(line.width(), usize::from(width));
     }
-    assert_eq!(tokens_pane_lines(&flow, 132, 1).len(), 1);
-    assert!(tokens_pane_lines(&flow, 40, PANE_MAX_ROWS)
+    assert_eq!(tokens_pane_lines(&flow, &[], 132, 1).len(), 1);
+    assert!(tokens_pane_lines(&flow, &[], 40, PANE_MAX_ROWS)
         .iter()
         .all(|line| line.width() <= 40));
 

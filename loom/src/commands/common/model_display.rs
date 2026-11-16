@@ -12,9 +12,25 @@ pub(crate) fn normalize_model(model: &str) -> &str {
     }
 }
 
+/// `model/effort` as operators read it (`opus/high`); the model alone when the effort is
+/// unknown or empty.
+pub(crate) fn model_with_effort(model: &str, effort: Option<&str>) -> String {
+    match effort.filter(|effort| !effort.is_empty()) {
+        Some(effort) => format!("{model}/{effort}"),
+        None => model.to_owned(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::normalize_model;
+    use super::{model_with_effort, normalize_model};
+
+    #[test]
+    fn joins_model_and_effort_with_a_slash() {
+        assert_eq!(model_with_effort("opus", Some("high")), "opus/high");
+        assert_eq!(model_with_effort("opus", Some("")), "opus");
+        assert_eq!(model_with_effort("opus", None), "opus");
+    }
 
     #[test]
     fn normalizes_prefix_and_date_without_splitting_unicode() {

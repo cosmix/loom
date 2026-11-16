@@ -5,6 +5,7 @@ import { useId } from "react";
 import type { StageFlow, TokenFlow } from "@/api/schema";
 import { HeatStrip, Sparkline } from "@/components/sparkline";
 import { TokenLanes } from "@/components/stage-token-lanes";
+import { matchCodexJobs, unmatchedCodexJobs } from "@/lib/codex-jobs";
 import {
   cacheHitPercent,
   carryForward,
@@ -127,16 +128,21 @@ function Chips({ tokens, flow }: { tokens: TokenFlow; flow: StageFlow }) {
 /// and trends until the reader opens it.
 /// Renders nothing for a stage the tracker has not seen.
 export function StageTokens({ stageId }: { stageId: string }) {
-  const tokens = useAtomValue(snapshotAtom)?.status.tokens;
+  const status = useAtomValue(snapshotAtom)?.status;
+  const tokens = status?.tokens;
   const flow = stageFlow(tokens, stageId);
+  const stage = status?.stages.find(({ id }) => id === stageId);
   const [open, toggle] = useDisclosure(false);
   const panel = useId();
   if (!tokens || !flow) return null;
 
   const { lanes, max, minutes } = laneSeries(flow, tokens.bucket_secs);
+  const jobs = stage?.codex_jobs ?? [];
+  const matched = matchCodexJobs(jobs, flow.agents);
   const rows = flow.agents.map((agent, index) => ({
     agent,
     series: lanes[index] ?? [],
+    job: matched.get(agent.id),
   }));
   const plain = rows.filter(({ agent }) => !isCodexLane(agent));
   const clusters = codexPairs(rows);
@@ -172,7 +178,13 @@ export function StageTokens({ stageId }: { stageId: string }) {
       <div id={open ? panel : undefined} className="flex flex-col gap-2.5 p-3.5">
         <Chips tokens={tokens} flow={flow} />
         {open && (
-          <TokenLanes plain={plain} clusters={clusters} max={max} window={`last ${minutes} min`} />
+          <TokenLanes
+            plain={plain}
+            clusters={clusters}
+            unthreaded={unmatchedCodexJobs(jobs, matched)}
+            max={max}
+            window={`last ${minutes} min`}
+          />
         )}
       </div>
     </section>

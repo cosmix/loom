@@ -92,7 +92,7 @@ fn running_then_completed_appends_exact_observations() -> Result<()> {
     let display_work_dir = WorkDir::new(&fixture.work_dir)?;
     assert_eq!(
         execution_models_for_stage(&display_work_dir, STAGE),
-        ["gpt-6-sol (requested)"]
+        ["gpt-6-sol/xhigh (requested)"]
     );
 
     fixture.write_job(&authorization, "task-a", "completed")?;

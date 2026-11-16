@@ -38,6 +38,13 @@ fn seed(work: &Path, stage: &str, started: bool) {
     }
 }
 
+fn unit() -> NativeUnit {
+    NativeUnit {
+        unit_id: "unit-1".into(),
+        effort: "xhigh".into(),
+    }
+}
+
 const NOW: i64 = 1_788_523_200;
 
 fn setup(started: bool) -> (Fixture, PathBuf) {
@@ -98,6 +105,7 @@ fn native_thread_is_attributed_to_its_stage() {
     assert_eq!(sources[0].key, "codex-thread-n");
     assert_eq!(sources[0].stage_id, STAGE);
     assert_eq!(sources[0].forwarder, None);
+    assert_eq!(sources[0].unit, Some(unit()));
 }
 
 #[test]
@@ -109,6 +117,7 @@ fn native_thread_named_by_a_receipt_is_counted_once() {
     assert_eq!(sources[0].key, "codex-thread-n");
     assert_eq!(sources[0].stage_id, STAGE);
     assert_eq!(sources[0].forwarder.as_deref(), Some("agent"));
+    assert_eq!(sources[0].unit, Some(unit()));
 }
 
 #[test]

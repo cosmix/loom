@@ -45,6 +45,8 @@ mod tests_tokens;
 mod tests_viewport;
 /// Cell width and truncation helpers.
 pub mod text;
+mod tokens_columns;
+mod tokens_jobs;
 mod tokens_models;
 mod tokens_pane;
 

@@ -100,6 +100,11 @@ fn agent_flow(id: String, agent: &AgentState, now: i64) -> AgentFlow {
         agent_type: agent.agent_type.clone(),
         forwarder: agent.forwarder.clone(),
         model: agent.model.clone(),
+        effort: agent
+            .effort
+            .clone()
+            .or_else(|| agent.unit.as_ref().map(|unit| unit.effort.clone())),
+        unit_id: agent.unit.as_ref().map(|unit| unit.unit_id.clone()),
         active,
         total: agent.total,
         rate: rate(&agent.buckets, now, now_bucket),

@@ -24,7 +24,7 @@ import {
   yesNo,
   type SectionSpec,
 } from "@/components/stage-detail";
-import { contextUsage, formatStamp } from "@/lib/format";
+import { contextUsage, formatStamp, modelWithEffort } from "@/lib/format";
 import {
   contractTesting,
   exitReasonLabel,
@@ -105,7 +105,7 @@ function identityRows(stage: StageSummary, level: number | null) {
   return present([
     row("type", HINT.type, stage.stage_type, true),
     row("level", HINT.level, level === null ? null : String(level), true),
-    row("orchestrator model", HINT.model, stage.model, true),
+    row("orchestrator model", HINT.model, modelWithEffort(stage.model, stage.effort), true),
     row("execution models", HINT.executionModels, stage.execution_models.join(", "), true),
   ]);
 }

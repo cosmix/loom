@@ -105,6 +105,7 @@ fn planted_checkpoint(transcript: &Path) -> Checkpoint {
         path: transcript.to_str().expect("utf-8").into(),
         agent_type: None,
         forwarder: None,
+        unit: None,
     };
     let agent = checkpoint.agent(&source);
     agent.total = usage(0, 999, 0, 0);
@@ -370,6 +371,7 @@ fn unreadable_file_warning_flattens_the_untrusted_path() {
         path: path.to_str().expect("utf-8").into(),
         agent_type: None,
         forwarder: None,
+        unit: None,
     };
 
     let (advanced, failure) = read_sources(

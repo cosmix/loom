@@ -45,19 +45,22 @@ fn native_model_is_listed_as_requested() {
     let (_temp, work) = fixture(true);
     assert_eq!(
         execution_models_for_stage(&work, "s1"),
-        ["gpt-6.1-terra (requested)"]
+        ["gpt-6.1-terra/xhigh (requested)"]
     );
 }
 
 #[test]
-fn native_model_and_codex_row_collapse() {
+fn native_model_with_effort_stays_apart_from_an_effortless_codex_row() {
     let (_temp, work) = fixture(true);
     let stage = work.root().join("subagents/s1");
     std::fs::create_dir_all(&stage).unwrap();
     std::fs::write(stage.join("codex.jsonl"), "{\"model\":\"gpt-6.1-terra\"}\n").unwrap();
     assert_eq!(
         execution_models_for_stage(&work, "s1"),
-        ["gpt-6.1-terra (requested)"]
+        [
+            "gpt-6.1-terra (requested)",
+            "gpt-6.1-terra/xhigh (requested)"
+        ]
     );
 }
 
