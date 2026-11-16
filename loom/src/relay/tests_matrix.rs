@@ -338,6 +338,26 @@ fn complete_is_applied_for_stage_and_knowledge_only() {
     }
 }
 
+const WORKER_CONTROL_COLUMN: [(SessionType, MatrixVerdict); 6] = [
+    (SessionType::Stage, MatrixVerdict::Apply),
+    (SessionType::Knowledge, MatrixVerdict::Refuse),
+    (SessionType::Merge, MatrixVerdict::Refuse),
+    (SessionType::BaseConflict, MatrixVerdict::Refuse),
+    (SessionType::Adjudication, MatrixVerdict::Refuse),
+    (SessionType::Contract, MatrixVerdict::Refuse),
+];
+
+#[test]
+fn worker_control_is_applied_for_stage_only() {
+    for (session, expected_verdict) in WORKER_CONTROL_COLUMN {
+        assert_eq!(
+            verdict(session, RequestKind::WorkerControl),
+            expected_verdict,
+            "{session:?} x subagents:control"
+        );
+    }
+}
+
 #[test]
 fn matches_the_full_six_by_nine_writer_matrix() {
     assert_eq!(EXPECTED.len(), 54, "6 session types x 9 kinds");

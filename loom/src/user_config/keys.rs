@@ -299,6 +299,13 @@ pub const KEYS: &[KeySpec] = &[
         kind: ValueKind::Enum(crate::models::stage::ALLOWED_REASONING_EFFORTS),
         help: "Reasoning effort a loom plan authoring session runs at for plan steps",
     },
+    KeySpec {
+        name: "codex.backend",
+        section: "codex",
+        field: "backend",
+        kind: ValueKind::Enum(super::codex::CODEX_BACKENDS),
+        help: "Codex worker lane for stage leads: legacy forwarders or native workers (default: legacy)",
+    },
 ];
 
 /// The spec for `name`, or an error listing every valid key.

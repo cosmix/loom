@@ -16,13 +16,13 @@ use std::time::{Duration, Instant};
 use anyhow::{ensure, Context, Result};
 use chrono::Utc;
 
+pub use super::signals::recover_after_restart;
 use super::signals::{kill_groups, retire};
+pub(crate) use super::spawn::is_session_variable;
 use super::spawn::{reaped_outcome, spawn_child};
 use super::{bounded_detail, store, JobKind, JobRecord, JobState};
 use crate::models::stage::Stage;
 use crate::process::OwnedProcess;
-
-pub use super::signals::recover_after_restart;
 
 /// Jobs the daemon runs at once.
 const DEFAULT_SLOTS: usize = 2;
@@ -317,7 +317,7 @@ fn queued_records(work_dir: &Path) -> Result<Vec<JobRecord>> {
 /// `current_exe` of a binary replaced on disk under the running process (a
 /// reinstall) reads `<path> (deleted)` on Linux; the binary now at `<path>`
 /// is the one to spawn.
-pub(super) fn installed_binary(exe: PathBuf) -> PathBuf {
+pub(crate) fn installed_binary(exe: PathBuf) -> PathBuf {
     exe.to_str()
         .and_then(|path| path.strip_suffix(" (deleted)"))
         .map(PathBuf::from)

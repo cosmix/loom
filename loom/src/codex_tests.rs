@@ -141,3 +141,62 @@ fn companion_preflight_requires_the_supported_regular_file() {
     std::fs::remove_file(unsupported).unwrap();
     assert!(super::codex_companion_installed_in(home.path()));
 }
+
+#[test]
+fn lane_selection_respects_backend_and_qualification() {
+    use super::backend::lane_from;
+    assert_eq!(
+        lane_from(CodexBackend::Legacy, true, Ok(()), || panic!(
+            "unexpected probe"
+        )),
+        CodexLane::Legacy
+    );
+    assert_eq!(
+        lane_from(
+            CodexBackend::Legacy,
+            true,
+            Err("missing plugin".into()),
+            || panic!("unexpected probe"),
+        ),
+        CodexLane::Unavailable("missing plugin".into())
+    );
+    assert_eq!(
+        lane_from(CodexBackend::Native, false, Ok(()), || panic!(
+            "unexpected probe"
+        )),
+        CodexLane::Unavailable(CODEX_CLI_MISSING.into())
+    );
+    assert_eq!(
+        lane_from(
+            CodexBackend::Native,
+            true,
+            Err("missing plugin".into()),
+            || Ok(()),
+        ),
+        CodexLane::Native
+    );
+    assert_eq!(
+        lane_from(CodexBackend::Native, true, Ok(()), || Err(
+            "no pid namespace".into()
+        )),
+        CodexLane::Unavailable("no pid namespace".into())
+    );
+}
+
+#[test]
+fn configured_backend_resolves_project_and_user_tiers() {
+    let dir = tempfile::tempdir().unwrap();
+    let workspace = dir.path().join("workspace");
+    std::fs::create_dir(&workspace).unwrap();
+    assert_eq!(configured_backend(&workspace), CodexBackend::Legacy);
+    let config = workspace.join("config.toml");
+    std::fs::write(&config, "[codex]\nbackend = \"native\"\n").unwrap();
+    assert_eq!(configured_backend(&workspace), CodexBackend::Native);
+    let user = dir.path().join("user.toml");
+    std::fs::write(&user, "[codex]\nbackend = \"native\"\n").unwrap();
+    let _redirect = crate::user_config::redirect_user_config(user);
+    std::fs::write(&config, "[codex]\nbackend = \"bogus\"\n").unwrap();
+    assert_eq!(configured_backend(&workspace), CodexBackend::Native);
+    std::fs::write(&config, "[codex]\nbackend = \"legacy\"\n").unwrap();
+    assert_eq!(configured_backend(&workspace), CodexBackend::Legacy);
+}

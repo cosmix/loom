@@ -8,7 +8,7 @@
 //!
 //! # One shadowing rule: every workspace-backed key resolves per KEY
 //!
-//! `[terminal]`, `[context]`, `[pressure]`, `[models]` and `[planning]` (the
+//! `[terminal]`, `[context]`, `[pressure]`, `[models]`, `[codex]` and `[planning]` (the
 //! registry's `plan` section; see [`workspace_table`]) all shadow
 //! `~/.loom/config.toml` a KEY at a time: a present section that omits a key
 //! falls through to the user tier for that key rather than shadowing it with
@@ -48,6 +48,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{anyhow, bail, Context, Result};
 use toml_edit::DocumentMut;
 
+use crate::fs::work_dir::config_sections::CodexConfig;
 use crate::fs::work_dir::{
     insert_key, read_config, remove_key, update_config, ContextConfig, ModelsConfig, PlanConfig,
     PressureConfig, WorkDir,
@@ -197,7 +198,7 @@ fn resolve(spec: &KeySpec, section: Option<&toml::Value>) -> Option<Result<Optio
         ),
         _ => match spec.section {
             "pressure" => Some(Ok(pressure_key(section, spec.field))),
-            "models" | "plan" => Some(Ok(section_key(section, spec))),
+            "models" | "plan" | "codex" => Some(Ok(section_key(section, spec))),
             _ => None,
         },
     }
@@ -250,6 +251,7 @@ fn section_key(section: Option<&toml::Value>, spec: &KeySpec) -> Option<ConfigVa
 /// Use the runtime's section types, including their unknown-field policy.
 fn section_readable(section: &toml::Value, name: &str) -> bool {
     match name {
+        "codex" => section.clone().try_into::<CodexConfig>().is_ok(),
         "models" => section.clone().try_into::<ModelsConfig>().is_ok(),
         "plan" => section.clone().try_into::<PlanConfig>().is_ok(),
         _ => false,

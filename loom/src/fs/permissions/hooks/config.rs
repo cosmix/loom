@@ -61,6 +61,7 @@ const PRE_TOOL_HOOKS: &[(&str, &str)] = &[
     ("Monitor", "codex-forward-guard.sh"),
     ("PowerShell", "codex-forward-guard.sh"),
     ("Bash", "loom-control-complete.sh"),
+    ("Bash", "loom-control-subagents.sh"),
     ("Edit", "codex-forward-guard.sh"),
     ("MultiEdit", "codex-forward-guard.sh"),
     ("Write", "codex-forward-guard.sh"),

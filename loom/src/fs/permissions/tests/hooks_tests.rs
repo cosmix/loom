@@ -29,7 +29,7 @@ fn test_hooks_config_structure() {
         ("Glob", "worktree-file-guard.sh"),
         ("Grep", "worktree-file-guard.sh"),
     ];
-    assert_eq!(pre_tool.len(), 49);
+    assert_eq!(pre_tool.len(), 50);
     for (entry, (matcher, script)) in pre_tool.iter().zip(expected_prefix) {
         assert_hook(entry, matcher, script);
     }

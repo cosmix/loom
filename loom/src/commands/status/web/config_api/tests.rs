@@ -138,7 +138,7 @@ fn only_the_workspace_backed_keys_carry_a_project_scope() {
     let payload = parse(&scratch.base);
     for entry in &payload.entries {
         let key = KEYS.iter().find(|key| key.name == entry.name).unwrap();
-        let project = matches!(key.section, "pressure" | "models" | "plan")
+        let project = matches!(key.section, "pressure" | "models" | "plan" | "codex")
             || matches!(
                 entry.name.as_str(),
                 "terminal.backend" | "context.ceiling_tokens"
@@ -290,7 +290,7 @@ fn every_entry_reports_the_registrys_own_default() {
 }
 
 /// The project scope covers `terminal.backend`, `context.ceiling_tokens`,
-/// plus every `[pressure]`/`[models]`/`[plan]` key (twenty total) — every key
+/// plus every `[pressure]`/`[models]`/`[plan]`/`[codex]` key — every key
 /// `workspace::backs` resolves. The key-level set is derived from [`KEYS`]
 /// rather than typed out eighteen times, so this test keeps testing the right
 /// thing when another key is added.
@@ -298,7 +298,7 @@ fn every_entry_reports_the_registrys_own_default() {
 fn project_scoped_covers_the_workspace_backed_keys() {
     let key_level: Vec<&str> = KEYS
         .iter()
-        .filter(|key| matches!(key.section, "pressure" | "models" | "plan"))
+        .filter(|key| matches!(key.section, "pressure" | "models" | "plan" | "codex"))
         .map(|key| key.name)
         .collect();
     let expected: Vec<&str> = ["terminal.backend", "context.ceiling_tokens"]

@@ -1,6 +1,6 @@
 //! Security policy helpers for Claude settings generation.
 
-use crate::codex::{CODEX_SANDBOX_DOMAINS, CODEX_SANDBOX_WRITE_PATHS};
+use crate::codex::{CodexBackend, CODEX_SANDBOX_DOMAINS, CODEX_SANDBOX_WRITE_PATHS};
 use crate::fs::permissions::state_root::{
     CODEX_AUTH_DENY_READ_PATH, CREDENTIAL_DENY_READ_PATHS, CREDENTIAL_FILE_DENY_READ_PATHS,
 };
@@ -21,6 +21,14 @@ pub(crate) fn mandatory_deny_read(codex_licensed: bool) -> Vec<&'static str> {
         .chain(CREDENTIAL_FILE_DENY_READ_PATHS)
         .chain(codex_auth)
         .collect()
+}
+
+/// Whether the session gets the legacy codex lane's grants (its state write
+/// paths, its hosts, a readable `auth.json`): the stage licenses codex and the
+/// configured backend is `Legacy`. A native worker runs outside the session's
+/// sandbox, so with `Native` the session needs none of them.
+fn codex_granted(config: &MergedSandboxConfig, backend: CodexBackend) -> bool {
+    config.implementers.includes_codex() && backend == CodexBackend::Legacy
 }
 
 /// Reject policy that cannot be represented without a sandbox escape.
@@ -46,13 +54,21 @@ pub(crate) fn validate_emittable(config: &MergedSandboxConfig) -> Result<()> {
 /// Effective OS-level read denials. Parent traversal is handled by worktree
 /// confinement; emitting it here can resolve against the user's home directory.
 pub(super) fn deny_read_patterns(config: &MergedSandboxConfig) -> Vec<String> {
+    deny_read_patterns_for(config, CodexBackend::Legacy)
+}
+
+/// [`deny_read_patterns`] for the configured codex `backend`.
+pub(super) fn deny_read_patterns_for(
+    config: &MergedSandboxConfig,
+    backend: CodexBackend,
+) -> Vec<String> {
     let mut seen = HashSet::new();
     config
         .filesystem
         .deny_read
         .iter()
         .map(String::as_str)
-        .chain(mandatory_deny_read(config.implementers.includes_codex()))
+        .chain(mandatory_deny_read(codex_granted(config, backend)))
         .map(str::trim)
         .filter(|path| !path.is_empty() && !path.contains("../"))
         .filter(|path| seen.insert((*path).to_string()))
@@ -60,8 +76,15 @@ pub(super) fn deny_read_patterns(config: &MergedSandboxConfig) -> Vec<String> {
         .collect()
 }
 
-/// Build the host sandbox portion of Claude's settings.
+/// Build the host sandbox portion of Claude's settings for the legacy codex
+/// backend; the settings entry points call [`sandbox_settings_for`].
+#[cfg(test)]
 pub(super) fn sandbox_settings(config: &MergedSandboxConfig) -> Value {
+    sandbox_settings_for(config, CodexBackend::Legacy)
+}
+
+/// [`sandbox_settings`] for the configured codex `backend`.
+pub(super) fn sandbox_settings_for(config: &MergedSandboxConfig, backend: CodexBackend) -> Value {
     let mut sandbox = json!({ "enabled": config.enabled });
     if config.enabled {
         sandbox["failIfUnavailable"] = json!(true);
@@ -70,10 +93,10 @@ pub(super) fn sandbox_settings(config: &MergedSandboxConfig) -> Value {
     // an absent key is indistinguishable from a key the reader has not looked for.
     sandbox["autoAllowBashIfSandboxed"] = json!(config.auto_allow);
     sandbox["allowUnsandboxedCommands"] = json!(config.allow_unsandboxed_escape);
-    if let Some(network) = network_settings(config) {
+    if let Some(network) = network_settings(config, backend) {
         sandbox["network"] = network;
     }
-    if let Some(filesystem) = filesystem_settings(config) {
+    if let Some(filesystem) = filesystem_settings(config, backend) {
         sandbox["filesystem"] = filesystem;
     }
     if config.linux.enable_weaker_nested {
@@ -82,13 +105,13 @@ pub(super) fn sandbox_settings(config: &MergedSandboxConfig) -> Value {
     sandbox
 }
 
-fn network_settings(config: &MergedSandboxConfig) -> Option<Value> {
+fn network_settings(config: &MergedSandboxConfig, backend: CodexBackend) -> Option<Value> {
     let mut network = json!({});
     let mut domains = config.network.allowed_domains.clone();
     domains.extend(config.network.additional_domains.clone());
     // The codex lane's own hosts follow the stage's licensed lanes, sparing a
     // licensed stage a mid-run domain decision it cannot answer.
-    if config.implementers.includes_codex() {
+    if codex_granted(config, backend) {
         for domain in CODEX_SANDBOX_DOMAINS {
             if !domains.iter().any(|existing| existing == domain) {
                 domains.push(domain.to_string());
@@ -128,9 +151,9 @@ fn push_unique(into: &mut Vec<String>, path: &str) {
 
 /// `allowWrite`, the OS-enforced, additive write grant. Plan entries reach it
 /// directly; package-manager caches are granted to every stage
-/// (`sandbox::package_caches`); codex state directories only when that lane is
-/// licensed.
-fn allow_write_settings(config: &MergedSandboxConfig) -> Vec<String> {
+/// (`sandbox::package_caches`); codex state directories only when the legacy codex
+/// lane is licensed (`codex_granted`).
+fn allow_write_settings(config: &MergedSandboxConfig, backend: CodexBackend) -> Vec<String> {
     let mut allow_write: Vec<String> = Vec::new();
     for path in config
         .filesystem
@@ -148,7 +171,7 @@ fn allow_write_settings(config: &MergedSandboxConfig) -> Vec<String> {
     for path in PACKAGE_MANAGER_CACHE_WRITE_PATHS {
         push_unique(&mut allow_write, path);
     }
-    if config.implementers.includes_codex() {
+    if codex_granted(config, backend) {
         for path in CODEX_SANDBOX_WRITE_PATHS {
             push_unique(&mut allow_write, path);
         }
@@ -156,9 +179,9 @@ fn allow_write_settings(config: &MergedSandboxConfig) -> Vec<String> {
     allow_write
 }
 
-fn filesystem_settings(config: &MergedSandboxConfig) -> Option<Value> {
+fn filesystem_settings(config: &MergedSandboxConfig, backend: CodexBackend) -> Option<Value> {
     let mut filesystem = json!({});
-    let deny_read = deny_read_patterns(config);
+    let deny_read = deny_read_patterns_for(config, backend);
     if !deny_read.is_empty() {
         filesystem["denyRead"] = json!(deny_read);
     }
@@ -178,7 +201,7 @@ fn filesystem_settings(config: &MergedSandboxConfig) -> Option<Value> {
     if !deny_write.is_empty() {
         filesystem["denyWrite"] = json!(deny_write);
     }
-    let allow_write = allow_write_settings(config);
+    let allow_write = allow_write_settings(config, backend);
     if !allow_write.is_empty() {
         filesystem["allowWrite"] = json!(allow_write);
     }
@@ -192,5 +215,8 @@ const fn host_supports_deny_read() -> bool {
     cfg!(any(target_os = "macos", target_os = "linux"))
 }
 
+#[cfg(test)]
+#[path = "policy_tests.rs"]
+mod native_policy_tests;
 #[cfg(test)]
 mod tests;

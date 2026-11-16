@@ -25,7 +25,7 @@ use crate::telemetry::{append_record, TelemetryEvent, TelemetryRecord};
 use crate::verify::transitions::{load_stage, update_stage};
 
 use super::commit::{self, CommitSite};
-use super::{check, complete};
+use super::{check, complete, worker_control};
 use super::{InboxHost, Settle};
 
 #[path = "stage_request_dispatch.rs"]
@@ -116,6 +116,9 @@ pub(super) fn apply(host: &mut dyn InboxHost, record: &Session, admitted: Admitt
         }
         RequestPayload::Complete(request) => {
             complete::apply_complete(host, stage_id, record, &request, request_id)
+        }
+        RequestPayload::WorkerControl(request) => {
+            worker_control::apply_worker_control(host, stage_id, record, request)
         }
     }
 }

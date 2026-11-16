@@ -126,7 +126,7 @@ out=$(run_hook "$MEMORY" LOOM_BIN="$TMP/missing/loom") || fail "missing binary e
 [[ "$(context_of "$out")" == *"was not found"* ]] || fail "missing binary: $out"
 
 # 10. Every hook that runs loom pins PATH before any other statement.
-for hook in loom-relay.sh loom-control-complete.sh ask-user-pre.sh ask-user-post.sh session-end.sh \
+for hook in loom-relay.sh loom-control-complete.sh loom-control-subagents.sh ask-user-pre.sh ask-user-post.sh session-end.sh \
 	pre-compact.sh user-prompt-context.sh codex-apply-patch.sh post-tool-use.sh _read_discipline.sh \
 	_read_ledger.sh spawn-guard.sh subagent-start.sh; do
 	first=""

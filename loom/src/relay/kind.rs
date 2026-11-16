@@ -1,4 +1,4 @@
-//! The twelve request kinds a CLI invocation can relay to the daemon.
+//! The thirteen request kinds a CLI invocation can relay to the daemon.
 
 use anyhow::bail;
 use serde::{Deserialize, Serialize};
@@ -22,17 +22,20 @@ pub enum RequestKind {
     Commit,
     Check,
     Complete,
+    #[serde(rename = "subagents:control")]
+    WorkerControl,
 }
 
 impl RequestKind {
-    /// All twelve kinds, in the per-writer matrix's order
+    /// All thirteen kinds, in the per-writer matrix's order
     /// (`doc/plans/PLAN-loom-state-confinement.md` section 5, then
     /// `freeze-contracts` from verification v2's contract phase,
     /// `file-dispute` from its dispute kinds, `commit`, the staged index the
     /// daemon commits for a session, `check`, a host verification job, and
     /// `complete`, the host job whose passing run lets the daemon complete
-    /// the stage).
-    pub fn all() -> [RequestKind; 12] {
+    /// the stage), and `subagents:control`, the lead's start, message and
+    /// cancel of a native Codex worker.
+    pub fn all() -> [RequestKind; 13] {
         [
             RequestKind::Memory,
             RequestKind::Block,
@@ -46,10 +49,11 @@ impl RequestKind {
             RequestKind::Commit,
             RequestKind::Check,
             RequestKind::Complete,
+            RequestKind::WorkerControl,
         ]
     }
 
-    /// The nine kinds only a session's lead process may relay; the relay
+    /// The ten kinds only a session's lead process may relay; the relay
     /// hook drops these from a teammate before an inbox entry is ever
     /// written, and the daemon's drain refuses one that arrives anyway.
     pub fn is_control(self) -> bool {
@@ -64,6 +68,7 @@ impl RequestKind {
                 | RequestKind::FileDispute
                 | RequestKind::Commit
                 | RequestKind::Complete
+                | RequestKind::WorkerControl
         )
     }
 
@@ -81,6 +86,7 @@ impl RequestKind {
             RequestKind::Commit => "commit",
             RequestKind::Check => "check",
             RequestKind::Complete => "complete",
+            RequestKind::WorkerControl => "subagents:control",
         }
     }
 }
@@ -127,7 +133,7 @@ mod tests {
     }
 
     #[test]
-    fn is_control_matches_the_nine_control_kinds() {
+    fn is_control_matches_the_ten_control_kinds() {
         let control: Vec<RequestKind> = RequestKind::all()
             .into_iter()
             .filter(|kind| kind.is_control())
@@ -144,6 +150,7 @@ mod tests {
                 RequestKind::FileDispute,
                 RequestKind::Commit,
                 RequestKind::Complete,
+                RequestKind::WorkerControl,
             ]
         );
     }
@@ -164,6 +171,19 @@ mod tests {
         assert_eq!(
             "commit".parse::<RequestKind>().unwrap(),
             RequestKind::Commit
+        );
+    }
+
+    #[test]
+    fn worker_control_is_subagents_control_on_the_wire() {
+        assert_eq!(RequestKind::WorkerControl.to_string(), "subagents:control");
+        assert_eq!(
+            "subagents:control".parse::<RequestKind>().unwrap(),
+            RequestKind::WorkerControl
+        );
+        assert_eq!(
+            serde_json::to_value(RequestKind::WorkerControl).unwrap(),
+            serde_json::json!("subagents:control")
         );
     }
 

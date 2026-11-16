@@ -36,6 +36,8 @@ pub enum MatrixVerdict {
 /// `file-dispute` (DESIGN D15) disputes a plan v2 stage's findings, contract,
 /// integrity events or failing impact tests; only a `Stage` session may relay
 /// it.
+/// `subagents:control` starts, messages and cancels a native Codex worker;
+/// only a `Stage` session may relay it.
 ///
 /// `commit` hands the daemon a session's staged index to commit. The three
 /// sessions that write a branch relay it: `Stage` (its stage branch),
@@ -55,7 +57,7 @@ pub fn verdict(session: SessionType, kind: RequestKind) -> MatrixVerdict {
         RequestKind::Verdict => policy_verdict(session),
         RequestKind::Telemetry => policy_telemetry(session),
         RequestKind::FreezeContracts => policy_freeze_contracts(session),
-        RequestKind::FileDispute => policy_file_dispute(session),
+        RequestKind::FileDispute | RequestKind::WorkerControl => policy_file_dispute(session),
         RequestKind::Commit => policy_commit(session),
         RequestKind::Check => policy_check(session),
     }

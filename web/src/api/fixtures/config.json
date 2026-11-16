@@ -764,6 +764,28 @@
         "value": "high",
         "source": "default"
       }
+    },
+    {
+      "name": "codex.backend",
+      "help": "Codex worker lane for stage leads: legacy forwarders or native workers (default: legacy)",
+      "kind": {
+        "type": "enum",
+        "variants": ["legacy", "native"]
+      },
+      "scopes": ["user", "project"],
+      "default": "legacy",
+      "user": {
+        "value": "legacy",
+        "set": false
+      },
+      "project": {
+        "value": "legacy",
+        "set": false
+      },
+      "effective": {
+        "value": "legacy",
+        "source": "default"
+      }
     }
   ]
 }

@@ -7,7 +7,7 @@
 //! backend `loom run` defaults to, the default context ceiling, the
 //! Claude/Codex models and reasoning efforts `loom pressure` spawns absent a
 //! CLI flag, and the model and reasoning effort each stage type's main-agent
-//! session launches with absent a plan field. `loom config`
+//! session launches with absent a plan field, and which Codex worker backend stage leads use. `loom config`
 //! (`crate::commands::config`) is the only writer; every other consumer
 //! reads through [`UserConfig::load`], which never fails.
 //!
@@ -68,10 +68,12 @@ use crate::models::session::SessionBackendKind;
 pub mod keys;
 pub mod value;
 
+pub use codex::CODEX_BACKENDS;
 use keys::KeySpec;
 pub use plan::SUMMARY_BACKENDS;
 pub use value::ConfigValue;
 
+mod codex;
 mod models;
 mod parse;
 mod plan;
@@ -140,6 +142,7 @@ impl std::fmt::Display for Origin {
 /// need to know whether the user config actually set a value.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct UserConfig {
+    codex: codex::CodexSection,
     update_check: Option<bool>,
     update_check_interval_hours: Option<u32>,
     terminal_backend: Option<SessionBackendKind>,
@@ -288,6 +291,7 @@ impl UserConfig {
 pub(crate) fn parse_document(text: &str) -> Result<UserConfig> {
     let doc: DocumentMut = text.parse().context("invalid TOML")?;
     Ok(UserConfig {
+        codex: codex::CodexSection::parse(&doc)?,
         update_check: parse::get_bool(&doc, "update", "check")?,
         update_check_interval_hours: parse::get_u32(&doc, "update", "check_interval_hours")?,
         terminal_backend: parse::get_backend(&doc)?,

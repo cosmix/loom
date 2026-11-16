@@ -26,4 +26,4 @@ pub(crate) use merge_resolver::{
 };
 pub use package_caches::PACKAGE_MANAGER_CACHE_WRITE_PATHS;
 pub use settings::{apply_default_mode, generate_settings_json};
-pub(crate) use settings::{build_settings, target_is_worktree, validate_emittable, SettingsTarget};
+pub(crate) use settings::{target_is_worktree, validate_emittable, SettingsTarget};

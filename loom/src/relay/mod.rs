@@ -12,6 +12,7 @@ mod kind;
 mod line;
 mod matrix;
 mod payload;
+mod payload_native;
 mod scratch;
 mod ticket;
 
@@ -22,6 +23,7 @@ pub use matrix::{verdict, MatrixVerdict};
 pub use payload::{
     decode_payload, CommitPayload, HandoffRequest, HostJobRequest, RequestPayload, VerdictRequest,
 };
+pub use payload_native::WorkerControlPayload;
 pub use scratch::{
     ensure_dir_0700, scratch_root, scratch_root_from_env, session_dir, validate_session_dir,
     Platform,

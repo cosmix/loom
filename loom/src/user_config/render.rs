@@ -18,6 +18,9 @@ impl UserConfig {
         if let Some(resolved) = self.plan_value_of(spec) {
             return resolved;
         }
+        if let Some(resolved) = self.codex_value_of(spec) {
+            return resolved;
+        }
         if let Some(resolved) = self.pressure_value_of(spec) {
             return resolved;
         }
@@ -54,13 +57,14 @@ impl UserConfig {
     }
 
     /// The fully resolved config (every key, its effective value) as TOML,
-    /// sections in `[context]`, `[models]`, `[plan]`, `[pressure]`, `[terminal]`,
+    /// sections in `[codex]`, `[context]`, `[models]`, `[plan]`, `[pressure]`, `[terminal]`,
     /// `[update]` order — the shape `loom config --print` renders. Composed
     /// from the private `models_toml`, `plan_toml` and `pressure_toml` helpers rather
     /// than growing this `format!` further.
     pub fn to_toml_string(&self) -> String {
         format!(
-            "[context]\nceiling_tokens = {}\n\n{}\n{}\n{}\n[terminal]\nbackend = {}\n\n[update]\ncheck = {}\ncheck_interval_hours = {}\n",
+            "{}\n[context]\nceiling_tokens = {}\n\n{}\n{}\n{}\n[terminal]\nbackend = {}\n\n[update]\ncheck = {}\ncheck_interval_hours = {}\n",
+            self.codex_toml(),
             ConfigValue::Number(self.context_ceiling_tokens()).to_toml_literal(),
             self.models_toml(),
             self.plan_toml(),

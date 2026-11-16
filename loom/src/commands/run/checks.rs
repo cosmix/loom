@@ -109,13 +109,12 @@ fn advisory_sccache_preflight() {
 
 /// Advisory Codex lane preflight — never aborts startup.
 ///
-/// When any stage licenses the codex lane but the codex CLI or its plugin's
-/// companion runtime is missing on this machine, print ONE warning naming the
-/// stages. The stage signals independently route terra- and sol-tier work to sonnet and
+/// When the configured Codex lane is unavailable, print ONE warning naming
+/// the licensed stages. The stage signals route terra- and sol-tier work to sonnet and
 /// boilerplate and simple unit tests to haiku (the fallback branch of `format_codex_implementers_section`),
 /// so this is notice, not enforcement.
-pub fn advisory_codex_lane_preflight(repo_root: &Path) {
-    let Ok(stages) = crate::verify::transitions::list_all_stages(repo_root) else {
+pub fn advisory_codex_lane_preflight(work_dir: &Path) {
+    let Ok(stages) = crate::verify::transitions::list_all_stages(work_dir) else {
         return;
     };
     let codex_stage_ids: Vec<&str> = stages
@@ -126,13 +125,20 @@ pub fn advisory_codex_lane_preflight(repo_root: &Path) {
     if codex_stage_ids.is_empty() {
         return;
     }
-    if let Err(reason) = crate::codex::codex_lane_status() {
-        eprintln!(
-            "codex lane licensed for stage(s) {} but unavailable ({reason}) - \
-             terra- and sol-tier work will fall back to sonnet, and boilerplate and simple unit tests to haiku.",
-            codex_stage_ids.join(", ")
-        );
-        return;
+    match crate::codex::codex_lane(work_dir) {
+        crate::codex::CodexLane::Unavailable(reason) => {
+            eprintln!(
+                "{}",
+                lane_advisory(
+                    &codex_stage_ids,
+                    crate::codex::configured_backend(work_dir),
+                    &reason,
+                )
+            );
+            return;
+        }
+        crate::codex::CodexLane::Native => return,
+        crate::codex::CodexLane::Legacy => {}
     }
     // Lane installed — but on Linux codex's own workspace-write sandbox must
     // exclude /tmp: it masks `.git` under every writable root, and inside the
@@ -151,6 +157,14 @@ pub fn advisory_codex_lane_preflight(repo_root: &Path) {
                 );
             }
         }
+    }
+}
+
+fn lane_advisory(stage_ids: &[&str], backend: crate::codex::CodexBackend, reason: &str) -> String {
+    let ids = stage_ids.join(", ");
+    match backend {
+        crate::codex::CodexBackend::Legacy => format!("codex lane licensed for stage(s) {ids} but unavailable ({reason}) - terra- and sol-tier work will fall back to sonnet, and boilerplate and simple unit tests to haiku."),
+        crate::codex::CodexBackend::Native => format!("codex lane licensed for stage(s) {ids} but codex.backend = native is unavailable ({reason}) - terra- and sol-tier work will fall back to sonnet, and boilerplate and simple unit tests to haiku; the legacy forwarder lane is not used while codex.backend is native."),
     }
 }
 
@@ -246,4 +260,23 @@ pub fn check_for_uncommitted_changes(repo_root: &Path) -> Result<()> {
         bail!("Uncommitted changes in repository - commit or stash before running loom");
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::lane_advisory;
+    use crate::codex::CodexBackend;
+
+    #[test]
+    fn lane_advisory_describes_the_configured_backend() {
+        let ids = &["one", "two"];
+        assert_eq!(
+            lane_advisory(ids, CodexBackend::Legacy, "missing"),
+            "codex lane licensed for stage(s) one, two but unavailable (missing) - terra- and sol-tier work will fall back to sonnet, and boilerplate and simple unit tests to haiku."
+        );
+        assert_eq!(
+            lane_advisory(ids, CodexBackend::Native, "missing"),
+            "codex lane licensed for stage(s) one, two but codex.backend = native is unavailable (missing) - terra- and sol-tier work will fall back to sonnet, and boilerplate and simple unit tests to haiku; the legacy forwarder lane is not used while codex.backend is native."
+        );
+    }
 }

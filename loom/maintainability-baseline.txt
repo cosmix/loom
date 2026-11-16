@@ -95,7 +95,6 @@ function src/plan/schema/tests/security_policy_tests.rs rejects_misspelled_neste
 function src/plan/schema/validation.rs check_cross_stage_wiring_coverage 66
 function src/plan/schema/validation.rs validate 357
 function src/plan/schema/validation.rs validate_structural_preflight 196
-function src/sandbox/settings.rs generate_settings_json 106
 function src/sandbox/settings/tests.rs every_stage_type_can_write_the_knowledge_directory 56
 function src/sandbox/settings/tests.rs test_build_settings_adds_resolved_work_symlink_permissions_legacy_layout 92
 function src/sandbox/settings/tests.rs test_build_settings_does_not_carry_forward_existing_allow 63

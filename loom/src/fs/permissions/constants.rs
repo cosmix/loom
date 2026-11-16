@@ -61,6 +61,11 @@ pub const HOOK_POST_TOOL_USE: &str = include_str!("../../../../loom-hooks/post-t
 pub const HOOK_LOOM_CONTROL_COMPLETE: &str =
     include_str!("../../../../loom-hooks/loom-control-complete.sh");
 
+/// Trusted PreToolUse pin for the relayed native worker commands
+/// (`loom subagents start`, `message`, `cancel`).
+pub const HOOK_LOOM_CONTROL_SUBAGENTS: &str =
+    include_str!("../../../../loom-hooks/loom-control-subagents.sh");
+
 /// Trusted PostToolUse producer for completed direct Codex forwards.
 pub const HOOK_CODEX_FORWARD_RESULT: &str =
     include_str!("../../../../loom-hooks/codex-forward-result.sh");
@@ -223,6 +228,7 @@ pub const LOOM_HOOKS: &[(&str, &str)] = &[
     // Session lifecycle hooks
     ("post-tool-use.sh", HOOK_POST_TOOL_USE),
     ("loom-control-complete.sh", HOOK_LOOM_CONTROL_COMPLETE),
+    ("loom-control-subagents.sh", HOOK_LOOM_CONTROL_SUBAGENTS),
     ("loom-relay.sh", HOOK_LOOM_RELAY),
     ("codex-forward-result.sh", HOOK_CODEX_FORWARD_RESULT),
     ("session-start.sh", HOOK_SESSION_START),
