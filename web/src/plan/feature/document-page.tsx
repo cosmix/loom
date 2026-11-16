@@ -45,8 +45,9 @@ function SourcePage(props: { feature: string; path: string; anchor?: string | nu
   const tree = useAtomValue(treeAtom);
   return (
     <div className="plan-document">
-      <SourceTrace key={path} feature={feature} path={path} />
-      <ReadingColumn key={path} path={repoRel(path)} anchor={anchor} tree={tree} />
+      {/* Both restart on a new path; siblings must not share the one key. */}
+      <SourceTrace key={`trace:${path}`} feature={feature} path={path} />
+      <ReadingColumn key={`column:${path}`} path={repoRel(path)} anchor={anchor} tree={tree} />
     </div>
   );
 }
