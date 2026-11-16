@@ -15,6 +15,7 @@ use super::model::{
     resolve_claude_transcript, BoundWorker, CodexAuthority, EvidenceReference, WaitIdentity,
     WorkerKind, WorkerSpec,
 };
+use super::native::NativeSet;
 
 pub struct IdentityScope {
     pub work_dir: PathBuf,
@@ -46,10 +47,19 @@ pub fn resolve(
     let starts = StartedAgentTypeIndex::load(Some(&scope.work_dir));
     let authorizations =
         super::codex_binding::load_wait_authorizations(&scope.work_dir, &scope.stage_id)?;
-    let parent = common_parent(scope, &specs, requested_parent, &starts, &authorizations)?;
+    let natives = NativeSet::load(scope, &specs)?;
+    let legacy = natives.legacy(&specs);
+    let parent = if legacy.is_empty() {
+        NativeSet::parent_when_all_native(scope, requested_parent)?
+    } else {
+        common_parent(scope, &legacy, requested_parent, &starts, &authorizations)?
+    };
     let mut bound = Vec::with_capacity(specs.len());
     for spec in specs {
-        bound.push(bind_worker(scope, spec, &parent, &starts, &authorizations)?);
+        bound.push(match natives.bind(scope, &spec)? {
+            Some(worker) => worker,
+            None => bind_worker(scope, spec, &parent, &starts, &authorizations)?,
+        });
     }
     Ok(WaitIdentity {
         canonical_repo: scope.canonical_repo.clone(),
@@ -269,7 +279,8 @@ fn bind_claude(
     };
     Ok(BoundWorker {
         worker: spec.clone(),
-        lifecycle_identity: identity,
+        lifecycle_identity: Some(identity),
+        native_invocation: None,
         authority: None,
         evidence: vec![
             EvidenceReference {
@@ -320,7 +331,8 @@ fn bind_codex(
     )?;
     Ok(BoundWorker {
         worker: spec,
-        lifecycle_identity: execution.identity,
+        lifecycle_identity: Some(execution.identity),
+        native_invocation: None,
         authority: Some(CodexAuthority::from(authorization.clone())),
         evidence: vec![
             EvidenceReference {

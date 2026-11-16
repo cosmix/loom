@@ -29,6 +29,7 @@ use crate::fs::session_files::load_session_exact;
 use crate::handoff::completion::content::VerificationSnapshot;
 use crate::models::session::{Session, SessionStatus, SessionType};
 use crate::models::stage::{Stage, StageStatus, StageType};
+use crate::native_worker::index::stage_disposition;
 use crate::stage_service::ownership::owns_stage_as;
 use crate::verify::transitions::{load_stage, update_stage};
 
@@ -315,6 +316,9 @@ pub(super) fn verify_bound_run(
     record: &JobRecord,
     result: &JobResult,
 ) -> Result<()> {
+    if let Some(blocker) = stage_disposition(work_dir, &stage.id).blocker(&stage.id) {
+        return Err(binding_failed(blocker));
+    }
     if !result.passed || result.head != record.head {
         return Err(binding_failed("the run does not verify the requested head"));
     }

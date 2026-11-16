@@ -10,6 +10,9 @@
 //! located once per poll instead of twice; see that function's doc for its
 //! process-liveness and log-freshness evidence.
 //!
+//! A native Codex worker is read from its own record by `native::outcome_for`,
+//! which also decides its stall; this module never sees one.
+//!
 //! The evidence this module produces is deliberately weaker than a terminal
 //! record, which is why it produces its own [`WorkerOutcome::Stalled`]
 //! (exit 6) rather than `Failed`.
@@ -39,19 +42,20 @@ pub(super) fn detect(
     work_dir: &Path,
     budget: Duration,
 ) -> Option<WorkerOutcome> {
-    match &worker.lifecycle_identity {
-        WorkerIdentity::ClaudeSubagent {
+    match worker.lifecycle_identity.as_ref() {
+        Some(WorkerIdentity::ClaudeSubagent {
             agent_id,
             transcript_path,
             ..
-        } => claude_stall(transcript_path, agent_id, work_dir, budget)
+        }) => claude_stall(transcript_path, agent_id, work_dir, budget)
             .map(|detail| WorkerOutcome::Stalled(format!("claude worker {agent_id}: {detail}"))),
         // A companion job is classified by `evidence::LifecycleEvidence::codex_outcome`, which calls
         // `codex_lifecycle::companion_outcome_with_progress` directly so the job
         // is located once per poll instead of twice. A direct Codex invocation
         // is killed by its own supervisor at 1500s, and a teammate has no
-        // transcript of its own to measure.
-        WorkerIdentity::Codex { .. } | WorkerIdentity::ClaudeTeammate { .. } => None,
+        // transcript of its own to measure. A native Codex worker has no
+        // lifecycle identity: its stall comes from `native::outcome_for`.
+        Some(WorkerIdentity::Codex { .. } | WorkerIdentity::ClaudeTeammate { .. }) | None => None,
     }
 }
 

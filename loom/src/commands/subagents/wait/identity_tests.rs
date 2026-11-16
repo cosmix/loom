@@ -2,6 +2,7 @@ use std::ffi::OsString;
 use std::fs;
 
 use super::*;
+use crate::commands::subagents::wait::native_tests::seed;
 use crate::commands::subagents::wait::parent_scan::candidates_from_entries;
 
 const FIRST: &str = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
@@ -124,4 +125,105 @@ fn mixed_workers_intersect_parents_and_explicit_selection_still_checks_ownership
         common_parent(&scope, &[claude()], None, &starts, &[]).unwrap(),
         FIRST
     );
+}
+
+fn native() -> WorkerSpec {
+    "codex:unit-n".parse().unwrap()
+}
+
+fn seed_native(scope: &IdentityScope) -> std::path::PathBuf {
+    seed(&scope.work_dir, &scope.canonical_worktree, "unit-n", 1, &[])
+}
+
+#[test]
+fn mixed_claude_and_native_set_binds_both() {
+    let (_dir, scope, _starts) = fixture();
+    let subagents = scope
+        .projects_root
+        .join(project_slug(&scope.canonical_worktree))
+        .join(FIRST)
+        .join("subagents");
+    fs::create_dir_all(&subagents).unwrap();
+    fs::write(subagents.join("agent-agent-a.jsonl"), "").unwrap();
+    seed_native(&scope);
+
+    let identity = resolve(&scope, vec![claude(), native()], Some(FIRST)).unwrap();
+
+    assert_eq!(identity.parent_session_id, FIRST);
+    let [claude, native] = identity.workers.as_slice() else {
+        panic!("expected two workers: {:?}", identity.workers);
+    };
+    assert!(claude.lifecycle_identity.is_some() && claude.native_invocation.is_none());
+    assert!(native.lifecycle_identity.is_none() && native.native_invocation.is_some());
+}
+
+#[test]
+fn all_native_set_uses_the_loom_session_as_parent() {
+    let (_dir, scope, _starts) = fixture();
+    seed_native(&scope);
+
+    let identity = resolve(&scope, vec![native()], None).unwrap();
+    assert_eq!(identity.parent_session_id, scope.loom_session_id);
+
+    let error = resolve(&scope, vec![native()], Some(FIRST)).unwrap_err();
+    assert!(
+        error.to_string().contains("native Codex worker"),
+        "{error:#}"
+    );
+}
+
+#[test]
+fn unit_without_a_record_binds_through_the_authorization_row() {
+    let (_dir, scope, _starts) = fixture();
+    let spec: WorkerSpec = "codex:unit-a".parse().unwrap();
+    let natives = NativeSet::load(&scope, std::slice::from_ref(&spec)).unwrap();
+    assert!(natives.bind(&scope, &spec).unwrap().is_none());
+    assert_eq!(
+        natives.legacy(std::slice::from_ref(&spec)),
+        vec![spec.clone()]
+    );
+
+    let row = serde_json::json!({
+        "v": 2,
+        "ts": "2026-09-14T10:00:00.000Z",
+        "stage_id": scope.stage_id,
+        "session_id": scope.loom_session_id,
+        "parent_session_id": SECOND,
+        "forwarder_agent_id": "agent-a",
+        "tool_use_id": "tool-a",
+        "unit_id": "unit-a",
+        "invocation_id": "inv-0123456789abcdef0123456789abcdef",
+        "model": "gpt-6.1-terra",
+        "effort": "xhigh",
+        "workspace_root": scope.canonical_worktree,
+        "companion_version": "1.0.6",
+        "companion_path": scope.canonical_repo.join("companion.mjs"),
+        "state_root": scope.canonical_repo.join("state"),
+    });
+    let ledger = scope.work_dir.join("subagents/stage-a");
+    fs::write(ledger.join("codex.jsonl"), format!("{row}\n")).unwrap();
+
+    // The legacy binding ran: it reached the execution lookup, which finds
+    // no companion job, journal row or receipt for the authorization.
+    let error = resolve(&scope, vec![spec], None).unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("expected exactly one Codex execution"),
+        "{error:#}"
+    );
+}
+
+#[test]
+fn corrupt_native_record_is_not_a_fallback() {
+    let (_dir, scope, _starts) = fixture();
+    let dir = seed_native(&scope);
+    let mut events = fs::OpenOptions::new()
+        .append(true)
+        .open(dir.join("events.jsonl"))
+        .unwrap();
+    std::io::Write::write_all(&mut events, b"not json\n").unwrap();
+
+    let error = NativeSet::load(&scope, &[native()]).err().unwrap();
+    assert!(error.to_string().contains("unreadable"), "{error:#}");
 }

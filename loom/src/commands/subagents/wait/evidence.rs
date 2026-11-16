@@ -9,7 +9,7 @@ use crate::subagent_lifecycle::{CodexExecution, LifecycleState, WorkerIdentity, 
 
 use super::engine::EvidenceSource;
 use super::model::{BoundWorker, WorkerKind};
-use super::stall;
+use super::{native, stall};
 
 /// Filesystem-backed lifecycle evidence reader.
 pub struct LifecycleEvidence {
@@ -38,6 +38,9 @@ impl EvidenceSource for LifecycleEvidence {
         workers
             .iter()
             .map(|worker| {
+                if worker.native_invocation.is_some() {
+                    return self.native_poll(worker);
+                }
                 let outcome = match &index {
                     Ok(index) => self.outcome_from_index(worker, index),
                     Err(error) => {
@@ -55,6 +58,18 @@ impl EvidenceSource for LifecycleEvidence {
 }
 
 impl LifecycleEvidence {
+    /// A native worker is read from its own record, never the lifecycle
+    /// journal. Every native `Unknown` is final: nothing later changes it, so
+    /// the wait ends with exit 5 instead of holding to its deadline.
+    fn native_poll(&self, worker: &BoundWorker) -> (WorkerOutcome, bool) {
+        let outcome = match native::state_of(&self.work_dir, worker) {
+            Ok(state) => native::outcome_for(&state, chrono::Utc::now(), self.stall_budget),
+            Err(reason) => WorkerOutcome::Unknown(reason),
+        };
+        let settled = matches!(outcome, WorkerOutcome::Unknown(_));
+        (outcome, settled)
+    }
+
     fn outcome_from_index(
         &self,
         worker: &BoundWorker,
@@ -76,7 +91,10 @@ impl LifecycleEvidence {
         worker: &BoundWorker,
         index: &crate::subagent_lifecycle::LifecycleIndex,
     ) -> WorkerOutcome {
-        match &worker.lifecycle_identity {
+        let Some(identity) = worker.lifecycle_identity.as_ref() else {
+            return WorkerOutcome::Unknown("worker has no lifecycle identity".into());
+        };
+        match identity {
             WorkerIdentity::ClaudeSubagent {
                 stage_id,
                 loom_session_id,
@@ -95,14 +113,14 @@ impl LifecycleEvidence {
                 if matches!(
                     &outcome,
                     WorkerOutcome::Unknown(reason) if reason == "no matching lifecycle evidence"
-                ) && missing_or_idle_claude_evidence(index, &worker.lifecycle_identity)
+                ) && missing_or_idle_claude_evidence(index, identity)
                 {
                     WorkerOutcome::Active
                 } else {
                     outcome
                 }
             }
-            WorkerIdentity::ClaudeTeammate { .. } => index.outcome(&worker.lifecycle_identity),
+            WorkerIdentity::ClaudeTeammate { .. } => index.outcome(identity),
             WorkerIdentity::Codex { .. } => {
                 WorkerOutcome::Unknown("Claude worker has a Codex lifecycle identity".into())
             }
@@ -114,18 +132,19 @@ impl LifecycleEvidence {
         worker: &BoundWorker,
         index: &crate::subagent_lifecycle::LifecycleIndex,
     ) -> WorkerOutcome {
+        let Some(identity) = worker.lifecycle_identity.as_ref() else {
+            return WorkerOutcome::Unknown("worker has no lifecycle identity".into());
+        };
         let Some(authority) = &worker.authority else {
             return WorkerOutcome::Unknown("missing Codex authority".into());
         };
-        match &worker.lifecycle_identity {
+        match identity {
             WorkerIdentity::Codex {
                 execution: CodexExecution::Companion { .. },
                 ..
             } => {
-                let journal = index.outcome(&worker.lifecycle_identity);
-                if terminal_outcome(&journal)
-                    || has_exact_terminal_record(index, &worker.lifecycle_identity)
-                {
+                let journal = index.outcome(identity);
+                if terminal_outcome(&journal) || has_exact_terminal_record(index, identity) {
                     journal
                 } else {
                     crate::codex_lifecycle::companion_outcome_with_progress(
@@ -139,7 +158,7 @@ impl LifecycleEvidence {
             WorkerIdentity::Codex {
                 execution: CodexExecution::Direct { .. },
                 ..
-            } => index.outcome(&worker.lifecycle_identity),
+            } => index.outcome(identity),
             _ => WorkerOutcome::Unknown("Codex worker has a non-Codex lifecycle identity".into()),
         }
     }
@@ -219,15 +238,18 @@ fn unknown_settled(
     index: &crate::subagent_lifecycle::LifecycleIndex,
     worker: &BoundWorker,
 ) -> bool {
+    let Some(identity) = &worker.lifecycle_identity else {
+        return false;
+    };
     worker.worker.kind == WorkerKind::Codex
         && matches!(
-            &worker.lifecycle_identity,
+            identity,
             WorkerIdentity::Codex {
                 execution: CodexExecution::Direct { .. },
                 ..
             }
         )
-        && has_exact_record(index, &worker.lifecycle_identity, false, |state| {
+        && has_exact_record(index, identity, false, |state| {
             state == LifecycleState::Unknown
         })
 }

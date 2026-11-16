@@ -84,6 +84,11 @@ fn discover_with(
         .into_iter()
         .map(|(stage, thread)| (stage, thread, None));
     stage_threads.extend(authorized);
+    for stage in &stages {
+        for thread in crate::native_worker::index::stage_threads(work_root, stage) {
+            stage_threads.push(((*stage).to_owned(), thread.thread_id, None));
+        }
+    }
     let mut seen = HashSet::new();
     stage_threads.retain(|(_, thread, _)| seen.insert(thread.clone()));
     resolve_threads(threads, &stage_threads, codex_sessions_root, now);
@@ -314,3 +319,7 @@ mod authorized_tests;
 #[cfg(test)]
 #[path = "discover_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "discover_native_tests.rs"]
+mod native_tests;

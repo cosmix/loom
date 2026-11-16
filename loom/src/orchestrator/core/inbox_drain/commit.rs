@@ -120,6 +120,12 @@ fn prepare(site: &CommitSite<'_>) -> Result<Prepared, String> {
 fn prepare_stage(site: &CommitSite<'_>) -> Result<Prepared, String> {
     let stage = require_owner(site.work_dir, site.stage_id, site.record)?;
     require_executing(&stage)?;
+    if let Some(blocker) =
+        crate::native_worker::index::stage_disposition(site.work_dir, site.stage_id)
+            .blocker(site.stage_id)
+    {
+        return Err(blocker);
+    }
     Ok(Prepared {
         git: pinned_worktree(site.repo_root, &stage)?,
         scope: CommitScope::StageBranch {
@@ -296,6 +302,39 @@ fn attest_knowledge_commit(work_dir: &Path, scope: &CommitScope, from: &str, to:
             reference = %reference,
             error = %format!("{error:#}"),
             "Could not attest a knowledge commit; the target guard holds it for the operator"
+        );
+    }
+}
+
+#[cfg(test)]
+mod native_gate_tests {
+    use super::*;
+    use crate::models::session::SessionStatus;
+    use crate::verify::transitions::{create_stage, load_stage};
+
+    #[test]
+    fn daemon_commit_refuses_active_worker() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let work = temp.path();
+        let mut session = Session::new();
+        session.status = SessionStatus::Running;
+        let mut stage = Stage::new("s1".into(), None);
+        stage.id = "s1".into();
+        stage.status = StageStatus::Executing;
+        stage.session = Some(session.id.clone());
+        create_stage(&stage, work).unwrap();
+        crate::commands::stage::native_gate::tests::seed_active_worker(work, "s1", "unit");
+        let site = CommitSite {
+            work_dir: work,
+            repo_root: work,
+            stage_id: "s1",
+            record: &session,
+        };
+        let error = prepare_stage(&site).err().unwrap();
+        assert!(error.contains("running native Codex workers"));
+        assert_eq!(
+            load_stage("s1", work).unwrap().status,
+            StageStatus::Executing
         );
     }
 }

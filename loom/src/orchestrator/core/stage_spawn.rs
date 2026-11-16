@@ -243,7 +243,7 @@ impl Orchestrator {
         handover: bool,
     ) {
         let err_msg = format!("Failed to spawn session for stage {stage_id}: {spawn_err:#}");
-        if !handover {
+        if spawn_cleanup_allowed(&self.config.work_dir, stage_id, handover) {
             // Remove orphan resources so a retry can start clean.
             // Worktree — best-effort force-removal; ignore "not found" etc.
             let _ = git::remove_worktree(stage_id, &self.config.repo_root, true);
@@ -301,6 +301,20 @@ impl Orchestrator {
     }
 }
 
+/// Whether a failed spawn's worktree and branch may be deleted.
+fn spawn_cleanup_allowed(work_dir: &Path, stage_id: &str, handover: bool) -> bool {
+    if handover {
+        return false;
+    }
+    match crate::native_worker::index::stage_disposition(work_dir, stage_id).blocker(stage_id) {
+        Some(blocker) => {
+            eprintln!("Warning: keeping the worktree of stage '{stage_id}': {blocker}");
+            false
+        }
+        None => true,
+    }
+}
+
 /// Refresh the stage's source-graph overlay BEFORE the signal is generated:
 /// the Knowledge Brief embedded in the signal is built from the overlay, so a
 /// stale overlay would brief the agent from the pre-stage tree. This mirrors
@@ -346,5 +360,20 @@ fn print_manual_start(
         work_dir,
     ) {
         println!("{line}");
+    }
+}
+
+#[cfg(test)]
+mod native_gate_tests {
+    use super::*;
+
+    #[test]
+    fn failed_spawn_keeps_worktree_while_worker_runs() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let work = temp.path();
+        assert!(spawn_cleanup_allowed(work, "s1", false));
+        assert!(!spawn_cleanup_allowed(work, "s1", true));
+        crate::commands::stage::native_gate::tests::seed_active_worker(work, "s1", "unit");
+        assert!(!spawn_cleanup_allowed(work, "s1", false));
     }
 }

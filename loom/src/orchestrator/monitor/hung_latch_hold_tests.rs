@@ -133,6 +133,24 @@ fn stage() -> Stage {
     }
 }
 
+#[test]
+fn silence_is_held_while_a_native_worker_is_active() {
+    let temp = TempDir::new().unwrap();
+    let mut session = Session::new();
+    session.stage_id = Some("stage-1".into());
+    let watcher = HeartbeatWatcher::new();
+    let mut detection = Detection::new();
+    assert_ne!(
+        detection.silence_completion_line(&session, Some(&stage()), &watcher, 300, temp.path()),
+        Some(HELD_LINE)
+    );
+    crate::host_verify::submit::native_hold_tests::seed(temp.path(), "stage-1");
+    assert_eq!(
+        detection.silence_completion_line(&session, Some(&stage()), &watcher, 300, temp.path()),
+        Some(HELD_LINE)
+    );
+}
+
 /// Save stage-1's current job in `state`, started `started_secs_ago`.
 fn save_job(work_dir: &Path, state: JobState, started_secs_ago: i64) {
     let started = Utc::now() - ChronoDuration::seconds(started_secs_ago);

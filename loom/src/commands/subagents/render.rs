@@ -12,6 +12,8 @@ use super::table;
 
 #[path = "render_forward.rs"]
 mod forward;
+#[path = "render_native.rs"]
+mod native;
 
 /// The result of resolving a transcript directory and reading every
 /// subagent transcript found in it.
@@ -91,6 +93,7 @@ fn gather_with_index(
                 forward_index,
             );
             forward::append_missing_summaries(&mut summaries, forward_index, work_dir);
+            native::append_summaries(&mut summaries, work_dir);
             Gathered::Found(summaries)
         }
     }
@@ -103,6 +106,7 @@ fn missing_gathered(
 ) -> Gathered {
     let mut summaries = Vec::new();
     forward::append_missing_summaries(&mut summaries, forward_index, work_dir);
+    native::append_summaries(&mut summaries, work_dir);
     if summaries.is_empty() {
         Gathered::NotFound(looked_for)
     } else {

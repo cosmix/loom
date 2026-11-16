@@ -2,6 +2,9 @@ use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
+#[path = "forward_join_native.rs"]
+mod forward_join_native;
+
 use chrono::{DateTime, Utc};
 use serde::Serialize;
 
@@ -81,6 +84,10 @@ impl ForwardJoin {
             if let Some(thread_id) = receipt_thread_id(&receipt) {
                 insert_candidate(&mut result.by_thread_id, thread_id, metadata);
             }
+        }
+        if let Some(root) = root {
+            let natives = forward_join_native::native_threads(root, &mut result.load_diagnostics);
+            result.receipt_threads.extend(natives);
         }
         result
     }
@@ -379,3 +386,7 @@ fn receipt_files(
 #[cfg(test)]
 #[path = "forward_join_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "forward_join_native_tests.rs"]
+mod native_tests;

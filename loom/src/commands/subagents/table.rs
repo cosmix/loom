@@ -8,6 +8,7 @@ use super::classify::{DoneEvidence, SubagentState, SubagentSummary};
 const LAST_TOOL_WIDTH: usize = 18;
 const AGENT_TYPE_WIDTH: usize = 15;
 const MODEL_WIDTH: usize = 14;
+const MODEL_MAX_WIDTH: usize = 32;
 const REQS_WIDTH: usize = 5;
 const PEAK_TOKENS_WIDTH: usize = 10;
 
@@ -19,13 +20,17 @@ pub(super) fn print_table(summaries: &[SubagentSummary]) {
 
     let agent_id_width = agent_id_width(summaries);
     let state_width = state_width(summaries);
-    println!("{}", table_header(agent_id_width, state_width).bold());
+    let model_width = model_width(summaries);
+    println!(
+        "{}",
+        table_header(agent_id_width, state_width, model_width).bold()
+    );
     for summary in summaries {
-        print_row(summary, agent_id_width, state_width);
+        print_row(summary, agent_id_width, state_width, model_width);
     }
 }
 
-/// AGENT ID is the only variable-width column: real ids (user-chosen, up to
+/// AGENT ID is an unbounded variable-width column: real ids (user-chosen, up to
 /// ~34 chars, e.g. "aexplore-doctrine-1d2b4f8be46cae08") exceed the historical
 /// 28-char width, and a hardcoded width pushes every later column out of
 /// alignment on any row with a long id. Compute the width from the data,
@@ -51,21 +56,36 @@ fn state_width(summaries: &[SubagentSummary]) -> usize {
         .max(10)
 }
 
-fn table_header(agent_id_width: usize, state_width: usize) -> String {
+fn model_width(summaries: &[SubagentSummary]) -> usize {
+    summaries
+        .iter()
+        .filter_map(|summary| display_model(summary.model.as_deref()))
+        .map(|model| model.chars().count())
+        .max()
+        .unwrap_or(0)
+        .clamp(MODEL_WIDTH, MODEL_MAX_WIDTH)
+}
+
+fn table_header(agent_id_width: usize, state_width: usize, model_width: usize) -> String {
     format!(
         "{:<agent_id_width$} {:<state_width$} {:>9} {:>5}  {:<last_tool_width$} {:<agent_type_width$} {:<model_width$} {:>reqs_width$} {:>peak_tokens_width$}",
         "AGENT ID", "STATE", "IDLE(S)", "TURNS", "LAST TOOL", "AGENT TYPE", "MODEL", "REQS", "PEAK TOK",
         state_width = state_width,
         last_tool_width = LAST_TOOL_WIDTH,
         agent_type_width = AGENT_TYPE_WIDTH,
-        model_width = MODEL_WIDTH,
+        model_width = model_width,
         reqs_width = REQS_WIDTH,
         peak_tokens_width = PEAK_TOKENS_WIDTH,
         agent_id_width = agent_id_width,
     )
 }
 
-fn print_row(summary: &SubagentSummary, agent_id_width: usize, state_width: usize) {
+fn print_row(
+    summary: &SubagentSummary,
+    agent_id_width: usize,
+    state_width: usize,
+    model_width: usize,
+) {
     let model = display_model(summary.model.as_deref());
     println!(
         "{:<agent_id_width$} {:<state_width$} {:>9} {:>5}  {:<last_tool_width$} {:<agent_type_width$} {:<model_width$} {:>reqs_width$} {:>peak_tokens_width$}",
@@ -75,13 +95,13 @@ fn print_row(summary: &SubagentSummary, agent_id_width: usize, state_width: usiz
         summary.turns,
         summary.last_tool.as_deref().unwrap_or("-"),
         text_cell(summary.agent_type.as_deref(), AGENT_TYPE_WIDTH),
-        text_cell(model.as_deref(), MODEL_WIDTH),
+        text_cell(model.as_deref(), model_width),
         reqs_label(summary.request_count),
         peak_tokens_label(summary.peak_resident_tokens, summary.peak_tokens_over_ceiling),
         state_width = state_width,
         last_tool_width = LAST_TOOL_WIDTH,
         agent_type_width = AGENT_TYPE_WIDTH,
-        model_width = MODEL_WIDTH,
+        model_width = model_width,
         reqs_width = REQS_WIDTH,
         peak_tokens_width = PEAK_TOKENS_WIDTH,
         agent_id_width = agent_id_width,
@@ -175,6 +195,15 @@ mod tests {
         assert_eq!(state_label(&summary), "failed");
         summary.state = SubagentState::Cancelled;
         assert_eq!(state_label(&summary), "cancelled");
+    }
+
+    #[test]
+    fn model_column_widens_for_the_requested_label() {
+        let mut summary = super::super::summary::empty("agent".into(), 0, None);
+        summary.model = Some("gpt-6.1-terra (requested)".into());
+        assert_eq!(model_width(&[summary.clone()]), 25);
+        summary.model = Some("claude-opus-5".into());
+        assert_eq!(model_width(&[summary]), 14);
     }
 
     #[test]

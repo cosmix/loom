@@ -51,6 +51,10 @@ fn commit_with(
         }
     }
 
+    super::native_gate::ensure_no_native_workers(
+        &crate::commands::common::resolve_state_dir(cwd),
+        stage_id,
+    )?;
     match relay_mode {
         RelayMode::Relay(context) => relay_commit(stage_id, message, &context, cwd, sink),
         RelayMode::Operator | RelayMode::Legacy => commit_in_process(stage_id, message, cwd, sink),
@@ -182,3 +186,28 @@ fn last_lines(bytes: &[u8]) -> String {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod native_gate_tests {
+    use super::*;
+
+    #[test]
+    fn cli_commit_refuses_before_hooks_in_both_modes() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let cwd = temp.path();
+        let work = crate::commands::common::resolve_state_dir(cwd);
+        crate::commands::stage::native_gate::tests::seed_active_worker(&work, "s1", "unit");
+        for mode in [RelayMode::Operator, RelayMode::Legacy] {
+            let error = commit_with(
+                "s1",
+                "test: change",
+                None,
+                mode,
+                cwd,
+                &mut StdSink::default(),
+            )
+            .unwrap_err();
+            assert!(format!("{error:#}").contains("running native Codex workers"));
+        }
+    }
+}

@@ -136,6 +136,7 @@ pub(super) fn reset_under_admission(
     runtime: &impl ResetRuntime,
 ) -> Result<()> {
     let stage = load_stage(stage_id, work_dir)?;
+    crate::commands::stage::native_gate::ensure_no_native_workers(work_dir, stage_id)?;
     if !kill_session {
         let live = live_agents_for(work_dir, stage_id)?;
         if !live.is_empty() {
@@ -335,3 +336,41 @@ fn agent_session(agent: &LiveAgent) -> Session {
 #[cfg(test)]
 #[path = "identityless_tests.rs"]
 mod identityless_tests;
+
+#[cfg(test)]
+mod native_gate_tests {
+    use super::*;
+    use crate::models::stage::{Stage, StageStatus};
+    use crate::verify::transitions::create_stage;
+
+    struct Runtime;
+    impl ResetRuntime for Runtime {
+        fn kill(&self, _: &Path, _: &[LiveAgent]) {}
+        fn identity_missing(&self, _: &Path, _: &LiveAgent) -> bool {
+            false
+        }
+        fn is_alive(&self, _: &Path, _: &LiveAgent) -> Result<bool> {
+            Ok(false)
+        }
+        fn wait(&self) {}
+    }
+
+    #[test]
+    fn reset_refuses_active_worker_even_with_kill_session() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let work = temp.path();
+        let mut stage = Stage::new("s1".into(), None);
+        stage.id = "s1".into();
+        stage.status = StageStatus::Executing;
+        create_stage(&stage, work).unwrap();
+        crate::commands::stage::native_gate::tests::seed_active_worker(work, "s1", "unit");
+        for kill in [true, false] {
+            let error = reset_with(work, "s1", false, kill, &Runtime).unwrap_err();
+            assert!(format!("{error:#}").contains("running native Codex workers"));
+            assert_eq!(
+                load_stage("s1", work).unwrap().status,
+                StageStatus::Executing
+            );
+        }
+    }
+}

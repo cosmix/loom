@@ -9,7 +9,7 @@ use crate::codex_lifecycle::CodexAuthorization;
 use crate::process::ProcessIdentity;
 use crate::subagent_lifecycle::WorkerIdentity;
 
-pub const WAIT_SCHEMA_VERSION: u16 = 1;
+pub const WAIT_SCHEMA_VERSION: u16 = 2;
 pub const EXIT_TIMEOUT: i32 = 2;
 pub const EXIT_WORKER_TERMINAL: i32 = 3;
 pub const EXIT_BUSY: i32 = 4;
@@ -142,7 +142,12 @@ impl CodexAuthority {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BoundWorker {
     pub worker: WorkerSpec,
-    pub lifecycle_identity: WorkerIdentity,
+    /// `None` for a native Codex worker, which is read from its own record.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lifecycle_identity: Option<WorkerIdentity>,
+    /// `<stage_id>/<invocation_id>` of the native record the worker is bound to.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub native_invocation: Option<String>,
     pub authority: Option<CodexAuthority>,
     pub evidence: Vec<EvidenceReference>,
 }
