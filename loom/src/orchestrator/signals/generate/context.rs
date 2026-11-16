@@ -34,7 +34,7 @@ pub fn build_embedded_context_with_stage_and_session(
     // Availability is resolved here, not in the formatters, so the formatting
     // path stays pure and tests can pin both branches deterministically.
     let mut context = EmbeddedContext {
-        codex_available: crate::codex::codex_lane_available(),
+        codex_lane: crate::codex::codex_lane(work_dir),
         model_budget: current_model_budget(work_dir),
         ..EmbeddedContext::default()
     };

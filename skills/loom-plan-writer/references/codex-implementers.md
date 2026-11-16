@@ -12,7 +12,7 @@ license accordingly; the stage's orchestrator picks the lane per piece at spawn 
   foreground call to `codex-forward.sh`, which runs gpt-6.1-terra (implementation, integration
   tests, boilerplate, scaffolding, simple unit tests), gpt-6.1-sol (a substantial well-specified unit
   (about 4 to 6 file-sized changes) or a terra unit that failed once), or gpt-6-luna only when the
-  user or the plan explicitly asks for it, always at effort xhigh.
+  user or the plan explicitly asks for it, always at effort xhigh. Under `codex.backend = native` the stage's main agent starts the unit itself instead; see Native backend.
 - **Claude lane:** `loom-software-engineer` (sonnet), `loom-software-developer` (haiku, routine work),
   `loom-senior-software-engineer` (opus, effort medium; respawned at `effort: high` after a failed attempt), and fable by an explicit model override.
 
@@ -119,7 +119,7 @@ the stage signal reroutes terra- and sol-tier work to sonnet, and boilerplate an
    plans do not need to restate it.) When a stage mixes lanes, say which work goes to which lane, and put EVERY subagent —
    both lanes — in ONE file-ownership table. File exclusivity is enforced across lanes: a codex
    agent and a sonnet worker writing the same file is lost work exactly as two agents in one lane
-   would be.
+   would be. Under `codex.backend = native`, describe the fan-out as "start N codex units" and leave the launch to the stage signal; see Native backend.
 
    **Size each job as one concern.** Keep code, consumers and tests together in dependency order
    in one brief, across several files where cohesive. Two jobs never write one file. At high effort,
@@ -185,13 +185,40 @@ the stage signal reroutes terra- and sol-tier work to sonnet, and boilerplate an
    The one forwarded line carries no apostrophe, no `complete` substring, and not the phrase `loom stage`,
    or the forward is blocked.
 
+## Native backend
+
+Read when: `loom config -k codex.backend` prints `native`, or the project's `.loom/work/config.toml` sets `[codex] backend = "native"` (`loom config -k` reads only the user file). The default is `legacy`, which keeps everything above unchanged.
+
+With the native backend the stage's main agent starts each codex unit itself, and no forwarder is spawned. The plan does not change: the same `implementers` lists, tiers, one-concern sizing, disjoint file sets, cap of 6 and brief rules apply. Only the launch differs, and the stage signal's Codex Implementers section carries the commands, so a stage description says "start N codex units" and names neither the forwarder nor a Bash timeout:
+
+```text
+loom subagents start --provider codex --unit-id <unit-id> --brief <absolute brief path> --model <model> --effort xhigh
+loom request status <id> --wait 90
+loom subagents watch --worker codex:<unit-id> [--worker codex:<unit-id> ...] --timeout 3600
+loom subagents result --worker codex:<unit-id>
+```
+
+Each `start` runs alone in its own Bash call and `loom request status` reads its verdict in another; one background `watch` covers the whole wave; `loom subagents message` and `loom subagents cancel` steer or stop a running unit. Only the stage's main agent can run them: a coordinator or an ultracode Workflow cannot start codex units. A unit id matches `[A-Za-z0-9][A-Za-z0-9_-]{0,63}` (no dot, unlike the forwarder's), and the brief is an absolute path inside the stage worktree of at most 256 KiB. At 1500000 ms the host cancels the unit; re-split it against its partial tree, as above.
+
+What differs in the Lane comparison table:
+
+| Concern | Native backend |
+| --- | --- |
+| Claude-side cost | No forwarder spawn and none of its roughly 20,000 tokens per job; the lead pays one start call, one status call and one result call per unit, plus one watch per wave. The saving is not yet measured against matched legacy jobs |
+| Parallelism | Units start through a relayed command, not a foreground spawn: up to 6 run at once, one background watch covers the wave, and no 1560000 ms Bash timeout applies |
+| Checks it can run | Plan for compile-only acceptance, as in the legacy lane: the worker has no network except its model provider, so a unit whose proof needs fixtures or network is a Claude piece, or the orchestrator proves it right after the unit |
+| Guardrails | The same prose rules (no git, no `.loom/` path, `git status --short` after each unit), now backed by the boundary: `.loom`, `.git` and `.claude` are read-only, and no operator Codex config, rules, hooks or MCP servers load. No Loom or Claude hook runs for the worker's commands. In addition the host refuses reset, retry (even `--force`), skip, commit, `loom check` and `loom stage complete` while a worker of the stage runs |
+| Heartbeat | No long foreground Bash call; the lead waits in the watch |
+| Availability | Linux with a working bubblewrap pid namespace only. Elsewhere, or when the boundary cannot be created, the signal reports the lane UNAVAILABLE with the reason, routes codex-tier work to Claude and never falls back to the forwarder, so keep `claude` in every list that licenses codex. The default stays `legacy` until an operator has qualified native launch with real Codex jobs |
+
 ## Codex pre-STOP checks
 
 ```text
 □ Codex availability checked; if available, ONE AskUserQuestion confirmed a per-stage lane recommendation with a one-line reason each, and every `implementers:` list matches the answer; if unavailable, the user was told and no stage lists codex
 □ Lanes follow the per-stage rule: straightforward, well-specified concerns (code, consumers and tests together, pinned interfaces, mechanical acceptance) license codex; exploration, fixture-backed test convergence, UI design, and debugging license Claude; codex never on bookend stages; every list is a non-empty YAML sequence with no repeated lane
 □ Every codex job is one concern, possibly several files, sized by measured model rates for at most about 250,000 tokens of peak context and well inside 1500000 ms; xhigh budgets twice the high-effort time. Its brief names files owned/read, entry symbols, done condition, proof command and traps; two jobs never write one file
-□ Every forwarder prompt names an absolute brief path in ONE line, with no apostrophe, complete substring or loom stage phrase; declared skill rules are quoted in the brief; the wrapper sets LOOM_CODEX_FORWARD=1 so context-injecting hooks stay silent while guard hooks still run
-□ Every codex subagent prompt states a foreground Bash timeout of 1560000 ms alongside the tier-appropriate model — `--model gpt-6.1-terra` (implementation, integration tests, boilerplate, scaffolding, simple unit tests), `--model gpt-6.1-sol` (a substantial well-specified unit or a terra unit that failed once) or, only on explicit request, `--model gpt-6-luna` — always `--effort xhigh`; the wrapper cancels at 1500000 ms, exits 124, and an overrun is re-split against its partial tree
+□ On the legacy backend, every forwarder prompt names an absolute brief path in ONE line, with no apostrophe, complete substring or loom stage phrase; declared skill rules are quoted in the brief; the wrapper sets LOOM_CODEX_FORWARD=1 so context-injecting hooks stay silent while guard hooks still run
+□ On the legacy backend, every codex subagent prompt states a foreground Bash timeout of 1560000 ms alongside the tier-appropriate model — `--model gpt-6.1-terra` (implementation, integration tests, boilerplate, scaffolding, simple unit tests), `--model gpt-6.1-sol` (a substantial well-specified unit or a terra unit that failed once) or, only on explicit request, `--model gpt-6-luna` — always `--effort xhigh`; the wrapper cancels at 1500000 ms, exits 124, and an overrun is re-split against its partial tree
 □ No wave exists only to respect the cap of 6; order work inside a job first, then use waves only for dependencies on another job's result on disk
+□ If the backend is `native` (`loom config -k codex.backend` or the project's `[codex] backend`): no stage description orders a forwarder spawn or a 1560000 ms Bash timeout; every unit id matches `[A-Za-z0-9][A-Za-z0-9_-]{0,63}` (no dot) and names an absolute brief path inside the stage worktree; no codex unit sits under a coordinator, because only the stage's main agent can start one; at most 6 units run at once
 ```

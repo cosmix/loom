@@ -28,6 +28,9 @@ mod allocation_contract_tests;
 mod budget_contract_tests;
 
 #[cfg(test)]
+mod native_doctrine_contract_tests;
+
+#[cfg(test)]
 mod tests;
 #[cfg(test)]
 #[path = "tests_model_budget.rs"]
@@ -40,6 +43,9 @@ mod tests_dependency_harness;
 #[path = "tests_size.rs"]
 mod tests_size;
 
+#[cfg(test)]
+#[path = "tests_codex_lane.rs"]
+mod tests_codex_lane;
 #[cfg(test)]
 #[path = "tests_doctrine.rs"]
 mod tests_doctrine;

@@ -1,7 +1,7 @@
 //! Codex implementer guidance for stage signals.
 
 use crate::codex::{
-    CODEX_FORWARD_SENTINEL, CODEX_IMPLEMENTER_EFFORT, CODEX_IMPLEMENTER_MODEL_LUNA,
+    CodexLane, CODEX_FORWARD_SENTINEL, CODEX_IMPLEMENTER_EFFORT, CODEX_IMPLEMENTER_MODEL_LUNA,
     CODEX_IMPLEMENTER_MODEL_SOL, CODEX_IMPLEMENTER_MODEL_TERRA,
 };
 use crate::models::stage::Implementers;
@@ -16,34 +16,36 @@ use crate::models::stage::Implementers;
 /// [`CODEX_IMPLEMENTER_MODEL_SOL`], [`CODEX_IMPLEMENTER_MODEL_LUNA`], and [`CODEX_IMPLEMENTER_EFFORT`] rather than
 /// repeated as literals — one source of truth for the lane's settings.
 ///
-/// `codex_available` is [`crate::codex::codex_lane_available`] evaluated by the
-/// caller: when the codex CLI or its plugin's companion runtime is missing on
-/// this machine, the full doctrine below is replaced by a short fallback block
-/// that forbids spawning `loom-codex-forwarder` and routes the codex tiers'
-/// work to sonnet instead - the lane being licensed in the plan does not mean
-/// it is installed on the machine actually running it.
+/// `lane` is [`crate::codex::codex_lane`] evaluated once by the caller and selects
+/// one of three texts. [`CodexLane::Legacy`] keeps the forwarder spawn rules.
+/// [`CodexLane::Native`] tells the main agent to launch workers with
+/// `loom subagents start`. [`CodexLane::Unavailable`] replaces the doctrine by a
+/// short fallback block that forbids spawning `loom-codex-forwarder`, routes the
+/// codex tiers' work to sonnet and states the reason - the lane being licensed
+/// in the plan does not mean it is usable on the machine actually running it.
 pub(crate) fn format_codex_implementers_section(
     implementers: &Implementers,
-    codex_available: bool,
+    lane: &CodexLane,
 ) -> String {
     let mut content = String::new();
     content.push_str("## Codex Implementers\n\n");
 
-    if !codex_available {
-        push_codex_unavailable_fallback(&mut content);
-        return content;
+    match lane {
+        CodexLane::Unavailable(reason) => push_codex_unavailable_fallback(&mut content, reason),
+        CodexLane::Native => codex_native::push_native_doctrine(&mut content, implementers),
+        CodexLane::Legacy => {
+            push_codex_intro(&mut content, implementers);
+            push_codex_spawn_rules(&mut content);
+            push_codex_prompt_rules(&mut content);
+            push_codex_blast_radius_and_evidence(&mut content);
+        }
     }
-
-    push_codex_intro(&mut content, implementers);
-    push_codex_spawn_rules(&mut content);
-    push_codex_prompt_rules(&mut content);
-    push_codex_blast_radius_and_evidence(&mut content);
 
     content
 }
 
 /// Push the fallback doctrine used when the codex lane is licensed but unavailable.
-fn push_codex_unavailable_fallback(content: &mut String) {
+fn push_codex_unavailable_fallback(content: &mut String, reason: &str) {
     content.push_str(&format!(
         "This stage lists codex in `implementers`, but the lane is UNAVAILABLE on this machine.\n\
          Do NOT spawn `loom-codex-forwarder`; route {CODEX_IMPLEMENTER_MODEL_TERRA}- and\n\
@@ -51,6 +53,9 @@ fn push_codex_unavailable_fallback(content: &mut String) {
          sonnet (`loom-software-engineer`) and boilerplate, scaffolding and simple unit tests\n\
          to haiku (`loom-software-developer`).\n"
     ));
+    if !reason.is_empty() {
+        content.push_str(&format!("Reason: {reason}\n"));
+    }
 }
 
 /// Push the licensed-lanes summary and the always-applies judgment/verification paragraph.
@@ -162,6 +167,17 @@ fn push_codex_prompt_rules(content: &mut String) {
         "  forwarder spawn with the SAME unit id; the guard mints a fresh invocation, so it cannot revive\n",
         "  the previous job. The watch binds those workers once, holds one lease for the parent session,\n",
         "  prints one initial record and one terminal record, then exits. Treat exits distinctly: 0 only\n",
+    ));
+    push_watch_exit_meanings(content);
+    content.push_str(concat!(
+        "  A foreground run is one long Bash call - no PostToolUse fires, so the daemon's \"appears hung\"\n",
+        "  warning past 300s is ADVISORY ONLY.\n",
+    ));
+}
+
+/// Push the exit-code meanings of `loom subagents watch`, shared by the legacy and native text.
+fn push_watch_exit_meanings(content: &mut String) {
+    content.push_str(concat!(
         "  when every bound worker has fresh, correlated success evidence; 2 when the wait deadline\n",
         "  passed (not proof any worker died); 3 when a bound worker failed or was cancelled; 4 when a\n",
         "  wait for this parent session already exists (`AlreadyWaiting` for the same worker set or `Busy`\n",
@@ -171,8 +187,6 @@ fn push_codex_prompt_rules(content: &mut String) {
         "  `subagent_timeout_secs`, else 600 s), or a codex job whose process is gone or whose log stopped\n",
         "  growing. On 6: `TaskStop` the Claude worker (a cancelled codex job needs nothing), confirm it\n",
         "  stopped, re-delegate the remainder in a smaller brief.\n",
-        "  A foreground run is one long Bash call - no PostToolUse fires, so the daemon's \"appears hung\"\n",
-        "  warning past 300s is ADVISORY ONLY.\n",
     ));
 }
 
@@ -187,14 +201,7 @@ fn push_codex_blast_radius_and_evidence(content: &mut String) {
          symlink to state shared with every parallel stage); tell it not to run git at all; check\n\
          `git status --short` after each run - anything touched outside its files is yours to catch.\n",
     );
-    content.push_str(
-        "- WHAT CODEX IS FOR: terra takes implementation, integration tests, boilerplate, scaffolding and\n\
-         simple unit tests; sol takes substantial units and failed terra units; luna only on request.\n\
-         Codex takes these pieces when the stage licenses it, it is available and quota has room. Not\n\
-         opus work (architecture across modules, new algorithms, concurrency, security-sensitive\n\
-         code), fable work (visual/UI design, hard algorithmic design), or loom-advisor's\n\
-         role after an opus failure - route by what the task needs, not by what the stage lists.\n",
-    );
+    push_codex_scope_bullet(content);
     content.push_str(concat!(
         "- ACCEPT A REPORT ONLY WITH EVIDENCE: the report is the forwarder's FINAL MESSAGE, and a\n",
         "  completed forward has wrapper-owned `LOOM-FORWARD-START` and `LOOM-FORWARD-END` markers, then\n",
@@ -212,6 +219,23 @@ fn push_codex_blast_radius_and_evidence(content: &mut String) {
         "  No matching markers, trailer, exact record, or exact thread leaves the forward state unresolved\n",
         "  for orchestrator review.\n",
     ));
+    push_codex_verification_bullet(content);
+}
+
+/// Push the lane-scope bullet, shared by the legacy and native text.
+fn push_codex_scope_bullet(content: &mut String) {
+    content.push_str(
+        "- WHAT CODEX IS FOR: terra takes implementation, integration tests, boilerplate, scaffolding and\n\
+         simple unit tests; sol takes substantial units and failed terra units; luna only on request.\n\
+         Codex takes these pieces when the stage licenses it, it is available and quota has room. Not\n\
+         opus work (architecture across modules, new algorithms, concurrency, security-sensitive\n\
+         code), fable work (visual/UI design, hard algorithmic design), or loom-advisor's\n\
+         role after an opus failure - route by what the task needs, not by what the stage lists.\n",
+    );
+}
+
+/// Push the verification-ownership bullet, shared by the legacy and native text.
+fn push_codex_verification_bullet(content: &mut String) {
     content.push_str(
         "- VERIFICATION NEVER GOES TO CODEX: codex subagents implement and report, never verify,\n\
          commit, or run `loom stage complete`. The gate is the orchestrator's\n\
@@ -224,12 +248,13 @@ fn push_codex_blast_radius_and_evidence(content: &mut String) {
 #[cfg(test)]
 mod tests {
     use super::format_codex_implementers_section;
+    use crate::codex::CodexLane;
     use crate::models::stage::{Implementer, Implementers};
 
     #[test]
     fn codex_doctrine_requires_exact_lifecycle_recovery() {
         let implementers = Implementers::new(vec![Implementer::Codex]);
-        let rendered = format_codex_implementers_section(&implementers, true);
+        let rendered = format_codex_implementers_section(&implementers, &CodexLane::Legacy);
         let collapsed = rendered.split_whitespace().collect::<Vec<_>>().join(" ");
 
         assert!(collapsed.contains("[A-Za-z0-9][A-Za-z0-9._-]{0,63}"));
@@ -268,7 +293,36 @@ mod tests {
             );
         }
     }
+
+    #[test]
+    fn unavailable_text_appends_the_reason() {
+        let implementers = Implementers::new(vec![Implementer::Codex]);
+        let lane = CodexLane::Unavailable("no qualified sandbox".to_string());
+        let rendered = format_codex_implementers_section(&implementers, &lane);
+
+        let unavailable_at = rendered.find("UNAVAILABLE").expect("names UNAVAILABLE");
+        let reason_at = rendered
+            .find("Reason: no qualified sandbox\n")
+            .expect("carries the reason");
+        assert!(unavailable_at < reason_at);
+        assert!(rendered.contains("loom-software-engineer"));
+        assert!(!rendered.contains("loom subagents start"));
+        assert!(!rendered.contains("subagent_type"));
+    }
+
+    #[test]
+    fn unavailable_text_with_empty_reason_has_no_reason_line() {
+        let implementers = Implementers::new(vec![Implementer::Codex]);
+        let lane = CodexLane::Unavailable(String::new());
+        let rendered = format_codex_implementers_section(&implementers, &lane);
+
+        assert!(rendered.contains("UNAVAILABLE"));
+        assert!(!rendered.contains("Reason:"));
+    }
 }
+
+#[path = "codex_native.rs"]
+mod codex_native;
 
 #[cfg(all(test, unix))]
 #[path = "tests_codex_wrapper.rs"]

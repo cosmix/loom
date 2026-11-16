@@ -112,8 +112,10 @@ fn codex_job_doctrine_pins_sizing_and_brief_handoff() {
     use super::format::format_codex_implementers_section;
     use crate::models::stage::{Implementer, Implementers};
 
-    let text =
-        format_codex_implementers_section(&Implementers::new(vec![Implementer::Codex]), true);
+    let text = format_codex_implementers_section(
+        &Implementers::new(vec![Implementer::Codex]),
+        &crate::codex::CodexLane::Legacy,
+    );
     for needle in [
         "ONE CONCERN",
         "250,000",

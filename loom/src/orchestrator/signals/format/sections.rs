@@ -241,7 +241,7 @@ pub(super) fn format_semi_stable_section(
     if embedded_context.implementers.includes_codex() {
         content.push_str(&format_codex_implementers_section(
             &embedded_context.implementers,
-            embedded_context.codex_available,
+            &embedded_context.codex_lane,
         ));
     }
 
@@ -281,7 +281,7 @@ pub(super) fn format_semi_stable_section(
             "gpt-6.1-sol / gpt-6-luna) is NOT addressable from a Workflow script. On a stage licensed for\n",
         );
         content.push_str(
-            "both, codex work goes through normal `loom-codex-forwarder` Agent spawns, outside\n",
+            "both, codex work follows the Codex Implementers section's launch rules, outside\n",
         );
         content.push_str("the Workflow.\n\n");
     }

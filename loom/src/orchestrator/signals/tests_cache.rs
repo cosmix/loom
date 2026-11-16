@@ -423,12 +423,12 @@ fn test_signal_codex_implementers_section_gated() {
 
 #[test]
 fn test_codex_implementers_section_unavailable_falls_back_to_sonnet() {
-    // Unit-tests the `codex_available: bool` branch directly rather than
-    // through the full signal pipeline, whose call sites resolve availability
-    // from the machine's actual codex install - keeping this test independent
-    // of whether codex happens to be installed where it runs.
+    // Unit-tests the `CodexLane::Unavailable` branch directly rather than through
+    // the signal pipeline, whose call sites resolve the lane from the machine's
+    // codex install - keeping this test independent of where it runs.
     let implementers = Implementers::new(vec![Implementer::Codex]);
-    let content = format_codex_implementers_section(&implementers, false);
+    let unavailable = crate::codex::CodexLane::Unavailable(String::new());
+    let content = format_codex_implementers_section(&implementers, &unavailable);
 
     assert!(content.contains("## Codex Implementers"));
     assert!(
@@ -585,7 +585,7 @@ fn test_recovery_signal_carries_codex_implementers_section() {
     // The formatter is pure: availability arrives via EmbeddedContext, so this
     // test pins the full-doctrine branch regardless of the machine's install.
     let embedded = EmbeddedContext {
-        codex_available: true,
+        codex_lane: crate::codex::CodexLane::Legacy,
         ..EmbeddedContext::default()
     };
 

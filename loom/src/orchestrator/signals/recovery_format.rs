@@ -102,7 +102,7 @@ pub fn format_recovery_signal(
     if stage.implementers.includes_codex() {
         signal.push_str(&format_codex_implementers_section(
             &stage.implementers,
-            embedded_context.codex_available,
+            &embedded_context.codex_lane,
         ));
     }
 

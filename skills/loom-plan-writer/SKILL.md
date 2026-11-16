@@ -175,7 +175,7 @@ in the foreground with Bash timeout 1560000 ms; waves follow real dependencies, 
 worktree scratch directory first. Quote applicable skill rules there: declared skills are for Claude
 workers, and Codex opens no skill files. Codex runs no fixture-backed tests and touches no git or `.loom/`. Claude fits exploration, fixture-backed test convergence, UI design and debugging.
 Mixed stages list both lanes (order is informational); list codex on a stage with a straightforward, well-specified piece, `["claude"]` otherwise. Run `loom usage --quota` before choosing lanes. Check availability and ask the user ONCE to confirm
-a per-stage lane recommendation with one-line reasons; if unavailable, say so and plan on Claude.
+a per-stage lane recommendation with one-line reasons; if unavailable, say so and plan on Claude. Under `codex.backend = native` (`loom config -k codex.backend` or the project's `[codex] backend`; default `legacy`) the stage's main agent starts each unit with `loom subagents start --provider codex` and spawns no forwarder: lists, sizing and brief rules are unchanged, and the description says "start N codex units" with no Bash timeout.
 Model selection, anchors, forwarding-line restrictions and checks: `references/codex-implementers.md`.
 
 ### Context ceiling (`context_ceiling_tokens`)
@@ -224,7 +224,7 @@ Each worker's brief is written to `doc/plans/briefs/<plan-slug>/<stage-id>/<work
 
 `Worker | Role | Tier | Files owned | Shared context | Brief path`
 
-Territories are DISJOINT; workers NEVER spawn subagents; the orchestrator spawns every worker BY AGENT TYPE, ALL in ONE message, each with a short fixed prompt plus `Your brief: <path>. Read it in full before anything else.` Execution → `loom-software-engineer` (pins sonnet), or HAIKU (loom-software-developer) for extremely simple or highly detailed pieces, or `loom-codex-forwarder` for a codex unit (Tier `codex terra` or `codex sol`; `codex luna` only on request); judgment → `loom-senior-software-engineer`.
+Territories are DISJOINT; workers NEVER spawn subagents; the orchestrator spawns every worker BY AGENT TYPE, ALL in ONE message, each with a short fixed prompt plus `Your brief: <path>. Read it in full before anything else.` Execution → `loom-software-engineer` (pins sonnet), or HAIKU (loom-software-developer) for extremely simple or highly detailed pieces, or `loom-codex-forwarder` for a codex unit (Tier `codex terra` or `codex sol`; `codex luna` only on request; on the native backend the main agent starts it with `loom subagents start --provider codex` instead of spawning it); judgment → `loom-senior-software-engineer`.
 
 **A `Files owned` cell holds paths only.** `loom plan verify` parses the table: it splits the cell on `,` and `;`, strips one trailing `(annotation)` and backticks, and treats every remaining string as a path. Prose in the cell becomes a bogus path that warns as outside the stage's `files:`; a row with the wrong column count makes the whole table claim nothing. It also warns when two workers claim one path, and when four or more rows each own exactly one path (group them).
 

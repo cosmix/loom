@@ -49,10 +49,10 @@ pub(super) const BLOCK_B: &str = r#"1. DELEGATION IS A COST DECISION: TOKENS TIM
    of unknown cause, concurrency, security-sensitive code, a data-loss path.
    Spawn `Explore` with `model: haiku` for locate-only sweeps (paths, symbols,
    call sites, where a string occurs); the default sonnet when the answer
-   requires reading behavior. CODEX (loom-codex-forwarder, effort xhigh) takes
+   requires reading behavior. CODEX (effort xhigh) takes
    straightforward, well-specified implementation (one concern, pinned
    interfaces, mechanical acceptance, no git, no `.loom/`) when the stage lists
-   codex in implementers, the codex CLI + plugin are installed and quota has
+   codex in implementers, the lane is available and quota has
    room. No lane is first or default; list order means nothing. Verification,
    review, planning, exploration, debugging and iteration on failing tests
    stay with Claude. gpt-6.1-terra: implementation, integration tests,

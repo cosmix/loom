@@ -31,6 +31,7 @@ use super::cache::{
     generate_knowledge_stable_prefix, generate_stable_prefix,
 };
 use super::format::format_codex_implementers_section;
+use crate::codex::CodexLane;
 use crate::fs::permissions::constants::{
     HOOK_CODEX_FORWARD, HOOK_SUBAGENT_PREAMBLE, HOOK_SUBAGENT_VERIFY_GUARD,
 };
@@ -279,8 +280,10 @@ fn codex_forward_sentinel_agrees_across_surfaces() {
     );
 
     let forwarder = forwarder_definition();
-    let doctrine =
-        format_codex_implementers_section(&Implementers::new(vec![Implementer::Codex]), true);
+    let doctrine = format_codex_implementers_section(
+        &Implementers::new(vec![Implementer::Codex]),
+        &CodexLane::Legacy,
+    );
     for needle in [
         CODEX_FORWARD_SENTINEL,
         "codex-forward.sh",
@@ -366,7 +369,7 @@ fn codex_navigation_kit_wrapper_carries_and_delivers_the_preamble() {
 #[test]
 fn codex_navigation_kit_signal_doctrine_names_the_kit() {
     let implementers = Implementers::new(vec![Implementer::Codex]);
-    let content = format_codex_implementers_section(&implementers, true);
+    let content = format_codex_implementers_section(&implementers, &CodexLane::Legacy);
 
     for needle in ["loom map --find-all", "loom map --impact", "AGENTS.md"] {
         assert!(
