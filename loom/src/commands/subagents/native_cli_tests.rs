@@ -320,7 +320,11 @@ fn failed_wait_hint_does_not_fail_an_emitted_request() {
 
 #[path = "native_cli_control_tests.rs"]
 mod control_tests;
+#[path = "native_cli_e2e_tests.rs"]
+mod e2e_tests;
 #[path = "native_cli_parse_tests.rs"]
 mod parse_tests;
+#[path = "native_cli_release_tests.rs"]
+mod release_tests;
 #[path = "native_cli_view_tests.rs"]
 mod view_tests;

@@ -355,3 +355,17 @@ fn cancel_with_wrong_invocation_names_it() {
     let text = accept_cancel(&fx.work, STAGE, &blank, "lead").expect_err("blank reason");
     assert_eq!(text, "the cancel reason is empty");
 }
+
+#[test]
+fn admission_accepts_every_loom_stage_id_shape() {
+    for stage_id in ["s".repeat(70), "_x".to_string()] {
+        let mut fx = fx();
+        fx.stage.id = stage_id.clone();
+        fx.admitted("unit-a");
+        assert_eq!(
+            index::stage_units(&fx.work, &stage_id).len(),
+            1,
+            "{stage_id}"
+        );
+    }
+}

@@ -50,9 +50,64 @@ pub(super) struct Pass<'a> {
 
 /// An action the pass leaves to its caller, or reports.
 pub(super) enum Step {
-    Spawn { invocation_id: String, dir: PathBuf },
+    Spawn {
+        invocation_id: String,
+        dir: PathBuf,
+    },
     Settled(String),
+    /// A bad condition first seen in this pass. The pass runs every tick, so a
+    /// condition that persists is reported once, and again only after it cleared.
+    Warn(Warning),
 }
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub(super) enum WarnKind {
+    Corrupt,
+    CannotSettle,
+    UnreadableClaim,
+    UnverifiableIdentity,
+}
+
+/// A warning's identity: a stage's corrupt records have no invocation id.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub(super) struct WarnKey {
+    pub(super) stage_id: String,
+    pub(super) invocation_id: Option<String>,
+    pub(super) kind: WarnKind,
+}
+
+pub(super) struct Warning {
+    pub(super) key: WarnKey,
+    pub(super) detail: String,
+}
+
+impl Warning {
+    fn new(stage_id: &str, invocation_id: Option<&str>, kind: WarnKind, detail: String) -> Self {
+        let key = WarnKey {
+            stage_id: stage_id.to_string(),
+            invocation_id: invocation_id.map(str::to_string),
+            kind,
+        };
+        Self { key, detail }
+    }
+
+    pub(super) fn log(&self) {
+        let what = match self.key.kind {
+            WarnKind::Corrupt => "native worker records are corrupt; skipped",
+            WarnKind::CannotSettle => "cannot settle native worker",
+            WarnKind::UnreadableClaim => "cannot read supervisor.json",
+            WarnKind::UnverifiableIdentity => {
+                "native worker supervisor identity is unverifiable; treated as alive"
+            }
+        };
+        let invocation_id = self.key.invocation_id.as_deref().unwrap_or("-");
+        tracing::warn!(stage_id = %self.key.stage_id, %invocation_id, detail = %self.detail,
+            "{what} (repeats suppressed until it clears)");
+    }
+}
+
+/// Notes `decide` makes about one record, before the pass attributes them.
+type Notes = Vec<(WarnKind, String)>;
 
 enum Decision {
     Wait,
@@ -79,17 +134,22 @@ pub fn settle_lost_supervisor(dir: &Path) -> Result<()> {
     let has_terminal = events
         .iter()
         .any(|record| matches!(record.event, NativeEvent::Terminal { .. }));
+    let boundary = store::read_boundary(dir).context("boundary.json")?;
+    // bubblewrap may have run without an identity on record: nothing can prove it gone.
+    let unrecorded = boundary.is_none() && store::spawn_begun(dir);
     if !has_terminal {
-        log.append(NativeEvent::Terminal {
-            outcome: Outcome::Unknown,
-            reason: "supervisor exited without a terminal record".to_string(),
-        })
-        .context("terminal event")?;
+        log.append(lost_terminal(unrecorded))
+            .context("terminal event")?;
     }
-    // No boundary.json: no provider process was ever started.
-    let verdict = match store::read_boundary(dir).context("boundary.json")? {
-        None => Quiescence::Released,
+    let verdict = match boundary {
         Some(identity) => verify_quiescent(&identity),
+        None if unrecorded => Quiescence::Unverified(
+            "boundary spawn began but boundary.json is missing: no boundary identity was \
+             recorded, so its processes cannot be proven stopped"
+                .to_string(),
+        ),
+        // No spawn marker: no provider process was ever started.
+        None => Quiescence::Released,
     };
     let event = match verdict {
         Quiescence::Released => NativeEvent::OwnershipReleased {
@@ -99,6 +159,24 @@ pub fn settle_lost_supervisor(dir: &Path) -> Result<()> {
     };
     log.append(event).context("ownership event")?;
     Ok(())
+}
+
+fn lost_terminal(unrecorded: bool) -> NativeEvent {
+    let (outcome, reason) = if unrecorded {
+        (
+            Outcome::Failed,
+            "supervisor exited after starting bubblewrap and before recording it",
+        )
+    } else {
+        (
+            Outcome::Unknown,
+            "supervisor exited without a terminal record",
+        )
+    };
+    NativeEvent::Terminal {
+        outcome,
+        reason: reason.to_string(),
+    }
 }
 
 /// Daemon start: settles every supervisor an earlier daemon left that is
@@ -111,64 +189,98 @@ pub fn recover_after_restart(work_dir: &Path) -> Vec<String> {
         spawned: &none,
         may_spawn: false,
     };
-    run_pass(&pass, &mut HashSet::new())
+    run_pass(&pass, &mut HashSet::new(), &mut HashSet::new())
         .into_iter()
         .filter_map(|step| match step {
             Step::Settled(invocation_id) => Some(invocation_id),
+            Step::Warn(warning) => {
+                warning.log();
+                None
+            }
             Step::Spawn { .. } => None,
         })
         .collect()
 }
 
 /// Looks at every record not held and not yet settled; settles the lost
-/// ones itself and returns the starts for the caller.
-pub(super) fn run_pass(pass: &Pass<'_>, settled: &mut HashSet<String>) -> Vec<Step> {
+/// ones itself and returns the starts for the caller. `warned` holds the
+/// warnings of the previous pass; only the ones absent from it are returned.
+pub(super) fn run_pass(
+    pass: &Pass<'_>,
+    settled: &mut HashSet<String>,
+    warned: &mut HashSet<WarnKey>,
+) -> Vec<Step> {
     let mut steps = Vec::new();
+    let mut found = Vec::new();
     for stage_id in index::stages(pass.work_dir) {
-        let mut corrupt = 0usize;
-        for unit in index::stage_units(pass.work_dir, &stage_id) {
-            let Ok(state) = unit else {
-                corrupt += 1;
-                continue;
-            };
-            let invocation_id = state.manifest.invocation_id.clone();
-            if settled.contains(&invocation_id) || pass.held.contains(&invocation_id) {
-                continue;
-            }
-            if state.phase == Phase::Terminal && state.ownership != Ownership::Held {
-                settled.insert(invocation_id);
-                continue;
-            }
-            let dir = store::invocation_dir(pass.work_dir, &stage_id, &invocation_id);
-            match decide(pass, &dir, &state) {
-                Decision::Wait => {}
-                Decision::Spawn => steps.push(Step::Spawn { invocation_id, dir }),
-                Decision::Settle => match settle_lost_supervisor(&dir) {
-                    Ok(()) => steps.push(Step::Settled(invocation_id)),
-                    Err(error) => {
-                        tracing::warn!(%invocation_id, error = %format!("{error:#}"), "cannot settle native worker")
-                    }
-                },
-            }
-        }
-        if corrupt > 0 {
-            tracing::warn!(%stage_id, corrupt, "native worker records are corrupt; skipped");
+        pass_stage(pass, &stage_id, settled, &mut steps, &mut found);
+    }
+    let previous = std::mem::take(warned);
+    for warning in found {
+        if warned.insert(warning.key.clone()) && !previous.contains(&warning.key) {
+            steps.push(Step::Warn(warning));
         }
     }
     steps
 }
 
-fn decide(pass: &Pass<'_>, dir: &Path, state: &NativeUnitState) -> Decision {
+fn pass_stage(
+    pass: &Pass<'_>,
+    stage_id: &str,
+    settled: &mut HashSet<String>,
+    steps: &mut Vec<Step>,
+    found: &mut Vec<Warning>,
+) {
+    let mut corrupt = 0usize;
+    for unit in index::stage_units(pass.work_dir, stage_id) {
+        let Ok(state) = unit else {
+            corrupt += 1;
+            continue;
+        };
+        let invocation_id = state.manifest.invocation_id.clone();
+        if settled.contains(&invocation_id) || pass.held.contains(&invocation_id) {
+            continue;
+        }
+        if state.phase == Phase::Terminal && state.ownership != Ownership::Held {
+            settled.insert(invocation_id);
+            continue;
+        }
+        let dir = store::invocation_dir(pass.work_dir, stage_id, &invocation_id);
+        let mut notes = Notes::new();
+        match decide(pass, &dir, &state, &mut notes) {
+            Decision::Wait => {}
+            Decision::Spawn => steps.push(Step::Spawn {
+                invocation_id: invocation_id.clone(),
+                dir,
+            }),
+            Decision::Settle => match settle_lost_supervisor(&dir) {
+                Ok(()) => steps.push(Step::Settled(invocation_id.clone())),
+                Err(error) => notes.push((WarnKind::CannotSettle, format!("{error:#}"))),
+            },
+        }
+        found.extend(
+            notes
+                .into_iter()
+                .map(|(kind, detail)| Warning::new(stage_id, Some(&invocation_id), kind, detail)),
+        );
+    }
+    if corrupt > 0 {
+        let detail = format!("{corrupt} corrupt records");
+        found.push(Warning::new(stage_id, None, WarnKind::Corrupt, detail));
+    }
+}
+
+fn decide(pass: &Pass<'_>, dir: &Path, state: &NativeUnitState, notes: &mut Notes) -> Decision {
     let claim = match read_claim(dir) {
         Ok(claim) => claim,
         Err(error) => {
-            tracing::warn!(dir = %dir.display(), %error, "cannot read supervisor.json");
+            notes.push((WarnKind::UnreadableClaim, error.to_string()));
             return Decision::Wait;
         }
     };
     match claim {
         Some(claim) if claim.pid <= 0 => Decision::Settle,
-        Some(claim) if supervisor_gone(dir, &claim) => Decision::Settle,
+        Some(claim) if supervisor_gone(dir, &claim, notes) => Decision::Settle,
         Some(_) => Decision::Wait,
         None => {
             let invocation_id = &state.manifest.invocation_id;
@@ -192,7 +304,7 @@ fn decide(pass: &Pass<'_>, dir: &Path, state: &NativeUnitState) -> Decision {
 
 /// Whether the process `claim` names no longer runs. An identity that cannot
 /// be verified counts as alive.
-fn supervisor_gone(dir: &Path, claim: &SupervisorClaim) -> bool {
+fn supervisor_gone(dir: &Path, claim: &SupervisorClaim, notes: &mut Notes) -> bool {
     if let Ok(Some(identity)) = store::read_boundary(dir) {
         let rebooted =
             crate::process::boot_id::os_boot_id().is_ok_and(|boot_id| boot_id != identity.boot_id);
@@ -208,7 +320,7 @@ fn supervisor_gone(dir: &Path, claim: &SupervisorClaim) -> bool {
         IdentityStatus::Dead => true,
         IdentityStatus::VerifiedAlive => false,
         IdentityStatus::Unverifiable => {
-            tracing::warn!(dir = %dir.display(), pid = claim.pid, "native worker supervisor identity is unverifiable; treated as alive");
+            notes.push((WarnKind::UnverifiableIdentity, format!("pid {}", claim.pid)));
             false
         }
     }
@@ -253,3 +365,7 @@ pub(super) fn claimed_running(work_dir: &Path) -> Vec<PathBuf> {
     }
     dirs
 }
+
+#[cfg(test)]
+#[path = "runner_recover_tests.rs"]
+mod tests;

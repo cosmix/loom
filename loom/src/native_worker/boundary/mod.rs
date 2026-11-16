@@ -232,8 +232,8 @@ mod mounts {
     }
 
     /// The writable worktree `w`, its read-only `.loom` (state root hidden),
-    /// `.git` and (with `claude`) `.claude`, its Git metadata and the map
-    /// stores. A symlinked `.loom`, `.git` or `.claude` is refused.
+    /// `.git`, `.codex` and (with `claude`) `.claude`, its Git metadata and the
+    /// map stores. A symlinked `.loom`, `.git`, `.codex` or `.claude` is refused.
     pub(super) fn worktree(command: &mut Command, w: &Path, claude: bool) -> Result<()> {
         bind(command, "--bind", w);
         let loom = w.join(".loom");
@@ -251,6 +251,12 @@ mod mounts {
             let claude = w.join(".claude");
             require_dir(&claude)?;
             bind(command, "--ro-bind", &claude);
+        }
+        // Read-only, so no worker plants project Codex configuration for the next one.
+        let codex = w.join(".codex");
+        if entry(&codex)?.is_some() {
+            require_dir(&codex)?;
+            bind(command, "--ro-bind", &codex);
         }
         let git_roots = git_dirs(w, NetworkAccess::Denied).map(|dirs| dirs.roots);
         for root in git_roots.unwrap_or_default() {
@@ -309,6 +315,7 @@ mod mounts {
         let sessions = home.join("sessions");
         require_dir(&sessions)?;
         command.arg("--tmpfs").arg(home);
+        hide_system_config(command, Path::new(SYSTEM_CODEX_CONFIG))?;
         bind(command, "--bind", &sessions);
         for name in AUTH_FILES {
             if let Some(path) = regular_file(home, name)? {
@@ -320,6 +327,19 @@ mod mounts {
         }
         if let Some(root) = package_root {
             bind(command, "--ro-bind", root);
+        }
+        Ok(())
+    }
+
+    /// Codex's system configuration directory, visible through the read-only `/etc`.
+    pub(super) const SYSTEM_CODEX_CONFIG: &str = "/etc/codex";
+
+    /// Covers the host's system Codex configuration (`config.toml`,
+    /// `managed_config.toml`, `requirements.toml`) with an empty read-only tmpfs:
+    /// a worker inherits no operator Codex configuration. A symlink is refused.
+    pub(super) fn hide_system_config(command: &mut Command, dir: &Path) -> Result<()> {
+        if entry(dir)?.is_some_and(|metadata| metadata.is_dir()) {
+            command.arg("--tmpfs").arg(dir).arg("--remount-ro").arg(dir);
         }
         Ok(())
     }

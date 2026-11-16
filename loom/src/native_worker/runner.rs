@@ -33,7 +33,7 @@ mod tests;
 
 pub use recover::{recover_after_restart, settle_lost_supervisor};
 
-use recover::{Pass, Step};
+use recover::{Pass, Step, WarnKey};
 
 /// How long `cancel_all` waits for held supervisors to exit.
 const STOP_WAIT: Duration = Duration::from_secs(10);
@@ -54,6 +54,8 @@ pub struct NativeRunner {
     spawned: HashSet<String>,
     /// Invocations that are terminal with ownership no longer held.
     settled: HashSet<String>,
+    /// Warnings the previous pass reported, so a lasting condition logs once.
+    warned: HashSet<WarnKey>,
 }
 
 impl NativeRunner {
@@ -64,6 +66,7 @@ impl NativeRunner {
             held: HashMap::new(),
             spawned: HashSet::new(),
             settled: HashSet::new(),
+            warned: HashSet::new(),
         }
     }
 
@@ -93,10 +96,14 @@ impl NativeRunner {
             spawned: &self.spawned,
             may_spawn,
         };
-        let steps = recover::run_pass(&pass, &mut self.settled);
+        let steps = recover::run_pass(&pass, &mut self.settled, &mut self.warned);
         for step in &steps {
-            if let Step::Settled(invocation_id) = step {
-                tracing::warn!(%invocation_id, "native worker supervisor lost; record settled");
+            match step {
+                Step::Settled(invocation_id) => {
+                    tracing::warn!(%invocation_id, "native worker supervisor lost; record settled")
+                }
+                Step::Warn(warning) => warning.log(),
+                Step::Spawn { .. } => {}
             }
         }
         steps

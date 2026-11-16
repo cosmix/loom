@@ -1,17 +1,18 @@
 //! Read-only queries over native worker records: folded state, stage disposition, threads.
 
 use std::cmp::Ordering;
+use std::ffi::OsStr;
 use std::fs;
 use std::path::Path;
 
 use chrono::{DateTime, Utc};
 
-use super::ids::{validate_invocation_id, validate_unit_id};
+use super::ids::{validate_invocation_id, validate_stage_id};
 use super::model::{
     EventRecord, MessageInfo, NativeEvent, NativeManifest, NativeUnitState, Ownership, Phase,
     ReportInfo,
 };
-use super::store::{read_events, read_manifest, stage_dir, StoreError};
+use super::store::{invocation_dir, read_events, read_manifest, stage_dir, StoreError};
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum NativeDisposition {
@@ -25,14 +26,28 @@ impl NativeDisposition {
         match self {
             Self::None => None,
             Self::Active(units) => Some(format!(
-                "stage '{stage_id}' has running native Codex workers ({}); cancel each with 'loom subagents cancel --stage {stage_id} --worker codex:<unit>' and wait for it to stop",
+                "stage '{stage_id}' has running native Codex workers ({}); cancel each with 'loom subagents cancel --stage {stage_id} --worker codex:<unit> --reason <text>' and wait for it to stop",
                 units.join(", ")
             )),
-            Self::Unverified(cause) => Some(format!(
+            Self::Unverified(cause) if is_unproven_ownership(cause) => Some(format!(
                 "stage '{stage_id}' has a native Codex worker whose processes could not be proven stopped ({cause}); inspect the worktree, then run 'loom subagents release --stage {stage_id} --invocation <invocation id>'"
+            )),
+            // `release` cannot read a damaged record, so the remedy is manual.
+            Self::Unverified(cause) => Some(format!(
+                "stage '{stage_id}' has a damaged native Codex worker record ({cause}); confirm no process of that worker still runs, then remove the damaged path under .loom/work/native-workers/{stage_id}/"
             )),
         }
     }
+}
+
+/// The cause suffix of an intact record whose ownership is `Unverified`; every other
+/// `Unverified` cause comes from a damaged record or stage directory.
+const UNPROVEN_OWNERSHIP: &str = ": processes not proven stopped";
+
+fn is_unproven_ownership(cause: &str) -> bool {
+    cause
+        .strip_suffix(UNPROVEN_OWNERSHIP)
+        .is_some_and(|id| validate_invocation_id(id).is_ok())
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -167,25 +182,28 @@ fn list_invocations(dir: &Path) -> Vec<Result<fs::DirEntry, StoreError>> {
 }
 
 fn load_one(entry: fs::DirEntry, stage_id: &str) -> Result<LoadedUnit, StoreError> {
-    let name = entry.file_name();
+    load_named(&entry.path(), &entry.file_name(), stage_id)
+}
+
+fn load_named(path: &Path, name: &OsStr, stage_id: &str) -> Result<LoadedUnit, StoreError> {
     let load = || {
         let id = name
             .to_str()
             .ok_or_else(|| StoreError::Corrupt("non-UTF-8 name".into()))?;
         validate_invocation_id(id).map_err(|error| StoreError::UnsafePath(error.to_string()))?;
-        let metadata = fs::symlink_metadata(entry.path())?;
+        let metadata = fs::symlink_metadata(path)?;
         if !metadata.is_dir() || metadata.is_symlink() {
             return Err(StoreError::UnsafePath(
                 "invocation is not a real directory".into(),
             ));
         }
-        let manifest = read_manifest(&entry.path())?;
+        let manifest = read_manifest(path)?;
         if manifest.stage_id != stage_id || manifest.invocation_id != id {
             return Err(StoreError::Corrupt(
                 "manifest ids differ from directory names".into(),
             ));
         }
-        let events = read_events(&entry.path())?;
+        let events = read_events(path)?;
         let first = events.first().map(|record| &record.event);
         if !matches!(first, Some(NativeEvent::Admitted)) {
             return Err(StoreError::Corrupt("first event is not Admitted".into()));
@@ -204,6 +222,22 @@ fn load_one(entry: fs::DirEntry, stage_id: &str) -> Result<LoadedUnit, StoreErro
     })
 }
 
+/// One invocation's state, read without its siblings: `Ok(None)` when it has no record.
+pub fn invocation_state(
+    work_dir: &Path,
+    stage_id: &str,
+    invocation_id: &str,
+) -> Result<Option<NativeUnitState>, StoreError> {
+    validate_stage_id(stage_id).map_err(|error| StoreError::UnsafePath(error.to_string()))?;
+    validate_invocation_id(invocation_id)
+        .map_err(|error| StoreError::UnsafePath(error.to_string()))?;
+    let path = invocation_dir(work_dir, stage_id, invocation_id);
+    match fs::symlink_metadata(&path) {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        _ => load_named(&path, OsStr::new(invocation_id), stage_id).map(|(state, _)| Some(state)),
+    }
+}
+
 fn sort_units(units: &mut [Result<LoadedUnit, StoreError>]) {
     units.sort_by(|a, b| match (a, b) {
         (Ok((a, _)), Ok((b, _))) => b
@@ -218,7 +252,7 @@ fn sort_units(units: &mut [Result<LoadedUnit, StoreError>]) {
 }
 
 fn load_all(work_dir: &Path, stage_id: &str) -> Vec<Result<LoadedUnit, StoreError>> {
-    if let Err(error) = validate_unit_id(stage_id) {
+    if let Err(error) = validate_stage_id(stage_id) {
         return vec![Err(StoreError::UnsafePath(error.to_string()))];
     }
     let mut units: Vec<_> = list_invocations(&stage_dir(work_dir, stage_id))
@@ -265,7 +299,7 @@ pub fn stage_disposition(work_dir: &Path, stage_id: &str) -> NativeDisposition {
         .find(|unit| unit.ownership == Ownership::Unverified)
     {
         return NativeDisposition::Unverified(format!(
-            "{}: processes not proven stopped",
+            "{}{UNPROVEN_OWNERSHIP}",
             unit.manifest.invocation_id
         ));
     }
@@ -314,7 +348,7 @@ pub fn stages(work_dir: &Path) -> Vec<String> {
         .filter_map(Result::ok)
         .filter_map(|entry| {
             let name = entry.file_name().into_string().ok()?;
-            if validate_unit_id(&name).is_ok() && entry.file_type().ok()?.is_dir() {
+            if validate_stage_id(&name).is_ok() && entry.file_type().ok()?.is_dir() {
                 Some(name)
             } else {
                 None

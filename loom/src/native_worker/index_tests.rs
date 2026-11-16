@@ -307,9 +307,12 @@ fn unit_state_errors_when_a_sibling_record_is_corrupt() {
 fn blocker_texts_are_exact() {
     assert_eq!(NativeDisposition::None.blocker("stage"), None);
     assert_eq!(NativeDisposition::Active(vec!["a".into(), "b".into()]).blocker("stage").unwrap(),
-        "stage 'stage' has running native Codex workers (a, b); cancel each with 'loom subagents cancel --stage stage --worker codex:<unit>' and wait for it to stop");
-    assert_eq!(NativeDisposition::Unverified("inv-x: missing".into()).blocker("stage").unwrap(),
-        "stage 'stage' has a native Codex worker whose processes could not be proven stopped (inv-x: missing); inspect the worktree, then run 'loom subagents release --stage stage --invocation <invocation id>'");
+        "stage 'stage' has running native Codex workers (a, b); cancel each with 'loom subagents cancel --stage stage --worker codex:<unit> --reason <text>' and wait for it to stop");
+    let id = format!("inv-{:032x}", 1);
+    assert_eq!(NativeDisposition::Unverified(format!("{id}: processes not proven stopped")).blocker("stage").unwrap(),
+        format!("stage 'stage' has a native Codex worker whose processes could not be proven stopped ({id}: processes not proven stopped); inspect the worktree, then run 'loom subagents release --stage stage --invocation <invocation id>'"));
+    assert_eq!(NativeDisposition::Unverified(format!("{id}: line 1: bad")).blocker("stage").unwrap(),
+        format!("stage 'stage' has a damaged native Codex worker record ({id}: line 1: bad); confirm no process of that worker still runs, then remove the damaged path under .loom/work/native-workers/stage/"));
 }
 
 #[test]
@@ -338,12 +341,12 @@ fn stages_lists_only_safe_directories_in_sorted_order() {
     let work = TempDir::new().unwrap();
     assert!(stages(work.path()).is_empty());
     let root = work.path().join("native-workers");
-    for name in ["z-stage", "a-stage", "_unsafe", ".hidden", "bad.name"] {
+    for name in ["z-stage", "a-stage", "_leading", ".hidden", "bad.name"] {
         fs::create_dir_all(root.join(name)).unwrap();
     }
     fs::write(root.join("file"), b"").unwrap();
     std::os::unix::fs::symlink(root.join("a-stage"), root.join("link")).unwrap();
-    assert_eq!(stages(work.path()), ["a-stage", "z-stage"]);
+    assert_eq!(stages(work.path()), ["_leading", "a-stage", "z-stage"]);
 }
 
 #[test]

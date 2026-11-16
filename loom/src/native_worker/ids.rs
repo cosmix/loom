@@ -69,6 +69,25 @@ pub fn validate_unit_id(value: &str) -> Result<(), IdError> {
     Ok(())
 }
 
+/// Validate a stage identifier with loom's stage-id rule (`crate::validation::validate_id`):
+/// at most 128 ASCII alphanumerics, `-` and `_`, a leading `-` or `_` allowed. The rule
+/// excludes `/` and `.`, so a valid stage id is one safe path component.
+pub fn validate_stage_id(value: &str) -> Result<(), IdError> {
+    if value.is_empty() {
+        return Err(IdError::Empty);
+    }
+    if value.len() > crate::validation::MAX_ID_LENGTH {
+        return Err(IdError::TooLong);
+    }
+    if let Some(c) = value
+        .chars()
+        .find(|c| !c.is_ascii_alphanumeric() && *c != '-' && *c != '_')
+    {
+        return Err(IdError::BadCharacter(c));
+    }
+    crate::validation::validate_id(value).map_err(|_| IdError::BadShape)
+}
+
 /// Validate a message identifier using the unit identifier rules.
 pub fn validate_message_id(value: &str) -> Result<(), IdError> {
     validate_unit_id(value)
