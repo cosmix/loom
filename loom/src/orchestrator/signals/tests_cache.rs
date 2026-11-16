@@ -307,7 +307,7 @@ fn generated_signal(
 fn test_signal_codex_implementers_section_gated() {
     let temp_dir = TempDir::new().unwrap();
     // The forwarder doctrine below is the legacy lane's; native is the default.
-    let work_dir = super::tests_codex_lane::legacy_state_dir(&temp_dir);
+    let work_dir = crate::orchestrator::signals::tests_codex_lane::legacy_state_dir(&temp_dir);
 
     let content = generated_signal(&work_dir, None, None);
     assert!(!content.contains("## Codex Implementers"));
