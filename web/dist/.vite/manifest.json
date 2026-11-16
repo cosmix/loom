@@ -1,13 +1,4 @@
 {
-  "_button.js": {
-    "file": "assets/button.js",
-    "name": "button",
-    "imports": [
-      "_rolldown-runtime.js",
-      "_react.js",
-      "_zod.js"
-    ]
-  },
   "_chunk-2Q5K7J3B.js": {
     "file": "assets/chunk-2Q5K7J3B.js",
     "name": "chunk-2Q5K7J3B",
@@ -271,10 +262,9 @@
     "file": "assets/coverage-marks.js",
     "name": "coverage-marks",
     "imports": [
-      "_button.js",
+      "_use-media-query.js",
       "_heading-parts.js",
       "_coverage-model.js",
-      "_trace.js",
       "_react.js"
     ]
   },
@@ -284,7 +274,7 @@
     "imports": [
       "_rolldown-runtime.js",
       "_react.js",
-      "_button.js",
+      "_use-media-query.js",
       "_heading-parts.js"
     ]
   },
@@ -297,24 +287,6 @@
     "name": "dist",
     "imports": [
       "_rolldown-runtime.js"
-    ]
-  },
-  "_doc-heading.css": {
-    "file": "assets/doc-heading.css",
-    "src": "_doc-heading.css"
-  },
-  "_doc-heading.js": {
-    "file": "assets/doc-heading.js",
-    "name": "doc-heading",
-    "imports": [
-      "_rolldown-runtime.js",
-      "_button.js",
-      "_heading-parts.js",
-      "_react.js",
-      "_router.js"
-    ],
-    "css": [
-      "assets/doc-heading.css"
     ]
   },
   "_feature-mark.css": {
@@ -354,7 +326,7 @@
     "imports": [
       "_rolldown-runtime.js",
       "_react.js",
-      "_button.js",
+      "_use-media-query.js",
       "_router.js",
       "_zod.js"
     ],
@@ -372,7 +344,7 @@
     "imports": [
       "_rolldown-runtime.js",
       "_react.js",
-      "_button.js",
+      "_use-media-query.js",
       "_quota-meters.js"
     ],
     "css": [
@@ -424,7 +396,7 @@
     "name": "page-offer",
     "imports": [
       "_react.js",
-      "_button.js",
+      "_use-media-query.js",
       "_zod.js",
       "_heading-parts.js"
     ]
@@ -439,7 +411,7 @@
     "imports": [
       "_rolldown-runtime.js",
       "_react.js",
-      "_button.js",
+      "_use-media-query.js",
       "_router.js",
       "_zod.js",
       "_flow.js"
@@ -486,7 +458,7 @@
     "file": "assets/rotate-ccw.js",
     "name": "rotate-ccw",
     "imports": [
-      "_button.js"
+      "_use-media-query.js"
     ]
   },
   "_rough.esm.js": {
@@ -511,7 +483,7 @@
     "imports": [
       "_rolldown-runtime.js",
       "_react.js",
-      "_button.js",
+      "_use-media-query.js",
       "_quota-meters.js",
       "_router.js",
       "_zod.js",
@@ -526,11 +498,21 @@
       "assets/sentence-text.css"
     ]
   },
+  "_state.js": {
+    "file": "assets/state.js",
+    "name": "state",
+    "imports": [
+      "_rolldown-runtime.js",
+      "_react.js",
+      "_use-media-query.js",
+      "_heading-parts.js"
+    ]
+  },
   "_store.js": {
     "file": "assets/store.js",
     "name": "store",
     "imports": [
-      "_button.js"
+      "_use-media-query.js"
     ]
   },
   "_trace-gate.js": {
@@ -538,28 +520,19 @@
     "name": "trace-gate",
     "imports": [
       "_react.js",
-      "_button.js",
+      "_use-media-query.js",
       "_heading-parts.js",
-      "_doc-heading.js",
-      "_trace.js",
+      "_state.js",
       "plan.html"
     ]
   },
-  "_trace.css": {
-    "file": "assets/trace.css",
-    "src": "_trace.css"
-  },
-  "_trace.js": {
-    "file": "assets/trace.js",
-    "name": "trace",
+  "_use-media-query.js": {
+    "file": "assets/use-media-query.js",
+    "name": "use-media-query",
     "imports": [
       "_rolldown-runtime.js",
       "_react.js",
-      "_button.js",
-      "_heading-parts.js"
-    ],
-    "css": [
-      "assets/trace.css"
+      "_zod.js"
     ]
   },
   "_zod.js": {
@@ -574,7 +547,7 @@
     "imports": [
       "_rolldown-runtime.js",
       "_react.js",
-      "_button.js",
+      "_use-media-query.js",
       "_router.js",
       "_quota-meters.js",
       "_zod.js",
@@ -1743,7 +1716,7 @@
     "isEntry": true,
     "imports": [
       "_rolldown-runtime.js",
-      "_button.js",
+      "_use-media-query.js",
       "_react.js",
       "_router.js",
       "_quota-meters.js",
@@ -1752,8 +1725,7 @@
       "_coverage-model.js",
       "_sentence-text.js",
       "_page-offer.js",
-      "_doc-heading.js",
-      "_trace.js",
+      "_state.js",
       "_feature-mark.js",
       "_markdown.js",
       "_flow.js"
@@ -1808,7 +1780,7 @@
     "isDynamicEntry": true,
     "imports": [
       "_rolldown-runtime.js",
-      "_button.js",
+      "_use-media-query.js",
       "_react.js",
       "_router.js",
       "_sentence-text.js",
@@ -1825,16 +1797,14 @@
     "isDynamicEntry": true,
     "imports": [
       "_rolldown-runtime.js",
-      "_button.js",
+      "_use-media-query.js",
       "_help-shortcuts.js",
       "_react.js",
       "_quota-meters.js",
       "_heading-parts.js",
       "plan.html",
-      "_sentence-text.js",
       "_router.js",
       "_coverage-marks.js",
-      "_trace.js",
       "_coverage-model.js"
     ],
     "css": [
@@ -1850,12 +1820,11 @@
     "isDynamicEntry": true,
     "imports": [
       "_rolldown-runtime.js",
-      "_button.js",
+      "_use-media-query.js",
       "_react.js",
       "_heading-parts.js",
       "_quota-meters.js",
-      "plan.html",
-      "_doc-heading.js"
+      "plan.html"
     ]
   },
   "src/plan/trace/coverage-page.tsx": {
@@ -1870,7 +1839,7 @@
       "_heading-parts.js",
       "_coverage-marks.js",
       "_coverage-model.js",
-      "_button.js",
+      "_use-media-query.js",
       "_sentence-text.js",
       "plan.html",
       "_trace-gate.js"
@@ -1886,7 +1855,7 @@
     "isDynamicEntry": true,
     "imports": [
       "_rolldown-runtime.js",
-      "_button.js",
+      "_use-media-query.js",
       "_react.js",
       "_router.js",
       "_heading-parts.js",
@@ -1894,7 +1863,7 @@
       "_page-offer.js",
       "_rotate-ccw.js",
       "_quota-meters.js",
-      "_trace.js",
+      "_state.js",
       "_trace-gate.js"
     ],
     "css": [
