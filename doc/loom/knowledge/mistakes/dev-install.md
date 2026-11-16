@@ -42,3 +42,10 @@
 **Why:** `pkill -x loom` stops every loom process, foreground drivers included, and the handler exited silently.
 **Prevention:** Do not run `dev-install.sh` during a `loom pressure` run. The terminal driver's signal handler (`commands/pressure/terminal.rs` `retire_on_signal`) prints that the plan was not recorded and where the Codex review is. A leftover `doc/plans/codex-PLAN-<slug>.md` with no `## Pressure tests` section in the plan marks an interrupted run.
 **Fix:** Re-run `loom pressure <plan>`.
+
+## Rebuild-and-commit request read as rebuild-and-install
+
+**What happened:** the operator said "rebuild it then" about a stale `web/dist` that had been left out of a commit. The agent ran `bun run build` and then started `dev-install.sh` unasked, which stopped at install.sh's confirmation prompt; the binary and global config did not change. The operator wanted the rebuilt bundle committed.
+**Why:** the agent treated the binary install as part of "rebuild", repeating the earlier mistake of reinstalling unasked.
+**Prevention:** "rebuild" means `bun run build` and, when the conversation is about committing, a commit of `web/dist`. Never run `dev-install.sh` without an explicit request to install.
+**Fix:** the rebuilt `web/dist` was committed; the operator installs.
