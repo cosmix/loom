@@ -181,27 +181,37 @@ impl Orchestrator {
         }
     }
 
-    /// Insert a spawned session into `active_sessions`, refusing to replace an
-    /// existing entry for the stage.
+    /// Insert a spawned session into `active_sessions`, refusing to replace a
+    /// tracked session that may still be running.
     ///
-    /// Silently overwriting here (a plain `.insert()`) is how the daemon
-    /// stopped monitoring an original session the moment a second one spawned
-    /// into the same worktree: the first entry, and with it the only handle
-    /// the daemon had on the live agent, was simply dropped. Once a stage has
-    /// a tracked session, only its own removal (completion, crash, merge)
-    /// may replace it.
+    /// A plain `.insert()` would drop the daemon's only handle on a live
+    /// agent the moment a second session spawned into the same worktree, so
+    /// an incumbent entry is kept whenever it is alive or its liveness cannot
+    /// be established (a probe error). An incumbent the backend proves dead
+    /// is replaced: that is the state left behind when another process (for
+    /// example `loom stage reset --kill-session`) kills the session and
+    /// rewrites the stage file while the daemon still holds its entry, and
+    /// keeping it would leave every replacement session unmonitored.
     ///
     /// Returns `true` if the session was inserted, `false` if refused because
-    /// an entry already existed.
+    /// a live (or unverifiable) entry already existed.
     pub(super) fn insert_active_session(&mut self, stage_id: &str, session: Session) -> bool {
         if let Some(existing) = self.active_sessions.get(stage_id) {
-            tracing::error!(
+            if !matches!(self.backend.is_session_alive(existing), Ok(false)) {
+                tracing::error!(
+                    stage_id = %stage_id,
+                    incumbent_session = %existing.id,
+                    rejected_session = %session.id,
+                    "Refusing to evict an already-tracked active session"
+                );
+                return false;
+            }
+            tracing::warn!(
                 stage_id = %stage_id,
                 incumbent_session = %existing.id,
-                rejected_session = %session.id,
-                "Refusing to evict an already-tracked active session"
+                replacement_session = %session.id,
+                "Replacing a dead tracked session with its replacement"
             );
-            return false;
         }
         self.active_sessions.insert(stage_id.to_string(), session);
         true

@@ -339,22 +339,23 @@ fn knowledge_and_worktree_preflights_agree_on_policy() {
     );
 }
 
-/// The eviction guard: once a stage has a tracked session, a second insert
-/// for the same stage must not silently replace it. Silent replacement is how
-/// the daemon stopped monitoring an original session the moment a duplicate
-/// spawned into the same worktree.
+/// The eviction guard: a second insert for a stage whose tracked session is
+/// still alive must not replace it. Silent replacement is how the daemon
+/// stopped monitoring an original session the moment a duplicate spawned
+/// into the same worktree.
 #[test]
-fn insert_active_session_refuses_to_evict_an_existing_entry() {
+fn insert_active_session_refuses_to_evict_a_live_entry() {
     let temp = work_dir();
     let work = temp.path().join(".loom").join("work");
     let mut orchestrator = orchestrator_for(&work, temp.path());
 
     let incumbent = session_for("alpha", SessionStatus::Running);
+    spawn_a_live_agent(&work, &incumbent);
     let incumbent_id = incumbent.id.clone();
-    orchestrator.insert_active_session("alpha", incumbent);
+    assert!(orchestrator.insert_active_session("alpha", incumbent));
 
     let challenger = session_for("alpha", SessionStatus::Running);
-    orchestrator.insert_active_session("alpha", challenger);
+    assert!(!orchestrator.insert_active_session("alpha", challenger));
 
     let kept = orchestrator
         .active_sessions
@@ -362,7 +363,34 @@ fn insert_active_session_refuses_to_evict_an_existing_entry() {
         .expect("the incumbent must still be tracked");
     assert_eq!(
         kept.id, incumbent_id,
-        "the first-tracked session must survive a second insert for the same stage"
+        "a live tracked session must survive a second insert for the same stage"
+    );
+}
+
+/// An incumbent killed out from under the daemon (`loom stage reset
+/// --kill-session`) leaves a dead in-memory entry; the replacement session
+/// must take its place or it is never monitored.
+#[test]
+fn insert_active_session_replaces_a_dead_entry() {
+    let temp = work_dir();
+    let work = temp.path().join(".loom").join("work");
+    let mut orchestrator = orchestrator_for(&work, temp.path());
+
+    // No PID file is written for the incumbent, so the probe reads it as dead.
+    let incumbent = session_for("alpha", SessionStatus::Running);
+    assert!(orchestrator.insert_active_session("alpha", incumbent));
+
+    let replacement = session_for("alpha", SessionStatus::Running);
+    let replacement_id = replacement.id.clone();
+    assert!(orchestrator.insert_active_session("alpha", replacement));
+
+    let tracked = orchestrator
+        .active_sessions
+        .get("alpha")
+        .expect("the replacement must be tracked");
+    assert_eq!(
+        tracked.id, replacement_id,
+        "a dead incumbent must be replaced by the new session"
     );
 }
 
