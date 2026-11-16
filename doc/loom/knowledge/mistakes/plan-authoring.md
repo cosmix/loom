@@ -258,3 +258,11 @@ knowledge-distill the rewrite, or the stage changes it. Raise a cap to the measu
 **Prevention:** when a plan replaces a confinement layer, diff its mounts and denies against the layer it replaces before claiming parity. Treat the Loom boundary as the only enforcement and Codex's sandbox as defence in depth. Give every mount of a credential or config directory a test that asserts the host-side effect.
 
 **Fix:** the plan mounts a private tmpfs Codex home holding only `sessions/`, the auth files and AGENTS.md, binds `W/.claude` read-only, and adds the contract `boundary-codex-home-is-private`.
+
+## A Throwaway Smoke Plan Ran the Full Bookends (2026-11-16)
+
+**What happened:** a one-test plan written only to exercise the native codex lane carried `integration-verify` and `knowledge-distill` because the plan-writer doctrine lists them for every plan. After the codex stage merged, integration-verify ran the full `cargo test`, hit the 300 s default criterion timeout (13,496 passed, none failed, ~400 unfinished), filed a dispute and started an opus judge; the operator asked why it was running and had it killed.
+
+**Why:** the bookends were added by rule, without asking what the plan was for. The full-suite criterion also had no `timeout_secs`, though the loom suite needs more than 300 s even warm.
+
+**Prevention:** a throwaway plan that exists to observe loom behaviour is the implementation stage alone, accepting the strict-verify warnings, or the operator is asked first. Any integration-verify criterion that runs the full loom suite sets `timeout_secs` of at least 900.

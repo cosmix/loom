@@ -87,6 +87,8 @@ Reviewer findings nobody implemented, grouped by area. File paths are under `loo
 
 ## Native Lane Smoke Observations
 
-The codex-native-smoke run (one unit adding a test to `native_worker/ids_tests.rs`) has exercised admission only: the start request applied within one 90 s wait and the unit was admitted at `terra`/`xhigh`. No native worker has yet run a Codex thread to a report, so qualification items 2 and 3 stay unmet; rerun the smoke plan to cover them.
+Two throwaway smoke runs on 2026-11-16 each sent one terra/xhigh unit adding one test to `native_worker/ids_tests.rs`. In the second, the unit ran a full Codex thread in `workspace_write` mode: admitted, thread started 5 s later, one turn of 18 s, report stored, outcome `succeeded`, ownership released; the edit was exactly the briefed one and touched no other file. That covers the `WorkspaceWrite` half of item 2; the `External` mode and the `loom usage` attribution are unchecked, and items 3 to 8 have not been run.
 
-The proxy socket directory comes from `proxy::socket_dir` (`proxy/mod.rs`), which passes mode 0700 to `tempfile::Builder::permissions`; `require_private_dir` demands exactly 0700. tempfile's default is 0777 less the umask, which is why the first smoke run failed under umask 002: see [Native Proxy Socket Dir Umask](../mistakes/sandbox-and-settings.md#native-proxy-socket-dir-umask). `proxy::tests::socket_dir_is_private_under_any_umask` pins it, and every proxy test builds its directory through `proxy::socket_dir`.
+Inside the boundary a Codex unit cannot link a test binary: its report said the linker could not create a temporary file on the read-only filesystem. The boundary sets `TMPDIR=/tmp` (`boundary/linux.rs`) and mounts no writable `/tmp`; whether Codex's own inner sandbox also denies it is unconfirmed. Until that changes, a native unit proves nothing by running tests, and the stage's lead runs each unit's tests after it.
+
+The first run failed before any thread on the proxy socket directory mode: see [Native Proxy Socket Dir Umask](../mistakes/sandbox-and-settings.md#native-proxy-socket-dir-umask).
