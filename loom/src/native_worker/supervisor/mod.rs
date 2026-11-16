@@ -250,6 +250,11 @@ pub fn run_from_dir(dir: &Path) -> Result<ExitCode> {
         proxy_socket,
         loom_program,
     };
+    // Durable before bubblewrap can exist: a crash between the spawn and
+    // `boundary.json` must not let the daemon release ownership unproven.
+    if let Err(e) = store::mark_spawn_begun(dir) {
+        return Ok(settle_unspawned(dir, &format!("spawn marker: {e}")));
+    }
     // From this (main) thread, before any reader, writer or drain thread exists.
     let code = match boundary::spawn(&spec) {
         Ok(spawned) => supervise_boundary(dir, spawned, mode),

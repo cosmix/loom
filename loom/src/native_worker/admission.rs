@@ -11,7 +11,8 @@ use std::path::{Path, PathBuf};
 use chrono::Utc;
 
 use super::ids::{
-    mint_invocation_id, validate_invocation_id, validate_message_id, validate_unit_id, IdError,
+    mint_invocation_id, validate_invocation_id, validate_message_id, validate_stage_id,
+    validate_unit_id, IdError,
 };
 use super::index::{self, NativeDisposition};
 use super::model::{
@@ -314,7 +315,7 @@ fn newest_running(
 /// The stage id names a directory under the record root, so it must have the
 /// shape `create_invocation` and `index::stages` accept.
 fn check_stage_id(stage_id: &str) -> Result<(), String> {
-    check_id("stage", stage_id, validate_unit_id)
+    check_id("stage", stage_id, validate_stage_id)
 }
 
 fn check_id(

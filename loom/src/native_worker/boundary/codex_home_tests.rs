@@ -157,3 +157,53 @@ fn symlinked_codex_home_source_is_refused() {
         );
     }
 }
+
+#[test]
+fn system_codex_config_is_covered_by_an_empty_read_only_tmpfs() {
+    use super::mounts::hide_system_config;
+    let (_tmp, root) = canonical_tempdir();
+    let dir = root.join("codex");
+    let args = |dir: &Path| {
+        let mut command = std::process::Command::new("bwrap");
+        hide_system_config(&mut command, dir)
+            .map(|()| command.get_args().map(OsString::from).collect::<Vec<_>>())
+    };
+    assert!(args(&dir).unwrap().is_empty(), "absent: nothing to cover");
+    std::fs::create_dir(&dir).unwrap();
+    let expected: Vec<OsString> = vec![
+        "--tmpfs".into(),
+        dir.clone().into(),
+        "--remount-ro".into(),
+        dir.clone().into(),
+    ];
+    assert_eq!(args(&dir).unwrap(), expected);
+    let link = root.join("link");
+    std::os::unix::fs::symlink(&dir, &link).unwrap();
+    assert!(format!("{:#}", args(&link).unwrap_err()).contains("symlink"));
+    assert_eq!(super::mounts::SYSTEM_CODEX_CONFIG, "/etc/codex");
+}
+
+#[test]
+fn argv_project_codex_dir_is_read_only() {
+    if no_bwrap("argv_project_codex_dir_is_read_only") {
+        return;
+    }
+    let fixture = RealFixture::new();
+    let codex = fixture.w.join(".codex");
+    let ro = ["--ro-bind".as_ref(), codex.as_ref(), codex.as_ref()];
+    assert!(position(&fixture.argv(), &ro).is_none());
+    std::fs::create_dir(&codex).unwrap();
+    let args = fixture.argv();
+    assert!(position(&args, &ro).is_some(), "{args:?}");
+    std::fs::remove_dir(&codex).unwrap();
+    std::fs::write(&codex, "x").unwrap();
+    let host = host(&fixture.home);
+    let plan = Plan::real(&fixture.spec, &host).unwrap();
+    let error = super::linux::command(&plan, &host, 3)
+        .err()
+        .expect("a file .codex");
+    assert!(
+        format!("{error:#}").contains("is not a directory"),
+        "{error:#}"
+    );
+}

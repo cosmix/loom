@@ -190,7 +190,8 @@ pub(super) fn release_in(
     Ok(0)
 }
 
-/// `Ok(Err(reason))` is a refusal; `Err` is an unreadable record.
+/// `Ok(Err(reason))` is a refusal; `Err` is an I/O failure outside the record.
+/// Only the named invocation's record is read: a damaged sibling cannot block its release.
 fn release_gate(args: &ReleaseArgs, work_dir: &Path) -> Result<Result<(), String>> {
     if let Err(error) = validate_id(&args.stage) {
         return Ok(Err(format!("invalid --stage: {error:#}")));
@@ -198,14 +199,11 @@ fn release_gate(args: &ReleaseArgs, work_dir: &Path) -> Result<Result<(), String
     if let Err(error) = validate_invocation_id(&args.invocation) {
         return Ok(Err(format!("invalid --invocation: {error}")));
     }
-    let states = index::stage_units(work_dir, &args.stage)
-        .into_iter()
-        .collect::<Result<Vec<_>, _>>()?;
-    let Some(state) = states
-        .into_iter()
-        .find(|state| state.manifest.invocation_id == args.invocation)
-    else {
-        return Ok(Err("no such invocation".into()));
+    let dir = store::invocation_dir(work_dir, &args.stage, &args.invocation);
+    let state = match index::invocation_state(work_dir, &args.stage, &args.invocation) {
+        Ok(Some(state)) => state,
+        Ok(None) => return Ok(Err("no such invocation".into())),
+        Err(error) => return Ok(Err(damaged(&dir, &error))),
     };
     if state.ownership != Ownership::Unverified {
         let ownership = match state.ownership {
@@ -214,11 +212,21 @@ fn release_gate(args: &ReleaseArgs, work_dir: &Path) -> Result<Result<(), String
         };
         return Ok(Err(format!("nothing to release: ownership is {ownership}")));
     }
-    let dir = store::invocation_dir(work_dir, &args.stage, &args.invocation);
-    if let Some(identity) = store::read_boundary(&dir)? {
-        if let Quiescence::Unverified(detail) = boundary::verify_quiescent(&identity) {
-            return Ok(Err(format!("still not provably stopped: {detail}")));
+    match store::read_boundary(&dir) {
+        Ok(Some(identity)) => {
+            if let Quiescence::Unverified(detail) = boundary::verify_quiescent(&identity) {
+                return Ok(Err(format!("still not provably stopped: {detail}")));
+            }
         }
+        Ok(None) => {}
+        Err(error) => return Ok(Err(damaged(&dir, &error))),
     }
     Ok(Ok(()))
+}
+
+fn damaged(dir: &Path, error: &store::StoreError) -> String {
+    format!(
+        "the record {} is damaged ({error}); confirm no process of this worker still runs, then remove that directory",
+        dir.display()
+    )
 }

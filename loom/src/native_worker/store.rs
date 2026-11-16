@@ -14,7 +14,9 @@ use crate::fs::safe_fs::{
 };
 use crate::utils::sha256_hex;
 
-use super::ids::{validate_invocation_id, validate_message_id, validate_unit_id};
+use super::ids::{
+    validate_invocation_id, validate_message_id, validate_stage_id, validate_unit_id,
+};
 use super::model::{
     BoundaryIdentity, CancelRequest, ControlMessage, EventRecord, NativeEvent, NativeManifest,
     ReportInfo, MAX_BRIEF_BYTES, MAX_MESSAGE_BYTES, MAX_RECORD_BYTES,
@@ -87,6 +89,25 @@ pub fn read_boundary(dir: &Path) -> Result<Option<BoundaryIdentity>, StoreError>
 
 pub fn write_boundary(dir: &Path, identity: &BoundaryIdentity) -> Result<(), StoreError> {
     write_json(dir, "boundary.json", identity)
+}
+
+/// Created by the supervisor before `boundary::spawn`. From then on a namespace may
+/// exist that no `boundary.json` names yet, so a lost supervisor's record whose
+/// `boundary.json` is absent cannot be released without proof.
+const SPAWN_MARKER: &str = "boundary.pending";
+
+pub fn mark_spawn_begun(dir: &Path) -> Result<(), StoreError> {
+    let fd = safe_open_dirfd(dir).map_err(io_err)?;
+    safe_create_new_in_workdir(fd.as_raw_fd(), Path::new(SPAWN_MARKER), b"").map_err(io_err)?;
+    File::from(fd).sync_all()?;
+    Ok(())
+}
+
+/// Whether `mark_spawn_begun` ran. Anything at the path other than a clean
+/// absence counts as begun: the answer only ever withholds a release.
+pub fn spawn_begun(dir: &Path) -> bool {
+    !matches!(fs::symlink_metadata(dir.join(SPAWN_MARKER)),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound)
 }
 
 pub fn read_cancel(dir: &Path) -> Result<Option<CancelRequest>, StoreError> {
@@ -296,9 +317,10 @@ pub fn create_invocation(
 }
 
 fn validate_creation(manifest: &NativeManifest, brief: &[u8]) -> Result<(), StoreError> {
-    for id in [&manifest.stage_id, &manifest.unit_id] {
-        validate_unit_id(id).map_err(|error| StoreError::UnsafePath(error.to_string()))?;
-    }
+    validate_stage_id(&manifest.stage_id)
+        .map_err(|error| StoreError::UnsafePath(error.to_string()))?;
+    validate_unit_id(&manifest.unit_id)
+        .map_err(|error| StoreError::UnsafePath(error.to_string()))?;
     validate_invocation_id(&manifest.invocation_id)
         .map_err(|error| StoreError::UnsafePath(error.to_string()))?;
     if brief.len() as u64 > MAX_BRIEF_BYTES {

@@ -13,6 +13,33 @@ fn disposition_unverified_for_corrupt_events() {
     };
     assert!(cause.starts_with(&format!("inv-{:032x}: ", 1)));
     assert!(cause.contains("line 1:"));
+    let blocker = stage_disposition(work.path(), "stage")
+        .blocker("stage")
+        .unwrap();
+    assert!(
+        blocker.contains("damaged native Codex worker record"),
+        "{blocker}"
+    );
+    assert!(!blocker.contains("loom subagents release"), "{blocker}");
+}
+
+#[test]
+fn invocation_state_ignores_corrupt_siblings() {
+    let work = TempDir::new().unwrap();
+    let corrupt = admit(work.path(), "corrupt", 1, 0, &[]);
+    admit(work.path(), "unknown", 2, 1, &[unverified()]);
+    fs::write(corrupt.join("events.jsonl"), b"broken\n").unwrap();
+    let good = format!("inv-{:032x}", 2);
+    let state = invocation_state(work.path(), "stage", &good)
+        .unwrap()
+        .unwrap();
+    assert_eq!(state.ownership, Ownership::Unverified);
+    assert!(invocation_state(work.path(), "stage", &format!("inv-{:032x}", 1)).is_err());
+    assert!(
+        invocation_state(work.path(), "stage", &format!("inv-{:032x}", 3))
+            .unwrap()
+            .is_none()
+    );
 }
 
 #[test]
@@ -100,4 +127,16 @@ fn disposition_attributes_corrupt_manifest_to_invocation() {
         panic!("corrupt invocation must block the stage");
     };
     assert!(cause.starts_with(&format!("inv-{:032x}: ", 1)), "{cause}");
+}
+
+#[test]
+fn disposition_none_for_loom_stage_ids_without_records() {
+    for stage_id in ["s".repeat(70), "_x".to_string(), "-x".to_string()] {
+        let work = TempDir::new().unwrap();
+        assert_eq!(
+            stage_disposition(work.path(), &stage_id),
+            NativeDisposition::None,
+            "{stage_id}"
+        );
+    }
 }

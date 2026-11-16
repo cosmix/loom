@@ -82,3 +82,21 @@ fn mint_invocation_id_is_valid_and_distinct() {
     assert_eq!(validate_invocation_id(&b), Ok(()));
     assert_ne!(a, b);
 }
+
+#[test]
+fn stage_id_follows_loom_stage_rule() {
+    for id in [&"a".repeat(70), "_x", "-x", &"s".repeat(128)] {
+        assert_eq!(validate_stage_id(id), Ok(()), "{id}");
+    }
+    assert_eq!(validate_stage_id(""), Err(IdError::Empty));
+    assert_eq!(validate_stage_id(&"a".repeat(129)), Err(IdError::TooLong));
+    for (id, c) in [
+        ("../escape", '.'),
+        ("bad.name", '.'),
+        ("a/b", '/'),
+        (".", '.'),
+    ] {
+        assert_eq!(validate_stage_id(id), Err(IdError::BadCharacter(c)), "{id}");
+    }
+    assert_eq!(validate_stage_id("con"), Err(IdError::BadShape));
+}
