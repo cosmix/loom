@@ -20,6 +20,7 @@ mod forward_jobs_transcript;
 mod forward_jobs_wait;
 pub(crate) mod ledger;
 mod metrics;
+mod native_hidden;
 mod render;
 mod wait;
 // `pub(crate)` rather than private: `commands::usage` reuses this module's
@@ -144,6 +145,22 @@ pub enum SubagentsCommand {
         #[arg(long)]
         json: bool,
     },
+
+    /// Run one native Codex worker; the daemon starts it, never a session
+    #[command(hide = true)]
+    Supervise {
+        #[arg(long)]
+        dir: PathBuf,
+    },
+
+    /// Run a program inside the worker boundary behind the loopback proxy bridge
+    #[command(hide = true)]
+    WorkerExec {
+        #[arg(long)]
+        proxy_socket: PathBuf,
+        #[arg(last = true, required = true)]
+        command: Vec<std::ffi::OsString>,
+    },
 }
 
 /// Dispatch to the requested diagnostic or bounded wait.
@@ -181,5 +198,10 @@ pub fn execute(args: SubagentsArgs) -> Result<()> {
             timeout,
             json,
         } => forward_jobs_wait::wait(receipt, timeout, json),
+        SubagentsCommand::Supervise { dir } => native_hidden::supervise(dir),
+        SubagentsCommand::WorkerExec {
+            proxy_socket,
+            command,
+        } => native_hidden::worker_exec(proxy_socket, command),
     }
 }

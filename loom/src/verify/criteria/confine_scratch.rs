@@ -31,7 +31,7 @@ use super::host::cargo_home;
 #[path = "confine_linked_home.rs"]
 mod linked_home;
 
-pub(super) struct CargoScratch {
+pub(crate) struct CargoScratch {
     directory: tempfile::TempDir,
     cargo: CargoHome,
     #[cfg(target_os = "linux")]
@@ -57,7 +57,7 @@ enum CargoHome {
 impl CargoScratch {
     /// `mount` says the launcher can bind a private directory at the host's
     /// Cargo home path.
-    pub(super) fn prepare(command: &Command, tree: &Path, mount: bool) -> Result<Self> {
+    pub(crate) fn prepare(command: &Command, tree: &Path, mount: bool) -> Result<Self> {
         let directory = private_temporary_directory(tree)?;
         let host = cargo_home(command);
         let cargo = match host {
@@ -108,7 +108,7 @@ impl CargoScratch {
     }
 
     /// The persistent per-tree Cargo home the launcher must grant writes to.
-    pub(super) fn linked_cargo_home(&self) -> Option<&Path> {
+    pub(crate) fn linked_cargo_home(&self) -> Option<&Path> {
         match &self.cargo {
             CargoHome::Linked { home, .. } => Some(home),
             CargoHome::Mounted(_) => None,
@@ -148,7 +148,7 @@ impl CargoScratch {
             .collect()
     }
 
-    pub(super) fn populate(&self) -> Result<()> {
+    pub(crate) fn populate(&self) -> Result<()> {
         #[cfg(target_os = "linux")]
         for (_, upper, work, target) in self.cache_overlays() {
             for path in [upper, work, target] {
