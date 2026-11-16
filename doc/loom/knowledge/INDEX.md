@@ -181,7 +181,7 @@
 | [review-final-wave](mistakes/review-final-wave.md) |  | 200 |
 | [review-integration-verification](mistakes/review-integration-verification.md) |  | 283 |
 | [review-tracker](mistakes/review-tracker.md) |  | 353 |
-| [sandbox-and-settings](mistakes/sandbox-and-settings.md) |  | 391 |
+| [sandbox-and-settings](mistakes/sandbox-and-settings.md) |  | 399 |
 | [sandbox-protected-hooks-dir](mistakes/sandbox-protected-hooks-dir.md) |  | 37 |
 | [sandbox-state-channels](mistakes/sandbox-state-channels.md) |  | 299 |
 | [sandbox-tooling-and-network](mistakes/sandbox-tooling-and-network.md) |  | 387 |
@@ -226,7 +226,7 @@
 | [knowledge-cli-gaps](concerns/knowledge-cli-gaps.md) |  | 108 |
 | [loom-ask-and-read-gate](concerns/loom-ask-and-read-gate.md) |  | 112 |
 | [merge-and-recovery-edge-cases](concerns/merge-and-recovery-edge-cases.md) | Edges | 105 |
-| [native-codex-qualification](concerns/native-codex-qualification.md) |  | 90 |
+| [native-codex-qualification](concerns/native-codex-qualification.md) |  | 92 |
 | [plan-chat-followups](concerns/plan-chat-followups.md) | Chat | 41 |
 | [planner-follow-ups-followups](concerns/planner-follow-ups-followups.md) |  | 91 |
 | [planner-ui-repair-followups](concerns/planner-ui-repair-followups.md) | UI | 214 |

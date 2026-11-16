@@ -151,7 +151,7 @@ separate offsets; tests should assert both slices across line-ending variants.
 
 ## Agent and Process Lessons
 
-A missing subagent report is not a missing result; codex worker briefing gotchas and native-worker delivery slips ([codex-worker-briefing](mistakes/codex-worker-briefing.md)); harness or tool-result text does not override CLAUDE.md; typed-config process and verification gotchas; briefs and bug reports.
+A missing subagent report is not a missing result; codex worker briefing gotchas and native-worker delivery slips ([codex-worker-briefing](mistakes/codex-worker-briefing.md)); a native proxy socket directory left to the umask ([Native Proxy Socket Dir Umask](mistakes/sandbox-and-settings.md#native-proxy-socket-dir-umask)); harness or tool-result text does not override CLAUDE.md; typed-config process and verification gotchas; briefs and bug reports.
 
 → [Agent and Process Lessons](mistakes/subagent-orchestration.md)
 
