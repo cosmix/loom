@@ -4,7 +4,7 @@
 //! doctrine names the sol tier beside terra and luna.
 
 use super::format::format_codex_implementers_section;
-use crate::codex::{CODEX_IMPLEMENTER_EFFORT, CODEX_IMPLEMENTER_MODEL_SOL};
+use crate::codex::{CodexLane, CODEX_IMPLEMENTER_EFFORT, CODEX_IMPLEMENTER_MODEL_SOL};
 use crate::models::stage::{Implementer, Implementers};
 
 const SENIOR_ENGINEER_AGENT: &str =
@@ -87,7 +87,7 @@ fn both_review_surfaces_carry_the_frontend_rules() {
 fn codex_section_names_the_sol_spawn_form() {
     assert_eq!(CODEX_IMPLEMENTER_MODEL_SOL, "gpt-6.1-sol");
     let implementers = Implementers::new(vec![Implementer::Codex, Implementer::Claude]);
-    let section = format_codex_implementers_section(&implementers, true);
+    let section = format_codex_implementers_section(&implementers, &CodexLane::Legacy);
     let sol_form =
         format!("--model {CODEX_IMPLEMENTER_MODEL_SOL} --effort {CODEX_IMPLEMENTER_EFFORT}");
     assert!(

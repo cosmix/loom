@@ -94,9 +94,11 @@ Harvest each worker's terminal report exactly once. Never re-arm the watch and n
 a `model` override — the engineer agent types carry no Task tool and run as leaves, so
 they cannot coordinate. Spawn workers BY AGENT TYPE — inside a stage untyped spawns are denied; outside one the spawn guard gives them `sonnet`.
 Coordinators delegate too (hard stop 6), going opus only when territory integration needs
-judgment. Mix lanes under ONE ownership table. On a stage listing codex in `implementers`, a
-coordinator spawns `loom-codex-forwarder` BY AGENT TYPE (never the plugin's `codex:codex-rescue`
-directly), foreground only, for straightforward well-specified pieces: gpt-6.1-terra for
+judgment. Mix lanes under ONE ownership table. On a stage listing codex in `implementers`, the
+signal's Codex Implementers section names the launch: on the forwarder lane a coordinator spawns
+`loom-codex-forwarder` BY AGENT TYPE (never the plugin's `codex:codex-rescue` directly), foreground
+only; on the native lane only the main agent runs `loom subagents start`. Codex takes
+straightforward well-specified pieces: gpt-6.1-terra for
 implementation, integration tests, boilerplate and simple unit tests; gpt-6.1-sol for substantial
 units and a failed terra unit; gpt-6-luna only when the user or the plan asks. The lane is chosen
 per piece, never per stage; the coordinator still does not verify.
@@ -164,10 +166,10 @@ After each wave of workers returns, the main agent compiles the tree once before
    of unknown cause, concurrency, security-sensitive code, a data-loss path.
    Spawn `Explore` with `model: haiku` for locate-only sweeps (paths, symbols,
    call sites, where a string occurs); the default sonnet when the answer
-   requires reading behavior. CODEX (loom-codex-forwarder, effort xhigh) takes
+   requires reading behavior. CODEX (effort xhigh) takes
    straightforward, well-specified implementation (one concern, pinned
    interfaces, mechanical acceptance, no git, no `.loom/`) when the stage lists
-   codex in implementers, the codex CLI + plugin are installed and quota has
+   codex in implementers, the lane is available and quota has
    room. No lane is first or default; list order means nothing. Verification,
    review, planning, exploration, debugging and iteration on failing tests
    stay with Claude. gpt-6.1-terra: implementation, integration tests,
@@ -296,9 +298,6 @@ request for more evidence.
 
 **Stage lifecycle:** `WaitingForDeps → Queued → Executing → Completed → Verified` (also `Blocked`,
 `NeedsHandoff`, `WaitingForInput`). Retry a failed merge: `loom stage merge <stage-id>`.
-
-**CLI:** `loom run` | `loom status` | `loom stop` | `loom check <stage-id> [--suggest]` |
-`loom knowledge sync` | `loom repair [--fix]`.
 
 **Handoff** (`.loom/work/handoffs/YYYY-MM-DD-desc.md`, written by `loom handoff` per Rule 3):
 `# Handoff: [Description]`, `**Stage**: [id]`, `## Completed` with file:line refs, `## Next Steps`

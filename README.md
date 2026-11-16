@@ -662,9 +662,19 @@ loom ask --eval <cases.json> [--backend claude|codex] [--model <M>] [--timeout-s
 loom subagents list | harvest [--id <id>] [--json]                           # One-shot diagnostics only: list shows liveness, harvest prints a terminal report (optionally one agent's); watch/wait below are the blocking waits
 loom subagents watch --worker <kind>:<id> [--worker <kind>:<id> ...] [--session <claude-parent-uuid>] --timeout <secs> [--json]
                                                                              # One owned wait, inside a loom stage only (needs LOOM_STAGE_ID/LOOM_SESSION_ID/LOOM_WORK_DIR): exit 0 all bound workers have fresh correlated success; 2 deadline passed; 3 worker failed/cancelled
-                                                                             # kind is claude (spawned agent ID) or codex (--unit-id); exit 4 AlreadyWaiting/Busy (no second monitor)
+                                                                             # kind is claude (spawned agent ID) or codex (--unit-id, or the --unit-id of a native start); exit 4 AlreadyWaiting/Busy (no second monitor)
                                                                              # Exit 5 identity/evidence unknown; --dir or no --worker is rejected with migration guidance
 loom subagents wait --receipt <id> [--timeout <secs>] [--json]               # Wait on one exact forwarded Codex job; exit 0 succeeded, 1 failed/canceled, 2 still running/unknown
+loom subagents start --provider codex --unit-id <unit> --brief <absolute path> --model <model> --effort <effort>
+                                                                             # Native Codex backend, stage main agent only: relays one worker start; read the verdict with loom request status <id> --wait 90
+loom subagents message --worker codex:<unit> --invocation <id> --delivery steer|next-turn --message-id <id> (--text <text> | --file <path>)
+                                                                             # Native backend: relays a steer or next-turn message to a running worker
+loom subagents cancel --worker codex:<unit> --invocation <id> --reason <text>
+                                                                             # Native backend, inside a stage: relays a cancel; an operator outside a session passes --stage <stage> instead of --invocation
+loom subagents status --worker codex:<unit> [--stage <stage>] [--json]       # Native backend: one-shot state of the unit's newest worker
+loom subagents result --worker codex:<unit> [--stage <stage>] [--full] [--json]
+                                                                             # Native backend: the worker's final report once it has ended
+loom subagents release --stage <stage> --invocation <id>                     # Native backend, operator only: records that a worker's processes are gone after an unverified stop
 loom attach [stage-id]                                                       # tmux backend only; omit the id for a tiled overview
 loom sessions list
 loom sessions kill <session-id...> | --stage <stage-id>
@@ -726,6 +736,7 @@ The keys, with their built-in defaults:
 | `update.check_interval_hours`      | `24`          | integer                                                                  | no            |
 | `terminal.backend`                 | `tmux`        | `native`, `tmux`                                                         | whole section |
 | `context.ceiling_tokens`           | `800000`      | integer                                                                  | whole section |
+| `codex.backend`                    | `legacy`      | `legacy`, `native`                                                       | per key       |
 | `pressure.claude_model`            | `opus`        | `haiku`, `sonnet`, `opus`, `fable`                                       | per key       |
 | `pressure.claude_effort`           | `xhigh`       | `low`, `medium`, `high`, `xhigh`, `max`                                  | per key       |
 | `pressure.codex_model`             | `gpt-6.1-sol` | `gpt-6-astra`, `gpt-6.1-sol`, `gpt-6-sol`, `gpt-6.1-terra`, `gpt-6-luna` | per key       |
@@ -757,7 +768,7 @@ The keys, with their built-in defaults:
 | `models.contract_writer_model`     | `opus`        | `haiku`, `sonnet`, `opus`, `fable`                                       | per key       |
 | `models.contract_writer_effort`    | `high`        | `low`, `medium`, `high`, `xhigh`, `max`                                  | per key       |
 
-"Whole section" means a project `[terminal]` or `[context]` section replaces the user tier's section outright, so a key it omits takes the built-in. "Per key" means a project `[pressure]`, `[planning]`, or `[models]` section overrides only the keys it names and the rest fall through to the user file. The `pressure.*` keys are explained under [Primary Commands](#primary-commands), the `models.*` keys under [Model Allocation](#model-allocation).
+"Whole section" means a project `[terminal]` or `[context]` section replaces the user tier's section outright, so a key it omits takes the built-in. "Per key" means a project `[pressure]`, `[planning]`, `[models]`, or `[codex]` section overrides only the keys it names and the rest fall through to the user file. The `pressure.*` keys are explained under [Primary Commands](#primary-commands), the `models.*` keys under [Model Allocation](#model-allocation).
 
 ### Read gate
 
@@ -1178,6 +1189,23 @@ The `loom-codex-forwarder` row additionally depends on the `codex` CLI and its p
 This is why savings come from delegation rather than downgrade: an untyped subagent inherits the spawning session's model, so the spawn guard denies it inside a stage and sets `model: sonnet` on it elsewhere. A failure against clear acceptance moves the work up one tier: Haiku to Sonnet, Sonnet to Opus at medium, Opus at medium to Opus at `effort: high`; Codex Terra to Sol, then Claude. Only after an Opus implementer fails at `effort: high` does `loom-advisor` diagnose, which is rare. `loom usage` attributes every transcript to its stage and every subagent to its requested model, from the worktree directory name and the spawn record when no hook ledger exists, so a misrouting shows in `by_agent_model`.
 
 A stage omits `model` and `reasoning_effort` by default, so the stage type's configured default applies. Set either field only as a deliberate per-stage override (`low`, `medium`, `high`, `xhigh`, `max` for effort). `ultracode: true` licenses a stage for large multi-agent fan-out; it is per-stage opt-in so the cost decision stays explicit.
+
+### Native Codex workers
+
+By default a stage's main agent reaches Codex through the `loom-codex-forwarder` subagent. Setting `codex.backend = native` (`loom config -k codex.backend native`) replaces that spawn with relayed commands: the main agent starts each worker with `loom subagents start`, loom's daemon admits it and runs one supervisor per worker, and the worker's record lives under `.loom/work/native-workers/`. The worker runs `codex app-server` inside a bubblewrap boundary with its own pid namespace, no network except an allowlist proxy to the model provider, and a private Codex home, so no `config.toml`, rules, hooks or MCP servers from your own `~/.codex` load. The worktree is writable except `.loom`, `.git` and `.claude`, so the worker cannot commit or change the repository's git state and cannot change `.loom/`; the instruction not to run git stays as a second layer, and no Loom or Claude hook runs for its commands. Briefs, model tiers, sizing rules, the cap of 6 workers per stage and the 1500000 ms deadline are the same as on the forwarder lane.
+
+```text
+loom subagents start --provider codex --unit-id <unit> --brief <absolute path> --model <model> --effort xhigh
+loom request status <id> --wait 90
+loom subagents watch --worker codex:<unit> --timeout 3600
+loom subagents result --worker codex:<unit>
+loom subagents message --worker codex:<unit> --invocation <id> --delivery steer|next-turn --message-id <id> --text <text>
+loom subagents cancel --worker codex:<unit> --invocation <id> --reason <text>
+```
+
+Only the stage's main agent can start, message or cancel a worker, and each of those commands runs alone in its own Bash call. While a worker of the stage runs, or its processes cannot be proven stopped, `loom stage reset`, `retry` (even with `--force`), `skip`, `commit`, `loom check` and `loom stage complete` are refused; an operator checks a worker with `loom subagents status` and, after inspecting the worktree, clears an unverified one with `loom subagents release --stage <stage> --invocation <id>`.
+
+The native backend works on Linux only, where bubblewrap can create a pid namespace. When the key is `native` and the host cannot run it, the stage signal reports the Codex lane as unavailable with the reason; it does not fall back to the forwarder. The default stays `legacy` until native launch is qualified with real jobs: loom's own tests drive it with a scripted peer, so before changing the key check that `codex --version` is 0.169.0 (the version the protocol was measured against) and run one real job on a disposable worktree, confirming that the report arrives, `git status` shows only the briefed files, and `loom usage` attributes the thread.
 
 ## Sandbox Configuration
 
