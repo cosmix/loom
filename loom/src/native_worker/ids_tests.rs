@@ -30,6 +30,15 @@ fn unit_id_rejects_leading_dash_as_bad_shape() {
 }
 
 #[test]
+fn unit_id_rejects_non_ascii_and_whitespace() {
+    assert_eq!(validate_unit_id("a b"), Err(IdError::BadCharacter(' ')));
+    assert_eq!(validate_unit_id("aé"), Err(IdError::BadCharacter('é')));
+    assert_eq!(validate_unit_id("a\t"), Err(IdError::BadCharacter('\t')));
+    // The limit counts bytes: 33 two-byte chars is 66 bytes, over the 64-byte limit.
+    assert_eq!(validate_unit_id(&"é".repeat(33)), Err(IdError::TooLong));
+}
+
+#[test]
 fn message_id_matches_unit_id_rules() {
     for id in ["abc_1-x", "", "..", "-x", "a/b", &"x".repeat(65)] {
         assert_eq!(validate_message_id(id), validate_unit_id(id));
