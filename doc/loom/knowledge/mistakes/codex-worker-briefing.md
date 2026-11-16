@@ -160,3 +160,81 @@ exists, or pin the interface inline in the brief so codex does not wait for it.
 **Prevention:** when waiting on Codex outside a stage's owned wait, also watch the rollout under `~/.codex/sessions`: no new event for 5 minutes during a turn is a stall, and a `turn_aborted` event is a dead job whatever its status says. On a hang, bisect with `codex exec --ignore-user-config`, then `-c mcp_servers.<name>.enabled=false` per server, with stdin closed.
 
 **Fix:** `enabled = false` on `vnkt` and on `node_repl` (its binary is missing) in `~/.codex/config.toml`.
+
+## A Codex Brief With `../` Paths Reported Success With Zero Edits
+
+**What happened:** a doctrine unit's brief named its edit targets relative to `loom/`. Codex started in `loom/`, `loom-hooks/worktree-file-guard.sh` rejected every edit for its parent-directory components, and the unit still reported `succeeded` with no changes.
+
+**Why:** the brief was written relative to the crate directory, and a forwarded job's success trailer says nothing about whether any file changed.
+
+**Prevention:** a codex brief names an absolute path for every edit target. After every forward, run `git status --short` before trusting a `succeeded` trailer.
+
+**Fix:** the unit was re-briefed with absolute paths.
+
+## Brief Paths Are Not Repository Paths, and Briefs Can Contradict the Code
+
+**What happened:** source outlines used `src/...` paths from a brief while the crate lives under `loom/src`; a brief asked for a zero digest while `store::create_invocation` validates the digest against the brief bytes (`sha256_hex(b"brief")` works); `common.md` spells `--unit-id` while the I2 brief named the clap field `unit`; the runtime brief and stage text asked for a `mod testkit;` line the freeze scaffold check refuses. In each case the worker followed the brief literally or guessed.
+
+**Why:** briefs were written from the design, not from the final tree, and the contract freeze checks only the scaffold lines it lists.
+
+**Prevention:** resolve a path with `loom map --find-all` before using it, read the validating function before choosing a fixture value, and when a brief and the code disagree record a `decision` memory naming both and follow the code. `loom-control-subagents.sh` accepts `--unit` as an alias of `--unit-id` for this reason.
+
+## Plausible Helpers and Imports That Do Not Exist
+
+**What happened:** a handler test called a nonexistent `mint_message_id` (message ids only need `validate_message_id`); a codex unit used `format!("{:x}", Sha256::digest(..))`, which does not compile with this `sha2` version (`crate::utils::sha256_hex` does); a sibling worker trimmed an import in `freeze_refusal.rs` and `freeze_refusal_tests.rs` lost `replay`, which it had received through `use super::*`; moving `contents.rs` to `build_settings_for_backend` left `sandbox::build_settings` with no non-test caller, so the re-export warned unused and the function warned dead.
+
+**Why:** identifier helpers were assumed by analogy, and glob imports hide what a test depends on.
+
+**Prevention:** confirm an identifier helper with `loom map --find-all` before using it; import test dependencies by name instead of `use super::*` where a sibling may edit the parent module; after moving the only caller of a function, re-export the replacement and mark the old one `#[cfg(test)]`.
+
+## Counts and Display Text That Changed a Public Contract
+
+**What happened:** a status JSON regression asserted 16 fields while the contract defines 15 (the text worker label was counted beside `unit_id`); `StoreError`'s `Display` prefixed `Corrupt` details and moved the invocation id away from the start of an `Unverified` cause, which `NativeDisposition::blocker` parses.
+
+**Why:** an inferred count replaced the explicit contract, and generic error labelling conflicted with an exact public cause text.
+
+**Prevention:** assert the explicit key set, not a count. Render an error whose text is parsed elsewhere verbatim, and pin its prefix in a test (`index_tests.rs`).
+
+**Fix:** the `Corrupt` detail renders directly and the index tests assert the cause prefix.
+
+## Edits Anchored to Repeated Fixture Text, and `rustfmt` Across `mod` Declarations
+
+**What happened:** a cleanup guard attached to an existing test instead of the new native-worker test because the patch matched repeated fixture setup; a native gate test seeder assumed the state directory existed before the CLI commit fixture created it; a reducer patch assumed placeholder text it had not read (the source graph had no symbols for the one-line file); `rustfmt --edition 2024` on `supervisor/mod.rs` reformatted every declared submodule, including four tracked `commands/subagents` files, and re-running with 2021 did not revert them.
+
+**Why:** edits were placed by pattern instead of by name, and `rustfmt` follows `mod` declarations.
+
+**Prevention:** anchor an edit to the test function name and check every occurrence; create the state directory before seeding; read a placeholder file before replacing it; read the crate edition from `Cargo.toml` and run `rustfmt --check` on the exact entry files, remembering it recurses.
+
+**Fix:** the four tracked files were restored by hand and `git diff` was clean.
+
+## Verification Loops Hid the Tool They Called
+
+**What happened:** a loop variable named `path` hid `rg` from the command, because `path` is tied to `PATH` in zsh. A Bash heredoc whose text held both the `stage` and `complete` tokens was refused by `loom-control-complete.sh` as an unpinned completion command.
+
+**Why:** zsh special variables and a text-scanning hook.
+
+**Prevention:** use task-specific loop variable names; write test files and scripts with the Write tool, not a heredoc ([Relay Kinds](../patterns/stage-daemon-channels.md#relay-kinds-and-their-hook-mapping)).
+
+## `loom check` Keys on the Working Tree
+
+**What happened:** editing files while a host `loom check integration-verify` was pending started a fresh job (criteria-done went from 1 to 0). Separately, `loom check native-consumers > file 2>&1` and a backgrounded `loom check integration-verify` were refused because the relay reads the `LOOM_RELAY_V1` line from foreground, unfiltered stdout.
+
+**Why:** the gate result is bound to the tree it ran on, and CLAUDE.md's log-redirect advice does not apply to relayed `loom` commands.
+
+**Prevention:** run the gate only after every fix worker has returned, in the foreground, unredirected, with a long Bash timeout, and rerun it to wait. This is a recurrence; the proposed hook is in [No Hook Refuses a Relayed `loom` Command Run in the Background or Through a Pipe](../concerns/code-quality-and-hook-debt.md#no-hook-refuses-a-relayed-loom-command-run-in-the-background-or-through-a-pipe).
+
+## Sandboxed Subagents Cannot Prove Boundary or Socket Behaviour
+
+**What happened:** in a subagent's Bash sandbox `UnixListener::bind` fails with `EPERM` (proxy server tests) and bubblewrap cannot create a namespace, so every `skip_unless(confined_commands_runnable())` boundary test skipped and about 58 unguarded `verify::criteria` confine tests failed regardless of the code. `stop_process_ends_a_sleeping_boundary_and_namespace_is_released` only proves anything on a host with a working pid namespace.
+
+**Why:** the subagent sandbox is itself a bubblewrap sandbox.
+
+**Prevention:** run boundary payload tests and `verify::criteria` from the stage main session or the host job, never from a sandboxed subagent, and read a skipped test as unproven.
+
+## No Test Chained a Scripted Run to the Final Settled Result
+
+**What happened:** `Succeeded`, `OwnershipReleased` and `result_in` were each covered under different settlement paths (`runtime_contract_tests.rs`, `supervisor/tests.rs`, `native_cli_view_tests.rs`), and no test chained a scripted `run_session` through `settle(Released)` to `subagents result`; integration-verify added `native_cli_e2e_tests.rs`.
+
+**Why:** each stage tested its own seam against a hand-built record.
+
+**Prevention:** when stages build consecutive seams of one lifecycle, the integration stage adds one test that drives the first seam's real output into the last seam's reader.

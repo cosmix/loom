@@ -180,40 +180,12 @@ this instance follows.
 
 ## The loom-codex-forwarder lane
 
-Loom stages spawn `subagent_type: "loom-codex-forwarder"`. The agent definition
+This section describes the Legacy lane (`codex.backend = legacy`, the default). The Native lane runs no forwarder and no plugin: see [Native Codex Workers](native-codex-workers.md).
+
+On the Legacy lane loom stages spawn `subagent_type: "loom-codex-forwarder"`. The agent definition
 (`agents/loom-codex-forwarder.md`) selects haiku and Bash; the shim forwards one
 brief-path task through `~/.claude/hooks/loom/codex-forward.sh task ...`, preserving
 model, effort and unit id. It never implements or verifies.
-
-The shim does not resolve a highest-version companion glob. The trusted wrapper
-selects the pinned companion version or its direct supervisor backend
-(`loom-hooks/codex-forward.sh:265-326`). The guard injects the invocation id and
-permits one exact forwarding command per forwarder transcript.
-
-`codex-forward-guard.sh` identifies the typed forwarder and stock plugin rescue
-agent, with a transcript sentinel fallback. Enforcement requires stage evidence.
-The signal doctrine in `orchestrator/signals/format/codex.rs` emits the sentinel,
-brief-path protocol, unit identity, wrapper command and lifecycle rules.
-Completion requires correlated wrapper START/END evidence and the evidence trailer;
-a newest-job guess or a rollout merely postdating spawn is insufficient.
-
-The forwarding agent requests a 1560000 ms foreground Bash timeout. Its definition
-instructs it to end with plain final text after background acknowledgement and to
-relay a later notification without more tools. Claude Code 2.1.325 transcripts
-require SubagentHandback instead; this conflicts with the definition's assertion
-that the final text alone is harvested. The mismatch can add an enforcement turn.
-
-Forwarding carries substantial Claude context even for a brief-path prompt.
-The November transcript sample contains 24 forwarders with one Bash call each,
-all observed assistant responses at high effort, median 20663.5 cache-write
-tokens and 3608 output tokens per forwarder. Twelve receive handback enforcement.
-These are transcript token counts, not prices or subscription quota conversions.
-The direct wrapper prints up to the final 65536 bytes of provider JSON output,
-which can exceed the harness output limit and hide the trailing evidence behind
-a persisted-output preview. Raw provider output is not a compact final report.
-
-Cross-surface tests pin the sentinel, forwarding type and evidence names
-(`tests_doctrine.rs`, `tests_cache.rs`).
 
 ## The sandbox must grant codex its state dirs
 
@@ -231,7 +203,7 @@ Both are declared once as `CODEX_SANDBOX_WRITE_PATHS` (`loom/src/codex.rs`) and 
 settings schema names for exactly this. `CODEX_SANDBOX_DOMAINS` does the same for the hosts codex
 reaches (no domain is pre-allowed by default, and an unlisted host raises a mid-run permission
 decision). `sandbox/settings/policy.rs::filesystem_settings` emits them into a codex-licensed
-stage's settings (every stage worktree and `loom repair --fix`), and
+stage's settings (every stage worktree and `loom repair --fix`) only while `codex.backend` is `legacy`: `policy.rs::codex_granted` is false on the native backend, whose session gets no `~/.codex` write, no OpenAI domains and no readable `auth.json` because the supervisor, not the session, talks to Codex. And
 `sandbox/control_surfaces.rs::session_writable_roots` counts them among the session's writable
 roots, so no hook path or `LOOM_BIN` under them is accepted. `fs/permissions/settings.rs` emits no
 codex grant. Sessions outside a loom repo need the same block in `~/.claude/settings.json` — loom
@@ -282,6 +254,7 @@ Stage licensing (`implementers` listing `codex`) permits the lane; availability 
 - `commands/run/` emits an advisory warning when the lane is unavailable; it does not block a run.
 - Signal generation supplies fallback guidance instead of licensing `loom-codex-forwarder` when the lane is unavailable: terra- and sol-tier work goes to sonnet (`loom-software-engineer`), boilerplate, scaffolding and simple unit tests to haiku (`loom-software-developer`) (`format/codex.rs:51-52`).
 - The check does not mutate stage state or the `implementers` list.
+- The check above is the Legacy lane's. `codex_backend.rs::codex_lane` selects `Legacy`, `Native` or `Unavailable(reason)` from `codex.backend`; a configured native backend whose boundary does not qualify is `Unavailable`, never Legacy ([Native Codex Workers](native-codex-workers.md#backend-and-lane-selection)).
 
 ## What Codex Actually Reads
 

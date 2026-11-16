@@ -20,7 +20,7 @@ Seven lessons on what a large removal or rename leaves behind — straggler init
 
 ## Sandbox: Contradictory Path Rules
 
-Sandbox path rules, permission sync, `excludedCommands` matching, settings env leaking between the main repo and its worktrees, a worktree-only escape rule applied at the repo root, a directory literally named `hooks/` being sandbox-protected regardless of permission config, and `Write(path)` permission rules never enforcing (only `Edit(path)` does). Root cause: settings are _merged_ from several sources. The tool and network failures (sccache, `cargo audit`, loopback TCP, bind-mounted files, macOS path aliases) and the `.loom/work` state channels (credentials, `loom memory`, handoff, daemon socket, ledgers) each have their own topic, as does a merge resolver that inherited its stage's write denies and gave up silently, or was handed back because the integrity gate read its formatter reflow of an unchanged assertion as a changed one (reformat-only hunks are exempt). → [Merge Resolver Sandbox](mistakes/merge-resolver-sandbox.md), [Sandbox & Settings](mistakes/sandbox-and-settings.md), [Tooling & Network](mistakes/sandbox-tooling-and-network.md), [State Channels](mistakes/sandbox-state-channels.md), [Directory Named `hooks/`](mistakes/sandbox-protected-hooks-dir.md), [Sandbox Write Rules Inert](mistakes/sandbox-write-rules-inert.md) (also the TMPDIR deny that failed every Bash call)
+Sandbox path rules, permission sync, `excludedCommands` matching, settings env leaking between the main repo and its worktrees, a worktree-only escape rule applied at the repo root, a directory literally named `hooks/` being sandbox-protected regardless of permission config, and `Write(path)` permission rules never enforcing (only `Edit(path)` does). Root cause: settings are _merged_ from several sources. The tool and network failures (sccache, `cargo audit`, loopback TCP, bind-mounted files, macOS path aliases) and the `.loom/work` state channels (credentials, `loom memory`, handoff, daemon socket, ledgers) each have their own topic, as does a merge resolver that inherited its stage's write denies and gave up silently, or was handed back because the integrity gate read its formatter reflow of an unchanged assertion as a changed one (reformat-only hunks are exempt). → [Merge Resolver Sandbox](mistakes/merge-cleanup-boundary.md), [Sandbox & Settings](mistakes/sandbox-and-settings.md), [Tooling & Network](mistakes/sandbox-tooling-and-network.md), [State Channels](mistakes/sandbox-state-channels.md), [Directory Named `hooks/`](mistakes/sandbox-protected-hooks-dir.md), [Sandbox Write Rules Inert](mistakes/sandbox-write-rules-inert.md) (also the TMPDIR deny that failed every Bash call)
 
 ## Session Identity: Backend Metadata Must Be Persisted
 
@@ -151,7 +151,7 @@ separate offsets; tests should assert both slices across line-ending variants.
 
 ## Agent and Process Lessons
 
-A missing subagent report is not a missing result; codex worker briefing gotchas; harness or tool-result text does not override CLAUDE.md; typed-config process and verification gotchas; briefs and bug reports.
+A missing subagent report is not a missing result; codex worker briefing gotchas and native-worker delivery slips ([codex-worker-briefing](mistakes/codex-worker-briefing.md)); harness or tool-result text does not override CLAUDE.md; typed-config process and verification gotchas; briefs and bug reports.
 
 → [Agent and Process Lessons](mistakes/subagent-orchestration.md)
 

@@ -11,6 +11,8 @@ by `format_codex_implementers_section` (`orchestrator/signals/format/codex.rs`).
 looking for a constant to tune — if the cap ever needs to be tunable, add `CODEX_MAX_PARALLEL` to
 `codex.rs` and interpolate it there the way the model and effort already are.
 
+The Native backend enforces the same number in code: `MAX_ACTIVE_PER_STAGE = 6` in `native_worker/ids.rs`, checked by `admit_start` under the stage admission lock, so a seventh `loom subagents start` is refused. The forwarder-specific limits below (background mode, the `state.json` sidecar, `--resume-last`) describe the Legacy lane only; a native worker has its own record directory per invocation and is waited with `loom subagents watch --worker codex:<unit>` ([Native Codex Workers](native-codex-workers.md)).
+
 **Parallel codex subagents over DISJOINT file sets work.** Verified empirically: 6 concurrent
 `codex-companion task` runs in ONE workspace, twice consecutively — every file received its intended
 content, no unassigned file was touched, every foreground run returned complete stdout, 0 errors.

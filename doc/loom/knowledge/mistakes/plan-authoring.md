@@ -251,10 +251,10 @@ knowledge-distill the rewrite, or the stage changes it. Raise a cap to the measu
 
 ## A Native-Worker Plan Mounted the Operator's Whole ~/.codex Read-Write and Called It Parity
 
-**What happened:** the native Codex workers plan bound the real `~/.codex` read-write into the worker boundary and said inherited Codex configuration was "at parity with the legacy lane". The legacy capsule denies writes to `.codex/hooks`, `hooks.json`, `config.toml` and `AGENTS.md` even inside its `~/.codex` grant, so the plan was weaker. A worker could rewrite rules, hooks, config or the codex package symlink for the operator's next interactive Codex, and `W/.claude` stayed writable. The plan also treated Codex's own sandbox as a second enforcement layer, though execpolicy allow rules, hooks and MCP commands run outside it.
+**What happened:** the native Codex workers plan bound the real `~/.codex` read-write into the worker boundary and said inherited Codex configuration was "at parity with the legacy lane". The legacy capsule denies writes to `.codex/hooks`, `hooks.json`, config.toml and AGENTS.md even inside its `~/.codex` grant, so the plan was weaker. A worker could rewrite rules, hooks, config or the codex package symlink for the operator's next interactive Codex, and `W/.claude` stayed writable. The plan also treated Codex's own sandbox as a second enforcement layer, though execpolicy allow rules, hooks and MCP commands run outside it.
 
 **Why:** the sandbox question was answered from the plan's Decisions alone; nobody compared the new boundary's mounts with the legacy capsule's deny list, and nothing tested the codex-home mounts.
 
 **Prevention:** when a plan replaces a confinement layer, diff its mounts and denies against the layer it replaces before claiming parity. Treat the Loom boundary as the only enforcement and Codex's sandbox as defence in depth. Give every mount of a credential or config directory a test that asserts the host-side effect.
 
-**Fix:** the plan mounts a private tmpfs Codex home holding only `sessions/`, the auth files and `AGENTS.md`, binds `W/.claude` read-only, and adds the contract `boundary-codex-home-is-private`.
+**Fix:** the plan mounts a private tmpfs Codex home holding only `sessions/`, the auth files and AGENTS.md, binds `W/.claude` read-only, and adds the contract `boundary-codex-home-is-private`.

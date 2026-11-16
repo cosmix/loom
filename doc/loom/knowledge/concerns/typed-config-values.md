@@ -1,7 +1,7 @@
 # Typed Config Values: Known Gaps
 
-> Gaps
-> read-path seam. See [Typed Config Values](../architecture/config-value-types.md) for the
+>
+> Gap
 > architecture.
 
 - **No control-character stripping in the TUI's value cell.** `commands/config/tui/render/table.rs::value_cell` renders

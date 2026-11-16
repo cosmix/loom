@@ -249,3 +249,13 @@ Design and limits: [architecture/token-flow-sources.md](../architecture/token-fl
 
 Split into three files because they grow for different reasons; wired with `#[path]` submodules
 so the children reach the parent's private helpers via `use super::*` without widening visibility.
+
+## Native Codex Worker Files (`loom/src/native_worker/`, `codex_backend.rs`)
+
+- `codex_backend.rs` - `CodexBackend`, `CodexLane`, `configured_backend`, `codex_lane`; the `codex.backend` key is registered in `user_config/keys.rs`.
+- `native_worker/index.rs` - the only read API for consumers: `stage_disposition`, `unit_state`, `stage_units`, `stage_threads`, `stages`. `store.rs` and `store_io.rs` write the record directory; `model.rs` and `ids.rs` hold the types and constants.
+- `native_worker/admission.rs` (+ `admission_brief.rs`) - daemon-side `admit_start`, `accept_message`, `accept_cancel`; called from `orchestrator/core/inbox_drain/worker_control.rs`. `runner.rs` and `runner_recover.rs` start and settle supervisors.
+- `native_worker/supervisor/`, `machine/`, `protocol/` - the per-worker loop, the pure reducer and the app-server wire. `boundary/`, `proxy/`, `bridge.rs` - the bubblewrap boundary, allowlist proxy and in-boundary forwarder.
+- `commands/subagents/native_start.rs`, `native_control.rs` and `wait/native.rs` - the CLI verbs and the wait binding; `commands/stage/native_gate.rs` - the shared gate; `relay/payload_native.rs` - the `subagents:control` payload; `loom-hooks/loom-control-subagents.sh` - the command pin.
+
+Design and gates: [Native Codex Workers](../architecture/native-codex-workers.md).
