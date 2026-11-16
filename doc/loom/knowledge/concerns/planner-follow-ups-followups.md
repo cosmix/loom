@@ -78,7 +78,7 @@ Reviewer suggestions not applied and questions left open when `PLAN-trace-screen
 
 - `coverage-rows.tsx` says the toggle is a row's only control, but the Covered-by cell holds plan and stage links that are tab stops. Its header comment (and `findings-model.ts`) still says every string is drawn with `Untrusted`; entries use `SentenceText`.
 - `ui/doc-heading.css`: a comment describes a separate settle group and a "settle pill"; `page-heading.tsx` puts the settle control in one group with Edit, Discuss and Open all.
-- `ui/DESIGN.md`: the line that the menu "flips above only when less than 18rem is free below" holds only for content taller than 18rem; the Pressure-test exception names the plan's state row, but in file mode it sits on the pressure chip row; the Coverage tile's inset focus ring (`maps.css`) is not among the displaced rings the design names.
+- `ui/DESIGN.md`: the line that the menu "flips above only when less than 18rem is free below" holds only for content taller than 18rem; the Pressure-test exception names the plan's state row, but in file mode it sits on the status card's pressure row; the Coverage tile's inset focus ring (`maps.css`) is not among the displaced rings the design names.
 
 ### Tests
 
