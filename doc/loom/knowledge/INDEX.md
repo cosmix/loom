@@ -47,7 +47,7 @@
 | [memory-spool](architecture/memory-spool.md) |  | 205 |
 | [merge-checkout-state](architecture/merge-checkout-state.md) | FF | 32 |
 | [merge-flow](architecture/merge-flow.md) |  | 133 |
-| [native-codex-workers](architecture/native-codex-workers.md) |  | 70 |
+| [native-codex-workers](architecture/native-codex-workers.md) |  | 74 |
 | [orchestrator-loop](architecture/orchestrator-loop.md) | Ticks | 80 |
 | [owned-waits](architecture/owned-waits.md) | Waits | 72 |
 | [plan-lifecycle-and-fields](architecture/plan-lifecycle-and-fields.md) |  | 284 |
@@ -152,14 +152,14 @@
 | [dev-install](mistakes/dev-install.md) | Daemon | 44 |
 | [doctrine-and-acceptance](mistakes/doctrine-and-acceptance.md) |  | 392 |
 | [hooks-shell-portability](mistakes/hooks-shell-portability.md) |  | 382 |
-| [host-verify-group-containment](mistakes/host-verify-group-containment.md) |  | 23 |
+| [host-verify-group-containment](mistakes/host-verify-group-containment.md) |  | 47 |
 | [knowledge-base-drift](mistakes/knowledge-base-drift.md) |  | 266 |
 | [knowledge-cli-invariants](mistakes/knowledge-cli-invariants.md) | Rules | 241 |
 | [knowledge-write-channel](mistakes/knowledge-write-channel.md) | Writes | 134 |
 | [ledger-tui-rendering](mistakes/ledger-tui-rendering.md) |  | 84 |
 | [live-state-pollution](mistakes/live-state-pollution.md) |  | 133 |
 | [maintainability-baseline](mistakes/maintainability-baseline.md) |  | 96 |
-| [memory-relay-drain-gap](mistakes/memory-relay-drain-gap.md) |  | 39 |
+| [memory-relay-drain-gap](mistakes/memory-relay-drain-gap.md) |  | 47 |
 | [merge-cleanup-boundary](mistakes/merge-cleanup-boundary.md) |  | 237 |
 | [merge-in-operator-checkout](mistakes/merge-in-operator-checkout.md) |  | 70 |
 | [parallel-worktree-shared-state](mistakes/parallel-worktree-shared-state.md) | Shared | 351 |
@@ -226,7 +226,7 @@
 | [knowledge-cli-gaps](concerns/knowledge-cli-gaps.md) |  | 108 |
 | [loom-ask-and-read-gate](concerns/loom-ask-and-read-gate.md) |  | 112 |
 | [merge-and-recovery-edge-cases](concerns/merge-and-recovery-edge-cases.md) | Edges | 105 |
-| [native-codex-qualification](concerns/native-codex-qualification.md) |  | 86 |
+| [native-codex-qualification](concerns/native-codex-qualification.md) |  | 90 |
 | [plan-chat-followups](concerns/plan-chat-followups.md) | Chat | 41 |
 | [planner-follow-ups-followups](concerns/planner-follow-ups-followups.md) |  | 91 |
 | [planner-ui-repair-followups](concerns/planner-ui-repair-followups.md) | UI | 214 |

@@ -68,3 +68,7 @@ Every gate calls it, and `--force` cannot bypass any of them: `commands/stage/na
 ## Testing Limits
 
 Acceptance runs in a confined host job with no network and no `~/.codex`, so every test uses a scripted peer. Inside a sandboxed subagent `UnixListener::bind` fails with `EPERM` (proxy server tests) and bubblewrap cannot create a namespace, so `skip_unless(confined_commands_runnable())` boundary tests skip there and about 58 unguarded `verify::criteria` confine tests fail regardless of code; the `loom check` host job is the judge. Runtime contract helpers live at `native_worker::runtime_contract_tests::testkit` through a `#[path]` attribute; `native_worker/mod.rs` declares no `testkit` module. Seed test invocations with `sha256_hex(b"brief")` (`store::create_invocation` validates the digest against the brief bytes).
+
+## Tracing Native Workers
+
+`nativeBackend` in `web/src/components/stage-modal.tsx:104` means `session_backend === 'native'`, a native terminal window; it has no relation to a native Codex worker (`loom/src/native_worker`). Search `native_worker`, `codex.backend` and `WorkerControl` when tracing the lane.
