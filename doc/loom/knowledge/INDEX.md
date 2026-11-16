@@ -217,7 +217,7 @@
 | Topic | Blurb | Lines |
 | --- | --- | --- |
 | [agent-rule-bending-hardening](concerns/agent-rule-bending-hardening.md) |  | 375 |
-| [automatic-knowledge-source-graph-followups](concerns/automatic-knowledge-source-graph-followups.md) | Gaps | 69 |
+| [automatic-knowledge-source-graph-followups](concerns/automatic-knowledge-source-graph-followups.md) | Gap | 69 |
 | [code-quality-and-hook-debt](concerns/code-quality-and-hook-debt.md) | Debt | 308 |
 | [codex-heartbeat-starvation](concerns/codex-heartbeat-starvation.md) |  | 22 |
 | [consolidation-followups](concerns/consolidation-followups.md) |  | 148 |
@@ -240,7 +240,7 @@
 | [source-graph-review-backlog](concerns/source-graph-review-backlog.md) | Todo | 295 |
 | [state-confinement-gaps](concerns/state-confinement-gaps.md) | Caches | 21 |
 | [token-accounting-and-proof-defects](concerns/token-accounting-and-proof-defects.md) |  | 334 |
-| [typed-config-values](concerns/typed-config-values.md) |  | 22 |
+| [typed-config-values](concerns/typed-config-values.md) | Gap | 22 |
 | [verification-v2-followups](concerns/verification-v2-followups.md) |  | 234 |
 | [web-dashboard-latent-issues](concerns/web-dashboard-latent-issues.md) | UI | 96 |
 | [worktree-build-cold-start](concerns/worktree-build-cold-start.md) | Cold | 136 |
