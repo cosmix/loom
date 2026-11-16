@@ -62,6 +62,14 @@ fn invocation_id_rejects_uppercase_hex() {
 }
 
 #[test]
+fn invocation_id_rejects_lowercase_non_hex() {
+    assert_eq!(
+        validate_invocation_id("inv-0123456789abcdef0123456789abcdeg"),
+        Err(IdError::BadCharacter('g'))
+    );
+}
+
+#[test]
 fn invocation_id_rejects_wrong_prefix() {
     assert_eq!(
         validate_invocation_id("bad-0123456789abcdef0123456789abcdef"),
