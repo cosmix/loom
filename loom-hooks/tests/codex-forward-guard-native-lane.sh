@@ -37,6 +37,11 @@ if [[ $CODE -ne 2 || "$OUT" != *"loom subagents start --provider codex --unit-id
 	echo "FAIL: a native backend must refuse a main-session forward with the start command (exit $CODE): $OUT"
 	exit 1
 fi
+# The native lane is the default backend, so the refusal wording is pinned.
+if [[ "$OUT" != *"BLOCKED: a codex-forward.sh call is the legacy Codex lane; this stage runs the native lane (codex.backend = native)."* ]]; then
+	echo "FAIL: the native refusal must open with the BLOCKED lane message: $OUT"
+	exit 1
+fi
 
 run_guard native "rg -n codex-forward.sh loom-hooks"
 if [[ $CODE -ne 0 ]]; then

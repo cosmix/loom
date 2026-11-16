@@ -5,6 +5,8 @@ unset LOOM_STAGE_ID LOOM_SESSION_ID LOOM_WORK_DIR LOOM_SESSION_TYPE LOOM_MAIN_AG
 GUARD="$(cd "$(dirname "$0")/.." && pwd)/codex-forward-guard.sh"
 d=$(mktemp -d "${TMPDIR:-/tmp}/cfw-records.XXXXXX") && [[ -n "$d" ]]
 trap 'rm -rf "$d"' EXIT
+source "$(dirname "$0")/_legacy_backend.sh"
+legacy_backend "$d"
 
 HOME_DIR="$d/home"
 WORKSPACE="$d/workspace"

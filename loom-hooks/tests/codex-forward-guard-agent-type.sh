@@ -4,6 +4,8 @@ set -euo pipefail
 unset LOOM_STAGE_ID LOOM_SESSION_ID LOOM_WORK_DIR LOOM_SESSION_TYPE LOOM_MAIN_AGENT_PID
 d=$(mktemp -d "${TMPDIR:-/tmp}/cfw-agent-type.XXXXXX") && [[ -n "$d" ]]
 trap 'rm -rf "$d"' EXIT
+source "$(dirname "$0")/_legacy_backend.sh"
+legacy_backend "$d"
 
 HOOK="$(cd "$(dirname "$0")/.." && pwd)/codex-forward-guard.sh"
 HOME_DIR="$d/home"
