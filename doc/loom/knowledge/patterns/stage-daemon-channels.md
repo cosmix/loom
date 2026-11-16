@@ -98,7 +98,7 @@ A session Bash call that relays a request prints one `LOOM_RELAY_V1` line as its
 The PostToolUse hook `loom-hooks/loom-relay.sh` derives the kinds the command may write from its
 argv (`relay_kind_at`), and `loom hook relay` admits the line only when the ticket's kind equals the
 line's kind (`commands/hook/relay/ticket_check.rs`). A command whose kind the hook does not derive
-is never relayed. The nine control kinds (`RequestKind::is_control`, `loom/src/relay/kind.rs`) are
+is never relayed. The ten control kinds (`RequestKind::is_control`, `loom/src/relay/kind.rs`) are
 dropped from a subagent by `drop_control_kinds` before an inbox entry exists, so a new control kind
 needs an entry there.
 
@@ -113,6 +113,7 @@ needs an entry there.
 | `loom stage merge --resolved`                                          | `merge-resolved`                                      | yes     |
 | `loom stage adjudicate`                                                | `verdict`                                             | yes     |
 | `loom stage contracts freeze`                                          | `freeze-contracts`                                    | yes     |
+| `loom subagents start`, `message`, in-session `cancel`                 | `subagents:control` (`WorkerControl`, Stage sessions only) | yes |
 | `loom knowledge context`                                               | `telemetry`                                           | no      |
 | `loom check`                                                           | `check`                                               | no      |
 | `loom handoff`                                                         | `handoff`                                             | yes     |
@@ -128,6 +129,13 @@ heartbeat the stall monitor reads. It carries no verdict. A Bash call whose text
 completion subcommand is refused unless it is that exact command, so a heredoc that edits relay or
 hook scripts is refused too: make such edits with the Edit tool. Run the pinned command bare, with
 no redirect or pipe, since the verdict comes from the daemon's host job rather than from output.
+
+**The worker-control pin follows the same shape.** `loom-hooks/loom-control-subagents.sh` admits
+exactly one spelling of `loom subagents start`, `message` and `cancel` (`<bin> subagents <verb>`,
+then `--flag value` pairs, then an optional `2>&1`), rewrites it to the trusted absolute loom
+binary, and refuses every other spelling and every caller other than the stage's main agent. It
+writes no heartbeat. A local refusal in these commands exits 3 before any ticket exists; once a
+ticket is written they exit 0 ([Native Codex Workers](../architecture/native-codex-workers.md#admission-and-ingress)).
 
 ## Every Relay Command Exits 0
 
@@ -182,3 +190,7 @@ functions) require the job directory to exist: `write_atomic` does not recreate 
 pruned. `save_current` creates the job directory, so a test or a caller that writes a job file first
 gets `ENOENT`. `save_job_file` refuses the five store files (`record.json`, `progress.jsonl`,
 `result.json`, `groups`, `child.log`) and accepts other names, including `applied`.
+
+## Worker Control Runs Through a Relayed Control Kind
+
+`loom subagents start`, `message` and in-session `cancel` follow the relay contract above: validate locally (exit 3 before any ticket), write one `subagents:control` ticket, print the `LOOM_RELAY_V1` line and exit 0. The daemon drains the ticket under the stage admission lock (`inbox_drain/worker_control.rs`) and the answer is read with `loom request status`. A new relayed worker command needs the hook pin, the `RequestKind` arm, the relay matrix policy and a drain handler, as for any control kind.

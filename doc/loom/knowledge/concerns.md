@@ -45,7 +45,7 @@ Mitigation is doctrine (bound the task, set `subagent_timeout_secs`), not a moni
 the global timeout was considered and rejected. The `loom status` badge shows such a stage as `Busy`
 (open tool call) and measures silence against the same per-stage budget as the monitor.
 
-Full detail: [codex-heartbeat-starvation.md](concerns/codex-heartbeat-starvation.md).
+Full detail: [codex-heartbeat-starvation.md](concerns/codex-heartbeat-starvation.md). Native backend gaps (eight qualification checks, exposure facts, unimplemented review suggestions): [native-codex-qualification](concerns/native-codex-qualification.md).
 
 ## Automatic-Knowledge Plan Followups
 
@@ -229,7 +229,7 @@ The chat plan left the live-session operator test unrun, a SHA-256 ref gap and g
 
 ## macOS Window Teardown Closes by Title and Is Unverified (GitHub #7)
 
-Teardown closes an iTerm2 or Terminal.app window by its title. The iTerm2 spawn arm names the window and spawn and teardown address the same application name, but no macOS run of the close is on record, and Terminal.app's displayed title may not match. Full detail: [iterm2-window-teardown.md](concerns/iterm2-window-teardown.md).
+Teardown closes an iTerm2 or Terminal.app window by its title. The iTerm2 spawn arm names the window and spawn and teardown address the same application name, but no macOS run of the close is on record, and Terminal.app's displayed title may not match. Full detail: [platform-and-commit-gaps.md](concerns/platform-and-commit-gaps.md#macos-window-teardown-closes-by-title-and-is-unverified-github-7).
 
 ## Planner Review Fixes Follow-ups
 
