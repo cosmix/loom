@@ -35,13 +35,10 @@ use crate::parser::frontmatter::split_frontmatter_raw;
 
 use super::events::MonitorEvent;
 
-/// How much of a document's head is read to find its frontmatter.
-///
-/// The identity fields are serialized first and the body that follows the
-/// frontmatter can run to tens of kilobytes, so reading the whole file to
-/// learn two strings is waste. A document whose frontmatter does not close
-/// within this budget is not evidence of anything and is skipped.
-const FRONTMATTER_SCAN_BYTES: usize = 8 * 1024;
+/// The largest document inspected. The whole document is read (and cached by
+/// filename once inspected), so a frontmatter that carries a long stage
+/// `goals` text still closes and parses; only a document past this size, or
+/// one whose frontmatter has not closed yet, is retried.
 const MAX_HANDOFF_BYTES: usize = 1024 * 1024;
 const MAX_RETRY_BACKOFF_EXPONENT: u32 = 4;
 
@@ -227,8 +224,8 @@ fn frontmatter_head(root: &Path, filename: &str) -> Result<Option<String>> {
     if document.is_empty() {
         bail!("Handoff document is empty");
     }
-    let head = String::from_utf8_lossy(&document[..document.len().min(FRONTMATTER_SCAN_BYTES + 1)]);
-    let trimmed = head.trim_start();
+    let text = String::from_utf8_lossy(&document);
+    let trimmed = text.trim_start();
     match split_frontmatter_raw(trimmed) {
         Ok((yaml, _)) => Ok(Some(yaml.to_string())),
         Err(_)
@@ -237,7 +234,7 @@ fn frontmatter_head(root: &Path, filename: &str) -> Result<Option<String>> {
                 .next()
                 .is_some_and(|line| line.trim() == "---") =>
         {
-            bail!("Handoff frontmatter is incomplete or exceeds {FRONTMATTER_SCAN_BYTES} bytes")
+            bail!("Handoff frontmatter is not closed yet")
         }
         Err(_) => Ok(None),
     }

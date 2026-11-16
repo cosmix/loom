@@ -302,14 +302,6 @@ fn partial_and_oversized_frontmatter_never_authorize_takedown() {
     let partial = dir.join("climate-timezone-data-handoff-001.md");
     std::fs::write(&partial, &prefix).unwrap();
     std::fs::write(
-        dir.join("climate-timezone-data-handoff-002.md"),
-        format!(
-            "{prefix}description: {}\n---\n",
-            "x".repeat(FRONTMATTER_SCAN_BYTES)
-        ),
-    )
-    .unwrap();
-    std::fs::write(
         dir.join("climate-timezone-data-handoff-003.md"),
         format!("{prefix}---\n{}", "x".repeat(MAX_HANDOFF_BYTES)),
     )
@@ -321,6 +313,28 @@ fn partial_and_oversized_frontmatter_never_authorize_takedown() {
 
     std::fs::write(&partial, format!("{prefix}---\n# Complete now\n")).unwrap();
     assert_eq!(query(&mut watch, &session, &stages, &work), None);
+    assert!(query(&mut watch, &session, &stages, &work).is_some());
+}
+
+#[test]
+fn a_long_closed_frontmatter_still_authorizes_takedown() {
+    let (_temp, work) = work_dir();
+    let session = running_session("climate-timezone-data");
+    let stages = vec![executing_stage(&session.id)];
+    let dir = work.join("handoffs");
+    std::fs::create_dir_all(&dir).unwrap();
+    // A stage's `goals` text rides in the frontmatter and runs far past 8 KiB.
+    std::fs::write(
+        dir.join("climate-timezone-data-handoff-001.md"),
+        format!(
+            "---\nsession_id: {}\nstage_id: climate-timezone-data\norigin: agent_ceiling\ngoals: {}\n---\n# Body\n",
+            session.id,
+            "x".repeat(32 * 1024)
+        ),
+    )
+    .unwrap();
+    let mut watch = HandoffWatch::default();
+
     assert!(query(&mut watch, &session, &stages, &work).is_some());
 }
 
