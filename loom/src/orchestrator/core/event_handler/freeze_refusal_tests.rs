@@ -20,7 +20,7 @@ use crate::subagent_lifecycle::model::{
     CodexEvidence, CodexEvidenceKind, CodexEvidenceOutcome, CodexExecution, LifecycleProducer,
     LifecycleRecord, LifecycleState, WorkerIdentity, LIFECYCLE_VERSION,
 };
-use crate::subagent_lifecycle::store::{append_locked, codex_event_id};
+use crate::subagent_lifecycle::store::{append_locked, codex_event_id, replay};
 use crate::verify::contracts::refusal::record;
 use crate::verify::contracts::test_support::contract;
 use crate::verify::transitions::{create_stage, load_stage, update_stage};
@@ -392,7 +392,7 @@ fn active_child(work: &Path, workspace: &Path, session_id: &str) {
         append_locked(work, &record).unwrap();
     }
     assert_eq!(
-        crate::subagent_lifecycle::replay(work)
+        replay(work)
             .unwrap()
             .session_child_disposition(STAGE, session_id),
         ChildDisposition::Active
