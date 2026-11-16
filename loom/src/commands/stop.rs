@@ -1,9 +1,11 @@
 //! Stop command - gracefully shuts down the daemon
 //!
-//! Stop is a **privileged** operation that requires an action-bound one-time
-//! operator proof. The target command never reads the admin token itself.
+//! Stop is a **privileged** operation that authorizes itself: the operator
+//! runs `loom stop` with nothing to mint or carry. A sandboxed agent cannot,
+//! because the sandbox denies it the daemon's admin token.
 //!
-//!   1. Take the proof from `LOOM_ADMIN_PROOF` and remove it from the environment.
+//!   1. Authorize through `admin_proof::authorize` (a `LOOM_ADMIN_PROOF` in the
+//!      environment wins; otherwise the proof is derived from `admin.token`).
 //!   2. Send `Request::Stop` to the daemon and wait for acknowledgement.
 //!
 //! Verified SIGTERM fallback is reserved for an unreachable daemon socket and
@@ -21,8 +23,8 @@ use std::time::Duration;
 ///
 /// Order of operations:
 ///   1. Verify daemon is running.
-///   2. Consume the external action-bound proof.
-///   3. Send `Stop` (via [`DaemonServer::stop`]). If proof verification fails → abort.
+///   2. Authorize against the daemon's admin token (`admin_proof::authorize`).
+///   3. Send `Stop` (via [`DaemonServer::stop`]). If authorization fails → abort.
 ///
 /// PID fallback only triggers when `force` is true AND the socket is
 /// unreachable; never on `AuthenticationFailed`.
@@ -84,8 +86,8 @@ pub fn stop_daemon(work_root: &std::path::Path, force: bool) -> Result<()> {
             if !force {
                 bail!(
                     "{} Daemon did not respond cleanly: {e}\n  \
-                     Re-run with --force and a fresh one-time operator proof to request \
-                     verified SIGTERM of the recorded daemon identity.",
+                     Re-run with --force to request verified SIGTERM of the recorded \
+                     daemon identity.",
                     "✗".red().bold()
                 );
             }
@@ -228,7 +230,7 @@ mod tests {
 
     #[test]
     #[serial]
-    fn readable_admin_token_cannot_self_authorize_stop() {
+    fn unreachable_daemon_is_not_signalled_without_force() {
         let temp_dir = TempDir::new().unwrap();
         let work_dir = temp_dir.path().join(".loom").join("work");
         fs::create_dir_all(&work_dir).unwrap();
@@ -260,7 +262,7 @@ mod tests {
         if let Some(proof) = original_proof {
             std::env::set_var("LOOM_ADMIN_PROOF", proof);
         }
-        assert!(error.to_string().contains("one-time operator proof"));
+        assert!(error.to_string().contains("Re-run with --force"));
     }
 
     #[test]

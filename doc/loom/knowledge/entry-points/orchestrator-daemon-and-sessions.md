@@ -133,13 +133,14 @@ written for the tokens at all; the OS-level `sandbox.filesystem.denyRead` list a
 `loom-hooks/credential-guard.sh` cover them, for the reason in concerns.md § "No `Read(...)` Deny Rule
 May Exist in Any Settings File".
 
-Privileged actions do not treat the mere presence of `.loom/work/admin.token` as authorization. The
-operator supplies that secret only to the proof-minting process through `LOOM_ADMIN_TOKEN`; the
-target command receives an action-bound proof through `LOOM_ADMIN_PROOF` and never reads the token.
-Proofs are HMAC-SHA256-bound to the project, action, stage (when applicable), and privileged flag
-set, then consumed through a private atomic replay marker. The integrated shutdown flow is
-`loom stage admin-proof --daemon-stop`, followed by `loom stop` with the minted proof in
-`LOOM_ADMIN_PROOF`.
+Privileged actions (`loom stop`, `--no-verify`, `--force-unsafe`, `--assume-merged`) authorize
+themselves: `admin_proof::authorize` derives the proof from `.loom/work/admin.token`, which the
+operator can read and a sandboxed stage agent cannot (the sandbox denies it to the whole process
+tree, and `refuse_operator_inside_a_session` turns a session away first). The operator mints and
+carries nothing. Proofs are HMAC-SHA256-bound to the project, action, stage (when applicable), and
+privileged flag set, then consumed through a private atomic replay marker. A `LOOM_ADMIN_PROOF` in
+the environment wins over the derived one: `loom stage admin-proof` (secret through
+`LOOM_ADMIN_TOKEN`) exists only to mint a narrowly scoped capability for another process.
 
 `daemon/server/client.rs` verifies the preface in constant time and fails closed on missing or
 malformed credentials. `commands/stage/admin_proof.rs` owns minting, exact-request verification,

@@ -100,8 +100,8 @@ pub use crate::stage_service::ContractRunReport;
 /// before it uses them.
 ///
 /// `Admin` requests are privileged host-only operations (Stop). They require
-/// an action-bound, one-time operator proof minted from the mode-0600 admin
-/// secret by a trusted host process.
+/// an action-bound, one-time proof derived from the mode-0600 admin secret,
+/// which the operator can read and a sandboxed agent cannot.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Capability {
     User,

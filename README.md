@@ -373,7 +373,7 @@ Subagent detection is a live process-tree ancestry check, not a PPID comparison.
 - **`dead_code_check`** — command output patterns catching code that exists but is never called
 - **`before_stage` / `after_stage`** — pre-spawn and post-acceptance gates; a failed pre-check blocks the stage before a session is even spawned
 
-The escape hatches (`--no-verify`, `--force-unsafe`, `--assume-merged`) require a one-time operator proof bound to the project, stage, action, and exact flag set. The operator supplies the daemon secret only while minting the proof; the target command cannot fetch that credential for its caller or reuse the proof for another action.
+The escape hatches (`--no-verify`, `--force-unsafe`, `--assume-merged`) require a one-time proof bound to the project, stage, action, and exact flag set. The command derives it from the daemon token, which the operator can read and a sandboxed agent cannot; the proof cannot be reused for another action.
 
 ### Knowledge capture and distillation
 

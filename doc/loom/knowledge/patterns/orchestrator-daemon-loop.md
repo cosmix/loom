@@ -33,7 +33,7 @@ global in-flight request budget, and 32 subscribers per stream. User capabilitie
 status/log subscriptions, Unsubscribe, DisputeCriteria, and the data-only `CompleteStage` request.
 Completion is accepted only for the exact active stage/session identity and remains under the
 sessions-directory lock through the stage transition; replay and cross-stage/session requests fail
-without mutating state. Stop requires a one-time action-bound operator proof. A stable-file `flock`
+without mutating state. Stop authorizes itself with an action-bound proof derived from the daemon token, which a sandboxed agent cannot read. A stable-file `flock`
 is authoritative for daemon ownership and is held for the server lifetime. Graceful shutdown sets
 the shutdown flag, joins bounded workers, and removes only the control files owned by that daemon.
 
