@@ -199,7 +199,7 @@
 | [subagent-orchestration](mistakes/subagent-orchestration.md) | Agents | 397 |
 | [test-concurrency-and-fixtures](mistakes/test-concurrency-and-fixtures.md) | Races | 398 |
 | [test-sweep-and-fixture-discipline](mistakes/test-sweep-and-fixture-discipline.md) |  | 398 |
-| [testing-and-lint](mistakes/testing-and-lint.md) |  | 398 |
+| [testing-and-lint](mistakes/testing-and-lint.md) |  | 408 |
 | [tests-that-cannot-fail](mistakes/tests-that-cannot-fail.md) |  | 392 |
 | [tmux-backend](mistakes/tmux-backend.md) | tmux | 164 |
 | [typed-config-values-process](mistakes/typed-config-values-process.md) | Dev | 86 |

@@ -396,3 +396,13 @@ never by adding a baseline entry.
 **Why:** the prompt-budget edit followed formatting verification.
 **Prevention:** format after the last source edit. Keep appended lessons within the topic size limit.
 **Fix:** apply rustfmt only to the changed Rust files.
+
+## A `pgrep -f` Wait Loop Matches Its Own Shell and Never Ends (2026-11-17)
+
+**What happened:** two background waits ran for 41 min and about 2 h after the work they waited on had finished: `while pgrep -f 'cargo test --all-targets' ...` and `until [ "$(pgrep -fc 'python3 -c while True')" = 0 ]`. The operator suspected a full-suite run.
+
+**Why:** `pgrep -f` matches against full command lines, and the waiting shell's own command line contains the pattern, so the process it looks for always exists.
+
+**Prevention:** wait on a PID (`while kill -0 "$pid"`; `wait "$pid"`), or run the command in the foreground. Never wait with `pgrep -f` on a pattern the waiting command itself contains.
+
+**Fix:** killed both loops; the subagent re-ran its module tests in the foreground.
