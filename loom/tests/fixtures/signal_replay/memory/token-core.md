@@ -294,7 +294,7 @@ found: frozen contract rate-is-five-minute-average stays green under an 11-14 bu
 
 ### 💡 Suggestion [2026-10-14 19:18:37] id=7f982dd9d88f455f925a00927120bef6
 
-/home/dkaponis/src/loom/.worktrees/token-core/loom/src/tokens/claude_line.rs:63 A present but non-numeric cache counter makes the whole line Unreadable and drops its valid input/output tokens, while codex_line.rs treats the same drift as 0. The spec covers only absent fields. Consider treating a non-numeric cache field as 0 for consistency, or keep it and note the choice in common.md.
+/home/username/src/loom/.worktrees/token-core/loom/src/tokens/claude_line.rs:63 A present but non-numeric cache counter makes the whole line Unreadable and drops its valid input/output tokens, while codex_line.rs treats the same drift as 0. The spec covers only absent fields. Consider treating a non-numeric cache field as 0 for consistency, or keep it and note the choice in common.md.
 
 *Evidence:* `review round 1`
 *Session:* session-d4c93a26-1792002297
@@ -303,7 +303,7 @@ found: frozen contract rate-is-five-minute-average stays green under an 11-14 bu
 
 ### 💡 Suggestion [2026-10-14 19:18:37] id=2bbc527ace034a3e8801e0ed8f1b20a8
 
-/home/dkaponis/src/loom/.worktrees/token-core/loom/src/tokens/tail.rs:45 read_until has no per-line cap: one very long line, or a growing unterminated tail, buffers up to the whole remaining file in memory and is re-read each pass. The read is also not interruptible by the shutdown flag. Consider a line length cap (skip and count as unreadable) and a stop check between lines.
+/home/username/src/loom/.worktrees/token-core/loom/src/tokens/tail.rs:45 read_until has no per-line cap: one very long line, or a growing unterminated tail, buffers up to the whole remaining file in memory and is re-read each pass. The read is also not interruptible by the shutdown flag. Consider a line length cap (skip and count as unreadable) and a stop check between lines.
 
 *Evidence:* `review round 1`
 *Session:* session-d4c93a26-1792002297
@@ -312,7 +312,7 @@ found: frozen contract rate-is-five-minute-average stays green under an 11-14 bu
 
 ### 💡 Suggestion [2026-10-14 19:18:37] id=3dcfdae15d284a898c1bae75eba68b9b
 
-/home/dkaponis/src/loom/.worktrees/token-core/loom/src/tokens/checkpoint.rs:50 save() does not check the 8 MiB MAX_CHECKPOINT_BYTES that load() enforces. A checkpoint written over the cap is ignored by the next load, which runs every pass, so every pass would rescan every file. Consider shrinking the message tables or logging when the written size exceeds the cap.
+/home/username/src/loom/.worktrees/token-core/loom/src/tokens/checkpoint.rs:50 save() does not check the 8 MiB MAX_CHECKPOINT_BYTES that load() enforces. A checkpoint written over the cap is ignored by the next load, which runs every pass, so every pass would rescan every file. Consider shrinking the message tables or logging when the written size exceeds the cap.
 
 *Evidence:* `review round 1`
 *Session:* session-d4c93a26-1792002297
@@ -321,7 +321,7 @@ found: frozen contract rate-is-five-minute-average stays green under an 11-14 bu
 
 ### 💡 Suggestion [2026-10-14 19:18:37] id=370d57e40e564878ae2ef76264a5a23d
 
-/home/dkaponis/src/loom/.worktrees/token-core/loom/src/tokens/flow_build.rs:126 The full-key fallback on a shared 8-char short id is not in common.md or w1-engine.md. It is reasonable; document it in the spec so the UI stages know ids can be longer.
+/home/username/src/loom/.worktrees/token-core/loom/src/tokens/flow_build.rs:126 The full-key fallback on a shared 8-char short id is not in common.md or w1-engine.md. It is reasonable; document it in the spec so the UI stages know ids can be longer.
 
 *Evidence:* `review round 1`
 *Session:* session-d4c93a26-1792002297
@@ -330,7 +330,7 @@ found: frozen contract rate-is-five-minute-average stays green under an 11-14 bu
 
 ### 💡 Suggestion [2026-10-14 19:18:47] id=66d457fd0f804384a8bb9d5ac100c868
 
-/home/dkaponis/src/loom/.worktrees/token-core/loom/src/tokens/claude_line.rs:63 A present but non-numeric cache counter makes the whole line Unreadable and drops its valid input/output tokens, while codex_line.rs treats the same drift as 0. The spec covers only absent fields. Consider treating a non-numeric cache field as 0 for consistency, or keep it and note the choice in common.md.
+/home/username/src/loom/.worktrees/token-core/loom/src/tokens/claude_line.rs:63 A present but non-numeric cache counter makes the whole line Unreadable and drops its valid input/output tokens, while codex_line.rs treats the same drift as 0. The spec covers only absent fields. Consider treating a non-numeric cache field as 0 for consistency, or keep it and note the choice in common.md.
 
 *Evidence:* `review round 2`
 *Session:* session-d4c93a26-1792002297
@@ -339,7 +339,7 @@ found: frozen contract rate-is-five-minute-average stays green under an 11-14 bu
 
 ### 💡 Suggestion [2026-10-14 19:18:47] id=f097ae0affde497eb064280cefa22503
 
-/home/dkaponis/src/loom/.worktrees/token-core/loom/src/tokens/tail.rs:45 read_until has no per-line cap: one very long line, or a growing unterminated tail, buffers up to the whole remaining file in memory and is re-read each pass. The read is also not interruptible by the shutdown flag. Consider a line length cap (skip and count as unreadable) and a stop check between lines.
+/home/username/src/loom/.worktrees/token-core/loom/src/tokens/tail.rs:45 read_until has no per-line cap: one very long line, or a growing unterminated tail, buffers up to the whole remaining file in memory and is re-read each pass. The read is also not interruptible by the shutdown flag. Consider a line length cap (skip and count as unreadable) and a stop check between lines.
 
 *Evidence:* `review round 2`
 *Session:* session-d4c93a26-1792002297
@@ -348,7 +348,7 @@ found: frozen contract rate-is-five-minute-average stays green under an 11-14 bu
 
 ### 💡 Suggestion [2026-10-14 19:18:47] id=27ec65e3d9344742ac370207c9ffdc09
 
-/home/dkaponis/src/loom/.worktrees/token-core/loom/src/tokens/checkpoint.rs:50 save() does not check the 8 MiB MAX_CHECKPOINT_BYTES that load() enforces. A checkpoint written over the cap is ignored by the next load, which runs every pass, so every pass would rescan every file. Consider shrinking the message tables or logging when the written size exceeds the cap.
+/home/username/src/loom/.worktrees/token-core/loom/src/tokens/checkpoint.rs:50 save() does not check the 8 MiB MAX_CHECKPOINT_BYTES that load() enforces. A checkpoint written over the cap is ignored by the next load, which runs every pass, so every pass would rescan every file. Consider shrinking the message tables or logging when the written size exceeds the cap.
 
 *Evidence:* `review round 2`
 *Session:* session-d4c93a26-1792002297
@@ -357,7 +357,7 @@ found: frozen contract rate-is-five-minute-average stays green under an 11-14 bu
 
 ### 💡 Suggestion [2026-10-14 19:18:47] id=c3fd3c22d7764ccb96b4e53548da7423
 
-/home/dkaponis/src/loom/.worktrees/token-core/loom/src/tokens/flow_build.rs:126 The full-key fallback on a shared 8-char short id is not in common.md or w1-engine.md. It is reasonable; document it in the spec so the UI stages know ids can be longer.
+/home/username/src/loom/.worktrees/token-core/loom/src/tokens/flow_build.rs:126 The full-key fallback on a shared 8-char short id is not in common.md or w1-engine.md. It is reasonable; document it in the spec so the UI stages know ids can be longer.
 
 *Evidence:* `review round 2`
 *Session:* session-d4c93a26-1792002297

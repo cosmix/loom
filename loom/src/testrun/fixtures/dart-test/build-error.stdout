@@ -25,5 +25,5 @@
       expect(add(2, 2), equals(4))  this is a deliberate syntax error
                                                                 ^^^^^
 
-[1m[36mTo run this test again:[0m /home/dkaponis/dev/flutter/bin/cache/dart-sdk/bin/dart test test/fixture_test.dart -p vm --plain-name 'loading test/fixture_test.dart'
+[1m[36mTo run this test again:[0m /home/username/dev/flutter/bin/cache/dart-sdk/bin/dart test test/fixture_test.dart -p vm --plain-name 'loading test/fixture_test.dart'
 00:00 [32m+0[0m[31m -1[0m: [31mSome tests failed.[0m                                                                                                                                                                        

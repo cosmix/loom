@@ -195,7 +195,7 @@ fn spelling_decides_which_names_rarity_may_vouch_for() {
 }
 
 /// The second measured specimen: "write the recommendation in
-/// /home/dkaponis/src/loom/doc" pulled in five `write` helpers and three
+/// /home/username/src/loom/doc" pulled in five `write` helpers and three
 /// `home()` functions. A filesystem path in a prompt is not a symbol
 /// reference, and its segments are not identifiers just because a file is
 /// named after them.
@@ -217,7 +217,7 @@ fn words_lifted_out_of_a_filesystem_path_earn_no_exact_rung() {
     }
 
     let ranked = rank_text(
-        "write the recommendation in /home/dkaponis/src/loom/doc",
+        "write the recommendation in /home/username/src/loom/doc",
         &corpus,
     );
 

@@ -138,8 +138,8 @@ mod tests {
     #[test]
     fn slug_replaces_slashes_and_dots() {
         assert_eq!(
-            project_slug(Path::new("/home/dkaponis/src/loom")),
-            "-home-dkaponis-src-loom"
+            project_slug(Path::new("/home/username/src/loom")),
+            "-home-username-src-loom"
         );
     }
 
@@ -147,9 +147,9 @@ mod tests {
     fn slug_collapses_dot_segment_to_double_dash() {
         assert_eq!(
             project_slug(Path::new(
-                "/home/dkaponis/src/cartolyth/.worktrees/admin1-atlas"
+                "/home/username/src/myproject/.worktrees/admin1-atlas"
             )),
-            "-home-dkaponis-src-cartolyth--worktrees-admin1-atlas"
+            "-home-username-src-myproject--worktrees-admin1-atlas"
         );
     }
 
