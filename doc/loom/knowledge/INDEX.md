@@ -118,7 +118,7 @@
 | --- | --- | --- |
 | [code-style-and-structure](conventions/code-style-and-structure.md) |  | 298 |
 | [commits](conventions/commits.md) | Format | 24 |
-| [config-plan-and-gate-rules](conventions/config-plan-and-gate-rules.md) |  | 27 |
+| [config-plan-and-gate-rules](conventions/config-plan-and-gate-rules.md) |  | 31 |
 | [dispute-and-adjudication](conventions/dispute-and-adjudication.md) |  | 138 |
 | [git-and-build-workflow](conventions/git-and-build-workflow.md) |  | 237 |
 | [guidance-channels-and-plugin-scope](conventions/guidance-channels-and-plugin-scope.md) |  | 134 |
