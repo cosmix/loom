@@ -28,10 +28,12 @@ payload() {
 # $TMP/stderr. The environment is the guard's own and nothing inherited.
 run_guard() {
 	local rc=0
-	printf '%s' "$1" | env -i HOME="$TMP" PATH="$PATH" \
+	# A here-string, not a pipe: a guard that exits before reading stdin
+	# would fail the writer under pipefail.
+	env -i HOME="$TMP" PATH="$PATH" \
 		LOOM_SESSION_ID=session-1 LOOM_SCRATCH_DIR="$TMP/scratch" \
 		LOOM_WORK_DIR="$TMP/work" LOOM_STAGE_ID=stage-a \
-		bash "$HOOK" 2>"$TMP/stderr" >/dev/null || rc=$?
+		bash "$HOOK" <<<"$1" 2>"$TMP/stderr" >/dev/null || rc=$?
 	printf '%s' "$rc"
 }
 
@@ -164,11 +166,11 @@ passes '{ echo a; } | grep LOOM_RELAY; loom memory note a'
 # The payload must be a Bash tool call, and the env gate decides.
 got=$(run_guard '{"tool_name":"Read","tool_input":{"command":"loom stage commit s | rg x"}}')
 [[ "$got" == 0 ]] || { echo "FAIL: non-Bash payload: exit $got" >&2; FAILED=1; }
-got=$(printf '%s' "$(payload 'loom stage commit s | rg x')" | env -i HOME="$TMP" PATH="$PATH" \
-	bash "$HOOK" >/dev/null 2>&1 && echo 0 || echo $?)
+got=$(env -i HOME="$TMP" PATH="$PATH" \
+	bash "$HOOK" <<<"$(payload 'loom stage commit s | rg x')" >/dev/null 2>&1 && echo 0 || echo $?)
 [[ "$got" == 0 ]] || { echo "FAIL: env gate unset: exit $got" >&2; FAILED=1; }
-got=$(printf '%s' "$(payload 'loom stage commit s | rg x')" | env -i HOME="$TMP" PATH="$PATH" \
-	LOOM_SESSION_ID=session-1 bash "$HOOK" >/dev/null 2>&1 && echo 0 || echo $?)
+got=$(env -i HOME="$TMP" PATH="$PATH" \
+	LOOM_SESSION_ID=session-1 bash "$HOOK" <<<"$(payload 'loom stage commit s | rg x')" >/dev/null 2>&1 && echo 0 || echo $?)
 [[ "$got" == 0 ]] || { echo "FAIL: scratch gate unset: exit $got" >&2; FAILED=1; }
 
 # A blocked call appends exactly one block-ledger line.
