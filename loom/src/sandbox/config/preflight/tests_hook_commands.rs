@@ -30,8 +30,11 @@ struct Scene {
 
 fn scene() -> Scene {
     let temp = TempDir::new().unwrap();
+    // Resolved: refusals name the script they resolved, and macOS temp dirs sit under the
+    // `/var` -> `/private/var` link.
+    let base = temp.path().canonicalize().unwrap();
     let [repo, writable, outside, bin] =
-        ["repo", "writable", "outside", "bin"].map(|name| temp.path().join(name));
+        ["repo", "writable", "outside", "bin"].map(|name| base.join(name));
     for dir in [&repo, &writable, &outside, &bin] {
         std::fs::create_dir_all(dir).unwrap();
     }

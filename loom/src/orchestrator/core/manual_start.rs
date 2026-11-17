@@ -166,11 +166,14 @@ mod tests {
     #[test]
     fn stage_command_keeps_hostile_paths_and_prompt_literal() {
         let temp = tempfile::tempdir().unwrap();
-        let marker = temp.path().join("executed");
+        // Resolved: the printed LOOM_WORK_DIR is canonicalized, and macOS temp dirs sit
+        // under the `/var` -> `/private/var` link.
+        let base = temp.path().canonicalize().unwrap();
+        let marker = base.join("executed");
         let hostile = "a b ' $HOME `touch executed` $(touch executed)\nend";
-        let worktree = temp.path().join(format!("worktree {hostile}"));
-        let work_dir = temp.path().join(format!("state {hostile}"));
-        let signal = temp.path().join(format!("signal {hostile}"));
+        let worktree = base.join(format!("worktree {hostile}"));
+        let work_dir = base.join(format!("state {hostile}"));
+        let signal = base.join(format!("signal {hostile}"));
         std::fs::create_dir(&worktree).unwrap();
         std::fs::create_dir(&work_dir).unwrap();
         let lines = manual_stage_start_lines("stage-1", &worktree, "session-1", &signal, &work_dir);

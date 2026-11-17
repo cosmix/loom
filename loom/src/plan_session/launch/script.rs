@@ -134,6 +134,9 @@ mod tests {
         \"${LOOM_WORK_DIR+set}\" \"${CUSTOM-}\" \"$@\"\n";
 
     fn spec(base: &Path) -> LaunchSpec {
+        // Resolved: `env -i` drops `PWD`, so the fake claude reports the physical directory,
+        // and macOS temp dirs sit under the `/var` -> `/private/var` link.
+        let base = &base.canonicalize().unwrap();
         let root = base.join("project '$\nspace");
         fs::create_dir(&root).unwrap();
         let runtime = runtime_paths_under(&base.join("loom-home"), &root).unwrap();
