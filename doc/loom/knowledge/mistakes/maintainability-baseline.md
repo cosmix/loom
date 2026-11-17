@@ -94,3 +94,10 @@
 **Prevention:** Use direct array-to-slice coercion in typed const tables and compile before reporting the implementation stable.
 
 **Fix:** Replace the range expression with a direct borrowed array and rerun the focused language and project tests.
+
+## Subagent targeted tests missed the file-size guard
+
+**What happened:** During the gpt-6.2 codex model rename, a subagent split a helper out of `loom/src/pressure/codex_run.rs` and left it at 405 lines. Its targeted `cargo test` filters passed, and the full suite then failed `tests/maintainability.rs` on the 400-line limit.
+**Why:** The `maintainability` integration test runs only in the full suite, and the brief did not tell the subagent to check file length on files it grew.
+**Prevention:** Briefs that add code to an existing file include `cargo test --test maintainability` among the targeted tests.
+**Fix:** Compacted `chain_label` back under 400 lines.

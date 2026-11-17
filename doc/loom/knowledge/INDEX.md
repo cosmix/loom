@@ -122,7 +122,7 @@
 | [dispute-and-adjudication](conventions/dispute-and-adjudication.md) |  | 138 |
 | [git-and-build-workflow](conventions/git-and-build-workflow.md) |  | 237 |
 | [guidance-channels-and-plugin-scope](conventions/guidance-channels-and-plugin-scope.md) |  | 134 |
-| [model-and-effort-config](conventions/model-and-effort-config.md) |  | 145 |
+| [model-and-effort-config](conventions/model-and-effort-config.md) |  | 147 |
 | [plan-web](conventions/plan-web.md) |  | 215 |
 | [plan-yaml-and-hooks](conventions/plan-yaml-and-hooks.md) |  | 186 |
 | [web-dashboard-typography](conventions/web-dashboard-typography.md) |  | 68 |
@@ -149,7 +149,7 @@
 | [daemon-fork-after-threads](mistakes/daemon-fork-after-threads.md) | Fork | 38 |
 | [daemon-singleton](mistakes/daemon-singleton.md) |  | 141 |
 | [detached-spawn-in-tests](mistakes/detached-spawn-in-tests.md) |  | 65 |
-| [dev-install](mistakes/dev-install.md) | Daemon | 51 |
+| [dev-install](mistakes/dev-install.md) | Daemon | 58 |
 | [doctrine-and-acceptance](mistakes/doctrine-and-acceptance.md) |  | 392 |
 | [hooks-shell-portability](mistakes/hooks-shell-portability.md) |  | 402 |
 | [host-verify-group-containment](mistakes/host-verify-group-containment.md) |  | 47 |
@@ -158,7 +158,7 @@
 | [knowledge-write-channel](mistakes/knowledge-write-channel.md) | Writes | 134 |
 | [ledger-tui-rendering](mistakes/ledger-tui-rendering.md) |  | 84 |
 | [live-state-pollution](mistakes/live-state-pollution.md) |  | 133 |
-| [maintainability-baseline](mistakes/maintainability-baseline.md) |  | 96 |
+| [maintainability-baseline](mistakes/maintainability-baseline.md) |  | 103 |
 | [memory-relay-drain-gap](mistakes/memory-relay-drain-gap.md) |  | 51 |
 | [merge-cleanup-boundary](mistakes/merge-cleanup-boundary.md) |  | 237 |
 | [merge-in-operator-checkout](mistakes/merge-in-operator-checkout.md) |  | 70 |
@@ -207,7 +207,7 @@
 | [verification-harness](mistakes/verification-harness.md) |  | 399 |
 | [verification-v2-delivery](mistakes/verification-v2-delivery.md) | v2 | 396 |
 | [visibility-and-reachability](mistakes/visibility-and-reachability.md) |  | 141 |
-| [web-dashboard](mistakes/web-dashboard.md) | UI | 184 |
+| [web-dashboard](mistakes/web-dashboard.md) | UI | 194 |
 | [web-dashboard-server](mistakes/web-dashboard-server.md) | Races | 278 |
 | [web-terminal](mistakes/web-terminal.md) | TTY | 142 |
 | [writer-reader-address](mistakes/writer-reader-address.md) | Keys | 115 |
