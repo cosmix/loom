@@ -2,7 +2,7 @@
 
 use super::*;
 use std::fs::Permissions;
-use std::io::Write;
+use std::io::{Seek, SeekFrom, Write};
 
 #[cfg(test)]
 thread_local! {
@@ -96,6 +96,16 @@ fn append_once(output: &mut File, bytes: &[u8]) -> Result<()> {
     // on the length it checked, so it could cut an external edit that followed.
     // A fragment adds bytes at the end of the plan and removes none, and a later
     // record starts on its own line after it.
+    //
+    // Move the descriptor's offset to EOF first. XNU checks RLIMIT_FSIZE
+    // against the descriptor's offset even for O_APPEND (vn_write in
+    // bsd/vfs/vfs_vnops.c takes write_offset from fg_offset, then appends at
+    // EOF), so from offset 0 it would let a full-size plan grow by up to its
+    // own length. Linux checks from EOF (generic_write_checks), as XNU then
+    // does too: the write fails or is clipped alike on both.
+    output
+        .seek(SeekFrom::End(0))
+        .context("Failed to find the end of the plan before the record append")?;
     let record = String::from_utf8_lossy(bytes);
     let recovery = format!(
         "a record fragment may remain at the end of the plan, existing text was not rewritten; \
