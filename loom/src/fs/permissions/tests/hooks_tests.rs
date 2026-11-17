@@ -29,7 +29,7 @@ fn test_hooks_config_structure() {
         ("Glob", "worktree-file-guard.sh"),
         ("Grep", "worktree-file-guard.sh"),
     ];
-    assert_eq!(pre_tool.len(), 50);
+    assert_eq!(pre_tool.len(), 51);
     for (entry, (matcher, script)) in pre_tool.iter().zip(expected_prefix) {
         assert_hook(entry, matcher, script);
     }
@@ -56,6 +56,7 @@ fn assert_sourced_libraries_not_registered(hooks: &Value) {
         "_post-tool-heartbeat.sh",
         "_subagent-preamble.txt",
         "_verify_matchers.sh",
+        "_relay_kinds.sh",
     ] {
         let registered_globally = hooks
             .as_object()
@@ -225,8 +226,9 @@ fn assert_lifecycle_hooks(hooks: &Value) {
     ));
 
     let stop = hooks["Stop"].as_array().unwrap();
-    assert_eq!(stop.len(), 1);
+    assert_eq!(stop.len(), 2);
     assert_hook(&stop[0], "*", "commit-guard.sh");
+    assert_hook(&stop[1], "*", "loom-relay-stop.sh");
 
     let prompt = hooks["UserPromptSubmit"].as_array().unwrap();
     assert_eq!(prompt.len(), 2);

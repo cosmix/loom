@@ -311,7 +311,7 @@ fn relay_mode_marks_a_ceiling_trigger_end_turn() {
     .unwrap();
 
     let stderr_text = String::from_utf8(sink.stderr).unwrap();
-    assert!(stderr_text.contains("End your turn after the confirmation."));
+    assert!(stderr_text.contains("End your turn only after the confirmation."));
 }
 
 #[test]

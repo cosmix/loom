@@ -7,7 +7,10 @@ pub(super) fn build(hooks_dir: &str) -> Value {
             hook(hooks_dir, "AskUserQuestion", "ask-user-post.sh"),
             hook(hooks_dir, "Bash", "codex-forward-result.sh"),
         ],
-        "Stop": [hook(hooks_dir, "*", "commit-guard.sh")],
+        "Stop": [
+            hook(hooks_dir, "*", "commit-guard.sh"),
+            hook(hooks_dir, "*", "loom-relay-stop.sh"),
+        ],
         "UserPromptSubmit": [
             hook(hooks_dir, "*", "skill-trigger.sh"),
             hook(hooks_dir, "*", "user-prompt-context.sh"),
@@ -62,6 +65,7 @@ const PRE_TOOL_HOOKS: &[(&str, &str)] = &[
     ("PowerShell", "codex-forward-guard.sh"),
     ("Bash", "loom-control-complete.sh"),
     ("Bash", "loom-control-subagents.sh"),
+    ("Bash", "loom-relay-guard.sh"),
     ("Edit", "codex-forward-guard.sh"),
     ("MultiEdit", "codex-forward-guard.sh"),
     ("Write", "codex-forward-guard.sh"),

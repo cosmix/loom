@@ -141,7 +141,7 @@ pub(super) fn recover(request: &Request<'_>, candidates: &[Candidate]) -> Vec<St
     report
 }
 
-/// Only `memory` and `telemetry` are ever swept. A control kind a teammate
+/// Only `memory`, `telemetry` and `check` are ever swept. A control kind a teammate
 /// wrote was refused when its own line appeared; relaying it from a later
 /// call would record that teammate's block, handoff or verdict as the main
 /// agent's own.

@@ -34,6 +34,20 @@ loom_token_is_word() {
     return 0
 }
 
+# loom_token_depth <index> <var> - set <var> to the nesting depth recorded for
+# LOOM_TOKENS[index] in LOOM_TOKEN_META: 0 at the top level, more inside a
+# substitution, backticks, a subshell or an `sh -c` payload.
+loom_token_depth() {
+    local meta="${LOOM_TOKEN_META[$1]:-0}"
+    printf -v "$2" '%s' "${meta%g}"
+}
+
+# loom_token_glued <index> - Return 0 when the separator run at LOOM_TOKENS[index]
+# began directly after a word character with no whitespace (`2>f`, not `2 > f`).
+loom_token_glued() {
+    [[ "${LOOM_TOKEN_META[$1]:-}" == *g ]]
+}
+
 # _loom_wrapper_flag_takes_arg <wrapper> <flag> - (internal helper) Return 0
 # when <flag>, as spelled by <wrapper>, consumes the FOLLOWING word as its
 # value, so command-word resolution has to step over both. Without this,

@@ -214,6 +214,25 @@ fn every_kind_registers_the_relay_hook_and_runs_every_hook_under_bin_bash() {
     }
 }
 
+/// The global hook table reaches every capsule through `guard_hooks_config`; a
+/// second registration in the capsule would run the guard or the hook twice.
+#[test]
+fn every_kind_registers_the_relay_guard_and_stop_hook_exactly_once() {
+    for kind in ALL_KINDS {
+        let registered = hooks(&plain(kind));
+        for (event, script) in [
+            ("PreToolUse", "/loom-relay-guard.sh"),
+            ("Stop", "/loom-relay-stop.sh"),
+        ] {
+            let count = registered
+                .iter()
+                .filter(|(e, _, command)| e == event && command.ends_with(script))
+                .count();
+            assert_eq!(count, 1, "{kind}: {event} {script}");
+        }
+    }
+}
+
 #[test]
 fn stage_and_knowledge_get_every_session_hook_and_the_completion_pin() {
     for kind in [

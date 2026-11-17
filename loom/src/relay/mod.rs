@@ -37,6 +37,11 @@ pub const MAX_LINES_PER_CALL: usize = 16;
 /// A session may accumulate at most this many CLI tickets the relay hook has
 /// not yet picked up before the CLI refuses to write another.
 pub const MAX_UNCONSUMED_TICKETS: usize = 32;
+/// The scratch directory holds at most this many tickets of any kind and age
+/// before the CLI refuses to write another. Control tickets older than a
+/// minute do not count against [`MAX_UNCONSUMED_TICKETS`] but do count here,
+/// which keeps the directory bounded; no ticket is ever deleted by the CLI.
+pub const MAX_SCRATCH_TICKETS: usize = 128;
 /// The daemon refuses to relay past this many pending (undrained) inbox
 /// entries for one session.
 pub const MAX_PENDING_ENTRIES: usize = 128;

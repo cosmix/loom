@@ -95,14 +95,18 @@ _loom_expand_shell_c() {
         return 0
     fi
 
-    # LOOM_TOKEN_SEPS moves with its tokens. Each payload walk below replaces
-    # it, and "${out_seps[@]}" keeps indices only because no entry is skipped.
-    local -a src_seps out_seps
+    # LOOM_TOKEN_SEPS and LOOM_TOKEN_META move with their tokens. Each payload
+    # walk below replaces them, and "${out_seps[@]}" keeps indices only because
+    # no entry is skipped.
+    local -a src_seps out_seps src_meta out_meta
     src_seps=()
     out_seps=()
-    local i k
+    src_meta=()
+    out_meta=()
+    local i k base m
     for ((i = 0; i < n; i++)); do
         src_seps[$i]="${LOOM_TOKEN_SEPS[$i]:-}"
+        src_meta[$i]="${LOOM_TOKEN_META[$i]:-0}"
     done
 
     # " 2 5 " - a space-delimited set, since bash 3.2 has no associative arrays
@@ -117,6 +121,7 @@ _loom_expand_shell_c() {
     for ((i = 0; i < n; i++)); do
         out+=("${src[$i]}")
         out_seps+=("${src_seps[$i]}")
+        out_meta+=("${src_meta[$i]}")
         if [[ "$marks" != *" $i "* ]]; then
             continue
         fi
@@ -131,24 +136,36 @@ _loom_expand_shell_c() {
         _loom_tokenize_walk "$payload" || rc=1
         _loom_expand_shell_c $((depth - 1)) || rc=1
         if ((${#LOOM_TOKENS[@]} > 0)); then
+            # A payload runs one level deeper than the word that carries it.
+            base=${src_meta[$i]%g}
             out+=("%%SEP%%")
             out_seps+=("")
+            out_meta+=("$((base + 1))")
             out+=("${LOOM_TOKENS[@]}")
             for ((k = 0; k < ${#LOOM_TOKENS[@]}; k++)); do
                 out_seps+=("${LOOM_TOKEN_SEPS[$k]:-}")
+                m="${LOOM_TOKEN_META[$k]:-0}"
+                if [[ "$m" == *g ]]; then
+                    out_meta+=("$((${m%g} + base + 1))g")
+                else
+                    out_meta+=("$((m + base + 1))")
+                fi
             done
             if ((i + 1 < n)) && [[ "${src[$((i + 1))]}" != "%%SEP%%" ]]; then
                 out+=("%%SEP%%")
                 out_seps+=("")
+                out_meta+=("$base")
             fi
         fi
     done
 
     LOOM_TOKENS=()
     LOOM_TOKEN_SEPS=()
+    LOOM_TOKEN_META=()
     if ((${#out[@]} > 0)); then
         LOOM_TOKENS=("${out[@]}")
         LOOM_TOKEN_SEPS=("${out_seps[@]}")
+        LOOM_TOKEN_META=("${out_meta[@]}")
     fi
     return "$rc"
 }

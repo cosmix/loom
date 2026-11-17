@@ -13,6 +13,7 @@ mod cwd;
 mod quota;
 mod session_type;
 mod sink;
+mod stale;
 mod stderr_text;
 mod ticket_io;
 
@@ -37,6 +38,7 @@ use anyhow::{bail, Context, Result};
 use chrono::Utc;
 use serde_json::Value;
 use std::path::{Path, PathBuf};
+use std::time::SystemTime;
 
 /// A snapshot of the environment variables [`mode`] and [`RelayContext`]
 /// decide from: `LOOM_SESSION_ID`, `LOOM_SCRATCH_DIR`, `LOOM_STAGE_ID`,
@@ -157,7 +159,7 @@ impl RelayContext {
             );
         }
 
-        quota::require_headroom(&self.scratch_dir)
+        quota::require_headroom(&self.scratch_dir, SystemTime::now())
     }
 
     /// Write a ticket for `kind`/`payload`, print the `LOOM_RELAY_V1` line as
@@ -178,7 +180,7 @@ impl RelayContext {
 
     /// As [`Self::emit`], but writes nothing to `sink`'s stderr — for a
     /// request relayed on every call (`loom knowledge context`'s telemetry),
-    /// where the five-line PENDING RELAY notice would make routine lookups
+    /// where the PENDING RELAY notice would make routine lookups
     /// noisy.
     pub fn emit_quiet(
         &self,
@@ -215,7 +217,7 @@ impl RelayContext {
         ticket_io::write_ticket(&self.scratch_dir, &ticket.id, &bytes)?;
 
         if let Some((what, end_turn)) = status {
-            let text = stderr_text::build(&ticket.id, what, end_turn);
+            let text = stderr_text::build(kind, &ticket.id, what, end_turn);
             write!(sink.stderr(), "{text}").context("failed to write the relay status text")?;
             sink.stderr().flush().context("failed to flush stderr")?;
         }

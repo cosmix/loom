@@ -234,3 +234,137 @@ fn refuses_at_the_unconsumed_ticket_quota() {
         )
         .is_err());
 }
+
+/// Ticket-quota coverage: control tickets older than a minute stop counting
+/// against the 32 limit, and nothing is ever deleted.
+mod stranded_tickets {
+    use super::*;
+    use crate::relay::{new_request_id, Ticket, MAX_SCRATCH_TICKETS};
+    use std::time::{Duration, SystemTime};
+
+    const OLD: Duration = Duration::from_secs(120);
+
+    fn write_ticket(scratch: &Path, kind: RequestKind, age: Duration) -> PathBuf {
+        let ticket = Ticket {
+            v: 1,
+            id: new_request_id(),
+            kind,
+            created_at: Utc::now(),
+            payload: serde_json::json!({}),
+        };
+        let path = scratch.join(format!("{}.req", ticket.id));
+        fs::write(&path, ticket.encode()).unwrap();
+        fs::File::options()
+            .write(true)
+            .open(&path)
+            .unwrap()
+            .set_modified(SystemTime::now() - age)
+            .unwrap();
+        path
+    }
+
+    fn fill(scratch: &Path, kind: RequestKind, age: Duration, count: usize) -> Vec<PathBuf> {
+        (0..count)
+            .map(|_| write_ticket(scratch, kind, age))
+            .collect()
+    }
+
+    fn check(fixture: &super::test_support::RelayFixture, kind: RequestKind) -> Result<()> {
+        fixture
+            .context
+            .check(kind, None, &fixture.cwd, current_uid())
+    }
+
+    #[test]
+    fn old_control_tickets_do_not_consume_the_unconsumed_quota_and_stay_on_disk() {
+        let fixture = test_support::context_for(SessionType::Stage);
+        let scratch = &fixture.context.scratch_dir;
+        let tickets = fill(
+            scratch,
+            RequestKind::FileDispute,
+            OLD,
+            MAX_UNCONSUMED_TICKETS,
+        );
+        check(&fixture, RequestKind::FileDispute).unwrap();
+        assert!(tickets.iter().all(|path| path.exists()));
+    }
+
+    #[test]
+    fn fresh_control_tickets_count_against_the_unconsumed_quota() {
+        let fixture = test_support::context_for(SessionType::Stage);
+        let scratch = &fixture.context.scratch_dir;
+        fill(
+            scratch,
+            RequestKind::FileDispute,
+            Duration::ZERO,
+            MAX_UNCONSUMED_TICKETS,
+        );
+        let error = check(&fixture, RequestKind::FileDispute)
+            .unwrap_err()
+            .to_string();
+        assert!(
+            error.contains("unconsumed relay tickets (limit 32)"),
+            "{error}"
+        );
+        assert!(error.contains("rerun `loom check`"), "{error}");
+    }
+
+    #[test]
+    fn old_swept_tickets_still_count_against_the_unconsumed_quota() {
+        let fixture = test_support::context_for(SessionType::Stage);
+        let scratch = &fixture.context.scratch_dir;
+        fill(scratch, RequestKind::Memory, OLD, MAX_UNCONSUMED_TICKETS);
+        for kind in [RequestKind::Memory, RequestKind::FileDispute] {
+            let error = check(&fixture, kind).unwrap_err().to_string();
+            assert!(
+                error.contains("unconsumed relay tickets (limit 32)"),
+                "{error}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_scratch_limit_refuses_and_names_stale_control_ids() {
+        let fixture = test_support::context_for(SessionType::Stage);
+        let scratch = &fixture.context.scratch_dir;
+        let tickets = fill(scratch, RequestKind::Block, OLD, MAX_SCRATCH_TICKETS);
+        let error = check(&fixture, RequestKind::Block).unwrap_err().to_string();
+        assert!(
+            error.contains(&format!("holds {MAX_SCRATCH_TICKETS} relay tickets")),
+            "{error}"
+        );
+        let named = tickets
+            .iter()
+            .filter(|path| {
+                let id = path.file_stem().unwrap().to_str().unwrap();
+                error.contains(id)
+            })
+            .count();
+        assert_eq!(named, 10, "{error}");
+        assert!(tickets.iter().all(|path| path.exists()));
+    }
+
+    #[test]
+    fn undecodable_req_files_count_as_live() {
+        let fixture = test_support::context_for(SessionType::Stage);
+        let scratch = &fixture.context.scratch_dir;
+        for n in 0..MAX_UNCONSUMED_TICKETS {
+            fs::write(scratch.join(format!("{n}.req")), b"not a ticket").unwrap();
+        }
+        assert!(check(&fixture, RequestKind::Block).is_err());
+    }
+
+    #[test]
+    fn a_symlinked_req_counts_as_live_and_is_not_followed() {
+        let fixture = test_support::context_for(SessionType::Stage);
+        let scratch = &fixture.context.scratch_dir;
+        let target = write_ticket(scratch, RequestKind::Block, OLD);
+        let hidden = scratch.join("target.tmp");
+        fs::rename(&target, &hidden).unwrap();
+        for n in 0..MAX_UNCONSUMED_TICKETS {
+            std::os::unix::fs::symlink(&hidden, scratch.join(format!("{n}.req"))).unwrap();
+        }
+        // Followed, each link would decode as an old control ticket and free the quota.
+        assert!(check(&fixture, RequestKind::Block).is_err());
+    }
+}

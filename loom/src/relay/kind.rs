@@ -192,3 +192,7 @@ mod tests {
         assert!("bogus".parse::<RequestKind>().is_err());
     }
 }
+
+#[cfg(test)]
+#[path = "kind_hook_parity_tests.rs"]
+mod hook_parity_tests;

@@ -40,92 +40,12 @@ say() {
 	exit 0
 }
 
-# segment_has_arg <index> <arg> - True when a later word of the command segment
-# whose command word sits at LOOM_TOKENS[<index>] is exactly <arg>.
-segment_has_arg() {
-	local k=$(($1 + 1)) n=${#LOOM_TOKENS[@]}
-	while ((k < n)) && [[ "${LOOM_TOKENS[$k]}" != "%%SEP%%" ]]; do
-		[[ "${LOOM_TOKENS[$k]}" == "$2" ]] && return 0
-		k=$((k + 1))
-	done
-	return 1
-}
-
-# segment_has_option <index> <option> <value> - True when the command segment
-# whose command word sits at LOOM_TOKENS[<index>] passes <option> <value>, as
-# two words or as <option>=<value>.
-segment_has_option() {
-	local k=$(($1 + 1)) n=${#LOOM_TOKENS[@]}
-	while ((k < n)) && [[ "${LOOM_TOKENS[$k]}" != "%%SEP%%" ]]; do
-		[[ "${LOOM_TOKENS[$k]}" == "$2=$3" ]] && return 0
-		[[ "${LOOM_TOKENS[$k]}" == "$2" && "${LOOM_TOKENS[$((k + 1))]:-}" == "$3" ]] && return 0
-		k=$((k + 1))
-	done
-	return 1
-}
-
-# relay_kind_at <index> - Echo the request kind written by the loom invocation
-# whose command word sits at LOOM_TOKENS[<index>], or nothing (section 5).
-relay_kind_at() {
-	local j=$1 n=${#LOOM_TOKENS[@]} sub="" verb=""
-	((j + 1 < n)) && sub=${LOOM_TOKENS[$((j + 1))]}
-	((j + 2 < n)) && verb=${LOOM_TOKENS[$((j + 2))]}
-	[[ "$verb" == "%%SEP%%" ]] && verb=""
-	case "$sub:$verb" in
-	memory:note | memory:decision | memory:change | memory:question | memory:resolve) echo memory ;;
-	stage:block) echo block ;;
-	stage:commit) echo commit ;;
-	stage:complete) echo complete ;;
-	stage:dispute-criteria)
-		# --field impact-tests files a plan v2 dispute kind, not a criterion.
-		if segment_has_option "$j" --field impact-tests; then echo file-dispute; else echo dispute; fi
-		;;
-	stage:dispute-findings | stage:dispute-contract | stage:dispute-integrity) echo file-dispute ;;
-	stage:merge) segment_has_arg "$j" --resolved && echo merge-resolved ;;
-	stage:adjudicate) echo verdict ;;
-	stage:contracts) [[ "${LOOM_TOKENS[$((j + 3))]:-}" == freeze ]] && echo freeze-contracts ;;
-	knowledge:context) echo telemetry ;;
-	subagents:start | subagents:message | subagents:cancel) echo subagents:control ;;
-	check:*) echo check ;;
-	handoff:*) echo handoff ;;
-	esac
-	return 0
-}
-
-# relay_allowed_kinds - Echo, comma-separated, the kinds written by every
-# segment of LOOM_TOKENS whose effective command word is exactly `loom`. Walks
-# command positions the way loom_tokens_invoke does, so VAR= prefixes, wrappers
-# and `sh -c` payloads are seen through while quoted prose stays one argument.
-relay_allowed_kinds() {
-	local n=${#LOOM_TOKENS[@]} i=0 at_cmd_pos=1 j kind kinds=""
-	while ((i < n)); do
-		if [[ "${LOOM_TOKENS[$i]}" == "%%SEP%%" ]]; then
-			at_cmd_pos=1
-			i=$((i + 1))
-			continue
-		fi
-		if [[ $at_cmd_pos -eq 1 ]] && j=$(loom_tokens_command_word_index "$i") &&
-			[[ "${LOOM_TOKENS[$j]##*/}" == loom ]]; then
-			kind=$(relay_kind_at "$j")
-			if [[ -n "$kind" && ",$kinds," != *",$kind,"* ]]; then
-				kinds=${kinds:+$kinds,}$kind
-			fi
-		fi
-		at_cmd_pos=0
-		i=$((i + 1))
-	done
-	printf '%s' "$kinds"
-}
-
 # drop_control_kinds <csv> - The kinds in <csv> a subagent may relay. A
 # `commit` line is admitted like the other control kinds and never swept.
 drop_control_kinds() {
 	local kind kept="" IFS=,
 	for kind in $1; do
-		case "$kind" in
-		block | commit | complete | dispute | handoff | merge-resolved | verdict | freeze-contracts | file-dispute | subagents:control) ;;
-		*) kept=${kept:+$kept,}$kind ;;
-		esac
+		relay_kind_is_control "$kind" || kept=${kept:+$kept,}$kind
 	done
 	printf '%s' "$kept"
 }
@@ -149,10 +69,13 @@ esac
 HAS_LINE=0
 [[ "$INPUT_JSON" == *"LOOM_RELAY_V1 "* ]] && HAS_LINE=1
 
-if ! source "${BASH_SOURCE[0]%/*}/_common.sh" 2>/dev/null || ! command -v jq &>/dev/null; then
+# _relay_kinds.sh is sourced here, after the fast path above: sourcing it at the
+# top would add a file read to every Bash call.
+if ! source "${BASH_SOURCE[0]%/*}/_common.sh" 2>/dev/null ||
+	! source "${BASH_SOURCE[0]%/*}/_relay_kinds.sh" 2>/dev/null || ! command -v jq &>/dev/null; then
 	# Without jq there is no safe way to build JSON: a fixed message, verbatim.
 	[[ $HAS_LINE -eq 1 ]] &&
-		printf '%s\n' '{"hookSpecificOutput":{"hookEventName":"PostToolUse","additionalContext":"LOOM relay: unavailable because jq or the loom hook library (_common.sh) is missing, so nothing was relayed. Stop and report it; do not retry."}}'
+		printf '%s\n' '{"hookSpecificOutput":{"hookEventName":"PostToolUse","additionalContext":"LOOM relay: unavailable because jq or the loom hook library (_common.sh, _relay_kinds.sh) is missing, so nothing was relayed. Stop and report it; do not retry."}}'
 	exit 0
 fi
 

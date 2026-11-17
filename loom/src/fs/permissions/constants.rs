@@ -17,6 +17,10 @@ pub const HOOK_WORKTREE_POLICY_LOADER: &str =
     include_str!("../../../../loom-hooks/_worktree_policy.sh");
 pub const HOOK_WORKTREE_POLICY: &str = include_str!("../../../../loom-hooks/worktree-policy.json");
 pub const HOOK_GIT_COMMAND: &str = include_str!("../../../../loom-hooks/_git-command.sh");
+/// Relay request-kind library sourced by `loom-relay.sh`, `loom-relay-guard.sh`
+/// and `loom-relay-stop.sh` (never registered as a hook directly). A missing
+/// row here leaves the installed `loom-relay.sh` without `relay_allowed_kinds`.
+pub const HOOK_RELAY_KINDS: &str = include_str!("../../../../loom-hooks/_relay_kinds.sh");
 
 /// Claude worker lifecycle evidence utilities shared by lifecycle hooks
 pub const HOOK_LIFECYCLE: &str = include_str!("../../../../loom-hooks/_lifecycle.sh");
@@ -65,6 +69,13 @@ pub const HOOK_LOOM_CONTROL_COMPLETE: &str =
 /// (`loom subagents start`, `message`, `cancel`).
 pub const HOOK_LOOM_CONTROL_SUBAGENTS: &str =
     include_str!("../../../../loom-hooks/loom-control-subagents.sh");
+
+/// PreToolUse guard refusing a relayed loom command whose `LOOM_RELAY_V1` line
+/// the call would hide (backgrounded, redirected, captured or filtered).
+pub const HOOK_LOOM_RELAY_GUARD: &str = include_str!("../../../../loom-hooks/loom-relay-guard.sh");
+
+/// Stop hook warning once about a control relay ticket left on disk.
+pub const HOOK_LOOM_RELAY_STOP: &str = include_str!("../../../../loom-hooks/loom-relay-stop.sh");
 
 /// Trusted PostToolUse producer for completed direct Codex forwards.
 pub const HOOK_CODEX_FORWARD_RESULT: &str =
@@ -212,6 +223,7 @@ pub const LOOM_HOOKS: &[(&str, &str)] = &[
     ("_stage_lookup.sh", HOOK_STAGE_LOOKUP),
     ("_parser_expand.sh", HOOK_PARSER_EXPAND),
     ("_parser_scan.sh", HOOK_PARSER_SCAN),
+    ("_relay_kinds.sh", HOOK_RELAY_KINDS),
     ("_containment.sh", HOOK_CONTAINMENT),
     ("_identity.sh", HOOK_IDENTITY),
     ("_heartbeat.sh", HOOK_HEARTBEAT),
@@ -260,6 +272,8 @@ pub const LOOM_HOOKS: &[(&str, &str)] = &[
     ("spawn-guard.sh", HOOK_SPAWN_GUARD),
     ("read-guard.sh", HOOK_READ_GUARD),
     ("poll-guard.sh", HOOK_POLL_GUARD),
+    ("loom-relay-guard.sh", HOOK_LOOM_RELAY_GUARD),
+    ("loom-relay-stop.sh", HOOK_LOOM_RELAY_STOP),
     // Skill suggestion hooks
     ("skill-trigger.sh", HOOK_SKILL_TRIGGER),
     ("user-prompt-context.sh", HOOK_USER_PROMPT_CONTEXT),

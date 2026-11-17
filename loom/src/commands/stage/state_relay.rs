@@ -141,7 +141,7 @@ mod tests {
         );
 
         let stderr_text = String::from_utf8(sink.stderr).unwrap();
-        assert!(stderr_text.contains("End your turn after the confirmation."));
+        assert!(stderr_text.contains("End your turn only after the confirmation."));
     }
 
     /// Restores the process cwd on drop, even if the test panics:

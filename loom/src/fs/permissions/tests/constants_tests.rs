@@ -22,6 +22,24 @@ fn teammate_idle_hook_is_embedded() {
     assert!(LOOM_HOOKS.contains(&("teammate-idle.sh", HOOK_TEAMMATE_IDLE)));
 }
 
+/// An installed script that sources `_x.sh` by name breaks silently when `_x.sh`
+/// has no `LOOM_HOOKS` row: the repo hook tests run from the source tree and
+/// never see the gap.
+#[test]
+fn every_library_an_embedded_script_sources_is_embedded() {
+    let sourced = regex::Regex::new(r"/(_[A-Za-z0-9_-]+\.(?:sh|py|txt))\b").unwrap();
+    let names: BTreeSet<&str> = LOOM_HOOKS.iter().map(|(name, _)| *name).collect();
+    for (script, content) in LOOM_HOOKS {
+        for library in sourced.captures_iter(content) {
+            assert!(
+                names.contains(&library[1]),
+                "{script} sources {}, which has no LOOM_HOOKS row",
+                &library[1]
+            );
+        }
+    }
+}
+
 #[test]
 fn lifecycle_library_is_embedded() {
     assert!(LOOM_HOOKS.contains(&("_lifecycle.sh", HOOK_LIFECYCLE)));

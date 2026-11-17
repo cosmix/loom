@@ -117,6 +117,13 @@ BEGIN { inside = 0; marker = "" }
 # opener adds no character. loom_token_sep reads a run with line continuations
 # dropped.
 #
+# LOOM_TOKEN_META is a second side channel, parallel to LOOM_TOKENS: for every
+# token the nesting depth of its command (substitutions, backticks, subshells
+# and `sh -c` payload splices open it, so `x=$(loom ...)` reads 1), plus a
+# trailing `g` on a separator run that began directly after a word character
+# with no whitespace (`2>f` is glued, `2 > f` is not). Read it with
+# loom_token_depth and loom_token_glued (_parser_scan.sh).
+#
 # LOOM_TOKEN_LITERAL_DOLLAR is 1 when the command holds a `$` bash keeps
 # literal (inside single quotes, after a backslash, or followed by no name), so
 # a token reading `$LOOM_SCRATCH_DIR` may be that literal text; else 0.
@@ -165,6 +172,7 @@ _loom_tokenize_walk() {
     local last_was_sep=0
     local length=${#input}
     local i char next entry sentinel name_re='^[A-Za-z0-9_{?$!#@*-]'
+    local d0 t prev_t=0 glue
     # Substitutions currently open, innermost last. Each entry is
     # "<kind>:<state>": the kind the close must match (`p` for `(` / `$(`,
     # `b` for a backtick) and the state to restore when it does. Bash 3.2 has
@@ -175,9 +183,11 @@ _loom_tokenize_walk() {
 
     LOOM_TOKENS=()
     LOOM_TOKEN_SEPS=()
+    LOOM_TOKEN_META=()
 
     for ((i = 0; i < length; i++)); do
         char="${input:$i:1}"
+        d0=$subst_depth
         case "$state" in
         plain)
             case "$char" in
@@ -363,10 +373,24 @@ _loom_tokenize_walk() {
             esac
             ;;
         esac
+        t=${#LOOM_TOKENS[@]}
+        if ((t != prev_t || subst_depth != d0)); then
+            # Words keep the depth they were pushed at; a separator takes the
+            # depth after its opener or closer. A word flushed in the same
+            # step as the separator means the run is glued to it.
+            while ((${#LOOM_TOKEN_META[@]} < t)); do LOOM_TOKEN_META+=("$d0"); done
+            if ((t > 0)) && [[ "${LOOM_TOKENS[$((t - 1))]}" == "%%SEP%%" ]]; then
+                glue=""
+                if ((t - prev_t == 2)) || [[ "${LOOM_TOKEN_META[$((t - 1))]}" == *g ]]; then glue=g; fi
+                LOOM_TOKEN_META[$((t - 1))]="$subst_depth$glue"
+            fi
+            prev_t=$t
+        fi
     done
 
     if [[ $started -eq 1 ]]; then
         LOOM_TOKENS+=("$token")
+        LOOM_TOKEN_META+=("$subst_depth")
     fi
 
     [[ "$state" == plain ]]

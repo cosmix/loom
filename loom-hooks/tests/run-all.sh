@@ -264,6 +264,8 @@ run_test "knowledge-orient: silent without an index, inside a stage, on compact,
 run_test "post-tool-use: commit reminder is tokenized - heredoc body ignored, real commits fire" "$SCRIPT_DIR/post-tool-use-commit-reminder-tokenized.sh"
 run_test "loom-relay: kind derivation per loom command segment, no control kinds for subagents" "$SCRIPT_DIR/loom-relay-kinds.sh"
 run_test "loom-relay: fast path, jq and LOOM_HOOK_PATH gates, helper call contract" "$SCRIPT_DIR/loom-relay-gates.sh"
+run_test "loom-relay-guard: refuses a relayed loom command whose stdout would be hidden" "$SCRIPT_DIR/loom-relay-guard.sh"
+run_test "loom-relay-stop: one block per stranded control ticket" "$SCRIPT_DIR/loom-relay-stop.sh"
 
 START=$SECONDS
 run_all_jobs
