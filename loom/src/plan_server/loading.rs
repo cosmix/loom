@@ -13,6 +13,7 @@
 
 use std::panic::{self, AssertUnwindSafe};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::{self, RecvTimeoutError};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -35,8 +36,9 @@ const STOP_CHECK: Duration = Duration::from_millis(50);
 
 /// The install step of the load: `routes::install_all`, with whatever the caller adds around it.
 pub(super) type Install = Box<dyn FnOnce(&Arc<PlanContext>) + Send>;
-/// The load's source of the prerequisites' verdict. It runs on the load thread: the Claude login
-/// probe in [`ReadOnly::detect`] alone may take its 30 s timeout.
+/// The load's source of the prerequisites' verdict. It runs on a thread the load abandons on a
+/// stop ([`check_read_only`]): the Claude login probe in [`ReadOnly::detect`] alone may take its
+/// 30 s timeout.
 pub(super) type CheckReadOnly = Box<dyn FnOnce() -> ReadOnly + Send>;
 
 /// How far the background load got.
@@ -140,7 +142,10 @@ fn run(ctx: &Arc<PlanContext>, load: Load, registration: &Registration) {
 /// The load itself. A server told to stop while the project loaded installs nothing: held
 /// requests already answer that it is stopping.
 fn load_and_install(ctx: &Arc<PlanContext>, load: Load, registration: &Registration) -> Result<()> {
-    let watcher = load_project(ctx, (load.read_only)())?;
+    let Some(read_only) = check_read_only(ctx, load.read_only, &load.stop)? else {
+        return Ok(());
+    };
+    let watcher = load_project(ctx, read_only)?;
     if ctx.is_stopping() {
         return Ok(());
     }
@@ -148,6 +153,39 @@ fn load_and_install(ctx: &Arc<PlanContext>, load: Load, registration: &Registrat
     spawn_workers(ctx, watcher, &load.stop, registration)?;
     ctx.loading().finish(LoadState::Ready);
     Ok(())
+}
+
+/// Run the prerequisite checks on a thread of their own and wait for their verdict, or `None` once
+/// the server stops. The stop joins the load thread within a three-second bound, and the login
+/// probe alone may take its 30 s timeout; a stopping server installs nothing, so the verdict is
+/// unused. An abandoned check owns nothing but its probe. If loom exits first, the probe's own
+/// process group outlives it until the probe finishes or fails writing to its closed pipes.
+fn check_read_only(
+    ctx: &PlanContext,
+    check: CheckReadOnly,
+    stop: &AtomicBool,
+) -> Result<Option<ReadOnly>> {
+    let (verdict_tx, verdict) = mpsc::channel();
+    thread::Builder::new()
+        .name("loom-plan-prereq".into())
+        .spawn(move || {
+            // The load may have stopped waiting; a verdict nobody reads is dropped.
+            let _ = verdict_tx.send(check());
+        })
+        .context("cannot start the loom plan prerequisite checks")?;
+    loop {
+        match verdict.recv_timeout(STOP_CHECK) {
+            Ok(read_only) => return Ok(Some(read_only)),
+            Err(RecvTimeoutError::Timeout) => {
+                if ctx.is_stopping() || stop.load(Ordering::SeqCst) {
+                    return Ok(None);
+                }
+            }
+            Err(RecvTimeoutError::Disconnected) => {
+                return Err(anyhow!("the prerequisite checks panicked"));
+            }
+        }
+    }
 }
 
 /// Take the watcher's baseline, then load the project. The baseline keeps edits made during the

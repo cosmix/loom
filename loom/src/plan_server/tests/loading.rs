@@ -151,6 +151,37 @@ fn stopping_during_the_load_answers_held_requests_and_still_stops() {
 }
 
 #[test]
+fn a_stop_during_the_prerequisite_checks_does_not_wait_for_them() {
+    if skip("a_stop_during_the_prerequisite_checks_does_not_wait_for_them") {
+        return;
+    }
+    let project = project();
+    let options = options(&project);
+    let (entered_tx, entered) = mpsc::channel();
+    let (release, released) = mpsc::channel::<()>();
+    let server = start_owned(Launch {
+        root: options.root,
+        host: options.host,
+        port: options.port,
+        // Stands in for a login probe that takes its 30 s timeout: it outlasts the stop's bound.
+        read_only: Box::new(move || {
+            let _ = entered_tx.send(());
+            let _ = released.recv();
+            ReadOnly::from_problems(Vec::new())
+        }),
+        install: Box::new(routes::install_all),
+        routes: routes::all_routes(),
+        ownership: Arc::default(),
+    })
+    .expect("start the planning server");
+    entered.recv_timeout(WAIT).expect("the checks run");
+
+    let result = server.stop();
+    drop(release);
+    result.expect("the stop does not wait on the checks");
+}
+
+#[test]
 fn a_full_held_lane_answers_loading_at_once_and_keeps_the_shell_served() {
     if skip("a_full_held_lane_answers_loading_at_once_and_keeps_the_shell_served") {
         return;

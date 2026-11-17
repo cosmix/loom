@@ -225,8 +225,8 @@ fn runtime_is_private_ignores_session_state_and_sigint_stops_cleanly() {
     assert_eq!(std::fs::read_dir(&ignored).unwrap().count(), 0);
     kill(Pid::from_raw(server.0.id() as i32), Signal::SIGINT).unwrap();
     let status = wait_for_exit(&mut server);
-    assert!(status.success(), "{status}");
     let stderr = read_stderr(&mut server);
+    assert!(status.success(), "{status}\n{stderr}");
     assert!(
         stderr.contains("LOOM_PLAN_STATE") && stderr.contains("ignored"),
         "{stderr}"
