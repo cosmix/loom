@@ -19,7 +19,8 @@
 //!   stage, or any `defer` from an integration-verify stage (integration-verify
 //!   never defers), turns the verdict into `NeedsMoreEvidence` naming why.
 //! * contract `accept`: amends `contracts` when the verdict carries a patch,
-//!   then re-freezes the contract's file at its current worktree content;
+//!   writes the dispute's replacement file when it carries one, then
+//!   re-freezes the contract's file at its current worktree content;
 //!   `reject`: feedback to restore the frozen contract (`apply_contract.rs`).
 //! * integrity `accept`: records each event in `reviews/<stage>/integrity.json`
 //!   with the counts and hashes the adjudicator judged; `reject`: feedback to
@@ -62,12 +63,9 @@ pub(super) fn apply_by_kind(
 ) -> Result<()> {
     let dispute = record.id;
     match &record.verdict {
-        DisputeVerdict::NeedsMoreEvidence { questions } => match kind {
-            DisputeKind::FreezeRefusal { .. } => {
-                apply_freeze_refusal::needs_more_evidence(work_dir, stage, questions)
-            }
-            _ => apply_needs_more_evidence(work_dir, stage, questions),
-        },
+        DisputeVerdict::NeedsMoreEvidence { questions } => {
+            apply_questions(work_dir, stage, questions, kind)
+        }
         DisputeVerdict::Rulings { rulings } => {
             apply_rulings(work_dir, stage, dispute, rulings, kind)
         }
@@ -76,9 +74,8 @@ pub(super) fn apply_by_kind(
             reasoning,
             ..
         } => match kind {
-            DisputeKind::Contract { contract_id } => {
-                let accepted =
-                    apply_contract::accept(work_dir, stage, dispute, contract_id, plan_patch)?;
+            DisputeKind::Contract { .. } => {
+                let accepted = apply_contract::accept(work_dir, stage, dispute, kind, plan_patch)?;
                 accepted.map_or(Ok(()), |body| notify_and_requeue(work_dir, stage, &body))
             }
             DisputeKind::Integrity {
@@ -104,6 +101,21 @@ pub(super) fn apply_by_kind(
     }
 }
 
+/// Ask the agent the verdict's questions, in the words its dispute kind calls
+/// for; a freeze refusal's writer has its own round.
+fn apply_questions(
+    work_dir: &Path,
+    stage: &mut Stage,
+    questions: &[String],
+    kind: &DisputeKind,
+) -> Result<()> {
+    if matches!(kind, DisputeKind::FreezeRefusal { .. }) {
+        return apply_freeze_refusal::needs_more_evidence(work_dir, stage, questions);
+    }
+    let action = feedback::evidence_action(&stage.id, kind);
+    apply_needs_more_evidence(work_dir, stage, questions, &action)
+}
+
 /// Apply a rejecting verdict by the kind of the dispute it answers.
 fn apply_rejection(
     work_dir: &Path,
@@ -114,8 +126,17 @@ fn apply_rejection(
     kind: &DisputeKind,
 ) -> Result<()> {
     match kind {
-        DisputeKind::Contract { contract_id } => {
-            let body = apply_contract::reject_notice(&stage.id, contract_id, reasoning);
+        DisputeKind::Contract {
+            contract_id,
+            replacement,
+            ..
+        } => {
+            let body = apply_contract::reject_notice(
+                &stage.id,
+                contract_id,
+                reasoning,
+                replacement.is_some(),
+            );
             notify_and_requeue(work_dir, stage, &body)
         }
         DisputeKind::Integrity { event_ids, .. } => {
@@ -158,7 +179,8 @@ fn apply_rulings(
         );
     };
     if let Some(question) = refused_defer(work_dir, stage, rulings)? {
-        return apply_needs_more_evidence(work_dir, stage, &[question]);
+        let action = feedback::evidence_action(&stage.id, kind);
+        return apply_needs_more_evidence(work_dir, stage, &[question], &action);
     }
     for (target, carried) in carried_by_target(&stage.id, dispute, rulings, evidence)? {
         verdict_records::append_carried(work_dir, &target, &carried)?;

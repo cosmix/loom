@@ -288,7 +288,7 @@ fn failed_accept_amendment_leaves_verdict_unapplied() {
     write_stage(work, &make_stage("s1"));
     write_dispute(work, "s1", 1);
     // Pre-seed feedback while exercising a failed amendment.
-    feedback::append_questions(work, "s1", &["stale".to_string()]).unwrap();
+    feedback::append_questions(work, "s1", &["stale".into()], feedback::EVIDENCE_ACTION).unwrap();
 
     let reg = AdjudicatorRegistry::new();
     assert_eq!(reg.disputes_awaiting_session(work).unwrap().jobs.len(), 1);

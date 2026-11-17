@@ -219,17 +219,17 @@ the worker can open. Plan authors: rubric in
 
 ## Plan version 2 stages
 
-A stage of a version 2 plan must satisfy more than its acceptance criteria. Its signal names the
-stage's frozen contracts, the review gate and any findings carried in from an earlier stage; this
-section is the flow around them.
+A version 2 stage must satisfy more than its acceptance criteria. Its signal names its frozen
+contracts, the review gate and findings carried from earlier stages; this section is the flow.
 
-**Contracts** (standard stages with `contracts`). Loom ran a contract session before yours: it
-wrote each contract test and the harness files, confirmed every contract test fails, and froze
-them. Never edit a frozen file, and name the frozen files read-only in every brief.
-`loom stage contracts show <stage-id>` prints the freeze record and the frozen files;
-`loom stage contracts restore <stage-id> [--contract <id>]` copies the frozen content back into
-the worktree. A contract that is itself wrong is disputed, never edited:
-`loom stage dispute-contract <stage-id> --contract <id> --reason "..."`.
+**Contracts** (standard stages with `contracts`). Loom's contract session wrote the contract tests
+and harness files, confirmed each test fails, and froze them. Never edit a frozen
+file; name the frozen files read-only in every brief. `loom stage contracts show <stage-id>`
+prints the freeze record; `loom stage contracts restore <stage-id> [--contract <id>]` copies
+the frozen content back. A wrong contract is disputed, never edited: copy
+the frozen file to `$LOOM_SCRATCH_DIR`, edit the copy, run the stage's formatter check on it, and
+file `loom stage dispute-contract <stage-id> --contract <id> --replacement <path> --reason "..."`.
+An accept writes it into the worktree; commit it.
 
 **The review loop** (standard and integration-verify stages):
 
@@ -262,10 +262,9 @@ see them; fix their findings before the final round. An accepted count event hol
 does not drop; accepted TI-edit and TI-ratchet events pin the file's sha256, so any later
 edit reopens them.
 
-**What `loom stage complete` checks, in order.** The daemon's host job runs acceptance first. Only
-a pass continues to steps 2 to 6, and each of those runs even after an earlier one failed, so one
-run names every failing check. Steps 7 and 8 are not in the host job: the daemon runs each once,
-when it applies a passing run.
+**What `loom stage complete` checks, in order.** The daemon's host job runs acceptance first; only a
+pass continues to steps 2 to 6, each of which runs even after an earlier one failed, so one run
+names every failing check. Steps 7 and 8 are the daemon's, run once when it applies a passing run.
 
 1. The acceptance criteria. A criterion whose test runner selected zero tests fails.
 2. The goal-backward checks: `artifacts`, `wiring`, `wiring_tests`, the dead-code check and

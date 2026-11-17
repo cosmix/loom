@@ -21,6 +21,10 @@ use crate::verify::review::store::{OpenFinding, RulingKind};
 mod criterion;
 pub use criterion::{CriterionField, CriterionTarget};
 
+#[path = "dispute_replacement.rs"]
+mod replacement;
+pub use replacement::MAX_REPLACEMENT_BYTES;
+
 /// A disputed review finding as it stood open when the dispute was filed:
 /// `origin_stage` is set for a finding carried from another stage, `round` is
 /// the review round that raised it.
@@ -62,8 +66,18 @@ pub enum DisputeKind {
         finding_ids: Vec<String>,
         evidence: Vec<FindingSnapshot>,
     },
-    /// One frozen contract: `loom stage dispute-contract`.
-    Contract { contract_id: String },
+    /// One frozen contract: `loom stage dispute-contract`. `replacement` is
+    /// the complete file the agent proposes in place of the frozen one.
+    /// `replacement_base_sha256` is the frozen file's sha256 the replacement
+    /// was filed against: only admission sets it, and it overwrites any value
+    /// a client sent.
+    Contract {
+        contract_id: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        replacement: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        replacement_base_sha256: Option<String>,
+    },
     /// Current test-integrity events: `loom stage dispute-integrity`.
     Integrity {
         event_ids: Vec<String>,

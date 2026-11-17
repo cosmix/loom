@@ -222,6 +222,8 @@ fn contract_accept_refreezes_current_content() {
     std::fs::write(worktree.join(CONTRACT_FILE), edited).unwrap();
     let kind = DisputeKind::Contract {
         contract_id: CONTRACT_ID.to_string(),
+        replacement: None,
+        replacement_base_sha256: None,
     };
     write_request(&work, "s1", 1, kind);
     write_verdict(&work, "s1", 1, accept_without_patch(), 1);
@@ -244,6 +246,8 @@ fn contract_reject_requeues_with_restore_feedback() {
     write_stage(work, &make_stage("s1"));
     let kind = DisputeKind::Contract {
         contract_id: "rejects-x".to_string(),
+        replacement: None,
+        replacement_base_sha256: None,
     };
     write_request(work, "s1", 1, kind);
     write_verdict(work, "s1", 1, reject_verdict(), 1);
@@ -263,6 +267,8 @@ fn unreadable_request_never_changes_noncriterion_verdict_policy() {
     let kinds = [
         DisputeKind::Contract {
             contract_id: "c".into(),
+            replacement: None,
+            replacement_base_sha256: None,
         },
         DisputeKind::Integrity {
             event_ids: vec![],

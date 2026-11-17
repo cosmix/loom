@@ -92,6 +92,22 @@ impl Dispute {
         }
     }
 
+    /// What the confirmation says about a contract dispute's replacement file.
+    fn replacement_note(&self) -> Option<String> {
+        let DisputeKind::Contract {
+            replacement: Some(replacement),
+            ..
+        } = &self.kind
+        else {
+            return None;
+        };
+        Some(format!(
+            "Replacement attached: {} bytes; the daemon writes it into the worktree if the \
+             adjudicator accepts.",
+            replacement.len()
+        ))
+    }
+
     /// The RPC the daemon expects.
     ///
     /// A missing or unreadable token is the NORMAL case here, not an error: the
@@ -181,7 +197,7 @@ impl Dispute {
                 "The findings stand",
                 "stage dispute-findings",
             ),
-            DisputeKind::Contract { contract_id } => (
+            DisputeKind::Contract { contract_id, .. } => (
                 format!("contract {contract_id}"),
                 "The contract stands",
                 "stage dispute-contract",
@@ -290,6 +306,9 @@ fn send_via_relay(
 
     let payload =
         serde_json::to_value(dispute.queued()).context("failed to serialize dispute request")?;
+    if let Some(note) = dispute.replacement_note() {
+        writeln!(sink.stderr(), "{note}").context("failed to write the replacement note")?;
+    }
     context.emit(wording.relay_kind, payload, wording.command, true, sink)?;
     Ok(())
 }
@@ -329,6 +348,9 @@ fn handle_response(dispute: &Dispute, wording: &Wording, response: Response) -> 
                 wording.subject
             );
             println!("Reason: {}", dispute.reason);
+            if let Some(note) = dispute.replacement_note() {
+                println!("{note}");
+            }
             println!();
             println!(
                 "The stage is now in NeedsAdjudication and this session's turn is over. When \

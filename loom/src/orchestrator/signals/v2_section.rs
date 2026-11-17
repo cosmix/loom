@@ -70,7 +70,11 @@ fn append_frozen_contracts(content: &mut String, stage: &Stage, work_dir: &Path)
          - `loom stage contracts restore {id}` copies the frozen content back into the \
          worktree (`--contract <id>` for one contract).\n\
          - `loom stage dispute-contract {id} --contract <contract-id> --reason \"...\"` files a \
-         dispute when the frozen contract itself is wrong.\n",
+         dispute when the frozen contract itself is wrong.\n\
+         - To change a frozen contract, copy the frozen file to `$LOOM_SCRATCH_DIR`, edit the \
+         copy there, run the stage's formatter check on it, and file `loom stage dispute-contract \
+         {id} --contract <contract-id> --replacement <path> --reason \"...\"`. On accept the \
+         daemon writes it into the worktree.\n",
         id = stage.id
     ));
 }

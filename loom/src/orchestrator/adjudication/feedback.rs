@@ -20,7 +20,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use crate::fs::safe_fs::safe_open_append;
-use crate::models::dispute::{truncate_to_byte_limit, Citation};
+use crate::models::dispute::{truncate_to_byte_limit, Citation, DisputeKind};
 use crate::utils::text::single_line;
 
 const FEEDBACK_FILENAME: &str = "feedback.md";
@@ -78,10 +78,35 @@ pub fn append_rejection(
     Ok(())
 }
 
+/// What the agent does with an evidence question, for every dispute kind but a
+/// contract's.
+pub const EVIDENCE_ACTION: &str =
+    "gather the requested evidence, commit it, and file a follow-up dispute.";
+
+/// The action line an evidence-loop notice ends with for a dispute of `kind`.
+/// A contract dispute never asks the agent to edit the frozen file: that edit
+/// is forbidden, and a replacement travels with the dispute instead.
+pub fn evidence_action(stage_id: &str, kind: &DisputeKind) -> String {
+    let DisputeKind::Contract { contract_id, .. } = kind else {
+        return EVIDENCE_ACTION.to_string();
+    };
+    format!(
+        "answer these in your next dispute. Never edit a frozen file. If the contract must \
+         change, re-file `loom stage dispute-contract {stage_id} --contract {contract_id} \
+         --replacement <path> --reason \"...\"` with a complete replacement; an earlier \
+         replacement is not carried over."
+    )
+}
+
 /// Write evidence-loop feedback: the adjudicator wants the agent to
-/// answer specific questions before re-disputing. Overwrites any prior
-/// content.
-pub fn append_questions(work_dir: &Path, stage_id: &str, questions: &[String]) -> Result<()> {
+/// answer specific questions before re-disputing, then do `action`.
+/// Overwrites any prior content.
+pub fn append_questions(
+    work_dir: &Path,
+    stage_id: &str,
+    questions: &[String],
+    action: &str,
+) -> Result<()> {
     let path = feedback_path(work_dir, stage_id);
     ensure_parent(&path)?;
     let mut body = String::from(
@@ -91,9 +116,7 @@ pub fn append_questions(work_dir: &Path, stage_id: &str, questions: &[String]) -
         body.push_str(&format!("{}. {}\n", i + 1, q));
     }
     body.push('\n');
-    body.push_str(
-        "Action: gather the requested evidence, commit it, and file a follow-up dispute.\n",
-    );
+    body.push_str(&format!("Action: {action}\n"));
     fs::write(&path, body).with_context(|| format!("Failed to write {}", path.display()))?;
     Ok(())
 }
@@ -211,6 +234,7 @@ mod tests {
                 "why does X fail?".to_string(),
                 "is Y reachable?".to_string(),
             ],
+            EVIDENCE_ACTION,
         )
         .unwrap();
         let content = read_feedback(work, "stage-b").unwrap().unwrap();
@@ -222,7 +246,7 @@ mod tests {
     fn second_write_overwrites_first() {
         let tmp = temp_work();
         let work = tmp.path();
-        append_questions(work, "stage-c", &["first".to_string()]).unwrap();
+        append_questions(work, "stage-c", &["first".to_string()], EVIDENCE_ACTION).unwrap();
         append_rejection(work, "stage-c", "second reasoning", &[]).unwrap();
         let content = read_feedback(work, "stage-c").unwrap().unwrap();
         assert!(!content.contains("first"));
@@ -241,7 +265,7 @@ mod tests {
     fn clear_feedback_is_idempotent() {
         let tmp = temp_work();
         clear_feedback(tmp.path(), "never-written").unwrap();
-        append_questions(tmp.path(), "z", &["q".to_string()]).unwrap();
+        append_questions(tmp.path(), "z", &["q".to_string()], EVIDENCE_ACTION).unwrap();
         clear_feedback(tmp.path(), "z").unwrap();
         assert!(read_feedback(tmp.path(), "z").unwrap().is_none());
     }

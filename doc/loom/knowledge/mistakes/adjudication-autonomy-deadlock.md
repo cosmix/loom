@@ -223,6 +223,16 @@ prompt spells the schema out.
 
 **Why:** the dispute was filed before the frozen file was edited.
 
-**Prevention:** apply the exact proposed edit to the frozen file and commit it before `dispute-contract`, then cite the commit with `--evidence-commit`. A source site that builds a struct with a trailing `..Default::default()` for a field a later plan adds carries `#[allow(clippy::needless_update)]` (precedent `loom/src/map/views/tests.rs:313`), and a frozen contract that does the same needs the same allow.
+**Prevention:** apply the exact proposed edit to the frozen file and commit it before `dispute-contract`, then cite the commit with `--evidence-commit`. This prescription contradicted the rule never to edit a frozen file; see [Needs-More-Evidence Feedback Asked for a Frozen-File Edit](#needs-more-evidence-feedback-asked-for-a-frozen-file-edit-2026-11-17) for the `--replacement` flow that replaced it. A source site that builds a struct with a trailing `..Default::default()` for a field a later plan adds carries `#[allow(clippy::needless_update)]` (precedent `loom/src/map/views/tests.rs:313`), and a frozen contract that does the same needs the same allow.
 
 **Fix:** the second dispute carried the applied edit and its commit.
+
+## Needs-More-Evidence Feedback Asked for a Frozen-File Edit (2026-11-17)
+
+**What happened:** in collaterai stage `kit-consumers`, the adjudicator's needs-more-evidence feedback on a third contract dispute asked the agent to edit the frozen test and dispute against the diff. The signal says never to edit a frozen file, and the permission classifier denied the edit, so the agent could not produce the evidence the judge asked for.
+
+**Why:** loom contradicted itself. The signal forbade the edit; the contract prompt built its evidence as a frozen-vs-worktree diff; accept re-froze at worktree content; the generic feedback said "gather the requested evidence, commit it"; and [A Contract Dispute Proposed an Edit It Had Not Applied](#a-contract-dispute-proposed-an-edit-it-had-not-applied-2026-10-28) prescribed editing the frozen file.
+
+**Prevention:** a dispute must be able to carry every piece of evidence the judge may ask for without breaking a rule the agent is bound by. When one rule forbids an action, search the prompts, feedback text and knowledge for instructions that require it.
+
+**Fix:** `loom stage dispute-contract --replacement <path>` carries the complete replacement inline; accept writes it into the worktree and re-freezes; contract prompts and feedback forbid asking for a frozen-file edit ([Frozen Contracts Change Only Through `--replacement`](../conventions/dispute-and-adjudication.md#frozen-contracts-change-only-through---replacement)).

@@ -2,7 +2,7 @@
 //! out of `generate.rs` to keep that file under the size ceiling.
 
 use super::*;
-use crate::orchestrator::adjudication::feedback::append_questions;
+use crate::orchestrator::adjudication::feedback::{append_questions, EVIDENCE_ACTION};
 
 const HEADING: &str = "## Adjudicator Feedback (from your prior dispute)";
 
@@ -13,6 +13,7 @@ fn rendered(stage: &Stage) -> String {
         temp.path(),
         &stage.id,
         &["Which test covers it?".to_string()],
+        EVIDENCE_ACTION,
     )
     .unwrap();
     let mut content = String::new();

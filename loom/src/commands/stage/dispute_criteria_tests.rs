@@ -192,12 +192,14 @@ fn relay_mode_dispute_ends_the_turn() {
     .unwrap();
 
     let stderr_text = String::from_utf8(sink.stderr).unwrap();
-    assert!(stderr_text.contains("End your turn after the confirmation."));
+    assert!(stderr_text.contains("End your turn only after the confirmation."));
 }
 
 fn contract_dispute() -> Dispute {
     let kind = crate::models::dispute::DisputeKind::Contract {
         contract_id: "rejects-x".to_string(),
+        replacement: None,
+        replacement_base_sha256: None,
     };
     Dispute::of_kind("stage-a".to_string(), kind, "wrong error".to_string(), None)
 }

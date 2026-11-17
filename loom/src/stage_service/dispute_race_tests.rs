@@ -121,6 +121,8 @@ pub(super) fn setup_contract(id: &str) -> (tempfile::TempDir, std::path::PathBuf
 fn contract_kind() -> DisputeKind {
     DisputeKind::Contract {
         contract_id: CONTRACT.into(),
+        replacement: None,
+        replacement_base_sha256: None,
     }
 }
 

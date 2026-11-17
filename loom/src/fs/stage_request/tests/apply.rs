@@ -330,6 +330,8 @@ fn a_spooled_file_dispute_the_daemon_refuses_is_skipped() {
     let request = StageRequest::FileDispute {
         kind: crate::models::dispute::DisputeKind::Contract {
             contract_id: "rejects-x".to_string(),
+            replacement: None,
+            replacement_base_sha256: None,
         },
         reason: "the contract asserts the wrong error".to_string(),
         evidence_commit: None,

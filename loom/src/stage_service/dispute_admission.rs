@@ -5,8 +5,12 @@ use anyhow::{bail, Context, Result};
 use std::path::Path;
 
 use crate::fs::session_files::load_session_exact_unlocked;
-use crate::models::dispute::{select_events, select_findings, select_impact, DisputeKind};
+use crate::models::dispute::{
+    select_events, select_findings, select_impact, DisputeKind, MAX_REPLACEMENT_BYTES,
+};
 use crate::models::stage::{Stage, StageStatus, StageType};
+use crate::utils::sha256_hex;
+use crate::verify::contracts::normalize;
 use crate::verify::contracts::store::load_freeze;
 use crate::verify::impact_tests::{check_failure_id, load_observed};
 use crate::verify::review::store::open_findings;
@@ -76,9 +80,18 @@ fn check_unfrozen(work_dir: &Path, stage: &Stage) -> Result<Option<String>> {
     Ok(None)
 }
 
-fn check_frozen(work_dir: &Path, stage_id: &str, contract_id: &str) -> Result<()> {
-    let Some(record) = load_freeze(work_dir, stage_id)? else {
-        bail!("the contracts of stage '{stage_id}' are not frozen");
+/// The contract dispute to record: `contract_id` must name a frozen contract.
+/// A replacement is bounded, must differ from the frozen file, and is bound to
+/// the frozen file's hash, which overwrites any value the client sent
+/// (`apply_contract_replacement.rs` refuses an accept once the file moved on).
+fn confirm_contract(
+    work_dir: &Path,
+    stage: &Stage,
+    contract_id: String,
+    replacement: Option<String>,
+) -> Result<DisputeKind> {
+    let Some(record) = load_freeze(work_dir, &stage.id)? else {
+        bail!("the contracts of stage '{}' are not frozen", stage.id);
     };
     if !record
         .contracts
@@ -87,7 +100,38 @@ fn check_frozen(work_dir: &Path, stage_id: &str, contract_id: &str) -> Result<()
     {
         bail!("'{contract_id}' names no frozen contract of this stage");
     }
-    Ok(())
+    let Some(text) = replacement else {
+        return Ok(DisputeKind::Contract {
+            contract_id,
+            replacement: None,
+            replacement_base_sha256: None,
+        });
+    };
+    if text.len() > MAX_REPLACEMENT_BYTES {
+        bail!(
+            "the replacement is {} bytes, over the {MAX_REPLACEMENT_BYTES}-byte limit",
+            text.len()
+        );
+    }
+    let file = stage
+        .contracts
+        .iter()
+        .find(|contract| contract.id == contract_id)
+        .map(|contract| normalize(&contract.file))
+        .with_context(|| format!("stage '{}' has no contract '{contract_id}'", stage.id))?;
+    let frozen = record
+        .files
+        .iter()
+        .find(|frozen| frozen.path == file)
+        .with_context(|| format!("the freeze holds no file '{file}' for '{contract_id}'"))?;
+    if sha256_hex(text.as_bytes()) == frozen.sha256 {
+        bail!("the replacement is identical to the frozen '{file}': there is nothing to change");
+    }
+    Ok(DisputeKind::Contract {
+        contract_id,
+        replacement: Some(text),
+        replacement_base_sha256: Some(frozen.sha256.clone()),
+    })
 }
 
 /// The dispute to record: `kind` with every id checked against what exists
@@ -129,10 +173,11 @@ fn confirm_evidence(work_dir: &Path, stage: &Stage, kind: DisputeKind) -> Result
                 evidence,
             })
         }
-        DisputeKind::Contract { contract_id } => {
-            check_frozen(work_dir, &stage.id, &contract_id)?;
-            Ok(DisputeKind::Contract { contract_id })
-        }
+        DisputeKind::Contract {
+            contract_id,
+            replacement,
+            ..
+        } => confirm_contract(work_dir, stage, contract_id, replacement),
         DisputeKind::Integrity { event_ids, .. } => {
             let events = crate::stage_service::observer::integrity_events(work_dir, stage)?;
             let evidence = select_events(&events, &event_ids)?;

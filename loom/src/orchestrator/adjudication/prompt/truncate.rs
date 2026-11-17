@@ -6,7 +6,10 @@
 //! cannot see the whole diff can still go and read the tree, but a session
 //! that has lost half its protocol has no way back.
 
-use super::contract::{CURRENT_CONTENT_HEADING, DIFF_HEADING, FROZEN_CONTENT_HEADING};
+use super::contract::{
+    CURRENT_CONTENT_HEADING, DIFF_HEADING, FROZEN_CONTENT_HEADING, REPLACEMENT_DIFF_HEADING,
+    REPLACEMENT_HEADING,
+};
 use super::{Prompt, MAX_PROMPT_BYTES};
 use crate::models::dispute::truncate_to_byte_limit;
 
@@ -28,8 +31,10 @@ pub(super) fn truncate_to_budget(prompt: &mut Prompt) {
         // A contract briefing quotes the contract file twice and diffs it once;
         // these go before the frozen-set section at its tail is cut.
         DIFF_HEADING,
+        REPLACEMENT_DIFF_HEADING,
         FROZEN_CONTENT_HEADING,
         CURRENT_CONTENT_HEADING,
+        REPLACEMENT_HEADING,
         "## Failure output (what the criterion produced)",
         "## Worktree top-level files (3-deep listing)",
         "## Plan acceptance criteria source (from plan file)",

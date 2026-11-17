@@ -37,6 +37,8 @@ fn first_step_of(plan: ContractSpec, dir: &Path) -> String {
         stage_id: "demo".to_string(),
         kind: DisputeKind::Contract {
             contract_id: "rejects-x".to_string(),
+            replacement: None,
+            replacement_base_sha256: None,
         },
         reason: "r".to_string(),
         evidence_commit: None,

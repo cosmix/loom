@@ -159,6 +159,8 @@ fn accepted_contract_verdict_requeues() {
     std::fs::write(worktree.join(CONTRACT_FILE), edited).unwrap();
     let kind = DisputeKind::Contract {
         contract_id: CONTRACT_ID.to_string(),
+        replacement: None,
+        replacement_base_sha256: None,
     };
     write_request(&work, "s1", 1, kind);
     write_verdict(&work, "s1", 1, accept_without_patch(), 1);

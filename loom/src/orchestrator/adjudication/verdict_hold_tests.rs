@@ -141,6 +141,8 @@ fn a_last_verdict_that_requeues_overrides_an_earlier_hold() {
     write_request(work, "s1", 1, integrity());
     let contract = DisputeKind::Contract {
         contract_id: "rejects-x".to_string(),
+        replacement: None,
+        replacement_base_sha256: None,
     };
     write_request(work, "s1", 2, contract);
     write_verdict(work, "s1", 1, accept(), 1);

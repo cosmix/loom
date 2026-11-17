@@ -347,7 +347,13 @@ fn feedback_signal_only_when_dispute_count_positive() {
     // even if a stray feedback.md exists from a previous plan.
     let tmp = tempfile::tempdir().unwrap();
     let work = tmp.path();
-    feedback::append_questions(work, "s1", &["stale".to_string()]).unwrap();
+    feedback::append_questions(
+        work,
+        "s1",
+        &["stale".to_string()],
+        feedback::EVIDENCE_ACTION,
+    )
+    .unwrap();
     let mut stage = make_stage("s1");
     stage.dispute_count = 0;
     // We can't easily build the full Session/Worktree here, so just

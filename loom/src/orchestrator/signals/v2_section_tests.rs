@@ -79,6 +79,22 @@ fn frozen_contracts_block_names_contracts_and_commands() {
     assert!(content.contains("loom stage dispute-contract s1 --contract <contract-id>"));
 }
 
+/// The exact instruction, not just the flag: a signal that names `--replacement`
+/// but sends the agent to edit the frozen file in place would pass a bare grep.
+#[test]
+fn frozen_contracts_block_teaches_the_replacement_dispute() {
+    let temp = tempfile::tempdir().unwrap();
+    write_test_freeze(temp.path(), "s1", "session-1");
+    let content = render(&v2_stage(), temp.path());
+
+    assert!(content.contains(
+        "- To change a frozen contract, copy the frozen file to `$LOOM_SCRATCH_DIR`, edit the \
+         copy there, run the stage's formatter check on it, and file `loom stage dispute-contract \
+         s1 --contract <contract-id> --replacement <path> --reason \"...\"`. On accept the \
+         daemon writes it into the worktree."
+    ));
+}
+
 #[test]
 fn unfrozen_stage_renders_no_frozen_contracts_block() {
     let temp = tempfile::tempdir().unwrap();

@@ -238,6 +238,8 @@ fn an_id_that_does_not_exist_is_refused_before_anything_is_written() {
     };
     let contract = DisputeKind::Contract {
         contract_id: CONTRACT_ID.to_string(),
+        replacement: None,
+        replacement_base_sha256: None,
     };
 
     let not_open = refusal(file(&work_dir, unknown));
@@ -267,6 +269,8 @@ fn freeze_contract(work_dir: &Path) -> DisputeKind {
     write_freeze(work_dir, &record, &[]).unwrap();
     DisputeKind::Contract {
         contract_id: CONTRACT_ID.to_string(),
+        replacement: None,
+        replacement_base_sha256: None,
     }
 }
 

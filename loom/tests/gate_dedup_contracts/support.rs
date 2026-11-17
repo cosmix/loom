@@ -204,6 +204,8 @@ fn write_dispute(work: &Path) {
         stage_id: STAGE.to_string(),
         kind: DisputeKind::Contract {
             contract_id: CONTRACT.to_string(),
+            replacement: None,
+            replacement_base_sha256: None,
         },
         reason: "the contract is wrong".to_string(),
         evidence_commit: None,

@@ -273,7 +273,7 @@ pub(super) fn amend_plan(
 /// Cap exceeded: a further accepted dispute would exceed the per-stage
 /// amendment budget. Escalate to human review and let the caller still write
 /// applied.marker so we don't loop this verdict forever on the next tick.
-fn escalate_amendment_cap(work_dir: &Path, stage: &mut Stage, error: &anyhow::Error) {
+pub(super) fn escalate_amendment_cap(work_dir: &Path, stage: &mut Stage, error: &anyhow::Error) {
     let reason = format!("{error:#}");
     if let Err(transition_err) = stage.try_request_human_review(reason) {
         tracing::warn!(
@@ -367,14 +367,16 @@ fn disputed_entry(kind: &DisputeKind) -> String {
     }
 }
 
-/// Undecidable on the evidence supplied: ask the agent the questions, unless
-/// the evidence loop is spent.
+/// Undecidable on the evidence supplied: ask the agent the questions and tell
+/// it what to do with them (`feedback::evidence_action`), unless the evidence
+/// loop is spent. The only owner of the evidence-round count and its cap.
 pub(super) fn apply_needs_more_evidence(
     work_dir: &Path,
     stage: &mut Stage,
     questions: &[String],
+    action: &str,
 ) -> Result<()> {
-    feedback::append_questions(work_dir, &stage.id, questions)?;
+    feedback::append_questions(work_dir, &stage.id, questions, action)?;
     stage.tally.evidence_rounds = stage.tally.evidence_rounds.saturating_add(1);
     if stage.tally.evidence_rounds >= MAX_EVIDENCE_ROUNDS {
         let reason = format!(

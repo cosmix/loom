@@ -34,6 +34,8 @@ pub mod plan_verify;
 pub mod plan_verify_declared_skills;
 pub mod project_detect;
 pub mod relay_commit_e2e;
+pub mod relay_control_e2e;
+pub mod relay_dispute_replacement_e2e;
 pub mod relay_e2e;
 pub mod relay_scratch;
 pub mod source_graph_fixtures;

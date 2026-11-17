@@ -12,6 +12,8 @@ fn findings(ids: &[&str]) -> DisputeKind {
 fn contract() -> DisputeKind {
     DisputeKind::Contract {
         contract_id: "rejects-x".to_string(),
+        replacement: None,
+        replacement_base_sha256: None,
     }
 }
 

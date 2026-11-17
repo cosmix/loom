@@ -189,6 +189,12 @@ pub struct DisputeContractArgs {
     /// Optional commit SHA cited as evidence.
     #[arg(long = "evidence-commit")]
     pub evidence_commit: Option<String>,
+
+    /// File holding the complete replacement for the frozen contract file,
+    /// outside the stage worktree (max 32 KiB, UTF-8). An accept writes it into
+    /// the worktree.
+    #[arg(long)]
+    pub replacement: Option<PathBuf>,
 }
 
 #[derive(Args)]
@@ -226,7 +232,10 @@ impl From<DisputeContractArgs> for DisputeFiling {
     fn from(args: DisputeContractArgs) -> Self {
         Self {
             stage_id: args.stage_id,
-            target: DisputeTarget::Contract(args.contract),
+            target: DisputeTarget::Contract {
+                contract_id: args.contract,
+                replacement: args.replacement,
+            },
             reason: args.reason,
             evidence_commit: args.evidence_commit,
         }

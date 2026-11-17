@@ -1,8 +1,9 @@
 //! A contract dispute's verdicts (DESIGN D15), routed here by `apply_kinds.rs`.
 //!
 //! `accept` means the frozen contract was wrong and the agent's edit is right:
-//! the verdict's optional `contracts` amendment is applied, then the stage's
-//! whole frozen set (contract and harness files) is re-frozen at its current
+//! the verdict's optional `contracts` amendment is applied, the dispute's
+//! replacement file, when it carries one, is written into the worktree
+//! (`apply_contract_replacement.rs`), then the stage's whole frozen set (contract and harness files) is re-frozen at its current
 //! worktree content, deleted harness files dropped, and the disputed contract
 //! and every contract the record no longer describes get their files and run
 //! directories recorded (see `refrozen_contracts`). `reject` means the
@@ -14,7 +15,7 @@ use anyhow::{bail, Result};
 use std::collections::BTreeSet;
 use std::path::Path;
 
-use crate::models::dispute::PlanPatch;
+use crate::models::dispute::{DisputeKind, PlanPatch};
 use crate::models::stage::Stage;
 use crate::plan::amendment::{AmendmentField, AmendmentPatch, AmendmentRequest};
 use crate::plan::schema::ContractSpec;
@@ -28,6 +29,10 @@ use crate::verify::contracts::{normalize, resolve_adapter};
 use super::apply::amend_plan;
 use super::plan_patch;
 
+#[path = "apply_contract_replacement.rs"]
+mod replacement;
+pub(super) use replacement::Proposed;
+
 /// Apply an accepted contract dispute and return the feedback for the agent,
 /// or `None` when the amendment cap escalated the stage instead.
 ///
@@ -40,12 +45,46 @@ use super::plan_patch;
 /// new generation whole or not at all, so an interrupted re-freeze leaves the
 /// prior snapshot committed. A retry re-reads the worktree, so it freezes the
 /// bytes there at that time, not the bytes the interrupted attempt read.
+///
+/// A replacement the dispute carries is written first (see
+/// `apply_contract_replacement.rs`): the frozen file must still be the one the
+/// dispute was filed against, else nothing is applied and the stage goes to
+/// human review.
 pub(super) fn accept(
     work_dir: &Path,
     stage: &mut Stage,
     dispute: u32,
-    contract_id: &str,
+    kind: &DisputeKind,
     plan_patch: &PlanPatch,
+) -> Result<Option<String>> {
+    let DisputeKind::Contract { contract_id, .. } = kind else {
+        bail!(
+            "dispute {dispute} of stage '{}' is not a contract dispute",
+            stage.id
+        );
+    };
+    let proposed = Proposed::of(kind);
+    if let Some(proposed) = &proposed {
+        if replacement::escalated_on_conflict(work_dir, stage, contract_id, dispute, proposed)? {
+            return Ok(None);
+        }
+    }
+    refreeze(
+        work_dir,
+        stage,
+        (dispute, contract_id),
+        plan_patch,
+        proposed.as_ref(),
+    )
+}
+
+/// Amend, write the replacement and re-freeze the stage's whole frozen set.
+fn refreeze(
+    work_dir: &Path,
+    stage: &mut Stage,
+    (dispute, contract_id): (u32, &str),
+    plan_patch: &PlanPatch,
+    proposed: Option<&Proposed<'_>>,
 ) -> Result<Option<String>> {
     let mut recorded: Vec<String> = contract_file(stage, contract_id).into_iter().collect();
     let request = contracts_amendment(&stage.id, plan_patch, dispute)?;
@@ -71,16 +110,29 @@ pub(super) fn accept(
     }
     recorded.extend(record.files.iter().map(|file| file.path.clone()));
     let site = super::locate_stage_site(work_dir, stage)?;
+    let written = replacement::write_proposed(proposed, &site, stage, contract_id)?;
     let contracts = refrozen_contracts(stage, &record, contract_id, &amended, &site)?;
     let harness = harness_files(&site.git, &site.working_dir, &stage.harness)?;
     let files = read_frozen_set(&site.working_dir, &stage.contracts, &harness, &recorded)?;
     let dropped = contract_store::refreeze_set(work_dir, &stage.id, &files, &contracts)?;
-    Ok(Some(accept_notice(contract_id, &files, &dropped)))
+    Ok(Some(accept_notice(
+        contract_id,
+        &files,
+        &dropped,
+        written.as_deref(),
+    )))
 }
 
 /// The feedback for an accepted contract dispute: the paths re-frozen and
-/// the ones dropped from the freeze.
-fn accept_notice(contract_id: &str, files: &[(String, Vec<u8>)], dropped: &[String]) -> String {
+/// the ones dropped from the freeze, and the file the daemon wrote from the
+/// dispute's replacement. That write is uncommitted: completion reads the
+/// worktree, but the branch keeps the old file until the agent commits it.
+fn accept_notice(
+    contract_id: &str,
+    files: &[(String, Vec<u8>)],
+    dropped: &[String],
+    written: Option<&str>,
+) -> String {
     let paths: Vec<&str> = files.iter().map(|(path, _)| path.as_str()).collect();
     let dropped = if dropped.is_empty() {
         String::new()
@@ -90,21 +142,41 @@ fn accept_notice(contract_id: &str, files: &[(String, Vec<u8>)], dropped: &[Stri
             dropped.join(", ")
         )
     };
+    let written = written.map_or_else(String::new, |file| {
+        format!(
+            "\n\nThe daemon wrote the accepted replacement to `{file}`. Stage it with \
+             `git add {file}` and commit it with your other files through `loom stage commit`."
+        )
+    });
     format!(
         "The adjudicator accepted your contract dispute on contract '{contract_id}': the \
          stage's contract and harness files are re-frozen at their current content ({}).\
-         {dropped}\n\nAction: implement until every contract passes.\n",
+         {dropped}{written}\n\nAction: implement until every contract passes.\n",
         paths.join(", ")
     )
 }
 
-/// The feedback for a rejected contract dispute.
-pub(super) fn reject_notice(stage_id: &str, contract_id: &str, reasoning: &str) -> String {
+/// The feedback for a rejected contract dispute. A disputed `replacement` was
+/// discarded and the worktree left alone, so there is nothing to restore.
+pub(super) fn reject_notice(
+    stage_id: &str,
+    contract_id: &str,
+    reasoning: &str,
+    replacement: bool,
+) -> String {
+    let action = if replacement {
+        "Your replacement was discarded; the worktree was not changed. Implement against the \
+         frozen contract."
+            .to_string()
+    } else {
+        format!(
+            "restore the frozen contract with `loom stage contracts restore {stage_id} \
+             --contract {contract_id}`, then implement against it."
+        )
+    };
     format!(
         "The adjudicator rejected your contract dispute: contract '{contract_id}' stands as \
-         frozen.\n\n### Reasoning\n\n{}\n\nAction: restore the frozen contract with \
-         `loom stage contracts restore {stage_id} --contract {contract_id}`, then implement \
-         against it.\n",
+         frozen.\n\n### Reasoning\n\n{}\n\nAction: {action}\n",
         reasoning.trim()
     )
 }

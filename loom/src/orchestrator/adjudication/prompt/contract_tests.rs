@@ -17,6 +17,8 @@ fn request() -> DisputeRequest {
         stage_id: "demo".to_string(),
         kind: DisputeKind::Contract {
             contract_id: "rejects-x".to_string(),
+            replacement: None,
+            replacement_base_sha256: None,
         },
         reason: "the new assertion still rejects x".to_string(),
         evidence_commit: None,
@@ -31,11 +33,11 @@ fn request() -> DisputeRequest {
 /// written to disk, ready for [`KindPromptInput`] to borrow from.
 pub(super) struct ContractFixture {
     _tmp: tempfile::TempDir,
-    work_dir: PathBuf,
+    pub(super) work_dir: PathBuf,
     pub(super) worktree: PathBuf,
     pub(super) stage: Stage,
-    request: DisputeRequest,
-    site: ExecutionSite,
+    pub(super) request: DisputeRequest,
+    pub(super) site: ExecutionSite,
 }
 
 pub(super) fn contract_fixture() -> ContractFixture {
@@ -186,7 +188,7 @@ fn the_spec_block_shows_the_plan_and_recorded_cwd() {
 }
 
 /// Writes the freeze of the `demo` stage holding exactly `frozen`.
-fn freeze(work_dir: &Path, frozen: &[(&str, &str)]) {
+pub(super) fn freeze(work_dir: &Path, frozen: &[(&str, &str)]) {
     let record = store::FreezeRecord {
         version: store::FREEZE_RECORD_VERSION,
         stage_id: "demo".to_string(),
@@ -267,7 +269,7 @@ fn the_briefing_shows_each_changed_and_deleted_frozen_file() {
     assert!(prompt.instructions.contains(FROZEN_SET_HEADING));
 }
 
-fn input_of(fx: &ContractFixture) -> KindPromptInput<'_> {
+pub(super) fn input_of(fx: &ContractFixture) -> KindPromptInput<'_> {
     KindPromptInput {
         stage: &fx.stage,
         dispute_id: 4,

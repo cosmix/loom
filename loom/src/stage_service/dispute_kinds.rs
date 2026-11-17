@@ -315,3 +315,7 @@ mod impact_tests;
 #[cfg(test)]
 #[path = "../daemon/server/dispute_freeze_refusal_tests.rs"]
 mod freeze_refusal_tests;
+
+#[cfg(test)]
+#[path = "dispute_replacement_tests.rs"]
+mod replacement_tests;

@@ -64,6 +64,7 @@ fn metrics_cover_the_same_complete_v2_signal() {
         &work_dir,
         &stage.id,
         &["Which test covers it?".to_string()],
+        crate::orchestrator::adjudication::feedback::EVIDENCE_ACTION,
     )
     .unwrap();
     let worktree = create_test_worktree();

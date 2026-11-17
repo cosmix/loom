@@ -51,10 +51,10 @@ loom:
 <!-- END loom METADATA -->
 "#;
 
-struct Fixture {
+pub(super) struct Fixture {
     _tmp: TempDir,
-    work: PathBuf,
-    worktree: PathBuf,
+    pub(super) work: PathBuf,
+    pub(super) worktree: PathBuf,
 }
 
 /// The harness file [`fixture_with_harness`] freezes.
@@ -64,7 +64,7 @@ const HARNESS_CONTENT: &[u8] = b"pub fn ready() -> bool { false }\n";
 /// A stage worktree holding the contract file, its state directory naming
 /// [`PLAN`], and the stage under adjudication, its contract frozen with the
 /// run directory `cwd` recorded for its file.
-fn fixture(cwd: Option<&str>) -> Fixture {
+pub(super) fn fixture(cwd: Option<&str>) -> Fixture {
     fixture_with(cwd, &[])
 }
 
@@ -151,6 +151,8 @@ fn write_plan(repo: &Path, work: &Path) {
 fn accept(fx: &Fixture, plan_patch: serde_json::Value) {
     let kind = DisputeKind::Contract {
         contract_id: CONTRACT_ID.to_string(),
+        replacement: None,
+        replacement_base_sha256: None,
     };
     write_request(&fx.work, "s1", 1, kind);
     let verdict = DisputeVerdict::Accept {
@@ -170,7 +172,7 @@ fn accept(fx: &Fixture, plan_patch: serde_json::Value) {
 }
 
 /// A `contracts` amendment replacing contract 0 with `spec` (YAML).
-fn replacing_contract(spec: &str) -> serde_json::Value {
+pub(super) fn replacing_contract(spec: &str) -> serde_json::Value {
     json!({
         "field": "contracts",
         "patch": {"op": "replace", "index": 0, "value": spec},
@@ -187,7 +189,7 @@ fn frozen(fx: &Fixture, id: &str) -> FrozenContract {
 }
 
 /// The hash the record holds for the frozen file `path`, if it lists it.
-fn frozen_hash(fx: &Fixture, path: &str) -> Option<String> {
+pub(super) fn frozen_hash(fx: &Fixture, path: &str) -> Option<String> {
     let record = contract_store::load_freeze(&fx.work, "s1")
         .unwrap()
         .unwrap();
