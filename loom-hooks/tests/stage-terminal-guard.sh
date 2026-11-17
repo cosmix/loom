@@ -3,7 +3,9 @@ set -euo pipefail
 
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 HOOK="$ROOT/loom-hooks/stage-terminal-guard.sh"
-TMP=$(mktemp -d "${TMPDIR:-/tmp}/loom-hooktest.XXXXXX")
+# Physical path: macOS TMPDIR sits under the /var symlink, which the
+# lifecycle lookup rejects as it rejects any symlinked component.
+TMP=$(cd "$(mktemp -d "${TMPDIR:-/tmp}/loom-hooktest.XXXXXX")" && pwd -P)
 trap 'rm -rf "$TMP"' EXIT
 
 STAGE_ID="build-api"

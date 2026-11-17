@@ -45,7 +45,10 @@ case "$1 $2" in
 	;;
 "hook reviewer-brief")
 	cat >"$STDIN_LOG"
-	[[ -z "${REVIEWER_SLEEP:-}" ]] || sleep "$REVIEWER_SLEEP"
+	# sleep must not inherit stdout: loom_run_bounded's bash fallback (macOS
+	# without coreutils) signals only this stub, and an orphaned sleep holding
+	# the pipe would keep the guard's $(...) open past the bound.
+	[[ -z "${REVIEWER_SLEEP:-}" ]] || sleep "$REVIEWER_SLEEP" >/dev/null 2>&1
 	[[ ! -f "$REVIEWER_REPLY" ]] || cat "$REVIEWER_REPLY"
 	exit "${REVIEWER_EXIT:-0}"
 	;;
