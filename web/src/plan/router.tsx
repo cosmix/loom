@@ -29,17 +29,13 @@ function Deferred({ children }: { children: ReactNode }) {
   return <Suspense fallback={<LoadState state="loading" />}>{children}</Suspense>;
 }
 
-/** The product overview carries the section gaps and the bulk settle action. */
+/** The product overview carries the section gaps and, in its ledger, the bulk settle action. */
 function ProductOverview() {
   const { checklist } = useFeature();
   return (
     <ConceptRoute
-      above={
-        <>
-          <Gaps scope="product" />
-          {checklist && <SettleAllAfterDrafting feature={checklist.feature} role="section" />}
-        </>
-      }
+      ledger={checklist && <SettleAllAfterDrafting feature={checklist.feature} role="section" />}
+      above={<Gaps scope="product" />}
     />
   );
 }

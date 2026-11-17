@@ -1,113 +1,59 @@
 /*
- * The chrome around a summary's reading column: the overview head's row, the document key and the
- * empty states. All sit on the page ground in the chrome face with no box, no border and no fill
- * (DESIGN.md, Surfaces).
+ * The chrome around a summary's reading column: the document key and the empty states. All sit on
+ * the page ground in the chrome face with no box, no border and no fill (DESIGN.md, Surfaces).
  */
 
 /* ── Page column ──────────────────────────────────────────────────────────── */
 
 /* A summary page's document heading takes no inset of its own: its breadcrumb, title and status
    start on the column's left edge with the key and the text, and its action row ends on the
-   column's right edge, where the overview head's Open all ends (doc-heading.css). */
+   column's right edge, where Open all ends (doc-heading.css). */
 .concept-page-column {
   --doc-heading-inset: 0;
 }
 
-/* ── Overview head ────────────────────────────────────────────────────────── */
-
-/* The overview's eyebrow and title, with Open all / Fold all at the end of the title's line. The
-   head's own bottom margin moves to this row so the control can sit on the title's line. */
-.concept-overview-head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: var(--space-2) var(--space-4);
-  margin-bottom: var(--space-5);
-}
-
-/* The pending-approval notice takes its own line under the title row; with no notice the
-   wrapper is empty and takes no gap. */
-.concept-overview-head__notice {
-  flex-basis: 100%;
-}
-
-.concept-overview-head__notice:empty {
-  display: none;
-}
-
-[data-loom-plan] .concept-overview-head > .plan-page__head {
-  margin-bottom: 0;
-}
-
 /* ── Document key ─────────────────────────────────────────────────────────── */
 
-.concept-key {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-  margin-block: var(--space-2) var(--space-5);
-  font-family: var(--font-sans);
-}
-
-/* The lede says what the documents are to the overview ("Sources: the 12 sections this overview
-   summarizes"), in fine print. */
+/* The key is the last row of the overview heading's ledger (header-ledger.css): the lede, then one
+   row per document on four shared tracks (mark, number, title, state) so a long number or a
+   long title never throws the other rows out. A title wraps; none is cut. */
 .concept-key-lede {
-  max-width: 68ch;
   margin: 0;
+  color: var(--muted-foreground);
+  font-size: var(--type-body);
+  line-height: 24px;
 }
 
-/* Every document sits on one fixed-width track, so a long key reads as aligned columns and a
-   title is cut at the same width wherever it falls: four tracks across the 68ch column at
-   1440px, two at 390px, where four documents take two lines and "more" a third. */
 .concept-key-list {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 9.5rem), 1fr));
-  align-items: center;
+  grid-template-columns: 22px max-content minmax(0, 1fr) auto;
   gap: 0 var(--space-3);
   min-width: 0;
-  margin: 0;
+  margin: 6px 0 0;
   padding: 0;
   list-style: none;
 }
 
 .concept-key-list > li {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
+  display: grid;
+  grid-template-columns: subgrid;
+  grid-column: 1 / -1;
+  align-items: start;
   min-width: 0;
+  padding-block: 5px;
 }
 
-/* A document: its mark, its number and its title on one control-high line. The title is cut with
-   an ellipsis at the track's end; the DOM, the link's name and the tooltip keep all of it. */
+/* A document: its mark, its number and its title. The link spans the first three tracks and the
+   state after it stays outside it, so the link's name is the number and the title alone. */
 .concept-key-doc {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
+  display: grid;
+  grid-template-columns: subgrid;
+  grid-column: 1 / 4;
+  align-items: start;
   min-width: 0;
-  max-width: 100%;
-  min-height: var(--control-height-sm);
-  padding: 0;
-  border: 0;
-  border-bottom: 1px solid transparent;
-  background: transparent;
-  color: var(--muted-foreground);
-  font-family: var(--font-sans);
-  font-size: var(--type-ui);
-  font-weight: 500;
-  line-height: var(--leading-ui);
-  white-space: nowrap;
-  text-decoration: none;
-  transition: color 120ms;
-}
-
-a.concept-key-doc:hover {
   color: var(--foreground);
-}
-
-/* An out-of-date document is dashed, not recoloured. */
-.concept-key-doc[data-dashed="true"] {
-  border-bottom: 1px dashed var(--muted-foreground);
+  font-family: var(--font-sans);
+  text-decoration: none;
 }
 
 .concept-key-doc:focus-visible {
@@ -115,13 +61,25 @@ a.concept-key-doc:hover {
   outline-offset: 2px;
 }
 
-/* The title reads in the chrome's foreground so it, not the number, names the document. */
+.concept-key-doc .concept-key-mark {
+  align-self: start;
+  margin-top: 1px;
+}
+
+.concept-key-label {
+  color: var(--muted-foreground);
+  font-family: var(--font-mono);
+  font-size: var(--type-ui);
+  line-height: 22px;
+  overflow-wrap: anywhere;
+}
+
 .concept-key-title {
-  flex: 0 100 auto;
   min-width: 0;
-  overflow: hidden;
-  color: var(--foreground);
-  text-overflow: ellipsis;
+  font-size: var(--type-title);
+  font-weight: 500;
+  line-height: 22px;
+  overflow-wrap: anywhere;
 }
 
 a.concept-key-doc:hover .concept-key-title {
@@ -129,34 +87,58 @@ a.concept-key-doc:hover .concept-key-title {
   text-underline-offset: 2px;
 }
 
-/* "changed" and "no plan" follow the link on its line and keep their width; the title gives way. */
-.concept-key-changed,
-.concept-key-list > li > .plan-fine {
-  flex: none;
+/* "changed", "no plan" and the summary state end the row, right-aligned on one line. */
+.concept-key-end {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: flex-end;
+  gap: 0 var(--space-3);
+  grid-column: 4;
+  font-size: var(--type-ui);
+  line-height: 22px;
+}
+
+.concept-key-end .plan-fine {
+  font-size: var(--type-ui);
   white-space: nowrap;
 }
 
-/* A long plan slug is cut with an ellipsis at 14 characters so its title still shows, and its
-   full name stays in the link's name. Once the title has given all its width, the slug shrinks
-   further, down to 4 characters, so the link and a "changed" after it fit their track instead of
-   running into the next one (the title's large shrink factor makes it give way first). */
-.concept-key-label {
-  flex: 0 1 auto;
-  min-width: 4ch;
-  max-width: 14ch;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  font-family: var(--font-mono);
-  font-size: var(--type-fine);
-  font-weight: 400;
+.concept-key-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--muted-foreground);
+  white-space: nowrap;
+}
+
+.concept-key-state svg {
+  width: 14px;
+  height: 14px;
+}
+
+.concept-key-state[data-state="current"] > svg {
+  color: var(--tone-completed);
+}
+
+.concept-key-state[data-state="stale"] > svg {
+  color: var(--tone-warning);
+}
+
+.concept-key-state[data-state="rebuilding"] > svg {
+  color: var(--tone-executing);
+}
+
+.concept-key-more-item {
+  display: block;
+  grid-column: 1 / -1;
+  padding-block: 0;
 }
 
 .concept-key-more {
-  cursor: pointer;
-}
-
-.concept-key-more:hover {
-  color: var(--foreground);
+  display: inline-flex;
+  align-items: center;
+  margin-inline-start: calc(-1 * var(--space-3));
 }
 
 /* A document's swatch: its icon in the document colour on a wash of it (`--key-colour`, set
@@ -170,39 +152,6 @@ a.concept-key-doc:hover .concept-key-title {
 
 .dark .concept-key-mark {
   background-color: color-mix(in oklch, var(--key-colour) 20%, transparent);
-}
-
-/* ── Source link ──────────────────────────────────────────────────────────── */
-
-/* The link under a short summary to its whole source ("Read the full vision"): one chrome line a
-   paragraph's gap under the text, its arrow after the words. A link in chrome underlines on hover
-   only (DESIGN.md, Focus and hover). */
-.concept-read-source {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
-  margin-top: var(--space-3);
-  color: var(--foreground);
-  font-family: var(--font-sans);
-  font-size: var(--type-ui);
-  font-weight: 500;
-  text-decoration: none;
-}
-
-.concept-read-source:hover {
-  text-decoration: underline;
-  text-underline-offset: 3px;
-}
-
-.concept-read-source:focus-visible {
-  outline: 2px solid var(--ring);
-  outline-offset: 2px;
-  border-radius: 2px;
-}
-
-.concept-read-source svg {
-  width: 14px;
-  height: 14px;
 }
 
 /* ── Empty states ─────────────────────────────────────────────────────────── */

@@ -1,4 +1,4 @@
-import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import { createStore } from "jotai";
 import { Provider } from "jotai/react";
 import type { ReactNode } from "react";
@@ -40,9 +40,10 @@ vi.mock("@/plan/feature/feature-layout", async () => {
 });
 // A summary page draws what its route puts `above` it; the summary itself is not under test.
 vi.mock("@/plan/concept/concept-route", () => ({
-  ConceptRoute: ({ above }: { above?: ReactNode }) => (
+  ConceptRoute: ({ above, ledger }: { above?: ReactNode; ledger?: ReactNode }) => (
     <div>
       Concept page
+      <dl>{ledger}</dl>
       {above}
     </div>
   ),
@@ -96,14 +97,15 @@ function renderWith(store: ReturnType<typeof createStore>, path: string) {
   );
 }
 
-it("the metaplan page offers Settle all plans, ahead of the Run panel", async () => {
+it("the metaplan page offers Settle all plans, in its own row after the Run row", async () => {
   renderRoutes("/f/demo/metaplan");
 
   const settle = await screen.findByRole("button", { name: "Settle all plans" });
   const run = await screen.findByRole("region", { name: "Run" });
   expect(screen.getByText("1 plan needs settling")).toBeTruthy();
   expect(screen.queryByRole("button", { name: "Settle all specs" })).toBeNull();
-  expect(settle.compareDocumentPosition(run) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(run.compareDocumentPosition(settle) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(within(screen.getByRole("region", { name: "Settling" })).getByRole("button")).toBe(settle);
 });
 
 it("the product overview offers Settle all specs", async () => {

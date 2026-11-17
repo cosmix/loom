@@ -77,7 +77,7 @@ it("shows a format character in the chip's label and title as its code point", (
   expect(link.textContent).toBe("0⟨U+202E⟩1 Plan⟨U+202E⟩ning");
 });
 
-it("draws a section by its number and its whole title, which CSS alone cuts", () => {
+it("draws a section by its number and its whole title, which wraps and is never cut", () => {
   const link = showChip(chipOf());
 
   expect(link.querySelector(".concept-key-label")?.textContent).toBe("§01");
@@ -86,7 +86,10 @@ it("draws a section by its number and its whole title, which CSS alone cuts", ()
   expect(link.querySelector(".sr-only")).toBeNull();
   expect(screen.getByRole("link", { name: "§01 Planning" })).toBe(link);
   const css = pageSheet.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\s+/g, " ");
-  expect(css).toMatch(/\.concept-key-title \{[^}]*overflow: hidden;[^}]*text-overflow: ellipsis;/);
+  const rule = /\.concept-key-title \{([^}]*)\}/.exec(css)![1]!;
+  expect(rule).toContain("overflow-wrap: anywhere;");
+  expect(rule).not.toMatch(/text-overflow|overflow: hidden|white-space: nowrap/);
+  expect(css).not.toMatch(/\.concept-key-label \{[^}]*text-overflow/);
 });
 
 it("draws a plan by its label as sent", () => {
@@ -95,20 +98,41 @@ it("draws a plan by its label as sent", () => {
   const link = showChip(chip);
 
   expect(link.querySelector(".concept-key-label")?.textContent).toBe("feat-planner-13");
-  // A long slug gives way, so a "changed" after its link stays inside the track.
+  // The number track sizes to its widest label, which wraps rather than being cut.
   const css = pageSheet.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\s+/g, " ");
-  expect(css).toMatch(/\.concept-key-label \{ flex: 0 1 auto; min-width: 4ch;/);
-  expect(css).toMatch(/\.concept-key-title \{ flex: 0 100 auto; min-width: 0;/);
+  expect(css).toContain("grid-template-columns: 22px max-content minmax(0, 1fr) auto;");
+  expect(css).toMatch(/\.concept-key-label \{[^}]*overflow-wrap: anywhere;/);
 });
 
 it("leads the key with a lede describing the list, and leaves the marks to Help's legend", () => {
   showChip(chipOf());
-  const lede = screen.getByText("Source: the section this overview summarizes");
-  expect(lede.classList.contains("plan-fine")).toBe(true);
+  const lede = screen.getByText("The section this overview summarizes");
+  expect(lede.classList.contains("plan-fine")).toBe(false);
   expect(screen.getByRole("list", { name: "Document key" }).getAttribute("aria-describedby")).toBe(
     lede.id,
   );
   expect(screen.queryByText(/A square after a sentence/)).toBeNull();
+});
+
+it("labels the row Sources and sets each document's summary state after its link", () => {
+  const stale = chipOf({ out_of_date: { reason: "source_changed", detail: null } });
+  const link = showChip(stale);
+  const row = screen.getByRole("region", { name: "Source" });
+  expect(row).toBeTruthy();
+  // The state is beside the link, so the link's name stays the number and the title.
+  expect(link.textContent).not.toContain("out of date");
+  const state = row.querySelector(".concept-key-state")!;
+  expect(state.textContent).toBe("Summary out of date");
+  expect(state.getAttribute("data-state")).toBe("stale");
+  expect(link.contains(state)).toBe(false);
+});
+
+it("says Up to date for a current document and Rebuilding for one being rebuilt", () => {
+  showChip(chipOf());
+  expect(document.querySelector(".concept-key-state")?.textContent).toBe("Up to date");
+  cleanup();
+  showChip(chipOf({ out_of_date: { reason: "rebuilding", detail: null } }));
+  expect(document.querySelector(".concept-key-state")?.textContent).toBe("Rebuilding");
 });
 
 it("renders a section DocMark in the chip's colour", () => {
@@ -206,20 +230,20 @@ describe("long keys", () => {
     );
   }
 
-  it("shows four chips, then expands the rest in place and folds them back", () => {
-    showKey(6);
-    expect(screen.getAllByRole("link")).toHaveLength(4);
+  it("shows eight chips, then expands the rest in place and folds them back", () => {
+    showKey(10);
+    expect(screen.getAllByRole("link")).toHaveLength(8);
 
     fireEvent.click(screen.getByRole("button", { name: /^…\s?2 more$/ }));
-    expect(screen.getAllByRole("link")).toHaveLength(6);
+    expect(screen.getAllByRole("link")).toHaveLength(10);
 
     fireEvent.click(screen.getByRole("button", { name: "Fewer" }));
-    expect(screen.getAllByRole("link")).toHaveLength(4);
+    expect(screen.getAllByRole("link")).toHaveLength(8);
   });
 
-  it("has no more chip and no Fold all button for a short key", () => {
-    showKey(4);
-    expect(screen.getAllByRole("link")).toHaveLength(4);
+  it("has no more chip and no Fold all button for a key of eight", () => {
+    showKey(8);
+    expect(screen.getAllByRole("link")).toHaveLength(8);
     expect(screen.queryByRole("button")).toBeNull();
   });
 });
@@ -240,12 +264,12 @@ describe("keyLede", () => {
     [
       "overview/demo/product",
       ["demo/product/section_01", "demo/product/section_02"],
-      "Sources: the 2 sections this overview summarizes",
+      "The 2 sections this overview summarizes",
     ],
     [
       "overview/demo/product",
       ["demo/product/section_01", "demo/engineering/a"],
-      "Sources: the 2 documents this overview summarizes",
+      "The 2 documents this overview summarizes",
     ],
   ])("names the documents of %s", (key, pages, expected) => {
     expect(keyLede(pageWith(key, pages))).toBe(expected);

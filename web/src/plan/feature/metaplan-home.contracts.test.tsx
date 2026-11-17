@@ -28,9 +28,10 @@ vi.mock("@/plan/feature/feature-layout", async () => {
 });
 // A summary page draws what its route puts `above` it; the summary itself is not under test.
 vi.mock("@/plan/concept/concept-route", () => ({
-  ConceptRoute: ({ above }: { above?: ReactNode }) => (
+  ConceptRoute: ({ above, ledger }: { above?: ReactNode; ledger?: ReactNode }) => (
     <div>
       Concept page
+      <dl>{ledger}</dl>
       {above}
     </div>
   ),

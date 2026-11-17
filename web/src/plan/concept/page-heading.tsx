@@ -48,6 +48,8 @@ import {
   ToolbarGroup,
 } from "@/plan/ui/doc-heading";
 
+import { LedgerRows } from "./header-ledger";
+import { PageSummariesRow, summaryInLedger } from "./overview-summaries";
 import { hasOpenable, useAllOpen, useFoldAll, useOpenAll } from "./open-all";
 import { useKeptDoc } from "./passage-doc";
 import { PageHeaderExtras, SummaryAction, SummaryDetail } from "./page-header-extras";
@@ -112,11 +114,12 @@ function implementsChips(page: ConceptPage): HeadingChip[] {
 
 /**
  * The summary status row, with its Rebuild action at its end and the pending approval's
- * sentence as its detail. A page whose state is null gets no row and so no Rebuild: the server
+ * sentence as its detail; the metaplan and the vision draw it as a ledger row instead. A page whose state is null gets no row and so no Rebuild: the server
  * sets state for every expected id (`plan_server/concept/evaluate.rs`), so null occurs only
  * while a cached evaluation predates a new document.
  */
 function statusChips(page: ConceptPage, rebuilding: boolean): HeadingChip[] {
+  if (summaryInLedger(page)) return [];
   return summaryChips(page, rebuilding).map((chip) => ({
     ...chip,
     action: <SummaryAction page={page} />,
@@ -309,18 +312,35 @@ function numberedTitle(page: ConceptPage): ReactNode {
  * popovers survive a navigation), so the kept document of the previous page is ignored until the
  * new one loads.
  */
-export function PageHeading({ page }: { page: ConceptPage }): JSX.Element {
-  if (!page.path) return <PageHeadingOf page={page} calls={[]} />;
-  return <PageHeadingWithCalls page={page} path={page.path} />;
+export function PageHeading({
+  page,
+  ledger,
+}: {
+  page: ConceptPage;
+  /** Rows the page adds to the heading's ledger, above its status row (the run, a bulk settle). */
+  ledger?: ReactNode;
+}): JSX.Element {
+  if (!page.path) return <PageHeadingOf page={page} calls={[]} ledger={ledger} />;
+  return <PageHeadingWithCalls page={page} path={page.path} ledger={ledger} />;
 }
 
-function PageHeadingWithCalls({ page, path }: { page: ConceptPage; path: string }): JSX.Element {
+function PageHeadingWithCalls(props: {
+  page: ConceptPage;
+  path: string;
+  ledger: ReactNode;
+}): JSX.Element {
+  const { page, path, ledger } = props;
   const kept = useKeptDoc(path).doc;
   const calls = useMyCallChips(path, kept?.path === repoRel(path) ? kept : null, true);
-  return <PageHeadingOf page={page} calls={calls} />;
+  return <PageHeadingOf page={page} calls={calls} ledger={ledger} />;
 }
 
-function PageHeadingOf({ page, calls }: { page: ConceptPage; calls: HeadingChip[] }): JSX.Element {
+function PageHeadingOf(props: {
+  page: ConceptPage;
+  calls: HeadingChip[];
+  ledger: ReactNode;
+}): JSX.Element {
+  const { page, calls, ledger } = props;
   const facts = useFeatureFacts(page.feature);
   const questions = [...useOpenQuestionChips(page.path, true), ...calls];
   const document = tracedDocument(page);
@@ -361,6 +381,10 @@ function PageHeadingOf({ page, calls }: { page: ConceptPage; calls: HeadingChip[
         }
         chips={pageChips(page, rebuilding, { questions, trace })}
       >
+        <LedgerRows>
+          {summaryInLedger(page) && <PageSummariesRow page={page} />}
+          {ledger}
+        </LedgerRows>
         {notice && <LockNotice notice={notice} />}
         <PageHeaderExtras page={page} />
       </DocHeading>

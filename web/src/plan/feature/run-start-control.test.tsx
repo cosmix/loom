@@ -9,7 +9,12 @@ import { runDialogAtom } from "@/plan/offers/actions-run";
 
 // Keep the page's above slot while leaving the summary renderer out of these panel tests.
 vi.mock("@/plan/concept/concept-route", () => ({
-  ConceptRoute: ({ above }: { above?: ReactNode }) => <>{above}</>,
+  ConceptRoute: ({ above, ledger }: { above?: ReactNode; ledger?: ReactNode }) => (
+    <>
+      <dl>{ledger}</dl>
+      {above}
+    </>
+  ),
 }));
 
 const PATH = "/f/atlas/metaplan";

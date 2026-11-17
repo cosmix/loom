@@ -63,6 +63,18 @@ it("counts only settleable unsettled documents of the requested role", () => {
   expect(screen.getByText("1 spec needs settling")).toBeTruthy();
 });
 
+it("draws the Settling row with the status, and a blocked reason as a lock-led line", () => {
+  const store = mount(<SettleAllButton feature="demo" role="section" />);
+  act(() => store.set(stoppingAtom, true));
+  const row = screen.getByRole("region", { name: "Settling" });
+  expect(within(row).getByText(/^\d+ specs? needs? settling$/)).toBeTruthy();
+  const button = within(row).getByRole("button", { name: "Settle all specs" });
+  expect(button.getAttribute("data-look")).toBe("secondary");
+  const reason = document.getElementById(button.getAttribute("aria-describedby")!)!;
+  expect(reason.querySelector("svg")).not.toBeNull();
+  expect(row.contains(reason)).toBe(true);
+});
+
 it("offers confirmation for the unresolved count and posts confirm only on that press", async () => {
   answers = [
     {

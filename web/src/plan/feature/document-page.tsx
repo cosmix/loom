@@ -1,12 +1,13 @@
 import { useAtomValue, useStore } from "jotai/react";
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, FileText } from "lucide-react";
 import { Link, useLocation, useParams } from "react-router";
 
 import type { ChecklistView } from "@/plan/api/schema";
 import { ConceptRoute } from "@/plan/concept/concept-route";
+import { LedgerRow, LedgerStatus } from "@/plan/concept/header-ledger";
 import { EmptyOffer } from "@/plan/concept/empty-offer";
 import { Gaps } from "@/plan/feature/gaps";
-import { RunPanel } from "@/plan/feature/run-panel";
+import { FindingsRow, RunRow } from "@/plan/feature/run-panel";
 import { hashAnchor, repoRel } from "@/plan/files/address";
 import { useFileSocket } from "@/plan/files/api";
 import { openDocAtom, treeAtom } from "@/plan/files/atoms";
@@ -71,6 +72,27 @@ function MissingDocument({
   );
 }
 
+/** The vision summary page's Source row: the way to the whole document. */
+function VisionSourceRow({ feature }: { feature: string }) {
+  return (
+    <LedgerRow
+      label="Source"
+      action={
+        <Link
+          to={featureSourceHref(feature, `doc/product/${feature}/index.md`)}
+          data-look="secondary"
+          className="plan-button inline-flex shrink-0 items-center justify-center"
+        >
+          Read the full vision
+          <ArrowRight aria-hidden="true" />
+        </Link>
+      }
+    >
+      <LedgerStatus glyph={<FileText />}>The full vision</LedgerStatus>
+    </LedgerRow>
+  );
+}
+
 /** `/f/:feature/vision`: the vision's summary page, or the offer to write the vision. */
 export function VisionPage() {
   const { checklist } = useFeature();
@@ -84,29 +106,13 @@ export function VisionPage() {
       />
     );
   }
-  return (
-    <>
-      <ConceptRoute />
-      {/* ConceptRoute draws its own column and bottom padding; this one matches the column and
-          pulls the link up under the summary. */}
-      <div className="-mt-8 w-full px-[clamp(16px,4vw,56px)] pb-12">
-        <div className="mx-auto max-w-[68ch]">
-          <Link
-            to={featureSourceHref(checklist.feature, `doc/product/${checklist.feature}/index.md`)}
-            className="concept-read-source"
-          >
-            Read the full vision
-            <ArrowRight aria-hidden="true" />
-          </Link>
-        </div>
-      </div>
-    </>
-  );
+  return <ConceptRoute ledger={<VisionSourceRow feature={checklist.feature} />} />;
 }
 
 /**
- * `/f/:feature/metaplan`: the Plans home, with the bulk settle action, the run and gaps above its
- * summary (its Source link opens `index.md`), or the offer to write the metaplan.
+ * `/f/:feature/metaplan`: the Plans home, with the run, the bulk settle action and the findings as
+ * rows of its heading's ledger and the gaps above its summary (its Source link opens `index.md`),
+ * or the offer to write the metaplan.
  */
 export function MetaplanPage() {
   const { checklist } = useFeature();
@@ -122,13 +128,14 @@ export function MetaplanPage() {
   }
   return (
     <ConceptRoute
-      above={
+      ledger={
         <>
+          <RunRow />
           <SettleAllAfterDrafting feature={checklist.feature} role="plan" />
-          <RunPanel />
-          <Gaps scope="metaplan" />
+          <FindingsRow />
         </>
       }
+      above={<Gaps scope="metaplan" />}
     />
   );
 }

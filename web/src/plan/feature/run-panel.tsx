@@ -1,46 +1,34 @@
 import { useAtomValue, useStore } from "jotai/react";
-import { useEffect, useState } from "react";
+import { ArrowRight, Circle, CircleCheck } from "lucide-react";
+import { useEffect, useId, useState, type JSX } from "react";
 import { Link } from "react-router";
 
 import type { ChecklistView } from "@/plan/api/schema";
 import { ConfigBlockNotice } from "@/plan/chat/pressure/config-block-notice";
 import { Untrusted } from "@/plan/chat/visible-controls";
-import { runScope, runSentence, startControl, type RunRead } from "@/plan/feature/run-scope";
+import {
+  BlockedReason,
+  LedgerRow,
+  LedgerStatus,
+  type LedgerTone,
+} from "@/plan/concept/header-ledger";
+import {
+  allPlansDone,
+  runScope,
+  runSentence,
+  startControl,
+  type RunRead,
+} from "@/plan/feature/run-scope";
 import { featureHref, useFeature } from "@/plan/feature/use-feature";
 import { DashboardLink, webUrl } from "@/plan/run/dashboard-button";
-import { StartRunButton } from "@/plan/run/plan-run-actions";
+import { StartRunButton, useStartRunReason } from "@/plan/run/plan-run-actions";
 import { fetchRunState, runStateAtom, runStripAtom } from "@/plan/run/use-run";
 import { openCount } from "@/plan/trace/findings-model";
 import { useTrace } from "@/plan/trace/state";
+import { INSTRUMENT_GLYPHS } from "@/plan/ui/glyphs";
+import { ArrowSpinner } from "@/plan/ui/spinner";
 
 import "./run-panel.css";
-
-/**
- * The panel's one Start a run button (`startControl`), with the Codex configuration notice under
- * it, and a dashboard link while a run of this feature (or none) is up. It is the screen's
- * primary only when the checklist's primary is the start_run offer.
- */
-function RunActions({ checklist, read }: { checklist: ChecklistView; read: RunRead }) {
-  const state = useAtomValue(runStateAtom);
-  const control = startControl(checklist, state, read);
-  const dashboard = runScope(checklist, state) === "foreign" ? null : webUrl(state?.dashboard_url);
-  if (control === null && dashboard === null) return null;
-  return (
-    <div className="plan-run__actions">
-      {control !== null && (
-        <div>
-          <StartRunButton
-            path={control.path}
-            blockedBy={control.reason}
-            look={checklist.primary?.kind === "start_run" ? "primary" : "secondary"}
-          />
-          <ConfigBlockNotice context="plan" />
-        </div>
-      )}
-      {dashboard !== null && <DashboardLink url={dashboard} />}
-    </div>
-  );
-}
 
 /**
  * The server pushes no run state, so the panel asks for it on arrival, as the run dialog does. A
@@ -64,41 +52,110 @@ function useRunRead(): RunRead {
   return read;
 }
 
-/** The way to the Findings page, with what still waits there; drawn once the ledger holds any. */
-function FindingsLink({ feature }: { feature: string }) {
-  const { trace } = useTrace(feature);
-  if (trace === null || trace.findings.length === 0) return null;
-  return (
-    <p className="plan-run__findings">
-      <Link to={featureHref(feature, "findings")}>Findings · {openCount(trace)} open</Link>
-    </p>
-  );
+/** The run's tone and glyph: turning while a run of this feature works, a check once all is done. */
+function runLook(
+  checklist: ChecklistView,
+  workspace: string | undefined,
+  own: boolean,
+): { tone: LedgerTone; glyph: JSX.Element } {
+  if (own && workspace === "running") return { tone: "executing", glyph: <ArrowSpinner /> };
+  if (allPlansDone(checklist)) return { tone: "completed", glyph: <CircleCheck /> };
+  return { tone: "pending", glyph: <Circle /> };
 }
 
-function Panel({ checklist }: { checklist: ChecklistView }) {
+/**
+ * The Run row of the metaplan's ledger: the one line on the run's state, the one Start a run
+ * button and the dashboard link at the row's end, and what blocks the button as a lock-led line
+ * under the status. The button is the screen's primary only when the checklist's primary is the
+ * start_run offer; the Codex configuration notice follows the status.
+ */
+function RunLedgerRow({ checklist }: { checklist: ChecklistView }): JSX.Element {
   const state = useAtomValue(runStateAtom);
   const strip = useAtomValue(runStripAtom);
   const read = useRunRead();
-  const sentence = runSentence(checklist, state, strip, read);
+  const reasonId = useId();
+  const control = startControl(checklist, state, read);
+  const reason = useStartRunReason(control?.reason ?? null);
+  const scope = runScope(checklist, state);
+  const dashboard = scope === "foreign" ? null : webUrl(state?.dashboard_url);
+  const { tone, glyph } = runLook(checklist, state?.workspace, scope === "own");
+  const action =
+    control === null && dashboard === null ? null : (
+      <>
+        {control !== null && (
+          <StartRunButton
+            path={control.path}
+            blockedBy={control.reason}
+            reasonId={reasonId}
+            look={checklist.primary?.kind === "start_run" ? "primary" : "secondary"}
+          />
+        )}
+        {dashboard !== null && (
+          <span className="header-ledger__dashboard">
+            <DashboardLink url={dashboard} />
+          </span>
+        )}
+      </>
+    );
   return (
-    <section className="plan-run" aria-label="Run">
-      <p className="plan-run__line" role="status">
-        <Untrusted text={sentence} />
-      </p>
-      <RunActions checklist={checklist} read={read} />
-      <FindingsLink feature={checklist.feature} />
-    </section>
+    <LedgerRow label="Run" action={action}>
+      <LedgerStatus tone={tone} glyph={glyph} role="status">
+        <Untrusted text={runSentence(checklist, state, strip, read)} />
+      </LedgerStatus>
+      {control !== null && reason !== null && (
+        <BlockedReason id={reasonId}>
+          <Untrusted text={reason} />
+        </BlockedReason>
+      )}
+      {control !== null && (
+        <div className="header-ledger__notes">
+          <ConfigBlockNotice context="plan" />
+        </div>
+      )}
+    </LedgerRow>
   );
 }
 
 /**
- * The feature's run on the metaplan page, the Plans home: one line on the run's state, the one Start a run
- * button and the dashboard link, then the Findings link while the feature's ledger has any
- * finding. A plan's state is its spine row's and its page's, so the panel lists no plans; a
- * feature with no plan yet has no run to speak of and draws nothing.
+ * The Findings row: how many findings wait, and the way to the Findings page; drawn once the
+ * feature's ledger holds any finding. With none open the button is quiet.
  */
-export function RunPanel() {
+function FindingsLedgerRow({ feature }: { feature: string }): JSX.Element | null {
+  const { trace } = useTrace(feature);
+  if (trace === null || trace.findings.length === 0) return null;
+  const open = openCount(trace);
+  const Glyph = INSTRUMENT_GLYPHS.findings;
+  return (
+    <LedgerRow
+      label="Findings"
+      action={
+        <Link
+          to={featureHref(feature, "findings")}
+          data-look={open > 0 ? "secondary" : "quiet"}
+          className="plan-button inline-flex shrink-0 items-center justify-center"
+        >
+          Open findings
+          <ArrowRight aria-hidden="true" />
+        </Link>
+      }
+    >
+      <LedgerStatus tone={open > 0 ? "warning" : undefined} glyph={<Glyph />}>
+        {open} open
+      </LedgerStatus>
+    </LedgerRow>
+  );
+}
+
+/** The feature's run on the metaplan page, the Plans home; a feature with no plan has none. */
+export function RunRow(): JSX.Element | null {
   const { checklist } = useFeature();
   if (!checklist || checklist.plan_rows.length === 0) return null;
-  return <Panel checklist={checklist} />;
+  return <RunLedgerRow checklist={checklist} />;
+}
+
+/** The feature's findings on the metaplan page, after the settling row. */
+export function FindingsRow(): JSX.Element | null {
+  const { checklist } = useFeature();
+  if (!checklist || checklist.plan_rows.length === 0) return null;
+  return <FindingsLedgerRow feature={checklist.feature} />;
 }

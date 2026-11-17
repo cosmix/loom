@@ -1,4 +1,4 @@
-import { Ellipsis } from "lucide-react";
+import { CircleCheck, CircleDashed, Ellipsis } from "lucide-react";
 import { useId, useState, type CSSProperties } from "react";
 import { useAtomValue } from "jotai/react";
 import { Link } from "react-router";
@@ -8,8 +8,10 @@ import { docKindOfPageKey, pageHref, parsePageKey } from "@/plan/api/page-key";
 import type { ConceptPage, ImplementsView, KeyChip } from "@/plan/api/schema-concept";
 import { Untrusted } from "@/plan/chat/visible-controls";
 import { DocMark } from "@/plan/ui/doc-mark";
+import { ArrowSpinner } from "@/plan/ui/spinner";
 
 import "./concept-page.css";
+import { LedgerRow } from "./header-ledger";
 import { KeyChipExtras } from "./key-chip-extras";
 import { docColour } from "./marks";
 import { conceptPageAtom } from "./page-state";
@@ -37,8 +39,8 @@ export function chipTitle(title: string): string {
   return title.replace(/^\s*\d+\s+[—–-]\s+/, "");
 }
 
-/** The key shows this many chips; the rest sit behind the "more" chip. */
-const VISIBLE_CHIPS = 4;
+/** The key shows this many documents; the rest sit behind the "more" button. */
+const VISIBLE_CHIPS = 8;
 
 function ChipMark({ chip, rebuilding }: { chip: KeyChip; rebuilding: boolean }) {
   const kind = docKindOfPageKey(chip.doc.page);
@@ -65,10 +67,9 @@ function shortLabel(chip: KeyChip): string {
 }
 
 /**
- * A document in the key: its mark in the document colour, its short label and its title. The
- * title is drawn whole in the DOM and cut to the chip's width by CSS alone (`.concept-key-title`),
- * so the link's accessible name keeps all of it; the tooltip repeats it in full, above the
- * out-of-date or implements note when there is one.
+ * A document in the key: its mark in the document colour, its short label and its title, which
+ * wraps and is never cut. The tooltip repeats the title above the out-of-date or implements note
+ * when there is one.
  */
 function ChipLink({
   chip,
@@ -112,6 +113,29 @@ function ChipLink({
   );
 }
 
+const STATE_WORDS = {
+  rebuilding: "Rebuilding",
+  stale: "Summary out of date",
+  current: "Up to date",
+} as const;
+
+/** The document's summary state at the row's end: a toned glyph and its words. */
+function ChipState({ chip, rebuilding }: { chip: KeyChip; rebuilding: boolean }) {
+  const state = rebuilding ? "rebuilding" : chip.out_of_date ? "stale" : "current";
+  return (
+    <span className="concept-key-state" data-state={state}>
+      {state === "rebuilding" ? (
+        <ArrowSpinner aria-hidden="true" />
+      ) : state === "stale" ? (
+        <CircleDashed aria-hidden="true" />
+      ) : (
+        <CircleCheck aria-hidden="true" />
+      )}
+      {STATE_WORDS[state]}
+    </span>
+  );
+}
+
 function Chip({ chip }: { chip: KeyChip }) {
   const descriptionId = useId();
   const loaded = useAtomValue(conceptPageAtom(chip.doc.page)).page;
@@ -133,8 +157,11 @@ function Chip({ chip }: { chip: KeyChip }) {
           <Untrusted text={description} />
         </span>
       )}
-      {chip.no_plan && <span className="plan-fine text-muted-foreground">no plan</span>}
-      <KeyChipExtras chip={chip} />
+      <span className="concept-key-end">
+        {chip.no_plan && <span className="plan-fine text-muted-foreground">no plan</span>}
+        <KeyChipExtras chip={chip} />
+        <ChipState chip={chip} rebuilding={rebuilding} />
+      </span>
     </li>
   );
 }
@@ -150,11 +177,12 @@ function MoreChip({
   onToggle: () => void;
 }) {
   return (
-    <li>
+    <li className="concept-key-more-item">
       <button
         type="button"
         aria-expanded={expanded}
-        className="concept-key-doc concept-key-more"
+        data-look="quiet"
+        className="plan-button concept-key-more"
         onClick={onToggle}
       >
         {expanded ? (
@@ -180,18 +208,17 @@ function sourceNoun(chips: readonly KeyChip[]): string {
   return chips.length === 1 ? noun : `${chips.length} ${noun}s`;
 }
 
-/** The key's one-line lede: what the overview summarizes. */
+/** The key's one-line lede, under the row's "Sources" label: what the overview summarizes. */
 export function keyLede(page: ConceptPage): string {
-  const chips = page.key_chips;
-  return `${chips.length === 1 ? "Source" : "Sources"}: the ${sourceNoun(chips)} this overview summarizes`;
+  return `The ${sourceNoun(page.key_chips)} this overview summarizes`;
 }
 
 /**
- * An overview's sources: which documents it summarizes and which colour is which. On the page
- * ground: the lede, then per document its mark, number and title on a fixed-width track, the
- * first four with "more" for the rest. No chips, no box (DESIGN.md, Surfaces). A summary page
- * draws no key: its own document is its heading, and a mark's tooltip names the document it
- * stands for (the marks themselves are explained in Help, Legend).
+ * An overview's sources, the last row of its heading's ledger: which documents it summarizes and
+ * which colour is which. The lede, then one row per document (its mark, number, whole title and
+ * summary state), the first eight with "more" for the rest. No chips, no box (DESIGN.md,
+ * Surfaces). A summary page draws no key: its own document is its heading, and a mark's tooltip
+ * names the document it stands for (the marks themselves are explained in Help, Legend).
  */
 export function DocumentKey({ page, pageKey }: { page: ConceptPage; pageKey: string }) {
   // Expansion belongs to one page: another page opens collapsed without remounting the key row,
@@ -202,8 +229,8 @@ export function DocumentKey({ page, pageKey }: { page: ConceptPage; pageKey: str
   const hidden = Math.max(0, page.key_chips.length - VISIBLE_CHIPS);
   const shown = expanded ? page.key_chips : page.key_chips.slice(0, VISIBLE_CHIPS);
   return (
-    <div className="concept-key">
-      <p id={ledeId} className="plan-fine concept-key-lede">
+    <LedgerRow label={page.key_chips.length === 1 ? "Source" : "Sources"} wide>
+      <p id={ledeId} className="concept-key-lede">
         {keyLede(page)}
       </p>
       <ul
@@ -223,6 +250,6 @@ export function DocumentKey({ page, pageKey }: { page: ConceptPage; pageKey: str
           />
         )}
       </ul>
-    </div>
+    </LedgerRow>
   );
 }

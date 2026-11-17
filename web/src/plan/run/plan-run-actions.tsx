@@ -13,29 +13,42 @@ import { type ButtonLook, DisabledReason } from "@/plan/ui/disabled-reason";
 import "./pressure-test-action.css";
 
 /**
- * The Start a run button for one plan (null opens the dialog on its own choice). Pressure start
- * can take free authoring, but /api/run/start and /api/run/commit need the holder, so a browser
- * without it sees the reason. `blockedBy` is the caller's own reason, such as a run holding the
- * workspace; the control draws one reason, the authoring one first.
+ * Why Start a run is blocked, or null: pressure start can take free authoring, but
+ * /api/run/start and /api/run/commit need the holder, so a browser without it sees the reason.
+ * `blockedBy` is the caller's own reason, such as a run holding the workspace; one reason is
+ * drawn, the authoring one first.
+ */
+export function useStartRunReason(blockedBy: string | null = null): string | null {
+  const reason = useAtomValue(authorBlockReasonAtom);
+  const holder = useAtomValue(isHolderAtom);
+  return (
+    reason ?? blockedBy ?? (holder ? null : "Start a chat to take authoring, then start a run.")
+  );
+}
+
+/**
+ * The Start a run button for one plan (null opens the dialog on its own choice). By default it
+ * draws its blocked reason under itself; a caller that draws the reason elsewhere (the run row of
+ * a ledger) passes `reasonId` of the element holding it, and the button is described by it.
  */
 export function StartRunButton({
   path,
   look,
   blockedBy = null,
+  reasonId,
 }: {
   path: string | null;
   look?: ButtonLook;
   blockedBy?: string | null;
+  reasonId?: string;
 }) {
-  const reason = useAtomValue(authorBlockReasonAtom);
-  const holder = useAtomValue(isHolderAtom);
   const setRun = useSetAtom(runDialogAtom);
-  const runReason =
-    reason ?? blockedBy ?? (holder ? null : "Start a chat to take authoring, then start a run.");
+  const runReason = useStartRunReason(blockedBy);
   return (
     <DisabledReason
       look={look}
       reason={runReason}
+      reasonId={reasonId}
       onClick={() => setRun({ open: true, plan: path })}
     >
       Start a run

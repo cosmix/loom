@@ -1,25 +1,30 @@
 /*
- * The run on the metaplan page, the Plans home (`run-panel.tsx`): one chrome line on the run's state, then the
- * start button with its notice under it and the dashboard link beside it. On the page ground,
- * in no box (ui/DESIGN.md, Surfaces): a status and a button row draw no border.
+ * The run on the metaplan page (`run-panel.tsx`) is two rows of the heading's ledger
+ * (concept/header-ledger.css). What it adds: the dashboard link, drawn as the ledger's state
+ * button (`DashboardLink` is a bare link; ui/DESIGN.md, Buttons).
  */
-[data-loom-plan] .plan-run {
-  display: grid;
-  gap: var(--space-3);
-  margin-bottom: var(--space-6);
-}
-
-[data-loom-plan] .plan-run__line {
-  max-width: 48ch;
-  margin: 0;
+[data-loom-plan] .header-ledger__dashboard > a {
+  display: inline-flex;
+  align-items: center;
+  height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--corner-control);
+  background: var(--card);
   color: var(--foreground);
   font-size: var(--type-body);
-  line-height: var(--leading-body);
+  font-weight: 500;
+  line-height: 1;
+  text-decoration: none;
+  white-space: nowrap;
 }
 
-[data-loom-plan] .plan-run__actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-start;
-  gap: var(--space-2) var(--space-4);
+[data-loom-plan] .header-ledger__dashboard > a:hover {
+  background: var(--muted);
+  text-decoration: none;
+}
+
+[data-loom-plan] .header-ledger__dashboard > a:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
 }

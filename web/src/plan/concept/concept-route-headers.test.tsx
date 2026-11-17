@@ -223,10 +223,10 @@ describe("summary page header source actions", () => {
 });
 
 describe("document key across pages", () => {
-  /** An overview of six chips, labelled `<prefix>01` to `<prefix>06`. */
+  /** An overview of ten chips, labelled `<prefix>01` to `<prefix>06`. */
   const longKey = (key: string, prefix: string) => {
     const overview = { ...clone(overviewFixture), key };
-    overview.key_chips = Array.from({ length: 6 }, (_, index) => {
+    overview.key_chips = Array.from({ length: 10 }, (_, index) => {
       const label = String(index + 1).padStart(2, "0");
       const chip = clone(overviewFixture.key_chips[0]!);
       chip.doc = { ...chip.doc, id: `section_${label}`, page: `demo/product/section_${label}` };
@@ -245,15 +245,15 @@ describe("document key across pages", () => {
     await router.navigate("/f/demo/product");
     await screen.findByText("p01");
     fireEvent.click(screen.getByRole("button", { name: /^…\s?2 more$/ }));
-    expect(within(keyList()).getAllByRole("link")).toHaveLength(6);
+    expect(within(keyList()).getAllByRole("link")).toHaveLength(10);
     await router.navigate("/f/other/product");
     await screen.findByText("e01");
-    expect(within(keyList()).getAllByRole("link")).toHaveLength(4);
+    expect(within(keyList()).getAllByRole("link")).toHaveLength(8);
   });
 
   it("keeps focus on a chip when navigating to a loaded overview with the same chip", async () => {
     const other = longKey("overview/other/product", "k");
-    other.key_chips = other.key_chips.slice(0, 5);
+    other.key_chips = other.key_chips.slice(0, 9);
     pages = {
       "overview/demo/product": longKey("overview/demo/product", "k"),
       "overview/other/product": other,
@@ -293,26 +293,38 @@ describe("overview eyebrow", () => {
 });
 
 describe("overview head", () => {
-  it("the overview eyebrow names the feature by its slug", async () => {
+  it("the overview's breadcrumb names the feature by its slug, then Product spec and Overview", async () => {
     serveOverview();
     renderAt("/f/demo/product", (store) =>
       store.set(checklistAtom, checklistViewSchema.parse(checklistFixture.checklists[0]!)),
     );
     await readingColumn();
-    expect(screen.getByText("demo · product overview")).toBeTruthy();
+    const crumbs = screen.getByRole("navigation", { name: "Breadcrumb" });
+    expect(
+      within(crumbs)
+        .getAllByRole("listitem")
+        .map((item) => item.textContent),
+    ).toEqual(["demo", "Product spec", "Overview"]);
+    expect(
+      within(crumbs).getByText("Overview").closest("[aria-current]")?.getAttribute("aria-current"),
+    ).toBe("page");
   });
-  it("an overview draws its eyebrow, then its page title, then the gaps above its text", async () => {
+  it("an overview draws its breadcrumb, then its page title, then its ledger, then its text", async () => {
     serveOverview();
     renderAt("/f/demo/product", (store) =>
       store.set(checklistAtom, checklistViewSchema.parse(checklistFixture.checklists[0]!)),
     );
     const column = await readingColumn();
-    const eyebrow = document.querySelector(".plan-eyebrow")!;
+    const crumbs = screen.getByRole("navigation", { name: "Breadcrumb" });
     const title = screen.getByRole("heading", { level: 1, name: "Product overview" });
-    expect(eyebrow.compareDocumentPosition(title) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(title.compareDocumentPosition(column) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    const sources = screen.getByRole("region", { name: "Sources" });
+    const after = (a: Element, b: Element) =>
+      Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(after(crumbs, title)).toBe(true);
+    expect(after(title, sources)).toBe(true);
+    expect(after(sources, column)).toBe(true);
   });
-  it("an overview with a rebuild waiting for approval offers Rebuild all under its title", async () => {
+  it("an overview with a rebuild waiting for approval offers Rebuild all and Not now in its Summaries row", async () => {
     serveOverview();
     const panel = summaryPanelSchema.parse({ ...panelFixture, question: questionFixture });
     // The header's summary feed reloads the panel from the server; serve the same question.
@@ -331,8 +343,10 @@ describe("overview head", () => {
       store.set(panelLoadAtom, { status: "ready", panel });
     });
     await readingColumn();
-    const head = document.querySelector(".concept-overview-head") as HTMLElement;
-    expect(within(head).getByRole("button", { name: "Rebuild all" })).toBeTruthy();
-    expect(within(head).getByText(/waiting for approval/)).toBeTruthy();
+    const row = screen.getByRole("region", { name: "Summaries" });
+    expect(within(row).getByRole("button", { name: "Rebuild all" })).toBeTruthy();
+    expect(within(row).getByRole("button", { name: "Not now" })).toBeTruthy();
+    expect(within(row).getByText(`${panel.question!.count} summaries out of date`)).toBeTruthy();
+    expect(within(row).getByText(/waiting for approval/)).toBeTruthy();
   });
 });

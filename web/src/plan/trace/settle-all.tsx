@@ -3,14 +3,15 @@ import { useId, useRef, useState, type JSX } from "react";
 
 import type { SettleAllResult } from "@/plan/api/schema-trace";
 import { Untrusted } from "@/plan/chat/visible-controls";
+import { BlockedReason, LedgerRow, LedgerStatus } from "@/plan/concept/header-ledger";
 import { refreshDocView } from "@/plan/concept/passages";
 import { authorBlockReasonAtom } from "@/plan/state/atoms";
 import { BusyText } from "@/plan/ui/busy-text";
-import { HEADING_BUTTON } from "@/plan/ui/doc-heading";
 import { plural } from "@/plan/ui/plural";
 
 import { SkippedDocuments } from "./settle-all-skipped";
 import { postSettleAll } from "./settle-flow";
+import { SEAL_ICONS } from "./settle-glyph";
 import { loadTrace, useTrace } from "./state";
 
 import "./trace.css";
@@ -45,6 +46,7 @@ function useBulkSettle({ feature, role }: Props) {
 
 type Flow = ReturnType<typeof useBulkSettle>;
 
+/** The ledger's state button (DESIGN.md, Buttons): secondary, its label the action. */
 function BulkButton({
   flow,
   reasonId,
@@ -56,46 +58,39 @@ function BulkButton({
   confirm: boolean;
   label: string;
 }): JSX.Element {
+  const Seal = SEAL_ICONS.settled;
   return (
     <button
       type="button"
-      {...HEADING_BUTTON}
-      className={`${HEADING_BUTTON.className} trace-settle-button`}
+      data-look="secondary"
+      className="plan-button inline-flex shrink-0 items-center justify-center trace-settle-button"
       aria-disabled={flow.reason !== null || flow.working || undefined}
       aria-busy={flow.working || undefined}
       aria-describedby={flow.reason !== null ? reasonId : undefined}
       onClick={() => void flow.send(confirm)}
     >
-      {flow.working ? <BusyText>Settling…</BusyText> : label}
+      {flow.working ? (
+        <BusyText>Settling…</BusyText>
+      ) : (
+        <>
+          <Seal aria-hidden="true" />
+          {label}
+        </>
+      )}
     </button>
   );
 }
 
-function BulkNotes({
-  flow,
-  reasonId,
-  feature,
-}: {
-  flow: Flow;
-  reasonId: string;
-  feature: string;
-}): JSX.Element {
+/** What the last press left to say: the skipped documents and a failed request, under the status. */
+function BulkNotes({ flow, feature }: { flow: Flow; feature: string }): JSX.Element {
   const unresolved = flow.answer?.skipped.filter((doc) => doc.reason === "unresolved").length ?? 0;
   const other = (flow.answer?.skipped.length ?? 0) - unresolved;
   return (
-    <>
-      {flow.reason !== null && (
-        <span id={reasonId} className="plan-fine text-muted-foreground">
-          <Untrusted text={flow.reason} />
-        </span>
-      )}
+    <div className="header-ledger__notes">
       {unresolved > 0 && (
-        <>
-          <span role="status" className="trace-settle-note">
-            {plural(unresolved, "document")} with unresolved points.
-          </span>
-          <BulkButton flow={flow} reasonId={reasonId} confirm label="Settle anyway" />
-        </>
+        <span role="status" className="trace-settle-note">
+          {plural(unresolved, "document")} with unresolved points.
+        </span>
       )}
       {other > 0 && (
         <span role="status" className="trace-settle-note">
@@ -110,7 +105,7 @@ function BulkNotes({
           <Untrusted text={flow.notice} />
         </span>
       )}
-    </>
+    </div>
   );
 }
 
@@ -118,23 +113,43 @@ function BulkControl(props: Props & { count: number }): JSX.Element {
   const { feature, role, count } = props;
   const flow = useBulkSettle(props);
   const reasonId = useId();
+  const unresolved = flow.answer?.skipped.some((doc) => doc.reason === "unresolved") ?? false;
+  const Seal = SEAL_ICONS.draft;
+  const noun = plural(count, role === "section" ? "spec" : "plan");
   return (
-    <div className="trace-settle-control">
-      <BulkButton
-        flow={flow}
-        reasonId={reasonId}
-        confirm={false}
-        label={role === "section" ? "Settle all specs" : "Settle all plans"}
-      />
-      <span className="plan-fine text-muted-foreground">
-        {plural(count, role === "section" ? "spec" : "plan")} need{count === 1 ? "s" : ""} settling
-      </span>
-      <BulkNotes flow={flow} reasonId={reasonId} feature={feature} />
-    </div>
+    <LedgerRow
+      label="Settling"
+      action={
+        <>
+          <BulkButton
+            flow={flow}
+            reasonId={reasonId}
+            confirm={false}
+            label={role === "section" ? "Settle all specs" : "Settle all plans"}
+          />
+          {unresolved && (
+            <BulkButton flow={flow} reasonId={reasonId} confirm label="Settle anyway" />
+          )}
+        </>
+      }
+    >
+      <LedgerStatus tone="pending" glyph={<Seal />}>
+        {`${noun} need${count === 1 ? "s" : ""} settling`}
+      </LedgerStatus>
+      {flow.reason !== null && (
+        <BlockedReason id={reasonId}>
+          <Untrusted text={flow.reason} />
+        </BlockedReason>
+      )}
+      <BulkNotes flow={flow} feature={feature} />
+    </LedgerRow>
   );
 }
 
-/** The overview's bulk settle action, shown only for written documents that need settling. */
+/**
+ * The Settling row of an overview's ledger with the bulk settle action, shown only for written
+ * documents that need settling. It sits among a `LedgerRows` block.
+ */
 export function SettleAllButton(props: Props): JSX.Element | null {
   const { trace } = useTrace(props.feature);
   const count =

@@ -1,5 +1,6 @@
 import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import { getDefaultStore } from "jotai";
+import type { ReactNode } from "react";
 import { createMemoryRouter, RouterProvider } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -18,7 +19,14 @@ vi.mock("@/plan/feature/feature-layout", async () => {
     FeatureLanding: () => createElement("div", null, "Feature landing"),
   };
 });
-vi.mock("@/plan/concept/concept-route", () => ({ ConceptRoute: () => <div>Concept page</div> }));
+vi.mock("@/plan/concept/concept-route", () => ({
+  ConceptRoute: ({ ledger }: { ledger?: ReactNode }) => (
+    <div>
+      Concept page
+      <dl>{ledger}</dl>
+    </div>
+  ),
+}));
 vi.mock("@/plan/files/api", () => ({ useFileSocket: () => {} }));
 vi.mock("@/plan/files/reading-column", () => ({
   ReadingColumn: ({ path, anchor }: { path: string; anchor: string | null }) => (
@@ -144,7 +152,6 @@ describe("plan routes", () => {
     const shell = renderRoute("/f/demo/vision");
     const link = within(shell!).getByRole("link", { name: "Read the full vision" });
     expect(link.getAttribute("href")).toBe("/f/demo/source/product/demo/index.md");
-    expect(link.classList.contains("concept-read-source")).toBe(true);
   });
 
   it("offers no link to the vision's source while the vision is missing", () => {

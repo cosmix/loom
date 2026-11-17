@@ -1,0 +1,223 @@
+/*
+ * The ledger of an overview page's heading (`header-ledger.tsx`): hairline-divided rows in a
+ * label | status | action grid, on the page ground, with no box and no fill. The heading is a
+ * size container (ui/doc-heading.css). The planner has no phone layout yet, so there is no narrow
+ * step: every track can shrink (`minmax(0, 1fr)`), words wrap and actions wrap, so nothing
+ * overflows sideways. Revisit when phone widths are supported. Nothing here is under 13px but the
+ * labels, which are the eyebrow of the summary pages' own ledger.
+ */
+
+.header-ledger {
+  --ledger-label: 6.5rem;
+  margin: var(--space-5) 0 0;
+  padding: 0;
+  font-family: var(--font-sans);
+}
+
+.header-ledger:empty {
+  display: none;
+}
+
+/* In a summary page's heading the block takes its place among the heading's bands, and the
+   status row after it closes up on it. */
+.concept-page-column .doc-heading > .header-ledger {
+  margin-top: var(--space-5);
+}
+
+.concept-page-column .doc-heading-status:has(~ .header-ledger:not(:empty)) {
+  margin-top: 0;
+}
+
+/* The last row's rule closes the block unless the heading's own ledger (status, facts) follows. */
+.header-ledger:not(:has(~ .doc-heading-status, ~ .doc-heading-facts)) {
+  border-bottom: 1px solid var(--hairline);
+}
+
+.header-ledger__row {
+  display: grid;
+  grid-template-columns: var(--ledger-label) minmax(0, 1fr) auto;
+  align-items: start;
+  padding: var(--space-3) 0;
+  border-top: 1px solid var(--hairline);
+}
+
+.header-ledger__row[data-wide] > .header-ledger__main {
+  grid-column: 2 / -1;
+}
+
+.header-ledger__label {
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: 10.5px;
+  font-weight: 600;
+  line-height: 24px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.header-ledger__main {
+  min-width: 0;
+  margin: 0;
+}
+
+/* ── Status ───────────────────────────────────────────────────────────────── */
+
+.header-ledger__status {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  color: var(--foreground);
+  font-size: var(--type-title);
+  font-weight: 500;
+  line-height: 24px;
+  overflow-wrap: anywhere;
+}
+
+.header-ledger__glyph {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  height: 24px;
+  color: var(--muted-foreground);
+}
+
+.header-ledger__glyph svg {
+  width: 16px;
+  height: 16px;
+}
+
+.header-ledger__status[data-tone="completed"] > .header-ledger__glyph {
+  color: var(--tone-completed);
+}
+
+.header-ledger__status[data-tone="warning"] > .header-ledger__glyph {
+  color: var(--tone-warning);
+}
+
+.header-ledger__status[data-tone="executing"] > .header-ledger__glyph {
+  color: var(--tone-executing);
+}
+
+.header-ledger__status[data-tone="blocked"] > .header-ledger__glyph {
+  color: var(--tone-blocked);
+}
+
+.header-ledger__detail {
+  max-width: 48ch;
+  margin: 2px 0 0 calc(16px + var(--space-2));
+  color: var(--muted-foreground);
+  font-size: var(--type-body);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+/* Notes and fine print the ledger's parts draw (a blocked reason, a bulk settle's notes) hold the
+   13px floor of header text. */
+.header-ledger [role="alert"],
+.header-ledger .plan-fine,
+.header-ledger .trace-settle-note,
+.header-ledger .trace-settle-skipped {
+  font-size: var(--type-ui);
+}
+
+.header-ledger__reason {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.header-ledger__reason > svg {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  margin-top: 4px;
+}
+
+.header-ledger__progress {
+  max-width: 22rem;
+  height: 3px;
+  margin: 10px 0 2px calc(16px + var(--space-2));
+  overflow: hidden;
+  border-radius: 2px;
+  background: var(--muted);
+}
+
+.header-ledger__progress > span {
+  display: block;
+  height: 100%;
+  background: var(--foreground);
+}
+
+/* What a bulk settle, a run or a rebuild adds under the status: notes, the skipped documents. */
+.header-ledger__notes {
+  display: grid;
+  gap: var(--space-1);
+  margin: var(--space-1) 0 0 calc(16px + var(--space-2));
+}
+
+.header-ledger__notes:empty {
+  display: none;
+}
+
+/* ── Action ───────────────────────────────────────────────────────────────── */
+
+.header-ledger__action {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  margin: -4px 0 0;
+  padding-inline-start: var(--space-4);
+}
+
+.header-ledger__action > * {
+  min-width: 0;
+}
+
+/* Buttons of one answer (Rebuild all, Not now) and a failure after them. */
+.header-ledger__buttons {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.header-ledger__action:empty {
+  display: none;
+}
+
+/* Every action of the ledger is the state button of the summary page's state row: 32px at the
+   body step on `--card` inside a `--border` edge (ui/DESIGN.md, Surfaces), whichever component
+   draws it. Quiet is the same height without the edge; primary keeps its fill. A blocked button
+   keeps the app's disabled look (design.css). */
+[data-loom-plan] .header-ledger .plan-button {
+  height: 32px;
+  gap: 6px;
+  padding: 0 12px;
+  font-size: var(--type-body);
+}
+
+[data-loom-plan] .header-ledger .plan-button svg {
+  width: 16px;
+  height: 16px;
+}
+
+[data-loom-plan] .header-ledger .plan-button[data-look="secondary"] {
+  background: var(--card);
+}
+
+[data-loom-plan] .header-ledger .plan-button[data-look="quiet"] {
+  color: var(--foreground);
+}
+
+[data-loom-plan] .header-ledger .plan-button[data-look="secondary"]:hover {
+  background: var(--muted);
+}
+
+[data-loom-plan]
+  .header-ledger
+  .plan-button[data-look="secondary"]:is([aria-disabled="true"], :disabled):hover {
+  background: var(--card);
+}

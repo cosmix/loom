@@ -8,16 +8,25 @@ import { type ButtonLook, DisabledReason, INLINE_BASELINE } from "@/plan/ui/disa
 
 import { summaryQuestionAtom, useSummaryActions } from "./state";
 
-/** The one sentence of a pending rebuild: the count, the reason and the estimate. */
-export function ApprovalSentence({ question }: { question: SummaryQuestion }) {
+/** Why a rebuild asks first: it is above the budget, with the estimate. */
+export function ApprovalReason({ question }: { question: SummaryQuestion }) {
   return (
     <>
-      <span className="tabular-nums">{question.count}</span> summaries out of date. The rebuild is
-      above the budget and waiting for approval:{" "}
+      The rebuild is above the budget and waiting for approval:{" "}
       <span className="tabular-nums">
         {question.estimate_tokens.toLocaleString("en-US")} tokens
       </span>
       .
+    </>
+  );
+}
+
+/** The one sentence of a pending rebuild: the count, the reason and the estimate. */
+export function ApprovalSentence({ question }: { question: SummaryQuestion }) {
+  return (
+    <>
+      <span className="tabular-nums">{question.count}</span> summaries out of date.{" "}
+      <ApprovalReason question={question} />
     </>
   );
 }
@@ -58,7 +67,7 @@ export function ApprovalNotice({
 type Failure = { questionId: string; message: string };
 
 /** The pending question, whether this browser may answer it, the answer, and the last failure. */
-function useAnswerApproval() {
+export function useAnswerApproval() {
   const question = useAtomValue(summaryQuestionAtom);
   const canAnswer = useAtomValue(canAuthorAtom);
   const { answer } = useSummaryActions();
@@ -80,7 +89,7 @@ function useAnswerApproval() {
   return { question, canAnswer, onAnswer, failure: shown };
 }
 
-function FailureAlert({ failure }: { failure: Failure | null }) {
+export function FailureAlert({ failure }: { failure: Failure | null }) {
   if (failure === null) return null;
   return (
     <span role="alert" className="text-xs text-destructive">

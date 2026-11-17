@@ -19,10 +19,10 @@ describe("reading repair", () => {
     expect(await group(column)).toBeTruthy();
   });
 
-  it("document key shows four chips and a more chip", () => {
+  it("document key shows eight chips and a more chip", () => {
     const hrefs = showKey(12);
 
-    expect(chipLinks(hrefs)).toHaveLength(4);
-    expect(screen.getByRole("button", { name: /^…\s?8 more$/ })).toBeTruthy();
+    expect(chipLinks(hrefs)).toHaveLength(8);
+    expect(screen.getByRole("button", { name: /^…\s?4 more$/ })).toBeTruthy();
   });
 });

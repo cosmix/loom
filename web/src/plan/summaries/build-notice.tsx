@@ -11,11 +11,11 @@ import { summaryPanelAtom } from "./state";
 
 export type NoticeCopy = { title: string; description?: ReactNode };
 
-type View = NoticeCopy & { action: ReactNode };
+export type View = NoticeCopy & { action: ReactNode };
 
-type Words = { noun: string; Noun: string; they: string; their: string };
+export type Words = { noun: string; Noun: string; they: string; their: string };
 
-function wordsFor(plural: boolean): Words {
+export function wordsFor(plural: boolean): Words {
   return plural
     ? {
         noun: "summaries",
@@ -41,7 +41,7 @@ function queuedText(status: Extract<BuildStatus, { kind: "queued" }>): ReactNode
   );
 }
 
-function viewOf(status: BuildStatus, ids: string[], words: Words, idle: NoticeCopy): View {
+export function viewOf(status: BuildStatus, ids: string[], words: Words, idle: NoticeCopy): View {
   const button = (label: string) => <RebuildButton ids={ids} label={label} />;
   switch (status.kind) {
     case "running":
@@ -92,7 +92,7 @@ export type Reported = {
  * The live panel's status settled with what the page reports: before the panel loads the page's
  * `building` decides, and a claimed summary reads as running whatever the panel lists.
  */
-function effectiveStatus(status: BuildStatus | null, reported: Reported): BuildStatus {
+export function effectiveStatus(status: BuildStatus | null, reported: Reported): BuildStatus {
   const { claimed, building, progress } = reported;
   const done = progress?.done ?? 0;
   const running: BuildStatus = {

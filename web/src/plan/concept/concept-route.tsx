@@ -19,19 +19,17 @@ import { AddToChat, addAttachmentAtom, useSelectionAttachment } from "@/plan/att
 import type { AttachmentDraft } from "@/plan/attachments/types";
 import { elsewhereSessionAtom } from "@/plan/chat/session-home";
 import { Untrusted, visibleControls } from "@/plan/chat/visible-controls";
-import { PageHead } from "@/plan/feature/plan-page";
-import { activeFeatureAtom, canAuthorAtom, featuresAtom } from "@/plan/state/atoms";
-import { PendingApprovalNotice } from "@/plan/summaries/approval-notice";
+import { activeFeatureAtom, canAuthorAtom } from "@/plan/state/atoms";
 import { LoadState } from "@/plan/ui/load-state";
 import type { Store } from "@/state/store";
 
 import { summaryIdOfKey } from "./column-context";
 import { foldedWith } from "./column-model";
-import { DocumentKey } from "./document-key";
 import { ConceptNotFound, EmptyStates } from "./empty-states";
+import { LedgerRows } from "./header-ledger";
 import { citableSentences } from "./open-state";
-import { hasOpenable } from "./open-all";
-import { OpenAllButton, PageHeading } from "./page-heading";
+import { OverviewHeading } from "./overview-heading";
+import { PageHeading } from "./page-heading";
 import {
   conceptPageAtom,
   isMissing,
@@ -76,18 +74,6 @@ export function conceptPageLabel(pathname: string): string | null {
   }
   if (parts.kind === "summary" && parts.scope === "metaplan") return "Metaplan summary";
   return `${parts.doc} summary`;
-}
-
-/**
- * The eyebrow above an overview: "<feature slug> · product overview", or the plain page label
- * while the feature is not in the project's checklists.
- */
-function useOverviewEyebrow(pageKey: string, pathname: string): string | null {
-  const feature = featureOfKey(pageKey);
-  const known = useAtomValue(featuresAtom).some((item) => item.feature === feature);
-  const label = conceptPageLabel(pathname);
-  if (!feature || !known || label === null) return label;
-  return `${feature} · ${label.toLowerCase()}`;
 }
 
 /** `g p` and `g e` go to the product overview and metaplan; ignored while typing or while a dialog is open. */
@@ -263,46 +249,31 @@ function KeyHints() {
 }
 
 /**
- * An overview's head: the eyebrow over the page title (ui/DESIGN.md, Page rhythm), with Open all
- * / Fold all at the end of the title's line when the page has a sentence that opens. A rebuild
- * waiting for approval shows its "Rebuild all" and sentence on a line under the title.
- */
-function OverviewHead({ page, pageKey }: { page: ConceptPage; pageKey: string }) {
-  const { pathname } = useLocation();
-  const eyebrow = useOverviewEyebrow(pageKey, pathname);
-  const title = conceptPageLabel(pathname);
-  if (title === null) return null;
-  return (
-    <div className="concept-overview-head">
-      <PageHead eyebrow={eyebrow ?? title} title={title} />
-      {hasOpenable(page) && <OpenAllButton page={page} />}
-      {/* Empty (and hidden by CSS) unless a rebuild is waiting for approval. */}
-      <div className="concept-overview-head__notice">
-        <PendingApprovalNotice />
-      </div>
-    </div>
-  );
-}
-
-/**
- * `above` (the gaps) sits between the page's head and an overview's document key, so the head
- * comes first. A summary page draws no key: its heading names its document.
+ * `ledger` holds the rows the caller adds to the heading's ledger (the bulk settle, the run);
+ * `above` (the gaps) sits under the heading, ahead of the reading column. An overview's heading
+ * carries its document key as the ledger's last row; a summary page draws no key: its heading
+ * names its document.
  */
 function LoadedPage({
   page,
   pageKey,
   above,
+  ledger,
 }: {
   page: ConceptPage;
   pageKey: string;
   above: ReactNode;
+  ledger: ReactNode;
 }) {
   const summary = !isOverviewKey(pageKey);
   return (
     <>
-      {summary ? <PageHeading page={page} /> : <OverviewHead page={page} pageKey={pageKey} />}
+      {summary ? (
+        <PageHeading page={page} ledger={ledger} />
+      ) : (
+        <OverviewHeading page={page} pageKey={pageKey} ledger={ledger} />
+      )}
       {above}
-      {!summary && page.key_chips.length > 0 && <DocumentKey page={page} pageKey={pageKey} />}
       {page.empty ? (
         <EmptyStates page={page} empty={page.empty} />
       ) : (
@@ -332,7 +303,15 @@ function Unloaded({ pageKey, state }: { pageKey: string; state: ConceptPageState
 }
 
 /** What the route shows for a page key and its load state. */
-function RouteBody({ pageKey, above }: { pageKey: string; above: ReactNode }) {
+function RouteBody({
+  pageKey,
+  above,
+  ledger,
+}: {
+  pageKey: string;
+  above: ReactNode;
+  ledger: ReactNode;
+}) {
   useConceptSubscription();
   const feature = featureOfKey(pageKey);
   useGoKeys(feature);
@@ -342,9 +321,12 @@ function RouteBody({ pageKey, above }: { pageKey: string; above: ReactNode }) {
     if (feature !== null) setFeature(feature);
   }, [feature, setFeature]);
   const state = useConceptPage(pageKey);
-  if (state.page) return <LoadedPage page={state.page} pageKey={pageKey} above={above} />;
+  if (state.page) {
+    return <LoadedPage page={state.page} pageKey={pageKey} above={above} ledger={ledger} />;
+  }
   return (
     <div className="concept-unloaded">
+      <LedgerRows>{ledger}</LedgerRows>
       {above}
       <Unloaded pageKey={pageKey} state={state} />
     </div>
@@ -352,11 +334,12 @@ function RouteBody({ pageKey, above }: { pageKey: string; above: ReactNode }) {
 }
 
 /**
- * The overview and summary pages of the product, the metaplan and the per-plan engineering docs. `above`
- * renders in the page's column under the page's head and ahead of its document key, so the feature screen can put its gaps
- * there without a second column or scroll container.
+ * The overview and summary pages of the product, the metaplan and the per-plan engineering docs.
+ * `ledger` is a set of `LedgerRow`s drawn in the page's heading; `above` renders in the page's
+ * column under the heading, so the feature screen can put its gaps there without a second column
+ * or scroll container.
  */
-export function ConceptRoute({ above }: { above?: ReactNode }) {
+export function ConceptRoute({ above, ledger }: { above?: ReactNode; ledger?: ReactNode }) {
   const { pathname } = useLocation();
   const key = pageKeyOfPath(pathname);
   return (
@@ -364,11 +347,12 @@ export function ConceptRoute({ above }: { above?: ReactNode }) {
       <div className="concept-page-column mx-auto max-w-[68ch]">
         {key === null ? (
           <>
+            <LedgerRows>{ledger}</LedgerRows>
             {above}
             <ConceptNotFound pageKey={rawNameOf(pathname)} />
           </>
         ) : (
-          <RouteBody pageKey={key} above={above} />
+          <RouteBody pageKey={key} above={above} ledger={ledger} />
         )}
       </div>
     </div>

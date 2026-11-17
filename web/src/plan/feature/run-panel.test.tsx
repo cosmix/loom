@@ -21,7 +21,12 @@ import { fetchRunState } from "@/plan/run/use-run";
 
 // Keep the page's above slot while leaving the summary renderer out of these panel tests.
 vi.mock("@/plan/concept/concept-route", () => ({
-  ConceptRoute: ({ above }: { above?: ReactNode }) => <>{above}</>,
+  ConceptRoute: ({ above, ledger }: { above?: ReactNode; ledger?: ReactNode }) => (
+    <>
+      <dl>{ledger}</dl>
+      {above}
+    </>
+  ),
 }));
 
 const PATH = "/f/atlas/metaplan";
@@ -106,6 +111,31 @@ it("blocks the start button with one reason while another browser holds authorin
 
   expect(start()[0]!.getAttribute("aria-disabled")).toBe("true");
   expect(screen.getAllByText("Ada holds authoring")).toHaveLength(1);
+});
+
+it("draws the blocked reason as a lock-led line under the run status, which describes the button", () => {
+  renderPage(<MetaplanPage />, PATH, written, { holder: "other" });
+
+  const row = screen.getByRole("region", { name: "Run" });
+  const button = within(row).getByRole("button", { name: "Start a run" });
+  const reason = document.getElementById(button.getAttribute("aria-describedby")!)!;
+  expect(reason.textContent).toBe("Ada holds authoring");
+  expect(reason.querySelector("svg")).not.toBeNull();
+  // The reason sits with the status it blocks; the button is in the row's action column.
+  const status = within(row).getByRole("status");
+  expect(status.parentElement).toBe(reason.parentElement);
+  expect(status.compareDocumentPosition(reason) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(reason.parentElement!.contains(button)).toBe(false);
+});
+
+it("labels the Run row and ends it with the Start a run button", async () => {
+  renderPage(<MetaplanPage />, PATH, written, { holder: "me" });
+
+  expect(screen.getByText("Run", { selector: ".header-ledger__label" })).toBeTruthy();
+  const row = screen.getByRole("region", { name: "Run" });
+  expect(
+    row.lastElementChild!.contains(within(row).getByRole("button", { name: "Start a run" })),
+  ).toBe(true);
 });
 
 it("draws no start button when no plan is written", () => {
@@ -299,7 +329,9 @@ it("links the Findings page with the number still open", async () => {
   serveWithTrace(traceFixture);
   renderPage(<MetaplanPage />, PATH, written, { holder: "me" });
 
-  const link = await screen.findByRole("link", { name: "Findings · 1 open" });
+  const row = await screen.findByRole("region", { name: "Findings" });
+  expect(within(row).getByText("1 open")).toBeTruthy();
+  const link = within(row).getByRole("link", { name: "Open findings" });
   expect(link.getAttribute("href")).toBe("/f/atlas/findings");
 });
 
@@ -309,5 +341,6 @@ it("draws no Findings link while the ledger is empty", async () => {
 
   await waitFor(() => expect(served.traceRequests()).toBeGreaterThan(0));
   await screen.findByText("Nothing is running.");
-  expect(screen.queryByRole("link", { name: /Findings/ })).toBeNull();
+  expect(screen.queryByRole("link", { name: /findings/i })).toBeNull();
+  expect(screen.queryByRole("region", { name: "Findings" })).toBeNull();
 });
