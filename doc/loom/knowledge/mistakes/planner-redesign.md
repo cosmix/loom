@@ -20,7 +20,7 @@
 
 **Prevention:** read each page's screenshot against its own rows before accepting a page worker. A brief for a page that reads a workspace atom names what refreshes it and what a failed read says.
 
-**Fix:** the lede counts live plans with a date; `useRunRead` reports a failed read and the Start control reads the run state ([screens](../architecture/planner-feature-screens.md#run-panel)).
+**Fix:** the lede counts live plans with a date; `useRunRead` reports a failed read and the Start control reads the run state ([screens](../architecture/planner-feature-screens.md#run-and-findings-rows)).
 
 ## A View Was Derived From Data the User Edits
 

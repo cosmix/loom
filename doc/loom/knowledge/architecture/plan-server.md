@@ -234,7 +234,6 @@ Names in the plan 9 briefs that differ from the tree; use the tree's.
 The extension slots in `web/src/plan/` and what fills them:
 
 - `concept/page-header-extras.tsx` (open-question count and the "Changed after … was built" marker, limited to `product/section_<n>` pages), `concept/key-chip-extras.tsx` and `files/tree-entry-extras.tsx` (the "changed since you looked" mark), `header-extras.tsx` (`ChangedSinceControl`, `ChatSheetButton` when `compact`, and `SummaryStatus`, the rebuild popover with the panel, question and cost lines) and `empty-offer.tsx` (the offer is a button for the holder, or while nobody holds authoring, and runs the registered `OfferButton` handler; viewers and read-only mode see text).
-- `concept/key-row-extras.tsx` (`<KeyRowExtras page />`, props exactly `{ page }`) renders `PendingApprovalNotice`, the above-budget notice with its approve button.
 - The chat turn footer draws no per-summary cost: `summaries/state.ts` no longer subscribes to the `summary_turn_cost` frame (it stays in `api/schema-summaries.ts` only), and `turn-footer-rebuilt.tsx` lists the rebuilt summaries without a cost.
 - Server: `PageContext` carries `read_only` and `rebuilds: Option<Arc<Rebuilds>>`; `state::out_of_date_reason` has the `awaiting_approval` and `failed` arms, `page::progress` the `building` and `estimate` values, and the scheduler subscribes through `ConceptState::subscribe`. A direct `Bridge::start_session` caller (plan 11) holds `ChatState::starting` or a lease from before it reserves.
 

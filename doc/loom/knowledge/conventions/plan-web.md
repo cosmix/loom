@@ -206,3 +206,10 @@ A vitest test that fakes only `setTimeout` and `clearTimeout` (`vi.useFakeTimers
 ## Settle Points Share the Heading Chips' Counts and Glyphs
 
 `open_question_counts` (`loom/src/plan_server/review/questions.rs`) covers every settleable kind: vision, product section, metaplan and plan. Dropping one leaves its heading, tree row and attention bar silent while the Mark settled dialog still lists the questions. The dialog (`web/src/plan/trace/settle-confirm.tsx`) draws open questions with `OTHER_GLYPHS.openQuestions` (MessageCircleQuestion) and My calls with `Flag`, the glyphs of the heading chips. `CircleHelp` is the app's Help glyph (`OTHER_GLYPHS.help`); never use it for an open question.
+
+## Findings Board Test Gotchas
+
+- A finding card's title is a span inside the card's button, so the only title headings on the page are the dialog's and `getByRole("heading", { name: title })` is unambiguous.
+- Accessible names of adjacent spans carry no spaces ("Title of F-4Two"), so a regex must not put `\b` after an id.
+- `.plan-button` on a router `Link` needs its own `display: inline-flex`, or the glyph stacks above the label.
+- The overview ledger's `LedgerRow` puts a `{" "}` between label and content, because `textContent` assertions with `\b` read "Findings1 open" otherwise.

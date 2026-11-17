@@ -15,3 +15,10 @@
 **Why**: The brief named the goal ('radically improve') without a concrete treatment or a before/after screenshot gate, and New chat's eager session start was outside the visual worker's files, so nobody owned its cost.
 **Prevention**: A redesign starts from a mockup the user approves; the stage gates on screenshots matching it. A chat starts a model session only when the user sends the first message.
 **Fix**: The plan planner-follow-ups built the chat from the approved `alt-d-hearth` mockup: no menu, no idle line, New chat starts no session, one roundel per pane and a designed ending ([Hearth head and states](../architecture/planner-web-shell.md#chat-home-and-the-chat-panel)). Integration-verify compared the five states with the mockup's frames, and a contract pins each rule (`new-chat-starts-no-session`, `live-chat-has-no-menu`, `idle-state-line-is-empty`, `one-roundel-per-pane`).
+
+## Mockup briefs named a retired theme
+
+**What happened**: The mockup briefs for the overview headers, findings page and settings modal told three design agents the dark theme was walnut. Walnut is retired; the stored name resolves to Aubergine. Two agents drew Aubergine and labelled it walnut, one drew Graphite, and the main agent reported the mix back as if the themes matched. The index pages also opened on PNG grids, though the user wanted HTML to inspect.
+**Why**: The brief named the themes from memory, without checking `web/src/plan/theme-default.ts` and `aurora-ui/shared/styles/tokens-dark.css`.
+**Prevention**: A mockup brief takes its theme names from `theme-default.ts` (light: ledger; planner dark default: Graphite, `data-dark-theme="gray"`) and says the deliverable is live HTML, with screenshots only for the agent's own check.
+**Fix**: The findings and settings mocks were rethemed to the Graphite tokens, and each index opens the live HTML directions.

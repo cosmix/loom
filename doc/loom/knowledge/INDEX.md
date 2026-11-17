@@ -51,10 +51,10 @@
 | [orchestrator-loop](architecture/orchestrator-loop.md) | Ticks | 80 |
 | [owned-waits](architecture/owned-waits.md) | Waits | 72 |
 | [plan-lifecycle-and-fields](architecture/plan-lifecycle-and-fields.md) |  | 284 |
-| [plan-server](architecture/plan-server.md) | Chat | 294 |
+| [plan-server](architecture/plan-server.md) | Chat | 293 |
 | [planner-feature-screens](architecture/planner-feature-screens.md) | Spine | 48 |
 | [planner-uploads-and-drafts](architecture/planner-uploads-and-drafts.md) |  | 35 |
-| [planner-web-shell](architecture/planner-web-shell.md) | Shell | 143 |
+| [planner-web-shell](architecture/planner-web-shell.md) | Shell | 147 |
 | [planning-document-model](architecture/planning-document-model.md) | Docs | 183 |
 | [planning-guidance](architecture/planning-guidance.md) |  | 43 |
 | [planning-session-bridge](architecture/planning-session-bridge.md) |  | 351 |
@@ -123,7 +123,7 @@
 | [git-and-build-workflow](conventions/git-and-build-workflow.md) |  | 237 |
 | [guidance-channels-and-plugin-scope](conventions/guidance-channels-and-plugin-scope.md) |  | 134 |
 | [model-and-effort-config](conventions/model-and-effort-config.md) |  | 145 |
-| [plan-web](conventions/plan-web.md) |  | 208 |
+| [plan-web](conventions/plan-web.md) |  | 215 |
 | [plan-yaml-and-hooks](conventions/plan-yaml-and-hooks.md) |  | 182 |
 | [web-dashboard-typography](conventions/web-dashboard-typography.md) |  | 68 |
 
@@ -173,7 +173,7 @@
 | [planner-redesign](mistakes/planner-redesign.md) |  | 80 |
 | [planner-review-fixes](mistakes/planner-review-fixes.md) |  | 139 |
 | [planner-ui-repair](mistakes/planner-ui-repair.md) | Repair | 215 |
-| [planner-visual-feedback-shortfall](mistakes/planner-visual-feedback-shortfall.md) | Visual | 17 |
+| [planner-visual-feedback-shortfall](mistakes/planner-visual-feedback-shortfall.md) | Visual | 24 |
 | [planning-sandbox-delivery](mistakes/planning-sandbox-delivery.md) |  | 73 |
 | [pre-commit-hardening](mistakes/pre-commit-hardening.md) |  | 93 |
 | [refactor-stragglers](mistakes/refactor-stragglers.md) |  | 335 |
