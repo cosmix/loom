@@ -182,3 +182,13 @@
 **Prevention:** Click the visible label containing the named radio, or activate the input with the keyboard.
 
 **Fix:** Use the radio locator to identify and click its enclosing label.
+
+## A Stale Local node_modules Produced a Committed Bundle CI Could Not Reproduce
+
+**What happened:** the CI step "Verify the committed bundle is current" failed: a fresh `bun install --frozen-lockfile` built `web/dist/assets/markdown.js` 160 bytes smaller than the committed copy. A local rebuild showed no drift, because the developer `web/node_modules` held micromark/mdast packages that no longer matched `bun.lock`, and `bun install --frozen-lockfile` did not replace them.
+
+**Why:** the bundle is built from whatever sits in `node_modules`; a frozen install passes on a tree it does not rewrite.
+
+**Prevention:** when CI reports bundle drift that a local build does not reproduce, build from a clean copy (`git archive HEAD web` into a scratch directory, fresh install, build) and compare file sizes against the CI build log. Before committing a rebuilt bundle after dependency changes, reinstall from scratch (`rm -rf web/node_modules && bun install --frozen-lockfile`).
+
+**Fix:** reinstalled `web/node_modules` from scratch and rebuilt; the result matched the clean copy byte for byte.

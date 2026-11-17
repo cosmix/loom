@@ -384,10 +384,10 @@ The sweep follow-ups on executable startup, cache coverage, hook-path navigation
 
 ## Linux-Gated Test Helpers Break the macOS Test Build (2026-11-17)
 
-**What happened:** `spawn_payload`/`spawn_payload_with_codex_home` are `#[cfg(all(test, target_os = "linux"))]`, but `runtime_contract_tests.rs` and `supervisor/tests.rs` imported them unconditionally; several other test files kept imports or `mut` bindings used only inside Linux-gated code. The macOS job failed with E0432 and `-D warnings` unused-import errors, which Linux clippy never sees.
+**What happened:** `spawn_payload`/`spawn_payload_with_codex_home` are `#[cfg(all(test, target_os = "linux"))]`, but `runtime_contract_tests.rs` and `supervisor/tests.rs` imported them unconditionally; several other test files kept imports or `mut` bindings used only inside Linux-gated code. The macOS job failed with E0432 and `-D warnings` unused-import errors, which Linux clippy never sees. The same day, after that fix, macOS Lint, Test and Flake check failed again with `dead_code`: `BOUNDARY_TMPDIR`, `SpawnedBoundary::namespace_pid`, `CargoScratch::prepare_private`, `confine_scratch::reclaim::remove`, `parse_cpu_ticks` and `removable::listed::with` were compiled on every platform but read only by Linux-gated code.
 
-**Why:** a `cfg(target_os)` gate on a helper or a test does not gate its imports; the Linux build cannot report the gap, and this host cannot cross-check macOS (aws-lc-sys needs an Apple C toolchain).
+**Why:** a `cfg(target_os)` gate on a caller does not gate the items it calls, and the Linux build cannot report the gap. This host cannot cross-check macOS: aws-lc-sys needs an Apple C toolchain and SDK.
 
-**Prevention:** when gating a test on Linux, gate every import only it uses, or group the gated tests in an inline `#[cfg(target_os = "linux")] mod` with its own `use` lines (as `runtime_contract_tests.rs` `mod bwrap` does). Prefer shadowing (`let x = x || ...;` under cfg) over `let mut` mutated only on Linux.
+**Prevention:** when code is gated on Linux, gate every import, constant, field and helper only it uses, or group the gated tests in an inline `#[cfg(target_os = "linux")] mod` with its own `use` lines (as `runtime_contract_tests.rs` `mod bwrap` does). Before pushing a cfg change, `rg` each newly gated caller's callees for other users. Prefer shadowing (`let x = x || ...;` under cfg) over `let mut` mutated only on Linux.
 
-**Fix:** the bwrap tests moved into `mod bwrap`; the other imports got `#[cfg(target_os = "linux")]`.
+**Fix:** the bwrap tests moved into `mod bwrap`; the other imports got `#[cfg(target_os = "linux")]`. The six dead items got `#[cfg(target_os = "linux")]`, except `prepare_private`, which a portable test also calls, so it got `#[cfg(any(target_os = "linux", test))]`.
