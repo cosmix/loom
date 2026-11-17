@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 
 use tempfile::tempdir;
 
+use super::super::lookup::MAX_WORK;
 use super::super::{changed, snapshot, ConfigSnapshot, MAX_ENTRIES};
 use super::put;
 
@@ -14,10 +15,21 @@ const SMALL_STACK: usize = 256 * 1024;
 
 /// Snapshot `root` on a thread with `SMALL_STACK`, returning the error text on failure.
 fn snapshot_on_small_stack(root: &Path) -> Result<ConfigSnapshot, String> {
+    snapshot_on_thread(root, false)
+}
+
+/// Snapshot `root` on a thread with `SMALL_STACK`; `portable` opens every path component by
+/// component, as on macOS, where there is no `openat2`.
+fn snapshot_on_thread(root: &Path, portable: bool) -> Result<ConfigSnapshot, String> {
     let root = root.to_path_buf();
     std::thread::Builder::new()
         .stack_size(SMALL_STACK)
-        .spawn(move || snapshot(&root).map_err(|error| format!("{error:#}")))
+        .spawn(move || {
+            if portable {
+                crate::fs::safe_fs::force_disable_openat2_for_tests();
+            }
+            snapshot(&root).map_err(|error| format!("{error:#}"))
+        })
         .unwrap()
         .join()
         .unwrap()
@@ -42,30 +54,71 @@ fn a_long_sibling_link_chain_fails_closed_without_recursing() {
     assert!(error.contains("cannot be checked"), "{error}");
 }
 
-#[test]
-fn a_nested_up_link_chain_stops_at_the_entry_cap() {
-    let root = tempdir().unwrap();
+/// `.claude/l` serves the deepest of 120 nested directories, each with an `up -> ..` link, the
+/// deepest holding 1000 FIFOs: every up link re-walks its parent's subtree under a longer path.
+fn nested_up_link_chain(root: &Path) {
     let mut deepest = PathBuf::from("n");
     for _ in 0..120 {
         deepest.push("c");
-        fs::create_dir_all(root.path().join(&deepest)).unwrap();
-        symlink("..", root.path().join(&deepest).join("up")).unwrap();
+        fs::create_dir_all(root.join(&deepest)).unwrap();
+        symlink("..", root.join(&deepest).join("up")).unwrap();
     }
     for index in 0..1_000 {
-        let fifo = root.path().join(&deepest).join(format!("f{index}"));
+        let fifo = root.join(&deepest).join(format!("f{index}"));
         nix::unistd::mkfifo(fifo.as_path(), nix::sys::stat::Mode::S_IRWXU).unwrap();
     }
-    fs::create_dir(root.path().join(".claude")).unwrap();
-    symlink(
-        Path::new("..").join(&deepest),
-        root.path().join(".claude/l"),
-    )
-    .unwrap();
+    fs::create_dir(root.join(".claude")).unwrap();
+    symlink(Path::new("..").join(&deepest), root.join(".claude/l")).unwrap();
+}
+
+#[test]
+fn a_nested_up_link_chain_stops_at_the_entry_cap() {
+    let root = tempdir().unwrap();
+    nested_up_link_chain(root.path());
 
     let error = snapshot_on_small_stack(root.path()).unwrap_err();
 
     assert!(
         error.contains(&format!("more than {MAX_ENTRIES}")),
+        "{error}"
+    );
+}
+
+/// Without `openat2` each lookup opens its path component by component; the re-walked
+/// directories and links are looked up once each, so the chain still ends at the entry cap,
+/// well inside the work budget.
+#[test]
+fn a_nested_up_link_chain_stops_at_the_entry_cap_without_openat2() {
+    let root = tempdir().unwrap();
+    nested_up_link_chain(root.path());
+
+    let error = snapshot_on_thread(root.path(), true).unwrap_err();
+
+    assert!(
+        error.contains(&format!("more than {MAX_ENTRIES}")),
+        "{error}"
+    );
+}
+
+/// Links few enough for the entry cap whose targets step through many components each fail
+/// closed on the work budget instead of resolving every one.
+#[test]
+fn links_costly_to_resolve_fail_closed_on_the_work_budget() {
+    let root = tempdir().unwrap();
+    fs::create_dir_all(root.path().join(".claude/a")).unwrap();
+    // 2 components per `a/..`: each target costs about 400 steps; 3000 of them pass the budget.
+    let target = "a/..".repeat(200).replace("..a", "../a");
+    for index in 0..3_000 {
+        symlink(&target, root.path().join(format!(".claude/l{index}"))).unwrap();
+    }
+
+    let error = snapshot_on_small_stack(root.path()).unwrap_err();
+
+    assert!(
+        error.contains(&format!(
+            "more than {MAX_WORK} configuration path lookups (symlinks re-serving directories?); \
+             session configuration cannot be checked"
+        )),
         "{error}"
     );
 }
