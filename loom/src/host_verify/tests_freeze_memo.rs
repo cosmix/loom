@@ -228,7 +228,8 @@ fn two_contracts_in_one_scope_share_a_failed_build_and_freeze() {
         progress[1]
             .summary
             .contains("shares the failed build of contract `a`"),
-        "{progress:?}"
+        "{progress:?}\n{result:?}\nThe job's stdout above quotes the output of a build that \
+         stopped before the compiler judged the code."
     );
     let applied = fx.apply(&record);
     assert!(
