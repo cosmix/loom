@@ -1,11 +1,14 @@
 //! Claude Code's own worktree checkouts in `.claude/worktrees/` are not session configuration.
 
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, File};
 use std::os::unix::fs::symlink;
+use std::path::{Path, PathBuf};
 
 use tempfile::tempdir;
 
-use super::super::{changed, snapshot, MAX_CONFIG_BYTES};
+use super::super::lookup::Identity;
+use super::super::{changed, covered, snapshot, MAX_CONFIG_BYTES};
 use super::put;
 
 #[test]
@@ -87,4 +90,39 @@ fn a_link_serving_a_directory_under_claude_worktrees_is_still_walked() {
 
     assert_eq!(changed(&before, &after), [".claude/a/src/lib.rs"]);
     assert!(!after.files.keys().any(|path| path.contains("worktrees/")));
+}
+
+/// Whether `served` is covered by a walked `.claude/` that left out `.claude/worktrees`, on a
+/// filesystem where `paths` name the identities given.
+fn covered_on(paths: &[(&str, Identity)], served: &str) -> bool {
+    let identities: BTreeMap<PathBuf, Identity> = paths
+        .iter()
+        .map(|(path, identity)| (PathBuf::from(path), *identity))
+        .collect();
+    let walked = BTreeSet::from([PathBuf::from(".claude")]);
+    let skipped = [identities[Path::new(".claude/worktrees")]];
+    covered(&walked, &skipped, Path::new(served), |at| {
+        Ok(identities.get(at).copied())
+    })
+    .unwrap()
+}
+
+// A case-insensitive filesystem (macOS's default APFS) serves `.claude/cfg -> Worktrees/shared`
+// as `.claude/Worktrees/shared`, which does not start with the skipped `.claude/worktrees`.
+// Linux cannot make two spellings name one directory without root (a casefold mount), so the
+// predicate is checked on the identities such a filesystem reports.
+#[test]
+fn another_spelling_of_the_skipped_worktrees_is_not_covered() {
+    let paths = [
+        (".claude", (1, 2)),
+        (".claude/worktrees", (1, 3)),
+        (".claude/Worktrees", (1, 3)),
+        (".claude/Worktrees/shared", (1, 4)),
+        (".claude/other", (1, 5)),
+        (".claude/other/x", (1, 6)),
+    ];
+
+    assert!(!covered_on(&paths, ".claude/Worktrees/shared"));
+    assert!(!covered_on(&paths, ".claude/Worktrees"));
+    assert!(covered_on(&paths, ".claude/other/x"));
 }

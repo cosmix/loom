@@ -10,7 +10,7 @@ use crate::fs::safe_read::EntryKind;
 
 mod lookup;
 
-use lookup::{Listing, Lookups};
+use lookup::{Identity, Listing, Lookups};
 
 // Fail closed above this per-file limit; hashing a prefix would hide edits.
 const MAX_CONFIG_BYTES: usize = 4 * 1024 * 1024;
@@ -104,9 +104,11 @@ struct Walker {
     /// Real directories whose trees are fingerprinted or queued; a link into one adds no walk.
     /// A set, so whether one covers a served directory costs a lookup per ancestor of it.
     walked: BTreeSet<PathBuf>,
-    /// Real directories left out of a walked tree (`CLAUDE_WORKTREES`); a link into one still
-    /// needs its own walk.
-    skipped: Vec<PathBuf>,
+    /// Real directories left out of a walked tree (`CLAUDE_WORKTREES`), by identity, since a
+    /// case-insensitive filesystem serves one under other spellings; a link into one still
+    /// needs its own walk. Revisit on a filesystem whose inode numbers follow the name (smbfs
+    /// without server file ids, FUSE without `use_ino`): there the match would miss.
+    skipped: Vec<Identity>,
     /// Directories still to list, as (path shown, real directory): one explicit stack, so a
     /// long link chain costs heap, never call depth.
     pending: Vec<(PathBuf, PathBuf)>,
@@ -136,24 +138,12 @@ impl Walker {
                 shown.display()
             );
         }
-        if !self.covered(&served) {
+        let identity = |at: &Path| self.lookups.identity(at);
+        if !covered(&self.walked, &self.skipped, &served, identity)? {
             self.walked.insert(served.clone());
             self.pending.push((shown.to_path_buf(), served));
         }
         Ok(())
-    }
-
-    /// Whether a walked or queued tree already fingerprints `served`: one that holds it and
-    /// does not leave it out as a skipped directory (a tree walked from inside the skipped
-    /// directory holds what is under it).
-    fn covered(&self, served: &Path) -> bool {
-        served.ancestors().any(|done| {
-            self.walked.contains(done)
-                && !self
-                    .skipped
-                    .iter()
-                    .any(|left_out| served.starts_with(left_out) && !done.starts_with(left_out))
-        })
     }
 
     /// Fingerprint every queued tree, including those the links it meets queue.
@@ -163,7 +153,7 @@ impl Walker {
                 .lookups
                 .listing(&real)
                 .with_context(|| format!("Cannot snapshot {}", shown.display()))?;
-            self.leave_out_worktrees(&shown, &real, &mut entries);
+            self.leave_out_worktrees(&shown, &real, &mut entries)?;
             for (name, kind) in entries {
                 let (shown, real) = (shown.join(&name), real.join(&name));
                 self.admit(&shown)?;
@@ -179,17 +169,27 @@ impl Walker {
     /// Remove `CLAUDE_WORKTREES` from the listing of the walked `.claude/` when it is a real
     /// directory, before any entry is recorded, so a link met earlier in the listing already
     /// sees it as left out. A symlink of that name is not a `Directory` here and is kept.
-    fn leave_out_worktrees(&mut self, shown: &Path, real: &Path, entries: &mut Listing) {
+    fn leave_out_worktrees(
+        &mut self,
+        shown: &Path,
+        real: &Path,
+        entries: &mut Listing,
+    ) -> Result<()> {
         if shown != Path::new(CLAUDE_DIR) {
-            return;
+            return Ok(());
         }
         let worktrees = entries
             .iter()
             .position(|(name, kind)| name == CLAUDE_WORKTREES && *kind == EntryKind::Directory);
         if let Some(at) = worktrees {
             entries.remove(at);
-            self.skipped.push(real.join(CLAUDE_WORKTREES));
+            let left_out = real.join(CLAUDE_WORKTREES);
+            let identity = self.lookups.identity(&left_out)?.with_context(|| {
+                format!("{} vanished while being snapshotted", left_out.display())
+            })?;
+            self.skipped.push(identity);
         }
+        Ok(())
     }
 
     /// Count one visited entry, failing closed past the entry and path budgets.
@@ -250,6 +250,32 @@ impl Walker {
         }
         Ok(fingerprint)
     }
+}
+
+/// Whether a walked or queued tree already fingerprints the real directory `served`: the
+/// nearest of its ancestors in `walked`, unless the path down from it passes a `skipped`
+/// directory (a tree walked from inside the skipped directory holds what is under it). Skipped
+/// directories are matched by `identity`, never by spelling: on a case-insensitive filesystem
+/// `.claude/Worktrees` is the skipped `.claude/worktrees` without starting with it.
+fn covered(
+    walked: &BTreeSet<PathBuf>,
+    skipped: &[Identity],
+    served: &Path,
+    mut identity: impl FnMut(&Path) -> Result<Option<Identity>>,
+) -> Result<bool> {
+    for at in served.ancestors() {
+        if at.as_os_str().is_empty() {
+            break;
+        }
+        if walked.contains(at) {
+            return Ok(true);
+        }
+        // A vanished ancestor (no identity) is not covered either: walk it rather than guess.
+        if !skipped.is_empty() && identity(at)?.is_none_or(|id| skipped.contains(&id)) {
+            return Ok(false);
+        }
+    }
+    Ok(false)
 }
 
 /// What a served directory is when walking it would fingerprint state every run changes: the

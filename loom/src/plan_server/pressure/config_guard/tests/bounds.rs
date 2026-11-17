@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 
 use tempfile::tempdir;
 
-use super::super::lookup::MAX_WORK;
+use super::super::lookup::{MAX_WORK, SPENT};
 use super::super::{changed, snapshot, ConfigSnapshot, MAX_ENTRIES};
 use super::put;
 
@@ -15,12 +15,12 @@ const SMALL_STACK: usize = 256 * 1024;
 
 /// Snapshot `root` on a thread with `SMALL_STACK`, returning the error text on failure.
 fn snapshot_on_small_stack(root: &Path) -> Result<ConfigSnapshot, String> {
-    snapshot_on_thread(root, false)
+    snapshot_on_thread(root, false).0
 }
 
-/// Snapshot `root` on a thread with `SMALL_STACK`; `portable` opens every path component by
-/// component, as on macOS, where there is no `openat2`.
-fn snapshot_on_thread(root: &Path, portable: bool) -> Result<ConfigSnapshot, String> {
+/// Snapshot `root` on a thread with `SMALL_STACK`, with the work units it spent; `portable`
+/// opens every path component by component, as on macOS, where there is no `openat2`.
+fn snapshot_on_thread(root: &Path, portable: bool) -> (Result<ConfigSnapshot, String>, usize) {
     let root = root.to_path_buf();
     std::thread::Builder::new()
         .stack_size(SMALL_STACK)
@@ -28,7 +28,8 @@ fn snapshot_on_thread(root: &Path, portable: bool) -> Result<ConfigSnapshot, Str
             if portable {
                 crate::fs::safe_fs::force_disable_openat2_for_tests();
             }
-            snapshot(&root).map_err(|error| format!("{error:#}"))
+            let result = snapshot(&root).map_err(|error| format!("{error:#}"));
+            (result, SPENT.with(|spent| spent.get()))
         })
         .unwrap()
         .join()
@@ -71,33 +72,40 @@ fn nested_up_link_chain(root: &Path) {
     symlink(Path::new("..").join(&deepest), root.join(".claude/l")).unwrap();
 }
 
-#[test]
-fn a_nested_up_link_chain_stops_at_the_entry_cap() {
+/// Snapshot the nested up-link chain, `portable` as in `snapshot_on_thread`: it must end at
+/// the entry cap having spent at most `MAX_CHAIN_WORK`.
+fn assert_the_chain_stops_cheaply(portable: bool) {
     let root = tempdir().unwrap();
     nested_up_link_chain(root.path());
 
-    let error = snapshot_on_small_stack(root.path()).unwrap_err();
+    let (result, spent) = snapshot_on_thread(root.path(), portable);
 
+    let error = result.unwrap_err();
+    // The whole phrase: "more than {MAX_ENTRIES}" alone is a prefix of the work cap's message.
     assert!(
-        error.contains(&format!("more than {MAX_ENTRIES}")),
+        error.contains(&format!("more than {MAX_ENTRIES} configuration entries")),
         "{error}"
     );
+    assert!(spent <= MAX_CHAIN_WORK, "spent {spent} work units");
+}
+
+/// What the chain may cost. Cached, each real directory, link and path prefix is looked up
+/// once, so the cost follows the real tree: about 72,500 work units. Uncached, every re-walk
+/// pays again for paths about 120 components deep and the snapshot runs into `MAX_WORK`
+/// (1,000,000) before the entry cap. A tenth of `MAX_WORK` leaves a third of headroom over the
+/// cached cost while staying a tenth of the budget a lost cache exhausts.
+const MAX_CHAIN_WORK: usize = MAX_WORK / 10;
+
+#[test]
+fn a_nested_up_link_chain_stops_at_the_entry_cap() {
+    assert_the_chain_stops_cheaply(false);
 }
 
 /// Without `openat2` each lookup opens its path component by component; the re-walked
-/// directories and links are looked up once each, so the chain still ends at the entry cap,
-/// well inside the work budget.
+/// directories and links are looked up once each, so the chain costs the same.
 #[test]
 fn a_nested_up_link_chain_stops_at_the_entry_cap_without_openat2() {
-    let root = tempdir().unwrap();
-    nested_up_link_chain(root.path());
-
-    let error = snapshot_on_thread(root.path(), true).unwrap_err();
-
-    assert!(
-        error.contains(&format!("more than {MAX_ENTRIES}")),
-        "{error}"
-    );
+    assert_the_chain_stops_cheaply(true);
 }
 
 /// Links few enough for the entry cap whose targets step through many components each fail
@@ -106,7 +114,7 @@ fn a_nested_up_link_chain_stops_at_the_entry_cap_without_openat2() {
 fn links_costly_to_resolve_fail_closed_on_the_work_budget() {
     let root = tempdir().unwrap();
     fs::create_dir_all(root.path().join(".claude/a")).unwrap();
-    // 2 components per `a/..`: each target costs about 400 steps; 3000 of them pass the budget.
+    // 2 components per `a/..`: each target costs about 600 units; 3000 of them pass the budget.
     let target = "a/..".repeat(200).replace("..a", "../a");
     for index in 0..3_000 {
         symlink(&target, root.path().join(format!(".claude/l{index}"))).unwrap();

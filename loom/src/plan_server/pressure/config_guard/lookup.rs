@@ -6,6 +6,8 @@
 //! open costs (one `openat` per path component; Linux `openat2` does it in one call), so the
 //! budget bounds the work alike on every platform.
 
+#[cfg(test)]
+use std::cell::Cell;
 use std::collections::HashMap;
 use std::ffi::{OsStr, OsString};
 use std::os::fd::{AsFd, AsRawFd, BorrowedFd, OwnedFd};
@@ -30,6 +32,16 @@ pub(super) const MAX_WORK: usize = 10 * MAX_ENTRIES;
 /// A directory listing: names sorted, each with its kind.
 pub(super) type Listing = Vec<(OsString, EntryKind)>;
 
+/// A path's identity, its device and inode numbers: what names a directory whatever the
+/// spelling of the path reaching it (a case-insensitive filesystem accepts many).
+pub(super) type Identity = (libc::dev_t, libc::ino_t);
+
+#[cfg(test)]
+thread_local! {
+    /// Work units the latest snapshot on this thread spent, so tests can bound its cost.
+    pub(super) static SPENT: Cell<usize> = const { Cell::new(0) };
+}
+
 /// What a symlink finally serves inside the repository, and its kind; `None` when it does not.
 pub(super) type Served = Option<(PathBuf, EntryKind)>;
 
@@ -41,7 +53,8 @@ pub(super) struct Lookups {
     /// Units spent so far, against `MAX_WORK`.
     work: usize,
     listings: HashMap<PathBuf, Listing>,
-    kinds: HashMap<PathBuf, Option<EntryKind>>,
+    /// Kind and identity per real path, `None` when it does not exist.
+    stats: HashMap<PathBuf, Option<(EntryKind, Identity)>>,
     targets: HashMap<PathBuf, OsString>,
     resolutions: HashMap<PathBuf, Served>,
     /// SHA-256 per real file, so many links serving one file read it once.
@@ -59,7 +72,7 @@ impl Lookups {
             spellings,
             work: 0,
             listings: HashMap::new(),
-            kinds: HashMap::new(),
+            stats: HashMap::new(),
             targets: HashMap::new(),
             resolutions: HashMap::new(),
             digests: HashMap::new(),
@@ -69,6 +82,8 @@ impl Lookups {
     /// Spend `units`, failing closed past `MAX_WORK`.
     fn charge(&mut self, units: usize) -> Result<()> {
         self.work += units;
+        #[cfg(test)]
+        SPENT.with(|spent| spent.set(self.work));
         if self.work > MAX_WORK {
             bail!(
                 "more than {MAX_WORK} configuration path lookups (symlinks re-serving \
@@ -90,6 +105,13 @@ impl Lookups {
 
     /// The real directory `relative`'s entries sorted by name, so which link first reaches a
     /// shared tree, and so the paths recorded, depend on the tree alone.
+    ///
+    /// Every answer here is cached for the snapshot, so a path swapped while one snapshot runs
+    /// may be seen in its first state only. That is acceptable: the snapshot compared against
+    /// the one taken before Codex ran is taken only once Codex has exited
+    /// (`CodexHalf::configuration_changed` in `pressure/codex.rs` returns early while it runs;
+    /// the summary job's `guarded_outcome` runs after `Child::wait` returns), so the writer the
+    /// guard watches for is no longer writing. Revisit if a snapshot ever runs beside Codex.
     pub(super) fn listing(&mut self, relative: &Path) -> Result<Listing> {
         self.charge_lookup(relative, self.listings.contains_key(relative))?;
         if let Some(known) = self.listings.get(relative) {
@@ -126,13 +148,22 @@ impl Lookups {
 
     /// What the real path `relative` is in itself, or `None` when it does not exist.
     fn kind(&mut self, relative: &Path) -> Result<Option<EntryKind>> {
-        self.charge_lookup(relative, self.kinds.contains_key(relative))?;
-        if let Some(known) = self.kinds.get(relative) {
+        Ok(self.stat(relative)?.map(|(kind, _)| kind))
+    }
+
+    /// The identity of the real path `relative` in itself, or `None` when it does not exist.
+    pub(super) fn identity(&mut self, relative: &Path) -> Result<Option<Identity>> {
+        Ok(self.stat(relative)?.map(|(_, identity)| identity))
+    }
+
+    fn stat(&mut self, relative: &Path) -> Result<Option<(EntryKind, Identity)>> {
+        self.charge_lookup(relative, self.stats.contains_key(relative))?;
+        if let Some(known) = self.stats.get(relative) {
             return Ok(*known);
         }
-        let kind = kind_at(&self.anchor, relative)?;
-        self.kinds.insert(relative.to_path_buf(), kind);
-        Ok(kind)
+        let stat = stat_at(&self.anchor, relative)?;
+        self.stats.insert(relative.to_path_buf(), stat);
+        Ok(stat)
     }
 
     /// The repository-relative path the symlink `link` finally serves, and its kind. Resolved
@@ -209,8 +240,8 @@ fn push_components(pending: &mut Vec<OsString>, path: &Path) {
     pending.extend(parts.into_iter().rev());
 }
 
-/// What `relative` is in itself, or `None` when it does not exist.
-fn kind_at(anchor: &OwnedFd, relative: &Path) -> Result<Option<EntryKind>> {
+/// What `relative` is in itself and its identity, or `None` when it does not exist.
+fn stat_at(anchor: &OwnedFd, relative: &Path) -> Result<Option<(EntryKind, Identity)>> {
     let stat = at_parent(anchor, relative, |dir, name| {
         match fstatat(dir, name, AtFlags::AT_SYMLINK_NOFOLLOW) {
             Ok(stat) => Ok(Some(stat)),
@@ -218,7 +249,7 @@ fn kind_at(anchor: &OwnedFd, relative: &Path) -> Result<Option<EntryKind>> {
             Err(error) => Err(error),
         }
     })?;
-    Ok(stat.map(|stat| kind_of_mode(stat.st_mode)))
+    Ok(stat.map(|stat| (kind_of_mode(stat.st_mode), (stat.st_dev, stat.st_ino))))
 }
 
 /// Run `call` on `relative`'s parent, opened from the anchor without following any component,
