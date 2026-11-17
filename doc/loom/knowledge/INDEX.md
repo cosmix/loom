@@ -10,7 +10,7 @@
 | --- | --- | --- |
 | [architecture.md](architecture.md) | High-level component relationships, data flow, module dependencies | 246 |
 | [entry-points.md](entry-points.md) | Key files agents should read first | 86 |
-| [patterns.md](patterns.md) | Architectural patterns discovered in the codebase | 194 |
+| [patterns.md](patterns.md) | Architectural patterns discovered in the codebase | 200 |
 | [conventions.md](conventions.md) | Coding conventions discovered in the codebase | 250 |
 | [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 250 |
 | [stack.md](stack.md) | Dependencies, frameworks, and tooling used in the project | 116 |
@@ -33,13 +33,13 @@
 | [context-retrieval-routing](architecture/context-retrieval-routing.md) |  | 75 |
 | [context-retrieval-state](architecture/context-retrieval-state.md) | Layers | 179 |
 | [contract-collection](architecture/contract-collection.md) |  | 70 |
-| [contract-phase](architecture/contract-phase.md) | Freeze | 275 |
+| [contract-phase](architecture/contract-phase.md) | Freeze | 277 |
 | [core-abstractions](architecture/core-abstractions.md) | Graph | 135 |
 | [daemon-launch](architecture/daemon-launch.md) |  | 71 |
 | [daemon-owned-commits](architecture/daemon-owned-commits.md) |  | 151 |
 | [directory-structure](architecture/directory-structure.md) | Tree | 50 |
 | [execution-containment](architecture/execution-containment.md) |  | 392 |
-| [hook-system](architecture/hook-system.md) |  | 338 |
+| [hook-system](architecture/hook-system.md) |  | 339 |
 | [knowledge-bootstrap](architecture/knowledge-bootstrap.md) | KB | 83 |
 | [knowledge-hierarchy](architecture/knowledge-hierarchy.md) | KB fs | 264 |
 | [live-preview-editor](architecture/live-preview-editor.md) | Editor | 32 |
@@ -65,8 +65,8 @@
 | [read-gate](architecture/read-gate.md) |  | 153 |
 | [remote-control](architecture/remote-control.md) |  | 81 |
 | [run-handoff](architecture/run-handoff.md) |  | 52 |
-| [security-and-isolation](architecture/security-and-isolation.md) | Deny | 200 |
-| [signal-generation](architecture/signal-generation.md) |  | 257 |
+| [security-and-isolation](architecture/security-and-isolation.md) | Deny | 202 |
+| [signal-generation](architecture/signal-generation.md) |  | 261 |
 | [skill-catalog](architecture/skill-catalog.md) |  | 158 |
 | [source-graph](architecture/source-graph.md) |  | 372 |
 | [source-graph-build](architecture/source-graph-build.md) |  | 130 |
@@ -92,7 +92,7 @@
 | [cli-and-plan-pipeline](entry-points/cli-and-plan-pipeline.md) | CLI | 197 |
 | [context-and-source-graph](entry-points/context-and-source-graph.md) |  | 80 |
 | [filesystem-and-integration-modules](entry-points/filesystem-and-integration-modules.md) |  | 135 |
-| [hooks](entry-points/hooks.md) |  | 149 |
+| [hooks](entry-points/hooks.md) |  | 152 |
 | [orchestrator-daemon-and-sessions](entry-points/orchestrator-daemon-and-sessions.md) |  | 262 |
 | [remote-control](entry-points/remote-control.md) | RC | 96 |
 
@@ -108,7 +108,7 @@
 | [orchestrator-daemon-loop](patterns/orchestrator-daemon-loop.md) | Loop | 115 |
 | [remote-control](patterns/remote-control.md) | RC | 51 |
 | [security-sandbox-and-hooks](patterns/security-sandbox-and-hooks.md) |  | 144 |
-| [stage-daemon-channels](patterns/stage-daemon-channels.md) |  | 196 |
+| [stage-daemon-channels](patterns/stage-daemon-channels.md) |  | 211 |
 | [stage-lifecycle-and-verification](patterns/stage-lifecycle-and-verification.md) |  | 214 |
 | [subagent-hierarchy](patterns/subagent-hierarchy.md) |  | 143 |
 
@@ -119,19 +119,19 @@
 | [code-style-and-structure](conventions/code-style-and-structure.md) |  | 298 |
 | [commits](conventions/commits.md) | Format | 24 |
 | [config-plan-and-gate-rules](conventions/config-plan-and-gate-rules.md) |  | 27 |
-| [dispute-and-adjudication](conventions/dispute-and-adjudication.md) |  | 123 |
+| [dispute-and-adjudication](conventions/dispute-and-adjudication.md) |  | 138 |
 | [git-and-build-workflow](conventions/git-and-build-workflow.md) |  | 237 |
 | [guidance-channels-and-plugin-scope](conventions/guidance-channels-and-plugin-scope.md) |  | 134 |
 | [model-and-effort-config](conventions/model-and-effort-config.md) |  | 145 |
 | [plan-web](conventions/plan-web.md) |  | 215 |
-| [plan-yaml-and-hooks](conventions/plan-yaml-and-hooks.md) |  | 182 |
+| [plan-yaml-and-hooks](conventions/plan-yaml-and-hooks.md) |  | 186 |
 | [web-dashboard-typography](conventions/web-dashboard-typography.md) |  | 68 |
 
 ### mistakes
 
 | Topic | Blurb | Lines |
 | --- | --- | --- |
-| [adjudication-autonomy-deadlock](mistakes/adjudication-autonomy-deadlock.md) |  | 228 |
+| [adjudication-autonomy-deadlock](mistakes/adjudication-autonomy-deadlock.md) |  | 238 |
 | [ambient-filesystem-trust](mistakes/ambient-filesystem-trust.md) |  | 186 |
 | [briefs-and-bug-reports](mistakes/briefs-and-bug-reports.md) |  | 386 |
 | [ci-toolchain-and-cargo](mistakes/ci-toolchain-and-cargo.md) |  | 383 |
@@ -151,7 +151,7 @@
 | [detached-spawn-in-tests](mistakes/detached-spawn-in-tests.md) |  | 65 |
 | [dev-install](mistakes/dev-install.md) | Daemon | 51 |
 | [doctrine-and-acceptance](mistakes/doctrine-and-acceptance.md) |  | 392 |
-| [hooks-shell-portability](mistakes/hooks-shell-portability.md) |  | 382 |
+| [hooks-shell-portability](mistakes/hooks-shell-portability.md) |  | 392 |
 | [host-verify-group-containment](mistakes/host-verify-group-containment.md) |  | 47 |
 | [knowledge-base-drift](mistakes/knowledge-base-drift.md) |  | 266 |
 | [knowledge-cli-invariants](mistakes/knowledge-cli-invariants.md) | Rules | 241 |
@@ -159,7 +159,7 @@
 | [ledger-tui-rendering](mistakes/ledger-tui-rendering.md) |  | 84 |
 | [live-state-pollution](mistakes/live-state-pollution.md) |  | 133 |
 | [maintainability-baseline](mistakes/maintainability-baseline.md) |  | 96 |
-| [memory-relay-drain-gap](mistakes/memory-relay-drain-gap.md) |  | 47 |
+| [memory-relay-drain-gap](mistakes/memory-relay-drain-gap.md) |  | 51 |
 | [merge-cleanup-boundary](mistakes/merge-cleanup-boundary.md) |  | 237 |
 | [merge-in-operator-checkout](mistakes/merge-in-operator-checkout.md) |  | 70 |
 | [parallel-worktree-shared-state](mistakes/parallel-worktree-shared-state.md) | Shared | 351 |
@@ -218,13 +218,13 @@
 | --- | --- | --- |
 | [agent-rule-bending-hardening](concerns/agent-rule-bending-hardening.md) |  | 375 |
 | [automatic-knowledge-source-graph-followups](concerns/automatic-knowledge-source-graph-followups.md) | Gap | 69 |
-| [code-quality-and-hook-debt](concerns/code-quality-and-hook-debt.md) | Debt | 308 |
+| [code-quality-and-hook-debt](concerns/code-quality-and-hook-debt.md) | Debt | 315 |
 | [codex-heartbeat-starvation](concerns/codex-heartbeat-starvation.md) |  | 22 |
 | [consolidation-followups](concerns/consolidation-followups.md) |  | 148 |
-| [contract-autonomy-followups](concerns/contract-autonomy-followups.md) |  | 74 |
+| [contract-autonomy-followups](concerns/contract-autonomy-followups.md) |  | 70 |
 | [handoff-followups](concerns/handoff-followups.md) |  | 57 |
 | [knowledge-cli-gaps](concerns/knowledge-cli-gaps.md) |  | 108 |
-| [loom-ask-and-read-gate](concerns/loom-ask-and-read-gate.md) |  | 112 |
+| [loom-ask-and-read-gate](concerns/loom-ask-and-read-gate.md) |  | 108 |
 | [merge-and-recovery-edge-cases](concerns/merge-and-recovery-edge-cases.md) | Edges | 105 |
 | [native-codex-qualification](concerns/native-codex-qualification.md) |  | 95 |
 | [plan-chat-followups](concerns/plan-chat-followups.md) | Chat | 41 |
@@ -239,7 +239,7 @@
 | [source-graph-known-gaps](concerns/source-graph-known-gaps.md) | Limits | 94 |
 | [source-graph-review-backlog](concerns/source-graph-review-backlog.md) | Todo | 295 |
 | [state-confinement-gaps](concerns/state-confinement-gaps.md) | Caches | 21 |
-| [token-accounting-and-proof-defects](concerns/token-accounting-and-proof-defects.md) |  | 334 |
+| [token-accounting-and-proof-defects](concerns/token-accounting-and-proof-defects.md) |  | 333 |
 | [typed-config-values](concerns/typed-config-values.md) | Gap | 22 |
 | [verification-v2-followups](concerns/verification-v2-followups.md) |  | 234 |
 | [web-dashboard-latent-issues](concerns/web-dashboard-latent-issues.md) | UI | 96 |

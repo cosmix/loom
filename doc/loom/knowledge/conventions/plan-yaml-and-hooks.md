@@ -116,8 +116,12 @@ Some fields may use `tool_response` instead of `tool_result` depending on Claude
   [plan-lifecycle-and-fields](../architecture/plan-lifecycle-and-fields.md).
 - **Adapter commands:** every `{test}` and `{file}` is shell-quoted through `testrun/command.rs`, regex-escaped where
   the runner's filter is a regex; a fixture is captured from a real run or carries a `PROVENANCE.md`.
-- **New relay `RequestKind`:** a `relay_kind_at` case, a `drop_control_kinds` entry when `is_control()`, and a
-  `loom-hooks/tests/*.sh` test with its `run_test` line in the same change.
+- **New relay `RequestKind`:** one case in `loom-hooks/_relay_kinds.sh::relay_kind_at`, plus a
+  `relay_kind_is_control` case when `is_control()` (pinned by `relay/kind_hook_parity_tests.rs`), and a
+  `loom-hooks/tests/*.sh` test with its `run_test` line in the same change. A new control kind the relay guard
+  should cover also goes in `loom-relay-guard.sh`'s guarded list and its must-block cases. A new sourced helper
+  needs its `LOOM_HOOKS` row, and a new registered hook moves the count pins in
+  `fs/permissions/tests/hooks_tests.rs` (PreToolUse 51, Stop 2).
 - **Worker briefs for a wave:** shared declaration sites owned by one worker, at most about 30 files per worker, no
   `name` parameter on stage workers, `cargo fmt` by the main agent before the maintainability test. Detail:
   [verification-v2-delivery](../mistakes/verification-v2-delivery.md).

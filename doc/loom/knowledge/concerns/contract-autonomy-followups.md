@@ -56,10 +56,6 @@ The chain check proves which file rustc compiles under a contract's test name, n
 - Inside the 1560 s receipt window, a `locate_job` error (ambiguous job, binding mismatch) reports Active instead of Unknown at once; telling them apart needs a typed error from `codex_lifecycle/jobs.rs`.
 - A damaged receipt journal marks every authorization in the stage Unknown, companion rows whose job is healthy included (consistent with `commands/subagents/wait/codex_binding.rs::receipt_matches`); a companion row could still be classified from its job.
 
-## Relayed Commands Run in the Background Again
-
-`loom check`, `loom memory ...` and `loom stage commit` are relayed only when the Bash call is foreground, unredirected and bare. The mistake recurred in two stages of one plan (twice by the integration-verify main agent after the refusal-adjudication stage recorded it), on top of the earlier incident in [mistakes/memory-relay-drain-gap.md](../mistakes/memory-relay-drain-gap.md): each ended `refused: the request never reached the daemon` and cost a gate cycle. Prose has failed three times; proposal: a PreToolUse hook that denies `run_in_background: true` (and stdout redirection or a pipe) on a Bash command whose first loom subcommand is relay-eligible, naming the foreground rerun.
-
 ## Writer-Chosen Contract Details and Static Freeze Gate Gaps
 
 Open items from the reviews of the freeze changes; mechanism in [contract-phase](../architecture/contract-phase.md).

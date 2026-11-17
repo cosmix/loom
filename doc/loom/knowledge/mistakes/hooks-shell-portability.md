@@ -380,3 +380,13 @@ reaches 3.
 **Prevention:** write `2>/dev/null` before the input redirect (`cmd 2>/dev/null <file`). `</dev/null 2>/dev/null` is safe because opening /dev/null cannot fail. This search prints nothing when the class is gone: `rg -n '(^|[^<0-9&])<[^<(&=]\S*\s+([^|;]*\s)?2>\s*/dev/null' loom-hooks | rg -v '</dev/null'`.
 
 **Fix:** every site reordered; `_codex_forward.sh` carries a comment at the first one.
+
+## A Caller Variable Named `run` Is Shadowed by `loom_token_sep` (2026-11-17)
+
+**What happened:** while writing `loom-hooks/_relay_kinds.sh`, helpers that called `loom_token_sep <i> <var>` and then assigned the result through `printf -v` read the wrong value whenever the caller's variable was named `run`.
+
+**Why:** `loom_token_sep` (`loom-hooks/_parser.sh`) declares `local run`. Bash scoping is dynamic, so a `printf -v run` or an indirect assignment inside it targets its own local, never the caller's variable of the same name.
+
+**Prevention:** never name a variable passed by name to a `_parser.sh` helper after one of that helper's locals; prefix such variables with the calling function's name.
+
+**Fix:** `_relay_kinds.sh` renamed its locals.

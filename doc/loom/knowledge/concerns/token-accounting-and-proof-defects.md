@@ -241,7 +241,6 @@ sibling-advisory wording, the `_bounded.sh` comment fix) are not listed.
 
 ## Hook Hardening Proposals From the Delivery-Truth Plan
 
-- **Relay-producing commands piped through a filter (recurrence).** `loom stage commit | rg -o ...` dropped the `LOOM_RELAY_V1` line, so the relay hook never saw the ticket and `loom request status` reported it not relayed. The same shape is in [Memory Relay Drain Gap](../mistakes/memory-relay-drain-gap.md). Proposal: a PreToolUse warning in `poll-guard.sh` when a Bash command pipes `loom stage commit` or `loom memory` into anything but `tail -3`; the instruction alone has not prevented the recurrence.
 - **BSD hook suite sits at the criterion timeout.** `LOOM_HOOK_TEST_BSD=1 run-all.sh` takes about 5.5 minutes standalone against the 300 s criterion limit, with per-test timings unchanged by the watchdog fix (171.9 s against 170.8 s). Proposal: split the suite across criteria or raise that criterion's timeout.
 - **`codex-forward-guard.sh` classifies test runs by ancestor environment.** The `bounded-stdin.py` case exits 2 instead of 0 when an ancestor process carries stage evidence, which fails in a stage's own gate; see [Hook Tests Inherit the Live Session's Environment](../mistakes/hooks-shell-portability.md).
 

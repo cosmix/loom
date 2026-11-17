@@ -205,10 +205,6 @@ Reviewer suggestions and findings the plan left unimplemented, with no fix in th
 - **Go skill triggers.** `skills/loom-golang/SKILL.md` keeps the two-word triggers `go code`, `go test`, `go mod` and `in go` as weight-2 solo qualifiers; an imperative-"go" Rust prompt could hit them. `error` and `sync` are dropped by the indexer's `STOPWORDS` (`skill_index.rs`). `hooks_skill_trigger_evidence.rs` skips silently when `python3` is missing (`skip_unless_python3`); run the gate with `LOOM_TEST_REQUIRE_SANDBOX_FREE=1` so a skip fails. The Go test fails only when two or more removed bare words return, since one bare hit scores 1 against `MIN_SCORE` 2 (`skill-trigger.sh`); asserting that the built `skill-keywords.json` has no bare key for the ten removed words would catch a single one.
 - **`loom/tests/guidance_gate_contracts.rs` spawns about 320 bash plus `jq` pipelines serially.** It is isolated and correct, and the slowest test of the suite for its size.
 
-## No Hook Refuses a Relayed `loom` Command Run in the Background or Through a Pipe
-
-`loom check`, `loom stage commit` and the stage completion command relay a request to the daemon and print the `LOOM_RELAY_V1` line the relay hook reads from foreground, unfiltered stdout. Run in a background Bash loop, piped, or redirected, the line is lost and the host job ends `refused: the request never reached the daemon` (the document-model, checklist-check, web-server-extract and integration-verify stages of the planner plans, and the shell-and-spine and integration-verify stages of the redesign, all hit it; two redesign workers also piped cargo output through `rg` against a brief that forbade it). The relay hook also refuses lines from one Bash call that chains several `loom memory` commands with `&&`. Proposal: extend the Bash PreToolUse guard to refuse `run_in_background`, a pipe, a redirect or a `&&` chain on these commands. Prose in [Wave, Gate and Proof Misses](../mistakes/verification-v2-delivery.md) and [Plan-Server Delivery](../mistakes/plan-server-delivery.md) has not stopped the recurrence.
-
 ## The Binary Spawn Guard Runs Only in integration-verify
 
 `tests/integration/binary_spawn_guard.rs` fails a test target that spawns the loom binary without scrubbing every `LOOM_*` variable or without joining `SANCTIONED_SPAWNERS`, but no stage gate runs it before integration-verify, so two consecutive plans (checklist-check's contract, plan-server-core's `plan_server_cli.rs` and `plan_server_contracts.rs`, the redesign's owner-watch test `plan_owner_watch_session.rs`) found the failure last ([Plan-Server Delivery](../mistakes/plan-server-delivery.md)). Proposal: have `loom plan verify` warn on a stage whose `files` list a `loom/tests/*.rs` that uses `CARGO_BIN_EXE_loom` and whose acceptance lacks `cargo test --test integration binary_spawn_guard`.
@@ -306,3 +302,14 @@ coordinator agent (with the Task tool) and removing the 2-level hierarchy from s
   findings read as decided once `openCount` counts only actionable ones.
 - The design record for the chat background line (`ui/DESIGN.md`, Chat) was not in this tree to
   check against the widened `waitsOnBackground` condition; compare it when the file is next edited.
+
+## The Retry Silence Report Mirrors `MAX_STALL_RECOVERIES`
+
+`commands/stage/skip_retry_silence.rs` keeps its own `MAX_STALL_RECOVERIES = 2`, because the constant is private to `orchestrator/core/event_handler/recover_hung.rs`, and it derives the escalation threshold by probing `never_worked::is_escalation` since `STALL_ESCALATION_MULTIPLIER` is private to `orchestrator/monitor/stall_line.rs`. A change to either value leaves the retry report wrong without a failing test. Fix: make both `pub(crate)` in `stall_line.rs`, import them in `recover_hung.rs` and `skip_retry_silence.rs`, and delete the local copy.
+
+## Relay Guard Tokenizer Edges
+
+Two accepted edges of `loom-hooks/loom-relay-guard.sh`, both from the shared tokenizer (`loom-hooks/_parser.sh`):
+
+- **Quoted descriptor digit.** `loom check s --criterion '2'>log` redirects stdout in bash (a quoted `2` is not a descriptor), but the glued flag in `LOOM_TOKEN_META` reads it as fd 2, so the guard passes it. Fix: mark quote-derived words as non-descriptors.
+- **Comments are not modelled.** An unmatched `(` inside a `#` comment (`# (draft` on one line, `loom check s` on the next) raises the next command's depth to 1, and the guard falsely refuses it as captured. Modelling `#` in the tokenizer changes every hook that sources `_parser.sh`, so it needs its own change with the full hook suite.

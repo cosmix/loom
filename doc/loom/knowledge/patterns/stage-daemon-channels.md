@@ -96,11 +96,26 @@ Deliberately not a blanket `.loom/` — a project may legitimately track `.loom/
 
 A session Bash call that relays a request prints one `LOOM_RELAY_V1` line as its last stdout line.
 The PostToolUse hook `loom-hooks/loom-relay.sh` derives the kinds the command may write from its
-argv (`relay_kind_at`), and `loom hook relay` admits the line only when the ticket's kind equals the
-line's kind (`commands/hook/relay/ticket_check.rs`). A command whose kind the hook does not derive
-is never relayed. The ten control kinds (`RequestKind::is_control`, `loom/src/relay/kind.rs`) are
-dropped from a subagent by `drop_control_kinds` before an inbox entry exists, so a new control kind
-needs an entry there.
+argv (`relay_kind_at`, in the sourced library `loom-hooks/_relay_kinds.sh`), and `loom hook relay`
+admits the line only when the ticket's kind equals the line's kind
+(`commands/hook/relay/ticket_check.rs`). A command whose kind the hook does not derive is never
+relayed. The ten control kinds (`RequestKind::is_control`, `loom/src/relay/kind.rs`) are dropped
+from a subagent by `drop_control_kinds` before an inbox entry exists; it asks
+`_relay_kinds.sh::relay_kind_is_control`, which `relay/kind_hook_parity_tests.rs` pins to
+`is_control()` for every kind.
+
+**Two more hooks guard the relay line.** The PreToolUse guard `loom-hooks/loom-relay-guard.sh`
+(global, self-gated on `LOOM_SESSION_ID` and `LOOM_SCRATCH_DIR`) refuses with exit 2 a `block`,
+`commit`, `dispute`, `file-dispute`, `merge-resolved`, `verdict`, `freeze-contracts`, `handoff` or
+`check` invocation that runs with `run_in_background`, inside a capture (`$(...)`, backticks, a
+subshell, a `bash -c` payload), or with stdout redirected, detached or piped into anything but a
+final `tail -N` / `tail -n N` (`relay-stdout`, decided by `_relay_kinds.sh::relay_stdout_fate`).
+It also refuses any pipeline with a loom invocation whose filter consumer names `LOOM_R`,
+`RELAY_V1` or `^LOOM` (`relay-filter`, memory included). `complete` and `subagents:control` are
+left to their pins, and `memory` and `telemetry` are swept. The Stop hook
+`loom-hooks/loom-relay-stop.sh` blocks a stop once per control ticket still in the scratch
+directory (a `.stop-warned-<id>` marker), never while `stop_hook_active` is set, and tells the
+agent to run `loom request status <id>` before any rerun.
 
 | Session command                                                        | Kind                                                  | Control |
 | ---------------------------------------------------------------------- | ----------------------------------------------------- | ------- |

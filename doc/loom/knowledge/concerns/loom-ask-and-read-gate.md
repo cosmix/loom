@@ -88,10 +88,6 @@ the `read:*` cost falls by more than the denied calls cost (see [Read Gate](../a
 
 ## Proposed Guards for Recurring Mistakes
 
-- **Relay-eligible `loom` command run in the background or piped.** Three occurrences, the last on
-  2026-11-02 ([record](../mistakes/memory-relay-drain-gap.md)): prose rules did not stop it. Propose a
-  PreToolUse hook that denies a Bash call whose command runs `loom check`, `loom stage commit`,
-  `loom stage complete` or `loom memory resolve` with `run_in_background`, a pipe or a redirect of its stdout.
 - **Integration-verify full-suite criterion written as a plain string.** Two occurrences
   ([record](../mistakes/completion-runtime.md)). Propose a `loom plan verify` check that fails an
   integration-verify criterion matching `cargo test --all-targets` unless it is an extended criterion with

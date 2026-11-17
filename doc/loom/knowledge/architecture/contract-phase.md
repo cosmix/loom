@@ -78,7 +78,7 @@ missed it: `orchestrator/coherence.rs` (`worker_session_type`, now `is_worker_se
 `relay/emit/cwd.rs::checkout_boundary` and `loom-control-complete.sh` treat the agent as a main-repo agent),
 `status/render/graph.rs`, `self_service.rs` (`BlockStage`), and `relay/matrix.rs` (Contract sends everything
 Stage does except `Dispute`, `Verdict` and completion, plus `FreezeContracts`, which only Contract may send).
-A relayed freeze is dropped unless `loom-hooks/loom-relay.sh` `relay_kind_at` maps `stage:contracts` to
+A relayed freeze is dropped unless `loom-hooks/_relay_kinds.sh` `relay_kind_at` maps `stage:contracts` to
 `FreezeContracts` only when the token after `contracts` is `freeze`, and drops it for subagents
 (`is_control()`, `drop_control_kinds`).
 
@@ -180,6 +180,8 @@ contracts are not batched into one command because `RunSummary` is aggregate.
 ## Accepted Dispute Re-Freeze
 
 An accepted `dispute-contract` re-freezes the complete amended contract and harness set, including the disputed file. `store::refreeze_set` records the exact paths, adapters and working directories; newly added contracts receive the `refrozen` outcome because they did not run during the original freeze.
+
+A dispute filed with `--replacement` adds two steps before `read_frozen_set` (`orchestrator/adjudication/apply_contract_replacement.rs`). First, before `amend_plan` and any write, the frozen file's recorded hash must equal the dispute's `replacement_base_sha256` (nothing changed since filing) or `sha256(replacement)` (an earlier attempt already re-froze); otherwise nothing is written and the stage goes to `NeedsHumanReview`. Then, after `amend_plan`, the replacement bytes from the admitted dispute record are written byte-exact to the post-amendment `contract_file`, through `fs/safe_replace.rs::restore_no_follow` (symlinked targets and parents refused, permission bits kept). A crash between the write and the re-freeze replays on the base hash; one after the re-freeze replays on the replacement hash. Flow: [Frozen Contracts Change Only Through `--replacement`](../conventions/dispute-and-adjudication.md#frozen-contracts-change-only-through---replacement).
 
 A re-freeze writes a version 2 record. It stages a complete generation under `staging/`, checks every copy hash, syncs every file and directory, renames it to `generations/<digest>/` (`<digest>` names its file and hash set), and only then publishes the freeze record (`verify/contracts/store_generation.rs`). Readers resolve copies from the generation their loaded record names, so a reader holding either record sees all of one generation; version 1 records keep the `files/` reader. Only `staging/` is collected, under the store lock and after publication, and a failure to collect changes nothing. A failed step leaves the previous committed record and generation readable, and a re-freeze that crashed restarts with every committed file restorable. Committed generations are kept indefinitely; power loss has not been exercised.
 

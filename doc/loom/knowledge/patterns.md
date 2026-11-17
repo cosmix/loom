@@ -97,7 +97,13 @@ instances of this in one stage.
 
 ## Draining a Stuck `loom-relay` Ticket Backlog
 
-A relay ticket whose `LOOM_RELAY_V1` line never reached `loom-hooks/loom-relay.sh` (stdout redirected or piped through `tail`, a script file, a background call, more than 16 lines in one output) stays in `$LOOM_SCRATCH_DIR`. `loom hook relay` sweeps leftover `memory` and `telemetry` tickets on the next foreground `loom memory` write command, so the backlog drains by running `loom memory note --help` on its own with its output unfiltered; it records nothing. Manual recovery for sessions on a pre-fix binary, and the root cause: [Memory Relay Drain Gap](mistakes/memory-relay-drain-gap.md).
+A relay ticket whose `LOOM_RELAY_V1` line never reached `loom-hooks/loom-relay.sh` (stdout redirected or filtered, a script file, a background call, more than 16 lines in one output) stays in `$LOOM_SCRATCH_DIR`. The recovery depends on the kind:
+
+- **`memory` and `telemetry`.** `loom hook relay` sweeps leftover tickets of these kinds on the next foreground call that allows them, so `loom memory note --help` run alone with its output unfiltered drains the memory backlog; it records nothing. Never rerun the original `loom memory` command: deduplication is by request id, so the note would be recorded twice.
+- **`check`.** Swept the same way; rerun `loom check` in the foreground.
+- **Control kinds** (`block`, `commit`, `dispute`, `file-dispute`, `handoff`, `verdict`, `merge-resolved`, `freeze-contracts`, `complete`, `subagents:control`). Never swept. Run `loom request status <id>` alone; when it reports pending relay or not found the request was not filed, so rerun the command alone, in the foreground, with stdout unfiltered. Any other state means it was received.
+
+Control tickets older than 60 s stop counting against the 32-ticket quota but stay on disk, up to the 128-ticket scratch limit ([Session Requests Travel Through a Hook-Written Inbox](architecture/security-and-isolation.md#session-requests-travel-through-a-hook-written-inbox)). Manual recovery for sessions on a pre-fix binary, and the root cause: [Memory Relay Drain Gap](mistakes/memory-relay-drain-gap.md).
 
 ## One Canonical NotFound-Tolerant Delete Helper
 
