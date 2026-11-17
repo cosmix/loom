@@ -390,3 +390,13 @@ reaches 3.
 **Prevention:** never name a variable passed by name to a `_parser.sh` helper after one of that helper's locals; prefix such variables with the calling function's name.
 
 **Fix:** `_relay_kinds.sh` renamed its locals.
+
+## Hook Tests Pass on Linux and Fail on macOS Through the /var Symlink and the Bash Watchdog (2026-11-17)
+
+**What happened:** two hook tests failed only on the macOS runner. `stage-terminal-guard.sh` built its fixture under `mktemp -d`, which on macOS sits under `/var/folders/...`, and `/var` is a symlink; `loom_lifecycle_plain_path` rejects any symlinked component, so the lifecycle binding refused valid metadata. `spawn-guard-reviewer-brief.sh` case 8 took 7 s against a 5 s bound: macOS has no `timeout`, so `loom_run_bounded` used its bash watchdog, which signals only the direct child; the stub's `sleep` grandchild kept the `$(...)` pipe open.
+
+**Why:** Linux CI has a physical `/tmp` and GNU `timeout`, which signals the whole process group, so neither trap is reachable there.
+
+**Prevention:** a hook test fixture that reaches a symlink-refusing helper resolves its temp root with `pwd -P`. A stub run under `loom_run_bounded` never leaves a child holding stdout (redirect it, or use a builtin). Reproduce the first trap on Linux with `TMPDIR=<symlink-to-/tmp>`.
+
+**Fix:** `TMP=$(cd "$(mktemp -d ...)" && pwd -P)` in `stage-terminal-guard.sh`; `sleep ... >/dev/null 2>&1` in the reviewer-brief stub.
