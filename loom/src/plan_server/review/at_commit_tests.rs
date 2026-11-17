@@ -6,9 +6,7 @@ use std::path::Path;
 use anyhow::{Context, Result};
 use serde_json::json;
 
-use super::compare::{
-    changed_since, discoverable, parse_name_status, text_at, BlobTooLarge, ChangedDocChange,
-};
+use super::compare::{discoverable, parse_name_status, text_at, BlobTooLarge, ChangedDocChange};
 use super::git_tests::{commit, doc, git_at, init, put, repo, BEFORE};
 use crate::plan_server::files::doc::MAX_EDIT_BYTES;
 use crate::plan_server::start_with_routes;
@@ -110,9 +108,12 @@ fn a_path_git_lists_twice_keeps_its_first_entry() {
     );
 }
 
-#[cfg(unix)]
+// APFS rejects file names that are not valid UTF-8 (EILSEQ), so the fixture
+// cannot exist on macOS.
+#[cfg(all(unix, not(target_os = "macos")))]
 #[test]
 fn untracked_non_utf8_name_does_not_fail_compare() {
+    use super::compare::changed_since;
     use std::ffi::OsStr;
     use std::os::unix::ffi::OsStrExt;
 

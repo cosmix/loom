@@ -4,7 +4,7 @@
 
 use std::path::Path;
 
-use super::checkout_stash::{reset_checkout, snapshot_changes, store_unchanged};
+use super::checkout_stash::{snapshot_changes, store_unchanged};
 use super::test_support::{commit_file, git_ok, git_out, init_repo, lock_dir, stage_branch};
 use super::{merge_stage, MergeGate, MergeResult};
 use crate::test_git::TestRepo;
@@ -209,8 +209,12 @@ fn a_file_rewritten_with_its_own_bytes_is_no_change() {
     assert!(snapshot_changes(root).unwrap().is_none());
 }
 
+// APFS rejects file names that are not valid UTF-8 (EILSEQ), so the fixture
+// cannot exist on macOS.
+#[cfg(not(target_os = "macos"))]
 #[test]
 fn a_snapshot_of_a_non_utf8_path_comes_back_through_the_stash() {
+    use super::checkout_stash::reset_checkout;
     use std::os::unix::ffi::OsStrExt;
     let repo = init_repo();
     let root = repo.path();

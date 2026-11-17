@@ -83,7 +83,9 @@ fn stale_control_id(scratch_dir: &Path, name: &str, now: SystemTime) -> Option<S
     ticket.kind.is_control().then_some(ticket.id)
 }
 
-#[cfg(test)]
+// APFS rejects file names that are not valid UTF-8 (EILSEQ), so the only
+// fixture here cannot exist on macOS.
+#[cfg(all(test, not(target_os = "macos")))]
 mod tests {
     use super::*;
     use std::os::unix::ffi::OsStrExt;

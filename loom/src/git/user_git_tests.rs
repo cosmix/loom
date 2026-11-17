@@ -1,7 +1,6 @@
 //! `IndexBefore` against real repositories with the user's hooks and unusual index contents.
 
 use std::fs;
-use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::PermissionsExt;
 
 use tempfile::TempDir;
@@ -51,8 +50,12 @@ fn commit_a(root: &Path) -> IndexReset {
     index.reset(root, &["a.md"], "HEAD")
 }
 
+// APFS rejects file names that are not valid UTF-8 (EILSEQ), so the fixture
+// cannot exist on macOS.
+#[cfg(not(target_os = "macos"))]
 #[test]
 fn a_staged_path_that_is_not_utf8_neither_fails_the_commit_nor_loses_its_staging() {
+    use std::os::unix::ffi::OsStrExt;
     for born in [true, false] {
         let dir = repo();
         let root = dir.path();

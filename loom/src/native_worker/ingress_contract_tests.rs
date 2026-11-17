@@ -238,14 +238,23 @@ fn brief_symlink_is_refused() {
     assert!(fx.invocations().is_empty(), "a refused start left a record");
 }
 
-/// Inode of the test process's own pid namespace (`/proc/self/ns/pid`).
-fn own_pid_namespace() -> u64 {
+/// Inode of the test process's own pid namespace (`/proc/self/ns/pid`), so
+/// `verify_quiescent` finds live members in it.
+#[cfg(target_os = "linux")]
+pub(super) fn own_pid_namespace() -> u64 {
     let link = fs::read_link("/proc/self/ns/pid").expect("pid namespace link");
     let link = link.to_string_lossy();
     link.strip_prefix("pid:[")
         .and_then(|rest| rest.strip_suffix(']'))
         .and_then(|inode| inode.parse().ok())
         .expect("pid namespace inode")
+}
+
+/// macOS has no pid namespaces (nor `/proc`): `verify_quiescent` leaves every
+/// boundary unverified there, whatever namespace a record names.
+#[cfg(not(target_os = "linux"))]
+pub(super) fn own_pid_namespace() -> u64 {
+    0
 }
 
 /// A pid above any kernel's `pid_max` (at most 2^22), so no process has it.

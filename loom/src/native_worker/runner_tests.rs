@@ -185,6 +185,8 @@ fn an_exited_supervisor_without_terminal_is_settled_unknown_released() {
     assert!(claim.contains("\"pid\":0"), "{claim}");
 }
 
+// The child reads its session id from /proc, which macOS lacks.
+#[cfg(target_os = "linux")]
 #[test]
 #[serial_test::serial]
 fn a_child_runs_in_its_own_session() {
@@ -297,16 +299,6 @@ fn a_live_claim_from_an_earlier_daemon_is_adopted() {
     assert!(fx.calls().is_empty(), "a claimed invocation was started");
 }
 
-/// Inode of this process's pid namespace, so `verify_quiescent` finds members.
-fn own_pid_namespace() -> u64 {
-    let link = fs::read_link("/proc/self/ns/pid").expect("pid namespace link");
-    let link = link.to_string_lossy().into_owned();
-    link.trim_start_matches("pid:[")
-        .trim_end_matches(']')
-        .parse()
-        .expect("pid namespace inode")
-}
-
 #[test]
 fn a_lost_supervisor_with_live_namespace_members_is_left_unverified() {
     let fx = fx();
@@ -315,7 +307,7 @@ fn a_lost_supervisor_with_live_namespace_members_is_left_unverified() {
         supervisor_pid: i32::MAX - 7,
         supervisor_start: "0".to_string(),
         boundary_pid: i32::MAX - 7,
-        pid_namespace: own_pid_namespace(),
+        pid_namespace: crate::native_worker::ingress_contract_tests::own_pid_namespace(),
         boot_id: crate::process::boot_id::os_boot_id().expect("boot id"),
     };
     store::write_boundary(&dir, &identity).expect("boundary.json");

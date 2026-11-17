@@ -259,6 +259,10 @@ fn the_session_wrapper_reads_as_a_command_only_while_a_tool_call_runs() {
     let agent = read_pid_entry(dir, &pid_key)
         .expect("the wrapper writes the PID file")
         .pid;
+    // The wrapper records a start time only where /proc has one; the spawner
+    // then records the kernel's (`spawner::finalize_pid_identity`), which is
+    // all macOS gets. Without it the agent is unverifiable and reads as idle.
+    crate::orchestrator::terminal::native::write_test_pid_identity(dir, &session, agent).unwrap();
     wait_until("the wrapper's tee", || wrapper_tee_runs_under(agent));
     for _ in 0..5 {
         let command = running_command(dir, &session);

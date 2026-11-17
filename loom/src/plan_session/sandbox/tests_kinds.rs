@@ -289,6 +289,9 @@ fn no_kind_allows_an_edit_under_doc_loom() {
     }
 }
 
+// APFS rejects file names that are not valid UTF-8 (EILSEQ), so the fixture
+// cannot exist on macOS.
+#[cfg(not(target_os = "macos"))]
 #[test]
 fn non_utf8_state_root_fails_the_build() {
     use std::os::unix::ffi::OsStrExt;

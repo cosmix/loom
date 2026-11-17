@@ -96,6 +96,12 @@ impl Repo {
 }
 
 pub(super) fn skip(test: &str) -> bool {
+    // The denies are measured through bubblewrap's read-only binds, and bubblewrap
+    // exists only on Linux; macOS confines with Seatbelt, which these do not drive.
+    if !cfg!(target_os = "linux") {
+        eprintln!("SKIP {test}: the capsule measured here is bubblewrap's, which is Linux-only");
+        return true;
+    }
     skip_unless(
         confined_commands_runnable(),
         test,

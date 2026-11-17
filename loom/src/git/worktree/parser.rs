@@ -60,7 +60,6 @@ pub fn parse_worktree_list(output: &[u8]) -> Result<Vec<WorktreeInfo>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_git::{git, git_command, TestRepo};
 
     #[test]
     fn parses_nul_records_and_rejects_incomplete_output() {
@@ -85,8 +84,12 @@ mod tests {
         assert_eq!(worktrees[1].branch.as_deref(), Some("main"));
     }
 
+    // APFS rejects file names that are not valid UTF-8 (EILSEQ), so the
+    // branch's loose ref cannot exist on macOS.
+    #[cfg(not(target_os = "macos"))]
     #[test]
     fn git_lists_a_worktree_on_a_non_utf8_branch() {
+        use crate::test_git::{git, git_command, TestRepo};
         use std::os::unix::ffi::OsStrExt;
         let repo = tempfile::TempDir::new().unwrap();
         let root = repo.path();

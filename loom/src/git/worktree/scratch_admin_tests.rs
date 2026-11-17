@@ -223,6 +223,15 @@ fn a_filename_that_folds_to_config_worktree_is_not_linked() {
         fixture.hostile_config(),
     )
     .unwrap();
+    // On a case-insensitive filesystem (APFS and HFS+ by default) the file IS
+    // `config.worktree` to git, so its hostile setting must refuse the command.
+    if fixture.admin.join(CONFIG_WORKTREE).exists() {
+        let error = ScratchAdmin::prepare(&fixture.repo, &fixture.admin, &fixture.common, true)
+            .err()
+            .expect("git would read the folded name as config.worktree");
+        assert!(format!("{error:#}").contains("filter.x.clean"), "{error:#}");
+        return;
+    }
 
     let scratch = fixture.scratch();
 

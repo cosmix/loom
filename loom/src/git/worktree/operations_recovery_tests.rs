@@ -1,8 +1,7 @@
 use super::*;
 use crate::fs::permissions::scratch_home::ScratchHome;
-use crate::test_git::{git, git_command, TestRepo};
+use crate::test_git::{git, TestRepo};
 use serial_test::serial;
-use std::os::unix::ffi::OsStringExt;
 
 fn repo() -> TestRepo {
     let repo = TestRepo::builder().no_seed().create();
@@ -54,8 +53,13 @@ fn prune_and_listing_errors_preserve_directory() {
     assert!(path.join(".git").exists());
 }
 
+// APFS rejects file names that are not valid UTF-8 (EILSEQ), so the fixture
+// cannot exist on macOS.
+#[cfg(not(target_os = "macos"))]
 #[test]
 fn listing_preserves_real_git_paths_with_newline_and_non_utf8() {
+    use crate::test_git::git_command;
+    use std::os::unix::ffi::OsStringExt;
     let repo = repo();
     let name = std::ffi::OsString::from_vec(b"linked\n\xff".to_vec());
     let path = repo.path().join(name);

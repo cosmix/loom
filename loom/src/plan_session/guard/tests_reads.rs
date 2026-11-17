@@ -320,6 +320,9 @@ fn dangling_link_is_read_denied() -> Result<()> {
     Ok(())
 }
 
+// APFS rejects file names that are not valid UTF-8 (EILSEQ), so the fixture
+// cannot exist on macOS.
+#[cfg(not(target_os = "macos"))]
 #[test]
 fn non_utf8_state_root_denies_reads() -> Result<()> {
     use std::os::unix::ffi::OsStrExt;

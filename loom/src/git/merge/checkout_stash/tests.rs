@@ -110,14 +110,20 @@ fn directory_becomes_file(root: &Path) {
     write(root, "gone", "a file now\n");
 }
 
-/// A path whose bytes are not UTF-8, and one holding a newline.
+/// A path holding a newline, and one whose bytes are not UTF-8 where the
+/// filesystem can hold it: APFS refuses such a name (EILSEQ).
 fn awkward_names(root: &Path) {
-    let latin1 = std::ffi::OsStr::from_bytes(b"caf\xe9.txt");
-    fs::write(root.join(latin1), "x\n").unwrap();
-    write(root, "new\nline.txt", "y\n");
+    let mut names = vec![std::ffi::OsStr::new("new\nline.txt")];
+    if cfg!(not(target_os = "macos")) {
+        names.push(std::ffi::OsStr::from_bytes(b"caf\xe9.txt"));
+    }
+    for name in &names {
+        fs::write(root.join(name), "x\n").unwrap();
+    }
     git_ok(root, &["add", "."]);
-    fs::write(root.join(latin1), "x2\n").unwrap();
-    write(root, "new\nline.txt", "y2\n");
+    for name in &names {
+        fs::write(root.join(name), "x2\n").unwrap();
+    }
 }
 
 fn cleaned_by_a_filter(root: &Path) {
