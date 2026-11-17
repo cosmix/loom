@@ -3,6 +3,7 @@
 
 use std::cell::RefCell;
 use std::collections::VecDeque;
+#[cfg(target_os = "linux")]
 use std::ffi::OsString;
 use std::fs;
 use std::io::{self, Cursor, Write};
@@ -14,7 +15,9 @@ use serde_json::{json, Value};
 
 use super::io::{CappedLog, PipeTransport};
 use super::{run_session, settle, teardown, Clock};
-use crate::native_worker::boundary::{identity_for, spawn_payload, verify_quiescent, Quiescence};
+use crate::native_worker::boundary::Quiescence;
+#[cfg(target_os = "linux")]
+use crate::native_worker::boundary::{identity_for, spawn_payload, verify_quiescent};
 use crate::native_worker::index::{stage_disposition, unit_state, NativeDisposition};
 use crate::native_worker::model::{
     CancelRequest, ControlMessage, Delivery, MessageState, NativeEvent, Outcome, Ownership,
@@ -22,6 +25,7 @@ use crate::native_worker::model::{
 };
 use crate::native_worker::protocol::frame::{read_frame, FrameError, Transport};
 use crate::native_worker::store::{self, read_events};
+#[cfg(target_os = "linux")]
 use crate::process::sandbox_probe::{confined_commands_runnable, skip_unless};
 
 // The frozen contract file declares the same harness privately in its own module, so these
@@ -292,7 +296,8 @@ fn spawn_failure_after_start_settles_unverified() {
 #[serial_test::serial]
 fn spawn_failure_before_start_settles_released() {
     let record = invocation();
-    teardown::settle_spawn_failure(&record.dir, "a symlinked .loom", false);
+    let code = teardown::settle_spawn_failure(&record.dir, "a symlinked .loom", false);
+    assert_eq!(code, std::process::ExitCode::SUCCESS);
     let tail = &events(&record.dir)[1..];
     assert!(matches!(&tail[1], NativeEvent::OwnershipReleased { by } if by == "supervisor"));
 }
@@ -371,6 +376,7 @@ fn send_after_the_reader_closed_is_an_error() {
     transport.close_input().join();
 }
 
+#[cfg(target_os = "linux")]
 #[test]
 #[serial_test::serial]
 fn stop_process_ends_a_sleeping_boundary_and_namespace_is_released() {

@@ -1,8 +1,12 @@
 //! Contract tests for the shared process-group signalling and bounded wait helpers.
 use nix::sys::signal::Signal;
+#[cfg(target_os = "linux")]
 use std::io::{BufRead, BufReader};
+#[cfg(target_os = "linux")]
 use std::os::unix::process::CommandExt;
-use std::process::{Command, Stdio};
+use std::process::Command;
+#[cfg(target_os = "linux")]
+use std::process::Stdio;
 use std::time::{Duration, Instant};
 
 /// True when `pid` no longer runs: its `/proc` entry is gone or it is a zombie.

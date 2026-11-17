@@ -92,16 +92,15 @@ fn run_cache_canary(cwd: &Path, home: &Path, port: u16, network: NetworkAccess, 
     );
     assert!(String::from_utf8_lossy(&output.stdout).contains("CACHE_CANARY_PASSED"));
     for cache in ["cache", "uv-cache", "bun-cache"] {
-        let mut written = scratch_path.join(cache).join("written").is_file();
+        let written = scratch_path.join(cache).join("written").is_file();
         #[cfg(target_os = "linux")]
-        if !written {
-            written = scratch
+        let written = written
+            || scratch
                 .cache_overlays()
                 .iter()
                 .any(|(_, upper, _, target)| {
                     target == &scratch_path.join(cache) && upper.join("written").is_file()
                 });
-        }
         assert!(written, "{cache}");
     }
     drop(scratch);

@@ -3,7 +3,9 @@
 //! symlink, at the root or below it: a process still running in a boundary
 //! the scratch is bound into may swap a directory for a link to `$HOME`
 //! mid-walk, and that link is skipped, never entered or changed.
-use std::ffi::{CStr, CString, OsStr};
+#[cfg(target_os = "linux")]
+use std::ffi::CStr;
+use std::ffi::{CString, OsStr};
 use std::os::fd::{AsFd, BorrowedFd};
 use std::os::unix::ffi::OsStrExt;
 use std::path::Path;
