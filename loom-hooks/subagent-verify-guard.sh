@@ -208,10 +208,13 @@ EOF
 # shellcheck source=_verify_matchers.sh
 # A missing helper lets the call through (exit 1 is non-blocking): this hook
 # only raises the cost of a bare run, so its own breakage never stops work.
-source "$(dirname "${BASH_SOURCE[0]}")/_verify_matchers.sh" || {
+# Checked before sourcing: bash 3.2 (macOS /bin/bash) exits a non-interactive
+# script when `source` cannot find its file, so the `||` branch never runs there.
+VERIFY_MATCHERS="$(dirname "${BASH_SOURCE[0]}")/_verify_matchers.sh"
+if [[ ! -r "$VERIFY_MATCHERS" ]] || ! source "$VERIFY_MATCHERS"; then
 	echo "subagent-verify-guard.sh: _verify_matchers.sh is missing or unreadable beside this hook - test-runner checks are off for this call. Reinstall the hooks with \`loom install-assets\`." >&2
 	exit 1
-}
+fi
 
 # Walk the token stream, inspecting only tokens in COMMAND POSITION (line start
 # or just after a separator), so mentions inside arguments - `rg cargo doc/`,
