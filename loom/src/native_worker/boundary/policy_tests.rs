@@ -5,7 +5,8 @@ use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use super::linux::{scratch_probe, StartedThenFailed};
+use super::environment::scratch_probe;
+use super::launch::StartedThenFailed;
 use super::mounts::{self, codex_package};
 use super::spawn_started;
 use super::tests::canonical_tempdir;

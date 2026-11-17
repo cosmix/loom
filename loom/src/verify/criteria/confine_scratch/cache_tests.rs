@@ -60,7 +60,7 @@ fn overlay_keeps_host_cache_unchanged_across_concurrent_commands() {
                     .arg(&target)
                     .status()
                     .unwrap();
-                restore_overlay_work_permissions(&overlay.join("work"));
+                reclaim::make_removable(&overlay.join("work"));
                 assert!(status.success());
             });
         }

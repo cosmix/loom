@@ -1,4 +1,4 @@
-use super::super::model::{MessageState, Outcome, SandboxMode, NATIVE_DEADLINE_SECS};
+use super::super::model::{MessageState, Outcome, NATIVE_DEADLINE_SECS};
 use super::super::store::{create_invocation, EventLog};
 use super::*;
 use chrono::TimeZone;
@@ -89,12 +89,7 @@ pub(super) fn admit(
 fn fold_phase_follows_events_and_never_moves_backward() {
     let steps = [
         (NativeEvent::Admitted, Phase::Admitted),
-        (
-            NativeEvent::BoundaryCreated {
-                sandbox_mode: SandboxMode::External,
-            },
-            Phase::Starting,
-        ),
+        (NativeEvent::BoundaryCreated, Phase::Starting),
         (running(), Phase::Running),
         (NativeEvent::Admitted, Phase::Running),
         (
@@ -174,9 +169,7 @@ fn fold_last_progress_is_newest_event_time() {
 #[test]
 fn fold_records_boundary_thread_cancel_and_report() {
     let state = folded(&[
-        NativeEvent::BoundaryCreated {
-            sandbox_mode: SandboxMode::External,
-        },
+        NativeEvent::BoundaryCreated,
         NativeEvent::ThreadStarted {
             thread_id: "thread".into(),
         },
@@ -190,7 +183,6 @@ fn fold_records_boundary_thread_cancel_and_report() {
         },
     ]);
     assert_eq!(state.phase, Phase::Finalizing);
-    assert_eq!(state.sandbox_mode, Some(SandboxMode::External));
     assert_eq!(state.thread_id.as_deref(), Some("thread"));
     assert!(state.cancel_requested);
     let report = state.report.unwrap();

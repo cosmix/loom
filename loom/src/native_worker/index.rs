@@ -69,7 +69,6 @@ pub fn fold(manifest: NativeManifest, events: &[EventRecord]) -> NativeUnitState
         outcome_reason: None,
         ownership: Ownership::Held,
         thread_id: None,
-        sandbox_mode: None,
         cancel_requested: false,
         report: None,
         messages: Vec::new(),
@@ -84,7 +83,7 @@ pub fn fold(manifest: NativeManifest, events: &[EventRecord]) -> NativeUnitState
 
 fn event_phase(event: &NativeEvent) -> Phase {
     match event {
-        NativeEvent::BoundaryCreated { .. } => Phase::Starting,
+        NativeEvent::BoundaryCreated => Phase::Starting,
         NativeEvent::TurnStarted { .. } => Phase::Running,
         NativeEvent::CancelRequested { .. }
         | NativeEvent::DeadlineExpired
@@ -96,7 +95,6 @@ fn event_phase(event: &NativeEvent) -> Phase {
 
 fn apply_event(state: &mut NativeUnitState, event: &NativeEvent) {
     match event {
-        NativeEvent::BoundaryCreated { sandbox_mode } => state.sandbox_mode = Some(*sandbox_mode),
         NativeEvent::ThreadStarted { thread_id } => state.thread_id = Some(thread_id.clone()),
         NativeEvent::CancelRequested { .. } => state.cancel_requested = true,
         NativeEvent::ReportStored {

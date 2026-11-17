@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 use serde_json::Value;
 
-use super::model::{ControlMessage, NativeEvent, Outcome, SandboxMode};
+use super::model::{ControlMessage, NativeEvent, Outcome};
 use super::protocol::{
     correlate::{Correlator, Pending},
     frame::{Incoming, RpcError},
@@ -33,7 +33,6 @@ pub struct MachineConfig {
     pub model: String,
     pub effort: String,
     pub task_text: String,
-    pub sandbox_mode: SandboxMode,
     pub client_version: String,
 }
 
@@ -199,13 +198,7 @@ impl Machine {
         vec![
             Action::Send(wire::initialized()),
             self.request(Pending::ThreadStart, |id| {
-                wire::thread_start(
-                    id,
-                    &config.model,
-                    &config.cwd,
-                    config.sandbox_mode,
-                    wire::DEVELOPER_INSTRUCTIONS,
-                )
+                wire::thread_start(id, &config.model, &config.cwd, wire::DEVELOPER_INSTRUCTIONS)
             }),
         ]
     }

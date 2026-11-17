@@ -5,9 +5,7 @@ use serde_json::{json, Value};
 fn every_event_variant_round_trips_through_json() {
     let events = vec![
         NativeEvent::Admitted,
-        NativeEvent::BoundaryCreated {
-            sandbox_mode: SandboxMode::WorkspaceWrite,
-        },
+        NativeEvent::BoundaryCreated,
         NativeEvent::ThreadStarted {
             thread_id: "t".into(),
         },
@@ -76,10 +74,6 @@ fn enums_serialize_snake_case() {
     assert_eq!(
         serde_json::to_value(Delivery::NextTurn).unwrap(),
         json!("next_turn")
-    );
-    assert_eq!(
-        serde_json::to_value(SandboxMode::WorkspaceWrite).unwrap(),
-        json!("workspace_write")
     );
 }
 

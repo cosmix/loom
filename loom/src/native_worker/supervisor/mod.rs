@@ -23,8 +23,8 @@ use self::teardown::{settle_exit, settle_unspawned};
 use super::boundary::{self, BoundarySpec, Quiescence, SpawnedBoundary};
 use super::machine::{Action, Input, Machine, MachineConfig};
 use super::model::{
-    BoundaryIdentity, NativeEvent, NativeManifest, Outcome, SandboxMode, INTERRUPT_GRACE_SECS,
-    MAX_BRIEF_BYTES, PROGRESS_EVENT_INTERVAL_SECS,
+    BoundaryIdentity, NativeEvent, NativeManifest, Outcome, INTERRUPT_GRACE_SECS, MAX_BRIEF_BYTES,
+    PROGRESS_EVENT_INTERVAL_SECS,
 };
 use super::protocol::frame::{classify, FrameError, Transport};
 use super::store::{self, EventLog};
@@ -73,21 +73,11 @@ impl<'a, T: Transport> Session<'a, T> {
             .context("brief.md")?
             .ok_or_else(|| anyhow!("brief.md is missing"))?;
         let brief = String::from_utf8(brief).context("brief.md is not UTF-8")?;
-        let events = store::read_events(dir).context("events.jsonl")?;
-        let sandbox_mode = events
-            .iter()
-            .rev()
-            .find_map(|record| match record.event {
-                NativeEvent::BoundaryCreated { sandbox_mode } => Some(sandbox_mode),
-                _ => None,
-            })
-            .unwrap_or(SandboxMode::WorkspaceWrite);
         let machine = Machine::new(MachineConfig {
             cwd: manifest.workspace_root.clone(),
             model: manifest.model.clone(),
             effort: manifest.effort.clone(),
             task_text: prompt::task_text(&manifest.brief_path, &brief),
-            sandbox_mode,
             client_version: env!("CARGO_PKG_VERSION").into(),
         });
         Ok(Self {
@@ -238,11 +228,6 @@ pub fn run_from_dir(dir: &Path) -> Result<ExitCode> {
         Ok(proxy) => proxy,
         Err(e) => return Ok(settle_unspawned(dir, &format!("proxy start failed: {e:#}"))),
     };
-    let mode = if boundary::nested_sandbox_supported() {
-        SandboxMode::WorkspaceWrite
-    } else {
-        SandboxMode::External
-    };
     let spec = BoundarySpec {
         worktree: manifest.workspace_root,
         codex_home,
@@ -257,7 +242,7 @@ pub fn run_from_dir(dir: &Path) -> Result<ExitCode> {
     }
     // From this (main) thread, before any reader, writer or drain thread exists.
     let code = match boundary::spawn(&spec) {
-        Ok(spawned) => supervise_boundary(dir, spawned, mode),
+        Ok(spawned) => supervise_boundary(dir, spawned),
         Err(e) => {
             teardown::settle_spawn_failure(dir, &format!("{e:#}"), boundary::spawn_started(&e))
         }
@@ -308,22 +293,15 @@ fn admitted_manifest(dir: &Path) -> Result<Option<NativeManifest>> {
 /// Records the boundary, runs the session, tears the boundary down and settles.
 /// Only the pipes move out of `spawned`; the rest (the process and the mounted
 /// Cargo home) lives until this function returns, after the boundary is retired.
-fn supervise_boundary(dir: &Path, mut spawned: SpawnedBoundary, mode: SandboxMode) -> ExitCode {
+/// A namespace not proven empty keeps that Cargo home on disk for the sweep.
+fn supervise_boundary(dir: &Path, mut spawned: SpawnedBoundary) -> ExitCode {
     use Outcome::Unknown;
     let identity = match boundary::identity_for(&spawned) {
         Ok(identity) => identity,
-        Err(e) => {
-            // Closing the input first lets the app-server exit on EOF instead
-            // of `stop_process` waiting out the whole grace.
-            drop(spawned.stdin);
-            teardown::stop_process(&mut spawned.process);
-            let unchecked = format!("no boundary identity, namespace unchecked: {e:#}");
-            let reason = format!("could not record boundary: {e:#}");
-            return settle_exit(dir, Unknown, &reason, Quiescence::Unverified(unchecked));
-        }
+        Err(e) => return teardown::settle_unrecorded(dir, spawned, &e),
     };
     let (stdin, stdout, stderr) = (spawned.stdin, spawned.stdout, spawned.stderr);
-    let (result, threads) = match record_boundary(dir, &identity, mode) {
+    let (result, threads) = match record_boundary(dir, &identity) {
         Ok(()) => match start_pipes(dir, stdin, stdout, stderr) {
             Ok(mut transport) => {
                 let result = run_session(dir, &mut transport, &SystemClock);
@@ -341,6 +319,8 @@ fn supervise_boundary(dir: &Path, mut spawned: SpawnedBoundary, mode: SandboxMod
     };
     teardown::stop_process(&mut spawned.process);
     let quiescence = boundary::verify_quiescent(&identity);
+    #[cfg(target_os = "linux")]
+    boundary::keep_scratch_unless_released(&mut spawned.scratch, &quiescence);
     if let (Quiescence::Released, Some(threads)) = (&quiescence, threads) {
         threads.join();
     }
@@ -350,8 +330,9 @@ fn supervise_boundary(dir: &Path, mut spawned: SpawnedBoundary, mode: SandboxMod
 }
 
 /// `boundary.json` first, so a crash after this point leaves a findable namespace.
-fn record_boundary(dir: &Path, identity: &BoundaryIdentity, mode: SandboxMode) -> Result<()> {
+/// Codex's own sandbox always runs: qualification requires it to nest.
+fn record_boundary(dir: &Path, identity: &BoundaryIdentity) -> Result<()> {
     store::write_boundary(dir, identity)?;
-    EventLog::open(dir)?.append(NativeEvent::BoundaryCreated { sandbox_mode: mode })?;
+    EventLog::open(dir)?.append(NativeEvent::BoundaryCreated)?;
     Ok(())
 }

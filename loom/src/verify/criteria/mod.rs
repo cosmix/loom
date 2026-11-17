@@ -57,6 +57,8 @@ mod confine;
 mod criterion_eval;
 mod executor;
 pub(crate) mod output;
+#[cfg(target_os = "linux")]
+pub(crate) mod pid_namespace;
 mod probe;
 mod result;
 mod runner;

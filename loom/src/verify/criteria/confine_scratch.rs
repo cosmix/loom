@@ -30,12 +30,16 @@ use super::host::cargo_home;
 #[cfg(unix)]
 #[path = "confine_linked_home.rs"]
 mod linked_home;
+#[path = "confine_scratch/reclaim.rs"]
+mod reclaim;
 
 pub(crate) struct CargoScratch {
     directory: tempfile::TempDir,
     cargo: CargoHome,
     #[cfg(target_os = "linux")]
     cache_lowers: Vec<(&'static str, PathBuf)>,
+    /// Left on disk when dropped: see [`CargoScratch::keep`].
+    kept: bool,
 }
 
 enum CargoHome {
@@ -44,10 +48,12 @@ enum CargoHome {
     /// keep the paths the session's own `cargo` builds against and a target
     /// directory warmed outside the boundary stays warm inside it.
     Mounted(PathBuf),
-    /// A stable directory per working tree, outside it, linking the host's
-    /// `registry` and `git`. Used where paths cannot be remapped (Seatbelt). It
-    /// persists across commands and is never removed: one small directory per
-    /// tree.
+    /// A directory linking the host's `registry` and `git`, used where the
+    /// host's Cargo home path cannot be remapped (Seatbelt, or a Cargo home
+    /// overlapping the tree). From [`CargoScratch::prepare`] it is stable per
+    /// working tree, outside it, persists across commands and is never removed:
+    /// one small directory per tree. From [`CargoScratch::prepare_private`] it
+    /// is `<scratch>/cargo` and goes with the scratch.
     Linked {
         home: PathBuf,
         sources: Vec<(&'static str, PathBuf)>,
@@ -58,12 +64,28 @@ impl CargoScratch {
     /// `mount` says the launcher can bind a private directory at the host's
     /// Cargo home path.
     pub(crate) fn prepare(command: &Command, tree: &Path, mount: bool) -> Result<Self> {
+        Self::build(command, tree, mount, false)
+    }
+
+    /// A mounted scratch whose Cargo home, Linked or not, lives inside it and
+    /// is removed with it. For a boundary whose commands may write their Cargo
+    /// home: a home shared with later boundaries or the confined gate would let
+    /// a planted `config.toml` (`build.rustc-wrapper`) run there unseen.
+    pub(crate) fn prepare_private(command: &Command, tree: &Path) -> Result<Self> {
+        Self::build(command, tree, true, true)
+    }
+
+    fn build(command: &Command, tree: &Path, mount: bool, private: bool) -> Result<Self> {
         let directory = private_temporary_directory(tree)?;
         let host = cargo_home(command);
         let cargo = match host {
             Some(host) if mount && !overlaps(&host, tree) => CargoHome::Mounted(host),
             host => CargoHome::Linked {
-                home: stable_cargo_home(tree)?,
+                home: if private {
+                    directory.path().join("cargo")
+                } else {
+                    stable_cargo_home(tree)?
+                },
                 sources: linked_sources(host.as_deref()),
             },
         };
@@ -90,11 +112,29 @@ impl CargoScratch {
             cargo,
             #[cfg(target_os = "linux")]
             cache_lowers,
+            kept: false,
         })
     }
 
+    /// Record that this scratch is bound into a native-worker boundary of
+    /// `pid_namespace` (`None` before bubblewrap reports it), so a sweep
+    /// keeps it while that namespace may have members.
+    #[cfg(target_os = "linux")]
+    pub(crate) fn mark_boundary(&self, pid_namespace: Option<u64>) -> Result<()> {
+        reclaim::marker::write(self.path(), pid_namespace)
+    }
+
+    /// Leave the scratch on disk when dropped: it is bound into a boundary
+    /// whose namespace was not proven empty. The sweep reclaims it once its
+    /// owner and that namespace are gone ([`CargoScratch::mark_boundary`]).
+    #[cfg(target_os = "linux")]
+    pub(crate) fn keep(&mut self) {
+        self.kept = true;
+        self.directory.disable_cleanup(true);
+    }
+
     /// The per-command scratch root: temporary files and package-manager caches.
-    pub(super) fn path(&self) -> &Path {
+    pub(crate) fn path(&self) -> &Path {
         self.directory.path()
     }
 
@@ -107,7 +147,8 @@ impl CargoScratch {
         }
     }
 
-    /// The persistent per-tree Cargo home the launcher must grant writes to.
+    /// The Linked Cargo home the launcher must grant writes to: persistent per
+    /// tree, or inside the scratch for [`CargoScratch::prepare_private`].
     pub(crate) fn linked_cargo_home(&self) -> Option<&Path> {
         match &self.cargo {
             CargoHome::Linked { home, .. } => Some(home),
@@ -166,30 +207,20 @@ impl CargoScratch {
     }
 }
 
-#[cfg(target_os = "linux")]
+/// Restore owner access below the scratch (overlayfs `work/work` is 000, a
+/// command may leave 0500 directories) before TempDir removes it, unless it
+/// is kept. On Linux a scratch dropped while its thread panics is kept: the
+/// unwinding skipped whatever would have proven its users stopped, and the
+/// sweep reclaims it once its owner, and any boundary it marks, is gone.
+#[cfg(unix)]
 impl Drop for CargoScratch {
     fn drop(&mut self) {
-        for (_, _, work, _) in self.cache_overlays() {
-            restore_overlay_work_permissions(&work);
+        #[cfg(target_os = "linux")]
+        if std::thread::panicking() {
+            self.keep();
         }
-    }
-}
-
-/// Overlayfs leaves `work/work` mode 000 after unmount. Restore owner access
-/// before TempDir recursively removes the private scratch directory.
-#[cfg(target_os = "linux")]
-fn restore_overlay_work_permissions(work: &Path) {
-    use std::os::unix::fs::PermissionsExt;
-
-    let internal = work.join("work");
-    let Ok(metadata) = std::fs::symlink_metadata(&internal) else {
-        return;
-    };
-    if metadata.file_type().is_dir() {
-        if let Err(error) =
-            std::fs::set_permissions(&internal, std::fs::Permissions::from_mode(0o700))
-        {
-            tracing::warn!(path = %internal.display(), %error, "cannot restore overlay work permissions");
+        if !self.kept {
+            reclaim::make_removable(self.path());
         }
     }
 }
@@ -216,33 +247,39 @@ fn linked_sources(host: Option<&Path>) -> Vec<(&'static str, PathBuf)> {
         .collect()
 }
 
+/// Every root a command scratch may be created under, canonical.
+fn candidate_roots() -> impl Iterator<Item = PathBuf> {
+    [std::env::temp_dir(), "/tmp".into(), "/var/tmp".into()]
+        .into_iter()
+        .filter_map(|root| root.canonicalize().ok())
+}
+
 /// Roots for command scratch outside `tree`, in preference order. The default
 /// comes first for inherited macOS temporary-directory grants; /var/tmp also
 /// supports callers whose working tree is /tmp itself.
 fn scratch_roots(tree: &Path) -> impl Iterator<Item = PathBuf> + '_ {
-    [std::env::temp_dir(), "/tmp".into(), "/var/tmp".into()]
-        .into_iter()
-        .filter_map(|root| root.canonicalize().ok())
-        .filter(move |root| !root.starts_with(tree))
+    outside(tree, candidate_roots())
 }
 
+/// The `roots` outside `tree`: a worker may write anywhere inside it.
+fn outside<'a>(
+    tree: &'a Path,
+    roots: impl Iterator<Item = PathBuf> + 'a,
+) -> impl Iterator<Item = PathBuf> + 'a {
+    roots.filter(move |root| !root.starts_with(tree))
+}
+
+/// A fresh scratch outside `tree`, after starting the reclaim of orphaned
+/// ones (once per process, in the background). On Linux it is created only
+/// under a root that sweep enters, so an orphan never outlives its owner there.
 fn private_temporary_directory(tree: &Path) -> Result<tempfile::TempDir> {
-    let mut failure = None;
-    for root in scratch_roots(tree) {
-        match tempfile::Builder::new()
-            .prefix(".loom-command-")
-            .tempdir_in(&root)
-        {
-            Ok(directory) => return Ok(directory),
-            Err(error) => failure = Some(error),
-        }
+    #[cfg(target_os = "linux")]
+    {
+        reclaim::sweep_once(|| reclaim::sweepable(scratch_roots(tree)));
+        reclaim::create(reclaim::sweepable(scratch_roots(tree)).into_iter())
     }
-    match failure {
-        Some(error) => {
-            Err(error).context("create private command scratch outside its working tree")
-        }
-        None => anyhow::bail!("command scratch must be outside its working tree"),
-    }
+    #[cfg(not(target_os = "linux"))]
+    reclaim::create(scratch_roots(tree))
 }
 
 /// `.loom-cargo-<digest of the canonical tree>` under the first scratch root.
@@ -335,7 +372,7 @@ fn overlay_supported(scratch: &Path, name: &str, source: &Path) -> bool {
             false
         }
     };
-    restore_overlay_work_permissions(&work);
+    reclaim::make_removable(&work);
     supported
 }
 
@@ -343,12 +380,6 @@ fn overlay_supported(scratch: &Path, name: &str, source: &Path) -> bool {
 #[path = "confine_scratch/cache_tests.rs"]
 mod cache_tests;
 
-#[cfg(test)]
-#[test]
-fn stable_cargo_home_digest_is_stable() {
-    let path = stable_cargo_home(Path::new("/loom-test-tree")).unwrap();
-    assert_eq!(
-        path.file_name().unwrap(),
-        ".loom-cargo-c4173759b16a543fccc72bcd"
-    );
-}
+#[cfg(all(test, unix))]
+#[path = "confine_scratch/tests.rs"]
+mod tests;

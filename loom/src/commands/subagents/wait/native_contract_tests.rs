@@ -37,7 +37,6 @@ fn state(
         outcome_reason: outcome.map(|(_, reason)| reason.to_string()),
         ownership,
         thread_id: Some("thr-1".to_string()),
-        sandbox_mode: None,
         cancel_requested: false,
         last_progress_at,
         report: None,

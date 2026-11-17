@@ -6,7 +6,8 @@ use std::time::Duration;
 
 use tempfile::TempDir;
 
-use super::linux::{self, environment, Plan};
+use super::environment::environment;
+use super::linux::{self, Plan};
 use super::mounts::{codex_package, map_store_roots};
 use super::{identity_for, spawn_payload, verify_quiescent, Quiescence, SpawnedBoundary};
 use crate::native_worker::model::BoundaryIdentity;

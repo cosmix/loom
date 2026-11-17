@@ -6,9 +6,7 @@ fn seed_terminal_events(h: &Harness) {
     let dir = h.record();
     let mut log = store::EventLog::open(&dir).unwrap();
     for event in [
-        NativeEvent::BoundaryCreated {
-            sandbox_mode: SandboxMode::WorkspaceWrite,
-        },
+        NativeEvent::BoundaryCreated,
         NativeEvent::ThreadStarted {
             thread_id: "thread-1".into(),
         },
@@ -53,7 +51,6 @@ fn assert_status_text(text: &str) {
             "model",
             "effort",
             "thread",
-            "sandbox",
             "cancel requested",
             "last progress",
             "report",
@@ -63,7 +60,6 @@ fn assert_status_text(text: &str) {
     for part in [
         "phase: terminal",
         "outcome: cancelled",
-        "sandbox: workspace_write",
         "cancel requested: yes",
         "report: 4 bytes, complete",
         "messages: msg=delivered",
@@ -94,7 +90,6 @@ fn assert_status_json(value: &Value) {
             "ownership",
             "phase",
             "report",
-            "sandbox_mode",
             "stage_id",
             "thread_id",
             "unit_id"

@@ -90,6 +90,15 @@ fn argv_codex_home_is_private() {
         assert!(name != "config.toml" && name != "hooks.json" && name != "rules");
     }
     let tmpfs = position(&args, &["--tmpfs".as_ref(), codex.as_ref()]).expect("private tmpfs");
+    let size = super::linux::CODEX_HOME_TMPFS_BYTES.to_string();
+    let sized = [
+        "--size".as_ref(),
+        size.as_ref(),
+        "--tmpfs".as_ref(),
+        codex.as_ref(),
+    ];
+    assert_eq!(position(&args, &sized), Some(tmpfs - 2), "{args:?}");
+    assert_eq!(size, (1u64 << 30).to_string());
     for (flag, name) in [("--bind", "sessions"), ("--bind", "auth.json")] {
         let path = codex.join(name);
         let bind = position(&args, &[flag.as_ref(), path.as_ref(), path.as_ref()]);

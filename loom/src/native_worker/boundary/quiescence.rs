@@ -1,6 +1,5 @@
 //! Ownership check after a boundary stopped: no process of its pid namespace
-//! may be left. Membership is read from `/proc/<pid>/ns/pid`, which resolves
-//! across the boundary's user namespace.
+//! may be left (`verify::criteria::pid_namespace` reads the membership).
 use super::{Quiescence, SpawnedBoundary};
 use crate::native_worker::model::BoundaryIdentity;
 
@@ -52,7 +51,7 @@ fn scan_until_empty(namespace: u64) -> Quiescence {
     use std::time::{Duration, Instant};
     let deadline = Instant::now() + Duration::from_secs(crate::native_worker::ids::REAP_GRACE_SECS);
     loop {
-        let last = match scan::members(namespace) {
+        let last = match crate::verify::criteria::pid_namespace::members(namespace) {
             Ok(members) if members.is_empty() => return Quiescence::Released,
             Ok(members) => {
                 let shown: Vec<String> = members.iter().take(5).map(u32::to_string).collect();
@@ -71,77 +70,54 @@ fn scan_until_empty(namespace: u64) -> Quiescence {
     }
 }
 
+/// SIGKILL `first_pid`, the first process of `namespace` as this side sees
+/// it, which takes every member down with it, then wait as
+/// [`verify_quiescent`] does for the namespace to empty.
 #[cfg(target_os = "linux")]
-mod scan {
-    use std::io::ErrorKind;
-    use std::path::PathBuf;
+pub(crate) fn kill_namespace(first_pid: i32, namespace: u64) -> Quiescence {
+    kill_member(first_pid, namespace);
+    scan_until_empty(namespace)
+}
 
-    /// Live (non-zombie) pids whose pid namespace is `namespace`; `Err`
-    /// when some process could be a member but cannot be inspected.
-    pub(super) fn members(namespace: u64) -> Result<Vec<u32>, String> {
-        let target = PathBuf::from(format!("pid:[{namespace}]"));
-        let entries =
-            std::fs::read_dir("/proc").map_err(|error| format!("cannot list /proc: {error}"))?;
-        let mut members = Vec::new();
-        for entry in entries {
-            let entry = entry.map_err(|error| format!("cannot list /proc: {error}"))?;
-            let Some(pid) = entry
-                .file_name()
-                .to_str()
-                .and_then(|n| n.parse::<u32>().ok())
-            else {
-                continue;
-            };
-            match std::fs::read_link(format!("/proc/{pid}/ns/pid")) {
-                Ok(link) if link == target => {
-                    if !crate::process::process_is_zombie(pid) {
-                        members.push(pid);
-                    }
-                }
-                Ok(_) => {}
-                Err(error) if error.kind() == ErrorKind::NotFound => {}
-                Err(error) if error.kind() == ErrorKind::PermissionDenied => {
-                    if !cannot_be_member(pid) {
-                        return Err(format!(
-                            "cannot read the pid namespace of pid {pid}: {error}"
-                        ));
-                    }
-                }
-                Err(error) => {
-                    return Err(format!(
-                        "cannot read the pid namespace of pid {pid}: {error}"
-                    ));
-                }
-            }
-        }
-        Ok(members)
+/// SIGKILL `pid` only while it is still a member of `namespace`. The
+/// `/proc/{pid}` namespace read happens while the pidfd pins the pid: the
+/// kernel reuses no pid while the pinned process or its zombie exists, so the
+/// read sees that process or fails. A successful `pidfd_send_signal` then
+/// proves the pinned process still existed, so the process signalled is the
+/// one whose membership was read; a pid reused before `pidfd_open` fails the
+/// membership check instead. That check names the namespace only by inode,
+/// so one window remains: the namespace's first process dies, its inode is
+/// reused by another boundary's namespace, and `pid` is reused by a process
+/// of that namespace, all before `pidfd_open`. That process is then killed.
+#[cfg(target_os = "linux")]
+fn kill_member(pid: i32, namespace: u64) {
+    use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
+    // SAFETY: pidfd_open takes a pid and flags; it returns a new descriptor or -1.
+    let raw = unsafe { libc::syscall(libc::SYS_pidfd_open, pid, 0) };
+    let Ok(raw) = i32::try_from(raw) else {
+        return;
+    };
+    if raw < 0 {
+        return;
     }
-
-    /// Whether a process whose namespace link is unreadable is provably not
-    /// a member. Members run under this uid (the boundary maps only it), and
-    /// they live in a child pid namespace, so `NSpid` lists more than one
-    /// pid. A non-dumpable member shows `/proc/<pid>` owned by root, so the
-    /// directory owner alone proves nothing; `status` stays readable.
-    fn cannot_be_member(pid: u32) -> bool {
-        let Ok(status) = std::fs::read_to_string(format!("/proc/{pid}/status")) else {
-            // Gone since the listing: an exited process is not a member.
-            return std::fs::metadata(format!("/proc/{pid}"))
-                .is_err_and(|error| error.kind() == ErrorKind::NotFound);
+    // SAFETY: `raw` is a descriptor pidfd_open just returned, owned only here.
+    let pidfd = unsafe { OwnedFd::from_raw_fd(raw) };
+    let target = std::path::PathBuf::from(format!("pid:[{namespace}]"));
+    if std::fs::read_link(format!("/proc/{pid}/ns/pid")).is_ok_and(|link| link == target) {
+        let null = std::ptr::null::<libc::siginfo_t>();
+        // SAFETY: a valid pidfd, a valid signal, no siginfo and no flags.
+        unsafe {
+            libc::syscall(
+                libc::SYS_pidfd_send_signal,
+                pidfd.as_raw_fd(),
+                libc::SIGKILL,
+                null,
+                0,
+            )
         };
-        // SAFETY: `getuid` has no preconditions and cannot fail.
-        let uid = unsafe { libc::getuid() };
-        let field = |name: &str| {
-            status
-                .lines()
-                .find_map(|line| line.strip_prefix(name))
-                .map(|rest| rest.split_whitespace().collect::<Vec<_>>())
-        };
-        let foreign = field("Uid:").is_some_and(|ids| {
-            ids.iter()
-                .take(2)
-                .all(|id| id.parse::<u32>().is_ok_and(|id| id != uid))
-        });
-        let own_namespace = field("NSpid:").is_some_and(|pids| pids.len() == 1);
-        foreign || own_namespace
     }
 }
+
+#[cfg(all(test, target_os = "linux"))]
+#[path = "quiescence_tests.rs"]
+mod tests;

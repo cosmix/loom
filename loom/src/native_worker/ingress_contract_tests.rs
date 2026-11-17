@@ -15,8 +15,7 @@ use super::admission::{admit_start, AdmissionOutcome, StartRequest};
 use super::ids::mint_invocation_id;
 use super::index::unit_state;
 use super::model::{
-    BoundaryIdentity, NativeEvent, NativeManifest, Outcome, Ownership, SandboxMode,
-    NATIVE_DEADLINE_SECS,
+    BoundaryIdentity, NativeEvent, NativeManifest, Outcome, Ownership, NATIVE_DEADLINE_SECS,
 };
 use super::runner::settle_lost_supervisor;
 use super::store::EventLog;
@@ -273,8 +272,7 @@ fn running_invocation_with_dead_supervisor(fx: &Fixture) -> PathBuf {
     };
     let dir = create_invocation(&fx.work, &manifest, BRIEF).expect("create invocation");
     let mut log = EventLog::open(&dir).expect("event log");
-    let sandbox_mode = SandboxMode::WorkspaceWrite;
-    log.append(NativeEvent::BoundaryCreated { sandbox_mode })
+    log.append(NativeEvent::BoundaryCreated)
         .expect("boundary event");
     let turn_id = "turn-1".to_string();
     log.append(NativeEvent::TurnStarted { turn_id })

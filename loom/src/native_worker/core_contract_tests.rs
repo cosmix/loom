@@ -12,9 +12,7 @@ use sha2::{Digest, Sha256};
 use super::ids::validate_unit_id;
 use super::index::{stage_disposition, NativeDisposition};
 use super::machine::{Action, Input, Machine, MachineConfig};
-use super::model::{
-    ControlMessage, Delivery, MessageState, NativeEvent, NativeManifest, Outcome, SandboxMode,
-};
+use super::model::{ControlMessage, Delivery, MessageState, NativeEvent, NativeManifest, Outcome};
 use super::protocol::frame::{read_frame, FrameError, Incoming};
 use super::protocol::policy::{reply_for, ServerReply};
 use super::store::{create_invocation, EventLog};
@@ -157,7 +155,6 @@ fn machine() -> Machine {
         model: "gpt-6.1-terra".to_string(),
         effort: "xhigh".to_string(),
         task_text: "do the task".to_string(),
-        sandbox_mode: SandboxMode::WorkspaceWrite,
         client_version: "0.0.0".to_string(),
     })
 }

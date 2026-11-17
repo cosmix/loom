@@ -115,7 +115,7 @@ fn status_json(state: &NativeUnitState) -> Value {
         "invocation_id": manifest.invocation_id, "phase": state.phase,
         "outcome": state.outcome, "outcome_reason": state.outcome_reason,
         "ownership": state.ownership, "model": manifest.model, "effort": manifest.effort,
-        "thread_id": state.thread_id, "sandbox_mode": state.sandbox_mode,
+        "thread_id": state.thread_id,
         "cancel_requested": state.cancel_requested, "last_progress_at": state.last_progress_at,
         "report": state.report, "messages": state.messages,
     })
@@ -137,7 +137,6 @@ fn status_text(state: &NativeUnitState, out: &mut dyn Write) -> Result<()> {
     writeln!(out, "model: {}", manifest.model)?;
     writeln!(out, "effort: {}", manifest.effort)?;
     writeln!(out, "thread: {}", state.thread_id.as_deref().unwrap_or("-"))?;
-    writeln!(out, "sandbox: {}", enum_text(&state.sandbox_mode))?;
     writeln!(
         out,
         "cancel requested: {}",

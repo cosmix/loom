@@ -8,14 +8,7 @@ impl Machine {
     pub(super) fn turn_request(&mut self, thread_id: &str, texts: &[String]) -> Action {
         let config = self.config.clone();
         self.request(Pending::TurnStart, |id| {
-            wire::turn_start(
-                id,
-                thread_id,
-                texts,
-                &config.effort,
-                config.sandbox_mode,
-                &config.cwd,
-            )
+            wire::turn_start(id, thread_id, texts, &config.effort, &config.cwd)
         })
     }
 

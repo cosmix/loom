@@ -23,7 +23,6 @@ fn initialize_ok_sends_initialized_then_thread_start() {
             2,
             &config().model,
             &config().cwd,
-            config().sandbox_mode,
             wire::DEVELOPER_INSTRUCTIONS,
         ))
     );
@@ -61,7 +60,6 @@ fn thread_ok_persists_thread_started_and_sends_first_turn_with_task_text_and_arm
                 "th-1",
                 &[config().task_text],
                 "high",
-                SandboxMode::WorkspaceWrite,
                 &config().cwd
             )),
             Action::ArmDeadline,

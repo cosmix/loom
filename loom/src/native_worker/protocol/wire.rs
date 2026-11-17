@@ -4,8 +4,6 @@ use std::path::Path;
 
 use serde_json::{json, Value};
 
-use crate::native_worker::model::SandboxMode;
-
 pub const DEVELOPER_INSTRUCTIONS: &str = "You are a loom implementation worker. Do not run git. Do not read or write any path under .loom or .work. Do not ask questions; if the brief is impossible, say why in your final answer and stop.";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -57,20 +55,10 @@ pub fn initialized() -> Value {
     json!({"method": "initialized", "params": {}})
 }
 
-pub fn thread_start(
-    id: u64,
-    model: &str,
-    cwd: &Path,
-    mode: SandboxMode,
-    developer_instructions: &str,
-) -> Value {
-    let sandbox = match mode {
-        SandboxMode::WorkspaceWrite => "workspace-write",
-        SandboxMode::External => "danger-full-access",
-    };
+pub fn thread_start(id: u64, model: &str, cwd: &Path, developer_instructions: &str) -> Value {
     json!({"id": id, "method": "thread/start", "params": {
         "model": model, "cwd": cwd.to_string_lossy(), "approvalPolicy": "never",
-        "sandbox": sandbox, "developerInstructions": developer_instructions
+        "sandbox": "workspace-write", "developerInstructions": developer_instructions
     }})
 }
 
@@ -79,25 +67,23 @@ pub fn turn_start(
     thread_id: &str,
     texts: &[String],
     effort: &str,
-    mode: SandboxMode,
     worktree: &Path,
 ) -> Value {
     let input: Vec<Value> = texts
         .iter()
         .map(|text| json!({"type": "text", "text": text}))
         .collect();
-    let policy = match mode {
-        // Codex adds `$TMPDIR` of its own process environment to the writable
-        // roots. The boundary sets it to `BOUNDARY_TMPDIR`, a private empty
-        // directory linkers and compilers need. `/tmp` itself stays read-only
-        // to sandboxed commands: binds below it (the Linked Cargo home, a
-        // worktree under `/tmp`) must not be renamed away and replaced.
-        SandboxMode::WorkspaceWrite => {
-            json!({"type": "workspaceWrite", "writableRoots": [worktree.to_string_lossy()],
-            "networkAccess": false, "excludeSlashTmp": true, "excludeTmpdirEnvVar": false})
-        }
-        SandboxMode::External => json!({"type": "externalSandbox", "networkAccess": "restricted"}),
-    };
+    // Codex's own sandbox runs every command: writes only to the worktree and
+    // `TMPDIR`. Codex adds `$TMPDIR` of its own process environment to the
+    // writable roots. The boundary sets it to `BOUNDARY_TMPDIR`, a private empty
+    // directory linkers and compilers need. `/tmp` itself stays read-only
+    // to sandboxed commands: binds below it (the Cargo scratch, a worktree
+    // under `/tmp`) must not be renamed away and replaced. Without network
+    // Codex's seccomp filter refuses AF_INET sockets and AF_UNIX
+    // `connect`, so commands reach neither the bridge's loopback port nor
+    // the proxy socket; only the app-server's own requests use the proxy.
+    let policy = json!({"type": "workspaceWrite", "writableRoots": [worktree.to_string_lossy()],
+        "networkAccess": false, "excludeSlashTmp": true, "excludeTmpdirEnvVar": false});
     json!({"id": id, "method": "turn/start", "params": {
         "threadId": thread_id, "input": input, "effort": effort, "sandboxPolicy": policy
     }})

@@ -8,7 +8,6 @@ pub(super) fn config() -> MachineConfig {
         model: "codex-model".into(),
         effort: "high".into(),
         task_text: "Implement the task".into(),
-        sandbox_mode: SandboxMode::WorkspaceWrite,
         client_version: "test-version".into(),
     }
 }

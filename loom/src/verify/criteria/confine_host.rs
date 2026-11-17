@@ -260,7 +260,7 @@ fn platform_command(
     network: NetworkAccess,
     git: Option<&git_roots::GitDirs>,
 ) -> Result<Command> {
-    let mut command = bubblewrap(network)?;
+    let mut command = bubblewrap(network, None)?;
     for writable in writable_roots(tree, scratch) {
         command.arg("--bind").arg(writable).arg(writable);
     }
@@ -286,26 +286,23 @@ fn platform_command(
 }
 
 /// The launcher with its namespaces and private system mounts, before any bind.
+/// `tmpfs_bytes` bounds `/tmp` and `/var/tmp` (bubblewrap 0.10 or later);
+/// `None` leaves each the kernel default, half of RAM.
 #[cfg(target_os = "linux")]
-pub(crate) fn bubblewrap(network: NetworkAccess) -> Result<Command> {
+pub(crate) fn bubblewrap(network: NetworkAccess, tmpfs_bytes: Option<[u64; 2]>) -> Result<Command> {
     let launcher =
         which::which("bwrap").context("confined verification requires bubblewrap (bwrap)")?;
     let mut command = Command::new(launcher);
-    command.args([
-        "--die-with-parent",
-        "--unshare-all",
-        "--new-session",
-        "--proc",
-        "/proc",
-        "--dev",
-        "/dev",
-        // Private temporary directories, mounted before any bind so a tree
-        // or scratch below them is mounted on top instead of hidden.
-        "--tmpfs",
-        "/tmp",
-        "--tmpfs",
-        "/var/tmp",
-    ]);
+    command.args(["--die-with-parent", "--unshare-all", "--new-session"]);
+    command.args(["--proc", "/proc", "--dev", "/dev"]);
+    // Private temporary directories, mounted before any bind so a tree or
+    // scratch below them is mounted on top instead of hidden.
+    for (index, dir) in ["/tmp", "/var/tmp"].into_iter().enumerate() {
+        if let Some(bytes) = tmpfs_bytes {
+            command.arg("--size").arg(bytes[index].to_string());
+        }
+        command.args(["--tmpfs", dir]);
+    }
     if network == NetworkAccess::Provision {
         command.arg("--share-net");
     }

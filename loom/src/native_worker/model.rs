@@ -74,13 +74,6 @@ pub enum MessageState {
     DeliveryUnknown,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum SandboxMode {
-    WorkspaceWrite,
-    External,
-}
-
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct EventRecord {
@@ -93,9 +86,7 @@ pub struct EventRecord {
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum NativeEvent {
     Admitted,
-    BoundaryCreated {
-        sandbox_mode: SandboxMode,
-    },
+    BoundaryCreated,
     ThreadStarted {
         thread_id: String,
     },
@@ -174,7 +165,6 @@ pub struct NativeUnitState {
     pub outcome_reason: Option<String>,
     pub ownership: Ownership,
     pub thread_id: Option<String>,
-    pub sandbox_mode: Option<SandboxMode>,
     pub cancel_requested: bool,
     pub last_progress_at: DateTime<Utc>,
     pub report: Option<ReportInfo>,

@@ -16,58 +16,16 @@ fn initialized_frame() {
 #[test]
 fn thread_start_frame_workspace_write() {
     assert_eq!(
-        thread_start(
-            2,
-            "model",
-            Path::new("/work"),
-            SandboxMode::WorkspaceWrite,
-            "instructions"
-        ),
+        thread_start(2, "model", Path::new("/work"), "instructions"),
         json!({"id":2,"method":"thread/start","params":{"model":"model","cwd":"/work","approvalPolicy":"never","sandbox":"workspace-write","developerInstructions":"instructions"}})
-    );
-}
-
-#[test]
-fn thread_start_frame_external_uses_danger_full_access() {
-    assert_eq!(
-        thread_start(
-            2,
-            "model",
-            Path::new("/work"),
-            SandboxMode::External,
-            "instructions"
-        ),
-        json!({"id":2,"method":"thread/start","params":{"model":"model","cwd":"/work","approvalPolicy":"never","sandbox":"danger-full-access","developerInstructions":"instructions"}})
     );
 }
 
 #[test]
 fn turn_start_frame_workspace_write_policy() {
     assert_eq!(
-        turn_start(
-            3,
-            "t",
-            &["hello".into()],
-            "high",
-            SandboxMode::WorkspaceWrite,
-            Path::new("/work")
-        ),
+        turn_start(3, "t", &["hello".into()], "high", Path::new("/work")),
         json!({"id":3,"method":"turn/start","params":{"threadId":"t","input":[{"type":"text","text":"hello"}],"effort":"high","sandboxPolicy":{"type":"workspaceWrite","writableRoots":["/work"],"networkAccess":false,"excludeSlashTmp":true,"excludeTmpdirEnvVar":false}}})
-    );
-}
-
-#[test]
-fn turn_start_frame_external_policy() {
-    assert_eq!(
-        turn_start(
-            3,
-            "t",
-            &[],
-            "low",
-            SandboxMode::External,
-            Path::new("/work")
-        ),
-        json!({"id":3,"method":"turn/start","params":{"threadId":"t","input":[],"effort":"low","sandboxPolicy":{"type":"externalSandbox","networkAccess":"restricted"}}})
     );
 }
 
@@ -79,10 +37,9 @@ fn turn_start_emits_one_text_item_per_text() {
             "t",
             &["one".into(), "two".into()],
             "medium",
-            SandboxMode::External,
             Path::new("/w")
         ),
-        json!({"id":1,"method":"turn/start","params":{"threadId":"t","input":[{"type":"text","text":"one"},{"type":"text","text":"two"}],"effort":"medium","sandboxPolicy":{"type":"externalSandbox","networkAccess":"restricted"}}})
+        json!({"id":1,"method":"turn/start","params":{"threadId":"t","input":[{"type":"text","text":"one"},{"type":"text","text":"two"}],"effort":"medium","sandboxPolicy":{"type":"workspaceWrite","writableRoots":["/w"],"networkAccess":false,"excludeSlashTmp":true,"excludeTmpdirEnvVar":false}}})
     );
 }
 

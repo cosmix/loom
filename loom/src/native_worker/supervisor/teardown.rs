@@ -4,7 +4,7 @@ use std::path::Path;
 use std::process::ExitCode;
 use std::time::Duration;
 
-use crate::native_worker::boundary::Quiescence;
+use crate::native_worker::boundary::{Quiescence, SpawnedBoundary};
 use crate::native_worker::model::{NativeEvent, Outcome, EOF_GRACE_SECS};
 use crate::native_worker::store::EventLog;
 use crate::process::OwnedProcess;
@@ -16,6 +16,43 @@ use crate::process::OwnedProcess;
 pub(crate) fn stop_process(process: &mut OwnedProcess) {
     let _ = process.wait(Duration::from_secs(EOF_GRACE_SECS));
     process.retire();
+}
+
+/// Settles `boundary`, whose identity could not be recorded (`error`), once
+/// [`stop_unrecorded`] stopped it. An `Unverified` ownership names the
+/// identity error before the reason the namespace was not proven empty.
+pub(super) fn settle_unrecorded(
+    dir: &Path,
+    boundary: SpawnedBoundary,
+    error: &anyhow::Error,
+) -> ExitCode {
+    let quiescence = match stop_unrecorded(boundary) {
+        Quiescence::Unverified(detail) => {
+            Quiescence::Unverified(format!("no boundary identity ({error:#}): {detail}"))
+        }
+        released => released,
+    };
+    let reason = format!("could not record boundary: {error:#}");
+    settle_exit(dir, Outcome::Unknown, &reason, quiescence)
+}
+
+/// Stops `boundary`, whose identity could not be recorded, then kills its
+/// namespace by the pid and inode bubblewrap reported. The scratch goes only
+/// when that proves the namespace empty; otherwise it stays for the sweep.
+fn stop_unrecorded(mut boundary: SpawnedBoundary) -> Quiescence {
+    // Closing the input first lets the app-server exit on EOF instead of
+    // `stop_process` waiting out the whole grace.
+    drop(boundary.stdin);
+    stop_process(&mut boundary.process);
+    #[cfg(target_os = "linux")]
+    {
+        use crate::native_worker::boundary::{keep_scratch_unless_released, kill_namespace};
+        let quiescence = kill_namespace(boundary.namespace_pid, boundary.pid_namespace);
+        keep_scratch_unless_released(&mut boundary.scratch, &quiescence);
+        quiescence
+    }
+    #[cfg(not(target_os = "linux"))]
+    Quiescence::Unverified("pid namespaces need Linux".into())
 }
 
 /// Appends `Terminal { outcome, reason }`, then the ownership event `quiescence`
@@ -41,10 +78,11 @@ pub fn settle(
     Ok(())
 }
 
-/// Settles a failure before bubblewrap was started (preflight, socket
-/// directory, proxy, or a spawn refused before any process ran). This is the
-/// only path that records `Released` without `verify_quiescent`: no namespace
-/// exists, so there is nothing to prove empty.
+/// Settles a failure that left no namespace process (preflight, socket
+/// directory, proxy, a spawn refused before any process ran, or a bubblewrap
+/// that exited before creating its namespace or had it proven empty). The
+/// only path that records `Released` without a namespace scan of its own:
+/// nothing is left to prove empty.
 pub(super) fn settle_unspawned(dir: &Path, reason: &str) -> ExitCode {
     settle_exit(dir, Outcome::Failed, reason, Quiescence::Released)
 }
@@ -86,3 +124,7 @@ pub(super) fn settle_exit(
         }
     }
 }
+
+#[cfg(all(test, target_os = "linux"))]
+#[path = "teardown_tests.rs"]
+mod tests;
