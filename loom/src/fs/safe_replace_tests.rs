@@ -1,11 +1,11 @@
 use std::os::unix::fs::{symlink, PermissionsExt};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use tempfile::TempDir;
 
 use super::{
     c_name, create_temp, is_publish_temp, open_parent, publish, publish_in_dir, replace_no_follow,
-    replace_private, restore_no_follow, temp_name, FAIL_DIR_SYNC, NAME_MAX,
+    replace_private, restore_no_follow, temp_name, BEFORE_CANONICALIZE, FAIL_DIR_SYNC, NAME_MAX,
 };
 
 /// A root holding `dir/a.md` with `text`.
@@ -240,4 +240,139 @@ fn a_failed_rename_removes_the_temp_file() {
     assert!(publish(&parent, &tmp, &target, file, 0o644, true, b"y").is_err());
     assert!(temp_files(&dir).is_empty());
     assert!(dir.join("sub").is_dir());
+}
+
+/// `base/real/proj/dir/a.md` and `base/alias` -> `base/real`, as macOS's `/var` link spells
+/// a temp dir two ways.
+fn linked_project() -> (TempDir, std::path::PathBuf, std::path::PathBuf) {
+    let base = tempfile::tempdir().expect("tempdir");
+    let real = base.path().canonicalize().unwrap().join("real/proj");
+    std::fs::create_dir_all(real.join("dir")).unwrap();
+    std::fs::write(real.join("dir/a.md"), "old\n").unwrap();
+    let alias = base.path().join("alias");
+    symlink(base.path().join("real"), &alias).unwrap();
+    (base, real, alias.join("proj"))
+}
+
+#[test]
+fn a_root_spelled_through_a_link_above_the_tree_is_matched_either_way() {
+    let (_base, real, aliased) = linked_project();
+    for (target, root) in [(&aliased, &real), (&real, &aliased)] {
+        let file = target.join("dir/a.md");
+        crate::fs::safe_fs::safe_replace_outside_workdir(&file, root, b"new\n").unwrap();
+        assert_eq!(
+            std::fs::read_to_string(real.join("dir/a.md")).unwrap(),
+            "new\n"
+        );
+        std::fs::write(real.join("dir/a.md"), "old\n").unwrap();
+    }
+}
+
+#[test]
+fn a_link_inside_the_tree_is_still_refused_when_the_root_is_spelled_differently() {
+    let (_base, real, aliased) = linked_project();
+    symlink(real.join("dir"), real.join("link")).unwrap();
+    let file = aliased.join("link/a.md");
+    assert!(crate::fs::safe_fs::safe_replace_outside_workdir(&file, &real, b"new\n").is_err());
+    assert_eq!(
+        std::fs::read_to_string(real.join("dir/a.md")).unwrap(),
+        "old\n"
+    );
+    let outside = real.parent().unwrap().join("other.md");
+    std::fs::write(&outside, "old\n").unwrap();
+    let err = crate::fs::safe_fs::safe_replace_outside_workdir(&outside, &aliased, b"new\n");
+    assert!(format!("{:#}", err.unwrap_err()).contains("not under project_root"));
+}
+
+#[test]
+fn the_cut_is_made_at_the_shortest_ancestor_so_an_in_tree_link_is_walked() {
+    let (_base, real, aliased) = linked_project();
+    symlink(&real, real.join("up")).unwrap();
+    let file = aliased.join("up/dir/a.md");
+    assert!(crate::fs::safe_fs::safe_replace_outside_workdir(&file, &real, b"new\n").is_err());
+    assert_eq!(
+        std::fs::read_to_string(real.join("dir/a.md")).unwrap(),
+        "old\n"
+    );
+}
+
+#[test]
+fn a_root_that_is_itself_a_link_is_refused_however_the_target_is_spelled() {
+    let (base, real, _aliased) = linked_project();
+    let link = base.path().join("rootlink");
+    symlink(&real, &link).unwrap();
+    // The lexical match reaches safe_open_dirfd, the other spelling the slow path's lstat; a
+    // trailing separator must not make that lstat follow the link.
+    let slashed = PathBuf::from(format!("{}/", link.display()));
+    for (target, root, refusal) in [
+        (&link, &link, "Failed to open dirfd"),
+        (&slashed, &slashed, "Failed to open dirfd"),
+        (&real, &link, "is a symlink"),
+        (&real, &slashed, "is a symlink"),
+    ] {
+        let file = target.join("dir/a.md");
+        let err = crate::fs::safe_fs::safe_replace_outside_workdir(&file, root, b"new\n");
+        // The top-level message names the refusal's cause.
+        let message = err.unwrap_err().to_string();
+        assert!(message.contains(refusal), "{message}");
+    }
+    assert_eq!(
+        std::fs::read_to_string(real.join("dir/a.md")).unwrap(),
+        "old\n"
+    );
+}
+
+/// Installs the `BEFORE_CANONICALIZE` hook and clears it on drop, so a test that fails before the
+/// hook runs cannot leave it set for a later test on the same thread.
+struct BeforeCanonicalize;
+
+impl BeforeCanonicalize {
+    fn set(hook: impl FnOnce() + 'static) -> Self {
+        BEFORE_CANONICALIZE.with(|slot| *slot.borrow_mut() = Some(Box::new(hook)));
+        Self
+    }
+}
+
+impl Drop for BeforeCanonicalize {
+    fn drop(&mut self) {
+        BEFORE_CANONICALIZE.with(|slot| slot.borrow_mut().take());
+    }
+}
+
+#[test]
+fn a_root_swapped_for_a_link_while_it_is_resolved_is_refused() {
+    let (base, real, aliased) = linked_project();
+    let decoy = base.path().join("decoy");
+    std::fs::create_dir_all(decoy.join("dir")).unwrap();
+    std::fs::write(decoy.join("dir/a.md"), "old\n").unwrap();
+    let (moved, swapped) = (base.path().join("moved"), real.clone());
+    let decoy_target = decoy.clone();
+    let _hook = BeforeCanonicalize::set(move || {
+        std::fs::rename(&swapped, &moved).unwrap();
+        symlink(&decoy_target, &swapped).unwrap();
+    });
+    let err = crate::fs::safe_fs::safe_replace_outside_workdir(
+        &aliased.join("dir/a.md"),
+        &real,
+        b"new\n",
+    );
+    let message = err.unwrap_err().to_string();
+    assert!(
+        message.contains("changed while it was resolved"),
+        "{message}"
+    );
+    assert_eq!(
+        std::fs::read_to_string(decoy.join("dir/a.md")).unwrap(),
+        "old\n"
+    );
+}
+
+#[test]
+fn a_relative_target_or_root_is_refused() {
+    let (_base, real, _aliased) = linked_project();
+    let err = crate::fs::safe_fs::safe_replace_outside_workdir(Path::new("dir/a.md"), &real, b"x");
+    assert!(format!("{:#}", err.unwrap_err()).contains("target dir/a.md is not absolute"));
+    let file = real.join("dir/a.md");
+    let err = crate::fs::safe_fs::safe_replace_outside_workdir(&file, Path::new("proj"), b"x");
+    assert!(format!("{:#}", err.unwrap_err()).contains("project_root proj is not absolute"));
 }

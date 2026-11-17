@@ -12,7 +12,7 @@ use std::io::{self, Write};
 use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::PermissionsExt;
 use std::os::unix::io::{AsFd, AsRawFd, BorrowedFd, FromRawFd, OwnedFd};
-use std::path::{Component, Path};
+use std::path::{Component, Path, PathBuf};
 
 use anyhow::{bail, Context, Result};
 
@@ -25,6 +25,11 @@ mod tests;
 #[cfg(test)]
 thread_local! {
     pub(crate) static FAIL_DIR_SYNC: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    /// Run once by `resolve_root` between its lstat of the root and the canonicalize: where a
+    /// writer of the root's parent could swap the root for a link. Set it through the tests'
+    /// drop guard so a failing test cannot leave it set.
+    pub(crate) static BEFORE_CANONICALIZE: std::cell::RefCell<Option<Box<dyn FnOnce()>>> =
+        const { std::cell::RefCell::new(None) };
 }
 
 /// Replace the regular file `rel` (relative to `root`, no `..`) with `bytes`, keeping its
@@ -70,6 +75,102 @@ pub(crate) fn replace_private(root: &Path, rel: &Path, bytes: &[u8]) -> Result<(
     };
     let parent = open_parent(root, rel)?;
     publish_in_dir(&parent, name, bytes, 0o600, false)
+}
+
+/// The root to open, and `target` relative to it.
+///
+/// Callers may spell the root and the target differently: one canonicalized, the other through
+/// a symlink above the tree (macOS `/var` -> `/private/var`, a checkout under a linked home
+/// directory). When `target` lies lexically under `project_root`, the root is returned as given
+/// less any trailing separator, so `safe_open_dirfd` still refuses a root that is itself a
+/// symlink. Otherwise the cut is made at the shortest ancestor of `target` that resolves to the
+/// root, so only the path above the tree is resolved; every component below it stays literal for
+/// the no-follow walk, which still refuses a symlink inside the tree.
+pub(crate) fn split_under_root<'a>(
+    target: &'a Path,
+    project_root: &Path,
+) -> Result<(PathBuf, &'a Path)> {
+    let not_under = || {
+        format!(
+            "safe_fs: refusing replace — target {} not under project_root {}",
+            target.display(),
+            project_root.display()
+        )
+    };
+    for (what, path) in [("target", target), ("project_root", project_root)] {
+        if !path.is_absolute() {
+            bail!(
+                "safe_fs: refusing replace — {what} {} is not absolute",
+                path.display()
+            );
+        }
+    }
+    // Rebuilt from components so a trailing separator, which makes lstat and open follow a final
+    // link, is dropped on both paths.
+    let project_root: PathBuf = project_root.components().collect();
+    if let Ok(relative) = target.strip_prefix(&project_root) {
+        return Ok((project_root, relative));
+    }
+    let root = resolve_root(&project_root)?;
+    let mut ancestors: Vec<&Path> = target.ancestors().skip(1).collect();
+    // Shortest first: when a longer ancestor also resolves to the root, it does so through a
+    // link inside the tree, which the no-follow walk must see and refuse.
+    ancestors.reverse();
+    ancestors
+        .into_iter()
+        .find(|ancestor| {
+            ancestor
+                .canonicalize()
+                .is_ok_and(|resolved| resolved == root)
+        })
+        .and_then(|prefix| target.strip_prefix(prefix).ok())
+        .map(|relative| (root, relative))
+        .with_context(not_under)
+}
+
+/// The canonical path of `project_root`, refused when the root is itself a symlink.
+///
+/// Guarantee: the returned path's last component is, at the moment of the second lstat, the
+/// directory the caller's root named at the first (same device and inode), so a root swapped for
+/// a link between the lstat and the canonicalize is refused. A swap after that leaves a link at
+/// the canonical last component, which the later O_NOFOLLOW open refuses. Components above the
+/// root are resolved and not pinned, as on the fast path.
+///
+/// Known limit: after the second lstat, a writer of the root's parent can replace the root's last
+/// component with another real directory before `safe_open_dirfd` opens it; O_NOFOLLOW refuses
+/// only links. The fast path has the same window. Closing it needs the open itself pinned to the
+/// lstat's device and inode; revisit if a caller's root parent becomes writable by sessions.
+///
+/// `project_root` must carry no trailing separator, which would make the lstat follow a link.
+fn resolve_root(project_root: &Path) -> Result<PathBuf> {
+    use std::os::unix::fs::MetadataExt;
+
+    let cannot = || {
+        format!(
+            "safe_fs: refusing replace — cannot resolve project_root {}",
+            project_root.display()
+        )
+    };
+    let before = std::fs::symlink_metadata(project_root).with_context(cannot)?;
+    if before.file_type().is_symlink() {
+        bail!(
+            "safe_fs: refusing replace — project_root {} is a symlink",
+            project_root.display()
+        );
+    }
+    #[cfg(test)]
+    if let Some(hook) = BEFORE_CANONICALIZE.with(|slot| slot.borrow_mut().take()) {
+        hook();
+    }
+    let root = project_root.canonicalize().with_context(cannot)?;
+    let after = std::fs::symlink_metadata(&root).with_context(cannot)?;
+    if !after.is_dir() || (after.dev(), after.ino()) != (before.dev(), before.ino()) {
+        bail!(
+            "safe_fs: refusing replace — project_root {} changed while it was resolved",
+            project_root.display()
+        );
+    }
+    Ok(root)
 }
 
 fn check_restore_target(parent: &OwnedFd, name: &CString) -> Result<()> {

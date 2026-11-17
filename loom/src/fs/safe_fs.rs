@@ -456,16 +456,7 @@ pub fn safe_replace_outside_workdir(
     content: &[u8],
 ) -> Result<()> {
     let content = enforce_size_limit(content)?;
-    let relative = target.strip_prefix(project_root).with_context(|| {
-        format!(
-            "safe_fs: refusing replace — target {} not under project_root {}",
-            target.display(),
-            project_root.display()
-        )
-    })?;
-    let root = project_root
-        .canonicalize()
-        .context("cannot resolve project root")?;
+    let (root, relative) = super::safe_replace::split_under_root(target, project_root)?;
     super::safe_replace::replace_private(&root, relative, content)
 }
 
