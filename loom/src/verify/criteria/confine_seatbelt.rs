@@ -7,6 +7,33 @@ use std::process::Command;
 use super::NetworkAccess;
 use super::{ancestors, git_roots, protected, read_roots, writable_roots, CargoScratch};
 
+/// `path` as an SBPL string literal. JSON escapes each character below
+/// U+0020 (`\u0001`, `\b`), and SBPL's string reader does not document those
+/// escapes, so such a path could reach the profile naming another file or fail
+/// to parse with an error that names no path. Refusing it fails the command
+/// with the path named. Skipping only the ancestor denies was the other
+/// option: Cargo would then fail on the visible file as if no rule existed,
+/// which hides the cause, and an allow rule cannot be skipped at all.
+fn quote(path: &Path) -> Result<String> {
+    let text = path.to_string_lossy();
+    if text.chars().any(|c| c < ' ') {
+        anyhow::bail!(
+            "confined verification cannot name {path:?} in a Seatbelt profile: \
+             the path holds a control character"
+        );
+    }
+    Ok(serde_json::to_string(&text)?)
+}
+
+/// [`quote`] for a rule builder that takes an infallible quoter, once every
+/// path it will name has passed [`quote`].
+fn quote_checked(paths: &[PathBuf]) -> Result<impl Fn(&Path) -> String> {
+    for path in paths {
+        quote(path)?;
+    }
+    Ok(|path: &Path| serde_json::to_string(&path.to_string_lossy()).unwrap())
+}
+
 /// Seatbelt read, write and deny rules for the tree, scratch, Cargo home, git
 /// roots and the command's own read-only roots.
 fn seatbelt_path_rules(
@@ -15,7 +42,6 @@ fn seatbelt_path_rules(
     scratch: &CargoScratch,
     git: Option<&git_roots::GitDirs>,
 ) -> Result<String> {
-    let quote = |path: &Path| serde_json::to_string(&path.to_string_lossy()).unwrap();
     let mut profile = String::new();
     let writable = writable_roots(tree, scratch);
     let readable = writable.iter().map(|path| path.to_path_buf());
@@ -26,9 +52,12 @@ fn seatbelt_path_rules(
         .map(|root| root.canonicalize().unwrap_or(root))
         .collect();
     for root in &readable {
-        profile.push_str(&format!("(allow file-read* (subpath {}))", quote(root)));
+        profile.push_str(&format!("(allow file-read* (subpath {}))", quote(root)?));
     }
-    let writable: Vec<_> = writable.into_iter().map(quote).collect();
+    let writable = writable
+        .into_iter()
+        .map(quote)
+        .collect::<Result<Vec<_>>>()?;
     profile.push_str(&format!(
         "(allow file-write* (subpath {}))(allow file-write-data (literal \"/dev/null\"))",
         writable.join(")(subpath ")
@@ -39,13 +68,15 @@ fn seatbelt_path_rules(
     {
         profile.push_str(&format!(
             "(deny file-write* (subpath {}))",
-            quote(&root.canonicalize()?)
+            quote(&root.canonicalize()?)?
         ));
     }
     let paths = protected::protected(tree);
-    profile.push_str(&protected::seatbelt_rules(&paths, quote));
+    let named = [&paths.read_only, &paths.hidden_files, &paths.hidden_dirs];
+    let named: Vec<PathBuf> = named.into_iter().flatten().cloned().collect();
+    profile.push_str(&protected::seatbelt_rules(&paths, quote_checked(&named)?));
     let hidden = ancestors::hidden_above(tree, &readable);
-    profile.push_str(&ancestors::seatbelt_rules(&hidden, quote));
+    profile.push_str(&ancestors::seatbelt_rules(&hidden, quote_checked(&hidden)?));
     Ok(profile)
 }
 
@@ -77,3 +108,7 @@ pub(super) fn platform_command(
         .args(original.get_args());
     Ok(command)
 }
+
+#[cfg(test)]
+#[path = "confine_seatbelt_tests.rs"]
+mod tests;
