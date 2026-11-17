@@ -92,6 +92,8 @@ Skipping exploration causes duplicate code, poor reuse, AND the #1 failure above
 
 **MANDATORY:** write plans to `doc/plans/PLAN-<description>.md`. **NEVER** write to `~/.claude/plans/`, `~/.claude/projects/*/plans/`, or any `.claude/plans` path — plan mode suggests these; ALWAYS override. Plans there are invisible to loom and git.
 
+Plans and briefs never contain personal data: no names, usernames, email addresses, home directories or other machine-specific absolute paths (`/home/<user>/...`, `/Users/<user>/...`, `/tmp/claude-<uid>/...` scratch paths), private project names, hostnames or secrets. Name files relative to the repository root and write `working_dir` and acceptance commands so they run from any checkout location. Quote recorded output only after replacing such values with placeholders (`/home/user/...`).
+
 ### After writing: validate, self-review, STOP
 
 1. **Run `loom plan verify --strict doc/plans/PLAN-<name>.md`** — parses YAML, validates structure (bookends, dependencies, required fields, declared `skills:`), lints every criterion (Section 6), checks sandbox, builds the DAG, and checks every brief/input reference the run preflight follows (invalid or missing ones are errors; uncommitted ones are a note). `--strict` fails on warnings too. READ-ONLY (does not create `.loom/work/`). Fix and re-run until it passes. Then run `loom plan verify --strict --dry-run doc/plans/PLAN-<name>.md` from a shell where loom can confine commands (a stage session's own sandbox refuses nested bubblewrap): it runs the plan's `loom.provision` entries in a checkout of HEAD, then every acceptance, after_stage and wiring_tests command once, and names environment failures and timeouts as errors before any stage runs. An empty test selection is a note, and so is a plain failure there, because a stage's criteria fail at base until the stage builds what they test; one that errors is a planning defect to fix. Structural validity does NOT mean the claims are true.
@@ -350,4 +352,5 @@ Read `references/plan-template.md` when writing YAML. It contains the complete p
 - Checks cover owned files, execute real behavior, select tests, and fail on a plausible regression; no ceremonial tests for trivial edits. Preserve mandatory v2 contracts and gates.
 - Baseline checks run in the planned worktree/sandbox; produced-artifact checks tried on good and broken fixtures; timeouts and ungrantable resources resolved.
 - Sandbox, provisioning and environment inventory complete; command paths resolve from working_dir; YAML/shell quoting checked.
+- No personal data in the plan or its briefs: no usernames, emails, home or machine-specific absolute paths, private project names, hostnames or secrets; commands and paths work from any checkout.
 - Self-consistency and ownership sweep complete; `loom plan verify --strict` passes and `loom plan verify --strict --dry-run` passes (under `--strict` a warning fails too). Report the plan and STOP; do not implement.
