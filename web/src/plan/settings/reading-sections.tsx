@@ -7,8 +7,10 @@ import {
   READING_SIZES,
   readingFaceAtom,
   readingSizeAtom,
+  sourceMarksAtom,
 } from "./preferences";
-import { SettingsGroup } from "./settings-sections";
+import { PaneBlock, SettingsPane } from "./settings-pane";
+import { ToggleRow } from "./settings-sections";
 import { SizePicture } from "./size-picture";
 import "./reading.css";
 
@@ -26,7 +28,7 @@ function ReadingPreview(): ReactElement {
   const size = useAtomValue(readingSizeAtom);
   const family = READING_FACES.find((option) => option.id === face)!.family;
   return (
-    <figure aria-label="Reading preview" className="ps-preview rounded-md border bg-card">
+    <figure aria-label="Reading preview" className="ps-preview">
       <figcaption className="ps-preview-eyebrow" aria-hidden="true">
         Preview
       </figcaption>
@@ -38,15 +40,11 @@ function ReadingPreview(): ReactElement {
   );
 }
 
-export function ReadingFaceGroup(): ReactElement {
+function ReadingFaceBlock(): ReactElement {
   const [selected, setSelected] = useAtom(readingFaceAtom);
   const name = useId();
   return (
-    <SettingsGroup
-      title="Reading face"
-      hint="Document text only; titles and controls stay Alegreya Sans"
-    >
-      <ReadingPreview />
+    <PaneBlock title="Face" hint="Document text only; titles and controls stay Alegreya Sans">
       <div role="radiogroup" aria-label="Reading face" className="ps-faces">
         {READING_FACES.map((face) => (
           <label key={face.id} className="ps-face">
@@ -70,16 +68,16 @@ export function ReadingFaceGroup(): ReactElement {
           </label>
         ))}
       </div>
-    </SettingsGroup>
+    </PaneBlock>
   );
 }
 
 /** Three tiles in a row, each a page picture over its label; the native radio group keeps the keys. */
-export function ReadingSizeGroup(): ReactElement {
+function ReadingSizeBlock(): ReactElement {
   const [selected, setSelected] = useAtom(readingSizeAtom);
   const name = useId();
   return (
-    <SettingsGroup title="Reading size">
+    <PaneBlock title="Size">
       <div role="radiogroup" aria-label="Reading size" className="ps-seg">
         {READING_SIZES.map(({ size, label }) => (
           <label key={size} className="ps-seg-item">
@@ -97,6 +95,28 @@ export function ReadingSizeGroup(): ReactElement {
           </label>
         ))}
       </div>
-    </SettingsGroup>
+    </PaneBlock>
+  );
+}
+
+/** The Reading pane: the specimen over the face and size choices, then the source marks switch. */
+export function ReadingPane(): ReactElement {
+  const [sourceMarks, setSourceMarks] = useAtom(sourceMarksAtom);
+  return (
+    <SettingsPane title="Reading" scope="browser">
+      <div className="ps-block">
+        <ReadingPreview />
+      </div>
+      <ReadingFaceBlock />
+      <ReadingSizeBlock />
+      <div className="ps-block ps-rows">
+        <ToggleRow
+          title="Show source marks after sentences"
+          subtitle="The coloured squares that say which document a sentence draws on"
+          checked={sourceMarks}
+          onChange={() => setSourceMarks(!sourceMarks)}
+        />
+      </div>
+    </SettingsPane>
   );
 }

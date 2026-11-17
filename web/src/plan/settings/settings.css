@@ -1,7 +1,8 @@
 /*
  * Planner settings dialog. Every rule hangs off `.planner-settings-dialog` or a `.ps-` class so
  * the dashboard, which shares ThemePicker and the dialog primitives, is untouched. The dialog is
- * portaled out of `[data-loom-plan]`, so it reads only the global theme tokens.
+ * portaled out of `[data-loom-plan]`, so it reads only the global theme tokens. Inside it
+ * `--card` is the raised `--popover` and `--background` the sunken `--popover-well` (index.css).
  */
 
 .planner-settings-dialog {
@@ -47,29 +48,134 @@
   color: var(--foreground);
 }
 
-.ps-body {
+/* ── The rail and the pane ────────────────────────────────────────────────── */
+
+/* A fixed 600px (less on a short screen) so the dialog keeps its size from pane to pane. */
+.ps-shell {
   display: grid;
-  gap: var(--space-5);
-  flex: 1 1 auto;
+  grid-template-columns: 196px minmax(0, 1fr);
+  flex: 0 1 600px;
   min-height: 0;
-  padding: var(--space-4);
+}
+
+.ps-rail {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--space-3) var(--space-2);
+  overflow-y: auto;
+  border-right: 1px solid var(--hairline);
+  background: var(--background);
+}
+
+.ps-tab {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: none;
+  height: 32px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: var(--corner-control);
+  background: transparent;
+  color: var(--muted-foreground);
+  font-family: var(--font-sans, inherit);
+  font-size: var(--type-ui);
+  font-weight: 500;
+  line-height: 1;
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.ps-tab svg {
+  flex: none;
+  width: 14px;
+  height: 14px;
+}
+
+.ps-tab:hover {
+  color: var(--foreground);
+}
+
+/* The current tab stands on the rail as a raised, edged tile: the one place the rail has a box. */
+.ps-tab[aria-selected="true"] {
+  background: var(--card);
+  box-shadow: 0 0 0 1px var(--border);
+  color: var(--foreground);
+  font-weight: 600;
+}
+
+.ps-tab:focus-visible,
+.ps-pane:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: -2px;
+}
+
+/* Positioned: a `.sr-only` span inside a scroller would otherwise stretch the dialog's height. */
+.ps-pane {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  padding: var(--space-5) var(--space-5) var(--space-6);
   overflow-y: auto;
 }
 
-.ps-group {
-  min-width: 0;
-}
-
-.ps-group-head {
+.ps-pane-head {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
+  justify-content: space-between;
   gap: 2px var(--space-3);
-  margin-bottom: var(--space-3);
 }
 
-.ps-group-title {
-  font-size: var(--type-title);
+.ps-pane-title {
+  font-family: var(--font-sans, inherit);
+  font-size: var(--type-page);
+  font-weight: 600;
+  line-height: var(--leading-ui);
+  letter-spacing: -0.01em;
+  color: var(--foreground);
+}
+
+.ps-scope {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--type-fine);
+  color: var(--muted-foreground);
+  white-space: nowrap;
+}
+
+.ps-scope svg {
+  flex: none;
+  width: 12px;
+  height: 12px;
+}
+
+.ps-lede {
+  max-width: 56ch;
+  margin: var(--space-2) 0 0;
+  font-size: var(--type-body);
+  line-height: var(--leading-body);
+  color: var(--muted-foreground);
+}
+
+.ps-block {
+  min-width: 0;
+  margin-top: var(--space-5);
+}
+
+.ps-block-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px var(--space-2);
+  margin-bottom: var(--space-2);
+}
+
+.ps-block-title {
+  font-size: var(--type-ui);
   font-weight: 600;
   color: var(--foreground);
 }
@@ -95,7 +201,9 @@
 
 /* The reading face cards, the size tiles and the specimen are in reading.css. */
 
-.ps-row-wrap + .ps-row-wrap {
+/* ── Switch rows ──────────────────────────────────────────────────────────── */
+
+.ps-rows > .ps-row + .ps-row {
   border-top: 1px solid var(--hairline);
 }
 
@@ -111,6 +219,11 @@
   display: grid;
   min-width: 0;
   gap: 2px;
+}
+
+.ps-row-label {
+  display: grid;
+  gap: 2px;
   cursor: pointer;
 }
 
@@ -125,10 +238,32 @@
   color: var(--muted-foreground);
 }
 
-.ps-status {
-  margin: calc(var(--space-1) * -1) 0 var(--space-3);
+/* A reason the control cannot do what it says, led by a glyph; a switch row never says "on". */
+.ps-row-reason {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: var(--space-1) 0 0;
   font-size: var(--type-fine);
+  line-height: var(--leading-ui);
+  color: var(--foreground);
+}
+
+.ps-row-reason svg {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  margin-top: 2px;
+  color: var(--tone-warning);
+}
+
+.ps-row-reason[data-kind="info"] svg {
   color: var(--muted-foreground);
+}
+
+.ps-pane-head + .ps-row-reason,
+.ps-lede + .ps-row-reason {
+  margin-top: var(--space-3);
 }
 
 .ps-switch {

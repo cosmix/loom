@@ -1,6 +1,8 @@
+import { CircleAlertIcon, InfoIcon } from "lucide-react";
 import { useAtom, useAtomValue } from "jotai";
-import { useId, type ReactElement, type ReactNode } from "react";
+import { useId, type ReactElement } from "react";
 
+import { ThemePicker } from "@/components/theme-picker";
 import { useNow } from "@/components/hooks/use-now";
 import { Button } from "@/components/ui/button";
 import { Untrusted } from "@/plan/chat/visible-controls";
@@ -8,34 +10,9 @@ import { panelLoadAtom, summaryReloadAtom } from "@/plan/summaries/state";
 import { SummaryPanel } from "@/plan/summaries/summary-panel";
 import { BusyText } from "@/plan/ui/busy-text";
 import { notificationStatus, useNotificationToggle } from "@/state/notifications";
-import { autoRebuildAtom, sourceMarksAtom } from "./preferences";
-
-export function SettingsGroup({
-  title,
-  hint,
-  level = 3,
-  children,
-}: {
-  title: string;
-  hint?: string;
-  /** The heading level; a group whose body has its own h3 sections takes 2 to keep the outline. */
-  level?: 2 | 3;
-  children: ReactNode;
-}): ReactElement {
-  const heading = useId();
-  const Title = level === 2 ? "h2" : "h3";
-  return (
-    <section aria-labelledby={heading} className="ps-group">
-      <div className="ps-group-head">
-        <Title id={heading} className="ps-group-title">
-          {title}
-        </Title>
-        {hint && <span className="ps-hint">{hint}</span>}
-      </div>
-      {children}
-    </section>
-  );
-}
+import { PlannerThemeSwatch } from "./planner-swatch";
+import { autoRebuildAtom } from "./preferences";
+import { PaneBlock, SettingsPane } from "./settings-pane";
 
 /** The switch: a native checkbox in the switch role, labelled and described by the row's ids. */
 function ToggleSwitch({
@@ -70,29 +47,37 @@ function ToggleSwitch({
   );
 }
 
-function ToggleRow({
+/** A reason the switch cannot do what it says; `info` is a step the person can still take. */
+export type RowReason = { text: string; kind: "info" | "warn" };
+
+/**
+ * A switch row: its title and subtitle, the switch at the end. A row prints a second line only
+ * when the switch cannot do what it says (`reason`); it never echoes "on" or "off".
+ */
+export function ToggleRow({
   title,
   subtitle,
   checked,
   onChange,
   disabled = false,
-  status,
+  reason,
 }: {
   title: string;
   subtitle: string;
   checked: boolean;
   onChange: () => void;
   disabled?: boolean;
-  status?: string;
+  reason?: RowReason;
 }): ReactElement {
   const id = useId();
   const titleId = `${id}-title`;
   const subtitleId = `${id}-sub`;
-  const statusId = `${id}-status`;
+  const reasonId = `${id}-reason`;
+  const Glyph = reason?.kind === "warn" ? CircleAlertIcon : InfoIcon;
   return (
-    <div className="ps-row-wrap">
-      <div className="ps-row">
-        <label htmlFor={id} className="ps-row-text">
+    <div className="ps-row">
+      <div className="ps-row-text">
+        <label htmlFor={id} className="ps-row-label">
           <span id={titleId} className="ps-row-title">
             {title}
           </span>
@@ -100,26 +85,39 @@ function ToggleRow({
             {subtitle}
           </span>
         </label>
-        <ToggleSwitch
-          id={id}
-          checked={checked}
-          disabled={disabled}
-          labelledBy={titleId}
-          describedBy={status ? `${subtitleId} ${statusId}` : subtitleId}
-          onChange={onChange}
-        />
+        {reason && (
+          <p id={reasonId} role="status" className="ps-row-reason" data-kind={reason.kind}>
+            <Glyph aria-hidden="true" />
+            <span>{reason.text}</span>
+          </p>
+        )}
       </div>
-      {status && (
-        <p id={statusId} role="status" className="ps-status">
-          {status}
-        </p>
-      )}
+      <ToggleSwitch
+        id={id}
+        checked={checked}
+        disabled={disabled}
+        labelledBy={titleId}
+        describedBy={reason ? `${subtitleId} ${reasonId}` : subtitleId}
+        onChange={onChange}
+      />
     </div>
   );
 }
 
+function sentence(text: string): string {
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
 function NotificationRow(): ReactElement {
   const { on, disabled, support, toggle } = useNotificationToggle();
+  // A granted permission needs no line: the switch itself says whether it is on.
+  const reason: RowReason | undefined =
+    support === "granted"
+      ? undefined
+      : {
+          text: sentence(notificationStatus(support, on)),
+          kind: support === "default" ? "info" : "warn",
+        };
   return (
     <ToggleRow
       title="Notify when a session needs me"
@@ -127,63 +125,72 @@ function NotificationRow(): ReactElement {
       checked={on}
       disabled={disabled}
       onChange={toggle}
-      status={notificationStatus(support, on)}
+      reason={reason}
     />
   );
 }
 
-/**
- * The whole summary panel, read from the feed the shell runs: token totals, last rebuild,
- * rebuild activity and terminal claims, in that order. The provider limits show only in the
- * footer. Plain text stands in for the panel until the feed answers; a status role here would
- * collide with the notification row's.
- */
-export function SummariesGroup(): ReactElement {
-  const load = useAtomValue(panelLoadAtom);
-  const { reload } = useAtomValue(summaryReloadAtom);
-  const nowSecs = Math.floor(useNow() / 1000);
+export function AppearancePane(): ReactElement {
   return (
-    <SettingsGroup title="Summaries" hint="Rebuild token totals" level={2}>
-      {load.status === "ready" ? (
-        <SummaryPanel panel={load.panel} nowSecs={nowSecs} />
-      ) : load.status === "loading" ? (
-        <p className="ps-hint">
-          <BusyText>Loading summaries</BusyText>
-        </p>
-      ) : (
-        <div className="space-y-2 text-[13px]">
-          <p role="alert">
-            <Untrusted text={load.message} />
-          </p>
-          <Button type="button" variant="outline" size="sm" onClick={reload}>
-            Retry
-          </Button>
+    <SettingsPane title="Appearance" scope="browser">
+      <PaneBlock title="Theme">
+        <div className="ps-theme">
+          <ThemePicker swatch={PlannerThemeSwatch} optionClassName="ps-theme-option" />
         </div>
-      )}
-    </SettingsGroup>
+      </PaneBlock>
+    </SettingsPane>
   );
 }
 
-export function ReadingTogglesGroup(): ReactElement {
-  const [sourceMarks, setSourceMarks] = useAtom(sourceMarksAtom);
-  const [autoRebuild, setAutoRebuild] = useAtom(autoRebuildAtom);
+export function NotificationsPane(): ReactElement {
   return (
-    <SettingsGroup title="Reading">
-      <div>
-        <ToggleRow
-          title="Show source marks after sentences"
-          subtitle="The coloured squares that say which document a sentence draws on"
-          checked={sourceMarks}
-          onChange={() => setSourceMarks(!sourceMarks)}
-        />
+    <SettingsPane title="Notifications" scope="browser">
+      <div className="ps-block ps-rows">
+        <NotificationRow />
+      </div>
+    </SettingsPane>
+  );
+}
+
+/**
+ * The automatic-rebuild switch over the whole summary panel, read from the feed the shell runs:
+ * token totals, last rebuild, rebuild activity and terminal claims, in that order. The provider
+ * limits show only in the footer. Plain text stands in for the panel until the feed answers; a
+ * status role here would collide with the notification row's.
+ */
+export function SummariesPane(): ReactElement {
+  const load = useAtomValue(panelLoadAtom);
+  const { reload } = useAtomValue(summaryReloadAtom);
+  const [autoRebuild, setAutoRebuild] = useAtom(autoRebuildAtom);
+  const nowSecs = Math.floor(useNow() / 1000);
+  return (
+    <SettingsPane title="Summaries" hint="Rebuild token totals">
+      <div className="ps-block ps-rows">
         <ToggleRow
           title="Rebuild summaries automatically"
           subtitle="Up to 5 at a time; above that the app asks first"
           checked={autoRebuild}
           onChange={() => setAutoRebuild(!autoRebuild)}
         />
-        <NotificationRow />
       </div>
-    </SettingsGroup>
+      <div className="ps-block">
+        {load.status === "ready" ? (
+          <SummaryPanel panel={load.panel} nowSecs={nowSecs} />
+        ) : load.status === "loading" ? (
+          <p className="ps-hint">
+            <BusyText>Loading summaries</BusyText>
+          </p>
+        ) : (
+          <div className="space-y-2 text-[13px]">
+            <p role="alert">
+              <Untrusted text={load.message} />
+            </p>
+            <Button type="button" variant="outline" size="sm" onClick={reload}>
+              Retry
+            </Button>
+          </div>
+        )}
+      </div>
+    </SettingsPane>
   );
 }

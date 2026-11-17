@@ -1,25 +1,80 @@
-/* Settings → Web fetches (`web-fetch-section.tsx`): four radio rows, the allowlist under the
-   listed mode, and the add field. */
+/* Settings → Web fetches (`web-fetch-section.tsx`, `allowlist-panel.tsx`, `paste-review.tsx`):
+   the mode list and the allowlist, two separate edged instruments inside the dialog (DESIGN.md,
+   Surfaces and borders, exception), and the paste review in the allowlist's place. */
 
-.ps-fetch-note {
-  max-width: 48ch;
-  margin-bottom: var(--space-2);
-  font-size: var(--type-ui);
-  color: var(--muted-foreground);
+/* ── The mode list ────────────────────────────────────────────────────────── */
+
+.ps-modes {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 8px;
 }
 
-.ps-fetch-radio {
-  flex: none;
-  width: 16px;
-  height: 16px;
-  margin: 0;
-  accent-color: var(--foreground);
+.ps-mode {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: 10px var(--space-3);
   cursor: pointer;
 }
 
-.ps-fetch-radio:focus-visible {
+.ps-mode + .ps-mode {
+  border-top: 1px solid var(--hairline);
+}
+
+.ps-mode:hover {
+  background: var(--background);
+}
+
+/* The chosen row is filled, and its title takes the heavier weight. */
+.ps-mode:has(input:checked) {
+  background: var(--muted);
+}
+
+.ps-mode:has(input:checked) .ps-row-title {
+  font-weight: 600;
+}
+
+.ps-mode:has(input:disabled) {
+  cursor: not-allowed;
+}
+
+/* The row draws the focus ring: the list clips an outside one. */
+.ps-mode:has(input:focus-visible) {
   outline: 2px solid var(--ring);
-  outline-offset: 2px;
+  outline-offset: -2px;
+}
+
+/* Drawn, not native: a native unchosen radio takes the browser's dark-scheme grey, which is a
+   faint ring on the dark themes' rows. The ring is `--muted-foreground` on a clear fill, 5.2:1
+   at the lowest (Graphite, Gray and Cool on the chosen row's `--muted` wash) and 7.8:1 at the
+   highest across the nine themes, so a row's ground (`--popover`, the `--muted` wash or the
+   hover's `--background`) never changes it. The chosen one is a `--foreground` ring and dot. */
+.ps-fetch-radio {
+  appearance: none;
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin: 1px 0 0;
+  border: 1.5px solid var(--muted-foreground);
+  border-radius: 50%;
+  background: transparent;
+  cursor: pointer;
+}
+
+.ps-fetch-radio:checked {
+  border-color: var(--foreground);
+  background: radial-gradient(circle, var(--foreground) 0 4px, transparent 4.6px);
+}
+
+@media (forced-colors: active) {
+  .ps-fetch-radio:checked {
+    background: CanvasText;
+  }
+}
+
+.ps-fetch-radio:focus-visible {
+  outline: none;
 }
 
 .ps-fetch-radio:disabled {
@@ -27,41 +82,55 @@
   cursor: not-allowed;
 }
 
-.ps-fetch-list {
-  display: grid;
-  gap: var(--space-2);
-  padding: 0 0 var(--space-3);
+/* ── The allowlist panel ──────────────────────────────────────────────────── */
+
+.ps-panel {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 8px;
 }
 
-.ps-fetch-domain {
+.ps-panel-head,
+.ps-panel-foot {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
-  min-height: 36px;
+  gap: var(--space-2);
+  background: var(--background);
 }
 
-.ps-fetch-host {
-  min-width: 0;
-  font-family: var(--font-mono);
+.ps-panel-head {
+  min-height: 40px;
+  padding: 6px var(--space-2) 6px var(--space-3);
+  border-bottom: 1px solid var(--hairline);
+}
+
+.ps-panel-title {
   font-size: var(--type-ui);
+  font-weight: 600;
   color: var(--foreground);
-  overflow-wrap: anywhere;
+}
+
+.ps-panel-tool {
+  margin-left: auto;
+}
+
+.ps-panel-empty {
+  padding: var(--space-3);
 }
 
 .ps-fetch-add {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-start;
-  gap: var(--space-2);
+  padding: var(--space-3);
+  border-bottom: 1px solid var(--hairline);
 }
 
-.ps-fetch-add > label {
-  flex-basis: 100%;
+.ps-fetch-add-row {
+  display: flex;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
 }
 
 .ps-fetch-input {
-  flex: 1 1 12rem;
+  flex: 1 1 auto;
   min-width: 0;
   height: var(--control-height);
   padding: 0 var(--space-2);
@@ -73,7 +142,170 @@
   font-size: var(--type-ui);
 }
 
+.ps-fetch-input::placeholder {
+  color: var(--muted-foreground);
+  opacity: 0.8;
+}
+
 .ps-fetch-input:focus-visible {
   outline: 2px solid var(--ring);
   outline-offset: 2px;
+}
+
+.ps-fetch-host {
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: var(--type-ui);
+  color: var(--foreground);
+  overflow-wrap: anywhere;
+}
+
+/* Hosts in two columns, each cell ruled by hairlines. */
+.ps-hosts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ps-hosts li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  min-height: 36px;
+  padding: 0 var(--space-2) 0 var(--space-3);
+  border-bottom: 1px solid var(--hairline);
+}
+
+.ps-hosts li:nth-child(odd) {
+  border-right: 1px solid var(--hairline);
+}
+
+.ps-hosts li:nth-last-child(-n + 2) {
+  border-bottom: 0;
+}
+
+/* ── Paste: the text area beside its review ───────────────────────────────── */
+
+.ps-split {
+  display: grid;
+  grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+}
+
+.ps-split > div {
+  min-width: 0;
+  padding: var(--space-3);
+}
+
+.ps-split > div + div {
+  border-left: 1px solid var(--hairline);
+}
+
+.ps-split-label {
+  display: block;
+  margin: 0 0 var(--space-2);
+  font-size: var(--type-fine);
+  font-variant-caps: all-small-caps;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  color: var(--muted-foreground);
+}
+
+.ps-fetch-area {
+  display: block;
+  width: 100%;
+  height: auto;
+  min-height: 236px;
+  padding: var(--space-2);
+  line-height: 1.55;
+  resize: vertical;
+}
+
+.ps-split-hint {
+  display: block;
+  margin-top: var(--space-2);
+}
+
+.ps-review {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ps-review li {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 0 var(--space-2);
+  padding: 6px 0;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.ps-review li:last-child {
+  border-bottom: 0;
+}
+
+.ps-review-glyph {
+  align-self: center;
+  justify-self: center;
+  width: 13px;
+  height: 13px;
+  color: var(--muted-foreground);
+}
+
+.ps-review li[data-status="add"] .ps-review-glyph {
+  color: var(--tone-completed);
+}
+
+.ps-review li[data-status="invalid"] .ps-review-glyph {
+  color: var(--tone-warning);
+}
+
+.ps-review li:not([data-status="add"]) .ps-fetch-host {
+  color: var(--muted-foreground);
+}
+
+.ps-review-word {
+  font-size: var(--type-fine);
+  color: var(--muted-foreground);
+}
+
+.ps-review li[data-status="add"] .ps-review-word {
+  color: var(--foreground);
+}
+
+.ps-review-from {
+  grid-column: 2 / -1;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: var(--type-fine);
+  color: var(--muted-foreground);
+  overflow-wrap: anywhere;
+}
+
+.ps-panel-foot {
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-3);
+  padding: var(--space-2) var(--space-2) var(--space-2) var(--space-3);
+  border-top: 1px solid var(--hairline);
+}
+
+.ps-panel-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.ps-review-sum {
+  margin: 0;
+  font-size: var(--type-ui);
+  color: var(--muted-foreground);
+}
+
+.ps-review-sum b {
+  font-weight: 600;
+  color: var(--foreground);
 }

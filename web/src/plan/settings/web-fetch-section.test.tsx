@@ -4,7 +4,7 @@ import { afterEach, expect, it, vi } from "vitest";
 
 import type { FetchPolicy } from "@/plan/api/schema-web-fetch";
 import { authoringAtom, youAtom } from "@/plan/state/atoms";
-import { WebFetchGroup } from "./web-fetch-section";
+import { WebFetchPane } from "./web-fetch-section";
 
 afterEach(() => {
   cleanup();
@@ -55,7 +55,7 @@ function renderGroup(holder = true) {
   });
   render(
     <Provider store={store}>
-      <WebFetchGroup />
+      <WebFetchPane />
     </Provider>,
   );
 }
@@ -149,4 +149,95 @@ it("another browser reads the policy but cannot change it", async () => {
   expect(screen.queryByRole("textbox", { name: "Add a domain" })).toBeNull();
   expect(screen.queryByRole("button", { name: "Remove docs.rs" })).toBeNull();
   expect(posts).toEqual([]);
+});
+
+const pasteArea = async () =>
+  (await screen.findByRole("textbox", { name: "Pasted text" })) as HTMLTextAreaElement;
+const reviewRows = () =>
+  within(screen.getByRole("list", { name: "What will happen" }))
+    .queryAllByRole("listitem")
+    .map((row) => row.textContent);
+
+async function openPaste(text: string) {
+  fireEvent.click(await screen.findByRole("button", { name: "Paste a list" }));
+  fireEvent.change(await pasteArea(), { target: { value: text } });
+}
+
+it("Paste a list reviews every entry and one save adds the new hosts", async () => {
+  const posts = stubServer({ mode: "listed", domains: ["github.com"] });
+  renderGroup();
+
+  await openPaste("docs.rs, https://Bun.com/x\nlocalhost bun.com GitHub.com");
+
+  expect(reviewRows()).toEqual([
+    "docs.rsWill be added",
+    "bun.comWill be addedfrom https://Bun.com/x",
+    "localhostNames this machine",
+    "bun.comRepeated in this paste",
+    "github.comAlready listedfrom GitHub.com",
+  ]);
+  expect(screen.getByRole("status").textContent).toBe(
+    "2 to add · 1 already listed · 1 repeated · 1 can’t be listed",
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Add 2 domains" }));
+  const list = await screen.findByRole("list", { name: "Listed domains" });
+  expect(posts).toEqual([
+    { mode: "listed", domains: ["github.com", "docs.rs", "bun.com"], revision: 0 },
+  ]);
+  expect(within(list).getAllByRole("listitem")).toHaveLength(3);
+  expect(screen.queryByRole("textbox", { name: "Pasted text" })).toBeNull();
+});
+
+it("Paste a list adds nothing while no entry is new", async () => {
+  const posts = stubServer({ mode: "listed", domains: ["docs.rs"] });
+  renderGroup();
+
+  await openPaste("docs.rs, localhost");
+  const add = screen.getByRole("button", { name: "Add domains" });
+
+  expect(add.getAttribute("aria-disabled")).toBe("true");
+  fireEvent.click(add);
+  expect(posts).toEqual([]);
+  fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+  expect(await screen.findByRole("list", { name: "Listed domains" })).toBeTruthy();
+  expect(document.activeElement).toBe(screen.getByRole("button", { name: "Paste a list" }));
+});
+
+it("a paste of several entries into the field opens the review; one entry types in", async () => {
+  stubServer({ mode: "listed", domains: [] });
+  renderGroup();
+  const field = await screen.findByRole("textbox", { name: "Add a domain" });
+  const pasteOf = (text: string) => ({ clipboardData: { getData: () => text } });
+
+  expect(fireEvent.paste(field, pasteOf("docs.rs"))).toBe(true);
+  expect(screen.queryByRole("textbox", { name: "Pasted text" })).toBeNull();
+  expect(fireEvent.paste(field, pasteOf("docs.rs,bun.com"))).toBe(false);
+
+  expect((await pasteArea()).value).toBe("docs.rs,bun.com");
+  expect(reviewRows()).toEqual(["docs.rsWill be added", "bun.comWill be added"]);
+});
+
+it("a batch built on a stale read is refused, the review re-run against the reloaded list", async () => {
+  const posts = stubServer({ mode: "listed", domains: [] });
+  renderGroup();
+
+  await openPaste("docs.rs bun.com");
+  changeElsewhere({ mode: "listed", domains: ["docs.rs"] });
+  fireEvent.click(screen.getByRole("button", { name: "Add 2 domains" }));
+
+  await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("changed since"));
+  expect(posts).toHaveLength(1);
+  expect((await pasteArea()).value).toBe("docs.rs bun.com");
+  expect(reviewRows()).toEqual(["docs.rsAlready listed", "bun.comWill be added"]);
+  fireEvent.click(screen.getByRole("button", { name: "Add 1 domain" }));
+  await screen.findByRole("list", { name: "Listed domains" });
+  expect(posts.at(-1)).toEqual({ mode: "listed", domains: ["docs.rs", "bun.com"], revision: 1 });
+});
+
+it("another browser cannot paste a list", async () => {
+  stubServer({ mode: "listed", domains: ["docs.rs"] });
+  renderGroup(false);
+
+  await screen.findByRole("list", { name: "Listed domains" });
+  expect(screen.queryByRole("button", { name: "Paste a list" })).toBeNull();
 });

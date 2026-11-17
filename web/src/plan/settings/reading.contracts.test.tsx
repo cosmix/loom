@@ -23,15 +23,15 @@ function stubNotifications(
   return requestPermission;
 }
 
+/** The dialog on its Reading tab, where the specimen, the faces and the sizes are. */
 function renderSettings(store = createStore()) {
-  return {
-    store,
-    ...render(
-      <Provider store={store}>
-        <SettingsDialog open onOpenChange={() => {}} />
-      </Provider>,
-    ),
-  };
+  const rendered = render(
+    <Provider store={store}>
+      <SettingsDialog open onOpenChange={() => {}} />
+    </Provider>,
+  );
+  fireEvent.click(screen.getByRole("tab", { name: "Reading" }));
+  return { store, ...rendered };
 }
 
 beforeEach(() => {

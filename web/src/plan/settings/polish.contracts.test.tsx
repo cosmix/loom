@@ -1,4 +1,4 @@
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { createStore, Provider } from "jotai";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
@@ -30,6 +30,7 @@ it("Settings shows the summary statistics and no provider limits", async () => {
       </TooltipProvider>
     </Provider>,
   );
+  fireEvent.click(screen.getByRole("tab", { name: "Summaries" }));
   const dialog = screen.getByRole("dialog", { name: "Settings" });
   expect(await within(dialog).findByRole("region", { name: "Token totals" })).toBeTruthy();
   expect(within(dialog).queryAllByRole("img", { name: /window .*% used/ })).toHaveLength(0);
