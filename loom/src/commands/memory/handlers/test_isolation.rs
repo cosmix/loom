@@ -18,8 +18,11 @@ pub(super) fn run_isolated_test() -> bool {
     // its fixture cwd without depending on other tests' cwd behavior.
     let fixture_root = TempDir::new().unwrap();
     let fixture_path = fixture_root.path().canonicalize().unwrap();
+    // Other in-process tests change the shared cwd and may delete it, so the
+    // child starts in a directory that exists for its whole run.
     let mut child = Command::new(env::current_exe().unwrap())
         .args(["--exact", &test_name])
+        .current_dir(&fixture_path)
         .env("LOOM_MEMORY_TEST_CHILD", &test_name)
         .env("LOOM_MEMORY_TEST_TMPDIR", &fixture_path)
         .stdout(Stdio::piped())
