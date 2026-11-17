@@ -1,21 +1,20 @@
-import { ChevronRight, X } from "lucide-react";
+import { ChevronRight } from "lucide-react";
 import { useId, type JSX, type ReactNode } from "react";
 
 import { ShortcutGroups } from "@/components/help-shortcuts";
-import { ignoreAction } from "@/plan/help/sample";
+import { FindingSpecimen } from "@/plan/help/finding-specimen";
 import { COVERAGE_SHORTCUTS, SHORTCUTS_LOOK } from "@/plan/help/shortcuts";
 import { SettleMark, StateMark } from "@/plan/trace/coverage-marks";
 import type { RowState } from "@/plan/trace/coverage-model";
-import { DisabledReason } from "@/plan/ui/disabled-reason";
 
 import "@/plan/trace/maps.css";
-import "@/plan/trace/maps-findings.css";
 import "@/plan/trace/trace.css";
 
 // The help bodies of the two map pages. Each opens with an inert specimen drawn in the page's own
-// classes (trace/maps.css, trace/maps-findings.css), so the help shows what the page shows, then
-// names the parts. The pages read the feature's trace from the server, so the specimens are
-// written here rather than mounted from the pages: a help scene never requests live data.
+// classes (trace/maps.css) or components (`finding-specimen.tsx`), so the help shows what the page
+// shows, then names the parts. The pages read the feature's trace from the server, so the
+// specimens are fed static data rather than mounted from the pages: a help scene never requests
+// live data.
 
 type Definition = readonly [name: string, meaning: string];
 
@@ -199,78 +198,6 @@ export function CoverageHelp(): JSX.Element {
       <div className={SHORTCUTS_LOOK}>
         <ShortcutGroups groups={[COVERAGE_SHORTCUTS]} />
       </div>
-    </div>
-  );
-}
-
-/**
- * The ledger as the page draws it (`trace/findings-cards.tsx`): an open, verified finding, then an
- * addressed one with what it changed and a dismissed one.
- */
-export function FindingSpecimen(): JSX.Element {
-  return (
-    <div data-loom-plan inert>
-      <ul className="maps-findings-list">
-        <li className="maps-finding" data-status="open" data-state="open">
-          <div className="maps-finding-head">
-            <span className="plan-fine maps-finding-id">F-3</span>
-            <h3 className="maps-finding-title">Stops have no time window</h3>
-            <p className="plan-fine maps-finding-status">Open · high</p>
-          </div>
-          <p className="maps-about" data-label="About">
-            <span>
-              <span className="maps-chip">
-                <span>Stops</span>
-              </span>
-            </span>
-          </p>
-          <figure className="maps-evidence">
-            <figcaption className="plan-fine">Evidence</figcaption>
-            <blockquote>Each stop carries the window in which the driver may arrive.</blockquote>
-          </figure>
-          <p className="maps-finding-text">
-            A stop stores a place and notes; the time window the spec asks for is missing from the
-            record.
-          </p>
-          <div className="maps-actions">
-            <DisabledReason reason={null} look="secondary" onClick={ignoreAction}>
-              <X aria-hidden="true" />
-              Dismiss
-            </DisabledReason>
-          </div>
-        </li>
-        <li
-          className="maps-finding"
-          data-status="addressed"
-          data-state="addressed"
-          data-line="true"
-        >
-          <div className="maps-finding-head">
-            <span className="plan-fine maps-finding-id">F-4</span>
-            <h3 className="maps-finding-title">Routes never say who owns a stop</h3>
-            <p className="plan-fine maps-finding-status">Addressed</p>
-          </div>
-          <p className="maps-about" data-label="Changed">
-            <span>
-              <span className="maps-chip">
-                <span>Ownership</span>
-              </span>
-            </span>
-          </p>
-        </li>
-        <li
-          className="maps-finding"
-          data-status="dismissed"
-          data-state="dismissed"
-          data-line="true"
-        >
-          <div className="maps-finding-head">
-            <span className="plan-fine maps-finding-id">F-2</span>
-            <h3 className="maps-finding-title">Rename the flag</h3>
-            <p className="plan-fine maps-finding-status">Dismissed: code-level note</p>
-          </div>
-        </li>
-      </ul>
     </div>
   );
 }

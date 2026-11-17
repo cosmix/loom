@@ -13,7 +13,6 @@ import {
   S03,
   UNCOVERED,
   checklist,
-  deepestHolding,
   follows,
   found,
   holding,
@@ -201,19 +200,23 @@ it("a coverage row expands to why, how and findings", async () => {
   expect(open.textContent).toMatch(/\bfirst\b/);
 });
 
-it("findings group by run and fold decided ones", async () => {
-  // F-1 is a run finding and F-2 a dismissed one; F-9 comes from Review the feature.
+it("findings sort into lanes in the order a finding moves, a decided one set aside", async () => {
+  // F-1 is an open run finding and F-2 a dismissed one; F-9 comes from Review the feature.
   const [run] = trace.findings;
   const source = "review 2026-11-06";
   trace.findings.push({ ...run!, finding: { ...run!.finding, id: "F-9", source } });
   renderRoutes("/f/demo/findings");
-  const [runHead] = await screen.findAllByRole("heading", { name: /^Run of/ });
-  const reviews = await screen.findByRole("heading", { name: "Reviews" });
-  expect(follows(runHead!, reviews)).toBe(true);
-  const line = await holding("Dismissed:", "not needed");
-  expect(norm(line.textContent)).toMatch(/Dismissed:\s*not needed/);
-  const [folded] = deepestHolding(document.body, "Rename the flag", "Dismissed:");
-  expect(within(folded!).queryAllByRole("button", { name: /^Dismiss\b/ })).toEqual([]);
+  const heads = await screen.findAllByRole("heading", { level: 2 });
+  expect(heads.map((head) => head.textContent?.replace(/\s*\d+$/, ""))).toEqual([
+    "To verify",
+    "Yours to decide",
+    "Addressed",
+    "Set aside",
+  ]);
+  const aside = screen.getByRole("region", { name: /^Set aside/ });
+  const line = within(aside).getByText("Rename the flag").closest("li")!;
+  expect(norm(line.textContent)).toMatch(/Dismissed\s*not needed/);
+  expect(within(line).queryAllByRole("button", { name: /^Dismiss\b/ })).toEqual([]);
 });
 
 it("the product overview draws no Coverage link of its own; the Run page links Findings", async () => {
@@ -229,5 +232,7 @@ it("the product overview draws no Coverage link of its own; the Run page links F
   cleanup();
   // Finding F-1 is open and verified in the trace fixture.
   renderRoutes("/f/demo/run");
-  await pageLink((name) => /Findings/.test(name) && /\b\d+ open\b/.test(name), "/f/demo/findings");
+  await pageLink((name) => /^Open findings$/.test(name), "/f/demo/findings");
+  const row = screen.getByRole("region", { name: "Findings" });
+  expect(row.textContent).toMatch(/\b\d+ open\b/);
 });

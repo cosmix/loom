@@ -1,13 +1,13 @@
 /*
- * The inline form of an open finding (`findings-cards.tsx`): the Dismiss reason field, and the
- * page's button sizes. maps-findings.css imports this sheet first, so its narrow steps win on equal
- * specificity.
+ * The Dismiss form of a finding (`findings-controls.tsx`, in the dialog's foot): the reason field,
+ * and the page's button sizes. maps-findings.css imports this sheet first, so its narrow steps win
+ * on equal specificity.
  */
 
 /* ── Dismiss ───────────────────────────────────────────────────────────────── */
 
-/* Under a hairline in the card. The reason field grows on the line, the confirm and Cancel after
-   it; the field is the card's one bordered thing. */
+/* Under a hairline in the dialog's foot. The reason field grows on the line, the confirm and
+   Cancel after it; the field is the foot's one bordered thing. */
 [data-loom-plan] .maps-dismiss {
   min-width: 0;
   margin: var(--space-2) 0 0;
@@ -53,18 +53,43 @@
 /* Every action on the page (Address the findings, Review the feature, Dismiss, and the form's
    confirm and Cancel) is a 32px button at --type-body with a 16px glyph, and a reason beside one
    is --type-ui: the page's chrome keeps the 13px floor. */
-[data-loom-plan] :is(.maps-findings-head, .maps-actions, .maps-dismiss) .plan-button {
+[data-loom-plan]
+  :is(
+    .maps-findings-head,
+    .findings-lane__action,
+    .findings-sheet__foot,
+    .maps-actions,
+    .maps-dismiss
+  )
+  .plan-button {
   height: 32px;
   gap: var(--space-2);
   padding: 0 var(--space-3);
   font-size: var(--type-body);
 }
 
-[data-loom-plan] :is(.maps-findings-head, .maps-actions, .maps-dismiss) .plan-button svg {
+[data-loom-plan]
+  :is(
+    .maps-findings-head,
+    .findings-lane__action,
+    .findings-sheet__foot,
+    .maps-actions,
+    .maps-dismiss
+  )
+  .plan-button
+  svg {
   width: 16px;
   height: 16px;
 }
 
-[data-loom-plan] :is(.maps-findings-head, .maps-actions, .maps-dismiss) .plan-fine {
+[data-loom-plan]
+  :is(
+    .maps-findings-head,
+    .findings-lane__action,
+    .findings-sheet__foot,
+    .maps-actions,
+    .maps-dismiss
+  )
+  .plan-fine {
   font-size: var(--type-ui);
 }

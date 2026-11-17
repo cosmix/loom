@@ -13,16 +13,19 @@ import { dismissReason, ledgerPath } from "./findings-actions";
 import {
   addressOffer,
   addressRunLive,
+  boardLanes,
   cardState,
+  findingSource,
   groupFindings,
-  groupTitle,
-  isFullCard,
+  laneOf,
+  ledgerSummary,
   nodeLabel,
+  nothingWaits,
   openCount,
   runOf,
   shortRun,
-  stateText,
-  tally,
+  stateReason,
+  stateWord,
 } from "./findings-model";
 
 function demo(): TraceView {
@@ -91,7 +94,7 @@ describe("groupFindings", () => {
   });
 });
 
-describe("group titles", () => {
+describe("short run names", () => {
   it.each([
     ["REVIEW-PLAN-demo-03-summaries", "03-summaries"],
     ["REVIEW-PLAN-first", "first"],
@@ -100,30 +103,116 @@ describe("group titles", () => {
   ])("shortens %s to %s", (run, short) => {
     expect(shortRun(run, "demo")).toBe(short);
   });
+});
 
-  it("titles a run by its short slug and the rest Reviews", () => {
-    const [run, reviews] = groupFindings([
-      entryOf("F-1", "REVIEW-PLAN-demo-03-summaries.md#open-findings (s, 1)"),
-      entryOf("F-2", null),
+describe("the board's lanes", () => {
+  it("puts each card state in the lane of what it needs from the reader", () => {
+    expect(
+      (
+        [
+          "unverified",
+          "stale",
+          "open",
+          "addressing",
+          "unaddressed",
+          "addressed",
+          "dismissed",
+          "duplicate",
+        ] as const
+      ).map(laneOf),
+    ).toEqual(["verify", "verify", "decide", "decide", "decide", "addressed", "aside", "aside"]);
+  });
+
+  it("sorts every finding into one of four lanes, always present, and counts them", () => {
+    const left = entryOf("F-8", null);
+    left.finding.status = { kind: "unaddressed", detail: "the plan is done" };
+    const all = [
+      entryOf("F-1", null),
+      entryOf("F-2", null, "open", "unverified"),
+      entryOf("F-3", null, "open", "stale"),
+      entryOf("F-4", null, "open", "duplicate"),
+      entryOf("F-5", null, "addressed"),
+      entryOf("F-6", null, "dismissed"),
+      left,
+    ];
+    const lanes = boardLanes(all, false);
+    expect(lanes.map(({ key }) => key)).toEqual(["verify", "decide", "addressed", "aside"]);
+    expect(lanes.map(({ entries }) => entries.map(({ finding }) => finding.id))).toEqual([
+      ["F-2", "F-3"],
+      ["F-1", "F-8"],
+      ["F-5"],
+      ["F-4", "F-6"],
     ]);
-    expect(groupTitle(run!, "demo")).toBe("Run of 03-summaries");
-    expect(groupTitle(reviews!, "demo")).toBe("Reviews");
+    expect(boardLanes([], false).map(({ entries }) => entries.length)).toEqual([0, 0, 0, 0]);
+  });
+
+  it("keeps a finding in Yours to decide while an address run works on it", () => {
+    const [, decide] = boardLanes([entryOf("F-1", null)], true);
+    expect(decide!.entries).toHaveLength(1);
+  });
+
+  it("orders Yours to decide by severity, high first, a failed finding last", () => {
+    const withSeverity = (id: string, severity: "high" | "medium" | "low" | null) => {
+      const entry = entryOf(id, null);
+      entry.finding.severity = severity;
+      return entry;
+    };
+    const failed = withSeverity("F-9", "high");
+    failed.finding.status = { kind: "unaddressed", detail: "stopped" };
+    const [, decide] = boardLanes(
+      [
+        withSeverity("F-1", "low"),
+        withSeverity("F-2", null),
+        failed,
+        withSeverity("F-3", "high"),
+        withSeverity("F-4", "medium"),
+      ],
+      false,
+    );
+    expect(decide!.entries.map(({ finding }) => finding.id)).toEqual([
+      "F-3",
+      "F-4",
+      "F-1",
+      "F-2",
+      "F-9",
+    ]);
+  });
+
+  it("says nothing waits only once findings exist and none is to verify or decide", () => {
+    expect(nothingWaits([])).toBe(false);
+    expect(nothingWaits([entryOf("F-1", null)])).toBe(false);
+    expect(nothingWaits([entryOf("F-1", null, "open", "stale")])).toBe(false);
+    expect(
+      nothingWaits([entryOf("F-1", null, "addressed"), entryOf("F-2", null, "dismissed")]),
+    ).toBe(true);
   });
 });
 
-describe("tally", () => {
-  it("splits open findings by their check, counts the rest by status and leaves out zeros", () => {
-    const all = [
-      entryOf("F-1", null),
-      entryOf("F-2", null),
-      entryOf("F-3", null, "open", "unverified"),
-      entryOf("F-4", null, "open", "stale"),
-      entryOf("F-5", null, "open", "duplicate"),
-      entryOf("F-6", null, "addressed"),
-      entryOf("F-7", null, "dismissed"),
-    ];
-    expect(tally(all)).toBe("2 to address · 2 to verify · 1 addressed · 1 dismissed");
-    expect(tally([])).toBe("");
+describe("where a finding came from", () => {
+  it("names the run and its stage, or the reader's own review", () => {
+    expect(
+      findingSource("REVIEW-PLAN-demo-05-trace.md#open-findings (settle, 3f9c1a2)", "demo"),
+    ).toEqual({
+      run: "05-trace",
+      short: "run 05-trace",
+      words: "Run review of 05-trace, stage settle",
+    });
+    expect(findingSource("review 2026-11-12", "demo")).toEqual({
+      run: null,
+      short: "your review",
+      words: "Your review of the feature, 2026-11-12",
+    });
+    expect(findingSource(null, "demo").words).toBe("Your review of the feature");
+  });
+
+  it("sums the ledger up in one line", () => {
+    const a = "REVIEW-PLAN-a.md#open-findings (s, 1)";
+    const b = "REVIEW-PLAN-b.md#open-findings (s, 2)";
+    expect(ledgerSummary([entryOf("F-1", a), entryOf("F-2", b), entryOf("F-3", null)])).toBe(
+      "3 findings from 2 run reviews and your reviews",
+    );
+    expect(ledgerSummary([entryOf("F-1", a)])).toBe("1 finding from 1 run review");
+    expect(ledgerSummary([entryOf("F-1", null)])).toBe("1 finding from your reviews");
   });
 });
 
@@ -171,22 +260,30 @@ describe("card states and nodeLabel", () => {
     expect(state(entryOf("F-1", null, "open", "stale"), true)).toBe("stale");
     expect(state(entryOf("F-1", null, "open", "duplicate"))).toBe("duplicate");
     expect(state(entryOf("F-1", null, "addressed"), true)).toBe("addressed");
-    expect(isFullCard("unverified")).toBe(true);
-    expect(isFullCard("duplicate")).toBe(false);
-    expect(isFullCard("addressed")).toBe(false);
   });
 
-  it("puts each state in words", () => {
+  it("puts each state in words, and the reason only where it adds to them", () => {
     const open = entryOf("F-1", null);
-    expect(stateText(open, "open")).toBe("Open · medium");
-    expect(stateText(open, "addressing")).toBe("Being addressed");
+    expect(stateWord(open, "open")).toBe("Open");
+    expect(stateWord(open, "addressing")).toBe("Being addressed");
+    expect(stateReason(open, "open")).toBeNull();
     const duplicate = entryOf("F-2", null, "open", "duplicate");
-    expect(stateText(duplicate, "duplicate")).toBe("Duplicate of F-1");
+    expect(stateWord(duplicate, "duplicate")).toBe("Duplicate of F-1");
+    expect(stateReason(duplicate, "duplicate")).toBeNull();
     const dismissed = entryOf("F-3", null, "dismissed");
-    expect(stateText(dismissed, "dismissed")).toBe("Dismissed: no");
+    expect(stateWord(dismissed, "dismissed")).toBe("Dismissed");
+    expect(stateReason(dismissed, "dismissed")).toBe("no");
     const left = entryOf("F-4", null);
     left.finding.status = { kind: "unaddressed", detail: "the plan is done" };
-    expect(stateText(left, "unaddressed")).toBe("Could not address: the plan is done");
+    expect(stateWord(left, "unaddressed")).toBe("Could not address");
+    expect(stateReason(left, "unaddressed")).toBe("the plan is done");
+    expect(stateReason(entryOf("F-5", null, "open", "stale"), "stale")).toMatch(/no longer/);
+    expect(stateReason(entryOf("F-6", null, "open", "unverified"), "unverified")).toMatch(
+      /No quote/,
+    );
+    const done = entryOf("F-7", null, "addressed");
+    done.changed = [{ path: "a.md", anchor: null }];
+    expect(stateReason(done, "addressed")).toBe("Changed 1 place");
   });
 
   it("names a heading, an entry and a document", () => {

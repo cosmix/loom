@@ -1,0 +1,244 @@
+/*
+ * The dialog a finding card opens (`findings-sheet.tsx`), on the shared dialog primitive's surface
+ * (`components/ui/dialog.tsx`: raised fill, edge, halo and a blurred scrim; index.css remaps
+ * `--card`, `--background`, `--muted` and `--hairline` to the raised layer). Three bands, the body
+ * scrolling inside the dialog: the head, the finding, the foot with its actions. These rules are
+ * unlayered, so they win over the primitive's utilities. ui/DESIGN.md, Floating surfaces.
+ */
+
+.findings-sheet {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 0;
+  width: min(720px, calc(100vw - 2rem));
+  max-width: none;
+  max-height: calc(100dvh - 4rem);
+  padding: 0;
+  border-radius: 14px;
+  overflow: hidden;
+}
+
+/* ── Head ──────────────────────────────────────────────────────────────────── */
+
+[data-loom-plan] .findings-sheet__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-4);
+  padding: var(--space-3) var(--space-3) var(--space-3) 28px;
+  border-bottom: 1px solid var(--hairline);
+  font-size: var(--type-ui);
+}
+
+[data-loom-plan] .findings-sheet__head .findings-state {
+  font-size: var(--type-ui);
+}
+
+[data-loom-plan] .findings-sheet__lane {
+  color: var(--muted-foreground);
+}
+
+[data-loom-plan] .findings-sheet__head .plan-button {
+  width: 32px;
+  height: 32px;
+  margin-left: auto;
+  padding: 0;
+}
+
+[data-loom-plan] .findings-sheet__head .plan-button svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* ── Body ──────────────────────────────────────────────────────────────────── */
+
+/* Positioned, so a `.sr-only` span inside the scroller scrolls with it and does not stretch the
+   dialog (conventions/plan-web.md, Planner Feedback Rules). */
+[data-loom-plan] .findings-sheet__body {
+  position: relative;
+  display: grid;
+  align-content: start;
+  gap: var(--space-4);
+  min-width: 0;
+  padding: var(--space-5) 28px;
+  overflow-y: auto;
+  overflow-wrap: anywhere;
+}
+
+[data-loom-plan] .findings-sheet__title {
+  margin: 0;
+  font-family: var(--font-sans);
+  font-size: 26px;
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+  text-wrap: pretty;
+}
+
+[data-loom-plan] .findings-sheet__title:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+
+/* The quote: a 2px edge in the colour of its document, the caption naming the passage. A stale
+   quote is struck through under a dashed edge; a finding with no quote says so in the same place. */
+[data-loom-plan] .findings-evidence {
+  max-width: 64ch;
+  margin: 0;
+  padding-left: var(--space-4);
+  border-left: 2px solid var(--evidence-hue, var(--hairline));
+}
+
+[data-loom-plan] .findings-evidence > figcaption {
+  margin-bottom: 6px;
+  color: var(--muted-foreground);
+  font-size: var(--type-ui);
+}
+
+[data-loom-plan] .findings-evidence > blockquote {
+  margin: 0;
+  font-family: var(--font-reading);
+  font-size: 17px;
+  line-height: 1.55;
+}
+
+[data-loom-plan] .findings-evidence:is([data-stale], [data-missing]) {
+  border-left-style: dashed;
+}
+
+[data-loom-plan] .findings-evidence[data-missing] {
+  border-left-color: var(--muted-foreground);
+}
+
+[data-loom-plan] .findings-evidence[data-stale] > blockquote {
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+}
+
+[data-loom-plan] .findings-evidence[data-missing] > blockquote {
+  color: var(--muted-foreground);
+  font-family: var(--font-sans);
+  font-size: var(--type-body);
+}
+
+[data-loom-plan] .findings-text {
+  max-width: 62ch;
+}
+
+[data-loom-plan] .findings-text p {
+  margin: 0;
+  font-family: var(--font-sans);
+  font-size: 16px;
+  line-height: 1.55;
+  text-wrap: pretty;
+}
+
+[data-loom-plan] .findings-text p + p {
+  margin-top: var(--space-3);
+}
+
+[data-loom-plan] .findings-meta {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: baseline;
+  gap: 10px var(--space-4);
+  margin: 0;
+  font-size: var(--type-body);
+}
+
+[data-loom-plan] .findings-meta dt {
+  color: var(--muted-foreground);
+  font-size: var(--type-ui);
+}
+
+[data-loom-plan] .findings-meta dd {
+  min-width: 0;
+  margin: 0;
+}
+
+/* The passages: sunken pills in the raised layer's well, cut with an ellipsis. */
+[data-loom-plan] .findings-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+[data-loom-plan] .findings-chips > span {
+  min-width: 0;
+  max-width: 100%;
+}
+
+[data-loom-plan] .findings-chip {
+  display: inline-block;
+  max-width: 100%;
+  padding: 2px 10px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--muted);
+  color: var(--foreground);
+  font-size: var(--type-ui);
+  line-height: 20px;
+  text-decoration: none;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+[data-loom-plan] .findings-chip:hover {
+  background: var(--accent);
+}
+
+[data-loom-plan] .findings-chip:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+/* ── Foot ──────────────────────────────────────────────────────────────────── */
+
+/* One line on what happens next, the actions at its end; the Dismiss form takes a line of its
+   own when it opens. */
+[data-loom-plan] .findings-sheet__foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3) var(--space-4);
+  padding: var(--space-3) 28px;
+  border-top: 1px solid var(--hairline);
+}
+
+[data-loom-plan] .findings-sheet__foot > p {
+  flex: 1 1 16rem;
+  min-width: 0;
+  margin: 0;
+}
+
+[data-loom-plan] .findings-sheet__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+[data-loom-plan] .findings-sheet__actions > .maps-actions {
+  margin-top: 0;
+}
+
+[data-loom-plan] .findings-sheet__actions:has(.maps-dismiss) {
+  flex: 1 0 100%;
+}
+
+[data-loom-plan] .findings-sheet__actions > .maps-actions:has(.maps-dismiss) {
+  flex: 1 1 auto;
+}
+
+/* "Open the passage" is a link drawn as a quiet button; the primitive's flex comes with Button. */
+[data-loom-plan] .findings-sheet__actions > a.plan-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+}

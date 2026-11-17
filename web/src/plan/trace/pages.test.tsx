@@ -92,6 +92,12 @@ describe("the coverage page with nothing to map", () => {
   });
 });
 
+/** Presses the board card titled `title`; resolves to the dialog it opens. */
+async function openCard(title: string): Promise<HTMLElement> {
+  fireEvent.click(await screen.findByRole("button", { name: new RegExp(title) }));
+  return screen.findByRole("dialog");
+}
+
 describe("the findings page with no ledger", () => {
   it("says there are no findings yet, and offers no address run", async () => {
     served = { status: 200, body: EMPTY_TRACE };
@@ -100,22 +106,33 @@ describe("the findings page with no ledger", () => {
     expect(screen.queryByText("Address the findings")).toBeNull();
   });
 
-  it("groups the ledger by run and review, with Dismiss on open findings only", async () => {
+  it("sorts the ledger into lanes, with Dismiss in a finding's dialog and on open ones only", async () => {
     served = { status: 200, body: traceFixture };
     renderPage(<FindingsPage />, "/f/atlas/findings", atlas({}));
-    expect(await screen.findByRole("heading", { name: "Run of first" })).toBeTruthy();
-    expect(screen.getByRole("heading", { name: "Reviews" })).toBeTruthy();
-    // F-1 is open and verified, F-2 dismissed.
-    expect(screen.getByText("1 to address · 1 dismissed")).toBeTruthy();
-    const dismissals = screen.getAllByRole("button", { name: /^Dismiss/ });
-    expect(dismissals.map((button) => button.getAttribute("aria-label"))).toEqual(["Dismiss F-1"]);
-    const dismissed = screen.getByText("Rename the flag").closest("li")!;
-    expect(within(dismissed).getByText("Dismissed: not needed")).toBeTruthy();
+    const decide = await screen.findByRole("region", { name: /^Yours to decide/ });
+    expect(within(decide).getByText("Rebuild ignores briefs")).toBeTruthy();
+    const aside = screen.getByRole("region", { name: /^Set aside/ });
+    expect(within(aside).getByText("Rename the flag")).toBeTruthy();
+    // F-1 is open and verified, F-2 dismissed; the one source is a run review, the other a person's.
+    expect(screen.getByText("2 findings from 1 run review and your reviews")).toBeTruthy();
+    expect(screen.queryAllByRole("button", { name: /^Dismiss/ })).toEqual([]);
+    const dialog = await openCard("Rebuild ignores briefs");
+    expect(
+      within(dialog)
+        .getAllByRole("button", { name: /^Dismiss/ })
+        .map((button) => button.getAttribute("aria-label")),
+    ).toEqual(["Dismiss F-1"]);
+    fireEvent.keyDown(dialog, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    const closed = await openCard("Rename the flag");
+    expect(within(closed).getByText("not needed")).toBeTruthy();
+    expect(within(closed).queryByRole("button", { name: /^Dismiss/ })).toBeNull();
+    expect(within(closed).getByRole("button", { name: "Reopen F-2" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: /^Plan this/ })).toBeNull();
     expect(screen.queryByRole("button", { name: /^Fold into/ })).toBeNull();
   });
 
-  it("shows each card's check, its quote and what an addressed finding changed", async () => {
+  it("shows each card's state, and in its dialog the quote and what an addressed finding changed", async () => {
     const trace = structuredClone(traceFixture) as TraceView;
     const [verified] = trace.findings;
     const raw = structuredClone(verified!);
@@ -133,29 +150,42 @@ describe("the findings page with no ledger", () => {
     served = { status: 200, body: trace };
     renderPage(<FindingsPage />, "/f/atlas/findings", atlas({}));
     const open = (await screen.findByText("Rebuild ignores briefs")).closest("li")!;
-    expect(within(open).getByText("Open · medium")).toBeTruthy();
-    expect(within(open).getByText("Text two names the budget.")).toBeTruthy();
+    expect(open.getAttribute("data-state")).toBe("open");
+    expect(within(open).getByText("Medium")).toBeTruthy();
     const unverified = screen.getByText("Raw item").closest("li")!;
     expect(unverified.getAttribute("data-state")).toBe("unverified");
-    expect(within(unverified).getByText(/^Unverified/)).toBeTruthy();
-    expect(screen.getByText("1 to address · 1 to verify · 1 addressed · 1 dismissed")).toBeTruthy();
+    expect(within(unverified).getByText("Unverified")).toBeTruthy();
+    expect(within(unverified).getByText("No severity")).toBeTruthy();
+    const verify = screen.getByRole("region", { name: /^To verify/ });
+    expect(within(verify).getByText("Raw item")).toBeTruthy();
     const addressed = screen.getByText("Heading one").closest("li")!;
-    expect(addressed.getAttribute("data-line")).toBe("true");
-    const changed = within(addressed).getByRole("group", { name: "Changed" });
+    expect(within(addressed).getByText("Changed 1 place")).toBeTruthy();
+
+    const quoted = await openCard("Rebuild ignores briefs");
+    expect(within(quoted).getByText("Text two names the budget.")).toBeTruthy();
+    expect(
+      within(quoted).getByText("The rebuild budget counts plans but not briefs."),
+    ).toBeTruthy();
+    fireEvent.keyDown(quoted, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    const finished = await openCard("Heading one");
+    const changed = within(finished).getByRole("group", { name: "Changed" });
     expect(within(changed).getByRole("link", { name: "One" })).toBeTruthy();
   });
 
-  it("draws a duplicate as a line that links to the finding it repeats", async () => {
+  it("draws a duplicate in Set aside, and links the finding it repeats from its dialog", async () => {
     const trace = structuredClone(traceFixture) as TraceView;
     trace.findings[0]!.check = { kind: "duplicate", duplicate_of: "F-3" };
     served = { status: 200, body: trace };
     renderPage(<FindingsPage />, "/f/atlas/findings", atlas({}));
-    const line = (await screen.findByText("Rebuild ignores briefs")).closest("li")!;
-    expect(line.getAttribute("data-line")).toBe("true");
-    expect(within(line).getByRole("link", { name: "F-3" }).getAttribute("href")).toMatch(
+    const card = (await screen.findByText("Rebuild ignores briefs")).closest("li")!;
+    expect(card.getAttribute("data-state")).toBe("duplicate");
+    expect(within(card).getByText("Duplicate of F-3")).toBeTruthy();
+    const dialog = await openCard("Rebuild ignores briefs");
+    expect(within(dialog).getByRole("link", { name: "F-3" }).getAttribute("href")).toMatch(
       /#finding-F-3$/,
     );
-    expect(within(line).queryByRole("button")).toBeNull();
+    expect(within(dialog).queryByRole("button", { name: /^(Dismiss|Reopen)/ })).toBeNull();
   });
 });
 
@@ -186,7 +216,7 @@ describe("Address the findings", () => {
     trace.findings[0]!.check = { kind: "stale", duplicate_of: null };
     served = { status: 200, body: trace };
     renderPage(<FindingsPage />, "/f/atlas/findings", atlas({}));
-    await screen.findByRole("heading", { name: "Reviews" });
+    await screen.findByRole("heading", { name: /^To verify/ });
     expect(screen.queryByText("Address the findings")).toBeNull();
   });
 });
@@ -202,7 +232,7 @@ describe("reading the ledger's hash", () => {
   it("fetches the ledger when the trace has findings", async () => {
     served = { status: 200, body: traceFixture };
     renderPage(<FindingsPage />, "/f/atlas/findings", atlas({}));
-    await screen.findByRole("heading", { name: "Reviews" });
+    await screen.findByRole("heading", { name: /^Yours to decide/ });
     await waitFor(() => expect(docFetches).toBe(1));
   });
 });
@@ -220,22 +250,15 @@ describe("the findings page header", () => {
   it("survives an address whose fragment is not a valid escape", async () => {
     served = { status: 200, body: traceFixture };
     renderPage(<FindingsPage />, "/f/atlas/findings#%E0", atlas({}));
-    expect(await screen.findByRole("heading", { name: "Run of first" })).toBeTruthy();
-  });
-
-  it("marks the finding the address names", async () => {
-    served = { status: 200, body: traceFixture };
-    renderPage(<FindingsPage />, "/f/atlas/findings#finding-F-1", atlas({}));
-    const addressed = (await screen.findByText("Rebuild ignores briefs")).closest("li")!;
-    expect(addressed.getAttribute("data-addressed")).toBe("true");
-    const other = screen.getByText("Rename the flag").closest("li")!;
-    expect(other.hasAttribute("data-addressed")).toBe(false);
+    expect(await screen.findByRole("heading", { name: /^Yours to decide/ })).toBeTruthy();
+    expect(screen.queryByRole("dialog")).toBeNull();
   });
 });
 
 describe("dismissing a finding", () => {
   async function openForm(): Promise<HTMLElement> {
     renderPage(<FindingsPage />, "/f/atlas/findings", atlas({}));
+    await openCard("Rebuild ignores briefs");
     fireEvent.click(await screen.findByRole("button", { name: "Dismiss F-1" }));
     return screen.findByRole("textbox", { name: /reason/i });
   }
@@ -290,10 +313,11 @@ describe("dismissing a finding", () => {
 });
 
 describe("after a dismissal is saved", () => {
-  it("moves focus to the finding's heading, since the actions are gone", async () => {
+  it("moves focus to the dialog's title, since the actions are gone", async () => {
     served = { status: 200, body: traceFixture };
     docHash = "sha256:shown";
     renderPage(<FindingsPage />, "/f/atlas/findings", atlas({}));
+    await openCard("Rebuild ignores briefs");
     fireEvent.click(await screen.findByRole("button", { name: "Dismiss F-1" }));
     fireEvent.change(await screen.findByRole("textbox", { name: /reason/i }), {
       target: { value: "duplicate" },

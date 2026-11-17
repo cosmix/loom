@@ -8,8 +8,8 @@ import {
   CoverageSpecimen,
   FINDINGS_TIPS,
   FindingsHelp,
-  FindingSpecimen,
 } from "./maps-help";
+import { FindingSpecimen } from "./finding-specimen";
 
 beforeEach(() => {
   vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("Help must not request live data")));
@@ -88,36 +88,54 @@ describe("the coverage topic body", () => {
 });
 
 describe("the finding specimen", () => {
-  it("draws an open finding with its id, state, About chip, evidence, text and Dismiss", () => {
+  it("draws the board's four lanes, one finding in each, inert", () => {
     const { container } = render(<FindingSpecimen />);
 
-    const card = container.querySelector(
-      '[data-loom-plan][inert] .maps-finding[data-state="open"]',
-    );
-    expect(card).not.toBeNull();
-    expect(card!.querySelector(".maps-finding-id")?.textContent).toBe("F-3");
-    expect(card!.querySelector("h3.maps-finding-title")?.textContent).toBe(
-      "Stops have no time window",
-    );
-    expect(card!.querySelector(".maps-finding-status")?.textContent).toBe("Open · high");
-    expect(card!.querySelectorAll('.maps-about[data-label="About"] .maps-chip')).toHaveLength(1);
-    expect(card!.querySelector(".maps-evidence blockquote")?.textContent).toMatch(/window/);
-    const actions = [...card!.querySelectorAll(".maps-actions button")];
-    expect(actions.map((button) => button.textContent)).toEqual(["Dismiss"]);
-    expect(actions.every((button) => button.getAttribute("data-look") === "secondary")).toBe(true);
+    const root = container.querySelector("[data-loom-plan][inert]");
+    expect(root).not.toBeNull();
+    const lanes = [...root!.querySelectorAll(".findings-board .findings-lane")];
+    expect(lanes.map((lane) => lane.getAttribute("data-lane"))).toEqual([
+      "verify",
+      "decide",
+      "addressed",
+      "aside",
+    ]);
+    expect(lanes.map((lane) => lane.querySelectorAll(".findings-card").length)).toEqual([
+      1, 1, 1, 1,
+    ]);
+    expect(container.querySelector(".findings-lane__none")).toBeNull();
   });
 
-  it("folds addressed and dismissed findings to lines, an addressed one with what changed", () => {
+  it("draws the open finding as the page's card: id, title, severity, place and source", () => {
     const { container } = render(<FindingSpecimen />);
 
-    const addressed = container.querySelector('.maps-finding[data-state="addressed"]');
-    expect(addressed!.getAttribute("data-line")).toBe("true");
-    expect(
-      addressed!.querySelectorAll('.maps-about[data-label="Changed"] .maps-chip'),
-    ).toHaveLength(1);
-    const dismissed = container.querySelector('.maps-finding[data-state="dismissed"]');
-    expect(dismissed!.querySelector(".maps-finding-status")?.textContent).toMatch(/^Dismissed: /);
-    expect(container.querySelectorAll("[data-line] button")).toHaveLength(0);
+    const card = container.querySelector('.findings-lane[data-lane="decide"] .findings-card');
+    expect(card!.getAttribute("data-state")).toBe("open");
+    expect(card!.querySelector(".findings-id")?.textContent).toBe("F-3");
+    expect(card!.querySelector(".findings-card__title")?.textContent).toBe(
+      "Stops have no time window",
+    );
+    expect(card!.querySelector(".findings-severity")?.textContent).toMatch(/high/i);
+    expect(card!.querySelector(".findings-card__where")?.textContent).toBe("Stops");
+  });
+
+  it("shows an addressed card with what changed and a dismissed one with its reason", () => {
+    const { container } = render(<FindingSpecimen />);
+
+    const addressed = container.querySelector('.findings-card[data-state="addressed"]');
+    expect(addressed!.querySelector(".findings-card__reason")?.textContent).toMatch(
+      /Changed 1 place/,
+    );
+    const dismissed = container.querySelector('.findings-card[data-state="dismissed"]');
+    expect(dismissed!.querySelector(".findings-card__detail")?.textContent).toBe("code-level note");
+    expect(container.querySelector('.findings-card[data-state="unverified"]')).not.toBeNull();
+  });
+
+  it("reads and requests nothing", () => {
+    render(<FindingSpecimen />);
+
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+    expect(globalThis.WebSocket).not.toHaveBeenCalled();
   });
 });
 

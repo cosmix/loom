@@ -170,6 +170,8 @@ afterEach(() => {
 it("dismiss needs a reason and posts the status", async () => {
   renderRoutes("/f/demo/findings");
 
+  // A finding's actions are in its dialog: a press on its card opens it.
+  fireEvent.click(await screen.findByRole("button", { name: /Rebuild ignores briefs/ }));
   const findingOne = await waitFor(() => findingCard("Rebuild ignores briefs", /^Dismiss\b/));
   fireEvent.click(within(findingOne).getByRole("button", { name: /^Dismiss\b/ }));
 
@@ -227,6 +229,7 @@ it("Reopen posts an open status for an unaddressed and a dismissed finding", asy
     ["F-8", "Stopped mid-run"],
     ["F-9", "Not worth it"],
   ] as const) {
+    fireEvent.click(await screen.findByRole("button", { name: new RegExp(title) }));
     const card = await waitFor(() => findingCard(title, /^Reopen\b/));
     expect(within(card).queryByRole("button", { name: /^Dismiss\b/ })).toBeNull();
     const reopen = within(card).getByRole("button", { name: `Reopen ${id}` });
@@ -241,6 +244,8 @@ it("Reopen posts an open status for an unaddressed and a dismissed finding", asy
         status: { kind: "open", detail: null },
       }),
     );
+    fireEvent.keyDown(document, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   }
 });
 
@@ -271,7 +276,10 @@ it("finding markup renders as text", async () => {
   });
   renderRoutes("/f/demo/findings");
 
+  // The title is on the card; the text is in the finding's dialog.
   await waitFor(() => expect(document.body.textContent).toContain(MARKUP_TITLE));
+  fireEvent.click(await waitFor(() => document.querySelector<HTMLElement>("#finding-F-9 button")!));
+  await screen.findByRole("dialog");
   expect(document.body.textContent).toContain(MARKUP_TEXT);
   expect(document.querySelectorAll('img[src="x"]')).toHaveLength(0);
   const bold = [...document.querySelectorAll("strong, b")].filter((element) =>
