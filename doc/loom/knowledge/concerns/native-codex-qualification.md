@@ -7,7 +7,7 @@
 No criterion could run a real Codex job (acceptance is confined: no network, no `~/.codex`), so `codex.backend = native`, the default, is unqualified against real jobs; an operator qualifies it on a disposable worktree. The eight items, in the order to run them ([backend design](../architecture/native-codex-workers.md)):
 
 1. `codex --version` matches `0.169.0`; otherwise re-measure the method table in `doc/plans/briefs/native-codex-workers/common.md` section 8.
-2. One real job per sandbox mode (`WorkspaceWrite` and `External`): the report arrives, `git status` shows only the briefed files, and `loom usage` attributes the thread.
+2. One real job in workspace-write mode (the only mode; hosts where bubblewrap cannot nest are refused): the report arrives, `git status` shows only the briefed files, and `loom usage` attributes the thread.
 3. A cancel during a tool call and a job run to its deadline both end with ownership `released`.
 4. Whether `codex app-server` honours the proxy variables for its streaming connection.
 5. Forwarder tokens saved, measured against matched legacy jobs.
@@ -22,6 +22,7 @@ Two further questions need a real job: whether codex 0.169 loads `/etc/codex` sy
 - `auth.json` is readable by every process in the boundary and can leave over the four allowlisted OpenAI domains. It is bound read-write, so a prompt-injected worker can read the refresh token or overwrite it with another account's. This is the same exposure as the legacy lane. Narrowing it means copying auth into the tmpfs and writing back only a validated refresh.
 - The allowlist proxy inspects no TLS: it admits CONNECT targets by host and port, so it cannot tell what a worker sends to an allowed domain.
 - `sessions/` is bound from the host, so a worker can read and rewrite every operator rollout across projects; usage accounting reads those rollouts.
+- Commands are kept off the proxy socket and the bridge's loopback port only by Codex's own seccomp filter and network namespace (checked against codex 0.169; [Boundary and Proxy](../architecture/native-codex-workers.md#boundary-and-proxy)). After a Codex upgrade, repeat that check: run `codex sandbox` nested in a payload boundary against a Unix socket and a loopback port, and expect both refused.
 - Auth lock files bind only when they already exist; otherwise each boundary locks on its own tmpfs and concurrent token refreshes across workers and the host Codex are not serialised.
 
 ## Reviewed Codex Tool Profile
@@ -87,17 +88,8 @@ Reviewer findings nobody implemented, grouped by area. File paths are under `loo
 
 ## Native Lane Smoke Observations
 
-Two throwaway smoke runs on 2026-11-16 each sent one terra/xhigh unit adding one test to `native_worker/ids_tests.rs`. In the second, the unit ran a full Codex thread in `workspace_write` mode: admitted, thread started 5 s later, one turn of 18 s, report stored, outcome `succeeded`, ownership released; the edit was exactly the briefed one and touched no other file. That covers the `WorkspaceWrite` half of item 2; the `External` mode and the `loom usage` attribution are unchecked, and items 3 to 8 have not been run.
+Two throwaway smoke runs on 2026-11-16 each sent one terra/xhigh unit adding one test to `native_worker/ids_tests.rs`. In the second, the unit ran a full Codex thread in `workspace_write` mode: admitted, thread started 5 s later, one turn of 18 s, report stored, outcome `succeeded`, ownership released; the edit was exactly the briefed one and touched no other file. That covers item 2 except the `loom usage` attribution, which is unchecked; items 3 to 8 have not been run.
 
 That unit could not link its test binary. Units now get a writable `$TMPDIR` ([Boundary and Proxy](../architecture/native-codex-workers.md#boundary-and-proxy)), but no real Codex job has yet confirmed a unit can build and run its tests; the next smoke run should brief a unit to run one.
 
 The first run failed before any thread on the proxy socket directory mode: see [Native Proxy Socket Dir Umask](../mistakes/codex-worker-briefing.md#native-proxy-socket-dir-umask).
-
-## Open Boundary Hardening
-
-Raised by the 2026-11-16 boundary review, not fixed:
-
-- **External mode Cargo home:** when `nested_sandbox_supported()` is false the policy is `externalSandbox` and commands get the boundary's own writes, including the Linked Cargo home (`/tmp/.loom-cargo-<digest(tree)>`, `boundary/linux.rs` `linked_cargo_home` bind), which persists per tree on the host. A planted Cargo config with `build.rustc-wrapper` would run in the next worker and the confined gate for that tree, without showing in the diff. Fix options: a per-boundary Linked home, or stripping the Cargo config files in `confine_scratch.rs` `populate`.
-- **Bind targets under `/tmp/loom-tmp`:** a worktree, HOME, Codex home or host TMPDIR whose path lies under `BOUNDARY_TMPDIR` would have bwrap-created ancestors inside the writable `$TMPDIR`. Refuse such paths in `Plan::real`/`Plan::payload`.
-- **Unbounded tmpfs:** `/tmp` and `/var/tmp` take the kernel default (half of RAM) per boundary; `--size` needs bubblewrap 0.10.
-- **Proxy socket and `networkAccess: false` (unverified):** a sandboxed command may be able to `connect()` to `/loom-proxy/proxy.sock` directly and reach the allowlisted domains despite the turn policy denying network.

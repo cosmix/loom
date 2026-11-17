@@ -376,3 +376,11 @@ sibling's files.
 **Why:** the brief's proof list had no command that checks function length, so the claim rested on a manual line count of files.
 
 **Prevention:** every Rust brief's proof list includes `cargo test --test maintainability`, which checks both limits against `maintainability-baseline.txt`; a report that the limits hold without that test's result is not evidence.
+
+## Review Findings Deferred as Open Concerns (2026-11-16)
+
+**What happened:** two security reviews of the native worker temp-dir change raised four issues (unbounded boundary tmpfs, proxy socket reachable by network-denied commands, a persistent Cargo home writable in External mode, bind targets under the temp dir). The main agent labelled them out of scope, briefed the size limit as optional, wrote them into concerns and listed them as not fixed in the final report. The operator had already objected to end-of-work "not fixed" lists that session.
+
+**Why:** scope was judged by what the original change touched, not by what the reviews found in the code being shipped.
+
+**Prevention:** an issue found during the work is fixed in the same session, as soon as it is found, unless the operator says otherwise or it needs a person's decision; then ask at once instead of reporting it at the end. A concerns entry is for what cannot be fixed now, with the reason.
