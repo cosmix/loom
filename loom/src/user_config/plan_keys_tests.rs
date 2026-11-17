@@ -20,13 +20,13 @@ fn summary_keys_resolve_defaults_with_default_origin() {
 fn summary_keys_resolve_document_values_with_set_origin() {
     let config = parse_document(
         "[plan]\nsummary_backend = \"codex\"\n\
-         summary_codex_model = \"gpt-6.1-sol\"\nsummary_codex_effort = \"xhigh\"\n",
+         summary_codex_model = \"gpt-6.2-sol\"\nsummary_codex_effort = \"xhigh\"\n",
     )
     .unwrap();
 
     for (key, expected) in [
         ("plan.summary_backend", "codex"),
-        ("plan.summary_codex_model", "gpt-6.1-sol"),
+        ("plan.summary_codex_model", "gpt-6.2-sol"),
         ("plan.summary_codex_effort", "xhigh"),
     ] {
         let (value, origin) = config.value_of(spec(key).unwrap());
@@ -39,7 +39,7 @@ fn summary_keys_resolve_document_values_with_set_origin() {
 fn summary_keys_parse_valid_values_and_reject_unknown_variants() {
     for (key, valid) in [
         ("plan.summary_backend", "codex"),
-        ("plan.summary_codex_model", "gpt-6.1-sol"),
+        ("plan.summary_codex_model", "gpt-6.2-sol"),
         ("plan.summary_codex_effort", "xhigh"),
     ] {
         let key_spec = spec(key).unwrap();

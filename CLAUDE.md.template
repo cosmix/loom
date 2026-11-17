@@ -116,7 +116,7 @@ Check skills and agents before implementing; the prompt-submit hook surfaces mat
 | `loom-code-reviewer` | — | Read-only code/security/architecture review |
 | `Explore` | — | Codebase exploration; `model: haiku` for locate-only sweeps |
 | `loom-advisor` | Fable | Read-only diagnosis after an opus implementer failed at effort high; rare — receives full detail, returns a diagnosis and next step, writes nothing |
-| `loom-codex-forwarder` | gpt-6.1-terra; gpt-6.1-sol for substantial units; gpt-6-luna only on explicit request | Stages listing codex in `implementers` whose signal names the forwarder (on the native lane the main agent runs `loom subagents start --provider codex` instead); state `--model <tier> --effort xhigh`; foreground, never verifies; one concern per job, cohesive files, within the 1500 s deadline; brief by absolute path; overruns re-split against the partial tree, never re-forward as is |
+| `loom-codex-forwarder` | gpt-6.1-terra; gpt-6.2-sol for substantial units; gpt-6-luna only on explicit request | Stages listing codex in `implementers` whose signal names the forwarder (on the native lane the main agent runs `loom subagents start --provider codex` instead); state `--model <tier> --effort xhigh`; foreground, never verifies; one concern per job, cohesive files, within the 1500 s deadline; brief by absolute path; overruns re-split against the partial tree, never re-forward as is |
 
 Fable-tier work has no pinned agent type; pass the model override at spawn.
 

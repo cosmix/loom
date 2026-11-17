@@ -99,7 +99,7 @@ impl FakeDriver {
             report: report.to_path_buf(),
             write_report_in: write_report_in.to_vec(),
             stop_at,
-            codex_model: "gpt-6.1-sol".to_string(),
+            codex_model: "gpt-6.2-sol".to_string(),
         }
     }
 

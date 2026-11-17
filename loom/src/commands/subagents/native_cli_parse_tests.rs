@@ -24,7 +24,7 @@ fn provider_must_be_codex() {
                 "--brief",
                 "/brief",
                 "--model",
-                "gpt-6.1-sol",
+                "gpt-6.2-sol",
                 "--effort",
                 "high"
             ]),

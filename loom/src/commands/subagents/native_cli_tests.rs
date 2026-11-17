@@ -71,7 +71,7 @@ impl Harness {
             provider: "codex".into(),
             unit: "unit".into(),
             brief: self.site.cwd.join("brief.md"),
-            model: "gpt-6.1-sol".into(),
+            model: "gpt-6.2-sol".into(),
             effort: "high".into(),
         }
     }
@@ -135,7 +135,7 @@ impl Harness {
             workspace_root: self.site.cwd.clone(),
             brief_path: self.site.cwd.join("brief.md"),
             brief_sha256: sha256_hex(b"task\n"),
-            model: "gpt-6.1-sol".into(),
+            model: "gpt-6.2-sol".into(),
             effort: "high".into(),
             deadline_secs: NATIVE_DEADLINE_SECS,
             created_at: chrono::Utc::now(),

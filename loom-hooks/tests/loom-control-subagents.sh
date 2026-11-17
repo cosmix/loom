@@ -93,7 +93,7 @@ expect_allow allow_message_text_double_quoted "loom subagents message$MSG --text
 expect_allow allow_message_file "loom subagents message$MSG --file /w/doc/note.md" message "$MSG --file /w/doc/note.md"
 expect_allow allow_cancel_reason_quoted "loom subagents cancel$CANCEL --reason 'wrong brief'" \
 	cancel "$CANCEL --reason 'wrong brief'"
-REORDERED=" --effort high --brief '/w/doc/my brief.md' --model gpt-6.1-sol --unit-id u2 --provider codex"
+REORDERED=" --effort high --brief '/w/doc/my brief.md' --model gpt-6.2-sol --unit-id u2 --provider codex"
 expect_allow allow_flags_in_any_order "loom subagents start$REORDERED" start "$REORDERED"
 expect_allow allow_single_quoted_substitution_is_inert "loom subagents cancel$CANCEL --reason '\$(id)'" \
 	cancel "$CANCEL --reason '\$(id)'"

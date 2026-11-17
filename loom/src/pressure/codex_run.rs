@@ -292,13 +292,15 @@ fn fallback_note(from: &str, to: &str, error_line: &str) -> String {
     )
 }
 
-/// The model plus its fallback chain, e.g. `gpt-6.1-sol (fallback: gpt-6-sol)`.
+/// The model plus its fallback chain, e.g. `gpt-6.3-sol (fallback: gpt-6.2-sol)`.
 pub fn codex_model_label(model: &str) -> String {
-    match codex_model_candidates(model).split_first() {
-        Some((first, rest)) if !rest.is_empty() => {
-            format!("{first} (fallback: {})", rest.join(", "))
-        }
-        _ => model.to_string(),
+    chain_label(&codex_model_candidates(model))
+}
+
+fn chain_label(candidates: &[&str]) -> String {
+    match candidates {
+        [id, rest @ ..] if !rest.is_empty() => format!("{id} (fallback: {})", rest.join(", ")),
+        _ => candidates.concat(),
     }
 }
 

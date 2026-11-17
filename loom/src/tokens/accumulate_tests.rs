@@ -221,7 +221,7 @@ fn codex_counts_deltas_and_restarts_on_a_decrease() {
 fn codex_model_is_the_last_one_seen_and_flattened() {
     let mut agent = AgentState::new(AgentKind::Codex, "/r/rollout.jsonl");
     let context = |model: &str| json!({"type": "turn_context", "payload": {"model": model}});
-    agent.ingest(&context("gpt-6.1-sol").to_string());
+    agent.ingest(&context("gpt-6.2-sol").to_string());
     agent.ingest(&context("gpt\u{1b}[31m\nx").to_string());
 
     let model = agent.model.expect("model");

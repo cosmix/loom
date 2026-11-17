@@ -79,7 +79,7 @@
           {
             "unit_id": "hex-test",
             "invocation_id": "inv-b63fd09ed5d66b5899fcaef4a521ffcd",
-            "model": "gpt-6.1-sol",
+            "model": "gpt-6.2-sol",
             "effort": "xhigh",
             "phase": "terminal",
             "outcome": "succeeded",
@@ -92,7 +92,7 @@
           {
             "unit_id": "hex-lint",
             "invocation_id": "inv-5c1e0a7d2f4b49c0a1e3b6d8f9072a14",
-            "model": "gpt-6.1-sol",
+            "model": "gpt-6.2-sol",
             "effort": "xhigh",
             "phase": "terminal",
             "outcome": "failed",
@@ -603,7 +603,7 @@
               "kind": "codex",
               "agent_type": null,
               "forwarder": null,
-              "model": "gpt-6.1-sol",
+              "model": "gpt-6.2-sol",
               "effort": "xhigh",
               "unit_id": "hex-test",
               "active": true,
@@ -656,7 +656,7 @@
           }
         },
         {
-          "model": "gpt-6.1-sol",
+          "model": "gpt-6.2-sol",
           "effort": "xhigh",
           "total": {
             "input": 30000,

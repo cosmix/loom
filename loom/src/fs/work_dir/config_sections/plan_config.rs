@@ -151,12 +151,12 @@ mod authoring_tests {
     fn summary_accessors_return_valid_values() {
         let config = PlanConfig::from_section_toml(
             "summary_backend = \"codex\"\n\
-             summary_codex_model = \"gpt-6.1-sol\"\n\
+             summary_codex_model = \"gpt-6.2-sol\"\n\
              summary_codex_effort = \"xhigh\"\n",
         )
         .unwrap();
         assert_eq!(config.summary_backend(), Some("codex"));
-        assert_eq!(config.summary_codex_model(), Some("gpt-6.1-sol"));
+        assert_eq!(config.summary_codex_model(), Some("gpt-6.2-sol"));
         assert_eq!(config.summary_codex_effort(), Some("xhigh"));
 
         let config = PlanConfig::from_section_toml("summary_backend = \"claude\"").unwrap();

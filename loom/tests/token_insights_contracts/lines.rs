@@ -6,7 +6,7 @@ use loom::tokens::{ModelUsage, TokenUsage};
 use serde_json::{json, Map, Value};
 use std::fs;
 
-pub const SOL_MODEL: &str = "gpt-6.1-sol";
+pub const SOL_MODEL: &str = "gpt-6.2-sol";
 
 /// A Claude assistant line; `effort` and `per_turn` are left out when `None`.
 pub fn assistant(

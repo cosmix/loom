@@ -21,7 +21,7 @@ a project config. A third pair of slots, the plan summary models, is configured 
 ## `[pressure]` Keys and Defaults
 
 `pressure.claude_model` opus, `pressure.claude_effort` xhigh, `pressure.codex_model`
-gpt-6.1-sol (in-family fallback to gpt-6-sol, see Codex Model Fallback below),
+gpt-6.2-sol (in-family fallback, see Codex Model Fallback below),
 `pressure.codex_effort` xhigh, `pressure.address_model` opus, `pressure.address_effort` high.
 `pressure.rounds` (Number, at least 1, default 1) sets the round count absent `--rounds`; a zero is
 rejected on write and dropped from a project file. Precedence: flag, project, user, built-in.
@@ -90,8 +90,10 @@ separately: see [Typed Config Values](../architecture/config-value-types.md).
 (`codex.rs`) parses each `CODEX_MODELS` id as `gpt-<version>-<family>`, compares versions
 segment-wise (missing segment = 0, so 6 < 6.1), and orders the chain: the requested id, then
 same-family newer versions ascending, then same-family older versions descending.
-`gpt-6.1-sol` → `[gpt-6.1-sol, gpt-6-sol]`; astra, terra and luna have one member each. Tiers
-(astra / sol / terra / luna) are never swapped.
+Every `CODEX_MODELS` family (astra, sol, terra, luna) has one member, so each chain is the
+requested id alone until a second version of a family is listed. Tiers (astra / sol / terra /
+luna) are never swapped. The ordering lives in `candidates_in(models, requested)`, which takes the
+model list as a parameter so tests exercise multi-member chains against a synthetic list.
 
 A run counts as unavailable only on a non-zero exit whose log has one codex error line (it
 starts with `ERROR`) naming the model id and, case-insensitively, `model is not supported`,
@@ -115,7 +117,7 @@ catalog (`/model`, `models_cache.json`) is stale in both directions, listing mod
 and omitting models that work, so only a real run answers the question. Unavailability is not
 cached between runs, since rollout reaches accounts over time.
 
-Codex "Ultrafast" (for example GPT-6.1 Sol Ultrafast) is a speed mode for the same model, like
+Codex "Ultrafast" (for example GPT-6.2 Sol Ultrafast) is a speed mode for the same model, like
 Claude Code `/fast`; it is not a model id and never belongs in `CODEX_MODELS`.
 
 ## `[plan]` Keys and Defaults
@@ -142,4 +144,4 @@ pinned by `settings-model.test.ts`; the Codex pair is `plan.summary_codex`). The
 
 ## Planner Execution Worker Allocation
 
-For planner plans 06–11 and their linked briefs, substantial Codex execution units use `gpt-6.1-sol` with `--effort high`; routine types, fixtures, documentation and mechanical wiring may use `gpt-6.1-terra` at high effort. The planner UI redesign plan and its briefs use `gpt-6.1-sol` with `--effort high` for implementation and fix workers in its eight standard stages and integration verification. The integration-verification stage is explicitly pinned to opus; code reviewers use opus. Knowledge distillation remains single-agent. This user-selected allocation applies to execution subagents, not verification judgment. The UI repair plan (`feat-planner-12-ui-repair`) runs its visual stages on Claude only (haiku, sonnet, opus; implementers load `frontend-design:frontend-design`), and gives Codex `gpt-6.1-sol` at high effort only the Rust payload, configuration keys and Codex summary spawner units, in file-sized units through `loom-codex-forwarder`; the opening-submission fix stays on opus. Contract tests always come from loom's Claude contract session.
+For planner plans 06–11 and their linked briefs, substantial Codex execution units use `gpt-6.2-sol` with `--effort high`; routine types, fixtures, documentation and mechanical wiring may use `gpt-6.1-terra` at high effort. The planner UI redesign plan and its briefs use `gpt-6.2-sol` with `--effort high` for implementation and fix workers in its eight standard stages and integration verification. The integration-verification stage is explicitly pinned to opus; code reviewers use opus. Knowledge distillation remains single-agent. This user-selected allocation applies to execution subagents, not verification judgment. The UI repair plan (`feat-planner-12-ui-repair`) runs its visual stages on Claude only (haiku, sonnet, opus; implementers load `frontend-design:frontend-design`), and gives Codex `gpt-6.2-sol` at high effort only the Rust payload, configuration keys and Codex summary spawner units, in file-sized units through `loom-codex-forwarder`; the opening-submission fix stays on opus. Contract tests always come from loom's Claude contract session.

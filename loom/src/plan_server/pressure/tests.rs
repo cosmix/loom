@@ -341,7 +341,7 @@ pub(super) fn start_body(plan: &str, rounds: u32) -> Value {
         "rounds": rounds,
         "claude_model": "opus",
         "claude_effort": "high",
-        "codex_model": "gpt-6.1-sol",
+        "codex_model": "gpt-6.2-sol",
         "codex_effort": "high",
         "address_model": "sonnet",
         "address_effort": "medium",

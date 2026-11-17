@@ -57,7 +57,7 @@ fn records_read_what_the_pressure_pipeline_writes() {
     let line = |day: u32| RecordLine {
         date: chrono::NaiveDate::from_ymd_opt(2026, 11, day).unwrap(),
         claude_model: "opus".into(),
-        codex_models: vec!["gpt-6-astra".into()],
+        codex_models: vec!["gpt-6.2-astra".into()],
         rounds: 1,
         missing_rounds: Vec::new(),
     };

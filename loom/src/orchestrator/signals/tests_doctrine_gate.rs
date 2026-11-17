@@ -120,7 +120,7 @@ fn codex_job_doctrine_pins_sizing_and_brief_handoff() {
         "ONE CONCERN",
         "250,000",
         "23,000",
-        "gpt-6.1-sol",
+        "gpt-6.2-sol",
         "gpt-6.1-terra",
         "50,000",
         "20,000",

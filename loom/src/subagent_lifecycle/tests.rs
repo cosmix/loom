@@ -284,7 +284,7 @@ fn codex_evidence(unit: &str, job: &str, terminal: bool) -> Result<CodexEvidence
         } else {
             CodexEvidenceKind::Authorization
         },
-        requested_model: "gpt-6-sol".into(),
+        requested_model: "gpt-6.2-sol".into(),
         requested_effort: "xhigh".into(),
         invocation_id: format!("invocation-{unit}"),
         job_id: Some(job.into()),

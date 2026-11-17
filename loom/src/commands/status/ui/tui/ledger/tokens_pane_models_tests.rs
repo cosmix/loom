@@ -33,7 +33,7 @@ fn four_models() -> Vec<ModelUsage> {
             usage(30_000, 450_000, 7_000_000, 80_000),
         ),
         entry(
-            "gpt-6.1-sol",
+            "gpt-6.2-sol",
             "xhigh",
             usage(30_000, 300_000, 4_000_000, 50_000),
         ),

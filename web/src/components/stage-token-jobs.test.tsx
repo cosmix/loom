@@ -32,7 +32,7 @@ describe("StageTokens codex jobs and effort", () => {
     expect(within(codex).getByText("hex-test", { exact: true })).toBeTruthy();
     expect(within(codex).getByText("codex", { exact: true })).toBeTruthy();
     expect(codex.textContent).not.toContain("codex job");
-    expect(codex.textContent).toContain("gpt-6.1-sol/xhigh · codex-01a1396b");
+    expect(codex.textContent).toContain("gpt-6.2-sol/xhigh · codex-01a1396b");
     expect(lanes[1]?.textContent).toContain("claude-sonnet-5-5/medium · a04baa183f888b773");
   });
 
@@ -56,7 +56,7 @@ describe("StageTokens codex jobs and effort", () => {
     expect(rows).toHaveLength(1);
     const row = rows[0] as HTMLElement;
     expect(row.textContent).toContain("hex-lint");
-    expect(row.textContent).toContain("gpt-6.1-sol/xhigh · no thread");
+    expect(row.textContent).toContain("gpt-6.2-sol/xhigh · no thread");
     const chip = within(row).getByText("failed");
     expect(chip.getAttribute("title")).toBe("codex exited before starting a thread");
     expect(chip.classList).toContain("tone-blocked");

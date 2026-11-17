@@ -137,7 +137,7 @@ mod tests {
             PressureModels::resolve(flags(), &PressureConfig::default(), &UserConfig::default());
         assert_eq!(models.claude, "opus");
         assert_eq!(models.claude_effort, "xhigh");
-        assert_eq!(models.codex, "gpt-6.1-sol");
+        assert_eq!(models.codex, "gpt-6.2-sol");
         assert_eq!(models.codex_effort, "xhigh");
         assert_eq!(models.address, "opus");
         assert_eq!(models.address_effort, "high");
@@ -145,17 +145,17 @@ mod tests {
 
     #[test]
     fn user_config_set_flag_absent_uses_user_config() {
-        let toml = "[pressure]\nclaude_model = \"fable\"\ncodex_model = \"gpt-6-astra\"\naddress_model = \"sonnet\"\n";
+        let toml = "[pressure]\nclaude_model = \"fable\"\ncodex_model = \"gpt-6.2-astra\"\naddress_model = \"sonnet\"\n";
         let user = crate::user_config::parse_document(toml).unwrap();
         let models = PressureModels::resolve(flags(), &PressureConfig::default(), &user);
         assert_eq!(models.claude, "fable");
-        assert_eq!(models.codex, "gpt-6-astra");
+        assert_eq!(models.codex, "gpt-6.2-astra");
         assert_eq!(models.address, "sonnet");
     }
 
     #[test]
     fn flag_overrides_both_config_tiers() {
-        let toml = "[pressure]\nclaude_model = \"fable\"\ncodex_model = \"gpt-6-astra\"\naddress_model = \"sonnet\"\n";
+        let toml = "[pressure]\nclaude_model = \"fable\"\ncodex_model = \"gpt-6.2-astra\"\naddress_model = \"sonnet\"\n";
         let user = crate::user_config::parse_document(toml).unwrap();
         let project = PressureConfig::from_section_toml("claude_model = \"haiku\"\n").unwrap();
         let mut f = flags();
@@ -207,12 +207,12 @@ mod tests {
     fn key_omitted_by_project_falls_through_to_user_file_not_builtin() {
         // The project section sets only claude_model - codex_model must fall
         // through to the user file's value, not skip straight to the built-in.
-        let user_toml = "[pressure]\ncodex_model = \"gpt-6-astra\"\n";
+        let user_toml = "[pressure]\ncodex_model = \"gpt-6.2-astra\"\n";
         let user = crate::user_config::parse_document(user_toml).unwrap();
         let project = PressureConfig::from_section_toml("claude_model = \"sonnet\"\n").unwrap();
         let models = PressureModels::resolve(flags(), &project, &user);
         assert_eq!(models.claude, "sonnet");
-        assert_eq!(models.codex, "gpt-6-astra");
+        assert_eq!(models.codex, "gpt-6.2-astra");
     }
 
     #[test]
@@ -228,7 +228,7 @@ mod tests {
         assert_eq!(models.address_effort, "low");
         // ...while every model slot is untouched, still on the built-in.
         assert_eq!(models.claude, "opus");
-        assert_eq!(models.codex, "gpt-6.1-sol");
+        assert_eq!(models.codex, "gpt-6.2-sol");
         assert_eq!(models.address, "opus");
     }
 }

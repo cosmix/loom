@@ -363,7 +363,7 @@ fn codex_record(
     let terminal = state == LifecycleState::Completed;
     let evidence = CodexEvidence {
         evidence_kind,
-        requested_model: "gpt-6-sol".into(),
+        requested_model: "gpt-6.2-sol".into(),
         requested_effort: "xhigh".into(),
         invocation_id: INVOCATION.into(),
         job_id: Some(JOB.into()),

@@ -85,7 +85,7 @@ fn both_review_surfaces_carry_the_frontend_rules() {
 
 #[test]
 fn codex_section_names_the_sol_spawn_form() {
-    assert_eq!(CODEX_IMPLEMENTER_MODEL_SOL, "gpt-6.1-sol");
+    assert_eq!(CODEX_IMPLEMENTER_MODEL_SOL, "gpt-6.2-sol");
     let implementers = Implementers::new(vec![Implementer::Codex, Implementer::Claude]);
     let section = format_codex_implementers_section(&implementers, &CodexLane::Legacy);
     let sol_form =

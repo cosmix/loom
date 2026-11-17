@@ -14,7 +14,7 @@ pub(super) fn fixture_codex_jobs() -> Vec<CodexJob> {
     let job = |unit: &str, invocation: &str| CodexJob {
         unit_id: unit.to_owned(),
         invocation_id: invocation.to_owned(),
-        model: "gpt-6.1-sol".to_owned(),
+        model: "gpt-6.2-sol".to_owned(),
         effort: "xhigh".to_owned(),
         phase: Phase::Terminal,
         outcome: None,

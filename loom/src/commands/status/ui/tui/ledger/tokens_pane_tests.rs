@@ -50,7 +50,7 @@ fn fixture_agents() -> Vec<AgentFlow> {
     let mut codex = agent(
         "codex-01a1396b",
         AgentKind::Codex,
-        "gpt-6.1-sol",
+        "gpt-6.2-sol",
         usage(30_000, 300_000, 4_000_000, 50_000),
         usage(200, 3_000, 50_000, 600),
     );

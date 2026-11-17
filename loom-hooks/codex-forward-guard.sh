@@ -113,7 +113,7 @@ is_exact_forward_command() {
 	loom_is_forward_wrapper "${PARSED_WORDS[0]}" "$PARSED_WORD0_PLAIN" || return 1
 	[[ "${PARSED_WORDS[1]}" == task && -n "${PARSED_WORDS[2]}" ]] || return 1
 	[[ "${PARSED_WORDS[3]}" == --model ]] || return 1
-	case "${PARSED_WORDS[4]}" in gpt-6-astra | gpt-6.1-sol | gpt-6-sol | gpt-6.1-terra | gpt-6-luna) ;; *) return 1 ;; esac
+	case "${PARSED_WORDS[4]}" in gpt-6.2-astra | gpt-6.2-sol | gpt-6.1-terra | gpt-6-luna) ;; *) return 1 ;; esac
 	[[ "${PARSED_WORDS[5]}" == --effort ]] || return 1
 	case "${PARSED_WORDS[6]}" in low | medium | high | xhigh | max | ultra) ;; *) return 1 ;; esac
 	[[ "${PARSED_WORDS[7]}" == --write ]] || return 1

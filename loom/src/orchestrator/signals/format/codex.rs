@@ -118,7 +118,7 @@ fn push_codex_spawn_rules(content: &mut String) {
     content.push_str(concat!(
         "- A codex job is ONE CONCERN: code, consumers and tests together in dependency order, in one brief.\n",
         "  It may span several files; two jobs never write one file. Size per file-sized change at high effort:\n",
-        "  gpt-6.1-sol takes about 3 minutes and 50,000 tokens of context; gpt-6.1-terra about 1 minute and\n",
+        "  gpt-6.2-sol takes about 3 minutes and 50,000 tokens of context; gpt-6.1-terra about 1 minute and\n",
         "  20,000 tokens. Each job starts near 23,000 tokens. Budget twice the time at xhigh.\n",
         "  Keep peak context at most about 250,000 tokens and finish well inside the 1500000 ms deadline:\n",
         "  about 4 to 6 file-sized changes on sol, about 12 on terra. The wrapper cancels at the deadline\n",

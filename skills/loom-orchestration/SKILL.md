@@ -99,7 +99,7 @@ signal's Codex Implementers section names the launch: on the forwarder lane a co
 `loom-codex-forwarder` BY AGENT TYPE (never the plugin's `codex:codex-rescue` directly), foreground
 only; on the native lane only the main agent runs `loom subagents start`. Codex takes
 straightforward well-specified pieces: gpt-6.1-terra for
-implementation, integration tests, boilerplate and simple unit tests; gpt-6.1-sol for substantial
+implementation, integration tests, boilerplate and simple unit tests; gpt-6.2-sol for substantial
 units and a failed terra unit; gpt-6-luna only when the user or the plan asks. The lane is chosen
 per piece, never per stage; the coordinator still does not verify.
 
@@ -173,7 +173,7 @@ After each wave of workers returns, the main agent compiles the tree once before
    room. No lane is first or default; list order means nothing. Verification,
    review, planning, exploration, debugging and iteration on failing tests
    stay with Claude. gpt-6.1-terra: implementation, integration tests,
-   boilerplate, scaffolding and simple unit tests; gpt-6.1-sol: a substantial
+   boilerplate, scaffolding and simple unit tests; gpt-6.2-sol: a substantial
    well-specified unit (about 4 to 6 file-sized changes) or a terra unit that
    failed once; gpt-6-luna only when the user or the plan asks. Otherwise
    terra- and sol-tier work goes to sonnet, and boilerplate and simple unit

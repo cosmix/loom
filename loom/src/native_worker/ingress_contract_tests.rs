@@ -166,7 +166,7 @@ fn repeated_start_returns_same_invocation() {
 fn changed_request_for_running_unit_is_refused() {
     let fx = fixture();
     let first = admitted(fx.admit(&fx.start("unit-a", MODEL)), "first start");
-    let changed = fx.start("unit-a", "gpt-6.1-sol");
+    let changed = fx.start("unit-a", "gpt-6.2-sol");
     let text = refused(fx.admit(&changed), "a changed request");
     assert!(
         text.contains(&first),

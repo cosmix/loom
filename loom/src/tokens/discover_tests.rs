@@ -51,7 +51,7 @@ fn add_receipt_for(fx: &Fixture, stage: &str, thread_id: &str) {
         exit_code: Some(0),
         codex_thread_id: Some(thread_id.to_string()),
         locator: None,
-        model: Some("gpt-6.1-sol".to_string()),
+        model: Some("gpt-6.2-sol".to_string()),
         effort: None,
     };
     let path = receipts_path(&fx.work_root, stage).expect("receipts path");

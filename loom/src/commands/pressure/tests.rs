@@ -132,7 +132,7 @@ fn test_render_dry_run_shows_real_argv() {
     assert!(out.contains("--append-system-prompt"));
     assert!(out.contains("/pressure doc/plans/PLAN-foo.md"));
     assert!(out.contains(
-        "codex exec --sandbox workspace-write -m gpt-6.1-sol -c model_reasoning_effort=xhigh \
+        "codex exec --sandbox workspace-write -m gpt-6.2-sol -c model_reasoning_effort=xhigh \
          -C /repo $pressure doc/plans/PLAN-foo.md"
     ));
     assert!(out.contains("/address doc/plans/PLAN-foo.md"));
@@ -143,7 +143,7 @@ fn test_render_dry_run_shows_real_argv() {
     assert!(out.contains("loom-pressure-codex-1.log"));
     assert!(out.contains(".loom/work/pressure/claude-1.done"));
     assert!(out.contains(
-        "Models:                  claude=opus/xhigh  codex=gpt-6.1-sol (fallback: gpt-6-sol)/xhigh  address=opus/high"
+        "Models:                  claude=opus/xhigh  codex=gpt-6.2-sol/xhigh  address=opus/high"
     ));
 }
 
@@ -158,7 +158,7 @@ fn test_render_dry_run_shows_a_non_default_model_selection_per_step() {
     let models = PressureModels {
         claude: "fable".to_string(),
         claude_effort: "low".to_string(),
-        codex: "gpt-6-astra".to_string(),
+        codex: "gpt-6.2-astra".to_string(),
         codex_effort: "medium".to_string(),
         address: "sonnet".to_string(),
         address_effort: "max".to_string(),
@@ -174,10 +174,10 @@ fn test_render_dry_run_shows_a_non_default_model_selection_per_step() {
     );
     // The header shows model AND effort for all three slots.
     assert!(out.contains(
-        "Models:                  claude=fable/low  codex=gpt-6-astra/medium  address=sonnet/max"
+        "Models:                  claude=fable/low  codex=gpt-6.2-astra/medium  address=sonnet/max"
     ));
     assert!(out.contains("--permission-mode auto --model fable --effort low"));
-    assert!(out.contains("-m gpt-6-astra"));
+    assert!(out.contains("-m gpt-6.2-astra"));
     assert!(out.contains("-c model_reasoning_effort=medium"));
     assert!(out.contains("--model sonnet --effort max --append-system-prompt"));
 }
@@ -294,9 +294,14 @@ fn test_codex_fallback_ignores_unrelated_failures() {
 #[test]
 fn test_codex_args_shape() {
     let repo = Path::new("/repo");
-    let args = codex_args(repo, "$pressure doc/plans/PLAN-foo.md", "gpt-6-sol", "high");
+    let args = codex_args(
+        repo,
+        "$pressure doc/plans/PLAN-foo.md",
+        "gpt-6.2-sol",
+        "high",
+    );
     assert_eq!(args[0], "exec");
-    assert!(args.contains(&"gpt-6-sol".to_string()));
+    assert!(args.contains(&"gpt-6.2-sol".to_string()));
     assert!(args.contains(&"model_reasoning_effort=high".to_string()));
     assert_eq!(args.last().unwrap(), "$pressure doc/plans/PLAN-foo.md");
 }

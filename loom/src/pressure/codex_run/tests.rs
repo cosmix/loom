@@ -19,36 +19,36 @@ fn model_unavailable_matches_the_captured_400_line() {
 #[test]
 fn model_unavailable_matches_the_404_form() {
     assert!(model_unavailable(
-        "ERROR: unexpected status 404 Not Found: Model not found gpt-6.1-sol",
-        "gpt-6.1-sol"
+        "ERROR: unexpected status 404 Not Found: Model not found gpt-6.2-sol",
+        "gpt-6.2-sol"
     ));
 }
 
 #[test]
 fn model_unavailable_ignores_quoted_text() {
-    let quoted = "    \"404 Not Found: Model not found gpt-6.1-sol\",\n\
-                  gpt-6.1-sol does not exist on some accounts";
-    assert!(!model_unavailable(quoted, "gpt-6.1-sol"));
+    let quoted = "    \"404 Not Found: Model not found gpt-6.2-sol\",\n\
+                  gpt-6.2-sol does not exist on some accounts";
+    assert!(!model_unavailable(quoted, "gpt-6.2-sol"));
 }
 
 #[test]
 fn model_unavailable_ignores_the_metadata_warning() {
     assert!(!model_unavailable(
-        "warning: Model metadata for `gpt-6.1-sol` not found",
-        "gpt-6.1-sol"
+        "warning: Model metadata for `gpt-6.2-sol` not found",
+        "gpt-6.2-sol"
     ));
 }
 
 #[test]
 fn model_unavailable_requires_the_model_on_the_same_line() {
-    assert!(!model_unavailable(UNSUPPORTED_400, "gpt-6.1-sol"));
-    let split = "running gpt-6.1-sol\nerror: the model is not supported";
-    assert!(!model_unavailable(split, "gpt-6.1-sol"));
+    assert!(!model_unavailable(UNSUPPORTED_400, "gpt-6.2-sol"));
+    let split = "running gpt-6.2-sol\nerror: the model is not supported";
+    assert!(!model_unavailable(split, "gpt-6.2-sol"));
 }
 
 #[test]
 fn model_unavailable_is_false_for_an_empty_log() {
-    assert!(!model_unavailable("", "gpt-6.1-sol"));
+    assert!(!model_unavailable("", "gpt-6.2-sol"));
 }
 
 #[test]
@@ -64,10 +64,16 @@ fn model_unavailable_line_is_what_the_fallback_note_carries() {
 #[test]
 fn codex_model_label_shows_the_chain_only_when_there_is_one() {
     assert_eq!(
-        codex_model_label("gpt-6.1-sol"),
-        "gpt-6.1-sol (fallback: gpt-6-sol)"
+        chain_label(&["gpt-9-new", "gpt-9-old"]),
+        "gpt-9-new (fallback: gpt-9-old)"
     );
-    assert_eq!(codex_model_label("gpt-6-astra"), "gpt-6-astra");
+    assert_eq!(
+        chain_label(&["gpt-9-a", "gpt-9-b", "gpt-9-c"]),
+        "gpt-9-a (fallback: gpt-9-b, gpt-9-c)"
+    );
+    assert_eq!(chain_label(&["gpt-9-new"]), "gpt-9-new");
+    assert_eq!(codex_model_label("gpt-6.2-sol"), "gpt-6.2-sol");
+    assert_eq!(codex_model_label("gpt-6.2-astra"), "gpt-6.2-astra");
 }
 
 #[cfg(unix)]

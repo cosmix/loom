@@ -23,7 +23,7 @@ fn user_values_override_all_defaults() {
     let user = crate::user_config::parse_document(
         "[plan]\ndocument_summary_model = \"opus\"\ndocument_summary_effort = \"low\"\n\
          overview_model = \"haiku\"\noverview_effort = \"medium\"\n\
-         summary_backend = \"codex\"\nsummary_codex_model = \"gpt-6.1-sol\"\n\
+         summary_backend = \"codex\"\nsummary_codex_model = \"gpt-6.2-sol\"\n\
          summary_codex_effort = \"medium\"\n",
     )
     .unwrap();
@@ -38,7 +38,7 @@ fn user_values_override_all_defaults() {
             overview_model: "haiku".into(),
             overview_effort: "medium".into(),
             backend: "codex".into(),
-            codex_model: "gpt-6.1-sol".into(),
+            codex_model: "gpt-6.2-sol".into(),
             codex_effort: "medium".into(),
         }
     );
@@ -49,7 +49,7 @@ fn project_values_override_user_values_for_every_slot() {
     let user = crate::user_config::parse_document(
         "[plan]\ndocument_summary_model = \"opus\"\ndocument_summary_effort = \"low\"\n\
          overview_model = \"haiku\"\noverview_effort = \"medium\"\n\
-         summary_backend = \"codex\"\nsummary_codex_model = \"gpt-6.1-sol\"\n\
+         summary_backend = \"codex\"\nsummary_codex_model = \"gpt-6.2-sol\"\n\
          summary_codex_effort = \"medium\"\n",
     )
     .unwrap();
@@ -81,7 +81,7 @@ fn project_values_override_user_values_for_every_slot() {
 fn missing_and_invalid_project_values_fall_back_independently() {
     let user = crate::user_config::parse_document(
         "[plan]\ndocument_summary_effort = \"low\"\noverview_model = \"opus\"\n\
-         summary_backend = \"codex\"\nsummary_codex_model = \"gpt-6.1-sol\"\n",
+         summary_backend = \"codex\"\nsummary_codex_model = \"gpt-6.2-sol\"\n",
     )
     .unwrap();
     let project = PlanConfig::from_section_toml(
@@ -99,7 +99,7 @@ fn missing_and_invalid_project_values_fall_back_independently() {
             overview_model: "opus".into(),
             overview_effort: "low".into(),
             backend: "codex".into(),
-            codex_model: "gpt-6.1-sol".into(),
+            codex_model: "gpt-6.2-sol".into(),
             codex_effort: "high".into(),
         }
     );

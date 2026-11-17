@@ -133,20 +133,20 @@
       "help": "Codex model loom pressure uses for the $pressure step",
       "kind": {
         "type": "enum",
-        "variants": ["gpt-6-astra", "gpt-6.1-sol", "gpt-6-sol", "gpt-6.1-terra", "gpt-6-luna"]
+        "variants": ["gpt-6.2-astra", "gpt-6.2-sol", "gpt-6.1-terra", "gpt-6-luna"]
       },
       "scopes": ["user", "project"],
-      "default": "gpt-6.1-sol",
+      "default": "gpt-6.2-sol",
       "user": {
-        "value": "gpt-6.1-sol",
+        "value": "gpt-6.2-sol",
         "set": false
       },
       "project": {
-        "value": "gpt-6.1-sol",
+        "value": "gpt-6.2-sol",
         "set": false
       },
       "effective": {
-        "value": "gpt-6.1-sol",
+        "value": "gpt-6.2-sol",
         "source": "default"
       }
     },
@@ -638,7 +638,7 @@
       "help": "Codex model for summaries when the backend is codex",
       "kind": {
         "type": "enum",
-        "variants": ["gpt-6-astra", "gpt-6.1-sol", "gpt-6-sol", "gpt-6.1-terra", "gpt-6-luna"]
+        "variants": ["gpt-6.2-astra", "gpt-6.2-sol", "gpt-6.1-terra", "gpt-6-luna"]
       },
       "scopes": ["user", "project"],
       "default": "gpt-6.1-terra",

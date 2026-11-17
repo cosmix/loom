@@ -81,7 +81,7 @@ fn section4_agents() -> Vec<AgentFlow> {
         agent(
             "codex-01a1396b",
             AgentKind::Codex,
-            "gpt-6.1-sol",
+            "gpt-6.2-sol",
             [
                 usage(30_000, 300_000, 4_000_000, 50_000),
                 usage(200, 3_000, 50_000, 600),
@@ -256,7 +256,7 @@ fn live_and_models_flow() -> TokenFlow {
     flow.models = [
         ("claude-sonnet-5-5", "medium"),
         ("claude-opus-5-5", "xhigh"),
-        ("gpt-6.1-sol", "xhigh"),
+        ("gpt-6.2-sol", "xhigh"),
     ]
     .into_iter()
     .map(|(model, effort)| ModelUsage {
@@ -329,7 +329,7 @@ fn a_short_terminal_keeps_the_live_rows_when_the_model_block_does_not_fit() {
         "{rows:#?}"
     );
     assert!(!contains(&rows, "BY MODEL"), "{rows:#?}");
-    assert!(!contains(&rows, "gpt-6.1-sol"), "{rows:#?}");
+    assert!(!contains(&rows, "gpt-6.2-sol"), "{rows:#?}");
 }
 
 #[test]
@@ -338,5 +338,5 @@ fn a_tall_terminal_shows_the_live_rows_and_the_model_block() {
 
     assert!(contains(&rows, "fresh per 30 s cell"), "{rows:#?}");
     assert!(contains(&rows, "BY MODEL"), "{rows:#?}");
-    assert!(contains(&rows, "gpt-6.1-sol"), "{rows:#?}");
+    assert!(contains(&rows, "gpt-6.2-sol"), "{rows:#?}");
 }

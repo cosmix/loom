@@ -58,7 +58,7 @@ const codex: AgentFlow = {
   kind: "codex",
   agent_type: null,
   forwarder: null,
-  model: "gpt-6.1-sol",
+  model: "gpt-6.2-sol",
   effort: "xhigh",
   unit_id: null,
   active: true,
@@ -176,7 +176,7 @@ it("modelRates sorts fixture models by fresh rate", () => {
   expect(modelRates(flow)).toEqual([
     { model: "claude-sonnet-5-5", perMinute: 25200 },
     { model: "claude-opus-5-5", perMinute: 14200 },
-    { model: "gpt-6.1-sol", perMinute: 3800 },
+    { model: "gpt-6.2-sol", perMinute: 3800 },
   ]);
 });
 
@@ -243,7 +243,7 @@ it("lastValues keeps the last N values and pads a short series on the left", () 
 const models: ModelUsage[] = [
   { model: "claude-sonnet-5-5", effort: "medium", total: usage(50000, 900000, 13000000, 160000) },
   { model: "claude-opus-5-5", effort: "xhigh", total: usage(30000, 450000, 7000000, 80000) },
-  { model: "gpt-6.1-sol", effort: "xhigh", total: usage(30000, 300000, 4000000, 50000) },
+  { model: "gpt-6.2-sol", effort: "xhigh", total: usage(30000, 300000, 4000000, 50000) },
   { model: "claude-opus-5-5", effort: "high", total: usage(10000, 150000, 2000000, 20000) },
 ];
 
@@ -253,7 +253,7 @@ it("modelShares sums efforts per model and orders by fresh", () => {
   expect(shares.map((s) => [s.model, s.fresh])).toEqual([
     ["claude-sonnet-5-5", 1110000],
     ["claude-opus-5-5", 740000],
-    ["gpt-6.1-sol", 380000],
+    ["gpt-6.2-sol", 380000],
   ]);
   expect(shares[0].share).toBeCloseTo(0.4978, 4);
   expect(shares[1].share).toBeCloseTo(0.3318, 4);
@@ -282,7 +282,7 @@ it("modelGroups keeps each model's efforts in input order with cache reads", () 
   expect(groups.map((g) => g.model)).toEqual([
     "claude-sonnet-5-5",
     "claude-opus-5-5",
-    "gpt-6.1-sol",
+    "gpt-6.2-sol",
   ]);
   expect(groups[1]).toEqual({
     model: "claude-opus-5-5",

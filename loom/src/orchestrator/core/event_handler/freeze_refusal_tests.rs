@@ -357,7 +357,7 @@ fn active_child(work: &Path, workspace: &Path, session_id: &str) {
     ] {
         let evidence = CodexEvidence {
             evidence_kind: kind,
-            requested_model: "gpt-6-sol".into(),
+            requested_model: "gpt-6.2-sol".into(),
             requested_effort: "high".into(),
             invocation_id: "invocation-child".into(),
             job_id: Some("job-child".into()),

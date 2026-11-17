@@ -56,9 +56,9 @@ fn codex_model_family_and_future_names_are_preserved() {
     std::fs::write(
         stage_dir.join("codex.jsonl"),
         concat!(
-            r#"{"model":"gpt-6-sol"}"#,
+            r#"{"model":"gpt-6.2-sol"}"#,
             "\n",
-            r#"{"model":"gpt-6-astra"}"#,
+            r#"{"model":"gpt-6.2-astra"}"#,
             "\n",
             r#"{"model":"gpt-7-orbit"}"#,
             "\n",
@@ -71,8 +71,8 @@ fn codex_model_family_and_future_names_are_preserved() {
     assert_eq!(
         execution_models_for_stage(&work_dir, "s1"),
         [
-            "gpt-6-sol (requested)",
-            "gpt-6-astra (requested)",
+            "gpt-6.2-sol (requested)",
+            "gpt-6.2-astra (requested)",
             "gpt-7-orbit (requested)"
         ]
     );

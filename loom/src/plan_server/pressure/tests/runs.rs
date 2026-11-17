@@ -234,9 +234,9 @@ fn a_session_failing_before_its_marker_stops_the_run() {
 
 #[test]
 #[serial]
-fn codex_is_recorded_again_after_a_fallback_and_shows_the_model_that_ran() {
+fn an_unavailable_codex_model_without_siblings_is_tried_once_and_shown() {
     let f = Fixture::new();
-    f.codex("unavailable-gpt-6.1-sol", "");
+    f.codex("unavailable-gpt-6.2-sol", "");
     f.codex("sleep", "1");
     f.fake
         .script(vec![Script::Marker(Duration::from_millis(1800))]);
@@ -249,7 +249,7 @@ fn codex_is_recorded_again_after_a_fallback_and_shows_the_model_that_ran() {
     );
     let attempts = f.codex_attempts();
     let models: Vec<&str> = attempts.iter().map(|(_, model)| model.as_str()).collect();
-    assert_eq!(models, ["gpt-6.1-sol", "gpt-6-sol"]);
+    assert_eq!(models, ["gpt-6.2-sol"]);
     let recorded: Vec<u32> = f
         .fake
         .children("s-1")
@@ -263,8 +263,8 @@ fn codex_is_recorded_again_after_a_fallback_and_shows_the_model_that_ran() {
         .iter()
         .find(|step| step.kind == PressureStepKind::Codex)
         .unwrap();
-    assert_eq!(codex.codex.clone().unwrap().model, "gpt-6-sol");
-    assert!(f.plan_text().contains("gpt-6-sol"), "{}", f.plan_text());
+    assert_eq!(codex.codex.clone().unwrap().model, "gpt-6.2-sol");
+    assert!(f.plan_text().contains("gpt-6.2-sol"), "{}", f.plan_text());
 }
 
 #[test]

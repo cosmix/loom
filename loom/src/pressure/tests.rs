@@ -46,7 +46,7 @@ impl PressureDriver for RecordingDriver {
         anyhow::ensure!(!self.fail_pressure, "codex did not start");
         Ok(PressureResult {
             verdict: StepVerdict::Continue,
-            codex_model_used: Some("gpt-6.1-sol".into()),
+            codex_model_used: Some("gpt-6.2-sol".into()),
         })
     }
 

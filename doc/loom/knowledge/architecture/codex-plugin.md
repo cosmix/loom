@@ -111,7 +111,7 @@ Three moving parts:
    (`cache.rs`). The recovery path emits it too (`recovery_format.rs`), which was a real gap fixed
    by `d1530e0c`; without it a recovered or retried codex stage loses its whole doctrine block.
    Model/effort are interpolated from `CODEX_IMPLEMENTER_MODEL_TERRA = "gpt-6.1-terra"`,
-   `CODEX_IMPLEMENTER_MODEL_SOL = "gpt-6.1-sol"`, `CODEX_IMPLEMENTER_MODEL_LUNA = "gpt-6-luna"`,
+   `CODEX_IMPLEMENTER_MODEL_SOL = "gpt-6.2-sol"`, `CODEX_IMPLEMENTER_MODEL_LUNA = "gpt-6-luna"`,
    and `CODEX_IMPLEMENTER_EFFORT = "xhigh"` (`loom/src/codex.rs:7-16`) rather than hardcoded, and
    `tests_doctrine.rs` asserts BLOCK-B contains all four — so changing `codex.rs` without
    updating the prose surfaces fails the build. Tiers: terra takes well-specified implementation,
@@ -123,9 +123,9 @@ Three moving parts:
    (`loom/src/sandbox/settings.rs`) — see the scope section below.
 
 Do NOT confuse the implementer-lane tiers (`CODEX_IMPLEMENTER_MODEL_*` in `codex.rs`) with the
-`loom pressure` review model: `gpt-6.1-sol` by default (`DEFAULT_PRESSURE_CODEX_MODEL` in
-`codex.rs`), falling back to `gpt-6-sol` when the account lacks it. The forwarder lane never falls
-back. `CODEX_MODELS` in `codex.rs` lists every id.
+`loom pressure` review model: `gpt-6.2-sol` by default (`DEFAULT_PRESSURE_CODEX_MODEL` in
+`codex.rs`), falling back within its family when the account lacks it (no family has a second
+member now). The forwarder lane never falls back. `CODEX_MODELS` in `codex.rs` lists every id.
 
 ## Install scope: user or project, not local
 

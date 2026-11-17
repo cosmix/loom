@@ -107,6 +107,6 @@ Waves come from real dependencies only: order work inside a job first, and start
 
 ## Job Sizing
 
-A job is one concern: the code, its consumers and its tests together, in dependency order, in one brief passed as an absolute path. Measured per file-sized change, across 491 jobs: `gpt-6.1-sol` at high effort about 3 minutes and 50,000 tokens of context, `gpt-6.1-terra` at high effort about 1 minute and 20,000 tokens, on a start of about 23,000. Limits are about 250,000 tokens of peak context and the 1500 s deadline: about 4 to 6 changes on sol, about 12 on terra.
+A job is one concern: the code, its consumers and its tests together, in dependency order, in one brief passed as an absolute path. Measured per file-sized change, across 491 jobs: `gpt-6.2-sol` at high effort about 3 minutes and 50,000 tokens of context, `gpt-6.1-terra` at high effort about 1 minute and 20,000 tokens, on a start of about 23,000. Limits are about 250,000 tokens of peak context and the 1500 s deadline: about 4 to 6 changes on sol, about 12 on terra.
 
 Filling a job costs Codex tokens, because every turn re-reads the context: a replay of one 24-unit stage put 4 jobs of 6 changes at about 1.8 times the Codex tokens of 24 jobs of one. Claude quota is the scarcer side, so a job's Claude cost (a haiku forwarder of about 20,000 tokens plus the orchestrator's turns) justifies that for cohesive work. Unrelated concerns are never bundled to reach a size.

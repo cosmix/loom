@@ -112,7 +112,7 @@ fn repeated_start_returns_same_invocation_and_changed_request_is_refused() {
     };
     assert_eq!(again, Ok(expected));
     let text = fx
-        .admit(&fx.start("unit-a", "gpt-6.1-sol"))
+        .admit(&fx.start("unit-a", "gpt-6.2-sol"))
         .expect_err("changed request");
     assert!(text.contains(&first), "{text}");
     assert_eq!(fx.count(), 1);

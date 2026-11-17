@@ -9,7 +9,7 @@ on failing tests. No lane is first or default: judge each piece by its nature an
 license accordingly; the stage's orchestrator picks the lane per piece at spawn time.
 
 - **Codex lane:** one codex unit per job, running gpt-6.1-terra (implementation, integration
-  tests, boilerplate, scaffolding, simple unit tests), gpt-6.1-sol (a substantial well-specified unit
+  tests, boilerplate, scaffolding, simple unit tests), gpt-6.2-sol (a substantial well-specified unit
   (about 4 to 6 file-sized changes) or a terra unit that failed once), or gpt-6-luna only when the
   user or the plan explicitly asks for it, always at effort xhigh. A plan names the implementer,
   `codex`, never the launch mechanism: the `codex.backend` setting picks it (see Backends) and the
@@ -111,7 +111,7 @@ the stage signal reroutes terra- and sol-tier work to sonnet, and boilerplate an
 
 1. In each codex stage's description, name the implementer and the fan-out explicitly, e.g. "Start N
    codex units, each with the tier-appropriate model — `gpt-6.1-terra` (implementation, integration
-   tests, boilerplate, scaffolding, simple unit tests), `gpt-6.1-sol` (a substantial well-specified
+   tests, boilerplate, scaffolding, simple unit tests), `gpt-6.2-sol` (a substantial well-specified
    unit or a terra unit that failed once) or, only when the user or plan asks for luna,
    `gpt-6-luna` — always effort xhigh, and a DISJOINT file set; run `loom check` for the gate, then
    commit yourself." In a wave or ownership table the implementer column says `codex`. Never name a
@@ -124,7 +124,7 @@ the stage signal reroutes terra- and sol-tier work to sonnet, and boilerplate an
 
    **Size each job as one concern.** Keep code, consumers and tests together in dependency order
    in one brief, across several files where cohesive. Two jobs never write one file. At high effort,
-   each file-sized change takes about 3 minutes and 50,000 tokens of context on gpt-6.1-sol, or
+   each file-sized change takes about 3 minutes and 50,000 tokens of context on gpt-6.2-sol, or
    1 minute and 20,000 tokens on gpt-6.1-terra. Each job starts near 23,000 tokens. At xhigh,
    budget twice the time. Keep peak context at most about 250,000 tokens and finish well inside
    the wrapper's 1500000 ms deadline: about 4 to 6 file-sized changes on sol, about 12 on terra.
@@ -147,7 +147,7 @@ the stage signal reroutes terra- and sol-tier work to sonnet, and boilerplate an
    workers: quote applicable rules in the Codex brief.
 
    **⚠️ CODEX UNITS NAME ANCHORS, NOT EXHAUSTIVE DETAIL.** A codex subagent is `gpt-6.1-terra`,
-   `gpt-6.1-sol` or, on request, `gpt-6-luna` with a shell, and no Read tool — but it is not blind: loom
+   `gpt-6.2-sol` or, on request, `gpt-6-luna` with a shell, and no Read tool — but it is not blind: loom
    hands every codex prompt the source-graph navigation kit (`loom map --find-all`, `--outline`,
    `--impact`, `loom knowledge context --query`), each answering in under a second. It looks up a
    signature, a call site, or a surrounding pattern itself, so the plan does not paste them. In a
@@ -200,7 +200,7 @@ The `codex.backend` setting (`loom config -k codex.backend`, or the project's `.
 □ Codex availability checked; if available, ONE AskUserQuestion confirmed a per-stage lane recommendation with a one-line reason each, and every `implementers:` list matches the answer; if unavailable, the user was told and no stage lists codex
 □ Lanes follow the per-stage rule: straightforward, well-specified concerns (code, consumers and tests together, pinned interfaces, mechanical acceptance) license codex; exploration, fixture-backed test convergence, UI design, and debugging license Claude; codex never on bookend stages; every list is a non-empty YAML sequence with no repeated lane
 □ Every codex job is one concern, possibly several files, sized by measured model rates for at most about 250,000 tokens of peak context and well inside 1500000 ms; xhigh budgets twice the high-effort time. Its brief names files owned/read, entry symbols, done condition, proof command and traps; two jobs never write one file
-□ Every codex unit names an absolute brief path inside the stage worktree, with no apostrophe, complete substring or loom stage phrase; declared skill rules are quoted in the brief; each unit states its tier — `gpt-6.1-terra` (implementation, integration tests, boilerplate, scaffolding, simple unit tests), `gpt-6.1-sol` (a substantial well-specified unit or a terra unit that failed once) or, only on explicit request, `gpt-6-luna` — always effort xhigh; an overrun of the 1500000 ms deadline is re-split against its partial tree
+□ Every codex unit names an absolute brief path inside the stage worktree, with no apostrophe, complete substring or loom stage phrase; declared skill rules are quoted in the brief; each unit states its tier — `gpt-6.1-terra` (implementation, integration tests, boilerplate, scaffolding, simple unit tests), `gpt-6.2-sol` (a substantial well-specified unit or a terra unit that failed once) or, only on explicit request, `gpt-6-luna` — always effort xhigh; an overrun of the 1500000 ms deadline is re-split against its partial tree
 □ The plan names `codex` as the implementer and no launch mechanism: no `loom-codex-forwarder`, `codex:codex-rescue`, `codex-forward.sh` or Bash timeout in any description, wave table or ownership table
 □ No wave exists only to respect the cap of 6; order work inside a job first, then use waves only for dependencies on another job's result on disk
 □ Every unit id matches `[A-Za-z0-9][A-Za-z0-9_-]{0,63}` (no dot); no codex unit sits under a coordinator, because only the stage's main agent can start one; at most 6 units run at once

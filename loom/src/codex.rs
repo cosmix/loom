@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 pub const CODEX_IMPLEMENTER_MODEL_TERRA: &str = "gpt-6.1-terra";
 
 /// Codex model for a substantial well-specified unit (about 4 to 6 file-sized changes) or a terra unit that failed once.
-pub const CODEX_IMPLEMENTER_MODEL_SOL: &str = "gpt-6.1-sol";
+pub const CODEX_IMPLEMENTER_MODEL_SOL: &str = "gpt-6.2-sol";
 
 /// Codex model used only when the user or the plan asks.
 pub const CODEX_IMPLEMENTER_MODEL_LUNA: &str = "gpt-6-luna";
@@ -20,17 +20,18 @@ pub const CODEX_IMPLEMENTER_EFFORT: &str = "xhigh";
 /// `codex-forward-guard.sh` and `codex-forward-result.sh`. Ids follow
 /// `gpt-<version>-<family>`, and `loom pressure` falls back within a family
 /// when the account cannot use the requested model (see
-/// [`codex_model_candidates`]); tiers never mix.
+/// [`codex_model_candidates`]); tiers never mix. Each family currently has one
+/// member, so the fallback chain is the requested id alone until a second
+/// version of a family is listed.
 pub const CODEX_MODELS: &[&str] = &[
-    "gpt-6-astra",
-    "gpt-6.1-sol",
-    "gpt-6-sol",
+    "gpt-6.2-astra",
+    "gpt-6.2-sol",
     "gpt-6.1-terra",
     "gpt-6-luna",
 ];
 
 /// Codex model the pressure run defaults to.
-pub const DEFAULT_PRESSURE_CODEX_MODEL: &str = "gpt-6.1-sol";
+pub const DEFAULT_PRESSURE_CODEX_MODEL: &str = "gpt-6.2-sol";
 
 /// The models `loom pressure` tries, in order, for a requested codex model:
 /// the requested one first, then the rest of its family from
@@ -39,13 +40,19 @@ pub const DEFAULT_PRESSURE_CODEX_MODEL: &str = "gpt-6.1-sol";
 /// is often not yet enabled for every account, so its siblings stand in for
 /// it. An id outside [`CODEX_MODELS`] gets no fallbacks.
 pub fn codex_model_candidates(requested: &str) -> Vec<&str> {
+    candidates_in(CODEX_MODELS, requested)
+}
+
+/// [`codex_model_candidates`] against an explicit model list, so the ordering
+/// rules stay testable while [`CODEX_MODELS`] has no multi-member family.
+fn candidates_in<'a>(models: &[&'a str], requested: &'a str) -> Vec<&'a str> {
     let Some((version, family)) = parse_codex_model(requested) else {
         return vec![requested];
     };
-    if !CODEX_MODELS.contains(&requested) {
+    if !models.contains(&requested) {
         return vec![requested];
     }
-    let (mut newer, mut older): (Vec<_>, Vec<_>) = family_members(family)
+    let (mut newer, mut older): (Vec<_>, Vec<_>) = family_members(models, family)
         .into_iter()
         .filter(|(member, _)| compare_versions(member, &version).is_ne())
         .partition(|(member, _)| compare_versions(member, &version).is_gt());
@@ -56,10 +63,10 @@ pub fn codex_model_candidates(requested: &str) -> Vec<&str> {
         .collect()
 }
 
-/// Every [`CODEX_MODELS`] entry of `family`, paired with its parsed version,
-/// so [`codex_model_candidates`] can order siblings without reparsing.
-fn family_members(family: &str) -> Vec<(Vec<u32>, &'static str)> {
-    CODEX_MODELS
+/// Every entry of `models` in `family`, paired with its parsed version, so
+/// [`candidates_in`] can order siblings without reparsing.
+fn family_members<'a>(models: &[&'a str], family: &str) -> Vec<(Vec<u32>, &'a str)> {
+    models
         .iter()
         .filter_map(|&id| parse_codex_model(id).map(|(version, fam)| (version, fam, id)))
         .filter(|(_, fam, _)| *fam == family)

@@ -37,7 +37,7 @@ pub struct PressureModelFlags {
     #[arg(long, value_parser = clap::builder::PossibleValuesParser::new(crate::models::stage::ALLOWED_REASONING_EFFORTS))]
     pub claude_effort: Option<String>,
 
-    /// Codex model for the $pressure step (default: gpt-6.1-sol, or pressure.codex_model); falls back within its family when unavailable
+    /// Codex model for the $pressure step (default: gpt-6.2-sol, or pressure.codex_model); falls back within its family when unavailable
     #[arg(long, value_parser = clap::builder::PossibleValuesParser::new(crate::codex::CODEX_MODELS))]
     pub codex_model: Option<String>,
 

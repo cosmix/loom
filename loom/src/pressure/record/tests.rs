@@ -6,7 +6,7 @@ use tempfile::TempDir;
 use std::os::unix::fs::{symlink, PermissionsExt};
 
 pub(super) const END: &str = "<!-- END loom METADATA -->\n";
-const RENDERED: &str = "- 2026-10-29: Claude sonnet, Codex gpt-6.1-sol; 1 round, review addressed";
+const RENDERED: &str = "- 2026-10-29: Claude sonnet, Codex gpt-6.2-sol; 1 round, review addressed";
 
 pub(super) fn record_line(models: &[&str], rounds: u32, missing_rounds: &[u32]) -> RecordLine {
     RecordLine {
@@ -208,23 +208,23 @@ fn placement_uses_crlf_for_new_section() {
 
 #[test]
 fn render_one_round_uses_singular_and_addressed_outcome() {
-    assert_eq!(record_line(&["gpt-6.1-sol"], 1, &[]).render(), RENDERED);
+    assert_eq!(record_line(&["gpt-6.2-sol"], 1, &[]).render(), RENDERED);
 }
 
 #[test]
 fn render_repeated_models_collapses_to_one_model() {
     assert_eq!(
-        record_line(&["gpt-6.1-sol", "gpt-6.1-sol"], 2, &[]).render(),
-        "- 2026-10-29: Claude sonnet, Codex gpt-6.1-sol; 2 rounds, review addressed"
+        record_line(&["gpt-6.2-sol", "gpt-6.2-sol"], 2, &[]).render(),
+        "- 2026-10-29: Claude sonnet, Codex gpt-6.2-sol; 2 rounds, review addressed"
     );
 }
 
 #[test]
 fn render_mixed_models_preserves_every_round_in_order() {
     assert_eq!(
-        record_line(&["gpt-6.1-sol", "gpt-6.1-sol", "gpt-6.1-terra"], 3, &[]).render(),
+        record_line(&["gpt-6.2-sol", "gpt-6.2-sol", "gpt-6.1-terra"], 3, &[]).render(),
         concat!(
-            "- 2026-10-29: Claude sonnet, Codex gpt-6.1-sol / gpt-6.1-sol / ",
+            "- 2026-10-29: Claude sonnet, Codex gpt-6.2-sol / gpt-6.2-sol / ",
             "gpt-6.1-terra; 3 rounds, review addressed"
         )
     );
@@ -241,9 +241,9 @@ fn render_empty_model_is_unknown() {
 #[test]
 fn render_unknown_model_keeps_its_place_among_mixed_models() {
     assert_eq!(
-        record_line(&["gpt-6.1-sol", "", "gpt-6.1-terra"], 3, &[]).render(),
+        record_line(&["gpt-6.2-sol", "", "gpt-6.1-terra"], 3, &[]).render(),
         concat!(
-            "- 2026-10-29: Claude sonnet, Codex gpt-6.1-sol / unknown / ",
+            "- 2026-10-29: Claude sonnet, Codex gpt-6.2-sol / unknown / ",
             "gpt-6.1-terra; 3 rounds, review addressed"
         )
     );
@@ -252,9 +252,9 @@ fn render_unknown_model_keeps_its_place_among_mixed_models() {
 #[test]
 fn render_several_missing_rounds_lists_round_numbers() {
     assert_eq!(
-        record_line(&["gpt-6.1-sol"; 4], 4, &[1, 3, 4]).render(),
+        record_line(&["gpt-6.2-sol"; 4], 4, &[1, 3, 4]).render(),
         concat!(
-            "- 2026-10-29: Claude sonnet, Codex gpt-6.1-sol; 4 rounds, ",
+            "- 2026-10-29: Claude sonnet, Codex gpt-6.2-sol; 4 rounds, ",
             "Codex review missing in round 1, 3, 4"
         )
     );
@@ -265,7 +265,7 @@ fn render_several_missing_rounds_lists_round_numbers() {
 fn append_record_keeps_mode_0640_and_writes_record() -> anyhow::Result<()> {
     let (dir, plan) = plan_file(END);
     fs::set_permissions(&plan, fs::Permissions::from_mode(0o640))?;
-    let line = record_line(&["gpt-6.1-sol"], 1, &[]);
+    let line = record_line(&["gpt-6.2-sol"], 1, &[]);
 
     let result = append_record(&plan, &line)?;
 
@@ -324,7 +324,7 @@ fn append_record_symlink_returns_plan_moved_without_changing_target() -> anyhow:
     let (dir, target) = plan_file("# Target\nKeep these bytes.\n");
     let link = dir.path().join("PLAN-link.md");
     symlink(&target, &link)?;
-    let line = record_line(&["gpt-6.1-sol"], 1, &[]);
+    let line = record_line(&["gpt-6.2-sol"], 1, &[]);
 
     let result = append_record(&link, &line)?;
 
@@ -343,7 +343,7 @@ fn append_record_symlink_returns_plan_moved_without_changing_target() -> anyhow:
 fn append_record_missing_plan_returns_plan_moved_without_creating_files() -> anyhow::Result<()> {
     let dir = TempDir::new()?;
     let plan = dir.path().join("PLAN-missing.md");
-    let line = record_line(&["gpt-6.1-sol"], 1, &[]);
+    let line = record_line(&["gpt-6.2-sol"], 1, &[]);
 
     let result = append_record(&plan, &line)?;
 
@@ -363,7 +363,7 @@ fn append_record_succeeds_when_plan_directory_cannot_be_opened() -> anyhow::Resu
     let (dir, plan) = plan_file(END);
     // Write+search without read permits candidate creation and append.
     fs::set_permissions(dir.path(), fs::Permissions::from_mode(0o311))?;
-    let line = record_line(&["gpt-6.1-sol"], 1, &[]);
+    let line = record_line(&["gpt-6.2-sol"], 1, &[]);
 
     let result = append_record(&plan, &line);
 

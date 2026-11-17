@@ -48,17 +48,17 @@ it("modelColor hashes the whole name, so two versions of one model get different
   expect(modelColor("gpt-6.1-terra")).not.toBe(modelColor("gpt-6-terra"));
 });
 
-it("assignSwatches separates gpt-6.1-sol from claude-opus-5-5", () => {
-  const swatches = assignSwatches(["gpt-6.1-sol", "claude-opus-5-5"], new Map());
+it("assignSwatches separates gpt-6.2-sol from claude-opus-5-5", () => {
+  const swatches = assignSwatches(["gpt-6.2-sol", "claude-opus-5-5"], new Map());
   expect(
-    distance(swatches.get("gpt-6.1-sol")!, swatches.get("claude-opus-5-5")!),
+    distance(swatches.get("gpt-6.2-sol")!, swatches.get("claude-opus-5-5")!),
   ).toBeGreaterThanOrEqual(TARGET_GAP);
 });
 
 it("assignSwatches keeps a mixed fleet of models at least the target gap apart", () => {
   const fleet = [
     ...FAMILY,
-    "gpt-6.1-sol",
+    "gpt-6.2-sol",
     "gpt-6.1-terra",
     "gpt-6-luna",
     "claude-opus-5-4",

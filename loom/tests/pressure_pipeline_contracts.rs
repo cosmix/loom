@@ -17,7 +17,7 @@ use support::{
     date, git_repo_with_plan, record_line, run_loom, Call, FakeDriver, END_MARKER, MINIMAL_PLAN,
 };
 
-const NEW_LINE: &str = "- 2026-10-26: Claude opus, Codex gpt-6.1-sol; 1 round, review addressed";
+const NEW_LINE: &str = "- 2026-10-26: Claude opus, Codex gpt-6.2-sol; 1 round, review addressed";
 
 fn section_at_end(line: &str) -> String {
     format!("\n## Pressure tests\n\n{line}\n")
@@ -65,14 +65,14 @@ fn record_ignores_a_heading_before_the_marker() {
 #[test]
 fn record_line_renders_rounds_models_and_outcome() {
     assert_eq!(
-        record_line(&["gpt-6.1-sol", "gpt-6.1-sol"], 2, &[]).render(),
-        "- 2026-10-26: Claude opus, Codex gpt-6.1-sol; 2 rounds, review addressed"
+        record_line(&["gpt-6.2-sol", "gpt-6.2-sol"], 2, &[]).render(),
+        "- 2026-10-26: Claude opus, Codex gpt-6.2-sol; 2 rounds, review addressed"
     );
     assert_eq!(
         record_line(&["a", "a", "b"], 3, &[2]).render(),
         "- 2026-10-26: Claude opus, Codex a / a / b; 3 rounds, Codex review missing in round 2"
     );
-    assert_eq!(record_line(&["gpt-6.1-sol"], 1, &[]).render(), NEW_LINE);
+    assert_eq!(record_line(&["gpt-6.2-sol"], 1, &[]).render(), NEW_LINE);
 }
 
 #[test]
@@ -82,7 +82,7 @@ fn record_keeps_the_plan_file_mode() {
     fs::write(&plan, MINIMAL_PLAN).unwrap();
     fs::set_permissions(&plan, fs::Permissions::from_mode(0o640)).unwrap();
 
-    let line = record_line(&["gpt-6.1-sol"], 1, &[]);
+    let line = record_line(&["gpt-6.2-sol"], 1, &[]);
     let written = append_record(&plan, &line).expect("append_record");
     assert!(matches!(written, RecordWrite::Written), "expected Written");
 
@@ -103,7 +103,7 @@ fn entries(dir: &Path) -> Vec<String> {
 
 #[test]
 fn moved_or_symlinked_plan_is_not_written() {
-    let line = record_line(&["gpt-6.1-sol"], 1, &[]);
+    let line = record_line(&["gpt-6.2-sol"], 1, &[]);
     let gone_dir = tempfile::tempdir().unwrap();
     let gone = gone_dir.path().join("PLAN-gone.md");
     let result = append_record(&gone, &line).expect("append_record on a removed path");
@@ -184,7 +184,7 @@ fn missing_report_round_is_recorded() {
     let mut driver = FakeDriver::new(&report, &[1], None);
     let outcome = run_pipeline(&mut driver, &input(2, &report, &plan)).expect("run_pipeline");
 
-    let expected = "- 2026-10-26: Claude opus, Codex gpt-6.1-sol; 2 rounds, \
+    let expected = "- 2026-10-26: Claude opus, Codex gpt-6.2-sol; 2 rounds, \
                     Codex review missing in round 2";
     match outcome {
         PipelineOutcome::Recorded { line } => assert_eq!(line, expected),
@@ -199,7 +199,7 @@ fn missing_report_round_is_recorded() {
 #[test]
 fn recorded_plan_passes_verify_and_preflight() {
     let (_temp, root, plan) = git_repo_with_plan(MINIMAL_PLAN);
-    let line = record_line(&["gpt-6.1-sol", "gpt-6.1-sol"], 2, &[]);
+    let line = record_line(&["gpt-6.2-sol", "gpt-6.2-sol"], 2, &[]);
     let written = append_record(&plan, &line).expect("append_record");
     assert!(matches!(written, RecordWrite::Written), "expected Written");
     assert!(fs::read_to_string(&plan)

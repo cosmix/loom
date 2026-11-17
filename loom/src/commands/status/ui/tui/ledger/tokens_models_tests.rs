@@ -29,7 +29,7 @@ fn four() -> Vec<ModelUsage> {
             [30_000, 450_000, 7_000_000, 80_000],
         ),
         entry(
-            "gpt-6.1-sol",
+            "gpt-6.2-sol",
             Some("xhigh"),
             [30_000, 300_000, 4_000_000, 50_000],
         ),
@@ -70,7 +70,7 @@ fn test_effort_rows_follow_their_model() {
     for needle in ["high", "180k", "2.00M"] {
         assert!(rows[5].contains(needle), "{needle}: {rows:#?}");
     }
-    assert!(rows[6].contains("gpt-6.1-sol") && rows[6].contains("17%"));
+    assert!(rows[6].contains("gpt-6.2-sol") && rows[6].contains("17%"));
 }
 
 #[test]

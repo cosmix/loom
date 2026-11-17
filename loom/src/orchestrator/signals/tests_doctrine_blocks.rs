@@ -56,7 +56,7 @@ pub(super) const BLOCK_B: &str = r#"1. DELEGATION IS A COST DECISION: TOKENS TIM
    room. No lane is first or default; list order means nothing. Verification,
    review, planning, exploration, debugging and iteration on failing tests
    stay with Claude. gpt-6.1-terra: implementation, integration tests,
-   boilerplate, scaffolding and simple unit tests; gpt-6.1-sol: a substantial
+   boilerplate, scaffolding and simple unit tests; gpt-6.2-sol: a substantial
    well-specified unit (about 4 to 6 file-sized changes) or a terra unit that
    failed once; gpt-6-luna only when the user or the plan asks. Otherwise
    terra- and sol-tier work goes to sonnet, and boilerplate and simple unit

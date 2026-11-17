@@ -60,7 +60,7 @@ describe("TokenModels", () => {
     const before = colors();
     cleanup();
     renderPanel((raw) => {
-      raw.status.tokens.models.find((entry) => entry.model === "gpt-6.1-sol")!.total.input =
+      raw.status.tokens.models.find((entry) => entry.model === "gpt-6.2-sol")!.total.input =
         99999999;
     });
     expect(colors()).toEqual(before);
@@ -74,7 +74,7 @@ describe("TokenModels", () => {
     expect(slices.map((slice) => slice.getAttribute("data-model"))).toEqual([
       "claude-sonnet-5-5",
       "claude-opus-5-5",
-      "gpt-6.1-sol",
+      "gpt-6.2-sol",
     ]);
     expect(pie.querySelectorAll("text")).toHaveLength(0);
   });

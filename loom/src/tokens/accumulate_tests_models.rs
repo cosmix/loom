@@ -93,13 +93,13 @@ fn model_keys_are_capped_and_overflow_goes_to_other() {
 fn codex_turn_context_effort_keys_the_usage() {
     let mut agent = AgentState::new(AgentKind::Codex, "/r/rollout.jsonl");
     let context = json!({"type": "turn_context",
-        "payload": {"model": "gpt-6.1-sol", "effort": "xhigh"}});
+        "payload": {"model": "gpt-6.2-sol", "effort": "xhigh"}});
     agent.ingest(&context.to_string());
     agent.ingest(&codex_count(NOW, [100, 40, 10]));
 
     assert_eq!(agent.effort.as_deref(), Some("xhigh"));
     assert_eq!(
-        model_key(&agent, "gpt-6.1-sol", Some("xhigh")),
+        model_key(&agent, "gpt-6.2-sol", Some("xhigh")),
         usage(60, 0, 40, 10)
     );
 }
@@ -108,20 +108,20 @@ fn codex_turn_context_effort_keys_the_usage() {
 fn codex_turn_context_without_effort_clears_the_previous_one() {
     let mut agent = AgentState::new(AgentKind::Codex, "/r/rollout.jsonl");
     let with_effort = json!({"type": "turn_context",
-        "payload": {"model": "gpt-6.1-sol", "effort": "xhigh"}});
+        "payload": {"model": "gpt-6.2-sol", "effort": "xhigh"}});
     agent.ingest(&with_effort.to_string());
     agent.ingest(&codex_count(NOW, [100, 40, 10]));
     let without_effort = json!({"type": "turn_context",
-        "payload": {"model": "gpt-6.1-sol"}});
+        "payload": {"model": "gpt-6.2-sol"}});
     agent.ingest(&without_effort.to_string());
     agent.ingest(&codex_count(NOW + 10, [150, 40, 15]));
 
     assert_eq!(agent.effort, None);
     assert_eq!(
-        model_key(&agent, "gpt-6.1-sol", Some("xhigh")),
+        model_key(&agent, "gpt-6.2-sol", Some("xhigh")),
         usage(60, 0, 40, 10)
     );
-    assert_eq!(model_key(&agent, "gpt-6.1-sol", None), usage(50, 0, 0, 5));
+    assert_eq!(model_key(&agent, "gpt-6.2-sol", None), usage(50, 0, 0, 5));
 }
 
 fn sonnet_effort_line(id: &str, effort: &str, spent: &TokenUsage) -> String {
@@ -160,11 +160,11 @@ fn a_claude_model_that_sanitizes_to_nothing_leaves_the_current_one() {
 #[test]
 fn a_codex_model_or_effort_that_sanitizes_to_nothing_is_absent() {
     let mut no_effort = AgentState::new(AgentKind::Codex, "/r/rollout.jsonl");
-    no_effort.ingest(&turn_context("gpt-6.1-sol", "  \n"));
+    no_effort.ingest(&turn_context("gpt-6.2-sol", "  \n"));
     no_effort.ingest(&codex_count(NOW, [100, 40, 10]));
     assert_eq!(no_effort.effort, None);
     assert_eq!(
-        model_key(&no_effort, "gpt-6.1-sol", None),
+        model_key(&no_effort, "gpt-6.2-sol", None),
         usage(60, 0, 40, 10)
     );
 
