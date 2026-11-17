@@ -129,6 +129,7 @@ pub(super) mod listed {
     }
 
     /// Run `hook` with each listed directory's path during `body`.
+    #[cfg(target_os = "linux")]
     pub(in super::super) fn with(hook: impl FnMut(&Path) + 'static, body: impl FnOnce()) {
         HOOK.with(|slot| *slot.borrow_mut() = Some(Box::new(hook)));
         body();

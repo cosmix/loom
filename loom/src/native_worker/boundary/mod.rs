@@ -34,6 +34,7 @@ pub use quiescence::verify_quiescent;
 /// The boundary's `TMPDIR`, `TMP` and `TEMP`: a 0700 directory on the
 /// private `/tmp` tmpfs, the only temporary directory sandboxed commands may
 /// write.
+#[cfg(target_os = "linux")]
 pub(crate) const BOUNDARY_TMPDIR: &str = "/tmp/loom-tmp";
 
 /// What one real boundary runs and exposes.
@@ -66,6 +67,7 @@ pub(crate) struct SpawnedBoundary {
     pub(crate) boundary_pid: i32,
     /// Pid, on this side, of the namespace's first process (bubblewrap's
     /// child), from bubblewrap's info JSON.
+    #[cfg(target_os = "linux")]
     pub(crate) namespace_pid: i32,
     /// Inode of the boundary's pid namespace, from bubblewrap's info JSON.
     pub(crate) pid_namespace: u64,

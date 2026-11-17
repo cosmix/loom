@@ -155,7 +155,7 @@ fn parse_ps_cpu_time(text: &str) -> Option<u64> {
 /// A process's own ticks plus those of the children it has reaped, so a tool
 /// that finishes leaves its work in the total instead of shrinking it. The
 /// macOS task counters have no reaped-children figure.
-#[cfg(any(target_os = "linux", test))]
+#[cfg(target_os = "linux")]
 fn parse_cpu_ticks(stat: &str) -> Option<u64> {
     let (_, fields) = stat.rsplit_once(") ")?;
     let fields: Vec<_> = fields.split_whitespace().collect();

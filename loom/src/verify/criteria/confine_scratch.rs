@@ -71,6 +71,7 @@ impl CargoScratch {
     /// is removed with it. For a boundary whose commands may write their Cargo
     /// home: a home shared with later boundaries or the confined gate would let
     /// a planted `config.toml` (`build.rustc-wrapper`) run there unseen.
+    #[cfg(any(target_os = "linux", test))]
     pub(crate) fn prepare_private(command: &Command, tree: &Path) -> Result<Self> {
         Self::build(command, tree, true, true)
     }

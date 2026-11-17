@@ -86,7 +86,7 @@ pub(super) fn sweepable(candidates: impl Iterator<Item = PathBuf>) -> Vec<PathBu
 
 /// Remove `scratch` after restoring owner access below it. Gone already (a
 /// concurrent sweep of another process) counts as removed.
-#[cfg(unix)]
+#[cfg(target_os = "linux")]
 pub(super) fn remove(scratch: &Path) -> std::io::Result<()> {
     make_removable(scratch);
     match std::fs::remove_dir_all(scratch) {
