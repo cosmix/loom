@@ -212,7 +212,6 @@ fn a_slow_reader_is_evicted_within_the_frame_deadline() {
     assert!(started.elapsed() < std::time::Duration::from_secs(6));
 }
 
-#[cfg(target_os = "linux")]
 #[test]
 fn a_trickle_reader_cannot_extend_the_whole_frame_deadline() {
     use std::os::fd::AsRawFd;

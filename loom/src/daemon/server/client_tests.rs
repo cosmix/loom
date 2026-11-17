@@ -39,7 +39,12 @@ fn subscription_acknowledges_before_first_broadcast() {
 #[test]
 fn failed_subscription_acknowledgement_removes_pending_writer() {
     let (server, client) = UnixStream::pair().unwrap();
+    // Linux fails the server's send once the peer shut its read side; XNU only
+    // stops the peer receiving, so the server's send fails there only after the
+    // peer closes. The shutdown keeps Linux deterministic when a concurrent fork
+    // holds a duplicate of the descriptor; the drop covers macOS.
     client.shutdown(std::net::Shutdown::Both).unwrap();
+    drop(client);
     let writer = Arc::new(Mutex::new(server));
     let subscribers = Mutex::new(Vec::new());
 

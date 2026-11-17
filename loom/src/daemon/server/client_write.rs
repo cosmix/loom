@@ -35,23 +35,27 @@ fn write_frame_with_timeout(
     timeout: Duration,
 ) -> io::Result<()> {
     let deadline = Instant::now() + timeout;
+    let chunk_limit = nonblocking_chunk_limit(stream.as_raw_fd());
     let mut remaining_frame = frame;
     while !remaining_frame.is_empty() {
         write_time_remaining(deadline)?;
+        #[cfg(not(target_os = "linux"))]
+        wait_for_write(stream.as_raw_fd(), deadline)?;
         // SO_SNDTIMEO bounds a blocking send only while it makes no progress.
-        // MSG_DONTWAIT keeps each call bounded without changing the shared
-        // socket mode seen by the connection's reader.
+        // MSG_DONTWAIT keeps each call bounded on Linux without changing the
+        // shared socket mode seen by the connection's reader.
         #[cfg(target_os = "linux")]
         let flags = libc::MSG_DONTWAIT | libc::MSG_NOSIGNAL;
         #[cfg(not(target_os = "linux"))]
         let flags = libc::MSG_DONTWAIT;
+        let attempted = remaining_frame.len().min(chunk_limit);
         // SAFETY: the descriptor is a live Unix socket and remaining_frame is
-        // a valid byte slice for the duration of this call.
+        // a valid byte slice of at least `attempted` bytes for this call.
         let written = unsafe {
             libc::send(
                 stream.as_raw_fd(),
                 remaining_frame.as_ptr().cast(),
-                remaining_frame.len(),
+                attempted,
                 flags,
             )
         };
@@ -71,6 +75,44 @@ fn write_frame_with_timeout(
         }
     }
     Ok(())
+}
+
+/// The most one `send` may carry without blocking.
+///
+/// Linux honors `MSG_DONTWAIT` on a blocking socket, so a send never waits.
+#[cfg(target_os = "linux")]
+fn nonblocking_chunk_limit(_fd: RawFd) -> usize {
+    usize::MAX
+}
+
+/// The most one `send` may carry without blocking.
+///
+/// XNU's `sosendcheck` ignores `MSG_DONTWAIT` (it tests only the socket's
+/// own non-blocking state), so a send larger than the free space sleeps until
+/// the peer reads, with no bound when the peer never does. `poll` reports
+/// `POLLOUT` only once the free space reaches the send low-water mark, and a
+/// send no larger than that space never sleeps; each send after a `POLLOUT`
+/// therefore carries at most `SO_SNDLOWAT` bytes. The socket mode stays
+/// blocking, because the connection's reader shares the open file.
+#[cfg(not(target_os = "linux"))]
+fn nonblocking_chunk_limit(fd: RawFd) -> usize {
+    let mut low_water: libc::c_int = 0;
+    let mut length = std::mem::size_of::<libc::c_int>() as libc::socklen_t;
+    // SAFETY: fd is a live socket; low_water and length are valid for writes
+    // of the sizes passed.
+    let result = unsafe {
+        libc::getsockopt(
+            fd,
+            libc::SOL_SOCKET,
+            libc::SO_SNDLOWAT,
+            (&raw mut low_water).cast(),
+            &mut length,
+        )
+    };
+    if result != 0 {
+        return 1;
+    }
+    usize::try_from(low_water).unwrap_or(1).max(1)
 }
 
 fn write_time_remaining(deadline: Instant) -> io::Result<Duration> {
