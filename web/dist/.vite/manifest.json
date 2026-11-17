@@ -304,6 +304,23 @@
       "assets/feature-mark.css"
     ]
   },
+  "_findings-cards.css": {
+    "file": "assets/findings-cards.css",
+    "src": "_findings-cards.css"
+  },
+  "_findings-cards.js": {
+    "file": "assets/findings-cards.js",
+    "name": "findings-cards",
+    "imports": [
+      "_rolldown-runtime.js",
+      "_use-media-query.js",
+      "_react.js",
+      "_heading-parts.js"
+    ],
+    "css": [
+      "assets/findings-cards.css"
+    ]
+  },
   "_flow.js": {
     "file": "assets/flow.js",
     "name": "flow",
@@ -351,10 +368,6 @@
       "assets/help-shortcuts.css"
     ]
   },
-  "_maps-findings.css": {
-    "file": "assets/maps-findings.css",
-    "src": "_maps-findings.css"
-  },
   "_maps.css": {
     "file": "assets/maps.css",
     "src": "_maps.css"
@@ -397,6 +410,7 @@
     "imports": [
       "_react.js",
       "_use-media-query.js",
+      "_quota-meters.js",
       "_zod.js",
       "_heading-parts.js"
     ]
@@ -505,6 +519,7 @@
       "_rolldown-runtime.js",
       "_react.js",
       "_use-media-query.js",
+      "_zod.js",
       "_heading-parts.js"
     ]
   },
@@ -515,6 +530,10 @@
       "_use-media-query.js"
     ]
   },
+  "_trace-gate.css": {
+    "file": "assets/trace-gate.css",
+    "src": "_trace-gate.css"
+  },
   "_trace-gate.js": {
     "file": "assets/trace-gate.js",
     "name": "trace-gate",
@@ -522,8 +541,10 @@
       "_react.js",
       "_use-media-query.js",
       "_heading-parts.js",
-      "_state.js",
-      "plan.html"
+      "_state.js"
+    ],
+    "css": [
+      "assets/trace-gate.css"
     ]
   },
   "_use-media-query.js": {
@@ -1722,10 +1743,10 @@
       "_quota-meters.js",
       "_zod.js",
       "_heading-parts.js",
+      "_state.js",
       "_coverage-model.js",
       "_sentence-text.js",
       "_page-offer.js",
-      "_state.js",
       "_feature-mark.js",
       "_markdown.js",
       "_flow.js"
@@ -1804,13 +1825,15 @@
       "_heading-parts.js",
       "plan.html",
       "_router.js",
+      "_state.js",
+      "_page-offer.js",
+      "_findings-cards.js",
       "_coverage-marks.js",
       "_coverage-model.js"
     ],
     "css": [
       "assets/help-dialog.css",
-      "assets/maps.css",
-      "assets/maps-findings.css"
+      "assets/maps.css"
     ]
   },
   "src/plan/run/handoff-dialogs.tsx": {
@@ -1861,14 +1884,15 @@
       "_heading-parts.js",
       "plan.html",
       "_page-offer.js",
-      "_rotate-ccw.js",
+      "_findings-cards.js",
       "_quota-meters.js",
+      "_rotate-ccw.js",
       "_state.js",
       "_trace-gate.js"
     ],
     "css": [
-      "assets/maps.css",
-      "assets/maps-findings.css"
+      "assets/findings-page.css",
+      "assets/maps.css"
     ]
   }
 }
