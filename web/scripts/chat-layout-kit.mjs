@@ -68,6 +68,7 @@ function turns(count) {
         attachments: [],
         delivery: "delivered",
         origin: null,
+        command: null,
       },
       { type: "text", id: `a${i}`, markdown: `${PROSE}\n\n${PROSE}` },
     ],
