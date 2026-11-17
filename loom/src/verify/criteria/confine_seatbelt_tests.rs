@@ -12,6 +12,9 @@ use crate::models::stage::CommandConfinement;
 use crate::process::sandbox_probe::skip_unless;
 use crate::verify::criteria::{run_spec_with_timeout, CommandSpec};
 
+#[path = "confine_seatbelt_probe_tests.rs"]
+mod probe;
+
 /// A canonical `<tmp>/worktree` whose parent holds `Cargo.toml` and
 /// `.cargo/config.toml` with the given contents.
 fn tree_below_cargo_files(manifest: &str, config: &str) -> (TempDir, PathBuf) {
@@ -69,15 +72,17 @@ fn the_profile_denies_every_read_of_the_cargo_files_after_allowing_metadata() {
     let metadata = profile.find("(allow file-read-metadata)").unwrap();
     for name in ["Cargo.toml", ".cargo/config.toml"] {
         let path = tree.parent().unwrap().join(name);
-        let rule = format!(
-            "(deny file-read* (literal {}))",
-            serde_json::to_string(&path.to_string_lossy()).unwrap()
-        );
-        let at = profile.find(&rule);
-        assert!(
-            at.is_some_and(|at| at > metadata),
-            "{rule} missing or before the metadata allowance in {profile}"
-        );
+        let path = serde_json::to_string(&path.to_string_lossy()).unwrap();
+        for rule in [
+            format!("(deny file-read* (literal {path}))"),
+            format!("(deny file-read-metadata file-test-existence (literal {path}))"),
+        ] {
+            let at = profile.find(&rule);
+            assert!(
+                at.is_some_and(|at| at > metadata),
+                "{rule} missing or before the metadata allowance in {profile}"
+            );
+        }
     }
 }
 
@@ -124,7 +129,8 @@ fn cargo_files_above_the_tree_are_absent_inside_the_boundary() {
         result.success
             && result.stdout.contains("ABSENT_MANIFEST")
             && result.stdout.contains("ABSENT_CONFIG"),
-        "confined: {result:?}"
+        "confined: {result:?}\n{}",
+        probe::report(&spec, &tree)
     );
 }
 
@@ -163,6 +169,7 @@ fn cargo_inside_the_boundary_ignores_the_workspace_and_config_above_it() {
         run_spec_with_timeout(&spec, Some(&tree), timeout, CommandConfinement::Confined).unwrap();
     assert!(
         result.success && result.stdout.contains("confined-fixture"),
-        "confined: {result:?}"
+        "confined: {result:?}\n{}",
+        probe::report(&spec, &tree)
     );
 }

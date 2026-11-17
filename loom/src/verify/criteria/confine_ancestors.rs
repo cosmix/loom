@@ -8,7 +8,11 @@
 //! every Cargo command, since the main checkout above it holds the project's
 //! own `Cargo.toml`; so does a tree below a home with `~/.cargo/config.toml`.
 //!
-//! Hiding each such file's metadata too makes it absent, as on Linux. Only
+//! Hiding each such file's metadata too makes it absent, as on Linux. A
+//! `file-read*` deny does not do it: a rule naming `file-read-metadata`
+//! outranks the wildcard, so the profile's global metadata allowance keeps
+//! `stat` working, and `access(F_OK)` is its own `file-test-existence`
+//! operation; each must be denied by name. Only
 //! files that exist get a rule: Seatbelt denies with `EPERM`, and a tool that
 //! reads any error other than `ENOENT` as fatal (rustfmt's config search) would
 //! otherwise fail where no file is. Tools that stop at the first file they find
@@ -46,14 +50,46 @@ pub(super) fn hidden_above(tree: &Path, readable: &[PathBuf]) -> Vec<PathBuf> {
     hidden
 }
 
-/// Seatbelt rules denying every operation that reads `hidden`, metadata
-/// included; they must follow the global metadata allowance.
+/// Seatbelt rules denying every operation that reads `hidden`, metadata and
+/// existence included, under each of [`seatbelt_spellings`]; they must follow
+/// the global metadata allowance.
 #[cfg(any(target_os = "macos", test))]
 pub(super) fn seatbelt_rules(hidden: &[PathBuf], quote: impl Fn(&Path) -> String) -> String {
-    hidden
-        .iter()
-        .map(|path| format!("(deny file-read* (literal {}))", quote(path)))
-        .collect()
+    let mut rules = String::new();
+    for path in hidden.iter().flat_map(|path| seatbelt_spellings(path)) {
+        let path = quote(&path);
+        rules.push_str(&format!(
+            "(deny file-read* (literal {path}))\
+             (deny file-read-metadata file-test-existence (literal {path}))"
+        ));
+    }
+    rules
+}
+
+/// `path`, then the other forms Seatbelt might match it under: without the
+/// `/private` prefix of a root symlink (`/var`, `/tmp`, `/etc`), and below
+/// `/System/Volumes/Data`, the data volume that firmlinks `/private`, `/Users`
+/// and the other writable roots resolve to. The kernel reports the canonical
+/// form, which is `path` itself; the others cost one rule each and cover a
+/// release that reports another. Revisit when the macOS probe in
+/// `confine_seatbelt_tests.rs` shows which form the kernel matches.
+#[cfg(any(target_os = "macos", test))]
+fn seatbelt_spellings(path: &Path) -> Vec<PathBuf> {
+    let mut spellings = vec![path.to_path_buf()];
+    if let Ok(rest) = path.strip_prefix("/private") {
+        if ["var", "tmp", "etc"]
+            .iter()
+            .any(|root| rest.starts_with(root))
+        {
+            spellings.push(Path::new("/").join(rest));
+        }
+    }
+    if !path.starts_with("/System/Volumes") {
+        if let Ok(rest) = path.strip_prefix("/") {
+            spellings.push(Path::new("/System/Volumes/Data").join(rest));
+        }
+    }
+    spellings
 }
 
 #[cfg(test)]
@@ -117,20 +153,42 @@ mod tests {
         assert!(hidden_below(&base, &tree, &[base.join("elsewhere")]).is_empty());
     }
 
-    /// `file-read*` covers `file-read-metadata`, so the rule overrides the
-    /// profile's global metadata allowance; a `file-read-data` rule would
-    /// leave `exists()` true and Cargo failing as before.
+    /// A rule naming `file-read-metadata` outranks a `file-read*` one, so only
+    /// a named deny overrides the profile's global metadata allowance.
     #[test]
-    fn each_hidden_file_gets_one_literal_deny_of_every_read() {
-        let hidden = [
-            PathBuf::from("/r/Cargo.toml"),
-            PathBuf::from("/r/.cargo/config.toml"),
-        ];
+    fn each_spelling_of_a_hidden_file_gets_a_read_and_a_named_metadata_deny() {
+        let hidden = [PathBuf::from("/r/Cargo.toml")];
         let quote = |path: &Path| format!("<{}>", path.display());
+        let rules = |path: &str| {
+            format!(
+                "(deny file-read* (literal <{path}>))\
+                 (deny file-read-metadata file-test-existence (literal <{path}>))"
+            )
+        };
         assert_eq!(
             seatbelt_rules(&hidden, quote),
-            "(deny file-read* (literal </r/Cargo.toml>))\
-             (deny file-read* (literal </r/.cargo/config.toml>))"
+            rules("/r/Cargo.toml") + &rules("/System/Volumes/Data/r/Cargo.toml")
+        );
+    }
+
+    #[test]
+    fn a_private_root_path_is_also_spelled_through_its_symlink_and_the_data_volume() {
+        let spell = |path: &str| seatbelt_spellings(Path::new(path));
+        assert_eq!(
+            spell("/private/var/folders/x/Cargo.toml"),
+            [
+                PathBuf::from("/private/var/folders/x/Cargo.toml"),
+                PathBuf::from("/var/folders/x/Cargo.toml"),
+                PathBuf::from("/System/Volumes/Data/private/var/folders/x/Cargo.toml"),
+            ]
+        );
+        assert_eq!(
+            spell("/private/varnish/Cargo.toml")[1],
+            PathBuf::from("/System/Volumes/Data/private/varnish/Cargo.toml")
+        );
+        assert_eq!(
+            spell("/System/Volumes/Data/Users/a/Cargo.toml"),
+            [PathBuf::from("/System/Volumes/Data/Users/a/Cargo.toml")]
         );
     }
 }
