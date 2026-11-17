@@ -135,6 +135,24 @@ fn each_agent_end_evidence_fed_alone_stops_the_agent_once() {
     }
 }
 
+#[test]
+fn an_agent_transcript_read_whole_before_its_launch_still_ends_the_agent() {
+    let h = harness();
+    let s = session(&h);
+    let replay = Replay::load("p1-background-agent", &s).unfinished();
+    let mut replay = replay.without(|record| handback(record) || a1_stops(record));
+    // The agent's file through its `toolEndsTurn` result, read before any record names it.
+    replay.agents(&s);
+    settle();
+    assert_eq!(tasks(&h, &s), Vec::new());
+    replay.until(&s, "2026-11-10T07:06:58.759Z");
+    wait_task(&h, &s, "a1", TaskState::Done);
+    assert_eq!(stopped(&h, "a1"), 1);
+    let agent = task(&h, &s, "a1").unwrap();
+    assert_eq!(agent.last_activity_at, at("2026-11-10T07:06:58.726Z"));
+    assert_eq!(agent.last_tool.as_deref(), Some("SubagentHandback"));
+}
+
 /// The user record Claude Code writes for a queued notification, as `p1-status.jsonl`'s.
 fn notification(body: &Value) -> Value {
     json!({"type": "user", "message": {"role": "user", "content": body},

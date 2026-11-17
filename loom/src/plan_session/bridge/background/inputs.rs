@@ -116,15 +116,16 @@ impl BackgroundTasks {
         });
     }
 
-    /// A new entry takes what was read before it: the agent's fold and meta file, and the end
-    /// the newest `Stop` list already proved when it omits an entry started before it.
+    /// A new entry takes what was read before it: the agent's fold, its `toolEndsTurn` end and
+    /// meta file, and the end the newest `Stop` list already proved when it omits an entry
+    /// started before it.
     fn created(&mut self, id: &str, change: &mut Change) {
         if let Some(facts) = self.agents.get(id) {
-            let follow = Follow::of(facts);
+            let (follow, ended_at) = (Follow::of(facts), facts.ended_at);
             self.update(id, Some(TaskKind::Agent), change, |entry| {
                 entry.follow(&follow);
                 entry.task.state = follow.state;
-                false
+                ended_at.is_some_and(|at| entry.end(TaskState::Done, at, Proof::Evidence))
             });
         }
         self.apply_meta(id, change);

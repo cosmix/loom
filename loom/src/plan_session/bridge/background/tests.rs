@@ -215,6 +215,40 @@ fn only_a_later_assistant_record_or_start_reopens_an_ended_agent() {
 }
 
 #[test]
+fn an_agent_whose_transcript_was_read_before_its_launch_keeps_its_end() {
+    let ends = json!({"type": "user", "toolEndsTurn": true, "timestamp": at(4).to_rfc3339()});
+    let start = spool("SubagentStart", 2, json!({"agent_id": "a1"}));
+    // The agent's file through its last record, then the launch and the hook naming it.
+    let mut table = BackgroundTasks::default();
+    table.agent_line("a1", &line(3, "SubagentHandback"));
+    assert_eq!(table.agent_line("a1", &ends), Change::default());
+    assert_eq!(
+        evidence(&mut table, 1, agent("a1", "toolu_a")).stopped,
+        ["a1"]
+    );
+    assert_eq!(table.event(&start), Change::default());
+    let late = get(&table, "a1");
+    assert_eq!(
+        (late.state, late.last_activity_at),
+        (TaskState::Done, at(4))
+    );
+    let mut ordered = BackgroundTasks::default();
+    evidence(&mut ordered, 1, agent("a1", "toolu_a"));
+    ordered.event(&start);
+    ordered.agent_line("a1", &line(3, "SubagentHandback"));
+    assert_eq!(ordered.agent_line("a1", &ends).stopped, ["a1"]);
+    assert_eq!(ordered.tasks(), table.tasks());
+
+    // A record of a later run read with the first run's end: the agent runs when launched.
+    let mut rewoken = BackgroundTasks::default();
+    rewoken.agent_line("a1", &ends);
+    rewoken.agent_line("a1", &line(5, "Read"));
+    let launch = evidence(&mut rewoken, 1, agent("a1", "toolu_a"));
+    assert_eq!(launch.stopped, Vec::<String>::new());
+    assert_eq!(get(&rewoken, "a1").state, TaskState::ToolWait);
+}
+
+#[test]
 fn a_quiet_tick_stalls_agents_never_shells_and_reports_only_changes() {
     let mut table = BackgroundTasks::default();
     evidence(&mut table, 0, shell("b1", "toolu_b", "Run it"));

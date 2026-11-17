@@ -6,9 +6,10 @@
 //! `SubagentStop`. An agent with none of these turns `Stalled` once its transcript has been
 //! quiet past the stall budget. Times come from record timestamps and spool `received_at`; only
 //! [`BackgroundTasks::reevaluate`] takes a clock reading. Each field keeps the value of its
-//! highest-ranked source and each time its earliest start and newest sighting, so a replay
-//! from offset 0 rebuilds the same table in whichever order the spool and the transcripts are
-//! read. The table is never persisted. Every id is bounded and every kept string capped.
+//! highest-ranked source and each time its earliest start and newest sighting, and an agent's
+//! own files are kept for an entry created after they were read, so a replay from offset 0
+//! rebuilds the same table in whichever order the spool and the transcripts are read. The
+//! table is never persisted. Every id is bounded and every kept string capped.
 
 mod entry;
 mod inputs;
@@ -102,6 +103,8 @@ struct AgentFacts {
     /// The newest timestamp among the agent's transcript lines.
     seen_at: Option<DateTime<Utc>>,
     meta: Option<AgentMeta>,
+    /// The time of the agent's `toolEndsTurn` result, until a later assistant record follows it.
+    ended_at: Option<DateTime<Utc>>,
 }
 
 impl AgentFacts {
@@ -208,6 +211,12 @@ impl BackgroundTasks {
         let ends = line.get("toolEndsTurn").and_then(Value::as_bool) == Some(true);
         let ends_at = at.filter(|_| kind == Some("user") && ends);
         let assistant = kind == Some("assistant");
+        // Kept for an entry created after this line was read (`created`).
+        if ends_at.is_some() {
+            facts.ended_at = ends_at;
+        } else if assistant && facts.ended_at.zip(at).is_some_and(|(ended, at)| at > ended) {
+            facts.ended_at = None;
+        }
         self.update(&id, Some(TaskKind::Agent), &mut change, |entry| {
             entry.follow(&follow);
             if let Some(at) = ends_at {

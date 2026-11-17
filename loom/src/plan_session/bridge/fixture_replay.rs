@@ -109,6 +109,11 @@ impl Replay {
         self.write(s, |line| line.stream == Stream::Spool);
     }
 
+    /// Every agent transcript line not yet written, each agent's meta before its first.
+    pub(super) fn agents(&mut self, s: &Sess) {
+        self.write(s, |line| matches!(line.stream, Stream::Agent(_)));
+    }
+
     /// The whole spool, a pause for the bridge to read it, then the transcripts.
     pub(super) fn spool_first(&mut self, s: &Sess) {
         self.spool(s);
