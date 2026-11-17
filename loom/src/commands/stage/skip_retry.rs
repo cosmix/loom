@@ -15,6 +15,9 @@ mod report;
 #[path = "skip_retry_recovery.rs"]
 mod recovery;
 
+#[path = "skip_retry_silence.rs"]
+mod silence;
+
 use super::recover::determine_recovery_reason;
 
 /// Skip a stage
@@ -54,7 +57,7 @@ fn retry_in(work_dir: &Path, stage_id: String, force: bool, context: Option<Stri
     // A confirmed dead session does not block retry. Unknown ownership does,
     // unless the operator explicitly requests the force override.
     if let Some(ref session_id) = stage.session {
-        ensure_retry_session_safe(work_dir, &stage_id, session_id, force)?;
+        ensure_retry_session_safe(work_dir, &stage_id, session_id, Some(&stage), force)?;
     }
 
     ensure_retry_allowed(&stage, &stage_id, force)?;
@@ -190,10 +193,13 @@ fn requeue_without_recovery(
     Ok(())
 }
 
+/// Refuse a retry while the assigned session may still be running, saying how
+/// long it has been silent and when the daemon could recover it itself.
 fn ensure_retry_session_safe(
     work_dir: &Path,
     stage_id: &str,
     session_id: &str,
+    stage: Option<&crate::models::stage::Stage>,
     force: bool,
 ) -> Result<()> {
     match crate::orchestrator::session_registry::assigned_session_is_live_admitted(
@@ -204,6 +210,11 @@ fn ensure_retry_session_safe(
             eprintln!("WARNING: Stage '{stage_id}' has an active (live) session ({session_id})");
             eprintln!("  If the session is still running, retry will create a parallel session.");
             eprintln!("  Fix issues in the current session and run 'loom stage complete {stage_id}'.");
+            if let Some(note) =
+                stage.and_then(|stage| silence::live_session_note(work_dir, stage, session_id))
+            {
+                eprintln!("{note}");
+            }
             if !force {
                 bail!("Stage has a live session. Use --force to override.");
             }
