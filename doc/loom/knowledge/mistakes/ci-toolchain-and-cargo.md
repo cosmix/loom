@@ -386,8 +386,28 @@ The sweep follow-ups on executable startup, cache coverage, hook-path navigation
 
 **What happened:** `spawn_payload`/`spawn_payload_with_codex_home` are `#[cfg(all(test, target_os = "linux"))]`, but `runtime_contract_tests.rs` and `supervisor/tests.rs` imported them unconditionally; several other test files kept imports or `mut` bindings used only inside Linux-gated code. The macOS job failed with E0432 and `-D warnings` unused-import errors, which Linux clippy never sees. The same day, after that fix, macOS Lint, Test and Flake check failed again with `dead_code`: `BOUNDARY_TMPDIR`, `SpawnedBoundary::namespace_pid`, `CargoScratch::prepare_private`, `confine_scratch::reclaim::remove`, `parse_cpu_ticks` and `removable::listed::with` were compiled on every platform but read only by Linux-gated code.
 
-**Why:** a `cfg(target_os)` gate on a caller does not gate the items it calls, and the Linux build cannot report the gap. This host cannot cross-check macOS: aws-lc-sys needs an Apple C toolchain and SDK.
+**Why:** a `cfg(target_os)` gate on a caller does not gate the items it calls, and the Linux build cannot report the gap. A plain `cargo clippy --target aarch64-apple-darwin` stops in the aws-lc-sys build script, which needs an Apple C toolchain and SDK, so the gap looked impossible to check before pushing.
 
 **Prevention:** when code is gated on Linux, gate every import, constant, field and helper only it uses, or group the gated tests in an inline `#[cfg(target_os = "linux")] mod` with its own `use` lines (as `runtime_contract_tests.rs` `mod bwrap` does). Before pushing a cfg change, `rg` each newly gated caller's callees for other users, and check every module-level import its signature names: gating `reclaim::remove(scratch: &Path)` left `use std::path::{Path, PathBuf}` with no `Path` user on macOS, and that broke all three macOS jobs again. Prefer shadowing (`let x = x || ...;` under cfg) over `let mut` mutated only on Linux.
 
+Run macOS clippy from Linux before pushing a cfg change. Install the std target (`rustup target add aarch64-apple-darwin`) and give aws-lc-sys stub tools: a `cc` that only creates the file named after `-o`, and an `ar` that only creates each `*.a` argument. Clippy never links, so the empty objects are enough:
+
+```bash
+CC_aarch64_apple_darwin=<dir>/cc AR_aarch64_apple_darwin=<dir>/ar \
+  CARGO_TARGET_DIR=<scratch>/mac-target \
+  cargo clippy --target aarch64-apple-darwin --all-targets -- -D warnings
+```
+
+This catches macOS dead code and unused imports. It cannot run tests, so macOS runtime behaviour still needs CI.
+
 **Fix:** the bwrap tests moved into `mod bwrap`; the other imports got `#[cfg(target_os = "linux")]`. The six dead items got `#[cfg(target_os = "linux")]`, except `prepare_private`, which a portable test also calls, so it got `#[cfg(any(target_os = "linux", test))]`.
+
+## macOS Test Failures Built Up Unseen Behind Compile Errors and a Hang (2026-11-17)
+
+**What happened:** after the macOS compile errors were fixed, Test (macos) ran for 28 minutes with no output and was cancelled. The full log showed two tests past 60 s and 88 lib-test failures that had accumulated since the last green macOS run on 2026-10-24. The hang kept libtest from printing its failure section, so no panic messages existed. Of the 88, 57 failed because the macOS temp directory sits under the `/var` symlink: `safe_replace_outside_workdir` compared the target and the canonical project root lexically and refused every plan amendment, a production bug for any project under a symlinked parent. The other 31 needed macOS-only behaviour: APFS rejects names that are not UTF-8, a case-insensitive filesystem folds `CONFIG.WORKTREE`, there is no bwrap or `/proc`, and XNU ignores `MSG_DONTWAIT` on a blocking socket, which made the daemon writer able to block forever.
+
+**Why:** every macOS run on the branch failed to compile first, so no test ran there for weeks. GitHub's live log viewer loads only part of a long log, so its search missed the "has been running for over 60 seconds" lines.
+
+**Prevention:** when a CI test job hangs, cancel it and read the raw log with `gh api repos/<owner>/<repo>/actions/jobs/<id>/logs`, searching for `has been running for over`. Reproduce the `/var` trap on Linux by running the failing tests with `TMPDIR` pointing through a symlink. A path check that compares a target with a canonical root canonicalizes the part above the tree on both sides.
+
+**Fix:** `split_under_root` in `loom/src/fs/safe_replace.rs` matches the root across spellings above the tree and walks the rest without following links. The daemon writer polls before each send off Linux. Tests whose setup macOS cannot create are gated or adapted, each with a comment naming the platform fact.
