@@ -22,7 +22,7 @@
 //! walk follows no symlink ([`removable`]); `std::fs::remove_dir_all` then
 //! removes the scratch on descriptors too (`unlinkat`, never following a
 //! symlink, since Rust 1.58.1), so it is kept over a removal of our own.
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use anyhow::{Context, Result};
 
@@ -87,7 +87,7 @@ pub(super) fn sweepable(candidates: impl Iterator<Item = PathBuf>) -> Vec<PathBu
 /// Remove `scratch` after restoring owner access below it. Gone already (a
 /// concurrent sweep of another process) counts as removed.
 #[cfg(target_os = "linux")]
-pub(super) fn remove(scratch: &Path) -> std::io::Result<()> {
+pub(super) fn remove(scratch: &std::path::Path) -> std::io::Result<()> {
     make_removable(scratch);
     match std::fs::remove_dir_all(scratch) {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
