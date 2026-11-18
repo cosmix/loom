@@ -411,3 +411,13 @@ This catches macOS dead code and unused imports. It cannot run tests, so macOS r
 **Prevention:** when a CI test job hangs, cancel it and read the raw log with `gh api repos/<owner>/<repo>/actions/jobs/<id>/logs`, searching for `has been running for over`. Reproduce the `/var` trap on Linux by running the failing tests with `TMPDIR` pointing through a symlink. A path check that compares a target with a canonical root canonicalizes the part above the tree on both sides.
 
 **Fix:** `split_under_root` in `loom/src/fs/safe_replace.rs` matches the root across spellings above the tree and walks the rest without following links. The daemon writer polls before each send off Linux. Tests whose setup macOS cannot create are gated or adapted, each with a comment naming the platform fact.
+
+## A Seatbelt `file-read*` Deny Did Not Hide a File From `stat` (2026-11-18)
+
+**What happened:** to make an ancestor `Cargo.toml` above a stage worktree look absent under the macOS sandbox, as it is under bubblewrap, the profile added `(deny file-read* (literal P))` after its global `(allow file-read-metadata)`. A unit test confirmed the rule text and order, but under the real `sandbox-exec` `test -e` still saw the file and cargo still failed with "failed searching for potential workspace … Operation not permitted". That took one more CI round to find.
+
+**Why:** in SBPL a rule that names `file-read-metadata` outranks the `file-read*` wildcard, so the earlier named allow won. `access(F_OK)` is a separate operation, `file-test-existence`. Checking the profile text cannot catch this, because the semantics live in the kernel.
+
+**Prevention:** to hide a path from a Seatbelt profile that allows metadata globally, deny the operations by name: `(deny file-read-metadata file-test-existence (literal P))` plus `(deny file-read* (literal P))`, on the canonical `/private/...` path. Test it under the real `sandbox-exec` (`confine_seatbelt_tests.rs`), never by asserting profile text alone. A macOS test that can fail in CI prints its diagnostics in the assertion message, so one CI round settles the cause.
+
+**Fix:** `confine_ancestors.rs` emits the named-operation denies for every spelling `seatbelt_spellings` produces. `confine_seatbelt_probe_tests.rs` prints the profile in use and the results of six rule variants when the absence test fails.
