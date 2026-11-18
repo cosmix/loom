@@ -3,7 +3,7 @@
 
 # Cli And Plan Pipeline
 
-> CLI dispatch, plan pipeline
+> CLI
 
 ## CLI Entry Point
 
@@ -32,7 +32,7 @@
 | `repair`      | `commands/repair.rs`              | Fix workspace issues                           |
 | `map`         | `commands/map.rs`                 | Codebase structure analysis                    |
 | `pressure`    | `commands/pressure/mod.rs`        | Plan pressure-testing driver (Claude + Codex)  |
-| `plan verify` | `commands/plan/verify.rs`         | Validate plan file without side effects        |
+| `plan verify` | `commands/plan/verify.rs`         | Validate plan file without side effects (result and `--json` types: `verify/report.rs`) |
 | `check`       | `commands/verify.rs`              | Goal-backward verification (`verify::execute`) |
 | `skill-index` | `commands/skill_index.rs`         | Build skill keyword index for skill-trigger    |
 | `completions` | `completions/mod.rs`              | Shell completions (custom scripts + dynamic)   |
@@ -72,7 +72,7 @@ Three files to add a new subcommand:
 
 ## Verification System
 
-- `verify/criteria/runner.rs` - Acceptance criteria execution: handles AcceptanceCriterion::Simple (5min) and Extended (30s + output checks) + detect_stderr_warnings()
+- `verify/criteria/runner.rs` - Acceptance criteria execution: handles AcceptanceCriterion::Simple (5min) and Extended (`timeout_secs`, else 300 s, + output checks) + detect_stderr_warnings()
 - `verify/criteria/executor.rs` - Single criterion with timeout, SIGKILL on timeout
 - `verify/goal_backward/mod.rs` - Goal-backward verification (artifacts, wiring, wiring_tests, dead_code) — truths removed from goal-backward
 - `verify/goal_backward/truths.rs` - verify_truth_checks() retained for before_after.rs only
@@ -92,7 +92,7 @@ Key public functions for `loom plan verify` to call:
 
 `validate()` runs inside `parse_and_validate()` → called by `parse_plan_content()` → called by `parse_plan()`. Any new command that calls `parse_plan()` automatically gets fatal validation for free.
 
-`commands/plan/verify.rs` additionally runs a verify-only per-stage check, `plan/schema/host_paths.rs::stage_host_path_errors`, rejecting `allow_write` grants under `/tmp` or missing on the host, `TMPDIR=` overrides, hardcoded `/tmp/` paths, and `mkdir`/`touch`/output redirects aimed outside the worktree in stage commands — `loom init` and `loom run` do not run this check.
+`commands/plan/verify/checks.rs` additionally runs a verify-only per-stage check, `plan/schema/host_paths.rs::stage_host_path_errors`, rejecting `allow_write` grants under `/tmp` or missing on the host, `TMPDIR=` overrides, hardcoded `/tmp/` paths, and `mkdir`/`touch`/output redirects aimed outside the worktree in stage commands — `loom init` and `loom run` do not run this check.
 
 ## Plan Parser Module (plan/parser/mod.rs)
 
@@ -125,20 +125,21 @@ Internal modules: `extraction.rs` (YAML block extraction, plan name), `validatio
 
 `plan/schema/types.rs::StageDefinition` is the struct; `plan/amendment.rs::AmendmentField` names the fields a plan amendment may mutate:
 
-- Amendable: `acceptance`, `wiring`, `wiring_tests`, `contracts`, `harness`
+- Amendable: `acceptance`, `wiring`, `wiring_tests`, `contracts`, `harness`, `reachable`
 - NOT amendable: `before_stage`, `after_stage`, `artifacts`, `id`, `name`, `dependencies`, `working_dir`, `model`, `sandbox`, `execution`
 
 ## `loom pressure` — Plan Pressure-Testing Files
 
-- `loom/src/commands/pressure/mod.rs` — the driver. Key fns: `resolve_plan_path` (raw→`doc/plans/` fallback, `is_file()` check, repo-relative `invocation`), `codex_report_path` (`codex-<basename>` sibling), `codex_log_path`/`claude_marker_path` (per-pid temp paths), `plan_steps` (ordered pipeline; `Step::{DeleteReport, Pressure{claude,codex}, Address}` — the `Pressure` variant is the parallel Claude+Codex pair), `claude_args(slash, marker, model)`/`codex_args(repo_root, skill, model)` (single-source argv builders; `claude_args` injects `completion_instruction(marker)` via `--append-system-prompt`), `render_dry_run`/`render_dry_run_step`, `classify_exit`/`classify_code`, `run_claude_foreground` (foreground TTY + marker-watch, delegating shutdown to `terminate_idle_session` — SIGTERM→grace→SIGKILL; returns `ClaudeOutcome`), `spawn_codex_background`/`wait_codex` (background codex → log + spinner), `should_stop`/`claude_should_stop`, `print_run_header`, `run_pressure_step`/`run_pipeline` (both take `StepContext<'a>`, the bundle of paths + models that keeps the per-step helpers to one parameter), `execute`. Unit tests in `loom/src/commands/pressure/tests.rs`.
-- `loom/src/commands/pressure/models.rs` — `PressureModels{claude,codex,address}` + `resolve(flags…, &UserConfig)`: per-slot precedence CLI flag → `~/.loom/config.toml` → built-in default. The two Claude slots (`/pressure`, `/address`) are independent.
+- `loom/src/pressure/` — the shared pipeline, one module per concern: `mod.rs` (`run_pipeline`, `PressureDriver`, `PipelineInput`, `PipelineOutcome`), `steps.rs` (`plan_steps`, `Step`), `models.rs` (`PressureModels::resolve`, `resolve_for`, `resolve_rounds`), `paths.rs` (`resolve_plan_path`: raw to `doc/plans/` fallback, `is_file()` check, repo-relative invocation; `codex_report_path`: `codex-<basename>` sibling), `codex_run.rs` (`spawn_codex_with_fallback`, `unavailable_line`, `codex_args`), `instruction.rs` (`completion_instruction`), `record.rs` (the `## Pressure tests` record). Design and rules: [pressure](../architecture/pressure.md).
+- `loom/src/commands/pressure/` — the terminal half only: `mod.rs` (`execute`, dry run), `terminal.rs` (`TerminalDriver`), `spawn.rs` (foreground Claude with marker watch, `terminate_idle_session`), `paths.rs`. Unit tests in `tests.rs`.
+- `loom/src/plan_server/pressure/` — the app driver and its routes (`driver.rs`, `codex.rs`, `config_guard.rs`, `recover.rs`, `options.rs`, `routes.rs`); `loom/src/plan_server/run/` — the execution handoff lane ([run-handoff](../architecture/run-handoff.md)).
 - `loom/src/claude.rs` / `loom/src/codex.rs` — `CLAUDE_MODELS`/`CODEX_MODELS` (accepted vocabularies) and `DEFAULT_PRESSURE_CLAUDE_MODEL`/`DEFAULT_PRESSURE_CODEX_MODEL`. One source of truth for the clap parser, the user-config registry and the completions.
 - `loom/src/codex.rs` — `find_codex_path()` codex binary resolver (exported via lib.rs).
-- `loom/src/cli/types_pressure.rs` — `PressureArgs { plan, rounds (default 2, ≥1), dry_run, claude_model, codex_model, address_model }`, each model flag validated by a clap `PossibleValuesParser` over the vocabularies above. `cli/types.rs` holds only the tuple variant `Commands::Pressure(PressureArgs)` (it sits at its 400-line ceiling); dispatched in `loom/src/cli/dispatch.rs`.
+- `loom/src/cli/types_pressure.rs` — `PressureArgs { plan, rounds (default 1 or`pressure.rounds`, at least 1), dry_run, claude_model, codex_model, address_model }`, each model flag validated by a clap `PossibleValuesParser` over the vocabularies above. `cli/types.rs` holds only the tuple variant `Commands::Pressure(PressureArgs)` (it sits at its 400-line ceiling); dispatched in `loom/src/cli/dispatch.rs`.
 - `loom/src/user_config/keys.rs` — the `pressure.{claude,codex,address}_model` keys in `KEYS`, as `ValueKind::Enum` over the same vocabularies, so `loom config` and its TUI edit them with no per-key wiring.
 - `commands/{pressure,address,distill,changelog}.md` — vendored Claude slash commands (source for `~/.claude/commands/`).
 - `codex/skills/pressure/SKILL.md` — vendored Codex pressure skill (source for `~/.codex/skills/pressure/`).
-- `loom install-assets` (`assets/install.rs::install_all`, `assets/install/claude.rs::install_files`, `assets/install/codex.rs::install_skills`) installs both from the binary's embedded copies; `install.sh::main` runs it on the cloned-repo and `curl | bash` paths alike.
+- `loom install-assets` (`assets/install.rs::install_all`, `assets/install/claude.rs::install_files`, `assets/install/codex.rs::install_skills`) installs both from the binary's embedded copies; `install.sh::main` runs it on the cloned-repo and `curl | bash` paths alike. `install_files` also runs `prune_stale_agents` (`assets/install/claude.rs`), removing each `$CLAUDE_DIR/agents/loom-*.md` with no embedded source: a regular file is first copied to `<name>.bak.<UTC stamp>`, a symlink is unlinked unfollowed, a directory is skipped. A prune error aborts `install_all` before commands, skills and hooks; rerun the install.
 
 ## Key Config Files
 
@@ -152,7 +153,7 @@ Internal modules: `extraction.rs` (YAML block extraction, plan name), `validatio
 
 | Path                                                                                                                                                                     | Role                                                                                                                                                                                                                          |
 | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `loom/src/commands/stage/complete_verification_v2.rs`                                                                                                                    | `run_v2`: contract check, integrity, impact tests, reachable re-check, review gate                                                                                                                                            |
+| `loom/src/verify/completion/complete_verification_v2.rs`                                                                                                                    | `run_v2`: contract check, integrity, impact tests, reachable re-check, review gate                                                                                                                                            |
 | `loom/src/commands/stage/contracts/`                                                                                                                                     | `loom stage contracts freeze\|show\|restore`                                                                                                                                                                                  |
 | `loom/src/orchestrator/core/event_handler/contract_phase.rs`, `core/contract_budget.rs`, `core/stage_spawn.rs`                                                           | contract-to-implementer handover, respawn budget, shared spawn tail                                                                                                                                                           |
 | `loom/src/verify/contracts/`, `verify/integrity/`, `verify/review/`, `verify/impact_tests.rs`                                                                            | the v2 gates and their stores under `.loom/work/{contracts,reviews}/<stage>/`                                                                                                                                                 |
@@ -164,6 +165,11 @@ Internal modules: `extraction.rs` (YAML block extraction, plan name), `validatio
 | `loom/src/commands/hook/review_harvest.rs`                                                                                                                               | `loom hook review-harvest`, called by `subagent-stop.sh`                                                                                                                                                                      |
 | `loom/src/orchestrator/adjudication/{verdict_kinds,apply_kinds,prompt/*}.rs`, `daemon/server/{contracts,dispute_kinds}.rs`                                               | dispute kinds: verdicts, apply, judge prompts, daemon handlers                                                                                                                                                                |
 | `loom/src/plan/schema/{types_v2.rs,validation/v2_lints/}`                                                                                                                | v2 fields and `plan verify` lints                                                                                                                                                                                             |
+| `loom/src/verify/contracts/{choices,choices_validate,run_dir}.rs`, `stage_service/contracts_choices.rs`, `host_verify/{freeze,freeze_artefacts,freeze_format}.rs` | writer-chosen test, runner and cwd, their validation, and the freeze's static gate ([contract-phase](../architecture/contract-phase.md#writer-chosen-contract-details)) |
+| `loom/src/verify/integrity/{statements,moves,moves_collect,ratchet_diff}.rs` | statement-level edit comparison, cross-file move cancellation, ratchet direction |
+| `loom/src/commands/hook/reviewer_brief.rs`, `reviewer_brief_plan.rs` | `loom hook reviewer-brief`, called by `spawn-guard.sh` |
+| `loom/src/commands/plan/verify/dry_run*.rs` | `loom plan verify --dry-run` |
+| `loom/src/orchestrator/core/verdict_completion.rs`, `host_verify/verdict_complete.rs`, `verdict_reuse.rs`, `gates.rs`, `models/stage/verdict_completion.rs` | the daemon's completion of a held stage after a verdict: gates preflight, reuse of a passing `Complete` run, the queued `VerdictComplete` job |
 | `doc/loom/knowledge/architecture/verification-v2-gates.md`                                                                                                               | current gate order, owners and runtime inputs                                                                                                                                                                                 |
 
 ## New CLI Surface

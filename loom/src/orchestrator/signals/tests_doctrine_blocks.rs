@@ -5,14 +5,17 @@
 //! functions assert against, not test logic of their own. Transitively
 //! `#[cfg(test)]`: the parent module is gated in `signals/mod.rs`.
 
-/// BLOCK-A - the no-verify rule, verbatim. Every surface must carry this text
-/// byte for byte; `loom-hooks/subagent-verify-guard.sh` prefixes it with a hook-only
+/// BLOCK-A - the no-verify rule, verbatim. Every surface except the
+/// integration-verify prefix must carry this text byte for byte;
+/// `loom-hooks/subagent-verify-guard.sh` prefixes it with a hook-only
 /// "BLOCKED" framing line, which is deliberately not part of the block.
 pub(super) const BLOCK_A: &str = "VERIFICATION IS THE MAIN AGENT'S JOB - NOT YOURS:
-- Do NOT verify your work. No full build, no full test suite, no linter, no
-  formatter, no type-checker, and never a repeated or looping check.
-- AT MOST ONE narrowly-scoped check over the files YOU wrote (e.g.
-  `cargo test <your_module>::`), run ONCE. Skip it if you are unsure.
+- Compile the files YOU wrote as often as you need, and format them,
+  with the project's own build and formatter commands scoped to those
+  files. No linter and no formatter run over the whole project.
+- Run the tests for the code YOU wrote, and its module, when you are
+  confident your code is ready or your fix is correct. Never the whole
+  test suite: the stage's gate runs it.
 - Report instead: files changed, assumptions made, anything unresolved.
   The stage's gate compiles, tests, and lints; the MAIN AGENT fixes.";
 
@@ -40,37 +43,52 @@ pub(super) const BLOCK_B: &str = r#"1. DELEGATION IS A COST DECISION: TOKENS TIM
    the subagent typically finishes under about 400,000 tokens, and never split
    below what that needs: every extra spawn pays the boot cost again. Pick PER
    SUBAGENT by what that piece needs, never once for the whole stage, and
-   default downward: HAIKU (`model: haiku` on loom-software-engineer) for
-   mechanical edits, boilerplate, scaffolding, and simple unit tests; codex
-   gpt-6-luna for that same work only when the user or the plan asks for it;
-   codex gpt-5.6-terra or SONNET (loom-software-engineer) for common
-   implementation and integration tests — most work belongs at this tier, and
-   neither lane is the default; OPUS (loom-senior-software-engineer, effort
-   high) for mainstream architecture and algorithm implementation, spawned
-   with `effort: xhigh` for hard debugging, core algorithmic or architectural
-   work, distributed systems, heavily multithreaded or parallel code, and
-   systems engineering; FABLE only for visual/UI design, a bug that survived a
-   delegated fix attempt, or extremely challenging algorithmic design. Codex
-   tiers (effort xhigh, via loom-codex-forwarder) exist only on stages listing
-   codex in implementers AND when the codex CLI + plugin are installed;
-   otherwise terra-tier work goes to sonnet and luna-tier work to haiku (loom
-   warns at startup when a stage lists codex it cannot use). In a standard
+   default downward. HAIKU (loom-software-developer, effort high): a piece
+   that is extremely simple, or whose brief is highly detailed — files,
+   exact change and acceptance stated. Never haiku: an open decision, a bug
+   of unknown cause, concurrency, security-sensitive code, a data-loss path.
+   Spawn `Explore` with `model: haiku` for locate-only sweeps (paths, symbols,
+   call sites, where a string occurs); the default sonnet when the answer
+   requires reading behavior. CODEX (effort xhigh) takes
+   straightforward, well-specified implementation (one concern, pinned
+   interfaces, mechanical acceptance, no git, no `.loom/`) when the stage lists
+   codex in implementers, the lane is available and quota has
+   room. No lane is first or default; list order means nothing. Verification,
+   review, planning, exploration, debugging and iteration on failing tests
+   stay with Claude. gpt-6.1-terra: implementation, integration tests,
+   boilerplate, scaffolding and simple unit tests; gpt-6.2-sol: a substantial
+   well-specified unit (about 4 to 6 file-sized changes) or a terra unit that
+   failed once; gpt-6-luna only when the user or the plan asks. Otherwise
+   terra- and sol-tier work goes to sonnet, and boilerplate and simple unit
+   tests to haiku. SONNET (loom-software-engineer): pieces that need exploration or the
+   initial iteration on failing tests, or are too large to brief in that
+   detail. A piece between sonnet and opus goes to sonnet.
+   OPUS (loom-senior-software-engineer, effort medium)
+   implements architecture across modules, new algorithms, concurrency,
+   distributed systems, security-sensitive code, bugs of unknown cause. It
+   takes no visual or CSS fixes, no fixes for review findings in code sonnet,
+   haiku or codex wrote (those return to the tier that wrote the piece and
+   escalate only on a failed fix), and no mainstream feature code. The
+   orchestrator passes no `effort` on a first attempt. FABLE implements only
+   visual/UI design and extremely challenging algorithmic design. In a standard
    stage the GATE is the orchestrator's single `loom check` (a fix round
    re-checks with `--criterion <n>`); an integration-verify stage runs the
    gate its own signal names. Either way the orchestrator owns fixes and the
    commit. Spawn BY AGENT TYPE.
-4. ESCALATE ON EVIDENCE, NOT ON HUNCH. Start at the cheapest plausible tier. A
-   fix that failed ONCE against clear acceptance criteria moves up exactly one
-   tier — haiku to sonnet, sonnet to opus, opus to fable — with the failed
-   attempt and its evidence in the new brief; never rerun the same tier on the
-   same bug. "This feels subtle" does not justify escalation. When a cheap
-   subagent's output is wrong, first ask whether the brief was detailed enough
-   — a vague brief is an orchestrator failure, not evidence the tier was too
-   small.
-5. DEBUGGING OR REPEATED FAILURE → spawn a `loom-advisor` (fable) subagent:
-   narrow scope, full detail supplied by the orchestrator, advice returned, no
-   writes. Its diagnosis then feeds a sonnet or opus implementer per point 2.
-   Do not let an implementer thrash on the same failure twice."#;
+4. FAILURE MOVES THE WORK UP ONE TIER. A failure misses clear acceptance:
+   a failing test, a correctness finding. A vague brief, or a worker that
+   stopped on an open decision, is an orchestrator failure: complete the
+   brief and respawn the same tier.
+   Settle every decision one lookup would answer before choosing a tier; one
+   left open is no reason to pick sonnet over haiku. A real failure moves up
+   one tier with every attempt and its evidence in the new brief: haiku,
+   sonnet, opus at effort medium, opus at `effort: high`; codex terra, sol,
+   then Claude at the tier the piece needs. Never skip a tier or rerun one on
+   the same failure.
+5. THE LADDER ENDS AT `loom-advisor` (fable, read-only), RARELY: spawn it
+   only after an opus implementer failed at effort high, typically a stubborn
+   bug, with every attempt. Its diagnosis goes to an opus implementer at
+   `effort: high`."#;
 
 /// BLOCK-D - the subagent context-ceiling rule, verbatim. Pinned against BOTH
 /// the subagent preamble (`loom-hooks/_subagent-preamble.txt`, which
@@ -103,12 +121,16 @@ pub(super) const RETIRED_PHRASES: &[&str] = &[
     concat!("Zero IDE ", "diagnostics"),
     concat!("haiku stays rare", " and trivial"),
     concat!("haiku (rare, trivial ", "mechanical edits)"),
-    // Retired: haiku was limited to renames and config values; it now takes
-    // boilerplate, scaffolding and simple unit tests, and luna only on request.
+    // Retired: haiku was limited to renames and config values; it takes
+    // extremely simple or highly detailed pieces, and luna runs only on request.
     concat!("mechanical edits such as a rename", " or a config value"),
     concat!("take the work ", "over"),
     concat!("report back ", "within"),
     concat!("hard ceiling on any", " single check"),
+    // Retired with the full-suite-at-the-gate rule: a subagent runs the tests
+    // for its own code and module, with no count limit.
+    concat!("AT MOST ONE ", "narrowly-scoped"),
+    concat!("never a repeated or ", "looping check"),
     // BLOCK-C: superseded by `loom subagents watch`'s own deadline/state.
     concat!("a check firing is NOT", " a deadline"),
     concat!("MUST carry a liveness", " signal"),
@@ -150,4 +172,12 @@ pub(super) const RETIRED_PHRASES: &[&str] = &[
     // only as `loom check`.
     concat!("Verification NEVER ", "delegates"),
     concat!("verification never ", "delegates"),
+    // Retired: opus runs at effort medium by default and `high` after a failed
+    // attempt; `xhigh` is no longer a subagent setting (`agents/loom-advisor.md`
+    // keeps its own frontmatter line, written without backticks).
+    concat!("`effort: ", "xhigh`"),
+    // Retired: luna-tier work no longer falls back to haiku; terra- and
+    // sol-tier work goes to sonnet when codex is unavailable.
+    concat!("luna-tier work to", " haiku"),
+    concat!("luna-tier work will fall back to", " haiku"),
 ];

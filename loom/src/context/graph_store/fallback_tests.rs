@@ -113,6 +113,58 @@ fn save_overlay_falls_back_to_memory_when_the_overlay_dir_is_read_only() {
 }
 
 #[test]
+fn discard_clears_denied_overlay_and_its_view() {
+    let temp = TempDir::new().unwrap();
+    let store = GraphStore::new(&temp.path().join("cache"), &temp.path().join("work"));
+    let overlay = layer_with("src/b.rs", "hash-b");
+    store
+        .fall_back_to_memory(
+            &store.overlay_path("plan", "stage"),
+            &overlay,
+            std::io::Error::new(std::io::ErrorKind::PermissionDenied, "denied").into(),
+        )
+        .unwrap();
+    assert!(store
+        .view("rev1", Some(("plan", "stage")))
+        .unwrap()
+        .graph
+        .files
+        .contains_key("src/b.rs"));
+
+    store.discard_overlay("plan", "stage").unwrap();
+    assert!(store.load_overlay("plan", "stage").unwrap().is_none());
+    assert!(!store
+        .resolved("rev1", Some(("plan", "stage")))
+        .unwrap()
+        .files
+        .contains_key("src/b.rs"));
+    assert!(!store
+        .view("rev1", Some(("plan", "stage")))
+        .unwrap()
+        .graph
+        .files
+        .contains_key("src/b.rs"));
+}
+
+#[test]
+fn failed_discard_keeps_memory_layer() {
+    let temp = TempDir::new().unwrap();
+    let store = GraphStore::new(&temp.path().join("cache"), &temp.path().join("work"));
+    let path = store.overlay_path("plan", "stage");
+    std::fs::create_dir_all(&path).unwrap();
+    let overlay = layer_with("src/b.rs", "hash-b");
+    store
+        .fall_back_to_memory(
+            &path,
+            &overlay,
+            std::io::Error::new(std::io::ErrorKind::PermissionDenied, "denied").into(),
+        )
+        .unwrap();
+    assert!(store.discard_overlay("plan", "stage").is_err());
+    assert_eq!(store.load_overlay("plan", "stage").unwrap(), Some(overlay));
+}
+
+#[test]
 fn a_replace_that_reaches_the_disk_drops_the_earlier_memory_fallback() {
     let temp = TempDir::new().unwrap();
     let store = GraphStore::new(&temp.path().join("cache"), &temp.path().join("work"));

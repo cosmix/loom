@@ -81,7 +81,7 @@ fn prose_named_nodes() -> Vec<SourceNode> {
 }
 
 /// The measured specimen: "write the recommendation in
-/// /home/dkaponis/src/loom/doc" returned five `write` helpers and three
+/// /home/username/src/loom/doc" returned five `write` helpers and three
 /// `home()` functions at `high` confidence. Every one of those matches came
 /// from a word the writer used as English, two of them lifted straight out of
 /// a filesystem path.
@@ -94,7 +94,7 @@ fn prose_named_nodes() -> Vec<SourceNode> {
 #[test]
 fn prose_words_and_path_segments_earn_no_exact_rung() {
     let candidates = rank_nodes(
-        "write the recommendation in /home/dkaponis/src/loom/doc",
+        "write the recommendation in /home/username/src/loom/doc",
         prose_named_nodes(),
     );
 

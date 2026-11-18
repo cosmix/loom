@@ -1,0 +1,336 @@
+/* The reading column's Markdown. Colours come from the shared tokens; Tailwind's preflight has
+ * reset margins, list markers and heading sizes, so they are set here. Hierarchy is made with
+ * size, weight and space (DESIGN.md, Type): headings step down from the page title, lists and
+ * quotes carry a quiet edge, tables sit on hairlines with no box, and code is one `--muted`
+ * level with no border of its own. Every size is in em, so Settings' reading size scales it all. */
+
+/* Document prose follows Settings' reading face and size (19px by default), held to 68ch.
+ * Chat prose takes the chrome face (chat-transcript.css); attachment quotes use the reading face. Tables and code
+ * blocks scroll inside themselves instead of widening the column. */
+.md {
+  min-width: 0;
+  max-width: min(100%, 68ch);
+  font-size: 1rem;
+  line-height: 1.65;
+  overflow-wrap: break-word;
+}
+
+[data-doc-container] .md,
+.concept-passage .md,
+.feature-pitch,
+.chat-passage {
+  font-family: var(--font-reading);
+  font-size: var(--reading-size);
+  line-height: var(--reading-line);
+}
+
+.md > * + *,
+.md li > * + *,
+.md blockquote > * + *,
+.md .md-footnote > * + * {
+  margin-top: 0.75em;
+}
+
+.md strong {
+  font-weight: 650;
+}
+
+/* ── Headings ─────────────────────────────────────────────────────────────── */
+
+.md h1,
+.md h2,
+.md h3,
+.md h4,
+.md h5,
+.md h6 {
+  font-family: var(--font-sans);
+  font-weight: 600;
+  line-height: 1.3;
+  letter-spacing: -0.012em;
+  text-wrap: balance;
+  scroll-margin-top: 1rem;
+}
+.md h1 {
+  font-size: 1.5em;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+}
+.md h2 {
+  font-size: 1.25em;
+  font-weight: 650;
+}
+.md h3 {
+  font-size: 1.08em;
+}
+.md h4 {
+  font-size: 1em;
+}
+.md h5,
+.md h6 {
+  font-size: 0.9em;
+  letter-spacing: 0;
+  color: var(--muted-foreground);
+}
+
+/* Space above a heading groups it with what follows; the gap below is smaller. A heading with a
+   copy control sits in `.md-heading`, which then takes the margins. */
+.md > :is(h1, h2),
+.md > .md-heading:where([data-depth="1"], [data-depth="2"]) {
+  margin-top: 2em;
+}
+.md > h3,
+.md > .md-heading[data-depth="3"] {
+  margin-top: 1.6em;
+}
+.md > :is(h4, h5, h6),
+.md > .md-heading:where([data-depth="4"], [data-depth="5"], [data-depth="6"]) {
+  margin-top: 1.3em;
+}
+.md > :is(h1, h2, h3, h4, h5, h6, .md-heading) + * {
+  margin-top: 0.5em;
+}
+.md > :first-child,
+.md > .md-heading:first-child {
+  margin-top: 0;
+}
+
+.md-heading {
+  font-family: var(--font-sans);
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+.md-heading > :is(h1, h2, h3, h4, h5, h6) {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.md-heading .md-copy {
+  opacity: 0;
+}
+.md-heading:hover .md-copy,
+.md-heading .md-copy:focus-visible,
+.md-heading .md-copy[data-state="copied"],
+.md-heading .md-copy[data-state="failed"] {
+  opacity: 1;
+}
+@media (hover: none) {
+  .md-heading .md-copy {
+    opacity: 1;
+  }
+}
+
+/* ── Links ────────────────────────────────────────────────────────────────── */
+
+/* A link in reading prose is always underlined (DESIGN.md, Focus and hover). */
+.md a {
+  text-decoration: underline;
+  text-decoration-color: var(--muted-foreground);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+.md a:hover {
+  text-decoration-color: currentColor;
+}
+.md .md-missing {
+  text-decoration: line-through;
+  color: var(--muted-foreground);
+}
+.md .md-outside {
+  text-decoration: underline dotted var(--muted-foreground);
+  cursor: help;
+}
+
+/* ── Lists ────────────────────────────────────────────────────────────────── */
+
+.md ul {
+  list-style: disc;
+  padding-left: 1.5em;
+}
+.md ol {
+  list-style: decimal;
+  padding-left: 1.7em;
+}
+.md li ul {
+  list-style: circle;
+}
+.md li::marker {
+  color: var(--muted-foreground);
+}
+.md ul.md-tasks {
+  list-style: none;
+  padding-left: 0.25em;
+}
+.md li + li {
+  margin-top: 0.3em;
+}
+/* Nested lists hang under their item with a little less air than top-level blocks. */
+.md li > :is(ul, ol) {
+  margin-top: 0.3em;
+}
+.md .md-task > input[type="checkbox"] {
+  margin-right: 0.5em;
+  vertical-align: middle;
+}
+.md .md-task > input + p {
+  display: inline;
+}
+
+/* ── Quotes and rules ─────────────────────────────────────────────────────── */
+
+/* A quote is set apart by a quiet edge and muted text; it never takes a hue. */
+.md blockquote {
+  margin-left: 0;
+  border-left: 2px solid var(--border);
+  padding-left: 1em;
+  color: var(--muted-foreground);
+}
+
+.md hr {
+  margin-block: 1.75em;
+  border: 0;
+  border-top: 1px solid var(--hairline);
+}
+
+.md mark {
+  background: var(--highlight);
+  color: var(--highlight-foreground);
+  border-radius: 2px;
+  padding: 0 1px;
+}
+
+/* ── Code ─────────────────────────────────────────────────────────────────── */
+
+/* Inline code and code blocks share one `--muted` level, in the mono face. A block draws no
+   edge of its own, and the code inside it takes no second box. */
+.md :not(pre) > code,
+.md a > code {
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+  padding: 0.08em 0.32em;
+  border-radius: 4px;
+  background: var(--muted);
+}
+
+.md .md-raw {
+  white-space: pre-wrap;
+  font-size: 0.875em;
+  color: var(--muted-foreground);
+}
+
+.md-code {
+  font-family: var(--font-mono);
+  max-width: 100%;
+  min-width: 0;
+  border-radius: 6px;
+  background: var(--muted);
+}
+.md-code-bar {
+  font-family: var(--font-sans);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.125rem 0.25rem 0 0.75rem;
+}
+.md-code-lang {
+  font-family: var(--font-sans);
+  font-size: var(--type-fine);
+  font-weight: 500;
+  color: var(--muted-foreground);
+}
+.md pre {
+  font-family: var(--font-mono);
+}
+/* The block scrolls inside itself at any width, so a long line never moves the page. */
+.md-code pre {
+  margin: 0;
+  padding: 0.25rem 0.75rem 0.75rem;
+  overflow-x: auto;
+  font-size: 0.85em;
+  line-height: 1.55;
+  white-space: pre;
+  overflow-wrap: normal;
+}
+
+/* A muted line under the source when a diagram could not be drawn. */
+.md-code-note {
+  margin: 0;
+  padding: 0 0.75rem 0.5rem;
+  font-family: var(--font-sans);
+  font-size: var(--type-fine);
+  color: var(--muted-foreground);
+}
+
+/* A drawn diagram: centred in the column, on the code block's ground, scrolling sideways inside itself. */
+.md-diagram {
+  max-width: 100%;
+  min-width: 0;
+  margin: 0;
+  padding: 0.75rem;
+  overflow-x: auto;
+  border-radius: 6px;
+  background: var(--muted);
+  text-align: center;
+}
+/* Mermaid caps the svg at its natural width inline, so a small diagram stays small and centred. */
+.md-diagram svg {
+  max-width: 100%;
+  height: auto;
+}
+
+/* ── Tables ───────────────────────────────────────────────────────────────── */
+
+/* Hairlines between rows and a firmer one under the head; the table's own edges are the column's. */
+.md-table-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+}
+.md-table {
+  min-width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9em;
+  line-height: 1.5;
+  overflow-wrap: normal;
+}
+.md-table thead tr {
+  border-bottom: 1px solid var(--border);
+}
+.md-table tbody tr + tr {
+  border-top: 1px solid var(--hairline);
+}
+.md-table th,
+.md-table td {
+  padding: 0.45em 1em 0.45em 0;
+  text-align: left;
+  vertical-align: top;
+}
+.md-table th:last-child,
+.md-table td:last-child {
+  padding-right: 0;
+}
+/* A long path or `fn::name` in a cell may break anywhere, so no column's min-content width pushes
+   the table past the reading column. `anywhere` (not `break-word`) also lowers the min-content
+   size. Scoped to code: on the whole cell a short label column shrinks until its words break
+   mid-word. Headers keep `nowrap`; fenced code still scrolls. */
+.md-table td code {
+  overflow-wrap: anywhere;
+}
+.md-table th {
+  font-family: var(--font-sans);
+  font-size: 0.92em;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.md-table .md-align-center {
+  text-align: center;
+}
+.md-table .md-align-right {
+  text-align: right;
+}
+
+.md-footnote {
+  font-size: 0.875em;
+  color: var(--muted-foreground);
+}
+.md-footnote-label {
+  margin-right: 0.375rem;
+}

@@ -1,35 +1,44 @@
 //! Orchestrator loop liveness ("is the scheduler still turning?").
 //!
-//! # Why this exists
-//!
-//! The daemon is two threads: a socket server that answers `loom status`, and
-//! the orchestrator poll loop that actually schedules stages. Nothing tied the
-//! two together, so a loop that stopped turning — blocked in a subprocess,
-//! wedged on a git operation — left the daemon answering "● daemon running"
-//! while no stage would ever start again. The only visible symptom was a stage
-//! sitting in `Queued` forever, which looks identical to a dependency problem.
+//! The daemon supervises the orchestrator and host jobs alongside its socket
+//! server. An orchestrator error or panic triggers shutdown, but a loop blocked
+//! in a subprocess or git operation can leave the server responsive without
+//! scheduling stages.
 //!
 //! Session heartbeats (`monitor::heartbeat`) answer "is the *agent* alive?".
 //! This answers "is the *scheduler* alive?", which is a different question and
-//! was previously unanswerable from outside the process.
+//! can be inspected from outside the process.
 //!
 //! The loop stamps this file with a timestamp and the phase it is entering.
 //! When the file goes stale while the daemon process is up, the loop is stuck,
 //! and the recorded phase says where.
+//!
+//! Format: line 1 is the RFC 3339 timestamp, line 2 the phase. A long operation
+//! wrapped by [`crate::orchestrator::busy::while_busy`] adds line 3,
+//! `busy <op> <started_at> <stage_id>`, and a helper thread keeps re-stamping the
+//! file while the operation runs. A third line that fails validation reads as
+//! "not busy"; it never hides the tick. Every phase entry rewrites two lines, which
+//! clears the busy line.
 
 use anyhow::Result;
 use chrono::{DateTime, Utc};
 use std::path::{Path, PathBuf};
 
+use super::busy::{Busy, BusyOp};
+
 /// File name inside `.loom/work/` holding the last loop tick.
 const TICK_FILE: &str = "orchestrator.tick";
 
+/// Longest stage id, in bytes, a busy line may carry.
+const MAX_STAGE_ID_BYTES: usize = 128;
+
 /// How far behind the tick may fall before the loop is considered stalled.
 ///
-/// The poll interval is 5s, so this is twelve missed iterations — long enough
-/// that a slow git operation or a bounded 5s teardown never trips it, short
-/// enough that an operator notices within a coffee break rather than
-/// overnight.
+/// The poll interval is 5s, so this is twelve missed iterations. The threshold
+/// applies to unwrapped work only: operations known to run longer re-stamp the
+/// tick from a helper thread through `busy::while_busy`, and are judged against
+/// their own ceiling. It is short enough that an operator notices a real stall
+/// within a coffee break rather than overnight.
 pub const STALL_THRESHOLD_SECS: i64 = 60;
 
 /// Phase of the poll loop, recorded alongside the tick so a stall report can
@@ -72,6 +81,8 @@ impl Phase {
 pub struct Tick {
     pub recorded_at: DateTime<Utc>,
     pub phase: Option<Phase>,
+    /// The wrapped operation running when this tick was written, if any.
+    pub busy: Option<Busy>,
 }
 
 impl Tick {
@@ -100,8 +111,72 @@ fn tick_path(work_dir: &Path) -> PathBuf {
 /// line every few seconds, and those conditions surface far more loudly
 /// elsewhere.
 pub fn record(work_dir: &Path, phase: Phase) {
-    let content = format!("{}\n{}\n", Utc::now().to_rfc3339(), phase.as_str());
-    let _ = std::fs::write(tick_path(work_dir), content);
+    write_tick(work_dir, phase, None);
+}
+
+/// Stamp the current time and phase plus the busy line for `busy`. Only
+/// `busy::while_busy` calls this; best-effort like [`record`].
+pub fn record_busy(work_dir: &Path, phase: Phase, busy: &Busy) {
+    debug_assert!(
+        valid_stage_id(&busy.stage_id),
+        "a busy line with stage id {:?} would read back as not busy",
+        busy.stage_id
+    );
+    write_tick(work_dir, phase, Some(busy));
+}
+
+/// Publish the tick through `safe_replace::publish_in_dir_reporting`, so a
+/// reader sees the old tick or the new one and a planted symlink is replaced,
+/// never written through. `work_dir` may itself be a symlink (a worktree's
+/// `.loom/work`); it is resolved once and opened without following links.
+fn write_tick(work_dir: &Path, phase: Phase, busy: Option<&Busy>) {
+    let mut content = format!("{}\n{}\n", Utc::now().to_rfc3339(), phase.as_str());
+    if let Some(busy) = busy {
+        content.push_str(&format!(
+            "busy {} {} {}\n",
+            busy.op.as_str(),
+            busy.started_at.to_rfc3339(),
+            busy.stage_id
+        ));
+    }
+    let Ok(dir) = work_dir
+        .canonicalize()
+        .map_err(anyhow::Error::from)
+        .and_then(|dir| crate::fs::safe_fs::safe_open_dirfd(&dir))
+    else {
+        return;
+    };
+    // A directory-sync failure is dropped with any other error: see `record`.
+    let _ = crate::fs::safe_replace::publish_in_dir_reporting(
+        &dir,
+        std::ffi::OsStr::new(TICK_FILE),
+        content.as_bytes(),
+        0o666,
+        false,
+    );
+}
+
+/// Whether `id` may appear in a busy line: non-empty, at most
+/// [`MAX_STAGE_ID_BYTES`], and only ASCII letters, digits, `-`, `_` and `.`.
+fn valid_stage_id(id: &str) -> bool {
+    !id.is_empty()
+        && id.len() <= MAX_STAGE_ID_BYTES
+        && id
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.'))
+}
+
+/// Parse `busy <op> <started_at> <stage_id>`; any rule failure is `None`.
+fn parse_busy(line: &str) -> Option<Busy> {
+    let mut parts = line.strip_prefix("busy ")?.splitn(3, ' ');
+    let op = BusyOp::parse(parts.next()?)?;
+    let started_at = DateTime::parse_from_rfc3339(parts.next()?).ok()?;
+    let stage_id = parts.next().filter(|id| valid_stage_id(id))?;
+    Some(Busy {
+        op,
+        stage_id: stage_id.to_string(),
+        started_at: started_at.with_timezone(&Utc),
+    })
 }
 
 /// Read the last recorded tick, if any.
@@ -125,9 +200,11 @@ pub fn read(work_dir: &Path) -> Result<Option<Tick>> {
         return Ok(None);
     };
 
+    let phase = lines.next().and_then(|p| Phase::from_str(p.trim()));
     Ok(Some(Tick {
         recorded_at: recorded_at.with_timezone(&Utc),
-        phase: lines.next().and_then(|p| Phase::from_str(p.trim())),
+        phase,
+        busy: lines.next().and_then(parse_busy),
     }))
 }
 
@@ -157,6 +234,25 @@ mod tests {
     }
 
     #[test]
+    fn test_record_replaces_a_planted_symlink_and_follows_a_symlinked_work_dir() {
+        let temp = TempDir::new().unwrap();
+        let work = temp.path().join("work");
+        std::fs::create_dir(&work).unwrap();
+        let victim = temp.path().join("victim");
+        std::fs::write(&victim, "keep").unwrap();
+        std::os::unix::fs::symlink(&victim, work.join(TICK_FILE)).unwrap();
+        let link = temp.path().join("link");
+        std::os::unix::fs::symlink(&work, &link).unwrap();
+
+        record(&link, Phase::Idle);
+
+        assert_eq!(std::fs::read_to_string(&victim).unwrap(), "keep");
+        let meta = std::fs::symlink_metadata(work.join(TICK_FILE)).unwrap();
+        assert!(meta.is_file(), "the planted link is replaced by the tick");
+        assert_eq!(read(&work).unwrap().unwrap().phase, Some(Phase::Idle));
+    }
+
+    #[test]
     fn test_read_returns_none_when_never_recorded() {
         let temp = TempDir::new().unwrap();
         assert!(read(temp.path()).unwrap().is_none());
@@ -168,6 +264,7 @@ mod tests {
         let tick = Tick {
             recorded_at: now - Duration::seconds(STALL_THRESHOLD_SECS - 1),
             phase: Some(Phase::Idle),
+            busy: None,
         };
 
         assert!(!tick.is_stalled(now));
@@ -181,6 +278,7 @@ mod tests {
         let tick = Tick {
             recorded_at: now - Duration::hours(10),
             phase: Some(Phase::Events),
+            busy: None,
         };
 
         assert!(tick.is_stalled(now));
@@ -193,6 +291,7 @@ mod tests {
         let tick = Tick {
             recorded_at: now + Duration::minutes(5),
             phase: None,
+            busy: None,
         };
 
         assert_eq!(tick.age_secs(now), 0);
@@ -215,5 +314,60 @@ mod tests {
         clear(temp.path());
 
         assert!(read(temp.path()).unwrap().is_none());
+    }
+
+    fn busy_for(stage_id: &str) -> Busy {
+        Busy {
+            op: BusyOp::MergeVerification,
+            stage_id: stage_id.to_string(),
+            started_at: Utc::now(),
+        }
+    }
+
+    #[test]
+    fn test_record_busy_roundtrips_the_busy_line() {
+        let temp = TempDir::new().unwrap();
+        let busy = busy_for("stage-a.1_x");
+
+        record_busy(temp.path(), Phase::Events, &busy);
+        let tick = read(temp.path()).unwrap().expect("tick should be written");
+
+        assert_eq!(tick.phase, Some(Phase::Events));
+        assert_eq!(tick.busy, Some(busy));
+    }
+
+    #[test]
+    fn test_record_after_record_busy_clears_the_busy_line() {
+        let temp = TempDir::new().unwrap();
+
+        record_busy(temp.path(), Phase::Events, &busy_for("stage-a"));
+        record(temp.path(), Phase::Idle);
+
+        assert_eq!(read(temp.path()).unwrap().unwrap().busy, None);
+    }
+
+    #[test]
+    fn test_bad_busy_lines_read_as_not_busy() {
+        let now = Utc::now().to_rfc3339();
+        let bad = [
+            format!("busy provisioning {now}"),
+            format!("busy provisioning {now} "),
+            format!("busy provisioning {now} a b"),
+            format!("busy provisioning {now} {}", "a".repeat(129)),
+            format!("busy nope {now} a"),
+            "busy provisioning yesterday a".to_string(),
+            format!("busy  provisioning {now} a"),
+            format!("busy provisioning {now} \u{e9}"),
+            format!("note provisioning {now} a"),
+        ];
+        for line in bad {
+            let temp = TempDir::new().unwrap();
+            let content = format!("{now}\nspawning\n{line}\n");
+            std::fs::write(temp.path().join(TICK_FILE), content).unwrap();
+
+            let tick = read(temp.path()).unwrap().expect("the tick still reads");
+            assert_eq!(tick.phase, Some(Phase::Spawning), "{line:?}");
+            assert_eq!(tick.busy, None, "{line:?}");
+        }
     }
 }

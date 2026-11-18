@@ -18,7 +18,10 @@ use super::super::detect::detect_stage_type;
 use super::super::types::{AcceptanceCriterion, StageDefinition, StageType};
 use super::search_args::SearchArgs;
 use super::shell_lex::{lex, Token, Word};
-use crate::git::runner::{run_git, run_git_bool, run_git_checked};
+use crate::git::changes::{changed_names, DiffNames};
+use crate::git::revision::has_commits;
+use crate::git::runner::{run_git, run_git_checked};
+use crate::git::worktree::WorktreeGit;
 
 /// The only short options an evaluable criterion may use.
 const EVALUABLE_FLAGS: &str = "qFinwe";
@@ -43,8 +46,10 @@ pub(crate) fn check_base_tree(
     let Some(root) = repo_root else {
         return skipped("no git repository contains the plan file");
     };
-    let Some(tree) = HeadTree::new(root) else {
-        return skipped("HEAD does not resolve to a commit");
+    let tree = match HeadTree::new(root) {
+        Ok(Some(tree)) => tree,
+        Ok(None) => return skipped("HEAD does not resolve to a commit"),
+        Err(error) => return skipped(&format!("git cannot read HEAD: {error:#}")),
     };
     let mut report = BaseTreeReport::default();
     for stage in stages {
@@ -169,18 +174,19 @@ pub(crate) struct HeadTree<'a> {
 }
 
 impl<'a> HeadTree<'a> {
-    /// HEAD of the repository at `root`; `None` when HEAD is no commit.
-    pub(crate) fn new(root: &'a Path) -> Option<Self> {
+    /// HEAD of the repository at `root`; `None` when HEAD is no commit, an error when git
+    /// cannot say (`root` is already known to be inside a repository).
+    pub(crate) fn new(root: &'a Path) -> anyhow::Result<Option<Self>> {
         let root = if root.as_os_str().is_empty() {
             Path::new(".")
         } else {
             root
         };
-        let resolves = run_git_bool(&["rev-parse", "--verify", "--quiet", "HEAD^{commit}"], root);
-        resolves.then(|| HeadTree {
+        let resolves = has_commits(&WorktreeGit::discovered(root))?;
+        Ok(resolves.then(|| HeadTree {
             root,
             changed: OnceCell::new(),
-        })
+        }))
     }
 
     /// Push the warnings `search` earns against HEAD.
@@ -270,14 +276,19 @@ fn exit_status(matched: bool, missing: bool, quiet: bool) -> i32 {
     }
 }
 
-/// Paths whose checkout may differ from HEAD, staged or not. Plumbing
-/// `diff-index` never refreshes the index, so verification writes nothing; a
-/// stat-dirty but unchanged file is listed and read through `git show`.
+/// Paths whose checkout differs from HEAD, staged or not, without writing
+/// the worktree's index. Stat-only changes are excluded.
 fn changed_paths(root: &Path) -> Option<HashSet<String>> {
-    let args = ["diff-index", "--name-only", "-z", "HEAD", "--"];
-    let listing = run_git_checked(&args, root).ok()?;
-    let paths = listing.split('\0').filter(|p| !p.is_empty());
-    Some(paths.map(str::to_string).collect())
+    let query = DiffNames {
+        from: "HEAD",
+        to: None,
+        filter: None,
+        all_submodules: false,
+        pathspecs: &[],
+    };
+    changed_names(&WorktreeGit::discovered(root), &query)
+        .ok()
+        .map(|paths| paths.into_iter().collect())
 }
 
 /// Whether any line of `bytes` matches, the way `rg` reads lines. Binary

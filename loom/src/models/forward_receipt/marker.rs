@@ -1,6 +1,7 @@
 use serde::Deserialize;
 
-use super::{is_safe_id, ForwardBackend, ForwardState};
+use super::{ForwardBackend, ForwardState};
+use crate::agent_state::is_safe_id;
 
 pub const START_PREFIX: &str = "LOOM-FORWARD-START ";
 pub const END_PREFIX: &str = "LOOM-FORWARD-END ";
@@ -186,7 +187,13 @@ fn validate_end(
     outcome: ForwardState,
     exit_code: i32,
 ) -> Result<EndMarker, ParseFailure> {
-    if version != 1 || actual != expected || !is_safe_id(&backend_id) || !outcome.is_terminal() {
+    // The direct wrapper ends a forward whose supervisor could not reach a
+    // verdict with outcome `unknown`; the marker is well formed, and its
+    // consumers decide what an unknown outcome proves. The companion wrapper
+    // never writes one.
+    let reportable = outcome.is_terminal()
+        || (outcome == ForwardState::Unknown && expected == ForwardBackend::Direct);
+    if version != 1 || actual != expected || !is_safe_id(&backend_id) || !reportable {
         return Err(ParseFailure::Invalid);
     }
     Ok(EndMarker {

@@ -1,0 +1,194 @@
+/* The "Taking shape" panel: one surface standing on the page beside (or under) the conversation.
+   Inside it nothing draws a box: rows are a label, then its value, on one text column, divided by
+   hairlines; lists are prose bullets; an empty value is muted words. The size choice's track is
+   at the end of this file, the proposal in proposal.css. */
+
+[data-loom-plan] .kickoff-shape {
+  display: grid;
+  align-content: start;
+  gap: var(--space-3);
+  min-width: 0;
+  padding: var(--space-4);
+  border: 1px solid var(--hairline);
+  border-radius: var(--corner-surface);
+  background: var(--card);
+  color: var(--foreground);
+  font-size: var(--type-body);
+  line-height: var(--leading-body);
+  overflow-wrap: anywhere;
+}
+
+[data-loom-plan] .kickoff-shape__title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  font-size: var(--type-title);
+  font-weight: 600;
+  line-height: var(--leading-ui);
+}
+
+[data-loom-plan] .kickoff-shape__title svg {
+  width: 16px;
+  height: 16px;
+  color: var(--muted-foreground);
+}
+
+[data-loom-plan] .kickoff-shape p {
+  margin: 0;
+}
+
+/* Panel text keeps the type floor: a reason or status under a control is set at --type-ui here. */
+[data-loom-plan] .kickoff-shape .plan-fine {
+  font-size: var(--type-ui);
+}
+
+[data-loom-plan] .kickoff-muted {
+  color: var(--muted-foreground);
+}
+
+/* The glyph hangs in its own narrow track; the label and every value share the text column. The
+   h3 stays a direct child of the row because the help scene reads `:scope > h3`. */
+[data-loom-plan] .kickoff-row {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  gap: var(--space-1) var(--space-2);
+}
+
+[data-loom-plan] .kickoff-shape > .kickoff-row + .kickoff-row {
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--hairline);
+}
+
+[data-loom-plan] .kickoff-row > :not(.kickoff-row__icon) {
+  grid-column: 2;
+  min-width: 0;
+}
+
+[data-loom-plan] .kickoff-row__icon {
+  grid-column: 1;
+  grid-row: 1;
+  display: grid;
+  place-items: center;
+  height: calc(var(--type-ui) * var(--leading-body));
+  color: var(--muted-foreground);
+}
+
+[data-loom-plan] .kickoff-row__icon svg {
+  width: 14px;
+  height: 14px;
+}
+
+[data-loom-plan] .kickoff-row__icon[data-tone="ok"] {
+  color: var(--tone-completed);
+}
+
+[data-loom-plan] .kickoff-row__icon[data-tone="warn"] {
+  color: var(--tone-warning);
+}
+
+[data-loom-plan] .kickoff-row__label {
+  grid-row: 1;
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: var(--type-ui);
+  font-weight: 500;
+  line-height: var(--leading-body);
+}
+
+/* Settled decisions and open questions read as prose bullets. */
+[data-loom-plan] .kickoff-row__list {
+  display: grid;
+  gap: var(--space-1);
+  margin: 0;
+  padding-inline-start: 1.1em;
+  list-style: disc;
+}
+
+[data-loom-plan] .kickoff-row__list > li {
+  white-space: pre-wrap;
+}
+
+[data-loom-plan] .kickoff-row__list > li::marker {
+  color: var(--muted-foreground);
+}
+
+/* The name, shown as a chip; the user names the work in the conversation. */
+[data-loom-plan] .kickoff-name {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-2);
+  min-width: 0;
+}
+
+[data-loom-plan] .kickoff-chip {
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: var(--type-ui);
+  overflow-wrap: anywhere;
+}
+
+[data-loom-plan] .kickoff-sections {
+  display: grid;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+[data-loom-plan] .kickoff-sections > li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: baseline;
+  gap: 0 var(--space-2);
+}
+
+[data-loom-plan] .kickoff-sections__no {
+  color: var(--muted-foreground);
+  font-family: var(--font-mono);
+  font-size: var(--type-ui);
+}
+
+/* The section's state sits under its title, a glyph and a word. */
+[data-loom-plan] .kickoff-state {
+  grid-column: 2;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--muted-foreground);
+  font-size: var(--type-ui);
+  white-space: nowrap;
+}
+
+[data-loom-plan] .kickoff-state svg {
+  width: 12px;
+  height: 12px;
+}
+
+[data-loom-plan] .kickoff-state[data-state="settled"] svg {
+  color: var(--tone-completed);
+}
+
+[data-loom-plan] .kickoff-shape__foot {
+  display: grid;
+  gap: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--hairline);
+}
+
+[data-loom-plan] .kickoff-notice {
+  color: var(--muted-foreground);
+}
+
+[data-loom-plan] .kickoff-notice code {
+  font-family: var(--font-mono);
+}
+
+/* An ended draft sets the same rows as part of its document, on the page ground. */
+[data-loom-plan] .kickoff-draft__shape {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+}

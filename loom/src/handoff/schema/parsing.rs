@@ -1,6 +1,7 @@
 //! Handoff parsing logic supporting both V2 and V1 formats.
 
 use super::v2::HandoffV2;
+use crate::parser::frontmatter::split_frontmatter_raw;
 
 /// Result of attempting to parse a handoff file.
 ///
@@ -57,12 +58,8 @@ impl ParsedHandoff {
 fn extract_yaml_from_handoff(content: &str) -> Option<String> {
     let trimmed = content.trim();
 
-    // Check for YAML frontmatter
-    if let Some(after_first) = trimmed.strip_prefix("---") {
-        if let Some(end_idx) = after_first.find("---") {
-            let yaml = after_first[..end_idx].trim();
-            return Some(yaml.to_string());
-        }
+    if let Ok((yaml, _)) = split_frontmatter_raw(trimmed) {
+        return Some(yaml.trim_start().to_string());
     }
 
     // Check if the file is pure YAML (starts with version:)
@@ -120,7 +117,7 @@ context_tokens: 120000
     fn test_extract_yaml_from_handoff_frontmatter() {
         let content = "---\nversion: 2\n---\n# Rest of file";
         let yaml = extract_yaml_from_handoff(content).unwrap();
-        assert_eq!(yaml, "version: 2");
+        assert_eq!(yaml.trim(), "version: 2");
     }
 
     #[test]
@@ -134,5 +131,37 @@ context_tokens: 120000
     fn test_extract_yaml_from_handoff_prose() {
         let content = "# Handoff\n\nSome prose content";
         assert!(extract_yaml_from_handoff(content).is_none());
+    }
+
+    #[test]
+    fn frontmatter_requires_exact_unindented_delimiter_lines() {
+        let content = "---\r\nversion: 2\r\nsession_id: test\r\nstage_id: test\r\nnotes: |\r\n  ---\r\n  before---after\r\n----\r\n---suffix\r\n---  \r\n# body";
+        let yaml = extract_yaml_from_handoff(content).unwrap();
+        assert!(yaml.contains("  ---\r\n"));
+        assert!(yaml.contains("----\r\n"));
+        assert!(yaml.contains("---suffix\r\n"));
+        assert!(!yaml.contains("# body"));
+    }
+
+    #[test]
+    fn missing_closing_delimiter_and_malformed_frontmatter_fall_back() {
+        for content in [
+            "---\nversion: 2\nsession_id: test\nstage_id: test\n",
+            "---\nversion: [invalid\n---\n# prose",
+            "---suffix\nversion: 2\n---\n",
+        ] {
+            assert_eq!(ParsedHandoff::parse(content).as_v1(), Some(content));
+        }
+    }
+
+    #[test]
+    fn indented_scalar_and_crlf_parse_as_v2() {
+        let content = "---\r\nversion: 2\r\nsession_id: test\r\nstage_id: test\r\ncontext_tokens: 0\r\ncompleted_tasks:\r\n  - description: |\r\n      ---\r\n      before---after\r\n---\r\n# body";
+        let parsed = ParsedHandoff::parse(content);
+        let handoff = parsed.as_v2().unwrap();
+        assert_eq!(
+            handoff.completed_tasks[0].description,
+            "---\nbefore---after\n"
+        );
     }
 }

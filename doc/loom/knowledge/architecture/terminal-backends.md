@@ -1,6 +1,6 @@
 # Terminal Backends
 
-> Native and tmux backends
+>
 
 ## Two Lanes Behind One Dispatcher
 
@@ -9,8 +9,8 @@ call goes through. It wraps two concrete lanes:
 
 | Lane               | Type                                 | Where sessions run                      |
 | ------------------ | ------------------------------------ | --------------------------------------- |
-| `Native` (default) | `NativeBackend` (`terminal/native/`) | a host terminal emulator window         |
-| `Tmux` (opt-in)    | `TmuxBackend` (`terminal/tmux/`)     | a detached tmux server, no GUI required |
+| `Native` (opt-in)  | `NativeBackend` (`terminal/native/`) | a host terminal emulator window         |
+| `Tmux` (default)   | `TmuxBackend` (`terminal/tmux/`)     | a detached tmux server, no GUI required |
 
 `SessionBackend::from_config(work_dir)` constructs `NativeBackend::new` eagerly when Native is configured (`orchestrator/terminal/backend.rs::from_config`), so valid configuration alone does not guarantee success: terminal detection can fail on a headless host. Tmux configuration constructs no native backend at startup. Each native detection/process-discovery probe has a two-second deadline.
 
@@ -20,10 +20,10 @@ When Tmux is configured but a persisted session belongs to Native, `native_lane`
 
 - **Config:** `[terminal]` / `backend = "native" | "tmux"` in `.loom/work/config.toml`.
   `TerminalConfig` (`models/session/types.rs::TerminalConfig`) holds one `SessionBackendKind`
-  (`models/session/types.rs::SessionBackendKind`, `#[serde(rename_all = "lowercase")]`, `#[default] Native`).
+  (`models/session/types.rs::SessionBackendKind`, `#[serde(rename_all = "lowercase")]`, `#[default] Tmux`).
   Helpers `read_terminal_config` / `write_terminal_config` (`fs/work_dir/config_sections/terminal_config.rs`); a missing
   `backend` key (section absent or empty) falls through to `~/.loom/config.toml`'s `terminal.backend`, THEN the built-in default —
-  absence is the inheritance channel, not a synonym for native. Written at init by
+  absence is the inheritance channel, not a synonym for any one backend. Written at init by
   `commands/init/plan_setup.rs`, and only when someone chose explicitly.
 - **CLI:** `--backend <native|tmux>` on both `loom init` (skips the interactive prompt) and
   `loom run` / `loom run --foreground` (persists to `[terminal]`). `loom run`'s
@@ -214,7 +214,12 @@ would become permanently unattributable and leak forever. `--clean` therefore re
 even when alive; the normal path stays conservative.
 
 `list_loom_sockets` skips names starting `loom-view-` so the overview viewer is not reported as
-unattributable. Nothing currently reaps that viewer socket (see `concerns.md`).
+unattributable. Explicit clean and init retire this repository's viewer through its separate
+ownership-checked path (`tmux/viewer/retire.rs`). An owned socket nothing listens on is what a dead
+server leaves, and also what a starting one shows between its bind and its listen, so it is removed only
+under tmux's own start lock, an exclusive `flock` on `<socket>.lock` (`tmux/viewer/start_lock.rs`, read
+from tmux 3.6). A socket that listens and cannot be verified is refused. Residual: a server rebinding its
+socket on SIGUSR1 takes no such lock.
 
 ## macOS Terminal Detection Priority
 
@@ -255,7 +260,7 @@ Every tmux server starts with `set-option -g history-limit 50000` and `set-optio
 **`[terminal]` config**
 
 - `loom/src/models/session/types.rs` — `SessionBackendKind` (`native`/`tmux`, default
-  `native`), `TerminalConfig`, `Session.backend`.
+  `tmux`), `TerminalConfig`, `Session.backend`.
 - `loom/src/fs/work_dir/config_sections/terminal_config.rs` — `TERMINAL_SECTION`, `read_terminal_config` /
   `write_terminal_config`.
 - `loom/src/commands/init/plan_setup.rs::initialize_with_plan` — writes the section at init.
@@ -269,7 +274,7 @@ Every tmux server starts with `set-option -g history-limit 50000` and `set-optio
   running (prints a restart hint), and calls `resolve_backend_flag_with_probe`, which FAILS startup
   (not just warns) when the effective backend is tmux and tmux is not on PATH.
 - `loom/src/commands/init/backend.rs::resolve_backend_choice`; flag wins, else prompts when
-  both stdin and stdout are TTYs, else defaults to native.
+  both stdin and stdout are TTYs, else inherits (user config, then the built-in tmux default).
 
 **`loom attach`**
 

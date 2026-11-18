@@ -30,7 +30,7 @@ const VALUE_WIDTH: u16 = 11;
 const SOURCE_WIDTH: u16 = 11;
 /// The tier block: one blank line and the three tiers.
 const TIER_HEIGHT: u16 = 4;
-/// The closing block: one blank line and the line naming what `s` writes.
+/// The closing block: the editing destination and all pending save targets.
 const WRITE_HEIGHT: u16 = 2;
 
 /// Render the tall panel beside the table.
@@ -109,7 +109,7 @@ fn strip_help(row: &ConfigRow, width: u16) -> Line<'static> {
 }
 
 /// The strip's second line: the kind, all three tiers, the built-in default,
-/// and the file `s` writes, separated by rules — the same facts the panel
+/// and the staged scopes `s` writes, separated by rules — the same facts the panel
 /// stacks, laid flat.
 ///
 /// The write segment is laid out FIRST and its width reserved out of the
@@ -120,7 +120,7 @@ fn strip_help(row: &ConfigRow, width: u16) -> Line<'static> {
 /// through. A final pass over the assembled line is only a safety net: the
 /// two pieces already sum to at most `width`.
 fn strip_facts(row: &ConfigRow, state: &ConfigState, width: u16) -> Line<'static> {
-    let write = strip_write(state, usize::from(width));
+    let write = strip_write(state);
     let room = (usize::from(width).saturating_sub(spans_width(&write))) as u16;
 
     let mut spans = vec![Span::styled(
@@ -167,21 +167,25 @@ fn strip_tier(row: &ConfigRow, scope: Scope) -> Vec<Span<'static>> {
     spans
 }
 
-/// The strip's closing segment: `s → <file>`, the path cut from the left so
-/// its tail still names the file.
-fn strip_write(state: &ConfigState, room: usize) -> Vec<Span<'static>> {
-    let Some(path) = state.active_path() else {
-        return vec![Span::styled("s writes nothing here", theme::secondary())];
-    };
-    let lead = "s → ";
+/// The strip's closing segment names every scope with a pending write.
+fn strip_write(state: &ConfigState) -> Vec<Span<'static>> {
+    let targets = save_scopes(state);
     vec![
         Span::styled("s", theme::key_hint()),
         Span::styled(" → ", theme::secondary()),
-        Span::styled(
-            super::tail(path, room.saturating_sub(text_width(lead))),
-            theme::primary(),
-        ),
+        Span::styled(targets, theme::primary()),
     ]
+}
+
+/// Scope names are short enough to survive the strip's narrow layout; paths
+/// live in the scope tabs and the tall inspector.
+fn save_scopes(state: &ConfigState) -> &'static str {
+    match state.staged_counts() {
+        (0, 0) => "no pending edits",
+        (0, _) => "project",
+        (_, 0) => "user",
+        (_, _) => "user + project",
+    }
 }
 
 /// The rule that separates the strip's segments.
@@ -261,17 +265,17 @@ fn tier_line(row: &ConfigRow, scope: Scope, active: Scope) -> Line<'static> {
     ])
 }
 
-/// What `s` will do, named by file, so pressing it is never a guess.
+/// The active editing file and every scope with staged edits. The scope tabs
+/// show each file's full path; this fixed-width panel keeps their names visible.
 fn write_line(state: &ConfigState) -> Vec<Line<'static>> {
-    let spans = match state.active_path() {
-        Some(path) => vec![
-            Span::styled("s writes to ", theme::secondary()),
-            Span::styled(path.to_owned(), theme::primary()),
-        ],
-        None => vec![Span::styled(
-            "s writes nothing here — run loom init to create a project config",
-            theme::secondary(),
-        )],
+    let editing = match state.active_path() {
+        Some(path) => format!(
+            "editing {}: {}",
+            state.scope().word(),
+            super::tail(path, 18)
+        ),
+        None => "editing project: unavailable".to_owned(),
     };
-    vec![Line::default(), Line::from(spans)]
+    let saving = format!("s writes: {}", save_scopes(state));
+    vec![Line::from(editing), Line::from(saving)]
 }

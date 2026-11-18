@@ -307,7 +307,7 @@ impl Fixture {
             "type": "assistant", "sessionId": PARENT, "timestamp": Utc::now().to_rfc3339(),
             "message": {"content": [{
                 "type": "tool_use", "id": TOOL, "name": "Bash",
-                "input": {"command": "~/.claude/hooks/loom/codex-forward.sh task 'x' --model gpt-5.6-terra --effort xhigh --write"}
+                "input": {"command": "~/.claude/hooks/loom/codex-forward.sh task 'x' --model gpt-6.1-terra --effort xhigh --write"}
             }]},
         });
         let tool_result = json!({
@@ -363,7 +363,7 @@ fn codex_record(
     let terminal = state == LifecycleState::Completed;
     let evidence = CodexEvidence {
         evidence_kind,
-        requested_model: "gpt-6-sol".into(),
+        requested_model: "gpt-6.2-sol".into(),
         requested_effort: "xhigh".into(),
         invocation_id: INVOCATION.into(),
         job_id: Some(JOB.into()),

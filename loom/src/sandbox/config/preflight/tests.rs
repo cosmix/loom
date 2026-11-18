@@ -1,12 +1,10 @@
 //! Each refusal of the sandbox preflight with a failing input and a passing
 //! control, over injected host facts and temporary directories only.
 
-use super::hook_commands::HookDocument;
 use super::local_settings::strip_loom_written_keys;
 use super::*;
 use crate::fs::permissions::{guard_hooks_config, install_loom_hooks_to};
-use crate::hooks::HooksConfig;
-use serde_json::{json, Map, Value};
+use serde_json::{json, Value};
 use std::os::unix::fs::{symlink, PermissionsExt};
 use tempfile::TempDir;
 
@@ -167,137 +165,6 @@ fn check_4_refuses_a_hook_tool_that_resolves_under_a_writable_root() {
     );
 }
 
-/// A repository and a writable root (both session-writable), a directory
-/// outside every root, and a PATH directory, all in one temp dir.
-struct Scene {
-    temp: TempDir,
-    repo: PathBuf,
-    writable: PathBuf,
-    outside: PathBuf,
-    bin: PathBuf,
-}
-
-fn scene() -> Scene {
-    let temp = TempDir::new().unwrap();
-    let [repo, writable, outside, bin] =
-        ["repo", "writable", "outside", "bin"].map(|name| temp.path().join(name));
-    for dir in [&repo, &writable, &outside, &bin] {
-        std::fs::create_dir_all(dir).unwrap();
-    }
-    Scene {
-        temp,
-        repo,
-        writable,
-        outside,
-        bin,
-    }
-}
-
-fn document(event: &str, command: &str) -> HookDocument {
-    let entry = json!([{ "matcher": "*", "hooks": [{ "type": "command", "command": command }] }]);
-    let mut hooks = Map::new();
-    hooks.insert(event.to_string(), entry);
-    HookDocument {
-        label: "settings.json".to_string(),
-        settings: json!({ "hooks": hooks }),
-    }
-}
-
-fn scan(scene: &Scene, documents: &[HookDocument]) -> HookFindings {
-    scan_hook_registrations(&HookScan {
-        documents,
-        repo_root: &scene.repo,
-        home: Some(scene.temp.path()),
-        path: std::slice::from_ref(&scene.bin),
-        writable_roots: &[scene.repo.clone(), scene.writable.clone()],
-    })
-}
-
-#[test]
-fn check_5_refuses_a_user_hook_that_runs_a_file_under_a_writable_root() {
-    let scene = scene();
-    for dir in [&scene.writable, &scene.outside] {
-        executable(&dir.join("notify.sh"));
-        executable(&dir.join("status"));
-    }
-    symlink(scene.writable.join("status"), scene.bin.join("status")).unwrap();
-    let (writable, outside) = (scene.writable.display(), scene.outside.display());
-
-    for command in [
-        format!("{writable}/notify.sh"),
-        format!("FOO=1 bash -x {writable}/notify.sh"),
-        "status --line".to_string(),
-        "$CLAUDE_PROJECT_DIR/.claude/hooks/guard.sh".to_string(),
-    ] {
-        let findings = scan(&scene, &[document("Stop", &command)]);
-        assert_eq!(findings.refusals.len(), 1, "{command}: {findings:?}");
-        let refusal = &findings.refusals[0];
-        assert!(
-            refusal.contains("under the session-writable root"),
-            "{refusal}"
-        );
-    }
-
-    for command in [
-        format!("{outside}/notify.sh"),
-        format!("bash -c 'echo {writable}/notify.sh'"),
-        "not-on-path --flag".to_string(),
-    ] {
-        let findings = scan(&scene, &[document("Stop", &command)]);
-        assert_eq!(findings, HookFindings::default(), "{command}");
-    }
-}
-
-#[test]
-fn check_5_warns_about_a_hard_linked_hook_without_refusing_it() {
-    let scene = scene();
-    let hook = scene.outside.join("notify.sh");
-    executable(&hook);
-    std::fs::hard_link(&hook, scene.outside.join("second-name")).unwrap();
-
-    let findings = scan(&scene, &[document("Stop", &hook.display().to_string())]);
-
-    assert!(findings.refusals.is_empty(), "{findings:?}");
-    assert_eq!(findings.warnings.len(), 1, "{findings:?}");
-    assert!(
-        findings.warnings[0].contains("2 hard links"),
-        "{findings:?}"
-    );
-}
-
-#[test]
-fn a_loom_hook_registration_resolving_inside_the_repository_is_refused() {
-    let scene = scene();
-    let in_repo = scene.repo.join("loom-hooks").join("commit-guard.sh");
-    let installed = scene.outside.join("hooks").join("commit-guard.sh");
-    executable(&in_repo);
-    executable(&installed);
-    let settings_dir = scene.repo.join(".claude");
-    std::fs::create_dir_all(&settings_dir).unwrap();
-    for (name, script) in [
-        ("settings.json", &installed),
-        ("settings.local.json", &in_repo),
-    ] {
-        let command = format!("/bin/bash {}", script.display());
-        let settings = document("PreToolUse", &command).settings.to_string();
-        std::fs::write(settings_dir.join(name), settings).unwrap();
-    }
-
-    let documents = hook_documents(&scene.repo, Some(scene.temp.path()));
-    assert_eq!(
-        documents.len(),
-        2,
-        "both project documents are read, no home one exists"
-    );
-    let findings = scan(&scene, &documents);
-
-    assert_eq!(findings.refusals.len(), 1, "{findings:?}");
-    let refusal = &findings.refusals[0];
-    assert!(refusal.starts_with("loom hook `PreToolUse`"), "{refusal}");
-    assert!(refusal.contains("settings.local.json"), "{refusal}");
-    assert!(refusal.contains("inside the repository"), "{refusal}");
-}
-
 /// Every key section 12 lists loom as writing into the main repo's
 /// `.claude/settings.local.json`, in the shapes the main-repo and
 /// knowledge-stage writers left them.
@@ -325,23 +192,16 @@ const KEPT_KEYS: [&str; 4] = [
     "Read(//repo/doc/other/**)",
 ];
 
-/// The `"hooks"` settings a session installed with `HooksConfig` merges
-/// into the guarded loom-hook stanza, as `the_loom_written_keys_...` below
-/// expects to find in a main repo's `settings.local.json`.
+/// Historical session registrations merged into the global guard fixture.
 fn session_hooks_settings() -> Value {
-    let session = HooksConfig::new(
-        "/hooks".into(),
-        "/repo/.loom/work".into(),
-        PermissionMode::Auto,
-    );
+    let session = crate::hooks::tests::session_hook_fixture(Path::new("/hooks"));
     let mut hooks = guard_hooks_config("/hooks");
-    for (event, rules) in session.to_settings_hooks() {
+    for (event, rules) in session.as_object().unwrap() {
         let slot = hooks
             .as_object_mut()
             .unwrap()
-            .entry(event)
+            .entry(event.clone())
             .or_insert_with(|| json!([]));
-        let rules = serde_json::to_value(rules).unwrap();
         slot.as_array_mut()
             .unwrap()
             .extend(rules.as_array().unwrap().iter().cloned());

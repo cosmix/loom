@@ -120,6 +120,43 @@ fn declared_skills_line_names_each_skill_with_its_invocation() {
 }
 
 #[test]
+fn software_developer_and_software_engineer_both_get_the_skills_line() {
+    let mut fixture = Fixture::new(true);
+    fixture.config.stage.skills = vec!["loom-rust".to_string()];
+    let prompt =
+        "Implement the scoped worker.\n\nFiles owned (write only these):\n- `src/scoped.rs`";
+    let developer = payload(prompt).replace("loom-software-engineer", "loom-software-developer");
+
+    let developer_brief = issue(&developer, &fixture.config).expect("scoped source should match");
+    let engineer_brief =
+        issue(&payload(prompt), &fixture.config).expect("scoped source should match");
+
+    for brief in [&developer_brief.brief, &engineer_brief.brief] {
+        assert!(brief.contains("Required skills for this stage"), "{brief}");
+        assert!(
+            brief.contains("Skill(skill=\"loom-skills\", args=\"loom-rust\")"),
+            "{brief}"
+        );
+    }
+}
+
+#[test]
+fn software_developer_with_an_empty_context_pack_still_gets_a_brief_for_stage_skills() {
+    let mut fixture = Fixture::new(false);
+    fixture.config.stage.skills = vec!["loom-rust".to_string()];
+    let prompt = "Implement the worker.\n\nFiles owned (write only these):\n- `src/absent.rs`";
+    let developer = payload(prompt).replace("loom-software-engineer", "loom-software-developer");
+
+    let envelope = issue(&developer, &fixture.config)
+        .expect("declared skills alone should emit a brief for the developer");
+    assert!(envelope.brief.contains("Required skills for this stage"));
+    assert!(issue(&payload(prompt), &fixture.config).is_some());
+
+    fixture.config.stage.skills.clear();
+    assert!(issue(&developer, &fixture.config).is_none());
+}
+
+#[test]
 fn declared_skills_reach_the_worker_even_with_an_empty_context_pack() {
     let mut fixture = Fixture::new(false);
     fixture.config.stage.skills = vec!["loom-rust".to_string()];
@@ -159,6 +196,39 @@ fn direct_plan_document_is_excluded_from_worker_scope() {
     scope_pack(&mut pack, &[]);
 
     assert!(pack.items.is_empty());
+}
+
+#[test]
+fn worker_scope_updates_coverage_for_retained_items() {
+    let mut pack = pack("rev-a", "kept", "sha256:kept", "src/kept.rs");
+    pack.items[0].score = 4.0;
+    let mut removed = item(
+        "plan",
+        "sha256:plan",
+        "doc/plans/DONE-PLAN-example.md",
+        "plan",
+    );
+    removed.token_count = 20;
+    removed.score = 2.0;
+    pack.items.push(removed);
+    pack.omitted.coverage.candidates = 2;
+    pack.omitted.coverage.included = 2;
+    pack.omitted.coverage.candidate_tokens = 30;
+    pack.omitted.coverage.included_tokens = 30;
+    pack.omitted.weakest_included_score = 2.0;
+
+    scope_pack(&mut pack, &[]);
+
+    assert_eq!(pack.items.len(), 1);
+    assert_eq!(pack.omitted.omitted, 1);
+    assert_eq!(pack.omitted.coverage.included, 1);
+    assert_eq!(pack.omitted.coverage.included_tokens, 10);
+    assert_eq!(pack.omitted.coverage.candidates, 2);
+    assert_eq!(pack.omitted.coverage.candidate_tokens, 30);
+    assert_eq!(pack.omitted.weakest_included_score, 4.0);
+    let estimate = pack.estimated_tokens;
+    pack.recompute_estimate();
+    assert_eq!(pack.estimated_tokens, estimate);
 }
 
 #[test]
@@ -207,7 +277,13 @@ fn unmet_required_material_is_rendered_without_plan_or_navigation_doctrine() {
     });
 
     scope_pack(&mut pack, &[]);
-    let brief = render_brief(&pack, &fixture.config.stage, NONCE_A).unwrap();
+    let brief = render_brief(
+        &pack,
+        &fixture.config.stage,
+        &fixture.config.stage.skills,
+        NONCE_A,
+    )
+    .unwrap();
 
     assert!(brief.contains("required-large"));
     assert!(brief.contains("worker material"));

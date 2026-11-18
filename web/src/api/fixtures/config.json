@@ -43,23 +43,23 @@
     },
     {
       "name": "terminal.backend",
-      "help": "Terminal backend loom run defaults to",
+      "help": "Terminal backend loom run defaults to (built-in default: tmux)",
       "kind": {
         "type": "enum",
         "variants": ["native", "tmux"]
       },
       "scopes": ["user", "project"],
-      "default": "native",
+      "default": "tmux",
       "user": {
-        "value": "native",
+        "value": "tmux",
         "set": false
       },
       "project": {
-        "value": "native",
+        "value": "tmux",
         "set": false
       },
       "effective": {
-        "value": "native",
+        "value": "tmux",
         "source": "default"
       }
     },
@@ -133,20 +133,20 @@
       "help": "Codex model loom pressure uses for the $pressure step",
       "kind": {
         "type": "enum",
-        "variants": ["gpt-6-astra", "gpt-6.1-sol", "gpt-6-sol", "gpt-5.6-terra", "gpt-6-luna"]
+        "variants": ["gpt-6.2-astra", "gpt-6.2-sol", "gpt-6.1-terra", "gpt-6-luna"]
       },
       "scopes": ["user", "project"],
-      "default": "gpt-6.1-sol",
+      "default": "gpt-6.2-sol",
       "user": {
-        "value": "gpt-6.1-sol",
+        "value": "gpt-6.2-sol",
         "set": false
       },
       "project": {
-        "value": "gpt-6.1-sol",
+        "value": "gpt-6.2-sol",
         "set": false
       },
       "effective": {
-        "value": "gpt-6.1-sol",
+        "value": "gpt-6.2-sol",
         "source": "default"
       }
     },
@@ -217,46 +217,67 @@
       }
     },
     {
+      "name": "pressure.rounds",
+      "help": "Pressure/address rounds loom pressure runs (at least 1)",
+      "kind": {
+        "type": "number"
+      },
+      "scopes": ["user", "project"],
+      "default": 1,
+      "user": {
+        "value": 1,
+        "set": false
+      },
+      "project": {
+        "value": 1,
+        "set": false
+      },
+      "effective": {
+        "value": 1,
+        "source": "default"
+      }
+    },
+    {
       "name": "models.standard_model",
-      "help": "Model a standard stage's main agent session runs on",
+      "help": "Stage orchestrator model for standard (implementation) stages",
       "kind": {
         "type": "enum",
         "variants": ["haiku", "sonnet", "opus", "fable"]
       },
       "scopes": ["user", "project"],
-      "default": "opus",
+      "default": "sonnet",
       "user": {
-        "value": "opus",
+        "value": "sonnet",
         "set": false
       },
       "project": {
-        "value": "opus",
+        "value": "sonnet",
         "set": false
       },
       "effective": {
-        "value": "opus",
+        "value": "sonnet",
         "source": "default"
       }
     },
     {
       "name": "models.standard_effort",
-      "help": "Reasoning effort a standard stage's main agent session runs at",
+      "help": "Stage orchestrator reasoning effort for standard (implementation) stages",
       "kind": {
         "type": "enum",
         "variants": ["low", "medium", "high", "xhigh", "max"]
       },
       "scopes": ["user", "project"],
-      "default": "medium",
+      "default": "high",
       "user": {
-        "value": "medium",
+        "value": "high",
         "set": false
       },
       "project": {
-        "value": "medium",
+        "value": "high",
         "set": false
       },
       "effective": {
-        "value": "medium",
+        "value": "high",
         "source": "default"
       }
     },
@@ -389,6 +410,380 @@
       },
       "effective": {
         "value": "xhigh",
+        "source": "default"
+      }
+    },
+    {
+      "name": "models.code_reviewer_model",
+      "help": "Model the loom-code-reviewer subagent runs on for its first round",
+      "kind": {
+        "type": "enum",
+        "variants": ["haiku", "sonnet", "opus", "fable"]
+      },
+      "scopes": ["user", "project"],
+      "default": "opus",
+      "user": {
+        "value": "opus",
+        "set": false
+      },
+      "project": {
+        "value": "opus",
+        "set": false
+      },
+      "effective": {
+        "value": "opus",
+        "source": "default"
+      }
+    },
+    {
+      "name": "models.code_reviewer_followup_model",
+      "help": "Model the loom-code-reviewer subagent runs on after a well-formed round",
+      "kind": {
+        "type": "enum",
+        "variants": ["haiku", "sonnet", "opus", "fable"]
+      },
+      "scopes": ["user", "project"],
+      "default": "sonnet",
+      "user": {
+        "value": "sonnet",
+        "set": false
+      },
+      "project": {
+        "value": "sonnet",
+        "set": false
+      },
+      "effective": {
+        "value": "sonnet",
+        "source": "default"
+      }
+    },
+    {
+      "name": "models.code_reviewer_effort",
+      "help": "Reasoning effort the loom-code-reviewer subagent runs at",
+      "kind": {
+        "type": "enum",
+        "variants": ["low", "medium", "high", "xhigh", "max"]
+      },
+      "scopes": ["user", "project"],
+      "default": "high",
+      "user": {
+        "value": "high",
+        "set": false
+      },
+      "project": {
+        "value": "high",
+        "set": false
+      },
+      "effective": {
+        "value": "high",
+        "source": "default"
+      }
+    },
+    {
+      "name": "models.contract_writer_model",
+      "help": "Model the contract test writer session runs on",
+      "kind": {
+        "type": "enum",
+        "variants": ["haiku", "sonnet", "opus", "fable"]
+      },
+      "scopes": ["user", "project"],
+      "default": "opus",
+      "user": {
+        "value": "opus",
+        "set": false
+      },
+      "project": {
+        "value": "opus",
+        "set": false
+      },
+      "effective": {
+        "value": "opus",
+        "source": "default"
+      }
+    },
+    {
+      "name": "models.contract_writer_effort",
+      "help": "Reasoning effort the contract test writer session runs at",
+      "kind": {
+        "type": "enum",
+        "variants": ["low", "medium", "high", "xhigh", "max"]
+      },
+      "scopes": ["user", "project"],
+      "default": "high",
+      "user": {
+        "value": "high",
+        "set": false
+      },
+      "project": {
+        "value": "high",
+        "set": false
+      },
+      "effective": {
+        "value": "high",
+        "source": "default"
+      }
+    },
+    {
+      "name": "plan.document_summary_model",
+      "help": "Model the loom-plan summary agent builds document summaries on",
+      "kind": {
+        "type": "enum",
+        "variants": ["haiku", "sonnet", "opus", "fable"]
+      },
+      "scopes": ["user", "project"],
+      "default": "haiku",
+      "user": {
+        "value": "haiku",
+        "set": false
+      },
+      "project": {
+        "value": "haiku",
+        "set": false
+      },
+      "effective": {
+        "value": "haiku",
+        "source": "default"
+      }
+    },
+    {
+      "name": "plan.document_summary_effort",
+      "help": "Reasoning effort for document summaries",
+      "kind": {
+        "type": "enum",
+        "variants": ["low", "medium", "high", "xhigh", "max"]
+      },
+      "scopes": ["user", "project"],
+      "default": "high",
+      "user": {
+        "value": "high",
+        "set": false
+      },
+      "project": {
+        "value": "high",
+        "set": false
+      },
+      "effective": {
+        "value": "high",
+        "source": "default"
+      }
+    },
+    {
+      "name": "plan.overview_model",
+      "help": "Model overviews and background summary sessions run on",
+      "kind": {
+        "type": "enum",
+        "variants": ["haiku", "sonnet", "opus", "fable"]
+      },
+      "scopes": ["user", "project"],
+      "default": "sonnet",
+      "user": {
+        "value": "sonnet",
+        "set": false
+      },
+      "project": {
+        "value": "sonnet",
+        "set": false
+      },
+      "effective": {
+        "value": "sonnet",
+        "source": "default"
+      }
+    },
+    {
+      "name": "plan.overview_effort",
+      "help": "Reasoning effort for overviews and summary sessions",
+      "kind": {
+        "type": "enum",
+        "variants": ["low", "medium", "high", "xhigh", "max"]
+      },
+      "scopes": ["user", "project"],
+      "default": "high",
+      "user": {
+        "value": "high",
+        "set": false
+      },
+      "project": {
+        "value": "high",
+        "set": false
+      },
+      "effective": {
+        "value": "high",
+        "source": "default"
+      }
+    },
+    {
+      "name": "plan.summary_backend",
+      "help": "Which agent builds summaries and overviews: Claude Code or Codex",
+      "kind": {
+        "type": "enum",
+        "variants": ["claude", "codex"]
+      },
+      "scopes": ["user", "project"],
+      "default": "claude",
+      "user": {
+        "value": "claude",
+        "set": false
+      },
+      "project": {
+        "value": "claude",
+        "set": false
+      },
+      "effective": {
+        "value": "claude",
+        "source": "default"
+      }
+    },
+    {
+      "name": "plan.summary_codex_model",
+      "help": "Codex model for summaries when the backend is codex",
+      "kind": {
+        "type": "enum",
+        "variants": ["gpt-6.2-astra", "gpt-6.2-sol", "gpt-6.1-terra", "gpt-6-luna"]
+      },
+      "scopes": ["user", "project"],
+      "default": "gpt-6.1-terra",
+      "user": {
+        "value": "gpt-6.1-terra",
+        "set": false
+      },
+      "project": {
+        "value": "gpt-6.1-terra",
+        "set": false
+      },
+      "effective": {
+        "value": "gpt-6.1-terra",
+        "source": "default"
+      }
+    },
+    {
+      "name": "plan.summary_codex_effort",
+      "help": "Codex reasoning effort for summaries when the backend is codex",
+      "kind": {
+        "type": "enum",
+        "variants": ["low", "medium", "high", "xhigh"]
+      },
+      "scopes": ["user", "project"],
+      "default": "high",
+      "user": {
+        "value": "high",
+        "set": false
+      },
+      "project": {
+        "value": "high",
+        "set": false
+      },
+      "effective": {
+        "value": "high",
+        "source": "default"
+      }
+    },
+    {
+      "name": "plan.spec_authoring_model",
+      "help": "Claude model a loom plan authoring session runs on for spec steps",
+      "kind": {
+        "type": "enum",
+        "variants": ["haiku", "sonnet", "opus", "fable"]
+      },
+      "scopes": ["user", "project"],
+      "default": "opus",
+      "user": {
+        "value": "opus",
+        "set": false
+      },
+      "project": {
+        "value": "opus",
+        "set": false
+      },
+      "effective": {
+        "value": "opus",
+        "source": "default"
+      }
+    },
+    {
+      "name": "plan.spec_authoring_effort",
+      "help": "Reasoning effort a loom plan authoring session runs at for spec steps",
+      "kind": {
+        "type": "enum",
+        "variants": ["low", "medium", "high", "xhigh", "max"]
+      },
+      "scopes": ["user", "project"],
+      "default": "medium",
+      "user": {
+        "value": "medium",
+        "set": false
+      },
+      "project": {
+        "value": "medium",
+        "set": false
+      },
+      "effective": {
+        "value": "medium",
+        "source": "default"
+      }
+    },
+    {
+      "name": "plan.plan_authoring_model",
+      "help": "Claude model a loom plan authoring session runs on for plan steps",
+      "kind": {
+        "type": "enum",
+        "variants": ["haiku", "sonnet", "opus", "fable"]
+      },
+      "scopes": ["user", "project"],
+      "default": "opus",
+      "user": {
+        "value": "opus",
+        "set": false
+      },
+      "project": {
+        "value": "opus",
+        "set": false
+      },
+      "effective": {
+        "value": "opus",
+        "source": "default"
+      }
+    },
+    {
+      "name": "plan.plan_authoring_effort",
+      "help": "Reasoning effort a loom plan authoring session runs at for plan steps",
+      "kind": {
+        "type": "enum",
+        "variants": ["low", "medium", "high", "xhigh", "max"]
+      },
+      "scopes": ["user", "project"],
+      "default": "high",
+      "user": {
+        "value": "high",
+        "set": false
+      },
+      "project": {
+        "value": "high",
+        "set": false
+      },
+      "effective": {
+        "value": "high",
+        "source": "default"
+      }
+    },
+    {
+      "name": "codex.backend",
+      "help": "Codex worker lane for stage leads: native workers or legacy forwarders (default: native)",
+      "kind": {
+        "type": "enum",
+        "variants": ["legacy", "native"]
+      },
+      "scopes": ["user", "project"],
+      "default": "native",
+      "user": {
+        "value": "native",
+        "set": false
+      },
+      "project": {
+        "value": "native",
+        "set": false
+      },
+      "effective": {
+        "value": "native",
         "source": "default"
       }
     }

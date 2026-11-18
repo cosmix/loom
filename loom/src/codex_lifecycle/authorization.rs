@@ -6,9 +6,10 @@ use chrono::{DateTime, Utc};
 use serde::Deserialize;
 use serde_json::Value;
 
-use crate::models::forward_receipt::{is_safe_id, parse_canonical_utc_millis};
+use crate::agent_state::is_safe_id;
+use crate::models::forward_receipt::job_record::{validate_path, validate_text};
+use crate::models::forward_receipt::parse_canonical_utc_millis;
 
-const MAX_PATH_BYTES: usize = 4096;
 const SUPPORTED_COMPANIONS: [&str; 1] = ["1.0.6"];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -61,9 +62,9 @@ impl CodexAuthorization {
             SUPPORTED_COMPANIONS.contains(&row.companion_version.as_str()),
             "unsupported Codex companion version"
         );
-        validate_path(&row.workspace_root, "workspace_root")?;
-        validate_path(&row.companion_path, "companion_path")?;
-        validate_path(&row.state_root, "state_root")?;
+        validate_path(Some(&row.workspace_root), "workspace_root")?;
+        validate_path(Some(&row.companion_path), "companion_path")?;
+        validate_path(Some(&row.state_root), "state_root")?;
         Ok(Self {
             stage_id: row.stage_id,
             loom_session_id: row.session_id,
@@ -143,28 +144,6 @@ fn parse_authorized_at(value: &str) -> Result<DateTime<Utc>> {
     parse_canonical_utc_millis(value).context("invalid Codex authorization timestamp")
 }
 
-fn validate_path(path: &Path, name: &str) -> Result<()> {
-    let text = path
-        .to_str()
-        .with_context(|| format!("Codex authorization {name} is not UTF-8"))?;
-    ensure!(
-        path.is_absolute(),
-        "Codex authorization {name} is not absolute"
-    );
-    ensure!(
-        text.len() <= MAX_PATH_BYTES,
-        "Codex authorization {name} exceeds cap"
-    );
-    ensure!(
-        !path.components().any(|part| matches!(
-            part,
-            std::path::Component::CurDir | std::path::Component::ParentDir
-        )),
-        "Codex authorization {name} is not normalized"
-    );
-    Ok(())
-}
-
 fn validate_canonical_path(path: &Path, file: bool, name: &str) -> Result<()> {
     let metadata =
         fs::metadata(path).with_context(|| format!("reading Codex authorization {name}"))?;
@@ -183,14 +162,79 @@ fn validate_canonical_path(path: &Path, file: bool, name: &str) -> Result<()> {
     Ok(())
 }
 
-fn validate_text(value: &str, max: usize, name: &str) -> Result<()> {
-    ensure!(
-        (1..=max).contains(&value.len()),
-        "invalid Codex authorization {name}"
-    );
-    ensure!(
-        !value.as_bytes().contains(&0),
-        "NUL in Codex authorization {name}"
-    );
-    Ok(())
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn valid_row() -> Value {
+        json!({
+            "v": 2,
+            "ts": "2026-09-14T10:00:00.000Z",
+            "stage_id": "stage-1",
+            "session_id": "session-1",
+            "parent_session_id": "parent-1",
+            "forwarder_agent_id": "agent-1",
+            "tool_use_id": "tool-1",
+            "unit_id": "unit-1",
+            "invocation_id": "inv-0123456789abcdef0123456789abcdef",
+            "model": "model",
+            "effort": "high",
+            "workspace_root": "/workspace",
+            "companion_version": "1.0.6",
+            "companion_path": "/plugin/companion.mjs",
+            "state_root": "/state"
+        })
+    }
+
+    #[test]
+    fn authorization_paths_use_shared_validation() {
+        CodexAuthorization::from_v2_value(&valid_row()).expect("valid authorization");
+        let over_cap = format!("/{}", "x".repeat(4096));
+        for field in ["workspace_root", "companion_path", "state_root"] {
+            for (path, reason) in [
+                ("/workspace\0tail", format!("NUL in companion {field}")),
+                ("relative", format!("companion {field} is not absolute")),
+                (
+                    "/workspace/../elsewhere",
+                    format!("companion {field} is not normalized"),
+                ),
+                (
+                    over_cap.as_str(),
+                    format!("invalid companion {field} length"),
+                ),
+            ] {
+                let mut row = valid_row();
+                row[field] = json!(path);
+                assert_eq!(
+                    CodexAuthorization::from_v2_value(&row)
+                        .unwrap_err()
+                        .to_string(),
+                    reason
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn authorization_text_uses_shared_errors_and_limits() {
+        for field in ["model", "effort"] {
+            let mut row = valid_row();
+            row[field] = json!("x".repeat(128));
+            CodexAuthorization::from_v2_value(&row).expect("text at byte cap");
+            for (value, reason) in [
+                (String::new(), format!("invalid companion {field} length")),
+                ("é".repeat(65), format!("invalid companion {field} length")),
+                ("x\0y".into(), format!("NUL in companion {field}")),
+            ] {
+                row[field] = json!(value);
+                assert_eq!(
+                    CodexAuthorization::from_v2_value(&row)
+                        .unwrap_err()
+                        .to_string(),
+                    reason
+                );
+            }
+        }
+    }
 }

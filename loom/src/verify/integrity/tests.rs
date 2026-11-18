@@ -2,8 +2,8 @@
 //! repository with a base commit on `main` and the stage's work on a branch.
 
 use super::*;
-use crate::git::runner::run_git_checked;
 use crate::models::stage::{Stage, StageType};
+use crate::test_git::{git, TestRepo};
 use sha2::{Digest, Sha256};
 use std::path::PathBuf;
 use tempfile::TempDir;
@@ -11,63 +11,48 @@ use tempfile::TempDir;
 const TESTS_FILE: &str = "src/calc_tests.rs";
 const STAGE: &str = "s1";
 
-struct Repo {
-    tmp: TempDir,
-    root: PathBuf,
+pub(super) struct Repo {
+    pub(super) tmp: TempDir,
+    pub(super) root: PathBuf,
 }
 
 impl Repo {
     /// `files` committed on `main`, then branch `feature` checked out.
-    fn new(files: &[(&str, &str)]) -> Self {
+    pub(super) fn new(files: &[(&str, &str)]) -> Self {
         let tmp = TempDir::new().unwrap();
         let root = tmp.path().join("repo");
         std::fs::create_dir_all(&root).unwrap();
+        TestRepo::builder().no_seed().init_in(&root);
         let repo = Self { tmp, root };
-        repo.git(&["init", "-q", "-b", "main"]);
         for &(path, content) in files {
             repo.write(path, content);
-            repo.git(&["add", "--", path]);
+            git(&repo.root, &["add", "--", path]);
         }
         repo.commit("base");
-        repo.git(&["switch", "-q", "-c", "feature"]);
+        git(&repo.root, &["switch", "-q", "-c", "feature"]);
         repo
     }
 
-    fn git(&self, args: &[&str]) -> String {
-        run_git_checked(args, &self.root).unwrap()
+    pub(super) fn commit(&self, message: &str) {
+        git(&self.root, &["commit", "-q", "-am", message]);
     }
 
-    fn commit(&self, message: &str) {
-        self.git(&[
-            "-c",
-            "user.name=t",
-            "-c",
-            "user.email=t@t",
-            "-c",
-            "commit.gpgsign=false",
-            "commit",
-            "-q",
-            "-am",
-            message,
-        ]);
-    }
-
-    fn write(&self, path: &str, content: &str) {
+    pub(super) fn write(&self, path: &str, content: &str) {
         let file = self.root.join(path);
         std::fs::create_dir_all(file.parent().unwrap()).unwrap();
         std::fs::write(file, content).unwrap();
     }
 
-    fn events(&self, ratchet_files: &[String]) -> Vec<IntegrityEvent> {
+    pub(super) fn events(&self, ratchet_files: &[String]) -> Vec<IntegrityEvent> {
         current_events(&self.root, "main", ratchet_files).unwrap()
     }
 }
 
-fn ids(events: &[IntegrityEvent]) -> Vec<&str> {
+pub(super) fn ids(events: &[IntegrityEvent]) -> Vec<&str> {
     events.iter().map(|event| event.id.as_str()).collect()
 }
 
-fn sha256_hex(content: &str) -> String {
+pub(super) fn sha256_hex(content: &str) -> String {
     hex::encode(Sha256::digest(content.as_bytes()))
 }
 
@@ -148,8 +133,10 @@ fn moved_assertion_is_not_an_integrity_event() {
     repo.write(TESTS_FILE, moved);
     repo.commit("move an assertion");
 
-    // The diff must remove the assertion line for the edit rule to see a move.
-    let diff = repo.git(&["diff", "main", "--", TESTS_FILE]);
+    // The textual diff shows the assertion line removed and added again; the
+    // scan matches statements by key rather than by diff line, so the moved
+    // statement is found on both sides and nothing is raised.
+    let diff = git(&repo.root, &["diff", "main", "--", TESTS_FILE]);
     assert!(diff.contains("\n-    assert_eq!(x, 5);"), "{diff}");
     assert!(diff.contains("\n+    assert_eq!(x, 5);"), "{diff}");
     assert_eq!(repo.events(&[]), Vec::new());
@@ -218,4 +205,48 @@ fn accepted_event_passes_until_it_worsens() {
         "{worse}"
     );
     assert!(!worse.contains("TI-edit-"), "{worse}");
+}
+
+/// Commits `base` at `path` on `main`, writes `edited` on the branch, and
+/// returns the integrity events.
+fn events_after_edit(path: &str, base: &str, edited: &str) -> Vec<IntegrityEvent> {
+    let repo = Repo::new(&[(path, base)]);
+    repo.write(path, edited);
+    repo.events(&[])
+}
+
+#[test]
+fn reflowed_rust_assertion_is_not_an_integrity_event() {
+    let base = "#[test]\nfn adds() {\n    assert_eq!(compute(1, 2), 3);\n}\n";
+    let reflowed =
+        "#[test]\nfn adds() {\n    assert_eq!(\n        compute(1, 2),\n        3,\n    );\n}\n";
+    assert_eq!(events_after_edit(TESTS_FILE, base, reflowed), Vec::new());
+}
+
+#[test]
+fn reflowed_typescript_assertion_is_not_an_integrity_event() {
+    let base = "it(\"x\", () => {\n  expect(spineGroups(atlas()).find((g) => g.id === \"plans\")!\
+                .children.at(-1)!.note).toBeNull();\n});\n";
+    let reflowed = "it(\"x\", () => {\n  expect(\n    spineGroups(atlas())\n      \
+                    .find((g) => g.id === \"plans\")!\n      .children.at(-1)!.note,\n  \
+                    ).toBeNull();\n});\n";
+    let events = events_after_edit("web/src/a.test.ts", base, reflowed);
+    assert_eq!(events, Vec::new());
+}
+
+#[test]
+fn reflow_that_changes_a_value_is_an_integrity_event() {
+    let base = "#[test]\nfn adds() {\n    assert_eq!(compute(1, 2), 3);\n}\n";
+    let edited =
+        "#[test]\nfn adds() {\n    assert_eq!(\n        compute(1, 2),\n        4,\n    );\n}\n";
+    let events = events_after_edit(TESTS_FILE, base, edited);
+    assert_eq!(ids(&events), [format!("TI-edit-{TESTS_FILE}")]);
+}
+
+#[test]
+fn whitespace_change_inside_a_string_is_an_integrity_event() {
+    let base = "#[test]\nfn joins() {\n    assert_eq!(join(), \"a b\");\n}\n";
+    let edited = "#[test]\nfn joins() {\n    assert_eq!(join(), \"ab\");\n}\n";
+    let events = events_after_edit(TESTS_FILE, base, edited);
+    assert_eq!(ids(&events), [format!("TI-edit-{TESTS_FILE}")]);
 }

@@ -72,47 +72,37 @@ pub fn extract_frontmatter_field(content: &str, field: &str) -> Result<Option<St
 /// - Content is empty or missing opening `---`
 /// - Closing `---` (at the same indentation) is not found
 pub fn extract_frontmatter_raw(content: &str) -> Result<&str> {
-    if content.is_empty() {
-        bail!("No frontmatter delimiter found at start of content");
-    }
+    split_frontmatter_raw(content).map(|(yaml, _)| yaml)
+}
 
-    // Find the end of the first line (the opening delimiter)
+/// Split at exact `---` delimiter lines with matching indentation and optional trailing whitespace.
+pub(crate) fn split_frontmatter_raw(content: &str) -> Result<(&str, &str)> {
     let first_newline = content.find('\n').unwrap_or(content.len());
     let first_line = &content[..first_newline];
-    if !first_line.trim().starts_with("---") {
+    if first_line.trim() != "---" {
         bail!("No frontmatter delimiter found at start of content");
     }
 
-    // Compute indentation of opening delimiter
     let opening_indent = first_line.len() - first_line.trim_start().len();
 
-    // The frontmatter body starts after the first newline
     let body_start = if first_newline < content.len() {
         first_newline + 1
     } else {
         bail!("Frontmatter not properly closed with ---");
     };
 
-    // Find closing delimiter at the same indentation
-    let mut search_offset = body_start;
-    loop {
-        let remaining = &content[search_offset..];
-        let line_end = remaining.find('\n').unwrap_or(remaining.len());
-        let line = &remaining[..line_end];
+    let mut closing_start = body_start;
+    for line in content[body_start..].split_inclusive('\n') {
         let trimmed = line.trim_start();
-        if trimmed.starts_with("---") {
-            let line_indent = line.len() - trimmed.len();
-            if line_indent == opening_indent {
-                // Return the slice between the opening and closing delimiters
-                return Ok(&content[body_start..search_offset]);
-            }
+        if trimmed.trim_end() == "---" && line.len() - trimmed.len() == opening_indent {
+            return Ok((
+                &content[body_start..closing_start],
+                &content[closing_start + line.len()..],
+            ));
         }
-        if line_end == remaining.len() {
-            // Reached end of content without finding closing delimiter
-            bail!("Frontmatter not properly closed with ---");
-        }
-        search_offset += line_end + 1;
+        closing_start += line.len();
     }
+    bail!("Frontmatter not properly closed with ---");
 }
 
 /// Extract YAML frontmatter from markdown content and deserialize it.
@@ -322,12 +312,26 @@ count: 42
     }
 
     #[test]
+    fn split_requires_exact_delimiters() {
+        for delimiter in ["----", "---x", "--- # c"] {
+            assert!(split_frontmatter_raw(&format!("{delimiter}\nkey: value\n---")).is_err());
+            let yaml = format!("key: value\n{delimiter}\n");
+            let content = format!("---\n{yaml}---  \r\nbody\n");
+            assert_eq!(
+                split_frontmatter_raw(&content).unwrap(),
+                (yaml.as_str(), "body\n")
+            );
+        }
+    }
+
+    #[test]
     fn test_extract_frontmatter_raw_embedded_delimiter() {
         // --- inside a block scalar must not be treated as the closing delimiter
         let content = "---\ndesc: |\n  ---\n  inner\n  ---\nstatus: ok\n---\n# body";
-        let raw = extract_frontmatter_raw(content).unwrap();
+        let (raw, body) = split_frontmatter_raw(content).unwrap();
         assert!(raw.contains("inner"));
         assert!(raw.contains("status: ok"));
+        assert_eq!(body, "# body");
     }
 
     #[test]

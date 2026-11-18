@@ -19,6 +19,12 @@ use crate::models::worktree::Worktree;
 use super::native::NativeBackend;
 use super::tmux::{self, TmuxBackend};
 
+/// Why a configured tmux backend with no `tmux` on PATH cannot run: the `loom run` preflight
+/// and the spawn dispatcher both fail with it.
+pub const TMUX_MISSING_MESSAGE: &str = "terminal backend \"tmux\" (configured or the built-in \
+    default) is selected but tmux is not on PATH; install tmux or set [terminal] backend = \
+    \"native\" (.loom/work/config.toml or ~/.loom/config.toml)";
+
 /// The stage worktree a merge resolver works in. Errors when its directory
 /// is missing: the caller routes the stage to human review.
 pub fn merge_resolver_worktree(repo_root: &Path, stage_id: &str) -> Result<Worktree> {
@@ -129,11 +135,10 @@ impl SessionBackend {
         spawn_native(native, session)
     }
 
-    /// Shared spawn dispatcher: dispatches on the CONFIGURED lane only — no
-    /// availability probe ever swaps it for the other lane. A configured tmux
-    /// backend with no `tmux` on PATH, or whose spawn fails, returns `Err`
-    /// straight to the caller; nothing is written to disk and no native retry
-    /// is attempted.
+    /// Dispatch on the configured lane. A missing tmux executable or failed
+    /// tmux spawn returns an error to the caller. A failure after launch
+    /// preparation may leave generated wrapper or settings files for the
+    /// normal cleanup path.
     fn dispatch_spawn(
         &self,
         session: Session,
@@ -144,11 +149,7 @@ impl SessionBackend {
             SessionBackendKind::Native => self.spawn_native_lane(session, spawn_native),
             SessionBackendKind::Tmux => {
                 if !(self.tmux_available)() {
-                    anyhow::bail!(
-                        "terminal backend \"tmux\" is configured but tmux is not on PATH; \
-                         install tmux or set [terminal] backend = \"native\" \
-                         (.loom/work/config.toml or ~/.loom/config.toml)"
-                    );
+                    anyhow::bail!(TMUX_MISSING_MESSAGE);
                 }
                 let mut tmux_session = session;
                 tmux_session.backend = SessionBackendKind::Tmux;

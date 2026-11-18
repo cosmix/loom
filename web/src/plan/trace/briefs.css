@@ -1,0 +1,117 @@
+/*
+ * A plan's briefs (`trace/briefs-card.tsx`): a section of the plan page under its heading and
+ * count (trace.css, `.trace-plan__heading`), set as the rows of "What it implements" are: one
+ * hairline row per folder (the stage) of the bundle, the folder's mono name in a label column and
+ * its files after it, in as many columns as the row holds. The bundle's own files lead under
+ * "Top level". A file is a muted glyph and its mono name. No descriptions: the trace carries no
+ * brief text. Tokens and scales only (ui/DESIGN.md).
+ */
+[data-loom-plan] .trace-briefs__groups,
+[data-loom-plan] .trace-briefs__files {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+[data-loom-plan] .trace-briefs__groups {
+  display: grid;
+  min-width: 0;
+  border-bottom: 1px solid var(--hairline);
+}
+
+[data-loom-plan] .trace-briefs__group {
+  display: grid;
+  grid-template-columns: minmax(0, 9rem) minmax(0, 1fr);
+  column-gap: var(--space-4);
+  align-items: start;
+  min-width: 0;
+  padding-block: var(--space-2);
+  border-top: 1px solid var(--hairline);
+}
+
+/* The label column: a stage's folder in mono at 600, "Top level" in the muted chrome face. Both
+   sit on the first file's 32px line. */
+[data-loom-plan] :is(.trace-briefs__folder, .trace-briefs__top) {
+  margin: 0;
+  font-size: var(--type-ui);
+  line-height: 32px;
+  overflow-wrap: anywhere;
+}
+
+[data-loom-plan] .trace-briefs__folder {
+  color: var(--foreground);
+  font-family: var(--font-mono);
+  font-weight: 600;
+}
+
+[data-loom-plan] .trace-briefs__top {
+  color: var(--muted-foreground);
+  font-family: var(--font-sans);
+  font-weight: 500;
+}
+
+[data-loom-plan] .trace-briefs__files {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 11rem), 1fr));
+  gap: 0 var(--space-4);
+  min-width: 0;
+}
+
+/* Under 480px a row sets its folder over its files. */
+@media (max-width: 480px) {
+  [data-loom-plan] .trace-briefs__group {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* A file: the row's hover wash reaches past the glyph into the column's gutter, so the glyph and
+   the name keep the folder's left edge. The name is cut, never wrapped. */
+[data-loom-plan] .trace-brief {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  min-height: 32px;
+  margin-inline: calc(-1 * var(--space-2));
+  padding: 0 var(--space-2);
+  border-radius: var(--corner-control);
+  color: var(--foreground);
+  text-decoration: none;
+  transition: background-color 120ms;
+}
+
+[data-loom-plan] .trace-brief > svg {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  color: var(--muted-foreground);
+}
+
+[data-loom-plan] .trace-brief__name {
+  min-width: 0;
+  overflow: hidden;
+  font-family: var(--font-mono);
+  font-size: var(--type-ui);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+[data-loom-plan] .trace-brief:hover {
+  background: var(--muted);
+}
+
+[data-loom-plan] .trace-brief:hover .trace-brief__name {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+[data-loom-plan] .trace-brief:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-loom-plan] .trace-brief {
+    transition: none;
+  }
+}

@@ -1,50 +1,50 @@
 ---
 aliases:
-  - loom usage
-  - read receipts
-  - forward receipts
-  - subagents wait
-  - worker brief
+- loom usage
+- read receipts
+- forward receipts
+- subagents wait
+- worker brief
 sources:
-  - loom/src/commands/usage/mod.rs
-  - loom/src/commands/usage/provider_types.rs
-  - loom/src/commands/usage/provider_normalization.rs
-  - loom/src/commands/usage/transcript_merge.rs
-  - loom/src/commands/usage/claude_provider.rs
-  - loom/src/commands/usage/codex_provider.rs
-  - loom/src/commands/usage/receipt_provider.rs
-  - loom/src/commands/usage/forward_join.rs
-  - loom/src/commands/usage/comparison.rs
-  - loom/src/commands/usage/comparison_validation.rs
-  - loom/src/models/execution_receipt.rs
-  - loom/src/quota/history.rs
-  - loom/src/verify/criteria/cache_contract.rs
-  - loom/src/models/forward_receipt.rs
-  - loom/src/commands/hook/forward_receipt.rs
-  - loom/src/commands/subagents/forward_jobs_wait.rs
-  - loom/src/commands/subagents/classify_forward.rs
-  - loom/src/commands/hook/worker_brief.rs
-  - loom/src/commands/hook/pre_compact.rs
-  - loom/src/plan/schema/structural_checks/worker_table.rs
-  - loom/src/orchestrator/signals/tests_size.rs
-  - loom/src/orchestrator/signals/cache.rs
-  - loom/src/orchestrator/signals/format/codex.rs
-  - loom-hooks/post-tool-use.sh
-  - loom-hooks/read-guard.sh
-  - loom-hooks/_read_discipline.sh
-  - loom-hooks/spawn-guard.sh
-  - loom-hooks/pre-compact.sh
-  - loom-hooks/poll-guard.sh
-  - loom-hooks/codex-forward-guard.sh
-  - agents/loom-codex-forwarder.md
-  - loom-hooks/_read_ledger.sh
-  - loom-hooks/knowledge-orient.sh
+- loom/src/commands/usage/mod.rs
+- loom/src/commands/usage/provider_types.rs
+- loom/src/commands/usage/provider_normalization.rs
+- loom/src/commands/usage/transcript_merge.rs
+- loom/src/commands/usage/claude_provider.rs
+- loom/src/commands/usage/codex_provider.rs
+- loom/src/commands/usage/receipt_provider.rs
+- loom/src/commands/usage/forward_join.rs
+- loom/src/commands/usage/comparison.rs
+- loom/src/commands/usage/comparison_validation.rs
+- loom/src/models/execution_receipt.rs
+- loom/src/quota/history.rs
+- loom/src/verify/criteria/cache_contract.rs
+- loom/src/models/forward_receipt.rs
+- loom/src/commands/hook/forward_receipt.rs
+- loom/src/commands/subagents/forward_jobs_wait.rs
+- loom/src/commands/subagents/classify_forward.rs
+- loom/src/commands/hook/worker_brief.rs
+- loom/src/commands/hook/pre_compact.rs
+- loom/src/plan/schema/structural_checks/worker_table.rs
+- loom/src/orchestrator/signals/tests_size.rs
+- loom/src/orchestrator/signals/cache.rs
+- loom/src/orchestrator/signals/format/codex.rs
+- loom-hooks/post-tool-use.sh
+- loom-hooks/read-guard.sh
+- loom-hooks/_read_discipline.sh
+- loom-hooks/spawn-guard.sh
+- loom-hooks/pre-compact.sh
+- loom-hooks/poll-guard.sh
+- loom-hooks/codex-forward-guard.sh
+- agents/loom-codex-forwarder.md
+- loom-hooks/_read_ledger.sh
+- loom-hooks/knowledge-orient.sh
 verified: c8c167bb2dbba1c5ec65b7b9c61130873a249da2
 ---
 
 # Token Accounting And Receipts
 
-> Usage ledger, compare
+> Ledger
 
 ## Scope and Evidence
 
@@ -100,6 +100,7 @@ clap surface is `UsageArgs` in `commands/usage/args.rs`. Rules:
   normalize `token_count` `last_token_usage` and use the last/total pair only to suppress consecutive duplicate
   snapshots (`loom/src/commands/usage/codex_provider.rs::direct_row`). Fallback rows remain coverage evidence, tagged
   `FallbackCoverage` and reported as `fallback_coverage_totals`; they are not derived cumulative deltas.
+  Project, stage and plan scope filter eligible threads and rows before response-ID classification, so foreign copies cannot change selected-row provenance.
 - **Execution receipts** (`--receipts-root`, `loom/src/models/execution_receipt.rs`, schema 1) are
   a protocol for an external producer; nothing in the tree writes them. A 5m/1h split mismatch
   marks the split unknown instead of rejecting the receipt (`receipt_provider.rs`).
@@ -114,7 +115,7 @@ clap surface is `UsageArgs` in `commands/usage/args.rs`. Rules:
 - **Completeness and Codex scope.** Each provider reads `measured` or `partial` with reason codes,
   including the evidence-loss reasons for unparseable lines, unreadable session records and
   damaged forward receipts. `fallback_coverage_rows` is a coverage count, never a reason. A Codex
-  row counts for a project only through the threads its forward receipts name; without readable
+  row counts for a project only through the threads its forward receipts name, with stage and plan selection resolved from the selected project root; without readable
   receipts the scope is `Unavailable`, and `--all` is unscoped. Scope and session-record
   reading use only the current `.loom/work`, so a window before the last `loom init` reads 0
   Codex tokens. Reasons, windows and the session-record read:
@@ -251,16 +252,22 @@ a miss or key stability must be `#[serial]` against tests that rewrite `PATH`.
   so a hook retry appends nothing. A companion END marker with outcome
   `timed_out` records `timed_out` with exit 124. It appends under its own sidecar lock with an
   `O_NOFOLLOW` regular-file append, since `fs::locking` opens targets with a plain `File::open`
-  that follows symlinks. `exact_forward_argv` (8 words only) is separate and still serves the
-  transcript classifier in `commands/subagents/forward_jobs_transcript.rs`
-  ([Delivery-Proof and Quota-Continuity Defects](../concerns/token-accounting-and-proof-defects.md#delivery-proof-and-quota-continuity-defects)).
+  that follows symlinks. The transcript classifier in `commands/subagents/forward_jobs_transcript.rs`
+  uses the same `forward_argv` parser as receipt formation, including optional unit and invocation identities.
   Stderr of the delegate is discarded by the shell. A damaged line in the receipts file stops all
   receipt formation for that stage (persist refuses to append) and fails every Codex wait on it.
 - **Wait.** `loom subagents wait --receipt <64 hex> [--timeout <secs>] [--json]`
   (`loom/src/commands/subagents/forward_jobs_wait.rs`) polls every 2 s, default timeout 300 s, and
   never starts, cancels or retries anything. The stage comes from `LOOM_STAGE_ID`, else from a scan
   of `subagents/*/forward-receipts.jsonl` for the id. `wait_exit_code` (`forward_jobs_wait.rs::wait_exit_code`):
-  exit 0 succeeded, 1 failed, canceled or timed out, 2 queued, running or unknown.
+  exit 0 succeeded, 1 failed, canceled or timed out, 2 queued, running or unknown. A direct receipt
+  that has folded to Unknown settles the wait before the deadline; a companion receipt keeps polling,
+  because its printed state comes from the live job record.
+- **Direct unknown in a bound watch.** Watch binding (`wait/codex_binding.rs::receipt_matches`) refuses
+  an Unknown receipt. A watch already bound on a Running direct receipt ends with exit 5 once reconcile
+  has appended the identity's `unknown` lifecycle record (`codex_lifecycle/direct.rs::unknown_fold`,
+  admitted under the journal lock by `subagent_lifecycle/append.rs::append_all_locked`; the engine reads
+  it through `wait/evidence.rs`). A worker with no lifecycle evidence yet still holds to the deadline.
 - **Who waits.** The orchestrator, only, and only through one bound `loom subagents watch --worker
 claude:<agent-id> --worker codex:<unit-id> --timeout 3600` — one `--worker` per worker, `--session`
   naming only the Claude parent UUID. The forwarder makes ONE foreground wrapper call; if the harness
@@ -274,18 +281,15 @@ claude:<agent-id> --worker codex:<unit-id> --timeout 3600` — one `--worker` pe
   (`loom/src/commands/subagents/mod.rs`), and `codex-companion.mjs status --all` is never used. Exit
   2 (deadline passed) is not proof any worker died — see
   [\Subagent Hierarchy](../patterns/subagent-hierarchy.md).
-- **Status overlay.** For a `loom-codex-forwarder`, the daemon-reconciled Codex lifecycle outcome
-  alone decides `SubagentState`, via an intermediate `ForwardOverlay`
-  (`loom/src/commands/subagents/forward_jobs.rs::marker_overlay`/`overlay_from_state`):
-  `Queued`/`Running` -> `ForwardWait`; `Succeeded` -> `Done` if the transcript itself is done, else
-  `ForwardWait`; `Failed`, `Canceled` and `TimedOut` all collapse to one `ForwardFailed`; `Unknown`
-  -> `ForwardUnknown`. `classify_forward.rs::state_for` then maps that overlay 1:1 to
-  `SubagentState::{Done,ForwardWait,ForwardFailed,ForwardUnknown}` — there is no direct
-  `Failed->Failed`/`Cancelled->Cancelled` case. The legacy receipt/marker overlay applied after
-  structural transcript classification survives only as the diagnostic `forward` field, and does not
-  decide state. A damaged receipt index is an unresolved observation, never a partial success.
-  Poll-guard counts repeated `loom subagents list` and names the exact wait when receipts exist
-  (`poll-guard.sh`).
+- **Status overlay.** Correlated lifecycle evidence owns forwarder state through
+  `commands/subagents/classify/lifecycle.rs::Evidence::apply`: Succeeded becomes Done
+  immediately, Failed becomes Failed, and Cancelled becomes Cancelled, with terminal
+  reasons retained. Active and Unknown become ForwardWait and ForwardUnknown.
+  `commands/subagents/classify_forward.rs::apply_evidence` preserves these states;
+  receipt metadata remains diagnostic. The claim that lifecycle success also requires
+  a done transcript, or that lifecycle failure and cancellation collapse to ForwardFailed,
+  is incorrect: those legacy overlay mappings do not override exact lifecycle evidence.
+  A damaged receipt index remains unresolved evidence, never a partial success.
 
 ## Worker Brief Lifecycle
 
@@ -342,28 +346,10 @@ are YAML-indented and have no Markdown divider row; the parser accepts that shap
 
 ## Read Advisories and Reread Measurement
 
-No Rust delegate, intent or receipt store backs a read, and no rule judges a same-agent repeat.
-The measured saving at stake is small: identical same-agent rereads are 29 of 7,612 stage Read
-results, about 0.4% of Read characters. Why the earlier receipt path never worked:
-[Read Receipts Could Not Form](../mistakes/store-without-consumer.md#read-receipts-could-not-form-and-fixtures-wrote-the-pair-before-completion-2026-10-20).
-
-`loom_read_discipline_check` (`loom-hooks/_read_discipline.sh`) keeps rules 0 and 0b (exemptions for
-a skill's `SKILL.md` and `INDEX.md`), 1 (a whole read over `READ_GUARD_LINE_LIMIT` lines is
-redirected to `loom map --outline`), 3 (an unscoped tier-1 knowledge read) and 4 (a whole-file read
-a sibling agent of the session already requested of the unchanged file is advised once per agent
-and path). The number 2 is deliberately unused. Rule 4 reads the sibling ledger written by
-`_read_ledger.sh` (`_loom_read_sibling_request`); the advisory says the file was requested whole by
-N agents, an attempt and not proof of delivery. The ledger is
-`$LOOM_WORK_DIR/hooks/reads/<session>/<agent>.tsv` inside a stage and a private
-`$TMPDIR/loom-reads/` directory outside one.
-
-Rereads are measured after the fact: the `reads` section of `loom usage`
-(`loom/src/commands/usage/sections/reads.rs`) counts native and shell reads from transcripts. If
-that measurement shows same-agent rereads above 2% of Read characters, the revival design is
-completion at the agent's next Read, from a transcript offset recorded at prepare time.
+The read gate (rule 1 of `loom_read_discipline_check`) is deny-once inside a live stage: an agent's first whole read of a large file that has an outline is denied with `loom map --outline` and its repeat passes; a file with no outline only warns, and `[hooks] read_gate = false` turns the denial into a warning. Rereads are measured after the fact by the `reads` section of `loom usage`, where `same_transcript_rereads` counts a denied attempt plus its retry. Full rules, ledgers and measurement: [Read Gate](read-gate.md).
 
 ## Signal Caps and the IV Gate
 
-`loom/src/orchestrator/signals/tests_size.rs` pins `CLAUDE_MD_TEMPLATE_MAX_BYTES` at 20,138 (the template's measured size), `ORCHESTRATION_SKILL_MAX_BYTES` at 20,530 (`skills/loom-orchestration/SKILL.md`, loaded by every stage main session), `STABLE_PREFIX_MAX_BYTES` at 8,192, `STANDARD_SIGNAL_BOILERPLATE_FLOOR_MAX_BYTES` at 10,240 and `PLAN_OVERVIEW_MAX_BYTES` at 4,096. The overview cap mirrors `MAX_PLAN_OVERVIEW_BYTES` in `orchestrator/signals/generate/context.rs::MAX_PLAN_OVERVIEW_BYTES`. Trim doctrine before raising a cap.
+`loom/src/orchestrator/signals/tests_size.rs` pins `CLAUDE_MD_TEMPLATE_MAX_BYTES` at 20,131 bytes, `ORCHESTRATION_SKILL_MAX_BYTES` at 20,530 (`skills/loom-orchestration/SKILL.md`, loaded by every stage main session), `STABLE_PREFIX_MAX_BYTES` at 8,192, `STANDARD_SIGNAL_BOILERPLATE_FLOOR_MAX_BYTES` at 10,240 and `PLAN_OVERVIEW_MAX_BYTES` at 4,096. The overview cap mirrors `MAX_PLAN_OVERVIEW_BYTES` in `orchestrator/signals/generate/context.rs::MAX_PLAN_OVERVIEW_BYTES`. Trim doctrine before raising a cap.
 
-The IV stable prefix (`INTEGRATION_VERIFY_OVERRIDE`, `orchestrator/signals/cache.rs`) has the orchestrator run `loom check integration-verify` once; that check carries the complete suite. Reviewers run only targeted discriminating checks, which never substitute for that gate. After a review fix the orchestrator re-evaluates invalidated checks, and only the repaired criteria cache decides reuse.
+The IV stable prefix (`INTEGRATION_VERIFY_OVERRIDE`, `orchestrator/signals/cache.rs`) permits the orchestrator and reviewers to run full checks through `loom check integration-verify [--criterion <n>]`. Matching requests join or reuse cached passes; after a review fix the orchestrator re-evaluates invalidated checks.

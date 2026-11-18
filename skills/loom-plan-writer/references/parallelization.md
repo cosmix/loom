@@ -2,12 +2,18 @@
 
 Read when: a stage needs more than about six workers, inter-agent messaging, or a Workflow fan-out.
 
-- **2-level hierarchy** (main → coordinators → workers; workers NEVER spawn subagents) — for >~6 well-defined tasks in 2–4 DISJOINT file territories. Use an `EXECUTION PLAN - HIERARCHICAL` table (`SKILL.md` Section 5's `Worker | Role | Tier | Files owned | Shared context | Brief path` format, one row per coordinator and per nested worker), each worker's brief written to `doc/plans/briefs/<plan-slug>/<stage-id>/<worker>.md`, an OPTIONAL per-coordinator `Verify:` line — AT MOST ONE narrowly-scoped check over the files that coordinator's workers wrote, run ONCE, skipped if the coordinator is unsure; it is not a substitute for real verification, which stays the stage's main agent's job (full compile/test/lint) — plus the statements "Territories are DISJOINT" and "Workers NEVER spawn subagents." Coordinator and worker model follows BLOCK-B (haiku for mechanical edits, boilerplate, scaffolding, and simple unit tests, codex luna only on explicit request; sonnet or codex terra for common implementation and integration tests; opus (effort high) for mainstream architecture and algorithm implementation, `opus/xhigh` for hard debugging, core algorithmic or architectural work, distributed systems, heavily multithreaded or parallel code, and systems engineering; fable only for visual/UI design, a bug that survived a delegated fix attempt, or extremely challenging algorithmic design) picked per task — not a blanket sonnet default that skips that judgment call. Spawn workers BY AGENT TYPE or an untyped worker inherits the stage's own main model. On a larger or harder territory, an opus coordinator orchestrating sonnet or codex workers is a common shape (judgment at the seam, cheap execution at the leaves), chosen per task rather than by rote. Mechanics/preambles: the `loom-orchestration` skill, `## Rule 6 — Subagents`.
+- **2-level hierarchy** (main → coordinators → workers; workers NEVER spawn subagents) — for >~6 well-defined tasks in 2–4 DISJOINT file territories. Use an `EXECUTION PLAN - HIERARCHICAL` table (`SKILL.md` Section 5's `Worker | Role | Tier | Files owned | Shared context | Brief path` format, one row per coordinator and per nested worker), each worker's brief written to `doc/plans/briefs/<plan-slug>/<stage-id>/<worker>.md`, an OPTIONAL per-coordinator `Verify:` line — the tests for the code that coordinator's workers wrote and its module, never the whole suite; it is not a substitute for real verification, which stays the stage's main agent's job (full compile/test/lint) — plus the statements "Territories are DISJOINT" and "Workers NEVER spawn subagents." Coordinator and worker model follows `../../loom-orchestration/SKILL.md#rule-7--model-allocation` per task. Spawn workers BY AGENT TYPE: inside a stage an untyped spawn is denied; outside one the spawn guard gives it sonnet. On a larger or harder territory, an opus coordinator orchestrating sonnet or codex workers is a common shape (judgment at the seam, cheap execution at the leaves), chosen per task rather than by rote. Mechanics/preambles: the `loom-orchestration` skill, `## Rule 6 — Subagents`.
 - **Ultracode** (`ultracode: true`) — licenses the stage's session for Workflow orchestration: scripted fan-out/verify over tens of agents inside ONE session, zero cross-stage merges. Reach for it whenever a stage — or a would-be GROUP of sibling stages — matches any of: ≳10 homogeneous work units (files to migrate, modules to audit, endpoints to cover); breadth-first exploration or research whose total coverage exceeds one context window; a high-stakes verification gate wanting multi-perspective adversarial review (N independent skeptics / judge panels, not one reviewer); or generating competing implementations and selecting the best. Check every candidate group of parallel stages against this list before defaulting to more stages — don't wait for it to become obvious.
 - **Stage-collapse rule.** Prefer ONE ultracode stage over 3+ parallel sibling stages that perform the SAME operation on different file sets — every extra stage costs a worktree, a session spin-up, a branch merge, and merge-conflict risk with its siblings, where a Workflow runs the identical fan-out inside one session with no cross-stage merge at all. Heuristic: siblings differing only in WHICH files they touch → collapse into one ultracode stage; siblings differing in WHAT they do → keep them as separate stages.
 - **Cost/latency discipline — stay judicious.** Multi-agent orchestration runs roughly an order of magnitude more tokens than a single session (published measurements land around 15×), and wall-clock stretches once fan-out queues past the runtime's concurrency ceiling (~16 agents run concurrently; the rest wait). License it PER STAGE with the existing MANDATORY one-sentence justification in the description — never as a plan-wide default. Do NOT ultracode ordinary implementation, small scope (below ~10 units), or tightly coupled/sequential work — multi-agent measurably underperforms on tightly interdependent coding. Run the Workflow's worker agents at the cheapest adequate tier (sonnet) so the multiplier lands on the cheap rate, not the expensive one.
-- **Claude-only.** Ultracode Workflow fan-out spawns CLAUDE subagents only — the codex lane (`gpt-5.6-terra` / `gpt-6-luna`) is not addressable from inside a Workflow script. A stage licensed for both lanes uses the Workflow for its Claude-side fan-out and reaches `loom-codex-forwarder` Agent spawns outside the Workflow for codex work. Ultracode is therefore never a reason to list codex in `implementers`, nor vice versa.
+- **Claude-only.** Ultracode Workflow fan-out spawns CLAUDE subagents only — the codex lane (`gpt-6.1-terra` / `gpt-6.2-sol` / `gpt-6-luna`) is not addressable from inside a Workflow script. A stage licensed for both lanes uses the Workflow for its Claude-side fan-out and reaches `loom-codex-forwarder` Agent spawns outside the Workflow for codex work. On the native backend the main agent starts codex workers with `loom subagents start --provider codex`, also outside the Workflow. Ultracode is therefore never a reason to list codex in `implementers`, nor vice versa.
 - **Agent teams** — wide, exploratory scope needing inter-agent comms or dynamic task discovery (~7× whole-job cost; the `loom-orchestration` skill, `## Rule 6 — Subagents`). Don't use for concrete file-partitioned work.
+
+**Codex waves follow dependencies.** Order code, consumers and tests inside one concern's job
+first, across several files where cohesive. A later wave exists only when a job needs another
+job's result on disk. Never slice a list into waves by the cap of 6. Two jobs never write one file.
+Size by the measured rates and limits in `codex-implementers.md`. Without a committed brief,
+write one under the worktree scratch directory and forward ONE line naming its absolute path.
 
 ## Hierarchical worker table example
 
@@ -24,10 +30,12 @@ description: |
   AGENT TYPE, each with the fixed prompt plus "Your brief: <path>. Read it in
   full before anything else."
   This stage licenses both lanes (implementers ["codex", "claude"]). Each
-  handler is one file whose signature is pinned in its brief, so A1-A3 and
-  B1-B3 are codex units: coordinators spawn them as loom-codex-forwarder in
-  the FOREGROUND, six at once, within the fan-out cap of 6. The test rows own
-  several files and stay on Claude.
+  handler is one concern with its consumers and tests in dependency order,
+  so A1-A3 and B1-B3 are codex jobs. The main agent starts them as codex
+  units, up to six at once, each with its absolute brief path; only the
+  main agent can start a codex unit, so the coordinators own the Claude rows
+  alone. The test rows stay on Claude because their work needs
+  fixture-backed test convergence.
 
   | Worker | Role | Tier | Files owned | Shared context | Brief path |
   | ------ | ---- | ---- | ------------ | --------------- | ---------- |
@@ -42,10 +50,12 @@ description: |
   | B3 | subscriptions.rs | codex terra | src/api/graphql/subscriptions.rs | src/api/graphql/mod.rs | doc/plans/briefs/endpoints-plan/add-endpoints/b3-subscriptions.md |
   | B4 | GraphQL tests | sonnet | tests/api/graphql/** | src/api/graphql/** (read-only) | doc/plans/briefs/endpoints-plan/add-endpoints/b4-tests.md |
 
-  Coordinator A verify (optional, ONE scoped check, skip if unsure): cargo test --test rest_api
-  Coordinator B verify (optional, ONE scoped check, skip if unsure): cargo test --test graphql
+  Coordinator A verify (optional; the tests for its workers' code and module, never the whole suite): cargo test --test rest_api
+  Coordinator B verify (optional; the tests for its workers' code and module, never the whole suite): cargo test --test graphql
   Territories are DISJOINT. Workers NEVER spawn subagents.
   Coordinators return compact summaries only. The main agent's single
   `loom check` is the gate — a coordinator's scoped check never substitutes
   for it.
 ```
+
+A coordinator cannot start codex units (only the stage's main agent can), so in a hierarchical plan the main agent starts the codex units directly and the worker table gives them no coordinator. The plan names them `codex`, never a launch mechanism; the `codex.backend` setting picks it.

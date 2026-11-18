@@ -119,7 +119,7 @@ fn sample_contract() -> ContractSpec {
     ContractSpec {
         id: "parses-plan".to_string(),
         file: "tests/contract.rs".to_string(),
-        test: "parses_plan".to_string(),
+        test: Some("parses_plan".to_string()),
         runner: Some("cargo".to_string()),
         cwd: None,
         scenario: "a v2 plan with one standard stage".to_string(),
@@ -177,6 +177,7 @@ fn build_full_stage_definition() -> StageDefinition {
         contracts: vec![sample_contract()],
         harness: vec!["tests/fixtures/**".to_string()],
         reachable: vec![sample_reachable_check()],
+        consumer_deferred: Some("the consumer is planned for a later plan".to_string()),
     }
 }
 
@@ -344,4 +345,32 @@ fn test_extract_stage_definition_round_trip_sandbox_and_context_ceiling() {
     let expected_regression = def.regression_test.as_ref().unwrap();
     assert_eq!(regression.file, expected_regression.file);
     assert_eq!(regression.must_contain, expected_regression.must_contain);
+}
+
+#[test]
+fn consumer_deferred_survives_stage_file_round_trip() {
+    let (def, round_tripped) = round_tripped_stage_definition();
+
+    assert_eq!(
+        def.consumer_deferred.as_deref(),
+        Some("the consumer is planned for a later plan")
+    );
+    assert_eq!(round_tripped.consumer_deferred, def.consumer_deferred);
+}
+
+#[test]
+fn a_stage_file_without_consumer_deferred_loads_with_none() {
+    let plan = PlanIdentity {
+        id: "plan-id",
+        version: 2,
+        ratchet_files: &[],
+    };
+    let mut def = build_full_stage_definition();
+    def.consumer_deferred = None;
+    let stage = Stage::from_definition(&def, &plan);
+    let content = serialize_stage_to_markdown(&stage).expect("serialize");
+    assert!(!content.contains("consumer_deferred"), "{content}");
+
+    let loaded = extract_stage_definition(&content).expect("round trip should parse");
+    assert_eq!(loaded.consumer_deferred, None);
 }

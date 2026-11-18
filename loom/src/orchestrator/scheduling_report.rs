@@ -23,6 +23,8 @@ use std::path::{Path, PathBuf};
 
 #[path = "scheduling_report_guard.rs"]
 mod guard;
+#[path = "scheduling_report_loop.rs"]
+mod loop_alert;
 
 /// File name inside `.loom/work/` holding the report.
 const REPORT_FILE: &str = "scheduling.json";
@@ -53,6 +55,9 @@ pub enum BlockReason {
     DependencyCheckFailed { detail: String },
     /// Base-branch resolution reported the stage as not schedulable.
     SchedulingNotReady { detail: String },
+    /// Nothing proves the stage is free to start: its session inventory, lock
+    /// or file cannot be read, or starting failed. Needs an operator to look.
+    OwnershipUncertain { detail: String },
     /// The target guard holds the stage back: a knowledge stage waits while
     /// the target branch is held, and a stage cut from the target waits
     /// while the guard record cannot be read. Resolves once the operator
@@ -69,6 +74,7 @@ impl BlockReason {
             BlockReason::Dependency { self_resolving, .. } => *self_resolving,
             BlockReason::DependencyCheckFailed { .. } => false,
             BlockReason::SchedulingNotReady { .. } => true,
+            BlockReason::OwnershipUncertain { .. } => false,
             BlockReason::TargetHeld => false,
         }
     }
@@ -87,6 +93,7 @@ impl BlockReason {
                 format!("dependency check failed: {detail}")
             }
             BlockReason::SchedulingNotReady { detail } => detail.clone(),
+            BlockReason::OwnershipUncertain { detail } => detail.clone(),
             BlockReason::TargetHeld => {
                 "waiting while the target branch is held (loom target status)".to_string()
             }
@@ -158,6 +165,17 @@ pub enum Severity {
     Critical,
 }
 
+impl Severity {
+    /// The glyph both dashboards put before an alert of this severity.
+    pub fn marker(self) -> &'static str {
+        match self {
+            Severity::Critical => "\u{2716}",
+            Severity::Warning => "!",
+            Severity::Info => "\u{00b7}",
+        }
+    }
+}
+
 /// A display-ready line for either dashboard.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Alert {
@@ -187,7 +205,7 @@ pub fn alerts(work_dir: &Path, daemon_running: bool) -> Vec<Alert> {
 
     let now = Utc::now();
 
-    if let Some(alert) = stalled_alert(work_dir, now) {
+    if let Some(alert) = loop_alert::loop_alert(work_dir, now) {
         alerts.push(alert);
     }
 
@@ -217,27 +235,6 @@ pub fn alerts(work_dir: &Path, daemon_running: bool) -> Vec<Alert> {
     }
 
     alerts
-}
-
-fn stalled_alert(work_dir: &Path, now: DateTime<Utc>) -> Option<Alert> {
-    let tick = crate::orchestrator::tick::read(work_dir).ok().flatten()?;
-    if !tick.is_stalled(now) {
-        return None;
-    }
-
-    let phase = tick
-        .phase
-        .map(|p| format!(", stuck in {}", p.as_str()))
-        .unwrap_or_default();
-    Some(Alert {
-        severity: Severity::Critical,
-        text: format!(
-            "orchestrator loop stalled: no tick for {}s{} — restart with \
-             `loom stop`, then `loom run`",
-            tick.age_secs(now),
-            phase
-        ),
-    })
 }
 
 #[cfg(test)]
@@ -340,26 +337,11 @@ mod tests {
     }
 
     #[test]
-    fn test_stall_alert_requires_a_running_daemon() {
-        let temp = TempDir::new().unwrap();
-        crate::orchestrator::tick::record(temp.path(), crate::orchestrator::tick::Phase::Events);
-
-        // Backdate the tick well past the stall threshold.
-        std::fs::write(
-            temp.path().join("orchestrator.tick"),
-            format!(
-                "{}\nevents\n",
-                (Utc::now() - Duration::hours(10)).to_rfc3339()
-            ),
-        )
-        .unwrap();
-
-        assert!(alerts(temp.path(), false).is_empty(), "stopped daemon");
-
-        let running = alerts(temp.path(), true);
-        assert_eq!(running.len(), 1);
-        assert_eq!(running[0].severity, Severity::Critical);
-        assert!(running[0].text.contains("stuck in events"));
+    fn test_uncertain_ownership_needs_an_operator() {
+        let detail = "session ownership is uncertain".to_string();
+        let reason = BlockReason::OwnershipUncertain { detail };
+        assert!(!reason.self_resolving());
+        assert_eq!(reason.describe(), "session ownership is uncertain");
     }
 
     #[test]
@@ -383,5 +365,12 @@ mod tests {
     fn test_missing_report_yields_no_alerts() {
         let temp = TempDir::new().unwrap();
         assert!(alerts(temp.path(), true).is_empty());
+    }
+
+    #[test]
+    fn test_severity_markers() {
+        assert_eq!(Severity::Critical.marker(), "\u{2716}");
+        assert_eq!(Severity::Warning.marker(), "!");
+        assert_eq!(Severity::Info.marker(), "\u{00b7}");
     }
 }

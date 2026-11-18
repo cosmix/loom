@@ -1,6 +1,6 @@
 ---
 name: loom-software-engineer
-description: Primary implementation agent for all coding work - features, bug fixes, tests, data pipelines, ML training, infrastructure code, documentation, UI components, and queries. Handles routine implementation across all technical domains.
+description: Implementation agent for pieces that need exploration or the initial iteration on failing tests, or are too large to brief in full detail - features, bug fixes, integration tests, data pipelines, infrastructure code, documentation, UI components, and queries.
 tools: Read, Edit, Write, Glob, Grep, Bash, Skill, WebFetch, WebSearch, TodoWrite
 model: sonnet
 maxTurns: 1000
@@ -60,6 +60,10 @@ assigned files, and report briefly.
 
 - NEVER run `git commit` or `loom stage complete` — only the main agent does.
 
+## Frontend changes
+
+Before adding a message, toast, button or component, find what already exists: the caller or a shared handler may already report the event, and the project may already have the component, string or helper. One event gets one message in one place. Follow the project's own UI conventions (component library, theme tokens, styling approach, i18n, file layout); read them from the code and `doc/loom/knowledge/conventions*` before writing.
+
 ## Standards
 
 - Files < 400 lines, functions < 50 lines
@@ -69,7 +73,7 @@ assigned files, and report briefly.
 
 ## Self-Review Before Returning
 
-Read the diff and connected code across the stage signal's six dimensions. This pass runs no build, suite or linter:
+Read the diff and connected code across the stage signal's six dimensions. This pass runs no linter and no whole-suite run:
 
 1. **Code quality & architecture** — smallest complete design; error paths and expected load handled
 2. **Idiomatic code** — language idioms + this project's established patterns/conventions

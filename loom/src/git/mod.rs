@@ -9,15 +9,23 @@
 //! - Git hook installation for .loom/work protection
 
 pub mod branch;
+pub(crate) mod changes;
+#[cfg(test)]
+mod changes_contract_tests;
 pub mod cleanup;
 pub mod hooks;
 mod init_blockers;
 pub mod merge;
+#[cfg(test)]
+mod queries_contract_tests;
 pub mod repository;
+pub(crate) mod revision;
 pub mod runner;
 pub mod signing;
 pub mod stage_commit;
+pub(crate) mod status_entries;
 pub mod target_guard;
+pub(crate) mod user_git;
 pub mod worktree;
 
 // Re-export commonly used types and functions
@@ -30,8 +38,9 @@ pub use worktree::{
 
 pub use merge::{
     blocked_merge_inputs, build_merge_report, check_merge_state, check_resolved_worktree,
-    control_path_violation, get_conflicting_files, merge_stage, verify_merge_succeeded, MergeBlock,
-    MergeGate, MergeResult, MergeState, MergeStatusReport, StashReapply,
+    control_path_violation, get_conflicting_files, has_merge_commit_since, merge_stage,
+    verify_merge_succeeded, MergeBlock, MergeGate, MergeResult, MergeState, MergeStatusReport,
+    StashReapply,
 };
 
 pub use repository::{ensure_repo_ready_for_worktrees, RepoBootstrapResult};

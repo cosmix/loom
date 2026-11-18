@@ -1,6 +1,7 @@
 #![deny(unsafe_op_in_unsafe_fn)]
 #![deny(clippy::undocumented_unsafe_blocks)]
 
+pub mod agent_state;
 pub mod assets;
 pub mod claude;
 pub mod cli;
@@ -18,9 +19,14 @@ pub mod host_verify;
 pub mod language;
 pub mod map;
 pub mod models;
+pub mod native_worker;
 pub mod orchestrator;
 pub mod parser;
 pub mod plan;
+pub mod plan_server;
+pub mod plan_session;
+pub mod planning;
+pub mod pressure;
 pub mod process;
 pub mod provider_data;
 pub mod quota;
@@ -29,6 +35,7 @@ pub mod remote_control;
 pub mod sandbox;
 pub mod skills;
 pub mod stage_service;
+pub mod status;
 pub mod subagent_lifecycle;
 pub mod telemetry;
 pub mod testrun;
@@ -39,7 +46,12 @@ pub mod utils;
 pub mod validation;
 pub mod verify;
 pub mod version;
+pub mod web_server;
 pub mod yaml;
+
+#[cfg(test)]
+#[path = "../tests/test_support/git_repo.rs"]
+pub(crate) mod test_git;
 
 /// ASCII art logo for loom CLI
 pub const LOGO: &str = "   ╷

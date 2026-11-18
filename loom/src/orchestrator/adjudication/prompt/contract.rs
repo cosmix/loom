@@ -6,12 +6,17 @@ use std::path::Path;
 use super::{KindPromptInput, Prompt};
 use crate::models::dispute::DisputeKind;
 use crate::plan::schema::ContractSpec;
+use crate::testrun::TestRunnerAdapter;
 use crate::verify::contracts::run_dir::{resolve_run, ContractRun};
-use crate::verify::contracts::{resolve_adapter, store};
+use crate::verify::contracts::{choices, resolve_adapter, store};
 
 #[path = "contract_frozen_set.rs"]
 mod frozen_set;
 use frozen_set::FROZEN_SET_HEADING;
+
+#[path = "contract_replacement.rs"]
+mod replacement;
+pub(super) use replacement::{REPLACEMENT_DIFF_HEADING, REPLACEMENT_HEADING};
 
 /// The evidence headings whose fences the truncation pass halves
 /// (`truncate.rs`): a contract file appears in three of them, so they go
@@ -20,15 +25,35 @@ pub(super) const FROZEN_CONTENT_HEADING: &str = "## Frozen content";
 pub(super) const CURRENT_CONTENT_HEADING: &str = "## Current content";
 pub(super) const DIFF_HEADING: &str = "## Diff (frozen vs current)";
 
+/// What a prompt shows for the run of a contract [`writer_test_unrunnable`]
+/// holds for.
+pub(super) const NO_ADAPTER_FOR_WRITER_TEST: &str =
+    "(no test-runner adapter answers where the contract runs, so loom runs no command for the \
+     writer's test)";
+
+/// Whether `effective`, the contract `plan` with the writer's choices, has a
+/// test the writer chose and no adapter to run it. Without an adapter a test
+/// runs as a shell command: a test the plan set is the planner's command and
+/// a prompt may show it as one, but a writer's test is an identifier, never a
+/// command, so no prompt shows it as one.
+pub(super) fn writer_test_unrunnable(
+    plan: &ContractSpec,
+    effective: &ContractSpec,
+    adapter: Option<&dyn TestRunnerAdapter>,
+) -> bool {
+    adapter.is_none() && effective.test != plan.test
+}
+
 pub(super) fn build(input: &KindPromptInput<'_>) -> Prompt {
+    let record = store::load_freeze(input.work_dir, &input.stage.id).map_err(|e| format!("{e:#}"));
     Prompt {
-        instructions: build_instructions(input),
-        evidence: build_evidence(input),
+        instructions: build_instructions(input, &record),
+        evidence: build_evidence(input, &record),
     }
 }
 
 fn spec<'a>(input: &'a KindPromptInput<'_>) -> Option<&'a ContractSpec> {
-    let DisputeKind::Contract { contract_id } = &input.request.kind else {
+    let DisputeKind::Contract { contract_id, .. } = &input.request.kind else {
         return None;
     };
     input
@@ -38,7 +63,10 @@ fn spec<'a>(input: &'a KindPromptInput<'_>) -> Option<&'a ContractSpec> {
         .find(|spec| spec.id == contract_id.as_str())
 }
 
-fn build_instructions(input: &KindPromptInput<'_>) -> String {
+type FreezeSnapshot = Result<Option<store::FreezeRecord>, String>;
+
+fn build_instructions(input: &KindPromptInput<'_>, record: &FreezeSnapshot) -> String {
+    let has_replacement = replacement::proposed(input).is_some();
     let mut s = String::new();
     s.push_str("## Your Job\n\n");
     s.push_str("You are the adjudication session for ONE disputed frozen contract.\n");
@@ -47,8 +75,9 @@ fn build_instructions(input: &KindPromptInput<'_>) -> String {
     s.push_str("You judge; you do not fix. Read files and run the contract test, but change\n");
     s.push_str("no code, write no files other than the verdict, make no commits, and never\n");
     s.push_str("run `loom stage complete`. Working-tree stage instructions do not govern\n");
-    s.push_str("this adjudication session.\n\n");
-    s.push_str(&first_step(input));
+    s.push_str("this adjudication session.\n");
+    s.push_str(replacement::NEVER_EDIT_SENTENCE);
+    s.push_str(&first_step(input, record));
     s.push_str("## Verdict semantics\n\n");
     s.push_str("- accept: the changed test still covers the scenario and rejects the stated\n");
     s.push_str("  plausible wrong implementation. Omit plan_patch unless the contract\n");
@@ -58,33 +87,41 @@ fn build_instructions(input: &KindPromptInput<'_>) -> String {
     s.push_str(&format!(
         "  files listed under `{FROZEN_SET_HEADING}` too.\n"
     ));
+    s.push_str(replacement::accept_note(has_replacement));
     s.push_str("- reject: the change weakens the contract's scenario or rejects clause.\n");
     s.push_str("- needs-more-evidence: you cannot decide; list specific questions.\n\n");
     s.push_str("Accept and reject require reasoning and citations to real lines in the\n");
-    s.push_str("contract, frozen or current file, or diff. A citation has file, optional\n");
+    s.push_str(&format!(
+        "contract, frozen or current file, {}or diff. A citation has file, optional\n",
+        replacement::citable(has_replacement)
+    ));
     s.push_str("line, excerpt, and claim. Include the command, exit code, and decisive\n");
     s.push_str("output from your test run in a citation when you can run it.\n\n");
     s.push_str(&input.verdict_protocol(verdict_schema()));
     s
 }
 
-fn first_step(input: &KindPromptInput<'_>) -> String {
+fn first_step(input: &KindPromptInput<'_>, record: &FreezeSnapshot) -> String {
     let mut s = String::from("## Step 1 — Run and compare the contract\n\n");
     s.push_str("Run the contract test as the adapter runs it, then compare the frozen content with the current content.\n\n");
     match (spec(input), input.worktree) {
         (Some(contract), _) if !valid_file(&contract.file) => {
             s.push_str("(contract file path is unsafe; do not run a command against it)\n\n");
         }
-        (Some(contract), Some(worktree)) => match contract_run(input, contract, worktree) {
-            Ok(run) => {
-                let quoted_dir = run.dir.display().to_string().replace('\'', "'\\''");
+        (Some(contract), Some(worktree)) => match contract_run(input, contract, worktree, record) {
+            Ok(None) => s.push_str(&format!(
+                "{NO_ADAPTER_FOR_WRITER_TEST}; report what evidence is missing\n\n"
+            )),
+            Ok(Some(run)) => {
+                let quoted_dir =
+                    crate::testrun::command::shell_quote(&run.dir.display().to_string());
                 s.push_str(&format!(
                     "Run from the contract's run directory (`{}` in the stage's worktree), \
                      where the completion check runs it:\n\n",
                     run.cwd
                 ));
                 s.push_str(&format!(
-                    "```bash\ncd -- '{quoted_dir}'\n{}\necho \"exit: $?\"\n```\n\n",
+                    "```bash\ncd -- {quoted_dir}\n{}\necho \"exit: $?\"\n```\n\n",
                     run.command
                 ));
             }
@@ -102,51 +139,96 @@ fn first_step(input: &KindPromptInput<'_>) -> String {
     }
     s.push_str("A failed run alone does not decide whether the change weakens the contract.\n");
     s.push_str("Compare the scenario and rejects clause with both versions of the file.\n\n");
+    s.push_str(replacement::first_step_note(
+        replacement::proposed(input).is_some(),
+    ));
     s
 }
 
+/// `contract` as it runs: the plan's spec with the test and runner the freeze
+/// recorded, or, before any freeze record exists, with the choices the daemon
+/// saved from earlier freeze calls. The test stays `None` when no writer named
+/// one.
+fn effective_spec(
+    input: &KindPromptInput<'_>,
+    contract: &ContractSpec,
+    record: &FreezeSnapshot,
+) -> ContractSpec {
+    if let Ok(Some(record)) = record {
+        return store::effective_contract(record, contract);
+    }
+    choices::lenient_contracts(input.work_dir, input.stage)
+        .into_iter()
+        .find(|spec| spec.id == contract.id)
+        .unwrap_or_else(|| contract.clone())
+}
+
 /// Where and how the completion check runs `contract`, from the run
-/// directory the plan gives or the freeze recorded for its file.
+/// directory the plan gives or the freeze recorded for its file, with the
+/// test the writer chose; `None` when that test has no adapter to run it
+/// ([`writer_test_unrunnable`]). A contract with no test cannot be run: the
+/// error says so.
 fn contract_run(
     input: &KindPromptInput<'_>,
     contract: &ContractSpec,
     worktree: &Path,
-) -> anyhow::Result<ContractRun> {
-    let recorded = recorded_cwd(input, contract)?;
-    let adapter = resolve_adapter(contract, &input.site.path);
+    record: &FreezeSnapshot,
+) -> anyhow::Result<Option<ContractRun>> {
+    let recorded = recorded_cwd(record, contract).map_err(|error| anyhow::anyhow!("{error}"))?;
+    let effective = effective_spec(input, contract, record);
+    let adapter = resolve_adapter(&effective, &input.site.path);
+    if writer_test_unrunnable(contract, &effective, adapter) {
+        return Ok(None);
+    }
     resolve_run(
-        contract,
+        &effective,
         adapter,
         worktree,
         &input.site.path,
         recorded.as_deref(),
     )
+    .map(Some)
 }
 
 /// The run directory the freeze recorded for `contract`'s file, if it
 /// recorded one.
-fn recorded_cwd(
-    input: &KindPromptInput<'_>,
+fn recorded_cwd<'a>(
+    record: &'a FreezeSnapshot,
     contract: &ContractSpec,
-) -> anyhow::Result<Option<String>> {
-    let record = store::load_freeze(input.work_dir, &input.stage.id)?;
-    Ok(record.and_then(|record| store::recorded_cwd(&record, contract).map(str::to_string)))
+) -> Result<Option<String>, &'a str> {
+    let record = record.as_ref().map_err(String::as_str)?;
+    Ok(record
+        .as_ref()
+        .and_then(|record| store::recorded_cwd(record, contract).map(str::to_string)))
 }
 
-/// The disputed contract's spec as the plan holds it, with the run directory
+/// The disputed contract's spec as the plan holds it, with the test it runs
+/// (`effective`: the writer's when the writer chose one), the run directory
 /// the plan gives and the one the freeze recorded.
-fn spec_block(input: &KindPromptInput<'_>, contract: &ContractSpec) -> String {
-    let recorded = match recorded_cwd(input, contract) {
+fn spec_block(
+    contract: &ContractSpec,
+    effective: &ContractSpec,
+    record: &FreezeSnapshot,
+) -> String {
+    let recorded = match recorded_cwd(record, contract) {
         Ok(Some(cwd)) => cwd,
         Ok(None) => "(none recorded)".to_string(),
         Err(error) => format!("(freeze record unreadable: {error:#})"),
     };
+    let test = effective.test.as_deref().unwrap_or("(none chosen)");
+    let writer = match (&contract.test, &effective.test) {
+        (hint, Some(_)) if *hint != effective.test => format!(
+            "writer's test: chosen when the contracts were frozen, in place of the plan's hint \
+             ({})\n",
+            hint.as_deref().unwrap_or("none")
+        ),
+        _ => String::new(),
+    };
     format!(
-        "id: {}\nfile: {}\ntest: {}\ncwd: {}\nrecorded cwd: {recorded}\nscenario: {}\n\
-         rejects: {}\n\n",
+        "id: {}\nfile: {}\ntest: {test}\n{writer}cwd: {}\nrecorded cwd: {recorded}\n\
+         scenario: {}\nrejects: {}\n\n",
         contract.id,
         contract.file,
-        contract.test,
         contract.cwd.as_deref().unwrap_or("(not set; detected)"),
         contract.scenario,
         contract.rejects
@@ -175,9 +257,9 @@ at least one question.
 "#
 }
 
-fn build_evidence(input: &KindPromptInput<'_>) -> String {
+fn build_evidence(input: &KindPromptInput<'_>, record: &FreezeSnapshot) -> String {
     let id = match &input.request.kind {
-        DisputeKind::Contract { contract_id } => contract_id.as_str(),
+        DisputeKind::Contract { contract_id, .. } => contract_id.as_str(),
         _ => "(non-contract dispute)",
     };
     let mut s = format!(
@@ -187,26 +269,30 @@ fn build_evidence(input: &KindPromptInput<'_>) -> String {
     let contract = spec(input);
     s.push_str("## Contract spec\n\n");
     if let Some(contract) = contract {
-        s.push_str(&spec_block(input, contract));
+        let effective = effective_spec(input, contract, record);
+        s.push_str(&spec_block(contract, &effective, record));
     } else {
         s.push_str("(contract spec unavailable for this dispute)\n\n");
     }
-    let frozen = frozen_content(input, contract);
+    let frozen = frozen_content(input, contract, record);
     let current = current_content(input, contract);
     push_content(&mut s, FROZEN_CONTENT_HEADING, &frozen);
     push_content(&mut s, CURRENT_CONTENT_HEADING, &current);
     s.push_str("## Agent's reason\n\n");
-    s.push_str(&input.request.reason);
-    s.push_str(&format!("\n\n{DIFF_HEADING}\n\n"));
+    s.push_str(&super::fenced("text", &input.request.reason));
+    let proposed = replacement::sections(input, contract, &frozen);
+    s.push_str(&format!("{DIFF_HEADING}\n\n"));
     match (frozen, current, contract) {
         (Ok(before), Ok(after), Some(contract)) => {
-            s.push_str("```diff\n");
-            s.push_str(&super::diff::unified_diff(&before, &after, &contract.file));
-            s.push_str("```\n\n");
+            s.push_str(&super::fenced(
+                "diff",
+                &super::diff::unified_diff(&before, &after, &contract.file),
+            ));
         }
         _ => s.push_str("(diff unavailable because frozen or current content is unavailable)\n\n"),
     }
-    s.push_str(&frozen_set::section(input, contract));
+    s.push_str(&proposed);
+    s.push_str(&frozen_set::section(input, contract, record));
     s
 }
 
@@ -217,6 +303,7 @@ fn valid_file(path: &str) -> bool {
 fn frozen_content(
     input: &KindPromptInput<'_>,
     contract: Option<&ContractSpec>,
+    record: &FreezeSnapshot,
 ) -> Result<String, String> {
     let Some(contract) = contract else {
         return Err("(frozen file unavailable: contract spec missing)".to_string());
@@ -224,20 +311,24 @@ fn frozen_content(
     if !valid_file(&contract.file) {
         return Err("(frozen file unavailable: unsafe contract file path)".to_string());
     }
-    let root = input
-        .work_dir
-        .join("contracts")
-        .join(&input.stage.id)
-        .join("files");
+    let record = record
+        .as_ref()
+        .map_err(|e| format!("(freeze record unreadable: {e})"))?
+        .as_ref()
+        .ok_or_else(|| "(the contracts are not frozen)".to_string())?;
+    if !record.files.iter().any(|file| file.path == contract.file) {
+        return Err("(frozen file unavailable: file absent from freeze record)".to_string());
+    }
+    let path = store::frozen_file_path_for_record(input.work_dir, record, &contract.file);
     let work_dir = fs::canonicalize(input.work_dir)
         .map_err(|_| "(frozen file work directory unavailable)".to_string())?;
-    let frozen_root =
-        fs::canonicalize(&root).map_err(|_| "(frozen file root unavailable)".to_string())?;
-    if !frozen_root.starts_with(work_dir) {
-        return Err("(frozen file root escapes the work directory)".to_string());
-    }
-    let path = store::frozen_file_path(input.work_dir, &input.stage.id, &contract.file);
-    read_confined(&frozen_root, &path, "frozen file")
+    let relative = path
+        .strip_prefix(input.work_dir)
+        .map_err(|_| "(frozen file path escapes the work directory)".to_string())?;
+    let bytes =
+        crate::fs::safe_read::read_bounded(&work_dir, relative, store::MAX_FROZEN_FILE_BYTES)
+            .map_err(|_| "(frozen file unavailable)".to_string())?;
+    String::from_utf8(bytes).map_err(|_| "(frozen file unreadable as UTF-8 text)".to_string())
 }
 
 fn current_content(
@@ -272,14 +363,7 @@ fn read_confined(root: &Path, path: &Path, label: &str) -> Result<String, String
 fn push_content(out: &mut String, heading: &str, content: &Result<String, String>) {
     out.push_str(&format!("{heading}\n\n"));
     match content {
-        Ok(text) => {
-            out.push_str("```text\n");
-            out.push_str(text);
-            if !text.ends_with('\n') {
-                out.push('\n');
-            }
-            out.push_str("```\n\n");
-        }
+        Ok(text) => out.push_str(&super::fenced("text", text)),
         Err(message) => out.push_str(&format!("{message}\n\n")),
     }
 }
@@ -287,3 +371,15 @@ fn push_content(out: &mut String, heading: &str, content: &Result<String, String
 #[cfg(test)]
 #[path = "contract_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "contract_choice_tests.rs"]
+mod choice_tests;
+
+#[cfg(test)]
+#[path = "contract_replacement_tests.rs"]
+mod replacement_tests;
+
+#[cfg(test)]
+#[path = "contract_no_adapter_tests.rs"]
+mod no_adapter_tests;

@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Trusted PreToolUse pin for the one exact completion command a session may run.
-# The command relays a host job (`loom stage complete`), so this hook only
+# The command relays a host job (`loom stage complete`), so this hook admits the
+# pinned command, rewrites the main agent's plain spelling of it (bare `loom`,
+# optional `2>&1`, one `| tail`/`| head` line count) to the pinned command,
 # refuses every other spelling and writes the completion heartbeat the stall
 # monitor reads; it carries no verdict.
 
@@ -18,9 +20,17 @@ read_input() {
 	loom_read_input 1 2>/dev/null || true
 }
 
+# fail_closed <reason> [<prefix>] - Print the refusal (after <prefix>) and exit 2.
 fail_closed() {
-	printf 'LOOM_CONTROL_ERROR: %s\n' "$1" >&2
+	printf '%sLOOM_CONTROL_ERROR: %s\n' "${2:-}" "$1" >&2
 	exit 2
+}
+
+# block_not_pinned <reason> - Record a refused completion attempt in the stage's
+# block ledger, then refuse it.
+block_not_pinned() {
+	loom_record_block loom-control-complete not-pinned Bash "$COMMAND"
+	fail_closed "$1" "[loom-control-complete/not-pinned] "
 }
 
 command -v jq &>/dev/null || fail_closed "$(loom_jq_missing_message loom-control-complete.sh)"
@@ -238,6 +248,69 @@ completion_rejection_reason() {
 	printf 'quoted, concatenated, escaped, or line-spliced command bytes are not allowed'
 }
 
+# completion_rewrite_matches - Return 0 when COMMAND's tokens are exactly
+# `BIN stage complete STAGE_ID [2>&1] [| tail|head -N | -n N]`, BIN being the
+# word `loom` or the resolved trusted path in LOOM_BIN. Any quote, escape,
+# expansion or newline in the raw bytes refuses, so the tokens are the argv.
+completion_rewrite_matches() {
+	local n i=4 t1 t2 t3
+	case "$COMMAND" in *\\* | *\'* | *\"* | *\$* | *\`* | *$'\n'*) return 1 ;; esac
+	loom_tokenize_command "$COMMAND" || return 1
+	n=${#LOOM_TOKENS[@]}
+	((n >= 4)) || return 1
+	[[ "${LOOM_TOKENS[0]}" == loom || "${LOOM_TOKENS[0]}" == "$LOOM_BIN" ]] || return 1
+	[[ "${LOOM_TOKENS[1]}" == stage && "${LOOM_TOKENS[2]}" == complete ]] || return 1
+	[[ "${LOOM_TOKENS[3]}" == "$STAGE_ID" ]] || return 1
+	if ((i + 2 < n)) && [[ "${LOOM_TOKENS[$i]}" == 2 && "${LOOM_TOKENS[$((i + 1))]}" == '%%SEP%%' &&
+		"${LOOM_TOKEN_SEPS[$((i + 1))]:-}" == '>&' && "${LOOM_TOKENS[$((i + 2))]}" == 1 ]]; then
+		i=$((i + 3))
+	fi
+	if ((i + 2 < n)) && [[ "${LOOM_TOKENS[$i]}" == '%%SEP%%' && "${LOOM_TOKEN_SEPS[$i]:-}" == '|' ]]; then
+		t1=${LOOM_TOKENS[$((i + 1))]} t2=${LOOM_TOKENS[$((i + 2))]} t3=${LOOM_TOKENS[$((i + 3))]:-}
+		[[ "$t1" == tail || "$t1" == head ]] || return 1
+		if [[ "$t2" =~ ^-[0-9]+$ ]]; then
+			i=$((i + 3))
+		elif ((i + 3 < n)) && [[ "$t2" == -n && "$t3" =~ ^[0-9]+$ ]]; then
+			i=$((i + 4))
+		else
+			return 1
+		fi
+	fi
+	((i == n))
+}
+
+# completion_caller_is_main - the payload positively names the main agent (its
+# transcript is <session_id>.jsonl), or names no transcript at all and the
+# process walk (loom_is_subagent) finds no subagent. An unrecognised transcript
+# shape never counts: main is not granted by elimination (_identity.sh).
+completion_caller_is_main() {
+	case "$(loom_payload_agent_verdict "$INPUT_JSON")" in
+	main) return 0 ;;
+	subagent) return 1 ;;
+	esac
+	[[ -z "$(printf '%s' "$INPUT_JSON" | jq -r '.transcript_path // empty' 2>/dev/null)" ]] || return 1
+	! loom_is_subagent "$INPUT_JSON"
+}
+
+# emit_pinned_allow <reason> - Write the completion heartbeat and print the
+# PreToolUse allow, giving <reason>, that runs PINNED_COMMAND. updatedInput
+# replaces the whole tool input, so only the model's timeout and description
+# carry over; run_in_background and dangerouslyDisableSandbox never ride on an
+# explicit hook allow.
+emit_pinned_allow() {
+	local out
+	out=$(jq -c --arg pinned "$PINNED_COMMAND" --arg reason "$1" '{hookSpecificOutput: {
+		hookEventName: "PreToolUse",
+		permissionDecision: "allow",
+		permissionDecisionReason: $reason,
+		updatedInput: ({command: $pinned}
+			+ (.tool_input | {timeout, description} | with_entries(select(.value != null)))),
+		additionalContext: ("LOOM: ran the pinned completion command " + $pinned + "; its output is not piped. Read the Host job line.")}}' <<<"$INPUT_JSON") ||
+		block_not_pinned "the completion allow could not be built; retry with the pinned command: $PINNED_COMMAND"
+	loom_write_completion_heartbeat >/dev/null || true
+	printf '%s\n' "$out"
+}
+
 INPUT_JSON=$(read_input)
 [[ -n "$INPUT_JSON" ]] || exit 0
 [[ "$(printf '%s' "$INPUT_JSON" | jq -r '.tool_name // empty')" == Bash ]] || exit 0
@@ -285,12 +358,26 @@ PINNED_COMMAND="$LOOM_BIN stage complete $STAGE_ID"
 # A PreToolUse payload carries no result; a payload that does is a stale
 # PostToolUse registration, which this hook no longer serves.
 [[ "$(printf '%s' "$INPUT_JSON" | jq -r 'has("tool_result") or has("tool_response")')" != true ]] || exit 0
+# Only a positively main caller completes a stage: any other caller's pinned
+# form gets no allow (commit-filter.sh refuses a subagent's) and its plain
+# spelling keeps the refusal.
+if [[ "$COMMAND" == "$PINNED_COMMAND" ]]; then
+	# No permission rule matches the absolute pinned path (the session grants
+	# `Bash(loom *)`), so without this allow auto mode's classifier judges, and
+	# can refuse, the main agent's completion.
+	if completion_caller_is_main; then
+		emit_pinned_allow "loom: pinned completion command"
+		exit 0
+	fi
+	loom_write_completion_heartbeat || true
+	exit 0
+fi
+if completion_caller_is_main && completion_rewrite_matches; then
+	emit_pinned_allow "loom: completion rewritten to the pinned command"
+	exit 0
+fi
 if [[ "$COMMAND" == "loom stage complete $STAGE_ID" ]]; then
-	fail_closed "retry with the pinned command: $PINNED_COMMAND"
+	block_not_pinned "retry with the pinned command: $PINNED_COMMAND"
 fi
-if [[ "$COMMAND" != "$PINNED_COMMAND" ]]; then
-	REASON=$(completion_rejection_reason "$LOOM_BIN")
-	fail_closed "completion must be one exact pinned command: $PINNED_COMMAND ($REASON)"
-fi
-loom_write_completion_heartbeat || true
-exit 0
+REASON=$(completion_rejection_reason "$LOOM_BIN")
+block_not_pinned "completion must be one exact pinned command: $PINNED_COMMAND ($REASON)"

@@ -1,20 +1,21 @@
 use anyhow::{bail, Context, Result};
 use std::fs;
 use std::os::unix::fs::DirBuilderExt;
-#[cfg(test)]
-use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
 use crate::fs::knowledge::KnowledgeDir;
 
-mod config_sections;
+pub(crate) mod config_sections;
 mod discovery;
+pub(crate) use config_sections::ModelsConfig;
 pub use config_sections::{
-    insert_key, read_config, read_context_config, read_plan_sandbox, read_pressure_config,
-    read_remote_control_config, read_terminal_config, remove_key, resolve_context_ceiling_tokens,
-    resolve_stage_model_effort, update_config, write_config, write_context_config,
-    write_plan_sandbox, write_remote_control_config, write_terminal_config, PressureConfig,
+    insert_key, read_config, read_context_config, read_plan_config, read_plan_sandbox,
+    read_pressure_config, read_remote_control_config, read_terminal_config, remove_key,
+    resolve_code_reviewer_model_effort, resolve_context_ceiling_tokens, resolve_stage_model_effort,
+    update_config, write_config, write_context_config, write_plan_sandbox,
+    write_remote_control_config, write_terminal_config, PlanConfig, PressureConfig,
 };
+
 mod context_config;
 pub use context_config::ContextConfig;
 
@@ -97,10 +98,10 @@ const LOOM_DIR: &str = ".loom";
 const WORK_DIR: &str = "work";
 /// The pre-move spelling of the state root, directly under the project root.
 const LEGACY_WORK_DIR: &str = ".work";
-/// The state root's private subdirectories. `terminal-history` exists from the start: every
-/// session capsule denies reading it, and the sandbox skips a deny whose path is missing.
+/// The state root's subdirectories, created by `WorkDir::load` when missing. `terminal-history`
+/// exists from the start: session capsules deny it, and the sandbox skips a missing deny path.
 #[rustfmt::skip]
-const STATE_SUBDIRS: [&str; 11] = [
+pub const STATE_SUBDIRS: [&str; 11] = [
     "signals", "handoffs", "archive", "stages", "sessions", "crashes", "memory",
     "wrappers", "pids", "logs", "terminal-history",
 ];
@@ -144,17 +145,17 @@ impl WorkDir {
         }
 
         // Search upward for a workspace, bounded at the enclosing repository
-        // and (when `base` sits under it) at the OS temp root too — a TMPDIR
-        // nested in a git checkout (e.g. a test suite's `<repo>/target/tmp`)
-        // sits below that checkout's `.git`, so the repo-root bound alone
-        // would walk into the checkout's own live workspace. See
-        // `discovery::walk_up` for the walk and both bounds in full.
+        // and (when `base` sits under it) at the OS temp root: a TMPDIR in a
+        // checkout (`<repo>/target/tmp`) sits below its `.git`, so the repo-root
+        // bound alone would walk into the checkout's workspace (`discovery::walk_up`).
+        let mut fallback = base.to_path_buf();
         if let Ok(abs) = base.canonicalize() {
             if let Some(repo_root) = discovery::nearest_git_root(&abs) {
                 let floor = temp_root.filter(|t| abs.starts_with(t));
                 if let Some((root, layout)) = discovery::walk_up(&abs, repo_root, floor) {
                     return Self { root, layout };
                 }
+                fallback = discovery::fallback_root(&abs, repo_root, floor, fallback);
             }
         }
 
@@ -166,7 +167,7 @@ impl WorkDir {
         }
 
         Self {
-            root: base.join(LOOM_DIR).join(WORK_DIR),
+            root: fallback.join(LOOM_DIR).join(WORK_DIR),
             layout: Layout::Nested,
         }
     }
@@ -287,15 +288,11 @@ This directory is managed by loom CLI and contains:
 - `sessions/` - Active session tracking
 - `crashes/` - Crash reports and diagnostics
 - `logs/` - Per-session captured stderr (`<session-id>.stderr.log`)
-- `knowledge/` - Curated codebase knowledge (entry points, patterns, conventions)
 
 Do not manually edit these files unless you know what you're doing.
 "#;
 
-        let readme_path = self.root.join("README.md");
-        fs::write(readme_path, readme_content).context("Failed to create README.md")?;
-
-        Ok(())
+        fs::write(self.root.join("README.md"), readme_content).context("Failed to create README.md")
     }
 
     pub fn signals_dir(&self) -> PathBuf {
@@ -322,6 +319,9 @@ Do not manually edit these files unless you know what you're doing.
         self.root.join("crashes")
     }
 
+    /// Legacy path retained for compatibility; active knowledge belongs to
+    /// the project root rather than this state directory.
+    #[deprecated(note = "use KnowledgeDir with WorkDir::project_root instead")]
     pub fn knowledge_dir(&self) -> PathBuf {
         self.root.join("knowledge")
     }

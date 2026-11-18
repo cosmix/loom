@@ -71,6 +71,13 @@ function SparklineDot({ x, y, stretch }: { x: number; y: number; stretch: boolea
   );
 }
 
+/// Share of the accent an empty cell keeps, so a quiet stretch still reads as a
+/// row of cells; busy cells run from `HEAT_BASE` to full on top of it.
+const HEAT_FLOOR = 8;
+const HEAT_BASE = 16;
+/// Cells at or above this share of the maximum glow.
+const HEAT_GLOW = 0.75;
+
 export function HeatStrip({
   values,
   max,
@@ -86,20 +93,28 @@ export function HeatStrip({
     <div
       role="img"
       aria-label={label}
-      className={cn("grid h-2 gap-px", className)}
+      className={cn("grid h-[18px] rounded-[3px] bg-foreground/[0.04] py-px pr-px", className)}
       style={{ gridAutoFlow: "column", gridAutoColumns: "minmax(0, 1fr)" }}
     >
       {values.map((value, index) => {
         const ratio = max > 0 ? Math.min(1, Math.max(0, value / max)) : 0;
+        // Square root spreads the low end: token series are heavily skewed, and
+        // a linear ramp leaves everything below the peak looking idle.
+        const tone = Math.sqrt(ratio);
+        const percent = ratio === 0 ? HEAT_FLOOR : Math.round(HEAT_BASE + (100 - HEAT_BASE) * tone);
+        const mix = (share: number) =>
+          `color-mix(in oklch, var(--tone-completed) ${share}%, transparent)`;
         return (
           <span
             key={index}
+            // The gap is a transparent left border, not a grid gap: Firefox snaps
+            // fractional gaps per cell, giving uneven spacing, while borders stay
+            // a whole device pixel wide.
+            className="rounded-[2px] border-l border-l-transparent bg-clip-padding"
             data-level={Math.ceil(4 * ratio)}
             style={{
-              background:
-                ratio === 0
-                  ? "transparent"
-                  : `color-mix(in oklch, var(--tone-executing) ${Math.round(18 + 82 * ratio)}%, transparent)`,
+              backgroundColor: mix(percent),
+              boxShadow: ratio >= HEAT_GLOW ? `0 0 5px ${mix(45)}` : undefined,
             }}
           />
         );

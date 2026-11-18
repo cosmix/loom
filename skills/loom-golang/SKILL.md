@@ -446,7 +446,7 @@ func head(s []int) []int { return s[0:1:1] } // first append reallocates; can't 
 
 Gated by the `go` directive in `go.mod`; older modules keep old behavior. The directive gates *language and runtime semantics*, not just the minimum toolchain — review release notes when bumping it.
 
-**Go 1.22 scopes for-loop variables per iteration — delete `x := x`.** Before 1.22 a loop's variables were created once and mutated each iteration, so closures/goroutines/parallel subtests captured a shared variable; the fix was `tt := tt`. Go 1.22 creates fresh variables each iteration (all loop forms). In 1.22+ modules `tt := tt` is dead code `go fix ./...` removes. Hazard: bumping to 1.22 can make parallel subtests that passed only by reading the *last* iteration's value start failing — run `GOEXPERIMENT=loopvar go test ./...` first.
+**Go 1.22 scopes for-loop variables per iteration — delete `x := x`.** Before 1.22 a loop's variables were created once and mutated each iteration, so closures/goroutines/parallel subtests captured a shared variable; the fix was `tt := tt`. Go 1.22 creates fresh variables each iteration (all loop forms). In 1.22+ modules `tt := tt` is dead code `go fix ./...` removes. Hazard: bumping to 1.22 can make parallel subtests that passed only by reading the *last* iteration's value start failing — run `GOEXPERIMENT=loopvar go test ./<changed pkg>/...` first; the stage gate runs the whole module.
 
 **Go 1.23 made timer/ticker channels unbuffered — the drain-before-Reset idiom can now deadlock.** Pre-1.23, timer channels had capacity 1, so a stale tick could buffer and the safe `Reset` idiom drained first. In 1.23 they are unbuffered and the runtime guarantees no stale value after `Stop`/`Reset`, so call `Reset` directly. An unconditional drain (`<-t.C` with nothing pending) now blocks forever; even `if !t.Stop() { <-t.C }` is no longer needed. Unstopped Timers/Tickers are now GC'd once unreferenced. (`GODEBUG=asynctimerchan=1` reverts.)
 
@@ -475,8 +475,8 @@ It rewrites `interface{}`→`any`, `sort.Slice`→`slices.SortFunc`, atomic free
 ### Before completing any Go change
 
 - [ ] `gofmt`/`goimports` clean; `go vet ./...` passes (catches copylock, printf, nil-func)
-- [ ] `go build ./...` and `go test ./...` green
-- [ ] `go test -race ./...` on any code touching goroutines/shared state
+- [ ] `go build ./...` clean and `go test ./<changed pkg>/...` green (`go test ./...` is the stage gate's)
+- [ ] `go test -race ./<changed pkg>/...` on any code touching goroutines/shared state
 - [ ] `golangci-lint`/`staticcheck` clean (SA2000 Add-before-go, SA4023 typed-nil) if configured
 - [ ] Every returned error is `%w`-wrapped with context, or deliberately `%v`-flattened at a boundary
 - [ ] No ignored errors (`_ =`) except deliberate, commented cases

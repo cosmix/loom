@@ -1,6 +1,6 @@
 # Contract Autonomy Delivery
 
-> Chain bypass, validation
+> Bypass
 
 ## The Chain Check Read Attributes by Position and Refused by Deny-List
 
@@ -63,3 +63,47 @@
 **Why:** the table listed the files each feature creates, not the files that must change for a new item to be reachable.
 
 **Prevention:** for each new `pub(crate)` item, the ownership table names the module file that re-exports it and each dispatcher that must route the new kind; a private `mod` needs its re-export in the parent (`signals::contract` is private, so `scaffold_line` needed a `signals/mod.rs` re-export).
+
+## Freeze Rebuilt Per Contract, Silently
+
+**What happened:** A freeze of 11 contracts took 8m13s, about 45 s each, with the status surfaces saying `writing contract tests` and the writer's terminal empty. All 11 reports were `build_failed` from one lib test target's compile error, although 8 of the contracts lived in an integration test file that was never compiled. The first fix shared failed builds only for cargo contracts with a resolved target, and only in freezes, which the operator rejected: loom runs on many projects and runners.
+
+**Why:** Three separate causes. `single_test_command` ignored the contract's file from the adapter's first version (af929bc9), so `cargo test <name> -- --exact` built every target and aborted at the first failure. Runners cache no failed compile, so each contract repeated it. Moving freeze to a daemon host job (23ceedb3) took the `Running contract` lines out of the writer's Bash output, and the job wrote no progress until it ended, so nothing showed the work. The first fix was shaped by the one project it was measured on.
+
+**Prevention:** Moving work out of a session into a daemon job must carry its progress to a status surface in the same change. A contract's red verdict must come from compiling its own file: `build_failed` passes a freeze, so an unscoped command lets any other target's compile error pass a misspelt or already green contract. A fix to loom's runner handling is stated and tested over every registered adapter and any contract count, never in terms of loom's own crate.
+
+**Fix:** Target-scoped cargo commands, failed builds shared by a runner-agnostic build key in freeze and completion, per-contract `progress.jsonl` lines and `StageSummary.contract_testing`; see [contract-phase](../architecture/contract-phase.md#where-a-contract-runs).
+
+## A Contract Freeze Refusal Waited on the Operator
+
+**What happened:** In liquidmon (plan custom-fan-curve, stage fix-instance-lock), the plan harnessed `src/main.rs` but not `src/device_lock/mod.rs`. The contract writer added `mod device_lock;`, the freeze's format gate (`cargo fmt --all -- --check`) failed on the missing module file, and the stage could never freeze. The refusal parked the stage `WaitingForInput`. The web UI showed only 'awaiting input'. The writer then asked the operator to choose between two fixes, one naming a command that does not exist (`loom stage amend` has no harness field) and one the relay refuses (a Contract session cannot dispute). Unblocking took several operator commands in a strict order.
+**Why:** The contract phase had no automatic path out of a plan defect. A Contract session may not dispute (`relay/matrix.rs`), a refused freeze parks the stage for a human, and harness was the only way to let the writer touch module wiring, but harness freezes what it matches.
+**Prevention:** A stage never waits on a human for something loom or an agent can resolve. Deterministic checks guide the agent. A refused freeze is disputed and adjudicated, never parked: the adjudicator either sends a fresh writer back with what to fix or amends the plan's contract setup. A human is reached only after the dispute budget is spent, through one named command. Any new park or block state must name the automatic path that leaves it. Genuine human input stays: an agent's `AskUserQuestion`, `loom stage block`, and an adjudicator rejecting a criterion dispute all mean a person is needed, and loom does not suppress them.
+
+**Fix:** doc/plans/PLAN-contract-phase-autonomy.md.
+
+## Frozen Contracts Failed the Stage's Own Lint Because the Freeze Ran Only the Format Gate
+
+**What happened:** 12 disputes and 11 refused freezes in 31 days came from contract files that were frozen and then failed a check of the stage's own acceptance (`cargo clippy -D warnings`, `eslint`, `ruff check`, an `rg` check) or from runner details the planner guessed wrong (a vitest `-t` separator, a missing `cwd`). A frozen file cannot be edited, so the stage could only dispute its own contract.
+
+**Why:** the freeze ran the stage's formatter checks and nothing else, and the planner, writing before any code existed, fixed the test identifier, runner and directory.
+
+**Prevention:** the freeze runs every pure static criterion (formatters, the listed lints, simple `rg`/`grep`) on the writer's files and returns a failure that names a writer file to the live writer session; the writer names `--test`, and `--runner`/`--cwd` where the plan left them open ([contract-phase](../architecture/contract-phase.md#the-freeze-runs-the-stages-static-gates)). A criterion that can only fail after the freeze is a defect in the freeze, not in the stage.
+
+**Fix:** `format_gate.rs`, `choices_validate.rs` and the freeze flags. Compiler-backed lints run at freeze only when every contract compiled, and `tsc --noEmit` never does (vitest transpiles without type-checking), so those still reach completion.
+
+## A Reviewer-Brief Fixture Spawned a Stage-Bound Command Without a Checkout Identity
+
+**What happened:** the contract author for the reviewer-brief hook never ran its fixture against a reference implementation. The fixture lacked `main-checkout-identity.json`, which every pinned-git path requires, so the contract could not pass for a correct implementation (`loom/tests/reviewer_brief_contracts.rs:75`). The stage disputed the contract instead of adding an unpinned fallback to the hook.
+
+**Why:** the fixture built a repository and a work directory by hand and skipped the identity file the pinned git reads.
+
+**Prevention:** a contract fixture that spawns a stage-bound command writes `test_support::write_main_checkout_identity(repo, work_dir)` first, and a contract author runs the fixture once against any implementation that should pass. Never loosen a production trust check (the pinned git) to fit a fixture.
+
+## Integrity Events From Tests Added Inside an Assertion Statement's Span
+
+**What happened:** a fix worker added tests in the middle of `reviewer_brief_tests.rs`, inside a span the statement extractor reads as one long assertion statement, and the integrity gate raised a `TI-edit` event for pure additions.
+
+**Why:** the lexical extractor runs an assertion statement across later tests when a bracket stays open, so inserting text inside it changes the statement.
+
+**Prevention:** add new tests in a new child test file declared at the top of the existing test module (`#[path] mod ...`), or at a point no extracted statement spans, and run `loom stage review integrity <stage-id>` after every test edit. Here the file was restored and the tests moved to `reviewer_brief_budget_tests.rs`.

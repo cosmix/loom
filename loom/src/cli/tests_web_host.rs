@@ -15,7 +15,11 @@ fn parse_status(extra: &[&str]) -> Result<StatusWebFields, String> {
     args.extend_from_slice(extra);
     let cli = Cli::try_parse_from(args).map_err(|error| error.to_string())?;
     match cli.command {
-        Commands::Status { web_args, .. } => Ok((web_args.web, web_args.terminals, web_args.host)),
+        Commands::Status(args) => Ok((
+            args.web_args.web,
+            args.web_args.terminals,
+            args.web_args.host,
+        )),
         _ => panic!("expected Commands::Status"),
     }
 }

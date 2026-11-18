@@ -10,6 +10,8 @@
         "stage_type": "knowledge",
         "dependencies": [],
         "context_tokens": null,
+        "contract_testing": null,
+        "verdict_completing": null,
         "elapsed_secs": 412,
         "execution_secs": 380,
         "base_branch": null,
@@ -22,6 +24,7 @@
         "context_ceiling_tokens": null,
         "review_reason": null,
         "review_notes": null,
+        "history": [],
         "merged": false,
         "merge_assumed": false,
         "held": false,
@@ -30,6 +33,8 @@
         "pid": null,
         "session_alive": false,
         "model": "opus",
+        "effort": "high",
+        "codex_jobs": [],
         "session_type": null,
         "incoherence": null,
         "execution_models": [],
@@ -46,6 +51,8 @@
         "stage_type": "standard",
         "dependencies": ["knowledge-bootstrap"],
         "context_tokens": 312000,
+        "contract_testing": null,
+        "verdict_completing": null,
         "elapsed_secs": 905,
         "execution_secs": 640,
         "base_branch": null,
@@ -58,6 +65,7 @@
         "context_ceiling_tokens": 800000,
         "review_reason": null,
         "review_notes": null,
+        "history": [],
         "merged": false,
         "merge_assumed": false,
         "held": false,
@@ -66,9 +74,38 @@
         "pid": 4242,
         "session_alive": true,
         "model": "opus",
+        "effort": "high",
+        "codex_jobs": [
+          {
+            "unit_id": "hex-test",
+            "invocation_id": "inv-b63fd09ed5d66b5899fcaef4a521ffcd",
+            "model": "gpt-6.2-sol",
+            "effort": "xhigh",
+            "phase": "terminal",
+            "outcome": "succeeded",
+            "outcome_reason": "turn completed",
+            "thread_id": "01a1396b-099e-7ef2-92c0-52e2b3314eb2",
+            "started_at": "2026-11-16T18:23:55.094Z",
+            "ended_at": "2026-11-16T18:24:18.813Z",
+            "deadline_secs": 1500
+          },
+          {
+            "unit_id": "hex-lint",
+            "invocation_id": "inv-5c1e0a7d2f4b49c0a1e3b6d8f9072a14",
+            "model": "gpt-6.2-sol",
+            "effort": "xhigh",
+            "phase": "terminal",
+            "outcome": "failed",
+            "outcome_reason": "codex exited before starting a thread",
+            "thread_id": null,
+            "started_at": "2026-11-16T18:25:02.411Z",
+            "ended_at": "2026-11-16T18:25:04.911Z",
+            "deadline_secs": 1500
+          }
+        ],
         "session_type": "stage",
         "incoherence": null,
-        "execution_models": ["sonnet", "gpt-5.6-terra"],
+        "execution_models": ["sonnet/medium", "gpt-6.1-terra/xhigh (requested)"],
         "dispute_count": 0,
         "judge_heartbeat_secs": null,
         "session_backend": "native"
@@ -82,6 +119,8 @@
         "stage_type": "standard",
         "dependencies": ["knowledge-bootstrap"],
         "context_tokens": null,
+        "contract_testing": null,
+        "verdict_completing": null,
         "elapsed_secs": 700,
         "execution_secs": 655,
         "base_branch": null,
@@ -102,6 +141,7 @@
         "context_ceiling_tokens": null,
         "review_reason": null,
         "review_notes": null,
+        "history": [],
         "merged": false,
         "merge_assumed": false,
         "held": false,
@@ -110,6 +150,8 @@
         "pid": null,
         "session_alive": false,
         "model": "opus",
+        "effort": "high",
+        "codex_jobs": [],
         "session_type": null,
         "incoherence": null,
         "execution_models": [],
@@ -126,6 +168,8 @@
         "stage_type": "standard",
         "dependencies": ["server", "client"],
         "context_tokens": null,
+        "contract_testing": null,
+        "verdict_completing": null,
         "elapsed_secs": 0,
         "execution_secs": null,
         "base_branch": null,
@@ -138,6 +182,7 @@
         "context_ceiling_tokens": null,
         "review_reason": null,
         "review_notes": null,
+        "history": [],
         "merged": false,
         "merge_assumed": false,
         "held": false,
@@ -146,6 +191,8 @@
         "pid": null,
         "session_alive": false,
         "model": "opus",
+        "effort": "high",
+        "codex_jobs": [],
         "session_type": null,
         "incoherence": null,
         "execution_models": [],
@@ -162,6 +209,8 @@
         "stage_type": "standard",
         "dependencies": ["knowledge-bootstrap"],
         "context_tokens": null,
+        "contract_testing": null,
+        "verdict_completing": null,
         "elapsed_secs": 300,
         "execution_secs": 290,
         "base_branch": null,
@@ -174,6 +223,7 @@
         "context_ceiling_tokens": null,
         "review_reason": null,
         "review_notes": null,
+        "history": [],
         "merged": false,
         "merge_assumed": false,
         "held": false,
@@ -182,6 +232,8 @@
         "pid": 4343,
         "session_alive": true,
         "model": "opus",
+        "effort": "high",
+        "codex_jobs": [],
         "session_type": "merge",
         "incoherence": null,
         "execution_models": [],
@@ -200,6 +252,8 @@
         "stage_type": "integration-verify",
         "dependencies": ["design", "docs"],
         "context_tokens": null,
+        "contract_testing": null,
+        "verdict_completing": null,
         "elapsed_secs": 120,
         "execution_secs": null,
         "base_branch": null,
@@ -212,6 +266,7 @@
         "context_ceiling_tokens": null,
         "review_reason": "acceptance criterion 3 disputed twice",
         "review_notes": "acceptance criterion 3 disputed twice",
+        "history": [],
         "merged": false,
         "merge_assumed": false,
         "held": true,
@@ -220,6 +275,8 @@
         "pid": null,
         "session_alive": false,
         "model": "opus",
+        "effort": "high",
+        "codex_jobs": [],
         "session_type": null,
         "incoherence": null,
         "execution_models": [],
@@ -236,6 +293,8 @@
         "stage_type": "knowledge-distill",
         "dependencies": ["integration-verify"],
         "context_tokens": null,
+        "contract_testing": null,
+        "verdict_completing": null,
         "elapsed_secs": null,
         "execution_secs": null,
         "base_branch": null,
@@ -248,6 +307,7 @@
         "context_ceiling_tokens": null,
         "review_reason": null,
         "review_notes": null,
+        "history": [],
         "merged": false,
         "merge_assumed": false,
         "held": false,
@@ -256,6 +316,8 @@
         "pid": null,
         "session_alive": false,
         "model": "sonnet",
+        "effort": "high",
+        "codex_jobs": [],
         "session_type": null,
         "incoherence": null,
         "execution_models": [],
@@ -272,6 +334,8 @@
         "stage_type": "standard",
         "dependencies": ["knowledge-bootstrap"],
         "context_tokens": null,
+        "contract_testing": null,
+        "verdict_completing": null,
         "elapsed_secs": 200,
         "execution_secs": 190,
         "base_branch": null,
@@ -284,6 +348,7 @@
         "context_ceiling_tokens": null,
         "review_reason": null,
         "review_notes": null,
+        "history": [],
         "merged": false,
         "merge_assumed": false,
         "merge_block": "the target branch moved while the merge was being prepared; it will be retried",
@@ -293,6 +358,8 @@
         "pid": null,
         "session_alive": false,
         "model": "sonnet",
+        "effort": "high",
+        "codex_jobs": [],
         "session_type": null,
         "incoherence": null,
         "execution_models": [],
@@ -309,6 +376,8 @@
         "stage_type": "standard",
         "dependencies": ["knowledge-bootstrap"],
         "context_tokens": null,
+        "contract_testing": null,
+        "verdict_completing": null,
         "elapsed_secs": 1800,
         "execution_secs": 1500,
         "base_branch": null,
@@ -321,6 +390,7 @@
         "context_ceiling_tokens": null,
         "review_reason": null,
         "review_notes": null,
+        "history": [],
         "merged": false,
         "merge_assumed": false,
         "held": false,
@@ -329,6 +399,8 @@
         "pid": null,
         "session_alive": false,
         "model": "opus",
+        "effort": "high",
+        "codex_jobs": [],
         "session_type": null,
         "incoherence": null,
         "execution_models": [],
@@ -350,27 +422,6 @@
               "index": 4,
               "command": "TROOFOO_STACK=ephemeral bun run stack:ephemeral --with objectstore -- bun test packages/db/src/ephemeral-services",
               "diagnostic": "FAILED [criterion 4]: stack:ephemeral cannot create AF_UNIX sockets"
-            }
-          ],
-          "disputes": [
-            {
-              "id": 1,
-              "kind": "integrity",
-              "verdict": "accept",
-              "field": null,
-              "ops": []
-            },
-            {
-              "id": 2,
-              "kind": "criterion",
-              "verdict": "accept",
-              "field": "acceptance",
-              "ops": [
-                {
-                  "op": "replace",
-                  "index": 3
-                }
-              ]
             }
           ]
         }
@@ -484,7 +535,10 @@
               "id": "main-01ed9f4c",
               "kind": "main",
               "agent_type": null,
+              "forwarder": null,
               "model": "claude-opus-5-5",
+              "effort": "high",
+              "unit_id": null,
               "active": true,
               "total": {
                 "input": 40000,
@@ -514,7 +568,10 @@
               "id": "a04baa183f888b773",
               "kind": "subagent",
               "agent_type": "loom-software-engineer",
+              "forwarder": null,
               "model": "claude-sonnet-5-5",
+              "effort": "medium",
+              "unit_id": null,
               "active": true,
               "total": {
                 "input": 50000,
@@ -545,7 +602,10 @@
               "id": "codex-01a1396b",
               "kind": "codex",
               "agent_type": null,
-              "model": "gpt-6.1-sol",
+              "forwarder": null,
+              "model": "gpt-6.2-sol",
+              "effort": "xhigh",
+              "unit_id": "hex-test",
               "active": true,
               "total": {
                 "input": 30000,
@@ -596,7 +656,7 @@
           }
         },
         {
-          "model": "gpt-6.1-sol",
+          "model": "gpt-6.2-sol",
           "effort": "xhigh",
           "total": {
             "input": 30000,
@@ -649,6 +709,7 @@
       "id": "client",
       "name": "TypeScript client",
       "label": "ACCEPTANCE FAILED",
+      "status": "completed-with-failures",
       "command": "loom stage retry client",
       "command_when": null,
       "alternatives": [],
@@ -669,13 +730,13 @@
       "reason": null,
       "acceptance": [],
       "failing_criteria": [],
-      "disputes": [],
       "terminal_history": false
     },
     {
       "id": "docs",
       "name": "Documentation",
       "label": "MERGE CONFLICT",
+      "status": "merge-conflict",
       "command": null,
       "command_when": null,
       "alternatives": [],
@@ -692,13 +753,13 @@
       "reason": null,
       "acceptance": [],
       "failing_criteria": [],
-      "disputes": [],
       "terminal_history": false
     },
     {
       "id": "integration-verify",
       "name": "Integration Verification",
       "label": "NEEDS REVIEW",
+      "status": "needs-human-review",
       "command": null,
       "command_when": null,
       "alternatives": [],
@@ -715,13 +776,13 @@
       "reason": "acceptance criterion 3 disputed twice",
       "acceptance": [],
       "failing_criteria": [],
-      "disputes": [],
       "terminal_history": false
     },
     {
       "id": "merge-gate",
       "name": "Merge Gate",
       "label": "MERGE BLOCKED",
+      "status": "merge-blocked",
       "command": null,
       "command_when": null,
       "alternatives": [],
@@ -738,13 +799,13 @@
       "reason": null,
       "acceptance": [],
       "failing_criteria": [],
-      "disputes": [],
       "terminal_history": false
     },
     {
       "id": "local-runtime",
       "name": "Local runtime",
       "label": "BLOCKED",
+      "status": "blocked",
       "command": "loom stage retry local-runtime --context \"<what you did and what it showed>\"",
       "command_when": "you have done what the reason asks, retry with your answer (the next session receives it)",
       "alternatives": [
@@ -786,27 +847,6 @@
           "diagnostic": "FAILED [criterion 4]: stack:ephemeral cannot create AF_UNIX sockets"
         }
       ],
-      "disputes": [
-        {
-          "id": 1,
-          "kind": "integrity",
-          "verdict": "accept",
-          "field": null,
-          "ops": []
-        },
-        {
-          "id": 2,
-          "kind": "criterion",
-          "verdict": "accept",
-          "field": "acceptance",
-          "ops": [
-            {
-              "op": "replace",
-              "index": 3
-            }
-          ]
-        }
-      ],
       "terminal_history": true
     }
   ],
@@ -826,6 +866,7 @@
   ],
   "daemon": "running",
   "tick_age_secs": 4,
+  "busy": null,
   "source": "daemon",
   "terminals": false,
   "generated_at": "2026-09-04T12:00:00Z",

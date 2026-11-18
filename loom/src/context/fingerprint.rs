@@ -6,6 +6,7 @@
 //! are a pure function of file bytes, so copying or touching a file without
 //! changing its contents never triggers a rebuild.
 
+use crate::context::source_graph::body_hash;
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -38,15 +39,15 @@ pub fn fingerprint_file(knowledge_root: &Path, path: &Path) -> Result<FileFinger
     let bytes =
         fs::read(&full_path).with_context(|| format!("Failed to read {}", full_path.display()))?;
 
-    let mut hasher = Sha256::new();
-    hasher.update(&bytes);
-    let content_hash = format!("sha256:{}", hex::encode(hasher.finalize()));
+    Ok(fingerprint_bytes(path.to_path_buf(), &bytes))
+}
 
-    Ok(FileFingerprint {
-        path: path.to_path_buf(),
-        content_hash,
+fn fingerprint_bytes(path: PathBuf, bytes: &[u8]) -> FileFingerprint {
+    FileFingerprint {
+        path,
+        content_hash: body_hash(bytes),
         size: bytes.len() as u64,
-    })
+    }
 }
 
 /// Fingerprint every `*.md` file under `knowledge_root`, recursively, sorted by
@@ -88,9 +89,7 @@ pub fn fingerprint_tree(knowledge_root: &Path) -> Result<Vec<FileFingerprint>> {
 /// "not fingerprinted" rather than an error, because a fingerprinting failure
 /// here must not be able to make `fingerprint_tree` — and through it,
 /// `evaluate`/`refresh` — return `Err` where they returned a value before
-/// prose existed. Reuses [`fingerprint_file`] rather than hashing bytes a
-/// second way, so a prose file's content hash is computed identically to a
-/// knowledge file's.
+/// prose existed. Hashes the bytes acquired by the shared prose boundary.
 fn prose_fingerprints(knowledge_root: &Path) -> Vec<FileFingerprint> {
     use crate::fs::knowledge::catalog::prose::{self, PROSE_ID_PREFIX};
 
@@ -98,15 +97,12 @@ fn prose_fingerprints(knowledge_root: &Path) -> Vec<FileFingerprint> {
         return Vec::new();
     };
 
-    sources
-        .files()
-        .into_iter()
-        .filter_map(|relative| {
-            let mut fingerprint = fingerprint_file(sources.project_root(), &relative).ok()?;
-            fingerprint.path = PathBuf::from(format!("{PROSE_ID_PREFIX}{}", relative.display()));
-            Some(fingerprint)
-        })
-        .collect()
+    let mut fingerprints = Vec::new();
+    sources.for_each_file(|relative, bytes| {
+        let path = PathBuf::from(format!("{PROSE_ID_PREFIX}{}", relative.display()));
+        fingerprints.push(fingerprint_bytes(path, &bytes));
+    });
+    fingerprints
 }
 
 /// Recursively collect `*.md` files under `dir`, relative to `knowledge_root`,

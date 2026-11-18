@@ -27,6 +27,18 @@ mod integrity;
 mod sources;
 mod truncate;
 
+/// Quote evidence with a delimiter that cannot occur in its contents.
+fn fenced(lang: &str, text: &str) -> String {
+    let longest = text
+        .split(|c: char| c != '`')
+        .map(str::len)
+        .max()
+        .unwrap_or(0);
+    let fence = "`".repeat(longest.max(2) + 1);
+    let newline = if text.ends_with('\n') { "" } else { "\n" };
+    format!("{fence}{lang}\n{text}{newline}{fence}\n\n")
+}
+
 use std::path::Path;
 
 use crate::models::dispute::{CriterionField, DisputeKind, DisputeRequest};
@@ -109,9 +121,13 @@ impl KindPromptInput<'_> {
             "which applies it on its next poll. If it prints a PENDING RELAY notice, keep\n",
         );
         s.push_str("its output unfiltered and in the foreground and follow that notice. If it\n");
-        s.push_str("reports an error, correct the JSON and run it again. Once it succeeds, your\n");
-        s.push_str("work is done — end your turn. The daemon closes this session once the\n");
-        s.push_str("verdict is applied.\n\n");
+        s.push_str("reports an error, correct the JSON and run it again.\n\n");
+        s.push_str("3. In your NEXT Bash call, run the `loom request status <id> --wait 90`\n");
+        s.push_str("   command it prints. The orchestrator checks the verdict again when it\n");
+        s.push_str("   records it; if the status is refused, correct the JSON as the reason\n");
+        s.push_str("   says and repeat from step 2. Never ask anyone and never wait for input.\n");
+        s.push_str("   Once the status is no longer pending or refused, your work is done — end\n");
+        s.push_str("   your turn. The daemon closes this session once the verdict is applied.\n\n");
         s
     }
 }
@@ -141,11 +157,15 @@ pub fn build(plan_path: &Path, stage: &Stage, dispute: &DisputeRequest, work_dir
         DisputeKind::Criterion {
             criterion_indices,
             field,
+            owner_stage,
         } => match field {
             CriterionField::Acceptance => criterion::build(&input, plan_path, criterion_indices),
-            CriterionField::Wiring => {
-                criterion_entry::build_wiring(&input, plan_path, criterion_indices)
-            }
+            CriterionField::Wiring => criterion_entry::build_wiring(
+                &input,
+                plan_path,
+                criterion_indices,
+                owner_stage.as_deref(),
+            ),
             CriterionField::WiringTests => {
                 criterion_entry::build_wiring_test(&input, plan_path, criterion_indices)
             }
@@ -185,3 +205,6 @@ mod tests_golden;
 
 #[cfg(test)]
 mod tests_kinds;
+
+#[cfg(test)]
+mod tests_owner;

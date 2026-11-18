@@ -2,6 +2,7 @@ import { loadTerminalFonts, TERMINAL_FONT_FAMILY } from "./fonts";
 import type { ILinkHandler, ITerminalOptions, Terminal } from "@xterm/xterm";
 import type { FitAddon } from "@xterm/addon-fit";
 import { handleTerminalKey } from "./keyboard";
+import { installViewerTouch } from "./viewer-touch";
 import { installViewerWheel, type TerminalScroll } from "./viewer-wheel";
 
 export interface EmulatorSize {
@@ -178,13 +179,18 @@ async function createEmulator(overrides: ITerminalOptions): Promise<Emulator> {
 
 function wrapTerminal(terminal: Terminal, fitAddon: FitAddon, render: () => void): Emulator {
   let opened = false;
-  let disposeWheel: (() => void) | undefined;
+  let disposeScroll: (() => void) | undefined;
   let onScroll: ((event: TerminalScroll) => void) | undefined;
 
   return {
     open(host) {
       terminal.open(host);
-      disposeWheel = installViewerWheel(terminal, host, (event) => onScroll?.(event));
+      const forward = (event: TerminalScroll) => onScroll?.(event);
+      const disposers = [
+        installViewerWheel(terminal, host, forward),
+        installViewerTouch(terminal, host, forward),
+      ];
+      disposeScroll = () => disposers.forEach((dispose) => dispose());
       opened = true;
       render();
     },
@@ -213,7 +219,7 @@ function wrapTerminal(terminal: Terminal, fitAddon: FitAddon, render: () => void
       terminal.options = readOnlyOptions(readOnly);
     },
     dispose() {
-      disposeWheel?.();
+      disposeScroll?.();
       terminal.dispose();
     },
   };

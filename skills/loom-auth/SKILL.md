@@ -139,19 +139,31 @@ function verifyToken(token) {
 ### Refresh token rotation (enables revocation)
 
 ```typescript
+// Illustrative transaction API: lock the family row before inspecting or changing
+// any of its tokens. Retain consumed token hashes until the family expires.
 async function refreshTokens(refreshToken) {
-  const stored = await db.refreshTokens.findUnique({ where: { token: hashToken(refreshToken) } });
-  if (!stored || stored.expiresAt < new Date()) throw new UnauthorizedError();
-  // Reuse detection: if a rotated (deleted) token is presented again, treat as theft →
-  // revoke the whole token family for that user.
-  await db.refreshTokens.delete({ where: { id: stored.id } }); // one-time use
-  const next = generateSecureToken();
-  await db.refreshTokens.create({ data: { token: hashToken(next), userId: stored.userId, expiresAt: addDays(new Date(), 7) } });
-  return { accessToken: signToken({ sub: stored.userId }), refreshToken: next };
+  const result = await db.transaction(async (tx) => {
+    const hash = hashToken(refreshToken);
+    const familyId = await tx.findFamilyIdByTokenHash(hash);
+    if (!familyId) return null;
+    const family = await tx.lockFamily(familyId); // exclusive row lock until commit
+    const stored = await tx.findTokenByHash(hash); // re-read after acquiring lock
+    if (!family || family.revoked || !stored || stored.expiresAt <= new Date()) return null;
+    if (stored.consumed) {
+      await tx.revokeFamily(familyId);
+      return null; // commit the revocation before reporting failure
+    }
+    await tx.markConsumed(stored.id);
+    const next = generateSecureToken();
+    await tx.insertToken({ hash: hashToken(next), familyId, expiresAt: stored.expiresAt });
+    return { userId: family.userId, next };
+  });
+  if (!result) throw new UnauthorizedError();
+  return { accessToken: signToken({ sub: result.userId }), refreshToken: result.next };
 }
 ```
 
-Store refresh tokens **hashed** (they are password-equivalent); short access (≤15 min), refresh ≤7 days; deliver refresh tokens in `httpOnly; Secure; SameSite` cookies, never in JS-readable storage.
+The database schema and transaction methods are illustrative: enforce a unique token hash and serialize all rotations and revocations on the family row. A replay revokes the family, including its replacement; concurrent use of one token therefore also revokes it. Store refresh tokens **hashed** (they are password-equivalent); short access (≤15 min), refresh ≤7 days; deliver refresh tokens in `httpOnly; Secure; SameSite` cookies, never in JS-readable storage.
 
 ## RBAC / ABAC
 

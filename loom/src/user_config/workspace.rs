@@ -8,7 +8,8 @@
 //!
 //! # One shadowing rule: every workspace-backed key resolves per KEY
 //!
-//! `[terminal]`, `[context]`, `[pressure]` and `[models]` all shadow
+//! `[terminal]`, `[context]`, `[pressure]`, `[models]`, `[codex]` and `[planning]` (the
+//! registry's `plan` section; see [`workspace_table`]) all shadow
 //! `~/.loom/config.toml` a KEY at a time: a present section that omits a key
 //! falls through to the user tier for that key rather than shadowing it with
 //! a built-in the operator never asked for — a plan's stage can leave
@@ -38,8 +39,8 @@
 //! [`crate::fs::work_dir::read_terminal_config`] and
 //! [`crate::fs::work_dir::resolve_context_ceiling_tokens`] for the two keys
 //! above, [`crate::fs::work_dir::read_pressure_config`] and
-//! [`crate::fs::work_dir::resolve_stage_model_effort`] for the fourteen
-//! `[pressure]`/`[models]` ones — because a settings page that disagrees with
+//! [`crate::fs::work_dir::resolve_stage_model_effort`] for the `[pressure]`/`[models]`/`[planning]`
+//! ones — because a settings page that disagrees with
 //! the daemon about the value in force is worse than no settings page.
 
 use std::path::{Path, PathBuf};
@@ -47,11 +48,13 @@ use std::path::{Path, PathBuf};
 use anyhow::{anyhow, bail, Context, Result};
 use toml_edit::DocumentMut;
 
+use crate::fs::work_dir::config_sections::CodexConfig;
 use crate::fs::work_dir::{
-    insert_key, read_config, remove_key, update_config, ContextConfig, WorkDir,
+    insert_key, read_config, remove_key, update_config, ContextConfig, ModelsConfig, PlanConfig,
+    PressureConfig, WorkDir,
 };
 use crate::models::session::TerminalConfig;
-use crate::user_config::keys::{KeySpec, KEYS};
+use crate::user_config::keys::KeySpec;
 use crate::user_config::{ConfigValue, UserConfig};
 
 /// A tree's `.loom/work` and its parsed `config.toml`.
@@ -100,7 +103,7 @@ impl Workspace {
     /// Whether the file sets `spec`'s key itself.
     pub(crate) fn has_key(&self, spec: &KeySpec) -> bool {
         self.doc
-            .get(spec.section)
+            .get(workspace_table(spec.section))
             .and_then(|section| section.get(spec.field))
             .is_some()
     }
@@ -110,7 +113,7 @@ impl Workspace {
     /// For a key the file does not supply, this is the user tier's value:
     /// that is what clearing the key (or never setting it) leaves in force.
     pub(crate) fn value_of(&self, spec: &KeySpec) -> Result<ConfigValue> {
-        match resolve(spec, self.doc.get(spec.section)) {
+        match resolve(spec, self.doc.get(workspace_table(spec.section))) {
             Some(value) => Ok(value?.unwrap_or_else(|| UserConfig::load().value_of(spec).0)),
             None => bail!("{} has no project scope", spec.name),
         }
@@ -120,7 +123,10 @@ impl Workspace {
     /// supplies the key itself (directly, or via [`resolve`]'s
     /// `context.ceiling_tokens` qualification).
     pub(crate) fn shadows(&self, spec: &KeySpec) -> bool {
-        matches!(resolve(spec, self.doc.get(spec.section)), Some(Ok(Some(_))))
+        matches!(
+            resolve(spec, self.doc.get(workspace_table(spec.section))),
+            Some(Ok(Some(_)))
+        )
     }
 
     /// Write or clear `spec` in this workspace's `config.toml`, reporting what
@@ -141,14 +147,29 @@ impl Workspace {
         update_config(&root, |doc| {
             let old = Self::from_document(&root, doc)?.value_of(spec)?;
             match value {
-                Some(value) => insert_key(doc, spec.section, spec.field, value.to_toml_edit())?,
-                None => remove_key(doc, spec.section, spec.field),
+                Some(value) => insert_key(
+                    doc,
+                    workspace_table(spec.section),
+                    spec.field,
+                    value.to_toml_edit(),
+                )?,
+                None => remove_key(doc, workspace_table(spec.section), spec.field),
             }
             let new = Self::from_document(&root, doc)?.value_of(spec)?;
             old_new = Some((old, new));
             Ok(())
         })?;
         old_new.ok_or_else(|| anyhow!("update_config returned without a captured value"))
+    }
+}
+
+/// The table of `<repo>/.loom/work/config.toml` that backs registry section
+/// `section`: `plan` lives in `[planning]` because the run's own `[plan]` table
+/// (`source_path`, `plan_id`, ...) belongs to `loom init` and the daemon.
+fn workspace_table(section: &str) -> &str {
+    match section {
+        "plan" => "planning",
+        other => other,
     }
 }
 
@@ -162,11 +183,8 @@ impl Workspace {
 /// and a `match` that must agree drift, and the drift would land as a panic on
 /// a live request rather than as a build failure.
 ///
-/// The `_` arm matches on `spec.section` rather than `spec.name` so a key
-/// added to `[pressure]`/`[models]` in the registry picks up this fallback
-/// with no edit here — the two exact-name arms above stay name-matched so a
-/// later key added to `[context]` cannot silently inherit `ContextConfig`'s
-/// reading of a DIFFERENT field.
+/// Pressure uses the runtime's validated accessors; other table-backed keys
+/// validate their entire section through the same typed parser as runtime.
 fn resolve(spec: &KeySpec, section: Option<&toml::Value>) -> Option<Result<Option<ConfigValue>>> {
     match spec.name {
         "terminal.backend" => Some(
@@ -179,10 +197,26 @@ fn resolve(spec: &KeySpec, section: Option<&toml::Value>) -> Option<Result<Optio
             ),
         ),
         _ => match spec.section {
-            "pressure" | "models" => Some(Ok(section_key(section, spec))),
+            "pressure" => Some(Ok(pressure_key(section, spec.field))),
+            "models" | "plan" | "codex" => Some(Ok(section_key(section, spec))),
             _ => None,
         },
     }
+}
+
+fn pressure_key(section: Option<&toml::Value>, field: &str) -> Option<ConfigValue> {
+    let config: PressureConfig = section?.clone().try_into().ok()?;
+    let text = match field {
+        "claude_model" => config.claude_model(),
+        "claude_effort" => config.claude_effort(),
+        "codex_model" => config.codex_model(),
+        "codex_effort" => config.codex_effort(),
+        "address_model" => config.address_model(),
+        "address_effort" => config.address_effort(),
+        "rounds" => return config.rounds().map(ConfigValue::Number),
+        _ => None,
+    };
+    text.map(|value| ConfigValue::Text(value.to_owned()))
 }
 
 /// Whether the workspace tier resolves `spec` at all — see [`resolve`], which
@@ -214,17 +248,14 @@ fn section_key(section: Option<&toml::Value>, spec: &KeySpec) -> Option<ConfigVa
     }
 }
 
-/// Whether the daemon can deserialize the `[models]` or `[pressure]` section:
-/// a table whose entries are registered fields in `name`, all holding strings.
+/// Use the runtime's section types, including their unknown-field policy.
 fn section_readable(section: &toml::Value, name: &str) -> bool {
-    let Some(table) = section.as_table() else {
-        return false;
-    };
-    table.iter().all(|(field, value)| {
-        KEYS.iter()
-            .any(|spec| spec.section == name && spec.field == field)
-            && value.is_str()
-    })
+    match name {
+        "codex" => section.clone().try_into::<CodexConfig>().is_ok(),
+        "models" => section.clone().try_into::<ModelsConfig>().is_ok(),
+        "plan" => section.clone().try_into::<PlanConfig>().is_ok(),
+        _ => false,
+    }
 }
 
 fn parse(text: &str) -> Result<toml::Value> {

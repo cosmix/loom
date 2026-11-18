@@ -153,9 +153,9 @@ fn test_hooks_not_duplicated_on_rerun() {
     let content = fs::read_to_string(&settings_local_path).unwrap();
     let settings: Value = serde_json::from_str(&content).unwrap();
 
-    // Should still have exactly one Stop hook entry
+    // Still one entry per Stop script (commit-guard, loom-relay-stop), none doubled
     let stop_hooks = settings["hooks"]["Stop"].as_array().unwrap();
-    assert_eq!(stop_hooks.len(), 1);
+    assert_eq!(stop_hooks.len(), 2);
 }
 
 #[test]

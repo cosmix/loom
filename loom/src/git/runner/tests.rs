@@ -1,4 +1,5 @@
 use super::*;
+use crate::test_git::{commit_file, git, TestRepo};
 
 #[test]
 fn git_deadlines_are_operation_specific() {
@@ -31,6 +32,69 @@ fn git_runner_returns_structured_timeout() {
     assert_eq!(timeout.operation(), "git -c");
 }
 
+#[test]
+fn repository_selectors_are_removed_before_explicit_overrides() {
+    let first = tempfile::tempdir().unwrap();
+    let second = tempfile::tempdir().unwrap();
+    for root in [first.path(), second.path()] {
+        TestRepo::builder().no_seed().init_in(root);
+    }
+    std::fs::write(first.path().join("first.txt"), "first").unwrap();
+    std::fs::write(second.path().join("second.txt"), "second").unwrap();
+
+    let mut command = Command::new("git");
+    command
+        .env("GIT_DIR", second.path().join(".git"))
+        .env("GIT_WORK_TREE", second.path())
+        .env("GIT_INDEX_FILE", second.path().join(".git/index"));
+    harden(
+        &mut command,
+        &global_args(&["add", "first.txt"]),
+        first.path(),
+    );
+    assert!(command.output().unwrap().status.success());
+    assert_eq!(
+        run_git_checked(&["ls-files"], first.path()).unwrap(),
+        "first.txt"
+    );
+    assert_eq!(run_git_checked(&["ls-files"], second.path()).unwrap(), "");
+
+    let mut read = Command::new("git");
+    read.env("GIT_DIR", second.path().join(".git"))
+        .env("GIT_WORK_TREE", second.path())
+        .env("GIT_INDEX_FILE", second.path().join(".git/index"));
+    harden(&mut read, &global_args(&["ls-files"]), first.path());
+    let output = read.output().unwrap();
+    assert!(output.status.success());
+    assert_eq!(output.stdout, b"first.txt\n");
+
+    assert_repository_selectors_removed(first.path());
+
+    let alternate_index = first.path().join("alternate-index");
+    let env = [("GIT_INDEX_FILE", alternate_index.as_os_str())];
+    let output = run_git_with_env(&["add", "first.txt"], &env, first.path()).unwrap();
+    assert!(output.status.success());
+    assert!(alternate_index.exists());
+    let output = run_git_with_env(&["ls-files"], &env, first.path()).unwrap();
+    assert_eq!(output.stdout, b"first.txt\n");
+}
+
+fn assert_repository_selectors_removed(repo: &Path) {
+    let mut selectors = Command::new("git");
+    for variable in REPO_REDIRECT_ENV {
+        selectors.env(variable, "ambient");
+    }
+    harden(&mut selectors, &[], repo);
+    for variable in REPO_REDIRECT_ENV {
+        assert!(
+            selectors
+                .get_envs()
+                .any(|(key, value)| key == OsStr::new(variable) && value.is_none()),
+            "{variable} must be removed"
+        );
+    }
+}
+
 /// Every hook name this fixture wires up. Each script just touches a
 /// marker file under the repo's `markers` directory when it runs.
 const HOOK_NAMES: [&str; 5] = [
@@ -41,57 +105,28 @@ const HOOK_NAMES: [&str; 5] = [
     "post-checkout",
 ];
 
-/// Set up isolated from ambient host git config (never mutates
-/// process-wide environment; each command carries its own overrides).
-pub(super) fn isolated_git(root: &Path, args: &[&str]) -> Output {
-    Command::new("git")
-        .args(args)
-        .current_dir(root)
-        .env("GIT_CONFIG_GLOBAL", root.join(".loom-test-no-global"))
-        .env("GIT_CONFIG_SYSTEM", root.join(".loom-test-no-system"))
-        .env("GIT_CONFIG_NOSYSTEM", "1")
-        .output()
-        .unwrap()
-}
-
-pub(super) fn isolated_git_ok(root: &Path, args: &[&str]) {
-    let output = isolated_git(root, args);
-    assert!(
-        output.status.success(),
-        "git {args:?} failed: stdout={}, stderr={}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
-}
-
 /// A repository whose `core.hooksPath` (set via local config, so it is
 /// live for any plain `git` call) points at a fixture directory where
 /// every hook in [`HOOK_NAMES`] touches a marker file under
 /// `<root>/markers` when it runs. Also carries a `feature` branch ready
 /// to merge or check out, and leaves `main` checked out.
 #[cfg(unix)]
-fn repo_with_marker_hooks() -> (tempfile::TempDir, std::path::PathBuf) {
+fn repo_with_marker_hooks() -> (TestRepo, std::path::PathBuf) {
     use std::os::unix::fs::PermissionsExt;
 
-    let temp = tempfile::tempdir().unwrap();
-    let root = temp.path().to_path_buf();
-    isolated_git_ok(&root, &["init", "-b", "main"]);
-    isolated_git_ok(&root, &["config", "user.email", "runner-test@example.com"]);
-    isolated_git_ok(&root, &["config", "user.name", "Runner Test"]);
-    std::fs::write(root.join("seed.txt"), "seed").unwrap();
-    isolated_git_ok(&root, &["add", "seed.txt"]);
-    isolated_git_ok(&root, &["commit", "-m", "seed"]);
+    let repo = TestRepo::builder()
+        .seed("seed.txt", "seed", "seed")
+        .create();
+    let root = repo.path().to_path_buf();
 
     // A branch to merge and check out, created outside the runner and
     // BEFORE the hook fixture is installed below - otherwise these
     // plain setup commands would themselves trigger the fixture hooks
     // (pre-commit, commit-msg, post-checkout) and pre-populate the
     // markers the tests assert on.
-    isolated_git_ok(&root, &["checkout", "-b", "feature"]);
-    std::fs::write(root.join("feature.txt"), "feature").unwrap();
-    isolated_git_ok(&root, &["add", "feature.txt"]);
-    isolated_git_ok(&root, &["commit", "-m", "feature commit"]);
-    isolated_git_ok(&root, &["checkout", "main"]);
+    git(&root, &["checkout", "-b", "feature"]);
+    commit_file(&root, "feature.txt", "feature", "feature commit");
+    git(&root, &["checkout", "main"]);
 
     let hooks_dir = root.join("hooks-fixture");
     let markers_dir = root.join("markers");
@@ -109,12 +144,12 @@ fn repo_with_marker_hooks() -> (tempfile::TempDir, std::path::PathBuf) {
         perms.set_mode(0o755);
         std::fs::set_permissions(&script_path, perms).unwrap();
     }
-    isolated_git_ok(
+    git(
         &root,
         &["config", "core.hooksPath", hooks_dir.to_str().unwrap()],
     );
 
-    (temp, root)
+    (repo, root)
 }
 
 #[cfg(unix)]
@@ -159,7 +194,7 @@ fn plain_git_commit_proves_the_fixture_hooks_are_live() {
     let (_temp, root) = repo_with_marker_hooks();
     let markers_dir = root.join("markers");
 
-    isolated_git_ok(&root, &["commit", "--allow-empty", "-m", "control commit"]);
+    git(&root, &["commit", "--allow-empty", "-m", "control commit"]);
 
     assert!(
         markers_dir.join("pre-commit").exists(),
@@ -168,5 +203,114 @@ fn plain_git_commit_proves_the_fixture_hooks_are_live() {
     assert!(
         markers_dir.join("commit-msg").exists(),
         "fixture commit-msg hook must be live"
+    );
+}
+
+/// `<tmp>/repo` tracking the gitlink `sub`, whose `.git` file names a foreign
+/// repository that defines a clean filter and leaves a file for it to hash.
+/// Returns the temporary directory, the repository and the marker path.
+pub(super) fn planted_gitlink() -> (tempfile::TempDir, std::path::PathBuf, std::path::PathBuf) {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let foreign = tmp.path().join("foreign");
+    let repo = tmp.path().join("repo");
+    let marker = tmp.path().join("filter-ran");
+    std::fs::create_dir_all(&foreign).unwrap();
+    std::fs::create_dir_all(repo.join("sub")).unwrap();
+    TestRepo::builder().no_seed().init_in(&foreign);
+    std::fs::write(foreign.join("f.md"), "one\n").unwrap();
+    std::fs::write(foreign.join(".gitattributes"), "* filter=trap\n").unwrap();
+    git(&foreign, &["add", "."]);
+    git(&foreign, &["commit", "-qm", "foreign"]);
+    let filter = format!("touch '{}'; cat", marker.display());
+    git(&foreign, &["config", "filter.trap.clean", &filter]);
+    let head = git(&foreign, &["rev-parse", "HEAD"]);
+    TestRepo::builder().no_seed().init_in(&repo);
+    std::fs::write(repo.join("a.txt"), "a\n").unwrap();
+    git(&repo, &["add", "a.txt"]);
+    let entry = format!("160000,{},sub", head.trim());
+    git(&repo, &["update-index", "--add", "--cacheinfo", &entry]);
+    git(&repo, &["commit", "-qm", "base"]);
+    let pointer = format!("gitdir: {}\n", foreign.join(".git").display());
+    std::fs::write(repo.join("sub/.git"), pointer).unwrap();
+    std::fs::write(repo.join("sub/f.md"), "TWO\n").unwrap();
+    std::fs::write(repo.join("sub/.gitattributes"), "* filter=trap\n").unwrap();
+    let ignore = "[submodule \"sub\"]\n\tpath = sub\n\turl = x\n\tignore = none\n";
+    std::fs::write(repo.join(".gitmodules"), ignore).unwrap();
+    (tmp, repo, marker)
+}
+
+/// A comparison through the runner starts no process inside a gitlink's
+/// directory, whatever its `.gitmodules` or the caller's option asks for. The
+/// positive control runs last: git outside the runner does run the filter.
+#[test]
+fn worktree_comparisons_never_run_the_configuration_of_a_gitlink() {
+    let (_tmp, repo, marker) = planted_gitlink();
+
+    for args in [
+        vec!["status", "--porcelain"],
+        vec!["diff", "--name-only"],
+        vec!["diff", "--quiet", "--ignore-submodules=none", "HEAD"],
+        vec!["diff-index", "--name-only", "HEAD"],
+        vec!["diff-files", "--name-only"],
+    ] {
+        run_git(&args, &repo).unwrap();
+        assert!(!marker.exists(), "git {args:?} ran the gitlink's filter");
+    }
+
+    let control = std::process::Command::new("git")
+        .args(["status", "--porcelain"])
+        .current_dir(&repo)
+        .output()
+        .unwrap();
+    assert!(control.status.success(), "{control:?}");
+    assert!(marker.exists(), "the fixture's filter never runs");
+}
+
+#[test]
+fn a_gitlink_whose_commit_moved_is_still_reported() {
+    let (tmp, repo, _marker) = planted_gitlink();
+    git(
+        &tmp.path().join("foreign"),
+        &["commit", "--allow-empty", "-qm", "moved"],
+    );
+
+    let status = run_git_checked(&["status", "--porcelain"], &repo).unwrap();
+
+    assert!(status.contains("sub"), "{status}");
+}
+
+#[test]
+fn only_worktree_comparisons_gain_the_gitlink_option() {
+    assert_eq!(
+        without_gitlink_recursion(&["log", "--ignore-submodules=none"]),
+        ["log", "--ignore-submodules=none"]
+    );
+    assert_eq!(
+        without_gitlink_recursion(&[
+            "-c",
+            "a=b",
+            "diff",
+            "--ignore-submodules=none",
+            "x",
+            "--",
+            "--ignore-submodules=none"
+        ]),
+        [
+            "-c",
+            "a=b",
+            "diff",
+            "--ignore-submodules=dirty",
+            "x",
+            "--",
+            "--ignore-submodules=none"
+        ]
+    );
+    assert_eq!(
+        without_gitlink_recursion(&["diff", "--ignore-submodules=all"]),
+        [
+            "diff",
+            "--ignore-submodules=dirty",
+            "--ignore-submodules=all"
+        ]
     );
 }

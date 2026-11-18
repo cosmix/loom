@@ -104,7 +104,12 @@ fn resolve_prompt_cache_split_prefix_file(work_dir: &Path, stage: &Stage) -> Opt
 ///   and running it on the disputing stage's model would let a plan pick its
 ///   own judge — so it uses the adjudicator's own model
 ///   (`.loom/work/config.toml::[adjudication] model`, default `opus`).
-/// * Stage, contract and knowledge sessions resolve through the four-tier chain in
+/// * The contract writer has its own slot, `crate::fs::work_dir::config_sections::resolve_contract_writer_model_effort`
+///   (`[models] contract_writer_model` / `contract_writer_effort`, default
+///   opus/high). A weak contract causes disputes, adjudication and delays, so
+///   it does not follow the stage's orchestrator model, and the plan's
+///   `model` / `reasoning_effort` fields never reach it.
+/// * Stage and knowledge sessions resolve through the four-tier chain in
 ///   `crate::fs::work_dir::resolve_stage_model_effort`: the stage's own plan
 ///   fields, then `.loom/work/config.toml`'s `[models]`, then
 ///   `~/.loom/config.toml`'s `[models]`, then the stage type's built-in.
@@ -115,7 +120,10 @@ fn model_and_effort(kind: SessionType, stage: &Stage, work_dir: &Path) -> (Strin
             crate::orchestrator::adjudication::resolve_model(work_dir),
             "high".to_string(),
         ),
-        SessionType::Stage | SessionType::Contract | SessionType::Knowledge => {
+        SessionType::Contract => {
+            crate::fs::work_dir::config_sections::resolve_contract_writer_model_effort(work_dir)
+        }
+        SessionType::Stage | SessionType::Knowledge => {
             crate::fs::work_dir::resolve_stage_model_effort(
                 work_dir,
                 stage.stage_type,
@@ -248,7 +256,8 @@ fn claude_command(
 /// Returns `(session, title, pid_key, wrapper_path_abs)`:
 /// * `session` — the input session with `session_type` and the stage
 ///   assignment (and therefore `tracking_key`) applied.
-/// * `title` — the window title / tmux session name (`session.tracking_key`).
+/// * `title` — the tmux session name (`session.tracking_key`); native spawn
+///   adds project and session identity to make its window title.
 /// * `pid_key` — the per-session PID-file key (`title + "-" + session.id`).
 /// * `wrapper_path_abs` — the absolute path to the wrapper script that
 ///   `exec`s claude.
@@ -299,11 +308,9 @@ fn write_capsule(
     })
 }
 
-/// [`prepare_session_launch`] against already-resolved host facts, which
-/// tests supply directly.
-///
+/// [`prepare_session_launch`] against host facts supplied by tests or the daemon.
 /// The stage is assigned first so `tracking_key` is set for the (stage, kind)
-/// pair: the window title IS the tracking_key, and the per-session PID-file
+/// pair: the tmux title is the tracking_key, and the per-session PID-file
 /// key (tracking_key + session.id, so two consecutive sessions for one stage
 /// never share a PID file, O-14) derives from it. The kind prefix stops at OS
 /// resources and never reaches `LOOM_STAGE_ID`, which is why the wrapper gets
@@ -321,15 +328,13 @@ fn prepare_session_launch_with(
     work_dir: &Path,
     kind: SessionType,
     stage: &Stage,
-    mut session: Session,
+    session: Session,
     signal_path: &Path,
     cwd: &Path,
 ) -> Result<(Session, String, String, PathBuf)> {
-    session.session_type = kind;
-    session.assign_to_stage(stage.id.clone());
-    let title = session.tracking_key.clone();
-    let pid_key = format!("{}-{}", title, session.id);
+    let (session, title, pid_key) = assigned_session(session, kind, stage);
     let sandbox = session_sandbox(work_dir, stage, kind);
+    host.capsule_support.require_isolation()?;
     crate::sandbox::preflight::require_confined_host(&host.facts)?;
     let scratch_dir = host.prepare_scratch(&session.id)?;
     let settings_file = write_capsule(
@@ -343,7 +348,12 @@ fn prepare_session_launch_with(
         &scratch_dir,
     )?;
     let prefix_file = resolve_prompt_cache_split_prefix_file(work_dir, stage);
-    let capsule = super::session_capsule(host.capsule_support, Some(settings_file), prefix_file);
+    let capsule = super::session_capsule(
+        host.capsule_support,
+        Some(settings_file.clone()),
+        prefix_file,
+    );
+    capsule.require_isolation(&settings_file)?;
     let claude_cmd = claude_command(host, work_dir, kind, stage, signal_path, &sandbox, &capsule);
     let context_ceiling_tokens =
         crate::fs::work_dir::resolve_context_ceiling_tokens(work_dir, stage.context_ceiling_tokens);
@@ -362,6 +372,18 @@ fn prepare_session_launch_with(
     // Absolute: macOS terminals open in the home directory.
     let wrapper_path_abs = wrapper_path.canonicalize().unwrap_or(wrapper_path);
     Ok((session, title, pid_key, wrapper_path_abs))
+}
+
+fn assigned_session(
+    mut session: Session,
+    kind: SessionType,
+    stage: &Stage,
+) -> (Session, String, String) {
+    session.session_type = kind;
+    session.assign_to_stage(stage.id.clone());
+    let title = session.tracking_key.clone();
+    let pid_key = format!("{}-{}", title, session.id);
+    (session, title, pid_key)
 }
 
 #[cfg(test)]

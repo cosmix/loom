@@ -35,17 +35,34 @@ class FakeSocket {
   }
 }
 
+function full(snapshot: unknown): string {
+  return JSON.stringify({ t: "full", snapshot });
+}
+
+const tickMessage = JSON.stringify({
+  t: "tick",
+  at: "2026-09-04T12:00:01Z",
+  tick_age: 1,
+  stages: {},
+});
+
 let clock = 0;
 let intervalCallback: (() => void) | undefined;
 let intervalCleared = false;
+let timeoutCallback: (() => void) | undefined;
+let timeoutCleared = false;
 
 function dependencies(): SocketDeps {
   return {
     WebSocket: FakeSocket as unknown as typeof WebSocket,
-    fetch: (async () => ({ json: async () => fixture })) as unknown as typeof fetch,
     location: { protocol: "http:", host: "127.0.0.1:7373" },
-    setTimeout: (() => 1) as unknown as typeof setTimeout,
-    clearTimeout: (() => undefined) as unknown as typeof clearTimeout,
+    setTimeout: ((callback: () => void) => {
+      timeoutCallback = callback;
+      return 1;
+    }) as unknown as typeof setTimeout,
+    clearTimeout: (() => {
+      timeoutCleared = true;
+    }) as unknown as typeof clearTimeout,
     setInterval: ((callback: () => void) => {
       intervalCallback = callback;
       return 7;
@@ -67,9 +84,39 @@ afterEach(() => {
   clock = 0;
   intervalCallback = undefined;
   intervalCleared = false;
+  timeoutCallback = undefined;
+  timeoutCleared = false;
 });
 
 describe("status socket watchdog", () => {
+  it("expires each silent handshake and ignores events from the retired socket", () => {
+    const store = createStore();
+    const dispose = connectStatusSocket(store, dependencies());
+    const first = FakeSocket.instances[0];
+    expect(store.get(connectionAtom).phase).toBe("connecting");
+
+    tick(30000);
+    expect(first.closed).toBe(true);
+    expect(store.get(connectionAtom)).toMatchObject({
+      phase: "reconnecting",
+      message: "connection attempt timed out",
+    });
+    const since = store.get(connectionAtom).since;
+    timeoutCallback?.();
+    const second = FakeSocket.instances[1];
+    first.open();
+    first.receive(full({ ...fixture, generated_at: "2099-01-01T00:00:00Z" }));
+    expect(store.get(connectionAtom).phase).toBe("reconnecting");
+    expect(store.get(snapshotAtom)).toBeNull();
+    tick(30000);
+    expect(second.closed).toBe(true);
+    expect(store.get(connectionAtom).since).toBe(since);
+    dispose();
+    expect(timeoutCleared).toBe(true);
+    timeoutCallback?.();
+    expect(FakeSocket.instances).toHaveLength(2);
+  });
+
   it("reconnects after 30s of silence on a socket that never closes", () => {
     const store = createStore();
     const dispose = connectStatusSocket(store, dependencies());
@@ -95,7 +142,7 @@ describe("status socket watchdog", () => {
     socket.open();
 
     tick(25000);
-    socket.receive(JSON.stringify(fixture));
+    socket.receive(full(fixture));
     tick(25000);
     expect(store.get(connectionAtom).phase).toBe("live");
 
@@ -106,18 +153,27 @@ describe("status socket watchdog", () => {
     dispose();
   });
 
-  it("keeps the same snapshot object when the keepalive resends an identical frame", () => {
+  it("ticks every second keep the socket live for a minute, and 31s of silence reconnects", () => {
     const store = createStore();
     const dispose = connectStatusSocket(store, dependencies());
     const socket = FakeSocket.instances[0];
     socket.open();
-    socket.receive(JSON.stringify(fixture));
-    const stored = store.get(snapshotAtom);
+    socket.receive(full(fixture));
 
-    socket.receive(JSON.stringify(fixture));
-
-    expect(store.get(snapshotAtom)).toBe(stored);
+    for (let second = 0; second < 60; second++) {
+      socket.receive(tickMessage);
+      tick(1000);
+    }
     expect(store.get(connectionAtom).phase).toBe("live");
+    expect(socket.closed).toBe(false);
+    expect(store.get(snapshotAtom)?.generated_at).toBe("2026-09-04T12:00:01Z");
+
+    tick(30000);
+    expect(store.get(connectionAtom)).toMatchObject({
+      phase: "reconnecting",
+      message: "no data for 30s",
+    });
+    expect(socket.closed).toBe(true);
     dispose();
   });
 

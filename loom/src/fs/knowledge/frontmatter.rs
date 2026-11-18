@@ -1,11 +1,98 @@
 //! Read and update the leading YAML frontmatter of a knowledge document.
 
 use crate::context::schema::LifecycleState;
+use crate::parser::frontmatter::split_frontmatter_raw;
 use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
+use serde_json::{Map, Value};
 use std::path::Path;
 
 const KNOWN_KEYS: &[&str] = &["id", "aliases", "state", "sources", "verified"];
+
+// Untyped serde values discard YAML tags. Reject them at every node so an
+// update cannot silently change the meaning of an unknown value.
+struct UntaggedValue(Value);
+
+impl<'de> Deserialize<'de> for UntaggedValue {
+    fn deserialize<D: serde::Deserializer<'de>>(
+        deserializer: D,
+    ) -> std::result::Result<Self, D::Error> {
+        let serde_saphyr::Tagged(value, tag) =
+            serde_saphyr::Tagged::<UntaggedValueInner>::deserialize(deserializer)?;
+        if tag.is_some() {
+            return Err(serde::de::Error::custom(
+                "YAML tags are unsupported in frontmatter",
+            ));
+        }
+        Ok(Self(value.0))
+    }
+}
+
+struct UntaggedValueInner(Value);
+
+impl<'de> Deserialize<'de> for UntaggedValueInner {
+    fn deserialize<D: serde::Deserializer<'de>>(
+        deserializer: D,
+    ) -> std::result::Result<Self, D::Error> {
+        deserializer.deserialize_any(UntaggedValueVisitor)
+    }
+}
+
+struct UntaggedValueVisitor;
+impl<'de> serde::de::Visitor<'de> for UntaggedValueVisitor {
+    type Value = UntaggedValueInner;
+    fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        f.write_str("an untagged YAML value")
+    }
+    fn visit_bool<E: serde::de::Error>(self, v: bool) -> std::result::Result<Self::Value, E> {
+        Ok(UntaggedValueInner(v.into()))
+    }
+    fn visit_i64<E: serde::de::Error>(self, v: i64) -> std::result::Result<Self::Value, E> {
+        Ok(UntaggedValueInner(v.into()))
+    }
+    fn visit_u64<E: serde::de::Error>(self, v: u64) -> std::result::Result<Self::Value, E> {
+        Ok(UntaggedValueInner(v.into()))
+    }
+    fn visit_f64<E: serde::de::Error>(self, v: f64) -> std::result::Result<Self::Value, E> {
+        serde_json::Number::from_f64(v)
+            .map(|n| UntaggedValueInner(Value::Number(n)))
+            .ok_or_else(|| E::custom("non-finite number"))
+    }
+    fn visit_str<E: serde::de::Error>(self, v: &str) -> std::result::Result<Self::Value, E> {
+        Ok(UntaggedValueInner(v.into()))
+    }
+    fn visit_string<E: serde::de::Error>(self, v: String) -> std::result::Result<Self::Value, E> {
+        Ok(UntaggedValueInner(v.into()))
+    }
+    fn visit_unit<E: serde::de::Error>(self) -> std::result::Result<Self::Value, E> {
+        Ok(UntaggedValueInner(Value::Null))
+    }
+    fn visit_seq<A: serde::de::SeqAccess<'de>>(
+        self,
+        mut seq: A,
+    ) -> std::result::Result<Self::Value, A::Error> {
+        let mut values = Vec::new();
+        while let Some(UntaggedValue(value)) = seq.next_element()? {
+            values.push(value);
+        }
+        Ok(UntaggedValueInner(Value::Array(values)))
+    }
+    fn visit_map<A: serde::de::MapAccess<'de>>(
+        self,
+        mut map: A,
+    ) -> std::result::Result<Self::Value, A::Error> {
+        let mut values = Map::new();
+        while let Some((UntaggedValue(key), UntaggedValue(value))) = map.next_entry()? {
+            let Value::String(key) = key else {
+                return Err(serde::de::Error::custom("mapping key must be a string"));
+            };
+            if values.insert(key, value).is_some() {
+                return Err(serde::de::Error::custom("duplicate mapping key"));
+            }
+        }
+        Ok(UntaggedValueInner(Value::Object(values)))
+    }
+}
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct Frontmatter {
@@ -14,7 +101,7 @@ pub(crate) struct Frontmatter {
     pub(crate) state: Option<LifecycleState>,
     pub(crate) sources: Vec<String>,
     pub(crate) verified: Option<String>,
-    unknown_yaml: String,
+    unknown: Map<String, Value>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
@@ -33,20 +120,37 @@ struct KnownFrontmatter {
 }
 
 impl Frontmatter {
+    fn from_known(known: KnownFrontmatter, unknown: Map<String, Value>) -> Self {
+        Self {
+            id: known.id,
+            aliases: known.aliases,
+            state: known.state,
+            sources: known.sources,
+            verified: known.verified,
+            unknown,
+        }
+    }
+
     fn parse(raw: &str) -> Result<Self> {
         let known = if raw.trim().is_empty() {
             KnownFrontmatter::default()
         } else {
             crate::yaml::from_str(raw).context("Invalid YAML frontmatter")?
         };
-        Ok(Self {
-            id: known.id,
-            aliases: known.aliases,
-            state: known.state,
-            sources: known.sources,
-            verified: known.verified,
-            unknown_yaml: unknown_yaml(raw),
-        })
+        let mut mapping: Map<String, Value> = if raw.trim().is_empty() {
+            Map::new()
+        } else {
+            let UntaggedValue(Value::Object(mapping)) =
+                crate::yaml::from_str(raw).context("Unsupported YAML frontmatter mapping")?
+            else {
+                bail!("YAML frontmatter must be a mapping");
+            };
+            mapping
+        };
+        for key in KNOWN_KEYS {
+            mapping.remove(*key);
+        }
+        Ok(Self::from_known(known, mapping))
     }
 
     fn render_block(&self) -> Result<String> {
@@ -57,18 +161,20 @@ impl Frontmatter {
             sources: self.sources.clone(),
             verified: self.verified.clone(),
         };
-        let mut yaml = crate::yaml::to_string(&known).context("Failed to serialize frontmatter")?;
+        let mut mapping = self.unknown.clone();
+        let Value::Object(known) = serde_json::to_value(known)? else {
+            bail!("Serialized frontmatter is not a mapping");
+        };
+        mapping.extend(known);
+        let mut yaml =
+            crate::yaml::to_string(&mapping).context("Failed to serialize frontmatter")?;
+        let reparsed: Map<String, Value> =
+            crate::yaml::from_str(&yaml).context("Serialized frontmatter is invalid")?;
+        if reparsed != mapping {
+            bail!("Serialized frontmatter does not preserve metadata");
+        }
         if yaml == "{}\n" {
             yaml.clear();
-        }
-        if !self.unknown_yaml.is_empty() {
-            if !yaml.is_empty() && !yaml.ends_with('\n') {
-                yaml.push('\n');
-            }
-            yaml.push_str(&self.unknown_yaml);
-            if !yaml.ends_with('\n') {
-                yaml.push('\n');
-            }
         }
         Ok(format!("---\n{yaml}---\n"))
     }
@@ -77,10 +183,15 @@ impl Frontmatter {
 /// Parse frontmatter for readers. Malformed YAML is stripped but contributes
 /// no metadata, preserving the chunker's long-standing best-effort behavior.
 pub(crate) fn split_frontmatter(text: &str) -> (Frontmatter, &str) {
-    let Some((raw, body)) = raw_frontmatter(text) else {
+    let Some((raw, body)) = split_frontmatter_raw(text).ok() else {
         return (Frontmatter::default(), text);
     };
-    (Frontmatter::parse(raw).unwrap_or_default(), body)
+    let metadata = Frontmatter::parse(raw).unwrap_or_else(|_| {
+        crate::yaml::from_str(raw)
+            .map(|known| Frontmatter::from_known(known, Map::new()))
+            .unwrap_or_default()
+    });
+    (metadata, body)
 }
 
 pub(crate) fn file_frontmatter(bytes: &[u8]) -> Frontmatter {
@@ -111,7 +222,7 @@ where
                 path.display()
             );
         }
-        let (mut frontmatter, body, had_block) = match raw_frontmatter(&content) {
+        let (mut frontmatter, body, had_block) = match split_frontmatter_raw(&content).ok() {
             Some((raw, body)) => (Frontmatter::parse(raw)?, body, true),
             None => (Frontmatter::default(), content.as_str(), false),
         };
@@ -126,83 +237,6 @@ where
     Ok(rendered)
 }
 
-fn raw_frontmatter(text: &str) -> Option<(&str, &str)> {
-    let (first_end, first_line) = line_at(text, 0)?;
-    if first_line != "---" {
-        return None;
-    }
-    let mut offset = first_end;
-    while let Some((line_end, line)) = line_at(text, offset) {
-        if line == "---" {
-            return Some((&text[first_end..offset], &text[line_end..]));
-        }
-        offset = line_end;
-    }
-    None
-}
-
-fn line_at(text: &str, start: usize) -> Option<(usize, &str)> {
-    if start >= text.len() {
-        return None;
-    }
-    let end = text[start..]
-        .find('\n')
-        .map_or(text.len(), |position| start + position + 1);
-    Some((end, text[start..end].trim_end_matches(['\n', '\r'])))
-}
-
-/// Preserve unknown top-level key blocks byte-for-byte while known fields are
-/// rewritten canonically. Unknown key order and multiline values are retained.
-fn unknown_yaml(raw: &str) -> String {
-    let mut output = String::new();
-    let mut keep_block = true;
-    for line in raw.split_inclusive('\n') {
-        if let Some(key) = top_level_key(line) {
-            keep_block = !KNOWN_KEYS.contains(&key);
-        }
-        if keep_block {
-            output.push_str(line);
-        }
-    }
-    output
-}
-
-fn top_level_key(line: &str) -> Option<&str> {
-    let line = line.trim_end_matches(['\n', '\r']);
-    if line.is_empty()
-        || line.chars().next().is_some_and(char::is_whitespace)
-        || line.starts_with('#')
-    {
-        return None;
-    }
-    let (key, _) = line.split_once(':')?;
-    Some(key.trim().trim_matches(['\'', '"']))
-}
-
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use std::fs;
-
-    #[test]
-    fn update_preserves_unknown_yaml_and_body() {
-        let temp = tempfile::tempdir().unwrap();
-        let path = temp.path().join("topic.md");
-        let body = "# Topic\n\nBody.\n";
-        fs::write(
-            &path,
-            format!("---\nowner:\n  team: docs\nstate: draft\n---\n{body}"),
-        )
-        .unwrap();
-
-        update_file(&path, |frontmatter| {
-            frontmatter.state = Some(LifecycleState::Active);
-            Ok(())
-        })
-        .unwrap();
-
-        let updated = fs::read_to_string(path).unwrap();
-        assert!(updated.contains("owner:\n  team: docs\n"));
-        assert!(updated.ends_with(body));
-    }
-}
+#[path = "frontmatter_tests.rs"]
+mod tests;

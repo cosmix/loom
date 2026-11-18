@@ -1,0 +1,53 @@
+{
+  "index.html": {
+    "forbidChunks": [
+      "src/plan/**",
+      "node_modules/@codemirror/**",
+      "node_modules/@lezer/**",
+      "assets/cm-view.js",
+      "assets/cm-lang.js",
+      "node_modules/@fontsource-variable/source-serif-4/**",
+      "node_modules/@fontsource-variable/literata/**",
+      "node_modules/@fontsource-variable/piazzolla/**",
+      "src/plan/editor/codemirror.ts"
+    ],
+    "forbidText": [
+      "Source Serif 4 Variable",
+      "Literata Variable",
+      "Piazzolla Variable",
+      "data-loom-plan",
+      "loom-plan-name",
+      "/api/share",
+      "plan socket: invalid frame",
+      "cm-editor"
+    ]
+  },
+  "plan.html": {
+    "forbidChunks": [
+      "node_modules/@xterm/**",
+      "src/components/terminal/**",
+      "node_modules/@codemirror/**",
+      "node_modules/@lezer/**",
+      "assets/cm-view.js",
+      "assets/cm-lang.js",
+      "src/plan/editor/codemirror.ts",
+      "src/plan/editor/edit-mode.tsx",
+      "src/plan/run/handoff-dialogs.tsx",
+      "src/plan/trace/coverage-page.tsx",
+      "src/plan/trace/findings-page.tsx"
+    ],
+    "forbidText": [
+      "xterm-helper-textarea",
+      "terminal-takeover-cue",
+      "Saved terminal history",
+      "cm-editor",
+      "Your kept text",
+      "took authoring. Your text is kept as a draft.",
+      "Delete branches with unmerged commits?",
+      "Could not load pressure options",
+      "Commit or stash the blocking changes first",
+      "No heading matches this filter.",
+      "This feature has no metaplan, so no Plan follow-ups can start."
+    ]
+  }
+}

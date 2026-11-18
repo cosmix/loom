@@ -4,6 +4,7 @@
 use crate::fs::work_dir::WorkDir;
 use crate::models::stage::Stage;
 use crate::plan::schema::{LoomConfig, LoomMetadata, StageDefinition, StageSandboxConfig};
+use crate::test_git::{git, TestRepo};
 use crate::verify::serialize_stage_to_markdown;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -74,50 +75,23 @@ fn setup_work_dir_with_plan(temp_dir: &TempDir) -> (PathBuf, WorkDir) {
     (plan_path, work_dir)
 }
 
-/// Run one git setup command with ambient global/system config neutralized, so
-/// a developer's or CI runner's `~/.gitconfig` cannot change test behaviour.
-fn run_git(root: &Path, args: &[&str]) {
-    let out = std::process::Command::new("git")
-        .args(args)
-        .current_dir(root)
-        .env("GIT_CONFIG_GLOBAL", root.join(".loom-test-no-global"))
-        .env("GIT_CONFIG_SYSTEM", root.join(".loom-test-no-system"))
-        .env("GIT_CONFIG_NOSYSTEM", "1")
-        .output()
-        .unwrap();
-    assert!(
-        out.status.success(),
-        "git {args:?} failed: {}",
-        String::from_utf8_lossy(&out.stderr)
-    );
-}
-
 /// A temp git repo with one committed file and an initialised `.loom/work/`,
 /// as the preflight expects to find.
 fn init_preflight_repo() -> TempDir {
     let temp = TempDir::new().unwrap();
     let root = temp.path();
-    run_git(root, &["init", "-b", "main"]);
-    run_git(root, &["config", "user.email", "t@t.com"]);
-    run_git(root, &["config", "user.name", "t"]);
-    fs::write(root.join("src.rs"), "fn main() {}\n").unwrap();
-    run_git(root, &["add", "src.rs"]);
-    run_git(root, &["commit", "-m", "seed"]);
-    fs::create_dir_all(root.join(".loom").join("work")).unwrap();
+    TestRepo::builder()
+        .identity("t", "t@t.com")
+        .seed("src.rs", "fn main() {}\n", "seed")
+        .init_in(root);
+    let work = root.join(".loom").join("work");
+    fs::create_dir_all(&work).unwrap();
+    crate::git::worktree::capture_main_identity(root, &work).unwrap();
     temp
 }
 
 fn head_sha(root: &Path) -> String {
-    let output = std::process::Command::new("git")
-        .args(["rev-parse", "HEAD"])
-        .current_dir(root)
-        .env("GIT_CONFIG_GLOBAL", root.join(".loom-test-no-global"))
-        .env("GIT_CONFIG_SYSTEM", root.join(".loom-test-no-system"))
-        .env("GIT_CONFIG_NOSYSTEM", "1")
-        .output()
-        .unwrap();
-    assert!(output.status.success());
-    String::from_utf8_lossy(&output.stdout).trim().to_string()
+    git(root, &["rev-parse", "HEAD"])
 }
 
 fn snapshot_stores(

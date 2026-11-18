@@ -6,11 +6,6 @@ use std::path::Path;
 use crate::fs::work_dir::ContextConfig;
 use crate::models::session::{Session, SessionStatus, SessionType};
 use crate::models::stage::{Stage, StageStatus};
-// `check_session_alive` below routes through the `LivenessService`
-// attached to the monitor's handlers. Imported for documentation and
-// to make the wiring discoverable via grep.
-#[allow(unused_imports)]
-use crate::orchestrator::liveness::LivenessService;
 use crate::verify::contracts::store::load_freeze;
 
 use super::ceiling::resolve_ceiling_tokens;
@@ -39,6 +34,8 @@ pub struct Detection {
     /// counts as activity until its hold ceiling. See
     /// [`super::judge_watchdog`].
     pub(super) judge_commands_seen: HashMap<String, chrono::DateTime<chrono::Utc>>,
+    /// Last observed CPU progress of a verified foreground stage command.
+    pub(super) foreground_commands_seen: HashMap<String, super::foreground::ForegroundObservation>,
     /// Red handoffs successfully written or found during this daemon run.
     /// A failed write remains absent so an unchanged-Red poll retries it.
     pub red_handoff_ready: HashSet<String>,
@@ -49,6 +46,9 @@ pub struct Detection {
     /// Handoff documents asking for a takedown their sandboxed author could
     /// not record in the stage file. See [`super::handoff_watch`].
     handoff_watch: HandoffWatch,
+    /// Crashes reported whose stage still runs under the crashed session. See
+    /// [`super::crash_redelivery`].
+    pub(super) undelivered_crashes: super::crash_redelivery::UndeliveredCrashes,
 }
 
 impl Detection {
@@ -61,9 +61,11 @@ impl Detection {
             escalated_hung_sessions: HashSet::new(),
             reported_stalled_judges: HashSet::new(),
             judge_commands_seen: HashMap::new(),
+            foreground_commands_seen: HashMap::new(),
             red_handoff_ready: HashSet::new(),
             last_budget_exceeded: HashMap::new(),
             handoff_watch: HandoffWatch::default(),
+            undelivered_crashes: HashMap::new(),
         }
     }
 
@@ -136,6 +138,7 @@ impl Detection {
 
         self.clear_inactive_latches(sessions);
         self.clear_finished_judge_latches(sessions);
+        self.handoff_watch.refresh(handlers.work_dir());
 
         for session in sessions {
             let status = self.detect_session_status(session, stages, handlers);
@@ -148,9 +151,9 @@ impl Detection {
             // leaves the request in the document alone. Checked before the
             // ceiling resolves: this recovery is about a stopped agent, not
             // about how much context it had.
-            if let Some(event) =
-                self.handoff_watch
-                    .needs_handoff_from_document(session, stages, handlers.work_dir())
+            if let Some(event) = self
+                .handoff_watch
+                .needs_handoff_from_document(session, stages)
             {
                 events.push(event);
             }
@@ -169,6 +172,11 @@ impl Detection {
         }
 
         events
+    }
+
+    #[cfg(test)]
+    pub(super) fn handoff_directory_reads(&self) -> u64 {
+        self.handoff_watch.directory_read_count()
     }
 
     /// Emit Yellow/Red band transitions for one session, and generate a handoff
@@ -267,9 +275,10 @@ impl Detection {
 
     /// Detect heartbeat-based events (heartbeat updates, silent sessions).
     ///
-    /// The silence check is deterministic: it compares the poll loop's own tick
-    /// against the timestamp recorded in the heartbeat file. Nothing sleeps here
-    /// and nothing shells out, so the check cannot itself wedge the loop.
+    /// Silence timing compares the poll loop's tick against the heartbeat
+    /// timestamp. Subsequent liveness and parked-stage checks may run probes,
+    /// including git commands, through the configured handlers and their
+    /// [`liveness service`](crate::orchestrator::liveness::LivenessService).
     ///
     /// `stages` supplies the per-stage response budget
     /// ([`Stage::effective_subagent_timeout_secs`]); a session whose stage is not

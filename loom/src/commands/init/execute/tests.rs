@@ -39,6 +39,9 @@ fn clean_refuses_before_stopping_anything_while_the_target_is_held() {
 #[serial]
 fn init_clean_refuses_through_execute_and_deletes_nothing() {
     let (repo, _accepted, _moved) = held_repo(true);
+    if !crate::git::worktree::main_identity_exists(&repo.work) {
+        crate::git::worktree::capture_main_identity(&repo.root, &repo.work).unwrap();
+    }
     let worktree_file = repo.root.join(".worktrees/stage-a/keep.txt");
     std::fs::create_dir_all(worktree_file.parent().unwrap()).unwrap();
     std::fs::write(&worktree_file, "work").unwrap();
@@ -60,6 +63,28 @@ fn init_clean_refuses_through_execute_and_deletes_nothing() {
 }
 
 #[test]
+#[serial]
+fn init_refuses_unanchored_existing_sessions_without_deleting_them() {
+    let (repo, _, _) = held_repo(false);
+    let anchor = repo.work.join("main-checkout-identity.json");
+    if anchor.exists() {
+        std::fs::remove_file(anchor).unwrap();
+    }
+    let sessions = repo.work.join("sessions");
+    std::fs::create_dir_all(&sessions).unwrap();
+    let session = sessions.join("existing.md");
+    std::fs::write(&session, "preserve session").unwrap();
+    let _cwd = CwdGuard::enter(&repo.root);
+
+    let error = execute(None, true, None, true).unwrap_err().to_string();
+    assert!(error.contains("Stop all sessions"), "{error}");
+    assert_eq!(
+        std::fs::read_to_string(session).unwrap(),
+        "preserve session"
+    );
+}
+
+#[test]
 fn a_work_root_whose_socket_path_cannot_fit_is_warned_about() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().canonicalize().unwrap();
@@ -72,4 +97,25 @@ fn a_work_root_whose_socket_path_cannot_fit_is_warned_about() {
 
     assert!(message.contains(&long.display().to_string()));
     assert_eq!(warn_on_long_socket_path(&short), None);
+}
+
+/// `loom init --clean` proceeds past the viewer socket a dead tmux server left,
+/// and the stale socket goes with the state it belonged to.
+#[test]
+#[serial]
+fn init_clean_proceeds_past_a_dead_viewer_socket() {
+    use crate::orchestrator::terminal::tmux::socket::tests::{server_socket_dir, TmuxTmpDirGuard};
+    use crate::orchestrator::terminal::tmux::socket_path_for;
+    use crate::orchestrator::terminal::tmux::viewer::viewer_socket_name;
+    let socket_root = server_socket_dir();
+    let _env = TmuxTmpDirGuard::set(socket_root.path());
+    let repo = crate::git::target_guard::test_support::repo();
+    let socket = socket_path_for(&viewer_socket_name(&repo.work));
+    std::fs::create_dir_all(socket.parent().unwrap()).unwrap();
+    drop(std::os::unix::net::UnixListener::bind(&socket).unwrap());
+
+    super::cleanup_previous_run(&repo.root, true).unwrap();
+
+    assert!(std::fs::symlink_metadata(&socket).is_err());
+    assert!(!repo.work.exists());
 }

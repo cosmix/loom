@@ -14,6 +14,7 @@ use std::process::{Command, Output};
 
 use tempfile::TempDir;
 
+use super::helpers::test_support::git_repo::git;
 use super::helpers::{init_test_repo, loom_bin_path, loom_cmd};
 
 /// Logs its invocation and exits 0 without touching the marker.
@@ -92,22 +93,14 @@ impl Sandbox {
     }
 
     pub fn bootstrap(&self, repo: &Path, args: &[&str]) -> Output {
+        if repo.join(".git").exists()
+            && !repo.join(".loom/work/main-checkout-identity.json").exists()
+        {
+            super::helpers::write_main_checkout_identity(repo, &repo.join(".loom/work"));
+        }
         self.command(repo, args)
             .output()
             .expect("run loom knowledge bootstrap")
-    }
-
-    /// Run git in `dir`, asserting success; returns stdout.
-    pub fn git(&self, dir: &Path, args: &[&str]) -> String {
-        let mut command = Command::new("git");
-        self.isolate(&mut command);
-        let output = command
-            .args(args)
-            .current_dir(dir)
-            .output()
-            .expect("run git");
-        assert!(output.status.success(), "git {args:?}: {output:?}");
-        String::from_utf8_lossy(&output.stdout).into_owned()
     }
 
     /// `init_test_repo()` plus `files`, each holding one small function,
@@ -123,8 +116,8 @@ impl Sandbox {
             )
             .expect("write fixture file");
         }
-        self.git(repo.path(), &["add", "-A"]);
-        self.git(repo.path(), &["commit", "-qm", "fixture"]);
+        git(repo.path(), &["add", "-A"]);
+        git(repo.path(), &["commit", "-qm", "fixture"]);
         repo
     }
 

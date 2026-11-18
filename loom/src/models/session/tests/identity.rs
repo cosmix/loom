@@ -8,23 +8,23 @@ use super::super::*;
 fn tracking_key_matrix() {
     assert_eq!(
         Session::derive_tracking_key("auth", SessionType::Stage),
-        "loom-auth"
+        "loom-v2-stage-auth"
     );
     assert_eq!(
         Session::derive_tracking_key("auth", SessionType::Merge),
-        "loom-merge-auth"
+        "loom-v2-merge-auth"
     );
     assert_eq!(
         Session::derive_tracking_key("auth", SessionType::BaseConflict),
-        "loom-base-conflict-auth"
+        "loom-v2-base_conflict-auth"
     );
     assert_eq!(
         Session::derive_tracking_key("auth", SessionType::Knowledge),
-        "loom-knowledge-auth"
+        "loom-v2-knowledge-auth"
     );
     assert_eq!(
         Session::derive_tracking_key("auth", SessionType::Contract),
-        "loom-contract-auth"
+        "loom-v2-contract-auth"
     );
 }
 
@@ -33,14 +33,14 @@ fn contract_constructor_derives_tracking_key() {
     let session = Session::new_contract("parse-args");
     assert_eq!(session.session_type, SessionType::Contract);
     assert_eq!(session.stage_id.as_deref(), Some("parse-args"));
-    assert_eq!(session.tracking_key, "loom-contract-parse-args");
+    assert_eq!(session.tracking_key, "loom-v2-contract-parse-args");
 }
 
 #[test]
 fn contract_session_assign_keeps_contract_prefix() {
     let mut session = Session::new_contract("parse-args");
     session.assign_to_stage("parse-args".to_string());
-    assert_eq!(session.tracking_key, "loom-contract-parse-args");
+    assert_eq!(session.tracking_key, "loom-v2-contract-parse-args");
 }
 
 #[test]
@@ -48,14 +48,14 @@ fn assign_to_stage_populates_tracking_key() {
     let mut session = Session::new();
     assert!(session.tracking_key.is_empty());
     session.assign_to_stage("worker-pool".to_string());
-    assert_eq!(session.tracking_key, "loom-worker-pool");
+    assert_eq!(session.tracking_key, "loom-v2-stage-worker-pool");
 }
 
 #[test]
 fn merge_session_assign_uses_merge_prefix() {
     let mut session = Session::new_merge("loom/feature".to_string(), "main".to_string());
     session.assign_to_stage("feature".to_string());
-    assert_eq!(session.tracking_key, "loom-merge-feature");
+    assert_eq!(session.tracking_key, "loom-v2-merge-feature");
 }
 
 #[test]
@@ -63,7 +63,10 @@ fn knowledge_constructor_derives_tracking_key() {
     let session = Session::new_knowledge("knowledge-bootstrap");
     assert_eq!(session.session_type, SessionType::Knowledge);
     assert_eq!(session.stage_id.as_deref(), Some("knowledge-bootstrap"));
-    assert_eq!(session.tracking_key, "loom-knowledge-knowledge-bootstrap");
+    assert_eq!(
+        session.tracking_key,
+        "loom-v2-knowledge-knowledge-bootstrap"
+    );
 }
 
 #[test]
@@ -89,5 +92,5 @@ fn knowledge_session_serializes_with_session_type_knowledge() {
     let session = Session::new_knowledge("kb");
     let json = serde_json::to_string(&session).unwrap();
     assert!(json.contains("\"session_type\":\"knowledge\""));
-    assert!(json.contains("\"tracking_key\":\"loom-knowledge-kb\""));
+    assert!(json.contains("\"tracking_key\":\"loom-v2-knowledge-kb\""));
 }

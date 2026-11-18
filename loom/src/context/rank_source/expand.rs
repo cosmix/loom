@@ -161,8 +161,6 @@ pub(super) fn expand_from_seeds(
 /// id index `index_wanted_nodes` builds only has to cover ids the traversal
 /// can actually reach — at most `MAX_EXPANSION_SEEDS *
 /// MAX_EXAMINED_NEIGHBORS_PER_SEED` — instead of every node in the graph.
-/// Split out of `expand_from_seeds` (expand.rs:62) to keep it under the
-/// function line limit.
 fn resolve_seed_neighbours<'a>(
     seeds: &[(String, f32)],
     forward: &Adjacency<'a>,
@@ -186,8 +184,7 @@ fn resolve_seed_neighbours<'a>(
 }
 
 /// Index just the nodes `resolve_seed_neighbours` found reachable, rather
-/// than every node the graph holds. Split out of `expand_from_seeds`
-/// (expand.rs:62) to keep it under the function line limit.
+/// than every node the graph holds.
 fn index_wanted_nodes<'a>(
     graph: &'a ResolvedGraph,
     wanted_ids: &BTreeSet<&str>,

@@ -3,16 +3,18 @@ use std::path::Path;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use crate::commands::status::data::{DisputeLine, FailingCriterion, StatusData};
-use crate::commands::status::render::attention_model::{Alternative, AttentionEntry};
-use crate::commands::status::render::failure_label;
 use crate::daemon::{DaemonServer, DaemonStatus};
 use crate::models::failure::FailureType;
+use crate::models::stage::StageStatus;
+use crate::orchestrator::busy::{Busy, GLOBAL_BUSY_CEILING_SECS};
 use crate::orchestrator::scheduling_report::{self, Alert, Severity};
 use crate::orchestrator::tick;
+use crate::status::attention_model::failure_label;
+use crate::status::attention_model::{Alternative, AttentionEntry};
+use crate::status::data::{FailingCriterion, StatusData};
 
 /// One frame of the web dashboard: everything the page renders, as one JSON object.
-/// Served by `/api/status` and pushed as every WebSocket text frame.
+/// Served by `/api/status` and carried by every `full` message on `/ws`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WebSnapshot {
     /// The exact status payload exposed by the live CLI.
@@ -25,6 +27,9 @@ pub struct WebSnapshot {
     pub daemon: DaemonState,
     /// Age of the most recent orchestrator tick.
     pub tick_age_secs: Option<i64>,
+    /// The long scheduler operation the tick names, whatever the daemon state;
+    /// `null` when none is wrapped. The web page decides whether to show it.
+    pub busy: Option<WebBusy>,
     /// Whether this frame came from the daemon or local files.
     pub source: SnapshotSource,
     /// Whether this server accepts browser terminal attachments (`loom status --web --terminals`).
@@ -36,6 +41,37 @@ pub struct WebSnapshot {
     pub generated_at: DateTime<Utc>,
     /// The version of the loom build serving the dashboard.
     pub version: String,
+}
+
+/// The operation a busy tick line names, as the dashboard wire carries it. The
+/// page computes elapsed time from `started_at` and its own clock.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WebBusy {
+    /// The operation's wire name (`BusyOp::as_str`).
+    pub op: String,
+    /// The operation as a phrase, e.g. `generating the brief for stage-a`.
+    pub what: String,
+    /// The stage the operation works on.
+    pub stage_id: String,
+    /// When the operation started.
+    pub started_at: DateTime<Utc>,
+    /// Seconds after which the operation is longer than expected.
+    pub ceiling_secs: i64,
+    /// Seconds after which any operation counts as a stalled loop.
+    pub global_ceiling_secs: i64,
+}
+
+impl From<&Busy> for WebBusy {
+    fn from(busy: &Busy) -> Self {
+        Self {
+            op: busy.op.as_str().to_owned(),
+            what: busy.op.describe(&busy.stage_id),
+            stage_id: busy.stage_id.clone(),
+            started_at: busy.started_at,
+            ceiling_secs: busy.op.ceiling_secs(),
+            global_ceiling_secs: GLOBAL_BUSY_CEILING_SECS,
+        }
+    }
 }
 
 /// The daemon state represented on the dashboard wire.
@@ -71,6 +107,8 @@ pub struct WebAttention {
     pub name: String,
     /// Short attention label.
     pub label: String,
+    /// Semantic state for tone and glyph selection.
+    pub status: StageStatus,
     /// Shell command the operator should run; `None` when no single command
     /// applies or loom is handling the state.
     pub command: Option<String>,
@@ -100,8 +138,6 @@ pub struct WebAttention {
     pub acceptance: Vec<String>,
     /// Acceptance criteria that failed in the stage's last completion attempt.
     pub failing_criteria: Vec<FailingCriterion>,
-    /// Disputes already ruled on for a blocked stage, oldest first.
-    pub disputes: Vec<DisputeLine>,
     /// Whether the stage left a terminal history the dashboard can open.
     pub terminal_history: bool,
     /// Post-merge cleanup warning, when present.
@@ -141,6 +177,7 @@ impl From<&AttentionEntry> for WebAttention {
             id: entry.id.clone(),
             name: entry.name.clone(),
             label: entry.label.to_owned(),
+            status: entry.status.clone(),
             command: entry.command.clone(),
             command_when: entry.command_when.clone(),
             alternatives: entry.alternatives.clone(),
@@ -157,7 +194,6 @@ impl From<&AttentionEntry> for WebAttention {
             reason: entry.reason.clone(),
             acceptance: entry.acceptance.clone(),
             failing_criteria: entry.failing_criteria.clone(),
-            disputes: entry.disputes.clone(),
             terminal_history: entry.terminal_history.is_some(),
             cleanup_warning: entry.cleanup_warning.clone(),
             has_human_review_choices: entry.has_human_review_choices,
@@ -209,7 +245,7 @@ pub fn collect_snapshot(
     terminals: bool,
 ) -> WebSnapshot {
     let daemon = DaemonState::from(DaemonServer::check_status(work_path));
-    let attention = crate::commands::status::render::attention_entries(&status.stages)
+    let attention = crate::status::attention_model::attention_entries(&status.stages)
         .iter()
         .map(WebAttention::from)
         .collect();
@@ -217,19 +253,22 @@ pub fn collect_snapshot(
         .iter()
         .map(WebAlert::from)
         .collect();
-    let tick_age_secs = tick::read(work_path)
-        .ok()
-        .flatten()
-        .map(|tick| tick.age_secs(Utc::now()));
+    let tick = tick::read(work_path).ok().flatten();
+    let tick_age_secs = tick.as_ref().map(|tick| tick.age_secs(Utc::now()));
+    let busy = tick
+        .as_ref()
+        .and_then(|tick| tick.busy.as_ref())
+        .map(WebBusy::from);
     WebSnapshot {
         status,
         attention,
         alerts,
         daemon,
         tick_age_secs,
+        busy,
         source,
         terminals,
-        notice: None,
+        notice: crate::daemon::completion_diagnostics(work_path),
         generated_at: Utc::now(),
         version: crate::version::VERSION.to_owned(),
     }

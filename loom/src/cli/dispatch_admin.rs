@@ -1,8 +1,4 @@
 //! Admin-proof helpers for `loom stage complete` / `loom stage admin-proof`.
-//!
-//! Split out of `dispatch`, whose top-level match sits at its line ceiling:
-//! every new arm has to buy its line back from an existing one, so this pair
-//! of privileged-completion helpers moved to their own module instead.
 
 use crate::commands::stage;
 use anyhow::Result;

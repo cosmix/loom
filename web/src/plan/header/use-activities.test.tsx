@@ -1,0 +1,359 @@
+import { act, cleanup, renderHook } from "@testing-library/react";
+import { Provider } from "jotai/react";
+import { createStore } from "jotai/vanilla";
+import { afterEach, expect, it } from "vitest";
+
+import draftsFixture from "@/plan/api/fixtures/kickoff-drafts.json";
+import panelFixture from "@/plan/api/fixtures/summary-panel.json";
+import { kickoffDraftViewSchema } from "@/plan/api/schema-kickoff";
+import { summaryPanelSchema } from "@/plan/api/schema-summaries";
+import { kickoffDraftsAtom } from "@/plan/state/atoms";
+import { snapshotAtom } from "@/plan/chat/model";
+import { pressureRunAtom } from "@/plan/chat/pressure/use-pressure";
+import { runStripAtom } from "@/plan/run/use-run";
+import { panelLoadAtom } from "@/plan/summaries/state";
+import { ACTIVITY_LABELS } from "@/plan/ui/activity-glyphs";
+import {
+  deriveActivities,
+  mostUrgent,
+  useActivities,
+  type ActivitiesInput,
+} from "./use-activities";
+import { codexStep, pressure, session, startedAt, startedMs } from "./use-activities-test-kit";
+
+afterEach(cleanup);
+
+const rebuild = {
+  session: "summary-session",
+  ids: ["a", "b", "c"],
+  done: 1,
+  total: 3,
+  started_at: startedAt,
+  log_path: null,
+};
+const empty: ActivitiesInput = {
+  summaryPanel: null,
+  runState: null,
+  runStrip: null,
+  pressureRun: null,
+  session: null,
+  pendingPermissions: [],
+};
+
+it("orders activities by urgency, then oldest start within a kind", () => {
+  const activities = deriveActivities({
+    ...empty,
+    summaryPanel: { running: rebuild },
+    runStrip: { daemon_running: true, plan: "PLAN-example.md" },
+    pressureRun: pressure([codexStep(2, startedMs + 100), codexStep(1, startedMs)]),
+    session: session("permission"),
+    pendingPermissions: [{ tool: "Write" }],
+  });
+  expect(activities.map((item) => item.kind)).toEqual([
+    "permission",
+    "running",
+    "pressure",
+    "codex",
+    "codex",
+    "summaries",
+  ]);
+  expect(activities.filter((item) => item.kind === "codex").map((item) => item.since)).toEqual([
+    startedMs,
+    startedMs + 100,
+  ]);
+  expect(activities.map((item) => item.title)).toEqual([
+    "Waiting for your answer",
+    "Plan running",
+    "Pressure test · round 1 of 2",
+    ACTIVITY_LABELS.codex,
+    ACTIVITY_LABELS.codex,
+    "3 summaries rebuilding",
+  ]);
+  expect(mostUrgent([...activities].reverse())).toBe(activities[0]);
+});
+
+it("keeps operation ids stable as progress and permission details change", () => {
+  const input: ActivitiesInput = {
+    ...empty,
+    summaryPanel: { running: rebuild },
+    runStrip: { daemon_running: true, plan: "PLAN-example.md" },
+    pressureRun: pressure([codexStep(1, startedMs)]),
+    session: session("permission"),
+    pendingPermissions: [{ tool: "Write" }],
+  };
+  const before = deriveActivities(input);
+  const after = deriveActivities({
+    ...input,
+    summaryPanel: { running: { ...rebuild, done: 2 } },
+    pressureRun: { ...pressure([codexStep(1, startedMs)]), tokens_total: 100 },
+    pendingPermissions: [{ tool: "Edit" }, { tool: "Write" }],
+  });
+  expect(after.map((item) => item.id)).toEqual(before.map((item) => item.id));
+  expect(before.map((item) => item.id)).toEqual([
+    "permission:chat-1",
+    "run",
+    `pressure:doc/plans/PLAN-example.md:${startedMs}`,
+    `codex:doc/plans/PLAN-example.md:${startedMs}:1`,
+    "summaries",
+  ]);
+});
+
+it("shows summary progress and its actual start time", () => {
+  expect(deriveActivities({ ...empty, summaryPanel: { running: rebuild } })).toEqual([
+    {
+      id: "summaries",
+      kind: "summaries",
+      title: "3 summaries rebuilding",
+      subject: "1 of 3",
+      since: startedMs,
+    },
+  ]);
+});
+
+it("names the plan run with its merge progress, by file name", () => {
+  expect(
+    deriveActivities({
+      ...empty,
+      runStrip: { daemon_running: true, plan: "doc/plans/PLAN-example.md", merged: 1, total: 3 },
+    }),
+  ).toMatchObject([
+    { kind: "running", title: "Plan running", subject: "PLAN-example.md · 1 of 3 stages merged" },
+  ]);
+  expect(
+    deriveActivities({
+      ...empty,
+      runStrip: { daemon_running: true, plan: "doc/plans/PLAN-example.md", merged: 0, total: 0 },
+    }),
+  ).toMatchObject([{ subject: "PLAN-example.md" }]);
+  // A total without a merged count invents no "0 of N": the plan name stands alone.
+  expect(
+    deriveActivities({
+      ...empty,
+      runStrip: { daemon_running: true, plan: "doc/plans/PLAN-example.md", total: 6 },
+    }),
+  ).toMatchObject([{ subject: "PLAN-example.md" }]);
+});
+
+it("uses the singular for a one-summary rebuild", () => {
+  const [row] = deriveActivities({
+    ...empty,
+    summaryPanel: { running: { ...rebuild, ids: ["a"], total: 1 } },
+  });
+  expect(row?.title).toBe("1 summary rebuilding");
+});
+
+it("returns no activities for empty state and no most urgent activity", () => {
+  expect(deriveActivities(empty)).toEqual([]);
+  expect(mostUrgent([])).toBeNull();
+});
+
+it.each([
+  ["starting", "starting"],
+  ["ending", "drafting"],
+  ["permission", "permission"],
+] as const)("derives %s sessions from existing state", (state, kind) => {
+  expect(deriveActivities({ ...empty, session: session(state) })).toEqual([
+    {
+      id: `${kind}:chat-1`,
+      kind,
+      title: kind === "permission" ? "Waiting for your answer" : ACTIVITY_LABELS[kind],
+      subject: "Planning",
+      since: startedMs,
+    },
+  ]);
+});
+
+it("gives pending permission requests precedence over the session state", () => {
+  expect(
+    deriveActivities({
+      ...empty,
+      session: session("idle"),
+      pendingPermissions: [{ tool: "Write" }, { tool: "Bash" }],
+    }),
+  ).toMatchObject([
+    {
+      id: "permission:chat-1",
+      kind: "permission",
+      subject: "Write, Bash",
+      since: null,
+    },
+  ]);
+});
+
+it.each(["working", "ended", "failed"] as const)(
+  "does not infer document drafting from a %s session",
+  (state) => {
+    expect(deriveActivities({ ...empty, session: session(state) })).toEqual([]);
+  },
+);
+
+it("does not show automatic pressure sessions as waiting or drafting", () => {
+  for (const state of ["idle", "ending"] as const) {
+    const pressure = { ...session(state), kind: "pressure" };
+    expect(deriveActivities({ ...empty, session: pressure })).toEqual([]);
+  }
+});
+
+it("drops stale permissions when a session has ended", () => {
+  expect(
+    deriveActivities({
+      ...empty,
+      session: session("ended"),
+      pendingPermissions: [{ tool: "Write" }],
+    }),
+  ).toEqual([]);
+});
+
+it("uses null for unknown timestamps and sorts them after known starts", () => {
+  const unknown = deriveActivities({
+    ...empty,
+    session: { ...session("starting"), state_since: "unknown" },
+  })[0]!;
+  const known = deriveActivities({ ...empty, session: session("starting") })[0]!;
+  expect(unknown.since).toBeNull();
+  expect(mostUrgent([unknown, known])).toBe(known);
+  expect(
+    deriveActivities({
+      ...empty,
+      summaryPanel: { running: { ...rebuild, started_at: "unknown" } },
+    })[0]?.since,
+  ).toBeNull();
+});
+
+it("uses workspace state until a run strip arrives, then trusts daemon status", () => {
+  const input: ActivitiesInput = {
+    ...empty,
+    runState: { workspace: "running", active_plan: "PLAN-example.md" },
+  };
+  expect(deriveActivities(input)).toMatchObject([
+    {
+      id: "run",
+      kind: "running",
+      subject: "PLAN-example.md",
+      since: null,
+    },
+  ]);
+  expect(
+    deriveActivities({
+      ...input,
+      runStrip: { daemon_running: false, plan: "PLAN-example.md" },
+    }),
+  ).toEqual([]);
+  expect(
+    deriveActivities({
+      ...empty,
+      runState: { workspace: "stopped", active_plan: "PLAN-example.md" },
+    }),
+  ).toEqual([]);
+});
+
+it("reports concurrent Codex work and removes completed reviews and pressure runs", () => {
+  const step = codexStep(1, startedMs);
+  const run = pressure([step]);
+  expect(deriveActivities({ ...empty, pressureRun: run }).map((item) => item.kind)).toEqual([
+    "pressure",
+    "codex",
+  ]);
+  expect(
+    deriveActivities({
+      ...empty,
+      pressureRun: { ...run, steps: [{ ...step, state: "done" }] },
+    }).map((item) => item.kind),
+  ).toEqual(["pressure"]);
+  expect(
+    deriveActivities({
+      ...empty,
+      pressureRun: {
+        ...run,
+        steps: [
+          {
+            ...step,
+            codex: {
+              model: "codex",
+              state: "review_written",
+              report_path: "review.md",
+              log_tail: null,
+            },
+          },
+        ],
+      },
+    }).map((item) => item.kind),
+  ).toEqual(["pressure"]);
+  expect(
+    deriveActivities({
+      ...empty,
+      pressureRun: {
+        ...run,
+        ended: {
+          kind: "recorded",
+          by: null,
+          step: null,
+          reason: null,
+          line: null,
+        },
+      },
+    }),
+  ).toEqual([]);
+});
+
+it("reads existing atoms from a Jotai store and reacts when operations end", () => {
+  const store = createStore();
+  store.set(panelLoadAtom, {
+    status: "ready",
+    panel: summaryPanelSchema.parse({ ...panelFixture, running: rebuild }),
+  });
+  store.set(runStripAtom, {
+    plan: "PLAN-example.md",
+    daemon_running: true,
+    merged: 0,
+    total: 2,
+    attention: 0,
+    dashboard_url: null,
+  });
+  store.set(pressureRunAtom, pressure([codexStep(1, startedMs)]));
+  store.set(snapshotAtom, { session: session("idle"), turns: [], queue: [], previous: null });
+  const draft = { ...draftsFixture.drafts[0], session: "chat-1" };
+  store.set(kickoffDraftsAtom, [kickoffDraftViewSchema.parse(draft)]);
+  const { result } = renderHook(useActivities, {
+    wrapper: ({ children }) => <Provider store={store}>{children}</Provider>,
+  });
+  // The waiting row takes its draft's name and stands for that kickoff.
+  expect(result.current[0]).toMatchObject({
+    title: "microvm-test-env",
+    session: { kickoff: true },
+  });
+  expect(result.current.map((item) => item.kind)).toEqual([
+    "waiting",
+    "running",
+    "pressure",
+    "codex",
+    "summaries",
+  ]);
+  act(() => {
+    store.set(panelLoadAtom, {
+      status: "ready",
+      panel: summaryPanelSchema.parse({ ...panelFixture, running: null }),
+    });
+    store.set(runStripAtom, null);
+    store.set(pressureRunAtom, null);
+    store.set(snapshotAtom, { session: null, turns: [], queue: [], previous: null });
+  });
+  expect(result.current).toEqual([]);
+});
+
+it("gives a pressure run's row the plan's file name, the current step and counted progress", () => {
+  const done = { ...codexStep(1, startedMs), state: "done" as const, ended_ms: startedMs + 1 };
+  const run = {
+    ...pressure([done, codexStep(1, startedMs)]),
+    round: 1,
+    step: "claude_address" as const,
+  };
+  const [row] = deriveActivities({ ...empty, pressureRun: run });
+  expect(row).toMatchObject({
+    kind: "pressure",
+    title: "Pressure test · round 1 of 2",
+    subject: "PLAN-example.md · /address",
+    since: startedMs,
+    progress: { done: 1, total: 6 },
+  });
+});

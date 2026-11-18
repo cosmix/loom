@@ -1,6 +1,6 @@
 # Ci Toolchain And Cargo
 
-> CI drift, audit, install.sh
+>
 
 ## CI's Clippy Tracks Rustup `stable`, So a New Rust Release Breaks Main With No Code Change (2026-08-26)
 
@@ -147,9 +147,7 @@ committing, not after.
 
 **Prevention:** share rustc output through `sccache`, which caches per input hash and leaves every worktree its own `target/` untouched.
 
-**Fix:** `orchestrator/terminal/native/build_cache.rs` locates `sccache` (`LOOM_SCCACHE=0` disables it, `LOOM_SCCACHE=<path>` pins it, otherwise `which` then `~/.cargo/bin`, `~/.local/bin`, `/opt/homebrew/bin`, `/usr/local/bin`). The session wrapper exports `RUSTC_WRAPPER=<path>` for every session kind when found, and forwards an operator's own `RUSTC_WRAPPER`, `SCCACHE_DIR`, `SCCACHE_CACHE_SIZE`; the confined acceptance environment allows the same three. `loom run` and `loom doctor` print one line stating whether sccache was found.
-
-**2026-09-04 correction:** sccache IS installed on this machine (0.7.7 at `/usr/bin/sccache`) and IS exported into every session, but it fails closed inside the stage sandbox — see "The Sandbox's AF_UNIX Denial Also Kills sccache" in [sandbox-and-settings.md](sandbox-and-settings.md) for the root cause and the `env -u RUSTC_WRAPPER` / `LOOM_SCCACHE=0` workarounds. The prior "not installed" note was wrong and led two separate stages to misattribute the same failure.
+**Fix (attempted, inert):** `orchestrator/terminal/native/build_cache.rs` locates `sccache` (`LOOM_SCCACHE=0` disables it, `LOOM_SCCACHE=<path>` pins it, otherwise `which` then `~/.cargo/bin`, `~/.local/bin`, `/opt/homebrew/bin`, `/usr/local/bin`), and `loom run` and `loom doctor` print whether it was found. It shares nothing in practice: `sccache_usable_in` withholds `RUSTC_WRAPPER` from every sandboxed session whose seccomp filter denies `AF_UNIX` (see "The Sandbox's AF_UNIX Denial Also Kills sccache" in [sandbox-tooling-and-network.md](sandbox-tooling-and-network.md)), and confined host jobs start from `env_clear()` with `process/environment.rs::STAGE_HOST_ENV_ALLOWLIST` forwarding `SCCACHE_DIR` and `SCCACHE_CACHE_SIZE` but never `RUSTC_WRAPPER`. The earlier text here claimed the session wrapper exports `RUSTC_WRAPPER` for every session kind and the confined environment allows it; neither holds. An empty `~/.cache/sccache` on the development machine confirms nothing is cached. The open problem, for every ecosystem, is [concerns/worktree-build-cold-start.md](../concerns/worktree-build-cold-start.md).
 
 ## The Same Suite Ran Once Per Stage, Per Check, Per Judge (2026-09-02)
 
@@ -159,7 +157,7 @@ committing, not after.
 
 **Prevention:** run the full suite once, in integration-verify. A standard stage's acceptance criterion should be `cargo test --lib <module>::`, `cargo test --test <target>`, or an equivalent name filter. `loom plan verify` now warns on a full-suite run outside integration-verify (`plan/schema/validation_suite.rs::is_full_suite_run`), and the plan-writer skill states the rule as item 6 of its acceptance checklist.
 
-**Fix:** `verify/criteria/cache.rs` caches criterion passes under `<work_dir>/acceptance-cache/<sha256>.json`, keyed by the criterion text, the acceptance directory, `git rev-parse HEAD`, the raw `git status --porcelain=v2 --untracked-files=all -z` output, and the content hash of every listed path. Failures are never cached. A command mentioning `$HOME`, `~/`, `mktemp`, or `LOOM_HOME` is never cached. `loom check --no-cache`, `loom stage complete --no-cache`, or `LOOM_ACCEPTANCE_CACHE=0` bypass the cache; a cached pass prints as `✓ passed (cached)`. A command that references any git-ignored path (a built binary under target/, for instance) is never cached, because the digest covers the tracked tree only; cargo test and cargo build stay cacheable since they rebuild from that tree.
+**Fix:** `verify/criteria/cache.rs` caches criterion passes under `<work_dir>/acceptance-cache/<sha256>.json`, keyed by the criterion text, the acceptance directory, `git rev-parse HEAD`, the raw `git status --porcelain=v2 --untracked-files=all -z` output, and the content hash of every listed path. Failures are never cached. A command mentioning `$HOME`, `~/`, `mktemp`, or `LOOM_HOME` is never cached. `loom check --no-cache`, `loom stage complete --no-cache`, or `LOOM_ACCEPTANCE_CACHE=0` bypass the cache; a cached pass prints as `✓ passed (cached)`. A command that references any git-ignored path (a built binary under target/, for instance) is never cached, because the digest covers the tracked tree only; cargo test and cargo build stay cacheable since they rebuild from that tree. That key later proved too strict: hashing the commit id made every commit after `loom check` invalidate its passes. The current key (commit 865eed49) is a `(path, mode, blob oid)` content manifest plus the HEAD text, prepared env, executables and containment revision (`verify/criteria/cache_fingerprint.rs`); `--no-cache` now refreshes (stores without reading) and only `LOOM_ACCEPTANCE_CACHE=0` bypasses; any command containing `$` or running `git` is never cached.
 
 ## A Test That Assumed a Dev Build Blocked the Release-Tag Push (2026-09-14)
 
@@ -197,7 +195,7 @@ committing, not after.
 
 **Why:** the fixtures (`git::target_guard::test_support::repo` and `tests_merge::repository`) gave git an identity only through `GIT_AUTHOR_*`/`GIT_COMMITTER_*` on their own git calls. The production code under test runs git without that environment and falls back to the global config, which the workstation has and the runner does not. Fixtures that only commit through their own helper are unaffected.
 
-**Prevention:** a fixture whose repository receives commits from production code sets `user.name` and `user.email` in the repository's own config right after `git init`, as `git::merge::test_support::init_repo` does. Reproduce CI's missing identity locally with `GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=user.useConfigOnly GIT_CONFIG_VALUE_0=true cargo test --all-targets --no-fail-fast`; `useConfigOnly` stops git guessing a name from the passwd entry, which the workstation would otherwise supply.
+**Prevention:** a fixture whose repository receives commits from production code sets `user.name` and `user.email` in the repository's own config right after `git init`. `TestRepo::builder()` / `RepoBuilder` in `loom/tests/test_support/git_repo.rs` (`crate::test_git`) does this for every shared fixture, and `loom/tests/test_git_guard_contracts.rs` fails a test file that sets `user.email` itself unless it carries a `bespoke-git-fixture` marker. Reproduce CI's missing identity locally with `GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=user.useConfigOnly GIT_CONFIG_VALUE_0=true cargo test --all-targets --no-fail-fast`; `useConfigOnly` stops git guessing a name from the passwd entry, which the workstation would otherwise supply.
 
 **Fix:** both fixtures set the identity with `git config` after `init`.
 
@@ -343,3 +341,83 @@ The sweep follow-ups on executable startup, cache coverage, hook-path navigation
 **Prevention:** before telling the operator to push, check `git status --short --untracked-files=no`. With tracked changes present, say the pass will not be recorded and the push may need a second full run; with a clean tree, recommend `scripts/push.sh` (deleted in the cleanup that followed) over `git push`.
 
 **Fix:** `scripts/push.sh` no longer needs a clean tree: it checks HEAD in a persistent detached worktree at `${XDG_CACHE_HOME:-$HOME/.cache}/loom-push-check/<cksum of the git common dir>` (own `loom/target`, so later runs build incrementally), runs that commit's hook there with `LOOM_PUSH_CHECK=1`, refuses to push unless HEAD landed in `loom-pre-push-verified`, then `git push`es on a fresh connection. A `mkdir` lock beside the worktree serializes runs. The hook's "Result not recorded" hint for a dirty tree pointed at `scripts/push.sh`, which was removed. The operator rejected the cached worktree and any push script. `scripts/push.sh` was removed, along with the verified-commit record and the check worktree, and the pre-push hook was cut to fast gates (fmt, markdownlint, clippy, rustdoc, test compilation, the maintainability test, a `loom --version`/`--help` smoke run) so plain `git push` finishes before the remote closes the connection. The full suite, flake-check and audit run in CI.
+
+## Signing test retained porcelain error wording
+
+**What happened:** A completion-commit test expected git commit error wording after the implementation moved to signed commit-tree.
+
+**Why:** The test asserted an incidental command phrase instead of the signing failure contract.
+
+**Prevention:** Update error assertions when changing the owning Git primitive, while retaining checks for unchanged HEAD and index.
+
+**Fix:** Assert the signing failure and preserved state.
+
+## Deprecated module marks generated test cases deprecated
+
+**What happened:** Deprecating the whole public worktree cleanup module caused warnings on generated Rust test-harness constants, including under warnings-as-errors builds.
+
+**Why:** Deprecation propagated through the module hierarchy rather than only to the obsolete exported operations.
+
+**Prevention:** Deprecate the specific legacy exports and allow deprecation within their compatibility tests; leave canonical re-exports available.
+
+**Fix:** Moved the deprecation attributes to legacy exports and retained their tests.
+
+## Create test module directories before splitting files
+
+**What happened:** A test-module split stopped after the implementation move because its destination directory did not exist.
+
+**Why:** The edit assumed a Rust test module already had a directory beside its file.
+
+**Prevention:** Create or verify the destination directory before writing a new nested module.
+
+**Fix:** Create the directory and finish the split before verification.
+
+## Dependency upgrade scope clarification
+
+**What happened:** A dependency update request needed clarification that direct dependencies should reach their latest releases, including breaking versions.
+
+**Why:** Latest compatible lockfile updates can be confused with latest direct dependency releases.
+
+**Prevention:** Check direct dependencies against latest releases separately from transitive resolution, and respect parent constraints for transitives.
+
+**Fix:** Upgrade direct requirements using the ecosystem tool and verify the resulting dependency inventory.
+
+## Linux-Gated Test Helpers Break the macOS Test Build (2026-11-17)
+
+**What happened:** `spawn_payload`/`spawn_payload_with_codex_home` are `#[cfg(all(test, target_os = "linux"))]`, but `runtime_contract_tests.rs` and `supervisor/tests.rs` imported them unconditionally; several other test files kept imports or `mut` bindings used only inside Linux-gated code. The macOS job failed with E0432 and `-D warnings` unused-import errors, which Linux clippy never sees. The same day, after that fix, macOS Lint, Test and Flake check failed again with `dead_code`: `BOUNDARY_TMPDIR`, `SpawnedBoundary::namespace_pid`, `CargoScratch::prepare_private`, `confine_scratch::reclaim::remove`, `parse_cpu_ticks` and `removable::listed::with` were compiled on every platform but read only by Linux-gated code.
+
+**Why:** a `cfg(target_os)` gate on a caller does not gate the items it calls, and the Linux build cannot report the gap. A plain `cargo clippy --target aarch64-apple-darwin` stops in the aws-lc-sys build script, which needs an Apple C toolchain and SDK, so the gap looked impossible to check before pushing.
+
+**Prevention:** when code is gated on Linux, gate every import, constant, field and helper only it uses, or group the gated tests in an inline `#[cfg(target_os = "linux")] mod` with its own `use` lines (as `runtime_contract_tests.rs` `mod bwrap` does). Before pushing a cfg change, `rg` each newly gated caller's callees for other users, and check every module-level import its signature names: gating `reclaim::remove(scratch: &Path)` left `use std::path::{Path, PathBuf}` with no `Path` user on macOS, and that broke all three macOS jobs again. Prefer shadowing (`let x = x || ...;` under cfg) over `let mut` mutated only on Linux.
+
+Run macOS clippy from Linux before pushing a cfg change. Install the std target (`rustup target add aarch64-apple-darwin`) and give aws-lc-sys stub tools: a `cc` that only creates the file named after `-o`, and an `ar` that only creates each `*.a` argument. Clippy never links, so the empty objects are enough:
+
+```bash
+CC_aarch64_apple_darwin=<dir>/cc AR_aarch64_apple_darwin=<dir>/ar \
+  CARGO_TARGET_DIR=<scratch>/mac-target \
+  cargo clippy --target aarch64-apple-darwin --all-targets -- -D warnings
+```
+
+This catches macOS dead code and unused imports. It cannot run tests, so macOS runtime behaviour still needs CI.
+
+**Fix:** the bwrap tests moved into `mod bwrap`; the other imports got `#[cfg(target_os = "linux")]`. The six dead items got `#[cfg(target_os = "linux")]`, except `prepare_private`, which a portable test also calls, so it got `#[cfg(any(target_os = "linux", test))]`.
+
+## macOS Test Failures Built Up Unseen Behind Compile Errors and a Hang (2026-11-17)
+
+**What happened:** after the macOS compile errors were fixed, Test (macos) ran for 28 minutes with no output and was cancelled. The full log showed two tests past 60 s and 88 lib-test failures that had accumulated since the last green macOS run on 2026-10-24. The hang kept libtest from printing its failure section, so no panic messages existed. Of the 88, 57 failed because the macOS temp directory sits under the `/var` symlink: `safe_replace_outside_workdir` compared the target and the canonical project root lexically and refused every plan amendment, a production bug for any project under a symlinked parent. The other 31 needed macOS-only behaviour: APFS rejects names that are not UTF-8, a case-insensitive filesystem folds `CONFIG.WORKTREE`, there is no bwrap or `/proc`, and XNU ignores `MSG_DONTWAIT` on a blocking socket, which made the daemon writer able to block forever.
+
+**Why:** every macOS run on the branch failed to compile first, so no test ran there for weeks. GitHub's live log viewer loads only part of a long log, so its search missed the "has been running for over 60 seconds" lines.
+
+**Prevention:** when a CI test job hangs, cancel it and read the raw log with `gh api repos/<owner>/<repo>/actions/jobs/<id>/logs`, searching for `has been running for over`. Reproduce the `/var` trap on Linux by running the failing tests with `TMPDIR` pointing through a symlink. A path check that compares a target with a canonical root canonicalizes the part above the tree on both sides.
+
+**Fix:** `split_under_root` in `loom/src/fs/safe_replace.rs` matches the root across spellings above the tree and walks the rest without following links. The daemon writer polls before each send off Linux. Tests whose setup macOS cannot create are gated or adapted, each with a comment naming the platform fact.
+
+## A Seatbelt `file-read*` Deny Did Not Hide a File From `stat` (2026-11-18)
+
+**What happened:** to make an ancestor `Cargo.toml` above a stage worktree look absent under the macOS sandbox, as it is under bubblewrap, the profile added `(deny file-read* (literal P))` after its global `(allow file-read-metadata)`. A unit test confirmed the rule text and order, but under the real `sandbox-exec` `test -e` still saw the file and cargo still failed with "failed searching for potential workspace … Operation not permitted". That took one more CI round to find.
+
+**Why:** in SBPL a rule that names `file-read-metadata` outranks the `file-read*` wildcard, so the earlier named allow won. `access(F_OK)` is a separate operation, `file-test-existence`. Checking the profile text cannot catch this, because the semantics live in the kernel.
+
+**Prevention:** to hide a path from a Seatbelt profile that allows metadata globally, deny the operations by name: `(deny file-read-metadata file-test-existence (literal P))` plus `(deny file-read* (literal P))`, on the canonical `/private/...` path. Test it under the real `sandbox-exec` (`confine_seatbelt_tests.rs`), never by asserting profile text alone. A macOS test that can fail in CI prints its diagnostics in the assertion message, so one CI round settles the cause.
+
+**Fix:** `confine_ancestors.rs` emits the named-operation denies for every spelling `seatbelt_spellings` produces. `confine_seatbelt_probe_tests.rs` prints the profile in use and the results of six rule variants when the absence test fails.

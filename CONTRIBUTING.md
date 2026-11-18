@@ -93,7 +93,7 @@ and `cd web && bun run check` (typecheck, oxlint, oxfmt check, vitest) when you 
 
 When changing source extraction or a Tree-sitter grammar, also run `cargo build --no-default-features`. The default-on `source-graph` feature must degrade to file-level lexical nodes without a C toolchain. If you change a grammar pin, an embedded query, or the tree-sitter walk, bump `ExtractorIdentity` so cached extractions are not reused.
 
-When Loom drives the work, a subagent may run at most one narrowly scoped check over the files it changed. Whole-project verification belongs to the stage's gate: the orchestrator's single `loom check` in a `standard` stage; an `integration-verify` stage keeps its own. `loom-hooks/subagent-verify-guard.sh` enforces this rule. See [Implementers Do Not Verify](README.md#implementers-do-not-verify).
+When Loom drives the work, a subagent compiles its own files freely (`cargo check`, `cargo build`, `cargo test --no-run`, `tsc --noEmit`, `<pm> run build`) and runs the tests for the code it wrote and its module, never the whole suite. The full suite runs only through `loom check`: the orchestrator's gate in a `standard` stage, and `loom check integration-verify` in an `integration-verify` stage, whose reviewers may run it too. `loom-hooks/subagent-verify-guard.sh` enforces this rule in live Loom sessions. Outside an orchestrated stage, run the native checks appropriate to the work. See [Implementers Do Not Verify](README.md#implementers-do-not-verify).
 
 Why the flags matter:
 
@@ -145,10 +145,10 @@ CI (`.github/workflows/ci.yml`) runs when a push to `main` or a pull request tou
 
 ## Hook Scripts and Agent Assets
 
-- Hook scripts in `loom-hooks/` are bash, must work on Linux and macOS (POSIX `awk`, no GNU-only extensions), and parse their payload with `jq`. Blocking guards call `loom_require_jq` from `loom-hooks/_common.sh` (fails closed); advisory hooks call `loom_warn_no_jq`. Run `scripts/check-hook-syntax.sh` after editing one.
+- Hook scripts in `loom-hooks/` are bash, must work on Linux and macOS (POSIX `awk`, no GNU-only extensions), and parse their payload with `jq`. Blocking guards call `loom_require_jq` from `loom-hooks/_common.sh` (fails closed); advisory hooks call `loom_warn_no_jq`. The exception is `subagent-verify-guard.sh`: it blocks runner calls but calls `loom_warn_no_jq`, because it is a deterrent whose own failure must not stop work. Run `scripts/check-hook-syntax.sh` after editing one.
 - Hooks, agents, skills and the templates are embedded into the binary at build time: to try an edit in a real session, rebuild and run `dev-install.sh`.
 - Some guidance blocks must appear byte-identically on several surfaces (`skills/loom-orchestration/SKILL.md`, `skills/loom-plan-writer/SKILL.md`, generated signal files, `loom-hooks/_subagent-preamble.txt`, hook messages). Equality tests in `loom/src/orchestrator/signals/tests_doctrine*.rs` pin them; change every surface together. `CLAUDE.md.template` keeps only the hard stops and pointers and is capped at 20,480 bytes by `tests_size.rs`; orchestrator-only rules belong in the `loom-orchestration` skill. `loom-hooks/spawn-guard.sh` prepends `_subagent-preamble.txt` to every typed spawn, so the preamble is edited in that one file.
-- A new `loom-hooks/tests/*.sh` needs its own `run_test` line in `loom-hooks/tests/run-all.sh` (a static list, not a glob), and a new relay request kind needs a `relay_kind_at` case in `loom-hooks/loom-relay.sh` plus a `drop_control_kinds` entry when the kind is a control request.
+- A new `loom-hooks/tests/*.sh` needs its own `run_test` line in `loom-hooks/tests/run-all.sh` (a static list, not a glob), and a new relay request kind needs one `relay_kind_at` case in `loom-hooks/_relay_kinds.sh`, plus a `relay_kind_is_control` entry there when the kind is a control request. A new sourced hook library also needs a `LOOM_HOOKS` row in `fs/permissions/constants.rs`, or the installed hooks lose its functions while the repo hook tests still pass.
 - Hook shell tests (`loom-hooks/tests/run-all.sh`) run inside stage sessions that carry `LOOM_WORK_DIR`, `LOOM_SESSION_ID`, `LOOM_STAGE_ID` and `LOOM_HOOK_PATH`; a test that exercises a ledger or builds a PATH without `rg`/`fd` must unset them, or the hook writes to the live `.loom/work` or finds the real tools. When a hook function ends in `cond && action` under `set -e`, wrap it in `if`.
 
 ## Project Knowledge
@@ -187,7 +187,7 @@ CI (`.github/workflows/ci.yml`) runs when a push to `main` or a pull request tou
 
 ### Releases
 
-Maintainers cut a release by pushing a `v*.*.*` tag. `.github/workflows/release.yml` builds the Linux x86_64 and macOS ARM64 binaries, runs tests and flake checks, verifies `loom -v` against the tag without its leading `v`, signs each binary, generates `SHA256SUMS.txt`, and publishes the release. Do not sign or upload assets by hand.
+Maintainers cut a release by pushing a `v*.*.*` tag. `.github/workflows/release.yml` builds the Linux x86_64 and macOS ARM64 binaries, runs tests, verifies `loom -v` against the tag without its leading `v`, signs each binary, generates `SHA256SUMS.txt`, and publishes the release. Main CI runs flake checks. Do not sign or upload assets by hand.
 
 ```bash
 git tag -a vX.Y.Z -m "loom X.Y.Z"
@@ -198,7 +198,7 @@ A release that changes the session capsule (`loom/src/orchestrator/terminal/nati
 
 `loom/Cargo.toml`'s version is a placeholder. `loom/build.rs` derives the binary version from the tag, using `loom/src/version/derive.rs`; never bump the manifest version. To exercise build, signing, and signature verification without publishing, dispatch the Release workflow with `dry_run: true` (or `gh workflow run release.yml -f dry_run=true`). Release creation requires a tag ref.
 
-Published assets are `loom-linux-x86_64` for `x86_64-unknown-linux-gnu` and `loom-darwin-arm64` for `aarch64-apple-darwin`; each has a `.minisig`, and `SHA256SUMS.txt` covers them both. Adding a platform requires matching changes to the release workflow's build matrix and `files:` list, `install.sh`, and `RELEASE_ASSETS` in `loom/src/commands/self_update/mod.rs`. For an unpublished platform, `loom update` reports the unsupported target triple.
+Published assets are `loom-linux-x86_64` for `x86_64-unknown-linux-gnu` and `loom-darwin-arm64` for `aarch64-apple-darwin`; each has a `.minisig`, and `SHA256SUMS.txt` covers them both. Adding a platform requires matching changes to the release workflow's build matrix and `files:` list and the canonical release contract in `install.sh`. For an unpublished platform, `loom update` reports the unsupported target triple.
 
 #### Signing and Key Rotation
 
@@ -208,7 +208,7 @@ Binaries use [minisign](https://jedisct1.github.io/minisign/) with the `MINISIGN
 minisign -G -W -p loom.pub -s loom.key
 ```
 
-The matching public key is `MINISIGN_PUBLIC_KEY` in `loom/src/commands/self_update/signature.rs`. The workflow reads that source, verifies every signature against it, and includes it in the release notes; a secret from another keypair fails before publishing.
+The matching public key is `MINISIGN_PUBLIC_KEY` in `install.sh`. The workflow reads that source and verifies every signature against it; release notes link to installation guidance. A secret from another keypair fails before publishing.
 
 The public key is compiled into released binaries, so rotating it prevents existing installations from accepting updates until users reinstall. Rotate only when the private key is lost or compromised, and change the repository secret and `MINISIGN_PUBLIC_KEY` together.
 
@@ -220,7 +220,7 @@ Anyone can verify a release with minisign:
 
 curl -LO https://github.com/cosmix/loom/releases/download/vX.Y.Z/loom-linux-x86_64
 curl -LO https://github.com/cosmix/loom/releases/download/vX.Y.Z/loom-linux-x86_64.minisig
-minisign -Vm loom-linux-x86_64 -P <public-key-from-release-notes>
+minisign -Vm loom-linux-x86_64 -P <public-key-from-install.sh>
 ```
 
 `loom update` performs the same check against the public key embedded in the running binary.

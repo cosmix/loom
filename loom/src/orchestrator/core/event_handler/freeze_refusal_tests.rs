@@ -20,7 +20,7 @@ use crate::subagent_lifecycle::model::{
     CodexEvidence, CodexEvidenceKind, CodexEvidenceOutcome, CodexExecution, LifecycleProducer,
     LifecycleRecord, LifecycleState, WorkerIdentity, LIFECYCLE_VERSION,
 };
-use crate::subagent_lifecycle::store::{append_locked, codex_event_id};
+use crate::subagent_lifecycle::store::{append_locked, codex_event_id, replay};
 use crate::verify::contracts::refusal::record;
 use crate::verify::contracts::test_support::contract;
 use crate::verify::transitions::{create_stage, load_stage, update_stage};
@@ -30,15 +30,15 @@ const STAGE: &str = "test-stage";
 /// An auto-mode orchestrator over a v2 standard stage executing its
 /// contract phase under the running writer `writer`, whose scratch
 /// directory lives under `scratch_root`.
-struct Fixture {
+pub(super) struct Fixture {
     _temp: TempDir,
-    work: PathBuf,
+    pub(super) work: PathBuf,
     scratch_root: PathBuf,
-    writer: Session,
+    pub(super) writer: Session,
     orchestrator: Orchestrator,
 }
 
-fn fixture() -> Fixture {
+pub(super) fn fixture() -> Fixture {
     let temp = handoff_work_dir();
     // Lifecycle evidence rejects a symlinked work dir; macOS temp dirs sit
     // under the `/var` -> `/private/var` symlink.
@@ -75,18 +75,18 @@ fn fixture() -> Fixture {
 }
 
 impl Fixture {
-    fn tick_at(&mut self, now: SystemTime) {
+    pub(super) fn tick_at(&mut self, now: SystemTime) {
         let root = self.scratch_root.clone();
         self.orchestrator
             .dispute_refused_freezes_at(Some(&root), now);
     }
 
-    fn tick(&mut self) {
+    pub(super) fn tick(&mut self) {
         self.tick_at(SystemTime::now());
     }
 
     /// A tick once a refusal written now has been quiet long enough.
-    fn tick_after_quiet(&mut self) {
+    pub(super) fn tick_after_quiet(&mut self) {
         self.tick_at(SystemTime::now() + Duration::from_secs(REFUSAL_QUIET_SECS + 1));
     }
 
@@ -124,12 +124,12 @@ impl Fixture {
         requests
     }
 
-    fn assert_nothing_filed(&self) {
+    pub(super) fn assert_nothing_filed(&self) {
         assert_eq!(self.stage().status, StageStatus::Executing);
         assert!(self.requests().is_empty(), "{:?}", self.requests());
     }
 
-    fn assert_filed_once(&self) -> String {
+    pub(super) fn assert_filed_once(&self) -> String {
         assert_eq!(self.stage().status, StageStatus::NeedsAdjudication);
         let requests = self.requests();
         assert_eq!(requests.len(), 1, "{requests:?}");
@@ -137,7 +137,6 @@ impl Fixture {
         std::fs::read_to_string(&requests[0]).unwrap()
     }
 }
-
 #[test]
 #[serial]
 fn a_daemon_record_is_filed_in_the_same_tick() {
@@ -154,7 +153,6 @@ fn a_daemon_record_is_filed_in_the_same_tick() {
     assert!(!request.contains(WRITER_PREFIX), "{request}");
     assert_eq!(fx.stage().tally.freeze_refusal_disputes, 1);
 }
-
 #[test]
 #[serial]
 fn a_record_for_another_session_is_dropped_and_nothing_is_filed() {
@@ -166,7 +164,6 @@ fn a_record_for_another_session_is_dropped_and_nothing_is_filed() {
     fx.assert_nothing_filed();
     assert_eq!(daemon_refusal(&fx.work, STAGE).unwrap(), None);
 }
-
 #[test]
 #[serial]
 fn a_local_refusal_is_filed_only_once_it_has_been_quiet() {
@@ -184,7 +181,6 @@ fn a_local_refusal_is_filed_only_once_it_has_been_quiet() {
         "{request}"
     );
 }
-
 #[test]
 #[serial]
 fn a_local_refusal_waits_while_the_writer_still_heartbeats() {
@@ -198,7 +194,6 @@ fn a_local_refusal_waits_while_the_writer_still_heartbeats() {
 
     fx.assert_nothing_filed();
 }
-
 #[test]
 #[serial]
 fn a_local_refusal_waits_while_the_writer_runs_a_subagent() {
@@ -208,6 +203,15 @@ fn a_local_refusal_waits_while_the_writer_runs_a_subagent() {
 
     fx.tick_after_quiet();
 
+    fx.assert_nothing_filed();
+}
+#[test]
+#[serial]
+fn freeze_refusal_waits_for_a_native_worker() {
+    let mut fx = fixture();
+    fx.refuse_locally();
+    crate::host_verify::submit::native_hold_tests::seed(&fx.work, STAGE);
+    fx.tick_after_quiet();
     fx.assert_nothing_filed();
 }
 
@@ -241,7 +245,6 @@ fn a_local_refusal_waits_while_the_writers_children_are_unknown() {
     fx.assert_filed_once();
     assert!(!fx.orchestrator.spool_drain_error_logged.contains(&key));
 }
-
 #[test]
 #[serial]
 fn the_fourth_refusal_retires_the_writer_and_escalates() {
@@ -284,7 +287,6 @@ fn the_fourth_refusal_retires_the_writer_and_escalates() {
     assert!(fx.requests().is_empty(), "no dispute is pending");
     assert_eq!(daemon_refusal(&fx.work, STAGE).unwrap(), None);
 }
-
 #[test]
 #[serial]
 fn a_declined_filing_is_marked_and_never_retried() {
@@ -303,7 +305,25 @@ fn a_declined_filing_is_marked_and_never_retried() {
     let record = daemon_refusal(&fx.work, STAGE).unwrap().unwrap();
     assert_eq!(record.declined.as_deref(), Some("not admitted"));
 }
-
+#[test]
+#[serial]
+fn an_admission_read_error_after_the_initial_read_retries() {
+    let mut fx = fixture();
+    fx.record(&fx.writer.id);
+    let (stage, _) = fx.orchestrator.refusing_writer(STAGE).unwrap().unwrap();
+    let refusal = daemon_refusal(&fx.work, STAGE).unwrap().unwrap();
+    let path = fx.work.join("contracts").join(STAGE).join("freeze.json");
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    std::fs::create_dir(&path).unwrap();
+    assert!(fx.orchestrator.file_refusal(&stage, &refusal).is_err());
+    let pending = daemon_refusal(&fx.work, STAGE).unwrap().unwrap();
+    assert_eq!(pending.declined, None);
+    fx.assert_nothing_filed();
+    std::fs::remove_dir(path).unwrap();
+    fx.tick();
+    fx.assert_filed_once();
+    assert_eq!(fx.stage().tally.freeze_refusal_disputes, 1);
+}
 #[test]
 #[serial]
 fn a_tick_retried_after_a_failed_filing_writes_one_request() {
@@ -337,7 +357,7 @@ fn active_child(work: &Path, workspace: &Path, session_id: &str) {
     ] {
         let evidence = CodexEvidence {
             evidence_kind: kind,
-            requested_model: "gpt-6-sol".into(),
+            requested_model: "gpt-6.2-sol".into(),
             requested_effort: "high".into(),
             invocation_id: "invocation-child".into(),
             job_id: Some("job-child".into()),

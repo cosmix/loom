@@ -23,9 +23,10 @@ use super::generate::{
 /// `CLAUDE.md.template` is pasted into every session's context on every spawn,
 /// across every stage, in every plan. Rules 3 and 3b live in the hooks that
 /// print them (`tests_guidance_manifest.rs` lists every relocation). The
-/// ceiling equals the actual size, so any addition fails here: trim the
-/// template or move the text to its home instead of raising the ceiling.
-const CLAUDE_MD_TEMPLATE_MAX_BYTES: usize = 20_138;
+/// ceiling equals the actual size (20,388 bytes), so any addition fails here:
+/// trim the template or move the text to its home instead of raising the
+/// ceiling. The model-allocation plan authorized the one raise to this size.
+const CLAUDE_MD_TEMPLATE_MAX_BYTES: usize = 20_388;
 
 /// The KV-cache-stable prefix pasted into the first message of every fresh
 /// session spawned for a standard stage.
@@ -55,10 +56,9 @@ const STABLE_PREFIX_MAX_BYTES: usize = 8_192;
 /// A future stage tightening this ratchet should do that split and add a
 /// fifth ceiling over the invariant part; until then it can regrow unchecked.
 ///
-/// Unchanged by BLOCK-D (see `STABLE_PREFIX_MAX_BYTES`): stable_prefix_bytes
-/// grows by ~889 bytes for a standard stage, but actual floor after that
-/// addition is 7,624 bytes (stable 6,034, semi-stable 1,590) - comfortably
-/// under this ceiling already, so it stays at its original value.
+/// The sandbox section renders the effective configuration, so an inherited
+/// default `deny_read` list counts here; it stays one line in the signal
+/// (`format/sandbox_section.rs`) rather than one line per path.
 const STANDARD_SIGNAL_BOILERPLATE_FLOOR_MAX_BYTES: usize = 10_240;
 
 /// Mirrors `generate::MAX_PLAN_OVERVIEW_BYTES` (private to that module); an
@@ -68,8 +68,9 @@ const PLAN_OVERVIEW_MAX_BYTES: usize = 4_096;
 
 /// Every stage main session loads `skills/loom-orchestration/SKILL.md`, so its
 /// bytes are paid on every later request of that session. The ceiling equals
-/// the actual size, so any addition fails here.
-const ORCHESTRATION_SKILL_MAX_BYTES: usize = 20_530;
+/// the actual size (21,794 bytes), so any addition fails here. The
+/// model-allocation plan authorized the one raise to this size.
+const ORCHESTRATION_SKILL_MAX_BYTES: usize = 21_794;
 
 const CLAUDE_MD_TEMPLATE: &str = include_str!("../../../../CLAUDE.md.template");
 const ORCHESTRATION_SKILL: &str = include_str!("../../../../skills/loom-orchestration/SKILL.md");

@@ -8,7 +8,42 @@ use serial_test::serial;
 use super::store;
 use super::tests_child::{confinement_unavailable, git, labels_and_verdicts, Fixture, STAGE};
 use super::{JobKind, JobRecord, JobResult, JobState};
+use crate::fs::session_files::save_session;
+use crate::models::session::Session;
 use crate::models::stage::StageType;
+
+#[test]
+#[serial]
+fn a_waiting_selection_reuses_the_pass_the_running_check_stored() {
+    if confinement_unavailable("a_waiting_selection_reuses_the_pass_the_running_check_stored") {
+        return;
+    }
+    // Identical commands intentionally share a cache key across criteria.
+    let fx = Fixture::new(&["true", "printf second"], StageType::Standard);
+    let mut first = fx.job(JobState::Running, false);
+    first.criteria = Some(vec![0]);
+    store::save_current(&fx.work_dir, &first).unwrap();
+    assert!(fx.run(&first).passed);
+    let mut next = fx.job(JobState::Running, false);
+    next.criteria = Some(vec![0, 1]);
+    store::save_current(&fx.work_dir, &next).unwrap();
+    let result = fx.run(&next);
+    assert!(result.passed, "{result:?}");
+    let cached = result
+        .criteria
+        .iter()
+        .find(|c| c.label == "acceptance-0")
+        .unwrap();
+    assert!(cached.summary.contains("(cached)"));
+    assert_eq!(cached.log, None);
+    let ran = result
+        .criteria
+        .iter()
+        .find(|c| c.label == "acceptance-1")
+        .unwrap();
+    assert!(!ran.summary.contains("(cached)"));
+    assert!(ran.log.is_some());
+}
 
 #[test]
 #[serial]
@@ -64,6 +99,68 @@ fn a_complete_on_the_commit_of_a_checked_dirty_tree_reuses_every_cached_pass() {
     let completion = complete(&fx);
 
     assert_every_acceptance_cached(&fx, &completion, &fx.run(&completion));
+}
+
+/// Make the fixture's job session a merge resolver.
+fn resolver_session(fx: &Fixture, id: &str) {
+    let mut session = Session::new_merge(format!("loom/{STAGE}"), "main".to_string());
+    session.id = id.to_string();
+    save_session(&session, &fx.work_dir).unwrap();
+}
+
+/// After a handback the stage session's Complete job must run every criterion:
+/// `land_stage_merge` runs no acceptance gate of its own.
+#[test]
+#[serial]
+fn a_resolvers_check_stores_no_pass_a_complete_could_reuse() {
+    if confinement_unavailable("a_resolvers_check_stores_no_pass_a_complete_could_reuse") {
+        return;
+    }
+    let fx = Fixture::new(&["test -f .gitignore"], StageType::Standard);
+    let check = fx.job(JobState::Running, false);
+    resolver_session(&fx, &check.session_id);
+    assert!(fx.run(&check).passed);
+    let completion = complete(&fx);
+
+    let result = fx.run(&completion);
+
+    let acceptance = result
+        .criteria
+        .iter()
+        .find(|outcome| outcome.label == "acceptance-0")
+        .expect("the criterion's outcome");
+    assert!(
+        !acceptance.summary.contains("(cached)"),
+        "{}",
+        acceptance.summary
+    );
+    assert!(acceptance.log.is_some(), "the criterion ran");
+}
+
+#[test]
+#[serial]
+fn a_resolvers_check_reads_no_pass_another_session_stored() {
+    if confinement_unavailable("a_resolvers_check_reads_no_pass_another_session_stored") {
+        return;
+    }
+    let fx = Fixture::new(&["test -f .gitignore"], StageType::Standard);
+    let stage_check = fx.job(JobState::Running, false);
+    assert!(fx.run(&stage_check).passed);
+    let cached = fx.run(&fx.job(JobState::Running, false));
+    assert!(
+        cached.criteria[0].summary.contains("(cached)"),
+        "the fixture never reaches the pass cache: {cached:?}"
+    );
+    let check = fx.job(JobState::Running, false);
+    resolver_session(&fx, &check.session_id);
+
+    let result = fx.run(&check);
+
+    assert!(result.passed, "{result:?}");
+    assert!(
+        !result.criteria[0].summary.contains("(cached)"),
+        "{result:?}"
+    );
 }
 
 fn complete(fx: &Fixture) -> JobRecord {

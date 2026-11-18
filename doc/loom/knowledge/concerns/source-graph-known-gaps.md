@@ -1,6 +1,6 @@
 # Source Graph Known Gaps
 
-> Language limits, decisions
+> Limits
 
 What the source graph cannot see, by design or by deferral. Each gap is a place where the honesty
 contract ([Source Graph](../architecture/source-graph.md#the-honesty-contract)) makes the graph say
@@ -29,7 +29,8 @@ Reviewer suggestions that are small, local fixes live in [Review Backlog](source
 - **Go** methods are not reachable by bare name and `import` paths are matched by directory suffix, so a slashed
   stdlib path such as `net/http` can still suffix-match a local `x/net/http` directory (accepted design behaviour,
   pinned by `tests_paths.rs`). `last_segment` splits on `.`, so `gopkg.in/yaml.v3` has local name `v3`.
-- **One-segment specs match anywhere** in Python, Ruby and Go: a local `utils/os.py` captures `import os`.
+- **One-segment specs match anywhere** in Python, Ruby and Go: for example, a local file named
+  os.py under a utils directory can capture `import os`.
   The same suffix match applies to Java `a.b.C`.
 - **Kotlin and Swift** have no grammar under `github.com/tree-sitter` and are not supported; shell and
   configuration languages (proposal wave D) are out of scope. A build without a wave pack reports its
@@ -42,7 +43,7 @@ Reviewer suggestions that are small, local fixes live in [Review Backlog](source
   snapshot 18.0 s, resolve 2.3 s, query 19 ms, render 45 ms, peak RSS 372 MiB) over 29,835 nodes and 150,964 edges,
   and every process is cold inside a stage sandbox because nothing persists. The decision between a persisted index
   and another engine waits on warm `--timings` numbers from a host run or a `TempDir` test, never from a stage.
-- **The agent-task comparison has not been run.** `doc/source-graph-evaluation.md` defines the four-mode protocol
+- **The agent-task comparison has not been run.** The evaluation protocol (no document in the tree) defines four modes
   (`rg`-first, graph alone, graph plus `rg`, current loom guidance); it needs consenting projects and live agent
   runs. No dialect or resolver capability is promoted into agent guidance until fixtures and holdouts pass.
 - **`scripts/retrieval-ab` has not been run.** It needs a pre-plan baseline binary built from another revision in a
@@ -77,3 +78,17 @@ which changes `excluded` for every consumer (enumeration, census, evaluator).
   is the stage's diff since its merge base, so unchanged `web/` files are not picked. A JS package without `node_modules`
   gives a note, not a failure (see [verification-v2-gates](../architecture/verification-v2-gates.md)). The graph-side root
   cause, the `EXCLUDED_ROOTS` first-segment gap above, is unchanged.
+
+## Reachable Checks From `main` Cannot Pass Through the Loom Library Crate
+
+A `reachable` goal-backward entry with `from: main` for a symbol of the `loom` library crate fails with every acceptance criterion green. `src/main.rs` imports the library as `loom::cli::{dispatch, Cli}`, and the resolver's package-name rule never applies inside a crate-root directory (`context/resolve/paths/rust.rs`), so every `loom::` path from `main.rs` is external. `dispatch(..)` also has nine callable namesakes over `MAX_CANDIDATES = 8`, so not even a candidate edge exists; `append_record` from `main` passes only through 0.20 candidate edges into `build.rs#main`. A module-qualified call (`plan::serve::execute`) binds only when written `crate::commands::plan::serve::execute`. A file that declares `pub mod X;` and defines `pub fn X()` makes every qualified call `module::X()` ambiguous (`plan_server/mod.rs` `run`, `plan_server/run/mod.rs`, `pressure/mod.rs`), and a tuple-struct constructor `T(x)` in the file holding `impl .. for T` is a same-file candidate pair that never binds, so `AppDriver` is reachable only by call-style construction. `loom map --impact` default kinds omit `contains` and `imports`, which `REACHABLE_KINDS` also omits.
+
+Choose a `from:` inside the library (a route handler or `cli::dispatch`'s callee) for such symbols, and dispute the criterion when the only honest origin is `main`. Closure registration of route handlers was tried and had no effect.
+
+## Two Outlines in One Call Abort in a Stage Sandbox
+
+`loom map --outline` on two files in one shell call printed `corrupted double-linked list` after the first outline when the worktree sandbox left the context cache read-only. Query one file per call, or read line ranges with the Read tool.
+
+## A Call Through a `#[path]` Module Has No Graph Edge
+
+`loom map --callees 'loom/src/verify/criteria/confine.rs#function:prepare'` lists no edge to `confine_host.rs#wrap`, although `prepare` calls `host::wrap(...)` (`confine.rs:298`). The module `host` is declared `#[path = "confine_host.rs"] mod host;` (`confine.rs:16-17`), and the only caller the graph attributes to `wrap` is a test. A `reachable` check from `run_acceptance_with_config` to anything below `wrap` (`platform_command`, `bubblewrap`, a device-grant helper) therefore fails for a correct implementation, because `verify/goal_backward/reachable.rs` walks the same edges. Before writing such a check, run `loom map --impact <symbol>` and confirm the `from` function appears. Otherwise prove the path with a contract or test.

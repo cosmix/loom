@@ -1,11 +1,11 @@
 //! The no-follow file primitives `store` builds on. Every path is relative to
 //! a descriptor on the canonical state root and is opened through
-//! `fs::safe_fs`, so no symlink is followed at any component; every write is a
-//! temp file renamed into place in the same directory.
+//! `fs::safe_fs`, so no symlink is followed at any component; every write is
+//! published through `fs::safe_replace::publish_in_dir`.
 
 use std::fs::File;
 use std::io::Write;
-use std::os::fd::{AsRawFd, OwnedFd};
+use std::os::fd::{AsFd, AsRawFd, OwnedFd};
 use std::os::unix::fs::FileExt;
 use std::path::{Path, PathBuf};
 
@@ -16,6 +16,7 @@ use serde::de::DeserializeOwned;
 
 use crate::fs::safe_fs;
 use crate::fs::safe_read::{is_not_found, list_dir_no_follow, read_bounded, EntryKind};
+use crate::fs::safe_replace::{open_parent_at, publish_in_dir};
 
 pub(super) const FILE_MODE: u32 = 0o600;
 const DIR_MODE: libc::mode_t = 0o700;
@@ -55,32 +56,12 @@ pub(super) fn create_dirs(root: &OwnedFd, rel: &Path) -> Result<()> {
 
 /// Replace `rel` with `bytes` through a temp file in the same directory. The
 /// directory must exist: a job directory already pruned is not recreated.
-pub(super) fn write_atomic(root: &OwnedFd, rel: &Path, bytes: &[u8]) -> Result<()> {
+pub(super) fn replace_file(root: &OwnedFd, rel: &Path, bytes: &[u8]) -> Result<()> {
     refuse_unsafe(root, rel)?;
-    let name = rel
-        .file_name()
-        .and_then(|name| name.to_str())
-        .context("a job file path names no file")?;
-    let temp = rel.with_file_name(format!(".{name}.{}.tmp", uuid::Uuid::new_v4().simple()));
-    let written = write_new(root, &temp, bytes)
-        .and_then(|()| safe_fs::safe_rename_in_workdir(root.as_raw_fd(), &temp, rel));
-    if written.is_err() {
-        let _ = safe_fs::safe_remove_in_workdir(root.as_raw_fd(), &temp);
-    }
-    written.with_context(|| format!("cannot write {}", rel.display()))
-}
-
-fn write_new(root: &OwnedFd, rel: &Path, bytes: &[u8]) -> Result<()> {
-    let flags = libc::O_WRONLY | libc::O_CREAT | libc::O_EXCL;
-    let mut file = File::from(safe_fs::open_safely(
-        root.as_raw_fd(),
-        rel,
-        flags,
-        FILE_MODE,
-    )?);
-    file.write_all(bytes)?;
-    file.sync_all()?;
-    Ok(())
+    let name = rel.file_name().context("a job file path names no file")?;
+    open_parent_at(root.as_fd(), rel)
+        .and_then(|parent| publish_in_dir(&parent, name, bytes, FILE_MODE, false))
+        .with_context(|| format!("cannot write {}", rel.display()))
 }
 
 /// Append to `rel` under an flock of the file itself. `choose` sees the file

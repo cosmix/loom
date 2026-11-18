@@ -5,8 +5,8 @@ use std::path::{Path, PathBuf};
 use anyhow::{ensure, Context, Result};
 use uuid::Uuid;
 
+use crate::agent_state::is_safe_id;
 use crate::codex_lifecycle::CodexAuthorization;
-use crate::models::forward_receipt::is_safe_id;
 use crate::subagent_lifecycle::WorkerIdentity;
 
 use super::super::ledger::StartedAgentTypeIndex;
@@ -15,8 +15,7 @@ use super::model::{
     resolve_claude_transcript, BoundWorker, CodexAuthority, EvidenceReference, WaitIdentity,
     WorkerKind, WorkerSpec,
 };
-
-const MAX_PARENT_DIRS: usize = 512;
+use super::native::NativeSet;
 
 pub struct IdentityScope {
     pub work_dir: PathBuf,
@@ -48,10 +47,19 @@ pub fn resolve(
     let starts = StartedAgentTypeIndex::load(Some(&scope.work_dir));
     let authorizations =
         super::codex_binding::load_wait_authorizations(&scope.work_dir, &scope.stage_id)?;
-    let parent = common_parent(scope, &specs, requested_parent, &starts, &authorizations)?;
+    let natives = NativeSet::load(scope, &specs)?;
+    let legacy = natives.legacy(&specs);
+    let parent = if legacy.is_empty() {
+        NativeSet::parent_when_all_native(scope, requested_parent)?
+    } else {
+        common_parent(scope, &legacy, requested_parent, &starts, &authorizations)?
+    };
     let mut bound = Vec::with_capacity(specs.len());
     for spec in specs {
-        bound.push(bind_worker(scope, spec, &parent, &starts, &authorizations)?);
+        bound.push(match natives.bind(scope, &spec)? {
+            Some(worker) => worker,
+            None => bind_worker(scope, spec, &parent, &starts, &authorizations)?,
+        });
     }
     Ok(WaitIdentity {
         canonical_repo: scope.canonical_repo.clone(),
@@ -202,7 +210,7 @@ fn candidate_parents(
     authorizations: &[CodexAuthorization],
 ) -> Result<BTreeSet<String>> {
     match spec.kind {
-        WorkerKind::Claude => claude_parent_candidates(scope, &spec.id, starts),
+        WorkerKind::Claude => super::parent_scan::claude_parent_candidates(scope, &spec.id, starts),
         WorkerKind::Codex => Ok(authorizations
             .iter()
             .filter(|row| authorization_matches(scope, row, &spec.id, None))
@@ -210,37 +218,6 @@ fn candidate_parents(
             .filter(|parent| validate_parent_uuid(parent).is_ok())
             .collect()),
     }
-}
-
-fn claude_parent_candidates(
-    scope: &IdentityScope,
-    agent_id: &str,
-    starts: &StartedAgentTypeIndex,
-) -> Result<BTreeSet<String>> {
-    let project = scope
-        .projects_root
-        .join(project_slug(&scope.canonical_worktree));
-    let entries = match fs::read_dir(project) {
-        Ok(entries) => entries,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(BTreeSet::new()),
-        Err(error) => return Err(error.into()),
-    };
-    let mut parents = BTreeSet::new();
-    for entry in entries.take(MAX_PARENT_DIRS) {
-        let entry = entry?;
-        let Some(parent) = entry.file_name().to_str().map(str::to_owned) else {
-            continue;
-        };
-        if entry.file_type()?.is_dir()
-            && validate_parent_uuid(&parent).is_ok()
-            && starts
-                .resolve_exact(&scope.stage_id, &parent, &scope.loom_session_id, agent_id)
-                .is_some()
-        {
-            parents.insert(parent);
-        }
-    }
-    Ok(parents)
 }
 
 fn can_bind(
@@ -302,7 +279,8 @@ fn bind_claude(
     };
     Ok(BoundWorker {
         worker: spec.clone(),
-        lifecycle_identity: identity,
+        lifecycle_identity: Some(identity),
+        native_invocation: None,
         authority: None,
         evidence: vec![
             EvidenceReference {
@@ -353,7 +331,8 @@ fn bind_codex(
     )?;
     Ok(BoundWorker {
         worker: spec,
-        lifecycle_identity: execution.identity,
+        lifecycle_identity: Some(execution.identity),
+        native_invocation: None,
         authority: Some(CodexAuthority::from(authorization.clone())),
         evidence: vec![
             EvidenceReference {
@@ -390,7 +369,7 @@ fn codex_path(scope: &IdentityScope) -> PathBuf {
         .join("codex.jsonl")
 }
 
-fn validate_parent_uuid(parent: &str) -> Result<()> {
+pub(super) fn validate_parent_uuid(parent: &str) -> Result<()> {
     let parsed = Uuid::parse_str(parent).context("Claude parent must be a UUID")?;
     ensure!(
         parsed.to_string() == parent.to_ascii_lowercase(),
@@ -398,3 +377,7 @@ fn validate_parent_uuid(parent: &str) -> Result<()> {
     );
     Ok(())
 }
+
+#[cfg(test)]
+#[path = "identity_tests.rs"]
+mod tests;

@@ -1,6 +1,6 @@
 # Completion Runtime
 
-> Cargo churn, stall kills
+> Churn
 
 ## A Per-Command Cargo Home Rebuilt Every Dependency, and Stall Recovery Killed the Completion (2026-10-20)
 
@@ -59,6 +59,36 @@ Three things hid the cause:
 
 **What happened:** integration-verify criterion 1 (`cargo test --all-targets --no-fail-fast`) was killed at the 300 s default criterion timeout while `tests/host_verification_e2e.rs` ran; every test before it passed (lib: 8376 passed, 125 s). The second host job passed with the lib at 8380, but test time alone was about 225 s, so the first run's timeout was the cold test-profile compile on top.
 
-**Why:** the plan wrote the criterion as a plain string; DONE-PLAN-03 gave the same criterion `timeout_secs: 1200` (`doc/plans/archive/DONE-PLAN-03-usage-evidence.md:731-732`).
+**Why:** the plan wrote the criterion as a plain string; DONE-PLAN-03 gave the same criterion `timeout_secs: 1200` (`doc/plans/optim-token/archive/DONE-PLAN-03-usage-evidence.md:731-732`).
 
 **Prevention:** an integration-verify full-suite criterion is an extended criterion with `timeout_secs` of at least 1200 (`verify/criteria/config.rs`).
+
+**Recurred (2026-11-02):** `PLAN-portal-token-savings` wrote the same criterion as a plain string and `cargo test --all-targets --no-fail-fast` was killed at 300 s with no test failing (2m40s compile, 6118 tests ok). On the host the lib tests alone take 237.73 s (12028 passed), so the default cannot hold whatever the compile cost. The same suite inside a stage's Bash sandbox shows 190 failures from nested bwrap, read-only `/tmp` locks, denied unix sockets and a temp root containing `claude` (`hooks_subagent_verify_guard.rs:46`), none in code the plan touched: the full suite is a host criterion, never a sandbox one. The recurrence means the knowledge did not reach plan authoring; the proposed guard is in [`loom ask` and Read Gate Concerns](../concerns/loom-ask-and-read-gate.md#proposed-guards-for-recurring-mistakes).
+
+## Stage Completion Refused on an Untracked `target/` File Its Own Build Wrote (2026-10-28)
+
+**What happened:** the completion command was refused twice with "untracked completion input loom/target/debug/..." naming a different gitignored file each time, while the host job's Rust impact-test build wrote `loom/target` in the worktree. `loom/.gitignore:2` ignores the files.
+
+**Why:** the completion scan raced the build the same host job ran; the refusal was not a missing commit.
+
+**Prevention:** after a refusal that names a gitignored build output, check `git status --short` for real untracked sources, then rerun the completion command; the rerun passes once the build is quiet.
+
+## Impact-Test Selection Rebuilt the Whole Graph Per Node, Costing ~9 Minutes Per Completion (2026-11-11)
+
+**What happened:** stage background-server (117 changed files) spent about 9-10 min in the impact-tests phase of each of four completion runs. The selected `cargo test` command itself took 70-80 s and was pass-cached on reruns. The investigation first blamed the target-less `cargo test -- <names>` command, because the phase's log lines bracket both.
+
+**Why:** `impact_with` (`loom/src/context/resolve/impact.rs`) collects every graph node and rebuilds the full reverse adjacency on each call; `walk_tests` (`loom/src/verify/impact_tests/reach.rs`) called it once per unseen node of every changed file, and `reached_test_nodes` walks twice (selected and namesakes). Cost grows with changed nodes times graph size.
+
+**Prevention:** time a completion phase from the acceptance cache's `original_duration_ms` and the job's `groups` start ticks, not from the log lines around the phase. A graph query run per node builds its indexes once per walk; collect the starts and call `ImpactOptions::impact_from` once.
+
+**Fix:** selection does one multi-source walk per `ImpactOptions` via `ImpactOptions::impact_from`; `impact_with` is the single-start case. A selection builds two indexes (selected, namesakes) in place of one per changed node.
+
+## Four Concurrent Agents in One Rust Crate Spent 60-85% of Their Time in Cargo (2026-11-11)
+
+**What happened:** a workflow ran four implementers at once in the same checkout of the single `loom` crate, sharing one target dir. After 26 minutes none had finished; each had spent 15-22 minutes inside cargo calls and 4-10 minutes generating. Each agent made 12-13 `cargo test` calls.
+
+**Why:** the lib crate is one compilation unit, so any agent's edit invalidates every other agent's next build; the shared target dir serialises builds on its lock; each `cargo test --lib <module>::` relinks the 13k-test lib binary (~60 s) even when only one module's tests run.
+
+**Prevention:** parallel implementers in one Rust crate do not run in parallel. Give each its own worktree and target dir (cold build cost paid once), or run them in sequence; budget one compile cycle as ~1-2 min, not seconds, when sizing waves. An agent uses `cargo check` or `cargo clippy` until the code compiles, runs its module's tests once at the end (again only after a failure), and never loops on `cargo test --lib`, because each call relinks the lib binary.
+
+**Fix:** let the run finish; size later fan-outs with per-agent worktrees and target dirs.

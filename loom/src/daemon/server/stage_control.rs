@@ -6,7 +6,8 @@
 use std::path::Path;
 
 use crate::daemon::protocol::{Request, Response};
-use crate::models::dispute::{CriterionField, DisputeKind};
+use crate::models::dispute::{CriterionTarget, DisputeKind};
+use crate::plan::schema::ContractChoices;
 
 /// Serve one `DisputeCriteria`.
 ///
@@ -17,21 +18,22 @@ use crate::models::dispute::{CriterionField, DisputeKind};
 fn serve_dispute_criteria(
     work_dir: &Path,
     stage_id: &str,
-    field: CriterionField,
-    criterion_indices: Vec<usize>,
+    session_id: &str,
+    criteria: CriterionTarget,
     reason: String,
     evidence_commit: Option<String>,
     failure_output: Option<String>,
 ) -> Response {
-    super::dispute::handle_dispute_criteria(
+    crate::stage_service::handle_dispute_criteria_for_session(
         work_dir,
         stage_id,
-        field,
-        criterion_indices,
+        criteria,
         reason,
         evidence_commit,
         failure_output,
+        (None, (!session_id.is_empty()).then_some(session_id)),
     )
+    .map(Into::into)
     .unwrap_or_else(|error| Response::Error {
         message: format!("Dispute persistence failed: {error:#}"),
     })
@@ -42,14 +44,23 @@ fn serve_dispute_criteria(
 fn serve_file_dispute(
     work_dir: &Path,
     stage_id: &str,
+    session_id: &str,
     kind: DisputeKind,
     reason: String,
     evidence_commit: Option<String>,
 ) -> Response {
-    super::dispute_kinds::handle_file_dispute(work_dir, stage_id, kind, reason, evidence_commit)
-        .unwrap_or_else(|error| Response::Error {
-            message: format!("Dispute persistence failed: {error:#}"),
-        })
+    crate::stage_service::handle_file_dispute_for_session(
+        work_dir,
+        stage_id,
+        kind,
+        reason,
+        evidence_commit,
+        (None, (!session_id.is_empty()).then_some(session_id)),
+    )
+    .map(Into::into)
+    .unwrap_or_else(|error| Response::Error {
+        message: format!("Dispute persistence failed: {error:#}"),
+    })
 }
 
 /// Serve one `BlockStage`. A transition the state machine refuses comes back
@@ -61,7 +72,13 @@ fn serve_block_stage(work_dir: &Path, stage_id: &str, session_id: &str, reason: 
     let blocked = if session_id.is_empty() {
         super::control_block::handle_block_stage(work_dir, stage_id, reason)
     } else {
-        super::control_block::handle_agent_block_stage(work_dir, stage_id, reason)
+        crate::stage_service::handle_agent_block_for_session(
+            work_dir,
+            stage_id,
+            reason,
+            Some(session_id),
+        )
+        .map(Into::into)
     };
     blocked.unwrap_or_else(|error| Response::Error {
         message: format!("Block transition failed: {error:#}"),
@@ -78,6 +95,7 @@ fn serve_freeze_contracts(
     session_id: &str,
     head: &str,
     tree_digest: &str,
+    choices: &ContractChoices,
 ) -> Response {
     let request_id = crate::host_verify::new_job_id();
     super::contracts::handle_freeze_contracts(
@@ -87,6 +105,7 @@ fn serve_freeze_contracts(
         head,
         tree_digest,
         &request_id,
+        choices,
     )
     .unwrap_or_else(|error| Response::Error {
         message: format!("Contract run request failed: {error:#}"),
@@ -99,8 +118,10 @@ pub(super) fn serve_stage_control(work_dir: &Path, request: Request) -> Response
     match request {
         Request::DisputeCriteria {
             stage_id,
+            session_id,
             field,
             criterion_indices,
+            owner_stage,
             reason,
             evidence_commit,
             failure_output,
@@ -108,19 +129,37 @@ pub(super) fn serve_stage_control(work_dir: &Path, request: Request) -> Response
         } => serve_dispute_criteria(
             work_dir,
             &stage_id,
-            field,
-            criterion_indices,
+            &session_id,
+            CriterionTarget {
+                field,
+                criterion_indices,
+                owner_stage,
+            },
             reason,
             evidence_commit,
             failure_output,
         ),
         Request::FileDispute {
             stage_id,
+            session_id,
             kind,
             reason,
             evidence_commit,
             ..
-        } => serve_file_dispute(work_dir, &stage_id, kind, reason, evidence_commit),
+        } => serve_file_dispute(
+            work_dir,
+            &stage_id,
+            &session_id,
+            kind,
+            reason,
+            evidence_commit,
+        ),
+        other => serve_other_control(work_dir, other),
+    }
+}
+
+fn serve_other_control(work_dir: &Path, request: Request) -> Response {
+    match request {
         Request::BlockStage {
             stage_id,
             session_id,
@@ -132,8 +171,16 @@ pub(super) fn serve_stage_control(work_dir: &Path, request: Request) -> Response
             session_id,
             head,
             tree_digest,
+            choices,
             ..
-        } => serve_freeze_contracts(work_dir, &stage_id, &session_id, &head, &tree_digest),
+        } => serve_freeze_contracts(
+            work_dir,
+            &stage_id,
+            &session_id,
+            &head,
+            &tree_digest,
+            &choices,
+        ),
         Request::ObserveChanges { stage_id, .. } => {
             super::observer::handle_observe_changes(work_dir, &stage_id)
         }

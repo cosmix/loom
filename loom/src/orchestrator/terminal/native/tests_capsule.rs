@@ -1,6 +1,5 @@
 //! Capsule-focused unit tests for `native/capsule.rs` and the capsule half of
-//! `build_claude_command`, split out of `native/tests.rs` to keep both files
-//! under the 400-line ceiling (CLAUDE.md Rule 17), and for the write denies a
+//! `build_claude_command`, and for the write denies a
 //! session's settings capsule carries (`session_settings.rs`), on the fixture
 //! `tests_session_settings.rs` builds.
 
@@ -14,7 +13,7 @@ use std::collections::BTreeSet;
 
 #[test]
 fn build_claude_command_empty_capsule_matches_legacy_argv() {
-    // An unsupported or unprobed capsule must never change the command line.
+    // The command builder is pure; launch preparation rejects this capsule.
     let cmd = build_claude_command(
         "/usr/bin/claude",
         "opus",
@@ -272,14 +271,16 @@ fn capsule_from_append_system_prompt_file_requires_support_and_a_resolved_path()
 /// every capsule carries, then `[denyWrite, Edit]` for each location. Each
 /// skill directory loom installs under `~/.codex/skills` is added apart
 /// (`codex_skill_denies`).
-const SHARED_DENY_WRITE: &str = "{R}/.loom {R}/.git/hooks {R}/.git/config {H} \
+const SHARED_DENY_WRITE: &str =
+    "{R}/.loom {R}/.git/hooks {R}/.git/config {R}/.git/config.worktree {H} \
     ~/.claude/hooks ~/.claude/settings.json ~/.claude/CLAUDE.md ~/.claude.json ~/.loom \
     ~/.claude/projects ~/.claude/agents ~/.claude/skills ~/.claude/commands \
     ~/.claude/loom-skill-catalog ~/.claude/plugins ~/.codex/hooks ~/.codex/hooks.json \
     ~/.codex/config.toml ~/.codex/AGENTS.md ~/.codex/loom-skill-catalog ~/.codex/prompts";
-const TOOL_DENIES: &str = "LSP RemoteTrigger CronCreate PushNotification Workflow";
+const TOOL_DENIES: &str =
+    "LSP RemoteTrigger CronCreate PushNotification Monitor PowerShell Workflow";
 const SHARED_EDIT_DENIES: &str = "Edit(/{R}/.loom/**) Edit(.loom/**) \
-    Edit(/{R}/.git/hooks/**) Edit(/{R}/.git/config) Edit(/{H}/**) Edit(~/.claude/hooks/**) \
+    Edit(/{R}/.git/hooks/**) Edit(/{R}/.git/config) Edit(/{R}/.git/config.worktree) Edit(/{H}/**) Edit(~/.claude/hooks/**) \
     Edit(~/.claude/settings.json) Edit(~/.claude/CLAUDE.md) Edit(~/.claude.json) \
     Edit(~/.loom/**) Edit(~/.claude/projects/**) Edit(~/.claude/agents/**) \
     Edit(~/.claude/skills/**) Edit(~/.claude/commands/**) \

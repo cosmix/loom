@@ -66,3 +66,22 @@ fn a_live_session_of_another_stage_does_not_defer_cleanup() {
         "got {outcome:?}"
     );
 }
+
+#[test]
+fn malformed_session_inventory_defers_cleanup() {
+    let stage_id = "merged-stage";
+    let (temp, head) = repo_with_stage_commit(stage_id);
+    let root = temp.path();
+    let work = root.join(".loom").join("work");
+    write_stage_record(&work, stage_id, &head);
+    merge_stage_branch(root, stage_id);
+    let sessions = work.join("sessions");
+    std::fs::create_dir_all(&sessions).unwrap();
+    std::fs::write(sessions.join("unknown-writer.md"), "invalid record").unwrap();
+
+    let outcome = cleanup_from_outside(root, stage_id);
+
+    assert!(matches!(outcome, CleanupOutcome::Deferred { .. }));
+    assert!(worktree_of(root, stage_id).exists());
+    assert!(branch_exists_strict(&branch_name_for_stage(stage_id), root).unwrap());
+}

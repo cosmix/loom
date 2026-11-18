@@ -37,7 +37,7 @@ pub const UNRESOLVED_TARGET: &str = "<unresolved>";
 /// Version of the persisted graph layer format. A layer written under another
 /// version is never current and never a reuse source, so an old cache is
 /// rebuilt instead of read.
-pub const GRAPH_SCHEMA_VERSION: u32 = 3;
+pub const GRAPH_SCHEMA_VERSION: u32 = 4;
 
 /// Confidence of a [`EdgeProvenance::Structural`] edge. Numeric confidence is
 /// an evidence ranking, not a calibrated probability; only structural (and the
@@ -125,10 +125,7 @@ pub fn node_id(path: &std::path::Path, kind: SourceNodeKind, scope: &[String]) -
 
 /// `sha256:<hex>` over arbitrary bytes — the one definition of a `body_hash`.
 pub fn body_hash(bytes: &[u8]) -> String {
-    use sha2::{Digest, Sha256};
-    let mut hasher = Sha256::new();
-    hasher.update(bytes);
-    format!("sha256:{}", hex::encode(hasher.finalize()))
+    format!("sha256:{}", crate::utils::sha256_hex(bytes))
 }
 
 #[cfg(test)]

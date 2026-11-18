@@ -1,0 +1,13 @@
+{
+  "hits": [
+    {
+      "path": "doc/product/section_01.md",
+      "title": "Product",
+      "heading_path": ["Purpose"],
+      "anchor": "purpose",
+      "snippet": "A useful purpose",
+      "terms": ["purpose"]
+    }
+  ],
+  "truncated": false
+}

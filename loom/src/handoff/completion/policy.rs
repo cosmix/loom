@@ -2,7 +2,6 @@
 use crate::models::stage::Stage;
 use anyhow::Result;
 use serde::Serialize;
-use sha2::{Digest, Sha256};
 use std::path::Path;
 
 #[derive(Serialize)]
@@ -40,13 +39,27 @@ pub fn effective_policy_hash(stage: &Stage, work_dir: &Path) -> Result<String> {
     {
         return Ok(policy.stage);
     }
-    Ok(hex::encode(Sha256::digest(serde_json::to_vec(&policy)?)))
+    Ok(crate::utils::sha256_hex(&serde_json::to_vec(&policy)?))
 }
 
 fn digest_file(path: &Path) -> Result<Option<String>> {
     match std::fs::read(path) {
-        Ok(bytes) => Ok(Some(hex::encode(Sha256::digest(bytes)))),
+        Ok(bytes) => Ok(Some(crate::utils::sha256_hex(&bytes))),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
         Err(error) => Err(error.into()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn file_digest_is_pinned() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("policy");
+        std::fs::write(&path, b"abc").unwrap();
+        assert_eq!(
+            super::digest_file(&path).unwrap().unwrap(),
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        );
     }
 }

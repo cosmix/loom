@@ -1,4 +1,4 @@
-use sha2::{Digest, Sha256};
+use crate::utils::sha256_hex;
 
 use super::helpers::{
     append_commit_timing_rules, append_completion_rules, append_knowledge_commit_bullet,
@@ -63,10 +63,7 @@ impl SignalMetrics {
 
 /// Compute SHA-256 hash of content, returning first 16 hex characters
 pub fn compute_hash(content: &str) -> String {
-    let mut hasher = Sha256::new();
-    hasher.update(content.as_bytes());
-    let result = hasher.finalize();
-    hex::encode(&result[..8])
+    sha256_hex(content.as_bytes())[..16].to_owned()
 }
 
 // ── Shared content blocks ────────────────────────────────────────────
@@ -96,7 +93,7 @@ pub fn generate_stable_prefix() -> String {
     append_path_boundaries(&mut content);
 
     content.push_str(
-        "**working_dir Reminder:** Criteria run from `WORKTREE + working_dir` (see Target below for the exact path).\n\n",
+        "**working_dir Reminder:** Criteria run from `WORKTREE + working_dir` (see Target for the exact path).\n\n",
     );
 
     append_execution_rules_header(&mut content);
@@ -112,18 +109,19 @@ pub fn generate_stable_prefix() -> String {
     content
 }
 
-const INTEGRATION_VERIFY_OVERRIDE: &str = "⚠️ **INTEGRATION-VERIFY OVERRIDE — the no-verify rule above does NOT apply here:**\n\n\
-         The IV orchestrator runs `loom check integration-verify` ONCE; it carries the COMPLETE suite \
-         (e.g. `cargo build`, `cargo test`, `cargo clippy -- -D warnings`, `cargo fmt --check`) \
-         and the orchestrator reads all stderr for each immutable tree, environment, and criterion \
-         contract. That check is the complete-suite run Rule 5's complete-suite \
-         instruction means. Reviewers inspect independently and run only targeted \
-         discriminating security/functional checks; targeted checks are additional evidence, never \
-         a substitute for the canonical gate. Each check summary records command, real exit, \
-         criterion verdict, input/contract identity, elapsed time, and an evidence pointer when \
-         available. A missing receipt means run the check. After any review fix, the orchestrator \
-         re-evaluates invalidated checks; only the repaired criteria cache decides reuse, and stale \
-         evidence never waives a failing gate.\n\n";
+const INTEGRATION_VERIFY_OVERRIDE: &str = "⚠️ **INTEGRATION-VERIFY OVERRIDE — the standard-stage test rule does NOT apply here:**\n\n\
+         Here every full run goes through \
+         `loom check integration-verify [--criterion <n>]`, never a bare test runner. \
+         The IV orchestrator runs `loom check integration-verify`; it carries the COMPLETE suite \
+         (every acceptance criterion the plan gives this stage: the project's own build, test, lint and format commands, in whatever language it uses). Read all \
+         stderr per immutable tree, environment, and criterion contract. Give reviewers the check summaries \
+         and evidence pointers. Reviewers inspect independently and run `loom check integration-verify` \
+         themselves, with `--criterion <n>` as needed. On one tree the first request runs; a covered \
+         request joins it; an uncovered one from the same session waits and runs with the other waiting selections, so its verdict can list criteria it did not select; later requests hit the pass cache. Add targeted checks; those are additional \
+         evidence, never a substitute for the canonical gate. Record command, real exit, criterion verdict, \
+         input/contract identity, elapsed time, and an evidence pointer when available. A missing receipt \
+         means run the check. After fixes the orchestrator re-evaluates invalidated checks; only the repaired \
+         criteria cache decides reuse, and stale evidence never waives a failing gate.\n\n";
 
 /// Stable prefix for integration-verify stages (final quality gate)
 pub fn generate_integration_verify_stable_prefix() -> String {
@@ -149,7 +147,6 @@ pub fn generate_integration_verify_stable_prefix() -> String {
 
     append_execution_rules_header(&mut content);
     content.push_str(LOAD_ORCHESTRATION_SKILL);
-    append_no_verify_block(&mut content);
     content.push_str(INTEGRATION_VERIFY_OVERRIDE);
     append_subagent_ceiling_block(&mut content);
 
@@ -213,7 +210,7 @@ pub fn generate_knowledge_distill_stable_prefix() -> String {
     content.push_str("   - `stack` — new dependencies, tooling changes\n");
     content.push_str("   - `concerns` — tech debt introduced, known issues\n");
     content.push_str("   **Tier routing:** tier-1 files are summaries, not archives. A section under ~40 lines goes inline; a longer one goes to a topic file (`loom knowledge update <category>/<slug> \"...\"`) with a 2-4 line summary plus link left behind. `INDEX.md` is regenerated automatically on every `loom knowledge update` — there is NO index step to run, so finish with your last write.\n");
-    content.push_str("6. DO NOT blindly copy memory entries — synthesize and curate\n");
+    content.push_str("6. DO NOT blindly copy memory entries — synthesize and curate\n   **No personal data:** memories often quote tool output. Before each write, replace usernames, email addresses, home directories and other machine-specific absolute paths (`/home/<user>/...`, `/tmp/claude-<uid>/...` scratch paths), private project names, hostnames and secrets with repository-relative paths or placeholders (`/home/user/...`). A section already in the tree that carries any of them is stale: correct it with `replace-section` in the corrections pass.\n");
     content.push_str("7. **CORRECTIONS PASS — run it BEFORE the step-5 writes.** Sweep `loom memory show --all` for entries starting `stale-knowledge:` and apply EVERY one, plus anything else you find stale. An unapplied `stale-knowledge:` memory is a correction LOST when this plan completes, and the falsehood is quoted into every later Knowledge Brief. Correct IN PLACE with `loom knowledge replace-section <file> \"<heading>\" \"<corrected body>\"` (body WITHOUT its `## ` heading line) — never `loom knowledge update`, which APPENDS. When no heading matches, `replace-section` appends and SAYS so: read that line, or the stale text is still standing. While in a section, also rewrite any history you find there — dated headings, \"was\"/\"used to\" language, a change log — into current-state text with `replace-section`; move the lesson to a `mistakes` topic when it carries one, and leave the current-state entry linking to it instead of retelling it.\n");
     content.push_str("8. **RECEIPT PROTOCOL — every memory event gets exactly one outcome:**\n");
     content.push_str("   a. `loom memory show --all --json` to get every entry's id.\n");
@@ -267,7 +264,7 @@ pub fn generate_knowledge_stable_prefix() -> String {
     append_settled_completion_rules(&mut content);
     append_knowledge_commit_bullet(&mut content);
     content.push_str(CONTEXT_CEILING_HANDOFF);
-    content.push_str("- **Run `loom stage complete <stage-id>`** when done (from the repo root); on `requested`/`pending`/`stopped` (exit 4) run it again\n");
+    content.push_str("- **Run `loom stage complete <stage-id>`** when done (from the repo root); on `requested`/`pending`/`stopped` (exit 4) run it again. Run it alone; at most `2>&1 | tail -N` may follow it.\n");
     content.push_str("- **If `Host job:` reads `failed`, `rejected` or `refused`**: fix, commit, run it again\n\n");
 
     // Knowledge-specific commands
@@ -317,7 +314,7 @@ mod tests {
         let hash1 = compute_hash(content);
         let hash2 = compute_hash(content);
         assert_eq!(hash1, hash2);
-        assert_eq!(hash1.len(), 16);
+        assert_eq!(hash1, "6ae8a75555209fd6");
     }
 
     #[test]
@@ -378,7 +375,7 @@ mod tests {
         assert!(prefix.contains("loom knowledge context --stage"));
         // Subagent no-verify rule (implementation stages do not verify their own work)
         assert!(prefix.contains("VERIFICATION IS THE MAIN AGENT'S JOB - NOT YOURS"));
-        assert!(prefix.contains("AT MOST ONE narrowly-scoped check"));
+        assert!(prefix.contains("Run the tests for the code YOU wrote, and its module,"));
         // Subagent context-ceiling doctrine (BLOCK-D): hook-reported only, never inferred
         assert!(prefix.contains("CONTEXT CEILING - HOOK-REPORTED ONLY"));
         assert!(prefix.contains("SUBAGENT CEILING REACHED"));

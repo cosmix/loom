@@ -1,41 +1,26 @@
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 use tempfile::TempDir;
 
 use loom::models::stage::{Stage, StageStatus, StageType};
 use loom::verify::transitions::save_stage;
 
+#[path = "../test_support/mod.rs"]
+mod test_support;
+
+pub(crate) use test_support::git_repo::git;
+use test_support::git_repo::TestRepo;
+
 /// Build a real git repo on branch `main` with an initial commit. Returns the
 /// TempDir (callers keep it alive for the duration of the test).
 pub(crate) fn init_repo() -> TempDir {
     let tmp = TempDir::new().expect("tempdir");
-    let root = tmp.path();
-
-    run_git(&["init", "-b", "main"], root);
-    run_git(&["config", "user.email", "test@test.com"], root);
-    run_git(&["config", "user.name", "Test"], root);
-    fs::write(root.join("README.md"), "initial\n").expect("write README");
-    run_git(&["add", "README.md"], root);
-    run_git(&["commit", "-m", "initial"], root);
-    run_git(&["branch", "-M", "main"], root);
-
+    TestRepo::builder()
+        .identity("Test", "test@test.com")
+        .seed("README.md", "initial\n", "initial")
+        .init_in(tmp.path());
     tmp
-}
-
-pub(crate) fn run_git(args: &[&str], cwd: &Path) {
-    let out = Command::new("git")
-        .args(args)
-        .current_dir(cwd)
-        .output()
-        .unwrap_or_else(|e| panic!("failed to run git {args:?}: {e}"));
-    assert!(
-        out.status.success(),
-        "git {args:?} failed: stdout={} stderr={}",
-        String::from_utf8_lossy(&out.stdout),
-        String::from_utf8_lossy(&out.stderr)
-    );
 }
 
 /// Create a branch, add one commit, return the commit SHA. Leaves caller on `main`.
@@ -46,19 +31,14 @@ pub(crate) fn create_loom_branch_with_commit(
     repo_root: &Path,
 ) -> String {
     let branch = format!("loom/{stage_id}");
-    run_git(&["checkout", "-b", &branch], repo_root);
+    git(repo_root, &["checkout", "-b", &branch]);
     fs::write(repo_root.join(filename), content).expect("write file");
-    run_git(&["add", filename], repo_root);
-    run_git(&["commit", "-m", "stage work"], repo_root);
+    git(repo_root, &["add", filename]);
+    git(repo_root, &["commit", "-m", "stage work"]);
 
-    let out = Command::new("git")
-        .args(["rev-parse", "HEAD"])
-        .current_dir(repo_root)
-        .output()
-        .unwrap();
-    let sha = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    let sha = git(repo_root, &["rev-parse", "HEAD"]);
 
-    run_git(&["checkout", "main"], repo_root);
+    git(repo_root, &["checkout", "main"]);
     sha
 }
 

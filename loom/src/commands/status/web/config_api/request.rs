@@ -1,20 +1,24 @@
 //! HTTP handling for `/api/config`: the gates a write must clear, and the
 //! responses both methods write.
 //!
-//! The gate order is deliberate. `Host` is already behind us — `connection`
-//! applies it to every request ahead of routing — so this runs `Origin`, then
-//! the dashboard cookie (remote posture only), then the CSRF token, then the
-//! framing checks. The access gates come first so a request that has no
-//! business writing is refused before the server reads a byte of its body.
+//! The gate order is deliberate. `Host` is already behind us —
+//! `web_server::serve` applies it to every request ahead of routing — so this
+//! runs `Origin`, then the dashboard cookie (remote posture only), then the
+//! CSRF token, then the framing checks. The access gates come first so a
+//! request that has no business writing is refused before the server reads a
+//! byte of its body.
 //! Reads stay open: a remote bind lets anyone who reaches it view the
 //! settings, and only writing asks for the cookie.
 
 use std::net::{SocketAddr, TcpStream};
 use std::path::Path;
+use std::sync::atomic::Ordering;
 
-use super::super::access::{AccessPolicy, OriginRequirement};
-use super::super::connection::{drain_pending, respond};
-use super::super::http::{self, RequestHead};
+use crate::web_server::access::{AccessPolicy, OriginRequirement};
+use crate::web_server::connection::{drain_pending, respond};
+use crate::web_server::http::{self, RequestHead};
+use crate::web_server::ConnInfo;
+
 use super::{csrf, error_body};
 
 /// The JSON content type every response on this route carries.
@@ -73,16 +77,30 @@ pub(in crate::commands::status::web) fn handle_post(
     head: &RequestHead,
     prefix: Vec<u8>,
     base: &Path,
-    policy: &AccessPolicy,
-    local: SocketAddr,
+    conn: &ConnInfo<'_>,
 ) {
-    let (status, reason, body) = match gate(head, policy, local) {
+    handle_post_with_update(stream, head, prefix, base, conn, super::update);
+}
+
+fn handle_post_with_update(
+    stream: &mut TcpStream,
+    head: &RequestHead,
+    prefix: Vec<u8>,
+    base: &Path,
+    conn: &ConnInfo<'_>,
+    update: impl FnOnce(&Path, &[u8]) -> (u16, String),
+) {
+    let (status, reason, body) = match gate(head, conn.policy, conn.local) {
         Err(Rejection(status, reason, body)) => (status, reason, body),
-        Ok(length) => match http::read_body(stream, prefix, length) {
-            Ok(body) => {
-                let (status, body) = super::update(base, &body);
+        Ok(length) => match http::read_body(stream, prefix, length, conn.running) {
+            Ok(body) if conn.running.load(Ordering::SeqCst) => {
+                // This load admits the mutation. The connection owns its slot
+                // and server resources until update finishes, including when
+                // bounded shutdown reports ShutdownPending to its caller.
+                let (status, body) = update(base, &body);
                 (status, reason_for(status), body)
             }
+            Ok(_) => (503, "Service Unavailable", error_body("server stopping")),
             Err(error) => {
                 tracing::debug!("dashboard could not read a config request body: {error}");
                 (400, "Bad Request", error_body("incomplete request body"))
@@ -97,6 +115,10 @@ pub(in crate::commands::status::web) fn handle_post(
     drain_pending(stream);
     let _ = http::write_response(stream, status, reason, JSON, body.as_bytes(), true);
 }
+
+#[cfg(test)]
+#[path = "request_lifecycle_tests.rs"]
+mod lifecycle_tests;
 
 /// Check every gate a write must clear, yielding the body length to read.
 fn gate(head: &RequestHead, policy: &AccessPolicy, local: SocketAddr) -> Result<usize, Rejection> {
@@ -146,12 +168,7 @@ fn length(head: &RequestHead) -> Result<usize, Rejection> {
             error_body("Content-Length is required"),
         ));
     };
-    // Digits only, per RFC 9110 section 8.6: `parse` alone would accept `+8`
-    // and surrounding whitespace, and a length this server reads differently
-    // from whatever wrote it is the shape request smuggling takes.
-    let declared = declared.trim();
-    let numeric = !declared.is_empty() && declared.bytes().all(|byte| byte.is_ascii_digit());
-    let Some(length) = numeric.then(|| declared.parse::<usize>().ok()).flatten() else {
+    let Some(length) = http::parse_content_length(declared) else {
         return Err(Rejection(
             400,
             "Bad Request",

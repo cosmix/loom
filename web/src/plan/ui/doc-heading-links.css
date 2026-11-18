@@ -1,0 +1,132 @@
+/*
+ * The document heading's link chips and its facts rows (`doc-heading-parts.tsx`), over the shared
+ * scales of design.css. Unlayered, as doc-heading.css is. A summary page lays the facts out as rows
+ * of its ledger (trace/trace-heading.css).
+ */
+
+/* ── Link chips ───────────────────────────────────────────────────────────── */
+
+/* A chip's links (the sections a plan implements, the plans that build a section), each a small
+   chip on a `--muted` fill with no edge, so it reads the same on the page ground and inside the
+   status card (DESIGN.md, Do not: no bordered control inside a bordered card). A number leads in
+   muted tabular figures, the title follows in `--foreground`, and a plan's state closes the chip
+   after a hairline: its toned glyph and its word. A chip with nowhere to go (a section that does
+   not exist, "Not stated") is muted on a dashed edge with no fill. */
+.doc-heading-links {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  min-width: 0;
+  vertical-align: top;
+}
+
+.doc-heading-links__item {
+  display: inline-flex;
+  min-width: 0;
+}
+
+.doc-heading-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  min-height: 26px;
+  padding: 2px var(--space-2);
+  border: 1px solid transparent;
+  border-radius: var(--corner-control);
+  background: var(--muted);
+  color: var(--foreground);
+  font-size: var(--type-ui);
+  font-weight: 500;
+  line-height: 20px;
+  text-decoration: none;
+  transition: background-color 120ms;
+}
+
+span.doc-heading-link {
+  border: 1px dashed var(--border);
+  background: transparent;
+  color: var(--muted-foreground);
+}
+
+a.doc-heading-link:hover {
+  background: color-mix(in oklch, var(--foreground) 8%, var(--muted));
+}
+
+a.doc-heading-link:hover .doc-heading-link__name,
+a.doc-heading-link:hover .doc-heading-link__label:not([data-lead]) {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.doc-heading-link__label {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.doc-heading-link__label[data-lead] {
+  color: var(--muted-foreground);
+}
+
+.doc-heading-link__name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.doc-heading-link__state {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-1);
+  margin-inline-start: 2px;
+  padding-inline-start: var(--space-2);
+  border-inline-start: 1px solid var(--border);
+  color: var(--muted-foreground);
+  font-size: var(--type-fine);
+  white-space: nowrap;
+}
+
+.doc-heading-link__glyph {
+  display: inline-flex;
+}
+
+.doc-heading-link__glyph svg {
+  width: 12px;
+  height: 12px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .doc-heading-link {
+    transition: none;
+  }
+}
+
+/* ── Facts ────────────────────────────────────────────────────────────────── */
+
+/* What the document relates to, one labelled row per relation: the label in the eyebrow style
+   ("Implements", "Built by"), then its link chips, wrapping under each other on the values' own
+   left edge. */
+.doc-heading-facts {
+  display: grid;
+  min-width: 0;
+  margin: 0;
+  padding-inline: var(--space-3);
+}
+
+.doc-heading-fact {
+  display: grid;
+  grid-template-columns: 6.5rem minmax(0, 1fr);
+  column-gap: var(--space-3);
+  align-items: start;
+  min-width: 0;
+  padding-block: var(--space-1);
+}
+
+.doc-heading-fact > dt {
+  line-height: 26px;
+}
+
+.doc-heading-fact > dd {
+  min-width: 0;
+  margin: 0;
+}

@@ -1,35 +1,32 @@
 //! End-to-end cache-input eligibility and stability tests.
 
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::time::Duration;
 
 use serial_test::serial;
 use tempfile::TempDir;
 
 use crate::models::stage::{AcceptanceCriterion, Stage, TruthCheck};
+use crate::test_git::{git, TestRepo};
 use crate::verify::criteria::executor::OUTPUT_TRUNCATED_MARKER;
 use crate::verify::criteria::{run_acceptance_with_config, CachePolicy, CriteriaConfig};
 
-const TEST_IDENTITY: &[&str] = &["-c", "user.name=Test", "-c", "user.email=test@example.com"];
-
 struct InputFixture {
-    repo: TempDir,
+    repo: TestRepo,
     cache: TempDir,
     marker: PathBuf,
 }
 
 impl InputFixture {
     fn new(script_body: &str) -> Self {
-        let repo = TempDir::new().unwrap();
+        let repo = TestRepo::builder().no_seed().create();
         let cache = TempDir::new().unwrap();
         let marker = repo.path().join(".git/executions.log");
-        git(&["init", "-q"], repo.path());
         std::fs::create_dir_all(repo.path().join("scripts")).unwrap();
         write_probe(repo.path(), &marker, script_body);
         std::fs::write(repo.path().join("source.txt"), "source\n").unwrap();
-        git(&["add", "scripts/probe.sh", "source.txt"], repo.path());
-        git(&["commit", "-q", "-m", "fixture"], repo.path());
+        git(repo.path(), &["add", "scripts/probe.sh", "source.txt"]);
+        git(repo.path(), &["commit", "-q", "-m", "fixture"]);
         Self {
             repo,
             cache,
@@ -66,17 +63,6 @@ fn write_probe(repo: &Path, marker: &Path, body: &str) {
     std::fs::write(repo.join("scripts/probe.sh"), content).unwrap();
 }
 
-fn git(args: &[&str], dir: &Path) {
-    let mut full = TEST_IDENTITY.to_vec();
-    full.extend_from_slice(args);
-    let status = Command::new("git")
-        .args(&full)
-        .current_dir(dir)
-        .status()
-        .unwrap();
-    assert!(status.success(), "git {args:?} failed in {}", dir.display());
-}
-
 fn extended(command: &str, required: &str) -> Stage {
     let mut stage = Stage::new("input-cache-test".to_string(), None);
     stage.add_acceptance_criterion(AcceptanceCriterion::Extended(TruthCheck {
@@ -98,6 +84,53 @@ fn with_counter_setup(mut stage: Stage) -> Stage {
 
 fn run(fixture: &InputFixture, stage: &Stage) -> crate::verify::criteria::AcceptanceResult {
     run_acceptance_with_config(stage, Some(fixture.repo.path()), &fixture.config()).unwrap()
+}
+
+#[test]
+#[serial]
+fn quoted_ignored_input_with_stdout_assertion_reexecutes_after_change() {
+    let fixture = InputFixture::new("true");
+    std::fs::write(fixture.repo.path().join(".gitignore"), "ignored data.txt\n").unwrap();
+    let ignored = fixture.repo.path().join("ignored data.txt");
+    std::fs::write(&ignored, "expected\n").unwrap();
+    let stage = extended("cat 'ignored data.txt'", "expected");
+
+    let first = run(&fixture, &stage);
+    std::fs::write(&ignored, "changed\n").unwrap();
+    let changed = run(&fixture, &stage);
+
+    assert!(first.all_passed());
+    assert!(!changed.all_passed());
+    assert!(!first.results()[0].cached && !changed.results()[0].cached);
+    assert_eq!(fixture.cache_records(), 0);
+}
+
+/// An adapter's selector is part of the command, so changing a substring selector
+/// to an exact one runs the exact one. An anchored regex holds `$`, which
+/// `is_cacheable` refuses outright; an exact flag gets a record of its own.
+#[test]
+#[serial]
+fn a_changed_selector_command_does_not_reuse_the_earlier_pass() {
+    let fixture = InputFixture::new("true");
+    let broad = extended("sh scripts/probe.sh -t 'rejects input'", "");
+    let anchored = extended("sh scripts/probe.sh -t '^rejects input$'", "");
+    let flagged = extended("sh scripts/probe.sh --exact 'rejects input'", "");
+
+    let first = run(&fixture, &broad);
+    let replay = run(&fixture, &broad);
+    assert!(first.all_passed() && !first.results()[0].cached);
+    assert!(replay.results()[0].cached, "the fixture must prove a hit");
+    assert_eq!(fixture.executions(), 1);
+
+    for (selector, executions, records) in [(&anchored, 2, 1), (&flagged, 3, 2)] {
+        let selected = run(&fixture, selector);
+        assert!(selected.all_passed());
+        assert!(!selected.results()[0].cached);
+        assert_eq!(fixture.executions(), executions);
+        assert_eq!(fixture.cache_records(), records);
+    }
+    assert!(run(&fixture, &flagged).results()[0].cached);
+    assert_eq!(fixture.executions(), 3);
 }
 
 #[test]
@@ -156,8 +189,8 @@ fn untracked_content_hit_has_neighboring_byte_mutation_miss() {
 fn ignored_and_external_inputs_bypass_and_reexecute_after_mutation() {
     let fixture = InputFixture::new(":");
     std::fs::write(fixture.repo.path().join(".gitignore"), "ignored.dat\n").unwrap();
-    git(&["add", ".gitignore"], fixture.repo.path());
-    git(&["commit", "-q", "-m", "ignore"], fixture.repo.path());
+    git(fixture.repo.path(), &["add", ".gitignore"]);
+    git(fixture.repo.path(), &["commit", "-q", "-m", "ignore"]);
     let ignored = fixture.repo.path().join("ignored.dat");
     std::fs::write(&ignored, "alpha").unwrap();
     let ignored_stage = with_counter_setup(extended("cat ignored.dat", "alpha"));
@@ -195,10 +228,10 @@ fn tracked_source_symlink_change_bypasses_and_reexecutes() {
     std::fs::write(fixture.repo.path().join("bravo.dat"), "bravo").unwrap();
     symlink("alpha.dat", fixture.repo.path().join("source.link")).unwrap();
     git(
-        &["add", "alpha.dat", "bravo.dat", "source.link"],
         fixture.repo.path(),
+        &["add", "alpha.dat", "bravo.dat", "source.link"],
     );
-    git(&["commit", "-q", "-m", "symlink"], fixture.repo.path());
+    git(fixture.repo.path(), &["commit", "-q", "-m", "symlink"]);
     let stage = with_counter_setup(extended("cat source.link", "alpha"));
     let first = run(&fixture, &stage);
     std::fs::remove_file(fixture.repo.path().join("source.link")).unwrap();

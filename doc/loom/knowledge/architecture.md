@@ -1,6 +1,6 @@
 # Architecture
 
-> Components, data flow, modules
+> Components and data flow
 >
 > **Related files:** [patterns.md](patterns.md) for design patterns, [entry-points.md](entry-points.md) for code navigation, [conventions.md](conventions.md) for coding standards.
 
@@ -68,17 +68,9 @@ Four verification layers; **`truths` is NOT one of them** — merged into accept
 
 → [Plan Lifecycle & Fields § Goal-Backward Verification](architecture/plan-lifecycle-and-fields.md)
 
-## Per-Worktree Gitignore for settings.local.json
-
-→ [Worktree Isolation & Security § Per-Worktree Gitignore](architecture/security-and-isolation.md)
-
-## Claude Code Worktree Isolation Disabled in Generated Settings
-
-→ [Worktree Isolation & Security § Claude Code Worktree Isolation Disabled](architecture/security-and-isolation.md)
-
 ## Hook System Architecture (loom-hooks/)
 
-The `loom-hooks/` scripts, how they are embedded and installed, the SessionStart `hookSpecificOutput` contract, and the enforcement layers that keep subagents inside their lane (`commit-filter.sh`, `subagent-verify-guard.sh`, the worktree guards).
+The `loom-hooks/` scripts, how they are embedded and installed, the SessionStart `hookSpecificOutput` contract, and the enforcement layers that keep subagents inside their lane (`commit-filter.sh`, `subagent-verify-guard.sh`, the worktree guards). The guards resolve paths physically against a tracked cwd (`_containment.sh`) and record their blocks in a per-stage ledger read by `loom hook blocks`.
 
 → [Hook System](architecture/hook-system.md)
 
@@ -106,7 +98,7 @@ Where every `loom status` field comes from, the 13 `StageStatus` variants, and w
 
 ## Adjudication Persistence and Stage Resumption [DETAILED]
 
-Durable artifact chain under `.loom/work/disputes/`, materialization into stage state, and what a fresh successor session receives.
+Durable artifact chain under `.loom/work/disputes/`, materialization into stage state, and what a fresh successor session receives. An accepted integrity or impact-tests dispute, or a findings ruling that upholds nothing, holds the stage with no session and the daemon finishes a passing committed tree through `JobKind::VerdictComplete`.
 
 → [Adjudication Persistence and Stage Resumption](architecture/adjudication-lifecycle.md)
 
@@ -134,7 +126,7 @@ Also covers `load_stage_definition_from_plan` — the centralized plan lookup.
 
 ## `loom pressure` Command (Plan Pressure-Testing Driver)
 
-→ [Remote Control Module § loom pressure Command](architecture/remote-control.md)
+`loom pressure` and the planning app's pressure run share one pipeline, `loom::pressure::run_pipeline`, with a `PressureDriver` per surface (terminal, app). The record rules, drivers, stop and recovery rules: [Pressure](architecture/pressure.md). The terminal command's own design: [Remote Control Module § loom pressure Command](architecture/remote-control.md). The execution handoff lane (start, commit, abandon, dashboard child, run strip): [Run Handoff](architecture/run-handoff.md).
 
 ## Tiered Knowledge Base (`fs/knowledge/`, `commands/knowledge/`)
 
@@ -168,7 +160,7 @@ Foreground fan-out verified safe to 6 concurrent codex-companion tasks; backgrou
 
 ## Terminal Backends: SessionBackend / TmuxBackend [DETAILED]
 
-`SessionBackend` dispatches every spawn/kill/liveness call to a `Native` or opt-in `Tmux` lane, recorded on `Session.backend`.
+`SessionBackend` dispatches every spawn/kill/liveness call to a `Tmux` (default) or opt-in `Native` lane, recorded on `Session.backend`.
 
 → [Terminal Backends](architecture/terminal-backends.md)
 
@@ -180,20 +172,16 @@ Full detail: [architecture/context-retrieval.md](architecture/context-retrieval.
 
 ## Source Graph (`loom/src/context/source_graph/`, `context/extract/`)
 
-A derived tree-sitter graph of the repo's own source over twelve dialects in three grammar packs, with
-two live consumers: `loom map` and the `Source` retrieval channel, ranked by `context::rank_source` and
-fused into the same `ContextPack` as knowledge chunks. Its defining property is an explicit honesty
-contract: every edge carries one of seven evidence classes with a named confidence constant, sites and
-(when ambiguous) a bounded candidate set, cross-file binding refuses rather than guesses, and no file is
-ever silently omitted: a degraded file is reported as degraded. A persisted resolved view keeps queries
-cheap, and its incremental relink is proven equal to a cold build.
+A derived tree-sitter graph of the repo's own source over twelve dialects in three grammar packs, read by `loom map`
+and the `Source` retrieval channel (`context::rank_source`, fused into the same `ContextPack` as knowledge chunks).
+Every edge carries one of seven evidence classes with a named confidence constant, cross-file binding refuses rather
+than guesses, and a degraded file is reported, never omitted. A persisted resolved view keeps queries cheap and its
+incremental relink is proven equal to a cold build.
 
-- Contract, extractors and dialects, identity, cache and coverage: [source-graph](architecture/source-graph.md)
-- Local binding, resolver rules 1 to 7, path conventions: [source-graph-resolution](architecture/source-graph-resolution.md)
-- Builder, freshness states, the reconcile lease: [source-graph-build](architecture/source-graph-build.md)
-- Resolved view, persistence, relink equivalence: [source-graph-view](architecture/source-graph-view.md)
-- Census, source windows, edge-quality evaluator: [source-graph-evaluation](architecture/source-graph-evaluation.md)
-- Intent routing, explained neighbours, caveats, windows: [context-retrieval-routing](architecture/context-retrieval-routing.md)
+Topics: [source-graph](architecture/source-graph.md) (contract, extractors, cache),
+[resolution](architecture/source-graph-resolution.md) (binding rules 1 to 7), [build](architecture/source-graph-build.md)
+(freshness, lease), [view](architecture/source-graph-view.md) (relink), [evaluation](architecture/source-graph-evaluation.md)
+(census, windows), [routing](architecture/context-retrieval-routing.md) (intent routing, neighbours).
 
 ## Execution Containment (`loom/src/verify/criteria/confine.rs`)
 
@@ -221,13 +209,13 @@ A daemon thread (`loom/src/quota/poller.rs`) polls the Claude OAuth usage endpoi
 
 ## Web Dashboard
 
-`loom status --web [PORT] [--host HOST]` serves an embedded React SPA over HTTP/WebSocket, streaming the same `StatusData` the live TUI renders. Viewing routes remain public on remote binds; the startup token protects configuration writes and terminal access (`loom/src/commands/status/web/connection.rs::gate`).
+`loom status --web [PORT] [--host HOST]` serves an embedded React SPA over HTTP/WebSocket, streaming the same `StatusData` the live TUI renders, on the shared `loom/src/web_server/` transport. Viewing routes remain public on remote binds; the startup token protects configuration writes and terminal access (`web_server::serve` runs the `Host` gate, `config_api/request.rs` and `terminal/upgrade.rs::admit` check the cookie). Bare `loom plan` serves the planning app from `loom/src/plan_server/` on the same transport (per-project lock, cookie pair, typed WebSocket, authoring holder, two-signal shutdown) and file mode (document tree, documents, diffs, saves, validation, search): [Plan Server](architecture/plan-server.md).
 
 → [Web Dashboard](architecture/web-dashboard.md)
 
 ## Token Accounting and Receipts [DETAILED]
 
-`loom usage` provider ledger and `--compare`, the certified criterion cache, the forward-receipt and worker-brief lifecycles, the read advisories, exact waits and their hook phases: [architecture/token-accounting-and-receipts.md](architecture/token-accounting-and-receipts.md). Partial reasons, Codex receipt scope and the `--run-evidence` producer: [architecture/usage-evidence.md](architecture/usage-evidence.md). Token usage sources (transcripts, rollouts, receipts, quota history): [architecture/token-flow-sources.md](architecture/token-flow-sources.md).
+`loom usage` provider ledger and `--compare`, the certified criterion cache, the forward-receipt and worker-brief lifecycles, exact waits and their hook phases: [architecture/token-accounting-and-receipts.md](architecture/token-accounting-and-receipts.md). The deny-once read gate and `[hooks] read_gate`: [architecture/read-gate.md](architecture/read-gate.md). The `loom usage` Attribution section: [architecture/read-gate.md](architecture/read-gate.md#the-attribution-section-of-loom-usage). The `loom ask` evaluation instrument (no agent may use it yet): [architecture/loom-ask.md](architecture/loom-ask.md). Partial reasons, Codex receipt scope and the `--run-evidence` producer: [architecture/usage-evidence.md](architecture/usage-evidence.md). Token usage sources (transcripts, rollouts, receipts, quota history): [architecture/token-flow-sources.md](architecture/token-flow-sources.md).
 
 ## Owned Subagent Waits
 
@@ -242,6 +230,17 @@ Typed value read-path replacing the old stringly `UserConfig::value_of`. See [Ty
 `loom.version: 2` turns on contracts (tests written and frozen by a separate `Contract` session before the
 implementer starts), the zero-test guard, wiring v2 and `reachable`, test integrity, impact-selected tests, and a
 recorded review gate, all read from `stage.plan_version == 2`. Disputes gain five kinds (findings, contract,
-integrity, impact tests, and the loom-filed freeze refusal). Rust contracts are proven compiled under their test name by the scaffold and chain check ([contract-collection](architecture/contract-collection.md)); a refused freeze goes to adjudication, never to the operator. Detail: [contract-phase](architecture/contract-phase.md), [verification-v2-gates](architecture/verification-v2-gates.md),
+integrity, impact tests, and the loom-filed freeze refusal). Rust contracts are proven compiled under their test name by the scaffold and chain check ([contract-collection](architecture/contract-collection.md)); a refused freeze goes to adjudication, never to the operator. The contract writer names each test (and a runner or directory the plan left open) at freeze, and the freeze runs the stage's formatters, lints and `rg` checks on the writer's files, returning a failure that names a writer file to the live writer session ([contract-phase](architecture/contract-phase.md#writer-chosen-contract-details)). The integrity gate compares assertion statements, cancels tests moved to a collected file and raises a ratchet event only when a ledger loosens; `loom hook reviewer-brief` hands every reviewer the stage's events ([hook-system](architecture/hook-system.md#reviewer-brief-hook-loom-hook-reviewer-brief)). `loom plan verify --dry-run` runs every criterion at the base tree, and `consumer_deferred` replaces an invented wiring check. Detail: [contract-phase](architecture/contract-phase.md), [verification-v2-gates](architecture/verification-v2-gates.md),
 [test-runner-adapters](architecture/test-runner-adapters.md), [plan fields and lints, provision, freeze formatter gate](architecture/plan-lifecycle-and-fields.md),
 [adjudication-lifecycle](architecture/adjudication-lifecycle.md).
+
+## Planning Document Model (`planning/`, `commands/plan/check.rs`)
+
+`loom::planning` models a project's `doc/` tree as features (`doc/product/<feature>/`, `doc/plans/<feature>/`) plus standalone plans: kinds and ids, plan slugs (most advanced state wins), heading anchors and span hashes, the locked set, the polling watcher with `OwnWrites`, the runtime directory, and the checklist behind `loom plan check` (exit 0 clean, 1 problems, 2 cannot check). → [Planning Document Model](architecture/planning-document-model.md)
+`planning/summary/` keeps sentence-level summaries of product sections, plans and each feature's two overviews in `doc/loom/summaries/`; each sentence cites its source by hash (a plan summary also cites the plan's brief bundle and records each brief's hash under `bundle`), so every summary evaluates `current`, `stale`, `incomplete`, `rebuilding` or `missing`, and `loom plan summary brief|seal|status|release` claims, validates and writes them under one store lock. The planning server also rebuilds stale and missing summaries itself, after their sources stay unchanged for 5 minutes: a pure scheduler (up to 5 without asking, else one question), one summary session at a time, and an append-only cost ledger behind the panel's estimates and totals. → [Summary Store](architecture/summary-store.md#rebuilds-and-cost) Claude Code or Codex builds them (`plan.summary_backend`): → [Summary Backends](architecture/summary-store.md#summary-backends-claude-and-codex)
+Concept mode (`plan_server/concept/`, `web/src/plan/concept/`) serves the reading views (the product overview, document summaries, and the metaplan page as the Plans home): the server resolves each page and drives plan 4's engine from the watcher, the browser renders it, opens sentences down to source passages and carries open runs across rebuilds by the source sections they rest on. → [Plan Server](architecture/plan-server.md#page-route-and-page-model) The review loop (`plan_server/review/`: restore through the save path with pinned text, suggestions to the authoring holder, ref compare, built notes) and the chat panel (`web/src/plan/chat/`, `web/src/plan/review/`) are in [Plan Server](architecture/plan-server.md#review-loop-server). The app bar, home, reading column, chat home and panel, and help: → [Planner Web Shell and Screens](architecture/planner-web-shell.md) A feature's layout route, spine, offer ownership, Pressure and Run pages and the six-step wire: → [Planner Feature Screens](architecture/planner-feature-screens.md) The planning trace (`planning/trace/`, `planning/findings/`, `plan_server/trace/`, `web/src/plan/trace/`) links a feature's documents by plain edge lines (`Covers:`, `Implements:` with heading anchors, `Implements (stage:<id>):`, `About:`), records a reader's settle decision as a `Settled:` line with body, stub and upstream hashes, derives per-document settle states, coverage gaps and a five-hint frontier, and keeps a findings ledger (`doc/plans/<f>/findings.md`) fed from run reviews. The server serves it at `GET /api/trace/<feature>`, `POST /api/settle`, `POST /api/settle-all`, `POST /api/findings/status` and `GET /api/settled-version`, and announces changes with `trace_changed`; the browser draws settle controls, edge chips, a Coverage page and a Findings page. Settling answers at once and commits the settled files afterwards on a queued worker with the user's own git hooks. → [Settle Commits](architecture/planning-trace.md#settle-commits) It is separate from the `loom map` source graph. → [Planning Trace](architecture/planning-trace.md)
+Planning sessions run under `plan_session::sandbox::write_session_sandbox`'s `settings.json` and `guard.json`: OS write/read denies, `Edit(//...)` rules and a `loom plan hook PreToolUse` guard that denies or stays silent, never `allow`. → [Planning Session Sandbox](architecture/planning-session-sandbox.md). The bridge starts each session in its own tmux server (`loom-plan-<12 hex>`), reads the hook spool and transcript, runs the state machine, delivers chat input only while Idle, answers permission requests through answer files and ends or recovers sessions. → [Planning Session Bridge](architecture/planning-session-bridge.md) The bridge also keeps a per-session background-task table that ends a task only on evidence and gates the close (→ [Background tasks](architecture/planning-session-bridge.md#background-tasks-in-the-planner-chat)), and a slash-command table (native rows plus a side process's list) that decides which `/` messages the chat sends (→ [Slash commands and skills](architecture/plan-server.md#slash-commands-and-skills-in-the-planner-chat)). Planning sessions are told what to do by a per-session `loom-plan` plugin and brief: `plan-plugin/` (skills and agents, embedded as `PLAN_PLUGIN`) plus `commands/pressure.md` and `commands/address.md` rendered from `CLAUDE_COMMANDS` are written into `<session dir>/plugin/` by `planning::guidance::render_session_guidance`, with agent `model`/`effort` frontmatter filled from the `[plan]` keys; `plan_server::guidance` installs the provider and serves `GET /api/session/brief`. → [Planning Session Guidance](architecture/planning-guidance.md) Kickoff (`/new`) and draft-all team sessions stay `SessionKind::Authoring`; a per-session `scope.json` (`plan_session/scope.rs`) limits the files they may write, and the browser holds features in `projectAtom`. → [Planner Kickoff, Draft-All Teams and the Feature Web Model](architecture/planning-session-bridge.md#planner-kickoff-draft-all-teams-and-the-feature-web-model)
+
+## Native Codex Workers
+
+`codex.backend = native` runs a stage's Codex workers as host-owned records (`native_worker/`): a lead-only `loom subagents start` relay, daemon admission under the stage admission lock, one supervisor per worker running `codex app-server` in a bubblewrap pid-namespace boundary behind an allowlist CONNECT proxy, and one `index::stage_disposition` that every reset, retry, skip, commit, verification and completion gate calls. Linux only; native is the default, `codex.backend = legacy` selects the forwarder lane. Detail: [native-codex-workers](architecture/native-codex-workers.md); open gaps: [native-codex-qualification](concerns/native-codex-qualification.md).

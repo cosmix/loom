@@ -1,4 +1,5 @@
 use super::*;
+use std::os::unix::fs::PermissionsExt;
 use tempfile::TempDir;
 
 mod git_marker_bound;
@@ -8,7 +9,7 @@ mod git_marker_bound;
 /// [`crate::user_config::redirect_user_config`]. Does not touch `$HOME` — the
 /// redirect is a per-thread seam inside `user_config`, not an env var, so
 /// this needs no directory layout beyond "a file somewhere in `temp`".
-fn write_user_config(temp: &TempDir, body: &str) -> PathBuf {
+pub(super) fn write_user_config(temp: &TempDir, body: &str) -> PathBuf {
     let path = temp.path().join("user-config.toml");
     fs::write(&path, body).unwrap();
     path
@@ -202,13 +203,9 @@ fn test_workdir_new_falls_back_when_no_work_dir() {
     let subdir = project_root.join("some/nested/dir");
     fs::create_dir_all(&subdir).unwrap();
 
-    // WorkDir::new should fall back to subdir/.loom/work
     let work_dir = WorkDir::new(&subdir).unwrap();
-    assert_eq!(
-        work_dir.root(),
-        subdir.join(".loom").join("work"),
-        "Without a workspace anywhere, should fall back to base_path/.loom/work"
-    );
+    let repo_state = project_root.canonicalize().unwrap().join(".loom/work");
+    assert_eq!(work_dir.root(), repo_state);
     assert_eq!(work_dir.layout(), Layout::Nested);
 }
 
@@ -233,10 +230,9 @@ fn test_workdir_new_legacy_hint_naming_work_dir_resolves_to_itself() {
 
 // ----- Centralized config.toml API tests -----
 
-use crate::models::session::TerminalConfig;
-use crate::plan::schema::SandboxConfig;
+use crate::{models::session::TerminalConfig, plan::schema::SandboxConfig};
 
-fn init_work(temp: &TempDir) -> PathBuf {
+pub(super) fn init_work(temp: &TempDir) -> PathBuf {
     let work = temp.path().join(".loom").join("work");
     fs::create_dir_all(&work).unwrap();
     work
@@ -315,7 +311,7 @@ fn read_terminal_config_defaults_when_section_missing() {
     assert_eq!(config, TerminalConfig::default());
     assert_eq!(
         config.backend,
-        crate::models::session::SessionBackendKind::Native
+        crate::models::session::SessionBackendKind::Tmux
     );
 }
 
@@ -680,7 +676,7 @@ mod resolver {
         let wd = WorkDir::new(&inner).unwrap();
         assert_eq!(
             wd.root(),
-            inner.join(".loom").join("work"),
+            repo.canonicalize().unwrap().join(".loom").join("work"),
             "a workspace above the repo root must not be adopted from inside it"
         );
     }

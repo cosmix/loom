@@ -1,0 +1,93 @@
+//! Holder confirmation of the kickoff's one creation grant.
+
+use super::dispatch::{bridge, chat_state, checked, remember_holder, Outcome, NO_CHAT};
+use super::{draft_cmd, lock};
+use crate::plan_server::authoring::Take;
+use crate::plan_server::context::PlanContext;
+use crate::plan_server::ids::ConnCtx;
+use crate::plan_server::wire::message::PlanMessage;
+use crate::plan_session::bridge::Bridge;
+use crate::plan_session::kind::SessionDir;
+use crate::plan_session::scope::{self, ArmRefusal, ArmedTarget, KickoffSize};
+
+pub(super) fn confirm(ctx: &PlanContext, conn: &ConnCtx, size: KickoffSize, name: &str) -> Outcome {
+    draft_cmd::writable(ctx)?;
+    let (bridge, state) = (bridge(ctx)?, chat_state(ctx)?);
+    // Scope arming is a read/replace operation: serialize competing confirmations.
+    let _starting = state.starting();
+    ctx.require_authoring(&conn.browser, Take::HolderOnly)
+        .map_err(|refusal| ctx.refusal_message(&refusal))?;
+    remember_holder(ctx, conn);
+    let id = bridge.chat_session_id().ok_or_else(|| NO_CHAT.to_owned())?;
+    let dir = SessionDir::new(ctx.runtime().sessions.join(&id));
+    let target = arm_and_send(ctx, &bridge, &dir, &id, size, name)?;
+    record_owner(&bridge, &id, size, name);
+    let document = target.document.to_string_lossy();
+    let view = lock(&state.kickoff).confirm(&id, &document);
+    if let Some(view) = view {
+        ctx.hub().broadcast(&PlanMessage::Kickoff(Box::new(view)));
+    }
+    draft_cmd::on_confirm(ctx, &state, &id, &document);
+    Ok(Vec::new())
+}
+
+fn arm_and_send(
+    ctx: &PlanContext,
+    bridge: &Bridge,
+    dir: &SessionDir,
+    id: &str,
+    size: KickoffSize,
+    name: &str,
+) -> Result<ArmedTarget, String> {
+    let message = checked(ctx, &confirmation(size, name), Vec::new())?;
+    let previous = scope::load(dir)
+        .map_err(|error| ArmRefusal::Unreadable(format!("{error:#}")).to_string())?;
+    let target =
+        scope::arm_kickoff(dir, ctx.root(), size, name).map_err(|refusal| refusal.to_string())?;
+    if let Err(error) = bridge.send(id, message.formatted, message.attachments) {
+        if let Err(rollback) = scope::write(dir, &previous) {
+            tracing::error!(session = %id, %rollback, "cannot roll back kickoff confirmation");
+        }
+        return Err(error.to_string());
+    }
+    Ok(target)
+}
+
+/// The confirmed name owns the session from here on, so it shows on that feature's or plan's
+/// screens and nowhere else. The grant is armed and sent by now: a session gone in between has
+/// nothing left to show.
+fn record_owner(bridge: &Bridge, id: &str, size: KickoffSize, name: &str) {
+    let name = Some(name.to_owned());
+    let (feature, plan) = match size {
+        KickoffSize::Feature => (name, None),
+        KickoffSize::Plan => (None, name),
+    };
+    if let Err(error) = bridge.set_owner(id, feature, plan) {
+        tracing::warn!(session = %id, %error, "cannot record the kickoff's owner");
+    }
+}
+
+fn confirmation(size: KickoffSize, name: &str) -> String {
+    let target = match size {
+        KickoffSize::Feature => ArmedTarget {
+            document: format!("doc/product/{name}/index.md").into(),
+            bundle: None,
+        },
+        KickoffSize::Plan => ArmedTarget {
+            document: format!("doc/plans/PLAN-{name}.md").into(),
+            bundle: Some(format!("doc/plans/briefs/{name}").into()),
+        },
+    };
+    let size = match size {
+        KickoffSize::Feature => "feature",
+        KickoffSize::Plan => "standalone plan",
+    };
+    let mut text = format!(
+        "The user confirmed the {size} \"{name}\" and asked you to write it now. You may now create {}",
+        target.document.display()
+    );
+    if let Some(bundle) = &target.bundle {
+        text.push_str(&format!(" and files inside {}/", bundle.display()));
+    }
+    text
+}

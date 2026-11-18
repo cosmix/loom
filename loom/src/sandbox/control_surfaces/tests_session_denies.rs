@@ -27,6 +27,21 @@ pub(super) fn has(list: &[String], item: &str) -> bool {
 }
 
 #[test]
+fn claude_code_temporary_directory_stays_writable() {
+    // Claude Code's Bash wrapper writes its cwd file under this directory, so
+    // a deny covering it makes every sandboxed command exit 1.
+    let denies = denies_for(NESTED, &[], None).unwrap();
+    for root in crate::models::forward_receipt::locator::default_task_output_roots() {
+        let root = root.to_str().unwrap();
+        for covering in ["/tmp", root] {
+            assert!(!has(&denies.deny_write, covering), "{denies:?}");
+            let rule = format!("Edit(/{covering}/**)");
+            assert!(!has(&denies.edit, &rule), "{denies:?}");
+        }
+    }
+}
+
+#[test]
 fn the_legacy_layout_adds_the_work_spellings_in_both_layers() {
     let legacy = denies_for("/repo/.work", &[], None).unwrap();
     assert!(has(&legacy.deny_write, "/repo/.work"), "{legacy:?}");

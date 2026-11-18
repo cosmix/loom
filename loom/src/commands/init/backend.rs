@@ -98,6 +98,6 @@ pub(super) fn parse_backend_response(input: &str) -> Option<Option<SessionBacken
 pub(super) fn backend_default_label(user_set: Option<SessionBackendKind>) -> String {
     match user_set {
         Some(kind) => format!("{kind}, from ~/.loom/config.toml"),
-        None => "native, built-in default".to_string(),
+        None => format!("{}, built-in default", SessionBackendKind::default()),
     }
 }

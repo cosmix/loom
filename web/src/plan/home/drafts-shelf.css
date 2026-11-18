@@ -1,0 +1,87 @@
+/* Home's "Unfinished" shelf: kickoffs started and not finished, as a list of work in progress on
+   the page ground. Each row is one link on one text column: the name, the problem's first line in
+   --muted-foreground, and the state as a glyph and a word at the row's end. Rows divide with
+   hairlines and draw no box (ui/DESIGN.md, Surfaces). */
+
+.drafts-shelf {
+  display: grid;
+  min-width: 0;
+}
+
+.drafts-shelf .plan-section-title {
+  margin-bottom: var(--space-2);
+}
+
+.drafts-shelf__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.drafts-shelf__list > li + li {
+  border-top: 1px solid var(--hairline);
+}
+
+.drafts-shelf__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: var(--space-1) var(--space-4);
+  min-height: 36px;
+  padding: var(--space-2) var(--space-2);
+  margin-inline: calc(-1 * var(--space-2));
+  border-radius: var(--corner-control);
+  color: var(--foreground);
+  text-decoration: none;
+  transition: background-color 120ms;
+}
+
+.drafts-shelf__row:hover {
+  background: var(--muted);
+}
+
+.drafts-shelf__row:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.drafts-shelf__title {
+  grid-column: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-size: var(--type-body);
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.drafts-shelf__problem {
+  grid-column: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted-foreground);
+  font-size: var(--type-ui);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.drafts-shelf__status {
+  grid-column: 2;
+  grid-row: 1;
+  color: var(--foreground);
+}
+
+.drafts-shelf__glyph {
+  color: var(--muted-foreground);
+  font-size: var(--type-fine);
+}
+
+.drafts-shelf__status[data-live="true"] .drafts-shelf__glyph {
+  color: var(--tone-executing);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .drafts-shelf__row {
+    transition: none;
+  }
+}

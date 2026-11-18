@@ -56,7 +56,7 @@ pub(super) fn protected(tree: &Path) -> Protected {
     let hidden_files = STATE_ROOT_SECRET_FILES
         .iter()
         .map(|name| state_root.join(name))
-        .filter(|path| path.symlink_metadata().is_ok_and(|meta| meta.is_file()))
+        .filter(|path| crate::fs::safe_read::is_regular_no_follow(path))
         .collect();
     let history = history_dir(&state_root);
     let hidden_dirs = history

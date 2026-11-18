@@ -63,12 +63,22 @@ pub fn spool_target_from_cwd() -> Result<PathBuf> {
 /// reason exceeds that, so two concurrent appends could otherwise interleave
 /// their bytes on one line.
 pub fn append_to_spool(worktree_root: &Path, request: &StageRequest) -> Result<()> {
-    jsonl_spool::append(
-        worktree_root,
-        SPOOL_RELPATH,
-        &super::types::QueuedRequest::new(request.clone()),
-        MAX_REQUEST_BYTES,
-    )
+    append_to_spool_for_session(worktree_root, request, &crate::daemon::current_session_id())
+}
+
+pub(crate) fn append_to_spool_for_session(
+    worktree_root: &Path,
+    request: &StageRequest,
+    session: &str,
+) -> Result<()> {
+    let mut queued = super::types::QueuedRequest::new(request.clone());
+    anyhow::ensure!(
+        !session.is_empty(),
+        "stage request needs an active session identity"
+    );
+    crate::validation::validate_id(session)?;
+    queued.session_id = Some(session.to_string());
+    jsonl_spool::append(worktree_root, SPOOL_RELPATH, &queued, MAX_REQUEST_BYTES)
 }
 
 /// Pending requests, WITHOUT applying or removing them. Empty vec when no

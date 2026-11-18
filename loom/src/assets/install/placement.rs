@@ -5,6 +5,8 @@
 use anyhow::{ensure, Context, Result};
 use std::collections::BTreeSet;
 use std::fs;
+use std::io::Write;
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Component, Path};
 
 use crate::assets::Asset;
@@ -61,10 +63,33 @@ fn write_skill(root: &Path, assets: &[Asset], name: &str) -> Result<()> {
             clear_non_directory_ancestors(root, parent)?;
             fs::create_dir_all(parent)
                 .with_context(|| format!("Failed to create {}", parent.display()))?;
-            fs::write(&dest, content)
-                .with_context(|| format!("Failed to write {}", dest.display()))?;
+            write_skill_file(&dest, content)?;
         }
     }
+    Ok(())
+}
+
+/// Replace the leaf itself, never following a symlink to an external file.
+/// A directory at a file path is an error, leaving it and the other root intact.
+fn write_skill_file(dest: &Path, content: &str) -> Result<()> {
+    let existing = symlink_metadata(dest)?;
+    ensure!(
+        !existing.as_ref().is_some_and(fs::Metadata::is_dir),
+        "Skill file destination {} is a directory",
+        dest.display()
+    );
+    let parent = dest.parent().context("Skill file has no parent")?;
+    let mut temp = tempfile::Builder::new()
+        .permissions(fs::Permissions::from_mode(0o666))
+        .tempfile_in(parent)
+        .with_context(|| format!("Failed to create temporary file in {}", parent.display()))?;
+    if let Some(metadata) = existing.filter(|metadata| metadata.is_file()) {
+        temp.as_file().set_permissions(metadata.permissions())?;
+    }
+    temp.write_all(content.as_bytes())
+        .with_context(|| format!("Failed to write {}", dest.display()))?;
+    temp.persist(dest)
+        .with_context(|| format!("Failed to replace {}", dest.display()))?;
     Ok(())
 }
 

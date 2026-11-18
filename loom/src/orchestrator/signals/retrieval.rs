@@ -55,6 +55,15 @@ pub(super) fn knowledge_tree_is_empty(work_dir: &Path) -> bool {
 /// written is a stalled stage, whereas a signal without a brief is merely a
 /// thinner one.
 pub(super) fn retrieve_stage_pack(work_dir: &Path, stage: &Stage) -> Option<ContextPack> {
+    let changes = dependency_changes(work_dir, stage);
+    retrieve_stage_pack_with_changes(work_dir, stage, &changes)
+}
+
+pub(super) fn retrieve_stage_pack_with_changes(
+    work_dir: &Path,
+    stage: &Stage,
+    changes: &[DependencyChange],
+) -> Option<ContextPack> {
     let main_root = WorkDir::new(work_dir)
         .ok()
         .and_then(|resolved| resolved.main_project_root())
@@ -67,7 +76,7 @@ pub(super) fn retrieve_stage_pack(work_dir: &Path, stage: &Stage) -> Option<Cont
         plan_key(stage),
         &stage.dependencies,
     );
-    query.dependency_paths = StageQuery::dependency_paths(work_dir, stage);
+    query.dependency_paths = paths_from_changes(changes);
     match retrieve_for_stage(&query, config.stage_brief_budget_tokens) {
         Ok(pack) if !pack.items.is_empty() => Some(pack),
         Ok(_) => None,
@@ -80,6 +89,18 @@ pub(super) fn retrieve_stage_pack(work_dir: &Path, stage: &Stage) -> Option<Cont
             None
         }
     }
+}
+
+fn paths_from_changes(changes: &[DependencyChange]) -> Vec<String> {
+    let mut paths = Vec::new();
+    for change in changes {
+        for path in &change.paths {
+            if !paths.contains(path) {
+                paths.push(path.clone());
+            }
+        }
+    }
+    paths
 }
 
 /// What one accepted dependency changed, as far as the repository can tell.
@@ -189,15 +210,7 @@ impl StageQuery {
     /// declared files, joined to its `working_dir`, when git names no change.
     /// Order is kept and duplicates across dependencies are dropped.
     pub(crate) fn dependency_paths(work_dir: &Path, stage: &Stage) -> Vec<String> {
-        let mut paths: Vec<String> = Vec::new();
-        for change in dependency_changes(work_dir, stage) {
-            for path in change.paths {
-                if !paths.contains(&path) {
-                    paths.push(path);
-                }
-            }
-        }
-        paths
+        paths_from_changes(&dependency_changes(work_dir, stage))
     }
 
     /// Which source-graph overlay a stage's brief reads: that stage's OWN overlay,
@@ -263,8 +276,8 @@ impl StageQuery {
 }
 
 /// Persist a [`crate::context::delivery::DeliveryRecord`] for `session_id`'s
-/// pack before the signal file that quotes it is written, so a delivery
-/// record never describes a signal that does not exist yet.
+/// pack after the signal file that quotes it is written. Publication does not
+/// prove that the recipient consumed the signal.
 ///
 /// Best-effort by contract: a recording failure never blocks signal
 /// generation, and a stage whose signal carries no brief writes nothing.

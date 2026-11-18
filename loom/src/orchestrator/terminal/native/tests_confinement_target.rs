@@ -9,6 +9,8 @@
 //! worktree's administrative directory no `HEAD` or `commondir`, so this file
 //! completes both before anything runs git.
 
+// bespoke-git-fixture: one git_env (config pointed at a missing file, NOSYSTEM, fixed author) is exported both to host git and into the srt shell command line, so the host and the capsule read the same config; the shared runner cannot be handed to the sandboxed shell.
+
 use super::tests_confinement_e2e::srt::{diagnostics, skip, write_rc, Confined, RC_PREFIX};
 use super::tests_confinement_e2e::{confine, fixture, stage, Fixture, STAGE_ID};
 use crate::git::hooks::{install_reference_transaction_hook, HookInstall};
@@ -22,7 +24,7 @@ use serial_test::serial;
 use shell_escape::escape;
 use std::borrow::Cow;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 
 /// The session id every sandboxed git runs under, as a loom session's shell
 /// carries one: the hook refuses a move it cannot attest only in a session.
@@ -65,9 +67,8 @@ fn git_env(f: &Fixture) -> Vec<(&'static str, String)> {
 /// Run `git` on the host in `dir`, assert it succeeded, and return its
 /// trimmed stdout.
 fn git(f: &Fixture, dir: &Path, args: &[&str]) -> String {
-    let output = Command::new("git")
+    let output = crate::test_git::git_command(dir)
         .args(args)
-        .current_dir(dir)
         .envs(git_env(f))
         .stdin(Stdio::null())
         .output()

@@ -18,6 +18,11 @@ mod integrity_status;
 mod knowledge_complete;
 mod merge;
 mod merge_resolver;
+pub(crate) mod native_gate;
+#[cfg(test)]
+pub(crate) use merge_resolver::{
+    spawn_merge_resolver as test_spawn_merge_resolver, MergeResolverResult,
+};
 pub mod merge_verify;
 mod output;
 mod progressive_complete;
@@ -28,6 +33,8 @@ mod skip_retry;
 mod state;
 pub(crate) mod verify_host;
 
+#[cfg(test)]
+mod native_gate_contract_tests;
 #[cfg(test)]
 mod tests;
 
@@ -47,5 +54,6 @@ pub use output::{
     get as output_get, list as output_list, remove as output_remove, set as output_set,
 };
 pub use review_status::review_status;
+pub(crate) use review_status::stage_worktree_and_target;
 pub use skip_retry::{retry, skip};
 pub use state::{block, hold, release, reset, resume_from_waiting, waiting};

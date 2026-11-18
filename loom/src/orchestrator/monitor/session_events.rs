@@ -1,10 +1,7 @@
 //! What a session's observed status means for its stage.
 //!
-//! Split out of `detection`, which keeps stage, context-health and heartbeat
-//! detection. This half is subtle enough to read on its own: it decides when a
-//! vanished process is a crash rather than a normal exit, and — the part that
-//! has bitten hardest — when an observation is a real transition rather than
-//! the daemon simply seeing a session file for the first time after a restart.
+//! Distinguish process transitions from first observations of persisted state,
+//! and ensure only a stage's current session can speak for that stage.
 
 use std::path::Path;
 
@@ -28,16 +25,9 @@ use super::heartbeat::remove_heartbeat;
 /// # Only the stage's CURRENT session may delete it
 ///
 /// The file is keyed by stage, so every session a stage has ever had shares
-/// one path — but only one of them owns it at a time. Session files
-/// accumulate, and a stage that crashed and retried leaves each corpse on disk
-/// with `stage_id` still set, so without this guard the terminal handling of a
-/// PREVIOUS session deletes the LIVE session's heartbeat. The live session
-/// then reports no activity since spawn: `last_active` freezes, hung detection
-/// reads `NoHeartbeat` and does nothing, and every duration derived from it is
-/// wrong — silently, and specifically for the repeat-failing stages whose
-/// history makes them the ones worth debugging. Observed 2026-08-11, where it
-/// made healthy multi-minute sessions look like they had died on spawn and
-/// sent two separate investigations after the wrong cause.
+/// one path — but only one of them owns it at a time. Old session records
+/// retain their stage ID, so a prior session must not delete its successor's
+/// heartbeat.
 ///
 /// Same rule, and for the same reason, as `stage_answerable_for_crash` in
 /// `core/crash_handler.rs`: naming a stage is far weaker than being the
@@ -109,12 +99,8 @@ impl SessionStatusEvents {
 ///
 /// The distinction only matters on daemon startup, when `last_session_states`
 /// is empty and every session file on disk is a first observation, including
-/// corpses from hours ago that were already handled and persisted as Crashed.
-/// Replaying those is not cosmetic: a crash report is written before any
-/// handler guard runs, and the emitted event is charged to the stage's retry
-/// budget. Observed 2026-08-10 — a restart re-fired a 25-minute-old crash,
-/// blocked a healthy stage, auto-retried it, and put a second agent into a
-/// worktree another agent was still working in.
+/// old sessions already handled as Crashed. Replaying them writes a crash
+/// report and charges the stage's retry budget before handler guards run.
 ///
 /// A first observation that IS the stage's active session still speaks: that is
 /// a stage genuinely stranded by a daemon that died between the crash and
@@ -177,7 +163,7 @@ impl Detection {
         }
 
         if previous_status.as_ref() == Some(current_status) {
-            return SessionStatusEvents::ongoing(Vec::new());
+            return SessionStatusEvents::ongoing(self.redeliver_crash(session, stages));
         }
 
         let events = if replays_stale_session(previous_status.as_ref(), session, stages) {
@@ -191,6 +177,7 @@ impl Detection {
         } else {
             transition_events(session, current_status, handlers)
         };
+        self.note_reported_crashes(&events);
 
         self.last_session_states
             .insert(session.id.clone(), current_status.clone());
@@ -376,11 +363,13 @@ impl Detection {
         // flag a fresh session reusing this stage as hung.
         let exit = SessionExitReason::Crashed;
         self.mark_terminal(session, stages, handlers, SessionStatus::Crashed, exit);
-        SessionStatusEvents::terminal(vec![MonitorEvent::SessionCrashed {
+        let events = vec![MonitorEvent::SessionCrashed {
             session_id: session.id.clone(),
             stage_id: session.stage_id.clone(),
             crash_report_path,
-        }])
+        }];
+        self.note_reported_crashes(&events);
+        SessionStatusEvents::terminal(events)
     }
 }
 

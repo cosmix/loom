@@ -111,6 +111,14 @@ fn decode_line_rejects_unsafe_ids_and_unknown_observations() {
             "field: {field}"
         );
     }
+    // A direct forward reports an unknown outcome; it round-trips without an
+    // exit code and never with one.
+    let mut direct = value();
+    direct["backend"] = json!("direct");
+    direct["state"] = json!("unknown");
+    assert!(ForwardObservation::decode_line(&direct.to_string()).is_ok());
+    direct["exit_code"] = json!(125);
+    assert!(ForwardObservation::decode_line(&direct.to_string()).is_err());
 }
 
 #[test]
@@ -201,7 +209,55 @@ fn fold_handles_terminal_conflicts_and_idempotent_repeats() {
         failed,
     ])
     .remove(0);
-    assert_eq!(receipt.state, ForwardState::Unknown);
+    assert_eq!(
+        (receipt.state, receipt.exit_code),
+        (ForwardState::Unknown, None)
+    );
+}
+
+/// Direct observations (the only backend `decode_line` accepts an unknown
+/// state for): a reported unknown outcome, an unknown-first sequence, and a
+/// terminal verdict followed by unknown all fold to `Unknown` with no exit
+/// code, and `Unknown` absorbs a later valid verdict.
+#[test]
+fn fold_direct_unknown_is_absorbing_and_drops_exit_code() {
+    let reported = fold_observations([
+        direct_observation(ForwardState::Running),
+        direct_observation(ForwardState::Unknown),
+    ])
+    .remove(0);
+    assert_eq!(
+        (reported.state, reported.exit_code),
+        (ForwardState::Unknown, None)
+    );
+
+    let unknown_first = fold_observations([
+        direct_observation(ForwardState::Unknown),
+        direct_observation(ForwardState::Running),
+        direct_with_exit(ForwardState::Succeeded, 0),
+    ])
+    .remove(0);
+    assert_eq!(
+        (unknown_first.state, unknown_first.exit_code),
+        (ForwardState::Unknown, None)
+    );
+
+    let downgraded = fold_observations([
+        direct_observation(ForwardState::Running),
+        direct_with_exit(ForwardState::Succeeded, 0),
+        direct_observation(ForwardState::Unknown),
+    ])
+    .remove(0);
+    assert_eq!(
+        (downgraded.state, downgraded.exit_code),
+        (ForwardState::Unknown, None)
+    );
+
+    let terminal_first = fold_observations([direct_with_exit(ForwardState::Failed, 1)]).remove(0);
+    assert_eq!(
+        (terminal_first.state, terminal_first.exit_code),
+        (ForwardState::Unknown, None)
+    );
 }
 
 #[test]
@@ -314,6 +370,23 @@ fn loader_refuses_a_fifo_without_blocking() {
 
 fn observation_with_exit(state: ForwardState, exit_code: i32) -> ForwardObservation {
     let mut observation = observation(state);
+    observation.exit_code = Some(exit_code);
+    observation
+}
+
+fn direct_observation(state: ForwardState) -> ForwardObservation {
+    let mut observation = observation(state);
+    observation.backend = ForwardBackend::Direct;
+    observation.backend_id = "thread-1".to_string();
+    observation.codex_thread_id = Some("thread-1".to_string());
+    observation
+        .validate()
+        .expect("direct fixture is a valid observation");
+    observation
+}
+
+fn direct_with_exit(state: ForwardState, exit_code: i32) -> ForwardObservation {
+    let mut observation = direct_observation(state);
     observation.exit_code = Some(exit_code);
     observation
 }

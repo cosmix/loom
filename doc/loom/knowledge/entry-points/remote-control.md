@@ -1,6 +1,6 @@
 # Remote Control
 
-> Remote-control call sites
+> RC
 
 ## Remote Control & Permission Mode Integration Points
 

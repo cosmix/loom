@@ -2,10 +2,12 @@
 //! session, the subagent transcripts beside it, and the Codex rollouts of the
 //! stage's forwarded jobs.
 
+use super::accumulate::NativeUnit;
 use super::model::AgentKind;
+use crate::agent_state::is_safe_id;
 use crate::context::untrusted::inline_safe;
 use crate::fs::work_dir::WorkDir;
-use crate::models::forward_receipt::{is_safe_id, load_receipts, receipts_path};
+use crate::models::forward_receipt::{load_receipts, receipts_path};
 use crate::provider_data::codex_discovery::{codex_root, collect_jsonl, CodexDiscovery};
 use crate::provider_data::ledger::StartedAgentTypeIndex;
 use crate::provider_data::resolve::{agent_id_from_path, list_agent_files};
@@ -32,6 +34,10 @@ pub(super) struct Source {
     pub(super) kind: AgentKind,
     pub(super) path: String,
     pub(super) agent_type: Option<String>,
+    /// For a codex source: the id of the forwarder subagent that forwarded to it.
+    pub(super) forwarder: Option<String>,
+    /// For a codex source: the native worker unit whose thread it is.
+    pub(super) unit: Option<NativeUnit>,
 }
 
 /// Where a Codex thread's rollout was found, or when it was last looked for.
@@ -76,14 +82,13 @@ fn discover_with(
         .filter_map(|s| s.stage_id.as_deref())
         .filter(|stage| is_safe_id(stage))
         .collect();
-    let mut stage_threads = stage_threads(work_root, &stages);
-    stage_threads.extend(authorized(work_root, &sessions));
-    let mut seen = HashSet::new();
-    stage_threads.retain(|(_, thread)| seen.insert(thread.clone()));
+    let stage_threads = all_stage_threads(work_root, &stages, authorized(work_root, &sessions));
     resolve_threads(threads, &stage_threads, codex_sessions_root, now);
     let codex: Vec<Source> = stage_threads
         .into_iter()
-        .filter_map(|(stage_id, thread)| codex_source(stage_id, thread, threads))
+        .filter_map(|(stage_id, thread, forwarder, unit)| {
+            codex_source(stage_id, thread, forwarder, unit, threads)
+        })
         .collect();
     sources.extend(codex);
     let mut paths = HashSet::new();
@@ -130,52 +135,113 @@ fn session_sources(
     if !is_safe_id(stem) {
         return;
     }
-    sources.push(Source {
+    sources.extend(main_source(stage_id, transcript));
+    for file in list_agent_files(&path.with_file_name(stem).join("subagents")) {
+        let agent_id = agent_id_from_path(&file);
+        let agent_type = index
+            .get_metadata(&agent_id, stem)
+            .map(|metadata| inline_safe(&metadata.agent_type));
+        sources.extend(subagent_source(stage_id, &agent_id, &file, agent_type));
+    }
+}
+
+/// The source of the main transcript `transcript` of `stage_id`; `None` when
+/// its file stem is not a safe id.
+pub(super) fn main_source(stage_id: &str, transcript: &str) -> Option<Source> {
+    let stem = Path::new(transcript).file_stem()?.to_str()?;
+    is_safe_id(stem).then(|| Source {
         stage_id: stage_id.to_owned(),
         key: format!("{MAIN_PREFIX}{stem}"),
         kind: AgentKind::Main,
         path: transcript.to_owned(),
         agent_type: None,
-    });
-    for file in list_agent_files(&path.with_file_name(stem).join("subagents")) {
-        let agent_id = agent_id_from_path(&file);
-        let Some(file_path) = file.to_str().filter(|_| is_safe_id(&agent_id)) else {
-            continue;
-        };
-        let agent_type = index
-            .get_metadata(&agent_id, stem)
-            .map(|metadata| inline_safe(&metadata.agent_type));
-        sources.push(Source {
-            stage_id: stage_id.to_owned(),
-            key: agent_id,
-            kind: AgentKind::Subagent,
-            path: file_path.to_owned(),
-            agent_type,
-        });
-    }
+        forwarder: None,
+        unit: None,
+    })
 }
 
-/// `(stage id, thread id)` for every safe `codex_thread_id` in each stage's
-/// forward receipts. A receipts path that is not a regular file is skipped
+/// The source of subagent `agent_id`'s transcript `path`; `None` when the id
+/// is not safe or the path is not UTF-8.
+pub(super) fn subagent_source(
+    stage_id: &str,
+    agent_id: &str,
+    path: &Path,
+    agent_type: Option<String>,
+) -> Option<Source> {
+    let path = path.to_str().filter(|_| is_safe_id(agent_id))?;
+    Some(Source {
+        stage_id: stage_id.to_owned(),
+        key: agent_id.to_owned(),
+        kind: AgentKind::Subagent,
+        path: path.to_owned(),
+        agent_type,
+        forwarder: None,
+        unit: None,
+    })
+}
+
+/// `(stage id, thread id, forwarder id)` for every safe `codex_thread_id` in
+/// each stage's forward receipts; the forwarder is the receipt's agent id when
+/// it is a safe id. A receipts path that is not a regular file is skipped
 /// before `load_receipts` opens it, so a FIFO there cannot block the pass.
-fn stage_threads(work_root: &Path, stages: &BTreeSet<&str>) -> Vec<(String, String)> {
+type StageThread = (String, String, Option<String>, Option<NativeUnit>);
+
+fn stage_threads(work_root: &Path, stages: &BTreeSet<&str>) -> Vec<StageThread> {
     let mut pairs = Vec::new();
     for stage_id in stages {
         let Ok(path) = receipts_path(work_root, stage_id) else {
             continue;
         };
-        if !std::fs::symlink_metadata(&path).is_ok_and(|m| m.is_file()) {
+        if !crate::fs::safe_read::is_regular_no_follow(&path) {
             continue;
         }
         let Ok(load) = load_receipts(&path) else {
             continue;
         };
-        let threads = load.receipts.into_iter().filter_map(|r| r.codex_thread_id);
-        for thread in threads.filter(|thread| is_safe_id(thread)) {
-            pairs.push(((*stage_id).to_owned(), thread));
+        for receipt in load.receipts {
+            let Some(thread) = receipt.codex_thread_id.filter(|t| is_safe_id(t)) else {
+                continue;
+            };
+            let forwarder = Some(receipt.identity.agent_id).filter(|id| is_safe_id(id));
+            pairs.push(((*stage_id).to_owned(), thread, forwarder, None));
         }
     }
     pairs
+}
+
+/// The threads to resolve: the forward receipts' threads, the authorized
+/// forwards, and each stage's native threads, each thread kept once. A native
+/// thread a forward receipt also names keeps the receipt's forwarder.
+fn all_stage_threads(
+    work_root: &Path,
+    stages: &BTreeSet<&str>,
+    authorized: Vec<(String, String)>,
+) -> Vec<StageThread> {
+    let mut stage_threads = stage_threads(work_root, stages);
+    let authorized = authorized
+        .into_iter()
+        .map(|(stage, thread)| (stage, thread, None, None));
+    stage_threads.extend(authorized);
+    for stage in stages {
+        for thread in crate::native_worker::index::stage_threads(work_root, stage) {
+            let unit = NativeUnit {
+                unit_id: thread.unit_id,
+                effort: thread.requested_effort,
+            };
+            match stage_threads
+                .iter_mut()
+                .find(|entry| entry.1 == thread.thread_id)
+            {
+                Some(entry) => entry.3 = Some(unit),
+                None => {
+                    stage_threads.push(((*stage).to_owned(), thread.thread_id, None, Some(unit)))
+                }
+            }
+        }
+    }
+    let mut seen = HashSet::new();
+    stage_threads.retain(|(_, thread, _, _)| seen.insert(thread.clone()));
+    stage_threads
 }
 
 /// Looks the due threads of `stage_threads` up in one walk of the sessions
@@ -184,13 +250,13 @@ fn stage_threads(work_root: &Path, stages: &BTreeSet<&str>) -> Vec<(String, Stri
 /// `now`.
 fn resolve_threads(
     threads: &mut BTreeMap<String, ThreadLookup>,
-    stage_threads: &[(String, String)],
+    stage_threads: &[StageThread],
     sessions_root: Option<&Path>,
     now: i64,
 ) {
     let due: BTreeSet<&str> = stage_threads
         .iter()
-        .map(|(_, thread)| thread.as_str())
+        .map(|(_, thread, _, _)| thread.as_str())
         .filter(|thread| {
             threads.get(*thread).is_none_or(|lookup| {
                 // `checked_at` comes from the checkpoint file, so the difference saturates.
@@ -262,6 +328,8 @@ fn rollout_files(sessions_root: Option<&Path>) -> Vec<PathBuf> {
 fn codex_source(
     stage_id: String,
     thread: String,
+    forwarder: Option<String>,
+    unit: Option<NativeUnit>,
     threads: &BTreeMap<String, ThreadLookup>,
 ) -> Option<Source> {
     let path = threads.get(&thread)?.rollout.clone()?;
@@ -271,6 +339,8 @@ fn codex_source(
         kind: AgentKind::Codex,
         path,
         agent_type: None,
+        forwarder,
+        unit,
     })
 }
 
@@ -280,3 +350,7 @@ mod authorized_tests;
 #[cfg(test)]
 #[path = "discover_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "discover_native_tests.rs"]
+mod native_tests;

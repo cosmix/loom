@@ -5,13 +5,16 @@ use super::*;
 use crate::fs::work_dir::write_terminal_config;
 use crate::models::failure::FailureType;
 use crate::models::session::{SessionBackendKind, TerminalConfig};
-use crate::models::stage::TruthCheck;
+use crate::models::stage::{StageStatus, TruthCheck};
+use crate::orchestrator::busy::BusyOp;
 use crate::orchestrator::core::OrchestratorConfig;
 use crate::orchestrator::provision::write_provision_snapshot;
+use crate::orchestrator::tick::{self, Phase};
 use crate::plan::ExecutionGraph;
+use crate::test_git::{git, TestRepo};
 use crate::verify::transitions::{load_stage, save_stage};
 use std::fs;
-use std::process::Command;
+use std::path::PathBuf;
 use tempfile::TempDir;
 
 /// A `.loom/work` directory whose configured terminal lane is tmux, so
@@ -20,7 +23,12 @@ use tempfile::TempDir;
 /// `config.toml`, never written over it.
 fn work_dir() -> TempDir {
     let temp = TempDir::new().unwrap();
-    let work = temp.path().join(".loom").join("work");
+    prepare_work_dir(temp.path());
+    temp
+}
+
+fn prepare_work_dir(root: &Path) -> PathBuf {
+    let work = root.join(".loom").join("work");
     fs::create_dir_all(&work).unwrap();
     write_terminal_config(
         &work,
@@ -29,7 +37,7 @@ fn work_dir() -> TempDir {
         },
     )
     .unwrap();
-    temp
+    work
 }
 
 fn orchestrator_for(work_dir: &Path, repo_root: &Path) -> Orchestrator {
@@ -60,15 +68,21 @@ fn queued_stage(work: &Path, before_stage: Vec<TruthCheck>) -> Stage {
 }
 
 /// Run the gate for a Queued `alpha` whose snapshot holds `commands`, with
-/// `worktree` as the stage worktree. Returns the gate's answer and the stage
-/// as the gate left it on disk.
+/// `worktree` as the stage worktree: in the repository that registers it, or
+/// beside a plain directory no repository does. Returns the gate's answer and
+/// the stage as the gate left it on disk.
 fn gate(commands: &[&str], before_stage: Vec<TruthCheck>, worktree: &Path) -> (bool, Stage) {
-    let temp = work_dir();
-    let work = temp.path().join(".loom").join("work");
+    let temp = TempDir::new().unwrap();
+    let root = worktree
+        .parent()
+        .filter(|parent| parent.ends_with(".worktrees"))
+        .and_then(Path::parent)
+        .unwrap_or(temp.path());
+    let work = prepare_work_dir(root);
     let entries: Vec<ProvisionEntry> = commands.iter().map(|c| entry(c)).collect();
     write_provision_snapshot(&work, &entries).unwrap();
     let stage = queued_stage(&work, before_stage);
-    let mut orchestrator = orchestrator_for(&work, temp.path());
+    let mut orchestrator = orchestrator_for(&work, root);
 
     let passed = orchestrator
         .pre_spawn_gates_passed(&stage, worktree, "main")
@@ -77,44 +91,64 @@ fn gate(commands: &[&str], before_stage: Vec<TruthCheck>, worktree: &Path) -> (b
     (passed, load_stage("alpha", &work).unwrap())
 }
 
-fn run_git(root: &Path, args: &[&str]) {
-    let output = Command::new("git")
-        .args(args)
-        .current_dir(root)
-        .env("GIT_CONFIG_GLOBAL", root.join(".loom-test-no-global"))
-        .env("GIT_CONFIG_SYSTEM", root.join(".loom-test-no-system"))
-        .env("GIT_CONFIG_NOSYSTEM", "1")
-        .output()
-        .unwrap();
-    assert!(
-        output.status.success(),
-        "git {args:?} failed: {}",
-        String::from_utf8_lossy(&output.stderr)
+/// A stage worktree the repository around it registers.
+struct StageRepo {
+    _temp: TempDir,
+    worktree: PathBuf,
+}
+
+impl StageRepo {
+    fn path(&self) -> &Path {
+        &self.worktree
+    }
+}
+
+/// `.worktrees/alpha` over the current commit of the repository at `temp`.
+fn with_stage_worktree(temp: TempDir) -> StageRepo {
+    let root = temp.path().canonicalize().unwrap();
+    git(
+        &root,
+        &[
+            "worktree",
+            "add",
+            "-q",
+            "-b",
+            "loom/alpha",
+            ".worktrees/alpha",
+        ],
     );
+    let work = prepare_work_dir(&root);
+    crate::git::worktree::capture_main_identity(&root, &work).unwrap();
+    StageRepo {
+        worktree: root.join(".worktrees").join("alpha"),
+        _temp: temp,
+    }
 }
 
 /// A git repository committing a `.gitignore` that holds `node_modules/`.
-fn repo_ignoring_node_modules() -> TempDir {
-    let temp = TempDir::new().unwrap();
-    let root = temp.path();
-    run_git(root, &["init", "-q"]);
-    run_git(root, &["config", "user.name", "t"]);
-    run_git(root, &["config", "user.email", "t@t"]);
-    fs::write(root.join(".gitignore"), "node_modules/\n").unwrap();
-    run_git(root, &["add", ".gitignore"]);
-    run_git(root, &["commit", "-q", "-m", "seed"]);
-    temp
+fn seeded_repo() -> TempDir {
+    TestRepo::builder()
+        .identity("t", "t@t")
+        .seed(".gitignore", "node_modules/\n", "seed")
+        .create()
+        .into_temp_dir()
 }
 
-/// [`repo_ignoring_node_modules`] that also commits `path` with the content `seed`.
-fn repo_tracking(path: &str) -> TempDir {
-    let repo = repo_ignoring_node_modules();
+/// The stage worktree of a [`seeded_repo`].
+fn repo_ignoring_node_modules() -> StageRepo {
+    with_stage_worktree(seeded_repo())
+}
+
+/// The stage worktree of a [`seeded_repo`] that also commits `path` with the
+/// content `seed`.
+fn repo_tracking(path: &str) -> StageRepo {
+    let repo = seeded_repo();
     let file = repo.path().join(path);
     fs::create_dir_all(file.parent().unwrap()).unwrap();
     fs::write(&file, "seed\n").unwrap();
-    run_git(repo.path(), &["add", path]);
-    run_git(repo.path(), &["commit", "-q", "-m", "track"]);
-    repo
+    git(repo.path(), &["add", path]);
+    git(repo.path(), &["commit", "-q", "-m", "track"]);
+    with_stage_worktree(repo)
 }
 
 fn failing_check() -> TruthCheck {
@@ -225,14 +259,14 @@ fn an_unignored_file_name_reaches_the_reason_without_its_escape_bytes() {
     );
 }
 
-/// Calling `run_provision` without the ticker thread writes no tick, so this fails.
+/// Calling `run_provision` outside `busy::while_busy` writes no tick, so this fails.
 #[test]
 fn provisioning_stamps_the_daemon_tick() {
     let work = TempDir::new().unwrap();
     let worktree = TempDir::new().unwrap();
     assert!(tick::read(work.path()).unwrap().is_none());
 
-    provision_worktree(work.path(), &[entry("true")], worktree.path()).unwrap();
+    provision_worktree(work.path(), "stage-a", &[entry("true")], worktree.path()).unwrap();
 
     let stamped = tick::read(work.path())
         .unwrap()
@@ -325,28 +359,24 @@ fn a_pre_existing_modified_tracked_file_is_not_a_new_entry() {
     assert_eq!(stage.status, StageStatus::Queued);
 }
 
+/// A lossy decode reads the name as `bad\u{FFFD}name`, a new entry it then blocks on
+/// under a different name; a skipped comparison lets the stage spawn. APFS
+/// rejects such a name (EILSEQ), so the provision cannot write it on macOS.
+#[cfg(not(target_os = "macos"))]
 #[test]
-fn status_entries_keep_their_leading_space_and_rename_origins() {
-    let listing = " M web/bun.lock\0R  new.txt\0old.txt\0?? added\0";
+fn a_provision_that_writes_a_non_utf8_name_blocks_the_stage() {
+    let repo = repo_ignoring_node_modules();
 
-    assert_eq!(
-        split_status_entries(listing),
-        [" M web/bun.lock", "R  new.txt\0old.txt", "?? added"]
+    let (passed, stage) = gate(
+        &["touch \"$(printf 'bad\\377name')\""],
+        Vec::new(),
+        repo.path(),
     );
+
+    assert!(!passed);
+    let reason = stage.close_reason.expect("the block records its reason");
+    assert_eq!(reason, NON_UTF8_REASON);
 }
 
-#[test]
-fn a_rename_in_the_worktree_column_keeps_its_origin_in_one_entry() {
-    assert_eq!(
-        split_status_entries(" R new.txt\0old.txt\0"),
-        [" R new.txt\0old.txt"]
-    );
-}
-
-#[test]
-fn a_renamed_file_is_reported_by_its_new_path() {
-    assert_eq!(
-        unignored_reason(&["R  new.txt\0old.txt"]),
-        unignored_reason(&["R  new.txt"])
-    );
-}
+#[path = "provision_gate_pin_tests.rs"]
+mod pin_tests;

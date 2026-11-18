@@ -10,35 +10,11 @@ use loom::git::merge::{
 };
 use serial_test::serial;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use tempfile::TempDir;
 
-/// Run git with the user's and system's config out of the picture.
-fn run_git(dir: &Path, args: &[&str]) -> std::process::Output {
-    Command::new("git")
-        .args(args)
-        .current_dir(dir)
-        .env("GIT_CONFIG_GLOBAL", dir.join(".loom-test-no-global"))
-        .env("GIT_CONFIG_SYSTEM", dir.join(".loom-test-no-system"))
-        .env("GIT_CONFIG_NOSYSTEM", "1")
-        .output()
-        .unwrap()
-}
-
-fn git(dir: &Path, args: &[&str]) {
-    let output = run_git(dir, args);
-    assert!(
-        output.status.success(),
-        "git {args:?} failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-}
-
-fn git_out(dir: &Path, args: &[&str]) -> String {
-    let output = run_git(dir, args);
-    assert!(output.status.success(), "git {args:?} failed");
-    String::from_utf8_lossy(&output.stdout).trim().to_string()
-}
+#[path = "test_support/mod.rs"]
+mod test_support;
+use test_support::git_repo::{git, git as git_out, git_unchecked, TestRepo};
 
 fn commit_file(dir: &Path, name: &str, text: &str) {
     std::fs::write(dir.join(name), text).unwrap();
@@ -55,9 +31,7 @@ fn read(dir: &Path, name: &str) -> String {
 fn init_repo(files: &[(&str, &str)]) -> TempDir {
     let repo = TempDir::new().unwrap();
     let root = repo.path();
-    git(root, &["init", "-b", "main"]);
-    git(root, &["config", "user.email", "t@t.com"]);
-    git(root, &["config", "user.name", "t"]);
+    TestRepo::builder().no_seed().init_in(root);
     std::fs::write(root.join(".git/info/exclude"), ".worktrees/\n").unwrap();
     for (name, text) in files {
         commit_file(root, name, text);
@@ -124,7 +98,7 @@ fn resolve_in_worktree(root: &Path, wt: &Path) {
     let own = git_out(wt, &["rev-parse", "HEAD"]);
     let own = Some(own.as_str());
     assert!(
-        !run_git(wt, &["merge", "main"]).status.success(),
+        !git_unchecked(wt, &["merge", "main"]).status.success(),
         "the merge must conflict"
     );
     let reason = check_resolved_worktree(root, "s1", own).expect_err("merge in progress");

@@ -2,35 +2,32 @@ use super::*;
 use crate::context::graph_store::GraphStore;
 use crate::context::local_overlay::local_overlay_key;
 use crate::context::store::ContextStore;
+pub(super) use crate::test_git::git as git_ok;
+use crate::test_git::TestRepo;
 use serial_test::serial;
 use std::time::Duration;
 use tempfile::TempDir;
 
-pub(super) fn git_ok(root: &Path, args: &[&str]) {
-    let output = std::process::Command::new("git")
-        .args(args)
-        .current_dir(root)
-        .env("GIT_CONFIG_GLOBAL", root.join(".loom-test-no-global"))
-        .env("GIT_CONFIG_SYSTEM", root.join(".loom-test-no-system"))
-        .env("GIT_CONFIG_NOSYSTEM", "1")
-        .output()
-        .unwrap();
-    assert!(
-        output.status.success(),
-        "git {args:?} failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-}
-
-pub(super) fn init_repo() -> TempDir {
+/// A committed repository with no loom state at all.
+pub(super) fn repo_without_state() -> TempDir {
     let temp = TempDir::new().unwrap();
     let root = temp.path();
-    git_ok(root, &["init", "-b", "main"]);
-    git_ok(root, &["config", "user.email", "t@t.com"]);
-    git_ok(root, &["config", "user.name", "t"]);
+    TestRepo::builder()
+        .identity("t", "t@t.com")
+        .no_seed()
+        .init_in(root);
     std::fs::write(root.join("src.rs"), "fn committed() {}\n").unwrap();
     git_ok(root, &["add", "src.rs"]);
     git_ok(root, &["commit", "-m", "seed"]);
+    temp
+}
+
+pub(super) fn init_repo() -> TempDir {
+    let temp = repo_without_state();
+    let root = temp.path();
+    let work = root.join(".loom").join("work");
+    std::fs::create_dir_all(&work).unwrap();
+    crate::git::worktree::capture_main_identity(root, &work).unwrap();
     temp
 }
 
@@ -243,7 +240,7 @@ fn outline_src_rs_args() -> crate::commands::map::MapArgs {
 fn map_answers_in_a_checkout_that_never_ran_init() {
     use crate::commands::map::execute;
 
-    let temp = init_repo();
+    let temp = repo_without_state();
     let root = temp.path();
     let _guard = CwdGuard::new();
     std::env::set_current_dir(root).unwrap();

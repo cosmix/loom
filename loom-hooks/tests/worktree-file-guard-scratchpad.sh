@@ -7,12 +7,13 @@
 set -euo pipefail
 
 HOOK="$(cd "$(dirname "$0")/.." && pwd)/worktree-file-guard.sh"
-TMP=$(mktemp -d "${TMPDIR:-/tmp}/loom-hooktest.XXXXXX")
+source "$(dirname "$0")/_fixture_base.sh"
+TMP=$(mktemp -d "$(fixture_base)/loom-hooktest.XXXXXX")
 UID_ROOT="/tmp/claude-$(id -u)"
-CREATED_ROOT=false
-if [[ ! -d "$UID_ROOT" ]]; then
-	mkdir -m 700 "$UID_ROOT" && CREATED_ROOT=true
-fi
+# worktree-file-guard.sh recognises only the literal /tmp/claude-<uid>, so the
+# fixtures must live there. Concurrent runs share the root: create it if absent
+# and never remove it.
+[[ -d "$UID_ROOT" ]] || mkdir -m 700 "$UID_ROOT" 2>/dev/null || [[ -d "$UID_ROOT" ]]
 if ! PROJECT=$(mktemp -d "$UID_ROOT/loom-hooktest-project.XXXXXX"); then
 	rm -rf "$TMP"
 	# Seatbelt cannot give loom's confined runner a private /tmp, so there the
@@ -25,7 +26,6 @@ if ! PROJECT=$(mktemp -d "$UID_ROOT/loom-hooktest-project.XXXXXX"); then
 fi
 cleanup() {
 	rm -rf "$TMP" "$PROJECT"
-	[[ "$CREATED_ROOT" == false ]] || rmdir "$UID_ROOT" 2>/dev/null || true
 }
 trap cleanup EXIT
 
@@ -47,6 +47,8 @@ ln -s "$OUTSIDE" "$SCRATCH/link"
 ln -s "$OUTSIDE/secret" "$SCRATCH/leaf"
 ln -s "$OUTSIDE" "$PROJECT/session-link/scratchpad"
 
+LOOM_ENV=()
+
 # run_hook <tool> <path> [session_id] - one guard call from inside the worktree.
 run_hook() {
 	local tool=$1 path=$2 session=${3-$SESSION} field=file_path payload
@@ -56,7 +58,7 @@ run_hook() {
 		 + (if $s == "" then {} else {session_id: $s} end)')
 	set +e
 	OUTPUT=$(cd "$WORKTREE" && printf '%s' "$payload" |
-		env -i PATH="${SHIM_PATH:-}$PATH" HOME="$TMP" bash "$HOOK" 2>&1)
+		env -i PATH="${SHIM_PATH:-}$PATH" HOME="$TMP" ${LOOM_ENV[@]+"${LOOM_ENV[@]}"} bash "$HOOK" 2>&1)
 	RC=$?
 	set -e
 }
@@ -97,6 +99,42 @@ expect_blocked Write "/tmp/claude-424242/project/$SESSION/scratchpad/x.txt"
 expect_blocked Write "$OUTSIDE/new.txt"
 expect_blocked Read "$OUTSIDE/secret"
 
+# The state directory is a real external directory linked into the stage, as
+# in an installed worktree. Reads are allowed, while only handoffs are writable.
+SHARED="$TMP/repo/.loom/work"
+mkdir -p "$WORKTREE/.loom" "$SHARED/stages" "$SHARED/sessions" \
+	"$SHARED/heartbeat" "$SHARED/signals" "$SHARED/handoffs"
+ln -s "$SHARED" "$WORKTREE/.loom/work"
+for path in src/main.rs Cargo.toml tests/integration/test_foo.rs ./file.txt; do
+	expect_allowed Write "$path"
+done
+for path in stages/01-bootstrap.md sessions/session-abc123.md \
+	heartbeat/stage.json signals/session-123.md; do
+	expect_allowed Read ".loom/work/$path"
+	expect_blocked Write ".loom/work/$path"
+done
+expect_allowed Write .loom/work/handoffs/handoff-001.md
+expect_blocked Write ../sibling/file.txt
+expect_blocked Write ../../main-repo/file.txt
+expect_blocked Write "$TMP/repo/.worktrees/other-stage/src/main.rs"
+expect_allowed Write "$WORKTREE/src/main.rs"
+expect_allowed Write "$WORKTREE/doc/loom/knowledge/patterns.md"
+expect_allowed Edit "$WORKTREE/doc/loom/knowledge/patterns.md"
+expect_blocked Write "$SHARED/stages/01-bootstrap.md"
+expect_blocked Write .loom/work/.loom/work/stages/a
+# The resolved location decides. Each of these stays where its first components
+# put it, whatever it spells later: under handoffs, or inside this worktree,
+# where a backslash is an ordinary filename byte.
+expect_allowed Write .loom/work/handoffs/.loom/work/stages/a
+expect_allowed Write .worktrees/other-stage/src/main.rs
+expect_allowed Write '..\..\file.txt'
+mv "$WORKTREE/.loom/work" "$WORKTREE/.work"
+expect_allowed Read .work/stages/01-bootstrap.md
+expect_blocked Write .work/stages/01-bootstrap.md
+expect_blocked Write .work/sessions/session-abc123.md
+expect_blocked Write .work/heartbeat/stage.json
+expect_allowed Write .work/handoffs/handoff-001.md
+
 # 3. A scratchpad whose components belong to another uid stays blocked: a stat
 # shim reports a foreign owner for every path under the scratchpad.
 REAL_STAT=$(command -v stat)
@@ -124,5 +162,21 @@ expect_allowed Read "$SKILLS/loom-skill-catalog/bar/SKILL.md"
 expect_blocked Read "$SKILLS/skills/a/b/SKILL.md"
 expect_blocked Read "$SKILLS/sibling/foo/SKILL.md"
 expect_blocked Read "$TMP/other/.claude/skills/foo/SKILL.md"
+
+# 6. The loom relay scratch directory ($LOOM_SCRATCH_DIR) is open to every file
+# tool when it is a real directory named for $LOOM_SESSION_ID; a symlink out of
+# it, a sibling, or a directory named for another session stays blocked.
+RELAY="$TMP/relay/judge-1"
+mkdir -p "$RELAY" "$TMP/relay/judge-2"
+ln -s "$OUTSIDE" "$RELAY/out"
+LOOM_ENV=(LOOM_SESSION_ID=judge-1 LOOM_SCRATCH_DIR="$RELAY")
+expect_allowed Write "$RELAY/verdict.json"
+expect_allowed Read "$RELAY"
+expect_blocked Write "$RELAY/out/x.txt"
+expect_blocked Write "$TMP/relay/judge-2/verdict.json"
+LOOM_ENV=(LOOM_SESSION_ID=judge-2 LOOM_SCRATCH_DIR="$RELAY")
+expect_blocked Write "$RELAY/verdict.json"
+LOOM_ENV=()
+expect_blocked Write "$RELAY/verdict.json"
 
 echo "PASS"

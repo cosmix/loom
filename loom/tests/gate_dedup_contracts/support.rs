@@ -18,12 +18,13 @@ use loom::models::dispute::{
 use loom::models::stage::{Stage, StageStatus};
 use loom::orchestrator::adjudication::AdjudicatorRegistry;
 use loom::plan::schema::{AcceptanceCriterion, ContractSpec};
-use loom::relay::sha256_hex;
+use loom::utils::sha256_hex;
 use loom::verify::contracts::store::{
     load_freeze, write_freeze, FreezeRecord, FrozenContract, FrozenFile, FREEZE_RECORD_VERSION,
 };
 use tempfile::TempDir;
 
+use crate::helpers::test_support::git_repo::TestRepo;
 use crate::hv_support;
 
 pub const STAGE: &str = "stage-a";
@@ -76,9 +77,10 @@ pub fn refreeze_fixture() -> Refreeze {
     let home = tmp.path().join("home");
     fs::create_dir_all(&home).unwrap();
     let repo = tmp.path().join("repo");
-    let worktree = repo_with_worktree(&home, &repo);
+    let worktree = repo_with_worktree(&repo);
     let work = repo.join(".loom").join("work");
     fs::create_dir_all(&work).unwrap();
+    hv_support::capture_checkout_identity(&repo, &work);
     fs::write(work.join("orchestrator.lock"), b"").unwrap();
     WorkDir::new(&repo).unwrap().adopt_existing().unwrap();
     write_plan(&repo, &work);
@@ -112,28 +114,17 @@ impl Refreeze {
     }
 }
 
-fn repo_with_worktree(home: &Path, repo: &Path) -> PathBuf {
+fn repo_with_worktree(repo: &Path) -> PathBuf {
     fs::create_dir_all(repo.join("tests/support")).unwrap();
-    hv_support::git(home, repo, &["init", "-q", "-b", "main"]);
-    for (key, value) in [
-        ("user.email", "test@test.com"),
-        ("user.name", "Test User"),
-        ("commit.gpgsign", "false"),
-    ] {
-        hv_support::git(home, repo, &["config", key, value]);
-    }
+    TestRepo::builder().no_seed().init_in(repo);
     fs::write(repo.join(".gitignore"), ".loom/\n.worktrees/\n").unwrap();
     fs::write(repo.join(CONTRACT_FILE), CONTRACT_BYTES).unwrap();
     fs::write(repo.join(HELPER_FILE), HELPER_BYTES).unwrap();
-    hv_support::git(home, repo, &["add", "."]);
-    hv_support::git(home, repo, &["commit", "-q", "-m", "base"]);
+    hv_support::git(repo, &["add", "."]);
+    hv_support::git(repo, &["commit", "-q", "-m", "base"]);
     let relative = format!(".worktrees/{STAGE}");
     let branch = format!("loom/{STAGE}");
-    hv_support::git(
-        home,
-        repo,
-        &["worktree", "add", "-q", "-b", &branch, &relative],
-    );
+    hv_support::git(repo, &["worktree", "add", "-q", "-b", &branch, &relative]);
     repo.join(relative)
 }
 
@@ -162,7 +153,7 @@ fn stage() -> Stage {
         contracts: vec![ContractSpec {
             id: CONTRACT.to_string(),
             file: CONTRACT_FILE.to_string(),
-            test: "c1".to_string(),
+            test: Some("c1".to_string()),
             runner: Some("cargo-test".to_string()),
             cwd: None,
             scenario: "x arrives".to_string(),
@@ -195,6 +186,7 @@ fn freeze(work: &Path) {
             exit_code: Some(101),
             file: Some(CONTRACT_FILE.to_string()),
             cwd: Some(".".to_string()),
+            test: None,
         }],
     };
     let copies: Vec<(String, Vec<u8>)> = files
@@ -212,6 +204,8 @@ fn write_dispute(work: &Path) {
         stage_id: STAGE.to_string(),
         kind: DisputeKind::Contract {
             contract_id: CONTRACT.to_string(),
+            replacement: None,
+            replacement_base_sha256: None,
         },
         reason: "the contract is wrong".to_string(),
         evidence_commit: None,
@@ -292,9 +286,42 @@ fn write_exec(path: &Path, content: &str) {
 
 /// Install the guard and its sourced helpers into `dir`; returns the hook.
 pub fn install_guard(dir: &Path) -> PathBuf {
-    use loom::fs::permissions::constants::{HOOK_BOUNDED, HOOK_COMMON};
+    use loom::fs::permissions::constants::{HOOK_BOUNDED, HOOK_COMMON, HOOK_VERIFY_MATCHERS};
     write_exec(&dir.join("_bounded.sh"), HOOK_BOUNDED);
     write_exec(&dir.join("_common.sh"), HOOK_COMMON);
+    write_exec(
+        &dir.join("_parser.sh"),
+        loom::fs::permissions::constants::HOOK_PARSER,
+    );
+    write_exec(
+        &dir.join("_parser_expand.sh"),
+        loom::fs::permissions::constants::HOOK_PARSER_EXPAND,
+    );
+    write_exec(
+        &dir.join("_parser_scan.sh"),
+        loom::fs::permissions::constants::HOOK_PARSER_SCAN,
+    );
+    write_exec(
+        &dir.join("_identity.sh"),
+        loom::fs::permissions::constants::HOOK_IDENTITY,
+    );
+    write_exec(
+        &dir.join("_stage_lookup.sh"),
+        loom::fs::permissions::constants::HOOK_STAGE_LOOKUP,
+    );
+    write_exec(
+        &dir.join("_containment.sh"),
+        loom::fs::permissions::constants::HOOK_CONTAINMENT,
+    );
+    write_exec(
+        &dir.join("_heartbeat.sh"),
+        loom::fs::permissions::constants::HOOK_HEARTBEAT,
+    );
+    write_exec(
+        &dir.join("_spawn_policy.sh"),
+        loom::fs::permissions::constants::HOOK_SPAWN_POLICY,
+    );
+    write_exec(&dir.join("_verify_matchers.sh"), HOOK_VERIFY_MATCHERS);
     let hook = dir.join("subagent-verify-guard.sh");
     let script = loom::fs::permissions::constants::HOOK_SUBAGENT_VERIFY_GUARD;
     write_exec(&hook, script);

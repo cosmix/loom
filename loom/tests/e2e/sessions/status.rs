@@ -52,18 +52,20 @@ fn test_session_all_status_transitions() {
 }
 
 #[test]
-fn test_session_status_equality() {
-    assert_eq!(SessionStatus::Spawning, SessionStatus::Spawning);
-    assert_eq!(SessionStatus::Running, SessionStatus::Running);
-    assert_eq!(SessionStatus::Paused, SessionStatus::Paused);
-    assert_eq!(SessionStatus::Completed, SessionStatus::Completed);
-    assert_eq!(SessionStatus::Crashed, SessionStatus::Crashed);
-    assert_eq!(
-        SessionStatus::ContextExhausted,
-        SessionStatus::ContextExhausted
-    );
-
-    assert_ne!(SessionStatus::Spawning, SessionStatus::Running);
-    assert_ne!(SessionStatus::Running, SessionStatus::Paused);
-    assert_ne!(SessionStatus::Completed, SessionStatus::Crashed);
+fn test_session_status_serialization() {
+    for (status, expected) in [
+        (SessionStatus::Spawning, "\"spawning\""),
+        (SessionStatus::Running, "\"running\""),
+        (SessionStatus::Paused, "\"paused\""),
+        (SessionStatus::Completed, "\"completed\""),
+        (SessionStatus::Crashed, "\"crashed\""),
+        (SessionStatus::ContextExhausted, "\"contextexhausted\""),
+    ] {
+        let json = serde_json::to_string(&status).unwrap();
+        assert_eq!(json, expected);
+        assert_eq!(
+            serde_json::from_str::<SessionStatus>(&json).unwrap(),
+            status
+        );
+    }
 }

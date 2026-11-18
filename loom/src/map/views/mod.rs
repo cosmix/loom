@@ -27,6 +27,7 @@ mod filters;
 mod find_all;
 mod impact;
 pub mod json;
+pub mod markdown_outline;
 mod matching;
 mod neighbors;
 mod outline;
@@ -99,6 +100,10 @@ pub fn render_footer(graph: &ResolvedGraph, stats: &ResolutionStats) -> String {
 }
 
 #[cfg(test)]
+mod markdown_outline_tests;
+#[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_identity_impact;
 #[cfg(test)]
 mod tests_rows;

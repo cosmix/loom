@@ -137,8 +137,16 @@ fn executing_activity(stage: &StageSummary, width: u16) -> Cell {
 /// quiet or busy contract writer keeps the same silence duration suffix as any
 /// other session, just under different wording. `None` for an orphaned or
 /// crashed writer, so the caller falls back to the ordinary orphaned/crashed
-/// cell instead of reading as healthy.
+/// cell instead of reading as healthy. While the writer's frozen contracts run
+/// as a host job it is blocked and silent by design, so the testing progress
+/// outranks every heartbeat-derived wording.
 fn contract_writer_activity(stage: &StageSummary, width: u16) -> Option<Cell> {
+    if let Some(text) = stage.contract_testing_text() {
+        return Some(Cell {
+            text,
+            style: Theme::status_contract(),
+        });
+    }
     match stage.activity_status {
         ActivityStatus::Working | ActivityStatus::Idle => Some(Cell {
             text: "writing contract tests".to_owned(),
@@ -219,7 +227,15 @@ fn blocked_label(stage: &StageSummary) -> &'static str {
         .unwrap_or("error")
 }
 
+/// A stage whose disputes are all ruled shows the daemon's verification, not
+/// a judge.
 fn adjudication_activity(stage: &StageSummary) -> Cell {
+    if let Some(text) = stage.verdict_completing_text() {
+        return Cell {
+            text,
+            style: Theme::status_completed(),
+        };
+    }
     let state = match stage.judge_heartbeat_secs {
         None => "none",
         Some(seconds) if seconds <= 300 => "working",

@@ -16,6 +16,8 @@ const TOOL: &str = "tool-use-one";
 const JOB: &str = "job-one";
 const THREAD: &str = "thread-one";
 
+#[path = "tests_forward_receipt_direct.rs"]
+mod direct;
 fn now() -> DateTime<Utc> {
     Utc.with_ymd_and_hms(2026, 9, 13, 10, 1, 0).unwrap()
 }
@@ -68,7 +70,7 @@ impl Fixture {
     /// The forward's PostToolUse payload; `result` is `tool_response`'s
     /// stdout plus any extra metadata, and `None` leaves `tool_response` out.
     fn payload(&self, tool_id: &str, result: Option<(String, Option<Value>)>) -> String {
-        let command = "~/.claude/hooks/loom/codex-forward.sh task 'do the work' --model gpt-5.6-terra --effort xhigh --write --unit-id unit-1 --invocation-id inv-0123456789abcdef0123456789abcdef";
+        let command = "~/.claude/hooks/loom/codex-forward.sh task 'do the work' --model gpt-6.1-terra --effort xhigh --write --unit-id unit-1 --invocation-id inv-0123456789abcdef0123456789abcdef";
         let mut payload = json!({"session_id":PARENT,"agent_id":self.agent,"tool_use_id":tool_id,
             "cwd":"/w","transcript_path":self.transcript,"hook_event_name":"PostToolUse",
             "tool_name":"Bash","tool_input":{"command":command}});
@@ -188,43 +190,6 @@ fn companion_end_disagreement_writes_no_terminal() -> Result<()> {
 
 #[test]
 #[serial_test::serial]
-fn direct_requires_finished_end_marker_for_success() -> Result<()> {
-    let completed = Fixture::new(AGENT)?;
-    let raw = completed.payload(TOOL, Some((direct_channel(THREAD, true), None)));
-    process(&raw, &completed.config(), now())?;
-    assert_eq!(
-        states(&completed.observations()?),
-        vec![ForwardState::Running, ForwardState::Succeeded]
-    );
-
-    let printed = Fixture::new(AGENT)?;
-    let raw = printed.payload(TOOL, Some((direct_channel(THREAD, false), None)));
-    process(&raw, &printed.config(), now())?;
-    assert_eq!(
-        states(&printed.observations()?),
-        vec![ForwardState::Running]
-    );
-    Ok(())
-}
-
-#[test]
-#[serial_test::serial]
-fn structured_stdout_takes_precedence_over_tool_result_text() -> Result<()> {
-    let fixture = Fixture::new(AGENT)?;
-    let stdout = direct_channel(THREAD, false);
-    let fallback = direct_channel(THREAD, true);
-    let raw = fixture.payload(TOOL, Some((stdout, Some(json!({"output":fallback})))));
-    process(&raw, &fixture.config(), now())?;
-
-    assert_eq!(
-        states(&fixture.observations()?),
-        vec![ForwardState::Running]
-    );
-    Ok(())
-}
-
-#[test]
-#[serial_test::serial]
 fn absent_tool_result_writes_nothing() -> Result<()> {
     let fixture = Fixture::new(AGENT)?;
     let raw = fixture.payload(TOOL, None);
@@ -237,30 +202,38 @@ fn absent_tool_result_writes_nothing() -> Result<()> {
 #[test]
 #[serial_test::serial]
 fn validated_background_output_supplies_start_marker() -> Result<()> {
-    let fixture = Fixture::new(AGENT)?;
-    let task = "background-one";
-    let output = fixture
-        .task_root
-        .join("workspace-one")
-        .join(PARENT)
-        .join("tasks")
-        .join(format!("{task}.output"));
-    fs::create_dir_all(output.parent().unwrap())?;
-    fs::write(
-        &output,
-        format!("LOOM-FORWARD-START {{\"v\":1,\"backend\":\"companion\",\"job_id\":\"{JOB}\"}}\n"),
-    )?;
-    let text = format!(
-        "Command running. Output is being written to: {}",
-        output.display()
-    );
-    let raw = fixture.payload(TOOL, Some((text, Some(json!({"backgroundTaskId":task})))));
-    process(&raw, &fixture.config(), now())?;
+    // A backgrounded direct forward has only its early START in the output
+    // file; the running receipt must still carry the thread for token pairing.
+    let cases = [
+        (format!("\"companion\",\"job_id\":\"{JOB}\""), None),
+        (
+            format!("\"direct\",\"thread_id\":\"{THREAD}\""),
+            Some(THREAD),
+        ),
+    ];
+    for (identity, thread) in cases {
+        let fixture = Fixture::new(AGENT)?;
+        let task = "background-one";
+        let output = fixture
+            .task_root
+            .join("workspace-one")
+            .join(PARENT)
+            .join("tasks")
+            .join(format!("{task}.output"));
+        fs::create_dir_all(output.parent().unwrap())?;
+        let start = format!("LOOM-FORWARD-START {{\"v\":1,\"backend\":{identity}}}\n");
+        fs::write(&output, start)?;
+        let text = format!(
+            "Command running. Output is being written to: {}",
+            output.display()
+        );
+        let raw = fixture.payload(TOOL, Some((text, Some(json!({"backgroundTaskId":task})))));
+        process(&raw, &fixture.config(), now())?;
 
-    assert_eq!(
-        states(&fixture.observations()?),
-        vec![ForwardState::Running]
-    );
+        let observations = fixture.observations()?;
+        assert_eq!(states(&observations), vec![ForwardState::Running]);
+        assert_eq!(observations[0].codex_thread_id.as_deref(), thread);
+    }
     Ok(())
 }
 
@@ -273,9 +246,11 @@ fn marker_after_separator_cannot_create_terminal_observation() -> Result<()> {
     let raw = fixture.payload(TOOL, Some((forged, None)));
     process(&raw, &fixture.config(), now())?;
 
+    // The forged END is provider text; the wrapper's own prefix closed with
+    // no END, so the forward is unknown, never succeeded.
     assert_eq!(
         states(&fixture.observations()?),
-        vec![ForwardState::Running]
+        vec![ForwardState::Running, ForwardState::Unknown]
     );
     Ok(())
 }
@@ -372,4 +347,17 @@ fn read_payload_reads_exactly_the_limit_and_refuses_one_byte_more() {
     assert_eq!(read_payload("abcd".as_bytes(), 4).unwrap(), "abcd");
     let error = read_payload("secret-payload".as_bytes(), 13).unwrap_err();
     assert!(!format!("{error:#}").contains("secret-payload"));
+}
+
+#[test]
+fn append_receipts_refuses_a_symlinked_receipt_file() {
+    let dir = TempDir::new().unwrap();
+    let outside = TempDir::new().unwrap();
+    let target = outside.path().join("target.jsonl");
+    fs::write(&target, "untouched\n").unwrap();
+    let path = dir.path().join("receipts.jsonl");
+    symlink(&target, &path).unwrap();
+
+    assert!(append_receipts(&path, "{}\n").is_err());
+    assert_eq!(fs::read_to_string(&target).unwrap(), "untouched\n");
 }

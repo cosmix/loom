@@ -1,0 +1,231 @@
+/*
+ * An opened sentence (a "run") reads as text that grew in place: the same reading face, size and
+ * measure as the sentence it replaced, on the page ground, with no wash, box or shadow
+ * (doc/product/feat-planner/index.md, Vision; DESIGN.md, Surfaces). Its extent and its folds are
+ * plain to see at rest:
+ *   - a block run (source passages) always draws a 2px edge down its start in its document's hue
+ *     (`--run-colour`), hung into the page gutter so the text keeps the sentence's own left edge
+ *     (DESIGN.md, Surfaces, names this edge as the one coloured border of the reading column);
+ *   - an inline run (cited sentences) carries a hairline under each of its sentences, which
+ *     turns the hue while one of its own caps is hovered or focused, naming the run that cap
+ *     would fold;
+ *   - the fold caps sit in the text at both ends of a run: a bare chevron in the hue, no box, that
+ *     brightens and leans the way it points when hovered or focused.
+ * The hue is identity (which document), never a status, and `--primary` never appears here.
+ */
+
+.concept-run {
+  --run-edge: var(--hairline);
+}
+
+/* The hairline sits under each cited sentence, never under the run's span: a member opened to
+   passages breaks the span's inline box, and the sentences after it must still read as level 1
+   rather than as closed overview prose. The wrap's own wash transitions (concept.css) are kept;
+   its box-decoration-break there repeats the line on every wrapped fragment. */
+.concept-run > .concept-sentence-wrap {
+  border-bottom: 1px solid var(--run-edge);
+  transition:
+    background-color 120ms,
+    box-shadow 120ms,
+    border-color 120ms;
+}
+
+/* Only this run's own caps recolour it; nested caps leave the outer edge alone. An inline run's
+   start cap is a direct child unless its first sentence opened to passages: then it waits in
+   that run's first passage (or its "No source sections." line) inside .concept-run-leading. */
+.concept-run:has(> .concept-run-cap:is(:hover, :focus-visible)),
+.concept-run:has(
+  > .concept-passages
+    > :is(.concept-passage, .concept-muted)
+    > .concept-run-leading
+    > .concept-run-cap:is(:hover, :focus-visible)
+) {
+  --run-edge: var(--run-colour);
+}
+
+.concept-passages {
+  margin-block: 0.5em;
+  margin-inline-start: -12px;
+  padding-inline-start: 10px;
+  border-inline-start: 2px solid var(--run-colour);
+}
+
+/* The fold cap: the chevron is the control. A 1.1em chevron in the document's hue at 70%, in the
+   text at each end of the run, with no box, edge or wash at rest or on hover: a square read as a
+   button stuck in the prose. The 1.5em box of padding (never under 24px) is the hit area and
+   keeps the old footprint and `vertical-align`, so the line box does not grow. The box is round,
+   so the focus ring is a circle around the chevron. */
+.concept-run-cap {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  width: 1.5em;
+  height: 1.5em;
+  min-width: 24px;
+  min-height: 24px;
+  margin: 0 0.15em;
+  padding: 0.2em;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--run-colour);
+  /* At rest the chevron is a control, so it needs 3:1 (WCAG 1.4.11) against the page: at 0.85 the
+   * weakest doc hue gives 3.4:1 on Ledger and 4.2:1 or more on Graphite and Aubergine (0.7 gave 2.7:1). */
+  opacity: 0.85;
+  vertical-align: -0.35em;
+  cursor: pointer;
+  transition: opacity 120ms;
+}
+
+.concept-run-cap-icon {
+  width: 1.1em;
+  height: 1.1em;
+  transition: transform 120ms;
+}
+
+/* Hovered or focused, the chevron comes to full strength and leans 2px the way it points. */
+.concept-run-cap:is(:hover, :focus-visible) {
+  opacity: 1;
+}
+
+.concept-run-cap[data-side="start"]:is(:hover, :focus-visible) > .concept-run-cap-icon {
+  transform: translateX(-2px);
+}
+
+.concept-run-cap[data-side="end"]:is(:hover, :focus-visible) > .concept-run-cap-icon {
+  transform: translateX(2px);
+}
+
+.concept-run-cap:focus-visible,
+.concept-plan-glyph:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+/* No overflow-x here: tables and code scroll in their own wrappers, and an overflow box would
+   clip the start cap's focus ring at the left edge. */
+.concept-passage {
+  padding-block: 0.15em;
+}
+
+.concept-passage + .concept-passage {
+  margin-top: 0.6em;
+}
+
+/* The chip names the section, so the passage's own heading line (every passage starts with
+   it, passages.ts passageOf) is not drawn a second time. */
+.concept-passage .md > :is(h1, h2, h3, h4, h5, h6, .md-heading):first-child {
+  display: none;
+}
+
+.concept-passage .md > :is(h1, h2, h3, h4, h5, h6, .md-heading):first-child + * {
+  margin-top: 0;
+}
+
+/* The body flows on from the chip line: a one-paragraph passage reads inline after the chip,
+   and the last paragraph carries the end cap on its last line. Earlier paragraphs, lists,
+   tables and code stay block, so after one of those the end cap takes a trailing line. */
+.concept-passage .md,
+.concept-passage .md > p:last-child {
+  display: inline;
+}
+
+/* The last paragraph is inline, so the `.md > * + *` top margin no longer separates it from the
+   block before it; that block carries the gap instead. The hidden first heading is excluded: a
+   one-paragraph passage has nothing to separate. */
+.concept-passage
+  .md
+  > :has(+ p:last-child):not(:is(h1, h2, h3, h4, h5, h6, .md-heading):first-child) {
+  margin-bottom: 0.75em;
+}
+
+/* The chip is a link naming the passage's file and heading: fine print, no edge, no fill. */
+.concept-passage-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35em;
+  margin-inline-end: 0.45em;
+  color: var(--muted-foreground);
+  font-family: var(--font-sans);
+  font-size: var(--type-fine);
+  font-weight: 500;
+  line-height: 1.4;
+  vertical-align: middle;
+  white-space: nowrap;
+  text-decoration: none;
+  transition: color 120ms;
+}
+
+.concept-passage-chip > svg {
+  flex: none;
+  width: 1.1em;
+  height: 1.1em;
+}
+
+.concept-passage-chip:hover {
+  color: var(--foreground);
+  text-decoration: underline;
+}
+
+.concept-passage-chip:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.concept-passage-path {
+  font-family: var(--font-mono);
+}
+
+.concept-muted {
+  font-family: var(--font-sans);
+  color: var(--muted-foreground);
+  font-size: var(--type-ui);
+}
+
+.concept-note {
+  display: block;
+  font-family: var(--font-sans);
+  margin-block: 4px;
+  color: var(--muted-foreground);
+  font-size: var(--type-ui);
+  line-height: 1.4;
+}
+
+.concept-note a {
+  text-decoration: underline;
+}
+
+/* The plan glyph after a sentence: a bare icon button, no edge. */
+.concept-plan-glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.1em;
+  height: 1.1em;
+  margin-inline-start: 0.1em;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted-foreground);
+  vertical-align: middle;
+  cursor: pointer;
+}
+
+.concept-plan-glyph:hover {
+  color: var(--foreground);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .concept-run > .concept-sentence-wrap,
+  .concept-run-cap,
+  .concept-run-cap-icon,
+  .concept-passage-chip {
+    transition: none;
+  }
+
+  .concept-run-cap:is(:hover, :focus-visible) > .concept-run-cap-icon {
+    transform: none;
+  }
+}

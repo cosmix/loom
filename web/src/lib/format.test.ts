@@ -1,41 +1,22 @@
 import { describe, expect, it } from "vitest";
 
-import fixtureJson from "@/api/fixtures/snapshot.json";
+import { snapshotSchema, type Busy, type StageStatus, type StageSummary } from "@/api/schema";
 import {
-  snapshotSchema,
-  type ActivityStatus,
-  type FailureType,
-  type StageStatus,
-  type StageSummary,
-} from "@/api/schema";
-import {
-  activityText,
   contextUsage,
   daemonLine,
-  exitReasonLabel,
-  failureLabel,
   formatClock,
   formatElapsed,
   formatStamp,
-  isContractPhase,
   mergeText,
   modelsOf,
   progressPercent,
-  sessionTypeLabel,
   stateMeta,
   summaryCounts,
   timeText,
   type Tone,
 } from "@/lib/format";
-
-const fixture = snapshotSchema.parse(fixtureJson);
-const stages = new Map(fixture.status.stages.map((stage) => [stage.id, stage]));
-const template = fixture.status.stages[0];
-const clientFailure = stages.get("client")!.failure_info!;
-
-function stage(overrides: Partial<StageSummary> = {}): StageSummary {
-  return { ...template, ...overrides };
-}
+import { fixture, stage, stages } from "./format-kit";
+import fixtureJson from "@/api/fixtures/snapshot.json";
 
 describe("TUI formatter ports", () => {
   it.each([
@@ -64,23 +45,6 @@ describe("TUI formatter ports", () => {
     ["needs-adjudication", "warning", true],
   ])("maps %s to its TUI state metadata", (status, tone, bold) => {
     expect(stateMeta(status)).toEqual({ tone, bold });
-  });
-
-  it.each<readonly [FailureType, string]>([
-    ["session-crash", "crash"],
-    ["test-failure", "test"],
-    ["build-failure", "build"],
-    ["code-error", "code"],
-    ["timeout", "timeout"],
-    ["context-exhausted", "context"],
-    ["user-blocked", "user"],
-    ["merge-conflict", "merge"],
-    ["infrastructure-error", "infra"],
-    ["sandbox-setup-failure", "sandbox"],
-    ["startup-refusal", "startup"],
-    ["unknown", "error"],
-  ])("maps failure %s to %s", (failure, expected) => {
-    expect(failureLabel(failure)).toBe(expected);
   });
 
   it.each([
@@ -113,250 +77,6 @@ describe("TUI formatter ports", () => {
     expect(
       contextUsage(stage({ status: "executing", context_tokens: 1, context_ceiling_tokens: 0 })),
     ).toBeNull();
-  });
-
-  it.each<readonly [ActivityStatus, string, Tone]>([
-    ["Working", "working · Bash", "completed"],
-    ["Idle", "idle 1m1s", "dimmed"],
-    ["Error", "crashed", "blocked"],
-    ["Stale", "stale 1m1s", "warning"],
-    ["Quiet", "quiet 1m1s", "dimmed"],
-    ["Busy", "running Bash 1m1s", "completed"],
-    ["Orphaned", "orphaned", "blocked"],
-  ])("formats executing %s activity", (activity_status, text, tone) => {
-    const result = activityText(
-      stage({
-        status: "executing",
-        activity_status,
-        last_tool: ["Working", "Busy"].includes(activity_status) ? "Bash" : null,
-        staleness_secs: ["Idle", "Stale", "Quiet", "Busy"].includes(activity_status) ? 61 : null,
-      }),
-    );
-
-    expect(result).toEqual({ text, tone });
-  });
-
-  it("names no tool for a busy session whose open call is unknown", () => {
-    expect(
-      activityText(
-        stage({
-          status: "executing",
-          activity_status: "Busy",
-          last_tool: null,
-          staleness_secs: 730,
-        }),
-      ),
-    ).toEqual({ text: "in tool call 12m10s", tone: "completed" });
-  });
-
-  it("uses the short working form when no tool is known", () => {
-    expect(
-      activityText(stage({ status: "executing", activity_status: "Working", last_tool: null })),
-    ).toEqual({
-      text: "working",
-      tone: "completed",
-    });
-  });
-
-  it.each<readonly [ActivityStatus, string, Tone]>([
-    ["Working", "writing contract tests", "contract"],
-    ["Idle", "writing contract tests", "contract"],
-    ["Stale", "contract writer idle 1m1s", "warning"],
-    ["Quiet", "contract writer quiet 1m1s", "dimmed"],
-    ["Busy", "contract writer running Bash 1m1s", "contract"],
-    ["Orphaned", "orphaned", "blocked"],
-    ["Error", "crashed", "blocked"],
-  ])("formats a contract-phase stage's %s activity", (activity_status, text, tone) => {
-    expect(
-      activityText(
-        stage({
-          status: "executing",
-          session_type: "contract",
-          activity_status,
-          last_tool: ["Working", "Busy"].includes(activity_status) ? "Bash" : null,
-          staleness_secs: ["Idle", "Stale", "Quiet", "Busy"].includes(activity_status) ? 61 : null,
-        }),
-      ),
-    ).toEqual({ text, tone });
-  });
-
-  it.each<readonly [Partial<StageSummary>, boolean]>([
-    [{ status: "executing", session_type: "contract" }, true],
-    [{ status: "executing", session_type: "stage" }, false],
-    [{ status: "queued", session_type: "contract" }, false],
-    [{ status: "executing", session_type: null }, false],
-  ])("detects the contract-writer phase %#", (overrides, expected) => {
-    expect(isContractPhase(stage(overrides))).toBe(expected);
-  });
-
-  it.each<readonly [StageSummary["session_type"], string | null]>([
-    ["contract", "contract writer"],
-    ["stage", "stage"],
-    ["baseconflict", "baseconflict"],
-    [null, null],
-  ])("labels session type %s", (type, label) => {
-    expect(sessionTypeLabel(type)).toBe(label);
-  });
-
-  it.each([
-    ["stalled", "ready · last: stalled"],
-    ["context-ceiling", "ready · last: context ceiling"],
-  ] as const)("shows a queued stage's last %s session exit", (reason, text) => {
-    expect(
-      activityText(
-        stage({
-          status: "queued",
-          outgoing_session_exit_reason: reason,
-        }),
-      ),
-    ).toEqual({ text, tone: "queued" });
-  });
-
-  it("does not show the last session exit while executing", () => {
-    expect(
-      activityText(
-        stage({
-          status: "executing",
-          activity_status: "Working",
-          last_tool: null,
-          outgoing_session_exit_reason: "stalled",
-        }),
-      ),
-    ).toEqual({ text: "working", tone: "completed" });
-  });
-
-  it("shows an incoherent executing stage and lets held override its tone", () => {
-    expect(
-      activityText(stage({ status: "executing", incoherence: "bad frame", held: true })),
-    ).toEqual({
-      text: "held · incoherent",
-      tone: "warning",
-    });
-  });
-
-  it("prioritizes completion recovery over stale activity and incoherence", () => {
-    const completion_blocker = {
-      state: "pending" as const,
-      fingerprint: "fp",
-      failure_code: "boundary-check-failed",
-      summary: "Verification did not observe the completion commit",
-      commit: "abc123",
-      repeat_count: 1,
-      first_observed_at: null,
-      last_observed_at: null,
-      next_action: "wait for another verification pass",
-    };
-
-    expect(
-      activityText(
-        stage({
-          status: "executing",
-          activity_status: "Stale",
-          incoherence: "stale session metadata",
-          completion_blocker,
-        }),
-      ),
-    ).toEqual({
-      text: "completion pending: Verification did not observe the completion commit",
-      tone: "warning",
-    });
-  });
-
-  it("keeps the held prefix on a blocked completion and hides the last session exit", () => {
-    expect(
-      activityText(
-        stage({
-          status: "needs-human-review",
-          held: true,
-          outgoing_session_exit_reason: "context-ceiling",
-          completion_blocker: {
-            state: "ownership_unknown",
-            fingerprint: "fp",
-            failure_code: "writer-unconfirmed",
-            summary: null,
-            commit: "abc123",
-            repeat_count: 2,
-            first_observed_at: null,
-            last_observed_at: null,
-            next_action: "confirm commit ownership",
-          },
-        }),
-      ),
-    ).toEqual({
-      text: "held · completion blocked, writer unconfirmed: writer-unconfirmed",
-      tone: "warning",
-    });
-  });
-
-  it("ignores completion recovery data once the stage is completed", () => {
-    expect(
-      activityText(
-        stage({
-          status: "completed",
-          completion_blocker: {
-            state: "blocked",
-            fingerprint: "fp",
-            failure_code: "old-failure",
-            summary: null,
-            commit: "abc123",
-            repeat_count: 2,
-            first_observed_at: null,
-            last_observed_at: null,
-            next_action: "ignore stale recovery data",
-          },
-        }),
-      ),
-    ).toBeNull();
-  });
-
-  it.each([
-    ["completed", "completed"],
-    ["crashed", "crashed"],
-    ["context-ceiling", "context ceiling"],
-    ["stalled", "stalled"],
-    ["operator-stop", "operator stop"],
-    ["criteria-blocked", "criteria blocked"],
-    ["replaced", "replaced"],
-  ] as const)("labels the %s session exit reason", (reason, label) => {
-    expect(exitReasonLabel(reason)).toBe(label);
-  });
-
-  it.each<readonly [StageStatus, Partial<StageSummary>, string, Tone]>([
-    ["queued", {}, "ready", "queued"],
-    ["waiting-for-input", {}, "awaiting input", "warning"],
-    ["needs-handoff", {}, "handing off", "warning"],
-    [
-      "blocked",
-      { failure_info: clientFailure, retry_count: 2, max_retries: null },
-      "test 2/3",
-      "blocked",
-    ],
-    ["completed-with-failures", { retry_count: 2, max_retries: 5 }, "failed 2/5", "blocked"],
-    ["merge-conflict", {}, "conflict", "warning"],
-    ["merge-blocked", {}, "merge error", "blocked"],
-    ["needs-human-review", { held: true }, "held · awaiting you", "warning"],
-  ])("formats %s activity branches", (status, overrides, text, tone) => {
-    expect(activityText(stage({ ...overrides, status }))).toEqual({ text, tone });
-  });
-
-  it.each<readonly [number | null, string]>([
-    [null, "dispute 3 · judge none"],
-    [300, "dispute 3 · judge working"],
-    [301, "dispute 3 · judge stale"],
-  ])("formats a judge heartbeat of %s", (heartbeat, text) => {
-    expect(
-      activityText(
-        stage({
-          status: "needs-adjudication",
-          dispute_count: 3,
-          judge_heartbeat_secs: heartbeat,
-        }),
-      ),
-    ).toEqual({ text, tone: "warning" });
-  });
-
-  it("leaves completed activity blank", () => {
-    expect(activityText(stage({ status: "completed" }))).toBeNull();
   });
 
   it.each<readonly [Partial<StageSummary>, { text: string; tone: Tone } | null]>([
@@ -394,7 +114,11 @@ describe("TUI formatter ports", () => {
   it.each<readonly [Partial<StageSummary>, string | null]>([
     [{ status: "waiting-for-deps" }, null],
     [{ status: "queued" }, null],
-    [{ status: "completed", execution_secs: 90, elapsed_secs: 5 }, "1m30s"],
+    [{ status: "completed", execution_secs: 90, elapsed_secs: 150 }, "2m30s"],
+    [{ status: "completed-with-failures", execution_secs: 90, elapsed_secs: 150 }, "2m30s"],
+    [{ status: "completed", execution_secs: 90, elapsed_secs: null }, "1m30s"],
+    [{ status: "completed", execution_secs: 90, elapsed_secs: 0 }, "0s"],
+    [{ status: "executing", execution_secs: 90, elapsed_secs: 150 }, "1m30s"],
     [{ status: "completed", execution_secs: null, elapsed_secs: 61 }, "1m1s"],
     [{ status: "completed", execution_secs: null, elapsed_secs: null }, ""],
   ])("formats time state %#", (overrides, expected) => {
@@ -404,7 +128,7 @@ describe("TUI formatter ports", () => {
   it("preserves the primary and execution model lists", () => {
     expect(modelsOf(stages.get("server")!)).toEqual({
       model: "opus",
-      execution: ["sonnet", "gpt-5.6-terra"],
+      execution: ["sonnet/medium", "gpt-6.1-terra/xhigh (requested)"],
     });
   });
 
@@ -439,7 +163,141 @@ describe("TUI formatter ports", () => {
       { text: "daemon unknown", detail: "no data for 45s", tone: "dimmed" },
     ],
   ] as const)("formats daemon %s (tick %s, stale %s)", (daemon, tickAge, staleSecs, expected) => {
-    expect(daemonLine(daemon, tickAge, staleSecs)).toEqual(expected);
+    expect(daemonLine(daemon, tickAge, staleSecs, null, Date.now())).toEqual(expected);
+  });
+
+  describe("daemonLine with a busy operation", () => {
+    const now = Date.parse("2026-11-08T12:00:00.000Z");
+    const busy: Busy = {
+      op: "merge-verification",
+      what: "verifying the merge of stage-a",
+      stage_id: "stage-a",
+      started_at: new Date(now - 90_000).toISOString(),
+      ceiling_secs: 1200,
+      global_ceiling_secs: 1800,
+    };
+
+    it("never shows a leftover busy line for a stopped or half-alive daemon", () => {
+      expect(daemonLine("not-running", 2, null, busy, now)).toEqual({
+        text: "daemon stopped",
+        tone: "dimmed",
+      });
+      expect(daemonLine("process-only", 2, null, busy, now)).toEqual({
+        text: "daemon process alive, socket missing",
+        tone: "warning",
+      });
+    });
+
+    it("prints the tick age, not the operation's elapsed time, for a stale tick", () => {
+      expect(daemonLine("running", 75, null, busy, now)).toEqual({
+        text: "loop stalled 1m15s",
+        tone: "warning",
+      });
+    });
+
+    it("keeps the unreachable detail ahead of the busy detail", () => {
+      expect(daemonLine("unreachable", 2, null, busy, now)).toEqual({
+        text: "daemon running",
+        detail: "socket unreachable",
+        tone: "warning",
+      });
+    });
+
+    it("shows the operation and its elapsed time while the tick is fresh", () => {
+      expect(daemonLine("running", 2, null, busy, now)).toEqual({
+        text: "daemon running",
+        detail: "busy verifying the merge of stage-a 1m30s",
+        tone: "completed",
+      });
+    });
+
+    it("treats an unparseable started_at as just started", () => {
+      const line = daemonLine("running", 2, null, { ...busy, started_at: "garbage" }, now);
+      expect(line.detail).toBe("busy verifying the merge of stage-a 0s");
+    });
+  });
+
+  describe("daemonLine busy boundaries", () => {
+    const now = Date.parse("2026-11-08T12:00:00.000Z");
+    const busyWith = (startedAt: string, ceilingSecs = 1200): Busy => ({
+      op: "merge-verification",
+      what: "verifying the merge of stage-a",
+      stage_id: "stage-a",
+      started_at: startedAt,
+      ceiling_secs: ceilingSecs,
+      global_ceiling_secs: 1800,
+    });
+    const agoMs = (ms: number) => new Date(now - ms).toISOString();
+
+    it("reports the global ceiling ahead of an unreachable socket", () => {
+      expect(daemonLine("unreachable", 2, null, busyWith(agoMs(1_900_000)), now)).toEqual({
+        text: "loop stalled 31m40s",
+        tone: "warning",
+      });
+    });
+
+    it("turns warning exactly at the operation's ceiling", () => {
+      const at = daemonLine("running", 2, null, busyWith(agoMs(1_200_000)), now);
+      const under = daemonLine("running", 2, null, busyWith(agoMs(1_199_000)), now);
+      expect(at).toEqual({
+        text: "daemon running",
+        detail: "busy verifying the merge of stage-a 20m0s",
+        tone: "warning",
+      });
+      expect(under).toEqual({
+        text: "daemon running",
+        detail: "busy verifying the merge of stage-a 19m59s",
+        tone: "completed",
+      });
+    });
+
+    it("reports stalled exactly at the global ceiling, not one second before", () => {
+      expect(daemonLine("running", 2, null, busyWith(agoMs(1_800_000)), now)).toEqual({
+        text: "loop stalled 30m0s",
+        tone: "warning",
+      });
+      expect(daemonLine("running", 2, null, busyWith(agoMs(1_799_000)), now).text).toBe(
+        "daemon running",
+      );
+    });
+
+    it("truncates a fractional second like the daemon", () => {
+      const line = daemonLine("running", 2, null, busyWith(agoMs(299_600), 300), now);
+      expect(line.detail).toBe("busy verifying the merge of stage-a 4m59s");
+      expect(line.tone).toBe("completed");
+    });
+
+    it("reads a nanosecond-precision started_at", () => {
+      const line = daemonLine("running", 2, null, busyWith("2026-11-08T11:58:30.123456789Z"), now);
+      expect(line.detail).toBe("busy verifying the merge of stage-a 1m29s");
+    });
+  });
+
+  describe("snapshot busy field", () => {
+    const wire = {
+      op: "merge-verification",
+      what: "verifying the merge of stage-a",
+      stage_id: "stage-a",
+      started_at: "2026-11-07T13:51:08.120Z",
+      ceiling_secs: 1200,
+      global_ceiling_secs: 1800,
+    };
+
+    it("round-trips the daemon's busy object", () => {
+      const parsed = snapshotSchema.parse({ ...fixtureJson, busy: wire });
+      expect(parsed.busy).toEqual(wire);
+    });
+
+    it("parses a snapshot without the key to busy null", () => {
+      const { busy: _omitted, ...withoutBusy } = { ...fixtureJson, busy: null };
+      expect(snapshotSchema.parse(withoutBusy).busy).toBeNull();
+    });
+
+    it("rejects an unknown operation", () => {
+      expect(
+        snapshotSchema.safeParse({ ...fixtureJson, busy: { ...wire, op: "napping" } }).success,
+      ).toBe(false);
+    });
   });
 
   describe("formatClock / formatStamp", () => {

@@ -2,10 +2,13 @@
 
 use super::checks::default_plan_version;
 use super::dispute_budgets::DisputeTally;
+use super::implementers::Implementers;
 use super::merge_block::MergeRecord;
-use super::types::{Implementers, Stage, StageStatus, StageType};
+use super::types::{Stage, StageStatus, StageType};
 
 impl Default for Stage {
+    // Kept at the baselined length of this literal by pairing the empty lists.
+    #[rustfmt::skip]
     fn default() -> Self {
         Self {
             id: String::new(),
@@ -56,8 +59,7 @@ impl Default for Stage {
             wiring: Vec::new(),
             wiring_tests: Vec::new(),
             dead_code_check: None,
-            before_stage: Vec::new(),
-            after_stage: Vec::new(),
+            before_stage: Vec::new(), after_stage: Vec::new(),
             code_review: None,
             fix_attempts: 0,
             dispute_count: 0,
@@ -67,6 +69,7 @@ impl Default for Stage {
             execution_mode: None,
             max_fix_attempts: None,
             review_reason: None,
+            issue_history: Vec::new(),
             bug_fix: None,
             regression_test: None,
             model: None,
@@ -78,7 +81,7 @@ impl Default for Stage {
             plan_version: default_plan_version(),
             contracts: Vec::new(),
             harness: Vec::new(),
-            reachable: Vec::new(),
+            reachable: Vec::new(), consumer_deferred: None,
             ratchet_files: Vec::new(),
         }
     }
@@ -96,11 +99,12 @@ impl Default for Stage {
 /// per-stage override, not as the default path plans should take.
 ///
 /// Every implementation stage's MAIN AGENT is an orchestrator: it reads
-/// context, plans the work, and delegates implementation to subagents (sonnet
-/// or codex terra workers for common implementation and integration tests,
-/// haiku workers for boilerplate/scaffolding/simple unit tests (codex luna on
-/// explicit request), opus
-/// workers only where architecture or algorithm judgment is required). Model
+/// context, plans the work, and delegates implementation to subagents (haiku
+/// workers for extremely simple or highly detailed pieces, codex terra/sol
+/// workers for well-specified pieces (luna on explicit request), sonnet workers
+/// for exploration or iteration on failing tests, opus workers only for
+/// architecture across modules, new algorithms, concurrency and distributed
+/// systems, security-sensitive code, and bugs of unknown cause). Model
 /// choice for the actual implementation work happens at the subagent level,
 /// not here. The one exception is knowledge-distill: a single-agent sonnet
 /// pass over memories that are already compact summaries — no subagents.
@@ -116,9 +120,13 @@ impl StageType {
             // subagents — the memories are already compact summaries, so the
             // volume and the judgment both fit a single sonnet session.
             StageType::KnowledgeDistill => "sonnet",
-            // Standard and integration-verify stages: the main agent orchestrates
-            // and delegates implementation/review work to subagents.
-            StageType::Standard | StageType::IntegrationVerify => "opus",
+            // Standard stages: the main agent orchestrates, delegates the
+            // implementation to subagents and runs one gate; sonnet at high
+            // effort covers that coordination.
+            StageType::Standard => "sonnet",
+            // Integration-verify: the final quality gate keeps the strongest
+            // orchestrator.
+            StageType::IntegrationVerify => "opus",
         }
     }
 
@@ -135,10 +143,9 @@ impl StageType {
             // The final quality gate, combining code review and functional
             // verification, gets the highest effort available.
             StageType::IntegrationVerify => "xhigh",
-            // Ordinary orchestration: plan the work, delegate, commit. The
-            // gate is one `loom check` whose output is a short summary, so
-            // the orchestrator itself needs only medium.
-            StageType::Standard => "medium",
+            // Ordinary orchestration: plan the work, delegate, commit. High
+            // effort compensates for the sonnet orchestrator.
+            StageType::Standard => "high",
         }
     }
 }

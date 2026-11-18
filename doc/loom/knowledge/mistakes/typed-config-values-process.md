@@ -1,6 +1,6 @@
 # Typed Config Values: Process and Verification Gotchas
 
-> Brief, dev-server gotchas
+> Dev
 > itself — verification-brief authorship, local dev-server checks, and plan-file formatting.
 
 ## A Verification Brief's Negative Expectation Must Trace to the Plan, Not an Assumption
@@ -53,11 +53,13 @@ markdownlint fixer, leaving an unstaged edit to the plan file after every commit
 
 ## `rustfmt` Reformats More Than the File It Was Given
 
-**What happened:** a worker ran `rustfmt --edition 2024` on `sandbox/settings/tests.rs` in the 2021-edition crate; it reflowed `assert!` chains and reordered imports, growing the file from 1565 to 1571 lines against a ledger that pinned 1565. `rustfmt` on `launch.rs`, `runner.rs` or `config_worktree.rs` also rewrote their out-of-line `tests_*.rs` children.
+**What happened:** Formatting `mod.rs` during parallel resolver work also visited child modules being edited by other workers. Earlier runs on module roots likewise reflowed their out-of-line tests.
 
-**Why:** subagents cannot run `cargo fmt` (a hook blocks it) and guessed the edition; `rustfmt` follows `mod` declarations into child files.
+**Why:** `rustfmt` follows out-of-line `mod` declarations by default, including in the correct Rust edition.
 
-**Prevention:** worker briefs say `rustfmt --edition 2021` (`loom/Cargo.toml:4`) or leave formatting to the orchestrator's `cargo fmt --all`; check one file with `rustfmt --check`, which reports instead of rewriting its children.
+**Prevention:** For scoped formatting use `rustfmt --edition 2021 --config skip_children=true` on the assigned files; coordinate whole-tree formatting after concurrent edits settle.
+
+**Fix:** Preserve the concurrent edits and review any incidental formatting in the affected descendants.
 
 ## Filtering `loom check` Output Hid the Relay Line
 
@@ -74,3 +76,11 @@ markdownlint fixer, leaving an unstaged edit to the plan file after every commit
 **Why:** the guard confines file tools to the worktree, and the scratch directory lies outside it. The orchestrator's own Read of a harness tool-result or temp file is blocked the same way.
 
 **Prevention:** quote `file:line` ranges in reviewer briefs, or print a scratch log through Bash; do not save a diff for a file-tool-only agent to read.
+
+## A Bare Formatter Run Touched Unrelated Files, and the Format Criterion Failed at Base (2026-11-08)
+
+**What happened:** a stage ran bare `oxfmt` in `web/` and reformatted five files it never touched (`model-color.ts`, `model-color.test.ts`, `pressure-timeline.tsx`, `codex-status.test.tsx`, `markdown/fixtures/hostile.md`). The contract writer had already filed a freeze dispute because `cd web && node_modules/.bin/oxfmt --check` failed at the stage base on those same files. The reformat never reached the merge, so integration-verify met the same failure and needed a `chore(web)` formatting commit.
+
+**Why:** the web tree was not formatted at the plan's base, and the signal said to run the formatter over the whole tree.
+
+**Prevention:** pass explicit file paths to `oxfmt`, then check `git status`. A tree-wide format criterion that fails at base is the plan author's to fix before the plan runs; the stage disputes it rather than reformatting files it does not own.

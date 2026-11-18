@@ -1,14 +1,15 @@
-use std::fs::File;
-use std::io::{self, Read, Write};
+use std::io::{self, Write};
 use std::path::Path;
 
 use anyhow::Result;
+
+use crate::fs::safe_read::{read_bounded, OverLimit};
 
 use super::comparison_eval;
 use super::comparison_schema::{ComparisonArtifact, ComparisonReport, COMPARISON_SCHEMA_VERSION};
 use super::UsageArgs;
 
-const MAX_INPUT_BYTES: u64 = 16 * 1024 * 1024;
+const MAX_INPUT_BYTES: usize = 16 * 1024 * 1024;
 
 pub(super) fn compare(path: &Path, args: &UsageArgs) -> Result<i32> {
     let report = if args.has_explicit_selection() {
@@ -26,9 +27,24 @@ pub(super) fn compare(path: &Path, args: &UsageArgs) -> Result<i32> {
 }
 
 fn load_report(path: &Path) -> ComparisonReport {
-    let bytes = match read_bounded(path) {
+    let parent = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    // The operator names the directory, so it may be reached through a symlink;
+    // only the artifact itself is refused as a link.
+    let root = std::fs::canonicalize(parent).unwrap_or_else(|_| parent.to_path_buf());
+    let relative = path.file_name().map(Path::new).unwrap_or(path);
+    let bytes = match read_bounded(&root, relative, MAX_INPUT_BYTES) {
         Ok(bytes) => bytes,
-        Err(reason) => return comparison_eval::failure_report(vec![reason]),
+        Err(error) => {
+            let reason = if error.downcast_ref::<OverLimit>().is_some() {
+                "input-too-large"
+            } else {
+                "input-read-failed"
+            };
+            return comparison_eval::failure_report(vec![reason]);
+        }
     };
     let artifact: ComparisonArtifact = match serde_json::from_slice(&bytes) {
         Ok(artifact) => artifact,
@@ -38,28 +54,6 @@ fn load_report(path: &Path) -> ComparisonReport {
         return comparison_eval::failure_report(vec!["unsupported-schema-version"]);
     }
     comparison_eval::evaluate(artifact)
-}
-
-fn read_bounded(path: &Path) -> Result<Vec<u8>, &'static str> {
-    let file = File::open(path).map_err(|_| "input-read-failed")?;
-    let metadata = file.metadata().map_err(|_| "input-read-failed")?;
-    if metadata.len() > MAX_INPUT_BYTES {
-        return Err("input-too-large");
-    }
-    let capacity = usize::try_from(metadata.len().min(MAX_INPUT_BYTES)).unwrap_or_default();
-    let mut bytes = Vec::with_capacity(capacity);
-    file.take(MAX_INPUT_BYTES + 1)
-        .read_to_end(&mut bytes)
-        .map_err(|_| "input-read-failed")?;
-    let too_large = match u64::try_from(bytes.len()) {
-        Ok(length) => length > MAX_INPUT_BYTES,
-        Err(_) => true,
-    };
-    if too_large {
-        Err("input-too-large")
-    } else {
-        Ok(bytes)
-    }
 }
 
 fn render_json(report: &ComparisonReport) -> Result<()> {
@@ -127,6 +121,49 @@ fn human_reasons(reasons: &[&str]) -> String {
 mod tests {
     use super::*;
     use crate::commands::usage::comparison_schema::{Outcome, PairResult};
+
+    #[test]
+    fn comparison_refuses_a_symlink_to_a_valid_artifact() {
+        let root = tempfile::tempdir().unwrap();
+        let target = root.path().join("comparison.json");
+        let link = root.path().join("link.json");
+        let valid = include_bytes!(
+            "../../../tests/fixtures/token_optimization/comparison/valid_improvement.json"
+        );
+        std::fs::write(&target, valid).unwrap();
+        std::os::unix::fs::symlink(&target, &link).unwrap();
+
+        assert_eq!(load_report(&target).verdict, Outcome::SupportedCandidate);
+        assert_eq!(load_report(&link).reason_codes, vec!["input-read-failed"]);
+    }
+
+    #[test]
+    fn comparison_reads_an_artifact_under_a_symlinked_directory() {
+        let root = tempfile::tempdir().unwrap();
+        let real = root.path().join("real");
+        let linked = root.path().join("linked");
+        std::fs::create_dir(&real).unwrap();
+        std::os::unix::fs::symlink(&real, &linked).unwrap();
+        let valid = include_bytes!(
+            "../../../tests/fixtures/token_optimization/comparison/valid_improvement.json"
+        );
+        std::fs::write(real.join("comparison.json"), valid).unwrap();
+
+        let report = load_report(&linked.join("comparison.json"));
+        assert_eq!(report.verdict, Outcome::SupportedCandidate);
+    }
+
+    #[test]
+    fn comparison_preserves_the_oversized_input_reason() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("oversized.json");
+        std::fs::File::create(&path)
+            .unwrap()
+            .set_len(MAX_INPUT_BYTES as u64 + 1)
+            .unwrap();
+
+        assert_eq!(load_report(&path).reason_codes, vec!["input-too-large"]);
+    }
 
     #[test]
     fn report_level_reason_prints_beside_pair_lines() {

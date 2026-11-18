@@ -89,12 +89,12 @@ impl StageWorktree {
 }
 
 /// Where `worktree`'s fingerprint comes from: the owning daemon's answer, or
-/// this process when `worktree` is no stage worktree or no daemon runs for
+/// this process when `worktree` is outside a stage worktree or no daemon runs for
 /// its project (module docs). Fails with `DaemonUnreachable` when neither is
 /// established, and when the daemon does not answer with a fingerprint.
 pub(super) fn source(worktree: &Path) -> Result<Source> {
-    let Some(stage) = locate(worktree)? else {
-        return Ok(Source::ThisProcess(WorktreeGit::discovered(worktree)));
+    let Some(stage) = enclosing_stage(worktree)? else {
+        return Ok(Source::ThisProcess(checkout_git(worktree)?));
     };
     let request = observe_request(&stage.work_dir, &stage.stage_id);
     match try_send_request(&stage.work_dir, &request)? {
@@ -125,11 +125,11 @@ pub(super) fn source(worktree: &Path) -> Result<Source> {
 
 /// The git through which this process reads `worktree` itself: pinned to the
 /// registered git directory of the stage worktree that is or holds it,
-/// whatever `.git` entries lie in it, and as discovered otherwise.
+/// whatever `.git` entries lie in it, and pinned to a main checkout otherwise.
 pub(crate) fn local_git(worktree: &Path) -> Result<WorktreeGit> {
     match enclosing_stage(worktree)? {
         Some(stage) => stage.git(),
-        None => Ok(WorktreeGit::discovered(worktree)),
+        None => checkout_git(worktree),
     }
 }
 
@@ -139,8 +139,8 @@ pub(crate) fn local_git(worktree: &Path) -> Result<WorktreeGit> {
 /// the worktree's `.git` file, or create `<worktree>/<sub>/.git` naming a git
 /// directory whose configuration runs a command. So a `dir` inside a stage
 /// worktree gets git pinned to that worktree's registered git directory,
-/// whatever `.git` lies between them. Any other `dir` gets git as it finds
-/// it, at the nearest ancestor of its canonical path with a `.git`.
+/// whatever `.git` lies between them. Other directories require a real main
+/// checkout git directory at their nearest checkout root.
 pub(crate) fn checkout_git(dir: &Path) -> Result<WorktreeGit> {
     let dir = dir
         .canonicalize()
@@ -152,7 +152,7 @@ pub(crate) fn checkout_git(dir: &Path) -> Result<WorktreeGit> {
         .ancestors()
         .find(|ancestor| ancestor.join(".git").symlink_metadata().is_ok())
         .with_context(|| format!("{} is inside no git checkout", dir.display()))?;
-    Ok(WorktreeGit::discovered(root))
+    WorktreeGit::pinned_main(root)
 }
 
 /// The outermost stage worktree ([`locate`]) among `dir` and its ancestors,

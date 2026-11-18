@@ -7,7 +7,7 @@ fn plan_patch(v: Value) -> PlanPatch {
 
 /// The one request `inner` builds.
 fn single(inner: Value) -> AmendmentRequest {
-    let mut requests = build_amendment_requests("s1", &plan_patch(inner), 1).unwrap();
+    let mut requests = build_amendment_requests("s1", &plan_patch(inner), "1").unwrap();
     assert_eq!(requests.len(), 1);
     requests.remove(0)
 }
@@ -63,7 +63,7 @@ fn patches_apply_by_descending_index_with_one_dispute_id_each() {
         ],
         "reason": "both run only outside the sandbox",
     });
-    let requests = build_amendment_requests("s1", &plan_patch(inner), 7).unwrap();
+    let requests = build_amendment_requests("s1", &plan_patch(inner), "7").unwrap();
 
     let order: Vec<(usize, Option<&str>)> = requests
         .iter()

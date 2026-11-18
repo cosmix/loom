@@ -7,9 +7,11 @@ use std::path::{Path, PathBuf};
 
 use tempfile::TempDir;
 
-use super::super::resolver_attempts::{attempts_dir, attempts_file, merge_resolver_attempts};
+use super::super::resolver_attempts::{
+    attempts_file, merge_resolver_attempts, with_recording_failure,
+};
 use super::super::resolver_spawn::test_fixtures::{
-    git_ok, orchestrator_with_conflict, repo_with_stage_branches,
+    orchestrator_with_conflict, repo_with_stage_branches,
 };
 use super::Landing;
 use crate::fs::stage_files::find_stage_file;
@@ -18,6 +20,7 @@ use crate::git::{MergeBlock, StashReapply};
 use crate::models::session::Session;
 use crate::models::stage::{Stage, StageStatus};
 use crate::orchestrator::core::Orchestrator;
+use crate::test_git::git;
 use crate::verify::transitions::{load_stage, update_stage};
 
 const ID: &str = "s";
@@ -28,7 +31,7 @@ fn worktree_stage() -> (TempDir, Orchestrator) {
     let repo = repo_with_stage_branches(&[]);
     let worktree = repo.path().join(".worktrees").join(ID);
     let path = worktree.to_str().unwrap();
-    git_ok(
+    git(
         repo.path(),
         &["worktree", "add", "-q", "-b", "loom/s", path],
     );
@@ -45,8 +48,8 @@ fn worktree(repo: &TempDir) -> PathBuf {
 
 fn commit_file(dir: &Path, name: &str, text: &str) {
     std::fs::write(dir.join(name), text).unwrap();
-    git_ok(dir, &["add", name]);
-    git_ok(dir, &["commit", "-q", "-m", name]);
+    git(dir, &["add", name]);
+    git(dir, &["commit", "-q", "-m", name]);
 }
 
 fn set_status(orchestrator: &Orchestrator, status: StageStatus) {
@@ -101,7 +104,7 @@ fn put_blocker(repo: &TempDir) -> PathBuf {
 /// `main` moves on and the worktree merges it, as a resolver does.
 fn resolve_in_worktree(repo: &TempDir) {
     commit_file(repo.path(), "m.txt", "main");
-    git_ok(
+    git(
         &worktree(repo),
         &["merge", "-q", "main", "-m", "merge main"],
     );
@@ -123,8 +126,10 @@ fn an_auto_merge_conflict_spawns_nothing_and_the_spawn_pass_counts_the_first_res
     assert_eq!(merge_resolver_attempts(work_dir, ID), 0);
     // The pass reserves attempt 1 before any spawn; a counter that cannot be
     // written sends the stage to review instead of spawning an uncounted one.
-    std::fs::write(attempts_dir(work_dir), "not a dir").unwrap();
-    assert_eq!(orchestrator.spawn_merge_resolution_sessions().unwrap(), 0);
+    let work_dir = work_dir.clone();
+    with_recording_failure(&work_dir, || {
+        assert_eq!(orchestrator.spawn_merge_resolution_sessions().unwrap(), 0);
+    });
     let reviewed = on_disk(&orchestrator);
     assert_eq!(reviewed.status, StageStatus::NeedsHumanReview);
     assert!(reviewed
@@ -259,7 +264,7 @@ fn the_resolver_exit_refuses_a_worktree_that_dropped_the_recorded_commit() {
     let (repo, mut orchestrator) = worktree_stage();
     enter_conflict(&orchestrator, &repo);
     commit_file(repo.path(), "m.txt", "main moved on");
-    git_ok(&worktree(&repo), &["reset", "-q", "--hard", "main"]);
+    git(&worktree(&repo), &["reset", "-q", "--hard", "main"]);
     let main_before = main_tip(&repo);
 
     orchestrator
@@ -315,7 +320,7 @@ fn a_landing_that_stashed_the_operators_changes_records_the_outcome() {
     // the merge touches a dirty path, needs a stash, and the reapply is clean.
     let lines: Vec<String> = (1..=20).map(|n| format!("line {n}\n")).collect();
     commit_file(repo.path(), "multi.txt", &lines.concat());
-    git_ok(&worktree(&repo), &["reset", "-q", "--hard", "main"]);
+    git(&worktree(&repo), &["reset", "-q", "--hard", "main"]);
     let stage_side = lines.concat().replace("line 20", "stage edit");
     commit_file(&worktree(&repo), "multi.txt", &stage_side);
     let operator_side = lines.concat().replace("line 1\n", "operator edit\n");
@@ -329,7 +334,7 @@ fn a_landing_that_stashed_the_operators_changes_records_the_outcome() {
     let stash = stage.merge.stash.expect("the stash outcome is recorded");
     assert!(stash.restored);
     assert!(stash.backup_ref.starts_with("refs/loom/autostash/"));
-    git_ok(repo.path(), &["rev-parse", "--verify", &stash.backup_ref]);
+    git(repo.path(), &["rev-parse", "--verify", &stash.backup_ref]);
     let merged = std::fs::read_to_string(repo.path().join("multi.txt")).unwrap();
     assert!(merged.starts_with("operator edit\n") && merged.contains("stage edit"));
 }

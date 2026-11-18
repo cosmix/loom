@@ -32,7 +32,7 @@ fn orphan_evidence_finds_the_recordless_agent_and_ignores_every_recorded_one() {
         OrphanEvidence {
             session_id: orphan.id.clone(),
             stage_id: "alpha".to_string(),
-            tracking_key: "loom-alpha".to_string(),
+            tracking_key: orphan.tracking_key.clone(),
             session_type: SessionType::Stage,
             pid: std::process::id(),
             backend: SessionBackendKind::Native,
@@ -80,7 +80,7 @@ fn an_adopted_record_is_attachable_again() {
     let evidence = OrphanEvidence {
         session_id: session_id.to_string(),
         stage_id: "alpha".to_string(),
-        tracking_key: "loom-alpha".to_string(),
+        tracking_key: "loom-v2-stage-alpha".to_string(),
         session_type: SessionType::Stage,
         pid: std::process::id(),
         backend: SessionBackendKind::Tmux,
@@ -94,7 +94,7 @@ fn an_adopted_record_is_attachable_again() {
     let adopted = adopt_orphan(work, &evidence).unwrap();
     assert_eq!(adopted.id, session_id);
     assert_eq!(adopted.stage_id.as_deref(), Some("alpha"));
-    assert_eq!(adopted.tracking_key, "loom-alpha");
+    assert_eq!(adopted.tracking_key, "loom-v2-stage-alpha");
     assert_eq!(adopted.session_type, SessionType::Stage);
     assert_eq!(adopted.status, SessionStatus::Running);
     assert_eq!(adopted.backend, SessionBackendKind::Tmux);
@@ -166,6 +166,98 @@ fn a_recordless_contract_agent_is_found_by_its_tracking_key() {
     let evidence = orphan_evidence(work);
     assert_eq!(evidence.len(), 1, "unexpected evidence: {evidence:?}");
     assert_eq!(evidence[0].session_id, orphan.id);
-    assert_eq!(evidence[0].tracking_key, "loom-contract-alpha");
+    assert_eq!(evidence[0].tracking_key, orphan.tracking_key);
     assert_eq!(evidence[0].session_type, SessionType::Contract);
+}
+
+#[test]
+fn ambiguous_legacy_tracking_key_is_never_adopted() {
+    for contract_stage in ["auth", "z-auth"] {
+        let temp = work_dir();
+        let work = temp.path();
+        let stage_alias = format!("contract-{contract_stage}");
+        stage_at(work, contract_stage, StageStatus::Executing);
+        stage_at(work, &stage_alias, StageStatus::Executing);
+        let mut orphan = Session::new_contract(contract_stage);
+        orphan.status = SessionStatus::Running;
+        orphan.tracking_key = Session::legacy_tracking_key(contract_stage, SessionType::Contract);
+        std::fs::create_dir_all(work.join("pids")).unwrap();
+        std::fs::write(
+            work.join("pids")
+                .join(format!("{}-{}.pid", orphan.tracking_key, orphan.id)),
+            format!("{}\n", std::process::id()),
+        )
+        .unwrap();
+        assert!(orphan_evidence(work).is_empty());
+
+        let current = Session::new_contract(contract_stage);
+        spawn_a_live_agent(work, &current);
+        let evidence = orphan_evidence(work);
+        assert_eq!(evidence.len(), 1);
+        assert_eq!(evidence[0].stage_id, contract_stage);
+        assert_eq!(evidence[0].session_type, SessionType::Contract);
+    }
+}
+
+/// Two executing stages whose pairs (`stage`, Contract) and
+/// (`contract-<stage>`, Stage) were one legacy key. The pid file belongs to the
+/// `contract-<stage>` stage's own session; the other stage sorts first for
+/// `auth` and last for `z-auth`, so sorted iteration reaches the wrong stage
+/// first in one order and the right one first in the other.
+#[test]
+fn a_stage_session_aliasing_another_stages_contract_keeps_its_owner() {
+    for contract_stage in ["auth", "z-auth"] {
+        let temp = work_dir();
+        let work = temp.path();
+        let owner = format!("contract-{contract_stage}");
+        stage_at(work, contract_stage, StageStatus::Executing);
+        stage_at(work, &owner, StageStatus::Executing);
+        let orphan = session_for(&owner, SessionStatus::Running);
+        spawn_a_live_agent(work, &orphan);
+
+        let evidence = orphan_evidence(work);
+
+        assert_eq!(evidence.len(), 1, "unexpected evidence: {evidence:?}");
+        assert_eq!(evidence[0].session_id, orphan.id);
+        assert_eq!(evidence[0].stage_id, owner);
+        assert_eq!(evidence[0].session_type, SessionType::Stage);
+        assert_eq!(evidence[0].tracking_key, orphan.tracking_key);
+    }
+}
+
+#[test]
+fn an_unambiguous_legacy_stage_pid_is_still_adopted() {
+    let temp = work_dir();
+    let work = temp.path();
+    stage_at(work, "alpha", StageStatus::Executing);
+    let mut orphan = session_for("alpha", SessionStatus::Running);
+    orphan.tracking_key = "loom-alpha".to_string();
+    std::fs::create_dir_all(work.join("pids")).unwrap();
+    std::fs::write(
+        work.join("pids")
+            .join(format!("{}-{}.pid", orphan.tracking_key, orphan.id)),
+        format!("{}\n", std::process::id()),
+    )
+    .unwrap();
+    let evidence = orphan_evidence(work);
+    assert_eq!(evidence.len(), 1);
+    assert_eq!(evidence[0].tracking_key, orphan.tracking_key);
+    assert_eq!(evidence[0].session_type, SessionType::Stage);
+}
+
+#[test]
+fn missing_new_owner_metadata_cannot_be_adopted_as_a_legacy_stage() {
+    let temp = work_dir();
+    let work = temp.path();
+    stage_at(work, "auth", StageStatus::Executing);
+    stage_at(work, "v2-stage-auth", StageStatus::Executing);
+    let orphan = session_for("auth", SessionStatus::Running);
+    std::fs::create_dir_all(work.join("pids")).unwrap();
+    std::fs::write(
+        work.join("pids")
+            .join(format!("{}-{}.pid", orphan.tracking_key, orphan.id)),
+        format!("{}\n", std::process::id()),
+    )
+    .unwrap();
+    assert!(orphan_evidence(work).is_empty());
 }

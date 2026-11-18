@@ -22,7 +22,7 @@ const MODELS_SECTION: &str = "models";
 /// `read_terminal_config`, `read_context_config`).
 #[derive(Debug, Clone, Default, serde::Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
-struct ModelsConfig {
+pub(crate) struct ModelsConfig {
     standard_model: Option<String>,
     standard_effort: Option<String>,
     knowledge_model: Option<String>,
@@ -31,6 +31,11 @@ struct ModelsConfig {
     knowledge_distill_effort: Option<String>,
     integration_verify_model: Option<String>,
     integration_verify_effort: Option<String>,
+    code_reviewer_model: Option<String>,
+    code_reviewer_followup_model: Option<String>,
+    code_reviewer_effort: Option<String>,
+    contract_writer_model: Option<String>,
+    contract_writer_effort: Option<String>,
 }
 
 impl ModelsConfig {
@@ -76,6 +81,54 @@ impl ModelsConfig {
             ),
         };
         allowed_value(value.as_ref(), ALLOWED_REASONING_EFFORTS, key)
+    }
+}
+
+impl ModelsConfig {
+    /// The validated `loom-code-reviewer` model this section sets, if any.
+    fn code_reviewer_model(&self) -> Option<&str> {
+        allowed_value(
+            self.code_reviewer_model.as_ref(),
+            crate::claude::CLAUDE_MODELS,
+            "models.code_reviewer_model",
+        )
+    }
+
+    fn code_reviewer_followup_model(&self) -> Option<&str> {
+        allowed_value(
+            self.code_reviewer_followup_model.as_ref(),
+            crate::claude::CLAUDE_MODELS,
+            "models.code_reviewer_followup_model",
+        )
+    }
+
+    /// The validated `loom-code-reviewer` effort this section sets, if any.
+    fn code_reviewer_effort(&self) -> Option<&str> {
+        allowed_value(
+            self.code_reviewer_effort.as_ref(),
+            ALLOWED_REASONING_EFFORTS,
+            "models.code_reviewer_effort",
+        )
+    }
+}
+
+impl ModelsConfig {
+    /// The validated contract writer model this section sets, if any.
+    fn contract_writer_model(&self) -> Option<&str> {
+        allowed_value(
+            self.contract_writer_model.as_ref(),
+            crate::claude::CLAUDE_MODELS,
+            "models.contract_writer_model",
+        )
+    }
+
+    /// The validated contract writer effort this section sets, if any.
+    fn contract_writer_effort(&self) -> Option<&str> {
+        allowed_value(
+            self.contract_writer_effort.as_ref(),
+            ALLOWED_REASONING_EFFORTS,
+            "models.contract_writer_effort",
+        )
     }
 }
 
@@ -133,108 +186,83 @@ pub fn resolve_stage_model_effort(
     resolve_from(&project, &user, stage_type, stage_model, stage_effort)
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn falls_back_to_the_stage_type_built_in_when_nothing_is_set() {
-        let project = ModelsConfig::default();
-        let user = UserConfig::default();
-        let cases = [
-            (StageType::Standard, "opus", "medium"),
-            (StageType::Knowledge, "opus", "medium"),
-            (StageType::KnowledgeDistill, "sonnet", "high"),
-            (StageType::IntegrationVerify, "opus", "xhigh"),
-        ];
-        for (stage_type, model, effort) in cases {
-            assert_eq!(
-                resolve_from(&project, &user, stage_type, None, None),
-                (model.to_string(), effort.to_string())
-            );
-        }
-    }
-
-    #[test]
-    fn a_project_key_wins_over_the_built_in() {
-        let project = ModelsConfig::from_section_toml(
-            "standard_model = \"sonnet\"\nstandard_effort = \"low\"\n",
-        )
-        .unwrap();
-        let user = UserConfig::default();
-        assert_eq!(
-            resolve_from(&project, &user, StageType::Standard, None, None),
-            ("sonnet".to_string(), "low".to_string())
-        );
-    }
-
-    #[test]
-    fn a_plan_field_wins_over_a_project_key() {
-        let project = ModelsConfig::from_section_toml(
-            "standard_model = \"sonnet\"\nstandard_effort = \"low\"\n",
-        )
-        .unwrap();
-        let user = UserConfig::default();
-        assert_eq!(
-            resolve_from(
-                &project,
-                &user,
-                StageType::Standard,
-                Some("haiku"),
-                Some("xhigh")
-            ),
-            ("haiku".to_string(), "xhigh".to_string())
-        );
-    }
-
-    #[test]
-    fn a_project_key_absent_from_a_present_section_falls_through() {
-        // Only standard_model is set; standard_effort must still resolve to
-        // the built-in rather than being shadowed by the present section.
-        let project = ModelsConfig::from_section_toml("standard_model = \"sonnet\"\n").unwrap();
-        let user = UserConfig::default();
-        assert_eq!(
-            resolve_from(&project, &user, StageType::Standard, None, None),
-            ("sonnet".to_string(), "medium".to_string())
-        );
-    }
-
-    #[test]
-    fn an_out_of_set_project_value_is_ignored() {
-        let project =
-            ModelsConfig::from_section_toml("standard_model = \"nonexistent\"\n").unwrap();
-        let user = UserConfig::default();
-        assert_eq!(
-            resolve_from(&project, &user, StageType::Standard, None, None),
-            ("opus".to_string(), "medium".to_string())
-        );
-    }
-
-    #[test]
-    fn project_tier_wins_over_user_tier_and_falls_through_key_by_key() {
-        let temp = tempfile::TempDir::new().unwrap();
-        let work_dir = temp.path().join("work");
-        std::fs::create_dir_all(&work_dir).unwrap();
-        std::fs::write(
-            work_dir.join("config.toml"),
-            "[models]\nstandard_model = \"sonnet\"\n",
-        )
-        .unwrap();
-
-        let user_config_path = temp.path().join("user-config.toml");
-        std::fs::write(
-            &user_config_path,
-            "[models]\nstandard_model = \"haiku\"\nstandard_effort = \"low\"\n",
-        )
-        .unwrap();
-        let _redirect = crate::user_config::redirect_user_config(user_config_path);
-
-        // The project's standard_model wins over the user config's.
-        // standard_effort, which the project section omits, falls through to
-        // the user config rather than the built-in.
-        assert_eq!(
-            resolve_stage_model_effort(&work_dir, StageType::Standard, None, None),
-            ("sonnet".to_string(), "low".to_string())
-        );
-    }
+/// Pure code-reviewer resolution: project key, else user tier (which already
+/// collapses "user set it" and the built-in).
+fn resolve_code_reviewer_from(project: &ModelsConfig, user: &UserConfig) -> (String, String) {
+    let model = project
+        .code_reviewer_model()
+        .unwrap_or_else(|| user.code_reviewer_model());
+    let effort = project
+        .code_reviewer_effort()
+        .unwrap_or_else(|| user.code_reviewer_effort());
+    (model.to_string(), effort.to_string())
 }
+
+/// The (model, reasoning effort) every `loom-code-reviewer` subagent spawn
+/// runs with: `.loom/work/config.toml` `[models]` -> `~/.loom/config.toml`
+/// `[models]` -> the built-in. Not a stage type, so it has no plan-field tier
+/// and does not go through [`resolve_stage_model_effort`]. Each key falls
+/// through independently; `work_dir` is `None` outside a workspace.
+///
+/// Strict, unlike the stage resolver: the caller is the spawn guard, which
+/// must fail loudly on an unreadable config rather than spawn a reviewer on a
+/// model nobody chose.
+pub fn resolve_code_reviewer_model_effort(
+    work_dir: Option<&Path>,
+) -> anyhow::Result<(String, String)> {
+    let project = match work_dir {
+        Some(dir) => super::read_section::<ModelsConfig>(dir, MODELS_SECTION)?.unwrap_or_default(),
+        None => ModelsConfig::default(),
+    };
+    Ok(resolve_code_reviewer_from(
+        &project,
+        &UserConfig::load_strict()?,
+    ))
+}
+
+/// Follow-up reviewer model and shared effort, each resolved independently.
+pub fn resolve_code_reviewer_followup_model_effort(
+    work_dir: Option<&Path>,
+) -> anyhow::Result<(String, String)> {
+    let project = match work_dir {
+        Some(dir) => super::read_section::<ModelsConfig>(dir, MODELS_SECTION)?.unwrap_or_default(),
+        None => ModelsConfig::default(),
+    };
+    let user = UserConfig::load_strict()?;
+    let model = project
+        .code_reviewer_followup_model()
+        .unwrap_or_else(|| user.code_reviewer_followup_model());
+    let effort = project
+        .code_reviewer_effort()
+        .unwrap_or_else(|| user.code_reviewer_effort());
+    Ok((model.to_string(), effort.to_string()))
+}
+
+/// Pure contract-writer resolution: project key, else user tier (which already
+/// collapses "user set it" and the built-in).
+fn resolve_contract_writer_from(project: &ModelsConfig, user: &UserConfig) -> (String, String) {
+    let model = project
+        .contract_writer_model()
+        .unwrap_or_else(|| user.contract_writer_model());
+    let effort = project
+        .contract_writer_effort()
+        .unwrap_or_else(|| user.contract_writer_effort());
+    (model.to_string(), effort.to_string())
+}
+
+/// The (model, reasoning effort) a contract writer session launches with:
+/// `.loom/work/config.toml` `[models]` -> `~/.loom/config.toml` `[models]` ->
+/// the built-in. A plan stage's `model` / `reasoning_effort` do not apply: they
+/// choose the implementer orchestrator, and the contract writer is decoupled
+/// from it. Each key falls through independently.
+///
+/// Lenient like [`resolve_stage_model_effort`]: the caller is a spawn, so a
+/// malformed project section falls through instead of failing the launch.
+pub fn resolve_contract_writer_model_effort(work_dir: &Path) -> (String, String) {
+    let project = read_models_config(work_dir);
+    let user = UserConfig::load();
+    resolve_contract_writer_from(&project, &user)
+}
+
+#[cfg(test)]
+mod tests;

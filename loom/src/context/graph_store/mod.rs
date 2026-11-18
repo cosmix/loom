@@ -11,11 +11,14 @@
 //!   once by the host and thereafter immutable. `.loom/cache/context-v1/graph/base/`
 //!   under the canonical main project root, shared by every worktree;
 //! - a per-stage **overlay**, under `.loom/work/context/<plan>/<stage>/`, holding
-//!   only the files that stage changed.
+//!   only the files that stage changed: a delta against the base at its revision.
+//!   An overlay built with no such base holds the whole tree and says so
+//!   ([`GraphLayer::complete`]).
 //!
 //! A read is `overlay ∪ (base − overlay's files)`: an overlay entry shadows the
 //! base entry for the same path wholesale, never merges with it. Partial merges
-//! are what produce a graph that describes no revision that ever existed.
+//! are what produce a graph that describes no revision that ever existed. A
+//! complete overlay is read alone.
 //!
 //! Nothing here builds a graph — `crate::context::refresh` does that — and
 //! nothing here decides *when* to write one; that is
@@ -61,6 +64,20 @@ pub struct GraphStore {
     pub(crate) view_cache: RefCell<HashMap<PathBuf, ResolvedView>>,
 }
 
+/// One overlay generation and the only base revision compatible with it.
+pub(crate) struct GraphRead<'a> {
+    pub revision: String,
+    pub address: Option<(&'a str, &'a str)>,
+    pub overlay: Option<GraphLayer>,
+}
+
+impl GraphRead<'_> {
+    /// Whether the overlay holds the whole tree, so no base is read under it.
+    pub fn has_complete_overlay(&self) -> bool {
+        self.overlay.as_ref().is_some_and(|layer| layer.complete)
+    }
+}
+
 impl GraphStore {
     /// Build from the two roots directly. `context_cache_root` is
     /// [`crate::context::store::ContextStore::root`]; `work_root` is
@@ -103,6 +120,12 @@ impl GraphStore {
     /// reuse the layer test `GraphLayer::has_current_schema`.
     pub fn load_base(&self, revision: &str) -> Result<Option<GraphLayer>> {
         self.read_layer_or_memory(&self.base_path(revision))
+    }
+
+    pub(crate) fn has_base_layer(&self, revision: &str) -> bool {
+        let path = self.base_path(revision);
+        !revision.is_empty()
+            && (path.is_file() || self.memory_fallback.borrow().contains_key(&path))
     }
 
     /// Read the most recently written base layer, if any.
@@ -193,8 +216,8 @@ impl GraphStore {
 
     /// Write a stage's overlay, replacing any previous one.
     ///
-    /// Overlays are mutable — a stage rewrites its own as it edits — but they
-    /// are private to that stage, so no other reader can observe a torn write.
+    /// Each stage owns its overlay writes. Atomic replacement protects
+    /// concurrent readers from observing a torn write.
     pub fn save_overlay(&self, plan: &str, stage: &str, layer: &GraphLayer) -> Result<()> {
         let mut persisted = layer.clone();
         let base = self.load_base(&layer.revision)?;
@@ -213,27 +236,27 @@ impl GraphStore {
     /// Called after the stage's work is merged and folded into a new base
     /// layer, at which point the overlay layer describes a revision nobody
     /// reads. Removes only [`LAYER_FILE`] and the overlay's resolved view
-    /// (`view.json`) — never the overlay directory — because that directory is a shared namespace, not this module's alone:
-    /// `crate::commands::context::record_edit` keeps `dirty-paths.json` there,
-    /// and `crate::context::delivery` keeps `session-retrieval/*.json` there,
-    /// and both outlive the graph layer and are read by other stages after
-    /// this one merges. A `remove_dir_all` here would delete those out from
-    /// under their owners on a schedule this module does not control; `.loom/work/`
-    /// is removed wholesale when the plan finishes, so the leftover directory
-    /// does not accumulate across plans.
+    /// (`view.json`) — never the shared overlay directory. Delivery keeps
+    /// `session-retrieval/*.json` there for other stages after this one merges.
+    /// Legacy sibling files are also preserved; plan cleanup owns the
+    /// directory's lifetime.
     pub fn discard_overlay(&self, plan: &str, stage: &str) -> Result<()> {
         let path = self.overlay_path(plan, stage);
-        self.discard_overlay_view(plan, stage);
         match fs::remove_file(&path) {
-            Ok(()) => Ok(()),
-            Err(error) if error.kind() == ErrorKind::NotFound => Ok(()),
-            Err(error) => Err(error)
-                .with_context(|| format!("Failed to remove overlay layer: {}", path.display())),
+            Ok(()) => (),
+            Err(error) if error.kind() == ErrorKind::NotFound => (),
+            Err(error) => {
+                return Err(error)
+                    .with_context(|| format!("Failed to remove overlay layer: {}", path.display()))
+            }
         }
+        self.memory_fallback.borrow_mut().remove(&path);
+        self.discard_overlay_view(plan, stage);
+        Ok(())
     }
 
-    /// The view a reader sees: base at `revision` with `plan`/`stage`'s overlay
-    /// applied on top.
+    /// Resolve a stage overlay against its recorded base, or `revision` when
+    /// no overlay exists. A legacy overlay without a revision has no base.
     ///
     /// Pass `None` for the stage to read the base layer alone. A missing base
     /// is not an error — an overlay-only view is exactly what a stage sees
@@ -252,27 +275,58 @@ impl GraphStore {
         revision: &str,
         stage: Option<(&str, &str)>,
     ) -> Result<(ResolvedGraph, bool)> {
-        let base = self.load_base(revision)?;
+        let read = self.graph_read(revision, stage)?;
+        self.resolve_read(&read)
+    }
+
+    pub(crate) fn graph_read<'a>(
+        &self,
+        revision: &str,
+        address: Option<(&'a str, &'a str)>,
+    ) -> Result<GraphRead<'a>> {
+        let overlay = match address {
+            Some((plan, stage)) => self.load_overlay(plan, stage)?,
+            None => None,
+        };
+        let revision = overlay.as_ref().map_or(revision, |layer| &layer.revision);
+        Ok(GraphRead {
+            revision: revision.to_owned(),
+            address: address.filter(|_| overlay.is_some()),
+            overlay,
+        })
+    }
+
+    pub(crate) fn resolve_read(&self, read: &GraphRead<'_>) -> Result<(ResolvedGraph, bool)> {
+        let complete = read.has_complete_overlay();
+        let base = if read.revision.is_empty() || complete {
+            None
+        } else {
+            self.load_base(&read.revision)?
+                .filter(|base| base.revision == read.revision)
+        };
         let mut current = base.as_ref().is_none_or(GraphLayer::has_current_schema);
         let base = base.unwrap_or_default();
+        let base_revision = if complete {
+            read.revision.clone()
+        } else {
+            base.revision
+        };
         let mut resolved = ResolvedGraph {
-            base_revision: base.revision.clone(),
+            base_revision,
             overlaid: BTreeSet::new(),
             files: base.files,
         };
 
-        if let Some((plan, stage)) = stage {
-            if let Some(overlay) = self.load_overlay(plan, stage)? {
-                current &= overlay.has_current_schema();
-                for (path, entry) in overlay.files {
-                    // Wholesale replacement, never a merge: an overlay entry is
-                    // the complete truth for that file in this stage.
-                    if entry.coverage == FileCoverage::Deleted {
-                        resolved.files.remove(&path);
-                    } else {
-                        resolved.files.insert(path.clone(), entry);
-                        resolved.overlaid.insert(path);
-                    }
+        if let Some(overlay) = &read.overlay {
+            current &= overlay.has_current_schema();
+            for (path, entry) in &overlay.files {
+                // Wholesale replacement, never a merge: an overlay entry is
+                // the complete truth for that file in this stage.
+                if entry.coverage == FileCoverage::Deleted {
+                    resolved.files.remove(path);
+                } else {
+                    resolved.files.insert(path.clone(), entry.clone());
+                    resolved.overlaid.insert(path.clone());
                 }
             }
         }

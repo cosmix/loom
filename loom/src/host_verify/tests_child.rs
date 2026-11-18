@@ -4,7 +4,6 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::time::{Duration, Instant};
 
 use chrono::Utc;
@@ -15,7 +14,11 @@ use super::child::run_job;
 use super::{digest, new_job_id, store, JobKind, JobRecord, JobResult, JobState};
 use crate::models::stage::{AcceptanceCriterion, Stage, StageStatus, StageType};
 use crate::process::sandbox_probe::{confined_commands_runnable, skip_unless};
+pub(super) use crate::test_git::git;
+use crate::test_git::TestRepo;
 use crate::verify::transitions::save_stage;
+
+mod invalid_requests;
 
 pub(super) const STAGE: &str = "stage-a";
 
@@ -25,23 +28,6 @@ pub(super) fn confinement_unavailable(test_name: &str) -> bool {
         test_name,
         "loom's confinement cannot start here",
     )
-}
-
-/// Run git in `dir` without the user's or the system's configuration.
-pub(super) fn git(dir: &Path, args: &[&str]) -> String {
-    let output = Command::new("git")
-        .args(args)
-        .current_dir(dir)
-        .env("GIT_CONFIG_GLOBAL", "/dev/null")
-        .env("GIT_CONFIG_NOSYSTEM", "1")
-        .output()
-        .expect("spawn git");
-    assert!(
-        output.status.success(),
-        "git {args:?}: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    String::from_utf8_lossy(&output.stdout).trim().to_string()
 }
 
 /// A repository with one commit, the stage worktree `.worktrees/stage-a`,
@@ -59,14 +45,7 @@ impl Fixture {
     pub(super) fn new(acceptance: &[&str], stage_type: StageType) -> Self {
         let dir = TempDir::new().expect("temp dir");
         let repo = dir.path().canonicalize().expect("canonical temp dir");
-        git(&repo, &["init", "-q", "-b", "main"]);
-        for (key, value) in [
-            ("user.email", "test@test.com"),
-            ("user.name", "Test User"),
-            ("commit.gpgsign", "false"),
-        ] {
-            git(&repo, &["config", key, value]);
-        }
+        TestRepo::builder().no_seed().init_in(&repo);
         fs::write(repo.join(".gitignore"), ".loom/\n.worktrees/\n").expect("write .gitignore");
         git(&repo, &["add", ".gitignore"]);
         git(&repo, &["commit", "-q", "-m", "initial"]);
@@ -85,6 +64,7 @@ impl Fixture {
         );
         let work_dir = repo.join(".loom").join("work");
         fs::create_dir_all(&work_dir).expect("create state root");
+        crate::git::worktree::capture_main_identity(&repo, &work_dir).expect("capture identity");
         let fixture = Self {
             _dir: dir,
             repo,
@@ -156,6 +136,7 @@ impl Fixture {
         let now = Utc::now();
         let record = JobRecord {
             id: new_job_id(),
+            submission_order: 0,
             stage_id: STAGE.to_string(),
             session_id: "session-a".to_string(),
             kind: JobKind::Check,
@@ -375,26 +356,4 @@ fn a_no_cache_job_runs_a_criterion_the_cache_would_answer() {
     assert!(fresh.passed);
     assert!(!outcome.summary.contains("(cached)"), "{}", outcome.summary);
     assert_eq!(outcome.log.as_deref(), Some("acceptance-0.log"));
-}
-
-#[test]
-#[serial]
-fn a_job_that_is_not_running_is_refused_without_a_result() {
-    let fx = Fixture::new(&["true"], StageType::Standard);
-    let record = fx.job(JobState::Queued, false);
-    assert!(run_job(&fx.work_dir, STAGE, &record.id).is_err());
-    let saved = store::load_result(&fx.work_dir, STAGE, &record.id).unwrap();
-    assert_eq!(saved, None);
-}
-
-#[test]
-#[serial]
-fn a_state_root_without_a_plan_source_is_an_error_result() {
-    let fx = Fixture::new(&["true"], StageType::Standard);
-    fs::remove_file(fx.work_dir.join("config.toml")).unwrap();
-    let record = fx.job(JobState::Running, false);
-    let result = fx.run(&record);
-    let error = error_of(&result);
-    assert!(error.contains("plan source"), "{error}");
-    assert!(result.criteria.is_empty(), "nothing ran");
 }

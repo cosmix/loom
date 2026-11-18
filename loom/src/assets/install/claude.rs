@@ -10,11 +10,48 @@ pub(super) fn install_files(
     claude_dir: &Path,
     agents: &[Asset],
     commands: &[Asset],
-) -> Result<(usize, usize, Vec<PathBuf>)> {
-    let (agents, mut backups) = write_assets(&claude_dir.join("agents"), agents)?;
+) -> Result<(usize, usize, Vec<PathBuf>, Vec<PathBuf>)> {
+    let agents_dir = claude_dir.join("agents");
+    let (agent_count, mut backups) = write_assets(&agents_dir, agents)?;
+    let (pruned, mut pruned_backups) = prune_stale_agents(&agents_dir, agents)?;
+    backups.append(&mut pruned_backups);
     let (commands, mut command_backups) = write_assets(&claude_dir.join("commands"), commands)?;
     backups.append(&mut command_backups);
-    Ok((agents, commands, backups))
+    Ok((agent_count, commands, backups, pruned))
+}
+
+/// Remove retired loom agents, backing up regular files and unlinking symlinks
+/// without following them. Other names, directories and backup copies survive.
+fn prune_stale_agents(agents_dir: &Path, assets: &[Asset]) -> Result<(Vec<PathBuf>, Vec<PathBuf>)> {
+    let (mut pruned, mut backups) = (Vec::new(), Vec::new());
+    for entry in fs::read_dir(agents_dir)
+        .with_context(|| format!("Failed to read {}", agents_dir.display()))?
+    {
+        let entry = entry.with_context(|| format!("Failed to inspect {}", agents_dir.display()))?;
+        let file_name = entry.file_name();
+        let Some(name) = file_name.to_str() else {
+            continue;
+        };
+        if !name.starts_with("loom-")
+            || !name.ends_with(".md")
+            || assets.iter().any(|(key, _)| *key == name)
+        {
+            continue;
+        }
+        let path = entry.path();
+        let kind = entry
+            .file_type()
+            .with_context(|| format!("Failed to inspect {}", path.display()))?;
+        if kind.is_file() {
+            backups.push(super::back_up_asset(&path)?);
+        } else if !kind.is_symlink() {
+            continue;
+        }
+        fs::remove_file(&path).with_context(|| format!("Failed to remove {}", path.display()))?;
+        pruned.push(path);
+    }
+    pruned.sort();
+    Ok((pruned, backups))
 }
 
 pub(super) fn install_skills(
@@ -56,26 +93,9 @@ pub(super) fn write_layout(claude_dir: &Path, layout: SkillLayout) -> Result<()>
 /// Write every embedded agent or command asset to `root`, preserving anything
 /// loom did not put there.
 ///
-/// Unlike a skill directory (`prune_skill`), nothing an operator wrote under
-/// `root` is ever removed: `~/.claude/agents` and `~/.claude/commands` hold
-/// their own files alongside loom's with no naming convention separating
-/// them, so pruning here could delete their work. A skill directory is safe
-/// to prune because only names present in the embedded table are ever
-/// touched there. The one thing this function's own backup path can delete
-/// under `root` is loom's own earlier `.bak.` file, and only while rotating
-/// to a new one - which `back_up_existing_once` skips once a backup already
-/// exists, so in practice nothing is ever deleted here.
-///
-/// A destination already holding `content` is left untouched, so a reinstall
-/// stays byte-identical. A destination that exists and differs was not
-/// written by this call — three shipped command names (`address`,
-/// `pressure`, `distill`) are not loom-namespaced, and an operator could have
-/// a file of their own under any of these names — so it is backed up first,
-/// with `back_up_existing_once` rather than the doctrine files' rotating
-/// scheme (see that function for why), then overwritten. This also means a
-/// loom upgrade that changes one of loom's own agent or command files leaves
-/// a `.bak` beside it on the first such upgrade: never silently destroying a
-/// file loom did not write is the deliberate trade.
+/// Unrecognized differing content is copied to a unique backup on every
+/// replacement; prior backups remain recoverable. Identical content is left
+/// untouched. An upgrade can therefore also preserve a prior shipped version.
 ///
 /// A destination that is a live symlink is written through rather than
 /// replaced: `~/.claude/commands/` (or `agents/`) is sometimes itself a
@@ -105,9 +125,7 @@ fn write_assets(root: &Path, assets: &[Asset]) -> Result<(usize, Vec<PathBuf>)> 
         match existing {
             Some(bytes) if bytes == content.as_bytes() => continue,
             Some(_) => {
-                if let Some(backup) = super::back_up_existing_once(&dest)? {
-                    backups.push(backup);
-                }
+                backups.push(super::back_up_asset(&dest)?);
             }
             None => {}
         }

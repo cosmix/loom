@@ -6,10 +6,18 @@
 //! identity only (see `TmuxBackend::is_session_alive`) and must never consult
 //! this module for it.
 
+use std::process::Output;
+use std::time::Duration;
+
+use anyhow::Result;
+
 use crate::models::session::Session;
+use crate::process::run_bounded_tail_output;
 
 use super::viewer::tmux_session_name;
-use super::{run_tmux_control, socket_name, socket_path_for, TMUX_PROBE_TIMEOUT};
+use super::{
+    run_tmux_control, socket_name, socket_path_for, tmux_control_command, TMUX_PROBE_TIMEOUT,
+};
 
 /// Pure builder for the `tmux capture-pane` argv (excluding the `tmux`
 /// binary): joined wrapped lines (`-J`), the last `lines` rows of scrollback
@@ -58,15 +66,16 @@ fn exact_pane_target(session_name: &str) -> String {
 }
 
 /// What `argv` (built from the socket and pane target) prints for `session`'s
-/// own tmux pane, or `None` when the session has no tmux name, its server
-/// socket does not exist (a dead or never-created server costs no subprocess),
-/// or the capture fails.
+/// own tmux pane, run through `run`, or `None` when the session has no tmux name,
+/// its server socket does not exist (a dead or never-created server costs no
+/// subprocess), or the capture fails.
 ///
 /// Bounded by `TMUX_PROBE_TIMEOUT` because the orchestrator's single poll
 /// thread calls it.
 fn capture_stdout(
     session: &Session,
     argv: impl FnOnce(&str, &str) -> Vec<String>,
+    run: impl FnOnce(&[&str], Duration, String) -> Result<Output>,
 ) -> Option<Vec<u8>> {
     let session_name = tmux_session_name(session)?;
     let socket = socket_name(session);
@@ -75,7 +84,7 @@ fn capture_stdout(
     }
     let args = argv(&socket, &exact_pane_target(&session_name));
     let args: Vec<&str> = args.iter().map(String::as_str).collect();
-    let output = run_tmux_control(
+    let output = run(
         &args,
         TMUX_PROBE_TIMEOUT,
         format!("tmux capture-pane ({socket})"),
@@ -88,16 +97,23 @@ fn capture_stdout(
 /// `None` when it cannot be read. The text is returned as captured; callers
 /// normalise it.
 pub(crate) fn capture_pane_tail(session: &Session, lines: usize) -> Option<String> {
-    capture_stdout(session, |socket, target| {
-        capture_pane_argv(socket, target, lines)
-    })
+    capture_stdout(
+        session,
+        |socket, target| capture_pane_argv(socket, target, lines),
+        run_tmux_control,
+    )
     .map(|stdout| String::from_utf8_lossy(&stdout).into_owned())
 }
 
 /// `session`'s whole scrollback and screen, colors included, or `None` when
-/// the pane cannot be read.
+/// the pane cannot be read. A scrollback past the capture limit keeps its end:
+/// `history::bound_history` keeps the end anyway, so its start cannot cost the
+/// session its whole history.
 pub(super) fn capture_history(session: &Session) -> Option<Vec<u8>> {
-    capture_stdout(session, capture_history_argv)
+    capture_stdout(session, capture_history_argv, |args, timeout, operation| {
+        let mut command = tmux_control_command(args);
+        run_bounded_tail_output(&mut command, timeout, operation)
+    })
 }
 
 #[cfg(test)]

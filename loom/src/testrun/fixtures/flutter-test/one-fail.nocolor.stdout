@@ -1,4 +1,4 @@
-00:00 +0: loading /tmp/claude-1000/-home-dkaponis-src-loom/99212933-6012-4c4f-a6a4-f4e7f5668350/scratchpad/runner-projects/flutter-test/test/fixture_test.dart                                         00:01 +0: loading /tmp/claude-1000/-home-dkaponis-src-loom/99212933-6012-4c4f-a6a4-f4e7f5668350/scratchpad/runner-projects/flutter-test/test/fixture_test.dart                                         00:01 +0: beta_fails                                                                                                                                                                                   00:01 +0 -1: beta_fails [E]                                                                                                                                                                            
+00:00 +0: loading /tmp/claude-1000/-home-username-src-loom/99212933-6012-4c4f-a6a4-f4e7f5668350/scratchpad/runner-projects/flutter-test/test/fixture_test.dart                                         00:01 +0: loading /tmp/claude-1000/-home-username-src-loom/99212933-6012-4c4f-a6a4-f4e7f5668350/scratchpad/runner-projects/flutter-test/test/fixture_test.dart                                         00:01 +0: beta_fails                                                                                                                                                                                   00:01 +0 -1: beta_fails [E]                                                                                                                                                                            
   Expected: <5>
     Actual: <4>
   deliberate failure
@@ -8,5 +8,5 @@
   test/fixture_test.dart 11:5                         main.<fn>
   
 
-To run this test again: /home/dkaponis/dev/flutter/bin/cache/dart-sdk/bin/dart test /tmp/claude-1000/-home-dkaponis-src-loom/99212933-6012-4c4f-a6a4-f4e7f5668350/scratchpad/runner-projects/flutter-test/test/fixture_test.dart -p vm --plain-name 'beta_fails'
+To run this test again: /home/username/dev/flutter/bin/cache/dart-sdk/bin/dart test /tmp/claude-1000/-home-username-src-loom/99212933-6012-4c4f-a6a4-f4e7f5668350/scratchpad/runner-projects/flutter-test/test/fixture_test.dart -p vm --plain-name 'beta_fails'
 00:01 +0 -1: Some tests failed.                                                                                                                                                                        

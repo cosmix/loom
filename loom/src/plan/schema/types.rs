@@ -2,10 +2,18 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::types_v2::{deserialize_reasoning_effort, deserialize_stage_model, ProvisionEntry};
+use super::types_v2::{
+    deserialize_consumer_deferred, deserialize_reasoning_effort, deserialize_stage_model,
+    ProvisionEntry,
+};
 
-/// Claude Code permission mode; defined in [`crate::models::stage::PermissionMode`].
-pub use crate::models::stage::PermissionMode;
+/// Shared stage and sandbox types used by the plan schema.
+pub use crate::models::stage::{
+    AcceptanceCriterion, CommandConfinement, DeadCodeCheck, FilesystemConfig, Implementer,
+    Implementers, LinuxConfig, NetworkConfig, PermissionMode, RegressionTest, StageSandboxConfig,
+    SuccessCriteria, TruthCheck, WiringCheck, WiringTest,
+};
+pub use crate::plan::schema::types_v2::{ContractSpec, ReachableCheck};
 
 /// Plan-level sandbox configuration (defaults for all stages)
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -66,36 +74,6 @@ impl Default for SandboxConfig {
         }
     }
 }
-
-/// Per-stage sandbox configuration (overrides plan-level defaults)
-///
-/// Re-exported from models::stage for backward compatibility.
-/// The canonical definition is in crate::models::stage::StageSandboxConfig.
-pub use crate::models::stage::StageSandboxConfig;
-
-/// Filesystem access configuration
-///
-/// Re-exported from models::stage for backward compatibility.
-/// The canonical definition is in crate::models::stage::FilesystemConfig.
-pub use crate::models::stage::FilesystemConfig;
-
-/// Network access configuration
-///
-/// Re-exported from models::stage for backward compatibility.
-/// The canonical definition is in crate::models::stage::NetworkConfig.
-pub use crate::models::stage::NetworkConfig;
-
-/// Linux-specific sandbox configuration
-///
-/// Re-exported from models::stage for backward compatibility.
-/// The canonical definition is in crate::models::stage::LinuxConfig.
-pub use crate::models::stage::LinuxConfig;
-
-/// Confinement level for plan-authored commands.
-///
-/// Re-exported from models::stage for backward compatibility.
-/// The canonical definition is in crate::models::stage::CommandConfinement.
-pub use crate::models::stage::CommandConfinement;
 
 // Default value functions for serde (used by SandboxConfig below)
 fn default_sandbox_enabled() -> bool {
@@ -312,19 +290,20 @@ pub struct StageDefinition {
     /// per-stage opt-in keeps the cost decision explicit.
     #[serde(default)]
     pub ultracode: bool,
-    /// Which agent lanes this stage may spawn subagents from, in preference
-    /// order — the first is the lane to reach for on routine implementation.
+    /// Which agent lanes this stage may spawn subagents from; order is
+    /// informational, each piece is routed by its nature and quota.
     /// Defaults to `["claude"]`; list `["codex", "claude"]` for a stage that
-    /// sends routine work to codex while keeping Claude subagents available
-    /// for the parts that call for them.
+    /// sends straightforward work to codex while keeping Claude subagents
+    /// available for the parts that call for them.
     #[serde(default)]
     pub implementers: Implementers,
     /// How long (seconds) this stage's session may go without a heartbeat before
     /// the orchestrator flags it as silent. `None` means the built-in default
     /// (`DEFAULT_HUNG_TIMEOUT_SECS`, 300s). Raise it for stages whose subagents
     /// legitimately go quiet for long stretches — a foreground codex run or a
-    /// long mechanical sweep fires no PostToolUse hook while it works. The check
-    /// is ADVISORY: it reports a silent session, it never kills or retries one.
+    /// long mechanical sweep fires no PostToolUse hook while it works. The
+    /// monitor warns first; continued silence can trigger bounded recovery in
+    /// `orchestrator/core/event_handler/recover_hung.rs`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub subagent_timeout_secs: Option<u64>,
     /// Skills this stage's agents need, by catalog name; validated by `check_declared_skills`.
@@ -339,9 +318,22 @@ pub struct StageDefinition {
     /// Units that must be reachable from an entry point in the code graph.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub reachable: Vec<ReachableCheck>,
+    /// The one-line reason no consumer of this stage's new units exists anywhere
+    /// in the plan; satisfies the cross-stage wiring coverage warning.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_consumer_deferred"
+    )]
+    pub consumer_deferred: Option<String>,
 }
 
 impl StageDefinition {
+    /// Whether the stage declares any wiring, wiring test or reachability check.
+    pub fn has_wiring_coverage(&self) -> bool {
+        !self.wiring.is_empty() || !self.wiring_tests.is_empty() || !self.reachable.is_empty()
+    }
+
     /// Check if this stage definition has any goal-backward verification checks defined.
     pub fn has_any_goal_checks(&self) -> bool {
         !self.artifacts.is_empty()
@@ -352,12 +344,6 @@ impl StageDefinition {
             || !self.reachable.is_empty()
     }
 }
-
-mod stage_reexports;
-pub use stage_reexports::{
-    AcceptanceCriterion, ContractSpec, DeadCodeCheck, Implementer, Implementers, ReachableCheck,
-    RegressionTest, SuccessCriteria, TruthCheck, WiringCheck, WiringTest,
-};
 
 /// Allowed values for `reasoning_effort` on a stage.
 ///

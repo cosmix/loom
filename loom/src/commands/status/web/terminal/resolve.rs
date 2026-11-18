@@ -5,13 +5,13 @@ use std::path::Path;
 use anyhow::Result;
 
 use crate::commands::attach::{matches_for_stage, pick_newest};
-use crate::commands::status::data::load_all_sessions;
 use crate::fs::work_dir::WorkDir;
 use crate::models::session::{Session, SessionBackendKind};
 use crate::orchestrator::terminal::tmux::socket_name;
 use crate::orchestrator::terminal::tmux::viewer::{
     endpoint_ready, is_plain_identifier, live_tmux_sessions, tmux_session_name,
 };
+use crate::status::data::load_all_sessions;
 
 use super::{Mode, CLOSE_NOT_YET, CLOSE_REFUSED, CLOSE_UNKNOWN_STAGE};
 

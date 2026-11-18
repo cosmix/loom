@@ -22,11 +22,12 @@ use crate::plan::amendment::{AmendmentField, AmendmentPatch, AmendmentRequest};
 /// was filed, so the patches apply by DESCENDING index: a delete or insert
 /// never shifts an entry a later patch names. Patch `k` of the recorded list
 /// carries `dispute_id` `"<dispute>.<k>"`, which keeps `apply_amendment`
-/// idempotent per patch when an interrupted apply runs again.
+/// idempotent per patch when an interrupted apply runs again; `dispute` is
+/// the verdict's audit key (see `apply_accept::audit_key`).
 pub(super) fn build_amendment_requests(
     stage_id: &str,
     plan_patch: &PlanPatch,
-    dispute_id: u32,
+    dispute: &str,
 ) -> Result<Vec<AmendmentRequest>> {
     let (field, patches, reason) =
         normalize(&plan_patch.inner).map_err(|msg| anyhow::anyhow!(msg))?;
@@ -38,7 +39,7 @@ pub(super) fn build_amendment_requests(
             field,
             patch,
             reason: reason.clone(),
-            dispute_id: Some(format!("{dispute_id}.{k}")),
+            dispute_id: Some(format!("{dispute}.{k}")),
         })
         .collect();
     requests.sort_by_key(|request| std::cmp::Reverse(request.patch.index()));

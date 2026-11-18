@@ -1,40 +1,31 @@
 //! Control paths: files a stage branch may change only with a person's review.
 //!
-//! A branch whose diff since it split from the target touches `.claude/`,
-//! `.mcp.json`, `.loom/`, or the tracked git hooks directory
-//! (`core.hooksPath`) is never merged automatically; owner decision 9,
-//! `doc/plans/PLAN-loom-state-confinement.md` §9. [`merge_stage`] enforces
-//! the gate on the exact commits it merges; the daemon's early filters call
-//! [`control_path_violation`] too.
-//!
-//! [`merge_stage`]: super::merge_stage
+//! Changes to `.claude/`, `.mcp.json`, `.loom/`, or the tracked hooks directory
+//! require review (`doc/plans/PLAN-loom-state-confinement.md` §9). The gate runs
+//! on exact merge commits; early filters use [`control_path_violation`].
 
-use std::path::Path;
+use std::path::{Component, Path};
 
-use anyhow::{bail, Result};
+use anyhow::{bail, Context, Result};
 
+use crate::fs::lexical::normalize_lexically;
 use crate::git::branch::branch_ref;
-use crate::git::read_hooks_path_scope;
+use crate::git::changes::{changed_names, merge_base, DiffNames};
 use crate::git::runner::run_git;
+use crate::git::worktree::WorktreeGit;
 
-/// Whether `merge_stage` checks the control-path gate on the commits it is
-/// about to merge.
+/// Whether `merge_stage` checks control paths on the commits it merges.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MergeGate {
-    /// Refuse a branch that touches a control path ([`MergeResult::Held`]).
-    ///
-    /// [`MergeResult::Held`]: super::MergeResult::Held
+    /// Hold a branch that touches a control path for review.
     Enforce,
-    /// Merge without the gate: the operator reviewed the branch
-    /// (`loom stage human-review --force-complete`).
+    /// Bypass after operator review (`loom stage human-review --force-complete`).
     Bypass,
 }
 
-/// A human-review reason when the diff of branch `branch` since it split from
-/// branch `target` touches a control path, else `None`. The reason names
-/// `branch`. Both are branch names, resolved as `refs/heads/<name>` so a tag
-/// of the same name cannot stand in. An error means the diff could not be
-/// computed; callers that guard a merge treat it as a refusal.
+/// A review reason when `branch` changed a control path since splitting from
+/// `target`. Both resolve through `refs/heads/` to exclude same-named tags.
+/// Merge guards refuse on errors; the reason names `branch`.
 pub fn control_path_violation(
     repo_root: &Path,
     target: &str,
@@ -43,22 +34,21 @@ pub fn control_path_violation(
     control_path_violation_as(repo_root, &branch_ref(target), &branch_ref(branch), branch)
 }
 
-/// [`control_path_violation`] with the reason naming `label` (a branch name)
-/// instead of the revision that was diffed.
+/// [`control_path_violation`] with the reason naming `label` instead of the revision.
 pub fn control_path_violation_as(
     repo_root: &Path,
     target_rev: &str,
     branch_rev: &str,
     label: &str,
 ) -> Result<Option<String>> {
-    let base = crate::git::run_git_checked(&["merge-base", target_rev, branch_rev], repo_root)?;
+    let git = WorktreeGit::discovered(repo_root);
+    let base = merge_base(&git, target_rev, branch_rev)?;
     let changed = changed_paths(repo_root, &base, branch_rev)?;
-    Ok(violation_reason(repo_root, &changed, label))
+    violation_reason(repo_root, &changed, label)
 }
 
-/// [`control_path_violation_as`] over the exact change a merge would land:
-/// the diff from `old` to the merged `tree`. The merge-base diff alone is
-/// ambiguous on a history with several merge bases.
+/// Check the exact change from `old` to merged `tree`, avoiding ambiguity
+/// when history has several merge bases.
 pub fn tree_change_violation(
     repo_root: &Path,
     old: &str,
@@ -66,12 +56,12 @@ pub fn tree_change_violation(
     label: &str,
 ) -> Result<Option<String>> {
     let changed = changed_paths(repo_root, old, tree)?;
-    Ok(violation_reason(repo_root, &changed, label))
+    violation_reason(repo_root, &changed, label)
 }
 
 /// The human-review reason naming the control paths among `changed`, if any.
-fn violation_reason(repo_root: &Path, changed: &[String], label: &str) -> Option<String> {
-    let hooks_prefix = hooks_dir_prefix(repo_root);
+fn violation_reason(repo_root: &Path, changed: &[String], label: &str) -> Result<Option<String>> {
+    let hooks_prefix = hooks_dir_prefix_checked(repo_root)?;
     let offending: Vec<String> = changed
         .iter()
         .filter(|path| is_control_path(path, hooks_prefix.as_deref()))
@@ -80,62 +70,50 @@ fn violation_reason(repo_root: &Path, changed: &[String], label: &str) -> Option
         .map(|path| format!("{path:?}"))
         .collect();
     if offending.is_empty() {
-        return None;
+        return Ok(None);
     }
-    Some(format!(
+    Ok(Some(format!(
         "branch {label} touches control path(s) requiring human review: {}",
         offending.join(", ")
-    ))
+    )))
 }
 
-/// Paths that differ between `base` and `branch_rev`, unquoted: `-z` output is
-/// NUL-separated and git never C-quotes it. Read untrimmed, so a path's own
-/// leading or trailing whitespace survives. Gitlink changes are always listed:
-/// `--ignore-submodules=none` overrides an `ignore` setting in the checkout's
-/// `.gitmodules`, which a merged branch can set. The trailing `--` keeps a
-/// file named like a revision from making git refuse the call as ambiguous.
+/// Sorted UTF-8 paths differing between `base` and `branch_rev`, with whitespace
+/// preserved and renames listed as deletion/addition. Gitlinks stay listed even
+/// when `.gitmodules` ignores the submodule; revisions are separated from paths.
 pub(crate) fn changed_paths(repo_root: &Path, base: &str, branch_rev: &str) -> Result<Vec<String>> {
-    let args = [
-        "diff",
-        "-z",
-        "--name-only",
-        "--no-renames",
-        "--ignore-submodules=none",
-        base,
-        branch_rev,
-        "--",
-    ];
-    let output = run_git(&args, repo_root)?;
-    if !output.status.success() {
-        bail!(
-            "git diff {base} {branch_rev} failed: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
-        );
-    }
-    Ok(output
-        .stdout
-        .split(|byte| *byte == 0)
-        .filter(|field| !field.is_empty())
-        .map(|field| String::from_utf8_lossy(field).into_owned())
-        .collect())
+    changed_paths_with(&WorktreeGit::discovered(repo_root), base, branch_rev)
+}
+
+pub(crate) fn changed_paths_with(
+    git: &WorktreeGit,
+    base: &str,
+    branch_rev: &str,
+) -> Result<Vec<String>> {
+    let query = DiffNames {
+        from: base,
+        to: Some(branch_rev),
+        filter: None,
+        all_submodules: true,
+        pathspecs: &[],
+    };
+    let paths = changed_names(git, &query)
+        .with_context(|| format!("git diff {base} {branch_rev} failed"))?;
+    Ok(paths.into_iter().collect())
 }
 
 /// Where the change a stage merge brought to `target` starts.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum AcceptedBase {
-    /// The first-parent history of `target` holds `merge`, whose second
-    /// parent is the stage commit; `base` is `merge-base <merge>^1 <completed>`.
+    /// An accepted second-parent merge; `base` is `merge-base <merge>^1 <completed>`.
     Merged { merge: String, base: String },
-    /// No such merge: `base` is `merge-base <completed> <target>`. That is
-    /// the fork point when the stage has not merged yet (a dependency used
-    /// as a base branch), and `completed` itself when the commit already
-    /// reached `target` another way; the caller treats the second as unknown.
+    /// No accepted merge: `base` is `merge-base <completed> <target>`, either
+    /// the fork point or `completed` itself if it reached `target` another way.
     Unmerged { base: String },
 }
 
-/// Locates the merge that brought stage commit `completed` to branch `target`
-/// and the base its change starts from. `merge_stage` writes the merge as
-/// `[old target tip, stage tip]`, so the match is on the second parent.
+/// Locate the accepted merge and change base for `completed` on `target`.
+/// `merge_stage` writes `[old target tip, stage tip]`; match the second parent.
 pub(crate) fn accepted_change_base(
     repo_root: &Path,
     completed: &str,
@@ -144,6 +122,7 @@ pub(crate) fn accepted_change_base(
     if !is_commit_id(completed) {
         bail!("{completed:?} is not a full commit id");
     }
+    let git = WorktreeGit::discovered(repo_root);
     let target_ref = branch_ref(target);
     let range = format!("{completed}..{target_ref}");
     let listing = crate::git::run_git_checked(
@@ -168,29 +147,25 @@ pub(crate) fn accepted_change_base(
     match merge {
         Some(merge) => {
             let first_parent = format!("{merge}^1");
-            let base =
-                crate::git::run_git_checked(&["merge-base", &first_parent, completed], repo_root)?;
+            let base = merge_base(&git, &first_parent, completed)?;
             Ok(AcceptedBase::Merged { merge, base })
         }
         None => {
-            let base =
-                crate::git::run_git_checked(&["merge-base", completed, &target_ref], repo_root)?;
+            let base = merge_base(&git, completed, &target_ref)?;
             Ok(AcceptedBase::Unmerged { base })
         }
     }
 }
 
-/// Whether `value` is a full SHA-1 or SHA-256 commit id (hex only, so it can
-/// never reach git's option parser).
+/// Whether `value` is a full hex commit id, safe from git's option parser.
 fn is_commit_id(value: &str) -> bool {
     matches!(value.len(), 40 | 64) && value.bytes().all(|byte| byte.is_ascii_hexdigit())
 }
 
-/// Whether `path` (repository-relative, forward-slashed, as `git diff -z
-/// --name-only` reports it) is a control path: `.claude`, `.mcp.json`,
-/// `.loom`, the tracked git hooks directory, or anything under a directory
-/// among them. ASCII-case-insensitive, since a case-insensitive filesystem
-/// resolves `.CLAUDE/settings.json` to `.claude/settings.json`.
+/// Whether a repository-relative, forward-slashed `path` controls `.claude`,
+/// `.mcp.json`, `.loom`, or tracked hooks (including directory descendants).
+/// Hook ancestors are controlled because a symlink can redirect them.
+/// Match ASCII case-insensitively for case-insensitive filesystems.
 pub fn is_control_path(path: &str, hooks_prefix: Option<&str>) -> bool {
     let path = path.to_ascii_lowercase();
     let at_or_under = |dir: &str| {
@@ -203,50 +178,145 @@ pub fn is_control_path(path: &str, hooks_prefix: Option<&str>) -> bool {
         || hooks_prefix.is_some_and(|prefix| {
             let dir = prefix.trim_end_matches('/').to_ascii_lowercase();
             let dir = dir.strip_prefix("./").unwrap_or(&dir);
-            !dir.is_empty() && at_or_under(dir)
+            dir.is_empty()
+                || at_or_under(dir)
+                || dir
+                    .strip_prefix(&path)
+                    .is_some_and(|rest| rest.starts_with('/'))
         })
 }
 
-/// The repo-relative prefix of the tracked git hooks directory
-/// (`core.hooksPath`), or `None` when it is unset at every scope or resolves
-/// outside the repository.
-///
-/// A `config.worktree` value outranks the local one, as in
-/// `configured_hooks_path`: git runs the hooks it names.
+/// The repository-relative hooks prefix, or `None` when unset or outside it.
+/// Errors conservatively control every path; merge guards use the checked form.
+/// Symlink ancestors require review. Worktree configuration outranks local.
 pub fn hooks_dir_prefix(repo_root: &Path) -> Option<String> {
-    // Scoped reads (see `read_hooks_path_scope` for why), one per scope.
-    let worktree = read_hooks_path_scope(repo_root, "--worktree");
-    let local = read_hooks_path_scope(repo_root, "--local");
-    let global = read_hooks_path_scope(repo_root, "--global");
-    let system = read_hooks_path_scope(repo_root, "--system");
-    resolve_hooks_dir_prefix(
-        repo_root,
-        worktree.as_deref().or(local.as_deref()),
-        global.as_deref(),
-        system.as_deref(),
-    )
+    hooks_dir_prefix_checked(repo_root).unwrap_or_else(|_| Some(String::new()))
 }
 
-/// Resolves `core.hooksPath` from the three config scopes to a repo-relative
-/// prefix ending in `/`, taking the first of `local`, `global`, `system` that
-/// is set — git's own precedence order, so a global value (even a relative
-/// one, which applies inside every repository) is used only when local is
-/// unset. `None` when every scope is unset, or the winning value is an
-/// absolute path outside `repo_root`.
+/// Checked form used by gates so path and configuration errors hold the change.
+pub(crate) fn hooks_dir_prefix_checked(repo_root: &Path) -> Result<Option<String>> {
+    // The runner's own -c core.hooksPath=/dev/null precludes an unscoped read.
+    // `--type=bool` applies git's own reading: yes, on and 1 enable the extension.
+    let worktree = config_value(
+        repo_root,
+        &["--local", "--type=bool"],
+        "extensions.worktreeConfig",
+    )?
+    .is_some_and(|value| value == "true");
+    let scopes: &[&str] = if worktree {
+        &["--worktree", "--local", "--global", "--system"]
+    } else {
+        &["--local", "--global", "--system"]
+    };
+    for scope in scopes {
+        // `--type=path` expands `~/` as git does when it runs a hook.
+        let typed = [*scope, "--type=path"];
+        if let Some(value) = config_value(repo_root, &typed, "core.hooksPath")? {
+            return resolve_hooks_dir_prefix_checked(repo_root, Some(&value), None, None);
+        }
+    }
+    Ok(None)
+}
+
+fn config_value(repo_root: &Path, scope: &[&str], key: &str) -> Result<Option<String>> {
+    let mut args = vec!["config"];
+    args.extend_from_slice(scope);
+    args.extend(["--includes", "--get", key]);
+    let output = run_git(&args, repo_root)?;
+    if output.status.code() == Some(1) {
+        return Ok(None);
+    }
+    if !output.status.success() {
+        bail!(
+            "git config {} --get {key} failed: {}",
+            scope.join(" "),
+            String::from_utf8_lossy(&output.stderr).trim()
+        );
+    }
+    let value = String::from_utf8(output.stdout).context("git config returned invalid UTF-8")?;
+    Ok(Some(value.trim().to_string()).filter(|value| !value.is_empty()))
+}
+
+/// Resolve the first configured `local`, `global`, or `system` hooks path to
+/// a repository-relative prefix ending in `/`. Unset or outside paths give
+/// `None`; the repository root and errors give an empty prefix, controlling
+/// every path. Use the checked form to distinguish errors.
 pub fn resolve_hooks_dir_prefix(
     repo_root: &Path,
     local: Option<&str>,
     global: Option<&str>,
     system: Option<&str>,
 ) -> Option<String> {
-    let configured = local.or(global).or(system)?;
-    let path = Path::new(configured);
-    let relative = if path.is_absolute() {
-        path.strip_prefix(repo_root).ok()?.to_str()?.to_string()
-    } else {
-        configured.to_string()
+    resolve_hooks_dir_prefix_checked(repo_root, local, global, system)
+        .unwrap_or_else(|_| Some(String::new()))
+}
+
+pub(crate) fn resolve_hooks_dir_prefix_checked(
+    repo_root: &Path,
+    local: Option<&str>,
+    global: Option<&str>,
+    system: Option<&str>,
+) -> Result<Option<String>> {
+    let Some(configured) = local.or(global).or(system) else {
+        return Ok(None);
     };
-    Some(format!("{}/", relative.trim_end_matches('/')))
+    let path = Path::new(configured);
+    let root = std::fs::canonicalize(repo_root)
+        .with_context(|| format!("Failed to resolve repository root: {}", repo_root.display()))?;
+    let relative = if path.is_absolute() {
+        if let Ok(relative) = path.strip_prefix(repo_root) {
+            relative
+        } else if let Ok(relative) = path.strip_prefix(&root) {
+            relative
+        } else {
+            return Ok(None);
+        }
+    } else {
+        path
+    };
+    normalized_hooks_path(&root, relative)
+}
+
+fn normalized_hooks_path(root: &Path, relative: &Path) -> Result<Option<String>> {
+    let normalized = normalize_lexically(relative)
+        .context("core.hooksPath climbs out of the repository; review it before merging")?;
+    // Inspect the original components too: `link/..` must still refuse the link.
+    let mut resolved = root.to_path_buf();
+    for part in relative.components() {
+        match part {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                resolved.pop();
+            }
+            Component::Normal(name) => {
+                resolved.push(name);
+                match std::fs::symlink_metadata(&resolved) {
+                    Ok(metadata) if metadata.file_type().is_symlink() => {
+                        bail!(
+                            "core.hooksPath has a symlink ancestor at {}; review it before merging",
+                            resolved.display()
+                        );
+                    }
+                    Ok(_) => {}
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                    Err(error) => {
+                        return Err(error).with_context(|| {
+                            format!("Failed to inspect core.hooksPath at {}", resolved.display())
+                        })
+                    }
+                }
+            }
+            Component::RootDir | Component::Prefix(_) => {
+                bail!("invalid core.hooksPath: {}", relative.display())
+            }
+        }
+    }
+    let relative = normalized.to_str().context("core.hooksPath is not UTF-8")?;
+    Ok(Some(if relative.is_empty() {
+        String::new()
+    } else {
+        format!("{relative}/")
+    }))
 }
 
 #[cfg(test)]
@@ -255,3 +325,33 @@ mod tests;
 #[cfg(test)]
 #[path = "control_paths/tests_accepted.rs"]
 mod tests_accepted;
+
+#[cfg(test)]
+#[path = "control_paths/tests_worktree_config.rs"]
+mod tests_worktree_config;
+
+#[cfg(test)]
+mod containment_tests {
+    use super::*;
+
+    #[test]
+    fn hooks_paths_that_climb_out_require_review() {
+        let root = tempfile::tempdir().unwrap();
+        for relative in ["../hooks", "x/../../hooks", "../repo/hooks"] {
+            let error = normalized_hooks_path(root.path(), Path::new(relative)).unwrap_err();
+            assert_eq!(
+                error.to_string(),
+                "core.hooksPath climbs out of the repository; review it before merging"
+            );
+        }
+    }
+
+    #[test]
+    fn lexical_normalization_keeps_cancelled_symlink_checks() {
+        let root = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        std::os::unix::fs::symlink(outside.path(), root.path().join("link")).unwrap();
+        let error = normalized_hooks_path(root.path(), Path::new("link/../hooks")).unwrap_err();
+        assert!(error.to_string().contains("symlink ancestor"));
+    }
+}

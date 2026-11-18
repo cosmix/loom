@@ -46,32 +46,27 @@ impl Landing {
             stage.id,
             stage.status
         );
-        stage.try_transition(StageStatus::Executing)?;
-        stage.review_reason = None;
-        Ok(())
+        stage.try_transition(StageStatus::Executing)
     }
 }
 
 /// What each outcome write re-checks on the fresh on-disk stage (A-5): the
 /// completion commit captured before the merge, and the landing's entry step.
 pub(super) struct Claim {
-    commit: Option<String>,
+    merge: crate::stage_service::merge_outcome::MergeClaim,
     landing: Landing,
 }
 
 impl Claim {
     pub(super) fn new(stage: &Stage, landing: Landing) -> Self {
         Self {
-            commit: stage.completed_commit.clone(),
+            merge: crate::stage_service::merge_outcome::MergeClaim::capture(stage),
             landing,
         }
     }
 
     pub(super) fn apply(&self, stage: &mut Stage) -> Result<()> {
-        ensure!(
-            stage.completed_commit == self.commit,
-            "completion proof changed during merge handling"
-        );
+        self.merge.check(stage)?;
         self.landing.enter(stage)
     }
 }

@@ -1,0 +1,222 @@
+import { useAtomValue } from "jotai";
+import { useEffect, useState, type ReactNode } from "react";
+import { Link, useParams } from "react-router";
+
+import {
+  featureOfKey,
+  isOverviewKey,
+  metaplanKey,
+  overviewKey,
+  pageHref,
+  parsePageKey,
+} from "@/plan/api/page-key";
+import type { ConceptPage, DocLink, EmptyState as EmptyData } from "@/plan/api/schema-concept";
+import { Button } from "@/components/ui/button";
+import { Untrusted, visibleControls } from "@/plan/chat/visible-controls";
+import { toAddress } from "@/plan/files/address";
+import { fetchDoc } from "@/plan/files/api";
+import { useFeature } from "@/plan/feature/use-feature";
+import { checklistAtom } from "@/plan/state/atoms";
+import { SummaryBuildNotice } from "@/plan/summaries/build-notice";
+import { listedOutOfDate } from "@/plan/summaries/build-status";
+import { summaryPanelAtom } from "@/plan/summaries/state";
+import { plural } from "@/plan/ui/plural";
+import { LoadState } from "@/plan/ui/load-state";
+
+import { summaryIdOfKey } from "./column-context";
+import "./concept-page.css";
+import { EmptyOffer } from "./empty-offer";
+
+type Copy = { title: string; description?: string };
+
+function copyFor(empty: EmptyData): Copy | null {
+  switch (empty.kind) {
+    case "no_vision":
+      return { title: "No product vision yet" };
+    case "sections_no_vision":
+      return {
+        title: "No product overview yet",
+        description: "The sections below have no vision to tie them together.",
+      };
+    case "never_built":
+    case "building":
+      return null;
+  }
+}
+
+/** What a page without a summary shows while nothing builds it. */
+function idleCopy(page: ConceptPage, empty: EmptyData): Copy {
+  const overview = isOverviewKey(page.key);
+  if (empty.kind !== "never_built") {
+    return {
+      title: "No summary yet",
+      description: overview ? "The overview has no summary." : undefined,
+    };
+  }
+  // The server's estimate covers every missing summary: it describes an overview only.
+  const estimate = page.estimate && overview ? ` ${visibleControls(page.estimate)}` : "";
+  return {
+    title: overview ? "No summaries yet" : "No summary yet",
+    description: `${plural(empty.count ?? 0, "document")} without a summary.${estimate}`,
+  };
+}
+
+/**
+ * The build state of a page without a summary (`never_built` or `building`): an overview waits
+ * on its members too. A never-built overview's members are all missing, so its action builds
+ * them all; otherwise it builds the overview and the members the panel lists out of date.
+ */
+function BuildNotice({ page, empty }: { page: ConceptPage; empty: EmptyData }) {
+  const panel = useAtomValue(summaryPanelAtom);
+  const own = summaryIdOfKey(page.key);
+  const overview = isOverviewKey(page.key);
+  const members = overview ? page.key_chips.map((chip) => summaryIdOfKey(chip.doc.page)) : [];
+  const listed = listedOutOfDate(panel);
+  const due = empty.kind === "never_built" ? members : members.filter((id) => listed.has(id));
+  const reported = {
+    claimed: page.state?.state === "rebuilding",
+    building: empty.kind === "building",
+    progress: page.building,
+  };
+  return (
+    <SummaryBuildNotice
+      ids={[...members, own]}
+      press={[...due, own]}
+      plural={overview}
+      reported={reported}
+      idle={idleCopy(page, empty)}
+    />
+  );
+}
+
+/** Sections and plans list to their summary pages; never-built documents open in file mode. */
+function DocList({ kind, docs }: { kind: EmptyData["kind"]; docs: DocLink[] }) {
+  if (docs.length === 0) return null;
+  const href = (doc: DocLink) =>
+    kind === "never_built" ? toAddress(doc.path) : pageHref(doc.page);
+  return (
+    <ul aria-label="Documents" className="plan-list concept-empty-docs">
+      {docs.map((doc) => (
+        <li key={doc.id}>
+          <Link to={href(doc)} className="no-underline hover:underline">
+            <Untrusted text={doc.title} />
+          </Link>
+          <span className="plan-fine font-mono">
+            <Untrusted text={doc.path} />
+          </span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/** `.plan-empty` text: the title in the foreground, its explanation on the line below. */
+function EmptyNote({ title, description }: Copy) {
+  return (
+    <p className="plan-empty">
+      <strong className="concept-empty-title">{title}</strong>
+      {description}
+    </p>
+  );
+}
+
+/**
+ * The checklist whose offers this screen may draw: the route feature's, so the offer comes from
+ * the feature on screen (`checklistAtom` follows the active feature, which an effect sets and
+ * which differs from the route's while several features exist). A standalone page has no route
+ * feature, so the active one is the only candidate there.
+ */
+function useScreenChecklist() {
+  const { feature } = useParams();
+  const routed = useFeature().checklist;
+  const active = useAtomValue(checklistAtom);
+  return feature === undefined ? active : routed;
+}
+
+/** The page's empty or partial state, with section 05's text for its kind. */
+export function EmptyStates({ page, empty }: { page: ConceptPage; empty: EmptyData }) {
+  const checklist = useScreenChecklist();
+  const copy = copyFor(empty);
+  // The server lists no documents for a never-built overview; its key chips are them. A document
+  // summary page lists none: its key is the whole feature, and the heading reaches its document.
+  const keyDocs =
+    empty.kind === "never_built" && isOverviewKey(page.key)
+      ? page.key_chips.map((chip) => chip.doc)
+      : [];
+  const docs = empty.docs.length > 0 ? empty.docs : keyDocs;
+  const { offer } = empty;
+  let action: ReactNode = null;
+  if (empty.kind !== "building" && offer) {
+    action = <EmptyOffer offer={offer} checklist={checklist ?? null} />;
+  }
+  return (
+    <div className="concept-empty">
+      {copy === null ? <BuildNotice page={page} empty={empty} /> : <EmptyNote {...copy} />}
+      {action}
+      <DocList kind={empty.kind} docs={docs} />
+    </div>
+  );
+}
+
+/** The source document behind a summary page key, or null for an overview. */
+function sourceOf(pageKey: string): string | null {
+  const key = parsePageKey(pageKey);
+  if (key === null || key.kind === "overview") return null;
+  if (key.kind === "standalone") return `doc/plans/PLAN-${key.doc}.md`;
+  if (key.scope === "metaplan") return `doc/plans/${key.feature}/index.md`;
+  return key.scope === "product"
+    ? `doc/product/${key.feature}/${key.doc}.md`
+    : `doc/plans/${key.feature}/PLAN-${key.doc}.md`;
+}
+
+/** Null until the document lookup answers. */
+function useDocExists(path: string | null): boolean | null {
+  const [found, setFound] = useState<{ path: string; exists: boolean } | null>(null);
+  useEffect(() => {
+    if (path === null) return;
+    let live = true;
+    void fetchDoc(path).then((result) => {
+      if (live) setFound({ path, exists: result.ok });
+    });
+    return () => {
+      live = false;
+    };
+  }, [path]);
+  return found?.path === path ? found.exists : null;
+}
+
+/** A summary page the server does not have: the document may exist without a summary. */
+export function ConceptNotFound({ pageKey }: { pageKey: string }) {
+  const source = sourceOf(pageKey);
+  const exists = useDocExists(source);
+  const feature = featureOfKey(pageKey);
+  const name = pageKey.split("/").pop() ?? pageKey;
+  if (source !== null && exists === null) return <LoadState state="loading" />;
+  if (source !== null && exists) {
+    return (
+      <LoadState state="empty" title={`No summary for ${visibleControls(name)}`}>
+        <Button asChild data-look="secondary" className="plan-button">
+          <Link to={toAddress(source)}>Open in file mode</Link>
+        </Button>
+      </LoadState>
+    );
+  }
+  return (
+    <LoadState state="not_found" title="No such document" message={`${name} does not exist.`}>
+      {feature !== null ? (
+        <nav aria-label="Overviews" className="concept-empty-links">
+          <Link to={pageHref(overviewKey(feature))} className="no-underline hover:underline">
+            Product overview
+          </Link>
+          <Link to={pageHref(metaplanKey(feature))} className="no-underline hover:underline">
+            Metaplan
+          </Link>
+        </nav>
+      ) : (
+        <Link to="/" className="concept-empty-links no-underline hover:underline">
+          Planner
+        </Link>
+      )}
+    </LoadState>
+  );
+}

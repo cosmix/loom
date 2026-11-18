@@ -1,0 +1,169 @@
+import {
+  BookOpenIcon,
+  CompassIcon,
+  FlaskConicalIcon,
+  KeyboardIcon,
+  LayersIcon,
+  MessagesSquareIcon,
+  ScrollTextIcon,
+  type LucideIcon,
+} from "lucide-react";
+import type { ComponentType } from "react";
+
+import { INSTRUMENT_GLYPHS } from "@/plan/ui/glyphs";
+
+import { CHAT_SCENES, CHAT_TIPS } from "./chat-scene";
+import { FEATURES_SCENES, FEATURES_TIPS } from "./features-scene";
+import { GettingAroundScene } from "./getting-around-scene";
+import { PlannerLegend } from "./legend";
+import { COVERAGE_TIPS, CoverageHelp, FINDINGS_TIPS, FindingsHelp } from "./maps-help";
+import type { PlannerHelpScene } from "./pinned-scene";
+import { PRESSURE_SCENES, PRESSURE_TIPS } from "./pressure-scene";
+import { READING_SCENES, READING_TIPS } from "./reading-scene";
+import { PlannerShortcuts } from "./shortcuts";
+
+export interface PlannerHelpTopic {
+  id: string;
+  label: string;
+  description: string;
+  Icon: LucideIcon;
+  hue: number; // 1..8, var(--doc-N)
+  intro: string;
+  scenes: readonly PlannerHelpScene[];
+  Body?: ComponentType;
+  tips?: readonly string[];
+}
+
+export const PLANNER_HELP_TOPICS: readonly PlannerHelpTopic[] = [
+  {
+    id: "getting-around",
+    label: "Getting around",
+    description: "Find your project, a feature's documents, views and settings.",
+    Icon: CompassIcon,
+    hue: 1,
+    intro:
+      "The header shows your project and navigation controls; beside a feature's pages, the spine shows its progress.",
+    scenes: [
+      {
+        title: "The planner header",
+        Scene: GettingAroundScene,
+        scale: 0.74,
+        notes: [
+          {
+            target: ['[aria-label="Loom planner home"]', ".plan-identity"],
+            text: "The Loom logo returns to the planner home, and the feature switcher shows the current feature and switches to another.",
+          },
+          {
+            target: 'nav[aria-label="Feature documents"]',
+            text: "The spine has four groups: Vision, Product spec, Metaplan and Plans. Product spec ends with the Coverage well and Plans with the Findings well, the two ledgers read over the documents above them: a count, one dot per heading or finding, and a footnote naming the gaps or the review. It marks what is done, and each plan row reads Pressure-tested with a date or Not pressure-tested.",
+          },
+          {
+            target: '[aria-label$="Waiting for you"]',
+            text: "The activity pill counts what is in progress, such as a chat waiting for you, and opens the list. A roundel marks work that is running.",
+          },
+          {
+            target: "nav.view-switch",
+            text: "Switch between the project home and the file view.",
+          },
+          {
+            target: ['[aria-label="Settings"]', '[aria-label="Help"]'],
+            text: "Settings changes planner preferences and appearance, and Help opens this guide with the legend and keyboard shortcuts.",
+          },
+        ],
+      },
+    ],
+    tips: [
+      "The spine belongs to a feature and is hidden on the project home.",
+      "A feature opens on its product overview; the metaplan opens as a summary, and its Source is one click away.",
+      "The footer shows the Claude and Codex limits side by side; Settings > Summaries shows the rebuild statistics.",
+      'The activity pill lists a running plan, a pressure test, a Codex review or a summary rebuild, and a chat that is starting, drafting a document, needs permission or is waiting for you; a chat that is working does not appear, and the pill reads "Idle" when nothing applies.',
+    ],
+  },
+  {
+    id: "reading",
+    label: "Reading summaries",
+    description: "Open sentences, follow marks and reach the source text.",
+    Icon: ScrollTextIcon,
+    hue: 2,
+    intro:
+      "Summaries are written in layers: open a sentence to see the sentences beneath it, and open those to reach the source passages.",
+    scenes: READING_SCENES,
+    tips: READING_TIPS,
+  },
+  {
+    id: "features",
+    label: "Features",
+    description: "Start a feature, shape its vision and keep standalone plans.",
+    Icon: LayersIcon,
+    hue: 3,
+    intro: "A feature groups the documents and plans for one piece of work in your project.",
+    scenes: FEATURES_SCENES,
+    tips: FEATURES_TIPS,
+  },
+  {
+    id: "chat",
+    label: "Chat and sessions",
+    description: "Talk to a session, attach passages and answer permission requests.",
+    Icon: MessagesSquareIcon,
+    hue: 4,
+    intro:
+      "Sessions work on your documents while you chat; their tool use and changes appear inline. The chat panel stays beside the page on wide screens and opens from the header's Chat button on narrow ones. New chat starts nothing until you send your first message, a chat ends when you start another or leave the planner, and Stop sits beside Send while a turn runs.",
+    scenes: CHAT_SCENES,
+    tips: CHAT_TIPS,
+  },
+  {
+    id: "pressure",
+    label: "Pressure tests and runs",
+    description: "Test a plan under pressure and follow a run step by step.",
+    Icon: FlaskConicalIcon,
+    hue: 5,
+    intro:
+      "A pressure test challenges a plan before it runs, and a run reports each step as it happens.",
+    scenes: PRESSURE_SCENES,
+    tips: PRESSURE_TIPS,
+  },
+  {
+    id: "coverage",
+    label: "Coverage",
+    description: "See which spec headings plans cover, find the gaps and open a row to see why.",
+    Icon: INSTRUMENT_GLYPHS.coverage,
+    hue: 7,
+    intro:
+      "The Coverage page lists every heading of the spec by section, with the plans and stages that cover it. The four tiles count the rows and filter them; open a row to see why the heading exists and how it is delivered. Its well closes the spine's Product spec group: one dot per heading, grouped by section and hollow where no plan covers it, with the count and the sections that have gaps.",
+    scenes: [],
+    Body: CoverageHelp,
+    tips: COVERAGE_TIPS,
+  },
+  {
+    id: "findings",
+    label: "Findings",
+    description: "What reviews found, each with its quote, and one session to address them all.",
+    Icon: INSTRUMENT_GLYPHS.findings,
+    hue: 3,
+    intro:
+      "The Findings page is the feature's ledger of what reviews found, grouped by the run that found it. A finding counts once it quotes the text it is about and that quote is still there; repeats are marked as duplicates. Address the findings starts one team session for all of them. Its well closes the spine's Plans group: one pip per finding, filled while it waits to be addressed, with the open count and the review it came from.",
+    scenes: [],
+    Body: FindingsHelp,
+    tips: FINDINGS_TIPS,
+  },
+  {
+    id: "legend",
+    label: "Legend",
+    description: "Read the marks, document glyphs and activity indicators.",
+    Icon: BookOpenIcon,
+    hue: 6,
+    intro: "The legend names the marks, document types, states and activities used in the planner.",
+    scenes: [],
+    Body: PlannerLegend,
+  },
+  {
+    id: "shortcuts",
+    label: "Shortcuts",
+    description: "Use the keyboard to read, navigate and open dialogs.",
+    Icon: KeyboardIcon,
+    hue: 8,
+    intro: "These keys move through reading passages, switch views and control dialogs.",
+    scenes: [],
+    Body: PlannerShortcuts,
+  },
+];

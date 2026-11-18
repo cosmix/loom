@@ -367,7 +367,7 @@ fn codex_forwarder_spawn_gets_no_prompt_rewrite() {
     let (fixture, hook) = setup_hook();
     let (home, cwd, work) = (temp(), temp(), temp());
     let stub_bin = install_worker_brief_stub(fixture.path());
-    let prompt = "LOOM-CODEX-FORWARD-ONLY\n--model gpt-6-sol --effort xhigh\ntask text";
+    let prompt = "LOOM-CODEX-FORWARD-ONLY\n--model gpt-6.2-sol --effort xhigh\ntask text";
     let tool_input = json!({
         "subagent_type": "loom-codex-forwarder",
         "model": "sonnet",

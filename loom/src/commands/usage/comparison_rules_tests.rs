@@ -15,6 +15,45 @@ fn evaluate(value: Value) -> ComparisonReport {
     comparison_eval::evaluate(artifact)
 }
 
+#[test]
+fn assignment_comparison_preserves_fixed_associations() {
+    use super::assignments_comparable;
+    use crate::commands::usage::comparison_schema::{
+        InterventionDimension as Change, ProviderAssignment,
+    };
+
+    let mut artifact: ComparisonArtifact = serde_json::from_value(fixture()).unwrap();
+    let assignments = |value| -> Vec<ProviderAssignment> { serde_json::from_value(value).unwrap() };
+    let baseline = assignments(json!([
+        {"provider":"claude", "model":"a", "effort":"low"},
+        {"provider":"codex", "model":"b", "effort":"high"}
+    ]));
+    let effort_swap = assignments(json!([
+        {"provider":"claude", "model":"a", "effort":"high"},
+        {"provider":"codex", "model":"b", "effort":"low"}
+    ]));
+    let model_swap = assignments(json!([
+        {"provider":"claude", "model":"b", "effort":"low"},
+        {"provider":"codex", "model":"a", "effort":"high"}
+    ]));
+    let mut reversed = baseline.clone();
+    reversed.reverse();
+    artifact.intervention.changed_dimensions.clear();
+    assert!(assignments_comparable(&artifact, &baseline, &reversed));
+    assert!(!assignments_comparable(&artifact, &baseline, &effort_swap));
+    assert!(!assignments_comparable(&artifact, &baseline, &model_swap));
+    artifact.intervention.changed_dimensions = vec![Change::EffortAssignment];
+    assert!(assignments_comparable(&artifact, &baseline, &effort_swap));
+    assert!(!assignments_comparable(&artifact, &baseline, &model_swap));
+    artifact.intervention.changed_dimensions = vec![Change::ProviderAssignment];
+    let reassigned = assignments(json!([
+        {"provider":"claude", "model":"b", "effort":"high"},
+        {"provider":"codex", "model":"a", "effort":"low"}
+    ]));
+    assert!(assignments_comparable(&artifact, &baseline, &reassigned));
+    assert!(!assignments_comparable(&artifact, &baseline, &effort_swap));
+}
+
 /// Four copies of the fixture pair whose candidate output sits 19, 22, 18 and
 /// 21 tokens below the baseline's 40; with resident input 130 against 150, the
 /// candidate net totals sit 39, 42, 38 and 41 below. No quota observations.

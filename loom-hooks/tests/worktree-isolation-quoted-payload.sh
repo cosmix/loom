@@ -19,20 +19,26 @@ trap 'rm -rf "$TMP"' EXIT
 STAGE="build-api"
 OTHER_STAGE="other-stage"
 WORKTREE="$TMP/repo/.worktrees/$STAGE"
-mkdir -p "$WORKTREE/src" "$TMP/repo/.worktrees/$OTHER_STAGE"
+mkdir -p "$WORKTREE/src" "$WORKTREE/.loom" "$TMP/repo/.loom/work" \
+    "$TMP/repo/.worktrees/$OTHER_STAGE" "$TMP/tmpdir"
+chmod 700 "$TMP/tmpdir"
+ln -s ../../../.loom/work "$WORKTREE/.loom/work"
 
+# run_hook <command> [<dir>] - run the hook from <dir> (default: the worktree
+# root) in the scrubbed hook environment.
 run_hook() {
-    local cmd="$1"
+    local cmd="$1" dir="${2:-$WORKTREE}"
     local input
     input=$(jq -nc --arg c "$cmd" '{tool_name:"Bash",tool_input:{command:$c}}')
-    (cd "$WORKTREE" && printf '%s' "$input" | bash "$HOOK" 2>&1)
+    (cd "$dir" && printf '%s' "$input" | env -u LOOM_SCRATCH_DIR -u LOOM_WORK_DIR TMPDIR="$TMP/tmpdir" \
+        bash "$HOOK" 2>&1)
 }
 
 expect_allow() {
-    local desc="$1" cmd="$2"
+    local desc="$1" cmd="$2" dir="${3:-}"
     local output code
     set +e
-    output=$(run_hook "$cmd")
+    output=$(run_hook "$cmd" $dir)
     code=$?
     set -e
     if [[ $code -ne 0 ]]; then
@@ -44,10 +50,10 @@ expect_allow() {
 }
 
 expect_block() {
-    local desc="$1" cmd="$2"
+    local desc="$1" cmd="$2" dir="${3:-}"
     local output code
     set +e
-    output=$(run_hook "$cmd")
+    output=$(run_hook "$cmd" $dir)
     code=$?
     set -e
     if [[ $code -ne 2 ]]; then
@@ -68,7 +74,7 @@ expect_allow "single-quoted prose containing a relative import" "$PROSE_IMPORT_C
 CODEX_CMD="~/.claude/hooks/loom/codex-forward.sh task \"Update the chart loaders.
 import { computeQuantiles } from '../../../src/data/atlas/quantiles';
 import { decodeAdmin1Overlay } from '../../../src/data/admin1';
-Wire both into the loader module.\" --model gpt-5.6-terra --effort xhigh --write"
+Wire both into the loader module.\" --model gpt-6.1-terra --effort xhigh --write"
 expect_allow "the full codex-forward command with a multi-line quoted brief" "$CODEX_CMD"
 
 MEMORY_NOTE_CMD="loom memory note \"a relative import like ../../../src/data/atlas/foo is bad\""
@@ -76,21 +82,46 @@ expect_allow "loom memory note documenting the traversal trap" "$MEMORY_NOTE_CMD
 
 expect_allow "current stage's own worktree path is not cross-worktree access" \
     "cat .worktrees/$STAGE/src/main.rs"
+expect_allow "ordinary in-tree command" "cat src/main.rs"
+expect_allow "git -C into the current worktree" "git -C . status"
+for cmd in 'cargo build' 'cargo test' 'git status' 'git add src/main.rs' \
+    "git commit -m 'test'" 'ls -la' 'pwd' 'cat file.txt' 'rg pattern src/'; do
+    expect_allow "ordinary command: $cmd" "$cmd"
+done
+# Traversal resolves against the directory the command runs in: one parent
+# component from src/ stays inside the worktree.
+expect_allow "one parent component resolving inside the worktree" "cat ../file.txt" "$WORKTREE/src"
+expect_allow "commit message mentioning worktree directories" 'git commit -m "Add .worktrees/ to .gitignore"'
+expect_allow "commit message describing an override" 'git commit -m "Use git -C for directory changes"'
+expect_allow "commit message mentioning traversal" 'git commit -m "Fixed ../../path issue"'
+expect_allow "heredoc prose containing guarded patterns" $'cat <<EOF\ngit -C ../other status\n../../escape\n.worktrees/other-stage/\nEOF'
+expect_allow "quoted heredoc marker hides its body" $'cat <<\'EOF\'\ngit -C ../other status\n../../escape\n.worktrees/other-stage/\nEOF'
+expect_allow "an indented terminator does not close a heredoc" $'cat <<\'EOF\'\n    EOF\ncat ../../still-in-body\nEOF'
+# Bash removes unquoted backslashes, so this names `....file.txt` in the cwd.
+expect_allow "unquoted backslashes leave no parent component" 'cat ..\..\file.txt'
+# On Unix a quoted backslash is part of the name: one file inside the worktree.
+expect_allow "quoted backslashes name one file in the cwd" 'cat "..\..\file.txt"'
 
 # --- MUST BE BLOCKED (exit 2), no regressions -------------------------------
 
 expect_block "bare path traversal" "cat ../../foo"
+expect_block "three parent components" "ls ../../../"
+expect_block "one parent component from the worktree root leaves it" "cat ../file.txt"
+expect_block "traversal before a compound command" "cd ../../other && ls"
 
 # Quoting changes how bash PARSES the command, never the argument's VALUE - a
 # quoted but genuinely word-shaped path argument must still block. This is
 # what proves quoting alone is not the discriminator; whitespace inside the
 # token is.
 expect_block "quoted real traversal path argument" 'cat "../../foo"'
+expect_block "traversal after a closed heredoc" $'cat <<\'EOF\'\nprose\nEOF\ncat ../../bad'
 
 expect_block "git -C directory override" "git -C /somewhere status"
+expect_block "git -C relative override" "git -C ../other status"
 expect_block "GIT_DIR= env assignment" "GIT_DIR=/x git status"
 expect_block "eval-reached git" 'eval "git status"'
 expect_block "git --work-tree override" "git --work-tree=/somewhere status"
+expect_block "git --work-tree relative override" "git --work-tree=../parent status"
 expect_block "git --git-dir override" "git --git-dir=/somewhere/.git log"
 expect_block "GIT_WORK_TREE= env assignment" "GIT_WORK_TREE=/x git status"
 

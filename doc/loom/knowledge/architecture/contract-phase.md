@@ -1,6 +1,6 @@
 # Contract Phase
 
-> Contract session, freeze
+> Freeze
 
 ## Contract Phase: A Second Writer Session Before the Implementer
 
@@ -14,7 +14,7 @@ The stage stays `Executing` across both sessions: no new `StageStatus`, no new e
 `harness`, the scaffold edits it may make (`scaffold_line`, the one description shared with the
 freeze-refusal briefing), the knowledge brief and the language skills. It writes contract files, harness
 files and the scaffold, every contract test must fail now, and it ends with
-`loom stage contracts freeze <stage-id>`. It must not commit or complete the stage; `commit-guard.sh` gives it
+`loom stage contracts freeze <stage-id> --test <contract-id>=<identifier> ...` (the writer names each contract's test, and a runner or directory the plan left open; see "Writer-Chosen Contract Details"). It must not commit or complete the stage; `commit-guard.sh` gives it
 a contract-specific reminder and calls no loom command for a contract session.
 
 **Freeze** has two halves. The CLI pre-check (`commands/stage/contracts/freeze.rs::check_changes`, runs in the
@@ -34,14 +34,16 @@ agent's sandbox):
 `Request::FreezeContracts` then goes over the dispute-criteria transport (socket, relay, spool). The daemon
 (`stage_service::handle_freeze_contracts`) admits only the stage's running Contract session and queues a
 `Freeze` host job for the HEAD and tree digest the writer saw. The job (`host_verify/freeze.rs`) re-checks
-the changes with git pinned to the stage's registered git directory, runs every contract through its
-adapter's `single_test_command` (or, with no adapter, its own `test` string via
-`verify::contracts::contract_command`) at the stage's resolved confinement, runs the format gate, and checks
+the changes with git pinned to the stage's registered git directory, runs every contract through the command `resolve_run` builds (see
+[Where a Contract Runs](#where-a-contract-runs)) at the stage's resolved confinement, runs the format gate, and checks
 its binding (HEAD, tree digest, file hashes, contract definitions) again. `Failed` and `BuildFailed` pass the
-freeze; `Passed` and `NotSelected` are errors; `Unparsed` needs a non-zero exit. Applying the job
+freeze; `Passed` and `NotSelected` are errors; `Unparsed` needs a non-zero exit. A failed compile runs once per build
+([Shared Failed Builds](#shared-failed-builds)). Each `contract:<id>` outcome goes to the job's `progress.jsonl` as it
+is produced. Applying the job
 (`freeze::apply_freeze_result`, `stage_service::freeze_with_reports`) re-checks the changes, hashes every
 contract and harness-matched file, requires them to equal what the run hashed, copies them to
-`.loom/work/contracts/<stage>/files/`, and writes `freeze.json`. The freeze copies and hashes EVERY existing
+`.loom/work/contracts/<stage>/files/`, syncs every file and directory it wrote, and only then writes `freeze.json`
+(`store_generation::write_initial`), so a freeze record never names copies a crash could lose. The freeze copies and hashes EVERY existing
 file a harness glob matches, tracked or not, so a glob over a production file freezes it for the implementer
 and `src/**/*.rs` freezes the crate (cap 500 files, 64 MiB). Harness globs belong on test-only files. A
 refusal at either half goes to adjudication ([Refused Freezes Are Disputed](#refused-freezes-are-disputed)).
@@ -76,7 +78,7 @@ missed it: `orchestrator/coherence.rs` (`worker_session_type`, now `is_worker_se
 `relay/emit/cwd.rs::checkout_boundary` and `loom-control-complete.sh` treat the agent as a main-repo agent),
 `status/render/graph.rs`, `self_service.rs` (`BlockStage`), and `relay/matrix.rs` (Contract sends everything
 Stage does except `Dispute`, `Verdict` and completion, plus `FreezeContracts`, which only Contract may send).
-A relayed freeze is dropped unless `loom-hooks/loom-relay.sh` `relay_kind_at` maps `stage:contracts` to
+A relayed freeze is dropped unless `loom-hooks/_relay_kinds.sh` `relay_kind_at` maps `stage:contracts` to
 `FreezeContracts` only when the token after `contracts` is `freeze`, and drops it for subagents
 (`is_control()`, `drop_control_kinds`).
 
@@ -136,35 +138,60 @@ stage-strip label reads `... · contract phase`, and the stage dialog's session-
 `contract writer` (`sessionTypeLabel`). `web/src/api/schema.ts` must accept
 `session_type: "contract"` (see mistakes/web-dashboard-server.md).
 
+While the stage's Freeze host job for the current writer is queued or running,
+`StageSummary.contract_testing` (`status/data/contract_testing.rs`: `load_current` plus the `contract:` lines of
+`progress.jsonl`) carries `done`, `total`, `queued` and `running_secs`. It is `None` for a dead job child, and
+`contract_testing_text` is `None` for a dead, orphaned or crashed writer. Every surface renders
+`contracts written, testing 9/11 · 6m12s` (`contracts written, waiting to test` while queued): in place of the
+`contracts` tag in static status, which also drops the idle icon and `(stale)` marker because the writer's silence is
+expected then; ahead of every live writer wording in the TUI cell and `format-activity.ts`; `... · testing contracts`
+on the stage strip; a separate `testing contracts` state-key chip; and a `contract testing` row in the stage dialog.
+
 ## Where a Contract Runs
 
 `verify/contracts/run_dir.rs::resolve_run` picks the directory every contract command runs from, and is the only builder of a contract command (freeze CLI, daemon freeze record, completion, dispute re-freeze, contract signal, adjudication prompt). Priority:
 
-1. the plan contract's optional `cwd`, relative to the worktree root (`v2_fields.rs` requires the file to lie beneath it); it always wins;
+1. the plan contract's optional `cwd`, relative to the worktree root (`v2_fields.rs` requires the file to lie beneath it); it always wins. Where the plan sets none, a writer-chosen `--cwd` (see "Writer-Chosen Contract Details") takes this place: it must be an ancestor of the contract file inside `working_dir` and carry the runner root marker at the stage's base commit, so a marker the writer plants cannot move a run (`verify/contracts/choices_validate.rs`);
 2. the cwd `freeze.json` recorded for the contract's current file, found by `store::recorded_cwd` (completion, dispute re-freeze, adjudication prompt), so completion runs where the freeze ran even if a runner config is planted since;
 3. the nearest ancestor of the contract file holding one of the adapter's `run_root_markers()` (regular files only, symlinks ignored), walking up to the worktree root;
 4. the stage's `working_dir`.
+
+A Rust contract's command is limited to the one cargo target compiling its file (`collection/rust/scope.rs::target_scope`, the `chain` and `targets` derivation the freeze scaffold uses): `--lib`, `--bin <name>` or `--test <name>`, for cargo and nextest. No scope, so the unscoped command, for a doctest name, a run directory cargo would not run the package from, no owning package, no or several targets reaching the file, a dotfile target, or a file that is its own root whose test starts with its stem. A wrong target would exit 101 and read as `build_failed`, so `cargo_target_unselected` (`testrun/recognize.rs`) turns cargo's `no test target named`, `no bin target named` and `no library targets found` into zero tests executed, which the freeze refuses as `NotSelected`. The writer's signal can show the unscoped command, since the chain usually does not exist when the signal is written.
 
 The file is passed to the runner relative to that directory. The daemon records each contract's normalized `file` (relative to `working_dir`) and resolved `cwd` in `FrozenContract`. `store::recorded_cwd` trusts an entry only for the file it was recorded with: the entry with the contract's id and file, else any entry with its file (a renamed id keeps its cwd, so markers the agent plants cannot move it), else an entry with its id and no `file`. A contract re-pointed to another file gets no recorded cwd and falls to rules 3-4; so does an entry without `cwd`.
 
 An accepted contract dispute re-freezes the whole frozen set, including the disputed contract; its `cwd` values still come from `store::recorded_cwd` as above. See [Accepted Dispute Re-Freeze](#accepted-dispute-re-freeze). See mistakes/verification-v2-delivery.md, "Contracts in a Sub-Workspace Ran Under the Root's Runner Config".
 
+## Shared Failed Builds
+
+A failed compile is shared within one freeze job and one completion check, for every adapter
+(`verify/contracts/failed_builds.rs`). Contracts with the same `ContractRun::build_key()` compile the same code, so once
+`TestRunnerAdapter::compile_rejected` says the compiler rejected one run, later contracts with that key run nothing. The
+key is the run directory plus the command rebuilt with a fixed test name, so it needs no knowledge of the runner: one
+build per cargo target, Go package or Gradle, Maven or sbt run directory, and one per file where the command names the
+file (jest, pytest, rspec).
+
+`compile_rejected` defaults to `build_failed`; cargo and nextest also require `could not compile`, so a killed rustc or
+a missing `cargo nextest` reds only its own contract. A freeze takes the report under the contract's own id with a
+summary naming the shared build; completion reports `was not run: the build it shares with contract '<id>' failed`. A
+build that succeeds is left to the runner's own incremental cache. A failing test and a pass are never shared, and
+contracts are not batched into one command because `RunSummary` is aggregate.
+
 ## Accepted Dispute Re-Freeze
 
-An accepted `dispute-contract` (`orchestrator/adjudication/apply_contract.rs`) re-freezes the stage's whole frozen set, including the disputed contract:
+An accepted `dispute-contract` re-freezes the complete amended contract and harness set, including the disputed file. `store::refreeze_set` records the exact paths, adapters and working directories; newly added contracts receive the `refrozen` outcome because they did not run during the original freeze.
 
-- the files read by `verify/contracts/frozen_set.rs::read_frozen_set` are the amended contract files, the harness files re-expanded from `stage.harness` (`verify/contracts/changes.rs::harness_files`), every path the record lists, and the disputed contract's file before the amendment;
-- `store::refreeze_set` (`verify/contracts/store.rs`) replaces the record's `files` with exactly that set, upserts each contract the accept names with its adapter, file and `cwd` (`store::recorded_cwd`), and adds a contract the record lacks with outcome `REFROZEN_OUTCOME` (`refrozen`), because it never ran at freeze;
-- `freeze.json` is rewritten before the dropped copies are removed, so the record never names a copy that is not on disk. A failed removal leaves an orphan copy that no record names; restore and completion read only the copies the record names, so the orphan is harmless;
-- the stage must already be frozen; `refreeze_set` is called by the accept only.
+A dispute filed with `--replacement` adds two steps before `read_frozen_set` (`orchestrator/adjudication/apply_contract_replacement.rs`). First, before `amend_plan` and any write, the frozen file's recorded hash must equal the dispute's `replacement_base_sha256` (nothing changed since filing) or `sha256(replacement)` (an earlier attempt already re-froze); otherwise nothing is written and the stage goes to `NeedsHumanReview`. Then, after `amend_plan`, the replacement bytes from the admitted dispute record are written byte-exact to the post-amendment `contract_file`, through `fs/safe_replace.rs::restore_no_follow` (symlinked targets and parents refused, permission bits kept). A crash between the write and the re-freeze replays on the base hash; one after the re-freeze replays on the replacement hash. Flow: [Frozen Contracts Change Only Through `--replacement`](../conventions/dispute-and-adjudication.md#frozen-contracts-change-only-through---replacement).
 
-The adjudicator's accept notice lists the re-frozen paths; see the cap suggestion in [Gate-Dedup and Integration-Verify Review Suggestions](../concerns/verification-v2-followups.md#gate-dedup-and-integration-verify-review-suggestions).
+A re-freeze writes a version 2 record. It stages a complete generation under `staging/`, checks every copy hash, syncs every file and directory, renames it to `generations/<digest>/` (`<digest>` names its file and hash set), and only then publishes the freeze record (`verify/contracts/store_generation.rs`). Readers resolve copies from the generation their loaded record names, so a reader holding either record sees all of one generation; version 1 records keep the `files/` reader. Only `staging/` is collected, under the store lock and after publication, and a failure to collect changes nothing. A failed step leaves the previous committed record and generation readable, and a re-freeze that crashed restarts with every committed file restorable. Committed generations are kept indefinitely; power loss has not been exercised.
+
+The stage must already be frozen. The accept notice lists the re-frozen paths; see [Gate-Dedup and Integration-Verify Review Suggestions](../concerns/verification-v2-followups.md#gate-dedup-and-integration-verify-review-suggestions).
 
 ## Refused Freezes Are Disputed
 
 A refused freeze never waits for the operator. loom files it as a `freeze-refusal` dispute
 (`DisputeKind::FreezeRefusal`), an adjudicator decides it, and a fresh contract writer starts with the verdict
-(see [mistakes/contract-phase-human-blocking.md](../mistakes/contract-phase-human-blocking.md)).
+(see [mistakes/contract-autonomy-delivery.md#a-contract-freeze-refusal-waited-on-the-operator](../mistakes/contract-autonomy-delivery.md#a-contract-freeze-refusal-waited-on-the-operator)).
 
 **Where a refusal is kept.** `verify::contracts::refusal` holds both sources.
 
@@ -224,3 +251,27 @@ alias, `a #1` loses its tail); every other field takes a YAML body. Every verdic
 while a sibling dispute is unanswered, for a fresh writer on the same worktree: no freeze exists, so the
 contract phase starts again and the signal carries the notice (`disputes/<stage>/feedback.md`). No freeze
 record is read or written.
+
+## Writer-Chosen Contract Details
+
+The planner cannot know the test identifier, and often not the runner or directory, before the code exists, so the writer names them at freeze. `ContractSpec.test` is an optional hint. The writer passes `--test <contract-id>=<identifier>` to `loom stage contracts freeze` for every contract, and `--runner <contract-id>=<adapter>` or `--cwd <contract-id>=<dir>` only where the plan leaves `runner` or `cwd` unset. A planner-set `runner` or `cwd` still wins, and a writer flag for a planner-set value is refused.
+
+- **Where it is kept.** The CLI relays the flags with the freeze request; the daemon saves them in `.loom/work/contracts/<stage>/choices.json` (`verify/contracts/choices.rs`, `stage_service/contracts_choices.rs::save_admitted`) and merges them across freezes, so a later freeze need not repeat them. A saved choice for a contract the plan no longer has, or for a field the plan now sets, is dropped before the merge, so an amendment never leaves a stale choice that refuses every later freeze. `FrozenContract` (`verify/contracts/store.rs`) records `test` beside `adapter` and `cwd`. Completion, the implementer's frozen-contracts table, `contracts show`, `contracts restore` and the adjudication prompts read the freeze record, never the plan, once a stage is frozen.
+- **Validation.** `validate_choices` (`verify/contracts/choices_validate.rs`) refuses a `--test` that is blank, over 512 bytes, carries control characters or starts with `-`, one holding `;` for any adapter (whitespace too for sbt), and one given for a contract with no adapter; the format rules apply to a writer-chosen value only, never to the plan's hint. The CLI runs it over the merged choices before it relays a freeze and refuses locally, so a flag mistake costs no dispute; the daemon validates again, and a refusal only the daemon finds is filed as a freeze-refusal dispute. The daemon saves the untrimmed wire values it validated trimmed (open suggestion in [contract-autonomy-followups](../concerns/contract-autonomy-followups.md)).
+- **Trust rule for `--cwd`.** The directory must be an ancestor of the contract file inside the stage's `working_dir`, and the runner root marker detection finds there must exist at the stage's base commit, so a file the writer planted cannot move a run (see "Where a Contract Runs").
+- **Duplicate freezes.** A freeze whose choices differ from those of a freeze job still pending for the same head and tree is refused by the CLI before it follows or relays anything; the request state records the choices it was sent with.
+- **Still refused.** A contract its adapter selects no test for; `loom plan verify` keeps its runner and collection lints for planner-set values.
+
+The freeze child checks the verification-policy binding on `load_stage` before it overlays the choices (`host_verify/freeze.rs`): `ensure_bound_stage` compares `effective_policy_hash`, which covers `stage.contracts`, while the runner hashes the plain stage record, so overlaying first makes every job with a writer choice fail with "verification policy changed".
+
+## The Freeze Runs the Stage's Static Gates
+
+The freeze runs every acceptance and `after_stage` criterion that is a pure check, not only the formatters (`verify/contracts/format_gate.rs`): the recognised formatters, the lint commands `cargo clippy`, `eslint`, `biome lint`, `biome check`, `ruff check`, `tsc --noEmit`, `go vet` and `golangci-lint run`, and simple `rg`/`grep` commands as `validation/base_tree.rs` parses them. A formatter check runs from `after_stage` as well as from `acceptance` (an `after_stage` check keeps its 30 s default). `runs_at_freeze` decides which run:
+
+- the compiler-backed lints (`cargo clippy`, `go vet`, `golangci-lint run`) run only when every contract compiled (every outcome is `failed`), because a build failure stays an accepted red outcome (`verify/contracts/freeze.rs`);
+- `tsc --noEmit` never runs at freeze: vitest transpiles without type-checking, so a red TypeScript contract that names a member the stage has not written still "compiles" and tsc would blame the writer's file for that member;
+- `eslint`, `biome`, `ruff check`, the formatters and the `rg`/`grep` checks always run.
+
+A pure check that fails and whose output names a file the writer wrote (a contract file, a harness file, or a file the freeze adds; `attribute_failure`) refuses the freeze back to the live writer session. An existing file the freeze changed only by a scaffold declaration loom derived is loom's edit, so a failure naming it is left to completion, as is a pure check that fails without naming a writer's file. `loom stage contracts freeze` waits for its host job the way `loom check` does, so the refusal reaches the writer as `Host job: failed` with the failing output and a "returned (n of 3)" line; the writer fixes its files and freezes again, in the same session. An interrupted or daemon-stopped freeze job of a waiting writer is returned the same way and counts toward the same limit.
+
+A returned refusal becomes a `freeze-refusal` dispute (see "Refused Freezes Are Disputed") only on the third static refusal in one writer session (`STATIC_RETURN_LIMIT`, `verify/contracts/refusal/static_return.rs::record_static_refusal`) or when the writer stays quiet for 5 minutes after a returned one (`REFUSAL_QUIET_SECS`, `orchestrator/core/event_handler/freeze_refusal.rs`). A newer job that finds an unfiled, undeclined record of the same session keeps it and answers `Filed`; an older order answers `Superseded`. Every filed refusal's `Applied::FreezeRefused` message starts `filed as a freeze-refusal dispute:` and a returned one `returned to the contract writer (n of 3):`; the recorded problems stay unprefixed. The gate removes only its own writes after it runs (`host_verify/freeze_artefacts.rs`): a fixed tool-artefact list (`target/`, `.ruff_cache/`, `node_modules/.cache/`, `.eslintcache`, `Cargo.lock`, `*.tsbuildinfo`) plus the output-redirect targets of the gate commands, removed through `safe_fs` dirfd removal, so a gate write never breaks the freeze's tree binding.

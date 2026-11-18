@@ -2,6 +2,7 @@
 //! budget, and each contract's recorded run directory.
 
 use super::*;
+use crate::plan::schema::ContractSpec;
 use tempfile::TempDir;
 
 fn record(stage_id: &str, path: &str, sha256: &str) -> FreezeRecord {
@@ -19,6 +20,16 @@ fn record(stage_id: &str, path: &str, sha256: &str) -> FreezeRecord {
     }
 }
 
+fn hashes(files: &[(String, Vec<u8>)]) -> Vec<FrozenFile> {
+    files
+        .iter()
+        .map(|(path, bytes)| FrozenFile {
+            path: path.clone(),
+            sha256: sha256_hex(bytes),
+        })
+        .collect()
+}
+
 #[test]
 fn write_then_load_round_trips_and_refuses_a_second_freeze() {
     let tmp = TempDir::new().unwrap();
@@ -33,6 +44,69 @@ fn write_then_load_round_trips_and_refuses_a_second_freeze() {
     assert_eq!(std::fs::read(copy).unwrap(), bytes);
     let again = write_freeze(tmp.path(), &frozen, &files).unwrap_err();
     assert!(again.to_string().contains("already frozen"), "{again:#}");
+}
+
+#[test]
+fn interrupted_generations_preserve_the_committed_snapshot() {
+    let tmp = TempDir::new().unwrap();
+    let old_bytes = b"old".to_vec();
+    let old = record("s1", "a", &sha256_hex(&old_bytes));
+    write_freeze(tmp.path(), &old, &[("a".into(), old_bytes.clone())]).unwrap();
+    let dir = stage_dir(tmp.path(), "s1");
+    let mut next = old.clone();
+    next.version = GENERATION_RECORD_VERSION;
+    let invalid = vec![
+        ("a".into(), b"new".to_vec()),
+        ("a/b".into(), b"other".to_vec()),
+    ];
+    next.files = hashes(&invalid);
+    assert!(generation::stage(&dir, &next, &invalid).is_err());
+    assert_eq!(std::fs::read_dir(dir.join("staging")).unwrap().count(), 1);
+    assert_eq!(load_freeze(tmp.path(), "s1").unwrap(), Some(old.clone()));
+    assert_eq!(
+        std::fs::read(frozen_file_path_for_record(tmp.path(), &old, "a")).unwrap(),
+        old_bytes
+    );
+
+    let files = vec![
+        ("a".into(), b"new".to_vec()),
+        ("b".into(), b"second".to_vec()),
+    ];
+    next.files = hashes(&files);
+    // Staging without publishing simulates interruption immediately before the record rename.
+    generation::stage(&dir, &next, &files).unwrap();
+    assert_eq!(load_freeze(tmp.path(), "s1").unwrap(), Some(old.clone()));
+    assert_eq!(
+        std::fs::read(frozen_file_path_for_record(tmp.path(), &old, "a")).unwrap(),
+        old_bytes
+    );
+    refreeze_set(tmp.path(), "s1", &files, &[]).unwrap();
+    assert_eq!(std::fs::read_dir(dir.join("staging")).unwrap().count(), 0);
+    let published = load_freeze(tmp.path(), "s1").unwrap().unwrap();
+    assert_eq!(published.version, GENERATION_RECORD_VERSION);
+    assert_eq!(
+        std::fs::read(frozen_file_path_for_record(tmp.path(), &published, "a")).unwrap(),
+        b"new"
+    );
+    assert_eq!(
+        std::fs::read(frozen_file_path_for_record(tmp.path(), &old, "a")).unwrap(),
+        old_bytes
+    );
+}
+
+#[test]
+fn staging_cleanup_does_not_follow_symlinks() {
+    let tmp = TempDir::new().unwrap();
+    let dir = tmp.path().join("stage");
+    let staging = dir.join("staging");
+    let outside = tmp.path().join("outside");
+    std::fs::create_dir_all(&staging).unwrap();
+    std::fs::create_dir(&outside).unwrap();
+    std::fs::write(outside.join("keep"), b"user data").unwrap();
+    std::os::unix::fs::symlink(&outside, staging.join("link")).unwrap();
+    generation::cleanup(&dir).unwrap();
+    assert!(!staging.join("link").exists());
+    assert_eq!(std::fs::read(outside.join("keep")).unwrap(), b"user data");
 }
 
 #[test]
@@ -84,6 +158,7 @@ fn red(cwd: Option<&str>) -> FrozenContract {
         exit_code: Some(1),
         file: None,
         cwd: cwd.map(str::to_string),
+        test: None,
     }
 }
 
@@ -159,8 +234,37 @@ fn a_refreeze_adds_a_contract_the_record_did_not_list() {
         exit_code: None,
         file: Some("a.rs".to_string()),
         cwd: Some("apps/web".to_string()),
+        test: None,
     };
     assert_eq!(loaded.contracts, vec![red(Some(".")), added]);
+}
+
+#[test]
+fn a_refreeze_records_the_test_identifier_for_existing_and_new_entries() {
+    let tmp = TempDir::new().unwrap();
+    let mut frozen = record("s1", "a.rs", "x");
+    frozen.contracts = vec![red(None)];
+    write_freeze(tmp.path(), &frozen, &[]).unwrap();
+    let files = vec![("a.rs".to_string(), b"new".to_vec())];
+    let with_test = |id: &str| RefrozenContract {
+        test: Some("a::b".to_string()),
+        ..refrozen(id, "apps/web")
+    };
+
+    refreeze_set(
+        tmp.path(),
+        "s1",
+        &files,
+        &[with_test("rejects-x"), with_test("rejects-y")],
+    )
+    .unwrap();
+
+    let loaded = load_freeze(tmp.path(), "s1").unwrap().unwrap();
+    let tests: Vec<Option<String>> = loaded.contracts.iter().map(|c| c.test.clone()).collect();
+    assert_eq!(
+        tests,
+        vec![Some("a::b".to_string()), Some("a::b".to_string())]
+    );
 }
 
 #[test]
@@ -206,6 +310,7 @@ fn refrozen(id: &str, cwd: &str) -> RefrozenContract {
         adapter: Some("bun-test".to_string()),
         file: "a.rs".to_string(),
         cwd: cwd.to_string(),
+        test: None,
     }
 }
 

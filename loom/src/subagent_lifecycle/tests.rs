@@ -9,7 +9,6 @@ use chrono::{DateTime, Utc};
 use sha2::{Digest, Sha256};
 use std::fs;
 use std::path::{Path, PathBuf};
-
 const STAGE: &str = "stage-a";
 const LOOM_SESSION: &str = "loom-session-a";
 const PARENT: &str = "parent-uuid-a";
@@ -57,6 +56,8 @@ fn shell_literal_jsonl_line_replays_as_success() -> Result<()> {
     Ok(())
 }
 
+#[path = "tests_qualified.rs"]
+mod qualified;
 #[test]
 fn transcript_growth_invalidates_stop_terminality() -> Result<()> {
     let fixture = Fixture::new("growth")?;
@@ -243,7 +244,7 @@ fn terminal_turn_id_is_optional_for_direct_records_only() -> Result<()> {
     Ok(())
 }
 
-fn codex_record(
+pub(super) fn codex_record(
     workspace: &Path,
     forwarder: &str,
     unit: &str,
@@ -283,7 +284,7 @@ fn codex_evidence(unit: &str, job: &str, terminal: bool) -> Result<CodexEvidence
         } else {
             CodexEvidenceKind::Authorization
         },
-        requested_model: "gpt-6-sol".into(),
+        requested_model: "gpt-6.2-sol".into(),
         requested_effort: "xhigh".into(),
         invocation_id: format!("invocation-{unit}"),
         job_id: Some(job.into()),
@@ -302,7 +303,7 @@ fn codex_evidence(unit: &str, job: &str, terminal: bool) -> Result<CodexEvidence
     })
 }
 
-fn set_codex_id(record: &mut LifecycleRecord) -> Result<()> {
+pub(super) fn set_codex_id(record: &mut LifecycleRecord) -> Result<()> {
     let evidence: CodexEvidence = serde_json::from_value(record.evidence.clone())?;
     record.event_id = codex_event_id(record, &evidence)?;
     Ok(())
@@ -339,16 +340,16 @@ fn digest(bytes: &[u8]) -> String {
     format!("sha256:{}", hex::encode(Sha256::digest(bytes)))
 }
 
-struct Fixture {
+pub(super) struct Fixture {
     _temp: tempfile::TempDir,
-    root: PathBuf,
-    work: PathBuf,
+    pub(super) root: PathBuf,
+    pub(super) work: PathBuf,
     parent: PathBuf,
     worker: PathBuf,
 }
 
 impl Fixture {
-    fn new(prefix: &str) -> Result<Self> {
+    pub(super) fn new(prefix: &str) -> Result<Self> {
         let temp = tempfile::Builder::new().prefix(prefix).tempdir()?;
         let root = fs::canonicalize(temp.path())?;
         let work = root.join("work");

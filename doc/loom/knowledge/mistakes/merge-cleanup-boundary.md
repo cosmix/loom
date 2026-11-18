@@ -1,6 +1,6 @@
 # Merge Cleanup Boundary
 
-> Cleanup-boundary bug
+>
 
 ## What Happened
 
@@ -169,3 +169,69 @@ committable `.loom/config.toml`.
   "wrote merged=true without verifying ancestry" incidents.
 - `architecture/context-retrieval-state.md` — the overlay/base reconcile steps this
   ordering interleaves, and why base publication requires a clean tree.
+
+## Merge failure policy missed a conflict-state transition
+
+**What happened:** A shared merge failure writer refused to record infrastructure errors on a stage in `MergeConflict`, leaving manual retry in its old state.
+
+**Why:** The state machine has no direct `MergeConflict -> MergeBlocked` transition; merge outcome writers deliberately force this transition after guarding ownership and proof.
+
+**Prevention:** Compare existing outcome writers and state-machine edges before unifying their mutations, including repeat `MergeBlocked` and unmerged `Completed` cases.
+
+**Fix:** The shared writer permits guarded merge-state outcomes and records the failure on the fresh stage.
+
+## Distinct merge holds need distinct operator messages
+
+**What happened:** Unifying signing and control-path holds replaced the control-path failure message with generic review text, breaking its existing operator contract.
+
+**Why:** One coarse held outcome did not carry which remedy applies.
+
+**Prevention:** Preserve a typed hold reason through adapters and test existing control-path output alongside signing failures.
+
+**Fix:** Keep separate signing and control-path dispositions while sharing the durable review transition.
+
+## Half-removed cleanup accepted uncertain entries and raced new files
+
+**What happened:** A cleanup repair retained scan-then-remove behavior and treated some scaffold-shaped entries as owned without establishing their identity.
+**Why:** The review checked existing files at inspection time but did not account for replacement or creation before recursive deletion.
+**Prevention:** Require positive ownership proof and use removal operations that refuse unexpected entries at deletion time; do not treat names alone as proof.
+**Fix:** Reassess half-removed recovery with deterministic adversarial interleavings and preserve uncertain entries.
+
+## Empty directory replacement can fool half-removed recovery
+
+**What happened:** Directory-only cleanup prevented late file loss but could remove a substituted empty directory and report success while the original was renamed away.
+**Why:** unlinkat by name is not conditional on the inode held by an earlier directory descriptor.
+**Prevention:** Treat name-based directory removal as a separate ownership boundary and do not claim exact identity without an atomic proof.
+**Fix:** Reassess concurrent replacement and preserve or explicitly report any remaining limitation.
+
+## A Merge Resolver Inherited the Stage's Write Denies and Gave Up Silently (2026-10-14)
+
+**What happened**: a plan set `deny_write: ["doc/specs/**"]`. A stage's merge conflicted while main had changed `doc/specs/`. `session_sandbox` built the resolver's capsule from the stage's merged sandbox, so `git merge --no-commit --no-ff main` in the worktree failed with "Read-only file system". The resolver explained this in prose and ended its turn. Status kept saying "merge resolver ... is running (attempt 1 of 6)" because its pid was alive, the web node showed no terminal because `session_for_stage` described the ended worker `stage.session` still named, and `loom stage block` from a resolver was refused at three layers (relay matrix, `require_owner`, the `MergeBlocked -> Blocked` transition). When the operator finished the merge by hand, `loom stage commit` told them to run `git merge --abort`.
+
+**Why**: the sandbox was built per stage with no session kind, though a resolver writes whatever the target changed. Resolver liveness was read as progress. The resolver had no path to report failure, and the status collector, the web schema and the CLI messages were each written for the stage worker only.
+
+**Prevention**: a session kind that writes outside its stage's authorship (a resolver merging the target) gets its own sandbox rule plus an equivalent check at the point its output lands. Never let a released deny go unchecked. Every agent session needs a machine-readable give-up path that its signal names; prose at the prompt is invisible to loom. Status that reports "running" must come from activity, never from pid liveness alone. A refusal message names the path for every caller who can hit it, the operator included.
+
+**Fix**: `release_worktree_write_denies` for `Merge` sessions plus the commit-time guarded-path check ([daemon-owned-commits](../architecture/daemon-owned-commits.md#what-the-daemon-refuses)); the give-up path ([merge-and-recovery](../patterns/merge-and-recovery.md#merge-resolver-spawn-loop)); `speaking_for` and staleness-based resolver notes ([status-data-model](../architecture/status-data-model.md#attention-rendering-static-view)); `merge_in_progress` in `git/stage_commit.rs` names the operator path (`git commit --no-edit`, then `loom stage merge <id> --resolved`).
+
+**Review-round lessons**: the first sandbox fix dropped every deny, including absolute carve-outs, with no downstream check. The guarded-path check first missed trailing-slash globs, failed open on an unreadable plan snapshot, accepted `--ours` on a cleanly merged path (reverting the target after a fast-forward), and printed `git checkout --ours`, which is a no-op on a resolved index. Test every refusal by executing the command it prints.
+
+## A Resolver Was Told To Pass Criteria It Could Not Run
+
+**What happened:** the merge signal told a resolver that the acceptance criteria must pass before it commits, while the relay matrix refused `loom check` for `Merge` sessions. Inside the sandbox `cargo test` cannot pass (AF_UNIX denied, no nested bwrap, read-only `/tmp`), so the instruction could not be met. Separately, a merge kept the target's `INDEX.md` while auto-resolving knowledge files, and the landing refused it as stale although `loom knowledge check` had reported 0 issues.
+
+**Why:** the signal text, the matrix and the gate were each written alone, and nothing tied an instruction in a signal to a capability of that session kind. The completion gate compared the index and `loom knowledge check` did not.
+
+**Prevention:** when a signal tells a session kind to do something, trace the command through that kind's relay verdict and daemon admission. A gate and its diagnostic command share one predicate (`index::index_is_stale`).
+
+**Fix:** a live resolver of the stage may relay `check` (`inbox_drain/apply.rs::require_merge_resolver`); step 3 of the signal syncs the index; `loom knowledge check` reports `StaleIndex`.
+
+## The Integrity Gate Read a Formatter Reflow as a Changed Assertion (2026-11-07)
+
+**What happened:** integration-verify's merge resolver merged feat-planner-ui, whose commit 5b3ec4a3 left `web/src/plan/feature/spine-model.test.ts` failing `oxfmt --check`. The resolver formatted it to pass that criterion; oxfmt wrapped one `expect(...)` across five lines and added a trailing comma. Every acceptance criterion passed, then the test-integrity gate raised `TI-edit-web/src/plan/feature/spine-model.test.ts` and the stage was handed back to a fresh stage session, re-running the stage.
+
+**Why:** `lost_assertions` (`loom/src/verify/integrity/edits.rs`) counted a removed assertion as kept only when an identical trimmed line was added back. A reflow never yields an identical line, so the formatter gate and the integrity gate could not both pass.
+
+**Prevention:** a diff-based gate over source lines must compare modulo formatting, or it fights the repository's own formatter check. Compare whole hunks, so a reflow that also changes a token still counts.
+
+**Fix:** a hunk whose removed and added text are equal after `normalize` (whitespace dropped outside string literals; a comma before `)`/`]`/`}` dropped except for Python, where `(1,)` is a tuple) contributes nothing. Tests in `loom/src/verify/integrity/tests.rs` cover Rust and TypeScript reflows and reflows hiding a value or string change.

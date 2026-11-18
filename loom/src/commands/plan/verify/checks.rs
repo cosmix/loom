@@ -2,11 +2,12 @@
 
 use std::path::Path;
 
-use super::{build_levels_output, JsonError, JsonStageLevel, JsonWarnings};
+use super::report::{VerifyError, VerifyStageLevel, VerifyWarnings};
 use crate::plan::graph::levels::compute_all_levels;
 use crate::plan::schema::{
     check_knowledge_recommendations, check_sandbox_recommendations, detect_stage_type,
     split_lint_findings, v2_lints, validate_structural_preflight, LoomMetadata, StageDefinition,
+    StageType,
 };
 
 /// Sandbox, lint and DAG hard errors go to `hard_errors`, skipped-check notes
@@ -14,9 +15,9 @@ use crate::plan::schema::{
 pub(super) fn soft_checks(
     metadata: &LoomMetadata,
     repo_root: Option<&Path>,
-    hard_errors: &mut Vec<JsonError>,
+    hard_errors: &mut Vec<VerifyError>,
     notes: &mut Vec<String>,
-) -> (JsonWarnings, Vec<Vec<JsonStageLevel>>) {
+) -> (VerifyWarnings, Vec<Vec<VerifyStageLevel>>) {
     let stages = &metadata.loom.stages;
     hard_errors.extend(sandbox_policy_errors(metadata));
     let context = v2_lints::LintContext {
@@ -25,8 +26,8 @@ pub(super) fn soft_checks(
     };
     let lints = v2_lints::run(&context, notes);
     let (lint_errs, lint_warns) = split_lint_findings(metadata.loom.version, lints);
-    hard_errors.extend(lint_errs.into_iter().map(JsonError::from));
-    let mut warnings = JsonWarnings {
+    hard_errors.extend(lint_errs.into_iter().map(VerifyError::from));
+    let mut warnings = VerifyWarnings {
         structural: validate_structural_preflight(stages, repo_root),
         knowledge: check_knowledge_recommendations(stages, repo_root),
         sandbox: check_sandbox_recommendations(metadata),
@@ -46,7 +47,7 @@ pub(super) fn soft_checks(
 /// validate_config / validate_emittable), so a plan `loom init` would refuse
 /// is not reported clean here. These are errors, not warnings — init already
 /// rejects these plans outright.
-fn sandbox_policy_errors(metadata: &LoomMetadata) -> Vec<JsonError> {
+fn sandbox_policy_errors(metadata: &LoomMetadata) -> Vec<VerifyError> {
     use crate::plan::schema::stage_host_path_errors;
     let mut errors = Vec::new();
     for stage in &metadata.loom.stages {
@@ -63,7 +64,7 @@ fn sandbox_policy_errors(metadata: &LoomMetadata) -> Vec<JsonError> {
         if let Err(e) = crate::sandbox::validate_emittable(&merged) {
             messages.push(e.to_string());
         }
-        errors.extend(messages.into_iter().map(|message| JsonError {
+        errors.extend(messages.into_iter().map(|message| VerifyError {
             stage_id: Some(stage.id.clone()),
             message,
         }));
@@ -72,13 +73,48 @@ fn sandbox_policy_errors(metadata: &LoomMetadata) -> Vec<JsonError> {
 }
 
 /// DAG cycle detection, then the stages grouped by execution level.
-fn dag_levels(stages: &[StageDefinition]) -> Result<Vec<Vec<JsonStageLevel>>, JsonError> {
+fn dag_levels(stages: &[StageDefinition]) -> Result<Vec<Vec<VerifyStageLevel>>, VerifyError> {
     if let Err(e) = crate::plan::graph::ExecutionGraph::build(stages.to_vec()) {
-        return Err(JsonError {
+        return Err(VerifyError {
             stage_id: None,
             message: e.to_string(),
         });
     }
     let levels_map = compute_all_levels(stages, |s| s.id.as_str(), |s| &s.dependencies);
     Ok(build_levels_output(stages, &levels_map))
+}
+
+fn stage_type_label(st: StageType) -> &'static str {
+    match st {
+        StageType::Standard => "standard",
+        StageType::Knowledge => "knowledge",
+        StageType::IntegrationVerify => "integration-verify",
+        StageType::KnowledgeDistill => "knowledge-distill",
+    }
+}
+
+fn build_levels_output(
+    stages: &[StageDefinition],
+    levels_map: &std::collections::HashMap<String, usize>,
+) -> Vec<Vec<VerifyStageLevel>> {
+    let max_level = levels_map.values().copied().max().unwrap_or(0);
+    let mut result = Vec::new();
+    for level_num in 0..=max_level {
+        let mut level_stages: Vec<&StageDefinition> = stages
+            .iter()
+            .filter(|s| levels_map.get(&s.id).copied().unwrap_or(0) == level_num)
+            .collect();
+        level_stages.sort_by(|a, b| a.id.cmp(&b.id));
+        let json_stages = level_stages
+            .iter()
+            .map(|s| VerifyStageLevel {
+                id: s.id.clone(),
+                name: s.name.clone(),
+                stage_type: stage_type_label(detect_stage_type(s)).to_string(),
+                dependencies: s.dependencies.clone(),
+            })
+            .collect();
+        result.push(json_stages);
+    }
+    result
 }

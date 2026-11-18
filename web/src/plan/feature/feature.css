@@ -1,0 +1,190 @@
+/* The feature screen: the spine beside the routed page. The page keeps <main> as its scroll
+   container (the spine sticks inside it), so the reading column's scroll logic is untouched. */
+/* A grid even without the spine, so the page's area is stretched to the full height and a
+   loading or empty state inside it centres in the page (ui/load-state.css). */
+[data-loom-plan] .plan-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  min-height: 100%;
+}
+
+[data-loom-plan] .plan-layout[data-spine] {
+  display: grid;
+  grid-template-columns: 18rem minmax(0, 1fr);
+}
+
+[data-loom-plan] .plan-layout__page {
+  min-width: 0;
+}
+
+/* The spine's edge is a hairline on the page, so it runs the page's full height. */
+[data-loom-plan] .plan-layout[data-spine] > .plan-layout__page {
+  border-left: 1px solid var(--hairline);
+}
+
+/* What is still to write, above an overview: pace, the draft team, the queue. */
+[data-loom-plan] .plan-gaps {
+  display: grid;
+  gap: var(--space-5);
+  margin-bottom: var(--space-6);
+}
+
+[data-loom-plan] .plan-gaps:empty {
+  display: none;
+}
+
+/* The vision and the metaplans read as source, in the reading column's measure. */
+[data-loom-plan] .plan-document {
+  width: 100%;
+  max-width: calc(68ch + 2 * var(--space-5));
+  margin: 0 auto;
+  padding: var(--space-5) 0 var(--space-7);
+}
+
+[data-loom-plan] .plan-document--empty {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-3);
+  padding: var(--space-6) var(--page-gutter);
+}
+
+/* Pace choice: two columns on the page, each with its own offer. Space divides them: a column
+   holds a bordered button, so it draws no box of its own (DESIGN.md, Surfaces and borders). */
+[data-loom-plan] .plan-pace {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
+  gap: var(--space-5) var(--space-6);
+}
+
+[data-loom-plan] .plan-pace__card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+[data-loom-plan] .plan-pace__title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+[data-loom-plan] .plan-pace__copy,
+[data-loom-plan] .plan-pace__cost {
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+[data-loom-plan] .plan-pace__cost {
+  font-size: 12px;
+}
+
+/* Both cards pin their offer to the bottom edge. The button keeps the design-system scale and
+   never wraps: a label that would is too long (DESIGN.md, Buttons). */
+[data-loom-plan] .plan-pace__offer {
+  min-width: 0;
+  max-width: 100%;
+  margin-top: auto;
+  padding-top: 4px;
+}
+
+/* Section and plan queues: rows on hairlines (design.css `.plan-list`), the list's edges the page's. */
+[data-loom-plan] .plan-queue > li {
+  flex-wrap: wrap;
+}
+
+[data-loom-plan] .plan-queue__num {
+  flex: none;
+  min-width: 2ch;
+  color: var(--muted-foreground);
+  font-family: var(--font-mono);
+  font-size: var(--type-fine);
+}
+
+[data-loom-plan] .plan-queue__name {
+  flex: 1 1 12ch;
+  min-width: 0;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+/* Plan names are slugs, so they read in mono. */
+[data-loom-plan] .plan-queue[data-kind="plan"] .plan-queue__name {
+  font-family: var(--font-mono);
+  font-size: var(--type-fine);
+}
+
+/* The row whose offer is the primary: the pace choice above carries its button. */
+[data-loom-plan] .plan-queue__next {
+  font-size: var(--type-fine);
+  font-weight: 600;
+}
+
+/* A row's state words and its action are two cells, as `.plan-queue__side` laid them out
+   (design.css): the words wrap among themselves, and a row with no action draws no cell. */
+[data-loom-plan] .plan-queue__status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-3);
+}
+
+[data-loom-plan] .plan-queue__action:empty {
+  display: none;
+}
+
+/* Wide enough to hold them on one line, every row shares the state column and the action column
+   (subgrid), so a row's Next or button never moves its state words off the column. Narrower, the
+   side wraps under the name and the rows are free to differ. */
+@media (min-width: 1100px) {
+  [data-loom-plan] .plan-queue {
+    display: grid;
+    grid-template-columns: auto minmax(12ch, 1fr) max-content max-content;
+  }
+
+  [data-loom-plan] .plan-queue > li {
+    display: grid;
+    grid-column: 1 / -1;
+    grid-template-columns: subgrid;
+    align-items: center;
+  }
+
+  [data-loom-plan] .plan-queue__side {
+    display: contents;
+  }
+
+  [data-loom-plan] .plan-queue__status {
+    grid-column: 3;
+    justify-content: flex-start;
+  }
+
+  [data-loom-plan] .plan-queue__action {
+    grid-column: 4;
+  }
+}
+
+@media (max-width: 759.98px) {
+  [data-loom-plan] .plan-layout[data-spine] {
+    grid-template-columns: minmax(0, 1fr);
+    /* The layout fills the height, so two auto rows would stretch and sit a short page halfway
+       down; the page row takes the spare height instead. */
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  [data-loom-plan] .plan-layout[data-spine] > .plan-layout__page {
+    border-left: 0;
+  }
+
+  /* Holds the row the spine's "Documents" control takes (spine.css: the control, its 2 x space-2
+     padding and the 1px rule) until the spine replaces it, so the page does not drop when the
+     project arrives. Revisit with the control's height in spine.css. */
+  [data-loom-plan] .plan-layout__spine-slot {
+    height: calc(var(--control-height) + 2 * var(--space-2) + 1px);
+  }
+}

@@ -8,10 +8,11 @@ use std::path::Path;
 
 use super::KindPromptInput;
 use crate::fs::safe_read::{is_not_found, read_bounded};
+use crate::models::dispute::truncate_to_byte_limit;
 use crate::orchestrator::adjudication::prompt::diff::unified_diff;
 use crate::plan::schema::ContractSpec;
-use crate::relay::sha256_hex;
 use crate::stage_service::contracts::locate;
+use crate::utils::sha256_hex;
 use crate::verify::contracts::changes::harness_files;
 use crate::verify::contracts::normalize;
 use crate::verify::contracts::store::{self, FreezeRecord, FrozenFile};
@@ -27,15 +28,18 @@ const MAX_FROZEN_SET_SECTION_BYTES: usize = 32 * 1024;
 /// diff of each, and a line naming each deleted one), then every harness match
 /// the freeze does not hold yet. An accept re-freezes the changed and new
 /// files and drops the deleted.
-pub(super) fn section(input: &KindPromptInput<'_>, contract: Option<&ContractSpec>) -> String {
-    let record = store::load_freeze(input.work_dir, &input.stage.id);
+pub(super) fn section(
+    input: &KindPromptInput<'_>,
+    contract: Option<&ContractSpec>,
+    record: &Result<Option<FreezeRecord>, String>,
+) -> String {
     let body = match (record, input.worktree) {
         (_, None) => "(stage worktree unavailable)\n\n".to_string(),
         (Ok(None), _) => "(the contracts are not frozen)\n\n".to_string(),
         (Err(error), _) => format!("(freeze record unreadable: {error:#})\n\n"),
         (Ok(Some(record)), Some(_)) => {
             let disputed = contract.map(|contract| normalize(&contract.file));
-            changes(input, &record, disputed.as_deref())
+            changes(input, record, disputed.as_deref())
         }
     };
     format!("{FROZEN_SET_HEADING}\n\n{body}")
@@ -70,11 +74,11 @@ fn changed_entries<'a>(
         .files
         .iter()
         .filter(move |file| Some(file.path.as_str()) != disputed)
-        .filter_map(move |file| drift(input, file))
+        .filter_map(move |file| drift(input, record, file))
 }
 
 /// The entry for `file` if the worktree no longer holds the frozen bytes.
-fn drift(input: &KindPromptInput<'_>, file: &FrozenFile) -> Option<String> {
+fn drift(input: &KindPromptInput<'_>, record: &FreezeRecord, file: &FrozenFile) -> Option<String> {
     let path = &file.path;
     let current = read_bounded(
         &input.site.path,
@@ -83,7 +87,7 @@ fn drift(input: &KindPromptInput<'_>, file: &FrozenFile) -> Option<String> {
     );
     let entry = match current {
         Ok(bytes) if sha256_hex(&bytes) == file.sha256 => return None,
-        Ok(bytes) => changed_entry(input, path, &bytes),
+        Ok(bytes) => changed_entry(input, record, path, &bytes),
         Err(error) if is_not_found(&error) => {
             format!("- `{path}` is deleted from the worktree\n\n")
         }
@@ -135,8 +139,13 @@ fn new_harness_paths(
 
 /// The diff of the frozen copy of `path` against its `current` bytes, cut to
 /// [`MAX_FROZEN_SET_DIFF_BYTES`].
-fn changed_entry(input: &KindPromptInput<'_>, path: &str, current: &[u8]) -> String {
-    let frozen = frozen_copy(input, path).ok();
+fn changed_entry(
+    input: &KindPromptInput<'_>,
+    record: &FreezeRecord,
+    path: &str,
+    current: &[u8],
+) -> String {
+    let frozen = frozen_copy(input, record, path).ok();
     let before = frozen
         .as_deref()
         .and_then(|bytes| std::str::from_utf8(bytes).ok());
@@ -177,18 +186,14 @@ fn cut(text: &mut String, what: &str) {
     if text.len() <= MAX_FROZEN_SET_DIFF_BYTES {
         return;
     }
-    let mut end = MAX_FROZEN_SET_DIFF_BYTES;
-    while !text.is_char_boundary(end) {
-        end -= 1;
-    }
-    text.truncate(end);
+    *text = truncate_to_byte_limit(text, MAX_FROZEN_SET_DIFF_BYTES);
     text.push_str(&format!("\n... [{what} truncated] ...\n"));
 }
 
 /// The frozen copy of `path`, read without following a symlink.
-fn frozen_copy(input: &KindPromptInput<'_>, path: &str) -> Result<Vec<u8>> {
+fn frozen_copy(input: &KindPromptInput<'_>, record: &FreezeRecord, path: &str) -> Result<Vec<u8>> {
     let root = input.work_dir.canonicalize()?;
-    let copy = store::frozen_file_path(&root, &input.stage.id, path);
+    let copy = store::frozen_file_path_for_record(&root, record, path);
     let relative = copy.strip_prefix(&root)?;
     read_bounded(&root, relative, store::MAX_FROZEN_FILE_BYTES)
 }

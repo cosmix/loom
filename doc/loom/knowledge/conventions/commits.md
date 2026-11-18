@@ -1,6 +1,6 @@
 # Commit Convention
 
-> Grouped Conventional Commits
+> Format
 
 ## Required Commit Practice
 

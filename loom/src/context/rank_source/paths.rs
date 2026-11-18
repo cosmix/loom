@@ -1,15 +1,14 @@
 //! How a query names a file: exact paths, bare stems, stage-dependency paths,
 //! and the test-file convention that damps them.
 //!
-//! Split out of [`super`] so the scoring pass and the path vocabulary it
-//! consults stay under the file line limit independently. Everything here is
-//! purely lexical — no filesystem access — because it runs against candidate
-//! paths that may not exist in this checkout at all.
+//! Matching is lexical; candidate paths need not exist in this checkout.
 
 use crate::context::config::RetrievalConfig;
 use crate::context::lexical::{contains_whole_term, ExactGate, TermEvidence};
 use crate::context::rank::RankQuery;
 use crate::context::schema::SourceNode;
+use crate::fs::lexical::normalize_lexically;
+use std::path::Path;
 
 /// How the query named the node's file, when it did at all.
 pub(super) enum PathMatch {
@@ -100,17 +99,9 @@ pub fn join_working_dir(working_dir: Option<&str>, path: &str) -> Option<String>
     if base.starts_with('/') {
         return None;
     }
-    let mut segments: Vec<&str> = Vec::new();
-    for segment in base.split('/').chain(path.split('/')) {
-        match segment {
-            "" | "." => {}
-            ".." => {
-                segments.pop()?;
-            }
-            other => segments.push(other),
-        }
-    }
-    (!segments.is_empty()).then(|| segments.join("/"))
+    let joined = normalize_lexically(&Path::new(&base).join(&path))?;
+    let joined = joined.to_str()?;
+    (!joined.is_empty()).then(|| joined.to_owned())
 }
 
 /// Multiply a test file's score by `test_path_factor`.

@@ -5,38 +5,16 @@
 //! Only synchronous `git` commands and the synchronous binary run here: no
 //! daemon, no terminal, no session.
 
+#[path = "test_support/mod.rs"]
+mod test_support;
+use test_support::git_repo::{git, git_unchecked, TestRepo};
+
 use loom::models::stage::{Stage, StageStatus};
 use loom::verify::transitions::{load_stage, save_stage};
 use serial_test::serial;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 use tempfile::TempDir;
-
-/// Run git with the user's and system's config out of the picture.
-fn run_git(dir: &Path, args: &[&str]) -> Output {
-    Command::new("git")
-        .args(args)
-        .current_dir(dir)
-        .env("GIT_CONFIG_GLOBAL", dir.join(".loom-test-no-global"))
-        .env("GIT_CONFIG_SYSTEM", dir.join(".loom-test-no-system"))
-        .env("GIT_CONFIG_NOSYSTEM", "1")
-        .env("GIT_AUTHOR_NAME", "t")
-        .env("GIT_AUTHOR_EMAIL", "t@t.com")
-        .env("GIT_COMMITTER_NAME", "t")
-        .env("GIT_COMMITTER_EMAIL", "t@t.com")
-        .output()
-        .unwrap()
-}
-
-fn git(dir: &Path, args: &[&str]) -> String {
-    let output = run_git(dir, args);
-    assert!(
-        output.status.success(),
-        "git {args:?} failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    String::from_utf8_lossy(&output.stdout).trim().to_string()
-}
 
 fn commit_file(dir: &Path, name: &str, text: &str) {
     std::fs::write(dir.join(name), text).unwrap();
@@ -58,9 +36,7 @@ impl Project {
     fn new() -> Self {
         let temp = TempDir::new().unwrap();
         let root = temp.path().to_path_buf();
-        git(&root, &["init", "-q", "-b", "main"]);
-        git(&root, &["config", "user.email", "t@t.com"]);
-        git(&root, &["config", "user.name", "t"]);
+        TestRepo::builder().no_seed().init_in(&root);
         std::fs::write(root.join(".git/info/exclude"), ".loom/\n.worktrees/\n").unwrap();
         commit_file(&root, "seed.txt", "seed");
         let worktree = root.join(".worktrees").join("s");
@@ -73,6 +49,7 @@ impl Project {
         // The state directory lives in the main checkout; the worktree reaches
         // it through the `.loom/work` symlink every stage worktree has.
         let work_dir = root.join(".loom").join("work");
+        test_support::write_main_checkout_identity(&root, &work_dir);
         std::fs::create_dir_all(work_dir.join("stages")).unwrap();
         std::fs::create_dir_all(work_dir.join("sessions")).unwrap();
         std::fs::create_dir_all(worktree.join(".loom")).unwrap();
@@ -120,7 +97,7 @@ impl Project {
 fn resolved_from_inside_the_worktree_lands_the_merge_and_defers_the_cleanup() {
     let project = Project::new();
     let wt = &project.worktree;
-    assert!(!run_git(wt, &["merge", "main"]).status.success());
+    assert!(!git_unchecked(wt, &["merge", "main"]).status.success());
     std::fs::write(wt.join("seed.txt"), "resolved").unwrap();
     git(wt, &["add", "seed.txt"]);
     git(wt, &["commit", "-q", "-m", "resolve"]);
@@ -135,7 +112,7 @@ fn resolved_from_inside_the_worktree_lands_the_merge_and_defers_the_cleanup() {
     );
     assert_eq!(git(&project.root, &["show", "main:seed.txt"]), "resolved");
     let branch_head = git(wt, &["rev-parse", "HEAD"]);
-    assert!(run_git(
+    assert!(git_unchecked(
         &project.root,
         &["merge-base", "--is-ancestor", &branch_head, "main"]
     )
@@ -160,7 +137,7 @@ fn resolved_from_inside_the_worktree_lands_the_merge_and_defers_the_cleanup() {
 fn resolved_with_the_merge_still_in_progress_is_refused_and_changes_nothing() {
     let project = Project::new();
     let wt = &project.worktree;
-    assert!(!run_git(wt, &["merge", "main"]).status.success());
+    assert!(!git_unchecked(wt, &["merge", "main"]).status.success());
     let main_before = git(&project.root, &["rev-parse", "main"]);
 
     let output = project.merge_resolved();

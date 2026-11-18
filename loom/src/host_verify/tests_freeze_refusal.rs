@@ -15,8 +15,9 @@ use super::tests_freeze::{
 use super::{store, JobRecord, JobState};
 use crate::daemon::ContractRunReport;
 use crate::models::stage::StageStatus;
-use crate::relay::sha256_hex;
 use crate::stage_service::contracts::{locate, read_files};
+use crate::test_git::git;
+use crate::utils::sha256_hex;
 use crate::verify::contracts::refusal::{daemon_refusal, RefusalSource, INFRASTRUCTURE_PREFIX};
 use crate::verify::contracts::test_support::{red_reports, CONTRACT_FILE};
 use crate::verify::transitions::{load_stage, update_stage};
@@ -123,10 +124,31 @@ fn a_commit_after_a_passing_run_records_a_refusal() {
         return;
     }
     let fx = Fixture::new("exit 1");
-    fx.git(&["add", "-A"]);
-    fx.git(&["commit", "-q", "-m", "contracts"]);
+    git(&fx.worktree, &["add", "-A"]);
+    git(
+        &fx.worktree,
+        &[
+            "-c",
+            "core.hooksPath=/dev/null",
+            "commit",
+            "-q",
+            "-m",
+            "contracts",
+        ],
+    );
     let record = fx.passed_run();
-    fx.git(&["commit", "-q", "--allow-empty", "-m", "later"]);
+    git(
+        &fx.worktree,
+        &[
+            "-c",
+            "core.hooksPath=/dev/null",
+            "commit",
+            "-q",
+            "--allow-empty",
+            "-m",
+            "later",
+        ],
+    );
     assert_recorded(&fx, fx.apply(&record), "HEAD moved");
 }
 
@@ -139,7 +161,7 @@ fn a_contract_command_amended_after_a_passing_run_records_a_refusal() {
     let fx = Fixture::new("exit 1");
     let record = fx.passed_run();
     update_stage(STAGE, &fx.work_dir, |stage| {
-        stage.contracts[0].test = "exit 2".to_string();
+        stage.contracts[0].test = Some("exit 2".to_string());
         Ok(())
     })
     .unwrap();

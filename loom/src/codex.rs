@@ -3,10 +3,13 @@
 use anyhow::{bail, Context, Result};
 use std::path::{Path, PathBuf};
 
-/// Codex model for common implementation and integration tests (sonnet's peer tier).
-pub const CODEX_IMPLEMENTER_MODEL_TERRA: &str = "gpt-5.6-terra";
+/// Codex model for implementation, integration tests, boilerplate, scaffolding and simple unit tests (sonnet's peer tier).
+pub const CODEX_IMPLEMENTER_MODEL_TERRA: &str = "gpt-6.1-terra";
 
-/// Codex model for boilerplate, scaffolding, and simple unit tests.
+/// Codex model for a substantial well-specified unit (about 4 to 6 file-sized changes) or a terra unit that failed once.
+pub const CODEX_IMPLEMENTER_MODEL_SOL: &str = "gpt-6.2-sol";
+
+/// Codex model used only when the user or the plan asks.
 pub const CODEX_IMPLEMENTER_MODEL_LUNA: &str = "gpt-6-luna";
 
 /// Reasoning effort used for Codex implementation runs.
@@ -17,17 +20,18 @@ pub const CODEX_IMPLEMENTER_EFFORT: &str = "xhigh";
 /// `codex-forward-guard.sh` and `codex-forward-result.sh`. Ids follow
 /// `gpt-<version>-<family>`, and `loom pressure` falls back within a family
 /// when the account cannot use the requested model (see
-/// [`codex_model_candidates`]); tiers never mix.
+/// [`codex_model_candidates`]); tiers never mix. Each family currently has one
+/// member, so the fallback chain is the requested id alone until a second
+/// version of a family is listed.
 pub const CODEX_MODELS: &[&str] = &[
-    "gpt-6-astra",
-    "gpt-6.1-sol",
-    "gpt-6-sol",
-    "gpt-5.6-terra",
+    "gpt-6.2-astra",
+    "gpt-6.2-sol",
+    "gpt-6.1-terra",
     "gpt-6-luna",
 ];
 
 /// Codex model the pressure run defaults to.
-pub const DEFAULT_PRESSURE_CODEX_MODEL: &str = "gpt-6.1-sol";
+pub const DEFAULT_PRESSURE_CODEX_MODEL: &str = "gpt-6.2-sol";
 
 /// The models `loom pressure` tries, in order, for a requested codex model:
 /// the requested one first, then the rest of its family from
@@ -36,13 +40,19 @@ pub const DEFAULT_PRESSURE_CODEX_MODEL: &str = "gpt-6.1-sol";
 /// is often not yet enabled for every account, so its siblings stand in for
 /// it. An id outside [`CODEX_MODELS`] gets no fallbacks.
 pub fn codex_model_candidates(requested: &str) -> Vec<&str> {
+    candidates_in(CODEX_MODELS, requested)
+}
+
+/// [`codex_model_candidates`] against an explicit model list, so the ordering
+/// rules stay testable while [`CODEX_MODELS`] has no multi-member family.
+fn candidates_in<'a>(models: &[&'a str], requested: &'a str) -> Vec<&'a str> {
     let Some((version, family)) = parse_codex_model(requested) else {
         return vec![requested];
     };
-    if !CODEX_MODELS.contains(&requested) {
+    if !models.contains(&requested) {
         return vec![requested];
     }
-    let (mut newer, mut older): (Vec<_>, Vec<_>) = family_members(family)
+    let (mut newer, mut older): (Vec<_>, Vec<_>) = family_members(models, family)
         .into_iter()
         .filter(|(member, _)| compare_versions(member, &version).is_ne())
         .partition(|(member, _)| compare_versions(member, &version).is_gt());
@@ -53,10 +63,10 @@ pub fn codex_model_candidates(requested: &str) -> Vec<&str> {
         .collect()
 }
 
-/// Every [`CODEX_MODELS`] entry of `family`, paired with its parsed version,
-/// so [`codex_model_candidates`] can order siblings without reparsing.
-fn family_members(family: &str) -> Vec<(Vec<u32>, &'static str)> {
-    CODEX_MODELS
+/// Every entry of `models` in `family`, paired with its parsed version, so
+/// [`candidates_in`] can order siblings without reparsing.
+fn family_members<'a>(models: &[&'a str], family: &str) -> Vec<(Vec<u32>, &'a str)> {
+    models
         .iter()
         .filter_map(|&id| parse_codex_model(id).map(|(version, fam)| (version, fam, id)))
         .filter(|(_, fam, _)| *fam == family)
@@ -102,13 +112,12 @@ pub const DEFAULT_PRESSURE_CODEX_EFFORT: &str = "xhigh";
 ///
 /// Codex is a subprocess, not a Claude tool, and it keeps its state outside the
 /// worktree: the CLI initialises a sqlite state runtime plus session logs under
-/// `~/.codex`, and the plugin's companion runtime records each job under
-/// `~/.claude/plugins/data/codex-openai-codex/state/<cwd>-<hash>/jobs/`. The
+/// `~/.codex`, and the wrapper sets the companion data root to
+/// `~/.codex/plugin-data`, where it records jobs under `state/<cwd>-<hash>/jobs/`. The
 /// sandbox's write set is otherwise the working directory and the session temp
-/// dir only, so without these two entries every forward dies before the model
-/// is ever reached — `Read-only file system (os error 30)` from codex, `ENOENT:
-/// ... mkdir` from the companion. This bit on Linux first: the native
-/// bubblewrap sandbox enforces the write allowlist that macOS Seatbelt let pass.
+/// dir only, so the `~/.codex` grant is required for the wrapper and CLI.
+/// The separate legacy plugin-data grant remains for compatibility with other
+/// companion consumers and historical records.
 ///
 /// This is emitted as `sandbox.filesystem.allowWrite`, which is ADDITIVE
 /// ("additional paths to allow writing within the sandbox") and OS-enforced for
@@ -118,9 +127,8 @@ pub const DEFAULT_PRESSURE_CODEX_EFFORT: &str = "xhigh";
 /// the lane ends up unusable rather than merely sandboxed.
 pub const CODEX_SANDBOX_WRITE_PATHS: [&str; 2] = ["~/.codex", CODEX_PLUGIN_DATA_GRANT];
 
-/// The plugin companion's state directory: the one path under
-/// `~/.claude/plugins` the codex lane may write. Every capsule that licenses
-/// the lane denies each other entry on the way down to it.
+/// Legacy plugin data grant retained for companion compatibility. The loom
+/// wrapper uses `~/.codex/plugin-data` instead. Capsules deny other plugin paths.
 pub const CODEX_PLUGIN_DATA_GRANT: &str = "~/.claude/plugins/data/codex-openai-codex";
 
 /// Domains the codex CLI reaches to run a task (ChatGPT-login and API auth).
@@ -262,35 +270,42 @@ pub fn find_codex_path() -> Result<PathBuf> {
     bail!("codex binary not found in PATH or common locations. Checked: ~/.bun/bin/codex, ~/.local/bin/codex, ~/.npm-global/bin/codex, ~/.cargo/bin/codex, /usr/local/bin/codex, /opt/homebrew/bin/codex")
 }
 
-/// Whether the codex plugin's companion runtime is installed, for any version.
-///
-/// Mirrors `agents/loom-codex-forwarder.md`'s COMPANION lookup
-/// (`~/.claude/plugins/cache/openai-codex/codex/*/scripts/codex-companion.mjs`)
-/// with a plain directory walk instead of a glob dependency - the presence of
-/// any version's companion script is enough, so no version sorting is needed.
-fn codex_companion_installed() -> bool {
-    let Some(home) = dirs::home_dir() else {
-        return false;
-    };
-    let versions_dir = home.join(".claude/plugins/cache/openai-codex/codex");
-    let Ok(entries) = std::fs::read_dir(&versions_dir) else {
-        return false;
-    };
-    entries
-        .flatten()
-        .any(|entry| entry.path().join("scripts/codex-companion.mjs").is_file())
+/// The installed wrapper owns the version pin; preflight reads the same embedded source.
+fn companion_version() -> Option<&'static str> {
+    crate::fs::permissions::constants::HOOK_CODEX_FORWARD
+        .lines()
+        .find_map(|line| line.strip_prefix("SUPPORTED_CODEX_COMPANION_VERSION="))
+        .filter(|version| {
+            !version.is_empty() && version.bytes().all(|b| b.is_ascii_digit() || b == b'.')
+        })
 }
 
-/// Combined availability check for the codex implementation lanes (terra, luna).
+/// Check the exact companion that the wrapper will execute without following its leaf.
+fn codex_companion_installed() -> bool {
+    dirs::home_dir().is_some_and(|home| codex_companion_installed_in(&home))
+}
+
+fn codex_companion_installed_in(home: &std::path::Path) -> bool {
+    let Some(version) = companion_version() else {
+        return false;
+    };
+    let path = home
+        .join(".claude/plugins/cache/openai-codex/codex")
+        .join(version)
+        .join("scripts/codex-companion.mjs");
+    crate::fs::safe_read::is_regular_no_follow(&path)
+}
+
+/// Combined availability check for the legacy forwarder lane (terra, sol, luna).
 ///
 /// `Ok(())` iff BOTH the codex CLI is resolvable (see [`find_codex_path`]) AND
 /// the codex plugin's companion runtime is installed. `Err` carries a short,
 /// human-readable reason naming what is missing, for the advisory startup
 /// warning and the stage-signal fallback text - this never signals a hard
-/// failure, only that the codex lanes are unavailable on this machine.
+/// failure, only that the legacy forwarder lane is unavailable on this machine.
 pub fn codex_lane_status() -> Result<()> {
     if find_codex_path().is_err() {
-        bail!("codex CLI not found in PATH or common install locations");
+        bail!(CODEX_CLI_MISSING);
     }
     if !codex_companion_installed() {
         bail!(
@@ -300,7 +315,7 @@ pub fn codex_lane_status() -> Result<()> {
     Ok(())
 }
 
-/// Memoized [`codex_lane_status`], process-lifetime cached.
+/// Memoized legacy forwarder lane [`codex_lane_status`], process-lifetime cached.
 ///
 /// Installation state (the codex CLI and plugin) is invariant for the
 /// lifetime of a daemon process, exactly like Remote Control's
@@ -309,6 +324,12 @@ pub fn codex_lane_available() -> bool {
     static CACHE: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *CACHE.get_or_init(|| codex_lane_status().is_ok())
 }
+
+const CODEX_CLI_MISSING: &str = "codex CLI not found in PATH or common install locations";
+
+#[path = "codex_backend.rs"]
+mod backend;
+pub use backend::{codex_lane, configured_backend, CodexBackend, CodexLane};
 
 #[cfg(test)]
 #[path = "codex_tests.rs"]

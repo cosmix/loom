@@ -9,6 +9,7 @@ use tempfile::TempDir;
 
 use crate::models::session::SessionType;
 use crate::relay::emit::test_support::{context_for, RelayFixture};
+use crate::test_git::{git, TestRepo};
 
 #[derive(Default)]
 struct VecSink {
@@ -26,36 +27,11 @@ impl RelaySink for VecSink {
     }
 }
 
-fn git(root: &Path, args: &[&str]) -> String {
-    let output = Command::new("git")
-        .args(args)
-        .current_dir(root)
-        .env("GIT_CONFIG_GLOBAL", root.join("no-global-config"))
-        .env("GIT_CONFIG_SYSTEM", root.join("no-system-config"))
-        .env("GIT_CONFIG_NOSYSTEM", "1")
-        .output()
-        .unwrap();
-    assert!(
-        output.status.success(),
-        "git {args:?} failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    String::from_utf8_lossy(&output.stdout).trim().to_string()
-}
-
 fn init_repo(root: &Path) {
-    git(root, &["init", "-b", "main"]);
-    for (key, value) in [
-        ("user.name", "Tester"),
-        ("user.email", "tester@example.com"),
-        ("commit.gpgsign", "false"),
-        ("core.hooksPath", ".git/hooks"),
-    ] {
-        git(root, &["config", key, value]);
-    }
-    fs::write(root.join("a.txt"), "base\n").unwrap();
-    git(root, &["add", "a.txt"]);
-    git(root, &["commit", "-m", "base"]);
+    TestRepo::builder()
+        .seed("a.txt", "base\n", "base")
+        .init_in(root);
+    git(root, &["config", "core.hooksPath", ".git/hooks"]);
 }
 
 fn stage(root: &Path) {
@@ -330,4 +306,46 @@ fn the_message_is_stripspaced_after_the_hooks() {
 
     relay_commit(&fixture, "feat: clean", &mut sink).unwrap();
     assert_eq!(payload(&fixture).message, "feat: clean\n");
+}
+
+/// Whatever `GIT_DIR` the caller exports, the hooks are the ones of the
+/// repository the commit is for. Exported in a child process only: this test
+/// binary runs raw git in parallel threads.
+#[test]
+fn hooks_ignore_an_inherited_repository_redirect() {
+    const RUN_IN: &str = "LOOM_TEST_RUN_HOOKS_IN";
+    if let Some(cwd) = std::env::var_os(RUN_IN) {
+        run_hooks(Path::new(&cwd), "feat: redirected\n").unwrap();
+        return;
+    }
+    let temp = TempDir::new().unwrap();
+    let (mine, other) = (temp.path().join("mine"), temp.path().join("other"));
+    for (root, marker) in [(&mine, "mine-ran"), (&other, "other-ran")] {
+        fs::create_dir(root).unwrap();
+        init_repo(root);
+        let script = format!(
+            "#!/bin/sh\ntouch '{}'\n",
+            temp.path().join(marker).display()
+        );
+        install_hook(root, "pre-commit", &script);
+        // Absolute: the fixture's relative path resolves against the working
+        // directory, which would run this directory's hook whatever the redirect.
+        let hooks = root.join(".git/hooks");
+        git(root, &["config", "core.hooksPath", hooks.to_str().unwrap()]);
+    }
+
+    let status = Command::new(std::env::current_exe().unwrap())
+        .args([
+            "--exact",
+            "commands::stage::commit::tests::hooks_ignore_an_inherited_repository_redirect",
+        ])
+        .env(RUN_IN, &mine)
+        .env("GIT_DIR", other.join(".git"))
+        .env("GIT_WORK_TREE", &other)
+        .status()
+        .unwrap();
+
+    assert!(status.success());
+    assert!(temp.path().join("mine-ran").exists());
+    assert!(!temp.path().join("other-ran").exists());
 }

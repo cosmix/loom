@@ -1,21 +1,17 @@
 //! Session lifecycle helpers for stage spawn.
 //!
-//! Extracted from `stage_executor.rs` to keep that file under the
-//! maintainability limit. Covers: writing a session's record to disk before
-//! the stage is marked Executing, and the Blocked-transition cleanup that
-//! undoes an in-flight write-ahead. Live-session adoption (refusing to spawn
-//! a duplicate agent over one a crashed daemon lost track of) lives in the
-//! sibling `session_adoption.rs`, split out to keep this file under the
-//! maintainability limit too. Behavior is unchanged from before the move.
+//! Write session records before linking stages and clean up failed pre-spawn
+//! attempts. Live-session adoption is handled by `session_adoption.rs`.
 
 use anyhow::Result;
 use chrono::Utc;
 
-use crate::models::failure::{FailureInfo, FailureType};
+use crate::models::failure::FailureType;
 use crate::models::session::Session;
-use crate::models::stage::{Stage, StageStatus};
+use crate::models::stage::Stage;
 
 use super::persistence::Persistence;
+use super::stage_block::StageBlock;
 use super::Orchestrator;
 
 impl Orchestrator {
@@ -53,12 +49,17 @@ impl Orchestrator {
         if let Err(e) = self.save_session(&session) {
             let err_msg =
                 format!("Failed to write session record ahead of spawn for {stage_id}: {e:#}");
-            let _ = self.persist_blocked_stage(
+            self.block_stage(
                 stage_id,
-                FailureType::InfrastructureError,
-                vec![err_msg],
+                StageBlock::new(FailureType::InfrastructureError, vec![err_msg]),
             );
             return None;
+        }
+        // The id is about to name a new process: a latch set for the attempt
+        // that crashed under it would swallow this attempt's crash and strand
+        // the stage `Executing` on a dead session.
+        if recovery_signal.is_some() {
+            self.reported_crashes.remove(&session.id);
         }
         Some((session, recovery_signal))
     }
@@ -77,14 +78,20 @@ impl Orchestrator {
     ) -> Result<Option<Session>> {
         let mut session = Session::new_knowledge(stage_id);
         session.backend = self.backend.resolve_lane();
+        let prior = self.load_stage(stage_id)?;
+        crate::verify::completion::knowledge_baseline::capture(
+            &self.config.work_dir,
+            &self.config.repo_root,
+            &session.id,
+            prior.session.as_deref(),
+        )?;
         if let Err(e) = self.save_session(&session) {
             let err_msg = format!(
                 "Failed to write session record ahead of spawn for knowledge stage {stage_id}: {e:#}"
             );
-            let _ = self.persist_blocked_stage(
+            self.block_stage(
                 stage_id,
-                FailureType::InfrastructureError,
-                vec![err_msg],
+                StageBlock::new(FailureType::InfrastructureError, vec![err_msg]),
             );
             return Ok(None);
         }
@@ -124,14 +131,11 @@ impl Orchestrator {
     /// logged, not propagated.
     pub(super) fn block_stranded_stage(&mut self, stage_id: &str, err_msg: String) {
         eprintln!("Stage '{stage_id}' blocked due to spawn-setup failure: {err_msg}");
-        match self.persist_blocked_stage(stage_id, FailureType::InfrastructureError, vec![err_msg])
-        {
-            Ok(()) => {
-                let _ = self.graph.mark_status(stage_id, StageStatus::Blocked);
-            }
-            Err(error) => {
-                eprintln!("Failed to persist Blocked state for '{stage_id}': {error:#}");
-            }
+        if !self.block_stage(
+            stage_id,
+            StageBlock::new(FailureType::InfrastructureError, vec![err_msg]),
+        ) {
+            eprintln!("Failed to persist Blocked state for '{stage_id}'");
         }
     }
 
@@ -143,9 +147,9 @@ impl Orchestrator {
     /// that write-ahead and a successful spawn — invalid sandbox config, hook
     /// install, signal generation, the spawn call itself — must not leave the
     /// stage pointing at a session record for an agent that never started.
-    /// This deletes that record and clears `stage.session` in the SAME locked
-    /// update that marks the stage Blocked, so the two can never be observed
-    /// apart.
+    /// This first attempts to delete the record, then clears `stage.session`
+    /// while marking the stage Blocked. The operations are separate: deletion
+    /// or the stage update can fail, leaving inconsistent on-disk state.
     ///
     /// Only for failures BEFORE a spawn succeeds. A failure after the spawn
     /// has already produced a live agent must use [`Self::block_stranded_stage`]
@@ -168,47 +172,46 @@ impl Orchestrator {
                 eprintln!("Warning: failed to remove stranded session record '{session_id}': {e}");
             }
         }
-        let result = self.update_stage(stage_id, |current| {
-            current.try_mark_blocked()?;
-            current.failure_info = Some(FailureInfo {
-                failure_type,
-                detected_at: Utc::now(),
-                evidence: vec![err_msg.clone()],
-            });
-            current.release_session();
-            Ok(())
-        });
-        match result {
-            Ok(_) => {
-                let _ = self.graph.mark_status(stage_id, StageStatus::Blocked);
-            }
-            Err(error) => {
-                eprintln!("Failed to persist Blocked state for '{stage_id}': {error:#}");
-            }
+        let block = StageBlock {
+            release_session: true,
+            ..StageBlock::new(failure_type, vec![err_msg])
+        };
+        if !self.block_stage(stage_id, block) {
+            eprintln!("Failed to persist Blocked state for '{stage_id}'");
         }
     }
 
-    /// Insert a spawned session into `active_sessions`, refusing to replace an
-    /// existing entry for the stage.
+    /// Insert a spawned session into `active_sessions`, refusing to replace a
+    /// tracked session that may still be running.
     ///
-    /// Silently overwriting here (a plain `.insert()`) is how the daemon
-    /// stopped monitoring an original session the moment a second one spawned
-    /// into the same worktree: the first entry, and with it the only handle
-    /// the daemon had on the live agent, was simply dropped. Once a stage has
-    /// a tracked session, only its own removal (completion, crash, merge)
-    /// may replace it.
+    /// A plain `.insert()` would drop the daemon's only handle on a live
+    /// agent the moment a second session spawned into the same worktree, so
+    /// an incumbent entry is kept whenever it is alive or its liveness cannot
+    /// be established (a probe error). An incumbent the backend proves dead
+    /// is replaced: that is the state left behind when another process (for
+    /// example `loom stage reset --kill-session`) kills the session and
+    /// rewrites the stage file while the daemon still holds its entry, and
+    /// keeping it would leave every replacement session unmonitored.
     ///
     /// Returns `true` if the session was inserted, `false` if refused because
-    /// an entry already existed.
+    /// a live (or unverifiable) entry already existed.
     pub(super) fn insert_active_session(&mut self, stage_id: &str, session: Session) -> bool {
         if let Some(existing) = self.active_sessions.get(stage_id) {
-            tracing::error!(
+            if !matches!(self.backend.is_session_alive(existing), Ok(false)) {
+                tracing::error!(
+                    stage_id = %stage_id,
+                    incumbent_session = %existing.id,
+                    rejected_session = %session.id,
+                    "Refusing to evict an already-tracked active session"
+                );
+                return false;
+            }
+            tracing::warn!(
                 stage_id = %stage_id,
                 incumbent_session = %existing.id,
-                rejected_session = %session.id,
-                "Refusing to evict an already-tracked active session"
+                replacement_session = %session.id,
+                "Replacing a dead tracked session with its replacement"
             );
-            return false;
         }
         self.active_sessions.insert(stage_id.to_string(), session);
         true

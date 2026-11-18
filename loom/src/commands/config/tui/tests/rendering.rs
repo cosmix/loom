@@ -4,7 +4,7 @@
 use ratatui::{backend::TestBackend, Terminal};
 
 use super::super::{render, state::ConfigState};
-use super::{focus_by_name, scratch, state};
+use super::{focus_by_name, scratch, scratch_without_workspace, state, Scratch};
 use crate::user_config::keys::KEYS;
 
 fn screen(state: &ConfigState) -> Vec<String> {
@@ -61,7 +61,7 @@ fn bool_cell_renders_its_glyph_and_an_enum_cell_renders_guillemets() {
     assert!(contains(&rows, "◯ off"), "{rows:?}");
     focus_by_name(&mut state, "terminal.backend");
     let rows = screen(&state);
-    assert!(contains(&rows, "‹ native ›"), "{rows:?}");
+    assert!(contains(&rows, "‹ tmux ›"), "{rows:?}");
 }
 
 /// The screen names both files and marks the one the keyboard writes, which
@@ -77,6 +77,63 @@ fn the_scope_band_names_both_tiers() {
     state.toggle_scope();
     let rows = screen(&state);
     assert!(contains(&rows, "no .loom/work"), "{rows:?}");
+}
+
+/// Saving acts on all staged scopes, including one hidden by the active tab.
+fn assert_hidden_user_save(scratch: Scratch, has_workspace: bool) {
+    let mut state = scratch.state();
+    focus_by_name(&mut state, "terminal.backend");
+    state.cycle(1);
+    state.toggle_scope();
+
+    let rows = screen(&state);
+    assert!(contains(&rows, "s writes: user"), "{rows:?}");
+    assert!(contains(&rows, "editing project:"), "{rows:?}");
+    assert_eq!(
+        contains(&rows, "editing project: unavailable"),
+        !has_workspace,
+        "{rows:?}"
+    );
+    let strip = screen_sized(&state, 80, 24);
+    assert!(contains(&strip, "s → user"), "{strip:?}");
+
+    if has_workspace {
+        state.cycle(1);
+        assert!(contains(&screen(&state), "s writes: user + project"));
+        assert!(contains(
+            &screen_sized(&state, 80, 24),
+            "s → user + project"
+        ));
+    }
+
+    state.save();
+    assert_eq!(
+        state.status(),
+        if has_workspace {
+            "2 keys written · 1 user · 1 project."
+        } else {
+            "1 key written · 1 user."
+        }
+    );
+    assert!(std::fs::read_to_string(scratch.user_config())
+        .unwrap()
+        .contains("backend = \"native\""));
+    if has_workspace {
+        assert!(std::fs::read_to_string(scratch.project_config())
+            .unwrap()
+            .contains("backend = \"native\""));
+    }
+    assert!(contains(&screen(&state), "s writes: no pending edits"));
+}
+
+#[test]
+fn hidden_user_save_is_named_on_the_project_tab() {
+    assert_hidden_user_save(scratch(), true);
+}
+
+#[test]
+fn hidden_user_save_is_named_without_a_workspace() {
+    assert_hidden_user_save(scratch_without_workspace(), false);
 }
 
 /// The scope tabs' own narrow-width arithmetic, carried through columns the
@@ -116,7 +173,7 @@ fn the_inspector_survives_a_narrow_frame_as_a_strip() {
     // The strip's block is titled with the full dotted key.
     assert!(contains(&rows, "terminal.backend"), "{rows:?}");
     // The table still shows the key and its value.
-    assert!(contains(&rows, "‹ native ›"), "{rows:?}");
+    assert!(contains(&rows, "‹ tmux ›"), "{rows:?}");
     assert!(contains(&rows, "── terminal"), "{rows:?}");
     // 80 columns still carries every column of the table.
     assert!(contains(&rows, "SOURCE"), "{rows:?}");
@@ -177,14 +234,14 @@ fn a_cramped_frame_drops_columns_rather_than_information() {
     // Inner width 54: past OTHER's floor, still above SOURCE's.
     let rows = screen_sized(&state, 56, 16);
     assert!(contains(&rows, "backend"), "{rows:?}");
-    assert!(contains(&rows, "‹ native ›"), "{rows:?}");
+    assert!(contains(&rows, "‹ tmux ›"), "{rows:?}");
     assert!(contains(&rows, "SOURCE"), "{rows:?}");
     assert!(!contains(&rows, "OTHER"), "{rows:?}");
 
     // Inner width 46: SOURCE goes too. KEY and VALUE never do.
     let rows = screen_sized(&state, 48, 16);
     assert!(contains(&rows, "backend"), "{rows:?}");
-    assert!(contains(&rows, "‹ native ›"), "{rows:?}");
+    assert!(contains(&rows, "‹ tmux ›"), "{rows:?}");
     assert!(!contains(&rows, "SOURCE"), "{rows:?}");
     // The logo has collapsed by this height, but the screen still names itself.
     assert!(contains(&rows, "configuration"), "{rows:?}");
@@ -199,7 +256,7 @@ fn strip_rows(state: &ConfigState, width: u16) -> Vec<String> {
     rows[rows.len() - 4..].to_vec()
 }
 
-/// The write segment — `s → <file>` — is the one fact on the strip that must
+/// The write segment — `s → <pending scopes>` — is the one fact on the strip that must
 /// never drop, because it is what makes pressing `s` not a guess. It has to
 /// survive at every width the table's own cramped-frame coverage uses, and
 /// at the narrower point right around where the fixed facts alone fill the

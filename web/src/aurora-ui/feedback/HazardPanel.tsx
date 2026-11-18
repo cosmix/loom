@@ -42,12 +42,16 @@ export function HazardHeader({
   title,
   icon: Icon = AlertTriangle,
   action,
+  actionClassName,
   className,
 }: {
   tone: HazardTone
   title: string
   icon?: LucideIcon
   action?: ReactNode
+  /** Merged onto the action slot, which is pinned right and never shrinks by
+   * default; pass `min-w-0 shrink` to let long action text wrap instead. */
+  actionClassName?: string
   className?: string
 }) {
   return (
@@ -67,7 +71,9 @@ export function HazardHeader({
       >
         {title}
       </span>
-      {action && <span className="ml-auto flex shrink-0 items-center">{action}</span>}
+      {action && (
+        <span className={cn('ml-auto flex shrink-0 items-center', actionClassName)}>{action}</span>
+      )}
     </div>
   )
 }
@@ -100,6 +106,8 @@ interface HazardPanelProps {
   icon?: LucideIcon
   /** Optional element pinned to the right of the header strip. */
   headerAction?: ReactNode
+  /** Merged onto the header's action slot (see `HazardHeader`). */
+  headerActionClassName?: string
   /** Clean body content — never striped. */
   children?: ReactNode
   className?: string
@@ -118,13 +126,20 @@ export function HazardPanel({
   title,
   icon,
   headerAction,
+  headerActionClassName,
   children,
   className,
   bodyClassName,
 }: HazardPanelProps) {
   return (
     <div className={cn('overflow-hidden rounded-lg border', TONE_BORDER[tone], className)}>
-      <HazardHeader tone={tone} title={title} icon={icon} action={headerAction} />
+      <HazardHeader
+        tone={tone}
+        title={title}
+        icon={icon}
+        action={headerAction}
+        actionClassName={headerActionClassName}
+      />
       {children != null && (
         <div className={cn('px-4 py-3.5 sm:px-5', TONE_BODY[tone], bodyClassName)}>
           {children}

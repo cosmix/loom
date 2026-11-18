@@ -55,6 +55,113 @@ fn assert_policy(plan: &Path, work: &Path, stage_id: &str, expected: &[&str]) {
     assert_eq!(load_stage(stage_id, work).unwrap().acceptance, expected);
 }
 
+fn amendment_files(plan: &Path, work: &Path) -> Vec<(PathBuf, Vec<u8>)> {
+    let mut paths = vec![plan.to_path_buf()];
+    for dir in [plan_versions_dir(work), work.join("stages")] {
+        paths.extend(
+            fs::read_dir(dir)
+                .unwrap()
+                .map(|entry| entry.unwrap().path()),
+        );
+    }
+    paths.sort();
+    paths
+        .into_iter()
+        .map(|path| {
+            let bytes = fs::read(&path).unwrap();
+            (path, bytes)
+        })
+        .collect()
+}
+
+#[test]
+fn malformed_committed_audit_row_blocks_recovery_and_retry_without_writes() {
+    for (cell, bad_value) in [(1, "bad-version"), (3, "bad-field"), (6, "bad-time")] {
+        let (_temp, work, plan) = fixture();
+        let req = request("a", AmendmentPatch::Delete { index: 0 });
+        apply_amendment(&plan, &work, req.clone()).unwrap();
+        let dir = plan_versions_dir(&work);
+        let audit = dir.join("audit.md");
+        let original = fs::read_to_string(&audit).unwrap();
+        let row = original.lines().last().unwrap();
+        let mut cells: Vec<&str> = row.split('|').collect();
+        cells[cell] = bad_value;
+        fs::write(&audit, original.replace(row, &cells.join("|"))).unwrap();
+        fs::write(dir.join("99.md"), b"orphan snapshot").unwrap();
+        fs::write(dir.join("100.md.tmp"), b"temporary snapshot").unwrap();
+        let before = amendment_files(&plan, &work);
+
+        let recovery = verify_plan_versions_consistency(&plan, &work).unwrap_err();
+        assert!(
+            recovery.to_string().contains("audit.md at line 5"),
+            "{recovery:#}"
+        );
+        let retry = apply_amendment(&plan, &work, req.clone()).unwrap_err();
+        assert!(
+            retry.to_string().contains("audit.md at line 5"),
+            "{retry:#}"
+        );
+        let count = count_amendments_for_stage(&work, "a").unwrap_err();
+        assert!(
+            count.to_string().contains("audit.md at line 5"),
+            "{count:#}"
+        );
+        assert_eq!(amendment_files(&plan, &work), before);
+    }
+}
+
+#[test]
+fn damaged_audit_framing_is_not_an_empty_history() {
+    let (_temp, work, _plan) = fixture();
+    let dir = plan_versions_dir(&work);
+    fs::create_dir_all(&dir).unwrap();
+    assert!(read_audit_rows(&work).unwrap().is_empty());
+    let audit = dir.join("audit.md");
+    let damaged_row = format!("{AUDIT_HEADER}damaged row\n");
+    for body in [
+        "",
+        "# Plan Amendment Audit\n",
+        "# Plan Amendment Audit\n\n| version | stage_id | field | op | index | applied_at | dispute_id | reason |\n",
+        "# Plan Amendment Audit\n\n| damaged header |\n",
+        AUDIT_HEADER,
+        &damaged_row,
+    ] {
+        fs::write(&audit, body).unwrap();
+        assert!(read_audit_rows(&work).is_err(), "accepted {body:?}");
+    }
+    let valid = format!(
+        "{AUDIT_HEADER}| 1 | a | acceptance | delete | 0 | 2026-05-13T07:30:00+00:00 | dispute-a | |\n"
+    );
+    fs::write(&audit, valid.replace('\n', "\r\n")).unwrap();
+    assert_eq!(read_audit_rows(&work).unwrap().len(), 1);
+}
+
+#[test]
+fn malformed_pending_row_cannot_be_completed_by_retry() {
+    let (_temp, work, plan) = fixture();
+    let req = request("a", AmendmentPatch::Delete { index: 0 });
+    transaction::fail_once(&work, "after-audit");
+    assert!(apply_amendment(&plan, &work, req.clone()).is_err());
+    let dir = plan_versions_dir(&work);
+    assert!(!dir.join("1.applied").exists());
+    let audit = dir.join("audit.md");
+    let content = fs::read_to_string(&audit).unwrap();
+    fs::write(
+        &audit,
+        content.replace("| acceptance |", "| invalid-field |"),
+    )
+    .unwrap();
+    let before = amendment_files(&plan, &work);
+
+    let error = apply_amendment(&plan, &work, req).unwrap_err();
+    assert!(
+        error.to_string().contains("audit.md at line 5"),
+        "{error:#}"
+    );
+    assert_eq!(amendment_files(&plan, &work), before);
+    assert!(!dir.join("1.applied").exists());
+}
+
 fn interrupted_retry(phase: &'static str, patch: AmendmentPatch, expected: &[&str]) {
     let (_temp, work, plan) = fixture();
     let req = request("a", patch);
@@ -124,158 +231,5 @@ fn failed_stage_write_cannot_create_receipt_or_return_idempotent_success() {
     assert_policy(&plan, &work, "a", &["two"]);
 }
 
-fn accepted_verdict(work: &Path, plan: &Path) -> PathBuf {
-    use crate::models::dispute::{DisputeVerdict, DisputeVerdictRecord, PlanPatch};
-    fs::write(work.join("config.toml"), format!(
-        "[plan]\nsource_path = \"{}\"\nplan_id = \"x\"\nplan_name = \"x\"\nbase_branch = \"main\"\n", plan.display(),
-    )).unwrap();
-    update_stage("a", work, |stage| {
-        stage.status = crate::models::stage::StageStatus::NeedsAdjudication;
-        stage.completed_commit = Some("old-policy-commit".into());
-        Ok(())
-    })
-    .unwrap();
-    let record = DisputeVerdictRecord {
-        id: 1,
-        stage_id: "a".into(),
-        adjudicator_attempt_count: 1,
-        created_at: Utc::now(),
-        model: "test".into(),
-        session_id: None,
-        verdict: DisputeVerdict::Accept {
-            plan_patch: PlanPatch {
-                inner: serde_json::json!({
-                    "field": "acceptance", "op": "delete", "index": 0,
-                }),
-            },
-            citations: vec![],
-            reasoning: "remove incorrect criterion".into(),
-        },
-    };
-    let dir = work.join("disputes/a/1");
-    fs::create_dir_all(&dir).unwrap();
-    fs::write(
-        dir.join("verdict.md"),
-        format!("---\n{}---\n", crate::yaml::to_string(&record).unwrap()),
-    )
-    .unwrap();
-    dir.join("applied.marker")
-}
-
-#[test]
-fn adjudication_marker_waits_for_both_live_writes_on_retry() {
-    use crate::orchestrator::adjudication::AdjudicatorRegistry;
-    for phase in ["after-audit", "after-plan"] {
-        let (_temp, work, plan) = fixture();
-        let applied = accepted_verdict(&work, &plan);
-        let registry = AdjudicatorRegistry::new();
-        transaction::fail_once(&work, phase);
-        assert!(registry.apply_verdict(&work, "a", 1).is_err());
-        assert!(!applied.exists());
-        assert_eq!(load_stage("a", &work).unwrap().acceptance.len(), 2);
-        registry.apply_verdict(&work, "a", 1).unwrap();
-        assert_policy(&plan, &work, "a", &["two"]);
-        assert!(applied.exists());
-        assert!(load_stage("a", &work).unwrap().completed_commit.is_none());
-    }
-}
-
-#[test]
-fn retry_of_older_unfinished_row_preserves_newer_unrelated_stage() {
-    let (_temp, work, plan) = fixture();
-    let original = fs::read_to_string(&plan).unwrap();
-    let a = request("a", AmendmentPatch::Delete { index: 0 });
-    apply_amendment(&plan, &work, a.clone()).unwrap();
-    let b = request(
-        "b",
-        AmendmentPatch::Replace {
-            index: 0,
-            value: "new-b".into(),
-        },
-    );
-    apply_amendment(&plan, &work, b).unwrap();
-    // Reconstruct an older process's partial write, followed by another stage's commit.
-    fs::remove_file(plan_versions_dir(&work).join("1.applied")).unwrap();
-    amendment_catch_up::reconcile_amended_field(
-        &plan,
-        &resolve_project_root(&work, &plan),
-        &original,
-        "a",
-        AmendmentField::Acceptance,
-    )
-    .unwrap();
-    update_stage("a", &work, |stage| {
-        stage.acceptance = vec![
-            AcceptanceCriterion::Simple("one".into()),
-            AcceptanceCriterion::Simple("two".into()),
-        ];
-        Ok(())
-    })
-    .unwrap();
-    assert_eq!(apply_amendment(&plan, &work, a).unwrap().version, 1);
-    assert_policy(&plan, &work, "a", &["two"]);
-    assert_policy(&plan, &work, "b", &["new-b", "two"]);
-    assert_eq!(read_audit_rows(&work).unwrap().len(), 2);
-}
-
-#[test]
-fn live_plan_write_failure_remains_pending_until_retry() {
-    let (_temp, work, plan) = fixture();
-    let req = request("a", AmendmentPatch::Delete { index: 0 });
-    transaction::fail_once(&work, "after-audit");
-    assert!(apply_amendment(&plan, &work, req.clone()).is_err());
-    let saved = plan.with_extension("saved");
-    fs::rename(&plan, &saved).unwrap();
-    fs::create_dir(&plan).unwrap();
-    assert!(apply_amendment(&plan, &work, req.clone()).is_err());
-    assert!(!plan_versions_dir(&work).join("1.applied").exists());
-    assert_eq!(load_stage("a", &work).unwrap().acceptance.len(), 2);
-    fs::remove_dir(&plan).unwrap();
-    fs::rename(saved, &plan).unwrap();
-    assert_eq!(apply_amendment(&plan, &work, req).unwrap().version, 1);
-    assert_policy(&plan, &work, "a", &["two"]);
-}
-
-#[test]
-fn older_pending_receipt_cannot_revert_newer_same_field_amendment() {
-    let (_temp, work, plan) = fixture();
-    let first = request("a", AmendmentPatch::Delete { index: 0 });
-    apply_amendment(&plan, &work, first.clone()).unwrap();
-    let mut second = request(
-        "a",
-        AmendmentPatch::Insert {
-            index: 0,
-            value: "new".into(),
-        },
-    );
-    second.dispute_id = Some("second-a".into());
-    apply_amendment(&plan, &work, second).unwrap();
-    // A legacy or interrupted journal can contain an older pending row.
-    fs::remove_file(plan_versions_dir(&work).join("1.applied")).unwrap();
-    assert_eq!(apply_amendment(&plan, &work, first).unwrap().version, 1);
-    assert_policy(&plan, &work, "a", &["new", "two"]);
-    assert!(plan_versions_dir(&work).join("1.applied").exists());
-    assert_eq!(read_audit_rows(&work).unwrap().len(), 2);
-}
-
-#[test]
-fn interrupted_audit_publication_keeps_previous_generation_readable() {
-    let (_temp, work, plan) = fixture();
-    let first = request("a", AmendmentPatch::Delete { index: 0 });
-    apply_amendment(&plan, &work, first).unwrap();
-    let mut second = request(
-        "a",
-        AmendmentPatch::Insert {
-            index: 0,
-            value: "new".into(),
-        },
-    );
-    second.dispute_id = Some("second-a".into());
-    transaction::fail_once(&work, "before-audit-publish");
-    assert!(apply_amendment(&plan, &work, second.clone()).is_err());
-    assert_eq!(count_amendments_for_stage(&work, "a").unwrap(), 1);
-    assert_policy(&plan, &work, "a", &["two"]);
-    apply_amendment(&plan, &work, second).unwrap();
-    assert_eq!(count_amendments_for_stage(&work, "a").unwrap(), 2);
-    assert_policy(&plan, &work, "a", &["new", "two"]);
-}
+#[path = "retry_recovery_tests.rs"]
+mod retry_recovery_tests;

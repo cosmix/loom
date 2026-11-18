@@ -71,9 +71,9 @@ fn ignores_null_info_ping() {
 #[test]
 fn parses_model() {
     assert_eq!(
-        parse_line(r#"{"type":"turn_context","payload":{"model":"gpt-6.1-sol"}}"#),
+        parse_line(r#"{"type":"turn_context","payload":{"model":"gpt-6.2-sol"}}"#),
         CodexLine::TurnContext {
-            model: "gpt-6.1-sol".into(),
+            model: "gpt-6.2-sol".into(),
             effort: None,
         }
     );
@@ -82,9 +82,9 @@ fn parses_model() {
 #[test]
 fn parses_model_with_effort() {
     assert_eq!(
-        parse_line(r#"{"type":"turn_context","payload":{"model":"gpt-6.1-sol","effort":"xhigh"}}"#),
+        parse_line(r#"{"type":"turn_context","payload":{"model":"gpt-6.2-sol","effort":"xhigh"}}"#),
         CodexLine::TurnContext {
-            model: "gpt-6.1-sol".into(),
+            model: "gpt-6.2-sol".into(),
             effort: Some("xhigh".into()),
         }
     );

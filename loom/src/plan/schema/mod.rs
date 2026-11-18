@@ -13,7 +13,7 @@ mod tests;
 
 pub use detect::{detect_stage_type, detect_stage_type_from_id_name};
 pub use host_paths::stage_host_path_errors;
-pub(crate) use structural_checks::extract_brief_paths;
+pub(crate) use structural_checks::{extract_brief_paths, extract_prefixed_paths};
 pub use types::{
     AcceptanceCriterion, AdjudicationConfig, CodeReviewConfig, CommandConfinement, ContractSpec,
     DeadCodeCheck, FilesystemConfig, Implementer, Implementers, LinuxConfig, LoomConfig,
@@ -21,7 +21,7 @@ pub use types::{
     StageDefinition, StageSandboxConfig, StageType, SuccessCriteria, TruthCheck, ValidationError,
     WiringCheck, WiringTest, ALLOWED_REASONING_EFFORTS,
 };
-pub use types_v2::ProvisionEntry;
+pub use types_v2::{ContractChoice, ContractChoices, ProvisionEntry};
 pub(crate) use validation::{base_tree, v2_fields::split_lint_findings, v2_lints};
 pub use validation::{
     check_knowledge_recommendations, check_sandbox_recommendations, validate,

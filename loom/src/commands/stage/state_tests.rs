@@ -271,6 +271,53 @@ fn reset_clears_the_stall_recovery_counter() {
 }
 
 #[test]
+fn reset_archives_the_review_reason_and_merge_conflict_and_clears_the_flag() {
+    use crate::models::stage::IssueKind;
+
+    let mut stage = Stage::new("alpha".to_string(), None);
+    stage.id = "alpha".to_string();
+    stage.status = StageStatus::Completed;
+    stage.merged = true;
+    stage.enter_merge_conflict();
+    stage.review_reason = Some("resolver gave up".to_string());
+
+    apply_reset(&mut stage);
+
+    assert_eq!(stage.status, StageStatus::WaitingForDeps);
+    assert!(!stage.merge_conflict);
+    assert_eq!(stage.review_reason, None);
+    let archived: Vec<_> = stage
+        .issue_history
+        .iter()
+        .map(|issue| {
+            (
+                issue.kind,
+                issue.ended_by.as_str(),
+                issue.detected_at.is_some(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        archived,
+        [
+            (
+                IssueKind::MergeConflict,
+                "MergeConflict -> WaitingForDeps",
+                true
+            ),
+            (IssueKind::Review, "MergeConflict -> WaitingForDeps", false),
+        ]
+    );
+
+    apply_reset(&mut stage);
+    assert_eq!(
+        stage.issue_history.len(),
+        2,
+        "a repeated reset archives nothing"
+    );
+}
+
+#[test]
 fn retry_delta_clears_the_stall_recovery_counter() {
     let mut stage = Stage::new("alpha".to_string(), None);
     stage.id = "alpha".to_string();

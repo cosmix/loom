@@ -3,7 +3,7 @@
 
 # Git And Build Workflow
 
-> Git, cargo, CI, ledger
+>
 
 ## Git Operations
 
@@ -17,7 +17,7 @@ Loom never runs a three-way merge in the operator's main checkout; the only merg
 
 **Operator-operation guard rule:** `merge_stage` returns `Blocked(OperatorOperation { marker })` when the main checkout has a `MERGE_HEAD`, `CHERRY_PICK_HEAD`, `REVERT_HEAD`, `rebase-merge/` or `rebase-apply/` (`git/merge/in_progress.rs` is the single source for `MERGE_HEAD` detection). Never silently `git merge --abort` an operator's merge.
 
-**Phantom-merge revert logging:** All phantom-merge reverts (sync-time merged=true revert, daemon `reconcile_main_repo_active_merge`, CLI `RevertAndSpawnResolver`) MUST log at `tracing::error!` level — not `warn` — so they show up in production logs. Reverts represent invariants violated; the noise is the point.
+**Attributed-merge logging:** the daemon's `reconcile_main_repo_active_merge` and the CLI `RevertAndSpawnResolver` arm log at `tracing::error!`, not `warn`, when they move a Completed, unmerged stage to MergeConflict: the move means an invariant broke, and the noise is the point. A final stage is never reverted, so no sync-time revert exists.
 
 ## Formatting and Test Invocation in a Shared Worktree
 
@@ -134,9 +134,7 @@ of the file's style.
 
 ## Install a New loom Binary Only After the Running Plan Completes
 
-The operator installs a freshly built `loom` (`dev-install.sh`) only once the plan being executed has completed, never between its stages: `dev-install.sh` stops the daemon, and a plan runs to completion on the binary it started with. Fixes committed to `main` mid-plan therefore take effect only for the next plan. Anything measured with the installed binary before then, such as `loom knowledge eval` scores, measures the older code. Re-measure after the install.
-
-`dev-install.sh` keeps release optimization but overrides the build invocation with LTO off, 16 codegen units, and incremental compilation. Cargo jobs default to the available CPU count (`nproc`, then `getconf _NPROCESSORS_ONLN`, then four); an explicit `CARGO_BUILD_JOBS` takes precedence. These command-local environment overrides preserve the ordinary release profile (fat LTO and one codegen unit) and the installer contract at `loom/target/release/loom`. The first build with these settings rebuilds affected artifacts; later dev installs reuse the incremental cache.
+The operator installs a freshly built `loom` (`dev-install.sh`) once the plan being executed has completed. After `install.sh` has written the binary and hooks, `dev-install.sh` runs `pkill -x loom`, stopping every loom process of the user in every repository, and the operator restarts daemons with `loom run`. The scope is deliberate: a daemon left running keeps its old binary and refuses spawns once its embedded hooks differ from the installed ones (see [mistakes/ci-toolchain-and-cargo.md](../mistakes/dev-install.md#dev-install-sh-stopped-killing-the-daemon-on-a-review-finding)). Installing mid-plan therefore kills the running plan's daemon and in-flight `loom` commands. Fixes committed mid-plan take effect for the next plan. Anything measured with the installed binary before then, such as `loom knowledge eval` scores, measures the older code. Re-measure after the install.
 
 ## CI Jobs Run on Path Filters; the `rust` Filter Must Name Every Repo-Root Path the Crate Reads
 
@@ -233,3 +231,7 @@ inside a live stage session and not in a clean shell.
 ## Push Tooling Keeps No Cached Copy of the Repository
 
 The operator pushes with plain `git push`, never a wrapper script, so the pre-push hook must finish before GitHub closes the idle push connection: it runs fast gates and a smoke test only, and the full suite and flake-check run in CI. Push tooling keeps no persistent copy of the repository (a cached worktree, clone or second build directory) to check a commit in; see [CI toolchain and cargo mistakes](../mistakes/ci-toolchain-and-cargo.md).
+
+## Servers Announce Before They Load
+
+A server command prints its URL and opens the browser as soon as it has bound its port. Loading, indexing and checks run in the background, and routes that depend on them report an in-progress state until they finish.

@@ -1,6 +1,33 @@
 use super::*;
 use tempfile::tempdir;
 
+#[test]
+fn subscription_plan_is_read_without_requiring_usage_response_metadata() {
+    assert_eq!(
+        extract_plan(r#"{"claudeAiOauth":{"subscriptionType":"max"}}"#),
+        Some("max".into())
+    );
+    assert_eq!(
+        extract_plan(r#"{"claudeAiOauth":{"subscriptionType":""}}"#),
+        None
+    );
+    assert_eq!(extract_plan(r#"{"claudeAiOauth":{}}"#), None);
+}
+
+#[cfg(not(target_os = "macos"))]
+#[test]
+fn account_reads_token_and_plan_together() {
+    let home = tempdir().unwrap();
+    write_credentials(
+        home.path(),
+        r#"{"claudeAiOauth":{"accessToken":"test","subscriptionType":"max"}}"#,
+    );
+    assert_eq!(
+        account(home.path()).unwrap(),
+        ("test".into(), Some("max".into()))
+    );
+}
+
 /// Shadows the glob-imported [`super::access_token`]: the tests below read the
 /// credentials file only, never the host's Keychain.
 fn access_token(home: &Path) -> Result<String> {

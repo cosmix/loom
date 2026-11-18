@@ -1,10 +1,11 @@
 //! Makes small, expensive workers visible before their work is normalized into
-//! aggregate totals. Loom's hook ledger is authoritative for agent type;
-//! prompt inference is a best-effort fallback for transcripts without one.
+//! aggregate totals. Loom's hook ledger is authoritative for agent type, the
+//! Claude Code sidecar fills a missing ledger row, and prompt inference is a
+//! best-effort fallback for transcripts with neither.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
-use crate::commands::usage::accounting::Accounting;
+use crate::commands::usage::accounting::UsageSummary;
 use crate::commands::usage::transcript::{Scope, Transcript};
 use crate::commands::usage::transcript_types::SYNTHETIC_MODEL;
 use crate::context::untrusted::inline_safe;
@@ -15,6 +16,7 @@ use super::fmt::{format_f64, format_u64, heading, no_data, row};
 pub struct AgentReport {
     pub subagent_transcripts: usize,
     pub agent_type_ledger_matches: usize,
+    pub agent_type_sidecar_matches: usize,
     pub tiny_subagents: Vec<TinySubagent>,
     pub by_agent_model: Vec<AgentModelRow>,
     pub parent_model: ParentModelMatch,
@@ -34,16 +36,11 @@ pub struct AgentModelRow {
     pub agent_type: String,
     pub requested_model: String,
     pub model: String,
+    /// Transcripts with at least one request in this row, each counted once.
+    pub transcripts: usize,
     pub requests: usize,
-    pub fresh_input: u64,
-    pub cache_creation: u64,
-    pub cache_reads: u64,
-    pub output: u64,
-    pub cache_writes_5m: u64,
-    pub cache_writes_1h: u64,
-    pub s1: u64,
-    pub s2: f64,
-    pub s3: u64,
+    #[serde(flatten)]
+    pub(crate) summary: UsageSummary,
 }
 
 #[derive(Debug, serde::Serialize, Default)]
@@ -67,7 +64,13 @@ pub fn build(transcripts: &[Transcript]) -> AgentReport {
         subagent_transcripts: subagents.len(),
         agent_type_ledger_matches: subagents
             .iter()
-            .filter(|transcript| transcript.agent_type.is_some())
+            .filter(|transcript| {
+                transcript.agent_type.is_some() && !transcript.agent_type_from_sidecar
+            })
+            .count(),
+        agent_type_sidecar_matches: subagents
+            .iter()
+            .filter(|transcript| transcript.agent_type_from_sidecar)
             .count(),
         tiny_subagents,
         by_agent_model,
@@ -87,6 +90,13 @@ pub fn render(report: &AgentReport) {
         format!(
             "{}/{} transcripts matched",
             report.agent_type_ledger_matches, report.subagent_transcripts
+        ),
+    );
+    row(
+        "agent type sidecar",
+        format!(
+            "{}/{} transcripts matched",
+            report.agent_type_sidecar_matches, report.subagent_transcripts
         ),
     );
     row("under-500-output subagents", report.tiny_subagents.len());
@@ -123,14 +133,15 @@ fn tiny_line(agent: &TinySubagent) -> String {
 
 fn agent_model_line(item: &AgentModelRow) -> String {
     format!(
-        "    {} / requested {} / {}: {} requests, input {}, output {}, S2 {}",
+        "    {} / requested {} / {}: {} transcripts, {} requests, input {}, output {}, S2 {}",
         inline_safe(&item.agent_type),
         inline_safe(&item.requested_model),
         inline_safe(&item.model),
+        item.transcripts,
         item.requests,
-        format_u64(item.fresh_input),
-        format_u64(item.output),
-        format_f64(item.s2)
+        format_u64(item.summary.usage.input),
+        format_u64(item.summary.usage.output),
+        format_f64(item.summary.accounting.s2)
     )
 }
 
@@ -187,6 +198,7 @@ fn by_agent_model(subagents: &[&Transcript]) -> Vec<AgentModelRow> {
             .requested_model
             .clone()
             .unwrap_or_else(|| "unknown".to_owned());
+        let mut counted = BTreeSet::new();
         for request in transcript.requests() {
             if request.model == SYNTHETIC_MODEL {
                 continue;
@@ -197,26 +209,22 @@ fn by_agent_model(subagents: &[&Transcript]) -> Vec<AgentModelRow> {
                     agent_type: kind.clone(),
                     requested_model: requested.clone(),
                     model: request.model.clone(),
+                    transcripts: 0,
                     requests: 0,
-                    fresh_input: 0,
-                    cache_creation: 0,
-                    cache_reads: 0,
-                    output: 0,
-                    cache_writes_5m: 0,
-                    cache_writes_1h: 0,
-                    s1: 0,
-                    s2: 0.0,
-                    s3: 0,
+                    summary: UsageSummary::default(),
                 });
+            row.transcripts += usize::from(counted.insert(request.model.as_str()));
             row.requests += 1;
-            add_usage(row, request);
+            row.summary.add(&request.usage);
         }
     }
     let mut rows = grouped.into_values().collect::<Vec<_>>();
     rows.sort_by(|left, right| {
         right
+            .summary
+            .accounting
             .s2
-            .total_cmp(&left.s2)
+            .total_cmp(&left.summary.accounting.s2)
             .then_with(|| left.agent_type.cmp(&right.agent_type))
             .then_with(|| left.requested_model.cmp(&right.requested_model))
             .then_with(|| left.model.cmp(&right.model))
@@ -250,50 +258,20 @@ fn parent_matches(
     matches
 }
 
-/// Names inferred from a subagent's spawn prompt. `agent_type` collects every
-/// match and returns a name only when exactly one survives, so this list's
-/// order carries no meaning -- it need not be sorted or otherwise ordered.
-///
-/// Deliberately excludes `Explore`: unlike every other candidate here, it is
-/// an ordinary English word (as in "Explore the tree first"), so it is the
-/// one name likely to appear as a false-positive match in unrelated task
-/// prose. That false match is worse than merely mislabeling one Explore
-/// spawn as `unknown` -- co-occurring with a second, genuine match collapses
-/// an otherwise-unambiguous identification to `unknown` too, per the
-/// disambiguation rule below. There is no realistic textual context to
-/// require instead (e.g. a `subagent_type=` neighbourhood): the whole reason
-/// this module falls back to prompt text is that the real spawn type is
-/// never echoed into the subagent's own received prompt in the first place.
-const KNOWN_AGENT_TYPES: [&str; 6] = [
+/// Known prompt identities; excludes the ordinary word `Explore` to avoid
+/// false matches in task prose.
+const KNOWN_AGENT_TYPES: [&str; 7] = [
     "loom-senior-software-engineer",
     "loom-software-engineer",
     "loom-codex-forwarder",
     "loom-code-reviewer",
     "general-purpose",
     "loom-advisor",
+    "loom-software-developer",
 ];
 
-/// Infer a subagent's type from its spawn prompt. The transcript format
-/// carries no explicit type field, so this is a best-effort textual
-/// fallback. `usage::parse_all` has already joined a matching hook-written
-/// `starts.jsonl` row by agent and parent session when one exists; that value
-/// returns above before this inference runs. `spawns.jsonl` is deliberately
-/// excluded because it has no agent id and cannot address one transcript.
-///
-/// Plain substring matching against a fixed-order list used to pick
-/// whichever known name happened to be checked first, which broke two ways:
-/// `loom-software-engineer` was checked before `loom-senior-software-engineer`,
-/// and `skills/loom-orchestration/SKILL.md`'s own Rule 6 coordinator preamble writes
-/// "(loom-software-engineer = sonnet)" into virtually every coordinator
-/// prompt regardless of the coordinator's real type, so that boilerplate
-/// alone made every senior-engineer spawn get reported as the sonnet tier.
-/// This version (1) never counts a name immediately followed by `=` as an
-/// identity mention -- that shape is CLAUDE.md's own cost-tier annotation,
-/// naming every known type without declaring the current transcript's own
-/// identity; (2) requires the match be delimited, not embedded inside a
-/// longer identifier; (3) refuses to guess when more than one distinct name
-/// survives those two filters, since a wrong label here is worse than an
-/// absent one.
+/// Infer a type from delimited prompt mentions when no joined type exists.
+/// Ignore cost annotations and return `unknown` for ambiguous matches.
 fn agent_type(transcript: &Transcript) -> String {
     if let Some(agent_type) = transcript.agent_type.as_deref() {
         return agent_type.to_owned();
@@ -332,20 +310,6 @@ fn mentions_agent_type(prompt: &str, name: &str) -> bool {
         let is_cost_annotation = prompt[end..].trim_start().starts_with('=');
         before_ok && after_ok && !is_cost_annotation
     })
-}
-
-fn add_usage(row: &mut AgentModelRow, request: &crate::commands::usage::transcript::Request) {
-    let usage = &request.usage;
-    let accounting = Accounting::of(usage);
-    row.fresh_input += usage.input;
-    row.cache_creation += usage.cache_creation;
-    row.cache_reads += usage.cache_read;
-    row.output += usage.output;
-    row.cache_writes_5m += usage.ephemeral_5m;
-    row.cache_writes_1h += usage.ephemeral_1h;
-    row.s1 += accounting.s1;
-    row.s2 += accounting.s2;
-    row.s3 += accounting.s3;
 }
 
 #[cfg(test)]

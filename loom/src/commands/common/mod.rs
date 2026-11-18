@@ -6,10 +6,11 @@
 //! - String truncation for display
 //! - Shared tree-rendering helpers (see [`tree`])
 
+pub(crate) mod model_display;
 pub mod tree;
 
 use anyhow::{bail, Result};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::fs::work_dir::WorkDir;
 use crate::git::branch::stage_id_from_branch;
@@ -55,15 +56,15 @@ pub fn resolve_state_dir(base: &std::path::Path) -> PathBuf {
 /// `loom/<stage-id>` and extracts the stage ID. Filters out special branches
 /// like `loom/_base`.
 pub fn detect_stage_id() -> Option<String> {
-    // Get current branch name
-    let cwd = std::env::current_dir().ok()?;
-    let output = crate::git::runner::run_git(&["rev-parse", "--abbrev-ref", "HEAD"], &cwd).ok()?;
+    detect_stage_id_in(&std::env::current_dir().ok()?)
+}
 
-    if !output.status.success() {
-        return None;
-    }
-
-    let branch = String::from_utf8_lossy(&output.stdout).trim().to_string();
+/// Detect a stage branch in the repository containing `dir`.
+pub fn detect_stage_id_in(dir: &Path) -> Option<String> {
+    let git = crate::git::worktree::WorktreeGit::discovered(dir);
+    let branch = crate::git::branch::checked_out_branch_with(&git)
+        .ok()
+        .flatten()?;
 
     // Extract stage ID from branch name using centralized logic
     let stage_id = stage_id_from_branch(&branch)?;
@@ -82,6 +83,19 @@ pub use crate::utils::{truncate, truncate_for_display};
 
 #[cfg(test)]
 mod tests {
+    use crate::test_git::TestRepo;
+
+    #[test]
+    fn stage_branch_with_same_named_tag_is_detected() {
+        let repo = TestRepo::builder().branch("loom/s1").no_seed().create();
+        repo.git(&["commit", "--allow-empty", "-qm", "seed"]);
+        repo.git(&["tag", "loom/s1"]);
+        assert_eq!(
+            super::detect_stage_id_in(repo.path()).as_deref(),
+            Some("s1")
+        );
+    }
+
     #[test]
     fn test_detect_stage_id_format() {
         let parse_branch = |branch: &str| -> Option<String> {

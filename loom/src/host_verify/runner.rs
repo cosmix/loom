@@ -13,16 +13,16 @@ use std::fs::File;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-use anyhow::{Context, Result};
+use anyhow::{ensure, Context, Result};
 use chrono::Utc;
 
-use super::signals::{kill_groups, retire};
-use super::spawn::{reaped_outcome, spawn_child};
-use super::{bounded_detail, store, JobRecord, JobState};
-use crate::models::stage::{AcceptanceCriterion, Stage};
-use crate::process::OwnedProcess;
-
 pub use super::signals::recover_after_restart;
+use super::signals::{kill_groups, retire};
+pub(crate) use super::spawn::is_session_variable;
+use super::spawn::{reaped_outcome, spawn_child};
+use super::{bounded_detail, store, JobKind, JobRecord, JobState};
+use crate::models::stage::Stage;
+use crate::process::OwnedProcess;
 
 /// Jobs the daemon runs at once.
 const DEFAULT_SLOTS: usize = 2;
@@ -31,9 +31,6 @@ const DEFAULT_SLOTS: usize = 2;
 pub(crate) const DAEMON_STOPPED: &str = "daemon stopped";
 /// `child.log` past this size ends the job.
 const CHILD_LOG_MAX_BYTES: u64 = 4 * 1024 * 1024;
-/// Seconds a command without its own timeout counts toward a deadline.
-const COMMAND_SECS: u64 = crate::verify::DEFAULT_COMMAND_TIMEOUT.as_secs();
-
 /// What the runner spawns: `<program> <args_prefix..> <stage> --job <id>`.
 pub struct RunnerConfig {
     pub program: PathBuf,
@@ -99,6 +96,18 @@ impl HostJobRunner {
     /// the jobs this call ended or reaped. A failure on one job is logged and
     /// retried on the next tick; it never stops the others.
     pub fn tick(&mut self) -> Result<Vec<JobRecord>> {
+        let mut ended = self.settle_held();
+        // Records settled above are already final; a failure to list or start
+        // queued jobs must not drop them.
+        match self.start_queued() {
+            Ok(started) => ended.extend(started),
+            Err(error) => warn_job("-", "could not start queued host jobs", &error),
+        }
+        Ok(ended)
+    }
+
+    /// The tick's end and reap steps alone, for a caller about to block the tick.
+    pub fn settle_held(&mut self) -> Vec<JobRecord> {
         let mut ended = Vec::new();
         let held: Vec<String> = self.running.keys().cloned().collect();
         for job_id in held {
@@ -107,13 +116,12 @@ impl HostJobRunner {
                 Err(error) => warn_job(&job_id, "could not settle a host job", &error),
             }
         }
-        // Records settled above are already final; a failure to list or start
-        // queued jobs must not drop them.
-        match self.start_queued() {
-            Ok(started) => ended.extend(started),
-            Err(error) => warn_job("-", "could not start queued host jobs", &error),
-        }
-        Ok(ended)
+        ended
+    }
+
+    /// Whether this runner holds a child of `stage_id`.
+    pub fn holds_stage(&self, stage_id: &str) -> bool {
+        self.running.values().any(|job| job.stage_id == stage_id)
     }
 
     /// The graceful stop: cancel every running record with `daemon stopped`,
@@ -185,12 +193,9 @@ impl HostJobRunner {
         })
     }
 
-    /// Step 3: start queued jobs, oldest first, while a slot is free.
+    /// Step 3: promote waiting jobs, then start queued jobs while a slot is free.
     fn start_queued(&mut self) -> Result<Vec<JobRecord>> {
         let mut ended = Vec::new();
-        if self.running.len() >= self.config.slots {
-            return Ok(ended);
-        }
         for record in queued_records(&self.work_dir)? {
             if self.running.len() >= self.config.slots {
                 break;
@@ -207,12 +212,10 @@ impl HostJobRunner {
     /// `pid` after it. Returns the record when the job failed to start.
     fn start(&mut self, record: &JobRecord) -> Result<Option<JobRecord>> {
         let (stage_id, job_id) = (record.stage_id.as_str(), record.id.as_str());
-        let deadline = match crate::verify::transitions::load_stage(stage_id, &self.work_dir) {
-            Ok(stage) => self
-                .deadline_override
-                .unwrap_or_else(|| Duration::from_secs(job_deadline_secs(&stage))),
+        let (deadline, policy_hash) = match budget_for_job(record, &self.work_dir) {
+            Ok((budget, policy)) => (self.deadline_override.unwrap_or(budget), policy),
             Err(error) => {
-                let detail = format!("cannot load stage '{stage_id}': {error:#}");
+                let detail = format!("cannot calculate the host job budget: {error:#}");
                 return self.fail_to_start(stage_id, job_id, JobState::Queued, detail);
             }
         };
@@ -223,13 +226,14 @@ impl HostJobRunner {
         if !matches!(started, Cas::Applied(_)) {
             return Ok(None);
         }
-        let (process, log) = match spawn_child(&self.work_dir, &self.config, stage_id, job_id) {
-            Ok(spawned) => spawned,
-            Err(error) => {
-                let detail = format!("cannot start verify-host: {error:#}");
-                return self.fail_to_start(stage_id, job_id, JobState::Running, detail);
-            }
-        };
+        let (process, log) =
+            match spawn_child(&self.work_dir, &self.config, stage_id, job_id, &policy_hash) {
+                Ok(spawned) => spawned,
+                Err(error) => {
+                    let detail = format!("cannot start verify-host: {error:#}");
+                    return self.fail_to_start(stage_id, job_id, JobState::Running, detail);
+                }
+            };
         let mut job = RunningJob {
             stage_id: stage_id.to_string(),
             process,
@@ -293,10 +297,13 @@ pub fn fail_queued(work_dir: &Path, detail: &str) -> Result<Vec<JobRecord>> {
     Ok(failed)
 }
 
-/// Every stage's current record that is queued, oldest first.
+/// Promote waiting jobs, then collect queued current records, oldest first.
 fn queued_records(work_dir: &Path) -> Result<Vec<JobRecord>> {
     let mut queued = Vec::new();
     for stage_id in store::stage_ids(work_dir)? {
+        if let Err(error) = super::pending::promote(work_dir, &stage_id) {
+            warn_job(&stage_id, "could not promote a waiting host job", &error);
+        }
         match store::load_current(work_dir, &stage_id) {
             Ok(Some(record)) if record.state == JobState::Queued => queued.push(record),
             Ok(_) => {}
@@ -310,7 +317,7 @@ fn queued_records(work_dir: &Path) -> Result<Vec<JobRecord>> {
 /// `current_exe` of a binary replaced on disk under the running process (a
 /// reinstall) reads `<path> (deleted)` on Linux; the binary now at `<path>`
 /// is the one to spawn.
-pub(super) fn installed_binary(exe: PathBuf) -> PathBuf {
+pub(crate) fn installed_binary(exe: PathBuf) -> PathBuf {
     exe.to_str()
         .and_then(|path| path.strip_suffix(" (deleted)"))
         .map(PathBuf::from)
@@ -318,30 +325,36 @@ pub(super) fn installed_binary(exe: PathBuf) -> PathBuf {
         .unwrap_or(exe)
 }
 
-/// The longest a job of `stage` may run: every acceptance criterion at its
-/// own timeout (else 300 s), 300 s for each wiring test, the dead-code check,
-/// the regression test, each frozen contract, one impact-test selection and
-/// each `after_stage` command, plus the completion margin. A check runs a
-/// share of that, so one deadline per stage serves every kind of job.
+/// A budget from the persisted stage. The runner uses `budget_for_job` for
+/// completion, since that child executes postconditions from the active plan.
 pub fn job_deadline_secs(stage: &Stage) -> u64 {
-    let acceptance = stage.acceptance.iter().fold(0u64, |sum, criterion| {
-        let secs = match criterion {
-            AcceptanceCriterion::Extended(check) => check.timeout_secs.unwrap_or(COMMAND_SECS),
-            AcceptanceCriterion::Simple(_) => COMMAND_SECS,
-        };
-        sum.saturating_add(secs)
-    });
-    let commands = stage.wiring_tests.len()
-        + usize::from(stage.dead_code_check.is_some())
-        + usize::from(stage.regression_test.is_some())
-        + stage.contracts.len()
-        + 1
-        + stage.after_stage.len();
-    u64::try_from(commands)
-        .unwrap_or(u64::MAX)
-        .saturating_mul(COMMAND_SECS)
-        .saturating_add(acceptance)
+    crate::verify::budget::stage_command_secs(stage)
         .saturating_add(crate::orchestrator::monitor::stall_line::COMPLETION_MARGIN_SECS)
+}
+
+/// Read the budget and its policy identity as one stable input. The child
+/// checks that identity before it reads any executable verification inputs.
+pub(super) fn budget_for_job(record: &JobRecord, work_dir: &Path) -> Result<(Duration, String)> {
+    let stage = crate::verify::transitions::load_stage(&record.stage_id, work_dir)?;
+    let before = crate::handoff::completion::policy::effective_policy_hash(&stage, work_dir)?;
+    let secs = match record.kind {
+        JobKind::Complete | JobKind::VerdictComplete | JobKind::Check => {
+            let definition = crate::plan::load_stage_definition_from_plan(&stage.id, work_dir)?;
+            crate::verify::budget::stage_command_secs_with_plan(
+                &stage,
+                definition.as_ref(),
+                matches!(record.kind, JobKind::Complete | JobKind::VerdictComplete),
+            )
+            .saturating_add(crate::orchestrator::monitor::stall_line::COMPLETION_MARGIN_SECS)
+        }
+        JobKind::Freeze => job_deadline_secs(&stage),
+    };
+    let after = crate::handoff::completion::policy::effective_policy_hash(&stage, work_dir)?;
+    ensure!(
+        before == after,
+        "verification policy changed while calculating its budget"
+    );
+    Ok((Duration::from_secs(secs), after))
 }
 
 /// Under the stage lock, apply `change` to the job's record when it is still

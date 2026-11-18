@@ -39,6 +39,10 @@ pub struct ReviewRound {
     pub harvested_at: DateTime<Utc>,
     /// The `sha256:<hex>` change fingerprint of the worktree the review saw.
     pub fingerprint: String,
+    #[serde(default)]
+    pub base: String,
+    #[serde(default)]
+    pub behaviour: BTreeMap<String, String>,
     /// Path to sha256 hex, or `deleted`, as the fingerprint hashed them.
     pub files: BTreeMap<String, String>,
     /// Why the reviewer's `loom-review` block could not be read; such a round

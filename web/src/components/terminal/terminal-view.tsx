@@ -30,6 +30,7 @@ import {
 } from "@/components/terminal/use-terminal";
 import { DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Kbd } from "@/components/ui/kbd";
+import { displayState } from "@/lib/display-state";
 import { stateMeta } from "@/lib/format";
 import { snapshotAtom } from "@/state/atoms";
 
@@ -85,7 +86,7 @@ export function TerminalView({
 
   return (
     <div
-      className={cn("terminal-frame", toneClass(stateMeta(stage.status).tone))}
+      className={cn("terminal-frame", toneClass(stateMeta(displayState(stage)).tone))}
       data-frame={frame}
       data-mode={mode}
       data-phase={phase}

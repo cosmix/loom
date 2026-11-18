@@ -32,12 +32,16 @@ use tempfile::TempDir;
 use super::failure::ImpactFailure;
 use super::runs::{Failed, Run, Site};
 use super::FULL_SUITE;
+use crate::git::changes::read_only;
 use crate::git::runner::run_git_checked;
 use crate::models::stage::Stage;
-use crate::verify::contracts::changes::git;
+use crate::utils::text::single_line;
 use crate::verify::criteria::{CriteriaConfig, CriteriaProbe, ProbeRunner};
 use crate::verify::review::fingerprint::local_git;
-use crate::verify::review::report::single_line;
+
+/// Name prefix of a dry-run checkout's scratch directory, which the dry run's
+/// sweep of earlier runs' leftovers matches on.
+pub(crate) const DRY_RUN_PREFIX: &str = "loom-dry-run-";
 
 /// Hex digits of the base commit a note shows.
 const SHORT_COMMIT: usize = 12;
@@ -79,21 +83,37 @@ pub(super) struct BaseProbe<'a> {
 }
 
 /// A detached checkout of one commit in a scratch directory, removed on drop.
-pub(super) struct BaseCheckout {
+pub(crate) struct BaseCheckout {
     dir: Option<TempDir>,
     root: PathBuf,
 }
 
 impl BaseCheckout {
     /// Check out `commit` of the repository holding `worktree`.
-    pub(super) fn create(worktree: &Path, commit: &str) -> Result<Self> {
-        let common_dir = ["rev-parse", "--path-format=absolute", "--git-common-dir"];
-        let common = git(&local_git(worktree)?, &common_dir)?;
-        let common = String::from_utf8(common).context("the git common directory is not UTF-8")?;
+    pub(crate) fn create(worktree: &Path, commit: &str) -> Result<Self> {
         let dir = tempfile::Builder::new()
             .prefix("loom-impact-base-")
             .tempdir()
             .context("failed to create a scratch directory for the base checkout")?;
+        Self::check_out(dir, worktree, commit)
+    }
+
+    /// Like [`Self::create`], with the scratch directory made inside `parent`
+    /// instead of the system temporary directory: a caller whose checkout
+    /// builds gigabytes of artifacts keeps them on a disk that can hold them.
+    pub(crate) fn create_in(parent: &Path, worktree: &Path, commit: &str) -> Result<Self> {
+        let dir = tempfile::Builder::new()
+            .prefix(DRY_RUN_PREFIX)
+            .tempdir_in(parent)
+            .with_context(|| format!("failed to create a checkout under {}", parent.display()))?;
+        Self::check_out(dir, worktree, commit)
+    }
+
+    /// The shared clone and detached checkout both constructors make in `dir`.
+    fn check_out(dir: TempDir, worktree: &Path, commit: &str) -> Result<Self> {
+        let common_dir = ["rev-parse", "--path-format=absolute", "--git-common-dir"];
+        let common = read_only(&local_git(worktree)?, &common_dir)?;
+        let common = String::from_utf8(common).context("the git common directory is not UTF-8")?;
         let root = dir.path().join("checkout");
         let target = root
             .to_str()
@@ -109,7 +129,7 @@ impl BaseCheckout {
     }
 
     /// The checkout's top directory.
-    pub(super) fn root(&self) -> &Path {
+    pub(crate) fn root(&self) -> &Path {
         &self.root
     }
 }
@@ -124,7 +144,7 @@ impl Drop for BaseCheckout {
             tracing::warn!(
                 path = %path.display(),
                 %error,
-                "failed to remove the impact-test base checkout"
+                "failed to remove a temporary checkout"
             );
         }
     }

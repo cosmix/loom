@@ -1,0 +1,118 @@
+/*
+ * Kind of work on the empty form (kind-control.tsx): three native radios in one 28px pill track,
+ * the chosen segment filled in --muted and set in --foreground at 600, with the chosen kind's hint
+ * on the same line (ui/DESIGN.md, New work).
+ */
+
+[data-loom-plan] .kickoff-kind {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+[data-loom-plan] .kickoff-kind:disabled {
+  opacity: 0.5;
+}
+
+/* The picker floats off the track, so the track alone is the anchor. */
+[data-loom-plan] .kickoff-kind__anchor {
+  position: relative;
+  display: inline-flex;
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+[data-loom-plan] .kickoff-kind__track {
+  display: inline-flex;
+  flex: 1 1 auto;
+  height: 28px;
+  min-width: 0;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+[data-loom-plan] .kickoff-kind__choice {
+  position: relative;
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  padding: 0 12px;
+  color: var(--muted-foreground);
+  font-size: var(--type-ui);
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background-color 120ms,
+    color 120ms;
+}
+
+[data-loom-plan] .kickoff-kind:not(:disabled) .kickoff-kind__choice:hover {
+  color: var(--foreground);
+}
+
+[data-loom-plan] .kickoff-kind__choice:has(> input:checked) {
+  background: var(--muted);
+  color: var(--foreground);
+  font-weight: 600;
+}
+
+/* The radio stays in the accessibility tree and takes the keys; its segment draws its state. */
+[data-loom-plan] .kickoff-kind__choice > input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+[data-loom-plan] .kickoff-kind__choice:has(> input:focus-visible) {
+  outline: 2px solid var(--ring);
+  outline-offset: -2px;
+}
+
+[data-loom-plan] .kickoff-kind:disabled .kickoff-kind__choice {
+  cursor: default;
+}
+
+[data-loom-plan] .kickoff-kind__hint {
+  flex: 1 1 12rem;
+  min-width: 0;
+  color: var(--muted-foreground);
+  font-size: var(--type-ui);
+  line-height: var(--leading-ui);
+}
+
+/* Narrow: the track fills the field's top, three equal segments, the hint under it. */
+@media (max-width: 480px) {
+  [data-loom-plan] .kickoff-kind__anchor {
+    display: flex;
+    flex-basis: 100%;
+  }
+
+  [data-loom-plan] .kickoff-kind__choice {
+    flex: 1 1 0;
+    padding: 0 6px;
+  }
+
+  [data-loom-plan] .kickoff-kind__hint {
+    flex-basis: 100%;
+    padding-inline-start: var(--space-1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-loom-plan] .kickoff-kind__choice {
+    transition: none;
+  }
+}

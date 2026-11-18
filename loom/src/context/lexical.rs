@@ -16,7 +16,8 @@ pub(crate) use evidence::{occurs_backticked, ExactGate};
 pub use evidence::{admits_exact, is_plain_word, is_shaped};
 
 use crate::context::schema::KnowledgeChunk;
-use std::path::{Component, Path, PathBuf};
+use crate::fs::lexical::normalize_lexically;
+use std::path::{Path, PathBuf};
 
 /// Weight for a chunk heading used as its title.
 pub const WEIGHT_TITLE: f32 = 3.0;
@@ -171,30 +172,11 @@ pub(crate) fn link_target_matches(source_file: &Path, target: &str, candidate_fi
 
 /// Lexically join `target` onto `source_file`'s parent directory and resolve
 /// `.`/`..` components, without touching the filesystem. Returns `None` when
-/// the target climbs above the knowledge root — such a link can never
-/// designate anything inside the tree.
+/// the target climbs above the knowledge root, and an absolute target stays
+/// absolute: neither can designate anything inside the tree.
 fn resolve_relative_link(source_file: &Path, target: &str) -> Option<PathBuf> {
-    let mut components: Vec<String> = source_file
-        .parent()
-        .into_iter()
-        .flat_map(Path::components)
-        .filter_map(|component| match component {
-            Component::Normal(part) => Some(part.to_string_lossy().into_owned()),
-            _ => None,
-        })
-        .collect();
-
-    for part in target.replace('\\', "/").split('/') {
-        match part {
-            "" | "." => {}
-            ".." => {
-                components.pop()?;
-            }
-            other => components.push(other.to_string()),
-        }
-    }
-
-    Some(PathBuf::from(components.join("/")))
+    let directory = source_file.parent().unwrap_or(Path::new(""));
+    normalize_lexically(&directory.join(target.replace('\\', "/")))
 }
 
 /// Normalize a knowledge-relative path to forward slashes for comparison.
@@ -263,4 +245,38 @@ pub(crate) fn find_whole_term(text: &str, term: &str) -> Option<(usize, usize)> 
 /// See [`whole_term_ranges`] for why the boundaries are required at all.
 pub(crate) fn contains_whole_term(text: &str, term: &str) -> bool {
     find_whole_term(text, term).is_some()
+}
+
+#[cfg(test)]
+mod link_tests {
+    use super::*;
+
+    #[test]
+    fn a_link_resolves_against_its_source_directory_and_never_escapes() {
+        let candidate = Path::new("mistakes/b.md");
+        let source = Path::new("mistakes/a.md");
+        assert!(link_target_matches(source, "b.md", candidate));
+        assert!(link_target_matches(source, "./b.md", candidate));
+        assert!(link_target_matches(
+            Path::new("architecture/t.md"),
+            "../mistakes/b.md",
+            candidate
+        ));
+        assert!(!link_target_matches(
+            source,
+            "../../mistakes/b.md",
+            candidate
+        ));
+    }
+
+    #[test]
+    fn an_absolute_link_designates_nothing_in_the_tree() {
+        let source = Path::new("mistakes/a.md");
+        assert!(!link_target_matches(
+            source,
+            "/b.md",
+            Path::new("mistakes/b.md")
+        ));
+        assert!(!link_target_matches(source, "/b.md", Path::new("b.md")));
+    }
 }

@@ -7,6 +7,8 @@ mod hooks_tests;
 #[cfg(test)]
 mod install_tests;
 #[cfg(test)]
+mod relay_hooks_tests;
+#[cfg(test)]
 mod settings_tests;
 #[cfg(test)]
 mod sync_read_deny_tests;

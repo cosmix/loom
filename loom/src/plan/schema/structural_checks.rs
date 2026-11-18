@@ -6,6 +6,8 @@
 
 use std::collections::{HashMap, HashSet, VecDeque};
 
+use crate::planning::kinds::is_feature_name;
+
 use super::types::StageDefinition;
 
 pub(super) mod declared_skills;
@@ -31,26 +33,56 @@ pub(super) fn check_missing_summaries(stages: &[StageDefinition]) -> Vec<String>
         .collect()
 }
 
-/// Extract `doc/plans/briefs/...` path-like tokens from free-form text.
+/// Extract standalone and feature brief path-like tokens from free-form text.
 ///
 /// A plain substring/token scan, not a markdown-link parser: split on
 /// whitespace and common delimiters, trim surrounding punctuation, and keep
-/// tokens that contain the brief-directory prefix. Templates such as
+/// tokens under `doc/plans/briefs/` or `doc/plans/<feature>/briefs/` with a valid
+/// feature name. Templates such as
 /// `doc/plans/briefs/<plan>/<stage-id>/` name a layout, not a file, and are
 /// skipped.
 pub(crate) fn extract_brief_paths(text: &str) -> Vec<String> {
-    const PREFIX: &str = "doc/plans/briefs/";
+    extract_prefixed_paths(text, "doc/plans/")
+        .into_iter()
+        .filter(|path| {
+            let rest = path.strip_prefix("doc/plans/").unwrap_or_default();
+            let Some((home, rest)) = rest.split_once('/') else {
+                return false;
+            };
+            if home == "briefs" {
+                return !rest.is_empty();
+            }
+            is_feature_name(home)
+                && rest
+                    .strip_prefix("briefs/")
+                    .is_some_and(|suffix| !suffix.is_empty())
+        })
+        .collect()
+}
+
+/// Extract path-like tokens containing `prefix`, skipping placeholder paths.
+pub(crate) fn extract_prefixed_paths(text: &str, prefix: &str) -> Vec<String> {
     let mut paths = Vec::new();
 
-    for token in text.split(|c: char| {
-        c.is_whitespace() || matches!(c, '(' | ')' | '[' | ']' | '"' | '\'' | ',' | ';' | '|')
-    }) {
+    // Skip patterns in `|`-joined words, but keep Markdown link targets inside them.
+    // Words without `|` retain the usual token extraction rules.
+    let words = text.split_whitespace().flat_map(|word| {
+        if word.contains('|') {
+            word.split("](")
+                .skip(1)
+                .filter_map(|link| link.split_once(')').map(|(target, _)| target))
+                .collect::<Vec<_>>()
+        } else {
+            vec![word]
+        }
+    });
+    for token in words.flat_map(|word| word.split(['(', ')', '[', ']', '"', '\'', ',', ';'])) {
         let trimmed = token.trim_matches(|c: char| matches!(c, '.' | ',' | ':' | '`'));
-        if let Some(idx) = trimmed.find(PREFIX) {
+        if let Some(idx) = trimmed.find(prefix) {
             // A backtick closes a code span, so markdown after it (`dir/`.** in
             // bold) is not part of the path and must not reach the glob expander.
             let path = trimmed[idx..].split(['#', '`']).next().unwrap_or_default();
-            if path.len() > PREFIX.len() && !path.contains(['<', '>']) {
+            if path.len() > prefix.len() && !path.contains(['<', '>']) {
                 paths.push(path.to_string());
             }
         }
@@ -257,9 +289,85 @@ mod tests {
     }
 
     #[test]
+    fn regex_alternatives_are_not_references() {
+        let text =
+            "! grep -nE 'doc/x\\.md|doc/plans/briefs/feat-planner-|doc/plans/PLAN-' doc/plans \
+                    | doc/plans/briefs/v2/a.md | b |";
+        assert_eq!(extract_brief_paths(text), vec!["doc/plans/briefs/v2/a.md"]);
+    }
+
+    #[test]
+    fn links_in_compact_table_rows_are_references() {
+        assert_eq!(
+            extract_brief_paths("|worker|[brief](doc/plans/briefs/shared/nested.md#details)|"),
+            vec!["doc/plans/briefs/shared/nested.md"]
+        );
+        assert_eq!(
+            extract_brief_paths("|[a](doc/plans/briefs/x/a.md)|[b](doc/plans/briefs/x/b.md)|"),
+            vec!["doc/plans/briefs/x/a.md", "doc/plans/briefs/x/b.md"]
+        );
+    }
+
+    #[test]
     fn markdown_after_a_code_span_is_not_part_of_the_path() {
         let text = "**Briefs live outside `doc/plans/briefs/`.** See `doc/plans/briefs/v2/a.md`.**";
         assert_eq!(extract_brief_paths(text), vec!["doc/plans/briefs/v2/a.md"]);
+    }
+
+    #[test]
+    fn prefixed_paths_find_product_sections_in_prose() {
+        let text = "See doc/product/section_01.md for the specification.";
+        assert_eq!(
+            extract_prefixed_paths(text, "doc/"),
+            vec!["doc/product/section_01.md"]
+        );
+    }
+
+    #[test]
+    fn brief_prefix_preserves_extraction_rules() {
+        let text = "See `doc/plans/briefs/v2/a.md#heading` and doc/plans/briefs/<stage>/";
+        let expected = vec!["doc/plans/briefs/v2/a.md"];
+        assert_eq!(extract_prefixed_paths(text, "doc/plans/briefs/"), expected);
+        assert_eq!(extract_brief_paths(text), expected);
+    }
+
+    #[test]
+    fn feature_brief_paths_preserve_token_rules_and_order() {
+        let text = "See (`doc/plans/feature-1/briefs/run/a.md#heading`), \
+                    doc/plans/briefs/shared/b.md. Then \
+                    **`doc/plans/2nd-feature/briefs/run/c.md`.** \
+                    Layout: doc/plans/feature-1/briefs/<stage-id>/ \
+                    and `doc/plans/feature-1/briefs/`.";
+        assert_eq!(
+            extract_brief_paths(text),
+            vec![
+                "doc/plans/feature-1/briefs/run/a.md",
+                "doc/plans/briefs/shared/b.md",
+                "doc/plans/2nd-feature/briefs/run/c.md",
+            ]
+        );
+    }
+
+    #[test]
+    fn invalid_feature_names_are_not_brief_references() {
+        let text = "doc/plans/Bad_Name/briefs/run/a.md \
+                    doc/plans/-bad/briefs/run/a.md \
+                    doc/plans/plans/briefs/run/a.md \
+                    doc/plans/overview/briefs/run/a.md \
+                    doc/plans/archive/briefs/run/a.md";
+        assert!(extract_brief_paths(text).is_empty());
+    }
+
+    #[test]
+    fn reserved_names_keep_their_standalone_brief_meaning() {
+        let text = "doc/plans/briefs/briefs/a.md doc/plans/briefs/archive/b.md";
+        assert_eq!(
+            extract_brief_paths(text),
+            vec![
+                "doc/plans/briefs/briefs/a.md",
+                "doc/plans/briefs/archive/b.md"
+            ]
+        );
     }
 
     #[test]

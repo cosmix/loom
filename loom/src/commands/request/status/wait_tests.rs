@@ -130,7 +130,9 @@ fn a_chained_wait_on_an_unrelayed_ticket_says_to_wait_again_not_to_recreate_it()
         message.contains("`loom request status request-1 --wait 90` again as its own Bash call")
     );
     assert!(message.contains("do not run the command that created the request again"));
-    assert!(!message.contains("never relayed"));
+    // Only a control request whose creating call already ended is never relayed.
+    assert!(message.contains("a control request"));
+    assert!(message.contains("is never relayed later"));
 }
 
 #[test]

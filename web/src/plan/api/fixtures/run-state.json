@@ -1,0 +1,23 @@
+{
+  "workspace": "stopped",
+  "active_plan": "doc/plans/PLAN-example.md",
+  "offer": "resume",
+  "plans": [{ "path": "doc/plans/PLAN-example.md", "slug": "example", "listed": true }],
+  "preselected": "doc/plans/PLAN-example.md",
+  "branch": "main",
+  "doc_changes": [{ "path": "doc/plans/PLAN-example.md", "status": " M" }],
+  "blocking_changes": [],
+  "backends": ["tmux", "native"],
+  "default_backend": "tmux",
+  "clean_notice": false,
+  "abandon": {
+    "plan": "doc/plans/PLAN-example.md",
+    "merged_stages": ["foundation"],
+    "unmerged_stages": ["implementation"],
+    "unmerged_branches": [{ "branch": "loom/implementation", "ahead": 2 }],
+    "base_branch": "main"
+  },
+  "finish_abandon": null,
+  "dashboard_url": "http://127.0.0.1:8080/",
+  "busy": null
+}

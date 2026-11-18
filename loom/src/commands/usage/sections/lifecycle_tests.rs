@@ -1,7 +1,4 @@
-//! Tests for the window-filtering defect: `build` used to count every
-//! subagent transcript file, including ones the `--since` window filtered
-//! down to zero in-window entries. Split out to keep `lifecycle.rs` legible
-//! (CLAUDE.md Rule 17).
+//! Tests for lifecycle counts within the selected time window.
 
 use super::*;
 use crate::commands::usage::transcript::{Request, TokenUsage, UserEntry};
@@ -36,6 +33,7 @@ fn subagent(prompt: &str, in_window_requests: usize) -> Transcript {
         session_id: "session-1".to_owned(),
         agent_id: Some("agent-1".to_owned()),
         agent_type: None,
+        agent_type_from_sidecar: false,
         requested_model: None,
         stage_id: None,
         loom_session_id: None,
@@ -45,6 +43,7 @@ fn subagent(prompt: &str, in_window_requests: usize) -> Transcript {
         entries: (0..in_window_requests)
             .map(|_| Entry::Assistant(Box::new(request())))
             .collect(),
+        attachments: Vec::new(),
         diagnostics: Default::default(),
     }
 }

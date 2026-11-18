@@ -24,6 +24,10 @@ use crate::testrun::{languages, registry};
 
 const ORCHESTRATION_SKILL: &str = include_str!("../../../../skills/loom-orchestration/SKILL.md");
 const PLAN_WRITER_SKILL: &str = include_str!("../../../../skills/loom-plan-writer/SKILL.md");
+const V2_CONTRACTS: &str =
+    include_str!("../../../../skills/loom-plan-writer/references/v2-contracts.md");
+const BOOKEND_STAGES: &str =
+    include_str!("../../../../skills/loom-plan-writer/references/bookend-stages.md");
 
 /// The language skills, read at run time: which skill an adapter needs is only
 /// known once `registry::all()` has been walked.
@@ -31,12 +35,12 @@ const SKILLS_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../skills");
 
 /// BLOCK-E - the plan-v2 review order, verbatim (DESIGN D16). The v2 review
 /// section of a stage signal and the orchestration skill carry it byte for byte.
-const BLOCK_E: &str = "**Review order (plan v2):** run `loom check` once beside the final review round; fix every finding and failed criterion, re-check the failed criteria with `loom check <stage-id> --criterion <n>` and re-review the changed files, then complete. Edit nothing after the final review round: any edit, formatting included, changes the change fingerprint and needs another round. A commit does not change it.";
+const BLOCK_E: &str = "**Review order (plan v2):** run `loom check` once beside the final review. One fix worker handles all findings and failed criteria; re-check failures with `loom check <stage-id> --criterion <n>`, then one re-review on the follow-up model, then complete. After the final round, code edits including formatting need re-review. Comment-only lines, blank lines, and prose markdown outside skills/, agents/, commands/, loom-hooks/, tests and fixtures need none; the base must be unchanged. Block comments and every other edit need re-review. Commits do not change it.";
 
 /// BLOCK-F - when the stage cannot finish, verbatim. The standard,
 /// integration-verify and knowledge-distill stable prefixes carry it byte for
 /// byte; the orchestration skill, which those sessions load, does not repeat it.
-const BLOCK_F: &str = "**When the stage cannot finish.** Fix what the stage can fix. A wrong criterion, wiring check, contract, review finding or test-integrity event gets a dispute: `loom stage dispute-criteria` (`--field` for wiring, wiring-tests, impact-tests entries), `dispute-contract`, `dispute-findings` or `dispute-integrity`. Filing ends this session; the daemon starts a fresh one with the verdict. Never revert, weaken or postpone correct work to avoid a dispute. A criterion failing only because of where completion runs (no network, unreadable git metadata, timeout, sandbox denial) is disputed, never blocked: one `loom stage dispute-criteria <stage-id> --criterion-index <n> [--criterion-index <n> ...]` filing names every such criterion. `loom stage block <stage-id> \"<what is needed and why>\"` is for a credential, a host install or a decision only a person can make; loom refuses it while the latest `loom stage complete` shows a failing criterion. Commit before filing either. Never end a turn asking the operator to act while the stage is executing.";
+const BLOCK_F: &str = "**When the stage cannot finish.** Fix what the stage can fix. A wrong criterion, wiring check, contract, review finding or test-integrity event gets a dispute: `loom stage dispute-criteria` (`--field` for wiring, wiring-tests, impact-tests entries), `dispute-contract`, `dispute-findings` or `dispute-integrity`. Filing ends this session; if the verdict changes nothing, loom reruns completion on your last-completed tree (an impact-tests-only failure too) and completes the stage on a pass, else a fresh session starts. Never revert, weaken or postpone correct work to avoid a dispute. A criterion failing only because of where completion runs (no network, unreadable git metadata, timeout, sandbox denial) is disputed, never blocked: one `loom stage dispute-criteria <stage-id> --criterion-index <n> [--criterion-index <n> ...]` filing names them all. `loom stage block <stage-id> \"<what is needed and why>\"` is for a credential, a host install or a decision only a person can make; loom refuses it while the latest `loom stage complete` fails a criterion. Before a dispute, run `loom stage complete` on that commit. Never end a turn asking the operator to act mid-stage.";
 
 /// The body of the `## <heading>` section of `markdown`: everything after the
 /// heading line up to the next level-2 heading or the end. `None` when no line
@@ -65,6 +69,10 @@ fn block_e_agrees_across_every_surface() {
     append_v2_section(&mut signal, &stage, work_dir.path());
     let review = section(&signal, "Review Gate")
         .expect("a v2 standard stage's signal renders a `## Review Gate` section");
+    for text in [review, ORCHESTRATION_SKILL] {
+        assert!(text.contains("models.code_reviewer_followup_model"));
+        assert!(text.contains("ONE fix worker before ONE re-review on the follow-up model"));
+    }
 
     for (label, text) in [
         ("the v2 review section of a standard stage signal", review),
@@ -101,6 +109,52 @@ fn block_f_agrees_across_every_surface() {
              byte-identical wherever it appears; reword one copy and you must reword all \
              of them. Expected to find:\n{BLOCK_F}"
         );
+    }
+}
+
+/// What follows a verdict, as every agent-facing surface states it: a verdict that changes
+/// nothing lets the daemon complete the stage, and no surface still says that every verdict
+/// starts a fresh session.
+#[test]
+fn verdict_completion_doctrine_agrees_across_every_surface() {
+    let prefix = super::cache::generate_stable_prefix();
+    for (label, text, needle) in [
+        (
+            "skills/loom-plan-writer/SKILL.md",
+            PLAN_WRITER_SKILL,
+            "lets the daemon complete the stage without a session",
+        ),
+        (
+            "references/v2-contracts.md",
+            V2_CONTRACTS,
+            "lets the daemon complete the stage without a session",
+        ),
+        (
+            "skills/loom-orchestration/SKILL.md",
+            ORCHESTRATION_SKILL,
+            "lets the daemon complete a passing tree",
+        ),
+        (
+            "the standard stable prefix",
+            prefix.as_str(),
+            "loom reruns completion on your last-completed tree",
+        ),
+    ] {
+        assert!(
+            text.contains(needle),
+            "{label} must say that a verdict changing nothing lets loom complete the stage; \
+             expected: {needle}"
+        );
+        for stale in [
+            "the daemon starts a fresh session with the verdict, so the agent never waits on it",
+            "the daemon restarts with the verdict",
+            "the daemon starts a fresh one with the verdict",
+        ] {
+            assert!(
+                !text.contains(stale),
+                "{label} still says every verdict starts a fresh session: {stale}"
+            );
+        }
     }
 }
 
@@ -144,4 +198,30 @@ fn plan_writer_skill_names_project_detect() {
              detect each package's adapter with it and write contracts from that reference"
         );
     }
+}
+
+#[test]
+fn v2_contracts_reference_describes_the_statement_detector() {
+    let enforced = section(V2_CONTRACTS, "5. What completion enforces in v2")
+        .expect("v2-contracts.md keeps its `## 5. What completion enforces in v2` section");
+    for needle in ["assertion statement", "loosens", "loom hook reviewer-brief"] {
+        assert!(
+            enforced.contains(needle),
+            "v2-contracts.md Section 5 must describe the test-integrity detector: missing `{needle}`"
+        );
+    }
+}
+
+#[test]
+fn bookend_stages_lists_the_signals_review_dimensions() {
+    for needle in ["performance", "build/test/sandbox"] {
+        assert!(
+            BOOKEND_STAGES.contains(needle),
+            "bookend-stages.md must list the review dimensions the signal injects: missing `{needle}`"
+        );
+    }
+    assert!(
+        !BOOKEND_STAGES.contains("test coverage"),
+        "bookend-stages.md must not name a `test coverage` review dimension the signal does not inject"
+    );
 }

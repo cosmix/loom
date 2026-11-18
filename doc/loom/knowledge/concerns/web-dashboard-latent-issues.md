@@ -1,9 +1,9 @@
 # Web Dashboard Latent Issues
 
-> Latent issues in status/web
-> deliberately left unchanged — recorded so a later reader does not mistake them for
-> oversights. See [architecture/web-dashboard.md](../architecture/web-dashboard.md) for
-> context.
+>
+>
+>
+> UI
 
 1. **Mutex poisoning cascade.** `loom/src/commands/status/web/broadcast.rs` calls
    `.expect()` on its lock in several places; a panic inside any of those critical sections
@@ -12,12 +12,7 @@
    Near-unreachable today — those sections only do push/`try_send`/clone.
 2. **`GET /ws` without an `Upgrade` header returns the SPA page with 200, not 400** —
    `loom/src/commands/status/web/connection.rs` falls through to `Route::Spa`. Cosmetic.
-3. **Inherited partial-frame truncation risk.** The broadcaster's 50ms read timeout over
-   `daemon/wire.rs`'s `read_exact`-based framing can truncate a large `StatusData` body
-   mid-read; it self-heals via reconnect. The TUI has the identical timeout and the same
-   risk, so this is inherited behaviour, not new — a real fix means owning `daemon/wire.rs`,
-   out of scope for this plan.
-4. **524 kB `index.js` chunk-size warning left in place.** `bun run build` warns that the
+3. **524 kB `index.js` chunk-size warning left in place.** `bun run build` warns that the
    bundle exceeds rollup's 500 kB default. Code-splitting conflicts with the single-bundle
    design `loom/build.rs` embeds via `include_bytes!` (and the acceptance criterion pinning
    `index.js` as one file); raising the warning limit would be suppression. Left for whoever
@@ -27,7 +22,7 @@
 
 - **A stalled control-mode terminal holds its resources for up to `GATE_STALL_TIMEOUT` + 2s.**
   `bridge.rs`'s inbound gate cannot distinguish a genuinely half-closed browser from a live one
-  that is merely slow to drain (see mistakes/web-dashboard-server.md) — it bounds the ambiguity
+  that is merely slow to drain (see mistakes/web-terminal.md) — it bounds the ambiguity
   with a 30s stall deadline rather than resolving it. Until that deadline, and for up to a
   further 2s while `PtyChild::shutdown` waits for a clean `try_wait` before `SIGKILL`, the
   terminal keeps one of `MAX_TERMINALS = 8` slots, its PTY and its tmux child alive. Deliberate
@@ -57,9 +52,8 @@ Current settings behavior and remaining concerns:
 
 Two gaps accepted rather than closed while adding the theme picker and notification switch:
 
-1. **Two tone tokens keep Aubergine's hue under Pacific and Graphite.** `--tone-pending` and
-   `--tone-dimmed` are `oklch(... 0.025 325)` for every `.dark` variant (`web/src/index.css`). At chroma 0.025 they read as near-gray in practice, but the literal hue is still
-   Aubergine's 325, not tuned per theme; "no new theme tokens" stayed a non-goal for this plan,
+1. **Two tone tokens keep hue 325 under Graphite.** `--tone-pending` and
+   `--tone-dimmed` are `oklch(... 0.025 325)` for every `.dark` variant (`web/src/index.css`). At chroma 0.025 they read as near-gray in practice, but the literal hue is a leftover violet 325, not tuned per theme (Graphite is hue 270); "no new theme tokens" stayed a non-goal for this plan,
    so it was left rather than adding per-theme overrides. Every other loom token either derives
    from `var(--primary)`/`var(--border)` or is hue-neutral.
 2. **No gate in the web pipeline executes the built bundle in a browser.** `bun run --cwd web
@@ -99,4 +93,4 @@ The conflicted card prints the word once: `ActivityLine` (the first line of the 
 
 ## The Bundle Is Over 500 kB and the Gate Hides the Warning
 
-`vite build` warns "Some chunks are larger than 500 kB after minification" (`web/dist/assets/index.js` about 880 KB, over before the token-flow plan). The dist criterion runs vite with `--logLevel error`, so the gate never shows it; raising `build.chunkSizeWarningLimit` would only hide it. Code-splitting adds chunks the embedded Rust asset server must serve, so it needs its own change.
+The dashboard bundle is split: `web/vite.config.ts` `codeSplitting` groups (`react`, `zod`, `router`, `flow`, `markdown`, `cm-view`, `cm-lang`) keep `web/dist/assets/index.js` near 190 kB, and `loom/src/web_server/assets.rs` serves any `web/dist` path, so a new chunk needs no server change. `plan.js` is the chunk that sits near the 500 kB warning (about 412 kB with edit mode lazy); the rule that keeps it there is in [Plan Web](../conventions/plan-web.md#live-preview-editor-rules). The dist criterion runs vite with `--logLevel error`, so the gate never prints the warning; raising `build.chunkSizeWarningLimit` would only hide it.

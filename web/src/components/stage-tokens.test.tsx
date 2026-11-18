@@ -1,4 +1,4 @@
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { createStore } from "jotai";
 import { Provider } from "jotai/react";
 import { afterEach, describe, expect, it } from "vitest";
@@ -10,19 +10,56 @@ import { applySnapshot } from "@/state/apply";
 
 afterEach(cleanup);
 
-function renderTokens(stageId: string, mutate?: (raw: typeof fixtureJson) => void) {
+function renderTokens(stageId: string, mutate?: (raw: typeof fixtureJson) => void, open = true) {
   const raw = structuredClone(fixtureJson);
   mutate?.(raw);
   const store = createStore();
   applySnapshot(store, snapshotSchema.parse(raw));
-  return render(
+  const view = render(
     <Provider store={store}>
       <StageTokens stageId={stageId} />
     </Provider>,
   );
+  if (open) fireEvent.click(screen.getByRole("button", { name: "tokens" }));
+  return { raw, store, ...view };
 }
 
 describe("StageTokens", () => {
+  it("folds to the four chips, unchanged from the open view, until opened, then keeps the reader's choice", () => {
+    const { store, raw } = renderTokens("server", undefined, false);
+
+    const toggle = screen.getByRole("button", { name: "tokens" });
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    for (const name of [
+      "fresh rate, last 30 min",
+      "fresh so far, last 30 min",
+      "cache hit per 30 s, last 30 min",
+      "agents live, last 30 min",
+    ]) {
+      expect(screen.getAllByRole("img", { name })).toHaveLength(1);
+    }
+    for (const label of ["fresh, 5 min avg", "fresh so far", "cache hit", "agents live"]) {
+      expect(screen.getByText(label)).toBeTruthy();
+    }
+    expect(screen.queryAllByTestId("token-lane")).toHaveLength(0);
+    expect(screen.queryByText("30 s cells")).toBeNull();
+    const chips = () => screen.getByText("fresh, 5 min avg").closest(".grid")?.outerHTML;
+    const foldedChips = chips();
+
+    fireEvent.click(toggle);
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+    expect(chips()).toBe(foldedChips);
+    expect(screen.getAllByTestId("token-lane")).toHaveLength(3);
+    expect(screen.getByText("agents live")).toBeTruthy();
+    expect(screen.getByText("30 s cells")).toBeTruthy();
+
+    act(() => applySnapshot(store, snapshotSchema.parse(raw)));
+    expect(screen.getAllByTestId("token-lane")).toHaveLength(3);
+
+    fireEvent.click(toggle);
+    expect(screen.queryAllByTestId("token-lane")).toHaveLength(0);
+  });
+
   it("renders one lane per agent with a codex marker on the codex job", () => {
     renderTokens("server");
 
@@ -30,10 +67,134 @@ describe("StageTokens", () => {
     expect(lanes).toHaveLength(3);
     expect(lanes.filter((lane) => lane.textContent?.includes("codex"))).toHaveLength(1);
     expect(lanes[0]?.textContent).toContain("main session");
-    expect(lanes[0]?.textContent).toContain("main-01ed9f4c · claude-opus-5-5 · live");
-    const dot = within(lanes[0] as HTMLElement).getByTestId("agent-dot");
+    expect(lanes[0]?.textContent).toContain("claude-opus-5-5/high · main-01ed9f4c");
+    expect(lanes[0]?.textContent).not.toMatch(/\b(live|idle)\b/);
+    const dot = within(lanes[0] as HTMLElement).getByRole("img", { name: "live" });
     expect(dot.dataset.state).toBe("live");
     expect(dot.classList).toContain("dot-live");
+  });
+
+  it("keeps the model before the agent id, which wraps instead of truncating", () => {
+    renderTokens("server");
+
+    const lane = within(screen.getAllByTestId("token-lane")[0] as HTMLElement);
+    const model = lane.getByText("claude-opus-5-5/high", { exact: true });
+    const id = lane.getByText("main-01ed9f4c", { exact: true });
+    expect(model.compareDocumentPosition(id) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(model.classList).toContain("shrink-0");
+    expect(model.classList).not.toContain("truncate");
+    expect(model.parentElement).toBe(id.parentElement);
+    for (const className of ["flex", "min-w-0", "items-baseline"]) {
+      expect(model.parentElement?.classList).toContain(className);
+    }
+    for (const className of ["wrap-anywhere", "min-w-0"]) {
+      expect(id.classList).toContain(className);
+    }
+    expect(id.classList).not.toContain("truncate");
+  });
+
+  it("gives the agent id its full value as a hover title", () => {
+    const fullId = "main-01ed9f4c-very-long-session-identifier";
+    renderTokens("server", (raw) => {
+      const agent = raw.status.tokens.stages[0]?.agents[0];
+      if (!agent) throw new Error("fixture main agent is missing");
+      agent.id = fullId;
+    });
+
+    const lane = within(screen.getAllByTestId("token-lane")[0] as HTMLElement);
+    expect(lane.getByText(fullId, { exact: true }).getAttribute("title")).toBe(fullId);
+  });
+
+  it("clusters the codex job with its forwarder subagents after the other lanes", () => {
+    renderTokens("server", (raw) => {
+      const agents = raw.status.tokens.stages[0]?.agents;
+      const forwarder = agents?.[1];
+      if (!agents || !forwarder) throw new Error("fixture agents are missing");
+      agents.push({
+        ...structuredClone(forwarder),
+        id: "a0forwarder",
+        agent_type: "loom-codex-forwarder",
+        unit_id: null,
+      });
+      const job = agents?.[2];
+      if (!job) throw new Error("fixture codex job is missing");
+      (job as { forwarder: string | null }).forwarder = "a0forwarder";
+    });
+
+    const cluster = screen.getByTestId("codex-cluster");
+    const inCluster = within(cluster).getAllByTestId("token-lane");
+    expect(inCluster).toHaveLength(2);
+    expect(inCluster[0]?.textContent).toContain("loom-codex-forwarder");
+    expect(inCluster[0]?.textContent).toContain("claude-sonnet-5-5/medium · a0forwarder");
+    expect(inCluster[1]?.textContent).toContain("hex-test");
+    const all = screen.getAllByTestId("token-lane");
+    expect(all).toHaveLength(4);
+    expect(all.slice(0, 2).every((lane) => !cluster.contains(lane))).toBe(true);
+  });
+
+  it("gives each forwarder and its codex job a cluster of their own, apart from native jobs", () => {
+    renderTokens("server", (raw) => {
+      const agents = raw.status.tokens.stages[0]?.agents;
+      const forwarder = agents?.[1];
+      const job = agents?.[2];
+      if (!agents || !forwarder || !job) throw new Error("fixture agents are missing");
+      for (const n of ["1", "2"]) {
+        agents.push({
+          ...structuredClone(forwarder),
+          id: `a0fwd${n}`,
+          agent_type: "loom-codex-forwarder",
+          unit_id: null,
+        });
+        agents.push({
+          ...structuredClone(job),
+          id: `codex-job${n}`,
+          forwarder: `a0fwd${n}` as unknown as null,
+        });
+      }
+      job.forwarder = null;
+    });
+
+    const clusters = screen.getAllByTestId("codex-cluster");
+    const texts = clusters.map((c) =>
+      within(c)
+        .getAllByTestId("token-lane")
+        .map((lane) => lane.textContent ?? ""),
+    );
+    expect(texts).toHaveLength(2);
+    expect(texts[0]).toHaveLength(2);
+    expect(texts[0]?.[0]).toContain("a0fwd1");
+    expect(texts[0]?.[1]).toContain("codex-job1");
+    expect(texts[1]?.[0]).toContain("a0fwd2");
+    expect(texts[1]?.[1]).toContain("codex-job2");
+    const native = within(screen.getByTestId("codex-native")).getAllByTestId("token-lane");
+    expect(native).toHaveLength(1);
+    expect(native[0]?.textContent).toContain("codex-01a1396b");
+  });
+
+  it("keeps every strip at one width of 60 to 120 cells, newest on the right", () => {
+    const cellCounts = (stageSeries: number[]) => {
+      renderTokens("server", (raw) => {
+        const stage = raw.status.tokens.stages[0];
+        if (!stage) throw new Error("fixture server stage is missing");
+        stage.series = stageSeries;
+        for (const agent of stage.agents) agent.series = [...stageSeries];
+      });
+      const strips = screen
+        .getAllByTestId("token-lane")
+        .map((lane) => within(lane).getByRole("img", { name: /last (30|60) min/ }));
+      cleanup();
+      return strips;
+    };
+
+    expect(cellCounts([0, 0, 7]).every((strip) => strip.children.length === 60)).toBe(true);
+    const full = cellCounts(Array<number>(500).fill(3));
+    expect(full.every((strip) => strip.children.length === 120)).toBe(true);
+    expect(full[0]?.getAttribute("aria-label")).toContain("last 60 min");
+
+    const [young] = cellCounts([0, 0, 7]);
+    const levels = Array.from(young?.children ?? [], (cell) => cell.getAttribute("data-level"));
+    expect(levels.slice(0, 57).every((level) => level === "0")).toBe(true);
+    expect(levels[59]).toBe("4");
   });
 
   it("shows the four chips from the stage flow", () => {
@@ -44,6 +205,56 @@ describe("StageTokens", () => {
     expect(within(section).getByText("2.23M")).toBeTruthy();
     expect(within(section).getByText("93.1%")).toBeTruthy();
     expect(within(section).getByText("3 of 3")).toBeTruthy();
+  });
+
+  it("labels the legend with the shared lane scale and updates it with the snapshot", () => {
+    const { store, raw } = renderTokens("server", (snapshot) => {
+      const stage = snapshot.status.tokens.stages[0];
+      if (!stage) throw new Error("fixture server stage is missing");
+      stage.series = [1200];
+      for (const agent of stage.agents) agent.series = [800];
+    });
+
+    const legend = screen.getByRole("img", {
+      name: "intensity, 0 to 1200 fresh tokens per 30 s",
+    });
+    expect(legend.previousElementSibling?.textContent).toBe("0");
+    expect(legend.nextElementSibling?.textContent).toBe("1.2k");
+    for (const label of [legend.previousElementSibling, legend.nextElementSibling]) {
+      expect(label?.classList).toContain("font-mono");
+      expect(label?.classList).toContain("tabular-nums");
+    }
+
+    const next = structuredClone(raw);
+    // applySnapshot rejects equal or older timestamps as repeated frames.
+    next.generated_at = new Date(Date.parse(raw.generated_at) + 1000).toISOString();
+    const stage = next.status.tokens.stages[0];
+    const agent = stage?.agents[0];
+    if (!stage || !agent) throw new Error("fixture server stage or agent is missing");
+    stage.series = [2200];
+    agent.series = [12500];
+    act(() => applySnapshot(store, snapshotSchema.parse(next)));
+
+    expect(screen.getByRole("img", { name: "intensity, 0 to 12500 fresh tokens per 30 s" })).toBe(
+      legend,
+    );
+    expect(legend.previousElementSibling?.textContent).toBe("0");
+    expect(legend.nextElementSibling?.textContent).toBe("12.5k");
+  });
+
+  it("shows zero on both ends of the legend when every series is zero", () => {
+    renderTokens("server", (raw) => {
+      const stage = raw.status.tokens.stages[0];
+      if (!stage) throw new Error("fixture server stage is missing");
+      stage.series = [0];
+      for (const agent of stage.agents) agent.series = [0];
+    });
+
+    const legend = screen.getByRole("img", {
+      name: "intensity, 0 to 0 fresh tokens per 30 s",
+    });
+    expect(legend.previousElementSibling?.textContent).toBe("0");
+    expect(legend.nextElementSibling?.textContent).toBe("0");
   });
 
   it("draws one trend under each chip, named for its statistic", () => {
@@ -65,16 +276,73 @@ describe("StageTokens", () => {
       const agent = raw.status.tokens.stages[0]?.agents[2];
       if (!agent) throw new Error("fixture codex agent is missing");
       agent.active = false;
-      agent.series = [];
+      agent.series = [4];
     });
 
     const lane = screen.getAllByTestId("token-lane")[2];
-    expect(lane?.textContent).toContain("· idle");
+    expect(lane?.textContent).not.toMatch(/\b(live|idle)\b/);
     expect(lane?.textContent).toContain("—");
-    const dot = within(lane as HTMLElement).getByTestId("agent-dot");
+    const dot = within(lane as HTMLElement).getByRole("img", { name: "idle" });
     expect(dot.dataset.state).toBe("idle");
     expect(dot.classList).not.toContain("dot-live");
     expect(screen.getByText("2 of 3")).toBeTruthy();
+  });
+
+  it("lights a lane for an agent active only 40 minutes ago", () => {
+    renderTokens("server", (raw) => {
+      const agent = raw.status.tokens.stages[0]?.agents[0];
+      if (!agent) throw new Error("fixture main agent is missing");
+      const series = Array<number>(120).fill(0);
+      series[120 - 80] = 9; // 80 buckets of 30 s back
+      agent.series = series;
+    });
+
+    const lane = screen.getAllByTestId("token-lane")[0] as HTMLElement;
+    const strip = within(lane).getByRole("img", { name: /last 60 min/ });
+    expect(strip.children).toHaveLength(120);
+    expect(strip.children[40]?.getAttribute("data-level")).not.toBe("0");
+  });
+
+  it("folds all-zero agents under one earlier-agents row with their total", () => {
+    renderTokens("server", (raw) => {
+      const agents = raw.status.tokens.stages[0]?.agents;
+      if (!agents) throw new Error("fixture agents are missing");
+      agents[0]!.series = [0, 0, 0];
+      agents[1]!.series = [0, 0];
+    });
+
+    expect(screen.getAllByTestId("token-lane")).toHaveLength(1);
+    const fold = screen.getByTestId("earlier-agents");
+    expect(fold.textContent).toContain("2 earlier agents");
+    expect(screen.queryAllByTestId("earlier-agent")).toHaveLength(0);
+    fireEvent.click(within(fold).getByRole("button"));
+    const items = screen.getAllByTestId("earlier-agent");
+    expect(items).toHaveLength(2);
+    expect(items[0]?.textContent).toContain("main session");
+    expect(within(fold).queryAllByRole("img", { name: /fresh tokens/ })).toHaveLength(0);
+  });
+
+  it("keeps a codex cluster with one active lane together and folds a fully idle one", () => {
+    const addCluster = (raw: typeof fixtureJson, jobSeries: number[]) => {
+      const agents = raw.status.tokens.stages[0]?.agents;
+      const forwarder = agents?.[1];
+      const job = agents?.[2];
+      if (!agents || !forwarder || !job) throw new Error("fixture agents are missing");
+      forwarder.agent_type = "loom-codex-forwarder";
+      forwarder.series = [0, 0];
+      (job as { forwarder: string | null }).forwarder = forwarder.id;
+      job.series = jobSeries;
+    };
+
+    renderTokens("server", (raw) => addCluster(raw, [0, 5]));
+    const cluster = screen.getByTestId("codex-cluster");
+    expect(within(cluster).getAllByTestId("token-lane")).toHaveLength(2);
+    expect(screen.queryByTestId("earlier-agents")).toBeNull();
+    cleanup();
+
+    renderTokens("server", (raw) => addCluster(raw, [0, 0]));
+    expect(screen.queryByTestId("codex-cluster")).toBeNull();
+    expect(screen.getByTestId("earlier-agents").textContent).toContain("2 earlier agents");
   });
 
   it("renders a 200k-value series without throwing", () => {
@@ -93,7 +361,7 @@ describe("StageTokens", () => {
   });
 
   it("renders nothing for a stage without a flow", () => {
-    renderTokens("not-a-stage");
+    renderTokens("not-a-stage", undefined, false);
 
     expect(screen.queryByRole("region", { name: "stage tokens" })).toBeNull();
     expect(screen.queryAllByTestId("token-lane")).toHaveLength(0);

@@ -9,10 +9,13 @@ use std::time::Duration;
 use anyhow::{bail, Context, Result};
 use tempfile::NamedTempFile;
 
+use crate::git::revision::{require_head_commit, toplevel};
 use crate::git::runner::run_git_checked;
 use crate::git::stage_commit::{
     commit_staged, validate_commit_message, CommitRequest, CommitScope,
 };
+use crate::git::user_git::user_git;
+use crate::git::worktree::WorktreeGit;
 use crate::process::run_bounded_output;
 use crate::relay::emit::{mode, EnvSnapshot, RelayContext, RelayMode, RelaySink, StdSink};
 use crate::relay::{CommitPayload, RequestKind};
@@ -48,6 +51,10 @@ fn commit_with(
         }
     }
 
+    super::native_gate::ensure_no_native_workers(
+        &crate::commands::common::resolve_state_dir(cwd),
+        stage_id,
+    )?;
     match relay_mode {
         RelayMode::Relay(context) => relay_commit(stage_id, message, &context, cwd, sink),
         RelayMode::Operator | RelayMode::Legacy => commit_in_process(stage_id, message, cwd, sink),
@@ -97,14 +104,14 @@ fn commit_in_process(
 ) -> Result<()> {
     let message = run_hooks(cwd, message)?;
     let (expected_head, expected_tree) = staged_state(cwd)?;
-    let top = run_git_checked(&["rev-parse", "--show-toplevel"], cwd)?;
+    let top = toplevel(cwd)?;
     let request = CommitRequest {
         message,
         expected_head,
         expected_tree,
     };
     let commit = commit_staged(
-        Path::new(&top),
+        &top,
         &CommitScope::StageBranch {
             stage_id: stage_id.to_string(),
         },
@@ -121,11 +128,11 @@ fn validate_message(message: &str) -> Result<()> {
     validate_commit_message(message).map_err(anyhow::Error::msg)
 }
 
+/// The pre-commit and commit-msg hooks through `user_git`: not runner calls, which disable hooks,
+/// and running them is the point here.
 fn run_hooks(cwd: &Path, message: &str) -> Result<String> {
-    let mut pre_commit = Command::new("git");
-    pre_commit
-        .args(["hook", "run", "--ignore-missing", "pre-commit"])
-        .current_dir(cwd);
+    let mut pre_commit = user_git(cwd);
+    pre_commit.args(["hook", "run", "--ignore-missing", "pre-commit"]);
     run_checked(&mut pre_commit, "pre-commit")?;
 
     let mut message_file = NamedTempFile::new().context("failed to create commit message file")?;
@@ -136,20 +143,16 @@ fn run_hooks(cwd: &Path, message: &str) -> Result<String> {
         .flush()
         .context("failed to flush commit message file")?;
     let path = message_file.path();
-    let mut commit_msg = Command::new("git");
+    let mut commit_msg = user_git(cwd);
     commit_msg
         .args(["hook", "run", "--ignore-missing", "commit-msg", "--"])
-        .arg(path)
-        .current_dir(cwd);
+        .arg(path);
     run_checked(&mut commit_msg, "commit-msg")?;
 
-    let mut stripspace = Command::new("git");
-    stripspace
-        .arg("stripspace")
-        .current_dir(cwd)
-        .stdin(Stdio::from(
-            File::open(path).context("failed to open commit message file")?,
-        ));
+    let mut stripspace = user_git(cwd);
+    stripspace.arg("stripspace").stdin(Stdio::from(
+        File::open(path).context("failed to open commit message file")?,
+    ));
     let output = run_checked(&mut stripspace, "stripspace")?;
     let message =
         String::from_utf8(output.stdout).context("stripspace emitted a non-UTF-8 message")?;
@@ -158,7 +161,7 @@ fn run_hooks(cwd: &Path, message: &str) -> Result<String> {
 }
 
 fn staged_state(cwd: &Path) -> Result<(String, String)> {
-    let head = run_git_checked(&["rev-parse", "HEAD"], cwd)?;
+    let head = require_head_commit(&WorktreeGit::discovered(cwd))?;
     let tree = run_git_checked(&["write-tree"], cwd)?;
     Ok((head, tree))
 }
@@ -183,3 +186,28 @@ fn last_lines(bytes: &[u8]) -> String {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod native_gate_tests {
+    use super::*;
+
+    #[test]
+    fn cli_commit_refuses_before_hooks_in_both_modes() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let cwd = temp.path();
+        let work = crate::commands::common::resolve_state_dir(cwd);
+        crate::commands::stage::native_gate::tests::seed_active_worker(&work, "s1", "unit");
+        for mode in [RelayMode::Operator, RelayMode::Legacy] {
+            let error = commit_with(
+                "s1",
+                "test: change",
+                None,
+                mode,
+                cwd,
+                &mut StdSink::default(),
+            )
+            .unwrap_err();
+            assert!(format!("{error:#}").contains("running native Codex workers"));
+        }
+    }
+}

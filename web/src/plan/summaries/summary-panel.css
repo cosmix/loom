@@ -1,0 +1,182 @@
+/*
+ * The summary statistics (summary-panel.tsx): the token totals as two figure cards, the last
+ * rebuild row, the running rebuild's progress line, the compact rows of failures and claims.
+ * Unlayered `.sp-` rules: the panel is mounted in the settings dialog and `RebuildActivity` in
+ * the activity popover, both portaled out of `[data-loom-plan]`, so only the global tokens and
+ * design.css's :root scales apply. The token cards and the cost line are in token-figures.css.
+ */
+
+.sp-panel {
+  display: grid;
+  gap: var(--space-5);
+  min-width: 0;
+  max-width: 100%;
+  font-size: var(--type-ui);
+  line-height: var(--leading-ui);
+  overflow-wrap: anywhere;
+}
+
+.sp-section {
+  display: grid;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+/* A section reads as a labelled band: a quiet small-caps eyebrow over a hairline, so the content
+   under it is the weight of the section, not its title. */
+.sp-title {
+  margin: 0;
+  padding-bottom: var(--space-2);
+  border-bottom: 1px solid var(--hairline);
+  font-size: var(--type-fine);
+  font-variant-caps: all-small-caps;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  color: var(--muted-foreground);
+}
+
+.sp-muted {
+  margin: 0;
+  color: var(--muted-foreground);
+}
+
+.sp-alert {
+  margin: 0;
+  color: var(--destructive);
+}
+
+.sp-mono {
+  font-family: var(--font-mono);
+  font-size: var(--type-fine);
+}
+
+.sp-ids {
+  display: grid;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-family: var(--font-mono);
+  font-size: var(--type-fine);
+}
+
+.sp-idle {
+  margin: 0;
+  color: var(--muted-foreground);
+}
+
+/* ── The last rebuild ─────────────────────────────────────────────────────── */
+
+.sp-last {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.sp-last-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
+  align-items: baseline;
+  margin: 0;
+}
+
+.sp-last-state {
+  display: inline-flex;
+  gap: var(--space-2);
+  align-items: center;
+  font-size: var(--type-body);
+  font-weight: 500;
+  color: var(--foreground);
+}
+
+.sp-dot {
+  display: inline-block;
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+
+.sp-dot[data-state="ok"] {
+  background: var(--tone-completed);
+}
+
+.sp-dot[data-state="failed"] {
+  background: var(--tone-blocked);
+}
+
+/* ── The running rebuild ──────────────────────────────────────────────────── */
+
+.sp-running-head {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+.sp-pulse {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--foreground);
+  animation: sp-pulse 2s ease-in-out infinite;
+}
+
+@keyframes sp-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.sp-progress {
+  height: 3px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: var(--muted);
+}
+
+.sp-progress-fill {
+  display: block;
+  height: 100%;
+  background: var(--foreground);
+  transition: width 300ms ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sp-pulse {
+    animation: none;
+  }
+
+  .sp-progress-fill {
+    transition: none;
+  }
+}
+
+/* ── Compact rows: failed rebuilds, terminal claims ───────────────────────── */
+
+/* `.plan-list` (design.css) draws the hairlines and the row height; the row's own parts here. */
+.sp-rows > li.sp-row {
+  align-items: flex-start;
+  gap: var(--space-3);
+}
+
+.sp-row-main {
+  display: grid;
+  flex: 1 1 auto;
+  gap: 2px;
+  min-width: 0;
+}
+
+.sp-row-sub {
+  margin: 0;
+  color: var(--muted-foreground);
+}
+
+.sp-row-action {
+  flex: none;
+}

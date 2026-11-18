@@ -9,62 +9,23 @@ use crate::git::branch::branch_name_for_stage;
 use crate::git::cleanup::branch_exists_strict;
 use crate::git::merge::verify_merge_succeeded;
 use crate::models::stage::Stage;
+use crate::test_git::{git, TestRepo};
 use crate::verify::transitions::create_stage;
 use std::fs;
 use std::path::PathBuf;
-use std::process::Command;
 use tempfile::TempDir;
-
-/// Run git with ambient configuration neutralized, so a developer's global
-/// settings (hooks, gpg signing, default branch, aliases) cannot change what
-/// these tests exercise.
-fn isolated_git(root: &Path, args: &[&str]) -> std::process::Output {
-    Command::new("git")
-        .args(args)
-        .current_dir(root)
-        .env("GIT_CONFIG_GLOBAL", root.join(".loom-test-no-global"))
-        .env("GIT_CONFIG_SYSTEM", root.join(".loom-test-no-system"))
-        .env("GIT_CONFIG_NOSYSTEM", "1")
-        .output()
-        .unwrap()
-}
-
-/// Assert a setup command succeeded. Dropping the exit status here would hide
-/// setup failures and turn them into a confusing assertion further down.
-fn git_ok(root: &Path, args: &[&str]) {
-    let out = isolated_git(root, args);
-    assert!(
-        out.status.success(),
-        "git {args:?} failed: {}",
-        String::from_utf8_lossy(&out.stderr)
-    );
-}
-
-fn git_stdout(root: &Path, args: &[&str]) -> String {
-    let out = isolated_git(root, args);
-    assert!(
-        out.status.success(),
-        "git {args:?} failed: {}",
-        String::from_utf8_lossy(&out.stderr)
-    );
-    String::from_utf8_lossy(&out.stdout).trim().to_string()
-}
 
 /// A repository with one commit on `main` and a `.loom/work/` directory.
 fn init_repo() -> TempDir {
-    let temp = TempDir::new().unwrap();
+    let temp = TestRepo::builder()
+        .seed("file.txt", "one\n", "initial")
+        .create()
+        .into_temp_dir();
     let root = temp.path();
-
-    git_ok(root, &["init", "-b", "main"]);
-    git_ok(root, &["config", "user.email", "test@example.com"]);
-    git_ok(root, &["config", "user.name", "Loom Test"]);
-
-    fs::write(root.join("file.txt"), "one\n").unwrap();
-    git_ok(root, &["add", "file.txt"]);
-    git_ok(root, &["commit", "-m", "initial"]);
 
     // Present so `WorkDir::new` resolves here instead of searching upward.
     fs::create_dir_all(root.join(".loom").join("work")).unwrap();
+    crate::git::worktree::capture_main_identity(root, &root.join(".loom/work")).unwrap();
 
     temp
 }
@@ -76,7 +37,7 @@ pub(super) fn repo_with_stage_commit(stage_id: &str) -> (TempDir, String) {
     let root = temp.path();
     let path = worktree_of(root, stage_id);
     let branch = branch_name_for_stage(stage_id);
-    git_ok(
+    git(
         root,
         &[
             "worktree",
@@ -95,9 +56,9 @@ pub(super) fn repo_with_stage_commit(stage_id: &str) -> (TempDir, String) {
 fn commit_in_worktree(root: &Path, stage_id: &str, name: &str, body: &str) -> String {
     let worktree = worktree_of(root, stage_id);
     fs::write(worktree.join(name), body).unwrap();
-    git_ok(&worktree, &["add", name]);
-    git_ok(&worktree, &["commit", "-m", "stage work"]);
-    git_stdout(&worktree, &["rev-parse", "HEAD"])
+    git(&worktree, &["add", name]);
+    git(&worktree, &["commit", "-m", "stage work"]);
+    git(&worktree, &["rev-parse", "HEAD"])
 }
 
 pub(super) fn worktree_of(root: &Path, stage_id: &str) -> PathBuf {
@@ -106,7 +67,7 @@ pub(super) fn worktree_of(root: &Path, stage_id: &str) -> PathBuf {
 
 pub(super) fn merge_stage_branch(root: &Path, stage_id: &str) {
     let branch = branch_name_for_stage(stage_id);
-    git_ok(root, &["merge", "--no-ff", "-m", "merge stage", &branch]);
+    git(root, &["merge", "--no-ff", "-m", "merge stage", &branch]);
 }
 
 pub(super) fn write_stage_record(work_dir: &Path, stage_id: &str, completed_commit: &str) {
@@ -220,8 +181,8 @@ fn cleanup_refuses_when_the_branch_is_gone_but_the_worktree_holds_unmerged_work(
     let (temp, _head) = repo_with_stage_commit(stage_id);
     let root = temp.path();
     let worktree = worktree_of(root, stage_id);
-    git_ok(&worktree, &["checkout", "--detach"]);
-    git_ok(root, &["branch", "-D", &branch_name_for_stage(stage_id)]);
+    git(&worktree, &["checkout", "--detach"]);
+    git(root, &["branch", "-D", &branch_name_for_stage(stage_id)]);
     assert!(!branch_exists_strict(&branch_name_for_stage(stage_id), root).unwrap());
 
     let outcome = cleanup_from_outside(root, stage_id);

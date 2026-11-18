@@ -105,12 +105,18 @@ pub(super) fn run_prepared_with_timeout(
 ) -> Result<CriterionResult> {
     let start = Instant::now();
     let display = prepared.display().to_string();
-    let mut child = OwnedProcess::new(prepared.spawn_retaining_resources()?);
+    let spawned = prepared.spawn_retaining_resources()?;
+    let mut child = if prepared.has_group_anchor() {
+        OwnedProcess::child_only(spawned)
+    } else {
+        OwnedProcess::new(spawned)
+    };
     let output = OutputReaders::spawn(child.child());
     let wait_result = child
         .wait(timeout)
         .with_context(|| format!("Failed to wait for command: {display}"))?;
     let cleanup_deadline = child.retire();
+    prepared.retire_group();
     let (stdout, mut stderr) = output.collect(cleanup_deadline);
     let complete = stdout.complete && stderr.complete;
     if wait_result.is_none() {

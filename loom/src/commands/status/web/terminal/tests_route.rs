@@ -3,13 +3,13 @@
 use chrono::{DateTime, Duration, Utc};
 
 use crate::models::session::{Session, SessionBackendKind, SessionStatus};
+use crate::web_server::token;
 
 use super::protocol::{
     CLOSE_ENDED, CLOSE_NOT_YET, CLOSE_REFUSED, CLOSE_SERVER_STOPPING, CLOSE_TOO_LARGE,
     CLOSE_UNKNOWN_STAGE,
 };
 use super::resolve::{attach_args, resolve, Refusal, Target};
-use super::token;
 use super::upgrade::origin_matches_host;
 use super::Mode;
 
@@ -83,7 +83,7 @@ fn resolve_returns_the_target_for_a_live_tmux_session() {
     )
     .expect("live tmux target");
     assert_eq!(target.socket, "loom-session-a");
-    assert_eq!(target.tmux_session, "loom-stage");
+    assert_eq!(target.tmux_session, "loom-v2-stage-stage");
 }
 
 #[test]

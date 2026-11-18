@@ -9,20 +9,20 @@
 # capable-tier delegation. This hook:
 #   1. ADVISES, on the first spawn of a session, loading the
 #      loom-orchestration skill.
-#   2. DENIES an untyped spawn outright (live loom stage session only; warns
-#      everywhere else - see the ENFORCEMENT GATE below).
+#   2. DENIES an untyped spawn outright (live loom stage session only; else it
+#      warns and, with no model requested, rewrites the input to model sonnet),
+#      and a loom-codex-forwarder or codex:* spawn on the native Codex lane.
 #   3. FILLS IN the model from the agent's own definition (or a built-in
 #      table) when a typed spawn omits `model`, so every spawn ends up with an
 #      explicit, auditable model.
 #   4. WARNS (never denies) when an explicit `model` escalates above the
 #      agent's defined tier.
 #   5. PREPENDS _subagent-preamble.txt to a typed spawn's prompt that lacks
-#      it, in every session (except loom-codex-forwarder and codex:* spawns);
-#      inside a stage (the GATE_PASSED gate) also APPENDS an optional worker
-#      brief, except to loom-codex-forwarder and codex:* spawns.
+#      it, in every session; inside a stage (the GATE_PASSED gate) also APPENDS
+#      an optional worker brief (neither for loom-codex-forwarder or codex:*);
+#      a loom-code-reviewer spawn also gets the reviewer brief appended last.
 #   6. RECORDS every typed spawn to $LOOM_WORK_DIR/subagents/<stage-id>/spawns.jsonl
-#      (the state directory - .loom/work, or the legacy .work) so
-#      `loom subagents` can report on model usage across a stage.
+#      (.loom/work, or the legacy .work) for `loom subagents` model reports.
 #
 # Input: JSON from stdin - {"tool_name": "Task"|"Agent", "tool_input": {...},
 #        "agent_id": ..., "agent_type": ..., "session_id": ...}
@@ -46,6 +46,7 @@ PATH="${LOOM_HOOK_PATH:-$PATH}"
 set -euo pipefail
 
 source "$(dirname "$0")/_common.sh"
+source "$(dirname "$0")/_spawn_policy.sh"
 source "$(dirname "$0")/_read_discipline.sh"
 loom_warn_no_jq "spawn-guard.sh"
 
@@ -99,7 +100,6 @@ hook_context() {
 }
 
 # --- THE ENFORCEMENT GATE ---------------------------------------------------
-#
 # This hook runs in every Claude Code session, loom or not, and LOOM_STAGE_ID
 # leaks into plain sessions from the shell a prior loom run exported it into
 # (doc/loom/knowledge/mistakes/session-identity-env.md). Gated on it alone, an
@@ -112,106 +112,12 @@ if [[ -n "${LOOM_STAGE_ID:-}" && -n "${LOOM_MAIN_AGENT_PID:-}" ]] && is_ancestor
 	GATE_PASSED=1
 fi
 
-# --- Model resolution helpers ------------------------------------------------
-
-# read_frontmatter_model <path> - Echo the `model:` value from <path>'s YAML
-# frontmatter (between the first `---` line and the next `---` line). Returns
-# 1 when the file is missing/unreadable, has no frontmatter, or no `model:`
-# key appears inside it.
-read_frontmatter_model() {
-	local file="$1"
-	[[ -n "$file" && -f "$file" && -r "$file" ]] || return 1
-
-	# Capped: this bash loop is on every spawn's critical path, and frontmatter
-	# not closed within the cap counts as no frontmatter at all - unresolvable.
-	local max_lines=100
-	local line first=1 in_fm=0 model_val="" count=0
-	while IFS= read -r line || [[ -n "$line" ]]; do
-		count=$((count + 1))
-		if [[ $first -eq 1 ]]; then
-			first=0
-			[[ "$line" == "---" ]] || return 1
-			in_fm=1
-			continue
-		fi
-		if [[ $in_fm -eq 1 ]]; then
-			[[ "$line" == "---" ]] && break
-			if [[ "$line" =~ ^model:[[:space:]]*(.*)$ ]]; then
-				model_val="${BASH_REMATCH[1]}"
-				model_val="${model_val%\"}"
-				model_val="${model_val#\"}"
-				model_val="${model_val%\'}"
-				model_val="${model_val#\'}"
-				model_val="${model_val%$'\r'}"
-			fi
-		fi
-		((count >= max_lines)) && return 1
-	done <"$file"
-
-	[[ -n "$model_val" ]] || return 1
-	printf '%s' "$model_val"
-}
-
-# resolve_defined_tier <agent-type> - Resolve the model tier from the agent's
-# definition file (<cwd>/.claude/agents/<type>.md, then ~/.claude/agents/),
-# else a built-in table. On success sets RESOLVED_TIER (the model) and
-# RESOLVE_SOURCE ("definition" or "table") and returns 0; on failure both are
-# "" and it returns 1, and callers must not warn: the tier cannot be known.
-# Globals, not an echo: callers need both values, and a `$(...)` call runs in
-# a subshell whose globals never reach the caller - so never wrap it in one.
-resolve_defined_tier() {
-	local agent_type="$1" val
-	RESOLVED_TIER=""
-	RESOLVE_SOURCE=""
-
-	# agent_type is caller-controlled and becomes a path component below, so
-	# an unsafe segment fails resolution BEFORE interpolation (the guard
-	# LOOM_STAGE_ID gets in record_spawn) - never a deny, never a substitute.
-	case "$agent_type" in
-	*[!A-Za-z0-9._-]* | "")
-		loom_debug "spawn-guard: agent_type is not a safe path component, skipping definition lookup: $agent_type"
-		return 1
-		;;
-	esac
-
-	if val=$(read_frontmatter_model "$(pwd)/.claude/agents/${agent_type}.md" 2>/dev/null) && [[ -n "$val" ]]; then
-		RESOLVED_TIER="$val"
-		RESOLVE_SOURCE="definition"
-		return 0
-	fi
-	if val=$(read_frontmatter_model "${HOME:-}/.claude/agents/${agent_type}.md" 2>/dev/null) && [[ -n "$val" ]]; then
-		RESOLVED_TIER="$val"
-		RESOLVE_SOURCE="definition"
-		return 0
-	fi
-
-	case "$agent_type" in
-	Explore | claude-code-guide)
-		RESOLVED_TIER="sonnet"
-		RESOLVE_SOURCE="table"
-		return 0
-		;;
-	esac
-
-	return 1
-}
-
-# tier_rank <model> - Echo the rank on haiku < sonnet < opus < fable, or -1 for
-# an unrecognized string (a raw model ID): "cannot compare", not lowest tier.
-tier_rank() {
-	case "$1" in
-	haiku) echo 0 ;;
-	sonnet) echo 1 ;;
-	opus) echo 2 ;;
-	fable) echo 3 ;;
-	*) echo -1 ;;
-	esac
-}
+if loom_native_lane_spawn "$AGENT_TYPE_REQ" "$GATE_PASSED"; then exit 2; fi # header item 2
 
 # --- 2. DENY: UNTYPED SPAWN --------------------------------------------------
-# Follows the ENFORCEMENT GATE only (deny when it passes, else warn-and-allow).
+# ENFORCEMENT GATE passes: deny; else warn, and with no model requested rewrite to sonnet.
 # With an explicit `model` nothing is inherited; the message says so.
-TYPED_AGENTS='loom-software-engineer (sonnet, default) / loom-senior-software-engineer (opus) / loom-code-reviewer / loom-advisor (fable, read-only) / loom-codex-forwarder / Explore'
+TYPED_AGENTS='loom-software-engineer (sonnet, default) / loom-senior-software-engineer (opus) / loom-software-developer (haiku) / loom-code-reviewer / loom-advisor (fable, read-only) / loom-codex-forwarder / Explore'
 if [[ -z "$MODEL_REQ" ]]; then
 	UNTYPED_MSG="Untyped spawn inherits the model of the spawning session. Use ${TYPED_AGENTS}. Pass \`model\` only to escalate, and record why."
 else
@@ -229,8 +135,9 @@ case "$AGENT_TYPE_REQ" in
 		} >&2
 		exit 2
 	fi
-	jq -nc --arg ctx "$(hook_context "$UNTYPED_MSG")" \
-		'{hookSpecificOutput: {hookEventName: "PreToolUse", additionalContext: $ctx}}'
+	[[ -n "$MODEL_REQ" ]] || UNTYPED_MSG="Untyped spawn outside a loom stage: loom set model sonnet so it does not inherit the spawning session's model. Pass \`model\` to choose another tier, or spawn by agent type: ${TYPED_AGENTS}."
+	printf '%s' "$TOOL_INPUT" | jq -c --arg ctx "$(hook_context "$UNTYPED_MSG")" --arg model "$MODEL_REQ" \
+		'{hookSpecificOutput: ({hookEventName: "PreToolUse", additionalContext: $ctx} + (if $model == "" then {permissionDecision: "allow", updatedInput: ((. // {}) + {model: "sonnet"})} else {} end))}'
 	exit 0
 	;;
 esac
@@ -242,6 +149,7 @@ NEEDS_REWRITE=0
 WARN_ESCALATION=""
 RESOLVED_TIER=""
 RESOLVE_SOURCE=""
+WARN_REVIEWER=""
 
 if [[ -z "$MODEL_REQ" ]]; then
 	if resolve_defined_tier "$AGENT_TYPE_REQ"; then
@@ -263,6 +171,21 @@ else
 			WARN_ESCALATION="explicit model '${MODEL_REQ}' on ${AGENT_TYPE_REQ} (defined tier: ${DEFINED_TIER}) is an escalation above the agent's tier - Rule 7 point 4 requires evidence; record it with loom memory decision"
 		fi
 	fi
+fi
+
+# --- 4b. REVIEWER MODEL FROM CONFIG ------------------------------------------
+# loom-code-reviewer runs the operator-configured model and effort over any
+# caller `model` (loom_reviewer_model_override, _spawn_policy.sh); a failure keeps the
+# frontmatter behavior above and sets WARN_REVIEWER.
+EFFORT=""
+if [[ "$AGENT_TYPE_REQ" == loom-code-reviewer ]]; then
+	LOOM_SPAWN_MODEL="$MODEL" LOOM_SPAWN_EFFORT="$EFFORT"
+	LOOM_SPAWN_MODEL_SOURCE="$MODEL_SOURCE" LOOM_SPAWN_NEEDS_REWRITE="$NEEDS_REWRITE"
+	LOOM_SPAWN_WARN_ESCALATION="$WARN_ESCALATION" LOOM_SPAWN_WARN_REVIEWER="$WARN_REVIEWER"
+	loom_reviewer_model_override "$MODEL_REQ"
+	MODEL="$LOOM_SPAWN_MODEL" EFFORT="$LOOM_SPAWN_EFFORT"
+	MODEL_SOURCE="$LOOM_SPAWN_MODEL_SOURCE" NEEDS_REWRITE="$LOOM_SPAWN_NEEDS_REWRITE"
+	WARN_ESCALATION="$LOOM_SPAWN_WARN_ESCALATION" WARN_REVIEWER="$LOOM_SPAWN_WARN_REVIEWER"
 fi
 
 # --- 5. PREPEND THE SUBAGENT PREAMBLE ---------------------------------------
@@ -291,37 +214,20 @@ loom-codex-forwarder | codex:*) ;;
 esac
 
 WARN_TEXT="$WARN_ESCALATION"
+if [[ -n "$WARN_REVIEWER" ]]; then WARN_TEXT="${WARN_TEXT:+${WARN_TEXT} | }${WARN_REVIEWER}"; fi
 if [[ -n "$WARN_PREAMBLE" ]]; then WARN_TEXT="${WARN_TEXT:+${WARN_TEXT} | }${WARN_PREAMBLE}"; fi
 
-# A scoped brief is optional: a missing command, timeout, bad envelope or empty selection changes nothing.
-# Codex-bound types get none: Codex units read loom's Codex UserPromptSubmit brief (fs/permissions/codex_hooks.rs).
-# The prompt is read from TOOL_INPUT so its trailing newlines survive the merge.
-WORKER_BRIEF_JSON=""
-if [[ $GATE_PASSED -eq 1 && "$AGENT_TYPE_REQ" != loom-codex-forwarder && "$AGENT_TYPE_REQ" != codex:* ]] && command -v "${LOOM_BIN:-loom}" &>/dev/null &&
-	printf '%s' "$TOOL_INPUT" | jq -e 'type == "object" and (.prompt | type == "string")' >/dev/null 2>&1; then
-	if ! WORKER_BRIEF_ENVELOPE=$(printf '%s' "$INPUT_JSON" | LOOM_HOOK_CONTEXT=1 loom_run_bounded 5 "${LOOM_BIN:-loom}" hook worker-brief 2>/dev/null) || [[ -z "$WORKER_BRIEF_ENVELOPE" ]]; then
-		loom_debug "spawn-guard: worker-brief timeout, nonzero exit or empty output"
-	else
-		if [[ "$WORKER_BRIEF_ENVELOPE" != *$'\n'* ]]; then
-			WORKER_BRIEF_JSON=$(printf '%s' "$WORKER_BRIEF_ENVELOPE" | jq -ec '
-				select(type == "object" and (keys | sort) == ["brief", "nonce"])
-				| .nonce as $nonce
-				| select(($nonce | type) == "string" and ($nonce | test("^[0-9a-f]{32}$")))
-				| select((.brief | type) == "string" and (.brief | length) > 0)
-				| select(([.brief | split("\n")[] | select(. == ("<!-- loom-worker-brief nonce=" + $nonce + " -->"))] | length) == 1)
-				| .brief' 2>/dev/null || true)
-		fi
-		[[ -n "$WORKER_BRIEF_JSON" ]] || loom_debug "spawn-guard: worker-brief invalid envelope"
-	fi
-fi
-
-if [[ -n "$WORKER_BRIEF_JSON" ]]; then
-	UPDATED_INPUT=$(printf '%s' "$UPDATED_INPUT" | jq -c --argjson brief "$WORKER_BRIEF_JSON" \
-		'. + {prompt: (.prompt + "\n\n" + $brief)}')
-	PROMPT_REWRITTEN=1
-fi
+# Scoped briefs are optional (_spawn_policy.sh): any failure changes nothing.
+# The worker brief follows the prompt; the reviewer brief (loom-code-reviewer only) comes last.
+loom_worker_brief "$INPUT_JSON" "$TOOL_INPUT" "$GATE_PASSED" "$AGENT_TYPE_REQ"
+loom_append_brief "$LOOM_SPAWN_WORKER_BRIEF_JSON"
+loom_reviewer_brief "$TOOL_INPUT" "$GATE_PASSED" "$AGENT_TYPE_REQ"
+loom_append_brief "$LOOM_SPAWN_REVIEWER_BRIEF_JSON"
 if [[ $NEEDS_REWRITE -eq 1 ]]; then
 	UPDATED_INPUT=$(printf '%s' "$UPDATED_INPUT" | jq -c --arg model "$MODEL" '. + {model: $model}')
+	if [[ -n "$EFFORT" ]]; then
+		UPDATED_INPUT=$(printf '%s' "$UPDATED_INPUT" | jq -c --arg effort "$EFFORT" '. + {effort: $effort}')
+	fi
 fi
 
 # emit_result - Print ONE hookSpecificOutput object with the whole rewrite and
@@ -370,6 +276,13 @@ record_spawn() {
 		return 0
 	fi
 
+	# The effort the subagent runs at: the reviewer's configured effort (which
+	# replaces the caller's in the rewritten input), else the caller's, else the
+	# agent definition's default; empty when none is known.
+	local effort="${EFFORT:-}"
+	[[ -n "$effort" ]] || effort=$(printf '%s' "$TOOL_INPUT" | jq -r '.effort | strings' 2>/dev/null || true)
+	[[ -n "$effort" ]] || effort=$(resolve_defined_effort "$AGENT_TYPE_REQ" || true)
+
 	local ts line
 	ts=$(date -u +"%Y-%m-%dT%H:%M:%S.000Z")
 	line=$(jq -nc \
@@ -380,8 +293,9 @@ record_spawn() {
 		--arg agent_type "$AGENT_TYPE_REQ" \
 		--arg model "${MODEL:-}" \
 		--arg model_source "${MODEL_SOURCE:-}" \
+		--arg effort "$effort" \
 		--arg description "${DESCRIPTION:-}" \
-		'{ts: $ts, stage_id: $stage_id, session_id: $session_id, caller: $caller, agent_type: $agent_type, model: $model, model_source: $model_source, description: $description}' \
+		'{ts: $ts, stage_id: $stage_id, session_id: $session_id, caller: $caller, agent_type: $agent_type, model: $model, model_source: $model_source, effort: $effort, description: $description}' \
 		2>/dev/null || true)
 
 	if [[ -n "$line" ]]; then

@@ -306,8 +306,8 @@ fn generated_signal(
 #[test]
 fn test_signal_codex_implementers_section_gated() {
     let temp_dir = TempDir::new().unwrap();
-    let work_dir = temp_dir.path().join(".loom").join("work");
-    fs::create_dir_all(&work_dir).unwrap();
+    // The forwarder doctrine below is the legacy lane's; native is the default.
+    let work_dir = crate::orchestrator::signals::tests_codex_lane::legacy_state_dir(&temp_dir);
 
     let content = generated_signal(&work_dir, None, None);
     assert!(!content.contains("## Codex Implementers"));
@@ -358,7 +358,7 @@ fn test_signal_codex_implementers_section_gated() {
              run; no hook covers codex's own shell commands"
         );
 
-        #[rustfmt::skip] let needles = ["600000", "540000", "timed_out", "6 when a bound worker is hung"];
+        #[rustfmt::skip] let needles = ["1560000", "1500000", "timed_out", "6 when a bound worker is hung"];
         assert!(
             needles.iter().all(|needle| content.contains(needle)),
             "the codex block must tell the orchestrator to state an explicit Bash \
@@ -382,7 +382,7 @@ fn test_signal_codex_implementers_section_gated() {
         );
     }
 
-    // Mixed stage: codex is licensed but NOT preferred. The doctrine must still
+    // Mixed stage: codex is licensed but NOT listed first. The doctrine must still
     // appear — this is the case an `implementer == Codex` equality gate silently
     // dropped, leaving a stage that can spawn codex agents with none of the
     // rules for them — and it must tell the orchestrator to choose per subagent
@@ -423,12 +423,12 @@ fn test_signal_codex_implementers_section_gated() {
 
 #[test]
 fn test_codex_implementers_section_unavailable_falls_back_to_sonnet() {
-    // Unit-tests the `codex_available: bool` branch directly rather than
-    // through the full signal pipeline, whose call sites resolve availability
-    // from the machine's actual codex install - keeping this test independent
-    // of whether codex happens to be installed where it runs.
+    // Unit-tests the `CodexLane::Unavailable` branch directly rather than through
+    // the signal pipeline, whose call sites resolve the lane from the machine's
+    // codex install - keeping this test independent of where it runs.
     let implementers = Implementers::new(vec![Implementer::Codex]);
-    let content = format_codex_implementers_section(&implementers, false);
+    let unavailable = crate::codex::CodexLane::Unavailable(String::new());
+    let content = format_codex_implementers_section(&implementers, &unavailable);
 
     assert!(content.contains("## Codex Implementers"));
     assert!(
@@ -585,7 +585,7 @@ fn test_recovery_signal_carries_codex_implementers_section() {
     // The formatter is pure: availability arrives via EmbeddedContext, so this
     // test pins the full-doctrine branch regardless of the machine's install.
     let embedded = EmbeddedContext {
-        codex_available: true,
+        codex_lane: crate::codex::CodexLane::Legacy,
         ..EmbeddedContext::default()
     };
 
@@ -611,7 +611,7 @@ fn test_recovery_signal_carries_codex_implementers_section() {
     assert!(signal.contains(CODEX_IMPLEMENTER_MODEL_LUNA));
 
     // A MIXED stage recovers with the doctrine too. The gate is "codex is
-    // licensed", not "codex is preferred" — a stage that reaches for sonnet
+    // licensed", not "codex is first-listed" — a stage that lists claude
     // first but may still spawn one codex agent needs the blast-radius rules
     // just as much, and this is the case a `== Codex` equality check dropped.
     let mut mixed_stage = create_test_stage();
@@ -620,7 +620,7 @@ fn test_recovery_signal_carries_codex_implementers_section() {
     assert!(
         signal.contains("## Codex Implementers"),
         "a recovered MIXED stage must receive the codex doctrine even though \
-         codex is not its preferred lane"
+         codex is not listed first"
     );
     assert!(
         signal.contains(".loom/work/") && signal.contains("git status --short"),

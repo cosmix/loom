@@ -80,24 +80,33 @@ pub fn route_complete_for_conflicts(
 fn worktree_merge_route(stage: &Stage, repo_root: &Path) -> Option<CompleteConflictRoute> {
     // Rule 2: Worktree active merge — refuse with location, never spawn.
     let worktree = repo_root.join(".worktrees").join(&stage.id);
-    if worktree.exists() {
-        if let Ok(Some(merge)) = detect_in_progress_merge_at_worktree(&worktree) {
-            let location = match &merge.location {
-                MergeLocation::Worktree { worktree_path, .. } => {
-                    worktree_path.display().to_string()
-                }
-                MergeLocation::MainRepo { repo_path, .. } => repo_path.display().to_string(),
-            };
+    if !worktree.exists() {
+        return None;
+    }
+    let merge = match detect_in_progress_merge_at_worktree(&worktree) {
+        Ok(merge) => merge?,
+        // An unregistered or forged worktree: whether it holds a merge cannot
+        // be read, and completing over it would land what it could not vouch for.
+        Err(error) => {
             return Some(CompleteConflictRoute::Refuse {
                 message: format!(
-                    "Worktree `{location}` has an active merge. Run `cd {location} && \
-                     git merge --abort` (or commit) before completing the stage."
+                    "Cannot tell whether worktree `{}` has an active merge: {error:#}. Restore \
+                     it (git worktree repair) before completing the stage.",
+                    worktree.display()
                 ),
             });
         }
-    }
-
-    None
+    };
+    let location = match &merge.location {
+        MergeLocation::Worktree { worktree_path, .. } => worktree_path.display().to_string(),
+        MergeLocation::MainRepo { repo_path, .. } => repo_path.display().to_string(),
+    };
+    Some(CompleteConflictRoute::Refuse {
+        message: format!(
+            "Worktree `{location}` has an active merge. Run `cd {location} && git merge --abort` \
+             (or commit) before completing the stage."
+        ),
+    })
 }
 
 fn foreign_merge_route(
@@ -190,6 +199,9 @@ fn status_route(
     if !conflict_status && merge.is_none() {
         return Ok(CompleteConflictRoute::Proceed);
     }
+    if let Some(refusal) = final_stage_refusal(stage) {
+        return Ok(refusal);
+    }
     if conflict_status && merge.is_none() && resolved_worktree_ready(stage, repo_root) {
         return Ok(CompleteConflictRoute::Proceed);
     }
@@ -214,6 +226,21 @@ fn status_route(
             target_branch,
         })
     }
+}
+
+/// A final stage (`Stage::is_final_merged`) is never reopened for a merge in
+/// progress attributed to it; the operator commits or aborts that merge.
+fn final_stage_refusal(stage: &Stage) -> Option<CompleteConflictRoute> {
+    stage
+        .is_final_merged()
+        .then(|| CompleteConflictRoute::Refuse {
+            message: format!(
+                "Stage '{}' is completed and merged, which is final: loom does not reopen it \
+                 for the merge in progress in the main checkout. Commit or abort that merge \
+                 yourself.",
+                stage.id
+            ),
+        })
 }
 
 // Resolution changes the certified content: run every completion gate again

@@ -2,7 +2,7 @@
 
 use std::time::Duration;
 
-use super::workspace;
+use super::{parse_full, workspace};
 use crate::commands::status::web::broadcast;
 use crate::commands::status::web::model::WebSnapshot;
 use crate::fs::work_dir::WorkDir;
@@ -19,9 +19,10 @@ fn republish_with_notice_reuses_the_latest_frame() {
     broadcast::poll_files_once(&broadcaster, &work_dir, work_dir.root(), None, false)
         .expect("first file poll");
     let receiver = broadcaster.subscribe();
-    receiver
+    let primer = receiver
         .recv_timeout(Duration::from_secs(1))
         .expect("replayed latest frame");
+    assert_eq!(parse_full(&primer).notice, None);
 
     assert!(broadcast::republish_with_notice(
         &broadcaster,
@@ -31,6 +32,11 @@ fn republish_with_notice_reuses_the_latest_frame() {
     let frame = receiver
         .recv_timeout(Duration::from_secs(1))
         .expect("frame carrying the failure");
-    let snapshot: WebSnapshot = serde_json::from_str(&frame).expect("snapshot JSON");
-    assert_eq!(snapshot.notice.as_deref(), Some("Status collection failed"));
+    let message: serde_json::Value = serde_json::from_str(&frame).expect("frame JSON");
+    assert_eq!(message["t"], "state");
+    assert_eq!(message["notice"], "Status collection failed");
+    // `/api/status` serves the same notice.
+    let bare: WebSnapshot =
+        serde_json::from_str(&broadcaster.latest().expect("latest")).expect("snapshot JSON");
+    assert_eq!(bare.notice.as_deref(), Some("Status collection failed"));
 }

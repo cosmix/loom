@@ -52,7 +52,7 @@ function terminal(status) {
 
 function buildJob() {
   const status = process.env.FAKE_CODEX_STATUS ?? "running";
-  const model = option("--model", "gpt-6-sol");
+  const model = option("--model", "gpt-6.2-sol");
   const effort = option("--effort", "xhigh");
   const prompt = argv[1] ?? "fixture prompt";
   const isTerminal = terminal(status);
@@ -107,7 +107,7 @@ if (command === "task") {
   const id = argv[1];
   const job = readJob(id);
   const waitTimedOut = job.status === "queued" || job.status === "running";
-  console.log(JSON.stringify({ workspaceRoot, job, waitTimedOut, timeoutMs: 540000 }));
+  console.log(JSON.stringify({ workspaceRoot, job, waitTimedOut, timeoutMs: 1500000 }));
 } else if (command === "result") {
   const id = argv[1];
   const job = readJob(id);

@@ -1,6 +1,6 @@
 # Verification V2 Gates
 
-> v2 gates, order, owners
+> Gates
 
 ## Verification v2 Gates: Order, Owners, and What Each Gate Reads
 
@@ -8,23 +8,9 @@ Every v2 gate reads `stage.plan_version == 2` (a `Stage` field, default 1, set t
 `PlanIdentity` in `Stage::from_definition`); none re-reads the plan file for the version. A v1 stage runs
 none of them.
 
-**Completion order** (`commands/stage/complete_verification.rs::run`): goal-backward checks
-(`run_goal_checks`), then `complete_verification_v2::run_v2` for v2 stages, then `after_stage`, the unwired
-and duplicate checks, the aggregated check (integration-verify only). Inside `run_v2`
-(`complete_verification_v2.rs`): contract check (standard stages with contracts), test integrity (standard and
-integration-verify), impact-selected tests (standard), reachable re-verification (integration-verify), and
-the review gate last. A host completion job (`checks.daemon_gates`, the child run in `host_verify/child_complete.rs`)
-skips test integrity and the review gate in `run_v2`; the daemon runs both when it applies the job
-(`daemon/server/observer.rs::check_completion_gates`, called from `host_verify/apply.rs::check_outside_lock`)
-before it completes the stage. See "Review gate and harvest" below. `complete_verification.rs` sits at 399 lines, so new v2 calls go in `run_v2`.
-`complete_verification_v2` is a `#[path]` child of `complete_verification.rs`, so its tests run as
-`commands::stage::complete::complete_verification::complete_verification_v2::tests::*`; a filter
-`commands::stage::complete_verification_v2` selects zero tests.
+**Completion order** (`verify/completion/mod.rs::run_checks`): goal-backward checks, then `verify/completion/complete_verification_v2.rs::run_v2` for v2 stages, then `after_stage`, unwired and duplicate checks, and the aggregated integration check. The command module `commands/stage/complete_verification.rs` prints operator guidance. The host child calls the same service; daemon gates defer integrity and review checks until the daemon applies the result. The preserved test file `commands/stage/complete_verification_v2_tests.rs` is loaded through its command wrapper and tests the shared v2 service.
 
-**No gate has a verifier subagent.** Integration-verify: the orchestrator runs `loom check integration-verify`
-once, and that check carries the complete suite; reviewers run only targeted checks (`INTEGRATION_VERIFY_OVERRIDE`,
-`orchestrator/signals/cache.rs::INTEGRATION_VERIFY_OVERRIDE`). Its acceptance criteria are the full gate, and `loom stage complete` runs
-every one of them again. Beyond that check, the orchestrator runs only what completion does not: functional
+**No gate has a verifier subagent.** Integration-verify: the orchestrator and reviewers may run the full suite through `loom check integration-verify [--criterion <n>]` (`orchestrator/signals/cache.rs::INTEGRATION_VERIFY_OVERRIDE`). A covered request joins the live host job, an uncovered check from the same session waits behind it in the pending slot, completed passes are reused from the cache, and callers wait for the result. Its acceptance criteria are the full gate, and `loom stage complete` can reuse valid cached passes. Beyond that check, the orchestrator runs only what completion does not: functional
 checks, markdownlint, flake-check, Cargo.lock and ledger diffs, and clippy, fmt and maintainability checks first.
 Standard stage: the orchestrator runs `loom check <stage-id>` once (`ORCHESTRATOR_GATE`,
 `orchestrator/signals/cache/blocks.rs::ORCHESTRATOR_GATE`), a fix round runs `loom check <stage-id> --criterion <n>`, and the
@@ -65,13 +51,20 @@ under `working_dir` and diffs against HEAD.
 ## Verification v2 Gates, Continued: Integrity, Change Fingerprint, Review Gate
 
 **Test integrity** (`verify/integrity/`): events `TI-decl-<lang>`, `TI-assert-<lang>`, `TI-edit-<path>`,
-`TI-ratchet-<path>`. `TI-edit` matches removed assertion lines against added lines as a multiset, so deleting
-one of two identical assertions is caught and a pure move cancels. Counts read unchanged base files from the
+`TI-ratchet-<path>`. `TI-edit` compares assertion STATEMENTS, not lines (below). Counts read unchanged base files from the
 worktree and only changed ones through `git cat-file`. `ratchet_files` entries are exact checkout-root-relative
-paths (no glob) and any change, tightening included, raises `TI-ratchet`. The gate reads
+paths (no glob); `TI-ratchet` fires only when the ledger loosens (below). The gate reads
 `reviews/<stage>/integrity.json` and accepts an event no worse than accepted; acceptance is an upsert by
 event id because `gate::shortfall` reads the FIRST record per event. The evidence snapshot filed with the
 dispute is what an accept records, not a re-scan.
+
+**Statements, not lines** (`verify/integrity/statements.rs`, `edits.rs::statements_of`). An assertion is the statement that starts at an assertion-regex match (`testrun/languages.rs`) and ends at the first `;` or line break at bracket depth zero outside string literals, or at a closing bracket that would take the depth below zero; a trailing backslash continues it, a single-quoted string ends at a line break and line comments are dropped. For Kotlin and Scala, whose infix matchers such as `x shouldBe 1` match mid-line, the statement starts at the first non-blank character of the match's line, or at the end of an earlier statement on that line when that is later, so the subject stays in it. `edits::normalize` still normalizes each statement. A file's lost assertions are its base statements less its head statements, as multisets (`edits::unmatched`), so deleting one of two identical assertions is caught, while a reflow, a multi-line assert and a rewrap inside a hunk that also holds a real edit raise nothing; a changed or deleted statement still raises `TI-edit`. The count events `TI-decl` and `TI-assert` are unchanged. A statement extractor reads a span as one statement across later tests when a bracket stays open, so a test added in the MIDDLE of such a span changes that statement: add new tests in a new child test file declared at the top of the test module, or at a point no extracted statement spans.
+
+**Moved tests cancel across files** (`verify/integrity/moves.rs`, `moves_collect.rs`). A lost statement cancels against an added statement in another changed or new test file only when both sit in a function node the source-graph extractor (`context::extract`) finds in both files with the same name and an identical identity (`moves.rs::identity`, cached per function node): the normalized text of its decoration prefix, the line-head text before the span on its first line (which carries wrappers such as `it.skip(`), and its body. The prefix is the contiguous lines directly above the span that are decorations: trimmed text starting `#[`, `#![`, `@`, or a bare `[Attr]` line; walking upward, a line that closes a bracket opened earlier pulls in every line up to the one that opens it, so a multi-line `#[cfg_attr(..)]` or a black-formatted `@pytest.mark.parametrize(..)` is wholly in it, and blank and comment lines between attributes and the function do not end it (stricter than the original brief, which ended the prefix there; kept for Rust attributes separated by comments). A test that gains `#[ignore]`, `@pytest.mark.skip`, `it.skip`, `[Ignore]` or a body-level skip therefore does not cancel, and an anonymous callback has no named node and never cancels. A destination file cancels only when the runner collects it at head, whether or not it existed at base (`Collector::collected`): in Rust when `verify/contracts/collection/rust::chain_problems` finds a plain `mod` chain reaching it, or a file that declares it with `#[path = "<rel>"]` (`collection/rust/path_mods.rs`, a tree-sitter parse, so a declaration in a comment, string, macro body or inline `mod` block does not count); elsewhere when the file name matches the runner's default collection (pytest's `test_` prefix or `_test` suffix, vitest and jest `.test.` or `.spec.` infixes, other languages the profile's test globs). Collection reads the head tree through a `FileSource` built from the scan's pinned repository, never the process's current directory. Languages without a grammar (Kotlin, Scala, Swift, Elixir, Dart), parse errors and oversized files get no cross-file cancellation. Cancellation is recomputed from the base on every scan and never stored.
+
+**Ratchet direction** (`verify/integrity/ratchet_diff.rs::ratchet_loosens`). A ratchet file parses only when every non-comment, non-blank line ends in an unsigned integer: the rest of the line, whitespace collapsed, is the key and the integer a ceiling. A new key or a higher value loosens and raises `TI-ratchet`; a removed key or a lower value does not. One line without an integer last token makes the file unparsable, and an unparsable, new or deleted ratchet file raises on any change (so `check-baseline.txt` still raises on every change). A ledger whose numbers are floors (coverage) must not end its lines in a bare integer.
+
+**The accept pin covers the partners** (`edits.rs::pinned_sha256`, `gate.rs`). An accepted edit or ratchet event stays pinned: to the file's sha256 for an event with no cross-file cancellation, and to one digest of the file's sha256 and every cancelling partner's path and sha256 otherwise, so a later edit of a partner reopens the event. A deleted partner enters the digest with the literal `deleted` as its own sha256. The recorded reason is in [planner-ui-repair](../mistakes/planner-ui-repair.md).
 
 Impact-selected tests have their own section below.
 
@@ -92,7 +85,7 @@ file). Every other outcome is the typed `DaemonUnreachable` error, and the calle
 than falling back to its own view. `loom stage review status`/`review integrity` may fall back to a locally
 computed value labelled as such, for display only, never for a value recorded or compared.
 
-A stage session cannot reach the daemon socket (its sandbox denies `AF_UNIX`, or, under `allow_all_unix_sockets`, masks the daemon socket, which `daemon/rpc.rs` classifies the same way), so a session's `loom stage complete` relays the completion and computes neither gate itself. The completion job's application runs both gates at the daemon (`daemon/server/observer.rs::check_completion_gates`) before it completes the stage, outside the session lock since both gates only read.
+A stage session cannot reach the daemon socket (its sandbox denies `AF_UNIX`, or, under `allow_all_unix_sockets`, masks the daemon socket, which `daemon/rpc.rs` classifies the same way), so a session's `loom stage complete` relays the completion and computes neither gate itself. The daemon runs both gates (`daemon/server/observer.rs::check_completion_gates`, wrapped by `host_verify/gates.rs::refusal`) twice: before it queues a completion job (`orchestrator/core/inbox_drain/complete.rs`, and the verdict sweep, see [adjudication-lifecycle](adjudication-lifecycle.md#retirement-and-fresh-session-boundary)), so a stage a gate refuses spends no job of minutes, and again when it applies the finished job, because the tree or the review can change while the job runs. Both give the same `completion gates: <error>` text; the early refusal reaches the session in full, while a post-job rejection checkpoint shows its first line. The gates run outside the session lock since both only read.
 
 **Review gate and harvest** (`verify/review/`, `commands/hook/review_harvest.rs`,
 `commands/hook/review_transcript.rs`). The `loom-code-reviewer` ends its report with a fenced `loom-review`
@@ -109,26 +102,38 @@ and every finding and carried finding is closed (listed `resolved` by a later ro
 `defer` in `rulings.json`; `uphold` does not close). A malformed round newer than a matching well-formed one
 does not fail the gate; it is quoted only when the gate fails for another reason. `loom stage review status`
 diffs against the latest well-formed round, not `rounds.last()`; a malformed round has a valid fingerprint and
-zero findings and would tell the next reviewer nothing changed. Review order: fix findings, run the full gate,
-run the final review, complete; any edit after it, formatting included, needs another round.
+zero findings and would tell the next reviewer nothing changed. Review order: one `loom check` beside the final
+review, one fix worker for every finding and failed criterion (failed criteria re-checked with `--criterion <n>`),
+one re-review on the follow-up model, complete. After the final round a code edit, formatting included, needs another
+round unless `gate::covers_review` accepts the tree (or `gate::round_covers`, which adds the merge-base-move rule below; `loom stage review status` uses it too): `covers_review` accepts a round whose fingerprint differs only by whole-line comments, blank lines and prose markdown: same base,
+and equal non-empty `behaviour` maps (`verify/review/prose.rs`, which keeps pragma comments and markdown under `skills/`,
+`agents/`, `commands/`, `loom-hooks/`, tests and fixtures in the hash). An empty map never passes through this exemption.
+Known limit: a comment-prefixed line inside a multi-line string literal counts as a comment.
+
+**A merge-base move** changes the fingerprint value, which hashes the base, so a merge of the target into a stage makes every round differ. `gate::stale_review` calls `verify/review/base_move.rs` when the exact match and the same-base prose rule both fail and the two bases are set and differ. The round must first hash: its per-path digests must hash to its fingerprint (`fingerprint::fingerprint_value`, the one place that hashes a value), else the round is stale. Then each path is judged from committed objects only. A path the stage still changes keeps the reviewed digest, and the target branch must not have changed it between the two bases (one `git diff --name-only` between them). A reviewed path that left the stage's diff counts only when the new base's blob hashes to the reviewed digest (`git ls-tree` entry matched on name, mode and size checked; a missing path is `deleted`; symlinks, submodules, directories and oversized blobs are never accepted). Any other path makes the round stale: a different digest, a path the review never saw, a reviewed change dropped for the target's version, or reviewed bytes kept over a target change. Git runs pinned to the stage's registered git directory (`stage_service::observer::stage_worktree_and_target`), bases must be full hex object ids, and any failure (a garbage-collected base) is stale with the cause named. The stale message reads `the base commit moved from X to Y; changed since: a, b; also changed on the target branch: c`. `covers_review` stays pure and reads no git. The same-base prose exemption is not carried across a base move, so a base move plus a prose-only edit needs a re-review. Generated output proven by a passing criterion is not exempt: a rebuilt bundle makes the round stale. An exemption needs a plan field that declares the generated paths and their proving criterion, and criterion results bound to the exact tree passed into the gate.
 `STATE_READ_DIRS` (`sandbox/settings.rs`) gains `contracts` and `reviews`; it is `#[rustfmt::skip]` on one
 line to stay at the ledgered 445 lines, and two `sandbox::settings::tests` pin the exact allow list.
 
 **Aggregated wiring in integration-verify** (`run_aggregated_check`) re-reads every completed stage's `wiring`
 from the plan file and re-runs it on the merged tree, and re-verifies every v2 stage's `reachable`. It returns
-early for any other stage type. A stage that moves a call another stage's wiring pins must amend that wiring
-(operator `loom stage amend --field wiring`), leave the call in place, or name it in a comment at its new site
+early for any other stage type. Each gap prints as `<stage>: [wiring n] ...` (`verify/completion/aggregated.rs`), and
+integration-verify disputes it with `loom stage dispute-criteria <iv> --field wiring --owner-stage <stage>
+--criterion-index n`: the daemon admits it only from an integration-verify stage, for a `Completed`, merged owner, with each
+index inside the owner's list, and an accepted verdict amends the owner's wiring and re-queues integration-verify.
+`loom check` does not run this re-verification; only `loom stage complete` does. A stage that moves a call another
+stage's wiring pins must dispute or amend that wiring, leave the call in place, or name it in a comment at its new site
 ([pinned literals](../mistakes/pinned-literals-ledgers-and-wiring.md)); pin wiring to the entry module or use `reachable`.
 
 ## Impact-Selected Tests: Selection, Base Comparison, Observed Record
 
 **Impact-selected tests** (`verify/impact_tests.rs`, `verify/impact_tests/`): tests reaching the changed nodes
-through `impact_with`, run per adapter through the criteria runner (300 s, certified cache). A test selects only
+through `ImpactOptions::impact_from` (`context/resolve/impact.rs`), run per adapter through the criteria runner (300 s, certified cache). A test selects only
 when every step of its path is a bound edge (`impact_tests/reach.rs`); one reached only through an ambiguous call's
 candidate set is a namesake note, never run. The selection set is every node in a file the
 stage changed since its merge base with the target branch (`git merge-base HEAD <target>`, via
 `verify/review/fingerprint.rs::changes_since_merge_base`), not since the nearest published graph base; the graph itself
 is still layered on that base, and a commit that lands on the target after the stage branched is not a stage change.
+The reverse walk is multi-source: `walk_tests` gathers every node of the changed files as starts and walks once, and `reached_test_nodes` does two walks per selection (selected: `min_confidence` `UNIQUE_NAME_CONFIDENCE`, no candidates; namesakes: default options), each building the node map and reverse adjacency once. `impact_with` is the single-start case. Starts are never hits, and a hit's depth counts from its nearest start.
 A runner's package comes from project detection, which skips `fixtures` directories, so test-data manifests are no
 packages. The gate names no language: each adapter declares what it needs and how it selects
 (`TestRunnerAdapter::required_environment`, `selection_names`). The JS adapters need `node_modules` when the
@@ -140,7 +145,7 @@ and so is every error the runner returns (E2BIG on an exec of thousands of names
 exec reports the OS limit): `run_group` names only its root cause. Notes cut the command at 200 bytes and list 10 names.
 Exit 127 cannot tell a missing runner from a suite that itself exits 127. Yarn PnP packages declare dependencies and
 have no `node_modules`, so they get the same note. It also selects the nodes of changed
-test files, since `impact_with` never returns its start node, but skips every test inside a contract FILE,
+test files, since a walk never returns a start node, but skips every test inside a contract FILE,
 so non-contract tests placed in a contract file run nowhere before integration-verify. Cargo targets are
 `Function` nodes named by a libtest path derived from `mod` declarations, `#[path]` included
 (`impact_tests/libtest.rs`); which files are crate roots is the cargo adapters' Cargo layout rule
@@ -148,6 +153,8 @@ so non-contract tests placed in a contract file run nowhere before integration-v
 extractor does not model macros (`context/extract/rust.rs`), so a test whose only use of the changed code
 sits inside `assert_eq!(...)` is not selected; write fixtures with the call outside the macro. No selection,
 a timeout or no `select_command` is a note, not a failure.
+
+**Cargo selections run per target.** For a runner that selects by libtest path, `TestTarget.file` is the crate root the libtest path starts at (`impact_tests/libtest.rs`), so tests in a `#[path]`-declared test module scope correctly. `impact_tests/scoped.rs::select_command` resolves each crate root with `contracts::collection::rust::target_scope` (manifest-aware, memoised per root) and asks the adapter's `TestRunnerAdapter::scoped_select_command` (`testrun/mod.rs`) for one command per target: `cargo test --lib -- --exact a::t && cargo test --test it -- --exact flow`. The default returns `None`, which means the runner cannot name a target, so the runner keeps one command over every test (`cargo-nextest` does). A test whose target is not certain stays in a plain `cargo test -- <names>` group. The groups form one `&&` chain inside one selection command, so a package selection stays one `IT-<runner>:<package>` failure (disputes, accepted records and the base re-run key on that id); a failing first group stops the chain, as cargo stops at the first failing test binary. The base re-run goes through the same `Site::run`.
 
 **Judging an impact failure** (`impact_tests/{report,accepted,base,failure}.rs`). A failed selection is
 `IT-<runner>:<package>` (`failure::failure_id`; no runner name holds `:`, so the first one splits the id whatever the
@@ -186,35 +193,39 @@ A stage's completion, its gate check and its contract freeze run as host jobs. T
 
 ## Job Records and State
 
-Records live under `<state root>/verification/<stage>/` (`host_verify/store.rs`): `current.json` holds the stage's current record, and each job has a directory with its record copy, `progress.jsonl`, the result, logs and a `groups` file of criterion process groups.
+Records live under `<state root>/verification/<stage>/` (`host_verify/store.rs`): `current.json` holds the stage's current record and `pending.json` holds its waiting check. Each job has a directory with its record copy, `progress.jsonl`, the result, logs and a `groups` file of criterion process groups.
 
 - Kinds (`JobKind`): `check` runs the stage gate and changes no state; `complete` runs the completion and is applied as a completion; `freeze` runs the contracts for [Contract Phase](contract-phase.md).
 - States (`JobState`): `queued` and `running` leave; `passed`, `failed`, `cancelled` and `interrupted` are terminal.
 - Every record change is a compare-and-set under the stage lock (`submit.rs`, `runner.rs`): the record is reloaded and changed only while it is still this job in the expected state.
 
+A covered check joins the live job whatever its session (`submit.rs::covers`); a merge resolver's request counts as uncached (`inbox_drain/check.rs::apply_check`), so it joins only a job that reads no pass cache; an uncovered check of the same session, head and tree waits in the pending slot (`submit.rs::waits_behind`); a check behind a live completion, freeze or verdict-completion job is refused; any other request supersedes the live job and cancels the waiting one. Waiting selections are unioned with each other, not with the running selection; a full selection covers all, and a no-cache request makes the waiting job no-cache. The job copy is written before the slot and wins if they differ. Slot changes hold the stage lock.
+
 ## Components
 
 - `commands/stage/complete_relay.rs`: the session side of completion. It relays a `complete` request, follows the job, then follows the daemon's application. A legacy session is refused; an operator's shell completes locally.
-- `orchestrator/core/inbox_drain/complete.rs`, `check.rs`, `freeze.rs`: the daemon queues a relayed request as a job and settles the ticket at once with the job id.
+- `orchestrator/core/inbox_drain/complete.rs`, `check.rs`, `freeze.rs`: the daemon queues a relayed request as a job and settles the ticket at once with the job id. A relayed `complete` first passes `host_verify/gates.rs::refusal`; a refusal settles the ticket as refused with the full `completion gates: <error>` reason (the ledger line holds up to `MAX_LEDGER_LINE_BYTES`, 4096) and queues nothing.
 - `orchestrator/core/host_jobs.rs`: the runner's tick, the startup recovery and the apply retries. The runner is `host_jobs: Option<HostJobRunner>` on `Orchestrator` (`orchestrator/core/orchestrator.rs`); the `OrchestratorResult` type lives in `orchestrator/core/orchestrator_result.rs`.
 - `host_verify/runner.rs`: starts each queued job as a `loom stage verify-host` child, polls it with `try_wait`, and ends it on cancellation, deadline or output cap. The tick blocks on a child only while retiring it, for at most the process cleanup grace.
 - `commands/stage/verify_host.rs`, `host_verify/child.rs`, `child_complete.rs`, `freeze.rs`: the child run.
 - `host_verify/apply.rs`, `apply_rejection.rs`, `freeze.rs`: the daemon's application of a finished job.
-- `host_verify/wait.rs`, `wait_state.rs`, `wait_report.rs`: the session's follow. A call with no matching request state relays a ticket and returns at once; a call that finds one waits inside its budget. Both exit 0 while nothing is decided, because Claude Code runs the relay and heartbeat hooks only after a Bash call that exits 0.
-- `host_verify/signals.rs`, `submit.rs`, `digest.rs`, `store_fs.rs`: process signalling, queueing and cancellation, the tree digest, and the no-symlink file access under the state root.
+- `host_verify/wait.rs`, `wait_state.rs`, `wait_report.rs`: the session's follow. Check wait state is keyed by criterion selection and cache flag; selections are sorted and deduplicated by `commands/verify.rs::normalized_criteria`. A call with no matching request state relays a ticket and returns at once; a call that finds one waits inside its budget. Both exit 0 while nothing is decided, because Claude Code runs the relay and heartbeat hooks only after a Bash call that exits 0.
+- `host_verify/submit.rs` queues, joins, waits or supersedes requests; `pending.rs` promotes and cancels waiting checks, and `store/slots.rs` persists current and pending slots and job copies. `signals.rs`, `digest.rs` and `store_fs.rs` handle process signalling, tree digest and no-symlink access under the state root.
 
 ## Child Run
 
 - Paths come from the state root (`JobTree::resolve`). A stage's checkout is its worktree. A knowledge stage runs in the repository root with no worktree root, so a `working_dir` below the root does not grant the whole repository. The child reads the repository through `WorkDir::main_project_root` and `resolve_acceptance_dir`; it does not call `acceptance_runner::resolve_knowledge_execution_paths`.
 - Caching follows the record. Unless the record says `no_cache`, the child sets `CachePolicy::Use` and the cache directory under the state root, so the daemon's environment never decides caching.
 - A knowledge stage's child creates the completion attestation key first (`handoff::attestation_key`), because its confinement binds over the state root's secret files.
-- Acceptance runs first. The completion checks (`complete_verification`) then each run, even after an earlier failure, so one run names every failing check. Test integrity and the review gate are not run by the child; the daemon runs them at apply.
+- Acceptance runs first. The completion checks (`complete_verification`) then each run, even after an earlier failure, so one run names every failing check. Test integrity and the review gate are not run by the child; the daemon runs them before it queues the job and again at apply.
 
 ## Cancellation and Restart
 
-- Only `take_down_agents` cancels a job (`orchestrator/core/event_handler/stage_takedown.rs::cancel_host_job`). A takedown, retirement, handoff, stall requeue, park or contract hand-off all reach it through that one function.
+- Takedown, retirement, handoff, stall requeue, park and contract hand-off cancel through `take_down_agents` (`orchestrator/core/event_handler/stage_takedown.rs::cancel_host_job`). Cancel paths also cancel the waiting job; superseding a current check cancels its waiting job.
 - A cancellation is a state write. The runner kills a child whose record is no longer `running` on its next tick.
 - A cancelled job that no runner retired is found at restart by its child: the child still runs, and its command line names the job (`signals.rs::stop_children`). Elapsed time does not decide it.
+- The runner promotes a waiting job when the current job ends, even when all execution slots are busy. Restart leaves the waiting job for promotion on a later tick.
+- Stage reset snapshots live current and waiting job IDs together under the host-job lock before retiring agents, then cancels those identities in either slot. Promotion during reset is covered. A replacement from another session or tree submitted afterward survives; a check that waits behind a captured job afterward is cancelled with it, because `submit::cancel_if_id` cancels the waiting slot when the captured current matches. `merge --resolved` treats a live waiting job as busy.
 
 ## Escalation Hold
 
@@ -229,10 +240,22 @@ Records live under `<state root>/verification/<stage>/` (`host_verify/store.rs`)
 
 `host_verify/apply.rs::apply_finished` runs for each finished record, and on startup for each terminal record with no `applied` marker. The `applied` marker is written last, so a crash between the transition and the marker repeats the step, and the session's waiter reads the marker before it reads the stage.
 
-- Passing `complete`: `check_outside_lock` checks ownership and runs `daemon::check_completion_gates` (`daemon/server/observer.rs`: test integrity and the review gate, against the change fingerprint). Then `bind_and_complete`, under the stage lock, requires that the stage is still `Executing` with the same session, that the run passed at the record's head, that the committed content and the check-definition hash still match the run, and then sets `completed_commit` to the run's head. A knowledge stage is also marked merged; any other stage waits for the merge flow. The session is retired and its acceptance receipt is written.
+- Passing `complete`: `check_outside_lock` checks ownership and runs the gates again through `gates::refusal` (`daemon::check_completion_gates`, `daemon/server/observer.rs`: test integrity and the review gate, against the change fingerprint), since the tree or the review can change while the job runs. Then `bind_and_complete`, under the stage lock, requires that the stage is still `Executing` with the same session, that the run passed at the record's head, that the committed content and the check-definition hash still match the run, and then sets `completed_commit` to the run's head. A knowledge stage is also marked merged; any other stage waits for the merge flow. The session is retired and its acceptance receipt is written.
 - A binding or gate refusal writes a rejection checkpoint (`apply_rejection.rs`).
 - Failing `complete`: a failure checkpoint and attempt evidence come from the failed result.
 - Cancelled or interrupted `complete`: nothing is written. A checkpoint would replace the latest attempt a block reads and spend the session's evidence.
 - `check`: changes no stage state.
 - `freeze`: `freeze::apply_freeze_result` freezes the contracts only while the binding holds; otherwise it records the refusal in `contracts/<stage>/refused.json` for the `dispute_refused_freezes` tick step to file as a freeze-refusal dispute (see [Refused Freezes Are Disputed](contract-phase.md#refused-freezes-are-disputed)). An interrupted or daemon-stopped run, or unreadable reports or binding, records a first problem starting `infrastructure:`.
 - An application that fails with an I/O or state error is retried at each later tick, up to `MAX_APPLY_ATTEMPTS` (`orchestrator/core/host_jobs.rs`). The last failure writes the marker as `apply failed: <error>`, so it is never retried again.
+
+## Host Job Budget Binding
+
+`verify/budget.rs` sums acceptance timeouts and fixed allowances for goal checks, frozen contracts, and impact selection with saturating arithmetic. Check and completion jobs take wiring, dead-code, and regression counts from the active plan definition; completion also takes `after_stage` timeouts from that definition. The persisted stage copy is insufficient for these deadlines. The runner brackets its budget read with the effective policy hash, passes it in `LOOM_VERIFY_BUDGET_POLICY`, and the child checks it after loading its stage and plan inputs before executing those commands. The host runner adds the named 1800-second completion margin and retires an expired child. The monitor uses the shared stage command sum for its separate session silence allowance.
+
+## A Merge Resolver's Check
+
+A live resolver of a stage in `MergeConflict` or `MergeBlocked` may relay `loom check`, so its criteria run on the host. The check is never landing evidence. `host_verify/child_policy.rs::check_cache_policy` gives it `CachePolicy::Bypass`, which neither reads nor stores the pass cache, and landing acceptance (`verify/completion/resolved.rs`) reads no pass cache either. Each landing therefore reruns the criteria and blocks the daemon tick for as long as they take.
+
+Gates and a check must not share a worktree. `--resolved` (after its worktree refusal) and the resolver-exit landing call `orchestrator/core/host_jobs.rs::stop_running_check`, which cancels the job and settles it with `HostJobRunner::settle_held`, starting no other job; a child still held refuses the landing. The operator's `--resolved` refuses a live job while a daemon runs. With no daemon it cancels a queued job and continues, and cancels a running one and asks for a rerun, since `child_watchdog` stops the orphan asynchronously.
+
+`loom knowledge sync` in a capsule can exit non-zero after writing `INDEX.md`: `--structural-only` skips only the semantic reconcile, and the catalog publish to the denied `.loom/cache` still runs and is not tolerated. `loom knowledge check`'s output is the proof there.

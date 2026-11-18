@@ -58,7 +58,7 @@ describe("stage route", () => {
     renderAt("/stages/server");
 
     expect(screen.getAllByText("Bash").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("opus").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("opus/high").length).toBeGreaterThan(0);
   });
 
   it("tells the operator what to do for a blocked stage and numbers its criteria", () => {

@@ -2,18 +2,19 @@
 //! pre-commit hook and JS provision lints in `repo_lints`. Each case runs
 //! through the lint entry point `run`, the path `plan verify` takes.
 
-use std::ffi::OsStr;
 use std::path::Path;
 
 use tempfile::TempDir;
 
-use crate::git::runner::run_git_with_env;
 use crate::plan::schema::validation::v2_lints::{run, LintContext, LintFinding};
 use crate::plan::schema::{
     AcceptanceCriterion, CommandConfinement, LoomConfig, LoomMetadata, NetworkConfig,
     StageDefinition, StageSandboxConfig, StageType,
 };
+use crate::test_git::{git, TestRepo};
 
+#[path = "v2_lint_environment_phase_tests.rs"]
+mod phases;
 #[path = "v2_lint_environment_repo_tests.rs"]
 mod repo_lints;
 
@@ -93,32 +94,13 @@ fn write(root: &Path, relative: &str, body: &str) {
     std::fs::write(path, body).expect("write file");
 }
 
-/// Run git in `dir` with the machine's global and system config pointed at missing
-/// files, so a developer's `core.hooksPath` or `init.templateDir` cannot reach the
-/// setup. The process environment is left alone.
-fn isolated_git(args: &[&str], dir: &Path) {
-    let no_global = dir.join(".no-global-config");
-    let no_system = dir.join(".no-system-config");
-    let env: [(&str, &OsStr); 3] = [
-        ("GIT_CONFIG_GLOBAL", no_global.as_os_str()),
-        ("GIT_CONFIG_SYSTEM", no_system.as_os_str()),
-        ("GIT_CONFIG_NOSYSTEM", OsStr::new("1")),
-    ];
-    let output = run_git_with_env(args, &env, dir).expect("run git");
-    assert!(
-        output.status.success(),
-        "git {args:?} failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-}
-
 /// A fresh repository whose LOCAL `core.hooksPath` names a directory that does not
 /// exist, so the hook lint finds no hook whatever the machine's global or system
 /// config says (the local scope wins). Tests that need a hook override the setting.
 fn git_repo() -> TempDir {
     let dir = TempDir::new().expect("temp dir");
-    isolated_git(&["init", "-q"], dir.path());
-    isolated_git(&["config", "core.hooksPath", "no-such-hooks"], dir.path());
+    TestRepo::builder().no_seed().init_in(dir.path());
+    git(dir.path(), &["config", "core.hooksPath", "no-such-hooks"]);
     dir
 }
 
@@ -265,13 +247,62 @@ fn a_disabled_sandbox_needs_no_domain() {
 }
 
 #[test]
-fn before_stage_runs_outside_the_sandbox() {
-    let mut metadata = plan_allowing(&[], &[]);
-    let checks = "- command: bunx tsc";
-    metadata.loom.stages[0].before_stage = crate::yaml::from_str(checks).expect("check");
-    assert!(messages(&metadata, None, NEEDS).is_empty());
-    metadata.loom.stages[0].after_stage = crate::yaml::from_str(checks).expect("check");
-    assert_eq!(messages(&metadata, None, NEEDS).len(), 1);
+fn network_capability_respects_phase_and_confinement() {
+    let mut inherited = plan_allowing(&[], &["curl https://example.com"]);
+    inherited.loom.stages[0].sandbox.enabled = Some(false);
+    assert!(messages(&inherited, None, "network").is_empty());
+    inherited.loom.stages[0].sandbox.enabled = Some(true);
+    assert_eq!(
+        messages(&inherited, None, "allows no network domain").len(),
+        1
+    );
+    inherited.loom.stages[0].sandbox.network = Some(network(&["example.com"]));
+    assert!(messages(&inherited, None, "allows no network domain").is_empty());
+    inherited.loom.sandbox.network = network(&["example.com"]);
+    inherited.loom.stages[0].sandbox.network = Some(network(&[]));
+    assert_eq!(
+        messages(&inherited, None, "allows no network domain").len(),
+        1
+    );
+
+    let mut confined = confined_plan_allowing(&["example.com"], &["curl https://example.com"]);
+    confined.loom.stages[0].sandbox.enabled = Some(false);
+    assert_eq!(
+        messages(&confined, None, "confined completion runner").len(),
+        1
+    );
+    confined.loom.stages[0].sandbox.command_confinement = Some(CommandConfinement::Inherit);
+    assert!(messages(&confined, None, "network").is_empty());
+}
+
+#[test]
+fn only_an_unsandboxed_command_reaches_host_daemons() {
+    const UNREACHABLE: &str = "no sandbox grant reaches";
+    let mut before = plan_allowing(&[], &[]);
+    before.loom.stages[0].before_stage = crate::yaml::from_str("- command: docker ps").unwrap();
+    assert_eq!(messages(&before, None, UNREACHABLE).len(), 1);
+
+    let mut inherited = plan_allowing(&[], &["docker ps"]);
+    inherited.loom.stages[0].sandbox.enabled = Some(false);
+    assert!(messages(&inherited, None, UNREACHABLE).is_empty());
+    inherited.loom.stages[0].sandbox.command_confinement = Some(CommandConfinement::Confined);
+    assert_eq!(messages(&inherited, None, UNREACHABLE).len(), 1);
+
+    let mut after = plan_allowing(&[], &[]);
+    after.loom.stages[0].after_stage = crate::yaml::from_str("- command: docker ps").unwrap();
+    after.loom.stages[0].sandbox.enabled = Some(false);
+    assert!(messages(&after, None, UNREACHABLE).is_empty());
+    after.loom.stages[0].sandbox.command_confinement = Some(CommandConfinement::Confined);
+    let (findings, _) = lint(&after, None);
+    let confined: Vec<_> = findings
+        .iter()
+        .filter(|finding| finding.message.contains(UNREACHABLE))
+        .collect();
+    assert_eq!(confined.len(), 1, "{findings:?}");
+    assert!(
+        !confined[0].error_in_v2,
+        "this phase used to pass: {findings:?}"
+    );
 }
 
 #[test]
@@ -319,15 +350,4 @@ fn a_stage_confinement_overrides_the_plan_default() {
     let mut inherit = plan_allowing(&["registry.npmjs.org"], &["bunx tsc"]);
     inherit.loom.stages[0].sandbox.command_confinement = Some(CommandConfinement::Confined);
     assert_eq!(messages(&inherit, None, NEEDS).len(), 1);
-}
-
-#[test]
-fn a_confined_setup_command_is_flagged_but_an_after_stage_check_keeps_the_domain_rule() {
-    let mut metadata = confined_plan_allowing(&["registry.npmjs.org"], &[]);
-    metadata.loom.stages[0].setup = vec!["npm ci".to_string()];
-    metadata.loom.stages[0].after_stage =
-        crate::yaml::from_str("- command: bunx tsc").expect("check");
-    let found = messages(&metadata, None, NEEDS);
-    assert_eq!(found.len(), 1, "{found:?}");
-    assert!(found[0].contains("Setup command #1"), "{found:?}");
 }

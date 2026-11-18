@@ -4,7 +4,7 @@
 //! round.
 
 use crate::commands::stage::{DisputeFiling, DisputeTarget};
-use crate::models::dispute::CriterionField;
+use crate::models::dispute::{CriterionField, CriterionTarget};
 use crate::validation::{clap_description_validator, clap_id_validator};
 use crate::verify::impact_tests::check_failure_id;
 use anyhow::{bail, Result};
@@ -58,6 +58,12 @@ pub struct DisputeCriteriaArgs {
     #[arg(long = "criterion-index", num_args = 1..)]
     pub criterion_indices: Vec<usize>,
 
+    /// With --field wiring, from an integration-verify stage: the completed
+    /// stage whose wiring list --criterion-index names, as the aggregated
+    /// wiring re-verification labels a failure `<stage>: [wiring n]`.
+    #[arg(long = "owner-stage", value_parser = clap_id_validator)]
+    pub owner_stage: Option<String>,
+
     /// With --field impact-tests: the id of a failing impact-selected test
     /// selection (`IT-<runner>:<package>`), as `loom stage complete` lists it.
     #[arg(long = "test", num_args = 1..)]
@@ -84,8 +90,7 @@ pub enum CriteriaDispute {
     /// without duplicates, never empty.
     Entry {
         stage_id: String,
-        field: CriterionField,
-        criterion_indices: Vec<usize>,
+        target: CriterionTarget,
         reason: String,
         evidence_commit: Option<String>,
         failure_output: Option<PathBuf>,
@@ -99,10 +104,13 @@ impl TryFrom<DisputeCriteriaArgs> for CriteriaDispute {
 
     fn try_from(args: DisputeCriteriaArgs) -> Result<Self> {
         let Some(field) = args.field.to_field() else {
-            if !args.criterion_indices.is_empty() || args.failure_output.is_some() {
+            if !args.criterion_indices.is_empty()
+                || args.failure_output.is_some()
+                || args.owner_stage.is_some()
+            {
                 bail!(
                     "--field impact-tests names the failing tests with --test; it takes no \
-                     --criterion-index or --failure-output"
+                     --criterion-index, --owner-stage or --failure-output"
                 );
             }
             if args.tests.is_empty() {
@@ -124,13 +132,19 @@ impl TryFrom<DisputeCriteriaArgs> for CriteriaDispute {
         if args.criterion_indices.is_empty() {
             bail!("--field {} needs --criterion-index", field.as_str());
         }
+        if args.owner_stage.is_some() && field != CriterionField::Wiring {
+            bail!("--owner-stage names another stage's wiring list; use it with --field wiring");
+        }
         let mut criterion_indices = args.criterion_indices;
         criterion_indices.sort_unstable();
         criterion_indices.dedup();
         Ok(CriteriaDispute::Entry {
             stage_id: args.stage_id,
-            field,
-            criterion_indices,
+            target: CriterionTarget {
+                field,
+                criterion_indices,
+                owner_stage: args.owner_stage,
+            },
             reason: args.reason,
             evidence_commit: args.evidence_commit,
             failure_output: args.failure_output,
@@ -175,6 +189,12 @@ pub struct DisputeContractArgs {
     /// Optional commit SHA cited as evidence.
     #[arg(long = "evidence-commit")]
     pub evidence_commit: Option<String>,
+
+    /// File holding the complete replacement for the frozen contract file,
+    /// outside the stage worktree (max 32 KiB, UTF-8). An accept writes it into
+    /// the worktree.
+    #[arg(long)]
+    pub replacement: Option<PathBuf>,
 }
 
 #[derive(Args)]
@@ -212,7 +232,10 @@ impl From<DisputeContractArgs> for DisputeFiling {
     fn from(args: DisputeContractArgs) -> Self {
         Self {
             stage_id: args.stage_id,
-            target: DisputeTarget::Contract(args.contract),
+            target: DisputeTarget::Contract {
+                contract_id: args.contract,
+                replacement: args.replacement,
+            },
             reason: args.reason,
             evidence_commit: args.evidence_commit,
         }
@@ -269,8 +292,11 @@ mod tests {
         assert!(matches!(
             entry,
             CriteriaDispute::Entry {
-                field: CriterionField::Wiring,
-                ref criterion_indices,
+                target: CriterionTarget {
+                    field: CriterionField::Wiring,
+                    ref criterion_indices,
+                    owner_stage: None,
+                },
                 ..
             } if criterion_indices == &[2]
         ));
@@ -279,18 +305,46 @@ mod tests {
     }
 
     #[test]
+    fn owner_stage_names_another_stages_wiring_only() {
+        let words = |line: &'static str| line.split_whitespace().collect::<Vec<_>>();
+        let filed = parsed(&words(
+            "--field wiring --owner-stage up --criterion-index 3",
+        ));
+        let CriteriaDispute::Entry { target, .. } = filed.unwrap() else {
+            panic!("expected a criterion filing");
+        };
+        assert_eq!(target.owner_stage.as_deref(), Some("up"));
+        assert_eq!(target.criterion_indices, vec![3]);
+
+        for (line, expected) in [
+            (
+                "--field acceptance --owner-stage up --criterion-index 0",
+                "use it with --field wiring",
+            ),
+            (
+                "--field impact-tests --owner-stage up --test IT-cargo-test:.",
+                "takes no --criterion-index, --owner-stage",
+            ),
+            (
+                "--field wiring --owner-stage ../up --criterion-index 0",
+                "invalid characters",
+            ),
+        ] {
+            let error = parsed(&words(line)).err().unwrap();
+            assert!(error.to_string().contains(expected), "{line}: {error}");
+        }
+    }
+
+    #[test]
     fn several_indexes_file_one_sorted_deduplicated_dispute() {
         for args in [
             &["--criterion-index", "14", "--criterion-index", "13"][..],
             &["--criterion-index", "13", "14", "13"],
         ] {
-            let CriteriaDispute::Entry {
-                criterion_indices, ..
-            } = parsed(args).unwrap()
-            else {
+            let CriteriaDispute::Entry { target, .. } = parsed(args).unwrap() else {
                 panic!("expected a criterion filing for {args:?}");
             };
-            assert_eq!(criterion_indices, vec![13, 14], "{args:?}");
+            assert_eq!(target.criterion_indices, vec![13, 14], "{args:?}");
         }
     }
 

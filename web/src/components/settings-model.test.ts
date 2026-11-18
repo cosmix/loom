@@ -22,13 +22,15 @@ const fixture = configResponseSchema.parse(fixtureJson);
 describe("sectionRows", () => {
   const sections = sectionRows(fixture.entries);
 
-  it("groups the fixture into five sections in registry order", () => {
+  it("groups the fixture into seven sections in registry order", () => {
     expect(sections.map((s) => s.section)).toEqual([
       "update",
       "terminal",
       "context",
       "pressure",
       "models",
+      "plan",
+      "codex",
     ]);
   });
 
@@ -39,10 +41,11 @@ describe("sectionRows", () => {
     expect(sections[2]?.rows).toHaveLength(1);
   });
 
-  it("pairs pressure into three rows labelled claude, codex, address with their captions", () => {
+  it("pairs pressure into three rows labelled claude, codex, address with their captions, then the rounds key", () => {
     const pressure = sections[3];
-    expect(pressure?.rows).toHaveLength(3);
-    const pairs = pressure?.rows as PairRow[];
+    expect(pressure?.rows).toHaveLength(4);
+    expect(pressure?.rows[3]?.kind).toBe("single");
+    const pairs = (pressure?.rows ?? []).slice(0, 3) as PairRow[];
     expect(pairs.map((row) => row.label)).toEqual(["claude", "codex", "address"]);
     expect(pairs.map((row) => row.caption)).toEqual([
       "/pressure, Claude",
@@ -52,16 +55,33 @@ describe("sectionRows", () => {
     expect(pressure?.caption).toBe("who runs each step of loom pressure");
   });
 
-  it("pairs models into four rows", () => {
+  it("pairs models into six rows plus a single follow-up model row", () => {
     const models = sections[4];
-    expect(models?.rows).toHaveLength(4);
+    expect(models?.rows).toHaveLength(7);
     expect(models?.rows.map((row) => rowLabel(row))).toEqual([
       "standard",
       "knowledge",
       "knowledge_distill",
       "integration_verify",
+      "code_reviewer",
+      "code_reviewer_followup_model",
+      "contract_writer",
     ]);
-    expect(models?.caption).toBe("a stage's main agent session, by stage type");
+    expect(models?.rows[5]?.kind).toBe("single");
+    expect(models?.caption).toBe("model and effort for each kind of session a stage runs");
+  });
+
+  it("pairs plan into six rows", () => {
+    const plan = sections[5];
+    expect(plan?.rows).toHaveLength(6);
+    expect(plan?.rows.map((row) => rowLabel(row))).toEqual([
+      "document_summary",
+      "overview",
+      "summary_backend",
+      "summary_codex",
+      "spec_authoring",
+      "plan_authoring",
+    ]);
   });
 
   it("projectAllowed matches whether any entry in the section scopes to project", () => {
@@ -93,6 +113,11 @@ describe("sectionRows", () => {
     const rows = sectionRows([lonely]);
     expect(rows).toHaveLength(1);
     expect(rows[0]?.rows).toEqual([{ kind: "single", entry: lonely }]);
+  });
+
+  it("titles a section from SECTION_TITLES, else from its prefix", () => {
+    expect(sections.find((s) => s.section === "models")?.title).toBe("stage sessions");
+    expect(sections.find((s) => s.section === "terminal")?.title).toBe("terminal");
   });
 });
 
@@ -135,6 +160,12 @@ describe("filterSections", () => {
 
   it("empty query returns the same array reference", () => {
     expect(filterSections(sections, "")).toBe(sections);
+  });
+
+  it("keeps the models section for its title and for its prefix", () => {
+    for (const query of ["stage sessions", "models"]) {
+      expect(filterSections(sections, query).map((s) => s.section)).toContain("models");
+    }
   });
 
   it("a nonsense query returns no sections", () => {

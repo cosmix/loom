@@ -1,12 +1,16 @@
-import type { Snapshot, StageStatus } from "@/api/schema";
+import type { Snapshot, StageStatus, SessionType } from "@/api/schema";
 
 function transitionMessage(
   id: string,
   status: StageStatus,
   previous: StageStatus | undefined,
+  sessionType: SessionType | null | undefined,
 ): string | null {
   switch (status) {
     case "executing":
+      if (sessionType === "contract") return `${id} contract writing started`;
+      if (sessionType === "stage") return `${id} execution started`;
+      if (previous === "executing") return null;
       return `${id} started`;
     case "completed":
       return `${id} completed`;
@@ -52,7 +56,7 @@ export interface ActivityEntry {
 export function activityEntries(snapshot: Snapshot | null): ActivityEntry[] {
   const entries: ActivityEntry[] = [];
   for (const event of snapshot?.status.activity ?? []) {
-    const message = transitionMessage(event.stage_id, event.to, event.from);
+    const message = transitionMessage(event.stage_id, event.to, event.from, event.session_type);
     if (message) {
       entries.push({
         at: Date.parse(event.at),

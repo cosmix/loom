@@ -4,6 +4,8 @@ use crate::models::stage::StageStatus;
 use crate::quota::{ProviderQuota, QuotaSnapshot, QuotaWindow, WindowKind};
 use chrono::TimeZone;
 
+#[path = "model_tests_busy.rs"]
+mod busy;
 #[path = "model_tests_stages.rs"]
 mod stages;
 #[path = "model_tests_tokens.rs"]
@@ -24,6 +26,7 @@ fn fixture_event(
         from,
         to,
         session: session.map(str::to_owned),
+        session_type: None,
         reason: None,
     }
 }
@@ -131,6 +134,7 @@ fn fixture_snapshot() -> WebSnapshot {
         alerts: fixture_alerts(),
         daemon: DaemonState::Running,
         tick_age_secs: Some(4),
+        busy: None,
         source: SnapshotSource::Daemon,
         terminals: false,
         notice: None,
@@ -187,6 +191,7 @@ fn attention_conversion_keeps_failure_label() {
         id: "server".to_owned(),
         name: "Rust server".to_owned(),
         label: "BLOCKED",
+        status: crate::models::stage::StageStatus::Blocked,
         command: Some("loom stage retry server".to_owned()),
         command_when: None,
         alternatives: Vec::new(),
@@ -198,7 +203,6 @@ fn attention_conversion_keeps_failure_label() {
         review_reason: None,
         reason: None,
         failing_criteria: Vec::new(),
-        disputes: Vec::new(),
         terminal_history: None,
         cleanup_warning: None,
         has_human_review_choices: false,
@@ -208,6 +212,7 @@ fn attention_conversion_keeps_failure_label() {
         outgoing_session_exit_reason: None,
     };
     let attention = WebAttention::from(&entry);
+    assert_eq!(attention.status, crate::models::stage::StageStatus::Blocked);
     assert_eq!(attention.label, "BLOCKED");
     assert_eq!(attention.failure_label.as_deref(), Some("test"));
     let wire = serde_json::to_value(&attention).unwrap();
@@ -230,7 +235,7 @@ fn attention_conversion_carries_the_block_facts_and_flags_the_history() {
 
     assert_eq!(wire["terminal_history"], true);
     assert_eq!(wire["failing_criteria"][0]["index"], 4);
-    assert_eq!(wire["disputes"].as_array().unwrap().len(), 2);
+    assert!(wire.get("disputes").is_none());
     assert_eq!(wire["acceptance"].as_array().unwrap().len(), 5);
     assert_eq!(
         wire["reason"],
@@ -241,6 +246,47 @@ fn attention_conversion_carries_the_block_facts_and_flags_the_history() {
             .unwrap()
     );
     assert!(!wire["note"].as_str().unwrap().contains("less -R"));
+}
+
+/// An executing stage whose `loom stage complete` failed a gate stays
+/// `executing` on the wire. The dashboard tells it from a running stage by
+/// the stage's `completion_blocker`, the summary `loom status` lists it by;
+/// its attention entry is filed under the generic blocked status.
+#[test]
+fn a_completion_pending_stage_reaches_the_wire_with_its_blocker() {
+    let stages = stages::fixture_stages();
+    let mut pending = stages.iter().find(|s| s.id == "server").unwrap().clone();
+    pending.completion_blocker = Some(crate::status::data::CompletionBlockerSummary {
+        state: crate::status::data::CompletionBlockerState::Pending,
+        fingerprint: "feedface1234".to_owned(),
+        failure_code: "daemon_rejected".to_owned(),
+        summary: Some("test-integrity gate failed".to_owned()),
+        commit: "0123456789ab".to_owned(),
+        repeat_count: 1,
+        first_observed_at: None,
+        last_observed_at: None,
+        next_action: "watching: a repeat of daemon_rejected parks this stage".to_owned(),
+    });
+    let entries = crate::status::attention_model::attention_entries(std::slice::from_ref(&pending));
+
+    let entry = serde_json::to_value(WebAttention::from(&entries[0])).unwrap();
+    let stage = serde_json::to_value(&pending).unwrap();
+
+    assert_eq!(entry["label"], "COMPLETION PENDING");
+    assert_eq!(entry["status"], "blocked");
+    assert_eq!(entry["automatic"], true);
+    assert_eq!(stage["status"], "executing");
+    assert_eq!(stage["completion_blocker"]["state"], "pending");
+    assert_eq!(
+        stage["completion_blocker"]["summary"],
+        "test-integrity gate failed"
+    );
+    let mut running = pending.clone();
+    running.completion_blocker = None;
+    assert!(serde_json::to_value(&running)
+        .unwrap()
+        .get("completion_blocker")
+        .is_none());
 }
 
 /// Every [`StageStatus`], ordered as `web/src/api/fixtures/statuses.json` lists

@@ -2,7 +2,7 @@ use std::net::{IpAddr, Ipv4Addr};
 
 use clap::Args;
 
-/// Dashboard-only options kept separate to preserve the main CLI type's size budget.
+/// Dashboard-only options of `loom status`.
 #[derive(Args)]
 pub struct StatusWebArgs {
     /// Serve the live dashboard (omit PORT to find a port from 7373; 0 picks a free port).

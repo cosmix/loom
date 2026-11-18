@@ -19,6 +19,9 @@ use crate::fs::session_files::save_session;
 use crate::models::dispute::{request_file, DisputeKind, DisputeRequest};
 use crate::models::session::{Session, SessionStatus, SessionType};
 use crate::models::stage::{Stage, StageStatus};
+use crate::native_worker::ids::mint_invocation_id;
+use crate::native_worker::model::{NativeManifest, NATIVE_DEADLINE_SECS};
+use crate::native_worker::store;
 use crate::plan::schema::AcceptanceCriterion;
 use crate::relay::{new_request_id, AgentRole, InboxEntry, RequestKind};
 use crate::verify::contracts::store::{write_freeze, FreezeRecord, FrozenContract};
@@ -285,5 +288,28 @@ pub(super) fn payload_for(kind: RequestKind) -> Value {
             "tree_digest": "0".repeat(64),
             "no_cache": false,
         }),
+        RequestKind::WorkerControl => json!({
+            "op": "cancel", "unit_id": "unit-a",
+            "invocation_id": format!("inv-{}", "0".repeat(32)), "reason": "stop",
+        }),
     }
+}
+
+pub(super) fn seed_native_invocation(fx: &Fixture, unit: &str) -> String {
+    let manifest = NativeManifest {
+        v: 1,
+        stage_id: STAGE.to_string(),
+        unit_id: unit.to_string(),
+        invocation_id: mint_invocation_id().unwrap(),
+        owner_session_id: "s".to_string(),
+        workspace_root: fx.repo_root.clone(),
+        brief_path: "/x/brief.md".into(),
+        brief_sha256: crate::utils::sha256_hex(b"brief"),
+        model: "gpt-6.1-terra".to_string(),
+        effort: "xhigh".to_string(),
+        deadline_secs: NATIVE_DEADLINE_SECS,
+        created_at: Utc::now(),
+    };
+    store::create_invocation(&fx.work_dir, &manifest, b"brief").unwrap();
+    manifest.invocation_id
 }

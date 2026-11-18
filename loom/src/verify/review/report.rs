@@ -26,16 +26,6 @@ pub struct ParsedReview {
     pub unresolved: Vec<String>,
 }
 
-/// `text` on one line: control characters and whitespace runs become single
-/// spaces, so reviewer-authored text can neither span journal lines nor steer
-/// a terminal. Every renderer of a review value goes through this.
-pub fn single_line(text: &str) -> String {
-    text.split(|c: char| c.is_whitespace() || c.is_control())
-        .filter(|word| !word.is_empty())
-        .collect::<Vec<_>>()
-        .join(" ")
-}
-
 /// Err(reason) = malformed: no block, or the last block is not the D12 JSON shape.
 pub fn parse_review(final_text: &str) -> Result<ParsedReview, String> {
     let block = last_review_block(final_text).ok_or("no loom-review block")?;
@@ -197,12 +187,7 @@ fn parse_suggestion(value: &Value) -> Result<Suggestion, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_review, single_line, Finding, Suggestion};
-
-    #[test]
-    fn single_line_flattens_control_characters_and_whitespace() {
-        assert_eq!(single_line(" a\n\tb\u{1b}[31m  c \r\n"), "a b [31m c");
-    }
+    use super::{parse_review, Finding, Suggestion};
 
     #[test]
     fn parses_loom_review_block() {

@@ -1,24 +1,28 @@
 import { useAtomValue } from "jotai/react";
+import { Coins } from "lucide-react";
+import { useId } from "react";
 
-import type { AgentFlow, StageFlow, TokenFlow } from "@/api/schema";
+import type { StageFlow, TokenFlow } from "@/api/schema";
 import { HeatStrip, Sparkline } from "@/components/sparkline";
+import { TokenLanes } from "@/components/stage-token-lanes";
+import { matchCodexJobs, unmatchedCodexJobs } from "@/lib/codex-jobs";
 import {
-  agentLabel,
   cacheHitPercent,
   carryForward,
+  codexPairs,
   compactTokens,
   cumulativeSeries,
   fresh,
+  isCodexLane,
   lastValues,
   liveCounts,
   maxOf,
-  padLeft,
   rollingRate,
   stageFlow,
 } from "@/lib/tokens";
+import { DisclosureHeading, useDisclosure } from "@/components/use-disclosure";
 import { snapshotAtom } from "@/state/atoms";
 
-const MIN_CELLS = 20;
 const RAMP = [0, 1, 2, 3, 4];
 /// The chips' trends show the last 60 buckets: 30 minutes of 30 s cells.
 const TREND_POINTS = 60;
@@ -38,23 +42,33 @@ function chipTrends(tokens: TokenFlow, flow: StageFlow) {
   };
 }
 
-/// The lanes' series (an idle agent's can be empty or short, so each is
-/// left-padded to the stage's length), trimmed of the leading buckets that are
-/// zero for every agent (keeping at least `MIN_CELLS`), and the maximum they
-/// are scaled to. Loops over the series rather than spreading them into
-/// arguments, which throws a RangeError on a long series.
-function laneSeries(stage: StageFlow): { lanes: number[][]; max: number } {
-  const length = stage.series.length;
-  const full = stage.agents.map((agent) => padLeft(agent.series, length));
-  let firstUsed = length;
-  for (const series of full) {
-    const index = series.findIndex((value) => value > 0);
-    if (index !== -1 && index < firstUsed) firstUsed = index;
-  }
-  const start = Math.max(0, Math.min(firstUsed, length - MIN_CELLS));
-  const lanes = full.map((series) => series.slice(start));
-  const max = lanes.reduce((best, series) => maxOf(series, best), maxOf(stage.series));
-  return { lanes, max };
+/// The lanes keep the whole series the API sends (120 buckets, 60 min) so an
+/// agent that ran an hour ago still lights its strip. Revisit if the API's
+/// bucket count changes; the cap also bounds the DOM for a runaway series.
+const LANE_POINTS = 120;
+
+/// The lanes' series over one window of cells: as long as the longest series
+/// (at least `TREND_POINTS`, at most `LANE_POINTS`), so the strips keep one
+/// width. Newer buckets sit on the right and a young or idle series starts with
+/// empty cells on the left. Also returns the maximum the cells are scaled to,
+/// over the visible window, and the window's span in minutes. Loops over the
+/// series rather than spreading them into arguments, which throws a RangeError
+/// on a long series.
+function laneSeries(
+  stage: StageFlow,
+  bucketSecs: number,
+): { lanes: number[][]; max: number; minutes: number } {
+  const longest = stage.agents.reduce(
+    (best, agent) => Math.max(best, agent.series.length),
+    stage.series.length,
+  );
+  const cells = Math.min(LANE_POINTS, Math.max(TREND_POINTS, longest));
+  const lanes = stage.agents.map((agent) => lastValues(agent.series, cells));
+  const max = lanes.reduce(
+    (best, series) => maxOf(series, best),
+    maxOf(lastValues(stage.series, cells)),
+  );
+  return { lanes, max, minutes: Math.round((cells * bucketSecs) / 60) };
 }
 
 function Chip({ value, label, trend }: { value: string; label: string; trend: Trend }) {
@@ -76,55 +90,8 @@ function Chip({ value, label, trend }: { value: string; label: string; trend: Tr
   );
 }
 
-function Lane({ agent, series, max }: { agent: AgentFlow; series: number[]; max: number }) {
-  const label = agentLabel(agent);
-  const state = agent.active ? "live" : "idle";
-  return (
-    <li
-      data-testid="token-lane"
-      className="grid grid-cols-[minmax(0,20rem)_minmax(0,1fr)_auto_auto] items-center gap-x-3 gap-y-1 max-md:grid-cols-[minmax(0,1fr)_auto_auto]"
-    >
-      <div className="flex min-w-0 flex-col">
-        <span className="flex items-center gap-1.5 text-sm font-medium">
-          <span
-            aria-hidden="true"
-            data-testid="agent-dot"
-            data-state={state}
-            className={`size-2 shrink-0 rounded-full bg-(--tone) ${agent.active ? "tone-completed dot-live" : "tone-dimmed"}`}
-          />
-          <span className="truncate" title={label}>
-            {label}
-          </span>
-          {agent.kind === "codex" && (
-            <span className="rounded-sm border border-hairline px-1 text-[10px] text-muted-foreground">
-              codex
-            </span>
-          )}
-        </span>
-        <span
-          className="truncate font-mono text-[11px] text-muted-foreground"
-          title={`${agent.id} · ${agent.model ?? "unknown model"} · ${state}`}
-        >
-          {agent.id} · {agent.model ?? "unknown model"} · {state}
-        </span>
-      </div>
-      <HeatStrip
-        values={series}
-        max={max}
-        label={`${label} fresh tokens per 30 s`}
-        className="max-md:order-last max-md:col-span-3"
-      />
-      <span className="w-16 text-right font-mono text-xs tabular-nums text-muted-foreground">
-        {agent.active ? `${compactTokens(fresh(agent.rate))}/m` : "—"}
-      </span>
-      <span className="w-16 text-right font-mono text-xs tabular-nums">
-        {compactTokens(fresh(agent.total))}
-      </span>
-    </li>
-  );
-}
-
-/// The four headline chips, each with the trend of its own statistic.
+/// The four headline chips, each with the trend of its own statistic. They
+/// render the same whether the section is folded or open.
 function Chips({ tokens, flow }: { tokens: TokenFlow; flow: StageFlow }) {
   const hit = cacheHitPercent(flow.total);
   const live = flow.agents.filter((agent) => agent.active).length;
@@ -155,33 +122,71 @@ function Chips({ tokens, flow }: { tokens: TokenFlow; flow: StageFlow }) {
   );
 }
 
-/// The stage's token flow: headline chips and one heat-strip lane per agent.
+/// The stage's token flow: headline chips and one heat-strip lane per agent
+/// active in the window, each forwarder and its codex job clustered last, the
+/// idle ones folded under "earlier agents". Folded to the chips' labels
+/// and trends until the reader opens it.
 /// Renders nothing for a stage the tracker has not seen.
 export function StageTokens({ stageId }: { stageId: string }) {
-  const tokens = useAtomValue(snapshotAtom)?.status.tokens;
+  const status = useAtomValue(snapshotAtom)?.status;
+  const tokens = status?.tokens;
   const flow = stageFlow(tokens, stageId);
+  const stage = status?.stages.find(({ id }) => id === stageId);
+  const [open, toggle] = useDisclosure(false);
+  const panel = useId();
   if (!tokens || !flow) return null;
 
-  const { lanes, max } = laneSeries(flow);
+  const { lanes, max, minutes } = laneSeries(flow, tokens.bucket_secs);
+  const jobs = stage?.codex_jobs ?? [];
+  const matched = matchCodexJobs(jobs, flow.agents);
+  const rows = flow.agents.map((agent, index) => ({
+    agent,
+    series: lanes[index] ?? [],
+    job: matched.get(agent.id),
+  }));
+  const plain = rows.filter(({ agent }) => !isCodexLane(agent));
+  const clusters = codexPairs(rows);
 
   return (
-    <section
-      aria-label="stage tokens"
-      className="flex flex-col gap-2.5 rounded-lg border border-hairline bg-card p-4"
-    >
-      <div className="flex items-center justify-between gap-3">
-        <h2 className="eyebrow">tokens</h2>
-        <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
-          <span>30 s cells</span>
-          <HeatStrip values={RAMP} max={4} label="intensity, low to high" className="w-16" />
-        </div>
+    <section aria-label="stage tokens" className="ledger-card">
+      <header className="ledger-head">
+        <DisclosureHeading
+          label="tokens"
+          open={open}
+          panel={panel}
+          onToggle={toggle}
+          icon={
+            <span className="ledger-icon">
+              <Coins aria-hidden="true" className="size-3" />
+            </span>
+          }
+        />
+        {open && (
+          <div className="ml-auto flex items-center gap-2 text-[11px] text-muted-foreground">
+            <span>{tokens.bucket_secs} s cells</span>
+            <span className="font-mono tabular-nums">0</span>
+            <HeatStrip
+              values={RAMP}
+              max={4}
+              label={`intensity, 0 to ${max} fresh tokens per ${tokens.bucket_secs} s`}
+              className="w-16"
+            />
+            <span className="font-mono tabular-nums">{compactTokens(max)}</span>
+          </div>
+        )}
+      </header>
+      <div id={open ? panel : undefined} className="flex flex-col gap-2.5 p-3.5">
+        <Chips tokens={tokens} flow={flow} />
+        {open && (
+          <TokenLanes
+            plain={plain}
+            clusters={clusters}
+            unthreaded={unmatchedCodexJobs(jobs, matched)}
+            max={max}
+            window={`last ${minutes} min`}
+          />
+        )}
       </div>
-      <Chips tokens={tokens} flow={flow} />
-      <ul className="flex flex-col gap-2.5">
-        {flow.agents.map((agent, index) => (
-          <Lane key={agent.id} agent={agent} series={lanes[index] ?? []} max={max} />
-        ))}
-      </ul>
     </section>
   );
 }

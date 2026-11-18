@@ -79,27 +79,6 @@ pub(crate) fn remove_if_exists(path: &Path) -> Result<()> {
     }
 }
 
-/// `Command::spawn` briefly, and rarely, fails with `ETXTBSY` ("text file
-/// busy") when the target binary is still settling right after being
-/// written — e.g. a fork/exec race right after a test writes a fake `claude`
-/// script. A handful of short retries clears it without treating it as a
-/// real spawn failure.
-fn spawn_retrying_text_busy(command: &mut Command) -> std::io::Result<Child> {
-    const MAX_ATTEMPTS: u32 = 5;
-    const RETRY_DELAY: Duration = Duration::from_millis(20);
-
-    for attempt in 1..=MAX_ATTEMPTS {
-        match command.spawn() {
-            Ok(child) => return Ok(child),
-            Err(e) if attempt < MAX_ATTEMPTS && e.raw_os_error() == Some(libc::ETXTBSY) => {
-                thread::sleep(RETRY_DELAY);
-            }
-            Err(e) => return Err(e),
-        }
-    }
-    unreachable!("loop always returns on its final attempt")
-}
-
 /// Spawn `claude_path` with `args` in the foreground (inherited stdin/stdout/stderr,
 /// `AGENT_TEAMS_ENV=1`, cwd = `cwd`), clear any stale `marker` first (creating its
 /// parent dir), and return `Completed` once `marker` appears (after SIGTERM then
@@ -124,7 +103,8 @@ pub(crate) fn run_foreground(
     cmd.stdin(Stdio::inherit());
     cmd.stdout(Stdio::inherit());
     cmd.stderr(Stdio::inherit());
-    let mut child = spawn_retrying_text_busy(&mut cmd).context("failed to spawn claude")?;
+    let mut child =
+        crate::process::spawn_retrying_text_busy(&mut cmd).context("failed to spawn claude")?;
 
     let outcome = loop {
         // The agent exited on its own (manual exit, crash, or Ctrl-C) — but
@@ -156,16 +136,10 @@ pub(crate) fn run_foreground(
 /// line limit.
 fn terminate_idle_session(child: &mut Child) -> Result<()> {
     send_sigterm(child.id());
-    let grace_polls = TERM_GRACE_MS / POLL_INTERVAL_MS;
-    let mut reaped = false;
-    for _ in 0..grace_polls {
-        thread::sleep(Duration::from_millis(POLL_INTERVAL_MS));
-        if child.try_wait().context("failed to poll claude")?.is_some() {
-            reaped = true;
-            break;
-        }
-    }
-    if !reaped {
+    let grace = Duration::from_millis(TERM_GRACE_MS);
+    let reaped =
+        crate::process::wait_with_deadline(child, grace).context("failed to poll claude")?;
+    if reaped.is_none() {
         let _ = child.kill();
         let _ = child.wait();
     }

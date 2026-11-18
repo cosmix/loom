@@ -1,0 +1,258 @@
+# 02 — `loom plan` Command and Server
+
+Part of the [Loom Plan product vision](index.md).
+
+This section defines the command line, how the server binds and announces itself, how the
+browser is opened, how long the process lives, what it shares with `loom status --web`, and how
+it behaves in a project that has never run `loom init`.
+
+## Command line
+
+```text
+loom plan [--port <PORT>] [--host <HOST>] [--no-open]
+loom plan verify <PLAN> [--strict] [--json] [--no-color]
+loom plan check [--json]
+loom plan summary seal|brief|status|release
+loom plan hook <event>
+```
+
+Bare `loom plan` starts the app. The existing subcommand, `loom plan verify`, keeps its
+arguments and behaviour; any subcommand added later sits beside it the same way. In clap terms
+the subcommand becomes optional and the app's flags belong to `loom plan` itself.
+
+| Flag            | Meaning                                                                                      |
+| --------------- | -------------------------------------------------------------------------------------------- |
+| `--port <PORT>` | Bind exactly this port; `0` asks the OS for a free one. Without it, see "Port" below.        |
+| `--host <HOST>` | Bind this address instead of `127.0.0.1`. Same parser and rules as `loom status --web --host` |
+| `--no-open`     | Print the URL and do not open a browser                                                      |
+
+`loom status --web [PORT]` takes its port as an optional value of `--web`. `loom plan` has no
+such flag to carry a value, and a positional port after `loom plan` would collide with
+subcommand names, so the port gets its own flag. (My call.)
+
+There are no config-file keys for any of these, matching the dashboard, which takes its bind
+host from the CLI only. (My call.) Shell completion tables (`completions/dynamic/`) gain the
+three flags, `check`, and the `summary` subcommands; the hidden `hook` is left out.
+
+`loom plan check [--json]` prints the project checklist of section 01 and every convention
+problem the app detects in `doc/`, reading only files and needing no running server; it exits
+non-zero when a checked file has a problem. Sessions run it at the end of every turn that edited
+documents. Section 09 owns it.
+
+`loom plan summary seal|brief|status|release` is how sessions and people build and claim
+summaries: `brief` prints what a summary is built from, `seal` validates and writes it,
+`status` lists what is stale, and `release` gives up a claim. Section 04 owns it.
+`loom plan hook <event>` is the command Claude Code runs for hook events in planning sessions,
+which feeds the session bridge. It is hidden from help, and section 07 owns it.
+
+## Project root
+
+`loom plan` works on the repository that contains the current directory: the root is
+`git rev-parse --show-toplevel`, so running it from a subdirectory opens the whole project.
+Outside a git repository it exits with an error naming the directory; the documents are meant
+to be committed, and the summary store (section 04) records content hashes that assume a
+repository.
+
+Inside a loom stage worktree (a checkout on a `loom/<stage-id>` branch) it refuses and names
+the main checkout to run it from. Planning edits `doc/` on the branch the user works on; a
+stage worktree is merged and deleted by loom, and edits there would be lost or merged as stage
+work. (My call.)
+
+## Port
+
+Bare `loom plan` tries 7272 and moves to the next port only when the address is in use, the
+same rule `loom status --web` applies from 7373 (`listener.rs`, `bind_first_available_port`).
+Two projects planned at once settle on different ports. An explicit `--port` binds exactly
+that port and reports the bind error as is. The printed and opened URL always carries the port
+actually bound.
+
+## One server per project
+
+A project has at most one `loom plan` server. The server is the backend; people share it by
+opening its URL in their browsers.
+
+On start, `loom plan` takes an exclusive OS file lock on a lock file in the per-user runtime
+directory (below) and holds it for its lifetime; the file records the process id, the bound
+URL, and the token. A second `loom plan` on the same project finds the lock held, starts
+nothing, and exits non-zero with the running server's URL:
+
+```text
+loom plan is already running for this project (pid 4242).
+Open http://127.0.0.1:7272/?token=…
+```
+
+The lock file is readable only by its owner (mode 0600), since it holds the token. An OS lock
+is released with its process, so a crashed server leaves no stale lock to clean up.
+
+## Several people, one author
+
+Any number of people can open the server's URL. At most one browser holds authoring; every
+other browser is read-only: it reads, expands, and browses, but cannot chat or save. While
+nobody holds authoring, any browser that starts a chat, sends a message, saves a file, or starts
+a pressure run takes it. Authoring frees on the events section 07 lists, among them the end of
+the grace period after the holder's browser closes.
+
+Every browser sees who else is connected: a presence list in the header names each connected
+browser, marks the one holding authoring, and shows the document each is reading. Read-only
+browsers see the authoring chat as it happens, without an input box. There are no accounts:
+a browser names itself on first open (kept in that browser), else it shows as "Viewer N".
+(My call.) Sections 07 and 08 own the chat side of this; section 12 owns how a person reaches
+the server from another machine.
+
+The header's activity pill gathers what is in progress. Its sign is the roundel, a turning
+black-and-white disc, while any work runs; it is the only place the planner draws the roundel.
+When the most urgent item is the user's turn (a permission request, or a chat waiting for
+them), the pill shows that item's bell or status dot instead. The popover lists one row per
+thing in progress: a running plan, a drafting session, a pressure test, a Codex review, a
+summary rebuild and a chat waiting. Elsewhere in the planner an operation that will finish
+turns an arrow, a shown state is a status dot (green and pulsing when live, gray and still when
+paused or ended), a block that loads is a ring spinner, and counted work is a progress bar.
+All of them rest under reduced motion.
+
+## Runtime state
+
+`loom plan` writes nothing into the project except documents under `doc/` (and what sessions
+write there). Its runtime state lives in a per-user directory:
+
+```text
+~/.loom/plan/<project-key>/
+  lock                server lock (pid, URL, token; mode 0600)
+  drafts/             summary drafts awaiting `seal` (section 04)
+  claims/             one claim file per summary being rebuilt (section 04)
+  summaries.lock      the summary store's write lock (section 04)
+  summary-cost.jsonl  one line per finished summary rebuild (section 04)
+  sessions/<id>/      one directory per session (section 07):
+    session.json      registry record
+    launch.sh         launch script
+    settings.json     hook registrations and permission rules (section 12)
+    brief.md          appended system prompt (section 09)
+    plugin/           the per-session `loom-plan` plugin (section 09)
+    events.jsonl      hook event spool
+    answers/          permission decisions
+    done/             pressure sessions: the completion marker (section 11)
+    codex.log         pressure runs: the Codex step's output (section 11)
+```
+
+`<project-key>` is the project directory's name plus a short hash of its canonical path, so two
+checkouts of one repository are two projects. (My call.) Keeping this out of the project means
+`loom plan` needs no `.gitignore` entry and no `loom init` before it runs; a project's `.loom/`
+directory belongs to `loom run`. Hook commands write their events here from Claude Code's own
+process, outside the session's sandbox (section 12, "What a session may write").
+
+The server finds the runtime directory from `LOOM_HOME` alone and ignores `LOOM_PLAN_STATE`,
+warning when it is set. Inside a planning session the runtime directory is passed as
+`LOOM_PLAN_STATE`, since the session's environment carries no `LOOM_HOME`. The summary CLI accepts
+it only when `LOOM_PLAN_SESSION` is also set and the directory is absolute, real, owned by the
+user, named for this project, and either has a parent the process cannot write or, where the
+sandbox covers the read-denied planning root with a private tmpfs (srt on Linux), has `drafts/`,
+`claims/` and `summaries.lock` mounted into it from another filesystem.
+
+The summary store is project content, not runtime state; it lives in `doc/loom/summaries/`
+(vision, Decisions; section 04).
+
+## Opening the browser
+
+After the server binds, `loom plan` prints the URL and opens it with the platform's opener
+(`open` on macOS, `xdg-open` on Linux). It prints the URL and skips the opener when any of
+these holds:
+
+- `--no-open` was given;
+- `SSH_CONNECTION` or `SSH_TTY` is set (the browser would open on the remote machine, or
+  nowhere);
+- on Linux, neither `DISPLAY` nor `WAYLAND_DISPLAY` is set.
+
+An opener that fails or is missing is not an error: the URL is already printed. Over SSH the
+output adds a tunnel hint with the bound port:
+
+```text
+http://127.0.0.1:7272/?token=…
+On your machine: ssh -L 7272:127.0.0.1:7272 <this host>
+```
+
+(My call: the tunnel keeps the server on loopback, where the access model is strongest, rather
+than pushing users toward `--host`.)
+
+## Access
+
+The access model is the dashboard's (`access.rs`, `auth.rs`, `bootstrap.rs`): `Host` and
+`Origin` checks on every request, a per-process token, and a port-scoped cookie obtained only
+through `GET /?token=<token>`.
+
+The difference is which routes need the cookie. The dashboard's only write lanes are config
+writes and, with `--terminals`, stage terminals. In `loom plan`, starting a session, chatting,
+and saving a file are write lanes into processes that edit the repository, so they need the
+cookie in every posture, loopback included, as the dashboard's terminal lane does. Every start
+therefore mints a token and the printed and opened URL carries it. Viewing routes follow the
+dashboard's rules. Section 12 owns the details and may tighten viewing.
+
+## Lifetime
+
+`loom plan` runs in the foreground until stopped. Closing every browser tab does not stop it;
+it ends the authoring session after the grace period (vision, "Sessions start cold"; section
+07) and keeps serving, so the user can reopen the URL.
+
+Stopping follows the vision:
+
+1. First Ctrl-C (or SIGTERM): the server stops accepting new sessions and chat messages, asks
+   every running session to write its final state into the documents, prints which sessions it
+   is waiting on, and exits when they finish.
+2. Second Ctrl-C: exits at once, leaving whatever the sessions had written.
+
+While running, the terminal prints one line per lifecycle event (a session started or ended, a
+summary rebuild started or finished with its count) and nothing per message, so the terminal
+stays readable. (My call.)
+
+Exit status is 0 after a normal stop and non-zero when the process could not start: not a git
+repository, a stage worktree, a server already running for the project, a bind failure.
+
+## Shared code with `loom status --web`
+
+`loom plan` runs its own server process, built from the dashboard's parts. These move out of
+`commands/status/web/` into a shared module that both commands use:
+
+- `listener.rs`: binding and port search, parameterised by the default port;
+- `access.rs`, `auth.rs`, `bootstrap.rs`: access policy, token, cookie bootstrap;
+- `connection.rs`: the request gate, connection and WebSocket caps;
+- `http.rs`: response heads with the security headers and CSP (`CONTENT_SECURITY_POLICY` and
+  `response_head`, `loom/src/commands/status/web/http.rs:251-264`), and the body limit;
+- `ws.rs`: WebSocket framing;
+- static asset serving from the embedded build.
+
+Each command keeps its own routes, wire model, and broadcaster. The dashboard's daemon-fed
+broadcaster has no counterpart; the planning server publishes from its own file watcher and
+session bridge (sections 04, 07).
+
+The browser app lives in the same `web/` project as the dashboard and shares its components,
+CSS tokens, and theme (vision, principle 6). It is a second entry page in the same Vite build,
+embedded through the same `build.rs` step, so the dashboard's bundle does not carry the
+planning app's code and both stay one product. (My call.)
+
+## Without `.loom/work`
+
+Steps 1 to 5 need nothing from `.loom/work`; `loom plan` works in a project that has never run
+`loom init`, unlike `loom status --web`, which exits before binding without it.
+
+What it reads of a run comes from the plan files: section 01 derives running and done plans
+from the `IN_PROGRESS-` and `DONE-` prefixes. When `.loom/work` exists, the app also shows that
+a run is set up and offers to open the dashboard; starting `loom init` and `loom run` from the
+app is section 11.
+
+## Missing prerequisites
+
+`loom plan` starts in read-only mode when any of these holds:
+
+- `tmux` is not on `PATH` (section 07, "Prerequisites");
+- the `claude` CLI is not on `PATH` (section 07);
+- Claude Code is not logged in (section 07);
+- on Linux or WSL, the sandbox's prerequisites are missing (section 12, "Sandbox prerequisites").
+
+In read-only mode no session starts: file mode and concept mode work on the summaries already
+committed, and the app and the terminal both say what is missing and how to install or fix it. (My call: a
+reviewer reading the plans on a machine without these should not be turned away.)
+
+## Out of scope for this section
+
+- Session start, ownership, and the hook event spool's format: section 07.
+- The file watcher and summary rebuilds: section 04.
+- Authentication details, session sandboxing, and writable paths: section 12.
+- Handing off to `loom init`, `loom run`, and the dashboard: section 11.

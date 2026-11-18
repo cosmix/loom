@@ -2,12 +2,14 @@
 //! first line (the failure's message after it) and exits 1, and a call that
 //! failed never shows a relay line.
 
+use std::io::{self, Write};
 use std::time::Duration;
 
 use anyhow::{anyhow, Result};
 
 use super::tests_wait::fixture;
 use super::wait::{exit_code, wait_or_request, TicketSink, WaitOutcome, WaitSite};
+use super::wait_state::{read_state, write_state};
 use crate::relay::emit::RelaySink;
 use crate::relay::HostJobRequest;
 
@@ -16,6 +18,76 @@ fn refused(outcome: &WaitOutcome) -> &str {
         WaitOutcome::Refused(message) => message,
         other => panic!("expected a refusal, got {other:?}"),
     }
+}
+
+struct ClosedWriter;
+
+impl Write for ClosedWriter {
+    fn write(&mut self, _: &[u8]) -> io::Result<usize> {
+        Err(io::Error::new(io::ErrorKind::BrokenPipe, "closed"))
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+#[test]
+fn failed_request_heading_retires_its_unpublished_state() {
+    let fx = fixture();
+    let mut relay = |_: &HostJobRequest| Ok("r1".to_string());
+    assert!(wait_or_request(
+        &fx.site(Duration::ZERO, false),
+        &mut relay,
+        &mut ClosedWriter
+    )
+    .is_err());
+    assert!(!fx.state_file().exists());
+}
+
+#[test]
+fn failed_ticket_write_retires_only_its_own_state() {
+    let fx = fixture();
+    let site = fx.site(Duration::ZERO, false);
+    let mut sink = TicketSink::default();
+    writeln!(sink.stdout(), "LOOM_RELAY_V1 id=r1").unwrap();
+    let mut relay = |_: &HostJobRequest| Ok("r1".to_string());
+    let outcome = wait_or_request(&site, &mut relay, &mut Vec::new()).unwrap();
+    let WaitOutcome::Requested { request_id } = outcome else {
+        panic!("expected request")
+    };
+
+    assert!(sink
+        .publish_request(&site, &request_id, &mut ClosedWriter)
+        .is_err());
+    assert!(!fx.state_file().exists());
+
+    let mut relay = |_: &HostJobRequest| Ok("r2".to_string());
+    wait_or_request(&site, &mut relay, &mut Vec::new()).unwrap();
+    let mut newer = read_state(&fx.state_file()).unwrap();
+    newer.request_id = "r3".to_string();
+    write_state(&fx.state_file(), &newer).unwrap();
+    assert!(sink
+        .publish_request(&site, &request_id, &mut ClosedWriter)
+        .is_err());
+    assert_eq!(read_state(&fx.state_file()).unwrap().request_id, "r3");
+}
+
+#[test]
+fn published_ticket_remains_owned_after_a_later_output_failure() {
+    let fx = fixture();
+    let site = fx.site(Duration::ZERO, false);
+    let mut sink = TicketSink::default();
+    writeln!(sink.stdout(), "LOOM_RELAY_V1 id=r1").unwrap();
+    let mut relay = |_: &HostJobRequest| Ok("r1".to_string());
+    let outcome = wait_or_request(&site, &mut relay, &mut Vec::new()).unwrap();
+    let WaitOutcome::Requested { request_id } = outcome else {
+        panic!("expected request")
+    };
+    let mut out = Vec::new();
+    sink.publish_request(&site, &request_id, &mut out).unwrap();
+    assert!(ClosedWriter.write_all(b"unrelated output").is_err());
+    assert_eq!(read_state(&fx.state_file()).unwrap().request_id, request_id);
 }
 
 #[test]

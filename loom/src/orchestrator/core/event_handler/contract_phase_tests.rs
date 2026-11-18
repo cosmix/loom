@@ -349,3 +349,35 @@ fn contract_session_exit_without_freeze_respawns() {
     assert_eq!(stage.session, None);
     assert_eq!(attempts_spent(&work, "test-stage").unwrap(), 3);
 }
+
+/// A held admission lock defers the report: no budget spent, the stage still
+/// names the ended writer, and the monitor's next report starts the replacement.
+#[test]
+#[serial]
+fn a_held_admission_lock_defers_a_replacement_without_charging_it() {
+    let _hooks = HooksDirGuard::install();
+    let temp = handoff_work_dir();
+    let work = temp.path().join(".loom").join("work");
+    let ended = contract_session(&work);
+    create_stage(&v2_stage(StageStatus::Executing, Some(&ended.id)), &work).unwrap();
+    let mut orchestrator = manual_orchestrator(&work, temp.path());
+    orchestrator.graph.mark_executing("test-stage").unwrap();
+    track_worktree(&mut orchestrator, temp.path());
+
+    let holder = crate::fs::stage_admission::lock(&work, "test-stage").unwrap();
+    let error = orchestrator
+        .on_contract_session_ended("test-stage", &ended.id)
+        .unwrap_err();
+    assert!(format!("{error:#}").contains("held the lock"), "{error:#}");
+    assert_eq!(attempts_spent(&work, "test-stage").unwrap(), 0);
+    let stage = load_stage("test-stage", &work).unwrap();
+    assert_eq!(stage.session.as_deref(), Some(ended.id.as_str()));
+
+    drop(holder);
+    orchestrator
+        .on_contract_session_ended("test-stage", &ended.id)
+        .unwrap();
+    assert_eq!(attempts_spent(&work, "test-stage").unwrap(), 1);
+    let stage = load_stage("test-stage", &work).unwrap();
+    assert_ne!(stage.session.as_deref(), Some(ended.id.as_str()));
+}

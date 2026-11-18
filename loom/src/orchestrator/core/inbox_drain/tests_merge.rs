@@ -3,7 +3,6 @@
 //! resolver's exit to remove, and the request is refused for any other
 //! session kind or stage.
 
-use std::path::Path;
 use std::process::Command;
 
 use chrono::Utc;
@@ -14,42 +13,23 @@ use crate::models::stage::StageStatus;
 use crate::orchestrator::core::{Orchestrator, OrchestratorConfig};
 use crate::plan::ExecutionGraph;
 use crate::relay::RequestKind;
+pub(super) use crate::test_git::git;
+use crate::test_git::TestRepo;
 use crate::verify::transitions::{load_stage, update_stage};
 
 use super::test_support::{entry_for, fixture, payload_for, Fixture, STAGE};
 use super::{run_pass, Tick};
 
-/// Run `git` with ambient global and system config shut out, for this child
-/// process only.
-fn git(root: &Path, args: &[&str]) -> String {
-    let output = Command::new("git")
-        .args(args)
-        .current_dir(root)
-        .env("GIT_CONFIG_GLOBAL", root.join(".no-global-config"))
-        .env("GIT_CONFIG_SYSTEM", root.join(".no-system-config"))
-        .env("GIT_CONFIG_NOSYSTEM", "1")
-        .env("GIT_AUTHOR_NAME", "loom-test")
-        .env("GIT_AUTHOR_EMAIL", "loom-test@example.com")
-        .env("GIT_COMMITTER_NAME", "loom-test")
-        .env("GIT_COMMITTER_EMAIL", "loom-test@example.com")
-        .output()
-        .unwrap();
-    assert!(
-        output.status.success(),
-        "git {args:?} failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    String::from_utf8_lossy(&output.stdout).trim().to_string()
-}
-
 /// A repository on `main` with the stage worktree `.worktrees/s1` on `loom/s1`,
 /// one commit ahead. The identity is set in the repository's own config,
 /// because the daemon's merge runs git without this module's environment.
-fn repository(fx: &Fixture) {
+pub(super) fn repository(fx: &Fixture) {
     let root = &fx.repo_root;
-    git(root, &["init", "-q", "-b", "main"]);
-    git(root, &["config", "user.name", "loom-test"]);
-    git(root, &["config", "user.email", "loom-test@example.com"]);
+    TestRepo::builder()
+        .identity("loom-test", "loom-test@example.com")
+        .no_seed()
+        .init_in(root);
+    crate::git::worktree::capture_main_identity(root, &fx.work_dir).unwrap();
     std::fs::write(root.join(".gitignore"), ".loom/\n.worktrees/\n").unwrap();
     std::fs::write(root.join("a.txt"), "a\n").unwrap();
     git(root, &["add", "."]);
@@ -71,7 +51,7 @@ fn repository(fx: &Fixture) {
     git(&worktree, &["commit", "-q", "-m", "stage work"]);
 }
 
-fn worktree_of(fx: &Fixture) -> std::path::PathBuf {
+pub(super) fn worktree_of(fx: &Fixture) -> std::path::PathBuf {
     fx.repo_root.join(".worktrees").join(STAGE)
 }
 
@@ -84,7 +64,7 @@ fn advance_main(fx: &Fixture, name: &str, text: &str) {
 
 /// An orchestrator over the fixture, on the tmux lane so that building it
 /// never probes the host for a terminal emulator.
-fn orchestrator(fx: &Fixture) -> Orchestrator {
+pub(super) fn orchestrator(fx: &Fixture) -> Orchestrator {
     std::fs::write(
         fx.work_dir.join("config.toml"),
         "[terminal]\nbackend = \"tmux\"\n",
@@ -101,8 +81,18 @@ fn orchestrator(fx: &Fixture) -> Orchestrator {
 }
 
 /// A Merge session relays `merge-resolved`; one pass settles it.
-fn resolve(fx: &Fixture, orchestrator: &mut Orchestrator) -> Option<LedgerOutcome> {
+pub(super) fn resolve(fx: &Fixture, orchestrator: &mut Orchestrator) -> Option<LedgerOutcome> {
     let record = fx.record(SessionType::Merge, SessionStatus::Running);
+    // The relay can be drained after its resolver exits. Give this synthetic
+    // record a proven stale PID identity so ownership checks can confirm that
+    // no resolver still writes the worktree before a handback.
+    let pids = fx.work_dir.join("pids");
+    std::fs::create_dir_all(&pids).unwrap();
+    std::fs::write(
+        pids.join(format!("{}-{}.pid", record.tracking_key, record.id)),
+        format!("{}\n{}\n", std::process::id(), u64::MAX),
+    )
+    .unwrap();
     let kind = RequestKind::MergeResolved;
     let entry = fx.relay(&record, kind, payload_for(kind));
     let tick = Tick {
@@ -114,7 +104,7 @@ fn resolve(fx: &Fixture, orchestrator: &mut Orchestrator) -> Option<LedgerOutcom
 }
 
 /// The stage in `MergeConflict` with `completed_commit` recorded as given.
-fn conflict_stage(fx: &Fixture, completed_commit: Option<&str>) {
+pub(super) fn conflict_stage(fx: &Fixture, completed_commit: Option<&str>) {
     fx.stage(StageStatus::MergeConflict, None);
     update_stage(STAGE, &fx.work_dir, |stage| {
         stage.completed_commit = completed_commit.map(str::to_string);
@@ -128,7 +118,7 @@ fn conflict_stage(fx: &Fixture, completed_commit: Option<&str>) {
 
 /// The stage as the daemon meets it after a resolver merged the (moved) target
 /// into the worktree: `main` advanced, and the worktree merged it.
-fn resolved_stage(fx: &Fixture) -> Orchestrator {
+pub(super) fn resolved_stage(fx: &Fixture) -> Orchestrator {
     repository(fx);
     let own_commit = git(&worktree_of(fx), &["rev-parse", "HEAD"]);
     advance_main(fx, "m.txt", "m\n");
@@ -142,7 +132,7 @@ fn resolved_stage(fx: &Fixture) -> Orchestrator {
 
 /// A refused `--resolved`: the stage keeps `MergeConflict`, `merged` stays
 /// false, `main` does not move, and the worktree stays.
-fn assert_refused(fx: &Fixture, orchestrator: &mut Orchestrator) {
+pub(super) fn assert_refused(fx: &Fixture, orchestrator: &mut Orchestrator) {
     let main_before = git(&fx.repo_root, &["rev-parse", "main"]);
     assert_eq!(resolve(fx, orchestrator), Some(LedgerOutcome::Refused));
     let stage = load_stage(STAGE, &fx.work_dir).unwrap();
@@ -363,27 +353,4 @@ mod settle_for_landing {
             _ => panic!("expected Refused"),
         }
     }
-}
-
-#[test]
-fn merge_resolved_refuses_failing_completion_without_replacing_original_proof() {
-    let fx = fixture();
-    let mut orchestrator = resolved_stage(&fx);
-    update_stage(STAGE, &fx.work_dir, |stage| {
-        stage.acceptance = vec![crate::models::stage::AcceptanceCriterion::Simple(
-            "false".into(),
-        )];
-        Ok(())
-    })
-    .unwrap();
-    let original = load_stage(STAGE, &fx.work_dir).unwrap().completed_commit;
-    let main = git(&fx.repo_root, &["rev-parse", "main"]);
-    assert_eq!(
-        resolve(&fx, &mut orchestrator),
-        Some(LedgerOutcome::Refused)
-    );
-    let stage = load_stage(STAGE, &fx.work_dir).unwrap();
-    assert!(!stage.merged);
-    assert_eq!(stage.completed_commit, original);
-    assert_eq!(git(&fx.repo_root, &["rev-parse", "main"]), main);
 }

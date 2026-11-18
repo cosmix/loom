@@ -42,9 +42,7 @@ const ADAPTER_NAMES: [&str; 23] = [
 /// Scenarios every adapter records; compiled runners add `build-error`.
 const REQUIRED_SCENARIOS: [&str; 4] = ["one-pass", "one-fail", "no-match", "suite"];
 
-fn words(command: &str) -> Vec<String> {
-    command.split_whitespace().map(str::to_string).collect()
-}
+use crate::testrun::fixture_support::words;
 
 fn recognized(command: &str, cwd: &Path) -> Option<&'static str> {
     registry::recognize(command, cwd).map(|adapter| adapter.name())
@@ -267,4 +265,21 @@ fn output_helpers_sum_count_and_strip() {
     let summary = summary_from_counts(Some(2), Some(1), None);
     assert_eq!((summary.executed, summary.build_failed), (Some(3), false));
     assert_eq!(summary_from_counts(None, None, Some(4)).executed, None);
+}
+
+/// Without an override an adapter shares exactly what it reads as a failed
+/// build.
+#[test]
+fn compile_rejected_defaults_to_build_failed() {
+    let gradle = registry::by_name("gradle").unwrap();
+    let out = |stdout| RunOutput {
+        stdout,
+        stderr: "",
+        exit_code: Some(1),
+    };
+    let rejected = out("> Compilation failed; see the compiler error output.\n");
+    assert!(gradle.parse(&rejected).build_failed);
+    assert!(gradle.compile_rejected(&rejected));
+    let failing = out("> Task :test FAILED\n3 tests completed, 1 failed\n");
+    assert!(!gradle.compile_rejected(&failing));
 }

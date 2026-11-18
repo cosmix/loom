@@ -7,7 +7,7 @@
 //! backend `loom run` defaults to, the default context ceiling, the
 //! Claude/Codex models and reasoning efforts `loom pressure` spawns absent a
 //! CLI flag, and the model and reasoning effort each stage type's main-agent
-//! session launches with absent a plan field. `loom config`
+//! session launches with absent a plan field, and which Codex worker backend stage leads use. `loom config`
 //! (`crate::commands::config`) is the only writer; every other consumer
 //! reads through [`UserConfig::load`], which never fails.
 //!
@@ -68,11 +68,16 @@ use crate::models::session::SessionBackendKind;
 pub mod keys;
 pub mod value;
 
+pub use codex::CODEX_BACKENDS;
 use keys::KeySpec;
+pub use plan::SUMMARY_BACKENDS;
 pub use value::ConfigValue;
 
+mod codex;
 mod models;
 mod parse;
+mod plan;
+mod plan_authoring;
 mod pressure;
 mod render;
 mod write;
@@ -93,13 +98,19 @@ mod redirect;
 pub(crate) use redirect::{redirect_user_config, UserConfigRedirect};
 
 #[cfg(test)]
+mod overview_default_contract_tests;
+
+#[cfg(test)]
+mod plan_keys_tests;
+
+#[cfg(test)]
 mod tests;
 
 /// Where a resolved key's value came from.
 ///
 /// `loom config` reads only the user config, never a workspace config, so
 /// these two are the whole space — a workspace `[terminal]`/`[context]`/
-/// `[pressure]`/`[models]` section is a separate resolution tier that
+/// `[pressure]`/`[models]`/`[planning]` section is a separate resolution tier that
 /// [`crate::fs::work_dir::read_terminal_config`]/
 /// [`crate::fs::work_dir::read_context_config`] merge in themselves, above
 /// this module.
@@ -131,10 +142,12 @@ impl std::fmt::Display for Origin {
 /// need to know whether the user config actually set a value.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct UserConfig {
+    codex: codex::CodexSection,
     update_check: Option<bool>,
     update_check_interval_hours: Option<u32>,
     terminal_backend: Option<SessionBackendKind>,
     context_ceiling_tokens: Option<u32>,
+    plan: plan::PlanSection,
     pressure: pressure::PressureSection,
     models: models::ModelsSection,
 }
@@ -242,7 +255,7 @@ impl UserConfig {
         self.update_check_interval_hours.unwrap_or(24)
     }
 
-    /// Terminal backend `loom run` defaults to. Default: native.
+    /// Terminal backend `loom run` defaults to. Default: tmux.
     pub fn terminal_backend(&self) -> SessionBackendKind {
         self.terminal_backend.unwrap_or_default()
     }
@@ -278,10 +291,12 @@ impl UserConfig {
 pub(crate) fn parse_document(text: &str) -> Result<UserConfig> {
     let doc: DocumentMut = text.parse().context("invalid TOML")?;
     Ok(UserConfig {
+        codex: codex::CodexSection::parse(&doc)?,
         update_check: parse::get_bool(&doc, "update", "check")?,
         update_check_interval_hours: parse::get_u32(&doc, "update", "check_interval_hours")?,
         terminal_backend: parse::get_backend(&doc)?,
         context_ceiling_tokens: parse::get_u32(&doc, "context", "ceiling_tokens")?,
+        plan: plan::PlanSection::parse(&doc)?,
         pressure: pressure::PressureSection::parse(&doc)?,
         models: models::ModelsSection::parse(&doc)?,
     })

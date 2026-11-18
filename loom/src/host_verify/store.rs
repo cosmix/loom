@@ -1,5 +1,5 @@
 //! Host-job state under `<state root>/verification/<stage>/`: the stage's
-//! current record, its lock, and one directory per job holding the record's
+//! current and waiting records, its lock, and one directory per job holding the
 //! copy, progress, result, logs and the criterion process groups.
 //!
 //! `work_dir` may itself be a symlink (a worktree's `.loom/work`), so it is
@@ -21,7 +21,7 @@ use nix::sys::stat::fstatat;
 
 use super::store_fs::{
     append_locked, create_dirs, ends_with, open_root, read_in, read_json, refuse_unsafe,
-    remove_job_dir, write_atomic, FILE_MODE,
+    remove_job_dir, replace_file, FILE_MODE,
 };
 use super::{CriterionOutcome, JobRecord, JobResult, JobState};
 use crate::fs::safe_fs::{self, MAX_LOG_BYTES};
@@ -45,9 +45,9 @@ const STORE_FILES: [&str; 5] = [
 ];
 /// `progress.jsonl` takes no outcome past this size but the truncation marker.
 const PROGRESS_MAX_BYTES: u64 = 2 * 1024 * 1024;
-/// Lines `groups` holds at most; a pgid is at most ten digits and a newline.
+/// Lines `groups` holds at most, including boot and start-time evidence.
 const MAX_GROUPS: usize = 4_096;
-const GROUPS_MAX_BYTES: usize = MAX_GROUPS * 11;
+const GROUPS_MAX_BYTES: usize = MAX_GROUPS * 192;
 /// Job directories a stage keeps; older ones go when a job is queued.
 const KEPT_JOB_DIRS: usize = 3;
 const RECORD_MAX_BYTES: usize = 1024 * 1024;
@@ -69,7 +69,7 @@ pub fn job_dir(work_dir: &Path, stage_id: &str, job_id: &str) -> Result<PathBuf>
 }
 
 /// Take the stage's lock, creating its directory. Read-modify-write of
-/// `current.json` happens only under it.
+/// `current.json` and `pending.json` happens only under it.
 pub fn lock_stage(work_dir: &Path, stage_id: &str) -> Result<StageLock> {
     let rel = stage_rel(stage_id)?;
     let lock = rel.join(LOCK_FILE);
@@ -94,16 +94,7 @@ pub fn load_current(work_dir: &Path, stage_id: &str) -> Result<Option<JobRecord>
 /// Write `record` as its stage's current record and as `<job dir>/record.json`,
 /// creating the job directory.
 pub fn save_current(work_dir: &Path, record: &JobRecord) -> Result<()> {
-    let job = job_rel(&record.stage_id, &record.id)?;
-    let current = stage_rel(&record.stage_id)?.join(CURRENT_FILE);
-    let copy = job.join(RECORD_FILE);
-    let root = open_root(work_dir)?;
-    refuse_unsafe(&root, &current)?;
-    refuse_unsafe(&root, &copy)?;
-    create_dirs(&root, &job)?;
-    let bytes = serde_json::to_vec_pretty(record).context("cannot encode the job record")?;
-    write_atomic(&root, &copy, &bytes)?;
-    write_atomic(&root, &current, &bytes)
+    slots::save_slot(work_dir, record, Some(CURRENT_FILE))
 }
 
 /// The stage's current record when relay request `request_id` queued or
@@ -167,9 +158,11 @@ pub fn read_progress(
 }
 
 pub fn save_result(work_dir: &Path, stage_id: &str, result: &JobResult) -> Result<()> {
-    let rel = job_rel(stage_id, &result.job_id)?.join(RESULT_FILE);
+    let job = job_rel(stage_id, &result.job_id)?;
     let bytes = serde_json::to_vec_pretty(result).context("cannot encode the job result")?;
-    write_atomic(&open_root(work_dir)?, &rel, &bytes)
+    let root = open_root(work_dir)?;
+    create_dirs(&root, &job)?;
+    replace_file(&root, &job.join(RESULT_FILE), &bytes)
 }
 
 pub fn load_result(work_dir: &Path, stage_id: &str, job_id: &str) -> Result<Option<JobResult>> {
@@ -198,7 +191,7 @@ pub fn save_criterion_log(
         "{name} is a store file"
     );
     let rel = job_rel(stage_id, job_id)?.join(&name);
-    write_atomic(&open_root(work_dir)?, &rel, &capped_log(bytes))?;
+    replace_file(&open_root(work_dir)?, &rel, &capped_log(bytes))?;
     Ok(name)
 }
 
@@ -217,7 +210,9 @@ pub fn save_job_file(
         bytes.len() <= MAX_LOG_BYTES,
         "job file {name} exceeds {MAX_LOG_BYTES} bytes"
     );
-    write_atomic(&open_root(work_dir)?, &rel, bytes)
+    let root = open_root(work_dir)?;
+    create_dirs(&root, &job_rel(stage_id, job_id)?)?;
+    replace_file(&root, &rel, bytes)
 }
 
 pub fn load_job_file(
@@ -233,32 +228,16 @@ pub fn load_job_file(
     )
 }
 
-/// Record a criterion's process group; `groups` takes at most 4,096 lines.
-pub fn append_group(work_dir: &Path, stage_id: &str, job_id: &str, pgid: u32) -> Result<()> {
-    let rel = job_rel(stage_id, job_id)?.join(GROUPS_FILE);
-    append_locked(&open_root(work_dir)?, &rel, |file, _| {
-        let mut held = Vec::new();
-        file.take(GROUPS_MAX_BYTES as u64)
-            .read_to_end(&mut held)
-            .context("cannot read the job's process groups")?;
-        let lines = held.iter().filter(|byte| **byte == b'\n').count();
-        Ok((lines < MAX_GROUPS).then(|| format!("{pgid}\n").into_bytes()))
-    })
-}
-
-/// The process groups the job's child recorded; a missing file is none. A
-/// value of 0 or 1 is dropped: signalling it would reach far beyond the job.
-pub fn load_groups(work_dir: &Path, stage_id: &str, job_id: &str) -> Result<Vec<u32>> {
-    let rel = job_rel(stage_id, job_id)?.join(GROUPS_FILE);
-    let Some(bytes) = read_in(work_dir, &rel, GROUPS_MAX_BYTES)? else {
-        return Ok(Vec::new());
-    };
-    Ok(String::from_utf8_lossy(&bytes)
-        .lines()
-        .filter_map(|line| line.trim().parse::<u32>().ok())
-        .filter(|pgid| *pgid > 1)
-        .collect())
-}
+mod groups;
+mod order;
+mod slots;
+#[cfg(test)]
+pub(crate) use groups::append_group;
+pub use groups::load_groups;
+pub(crate) use groups::start_guarded_group;
+pub(super) use groups::{load_group_anchors, load_uncontrolled_groups};
+pub(crate) use order::next_submission_order;
+pub(crate) use slots::{clear_pending, load_pending, save_job_copy, save_pending};
 
 /// Open `<job dir>/child.log` for appending (and reading its tail), creating it.
 pub(crate) fn open_child_log(work_dir: &Path, stage_id: &str, job_id: &str) -> Result<File> {
@@ -288,8 +267,21 @@ pub(crate) fn stage_ids(work_dir: &Path) -> Result<Vec<String>> {
     }
 }
 
-/// Remove the stage's job directories but the three newest by mtime, and
-/// never `keep`'s.
+/// Job directories under one stage, including jobs superseded as current.
+pub(crate) fn job_ids(work_dir: &Path, stage_id: &str) -> Result<Vec<String>> {
+    let root = open_root(work_dir)?;
+    let stage = stage_rel(stage_id)?;
+    let entries = list_dir_no_follow(&root, &stage)?;
+    Ok(entries
+        .into_iter()
+        .filter(|(_, kind)| *kind == EntryKind::Directory)
+        .filter_map(|(name, _)| name.into_string().ok())
+        .filter(|name| validate_job_id(name).is_ok())
+        .collect())
+}
+
+/// Remove old applied job directories beyond the three newest. An unmarked
+/// job may still need application after `current.json` advances or a restart.
 pub(crate) fn prune_jobs(work_dir: &Path, stage_id: &str, keep: &str) -> Result<()> {
     let rel = stage_rel(stage_id)?;
     let root = open_root(work_dir)?;
@@ -307,7 +299,14 @@ pub(crate) fn prune_jobs(work_dir: &Path, stage_id: &str, keep: &str) -> Result<
     }
     jobs.sort_unstable_by(|a, b| b.cmp(a));
     for (_, name) in jobs.into_iter().skip(KEPT_JOB_DIRS) {
-        if name != keep && !awaiting_retire(work_dir, stage_id, &name) {
+        if name != keep
+            && load_job_file(work_dir, stage_id, &name, "applied")?.is_some()
+            && !awaiting_retire(work_dir, stage_id, &name)
+            && load_uncontrolled_groups(work_dir, stage_id, &name)?.is_empty()
+            && !load_group_anchors(work_dir, stage_id, &name)?
+                .iter()
+                .any(groups::GroupAnchorAddress::is_live)
+        {
             remove_job_dir(&stage, &name)
                 .with_context(|| format!("cannot prune job directory {name}"))?;
         }

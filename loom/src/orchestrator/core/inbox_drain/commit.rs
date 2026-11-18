@@ -28,17 +28,16 @@ use anyhow::Result;
 
 use crate::daemon::{handle_block_stage, Response};
 use crate::fs::resolve_target_branch_from_config;
-use crate::git::branch::{branch_name_for_stage, branch_ref};
+use crate::git::branch::branch_ref;
 use crate::git::merge::lock::MergeLock;
 use crate::git::stage_commit::{CommitRefusal, CommitRequest, CommitScope, Committer};
 use crate::git::target_guard::{append_attestation, guarded_refs, knowledge_prefix};
 use crate::git::worktree::{stage_worktree_path, WorktreeGit};
-use crate::models::session::{Session, SessionStatus, SessionType};
+use crate::models::session::{Session, SessionType};
 use crate::models::stage::{Stage, StageStatus};
 use crate::relay::CommitPayload;
-use crate::verify::transitions::load_stage;
 
-use super::apply::require_owner;
+use super::apply::{require_merge_resolver, require_owner};
 use super::{InboxHost, Settle};
 
 /// How long a knowledge commit waits for the merge lock.
@@ -61,6 +60,7 @@ struct Prepared {
     git: WorktreeGit,
     scope: CommitScope,
     merge_target: Option<String>,
+    merge_snapshot: Option<String>,
     guarded_paths: Vec<String>,
     _merge_lock: Option<MergeLock>,
 }
@@ -85,6 +85,9 @@ pub(super) fn apply_commit(
         Committer::new(&prepared.git, site.repo_root).guarding_paths(&prepared.guarded_paths);
     if let Some(target) = &prepared.merge_target {
         committer = committer.merging_into(target);
+    }
+    if let Some(snapshot) = &prepared.merge_snapshot {
+        committer = committer.merging_snapshot(snapshot);
     }
     match committer.commit_staged(&prepared.scope, &request) {
         Ok(id) => {
@@ -117,12 +120,19 @@ fn prepare(site: &CommitSite<'_>) -> Result<Prepared, String> {
 fn prepare_stage(site: &CommitSite<'_>) -> Result<Prepared, String> {
     let stage = require_owner(site.work_dir, site.stage_id, site.record)?;
     require_executing(&stage)?;
+    if let Some(blocker) =
+        crate::native_worker::index::stage_disposition(site.work_dir, site.stage_id)
+            .blocker(site.stage_id)
+    {
+        return Err(blocker);
+    }
     Ok(Prepared {
         git: pinned_worktree(site.repo_root, &stage)?,
         scope: CommitScope::StageBranch {
             stage_id: site.stage_id.to_string(),
         },
         merge_target: None,
+        merge_snapshot: None,
         guarded_paths: Vec::new(),
         _merge_lock: None,
     })
@@ -144,6 +154,7 @@ fn prepare_knowledge(site: &CommitSite<'_>) -> Result<Prepared, String> {
             prefix: PathBuf::from(knowledge_prefix().trim_end_matches('/')),
         },
         merge_target: None,
+        merge_snapshot: None,
         guarded_paths: Vec::new(),
         _merge_lock: Some(merge_lock),
     })
@@ -156,41 +167,27 @@ fn target_branch(site: &CommitSite<'_>) -> Result<String, String> {
         .map_err(|error| format!("the target branch could not be read: {error:#}"))
 }
 
-/// A merge session's commit of the merge it resolves. The merge session is
-/// not the stage's `session`, so it is attributed by the branch it was
-/// spawned for, as `merge-resolved` is. Its `MERGE_HEAD` must be on the
-/// target: the session can write that file, and the commit records it. Its
-/// sandbox is released from the plan's worktree-relative `deny_write`, so the
-/// commit enforces those instead (`Committer::guarding_paths`).
+/// A merge session's commit of the merge it resolves. Its `MERGE_HEAD` must be
+/// on the target: the session can write that file, and the commit records it.
+/// Its sandbox is released from the plan's worktree-relative `deny_write`, so
+/// the commit enforces those instead (`Committer::guarding_paths`).
 fn prepare_merge(site: &CommitSite<'_>) -> Result<Prepared, String> {
     let record = site.record;
-    if record.status != SessionStatus::Running {
-        return Err(format!("session '{}' is no longer running", record.id));
-    }
-    let branch = branch_name_for_stage(site.stage_id);
-    if record.merge_source_branch.as_deref() != Some(branch.as_str()) {
-        return Err(format!(
-            "session '{}' is not resolving the merge of {branch}",
-            record.id
-        ));
-    }
-    let stage = load_stage(site.stage_id, site.work_dir)
-        .map_err(|error| format!("stage '{}' could not be loaded: {error:#}", site.stage_id))?;
-    if !matches!(
-        stage.status,
-        StageStatus::MergeConflict | StageStatus::MergeBlocked
-    ) {
-        return Err(format!(
-            "stage '{}' is {}, not MergeConflict or MergeBlocked",
-            site.stage_id, stage.status
-        ));
-    }
+    let stage = require_merge_resolver(site.work_dir, site.stage_id, record)?;
+    let snapshot = crate::orchestrator::signals::load_merge_snapshot(site.work_dir, &record.id)
+        .map_err(|error| {
+            format!(
+                "merge target snapshot unavailable ({error:#}); preserve staged \
+             changes and start a fresh merge resolver, or resolve manually before landing"
+            )
+        })?;
     Ok(Prepared {
         git: pinned_worktree(site.repo_root, &stage)?,
         scope: CommitScope::Merge {
             stage_id: site.stage_id.to_string(),
         },
         merge_target: Some(target_branch(site)?),
+        merge_snapshot: Some(snapshot),
         guarded_paths: guarded_paths(site, &stage)?,
         _merge_lock: None,
     })
@@ -305,6 +302,39 @@ fn attest_knowledge_commit(work_dir: &Path, scope: &CommitScope, from: &str, to:
             reference = %reference,
             error = %format!("{error:#}"),
             "Could not attest a knowledge commit; the target guard holds it for the operator"
+        );
+    }
+}
+
+#[cfg(test)]
+mod native_gate_tests {
+    use super::*;
+    use crate::models::session::SessionStatus;
+    use crate::verify::transitions::{create_stage, load_stage};
+
+    #[test]
+    fn daemon_commit_refuses_active_worker() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let work = temp.path();
+        let mut session = Session::new();
+        session.status = SessionStatus::Running;
+        let mut stage = Stage::new("s1".into(), None);
+        stage.id = "s1".into();
+        stage.status = StageStatus::Executing;
+        stage.session = Some(session.id.clone());
+        create_stage(&stage, work).unwrap();
+        crate::commands::stage::native_gate::tests::seed_active_worker(work, "s1", "unit");
+        let site = CommitSite {
+            work_dir: work,
+            repo_root: work,
+            stage_id: "s1",
+            record: &session,
+        };
+        let error = prepare_stage(&site).err().unwrap();
+        assert!(error.contains("running native Codex workers"));
+        assert_eq!(
+            load_stage("s1", work).unwrap().status,
+            StageStatus::Executing
         );
     }
 }

@@ -91,7 +91,7 @@ fn defaults_when_the_file_is_absent() {
     let config = UserConfig::default();
     assert!(config.update_check());
     assert_eq!(config.update_check_interval_hours(), 24);
-    assert_eq!(config.terminal_backend(), SessionBackendKind::Native);
+    assert_eq!(config.terminal_backend(), SessionBackendKind::Tmux);
     assert_eq!(
         config.context_ceiling_tokens(),
         DEFAULT_CONTEXT_CEILING_TOKENS
@@ -100,13 +100,18 @@ fn defaults_when_the_file_is_absent() {
     assert_eq!(config.context_ceiling_tokens_set(), None);
     assert_eq!(config.pressure_claude_model(), "opus");
     assert_eq!(config.pressure_claude_effort(), "xhigh");
-    assert_eq!(config.pressure_codex_model(), "gpt-6.1-sol");
+    assert_eq!(config.pressure_codex_model(), "gpt-6.2-sol");
     assert_eq!(config.pressure_codex_effort(), "xhigh");
     assert_eq!(config.pressure_address_model(), "opus");
     assert_eq!(config.pressure_address_effort(), "high");
 
-    assert_eq!(config.stage_model(StageType::Standard), "opus");
-    assert_eq!(config.stage_reasoning_effort(StageType::Standard), "medium");
+    assert_eq!(config.stage_model(StageType::Standard), "sonnet");
+    assert_eq!(config.stage_reasoning_effort(StageType::Standard), "high");
+    assert_eq!(config.code_reviewer_model(), "opus");
+    assert_eq!(config.code_reviewer_effort(), "high");
+    assert_eq!(config.contract_writer_model(), "opus");
+    assert_eq!(config.contract_writer_effort(), "high");
+    assert_eq!(config.pressure_rounds(), 1);
     assert_eq!(config.stage_model(StageType::Knowledge), "opus");
     assert_eq!(
         config.stage_reasoning_effort(StageType::Knowledge),
@@ -131,7 +136,7 @@ fn parses_every_key_out_of_a_document() {
          [terminal]\nbackend = \"tmux\"\n\n\
          [context]\nceiling_tokens = 111111\n\n\
          [pressure]\nclaude_model = \"fable\"\nclaude_effort = \"low\"\n\
-         codex_model = \"gpt-6-astra\"\ncodex_effort = \"medium\"\n\
+         codex_model = \"gpt-6.2-astra\"\ncodex_effort = \"medium\"\n\
          address_model = \"sonnet\"\naddress_effort = \"low\"\n\n\
          [models]\nstandard_model = \"sonnet\"\nstandard_effort = \"low\"\n\
          knowledge_model = \"fable\"\nknowledge_effort = \"medium\"\n\
@@ -145,7 +150,7 @@ fn parses_every_key_out_of_a_document() {
     assert_eq!(config.context_ceiling_tokens(), 111111);
     assert_eq!(config.pressure_claude_model(), "fable");
     assert_eq!(config.pressure_claude_effort(), "low");
-    assert_eq!(config.pressure_codex_model(), "gpt-6-astra");
+    assert_eq!(config.pressure_codex_model(), "gpt-6.2-astra");
     assert_eq!(config.pressure_codex_effort(), "medium");
     assert_eq!(config.pressure_address_model(), "sonnet");
     assert_eq!(config.pressure_address_effort(), "low");
@@ -170,6 +175,12 @@ fn parses_every_key_out_of_a_document() {
 }
 
 #[test]
+fn parses_terminal_backend_native_out_of_a_document() {
+    let config = parse_document("[terminal]\nbackend = \"native\"\n").unwrap();
+    assert_eq!(config.terminal_backend(), SessionBackendKind::Native);
+}
+
+#[test]
 fn a_type_mismatched_field_in_the_document_is_an_error() {
     assert!(parse_document("[update]\ncheck = \"nope\"\n").is_err());
     assert!(parse_document("[context]\nceiling_tokens = \"nope\"\n").is_err());
@@ -178,11 +189,11 @@ fn a_type_mismatched_field_in_the_document_is_an_error() {
 
 #[test]
 fn pressure_keys_reject_an_unknown_model_variant() {
-    let err = parse_document("[pressure]\nclaude_model = \"gpt-6-sol\"\n")
+    let err = parse_document("[pressure]\nclaude_model = \"gpt-6.2-sol\"\n")
         .unwrap_err()
         .to_string();
     assert!(err.contains("pressure.claude_model"), "{err}");
-    assert!(err.contains("gpt-6-sol"), "{err}");
+    assert!(err.contains("gpt-6.2-sol"), "{err}");
 
     let err = parse_document("[pressure]\ncodex_model = \"opus\"\n")
         .unwrap_err()
@@ -210,11 +221,11 @@ fn pressure_and_models_keys_reject_an_unknown_effort_variant() {
 
 #[test]
 fn models_keys_reject_an_unknown_model_variant() {
-    let err = parse_document("[models]\nknowledge_distill_model = \"gpt-6-sol\"\n")
+    let err = parse_document("[models]\nknowledge_distill_model = \"gpt-6.2-sol\"\n")
         .unwrap_err()
         .to_string();
     assert!(err.contains("models.knowledge_distill_model"), "{err}");
-    assert!(err.contains("gpt-6-sol"), "{err}");
+    assert!(err.contains("gpt-6.2-sol"), "{err}");
 }
 
 #[test]
@@ -227,7 +238,7 @@ fn origin_is_set_only_for_keys_the_document_wrote() {
     assert_eq!(origin.to_string(), "set");
 
     let (value, origin) = config.value_of(spec("terminal.backend").unwrap());
-    assert_eq!(value.to_string(), "native");
+    assert_eq!(value.to_string(), "tmux");
     assert_eq!(origin, Origin::Default);
     assert_eq!(origin.to_string(), "default");
 }
@@ -246,7 +257,7 @@ fn origin_of_pressure_keys_reflects_set_versus_unset() {
     assert_eq!(origin, Origin::Set);
 
     let (value, origin) = config.value_of(spec("pressure.codex_model").unwrap());
-    assert_eq!(value.to_string(), "gpt-6.1-sol");
+    assert_eq!(value.to_string(), "gpt-6.2-sol");
     assert_eq!(origin, Origin::Default);
 
     let (value, origin) = config.value_of(spec("pressure.codex_effort").unwrap());
@@ -282,15 +293,17 @@ fn to_toml_string_renders_every_key_resolved() {
     let config = parse_document("[context]\nceiling_tokens = 55555\n").unwrap();
     let rendered = config.to_toml_string();
 
-    // Section order: context, models, pressure, terminal, update.
+    // Section order: context, models, plan, pressure, terminal, update.
     let context_at = rendered.find("[context]").unwrap();
     let models_at = rendered.find("[models]").unwrap();
+    let plan_at = rendered.find("[plan]").unwrap();
     let pressure_at = rendered.find("[pressure]").unwrap();
     let terminal_at = rendered.find("[terminal]").unwrap();
     let update_at = rendered.find("[update]").unwrap();
     assert!(
         context_at < models_at
-            && models_at < pressure_at
+            && models_at < plan_at
+            && plan_at < pressure_at
             && pressure_at < terminal_at
             && terminal_at < update_at,
         "{rendered}"
@@ -316,11 +329,9 @@ fn to_toml_string_renders_every_key_resolved() {
 
 #[test]
 fn value_of_has_an_arm_for_every_registered_key() {
-    // `value_of`'s match on `spec.name` has an `unreachable!()` fallback arm
-    // that nothing checks at compile time - a key added to `keys::KEYS`
-    // without a matching arm would panic `loom config --list` at runtime.
-    // Looping over the real registry here means that panic happens in this
-    // test instead of in the field.
+    // `value_of`'s match on `spec.name` has an `unreachable!()` fallback arm that
+    // nothing checks at compile time: a key added to `keys::KEYS` without an arm
+    // would panic `loom config --list`. Looping over the registry catches it here.
     let config = UserConfig::default();
     for key in keys::KEYS {
         let (value, origin) = config.value_of(key);
@@ -329,18 +340,34 @@ fn value_of_has_an_arm_for_every_registered_key() {
         match key.name {
             "update.check" => assert_eq!(value, "true"),
             "update.check_interval_hours" => assert_eq!(value, "24"),
-            "terminal.backend" => assert_eq!(value, "native"),
+            "terminal.backend" => assert_eq!(value, "tmux"),
+            "codex.backend" => assert_eq!(value, "native"),
             "context.ceiling_tokens" => {
                 assert_eq!(value, DEFAULT_CONTEXT_CEILING_TOKENS.to_string())
             }
+            "plan.document_summary_model" => assert_eq!(value, "haiku"),
+            "plan.document_summary_effort" => assert_eq!(value, "high"),
+            "plan.overview_model" => assert_eq!(value, "sonnet"),
+            "plan.overview_effort" => assert_eq!(value, "high"),
+            name if name.starts_with("plan.summary_") => {} // pinned in plan_keys_tests.rs
+            "plan.spec_authoring_model" => assert_eq!(value, "opus"),
+            "plan.spec_authoring_effort" => assert_eq!(value, "medium"),
+            "plan.plan_authoring_model" => assert_eq!(value, "opus"),
+            "plan.plan_authoring_effort" => assert_eq!(value, "high"),
             "pressure.claude_model" => assert_eq!(value, "opus"),
             "pressure.claude_effort" => assert_eq!(value, "xhigh"),
-            "pressure.codex_model" => assert_eq!(value, "gpt-6.1-sol"),
+            "pressure.codex_model" => assert_eq!(value, "gpt-6.2-sol"),
             "pressure.codex_effort" => assert_eq!(value, "xhigh"),
             "pressure.address_model" => assert_eq!(value, "opus"),
             "pressure.address_effort" => assert_eq!(value, "high"),
-            "models.standard_model" => assert_eq!(value, "opus"),
-            "models.standard_effort" => assert_eq!(value, "medium"),
+            "models.standard_model" => assert_eq!(value, "sonnet"),
+            "models.standard_effort" => assert_eq!(value, "high"),
+            "models.code_reviewer_model" => assert_eq!(value, "opus"),
+            "models.code_reviewer_followup_model" => assert_eq!(value, "sonnet"),
+            "models.code_reviewer_effort" => assert_eq!(value, "high"),
+            "models.contract_writer_model" => assert_eq!(value, "opus"),
+            "models.contract_writer_effort" => assert_eq!(value, "high"),
+            "pressure.rounds" => assert_eq!(value, "1"),
             "models.knowledge_model" => assert_eq!(value, "opus"),
             "models.knowledge_effort" => assert_eq!(value, "medium"),
             "models.knowledge_distill_model" => assert_eq!(value, "sonnet"),
@@ -350,4 +377,21 @@ fn value_of_has_an_arm_for_every_registered_key() {
             other => panic!("no expected default wired up for key {other}"),
         }
     }
+}
+
+#[test]
+fn plan_keys_parse_a_set_value_and_reject_an_unknown_variant() {
+    let config = parse_document("[plan]\noverview_model = \"opus\"\n").unwrap();
+    let (value, origin) = config.value_of(spec("plan.overview_model").unwrap());
+    assert_eq!(value.to_string(), "opus");
+    assert_eq!(origin, Origin::Set);
+    let (value, origin) = config.value_of(spec("plan.overview_effort").unwrap());
+    assert_eq!(value.to_string(), "high");
+    assert_eq!(origin, Origin::Default);
+
+    let error = parse_document("[plan]\noverview_model = \"gpt\"\n").unwrap_err();
+    assert!(
+        format!("{error:#}").contains("plan.overview_model"),
+        "{error:#}"
+    );
 }

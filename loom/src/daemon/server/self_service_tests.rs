@@ -21,6 +21,7 @@ fn dispute(session_id: &str) -> Request {
         session_id: session_id.to_string(),
         field: crate::models::dispute::CriterionField::Acceptance,
         criterion_indices: vec![0],
+        owner_stage: None,
         reason: "r".to_string(),
         evidence_commit: None,
         failure_output: None,
@@ -34,6 +35,8 @@ fn file_dispute(session_id: &str) -> Request {
         session_id: session_id.to_string(),
         kind: crate::models::dispute::DisputeKind::Contract {
             contract_id: "rejects-x".to_string(),
+            replacement: None,
+            replacement_base_sha256: None,
         },
         reason: "r".to_string(),
         evidence_commit: None,
@@ -83,6 +86,7 @@ fn only_the_own_stage_requests_can_be_authorized_by_the_connection() {
             session_id: "s4".to_string(),
             head: "a".repeat(40),
             tree_digest: "b".repeat(64),
+            choices: Default::default(),
         })
     );
 

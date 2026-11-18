@@ -6,7 +6,7 @@ use super::model::{
 use anyhow::{ensure, Result};
 use std::path::Path;
 
-use crate::models::forward_receipt::is_safe_id;
+use crate::agent_state::is_safe_id;
 
 pub(super) enum Validation {
     Valid,

@@ -70,7 +70,9 @@ assert_deny_count() {
 fixture_t3_list() {
 	local n command='loom subagents list' agent=t3-list
 	enable_deny
-	for ((n = 1; n <= 902; n++)); do
+	# A denied call exits before the ledger append, so every call past the fifth
+	# repeats the fifth; a few denies prove the count holds at 5.
+	for ((n = 1; n <= 8; n++)); do
 		run_hook "$command" "$agent"
 		case "$n" in
 		1 | 2) assert_silent_allow "list call $n" ;;

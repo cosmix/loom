@@ -13,9 +13,13 @@ use super::helpers::{
     format_structured_handoff,
 };
 use super::sandbox_section::format_sandbox_section;
-use super::section_boxes::{append_empty_memory_box, append_knowledge_updates_required_box};
+use super::section_boxes::{
+    append_empty_memory_box, append_execution_path_box, append_knowledge_updates_required_box,
+};
 use super::skills::format_skill_recommendations;
 
+mod acceptance;
+pub(in crate::orchestrator::signals) use acceptance::format_criterion;
 mod goal_backward_section;
 use goal_backward_section::format_goal_backward_verification_section;
 
@@ -26,7 +30,6 @@ pub(super) fn format_semi_stable_section(
     stage_id: &str,
 ) -> String {
     let mut content = String::new();
-
     // Per-stage `## Knowledge Brief`, gated on retrieval having selected
     // anything. Labelled with the query's INPUT FIELDS, never `pack.query`
     // itself: that is the whole stage description, re-embedded a second time.
@@ -145,6 +148,7 @@ pub(super) fn format_semi_stable_section(
             content.push_str(
                 "**For long content, use stdin:** `loom knowledge update <file> - <<'EOF'`\n\n",
             );
+            content.push_str("Use `loom knowledge replace-section` or `delete-section` for existing sections; after direct edits run `loom knowledge sync`.\n\n");
 
             // Review document generation (knowledge-distill only)
             if stage_type == StageType::KnowledgeDistill {
@@ -219,10 +223,8 @@ pub(super) fn format_semi_stable_section(
             );
             content.push_str("| Gotcha | `loom memory note \"gotcha: ...\"` |\n");
             content.push_str("| File change | `loom memory change \"...\"` |\n");
+            // The recitation section states why evidence matters.
             content.push_str("| Question | `loom memory question \"...\"` |\n\n");
-            content.push_str(
-                "Evidence makes the entry checkable at distillation; an entry without evidence is a claim.\n\n",
-            );
             content.push_str(
                 "⚠️ NEVER use 'loom knowledge' in this stage — knowledge-distill curates \
                  memory into knowledge.\n",
@@ -235,11 +237,11 @@ pub(super) fn format_semi_stable_section(
     }
 
     // Codex implementer doctrine (semi-stable - gated on codex being one of the
-    // stage's licensed lanes, whether or not it is the preferred one)
+    // stage's licensed lanes, whether or not it is the first one listed)
     if embedded_context.implementers.includes_codex() {
         content.push_str(&format_codex_implementers_section(
             &embedded_context.implementers,
-            embedded_context.codex_available,
+            &embedded_context.codex_lane,
         ));
     }
 
@@ -273,13 +275,13 @@ pub(super) fn format_semi_stable_section(
         );
         content.push_str("scope just because orchestration is available.\n");
         content.push_str(
-            "Workflow fan-out spawns CLAUDE subagents only: the codex lane (gpt-5.6-terra /\n",
+            "Workflow fan-out spawns CLAUDE subagents only: the codex lane (gpt-6.1-terra /\n",
         );
         content.push_str(
-            "gpt-6-luna) is NOT addressable from a Workflow script. On a stage licensed for\n",
+            "gpt-6.2-sol / gpt-6-luna) is NOT addressable from a Workflow script. On a stage licensed for\n",
         );
         content.push_str(
-            "both, codex work goes through normal `loom-codex-forwarder` Agent spawns, outside\n",
+            "both, codex work follows the Codex Implementers section's launch rules, outside\n",
         );
         content.push_str("the Workflow.\n\n");
     }
@@ -335,25 +337,7 @@ pub(super) fn format_dynamic_section(
     content.push_str(&format!("- **Execution Path**: `{execution_path}`\n"));
     content.push('\n');
 
-    // Execution path reminder box
-    content.push_str("```text\n");
-    content.push_str("┌────────────────────────────────────────────────────────────────────┐\n");
-    content.push_str("│  📍 WHERE COMMANDS EXECUTE                                         │\n");
-    content.push_str("│                                                                    │\n");
-    content.push_str(&format!(
-        "│  Acceptance criteria run from: {}{}│\n",
-        execution_path,
-        " ".repeat(39_usize.saturating_sub(execution_path.len()))
-    ));
-    content.push_str(&format!(
-        "│  Formula: WORKTREE + working_dir = {}{}│\n",
-        working_dir,
-        " ".repeat(29_usize.saturating_sub(working_dir.len()))
-    ));
-    content.push_str("│                                                                    │\n");
-    content.push_str("│  If cargo/npm fails with 'not found', check working_dir setting.   │\n");
-    content.push_str("└────────────────────────────────────────────────────────────────────┘\n");
-    content.push_str("```\n\n");
+    append_execution_path_box(&mut content, &execution_path, working_dir);
 
     // Add worktree root directory reminder (defense-in-depth)
     content.push_str(&format!(
@@ -412,6 +396,8 @@ pub(super) fn format_dynamic_section(
         content.push_str(findings);
         content.push_str("\n\n");
     }
+
+    super::budget::push_model_budget(embedded_context.model_budget.as_deref(), &mut content);
 
     // Assignment section
     content.push_str("## Assignment\n\n");
@@ -485,7 +471,7 @@ pub(super) fn format_dynamic_section(
         content.push_str("- [ ] Code reviewed and tested\n");
     } else {
         for criterion in &stage.acceptance {
-            content.push_str(&format!("- [ ] {}\n", criterion.command()));
+            content.push_str(&format_criterion(criterion));
         }
     }
     content.push('\n');
@@ -564,6 +550,5 @@ pub(super) fn format_recitation_section(
     content.push_str(
         "- Evidence makes the entry checkable at distillation; an entry without evidence is a claim.\n\n",
     );
-
     content
 }

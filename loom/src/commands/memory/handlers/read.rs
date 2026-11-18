@@ -37,7 +37,7 @@ pub(super) fn read_journal_with_pending(work_dir: &Path, stage: &str) -> Result<
     Ok(journal)
 }
 
-pub(super) fn spool_only_stage_with_pending(journals: &[String]) -> Option<String> {
+fn spool_only_stage_with_pending(journals: &[String]) -> Option<String> {
     let (worktree_root, stage) = current_worktree_stage()?;
     if journals.contains(&stage) {
         return None;
@@ -47,6 +47,16 @@ pub(super) fn spool_only_stage_with_pending(journals: &[String]) -> Option<Strin
         return None;
     }
     Some(stage)
+}
+
+pub(super) fn memory_stages(work_dir: &Path, stage_id: Option<&str>) -> Result<Vec<String>> {
+    if let Some(stage) = stage_id {
+        return Ok(vec![stage.to_string()]);
+    }
+    let mut journals = list_journals(work_dir)?;
+    journals.extend(spool_only_stage_with_pending(&journals));
+    journals.sort();
+    Ok(journals)
 }
 
 pub fn query(search: String, stage_id: Option<String>) -> Result<()> {
@@ -62,10 +72,7 @@ pub fn query(search: String, stage_id: Option<String>) -> Result<()> {
         return Ok(());
     };
 
-    let stages_to_search: Vec<String> = match stage_id {
-        Some(id) => vec![id],
-        None => list_journals(&work_dir)?,
-    };
+    let stages_to_search = memory_stages(&work_dir, stage_id.as_deref())?;
 
     if stages_to_search.is_empty() {
         println!("{} No memory journals found", "ℹ".blue());
@@ -188,16 +195,7 @@ pub(super) fn list_json_output(
     stage_id: Option<&str>,
     type_filter: Option<MemoryEntryType>,
 ) -> Result<String> {
-    let mut journals = match stage_id {
-        Some(stage) => vec![stage.to_string()],
-        None => list_journals(work_dir)?,
-    };
-    if stage_id.is_none() {
-        if let Some(stage) = spool_only_stage_with_pending(&journals) {
-            journals.push(stage);
-        }
-        journals.sort();
-    }
+    let journals = memory_stages(work_dir, stage_id)?;
 
     let mut entries = Vec::new();
     for stage in journals {
@@ -232,17 +230,12 @@ fn list_single_stage(
 }
 
 fn list_all_stages(work_dir: &Path, type_filter: Option<MemoryEntryType>) -> Result<()> {
-    let mut journals = list_journals(work_dir)?;
-    if let Some(spool_only_stage) = spool_only_stage_with_pending(&journals) {
-        journals.push(spool_only_stage);
-    }
+    let journals = memory_stages(work_dir, None)?;
 
     if journals.is_empty() {
         println!("{} No memory journals found", "ℹ".blue());
         return Ok(());
     }
-    journals.sort();
-
     let current_stage = std::env::var("LOOM_STAGE_ID").ok();
     println!(
         "{} Plan Memory — {} journal{}",
@@ -320,11 +313,7 @@ pub fn show(stage_id: Option<String>, all: bool, json: bool) -> Result<()> {
 }
 
 fn show_all_json_output(work_dir: &Path) -> Result<String> {
-    let mut journals = list_journals(work_dir)?;
-    if let Some(stage) = spool_only_stage_with_pending(&journals) {
-        journals.push(stage);
-    }
-    journals.sort();
+    let journals = memory_stages(work_dir, None)?;
 
     let mut entries_by_stage: BTreeMap<String, Vec<MemoryEntry>> = BTreeMap::new();
     for stage in journals {
@@ -335,10 +324,7 @@ fn show_all_json_output(work_dir: &Path) -> Result<String> {
 }
 
 fn show_all_journals(work_dir: &Path) -> Result<()> {
-    let mut journals = list_journals(work_dir)?;
-    if let Some(spool_only_stage) = spool_only_stage_with_pending(&journals) {
-        journals.push(spool_only_stage);
-    }
+    let journals = memory_stages(work_dir, None)?;
 
     if journals.is_empty() {
         println!("{} No memory journals found", "ℹ".blue());

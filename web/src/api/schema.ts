@@ -1,4 +1,9 @@
+import { busySchema } from "@/api/busy-schema";
+import { codexJobSchema, tokenFlowSchema } from "@/api/token-schema";
 import { z } from "@/api/zod";
+
+export { busySchema, type Busy } from "@/api/busy-schema";
+export * from "@/api/token-schema";
 
 export const STAGE_STATUSES = [
   "waiting-for-deps",
@@ -87,20 +92,45 @@ export const failingCriterionSchema = z.object({
   command: z.string(),
   diagnostic: z.string().nullable(),
 });
-export const disputeOpSchema = z.object({
-  op: z.string(),
-  index: z.number().int().nonnegative().nullable(),
-});
-export const disputeLineSchema = z.object({
-  id: z.number().int(),
-  kind: z.string(),
-  verdict: z.string().nullable(),
-  field: z.string().nullable(),
-  ops: z.array(disputeOpSchema),
-});
+export const issueKindSchema = z.enum(["failure", "review", "merge-conflict", "adjudication"]);
+export const issueDispositionSchema = z.enum([
+  "resolved",
+  "closed",
+  "superseded",
+  "reset",
+  "retried",
+  "rejected",
+  "skipped",
+  "accepted",
+  "needs-evidence",
+  "ruled",
+  "unknown",
+]);
+// One issue a stage moved past (`StageIssue` in loom/src/models/stage/issue_history.rs).
+// Every key is always present; text is whole, never cut.
+export const stageIssueSchema = z
+  .object({
+    kind: issueKindSchema,
+    failure_type: failureTypeSchema.nullable(),
+    detected_at: z.string().nullable(),
+    evidence: z.array(z.string()),
+    ended_at: z.string(),
+    ended_by: z.string(),
+    disposition: issueDispositionSchema,
+    dispute_id: z.number().int().nonnegative().nullable(),
+  })
+  .strict();
+// The dashboard reads the failing criteria from the attention entry; the stage
+// still carries them for the terminal renderers, and any other key is dropped.
 export const blockDetailSchema = z.object({
   failing_criteria: z.array(failingCriterionSchema),
-  disputes: z.array(disputeLineSchema),
+});
+// A contract writer blocked on its frozen contracts' host job; null or absent otherwise.
+export const contractTestingSchema = z.object({
+  done: z.number().int().nonnegative(),
+  total: z.number().int().nonnegative(),
+  queued: z.boolean(),
+  running_secs: z.number().int().nullable(),
 });
 export const stageSummarySchema = z
   .object({
@@ -137,6 +167,10 @@ export const stageSummarySchema = z
     pid: z.number().int().nullable(),
     session_alive: z.boolean(),
     model: z.string(),
+    // The stage's resolved reasoning effort, the pair of `model`.
+    effort: z.string(),
+    // Newest invocation last; empty when the stage has no native codex workers.
+    codex_jobs: z.array(codexJobSchema),
     session_type: sessionTypeSchema.nullable(),
     incoherence: z.string().nullable(),
     execution_models: z.array(z.string()),
@@ -149,6 +183,11 @@ export const stageSummarySchema = z
     acceptance: z.array(z.string()).optional(),
     terminal_history_session: z.string().optional(),
     block_detail: blockDetailSchema.optional(),
+    contract_testing: contractTestingSchema.nullish(),
+    // The daemon verifying a stage whose disputes are all ruled; same shape as a freeze job.
+    verdict_completing: contractTestingSchema.nullish(),
+    // Newest first by `ended_at`. The daemon always sends it; a fixture without it reads as empty.
+    history: z.array(stageIssueSchema).default([]),
   })
   .strict();
 export const mergeSummarySchema = z.object({
@@ -179,74 +218,13 @@ export const quotaSnapshotSchema = z.object({
   claude: providerQuotaSchema.nullable(),
   codex: providerQuotaSchema.nullable(),
 });
-export const tokenUsageSchema = z
-  .object({
-    input: z.number().int().nonnegative(),
-    cache_write: z.number().int().nonnegative(),
-    cache_read: z.number().int().nonnegative(),
-    output: z.number().int().nonnegative(),
-  })
-  .strict();
-export const agentFlowSchema = z
-  .object({
-    id: z.string(),
-    kind: z.enum(["main", "subagent", "codex"]),
-    agent_type: z.string().nullable(),
-    model: z.string().nullable(),
-    active: z.boolean(),
-    total: tokenUsageSchema,
-    rate: tokenUsageSchema,
-    series: z.array(z.number().int().nonnegative()),
-  })
-  .strict();
-export const modelUsageSchema = z
-  .object({
-    model: z.string(),
-    effort: z.string().nullable(),
-    total: tokenUsageSchema,
-  })
-  .strict();
-export const stageFlowSchema = z
-  .object({
-    stage_id: z.string(),
-    total: tokenUsageSchema,
-    rate: tokenUsageSchema,
-    series: z.array(z.number().int().nonnegative()),
-    hit_series: z.array(z.number().int().min(0).max(100).nullable()),
-    agents: z.array(agentFlowSchema),
-  })
-  .strict();
-export const planFlowSchema = z
-  .object({
-    total: tokenUsageSchema,
-    rate: tokenUsageSchema,
-    series: z.array(z.number().int().nonnegative()),
-  })
-  .strict();
-export const quotaLeftSchema = z
-  .object({
-    provider: z.enum(["claude", "codex"]),
-    minutes_left: z.number().int().nonnegative().nullable(),
-    lasts_to_reset: z.boolean(),
-  })
-  .strict();
-export const tokenFlowSchema = z
-  .object({
-    observed_at: z.number().int(),
-    bucket_secs: z.number().int(),
-    plan: planFlowSchema,
-    stages: z.array(stageFlowSchema),
-    models: z.array(modelUsageSchema),
-    quota_left: z.array(quotaLeftSchema),
-    unreadable_lines: z.number().int().nonnegative(),
-  })
-  .strict();
 export const stageEventSchema = z.object({
   at: z.string(),
   stage_id: z.string(),
   from: stageStatusSchema,
   to: stageStatusSchema,
   session: z.string().nullable(),
+  session_type: sessionTypeSchema.nullish(),
   reason: z.string().nullable(),
 });
 export const statusDataSchema = z.object({
@@ -266,6 +244,7 @@ export const attentionSchema = z.object({
   id: z.string(),
   name: z.string(),
   label: z.string(),
+  status: stageStatusSchema,
   command: z.string().nullable(),
   command_when: z.string().nullable(),
   alternatives: z.array(alternativeSchema),
@@ -278,7 +257,6 @@ export const attentionSchema = z.object({
   reason: z.string().nullable(),
   acceptance: z.array(z.string()),
   failing_criteria: z.array(failingCriterionSchema),
-  disputes: z.array(disputeLineSchema),
   terminal_history: z.boolean(),
   cleanup_warning: z.string().nullable(),
   has_human_review_choices: z.boolean(),
@@ -297,6 +275,7 @@ export const snapshotSchema = z
     alerts: z.array(alertSchema),
     daemon: daemonStateSchema,
     tick_age_secs: z.number().int().nullable(),
+    busy: busySchema.nullable().default(null),
     source: z.enum(["daemon", "files"]),
     terminals: z.boolean(),
     notice: z.string().optional(),
@@ -332,10 +311,12 @@ export function parseSnapshot(raw: unknown): ReturnType<typeof snapshotSchema.sa
 }
 
 export type StageStatus = z.infer<typeof stageStatusSchema>;
+export type SessionType = z.infer<typeof sessionTypeSchema>;
 export type StageSummary = z.infer<typeof stageSummarySchema>;
 export type StatusData = z.infer<typeof statusDataSchema>;
 export type FailingCriterion = z.infer<typeof failingCriterionSchema>;
-export type DisputeLine = z.infer<typeof disputeLineSchema>;
+export type IssueKind = z.infer<typeof issueKindSchema>;
+export type StageIssue = z.infer<typeof stageIssueSchema>;
 export type Attention = z.infer<typeof attentionSchema>;
 export type Alternative = z.infer<typeof alternativeSchema>;
 export type Alert = z.infer<typeof alertSchema>;
@@ -351,10 +332,3 @@ export type WindowKind = z.infer<typeof windowKindSchema>;
 export type QuotaWindow = z.infer<typeof quotaWindowSchema>;
 export type ProviderQuota = z.infer<typeof providerQuotaSchema>;
 export type QuotaSnapshot = z.infer<typeof quotaSnapshotSchema>;
-export type TokenUsage = z.infer<typeof tokenUsageSchema>;
-export type ModelUsage = z.infer<typeof modelUsageSchema>;
-export type AgentFlow = z.infer<typeof agentFlowSchema>;
-export type StageFlow = z.infer<typeof stageFlowSchema>;
-export type PlanFlow = z.infer<typeof planFlowSchema>;
-export type QuotaLeft = z.infer<typeof quotaLeftSchema>;
-export type TokenFlow = z.infer<typeof tokenFlowSchema>;

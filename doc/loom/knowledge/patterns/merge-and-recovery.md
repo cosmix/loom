@@ -3,7 +3,7 @@
 
 # Merge And Recovery
 
-> Progressive merge, recovery
+>
 
 ## Progressive Merge Pattern
 
@@ -25,13 +25,13 @@ A conflicting merge leaves the stage in `MergeConflict` and R untouched; a merge
 2. Its signal (`orchestrator/signals/merge.rs`) tells it to continue a merge in progress or run `git merge --no-commit --no-ff <target>` in the worktree, resolve, rerun the stage's acceptance criteria, commit, and run `loom stage merge <id> --resolved`. It forbids rebase, reset, squash, amend and force-push, and for a non-conflict failure quotes up to 5 sanitized lines of the failure. It never touches the main checkout and never runs `loom worktree remove`. The signal includes an "Inherited Responsibilities" section explaining that the resolver owns the stage.
 3. The relayed `--resolved` is checked by `check_resolved_worktree` and landed by `land_stage_merge`; the worktree is removed when the resolver exits (`resolver_exit.rs`), or by the leftover sweep once no session runs for the stage.
 
-`check_resolved_worktree(repo_root, stage_id, completed_commit)` (`git/merge/resolved.rs`) uses pinned git, whose `config.worktree` check applies ([Execution Containment](../architecture/execution-containment.md)). It requires HEAD on `loom/<id>`, no `MERGE_HEAD`, no unmerged path, no tracked change (untracked files allowed; `--no-optional-locks`), and the recorded `completed_commit` (hex-validated) as an ancestor of HEAD, so a rebase, squash or reset by the resolver is refused. It does not require the current target tip: `merge_stage` merges newer target commits or reports a conflict.
+`check_resolved_worktree(repo_root, stage_id, completed_commit)` (`git/merge/resolved.rs`) uses pinned git, which reads only a validated copy of `config.worktree` ([Execution Containment](../architecture/execution-containment.md)). It requires HEAD on `loom/<id>`, no `MERGE_HEAD`, no unmerged path, no tracked change (untracked files allowed; `--no-optional-locks`), and the recorded `completed_commit` (hex-validated) as an ancestor of HEAD, so a rebase, squash or reset by the resolver is refused. It does not require the current target tip: `merge_stage` merges newer target commits or reports a conflict.
 
 Key invariant: the original execution session MUST exit when a merge conflict is detected. `bail!()` in `complete_with_merge()` ends it, `commit-guard.sh` does not block the exit, and the spawn loop kills a stale session before spawning the resolver.
 
 **Daemon ordering invariant:** Reconciliation runs BEFORE `sync_graph_with_stage_files` AND BEFORE `recover_orphaned_sessions`. Recovery deletes orphaned merge session files; attribution depends on their metadata. Sync reads stage files into the graph; if reconcile flips disk state AFTER sync, the graph keeps the stale view and would queue dependents based on a phantom merge.
 
-**Daemon-off CLI parity:** `loom stage complete` on a `Completed + merged=true` stage with an active main-repo merge attributed to it triggers the same revert the daemon performs (`Completed → MergeConflict + merged=false + merge_conflict=true`) before spawning the resolver. The router's `RevertAndSpawnResolver` arm encodes this; persistence is the caller's responsibility, BEFORE spawn so `spawn_merge_resolver`'s status contract is satisfied.
+**Daemon-off CLI parity:** `loom stage complete` on a Completed, unmerged stage with an active main-repo merge attributed to it performs the same move the daemon does (`Completed → MergeConflict + merge_conflict=true`) before spawning the resolver. The router's `RevertAndSpawnResolver` arm encodes this; the caller persists it BEFORE the spawn so `spawn_merge_resolver`'s status contract holds. A final stage (Stage::is_final_merged: Completed with `merged` or `merge_assumed`) is refused instead (`complete_route.rs::final_stage_refusal`), and `reconcile_main_repo_active_merge` leaves it unchanged (`AttributedNoOp`).
 
 ## Attribution-Aware Recovery
 
@@ -108,4 +108,4 @@ A transient spawn failure (tmux, lock timeout) is retried every tick with no cap
 
 A resolver that cannot finish runs `loom stage block <id> "<reason>"`, as its signal tells it. The relay matrix applies Merge × block, and the drain routes it to `hold_merge_for_resolver` (`merge_handler/resolver_give_up.rs`): a give-up. `require_giveable` refuses unless the record is `Running` and is the stage's live resolver (the tracked session or `find_live_merge_session_for_stage`), so a retired resolver's late ticket cannot stop its successor, and refuses a `MergeBlocked` stage with a typed `merge.block`, which loom retries itself. The reason is flattened by `inline_safe`; every resolver of the stage is stopped (`stop_resolvers_proven` reports whether each stop was proven) and the stage goes to `NeedsHumanReview` with the reason and the manual steps.
 
-The `--resolved` reply mapping is the pure `settle_for_landing` (`inbox_drain/merge_resolved.rs`). `loom stage merge` hitting a conflict moves a `MergeConflict`/`MergeBlocked` stage to `MergeConflict` (the `MergeBlocked -> MergeConflict` edge exists for this), clears its `failure_info`, and prints what the daemon will do next, read from the resolver counter (`commands/stage/merge/next_step.rs`). A `Completed` stage that was never merged (auto-merge disabled) is left untouched and gets only the manual steps.
+The `--resolved` reply mapping is the pure `settle_for_landing` (`inbox_drain/merge_resolved.rs`). `loom stage merge` hitting a conflict moves a `MergeConflict`/`MergeBlocked` stage to `MergeConflict` (the `MergeBlocked -> MergeConflict` edge exists for this); the transition archives its `failure_info` into `issue_history`, and prints what the daemon will do next, read from the resolver counter (`commands/stage/merge/next_step.rs`). A `Completed` stage that was never merged (auto-merge disabled) is left untouched and gets only the manual steps.

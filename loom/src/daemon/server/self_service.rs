@@ -109,11 +109,8 @@ pub(super) fn ownership_to_enforce(
 /// stage may legitimately be blocked or disputed from several states, and
 /// each handler validates its own transition.
 ///
-/// This runs before the handler takes any lock, so the binding it proves could
-/// in principle change before the handler mutates. That is acceptable for an
-/// authorization pre-check whose handlers re-read under their own locks: the
-/// window is between two facts about the same session, not a way to smuggle a
-/// different one through.
+/// This is a pre-check. Mutating handlers must re-check the session binding
+/// under the stage lock because ownership may change before dispatch.
 pub(super) use crate::stage_service::ownership::session_owns_stage_as;
 
 #[cfg(test)]

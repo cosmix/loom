@@ -7,6 +7,7 @@ use super::{create_test_stage, save_test_stage, setup_work_dir};
 use crate::models::stage::{StageStatus, StageType};
 use crate::plan::schema::AcceptanceCriterion;
 use crate::relay::emit::{RelayContext, RelayMode};
+use crate::test_git::{git, TestRepo};
 use crate::verify::transitions::load_stage;
 use anyhow::Result;
 use serial_test::serial;
@@ -36,20 +37,14 @@ fn write_admin_token(work_dir: &Path, content: &str) {
 }
 
 fn initialize_zero_commit_repo(repo: &Path) {
-    let run_git = |args: &[&str]| {
-        std::process::Command::new("git")
-            .args(args)
-            .current_dir(repo)
-            .output()
-            .unwrap()
-    };
-    run_git(&["init", "--initial-branch=main"]);
-    run_git(&["config", "user.email", "test@test.com"]);
-    run_git(&["config", "user.name", "Test"]);
+    TestRepo::builder().no_seed().init_in(repo);
     std::fs::write(repo.join("README.md"), "x").unwrap();
-    run_git(&["add", "README.md", "doc/loom/knowledge"]);
-    run_git(&["commit", "-m", "initial"]);
-    run_git(&["branch", "loom/test-stage"]);
+    // `setup_work_dir` scaffolds the knowledge files, which a real project has
+    // committed; completion refuses them as untracked inputs otherwise.
+    git(repo, &["add", "README.md", "doc"]);
+    git(repo, &["commit", "-m", "initial"]);
+    git(repo, &["branch", "loom/test-stage"]);
+    crate::git::worktree::capture_main_identity(repo, &repo.join(".loom/work")).unwrap();
 }
 
 fn assert_zero_commit_refusal(result: Result<()>, work_dir: &Path) {
@@ -137,12 +132,51 @@ fn restore_var(name: &str, value: &Option<String>) {
 
 #[test]
 #[serial]
+fn retry_signal_counts_execution_retries() {
+    let temp_dir = setup_work_dir();
+    let work_dir = temp_dir.path().join(".loom/work");
+    let _guard = EnvGuard::new();
+    std::env::set_current_dir(temp_dir.path()).unwrap();
+    for (id, retries, force, expected, persisted) in [
+        ("fresh", 0, false, 1, 1),
+        ("recovered", 2, false, 3, 3),
+        ("forced", 2, true, 3, 0),
+    ] {
+        let mut stage = create_test_stage(id, StageStatus::Blocked);
+        stage.retry_count = retries;
+        stage.stall_recoveries = 7;
+        save_test_stage(&work_dir, &stage);
+        super::super::skip_retry::retry(id.into(), force, Some("resume".into())).unwrap();
+        let updated = load_stage(id, &work_dir).unwrap();
+        let signal_path = work_dir
+            .join("signals")
+            .join(format!("{}.md", updated.session.unwrap()));
+        let signal = std::fs::read_to_string(signal_path).unwrap();
+        assert!(
+            signal.contains(&format!("**Recovery Attempt**: #{expected}")),
+            "{signal}"
+        );
+        assert_eq!(updated.retry_count, persisted);
+        assert_eq!(updated.stall_recoveries, 0);
+    }
+}
+
+#[test]
+#[serial]
 fn test_complete_with_passing_acceptance() {
     let temp_dir = setup_work_dir();
     let work_dir_path = temp_dir.path().join(".loom").join("work");
 
+    initialize_zero_commit_repo(temp_dir.path());
     let mut stage = create_test_stage("test-stage", StageStatus::Executing);
-    stage.acceptance = vec![AcceptanceCriterion::Simple("exit 0".to_string())];
+    let marker_dir = TempDir::new().unwrap();
+    let marker = marker_dir.path().join("acceptance-ran");
+    stage.sandbox.command_confinement = Some(crate::models::stage::CommandConfinement::Inherit);
+    stage.acceptance = vec![AcceptanceCriterion::Simple(format!(
+        "touch '{}'",
+        marker.display()
+    ))];
+    register_stage_worktree(temp_dir.path(), &mut stage, true);
     save_test_stage(&work_dir_path, &stage);
 
     let _guard = EnvGuard::new();
@@ -150,28 +184,12 @@ fn test_complete_with_passing_acceptance() {
 
     let result = complete_stage("test-stage", false, None);
 
-    // Acceptance passes but the test setup has no real git repo or stage branch,
-    // so progressive merge correctly hits MergeOutcome::Blocked (no `loom/test-stage`
-    // branch to merge). Stage stays Executing; complete() returns an error from
-    // the verification phase. We assert that acceptance ran successfully (no panic
-    // before merge) and that merged is NOT auto-set without a real merge — the
-    // phantom-merge fix removed the buggy "NoBranch → Success → merged=true" path.
-    let loaded_stage = load_stage("test-stage", &work_dir_path).unwrap();
-    assert!(
-        !loaded_stage.merged,
-        "Standard stage must not be marked merged without a real successful merge \
-         (this used to falsely succeed via the NoBranch arm — phantom merge bug)"
+    assert!(marker.exists(), "acceptance command must run: {result:?}");
+    assert!(result.is_ok(), "completion should succeed: {result:?}");
+    assert_eq!(
+        load_stage("test-stage", &work_dir_path).unwrap().status,
+        StageStatus::Completed
     );
-    // Stage either stays Executing (no save in NoBranch arm) or is the test setup
-    // returning early. Either way, completion did not finalize without a real merge.
-    assert_ne!(
-        loaded_stage.status,
-        StageStatus::Completed,
-        "Standard stage must not transition to Completed without a real merge"
-    );
-    // Result may be Ok or Err depending on how run_verification_phase reports the
-    // Blocked outcome — but the critical invariant is that merged stays false.
-    let _ = result;
 }
 
 #[test]
@@ -235,7 +253,7 @@ fn test_complete_with_no_verify_flag() {
 
 #[test]
 #[serial]
-fn test_complete_standard_stage_not_routed_to_knowledge() {
+fn test_complete_standard_stage_without_repository_fails() {
     let temp_dir = setup_work_dir();
     let work_dir_path = temp_dir.path().join(".loom").join("work");
 
@@ -251,12 +269,8 @@ fn test_complete_standard_stage_not_routed_to_knowledge() {
 
     let result = complete_stage("standard-stage", false, None);
 
-    // The point of this test is routing: confirm the standard path is taken,
-    // NOT the knowledge auto-merge path. Knowledge stages auto-set merged=true
-    // without a real merge; standard stages must not. After the phantom-merge
-    // fix, the NoBranch arm correctly returns Blocked instead of fabricating
-    // a successful merge. So a standard stage in a test setup with no git
-    // infrastructure must not end up with merged=true.
+    let error = format!("{:#}", result.unwrap_err());
+    assert!(error.contains("Stage has no assigned worktree"), "{error}");
     let loaded_stage = load_stage("standard-stage", &work_dir_path).unwrap();
     assert!(
         !loaded_stage.merged,
@@ -267,7 +281,6 @@ fn test_complete_standard_stage_not_routed_to_knowledge() {
         StageStatus::Completed,
         "Standard stage must not transition to Completed without a real merge"
     );
-    let _ = result;
 }
 
 /// An in-session `loom stage complete test-stage` run from `cwd`.

@@ -3,7 +3,7 @@
 
 # Orchestrator Daemon Loop
 
-> Signals, IPC, poll loop
+> Loop
 
 ## Signal Generation Pattern
 
@@ -33,13 +33,15 @@ global in-flight request budget, and 32 subscribers per stream. User capabilitie
 status/log subscriptions, Unsubscribe, DisputeCriteria, and the data-only `CompleteStage` request.
 Completion is accepted only for the exact active stage/session identity and remains under the
 sessions-directory lock through the stage transition; replay and cross-stage/session requests fail
-without mutating state. Stop requires a one-time action-bound operator proof. A stable-file `flock`
+without mutating state. Stop authorizes itself with an action-bound proof derived from the daemon token, which a sandboxed agent cannot read. A stable-file `flock`
 is authoritative for daemon ownership and is held for the server lifetime. Graceful shutdown sets
 the shutdown flag, joins bounded workers, and removes only the control files owned by that daemon.
 
 ## Polling Orchestration Pattern
 
 Main loop polls every 5 seconds: sync graph from stage files, sync queued status, spawn merge resolution sessions, start ready stages, poll monitor for events, handle events. Exit when all stages complete or (failed + no sessions + no ready).
+
+Each pass stamps `orchestrator.tick` with its phase, and `loom status` reads a tick 60 s old or older as a stalled loop. Work on the scheduler thread that can exceed a few seconds therefore runs inside `busy::while_busy` (`loom/src/orchestrator/busy.rs`) with a per-operation ceiling: brief generation, resolved-merge verification and each provision entry are wrapped today. A wrapped operation keeps the tick fresh from a helper thread and is reported as busy, with its elapsed time, until its ceiling or the 30-minute global ceiling. Unwrapped long work, such as the daemon-owned commit drain (`architecture/daemon-owned-commits.md`, Known limits), still reads as stalled at 60 s. Rules and thresholds: [Daemon Liveness and Loop Health](../architecture/status-data-model.md#daemon-liveness-and-loop-health).
 
 ## Monitoring Patterns
 
@@ -108,10 +110,6 @@ Known gap: with no daemon running at all, spooled entries stay pending until the
 tick or a teardown drain. `record_via_spool` says so in its own warning
 (`commands/memory/handlers/record.rs::reject_stage_forgery`) rather than pretending the write landed.
 
-## Host-Job Retry List Is a Process-Wide Mutex
+## Durable host-job application retries
 
-Applications that failed to record a finished host job wait for a retry in `FAILED_APPLIES`, a process-wide
-`Mutex<BTreeMap<PathBuf, Vec<FailedApply>>>` in `orchestrator/core/host_jobs.rs`, keyed by the state root. It is
-not an `Orchestrator` field: `orchestrator.rs` cannot grow past the 400-line limit. The runner reaches the
-orchestrator through `set_host_job_runner` (`HostJobRunner` in `host_verify/runner.rs`). Each state root has one
-orchestrator, so each root's list is its own key.
+Finished host-job applications are recovered by scanning retained terminal records without applied markers. Retry reservations persist per job; pruning preserves unapplied records. Freeze refusal publication is ordered by durable per-stage submission order and records its origin. Legacy jobs or refusals with unknown order defer when ownership cannot be proven.

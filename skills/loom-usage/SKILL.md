@@ -677,12 +677,19 @@ loom run                                 # Git branches preserve prior work
 
 ## Operator Gotchas
 
-- **The daemon loads the plan ONCE at startup.** Editing the plan file (or a `.loom/work/stages/*.md`) while `loom run` is live has NO effect on the running graph — no reload mechanism exists. To apply plan changes, `loom stop` → edit → `loom init --clean` (or `loom clean --state && loom init`) → `loom run`. (Exception: the adjudicator may amend only a single stage's `acceptance`/`wiring` in place.)
+- **Plan definitions and lifecycle state have different lifetimes.** The running graph starts from the initialized plan definition; changing the plan file does not redefine it. The daemon reloads stage and session lifecycle state each poll. Use the appropriate `loom stage` CLI command for a lifecycle update; do not edit state files directly or reinitialize merely to apply that update.
 - **Exit code 0 ≠ success.** Sandbox blocks, dep-fetch failures, and write denials all exit 0. Read stderr; "blocked / denied / connection refused / failed to download" means investigate, not proceed.
 - **`fix_attempts` caps at 3 by default.** After repeated acceptance failures a stage stops auto-retrying and escalates (Blocked / NeedsHumanReview). Don't loop `loom stage retry` blindly — read the block reason and fix root cause, or `loom stage dispute-criteria` if the criteria themselves are wrong.
 - **All four stage types default to `permission_mode: auto`** (resolves stage > plan > stage-type default). Loom stages run unattended, so the agent auto-accepts actions its heuristics deem safe; the sandbox deny/allow rules are the real boundary. Override to `accept-edits`/`plan` at plan or stage level to tighten.
+- **`loom plan [--port <PORT>] [--host <HOST>] [--no-open]`** starts the planning app for the current repository and prints its token-bearing URL. It opens a browser when available; `--no-open` skips that. A second server for the project exits with the existing URL. Missing session prerequisites leave the app read-only. Ctrl-C waits for sessions to finish; a second Ctrl-C exits immediately.
 - **`loom plan verify` checks STRUCTURE only** — valid YAML/DAG/bookends. It does NOT run acceptance, prove claims, or (currently) catch `bypass-permissions`. A plan can pass `plan verify` yet fail `loom init` or produce a non-working feature.
-- **`loom check` runs acceptance and every goal-backward layer** (`artifacts`, `wiring`, `wiring_tests`, `dead_code_check`) without changing stage state. `loom stage complete` runs acceptance before transitioning the stage. In a stage session both relay to a daemon host job and print `Host job: <state>` first: `requested` and `pending` (exit 0) are not results, so run the same command again; `stopped` exits 4, also run again; `failed`, `rejected` and `refused` exit 1.
+- **`loom check` runs acceptance and every goal-backward layer** (`artifacts`, `wiring`, `wiring_tests`, `dead_code_check`) without changing stage state. `loom stage complete` runs acceptance before transitioning the stage. In a stage session both relay to a daemon host job and print `Host job: <state>` first: `requested` and `pending` (exit 0) are not results, so run the same command again; `stopped` exits 4, also run again; `failed`, `rejected` and `refused` exit 1. A merge resolver's `loom check` relays the same way, because criteria run inside its sandbox can fail for sandbox reasons alone; a passing check never lands the merge, since `--resolved` reruns the gates.
+
+Planning sessions run `loom plan check` after editing planning documents. Exit 1 reports convention problems to fix; exit 2 means no repository or the doc/ tree could not be loaded.
+
+Sessions rebuild summaries with `loom plan summary brief`, write the draft, and run `loom plan summary seal` until it is accepted. `loom plan summary status` lists what is out of date.
+
+`loom plan hook` is internal and must never be run by hand.
 
 ## Anti-Patterns
 

@@ -36,21 +36,21 @@ const MAX_POINTER_BYTES: usize = 4 * 1024;
 
 /// The Git directories a command confined to a tree uses.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(in crate::verify::criteria) struct GitDirs {
+pub(crate) struct GitDirs {
     /// The tree's own Git directory: `HEAD` and the index.
     pub(in crate::verify::criteria) admin: PathBuf,
     /// The repository's shared directory: refs and objects.
     pub(in crate::verify::criteria) common: PathBuf,
     /// Canonical paths outside the tree to expose read-only; empty when the
     /// tree holds its own Git directory.
-    pub(in crate::verify::criteria) roots: Vec<PathBuf>,
+    pub(crate) roots: Vec<PathBuf>,
 }
 
 /// The Git directories of the canonical `tree` for a command denied the
 /// network. `None` under provisioning, whose network access could carry the
 /// repository's objects and config away, for a tree without `.git`, and for a
 /// linked worktree that fails verification.
-pub(super) fn git_dirs(tree: &Path, network: NetworkAccess) -> Option<GitDirs> {
+pub(crate) fn git_dirs(tree: &Path, network: NetworkAccess) -> Option<GitDirs> {
     if network != NetworkAccess::Denied {
         return None;
     }
@@ -64,9 +64,7 @@ pub(super) fn git_dirs(tree: &Path, network: NetworkAccess) -> Option<GitDirs> {
                 roots: Vec::new(),
             });
         }
-        Ok(metadata) if metadata.is_file() => loom_repository(tree)
-            .context("the tree is not at <repository>/.worktrees/<stage>")
-            .and_then(|repository| linked_dirs(tree, repository)),
+        Ok(metadata) if metadata.is_file() => linked_checkout_dirs(tree),
         Err(error) if error.kind() == ErrorKind::NotFound => return None,
         Ok(_) => Err(anyhow::anyhow!(
             "{} is not a regular file",
@@ -82,6 +80,28 @@ pub(super) fn git_dirs(tree: &Path, network: NetworkAccess) -> Option<GitDirs> {
             );
         })
         .ok()
+}
+
+fn linked_checkout_dirs(tree: &Path) -> Result<GitDirs> {
+    let workspace = crate::fs::work_dir::WorkDir::new(tree)?;
+    if crate::git::worktree::main_identity_exists(workspace.root()) {
+        if let Ok(operator) = crate::git::worktree::WorktreeGit::pinned_main(tree) {
+            if operator.is_linked_checkout() {
+                let common = operator
+                    .common_dir_path()
+                    .context("operator checkout is not pinned")?;
+                return roots_for_admin(
+                    operator
+                        .git_dir_path()
+                        .context("operator checkout is not pinned")?,
+                    common,
+                );
+            }
+        }
+    }
+    let repository =
+        loom_repository(tree).context("the tree is not at <repository>/.worktrees/<stage>")?;
+    linked_dirs(tree, repository)
 }
 
 /// The main checkout loom keeps `tree` for. Loom places every worktree at
@@ -101,14 +121,11 @@ fn loom_repository(tree: &Path) -> Option<&Path> {
 /// would expose whatever it names.
 fn linked_dirs(tree: &Path, repository: &Path) -> Result<GitDirs> {
     let tree = tree.canonicalize().context("resolve the confined tree")?;
-    let main = repository.join(".git");
-    ensure!(
-        main.symlink_metadata()
-            .is_ok_and(|metadata| metadata.is_dir()),
-        "{} is not a Git directory",
-        main.display()
-    );
-    let common = main.canonicalize()?;
+    let main = crate::git::worktree::WorktreeGit::pinned_main(repository)?;
+    let common = main
+        .common_dir_path()
+        .context("operator checkout is not pinned")?
+        .to_path_buf();
     let admin = named_path(&tree, ".git", "gitdir:")?;
     ensure!(
         admin.parent() == Some(common.join("worktrees").as_path()),
@@ -126,7 +143,11 @@ fn linked_dirs(tree: &Path, repository: &Path) -> Result<GitDirs> {
         "{} belongs to another worktree",
         admin.display()
     );
-    let mut roots = vec![admin.clone()];
+    roots_for_admin(&admin, &common)
+}
+
+fn roots_for_admin(admin: &Path, common: &Path) -> Result<GitDirs> {
+    let mut roots = vec![admin.to_path_buf()];
     roots.extend(
         COMMON_ENTRIES
             .iter()
@@ -137,8 +158,8 @@ fn linked_dirs(tree: &Path, repository: &Path) -> Result<GitDirs> {
             }),
     );
     Ok(GitDirs {
-        admin,
-        common,
+        admin: admin.to_path_buf(),
+        common: common.to_path_buf(),
         roots,
     })
 }

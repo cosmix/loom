@@ -23,7 +23,11 @@ fn handoff_does_not_requeue_when_persisted_session_discovery_is_uncertain() {
         .on_needs_handoff(&session.id, "test-stage")
         .expect_err("uncertain session discovery must block re-queue");
 
-    assert!(format!("{error:#}").contains("parsing persisted session"));
+    let diagnostic = format!("{error:#}");
+    assert!(
+        diagnostic.contains("session inventory is uncertain") && diagnostic.contains("corrupt.md"),
+        "the corrupt record must make session discovery uncertain: {diagnostic}"
+    );
     assert_eq!(
         load_stage("test-stage", &work).unwrap().status,
         StageStatus::NeedsHandoff

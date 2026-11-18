@@ -17,12 +17,6 @@ use super::json::safe;
 use super::matching::{match_note, resolve_starts, ResolvedStarts};
 use super::ViewOptions;
 
-const DEFAULT_IMPACT_KINDS: [SourceEdgeKind; 4] = [
-    SourceEdgeKind::Calls,
-    SourceEdgeKind::References,
-    SourceEdgeKind::Implements,
-    SourceEdgeKind::Extends,
-];
 const ALL_EDGE_KINDS: [SourceEdgeKind; 6] = [
     SourceEdgeKind::Contains,
     SourceEdgeKind::Imports,
@@ -36,6 +30,7 @@ struct StartHits {
     id: String,
     hits: Vec<ImpactHit>,
     suppressed: usize,
+    filtered: bool,
 }
 
 struct Impact {
@@ -73,6 +68,7 @@ fn collect(graph: &ResolvedGraph, project_root: &Path, arg: &str, opts: &ViewOpt
                 ..Default::default()
             },
         );
+        let removed_before = removed.path + removed.lang;
         removed.path += result.filtered_out;
         let mut hits: Vec<ImpactHit> = result
             .hits
@@ -88,6 +84,7 @@ fn collect(graph: &ResolvedGraph, project_root: &Path, arg: &str, opts: &ViewOpt
             id: id.clone(),
             hits,
             suppressed,
+            filtered: removed.path + removed.lang > removed_before,
         });
     }
     Impact {
@@ -149,7 +146,10 @@ fn render_start(
         resolved.mode.label(),
     );
     if start.hits.is_empty() {
-        return format!("{heading}\n  {}", untraversed_summary(graph, stats));
+        return format!(
+            "{heading}\n  {}",
+            untraversed_summary(graph, stats, start.filtered)
+        );
     }
     let mut lines = vec![heading];
     lines.extend(start.hits.iter().map(hit_row));
@@ -192,7 +192,7 @@ pub fn impact_json(
         .collect();
     json!({
         "match": impact.resolved.mode.as_str(),
-        "start_ids": impact.per_start.iter().map(|start| safe(&start.id)).collect::<Vec<_>>(),
+        "start_ids": impact.per_start.iter().map(|start| &start.id).collect::<Vec<_>>(),
         "depth": opts.depth,
         "kinds": effective_impact_kinds(&opts.kinds).iter().map(|kind| kind.as_str()).collect::<Vec<_>>(),
         "hits": hits,
@@ -204,9 +204,9 @@ pub fn impact_json(
 
 fn impact_hit_json(hit: &ImpactHit) -> Value {
     json!({
-        "id": safe(&hit.id),
+        "id": hit.id,
         "kind": hit.kind.as_str(),
-        "path": safe(&hit.path.to_string_lossy()),
+        "path": hit.path.to_string_lossy(),
         "depth": hit.depth,
         "min_confidence": hit.min_confidence,
         "weakest_provenance": hit.weakest_provenance.as_str(),
@@ -216,7 +216,8 @@ fn impact_hit_json(hit: &ImpactHit) -> Value {
 }
 
 fn impact_kinds_label(kinds: &[SourceEdgeKind]) -> String {
-    if kinds.is_empty() || ALL_EDGE_KINDS.iter().all(|kind| kinds.contains(kind)) {
+    let kinds = effective_impact_kinds(kinds);
+    if ALL_EDGE_KINDS.iter().all(|kind| kinds.contains(kind)) {
         "all".to_string()
     } else {
         kinds
@@ -228,22 +229,29 @@ fn impact_kinds_label(kinds: &[SourceEdgeKind]) -> String {
 }
 
 fn effective_impact_kinds(kinds: &[SourceEdgeKind]) -> Vec<SourceEdgeKind> {
-    if kinds.is_empty() {
-        DEFAULT_IMPACT_KINDS.to_vec()
-    } else {
-        kinds.to_vec()
+    if !kinds.is_empty() {
+        return kinds.to_vec();
     }
+    let options = ImpactOptions {
+        kinds: kinds.to_vec(),
+        ..Default::default()
+    };
+    ALL_EDGE_KINDS
+        .into_iter()
+        .filter(|kind| options.accepts_kind(*kind))
+        .collect()
 }
 
 /// Explain an empty reverse-impact result honestly: the traversal only walks
 /// RESOLVED edges, so it never proves nothing depends on a node — it can only
 /// report what it did not (and could not) traverse.
-fn untraversed_summary(graph: &ResolvedGraph, stats: &ResolutionStats) -> String {
+fn untraversed_summary(graph: &ResolvedGraph, stats: &ResolutionStats, filtered: bool) -> String {
     let coverage = CoverageReport::of(graph);
     let untraversed_files = coverage.files.saturating_sub(coverage.symbol_level_files);
     format!(
-        "no resolved edge reaches this node ({} unresolved edges and {untraversed_files} \
+        "no matching hits under these bounds{} ({} unresolved edges and {untraversed_files} \
          files without symbol coverage were not traversed)",
+        if filtered { " and display filters" } else { "" },
         stats.unresolved
     )
 }

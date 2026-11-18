@@ -4,7 +4,6 @@
 //! branch merged in.
 
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 use chrono::{TimeZone, Utc};
 use loom::fs::memory::{append_entry, read_journal, MemoryEntry, MemoryEntryType};
@@ -16,38 +15,16 @@ use loom::orchestrator::signals::generate_signal;
 use loom::verify::transitions::save_stage;
 use tempfile::TempDir;
 
-/// Run git in `dir` with the user's and the system's config out of the picture.
-fn git(dir: &Path, args: &[&str]) -> String {
-    let output = Command::new("git")
-        .args(args)
-        .current_dir(dir)
-        .env("GIT_CONFIG_GLOBAL", dir.join(".loom-test-no-global"))
-        .env("GIT_CONFIG_SYSTEM", dir.join(".loom-test-no-system"))
-        .env("GIT_CONFIG_NOSYSTEM", "1")
-        .output()
-        .expect("spawn git");
-    assert!(
-        output.status.success(),
-        "git {args:?} failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    String::from_utf8_lossy(&output.stdout).trim().to_string()
-}
+#[path = "test_support/mod.rs"]
+mod test_support;
+use test_support::git_repo::{self, git, TestRepo};
 
 fn commit_file(root: &Path, name: &str) {
-    let path = root.join(name);
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).unwrap();
-    }
-    std::fs::write(&path, format!("{name}\n")).unwrap();
-    git(root, &["add", name]);
-    git(root, &["commit", "-q", "-m", &format!("add {name}")]);
+    git_repo::commit_file(root, name, &format!("{name}\n"), &format!("add {name}"));
 }
 
 fn init_repo(root: &Path) {
-    git(root, &["init", "-q", "-b", "main"]);
-    git(root, &["config", "user.email", "t@t.com"]);
-    git(root, &["config", "user.name", "t"]);
+    TestRepo::builder().no_seed().init_in(root);
     let exclude = root.join(".git/info/exclude");
     let mut text = std::fs::read_to_string(&exclude).unwrap_or_default();
     text.push_str(".loom/\n");

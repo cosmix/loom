@@ -1,3 +1,6 @@
+use crate::agent_state::is_safe_id;
+use crate::fs::jsonl_spool::read_complete_lines;
+use crate::fs::safe_fs::safe_open_append;
 use crate::models::forward_receipt::job_record::read_companion_job;
 use crate::models::forward_receipt::locator::{
     default_companion_state_roots, default_task_output_roots, resolve_companion_locator,
@@ -9,7 +12,7 @@ use crate::models::forward_receipt::transcript::{
     evidence_channel, ForwardingInvocation, ForwardingResult,
 };
 use crate::models::forward_receipt::{
-    is_safe_id, load_receipts, receipts_path, ForwardBackend, ForwardIdentity, ForwardObservation,
+    load_receipts, receipts_path, ForwardBackend, ForwardIdentity, ForwardObservation,
     ForwardState, FORWARD_RECEIPT_SCHEMA,
 };
 use anyhow::{bail, ensure, Context, Result};
@@ -97,6 +100,7 @@ fn process(raw: &str, config: &Config, now: DateTime<Utc>) -> Result<()> {
     }
     Ok(())
 }
+
 fn observe(
     identity: &ForwardIdentity,
     call: &ForwardingInvocation,
@@ -104,9 +108,10 @@ fn observe(
     config: &Config,
 ) -> Vec<ForwardObservation> {
     let channel = evidence_channel(result, &config.task_roots, &identity.parent_session_id);
-    let (start, end) = match channel {
-        MarkerChannel::Streaming(start) | MarkerChannel::Started(start) => (start, None),
-        MarkerChannel::Finished(start, end) => (start, Some(end)),
+    let (start, end, closed) = match channel {
+        MarkerChannel::Streaming(start) => (start, None, false),
+        MarkerChannel::Started(start) => (start, None, true),
+        MarkerChannel::Finished(start, end) => (start, Some(end), true),
         MarkerChannel::Absent | MarkerChannel::Invalid(_) => return Vec::new(),
     };
     let backend = backend_evidence(&start, config);
@@ -120,7 +125,7 @@ fn observe(
         backend.thread.clone(),
         backend.locator.clone(),
     )];
-    let terminal = terminal_evidence(start.backend, end, backend.authoritative);
+    let terminal = terminal_evidence(start.backend, end, closed, backend.authoritative);
     if let Some((state, exit_code)) = terminal {
         observations.push(observation(
             identity,
@@ -167,13 +172,24 @@ fn backend_evidence(start: &StartMarker, config: &Config) -> BackendEvidence {
     }
 }
 
+/// The closing observation for a forward. `closed` means the wrapper printed
+/// its output separator, which it does only on exit.
 fn terminal_evidence(
     backend: ForwardBackend,
     end: Option<EndMarker>,
+    closed: bool,
     authoritative: Option<ForwardState>,
 ) -> Option<(ForwardState, Option<i32>)> {
     match backend {
-        ForwardBackend::Direct => end.map(|end| (end.outcome, Some(end.exit_code))),
+        // The direct wrapper has exited once the separator is out: an
+        // `unknown` END, or a separator with no END (a fail-closed exit after
+        // START), is a finished forward with no verdict. `Unknown` carries no
+        // exit code; the receipt keeps the thread for token pairing.
+        ForwardBackend::Direct => match end {
+            Some(end) if end.outcome.is_terminal() => Some((end.outcome, Some(end.exit_code))),
+            _ if closed => Some((ForwardState::Unknown, None)),
+            _ => None,
+        },
         // The wrapper cancels a job at its cap, so the record reads `cancelled`
         // (or `running` before the cancel lands) while the END marker says
         // `timed_out`; the END marker is the verdict.
@@ -270,8 +286,8 @@ fn encode_new_observations(
     Ok(append)
 }
 
-/// Whether two observations record the same fact: every field but
-/// `observed_at`, so a hook retry at a later instant adds nothing. `backend`
+/// Whether two observations record the same fact, ignoring `observed_at`,
+/// model and effort. Identity is represented by `receipt_id`. `backend`
 /// and `backend_id` are the fields `ForwardReceipt::apply` reads as conflicts,
 /// so observations differing only there are both kept and fold to Unknown.
 fn same_fact(old: &ForwardObservation, new: &ForwardObservation) -> bool {
@@ -286,26 +302,17 @@ fn same_fact(old: &ForwardObservation, new: &ForwardObservation) -> bool {
 
 fn append_receipts(path: &Path, append: &str) -> Result<()> {
     let was_missing = !path.exists();
-    let mut file = OpenOptions::new()
-        .append(true)
-        .create(true)
-        .mode(0o600)
-        .custom_flags(libc::O_NOFOLLOW)
-        .open(path)
-        .context("opening forward receipts")?;
-    ensure!(
-        file.metadata()?.is_file(),
-        "forward receipts are not a regular file"
-    );
+    let (Some(parent), Some(name)) = (path.parent(), path.file_name()) else {
+        bail!("forward receipts path has no parent");
+    };
+    let mut file = safe_open_append(parent, Path::new(name)).context("opening forward receipts")?;
     file.set_permissions(fs::Permissions::from_mode(0o600))?;
     file.write_all(append.as_bytes())
         .context("appending forward receipts")?;
     file.sync_data().context("syncing forward receipts")?;
     if was_missing {
-        if let Some(parent) = path.parent() {
-            if let Ok(directory) = fs::File::open(parent) {
-                let _ = directory.sync_all();
-            }
+        if let Ok(directory) = fs::File::open(parent) {
+            let _ = directory.sync_all();
         }
     }
     Ok(())
@@ -339,19 +346,16 @@ fn reject_non_regular(path: &Path) -> Result<()> {
         Err(error) => Err(error.into()),
     }
 }
+/// The receipts already on disk. `load_receipts` has bounded the line count and
+/// refused malformed or torn content before this runs.
 fn read_existing(path: &Path) -> Result<Vec<ForwardObservation>> {
-    if !path.exists() {
-        return Ok(Vec::new());
-    }
-    let mut file = OpenOptions::new()
-        .read(true)
-        .custom_flags(libc::O_NOFOLLOW)
-        .open(path)?;
-    let mut input = String::new();
-    Read::by_ref(&mut file)
-        .take(MAX_EXISTING_BYTES)
-        .read_to_string(&mut input)?;
-    input.lines().map(ForwardObservation::decode_line).collect()
+    read_complete_lines(path, MAX_EXISTING_BYTES, usize::MAX)?
+        .iter()
+        .map(|line| {
+            let line = std::str::from_utf8(line).context("forward receipt is not UTF-8")?;
+            ForwardObservation::decode_line(line)
+        })
+        .collect()
 }
 #[cfg(test)]
 #[path = "tests_forward_receipt.rs"]

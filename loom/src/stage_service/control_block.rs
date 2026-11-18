@@ -16,6 +16,7 @@ use chrono::Utc;
 use super::Response;
 use crate::handoff::load_trusted_session_checkpoint;
 use crate::handoff::schema::CompletionPhase;
+use crate::models::stage::Stage;
 use crate::verify::transitions::{load_stage, update_stage};
 
 /// A stage agent's `loom stage block`: refused while the stage session's
@@ -30,10 +31,20 @@ use crate::verify::transitions::{load_stage, update_stage};
 /// sandbox, setup error) has no dispute route, so the block stays open.
 /// Operator blocks and the daemon's own signing block call
 /// [`handle_block_stage`] directly.
+#[cfg(test)]
 pub(crate) fn handle_agent_block_stage(
     work_dir: &Path,
     stage_id: &str,
     reason: &str,
+) -> Result<Response> {
+    handle_agent_block_for_session(work_dir, stage_id, reason, None)
+}
+
+pub(crate) fn handle_agent_block_for_session(
+    work_dir: &Path,
+    stage_id: &str,
+    reason: &str,
+    session_id: Option<&str>,
 ) -> Result<Response> {
     crate::validation::validate_id(stage_id).context("invalid block stage id")?;
     let failing = failing_criterion_indices(work_dir, stage_id);
@@ -42,7 +53,7 @@ pub(crate) fn handle_agent_block_stage(
             message: failed_completion_refusal(stage_id, &failing),
         });
     }
-    handle_block_stage(work_dir, stage_id, reason)
+    block_for_session(work_dir, stage_id, reason, session_id)
 }
 
 /// Indices of the `acceptance-<i>` criteria that failed in the current session's
@@ -118,22 +129,28 @@ pub(crate) fn handle_block_stage(
     stage_id: &str,
     reason: &str,
 ) -> Result<Response> {
+    block_for_session(work_dir, stage_id, reason, None)
+}
+
+fn block_for_session(
+    work_dir: &Path,
+    stage_id: &str,
+    reason: &str,
+    session_id: Option<&str>,
+) -> Result<Response> {
     // The id arrives unvalidated from the wire and is resolved to a path
     // below; traversal shapes die before any file is touched.
     crate::validation::validate_id(stage_id).context("invalid block stage id")?;
 
     let mut refusal = None;
     update_stage(stage_id, work_dir, |stage| {
-        if let Err(error) = stage.try_mark_blocked() {
-            refusal = Some(format!("cannot block stage '{stage_id}': {error:#}"));
+        if session_id.is_some_and(|id| !super::ownership::matches_attempt(stage, id)) {
+            refusal = Some("request belongs to a stale stage session".to_string());
             return Ok(());
         }
-        stage.close_reason = Some(reason.to_string());
-        // A block closes the attempt with its own reason: an earlier attempt's
-        // crash evidence would re-arm auto-retry and hide this block from
-        // attention and from the daemon's retirement of the session.
-        stage.failure_info = None;
-        stage.updated_at = Utc::now();
+        if let Err(error) = apply_block(stage, reason) {
+            refusal = Some(format!("cannot block stage '{stage_id}': {error:#}"));
+        }
         Ok(())
     })
     .with_context(|| format!("failed to persist blocked state for stage '{stage_id}'"))?;
@@ -142,6 +159,32 @@ pub(crate) fn handle_block_stage(
         Some(message) => Response::Error { message },
         None => Response::Ok,
     })
+}
+
+/// Move `stage` to `Blocked` with `reason` as its close reason; a refused
+/// transition changes nothing. The daemon's handler and the CLI's
+/// no-daemon fallback both block this way.
+///
+/// A block closes the attempt with its own reason, so the failure and the
+/// review reason the left status recorded go into `issue_history`: an
+/// earlier attempt's crash evidence would re-arm auto-retry and hide this
+/// block from attention and from the daemon's retirement of the session,
+/// and a review reason would describe a wait the block ended.
+// Kept beside `Orchestrator::block_stage` (orchestrator/core/stage_block.rs): this mutates
+// a `Stage` the caller persists, with no orchestrator or graph, and retires issue history.
+pub(crate) fn apply_block(stage: &mut Stage, reason: &str) -> Result<()> {
+    stage.try_mark_blocked()?;
+    stage.close_reason = Some(reason.to_string());
+    stage.retire_failure(
+        "blocked by loom stage block",
+        crate::models::stage::IssueDisposition::Superseded,
+    );
+    stage.retire_review_reason(
+        "blocked by loom stage block",
+        crate::models::stage::IssueDisposition::Superseded,
+    );
+    stage.updated_at = Utc::now();
+    Ok(())
 }
 
 #[cfg(test)]
@@ -183,9 +226,11 @@ mod tests {
     fn a_block_clears_a_prior_attempts_failure_info() {
         use crate::models::failure::{FailureInfo, FailureType};
 
-        // A crash auto-retry and a `loom stage retry` without `--force` both
-        // requeue a stage with its old `failure_info` in place; a provision
-        // block records `InfrastructureError` before the operator retries it.
+        // A stage can reach `Executing` with a `failure_info` still set
+        // (a provision block records `InfrastructureError` before the
+        // operator retries it); blocking archives it. Entering `Queued`
+        // already archives the failure, including on a retry without
+        // `--force`, so this seeds the failure on the stage directly.
         for prior in [FailureType::SessionCrash, FailureType::InfrastructureError] {
             let temp = TempDir::new().unwrap();
             let mut stage = Stage::new("build-api".to_string(), None);
@@ -209,7 +254,40 @@ mod tests {
                 stage.failure_info.is_none(),
                 "prior {prior:?} must be cleared"
             );
+            let archived: Vec<_> = stage
+                .issue_history
+                .iter()
+                .map(|issue| (issue.failure_type.clone(), issue.ended_by.as_str()))
+                .collect();
+            assert_eq!(
+                archived,
+                [(Some(prior.clone()), "blocked by loom stage block")],
+                "prior {prior:?} must be archived"
+            );
         }
+    }
+
+    #[test]
+    fn blocking_a_stage_awaiting_review_archives_its_review_reason() {
+        let temp = TempDir::new().unwrap();
+        let mut stage = Stage::new("build-api".to_string(), None);
+        stage.id = "build-api".to_string();
+        stage.status = StageStatus::NeedsHumanReview;
+        stage.review_reason = Some("zero commits".to_string());
+        save_stage(&stage, temp.path()).unwrap();
+
+        let response = handle_block_stage(temp.path(), "build-api", "redo by hand").unwrap();
+
+        assert!(matches!(response, Response::Ok));
+        let stage = load_stage("build-api", temp.path()).unwrap();
+        assert_eq!(stage.status, StageStatus::Blocked);
+        assert_eq!(stage.review_reason, None);
+        assert_eq!(stage.issue_history.len(), 1);
+        assert_eq!(stage.issue_history[0].evidence, ["zero commits"]);
+        assert_eq!(
+            stage.issue_history[0].ended_by,
+            "blocked by loom stage block"
+        );
     }
 
     #[test]

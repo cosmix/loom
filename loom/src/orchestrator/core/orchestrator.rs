@@ -113,17 +113,6 @@ pub struct Orchestrator {
     ///
     /// Lifecycle: in-memory only; reset on next `loom run`.
     pub(super) merge_retry_attempted: HashSet<String>,
-    /// Stage IDs whose `Completed + merged=true` ancestry has already been
-    /// git-verified during this daemon session. Memoizes the result so
-    /// `verify_merged_true_or_revert` does not re-run `git symbolic-ref` +
-    /// `git merge-base --is-ancestor` per Completed+merged stage every 5s
-    /// tick (P-3) — these facts cannot change absent a history rewrite.
-    ///
-    /// Invalidated (entry removed) whenever a reconcile mutation flips a
-    /// stage's merged flag, so a phantom-merge revert forces re-verification.
-    ///
-    /// Lifecycle: in-memory only; reset on next `loom run`.
-    pub(super) verified_merged: HashSet<String>,
     /// Stage IDs for which spawn-time dependency verification has already
     /// logged a skip reason. Prevents the 5-second poll loop from flooding
     /// the logs when a dependent stage cannot start because of a phantom
@@ -183,6 +172,8 @@ pub struct Orchestrator {
     /// The host-job runner `tick_host_jobs` drives; `None` when it could not
     /// be built, which leaves host jobs disabled for this run.
     pub(super) host_jobs: Option<crate::host_verify::runner::HostJobRunner>,
+    /// Starts, reaps and settles native worker supervisors.
+    pub(super) native_workers: crate::native_worker::runner::NativeRunner,
 }
 
 impl Orchestrator {
@@ -204,6 +195,8 @@ impl Orchestrator {
         let detected_languages = detect_project_languages(&config.repo_root);
         Self::reconcile_plan_amendments(&config);
         let host_jobs = super::host_jobs::daemon_runner(&config.work_dir);
+        let native_workers =
+            crate::native_worker::runner::NativeRunner::new(config.work_dir.clone());
 
         Ok(Self {
             config,
@@ -217,7 +210,6 @@ impl Orchestrator {
             skill_index,
             detected_languages,
             merge_retry_attempted: HashSet::new(),
-            verified_merged: HashSet::new(),
             spawn_skip_logged: HashSet::new(),
             spool_drain_error_logged: HashSet::new(),
             adjudicators: AdjudicatorRegistry::new(),
@@ -233,6 +225,7 @@ impl Orchestrator {
             merge_probe_error: None,
             remote_control_active: crate::remote_control::resolve,
             host_jobs,
+            native_workers,
         })
     }
 
@@ -253,7 +246,10 @@ impl Orchestrator {
     /// the first poll tick reads stage acceptance arrays.
     fn reconcile_plan_amendments(config: &OrchestratorConfig) {
         if let Err(e) = crate::plan::amendment::verify_plan_versions_consistency(
-            &resolve_plan_path_for_startup(&config.work_dir).unwrap_or_default(),
+            &crate::fs::resolve_source_path(&config.work_dir)
+                .ok()
+                .flatten()
+                .unwrap_or_default(),
             &config.work_dir,
         ) {
             tracing::warn!(
@@ -302,11 +298,18 @@ impl Orchestrator {
     /// [`AdjudicatorRegistry::start_pending_adjudications`] and
     /// [`AdjudicatorRegistry::disputes_awaiting_session`] for the guards.
     pub(crate) fn check_pending_disputes(&mut self) -> Result<()> {
-        let pass = self.adjudicators.start_pending_adjudications(
+        let pass = match self.adjudicators.start_pending_adjudications(
             &self.backend,
             &self.config.work_dir,
             &self.config.repo_root,
-        )?;
+        ) {
+            Ok(pass) => pass,
+            Err(error) => {
+                tracing::warn!(target: "loom::adjudication", error = %format!("{error:#}"),
+                    "could not scan for pending disputes; retrying next tick");
+                return Ok(());
+            }
+        };
         for started in pass.started {
             clear_status_line();
             eprintln!(
@@ -359,22 +362,5 @@ pub(super) fn unretired_detail(retired: Result<Vec<String>>) -> Option<String> {
             survivors.join(", ")
         )),
         Err(error) => Some(format!("its agents could not be retired: {error:#}")),
-    }
-}
-
-/// Resolve the plan source_path from `.loom/work/config.toml` for daemon-
-/// startup recovery. Returns `None` when there is no config yet (e.g.
-/// during a test that doesn't initialise one).
-fn resolve_plan_path_for_startup(work_dir: &std::path::Path) -> Option<PathBuf> {
-    let cfg = crate::fs::work_dir::load_config(work_dir).ok().flatten()?;
-    let path = cfg.source_path()?;
-    if path.is_absolute() {
-        Some(path)
-    } else {
-        let root = work_dir
-            .canonicalize()
-            .ok()
-            .and_then(|wd| wd.parent().map(|p| p.to_path_buf()))?;
-        Some(root.join(path))
     }
 }

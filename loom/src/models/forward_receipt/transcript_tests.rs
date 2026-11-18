@@ -10,7 +10,7 @@ const PARENT: &str = "parent-session";
 const AGENT: &str = "agent-one";
 const TOOL: &str = "tool-one";
 const COMMAND: &str =
-    "~/.claude/hooks/loom/codex-forward.sh task 'work' --model gpt-5.6-terra --effort xhigh --write";
+    "~/.claude/hooks/loom/codex-forward.sh task 'work' --model gpt-6.1-terra --effort xhigh --write";
 
 fn identity() -> TranscriptIdentity {
     TranscriptIdentity {
@@ -39,6 +39,38 @@ fn bash_command_that_only_mentions_forwarder_is_not_an_invocation() -> Result<()
     let decoded = transcript(&[tool_use(r#"rg -n "codex-forward.sh task" doc/"#)])?;
 
     assert!(decoded.invocations.is_empty());
+    Ok(())
+}
+
+#[test]
+#[serial_test::serial]
+fn transcript_recognizes_authorized_identity_flags() -> Result<()> {
+    let home = tempfile::tempdir()?;
+    let _env = InstallRootsEnv::isolate(home.path());
+    for suffix in [
+        "",
+        " --unit-id unit-1",
+        " --unit-id unit-1 --invocation-id inv-0123456789abcdef0123456789abcdef",
+    ] {
+        let command = format!("{COMMAND}{suffix}");
+        let parsed = forward_argv(&command).expect("receipt parser accepts the command");
+        let decoded = transcript(&[tool_use(&command)])?;
+        assert_eq!(decoded.invocations.len(), 1, "{suffix}");
+        assert_eq!(decoded.invocations[0].model, parsed.model);
+        assert_eq!(decoded.invocations[0].effort, parsed.effort);
+    }
+    for suffix in [
+        " --unit-id ../bad",
+        " --unit-id unit-1 extra",
+        " --unit-id unit-1; true",
+        " --unit-id unit-1 --invocation-id inv-0123456789ABCDEF0123456789abcdef",
+        " --invocation-id inv-0123456789abcdef0123456789abcdef --unit-id unit-1",
+    ] {
+        let command = format!("{COMMAND}{suffix}");
+        assert!(forward_argv(&command).is_none(), "{suffix}");
+        let decoded = transcript(&[tool_use(&command)])?;
+        assert!(decoded.invocations.is_empty(), "{suffix}");
+    }
     Ok(())
 }
 

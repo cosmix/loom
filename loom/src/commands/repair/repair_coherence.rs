@@ -6,38 +6,29 @@
 
 use std::path::Path;
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 
-use super::{RepairIssue, Severity};
-use crate::fs::work_dir::WorkDir;
+use super::{DetectedIssue, RepairAction, Severity};
+use crate::commands::common::resolve_state_dir;
 use crate::orchestrator::coherence::{
     block_incoherent_stage, executing_stage_incoherence, load_assigned_session,
 };
 use crate::verify::transitions::list_all_stages;
 
-/// Resolve the state directory for `repo_root` the same way `repair.rs`'s
-/// other checks do: `WorkDir` when it can be determined, falling back to the
-/// nested `.loom/work` layout otherwise. Never assumes the legacy `.work`
-/// path — the state root moved to `.loom/work`.
-fn resolve_work_dir(repo_root: &Path) -> std::path::PathBuf {
-    WorkDir::new(repo_root)
-        .map(|wd| wd.root().to_path_buf())
-        .unwrap_or_else(|_| repo_root.join(".loom").join("work"))
-}
-
 /// An `Executing` stage that does not name a live worker session of its own
 /// kind, for every stage under `repo_root`'s state directory. Mirrors the
 /// "Phantom merge" check in `repair.rs`: an unreadable stages directory
 /// produces one INFO issue rather than failing the whole repair run.
-pub(super) fn check_incoherent_executing_stages(repo_root: &Path) -> Vec<RepairIssue> {
-    let work_dir = resolve_work_dir(repo_root);
+pub(super) fn check_incoherent_executing_stages(repo_root: &Path) -> Vec<DetectedIssue> {
+    let work_dir = resolve_state_dir(repo_root);
     if !work_dir.is_dir() {
         return Vec::new();
     }
     let stages = match list_all_stages(&work_dir) {
         Ok(stages) => stages,
         Err(_) => {
-            return vec![RepairIssue {
+            return vec![DetectedIssue {
+                action: RepairAction::Manual,
                 severity: Severity::Info,
                 description:
                     "Could not audit executing stages for coherence (stages directory unreadable)"
@@ -52,7 +43,11 @@ pub(super) fn check_incoherent_executing_stages(repo_root: &Path) -> Vec<RepairI
         .filter_map(|stage| {
             let assigned = load_assigned_session(&work_dir, stage).unwrap_or(None);
             let reason = executing_stage_incoherence(stage, assigned.as_ref())?;
-            Some(RepairIssue {
+            Some(DetectedIssue {
+                action: RepairAction::IncoherentStage {
+                    stage_id: stage.id.clone(),
+                    reason: reason.to_string(),
+                },
                 severity: Severity::Critical,
                 description: format!("Incoherent executing stage '{}': {reason}", stage.id),
                 fix_description: "Mark the stage Blocked (infrastructure) and clear its session \
@@ -65,15 +60,12 @@ pub(super) fn check_incoherent_executing_stages(repo_root: &Path) -> Vec<RepairI
 
 /// Apply the fix for [`check_incoherent_executing_stages`]: escalate the
 /// named stage to Blocked with its session pointer cleared.
-pub(super) fn fix_incoherent_executing_stage(repo_root: &Path, description: &str) -> Result<bool> {
-    let rest = description
-        .strip_prefix("Incoherent executing stage '")
-        .with_context(|| format!("Cannot parse stage ID from: {description}"))?;
-    let (stage_id, reason) = rest
-        .split_once("': ")
-        .with_context(|| format!("Cannot parse stage ID from: {description}"))?;
-
-    let work_dir = resolve_work_dir(repo_root);
+pub(super) fn fix_incoherent_executing_stage(
+    repo_root: &Path,
+    stage_id: &str,
+    reason: &str,
+) -> Result<bool> {
+    let work_dir = resolve_state_dir(repo_root);
     let fixed = block_incoherent_stage(&work_dir, stage_id, reason)?;
     Ok(fixed.is_some())
 }

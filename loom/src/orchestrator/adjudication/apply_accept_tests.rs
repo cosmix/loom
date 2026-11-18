@@ -132,7 +132,7 @@ fn the_notice_caps_the_reasoning() {
         &PlanPatch {
             inner: serde_json::json!({"field": "wiring", "patch": {"op": "delete", "index": 2}}),
         },
-        4,
+        "4",
     )
     .unwrap();
 
@@ -192,9 +192,10 @@ fn a_four_patch_verdict_counts_once_against_the_cap_and_applies_whole() {
     let stage = load_stage("s1", &work).unwrap();
     assert_eq!(count_amendments_for_stage(&work, "s1").unwrap(), 4);
     assert_eq!(stage.status, StageStatus::Queued);
-    for i in 0..4 {
+    assert!(stage.acceptance.len() >= 4);
+    for (i, criterion) in stage.acceptance.iter().take(4).enumerate() {
         assert_eq!(
-            stage.acceptance[i],
+            *criterion,
             AcceptanceCriterion::Simple(format!("cargo test --lib fixed_{i}"))
         );
     }

@@ -7,7 +7,15 @@ import { darkVariantAtom, lightVariantAtom, themeAtom } from "@/aurora-ui/shared
 import { ThemeProvider } from "@/aurora-ui/theme/ThemeProvider";
 import { THEME_OPTIONS, ThemePicker } from "@/components/theme-picker";
 
-const THEME_LABELS = ["Ledger", "Aubergine", "Pacific", "Graphite"] as const;
+const THEME_LABELS = [
+  "Ledger",
+  "Harbor",
+  "Aubergine",
+  "Graphite",
+  "Midnight",
+  "Obsidian",
+  "Indigo Night",
+] as const;
 
 const APPLIED_THEMES = [
   {
@@ -27,14 +35,6 @@ const APPLIED_THEMES = [
     storageKey: "loom:dark-variant",
   },
   {
-    label: "Pacific",
-    scheme: "dark",
-    dark: true,
-    datasetKey: "darkTheme",
-    variant: "blue",
-    storageKey: "loom:dark-variant",
-  },
-  {
     label: "Graphite",
     scheme: "dark",
     dark: true,
@@ -42,28 +42,37 @@ const APPLIED_THEMES = [
     variant: "gray",
     storageKey: "loom:dark-variant",
   },
-] as const;
-
-const NAMED_PALETTES = [
   {
-    label: "Ledger",
-    background: "oklch(0.925 0.009 102)",
-    primary: "oklch(0.84 0.155 80)",
+    label: "Harbor",
+    scheme: "light",
+    dark: false,
+    datasetKey: "lightTheme",
+    variant: "harbor",
+    storageKey: "loom:light-variant",
   },
   {
-    label: "Aubergine",
-    background: "oklch(0.16 0.035 325)",
-    primary: "oklch(0.83 0.165 82)",
+    label: "Midnight",
+    scheme: "dark",
+    dark: true,
+    datasetKey: "darkTheme",
+    variant: "midnight",
+    storageKey: "loom:dark-variant",
   },
   {
-    label: "Pacific",
-    background: "oklch(0.18 0.045 258)",
-    primary: "oklch(0.78 0.135 258)",
+    label: "Obsidian",
+    scheme: "dark",
+    dark: true,
+    datasetKey: "darkTheme",
+    variant: "obsidian",
+    storageKey: "loom:dark-variant",
   },
   {
-    label: "Graphite",
-    background: "oklch(0.18 0.005 270)",
-    primary: "oklch(0.78 0.015 270)",
+    label: "Indigo Night",
+    scheme: "dark",
+    dark: true,
+    datasetKey: "darkTheme",
+    variant: "indigo",
+    storageKey: "loom:dark-variant",
   },
 ] as const;
 
@@ -86,22 +95,98 @@ afterEach(() => {
 });
 
 describe("ThemePicker", () => {
-  it("renders four buttons with the option names", () => {
+  it("renders seven buttons with the option names", () => {
     renderThemePicker();
 
-    expect(screen.getAllByRole("button")).toHaveLength(4);
+    expect(screen.getAllByRole("button")).toHaveLength(7);
     for (const label of THEME_LABELS) {
       expect(screen.getByRole("button", { name: `${label} theme` })).toBeTruthy();
     }
   });
 
-  it("selects the Pacific dark variant", () => {
-    const { store } = renderThemePicker();
+  it("scopes each swatch to the same theme selector as the applied theme", () => {
+    renderThemePicker();
+    for (const option of THEME_OPTIONS) {
+      const button = screen.getByRole("button", { name: `${option.label} theme` });
+      const scope = button.querySelector(".theme-preview") as HTMLElement;
+      expect(scope.classList.contains("dark")).toBe(option.scheme === "dark");
+      expect(scope.dataset.lightTheme ?? null).toBe(option.lightVariant);
+      expect(scope.dataset.darkTheme ?? null).toBe(option.darkVariant);
+      expect(option.palette.background).toBe("var(--background)");
+    }
+  });
 
-    fireEvent.click(screen.getByRole("button", { name: "Pacific theme" }));
+  it("renders the custom swatch with each option palette instead of the stage graph", () => {
+    render(
+      <Provider store={createStore()}>
+        <ThemePicker
+          swatch={(palette) => (
+            <span data-testid="custom-swatch" data-background={palette.background}>
+              Custom swatch
+            </span>
+          )}
+        />
+      </Provider>,
+    );
+
+    expect(screen.getAllByText("Custom swatch")).toHaveLength(7);
+    for (const option of THEME_OPTIONS) {
+      const button = screen.getByRole("button", { name: `${option.label} theme` });
+      const swatch = button.querySelector("[data-testid='custom-swatch']");
+      expect(swatch?.getAttribute("data-background")).toBe(option.palette.background);
+      expect(button.querySelector("svg")).toBeNull();
+    }
+  });
+
+  it("marks every option button with the caller's class and adds none by default", () => {
+    const { unmount } = render(
+      <Provider store={createStore()}>
+        <ThemePicker optionClassName="caller-option" />
+      </Provider>,
+    );
+    const marked = screen
+      .getAllByRole("button")
+      .filter((b) => b.classList.contains("caller-option"));
+    expect(marked).toHaveLength(THEME_OPTIONS.length);
+    unmount();
+
+    render(
+      <Provider store={createStore()}>
+        <ThemePicker />
+      </Provider>,
+    );
+    for (const button of screen.getAllByRole("button")) {
+      expect(button.className).not.toContain("undefined");
+      expect(button.className.endsWith(" ")).toBe(false);
+    }
+  });
+
+  it("selects the theme when a card has a custom swatch", () => {
+    const store = createStore();
+    store.set(themeAtom, "light");
+    render(
+      <Provider store={store}>
+        <ThemePicker swatch={() => <span>Custom swatch</span>} />
+      </Provider>,
+    );
+    const graphite = screen.getByRole("button", { name: "Graphite theme" });
+
+    fireEvent.click(graphite);
 
     expect(store.get(themeAtom)).toBe("dark");
-    expect(store.get(darkVariantAtom)).toBe("blue");
+    expect(store.get(darkVariantAtom)).toBe("gray");
+    expect(graphite.getAttribute("aria-pressed")).toBe("true");
+  });
+
+  it("selects the Graphite dark variant from the light scheme", () => {
+    const store = createStore();
+    store.set(themeAtom, "light");
+    renderThemePicker(store);
+
+    fireEvent.click(screen.getByRole("button", { name: "Graphite theme" }));
+
+    expect(store.get(themeAtom)).toBe("dark");
+    expect(store.get(darkVariantAtom)).toBe("gray");
   });
 
   it("selects the Ledger light variant", () => {
@@ -145,25 +230,23 @@ describe("ThemePicker", () => {
     }
   });
 
-  it("exports complete and distinct oklch palettes", () => {
+  it("exports complete palettes backed by scoped CSS variables", () => {
     const paletteValues = THEME_OPTIONS.flatMap((option) => Object.values(option.palette));
-    const backgrounds = THEME_OPTIONS.map((option) => option.palette.background);
 
-    expect(paletteValues).toHaveLength(28);
-    expect(paletteValues.every((value) => value.startsWith("oklch("))).toBe(true);
-    expect(new Set(backgrounds).size).toBe(4);
+    expect(paletteValues).toHaveLength(49);
+    expect(paletteValues.every((value) => value.startsWith("var(--"))).toBe(true);
   });
 
-  it("does not mark an unoffered dark variant as active", () => {
+  it("reads a stored dark variant no card offers as the default, Aubergine", () => {
+    localStorage.setItem("loom:dark-variant", JSON.stringify("retired-variant"));
     const store = createStore();
     store.set(themeAtom, "dark");
-    store.set(darkVariantAtom, "green");
     renderThemePicker(store);
 
     const pressed = screen
       .getAllByRole("button")
       .filter((button) => button.getAttribute("aria-pressed") === "true");
-    expect(pressed).toHaveLength(0);
+    expect(pressed.map((button) => button.getAttribute("aria-label"))).toEqual(["Aubergine theme"]);
   });
 
   it.each(APPLIED_THEMES)(
@@ -189,16 +272,6 @@ describe("ThemePicker", () => {
         const restored = screen.getByRole("button", { name: `${label} theme` });
         expect(restored.getAttribute("aria-pressed")).toBe("true");
       });
-    },
-  );
-
-  it.each(NAMED_PALETTES)(
-    "uses the named palette literals for $label",
-    ({ label, background, primary }) => {
-      const option = THEME_OPTIONS.find((candidate) => candidate.label === label);
-
-      expect(option?.palette.background).toBe(background);
-      expect(option?.palette.primary).toBe(primary);
     },
   );
 

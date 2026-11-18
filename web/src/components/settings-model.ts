@@ -1,4 +1,10 @@
-import type { ConfigEntry, ConfigKind, ConfigScope, ConfigValue } from "@/api/config";
+import type {
+  ConfigEntry,
+  ConfigKind,
+  ConfigScope,
+  ConfigSnapshot,
+  ConfigValue,
+} from "@/api/config";
 
 export const USER_CONFIG_PATH = "~/.loom/config.toml";
 
@@ -140,20 +146,37 @@ export type SettingsRow = PairRow | SingleRow;
 
 export interface SectionRows {
   section: string;
+  /// The heading text: `SECTION_TITLES` for the section, else its prefix.
+  title: string;
   caption: string | null;
   projectAllowed: boolean;
   rows: SettingsRow[];
 }
 
+/// What a section's heading reads as; a section without an entry shows its
+/// config prefix.
+export const SECTION_TITLES: Readonly<Record<string, string>> = {
+  pressure: "pressure test",
+  models: "stage sessions",
+  plan: "planning sessions",
+};
+
 export const SECTION_CAPTIONS: Readonly<Record<string, string>> = {
   pressure: "who runs each step of loom pressure",
-  models: "a stage's main agent session, by stage type",
+  models: "model and effort for each kind of session a stage runs",
+  plan: "model and effort for loom plan's sessions",
 };
 
 export const ROW_CAPTIONS: Readonly<Record<string, string>> = {
   "pressure.claude": "/pressure, Claude",
   "pressure.codex": "$pressure, Codex",
   "pressure.address": "/address reconciliation",
+  "models.code_reviewer": "loom-code-reviewer subagent",
+  "models.contract_writer": "contract test writer",
+  "plan.summary_backend": "summary and overview agent",
+  "plan.summary_codex": "summaries and overviews, Codex",
+  "plan.summary_codex_model": "summary and overview model, Codex",
+  "plan.summary_codex_effort": "summary and overview effort, Codex",
 };
 
 /// A `_model`/`_effort` suffix's prefix, or null when the field doesn't end
@@ -191,6 +214,7 @@ export function sectionRows(entries: ConfigEntry[]): SectionRows[] {
     }
     return {
       section,
+      title: SECTION_TITLES[section] ?? section,
       caption: SECTION_CAPTIONS[section] ?? null,
       projectAllowed: sectionEntries.some((entry) => entry.scopes.includes("project")),
       rows,
@@ -207,7 +231,7 @@ export function rowLabel(row: SettingsRow): string {
 }
 
 function rowHaystack(section: SectionRows, row: SettingsRow): string {
-  const parts = [section.section, section.caption ?? "", rowLabel(row)];
+  const parts = [section.section, section.title, section.caption ?? "", rowLabel(row)];
   if (row.kind === "pair") parts.push(row.caption ?? "");
   for (const entry of rowEntries(row)) {
     parts.push(
@@ -250,6 +274,14 @@ export function formatValue(kind: ConfigKind, value: ConfigValue): string {
 /// Writes one key's value at one scope, or clears it (`null`) to fall back
 /// to the tier below.
 export type OnWrite = (scope: ConfigScope, name: string, value: ConfigValue | null) => void;
+
+export interface SettingsTableProps {
+  data: ConfigSnapshot;
+  sections: SectionRows[];
+  query: string;
+  statuses: Record<string, WriteStatus>;
+  onWrite: OnWrite;
+}
 
 /// One key's write in flight or just settled; the control shows the pending
 /// value until the server answers, then the entry it returned.

@@ -45,6 +45,7 @@ jobs:
               - "loom-hooks/**"
               - "web/dist/**"
               - "web/src/api/**"
+              - "web/src/plan/api/**"
               - "*.md.template"
               - "install.sh"
               - "dev-install.sh"
@@ -57,7 +58,13 @@ jobs:
             shell:
               - "loom-hooks/**"
               - "scripts/**"
+              - "install.sh"
+              - "dev-install.sh"
               - "loom/.githooks/**"
+              - "loom/tests/completion_shell_paths.sh"
+              - "skills/loom-auth/SKILL.md"
+              - "skills/loom-c/SKILL.md"
+              - "skills/loom-concurrency/SKILL.md"
               - ".github/workflows/ci.yml"
 
   # Rust jobs cache dependencies; fresh source mtimes rebuild the workspace.
@@ -285,23 +292,64 @@ jobs:
       - name: Parse every shell hook
         run: ./scripts/check-hook-syntax.sh
 
-      # The hook tests call rg, fd and jq; ubuntu ships fd as fdfind.
+      # The hook tests call rg, fd and jq; ubuntu ships fd as fdfind. The
+      # completion regression below drives Bash through expect, and fish.
       - name: Install hook test tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y ripgrep fd-find jq
+          sudo apt-get install -y ripgrep fd-find jq expect fish
           sudo ln -sf "$(command -v fdfind)" /usr/local/bin/fd
 
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      # The real-binary hook tests skip without a current binary; a skip here
+      # would be a silent pass, so the steps below require one.
+      - name: Build the loom binary
+        run: cargo build --locked --bin loom --manifest-path loom/Cargo.toml
+
       - name: Run the hook tests
-        run: bash loom-hooks/tests/run-all.sh
+        run: LOOM_HOOK_TEST_REQUIRE_BINARY=1 bash loom-hooks/tests/run-all.sh
 
       # BSD tool shims put a padded wc, BSD stat and BSD date ahead of the GNU
       # tools, the way macOS runs the hooks.
       - name: Run the hook tests with BSD tool shims
-        run: LOOM_HOOK_TEST_BSD=1 bash loom-hooks/tests/run-all.sh
+        run: LOOM_HOOK_TEST_REQUIRE_BINARY=1 LOOM_HOOK_TEST_BSD=1 bash loom-hooks/tests/run-all.sh
 
       - name: Pre-commit partial-staging regression
         run: ./scripts/test-pre-commit-partial-staging.sh
+
+      - name: Development installer regression
+        run: python3 -m unittest discover -s scripts/tests -p test_dev_install.py
+
+      - name: Changelog section priority regression
+        run: bash scripts/tests/changelog-section-priority.sh
+
+      - name: Install bun
+        uses: oven-sh/setup-bun@v2
+
+      # The skill examples build against tokio offline, from the registry cache.
+      # loom enables no tokio macros, so its own fetch leaves tokio-macros out;
+      # a scratch crate with the examples' features fills the cache.
+      - name: Fetch the Cargo registry
+        run: |
+          cargo fetch --locked --manifest-path loom/Cargo.toml
+          cargo new --bin --quiet "$RUNNER_TEMP/tokio-cache"
+          cargo add --manifest-path "$RUNNER_TEMP/tokio-cache/Cargo.toml" tokio@1 --features rt,macros
+          cargo fetch --manifest-path "$RUNNER_TEMP/tokio-cache/Cargo.toml"
+
+      - name: Terminal reader and skill example regressions
+        run: python3 -m unittest discover -s scripts/tests -p test_terminal_and_skill_examples.py
+
+      # The script skips a shell it cannot run, for machines without one. This
+      # job installs them all, so a skip here would be a silent pass.
+      - name: Completion shell path regression
+        run: |
+          output=$(bash loom/tests/completion_shell_paths.sh)
+          echo "$output"
+          case "$output" in
+            *SKIP*) echo "expected every completion check to run"; exit 1 ;;
+          esac
 
   # The hooks target macOS's bash 3.2, but the runner image puts a Homebrew
   # bash 5 first on PATH; the symlink and the version check make the job run
@@ -355,19 +403,21 @@ jobs:
     if: needs.changes.outputs.rust == 'true'
     permissions:
       contents: read
-      checks: write
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
 
-      # Pinned to the Node 24 commit on main: the v2 tag still ships a Node 20
-      # runtime, which the runners now warn about. Move back to a tag once
-      # rustsec cuts a release past 858dc40.
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      # cargo audit directly: rustsec/audit-check fails on pull_request events
+      # whenever an informational warning exists, because it cannot update the
+      # check run it reports through. Vulnerabilities fail this step;
+      # unmaintained and unsound notices are printed only.
       - name: Run security audit
-        uses: rustsec/audit-check@858dc40f52ca2b8570b7a997c1c4e35c6fc9a432
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          working-directory: loom
+        run: |
+          cargo install --locked cargo-audit
+          cargo audit --file loom/Cargo.lock
 
   deny:
     name: cargo-deny
@@ -402,6 +452,11 @@ jobs:
       - name: Typecheck, lint, format, and test
         working-directory: web
         run: bun run check
+
+      # ubuntu-latest ships Google Chrome at the scripts' default path.
+      - name: Run the browser regressions
+        working-directory: web
+        run: bun run test:browser
 
       - name: Verify the committed bundle is current
         working-directory: web

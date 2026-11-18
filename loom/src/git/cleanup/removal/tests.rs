@@ -1,50 +1,13 @@
 use super::*;
 use crate::git::cleanup::cleanup_after_merge;
+use crate::test_git::{git, TestRepo};
 use std::fs;
-use std::process::{Command, Output};
 use tempfile::TempDir;
 
-fn git(root: &Path, args: &[&str]) -> Output {
-    Command::new("git")
-        .args(args)
-        .current_dir(root)
-        .env("GIT_CONFIG_GLOBAL", root.join(".no-global-config"))
-        .env("GIT_CONFIG_SYSTEM", root.join(".no-system-config"))
-        .env("GIT_CONFIG_NOSYSTEM", "1")
-        .output()
-        .unwrap()
-}
-
-fn git_ok(root: &Path, args: &[&str]) {
-    let output = git(root, args);
-    assert!(
-        output.status.success(),
-        "git {args:?} failed: stdout={}, stderr={}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
-}
-
-fn git_stdout(root: &Path, args: &[&str]) -> String {
-    let output = git(root, args);
-    assert!(
-        output.status.success(),
-        "git {args:?} failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    String::from_utf8_lossy(&output.stdout).trim().to_string()
-}
-
-fn init_repo() -> TempDir {
-    let temp = TempDir::new().unwrap();
-    let root = temp.path();
-    git_ok(root, &["init", "-b", "main"]);
-    git_ok(root, &["config", "user.email", "test@example.com"]);
-    git_ok(root, &["config", "user.name", "Test"]);
-    fs::write(root.join("README.md"), "base\n").unwrap();
-    git_ok(root, &["add", "README.md"]);
-    git_ok(root, &["commit", "-m", "base"]);
-    temp
+fn init_repo() -> TestRepo {
+    TestRepo::builder()
+        .seed("README.md", "base\n", "base")
+        .create()
 }
 
 fn create_stage_worktree(root: &Path, stage_id: &str) -> (PathBuf, String) {
@@ -53,20 +16,65 @@ fn create_stage_worktree(root: &Path, stage_id: &str) -> (PathBuf, String) {
     let worktree = worktrees.join(stage_id);
     let worktree_arg = worktree.to_string_lossy().to_string();
     let branch = branch_name_for_stage(stage_id);
-    git_ok(
+    git(
         root,
         &["worktree", "add", "-b", &branch, &worktree_arg, "main"],
     );
     fs::write(worktree.join("feature.txt"), "feature\n").unwrap();
-    git_ok(&worktree, &["add", "feature.txt"]);
-    git_ok(&worktree, &["commit", "-m", "feature"]);
-    let commit = git_stdout(&worktree, &["rev-parse", "HEAD"]);
+    git(&worktree, &["add", "feature.txt"]);
+    git(&worktree, &["commit", "-m", "feature"]);
+    let commit = git(&worktree, &["rev-parse", "HEAD"]);
     (worktree, commit)
 }
 
 fn merge_stage(root: &Path, stage_id: &str) {
     let branch = branch_name_for_stage(stage_id);
-    git_ok(root, &["merge", "--no-ff", "-m", "merge stage", &branch]);
+    git(root, &["merge", "--no-ff", "-m", "merge stage", &branch]);
+}
+
+#[test]
+fn verified_cleanup_reconciles_half_removed_worktree_and_reports_retained_path() {
+    let temp = init_repo();
+    let root = temp.path();
+    let (worktree, commit) = create_stage_worktree(root, "retained");
+    merge_stage(root, "retained");
+    fs::remove_dir_all(&worktree).unwrap();
+    fs::remove_dir_all(root.join(".git/worktrees/retained")).unwrap();
+    fs::create_dir_all(worktree.join(".claude/.cc-writes")).unwrap();
+    fs::write(root.join("README.md"), "operator edits in enclosing repo").unwrap();
+
+    for _ in 0..2 {
+        let result = cleanup_verified_stage("retained", &commit, "main", root).unwrap();
+        assert!(!result.worktree_removed);
+        assert!(result.warnings[0].contains(worktree.to_str().unwrap()));
+        assert!(worktree.join(".claude/.cc-writes").is_dir());
+    }
+    assert_eq!(
+        fs::read_to_string(root.join("README.md")).unwrap(),
+        "operator edits in enclosing repo"
+    );
+}
+
+#[test]
+fn verified_cleanup_preserves_detached_admin_work_beyond_the_completed_commit() {
+    let temp = init_repo();
+    let root = temp.path();
+    let completed = git(root, &["rev-parse", "HEAD"]);
+    let (worktree, unmerged) = create_stage_worktree(root, "detached");
+    git(&worktree, &["checkout", "--detach"]);
+    git(root, &["branch", "-D", "loom/detached"]);
+    let admin = root.join(".git/worktrees/detached");
+    fs::remove_dir_all(&worktree).unwrap();
+    fs::create_dir_all(worktree.join(".claude/.cc-writes")).unwrap();
+
+    assert!(cleanup_verified_stage("detached", &completed, "main", root).is_err());
+
+    assert_eq!(
+        fs::read_to_string(admin.join("HEAD")).unwrap().trim(),
+        unmerged
+    );
+    assert!(admin.join("index").is_file());
+    assert!(worktree.join(".claude/.cc-writes").is_dir());
 }
 
 #[test]
@@ -81,6 +89,49 @@ fn verified_cleanup_refuses_modified_worktree() {
     assert!(error.to_string().contains("uncommitted changes"));
     assert!(worktree.join("feature.txt").exists());
     assert!(branch_exists_strict("loom/dirty", root).unwrap());
+}
+
+#[test]
+fn verified_cleanup_does_not_follow_a_foreign_gitdir() {
+    let temp = init_repo();
+    let root = temp.path();
+    let (worktree, commit) = create_stage_worktree(root, "redirected");
+    merge_stage(root, "redirected");
+    let foreign = init_repo();
+    let marker = worktree.join("filter-ran");
+    fs::write(
+        foreign.path().join(".gitattributes"),
+        "feature.txt filter=probe\n",
+    )
+    .unwrap();
+    fs::write(foreign.path().join("feature.txt"), "foreign\n").unwrap();
+    git(foreign.path(), &["add", ".gitattributes", "feature.txt"]);
+    git(foreign.path(), &["commit", "-m", "foreign"]);
+    git(
+        foreign.path(),
+        &["config", "filter.probe.clean", "touch filter-ran; cat"],
+    );
+    fs::write(
+        worktree.join(".gitattributes"),
+        "feature.txt filter=probe\n",
+    )
+    .unwrap();
+    fs::write(
+        worktree.join(".git"),
+        format!("gitdir: {}\n", foreign.path().join(".git").display()),
+    )
+    .unwrap();
+
+    git(&worktree, &["status", "--porcelain"]);
+    assert!(
+        marker.exists(),
+        "foreign filter must execute in the positive control"
+    );
+    fs::remove_file(&marker).unwrap();
+
+    assert!(cleanup_verified_stage("redirected", &commit, "main", root).is_err());
+    assert!(!marker.exists(), "cleanup executed the foreign filter");
+    assert!(worktree.exists());
 }
 
 #[test]
@@ -114,11 +165,11 @@ fn verified_cleanup_refuses_unmerged_stage_base_branch() {
     let root = temp.path();
     let (worktree, commit) = create_stage_worktree(root, "diverged-base");
     merge_stage(root, "diverged-base");
-    git_ok(root, &["checkout", "-b", "loom/_base/diverged-base"]);
+    git(root, &["checkout", "-b", "loom/_base/diverged-base"]);
     fs::write(root.join("base-only.txt"), "not retained\n").unwrap();
-    git_ok(root, &["add", "base-only.txt"]);
-    git_ok(root, &["commit", "-m", "unmerged base change"]);
-    git_ok(root, &["checkout", "main"]);
+    git(root, &["add", "base-only.txt"]);
+    git(root, &["commit", "-m", "unmerged base change"]);
+    git(root, &["checkout", "main"]);
 
     let error = cleanup_verified_stage("diverged-base", &commit, "main", root).unwrap_err();
     assert!(error.to_string().contains("stage base branch head"));
@@ -136,9 +187,9 @@ fn verified_cleanup_ignores_a_tag_shadowing_the_stage_branch() {
     // The branch gains an unmerged commit while a tag of the same name sits
     // at the merged commit; a bare branch name would resolve to the tag.
     fs::write(worktree.join("later.txt"), "unmerged\n").unwrap();
-    git_ok(&worktree, &["add", "later.txt"]);
-    git_ok(&worktree, &["commit", "-m", "unmerged work"]);
-    git_ok(root, &["tag", "loom/shadowed", &commit]);
+    git(&worktree, &["add", "later.txt"]);
+    git(&worktree, &["commit", "-m", "unmerged work"]);
+    git(root, &["tag", "loom/shadowed", &commit]);
 
     let error = cleanup_verified_stage("shadowed", &commit, "main", root).unwrap_err();
     assert!(error.to_string().contains("stage branch head"));
@@ -150,7 +201,7 @@ fn verified_cleanup_ignores_a_tag_shadowing_the_stage_branch() {
 fn verified_cleanup_refuses_when_both_resources_are_absent() {
     let temp = init_repo();
     let root = temp.path();
-    let main_commit = git_stdout(root, &["rev-parse", "main"]);
+    let main_commit = git(root, &["rev-parse", "main"]);
 
     let error = cleanup_verified_stage("absent", &main_commit, "main", root).unwrap_err();
     assert!(error
@@ -220,8 +271,8 @@ fn verified_cleanup_removes_worktree_holding_ignored_output() {
     let temp = init_repo();
     let root = temp.path();
     fs::write(root.join(".gitignore"), "target/\n.claude/\n").unwrap();
-    git_ok(root, &["add", ".gitignore"]);
-    git_ok(root, &["commit", "-m", "ignore build output"]);
+    git(root, &["add", ".gitignore"]);
+    git(root, &["commit", "-m", "ignore build output"]);
     let (worktree, commit) = create_stage_worktree(root, "ignored");
     merge_stage(root, "ignored");
     fs::create_dir_all(worktree.join("target/debug")).unwrap();
@@ -273,4 +324,21 @@ fn verified_cleanup_refuses_sandbox_stub_name_with_content() {
     assert!(error.to_string().contains(".zshrc"));
     assert!(worktree.join(".zshrc").exists());
     assert!(branch_exists_strict("loom/stub-content", root).unwrap());
+}
+
+#[test]
+fn verified_cleanup_names_an_untracked_path_with_quotes_and_non_ascii_unquoted() {
+    let temp = init_repo();
+    let root = temp.path();
+    let (worktree, commit) = create_stage_worktree(root, "odd-name");
+    merge_stage(root, "odd-name");
+    let name = "caf\u{e9} \"q\".txt";
+    fs::write(worktree.join(name), "keep me\n").unwrap();
+
+    let error = cleanup_verified_stage("odd-name", &commit, "main", root).unwrap_err();
+    assert!(
+        error.to_string().contains(&format!("?? {name}")),
+        "the listing must carry the raw path: {error}"
+    );
+    assert!(worktree.join(name).exists());
 }

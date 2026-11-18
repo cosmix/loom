@@ -1,7 +1,7 @@
 use super::*;
 use crate::context::extract::{extract_file, registry};
 use crate::context::graph_store::FileEntry;
-use crate::git::runner::run_git_checked;
+use crate::test_git::{git, TestRepo};
 
 fn extracted(files: &[(&str, &str)]) -> ResolvedGraph {
     let extractors = registry();
@@ -76,18 +76,12 @@ fn unrelated_methods_and_different_bodies_are_not_duplicates() {
     assert!(duplicate_candidates(&graph, &changed).is_empty());
 }
 
-fn git(root: &Path, args: &[&str]) {
-    run_git_checked(args, root).unwrap();
-}
-
 #[cfg(feature = "source-graph")]
 #[test]
 fn root_and_nested_package_see_staged_unstaged_and_new_copies() {
     let temp = tempfile::tempdir().unwrap();
     let root = temp.path();
-    git(root, &["init", "-b", "main"]);
-    git(root, &["config", "user.email", "test@example.com"]);
-    git(root, &["config", "user.name", "Test"]);
+    TestRepo::builder().no_seed().init_in(root);
     let nested = root.join("package/src");
     std::fs::create_dir_all(&nested).unwrap();
     let source = "pub(crate) fn normalize_settings() -> u32 { 42 }\n";
@@ -128,9 +122,7 @@ fn non_utf8_changed_paths_fail_explicitly_instead_of_lossy_matching() {
     use std::os::unix::ffi::OsStrExt;
     let temp = tempfile::tempdir().unwrap();
     let root = temp.path();
-    git(root, &["init", "-b", "main"]);
-    git(root, &["config", "user.email", "test@example.com"]);
-    git(root, &["config", "user.name", "Test"]);
+    TestRepo::builder().no_seed().init_in(root);
     git(
         root,
         &[

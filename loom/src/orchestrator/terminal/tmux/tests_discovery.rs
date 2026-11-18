@@ -1,11 +1,11 @@
-//! Pins the discovery half of `viewer.rs` — `live_tmux_sessions` and the
-//! filters (backend, status, liveness, orderability) it applies. Split from
-//! `tests_viewer.rs` only to keep both files under the 400-line ceiling
-//! (CLAUDE.md Rule 17); the identity half (socket/session naming, pane
-//! command, `attachable_panes`) lives there.
+//! Discovery tests for `live_tmux_sessions` and its backend, status,
+//! liveness, and ordering filters.
 
 use super::*;
+use crate::orchestrator::terminal::tmux::socket::tests::TmuxTmpDirGuard;
+use crate::orchestrator::terminal::tmux::socket::{list_loom_sockets, loom_socket_dir};
 use chrono::{DateTime, Utc};
+use serial_test::serial;
 use tempfile::TempDir;
 
 /// Fields needed to render a fixture session file, grouped into a struct
@@ -25,24 +25,8 @@ struct SessionFixture<'a> {
 /// (`session_files::session_to_markdown`), so the fixture matches the
 /// real on-disk format exactly instead of a hand-typed approximation.
 fn write_test_session(work_dir: &Path, fixture: SessionFixture) {
-    let mut session = Session::new();
-    session.id = fixture.id.to_string();
-    session.stage_id = Some(fixture.stage_id.to_string());
-    session.pid = Some(fixture.pid);
-    session.status = fixture.status;
-    session.backend = fixture.backend;
-    session.created_at = fixture.created_at;
-    session.tracking_key = fixture.tracking_key.to_string();
-
-    let sessions_dir = work_dir.join("sessions");
-    std::fs::create_dir_all(&sessions_dir).unwrap();
-    std::fs::write(
-        sessions_dir.join(format!("{}.md", fixture.id)),
-        crate::fs::session_files::session_to_markdown(&session),
-    )
-    .unwrap();
-    crate::orchestrator::terminal::native::write_test_pid_identity(work_dir, &session, fixture.pid)
-        .unwrap();
+    let filename = format!("{}.md", fixture.id);
+    write_test_session_with_filename(work_dir, &filename, fixture);
 }
 
 #[test]
@@ -199,10 +183,7 @@ fn live_tmux_sessions_filters_by_status_not_just_pid() {
 
 /// Write a fixture session whose ON-DISK FILENAME is independent of the
 /// `id` embedded in its frontmatter, so a test can pin filesystem-traversal
-/// order against LOGICAL id order without relying on any particular
-/// `read_dir` behaviour. [`write_test_session`] cannot do this — it always
-/// names the file after `fixture.id` — which is exactly why the plain
-/// version is insufficient for [`live_tmux_sessions_orders_by_created_at_then_id`].
+/// order against logical id order.
 fn write_test_session_with_filename(work_dir: &Path, filename: &str, fixture: SessionFixture) {
     let mut session = Session::new();
     session.id = fixture.id.to_string();
@@ -284,4 +265,23 @@ fn live_tmux_sessions_orders_by_created_at_then_id() {
         vec!["session-a-tied", "session-z-tied"],
         "with tied created_at, order must fall back to id, ascending — regardless of on-disk filename order"
     );
+}
+
+#[test]
+#[serial]
+fn list_loom_sockets_ignores_planning_sockets() {
+    let socket_dir = TempDir::new().unwrap();
+    let _guard = TmuxTmpDirGuard::set(socket_dir.path());
+    let tmux_socket_dir = loom_socket_dir();
+    std::fs::create_dir_all(&tmux_socket_dir).unwrap();
+    std::fs::write(tmux_socket_dir.join("loom-plan-3f9a0c41b7e2"), "").unwrap();
+
+    let real_session_id = "session-abcd1234-1111111111";
+    std::fs::write(tmux_socket_dir.join(format!("loom-{real_session_id}")), "").unwrap();
+    let work_dir = TempDir::new().unwrap();
+    std::fs::create_dir_all(work_dir.path().join("sessions")).unwrap();
+
+    let sockets = list_loom_sockets(work_dir.path());
+    assert_eq!(sockets.len(), 1);
+    assert_eq!(sockets[0].session_id, real_session_id);
 }

@@ -1,0 +1,118 @@
+@layer components {
+  .activity-glyph {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    width: 1.15em;
+    height: 1.15em;
+    vertical-align: middle;
+  }
+
+  .activity-glyph > svg {
+    display: block;
+    width: 100%;
+    height: 100%;
+  }
+
+  /* The roundel, used only by the header pill (`header/activity.tsx`), takes the `.activity-glyph`
+     box: the disc fills 86% of it, the reach of a lucide glyph's strokes. */
+  .activity-glyph > .aurora-roundel-wrap {
+    width: 86%;
+    height: 86%;
+  }
+
+  /* The status dot: every kind but permission. Live (running, waiting) is green and pulses;
+     a paused one is gray and still. */
+  .activity-glyph:not([data-kind="permission"]) {
+    color: var(--tone-completed);
+  }
+
+  .activity-glyph[data-paused="true"] {
+    color: var(--muted-foreground);
+  }
+
+  .activity-glyph .activity-glyph__led {
+    width: 0.5em;
+    height: 0.5em;
+    border-radius: 50%;
+    background: currentColor;
+    animation: activity-glyph-waiting 2s ease-in-out infinite;
+  }
+
+  .activity-glyph[data-kind="permission"] > .activity-glyph__motion {
+    transform-origin: 50% 10%;
+    animation: activity-glyph-permission 2.4s ease-in-out infinite;
+  }
+
+  /* The glyph column of an activity row: the glyph alone, on the row's ground. A filled tile
+     would be a box inside the popover. */
+  .activity-tile {
+    display: inline-grid;
+    place-items: center;
+    flex: none;
+    width: 20px;
+    height: 20px;
+    /* The glyph is 1.15em, so 13px draws it at 15px. */
+    font-size: 13px;
+    color: var(--muted-foreground);
+  }
+
+  .activity-tile > svg {
+    width: 15px;
+    height: 15px;
+  }
+
+  .activity-tile[data-tone="completed"] {
+    color: var(--tone-completed);
+  }
+
+  .activity-tile[data-tone="warning"] {
+    color: var(--tone-warning);
+  }
+
+  .activity-glyph[data-paused="true"],
+  .activity-glyph[data-paused="true"] * {
+    /* Override the more specific per-kind animation shorthands. */
+    animation-play-state: paused !important;
+  }
+}
+
+@keyframes activity-glyph-waiting {
+  0%,
+  100% {
+    transform: scale(0.85);
+    opacity: 0.55;
+  }
+  50% {
+    transform: scale(1.15);
+    opacity: 1;
+  }
+}
+
+@keyframes activity-glyph-permission {
+  0%,
+  30%,
+  100% {
+    transform: rotate(0deg);
+  }
+  5%,
+  15% {
+    transform: rotate(12deg);
+  }
+  10%,
+  20% {
+    transform: rotate(-12deg);
+  }
+  25% {
+    transform: rotate(6deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .activity-glyph,
+  .activity-glyph * {
+    animation: none;
+  }
+}

@@ -87,7 +87,7 @@ fn merge_hooks(root: &mut Map<String, Value>, hooks_dir: &Path) -> Result<()> {
         let rules = rules
             .as_array_mut()
             .with_context(|| format!("hooks.{event} must be a JSON array"))?;
-        rules.retain(|rule| !is_loom_rule(rule, hooks_dir));
+        super::hooks::ownership::remove_owned(rules, Some(hooks_dir));
         if let Some(fresh) = desired.get(&event).and_then(Value::as_array) {
             rules.extend(fresh.iter().cloned());
         }
@@ -157,20 +157,6 @@ fn handler(hooks_dir: &Path, script: &str, argument: Option<&str>) -> Value {
         command.push_str(argument);
     }
     json!({"type": "command", "command": command})
-}
-
-fn is_loom_rule(rule: &Value, hooks_dir: &Path) -> bool {
-    let prefix = hooks_dir.to_string_lossy();
-    rule.get("hooks")
-        .and_then(Value::as_array)
-        .is_some_and(|handlers| {
-            handlers.iter().any(|handler| {
-                handler
-                    .get("command")
-                    .and_then(Value::as_str)
-                    .is_some_and(|command| command.contains(prefix.as_ref()))
-            })
-        })
 }
 
 fn write_root(path: &Path, root: &Map<String, Value>) -> Result<()> {

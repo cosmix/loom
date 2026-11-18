@@ -19,9 +19,28 @@ pub const BLOCK_CASES: &[(&str, &str)] = &[
         "manifest-path alone is not a scope",
     ),
     ("cargo test --all", "explicit --all"),
-    ("cargo build", "cargo build is project-wide in any form"),
     ("cargo clippy", "cargo clippy is project-wide in any form"),
     ("cargo fmt", "cargo fmt is project-wide in any form"),
+    ("cargo fmt --all", "cargo fmt --all"),
+    (
+        "cargo fmt -- src/a.rs",
+        "cargo fmt -- <files> formats the whole package",
+    ),
+    ("cargo fmt --check", "cargo fmt --check is a lint"),
+    ("tsc -w", "tsc in watch mode"),
+    ("tsc --noEmit -w", "a watching --noEmit run never ends"),
+    (
+        "tsc --noEmit false -p .",
+        "`--noEmit false` emits the whole project",
+    ),
+    (
+        "bun run lint",
+        "lint scripts are linters, whatever they run",
+    ),
+    (
+        "bun run typecheck",
+        "typecheck scripts block, whatever they run",
+    ),
     (
         "cd loom && cargo clippy --all-targets",
         "clippy after a cd prefix",
@@ -32,8 +51,20 @@ pub const BLOCK_CASES: &[(&str, &str)] = &[
     ),
     ("pytest", "bare pytest"),
     ("go test ./...", "go test walks the whole module"),
+    (
+        "go test -bench . -benchtime 1s",
+        "benchmarks still run regular tests",
+    ),
+    (
+        "go test ./... -bench=. -benchtime=1s",
+        "benchmarks across the module",
+    ),
     ("make test", "make test"),
-    ("npm run build", "npm run build with no path"),
+    ("make build", "make build stays blocked"),
+    (
+        "go build ./... && cargo build",
+        "go build of the module before a compile",
+    ),
     // --- Regressions: tokenizer edge cases (do not weaken) ---
     (
         "cargo test 2>&1 | tail -50",
@@ -91,11 +122,11 @@ pub const BLOCK_CASES: &[(&str, &str)] = &[
         "REGRESSION: `&&` with no surrounding spaces still separates commands",
     ),
     (
-        "cd loom&&cargo build",
-        "REGRESSION: the natural `cd x&&cargo build` form must not slip through",
+        "cd loom&&cargo clippy",
+        "REGRESSION: the natural `cd x&&cargo clippy` form must not slip through",
     ),
     (
-        "true||cargo build",
+        "true||cargo clippy",
         "REGRESSION: `||` with no surrounding spaces still separates commands",
     ),
     (
@@ -115,7 +146,7 @@ pub const BLOCK_CASES: &[(&str, &str)] = &[
         "REGRESSION: a while-block body must still be inspected",
     ),
     (
-        "for f in a; do cargo build; done",
+        "for f in a; do cargo clippy; done",
         "REGRESSION: a for-block body must still be inspected",
     ),
     // --- Every test runner the adapters know: an unfiltered run is blocked ---
@@ -172,6 +203,10 @@ pub const BLOCK_CASES: &[(&str, &str)] = &[
     ("go test -v", "go test flags only"),
     ("bun test", "bare bun test"),
     ("jest", "bare jest"),
+    (
+        "cargo test -- --no-run",
+        "a --no-run after `--` goes to the test binary; cargo still runs the suite",
+    ),
 ];
 
 pub const ALLOW_CASES: &[(&str, &str)] = &[
@@ -196,6 +231,19 @@ pub const ALLOW_CASES: &[(&str, &str)] = &[
         "git commit is not a verification runner",
     ),
     ("ls -la", "unrelated command"),
+    ("cargo build", "a subagent may compile"),
+    ("npm run build", "a build script compiles"),
+    ("bun run build", "a build script compiles"),
+    ("cargo check --lib --tests", "cargo check compiles"),
+    (
+        "cargo test --lib --no-run",
+        "--no-run compiles the tests, runs none",
+    ),
+    ("tsc --noEmit", "a non-emitting typecheck compiles"),
+    ("tsc -b --noEmit", "a non-emitting build-mode typecheck"),
+    ("bunx tsc --noEmit -p .", "tsc --noEmit behind bunx"),
+    ("node_modules/.bin/tsc --noEmit", "tsc by path"),
+    ("tsc --noemit", "tsc reads option names case-insensitively"),
     // --- Regressions ---
     (
         "make docs\ncargo test --test parser",
@@ -203,7 +251,7 @@ pub const ALLOW_CASES: &[(&str, &str)] = &[
          for the scoped cargo test that follows on the next line",
     ),
     (
-        r#"rg "x && cargo build -v" src/"#,
+        r#"rg "x && cargo clippy -v" src/"#,
         "REGRESSION: a quoted && inside an rg pattern must not reset command position",
     ),
     (
@@ -329,8 +377,8 @@ pub const ALLOW_CASES: &[(&str, &str)] = &[
     ("go test -v ./pkg", "go test of one package with flags"),
     ("go test -run TestLogin", "go test -run without a package"),
     (
-        "go test -bench . -benchtime 1s",
-        "go test -bench selects benchmarks",
+        "go test -bench . -run TestLogin",
+        "benchmarks with test filter",
     ),
     ("bun test src/a.test.ts", "bun test path"),
     (

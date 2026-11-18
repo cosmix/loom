@@ -15,6 +15,7 @@ use crate::context::graph_store::{FileEntry, GraphLayer, GraphStore};
 use crate::context::refresh::{ensure_snapshot, SnapshotPolicy};
 use crate::context::source_graph::GRAPH_SCHEMA_VERSION;
 use crate::context::store::ContextStore;
+use crate::test_git::{git, TestRepo};
 
 pub(super) const A_RS: (&str, &str) = ("src/a.rs", "pub fn helper() {}\n");
 pub(super) const B_RS: (&str, &str) = ("src/b.rs", "pub fn run() {\n    helper();\n}\n");
@@ -176,13 +177,10 @@ fn prune_keeps_a_base_and_its_views_together_within_budget() {
 fn snapshot_repo() -> (TempDir, GraphStore, String) {
     let temp = TempDir::new().unwrap();
     let root = temp.path();
-    for args in [
-        &["init", "-b", "main"][..],
-        &["config", "user.name", "t"],
-        &["config", "user.email", "t@t"],
-    ] {
-        git(root, args);
-    }
+    TestRepo::builder()
+        .identity("t", "t@t")
+        .no_seed()
+        .init_in(root);
     for (path, source) in [A_RS, B_RS] {
         fs::create_dir_all(root.join("src")).unwrap();
         fs::write(root.join(path), source).unwrap();
@@ -194,22 +192,6 @@ fn snapshot_repo() -> (TempDir, GraphStore, String) {
     let head = ensure_snapshot(&context, &graph_store, root, SnapshotPolicy::BaseOnly).revision;
     assert!(!head.is_empty());
     (temp, graph_store, head)
-}
-
-fn git(root: &Path, args: &[&str]) {
-    let output = std::process::Command::new("git")
-        .args(args)
-        .current_dir(root)
-        .env("GIT_CONFIG_GLOBAL", root.join(".loom-test-no-global"))
-        .env("GIT_CONFIG_SYSTEM", root.join(".loom-test-no-system"))
-        .env("GIT_CONFIG_NOSYSTEM", "1")
-        .output()
-        .unwrap();
-    assert!(
-        output.status.success(),
-        "git {args:?} failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
 }
 
 #[test]

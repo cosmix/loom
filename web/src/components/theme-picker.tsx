@@ -9,6 +9,8 @@ import {
   type LightVariant,
 } from "@/aurora-ui/shared/atoms/theme";
 
+export const SWATCH_SIZE = { width: 120, height: 76 } as const;
+
 export interface ThemePalette {
   background: string;
   card: string;
@@ -19,7 +21,14 @@ export interface ThemePalette {
   primaryForeground: string;
 }
 
-export type ThemeId = "ledger" | "aubergine" | "pacific" | "graphite";
+export type ThemeId =
+  | "ledger"
+  | "harbor"
+  | "aubergine"
+  | "graphite"
+  | "midnight"
+  | "obsidian"
+  | "indigo";
 
 export interface ThemeOption {
   id: ThemeId;
@@ -31,23 +40,34 @@ export interface ThemeOption {
   palette: ThemePalette;
 }
 
+const PALETTE_VARIABLES: ThemePalette = {
+  background: "var(--background)",
+  card: "var(--card)",
+  foreground: "var(--foreground)",
+  mutedForeground: "var(--muted-foreground)",
+  border: "var(--border)",
+  primary: "var(--primary)",
+  primaryForeground: "var(--primary-foreground)",
+};
+
 export const THEME_OPTIONS: readonly ThemeOption[] = [
   {
     id: "ledger",
     label: "Ledger",
-    caption: "light · hue 102",
+    caption: "light · stone paper",
     scheme: "light",
     lightVariant: "ledger",
     darkVariant: null,
-    palette: {
-      background: "oklch(0.925 0.009 102)",
-      card: "oklch(0.955 0.008 102)",
-      foreground: "oklch(0.21 0.012 262)",
-      mutedForeground: "oklch(0.48 0.02 250)",
-      border: "oklch(0.84 0.012 100)",
-      primary: "oklch(0.84 0.155 80)",
-      primaryForeground: "oklch(0.21 0.012 262)",
-    },
+    palette: PALETTE_VARIABLES,
+  },
+  {
+    id: "harbor",
+    label: "Harbor",
+    caption: "light · cool blue-white",
+    scheme: "light",
+    lightVariant: "harbor",
+    darkVariant: null,
+    palette: PALETTE_VARIABLES,
   },
   {
     id: "aubergine",
@@ -56,49 +76,43 @@ export const THEME_OPTIONS: readonly ThemeOption[] = [
     scheme: "dark",
     lightVariant: null,
     darkVariant: "aubergine",
-    palette: {
-      background: "oklch(0.16 0.035 325)",
-      card: "oklch(0.195 0.04 325)",
-      foreground: "oklch(0.94 0.012 325)",
-      mutedForeground: "oklch(0.73 0.03 325)",
-      border: "oklch(0.31 0.045 325)",
-      primary: "oklch(0.83 0.165 82)",
-      primaryForeground: "oklch(0.2 0.04 325)",
-    },
-  },
-  {
-    id: "pacific",
-    label: "Pacific",
-    caption: "dark blue · hue 258",
-    scheme: "dark",
-    lightVariant: null,
-    darkVariant: "blue",
-    palette: {
-      background: "oklch(0.18 0.045 258)",
-      card: "oklch(0.225 0.045 258)",
-      foreground: "oklch(0.95 0.018 258)",
-      mutedForeground: "oklch(0.76 0.04 258)",
-      border: "oklch(0.42 0.06 258)",
-      primary: "oklch(0.78 0.135 258)",
-      primaryForeground: "oklch(0.17 0.045 258)",
-    },
+    palette: PALETTE_VARIABLES,
   },
   {
     id: "graphite",
     label: "Graphite",
-    caption: "dark gray · hue 270",
+    caption: "dark · neutral charcoal",
     scheme: "dark",
     lightVariant: null,
     darkVariant: "gray",
-    palette: {
-      background: "oklch(0.18 0.005 270)",
-      card: "oklch(0.225 0.005 270)",
-      foreground: "oklch(0.95 0.005 270)",
-      mutedForeground: "oklch(0.74 0.008 270)",
-      border: "oklch(0.42 0.006 270)",
-      primary: "oklch(0.78 0.015 270)",
-      primaryForeground: "oklch(0.18 0.005 270)",
-    },
+    palette: PALETTE_VARIABLES,
+  },
+  {
+    id: "midnight",
+    label: "Midnight",
+    caption: "dark · deep navy",
+    scheme: "dark",
+    lightVariant: null,
+    darkVariant: "midnight",
+    palette: PALETTE_VARIABLES,
+  },
+  {
+    id: "obsidian",
+    label: "Obsidian",
+    caption: "dark · near-black OLED",
+    scheme: "dark",
+    lightVariant: null,
+    darkVariant: "obsidian",
+    palette: PALETTE_VARIABLES,
+  },
+  {
+    id: "indigo",
+    label: "Indigo Night",
+    caption: "dark · blue-violet ink",
+    scheme: "dark",
+    lightVariant: null,
+    darkVariant: "indigo",
+    palette: PALETTE_VARIABLES,
   },
 ];
 
@@ -219,12 +233,12 @@ function SwatchStageCard({
   );
 }
 
-function ThemeSwatch({ palette }: { palette: ThemePalette }): ReactElement {
+function ThemeSwatch(palette: ThemePalette): ReactElement {
   return (
     <svg
-      viewBox="0 0 120 76"
-      width="120"
-      height="76"
+      viewBox={`0 0 ${SWATCH_SIZE.width} ${SWATCH_SIZE.height}`}
+      width={SWATCH_SIZE.width}
+      height={SWATCH_SIZE.height}
       aria-hidden="true"
       style={{ display: "block", borderRadius: "5px" }}
     >
@@ -239,7 +253,14 @@ function ThemeSwatch({ palette }: { palette: ThemePalette }): ReactElement {
   );
 }
 
-export function ThemePicker(): ReactElement {
+export function ThemePicker({
+  swatch = ThemeSwatch,
+  optionClassName,
+}: {
+  swatch?: (palette: ThemePalette) => ReactElement;
+  /** Added to every option button, for a caller whose stylesheet restyles the cards. */
+  optionClassName?: string;
+} = {}): ReactElement {
   const [scheme, setScheme] = useAtom(themeAtom);
   const [lightVariant, setLightVariant] = useAtom(lightVariantAtom);
   const [darkVariant, setDarkVariant] = useAtom(darkVariantAtom);
@@ -264,11 +285,17 @@ export function ThemePicker(): ReactElement {
               if (option.lightVariant !== null) setLightVariant(option.lightVariant);
               if (option.darkVariant !== null) setDarkVariant(option.darkVariant);
             }}
-            className={`flex flex-col items-start gap-1 rounded-lg border bg-card p-2 text-left transition-shadow ${
+            className={`flex flex-col items-start gap-1 rounded-lg border bg-card p-2 text-left transition-shadow focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring ${
               active ? "border-primary ring-2 ring-primary" : "border-border"
-            }`}
+            }${optionClassName ? ` ${optionClassName}` : ""}`}
           >
-            <ThemeSwatch palette={option.palette} />
+            <span
+              className={option.scheme === "dark" ? "theme-preview dark" : "theme-preview"}
+              data-light-theme={option.lightVariant ?? undefined}
+              data-dark-theme={option.darkVariant ?? undefined}
+            >
+              {swatch(option.palette)}
+            </span>
             <span className="mt-1 text-[13px] font-medium leading-4">{option.label}</span>
             <span className="text-xs leading-4 text-muted-foreground">{option.caption}</span>
           </button>

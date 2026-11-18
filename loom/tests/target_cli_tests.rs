@@ -12,30 +12,10 @@ mod helpers;
 
 use loom::git::target_guard::{accepted_tip, check, recorded_hold, GuardState, RECORD_FILE};
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output};
+use std::process::Output;
 use tempfile::TempDir;
 
-fn git(dir: &Path, args: &[&str]) -> String {
-    let out = Command::new("git")
-        .args(args)
-        .current_dir(dir)
-        .env_remove("LOOM_SESSION_ID")
-        .env("GIT_CONFIG_GLOBAL", dir.join(".loom-test-no-global"))
-        .env("GIT_CONFIG_SYSTEM", dir.join(".loom-test-no-system"))
-        .env("GIT_CONFIG_NOSYSTEM", "1")
-        .env("GIT_AUTHOR_NAME", "t")
-        .env("GIT_AUTHOR_EMAIL", "t@t.com")
-        .env("GIT_COMMITTER_NAME", "t")
-        .env("GIT_COMMITTER_EMAIL", "t@t.com")
-        .output()
-        .unwrap();
-    assert!(
-        out.status.success(),
-        "git {args:?} failed: {}",
-        String::from_utf8_lossy(&out.stderr)
-    );
-    String::from_utf8_lossy(&out.stdout).trim().to_string()
-}
+use helpers::test_support::git_repo::{git, TestRepo};
 
 /// A repository whose `main` the guard holds, and the files a refused
 /// command must leave behind.
@@ -55,11 +35,11 @@ struct Held {
 fn held() -> Held {
     let dir = TempDir::new().unwrap();
     let root = dir.path().canonicalize().unwrap();
-    git(&root, &["init", "-q", "-b", "main"]);
+    TestRepo::builder()
+        .identity("t", "t@t.com")
+        .seed("README.md", "readme\n", "seed")
+        .init_in(&root);
     std::fs::write(root.join(".git/info/exclude"), ".loom/\n.worktrees/\n").unwrap();
-    std::fs::write(root.join("README.md"), "readme\n").unwrap();
-    git(&root, &["add", "README.md"]);
-    git(&root, &["commit", "-q", "-m", "seed"]);
     let work_dir = root.join(".loom/work");
     std::fs::create_dir_all(&work_dir).unwrap();
     let first = check(&root, &work_dir, "main").unwrap();

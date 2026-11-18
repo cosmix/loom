@@ -5,6 +5,8 @@ import {
   agentLabel,
   cacheHitPercent,
   carryForward,
+  costShares,
+  codexPairs,
   compactTokens,
   cumulativeSeries,
   fresh,
@@ -29,7 +31,10 @@ const main: AgentFlow = {
   id: "main-01ed9f4c",
   kind: "main",
   agent_type: null,
+  forwarder: null,
   model: "claude-opus-5-5",
+  effort: "high",
+  unit_id: null,
   active: true,
   total: usage(40000, 600000, 9000000, 100000),
   rate: usage(600, 12000, 200000, 1600),
@@ -39,7 +44,10 @@ const subagent: AgentFlow = {
   id: "a04baa183f888b773",
   kind: "subagent",
   agent_type: "loom-software-engineer",
+  forwarder: null,
   model: "claude-sonnet-5-5",
+  effort: "medium",
+  unit_id: null,
   active: true,
   total: usage(50000, 900000, 13000000, 160000),
   rate: usage(1200, 21000, 350000, 3000),
@@ -49,7 +57,10 @@ const codex: AgentFlow = {
   id: "codex-01a1396b",
   kind: "codex",
   agent_type: null,
-  model: "gpt-6.1-sol",
+  forwarder: null,
+  model: "gpt-6.2-sol",
+  effort: "xhigh",
+  unit_id: null,
   active: true,
   total: usage(30000, 300000, 4000000, 50000),
   rate: usage(200, 3000, 50000, 600),
@@ -92,6 +103,24 @@ it.each([
   [2239999, "2.23M"],
 ])("compactTokens truncates %i to %s", (value, expected) => {
   expect(compactTokens(value)).toBe(expected);
+});
+
+it("costShares weights by price so cache reads no longer dwarf the other kinds", () => {
+  const shares = costShares(usage(10, 1000, 100_000, 500));
+  // cost: input 10, write 1250, output 2500, read 10000; reads are 98% of tokens but 73% of cost
+  expect(shares.cache_read).toBeCloseTo(10000 / 13760, 6);
+  expect(shares.output).toBeCloseTo(2500 / 13760, 6);
+  expect(shares.cache_write).toBeCloseTo(1250 / 13760, 6);
+  expect(shares.input + shares.cache_write + shares.output + shares.cache_read).toBeCloseTo(1, 9);
+});
+
+it("costShares is all zeros for empty usage", () => {
+  expect(costShares(usage(0, 0, 0, 0))).toEqual({
+    input: 0,
+    cache_write: 0,
+    output: 0,
+    cache_read: 0,
+  });
 });
 
 it("cacheHitPercent gives the pinned plan percentage", () => {
@@ -137,6 +166,7 @@ it.each([
   [main, "main session"],
   [subagent, "loom-software-engineer"],
   [codex, "codex job"],
+  [{ ...codex, unit_id: "hex-test" }, "hex-test"],
   [{ ...subagent, agent_type: null }, "subagent"],
 ])("agentLabel labels $0.kind as %s", (agent, expected) => {
   expect(agentLabel(agent)).toBe(expected);
@@ -146,7 +176,7 @@ it("modelRates sorts fixture models by fresh rate", () => {
   expect(modelRates(flow)).toEqual([
     { model: "claude-sonnet-5-5", perMinute: 25200 },
     { model: "claude-opus-5-5", perMinute: 14200 },
-    { model: "gpt-6.1-sol", perMinute: 3800 },
+    { model: "gpt-6.2-sol", perMinute: 3800 },
   ]);
 });
 
@@ -213,7 +243,7 @@ it("lastValues keeps the last N values and pads a short series on the left", () 
 const models: ModelUsage[] = [
   { model: "claude-sonnet-5-5", effort: "medium", total: usage(50000, 900000, 13000000, 160000) },
   { model: "claude-opus-5-5", effort: "xhigh", total: usage(30000, 450000, 7000000, 80000) },
-  { model: "gpt-6.1-sol", effort: "xhigh", total: usage(30000, 300000, 4000000, 50000) },
+  { model: "gpt-6.2-sol", effort: "xhigh", total: usage(30000, 300000, 4000000, 50000) },
   { model: "claude-opus-5-5", effort: "high", total: usage(10000, 150000, 2000000, 20000) },
 ];
 
@@ -223,7 +253,7 @@ it("modelShares sums efforts per model and orders by fresh", () => {
   expect(shares.map((s) => [s.model, s.fresh])).toEqual([
     ["claude-sonnet-5-5", 1110000],
     ["claude-opus-5-5", 740000],
-    ["gpt-6.1-sol", 380000],
+    ["gpt-6.2-sol", 380000],
   ]);
   expect(shares[0].share).toBeCloseTo(0.4978, 4);
   expect(shares[1].share).toBeCloseTo(0.3318, 4);
@@ -252,7 +282,7 @@ it("modelGroups keeps each model's efforts in input order with cache reads", () 
   expect(groups.map((g) => g.model)).toEqual([
     "claude-sonnet-5-5",
     "claude-opus-5-5",
-    "gpt-6.1-sol",
+    "gpt-6.2-sol",
   ]);
   expect(groups[1]).toEqual({
     model: "claude-opus-5-5",
@@ -331,4 +361,30 @@ it("wholePercents gives a single model 100 and no models none", () => {
 it("wholePercents hands the missing points to the largest remainders", () => {
   expect(wholePercents([0.256, 0.254, 0.49])).toEqual([26, 25, 49]);
   expect(wholePercents([0.29, 0.71])).toEqual([29, 71]);
+});
+
+it("codexPairs makes one cluster per forwarder with its jobs, orphan jobs alone", () => {
+  const lane = (id: string, over: Partial<AgentFlow>) => ({ agent: { ...subagent, id, ...over } });
+  const fwd = (id: string) => lane(id, { agent_type: "loom-codex-forwarder" });
+  const job = (id: string, forwarder: string | null) =>
+    lane(id, { kind: "codex", agent_type: null, forwarder });
+  const rows = [
+    lane("plain", {}),
+    job("job-b", "fwd-b"),
+    fwd("fwd-a"),
+    fwd("fwd-b"),
+    job("job-a", "fwd-a"),
+    job("lost", "gone"),
+    job("none", null),
+  ];
+
+  const ids = codexPairs(rows).map((cluster) => cluster.map(({ agent }) => agent.id));
+
+  expect(ids).toEqual([["fwd-a", "job-a"], ["fwd-b", "job-b"], ["lost"], ["none"]]);
+});
+
+it("codexPairs keeps a forwarder with no job and ignores plain lanes", () => {
+  const rows = [{ agent: main }, { agent: { ...subagent, agent_type: "loom-codex-forwarder" } }];
+
+  expect(codexPairs(rows).map((cluster) => cluster.length)).toEqual([1]);
 });

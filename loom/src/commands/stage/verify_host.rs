@@ -8,8 +8,8 @@ use std::path::PathBuf;
 
 use anyhow::{Context, Result};
 
-use crate::host_verify::child::run_job;
-use crate::host_verify::JobResult;
+use crate::host_verify::child_policy::run_job_bound;
+use crate::host_verify::{JobResult, BUDGET_POLICY_ENV};
 
 const EXIT_FAILED: i32 = 1;
 const EXIT_REFUSED: i32 = 2;
@@ -22,7 +22,11 @@ pub fn execute(stage_id: String, job: String) -> Result<()> {
         eprintln!("verify-host runs only from the loom daemon");
         std::process::exit(EXIT_REFUSED);
     }
-    let result = state_root().and_then(|work_dir| run_job(&work_dir, &stage_id, &job));
+    let result = state_root().and_then(|work_dir| {
+        let policy = std::env::var(BUDGET_POLICY_ENV)
+            .with_context(|| format!("{BUDGET_POLICY_ENV} is not set"))?;
+        run_job_bound(&work_dir, &stage_id, &job, &policy)
+    });
     match result {
         Ok(result) => {
             print_summary(&result);

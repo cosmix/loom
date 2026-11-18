@@ -8,6 +8,7 @@
 pub mod artifacts;
 pub mod dead_code;
 mod definition_sites;
+pub(crate) mod plan;
 pub mod reachable;
 pub mod result;
 pub mod truths;
@@ -108,7 +109,7 @@ fn wiring_gaps(
 
 /// `gaps` of entry `index` of `field`'s list, each description prefixed with
 /// `[<label> <index>]`.
-fn indexed_gaps(
+pub(crate) fn indexed_gaps(
     field: CriterionField,
     index: usize,
     gaps: Vec<VerificationGap>,

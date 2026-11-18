@@ -40,8 +40,8 @@ fn pane_lines(view: &LedgerView, width: u16, live_only: bool) -> Vec<Line<'stati
         return Vec::new();
     }
     match view.data.tokens.as_ref() {
-        Some(flow) if live_only => live_lines(flow, width),
-        Some(flow) => tokens_pane_lines(flow, width, PANE_MAX_ROWS),
+        Some(flow) if live_only => live_lines(flow, &view.data.stages, width),
+        Some(flow) => tokens_pane_lines(flow, &view.data.stages, width, PANE_MAX_ROWS),
         None => no_data_lines(width, PANE_MAX_ROWS),
     }
 }
@@ -127,6 +127,7 @@ fn render_size_notice(frame: &mut Frame, area: Rect) {
 
 #[cfg(test)]
 mod tests {
+    use crate::orchestrator::busy::LoopState;
     use std::collections::HashMap;
 
     use ratatui::{backend::TestBackend, Terminal};
@@ -277,7 +278,7 @@ mod tests {
             spinner: '⠋',
             scroll_y: 0,
             legend_open: false,
-            tick_age_secs: None,
+            loop_state: LoopState::Unknown,
             last_error: None,
             now_epoch: 1_788_523_200,
             scrollable: false,

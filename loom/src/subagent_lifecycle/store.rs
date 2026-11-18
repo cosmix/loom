@@ -1,16 +1,27 @@
+pub(crate) use super::append::append_all_locked;
+#[cfg(test)]
+pub(crate) use super::append::append_locked;
 pub(crate) use super::codex_evidence::codex_event_id;
 use super::codex_evidence::codex_records_outcome;
-use super::lock::JournalLock;
 use super::model::{LifecycleRecord, WorkerIdentity, WorkerOutcome};
 use super::validation::{fold_states, validate_record, validate_safe_id, Validation};
+use crate::fs::jsonl_spool::read_complete_lines;
 use anyhow::{ensure, Context, Result};
 use std::collections::{HashMap, HashSet};
-use std::fs::{self, OpenOptions};
-use std::io::{Read, Seek, SeekFrom};
-use std::os::unix::fs::OpenOptionsExt;
+use std::fs;
 use std::path::{Path, PathBuf};
 
 const MAX_JOURNAL_BYTES: u64 = 8 * 1024 * 1024;
+
+#[cfg(test)]
+thread_local! {
+    static REPLAY_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+pub(crate) fn replay_count() -> usize {
+    REPLAY_COUNT.with(std::cell::Cell::get)
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AppendOutcome {
@@ -30,43 +41,21 @@ pub enum ChildDisposition {
 pub struct LifecycleIndex {
     work_dir: PathBuf,
     records: Vec<LifecycleRecord>,
+    stage_evidence: HashMap<String, Vec<LifecycleRecord>>,
     conflicted: HashSet<WorkerIdentity>,
     corrupt_stages: HashMap<String, String>,
 }
 
 /// True when `error` wraps an `io::Error` of kind `NotFound`.
-fn is_not_found(error: &anyhow::Error) -> bool {
+pub(super) fn is_not_found(error: &anyhow::Error) -> bool {
     error
         .downcast_ref::<std::io::Error>()
         .is_some_and(|io| io.kind() == std::io::ErrorKind::NotFound)
 }
 
-pub(crate) fn append_locked(work_dir: &Path, record: &LifecycleRecord) -> Result<AppendOutcome> {
-    validate_safe_id(record.identity.stage_id())?;
-    let rel_dir = PathBuf::from("subagents").join(record.identity.stage_id());
-    crate::fs::safe_fs::safe_create_dir_all(work_dir, &rel_dir, 0o700)?;
-    let relpath = rel_dir.join("lifecycle.jsonl");
-    let journal = work_dir.join(&relpath);
-    let _lock = JournalLock::acquire(&journal)?;
-    let existing = match read_journal(&journal) {
-        Ok(records) => records,
-        Err(error) if is_not_found(&error) => Vec::new(),
-        Err(error) => return Err(error),
-    };
-    ensure!(
-        !journal_lacks_final_newline(&journal)?,
-        "refusing to append after a torn lifecycle line"
-    );
-    let outcome = duplicate_outcome(&existing, record);
-    if outcome != AppendOutcome::Duplicate {
-        let mut line = serde_json::to_vec(record)?;
-        line.push(b'\n');
-        crate::fs::safe_fs::safe_append(work_dir, &relpath, &line)?;
-    }
-    Ok(outcome)
-}
-
 pub fn replay(work_dir: &Path) -> Result<LifecycleIndex> {
+    #[cfg(test)]
+    REPLAY_COUNT.with(|count| count.set(count.get() + 1));
     let mut index = LifecycleIndex {
         work_dir: work_dir.to_path_buf(),
         ..LifecycleIndex::default()
@@ -92,6 +81,20 @@ pub fn replay(work_dir: &Path) -> Result<LifecycleIndex> {
 }
 
 impl LifecycleIndex {
+    /// Records acquired by this replay, or an error when the stage is corrupt.
+    pub(crate) fn stage_records(&self, stage_id: &str) -> Result<Vec<&LifecycleRecord>> {
+        if let Some(reason) = self.corrupt_stages.get(stage_id) {
+            anyhow::bail!("{reason}");
+        }
+        let records = self
+            .stage_evidence
+            .get(stage_id)
+            .map_or(&[][..], Vec::as_slice);
+        // Match the Codex ledger's secondary lifecycle reader (256 authorizations × 4).
+        ensure!(records.len() <= 1024, "lifecycle journal exceeds row cap");
+        Ok(records.iter().collect())
+    }
+
     pub fn session_child_disposition(
         &self,
         stage_id: &str,
@@ -277,6 +280,7 @@ fn replay_stage(
     let Some(loaded) = load_stage_records(&stage_dir, stage, index)? else {
         return Ok(());
     };
+    index.stage_evidence.insert(stage.into(), loaded.clone());
     for record in loaded {
         if record.identity.stage_id() != stage {
             index
@@ -323,75 +327,25 @@ fn load_stage_records(
     Ok(Some(loaded))
 }
 
-fn read_journal(path: &Path) -> Result<Vec<LifecycleRecord>> {
-    let mut file = OpenOptions::new()
-        .read(true)
-        .custom_flags(libc::O_NOFOLLOW)
-        .open(path)?;
-    let metadata = file.metadata()?;
-    ensure!(
-        metadata.is_file(),
-        "lifecycle journal is not a regular file"
-    );
-    ensure!(
-        metadata.len() <= MAX_JOURNAL_BYTES,
-        "lifecycle journal exceeds read cap"
-    );
-    let mut bytes = Vec::with_capacity(usize::try_from(metadata.len())?);
-    file.by_ref()
-        .take(MAX_JOURNAL_BYTES + 1)
-        .read_to_end(&mut bytes)?;
-    let terminated = bytes.last() == Some(&b'\n');
-    ensure!(
-        u64::try_from(bytes.len())? <= MAX_JOURNAL_BYTES,
-        "lifecycle journal grew beyond read cap"
-    );
-    let parts: Vec<_> = bytes.split(|byte| *byte == b'\n').collect();
-    let mut records = Vec::new();
-    for (index, line) in parts.iter().enumerate() {
-        let final_part = index + 1 == parts.len();
-        if (!terminated && final_part) || (terminated && final_part && line.is_empty()) {
-            continue;
-        }
-        let value = serde_json::from_slice::<serde_json::Value>(line)
-            .context("malformed complete lifecycle line")?;
-        let record = serde_json::from_value(value)
-            .context("invalid lifecycle schema on complete JSON line")?;
-        records.push(record);
-    }
-    Ok(records)
-}
-
-fn journal_lacks_final_newline(path: &Path) -> Result<bool> {
-    let mut file = match OpenOptions::new()
-        .read(true)
-        .custom_flags(libc::O_NOFOLLOW)
-        .open(path)
-    {
-        Ok(file) => file,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
-        Err(error) => return Err(error.into()),
-    };
-    let len = file.metadata()?.len();
-    if len == 0 {
-        return Ok(false);
-    }
-    file.seek(SeekFrom::End(-1))?;
-    let mut byte = [0_u8; 1];
-    file.read_exact(&mut byte)?;
-    Ok(byte[0] != b'\n')
-}
-
-fn duplicate_outcome(existing: &[LifecycleRecord], incoming: &LifecycleRecord) -> AppendOutcome {
-    let mut matching = existing
+/// Every record on a complete line of the journal. A missing journal is an
+/// `io::Error` of kind `NotFound` (see [`is_not_found`]); blank lines and a
+/// torn final line are skipped; a malformed complete line is an error.
+pub(super) fn read_journal(path: &Path) -> Result<Vec<LifecycleRecord>> {
+    // Surfaces a missing journal as NotFound, which the shared reader maps to empty.
+    fs::symlink_metadata(path)?;
+    // The byte cap bounds the journal; `stage_records` applies the row cap.
+    let lines = read_complete_lines(path, MAX_JOURNAL_BYTES, usize::MAX)
+        .context("reading lifecycle journal")?;
+    lines
         .iter()
-        .filter(|record| record.event_id == incoming.event_id);
-    let Some(first) = matching.next() else {
-        return AppendOutcome::Appended;
-    };
-    if first == incoming && matching.all(|record| record == incoming) {
-        AppendOutcome::Duplicate
-    } else {
-        AppendOutcome::Conflict
-    }
+        .map(|line| {
+            let value = serde_json::from_slice::<serde_json::Value>(line)
+                .context("malformed complete lifecycle line")?;
+            serde_json::from_value(value).context("invalid lifecycle schema on complete JSON line")
+        })
+        .collect()
 }
+
+#[cfg(test)]
+#[path = "store_read_tests.rs"]
+mod read_tests;

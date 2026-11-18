@@ -174,11 +174,17 @@ fn push_contract_problems(
         }
         let fields = [
             ("file", contract.file.as_str()),
-            ("test", contract.test.as_str()),
             ("scenario", contract.scenario.as_str()),
             ("rejects", contract.rejects.as_str()),
         ];
         push_blank_fields(&label, &fields, messages);
+        if contract
+            .test
+            .as_deref()
+            .is_some_and(|test| test.trim().is_empty())
+        {
+            messages.push(format!("{label} `test` cannot be empty"));
+        }
         if let Some(problem) = path_problem(&contract.file) {
             messages.push(format!("{label} file '{}' {problem}", contract.file));
         }

@@ -2,6 +2,9 @@ use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
+#[path = "forward_join_native.rs"]
+mod forward_join_native;
+
 use chrono::{DateTime, Utc};
 use serde::Serialize;
 
@@ -9,9 +12,9 @@ use super::provider_types::{
     NormalizedEvent, Provider, ProviderDiagnostics, ProviderLedger, SourceKind,
 };
 use super::transcript::{Entry, Scope, Transcript};
+use crate::agent_state::is_safe_id;
 use crate::models::forward_receipt::{
-    is_safe_id, load_receipts, receipts_path, ForwardBackend, ForwardIdentity, ForwardReceipt,
-    ForwardState,
+    load_receipts, receipts_path, ForwardBackend, ForwardIdentity, ForwardReceipt, ForwardState,
 };
 
 const MAX_STAGE_RECEIPT_FILES: usize = 4_096;
@@ -43,6 +46,7 @@ impl From<&ForwardReceipt> for ForwardMetadata {
 pub(crate) struct ReceiptThread {
     pub(crate) thread_id: Option<String>,
     pub(crate) observed_at: DateTime<Utc>,
+    pub(crate) stage_id: String,
 }
 
 enum Candidate {
@@ -71,6 +75,7 @@ impl ForwardJoin {
             result.receipt_threads.push(ReceiptThread {
                 thread_id: receipt_thread_id(&receipt),
                 observed_at: receipt.observed_at,
+                stage_id: receipt.identity.stage_id.clone(),
             });
             let metadata = ForwardMetadata::from(&receipt);
             result
@@ -79,6 +84,10 @@ impl ForwardJoin {
             if let Some(thread_id) = receipt_thread_id(&receipt) {
                 insert_candidate(&mut result.by_thread_id, thread_id, metadata);
             }
+        }
+        if let Some(root) = root {
+            let natives = forward_join_native::native_threads(root, &mut result.load_diagnostics);
+            result.receipt_threads.extend(natives);
         }
         result
     }
@@ -377,3 +386,7 @@ fn receipt_files(
 #[cfg(test)]
 #[path = "forward_join_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "forward_join_native_tests.rs"]
+mod native_tests;

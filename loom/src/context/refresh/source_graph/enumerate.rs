@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use std::path::Path;
 
 use super::{excluded, SourceGraphScope};
-use crate::git::runner::run_git_records;
+use crate::git::worktree::WorktreeGit;
 
 /// Git modes of the entries that are never source files: a symlink, whose
 /// working-tree path resolves to whatever it points at (possibly outside the
@@ -28,9 +28,10 @@ pub(crate) struct Enumeration {
 }
 
 pub(crate) fn enumerate(project_root: &Path, scope: &SourceGraphScope) -> Result<Enumeration> {
+    let git = WorktreeGit::pinned_checkout(project_root)?;
     match scope {
         SourceGraphScope::Base { .. } => {
-            let output = run_git_records(&["ls-tree", "-r", "-z", "HEAD"], project_root)?;
+            let output = git.run_checked(&["ls-tree", "-r", "-z", "HEAD"])?;
             // A base layer is built from `known` alone, so a committed symlink
             // or gitlink simply never enters it; there is nothing to tombstone.
             let (known, _) = parse_known(&output, TreeRow::Committed);
@@ -42,12 +43,9 @@ pub(crate) fn enumerate(project_root: &Path, scope: &SourceGraphScope) -> Result
             })
         }
         SourceGraphScope::Overlay { .. } => {
-            let output = run_git_records(&["ls-files", "-s", "-z"], project_root)?;
+            let output = git.run_checked(&["ls-files", "-s", "-z"])?;
             let (known, not_source) = parse_known(&output, TreeRow::Index);
-            let output = run_git_records(
-                &["ls-files", "--others", "--exclude-standard", "-z"],
-                project_root,
-            )?;
+            let output = git.run_checked(&["ls-files", "--others", "--exclude-standard", "-z"])?;
             let mut untracked = nul_paths(&output)
                 .filter(|path| {
                     !excluded(path)

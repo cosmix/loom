@@ -169,6 +169,10 @@ fn route_completion(
     cmd_path: &[&str],
     cmdline: &str,
 ) -> Result<Vec<String>> {
+    if matches!(cmd_path, ["plan", "hook", ..]) {
+        return Ok(Vec::new());
+    }
+
     // If current word starts with -, complete flags based on command path
     if prefix.starts_with('-') {
         return complete_flags(cmd_path, prefix);
@@ -197,8 +201,11 @@ fn complete_flag_value(
     cmd_path: &[&str],
     cmdline: &str,
 ) -> Result<Option<Vec<String>>> {
+    if let Some(values) = commands::finite_flag_choices(cmd_path, prev_word, prefix) {
+        return Ok(Some(values));
+    }
     match prev_word {
-        "--field" => Ok(Some(complete_flag_choices(cmd_path, "field", prefix)?)),
+        "--port" | "--host" if cmd_path == ["plan"] => Ok(Some(Vec::new())),
         "--stage" => {
             let results = complete_stage_ids(cwd, prefix)?;
             Ok(Some(results))

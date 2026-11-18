@@ -1,0 +1,280 @@
+//! Rebuild claims and draft paths in the runtime directory.
+//!
+//! A claim is `claims/<id with '/' -> "__">.json`, created with `O_EXCL`: the create failing
+//! because the file exists IS the refusal. `claims/` is session-writable, so every read is
+//! no-follow and bounded, and a claim that cannot be read or parsed still counts as a claim on
+//! its file-name id (fail toward "claimed").
+
+#[cfg(test)]
+mod tests;
+
+use std::fmt;
+use std::io;
+use std::os::fd::AsRawFd;
+use std::path::{Path, PathBuf};
+
+use anyhow::{bail, Context, Result};
+use serde::{Deserialize, Serialize};
+
+use super::lock::ensure_runtime_dir;
+use super::store;
+use crate::context::untrusted::inline_safe;
+use crate::fs::safe_fs::{
+    safe_create_dir_all_in_workdir, safe_create_new_in_workdir, safe_open_dirfd,
+    safe_remove_in_workdir,
+};
+use crate::fs::safe_read::{is_not_found, list_dir_no_follow, read_bounded};
+use crate::planning::runtime::{RuntimePaths, DRAFTS_DIR};
+
+/// Environment variable naming the planning session that runs the command.
+const SESSION_VAR: &str = "LOOM_PLAN_SESSION";
+/// Name of the claims directory inside the runtime directory.
+const CLAIMS_DIR: &str = "claims";
+/// Times a claim is attempted when the holder releases between our failed create and our read.
+const CLAIM_ATTEMPTS: usize = 2;
+/// Largest claim file read.
+const MAX_CLAIM_BYTES: usize = 4 * 1024;
+/// Longest session name kept from untrusted input, in characters.
+const MAX_SESSION_CHARS: usize = 128;
+
+/// A session's claim to rebuild one summary.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Claim {
+    /// The claimed summary id.
+    pub summary: String,
+    /// `$LOOM_PLAN_SESSION` of the claimant; `None` for a terminal.
+    pub session: Option<String>,
+    /// Process id of the claimant.
+    pub pid: u32,
+    /// When the claim was made, RFC 3339.
+    pub created_at: String,
+}
+
+/// A summary is claimed by someone else. Callers tell this refusal (exit code 1) from a failure
+/// to read or write claims by downcasting to this type.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ClaimHeld {
+    /// The claimed summary id.
+    pub summary: String,
+    /// `$LOOM_PLAN_SESSION` of the holder; `None` for a terminal.
+    pub holder: Option<String>,
+    /// True when a release was refused: the message then adds that the claim is not this
+    /// session's.
+    pub release: bool,
+}
+
+impl fmt::Display for ClaimHeld {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let holder = inline_safe(self.holder.as_deref().unwrap_or("a terminal"));
+        write!(f, "{} is claimed by {holder}", self.summary)?;
+        if self.release {
+            write!(f, ", not by this session")?;
+        }
+        Ok(())
+    }
+}
+
+impl std::error::Error for ClaimHeld {}
+
+/// `$LOOM_PLAN_SESSION`, sanitised; `None` when unset or empty.
+pub fn current_session() -> Option<String> {
+    sanitize_session(&std::env::var(SESSION_VAR).ok()?)
+}
+
+/// Untrusted session text without control characters, capped at 128 characters; `None` when
+/// nothing is left.
+fn sanitize_session(raw: &str) -> Option<String> {
+    let clean: String = raw
+        .chars()
+        .filter(|c| !c.is_control())
+        .take(MAX_SESSION_CHARS)
+        .collect();
+    (!clean.is_empty()).then_some(clean)
+}
+
+/// Runtime-relative path of the claim file of `id`.
+fn claim_rel(id: &str) -> PathBuf {
+    Path::new(CLAIMS_DIR).join(format!("{}.json", id.replace('/', "__")))
+}
+
+/// Decode structural separators only: features and overview kinds cannot contain `__`,
+/// while plan slugs can, so their underscores must survive unchanged.
+fn id_from_file(name: &str) -> Option<String> {
+    let stem = name.strip_suffix(".json")?;
+    let separators = if stem.starts_with("plans__") { 1 } else { 2 };
+    let id = stem.replacen("__", "/", separators);
+    store::validate_id(&id).is_ok().then_some(id)
+}
+
+/// Runtime-relative path of the draft of summary `id`: `drafts/<id>.md`. An invalid id yields an
+/// empty path; validate the id and report the error first.
+pub fn draft_rel(id: &str) -> PathBuf {
+    if store::validate_id(id).is_err() {
+        return PathBuf::new();
+    }
+    Path::new(DRAFTS_DIR).join(format!("{id}.md"))
+}
+
+/// The draft path of summary `id` in the runtime directory; empty for an invalid id, as
+/// [`draft_rel`].
+pub fn draft_path(paths: &RuntimePaths, id: &str) -> PathBuf {
+    let rel = draft_rel(id);
+    if rel.as_os_str().is_empty() {
+        return rel;
+    }
+    paths.dir.join(rel)
+}
+
+/// Claim `id` for `$LOOM_PLAN_SESSION`. `Ok(Ok(claim))` when this call created the claim,
+/// `Ok(Err(existing))` when a claim file already exists.
+pub fn create_claim(paths: &RuntimePaths, id: &str) -> Result<Result<Claim, Claim>> {
+    create_claim_as(paths, id, current_session())
+}
+
+/// [`create_claim`] for an explicit `session`.
+pub(crate) fn create_claim_as(
+    paths: &RuntimePaths,
+    id: &str,
+    session: Option<String>,
+) -> Result<Result<Claim, Claim>> {
+    store::validate_id(id)?;
+    ensure_runtime_dir(paths)?;
+    let dirfd = safe_open_dirfd(&paths.dir)?;
+    safe_create_dir_all_in_workdir(dirfd.as_raw_fd(), Path::new(CLAIMS_DIR), 0o700)?;
+    let draft = draft_rel(id);
+    let parent = draft.parent().context("draft path has no parent")?;
+    safe_create_dir_all_in_workdir(dirfd.as_raw_fd(), parent, 0o700)?;
+    let claim = Claim {
+        summary: id.to_string(),
+        session,
+        pid: std::process::id(),
+        created_at: chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
+    };
+    let json = serde_json::to_vec(&claim).context("cannot encode the claim")?;
+    for _ in 0..CLAIM_ATTEMPTS {
+        match safe_create_new_in_workdir(dirfd.as_raw_fd(), &claim_rel(id), &json) {
+            Ok(()) => return Ok(Ok(claim)),
+            Err(error) if already_exists(&error) => {
+                // `None` means the holder released after our create failed: create again.
+                if let Some(existing) = read_claim(paths, id) {
+                    return Ok(Err(existing));
+                }
+            }
+            Err(error) => return Err(error.context(format!("cannot claim {id}"))),
+        }
+    }
+    bail!("cannot claim {id}: its claim file keeps appearing and vanishing")
+}
+
+fn already_exists(error: &anyhow::Error) -> bool {
+    error
+        .chain()
+        .filter_map(|cause| cause.downcast_ref::<io::Error>())
+        .any(|e| e.kind() == io::ErrorKind::AlreadyExists)
+}
+
+/// The claim stored for `id`, read no-follow and bounded; `None` when the file is gone. A file
+/// that cannot be read or parsed, or that names another summary, is a claim on `id` with no
+/// session.
+fn read_claim(paths: &RuntimePaths, id: &str) -> Option<Claim> {
+    let bytes = match read_bounded(&paths.dir, &claim_rel(id), MAX_CLAIM_BYTES) {
+        Ok(bytes) => Some(bytes),
+        Err(error) if is_not_found(&error) => return None,
+        Err(_) => None,
+    };
+    let parsed = bytes
+        .and_then(|bytes| serde_json::from_slice::<Claim>(&bytes).ok())
+        .filter(|claim| claim.summary == id);
+    Some(match parsed {
+        Some(claim) => {
+            let session = claim.session.as_deref().and_then(sanitize_session);
+            Claim { session, ..claim }
+        }
+        None => Claim {
+            summary: id.to_string(),
+            session: None,
+            pid: 0,
+            created_at: String::new(),
+        },
+    })
+}
+
+/// Every claim, sorted by summary id. An absent runtime or claims directory has none; a
+/// symlinked `claims/` is refused.
+pub fn list_claims(paths: &RuntimePaths) -> Result<Vec<Claim>> {
+    let dirfd = match safe_open_dirfd(&paths.dir) {
+        Ok(fd) => fd,
+        Err(error) if is_not_found(&error) => return Ok(Vec::new()),
+        Err(error) => return Err(error),
+    };
+    let entries = match list_dir_no_follow(&dirfd, Path::new(CLAIMS_DIR)) {
+        Ok(entries) => entries,
+        Err(error) if is_not_found(&error) => return Ok(Vec::new()),
+        Err(error) => return Err(error.context("cannot list the claims directory")),
+    };
+    let mut ids: Vec<String> = entries
+        .into_iter()
+        .filter_map(|(name, _)| id_from_file(name.to_str()?))
+        .collect();
+    ids.sort();
+    Ok(ids.iter().filter_map(|id| read_claim(paths, id)).collect())
+}
+
+/// Delete the claim of `id`; an absent claim is not an error.
+pub fn delete_claim(paths: &RuntimePaths, id: &str) -> Result<()> {
+    store::validate_id(id)?;
+    let dirfd = match safe_open_dirfd(&paths.dir) {
+        Ok(fd) => fd,
+        Err(error) if is_not_found(&error) => return Ok(()),
+        Err(error) => return Err(error),
+    };
+    safe_remove_in_workdir(dirfd.as_raw_fd(), &claim_rel(id))
+}
+
+/// Give up the claims on `ids` for `$LOOM_PLAN_SESSION`; returns the ids released.
+pub fn release(paths: &RuntimePaths, ids: &[String]) -> Result<Vec<String>> {
+    release_as(paths, ids, current_session().as_deref())
+}
+
+/// [`release`] for an explicit `session`. With a session, a claim held by anyone else fails
+/// the whole call naming the holder, before anything is deleted; without one (a terminal),
+/// any claim is released. Ids with no claim are skipped.
+pub(crate) fn release_as(
+    paths: &RuntimePaths,
+    ids: &[String],
+    session: Option<&str>,
+) -> Result<Vec<String>> {
+    for id in ids {
+        store::validate_id(id)?;
+    }
+    let claims = list_claims(paths)?;
+    let held: Vec<&Claim> = claims.iter().filter(|c| ids.contains(&c.summary)).collect();
+    if let Some(session) = session {
+        if let Some(other) = held.iter().find(|c| c.session.as_deref() != Some(session)) {
+            return Err(ClaimHeld {
+                summary: other.summary.clone(),
+                holder: other.session.clone(),
+                release: true,
+            }
+            .into());
+        }
+    }
+    let mut released = Vec::new();
+    for claim in held {
+        delete_claim(paths, &claim.summary)?;
+        released.push(claim.summary.clone());
+    }
+    Ok(released)
+}
+
+/// Delete every claim `session` holds; returns the ids released.
+pub fn clear_session_claims(paths: &RuntimePaths, session: &str) -> Result<Vec<String>> {
+    let mut released = Vec::new();
+    for claim in list_claims(paths)? {
+        if claim.session.as_deref() == Some(session) {
+            delete_claim(paths, &claim.summary)?;
+            released.push(claim.summary);
+        }
+    }
+    Ok(released)
+}

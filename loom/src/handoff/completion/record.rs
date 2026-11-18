@@ -4,7 +4,8 @@ use anyhow::{ensure, Context, Result};
 
 use crate::handoff::completion::attestation_key;
 use crate::handoff::generator::{
-    load_session_checkpoint, merge_session_handoff, HandoffContent, MergeOutcome,
+    load_authenticated_session_checkpoint, load_trusted_session_checkpoint, merge_session_handoff,
+    HandoffContent, MergeOutcome,
 };
 use crate::handoff::schema::{
     AcceptedReceipt, CompletionAttemptEvidence, CompletionCheckpoint, HandoffOrigin,
@@ -50,12 +51,48 @@ pub fn record_accepted_handoff(
     work_dir: &Path,
 ) -> Result<(PathBuf, MergeOutcome)> {
     let key = attestation_key(work_dir)?;
-    let mut checkpoint = load_session_checkpoint(&stage.id, &session.id, work_dir)?
-        .context("no completion checkpoint exists for this stage session")?;
+    let mut checkpoint =
+        load_authenticated_session_checkpoint(&stage.id, &session.id, work_dir, &key)?
+            .context("no completion checkpoint exists for this stage session")?;
+    if attempt_overflowed(&checkpoint, &receipt, work_dir)? {
+        tracing::warn!(
+            stage_id = %stage.id,
+            session_id = %session.id,
+            evidence_nonce = %receipt.evidence_nonce,
+            "the accepted attempt overflowed the session's evidence nonces; no receipt is kept"
+        );
+        return merge_checkpoint(session, stage, checkpoint, work_dir);
+    }
     receipt.attestation = None;
     receipt.attestation = Some(key.sign_receipt(&stage.id, &session.id, &receipt));
     checkpoint.record_accepted(receipt)?;
     merge_checkpoint(session, stage, checkpoint, work_dir)
+}
+
+/// Whether `receipt` names the attempt that found every evidence nonce taken.
+/// No observation can back that receipt and none will: the attempt is settled
+/// as it stands, its signed overflow the record that it ran. `trusted` derives
+/// the overflow from signed evidence, so an edited handoff cannot claim it.
+fn attempt_overflowed(
+    checkpoint: &CompletionCheckpoint,
+    receipt: &AcceptedReceipt,
+    work_dir: &Path,
+) -> Result<bool> {
+    let nonce = &receipt.evidence_nonce;
+    let overflow_is_latest = checkpoint
+        .latest
+        .as_ref()
+        .is_some_and(|latest| &latest.evidence_nonce == nonce)
+        && !checkpoint
+            .observations
+            .iter()
+            .any(|observation| &observation.evidence_nonce == nonce);
+    if !overflow_is_latest {
+        return Ok(false);
+    }
+    let trusted =
+        load_trusted_session_checkpoint(&checkpoint.stage_id, &checkpoint.session_id, work_dir)?;
+    Ok(trusted.is_some_and(|trusted| trusted.capacity_exhausted))
 }
 
 fn merge_checkpoint(

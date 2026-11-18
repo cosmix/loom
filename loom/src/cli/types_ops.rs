@@ -7,11 +7,39 @@
 //! does not have. `types.rs` re-exports everything here, so callers keep naming
 //! a single `cli::types` surface.
 
+use std::net::IpAddr;
+
+use super::types::parse_web_host;
 use crate::validation::clap_id_validator;
-use clap::Subcommand;
+use clap::{Args, Subcommand};
+
+/// Bare `loom plan`: serve the planning app for the project in the current directory.
+#[derive(Args, Debug, Clone)]
+pub struct PlanServeArgs {
+    /// Port to bind (default: 7272, or the next free port after it; 0 picks a free port)
+    #[arg(long)]
+    pub port: Option<u16>,
+
+    /// Address to bind: an IPv4/IPv6 literal or `localhost`. Binding off loopback serves
+    /// plain HTTP and prints a warning
+    #[arg(long, value_parser = parse_web_host, default_value = "127.0.0.1")]
+    pub host: IpAddr,
+
+    /// Print the URL without opening a browser
+    #[arg(long)]
+    pub no_open: bool,
+}
 
 #[derive(Subcommand)]
 pub enum PlanCommands {
+    /// The hook entry Claude Code runs for planning sessions; not user-facing.
+    #[command(hide = true)]
+    Hook {
+        event: String,
+        #[arg(long)]
+        session_dir: std::path::PathBuf,
+    },
+
     /// Verify a plan file without side effects (no .loom/work/, no git repo required)
     Verify {
         /// Path to the plan file to validate
@@ -28,6 +56,65 @@ pub enum PlanCommands {
         /// Disable ANSI color codes
         #[arg(long)]
         no_color: bool,
+
+        /// Run every criterion against a checkout of HEAD under the stage's confinement;
+        /// environment failures and timeouts are errors, an empty test selection is a note
+        #[arg(long)]
+        dry_run: bool,
+    },
+
+    /// Print the project checklist and every document convention problem under doc/
+    Check {
+        /// Machine-readable JSON output
+        #[arg(long)]
+        json: bool,
+    },
+
+    /// Seal, brief, report and release plan and spec summaries (no server needed)
+    Summary {
+        #[command(subcommand)]
+        command: SummaryCommands,
+    },
+}
+
+/// `loom plan summary <subcommand>`.
+#[derive(Subcommand)]
+pub enum SummaryCommands {
+    /// Validate the draft of a summary and write it into the store
+    Seal {
+        /// Summary id, for example `planner-ui/product/section_01`.
+        /// Shapes: `overview/<feature>/product`, `<feature>/product/section_NN` or `plans/<slug>`.
+        id: String,
+
+        /// Seal a summary another session or a terminal claimed; only applies from a terminal,
+        /// never inside a planning session
+        #[arg(long)]
+        force: bool,
+    },
+
+    /// Claim summaries and print the brief for rebuilding them
+    Brief {
+        /// Summary ids to claim and brief
+        #[arg(required = true)]
+        ids: Vec<String>,
+
+        /// Note to show beside the sentence it names, or at the top
+        #[arg(long)]
+        note: Option<String>,
+    },
+
+    /// Print the state of every summary
+    Status {
+        /// Machine-readable JSON output
+        #[arg(long)]
+        json: bool,
+    },
+
+    /// Give up the claims on summaries
+    Release {
+        /// Summary ids to release
+        #[arg(required = true)]
+        ids: Vec<String>,
     },
 }
 
@@ -88,6 +175,17 @@ pub enum ContextCommands {
 
 #[derive(Subcommand)]
 pub enum HookCommands {
+    /// Summarize the guard blocks recorded by loom's hooks under
+    /// `$LOOM_WORK_DIR/heartbeat/<stage>.blocks.jsonl`.
+    Blocks {
+        /// Only count blocks recorded in the last N hours
+        #[arg(long, default_value_t = 168)]
+        since_hours: u64,
+        /// Group the blocks by guard and rule instead of listing recent ones
+        #[arg(long)]
+        by_rule: bool,
+    },
+
     /// UserPromptSubmit entry point: emit a retrieval brief, or nothing
     UserPrompt,
 
@@ -120,6 +218,21 @@ pub enum HookCommands {
     #[command(hide = true)]
     WorkerBrief,
 
+    /// Print the resolved `loom-code-reviewer` model and effort as
+    /// `model=<model> effort=<effort>` for the spawn guard.
+    #[command(hide = true)]
+    ReviewerModel,
+
+    /// Print the configured Codex backend, `native` or `legacy`, for the
+    /// spawn and forward guards.
+    #[command(hide = true)]
+    CodexBackend,
+
+    /// Print the test-integrity brief for a `loom-code-reviewer` spawn (spawn
+    /// guard helper).
+    #[command(hide = true)]
+    ReviewerBrief,
+
     /// Discover package-scoped project types for skill recommendations.
     #[command(hide = true)]
     ProjectTypes,
@@ -140,6 +253,11 @@ pub enum HookCommands {
     /// user-facing command.
     #[command(hide = true)]
     ReviewHarvest,
+
+    /// SubagentStart helper: capture the reviewer's immutable worktree
+    /// fingerprint before it begins. Not a user-facing command.
+    #[command(hide = true)]
+    ReviewStart,
 }
 
 #[derive(Subcommand)]

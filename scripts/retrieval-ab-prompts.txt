@@ -57,7 +57,7 @@ real|what does the worktree isolation rule prevent
 # collision (5) -----------------------------------------------------------
 collision|why doesn't loom repair --fix do it, the point is that the plan should complete
 collision|how do I configure the hooks so sessions get the right settings
-collision|write the recommendation in /home/dkaponis/src/loom/doc
+collision|write the recommendation in /home/username/src/loom/doc
 collision|improve the retrieval performance and quality
 collision|can you resolve the plan and check the point where it should complete
 

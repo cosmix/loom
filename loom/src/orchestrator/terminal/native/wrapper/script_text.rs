@@ -1,5 +1,5 @@
-//! Static shell text for `build_wrapper_script`, split out to keep
-//! `wrapper.rs` under its line cap.
+//! Static shell text for `build_wrapper_script`: environment allowlist and
+//! PID capture text shared by wrapper rendering.
 
 use crate::process::AGENT_SESSION_ENV_NAMES;
 
@@ -44,22 +44,22 @@ done
 /// Records the PID and, best-effort on Linux, the process start-time on line 2
 /// so liveness probes can detect PID reuse. `exec` preserves both, so they
 /// identify the claude process after it replaces this shell.
-pub(super) fn pid_capture(pid_file: &str) -> String {
+pub(super) fn pid_capture(pid_file: &str, owner: &str) -> String {
     format!(
         r#"# Write our PID, then (best-effort, Linux) the process start-time on
 # line 2 so liveness probes can detect PID reuse. exec preserves the PID and
 # start-time, so these identify the claude process after exec replaces us.
-echo $$ > {pid_file}
+_loom_start=
 if [ -r "/proc/$$/stat" ]; then
     # Field 22 of /proc/<pid>/stat is starttime. The comm field (2) is wrapped
     # in parens and may contain spaces, so strip through the last ')' first.
     _loom_stat=$(cat "/proc/$$/stat" 2>/dev/null)
     _loom_after=${{_loom_stat##*) }}
     _loom_start=$(echo "$_loom_after" | awk '{{print $20}}')
-    if [ -n "$_loom_start" ]; then
-        echo "$_loom_start" >> {pid_file}
-    fi
 fi
+_loom_pid_tmp={pid_file}.tmp-$$
+{{ printf '%s\n%s\n%s\n' "$$" "$_loom_start" {owner}; }} > "$_loom_pid_tmp"
+mv -f "$_loom_pid_tmp" {pid_file}
 "#
     )
 }

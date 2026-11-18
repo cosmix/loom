@@ -15,10 +15,14 @@
 //! frozen file is the one compiled under the contract's test name.
 
 pub mod changes;
+pub mod choices;
 pub mod collection;
 pub mod completion;
+pub(crate) mod failed_builds;
 pub mod format_gate;
+pub(crate) mod freeze;
 pub mod frozen_set;
+mod record_view;
 pub mod refusal;
 pub mod run_dir;
 pub mod site;
@@ -81,12 +85,30 @@ pub fn resolve_adapter(
 ) -> Option<&'static dyn TestRunnerAdapter> {
     match contract.runner.as_deref() {
         Some(name) => registry::by_name(name),
-        None => detected_runner(package_dir, &contract.file).and_then(registry::by_name),
+        None => {
+            let profile = ProjectProfile::discover(package_dir);
+            detected_adapter(&profile, package_dir, &contract.file)
+        }
     }
 }
 
-fn detected_runner(package_dir: &Path, file: &str) -> Option<&'static str> {
-    let profile = ProjectProfile::discover(package_dir);
+/// The adapter detection picks for `file` (relative to `package_dir`) in `profile`, which is
+/// `ProjectProfile::discover(package_dir)`: what [`resolve_adapter`] answers for a contract
+/// without a `runner`. Discovery walks the whole checkout, so a caller resolving many contracts
+/// of one package discovers once and passes the profile here.
+pub fn detected_adapter(
+    profile: &ProjectProfile,
+    package_dir: &Path,
+    file: &str,
+) -> Option<&'static dyn TestRunnerAdapter> {
+    detected_runner(profile, package_dir, file).and_then(registry::by_name)
+}
+
+fn detected_runner(
+    profile: &ProjectProfile,
+    package_dir: &Path,
+    file: &str,
+) -> Option<&'static str> {
     let target = package_dir.canonicalize().ok()?.join(normalize(file));
     let owned = target.strip_prefix(&profile.root).ok()?;
     let packages = profile.package_details();
@@ -112,7 +134,7 @@ mod tests {
         ContractSpec {
             id: "rejects-x".to_string(),
             file: file.to_string(),
-            test: "tests::rejects_x".to_string(),
+            test: Some("tests::rejects_x".to_string()),
             runner: Some("cargo-test".to_string()),
             cwd: None,
             scenario: "s".to_string(),

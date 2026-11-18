@@ -96,7 +96,7 @@ pub(super) fn compute_cache_key(
 ) -> Option<String> {
     let contract_digest = contract.digest()?;
     let mut hasher = Sha256::new();
-    hasher.update(b"acceptance-cache-key-v2\0");
+    hasher.update(b"acceptance-cache-key-v3\0");
     hasher.update(contract_digest.as_bytes());
     hasher.update([0]);
     hasher.update(fingerprint.digest.as_bytes());

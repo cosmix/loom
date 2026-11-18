@@ -4,8 +4,8 @@ use super::model::{
     LifecycleRecord, LifecycleState, WorkerIdentity, WorkerOutcome,
 };
 use super::validation::{fold_states, validate_safe_id};
+use crate::utils::sha256_hex;
 use anyhow::{bail, ensure, Context, Result};
-use sha2::{Digest, Sha256};
 use std::collections::HashSet;
 use std::fs;
 use std::path::Path;
@@ -271,7 +271,7 @@ fn hash_codex_fields(
         canonical.push(0);
         canonical.extend_from_slice(field.as_bytes());
     }
-    format!("sha256:{}", hex::encode(Sha256::digest(canonical)))
+    format!("sha256:{}", sha256_hex(&canonical))
 }
 
 pub(super) fn codex_records_outcome(records: &[&LifecycleRecord]) -> WorkerOutcome {

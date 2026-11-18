@@ -1,0 +1,367 @@
+/*
+ * The Coverage page's heading rows and what a row opens to (`coverage-rows.tsx`,
+ * `coverage-marks.tsx`, and the help specimen). maps.css imports this sheet first and adds the
+ * narrow steps after it, so the steps win on equal specificity. The grid and the indent are
+ * custom properties set on `.coverage` (maps.css), shared with the column header.
+ */
+
+[data-loom-plan] .coverage-rows {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+[data-loom-plan] .coverage-row {
+  min-width: 0;
+  border-bottom: 1px solid var(--hairline);
+  scroll-margin-top: var(--space-5);
+}
+
+[data-loom-plan] .coverage-row[data-open] {
+  background: var(--card);
+}
+
+/* One grid shared with the column header; the cells meet on their first baseline. */
+[data-loom-plan] .coverage-row__line {
+  position: relative;
+  display: grid;
+  grid-template-columns: var(--coverage-grid);
+  align-items: baseline;
+  column-gap: var(--space-4);
+  min-height: 56px;
+  padding: var(--space-3) var(--space-4);
+  transition: background-color 120ms;
+}
+
+[data-loom-plan] .coverage-row:not([data-open]) > .coverage-row__line:hover {
+  background: var(--muted);
+}
+
+/* The toggle is the row's one control: its ::after covers the line, so the whole row opens it
+   and carries its focus ring, as the standalone plans table's title link does. */
+[data-loom-plan] .coverage-row__toggle {
+  display: block;
+  min-width: 0;
+  margin: 0;
+  padding: 0 0 0 var(--coverage-indent);
+  border: 0;
+  background: none;
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  font-size: 18px;
+  font-weight: 500;
+  line-height: 1.35;
+  letter-spacing: -0.01em;
+  text-align: start;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+
+[data-loom-plan] .coverage-row__toggle::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+}
+
+[data-loom-plan] .coverage-row__toggle:focus-visible {
+  outline: none;
+}
+
+[data-loom-plan] .coverage-row__toggle:focus-visible::after {
+  outline: 2px solid var(--ring);
+  outline-offset: -2px;
+}
+
+/* On the line's start, centred on the heading's first line (1.35em tall). */
+[data-loom-plan] .coverage-row__chevron {
+  position: absolute;
+  top: calc(var(--space-3) + 0.675em - 8px);
+  left: var(--space-4);
+  width: 16px;
+  height: 16px;
+  color: var(--muted-foreground);
+  transition: transform 120ms;
+}
+
+[data-loom-plan] .coverage-row__toggle[aria-expanded="true"] > .coverage-row__chevron {
+  transform: rotate(90deg);
+}
+
+[data-loom-plan] .coverage-cell {
+  min-width: 0;
+  color: var(--foreground);
+  font-size: 15px;
+  line-height: 1.6;
+}
+
+/* Links in a cell sit over the toggle's cover, so they stay their own targets. */
+[data-loom-plan] .coverage-cell a {
+  position: relative;
+  z-index: 1;
+}
+
+[data-loom-plan] .coverage-cell[data-cell="findings"] > [aria-hidden="true"] {
+  color: var(--muted-foreground);
+}
+
+[data-loom-plan] .coverage-chains {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+[data-loom-plan] .coverage-chains > li {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* `<plan> › <stage>`: the plan slug in mono, the arrow and the stage in muted ink. */
+[data-loom-plan] .coverage-chain {
+  color: var(--muted-foreground);
+}
+
+[data-loom-plan] .coverage-chain > a:first-child,
+[data-loom-plan] .coverage-chain__plan {
+  color: var(--foreground);
+  font-family: var(--font-mono);
+  font-size: var(--type-body);
+}
+
+[data-loom-plan] .coverage-nothing {
+  color: var(--muted-foreground);
+  font-family: var(--font-sans);
+  font-size: 16px;
+}
+
+/* A state is a glyph and its word, inline so the word keeps the row's baseline; only the glyph
+   takes a tone. A gap's dashed ring and a change's alert share the warning tone. */
+[data-loom-plan] .coverage-mark {
+  --trace-tone: var(--muted-foreground);
+  color: var(--foreground);
+  font-size: 15px;
+  white-space: nowrap;
+}
+
+/* Inline-block over the preflight's `svg { display: block }`, which set the glyph over its word. */
+[data-loom-plan] .coverage-mark > svg {
+  display: inline-block;
+  width: 15px;
+  height: 15px;
+  margin-inline-end: 6px;
+  color: var(--trace-tone);
+  vertical-align: -0.15em;
+}
+
+/* A section's settle mark draws the shared settle glyph, which brings its own tone. */
+[data-loom-plan] .coverage-mark > .trace-glyph {
+  margin-inline-end: 6px;
+  vertical-align: -0.15em;
+}
+
+[data-loom-plan] .coverage-mark:is([data-mark="built"], [data-mark="settled"]) {
+  --trace-tone: var(--tone-completed);
+}
+
+[data-loom-plan] .coverage-mark:is([data-mark="changed"], [data-mark="uncovered"]) {
+  --trace-tone: var(--tone-warning);
+}
+
+/* In the State column a long word ("Changed since covered") may wrap in a narrow column: the
+   glyph keeps its own track before the words, which wrap under themselves, and the mark's
+   baseline stays the words' first line, so the cell still meets the row's baseline. */
+[data-loom-plan] .coverage-cell[data-cell="state"] .coverage-mark {
+  display: inline-grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: baseline;
+  max-width: 100%;
+  white-space: normal;
+}
+
+/* A grid item's glyph sits on the baseline by its foot; this drops it to the inline offset. */
+[data-loom-plan] .coverage-cell[data-cell="state"] .coverage-mark > svg {
+  transform: translateY(0.15em);
+}
+
+/* Chrome links in a row: no underline until hovered, the planner's ring on focus. */
+[data-loom-plan] .coverage-row a {
+  border-radius: 3px;
+  color: inherit;
+  text-decoration: none;
+}
+
+[data-loom-plan] .coverage-row a:hover {
+  text-decoration: underline;
+}
+
+[data-loom-plan] .coverage-row a:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+/* ── An open row ───────────────────────────────────────────────────────────── */
+
+/* Under the heading's own start; the amber note leads, then Why · How · Findings. */
+[data-loom-plan] .coverage-detail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  min-width: 0;
+  padding: var(--space-2) var(--space-4) var(--space-5)
+    calc(var(--space-4) + var(--coverage-indent));
+}
+
+[data-loom-plan] .coverage-detail__cols {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-5) var(--space-6);
+}
+
+[data-loom-plan] .coverage-col {
+  min-width: 0;
+}
+
+[data-loom-plan] .coverage-col > h3 {
+  margin: 0 0 var(--space-3);
+  color: var(--muted-foreground);
+  font-family: var(--font-sans);
+  font-size: var(--type-ui);
+  font-weight: 500;
+  line-height: var(--leading-ui);
+}
+
+/* "None open." and "No entry, plan or stage covers it.": an absence, quiet in the chrome face. */
+[data-loom-plan] .coverage-col > p.plan-fine:not(.coverage-links) {
+  margin: 0;
+  color: var(--muted-foreground);
+  font-family: var(--font-sans);
+  font-size: 16px;
+  line-height: 1.5;
+}
+
+[data-loom-plan] .coverage-quote {
+  margin: 0;
+  color: var(--foreground);
+  font-family: var(--font-reading);
+  font-size: calc(var(--reading-size) * 0.9);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  text-wrap: pretty;
+}
+
+[data-loom-plan] .coverage-quote strong {
+  font-weight: 600;
+}
+
+[data-loom-plan] .coverage-links {
+  margin: var(--space-2) 0 0;
+  color: var(--muted-foreground);
+  font-size: var(--type-ui);
+  line-height: var(--leading-ui);
+}
+
+/* One Entry / Plan / Stage block per covering chain, divided by hairlines. */
+[data-loom-plan] .coverage-how {
+  display: grid;
+  grid-template-columns: 4rem minmax(0, 1fr);
+  align-items: baseline;
+  gap: var(--space-2) var(--space-3);
+  margin: 0;
+}
+
+[data-loom-plan] .coverage-how + .coverage-how {
+  margin-top: var(--space-4);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--hairline);
+}
+
+[data-loom-plan] .coverage-how > dt {
+  color: var(--muted-foreground);
+  font-size: var(--type-ui);
+}
+
+[data-loom-plan] .coverage-how > dd {
+  min-width: 0;
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+[data-loom-plan] .coverage-how > dd:has(> .coverage-plan-state) > a:first-child {
+  font-family: var(--font-mono);
+  font-size: var(--type-body);
+}
+
+[data-loom-plan] .coverage-plan-state {
+  color: var(--muted-foreground);
+  font-size: var(--type-body);
+}
+
+[data-loom-plan] .coverage-plan-state::before {
+  content: "· " / "";
+}
+
+/* An open finding: its title in `--font-sans` over the mono id (the link's column runs reversed, so the
+   id stays first in the link's name). */
+[data-loom-plan] .coverage-col[data-col="findings"] ul {
+  display: grid;
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+[data-loom-plan] .coverage-col[data-col="findings"] li > a {
+  display: flex;
+  flex-direction: column-reverse;
+  gap: 2px;
+  font-family: var(--font-sans);
+  font-size: 17px;
+  font-weight: 600;
+  line-height: 1.3;
+  letter-spacing: -0.01em;
+  overflow-wrap: anywhere;
+}
+
+[data-loom-plan] .coverage-finding-id {
+  color: var(--muted-foreground);
+  font-family: var(--font-mono);
+  font-size: var(--type-ui);
+  font-weight: 400;
+  letter-spacing: 0;
+}
+
+/* Changed since covered: one line led by a ringed "!" in the warning tone (only the glyph takes
+   the tone), with See what changed after it in the shared in-sentence look of
+   trace-heading-parts.css (the line's colour, underlined in a quiet edge). */
+[data-loom-plan] .coverage-note {
+  position: relative;
+  order: -1;
+  max-width: 72ch;
+  margin: 0;
+  padding-inline-start: 26px;
+  color: var(--foreground);
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+[data-loom-plan] .coverage-note::before {
+  content: "!" / "";
+  position: absolute;
+  top: 0.2em;
+  left: 0;
+  display: grid;
+  place-items: center;
+  box-sizing: border-box;
+  width: 16px;
+  height: 16px;
+  border: 1.5px solid var(--tone-warning);
+  border-radius: 50%;
+  color: var(--tone-warning);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+}

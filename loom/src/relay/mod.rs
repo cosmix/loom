@@ -11,8 +11,8 @@ mod inbox;
 mod kind;
 mod line;
 mod matrix;
-mod matrix_host;
 mod payload;
+mod payload_native;
 mod scratch;
 mod ticket;
 
@@ -23,11 +23,12 @@ pub use matrix::{verdict, MatrixVerdict};
 pub use payload::{
     decode_payload, CommitPayload, HandoffRequest, HostJobRequest, RequestPayload, VerdictRequest,
 };
+pub use payload_native::WorkerControlPayload;
 pub use scratch::{
     ensure_dir_0700, scratch_root, scratch_root_from_env, session_dir, validate_session_dir,
     Platform,
 };
-pub use ticket::{sha256_hex, Ticket};
+pub use ticket::Ticket;
 
 /// Bound on one relay line: `LOOM_RELAY_V1 kind=... id=... sha256=... bytes=...`.
 pub const MAX_LINE_BYTES: usize = 160;
@@ -36,6 +37,11 @@ pub const MAX_LINES_PER_CALL: usize = 16;
 /// A session may accumulate at most this many CLI tickets the relay hook has
 /// not yet picked up before the CLI refuses to write another.
 pub const MAX_UNCONSUMED_TICKETS: usize = 32;
+/// The scratch directory holds at most this many tickets of any kind and age
+/// before the CLI refuses to write another. Control tickets older than a
+/// minute do not count against [`MAX_UNCONSUMED_TICKETS`] but do count here,
+/// which keeps the directory bounded; no ticket is ever deleted by the CLI.
+pub const MAX_SCRATCH_TICKETS: usize = 128;
 /// The daemon refuses to relay past this many pending (undrained) inbox
 /// entries for one session.
 pub const MAX_PENDING_ENTRIES: usize = 128;

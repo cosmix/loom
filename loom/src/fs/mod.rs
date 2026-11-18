@@ -1,9 +1,15 @@
+#[cfg(test)]
+mod append_contract_tests;
+pub(crate) mod cache_io;
 pub(crate) mod daemon_state;
 pub(crate) mod dispute_lock;
 pub(crate) mod git_marker;
 pub mod inbox;
 pub(crate) mod jsonl_spool;
 pub mod knowledge;
+pub(crate) mod lexical;
+#[cfg(test)]
+mod lexical_contract_tests;
 pub mod locking;
 pub mod memory;
 pub mod permissions;
@@ -11,8 +17,10 @@ pub mod plan_lifecycle;
 pub mod plan_review;
 pub mod safe_fs;
 pub mod safe_read;
+pub mod safe_replace;
 pub mod safe_write;
 pub mod session_files;
+pub(crate) mod stage_admission;
 pub mod stage_events;
 pub mod stage_files;
 pub mod stage_loading;
@@ -21,6 +29,7 @@ pub mod tmux_tmpdir;
 pub mod verifications;
 pub mod work_dir;
 pub mod work_integrity;
+pub(crate) mod work_state;
 pub mod worktree_files;
 
 use anyhow::Result;
@@ -46,7 +55,7 @@ pub use verifications::{
 // Re-export plan lifecycle utilities
 pub use plan_lifecycle::{
     all_stages_merged, mark_plan_done_if_all_merged, mark_plan_in_progress, DONE_PREFIX,
-    IN_PROGRESS_PREFIX,
+    IN_PROGRESS_PREFIX, RETIRED_PREFIX,
 };
 
 /// Parse base_branch from config.toml in a work directory.
@@ -125,18 +134,18 @@ pub fn get_source_path(work_dir: &Path) -> Result<Option<PathBuf>> {
 ///
 /// Absolute paths are returned as-is for backward compatibility.
 pub fn resolve_source_path(work_dir: &Path) -> Result<Option<PathBuf>> {
-    let config = match load_config(work_dir)? {
-        Some(c) => c,
-        None => return Ok(None),
-    };
+    Ok(resolve_source(work_dir)?.map(|(_, resolved)| resolved))
+}
 
-    let source_path = match config.source_path() {
-        Some(p) => p,
-        None => return Ok(None),
+/// The plan source path as configured (usually relative to the project root) together with its
+/// resolved form (see [`resolve_source_path`]), from one config load.
+pub fn resolve_source(work_dir: &Path) -> Result<Option<(PathBuf, PathBuf)>> {
+    let Some(source_path) = load_config(work_dir)?.and_then(|config| config.source_path()) else {
+        return Ok(None);
     };
 
     if source_path.is_absolute() {
-        return Ok(Some(source_path));
+        return Ok(Some((source_path.clone(), source_path)));
     }
 
     // Resolve relative paths from the main project root, following the
@@ -153,7 +162,8 @@ pub fn resolve_source_path(work_dir: &Path) -> Result<Option<PathBuf>> {
                 .unwrap_or_else(|| work_dir.to_path_buf())
         });
 
-    Ok(Some(project_root.join(&source_path)))
+    let resolved = project_root.join(&source_path);
+    Ok(Some((source_path, resolved)))
 }
 
 #[cfg(test)]

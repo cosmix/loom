@@ -48,6 +48,7 @@ describe("overview route", () => {
     const router = renderAt("/?stage=server");
 
     expect(screen.getByRole("dialog")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /^details/ }));
     expect(screen.getAllByText("Bash").length).toBeGreaterThan(0);
     // The dependency chip switches the dialog to the upstream stage.
     fireEvent.click(screen.getByRole("button", { name: /knowledge-bootstrap/ }));

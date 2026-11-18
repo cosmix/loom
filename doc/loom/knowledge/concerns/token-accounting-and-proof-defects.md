@@ -1,39 +1,33 @@
 ---
 sources:
-  - loom/src/verify/criteria/cache_contract.rs
-  - loom/src/verify/criteria/tests/runner_tests.rs
-  - loom/src/commands/usage/transcript_merge.rs
-  - loom-hooks/poll-guard.sh
-  - loom/tests/integration/hooks_poll_guard_subagents.rs
-  - loom-hooks/tests/codex-forward-guard-blocks-edit.sh
-  - loom/src/git/runner.rs
-  - loom/src/process/mod.rs
-  - loom/src/process/environment.rs
-  - loom/src/quota/history_store.rs
-  - loom/src/commands/usage/sections/edits.rs
-  - loom/src/fs/safe_read.rs
-  - loom-hooks/codex-forward-guard.sh
-  - CLAUDE.md.template
+- loom/src/verify/criteria/cache_contract.rs
+- loom/src/verify/criteria/tests/runner_tests.rs
+- loom/src/commands/usage/transcript_merge.rs
+- loom-hooks/poll-guard.sh
+- loom/tests/integration/hooks_poll_guard_subagents.rs
+- loom-hooks/tests/codex-forward-guard-blocks-edit.sh
+- loom/src/git/runner.rs
+- loom/src/process/mod.rs
+- loom/src/process/environment.rs
+- loom/src/quota/history_store.rs
+- loom/src/commands/usage/sections/edits.rs
+- loom/src/fs/safe_read.rs
+- loom-hooks/codex-forward-guard.sh
+- CLAUDE.md.template
 verified: 499b09b6297aeee4896a66df3da86d00f652a618
 ---
 
 # Token Accounting Follow-Ups
 
-> Token follow-ups
+>
 
 ## Open Follow-Ups After the Token-Optimization Plan
 
 Found during the plan's stages and integration-verify, verified against the tree at this page's
 `verified` revision, and not fixed by the plan. Each names its owner.
 
-- **Git runner does not isolate git's environment.** `git_command` (`loom/src/git/runner.rs`)
-  sets `LC_ALL`/`LANG` and the replace-ref and graft shutoff but removes no `GIT_*` repository variable, so an inherited `GIT_DIR`, `GIT_WORK_TREE` or `GIT_INDEX_FILE`
-  redirects every loom git call, knowledge evidence freshness included, to another repository.
-  Owner: `git/runner.rs`; `env_remove` the `GIT_*` repository variables.
-- **`process::run_bounded_output` bounds time, not bytes.** Its reader threads `read_to_end` with
-  no cap (`loom/src/process/mod.rs::collect_output`), so callers' output limits (for example
-  `MAX_GIT_OUTPUT_BYTES` in `fs/knowledge/catalog/evidence.rs`) cap the accepted result, not peak
-  memory. Owner: `process/mod.rs`; read through `take(limit + 1)` and error over the limit.
+- **Git runner environment.** `git/runner.rs` removes inherited repository-selection variables before applying explicit per-call overrides; ordinary calls use the specified repository root.
+- **Bounded process output.** `process::run_bounded_output` caps retained bytes per stream, drains excess and reports overflow while retaining its deadline and process-group retirement behavior.
 - **Two atomic-write implementations for quota state.** History rewrites reuse
   `quota/cache.rs`'s `atomic_write` instead of `fs::locking::atomic_write_locked`, and
   `ensure_history_dir` (`loom/src/quota/history_store.rs`) checks for symlinks before
@@ -135,7 +129,7 @@ Open items from PLAN-token-flow; the design is in [token-flow-sources](../archit
 - The frozen contract `rate-is-five-minute-average` stays green under an 11-14 bucket rate window (the outside line sits at `now - 420 s`); `flow_build.rs` uses `RATE_BUCKETS` = 10 correctly. A contract revision should place the outside line in bucket 11 (a dispute, not an edit).
 - The contract `tracker-memo-keeps-work-roots-apart` stays green with the memo's `is_for` guard removed: its two fixtures differ in transcript paths and flow hash, so cross-root reuse is unobservable (`tokens/tracker.rs::scan_until`). The implementation is right; the contract is weak.
 - The contract `stage-chips-carry-trends` stays green when a chip draws an empty series, because an empty `Sparkline` still renders `role="img"`.
-- No test clicks Back to details in control mode (`web/src/components/stage-modal.test.tsx`).
+- `web/src/components/terminal/terminal-back.test.tsx` enters control mode and clicks Back to details, asserting that the terminal closes and stage details remain selected. `stage-modal.test.tsx` separately covers terminal and saved-history back navigation.
 - `quota/codex_tests.rs`: when `poll_once` fails early the pid-file watcher keeps polling for up to `REPLY_DEADLINE` (60 s) before the scope joins and the `expect` panics; a shared done flag would end the wait. The detached `std::thread::spawn` in `a_shutdown_flag_set_mid_exchange_returns_quickly` predates the scoped helpers.
 
 ### Proposals
@@ -182,12 +176,6 @@ Verified against the tree; each gap blocks or weakens a token-saving claim that 
   resolve a plausible saving. The offline comparison therefore lets an inconclusive subscription
   verdict stand beside a supported net-total verdict and keeps only a rejected one as a veto
   ([Offline Comparison](../architecture/token-accounting-and-receipts.md#offline-comparison-loom-usage---compare)).
-- **`exact_forward_argv` still rejects the 10-word forward.** `forward_jobs_transcript.rs`
-  (`loom subagents` classification) reads forwarder transcripts through `exact_forward_argv`,
-  which accepts only the 8-word wrapper argv, so a recorded forward carrying `--unit-id` is
-  invisible to it. The receipt writer uses the wider `forward_argv`
-  (`models/forward_receipt/transcript/argv.rs`); widening `exact_forward_argv` changes
-  `loom subagents` classification, so it was left alone.
 - **A "Full output saved to:" notice forms no receipt.** When Claude Code replaces a Bash result
   with that notice, the payload's stdout decodes as `Absent` (`marker.rs` needs the START marker
   on line 0), so `forward-receipt` writes nothing; `codex-forward-result.sh` handles the notice,
@@ -253,7 +241,6 @@ sibling-advisory wording, the `_bounded.sh` comment fix) are not listed.
 
 ## Hook Hardening Proposals From the Delivery-Truth Plan
 
-- **Relay-producing commands piped through a filter (recurrence).** `loom stage commit | rg -o ...` dropped the `LOOM_RELAY_V1` line, so the relay hook never saw the ticket and `loom request status` reported it not relayed. The same shape is in [Memory Relay Drain Gap](../mistakes/memory-relay-drain-gap.md). Proposal: a PreToolUse warning in `poll-guard.sh` when a Bash command pipes `loom stage commit` or `loom memory` into anything but `tail -3`; the instruction alone has not prevented the recurrence.
 - **BSD hook suite sits at the criterion timeout.** `LOOM_HOOK_TEST_BSD=1 run-all.sh` takes about 5.5 minutes standalone against the 300 s criterion limit, with per-test timings unchanged by the watchdog fix (171.9 s against 170.8 s). Proposal: split the suite across criteria or raise that criterion's timeout.
 - **`codex-forward-guard.sh` classifies test runs by ancestor environment.** The `bounded-stdin.py` case exits 2 instead of 0 when an ancestor process carries stage evidence, which fails in a stage's own gate; see [Hook Tests Inherit the Live Session's Environment](../mistakes/hooks-shell-portability.md).
 
@@ -302,16 +289,13 @@ Open items from the plan's reviews, all small. The implemented ones are gone fro
   `repeated_set` duplicates `repeated_commands`.
 - **Duplicated helpers and test gaps.** `spawn_join.rs` reimplements `json_lines`,
   `stage_directories`, `plain_directory` and `MAX_LEDGER_BYTES` from `provider_data/ledger.rs`
-  (a third `json_lines` lives in `commands/status/data/execution_models.rs`), and
+  (a third `json_lines` lives in `status/data/execution_models.rs`), and
   `AMBIGUOUS_MODEL` is `pub(crate)` for a file-local use. No test pins `same_fact`'s comparison of `backend` and `backend_id` (dropping either passes). No test covers `receipt_matches` or the
   receipt side of `resolve_wait_codex_execution`, and the damaged-journal error does not name the
   receipts path. `discovery_tests.rs` pins `<slug>-other` but not `<slug>x--worktrees-y`. No test
   pins the stderr filtering of session-controlled names in `completeness.rs`, and `inline_safe`
   caps the whole enumeration diagnostic at 200 characters, which can elide a parse error tail.
-- **Replay harness.** `check_shape` compares asset paths as strings while `asset_paths()` sorts
-  `PathBuf`s component-wise, so a skill named `loom-md` beside `loom-md-tables` would fail the
-  self-check; no such pair exists. Signals render with the real `HOME` while `worker-brief` runs
-  with an isolated one, so developer-level config could shift byte counts between machines.
+- **Replay harness.** `asset_paths()` sorts by the rendered path string, matching `check_shape`. Signals still render with the real `HOME` while worker-brief runs with an isolated one, so developer-level configuration can shift byte counts between machines.
 
 ## Dependency Findings Follow-Ups
 
@@ -325,7 +309,7 @@ The offline harness (`orchestrator/signals/tests_dependency_harness.rs`) measure
 | token-core to tui-tokens        | 0                                                      | 0                               | 5,130 (54 tokens x 95 calls)                    |
 | token-core to web-tokens        | 0                                                      | 0                               | 2,430 (54 tokens x 45 calls)                    |
 
-For guard-core the old arm boosted nothing (its 15 declared paths were `working_dir`-relative), so the change set only reordered worker packs and cost one covered file; the change set reproduced the recorded 28 paths and no knowledge was lost. The operator overrode the stop rule and plan 4 completed: the guard-core harness test prints its verdict instead of asserting it, and no wave was re-run or tuned. Revisit when a pair with a real overlap between a dependency's change set and a successor's reads is recorded. The plan file `doc/plans/archive/DONE-PLAN-04-dependency-findings.md` still says the stop rule is asserted and has no Deviations entry for the override.
+For guard-core the old arm boosted nothing (its 15 declared paths were `working_dir`-relative), so the change set only reordered worker packs and cost one covered file; the change set reproduced the recorded 28 paths and no knowledge was lost. The operator overrode the stop rule and plan 4 completed: the guard-core harness test prints its verdict instead of asserting it, and no wave was re-run or tuned. Revisit when a pair with a real overlap between a dependency's change set and a successor's reads is recorded. The plan file `doc/plans/optim-token/archive/DONE-PLAN-04-dependency-findings.md` still says the stop rule is asserted and has no Deviations entry for the override.
 
 Signal replay at plan 4 integration-verify against the plan base: dynamic bytes tui-tokens +172, web-tokens +172, integration-verify +245; total signal bytes 214,457 to 192,068, a drop outside the dynamic sections whose cause is unattributed because per-signal base numbers were not recorded.
 

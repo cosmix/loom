@@ -7,7 +7,7 @@ use std::os::fd::AsRawFd;
 use std::path::Path;
 
 use super::{FileCoverage, MAX_EXTRACTED_FILE_BYTES};
-use crate::context::extract::{extract_file, file_node, lexical};
+use crate::context::extract::{extract_file, file_node, lexical, whole_file_line_count};
 use crate::context::graph_store::FileEntry;
 use crate::context::refresh::BoxedExtractor;
 use crate::fs::safe_fs::{open_safely, safe_open_dirfd};
@@ -19,6 +19,7 @@ pub(crate) struct SourceRead {
     pub size: usize,
     pub hash: String,
     lines: usize,
+    last: Option<u8>,
 }
 
 impl SourceRead {
@@ -27,6 +28,7 @@ impl SourceRead {
         let mut bytes = Vec::new();
         let mut size = 0usize;
         let mut lines = 0usize;
+        let mut last = None;
         let mut hash = Sha256::new();
         let mut buffer = [0u8; 16 * 1024];
         loop {
@@ -38,6 +40,7 @@ impl SourceRead {
                 break;
             }
             let chunk = &buffer[..count];
+            last = chunk.last().copied();
             hash.update(chunk);
             size = size.checked_add(count).context("source size overflow")?;
             lines += chunk.iter().filter(|&&byte| byte == b'\n').count();
@@ -49,6 +52,7 @@ impl SourceRead {
             size,
             hash: format!("sha256:{}", hex::encode(hash.finalize())),
             lines,
+            last,
         })
     }
 
@@ -72,7 +76,7 @@ impl SourceRead {
         );
         node.body_hash = self.hash.clone();
         node.span.end_byte = self.size;
-        node.span.line_end = self.lines.max(1);
+        node.span.line_end = whole_file_line_count(self.lines, self.last);
         FileEntry {
             content_hash: self.hash,
             nodes: vec![node],
@@ -128,6 +132,7 @@ mod tests {
         let entry = first.entry(&crate::context::extract::registry(), Path::new("large.rs"));
         assert_eq!(entry.content_hash, second.hash);
         assert_eq!(entry.nodes[0].span.end_byte, size);
+        assert_eq!(entry.nodes[0].span.line_end, 1);
         assert!(matches!(entry.coverage, FileCoverage::Oversized { bytes, .. } if bytes == size));
         let mut tail = std::fs::OpenOptions::new()
             .write(true)
@@ -141,6 +146,16 @@ mod tests {
             changed.hash, second.hash,
             "the hash must include bytes beyond retention"
         );
+    }
+
+    #[test]
+    fn oversized_unterminated_last_line_is_counted() {
+        let mut bytes = vec![b'x'; MAX_EXTRACTED_FILE_BYTES + 1];
+        bytes[0] = b'\n';
+        let entry = SourceRead::read(&bytes[..])
+            .unwrap()
+            .entry(&crate::context::extract::registry(), Path::new("large.rs"));
+        assert_eq!(entry.nodes[0].span.line_end, 2);
     }
 
     #[test]

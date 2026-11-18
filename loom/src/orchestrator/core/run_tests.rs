@@ -106,3 +106,63 @@ fn a_manual_tick_files_a_refused_contract_freeze() {
     assert_eq!(requests, 1);
     assert_eq!(daemon_refusal(&fx.work, STAGE).unwrap(), None);
 }
+
+#[test]
+#[serial]
+fn a_manual_tick_does_not_signal_a_stage_waiting_for_dependencies() {
+    let mut fx = manual();
+    let waiting = Stage {
+        id: "waiting".into(),
+        name: "Waiting".into(),
+        status: StageStatus::WaitingForDeps,
+        dependencies: vec![STAGE.into()],
+        ..Stage::default()
+    };
+    create_stage(&waiting, &fx.work).unwrap();
+    let prerequisite = StageDefinition {
+        id: STAGE.into(),
+        name: "Test Stage".into(),
+        working_dir: ".".into(),
+        ..Default::default()
+    };
+    let blocked = StageDefinition {
+        id: "waiting".into(),
+        name: "Waiting".into(),
+        dependencies: vec![STAGE.into()],
+        working_dir: ".".into(),
+        ..Default::default()
+    };
+    fx.orchestrator.graph = ExecutionGraph::build(vec![prerequisite, blocked]).unwrap();
+    fx.orchestrator.graph.mark_executing(STAGE).unwrap();
+
+    fx.orchestrator.run_tick(&mut false).unwrap();
+
+    assert_eq!(
+        load_stage("waiting", &fx.work).unwrap().status,
+        StageStatus::WaitingForDeps
+    );
+    assert!(crate::orchestrator::signals::list_signals(&fx.work)
+        .unwrap()
+        .is_empty());
+}
+
+/// A dispute directory that cannot be read belongs to one stage; the tick that
+/// finds it must go on, or the whole daemon ends over it.
+#[test]
+#[serial]
+fn an_unreadable_dispute_directory_does_not_end_the_tick() {
+    use std::os::unix::fs::PermissionsExt;
+    // SAFETY: `geteuid` has no preconditions.
+    if unsafe { libc::geteuid() } == 0 {
+        return; // root reads any directory, so the failure cannot be injected
+    }
+    let mut fx = manual();
+    let other = fx.work.join("disputes").join("other");
+    std::fs::create_dir_all(&other).unwrap();
+    std::fs::set_permissions(&other, std::fs::Permissions::from_mode(0o000)).unwrap();
+
+    let ticked = fx.orchestrator.run_tick(&mut false);
+
+    std::fs::set_permissions(&other, std::fs::Permissions::from_mode(0o755)).unwrap();
+    ticked.unwrap();
+}

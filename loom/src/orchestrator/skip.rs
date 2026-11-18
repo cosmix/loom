@@ -39,6 +39,10 @@ use crate::verify::transitions::update_stage;
 /// # Ok::<(), anyhow::Error>(())
 /// ```
 pub fn skip_stage(stage_id: &str, reason: Option<String>, work_dir: &Path) -> Result<()> {
+    // As in retry and reset: no native worker can be admitted between the gate
+    // and the status write.
+    let _admission = crate::fs::stage_admission::lock(work_dir, stage_id)?;
+    crate::commands::stage::native_gate::ensure_no_native_workers(work_dir, stage_id)?;
     update_stage(stage_id, work_dir, |stage| {
         if !matches!(
             stage.status,
@@ -64,6 +68,45 @@ mod tests {
         stage.id = id.to_string();
         stage.status = status;
         stage
+    }
+
+    #[test]
+    fn skip_refuses_active_worker() {
+        let temp = TempDir::new().unwrap();
+        let work = temp.path();
+        let stage = create_test_stage("s1", "stage", StageStatus::Blocked);
+        create_stage(&stage, work).unwrap();
+        crate::commands::stage::native_gate::tests::seed_active_worker(work, "s1", "unit");
+        let error = skip_stage("s1", None, work).unwrap_err();
+        assert!(format!("{error:#}").contains("running native Codex workers"));
+        assert_eq!(load_stage("s1", work).unwrap().status, StageStatus::Blocked);
+    }
+
+    #[test]
+    fn skip_waits_for_the_stage_admission_lock() {
+        let temp = TempDir::new().unwrap();
+        let work = temp.path().to_path_buf();
+        create_stage(
+            &create_test_stage("s1", "stage", StageStatus::Blocked),
+            &work,
+        )
+        .unwrap();
+        let held = crate::fs::stage_admission::lock(&work, "s1").unwrap();
+        let skipper = {
+            let work = work.clone();
+            std::thread::spawn(move || skip_stage("s1", None, &work))
+        };
+        std::thread::sleep(std::time::Duration::from_millis(300));
+        assert_eq!(
+            load_stage("s1", &work).unwrap().status,
+            StageStatus::Blocked
+        );
+        drop(held);
+        skipper.join().unwrap().unwrap();
+        assert_eq!(
+            load_stage("s1", &work).unwrap().status,
+            StageStatus::Skipped
+        );
     }
 
     #[test]

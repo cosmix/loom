@@ -1,13 +1,13 @@
 ---
 sources:
-  - loom/src/fs/knowledge/chunker/references.rs
-  - .gitignore
+- loom/src/fs/knowledge/chunker/references.rs
+- .gitignore
 verified: 7d6a14caf1750cc1e516519e650e2ee68641e0a1
 ---
 
 # Doctrine And Acceptance
 
-> Doctrine drift
+>
 
 ## An Acceptance Criterion That Greps One Phrase Proves Presence, Never Agreement (2026-07-28)
 

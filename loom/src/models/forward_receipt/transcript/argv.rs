@@ -6,48 +6,28 @@ use std::path::Path;
 /// The wrapper's default spelling, the one the shipped agent definitions use.
 const DEFAULT_FORWARD_WRAPPER: &str = "~/.claude/hooks/loom/codex-forward.sh";
 
-/// `exact_forward_argv_in` against the installed hooks directory.
-pub fn exact_forward_argv(command: &str) -> Option<(String, String)> {
-    let hooks_dir = crate::assets::install::claude_hooks_dir();
-    exact_forward_argv_in(command, hooks_dir.as_deref())
+#[derive(Debug, PartialEq, Eq)]
+pub struct ForwardArgv {
+    pub model: String,
+    pub effort: String,
+    pub unit_id: Option<String>,
+    pub invocation_id: Option<String>,
 }
 
-/// The `(model, effort)` of `command` when it is exactly
-/// `<wrapper> task <prompt> --model <m> --effort <e> --write`, the wrapper
-/// named as [`is_forward_wrapper`] accepts it; `None` for anything else, and
-/// for every command when no hooks directory resolves.
-pub(super) fn exact_forward_argv_in(
-    command: &str,
-    hooks_dir: Option<&Path>,
-) -> Option<(String, String)> {
-    if !safe_shell_syntax(command) {
-        return None;
-    }
-    let words = shell_words::split(command).ok()?;
-    if words.len() != 8
-        || !is_forward_wrapper(command, &words[0], hooks_dir?)
-        || words[1] != "task"
-        || words[2].is_empty()
-        || words[3] != "--model"
-        || words[5] != "--effort"
-        || words[7] != "--write"
-        || !bounded_diagnostic(&words[4])
-        || !bounded_diagnostic(&words[6])
-    {
-        return None;
-    }
-    Some((words[4].clone(), words[6].clone()))
+/// Recognize an exact wrapper invocation and return its model and effort.
+pub fn exact_forward_argv(command: &str) -> Option<(String, String)> {
+    forward_argv(command).map(|argv| (argv.model, argv.effort))
 }
 
 /// `forward_argv_in` against the installed hooks directory.
-pub fn forward_argv(command: &str) -> Option<(String, String)> {
+pub fn forward_argv(command: &str) -> Option<ForwardArgv> {
     forward_argv_in(command, &crate::assets::install::claude_hooks_dir()?)
 }
 
-/// The `(model, effort)` of `command` when it is a forward the guard
+/// The parsed `command` when it is a forward the guard
 /// authorizes: the 8-word wrapper call, optionally followed by
 /// `--unit-id <unit>` and then `--invocation-id inv-<32 hex>`.
-pub(super) fn forward_argv_in(command: &str, hooks_dir: &Path) -> Option<(String, String)> {
+pub(super) fn forward_argv_in(command: &str, hooks_dir: &Path) -> Option<ForwardArgv> {
     if !safe_shell_syntax(command) {
         return None;
     }
@@ -61,26 +41,33 @@ pub(super) fn forward_argv_in(command: &str, hooks_dir: &Path) -> Option<(String
         || words[7] != "--write"
         || !bounded_diagnostic(&words[4])
         || !bounded_diagnostic(&words[6])
-        || !optional_flags_valid(&words[8..])
     {
         return None;
     }
-    Some((words[4].clone(), words[6].clone()))
+    let (unit_id, invocation_id) = optional_flags(&words[8..])?;
+    Some(ForwardArgv {
+        model: words[4].clone(),
+        effort: words[6].clone(),
+        unit_id,
+        invocation_id,
+    })
 }
 
 /// The words after `--write`: nothing, `--unit-id <unit>`, or that followed by
 /// `--invocation-id <id>`.
-fn optional_flags_valid(rest: &[String]) -> bool {
+fn optional_flags(rest: &[String]) -> Option<(Option<String>, Option<String>)> {
     match rest {
-        [] => true,
-        [flag, unit] => flag == "--unit-id" && is_unit_id(unit),
-        [flag, unit, invocation_flag, invocation] => {
-            flag == "--unit-id"
+        [] => Some((None, None)),
+        [flag, unit] if flag == "--unit-id" && is_unit_id(unit) => Some((Some(unit.clone()), None)),
+        [flag, unit, invocation_flag, invocation]
+            if flag == "--unit-id"
                 && is_unit_id(unit)
                 && invocation_flag == "--invocation-id"
-                && is_invocation_id(invocation)
+                && is_invocation_id(invocation) =>
+        {
+            Some((Some(unit.clone()), Some(invocation.clone())))
         }
-        _ => false,
+        _ => None,
     }
 }
 

@@ -1,0 +1,159 @@
+{
+  "key": "overview/demo/product",
+  "title": "Overview",
+  "path": "doc/product/demo/index.md",
+  "file_hash": "9f2c4e7a1b3d5c60",
+  "colour": 0,
+  "state": {
+    "state": "current",
+    "out_of_date": null
+  },
+  "plan_state": null,
+  "last_pressure": null,
+  "key_chips": [
+    {
+      "doc": {
+        "id": "section_01",
+        "title": "Planning",
+        "path": "doc/product/demo/section_01.md",
+        "page": "demo/product/section_01"
+      },
+      "colour": 1,
+      "label": "01",
+      "out_of_date": {
+        "reason": "source_changed",
+        "detail": null
+      },
+      "no_plan": false
+    },
+    {
+      "doc": {
+        "id": "section_02",
+        "title": "Review",
+        "path": "doc/product/demo/section_02.md",
+        "page": "demo/product/section_02"
+      },
+      "colour": 2,
+      "label": "02",
+      "out_of_date": null,
+      "no_plan": false
+    },
+    {
+      "doc": {
+        "id": "section_03",
+        "title": "Release",
+        "path": "doc/product/demo/section_03.md",
+        "page": "demo/product/section_03"
+      },
+      "colour": 3,
+      "label": "03",
+      "out_of_date": null,
+      "no_plan": true
+    }
+  ],
+  "blocks": [
+    {
+      "kind": "heading",
+      "level": 1,
+      "text": "Overview"
+    },
+    {
+      "kind": "paragraph",
+      "sentences": [
+        {
+          "id": "s1",
+          "text": "Teams plan work together and review it before it ships.",
+          "marks": [
+            {
+              "doc": {
+                "id": "section_01",
+                "title": "Planning",
+                "path": "doc/product/demo/section_01.md",
+                "page": "demo/product/section_01"
+              },
+              "colour": 1,
+              "out_of_date": {
+                "reason": "source_changed",
+                "detail": null
+              }
+            },
+            {
+              "doc": {
+                "id": "section_02",
+                "title": "Review",
+                "path": "doc/product/demo/section_02.md",
+                "page": "demo/product/section_02"
+              },
+              "colour": 2,
+              "out_of_date": null
+            }
+          ],
+          "citations": [
+            {
+              "kind": "sentence",
+              "summary": "section_01",
+              "id": "s1"
+            },
+            {
+              "kind": "sentence",
+              "summary": "section_02",
+              "id": "s2"
+            }
+          ],
+          "rests_on": [],
+          "plans": []
+        },
+        {
+          "id": "s2",
+          "text": "The product exists to keep intent and code in step.",
+          "marks": [
+            {
+              "doc": {
+                "id": "vision",
+                "title": "Vision",
+                "path": "doc/product/demo/index.md",
+                "page": "demo/product/index"
+              },
+              "colour": 0,
+              "out_of_date": null
+            }
+          ],
+          "citations": [
+            {
+              "kind": "source",
+              "path": "doc/product/demo/index.md",
+              "anchor": "purpose"
+            }
+          ],
+          "rests_on": [
+            {
+              "path": "doc/product/demo/index.md",
+              "anchor": "purpose"
+            }
+          ],
+          "plans": []
+        }
+      ]
+    },
+    {
+      "kind": "paragraph",
+      "sentences": [
+        {
+          "id": "s3",
+          "text": "Release steps are still being worked out.",
+          "marks": [],
+          "citations": [],
+          "rests_on": [],
+          "plans": []
+        }
+      ]
+    }
+  ],
+  "unlisted": [],
+  "implements": null,
+  "implemented_by": [],
+  "empty": null,
+  "building": null,
+  "estimate": null,
+  "feature": "demo"
+}

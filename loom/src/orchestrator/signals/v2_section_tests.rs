@@ -10,7 +10,7 @@ use serial_test::serial;
 use std::path::PathBuf;
 
 /// DESIGN D16 BLOCK-E, copied from the design so the renderer is pinned to it.
-const BLOCK_E: &str = "**Review order (plan v2):** run `loom check` once beside the final review round; fix every finding and failed criterion, re-check the failed criteria with `loom check <stage-id> --criterion <n>` and re-review the changed files, then complete. Edit nothing after the final review round: any edit, formatting included, changes the change fingerprint and needs another round. A commit does not change it.";
+const BLOCK_E: &str = "**Review order (plan v2):** run `loom check` once beside the final review. One fix worker handles all findings and failed criteria; re-check failures with `loom check <stage-id> --criterion <n>`, then one re-review on the follow-up model, then complete. After the final round, code edits including formatting need re-review. Comment-only lines, blank lines, and prose markdown outside skills/, agents/, commands/, loom-hooks/, tests and fixtures need none; the base must be unchanged. Block comments and every other edit need re-review. Commits do not change it.";
 
 fn v2_stage() -> Stage {
     Stage {
@@ -79,6 +79,22 @@ fn frozen_contracts_block_names_contracts_and_commands() {
     assert!(content.contains("loom stage dispute-contract s1 --contract <contract-id>"));
 }
 
+/// The exact instruction, not just the flag: a signal that names `--replacement`
+/// but sends the agent to edit the frozen file in place would pass a bare grep.
+#[test]
+fn frozen_contracts_block_teaches_the_replacement_dispute() {
+    let temp = tempfile::tempdir().unwrap();
+    write_test_freeze(temp.path(), "s1", "session-1");
+    let content = render(&v2_stage(), temp.path());
+
+    assert!(content.contains(
+        "- To change a frozen contract, copy the frozen file to `$LOOM_SCRATCH_DIR`, edit the \
+         copy there, run the stage's formatter check on it, and file `loom stage dispute-contract \
+         s1 --contract <contract-id> --replacement <path> --reason \"...\"`. On accept the \
+         daemon writes it into the worktree."
+    ));
+}
+
 #[test]
 fn unfrozen_stage_renders_no_frozen_contracts_block() {
     let temp = tempfile::tempdir().unwrap();
@@ -124,6 +140,8 @@ fn review_gate_block_carries_block_e_verbatim() {
         assert!(content.contains(BLOCK_E), "{stage_type:?} lacks BLOCK-E");
         assert!(content.contains("Every finding blocks completion"));
         assert!(content.contains("`loom-code-reviewer`"));
+        assert!(content.contains("`models.code_reviewer_followup_model` (sonnet by default)"));
+        assert!(content.contains("ONE fix worker before ONE re-review on the follow-up model"));
         assert!(content.contains("`loom stage review status s1`"));
         assert!(
             content.contains("`loom stage dispute-findings s1 --finding <id> ... --reason ...`")
@@ -137,6 +155,20 @@ fn review_gate_block_carries_block_e_verbatim() {
     }
     let distill = render(&v2_stage_of(StageType::KnowledgeDistill), temp.path());
     assert!(!distill.contains("## Review Gate"));
+    assert!(!distill.contains("loom-reviewer-brief"));
+}
+
+#[test]
+fn review_gate_names_the_reviewer_brief_section() {
+    let temp = tempfile::tempdir().unwrap();
+    for stage_type in [StageType::Standard, StageType::IntegrationVerify] {
+        let content = render(&v2_stage_of(stage_type), temp.path());
+        assert!(
+            content.contains("appends a `loom-reviewer-brief` section to every reviewer brief"),
+            "{stage_type:?} lacks the reviewer-brief bullet"
+        );
+        assert!(content.contains("Do not paste them."), "{stage_type:?}");
+    }
 }
 
 #[test]

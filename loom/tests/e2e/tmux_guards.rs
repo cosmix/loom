@@ -1,17 +1,8 @@
 //! Process-global test guards for the tmux backend e2e tests.
 //!
-//! `/tmp` is preferred over [`std::env::temp_dir`], for the same reason
-//! `loom_socket_dir()` in `src/orchestrator/terminal/tmux/socket.rs` prefers
-//! it: on macOS, `std::env::temp_dir()` resolves to a long per-process
-//! `$TMPDIR` under `/var/folders/...`. Once tmux appends its own
-//! `tmux-<uid>/loom-<session-id>` beneath that, the full socket path can
-//! exceed the 104-byte `AF_UNIX sun_path` limit — an environment-specific
-//! path-length failure that has nothing to do with the code under test.
-//! `TmuxTmpDirGuard` therefore only falls back to `std::env::temp_dir()`
-//! when `/tmp` itself turns out not to be writable (e.g. inside a sandbox
-//! that mounts it read-only), and even then only after checking that the
-//! projected socket path still fits `sun_path` — see
-//! `create_isolated_tmux_tmpdir()`.
+//! Prefer a short `/tmp` socket path; fall back only when it is unwritable and
+//! the projected path fits the macOS/BSD limit. Bind permission is probed separately.
+//! See [tmux backend notes](../../../doc/loom/knowledge/mistakes/tmux-backend.md).
 
 use loom::orchestrator::terminal::tmux::kill_socket_server;
 use std::path::{Path, PathBuf};
@@ -53,26 +44,8 @@ const SUN_PATH_LIMIT: usize = 104;
 /// prefix plus a realistic id rather than measuring one exactly.
 const SOCKET_NAME_BUDGET: usize = 40;
 
-/// Creates and returns the isolated per-test directory to use as
-/// `TMUX_TMPDIR`, picking the first candidate base -- `/tmp`, then
-/// [`std::env::temp_dir`] -- under which it can actually be created. `/tmp`
-/// is preferred for its short path and because it matches tmux's own
-/// convention (see the module docs); the fallback exists for exactly the
-/// case where `/tmp` is not writable (e.g. a read-only sandbox mount), and
-/// the short `lt-<pid>` name leaves a long `$TMPDIR` room under `sun_path`.
-///
-/// A candidate is usable only if BOTH hold: the per-test directory can
-/// actually be created there (rejects a read-only `/tmp`), and the socket
-/// path tmux will build beneath it -- `<dir>/tmux-<uid>/loom-<session-id>`,
-/// per `loom_socket_dir()` in `src/orchestrator/terminal/tmux/socket.rs` --
-/// projects under the `sun_path` limit. Skipping the second check would
-/// trade one environment-specific failure (an unwritable `/tmp`) for
-/// another, further down the stack in `tmux` itself, where the fallback's
-/// long per-process path (e.g. macOS's `/var/folders/...`) can silently
-/// blow the socket path budget.
-///
-/// Panics naming every rejected candidate and why if none qualifies -- a
-/// skipped test is a test that can never fail, so this never skips.
+/// Select a writable base whose projected tmux socket path fits `sun_path`.
+/// Fail rather than skip when no candidate is usable.
 fn create_isolated_tmux_tmpdir() -> PathBuf {
     // SAFETY: getuid() is always safe to call and cannot fail. Matches
     // `loom_socket_dir()` in `src/orchestrator/terminal/tmux/socket.rs`,

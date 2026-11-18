@@ -6,12 +6,14 @@ import { Link, useSearchParams } from "react-router";
 
 import type { Attention, StageSummary } from "@/api/schema";
 import { HazardHeader } from "@/aurora-ui/feedback/HazardPanel";
-import { OperatorGuidance, attentionCounts, attentionHazard } from "@/components/attention-panel";
+import { isTyping } from "@/lib/is-typing";
+import { attentionDetail, attentionHazard } from "@/components/attention-status";
 import { CopyCommand } from "@/components/copy-command";
 import { StageSummaryText } from "@/components/stage-detail";
-import { StateLine, ThreadRows } from "@/components/stage-heading";
-import { stageHref } from "@/components/stage-href";
-import { StageSectionGrid } from "@/components/stage-sections";
+import { StateLine } from "@/components/stage-heading";
+import { ThreadChips } from "@/components/stage-thread";
+import { STAGE_PARAM, stageHref } from "@/components/stage-href";
+import { StageReport } from "@/components/stage-report";
 import { toneClass } from "@/components/state-badge";
 import { useScrollGutter } from "@/components/use-scroll-gutter";
 import { HistoryView } from "@/components/terminal/history-view";
@@ -33,12 +35,10 @@ import {
 } from "@/components/ui/dialog";
 import { Kbd } from "@/components/ui/kbd";
 import type { HistoryLoader } from "@/api/terminal-history";
+import { displayState } from "@/lib/display-state";
 import { stateMeta } from "@/lib/format";
 import { attentionAtom, orderedStagesAtom, selectStage, snapshotAtom } from "@/state/atoms";
 
-/// The query parameter naming the stage the modal shows, so an open modal
-/// has a URL and the back button closes it.
-export const STAGE_PARAM = "stage";
 /// Which face of the stage the modal shows; absent means the details.
 export const STAGE_VIEW_PARAM = "view";
 const TERMINAL_VIEW = "terminal";
@@ -70,11 +70,6 @@ export function useOpenTerminal(): (id: string) => void {
       }),
     [setParams],
   );
-}
-
-function isTyping(target: EventTarget | null): boolean {
-  if (!(target instanceof HTMLElement)) return false;
-  return target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName);
 }
 
 /// The stage page's content in a dialog, opened from any view with
@@ -273,24 +268,26 @@ function Body({
         ref={scroller}
         className="max-h-[62dvh] overflow-y-auto p-5 pr-[max(0px,calc(1.25rem-var(--gutter,0px)))]"
       >
-        <div className="flex flex-col gap-4">
-          {attention && <OperatorGuidance entry={attention} />}
-          <StageSectionGrid stage={stage} level={level} />
-        </div>
+        <StageReport stage={stage} entry={attention} level={level} />
       </div>
       <BodyFoot id={stage.id} />
     </>
   );
 }
 
+/// The entry's label and short detail across the dialog's top. The detail's
+/// slot shrinks so a phone-width dialog wraps it instead of clipping it.
 function AttentionBanner({ attention }: { attention: Attention }) {
-  const counts = attentionCounts(attention);
+  const detail = attentionDetail(attention);
   return (
     <HazardHeader
       tone={attentionHazard(attention)}
       title={attention.label}
       className="pr-12 sm:pr-12"
-      action={counts && <span className="text-xs text-muted-foreground">{counts}</span>}
+      action={
+        detail && <span className="attention-detail text-xs text-muted-foreground">{detail}</span>
+      }
+      actionClassName="min-w-0 shrink"
     />
   );
 }
@@ -299,7 +296,7 @@ function BodyHead({ stage, terminalButton }: { stage: StageSummary; terminalButt
   const open = useOpenStage();
   return (
     <DialogHeader
-      className={cn("stage-modal-head gap-2 p-5", toneClass(stateMeta(stage.status).tone))}
+      className={cn("stage-modal-head gap-2 p-5", toneClass(stateMeta(displayState(stage)).tone))}
     >
       {/* Only the title row clears the dialog's close button, so everything
           below keeps the body's right edge. */}
@@ -316,7 +313,7 @@ function BodyHead({ stage, terminalButton }: { stage: StageSummary; terminalButt
       <DialogDescription asChild>
         <StateLine stage={stage} className="stage-state-strip text-foreground" />
       </DialogDescription>
-      <ThreadRows stage={stage} pick={open} className="mt-2" />
+      <ThreadChips stage={stage} pick={open} className="mt-1" />
     </DialogHeader>
   );
 }

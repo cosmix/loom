@@ -1,5 +1,5 @@
 use super::claude_event::{
-    make_idle_record, make_stop_record, verify_idle_event_id, verify_stop_event_id,
+    make_idle_record, make_stop_record, malformed, verify_idle_event_id, verify_stop_event_id,
 };
 use super::claude_files::{
     expected_parent_transcript, plain_absolute, transcript_evidence, validate_current_binding,
@@ -15,7 +15,7 @@ use serde_json::Value;
 use std::fmt;
 use std::path::{Path, PathBuf};
 
-use crate::models::forward_receipt::is_safe_id;
+use crate::agent_state::is_safe_id;
 
 #[derive(Debug, Clone, Copy)]
 pub struct ClaudeEnvironment<'a> {
@@ -123,7 +123,10 @@ pub fn validate_subagent_stop<S: ClaudeStarts + ?Sized>(
     let parent_id = required(payload, "session_id")?;
     let agent_id = required(payload, "agent_id")?;
     let agent_type = required(payload, "agent_type")?;
-    validate_ids(&[parent_id, agent_id, agent_type])?;
+    validate_ids(&[parent_id, agent_id])?;
+    if !is_safe_agent_type(agent_type) {
+        return Err(ClaudeEvidenceError::Unsafe("invalid agent type".into()));
+    }
     let worker = plain_absolute(Path::new(required(payload, "agent_transcript_path")?))?;
     let parent = plain_absolute(Path::new(required(payload, "transcript_path")?))?;
     validate_transcript_layout(&worker, &parent, parent_id, agent_id)?;
@@ -239,13 +242,10 @@ fn validate_stop_start(
         ));
     }
     validate_current_binding(work_dir, stage_id, loom_session_id)?;
-    validate_ids(&[
-        stage_id,
-        loom_session_id,
-        parent_session_id,
-        agent_id,
-        agent_type,
-    ])?;
+    validate_ids(&[stage_id, loom_session_id, parent_session_id, agent_id])?;
+    if !is_safe_agent_type(agent_type) {
+        return Err(ClaudeEvidenceError::Unsafe("invalid agent type".into()));
+    }
     let starts = StartedAgentTypeIndex::load(Some(work_dir));
     let start = ClaudeStarts::resolve_exact(
         &starts,
@@ -341,6 +341,15 @@ fn required<'a>(payload: &'a Value, field: &str) -> Result<&'a str, ClaudeEviden
         .ok_or_else(|| malformed(format!("missing {field}")))
 }
 
+fn is_safe_agent_type(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    (1..=128).contains(&bytes.len())
+        && bytes[0].is_ascii_alphanumeric()
+        && bytes
+            .iter()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-' | b':'))
+}
+
 fn validate_ids(ids: &[&str]) -> Result<(), ClaudeEvidenceError> {
     if ids.iter().any(|id| !is_safe_id(id)) {
         return Err(ClaudeEvidenceError::Unsafe(
@@ -354,8 +363,4 @@ fn evidence<T: for<'de> Deserialize<'de>>(
     record: &LifecycleRecord,
 ) -> Result<T, ClaudeEvidenceError> {
     serde_json::from_value(record.evidence.clone()).map_err(malformed)
-}
-
-fn malformed(error: impl fmt::Display) -> ClaudeEvidenceError {
-    ClaudeEvidenceError::Malformed(error.to_string())
 }

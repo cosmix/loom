@@ -4,9 +4,9 @@
 //! and the daemon's own accepted binary and filtered PATH, which the wrapper
 //! exports as `LOOM_BIN` and `LOOM_HOOK_PATH`.
 //!
-//! [`LaunchHost::from_env`], and `run_host_facts` for `loom run`, are the only
-//! readers of the process environment; everything downstream takes these
-//! facts as fields, which tests set directly.
+//! [`LaunchHost::from_env`] and `run_host_facts` resolve these facts for
+//! spawning and preflight. Wrapper, build-cache and host-socket code also
+//! reads process environment for its own inputs.
 
 use anyhow::{bail, Context, Result};
 use std::ffi::OsStr;
@@ -55,7 +55,7 @@ impl LaunchHost {
         let scratch_root = host_scratch_root(work_dir)?;
         let facts = host_facts(work_dir, &repo_root, &scratch_root, uid, home.as_deref())?;
         Ok(Self {
-            capsule_support: probed_capsule_support(&claude_path),
+            capsule_support: probed_capsule_support(&claude_path)?,
             claude_path,
             repo_root,
             facts,
@@ -159,7 +159,15 @@ fn host_facts(
     uid: u32,
     home: Option<&Path>,
 ) -> Result<HostFacts> {
-    let exe = binary_to_accept(DAEMON_BINARY.get().map(PathBuf::as_path))?;
+    #[cfg(test)]
+    let recorded = crate::orchestrator::terminal::native::TEST_LOOM_BIN
+        .lock()
+        .unwrap()
+        .clone()
+        .or_else(|| DAEMON_BINARY.get().cloned());
+    #[cfg(not(test))]
+    let recorded = DAEMON_BINARY.get().cloned();
+    let exe = binary_to_accept(recorded.as_deref())?;
     let roots = writable_roots(work_dir, repo_root, scratch_root, home);
     let path_var = std::env::var_os("PATH").unwrap_or_default();
     let loom_bin = accepted_loom_bin(&exe, uid, &roots)

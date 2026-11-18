@@ -24,21 +24,6 @@ source "$(dirname "$0")/_read_ledger.sh"
 # is reading something that should not exist at this size.
 READ_GUARD_LINE_LIMIT=400
 
-# _LOOM_VERIFY_RUNNER_BASENAMES - runner basenames poll-guard.sh's rule 2
-# must NEVER count toward the repeated-command deny: the acceptance loop is
-# SUPPOSED to rerun `cargo test` many times. This DUPLICATES the dispatch
-# list in loom-hooks/subagent-verify-guard.sh's check_command (that file's line
-# 343) rather than sourcing it - a hand-transcribed copy that must be kept
-# in sync with it by hand.
-_LOOM_VERIFY_RUNNER_BASENAMES="cargo|pytest|tsc|eslint|go|npm|bun|pnpm|yarn|make"
-
-# _loom_is_verify_runner_command - Return 0 when the already-tokenized
-# command (global LOOM_TOKENS) invokes one of _LOOM_VERIFY_RUNNER_BASENAMES
-# in command position.
-_loom_is_verify_runner_command() {
-	loom_tokens_invoke "$_LOOM_VERIFY_RUNNER_BASENAMES"
-}
-
 # _loom_is_tier1_knowledge_path <path> - Return 0 when <path> is a tier-1
 # knowledge file: doc/loom/knowledge/<name>.md with NO further directory
 # component. A tier-2 topic file (doc/loom/knowledge/<category>/<slug>.md) is
@@ -96,7 +81,7 @@ _loom_is_skill_md_path() {
 # when it is not a regular file (a redirect onto a missing path is a hard
 # error even under 2>/dev/null, and this runs on every unbounded Read).
 _loom_file_line_count() {
-	[[ -f "$1" ]] && wc -l <"$1" 2>/dev/null | tr -d '[:space:]' || printf '0'
+	[[ -f "$1" ]] && wc -l 2>/dev/null <"$1" | tr -d '[:space:]' || printf '0'
 }
 
 # _loom_read_full_lines <path> - echo <path>'s line count for an UNBOUNDED
@@ -157,7 +142,8 @@ _loom_ledger_file() {
 }
 
 # _loom_outline_covered_rows <path> - echo `loom map --outline <path>`'s
-# symbol rows (matching `^[[:space:]]+L[0-9]+-L[0-9]+[[:space:]]`), or return
+# symbol rows (matching `^[[:space:]]+L[0-9]+-L[0-9]+[[:space:]]`) and the
+# `... <n> more headings` line a capped Markdown outline ends with, or return
 # 1 (nothing echoed) when the graph does not cover <path> or the command
 # produced no output. The call is bounded to 2 seconds by loom_run_bounded
 # (_bounded.sh: gtimeout, timeout, or a bash watchdog on a machine with
@@ -169,7 +155,7 @@ _loom_outline_covered_rows() {
 	local path="$1" output rows
 	output=$(LOOM_HOOK_CONTEXT=1 loom_run_bounded 2 "${LOOM_BIN:-loom}" map --outline "$path" 2>/dev/null || true)
 	[[ -n "$output" ]] || return 1
-	rows=$(printf '%s\n' "$output" | grep -E '^[[:space:]]+L[0-9]+-L[0-9]+[[:space:]]' || true)
+	rows=$(printf '%s\n' "$output" | grep -E '^[[:space:]]+L[0-9]+-L[0-9]+[[:space:]]|^\.\.\. [0-9]+ more headings$' || true)
 	[[ -n "$rows" ]] || return 1
 	printf '%s' "$rows"
 	return 0
@@ -209,7 +195,9 @@ loom_hook_emit_warns() {
 	exit 0
 }
 
-# loom_hook_deny_or_warn <message> - Deny (stderr heredoc, exit 2) only when
+# loom_hook_deny_or_warn <message> - poll-guard.sh's repeated-poll and
+# repeated-watch rules use this; rule 1 uses loom_read_deny_once, which does
+# not consult deny_enabled. Deny (stderr heredoc, exit 2) only when
 # BOTH hold: loom_deny_enabled (the repo's [hooks] deny_enabled=true switch,
 # _common.sh) AND LOOM_MAIN_AGENT_PID is set and a LIVE ancestor of this
 # process (is_ancestor, _common.sh) - proof a real loom stage session is
@@ -250,24 +238,48 @@ _loom_read_discipline_large_unbounded() {
 	((n > READ_GUARD_LINE_LIMIT))
 }
 
-# _loom_read_discipline_verdict1 <path> <lines> - Compute rule 1's verdict
-# WITHOUT emitting it: sets LOOM_RD_V1_KIND (none|warn|deny) and
-# LOOM_RD_V1_MSG. <lines> is <path>'s line count, computed ONCE by the caller
-# (never re-derived here with another `wc -l`). Deny when the graph covers
-# <path> (comes with the outline inline), warn otherwise. The caller decides
-# whether this is even a rule-1 candidate (large + unbounded) before calling
-# this.
+# _loom_is_read_gate_exempt <path> - Return 0 when <path> is a control input
+# rule 1 never redirects: anything under a .loom/ directory or $LOOM_WORK_DIR
+# (signals and other files loom hands an agent) or under doc/plans/ (plans and
+# worker briefs, written to be read whole). A relative <path> is also tested in
+# its absolute form, so `cat PLAN-x.md` run from inside doc/plans is exempt. An
+# empty LOOM_WORK_DIR, or one of "/", is ignored, since every absolute path would
+# sit under it.
+_loom_is_read_gate_exempt() {
+	local abs
+	_loom_path_is_control_input "$1" && return 0
+	[[ "$1" != /* ]] || return 1
+	abs=$(_loom_read_abs_path "$1") || return 1
+	_loom_path_is_control_input "$abs"
+}
+
+_loom_path_is_control_input() {
+	local path="$1" work="${LOOM_WORK_DIR:-}"
+	case "$path" in
+	*/.loom/* | .loom/* | */doc/plans/* | doc/plans/*) return 0 ;;
+	esac
+	work="${work%/}"
+	[[ -n "$work" && "$path" == "$work"/* ]]
+}
+
+# _loom_read_discipline_verdict1 <path> <lines> - Compute rule 1's message
+# into LOOM_RD_V1_MSG without emitting it. <lines> is <path>'s line count,
+# computed ONCE by the caller (never re-derived here with another `wc -l`).
+# The message carries the outline inline when `loom map --outline` returns
+# rows. Otherwise it gives `rg -n` advice: the 2-second bound on
+# _loom_outline_covered_rows can time out on a covered file, so the message
+# says only that no outline is available. LOOM_RD_V1_OUTLINED is 1 on the
+# outline branch and 0 otherwise; loom_read_deny_once denies only when it is 1.
 _loom_read_discipline_verdict1() {
-	local path="$1" n="$2" rows
-	LOOM_RD_V1_KIND="none"
-	LOOM_RD_V1_MSG=""
+	local path="$1" n="$2" rows quoted
 	if rows=$(_loom_outline_covered_rows "$path"); then
-		LOOM_RD_V1_KIND="deny"
+		LOOM_RD_V1_OUTLINED=1
 		LOOM_RD_V1_MSG="${path} is ${n} lines. Outline: ${rows}
 Read the ranges you need with offset/limit."
 	else
-		LOOM_RD_V1_KIND="warn"
-		LOOM_RD_V1_MSG="${path} is ${n} lines and not covered by the source graph - find sections with \`rg -n \"^#\" ${path}\` then read a range with offset/limit."
+		LOOM_RD_V1_OUTLINED=0
+		printf -v quoted '%q' "$path"
+		LOOM_RD_V1_MSG="${path} is ${n} lines and no outline is available - find the part you need with \`rg -n '<pattern>' ${quoted}\`, then read that range with offset/limit."
 	fi
 	return 0
 }
@@ -285,8 +297,15 @@ Read the ranges you need with offset/limit."
 #      loom-hooks/knowledge-orient.sh's SessionStart nudge points at it directly).
 #      Checked before rule 3, for the same reason as rule 0.
 #   1. An unbounded ("full") read of a file over READ_GUARD_LINE_LIMIT lines
-#      is redirected to `loom map --outline` (denied when covered, warned
-#      when not).
+#      is redirected to `loom map --outline` (loom_read_deny_once in
+#      _read_ledger.sh). Inside a live stage the first such read of a path by
+#      an agent is denied when an outline exists, and that agent's next whole
+#      read of the path (Read or Bash) passes; with no outline it is always a
+#      warning. Outside a live stage, or with
+#      `[hooks] read_gate = false`, it is a warning. A denial that cannot be
+#      recorded, or would overflow the denial ledger, is a warning too.
+#      Control inputs (_loom_is_read_gate_exempt: .loom/, $LOOM_WORK_DIR,
+#      doc/plans/) skip rule 1 entirely.
 #   3. A tier-1 knowledge file (other than INDEX.md) is warned with an
 #      unscoped knowledge query, and OVERRIDES rule 1 outright.
 #   4. A whole-file read that a sibling agent of this session already made
@@ -294,12 +313,10 @@ Read the ranges you need with offset/limit."
 #      when rule 1 is silent, advised once per agent and path
 #      (_loom_read_sibling_request in _read_ledger.sh).
 #
-# Rule 1 is computed with _loom_read_discipline_verdict1, then at most one
-# decision is queued.
-#
-# Decisions are queued via loom_hook_note_warn/loom_hook_deny_or_warn, not
-# emitted directly, so a caller evaluating several independent rules
-# (poll-guard.sh) can still join every warning into one JSON object.
+# Warnings are queued via loom_hook_note_warn, not emitted directly, so a
+# caller evaluating several independent rules (poll-guard.sh) can still join
+# every warning into one JSON object. A denial exits 2 before this read's
+# ledger append; an allowed repeat reaches it.
 loom_read_discipline_check() {
 	local path="$1" kind="$2" lines="$3" agent_id="$4" fallback_sid="$5"
 	local ledger
@@ -321,21 +338,16 @@ loom_read_discipline_check() {
 		return 0
 	fi
 
-	LOOM_RD_V1_KIND="none"
-	LOOM_RD_V1_MSG=""
-	if [[ "$kind" == "full" ]] && _loom_read_discipline_large_unbounded "$path" "$lines"; then
-		_loom_read_discipline_verdict1 "$path" "$lines"
-	fi
-
-	if [[ "$LOOM_RD_V1_KIND" == "deny" ]]; then
-		loom_hook_deny_or_warn "$LOOM_RD_V1_MSG"
-	elif [[ "$LOOM_RD_V1_KIND" == "warn" ]]; then
-		loom_hook_note_warn "$LOOM_RD_V1_MSG"
+	local rule1=0
+	if [[ "$kind" == "full" ]] && _loom_read_discipline_large_unbounded "$path" "$lines" &&
+		! _loom_is_read_gate_exempt "$path"; then
+		rule1=1
+		loom_read_deny_once "$path" "$lines" "$agent_id" "$fallback_sid"
 	fi
 
 	local sibling
 	if sibling=$(_loom_read_sibling_request "$path" "$kind" "$lines" "$ledger" "${ledger%/*}/_shared.tsv") &&
-		[[ "$LOOM_RD_V1_KIND" == "none" ]]; then
+		((rule1 == 0)); then
 		loom_hook_note_warn "$sibling"
 	fi
 	_loom_ledger_append "$ledger" "$path" "$kind" "$lines"

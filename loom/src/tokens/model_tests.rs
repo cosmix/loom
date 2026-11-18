@@ -23,9 +23,12 @@ fn sample_flow() -> TokenFlow {
             series: vec![70; STAGE_SERIES_LEN],
             hit_series: Vec::new(),
             agents: vec![AgentFlow {
+                effort: None,
+                unit_id: None,
                 id: "main-01".into(),
                 kind: AgentKind::Main,
                 agent_type: None,
+                forwarder: None,
                 model: Some("claude-opus-5-5".into()),
                 active: true,
                 total: usage,

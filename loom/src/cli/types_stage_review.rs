@@ -15,7 +15,7 @@ pub enum ReviewCommands {
         stage_id: String,
     },
     /// Print the stage's current test-integrity events (fallen declaration or
-    /// assertion totals, lost assertion lines, changed ratchet files) with
+    /// assertion totals, lost assertion statements, loosened ratchet files) with
     /// their detail, and which of them are accepted
     Integrity {
         /// Stage ID (alphanumeric, dash, underscore only; max 128 characters)

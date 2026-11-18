@@ -31,6 +31,7 @@ use super::cache::{
     generate_knowledge_stable_prefix, generate_stable_prefix,
 };
 use super::format::format_codex_implementers_section;
+use crate::codex::CodexLane;
 use crate::fs::permissions::constants::{
     HOOK_CODEX_FORWARD, HOOK_SUBAGENT_PREAMBLE, HOOK_SUBAGENT_VERIFY_GUARD,
 };
@@ -83,7 +84,7 @@ fn agent_definitions() -> Vec<(String, String)> {
 
 #[path = "tests_doctrine_blocks.rs"]
 mod blocks;
-use blocks::{BLOCK_A, BLOCK_B, BLOCK_D, RETIRED_PHRASES};
+use blocks::{BLOCK_A, BLOCK_B, BLOCK_D};
 
 /// Every static guidance surface pasted into a subagent prompt, as (label, text).
 fn guidance_surfaces() -> Vec<(String, String)> {
@@ -116,7 +117,6 @@ fn block_a_agrees_across_every_surface() {
 
     for (label, text) in [
         ("signal stable prefix", signal_prefix.as_str()),
-        ("signal integration-verify prefix", iv_prefix.as_str()),
         (PREAMBLE_LABEL, HOOK_SUBAGENT_PREAMBLE),
         (
             "loom-hooks/subagent-verify-guard.sh",
@@ -130,20 +130,31 @@ fn block_a_agrees_across_every_surface() {
              and you must reword all of them. Expected to find:\n{BLOCK_A}"
         );
     }
+
+    // Integration-verify is exempt from the test rule: its full runs go through
+    // `loom check integration-verify`, so its prefix carries the override and
+    // never BLOCK-A.
+    assert!(
+        !iv_prefix.contains("VERIFICATION IS THE MAIN AGENT'S JOB")
+            && !iv_prefix.contains("Run the tests for the code YOU wrote"),
+        "the integration-verify prefix must not carry BLOCK-A"
+    );
 }
 
 #[test]
 fn block_b_agrees_across_every_surface() {
-    for (label, text) in [
-        ("skills/loom-orchestration/SKILL.md", ORCHESTRATION_SKILL),
-        ("skills/loom-plan-writer/SKILL.md", PLAN_WRITER_SKILL),
-    ] {
-        assert!(
-            text.contains(BLOCK_B),
-            "{label} does not carry BLOCK-B verbatim. The model playbook must be \
-             byte-identical wherever it appears. Expected to find:\n{BLOCK_B}"
-        );
-    }
+    assert!(
+        ORCHESTRATION_SKILL.contains(BLOCK_B),
+        "orchestration must own the model playbook"
+    );
+    assert!(
+        PLAN_WRITER_SKILL.contains("../loom-orchestration/SKILL.md#rule-7--model-allocation"),
+        "plan writer must reference the model policy owner"
+    );
+    assert!(
+        !PLAN_WRITER_SKILL.contains(BLOCK_B),
+        "plan writer must not duplicate the model playbook"
+    );
 
     // BLOCK-B names the codex lane's model and effort as prose literals, so
     // equality with the surfaces above is not enough: editing the constants in
@@ -166,6 +177,16 @@ fn block_b_agrees_across_every_surface() {
         "BLOCK-B must name CODEX_IMPLEMENTER_EFFORT ({}); update every surface \
          when the constant changes",
         crate::codex::CODEX_IMPLEMENTER_EFFORT
+    );
+}
+
+#[test]
+fn block_b_names_codex_sol() {
+    assert!(
+        BLOCK_B.contains(crate::codex::CODEX_IMPLEMENTER_MODEL_SOL),
+        "BLOCK-B must name CODEX_IMPLEMENTER_MODEL_SOL ({}); update every surface \
+         when the constant changes",
+        crate::codex::CODEX_IMPLEMENTER_MODEL_SOL
     );
 }
 
@@ -259,8 +280,10 @@ fn codex_forward_sentinel_agrees_across_surfaces() {
     );
 
     let forwarder = forwarder_definition();
-    let doctrine =
-        format_codex_implementers_section(&Implementers::new(vec![Implementer::Codex]), true);
+    let doctrine = format_codex_implementers_section(
+        &Implementers::new(vec![Implementer::Codex]),
+        &CodexLane::Legacy,
+    );
     for needle in [
         CODEX_FORWARD_SENTINEL,
         "codex-forward.sh",
@@ -304,7 +327,7 @@ fn codex_navigation_kit_wrapper_carries_and_delivers_the_preamble() {
         "NEVER run git",
         ".loom/work/",
         "--unit-id",
-        "540000",
+        "1500000",
         "print_evidence 124 \"$job_id\" timed_out",
         "\"outcome\":\"timed_out\"",
         "unit:",
@@ -346,7 +369,7 @@ fn codex_navigation_kit_wrapper_carries_and_delivers_the_preamble() {
 #[test]
 fn codex_navigation_kit_signal_doctrine_names_the_kit() {
     let implementers = Implementers::new(vec![Implementer::Codex]);
-    let content = format_codex_implementers_section(&implementers, true);
+    let content = format_codex_implementers_section(&implementers, &CodexLane::Legacy);
 
     for needle in ["loom map --find-all", "loom map --impact", "AGENTS.md"] {
         assert!(
@@ -359,40 +382,8 @@ fn codex_navigation_kit_signal_doctrine_names_the_kit() {
     }
 }
 
-#[test]
-fn no_guidance_surface_still_tells_a_subagent_to_verify() {
-    let mut surfaces = guidance_surfaces();
-    surfaces.push(("signal stable prefix".to_string(), generate_stable_prefix()));
-    surfaces.push((
-        "signal integration-verify prefix".to_string(),
-        generate_integration_verify_stable_prefix(),
-    ));
-    surfaces.push((
-        "signal knowledge prefix".to_string(),
-        generate_knowledge_stable_prefix(),
-    ));
-    surfaces.push((
-        "signal knowledge-distill prefix".to_string(),
-        generate_knowledge_distill_stable_prefix(),
-    ));
-
-    let mut leftovers = Vec::new();
-    for (label, text) in surfaces {
-        for phrase in RETIRED_PHRASES {
-            if text.contains(phrase) {
-                leftovers.push(format!("{label} still contains {phrase:?}"));
-            }
-        }
-    }
-
-    assert!(
-        leftovers.is_empty(),
-        "guidance surfaces still carry phrasing the no-verify rule retired, so a \
-         subagent obeying them would be blocked by loom-hooks/subagent-verify-guard.sh \
-         with no allowed alternative:\n  {}",
-        leftovers.join("\n  ")
-    );
-}
+#[path = "tests_doctrine/verify_guidance.rs"]
+mod verify_guidance;
 
 // STABLE-PREFIX / emitted-signal doctrine tests (settled-completion, the subagent-budget
 // cadence framing, KNOWLEDGE_CONSUMPTION_CONTRACT) live in tests_doctrine_prefixes.rs;

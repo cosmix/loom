@@ -24,7 +24,7 @@ fn contract(id: &str) -> ContractSpec {
     ContractSpec {
         id: id.to_string(),
         file: "tests/plan_v2.rs".to_string(),
-        test: "parses_v2_plan".to_string(),
+        test: Some("parses_v2_plan".to_string()),
         runner: None,
         cwd: None,
         scenario: "a version 2 plan is parsed".to_string(),
@@ -159,7 +159,7 @@ fn v2_malformed_contracts_are_rejected() {
     let mut metadata = create_valid_metadata_v2();
     let mut blank = contract("Bad_Id");
     blank.file = "../outside.rs".to_string();
-    blank.test = " ".to_string();
+    blank.test = Some(" ".to_string());
     metadata.loom.stages[0].contracts = vec![contract("dup"), contract("dup"), blank];
 
     let messages = messages_of(&metadata);

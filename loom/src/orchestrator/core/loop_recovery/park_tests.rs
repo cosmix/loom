@@ -14,10 +14,10 @@ use crate::models::stage::{StageStatus, StageType};
 use crate::orchestrator::monitor::events::CompletionEscalation;
 use crate::orchestrator::monitor::MonitorEvent;
 use crate::orchestrator::terminal::native::write_test_pid_identity;
+use crate::test_git::{git, TestRepo};
 use crate::verify::transitions::{load_stage, update_stage};
 use chrono::Utc;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use tempfile::TempDir;
 
 pub(super) struct Fixture {
@@ -28,28 +28,11 @@ pub(super) struct Fixture {
     pub(super) orchestrator: Orchestrator,
 }
 
-fn git(repo: &Path, args: &[&str]) -> String {
-    let output = Command::new("git")
-        .arg("-C")
-        .arg(repo)
-        .args(args)
-        .output()
-        .expect("scratch git command must start");
-    assert!(output.status.success(), "scratch git command failed");
-    String::from_utf8(output.stdout)
-        .expect("git output must be UTF-8")
-        .trim()
-        .to_string()
-}
-
 fn init_repo(repo: &Path) -> String {
-    git(repo, &["init", "-q"]);
-    git(repo, &["config", "user.email", "loom@example.invalid"]);
-    git(repo, &["config", "user.name", "Loom Test"]);
-    git(repo, &["config", "commit.gpgSign", "false"]);
-    std::fs::write(repo.join("fixture.txt"), "fixture\n").unwrap();
-    git(repo, &["add", "fixture.txt"]);
-    git(repo, &["commit", "-q", "-m", "fixture"]);
+    TestRepo::builder()
+        .identity("Loom Test", "loom@example.invalid")
+        .seed("fixture.txt", "fixture\n", "fixture")
+        .init_in(repo);
     git(repo, &["rev-parse", "HEAD"])
 }
 
@@ -97,6 +80,7 @@ pub(super) fn fixture(repeats: u32) -> Fixture {
     let root = temp.path().canonicalize().unwrap();
     let commit = init_repo(&root);
     let work = root.join(".loom/work");
+    crate::git::worktree::capture_main_identity(&root, &work).unwrap();
     executing_stage(&work);
     let session = recorded_session(&work);
     update_stage("test-stage", &work, |stage| {

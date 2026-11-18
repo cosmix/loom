@@ -10,13 +10,17 @@
 //! wrote (`verify::impact_tests::observed`). The transport is the one
 //! `dispute-criteria` uses (`dispute_transport.rs`).
 
-use anyhow::{Context, Result};
-use std::path::Path;
+use anyhow::{bail, Context, Result};
+use std::path::{Path, PathBuf};
 
 use super::dispute_transport::{send, Dispute};
 use super::review_status::stage_worktree_and_target;
-use crate::models::dispute::{select_events, select_findings, DisputeKind};
+use crate::fs::safe_read::read_bounded;
+use crate::fs::stage_request::StageRequest;
+use crate::models::dispute::{select_events, select_findings, DisputeKind, MAX_REPLACEMENT_BYTES};
 use crate::relay::emit::{mode, EnvSnapshot, StdSink};
+use crate::relay::{new_request_id, RequestKind, Ticket, MAX_TICKET_BYTES};
+use crate::verify::contracts::site::stage_site;
 use crate::verify::integrity::current_events;
 use crate::verify::review::store::open_findings;
 use crate::verify::transitions::load_stage;
@@ -26,8 +30,12 @@ use crate::verify::transitions::load_stage;
 pub enum DisputeTarget {
     /// Open review finding ids, own or carried.
     Findings(Vec<String>),
-    /// A frozen contract's id.
-    Contract(String),
+    /// A frozen contract's id, and the file proposed in place of its frozen
+    /// content.
+    Contract {
+        contract_id: String,
+        replacement: Option<PathBuf>,
+    },
     /// Current test-integrity event ids.
     Integrity(Vec<String>),
     /// Ids of failing impact-selected tests, `IT-<runner>:<package>`.
@@ -48,6 +56,7 @@ pub struct DisputeFiling {
 pub fn file_dispute(filing: DisputeFiling) -> Result<()> {
     let work_dir = crate::commands::common::work_dir_path()?;
     let kind = snapshot(&work_dir, &filing.stage_id, filing.target)?;
+    ensure_fits_ticket(&kind, &filing.reason, filing.evidence_commit.as_ref())?;
     let dispute = Dispute::of_kind(filing.stage_id, kind, filing.reason, filing.evidence_commit);
     let relay_mode = mode(&EnvSnapshot::from_process_env());
     let cwd = std::env::current_dir().context("Failed to get current directory")?;
@@ -66,7 +75,19 @@ fn snapshot(work_dir: &Path, stage_id: &str, target: DisputeTarget) -> Result<Di
                 evidence,
             })
         }
-        DisputeTarget::Contract(contract_id) => Ok(DisputeKind::Contract { contract_id }),
+        DisputeTarget::Contract {
+            contract_id,
+            replacement,
+        } => {
+            let replacement = replacement
+                .map(|path| read_replacement(work_dir, stage_id, &path))
+                .transpose()?;
+            Ok(DisputeKind::Contract {
+                contract_id,
+                replacement,
+                replacement_base_sha256: None,
+            })
+        }
         DisputeTarget::Integrity(event_ids) => {
             let stage = load_stage(stage_id, work_dir)?;
             let (worktree, target) = stage_worktree_and_target(work_dir, &stage)?;
@@ -83,3 +104,93 @@ fn snapshot(work_dir: &Path, stage_id: &str, target: DisputeTarget) -> Result<Di
         }),
     }
 }
+
+/// The replacement file at `path`: UTF-8 text of at most
+/// [`MAX_REPLACEMENT_BYTES`], outside the stage worktree, read without
+/// following a symlink at its last component.
+///
+/// A path that canonicalizes into the worktree is refused whatever it names
+/// (`./` spellings and symlinks resolve first): the replacement is the daemon's
+/// to write there on an accept, and the agent never edits a frozen file.
+fn read_replacement(work_dir: &Path, stage_id: &str, path: &Path) -> Result<String> {
+    let resolved = path
+        .canonicalize()
+        .with_context(|| format!("cannot read the replacement file {}", path.display()))?;
+    let stage = load_stage(stage_id, work_dir)?;
+    // A session reaches the state directory through its worktree's `.loom/work`
+    // symlink; the repository root is the one the resolved path names.
+    let state_dir = work_dir
+        .canonicalize()
+        .with_context(|| format!("cannot resolve {}", work_dir.display()))?;
+    let (worktree_root, _) = stage_site(&state_dir, &stage)?;
+    if resolved.starts_with(&worktree_root) {
+        bail!(
+            "the replacement {} lies inside the stage worktree: copy the frozen file to \
+             $LOOM_SCRATCH_DIR, edit the copy there and name that copy",
+            path.display()
+        );
+    }
+    let Some(name) = path.file_name() else {
+        bail!("the replacement {} does not name a file", path.display());
+    };
+    let parent = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or(Path::new("."))
+        .canonicalize()
+        .with_context(|| format!("cannot read the replacement file {}", path.display()))?;
+    let bytes =
+        read_bounded(&parent, Path::new(name), MAX_REPLACEMENT_BYTES).with_context(|| {
+            format!(
+            "cannot read the replacement {} (a regular file of at most {MAX_REPLACEMENT_BYTES} \
+             bytes; a symlink is refused)",
+            path.display()
+        )
+        })?;
+    String::from_utf8(bytes)
+        .with_context(|| format!("the replacement {} is not valid UTF-8", path.display()))
+}
+
+/// Refuse a dispute whose replacement fits [`MAX_REPLACEMENT_BYTES`] but whose
+/// encoded ticket does not: JSON escaping expands a control character to six
+/// bytes. Measures the bytes `RelayContext::emit` checks, before any ticket is
+/// written.
+fn ensure_fits_ticket(
+    kind: &DisputeKind,
+    reason: &str,
+    evidence_commit: Option<&String>,
+) -> Result<()> {
+    let DisputeKind::Contract {
+        replacement: Some(replacement),
+        ..
+    } = kind
+    else {
+        return Ok(());
+    };
+    let request = StageRequest::FileDispute {
+        kind: kind.clone(),
+        reason: reason.to_string(),
+        evidence_commit: evidence_commit.cloned(),
+    };
+    let ticket = Ticket {
+        v: 1,
+        id: new_request_id(),
+        kind: RequestKind::FileDispute,
+        created_at: chrono::Utc::now(),
+        payload: serde_json::to_value(&request).context("failed to serialize the dispute")?,
+    };
+    let encoded = ticket.encode().len();
+    if encoded > MAX_TICKET_BYTES {
+        bail!(
+            "the replacement is {} bytes (limit {MAX_REPLACEMENT_BYTES}), but the dispute encodes \
+             to {encoded} bytes, over the {MAX_TICKET_BYTES}-byte request limit (control \
+             characters and quotes expand when encoded): shrink the replacement",
+            replacement.len()
+        );
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+#[path = "dispute_replacement_tests.rs"]
+mod replacement_tests;

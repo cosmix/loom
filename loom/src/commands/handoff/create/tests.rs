@@ -2,6 +2,7 @@
 //! transition that a sandboxed worktree session cannot always write.
 
 use super::*;
+use crate::test_git::{git, TestRepo};
 use serial_test::serial;
 
 /// Restores cwd on drop. `execute()` resolves its work dir from the process
@@ -310,7 +311,7 @@ fn relay_mode_marks_a_ceiling_trigger_end_turn() {
     .unwrap();
 
     let stderr_text = String::from_utf8(sink.stderr).unwrap();
-    assert!(stderr_text.contains("End your turn after the confirmation."));
+    assert!(stderr_text.contains("End your turn only after the confirmation."));
 }
 
 #[test]
@@ -337,5 +338,21 @@ fn an_adjudication_session_is_refused_before_any_ticket_is_written() {
     assert_eq!(
         fs::read_dir(&fixture.context.scratch_dir).unwrap().count(),
         0
+    );
+}
+
+#[test]
+fn modified_files_returns_unquoted_paths_and_rename_destinations() {
+    let temp = tempfile::TempDir::new().unwrap();
+    let root = temp.path();
+    std::fs::write(root.join("old name.txt"), "tracked\n").unwrap();
+    TestRepo::builder().no_seed().init_in(root);
+    git(root, &["add", "."]);
+    git(root, &["commit", "-qm", "base"]);
+    git(root, &["mv", "old name.txt", "new name.txt"]);
+    std::fs::write(root.join("quote\"d.txt"), "untracked\n").unwrap();
+    assert_eq!(
+        modified_files_in(root).unwrap(),
+        ["new name.txt", "quote\"d.txt"]
     );
 }

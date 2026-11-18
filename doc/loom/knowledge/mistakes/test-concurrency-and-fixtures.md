@@ -1,6 +1,6 @@
 # Test Concurrency And Fixtures
 
-> Racy tests: fds, ETXTBSY
+> Races
 
 ## An Inherited Descriptor Keeps an flock Alive After the Owner Releases It (2026-08-10)
 
@@ -13,6 +13,8 @@
 **Second instance:** `run_lock_is_exclusive_until_dropped` failed the v1.0.2 release run. Re-acquiring the bootstrap run lock right after `drop` returned "already running", because `fs2` locks with `flock`. Fix: `loom/src/commands/knowledge/bootstrap/tests.rs` polls the final acquire for up to 5 s.
 
 **Note for production:** the same window applies to the daemon singleton lock. A child forked during the microseconds `orchestrator.lock` is open can hold it past daemon exit until that child execs, so an immediate restart could briefly see "another daemon instance holds the singleton lock". Not observed in practice; recorded so the symptom is recognisable.
+
+**Third instance (2026-10-28):** `ServerLock` (`plan_server/lock.rs`) had no `Drop`; `flock(LOCK_EX)` on its `O_CLOEXEC` descriptor stayed held while a child on another test thread held a copy until exec, so `drop(lock)` left it held and the next acquire read `Running` (flaky `lock_tests`). The fix is a `Drop` that calls `flock(LOCK_UN)`, which unlocks the description for all copies, plus a regression test that duplicates the descriptor across the drop. A lock type that relies on close-on-drop needs the explicit unlock; see the proposal in [Planning Session Bridge Follow-ups](../concerns/planning-session-sandbox-limits.md#recurring-flock-after-drop).
 
 ## A Non-Serial Test Read an Env Var a `#[serial]` Sibling Mutates (2026-09-03)
 
@@ -330,3 +332,67 @@ expects to expire stays short. Reproduce a timing failure by looping the test un
 **Prevention:** a test that injects failure through directory permissions must check the platform's lookup rules (`openat2` versus a component walk) and skip where the injection cannot isolate the one failure. A concurrency test exercises the lock it proves (`store::record_round`) directly, never through a path that also probes the daemon lock.
 
 **Fix:** the host-verify test returns early when the record is unreadable after the chmod; the concurrency proof moved to `verify/review/store_tests.rs::concurrent_recorders_of_one_review_write_one_round` (four threads on a barrier, a 20 ms decide delay).
+
+## An Assertion on a Passive Effect Right After `findBy*` Is a Race (2026-10-28)
+
+**What happened:** concept-web tests that asserted `scrollIntoView` or focus right after `findBy*` failed under load. A React passive effect that follows a fetch-driven render (`DefaultLane`) flushes in a separate scheduler `setImmediate`, never in the commit's own macrotask (`react-dom-client.development.js:18232` sets `needsPaint`; `scheduler.development.js:166` yields on it). RTL's `findBy*` and `waitFor` resolve on the commit's `MutationObserver` microtask and drain with `setTimeout(0)` (`pure.js:92`), which fires before that `setImmediate` under load.
+
+**Prevention:** wrap any assertion on a passive-effect side effect in `waitFor`, as `web/src/plan/files/file-mode.test.tsx:213` does.
+
+## A Fake `codex` First on the Process-Wide `PATH` Answers Every Concurrent Test
+
+**What happened:** `codex_is_recorded_again_after_a_fallback_and_shows_the_model_that_ran` failed under `--all-targets` with empty Codex model strings. The pressure fixture puts a fake `codex` first on the process `PATH`; unrelated concurrent lib tests start planning servers whose summaries quota poller runs `codex app-server` through `find_codex_path`, and each call appended an empty-model line to the fake's `bin/pids`. In the same plan a test binary spawning `CARGO_BIN_EXE_loom` failed `binary_spawn_guard` for a missing `SANCTIONED_SPAWNERS` entry, and a Rust raw string `r#"..."#` holding a fake shell script closed early at `echo "# Review"`.
+
+**Why:** a fake binary on a shared `PATH` is run by every test in the process, and the raw-string delimiter ended at the first quote-hash.
+
+**Prevention:** a fake that sits on `PATH` ignores argv it was not written for (the fake `codex` exits 1 unless `argv[1] == exec`). Every test binary that spawns the loom binary gets a `SANCTIONED_SPAWNERS` entry and a `LOOM_*` scrub. A raw string holding shell or Markdown uses `r##"..."##` when the body can contain `"#`.
+
+**Fix:** the fake exits unrecorded for other argv; the entry and the scrub were added.
+
+## Stage event test setup used a create-only writer
+
+**What happened:** A merge-resolver regression fixture called `save_stage` on an already seeded stage. A follow-up replacement changed the shared fixture instead of the intended test call. A later merge-outcome patch again selected an earlier matching call instead of its outcome arm; both misapplied edits were corrected.
+
+**Why:** `save_stage` is create-only, and patches without enough enclosing context can select the first repeated call.
+
+**Prevention:** Create fixtures once, use `update_stage` for later changes, and anchor repeated-call edits to their enclosing function or match arm; inspect the affected occurrences immediately.
+
+**Fix:** Restored stage creation, updated the typed-block test, and applied the review route only to the intended outcome.
+
+## Assert the sanitizer’s actual replacement characters
+
+**What happened:** The excerpt rendering regression expected spaces for terminal control bytes, although the shared sanitizer replaces them with U+FFFD.
+
+**Why:** The expected output was written without checking the sanitizer contract.
+
+**Prevention:** Read the shared sanitizer behavior before asserting exact rendered bytes.
+
+**Fix:** Expect U+FFFD for control bytes and a space for bidi controls.
+
+## Test compilation raced an incomplete module edit
+
+**What happened:** A focused Cargo test compiled a new module declaration before its test file was created, and failed with a missing file error.
+
+**Why:** Editing continued while a test waited on the shared build lock.
+
+**Prevention:** Finish dependent file edits before starting or queuing a Cargo test.
+
+**Fix:** Complete the module files and rerun the focused test.
+
+## Direct test binary ran without its writable temporary directory
+
+**What happened:** Running a Cargo-built test binary directly selected an overly broad test filter and failed many tests when /tmp was read-only.
+
+**Why:** Bypassing Cargo also bypassed the approved command environment, and the filter matched unrelated tests.
+
+**Prevention:** Use a writable workspace TMPDIR and fully qualified test filters for direct test binaries.
+
+**Fix:** Rerun only the intended tests with workspace-backed temporary storage.
+
+## Tests That Copy the Daemon Tick Need a Work Dir Inside the Worktree (2026-11-08)
+
+**What happened:** `provision_gate` tests passed locally and failed only under the host job.
+
+**Why:** provision entries run sandboxed and see only the worktree. A test whose entry copies the daemon tick (`copy_tick_command`) from a work dir in a `/tmp` TempDir reads a path the entry cannot see under bwrap.
+
+**Prevention:** keep the work dir of such a test inside the worktree's TempDir, and run it through the host job (`loom stage complete`) before trusting a local pass.

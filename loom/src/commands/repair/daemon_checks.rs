@@ -9,10 +9,12 @@ use std::process::Command;
 use crate::daemon::{socket_path, DaemonServer, DaemonStatus};
 use crate::fs::work_dir::WorkDir;
 
-use super::{RepairIssue, Severity};
+use super::DetectedIssue;
+
+mod issues;
 
 /// Detect daemon singleton and socket failure modes for `repo_root`.
-pub(super) fn check_daemon_health(repo_root: &Path) -> Vec<RepairIssue> {
+pub(super) fn check_daemon_health(repo_root: &Path) -> Vec<DetectedIssue> {
     let work_dir = WorkDir::new(repo_root)
         .map(|wd| wd.root().to_path_buf())
         .unwrap_or_else(|_| repo_root.join(".loom").join("work"));
@@ -29,30 +31,14 @@ pub(super) fn check_daemon_health(repo_root: &Path) -> Vec<RepairIssue> {
 /// THIS repository — two plans in two different repositories each run their
 /// own daemon, and each repository's `loom repair` must not flag the other's
 /// as a duplicate.
-fn check_multiple_daemon_processes(work_dir: &Path) -> Vec<RepairIssue> {
+fn check_multiple_daemon_processes(work_dir: &Path) -> Vec<DetectedIssue> {
     let repo_root = derive_repo_root(work_dir);
     let lock_pid = DaemonServer::check_lock(work_dir);
     let processes = find_loom_run_processes();
     let run_pids = daemons_serving(&repo_root, &processes, lock_pid);
-    if run_pids.len() <= 1 {
-        return Vec::new();
-    }
-    let pid_list = run_pids
-        .iter()
-        .map(|p| p.to_string())
-        .collect::<Vec<_>>()
-        .join(", ");
-    let keep_hint = match lock_pid {
-        Some(pid) => {
-            format!("Keep the lock holder (PID {pid}); stop the others with `kill <pid>`")
-        }
-        None => "Stop the stale daemons with `kill <pid>` (no lock holder found)".to_string(),
-    };
-    vec![RepairIssue {
-        severity: Severity::Critical,
-        description: format!("Multiple 'loom run' processes alive (PIDs: {pid_list})"),
-        fix_description: keep_hint,
-    }]
+    issues::multiple_daemons(&run_pids, lock_pid)
+        .into_iter()
+        .collect()
 }
 
 /// Derive the repository root implied by a resolved `.loom/work` or legacy
@@ -157,7 +143,7 @@ fn process_cwd(_pid: u32) -> Option<PathBuf> {
 
 /// (2)/(3) Lock held by a live daemon, but PID file or socket missing; or no
 /// lock holder while a process still appears alive with an unreachable socket.
-fn check_daemon_socket_and_pid(work_dir: &Path) -> Vec<RepairIssue> {
+fn check_daemon_socket_and_pid(work_dir: &Path) -> Vec<DetectedIssue> {
     let mut issues = Vec::new();
     if let Some(lock_pid) = DaemonServer::check_lock(work_dir) {
         if crate::process::is_process_alive(lock_pid) {
@@ -165,37 +151,17 @@ fn check_daemon_socket_and_pid(work_dir: &Path) -> Vec<RepairIssue> {
             let socket_path = socket_path(work_dir);
 
             if !pid_path.exists() {
-                issues.push(RepairIssue {
-                    severity: Severity::Warning,
-                    description: format!(
-                        "Daemon lock held (PID {lock_pid}) but orchestrator.pid is missing"
-                    ),
-                    fix_description:
-                        "Restart the daemon: `loom stop`, then `loom run` (PID file was lost)"
-                            .to_string(),
-                });
+                issues.push(issues::missing_pid(lock_pid));
             }
 
             // Raw `Path::exists()`, not `check_status`: still sees the socket when a sandboxed `connect()` is denied.
             if !socket_path.exists() {
-                issues.push(RepairIssue {
-                    severity: Severity::Critical,
-                    description: format!(
-                        "Daemon lock held (PID {lock_pid}) but orchestrator.sock is missing (daemon unreachable)"
-                    ),
-                    fix_description:
-                        "Restart the daemon: `kill <pid>` then `loom run` (control socket was lost)"
-                            .to_string(),
-                });
+                issues.push(issues::missing_socket(lock_pid));
             }
         }
     } else if DaemonServer::check_status(work_dir) == DaemonStatus::ProcessOnly {
         // No flock holder, but a process appears alive with an unreachable socket. Checked via `== ProcessOnly`, not `Unreachable` too: our own sandboxed `connect()` denial also reads as `Unreachable` and must not restart a healthy daemon.
-        issues.push(RepairIssue {
-            severity: Severity::Warning,
-            description: "Daemon process appears alive but its socket is unreachable".to_string(),
-            fix_description: "Restart the daemon: `loom stop`, then `loom run`".to_string(),
-        });
+        issues.push(issues::process_only());
     }
     issues
 }

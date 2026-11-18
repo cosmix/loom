@@ -1,0 +1,134 @@
+/* The standalone shelf sits on the page ground below the feature cards: no box, no border. Its
+   summary row reads as the section's head; opened, it holds the table of every plan
+   (standalone-table.css), whose rows divide with hairlines (ui/DESIGN.md, Surfaces). */
+.shelf {
+  display: grid;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.shelf__move {
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: var(--space-2);
+  font-size: var(--type-ui);
+  overflow-wrap: anywhere;
+}
+
+/* ── Summary row: chevron, count and hint, the one action at the end, and under the count how
+      many plans are in each state, so the closed shelf still says what is running ──────── */
+
+.shelf__summary {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) auto;
+  grid-template-areas:
+    "chevron head action"
+    ". states states";
+  align-items: center;
+  gap: var(--space-1) var(--space-2);
+  min-height: 36px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.shelf__head {
+  grid-area: head;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 var(--space-2);
+  min-width: 0;
+}
+
+.shelf__states {
+  grid-area: states;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
+  min-width: 0;
+  color: var(--muted-foreground);
+  font-variant-numeric: tabular-nums;
+}
+
+.shelf__summary::-webkit-details-marker {
+  display: none;
+}
+
+.shelf__summary:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+  border-radius: var(--corner-control);
+}
+
+.shelf__chevron {
+  grid-area: chevron;
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  color: var(--muted-foreground);
+  transition: transform 120ms;
+}
+
+.shelf__details[open] .shelf__chevron {
+  transform: rotate(90deg);
+}
+
+.shelf__count {
+  font-size: var(--type-title);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.shelf__hint {
+  font-size: var(--type-ui);
+  color: var(--muted-foreground);
+}
+
+.shelf__actions {
+  grid-area: action;
+  display: flex;
+  justify-self: end;
+  min-width: 0;
+  max-width: 100%;
+  cursor: default;
+}
+
+/* A blocked control's reason wraps under its own button, so the action stays on the row. */
+.shelf__actions > div {
+  min-width: 0;
+  max-width: 28ch;
+  overflow-wrap: anywhere;
+}
+
+.shelf__empty {
+  padding: var(--space-2) 0 0 var(--space-5);
+}
+
+/* ── The selection bar on the table's toolbar ─────────────────────────────── */
+
+.shelf-bar,
+.shelf-bar__hint {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1);
+  margin: 0 0 0 auto;
+  font-size: var(--type-ui);
+  color: var(--muted-foreground);
+}
+
+.shelf-bar__count {
+  font-weight: 500;
+  color: var(--foreground);
+  font-variant-numeric: tabular-nums;
+}
+
+.shelf-bar__sep {
+  color: var(--muted-foreground);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shelf__chevron {
+    transition: none;
+  }
+}

@@ -10,6 +10,7 @@ use crate::commands::status::render::attention_model::attention_entries;
 use crate::commands::status::ui::tui::event_handler::{handle_key_event, KeyEventResult};
 use crate::commands::status::ui::tui::state::{GraphState, TuiActivityLog};
 use crate::models::stage::StageStatus;
+use crate::orchestrator::busy::LoopState;
 use crate::plan::graph::levels;
 use crate::quota::{ProviderQuota, QuotaSnapshot, QuotaWindow, WindowKind};
 use crate::tokens::{
@@ -38,9 +39,12 @@ fn plan_rate() -> TokenUsage {
 
 fn agent(id: &str, kind: AgentKind, model: &str, usages: [TokenUsage; 2], per: u64) -> AgentFlow {
     AgentFlow {
+        effort: None,
+        unit_id: None,
         id: id.to_owned(),
         kind,
         agent_type: None,
+        forwarder: None,
         model: Some(model.to_owned()),
         active: true,
         total: usages[0],
@@ -77,7 +81,7 @@ fn section4_agents() -> Vec<AgentFlow> {
         agent(
             "codex-01a1396b",
             AgentKind::Codex,
-            "gpt-6.1-sol",
+            "gpt-6.2-sol",
             [
                 usage(30_000, 300_000, 4_000_000, 50_000),
                 usage(200, 3_000, 50_000, 600),
@@ -187,7 +191,7 @@ fn render_with_pane(data: &StatusData, height: u16) -> Vec<String> {
         spinner: '⠋',
         scroll_y: 0,
         legend_open: false,
-        tick_age_secs: Some(2),
+        loop_state: LoopState::Ticking { age_secs: 2 },
         last_error: None,
         now_epoch: NOW,
         scrollable: false,
@@ -252,7 +256,7 @@ fn live_and_models_flow() -> TokenFlow {
     flow.models = [
         ("claude-sonnet-5-5", "medium"),
         ("claude-opus-5-5", "xhigh"),
-        ("gpt-6.1-sol", "xhigh"),
+        ("gpt-6.2-sol", "xhigh"),
     ]
     .into_iter()
     .map(|(model, effort)| ModelUsage {
@@ -303,7 +307,7 @@ fn render_pane_scenario(width: u16, height: u16) -> Vec<String> {
         spinner: '⠋',
         scroll_y: 0,
         legend_open: false,
-        tick_age_secs: Some(2),
+        loop_state: LoopState::Ticking { age_secs: 2 },
         last_error: None,
         now_epoch: NOW,
         scrollable: false,
@@ -325,7 +329,7 @@ fn a_short_terminal_keeps_the_live_rows_when_the_model_block_does_not_fit() {
         "{rows:#?}"
     );
     assert!(!contains(&rows, "BY MODEL"), "{rows:#?}");
-    assert!(!contains(&rows, "gpt-6.1-sol"), "{rows:#?}");
+    assert!(!contains(&rows, "gpt-6.2-sol"), "{rows:#?}");
 }
 
 #[test]
@@ -334,5 +338,5 @@ fn a_tall_terminal_shows_the_live_rows_and_the_model_block() {
 
     assert!(contains(&rows, "fresh per 30 s cell"), "{rows:#?}");
     assert!(contains(&rows, "BY MODEL"), "{rows:#?}");
-    assert!(contains(&rows, "gpt-6.1-sol"), "{rows:#?}");
+    assert!(contains(&rows, "gpt-6.2-sol"), "{rows:#?}");
 }

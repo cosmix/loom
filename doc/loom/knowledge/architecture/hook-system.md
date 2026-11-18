@@ -1,30 +1,23 @@
 ---
 sources:
-  - loom/src/hooks/mod.rs
-  - loom/src/hooks/generator.rs
-  - loom/src/hooks/config.rs
-  - loom/src/fs/permissions/hooks.rs
-  - loom/src/fs/permissions/codex_hooks.rs
-  - loom-hooks/_common.sh
+- loom/src/hooks/mod.rs
+- loom/src/hooks/generator.rs
+- loom/src/hooks/config.rs
+- loom/src/fs/permissions/hooks.rs
+- loom/src/fs/permissions/codex_hooks.rs
+- loom-hooks/_common.sh
 verified: 5546d3c47ddc1f8890b40157134f057393b8b90e
 ---
 
 # Hook System
 
-> Hook embedding, SessionStart
+>
 
 ## Hook System Architecture (loom/src/hooks/)
 
-The `loom/src/hooks/` module provides Claude Code hooks integration for session lifecycle management, plus a Codex-native subset installed through `fs/permissions/codex_hooks.rs`. It is a **top-level module** — currently imported by `orchestrator/` and `git/worktree/`, which is a known layering violation (both should import a stable hooks interface instead).
+The top-level `loom/src/hooks` module owns `HookEvent`, hook discovery and event-log readers. Global guard registrations come from `fs/permissions/hooks/config.rs`. The capsule builder combines those guards with shared session event rules, relay hooks and interpreter handling; stage, contract and knowledge capsules register every event, while other capsules register heartbeat.
 
-**Layering:** `loom/src/hooks/` is used by `orchestrator/core/stage_executor.rs` (worktree hook setup) and `git/worktree/settings.rs` (settings injection). The intended fix is to extract hooks as a fully independent top-level module with no reverse imports.
-
-**Global vs session hooks distinction:**
-
-- **Global hooks** include commit filtering, Git-add protection, Bash isolation, the canonical five-tool file guard, plan-path protection, `prefer-modern-tools.sh`, and the forwarding guard. They are installed under `~/.claude/hooks/loom/` and registered by `fs/permissions/hooks.rs`, so they persist across sessions. `prefer-modern-tools.sh` lives here as a global `PreToolUse:Bash` hook (`fs/permissions/hooks/config.rs`) — there is no `PreferModernTools` `HookEvent` variant (deleted); it never was one of the session hooks below.
-- **Session hooks** (session-start.sh, post-tool-use.sh, pre-compact.sh, session-end.sh, learning-validator.sh, subagent-start.sh, subagent-stop.sh, teammate-idle.sh): generated fresh per-session by `loom/src/hooks/generator.rs:generate_hooks_settings()` from the **8** `HookEvent`s that `HooksConfig::to_settings_hooks()` (`loom/src/hooks/config.rs`) emits, derived by iterating `HookEvent::all()` rather than eight hand-written blocks. Written into the per-session settings capsule (`<work_dir>/capsules/<session-id>.settings.json`) that every session kind launches with `--settings`; `contents.rs` sets `settings["hooks"]` (`loom/src/orchestrator/terminal/native/session_settings/contents.rs::capsule_settings`). No session loads a `settings.local.json`. `TeammateIdle` (`teammate-idle.sh`) was added for agent-team teammates, which never fire `SubagentStop`; it writes nonterminal idle evidence through the same shared lifecycle-journal/heartbeat helpers (`loom-hooks/_lifecycle.sh`) that `subagent-stop.sh` uses.
-
-`LOOM_HOOKS` (the full inventory: session hooks, global `PreToolUse` guards, compatibility bridges, and sourced libraries `_common.sh`/`_lifecycle.sh`/`_codex_forward.sh`/`_read_discipline.sh`/`_read_ledger.sh`/`_progress-classification.sh`/`_post-tool-heartbeat.sh`/`_subagent-preamble.txt`) is 42 rows. Earlier text said 33; the array in `fs/permissions/constants.rs` has since gained four sourced libraries plus `loom-control-complete.sh`, `loom-relay.sh`, `codex-forward-result.sh` and `teammate-idle.sh`. Claude's global `PreToolUse` registration alone is 47 entries, including `spawn-guard.sh` (Task+Agent), `read-guard.sh` (Read), and `poll-guard.sh` (Bash). Installers iterate `LOOM_HOOKS`; trigger configuration and tests remain separate registration surfaces — see [Registration Sites for a New Hook](../entry-points/hooks.md).
+Installed shell guards consume the shared `loom-hooks/worktree-policy.json` rule data and additionally enforce context, filesystem and shared-root boundaries. The production capsule builder consumes the session-event rules through `session_event_rules`, while guard and relay registration remain capsule-specific. Installed guard, mutation and installer tests exercise the shared owner.
 
 ## Hook System — Session-Start Behavior and hookSpecificOutput Pattern
 
@@ -70,9 +63,9 @@ Used by hooks to inject context into Claude's next turn:
 
 **Construction:** Always use `jq -nc --arg ctx "..."  '{hookSpecificOutput: {hookEventName: "...", additionalContext: $ctx}}'` — never manually escape JSON strings.
 
-**jq availability:** a hook must never fail open just because jq is missing. Blocking guards
+**jq availability:** a hook never fails silently when jq is missing. Blocking guards
 (header documents exit 2) call `loom_require_jq` at the top of the script, right after sourcing
-`_common.sh`; advisory hooks call `loom_warn_no_jq` instead — both defined in `loom-hooks/_common.sh`.
+`_common.sh`; advisory hooks call `loom_warn_no_jq` instead — both defined in `loom-hooks/_common.sh`. `subagent-verify-guard.sh` blocks but calls `loom_warn_no_jq`: it only deters, so its own breakage must not stop a stage.
 Lifecycle hooks (`session-start.sh`, `post-tool-use.sh`, `subagent-start.sh`, `subagent-stop.sh`)
 keep their own explicit `command -v jq` skip rather than either helper. See
 [stack.md](../stack.md#hook-runtime-dependencies-jq-rg-fd) for the Rust-side preflight/repair checks.
@@ -104,12 +97,18 @@ Pinned by `loom-hooks/tests/post-tool-use-main-edit-advisory.sh` and
 
 ## Subagent Isolation
 
-Three-layer defense: documentation (the subagent preamble `spawn-guard.sh` prepends to every typed spawn; CLAUDE.md Rule 5), signal injection (cache.rs prefix), and hook enforcement — which is now **two** hooks, not one:
+Three-layer defense: documentation (the subagent preamble `spawn-guard.sh` prepends to every typed spawn; CLAUDE.md Rule 5), signal injection (cache.rs prefix), and hook enforcement, split across these hooks:
 
 | Hook                       | Enforces                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `commit-filter.sh`         | subagents may not run git operations; blocks AI attribution in commit messages. Matches argv TOKENS (raw-regex fallback on an unterminated quote), so quoted prose about git is not a git invocation                                                                                                                                                                                                                                                                                                                                                                                                          |
-| `subagent-verify-guard.sh` | **still matches raw command strings** (see concerns.md). Subagents may not run project-wide build/test/lint/typecheck suites: at most one narrowly-scoped check. In a live standard stage it also blocks the main agent from an unfiltered test suite of any adapter runner; build, clippy and fmt stay allowed. Subagents of `integration-verify` stages are carved out, because that stage keeps its own gate. Ordinary sessions are never blocked (`live_loom_session`, `loom-hooks/subagent-verify-guard.sh`, needs a live `LOOM_MAIN_AGENT_PID` ancestor). Deliberately has **no opt-out env var** |
+| `commit-filter.sh` | Subagents may not run git operations; blocks AI attribution in commit messages. Matches argv TOKENS (raw-regex fallback on an unterminated quote), so quoted prose about git is not a git invocation. A command whose every git segment provably targets a scratch repository (`loom_git_targets_scratch_only`, `_git-command.sh`) is exempt from the subagent `git commit`/`git add` rule and the no-git-commit rule; the subagent completion deny and the isolation-bypass rule are never exempt |
+| `subagent-verify-guard.sh` | walks command-position tokens with a private scanner (see concerns.md) and deters rather than enforces, since it sees only the command line; its runner matchers live in the sourced `_verify_matchers.sh`, and a missing helper or a missing `jq` lets the call through with a warning. A subagent may compile (`cargo check`, `cargo build`, `cargo test --no-run`, `tsc --noEmit`, `<pm> run build`) and is blocked on every `cargo fmt` form, `cargo clippy`, unfiltered test suites and `lint`/`typecheck` scripts. In a live standard stage it also blocks the main agent from an unfiltered test suite of any adapter runner; build, clippy and fmt stay allowed. Subagents of `integration-verify` stages are carved out, because that stage keeps its own gate. Ordinary sessions are never blocked (`live_loom_session`, `loom-hooks/subagent-verify-guard.sh`, needs a live `LOOM_MAIN_AGENT_PID` ancestor). Deliberately has **no opt-out env var** |
+| `worktree-isolation.sh` | Resolves each `../` token and each `git -C`/`--git-dir` target against the tracked effective cwd (`loom_track_cwd`, `_containment.sh`: physical resolution, `cd` tracked through `&&`, `;` and newline, taint after a subshell or splice) and blocks only a target outside the worktree and scratch; an unknown cwd warns for a traversal and blocks a git target. The scratch class is keyed on `LOOM_SCRATCH_DIR` only, never `TMPDIR` |
+| `worktree-file-guard.sh` | Component-aware file boundary for the file tools; write confinement unchanged. The Read tool may open this session's `tool-results/*` files and regular uid-owned files under `/tmp/claude-<uid>` (outside other sessions' uuid directories) |
+| `loom-control-complete.sh` | Only a payload classified main gets the hook's `allow` for the pinned completion command, and the plain `loom stage complete <own-id>` (bare, `2>&1`, one `\| tail/head -N`) is rewritten to it; a subagent gets none |
+| `_read_ledger.sh` (via `read-guard.sh`, `poll-guard.sh`) | An unoutlined first whole read of a large file warns; an outlined one is denied once with its outline |
+
+Every guard in this table records its blocks through `loom_record_block` (`_common.sh`) into `$LOOM_WORK_DIR/heartbeat/<stage>.blocks.jsonl` on the Claude lane only (the codex lane's hooks cannot write it); `loom hook blocks [--since-hours N] [--by-rule]` reads that directory verbatim. The resolver, each guard's decisions and the ledger are described in the sections below.
 
 **Detection is payload-first, not a PPID comparison.** Both hooks gate on `loom_is_subagent()` in
 `loom-hooks/_common.sh`, which first requires `LOOM_MAIN_AGENT_PID` to be a **live ancestor** of the
@@ -162,6 +161,7 @@ differ where it matters. The rules, in `loom-hooks/_lifecycle.sh` unless noted:
   with parameter expansion, never `read <<<`.
 - **Ledger appends** (`loom_lifecycle_journal_ready`, the stop-skips append) require a regular file or an
   absent path, never a symlink: a planted FIFO would block the hook.
+- **Heartbeat lock** (`_heartbeat.sh`). Every shell heartbeat and lifecycle-journal writer serializes with `mkdir` and `rmdir` alone: stock macOS Bash 3.2 has no `flock(1)`, and a hook primitive must not depend on the `loom` binary on `PATH`. A held lock is `<lock-dir>/owner.<pid>.<created>.<nonce>/`. A reclaimer removes only the name it examined and `rmdir` of the lock directory refuses while an owner is published, so a stale decision cannot hit a later owner. An unparseable entry is never removed, so the lock stays held and writers skip their refresh. Residuals: a clock step of over 5 s, and PID reuse within 5 s.
 - **Tests.** `loom-hooks/tests/run-all.sh` runs in the `hook-syntax` CI job twice, plain and with
   `LOOM_HOOK_TEST_BSD=1`, which puts `loom-hooks/tests/bsd-shims/` (padded `wc`, BSD `stat` including
   `-f '%Lp'`, BSD `date` with `-r` and `-j -f`) first on PATH. Each shim carries a `# loom-bsd-shim`
@@ -175,7 +175,7 @@ differ where it matters. The rules, in `loom-hooks/_lifecycle.sh` unless noted:
 message, so `subagent-stop.sh` (`loom_subagent_stop_skip`) appends one row to
 `.loom/work/subagents/<stage>/stop-skips.jsonl`: `{"ts":"<UTC>","agent_id":"<id>","agent_type":
 "loom-code-reviewer","reason":"<code>"}`. It is diagnostic only: it never creates the directory,
-follows a symlink, or changes the hook's exit code. `verify/review/gate.rs::harvest_hint` compares the
+follows a symlink, or changes the hook's exit code. A harvest that failed writes `review_harvest_failed`, suffixed with its cause when one is known: `.transcript_unusable`, `.no_start_evidence`, `.worktree_changed` (`commands/hook/review_harvest_failure.rs`) or `.timed_out`. A repeated stop for a round already recorded is a duplicate and writes no row. `verify/review/gate.rs::harvest_hint` compares the
 `starts.jsonl` reviewer spawns with the recorded rounds, opens both ledgers read-only (no symlink, regular
 file, size cap), and `loom stage review status` and the review gate's failure message print
 `N reviewer spawns, M rounds, K stop events not harvested` with the last recorded skip reasons and a
@@ -227,8 +227,8 @@ session's prompt delivery record; `pre-compact.sh` calls it in worktree sessions
 `loom-relay.sh`), `review-harvest` (`subagent-stop.sh`), and the receipt and brief delegates:
 `forward-receipt` (`post-tool-use.sh` pipes the PostToolUse payload to its stdin after a Bash
 call containing `codex-forward.sh task`; it takes no flags) and
-`worker-brief` (`spawn-guard.sh`, skipped for Codex-bound spawn types). The shell runs the hook-called delegates through `loom_run_bounded`
-(`_bounded.sh`): 3 s for `context-ceilings` and `pre-compact`, 5 s for `worker-brief` and
+`worker-brief` (`spawn-guard.sh`, skipped for Codex-bound spawn types) and `reviewer-brief` (`spawn-guard.sh`, only for `loom-code-reviewer` spawns; see "Reviewer Brief Hook"). The shell runs the hook-called delegates through `loom_run_bounded`
+(`_bounded.sh`): 3 s for `context-ceilings` and `pre-compact`, 5 s for `worker-brief`, `reviewer-brief` and
 `forward-receipt`, 10 s for `review-harvest`; every failure is a silent no-op.
 Phases and state files: [Token Accounting and Receipts](token-accounting-and-receipts.md).
 
@@ -272,36 +272,68 @@ Set by the wrapper script before `exec claude` (`orchestrator/terminal/native/wr
 
 ### Hook Embedding (constants.rs)
 
-`LOOM_HOOKS` (`fs/permissions/constants.rs`) holds **42 entries** (earlier text said 33), each embedded via
-`include_str!()` at compile time. `install_loom_hooks()` writes them to
-`~/.claude/hooks/loom/` with mode 0o755. Hooks are NOT read from disk by loom at
-runtime.
+`LOOM_HOOKS` in `loom/src/fs/permissions/constants.rs` embeds hook assets with `include_str!`; `install_loom_hooks()` installs them under `~/.claude/hooks/loom/`. The binary uses the embedded sources, so source changes require a rebuild and asset installation. The inventory includes invoked hooks and sourced libraries; sourced libraries have no event trigger. Global and session hook registration is defined separately in `fs/permissions/hooks/config.rs` and `loom/src/hooks/config.rs`; Codex registrations are in `fs/permissions/codex_hooks.rs`.
 
-**Do not read "42 entries" as "42 hooks."** The arithmetic, verified against
-`fd . loom-hooks --max-depth 1 -t f | wc -l`, the `LOOM_HOOKS` array in
-`loom/src/fs/permissions/constants.rs`, and the script names in
-`fs/permissions/hooks/config.rs`:
+`knowledge-orient.sh` is registered globally on `SessionStart` and points a fresh non-stage session to `doc/loom/knowledge/INDEX.md`. It exits silently inside a stage, on `compact` or `resume`, and when no index exists inside the git root.
 
-```text
-43 top-level files in loom-hooks/    (earlier text said 34)
- −1  git-pre-commit-hook.sh    (excluded from LOOM_HOOKS; appended to .git/hooks/pre-commit by loom init)
- ───
- 42  LOOM_HOOKS entries installed to ~/.claude/hooks/loom/    (earlier text said 33)
- −8  _common.sh, _lifecycle.sh, _codex_forward.sh, _read_discipline.sh, _read_ledger.sh,
-     _progress-classification.sh, _post-tool-heartbeat.sh, _subagent-preamble.txt
-     (sourced libraries, not registered hooks — earlier text listed only 3)
- −1  codex-forward.sh          (wrapper the codex forwarding lane invokes directly)
- −1  codex-apply-patch.sh      (Codex apply_patch bridge, registered only by codex_hooks.rs)
- ───
- 32  Claude Code hooks: 24 global, registered in fs/permissions/hooks/config.rs,
-                        + 8 session hooks emitted from HookEvent   (earlier text said 21 + 7)
-```
+## Forwarded Codex context hooks
 
-One of the global hooks is `knowledge-orient.sh`, the only hook registered
-**globally** on `SessionStart` (`fs/permissions/hooks/config.rs`) rather than
-per-session — it points a fresh non-stage session at `doc/loom/knowledge/INDEX.md`.
-It exits silently inside a stage, on `compact`/`resume`, and when no `INDEX.md`
-exists inside the git root.
+`loom-hooks/codex-forward.sh` exports `LOOM_CODEX_FORWARD=1` before launching either the companion or direct Codex lane. With a nonempty marker, `skill-trigger.sh --codex`, `user-prompt-context.sh`, and `knowledge-orient.sh` exit 0 without output before processing input. Claude-mode skill suggestions retain their normal behavior. Guard hooks still run; the marker suppresses only these context-injecting hooks. The wrapper retains its instruction against opening skill files, while hook suppression prevents forwarded jobs from receiving injected skill/context directives.
 
-Re-derive these with the commands above rather than trusting the numbers here —
-they have gone stale three times.
+## Pre-commit chaining and control paths
+
+`install_pre_commit_hook` (`git/hooks.rs`) installs in the directory git runs hooks from (`git/hooks/location.rs`): `.git/hooks`, or a `core.hooksPath` inside the repository, untracked and reached through no symlink. Another `core.hooksPath` is refused with its reason, unless the hook is already there, which is how an operator serves a shared one. A foreign executable hook is preserved byte-for-byte as `pre-commit.loom-original` and invoked after Loom through the installed wrapper. An earlier Loom section is replaced in place, keeping every other byte; markers that do not bound one section, a hook without an executable shebang, and a symlink whose target is missing are refused untouched. Hook control-path classification refuses existing symlink ancestors when their link and destination cannot be represented by one protected prefix.
+
+## Spawn Guard: Untyped Spawns (`loom-hooks/spawn-guard.sh`)
+
+An untyped spawn (no `subagent_type`, or `general-purpose`, `claude`, `Plan`) would inherit the spawning session's model. The guard's case arm (`spawn-guard.sh:223`) handles it by session:
+
+- **Inside a live stage session** (`GATE_PASSED`: `LOOM_STAGE_ID` set and `LOOM_MAIN_AGENT_PID` a live ancestor) the spawn is denied with exit 2, whether or not a `model` was passed.
+- **Anywhere else** the spawn proceeds with a warning. When the input names no `model`, the hook rewrites it to `model: sonnet` through `updatedInput` (`spawn-guard.sh:233-236`); an explicit `model` is left alone. `LOOM_STAGE_ID` leaks into plain shells ([session-identity-env](../mistakes/session-identity-env.md)), which is why the live-ancestor test gates denial.
+- `TYPED_AGENTS` names the typed alternatives. `tests/spawn-guard-*.sh` pin both arms; the sonnet rewrite case is mutation-checked.
+- A non-object `tool_input` makes the `. + {model}` merge fail, so the hook exits non-zero and fails open without the rewrite ([code-quality-and-hook-debt](../concerns/code-quality-and-hook-debt.md)).
+
+## Reviewer Brief Hook (`loom hook reviewer-brief`)
+
+`spawn-guard.sh` appends a brief that loom computes to every `loom-code-reviewer` spawn made inside a live stage session, beside the worker brief (`_spawn_policy.sh::loom_reviewer_brief`, appended last through `loom_append_brief`). The hook reads no stdin, gets `/dev/null`, runs under `loom_run_bounded` for 5 s and fails open: a missing command, a timeout, a bad envelope or empty output changes nothing, and is reported only through `loom_debug`. The body sits inside a nonce envelope (`<!-- loom-reviewer-brief ... -->`, the same nonce rule as the worker brief), so text in an agent-written statement cannot close it; `clean`/`single_line` (`verify/review/report.rs`) strip control and Unicode format characters (bidi overrides, zero-width) from every agent-written value, and `fence_for` picks a code fence longer than any backtick run inside the text. The guard appends unconditionally, so a reviewer prompt that already pastes a brief holds two; `agents/loom-code-reviewer.md` therefore says only the LAST `loom-reviewer-brief` section in a prompt is loom's. The stage signal tells the orchestrator not to paste the brief (`orchestrator/signals/v2_section_review.rs`).
+
+- **Code** (`commands/hook/reviewer_brief.rs`, `reviewer_brief_plan.rs`). The brief lists the stage's current test-integrity events (`integrity::current_events`) with each lost assertion statement (at most 25 per event, 400 bytes per statement) and asks for a finding for every lost guard that no equal or stronger check replaces. An event the stage description names as expected, with its reason, needs a finding only when the changed statement no longer asserts what that reason describes (the stage orchestrator pastes its INTEGRITY line into every reviewer prompt); an accepted event is context only. The body is capped at `MAX_BRIEF_BYTES` (16 KiB) with a line naming omitted events. A stage the daemon cannot read yields `{}` and the guard adds nothing.
+- **Integration-verify** also gets the files the plan's merged stages changed, the plan's brief directory and every stage's `consumer_deferred`. Loom records no plan base commit, so the files are the sorted union, over every other non-knowledge stage with a `completed_commit`, of the paths between `merge-base(<merge>^1, completed_commit)` and `completed_commit`, where `<merge>` is the merge in the target's first-parent history whose second parent is that commit (`plan_changed_files`, using `control_paths::{accepted_change_base, changed_paths}` as `orchestrator/signals/retrieval.rs` does). A stage with no such merge is listed as not found and adds no files; knowledge stages commit on the target directly and are skipped. A 10 KiB budget lists the paths that fit and summarises the rest by directory. A failed stage listing reports `stage listing failed: ...` rather than "no stage of this plan has completed".
+- **Fixtures** for a command that spawns a stage-bound `loom` write `test_support::write_main_checkout_identity(repo, work_dir)` first: every pinned-git path requires `main-checkout-identity.json`, and a fixture without it can never pass against a correct implementation ([mistakes/contract-autonomy-delivery](../mistakes/contract-autonomy-delivery.md#a-reviewer-brief-fixture-spawned-a-stage-bound-command-without-a-checkout-identity)).
+- **Reviewers have no Skill tool** (`tools: Read, Glob, Grep`), so a brief that tells a reviewer to load a security or concurrency skill cannot be followed; quote the checklist into the brief instead.
+- Integration-verify's parallel review gains a performance dimension; its reviewer reads the whole plan's change and the briefs.
+
+## Path Resolution and Working-Directory Tracking
+
+`loom-hooks/_containment.sh` is the one resolver the Bash and file guards share. It decides soundly or says it cannot.
+
+- **Physical resolution.** `loom_normalize_path <base> <path>` returns the absolute physical path a token names from `<base>`. Before a `..` pops a component the prefix built so far is made physical (`cd -P`), so `<wt>/.loom/work/../x` is `<repo>/.loom/x` (every worktree's `.loom/work` is a symlink into the main checkout). `loom_normalize_word` wraps it for git targets, the scratch exemption and `cd` tracking: it rejects a word with a glob, brace or backslash-escape component, which bash expands before `..` applies. The resolver returns 1 for `~user`, any other `$` and a backtick.
+- **`loom_track_cwd`** (after `loom_tokenize_command`) fills `LOOM_TOKEN_CWD[i]`, the physical directory token `i` runs in, or `""` when unknown. It follows `cd` through `&&`, `;` and newline only. A `cd` behind `&&` after an unverified one stays unverified; behind `||`, `|`, `&` or a redirection the cwd becomes unknown. **Taint rule:** a separator holding `(`, `)`, a backtick or an empty body (a `$(` or `sh -c` splice) makes every segment after the first directory change unknown, and a segment with `cd`, `pushd`, `popd`, `eval`, `source` or `.` counts as a directory change. A `CDPATH` mention makes later `cd` unknown. Every extension only adds unknown cases (fail closed).
+- **`loom_path_class <abs>`** prints `state` (`<repo>/.loom/work`, `.work`, `.git`), `sibling` (another stage's worktree), `worktree`, `scratch` or `outside`. The scratch class is keyed on `LOOM_SCRATCH_DIR` alone, never on `TMPDIR`: the root must be absolute, an existing non-symlink directory owned by the uid (`_loom_scratch_root`), and a root inside the repo is never scratch. Hooks inherit the daemon environment, and the Bash tool's `TMPDIR=/tmp/claude-<uid>` exists only inside each command, so a TMPDIR key would class every uid-owned fixture as scratch.
+- **Scratch expansion.** A `$LOOM_SCRATCH_DIR` or `${LOOM_SCRATCH_DIR}` token expands to the hook's value only while `LOOM_SCRATCH_EXPAND=1` (`_loom_scratch_expand_allowed`). The command forfeits it when it could reassign the variable (`${LOOM_SCRATCH_DIR:=x}`, `eval`, `source`, `.` at a command word) or when the tokenizer set `LOOM_TOKEN_LITERAL_DOLLAR`, which it does for a single-quoted, backslash-escaped or nameless `$`. The tokenizer owns that test because it drops quotes and escapes, and `$\LOOM_SCRATCH_DIR` or `"$"LOOM_SCRATCH_DIR` produce the same token text as a real read.
+
+## What Each Changed Guard Decides
+
+- **`worktree-isolation.sh`.** `check_path_traversal_resolved` resolves each `../` token against its tracked cwd and blocks only a target whose class is neither `worktree` nor `scratch`. A PAIR candidate (a `..` pair in the text) whose cwd is unknown is warned; one whose glob, brace or escape component precedes a later `..` cannot be resolved and blocks. A WIDENED candidate (a single `..`) that cannot be resolved stays allowed. Accepted residual: a glob component before one `..` (`cat .loom/w*/../x`) resolves lexically and reaches only `<repo>/.loom`. `git -C`, `--git-dir` and `--work-tree` are blocked unless the target is this worktree or scratch, and always when the cwd is unknown. `check_cross_worktree_tokens` exempts an absolute token with a known cwd that classes `worktree` or `scratch`; its own-stage exemption (`own_re`) is unanchored.
+- **`worktree-file-guard.sh`.** Write confinement is unchanged. The Read tool may open this session's harness `tool-results/*` files (`allow_tool_results`) and a regular uid-owned file under the literal `/tmp/claude-<uid>` outside another session's uuid directory (`allow_tmpdir`); Grep and Glob get neither. The root is the literal `/tmp/claude-<uid>` because hooks never see the Bash tool's TMPDIR. A hook test whose fixtures sit under that root cannot prove a block, so fixtures live outside it (`loom-hooks/tests/_fixture_base.sh`: `<uid-root>/loom-fixtures/<fixed uuid>`).
+- **`loom-control-complete.sh`.** Only a payload classified main (`completion_caller_is_main`) gets the hook's `allow`, with `updatedInput` carrying `timeout` and `description` only: for the exact pinned command and for `loom stage complete <own-id>`, bare or followed by `2>&1` and one `| tail/head -N`, rewritten to the pinned one. A subagent gets no allow and the plain spelling stays refused. An unknown verdict rewrites only with no `transcript_path` and `loom_is_subagent` false; an unrecognised `transcript_path` never counts as main. `run_in_background` and `dangerouslyDisableSandbox` never ride on the allow.
+- **`commit-filter.sh`.** `loom_git_targets_scratch_only` (`_git-command.sh`) lifts the subagent `git commit`/`git add` rule and the no-git-commit rule only when every git segment targets scratch, the hook's rev-parse puts toplevel, git dir and common dir in scratch (or the same `&&` chain ran `git init` there), every non-git word is in `{cd mkdir true : echo printf touch ls pwd cat}`, no token names a `.git` component or starts `GIT_`, and no git segment is redirected. A command with no git segment is never exempt. The subagent completion deny and the isolation-bypass rule (`unset LOOM_MAIN_AGENT_PID`) are unchanged.
+- **`subagent-verify-guard.sh`.** A subagent may compile: `cargo check`, `cargo build`, `cargo test --no-run` (the flag counts only before `--`), `tsc --noEmit` without a watch flag or `false`, `<pm> run build`. It still blocks every `cargo fmt` form, `cargo clippy`, unfiltered test suites and `lint`/`typecheck` scripts, whose bodies are not inspected. `tsc --noEmit false` is read as tsc with file argument `false` and passes. Integration-verify subagents stay carved out. The main agent of a live standard stage is blocked only on an unfiltered test suite.
+- **`loom-relay-guard.sh`.** Runs only with `LOOM_SESSION_ID` and `LOOM_SCRATCH_DIR` set, and returns before tokenizing unless the command text contains `loom`, `LOOM_R` or `RELAY_V1`. An untokenizable command passes unrecorded (the relay hook already says to rerun it alone). `relay_stdout_fate` walks the separator runs after a guarded invocation through substitution splices, `)`, `<` and heredoc openers, so the commit idiom `-m "$(cat <<'EOF' ... )" 2>&1 | rg x` still reaches its pipe; `;`, `&&`, `||` and a bare newline end the walk as free. `2>&1`, `|&` and a redirect of another descriptor leave stdout alone; `N>` counts as a descriptor redirect only when the `>` is glued to the digit, so `--criterion 2 > log` is refused. At a `;`, `&&`, `||` or newline, `_relay_group_exit` scans the later segments at the same depth, counting group openers (`{`, `if`, `for`, `while`, `until`, `case`, `select`) against closers (`}`, `fi`, `done`, `esac`); an unmatched closer means the invocation sits inside that group, and the walk resumes after it, so a pipe or redirect on a brace group, `if` or loop is charged to the loom call inside it. `check_filter_rule` keeps the same group stack for rule 2. An invocation whose command word sits at nesting depth above 0 (substitution, backticks, subshell, `sh -c` payload) is refused as captured. Both facts come from the tokenizer's `LOOM_TOKEN_META` side array (`_parser.sh`, read with `loom_token_depth` and `loom_token_glued` from `_parser_scan.sh`, carried through payload splices by `_parser_expand.sh`). Accepted fail-open: a `;` inside `$(...)` after the loom word. The first stderr line of a block starts with `[loom-relay-guard/<rule>]`.
+- **`_read_ledger.sh`.** An unoutlined first whole read warns; an outlined one keeps the deny-once ([Read Gate](read-gate.md#rule-1-is-deny-once)).
+
+## Block Ledger and `loom hook blocks`
+
+`loom_record_block <guard> <rule> <tool> <subject>` (`_common.sh`) appends one JSON line `{ts,stage,session,role,guard,rule,tool,subject}` to `$LOOM_WORK_DIR/heartbeat/<stage>.blocks.jsonl`. `role` is `subagent` when `loom_payload_agent_verdict` says so, else `main`; `subject` keeps its first 300 bytes (UTF-8 safe). The Claude lane only: it writes nothing when `LOOM_CODEX_FORWARD` is set (the codex sandbox denies `<repo>/.loom`), when `LOOM_WORK_DIR` is not an absolute existing directory, or when `jq` is missing. It appends only when the ledger is absent or a regular non-symlink file of at most 4 MiB (size read with `stat`, never `wc`, which would open a swapped-in FIFO), under `umask 077`, with no lock, and every failure is silent. `loom init` and `loom clean` delete it unarchived.
+
+Recorded guards and rules: `worktree-isolation` (the isolation rules, `policy-load`), `worktree-file-guard` (per rule, `bad-payload`), `loom-control-complete` (`not-pinned` only; identity, missing-checkout and no-trusted-binary exits stay unrecorded), `subagent-verify-guard` (`subagent-verify`, `gate-once`), `commit-filter` (`subagent-git`, `no-git-commit`, `subagent-complete`, `isolation-bypass`, `ai-attribution`), `git-add-guard` (`dangerous-add`), `loom-relay-guard` (`relay-stdout`, `relay-filter`) and `read-discipline` (`first-read`). Every recorded block's first non-empty stderr line starts with `[guard/rule]`. The guards that record nothing are listed in [Hook and Code-Quality Debt](../concerns/code-quality-and-hook-debt.md).
+
+`loom hook blocks [--since-hours N] [--by-rule]` (`commands/hook/blocks.rs`) reads `$LOOM_WORK_DIR/heartbeat` verbatim when the variable is set (non-UTF-8 included), else `WorkDir::new(".")`, and prints `reading <dir>` first. It reads the last 4 MiB and 50,000 lines of each `*.blocks.jsonl`, opened `O_NOFOLLOW|O_NONBLOCK` and checked as a regular file on the opened handle, counts a line over 4,096 bytes as malformed, and prints every control character as `?`. The default window is 168 hours and lists the 20 newest blocks; `--by-rule` prints counts per `guard/rule`, split by role, with three sample subjects each.
+
+## Testing Guards
+
+- **Fixture base.** Fixtures that must not sit under `/tmp/claude-<uid>` (`allow_tmpdir` opens every plain uid-owned file there, and the Bash tool's `TMPDIR` is that root) go to `<uid-root>/loom-fixtures/<fixed uuid>` (`loom-hooks/tests/_fixture_base.sh`), not `<checkout>/loom/target/tmp`: in a stage worktree the checkout path holds `.worktrees/<id>`, so `loom_cwd_worktree` would put every fixture cwd inside that worktree. A test whose fixtures come from `mktemp` in `${TMPDIR:-/tmp}` and expects a Read outside the worktree to block passes no more.
+- **Rust contract fixtures** (`loom/tests/hook_false_positive_contracts/`) set `GIT_CEILING_DIRECTORIES=<temp root>` for every hook run, because the temp root (`CARGO_TARGET_TMPDIR`) sits inside the checkout and `git rev-parse` in a scratch dir would find the outer repository. The copied hook directory gets an empty `tests/` subdirectory because `loom-control-complete.sh`'s `resolve_trusted_loom` honours `LOOM_CONTROL_TEST_BIN` only when `$(dirname $0)/tests` exists. Their temp paths hold `.worktrees/`, which is why `check_cross_worktree_tokens` exempts absolute tokens that resolve to class `worktree` or `scratch`.
+- **Ledger contract.** The first non-empty stderr line of every recorded block, after `trim_start`, starts with `[guard/rule]`; for `worktree-isolation`'s heredoc banners that is the `=====` line, so the tag goes there.
+- **Run hook tests plainly.** The installed `commit-filter.sh` blocks any command line containing `env -u LOOM_MAIN_AGENT_PID` as an isolation bypass, even one that only runs a hook test; the scripts scrub the hook environment inside `run_hook`. A functional test of a subagent verdict builds its own claude chain: the session's `LOOM_MAIN_AGENT_PID` is not visible in the stage Bash sandbox (PID namespace).
+- **Sandbox limits.** `UnixListener::bind` fails with `EPERM` inside the stage Bash sandbox; `commands/hook/tests_blocks_files.rs` makes the socket inode with `nix` `mknod(S_IFSOCK)`. `loom/tests/integration/hooks_subagent_verify_guard.rs` asserts `std::env::temp_dir()` holds no `claude`, so run it with `TMPDIR` set to a claude-free writable directory.

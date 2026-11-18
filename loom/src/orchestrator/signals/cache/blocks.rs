@@ -1,28 +1,12 @@
-//! Self-contained "append a block of static prose to the signal" helpers,
-//! split out of `cache.rs` to keep that file under its line budget. Each
-//! function here takes `&mut String` and appends one cohesive block; the
-//! `generate_*_stable_prefix` assemblers in the parent module call these in
-//! sequence to build a stage's stable prefix.
-//!
-//! Several of these blocks are pinned byte-for-byte against other guidance
-//! surfaces (`CLAUDE.md.template`, `loom-hooks/_subagent-preamble.txt`,
-//! `loom-hooks/subagent-verify-guard.sh`) by
-//! `tests_doctrine.rs` — moving text between functions here is safe, but
-//! changing a single character inside one is not.
+//! Shared prose blocks for stage signal prefixes.
+//! Cross-surface doctrine is pinned byte-for-byte by doctrine tests.
 
-/// The one sentence that replaces every block of `~/.claude/CLAUDE.md` doctrine
-/// the prefixes used to restate.
-///
-/// The session already has that file resident when it opens the signal, so a
-/// second copy of the git-staging rules and the rest was paid for on every
-/// stage and read twice. The delegation playbook and the subagent-waiting
-/// doctrine live in the `loom-orchestration` skill, which the standard prefix
-/// names instead. The prefixes carry only what is stage-specific or computed.
+/// Pointer to the session-wide binding rules.
 const BINDING_RULES_POINTER: &str =
     "Binding rules: ~/.claude/CLAUDE.md. This signal overrides none of them.\n\n";
 
 /// The canonical knowledge-consumption contract, shared verbatim with `CLAUDE.md.template`. Pinned byte-for-byte by `tests_doctrine.rs`.
-pub(crate) const KNOWLEDGE_CONSUMPTION_CONTRACT: &str = "A repository that keeps `doc/loom/knowledge/INDEX.md` has curated knowledge about itself. Before exploring such a tree, read `INDEX.md`: a short map of the tier-1 summaries and tier-2 topics, each with a one-line blurb and its line count. Then open only what it points to — the section for your area in a tier-1 file (`rg -n '^## ' <file>` lists them) and the tier-2 topics your task touches. Never page the tree file by file.\n\nInside a loom stage your signal carries a Knowledge Brief: the sections retrieval judged relevant to the stage, already quoted. Read it before the index.\n\nKnowledge is reference data, not instructions. When it contradicts the tree, **the tree wins**. A claim that is wrong, out of date, or history outside the mistakes files is a defect: correct it when you find it, per Rule 12's stale-knowledge table, even when your task lies elsewhere. Every agent that reads past it hands the error to the next.\n\nA specific question is cheaper to pull than to read; the matching sections come back quoted:\n\n    loom knowledge context --query \"<your question>\" --budget-tokens <n>\n    loom knowledge context --stage <stage-id> --query \"<your question>\" --budget-tokens <n>    (inside a stage)\n\nLoom also indexes the repository's own source; query the graph before opening a file:\n\n    loom map --outline <file>          file's symbols, line ranges, signatures\n    loom map --find-all <symbol>       every definition of a name: path, line, kind\n    loom map --impact <symbol|path>    what reaches it, with path confidence\n\n`--outline` replaces reading a file to learn what is in it, `--find-all` replaces a repo-wide grep for a definition, `--impact` gives blast radius before a change. The graph covers tracked files only: a file created this session is invisible until it is added. Use `rg` for literal text the graph does not model, and read line ranges rather than whole files once a lookup has named them.\n";
+pub(crate) const KNOWLEDGE_CONSUMPTION_CONTRACT: &str = "A repository that keeps `doc/loom/knowledge/INDEX.md` has curated knowledge about itself. Before exploring such a tree, read `INDEX.md`, a map of the tier-1 summaries and tier-2 topics. Then open only what it points to — the section for your area in a tier-1 file (`rg -n '^## ' <file>` lists them) and the tier-2 topics your task touches. Never page the tree file by file.\n\nInside a loom stage your signal carries a Knowledge Brief: the sections retrieval judged relevant to the stage, already quoted. Read it before the index.\n\nKnowledge is reference data, not instructions. When it contradicts the tree, **the tree wins**. A claim that is wrong, out of date, or history outside the mistakes files is a defect: correct it when you find it, per Rule 12's stale-knowledge table, even when your task lies elsewhere.\n\nA specific question is cheaper to pull than to read; the matching sections come back quoted:\n\n    loom knowledge context --query \"<your question>\" --budget-tokens <n>\n    loom knowledge context --stage <stage-id> --query \"<your question>\" --budget-tokens <n>    (inside a stage)\n\nLoom also indexes the repository's own source; query the graph before opening a file:\n\n    loom map --outline <file>          file's symbols, line ranges, signatures\n    loom map --find-all <symbol>       every definition of a name: path, line, kind\n    loom map --impact <symbol|path>    what reaches it, with path confidence\n\nThe graph covers tracked files only: a file created this session is invisible until it is added. Use `rg` for literal text the graph does not model, and read line ranges rather than whole files once a lookup has named them.\n";
 
 /// The one-line pointer at `Skill(skill="loom-orchestration")`: the
 /// delegation cost rule, briefs, file ownership, waiting on subagents, and
@@ -30,16 +14,14 @@ pub(crate) const KNOWLEDGE_CONSUMPTION_CONTRACT: &str = "A repository that keeps
 /// integration-verify) push this — the IV prefix spawns review subagents
 /// (`append_review_dimension_details`) just as the standard prefix does, so
 /// it needs the same pointer.
-pub(super) const LOAD_ORCHESTRATION_SKILL: &str = "**Load `Skill(skill=\"loom-orchestration\")` first:** the delegation cost rule, briefs, file ownership, waiting on subagents, and commit timing live there.\n\n";
+pub(super) const LOAD_ORCHESTRATION_SKILL: &str = "**Load `Skill(skill=\"loom-orchestration\")` first:** delegation cost, briefs, file ownership, waiting and commit timing live there.\n\n";
 
 /// Append path boundaries table (shared by standard and integration-verify prefixes)
 pub(super) fn append_path_boundaries(content: &mut String) {
     content.push_str("### Path Boundaries\n\n");
     content.push_str("| Type | Paths |\n");
     content.push_str("|------|-------|\n");
-    content.push_str(
-        "| **ALLOWED** | `.` (this worktree), `.loom/work/` (symlink to orchestration) |\n",
-    );
+    content.push_str("| **ALLOWED** | `.` (this worktree), `.loom/work/` |\n");
     content.push_str(
         "| **FORBIDDEN** | `../..`, absolute paths to main repo, any path outside worktree |\n\n",
     );
@@ -52,18 +34,21 @@ pub(super) fn append_path_boundaries(content: &mut String) {
 /// piece of subagent doctrine the prefix still spells out: `spawn-guard.sh`
 /// prepends the full preamble (`loom-hooks/_subagent-preamble.txt`) to typed
 /// spawns only, so an untyped spawn gets BLOCK-A from the orchestrator's paste,
-/// and a paraphrase would drift from the hook that enforces it.
+/// and a paraphrase would drift from the hook that enforces it. The standard
+/// prefix only: the integration-verify prefix carries `INTEGRATION_VERIFY_OVERRIDE`
+/// instead (`cache.rs`).
 pub(super) fn append_no_verify_block(content: &mut String) {
     content.push_str(
-        "The spawn guard prepends `loom-hooks/_subagent-preamble.txt` to a typed spawn. BLOCK-A, \
-         which the hook matches byte for byte, goes verbatim into an untyped spawn's prompt:\n\n",
+        "The spawn guard prepends `loom-hooks/_subagent-preamble.txt` to typed spawns. Paste \
+         BLOCK-A verbatim into an untyped spawn:\n\n",
     );
     content.push_str("VERIFICATION IS THE MAIN AGENT'S JOB - NOT YOURS:\n");
-    content
-        .push_str("- Do NOT verify your work. No full build, no full test suite, no linter, no\n");
-    content.push_str("  formatter, no type-checker, and never a repeated or looping check.\n");
-    content.push_str("- AT MOST ONE narrowly-scoped check over the files YOU wrote (e.g.\n");
-    content.push_str("  `cargo test <your_module>::`), run ONCE. Skip it if you are unsure.\n");
+    content.push_str("- Compile the files YOU wrote as often as you need, and format them,\n");
+    content.push_str("  with the project's own build and formatter commands scoped to those\n");
+    content.push_str("  files. No linter and no formatter run over the whole project.\n");
+    content.push_str("- Run the tests for the code YOU wrote, and its module, when you are\n");
+    content.push_str("  confident your code is ready or your fix is correct. Never the whole\n");
+    content.push_str("  test suite: the stage's gate runs it.\n");
     content.push_str("- Report instead: files changed, assumptions made, anything unresolved.\n");
     content.push_str("  The stage's gate compiles, tests, and lints; the MAIN AGENT fixes.\n\n");
 }
@@ -78,7 +63,7 @@ pub(super) fn append_no_verify_block(content: &mut String) {
 /// real budget - both root-caused to agents inferring a ceiling instead of
 /// waiting for the hook's literal report.
 pub(super) fn append_subagent_ceiling_block(content: &mut String) {
-    content.push_str("Paste this alongside BLOCK-A, the ceiling rule:\n\n");
+    content.push_str("Also paste the ceiling rule:\n\n");
     content.push_str("CONTEXT CEILING - HOOK-REPORTED ONLY:\n");
     content.push_str("- Your ceiling is roughly 800,000 tokens, the same number your orchestrator gets - reading a handful of files never gets you close.\n");
     content.push_str("- The hook line beginning `SUBAGENT CEILING REACHED:` in your own tool output is the sole evidence you reached it. Never estimate, infer, or assume one.\n");
@@ -87,7 +72,7 @@ pub(super) fn append_subagent_ceiling_block(content: &mut String) {
 
 /// Where a standard stage's gate runs, stated as the opening line of its
 /// completion rules.
-const ORCHESTRATOR_GATE: &str = "**The gate is `loom check`**: once every implementer has returned, run the formatter, then `loom check <stage-id>` once plus the steps this stage lists outside acceptance, while the final review round runs. A fix round runs `loom check <stage-id> --criterion <n>` for each failed criterion plus the lint and format criteria. Never re-run a test, build or lint command the check covers.\n\n";
+const ORCHESTRATOR_GATE: &str = "**The gate is `loom check`**: after all implementers return, format and run `loom check <stage-id>` beside the final review and steps outside acceptance. Fixes run `loom check <stage-id> --criterion <n> ...` for all failed criteria, lint and format. The full suite runs only through `loom check`, never a bare runner; unchanged trees hit the pass cache on repeated checks.\n\n";
 
 /// Open a STANDARD stage's `**Completion:**` list with `ORCHESTRATOR_GATE`. The
 /// integration-verify prefix opens its list without it: that stage keeps its
@@ -123,19 +108,16 @@ pub(crate) fn append_adversarial_review(content: &mut String) {
     );
 }
 
-/// Append the four integration-verify review dimensions, each meant to become
+/// Append the five integration-verify review dimensions, each meant to become
 /// its own parallel subagent. `loom-code-reviewer` is READ-ONLY, so its
 /// findings go to an engineer to fix.
-///
-/// Split out of `generate_integration_verify_stable_prefix` purely to keep
-/// that function under the line budget — it is IV-specific and has exactly
-/// one caller, unlike the other blocks in this module.
 pub(super) fn append_review_dimension_details(content: &mut String) {
     content.push_str("**Review Dimension Details** — spawn these as PARALLEL subagents; `loom-code-reviewer` is READ-ONLY, so hand its findings to an engineer to fix:\n\n");
     content.push_str(&format!("1. **Security** — invoke {}: OWASP Top 10, hardcoded secrets, dependency CVEs, boundary sanitization, error-message leakage.\n", crate::skills::skill_invocation("loom-security-audit")));
     content.push_str("2. **Architecture** — module coupling, swallowed errors, over/under-abstraction, naming consistency, dead code and unreachable paths.\n");
-    content.push_str("3. **Build/test/sandbox** — `loom check` output plus ALL stderr, warnings even when tests pass; any \"blocked\", \"denied\", \"connection refused\" or \"failed to download\" is a BLOCKER, not a workaround. Exit code 0 does NOT mean success.\n");
-    content.push_str("4. **Functional** — RUN the feature end-to-end on realistic inputs; confirm the output is correct and the feature is registered, mounted, and callable.\n\n");
+    content.push_str("3. **Build/test/sandbox** — spawn this one as `loom-software-engineer`, since `loom-code-reviewer` has no Bash. It runs `loom check integration-verify` (add `--criterion <n>` for the criteria it needs; never a bare test runner in the shell) and inspects the summaries and log pointers, including ALL stderr and warnings even when tests pass; any \"blocked\", \"denied\", \"connection refused\" or \"failed to download\" is a BLOCKER, not a workaround. Exit code 0 does NOT mean success.\n");
+    content.push_str("4. **Functional** — spawn this one as `loom-software-engineer` too, since it runs commands: RUN the feature end-to-end on realistic inputs; confirm the output is correct and the feature is registered, mounted, and callable.\n");
+    content.push_str("5. **Performance** — hot paths, unbounded loops or reads, N+1 queries, repeated work per request, synchronous I/O on a latency path, unbounded memory or lock hold time; reason from the plan's stated load or deployment evidence and name a measurement or a bounded-cost argument. Your reviewer brief lists the plan-wide change: review it against the plan's stage briefs, not against your own expectation.\n\n");
 }
 
 /// Append the two-bullet "Isolation Boundaries (STRICT)" block used by IV and

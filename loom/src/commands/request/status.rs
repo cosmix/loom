@@ -82,22 +82,23 @@ fn resolve_status(
 ) -> Result<ReportedStatus> {
     inbox::validate_request_id(id)?;
 
-    if let Some(scratch) = scratch {
-        if scratch.join(format!("{id}.req")).is_file() {
-            return Ok(ReportedStatus::PendingRelay);
+    if let Some(session) = session {
+        let status = inbox::request_status(work_dir, session, id)?;
+        if status != RequestStatus::NotFound {
+            return Ok(ReportedStatus::Inbox(status));
+        }
+    } else {
+        for session_id in list_inbox_sessions(work_dir)? {
+            let status = inbox::request_status(work_dir, &session_id, id)?;
+            if status != RequestStatus::NotFound {
+                return Ok(ReportedStatus::Inbox(status));
+            }
         }
     }
 
-    if let Some(session) = session {
-        return Ok(ReportedStatus::Inbox(inbox::request_status(
-            work_dir, session, id,
-        )?));
-    }
-
-    for session_id in list_inbox_sessions(work_dir)? {
-        let status = inbox::request_status(work_dir, &session_id, id)?;
-        if status != RequestStatus::NotFound {
-            return Ok(ReportedStatus::Inbox(status));
+    if let Some(scratch) = scratch {
+        if scratch.join(format!("{id}.req")).is_file() {
+            return Ok(ReportedStatus::PendingRelay);
         }
     }
     Ok(ReportedStatus::Inbox(RequestStatus::NotFound))
@@ -142,11 +143,13 @@ fn outcome_line(id: &str, waited: Waited, secs: u64, note: Option<String>) -> Re
         // still in the scratch directory, so the ticket still applies: the
         // hook relays it after the Bash call that created it ends.
         Waited::Settled(ReportedStatus::PendingRelay) => anyhow::bail!(
-            "request {id} is not relayed yet: the relay hook relays its ticket only after the Bash call that created it ends, so a wait chained into that call cannot see it; run `loom request status {id} --wait 90` again as its own Bash call and do not run the command that created the request again, which would create a second ticket the daemon refuses"
+            "request {id} is not relayed yet: the relay hook relays its ticket only after the Bash call that created it ends, so a wait chained into that call cannot see it; run `loom request status {id} --wait 90` again as its own Bash call and do not run the command that created the request again, which would create a second ticket the daemon refuses. If the Bash call that created it has already ended and printed no `LOOM relay: received` line, its relay line was lost: a control request (block, commit, dispute, handoff, verdict, merge, freeze) is never relayed later, so rerun that command alone, in the foreground, with stdout unfiltered; a memory request is relayed by the next foreground `loom memory` call"
         ),
-        Waited::Settled(ReportedStatus::Inbox(RequestStatus::UnknownAfterRestart)) => anyhow::bail!(
-            "request {id} is unknown after a daemon restart: check the repository state, then run the command again if the change is missing"
-        ),
+        Waited::Settled(ReportedStatus::Inbox(RequestStatus::UnknownAfterRestart)) => {
+            anyhow::bail!(
+                "request {id} is unknown after a daemon restart: check the repository state, then run the command again if the change is missing"
+            )
+        }
         Waited::TimedOut(_) => anyhow::bail!("request {id} still pending after {secs}s"),
         // `wait_for` keeps polling these two, so they settle only if its
         // loop condition changes; naming them keeps the match exhaustive.
@@ -181,7 +184,7 @@ fn list_inbox_sessions(work_dir: &Path) -> Result<Vec<String>> {
         Ok(read_dir) => read_dir,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
         Err(error) => {
-            return Err(error).with_context(|| format!("failed to list {}", root.display()))
+            return Err(error).with_context(|| format!("failed to list {}", root.display()));
         }
     };
     let mut sessions = Vec::new();
@@ -217,117 +220,6 @@ fn format_status(status: &ReportedStatus) -> (String, bool) {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::relay::new_request_id;
-
-    #[test]
-    fn a_pending_ticket_wins_over_the_inbox() {
-        let work_dir = tempfile::tempdir().unwrap();
-        let scratch = tempfile::tempdir().unwrap();
-        let id = new_request_id();
-        std::fs::write(scratch.path().join(format!("{id}.req")), b"{}").unwrap();
-
-        let status = resolve_status(
-            work_dir.path(),
-            Some("session-1"),
-            Some(scratch.path()),
-            &id,
-        )
-        .unwrap();
-        assert_eq!(status, ReportedStatus::PendingRelay);
-    }
-
-    #[test]
-    fn an_explicit_session_is_looked_up_directly() {
-        let work_dir = tempfile::tempdir().unwrap();
-        let id = new_request_id();
-        let dir = work_dir.path().join("inbox").join("session-1");
-        std::fs::create_dir_all(&dir).unwrap();
-        std::fs::write(dir.join(format!("{id}.json")), b"{}").unwrap();
-
-        let status = resolve_status(work_dir.path(), Some("session-1"), None, &id).unwrap();
-        assert_eq!(
-            status,
-            ReportedStatus::Inbox(RequestStatus::RelayedAwaitingDaemon)
-        );
-    }
-
-    #[test]
-    fn without_a_session_every_inbox_is_scanned() {
-        let work_dir = tempfile::tempdir().unwrap();
-        let id = new_request_id();
-        std::fs::create_dir_all(work_dir.path().join("inbox").join("session-1")).unwrap();
-        let dir = work_dir.path().join("inbox").join("session-2");
-        std::fs::create_dir_all(&dir).unwrap();
-        std::fs::write(dir.join(format!("{id}.json")), b"{}").unwrap();
-
-        let status = resolve_status(work_dir.path(), None, None, &id).unwrap();
-        assert_eq!(
-            status,
-            ReportedStatus::Inbox(RequestStatus::RelayedAwaitingDaemon)
-        );
-    }
-
-    #[test]
-    fn not_found_when_no_session_has_it() {
-        let work_dir = tempfile::tempdir().unwrap();
-        let id = new_request_id();
-        let status = resolve_status(work_dir.path(), None, None, &id).unwrap();
-        assert_eq!(status, ReportedStatus::Inbox(RequestStatus::NotFound));
-    }
-
-    #[test]
-    fn a_work_dir_symlink_resolves_once_canonicalized() {
-        let base = tempfile::tempdir().unwrap();
-        let real = base.path().join("real");
-        let id = new_request_id();
-        let dir = real.join("inbox").join("session-1");
-        std::fs::create_dir_all(&dir).unwrap();
-        std::fs::write(dir.join(format!("{id}.json")), b"{}").unwrap();
-        let link_parent = base.path().join("wt").join(".loom");
-        std::fs::create_dir_all(&link_parent).unwrap();
-        let link = link_parent.join("work");
-        std::os::unix::fs::symlink(&real, &link).unwrap();
-
-        assert!(resolve_status(&link, Some("session-1"), None, &id).is_err());
-        assert_eq!(
-            resolve_status(&canonical_root(&link), Some("session-1"), None, &id).unwrap(),
-            ReportedStatus::Inbox(RequestStatus::RelayedAwaitingDaemon)
-        );
-    }
-
-    #[test]
-    fn an_invalid_id_is_refused() {
-        let work_dir = tempfile::tempdir().unwrap();
-        assert!(resolve_status(work_dir.path(), None, None, "not-hex").is_err());
-    }
-
-    #[test]
-    fn format_status_reports_not_found_with_exit_1() {
-        let (message, not_found) = format_status(&ReportedStatus::Inbox(RequestStatus::NotFound));
-        assert_eq!(message, "not found");
-        assert!(not_found);
-    }
-
-    #[test]
-    fn format_status_reports_every_other_state_with_exit_0() {
-        let cases = [
-            ReportedStatus::PendingRelay,
-            ReportedStatus::Inbox(RequestStatus::RelayedAwaitingDaemon),
-            ReportedStatus::Inbox(RequestStatus::Applying),
-            ReportedStatus::Inbox(RequestStatus::Applied),
-            ReportedStatus::Inbox(RequestStatus::Refused {
-                reason: "bad kind".to_string(),
-            }),
-            ReportedStatus::Inbox(RequestStatus::UnknownAfterRestart),
-        ];
-        for case in cases {
-            let (_, not_found) = format_status(&case);
-            assert!(!not_found, "{case:?} should exit 0");
-        }
-    }
-}
-
+mod tests;
 #[cfg(test)]
 mod wait_tests;

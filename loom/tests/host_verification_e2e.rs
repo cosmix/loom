@@ -18,12 +18,14 @@ use std::process::{Command, Output, Stdio};
 use std::time::{Duration, Instant};
 
 use chrono::Utc;
+use loom::fs::session_files::{load_session_exact, save_session};
 use loom::handoff::generator::load_trusted_session_checkpoint;
 use loom::handoff::schema::CompletionPhase;
 use loom::host_verify::runner::{HostJobRunner, RunnerConfig};
 use loom::host_verify::store::{load_current, load_groups, load_job_file, load_job_record};
 use loom::host_verify::submit::{submit, Submission, SubmitRequest};
 use loom::host_verify::{digest, JobKind, JobRecord, JobState};
+use loom::models::session::{Session, SessionType};
 use loom::models::stage::StageStatus;
 use loom::orchestrator::{Orchestrator, OrchestratorConfig};
 use loom::plan::schema::ContractSpec;
@@ -120,7 +122,7 @@ fn run_hook(fx: &Fixture, output: &Output) -> Output {
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
-    isolate_git(&mut command, &fx.home);
+    isolate_git(&mut command);
     let mut child = command.spawn().expect("spawn loom-relay.sh");
     let stdin = child.stdin.take().expect("child stdin is piped");
     { stdin }
@@ -253,6 +255,12 @@ fn a_failing_host_completion_leaves_the_stage_executing() {
 
 /// Make stage-a a v2 contract stage whose one contract never ends.
 fn never_ending_contract_stage(fx: &Fixture) {
+    let mut session = load_session_exact(&fx.work_dir, SESSION)
+        .expect("load stage session")
+        .expect("the fixture has a stage session");
+    session.session_type = SessionType::Contract;
+    session.tracking_key = Session::derive_tracking_key(STAGE, SessionType::Contract);
+    save_session(&session, &fx.work_dir).expect("save contract writer");
     let file = "tests/never_contract.rs";
     std::fs::create_dir_all(fx.worktree.join("tests")).expect("create tests dir");
     std::fs::write(fx.worktree.join(file), "#[test]\nfn never() {}\n").expect("write contract");
@@ -261,7 +269,7 @@ fn never_ending_contract_stage(fx: &Fixture) {
         stage.contracts = vec![ContractSpec {
             id: "never-ends".to_string(),
             file: file.to_string(),
-            test: "sleep 600".to_string(),
+            test: Some("sleep 600".to_string()),
             runner: None,
             cwd: None,
             scenario: "the contract runs".to_string(),

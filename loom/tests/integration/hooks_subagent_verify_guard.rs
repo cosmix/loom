@@ -6,9 +6,9 @@
 //! agent is blocked only on an unfiltered test suite in a live standard stage
 //! (see the `main` submodule); scoped runs are still allowed; subagents running
 //! inside an `integration-verify` stage are exempted because that stage keeps
-//! its own gate (its orchestrator runs `loom check`; its reviewers run only
-//! targeted checks, which the subagent preamble states and this hook does not
-//! enforce); git commits are never blocked by this hook even
+//! its own gate (its orchestrator and reviewers run the full suite only through
+//! `loom check integration-verify`, which the subagent preamble states and this
+//! hook does not enforce); git commits are never blocked by this hook even
 //! when their message body mentions a verification command.
 //!
 //! GOTCHA 1 (temp dir): the detector matches "claude" case-insensitively
@@ -34,10 +34,9 @@
 use loom::fs::permissions::constants::{HOOK_COMMON, HOOK_SUBAGENT_VERIFY_GUARD};
 use loom::process::sandbox_probe::{process_tree_visible, skip_unless};
 use std::fs;
-use std::io::Write;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::Command;
 use tempfile::TempDir;
 
 /// Keep fixture writes under the runner's temporary root while rejecting a
@@ -76,6 +75,42 @@ fn install_hook(dir: &Path) -> PathBuf {
         loom::fs::permissions::constants::HOOK_BOUNDED,
     );
     write_exec(&dir.join("_common.sh"), HOOK_COMMON);
+    write_exec(
+        &dir.join("_parser.sh"),
+        loom::fs::permissions::constants::HOOK_PARSER,
+    );
+    write_exec(
+        &dir.join("_parser_expand.sh"),
+        loom::fs::permissions::constants::HOOK_PARSER_EXPAND,
+    );
+    write_exec(
+        &dir.join("_parser_scan.sh"),
+        loom::fs::permissions::constants::HOOK_PARSER_SCAN,
+    );
+    write_exec(
+        &dir.join("_identity.sh"),
+        loom::fs::permissions::constants::HOOK_IDENTITY,
+    );
+    write_exec(
+        &dir.join("_stage_lookup.sh"),
+        loom::fs::permissions::constants::HOOK_STAGE_LOOKUP,
+    );
+    write_exec(
+        &dir.join("_containment.sh"),
+        loom::fs::permissions::constants::HOOK_CONTAINMENT,
+    );
+    write_exec(
+        &dir.join("_heartbeat.sh"),
+        loom::fs::permissions::constants::HOOK_HEARTBEAT,
+    );
+    write_exec(
+        &dir.join("_spawn_policy.sh"),
+        loom::fs::permissions::constants::HOOK_SPAWN_POLICY,
+    );
+    write_exec(
+        &dir.join("_verify_matchers.sh"),
+        loom::fs::permissions::constants::HOOK_VERIFY_MATCHERS,
+    );
     let hook_path = dir.join("subagent-verify-guard.sh");
     write_exec(&hook_path, HOOK_SUBAGENT_VERIFY_GUARD);
     hook_path
@@ -133,23 +168,14 @@ fn run_hook_in_tree(
     );
 
     let mut cmd = Command::new("bash");
-    cmd.arg(dir.join("claude-outer.sh"))
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        // GOTCHA 2: clear ambient loom env before layering on whatever this
-        // specific test wants. Must happen before the extra_env loop below.
-        .env_remove("LOOM_STAGE_ID")
-        .env_remove("LOOM_WORK_DIR");
+    // GOTCHA 2: clear ambient loom env before layering on whatever this
+    // specific test wants. Must happen before the extra_env loop below.
+    super::helpers::clear_relay_env(&mut cmd).arg(dir.join("claude-outer.sh"));
     for (key, value) in extra_env {
         cmd.env(key, value);
     }
 
-    let mut child = cmd.spawn().expect("spawn process tree");
-    if let Some(mut stdin) = child.stdin.take() {
-        stdin.write_all(json_input.as_bytes()).ok();
-    }
-    let output = child.wait_with_output().expect("wait for process tree");
+    let output = super::helpers::run_hook_process(&mut cmd, json_input.as_bytes());
 
     (
         output.status.code().unwrap_or(-1),
@@ -178,7 +204,7 @@ fn write_integration_verify_stage(work_dir: &Path, stage_id: &str) {
     fs::write(stages_dir.join(format!("01-{stage_id}.md")), content).expect("write stage file");
 }
 
-const BLOCK_MESSAGE_SNIPPET: &str = "AT MOST ONE narrowly-scoped check";
+const BLOCK_MESSAGE_SNIPPET: &str = "Run the tests for the code YOU wrote, and its module,";
 
 /// Every subagent-classification test below needs the SAME probe: whether
 /// this sandbox can see its own process tree, which the fake process trees
@@ -328,7 +354,7 @@ mod main;
 // Non-vacuous message-stripping check: the "&&" lives INSIDE the quoted -m
 // message, so this only passes if strip_embedded_content actually removes
 // the message body before tokenization. Without stripping, the quoted "&&"
-// re-splits into a real separator token, exposing "cargo build" as a fresh
+// re-splits into a real separator token, exposing "cargo clippy" as a fresh
 // command and blocking it - so this genuinely depends on the fix.
 // =============================================================================
 
@@ -337,14 +363,17 @@ fn subagent_git_commit_message_with_internal_separator_allowed() {
     let dir = temp_dir_no_claude();
     let hook_path = install_hook(dir.path());
 
-    let command = r#"git commit -m "x && cargo build -v""#;
+    let command = r#"git commit -m "x && cargo clippy -v""#;
     let (code, stderr) =
         run_hook_in_tree(dir.path(), &hook_path, true, &bash_payload(command), &[]);
 
     assert_eq!(
         code, 0,
-        "a git commit whose message body happens to contain '&& cargo build -v' \
+        "a git commit whose message body happens to contain '&& cargo clippy -v' \
          must not be blocked (message body is stripped before pattern matching); \
          stderr={stderr}"
     );
 }
+
+#[path = "hooks_subagent_verify_guard_helper.rs"]
+mod helper;

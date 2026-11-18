@@ -1,6 +1,7 @@
 //! Shared repository coordinates, changed inputs, and coverage reporting.
 use crate::context::source_graph::FileCoverage;
 use crate::context::worktree_graph::{build_for_worktree, WorktreeGraph};
+use crate::git::changes::{changes_since, merge_base};
 use crate::verify::review::fingerprint::checkout_git;
 use anyhow::Result;
 use std::collections::BTreeSet;
@@ -15,24 +16,16 @@ pub(crate) fn repository_root(directory: &Path) -> Result<PathBuf> {
     Ok(checkout_git(directory)?.work_tree().to_path_buf())
 }
 
-/// Diff against the merge base includes committed, staged and unstaged changes;
-/// untracked files join the same repository-relative set.
+/// The repository-relative paths changed since the merge base of `base` and
+/// `HEAD`: committed, staged and unstaged changes (only additions when
+/// `added_only`, otherwise additions, copies, modifications, renames and type
+/// changes), plus untracked files git does not ignore. Rename detection is
+/// off, so a moved file is listed as added at its new path. Untracked sandbox
+/// artifacts and worktree scaffolding are left out.
 pub(crate) fn changed_files(root: &Path, base: &str, added_only: bool) -> Result<BTreeSet<String>> {
     let git = checkout_git(root)?;
-    let merge_base = git.run_checked(&["merge-base", base, "HEAD"])?;
-    let filter = if added_only {
-        "--diff-filter=A"
-    } else {
-        "--diff-filter=ACMRT"
-    };
-    let diff = git.run_checked(&["diff", "--name-only", "-z", filter, merge_base.trim(), "--"])?;
-    let untracked = git.run_checked(&["ls-files", "--others", "--exclude-standard", "-z"])?;
-    Ok(diff
-        .split('\0')
-        .chain(untracked.split('\0'))
-        .filter(|path| !path.is_empty())
-        .map(str::to_owned)
-        .collect())
+    let fork = merge_base(&git, base, "HEAD")?;
+    changes_since(&git, &fork, Some(if added_only { "A" } else { "ACMRT" }))
 }
 
 pub(crate) fn graph(root: &Path) -> Result<WorktreeGraph> {

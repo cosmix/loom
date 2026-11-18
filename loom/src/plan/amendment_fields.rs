@@ -1,7 +1,7 @@
 //! Field-dispatch helpers for [`super::amendment`].
 //!
 //! These functions translate an [`AmendmentField`] into the concrete
-//! `acceptance` / `wiring` / `wiring_tests` / `contracts` / `harness` array on a
+//! `acceptance` / `wiring` / `wiring_tests` / `contracts` / `harness` / `reachable` array on a
 //! [`StageDefinition`] or runtime [`Stage`], apply an [`AmendmentPatch`] to
 //! that array, and synchronize the amended runtime field.
 
@@ -20,6 +20,7 @@ pub(super) fn current_field_len(stage: &StageDefinition, field: AmendmentField) 
         AmendmentField::WiringTests => stage.wiring_tests.len(),
         AmendmentField::Contracts => stage.contracts.len(),
         AmendmentField::Harness => stage.harness.len(),
+        AmendmentField::Reachable => stage.reachable.len(),
     }
 }
 
@@ -53,6 +54,9 @@ pub(super) fn parse_amendment_value(request: &AmendmentRequest) -> Result<Parsed
             }
             ParsedAmendmentValue::Harness(glob.to_string())
         }
+        AmendmentField::Reachable => {
+            ParsedAmendmentValue::Reachable(parse_yaml(value, "ReachableCheck", stage)?)
+        }
     })
 }
 
@@ -67,47 +71,27 @@ pub(super) fn apply_patch_to_stage_def(
     patch: &AmendmentPatch,
     value: &ParsedAmendmentValue,
 ) -> Result<()> {
+    // Each field's array is patched with the value only when the parsed
+    // variant matches it; a mismatch reaches apply_patch_vec as None.
+    macro_rules! patch_field {
+        ($vec:expr, $variant:ident) => {
+            apply_patch_vec(
+                $vec,
+                patch,
+                match value {
+                    ParsedAmendmentValue::$variant(v) => Some(v.clone()),
+                    _ => None,
+                },
+            )
+        };
+    }
     match field {
-        AmendmentField::Acceptance => apply_patch_vec(
-            &mut stage.acceptance,
-            patch,
-            match value {
-                ParsedAmendmentValue::Acceptance(v) => Some(v.clone()),
-                _ => None,
-            },
-        ),
-        AmendmentField::Wiring => apply_patch_vec(
-            &mut stage.wiring,
-            patch,
-            match value {
-                ParsedAmendmentValue::Wiring(v) => Some(v.clone()),
-                _ => None,
-            },
-        ),
-        AmendmentField::WiringTests => apply_patch_vec(
-            &mut stage.wiring_tests,
-            patch,
-            match value {
-                ParsedAmendmentValue::WiringTest(v) => Some(v.clone()),
-                _ => None,
-            },
-        ),
-        AmendmentField::Contracts => apply_patch_vec(
-            &mut stage.contracts,
-            patch,
-            match value {
-                ParsedAmendmentValue::Contract(v) => Some(v.clone()),
-                _ => None,
-            },
-        ),
-        AmendmentField::Harness => apply_patch_vec(
-            &mut stage.harness,
-            patch,
-            match value {
-                ParsedAmendmentValue::Harness(v) => Some(v.clone()),
-                _ => None,
-            },
-        ),
+        AmendmentField::Acceptance => patch_field!(&mut stage.acceptance, Acceptance),
+        AmendmentField::Wiring => patch_field!(&mut stage.wiring, Wiring),
+        AmendmentField::WiringTests => patch_field!(&mut stage.wiring_tests, WiringTest),
+        AmendmentField::Contracts => patch_field!(&mut stage.contracts, Contract),
+        AmendmentField::Harness => patch_field!(&mut stage.harness, Harness),
+        AmendmentField::Reachable => patch_field!(&mut stage.reachable, Reachable),
     }
 }
 
@@ -152,20 +136,11 @@ pub(super) fn stage_field_matches(
 ) -> bool {
     match field {
         AmendmentField::Acceptance => stage.acceptance == def.acceptance,
-        AmendmentField::Wiring => {
-            // WiringCheck doesn't derive PartialEq; compare by serialized form.
-            let a = crate::yaml::to_string(&stage.wiring).unwrap_or_default();
-            let b = crate::yaml::to_string(&def.wiring).unwrap_or_default();
-            a == b
-        }
-        AmendmentField::WiringTests => {
-            // WiringTest doesn't derive PartialEq; compare by serialized form.
-            let a = crate::yaml::to_string(&stage.wiring_tests).unwrap_or_default();
-            let b = crate::yaml::to_string(&def.wiring_tests).unwrap_or_default();
-            a == b
-        }
+        AmendmentField::Wiring => stage.wiring == def.wiring,
+        AmendmentField::WiringTests => stage.wiring_tests == def.wiring_tests,
         AmendmentField::Contracts => stage.contracts == def.contracts,
         AmendmentField::Harness => stage.harness == def.harness,
+        AmendmentField::Reachable => stage.reachable == def.reachable,
     }
 }
 
@@ -174,7 +149,11 @@ pub(super) fn sync_stage_from_definition(
     def: &StageDefinition,
     field: AmendmentField,
 ) {
-    if !stage_field_matches(stage, def, field) {
+    // Clearing the commit forces an unfinished stage to verify again. A merged
+    // stage cannot re-verify, and the scheduler reads merged-without-commit as
+    // an unverifiable dependency, so its commit stays.
+    let landed = stage.merged || stage.merge_assumed;
+    if !landed && !stage_field_matches(stage, def, field) {
         stage.completed_commit = None;
     }
     match field {
@@ -192,6 +171,9 @@ pub(super) fn sync_stage_from_definition(
         }
         AmendmentField::Harness => {
             stage.harness = def.harness.clone();
+        }
+        AmendmentField::Reachable => {
+            stage.reachable = def.reachable.clone();
         }
     }
 }

@@ -2,6 +2,8 @@
 // only loom_cmd() is used; the shared module serves the integration target
 #[allow(dead_code)]
 mod helpers;
+use crate::helpers::test_support;
+use test_support::git_repo::{git, TestRepo};
 
 use serde_json::Value;
 use std::fs;
@@ -13,34 +15,9 @@ fn scratch() -> TempDir {
     TempDir::new().expect("create unique scratch child")
 }
 
-fn git(root: &Path, args: &[&str]) -> String {
-    let output = Command::new("git")
-        .current_dir(root)
-        .args(args)
-        .output()
-        .expect("run git");
-    assert!(
-        output.status.success(),
-        "git {args:?}: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    String::from_utf8_lossy(&output.stdout).trim().to_string()
-}
-
 fn commit_all(root: &Path, message: &str) {
     git(root, &["add", "."]);
-    git(
-        root,
-        &[
-            "-c",
-            "user.name=Loom Test",
-            "-c",
-            "user.email=loom@example.invalid",
-            "commit",
-            "-m",
-            message,
-        ],
-    );
+    git(root, &["commit", "-m", message]);
 }
 
 fn seed_work_marker(project: &Path) {
@@ -57,7 +34,11 @@ fn changed_evidence_project() -> TempDir {
     fs::create_dir_all(root.join("src")).expect("create source directory");
     fs::create_dir_all(root.join("doc/loom/knowledge")).expect("create knowledge directory");
     fs::write(root.join("src/evidence.rs"), "pub const VALUE: u8 = 1;\n").expect("write source");
-    git(root, &["init", "-q"]);
+    TestRepo::builder()
+        .identity("Loom Test", "loom@example.invalid")
+        .no_seed()
+        .init_in(root);
+    test_support::write_main_checkout_identity(root, &root.join(".loom/work"));
     commit_all(root, "initial source");
     let verified = git(root, &["rev-parse", "HEAD"]);
     fs::write(

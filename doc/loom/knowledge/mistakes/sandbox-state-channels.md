@@ -4,7 +4,7 @@ verified: 5546d3c47ddc1f8890b40157134f057393b8b90e
 
 # Sandbox State Channels
 
-> Sandboxed callers, work state
+>
 
 ## A Credential That Must Be Read Cannot Express a Narrow Capability (2026-08-11)
 
@@ -153,7 +153,7 @@ disk and the daemon healthy. Reproduced directly:
 
 ```text
 $ ls -la .loom/work/orchestrator.sock
-srw------- dkaponis dkaponis 0 B  .loom/work/orchestrator.sock        # present
+srw------- username username 0 B  .loom/work/orchestrator.sock        # present
 
 $ python3 -c "import socket; socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)"
 PermissionError: [Errno 1] Operation not permitted                # denied at socket() creation
@@ -199,8 +199,8 @@ stopped. The daemon did nothing for hours until an operator noticed. The stage f
 `status: executing`. The command's own output, verbatim:
 
 ```text
-Warning: could not mark stage 'climate-timezone-data' NeedsHandoff: Failed to open temp file: /home/dkaponis/src/cartolyth/.worktrees/climate-timezone-data/.work/stages/01-climate-timezone-data.md.tmp
-/home/dkaponis/src/cartolyth/.worktrees/climate-timezone-data/.work/handoffs/climate-timezone-data-handoff-002.md
+Warning: could not mark stage 'climate-timezone-data' NeedsHandoff: Failed to open temp file: /home/username/src/myproject/.worktrees/climate-timezone-data/.work/stages/01-climate-timezone-data.md.tmp
+/home/username/src/myproject/.worktrees/climate-timezone-data/.work/handoffs/climate-timezone-data-handoff-002.md
 ```
 
 **Why:** a worktree agent's Bash sandbox write allow-list grants `.loom/work/handoffs` but not

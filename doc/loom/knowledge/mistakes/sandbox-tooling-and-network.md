@@ -1,7 +1,5 @@
 # Sandbox Tooling And Network
 
-> Sandbox tool failures
-
 ## The Sandbox's AF_UNIX Denial Also Kills sccache, Breaking Every Cargo Command (2026-09-04)
 
 **Current state (2026-09-25):** the export described below is now gated. `build_cache::sccache_usable_in` (`orchestrator/terminal/native/build_cache.rs::sccache_usable_in`) is `!sandbox.enabled || network.allow_all_unix_sockets`; `orchestrator/terminal/native/launch.rs` and `wrapper.rs::sccache_env` withhold `RUSTC_WRAPPER` from a sandboxed session whose seccomp filter denies `AF_UNIX`, and `process/environment.rs` starts acceptance commands from `env_clear()`. The `env -u RUSTC_WRAPPER` workaround and the `LOOM_SCCACHE=0` restart are needed only for a sandbox that allows all unix sockets yet still breaks sccache, or if that gate is removed. A 2026-10-14 probe under the host-socket hiding (`sandbox/host_sockets.rs`) ran `sccache rustc -vV` and `sccache --start-server` inside a flagged session, so the gate's "on" side holds. Verification v2's D4 plan-verify "Rustc wrapper" lint was dropped for this reason: as specified it warned on every cargo plan whenever `/usr/bin/sccache` existed, so `plan verify --strict` failed for plans that could not hit the failure.
@@ -162,7 +160,7 @@ produces a grant path the sandbox never binds at all.
 
 ## Worktree Test Runs Resolve node_modules From the MAIN Repo When the Worktree Has None (2026-08-11)
 
-**What happened:** in a JS-project worktree stage (cartolyth `city-detail-popup`), codex's proof
+**What happened:** in a JS-project worktree stage (myproject `city-detail-popup`), codex's proof
 command `bunx vitest run …` failed with EROFS writing `node_modules/.vite-temp`, with no test
 assertions executed — while the file edits themselves landed fine.
 
@@ -172,7 +170,7 @@ MAIN repo's `node_modules/` — so test runners load dependencies from the main 
 their caches there too (vite writes `node_modules/.vite-temp/` while loading config). Both the
 codex nested sandbox and the stage sandbox refuse that write, correctly: it lands outside the
 worktree, in shared mutable state that parallel stages and the operator's checkout depend on.
-Proof it really happens: `node_modules/.vite-temp` exists in cartolyth's MAIN repo, created by a
+Proof it really happens: `node_modules/.vite-temp` exists in myproject's MAIN repo, created by a
 later unsandboxed run.
 
 **Prevention:** a plan whose stages run JS/TS tests in-session MUST provision dependencies inside

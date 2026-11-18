@@ -42,7 +42,7 @@ SwiftPM is the build tool and package manager. Xcode projects (`.xcodeproj`) bui
 | Wire it to a target | `swift package add-target-dependency ArgumentParser spool-cli --package swift-argument-parser` |
 | Resolve / update | `swift package resolve` / `swift package update` (rewrites `Package.resolved`) |
 | Build with tests | `swift build --build-tests` |
-| Test | `swift test` (`--parallel` for XCTest; Swift Testing runs tests in parallel by default) |
+| Test, whole suite (the stage gate's) | `swift test` (`--parallel` for XCTest; Swift Testing runs tests in parallel by default); the changed code: `swift test --filter '<Module.Class>'` |
 | List test ids | `swift test list` |
 | Release build | `swift build -c release` (whole-module optimization) |
 | Format | `swift format --in-place --recursive Sources Tests` (swift-format ships with the 6.0 toolchain) |
@@ -75,7 +75,7 @@ let package = Package(
 - Migrating an older target: `swiftSettings: [.swiftLanguageMode(.v5), .enableUpcomingFeature("StrictConcurrency")]` keeps Swift 5 mode while surfacing the data-race diagnostics as warnings; remove both once they are fixed.
 - Keep executables thin. Logic lives in a library target so tests `@testable import` it.
 
-The canonical gate:
+The canonical gate (the stage gate runs the `swift test` line; while working, use `swift test --filter '<Module.Class>'`):
 
 ```bash
 swift format lint --strict --recursive Sources Tests
@@ -352,7 +352,7 @@ import Testing
 **Single-test command.** Loom runs each contract with the package directory as the working directory:
 
 ```bash
-swift test --filter '{test}'
+swift test --filter '^{escaped test}$'
 ```
 
 **The `test` field.** `Module.Class/testMethod`, where `Module` is the test target's module name. `swift test list` prints ids in this form. Example: `SpoolTests.SpoolWriterContractTests/testRejectsSymlinkedSpool`.
@@ -363,7 +363,7 @@ swift test --filter '{test}'
 
 - SwiftPM compiles every `.swift` file under `Tests/<TestTarget>/` into that test target. Put a contract in the existing test target, in a file named for its subject: `Tests/SpoolTests/SpoolWriterContractTests.swift`.
 - Write contract tests as XCTest methods. The adapter's `test` format and its parser are XCTest's; a Swift Testing `@Test` function prints a separate summary that the adapter does not read, so a filter that selects only Swift Testing tests can read as zero tests executed.
-- `--filter` is an unanchored regular expression. `testRejectsSymlink` also selects `testRejectsSymlinkedSpool`, so choose a method name that no other test id in the package contains.
+- Loom escapes and anchors the complete XCTest identifier. A bare method name does not match the complete identifier.
 - Any other file the contract session changes (a shared fixture, a new test target in `Package.swift`) must match a `harness` glob, or the freeze rejects it.
 - Resolve and build once (`swift build --build-tests`) before writing contracts, so the freeze run compiles only your test target instead of fetching and building dependencies inside its 300-second limit. `.build/` must be in `.gitignore` (`swift package init` writes it); the freeze treats every other untracked path as a change.
 - Loom cannot batch-select Swift tests by file, so impact-selected tests are skipped with a note for Swift packages; the full suite still runs in integration-verify.
@@ -491,7 +491,7 @@ func openSpool(atPath path: String) throws(SpoolError) -> Int32 {
 
 - [ ] `swift format lint --strict` clean (or SwiftLint where the project configures it)
 - [ ] `swift build --build-tests` with zero warnings in your own targets
-- [ ] `swift test` green; new behaviour has tests, parameterized where inputs vary
+- [ ] `swift test --filter '<Module.Class>'` green (bare `swift test` is the stage gate's); new behaviour has tests, parameterized where inputs vary
 - [ ] No `!`, `try!` or `as!` on data from outside the program; no `assert` used for validation
 - [ ] Public API uses untyped `throws`; typed throws only on closed, internal error sets
 - [ ] Dependencies added with `swift package add-dependency`; `Package.resolved` committed for applications

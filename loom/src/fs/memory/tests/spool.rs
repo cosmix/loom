@@ -226,9 +226,11 @@ fn drain_into_journal_skips_an_invalid_entry_but_lands_the_valid_one() {
     let stage_id = "stage-under-test";
 
     // Fails validate_content: over the 2000-char cap.
-    append_to_spool(
+    crate::fs::jsonl_spool::append(
         worktree.path(),
+        SPOOL_RELPATH,
         &MemoryEntry::new(MemoryEntryType::Note, "x".repeat(2001)),
+        SPOOL_MAX_BYTES as usize,
     )
     .unwrap();
     append_to_spool(
@@ -250,6 +252,52 @@ fn drain_into_journal_skips_an_invalid_entry_but_lands_the_valid_one() {
     assert!(!journal.contains(&"x".repeat(2001)));
 
     assert!(read_pending(worktree.path()).unwrap().is_empty());
+}
+
+#[test]
+fn json_ingress_discards_unreadable_entries_and_keeps_valid_receipts() {
+    use crate::fs::memory::{read_journal, Receipt, ReceiptOutcome};
+    let worktree = TempDir::new().unwrap();
+    let work = TempDir::new().unwrap();
+    let note = MemoryEntry::new(MemoryEntryType::Note, "a useful note".into());
+    let receipt = MemoryEntry::receipt(
+        Receipt {
+            event_id: note.id.clone(),
+            outcome: ReceiptOutcome::Implemented,
+            target: None,
+        },
+        "done".into(),
+    );
+    let mut bad_id = note.clone();
+    bad_id.id = "bad-id".into();
+    let no_payload = MemoryEntry::new(MemoryEntryType::Receipt, "missing".into());
+    let mut extra_payload = note.clone();
+    extra_payload.receipt = receipt.receipt.clone();
+    let whitespace = MemoryEntry::new(MemoryEntryType::Note, "  \n ".into());
+    for entry in [&bad_id, &no_payload, &extra_payload, &whitespace] {
+        assert!(append_entry(work.path(), "stage", entry).is_err());
+        crate::fs::jsonl_spool::append(
+            worktree.path(),
+            SPOOL_RELPATH,
+            entry,
+            SPOOL_MAX_BYTES as usize,
+        )
+        .unwrap();
+    }
+    append_to_spool(worktree.path(), &note).unwrap();
+    append_to_spool(worktree.path(), &receipt).unwrap();
+    let outcome = drain_into_journal(work.path(), "stage", worktree.path()).unwrap();
+    assert_eq!((outcome.drained, outcome.skipped_malformed), (2, 4));
+    let entries = read_journal(work.path(), "stage").unwrap().entries;
+    assert_eq!(entries.len(), 2);
+    assert_eq!(
+        (&entries[0].id, &entries[0].entry_type, &entries[0].content),
+        (&note.id, &note.entry_type, &note.content)
+    );
+    assert_eq!(
+        (&entries[1].id, &entries[1].receipt),
+        (&receipt.id, &receipt.receipt)
+    );
 }
 
 #[test]

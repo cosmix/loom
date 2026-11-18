@@ -5,6 +5,9 @@
 //! backstop's test does it: every proxy for "the agent was taken down" lies in
 //! at least one lane.
 
+#[path = "recover_hung_latch_tests.rs"]
+mod latch_tests;
+
 use super::governor_tests::assign_stage_session;
 use super::recover_hung::{checkpoint_has_current_blocker, HungReport};
 use super::tests::{
@@ -21,6 +24,7 @@ use crate::models::stage::{AcceptanceCriterion, StageType};
 use crate::orchestrator::monitor::heartbeat::{write_heartbeat, Heartbeat};
 use crate::orchestrator::monitor::stall_line::COMPLETION_ACTIVITY;
 use crate::orchestrator::terminal::native::write_test_pid_identity;
+use crate::test_git::{git, TestRepo};
 use crate::verify::transitions::{load_stage, update_stage};
 use std::path::Path;
 
@@ -40,6 +44,29 @@ pub(super) fn report(session_id: &str, stale_duration_secs: u64) -> HungReport<'
     }
 }
 
+#[test]
+#[serial_test::serial]
+fn forward_facts_hold_for_a_native_worker() {
+    let temp = handoff_work_dir();
+    let work = temp.path().join(".loom").join("work");
+    let (session, agent_pid) = stalled_stage(&work);
+    let _process = crate::host_verify::submit::native_hold_tests::ProcessGuard(agent_pid);
+    let mut orchestrator = orchestrator_for(&work, temp.path());
+    orchestrator.graph.mark_executing("test-stage").unwrap();
+    orchestrator
+        .active_sessions
+        .insert("test-stage".to_string(), session.clone());
+    crate::host_verify::submit::native_hold_tests::seed(&work, "test-stage");
+    orchestrator
+        .on_session_hung(report(&session.id, ESCALATING_SILENCE_SECS))
+        .unwrap();
+    assert!(crate::process::is_process_alive(agent_pid));
+    assert_eq!(
+        load_stage("test-stage", &work).unwrap().status,
+        StageStatus::Executing
+    );
+}
+
 /// A stage executing behind a live agent, exactly as the executor leaves it.
 pub(super) fn stalled_stage(work: &Path) -> (Session, u32) {
     executing_stage(work);
@@ -52,23 +79,11 @@ pub(super) fn stalled_stage(work: &Path) -> (Session, u32) {
 }
 
 fn init_checkpoint_repo(repo: &Path) -> String {
-    crate::git::runner::run_git_checked(&["init", "-q"], repo).unwrap();
-    std::fs::write(repo.join("seed"), "seed\n").unwrap();
-    crate::git::runner::run_git_checked(&["add", "seed"], repo).unwrap();
-    crate::git::runner::run_git_checked(
-        &[
-            "-c",
-            "user.name=Loom Test",
-            "-c",
-            "user.email=loom@example.invalid",
-            "commit",
-            "-qm",
-            "seed",
-        ],
-        repo,
-    )
-    .unwrap();
-    crate::git::runner::run_git_checked(&["rev-parse", "HEAD"], repo).unwrap()
+    TestRepo::builder()
+        .identity("Loom Test", "loom@example.invalid")
+        .seed("seed", "seed\n", "seed")
+        .init_in(repo);
+    git(repo, &["rev-parse", "HEAD"])
 }
 
 /// A slow agent is not a dead one. One budget of silence buys a warning and
@@ -293,8 +308,8 @@ fn a_report_without_a_stage_is_only_a_warning() {
 }
 
 /// The line a stage with two acceptance criteria gets while its pinned
-/// completion runs: one command timeout each, plus the margin for the later checks.
-const COMPLETION_LINE_SECS: u64 = 2 * 300 + 1_800;
+/// completion runs: one timeout each and one for impact selection, plus the margin.
+const COMPLETION_LINE_SECS: u64 = 3 * 300 + 1_800;
 
 /// A stalled stage whose own latest heartbeat says its pinned completion is running.
 fn completing_stage(work: &Path) -> (Session, u32) {

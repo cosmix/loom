@@ -44,8 +44,8 @@ Change the internal structure of code without changing its observable behavior. 
 
 Corollaries an expert never violates:
 
-1. **Tests are the safety net.** Run them before you touch anything (establish green). If there are none for the code you're changing, write **characterization tests** first (below) — do not refactor untested legacy blind.
-2. **Tiny reversible steps.** One mechanical move at a time; re-run tests after each. When something breaks, inspect the small current diff and use the repository's approved recovery workflow rather than discarding unrelated work.
+1. **Tests are the safety net.** Run the tests for the code you will change before you touch anything (establish green). If there are none for the code you're changing, write **characterization tests** first (below) — do not refactor untested legacy blind.
+2. **Tiny reversible steps.** One mechanical move at a time; re-run the touched module's tests after each. When something breaks, inspect the small current diff and use the repository's approved recovery workflow rather than discarding unrelated work.
 3. **Separate refactor commits from behavior-change commits.** A `refactor:` commit must be a no-op at runtime — reviewers can trust the diff without re-verifying logic. Mixing a bug fix into a rename hides the fix and poisons `git bisect`. (Commit mechanics: `/loom-git-workflow`.)
 4. **Don't change tests and production code in the same step.** If a refactor "requires" editing a test's assertions, behavior changed — stop and reconsider.
 
@@ -79,12 +79,12 @@ Refactoring is not "make it nicer" — identify a specific smell and apply its c
 ## Workflow
 
 ```text
-1. Green baseline   → run the full suite; if red, stop (fix or characterize first)
+1. Green baseline   → run the touched module's tests; if red, stop (fix or characterize first)
 2. Name the smell   → pick ONE move from the table
 3. Apply one step   → smallest mechanical edit; prefer IDE/tool rename over hand-edit
-4. Re-run tests     → green? commit. red? inspect the current small diff and rethink
+4. Re-run tests     → touched module only: green? commit. red? inspect the current small diff and rethink
 5. Repeat           → next step
-6. Final gate       → full suite + lint + build green; diff is behavior-neutral
+6. Final gate       → full suite + lint + build green (in a loom stage the stage gate runs them); diff is behavior-neutral
 ```
 
 Prefer tool-driven moves when available: LSP/IDE "rename symbol" and "extract function" are behavior-preserving by construction and update all references — safer than `rg`+Edit. Use `rg` first to size the blast radius of any rename. Loom stage sessions deny the LSP tool, so in a stage use `rg` to find every reference and Edit each one.
@@ -153,7 +153,7 @@ Commit progress and escalate (to `loom-senior-software-engineer` or a specialist
 
 ## Verify before done
 
-- [ ] Full suite green BEFORE first change (or characterization tests written)
+- [ ] Touched module's tests green BEFORE first change (or characterization tests written)
 - [ ] Each step was one behavior-neutral move; tests green between steps
 - [ ] No production + test logic changed in the same step
 - [ ] Refactor commits contain no behavior change; any fix/feature is a separate commit

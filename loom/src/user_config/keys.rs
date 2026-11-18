@@ -40,6 +40,15 @@ pub struct KeySpec {
     pub help: &'static str,
 }
 
+/// The smallest value a [`ValueKind::Number`] key accepts. Every number key
+/// is non-negative; `pressure.rounds` is the one that must also be non-zero.
+pub fn number_min(name: &str) -> u32 {
+    match name {
+        "pressure.rounds" => 1,
+        _ => 0,
+    }
+}
+
 /// Every key `loom config` knows about, in the order `--list`/`--print`
 /// render them. The default for each key lives on
 /// [`crate::user_config::UserConfig`]'s getters, not here — one source of
@@ -64,7 +73,7 @@ pub const KEYS: &[KeySpec] = &[
         section: "terminal",
         field: "backend",
         kind: ValueKind::Enum(&["native", "tmux"]),
-        help: "Terminal backend loom run defaults to",
+        help: "Terminal backend loom run defaults to (built-in default: tmux)",
     },
     KeySpec {
         name: "context.ceiling_tokens",
@@ -116,18 +125,25 @@ pub const KEYS: &[KeySpec] = &[
         help: "Claude reasoning effort loom pressure uses for the /address reconciliation step",
     },
     KeySpec {
+        name: "pressure.rounds",
+        section: "pressure",
+        field: "rounds",
+        kind: ValueKind::Number,
+        help: "Pressure/address rounds loom pressure runs (at least 1)",
+    },
+    KeySpec {
         name: "models.standard_model",
         section: "models",
         field: "standard_model",
         kind: ValueKind::Enum(crate::claude::CLAUDE_MODELS),
-        help: "Model a standard stage's main agent session runs on",
+        help: "Stage orchestrator model for standard (implementation) stages",
     },
     KeySpec {
         name: "models.standard_effort",
         section: "models",
         field: "standard_effort",
         kind: ValueKind::Enum(crate::models::stage::ALLOWED_REASONING_EFFORTS),
-        help: "Reasoning effort a standard stage's main agent session runs at",
+        help: "Stage orchestrator reasoning effort for standard (implementation) stages",
     },
     KeySpec {
         name: "models.knowledge_model",
@@ -170,6 +186,125 @@ pub const KEYS: &[KeySpec] = &[
         field: "integration_verify_effort",
         kind: ValueKind::Enum(crate::models::stage::ALLOWED_REASONING_EFFORTS),
         help: "Reasoning effort an integration-verify stage's main agent session runs at",
+    },
+    KeySpec {
+        name: "models.code_reviewer_model",
+        section: "models",
+        field: "code_reviewer_model",
+        kind: ValueKind::Enum(crate::claude::CLAUDE_MODELS),
+        help: "Model the loom-code-reviewer subagent runs on for its first round",
+    },
+    KeySpec {
+        name: "models.code_reviewer_followup_model",
+        section: "models",
+        field: "code_reviewer_followup_model",
+        kind: ValueKind::Enum(crate::claude::CLAUDE_MODELS),
+        help: "Model the loom-code-reviewer subagent runs on after a well-formed round",
+    },
+    KeySpec {
+        name: "models.code_reviewer_effort",
+        section: "models",
+        field: "code_reviewer_effort",
+        kind: ValueKind::Enum(crate::models::stage::ALLOWED_REASONING_EFFORTS),
+        help: "Reasoning effort the loom-code-reviewer subagent runs at",
+    },
+    KeySpec {
+        name: "models.contract_writer_model",
+        section: "models",
+        field: "contract_writer_model",
+        kind: ValueKind::Enum(crate::claude::CLAUDE_MODELS),
+        help: "Model the contract test writer session runs on",
+    },
+    KeySpec {
+        name: "models.contract_writer_effort",
+        section: "models",
+        field: "contract_writer_effort",
+        kind: ValueKind::Enum(crate::models::stage::ALLOWED_REASONING_EFFORTS),
+        help: "Reasoning effort the contract test writer session runs at",
+    },
+    KeySpec {
+        name: "plan.document_summary_model",
+        section: "plan",
+        field: "document_summary_model",
+        kind: ValueKind::Enum(crate::claude::CLAUDE_MODELS),
+        help: "Model the loom-plan summary agent builds document summaries on",
+    },
+    KeySpec {
+        name: "plan.document_summary_effort",
+        section: "plan",
+        field: "document_summary_effort",
+        kind: ValueKind::Enum(crate::models::stage::ALLOWED_REASONING_EFFORTS),
+        help: "Reasoning effort for document summaries",
+    },
+    KeySpec {
+        name: "plan.overview_model",
+        section: "plan",
+        field: "overview_model",
+        kind: ValueKind::Enum(crate::claude::CLAUDE_MODELS),
+        help: "Model overviews and background summary sessions run on",
+    },
+    KeySpec {
+        name: "plan.overview_effort",
+        section: "plan",
+        field: "overview_effort",
+        kind: ValueKind::Enum(crate::models::stage::ALLOWED_REASONING_EFFORTS),
+        help: "Reasoning effort for overviews and summary sessions",
+    },
+    KeySpec {
+        name: "plan.summary_backend",
+        section: "plan",
+        field: "summary_backend",
+        kind: ValueKind::Enum(super::plan::SUMMARY_BACKENDS),
+        help: "Which agent builds summaries and overviews: Claude Code or Codex",
+    },
+    KeySpec {
+        name: "plan.summary_codex_model",
+        section: "plan",
+        field: "summary_codex_model",
+        kind: ValueKind::Enum(crate::codex::CODEX_MODELS),
+        help: "Codex model for summaries when the backend is codex",
+    },
+    KeySpec {
+        name: "plan.summary_codex_effort",
+        section: "plan",
+        field: "summary_codex_effort",
+        kind: ValueKind::Enum(crate::codex::CODEX_EFFORTS),
+        help: "Codex reasoning effort for summaries when the backend is codex",
+    },
+    KeySpec {
+        name: "plan.spec_authoring_model",
+        section: "plan",
+        field: "spec_authoring_model",
+        kind: ValueKind::Enum(crate::claude::CLAUDE_MODELS),
+        help: "Claude model a loom plan authoring session runs on for spec steps",
+    },
+    KeySpec {
+        name: "plan.spec_authoring_effort",
+        section: "plan",
+        field: "spec_authoring_effort",
+        kind: ValueKind::Enum(crate::models::stage::ALLOWED_REASONING_EFFORTS),
+        help: "Reasoning effort a loom plan authoring session runs at for spec steps",
+    },
+    KeySpec {
+        name: "plan.plan_authoring_model",
+        section: "plan",
+        field: "plan_authoring_model",
+        kind: ValueKind::Enum(crate::claude::CLAUDE_MODELS),
+        help: "Claude model a loom plan authoring session runs on for plan steps",
+    },
+    KeySpec {
+        name: "plan.plan_authoring_effort",
+        section: "plan",
+        field: "plan_authoring_effort",
+        kind: ValueKind::Enum(crate::models::stage::ALLOWED_REASONING_EFFORTS),
+        help: "Reasoning effort a loom plan authoring session runs at for plan steps",
+    },
+    KeySpec {
+        name: "codex.backend",
+        section: "codex",
+        field: "backend",
+        kind: ValueKind::Enum(super::codex::CODEX_BACKENDS),
+        help: "Codex worker lane for stage leads: native workers or legacy forwarders (default: native)",
     },
 ];
 

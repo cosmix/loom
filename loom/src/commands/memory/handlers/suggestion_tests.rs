@@ -3,24 +3,20 @@
 
 use super::super::record::record;
 use super::super::resolve;
-use super::super::tests::{init_git_repo, EnvGuard};
+use super::super::test_isolation::{init_git_repo, run_isolated_test, RepoFixture};
 use super::groups::group_pending;
 use super::pending_report;
 use crate::fs::memory::{MemoryEntry, MemoryEntryType};
-use serial_test::serial;
 use std::env;
 use std::path::{Path, PathBuf};
-use tempfile::TempDir;
 
-/// Enter a fresh repository outside any loom session; returns the guard that
-/// restores the environment, the repository, and its work directory.
-fn enter_repo() -> (EnvGuard, TempDir, PathBuf) {
-    let guard = EnvGuard::new();
+/// Enter a fresh repository in this isolated test process.
+fn enter_repo() -> (RepoFixture, PathBuf) {
     let repo = init_git_repo();
     env::set_current_dir(repo.path()).unwrap();
     env::remove_var("LOOM_SESSION_ID");
     let work_dir = repo.path().join(".loom/work");
-    (guard, repo, work_dir)
+    (repo, work_dir)
 }
 
 fn record_suggestion(stage: &str, text: &str) -> String {
@@ -41,9 +37,11 @@ fn pending_ids(work_dir: &Path) -> Vec<String> {
 }
 
 #[test]
-#[serial]
 fn suggestion_entries_are_pending_until_resolved() {
-    let (_guard, _repo, work_dir) = enter_repo();
+    if run_isolated_test() {
+        return;
+    }
+    let (_repo, work_dir) = enter_repo();
     let id = record_suggestion("suggestion-stage", "extract the retry loop");
 
     let grouped = group_pending(pending_report(&work_dir, None).unwrap());
@@ -68,9 +66,11 @@ fn suggestion_entries_are_pending_until_resolved() {
 }
 
 #[test]
-#[serial]
 fn implemented_outcome_requires_reason() {
-    let (_guard, _repo, work_dir) = enter_repo();
+    if run_isolated_test() {
+        return;
+    }
+    let (_repo, work_dir) = enter_repo();
     let id = record_suggestion("implemented-stage", "rename the helper");
 
     let error = resolve(id.clone(), "implemented".to_string(), None, None, None).unwrap_err();

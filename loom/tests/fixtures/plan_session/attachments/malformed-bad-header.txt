@@ -1,0 +1,6 @@
+See this.
+
+<loom-attachments>
+[1] sauce doc/x.md#y
+> quote
+</loom-attachments>

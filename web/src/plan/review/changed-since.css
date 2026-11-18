@@ -1,0 +1,318 @@
+/*
+ * "Changed since you looked", a page at /changes. Nothing on it draws a box: the head, the list,
+ * the diff and the foot are divided by space and hairlines (DESIGN.md, Surfaces). The page spans
+ * the main column's full width, so a side-by-side diff has room. Narrow: the list, with the open
+ * document's diff under its row. From 1024px: a 22rem list beside the diff, each scrolling on its
+ * own inside the page's height, the foot fixed under both.
+ */
+/* At least the main's height, so a loading or empty body centres in the space under the head. */
+.changes-page {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-height: 100%;
+  padding: var(--space-6) var(--page-gutter) 0;
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  font-size: var(--type-ui);
+  line-height: var(--leading-ui);
+}
+
+/* Eyebrow, title, the lede, then --space-5 to the content (DESIGN.md, Page rhythm). */
+.changes-page__head {
+  display: grid;
+  flex: none;
+  gap: var(--space-1);
+  margin-bottom: var(--space-5);
+}
+
+.changes-page__lede {
+  max-width: 48ch;
+  margin: var(--space-1) 0 0;
+  font-size: var(--type-body);
+  line-height: var(--leading-body);
+}
+
+.changes-page__head .plan-fine {
+  margin: 0;
+  max-width: 48ch;
+}
+
+.changed-since__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  padding-bottom: var(--space-5);
+}
+
+.changed-since__index {
+  min-width: 0;
+}
+
+.changed-since__state {
+  margin: 0 0 var(--space-3);
+  max-width: 64ch;
+}
+
+/* ── The list ─────────────────────────────────────────────────────────────── */
+
+.changed-since__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* Two lines per row, at every width: the path, which names the row, takes the whole text column;
+   under it, the status (and the commit a diff starts from) on the left and the action on the
+   right, on one centre line. The list column is never wide enough for a path, a status and an
+   action on one line without crushing the path. The negative margin lets the current row's wash
+   reach past the text column without moving the text. */
+.changed-since__row {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "path path"
+    "meta action";
+  align-items: center;
+  gap: var(--space-1) var(--space-3);
+  min-height: 36px;
+  margin: 0 calc(-1 * var(--space-2));
+  padding: var(--space-2);
+  border-radius: var(--corner-control);
+}
+
+.changed-since__row > .changed-since__path {
+  grid-area: path;
+}
+
+.changed-since__row > :last-child {
+  grid-area: action;
+  justify-self: end;
+}
+
+/* The hairline is inset by the row's negative margin, so its ends sit on the text column. */
+.changed-since__row + .changed-since__row::before,
+.changed-since__detail + .changed-since__row::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: var(--space-2);
+  left: var(--space-2);
+  border-top: 1px solid var(--hairline);
+}
+
+.changed-since__row[aria-current] {
+  background: var(--muted);
+}
+
+.changed-since__meta {
+  display: flex;
+  grid-area: meta;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.changed-since__meta > .plan-status {
+  flex: none;
+}
+
+.changed-since__meta > .plan-fine {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* A path truncated from its start, so the file name stays readable: the box runs right to left
+   and clips on the left, and the <bdi> keeps the path itself in its own order. */
+.changed-since__path {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  direction: rtl;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: var(--type-fine);
+}
+
+.changed-since__path > bdi {
+  direction: ltr;
+  unicode-bidi: isolate;
+}
+
+/* A quiet link in chrome: muted, underlined on hover only (DESIGN.md, Focus and hover). The
+   ref disclosure's summary shares it, at the height of the buttons beside it. */
+.changed-since__link {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--control-height-sm);
+  color: var(--muted-foreground);
+  font-size: var(--type-ui);
+  font-weight: 500;
+  white-space: nowrap;
+  text-decoration: none;
+  cursor: pointer;
+  transition: color 120ms ease;
+}
+
+.changed-since__link:hover {
+  color: var(--foreground);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.changed-since__link:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+/* ── The diff ─────────────────────────────────────────────────────────────── */
+
+.changed-since__diff {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+/* Narrow: the open document's diff is the list item under its row, on the row's text column. */
+.changed-since__detail {
+  min-width: 0;
+  padding: var(--space-3) 0 var(--space-5);
+}
+
+.changed-since__diff-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.changed-since__diff-head > .changed-since__path {
+  flex: 1 1 auto;
+  font-size: var(--type-ui);
+}
+
+.changed-since__diff-head > .plan-fine {
+  flex: none;
+  white-space: nowrap;
+}
+
+/* ── The foot ─────────────────────────────────────────────────────────────── */
+
+.changed-since__foot {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-4);
+  padding: var(--space-3) 0 var(--space-4);
+  border-top: 1px solid var(--hairline);
+}
+
+.changed-since__ref > summary {
+  list-style: none;
+}
+
+.changed-since__ref > summary::-webkit-details-marker {
+  display: none;
+}
+
+/* Open, the ref form takes its own line under the foot's controls. */
+.changed-since__ref[open] {
+  flex-basis: 100%;
+}
+
+.changed-since__ref-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+.changed-since__input {
+  flex: 1 1 10rem;
+  min-width: 0;
+  max-width: 18rem;
+  height: var(--control-height-sm);
+  padding: 0 var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--corner-control);
+  background: transparent;
+  color: var(--foreground);
+  font-family: var(--font-mono);
+  font-size: var(--type-fine);
+}
+
+.changed-since__input:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.changed-since__foot > [role="alert"],
+.changed-since__foot > .changed-since__note {
+  flex-basis: 100%;
+}
+
+.changed-since__note {
+  margin: 0;
+  max-width: 48ch;
+}
+
+@media (min-width: 1024px) {
+  /* The page fills the main column's height; the list and the diff scroll inside it. */
+  .changes-page {
+    height: 100%;
+  }
+
+  .changed-since__body {
+    display: grid;
+    flex: 1 1 auto;
+    grid-template-columns: 22rem minmax(0, 1fr);
+    min-height: 16rem;
+    overflow: hidden;
+    padding-bottom: 0;
+  }
+
+  /* The index scrolls on its own here, which would clip the rows' wash at the text column; the
+     box reaches one --space-2 past it on both sides and pads back, so the text stays put. */
+  .changed-since__index {
+    margin: 0 calc(-1 * var(--space-2));
+    padding-right: var(--space-2);
+    padding-left: var(--space-2);
+  }
+
+  .changed-since__index,
+  .changed-since__diff,
+  .changed-since__placeholder {
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding-bottom: var(--space-5);
+  }
+
+  .changed-since__diff,
+  .changed-since__placeholder {
+    margin: 0 0 0 var(--space-5);
+    padding-left: var(--space-5);
+    border-left: 1px solid var(--hairline);
+  }
+
+  /* Beside the controls, the note sits at the foot's end rather than on a line of its own. */
+  .changed-since__foot > .changed-since__note {
+    flex: 0 1 48ch;
+    margin-left: auto;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .changed-since__link {
+    transition: none;
+  }
+}

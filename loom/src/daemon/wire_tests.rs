@@ -1,11 +1,11 @@
 use super::*;
-use crate::commands::status::data::{
-    ActivityStatus, CompletionBlockerState, CompletionBlockerSummary, MergeSummary,
-    ProgressSummary, StageSummary, StageType, StatusData,
-};
 use crate::daemon::protocol::{CompletionSummary, DaemonConfig, StageCompletionInfo};
 use crate::models::session::{SessionBackendKind, SessionExitReason};
 use crate::models::stage::StageStatus;
+use crate::status::data::{
+    CompletionBlockerState, CompletionBlockerSummary, MergeSummary, ProgressSummary, StageSummary,
+    StatusData,
+};
 use std::io::{Cursor, Read};
 
 struct CountingReader<R> {
@@ -79,49 +79,9 @@ fn stage_summary(id: &str, status: StageStatus) -> StageSummary {
     StageSummary {
         id: id.to_string(),
         name: id.to_string(),
-        description: None,
-        summary: None,
         status,
-        stage_type: StageType::Standard,
-        dependencies: vec![],
-        context_tokens: None,
-        elapsed_secs: None,
-        execution_secs: None,
-        base_branch: None,
-        base_merged_from: vec![],
-        failure_info: None,
-        activity_status: ActivityStatus::Idle,
-        last_tool: None,
-        last_activity: None,
-        staleness_secs: None,
-        context_ceiling_tokens: None,
-        review_reason: None,
-        review_notes: None,
-        merged: false,
-        merge_assumed: false,
-        cleanup_warning: None,
-        merge_block: None,
-        stash_warning: None,
-        held: false,
-        retry_count: 0,
-        max_retries: None,
-        pid: None,
-        session_alive: false,
         model: "test".to_string(),
-        session_type: None,
-        incoherence: None,
-        execution_models: vec![],
-        dispute_count: 0,
-        judge_heartbeat_secs: None,
-        session_backend: None,
-        outgoing_session_exit_reason: None,
-        completion_blocker: None,
-        merge_resolver_session: None,
-        merge_resolver_attempts: None,
-        close_reason: None,
-        acceptance: vec![],
-        terminal_history_session: None,
-        block_detail: Default::default(),
+        ..Default::default()
     }
 }
 
@@ -278,6 +238,7 @@ fn oversized_credential_and_frames_are_rejected_on_write() {
         session_id: "session-1".to_string(),
         field: crate::models::dispute::CriterionField::Acceptance,
         criterion_indices: vec![0],
+        owner_stage: None,
         reason: "x".repeat(MAX_REQUEST_BYTES),
         evidence_commit: None,
         failure_output: None,
@@ -298,6 +259,7 @@ fn request_debug_output_redacts_credentials_and_evidence() {
         session_id: "session-1".to_string(),
         field: crate::models::dispute::CriterionField::Acceptance,
         criterion_indices: vec![0],
+        owner_stage: None,
         reason: "private reason".to_string(),
         evidence_commit: None,
         failure_output: Some("private output".to_string()),
@@ -339,6 +301,8 @@ fn file_dispute_debug_output_redacts_credential_reason_and_ids() {
         session_id: "session-1".to_string(),
         kind: crate::models::dispute::DisputeKind::Contract {
             contract_id: "private-contract".to_string(),
+            replacement: None,
+            replacement_base_sha256: None,
         },
         reason: "private reason".to_string(),
         evidence_commit: None,
@@ -348,10 +312,7 @@ fn file_dispute_debug_output_redacts_credential_reason_and_ids() {
     assert!(!output.contains("user-secret"));
     assert!(!output.contains("private reason"));
     assert!(!output.contains("private-contract"));
-    assert!(
-        output.contains("contract"),
-        "the kind stays legible: {output}"
-    );
+    assert!(output.contains("contract"), "kind: {output}");
     assert!(output.contains("session-1"));
 }
 

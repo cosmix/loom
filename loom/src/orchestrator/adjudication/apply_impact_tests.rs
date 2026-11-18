@@ -61,7 +61,7 @@ fn an_accepted_impact_dispute_records_the_failure_as_judged() {
     assert_eq!(accepted[0].dispute, 1);
     assert_eq!(
         load_stage("s1", tmp.path()).unwrap().status,
-        StageStatus::Queued
+        StageStatus::NeedsAdjudication
     );
     let notice = feedback::read_feedback(tmp.path(), "s1").unwrap().unwrap();
     assert!(

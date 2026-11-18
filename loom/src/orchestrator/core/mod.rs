@@ -25,6 +25,7 @@ mod merge_handler;
 #[cfg(test)]
 #[path = "merge_lifecycle_e2e_tests.rs"]
 mod merge_lifecycle_e2e_tests;
+mod native_workers;
 mod orchestrator;
 mod orchestrator_result;
 mod orphan_adoption;
@@ -41,16 +42,19 @@ mod session_adoption;
 mod session_lifecycle;
 mod spawn_setup;
 mod spool_drain;
+mod stage_block;
 mod stage_executor;
 mod stage_handoff;
 mod stage_knowledge;
 mod stage_launch_policy;
 mod stage_preflight;
 mod stage_spawn;
+mod stage_spawn_signal;
 mod stage_telemetry;
 pub mod state_identity;
 mod target_hold;
 mod verdict_apply;
+mod verdict_completion;
 
 pub(crate) use crash_classification::spawn_failure_type;
 pub(crate) use merge_handler::resolver_attempts::{
@@ -220,7 +224,7 @@ mod tests {
             .validate_knowledge_sandbox(&stage, "knowledge-1")
             .unwrap();
 
-        assert!(result.is_some(), "a default sandbox config must validate");
+        assert!(result, "a default sandbox config must validate");
         assert!(
             !repo_root.join(".claude/settings.local.json").exists(),
             "knowledge-stage spawn setup must not write the main repo's local settings"
@@ -268,10 +272,7 @@ mod tests {
         let result = orchestrator
             .validate_knowledge_sandbox(&stage, "knowledge-1")
             .unwrap();
-        assert!(
-            result.is_none(),
-            "an invalid sandbox config must refuse to spawn"
-        );
+        assert!(!result, "an invalid sandbox config must refuse to spawn");
 
         let after = load_stage("knowledge-1", &work).unwrap();
         assert_eq!(after.status, StageStatus::Blocked);
@@ -345,5 +346,7 @@ name: Test Stage
     }
 }
 
+#[cfg(test)]
+mod block_contract_tests;
 #[cfg(test)]
 mod lifecycle_regression_tests;

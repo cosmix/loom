@@ -12,7 +12,7 @@ mod git_preflight;
 mod graph_loader;
 mod guidance;
 mod plan_inputs;
-mod sandbox_preflight;
+pub(crate) mod sandbox_preflight;
 mod signing_preflight;
 
 #[cfg(test)]
@@ -27,6 +27,7 @@ use std::path::PathBuf;
 use crate::daemon::{DaemonConfig, DaemonServer};
 use crate::fs::work_dir::{read_terminal_config, write_terminal_config, WorkDir};
 use crate::models::session::{SessionBackendKind, TerminalConfig};
+use crate::orchestrator::terminal::backend::TMUX_MISSING_MESSAGE;
 
 use checks::prepare_repo_for_run;
 
@@ -98,6 +99,7 @@ fn prepare_background_run(
 ) -> Result<WorkDir> {
     // Ensure git worktree prerequisites are met before starting.
     let repo_root = std::env::current_dir()?;
+    crate::git::worktree::require_main_identity(&repo_root)?;
     prepare_repo_for_run(&repo_root)?;
 
     // Absolute, not ".": a long-lived daemon must get an absolute base — a
@@ -230,28 +232,22 @@ fn resolve_backend_flag_with_probe(
     if read_terminal_config(work_dir.root())?.backend == SessionBackendKind::Tmux
         && !tmux_available()
     {
-        bail!(
-            "terminal backend \"tmux\" is configured but tmux is not on PATH; install tmux or \
-             set [terminal] backend = \"native\" (.loom/work/config.toml or ~/.loom/config.toml)"
-        );
+        bail!(TMUX_MISSING_MESSAGE);
     }
 
     Ok(())
 }
 
-/// Builds the daemon-desync hint text for [`resolve_backend_flag`], isolated
-/// from the `println!` so the FIX-critical part — re-running the SAME
-/// command shape the operator actually invoked, not a different one — is
-/// unit-testable without a live daemon (see `backend_flag_tests` below for
-/// why the branch that calls this is not).
+/// Builds a restart hint preserving the operator's invocation, including
+/// `--foreground` when present.
 fn backend_restart_hint(invocation: &str, value: &str) -> String {
     format!(
         "backend change requires a daemon restart: run `loom stop`, then `{invocation} --backend {value}`"
     )
 }
 
-/// Tests for [`resolve_backend_flag`] — the shared `--backend` resolution and
-/// marker-clearing logic used by both `loom run` and `loom run --foreground`.
+/// Tests for shared `--backend` resolution, persistence and restart hints for
+/// both `loom run` and `loom run --foreground`.
 ///
 /// Kept inline (rather than in `run/tests.rs`) since these exercise a
 /// module-private function; none of these need a live daemon, so the
@@ -377,11 +373,7 @@ mod backend_flag_tests {
 
     #[test]
     fn backend_restart_hint_uses_the_callers_invocation_text() {
-        // The daemon-desync branch itself needs a live daemon (see the
-        // module doc comment above), but the text it prints is a pure
-        // function of `invocation` and is exactly what FIX 3 is about: a
-        // foreground caller must be told to re-run `loom run --foreground
-        // --backend <x>`, not `loom run --backend <x>`.
+        // Preserve the foreground flag in the command suggested to the user.
         assert_eq!(
             super::backend_restart_hint("loom run", "tmux"),
             "backend change requires a daemon restart: run `loom stop`, then `loom run --backend tmux`"

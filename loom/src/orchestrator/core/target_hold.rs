@@ -37,8 +37,8 @@ fn hook_install_line(installed: &anyhow::Result<HookInstall>) -> Result<&'static
         Ok(HookInstall::Installed) => Ok("target guard: reference-transaction hook installed"),
         Ok(HookInstall::UpToDate) => Ok("target guard: reference-transaction hook up to date"),
         Ok(HookInstall::ForeignHookPresent) => Err(
-            "target guard: .git/hooks/reference-transaction belongs to another tool and was \
-             left in place"
+            "target guard: the reference-transaction hook git runs here belongs to another \
+             tool and was left in place"
                 .to_string(),
         ),
         Err(error) => Err(format!(
@@ -235,22 +235,6 @@ impl Orchestrator {
              they are"
         );
         self.merge_probe_error = Some(message);
-    }
-
-    /// Whether `commit` is in the accepted target tip, for a caller that
-    /// reverts `merged` when it is not; no commit counts as not merged.
-    /// `None` when the guard cannot be evaluated: that is not evidence of a
-    /// phantom merge, and the guard keeps merges held.
-    pub(in crate::orchestrator::core) fn probe_merged(
-        &mut self,
-        stage_id: &str,
-        commit: Option<&str>,
-        target: &str,
-    ) -> Option<bool> {
-        let Some(commit) = commit else {
-            return Some(false);
-        };
-        self.probe_accepted(stage_id, commit, target).ok()
     }
 
     /// Why `stage` must not spawn now: `Held` for a held stage, `TargetHeld`

@@ -1,6 +1,6 @@
 # Sessions And Liveness
 
-> Session identity, liveness
+>
 
 ## Session Identity: Backend Metadata Must Be Persisted
 
@@ -380,3 +380,20 @@ test output before calling a platform test green.
 
 **Fix:** `bsd_info` passes 1; `process_start_time` now also answers for a zombie, as on Linux, and every
 caller checks `is_process_alive` first.
+
+## The 60 s Stall Rule Reported Slow Scheduler Work as a Stalled Loop (2026-11-08)
+
+**What happened:** `loom status` showed "orchestrator loop stalled" with the restart advice (`loom stop`, then `loom run`) while the scheduler was healthy and inside brief generation, resolved-merge verification or a provision entry. Following the advice would have killed the work in flight.
+
+**Why:** `STALL_THRESHOLD_SECS` (60 s, `loom/src/orchestrator/tick.rs`) assumed slow scheduler-thread work never reached 60 s. Only provisioning re-stamped the tick (a private helper in `provision_gate.rs`); every other long operation left the tick stale and read as a hung loop.
+
+**Prevention:** wrap any scheduler-thread operation that can exceed a few seconds in `busy::while_busy` (`loom/src/orchestrator/busy.rs`) with a ceiling in `BusyOp::ceiling_secs`, and keep the global ceiling above the longest per-operation one. Do not raise the 60 s constant. Shape and rules: [Daemon Liveness and Loop Health](../architecture/status-data-model.md#daemon-liveness-and-loop-health).
+
+**Fix:** the tick gained a third `busy <op> <started_at> <stage_id>` line, `busy::loop_state` became the one classifier every status surface calls, and the provision-only ticker moved into `busy.rs`.
+
+## A Dead Tracked Session Blocked Every Replacement After an External Stage Reset (2026-11-16)
+
+**What happened:** `loom stage reset <stage> --kill-session` run from the CLI while the daemon ran killed the session and rewrote the stage file, but the daemon kept its `active_sessions` entry for the dead session. `insert_active_session` refused each replacement (`Refusing to evict an already-tracked active session`), so the respawned sessions ran unmonitored and their relayed requests stalled (`relay stalled: request tickets ... never relayed`). A native `loom subagents start` is one of those requests. The reset also wrote a handoff whose frontmatter, carrying the whole stage `goals`, exceeded the 8 KiB scan in `handoff_watch`, which warned on every poll.
+**Why:** the refusal protected a live agent from being dropped but treated a dead incumbent the same way; `handoff_watch` read the whole document and then judged only its first 8 KiB. The operator-run reset was not checked against the ERROR it produced in orchestrator.log, so two stages ran untracked until a relay stall surfaced it.
+**Prevention:** after any CLI action on a stage while the daemon runs, grep orchestrator.log for `ERROR` before trusting the respawn. A guard that refuses must separate a live holder from a dead one. A size limit on a parsed head needs a reason tied to the data's real size.
+**Fix:** `insert_active_session` replaces an incumbent only when `is_session_alive` returns `Ok(false)` and still refuses a live or unverifiable one; `handoff_watch` parses the whole bounded document.

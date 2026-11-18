@@ -1,7 +1,5 @@
 # Execution Containment
 
-> Command containment
-
 ## Read This First: What "Containment" Means In Loom
 
 `CommandConfinement::Confined` prepares an OS boundary in `verify/criteria/confine_host.rs` as well as rebuilding the child environment. Fresh host verification commands use macOS Seatbelt or Linux bubblewrap, allow selected runtime/toolchain reads and worktree writes, and deny network access. Missing containment support is an error. Confined commands run only in a host job's child (`loom stage verify-host`, see [Host Verification Jobs](verification-v2-gates.md)). A session never runs one, so a session sandbox never nests a boundary and needs no nested user namespaces.
@@ -110,6 +108,8 @@ Two things not to "fix" without reading the reasoning first:
 `allow_write` rules also have parent traversal filtered out at the emitter, which
 is what actually closes the path-escape hole at the point of use.
 
+The planning sessions' settings are the second producer: `loom::plan_session::sandbox` writes their `settings.json` per session kind and not through `generate_settings_json` ([Planning Session Sandbox](planning-session-sandbox.md)).
+
 ## Package-Manager Caches Are Granted To Every Stage
 
 `sandbox::PACKAGE_MANAGER_CACHE_WRITE_PATHS` (`sandbox/package_caches.rs`) lists the
@@ -216,8 +216,11 @@ repository), these sandbox rules decide what loom's capsule can and cannot expre
   when the parent is a host directory bound into the sandbox, so host processes see an empty
   regular file there while each sandboxed command runs; Claude Code removes it afterwards (a killed
   sandbox can leave it). A `denyRead` path that does not exist mounts nothing.
-- **Reads.** A `denyRead` file is bound from `/dev/null`; a directory is covered by a tmpfs with
-  the `allowRead` and `allowWrite` paths inside it re-mounted.
+- **Reads.** A `denyRead` file is bound from `/dev/null`; a directory is covered by a private
+  writable tmpfs for one command, with the `allowRead` and `allowWrite` paths inside it
+  re-mounted. A write under it succeeds and never reaches the host, and no `denyWrite` can make it
+  read-only (srt 0.0.78 `pushReadDenyDirMounts` skips a `denyWrite` outside `allowWrite` as
+  already read-only).
 - **Environment.** A top-level `env` in a `--settings` file reaches Bash commands; Claude Code
   sets `TMPDIR` per command to `<CLAUDE_CODE_TMPDIR or /tmp>/claude-<uid>`.
 - **srt.** `@anthropic-ai/sandbox-runtime` 0.0.78 shares this bind logic but not the git-dir
@@ -338,7 +341,7 @@ Running `loom status` FROM INSIDE a stage's own sandboxed session reports that s
 
 ## macOS: the stage sandbox refuses a nested Seatbelt, so the wrapper runs codex exec directly
 
-**Symptom.** Five `loom-codex-forwarder` spawns in a stage session each reached gpt-5.6-terra and the
+**Symptom.** Five `loom-codex-forwarder` spawns in a stage session each reached gpt-6.1-terra and the
 companion exited 0, but zero files were written: every shell command codex ran, even `pwd`, died with
 `sandbox-exec: sandbox_apply: Operation not permitted`. The 67b97114 state-root redirect (previous
 section) had worked; this failure sits one layer below it.

@@ -1,6 +1,6 @@
 # Config Plan And Gate Rules
 
-> Config, plan-only, gate rules
+>
 
 ## Configuration Is the Only Authority for Configurable Behavior
 
@@ -17,3 +17,15 @@ A completion, verification or cleanup rule never hardcodes one ecosystem's direc
 ## README Covers Current Behavior Only
 
 The README documents what loom does now. A fixed bug gets no warning box, mechanism write-up, or workaround recipe there; that history belongs in `mistakes/` and the commit log. A cost or limit that was expected but never materialized is deleted, not hedged: the owner confirmed `-p` usage is not charged separately, so the README carries no `claude -p` billing warning.
+
+## A Completed, Merged Stage Is Final
+
+A stage that is Completed with `merged: true`, or completed by the operator with `--force-unsafe --assume-merged` (`merge_assumed: true`), is final. Loom never re-verifies its merge, never reverts `merged`, and never moves it to MergeBlocked, MergeConflict or any other status, whatever happens to the target branch afterwards (a move outside loom, a target hold, a changed HEAD). `--assume-merged` is the operator's statement that the work landed, and loom takes it as given. Owner direction.
+
+## Prove Reach With `reachable`; `wiring` Is for Seams the Graph Cannot See
+
+A stage proves its new unit is used with `reachable` (a symbol and an entry point, checked on the source graph). `wiring` exists for seams the graph cannot follow: registration by string, configuration, templates, macros and trait objects. A `wiring` pattern never points at a definition (`fn run`, `mod x`, `class Y`): it matches only where the name is declared, so it passes while nothing calls the unit, and `loom plan verify` rejects the shape (`v2_lints/wiring_definition.rs`). A stage whose consumer comes in a later stage or outside the plan declares `consumer_deferred: "<reason>"` and writes no invented wiring check; the reason reaches the stage signal and integration-verify's reviewer brief, and it waives nothing else. Details: [plan-lifecycle-and-fields](../architecture/plan-lifecycle-and-fields.md#wiring-patterns-shaped-like-a-definition-consumer_deferred-and-the-leaf-rule). Run `loom plan verify --strict --dry-run` before handing a plan over.
+
+## Plans and Fixtures Stay Out of Version Control Without Ignore Rules
+
+`doc/plans/` (plans, briefs, mockups, archive) is kept on disk but not tracked on feat-planner-ui and later branches. It is deliberately absent from `.gitignore`, because loom commits plan files during a run and an ignore rule would block that. Recorded fixtures, tests and docs never carry a real home directory, username or private project name: use `/home/username/...` and `myproject` (same length as the originals, so recorded byte offsets and column alignment hold), and tests take paths from temp dirs or synthetic literals, never the host layout.

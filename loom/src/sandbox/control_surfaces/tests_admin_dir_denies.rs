@@ -81,9 +81,62 @@ fn each_admin_dir_is_denied_by_its_relation_to_the_session() {
     let checkout = denies_at(&repo, None).unwrap();
     assert_denied_whole(&checkout, &s1);
     assert_denied_whole(&checkout, &s2);
-    let configs = |entry: &String| entry.contains("config.worktree");
-    assert!(!checkout.deny_write.iter().any(configs), "{checkout:?}");
-    assert!(!checkout.edit.iter().any(configs), "{checkout:?}");
+    assert_nothing_beneath(&checkout, &s1);
+    assert_nothing_beneath(&checkout, &s2);
+}
+
+#[test]
+fn linked_operator_git_pointer_is_denied_without_blocking_main_git_directory() {
+    let (_tmp, repo) = repo_with_two_worktrees();
+    let linked = repo.join(".worktrees/s1");
+    let pointer = linked.join(".git");
+    let git_dir = common(&repo);
+    let child = linked.join(".worktrees/child");
+    let output = std::process::Command::new("git")
+        .args(["worktree", "add", "-b", "loom/child"])
+        .arg(&child)
+        .current_dir(&linked)
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{output:?}");
+    for worktree in [None, Some(child)] {
+        let denies = denies_at(&linked, worktree.as_deref()).unwrap();
+        assert!(has(&denies.deny_write, text(&pointer)));
+        assert!(has(&denies.edit, &format!("Edit(/{})", text(&pointer))));
+        assert!(has(&denies.edit, "Edit(.git)"));
+        assert!(has(&denies.deny_write, text(&git_dir.join("config"))));
+        assert!(has(&denies.deny_write, text(&git_dir.join("hooks"))));
+        assert!(!has(&denies.deny_write, text(&git_dir)));
+        assert!(!denies
+            .deny_write
+            .iter()
+            .any(|path| Path::new(path).starts_with(&pointer) && Path::new(path) != pointer));
+        let own = if worktree.is_some() {
+            git_dir.join("worktrees/child")
+        } else {
+            git_dir.join("worktrees/s1")
+        };
+        assert!(!has(&denies.deny_write, text(&own)));
+        assert!(!has(&denies.deny_write, text(&own.join("index"))));
+        for name in ["config.worktree", "gitdir", "commondir"] {
+            assert!(has(&denies.deny_write, text(&own.join(name))));
+        }
+    }
+}
+
+#[test]
+fn anchored_linked_operator_keeps_pointer_and_admin_denies_if_pointer_is_removed() {
+    let (_tmp, repo) = repo_with_two_worktrees();
+    let linked = repo.join(".worktrees/s1");
+    let state = linked.join(".loom/work");
+    std::fs::create_dir_all(&state).unwrap();
+    crate::git::worktree::capture_main_identity(&linked, &state).unwrap();
+    std::fs::remove_file(linked.join(".git")).unwrap();
+    let denies = denies_at(&linked, None).unwrap();
+    assert!(has(&denies.deny_write, text(&linked.join(".git"))));
+    let own = common(&repo).join("worktrees/s1");
+    assert!(has(&denies.deny_write, text(&own.join("commondir"))));
+    assert!(!has(&denies.deny_write, text(&own.join("index"))));
 }
 
 #[test]

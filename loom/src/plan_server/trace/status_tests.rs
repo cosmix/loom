@@ -1,0 +1,198 @@
+//! `POST /api/findings/status`: the refusals, a dismissal and a reopen, and the status rules on
+//! their own.
+
+use serde_json::json;
+
+use super::route_tests::{demo, read};
+use super::status_route::status_of;
+use crate::plan_server::tests::support::{bootstrap, post_json, serve, skip, status};
+use crate::plan_server::wire::trace::{FindingKindView, FindingStatusView};
+use crate::plan_server::RunningServer;
+use crate::planning::findings::FindingStatus;
+use crate::planning::sections::normalized_hash;
+
+const LEDGER: &str = "doc/plans/demo/findings.md";
+const TEXT: &str =
+    "# Findings\n\n## F-1 Flag\n\nAbout: section_01#one\nStatus: open\n\nRename the flag.\n";
+
+fn view(kind: FindingKindView, detail: Option<&str>) -> FindingStatusView {
+    FindingStatusView {
+        kind,
+        detail: detail.map(str::to_owned),
+    }
+}
+
+fn post_status(
+    server: &RunningServer,
+    cookies: &str,
+    id: &str,
+    hash: &str,
+    status: serde_json::Value,
+) -> String {
+    let body = json!({ "feature": "demo", "id": id, "hash": hash, "status": status });
+    post_json(server, "/api/findings/status", cookies, &body.to_string())
+}
+
+#[test]
+fn refused_statuses_leave_the_ledger_untouched() {
+    if skip("refused_statuses_leave_the_ledger_untouched") {
+        return;
+    }
+    let dir = demo(&[(LEDGER, TEXT)]);
+    let server = serve(&dir);
+    let cookies = bootstrap(&server);
+    let hash = normalized_hash(TEXT);
+    let cases = [
+        ("F-9", json!({ "kind": "dismissed", "detail": "no" })),
+        (
+            "F-1",
+            json!({ "kind": "addressed", "detail": "section_01#one" }),
+        ),
+        ("F-1", json!({ "kind": "unaddressed", "detail": "no" })),
+        (
+            "F-1",
+            json!({ "kind": "planned", "detail": "PLAN-first.md" }),
+        ),
+        ("F-1", json!({ "kind": "folded", "detail": "metaplan#a" })),
+        ("F-1", json!({ "kind": "dismissed", "detail": " \n " })),
+        ("F-1", json!({ "kind": "open", "detail": "x" })),
+    ];
+    for (id, status_body) in cases {
+        let response = post_status(&server, &cookies, id, &hash, status_body.clone());
+        assert_eq!(status(&response), 400, "{id} {status_body}: {response}");
+        assert_eq!(read(&dir, LEDGER), TEXT);
+    }
+    server.stop().unwrap();
+}
+
+#[test]
+fn a_dismissal_and_a_reopen_are_written_as_one_line() {
+    if skip("a_dismissal_and_a_reopen_are_written_as_one_line") {
+        return;
+    }
+    let dir = demo(&[(LEDGER, TEXT)]);
+    let server = serve(&dir);
+    let cookies = bootstrap(&server);
+    let dismissed = post_status(
+        &server,
+        &cookies,
+        "F-1",
+        &normalized_hash(TEXT),
+        json!({ "kind": "dismissed", "detail": "not\nneeded" }),
+    );
+    assert_eq!(status(&dismissed), 200, "{dismissed}");
+    let written = read(&dir, LEDGER);
+    assert!(
+        written
+            .lines()
+            .any(|l| l == "Status: dismissed: not needed"),
+        "{written}"
+    );
+
+    let reopened = post_status(
+        &server,
+        &cookies,
+        "F-1",
+        &normalized_hash(&written),
+        json!({ "kind": "open", "detail": null }),
+    );
+    assert_eq!(status(&reopened), 200, "{reopened}");
+    assert_eq!(read(&dir, LEDGER), TEXT);
+    server.stop().unwrap();
+}
+
+#[test]
+fn an_unaddressed_finding_reopens() {
+    if skip("an_unaddressed_finding_reopens") {
+        return;
+    }
+    let unaddressed = TEXT.replace("Status: open", "Status: unaddressed: the team was stopped");
+    let dir = demo(&[(LEDGER, &unaddressed)]);
+    let server = serve(&dir);
+    let cookies = bootstrap(&server);
+    let reopened = post_status(
+        &server,
+        &cookies,
+        "F-1",
+        &normalized_hash(&unaddressed),
+        json!({ "kind": "open", "detail": null }),
+    );
+    assert_eq!(status(&reopened), 200, "{reopened}");
+    assert_eq!(read(&dir, LEDGER), TEXT);
+    server.stop().unwrap();
+}
+
+#[test]
+fn a_stale_ledger_hash_conflicts_and_an_unknown_feature_is_not_found() {
+    if skip("a_stale_ledger_hash_conflicts_and_an_unknown_feature_is_not_found") {
+        return;
+    }
+    let dir = demo(&[(LEDGER, TEXT)]);
+    let server = serve(&dir);
+    let cookies = bootstrap(&server);
+    let dismissal = json!({ "kind": "dismissed", "detail": "no" });
+    let stale = post_status(
+        &server,
+        &cookies,
+        "F-1",
+        &normalized_hash("old"),
+        dismissal.clone(),
+    );
+    assert_eq!(status(&stale), 409, "{stale}");
+    assert_eq!(read(&dir, LEDGER), TEXT);
+
+    let body = json!({ "feature": "nope", "id": "F-1", "hash": "x", "status": dismissal });
+    let unknown = post_json(&server, "/api/findings/status", &cookies, &body.to_string());
+    assert_eq!(status(&unknown), 404, "{unknown}");
+    server.stop().unwrap();
+}
+
+#[test]
+fn a_stale_hash_conflicts_before_the_new_text_is_built() {
+    if skip("a_stale_hash_conflicts_before_the_new_text_is_built") {
+        return;
+    }
+    let dir = demo(&[(LEDGER, TEXT)]);
+    let server = serve(&dir);
+    let cookies = bootstrap(&server);
+    // An unknown id would be a 400 if the text were built before the hash is compared.
+    let dismissal = json!({ "kind": "dismissed", "detail": "no" });
+    let stale = post_status(&server, &cookies, "F-9", &normalized_hash("old"), dismissal);
+    assert_eq!(status(&stale), 409, "{stale}");
+    assert_eq!(read(&dir, LEDGER), TEXT);
+    server.stop().unwrap();
+}
+
+#[test]
+fn a_feature_without_a_ledger_is_not_found() {
+    if skip("a_feature_without_a_ledger_is_not_found") {
+        return;
+    }
+    let dir = demo(&[]);
+    let server = serve(&dir);
+    let cookies = bootstrap(&server);
+    let response = post_status(
+        &server,
+        &cookies,
+        "F-1",
+        "x",
+        json!({ "kind": "open", "detail": null }),
+    );
+    assert_eq!(status(&response), 404, "{response}");
+    server.stop().unwrap();
+}
+
+#[test]
+fn status_rules() {
+    let ok = |kind, detail| status_of(&view(kind, detail));
+    assert_eq!(ok(FindingKindView::Open, None), Ok(FindingStatus::Open));
+    assert!(ok(FindingKindView::Open, Some("x")).is_err());
+    assert!(ok(FindingKindView::Addressed, Some("section_01")).is_err());
+    assert!(ok(FindingKindView::Unaddressed, Some("no")).is_err());
+    assert_eq!(
+        ok(FindingKindView::Dismissed, Some("not needed\n## F-2 x")),
+        Ok(FindingStatus::Dismissed("not needed ## F-2 x".into()))
+    );
+    assert!(ok(FindingKindView::Dismissed, Some("")).is_err());
+    assert!(ok(FindingKindView::Dismissed, None).is_err());
+}

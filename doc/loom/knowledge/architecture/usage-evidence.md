@@ -1,6 +1,6 @@
 # Usage Evidence
 
-> Usage reasons, scope, trials
+>
 
 ## Completeness
 
@@ -21,6 +21,15 @@ from a stage worktree `.loom/work` is a symlink and the bounded record read open
 following links
 ([mistake](../mistakes/completion-runner-blocks.md#a-symlinked-work-dir-made-every-session-record-read-as-unreadable)).
 Per-record diagnostics print to stderr through `inline_safe`.
+
+## Attribution Without a Hook Ledger
+
+`loom usage` joins each transcript to the hook ledgers first; `commands/usage/parent_spawns.rs::ParentSpawns::fill_fallbacks` fills only a field the join left `None`, so a ledger value always wins.
+
+- **Stage.** From the project slug of the transcript's directory: `discovery.rs::stage_from_project_slug` takes the remainder after `<repo-slug>--worktrees-` (the exact remainder when the repo slug is known, otherwise only a remainder with no second delimiter), and accepts it only when it is non-empty and uses `[A-Za-z0-9_-]`. `ParentSpawns::new` loads the recorded stage ids once (`discovery::recorded_stage_ids` through `read_stage_ids`, which strips the depth prefix: `01-core.md` is stage `core`); a slug remainder outside that set names no stage, so a session started in `.worktrees/foo/loom` is not stage `foo-loom`. With `--all` or no readable work dir the set is `None` and the slug parse stands unchecked.
+- **Requested model of a subagent.** The sidecar's `model`, else the `model` of the parent transcript's spawn `tool_use` (`index_parent` streams the parent line by line, skipping lines over 8 MiB), else `default`. A subagent row therefore reports its requested model (`sonnet`, `opus`, `haiku`) and is never unknown when either source exists.
+- **`--stage` filter.** `discovery.rs::filter_stages` matches `ends_with("-worktrees-<stage>")`, so `--stage b` also selects the slug of stage `a-b` ([code-quality-and-hook-debt](../concerns/code-quality-and-hook-debt.md)).
+- **`loom usage --quota`** prints the `## Model Budget` section a stage signal would carry, or a no-data line ([signal-generation.md](signal-generation.md#model-budget-section-formatbudgetrs)); it needs no stage and reads no transcript.
 
 ## Codex Scope
 

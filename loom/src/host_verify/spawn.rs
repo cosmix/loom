@@ -10,7 +10,7 @@ use std::process::{Command, ExitStatus, Stdio};
 use anyhow::{Context, Result};
 
 use super::runner::RunnerConfig;
-use super::{store, JobState, DETAIL_MAX_BYTES};
+use super::{store, JobState, BUDGET_POLICY_ENV, DETAIL_MAX_BYTES};
 use crate::fs::work_dir::WorkDir;
 use crate::process::OwnedProcess;
 
@@ -38,6 +38,7 @@ pub(super) fn spawn_child(
     config: &RunnerConfig,
     stage_id: &str,
     job_id: &str,
+    policy_hash: &str,
 ) -> Result<(OwnedProcess, File)> {
     let root = work_dir
         .canonicalize()
@@ -61,6 +62,7 @@ pub(super) fn spawn_child(
         }
     }
     command.env("LOOM_WORK_DIR", &root);
+    command.env(BUDGET_POLICY_ENV, policy_hash);
     let child = command
         .spawn()
         .with_context(|| format!("cannot spawn {}", config.program.display()))?;
@@ -140,6 +142,6 @@ fn with_log_tail(prefix: &str, log: &File) -> String {
 }
 
 /// Whether the child must not inherit `key` from the daemon's environment.
-pub(super) fn is_session_variable(key: &str) -> bool {
+pub(crate) fn is_session_variable(key: &str) -> bool {
     key.starts_with("LOOM_SESSION") || STRIPPED_ENV.contains(&key)
 }

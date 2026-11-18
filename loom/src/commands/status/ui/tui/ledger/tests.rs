@@ -7,7 +7,8 @@ use crate::commands::status::data::{
 };
 use crate::commands::status::render::attention_model::attention_entries;
 use crate::commands::status::ui::tui::state::TuiActivityLog;
-use crate::models::stage::{StageStatus, StageType, StatusBucket};
+use crate::models::stage::{StageStatus, StatusBucket};
+use crate::orchestrator::busy::LoopState;
 use crate::plan::graph::levels;
 
 pub(super) fn screen(width: u16, height: u16, view: &LedgerView) -> Vec<String> {
@@ -41,49 +42,9 @@ pub(super) fn make_stage(id: &str, status: StageStatus) -> StageSummary {
     StageSummary {
         id: id.to_owned(),
         name: id.to_owned(),
-        description: None,
-        summary: None,
         status,
-        stage_type: StageType::Standard,
-        dependencies: Vec::new(),
-        context_tokens: None,
-        elapsed_secs: None,
-        execution_secs: None,
-        base_branch: None,
-        base_merged_from: Vec::new(),
-        failure_info: None,
-        activity_status: ActivityStatus::Idle,
-        last_tool: None,
-        last_activity: None,
-        staleness_secs: None,
-        context_ceiling_tokens: None,
-        review_reason: None,
-        review_notes: None,
-        merged: false,
-        merge_assumed: false,
-        cleanup_warning: None,
-        merge_block: None,
-        stash_warning: None,
-        held: false,
-        retry_count: 0,
-        max_retries: None,
-        pid: None,
-        session_alive: false,
         model: "opus".to_owned(),
-        session_type: None,
-        incoherence: None,
-        execution_models: Vec::new(),
-        dispute_count: 0,
-        judge_heartbeat_secs: None,
-        session_backend: None,
-        outgoing_session_exit_reason: None,
-        completion_blocker: None,
-        merge_resolver_session: None,
-        merge_resolver_attempts: None,
-        close_reason: None,
-        acceptance: vec![],
-        terminal_history_session: None,
-        block_detail: Default::default(),
+        ..Default::default()
     }
 }
 
@@ -225,7 +186,7 @@ pub(super) fn render_view(
         spinner: '⠋',
         scroll_y: 0,
         legend_open,
-        tick_age_secs: Some(2),
+        loop_state: LoopState::Ticking { age_secs: 2 },
         last_error: None,
         now_epoch: 1_788_523_200,
         scrollable: false,

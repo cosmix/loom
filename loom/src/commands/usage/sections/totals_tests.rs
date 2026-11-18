@@ -1,7 +1,4 @@
-//! Regression test for the `<synthetic>`-request defect in `build`: the
-//! report's own `requests` count must exclude a synthetic API-error row, the
-//! same as `by_model`/`by_agent_model`, so the breakdown rows still sum back
-//! to this total. Split out to keep `totals.rs` legible (CLAUDE.md Rule 17).
+//! Tests for excluding synthetic requests from report totals.
 
 use super::*;
 use crate::commands::usage::transcript::{Entry, Request, Scope};
@@ -34,6 +31,7 @@ fn totals_excludes_synthetic_requests_from_the_report_count() {
         session_id: "session-1".to_owned(),
         agent_id: None,
         agent_type: None,
+        agent_type_from_sidecar: false,
         requested_model: None,
         stage_id: None,
         loom_session_id: None,
@@ -44,6 +42,7 @@ fn totals_excludes_synthetic_requests_from_the_report_count() {
             Entry::Assistant(Box::new(real)),
             Entry::Assistant(Box::new(synthetic)),
         ],
+        attachments: Vec::new(),
         diagnostics: Default::default(),
     };
 
@@ -69,6 +68,7 @@ fn measured_thinking_subfield_does_not_change_legacy_totals_shape() {
         session_id: "session-1".to_owned(),
         agent_id: None,
         agent_type: None,
+        agent_type_from_sidecar: false,
         requested_model: None,
         stage_id: None,
         loom_session_id: None,
@@ -76,6 +76,7 @@ fn measured_thinking_subfield_does_not_change_legacy_totals_shape() {
         forward_candidate: false,
         first_user_entry: None,
         entries: vec![Entry::Assistant(Box::new(measured))],
+        attachments: Vec::new(),
         diagnostics: Default::default(),
     };
 

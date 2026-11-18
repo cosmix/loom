@@ -2,26 +2,29 @@
 //! package.
 
 use std::path::Path;
-use std::process::Command;
 
 use tempfile::TempDir;
 
 use super::super::{run, LintContext, LintFinding};
 use crate::plan::schema::{ContractSpec, LoomConfig, LoomMetadata, StageDefinition};
+use crate::test_git::{git, TestRepo};
 
-fn git(root: &Path, args: &[&str]) {
-    let output = Command::new("git")
-        .args(args)
-        .current_dir(root)
-        .env("GIT_CONFIG_GLOBAL", root.join(".no-global-config"))
-        .env("GIT_CONFIG_NOSYSTEM", "1")
-        .output()
-        .unwrap();
-    assert!(
-        output.status.success(),
-        "git {args:?} failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
+#[test]
+fn integration_verify_accepts_go_benchmarks_only_when_tests_are_unfiltered() {
+    use crate::plan::schema::types::{AcceptanceCriterion, StageType};
+    for (command, full) in [
+        ("go test ./... -bench . -benchtime 1s", true),
+        ("go test ./... -bench . -run TestOne", false),
+    ] {
+        let stage = StageDefinition {
+            stage_type: Some(StageType::IntegrationVerify),
+            acceptance: vec![AcceptanceCriterion::Simple(command.to_string())],
+            ..Default::default()
+        };
+        let mut findings = Vec::new();
+        super::check_full_test_run(&stage, None, &mut findings);
+        assert_eq!(findings.is_empty(), full, "{command}");
+    }
 }
 
 /// A repository whose one commit holds a binary package at its root.
@@ -34,9 +37,7 @@ fn repo() -> TempDir {
 fn repo_in(dir: &str) -> TempDir {
     let temp = TempDir::new().unwrap();
     let root = temp.path();
-    git(root, &["init", "-q", "-b", "main"]);
-    git(root, &["config", "user.email", "test@example.com"]);
-    git(root, &["config", "user.name", "Test"]);
+    TestRepo::builder().no_seed().init_in(root);
     let package = root.join(dir);
     std::fs::create_dir_all(package.join("src")).unwrap();
     std::fs::create_dir_all(root.join("tools")).unwrap();
@@ -56,7 +57,7 @@ fn contract(file: &str, test: &str) -> ContractSpec {
     ContractSpec {
         id: "locks".to_string(),
         file: file.to_string(),
-        test: test.to_string(),
+        test: Some(test.to_string()),
         runner: Some("cargo-test".to_string()),
         cwd: None,
         scenario: "a lock is taken".to_string(),

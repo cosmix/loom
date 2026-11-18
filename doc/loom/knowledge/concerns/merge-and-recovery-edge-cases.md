@@ -1,13 +1,12 @@
 # Merge And Recovery Edge Cases
 
-> Merge/retry edge cases
+> Edges
 
 ## Merge Path Follow-Ups After the Silent-Unmerged Fix
 
 Found while fixing the silent `Completed + !merged` outcome (`mistakes/phantom-merges.md`, last entry). Each is a separate change and was left as is.
 
 - `loom stage merge` requires the cwd to be inside `.worktrees/` (`commands/stage/merge/preflight.rs::resolve_worktree_paths`). A stage whose worktree is gone but whose branch is unmerged has no loom command that merges it, and the hints printed by the daemon and `loom status` do not say to cd first.
-- `verify_merged_true_or_revert` (`orchestrator/core/recovery.rs`) treats a git error from `verify_merge_succeeded` as "not verified" (`unwrap_or(false)`) and reverts `merged` to false, so a transient git failure can flip a merged stage to unmerged.
 - `try_auto_merge` is 228 lines against the 50-line function cap and is ledgered at that size.
 
 ## Merge Resolver Spawn Loop: Open Gaps
@@ -58,7 +57,7 @@ When one of loom's own completion gates cannot evaluate (its run errors), nothin
 
 - **The stage agent cannot fix the gate.** `loom stage complete` runs the installed `loom` binary, so the worktree's copy of `src/verify` has no effect; in a loom-on-loom plan that directory is usually outside the stage's `files` as well.
 - **Most of loom's own gates have no dispute.** `dispute-criteria`, `dispute-findings`, `dispute-contract` and `dispute-integrity` cover plan-authored checks, review findings, frozen contracts and integrity events, and `dispute-criteria --field impact-tests --test <id>` covers a failing impact-selected test the stage did not cause. Reachable re-verification and the checks every stage gets have no dispute, and an impact dispute covers a selection that ran and failed, never a gate run that errored before any selection could be judged, so the adjudicator never sees those.
-- **A block is untyped and terminal.** `loom stage block <id> <reason>` takes free text and clears `failure_info` (`stage_service/control_block.rs`). An agent's block is refused only while its latest completion shows a failing acceptance criterion; a gate that errors before any criterion result passes the refusal. The daemon auto-retries only `SessionCrash` and `Timeout` (`orchestrator/retry.rs::should_auto_retry`). A gate defect and a missing credential look identical, and both wait for a person. A manual `loom stage retry` re-runs the same deterministic gate and blocks again.
+- **A block is untyped and terminal.** `loom stage block <id> <reason>` takes free text and archives `failure_info` into `issue_history` before clearing it (`stage_service/control_block.rs`). An agent's block is refused only while its latest completion shows a failing acceptance criterion; a gate that errors before any criterion result passes the refusal. The daemon auto-retries only `SessionCrash` and `Timeout` (`orchestrator/retry.rs::should_auto_retry`). A gate defect and a missing credential look identical, and both wait for a person. A manual `loom stage retry` re-runs the same deterministic gate and blocks again.
 
 See [[mistakes/verification-v2-delivery]], "The Impact Gate Failed a Stage on Its Own Spawn Error".
 
@@ -85,33 +84,13 @@ A retry after a successful archive whose DONE rename then failed writes another 
 
 **Hardening path:** Tag base merges explicitly via session metadata (e.g., a marker file or distinct `SessionType::BaseConflict` always present during the base-merge window) and key the carve-out off that signal alone, not the current branch name. Until then, the heuristic is documented here so future work knows where to look.
 
-## Recovery: `retry --force` races daemon orphan-recovery on existing worktree
+## Retry session identity and startup recovery
 
-**Observed:** `loom stage retry --force --context "..."` correctly set `integration-verify` to `Queued`, but on the next daemon poll the orphan-recovery routine in `orchestrator/core/orphan_adoption.rs::route_orphaned_stage` saw the (now-stale) session_id, found commits-ahead-of-base on the worktree branch, and immediately re-routed the stage to `NeedsHandoff` (commits_ahead path in `route_orphaned_stage`). To the user, the stage looked stuck — they typed `retry`, it was ready for a second, then back to a handoff state with no agent activity.
-
-This is a logically defensible design (commits exist, don't burn tokens redoing them), but the user-visible interaction is confusing. The "fix" — using `retry --force` a _second_ time after acknowledging the handoff — is undocumented in the recovery flow.
-
-**What's needed (pick one or both):**
-
-- `retry --force` should clear `stage.session` before saving, so subsequent orphan recovery doesn't treat the prior session as live and doesn't rerun its decision tree.
-- Orphan-recovery should respect a recently-saved "retry intent" marker (e.g., a timestamp on the stage indicating user-driven retry within the last poll interval) and skip its commits-ahead reroute for those.
-
-**Where to look:**
-
-- `commands/stage/skip_retry.rs` (`retry` sets Queued but leaves `stage.session` populated)
-- `orchestrator/core/orphan_adoption.rs::route_orphaned_stage` (the orphan-recovery decision tree that re-routes to `NeedsHandoff`) and `orchestrator/core/recovery_sessions.rs`
+Explicit retry clears the previous session pointer on the simple path (`commands/stage/skip_retry.rs:236-243`). A retry with recovery context assigns a new session id (`:216`); `apply_retry_delta` persists the planned identity under the stages lock (`:313-336`). Orphan adoption runs at startup (`orchestrator/core/run.rs:70`). Any residual recovery issue requires a trace distinguishing the context path from the simple retry path.
 
 ## Status Dashboard: `started_at` not refreshed on retry, stage appears "stale/orphaned"
 
-**Observed:** After a successful `loom stage retry --force` that spawned a fresh session, the status dashboard rendered `integration-verify` as `19h4m · 🔄 · orphaned (stale)` for the duration of the new attempt. The number came from the original (long-dead) `started_at`; the new session was actually `Up About a minute` in podman and actively making tool calls.
-
-**What's needed:** `stage_executor`'s spawn path (or `retry`) should reset `stage.started_at` to `Utc::now()` when a new session is created. The dashboard's "stale" heuristic should key off the new attempt, not the cumulative duration.
-
-**Where to look:**
-
-- `commands/stage/skip_retry.rs::retry` (where retry mutates stage fields)
-- `orchestrator/core/stage_spawn.rs` (`begin_attempt(Utc::now())` is already called here — confirm it's the only writer of `started_at` and that it's reached on retry).
-- The "stale" indicator emitter — likely in `commands/graph/indicators.rs` or a dashboard renderer.
+The claim that explicit retry retains the dead session start time is incorrect. `loom/src/commands/stage/skip_retry.rs` clears `started_at` and `attempt_started_at` before queuing a retry. `Stage::try_mark_executing` stamps the new start at spawn, and `begin_attempt` starts the attempt clock. Status elapsed time therefore measures from the fresh retry start.
 
 ## A Retry Reset a Completed Stage's Branch, and the Stage Still Read `merged: true`
 

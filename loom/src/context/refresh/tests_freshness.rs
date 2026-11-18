@@ -4,36 +4,13 @@
 use super::*;
 use crate::context::freshness::GraphState;
 use crate::context::store::StoreState;
+use crate::test_git::git as git_ok;
+use crate::test_git::TestRepo;
 use std::path::PathBuf;
 use tempfile::TempDir;
 
-/// Run one git command with ambient global/system config neutralized, so a
-/// developer's or CI runner's `~/.gitconfig` cannot change test behavior —
-/// mirrors `tests_source_graph.rs::isolated_git`.
-fn isolated_git(root: &Path, args: &[&str]) -> std::process::Output {
-    std::process::Command::new("git")
-        .args(args)
-        .current_dir(root)
-        .env("GIT_CONFIG_GLOBAL", root.join(".loom-test-no-global"))
-        .env("GIT_CONFIG_SYSTEM", root.join(".loom-test-no-system"))
-        .env("GIT_CONFIG_NOSYSTEM", "1")
-        .output()
-        .unwrap()
-}
-
-fn git_ok(root: &Path, args: &[&str]) {
-    let out = isolated_git(root, args);
-    assert!(
-        out.status.success(),
-        "git {args:?} failed: {}",
-        String::from_utf8_lossy(&out.stderr)
-    );
-}
-
 fn head_sha(root: &Path) -> String {
-    let out = isolated_git(root, &["rev-parse", "HEAD"]);
-    assert!(out.status.success(), "rev-parse HEAD failed");
-    String::from_utf8_lossy(&out.stdout).trim().to_string()
+    git_ok(root, &["rev-parse", "HEAD"])
 }
 
 /// A git repo rooted at `temp.path()`, with `doc/loom/knowledge/` present so
@@ -42,9 +19,10 @@ fn head_sha(root: &Path) -> String {
 fn init_repo_with_knowledge_root() -> (TempDir, PathBuf, String) {
     let temp = TempDir::new().unwrap();
     let root = temp.path().to_path_buf();
-    git_ok(&root, &["init", "-b", "main"]);
-    git_ok(&root, &["config", "user.email", "t@t.com"]);
-    git_ok(&root, &["config", "user.name", "t"]);
+    TestRepo::builder()
+        .identity("t", "t@t.com")
+        .no_seed()
+        .init_in(&root);
 
     let knowledge_root = root.join("doc/loom/knowledge");
     std::fs::create_dir_all(&knowledge_root).unwrap();

@@ -1,6 +1,6 @@
 # Codex Lane Rogue Wrapper
 
-> Wrapper implemented itself
+>
 
 ## A forwarding wrapper implemented the task itself (2026-08-07)
 
@@ -155,3 +155,33 @@ lagged the worktree fix until merge.
 - When the Agent result is truncated, read the persisted task output through Bash with
   `rg -A60 '^\[codex\] Turn completed'` (Read is blocked outside the worktree) and cross-check the
   job record's phase.
+
+## Review rounds looped because fix agents could not compile the shared checkout (2026-10-28)
+
+**What happened:** the early-START receipt fix went through four review rounds. Each round found a defect the previous fix agent could have caught by running the tests: a test fixture that panicked, an assertion that still encoded old behaviour, and a wait that still blocked until its timeout. Another session's unfinished edit to `commands/knowledge/eval.rs` kept the shared checkout from compiling, so the fix agents edited blind and only ran rustfmt.
+**Why:** verification was handed back to the main agent, and each review round then ran on code nobody had executed. A side test run under `/tmp` also filled the volume's quota and produced false failures.
+**Prevention:** when the shared checkout does not build, give the fix agent a detached worktree of HEAD with the change applied and one shared `CARGO_TARGET_DIR`, and require green gates before review. Run one build at a time on the `/tmp` volume.
+**Fix:** the last round went to a Fable agent working in such a worktree.
+
+## Sandbox and relay tests fail when the checkout lives under /tmp (2026-10-28)
+
+**What happened:** a full `cargo test` in a detached worktree under the session scratchpad failed `tests_confinement_e2e`, `tmux::tests_spawn`, `daemon_completion_contracts`, `host_verification_*` and the relay e2e tests. These failures were first blamed on the /tmp disk quota.
+**Why:** loom's sandbox preflight refuses a `LOOM_BIN` or hooks directory under the session-writable root `/tmp`, and `relay_scratch.rs` refuses a scratch root under `/tmp`. The tests fail because of where the checkout is, whatever the code.
+**Prevention:** judge those binaries only from a checkout and `CARGO_TARGET_DIR` outside `/tmp`. A failure whose panic names `/tmp` as the refused root is a location artifact, not a regression.
+
+## Blamed a nonexistent concurrent session for a broken checkout
+
+**What happened:** The pre-commit hook failed to compile loom/src/commands/knowledge/eval.rs. I attributed the edit to another live session and asked the user to wait, though no other agent was running: the edit was a half-applied held fix from finish-eval-fix.sh that duplicated HEAD's own refresh_source_graph call.
+**Why:** I inferred ownership from the files being outside my change instead of checking their origin (git diff, held-fix scripts, stash list).
+**Prevention:** When unrelated uncommitted edits break the build, trace where they came from before assuming a concurrent owner, and ask the user only once that trace is inconclusive. Reconciling a stash apply covers its untracked files too: `git show --stat stash^3` lists them.
+**Fix:** Reconciled eval.rs against HEAD and dropped the duplicate call. That left the stash's untracked loom/src/commands/knowledge/eval/refresh.rs behind as an orphan, deleted later; HEAD's eval.rs already refreshes the graph inline.
+
+## Treated Backend Selection as a Text Problem
+
+**What happened:** a stage on the native Codex lane followed plan text naming `loom-codex-forwarder` and never started a native worker. I proposed editing the plans' unit lines, then rewriting forwarder wording in the signal. The user corrected both: a plan names the implementer (codex or claude), and `codex.backend` alone picks the mechanism.
+
+**Why:** I read "map the different ways of expressing codex to the chosen method" as a text mapping. Nothing at the execution layer consulted `codex.backend`, so the hooks allowed a forwarder spawn on a native-configured stage.
+
+**Prevention:** when behaviour must follow a setting, enforce it where the action executes and resolve the setting there. Never adapt the text that asks for the action.
+
+**Fix:** the spawn and forward hooks query `loom hook codex-backend` and refuse the other lane's mechanism with the correct command; the default backend is native; plan-writer guidance says `codex` only.

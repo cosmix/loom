@@ -1,7 +1,5 @@
 # Adjudication Autonomy Deadlock
 
-> Accepted-verdict deadlock
-
 ## Adoption Matched Sessions by stage_id Alone
 
 **What happened:** The adjudication session for stage `loom-dir-migration` carried the stage's own `stage_id` (`loom/src/models/session/methods.rs::new_adjudication`), and the daemon's session-adoption path looked up live sessions for a stage by `stage_id` alone. The adjudicator, spawned after the real stage agent and therefore newer by `created_at`, was adopted as the stage's worker in place of the actual agent.
@@ -198,3 +196,43 @@ prompt spells the schema out.
 **Prevention:** every exit from `NeedsAdjudication` goes through the same retirement boundary. A path that writes a stage status must do it after the agents that no longer own that stage are gone. Adoption may only fill a stage the scheduler would start, which means Queued on disk.
 
 **Fix:** the adjudicator registry returns `Escalation` values, and `Orchestrator::escalate_dispute` retires the agent first, then always escalates, naming any survivor in `review_reason`. Escalation closes the stage's open disputes (`closed.marker`), so none shadows a later dispute. `--approve` refuses while a worker is live. `start_stage` starts or adopts only a Queued or WaitingForDeps stage and resyncs the graph for any other status. See `architecture/adjudication-lifecycle.md#Retirement and Fresh-Session Boundary`.
+
+## Adjudication Resolved source_path One Level Above .loom/work
+
+**What happened:** A freeze-refusal judge's Accept verdict was refused with "the plan .loom/doc/plans/... cannot be read". Every judge attempt hit the same refusal, the judge sat waiting for a human, and the stage stayed in ADJUDICATING until the watchdog spent the attempt budget.
+
+**Why:** `adjudication/mod.rs::resolve_plan_path` and the daemon-startup resolver each re-implemented relative `source_path` resolution as `work_dir.parent()`, which is `.loom/`, not the project root. The verdict check (`verdict_freeze_plan.rs::load`) and verdict apply both use it.
+
+**Prevention:** Resolve the plan's `source_path` from `.loom/work/config.toml` only through `crate::fs::resolve_source_path`, which owns the `.loom/work` layout via `WorkDir::main_project_root`. Never hand-roll a parent walk from the work dir.
+
+**Fix:** Both resolvers now delegate to `crate::fs::resolve_source_path`; regression test `tests_verdicts.rs::a_relative_source_path_resolves_from_the_project_root`.
+
+## A Relayed Verdict Ended the Judge's Turn Before the Daemon Checked It
+
+**What happened:** A freeze-refusal judge relayed an Accept verdict whose replacement criterion ran `bunx`. The daemon refused it on drain (`plan verify` rejects network-only commands), but the judge had already ended its turn on the relay receipt, so it never read the refusal and the stage sat in ADJUDICATING until the judge watchdog fired.
+
+**Why:** `relay_verdict` emitted with the end-turn reminder and the judge prompt said the work was done once the command succeeded. The daemon's check of a freeze amendment runs only when it drains the ticket, after the command has returned.
+
+**Prevention:** Any relayed request the daemon can refuse must tell its sender to wait for the outcome (`loom request status <id> --wait 90` in the next Bash call) and to correct and resubmit on refusal, as `loom stage commit` does.
+
+**Fix:** `commands/stage/adjudicate.rs::relay_verdict` prints the wait command; `adjudication/prompt.rs::verdict_protocol` adds step 3 (wait, correct on refusal, never ask for input).
+
+## A Contract Dispute Proposed an Edit It Had Not Applied (2026-10-28)
+
+**What happened:** the concept-data stage's first `dispute-contract` for `read-only-stale-reason` proposed an `#[allow(clippy::needless_update)]` in the frozen contract file without applying it, so the adjudicator saw no diff. The cause of the dispute was real: the frozen `tests/plan_concept_contracts.rs` builds `PageContext { read_only, ..Default::default() }` as the stage description mandates, which fails `cargo clippy --all-targets -D warnings` while `PageContext` has one field.
+
+**Why:** the dispute was filed before the frozen file was edited.
+
+**Prevention:** apply the exact proposed edit to the frozen file and commit it before `dispute-contract`, then cite the commit with `--evidence-commit`. This prescription contradicted the rule never to edit a frozen file; see [Needs-More-Evidence Feedback Asked for a Frozen-File Edit](#needs-more-evidence-feedback-asked-for-a-frozen-file-edit-2026-11-17) for the `--replacement` flow that replaced it. A source site that builds a struct with a trailing `..Default::default()` for a field a later plan adds carries `#[allow(clippy::needless_update)]` (precedent `loom/src/map/views/tests.rs:313`), and a frozen contract that does the same needs the same allow.
+
+**Fix:** the second dispute carried the applied edit and its commit.
+
+## Needs-More-Evidence Feedback Asked for a Frozen-File Edit (2026-11-17)
+
+**What happened:** in collaterai stage `kit-consumers`, the adjudicator's needs-more-evidence feedback on a third contract dispute asked the agent to edit the frozen test and dispute against the diff. The signal says never to edit a frozen file, and the permission classifier denied the edit, so the agent could not produce the evidence the judge asked for.
+
+**Why:** loom contradicted itself. The signal forbade the edit; the contract prompt built its evidence as a frozen-vs-worktree diff; accept re-froze at worktree content; the generic feedback said "gather the requested evidence, commit it"; and [A Contract Dispute Proposed an Edit It Had Not Applied](#a-contract-dispute-proposed-an-edit-it-had-not-applied-2026-10-28) prescribed editing the frozen file.
+
+**Prevention:** a dispute must be able to carry every piece of evidence the judge may ask for without breaking a rule the agent is bound by. When one rule forbids an action, search the prompts, feedback text and knowledge for instructions that require it.
+
+**Fix:** `loom stage dispute-contract --replacement <path>` carries the complete replacement inline; accept writes it into the worktree and re-freezes; contract prompts and feedback forbid asking for a frozen-file edit ([Frozen Contracts Change Only Through `--replacement`](../conventions/dispute-and-adjudication.md#frozen-contracts-change-only-through---replacement)).

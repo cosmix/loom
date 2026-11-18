@@ -1,6 +1,6 @@
 # Pinned Literals Ledgers And Wiring
 
-> Ledger exact-match, pins
+> Pins
 
 ## Why These Two Belong Together
 
@@ -166,9 +166,9 @@ function that's still under the 400/50-line limit (those never need one).
 
 ## `loom stage complete`'s Unwired-File Check Has a False Positive on `#[path]` Test Modules
 
-**What happened:** `loom/src/commands/status/render/attention_model_tests.rs` is wired at
+**What happened:** `loom/src/status/attention_model_tests.rs` is wired at
 `commands/status/render/attention_model.rs`'s tail as `#[cfg(test)] #[path = "attention_model_tests.rs"] mod tests;` — the
-same pattern `commands/status/render/attention.rs`/`commands/status/render/attention_tests.rs` and `commands/status/data/collector.rs`/`commands/status/data/collector_tests.rs` already use —
+same pattern `commands/status/render/attention.rs`/`commands/status/render/attention_tests.rs` and `status/data/collector.rs`/`status/data/collector_tests.rs` already use —
 but the finalization command's unwired-file checker looks for a `mod attention_model_tests;` declaration
 and finds none, so it flags the file as unwired even though `cargo test --lib
 commands::status::render::attention_model::tests::` reaches it fine.
@@ -320,3 +320,13 @@ change bumps the plan `version` (conventions/plan-yaml-and-hooks).
 **Prevention:** a plan that adds a test-only module declares no wiring entry for it; the test run in the acceptance criteria proves the module compiles and runs. See also [Goal-Backward Wiring Checks Pin a PATTERN to a PATH](#goal-backward-wiring-checks-pin-a-pattern-to-a-path).
 
 **Fix:** dispute the entry (`loom stage dispute-criteria --field wiring`) rather than add a consumer to satisfy it.
+
+## A Wiring Check Named the File That Asserts a String, Not the File That Renders It
+
+**What happened:** the wiring test `rg -qF "tmux, built-in default" src/commands/init/backend.rs` could not pass. `backend.rs` renders the label with `format!("{}, built-in default", SessionBackendKind::default())`; the literal appears only in `backend_tests.rs`. The behaviour was correct and tested.
+
+**Why:** the check was written from the expected output, not from the code that produces it.
+
+**Prevention:** when a wiring check pins a rendered string, point it at the test that asserts the string or at the format expression, and run the check once against the tree before freezing it.
+
+**Fix:** dispute the criterion with `loom stage dispute-criteria --field wiring`.

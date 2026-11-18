@@ -103,7 +103,10 @@ fn a_live_contract_session_is_adopted_for_a_v2_standard_stage() {
     let contract = live_session(&work, Session::new_contract("alpha"));
 
     let mut orchestrator = orchestrator_for(&work, temp.path());
-    assert!(orchestrator.adopt_live_session_if_present("alpha").unwrap());
+    assert_eq!(
+        orchestrator.adopt_live_session_if_present("alpha").unwrap(),
+        super::AdoptionResult::Adopted
+    );
 
     let after = load_stage("alpha", &work).unwrap();
     assert_eq!(after.status, StageStatus::Executing);
@@ -128,7 +131,10 @@ fn a_live_stage_session_wins_over_a_live_contract_session() {
     live_session(&work, Session::new_contract("alpha"));
 
     let mut orchestrator = orchestrator_for(&work, temp.path());
-    assert!(orchestrator.adopt_live_session_if_present("alpha").unwrap());
+    assert_eq!(
+        orchestrator.adopt_live_session_if_present("alpha").unwrap(),
+        super::AdoptionResult::Adopted
+    );
     let after = load_stage("alpha", &work).unwrap();
     assert_eq!(after.session.as_deref(), Some(worker.id.as_str()));
 }
@@ -144,7 +150,10 @@ fn a_contract_session_is_never_adopted_without_a_contract_phase() {
         live_session(&work, Session::new_contract("alpha"));
 
         let mut orchestrator = orchestrator_for(&work, temp.path());
-        assert!(!orchestrator.adopt_live_session_if_present("alpha").unwrap());
+        assert_eq!(
+            orchestrator.adopt_live_session_if_present("alpha").unwrap(),
+            super::AdoptionResult::Absent
+        );
         let after = load_stage("alpha", &work).unwrap();
         assert_eq!(
             after.status,
@@ -152,6 +161,27 @@ fn a_contract_session_is_never_adopted_without_a_contract_phase() {
             "v{plan_version} {stage_type:?}"
         );
     }
+}
+
+#[test]
+fn malformed_only_session_inventory_prevents_replacement_spawn() {
+    let temp = work_dir();
+    let work = temp.path().join(".work");
+    queued_stage(&work, StageType::Standard, 1);
+    let sessions = work.join("sessions");
+    std::fs::create_dir_all(&sessions).unwrap();
+    std::fs::write(sessions.join("unreadable-worker.md"), "malformed").unwrap();
+
+    let mut orchestrator = orchestrator_for(&work, temp.path());
+    assert!(matches!(
+        orchestrator.start_stage("alpha").unwrap(),
+        super::super::stage_executor::StartDisposition::Deferred
+    ));
+
+    let stage = load_stage("alpha", &work).unwrap();
+    assert_eq!(stage.status, StageStatus::Queued);
+    assert!(stage.session.is_none());
+    assert!(orchestrator.active_sessions.is_empty());
 }
 
 /// A stage the graph still holds `Queued` but whose file has moved on is not

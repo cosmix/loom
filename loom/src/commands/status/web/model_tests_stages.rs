@@ -42,6 +42,8 @@ macro_rules! stage {
             pid: $pid,
             session_alive: $session_alive,
             model: $model.to_owned(),
+            effort: "high".to_owned(),
+            codex_jobs: Vec::new(),
             session_type: $session_type,
             incoherence: $incoherence.map(str::to_owned),
             execution_models: $execution_models
@@ -59,12 +61,17 @@ macro_rules! stage {
             acceptance: vec![],
             terminal_history_session: None,
             block_detail: Default::default(),
+            history: Vec::new(),
+            contract_testing: None,
+            verdict_completing: None,
         }
     };
 }
 
 #[path = "model_tests_blocked.rs"]
 mod blocked;
+#[path = "model_tests_codex.rs"]
+mod codex;
 
 fn stage_knowledge_bootstrap() -> StageSummary {
     let empty: &[&str] = &[];
@@ -102,7 +109,7 @@ fn stage_knowledge_bootstrap() -> StageSummary {
 }
 
 fn stage_server() -> StageSummary {
-    stage!(
+    let mut stage = stage!(
         "server",
         "Rust server",
         StageStatus::Executing,
@@ -128,11 +135,13 @@ fn stage_server() -> StageSummary {
         "opus",
         Some(SessionType::Stage),
         None,
-        &["sonnet", "gpt-5.6-terra"],
+        &["sonnet/medium", "gpt-6.1-terra/xhigh (requested)"],
         0,
         None,
         Some(SessionBackendKind::Native)
-    )
+    );
+    stage.codex_jobs = codex::fixture_codex_jobs();
+    stage
 }
 
 fn stage_client(detected_at: DateTime<Utc>) -> StageSummary {

@@ -1,0 +1,177 @@
+@import "./concept-runs.css";
+
+/*
+ * Concept mode reading column (section 05, "Visual design"). Reading text is prose, so it sets
+ * in the selected reading face (Source Serif 4 by default), size and line-height tokens.
+ * The column width is in ch, so browser zoom to 200% reflows without
+ * horizontal scrolling; a long token wraps rather than widening it. The route wrapper owns the
+ * page gutter and its own 68ch cap, set in the chrome face. The column's 68ch is in the reading
+ * face, so it stays left-aligned instead of centring, and its text lines up with the key and
+ * the header at any reading size. Headings and chrome retain Alegreya Sans; code and paths retain the
+ * mono face.
+ */
+.concept-column {
+  position: relative;
+  max-width: 68ch;
+  font-family: var(--font-reading);
+  font-size: var(--reading-size);
+  line-height: var(--reading-line);
+  overflow-wrap: anywhere;
+  outline: none;
+}
+
+.concept-heading {
+  font-family: var(--font-sans);
+  font-size: 1.15em;
+  font-weight: 650;
+  line-height: 1.3;
+  letter-spacing: -0.015em;
+  margin: 36px 0 12px;
+  text-wrap: balance;
+}
+
+.concept-heading:first-child {
+  margin-top: 0;
+}
+
+.concept-paragraph {
+  position: relative;
+  margin-block: 0 1em;
+}
+
+.concept-column [data-focus]:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+.concept-sentence {
+  cursor: pointer;
+  border-radius: 3px;
+}
+
+.concept-sentence code {
+  font-family: var(--font-mono);
+  font-size: 0.8em;
+  padding: 0.06em 0.32em;
+  border-radius: 4px;
+  background: var(--muted);
+}
+
+.concept-sentence-plain {
+  cursor: default;
+}
+
+/*
+ * The ink wash. The hover sits on the wrap so the marks are washed with their sentence; a plain
+ * sentence (nothing to open) takes none. The inset bottom edge replaces an underline.
+ */
+.concept-sentence-wrap {
+  border-radius: 3px;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+  transition:
+    background-color 120ms,
+    box-shadow 120ms;
+}
+
+/*
+ * A fragment (two or more sentences opening to the same content) is one unit at rest: a 1px
+ * edge at 35% runs under its sentences, spaces and marks alike, cloned across line wraps.
+ * 35% is the floor that still measures 1.5:1 on Ledger's paper (1.6:1; 2.0:1 in the dark). The
+ * same property as the hover edge, at lower specificity, so hover replaces it instead of
+ * stacking on it.
+ */
+.concept-sentence-wrap[data-fragment] {
+  box-shadow: inset 0 -1px 0 color-mix(in oklch, var(--sentence-colour) 35%, transparent);
+}
+
+.concept-sentence-wrap:has(> .concept-sentence:not(.concept-sentence-plain)):is(
+    :hover,
+    :has(:focus-visible)
+  ) {
+  background: color-mix(in oklch, var(--sentence-colour) 20%, transparent);
+  box-shadow: inset 0 -2px 0 color-mix(in oklch, var(--sentence-colour) 85%, transparent);
+}
+
+.concept-sentence-wrap:has(> .concept-sentence:not(.concept-sentence-plain)):is(
+    :hover,
+    :has(:focus-visible)
+  )
+  .concept-mark {
+  transform: scale(1.35);
+}
+
+.concept-marks {
+  white-space: nowrap;
+  margin-inline-start: 0.2em;
+}
+
+.concept-column[data-source-marks="off"] .concept-sentence-wrap .concept-marks {
+  display: none;
+}
+
+.concept-mark {
+  display: inline-block;
+  box-sizing: border-box;
+  width: 0.5em;
+  height: 0.5em;
+  margin-inline-end: 0.18em;
+  padding: 0;
+  vertical-align: 0.08em;
+  border: 0;
+  border-radius: 2px;
+  cursor: pointer;
+  transition: transform 120ms;
+}
+
+.concept-mark:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+/* An out-of-date mark is an outline, not a fill: the shape differs, not only the colour. */
+.concept-mark[data-dashed="true"] {
+  background: transparent !important;
+  outline: 1.5px dashed var(--mark-colour);
+  outline-offset: -1.5px;
+}
+
+.concept-mark[data-dashed="true"]:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.concept-no-source {
+  font-family: var(--font-sans);
+  margin-inline-start: 0.35em;
+  color: var(--muted-foreground);
+  font-size: 0.75em;
+}
+
+/* Arrival flash: a --primary wash fading over about one second. */
+.concept-flash {
+  animation: concept-flash 1s ease-out;
+}
+
+@keyframes concept-flash {
+  from {
+    background: color-mix(in oklch, var(--primary) 45%, transparent);
+  }
+  to {
+    background: transparent;
+  }
+}
+
+/* Reduced motion: the wash shows without animation; flash.ts clears the class after 3s. */
+@media (prefers-reduced-motion: reduce) {
+  .concept-flash {
+    animation: none;
+    background: color-mix(in oklch, var(--primary) 30%, transparent);
+  }
+
+  .concept-sentence-wrap,
+  .concept-mark {
+    transition: none;
+  }
+}

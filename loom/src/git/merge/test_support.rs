@@ -1,45 +1,24 @@
-//! Shared helpers for the merge tests: scratch repositories with isolated git
-//! config, branch builders, and a snapshot of a checkout's visible state.
+//! Shared helpers for the merge tests: scratch repositories on the shared git
+//! fixtures, branch builders, and a snapshot of a checkout's visible state.
 
+use crate::test_git::{git, git_unchecked, TestRepo};
+// The merge tests keep their historical helper names; each is the shared fixture.
+// About 34 assertion statements under src/git/merge call these names, and the
+// test-integrity rule keeps assertions byte-identical, so the aliases stay.
+// Revisit: drop them once those assertion callers may be renamed.
+pub(super) use crate::test_git::{
+    commit_file, git as git_ok, git as git_out, git_unchecked as isolated_git,
+};
 use std::path::{Path, PathBuf};
 use tempfile::TempDir;
 
-pub(super) fn isolated_git(root: &Path, args: &[&str]) -> std::process::Output {
-    std::process::Command::new("git")
-        .args(args)
-        .current_dir(root)
-        .env("GIT_CONFIG_GLOBAL", root.join(".loom-test-no-global"))
-        .env("GIT_CONFIG_SYSTEM", root.join(".loom-test-no-system"))
-        .env("GIT_CONFIG_NOSYSTEM", "1")
-        .output()
-        .unwrap()
-}
-
-pub(super) fn git_ok(root: &Path, args: &[&str]) {
-    let out = isolated_git(root, args);
-    assert!(
-        out.status.success(),
-        "git {args:?} failed: {}",
-        String::from_utf8_lossy(&out.stderr)
-    );
-}
-
-/// Trimmed stdout of a git command that must succeed.
-pub(super) fn git_out(root: &Path, args: &[&str]) -> String {
-    let out = isolated_git(root, args);
-    assert!(out.status.success(), "git {args:?} failed");
-    String::from_utf8_lossy(&out.stdout).trim().to_string()
-}
-
 /// Repository on `main` with `a.txt` ("seed") committed.
 pub(super) fn init_repo() -> TempDir {
-    let temp = TempDir::new().unwrap();
-    let root = temp.path();
-    git_ok(root, &["init", "-b", "main"]);
-    git_ok(root, &["config", "user.email", "t@t.com"]);
-    git_ok(root, &["config", "user.name", "t"]);
-    commit_file(root, "a.txt", "seed", "seed");
-    temp
+    TestRepo::builder()
+        .identity("t", "t@t.com")
+        .seed("a.txt", "seed", "seed")
+        .create()
+        .into_temp_dir()
 }
 
 /// A work directory outside the repository, so the merge lock file does not
@@ -48,32 +27,25 @@ pub(super) fn lock_dir() -> TempDir {
     TempDir::new().unwrap()
 }
 
-/// Write `name`, stage it and commit on the current branch.
-pub(super) fn commit_file(root: &Path, name: &str, text: &str, message: &str) {
-    std::fs::write(root.join(name), text).unwrap();
-    git_ok(root, &["add", name]);
-    git_ok(root, &["commit", "-m", message]);
-}
-
 /// Create `loom/<id>` from `main` with one commit per `(file, text)` pair,
 /// then return to `main`.
 pub(super) fn stage_branch(root: &Path, id: &str, files: &[(&str, &str)]) {
-    git_ok(root, &["checkout", "-b", &format!("loom/{id}"), "main"]);
+    git(root, &["checkout", "-b", &format!("loom/{id}"), "main"]);
     for (name, text) in files {
         commit_file(root, name, text, &format!("stage {name}"));
     }
-    git_ok(root, &["checkout", "main"]);
+    git(root, &["checkout", "main"]);
 }
 
 pub(super) fn rev(root: &Path, name: &str) -> String {
-    git_out(root, &["rev-parse", name])
+    git(root, &["rev-parse", name])
 }
 
 /// Everything an operator can see in a checkout: porcelain status plus the
 /// bytes of every tracked or untracked file.
 pub(super) fn snapshot(root: &Path) -> (String, Vec<(String, Vec<u8>)>) {
-    let status = git_out(root, &["status", "--porcelain=v2", "--untracked-files=all"]);
-    let listing = isolated_git(root, &["ls-files", "-z", "--cached", "--others"]);
+    let status = git(root, &["status", "--porcelain=v2", "--untracked-files=all"]);
+    let listing = git_unchecked(root, &["ls-files", "-z", "--cached", "--others"]);
     let files = String::from_utf8_lossy(&listing.stdout)
         .split('\0')
         .filter(|p| !p.is_empty())
@@ -96,7 +68,7 @@ pub(super) fn sibling_dir() -> (TempDir, PathBuf) {
 
 /// Number of commit objects in the repository, reachable or not.
 pub(super) fn commit_count(root: &Path) -> usize {
-    git_out(
+    git(
         root,
         &[
             "cat-file",

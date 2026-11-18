@@ -4,11 +4,17 @@ use anyhow::{bail, Result};
 use std::path::Path;
 
 use crate::git::runner::run_git;
+use crate::git::status_entries::{parse_porcelain_v1_z, StatusEntry};
+use crate::git::worktree::WorktreeGit;
 use crate::verify::tool_artifacts::is_tool_artifact;
+
+/// `git status` as a NUL-separated porcelain v1 listing, untracked
+/// directories collapsed (git's default untracked mode).
+const STATUS_Z: [&str; 3] = ["status", "--porcelain=v1", "-z"];
 
 /// Check if the repository has uncommitted changes (staged or unstaged)
 ///
-/// Uses `git status --porcelain` to detect:
+/// Uses `git status --porcelain=v1 -z` to detect:
 /// - Staged but uncommitted changes (index)
 /// - Unstaged modifications in working tree
 /// - Untracked files are NOT considered (they don't affect worktree creation)
@@ -19,24 +25,9 @@ use crate::verify::tool_artifacts::is_tool_artifact;
 /// # Returns
 /// * `Ok(true)` if there are uncommitted changes
 /// * `Ok(false)` if the working tree is clean (no staged/unstaged changes)
-/// * `Err` if git command fails
+/// * `Err` if git command fails or prints a listing that does not parse
 pub fn has_uncommitted_changes(repo_root: &Path) -> Result<bool> {
-    let output = run_git(&["status", "--porcelain"], repo_root)?;
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        bail!("git status failed: {stderr}");
-    }
-    let stdout = String::from_utf8_lossy(&output.stdout);
-
-    // Check for staged or modified files (exclude untracked with ??)
-    let has_changes = stdout.lines().any(|line| {
-        // Porcelain format: XY filename
-        // X = index status, Y = worktree status
-        // ?? = untracked (ignore these)
-        !line.starts_with("??") && !line.is_empty()
-    });
-
-    Ok(has_changes)
+    Ok(is_dirty(&status_entries(repo_root)?))
 }
 
 /// List every locally changed path in the working tree
@@ -47,39 +38,29 @@ pub fn has_uncommitted_changes(repo_root: &Path) -> Result<bool> {
 /// `.git/info/exclude` are excluded by git itself, and untracked sandbox
 /// artifacts at the root by [`is_tool_artifact`].
 ///
-/// Paths are as git reports them, relative to the repository root; untracked
-/// directories are reported collapsed (`some/dir/`). For renames only the
-/// destination path is returned.
+/// Paths are as git names them, relative to the repository root and never
+/// C-quoted; untracked directories are reported collapsed (`some/dir/`). For
+/// renames only the destination path is returned.
 ///
 /// # Arguments
 /// * `repo_root` - Path to the git repository or worktree root
 ///
 /// # Returns
 /// * `Ok(paths)` - changed paths, empty when the working tree is pristine
-/// * `Err` if the git command fails
+/// * `Err` if the git command fails or prints a listing that does not parse
 pub fn list_working_tree_changes(repo_root: &Path) -> Result<Vec<String>> {
-    let output = run_git(&["status", "--porcelain"], repo_root)?;
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        bail!("git status failed: {stderr}");
-    }
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    Ok(working_tree_changes(repo_root, &stdout))
+    let status = WorktreeGit::pinned_checkout(repo_root)?.run_checked(&STATUS_Z)?;
+    working_tree_changes(repo_root, status.as_bytes())
 }
 
-/// The paths in `git status --porcelain` output, as
+/// The paths in a `git status --porcelain=v1 -z` listing, as
 /// [`list_working_tree_changes`] reports them.
-fn working_tree_changes(repo_root: &Path, porcelain: &str) -> Vec<String> {
-    porcelain
-        .lines()
-        .filter(|line| line.len() > 3)
-        .filter(|line| !(line.starts_with("??") && is_tool_artifact(repo_root, &line[3..])))
-        // Porcelain v1: "XY path" — or "XY old -> new" for renames/copies.
-        .map(|line| match line[3..].split_once(" -> ") {
-            Some((_, destination)) => destination.to_string(),
-            None => line[3..].to_string(),
-        })
-        .collect()
+fn working_tree_changes(repo_root: &Path, porcelain: &[u8]) -> Result<Vec<String>> {
+    Ok(parse_porcelain_v1_z(porcelain)?
+        .into_iter()
+        .filter(|entry| !(entry.is_untracked() && is_tool_artifact(repo_root, &entry.path)))
+        .map(|entry| entry.path)
+        .collect())
 }
 
 /// Get a summary of uncommitted changes for display
@@ -91,42 +72,45 @@ fn working_tree_changes(repo_root: &Path, porcelain: &str) -> Vec<String> {
 ///
 /// # Returns
 /// * `Ok(summary)` - A string describing the changes, empty if clean
-/// * `Err` if git command fails
+/// * `Err` if git command fails or prints a listing that does not parse
 pub fn get_uncommitted_changes_summary(repo_root: &Path) -> Result<String> {
-    let output = run_git(&["status", "--porcelain"], repo_root)?;
+    Ok(uncommitted_changes_summary(&status_entries(repo_root)?))
+}
+
+/// Read startup status once through the saved operator checkout identity.
+pub(crate) fn pinned_uncommitted_changes(repo_root: &Path) -> Result<(bool, String)> {
+    crate::git::worktree::require_main_identity(repo_root)?;
+    let status = WorktreeGit::pinned_main(repo_root)?.run_checked(&STATUS_Z)?;
+    let entries = parse_porcelain_v1_z(status.as_bytes())?;
+    Ok((is_dirty(&entries), uncommitted_changes_summary(&entries)))
+}
+
+/// The status entries of the checkout at `repo_root`, through [`run_git`].
+fn status_entries(repo_root: &Path) -> Result<Vec<StatusEntry>> {
+    let output = run_git(&STATUS_Z, repo_root)?;
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         bail!("git status failed: {stderr}");
     }
-    let stdout = String::from_utf8_lossy(&output.stdout);
+    parse_porcelain_v1_z(&output.stdout)
+}
 
-    let mut staged = Vec::new();
-    let mut modified = Vec::new();
+/// Whether some entry is staged or modified; untracked files do not count.
+fn is_dirty(entries: &[StatusEntry]) -> bool {
+    entries.iter().any(|entry| !entry.is_untracked())
+}
 
-    for line in stdout.lines() {
-        if line.is_empty() || line.starts_with("??") {
-            continue;
-        }
-
-        // Porcelain format: XY filename
-        let chars: Vec<char> = line.chars().collect();
-        if chars.len() < 3 {
-            continue;
-        }
-
-        let index_status = chars[0];
-        let worktree_status = chars[1];
-        let filename = line[3..].to_string();
-
-        // X != ' ' means staged
-        if index_status != ' ' && index_status != '?' {
-            staged.push(filename.clone());
-        }
-        // Y != ' ' means modified in worktree
-        if worktree_status != ' ' && worktree_status != '?' {
-            modified.push(filename);
-        }
-    }
+fn uncommitted_changes_summary(entries: &[StatusEntry]) -> String {
+    let changed = |column: u8| column != b' ' && column != b'?';
+    let tracked = || entries.iter().filter(|entry| !entry.is_untracked());
+    let staged: Vec<&str> = tracked()
+        .filter(|entry| changed(entry.index()))
+        .map(|entry| entry.path.as_str())
+        .collect();
+    let modified: Vec<&str> = tracked()
+        .filter(|entry| changed(entry.worktree()))
+        .map(|entry| entry.path.as_str())
+        .collect();
 
     let mut summary = String::new();
     if !staged.is_empty() {
@@ -136,7 +120,7 @@ pub fn get_uncommitted_changes_summary(repo_root: &Path) -> Result<String> {
         summary.push_str(&format!("Modified: {}\n", modified.join(", ")));
     }
 
-    Ok(summary)
+    summary
 }
 
 #[cfg(test)]

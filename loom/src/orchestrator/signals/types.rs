@@ -1,9 +1,11 @@
+use crate::codex::CodexLane;
 use crate::handoff::git_handoff::GitHistory;
 use crate::handoff::schema::HandoffV2;
 use crate::models::stage::{Implementers, StageOutput};
 use crate::skills::SkillMatch;
 
-/// Summary of sandbox restrictions for signal display
+/// Display projection of the effective sandbox configuration the launcher uses.
+/// `allow_write` omits the knowledge grant, which serves only the knowledge CLI.
 #[derive(Debug, Clone, Default)]
 pub struct SandboxSummary {
     /// Whether sandboxing is enabled
@@ -70,11 +72,12 @@ pub struct EmbeddedContext {
     pub ultracode: bool,
     /// Which agent lanes this stage may spawn subagents from, in preference order
     pub implementers: Implementers,
-    /// Whether the codex CLI and its plugin's companion runtime are installed
-    /// on this machine, resolved once at context-build time. Gates the Codex
-    /// Implementers section between the full doctrine and the route-to-sonnet
-    /// fallback; the formatters never probe the machine themselves.
-    pub codex_available: bool,
+    /// Which Codex launch instructions this machine supports, resolved once at
+    /// context-build time by `crate::codex::codex_lane`. Selects the Codex
+    /// Implementers text; the formatters never probe the machine themselves.
+    pub codex_lane: CodexLane,
+    /// Fresh provider quota and routing guidance for this signal.
+    pub model_budget: Option<String>,
     /// Per-subagent response budget in seconds, when the stage sets one
     /// explicitly. `None` leaves the built-in default in force and emits
     /// nothing — the signal only spends tokens on a budget the plan chose.

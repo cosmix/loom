@@ -1,10 +1,11 @@
 //! Codex quota polling over the `codex app-server` JSON-RPC subprocess.
 
 use crate::context::untrusted::inline_safe;
+use crate::process::lines::read_bounded_line;
 use crate::process::OwnedProcess;
 use crate::quota::model::{self, ProviderQuota, QuotaWindow, WindowKind};
 use anyhow::{anyhow, Context, Result};
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufReader, Write};
 use std::path::Path;
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -101,7 +102,7 @@ fn spawn_app_server(mut command: Command) -> Result<(Child, ChildStdin, ChildStd
         command.process_group(0);
     }
 
-    let mut child = spawn_retrying_text_busy(&mut command).with_context(|| {
+    let mut child = crate::process::spawn_retrying_text_busy(&mut command).with_context(|| {
         format!(
             "failed to spawn {}",
             command.get_program().to_string_lossy()
@@ -175,27 +176,6 @@ fn poll_command(
     outcome
 }
 
-/// `Command::spawn` briefly, and rarely, fails with `ETXTBSY` ("text file
-/// busy") when the target binary is still settling right after being
-/// written - e.g. a `codex` self-update in progress, or (in tests) a fake
-/// script written moments earlier. A handful of short retries clears it
-/// without treating it as a real spawn failure.
-fn spawn_retrying_text_busy(command: &mut Command) -> std::io::Result<Child> {
-    const MAX_ATTEMPTS: u32 = 5;
-    const RETRY_DELAY: Duration = Duration::from_millis(20);
-
-    for attempt in 1..=MAX_ATTEMPTS {
-        match command.spawn() {
-            Ok(child) => return Ok(child),
-            Err(e) if attempt < MAX_ATTEMPTS && e.raw_os_error() == Some(libc::ETXTBSY) => {
-                thread::sleep(RETRY_DELAY);
-            }
-            Err(e) => return Err(e),
-        }
-    }
-    unreachable!("loop always returns on its final attempt")
-}
-
 fn write_requests(stdin: &mut ChildStdin) -> std::io::Result<()> {
     let version = env!("LOOM_VERSION");
     let frames = [
@@ -228,37 +208,6 @@ fn spawn_reader(stdout: ChildStdout) -> (mpsc::Receiver<String>, mpsc::Receiver<
         let _ = done.send(());
     });
     (receiver, finished)
-}
-
-/// Read one newline-terminated line, capping retained bytes at `max_bytes`
-/// and discarding (without buffering) whatever overruns the cap - so an
-/// over-long line still drains from the pipe instead of blocking the writer.
-/// `Ok(false)` at EOF with nothing pending.
-fn read_bounded_line<R: BufRead>(
-    reader: &mut R,
-    buf: &mut Vec<u8>,
-    max_bytes: usize,
-) -> std::io::Result<bool> {
-    buf.clear();
-    loop {
-        let available = reader.fill_buf()?;
-        if available.is_empty() {
-            return Ok(false);
-        }
-        if let Some(newline_pos) = available.iter().position(|&b| b == b'\n') {
-            let line_part = &available[..newline_pos];
-            let room = max_bytes.saturating_sub(buf.len());
-            buf.extend_from_slice(&line_part[..line_part.len().min(room)]);
-            let consumed = newline_pos + 1;
-            reader.consume(consumed);
-            return Ok(true);
-        }
-        let room = max_bytes.saturating_sub(buf.len());
-        let take = available.len().min(room);
-        buf.extend_from_slice(&available[..take]);
-        let consumed = available.len();
-        reader.consume(consumed);
-    }
 }
 
 fn await_reply(

@@ -247,6 +247,8 @@ fn write_review(work_dir: &Path) {
         agent_id: "agent-r1".to_string(),
         harvested_at: at("2026-10-14T06:09:00Z"),
         fingerprint: format!("sha256:{}", "a".repeat(64)),
+        base: String::new(),
+        behaviour: Default::default(),
         files: BTreeMap::new(),
         malformed: None,
         findings: vec![RecordedFinding {
@@ -316,7 +318,7 @@ fn observation(
         exit_code,
         codex_thread_id: Some("thread-p".to_string()),
         locator: None,
-        model: Some("gpt-5.6-terra".to_string()),
+        model: Some("gpt-6.1-terra".to_string()),
         effort: Some("xhigh".to_string()),
     }
 }
@@ -345,7 +347,7 @@ pub fn codex_evidence(project: &Path, codex: &Path) {
         "type": "token_usage_record",
         "payload": {
             "response_id": "response-thread-p",
-            "model": "gpt-5.6-terra",
+            "model": "gpt-6.1-terra",
             "usage": {
                 "input_tokens": 100,
                 "cached_input_tokens": 40,

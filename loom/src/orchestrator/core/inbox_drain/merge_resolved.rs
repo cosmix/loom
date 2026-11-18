@@ -6,15 +6,20 @@
 //! (`check_resolved_worktree`: no merge in progress, no unmerged path, no
 //! tracked change, the stage's recorded commit still in the branch), then lands the merge
 //! with `merge_stage` through the merge gate. `merged = true` is written only
-//! after ancestry proves the stage's commit is in the target. The worktree is
-//! not removed here: the resolver is still running in it, and its exit
-//! (`handle_merge_session_completed`) cleans up.
+//! after ancestry proves the stage's commit is in the target. Content that
+//! fails completion verification hands the stage back to a stage session
+//! (`hand_merge_back`). The worktree is not removed here: the resolver is
+//! still running in it, and its exit (`handle_merge_session_completed`)
+//! cleans up. A check the resolver ran is no input to any of this; one still
+//! running is stopped once the worktree is accepted, before the gates run.
 
 use crate::git::merge::check_resolved_worktree;
 use crate::models::session::Session;
-use crate::models::stage::StageStatus;
+use crate::models::stage::{Stage, StageStatus};
+use crate::orchestrator::busy::{self, BusyOp};
+use crate::orchestrator::tick::Phase;
 
-use super::super::merge_handler::Landing;
+use super::super::merge_handler::{trace_verification_output, Landing};
 use super::super::persistence::Persistence;
 use super::super::Orchestrator;
 use super::Settle;
@@ -39,10 +44,6 @@ impl Orchestrator {
                 stage.status
             ));
         }
-        let target = crate::git::branch::resolve_target_branch(
-            &self.config.base_branch,
-            &self.config.repo_root,
-        );
         if let Err(reason) = check_resolved_worktree(
             &self.config.repo_root,
             stage_id,
@@ -50,14 +51,34 @@ impl Orchestrator {
         ) {
             return Settle::Refused(reason);
         }
-        if let Err(error) = crate::commands::stage::complete::verify_resolved_completion(
-            &stage,
-            &self.config.work_dir,
-        ) {
-            return Settle::Refused(format!(
-                "resolved content failed completion verification: {error:#}"
-            ));
+        if let Err(reason) = self.stop_running_check(stage_id) {
+            return Settle::Refused(reason);
         }
+        let verified = busy::while_busy(
+            &self.config.work_dir,
+            Phase::Sync,
+            BusyOp::MergeVerification,
+            stage_id,
+            || {
+                crate::verify::completion::resolved::verify_resolved_completion(
+                    &stage,
+                    &self.config.work_dir,
+                    trace_verification_output,
+                )
+            },
+        );
+        if let Err(error) = verified {
+            return self.settle_failed_verification(&stage, stage_id, &error);
+        }
+        self.land_verified_merge(stage_id)
+    }
+
+    /// Land the merge whose content passed verification, and settle how it ended.
+    fn land_verified_merge(&mut self, stage_id: &str) -> Settle {
+        let target = crate::git::branch::resolve_target_branch(
+            &self.config.base_branch,
+            &self.config.repo_root,
+        );
         match self.land_stage_merge(stage_id, &target) {
             // The landing recorded why it held the merge; say that.
             Landing::Held => {
@@ -68,6 +89,35 @@ impl Orchestrator {
                 Settle::Refused(held_reason(review.as_deref()))
             }
             landing => settle_for_landing(landing, stage_id, &target),
+        }
+    }
+
+    /// Settle `--resolved` for content that failed completion verification
+    /// with `error`. A typed block is refused: loom retries such a merge every
+    /// tick, and a handback would cancel the retry of a resolution it already
+    /// accepted. A branch with no merge commit since the stage's completed
+    /// commit is refused, since a clean tree proves no merge happened. Only a
+    /// proven committed merge is handed back to a stage session.
+    fn settle_failed_verification(
+        &mut self,
+        stage: &Stage,
+        stage_id: &str,
+        error: &anyhow::Error,
+    ) -> Settle {
+        let refusal = format!("resolved content failed completion verification: {error:#}");
+        if stage.merge.block.is_some() {
+            return Settle::Refused(refusal);
+        }
+        if !self.resolver_merge_committed(stage) {
+            return Settle::Refused(format!(
+                "{refusal}; the branch has no merge commit since the stage's completed commit: \
+                 merge the target with git merge --no-commit --no-ff, commit it with loom stage \
+                 commit, then rerun --resolved"
+            ));
+        }
+        match self.hand_merge_back(stage_id, &refusal) {
+            Ok(note) => Settle::Applied(Some(note)),
+            Err(why) => Settle::Refused(why),
         }
     }
 }

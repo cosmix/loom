@@ -2,7 +2,6 @@
 
 use crate::context::schema::LifecycleState;
 use regex::Regex;
-use sha2::{Digest, Sha256};
 use std::path::{Component, Path, PathBuf};
 use std::sync::LazyLock;
 
@@ -40,7 +39,7 @@ fn build_chunk(
 
     let (references, symbols) = references::references_in(&body);
     let source_paths = live_source_paths(index, references, frontmatter);
-    let content_hash = format!("sha256:{}", hex::encode(Sha256::digest(body.as_bytes())));
+    let content_hash = format!("sha256:{}", crate::utils::sha256_hex(body.as_bytes()));
     // This is an estimate, not a tokenizer count.
     let estimated_tokens = crate::context::schema::estimate_tokens(&body);
     let links = links_in(&body);
@@ -136,18 +135,13 @@ struct Section<'a> {
 
 fn split_sections(content: &str) -> Vec<Section<'_>> {
     let mut split_points = Vec::new();
-    let mut fence = None;
+    let mut scanner = super::scanner::Scanner::default();
     let mut offset = 0;
 
     while let Some((line_end, line)) = line_at(content, offset) {
-        let fence_marker = fence_marker(line);
-        if let Some(open_fence) = fence {
-            if fence_marker == Some(open_fence) {
-                fence = None;
-            }
-        } else if let Some(marker) = fence_marker {
-            fence = Some(marker);
-        } else if line.starts_with("## ") {
+        if !scanner.fenced(line)
+            && super::scanner::atx_heading(line).is_some_and(|(level, _)| level == 2)
+        {
             split_points.push(offset);
         }
         offset = line_end;
@@ -176,7 +170,7 @@ fn split_sections(content: &str) -> Vec<Section<'_>> {
         let (_, line) = line_at(content, *start).unwrap_or((end, ""));
         sections.push(Section {
             body: &content[*start..end],
-            heading: line.strip_prefix("## ").unwrap_or_default(),
+            heading: super::scanner::atx_heading(line).map_or("", |(_, heading)| heading),
         });
     }
     sections
@@ -249,17 +243,6 @@ fn line_at(text: &str, start: usize) -> Option<(usize, &str)> {
     Some((end, line))
 }
 
-pub(crate) fn fence_marker(line: &str) -> Option<char> {
-    let trimmed = line.trim_start();
-    if trimmed.starts_with("```") {
-        Some('`')
-    } else if trimmed.starts_with("~~~") {
-        Some('~')
-    } else {
-        None
-    }
-}
-
 fn trim_trailing_blank_lines(body: &str) -> String {
     let mut offset = 0;
     let mut last_non_blank_end = 0;
@@ -322,4 +305,20 @@ fn category_for(path: &Path) -> Option<String> {
         })
         .collect();
     components.get(components.len().checked_sub(2)?).cloned()
+}
+
+#[cfg(test)]
+#[test]
+fn chunk_and_empty_catalog_digests_are_stable() {
+    let chunks = chunk_file(Path::new("notes.md"), b"## Title\nBody\n").unwrap();
+    assert_eq!(
+        chunks[0].content_hash,
+        "sha256:29087886ceb102c198849ee96215362945dc9f42d4dc40053b12f5bb50aab8be"
+    );
+    let root = tempfile::tempdir().unwrap();
+    let catalog = crate::fs::knowledge::catalog::build(root.path()).unwrap();
+    assert_eq!(
+        catalog.revision,
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    );
 }

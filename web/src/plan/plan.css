@@ -1,0 +1,68 @@
+/* Planning-specific layout only; colours and type come from the shared tokens. */
+
+/* The visual system every planner surface follows: scales and primitives per ui/DESIGN.md. */
+@import "./ui/design.css";
+
+/*
+ * Reading face: body text of rendered documents and concept prose. Chrome and titles stay in
+ * `--font-sans` (Alegreya Sans); code, paths and ids stay in `--font-mono` (Commit Mono Cosmix).
+ * Settings picks the face and size through `data-reading-face` / `data-reading-size` on the
+ * shell root; Source Serif 4 at 19px is the default.
+ */
+[data-loom-plan] {
+  --font-reading: "Source Serif 4 Variable", "Source Serif 4", Georgia, serif;
+  --reading-size: 19px;
+  --reading-line: 1.6;
+}
+
+[data-loom-plan][data-reading-face="literata"] {
+  --font-reading: "Literata Variable", Literata, Georgia, serif;
+}
+
+[data-loom-plan][data-reading-face="piazzolla"] {
+  --font-reading: "Piazzolla Variable", Piazzolla, Georgia, serif;
+}
+
+[data-loom-plan][data-reading-size="17"] {
+  --reading-size: 17px;
+}
+
+[data-loom-plan][data-reading-size="21"] {
+  --reading-size: 21px;
+}
+
+/*
+ * The shadow of what floats without a scrim (a popover, a menu, the selection pill); nothing in
+ * the page flow casts one. `--plan-shadow` is the halo `--popover-glow` (src/index.css) over the
+ * contact shadow and the near drop; `--popover-lift` is the longer drop under them. The two are
+ * always layered `var(--plan-shadow), var(--popover-lift)` (header/popover.tsx,
+ * header/activity.tsx), which paints the halo over every drop: under them the dark themes' black
+ * drops would cover it. `--dialog-shadow` (src/index.css) is the deeper drop of a modal. On :root
+ * and .dark, not on [data-loom-plan], because a popover portals out of the shell. Every dark
+ * variant keeps the `.dark` class (`.dark[data-dark-theme=...]`), so one dark rule covers them;
+ * it comes after :root, which it ties on specificity.
+ */
+:root {
+  --plan-shadow:
+    var(--popover-glow), 0 1px 2px oklch(0.2 0.02 100 / 0.1),
+    0 8px 24px -4px oklch(0.2 0.02 100 / 0.14);
+  --popover-lift: 0 22px 56px -10px oklch(0 0 0 / 0.24);
+}
+
+.dark {
+  --plan-shadow:
+    var(--popover-glow), 0 1px 2px oklch(0 0 0 / 0.5), 0 10px 30px -4px oklch(0 0 0 / 0.6);
+  --popover-lift: 0 24px 64px -8px oklch(0 0 0 / 0.8);
+}
+
+[data-loom-plan] .plan-header {
+  min-width: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-slot="dialog-overlay"],
+  [data-slot="dialog-content"],
+  [data-slot="popover-content"] {
+    animation: none !important;
+  }
+}

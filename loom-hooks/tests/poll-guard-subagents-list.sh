@@ -10,7 +10,7 @@ trap 'rm -rf "$d"' EXIT
 work="$d/work"
 stage="pg-stage"
 session="pg-session"
-mkdir -p "$work"
+mkdir -p "$work" "$d/tmp"
 
 fail() {
 	printf 'FAIL: %s\n' "$1"
@@ -25,11 +25,13 @@ run_hook() {
 }
 
 # Same payload, but with no stage identity - an interactive session outside a stage.
+# The hook then keeps its ledger under ${TMPDIR:-/tmp}/loom-polls; a private
+# TMPDIR gives every run a fresh ledger instead of a fixed, ever-growing /tmp path.
 run_hook_no_stage() {
 	local command="$1" agent="$2"
 	jq -nc --arg command "$command" --arg agent "$agent" --arg session "$session" \
 		'{tool_name:"Bash",tool_input:{command:$command},agent_id:$agent,session_id:$session}' |
-		env -u LOOM_STAGE_ID LOOM_WORK_DIR="$work" LOOM_SESSION_ID="$session" bash "$hook"
+		env -u LOOM_STAGE_ID TMPDIR="$d/tmp" LOOM_WORK_DIR="$work" LOOM_SESSION_ID="$session" bash "$hook"
 }
 
 third_output() {

@@ -1,16 +1,5 @@
 //! Tests for `install_binary`'s atomic staging write, executable mode, and
-//! backup rename.
-//!
-//! The rollback-on-failure path (`install.rs:43-58`) fires only when the
-//! final `staging -> current_exe` rename fails after the backup rename
-//! already succeeded. `staging`, `backup`, and `current_exe` are all created
-//! via `NamedTempFile::new_in(parent)` against the exact same `parent`
-//! directory, so any filesystem permission or attribute change that would
-//! block the second rename blocks the first one identically - there is no
-//! directory- or file-level state reachable from a test that fails one
-//! same-directory rename but not the other, short of a fault-injection seam
-//! inside `install_binary` itself. No test for that path is included here
-//! for that reason; see the stage report for the same conclusion.
+//! atomic replacement. A replacement seam makes failures deterministic.
 
 use std::fs;
 #[cfg(unix)]
@@ -18,7 +7,38 @@ use std::os::unix::fs::PermissionsExt;
 
 use tempfile::TempDir;
 
-use crate::commands::self_update::install::install_binary;
+use crate::commands::self_update::install::{install_binary, install_with_replace};
+
+#[test]
+fn failed_replacement_preserves_the_original_at_its_public_path() {
+    let temp_dir = TempDir::new().unwrap();
+    let current_exe = temp_dir.path().join("loom");
+    fs::write(&current_exe, b"old binary").unwrap();
+    let result = install_with_replace(b"new binary", &current_exe, |staging, target| {
+        assert_eq!(fs::read(target).unwrap(), b"old binary");
+        assert_eq!(fs::read(staging).unwrap(), b"new binary");
+        Err(std::io::Error::other("injected replacement failure"))
+    });
+    assert!(result
+        .unwrap_err()
+        .to_string()
+        .contains("replace current binary"));
+    assert_eq!(fs::read(&current_exe).unwrap(), b"old binary");
+    assert_eq!(fs::read_dir(temp_dir.path()).unwrap().count(), 1);
+}
+
+#[test]
+fn replacement_keeps_the_original_visible_until_the_atomic_rename() {
+    let temp_dir = TempDir::new().unwrap();
+    let current_exe = temp_dir.path().join("loom");
+    fs::write(&current_exe, b"old binary").unwrap();
+    install_with_replace(b"new binary", &current_exe, |staging, target| {
+        assert_eq!(fs::read(target).unwrap(), b"old binary");
+        fs::rename(staging, target)
+    })
+    .unwrap();
+    assert_eq!(fs::read(&current_exe).unwrap(), b"new binary");
+}
 
 #[test]
 fn install_binary_replaces_the_target_and_leaves_no_temp_files() {
@@ -33,7 +53,7 @@ fn install_binary_replaces_the_target_and_leaves_no_temp_files() {
     assert_eq!(
         entries.len(),
         1,
-        "the staging and backup temp files must not survive a successful install"
+        "the staging file must not survive a successful install"
     );
 }
 

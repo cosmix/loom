@@ -1,10 +1,5 @@
 #!/usr/bin/env bash
-# NotebookEdit does NOT carry its target at `.tool_input.file_path` - its
-# field is `.notebook_path`, confirmed against `worktree-file-guard.sh`'s
-# `extract_path()`, which already special-cases the same tool for the same
-# reason. A payload with `notebook_path` but no `file_path` must still be
-# recorded, and recorded at the notebook path, not silently dropped or
-# recorded as an empty/wrong path.
+# The hook remains silent and must not invoke the obsolete edit recorder.
 set -euo pipefail
 HOOK="$(dirname "$0")/../post-tool-use.sh"
 TMP=$(mktemp -d "${TMPDIR:-/tmp}/loom-hooktest.XXXXXX")
@@ -42,12 +37,8 @@ if [[ -n "$OUTPUT" ]]; then
 	exit 1
 fi
 
-if [[ ! -f "$MARKER" ]]; then
-	echo "FAIL: loom context record-edit was never invoked for a NotebookEdit tool call"
-	exit 1
-fi
-if ! grep -qF -- "--path notebooks/analysis.ipynb" "$MARKER"; then
-	echo "FAIL: record-edit was not called with the notebook_path from a NotebookEdit payload. Got: $(cat "$MARKER")"
+if [[ -e "$MARKER" ]]; then
+	echo "FAIL: hook invoked the obsolete edit recorder"
 	exit 1
 fi
 

@@ -31,6 +31,34 @@ fn disputing_stage(work: &std::path::Path) -> (Session, u32) {
     (session, agent_pid)
 }
 
+#[test]
+fn retirement_keeps_a_missing_assigned_writer_for_block_and_dispute() {
+    for expected in [StageStatus::Blocked, StageStatus::NeedsAdjudication] {
+        let temp = handoff_work_dir();
+        let work = temp.path().join(".loom").join("work");
+        executing_stage(&work);
+        update_stage("test-stage", &work, |stage| {
+            match expected {
+                StageStatus::Blocked => stage.try_mark_blocked()?,
+                StageStatus::NeedsAdjudication => stage.try_request_adjudication(None)?,
+                _ => unreachable!(),
+            }
+            Ok(())
+        })
+        .unwrap();
+        assign_stage_session(&work, "missing-writer");
+        let mut orchestrator = orchestrator_for(&work, temp.path());
+
+        let error = orchestrator
+            .retire_stage_agents("test-stage", expected.clone())
+            .unwrap_err();
+        assert!(format!("{error:#}").contains("no exact session record exists"));
+        let stage = load_stage("test-stage", &work).unwrap();
+        assert_eq!(stage.status, expected);
+        assert_eq!(stage.session.as_deref(), Some("missing-writer"));
+    }
+}
+
 /// The agent that filed the dispute is idle and must be taken down before the
 /// verdict applies, so a successor spawns against the amended criteria
 /// instead of the daemon adopting the same idle process.

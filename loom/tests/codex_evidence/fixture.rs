@@ -16,7 +16,7 @@ use crate::fixture_support::{
 
 pub const STAGE: &str = "codex-stage";
 pub const LOOM_SESSION: &str = "loom-session-a";
-pub const MODEL: &str = "gpt-6-sol";
+pub const MODEL: &str = "gpt-6.2-sol";
 pub const EFFORT: &str = "xhigh";
 
 #[derive(Clone)]
@@ -68,6 +68,10 @@ impl Fixture {
         fs::create_dir_all(home.join(".codex/plugin-data/state"))?;
         write_stage(&work, &project)?;
         write_session(&work, &project)?;
+        // These tests cover the legacy forward lane. LOOM_* is stripped, so the guard
+        // runs the `loom` on PATH, whose default with no user config (native)
+        // refuses it.
+        fs::write(work.join("config.toml"), "[codex]\nbackend = \"legacy\"\n")?;
         Ok(Self {
             _temp: temp,
             root,

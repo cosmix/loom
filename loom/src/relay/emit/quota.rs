@@ -1,44 +1,58 @@
 //! Guards the CLI's per-session ticket quota
-//! ([`crate::relay::MAX_UNCONSUMED_TICKETS`]).
+//! ([`crate::relay::MAX_UNCONSUMED_TICKETS`] and
+//! [`crate::relay::MAX_SCRATCH_TICKETS`]).
 
-use crate::relay::MAX_UNCONSUMED_TICKETS;
-use anyhow::{bail, Context, Result};
-use std::fs;
+use super::stale::{self, TicketCounts};
+use crate::relay::{MAX_SCRATCH_TICKETS, MAX_UNCONSUMED_TICKETS};
+use anyhow::{bail, Result};
 use std::path::Path;
+use std::time::SystemTime;
 
-/// Refuse when `scratch_dir` already holds `MAX_UNCONSUMED_TICKETS` or more
-/// `.req` files the relay hook has not yet picked up.
-pub(super) fn require_headroom(scratch_dir: &Path) -> Result<()> {
-    let count = count_unconsumed(scratch_dir)?;
-    if count >= MAX_UNCONSUMED_TICKETS {
+/// Refuse a new ticket when `scratch_dir` holds too many.
+///
+/// Two limits apply. `MAX_UNCONSUMED_TICKETS` counts the live tickets: swept
+/// kinds, fresh control tickets and anything unclassifiable. Control tickets
+/// older than a minute are stranded (no later call relays them), so they do
+/// not count there. `MAX_SCRATCH_TICKETS` counts every ticket and keeps the
+/// directory bounded. No ticket is deleted by either check.
+pub(super) fn require_headroom(scratch_dir: &Path, now: SystemTime) -> Result<()> {
+    let TicketCounts {
+        live,
+        stale_control,
+        stale_ids,
+    } = stale::classify(scratch_dir, now)?;
+    if live >= MAX_UNCONSUMED_TICKETS {
         bail!(
-            "this session already has {count} unconsumed relay tickets (limit \
-             {MAX_UNCONSUMED_TICKETS}); run `loom memory note --help` in the foreground, with its \
-             output unfiltered, to relay the backlog — a ticket written under a redirect, a \
-             line-dropping pipe, a script file or a background call stays queued until then"
+            "this session already has {live} unconsumed relay tickets (limit \
+             {MAX_UNCONSUMED_TICKETS}). Memory tickets: run `loom memory note --help` alone, in \
+             the foreground, with its output unfiltered, to relay them. Check tickets: rerun \
+             `loom check` the same way."
+        );
+    }
+    let total = live + stale_control;
+    if total >= MAX_SCRATCH_TICKETS {
+        bail!(
+            "the scratch directory holds {total} relay tickets (limit {MAX_SCRATCH_TICKETS}), \
+             {stale_control} of them unrelayed control tickets older than {} s: {}. For each, run \
+             `loom request status <id>`; when it reports pending relay and you no longer need \
+             that request, delete `$LOOM_SCRATCH_DIR/<id>.req`, otherwise rerun its command \
+             alone in the foreground.",
+            stale::STALE_AFTER.as_secs(),
+            stale_ids.join(", ")
         );
     }
     Ok(())
 }
 
-fn count_unconsumed(scratch_dir: &Path) -> Result<usize> {
-    let entries = fs::read_dir(scratch_dir)
-        .with_context(|| format!("failed to read scratch directory {}", scratch_dir.display()))?;
-    let mut count = 0usize;
-    for entry in entries {
-        let entry = entry
-            .with_context(|| format!("failed to read an entry in {}", scratch_dir.display()))?;
-        if entry.path().extension().and_then(|ext| ext.to_str()) == Some("req") {
-            count += 1;
-        }
-    }
-    Ok(count)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
     use tempfile::TempDir;
+
+    fn require(dir: &TempDir) -> Result<()> {
+        require_headroom(dir.path(), SystemTime::now())
+    }
 
     #[test]
     fn allows_up_to_the_limit_minus_one() {
@@ -46,7 +60,7 @@ mod tests {
         for n in 0..MAX_UNCONSUMED_TICKETS - 1 {
             fs::write(dir.path().join(format!("{n}.req")), b"").unwrap();
         }
-        require_headroom(dir.path()).unwrap();
+        require(&dir).unwrap();
     }
 
     #[test]
@@ -55,8 +69,9 @@ mod tests {
         for n in 0..MAX_UNCONSUMED_TICKETS {
             fs::write(dir.path().join(format!("{n}.req")), b"").unwrap();
         }
-        let err = require_headroom(dir.path()).unwrap_err().to_string();
+        let err = require(&dir).unwrap_err().to_string();
         assert!(err.contains("loom memory note --help"));
+        assert!(err.contains("rerun `loom check`"));
         assert!(!err.contains("wait for the relay hook"));
     }
 
@@ -64,6 +79,6 @@ mod tests {
     fn ignores_non_req_files() {
         let dir = TempDir::new().unwrap();
         fs::write(dir.path().join("not-a-ticket.tmp"), b"").unwrap();
-        require_headroom(dir.path()).unwrap();
+        require(&dir).unwrap();
     }
 }

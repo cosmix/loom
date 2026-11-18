@@ -8,8 +8,9 @@ use std::path::Path;
 use crate::git::hooks::{install_reference_transaction_hook, HookInstall};
 use crate::git::install_pre_commit_hook;
 
-/// Install both hooks into `repo_root/.git/hooks`, one status line each. A
-/// failed install prints a warning and does not fail `init`.
+/// Install both hooks in the directory git runs hooks from, one status line each.
+/// A failed install, a `core.hooksPath` loom must not write to among the causes,
+/// prints a warning and does not fail `init`.
 pub(super) fn install_git_hooks(repo_root: &Path) {
     install_pre_commit(repo_root);
     install_reference_transaction(repo_root);
@@ -43,7 +44,7 @@ fn install_reference_transaction(repo_root: &Path) {
             "already".dimmed()
         ),
         Ok(HookInstall::ForeignHookPresent) => println!(
-            "  {} .git/hooks/reference-transaction belongs to another tool; loom cannot \
+            "  {} The reference-transaction hook belongs to another tool; loom cannot \
              attest operator moves of the target, so the target guard runs without \
              attestation",
             "!".yellow().bold()

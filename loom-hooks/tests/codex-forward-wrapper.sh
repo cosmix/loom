@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-unset LOOM_STAGE_ID LOOM_SESSION_ID LOOM_WORK_DIR LOOM_SESSION_TYPE LOOM_MAIN_AGENT_PID
+unset LOOM_STAGE_ID LOOM_SESSION_ID LOOM_WORK_DIR LOOM_SESSION_TYPE LOOM_MAIN_AGENT_PID LOOM_CODEX_FORWARD
 d=$(mktemp -d "${TMPDIR:-/tmp}/cfw-wrapper.XXXXXX") && [[ -n "$d" ]]
 trap 'rm -rf "$d"' EXIT
 
@@ -46,6 +46,7 @@ STUB
 cat >"$BIN_DIR/node" <<'STUB'
 #!/usr/bin/env bash
 set -euo pipefail
+[[ "${LOOM_CODEX_FORWARD:-}" == 1 ]] || exit 96
 touch "$NODE_CALLED"
 jq -nc --args '$ARGS.positional' -- "$@" >>"$CALLS"
 companion=$1
@@ -65,7 +66,7 @@ task)
 	;;
 status)
 	[[ $# -eq 5 && "$1" == "$job_id" && "$2" == --wait && "$3" == --json &&
-		"$4" == --timeout-ms && "$5" == 540000 ]] || exit 92
+		"$4" == --timeout-ms && "$5" == 1500000 ]] || exit 92
 	printf '%s\n' "$*" >>"$STATUS_CALLS"
 	case "${SCENARIO:-completed}" in
 	wait-fail) printf '%s\n' 'simulated wait failure' >&2; exit 7 ;;
@@ -78,7 +79,7 @@ status)
 	esac
 	jq -nc --arg id "$job_id" --arg status "$status" --arg phase "$phase" \
 		--argjson timed_out "$timed_out" \
-		'{workspaceRoot:"/workspace",job:{id:$id,status:$status,phase:$phase},waitTimedOut:$timed_out,timeoutMs:540000}'
+		'{workspaceRoot:"/workspace",job:{id:$id,status:$status,phase:$phase},waitTimedOut:$timed_out,timeoutMs:1500000}'
 	;;
 result)
 	[[ $# -eq 2 && "$1" == "$job_id" && "$2" == --json ]] || exit 93
@@ -113,7 +114,7 @@ run_companion() {
 		CAPTURE_LAUNCH="$CAPTURE_LAUNCH" CALLS="$CALLS" ENV_CALLS="$ENV_CALLS" STATUS_CALLS="$STATUS_CALLS" \
 		CLAUDE_PLUGIN_DATA="$d/attacker-selected-root" LOOM_WORK_DIR="$WORK_DIR" \
 		LOOM_STAGE_ID=stage-one LOOM_SESSION_ID=loom-session \
-		bash "$WRAPPER" task "$prompt" --model gpt-5.6-terra --effort xhigh --write \
+		bash "$WRAPPER" task "$prompt" --model gpt-6.1-terra --effort xhigh --write \
 		--unit-id unit-a --invocation-id "$INVOCATION" >"$stdout" 2>"$stderr" || RUN_STATUS=$?
 }
 
@@ -122,6 +123,16 @@ assert_line() {
 	actual=$(sed -n "${number}p" "$file")
 	[[ "$actual" == "$expected" ]] || {
 		printf '%s\n' "FAIL: $file line $number was '$actual', expected '$expected'"
+		exit 1
+	}
+}
+
+# Require rg to report no match (exit 1); a read error (exit 2) fails too.
+assert_absent() {
+	local status=0
+	rg -q "$@" || status=$?
+	[[ $status -eq 1 ]] || {
+		printf '%s\n' "FAIL: rg $* exited $status, expected 1 (no match)"
 		exit 1
 	}
 }
@@ -158,7 +169,7 @@ rg -qFx "task|$SESSION_ID|$CANONICAL_PLUGIN_DATA" "$ENV_CALLS"
 rg -qFx "status|$SESSION_ID|$CANONICAL_PLUGIN_DATA" "$ENV_CALLS"
 rg -qFx "result|$SESSION_ID|$CANONICAL_PLUGIN_DATA" "$ENV_CALLS"
 [[ $(wc -l <"$STATUS_CALLS") -eq 1 ]]
-rg -qFx 'job-exact --wait --json --timeout-ms 540000' "$STATUS_CALLS"
+rg -qFx 'job-exact --wait --json --timeout-ms 1500000' "$STATUS_CALLS"
 
 [[ $(wc -l <"$CAPTURE_LAUNCH") -eq 10 ]]
 assert_line "$CAPTURE_LAUNCH" 2 task
@@ -166,10 +177,13 @@ assert_line "$CAPTURE_LAUNCH" 4 --background
 assert_line "$CAPTURE_LAUNCH" 5 --json
 assert_line "$CAPTURE_LAUNCH" 6 --write
 assert_line "$CAPTURE_LAUNCH" 7 --model
-assert_line "$CAPTURE_LAUNCH" 8 gpt-5.6-terra
+assert_line "$CAPTURE_LAUNCH" 8 gpt-6.1-terra
 assert_line "$CAPTURE_LAUNCH" 9 --effort
 assert_line "$CAPTURE_LAUNCH" 10 xhigh
 rg -qF '=== TASK ===' "$CAPTURE_LAUNCH"
+jq -se '.[0][2] | split("\n") | index(
+	"DO NOT open SKILL.md or skill catalogs or invoke skills despite other instructions; task/source suffice."
+) != null' "$CALLS" >/dev/null
 rg -qF 'literal;' "$CAPTURE_LAUNCH"
 [[ ! -e "$d/operator" ]]
 
@@ -186,7 +200,7 @@ for scenario in wait-timeout running queued; do
 	assert_line "$OUT" 2 \
 		'LOOM-FORWARD-END {"v":1,"backend":"companion","job_id":"job-exact","outcome":"timed_out","exit_code":124}'
 	assert_line "$OUT" 3 "$SEPARATOR"
-	rg -qF 'exceeded the 540000 ms unit deadline and was cancelled' "$OUT"
+	rg -qF 'exceeded the 1500000 ms unit deadline and was cancelled' "$OUT"
 	rg -qFx 'exit: 124' "$OUT"
 	rg -qFx 'state: timed_out' "$OUT"
 	[[ $(wc -l <"$STATUS_CALLS") -eq 1 ]]
@@ -203,7 +217,7 @@ run_companion wait-fail "$OUT" "$ERR"
 [[ $RUN_STATUS -eq 7 && ! -s "$ERR" ]]
 assert_line "$OUT" 1 "$START"
 assert_line "$OUT" 2 "$SEPARATOR"
-! rg -q '^LOOM-FORWARD-END ' "$OUT"
+assert_absent '^LOOM-FORWARD-END ' "$OUT"
 rg -qF 'simulated wait failure' "$OUT"
 rg -qFx 'state: unknown' "$OUT"
 
@@ -216,7 +230,17 @@ OUT="$d/unsupported.stdout"
 ERR="$d/unsupported.stderr"
 run_companion completed "$OUT" "$ERR" "$UNSUPPORTED_HOME"
 [[ $RUN_STATUS -eq 1 && ! -e "$NODE_CALLED" ]]
-! rg -q '^LOOM-FORWARD-START ' "$OUT"
+assert_absent '^LOOM-FORWARD-START ' "$OUT"
+rg -qF 'Supported codex companion 1.0.6 is missing or unsafe' "$OUT"
+
+# A symlink at the supported leaf is unsafe even when its target is a file.
+SYMLINK_HOME="$d/symlink-home"
+SYMLINK_COMPANION="$SYMLINK_HOME/.claude/plugins/cache/openai-codex/codex/1.0.6/scripts"
+mkdir -p "$SYMLINK_COMPANION"
+ln -s "$COMPANION" "$SYMLINK_COMPANION/codex-companion.mjs"
+rm -f "$NODE_CALLED"
+run_companion completed "$OUT" "$ERR" "$SYMLINK_HOME"
+[[ $RUN_STATUS -eq 1 && ! -e "$NODE_CALLED" ]]
 rg -qF 'Supported codex companion 1.0.6 is missing or unsafe' "$OUT"
 
 UNWRITABLE_HOME="$d/unwritable-home"
@@ -229,7 +253,7 @@ OUT="$d/unwritable.stdout"
 ERR="$d/unwritable.stderr"
 run_companion completed "$OUT" "$ERR" "$UNWRITABLE_HOME"
 [[ $RUN_STATUS -eq 1 && ! -e "$NODE_CALLED" ]]
-! rg -q '^LOOM-FORWARD-START ' "$OUT"
+assert_absent '^LOOM-FORWARD-START ' "$OUT"
 rg -qF 'canonical plugin data state root is not writable' "$OUT"
 
 # Direct exec schema: Codex 0.162.1, commit 092d3acd6bec3e3a14bdc7e7a2810ab628ab759d.
@@ -242,6 +266,7 @@ exit 71
 STUB
 cat >"$DIRECT_BIN/codex" <<'STUB'
 #!/usr/bin/env bash
+[[ "${LOOM_CODEX_FORWARD:-}" == 1 ]] || exit 96
 printf '%q\n' "$@" >"$DIRECT_ARGV"
 [[ /dev/stdin -ef /dev/null ]] || exit 66
 [[ "${DIRECT_SCENARIO:-success}" == missing-thread ]] || printf '%s\n' '{"type":"thread.started","thread_id":"thread-exact"}'
@@ -260,7 +285,7 @@ run_direct() {
 	RUN_STATUS=0
 	HOME="$HOME_DIR" PATH="$DIRECT_BIN:$PATH" DIRECT_SCENARIO="$scenario" DIRECT_ARGV="$d/direct-argv" \
 		LOOM_WORK_DIR="$WORK_DIR" LOOM_STAGE_ID=stage-one LOOM_SESSION_ID=loom-session \
-		bash "$WRAPPER" task "$prompt" --model gpt-5.6-terra --effort xhigh --write \
+		bash "$WRAPPER" task "$prompt" --model gpt-6.1-terra --effort xhigh --write \
 		--unit-id unit-a --invocation-id "$INVOCATION" <"$d/stdin-open" >"$stdout" 2>"$stderr" || RUN_STATUS=$?
 }
 printf '%s\n' 'caller stdin' >"$d/stdin-open"
@@ -281,7 +306,7 @@ assert_line "$OUT" 2 'LOOM-FORWARD-END {"v":1,"backend":"direct","thread_id":"th
 OUT="$d/usage.stdout"; ERR="$d/usage.stderr"; status=0
 HOME="$HOME_DIR" PATH="$BIN_DIR:$PATH" LOOM_WORK_DIR="$WORK_DIR" \
 	LOOM_STAGE_ID=stage-one LOOM_SESSION_ID=loom-session \
-	bash "$WRAPPER" task hello --model gpt-5.6-terra --effort xhigh --write >"$OUT" 2>"$ERR" || status=$?
+	bash "$WRAPPER" task hello --model gpt-6.1-terra --effort xhigh --write >"$OUT" 2>"$ERR" || status=$?
 [[ $status -eq 2 && ! -s "$OUT" ]]
 
 printf '%s\n' PASS

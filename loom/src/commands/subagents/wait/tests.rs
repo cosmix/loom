@@ -210,14 +210,15 @@ fn claude_worker(id: &str) -> BoundWorker {
             kind: WorkerKind::Claude,
             id: id.into(),
         },
-        lifecycle_identity: WorkerIdentity::ClaudeSubagent {
+        lifecycle_identity: Some(WorkerIdentity::ClaudeSubagent {
             stage_id: "stage-a".into(),
             loom_session_id: "loom-a".into(),
             parent_session_id: "parent-a".into(),
             agent_id: id.into(),
             agent_type: "general-purpose".into(),
             transcript_path: "/tmp/transcript.jsonl".into(),
-        },
+        }),
+        native_invocation: None,
         authority: None,
         evidence: Vec::new(),
     }
@@ -229,7 +230,7 @@ fn codex_worker(id: &str) -> BoundWorker {
             kind: WorkerKind::Codex,
             id: id.into(),
         },
-        lifecycle_identity: WorkerIdentity::Codex {
+        lifecycle_identity: Some(WorkerIdentity::Codex {
             stage_id: "stage-a".into(),
             loom_session_id: "loom-a".into(),
             parent_session_id: "parent-a".into(),
@@ -241,7 +242,8 @@ fn codex_worker(id: &str) -> BoundWorker {
                 thread_id: "thread-a".into(),
                 tool_use_id: "tool-a".into(),
             },
-        },
+        }),
+        native_invocation: None,
         authority: None,
         evidence: Vec::new(),
     }

@@ -9,7 +9,9 @@ targets = [
 
 [advisories]
 db-urls = ["https://github.com/rustsec/advisory-db"]
-ignore = []
+ignore = [
+    { id = "RUSTSEC-2026-0543", reason = "chrono is unmaintained with no safe upgrade; migrating its uses across the tree to jiff is tracked separately" },
+]
 
 [licenses]
 confidence-threshold = 0.8
@@ -35,7 +37,7 @@ highlight = "simplest-path"
 deny = []
 skip = [
     { crate = "core-foundation@0.9.4", reason = "reqwest transitively supports two macOS security-framework generations" },
-    { crate = "hashbrown@0.16.1", reason = "ratatui and current indexmap require adjacent hashbrown generations" },
+    { crate = "syn@2.0.119", reason = "derive_more, strum_macros and tracing-attributes have no syn 3 release yet" },
 ]
 skip-tree = []
 

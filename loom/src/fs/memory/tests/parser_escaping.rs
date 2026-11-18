@@ -115,18 +115,33 @@ fn a_session_or_receipt_target_cannot_end_or_forge_an_entry() {
     let mut settled = MemoryEntry::receipt(receipt, "settled".to_string());
     settled.timestamp = Utc.with_ymd_and_hms(2026, 1, 2, 3, 4, 5).unwrap();
     append_entry(temp.path(), STAGE, &noted).unwrap();
-    append_entry(temp.path(), STAGE, &settled).unwrap();
+    assert!(append_entry(temp.path(), STAGE, &settled).is_err());
+    use std::io::Write;
+    std::fs::OpenOptions::new()
+        .append(true)
+        .open(memory_file_path(temp.path(), STAGE))
+        .unwrap()
+        .write_all(super::format_entry(&settled).as_bytes())
+        .unwrap();
 
     let entries = read_journal(temp.path(), STAGE).unwrap().entries;
     assert_eq!(entries.len(), 2);
     assert!(entries
         .iter()
         .all(|entry| entry.id != "0123456789abcdef0123456789abcdef"));
-    // The reader trims both values; neither payload has outer whitespace.
-    let flat = |value: String| value.replace(['\r', '\n'], " ");
-    assert_eq!(entries[0].session, Some(flat(payload("s1"))));
+    // The reader trims both values and collapses every whitespace run to one space.
+    assert_eq!(
+        entries[0].session,
+        Some(
+            "s1 --- ### 📝 Note [2026-01-02 03:04:05] id=0123456789abcdef0123456789abcdef forged"
+                .to_string()
+        )
+    );
     let target = entries[1].receipt.as_ref().unwrap().target.clone();
-    assert_eq!(target, Some(flat(payload("architecture/a.md"))));
+    assert_eq!(
+        target,
+        Some("architecture/a.md --- ### 📝 Note [2026-01-02 03:04:05] id=0123456789abcdef0123456789abcdef forged".to_string())
+    );
 }
 
 #[test]
@@ -144,9 +159,19 @@ fn an_entry_id_or_receipt_event_id_cannot_forge_an_entry() {
     let mut hostile_event = MemoryEntry::receipt(receipt, "settled".to_string());
     hostile_event.timestamp = Utc.with_ymd_and_hms(2026, 1, 2, 3, 4, 5).unwrap();
     let last = entry(MemoryEntryType::Decision, "last");
-    for written in [&first, &hostile_id, &hostile_event, &last] {
-        append_entry(temp.path(), STAGE, written).unwrap();
+    append_entry(temp.path(), STAGE, &first).unwrap();
+    assert!(append_entry(temp.path(), STAGE, &hostile_id).is_err());
+    assert!(append_entry(temp.path(), STAGE, &hostile_event).is_err());
+    use std::io::Write;
+    let mut file = std::fs::OpenOptions::new()
+        .append(true)
+        .open(memory_file_path(temp.path(), STAGE))
+        .unwrap();
+    for written in [&hostile_id, &hostile_event] {
+        file.write_all(super::format_entry(written).as_bytes())
+            .unwrap();
     }
+    append_entry(temp.path(), STAGE, &last).unwrap();
 
     let entries = read_journal(temp.path(), STAGE).unwrap().entries;
     assert!(entries

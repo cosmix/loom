@@ -1,7 +1,5 @@
-//! Unit tests for `native/session_settings.rs`: the capsule file, its
-//! lifecycle, and what `write_session_capsule` renders into it. Declared as a
-//! sibling module the way `tests_capsule.rs` and `tests_wrapper_env.rs` are
-//! (CLAUDE.md Rule 17 keeps test files split out of the module they cover).
+//! Unit tests for the session settings capsule: its file lifecycle and
+//! rendered policy across launch kinds.
 //! The fixture below is shared with `tests_capsule.rs`, which checks the
 //! capsule's write denies.
 
@@ -189,6 +187,12 @@ pub(super) fn checkout() -> Checkout {
     for dir in [&worktree, &work_dir, &hooks_dir, &home] {
         std::fs::create_dir_all(dir).unwrap();
     }
+    // The capsule tests pin the legacy lane's grants; native is the default.
+    std::fs::write(
+        work_dir.join("config.toml"),
+        "[codex]\nbackend = \"legacy\"\n",
+    )
+    .unwrap();
     Checkout {
         _temp: temp,
         repo,

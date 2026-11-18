@@ -21,47 +21,41 @@ pub fn read_recovery_signal(
         .with_context(|| format!("Failed to read recovery signal: {}", signal_path.display()))?;
 
     // Check if this is a recovery signal by looking for the recovery context section
-    if !content.contains("## Recovery Context") {
+    let Some(context) = section(&content, "## Recovery Context") else {
         return Ok(None);
-    }
+    };
 
     // Parse basic information from the signal
     // Note: Field names are passed without colon - extract_field adds **: pattern
-    let stage_id = extract_field(&content, "Stage")
+    let target = section(&content, "## Target").unwrap_or_default();
+    let stage_id = extract_field(&target, "Stage")
+        .filter(|id| !id.is_empty())
+        .context("Recovery signal is missing stage_id")?
+        .to_string();
+    let previous_session_id = extract_field(&context, "Previous Session")
         .unwrap_or_default()
         .to_string();
-    let previous_session_id = extract_field(&content, "Previous Session")
-        .unwrap_or_default()
-        .to_string();
-    let recovery_attempt = extract_field(&content, "Recovery Attempt")
+    let recovery_attempt = extract_field(&context, "Recovery Attempt")
         .and_then(|s| s.trim_start_matches('#').parse().ok())
         .unwrap_or(1);
 
-    let reason = if content.contains("Session crashed") {
-        RecoveryReason::Crash
-    } else if content.contains("Session hung") {
-        RecoveryReason::Hung
-    } else if content.contains("Context exhaustion") {
-        RecoveryReason::ContextExhaustion
-    } else {
-        RecoveryReason::Manual
-    };
+    let reason = parse_recovery_reason(&context);
 
     // Parse crash_report_path from "- **Crash Report**: {path}" line
-    let crash_report_path = extract_field(&content, "Crash Report")
+    let crash_report_path = extract_field(&context, "Crash Report")
         .filter(|s| !s.is_empty())
         .map(|s| PathBuf::from(s.trim()));
 
     // Parse detected_at timestamp from "- **Detected At**: {timestamp}" line
-    let detected_at = extract_field(&content, "Detected At")
+    let detected_at = extract_field(&context, "Detected At")
         .and_then(|s| parse_timestamp(s.trim()))
         .unwrap_or_else(Utc::now);
 
     // Parse last heartbeat info from "### Last Known State" section
-    let last_heartbeat = parse_last_heartbeat(&content);
+    let last_heartbeat = parse_last_heartbeat(&context);
 
     // Parse recovery actions from "### Recovery Actions" section
-    let recovery_actions = parse_recovery_actions(&content);
+    let recovery_actions = parse_recovery_actions(&context);
 
     Ok(Some(RecoverySignalContent {
         session_id: session_id.to_string(),
@@ -76,6 +70,19 @@ pub fn read_recovery_signal(
     }))
 }
 
+fn parse_recovery_reason(context: &str) -> RecoveryReason {
+    let reason_field = extract_field(context, "Reason").unwrap_or_default();
+    if reason_field.starts_with("Session crashed") {
+        RecoveryReason::Crash
+    } else if reason_field.starts_with("Session hung") {
+        RecoveryReason::Hung
+    } else if reason_field.starts_with("Context exhaustion") {
+        RecoveryReason::ContextExhaustion
+    } else {
+        RecoveryReason::Manual
+    }
+}
+
 /// Parse a timestamp in "YYYY-MM-DD HH:MM:SS UTC" format
 fn parse_timestamp(s: &str) -> Option<DateTime<Utc>> {
     // Expected format: "2025-01-24 15:30:45 UTC"
@@ -87,18 +94,15 @@ fn parse_timestamp(s: &str) -> Option<DateTime<Utc>> {
 
 /// Parse the "### Last Known State" section for heartbeat info
 fn parse_last_heartbeat(content: &str) -> Option<LastHeartbeatInfo> {
-    // Check if section exists
-    if !content.contains("### Last Known State") {
-        return None;
-    }
+    let content = section(content, "### Last Known State")?;
 
     // Find the section and extract fields
-    let timestamp = extract_field(content, "Timestamp").and_then(|s| parse_timestamp(s.trim()));
+    let timestamp = extract_field(&content, "Timestamp").and_then(|s| parse_timestamp(s.trim()));
 
     // If no timestamp, we don't have valid heartbeat info
     let timestamp = timestamp?;
 
-    let context_tokens = extract_field(content, "Context Tokens").and_then(|s| {
+    let context_tokens = extract_field(&content, "Context Tokens").and_then(|s| {
         s.trim()
             .trim_end_matches("tokens")
             .trim()
@@ -106,11 +110,11 @@ fn parse_last_heartbeat(content: &str) -> Option<LastHeartbeatInfo> {
             .ok()
     });
 
-    let last_tool = extract_field(content, "Last Tool")
+    let last_tool = extract_field(&content, "Last Tool")
         .filter(|s| !s.is_empty())
         .map(|s| s.trim().to_string());
 
-    let activity = extract_field(content, "Activity")
+    let activity = extract_field(&content, "Activity")
         .filter(|s| !s.is_empty())
         .map(|s| s.trim().to_string());
 
@@ -124,35 +128,37 @@ fn parse_last_heartbeat(content: &str) -> Option<LastHeartbeatInfo> {
 
 /// Parse the "### Recovery Actions" section
 fn parse_recovery_actions(content: &str) -> Vec<String> {
-    let mut actions = Vec::new();
-    let mut in_recovery_section = false;
+    section(content, "### Recovery Actions")
+        .map(|section| {
+            super::helpers::signal_lines(&section)
+                .filter(|(_, outside)| *outside)
+                .filter_map(|(line, _)| super::helpers::numbered_item(line.trim()))
+                .filter(|action| !action.is_empty())
+                .map(str::to_string)
+                .collect()
+        })
+        .unwrap_or_default()
+}
 
-    for line in content.lines() {
+fn section(content: &str, heading: &str) -> Option<String> {
+    let level = heading.bytes().take_while(|b| *b == b'#').count();
+    let mut found = false;
+    let mut result = String::new();
+    for (line, _, structural_heading) in super::helpers::signal_sections(content) {
         let trimmed = line.trim();
-
-        if trimmed == "### Recovery Actions" {
-            in_recovery_section = true;
+        if structural_heading.is_some() && trimmed == heading && !found {
+            found = true;
             continue;
         }
-
-        // End of section when we hit another heading
-        if in_recovery_section && (trimmed.starts_with("## ") || trimmed.starts_with("### ")) {
-            break;
-        }
-
-        if in_recovery_section {
-            // Parse numbered actions like "1. Review the crash report..."
-            if let Some(rest) = trimmed.strip_prefix(|c: char| c.is_ascii_digit()) {
-                if let Some(action) = rest.strip_prefix(". ") {
-                    if !action.is_empty() {
-                        actions.push(action.to_string());
-                    }
-                }
+        if found {
+            if structural_heading.is_some_and(|(depth, _)| depth <= level) {
+                break;
             }
+            result.push_str(line);
+            result.push('\n');
         }
     }
-
-    actions
+    found.then_some(result)
 }
 
 /// Extract a field value from markdown content.
@@ -164,32 +170,64 @@ fn parse_recovery_actions(content: &str) -> Vec<String> {
 /// - `- **Field Name**: value`
 /// - `- Field Name: value`
 pub fn extract_field<'a>(content: &'a str, field: &str) -> Option<&'a str> {
-    // Try the bold format first: "**Field**:"
-    let bold_pattern = format!("**{field}**:");
-    for line in content.lines() {
-        if line.contains(&bold_pattern) {
-            if let Some(value) = line.split(&bold_pattern).nth(1) {
-                return Some(value.trim());
-            }
-        }
-    }
-
-    // Fall back to plain format: "Field:"
-    let plain_pattern = format!("{field}:");
-    for line in content.lines() {
-        if line.contains(&plain_pattern) {
-            if let Some(value) = line.split(&plain_pattern).nth(1) {
-                let value = value.trim().trim_start_matches("**").trim_end_matches("**");
-                return Some(value);
-            }
-        }
-    }
-    None
+    super::helpers::signal_lines(content)
+        .filter(|(_, outside)| *outside)
+        .find_map(|(line, _)| super::helpers::field_value(line, field))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn actions_and_fields_ignore_fenced_examples() {
+        let actions = (1..=12)
+            .map(|i| format!("{i}. action {i}\n"))
+            .collect::<String>();
+        let content =
+            format!("### Recovery Actions\n```\n1. fake\n### Other\n```\n{actions}## End\n");
+        assert_eq!(parse_recovery_actions(&content).len(), 12);
+        assert_eq!(
+            extract_field(
+                "```\n- **Reason**: fake\n```\n- **Reason**: Manual",
+                "Reason"
+            ),
+            Some("Manual")
+        );
+    }
+
+    #[test]
+    fn recovery_reason_comes_from_context_field() {
+        let temp = tempfile::TempDir::new().unwrap();
+        std::fs::create_dir_all(temp.path().join("signals")).unwrap();
+        std::fs::write(temp.path().join("signals/s.md"), "# Recovery Signal: s\n## Recovery Context\n- **Reason**: Manual\n## Target\n- **Stage**: mine\n## Assignment\nSession crashed, Session hung, Context exhaustion\n").unwrap();
+        let parsed = read_recovery_signal(temp.path(), "s").unwrap().unwrap();
+        assert!(matches!(parsed.reason, RecoveryReason::Manual));
+    }
+
+    #[test]
+    fn recovery_actions_round_trip_through_formatter() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let mut original =
+            RecoverySignalContent::for_crash("s".into(), "mine".into(), "old".into(), None, 1);
+        original.reason = RecoveryReason::Manual;
+        original.recovery_actions = (1..=12).map(|i| format!("action {i}")).collect();
+        let stage = crate::models::stage::Stage {
+            id: "mine".into(),
+            description: Some("Session crashed; Session hung; Context exhaustion".into()),
+            ..Default::default()
+        };
+        let rendered = super::super::recovery_format::format_recovery_signal(
+            &original,
+            &stage,
+            &Default::default(),
+        );
+        std::fs::create_dir_all(temp.path().join("signals")).unwrap();
+        std::fs::write(temp.path().join("signals/s.md"), rendered).unwrap();
+        let parsed = read_recovery_signal(temp.path(), "s").unwrap().unwrap();
+        assert_eq!(parsed.recovery_actions, original.recovery_actions);
+        assert!(matches!(parsed.reason, RecoveryReason::Manual));
+    }
 
     #[test]
     fn test_parse_timestamp() {

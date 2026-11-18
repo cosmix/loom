@@ -2,6 +2,7 @@
 //! canned runner output standing in for the test runner.
 
 use super::*;
+use crate::test_git::TestRepo;
 use crate::testrun::{registry, TestTarget};
 use crate::verify::criteria::ProbeRun;
 use crate::verify::impact_tests::failure::FailureKind;
@@ -23,6 +24,7 @@ fn cargo_run(failed: u32) -> ProbeRun {
         stderr: String::new(),
         exit_code: Some(if failed == 0 { 0 } else { 101 }),
         timed_out: false,
+        output_complete: true,
         cached: None,
     }
 }
@@ -64,9 +66,7 @@ impl ProbeRunner for &Canned {
 fn stage_repo() -> (TempDir, String) {
     let temp = TempDir::new().unwrap();
     let root = temp.path();
-    git(root, &["init", "-q", "-b", "main"]);
-    git(root, &["config", "user.email", "t@t.com"]);
-    git(root, &["config", "user.name", "t"]);
+    TestRepo::builder().no_seed().init_in(root);
     fs::create_dir_all(root.join("src")).unwrap();
     fs::write(root.join("src/lib.rs"), "base").unwrap();
     git(root, &["add", "."]);
@@ -179,6 +179,7 @@ fn a_selection_that_does_not_build_at_the_base_either_stays_a_failure() {
                 .to_string(),
             exit_code: Some(101),
             timed_out: false,
+            output_complete: true,
             cached: None,
         })
     });

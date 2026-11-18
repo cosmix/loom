@@ -6,9 +6,9 @@ use std::path::Path;
 use super::{load_accepted, scan_changes, Accepted, EventKind, IntegrityEvent};
 use crate::git::worktree::WorktreeGit;
 use crate::models::stage::Stage;
+use crate::utils::text::single_line;
 use crate::verify::review::fingerprint::{self, ChangeFingerprint};
 use crate::verify::review::gate::covers;
-use crate::verify::review::report::single_line;
 
 /// [`check_changes`] against the worktree's fingerprint from the loom daemon
 /// that owns it (`fingerprint::compute`), for a stage the review gate covers
@@ -108,10 +108,10 @@ pub fn describe(event: &IntegrityEvent) -> String {
         EventKind::DeclTotal => counted("test declarations"),
         EventKind::AssertTotal => counted("assertions"),
         EventKind::AssertionEdit => format!(
-            "{id} ({} assertion line(s) removed or changed)",
+            "{id} ({} assertion statement(s) removed or changed)",
             event.detail.len()
         ),
-        EventKind::Ratchet => format!("{id} (ratchet file differs from base)"),
+        EventKind::Ratchet => format!("{id} (ratchet file loosened from base)"),
     }
 }
 

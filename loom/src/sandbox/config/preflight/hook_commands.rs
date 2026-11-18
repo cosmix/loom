@@ -2,24 +2,29 @@
 //! the hooks a user or project registers run unsandboxed in every session,
 //! so none may run a file a session can write.
 //!
-//! A registration's command runs through a shell, so it is read the way that
-//! shell starts it: leading `NAME=value` assignments and an `exec` are
-//! skipped, the first word is the program (a bare name resolves through
-//! PATH), and for an interpreter such as `bash` or `python3` the first
-//! argument that is not a flag is the script it runs, unless a flag like `-c`
-//! makes it run inline code instead.
+//! Commands use the shared shell lexer and a deliberately bounded grammar.
+//! Unverified syntax refuses preflight rather than implying a safe target, and a
+//! command resolves through every wrapper and inline shell string to what it
+//! finally runs (`exec_wrappers`). Whatever the program, no argument or
+//! environment value of it may resolve inside a writable root (`paths`).
 
 use serde_json::Value;
 use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 
-use super::{find_executable, resolved, WritableRoots};
+use super::exec_wrappers::{
+    check_followable, interpreter_family, interpreter_option_width, is_shell, runs_inline_code,
+    runtime_script, shell_runs_inert, wrapped_command, Reason,
+};
+use super::{resolved, WritableRoots};
 use crate::fs::permissions::constants::LOOM_HOOKS;
+use crate::plan::schema::validation::shell_lex::{lex, simple_commands, Token, Word};
 
-/// Programs whose first non-flag argument is the file they run.
-const INTERPRETERS: [&str; 11] = [
-    "sh", "bash", "zsh", "dash", "python", "python3", "node", "bun", "deno", "ruby", "perl",
-];
+mod paths;
+use paths::{check_argument_paths, check_assignment_path, known_path_expansion, locate_word};
+
+/// How deep wrappers and inline shell strings may nest in one hook command.
+const MAX_NESTING: usize = 8;
 
 /// A settings document whose `hooks` block Claude Code runs, and the label
 /// findings name it by.
@@ -77,7 +82,17 @@ pub(crate) fn scan_hook_registrations(scan: &HookScan<'_>) -> HookFindings {
     let mut findings = HookFindings::default();
     for document in scan.documents {
         for (event, command) in hook_commands(&document.settings) {
-            for target in command_targets(&command, scan) {
+            let targets = match command_targets(&command, scan, 0) {
+                Ok(targets) => targets,
+                Err(reason) => {
+                    findings.refusals.push(format!(
+                        "hook `{event}` in {} cannot be verified: {reason}. Use a literal executable and script path or move the logic into a protected script.",
+                        document.label
+                    ));
+                    continue;
+                }
+            };
+            for target in targets {
                 let target = resolved(&target);
                 let hook = format!(
                     "hook `{event}` in {} runs {}",
@@ -131,75 +146,172 @@ fn hook_commands(settings: &Value) -> Vec<(String, String)> {
         .collect()
 }
 
-/// The files a hook command runs: its program and, for an interpreter, the
-/// script it is given.
-fn command_targets(command: &str, scan: &HookScan<'_>) -> Vec<PathBuf> {
-    let mut words = command
-        .split_whitespace()
-        .map(|word| word.trim_matches(|c| c == '"' || c == '\''))
-        .skip_while(|word| *word == "exec" || is_assignment(word));
-    let Some(program) = words.next() else {
-        return Vec::new();
+/// The files a hook command runs: its program, what a wrapper execs, and the
+/// script or inline shell an interpreter is given.
+fn command_targets(
+    command: &str,
+    scan: &HookScan<'_>,
+    depth: usize,
+) -> Result<Vec<PathBuf>, Reason> {
+    let tokens = lex(command);
+    if tokens
+        .iter()
+        .any(|token| matches!(token, Token::Redirect(_) | Token::Control("(" | ")" | ";;")))
+    {
+        return Err("unsupported shell operator".into());
+    }
+    let commands = simple_commands(&tokens);
+    if commands.is_empty() {
+        return Err("no executable".into());
+    }
+    let mut targets = Vec::new();
+    for command in commands {
+        targets.extend(simple_targets(&command.words, scan, depth)?);
+    }
+    Ok(targets)
+}
+
+/// One simple command as the shell runs it: a builtin needs no file, and `exec`
+/// or a later wrapper runs a builtin's name from PATH.
+fn simple_targets(
+    words: &[&Word],
+    scan: &HookScan<'_>,
+    depth: usize,
+) -> Result<Vec<PathBuf>, Reason> {
+    let (index, exec) = program_index(words, scan)?;
+    let words = &words[index..];
+    let program = words.first().ok_or("no executable")?;
+    check_arguments(&words[1..])?;
+    if !exec && shell_runs_inert(&program.value)? {
+        return Ok(Vec::new());
+    }
+    program_targets(words, scan, depth)
+}
+
+fn check_arguments(words: &[&Word]) -> Result<(), Reason> {
+    let dynamic = |word: &&&Word| {
+        !word.substitutions.is_empty() || (word.expands && !known_path_expansion(word))
     };
-    let mut targets: Vec<PathBuf> = locate(program, scan, true).into_iter().collect();
-    let name = program.rsplit('/').next().unwrap_or(program);
-    if INTERPRETERS.contains(&name) {
-        let script = words
-            .take_while(|word| !runs_inline_code(name, word))
-            .find(|word| !word.starts_with('-'));
-        targets.extend(script.and_then(|word| locate(word, scan, false)));
-    }
-    targets
-}
-
-/// Whether `flag` makes `interpreter` run the code that follows it.
-fn runs_inline_code(interpreter: &str, flag: &str) -> bool {
-    match interpreter {
-        "sh" | "bash" | "zsh" | "dash" | "python" | "python3" => flag == "-c",
-        _ => flag == "-e" || flag == "--eval",
+    match words.iter().find(dynamic) {
+        Some(_) => Err("dynamic shell expansion".into()),
+        None => Ok(()),
     }
 }
 
-fn is_assignment(word: &str) -> bool {
-    word.split_once('=').is_some_and(|(name, _)| {
-        name.starts_with(|c: char| c == '_' || c.is_ascii_alphabetic())
-            && name.chars().all(|c| c == '_' || c.is_ascii_alphanumeric())
-    })
-}
-
-/// Where `word` points: expanded against the home directory and the project,
-/// a relative path taken from the project (hooks run there), and a bare
-/// program name found on PATH. `None` for a program PATH does not hold.
-fn locate(word: &str, scan: &HookScan<'_>, program: bool) -> Option<PathBuf> {
-    let path = expand(word, scan);
-    if path.is_absolute() {
-        Some(path)
-    } else if program && !word.contains('/') {
-        find_executable(word, scan.path)
+/// `words[0]` as a program, then what it runs in turn.
+fn program_targets(
+    words: &[&Word],
+    scan: &HookScan<'_>,
+    depth: usize,
+) -> Result<Vec<PathBuf>, Reason> {
+    if depth > MAX_NESTING {
+        return Err("commands are nested too deeply".into());
+    }
+    let program = *words.first().ok_or("no executable")?;
+    if program.value.starts_with('-') {
+        return Err(format!("option `{}` where a program belongs", program.value).into());
+    }
+    let name = program.value.rsplit('/').next().unwrap_or(&program.value);
+    check_followable(name)?;
+    let mut targets = vec![locate_word(program, scan, true)?];
+    let args = &words[1..];
+    let inner = if name == "env" {
+        Some(env_command(args, scan)?)
     } else {
-        Some(scan.repo_root.join(path))
+        wrapped_command(name, args)?
+    };
+    let mut own_args = args;
+    let family = interpreter_family(name);
+    if let Some(inner) = inner {
+        own_args = &args[..args.len() - inner.len()];
+        targets.extend(program_targets(inner, scan, depth + 1)?);
+    } else if let Some(family) = family {
+        targets.extend(interpreter_targets(family, args, scan, depth)?);
     }
+    check_argument_paths(own_args, family, &targets, scan)?;
+    Ok(targets)
 }
 
-/// `word` with a leading `~/`, `$HOME/` or `$CLAUDE_PROJECT_DIR/` (braced or
-/// not) expanded.
-fn expand(word: &str, scan: &HookScan<'_>) -> PathBuf {
-    let bases = [
-        ("~", scan.home),
-        ("$HOME", scan.home),
-        ("${HOME}", scan.home),
-        ("$CLAUDE_PROJECT_DIR", Some(scan.repo_root)),
-        ("${CLAUDE_PROJECT_DIR}", Some(scan.repo_root)),
-    ];
-    for (prefix, base) in bases {
-        let rest = word
-            .strip_prefix(prefix)
-            .and_then(|rest| rest.strip_prefix('/'));
-        if let (Some(rest), Some(base)) = (rest, base) {
-            return base.join(rest);
+/// The command `env` runs after its environment changes.
+fn env_command<'a, 'w>(
+    args: &'a [&'w Word],
+    scan: &HookScan<'_>,
+) -> Result<&'a [&'w Word], Reason> {
+    let mut index = 0;
+    while let Some(word) = args.get(index) {
+        if word.assignment_name().is_some() {
+            check_assignment(word, scan)?;
+        } else if word.value != "-i" && word.value != "--ignore-environment" {
+            return Ok(&args[index..]);
         }
+        index += 1;
     }
-    PathBuf::from(word)
+    Err("env has no executable".into())
+}
+
+/// The assignments and `exec` ahead of a command's program: the program's index,
+/// and whether `exec` runs it.
+fn program_index(words: &[&Word], scan: &HookScan<'_>) -> Result<(usize, bool), Reason> {
+    let mut index = 0;
+    while words
+        .get(index)
+        .is_some_and(|w| w.assignment_name().is_some())
+    {
+        check_assignment(words[index], scan)?;
+        index += 1;
+    }
+    if words
+        .get(index)
+        .is_some_and(|w| w.value == "exec" && !w.quoted)
+    {
+        return Ok((index + 1, true));
+    }
+    Ok((index, false))
+}
+
+/// What the interpreter `family` runs given `words`: a script file, or for a
+/// shell its inline code. Reading the program from stdin or from inline code in
+/// another language leaves nothing to check, which is a refusal.
+fn interpreter_targets(
+    family: &str,
+    words: &[&Word],
+    scan: &HookScan<'_>,
+    depth: usize,
+) -> Result<Vec<PathBuf>, Reason> {
+    let mut index = 0;
+    while let Some(word) = words.get(index) {
+        if runs_inline_code(family, &word.value) {
+            if !is_shell(family) {
+                return Err(format!("inline {family} code cannot be checked").into());
+            }
+            let code = words.get(index + 1).ok_or("shell names no inline code")?;
+            return command_targets(&code.value, scan, depth + 1);
+        }
+        if !word.value.starts_with('-') {
+            let script = runtime_script(family, &words[index..])?;
+            return Ok(vec![locate_word(script, scan, false)?]);
+        }
+        index += interpreter_option_width(family, &word.value).ok_or_else(|| {
+            format!(
+                "`{family}` option `{}` is not one this check can follow",
+                word.value
+            )
+        })?;
+    }
+    Err(format!("{family} names no script and would read its program from stdin").into())
+}
+
+fn check_assignment(word: &Word, scan: &HookScan<'_>) -> Result<(), Reason> {
+    if word.expands
+        || !word.substitutions.is_empty()
+        || matches!(
+            word.assignment_name(),
+            Some("PATH" | "HOME" | "CLAUDE_PROJECT_DIR")
+        )
+    {
+        return Err("dynamic assignment or path environment override".into());
+    }
+    check_assignment_path(word, scan)
 }
 
 /// Whether `path` is named like one of loom's own hook scripts.

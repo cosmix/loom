@@ -2,10 +2,10 @@
 //! pass before a PTY child is ever spawned - feature flag, `Origin`, the
 //! token cookie, the stage/mode path shape, and the terminal capacity cap.
 
-use crate::commands::status::web::limits::{acquire_terminal_slot, MAX_TERMINALS};
 use crate::commands::status::web::tests::{
     body, request, skip_without_loopback, start, start_with, stop, workspace,
 };
+use crate::web_server::limits::{acquire_terminal_slot, MAX_TERMINALS};
 
 use super::super::upgrade::terminal_path;
 use super::{connect_terminal, cookie, terminal_options, terminal_request};

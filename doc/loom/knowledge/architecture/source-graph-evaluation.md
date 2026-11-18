@@ -1,6 +1,6 @@
 # Source Graph Evaluation
 
-> Census, windows, evaluator
+>
 
 Offline tools that say what the graph can and cannot see, and how well its edges hold up: the
 portfolio census, source windows and the edge-quality evaluator. Views and flags are in
@@ -64,5 +64,5 @@ never edited to match output; a label that exposes a defect is fixed at the sour
 - **Fixing a defect** bumps that dialect's `extractor_version` (walk) or `RESOLVER_VERSION` (rules); without the
   bump, cached layers and views keep serving the old output.
 
-`doc/source-graph-evaluation.md` is the operator protocol (census across consenting projects, holdout labelling,
-the four-mode agent-task comparison, metrics stratification, release rule). The comparison has not been run.
+The operator protocol (census across consenting projects, holdout labelling, the four-mode agent-task comparison,
+metrics stratification, release rule) has no document in the tree. The comparison has not been run.

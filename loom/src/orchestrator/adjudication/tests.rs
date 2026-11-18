@@ -4,7 +4,7 @@
 //! `feedback.rs`.
 
 use super::plan_patch::build_amendment_requests;
-use super::scan::{parse_yaml_frontmatter, scan_pending_requests};
+use super::scan::scan_pending_requests;
 use super::session::{attempt_count, MAX_ADJUDICATION_ATTEMPTS};
 use super::{feedback, AdjudicatorRegistry, MAX_EVIDENCE_ROUNDS};
 use crate::models::dispute::{
@@ -124,6 +124,59 @@ fn pending_dispute_is_offered_a_session_and_counted() {
         1,
         "handing out a job must spend one attempt",
     );
+}
+
+#[test]
+fn corrupt_spawn_budget_stops_session_handoff() {
+    let tmp = tempfile::tempdir().unwrap();
+    let work = tmp.path();
+    std::fs::create_dir_all(work.join("stages")).unwrap();
+    write_stage(work, &make_stage("s1"));
+    write_dispute_request(work, "s1", 1, 0);
+    let counter = work.join("disputes/s1/1/attempts");
+    std::fs::write(&counter, "invalid").unwrap();
+
+    assert!(AdjudicatorRegistry::new()
+        .disputes_awaiting_session(work)
+        .is_err());
+    assert_eq!(std::fs::read_to_string(counter).unwrap(), "invalid");
+}
+
+#[test]
+fn failed_spawn_charge_stops_session_handoff() {
+    let tmp = tempfile::tempdir().unwrap();
+    let work = tmp.path();
+    std::fs::create_dir_all(work.join("stages")).unwrap();
+    write_stage(work, &make_stage("s1"));
+    write_dispute_request(work, "s1", 1, 0);
+    let registry = AdjudicatorRegistry::new();
+    let result = super::counter::with_write_failure(|| registry.disputes_awaiting_session(work));
+    assert!(result.is_err());
+    assert!(!work.join("disputes/s1/1/attempts").exists());
+    assert_eq!(
+        registry.disputes_awaiting_session(work).unwrap().jobs.len(),
+        1
+    );
+    assert_eq!(attempt_count(work, "s1", 1), 1);
+}
+
+#[test]
+fn uncertain_session_inventory_does_not_offer_a_second_adjudicator() {
+    let tmp = tempfile::tempdir().unwrap();
+    let work = tmp.path();
+    std::fs::create_dir_all(work.join("stages")).unwrap();
+    write_stage(work, &make_stage("s1"));
+    write_dispute_request(work, "s1", 1, 0);
+    let sessions = work.join("sessions");
+    std::fs::create_dir(&sessions).unwrap();
+    std::fs::write(sessions.join("broken.md"), "malformed").unwrap();
+
+    let pending = AdjudicatorRegistry::new()
+        .disputes_awaiting_session(work)
+        .unwrap();
+
+    assert!(pending.jobs.is_empty());
+    assert_eq!(attempt_count(work, "s1", 1), 0);
 }
 
 /// Two unanswered disputes on one stage (an abandoned one plus the live one)
@@ -269,7 +322,7 @@ fn build_amendment_request_decodes_plan_patch() {
             "reason": "criterion was wrong"
         }),
     };
-    let req = build_amendment_requests("s1", &plan_patch, 1)
+    let req = build_amendment_requests("s1", &plan_patch, "1")
         .unwrap()
         .remove(0);
     assert_eq!(req.stage_id, "s1");
@@ -284,7 +337,7 @@ fn build_amendment_request_rejects_unknown_field() {
     let plan_patch = PlanPatch {
         inner: serde_json::json!({"field": "bogus", "patch": {}}),
     };
-    assert!(build_amendment_requests("s1", &plan_patch, 1).is_err());
+    assert!(build_amendment_requests("s1", &plan_patch, "1").is_err());
 }
 
 #[test]
@@ -294,7 +347,13 @@ fn feedback_signal_only_when_dispute_count_positive() {
     // even if a stray feedback.md exists from a previous plan.
     let tmp = tempfile::tempdir().unwrap();
     let work = tmp.path();
-    feedback::append_questions(work, "s1", &["stale".to_string()]).unwrap();
+    feedback::append_questions(
+        work,
+        "s1",
+        &["stale".to_string()],
+        feedback::EVIDENCE_ACTION,
+    )
+    .unwrap();
     let mut stage = make_stage("s1");
     stage.dispute_count = 0;
     // We can't easily build the full Session/Worktree here, so just
@@ -304,7 +363,7 @@ fn feedback_signal_only_when_dispute_count_positive() {
 }
 
 #[test]
-fn parse_yaml_frontmatter_round_trips() {
+fn dispute_frontmatter_round_trips() {
     let req = DisputeRequest {
         id: 7,
         stage_id: "x".to_string(),
@@ -317,7 +376,8 @@ fn parse_yaml_frontmatter_round_trips() {
     };
     let yaml = crate::yaml::to_string(&req).unwrap();
     let body = format!("---\n{yaml}---\n\n# X\n");
-    let parsed: DisputeRequest = parse_yaml_frontmatter(&body).unwrap();
+    let (yaml, _) = crate::parser::frontmatter::split_frontmatter_raw(&body).unwrap();
+    let parsed: DisputeRequest = crate::yaml::from_str(yaml).unwrap();
     assert_eq!(parsed.id, 7);
     assert_eq!(parsed.stage_id, "x");
 }

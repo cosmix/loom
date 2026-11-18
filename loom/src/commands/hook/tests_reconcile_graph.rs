@@ -4,6 +4,7 @@
 use super::*;
 use crate::context::schema::{Channel, Freshness, OmissionSummary};
 use crate::models::stage::Stage;
+use crate::test_git::{git, TestRepo};
 use serial_test::serial;
 use std::sync::atomic::Ordering;
 use tempfile::TempDir;
@@ -11,49 +12,23 @@ use tempfile::TempDir;
 use super::lock::read_lock;
 use super::tests_wants_rebuild::seed;
 
-/// Run one git command with ambient global/system config neutralized, so a
-/// developer's or CI runner's `~/.gitconfig` cannot change test behavior.
-fn isolated_git(root: &Path, args: &[&str]) -> std::process::Output {
-    std::process::Command::new("git")
-        .args(args)
-        .current_dir(root)
-        .env("GIT_CONFIG_GLOBAL", root.join(".loom-test-no-global"))
-        .env("GIT_CONFIG_SYSTEM", root.join(".loom-test-no-system"))
-        .env("GIT_CONFIG_NOSYSTEM", "1")
-        .output()
-        .unwrap()
-}
-
-fn git_ok(root: &Path, args: &[&str]) {
-    let out = isolated_git(root, args);
-    assert!(
-        out.status.success(),
-        "git {args:?} failed: {}",
-        String::from_utf8_lossy(&out.stderr)
-    );
-}
-
 /// A temp git repo with a `.loom/work/` directory and one committed file,
 /// ready for a checkout-scope reconcile.
 fn init_repo() -> TempDir {
-    let temp = TempDir::new().unwrap();
+    let temp = TestRepo::builder()
+        .seed("src.rs", "fn main() {}\n", "seed")
+        .create()
+        .into_temp_dir();
     let root = temp.path();
-    git_ok(root, &["init", "-b", "main"]);
-    git_ok(root, &["config", "user.email", "t@t.com"]);
-    git_ok(root, &["config", "user.name", "t"]);
 
-    std::fs::write(root.join("src.rs"), "fn main() {}\n").unwrap();
-    git_ok(root, &["add", "src.rs"]);
-    git_ok(root, &["commit", "-m", "seed"]);
-
-    std::fs::create_dir_all(root.join(".loom").join("work")).unwrap();
+    let work = root.join(".loom").join("work");
+    std::fs::create_dir_all(&work).unwrap();
+    crate::git::worktree::capture_main_identity(root, &work).unwrap();
     temp
 }
 
 fn head_sha(root: &Path) -> String {
-    let out = isolated_git(root, &["rev-parse", "HEAD"]);
-    assert!(out.status.success(), "rev-parse HEAD failed");
-    String::from_utf8_lossy(&out.stdout).trim().to_string()
+    git(root, &["rev-parse", "HEAD"])
 }
 
 /// Point this process at `root` with no stage naming it.
@@ -105,17 +80,17 @@ fn reconcile_graph_leaves_a_finished_marker_after_a_successful_run() {
     let work_dir = WorkDir::new(root).unwrap();
     let store = ContextStore::open(&work_dir).unwrap();
     let lock_path = reconcile_lock_path(&store);
-    // A pre-existing in-progress claim, as `spawn_if_needed` would have left
-    // before spawning this same process.
-    seed(&lock_path, unix_now(), std::process::id(), 0, false);
 
     enter_checkout(root);
+    std::env::remove_var("LOOM_RECONCILE_CLAIM");
     reconcile_graph(false).unwrap();
     leave();
 
     let marker = read_lock(&lock_path)
         .expect("reconcile_graph must leave a marker behind, never unlink the lock");
     assert_eq!(marker.pid, 0, "a completed run's marker must carry pid 0");
+    assert_eq!(marker.failures, 0, "the successful pass resets failures");
+    assert_ne!(marker.claim, 0, "the direct run must own its lease");
 }
 
 #[test]
@@ -380,7 +355,7 @@ fn spawn_is_allowed_when_loom_work_dir_was_explicitly_set() {
 fn spawn_detached_is_suppressed_in_a_test_build() {
     let before = SUPPRESSED_SPAWNS.load(Ordering::SeqCst);
 
-    let result = spawn_detached(Path::new("/nonexistent-reconcile-graph-test-target"));
+    let result = spawn_detached(Path::new("/nonexistent-reconcile-graph-test-target"), 1);
 
     assert!(
         result.is_ok(),

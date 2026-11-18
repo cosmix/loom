@@ -1,0 +1,352 @@
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { Provider } from "jotai";
+import { MemoryRouter } from "react-router";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+import { initClient } from "@/plan/api/client";
+import checklistFixture from "@/plan/api/fixtures/checklist.json";
+import overviewFixture from "@/plan/api/fixtures/concept-overview.json";
+import summaryFixture from "@/plan/api/fixtures/concept-summary.json";
+import { featureOfKey } from "@/plan/api/page-key";
+import { checklistViewSchema } from "@/plan/api/schema";
+import panelFixture from "@/plan/api/fixtures/summary-panel.json";
+import questionFixture from "@/plan/api/fixtures/summary-question.json";
+import { conceptPageSchema, type ConceptPage } from "@/plan/api/schema-concept";
+import { summaryPanelSchema } from "@/plan/api/schema-summaries";
+import { authorStore, makeDoc } from "@/plan/files/doc-heading-kit";
+import { pressureWhen } from "@/plan/files/heading-parts";
+import { authoringAtom, checklistAtom, youAtom } from "@/plan/state/atoms";
+import { panelLoadAtom } from "@/plan/summaries/state";
+import headingSheet from "@/plan/ui/doc-heading.css?raw";
+import pageSheet from "@/plan/concept/concept-page.css?raw";
+
+import { PageHeading } from "./page-heading";
+import {
+  clone,
+  json,
+  makeStubFetch,
+  renderAt,
+  planPage,
+  keyList,
+  readingColumn,
+  text,
+  type Page,
+} from "./concept-route-support";
+
+const extras = vi.hoisted(() => ({
+  header: vi.fn(() => null),
+  chip: vi.fn(() => null),
+  action: vi.fn(() => null),
+}));
+vi.mock("./page-header-extras", () => ({
+  PageHeaderExtras: extras.header,
+  SummaryAction: extras.action,
+  SummaryDetail: () => null,
+}));
+vi.mock("./key-chip-extras", () => ({ KeyChipExtras: extras.chip }));
+
+let pages: Record<string, unknown> = {};
+let docs: Record<string, unknown> = {};
+let failing = false;
+const fetched: string[] = [];
+
+function serveOverview(overview: Page = clone(overviewFixture)): void {
+  pages = {
+    "overview/demo/product": { ...overview, key: "overview/demo/product" },
+    "demo/product/section_01": clone(summaryFixture),
+    "demo/product/section_02": {
+      ...clone(summaryFixture),
+      key: "demo/product/section_02",
+      title: "Review",
+    },
+  };
+}
+beforeEach(() => {
+  pages = {};
+  docs = {};
+  failing = false;
+  fetched.length = 0;
+  extras.header.mockClear();
+  extras.chip.mockClear();
+  extras.action.mockClear();
+  window.sessionStorage.clear();
+  vi.stubGlobal("fetch", vi.fn(makeStubFetch(() => ({ pages, docs, failing }), fetched)));
+});
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
+describe("summary page header", () => {
+  it("header shows title, path, colour, state and source view", async () => {
+    serveOverview();
+    renderAt("/f/demo/product/section_01");
+    const title = await screen.findByRole("heading", { level: 1, name: "Planning" });
+    const header = title.closest("header") as HTMLElement;
+    expect(within(header).queryByText("doc/product/demo/section_01.md")).toBeNull();
+    const crumbs = within(header).getByRole("navigation", { name: "Breadcrumb" });
+    expect(within(crumbs).getAllByRole("listitem")[0]?.textContent).toBe("demo");
+    expect(within(crumbs).getByRole("link", { name: "demo" }).getAttribute("href")).toBe("/f/demo");
+    // A section's head leads with its number, not a document mark.
+    expect(title.previousElementSibling).toBeNull();
+    expect(title.querySelector(".doc-heading-number")?.textContent).toBe("01");
+    expect(within(header).getByText("Out of date: the source changed")).toBeTruthy();
+    const link = within(header).getByRole("link", { name: "Source" });
+    expect(link.getAttribute("href")).toBe("/f/demo/source/product/demo/section_01.md");
+    expect(extras.header).toHaveBeenCalled();
+  });
+  it("a summary page draws no document key, though its page carries key chips", async () => {
+    serveOverview();
+    renderAt("/f/demo/product/section_01");
+    await screen.findByRole("heading", { level: 1, name: "Planning" });
+    await readingColumn();
+    expect(screen.queryByRole("list", { name: "Document key" })).toBeNull();
+    expect(screen.queryByText(/^Key: /)).toBeNull();
+  });
+  it("the summary header shares the page column's edges", async () => {
+    serveOverview();
+    renderAt("/f/demo/product/section_01");
+    const title = await screen.findByRole("heading", { level: 1, name: "Planning" });
+    const header = title.closest("header") as HTMLElement;
+    // The inset is the column's: none of its own utilities, and the page column zeroes it.
+    expect(header.className).not.toMatch(/(?:^|\s)px-/);
+    expect(header.classList.contains("doc-heading")).toBe(true);
+    expect(header.closest(".concept-page-column")).not.toBeNull();
+    const strip = (css: string) => css.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\s+/g, " ");
+    expect(strip(headingSheet)).toContain(
+      ".doc-heading { padding-inline: var(--doc-heading-inset, var(--space-5)); }",
+    );
+    expect(strip(pageSheet)).toContain(".concept-page-column { --doc-heading-inset: 0; }");
+  });
+  it("plan header shows state and pressure date", async () => {
+    pages = {
+      "demo/engineering/a": planPage({ key: "demo/engineering/a", last_pressure: "2026-10-20" }),
+    };
+    renderAt("/f/demo/engineering/a");
+    await screen.findByRole("heading", { level: 1, name: "Plan a" });
+    expect(screen.getByText("Written").closest("[data-chip]")).not.toBeNull();
+    expect(text()).toContain(`Pressure-tested ${pressureWhen("2026-10-20")}`);
+  });
+  it("locked notice on a done plan", async () => {
+    pages = { "demo/engineering/a": planPage({ key: "demo/engineering/a", plan_state: "done" }) };
+    renderAt("/f/demo/engineering/a");
+    const note = await screen.findByRole("note");
+    expect(note.textContent).toContain("This plan is done. Record changes in a new plan.");
+  });
+  it("locked notice on a running plan", async () => {
+    pages = {
+      "demo/engineering/a": planPage({ key: "demo/engineering/a", plan_state: "running" }),
+    };
+    renderAt("/f/demo/engineering/a");
+    const note = await screen.findByRole("note");
+    expect(note.textContent).toContain(
+      "This plan is running. loom run works from the committed copy, so the app keeps it read-only.",
+    );
+    expect(within(note).getByText("loom run", { selector: "code" })).toBeTruthy();
+  });
+  it("Implemented by with states", async () => {
+    serveOverview();
+    renderAt("/f/demo/product/section_01");
+    await screen.findByRole("heading", { level: 1, name: "Planning" });
+    expect(text()).toContain("Built by");
+    expect(
+      screen.getByRole("link", { name: "05 Concept mode in progress" }).getAttribute("href"),
+    ).toBe("/f/demo/engineering/feat-planner-05-concept-mode");
+  });
+  it("the Open all header button opens the page's runs", async () => {
+    serveOverview();
+    renderAt("/f/demo/product/section_01");
+    const column = await readingColumn();
+    expect(within(column).queryAllByRole("group", { name: /^Detail of/ })).toHaveLength(0);
+    fireEvent.click(screen.getByRole("button", { name: "Open all" }));
+    const runs = await within(column).findAllByRole("group", { name: /^Detail of/ });
+    expect(runs.length).toBeGreaterThan(0);
+  });
+});
+
+describe("summary page header source actions", () => {
+  const sourceOf = (stem: string) => `doc/product/demo/${stem}.md`;
+  const pageOf = (stem: string): ConceptPage =>
+    conceptPageSchema.parse({
+      ...clone(summaryFixture),
+      state: null,
+      implemented_by: [],
+      feature: featureOfKey(summaryFixture.key),
+      path: sourceOf(stem),
+    });
+
+  it("never lends the previous page's file to Edit and Discuss while the next one loads", async () => {
+    const files = { editable: true, lock: null } as const;
+    const docA = makeDoc({ ...files, path: sourceOf("stale_a"), hash: "sha256:a" });
+    const docB = makeDoc({ ...files, path: sourceOf("stale_b"), hash: "sha256:b" });
+    let release: (response: Response) => void = () => {};
+    const held = new Promise<Response>((resolve) => {
+      release = resolve;
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: RequestInfo | URL) => {
+        const href = input instanceof URL ? input.href : input;
+        const url = new URL(typeof href === "string" ? href : href.url, "http://localhost");
+        const wanted = url.searchParams.get("path");
+        if (url.pathname !== "/api/doc") return Promise.resolve(json({ error: "not_found" }, 404));
+        return wanted === "product/demo/stale_a.md" ? Promise.resolve(json(docA)) : held;
+      }),
+    );
+    const store = authorStore();
+    initClient(store);
+    const heading = (stem: string) => (
+      <Provider store={store}>
+        <MemoryRouter>
+          <PageHeading page={pageOf(stem)} />
+        </MemoryRouter>
+      </Provider>
+    );
+    const { rerender } = render(heading("stale_a"));
+    const edit = await screen.findByRole("link", { name: "Edit" });
+    expect(edit.getAttribute("href")).toBe("/files/product/demo/stale_a.md?edit=1");
+
+    rerender(heading("stale_b"));
+
+    expect(screen.queryByRole("link", { name: "Edit" })).toBeNull();
+    expect((screen.getByRole("button", { name: "Edit" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "Discuss" }) as HTMLButtonElement).disabled).toBe(
+      true,
+    );
+
+    release(json(docB));
+    await waitFor(() =>
+      expect(screen.getByRole("link", { name: "Edit" }).getAttribute("href")).toBe(
+        "/files/product/demo/stale_b.md?edit=1",
+      ),
+    );
+  });
+});
+
+describe("document key across pages", () => {
+  /** An overview of ten chips, labelled `<prefix>01` to `<prefix>06`. */
+  const longKey = (key: string, prefix: string) => {
+    const overview = { ...clone(overviewFixture), key };
+    overview.key_chips = Array.from({ length: 10 }, (_, index) => {
+      const label = String(index + 1).padStart(2, "0");
+      const chip = clone(overviewFixture.key_chips[0]!);
+      chip.doc = { ...chip.doc, id: `section_${label}`, page: `demo/product/section_${label}` };
+      return { ...chip, label: `${prefix}${label}` };
+    });
+    return overview;
+  };
+
+  it("opens a second feature's key collapsed after expanding the first", async () => {
+    pages = {
+      "overview/demo/product": longKey("overview/demo/product", "p"),
+      "overview/other/product": longKey("overview/other/product", "e"),
+    };
+    const { router } = renderAt("/f/other/product");
+    await screen.findByText("e01");
+    await router.navigate("/f/demo/product");
+    await screen.findByText("p01");
+    fireEvent.click(screen.getByRole("button", { name: /^…\s?2 more$/ }));
+    expect(within(keyList()).getAllByRole("link")).toHaveLength(10);
+    await router.navigate("/f/other/product");
+    await screen.findByText("e01");
+    expect(within(keyList()).getAllByRole("link")).toHaveLength(8);
+  });
+
+  it("keeps focus on a chip when navigating to a loaded overview with the same chip", async () => {
+    const other = longKey("overview/other/product", "k");
+    other.key_chips = other.key_chips.slice(0, 9);
+    pages = {
+      "overview/demo/product": longKey("overview/demo/product", "k"),
+      "overview/other/product": other,
+    };
+    const { router } = renderAt("/f/other/product");
+    const more = (count: number) => screen.findByRole("button", { name: `…${count} more` });
+    await more(1);
+    await router.navigate("/f/demo/product");
+    await more(2);
+    await router.navigate("/f/other/product");
+    await more(1);
+    const link = within(keyList()).getAllByRole("link")[0]!;
+    link.focus();
+    await router.navigate("/f/demo/product");
+    await more(2);
+    expect(document.activeElement).toBe(within(keyList()).getAllByRole("link")[0]);
+  });
+});
+
+describe("overview eyebrow", () => {
+  it("never shows a slug holding a format character: the route refuses it before any eyebrow", async () => {
+    const slug = "dem\u202Eo";
+    // Served so that a loosened slug rule would load the overview and reach the eyebrow.
+    const key = `overview/${slug}/product`;
+    pages = { [key]: { ...clone(overviewFixture), key } };
+    renderAt(`/f/${encodeURIComponent(slug)}/product`, (store) =>
+      store.set(
+        checklistAtom,
+        checklistViewSchema.parse({ ...checklistFixture.checklists[0]!, feature: slug }),
+      ),
+    );
+    await screen.findByText("No such document");
+    expect(screen.queryByRole("document", { name: "Reading column" })).toBeNull();
+    expect(text()).not.toContain("\u202E");
+    expect(fetched.some((url) => url.includes("/api/concept/"))).toBe(false);
+  });
+});
+
+describe("overview head", () => {
+  it("the overview's breadcrumb names the feature by its slug, then Product spec and Overview", async () => {
+    serveOverview();
+    renderAt("/f/demo/product", (store) =>
+      store.set(checklistAtom, checklistViewSchema.parse(checklistFixture.checklists[0]!)),
+    );
+    await readingColumn();
+    const crumbs = screen.getByRole("navigation", { name: "Breadcrumb" });
+    expect(
+      within(crumbs)
+        .getAllByRole("listitem")
+        .map((item) => item.textContent),
+    ).toEqual(["demo", "Product spec", "Overview"]);
+    expect(
+      within(crumbs).getByText("Overview").closest("[aria-current]")?.getAttribute("aria-current"),
+    ).toBe("page");
+  });
+  it("an overview draws its breadcrumb, then its page title, then its ledger, then its text", async () => {
+    serveOverview();
+    renderAt("/f/demo/product", (store) =>
+      store.set(checklistAtom, checklistViewSchema.parse(checklistFixture.checklists[0]!)),
+    );
+    const column = await readingColumn();
+    const crumbs = screen.getByRole("navigation", { name: "Breadcrumb" });
+    const title = screen.getByRole("heading", { level: 1, name: "Product overview" });
+    const sources = screen.getByRole("region", { name: "Sources" });
+    const after = (a: Element, b: Element) =>
+      Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(after(crumbs, title)).toBe(true);
+    expect(after(title, sources)).toBe(true);
+    expect(after(sources, column)).toBe(true);
+  });
+  it("an overview with a rebuild waiting for approval offers Rebuild all and Not now in its Summaries row", async () => {
+    serveOverview();
+    const panel = summaryPanelSchema.parse({ ...panelFixture, question: questionFixture });
+    // The header's summary feed reloads the panel from the server; serve the same question.
+    const stub = vi.mocked(fetch).getMockImplementation()!;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: RequestInfo | URL) =>
+        String(input).includes("/api/summaries/panel") ? Promise.resolve(json(panel)) : stub(input),
+      ),
+    );
+    const ada = { public_id: "0123456789abcdef", name: "Ada" };
+    renderAt("/f/demo/product", (store) => {
+      store.set(checklistAtom, checklistViewSchema.parse(checklistFixture.checklists[0]!));
+      store.set(youAtom, ada);
+      store.set(authoringAtom, { holder: { ...ada, away_since: null, frees_at: null } });
+      store.set(panelLoadAtom, { status: "ready", panel });
+    });
+    await readingColumn();
+    const row = screen.getByRole("region", { name: "Summaries" });
+    expect(within(row).getByRole("button", { name: "Rebuild all" })).toBeTruthy();
+    expect(within(row).getByRole("button", { name: "Not now" })).toBeTruthy();
+    expect(within(row).getByText(`${panel.question!.count} summaries out of date`)).toBeTruthy();
+    expect(within(row).getByText(/waiting for approval/)).toBeTruthy();
+  });
+});

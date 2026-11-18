@@ -72,7 +72,14 @@ pub struct AgentFlow {
     pub id: String,
     pub kind: AgentKind,
     pub agent_type: Option<String>,
+    /// For a codex agent: the id of the forwarder subagent that forwarded to it.
+    pub forwarder: Option<String>,
     pub model: Option<String>,
+    /// The last reasoning effort the agent's transcript named; for a native
+    /// codex agent without one, the effort its worker was admitted with.
+    pub effort: Option<String>,
+    /// For a codex agent started by a native worker: that worker's unit id.
+    pub unit_id: Option<String>,
     pub active: bool,
     pub total: TokenUsage,
     pub rate: TokenUsage,

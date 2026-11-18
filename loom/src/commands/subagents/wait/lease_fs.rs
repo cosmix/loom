@@ -1,19 +1,22 @@
 use std::ffi::{CStr, OsStr, OsString};
 use std::fs::File;
 use std::io::Read;
-use std::os::fd::{AsRawFd, FromRawFd, IntoRawFd, OwnedFd, RawFd};
+use std::os::fd::{AsRawFd, BorrowedFd, IntoRawFd, OwnedFd, RawFd};
 use std::os::unix::ffi::{OsStrExt, OsStringExt};
 use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 
 use anyhow::{bail, Context, Result};
 use nix::errno::Errno;
-use sha2::{Digest, Sha256};
-use uuid::Uuid;
 
 use super::{TerminalOutcome, WaitIdentity, WaitLease, WAIT_SCHEMA_VERSION};
+use crate::agent_state::is_safe_id;
 use crate::fs::safe_fs;
-use crate::models::forward_receipt::is_safe_id;
+use crate::fs::safe_replace::{open_parent_at, publish_in_dir_reporting};
+
+#[cfg(test)]
+#[path = "lease_fs_tests.rs"]
+mod tests;
 
 pub(super) fn open_lease_dir(
     scratch_root: &Path,
@@ -27,9 +30,7 @@ pub(super) fn open_lease_dir(
         )
     })?;
     let scratch = safe_fs::safe_open_dirfd(&canonical_root)?;
-    let digest = hex::encode(Sha256::digest(
-        identity.canonical_repo.as_os_str().as_bytes(),
-    ));
+    let digest = crate::utils::sha256_hex(identity.canonical_repo.as_os_str().as_bytes());
     let mut relative = PathBuf::new();
     for component in [
         "loom-subagent-waits",
@@ -180,7 +181,7 @@ fn validate_lease(path: &Path, lease: &WaitLease) -> Result<()> {
 pub(super) fn write_active(dirfd: RawFd, root: &Path, lease: &WaitLease) -> Result<()> {
     let relative = Path::new("lease.json");
     validate_lease(&root.join(relative), lease)?;
-    write_atomic(dirfd, relative, &root.join(relative), lease)
+    publish_lease(dirfd, relative, &root.join(relative), lease)
 }
 
 pub(super) fn remove_active(dirfd: RawFd, root: &Path) -> Result<()> {
@@ -205,48 +206,35 @@ pub(super) fn write_result(
     let mut result = lease.clone();
     result.terminal_result = Some(outcome);
     result.finished_unix_secs = Some(finished_unix_secs);
-    write_atomic(dirfd, &relative, &display, &result)
+    publish_lease(dirfd, &relative, &display, &result)
 }
 
-fn write_atomic(dirfd: RawFd, target: &Path, display: &Path, lease: &WaitLease) -> Result<()> {
+fn publish_lease(dirfd: RawFd, target: &Path, display: &Path, lease: &WaitLease) -> Result<()> {
     validate_target(dirfd, target, display)?;
     let name = target
         .file_name()
         .context("wait lease target has no file name")?;
-    let temporary = target.with_file_name(format!(
-        ".{}.{}.tmp",
-        name.to_string_lossy(),
-        Uuid::new_v4()
-    ));
     let bytes = serde_json::to_vec_pretty(lease).context("failed to encode wait lease")?;
-    let result = replace_from_temporary(dirfd, &temporary, target, display, &bytes);
-    if let Err(error) = result {
-        let _ = safe_fs::safe_remove_in_workdir(dirfd, &temporary);
-        return Err(error);
-    }
-    sync_parent(dirfd, target, display).with_context(|| {
-        format!(
-            "target was replaced but its directory sync failed: {}",
+    if bytes.len() > safe_fs::MAX_LOG_BYTES {
+        bail!(
+            "wait lease exceeds the maximum file size: {}",
             display.display()
-        )
-    })
-}
-
-fn replace_from_temporary(
-    dirfd: RawFd,
-    temporary: &Path,
-    target: &Path,
-    display: &Path,
-    bytes: &[u8],
-) -> Result<()> {
-    safe_fs::safe_create_new_in_workdir(dirfd, temporary, bytes)?;
-    let temp = safe_fs::open_safely(dirfd, temporary, libc::O_RDONLY, 0)?;
-    File::from(temp)
-        .sync_all()
-        .with_context(|| format!("failed to sync temporary lease for {}", display.display()))?;
-    validate_target(dirfd, target, display)?;
-    safe_fs::safe_rename_in_workdir(dirfd, temporary, target)?;
-    Ok(())
+        );
+    }
+    // SAFETY: `dirfd` is owned by the caller's live `LeaseDir` and stays open for this call.
+    let lease_dir = unsafe { BorrowedFd::borrow_raw(dirfd) };
+    let synced = open_parent_at(lease_dir, target)
+        .and_then(|parent| publish_in_dir_reporting(&parent, name, &bytes, 0o600, false))
+        .with_context(|| format!("failed to write wait lease {}", display.display()))?;
+    match synced {
+        None => Ok(()),
+        Some(error) => Err(error).with_context(|| {
+            format!(
+                "target was replaced but its directory sync failed: {}",
+                display.display()
+            )
+        }),
+    }
 }
 
 fn validate_target(dirfd: RawFd, target: &Path, display: &Path) -> Result<()> {
@@ -261,33 +249,6 @@ fn validate_target(dirfd: RawFd, target: &Path, display: &Path) -> Result<()> {
         Err(error) => Err(error)
             .with_context(|| format!("refusing unsafe wait lease file {}", display.display())),
     }
-}
-
-fn sync_parent(dirfd: RawFd, target: &Path, display: &Path) -> Result<()> {
-    let parent = target.parent().filter(|path| !path.as_os_str().is_empty());
-    let parent = match parent {
-        Some(path) => File::from(safe_fs::open_safely(
-            dirfd,
-            path,
-            libc::O_DIRECTORY | libc::O_RDONLY,
-            0,
-        )?),
-        None => {
-            // SAFETY: `dirfd` is owned by the caller's live `LeaseDir` and
-            // remains valid for the duration of this call.
-            let duplicate = unsafe { libc::dup(dirfd) };
-            if duplicate < 0 {
-                return Err(std::io::Error::last_os_error())
-                    .context("failed to duplicate lease dirfd");
-            }
-            // SAFETY: successful `dup` returned a fresh descriptor owned here;
-            // ownership is transferred exactly once to `OwnedFd`.
-            File::from(unsafe { OwnedFd::from_raw_fd(duplicate) })
-        }
-    };
-    parent
-        .sync_all()
-        .with_context(|| format!("failed to sync lease directory for {}", display.display()))
 }
 
 pub(super) fn prune(dirfd: RawFd, root: &Path, now: u64, retention: u64) -> Result<usize> {

@@ -1,7 +1,7 @@
 //! The typed reason a stage's merge was not advanced (`Stage::merge`)
 //! and the transitions that set and clear it.
 
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 use super::types::{Stage, StageStatus};
@@ -36,15 +36,53 @@ pub struct MergeRecord {
         skip_serializing_if = "Vec::is_empty"
     )]
     pub unrestored: Vec<String>,
+    /// When the stage entered `MergeConflict`; set while it is there, and
+    /// moved into the conflict's `issue_history` entry when it leaves.
+    #[serde(
+        rename = "merge_conflict_since",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub conflict_since: Option<DateTime<Utc>>,
+    /// How many times a resolver's committed content failed completion
+    /// verification and the stage went back to a stage session; caps the
+    /// loop. Reset by `loom stage human-review --approve` and `loom stage
+    /// reset`.
+    #[serde(rename = "merge_handbacks", default, skip_serializing_if = "is_zero")]
+    pub handbacks: u32,
+    /// The verification failure of the latest handback. It is cleared when a
+    /// completion succeeds or the stage is reset, and replaced by the next
+    /// handback.
+    #[serde(
+        rename = "merge_handback_refusal",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub handback_refusal: Option<String>,
+}
+
+fn is_zero(count: &u32) -> bool {
+    *count == 0
 }
 
 impl Stage {
+    /// Whether the stage is final: `Completed` and merged, by loom or by the
+    /// operator's `loom stage complete --force-unsafe --assume-merged`. Loom
+    /// never re-verifies, reverts or moves a final stage, whatever happens to
+    /// the target branch afterwards (an owner decision): recovery, merge and
+    /// attribution paths all leave it as it is.
+    pub fn is_final_merged(&self) -> bool {
+        self.status == StageStatus::Completed && (self.merged || self.merge_assumed)
+    }
+
     /// Record `block` as the reason the merge did not advance and move the
     /// stage to `MergeBlocked`, with the sentence in `failure_info` so
-    /// `loom status` shows it. The daemon retries such a stage every tick.
+    /// `loom status` shows it. The daemon retries such a stage every tick:
+    /// re-recording the same block keeps its failure as recorded, and a
+    /// different one archives the failure it replaces.
     pub fn block_merge(&mut self, block: MergeBlock) {
         let sentence = block.to_string();
-        self.failure_info = Some(FailureInfo {
+        self.replace_failure(FailureInfo {
             failure_type: FailureType::InfrastructureError,
             detected_at: Utc::now(),
             evidence: vec![sentence.clone()],
@@ -102,7 +140,7 @@ impl Stage {
     /// `Ok(())` if the transition succeeded, `Err` if invalid
     pub fn try_complete_merge(&mut self) -> anyhow::Result<()> {
         if self.status != StageStatus::Completed {
-            self.try_transition(StageStatus::Completed)?;
+            self.try_transition_to_completed()?;
             self.stamp_completed();
         }
         self.merge_conflict = false;
@@ -121,14 +159,6 @@ impl Stage {
         self.try_transition(StageStatus::MergeBlocked)
     }
 
-    /// Forget the typed block once the stage's status is no longer
-    /// `MergeBlocked`; both status writers call this after assigning.
-    pub(super) fn drop_merge_block_unless_blocked(&mut self) {
-        if self.status != StageStatus::MergeBlocked {
-            self.clear_merge_block();
-        }
-    }
-
     /// Why a stage whose branch has zero commits beyond `target` goes to human
     /// review instead of merging: a no-op merge would stand for work that was
     /// never committed.
@@ -142,28 +172,64 @@ impl Stage {
     }
 
     /// Move the stage to `NeedsHumanReview` with `reason`, whatever its
-    /// status, clearing any merge block. The merge gate uses it for a branch
-    /// that touches a control path.
+    /// status; the transition drops any merge block. The merge gate uses it
+    /// for a branch that touches a control path.
     pub fn route_to_review(&mut self, reason: &str) {
-        self.clear_merge_block();
         self.force_status_with_reason(StageStatus::NeedsHumanReview, reason);
-        self.review_reason = Some(reason.to_string());
+        self.replace_review_reason(reason.to_string());
     }
 
-    /// Forget the typed merge block. Every transition out of a blocked merge
-    /// calls this, so a stale reason never outlives the status it explained.
-    /// The `failure_info` that `block_merge` wrote goes with the block; with
-    /// no block recorded, an unrelated `failure_info` stays.
+    /// Forget the typed merge block. Every status change out of `MergeBlocked`
+    /// drops it too (`retire_issues_of`, labelled by the transition), so a
+    /// stale reason never outlives the status it explained. The
+    /// `failure_info` that `block_merge` wrote goes with the block, into
+    /// `issue_history`; with no block recorded, an unrelated `failure_info`
+    /// stays.
     pub fn clear_merge_block(&mut self) {
         if self.merge.block.take().is_some() {
-            self.failure_info = None;
+            self.retire_failure(
+                "merge block cleared",
+                crate::models::stage::IssueDisposition::Resolved,
+            );
         }
+    }
+
+    /// Hand a stage whose resolver committed the merge back to a stage
+    /// session: `Queued`, with `refusal` kept for the signal and the fix and
+    /// stall budgets fresh. Changes nothing unless the stage is in
+    /// `MergeConflict` or `MergeBlocked`.
+    ///
+    /// A conflict steps through `Blocked` because the table keeps
+    /// `MergeConflict -> Queued` illegal, so no retry, resume or recovery path
+    /// can requeue an unresolved conflict. The callers have proved a
+    /// merge commit on the branch (`has_merge_commit_since`).
+    pub fn try_hand_back_merge(&mut self, refusal: String) -> anyhow::Result<()> {
+        match self.status {
+            StageStatus::MergeConflict => {
+                self.try_transition(StageStatus::Blocked)?;
+                self.try_transition(StageStatus::Queued)?;
+            }
+            StageStatus::MergeBlocked => self.try_transition(StageStatus::Queued)?,
+            // Not a merge state: `Queued` may be legal from here (human
+            // review), but a handback is not.
+            ref status => anyhow::bail!(
+                "Invalid stage status transition: {status} -> Queued (not MergeConflict or \
+                 MergeBlocked)"
+            ),
+        }
+        self.merge_conflict = false;
+        self.release_session();
+        self.merge.handbacks += 1;
+        self.merge.handback_refusal = Some(refusal);
+        self.fix_attempts = 0;
+        self.stall_recoveries = 0;
+        Ok(())
     }
 
     /// Move the stage to `MergeConflict`, clearing any merge block.
     pub fn enter_merge_conflict(&mut self) {
-        self.clear_merge_block();
         if self.status == StageStatus::MergeConflict {
+            self.clear_merge_block();
             self.merge_conflict = true;
         } else if let Err(error) = self.try_mark_merge_conflict() {
             self.force_status_with_reason(

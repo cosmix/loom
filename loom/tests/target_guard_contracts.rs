@@ -5,59 +5,32 @@
 //! and `LOOM_SESSION_ID` removed, so the hook (when installed) can write the
 //! ledger and attests every move made through git.
 
+#[path = "test_support/mod.rs"]
+mod test_support;
+
 use loom::git::hooks::{install_reference_transaction_hook, HookInstall};
 use loom::git::merge::{merge_stage, MergeBlock, MergeGate, MergeResult};
 use loom::git::target_guard::{
     accepted_tip, attestation_mode, check, AttestationMode, GuardState, HoldReason,
 };
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output};
 use tempfile::TempDir;
 
-fn run(dir: &Path, args: &[&str], envs: &[(&str, &str)]) -> Output {
-    let mut cmd = Command::new("git");
-    cmd.args(args)
-        .current_dir(dir)
-        .env_remove("LOOM_SESSION_ID")
-        .env("GIT_CONFIG_GLOBAL", dir.join(".loom-test-no-global"))
-        .env("GIT_CONFIG_SYSTEM", dir.join(".loom-test-no-system"))
-        .env("GIT_CONFIG_NOSYSTEM", "1")
-        .env("GIT_AUTHOR_NAME", "t")
-        .env("GIT_AUTHOR_EMAIL", "t@t.com")
-        .env("GIT_COMMITTER_NAME", "t")
-        .env("GIT_COMMITTER_EMAIL", "t@t.com");
-    for (key, value) in envs {
-        cmd.env(key, value);
-    }
-    cmd.output().unwrap()
-}
-
-fn git_env(dir: &Path, args: &[&str], envs: &[(&str, &str)]) -> String {
-    let out = run(dir, args, envs);
-    assert!(
-        out.status.success(),
-        "git {args:?} failed: {}",
-        String::from_utf8_lossy(&out.stderr)
-    );
-    String::from_utf8_lossy(&out.stdout).trim().to_string()
-}
-
-fn git(dir: &Path, args: &[&str]) -> String {
-    git_env(dir, args, &[])
-}
+use test_support::git_repo::{git, git_with_env as git_env, TestRepo};
 
 /// A repository on `main` with one commit, `.loom/` and `.worktrees/`
 /// excluded, and the state directory `root/.loom/work` created.
 fn fixture() -> (TempDir, PathBuf, PathBuf) {
     let dir = TempDir::new().unwrap();
     let root = dir.path().canonicalize().unwrap();
-    git(&root, &["init", "-b", "main"]);
-    git(&root, &["config", "user.name", "t"]);
-    git(&root, &["config", "user.email", "t@t.com"]);
+    TestRepo::builder()
+        .identity("t", "t@t.com")
+        .no_seed()
+        .init_in(&root);
     std::fs::write(root.join(".git/info/exclude"), ".loom/\n.worktrees/\n").unwrap();
     commit(&root, "README.md", false);
     let work = root.join(".loom/work");
-    std::fs::create_dir_all(&work).unwrap();
+    test_support::write_main_checkout_identity(&root, &work);
     (dir, root, work)
 }
 
@@ -259,6 +232,30 @@ fn tracked_hooks_dir_change_is_held() {
         has_control_path(&reasons, "hooks/pre-commit"),
         "{reasons:?}"
     );
+}
+
+#[test]
+fn normalized_hook_paths_are_held_at_the_target_boundary() {
+    for spelling in [".", "././.githooks", "x/../.githooks", "absolute"] {
+        let (_dir, root, work) = fixture();
+        std::fs::create_dir_all(root.join("x")).unwrap();
+        let absolute = root.join("x/../.githooks");
+        let configured = if spelling == "absolute" {
+            absolute.to_str().unwrap()
+        } else {
+            spelling
+        };
+        git(&root, &["config", "core.hooksPath", configured]);
+        record(&root, &work);
+        let path = if spelling == "." {
+            "pre-commit"
+        } else {
+            ".githooks/pre-commit"
+        };
+        commit(&root, path, false);
+        let held = reasons(check_now(&root, &work));
+        assert!(has_control_path(&held, path), "{spelling}: {held:?}");
+    }
 }
 
 #[test]

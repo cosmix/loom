@@ -1,6 +1,5 @@
 # Briefs And Bug Reports
-
-> Bug reports, brief flags
+>
 
 ## A Bug Report From a Loom Stage Is About Loom the Product, Not About a Project on This Machine (2026-09-18)
 
@@ -194,122 +193,194 @@ sibling's files.
 
 **Prevention:** a brief quotes the full test name or checks the filter with `cargo test <filter> -- --list` first; a green run that never named the target test proves nothing. Before briefing a fix, confirm the failing behavior exists at the base.
 
-## Quota layout compacted too early
+## A Brief Paraphrased a Validation Regex, and Fix Briefs Named One Scenario (2026-10-28)
 
-**What happened**: The footer quota layout switched to stacked provider rows at 1100px of available width, before the inline meters needed to wrap.
+**What happened:** (1) `PageKey::parse` in the concept-data stage rejected `.` and had no 128-character cap against the stage's `^[A-Za-z0-9._-]{1,128}$` rule, because the worker brief paraphrased the rule. (2) The concept-web integration-verify review loop took three fix rounds; each re-review of a fix surfaced a neighbouring edge case (focus identity across two citers, cross-key response ordering, pages the delta did not list).
 
-**Why**: The responsive threshold was selected without checking the operator preferred keeping the compact inline meter pairs longer.
+**Why:** a paraphrase of a pattern drops its character class and bounds; a fix brief that names only the filed scenario leaves its siblings to the next review round.
 
-**Prevention**: Base quota wrapping on the measured width of the compact provider groups and preserve the inline layout while it fits.
+**Prevention:** quote every validation regex and limit verbatim in the brief, and list the neighbouring cases beside the filed scenario when a fix touches focus identity or delta naming.
 
-**Fix**: Keep compact provider groups inline until the available width requires shared rows.
+**Fix:** the orchestrator corrected `parse`, and the later fix briefs carried the neighbouring cases.
 
-## Verify help illustrations alongside typography changes
+## Planner takeover current-plan correction
 
-**What happened**: A token-flow font adjustment did not explicitly verify the corresponding help illustration before reporting completion.
+**What happened**: The takeover request mentioned finishing plan 07; the user clarified that plan 08 is running.
 
-**Why**: The source component was checked without tracing its help consumer.
+**Why**: The request included an older plan reference alongside the latest verified state.
 
-**Prevention**: Trace help illustrations for dashboard visual changes and verify the example uses the updated production component.
+**Prevention**: Treat the explicit correction and live Loom status as the current execution position.
 
-**Fix**: Check the token-flow help example alongside the responsive quota layout.
+**Fix**: Continue plan 08, then plans 09–11 sequentially.
 
-## Model history chart metric
+## Planner takeover stopped before investigating recovery
 
-**What happened**: The operator selected fresh tokens per minute for the By model history chart.
+**What happened**: I reported plan 08 blocked after checking CLI help instead of investigating how to unblock it.
 
-**Why**: The chart should compare model throughput over the same recent window as the token-flow sidebar.
+**Why**: I treated missing installed amendment support as the end of the task.
 
-**Prevention**: Keep the metric explicit on the chart and combine efforts into one series per model.
+**Prevention**: Trace the verification and amendment implementation and prepare a supported fix before handing a blocker back.
 
-**Fix**: Plot a separate color-matched model series over the last 30 minutes.
+**Fix**: Investigate and implement a verified recovery while preserving the prohibition on forced completion and leaving installation to the user.
 
-## Reuse model totals for sidebar history
+## Recover an unsupported predecessor check without changing Loom
 
-**What happened**: I proposed extending the token tracker before using the per-model cumulative totals already supplied for the pie chart; the operator directed me to reuse those totals.
+**What happened**: I proposed updating Loom to recover plan 08 instead of using the operator decision and retry context.
 
-**Why**: I focused on reconstructing history from agent data instead of sampling the existing model totals.
+**Why**: I conflated the predecessor static reachability limitation with a failure of integration verification completion checks.
 
-**Prevention**: For this chart, sample flow.models totals and derive fresh tokens per minute from their deltas, combining efforts per model.
+**Prevention**: Distinguish an agent-declared block from a failing completion gate; convey the narrowly scoped operator decision through stage retry while retaining normal verification.
 
-**Fix**: Keep the change in the web UI, retain a bounded recent history, and explain that history starts when the dashboard observes samples.
+**Fix**: Record the unsupported trait-object reachability check for future Loom work and retry integration-verify with that limitation accepted, without no-verify or forced completion.
 
-## Model history uses stacked time bars
+## Retry context cannot waive aggregated reachability
 
-**What happened**: The operator rejected the model history line chart and requested a stacked time-series bar graph.
+**What happened**: I retried integration-verify assuming its predecessor reachability limitation could be accepted through context.
 
-**Why**: The separate lines did not give the desired visual comparison of total throughput and each model contribution.
+**Why**: I had not traced complete_verification_v2::reverify_reachable, which reruns completed stages reachable assertions.
 
-**Prevention**: Render model throughput as stacked bars with the existing per-model pie colors.
+**Prevention**: Inspect actual completion gates before proposing contextual acceptance as recovery.
 
-**Fix**: Keep cumulative-total sampling and fresh tokens per minute; group samples into time buckets and stack model contributions in each bar, including the production help illustration.
+**Fix**: Correct the unsupported plan assertion through the supported plan input path while retaining normal completion checks; retry context alone is insufficient.
 
-## Model history bars disappear during live updates
+## Planner takeover told a Claude driver to skip CLAUDE.md
 
-**What happened**: The operator reported that the new stacked model histogram populated inconsistently, with bars appearing and disappearing.
+**What happened**: The takeover prompt, written for a codex driver, said "Do not read CLAUDE.md" and pointed at `~/.codex/skills/loom-usage`. The user then told the Claude session taking over to follow CLAUDE.md after all.
 
-**Why**: The initial validation covered sample totals and static rendering but did not establish stable behavior across successive live updates.
+**Why**: Codex loads only AGENTS.md, so that prompt's doctrine routing does not fit a Claude driver.
 
-**Prevention**: Verify time-bucket identity and retention across incremental snapshots, including idle periods and gaps.
+**Prevention**: When a Claude session drives loom from a prompt written for codex, it still follows CLAUDE.md (commit conventions, no attribution, knowledge routing, tool rules) unless the user restates the exclusion for Claude.
 
-**Fix**: Diagnose and correct live histogram bucketing with a regression covering consecutive updates.
+**Fix**: Follow CLAUDE.md for the rest of the takeover.
 
-## Separate model segments in both charts
+## A Plan Premise Was Already True in the Base Tree
 
-**What happened**: The operator requested visible separation between model segments, including the pie chart, because neighboring hues were difficult to distinguish.
+**What happened:** a pressure-pipeline stage froze a contract `builtin-backend-default-is-tmux` that expected `Native` at freeze, and four tasks (T1 to T4) to make tmux the default. `SessionBackendKind` already defaulted to `Tmux` (`types.rs`), with the tests, README lines and fixtures; only a README and skill sentence audit remained.
 
-**Why**: Adjacent colored fills lacked a neutral boundary.
+**Recurrence (caught by a pressure test):** the planner-issue-fixes plan specified its merged-count contract "on the strip/tests.rs fixture". That fixture writes `StageType::Knowledge` stages, which `git/merge/status.rs::check_merge_state` already counts as merged from their flag, so six merged stages read 6 at base and the contract would have been green at freeze. The same plan's restatement contract asserted a bare `SealError::Rejected`, which a one-sentence overview draft already gets at base for its missing member and vision citations.
 
-**Prevention**: Keep shared model colors and add visible separators in both stacked bars and pie slices.
+**Why:** the plan was written from an earlier reading of the default backend; the recurrence borrowed an existing fixture and an error variant without checking what they already produce at base.
 
-**Fix**: Add thin background-colored boundaries while correcting the live histogram bucket stability.
+**Prevention:** before freezing a "change the default" contract, read the `#[default]` and its tests at the stage base; a contract that is already green at freeze proves nothing. A contract that reuses an existing fixture names the fixture field that makes it fail at base, and a rejection contract asserts the specific message, on an input that is valid in every other respect.
 
-## Histogram slots must use fixed clock boundaries
+## Commit scope for quota repair
 
-**What happened**: The operator confirmed that histogram slots must be fixed in time. The regression reproduced a completed bar disappearing when the latest timestamp advanced five seconds.
+**What happened**: The user explicitly requested committing everything when the quota repair finishes.
 
-**Why**: All sixty bucket starts were calculated relative to the newest sample rather than aligned to clock boundaries.
+**Why**: The checkout includes concurrent and pre-existing changes beyond quota code.
 
-**Prevention**: Anchor each 30-second slot to an epoch multiple of 30; advance the visible window only at bucket boundaries.
+**Prevention**: Preserve the requested whole-checkout commit scope and distinguish focused verification from validation of unrelated work.
 
-**Fix**: Align the chart window to fixed slots and preserve completed bars across subsequent snapshots.
+**Fix**: Commit all current tracked and untracked changes after the quota checks finish.
 
-## Use a more distinct shared model palette
+## Check schema bounds before publishing review examples
 
-**What happened**: After requesting segment separators, the operator also explicitly requested new model colors in both charts.
+**What happened:** an intermediate review example used an after-stage timeout of 7200 seconds; schema validation caps it at 3600. The confirmed host-deadline defect remains reproducible with the allowed 3600-second value against a 2700-second host budget. **Why:** runtime behavior was traced before schema bounds. **Prevention:** validate concrete review inputs against parsing and schema constraints before reporting reachable scenarios. **Fix:** the review uses 3600 seconds and retains the deadline mismatch finding.
 
-**Why**: The evenly spaced hue palette did not provide satisfactory visual distinction.
+## A brief named a file from a grep hit without reading it
 
-**Prevention**: Use a deliberately ordered palette starting with blue, amber, and magenta, shared by both charts and their legend.
+**What happened:** Planner UI fix briefs sent the summary-body spacing bug to `src/plan/summaries/summary-panel.*` (the Settings statistics panel) and claimed mermaid handling existed in `src/plan/markdown/code-block.tsx`. That file's only mermaid mention was a comment saying mermaid fences render as source. Both subagents spent a spawn discovering that the premise was wrong.
+**Why:** The orchestrator took file names from `rg -l` matches on a keyword ("summary", "mermaid") and wrote them into the brief as the owner without opening the matched lines.
+**Prevention:** Before a brief names a file as the site of a bug or of existing behavior, read the matching lines (`rg -n`, not `-l`). In the planner, `summaries/summary-panel.*` is the Settings statistics panel; a document's reading body lives under `files/reading-column.tsx` and `ui/doc-heading.css`.
+**Fix:** The subagents were re-briefed with the correct owners.
 
-**Fix**: Replace automatic equal hue spacing with distinct preset colors and retain separators.
+## A Growth Budget Ignored the Stable-Prefix Size Ceiling
 
-## Histogram scale and rate comparison must stay consistent
+**What happened:** the brief for the `STAGE_EXIT_RULES` doctrine edit allowed 250 bytes of growth. `tests_size.rs` pins a ceiling and a floor on the stable prefix, and the edit needed about 217 bytes of trims elsewhere (`cache/blocks.rs`) to pass.
 
-**What happened**: The operator reported that chart rates disagreed with values by the pie and that the y-axis moved unpredictably.
+**Why:** the brief set a growth cap without reading the headroom `tests_size.rs` leaves.
 
-**Why**: The chart recomputed its exact maximum at every update; its 30-second sampled rates also differ from the existing agent-derived five-minute legend rates.
+**Prevention:** before setting a growth budget for signal text, read the headroom in `orchestrator/signals/tests_size.rs`; brief the trims with the growth.
 
-**Prevention**: Use stable rounded axis limits and explicitly align the model chart and model rate legend to one calculation and averaging window.
+## A Worker's Compile Signal Never Existed
 
-**Fix**: Verify live samples, stabilize the y-axis, and share model rate values between the chart and legend.
+**What happened:** in the verdict-completion and criteria-authoring stages the subagent PreToolUse hook blocked `cargo check --lib`, `cargo build --all-targets` and `cargo check --lib --tests` for workers, even when the brief allowed one check. Only a narrow `cargo test --lib <module>::` ran; integration-test targets (`tests/*.rs`) stayed uncompiled, and one worker's code (`tests_freeze.rs:307`, an old 6-argument call) reached the main agent's gate uncompiled.
 
-## Convert fixed 30-second bar counts by multiplying by two
+**Why:** the hook treats a compile as project-wide verification, and the brief promised a check the hook refuses.
 
-**What happened**: I proposed changing the model legend and averaging the histogram over five minutes. The operator rejected both: fix the bar chart alone, and convert each fixed 30-second token count to tokens per minute by multiplying by two.
+**Prevention:** brief workers with the one check the hook allows (a lib filter) and tell them it is the only compile signal; name the arity and signature changes other files must follow so the first full compile is the main agent's gate; a fix brief that edits a function near a size limit names `cargo test --manifest-path loom/Cargo.toml --test maintainability` as the check (a worker's lib filter never runs it: the security fix worker grew `record_static_refusal` to 54 lines, caught only by the gate). That repeat of [a worker's one scoped check missing the maintainability test](contract-autonomy-delivery.md#a-workers-one-scoped-check-missed-its-consumers-and-the-maintainability-test) has a hook proposal in [concerns/code-quality-and-hook-debt](../concerns/code-quality-and-hook-debt.md).
 
-**Why**: I confused rate normalization over partial observations with the units of a fixed-width histogram bin.
+## Subagent Briefs Asked for the Full Gate the Main Agent Reruns
 
-**Prevention**: Keep each bar tied to one fixed 30-second interval; multiply its accumulated count by 60/30, including a still-filling bar. Do not change the pie or its legend to match a chart bug.
+**What happened:** outside a stage, main-agent briefs for the planner spine, help dialog, web fetch and dashboard fixes each told the subagent to run full `cargo test`, `cargo clippy`, full `vitest` and builds; the main agent then reran the same gate to verify. The operator flagged the duplicated runs.
 
-**Fix**: Replace elapsed-time normalization with a fixed factor of two, retain fixed clock boundaries, and stabilize the axis independently.
+**Why:** the briefs treated a subagent's own green run as part of verification, although the main agent verifies regardless.
 
-## Verify the reported histogram rate discrepancy against raw counts
+**Prevention:** a stage subagent runs the tests for its changed code and module when ready, without a count cap; the stage gate owns full suites. Integration-verify orchestrators and reviewers may run full checks through `loom check integration-verify`.
 
-**What happened**: The operator still observed roughly 110k/min in a histogram bar while the existing fresh rate read 12.4k/min, and confirmed the pie was correct.
+**Fix:** briefs name targeted tests and the gate owns the full-suite verdict.
 
-**Why**: A corrected bin conversion alone does not establish whether the displayed discrepancy is a data bug or different averaging periods.
+## Cargo test name filters are OR-ed substrings
 
-**Prevention**: Capture the actual cumulative model deltas and existing rate over a full fixed interval; explain the arithmetic with evidence before claiming resolution.
+**What happened:** A brief told a worker to run one ignored test as `cargo test --test plan_session_bridge_e2e probes:: -- --ignored rescrub_existing_fixtures`. Cargo treats every positional filter as an OR-ed substring match, so the command ran every ignored operator probe: real Claude Code sessions on a copied HOME, and token spend.
+**Why:** The brief added a narrowing word without checking how libtest combines filters.
+**Prevention:** To run one test, give its full path and pass `--exact`, as in `cargo test --test <target> -- --ignored --exact <module>::<test>`. Never combine a module filter with a name filter to narrow the run.
+**Fix:** The worker killed the run, removed the orphaned temp HOME (it held a copied `.credentials.json`), and restored the fixtures from a backup.
 
-**Fix**: Compare live 30-second token increases against the chart while leaving the pie and its legend unchanged.
+## Native-worker proposal needs proven ownership and ingress mechanisms
+
+**What happened:** A native-worker proposal draft treated process ownership, caller isolation and synchronous admission as consequences of a process group, a host credential and a post-tool relay. Review also found ambiguous clarification/wait continuation and cancel-versus-fork semantics.
+**Why:** Desired guarantees were described before their enforcement and acknowledgement boundaries were fully specified.
+**Prevention:** Separate provider outcome from process quiescence; specify recoverable lifetime-boundary creation before fork, serialized launch/cancel, exact caller/attempt binding, all-writer reservations and uncertain delivery. A PostToolUse relay runs after the submitting CLI returns, so host acceptance requires a later status call. Never assume a same-UID secret is isolated or an old binary understands a new compatibility record.
+**Fix:** Tighten the proposal's qualification gates and operation ordering, require released ownership before reallocation, use immutable briefs and two-phase submissions, and make clarification responses and resumable attention waits explicit.
+
+## Native-worker schema and integration qualification
+
+**What happened:** Pressure testing the native-worker proposal exposed missing distinctions between blocking and nonblocking input, experimental schema availability and runtime support, existing journal locks versus a shared writer fence, and existing text-status exits versus proposed machine-status exits.
+**Why:** Interface names and intended safety properties can look like implemented contracts without tracing their producers and consumers.
+**Prevention:** Inspect the installed schema and exact code owners; require field-level protocol fixtures and explicit new-work seams. A resolved server request need not mean an answer was accepted, and a disabled-plugin list need not enforce capability removal. Preserve legacy request-status behavior when adding native JSON receipts; current nonwaiting text status succeeds for refused and unknown outcomes (loom/src/commands/request/status.rs:201).
+**Fix:** Keep native supervision as the proposal direction, document a qualified exclusive first-release mode with explicit writer handoff, and separate later mixed-writer and attention support from baseline launch/cancel/result correctness. Preserve uncertain ownership and delivery rather than infer success.
+
+## Worker-writable provider history is not acceptance evidence
+
+**What happened:** The native-worker proposal allowed supported persisted provider history to settle uncertain message delivery without requiring protection from worker mutation.
+**Why:** Thread attribution and JSON schema validity were conflated with authentic provider acceptance; the worker boundary deliberately grants Codex state writes.
+**Prevention:** Treat worker-writable rollouts as diagnostic/accounting data with explicit coverage. Hashing them after a crash cannot authenticate past events. Only qualified host-captured correlated events, or separately authenticated immutable provider history, can settle delivery uncertainty; neither substitutes for host process-quiescence evidence.
+**Fix:** Require response-origin isolation, durable host capture before acknowledging delivery, and negative tests for forged history and protocol-FD injection in the native-worker proposal.
+
+## Read back proposal sentences after mechanical edits
+
+**What happened:** A proposal sentence replacement briefly joined incompatible fragments around the no-git worker instruction. A later consolidation check also required an obsolete literal phrase even though the qualification remained in different wording.
+**Why:** Mechanical boundaries and exact-string checks were mistaken for semantic validation.
+**Prevention:** Read changed sentences and validate retained meaning after consolidation; do not require obsolete phrasing when equivalent qualified wording is present.
+**Fix:** Correct the sentence and inspect the retained qualification before adjusting the check.
+
+## Reconcile summary tables with qualified contracts
+
+**What happened:** A proposal revision retained unqualified wording about effective settings, historical acceptance evidence and six-worker rollout gates, plus an unnecessary review-provenance sentence.
+**Why:** Detailed qualification rules were updated without applying them consistently to summary rows and metadata.
+**Prevention:** Review summary tables, metadata and rollout gates against the detailed contract; keep process provenance out of deliverables when attribution is prohibited.
+**Fix:** Require observed settings and protected evidence explicitly, scope resource qualification to the enabled concurrency, and remove unnecessary provenance.
+
+## Keep a single-file proposal review in the requested file
+
+**What happened:** A review requested for one proposal produced an additional implementation annex; the user corrected the deliverable scope.
+**Why:** Splitting detailed guidance to satisfy file-length limits was treated as permission to create a second deliverable.
+**Prevention:** Keep revisions in the requested proposal. Consolidate overlapping material and use the line budget efficiently rather than adding an unsolicited annex.
+**Fix:** Merge the useful annex content into the original proposal and remove the extra file.
+
+## Follow-up UI Tweak Briefed as a Full Redesign Pass
+
+**What happened:** after a header redesign, the operator asked for one follow-up (make the pressure-test button a dropdown like the settle button). The main agent spawned a fresh fable subagent that had to load the frontend-design skill, rediscover the files, run tsc, lint, format and the whole `src/plan` vitest folder (4,600+ tests), and reshoot every screenshot. A few-second change took many minutes.
+
+**Why:** the brief reused the heavy verification and screenshot steps of the first pass, and chose fable plus a fresh boot for a contained edit.
+
+**Prevention:** a small follow-up tweak during operator review goes to the cheapest capable tier with file:line pointers, runs only the tests of the touched files, skips skill loads and screenshot reshoots, and relies on the running hot-reload mock for review.
+
+**Fix:** verification in later briefs was limited to the touched files' tests.
+
+## A Size-Limit Claim Covered File Length Only (2026-11-16)
+
+**What happened:** a brief named both limits (files 400 lines, functions 50), the engineer reported the files under 400 and the orchestrator accepted that as both. `boundary/linux.rs::command` was 52 lines; the operator caught it.
+
+**Why:** the brief's proof list had no command that checks function length, so the claim rested on a manual line count of files.
+
+**Prevention:** every Rust brief's proof list includes `cargo test --test maintainability`, which checks both limits against `maintainability-baseline.txt`; a report that the limits hold without that test's result is not evidence.
+
+## Review Findings Deferred as Open Concerns (2026-11-16)
+
+**What happened:** two security reviews of the native worker temp-dir change raised four issues (unbounded boundary tmpfs, proxy socket reachable by network-denied commands, a persistent Cargo home writable in External mode, bind targets under the temp dir). The main agent labelled them out of scope, briefed the size limit as optional, wrote them into concerns and listed them as not fixed in the final report. The operator had already objected to end-of-work "not fixed" lists that session.
+
+**Why:** scope was judged by what the original change touched, not by what the reviews found in the code being shipped.
+
+**Prevention:** an issue found during the work is fixed in the same session, as soon as it is found, unless the operator says otherwise or it needs a person's decision; then ask at once instead of reporting it at the end. A concerns entry is for what cannot be fixed now, with the reason.

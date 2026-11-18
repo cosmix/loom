@@ -68,7 +68,6 @@ assert_rc 0
 symlink_bin="$TMP/bin/loom-link"
 ln -s "$TMP/bin/loom" "$symlink_bin"
 INVALID_COMMANDS=(
-	'loom stage complete build-api'
 	"loom() { \"$TMP/bin/loom\" \"\$@\"; }; loom stage complete build-api"
 	"alias loom='$TMP/bin/loom'; loom stage complete build-api"
 	"$symlink_bin stage complete build-api"
@@ -113,13 +112,21 @@ TEST_WORKTREE_OVERRIDE="$nested_main" run_pre 'loom stage complete build-api'
 assert_rc 0
 [[ -z "$HOOK_OUTPUT" ]] || { echo "nested main-repo path emitted a pin" >&2; exit 1; }
 TEST_WORKTREE_OVERRIDE="$real_nested_worktree" run_pre 'loom stage complete build-api'
-assert_rc 2
-assert_output 'retry with the pinned command'
+assert_rc 0
+[[ "$(jq -r .hookSpecificOutput.updatedInput.command <<<"$HOOK_OUTPUT")" == "$PINNED" ]] ||
+	{ echo "bare completion was not rewritten to the pinned command: $HOOK_OUTPUT" >&2; exit 1; }
 
 production_hook="$TMP/installed/loom-control-complete.sh"
 mkdir -p "$(dirname "$production_hook")"
 cp "$HOOK" "$production_hook"
 cp "$ROOT/loom-hooks/_common.sh" "$(dirname "$production_hook")/_common.sh"
+cp "$ROOT/loom-hooks/_parser.sh" "$(dirname "$production_hook")/_parser.sh"
+cp "$ROOT/loom-hooks/_stage_lookup.sh" "$(dirname "$production_hook")/_stage_lookup.sh"
+cp "$ROOT/loom-hooks/_parser_expand.sh" "$(dirname "$production_hook")/_parser_expand.sh"
+cp "$ROOT/loom-hooks/_parser_scan.sh" "$(dirname "$production_hook")/_parser_scan.sh"
+cp "$ROOT/loom-hooks/_containment.sh" "$(dirname "$production_hook")/_containment.sh"
+cp "$ROOT/loom-hooks/_identity.sh" "$(dirname "$production_hook")/_identity.sh"
+cp "$ROOT/loom-hooks/_heartbeat.sh" "$(dirname "$production_hook")/_heartbeat.sh"
 cp "$ROOT/loom-hooks/_bounded.sh" "$(dirname "$production_hook")/_bounded.sh"
 cp "$ROOT/loom-hooks/_post-tool-heartbeat.sh" "$(dirname "$production_hook")/_post-tool-heartbeat.sh"
 set +e

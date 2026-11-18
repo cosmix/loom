@@ -1,9 +1,12 @@
 mod codex_binding;
 mod engine;
+mod evidence;
 mod identity;
 mod lease;
 mod model;
+mod native;
 mod output;
+mod parent_scan;
 mod stall;
 
 #[cfg(test)]
@@ -15,6 +18,10 @@ mod lease_boot_tests;
 #[cfg(test)]
 mod lease_tests;
 #[cfg(test)]
+mod native_contract_tests;
+#[cfg(test)]
+mod native_tests;
+#[cfg(test)]
 mod tests;
 
 use std::path::{Path, PathBuf};
@@ -22,7 +29,8 @@ use std::time::Duration;
 
 use anyhow::{bail, Result};
 
-use engine::{wait_for_workers, EngineResult, LifecycleEvidence, ThreadSleeper, POLL_INTERVAL};
+use engine::{wait_for_workers, EngineResult, ThreadSleeper, POLL_INTERVAL};
+use evidence::LifecycleEvidence;
 use lease::{
     acquire, finish, prune_results, Acquired, LeaseDir, SystemBootClock, SystemOwnerProbe,
 };

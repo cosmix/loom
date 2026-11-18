@@ -4,6 +4,7 @@
 
 use std::collections::BTreeMap;
 
+use crate::commands::usage::discovery::stage_from_project_slug;
 use crate::commands::usage::transcript::{Scope, Transcript};
 
 use super::fmt::{heading, no_data};
@@ -63,16 +64,9 @@ pub fn render(edits: &EditRequests) {
 }
 
 fn stage_id(slug: &str) -> String {
-    slug.rsplit_once("-worktrees-").map_or_else(
-        || "(no stage)".to_owned(),
-        |(_, tail)| {
-            if tail.is_empty() {
-                "(no stage)".to_owned()
-            } else {
-                tail.to_owned()
-            }
-        },
-    )
+    stage_from_project_slug(slug, None)
+        .unwrap_or("(no stage)")
+        .to_owned()
 }
 
 fn is_edit(name: &str) -> bool {

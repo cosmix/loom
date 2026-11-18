@@ -3,12 +3,12 @@
 //! puts it.
 
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 use crate::daemon::ContractRunReport;
 use crate::git::worktree::WorktreeGit;
 use crate::models::stage::{Stage, StageStatus};
 use crate::plan::schema::ContractSpec;
+use crate::test_git::{git, TestRepo};
 use crate::verify::contracts::store::{write_freeze, FreezeRecord, FREEZE_RECORD_VERSION};
 
 pub(crate) const CONTRACT_ID: &str = "rejects-x";
@@ -19,7 +19,7 @@ pub(crate) fn contract() -> ContractSpec {
     ContractSpec {
         id: CONTRACT_ID.to_string(),
         file: CONTRACT_FILE.to_string(),
-        test: "tests::rejects_x".to_string(),
+        test: Some("tests::rejects_x".to_string()),
         runner: Some("cargo-test".to_string()),
         cwd: None,
         scenario: "x arrives".to_string(),
@@ -38,7 +38,7 @@ pub(crate) const LIQUIDMON_FILE: &str = "src/device_lock/contract_tests.rs";
 pub(crate) fn liquidmon_contract() -> ContractSpec {
     ContractSpec {
         file: LIQUIDMON_FILE.to_string(),
-        test: "device_lock::contract_tests::rejects_x".to_string(),
+        test: Some("device_lock::contract_tests::rejects_x".to_string()),
         ..contract()
     }
 }
@@ -131,20 +131,25 @@ pub(crate) fn shell_contract_worktree(repo_root: &Path, stage_id: &str) -> PathB
     worktree_over(repo_root, stage_id, &[])
 }
 
+/// Hooks stay disabled for the calls that would fire one (`commit`, `worktree add`).
+const HOOKS_OFF: &str = "core.hooksPath=/dev/null";
+
 fn worktree_over(repo_root: &Path, stage_id: &str, base: &[(&str, &str)]) -> PathBuf {
     std::fs::create_dir_all(repo_root).unwrap();
-    git(repo_root, &["init", "-q", "-b", "main"]);
+    TestRepo::builder().no_seed().init_in(repo_root);
     std::fs::write(repo_root.join("README.md"), "base\n").unwrap();
     write_files(repo_root, base);
     let mut add = vec!["add", "README.md"];
     add.extend(base.iter().map(|(path, _)| *path));
     git(repo_root, &add);
-    git(repo_root, &["commit", "-q", "-m", "base"]);
+    git(repo_root, &["-c", HOOKS_OFF, "commit", "-q", "-m", "base"]);
     let branch = format!("loom/{stage_id}");
     let relative = format!(".worktrees/{stage_id}");
     git(
         repo_root,
-        &["worktree", "add", "-q", "-b", &branch, &relative],
+        &[
+            "-c", HOOKS_OFF, "worktree", "add", "-q", "-b", &branch, &relative,
+        ],
     );
     let worktree = repo_root.join(relative);
     let contract_file = worktree.join(CONTRACT_FILE);
@@ -152,6 +157,7 @@ fn worktree_over(repo_root: &Path, stage_id: &str, base: &[(&str, &str)]) -> Pat
     std::fs::write(contract_file, CONTRACT_CONTENT).unwrap();
     let work_dir = repo_root.join(".loom").join("work");
     std::fs::create_dir_all(&work_dir).unwrap();
+    crate::git::worktree::capture_main_identity(repo_root, &work_dir).unwrap();
     std::fs::write(work_dir.join("orchestrator.lock"), b"").unwrap();
     worktree
 }
@@ -194,20 +200,4 @@ pub(crate) fn plant_foreign_git_dir(worktree: &Path) -> PathBuf {
     std::fs::write(worktree.join(".gitattributes"), "* filter=evil\n").unwrap();
     std::fs::write(worktree.join("README.md"), "changed\n").unwrap();
     marker
-}
-
-fn git(dir: &Path, args: &[&str]) {
-    let output = Command::new("git")
-        .args(["-c", "user.name=t", "-c", "user.email=t@t"])
-        .args([
-            "-c",
-            "commit.gpgsign=false",
-            "-c",
-            "core.hooksPath=/dev/null",
-        ])
-        .args(args)
-        .current_dir(dir)
-        .output()
-        .unwrap();
-    assert!(output.status.success(), "git {args:?}: {output:?}");
 }

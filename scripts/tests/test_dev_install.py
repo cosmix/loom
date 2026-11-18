@@ -27,7 +27,8 @@ class DevInstallTests(unittest.TestCase):
         self.bin = self.root / "bin"
         self.bin.mkdir()
         shutil.copyfile(DEV_INSTALL, self.root / "dev-install.sh")
-        self.stub("pgrep", "#!/bin/sh\nexit 1\n")
+        for name in ("pgrep", "pkill"):
+            self.stub(name, f'#!/bin/sh\nprintf "%s\\n" {name} >> "$SIGNAL_TRACE"\nexit 0\n')
         self.stub("nproc", "#!/bin/sh\necho 12\n")
         self.stub("getconf", "#!/bin/sh\necho 8\n")
         self.stub("cargo", f"#!{sys.executable}\n" + """
@@ -43,6 +44,7 @@ sys.exit(int(os.environ.get('BUILD_EXIT', '0')))
         (self.root / "install.sh").write_text(
             'printf "%s\\n" "$@" > "$INSTALL_TRACE"\n'
             'printf "%s\\n" "$CARGO_PROFILE_RELEASE_LTO" >> "$INSTALL_TRACE"\n'
+            'exit "${INSTALL_EXIT:-0}"\n'
         )
 
     def stub(self, name, content):
@@ -58,6 +60,7 @@ sys.exit(int(os.environ.get('BUILD_EXIT', '0')))
             PATH=f"{self.bin}:{env['PATH']}", HOME=str(self.root),
             BUILD_TRACE=str(self.root / "build.json"),
             INSTALL_TRACE=str(self.root / "install.trace"),
+            SIGNAL_TRACE=str(self.root / "signals.trace"),
             CARGO_PROFILE_RELEASE_LTO="fat",
             **overrides,
         )
@@ -98,6 +101,21 @@ sys.exit(int(os.environ.get('BUILD_EXIT', '0')))
         result = self.run_install(BUILD_EXIT="7")
         self.assertEqual(result.returncode, 7, result.stderr)
         self.assertFalse((self.root / "install.trace").exists())
+        self.assertFalse((self.root / "signals.trace").exists())
+
+    def test_install_stops_daemon_after_install(self):
+        result = self.run_install()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue((self.root / "install.trace").exists())
+        signals = (self.root / "signals.trace").read_text().split()
+        self.assertEqual(signals, ["pgrep", "pkill"])
+        self.assertLess(result.stdout.index("Running install.sh"),
+                        result.stdout.index("Killing loom daemon"))
+
+    def test_failed_install_does_not_signal(self):
+        result = self.run_install(INSTALL_EXIT="9")
+        self.assertEqual(result.returncode, 9, result.stderr)
+        self.assertFalse((self.root / "signals.trace").exists())
 
 
 if __name__ == "__main__":

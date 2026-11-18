@@ -77,33 +77,7 @@ pub fn verify_or_derive_completed_commit(
 mod tests {
     use super::*;
     use crate::models::stage::{Stage, StageStatus, StageType};
-    use std::process::Command;
-    use tempfile::TempDir;
-
-    fn run_git(args: &[&str], cwd: &Path) {
-        let out = Command::new("git")
-            .args(args)
-            .current_dir(cwd)
-            .output()
-            .unwrap();
-        assert!(
-            out.status.success(),
-            "git {args:?} failed: {}",
-            String::from_utf8_lossy(&out.stderr)
-        );
-    }
-
-    fn init_repo() -> TempDir {
-        let tmp = TempDir::new().unwrap();
-        let root = tmp.path();
-        run_git(&["init", "-b", "main"], root);
-        run_git(&["config", "user.email", "t@t.com"], root);
-        run_git(&["config", "user.name", "t"], root);
-        std::fs::write(root.join("README.md"), "seed").unwrap();
-        run_git(&["add", "README.md"], root);
-        run_git(&["commit", "-m", "seed"], root);
-        tmp
-    }
+    use crate::test_git::{git, TestRepo};
 
     fn make_stage(id: &str) -> Stage {
         let mut s = Stage::new(id.to_string(), Some(format!("test {id}")));
@@ -115,14 +89,16 @@ mod tests {
 
     #[test]
     fn verifies_when_completed_commit_is_ancestor_of_target() {
-        let repo = init_repo();
+        let repo = TestRepo::builder()
+            .seed("README.md", "seed", "seed")
+            .create();
         let root = repo.path();
-        run_git(&["checkout", "-b", "loom/landed"], root);
+        git(root, &["checkout", "-b", "loom/landed"]);
         std::fs::write(root.join("a.rs"), "ok").unwrap();
-        run_git(&["add", "a.rs"], root);
-        run_git(&["commit", "-m", "landed"], root);
-        run_git(&["checkout", "main"], root);
-        run_git(&["merge", "--no-ff", "-m", "merge", "loom/landed"], root);
+        git(root, &["add", "a.rs"]);
+        git(root, &["commit", "-m", "landed"]);
+        git(root, &["checkout", "main"]);
+        git(root, &["merge", "--no-ff", "-m", "merge", "loom/landed"]);
 
         let head = crate::git::branch::get_branch_head("loom/landed", root).unwrap();
         let mut stage = make_stage("landed");
@@ -135,13 +111,15 @@ mod tests {
 
     #[test]
     fn refuses_when_completed_commit_not_ancestor_of_target() {
-        let repo = init_repo();
+        let repo = TestRepo::builder()
+            .seed("README.md", "seed", "seed")
+            .create();
         let root = repo.path();
-        run_git(&["checkout", "-b", "loom/stranded"], root);
+        git(root, &["checkout", "-b", "loom/stranded"]);
         std::fs::write(root.join("a.rs"), "ok").unwrap();
-        run_git(&["add", "a.rs"], root);
-        run_git(&["commit", "-m", "stranded"], root);
-        run_git(&["checkout", "main"], root);
+        git(root, &["add", "a.rs"]);
+        git(root, &["commit", "-m", "stranded"]);
+        git(root, &["checkout", "main"]);
 
         let head = crate::git::branch::get_branch_head("loom/stranded", root).unwrap();
         let mut stage = make_stage("stranded");
@@ -153,14 +131,16 @@ mod tests {
 
     #[test]
     fn derives_commit_from_branch_head_when_completed_commit_missing() {
-        let repo = init_repo();
+        let repo = TestRepo::builder()
+            .seed("README.md", "seed", "seed")
+            .create();
         let root = repo.path();
-        run_git(&["checkout", "-b", "loom/derived"], root);
+        git(root, &["checkout", "-b", "loom/derived"]);
         std::fs::write(root.join("a.rs"), "ok").unwrap();
-        run_git(&["add", "a.rs"], root);
-        run_git(&["commit", "-m", "work"], root);
-        run_git(&["checkout", "main"], root);
-        run_git(&["merge", "--no-ff", "-m", "merge", "loom/derived"], root);
+        git(root, &["add", "a.rs"]);
+        git(root, &["commit", "-m", "work"]);
+        git(root, &["checkout", "main"]);
+        git(root, &["merge", "--no-ff", "-m", "merge", "loom/derived"]);
 
         let mut stage = make_stage("derived");
         stage.completed_commit = None;
@@ -172,7 +152,9 @@ mod tests {
 
     #[test]
     fn refuses_when_branch_missing_and_no_commit() {
-        let repo = init_repo();
+        let repo = TestRepo::builder()
+            .seed("README.md", "seed", "seed")
+            .create();
         let root = repo.path();
 
         let mut stage = make_stage("nope");

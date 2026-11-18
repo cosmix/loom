@@ -15,6 +15,7 @@ use toml_edit::value;
 use crate::fs::memory::archive_run_state;
 use crate::fs::work_dir::{self, WorkDir};
 use crate::parser::frontmatter::extract_frontmatter_field;
+use crate::planning::findings;
 
 pub(crate) mod commit;
 use commit::commit_post_completion_changes;
@@ -22,6 +23,9 @@ use commit::commit_post_completion_changes;
 // Filename prefix constants
 pub const IN_PROGRESS_PREFIX: &str = "IN_PROGRESS-";
 pub const DONE_PREFIX: &str = "DONE-";
+/// An abandoned plan at `<plan home>/archive/RETIRED-PLAN-<slug>.md`, where the home is
+/// `doc/plans` for a standalone plan or `doc/plans/<feature>` for a feature plan.
+pub const RETIRED_PREFIX: &str = "RETIRED-";
 
 // ===== Filename Operations =====
 
@@ -212,8 +216,9 @@ pub fn mark_plan_done_if_all_merged(work_dir: &WorkDir) -> Result<Option<PathBuf
         .main_project_root()
         .context("Cannot determine plan project root")?;
     // Rebuild from final memories before archiving/renaming. Failure keeps IN_PROGRESS retryable.
-    crate::fs::plan_review::generate(work_dir.root(), &root, &root, false)
+    let review = crate::fs::plan_review::generate(work_dir.root(), &root, &root, false)
         .context("Failed to generate final plan review")?;
+    import_review_findings(&root, &current_path, &review)?;
     if already_done {
         return Ok(None);
     }
@@ -225,7 +230,41 @@ pub fn mark_plan_done_if_all_merged(work_dir: &WorkDir) -> Result<Option<PathBuf
     Ok(Some(new_path))
 }
 
+/// Record the run review's open findings and questions in the plan's feature ledger. The import
+/// is idempotent, so the repeated calls for an already-DONE plan add nothing; a failure leaves an
+/// in-progress plan retryable. A plan outside the project root cannot sit in a feature's plan
+/// home, so it has nothing to import; that case warns.
+fn import_review_findings(root: &Path, plan: &Path, review: &Path) -> Result<()> {
+    let plan_rel = match plan.strip_prefix(root) {
+        Ok(relative) => relative,
+        Err(_) if plan.is_relative() => plan,
+        Err(_) => {
+            eprintln!(
+                "  {} Warning: plan {} is outside the project root; its review findings were not imported",
+                "⚠".yellow().bold(),
+                plan.display()
+            );
+            return Ok(());
+        }
+    };
+    let text = fs::read_to_string(review)
+        .with_context(|| format!("Failed to read run review {}", review.display()))?;
+    findings::import_review(root, plan_rel, &text)
+        .context("Failed to import run review findings")?;
+    Ok(())
+}
+
 fn rename_completed_plan(work_dir: &WorkDir, current_path: &Path, new_path: &Path) -> Result<()> {
+    match fs::symlink_metadata(new_path) {
+        Ok(_) => anyhow::bail!(
+            "refusing to overwrite completed plan {}",
+            new_path.display()
+        ),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => {
+            return Err(error).with_context(|| format!("checking {}", new_path.display()))
+        }
+    }
     fs::rename(current_path, new_path).with_context(|| {
         format!(
             "Failed to rename plan file from {} to {}",
@@ -233,7 +272,15 @@ fn rename_completed_plan(work_dir: &WorkDir, current_path: &Path, new_path: &Pat
             new_path.display()
         )
     })?;
-    update_plan_source_path(work_dir, new_path)?;
+    if let Err(error) = update_plan_source_path(work_dir, new_path) {
+        return match fs::rename(new_path, current_path) {
+            Ok(()) => Err(error.context("Plan rename rolled back after config update failed")),
+            Err(rollback) => Err(error.context(format!(
+                "Plan moved to {} but rollback failed: {rollback}; repair the configured source path before retrying",
+                new_path.display()
+            ))),
+        };
+    }
     println!(
         "  {} Plan marked as done: {}",
         "✓".green().bold(),
@@ -263,3 +310,6 @@ fn archive_run_state_before_done(work_dir: &WorkDir, main_root: &Path) -> Result
 #[cfg(test)]
 #[path = "plan_lifecycle_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+mod import_tests;

@@ -24,6 +24,8 @@ use crate::context::store::ContextStore;
 use crate::fs::work_dir::WorkDir;
 use crate::models::stage::Stage;
 use crate::orchestrator::merge_lifecycle::MergeLifecycle;
+use crate::test_git::git as git_ok;
+use crate::test_git::TestRepo;
 use std::fs;
 use std::path::{Path, PathBuf};
 use tempfile::TempDir;
@@ -32,24 +34,6 @@ use tempfile::TempDir;
 /// the stage record. Supplying it once here is the invariant under test.
 const PLAN_ID: &str = "PLAN-source-channel";
 const STAGE_ID: &str = "source-ranker";
-
-/// Run one git command with ambient global/system config neutralized, so a
-/// developer's or CI runner's `~/.gitconfig` cannot change test behavior.
-fn git_ok(root: &Path, args: &[&str]) {
-    let output = std::process::Command::new("git")
-        .args(args)
-        .current_dir(root)
-        .env("GIT_CONFIG_GLOBAL", root.join(".loom-test-no-global"))
-        .env("GIT_CONFIG_SYSTEM", root.join(".loom-test-no-system"))
-        .env("GIT_CONFIG_NOSYSTEM", "1")
-        .output()
-        .unwrap();
-    assert!(
-        output.status.success(),
-        "git {args:?} failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-}
 
 /// A project root with `.loom/work/config.toml` naming [`PLAN_ID`], and a committed
 /// git repository at `.worktrees/<stage>` for the overlay reconcile to walk —
@@ -71,9 +55,10 @@ fn project_with_stage_worktree() -> TempDir {
 
     let worktree = root.join(".worktrees").join(STAGE_ID);
     fs::create_dir_all(&worktree).unwrap();
-    git_ok(&worktree, &["init", "-b", "main"]);
-    git_ok(&worktree, &["config", "user.email", "t@t.com"]);
-    git_ok(&worktree, &["config", "user.name", "t"]);
+    TestRepo::builder()
+        .identity("t", "t@t.com")
+        .no_seed()
+        .init_in(&worktree);
     fs::write(worktree.join("ranked.rs"), "pub fn rank_source() {}\n").unwrap();
     git_ok(&worktree, &["add", "ranked.rs"]);
     git_ok(&worktree, &["commit", "-m", "seed"]);

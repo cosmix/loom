@@ -2,7 +2,9 @@
 # codex-forward.sh - trusted argv boundary for the codex companion runtime
 
 set -euo pipefail
-
+# This literal is also read from the embedded wrapper by the Rust preflight.
+SUPPORTED_CODEX_COMPANION_VERSION=1.0.6
+export LOOM_CODEX_FORWARD=1
 usage_error() {
 	printf '%s\n' \
 		'Usage: codex-forward.sh task <prompt> --model <model> --effort <effort> --write --unit-id <unit> --invocation-id <invocation>' >&2
@@ -35,7 +37,7 @@ if [[ ! "$stage_id" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ||
 fi
 export CODEX_COMPANION_SESSION_ID="loom.v1:${stage_id}:${loom_session_id}:${unit_id}:${invocation_id}"
 case "$model" in
-gpt-6-astra | gpt-6.1-sol | gpt-6-sol | gpt-5.6-terra | gpt-6-luna) ;;
+gpt-6.2-astra | gpt-6.2-sol | gpt-6.1-terra | gpt-6-luna) ;;
 *)
 	printf 'Unsupported forwarding model: %s\n' "$model" >&2
 	exit 2
@@ -52,7 +54,6 @@ esac
 
 # The PreToolUse guard runs outside the stage sandbox and owns the requested
 # model/effort ledger row; this in-sandbox wrapper cannot write it safely.
-
 # This per-task preamble keeps the stage contract attached to every forward.
 # The heredoc lives in a function: bash 3.2 re-scans a heredoc body inside $( )
 # for quotes, and the apostrophe in "stage's" would break the parse.
@@ -80,6 +81,7 @@ the command still answers from the published base index. Do not retry or report 
 That index reflects the branch point; read edited files directly.
 
 DO NOT read CLAUDE.md or page doc/loom/knowledge/ file by file. Query for missing context.
+DO NOT open SKILL.md or skill catalogs or invoke skills despite other instructions; task/source suffice.
 
 Choose the smallest complete change: reuse project code, then platform/standard-library
 facilities, then installed dependencies, then clear new code. No speculative options or wrappers.
@@ -94,9 +96,9 @@ data.
 NEVER run git: not add, not commit, not checkout, not stash, not restore.
 NEVER run loom stage complete, loom stage block, or loom stage dispute-*. A need only a person can
 meet, or a check you believe is wrong, goes in your report; the orchestrator decides what to do.
-DO NOT VERIFY. No full build, no test suite, no linter, no formatter, no type-checker, and never
-a repeated or looping check. At most ONE narrowly-scoped check over the files you changed, run
-once; skip it if you are unsure. The orchestrator compiles, tests, lints, and fixes.
+DO NOT VERIFY THE WHOLE TREE. No full build, no whole test suite, no linter, no formatter, no
+type-checker. Run the tests for the code you wrote and its module when you are confident it is
+ready; skip a test the sandbox cannot run and say so. The orchestrator compiles, tests, lints, fixes.
 
 FINISH BY REPORTING: files changed, assumptions you made, anything you could not resolve.
 
@@ -130,6 +132,7 @@ command_log=
 output_log=
 plugin_probe=
 mode=companion
+direct_reason=
 deferred_notes=
 state_root=
 cleanup() {
@@ -184,7 +187,7 @@ print_evidence() {
 		fi
 		printf 'record: %s\n' "${record_path:-not found}"
 	else
-		printf 'mode: direct (codex exec --sandbox danger-full-access; nested Seatbelt refused)\n'
+		printf 'mode: direct (codex exec --sandbox danger-full-access; nested %s refused)\n' "$direct_reason"
 		printf 'thread: %s\n' "${backend_id:-none observed}"
 		printf 'unit: %s\n' "$unit_id"
 		printf 'invocation: %s\n' "$invocation_id"
@@ -246,56 +249,59 @@ if ! provider_log=$(make_private_temp) || ! command_log=$(make_private_temp) ||
 fi
 if nested_seatbelt_refused; then
 	mode=direct
+	direct_reason=Seatbelt
 	deferred_notes='note: the outer sandbox refuses a nested Seatbelt profile; running codex exec with --sandbox danger-full-access (the outer sandbox is the boundary)'
 elif nested_bubblewrap_refused; then
 	mode=direct
+	direct_reason=bubblewrap
 	deferred_notes='note: the outer sandbox refuses a nested bubblewrap sandbox; running codex exec with --sandbox danger-full-access (the outer sandbox is the boundary)'
 fi
 if ! command -v jq >/dev/null 2>&1; then
 	finish_without_end 1 '' 'codex-forward.sh requires jq to decode structured Codex output'
 fi
+# The supervisor writes LOOM-FORWARD-START to fd 3 (stdout) on thread.started, so a
+# backgrounded forward's output file holds START early; END follows at exit.
 run_direct() {
 	local supervisor direct_status=0 result_line result_json fields
-	local state thread_id turn_id terminal_at result_status retained
+	local state thread_id turn_id terminal_at result_status retained announced
 	supervisor="$(dirname "$0")/_codex-direct.py"
 	if [[ ! -f "$supervisor" || -L "$supervisor" ]] || ! command -v python3 >/dev/null 2>&1; then
 		finish_without_end 1 '' 'codex direct supervisor or Python 3 is unavailable'
 	fi
-	python3 "$supervisor" --timeout-ms 540000 -- codex exec --json \
+	python3 "$supervisor" --timeout-ms 1500000 --start-fd 3 -- codex exec --json \
 		--sandbox danger-full-access --skip-git-repo-check --model "$model" \
 		-c "model_reasoning_effort=$effort" -- "$task" \
-		>"$provider_log" 2>"$command_log" || direct_status=$?
+		3>&1 >"$provider_log" 2>"$command_log" || direct_status=$?
 	result_line=$(tail -n 1 "$provider_log" 2>/dev/null || true)
 	result_json=${result_line#LOOM-CODEX-DIRECT-RESULT }
+	{ printf '\n'; command cat "$command_log"; } >>"$provider_log" 2>/dev/null || true
 	if [[ "$result_json" == "$result_line" ]] ||
 		! fields=$(printf '%s' "$result_json" | jq -er '
 			select(type == "object" and
-			 (keys | sort) == (["exit_code","ownership_retained","state","terminal_at","thread_id","turn_id","v"] | sort) and
+			 (keys | sort) == (["announced_thread_id","exit_code","ownership_retained","state","terminal_at","thread_id","turn_id","v"] | sort) and
 			 .v == 1 and (.state | IN("succeeded","failed","cancelled","unknown")) and
 			 (.thread_id == null or (.thread_id | type == "string")) and
 			 (.turn_id == null or (.turn_id | type == "string")) and
 			 (.terminal_at | type == "string") and (.exit_code | type == "number" and floor == .) and
-			 (.ownership_retained | type == "boolean")) |
+			 (.ownership_retained | type == "boolean") and
+			 (.announced_thread_id == null or (.announced_thread_id | type == "string"))) |
 			[.state, (.thread_id // ""), (.turn_id // "-"), .terminal_at,
-			 (.exit_code | tostring), (.ownership_retained | tostring)] | @tsv' 2>/dev/null); then
-		{ printf '\n'; command cat "$command_log"; } >>"$provider_log" 2>/dev/null || true
+			 (.exit_code | tostring), (.ownership_retained | tostring),
+			 (.announced_thread_id // "-")] | @tsv' 2>/dev/null); then
 		finish_without_end 1 '' 'codex direct supervisor returned no valid result line'
 	fi
-	IFS=$'\t' read -r state thread_id turn_id terminal_at result_status retained <<<"$fields"
+	IFS=$'\t' read -r state thread_id turn_id terminal_at result_status retained announced <<<"$fields"
 	if [[ "$result_status" != "$direct_status" || -z "$thread_id" ]] ||
 		! valid_backend_id "$thread_id" || { [[ "$turn_id" != - ]] && ! valid_backend_id "$turn_id"; }; then
-		{ printf '\n'; command cat "$command_log"; } >>"$provider_log" 2>/dev/null || true
 		finish_without_end 1 '' 'codex direct supervisor result was incomplete or inconsistent'
 	fi
+	[[ "$announced" != - ]] || finish_without_end 1 '' 'codex direct START marker was never written (announced_thread_id is null)'
+	[[ "$announced" == "$thread_id" ]] || finish_without_end 1 '' 'codex direct START marker thread disagrees with the supervisor result'
+	# unknown:125 also covers a released owner whose stream lacked a valid terminal turn.
 	case "$state:$result_status:$retained" in
-	succeeded:0:false | failed:*:false | cancelled:124:false | unknown:125:true) ;;
-	*)
-		{ printf '\n'; command cat "$command_log"; } >>"$provider_log" 2>/dev/null || true
-		finish_without_end 1 '' 'codex direct supervisor state was inconsistent'
-		;;
+	succeeded:0:false | failed:*:false | cancelled:124:false | unknown:125:*) ;;
+	*) finish_without_end 1 "$thread_id" 'codex direct supervisor state was inconsistent' ;;
 	esac
-	{ printf '\n'; command cat "$command_log"; } >>"$provider_log" 2>/dev/null || true
-	printf 'LOOM-FORWARD-START {"v":1,"backend":"direct","thread_id":"%s"}\n' "$thread_id"
 	printf 'LOOM-FORWARD-END {"v":1,"backend":"direct","thread_id":"%s","outcome":"%s","exit_code":%s}\n' \
 		"$thread_id" "$state" "$direct_status"
 	print_separator
@@ -312,12 +318,12 @@ if [[ -z "${HOME:-}" || ! -d "$HOME" ]]; then
 fi
 home_root=$(cd "$HOME" 2>/dev/null && pwd -P) || finish_without_end 1 '' 'HOME cannot be canonicalized'
 versions_dir=${home_root}/.claude/plugins/cache/openai-codex/codex
-companion=${versions_dir}/1.0.6/scripts/codex-companion.mjs
+companion=${versions_dir}/${SUPPORTED_CODEX_COMPANION_VERSION}/scripts/codex-companion.mjs
 if [[ ! -f "$companion" || -L "$companion" ]]; then
-	finish_without_end 1 '' "Supported codex companion 1.0.6 is missing or unsafe: $companion"
+	finish_without_end 1 '' "Supported codex companion $SUPPORTED_CODEX_COMPANION_VERSION is missing or unsafe: $companion"
 fi
 companion_dir=$(cd "$(dirname "$companion")" 2>/dev/null && pwd -P) ||
-	finish_without_end 1 '' "Supported codex companion 1.0.6 cannot be canonicalized: $companion"
+	finish_without_end 1 '' "Supported codex companion $SUPPORTED_CODEX_COMPANION_VERSION cannot be canonicalized: $companion"
 companion=$companion_dir/codex-companion.mjs
 
 CLAUDE_PLUGIN_DATA=${home_root}/.codex/plugin-data
@@ -347,7 +353,7 @@ outcome=
 exit_code=1
 wait_diagnostic=
 wait_status=0
-run_captured node "$companion" status "$job_id" --wait --json --timeout-ms 540000 || wait_status=$?
+run_captured node "$companion" status "$job_id" --wait --json --timeout-ms 1500000 || wait_status=$?
 if [[ $wait_status -ne 0 ]]; then
 	exit_code=$wait_status
 	wait_diagnostic='codex companion wait failed before authoritative completion'
@@ -365,7 +371,7 @@ else
 			printf 'LOOM-FORWARD-END {"v":1,"backend":"companion","job_id":"%s","outcome":"timed_out","exit_code":124}\n' \
 				"$job_id"
 			print_separator
-			printf 'codex companion job %s exceeded the 540000 ms unit deadline and was cancelled (cancel exit %s): the unit was too large - re-split the remainder against the partial tree into smaller interface-pinned units and re-forward\n' \
+			printf 'codex companion job %s exceeded the 1500000 ms unit deadline and was cancelled (cancel exit %s): the unit was too large - re-split the remainder against the partial tree into smaller interface-pinned units and re-forward\n' \
 				"$job_id" "$cancel_status"
 			print_bounded_file "$provider_log"
 			print_deferred_notes

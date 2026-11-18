@@ -1,13 +1,13 @@
 ---
 sources:
-  - loom/src/context/refresh/source_graph.rs
-  - loom/src/context/graph_store/mod.rs
+- loom/src/context/refresh/source_graph.rs
+- loom/src/context/graph_store/mod.rs
 verified: 5546d3c47ddc1f8890b40157134f057393b8b90e
 ---
 
 # Source Graph
 
-> Source graph contract
+>
 
 ## What It Is, and What It Is Not
 
@@ -76,8 +76,9 @@ extraction-time state (relink uses it, see [Source Graph Resolved View](source-g
 
 **Candidate sets.** A `Syntax` edge whose target is ambiguous keeps `candidates`: sorted
 node ids, at most `MAX_CANDIDATES = 8`; with more than 8 the list stays empty and the edge is
-plain unresolved. Traversal (`impact_with`, which `impact`, `reachable` and impact-selected
-tests share) treats each candidate as a reverse edge trusted at
+plain unresolved. Traversal (`ImpactOptions::impact_from`, a multi-source reverse walk over one node map and reverse
+adjacency, and `impact_with`, its single-start case; `impact`, `reachable` and impact-selected
+tests share them) treats each candidate as a reverse edge trusted at
 `AMBIGUOUS_CANDIDATE_CONFIDENCE = 0.2`, so the hit's weakest provenance is `syntax` and it is
 flagged `via_candidates`. Retrieval expansion never follows candidates: they sit below its 0.5
 floor. A plan check that must not rest on candidates sets `min_confidence` above 0.2.
@@ -212,7 +213,7 @@ structural instead of a rule twelve `extract()` implementations each have to rem
 
 Three layers of identity stop a cached extraction from an older build being reused.
 
-**Graph schema.** `GRAPH_SCHEMA_VERSION` (`context/source_graph/mod.rs`, currently 3) is stamped
+**Graph schema.** `GRAPH_SCHEMA_VERSION` (`context/source_graph/mod.rs`, currently 4) is stamped
 into every `GraphLayer.schema_version`. A layer whose version differs is never current and never a
 reuse source: `layer_is_current`, `build_layer` (as a previous layer) and `build_worktree_graph`
 (treats it as absent) all refuse it. A layer file that fails to deserialize is **corrupt**, not an
@@ -301,8 +302,10 @@ degrade retrieval, never block a run.
 
 A base for `HEAD` is reused when it exists and is `layer_is_current` (current schema version
 and every entry current under `entries_are_current`); a stale or corrupt base is replaced in
-place through `replace_base`. An overlay is reused when its `generation` equals the tree's and
-it is `layer_is_current`. The result is a
+place through `replace_base`. An overlay is reused when its `generation` equals the tree's,
+it is `layer_is_current`, and it is either complete (`GraphLayer.complete`, built with no base, read alone) or a delta
+whose recorded base exists at the current schema; a delta whose base was pruned no longer describes the tree, and
+reconciling rebuilds it complete. The result is a
 `SnapshotOutcome { action, reason, revision, generation, overlay, counters, elapsed, persisted,
 serving }` whose `SnapshotAction` is `Reused`, `Updated` (some files reused), `Rebuilt` or
 `Unavailable`. `persisted` is false when the memory fallback served the layer, when

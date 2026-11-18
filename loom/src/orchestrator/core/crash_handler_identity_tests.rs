@@ -12,7 +12,7 @@ use crate::models::session::{Session, SessionStatus};
 use crate::models::stage::{Stage, StageStatus};
 use crate::orchestrator::core::OrchestratorConfig;
 use crate::plan::ExecutionGraph;
-use crate::verify::transitions::{load_stage, save_stage};
+use crate::verify::transitions::{load_stage, save_stage, update_stage};
 use serial_test::serial;
 use std::path::Path;
 
@@ -127,6 +127,85 @@ fn the_stages_own_session_crashing_still_moves_the_stage() {
         StageStatus::Executing,
         "a crash of the stage's own session must move it out of Executing"
     );
+}
+
+#[test]
+#[serial]
+fn successor_assigned_after_observation_survives_locked_crash_update() {
+    let temp = tempfile::tempdir().unwrap();
+    let work_dir = temp.path().join(".loom/work");
+    let stage = executing_stage(&work_dir, "session-old");
+    let mut orchestrator = orchestrator_for(&work_dir, temp.path());
+    assert!(orchestrator
+        .stage_answerable_for_crash(&stage.id, "session-old")
+        .unwrap()
+        .is_some());
+
+    update_stage(&stage.id, &work_dir, |current| {
+        current.session = Some("session-new".to_string());
+        Ok(())
+    })
+    .unwrap();
+    let mut handle = Session::new();
+    handle.id = "session-new".to_string();
+    orchestrator
+        .active_sessions
+        .insert(stage.id.clone(), handle);
+    orchestrator.handle_answerable_crash(&stage.id, "session-old", None);
+
+    let after = load_stage(&stage.id, &work_dir).unwrap();
+    assert_eq!(after.status, StageStatus::Executing);
+    assert_eq!(after.session.as_deref(), Some("session-new"));
+    assert_eq!(after.retry_count, 0);
+    assert!(after.failure_info.is_none());
+    assert_eq!(orchestrator.active_sessions[&stage.id].id, "session-new");
+    assert!(orchestrator.reported_crashes.contains("session-old"));
+}
+
+#[test]
+#[serial]
+fn failed_locked_crash_read_keeps_event_and_handle_for_one_retry() {
+    let temp = tempfile::tempdir().unwrap();
+    let work_dir = temp.path().join(".loom/work");
+    let stage = executing_stage(&work_dir, "session-old");
+    let mut orchestrator = orchestrator_for(&work_dir, temp.path());
+    let mut handle = Session::new();
+    handle.id = "session-old".to_string();
+    handle.created_at = chrono::Utc::now() - chrono::Duration::minutes(10);
+    orchestrator
+        .active_sessions
+        .insert(stage.id.clone(), handle);
+    assert!(orchestrator
+        .stage_answerable_for_crash(&stage.id, "session-old")
+        .unwrap()
+        .is_some());
+
+    let stages = work_dir.join("stages");
+    let path = crate::fs::stage_files::find_stage_file(&stages, &stage.id)
+        .unwrap()
+        .unwrap();
+    let saved = path.with_extension("saved");
+    std::fs::rename(&path, &saved).unwrap();
+    std::fs::create_dir(&path).unwrap();
+    orchestrator.handle_answerable_crash(&stage.id, "session-old", None);
+    assert!(!orchestrator.reported_crashes.contains("session-old"));
+    assert_eq!(orchestrator.active_sessions[&stage.id].id, "session-old");
+
+    std::fs::remove_dir(&path).unwrap();
+    std::fs::rename(saved, path).unwrap();
+    for _ in 0..2 {
+        orchestrator
+            .handle_session_crashed("session-old", Some(stage.id.clone()), None)
+            .unwrap();
+    }
+    let after = load_stage(&stage.id, &work_dir).unwrap();
+    assert_eq!(after.status, StageStatus::Blocked);
+    assert_eq!(after.retry_count, 1);
+    assert_eq!(
+        after.failure_info.unwrap().failure_type,
+        crate::models::failure::FailureType::SessionCrash
+    );
+    assert!(!orchestrator.active_sessions.contains_key(&stage.id));
 }
 
 /// Recursively list every regular file under `dir`, relative to `dir`,

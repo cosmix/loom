@@ -1,0 +1,344 @@
+/* The transcript's parts: turns, the user's bubble, the assistant's prose, notices and the
+ * breaks. Imported by chat-surface.css; see its header for why these rules are unlayered. The
+ * working card and the tool rows are in chat-tools.css, the ending's cards in chat-cards.css.
+ * Every size is set here, on classes the transcript carries wherever it mounts (the panel, the
+ * kickoff screen, the help scene), so it never shrinks outside the panel. Chrome is --type-body,
+ * secondary text (a time, a control) --type-ui, the user's words 15px and the assistant's prose
+ * the chrome face at 16px.
+ */
+@import "./chat-tools.css";
+@import "./chat-cards.css";
+
+.chat-transcript {
+  /* The cards' corner and the rise's curve, shared by every part of the transcript. */
+  --chat-card-corner: 14px;
+  --chat-ease: cubic-bezier(0.16, 1, 0.3, 1);
+  /* The scroller is the containing block of everything positioned inside it. Without it an
+   * sr-only span (position: absolute) with no positioned ancestor in the log, such as the typing
+   * bubble's "Working", is placed against Transcript's relative root outside the scroller: it sits
+   * at its static offset deep in the flow, is never clipped, and its overflow runs up through the
+   * panel or the kickoff page until the document or `main` scrolls with the whole chat. */
+  position: relative;
+  padding: var(--space-2) var(--chat-gutter) var(--space-4);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  font-size: var(--type-body);
+  line-height: var(--leading-body);
+}
+
+/* The log's focus ring is drawn inside its edge: its frame clips at that edge (chat-column.css). */
+.chat-transcript:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: -2px;
+}
+
+/* The transcript is a column with one 16px gap; turns are set apart by that space alone. */
+.chat-transcript-flow {
+  display: grid;
+  min-width: 0;
+  gap: var(--space-4);
+}
+
+.chat-turn {
+  display: grid;
+  min-width: 0;
+  gap: var(--space-3);
+}
+
+/* Items inside a turn. The column is pinned to the turn's width: an auto track grows to the
+ * widest item's min-content (an unbroken chip quote, a tool row), and every item, the assistant's
+ * lists with them, would then run past the transcript's right gutter. */
+.chat-turn-items {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-3);
+}
+
+.chat-turn-toggle {
+  display: block;
+  width: 100%;
+  overflow: hidden;
+  padding: var(--space-1) 0;
+  border: 0;
+  border-radius: var(--corner-control);
+  background: transparent;
+  color: var(--muted-foreground);
+  font-size: var(--type-body);
+  text-align: start;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.chat-turn-toggle:hover {
+  color: var(--foreground);
+}
+
+.chat-turn-toggle:focus-visible,
+.chat-tool-head:focus-visible,
+.chat-tool-fold > summary:focus-visible,
+.chat-follow:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+/*
+ * Floats over the transcript when new activity arrives below the fold: a raised fill, an edge and
+ * the floating shadow, as the other floating surfaces draw them (ui/DESIGN.md, Floating surfaces).
+ */
+.chat-follow {
+  position: absolute;
+  inset-block-end: var(--space-3);
+  inset-inline-start: 50%;
+  height: var(--control-height-sm);
+  padding: 0 var(--space-3);
+  border: 1px solid var(--popover-border);
+  border-radius: 999px;
+  background: var(--popover);
+  box-shadow: var(--plan-shadow), var(--popover-lift);
+  color: var(--foreground);
+  font-size: var(--type-body);
+  font-weight: 500;
+  transform: translateX(-50%);
+  cursor: pointer;
+}
+
+.chat-follow:hover {
+  background: color-mix(in oklab, var(--foreground) 10%, var(--popover));
+}
+
+/* ── The user's words ──────────────────────────────────────────────────────── */
+
+/* A bubble on the right, --muted on the --card panel, with one square corner at its foot. What
+ * follows the bubble (a delivery state, the sent chips, Copy and the time) sits under it, right. */
+.chat-user {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr);
+  justify-items: end;
+  gap: var(--space-2);
+}
+
+.chat-user-body {
+  display: grid;
+  gap: var(--space-2);
+  max-width: 86%;
+  min-width: 0;
+  padding: 10px 14px;
+  border-radius: var(--chat-card-corner) var(--chat-card-corner) 4px var(--chat-card-corner);
+  background: var(--muted);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  font-size: var(--type-title);
+  font-weight: 400;
+  line-height: var(--leading-body);
+}
+
+.chat-user-body > p {
+  margin: 0;
+  min-width: 0;
+}
+
+/* A passage the user attached sits inside the bubble above the words: the reading face, muted,
+ * three lines at most. */
+.chat-user-quote {
+  display: -webkit-box;
+  overflow: hidden;
+  margin: 0;
+  color: var(--muted-foreground);
+  font-family: var(--font-reading);
+  font-size: var(--type-title);
+  font-weight: 400;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+
+.chat-message-controls {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--muted-foreground);
+  font-size: var(--type-ui);
+}
+
+/* An offer's opening: one quiet centred line, the label and Show, never a bubble. Shown, the
+ * prompt opens under it as muted pre-wrapped text. */
+.chat-opening {
+  justify-items: center;
+  color: var(--muted-foreground);
+  font-size: var(--type-ui);
+  font-weight: 500;
+}
+
+.chat-opening-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: center;
+  gap: var(--space-2);
+  margin: 0;
+  text-align: center;
+}
+
+.chat-opening-prompt {
+  margin: 0;
+  justify-self: stretch;
+  font-weight: 400;
+  text-align: start;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.chat-opening-prompt:empty {
+  display: none;
+}
+
+/* ── The assistant's prose ─────────────────────────────────────────────────── */
+
+/* The assistant's prose at the reply's full width, two sizes over the chrome. */
+.chat-assistant-text .md {
+  max-width: 100%;
+  font-family: var(--font-sans);
+  font-size: 16px;
+  line-height: 1.55;
+}
+
+.chat-assistant-text .md :is(code, pre, kbd) {
+  font-family: var(--font-mono);
+}
+
+/* The typing bubble at the end of the working turn: the user's bubble mirrored to the left, its
+ * square corner at the bottom left, the size of its three dots. */
+.chat-typing {
+  display: flex;
+  align-items: center;
+  justify-self: start;
+  gap: 5px;
+  width: fit-content;
+  padding: 10px 14px;
+  border-radius: var(--chat-card-corner) var(--chat-card-corner) var(--chat-card-corner) 4px;
+  background: var(--muted);
+}
+
+.chat-typing-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--muted-foreground);
+  opacity: 0.35;
+  animation: chat-typing 1.2s ease-in-out infinite;
+}
+
+.chat-typing-dot:nth-child(2) {
+  animation-delay: 160ms;
+}
+
+.chat-typing-dot:nth-child(3) {
+  animation-delay: 320ms;
+}
+
+/* ── Notices ───────────────────────────────────────────────────────────────── */
+
+/* A notice is a centred muted line. A stop (auto mode, interrupt) is drawn as a break in the
+ * transcript: the line between two rules, so it reads as "the session stopped here". */
+.chat-notice-item {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: var(--type-body);
+}
+
+.chat-notice-item > span {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.chat-notice-item:is([data-kind="stopped"], [data-kind="interrupted"])::before,
+.chat-notice-item:is([data-kind="stopped"], [data-kind="interrupted"])::after {
+  content: "";
+  flex: 1 1 0;
+  border-block-start: 1px solid var(--hairline);
+}
+
+.chat-notice-item[data-kind="api_error"] .chat-notice-glyph {
+  color: var(--tone-blocked);
+}
+
+/* ── Motion ────────────────────────────────────────────────────────────────── */
+
+/* A new message, card or row enters with a rise; items arriving together are staggered 70ms.
+ * A spinner's turn is its own. */
+@keyframes chat-rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.985);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* Each typing dot rises 3px and comes up to full strength a third of the way through its cycle,
+ * and is back at rest by 60%. */
+@keyframes chat-typing {
+  0%,
+  60%,
+  100% {
+    opacity: 0.35;
+    transform: none;
+  }
+
+  30% {
+    opacity: 1;
+    transform: translateY(-3px);
+  }
+}
+
+.chat-turn-items > *,
+.chat-tool-fold > .chat-tool-run,
+.chat-decision,
+.chat-wrap,
+.chat-left-behind,
+.chat-starting,
+.chat-typing {
+  /* `backwards`, never `both`, for the reason in chat-composer.css: a sent chip's fixed tooltip
+   * (.chat-passage) sits inside these items, and a held end transform would displace it. */
+  animation: chat-rise 460ms var(--chat-ease, cubic-bezier(0.16, 1, 0.3, 1)) backwards;
+}
+
+:is(.chat-turn-items, .chat-tool-fold) > :nth-child(2) {
+  animation-delay: 70ms;
+}
+
+:is(.chat-turn-items, .chat-tool-fold) > :nth-child(3) {
+  animation-delay: 140ms;
+}
+
+:is(.chat-turn-items, .chat-tool-fold) > :nth-child(n + 4) {
+  animation-delay: 210ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-turn-items > *,
+  .chat-tool-fold > .chat-tool-run,
+  .chat-decision,
+  .chat-wrap,
+  .chat-left-behind,
+  .chat-starting,
+  .chat-typing {
+    animation: none;
+  }
+
+  .chat-typing-dot {
+    opacity: 0.6;
+    animation: none;
+  }
+}

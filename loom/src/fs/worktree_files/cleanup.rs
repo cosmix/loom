@@ -8,11 +8,11 @@ use super::sessions::cleanup_sessions_for_stage;
 use super::signals::cleanup_signals_for_sessions;
 use super::stages::archive_stage_file;
 
-/// Clean up all files associated with a stage after successful merge
+/// Perform legacy file cleanup for a stage.
 ///
 /// This function removes or archives:
 /// - Session files associated with the stage
-/// - Signal files for those sessions
+/// - Signal files for those sessions, when session cleanup is enabled
 /// - Optionally the stage file itself
 ///
 /// # Arguments

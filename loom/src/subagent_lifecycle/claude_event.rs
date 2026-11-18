@@ -3,7 +3,6 @@ use super::model::{
     LifecycleProducer, LifecycleRecord, LifecycleState, WorkerIdentity, LIFECYCLE_VERSION,
 };
 use chrono::{DateTime, Utc};
-use sha2::{Digest, Sha256};
 use std::path::Path;
 
 pub(super) fn make_stop_record(
@@ -149,7 +148,7 @@ fn canonical_digest(prefix: &str, fields: &[&str]) -> Result<String, ClaudeEvide
 }
 
 pub(super) fn digest(bytes: &[u8]) -> String {
-    format!("sha256:{}", hex::encode(Sha256::digest(bytes)))
+    format!("sha256:{}", crate::utils::sha256_hex(bytes))
 }
 
 fn path_text(path: &Path) -> Result<&str, ClaudeEvidenceError> {
@@ -157,6 +156,17 @@ fn path_text(path: &Path) -> Result<&str, ClaudeEvidenceError> {
         .ok_or_else(|| ClaudeEvidenceError::Unsafe("non-UTF-8 transcript path".into()))
 }
 
-fn malformed(error: impl std::fmt::Display) -> ClaudeEvidenceError {
+pub(super) fn malformed(error: impl std::fmt::Display) -> ClaudeEvidenceError {
     ClaudeEvidenceError::Malformed(error.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn transcript_digest_is_pinned() {
+        assert_eq!(
+            super::digest(br#"{"type":"result","result":"done"}"#),
+            "sha256:e897dc87287c34d2767788acfff73816a69832fce9980d01d6b0805575ce4ec3"
+        );
+    }
 }

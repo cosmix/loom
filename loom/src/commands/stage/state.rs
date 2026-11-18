@@ -8,7 +8,7 @@ use crate::fs::stage_request::{append_to_spool, spool_path, spool_target_from_cw
 use crate::models::session::Session;
 use crate::models::stage::{Stage, StageStatus};
 use crate::orchestrator::session_registry::{
-    live_sessions_for_stage, orphan_evidence, OrphanEvidence,
+    live_sessions_for_stage_admitted, orphan_evidence, OrphanEvidence,
 };
 use crate::orchestrator::terminal::backend::SessionBackend;
 use crate::orchestrator::terminal::native;
@@ -18,6 +18,7 @@ use crate::verify::transitions::update_stage;
 
 #[path = "state/loop_recovery/mod.rs"]
 mod loop_recovery;
+use loop_recovery::reset_and_cancel;
 #[path = "state_relay.rs"]
 mod relay;
 
@@ -136,9 +137,10 @@ impl LiveAgent {
 
 /// Every live agent process associated with `stage_id`: sessions the
 /// registry can account for, plus orphans it can only see via PID evidence
-/// (e.g. after a daemon crash severed `stage.session`).
+/// (e.g. after a daemon crash severed `stage.session`). The caller holds the
+/// stage's admission lock.
 fn live_agents_for(work_dir: &Path, stage_id: &str) -> Result<Vec<LiveAgent>> {
-    let mut agents: Vec<LiveAgent> = live_sessions_for_stage(work_dir, stage_id)?
+    let mut agents: Vec<LiveAgent> = live_sessions_for_stage_admitted(work_dir, stage_id)?
         .into_iter()
         // The judge is not an agent working the stage: it must neither block
         // a reset nor be killed by one, and this is also what lets an
@@ -223,31 +225,13 @@ fn kill_orphan_session(work_dir: &Path, evidence: &OrphanEvidence) -> Result<()>
 /// Reset a stage to pending
 ///
 /// NOTE: This is a manual recovery command that intentionally bypasses state machine validation.
-/// WaitingForDeps has no incoming transitions because it's the initial state. For recovery scenarios,
-/// we allow direct assignment to reset stages to their initial state.
+/// WaitingForDeps has no incoming transitions because it's the initial state, so the reset goes
+/// through `Stage::reset_to_waiting_for_deps`, which assigns it directly without the error-level
+/// log of a forced transition.
 pub fn reset(stage_id: String, hard: bool, kill_session: bool) -> Result<()> {
     let work_dir = crate::commands::common::work_dir_path()?;
     let runtime = loop_recovery::OsRuntime::new(&work_dir);
     reset_and_cancel(&work_dir, &stage_id, hard, kill_session, &runtime)
-}
-
-/// Reset the stage, then cancel its host job: a run for the attempt the reset
-/// discarded has nobody left to report to. The host-job store's stage lock
-/// makes this write safe against the daemon's runner; a failure is reported
-/// and the reset stands.
-fn reset_and_cancel(
-    work_dir: &Path,
-    stage_id: &str,
-    hard: bool,
-    kill_session: bool,
-    runtime: &impl loop_recovery::ResetRuntime,
-) -> Result<()> {
-    loop_recovery::reset_with(work_dir, stage_id, hard, kill_session, runtime)?;
-    let cancelled = crate::host_verify::submit::cancel(work_dir, stage_id, "stage reset");
-    if let Err(error) = cancelled {
-        eprintln!("Warning: could not cancel the host job of stage '{stage_id}': {error:#}");
-    }
-    Ok(())
 }
 
 /// Mark a stage as waiting for user input (called by hooks)
@@ -355,7 +339,22 @@ pub fn release(stage_id: String) -> Result<()> {
 }
 
 fn apply_reset(stage: &mut Stage) {
-    stage.status = StageStatus::WaitingForDeps;
+    // No edge leads to `WaitingForDeps`; the sanctioned reset write archives
+    // the failure, review reason, merge block and merge conflict the left
+    // status recorded. For an already waiting stage it archives nothing the
+    // calls below do not.
+    stage.reset_to_waiting_for_deps();
+    stage.retire_failure(
+        "loom stage reset",
+        crate::models::stage::IssueDisposition::Reset,
+    );
+    stage.retire_review_reason(
+        "loom stage reset",
+        crate::models::stage::IssueDisposition::Reset,
+    );
+    stage.merge_conflict = false;
+    stage.merge.handbacks = 0;
+    stage.merge.handback_refusal = None;
     stage.completed_at = None;
     stage.close_reason = None;
     stage.started_at = None;
@@ -365,7 +364,6 @@ fn apply_reset(stage: &mut Stage) {
     // A reset hands the stage to a fresh attempt with a fresh stall budget.
     stage.stall_recoveries = 0;
     stage.last_failure_at = None;
-    stage.failure_info = None;
     // Cleared in both soft and hard resets: by this point any live agent has
     // either been killed or refused (see `reset`), so a stage naming a
     // session it no longer owns is the exact inconsistency this fix exists
@@ -381,6 +379,10 @@ mod state_tests;
 #[cfg(test)]
 #[path = "state_host_job_tests.rs"]
 mod host_job_tests;
+
+#[cfg(test)]
+#[path = "state_reset_race_tests.rs"]
+mod reset_race_tests;
 
 #[cfg(test)]
 #[path = "state_waiting_tests.rs"]

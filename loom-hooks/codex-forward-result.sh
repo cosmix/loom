@@ -16,7 +16,7 @@ parse_forward_command() {
 		"${PARSED_WORDS[3]}" == --model && "${PARSED_WORDS[5]}" == --effort &&
 		"${PARSED_WORDS[7]}" == --write && "${PARSED_WORDS[8]}" == --unit-id &&
 		"${PARSED_WORDS[10]}" == --invocation-id ]] || return 1
-	case "${PARSED_WORDS[4]}" in gpt-6-astra | gpt-6.1-sol | gpt-6-sol | gpt-5.6-terra | gpt-6-luna) ;; *) return 1 ;; esac
+	case "${PARSED_WORDS[4]}" in gpt-6.2-astra | gpt-6.2-sol | gpt-6.1-terra | gpt-6-luna) ;; *) return 1 ;; esac
 	case "${PARSED_WORDS[6]}" in low | medium | high | xhigh | max | ultra) ;; *) return 1 ;; esac
 	loom_lifecycle_safe_id "${PARSED_WORDS[9]}" && [[ ${#PARSED_WORDS[9]} -le 64 ]] || return 1
 	[[ "${PARSED_WORDS[11]}" =~ ^inv-[0-9a-f]{32}$ ]]
@@ -42,7 +42,7 @@ load_payload() {
 load_authorization() {
 	local ledger="$WORK/subagents/$STAGE/codex.jsonl" bytes auth_fields
 	loom_lifecycle_plain_path "$ledger" file || return 1
-	bytes=$(wc -c <"$ledger" 2>/dev/null | tr -d "[:space:]") || return 1
+	bytes=$(wc -c 2>/dev/null <"$ledger" | tr -d "[:space:]") || return 1
 	[[ "$bytes" =~ ^[0-9]+$ ]] && ((bytes > 0 && bytes <= 4194304)) || return 1
 	AUTH_ROW=$(jq -sc --arg stage "$STAGE" --arg session "$SESSION" \
 		--arg parent "$PARENT_ID" --arg forwarder "$FORWARDER_ID" \
@@ -77,7 +77,7 @@ valid_persisted_output() {
 	case "$path" in ../* | */../* | */.. | ..) return 1 ;; esac
 	[[ "$path" == "$projects"/* && "$path" == */tool-results/* && -f "$path" && ! -L "$path" ]] || return 1
 	before=$(loom_lifecycle_stat_fingerprint "$path") || return 1
-	bytes=$(wc -c <"$path" 2>/dev/null | tr -d "[:space:]") || return 1
+	bytes=$(wc -c 2>/dev/null <"$path" | tr -d "[:space:]") || return 1
 	[[ "$bytes" =~ ^[0-9]+$ ]] && ((bytes > 0 && bytes <= 262144)) || return 1
 	newline_count=$(tail -c 1 "$path" 2>/dev/null | wc -l) || return 1
 	[[ "$newline_count" =~ ^[[:space:]]*1[[:space:]]*$ ]] || return 1
@@ -122,11 +122,11 @@ parse_supervisor_result() {
 		select($rows | length == 1) |
 		($rows[0] | ltrimstr("LOOM-CODEX-DIRECT-RESULT ") | fromjson?) as $r |
 		select($r != null and ($r | type == "object") and
-		 ($r | keys | sort) == (["exit_code","ownership_retained","state","terminal_at","thread_id","turn_id","v"] | sort) and
+		 ($r | keys | sort) == (["announced_thread_id","exit_code","ownership_retained","state","terminal_at","thread_id","turn_id","v"] | sort) and
 		 $r.v == 1 and ($r.state | IN("succeeded","failed","cancelled","unknown")) and
 		 ($r.thread_id | type == "string") and ($r.turn_id == null or ($r.turn_id | type == "string")) and
 		 ($r.terminal_at | type == "string") and ($r.exit_code | type == "number" and floor == .) and
-		 ($r.ownership_retained | type == "boolean")) |
+		 ($r.ownership_retained | type == "boolean") and $r.announced_thread_id == $r.thread_id) |
 		[$r.state,$r.thread_id,($r.turn_id // "-"),$r.terminal_at,($r.exit_code|tostring),
 		 ($r.ownership_retained|tostring)] | @tsv' 2>/dev/null) || return 1
 	IFS=$'\t' read -r STATE THREAD_ID TURN_ID TERMINAL_AT RESULT_STATUS RETAINED <<<"$fields"
@@ -134,7 +134,7 @@ parse_supervisor_result() {
 	if [[ "$TURN_ID" == - ]]; then TURN_ID=; else loom_lifecycle_safe_id "$TURN_ID" || return 1; fi
 	[[ "$TERMINAL_AT" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{3}Z$ ]] || return 1
 	case "$STATE:$RESULT_STATUS:$RETAINED" in
-	succeeded:0:false | cancelled:124:false | unknown:125:true) ;;
+	succeeded:0:false | cancelled:124:false | unknown:125:true | unknown:125:false) ;;
 	failed:*:false) ((RESULT_STATUS > 0 && RESULT_STATUS < 126)) || return 1 ;;
 	*) return 1 ;;
 	esac
@@ -153,12 +153,14 @@ validate_outer_result() {
 }
 
 validate_wrapper_output() {
-	local trailer protocol
-	trailer=$(printf '%s\n' '--- LOOM-CODEX-EVIDENCE ---' "exit: $RESULT_STATUS" \
-		'mode: direct (codex exec --sandbox danger-full-access; nested Seatbelt refused)' \
-		"thread: $THREAD_ID" "unit: $UNIT" "invocation: $INVOCATION" "state: $STATE")
-	trailer=${trailer%$'\n'}
-	[[ "$OUTPUT" == *$'\n'"$trailer" ]] || return 1
+	local trailer protocol reason matched=false
+	for reason in Seatbelt bubblewrap; do
+		trailer=$(printf '%s\n' '--- LOOM-CODEX-EVIDENCE ---' "exit: $RESULT_STATUS" \
+			"mode: direct (codex exec --sandbox danger-full-access; nested $reason refused)" \
+			"thread: $THREAD_ID" "unit: $UNIT" "invocation: $INVOCATION" "state: $STATE")
+		[[ "$OUTPUT" == *$'\n'"$trailer" ]] && matched=true
+	done
+	[[ "$matched" == true ]] || return 1
 	protocol=$(printf '%s' "$OUTPUT" | jq -Rser --arg thread "$THREAD_ID" --arg state "$STATE" \
 		--argjson status "$RESULT_STATUS" '
 		split("\n") as $lines |
@@ -214,7 +216,10 @@ append_records() {
 	succeeded) lifecycle_state=completed; outcome=succeeded ;;
 	failed) lifecycle_state=failed; outcome=failed ;;
 	cancelled) lifecycle_state=cancelled; outcome=cancelled ;;
-	unknown) lifecycle_state=unknown; outcome=unknown; detail='ownership retained' ;;
+	unknown)
+		lifecycle_state=unknown; outcome=unknown; detail='incomplete event stream'
+		[[ "$RETAINED" == true ]] && detail='ownership retained'
+		;;
 	*) return 1 ;;
 	esac
 	terminal_hash=${TERMINAL_AT%Z}+00:00

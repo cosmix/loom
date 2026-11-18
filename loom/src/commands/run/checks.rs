@@ -10,14 +10,15 @@ use crate::context::graph_store::GraphStore;
 use crate::context::refresh::{ensure_snapshot, SnapshotAction, SnapshotOutcome, SnapshotPolicy};
 use crate::context::store::ContextStore;
 use crate::fs::work_dir::WorkDir;
-use crate::git::{get_uncommitted_changes_summary, has_uncommitted_changes};
+use crate::git::branch::pinned_uncommitted_changes;
 
 /// Ensure the repository is ready for Loom's git worktree operations.
 pub fn prepare_repo_for_run(repo_root: &Path) -> Result<()> {
+    crate::git::worktree::require_main_identity(repo_root)?;
     require_jq()?;
 
-    let repo_bootstrap = crate::git::ensure_repo_ready_for_worktrees(repo_root)?;
-    print_repo_bootstrap(repo_bootstrap);
+    let repo_bootstrap = crate::git::repository::ensure_pinned_repo_ready(repo_root)?;
+    print_repo_bootstrap(repo_bootstrap, None);
 
     // Stale per-session identity in the MAIN repo's settings env shadows the
     // wrapper exports of every session this run will spawn (Claude Code
@@ -108,13 +109,12 @@ fn advisory_sccache_preflight() {
 
 /// Advisory Codex lane preflight — never aborts startup.
 ///
-/// When any stage licenses the codex lane but the codex CLI or its plugin's
-/// companion runtime is missing on this machine, print ONE warning naming the
-/// stages. The stage signals independently route terra-tier work to sonnet and
-/// luna-tier work to haiku (the fallback branch of `format_codex_implementers_section`),
+/// When the configured Codex lane is unavailable, print ONE warning naming
+/// the licensed stages. The stage signals route terra- and sol-tier work to sonnet and
+/// boilerplate and simple unit tests to haiku (the fallback branch of `format_codex_implementers_section`),
 /// so this is notice, not enforcement.
-pub fn advisory_codex_lane_preflight(repo_root: &Path) {
-    let Ok(stages) = crate::verify::transitions::list_all_stages(repo_root) else {
+pub fn advisory_codex_lane_preflight(work_dir: &Path) {
+    let Ok(stages) = crate::verify::transitions::list_all_stages(work_dir) else {
         return;
     };
     let codex_stage_ids: Vec<&str> = stages
@@ -125,13 +125,20 @@ pub fn advisory_codex_lane_preflight(repo_root: &Path) {
     if codex_stage_ids.is_empty() {
         return;
     }
-    if let Err(reason) = crate::codex::codex_lane_status() {
-        eprintln!(
-            "codex lane licensed for stage(s) {} but unavailable ({reason}) - \
-             terra-tier work will fall back to sonnet and luna-tier work to haiku.",
-            codex_stage_ids.join(", ")
-        );
-        return;
+    match crate::codex::codex_lane(work_dir) {
+        crate::codex::CodexLane::Unavailable(reason) => {
+            eprintln!(
+                "{}",
+                lane_advisory(
+                    &codex_stage_ids,
+                    crate::codex::configured_backend(work_dir),
+                    &reason,
+                )
+            );
+            return;
+        }
+        crate::codex::CodexLane::Native => return,
+        crate::codex::CodexLane::Legacy => {}
     }
     // Lane installed — but on Linux codex's own workspace-write sandbox must
     // exclude /tmp: it masks `.git` under every writable root, and inside the
@@ -150,6 +157,14 @@ pub fn advisory_codex_lane_preflight(repo_root: &Path) {
                 );
             }
         }
+    }
+}
+
+fn lane_advisory(stage_ids: &[&str], backend: crate::codex::CodexBackend, reason: &str) -> String {
+    let ids = stage_ids.join(", ");
+    match backend {
+        crate::codex::CodexBackend::Legacy => format!("codex lane licensed for stage(s) {ids} but unavailable ({reason}) - terra- and sol-tier work will fall back to sonnet, and boilerplate and simple unit tests to haiku."),
+        crate::codex::CodexBackend::Native => format!("codex lane licensed for stage(s) {ids} but codex.backend = native is unavailable ({reason}) - terra- and sol-tier work will fall back to sonnet, and boilerplate and simple unit tests to haiku; the legacy forwarder lane is not used while codex.backend is native."),
     }
 }
 
@@ -179,32 +194,40 @@ fn preflight_snapshot(repo_root: &Path, work_dir: &WorkDir) -> Result<SnapshotOu
     ))
 }
 
-fn print_repo_bootstrap(result: crate::git::RepoBootstrapResult) {
+/// Print the git bootstrap status lines, or nothing when the repository was unchanged.
+/// With a heading, print it above a dimmed rule and indent each status line by two spaces.
+pub(crate) fn print_repo_bootstrap(result: crate::git::RepoBootstrapResult, heading: Option<&str>) {
     if !result.changed() {
         return;
     }
 
+    if let Some(h) = heading {
+        println!("\n{}", h.bold());
+        println!("{}", "─".repeat(40).dimmed());
+    }
+    let indent = if heading.is_some() { "  " } else { "" };
+
     if result.initialized_repo {
-        println!("{} Initialized git repository", "✓".green().bold());
+        println!("{indent}{} Initialized git repository", "✓".green().bold());
     }
 
     if result.created_initial_commit {
         println!(
-            "{} Created bootstrap commit for worktree support",
+            "{indent}{} Created bootstrap commit for worktree support",
             "✓".green().bold()
         );
     }
 
     if result.removed_stale_git_locks {
         println!(
-            "{} Removed stale .git lock files that blocked git init",
+            "{indent}{} Removed stale .git lock files that blocked git init",
             "✓".green().bold()
         );
     }
 
     if result.backed_up_git_config {
         println!(
-            "{} Moved unreadable .git/config aside (kept as .git/config.loom-backup-*)",
+            "{indent}{} Moved unreadable .git/config aside (kept as .git/config.loom-backup-*)",
             "!".yellow().bold()
         );
     }
@@ -215,8 +238,8 @@ fn print_repo_bootstrap(result: crate::git::RepoBootstrapResult) {
 /// This prevents starting orchestration with a dirty repository, which could
 /// cause issues with worktree creation and branch management.
 pub fn check_for_uncommitted_changes(repo_root: &Path) -> Result<()> {
-    if has_uncommitted_changes(repo_root)? {
-        let summary = get_uncommitted_changes_summary(repo_root)?;
+    let (dirty, summary) = pinned_uncommitted_changes(repo_root)?;
+    if dirty {
         eprintln!(
             "{} Cannot start loom run with uncommitted changes",
             "✗".red().bold()
@@ -237,4 +260,23 @@ pub fn check_for_uncommitted_changes(repo_root: &Path) -> Result<()> {
         bail!("Uncommitted changes in repository - commit or stash before running loom");
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::lane_advisory;
+    use crate::codex::CodexBackend;
+
+    #[test]
+    fn lane_advisory_describes_the_configured_backend() {
+        let ids = &["one", "two"];
+        assert_eq!(
+            lane_advisory(ids, CodexBackend::Legacy, "missing"),
+            "codex lane licensed for stage(s) one, two but unavailable (missing) - terra- and sol-tier work will fall back to sonnet, and boilerplate and simple unit tests to haiku."
+        );
+        assert_eq!(
+            lane_advisory(ids, CodexBackend::Native, "missing"),
+            "codex lane licensed for stage(s) one, two but codex.backend = native is unavailable (missing) - terra- and sol-tier work will fall back to sonnet, and boilerplate and simple unit tests to haiku; the legacy forwarder lane is not used while codex.backend is native."
+        );
+    }
 }

@@ -1,12 +1,13 @@
 //! Tool regressions use isolated repositories and optional installed tool binaries.
 use super::NetworkAccess;
 use crate::models::stage::CommandConfinement;
+use crate::test_git::{git, TestRepo};
 use crate::verify::criteria::{run_spec_with_timeout, CommandSpec};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Duration;
 
-fn launcher_available(name: &str) -> bool {
+pub(super) fn launcher_available(name: &str) -> bool {
     !crate::process::sandbox_probe::skip_unless(
         super::launcher().is_some(),
         name,
@@ -91,10 +92,16 @@ fn run_cache_canary(cwd: &Path, home: &Path, port: u16, network: NetworkAccess, 
     );
     assert!(String::from_utf8_lossy(&output.stdout).contains("CACHE_CANARY_PASSED"));
     for cache in ["cache", "uv-cache", "bun-cache"] {
-        assert!(
-            scratch_path.join(cache).join("written").is_file(),
-            "{cache}"
-        );
+        let written = scratch_path.join(cache).join("written").is_file();
+        #[cfg(target_os = "linux")]
+        let written = written
+            || scratch
+                .cache_overlays()
+                .iter()
+                .any(|(_, upper, _, target)| {
+                    target == &scratch_path.join(cache) && upper.join("written").is_file()
+                });
+        assert!(written, "{cache}");
     }
     drop(scratch);
     assert!(!scratch_path.exists());
@@ -141,7 +148,7 @@ fn private_scratch_does_not_change_acceptance_cache_identity() {
     );
 }
 
-fn optional_tool(name: &str, variable: &str) -> Option<PathBuf> {
+pub(super) fn optional_tool(name: &str, variable: &str) -> Option<PathBuf> {
     let tool = std::env::var_os(variable)
         .map(PathBuf::from)
         .or_else(|| which::which(name).ok());
@@ -153,6 +160,24 @@ fn optional_tool(name: &str, variable: &str) -> Option<PathBuf> {
         return None;
     }
     tool
+}
+
+/// Copies an installed tool into a fixture. A sibling test thread that forks
+/// while the copy's write fd is open holds a duplicate until its own exec, and
+/// an exec of the copy in that window fails with `ETXTBSY`. One exec that
+/// succeeds proves no writer remains, so every later exec of the copy is safe.
+pub(super) fn install_tool(tool: &Path, binary: &Path) {
+    const MAX_ATTEMPTS: u32 = 50;
+    std::fs::copy(tool, binary).unwrap();
+    for attempt in 1..=MAX_ATTEMPTS {
+        match Command::new(binary).arg("--version").output() {
+            Ok(_) => return,
+            Err(error) if attempt < MAX_ATTEMPTS && error.raw_os_error() == Some(libc::ETXTBSY) => {
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            Err(error) => panic!("{}: {error}", binary.display()),
+        }
+    }
 }
 
 #[test]
@@ -167,7 +192,7 @@ fn actual_uv_lock_check_uses_private_writable_cache_offline() {
     let cwd = root.path().join("worktree");
     std::fs::create_dir(&cwd).unwrap();
     let binary = cwd.join("uv");
-    std::fs::copy(tool, &binary).unwrap();
+    install_tool(&tool, &binary);
     std::fs::write(
         cwd.join("pyproject.toml"),
         "[project]\nname = \"cache-fixture\"\nversion = \"0.1.0\"\nrequires-python = \">=3.8\"\n",
@@ -200,34 +225,11 @@ fn actual_uv_lock_check_uses_private_writable_cache_offline() {
         .starts_with(".loom-")));
 }
 
-fn git(directory: &Path, args: &[&str]) {
-    let output = Command::new("git")
-        .current_dir(directory)
-        .args([
-            "-c",
-            "user.name=Fixture",
-            "-c",
-            "user.email=fixture@example.invalid",
-            "-c",
-            "commit.gpgsign=false",
-            "-c",
-            "core.hooksPath=/dev/null",
-        ])
-        .args(args)
-        .output()
-        .unwrap();
-    assert!(
-        output.status.success(),
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-}
-
 #[cfg(unix)]
 fn biome_fixture(root: &Path, tool: &Path) -> PathBuf {
     let repo = root.join("repo");
     std::fs::create_dir(&repo).unwrap();
-    git(&repo, &["init", "--initial-branch=main"]);
+    TestRepo::builder().no_seed().init_in(&repo);
     std::fs::write(
         repo.join("biome.json"),
         r#"{
@@ -244,11 +246,22 @@ fn biome_fixture(root: &Path, tool: &Path) -> PathBuf {
     .unwrap();
     std::fs::write(repo.join("source.js"), "const answer = 42;\n").unwrap();
     git(&repo, &["add", "."]);
-    git(&repo, &["commit", "-m", "fixture"]);
+    git(
+        &repo,
+        &["-c", "core.hooksPath=/dev/null", "commit", "-m", "fixture"],
+    );
     let cwd = repo.join(".worktrees/stage");
     git(
         &repo,
-        &["worktree", "add", cwd.to_str().unwrap(), "-b", "stage"],
+        &[
+            "-c",
+            "core.hooksPath=/dev/null",
+            "worktree",
+            "add",
+            cwd.to_str().unwrap(),
+            "-b",
+            "stage",
+        ],
     );
     let state = root.join("private-state");
     std::fs::create_dir(&state).unwrap();
@@ -259,7 +272,7 @@ fn biome_fixture(root: &Path, tool: &Path) -> PathBuf {
         std::fs::create_dir_all(cwd.join(generated)).unwrap();
         std::fs::write(cwd.join(generated).join("broken.js"), "function {\n").unwrap();
     }
-    std::fs::copy(tool, cwd.join("biome")).unwrap();
+    install_tool(tool, &cwd.join("biome"));
     cwd
 }
 

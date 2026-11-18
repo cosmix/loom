@@ -5,7 +5,7 @@ use std::sync::LazyLock;
 
 use regex::Regex;
 
-use crate::testrun::command::{regex_literal, shell_quote};
+use crate::testrun::command::{exact_regex_literal, shell_quote};
 use crate::testrun::recognize::{
     combined_output, command_args, has_flag, last_match, pattern, summary_from_counts,
 };
@@ -52,7 +52,10 @@ impl TestRunnerAdapter for SwiftTest {
     }
 
     fn single_test_command(&self, _file: &str, test: &str, _package_dir: &Path) -> String {
-        format!("swift test --filter {}", shell_quote(&regex_literal(test)))
+        format!(
+            "swift test --filter {}",
+            shell_quote(&exact_regex_literal(test))
+        )
     }
 
     fn select_command(&self, _targets: &[TestTarget], _package_dir: &Path) -> Option<String> {
@@ -83,12 +86,8 @@ impl TestRunnerAdapter for SwiftTest {
 mod tests {
     use super::*;
     use crate::testrun::command::{assert_one_word, HOSTILE_NAME};
-    use crate::testrun::fixture_support::{load, scenarios};
+    use crate::testrun::fixture_support::{load, scenarios, words};
     use crate::testrun::{classify, RunOutcome};
-
-    fn words(command: &str) -> Vec<String> {
-        command.split_whitespace().map(str::to_string).collect()
-    }
 
     #[test]
     fn swift_filter_uses_xctest_identifier() {
@@ -99,14 +98,14 @@ mod tests {
         );
         assert_eq!(
             command,
-            r"swift test --filter 'ModuleTests\.FooTests/testBar'"
+            r"swift test --filter '^ModuleTests\.FooTests/testBar$'"
         );
     }
 
     #[test]
     fn hostile_test_name_stays_one_escaped_pattern() {
         let command = ADAPTER.single_test_command("A.swift", HOSTILE_NAME, Path::new("."));
-        assert_one_word(&command, &regex_literal(HOSTILE_NAME));
+        assert_one_word(&command, &exact_regex_literal(HOSTILE_NAME));
     }
 
     #[test]

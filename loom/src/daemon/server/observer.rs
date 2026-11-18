@@ -10,9 +10,10 @@
 //! never to whatever the worktree's `.git` file names.
 //!
 //! A stage session's sandbox cannot reach this socket, so its `loom stage
-//! complete` compares no fingerprint. The completion transition
-//! (`host_verify::apply`) runs both fingerprint gates here instead, before
-//! it applies (`check_completion_gates`).
+//! complete` compares no fingerprint. The daemon runs both fingerprint gates
+//! here instead (`check_completion_gates`, through `host_verify::gates`):
+//! before it queues a completion run, and again when it applies one
+//! (`host_verify::apply`).
 
 use anyhow::{Context, Result};
 use std::path::Path;
@@ -30,10 +31,10 @@ use crate::verify::transitions::load_stage;
 impl DaemonServer {
     /// Whether this process holds positive evidence that no daemon owns the
     /// state directory `work_dir`: its singleton lock is a regular file that
-    /// opens without following a symlink, and a non-blocking exclusive
-    /// `flock` on it succeeds (released again at once). A missing lock file,
-    /// one that cannot be opened or is no regular file, a held lock and a
-    /// failed probe all answer `false`: inside a sandbox, which can hide the
+    /// opens without following a symlink, and a non-blocking shared
+    /// `flock` on it succeeds (held through the file metadata check). A missing
+    /// lock file, one that cannot be opened or is not regular, a held lock,
+    /// and a failed probe all answer `false`: inside a sandbox, which can hide the
     /// state directory or mount `/dev/null` over a name, none of them proves
     /// anything. Like `check_status`, the probe briefly contends with a
     /// `loom run` starting at the same instant.
@@ -73,7 +74,8 @@ fn observe(work_dir: &Path, stage_id: &str) -> Result<(String, ChangeFingerprint
 /// by this daemon: fail unless `reviews/<stage>/integrity.json` accepts every
 /// test-integrity event of the worktree, the latest well-formed review round
 /// saw exactly its current changes, and no finding is open. Any other stage
-/// passes. The host job's apply step runs this before it completes the stage.
+/// passes. The daemon runs this before it queues a completion run and again
+/// when it applies the run (`host_verify::gates`).
 pub(crate) fn check_completion_gates(work_dir: &Path, stage_id: &str) -> Result<()> {
     let stage = load_stage(stage_id, work_dir)?;
     if !gate::covers(&stage) {

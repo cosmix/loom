@@ -135,8 +135,8 @@
   /* section rows: an eyebrow + caption, and empty lane placeholders that
    * either label the model/effort sub-columns or stay blank for singles */
   .settings-sech th {
-    border-top: 1px solid var(--hairline);
-    padding: 12px 8px 4px 12px;
+    border-top: 2px solid color-mix(in oklch, var(--foreground) 18%, var(--card));
+    padding: 26px 8px 8px 12px;
     vertical-align: bottom;
     font-size: 10.5px;
     font-weight: 500;
@@ -146,6 +146,7 @@
   }
   .settings-table > tbody:first-of-type > tr.settings-sech th {
     border-top: 0;
+    padding-top: 14px;
   }
   .settings-sech th.settings-key {
     padding-left: 22px;
@@ -154,8 +155,18 @@
     display: block;
     text-transform: none;
     letter-spacing: 0;
-    font-size: 11.5px;
-    margin-top: 2px;
+    font-size: 12px;
+    margin-top: 3px;
+  }
+  /* a section's heading: its title reads as the section's name, the config
+   * prefix stays on hover (the title attribute) */
+  .settings-section-title {
+    display: block;
+    font-size: 13.5px;
+    font-weight: 600;
+    letter-spacing: 0;
+    text-transform: none;
+    color: var(--foreground);
   }
 
   .settings-table tbody td {
@@ -175,6 +186,7 @@
     font-family: var(--font-mono);
     font-size: 12.5px;
     font-weight: 500;
+    overflow-wrap: anywhere;
   }
   .settings-help {
     display: block;

@@ -17,28 +17,19 @@ pub(super) struct Observation {
 
 impl Observation {
     pub fn new(
-        line: &str,
-        timestamp: i64,
+        stamp: DateTime<Utc>,
         usage: TokenUsage,
         model: &Option<String>,
         effort: &Option<String>,
     ) -> Self {
-        let stamp = stamp(line);
         Self {
             stamp,
-            bucket: timestamp.div_euclid(BUCKET_SECS),
+            bucket: stamp.timestamp().div_euclid(BUCKET_SECS),
             usage,
             model: model.clone().unwrap_or_else(|| UNKNOWN_MODEL.to_owned()),
             effort: effort.clone(),
         }
     }
-}
-
-fn stamp(line: &str) -> DateTime<Utc> {
-    let value: serde_json::Value = serde_json::from_str(line).expect("parsed Claude line");
-    DateTime::parse_from_rfc3339(value["timestamp"].as_str().unwrap())
-        .expect("validated timestamp")
-        .with_timezone(&Utc)
 }
 
 pub(super) fn subtract(total: &mut TokenUsage, old: &TokenUsage) {
@@ -54,34 +45,21 @@ pub(super) fn subtract(total: &mut TokenUsage, old: &TokenUsage) {
 #[serde(from = "Vec<SavedMessage>", into = "Vec<SavedMessage>")]
 pub(super) struct MessageTable {
     pub(super) order: VecDeque<String>,
-    pub(super) max: HashMap<String, TokenUsage>,
     pub(super) observations: HashMap<String, Observation>,
 }
 
 impl MessageTable {
-    pub(super) fn is_stale(&self, id: Option<&str>, line: &str) -> bool {
+    pub(super) fn is_stale(&self, id: Option<&str>, stamp: DateTime<Utc>) -> bool {
         id.and_then(|id| self.observations.get(id))
-            .is_some_and(|previous| !crate::provider_data::supersedes(previous.stamp, stamp(line)))
+            .is_some_and(|previous| !crate::provider_data::supersedes(previous.stamp, stamp))
     }
 
-    /// Records the selected vector and returns its positive change.
-    /// Retractions are applied by the live accumulator before replacement.
-    pub(super) fn increase(&mut self, id: &str, usage: &TokenUsage) -> TokenUsage {
-        let seen = match self.max.get(id) {
-            Some(seen) => *seen,
-            None => {
-                self.remember(id);
-                TokenUsage::default()
-            }
-        };
-        let gain = TokenUsage {
-            input: usage.input.saturating_sub(seen.input),
-            cache_write: usage.cache_write.saturating_sub(seen.cache_write),
-            cache_read: usage.cache_read.saturating_sub(seen.cache_read),
-            output: usage.output.saturating_sub(seen.output),
-        };
-        self.max.insert(id.to_owned(), *usage);
-        gain
+    /// Select an already-validated observation and return the one it replaces.
+    pub(super) fn replace(&mut self, id: String, observation: Observation) -> Option<Observation> {
+        if !self.observations.contains_key(&id) {
+            self.remember(&id);
+        }
+        self.observations.insert(id, observation)
     }
 
     /// Appends a new id, evicting the oldest one past the cap.
@@ -89,23 +67,19 @@ impl MessageTable {
         self.order.push_back(id.to_owned());
         if self.order.len() > MESSAGE_TABLE_CAP {
             if let Some(oldest) = self.order.pop_front() {
-                self.max.remove(&oldest);
                 self.observations.remove(&oldest);
             }
         }
     }
 }
 
-type SavedMessage = (String, TokenUsage, Option<Observation>);
+type SavedMessage = (String, Observation);
 
 impl From<Vec<SavedMessage>> for MessageTable {
     fn from(saved: Vec<SavedMessage>) -> Self {
         let mut table = Self::default();
-        for (id, usage, observation) in saved {
-            table.increase(&id, &usage);
-            if let Some(observation) = observation {
-                table.observations.insert(id, observation);
-            }
+        for (id, observation) in saved {
+            table.replace(id, observation);
         }
         table
     }
@@ -116,10 +90,11 @@ impl From<MessageTable> for Vec<SavedMessage> {
         table
             .order
             .into_iter()
-            .map(|id| {
-                let usage = table.max.remove(&id).unwrap_or_default();
-                let observation = table.observations.remove(&id);
-                (id, usage, observation)
+            .filter_map(|id| {
+                table
+                    .observations
+                    .remove(&id)
+                    .map(|observation| (id, observation))
             })
             .collect()
     }

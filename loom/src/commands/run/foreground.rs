@@ -1,6 +1,6 @@
 //! Foreground execution mode for the orchestrator.
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result};
 use colored::{Color, Colorize};
 use std::time::Duration;
 
@@ -9,7 +9,6 @@ use super::graph_loader::build_execution_graph;
 use super::resolve_backend_flag;
 use crate::commands::status::render::print_completion_summary;
 use crate::daemon::collect_completion_summary;
-use crate::fs::plan_lifecycle;
 use crate::fs::work_dir::WorkDir;
 use crate::git::signing;
 use crate::orchestrator::{
@@ -35,6 +34,7 @@ pub fn execute(
 
     // Ensure git worktree prerequisites are met before starting.
     let repo_root = std::env::current_dir()?;
+    crate::git::worktree::require_main_identity(&repo_root)?;
     prepare_repo_for_run(&repo_root)?;
 
     let work_dir = WorkDir::new(".")?;
@@ -45,6 +45,7 @@ pub fn execute(
     resolve_backend_flag(&work_dir, backend, "loom run --foreground")?;
 
     super::run_startup_preflights(&work_dir, accept_unix_socket_risk)?;
+    crate::daemon::remove_previous_outcome(work_dir.root())?;
     super::plan_inputs::mark_plan_in_progress(&work_dir)?;
 
     // Publish against the committed active filename and the revision stages inherit.
@@ -95,14 +96,9 @@ fn execute_foreground(
     if manual {
         return Ok(());
     }
+    let finalization = crate::daemon::finish_foreground(work_dir, &result);
     report_completion(work_dir, &result);
-
-    if result.is_success() {
-        plan_lifecycle::mark_plan_done_if_all_merged(work_dir)?;
-        Ok(())
-    } else {
-        bail!("Orchestration completed with failures")
-    }
+    finalization
 }
 
 /// Build the `OrchestratorConfig` for a foreground orchestrator run.

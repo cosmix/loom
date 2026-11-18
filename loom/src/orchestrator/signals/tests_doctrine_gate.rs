@@ -55,6 +55,19 @@ fn gate_block_and_orchestration_skill_state_the_check_flow() {
 }
 
 #[test]
+fn gate_block_keeps_the_full_suite_behind_loom_check() {
+    let prefix = generate_stable_prefix();
+    assert!(
+        prefix.contains("The full suite runs only through `loom check`"),
+        "the standard prefix must send the full suite through `loom check`"
+    );
+    assert!(
+        !prefix.contains("Never re-run what the check covers"),
+        "the retired re-run ban must not return: a repeated check is cheap, not refused"
+    );
+}
+
+#[test]
 fn code_reviewer_judges_criteria_intent() {
     assert!(
         CODE_REVIEWER.contains("acceptance criterion") && CODE_REVIEWER.contains("intent"),
@@ -92,4 +105,52 @@ fn orchestrator_pastes_the_acceptance_criteria_into_the_reviewer_brief() {
         CODE_REVIEWER.contains("acceptance criterion in your brief"),
         "loom-code-reviewer must take the criteria from its brief, not a signal it never sees"
     );
+}
+
+#[test]
+fn codex_job_doctrine_pins_sizing_and_brief_handoff() {
+    use super::format::format_codex_implementers_section;
+    use crate::models::stage::{Implementer, Implementers};
+
+    let text = format_codex_implementers_section(
+        &Implementers::new(vec![Implementer::Codex]),
+        &crate::codex::CodexLane::Legacy,
+    );
+    for needle in [
+        "ONE CONCERN",
+        "250,000",
+        "23,000",
+        "gpt-6.2-sol",
+        "gpt-6.1-terra",
+        "50,000",
+        "20,000",
+        "1500000",
+        "1560000",
+        "twice the time at xhigh",
+        "absolute path",
+        "never retypes the brief",
+        "LOOM_CODEX_FORWARD=1",
+        "context-injecting hooks stay silent while guard hooks still run",
+        "Never slice jobs into waves by the cap of 6",
+    ] {
+        assert!(text.contains(needle), "codex doctrine lost {needle:?}");
+    }
+}
+
+#[test]
+fn orchestration_review_loop_pins_followup_and_edit_exceptions() {
+    for needle in [
+        "models.code_reviewer_model",
+        "models.code_reviewer_followup_model",
+        "ONE fix worker before ONE re-review",
+        "Comment-only lines, blank lines",
+        "prose markdown outside skills/, agents/, commands/, loom-hooks/, tests and fixtures",
+        "the base must be unchanged",
+        "Block comments and every other edit",
+    ] {
+        assert!(
+            ORCHESTRATION_SKILL.contains(needle),
+            "review loop lost {needle:?}"
+        );
+    }
 }

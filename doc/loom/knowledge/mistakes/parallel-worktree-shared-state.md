@@ -1,6 +1,6 @@
 # Parallel Worktree Shared State
 
-> Cross-worktree races
+> Shared
 
 ## The One Question That Catches This Whole Class
 
@@ -329,3 +329,23 @@ One question catches the class: **was this path resolved through `main_project_r
 **Why:** the stage read the memory of an earlier stage and the tree, not the newer commits on the target branch.
 
 **Prevention:** before fixing a defect an earlier stage recorded, run `git log <stage-base>..<target-branch>` for an upstream fix.
+
+## Blanket replace over a checkout another session was editing
+
+**What happened:** A lead session ran a repo-wide perl replace (gpt-5.6-terra to gpt-6.1-terra) on every tracked file that matched at that moment. A second interactive session in the same checkout was mid-way through the same rename and had just added gpt-5.6-terra back as an older-family fallback. The replace turned each fallback into a duplicate gpt-6.1-terra entry in loom/src/codex.rs CODEX_MODELS, the three codex-forward hook model allowlists and a new codex_tests.rs test.
+
+**Why:** The tracked diff was taken as stable input. Nothing checked whether another session was writing the same files, even though the diff had appeared mid-session with no edits from this one.
+
+**Prevention:** Before a bulk edit of tracked files, compare git status with the session-start snapshot. If files changed that this session did not touch, run ListAgents and ask the peer session before editing. Re-check the match list right before the replace, never from an earlier grep.
+
+**Fix:** Stop editing, hand the rename to the owning session with the list of files touched, and leave the commit to it.
+
+## Repository-wide diff check in a shared checkout
+
+**What happened:** A `git diff --check` without paths reported whitespace from another agent’s edits during an RT-02 repair.
+
+**Why:** The check covered the shared checkout instead of the files owned by this task.
+
+**Prevention:** Scope diff checks to the paths edited by the current task, after inspecting their diff stat.
+
+**Fix:** Repeat any needed whitespace check with explicit paths and leave unrelated edits to their owners.

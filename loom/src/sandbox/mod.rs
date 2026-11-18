@@ -9,13 +9,12 @@ mod grant_paths;
 mod host_sockets;
 mod merge_resolver;
 mod package_caches;
-mod settings;
+pub(crate) mod settings;
 
 pub(crate) use config::preflight;
 pub use config::{
     default_mode_for, detect_path_escape, expand_env_vars, expand_paths, expand_tilde,
-    is_legitimate_work_access, merge_config, validate_config, validate_paths, MergedSandboxConfig,
-    PathEscapeAttempt, KNOWLEDGE_WRITE_GLOB,
+    merge_config, validate_config, MergedSandboxConfig, PathEscapeAttempt, KNOWLEDGE_WRITE_GLOB,
 };
 pub use grant_paths::{missing_grant_paths, warn_missing_grants};
 pub(crate) use host_sockets::{
@@ -27,4 +26,4 @@ pub(crate) use merge_resolver::{
 };
 pub use package_caches::PACKAGE_MANAGER_CACHE_WRITE_PATHS;
 pub use settings::{apply_default_mode, generate_settings_json};
-pub(crate) use settings::{build_settings, target_is_worktree, validate_emittable, SettingsTarget};
+pub(crate) use settings::{target_is_worktree, validate_emittable, SettingsTarget};

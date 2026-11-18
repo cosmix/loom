@@ -1,0 +1,105 @@
+/* The chat panel's frame: a fixed column of the page, one hairline on its page-side edge, with
+ * the body size of the design scale. The transcript sets its own sizes (chat-transcript.css), so
+ * the kickoff screen, which mounts it outside the panel, reads the same. Import beside the panel,
+ * as concept.css is imported by its reading column. This file carries no tone, shadow or fade:
+ * panel-a11y.test pins that.
+ */
+.chat-panel,
+.chat-sheet {
+  box-sizing: border-box;
+  min-width: 0;
+  min-height: 0;
+  background: var(--card);
+  color: var(--foreground);
+  font-family: var(--font-sans), "Alegreya Sans", sans-serif;
+  font-size: var(--type-body);
+  line-height: var(--leading-body);
+}
+
+/* The panel is as tall as the page's row and no taller. How its parts share that height is in
+ * chat-column.css. */
+.chat-panel {
+  position: relative;
+  height: 100%;
+  border-inline-start: 1px solid var(--hairline);
+}
+
+.chat-sheet {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  max-height: 100dvh;
+}
+
+.chat-panel [role="log"],
+.chat-sheet [role="log"] {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.chat-connection-banner,
+.chat-last-update {
+  font-size: var(--type-body);
+  font-weight: 500;
+}
+
+.chat-connection-banner {
+  flex-shrink: 0;
+  padding: 0 var(--space-4) var(--space-2);
+  overflow-wrap: anywhere;
+}
+
+.chat-connection-banner p + p {
+  margin-block-start: var(--space-1);
+}
+
+.chat-last-update {
+  margin: 0;
+  padding: var(--space-1) var(--space-4);
+  color: var(--muted-foreground);
+}
+
+/* The resize handle straddles the panel's edge. At rest it is the edge itself; under the pointer
+ * or focus a 2px line in --border shows where the column can be dragged. */
+.chat-resize-handle {
+  position: absolute;
+  z-index: 1;
+  inset-block: 0;
+  inset-inline-start: -4px;
+  width: 8px;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.chat-resize-handle::after {
+  content: "";
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: 3px;
+  width: 2px;
+  background: transparent;
+  transition: background-color 120ms;
+}
+
+.chat-resize-handle:hover::after,
+.chat-resize-handle:focus-visible::after {
+  background: var(--border);
+}
+
+.chat-resize-handle:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: -2px;
+}
+
+@media (max-width: 63.999rem) {
+  .chat-sheet .chat-resize-handle {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-resize-handle::after {
+    transition: none;
+  }
+}

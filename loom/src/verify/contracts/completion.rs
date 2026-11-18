@@ -11,14 +11,15 @@ use anyhow::{bail, Context, Result};
 use std::path::Path;
 
 use super::collection::rust::{chain_problems, run_dir_problems};
+use super::failed_builds::FailedBuilds;
 use super::run_dir::resolve_run;
 use super::store::{self, FreezeRecord};
 use super::{normalize, resolve_adapter};
 use crate::fs::safe_read::{is_not_found, read_bounded};
 use crate::models::stage::Stage;
 use crate::plan::schema::ContractSpec;
-use crate::relay::sha256_hex;
 use crate::testrun::{classify, registry, RunOutcome, RunOutput, TestRunnerAdapter};
+use crate::utils::sha256_hex;
 use crate::verify::criteria::{
     plan_confinement, CachedRun, CriteriaConfig, CriteriaProbe, ProbeRun, ProbeRunner,
 };
@@ -59,9 +60,13 @@ fn check_with(
         acceptance_dir,
         worktree_root,
     };
+    let mut rejected = FailedBuilds::default();
     for contract in &stage.contracts {
+        // The contract as the freeze ran it: the recorded test and adapter
+        // fill what the plan left open.
+        let effective = store::effective_contract(&record, contract);
         let recorded = store::recorded_cwd(&record, contract);
-        let found = run_contract(contract, recorded, &place, runner)?;
+        let found = run_contract(&effective, recorded, &place, runner, &mut rejected)?;
         failures.extend(found);
     }
     if failures.is_empty() {
@@ -86,18 +91,24 @@ struct Place<'a> {
     worktree_root: &'a Path,
 }
 
-/// Run `contract` from its run directory (its plan `cwd`, else the one
+/// Run `contract`, the effective spec (`store::effective_contract`: the
+/// recorded test and adapter fill what the plan left open), from its run
+/// directory (its plan `cwd`, else the one
 /// `recorded` for its file by the freeze, else resolved as the freeze
 /// resolves it) and say why it does not pass, if it
 /// does not. A contract that cannot be resolved is a failure of its own, so
 /// the check still runs and reports every other contract. A Rust contract's
 /// collection (its module chain and run directory) is checked whether or not
 /// the run is cached, since a cached pass would otherwise hide a redirect.
+/// A contract whose build an earlier contract of `rejected` already had the
+/// compiler reject is not run: it fails naming that contract, and so records
+/// nothing in the certified cache.
 fn run_contract(
     contract: &ContractSpec,
     recorded: Option<&str>,
     place: &Place<'_>,
     runner: &dyn ProbeRunner,
+    rejected: &mut FailedBuilds<()>,
 ) -> Result<Vec<String>> {
     let adapter = resolve_adapter(contract, place.acceptance_dir);
     let resolved = match resolve_run(
@@ -116,11 +127,37 @@ fn run_contract(
         }
     };
     let mut failures = collection_problems(contract, place, &resolved.cwd)?;
+    let build = resolved.build_key();
+    if let Some((first, ())) = build.as_ref().and_then(|build| rejected.get(build)) {
+        failures.push(format!(
+            "contract '{}' was not run: the build it shares with contract '{first}' failed",
+            contract.id
+        ));
+        return Ok(failures);
+    }
     let run = runner
         .run(&resolved.command, &resolved.dir)
         .with_context(|| format!("failed to run contract '{}'", contract.id))?;
+    if let (Some(build), Some(adapter)) = (build, adapter) {
+        if compile_rejected(adapter, &run) {
+            rejected.record(build, contract.id.clone(), ());
+        }
+    }
     failures.extend(judge(contract, adapter, &resolved.command, &run));
     Ok(failures)
+}
+
+/// Whether `run` ended with the compiler rejecting the code. A cached run is a
+/// certified pass, and a timed-out one has no output to read.
+fn compile_rejected(adapter: &dyn TestRunnerAdapter, run: &ProbeRun) -> bool {
+    !run.timed_out
+        && run.output_complete
+        && run.cached.is_none()
+        && adapter.compile_rejected(&RunOutput {
+            stdout: &run.stdout,
+            stderr: &run.stderr,
+            exit_code: run.exit_code,
+        })
 }
 
 /// Whether `contract` runs through a Rust adapter: its `runner`, else the
@@ -167,7 +204,8 @@ fn collection_problems(
     } else {
         format!("{prefix}/{file}")
     };
-    let mut problems = chain_problems(&source, &file, &contract.test);
+    // `resolve_run` has already required the test.
+    let mut problems = chain_problems(&source, &file, contract.required_test()?);
     problems.extend(run_dir_problems(&source, &file, run_cwd));
     Ok(problems
         .into_iter()
@@ -211,6 +249,11 @@ fn judge(
     if run.timed_out {
         return Some(format!("contract '{id}' timed out running `{command}`"));
     }
+    if !run.output_complete {
+        return Some(format!(
+            "contract '{id}' output capture was incomplete: `{command}`"
+        ));
+    }
     if let Some(cached) = &run.cached {
         return judge_cached(contract, adapter, command, run.exit_code, cached);
     }
@@ -228,7 +271,7 @@ fn judge(
         }
         Some(RunOutcome::NotSelected) => Some(format!(
             "contract '{id}': contract test not selected; `{command}` ran no test named '{}'",
-            contract.test
+            contract.test.as_deref().unwrap_or_default()
         )),
         Some(RunOutcome::Unparsed) | None => judge_exit_code(id, adapter, command, run.exit_code),
     }
@@ -249,7 +292,7 @@ fn judge_cached(
     match cached.tests_executed {
         Some(0) => Some(format!(
             "contract '{id}': contract test not selected; `{command}` ran no test named '{}'",
-            contract.test
+            contract.test.as_deref().unwrap_or_default()
         )),
         Some(_) if exit_code == Some(0) => None,
         _ => judge_exit_code(id, adapter, command, exit_code),
@@ -283,3 +326,7 @@ mod tests;
 #[cfg(test)]
 #[path = "completion_adapter_tests.rs"]
 mod adapter_tests;
+
+#[cfg(test)]
+#[path = "completion_share_tests.rs"]
+mod share_tests;

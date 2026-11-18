@@ -168,7 +168,7 @@ impl Fx {
             exit_code: Some(0),
             codex_thread_id: Some(thread_id.to_string()),
             locator: None,
-            model: Some("gpt-6.1-sol".to_string()),
+            model: Some("gpt-6.2-sol".to_string()),
             effort: None,
         };
         let path = receipts_path(&self.work_root, stage).expect("receipts path");
@@ -198,7 +198,7 @@ impl Fx {
             .to_string(),
             count([21255, 12160, 110], [21255, 12160, 110], ts),
             count([43274, 33280, 206], [22019, 21120, 96], ts + 10),
-            json!({"type": "turn_context", "payload": {"model": "gpt-6.1-sol"}}).to_string(),
+            json!({"type": "turn_context", "payload": {"model": "gpt-6.2-sol"}}).to_string(),
         ];
         let name = format!("rollout-2026-10-14T10-58-07-{thread_id}.jsonl");
         fs::write(dir.join(name), body(&lines)).expect("rollout file");

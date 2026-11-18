@@ -2,13 +2,13 @@
 //! session kind launches under.
 
 use super::contents::{capsule_settings, CapsuleInputs};
+use crate::hooks::HookEvent;
 use crate::models::session::SessionType;
 use crate::models::stage::{Implementer, Implementers, Stage, StageType};
 use crate::plan::schema::PermissionMode;
 use crate::sandbox::control_surfaces::{session_denies, DenyInputs, SessionDenies};
 use crate::sandbox::MergedSandboxConfig;
 use serde_json::{json, Value};
-use serial_test::serial;
 use std::path::{Path, PathBuf};
 
 const ALL_KINDS: [SessionType; 6] = [
@@ -64,6 +64,11 @@ fn try_build(
     worktree_rooted: bool,
 ) -> anyhow::Result<Value> {
     let denies = denies(worktree_rooted, config.implementers.includes_codex());
+    // `/repo/.loom/work` holds no config, so the user tier picks the lane: the
+    // legacy lane these tests pin, over the native default.
+    let user = tempfile::NamedTempFile::new()?;
+    std::fs::write(user.path(), "[codex]\nbackend = \"legacy\"\n")?;
+    let _legacy = crate::user_config::redirect_user_config(user.path().to_path_buf());
     capsule_settings(&CapsuleInputs {
         kind,
         sandbox: config,
@@ -209,6 +214,25 @@ fn every_kind_registers_the_relay_hook_and_runs_every_hook_under_bin_bash() {
     }
 }
 
+/// The global hook table reaches every capsule through `guard_hooks_config`; a
+/// second registration in the capsule would run the guard or the hook twice.
+#[test]
+fn every_kind_registers_the_relay_guard_and_stop_hook_exactly_once() {
+    for kind in ALL_KINDS {
+        let registered = hooks(&plain(kind));
+        for (event, script) in [
+            ("PreToolUse", "/loom-relay-guard.sh"),
+            ("Stop", "/loom-relay-stop.sh"),
+        ] {
+            let count = registered
+                .iter()
+                .filter(|(e, _, command)| e == event && command.ends_with(script))
+                .count();
+            assert_eq!(count, 1, "{kind}: {event} {script}");
+        }
+    }
+}
+
 #[test]
 fn stage_and_knowledge_get_every_session_hook_and_the_completion_pin() {
     for kind in [
@@ -236,6 +260,25 @@ fn stage_and_knowledge_get_every_session_hook_and_the_completion_pin() {
         assert!(
             !registers(&settings, "PostToolUse", "loom-control-complete.sh"),
             "{kind} must not register the completion pin on PostToolUse"
+        );
+    }
+}
+
+/// Spelled out from the event's script name so the emitter cannot vouch for itself.
+#[test]
+fn a_stage_capsule_registers_every_session_event_under_bin_bash() {
+    let registered = hooks(&plain(SessionType::Stage));
+
+    for event in HookEvent::all() {
+        let name = event.to_string();
+        let command = format!("/bin/bash {HOOKS_DIR}/{}", event.script_name());
+        assert!(
+            registered
+                .iter()
+                .any(|(registered_event, matcher, script)| {
+                    registered_event == &name && matcher == "*" && script == &command
+                }),
+            "{name} {command} missing from the production capsule"
         );
     }
 }
@@ -350,37 +393,5 @@ fn every_generated_path_rule_and_sandbox_path_has_the_literal_shape() {
     }
 }
 
-#[test]
-fn a_config_validate_config_refuses_is_refused_for_every_kind() {
-    let mut config = sandbox(false);
-    config.permission_mode = PermissionMode::BypassPermissions;
-    for kind in ALL_KINDS {
-        for worktree_rooted in [true, false] {
-            let error = try_build(kind, &config, &[], None, worktree_rooted).unwrap_err();
-            assert!(
-                format!("{error:#}").contains("bypass-permissions"),
-                "{kind}: {error:#}"
-            );
-        }
-    }
-}
-
-/// Reads the install roots here and again inside `build`: both pinned to one
-/// scratch home (`InstallRootsEnv`, `#[serial]`).
-#[test]
-#[serial]
-fn the_home_expanded_forward_entry_is_allowed_only_with_the_codex_lane() {
-    let home = tempfile::tempdir().unwrap();
-    let _env = crate::assets::install::test_env::InstallRootsEnv::isolate(home.path());
-    let entry = crate::fs::permissions::settings::codex_forward_home_allow_entry()
-        .expect("an isolated home resolves the hooks directory");
-    for kind in ALL_KINDS {
-        let with_codex = build(kind, &sandbox(true), &[], None, true);
-        assert_has(&with_codex, "/permissions/allow", &entry, kind);
-        let without = strings(
-            &build(kind, &sandbox(false), &[], None, true),
-            "/permissions/allow",
-        );
-        assert!(!without.contains(&entry), "{kind}: {without:?}");
-    }
-}
+#[path = "tests_capsule_contents_config.rs"]
+mod config;

@@ -5,8 +5,13 @@ use ratatui::{
     text::{Line, Span},
 };
 
+use chrono::{DateTime, Utc};
+
 use super::text::{cut_line, padded, spans_width};
+use super::tokens_columns::Columns;
+use super::tokens_jobs::{has_open_job, job_of, jobs_of, model_text, state_text, unmatched};
 use super::tokens_models::{model_lines, MODEL_BLOCK_MAX_ROWS};
+use crate::commands::status::data::{CodexJob, StageSummary};
 use crate::commands::status::ui::theme::Theme;
 use crate::tokens::{AgentFlow, AgentKind, QuotaLeft, StageFlow, TokenFlow};
 
@@ -14,23 +19,6 @@ use crate::tokens::{AgentFlow, AgentKind, QuotaLeft, StageFlow, TokenFlow};
 const LIVE_MAX_ROWS: usize = 16;
 /// The live rows, a blank line and the by-model block.
 pub(super) const PANE_MAX_ROWS: u16 = (LIVE_MAX_ROWS + 1 + MODEL_BLOCK_MAX_ROWS) as u16;
-/// Preferred and smallest cell widths of the series strip, the agent label and the
-/// model column.
-const SERIES_CELLS: u16 = 48;
-const SERIES_MIN: u16 = 12;
-const LABEL_CELLS: u16 = 30;
-const LABEL_MIN: u16 = 12;
-const MODEL_CELLS: u16 = 24;
-const MODEL_MIN: u16 = 8;
-/// Cells an agent row spends outside those three columns and its total: the two-space
-/// indent, the two gaps, the 5-cell state and the gap before the total.
-const AGENT_FIXED: u16 = 2 + 1 + 1 + 5 + 1;
-/// Cells a stage line spends outside its id, sparkline and rate: the indent and the
-/// ` {rate}/m  ` text around the rate.
-const STAGE_FIXED: u16 = 1 + 1 + 2 + 2;
-/// The agent total and stage rate slots are at least this many cells wide.
-const SLOT_MIN: u16 = 5;
-
 pub(super) fn compact_tokens(n: u64) -> String {
     match n {
         0..=999 => n.to_string(),
@@ -91,82 +79,18 @@ pub(super) fn quota_left_text(left: &QuotaLeft) -> Option<(String, Style)> {
     Some((text, Style::default().fg(color)))
 }
 
-/// Cell widths of the pane's columns at one pane width.
-struct Columns {
-    stage_id: u16,
-    rate: u16,
-    spark: u16,
-    label: u16,
-    model: u16,
-    strip: u16,
-}
-
-impl Columns {
-    /// The columns for the rows of `stages`, with the slots the widest agent total and
-    /// stage rate among them need.
-    fn for_stages(width: u16, stages: &[&StageFlow]) -> Self {
-        let totals = stages.iter().flat_map(|stage| &stage.agents);
-        Self::fit(
-            width,
-            slot_cells(totals.map(|agent| agent.total.fresh())),
-            slot_cells(stages.iter().map(|stage| stage.rate.fresh())),
-        )
-    }
-
-    /// Every row of the pane uses these widths, so the strips line up. `total` and `rate`
-    /// are the cells the widest agent total and stage rate need, so a long number never
-    /// pushes the newest cell of a strip off the row. The model column gives way first,
-    /// then the strip, then the label; each stops at its minimum.
-    fn fit(width: u16, total: u16, rate: u16) -> Self {
-        let [model, strip, label] = shrink(
-            width.saturating_sub(AGENT_FIXED + total),
-            [
-                (MODEL_CELLS, MODEL_MIN),
-                (SERIES_CELLS, SERIES_MIN),
-                (LABEL_CELLS, LABEL_MIN),
-            ],
-        );
-        let [spark, stage_id] = shrink(
-            width.saturating_sub(STAGE_FIXED + rate),
-            [(SERIES_CELLS, SERIES_MIN), (LABEL_CELLS, LABEL_MIN)],
-        );
-        Self {
-            stage_id,
-            rate,
-            spark,
-            label,
-            model,
-            strip,
-        }
-    }
-}
-
-/// Cells the widest of `values` needs once compacted, at least [`SLOT_MIN`].
-fn slot_cells(values: impl Iterator<Item = u64>) -> u16 {
-    // `compact_tokens` is ASCII and at most 18 cells, so the cast is exact.
-    let widest = values.map(|n| compact_tokens(n).len() as u16).max();
-    widest.unwrap_or(0).max(SLOT_MIN)
-}
-
-/// Fit `(preferred, minimum)` columns into `room` cells. They shrink in array order,
-/// each no further than its minimum.
-fn shrink<const N: usize>(room: u16, columns: [(u16, u16); N]) -> [u16; N] {
-    let wanted: u16 = columns.iter().map(|&(preferred, _)| preferred).sum();
-    let mut excess = wanted.saturating_sub(room);
-    columns.map(|(preferred, minimum)| {
-        let cut = excess.min(preferred - minimum);
-        excess -= cut;
-        preferred - cut
-    })
-}
-
 /// The live rows (at most [`LIVE_MAX_ROWS`]), a blank line and the by-model block,
 /// cut to `max_rows` from the bottom.
-pub(super) fn tokens_pane_lines(flow: &TokenFlow, width: u16, max_rows: u16) -> Vec<Line<'static>> {
+pub(super) fn tokens_pane_lines(
+    flow: &TokenFlow,
+    stages: &[StageSummary],
+    width: u16,
+    max_rows: u16,
+) -> Vec<Line<'static>> {
     if max_rows == 0 {
         return Vec::new();
     }
-    let mut lines = live_lines(flow, width);
+    let mut lines = live_lines(flow, stages, width);
     let models = model_lines(&flow.models, width);
     if !models.is_empty() {
         lines.push(Line::default());
@@ -176,18 +100,27 @@ pub(super) fn tokens_pane_lines(flow: &TokenFlow, width: u16, max_rows: u16) -> 
     lines
 }
 
-/// The title and the stage and agent rows of the stages with a live agent: the part of
-/// the pane that stays when the by-model block does not fit.
-pub(super) fn live_lines(flow: &TokenFlow, width: u16) -> Vec<Line<'static>> {
+/// The title and the stage and agent rows of the stages with a live agent or a Codex job
+/// still running that no agent row reads: the part of the pane that stays when the by-model block does not
+/// fit. `stages` holds the Codex jobs.
+pub(super) fn live_lines(
+    flow: &TokenFlow,
+    stages: &[StageSummary],
+    width: u16,
+) -> Vec<Line<'static>> {
+    let now = Utc::now();
     let active: Vec<&StageFlow> = flow
         .stages
         .iter()
-        .filter(|stage| stage.agents.iter().any(|agent| agent.active))
+        .filter(|stage| {
+            stage.agents.iter().any(|agent| agent.active)
+                || has_open_job(stage, jobs_of(stages, &stage.stage_id))
+        })
         .collect();
     if active.is_empty() {
         return vec![title_line(width, Some("no active agent"))];
     }
-    let columns = Columns::for_stages(width, &active);
+    let columns = Columns::for_stages(width, &active, stages, now);
     let mut lines = vec![title_line(width, None)];
     for stage in active {
         if lines.len() >= LIVE_MAX_ROWS {
@@ -200,11 +133,19 @@ pub(super) fn live_lines(flow: &TokenFlow, width: u16) -> Vec<Line<'static>> {
             .copied()
             .max()
             .unwrap_or(0);
+        let jobs = jobs_of(stages, &stage.stage_id);
         for agent in &stage.agents {
             if lines.len() >= LIVE_MAX_ROWS {
                 break;
             }
-            lines.push(agent_line(agent, max, &columns, width));
+            let job = job_of(agent, jobs);
+            lines.push(agent_line(agent, job, now, max, &columns, width));
+        }
+        for job in unmatched(stage, jobs) {
+            if lines.len() >= LIVE_MAX_ROWS {
+                break;
+            }
+            lines.push(job_line(job, now, &columns, width));
         }
     }
     lines
@@ -272,23 +213,33 @@ fn agent_label(agent: &AgentFlow) -> String {
             let kind = kind.strip_prefix("loom-").unwrap_or(kind);
             format!("{} {}", kind, agent.id.chars().take(4).collect::<String>())
         }
-        AgentKind::Codex => {
-            let id = agent.id.strip_prefix("codex-").unwrap_or(&agent.id);
-            format!("codex {}", id.chars().take(4).collect::<String>())
-        }
+        AgentKind::Codex => match agent.unit_id.as_deref() {
+            Some(unit) => format!("codex {unit}"),
+            None => {
+                let id = agent.id.strip_prefix("codex-").unwrap_or(&agent.id);
+                format!("codex {}", id.chars().take(4).collect::<String>())
+            }
+        },
     }
 }
 
-fn agent_line(agent: &AgentFlow, max: u64, columns: &Columns, width: u16) -> Line<'static> {
+fn agent_line(
+    agent: &AgentFlow,
+    job: Option<&CodexJob>,
+    now: DateTime<Utc>,
+    max: u64,
+    columns: &Columns,
+    width: u16,
+) -> Line<'static> {
     let model_style = if agent.kind == AgentKind::Codex {
         Theme::dimmed().fg(Color::Magenta)
     } else {
         Theme::dimmed()
     };
-    let (state, state_style) = if agent.active {
-        ("live ", Style::default().fg(Color::Blue))
-    } else {
-        ("idle ", Theme::dimmed())
+    let (state, state_style) = match (job, agent.active) {
+        (Some(job), _) => state_text(job, now),
+        (None, true) => ("live".into(), Style::default().fg(Color::Blue)),
+        (None, false) => ("idle".into(), Theme::dimmed()),
     };
     // The newest cells always: an older series is cut from its left end.
     let values = tail(&agent.series, usize::from(columns.strip));
@@ -302,14 +253,39 @@ fn agent_line(agent: &AgentFlow, max: u64, columns: &Columns, width: u16) -> Lin
         Span::raw(padded(&agent_label(agent), columns.label)),
         Span::raw(" "),
         Span::styled(
-            padded(agent.model.as_deref().unwrap_or("—"), columns.model),
+            padded(
+                &model_text(agent.model.as_deref(), agent.effort.as_deref()),
+                columns.model,
+            ),
             model_style,
         ),
         Span::raw(" "),
-        Span::styled(state, state_style),
+        Span::styled(padded(&state, columns.state), state_style),
         Span::raw(strip),
     ];
     right_aligned(spans, Span::raw(compact_tokens(agent.total.fresh())), width)
+}
+
+/// A Codex job no agent row reads, with no tokens: the unit that failed before its thread
+/// started, or whose rollout has not been found.
+fn job_line(job: &CodexJob, now: DateTime<Utc>, columns: &Columns, width: u16) -> Line<'static> {
+    let (state, state_style) = state_text(job, now);
+    let spans = vec![
+        Span::raw("  "),
+        Span::raw(padded(&format!("codex {}", job.unit_id), columns.label)),
+        Span::raw(" "),
+        Span::styled(
+            padded(
+                &model_text(Some(&job.model), Some(&job.effort)),
+                columns.model,
+            ),
+            Theme::dimmed().fg(Color::Magenta),
+        ),
+        Span::raw(" "),
+        Span::styled(padded(&state, columns.state), state_style),
+        Span::raw(" ".repeat(usize::from(columns.strip))),
+    ];
+    right_aligned(spans, Span::raw("—"), width)
 }
 
 fn right_aligned(spans: Vec<Span<'static>>, right: Span<'static>, width: u16) -> Line<'static> {

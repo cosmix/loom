@@ -82,7 +82,7 @@ GATE_VAR_NAME="LOOM_MAIN""_AGENT_PID"
 # (a) THE REGRESSION: the full codex-forward invocation, detected as a
 # subagent, whose entire task brief is ONE single-quoted argument that
 # happens to instruct the subagent not to touch git at all.
-CODEX_FORWARD_CMD=$'~/.claude/hooks/loom/codex-forward.sh task \'Fix the bug.\nHARD CONSTRAINTS:\n- Do NOT run git at all (no git add, no git commit).\n\' --model gpt-5.6-terra --effort xhigh --write'
+CODEX_FORWARD_CMD=$'~/.claude/hooks/loom/codex-forward.sh task \'Fix the bug.\nHARD CONSTRAINTS:\n- Do NOT run git at all (no git add, no git commit).\n\' --model gpt-6.1-terra --effort xhigh --write'
 expect_exit "(a) codex-forward brief telling a subagent not to use git is allowed" \
 	0 "$(subagent_payload "$CODEX_FORWARD_CMD")" LOOM_MAIN_AGENT_PID=$$
 

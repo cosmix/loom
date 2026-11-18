@@ -68,6 +68,9 @@ pub(super) fn issue_line(issue: &CatalogIssue) -> String {
         CatalogIssue::OversizedIndex { bytes } => format!(
             "{INDEX_FILENAME} is {bytes} bytes, over the {MAX_INDEX_BYTES}-byte budget - trim it"
         ),
+        CatalogIssue::StaleIndex => format!(
+            "{INDEX_FILENAME} is stale: it is not what this tree generates, and a landing refuses it - run `loom knowledge sync`"
+        ),
     }
 }
 

@@ -1,5 +1,6 @@
 use super::*;
 use crate::fs::stage_request::StageRequest;
+use crate::models::dispute::CriterionField;
 use crate::relay::RequestKind;
 use std::io::Write;
 use tempfile::NamedTempFile;
@@ -64,8 +65,7 @@ fn relay_mode_writes_exactly_one_ticket_with_truncated_failure_output() {
 
     dispute_criteria_with_mode(
         "stage-a".to_string(),
-        CriterionField::Acceptance,
-        vec![0],
+        CriterionTarget::own(CriterionField::Acceptance, vec![0]),
         "flaky".to_string(),
         None,
         None,
@@ -89,6 +89,7 @@ fn relay_mode_writes_exactly_one_ticket_with_truncated_failure_output() {
         StageRequest::Dispute {
             field: CriterionField::Acceptance,
             criterion_indices: vec![0],
+            owner_stage: None,
             reason: "flaky".to_string(),
             evidence_commit: None,
             failure_output: None,
@@ -103,7 +104,7 @@ fn relay_mode_writes_exactly_one_ticket_with_truncated_failure_output() {
             .unwrap(),
     )
     .unwrap();
-    assert_eq!(line.sha256, crate::relay::sha256_hex(&bytes));
+    assert_eq!(line.sha256, crate::utils::sha256_hex(&bytes));
 }
 
 #[test]
@@ -117,8 +118,7 @@ fn an_adjudication_session_is_refused_before_any_ticket_is_written() {
 
     let error = dispute_criteria_with_mode(
         "stage-a".to_string(),
-        CriterionField::Acceptance,
-        vec![0],
+        CriterionTarget::own(CriterionField::Acceptance, vec![0]),
         "flaky".to_string(),
         None,
         None,
@@ -136,7 +136,7 @@ fn an_adjudication_session_is_refused_before_any_ticket_is_written() {
 }
 
 #[test]
-fn relay_mode_dispute_carries_its_field() {
+fn relay_mode_dispute_carries_its_field_and_owner_stage() {
     use crate::models::session::SessionType;
     use crate::relay::emit::test_support::context_for;
     use std::fs;
@@ -146,8 +146,11 @@ fn relay_mode_dispute_carries_its_field() {
 
     dispute_criteria_with_mode(
         "stage-a".to_string(),
-        CriterionField::Wiring,
-        vec![1],
+        CriterionTarget {
+            field: CriterionField::Wiring,
+            criterion_indices: vec![1],
+            owner_stage: Some("up".to_string()),
+        },
         "wrong check".to_string(),
         None,
         None,
@@ -165,6 +168,7 @@ fn relay_mode_dispute_carries_its_field() {
     let ticket = crate::relay::Ticket::decode(&fs::read(ticket_path).unwrap()).unwrap();
     assert_eq!(ticket.payload["field"], "wiring");
     assert_eq!(ticket.payload["criterion_indices"], serde_json::json!([1]));
+    assert_eq!(ticket.payload["owner_stage"], "up");
 }
 
 #[test]
@@ -177,8 +181,7 @@ fn relay_mode_dispute_ends_the_turn() {
 
     dispute_criteria_with_mode(
         "stage-a".to_string(),
-        CriterionField::Acceptance,
-        vec![0],
+        CriterionTarget::own(CriterionField::Acceptance, vec![0]),
         "wrong check".to_string(),
         None,
         None,
@@ -189,12 +192,14 @@ fn relay_mode_dispute_ends_the_turn() {
     .unwrap();
 
     let stderr_text = String::from_utf8(sink.stderr).unwrap();
-    assert!(stderr_text.contains("End your turn after the confirmation."));
+    assert!(stderr_text.contains("End your turn only after the confirmation."));
 }
 
 fn contract_dispute() -> Dispute {
     let kind = crate::models::dispute::DisputeKind::Contract {
         contract_id: "rejects-x".to_string(),
+        replacement: None,
+        replacement_base_sha256: None,
     };
     Dispute::of_kind("stage-a".to_string(), kind, "wrong error".to_string(), None)
 }

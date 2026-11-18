@@ -9,6 +9,8 @@
 #[path = "target_ref_hook_support/mod.rs"]
 #[allow(dead_code)]
 mod support;
+#[path = "test_support/mod.rs"]
+mod test_support;
 use std::process::Output;
 use support::{commit, commit_paths, git, make_ledger_unwritable, repo, run, stderr, tip, Repo};
 

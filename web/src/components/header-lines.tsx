@@ -3,8 +3,8 @@ import { useAtomValue } from "jotai/react";
 import {
   Check,
   Circle,
-  Clock3,
   Diamond,
+  Hourglass,
   Play,
   TriangleAlert,
   Zap,
@@ -28,6 +28,8 @@ const CONNECTION_LINE: Record<ConnectionPhase, ReturnType<typeof daemonLine>> = 
   error: { text: "connection error", tone: "blocked" },
 };
 
+const LONGER_THAN_EXPECTED = "longer than expected";
+
 /// "● daemon running · tick 4s ago", toned by `daemonLine`. Before a valid
 /// frame arrives it shows transport state. Once the feed drops, daemon state
 /// is unknown regardless of the frozen snapshot, so connection staleness
@@ -41,9 +43,14 @@ export function DaemonLine({ snapshot }: { snapshot: Snapshot | null }) {
     connection.phase === "error";
   const staleSecs = stale ? Math.max(0, Math.round((now - connection.since) / 1000)) : null;
   const line = snapshot
-    ? daemonLine(snapshot.daemon, snapshot.tick_age_secs, staleSecs)
+    ? daemonLine(snapshot.daemon, snapshot.tick_age_secs, staleSecs, snapshot.busy, now)
     : CONNECTION_LINE[connection.phase];
-  const diagnostics = [connection.message, snapshot?.notice].filter(Boolean).join("\n");
+  // Colour alone marks an operation over its ceiling (WCAG 1.4.1), so it also gets a
+  // text cue. Only the busy detail can pair a warning tone with a leading "busy ".
+  const overCeiling = line.tone === "warning" && Boolean(line.detail?.startsWith("busy "));
+  const diagnostics = [connection.message, snapshot?.notice, overCeiling && LONGER_THAN_EXPECTED]
+    .filter(Boolean)
+    .join("\n");
   return (
     <span
       className={cn(
@@ -55,6 +62,7 @@ export function DaemonLine({ snapshot }: { snapshot: Snapshot | null }) {
       <span aria-hidden="true" className="size-2 rounded-full bg-(--tone)" />
       <span>{line.text}</span>
       {line.detail && <span className="text-muted-foreground">· {line.detail}</span>}
+      {overCeiling && <span className="sr-only">, {LONGER_THAN_EXPECTED}</span>}
     </span>
   );
 }
@@ -115,7 +123,7 @@ export function SummaryLine({ snapshot, attention }: { snapshot: Snapshot; atten
       cells={[
         cell("executing", "executing", "executing", Play),
         cell("queued", "queued", "queued", Circle),
-        cell("waiting", "waiting-for-deps", "waiting", Clock3),
+        cell("waiting", "waiting-for-deps", "waiting", Hourglass),
         {
           key: "attention",
           glyph: <TriangleAlert className="inline-block size-3.5 align-[-1px]" />,

@@ -49,3 +49,8 @@ pub(crate) fn scenarios(adapter: &str) -> Vec<String> {
     names.sort();
     names
 }
+
+/// The whitespace-separated words of `command`, as the runner receives them.
+pub(crate) fn words(command: &str) -> Vec<String> {
+    command.split_whitespace().map(str::to_string).collect()
+}

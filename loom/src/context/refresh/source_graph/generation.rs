@@ -6,7 +6,9 @@ use std::path::Path;
 use super::excluded;
 use crate::context::source_graph::body_hash;
 use crate::context::source_graph::read::read_source;
-use crate::git::runner::{run_git_checked, run_git_records};
+use crate::git::revision::require_head_commit;
+use crate::git::status_entries::{parse_porcelain_v1_z, StatusEntry, PORCELAIN_V1_Z};
+use crate::git::worktree::WorktreeGit;
 
 pub(crate) struct WorkingTree {
     pub head: String,
@@ -17,12 +19,10 @@ pub(crate) struct WorkingTree {
 }
 
 pub(crate) fn working_tree(project_root: &Path) -> Result<WorkingTree> {
-    let head = run_git_checked(&["rev-parse", "HEAD"], project_root)?;
-    let status = run_git_records(
-        &["status", "--porcelain=v1", "-z", "--untracked-files=all"],
-        project_root,
-    )?;
-    let dirty = parse_status(&status);
+    let git = WorktreeGit::pinned_checkout(project_root)?;
+    let head = require_head_commit(&git)?;
+    let status = git.run_checked(&PORCELAIN_V1_Z)?;
+    let dirty = dirty_paths(parse_porcelain_v1_z(status.as_bytes())?);
     let generation = generation(project_root, &head, &dirty)?;
     Ok(WorkingTree {
         head,
@@ -62,86 +62,54 @@ fn generation(project_root: &Path, head: &str, dirty: &BTreeMap<String, String>)
     Ok(hex::encode(hasher.finalize()))
 }
 
-fn parse_status(output: &str) -> BTreeMap<String, String> {
+fn dirty_paths(entries: Vec<StatusEntry>) -> BTreeMap<String, String> {
     let mut dirty = BTreeMap::new();
-    let mut records = output.split('\0');
-    while let Some(record) = records.next() {
-        if record.is_empty() {
-            continue;
-        }
-        let Some((status, path)) = status_record(record) else {
-            continue;
-        };
-        if !excluded(path) {
-            dirty.insert(path.to_string(), status.clone());
-        }
-        if status.contains('R') || status.contains('C') {
-            if let Some(source) = records.next() {
-                if !source.is_empty() && !excluded(source) {
-                    dirty.insert(source.to_string(), status);
-                }
+    for entry in entries {
+        for path in std::iter::once(&entry.path).chain(entry.origin.iter()) {
+            if !excluded(path) {
+                dirty.insert(path.clone(), entry.code_str().to_owned());
             }
         }
     }
     dirty
 }
 
-fn status_record(record: &str) -> Option<(String, &str)> {
-    let bytes = record.as_bytes();
-    if bytes.len() >= 3 && bytes[2] == b' ' {
-        return Some((record[..2].to_string(), &record[3..]));
-    }
-    // `run_git_checked` trims a leading status-space from the first record.
-    if bytes.len() >= 2 && bytes[1] == b' ' {
-        return Some((format!(" {}", &record[..1]), &record[2..]));
-    }
-    None
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    fn parsed_dirty(output: &str) -> BTreeMap<String, String> {
+        dirty_paths(parse_porcelain_v1_z(output.as_bytes()).unwrap())
+    }
+
     #[test]
-    fn status_record_extracts_a_two_char_status_and_path() {
+    fn generation_hash_preserves_status_spaces_renames_and_deleted_paths() {
+        let temp = tempfile::TempDir::new().unwrap();
+        std::fs::write(temp.path().join("new name.rs"), "fn renamed() {}\n").unwrap();
+        std::fs::write(temp.path().join("next.rs"), "next\n").unwrap();
+        let dirty = parsed_dirty("R  new name.rs\0old name.rs\0 M next.rs\0");
+
         assert_eq!(
-            status_record("M  file.rs"),
-            Some(("M ".to_string(), "file.rs"))
+            generation(temp.path(), "deadbeef", &dirty).unwrap(),
+            "e63e2beec53251811c215f11221aebcc0bea249a02c9ab34e5b45410add99ae3"
         );
     }
 
     #[test]
-    fn status_record_recovers_a_trimmed_leading_status_space() {
-        // The real record is " M mod.rs" (unstaged modification); if
-        // `run_git_checked` trims the leading space it becomes "M mod.rs".
-        // The recovery branch must reconstruct the original " M" status
-        // rather than misreading it as status "M " on path " mod.rs".
-        assert_eq!(
-            status_record("M mod.rs"),
-            Some((" M".to_string(), "mod.rs"))
-        );
+    fn dirty_paths_on_empty_input_yields_no_dirty_paths() {
+        assert!(parsed_dirty("").is_empty());
     }
 
     #[test]
-    fn status_record_rejects_a_record_with_no_recognizable_separator() {
-        assert_eq!(status_record("x"), None);
-    }
-
-    #[test]
-    fn parse_status_on_empty_input_yields_no_dirty_paths() {
-        assert!(parse_status("").is_empty());
-    }
-
-    #[test]
-    fn parse_status_reads_a_plain_modification() {
-        let dirty = parse_status("M  file.rs\0");
+    fn dirty_paths_reads_a_plain_modification() {
+        let dirty = parsed_dirty("M  file.rs\0");
         assert_eq!(dirty.get("file.rs"), Some(&"M ".to_string()));
         assert_eq!(dirty.len(), 1);
     }
 
     #[test]
-    fn parse_status_reads_an_untracked_entry() {
-        let dirty = parse_status("?? new_file.txt\0");
+    fn dirty_paths_reads_an_untracked_entry() {
+        let dirty = parsed_dirty("?? new_file.txt\0");
         assert_eq!(dirty.get("new_file.txt"), Some(&"??".to_string()));
         assert_eq!(dirty.len(), 1);
     }
@@ -168,19 +136,32 @@ mod tests {
     }
 
     #[test]
-    fn parse_status_rename_record_consumes_both_paths_without_shifting_the_next_record() {
+    fn dirty_paths_rename_record_consumes_both_paths_without_shifting_the_next_record() {
         // A rename occupies two NUL-separated fields: the destination path
         // (with the "R " status prefix) then the bare source path. Getting
         // this wrong would shift every following record by one.
-        let input = "R  new.rs\0old.rs\0M  next.rs\0";
-        let dirty = parse_status(input);
-        assert_eq!(dirty.get("new.rs"), Some(&"R ".to_string()));
-        assert_eq!(dirty.get("old.rs"), Some(&"R ".to_string()));
+        let input = "R  new name.rs\0old name.rs\0 M next.rs\0";
+        let dirty = parsed_dirty(input);
+        assert_eq!(dirty.get("new name.rs"), Some(&"R ".to_string()));
+        assert_eq!(dirty.get("old name.rs"), Some(&"R ".to_string()));
         assert_eq!(
             dirty.get("next.rs"),
-            Some(&"M ".to_string()),
+            Some(&" M".to_string()),
             "the record after a rename must not be shifted or swallowed"
         );
         assert_eq!(dirty.len(), 3);
+    }
+
+    #[test]
+    fn dirty_paths_excludes_each_side_of_renames_and_copies_independently() {
+        let dirty =
+            parsed_dirty("R  visible name.rs\0target/old name.rs\0 C .loom/new.rs\0old name.rs\0");
+        assert_eq!(
+            dirty,
+            BTreeMap::from([
+                ("old name.rs".to_owned(), " C".to_owned()),
+                ("visible name.rs".to_owned(), "R ".to_owned()),
+            ])
+        );
     }
 }

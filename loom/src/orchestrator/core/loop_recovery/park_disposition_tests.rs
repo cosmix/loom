@@ -14,7 +14,7 @@ use std::path::Path;
 fn child_evidence(evidence_kind: CodexEvidenceKind, terminal: bool) -> CodexEvidence {
     CodexEvidence {
         evidence_kind,
-        requested_model: "gpt-6-sol".into(),
+        requested_model: "gpt-6.2-sol".into(),
         requested_effort: "high".into(),
         invocation_id: "invocation-child".into(),
         job_id: Some("job-child".into()),
@@ -165,4 +165,50 @@ fn lifecycle_disposition_covers_no_children_active_and_unknown_journals() {
             .session_child_disposition("test-stage", &fixture.session.id),
         ChildDisposition::Unknown(_)
     ));
+}
+
+#[test]
+#[serial_test::serial]
+fn park_native_active_worker_forbids_takedown() {
+    let mut fixture = fixture(2);
+    let pid = spawn_orphan_process();
+    let _process = crate::host_verify::submit::native_hold_tests::ProcessGuard(pid);
+    write_test_pid_identity(&fixture.work, &fixture.session, pid).unwrap();
+    crate::host_verify::submit::native_hold_tests::seed(&fixture.work, "test-stage");
+    block(&mut fixture);
+    assert!(crate::process::is_process_alive(pid));
+    assert_eq!(
+        load_session_exact(&fixture.work, &fixture.session.id)
+            .unwrap()
+            .unwrap()
+            .status,
+        SessionStatus::Running
+    );
+    assert_eq!(
+        crate::verify::transitions::load_stage("test-stage", &fixture.work)
+            .unwrap()
+            .status,
+        StageStatus::Executing
+    );
+}
+
+#[test]
+#[serial_test::serial]
+fn park_native_unverified_worker_escalates_ownership() {
+    let mut fixture = fixture(2);
+    let pid = spawn_orphan_process();
+    let _process = crate::host_verify::submit::native_hold_tests::ProcessGuard(pid);
+    write_test_pid_identity(&fixture.work, &fixture.session, pid).unwrap();
+    let dir = crate::host_verify::submit::native_hold_tests::seed(&fixture.work, "test-stage");
+    crate::native_worker::store::EventLog::open(&dir)
+        .unwrap()
+        .append(
+            crate::native_worker::model::NativeEvent::OwnershipUnverified {
+                detail: "unknown".into(),
+            },
+        )
+        .unwrap();
+    block(&mut fixture);
+    assert!(crate::process::is_process_alive(pid));
+    assert_ownership_unknown(&fixture);
 }

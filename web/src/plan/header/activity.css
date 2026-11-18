@@ -1,0 +1,277 @@
+@layer components {
+  /* The header control that opens the activity popover. It is a quiet button: status is the glyph
+     and the word, with no edge and no fill (ui/DESIGN.md, Status). */
+  .activity-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    height: var(--control-height);
+    padding: 0 10px;
+    border: 1px solid transparent;
+    border-radius: var(--corner-control);
+    background: transparent;
+    color: var(--foreground);
+    font-family: var(--font-sans, inherit);
+    font-size: var(--type-ui);
+    font-weight: 500;
+    white-space: nowrap;
+    cursor: pointer;
+  }
+
+  /* The dashboard's touch rule (`.header-controls button`, src/header.css) gives every header
+     button a 40px floor below 640px. The planner's row is 28px (ui/design.css), so the pill
+     lifts that floor; the two-class selector outranks the dashboard's one class and one tag. */
+  .plan-header-controls .activity-pill {
+    min-width: 0;
+    min-height: 0;
+  }
+
+  .activity-pill:hover,
+  .activity-pill[data-state="open"] {
+    background: var(--muted);
+  }
+
+  .activity-pill:focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+
+  .activity-pill__chevron {
+    width: 14px;
+    height: 14px;
+    color: var(--muted-foreground);
+  }
+
+  .activity-pill__idle {
+    width: 15px;
+    height: 15px;
+    color: var(--tone-completed);
+  }
+
+  .activity-pill[data-tone="completed"] .activity-glyph {
+    color: var(--tone-completed);
+  }
+
+  .activity-pill[data-tone="warning"] .activity-glyph {
+    color: var(--tone-warning);
+  }
+
+  /* The popover. Every row shares one anatomy: a 20px glyph column, then one text column (title,
+     one subject line) and a right column for the elapsed time or one quiet control. The glyph,
+     title and right column sit on the title's 20px line, so they share its centre line. The
+     footer's controls, the empty state and the expanded summary detail start on the same text
+     column. */
+  .activity-popover {
+    --activity-row-pad: var(--space-2);
+    --activity-glyph-col: 20px;
+    --activity-col-gap: var(--space-2);
+    --activity-line: 20px;
+    /* Where every row's text starts, measured from the popover's content edge. */
+    --activity-text-start: calc(
+      var(--activity-row-pad) + var(--activity-glyph-col) + var(--activity-col-gap)
+    );
+  }
+
+  .activity-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .activity-row {
+    display: grid;
+    grid-template-columns: var(--activity-glyph-col, 20px) minmax(0, 1fr) auto;
+    align-items: start;
+    column-gap: var(--activity-col-gap, var(--space-2));
+    width: 100%;
+    min-width: 0;
+    padding: var(--activity-row-pad, var(--space-2));
+    border: 0;
+    border-radius: var(--corner-control);
+    background: transparent;
+    color: var(--foreground);
+    font: inherit;
+    font-size: var(--type-ui);
+    line-height: var(--activity-line, 20px);
+    text-align: left;
+  }
+
+  /* Only a row that opens something washes on hover; a status row is not a target. */
+  button.activity-row {
+    cursor: pointer;
+    transition: background-color 120ms;
+  }
+
+  button.activity-row:hover {
+    background: var(--muted);
+  }
+
+  button.activity-row:focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: -2px;
+  }
+
+  .activity-row > .activity-tile {
+    height: var(--activity-line, 20px);
+  }
+
+  .activity-row__body {
+    display: grid;
+    min-width: 0;
+  }
+
+  .activity-row__title {
+    overflow: hidden;
+    font-size: var(--type-ui);
+    font-weight: 500;
+    line-height: var(--activity-line, 20px);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* One fine line under the title; it truncates rather than wraps. */
+  .activity-row__sub {
+    overflow: hidden;
+    color: var(--muted-foreground);
+    font-size: var(--type-fine);
+    font-weight: 400;
+    line-height: var(--leading-ui);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* A subject with a trailing fact: the subject gives way first, the fact stays whole. */
+  .activity-row__facts {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: var(--space-2);
+  }
+
+  .activity-row__subject {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* A pressure run's counted work: a 4px determinate bar under the subject line. */
+  .activity-row__bar {
+    display: block;
+    height: 4px;
+    margin-top: var(--space-1);
+    overflow: hidden;
+    border-radius: 9999px;
+    background: var(--muted);
+  }
+
+  .activity-row__bar > span {
+    display: block;
+    height: 100%;
+    border-radius: inherit;
+    background: var(--tone-executing);
+  }
+
+  .activity-attention {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    gap: var(--space-1);
+    color: var(--foreground);
+  }
+
+  .activity-attention__glyph {
+    width: 13px;
+    height: 13px;
+    color: var(--tone-warning);
+  }
+
+  .activity-row__time {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    height: var(--activity-line, 20px);
+    color: var(--muted-foreground);
+    font-size: var(--type-fine);
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+    white-space: nowrap;
+  }
+
+  .activity-row__chevron {
+    width: 14px;
+    height: 14px;
+    flex: none;
+    color: var(--muted-foreground);
+  }
+
+  /* One quiet control in the right column: a link in chrome, underlined on hover only. */
+  .activity-row__action {
+    display: inline-flex;
+    align-items: center;
+    height: var(--activity-line, 20px);
+    font-size: var(--type-fine);
+    font-weight: 500;
+    white-space: nowrap;
+  }
+
+  .activity-row__action a {
+    color: var(--foreground);
+  }
+
+  .activity-row__action a:focus-visible {
+    border-radius: 2px;
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+
+  /* The list and any detail it opens. The popover caps its height (max-h on PopoverContent) and
+     does not scroll itself: this region scrolls, so the hairline and the footer stay in view. */
+  .activity-scroll {
+    flex: 0 1 auto;
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+  }
+
+  /* The summary, stopped run and review controls, under one hairline. The footer keeps its full
+     height unless the idle summary row's detail is open; then that detail (`__scroll`) gives way
+     first and scrolls, and the run and review lines below it keep the bottom edge. */
+  .activity-foot {
+    display: flex;
+    flex: none;
+    flex-direction: column;
+    gap: var(--space-1);
+    margin-top: var(--space-1);
+    padding-top: var(--space-1);
+    border-top: 1px solid var(--hairline);
+  }
+
+  .activity-foot:empty {
+    display: none;
+  }
+
+  .activity-foot > * {
+    flex: none;
+  }
+
+  .activity-foot:has(> .activity-foot__scroll) {
+    flex: 0 1000 auto;
+    min-height: 0;
+  }
+
+  .activity-foot > .activity-foot__scroll {
+    flex: 0 1 auto;
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+  }
+
+  .activity-foot__detail {
+    padding: var(--space-1) var(--activity-row-pad, var(--space-2)) var(--space-2)
+      var(--activity-text-start, 36px);
+    font-size: var(--type-ui);
+  }
+}

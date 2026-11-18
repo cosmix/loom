@@ -195,6 +195,24 @@ expect_no_line '<helper not called>' 'ls -la'
 expect_no_line '<helper not called>' 'echo "out of memory error"'
 expect_stdout_empty 'echo "out of memory error"'
 
+# `loom subagents start|message|cancel` relay the `subagents:control` control
+# kind: the main agent's request reaches the daemon, a subagent's never does,
+# and the read-only and operator subcommands relay nothing.
+SUB_START='loom subagents start --provider codex --unit-id u1 --brief /w/brief.md --model gpt-6.1-terra --effort xhigh'
+SUB_MESSAGE="loom subagents message --worker codex:u1 --invocation inv-0123456789abcdef0123456789abcdef --delivery steer --message-id m1 --text 'go on'"
+SUB_CANCEL="loom subagents cancel --worker codex:u1 --invocation inv-0123456789abcdef0123456789abcdef --reason 'wrong brief'"
+for sub_command in "$SUB_START" "$SUB_MESSAGE" "$SUB_CANCEL"; do
+	expect subagents:control "$sub_command"
+	expect '' "$sub_command" general-purpose
+done
+expect subagents:control "cd loom && $SUB_START"
+expect '' 'loom subagents status --worker codex:u1'
+expect '' 'loom subagents result --worker codex:u1'
+expect '' 'loom subagents release --stage s --invocation i'
+expect '' 'loom subagents watch --worker codex:u1'
+expect '' 'loom subagents list'
+expect '' 'echo "loom subagents start --provider codex"'
+
 UNPARSEABLE='echo "start memory end'
 expect_no_line '<helper not called>' "$UNPARSEABLE"
 expect_stdout_empty "$UNPARSEABLE"

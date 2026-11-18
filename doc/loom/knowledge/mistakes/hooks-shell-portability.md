@@ -3,7 +3,7 @@
 
 # Hooks Shell Portability
 
-> Hook portability
+>
 
 ## gawk vs POSIX awk (2026-03-31)
 
@@ -343,3 +343,60 @@ reaches 3.
 **Prevention:** time hook delegates with a release build, or with the installed binary after `git diff <installed commit> HEAD -- loom` comes back empty.
 
 **Fix:** the replay was re-timed with the installed release binary; the numbers above are from that run.
+
+## Linux BSD shims are not a BSD test run
+
+**What happened:** A Linux full-suite run started the BSD-shim hook mode and described it as BSD compatibility verification.
+
+**Why:** The CI shim mode was conflated with execution on a BSD or macOS host.
+
+**Prevention:** Treat Linux shims only as partial simulation; never report them as platform verification. Follow the user’s request to omit this run.
+
+**Fix:** Report the Linux results and identify native BSD/macOS coverage as unrun.
+
+## Timeout fixture left a descendant holding stdout
+
+**What happened:** A bounded-hook test fixture spawned `sleep` as a child, leaving the watchdog capture pipe open after the shell was terminated.
+**Why:** The fixture did not replace its shell process with the intended stalled delegate.
+**Prevention:** Use `exec` in timeout fixtures when the test models a single stalled delegate; test descendant cleanup separately when required.
+**Fix:** Changed the fixture to `exec sleep` and reran the focused hook tests.
+
+## A Hook Fixture Copying a Subset of `loom-hooks/` Dies on `_common.sh`'s Sources
+
+**What happened:** the `guard-warns-without-jq` contract and an integration-verify functional check copied only `_common.sh`, `_bounded.sh` and `subagent-verify-guard.sh` into a temp directory. The guard exited 1 before its jq check, so stderr never named jq and the contract could not pass. With the seven helpers added but `_verify_matchers.sh` absent, a `cargo test` payload exits 0 for a dead or empty `LOOM_MAIN_AGENT_PID` and for the main agent.
+
+**Why:** `loom-hooks/_common.sh:178-184` sources `_parser`, `_parser_expand`, `_parser_scan`, `_identity`, `_stage_lookup`, `_containment` and `_heartbeat` with `|| return 1`, and the guard runs under `set -e`, so a missing helper ends the script on the `source` line, before the role check.
+
+**Prevention:** a fixture, contract or plan check that copies a hook into a temp directory copies the script plus every helper `_common.sh` sources (`rg -n 'source .*return 1' loom-hooks/_common.sh`), plus `_verify_matchers.sh` when the case reaches runner matching, and the plan's description names them.
+
+**Fix:** the contract writes the guard plus the seven helpers; `require-jq-advisory.sh` unsets `LOOM_WORK_DIR`, `LOOM_SESSION_ID`, `LOOM_STAGE_ID`, `LOOM_SESSION_TYPE` and `LOOM_HOOK_PATH`, as its sibling tests do (the recurrence of the `LOOM_HOOK_PATH` leak in [Hook Tests Inherit the Live Session's Environment](#hook-tests-inherit-the-live-sessions-environment-2026-09-19)).
+
+## A Failed Input Redirect Printed to Hook Stderr Despite 2>/dev/null
+
+**What happened:** `forward_guard_allows_when_no_stage_evidence_exists` failed on stderr output: `_codex_forward.sh` walks ancestor PIDs and reads `/proc/<pid>/environ` with `done <"/proc/$pid/environ" 2>/dev/null`. For a same-user process that blocks reading its environment (`systemd --user`), `[[ -r ]]` passes but the open fails with EACCES, and bash printed `Permission denied` to the hook's stderr. Eleven sites across seven hooks had the same order.
+
+**Why:** bash applies redirections left to right, so a failed input open is reported before the later `2>/dev/null` takes effect. The failure depends on the machine's process tree (an affected ancestor within the guard's 12-step walk), so it passed elsewhere.
+
+**Prevention:** write `2>/dev/null` before the input redirect (`cmd 2>/dev/null <file`). `</dev/null 2>/dev/null` is safe because opening /dev/null cannot fail. This search prints nothing when the class is gone: `rg -n '(^|[^<0-9&])<[^<(&=]\S*\s+([^|;]*\s)?2>\s*/dev/null' loom-hooks | rg -v '</dev/null'`.
+
+**Fix:** every site reordered; `_codex_forward.sh` carries a comment at the first one.
+
+## A Caller Variable Named `run` Is Shadowed by `loom_token_sep` (2026-11-17)
+
+**What happened:** while writing `loom-hooks/_relay_kinds.sh`, helpers that called `loom_token_sep <i> <var>` and then assigned the result through `printf -v` read the wrong value whenever the caller's variable was named `run`.
+
+**Why:** `loom_token_sep` (`loom-hooks/_parser.sh`) declares `local run`. Bash scoping is dynamic, so a `printf -v run` or an indirect assignment inside it targets its own local, never the caller's variable of the same name.
+
+**Prevention:** never name a variable passed by name to a `_parser.sh` helper after one of that helper's locals; prefix such variables with the calling function's name.
+
+**Fix:** `_relay_kinds.sh` renamed its locals.
+
+## Hook Tests Pass on Linux and Fail on macOS Through the /var Symlink and the Bash Watchdog (2026-11-17)
+
+**What happened:** two hook tests failed only on the macOS runner. `stage-terminal-guard.sh` built its fixture under `mktemp -d`, which on macOS sits under `/var/folders/...`, and `/var` is a symlink; `loom_lifecycle_plain_path` rejects any symlinked component, so the lifecycle binding refused valid metadata. `spawn-guard-reviewer-brief.sh` case 8 took 7 s against a 5 s bound: macOS has no `timeout`, so `loom_run_bounded` used its bash watchdog, which signals only the direct child; the stub's `sleep` grandchild kept the `$(...)` pipe open.
+
+**Why:** Linux CI has a physical `/tmp` and GNU `timeout`, which signals the whole process group, so neither trap is reachable there.
+
+**Prevention:** a hook test fixture that reaches a symlink-refusing helper resolves its temp root with `pwd -P`. A stub run under `loom_run_bounded` never leaves a child holding stdout (redirect it, or use a builtin). Reproduce the first trap on Linux with `TMPDIR=<symlink-to-/tmp>`.
+
+**Fix:** `TMP=$(cd "$(mktemp -d ...)" && pwd -P)` in `stage-terminal-guard.sh`; `sleep ... >/dev/null 2>&1` in the reviewer-brief stub.

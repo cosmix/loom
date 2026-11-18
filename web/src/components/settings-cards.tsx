@@ -2,7 +2,7 @@ import { cn } from "cn";
 import type { ReactElement } from "react";
 import { useId } from "react";
 
-import type { ConfigEntry, ConfigScope, ConfigSnapshot, ConfigValue } from "@/api/config";
+import type { ConfigEntry, ConfigScope, ConfigSnapshot } from "@/api/config";
 import { BuiltinValue, LaneSlot, PairSummary } from "@/components/settings-control";
 import {
   LANES,
@@ -14,18 +14,11 @@ import {
   type Lane,
   type SectionRows,
   type SettingsRow,
+  type SettingsTableProps,
   type WriteStatus,
 } from "@/components/settings-model";
 
-/// Identical to `SettingsLanes`' props — the dialog swaps between the two
-/// below 700px without changing what it passes down.
-export interface SettingsTableProps {
-  data: ConfigSnapshot;
-  sections: SectionRows[];
-  query: string;
-  statuses: Record<string, WriteStatus>;
-  onWrite: (scope: ConfigScope, name: string, value: ConfigValue | null) => void;
-}
+export type { SettingsTableProps } from "@/components/settings-model";
 
 const TIER_LABEL: Readonly<Record<Lane, string>> = {
   builtin: "built-in",
@@ -98,7 +91,9 @@ function SectionCards({
   return (
     <>
       <div className="settings-cards-sec">
-        <span className="eyebrow">{section.section}</span>
+        <span className="settings-section-title" title={`config section [${section.section}]`}>
+          {section.title}
+        </span>
         {section.caption && <span className="settings-help">{section.caption}</span>}
       </div>
       {section.rows.map((row) => (

@@ -93,6 +93,29 @@ fn test_write_and_read_heartbeat() -> Result<()> {
 }
 
 #[test]
+fn heartbeat_read_refuses_special_files_and_links() -> Result<()> {
+    use std::os::unix::fs::symlink;
+    let tmp = TempDir::new()?;
+    let dir = tmp.path().join("heartbeat");
+    std::fs::create_dir(&dir)?;
+    let path = dir.join("s.json");
+    let outside = tmp.path().join("outside");
+    std::fs::write(&outside, "{}")?;
+    symlink(&outside, &path)?;
+    assert!(read_heartbeat(&path).is_err());
+    std::fs::remove_file(&path)?;
+    nix::unistd::mkfifo(&path, nix::sys::stat::Mode::S_IRUSR)?;
+    assert!(read_heartbeat(&path).is_err());
+    std::fs::remove_file(&path)?;
+    std::fs::write(&path, " ".repeat(64 * 1024 + 1))?;
+    assert!(read_heartbeat(&path).is_err());
+    std::fs::rename(&dir, tmp.path().join("real-heartbeat"))?;
+    symlink(tmp.path().join("real-heartbeat"), &dir)?;
+    assert!(read_heartbeat(&path).is_err());
+    Ok(())
+}
+
+#[test]
 fn test_heartbeat_watcher_poll() -> Result<()> {
     let tmp = TempDir::new()?;
     let work_dir = tmp.path();

@@ -48,4 +48,4 @@ fi
 PATH="$BIN_DIR:$PATH" LOOM_LOG="$LOOM_LOG" LOOM_STAGE_ID=stage-1 \
 	printf '%s' "$payload" | PATH="$BIN_DIR:$PATH" LOOM_LOG="$LOOM_LOG" LOOM_STAGE_ID=stage-1 \
 	"$HOOK_DIR/codex-apply-patch.sh" post
-rg -qF 'context record-edit --stage stage-1 --path src/new.rs --path src/old.rs --path src/moved.rs' "$LOOM_LOG"
+[[ ! -e "$LOOM_LOG" ]] || { echo "FAIL: post hook invoked loom"; exit 1; }

@@ -3,13 +3,12 @@
 //! large output to, but only a file the harness itself could have written.
 
 use std::fs;
-use std::io::Read;
 use std::path::{Component, Path, PathBuf};
 
 use anyhow::{anyhow, bail, Context, Result};
 use serde_json::Value;
 
-use crate::fs::safe_read::open_regular_no_follow;
+use crate::fs::safe_read::{open_regular_no_follow, read_open_bounded, OverLimit};
 use crate::relay::MAX_PERSISTED_OUTPUT_BYTES;
 
 /// The current payload shape first, then the older one.
@@ -117,24 +116,15 @@ pub(super) fn read_persisted(path: &Path, projects_root: &Path) -> Result<String
     let relative = relative.to_str().context("the path is not UTF-8")?;
     let file = open_regular_no_follow(&root, relative, libc::O_RDONLY)?
         .context("the file does not exist")?;
-    read_capped(file)
-}
-
-fn read_capped(file: fs::File) -> Result<String> {
-    let size = file
-        .metadata()
-        .context("the file could not be inspected")?
-        .len();
-    if size > MAX_PERSISTED_OUTPUT_BYTES {
-        bail!("it is {size} bytes, above the {MAX_PERSISTED_OUTPUT_BYTES}-byte cap");
-    }
-    let mut bytes = Vec::new();
-    file.take(MAX_PERSISTED_OUTPUT_BYTES + 1)
-        .read_to_end(&mut bytes)
-        .context("the file could not be read")?;
-    if bytes.len() as u64 > MAX_PERSISTED_OUTPUT_BYTES {
-        bail!("it grew past the {MAX_PERSISTED_OUTPUT_BYTES}-byte cap while being read");
-    }
+    // The descriptor `open_regular_no_follow` vetted for a single link is the one read.
+    let cap = usize::try_from(MAX_PERSISTED_OUTPUT_BYTES).unwrap_or(usize::MAX);
+    let bytes = read_open_bounded(file, Path::new(name), cap).map_err(|error| {
+        if error.downcast_ref::<OverLimit>().is_some() {
+            anyhow!("it is larger than the {MAX_PERSISTED_OUTPUT_BYTES}-byte cap")
+        } else {
+            error.context("the file could not be read")
+        }
+    })?;
     Ok(String::from_utf8_lossy(&bytes).into_owned())
 }
 

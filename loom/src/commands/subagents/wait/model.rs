@@ -9,7 +9,7 @@ use crate::codex_lifecycle::CodexAuthorization;
 use crate::process::ProcessIdentity;
 use crate::subagent_lifecycle::WorkerIdentity;
 
-pub const WAIT_SCHEMA_VERSION: u16 = 1;
+pub const WAIT_SCHEMA_VERSION: u16 = 2;
 pub const EXIT_TIMEOUT: i32 = 2;
 pub const EXIT_WORKER_TERMINAL: i32 = 3;
 pub const EXIT_BUSY: i32 = 4;
@@ -46,7 +46,7 @@ impl FromStr for WorkerSpec {
                 "named spawns cannot be watched: spawn the subagent without `name`, or wait for its Agent-tool completion notice"
             );
         }
-        if !crate::models::forward_receipt::is_safe_id(id) {
+        if !crate::agent_state::is_safe_id(id) {
             bail!("worker id is empty or unsafe");
         }
         Ok(Self {
@@ -60,7 +60,7 @@ impl FromStr for WorkerSpec {
 /// name, which has no `agent-<id>.jsonl` transcript to follow.
 fn is_named_spawn_id(id: &str) -> bool {
     id.split_once("@session-").is_some_and(|(name, hex)| {
-        crate::models::forward_receipt::is_safe_id(name)
+        crate::agent_state::is_safe_id(name)
             && !hex.is_empty()
             && hex.bytes().all(|b| b.is_ascii_hexdigit())
     })
@@ -142,7 +142,12 @@ impl CodexAuthority {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BoundWorker {
     pub worker: WorkerSpec,
-    pub lifecycle_identity: WorkerIdentity,
+    /// `None` for a native Codex worker, which is read from its own record.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lifecycle_identity: Option<WorkerIdentity>,
+    /// `<stage_id>/<invocation_id>` of the native record the worker is bound to.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub native_invocation: Option<String>,
     pub authority: Option<CodexAuthority>,
     pub evidence: Vec<EvidenceReference>,
 }

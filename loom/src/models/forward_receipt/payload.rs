@@ -7,8 +7,9 @@ use anyhow::{bail, ensure, Result};
 use chrono::{DateTime, Utc};
 use serde_json::{Map, Value};
 
-use super::is_safe_id;
 use super::transcript::{collect_strings, forward_argv, ForwardingInvocation, ForwardingResult};
+use crate::agent_state::background_task_id;
+use crate::agent_state::is_safe_id;
 
 /// The forward a payload describes, with its result attached.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -32,7 +33,8 @@ pub fn decode_payload(raw: &str, now: DateTime<Utc>) -> Result<PayloadForward> {
         .get("tool_input")
         .and_then(|input| input.get("command"))
         .and_then(Value::as_str);
-    let Some((model, effort)) = command.and_then(forward_argv) else {
+    let Some(super::transcript::ForwardArgv { model, effort, .. }) = command.and_then(forward_argv)
+    else {
         bail!("payload command is not a forward");
     };
     let tool_use_id = safe_id(&payload, "tool_use_id")?;
@@ -80,13 +82,10 @@ fn result_from(
         .find_map(|key| response.get(*key).and_then(Value::as_str))
         .unwrap_or_default()
         .to_owned();
-    let background_task_id = ["backgroundTaskId", "background_task_id"]
-        .iter()
-        .find_map(|key| response.get(*key).and_then(Value::as_str))
-        .filter(|id| is_safe_id(id))
-        .map(str::to_owned);
+    let response = Value::Object(response.clone());
+    let background_task_id = background_task_id(&response);
     let mut task_output_path_text = vec![text.clone()];
-    collect_strings(&Value::Object(response.clone()), &mut task_output_path_text);
+    collect_strings(&response, &mut task_output_path_text);
     ForwardingResult {
         id: tool_use_id.to_owned(),
         text,

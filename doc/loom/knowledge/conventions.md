@@ -217,7 +217,7 @@ See [Code Style and Structure](conventions/code-style-and-structure.md).
 
 ## Web Dashboard Typography
 
-Controls, cues and status words in the dashboard use the body face in sentence case; monospace only for ids and code, uppercase only via `eyebrow`, `.stage-tag` and `.rank-caption`. See [Web Dashboard Typography](conventions/web-dashboard-typography.md).
+Controls, cues and status words in the dashboard use the body face in sentence case; monospace only for ids and code, uppercase only via `eyebrow`, `.stage-tag` and `.rank-caption`. See [Web Dashboard Typography](conventions/web-dashboard-typography.md). The planning app's Markdown renderer and CodeMirror rules, its visual-stage screenshot script and its UI test rules are in [plan-web](conventions/plan-web.md).
 
 ## Model and Effort Config
 
@@ -247,4 +247,4 @@ ends and every artifact judged by `loom usage --compare` under the net-total rul
 
 ## Implementers Do Not Verify
 
-A subagent runs at most one narrowly-scoped check. The gate is the orchestrator's `loom check <stage-id>`, run once after the implementers return. See [Guidance Channels and Plugin Scope](conventions/guidance-channels-and-plugin-scope.md).
+In an orchestrated Loom stage, a subagent compiles its own files freely (`cargo check`, `cargo build`, `cargo test --no-run`, `tsc --noEmit`, `<pm> run build`) and runs targeted tests for its code and module when ready, with no run-count limit. The stage gate runs full suites through `loom check`; integration-verify orchestrators and reviewers use `loom check integration-verify`. See [Guidance Channels and Plugin Scope](conventions/guidance-channels-and-plugin-scope.md).

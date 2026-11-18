@@ -1,7 +1,10 @@
+use std::collections::BTreeMap;
+
 use serde::{Deserialize, Serialize};
 
 use crate::models::dispute::{CriterionField, DisputeKind};
 use crate::models::stage::StageStatus;
+use crate::plan::schema::ContractChoices;
 use crate::verify::review::fingerprint::ChangeFingerprint;
 
 #[path = "protocol_debug.rs"]
@@ -90,12 +93,15 @@ pub use crate::stage_service::ContractRunReport;
 /// FreezeContracts, ObserveChanges).
 /// They use the user token. The stage self-service RPCs are additionally
 /// accepted only for the exact stage/session pair the caller names.
-/// State-transition requests carry no command, path, or privileged flags;
-/// evidence is separately bounded and validated.
+/// State-transition requests carry no command and no privileged flags;
+/// evidence is separately bounded and validated. The freeze request's
+/// `choices` map carries writer-chosen test identifiers, runner adapters and
+/// run directories, which the daemon validates against the stage's base commit
+/// before it uses them.
 ///
 /// `Admin` requests are privileged host-only operations (Stop). They require
-/// an action-bound, one-time operator proof minted from the mode-0600 admin
-/// secret by a trusted host process.
+/// an action-bound, one-time proof derived from the mode-0600 admin secret,
+/// which the operator can read and a sandboxed agent cannot.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Capability {
     User,
@@ -133,6 +139,10 @@ pub enum Request {
         field: CriterionField,
         /// The disputed entries; the daemon sorts them and drops repeats.
         criterion_indices: Vec<usize>,
+        /// The completed stage whose `wiring` list the indices name, for an
+        /// integration-verify stage's aggregated wiring re-verification.
+        #[serde(default)]
+        owner_stage: Option<String>,
         reason: String,
         evidence_commit: Option<String>,
         failure_output: Option<String>, // pre-truncated to 4KB by the CLI
@@ -178,6 +188,9 @@ pub enum Request {
         session_id: String,
         head: String,
         tree_digest: String,
+        /// This call's `--test`, `--runner` and `--cwd` flags, by contract id.
+        #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+        choices: ContractChoices,
     },
     /// Ask for a stage's change fingerprint, which only the daemon computes
     /// (`verify::review::observer`). The request names the stage alone; the
@@ -238,7 +251,7 @@ pub enum Response {
     },
     AuthenticationFailed,
     StatusUpdate {
-        data: Box<crate::commands::status::data::StatusData>,
+        data: Box<crate::status::data::StatusData>,
     },
     /// Orchestration has completed (all stages terminal)
     OrchestrationComplete {

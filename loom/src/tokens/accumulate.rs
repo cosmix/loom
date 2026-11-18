@@ -1,7 +1,7 @@
 //! Per-agent token state: totals, 30 s buckets, and where reading the agent's
 //! one file stopped, with the dedupe state needed to continue from there.
 
-use super::claude_line::{self, ClaudeLine};
+use super::claude_line::{self, ClaudeObservation};
 use super::codex_line::{self, CodexLine, CodexTotals};
 pub(super) use super::messages::MessageTable;
 use super::messages::Observation;
@@ -20,11 +20,24 @@ pub(super) use super::messages::MESSAGE_TABLE_CAP;
 /// A stage's agents by agent key.
 pub(super) type StageAgents = BTreeMap<String, AgentState>;
 
+/// The native worker unit a Codex agent's thread belongs to.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(super) struct NativeUnit {
+    pub(super) unit_id: String,
+    /// The reasoning effort the unit was admitted with: the fallback for an
+    /// agent whose rollout names none.
+    pub(super) effort: String,
+}
+
 /// One agent's accumulated usage and the state of reading its file.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct AgentState {
     pub(super) kind: AgentKind,
     pub(super) agent_type: Option<String>,
+    /// For a codex agent: the id of the forwarder subagent that forwarded to it.
+    pub(super) forwarder: Option<String>,
+    /// For a codex agent started by a native worker: that worker's unit.
+    pub(super) unit: Option<NativeUnit>,
     pub(super) model: Option<String>,
     /// The last reasoning effort a line named.
     pub(super) effort: Option<String>,
@@ -49,38 +62,7 @@ pub(super) struct FileCursor {
     pub(super) offset: u64,
     pub(super) messages: MessageTable,
     /// The last Codex `total_token_usage` read.
-    pub(super) codex_total: Option<SavedTotals>,
-}
-
-/// Serializable copy of [`CodexTotals`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub(super) struct SavedTotals {
-    input: u64,
-    cached_input: u64,
-    cache_write: u64,
-    output: u64,
-}
-
-impl From<CodexTotals> for SavedTotals {
-    fn from(totals: CodexTotals) -> Self {
-        Self {
-            input: totals.input,
-            cached_input: totals.cached_input,
-            cache_write: totals.cache_write,
-            output: totals.output,
-        }
-    }
-}
-
-impl From<SavedTotals> for CodexTotals {
-    fn from(saved: SavedTotals) -> Self {
-        Self {
-            input: saved.input,
-            cached_input: saved.cached_input,
-            cache_write: saved.cache_write,
-            output: saved.output,
-        }
-    }
+    pub(super) codex_total: Option<CodexTotals>,
 }
 
 impl AgentState {
@@ -88,6 +70,8 @@ impl AgentState {
         Self {
             kind,
             agent_type: None,
+            forwarder: None,
+            unit: None,
             model: None,
             effort: None,
             first_seen: None,
@@ -103,11 +87,15 @@ impl AgentState {
     }
 
     /// Forgets everything read from the file, to read `path` (inode `inode`)
-    /// again from offset 0. The ledger's agent type is kept.
+    /// again from offset 0. The ledger's agent type, forwarder and native unit are kept.
     pub(super) fn restart(&mut self, path: &str, inode: u64) {
         let agent_type = self.agent_type.take();
+        let forwarder = self.forwarder.take();
+        let unit = self.unit.take();
         *self = Self {
             agent_type,
+            forwarder,
+            unit,
             ..Self::new(self.kind, path)
         };
         self.file.inode = inode;
@@ -132,15 +120,19 @@ impl AgentState {
     }
 
     fn ingest_claude(&mut self, line: &str) {
-        match claude_line::parse_line(line) {
-            ClaudeLine::Usage {
+        match claude_line::parse_observation(line) {
+            ClaudeObservation::Usage {
                 message_id,
                 timestamp,
                 model,
                 effort,
                 usage,
             } => {
-                if self.file.messages.is_stale(message_id.as_deref(), line) {
+                if self
+                    .file
+                    .messages
+                    .is_stale(message_id.as_deref(), timestamp)
+                {
                     return;
                 }
                 // An API-error row names the `<synthetic>` sentinel, not a model. A
@@ -155,26 +147,26 @@ impl AgentState {
                 if let Some(effort) = effort.and_then(|effort| visible(&effort)) {
                     self.effort = Some(effort);
                 }
-                self.revise_claude(line, message_id, timestamp, usage);
+                self.revise_claude(message_id, timestamp, usage);
             }
-            ClaudeLine::Unreadable => self.count_unreadable(),
-            ClaudeLine::Other => {}
+            ClaudeObservation::Unreadable => self.count_unreadable(),
+            ClaudeObservation::Other => {}
         }
     }
 
-    fn revise_claude(&mut self, line: &str, id: Option<String>, timestamp: i64, usage: TokenUsage) {
-        let observation = Observation::new(line, timestamp, usage, &self.model, &self.effort);
+    fn revise_claude(
+        &mut self,
+        id: Option<String>,
+        timestamp: chrono::DateTime<chrono::Utc>,
+        usage: TokenUsage,
+    ) {
+        let observation = Observation::new(timestamp, usage, &self.model, &self.effort);
         if let Some(id) = id {
-            if let Some(previous) = self.file.messages.observations.get(&id).cloned() {
-                if !crate::provider_data::supersedes(previous.stamp, observation.stamp) {
-                    return;
-                }
+            if let Some(previous) = self.file.messages.replace(id, observation) {
                 self.retract(&previous);
             }
-            self.file.messages.increase(&id, &usage);
-            self.file.messages.observations.insert(id, observation);
         }
-        self.add(timestamp, &usage);
+        self.add(timestamp.timestamp(), &usage);
     }
 
     fn retract(&mut self, previous: &Observation) {
@@ -204,9 +196,9 @@ impl AgentState {
                 let delta = self
                     .file
                     .codex_total
-                    .and_then(|last| total.delta_since(&last.into()))
+                    .and_then(|last| total.delta_since(&last))
                     .unwrap_or(total);
-                self.file.codex_total = Some(total.into());
+                self.file.codex_total = Some(total);
                 self.add(timestamp, &delta.to_usage());
             }
             CodexLine::TurnContext { model, effort } => {

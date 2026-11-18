@@ -1,5 +1,4 @@
 use std::env;
-use tempfile::TempDir;
 
 use super::*;
 
@@ -7,10 +6,12 @@ use super::*;
 /// state when `note` walks upward from a nested directory. Both the impostor
 /// and the starting directory belong to this fixture.
 #[test]
-#[serial]
 fn note_does_not_adopt_an_impostor_git_dir_at_the_temp_root() {
-    let temp_root = TempDir::new().unwrap();
-    let _guard = EnvGuard::new();
+    if run_isolated_test() {
+        return;
+    }
+    let temp_root = isolated_temp_dir();
+    let _cwd = CwdRestorer::new();
     env::remove_var("LOOM_STAGE_ID");
     std::fs::create_dir(temp_root.path().join(".git")).unwrap();
     let plain_dir = temp_root.path().join("plain");

@@ -3,7 +3,7 @@
 use std::path::Path;
 
 use super::*;
-use crate::context::source_graph::{EdgeProvenance, RECEIVER_CONFIDENCE};
+use crate::context::source_graph::{EdgeProvenance, SourceEdgeKind, RECEIVER_CONFIDENCE};
 
 /// One binding as `(path, name, alias, glob)`.
 type Leaf = (String, Option<String>, Option<String>, bool);
@@ -43,6 +43,81 @@ fn named_imports_keep_their_aliases() {
             leaf("x", Some("b"), Some("c"), false),
         ]
     );
+}
+
+#[test]
+fn comments_in_imports_preserve_bindings() {
+    let clean =
+        "import d, { parse, type Thing as T } from './x'; export { parse as p } from 'external';";
+    let commented = "import d, { /*x*/ parse, type /*y*/ Thing as /*z*/ T } from './x'; export { /*a*/ parse as p } from 'external';";
+    assert_eq!(bindings(clean), bindings(commented));
+}
+
+#[test]
+fn comments_preserve_bindings_in_every_ecmascript_grammar() {
+    use crate::context::extract::{javascript::JavaScriptExtractor, tsx::TsxExtractor};
+    let extractors: &[(&dyn SourceGraphExtractor, &str)] = &[
+        (&JavaScriptExtractor::new(), "a.js"),
+        (&TypeScriptExtractor::new(), "a.ts"),
+        (&TsxExtractor::new(), "a.tsx"),
+    ];
+    for (extractor, path) in extractors {
+        let project = |source: &str| {
+            extractor
+                .extract(Path::new(path), source.as_bytes())
+                .unwrap()
+                .imports
+                .into_iter()
+                .map(|b| (b.path, b.name, b.alias, b.glob, b.exported_as))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            project("import { parse as p } from 'external'; export { p as q } from './local';"),
+            project("import { /* x */ parse as /* y */ p } from 'external'; export { /* z */ p as q } from './local';"),
+            "{path}"
+        );
+    }
+}
+
+#[test]
+fn comment_markers_in_module_strings_remain_literal() {
+    assert_eq!(
+        bindings("import { /* comment */ parse } from './x/*literal*/y';"),
+        vec![leaf("./x/*literal*/y", Some("parse"), Some("parse"), false)]
+    );
+}
+
+#[test]
+fn commented_external_import_refuses_cross_file_namesake() {
+    use crate::context::graph_store::{FileEntry, ResolvedGraph};
+    use crate::context::resolve_graph;
+    for import in [
+        "import { parse } from 'external';",
+        "import { /* explanation */ parse } from 'external';",
+    ] {
+        let source = format!("{import} function run() {{ parse(); }}");
+        let main = extraction(&source);
+        let other = TypeScriptExtractor::new()
+            .extract(Path::new("src/other.ts"), b"export function parse() {} ")
+            .unwrap();
+        let entry = |value: FileExtraction| FileEntry {
+            nodes: value.nodes,
+            edges: value.edges,
+            coverage: value.coverage,
+            imports: value.imports,
+            ..FileEntry::default()
+        };
+        let mut graph = ResolvedGraph::default();
+        graph.files.insert("src/lib.ts".into(), entry(main));
+        graph.files.insert("src/other.ts".into(), entry(other));
+        resolve_graph(&mut graph);
+        let call = graph.files["src/lib.ts"]
+            .edges
+            .iter()
+            .find(|edge| edge.kind == SourceEdgeKind::Calls && edge.symbol == "parse")
+            .unwrap();
+        assert!(call.is_unresolved(), "{call:#?}");
+    }
 }
 
 #[test]

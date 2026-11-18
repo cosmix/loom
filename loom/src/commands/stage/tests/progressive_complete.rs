@@ -25,6 +25,7 @@ use super::super::progressive_complete::{
     attempt_progressive_merge, complete_with_merge, should_defer_cleanup, Landing, MergeOutcome,
 };
 use crate::models::stage::{Stage, StageStatus};
+use crate::test_git::TestRepo;
 use crate::verify::transitions::{load_stage, save_stage};
 
 /// Build a real git repo with a `.loom/work` directory and a `config.toml` that
@@ -33,37 +34,9 @@ fn init_repo_with_work_dir() -> TempDir {
     let temp_dir = TempDir::new().expect("tempdir");
     let repo_root = temp_dir.path();
 
-    Command::new("git")
-        .args(["init", "-b", "main"])
-        .current_dir(repo_root)
-        .output()
-        .expect("git init");
-    Command::new("git")
-        .args(["config", "user.email", "test@test.com"])
-        .current_dir(repo_root)
-        .output()
-        .expect("git config email");
-    Command::new("git")
-        .args(["config", "user.name", "Test"])
-        .current_dir(repo_root)
-        .output()
-        .expect("git config name");
-    std::fs::write(repo_root.join("README.md"), "r").expect("write README");
-    Command::new("git")
-        .args(["add", "README.md"])
-        .current_dir(repo_root)
-        .output()
-        .expect("git add");
-    Command::new("git")
-        .args(["commit", "-m", "initial"])
-        .current_dir(repo_root)
-        .output()
-        .expect("git commit");
-    Command::new("git")
-        .args(["branch", "-M", "main"])
-        .current_dir(repo_root)
-        .output()
-        .expect("rename to main");
+    TestRepo::builder()
+        .seed("README.md", "r", "initial")
+        .init_in(repo_root);
 
     // Create a minimal state directory with config.toml so `get_merge_point`
     // can resolve to "main".
@@ -71,6 +44,7 @@ fn init_repo_with_work_dir() -> TempDir {
     std::fs::create_dir_all(&work_dir).expect("mkdir .loom/work");
     std::fs::write(work_dir.join("config.toml"), "base_branch = \"main\"\n")
         .expect("write config.toml");
+    crate::git::worktree::capture_main_identity(repo_root, &work_dir).expect("capture identity");
 
     temp_dir
 }
@@ -115,7 +89,12 @@ fn no_branch_does_not_mark_merged() {
                 stage.merged
             );
         }
-        Ok(MergeOutcome::Conflict | MergeOutcome::Held | MergeOutcome::NoCommits) => {
+        Ok(
+            MergeOutcome::Conflict
+            | MergeOutcome::Held
+            | MergeOutcome::SigningHeld
+            | MergeOutcome::NoCommits,
+        ) => {
             panic!("unexpected Conflict, Held or NoCommits from missing branch");
         }
         Err(_) => {

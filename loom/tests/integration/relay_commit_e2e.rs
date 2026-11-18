@@ -23,6 +23,7 @@ use tempfile::TempDir;
 use uuid::Uuid;
 
 use super::helpers;
+use super::helpers::test_support::git_repo::{self, git, TestRepo};
 use super::relay_scratch::{create_scratch_dir, tempdir_outside_tmp};
 
 const MESSAGE: &str = "test(e2e): commit a.txt";
@@ -57,28 +58,6 @@ struct Staged {
     output: Output,
 }
 
-/// Point every git this test spawns at missing global and system config.
-fn isolate_git(command: &mut Command, home: &Path) {
-    command
-        .env("GIT_CONFIG_GLOBAL", home.join("no-global-gitconfig"))
-        .env("GIT_CONFIG_SYSTEM", home.join("no-system-gitconfig"))
-        .env("GIT_CONFIG_NOSYSTEM", "1");
-}
-
-/// Run git in `dir` with ambient config neutralised; returns trimmed stdout.
-fn git(home: &Path, dir: &Path, args: &[&str]) -> String {
-    let mut command = Command::new("git");
-    command.args(args).current_dir(dir);
-    isolate_git(&mut command, home);
-    let output = command.output().expect("spawn git");
-    assert!(
-        output.status.success(),
-        "git {args:?} failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    String::from_utf8_lossy(&output.stdout).trim().to_string()
-}
-
 /// A Running Stage session and an Executing stage it owns, with the pid entry
 /// of the test process itself so a hook child proves as "inside the session".
 fn write_session_and_stage(work_dir: &Path, worktree: &Path, session_id: &str, stage_id: &str) {
@@ -111,26 +90,23 @@ fn write_session_and_stage(work_dir: &Path, worktree: &Path, session_id: &str, s
 }
 
 /// Isolated-git repo, config pinned repo-locally (drain reads host config), and a stage worktree.
-fn init_repo_with_worktree(home: &Path, stage_id: &str) -> (TempDir, PathBuf) {
+fn init_repo_with_worktree(stage_id: &str) -> (TempDir, PathBuf) {
     let repo = TempDir::new().expect("create repo dir");
     let root = repo.path().to_path_buf();
-    git(home, &root, &["init", "-b", "main"]);
+    TestRepo::builder().no_seed().init_in(&root);
     let hooks = root.join(".git").join("hooks");
     fs::create_dir_all(&hooks).expect("create hooks dir");
     for (key, value) in [
-        ("user.email", "test@test.com"),
-        ("user.name", "Test User"),
-        ("commit.gpgsign", "false"),
         ("gpg.format", "openpgp"),
         ("core.hooksPath", hooks.to_str().unwrap()),
     ] {
-        git(home, &root, &["config", key, value]);
+        git(&root, &["config", key, value]);
     }
-    git(home, &root, &["commit", "--allow-empty", "-m", "initial"]);
+    git(&root, &["commit", "--allow-empty", "-m", "initial"]);
     let worktree = root.join(".worktrees").join(stage_id);
     let branch = format!("loom/{stage_id}");
     let path = worktree.to_str().unwrap();
-    git(home, &root, &["worktree", "add", "-b", &branch, path]);
+    git(&root, &["worktree", "add", "-b", &branch, path]);
     (repo, worktree)
 }
 
@@ -138,10 +114,11 @@ fn build_fixture() -> Fixture {
     let home = tempdir_outside_tmp("home-");
     let xdg = tempdir_outside_tmp("xdg-");
     let stage_id = "relay-commit-e2e-stage".to_string();
-    let (repo, worktree_path) = init_repo_with_worktree(home.path(), &stage_id);
+    let (repo, worktree_path) = init_repo_with_worktree(&stage_id);
     let repo_root = repo.path().to_path_buf();
     let work_dir = repo_root.join(".loom").join("work");
     fs::create_dir_all(&work_dir).expect("create work dir");
+    helpers::write_main_checkout_identity(&repo_root, &work_dir);
     // A stage worktree reaches the shared state through this symlink.
     fs::create_dir_all(worktree_path.join(".loom")).expect("create worktree .loom dir");
     std::os::unix::fs::symlink(&work_dir, worktree_path.join(".loom/work"))
@@ -167,16 +144,6 @@ fn build_fixture() -> Fixture {
 }
 
 impl Fixture {
-    /// Git in the main checkout (`in_worktree` false) or the stage worktree.
-    fn git(&self, in_worktree: bool, args: &[&str]) -> String {
-        let dir = if in_worktree {
-            &self.worktree_path
-        } else {
-            &self.repo_root
-        };
-        git(&self.home, dir, args)
-    }
-
     /// A `loom` command (via `helpers::loom_cmd`) as the Stage session.
     fn session_loom(&self) -> Command {
         let mut command = helpers::loom_cmd();
@@ -192,7 +159,7 @@ impl Fixture {
             .env("LOOM_WORKTREE_PATH", &self.worktree_path)
             .env("XDG_RUNTIME_DIR", &self.xdg)
             .env("HOME", &self.home);
-        isolate_git(&mut command, &self.home);
+        git_repo::isolate(&mut command);
         command
     }
 }
@@ -200,9 +167,9 @@ impl Fixture {
 /// Stage `a.txt`, record what the session saw, and run `loom stage commit`.
 fn stage_and_request_commit(fx: &Fixture) -> Staged {
     fs::write(fx.worktree_path.join("a.txt"), "a\n").expect("write a.txt");
-    fx.git(true, &["add", "a.txt"]);
-    let head = fx.git(true, &["rev-parse", "HEAD"]);
-    let tree = fx.git(true, &["write-tree"]);
+    git(&fx.worktree_path, &["add", "a.txt"]);
+    let head = git(&fx.worktree_path, &["rev-parse", "HEAD"]);
+    let tree = git(&fx.worktree_path, &["write-tree"]);
 
     let mut command = fx.session_loom();
     command.args(["stage", "commit", &fx.stage_id, "-m", MESSAGE]);
@@ -259,7 +226,7 @@ fn run_hook(fx: &Fixture, staged: &Staged) -> Output {
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
-    isolate_git(&mut command, &fx.home);
+    git_repo::isolate(&mut command);
     let mut child = command.spawn().expect("spawn loom-relay.sh");
     let stdin = child.stdin.take().expect("child stdin is piped");
     { stdin }
@@ -318,16 +285,22 @@ fn relay_and_assert_landed(fx: &Fixture, staged: &Staged) -> String {
     assert_eq!(last.outcome, Some(LedgerOutcome::Applied), "{last:?}");
 
     let printed = wait_for_commit_id(fx, id);
-    let tip = fx.git(
-        false,
+    let tip = git(
+        &fx.repo_root,
         &["rev-parse", &format!("refs/heads/loom/{}", fx.stage_id)],
     );
     assert_eq!(printed, tip);
     assert_eq!(
-        fx.git(false, &["rev-parse", &format!("{printed}^{{tree}}")]),
+        git(
+            &fx.repo_root,
+            &["rev-parse", &format!("{printed}^{{tree}}")]
+        ),
         staged.tree
     );
-    let parents = fx.git(false, &["rev-list", "--parents", "-n", "1", &printed]);
+    let parents = git(
+        &fx.repo_root,
+        &["rev-list", "--parents", "-n", "1", &printed],
+    );
     assert_eq!(parents, format!("{printed} {}", staged.head));
     printed
 }
@@ -337,8 +310,11 @@ fn enable_fake_signer(fx: &Fixture, dir: &Path) {
     let script = dir.join("fake-gpg");
     fs::write(&script, FAKE_SIGNER).expect("write fake signer");
     fs::set_permissions(&script, fs::Permissions::from_mode(0o755)).expect("chmod fake signer");
-    fx.git(false, &["config", "gpg.program", script.to_str().unwrap()]);
-    fx.git(false, &["config", "commit.gpgsign", "true"]);
+    git(
+        &fx.repo_root,
+        &["config", "gpg.program", script.to_str().unwrap()],
+    );
+    git(&fx.repo_root, &["config", "commit.gpgsign", "true"]);
 }
 
 /// True (after reporting the skip) when a tool this flow needs is missing.
@@ -379,7 +355,7 @@ fn a_relayed_commit_is_signed_when_gpgsign() {
     let staged = stage_and_request_commit(&fx);
     let id = relay_and_assert_landed(&fx, &staged);
 
-    let object = fx.git(false, &["cat-file", "commit", &id]);
+    let object = git(&fx.repo_root, &["cat-file", "commit", &id]);
     assert!(
         object.lines().any(|line| line.starts_with("gpgsig ")),
         "commit {id} carries no gpgsig header:\n{object}"

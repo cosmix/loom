@@ -25,13 +25,14 @@
 //! the completion records them (`observed`) for that dispute to name.
 
 mod accepted;
-mod base;
+pub(crate) mod base;
 mod failure;
 mod libtest;
 mod observed;
 mod reach;
 mod report;
 mod runs;
+mod scoped;
 
 use anyhow::{Context, Result};
 use std::collections::{BTreeMap, BTreeSet};
@@ -41,12 +42,13 @@ use std::time::Duration;
 use crate::context::graph_store::ResolvedGraph;
 use crate::context::source_graph::{file_node_id, SourceNode, SourceNodeKind};
 use crate::context::worktree_graph::{build_for_worktree, WorktreeGraph};
+use crate::git::changes::{changes_since, merge_base};
 use crate::models::stage::{CommandConfinement, Stage};
 use crate::skills::project::ProjectProfile;
 use crate::testrun::{registry, SelectionNames, TestRunnerAdapter, TestTarget};
 use crate::verify::contracts::{normalize, owning_package};
 use crate::verify::criteria::{CriteriaConfig, CriteriaProbe, ProbeRunner};
-use crate::verify::review::fingerprint::{changes_since_merge_base, checkout_git, local_git};
+use crate::verify::review::fingerprint::{checkout_git, local_git};
 
 pub(in crate::verify) use accepted::ACCEPTED_FILE;
 pub use accepted::{load_accepted, AcceptedFailure, AcceptedImpact};
@@ -54,8 +56,17 @@ pub use failure::{check_failure_id, FailureKind, ImpactFailure};
 pub use observed::{load_observed, record_observed, ObservedImpact};
 pub use report::ImpactTestsFailed;
 
+/// Failures observed by the impact gate in a completion error, if any.
+pub(crate) fn observed_impact(error: &anyhow::Error) -> ObservedImpact {
+    let failures = error
+        .downcast_ref::<ImpactTestsFailed>()
+        .map(|failed| failed.failures.as_slice())
+        .unwrap_or_default();
+    ObservedImpact::of(failures)
+}
+
 use base::{BaseCriteria, BaseProbe};
-use libtest::LibtestPaths;
+use libtest::{LibtestPath, LibtestPaths};
 use reach::{reached_test_nodes, TestNodes};
 use report::Report;
 use runs::Selection;
@@ -155,7 +166,10 @@ pub fn stage_changes(worktree: &Path, target_branch: &str) -> Result<Vec<PathBuf
 
 /// The merge base [`stage_changes`] measures from, and those changes.
 fn merge_base_changes(worktree: &Path, target_branch: &str) -> Result<(String, Vec<PathBuf>)> {
-    let (base, paths) = changes_since_merge_base(&local_git(worktree)?, target_branch)?;
+    let git = local_git(worktree)?;
+    let base = merge_base(&git, "HEAD", target_branch)
+        .with_context(|| format!("finding merge base with {target_branch}"))?;
+    let paths = changes_since(&git, &base, None)?;
     Ok((base, paths.into_iter().map(PathBuf::from).collect()))
 }
 
@@ -282,9 +296,9 @@ fn group_targets(
 }
 
 /// What `node` selects: its file for a runner selecting by file, a function's
-/// libtest path for one selecting by libtest path
-/// (`TestRunnerAdapter::selection_names`). `None` when such a runner cannot
-/// name it, with a note when it is a function.
+/// libtest path and the crate root it starts at for one selecting by libtest
+/// path (`TestRunnerAdapter::selection_names`). `None` when such a runner
+/// cannot name it, with a note when it is a function.
 fn target_of(
     paths: &mut LibtestPaths<'_>,
     package: &Path,
@@ -299,7 +313,7 @@ fn target_of(
     if node.kind != SourceNodeKind::Function {
         return None;
     }
-    let Some(name) = paths.of(node, package, is_crate_root) else {
+    let Some(LibtestPath { name, root }) = paths.of(node, package, is_crate_root) else {
         notes.insert(format!(
             "`{}` is not selected: its libtest path cannot be derived from the module \
              declarations in the source graph",
@@ -307,6 +321,8 @@ fn target_of(
         ));
         return None;
     };
+    // The path starts at the crate root, which names the cargo target (`scoped`).
+    let file = file_node_id(Path::new(&root).strip_prefix(package).ok()?);
     Some(TestTarget {
         file,
         name: Some(name),

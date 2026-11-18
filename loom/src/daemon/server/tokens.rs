@@ -29,10 +29,7 @@ pub fn admin_token_path(work_dir: &Path) -> PathBuf {
     work_dir.join(ADMIN_TOKEN_FILE)
 }
 
-/// Generate a 64-character hex token from 32 cryptographically-strong bytes.
-///
-/// Uses `OsRng` (getrandom on Linux, SecRandomCopyBytes on macOS) instead of
-/// `Uuid::new_v4` so token entropy is the full 256 bits the format implies.
+/// Read 32 random bytes from /dev/urandom and encode them as 64 hexadecimal characters.
 fn generate_token_hex() -> Result<String> {
     let mut bytes = [0u8; 32];
     let mut f = fs::File::open("/dev/urandom").context("Failed to open /dev/urandom")?;

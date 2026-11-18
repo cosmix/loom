@@ -3,14 +3,25 @@ import { cn } from "cn";
 import { StateBadge, toneClass } from "@/components/state-badge";
 import { Separator } from "@/components/ui/separator";
 import type { Tone } from "@/lib/format";
-import { LEGEND, type StageStateMeta } from "@/lib/states";
+import { DISPLAY_LEGEND, type StageStateMeta } from "@/lib/states";
 
 /// The activity column's vocabulary (`legend.rs` `activity_lines`, plus the
 /// `crashed` cell from `cells.rs`).
 const ACTIVITY: { word: string; tone: Tone; meaning: string }[] = [
   { word: "working", tone: "completed", meaning: "the session used a tool recently" },
   { word: "idle", tone: "dimmed", meaning: "alive, nothing happening" },
-  { word: "stale", tone: "warning", meaning: "no heartbeat for 5 min" },
+  { word: "quiet", tone: "dimmed", meaning: "no recent heartbeat" },
+  {
+    word: "busy",
+    tone: "completed",
+    meaning: "a foreground command is still making progress, within a bounded hold",
+  },
+  {
+    word: "stale",
+    tone: "warning",
+    meaning:
+      "heartbeat budget exceeded with no verified progress; a long tool call can still read stale",
+  },
   { word: "orphaned", tone: "blocked", meaning: "executing with no session record" },
   { word: "crashed", tone: "blocked", meaning: "the session process died" },
   {
@@ -18,6 +29,12 @@ const ACTIVITY: { word: string; tone: Tone; meaning: string }[] = [
     tone: "contract",
     meaning:
       "a contract writer is writing the stage's failing contract tests before implementation starts; the card glows purple until it hands over",
+  },
+  {
+    word: "contracts written, testing 9/11 · 6m12s",
+    tone: "contract",
+    meaning:
+      "the writer froze its contracts and loom is running them, 9 of 11 done so far; the writer is waiting, so its silence is expected (waiting to test while the run is queued)",
   },
 ];
 
@@ -29,11 +46,11 @@ export function LegendTopic() {
   return (
     <div className="space-y-5">
       <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-sm">
-        {LEGEND.slice(0, NEEDS_YOU_FROM).map((entry) => (
+        {DISPLAY_LEGEND.slice(0, NEEDS_YOU_FROM).map((entry) => (
           <LegendRow key={entry.status} entry={entry} />
         ))}
         <div className={cn("col-span-2 mt-2 eyebrow", toneClass("blocked"))}>needs you</div>
-        {LEGEND.slice(NEEDS_YOU_FROM).map((entry) => (
+        {DISPLAY_LEGEND.slice(NEEDS_YOU_FROM).map((entry) => (
           <LegendRow key={entry.status} entry={entry} />
         ))}
       </dl>

@@ -2,8 +2,9 @@
 //!
 //! Always compiled, with no `cfg`, so a build without a grammar pack can still
 //! name the dialects it cannot parse and report them as gaps instead of
-//! mislabelling them as unknown files. Stage and skill language detection
-//! (`crate::language`) is unrelated and stays as it was.
+//! mislabelling them as unknown files. Stage and skill file detection
+//! (`crate::language`) shares this extension registry; project detection uses
+//! separate manifest evidence rules.
 
 use std::path::Path;
 

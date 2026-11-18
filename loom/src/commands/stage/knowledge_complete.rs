@@ -6,7 +6,7 @@
 use anyhow::{bail, Context, Result};
 use std::path::Path;
 
-use crate::models::stage::{Stage, StageType};
+use crate::models::stage::{Stage, StageStatus, StageType};
 use crate::verify::transitions::{load_stage, trigger_dependents, update_stage};
 
 use super::acceptance_runner::{
@@ -57,6 +57,16 @@ pub fn complete_knowledge_stage(
     };
     if !no_verify {
         verify_knowledge_acceptance(&stage, work_dir)?;
+        let Some(session) = stage.session.as_deref() else {
+            bail!(
+                "{}",
+                crate::verify::completion::knowledge::no_session_recovery(stage_id)
+            );
+        };
+        let repo = crate::fs::work_dir::WorkDir::new(work_dir)?
+            .main_project_root()
+            .context("completion repository is unavailable")?;
+        crate::verify::completion::knowledge::check_session(&repo, work_dir, session)?;
     }
 
     finish_knowledge_stage(&stage, session_id, snapshot.as_ref(), work_dir)
@@ -84,8 +94,8 @@ pub(super) fn finish_knowledge_stage(
         // Knowledge stages auto-set merged=true since there's no branch to merge.
         current.merged = true;
         current.completed_commit = snapshot.map(|snapshot| snapshot.commit.clone());
-        // An operator's force-complete lands a stage still awaiting review.
-        current.review_reason = None;
+        // An operator's force-complete lands a stage still awaiting review;
+        // completing archives its review reason into `issue_history`.
         current.try_complete(None)
     })?;
 
@@ -112,14 +122,19 @@ fn force_complete_knowledge(
         cleanup_session_resources(stage_id, sid, work_dir);
     }
     update_stage(stage_id, work_dir, |current| {
-        current.merged = true;
-        current.status = crate::models::stage::StageStatus::Completed;
-        current.completed_at = Some(chrono::Utc::now());
-        current.updated_at = chrono::Utc::now();
+        mark_force_completed(current);
         Ok(())
     })?;
     println!("Knowledge stage '{stage_id}' force-completed!");
     trigger_knowledge_dependents(stage_id, work_dir)
+}
+
+/// `--force-unsafe` completes from any status; the forced write archives
+/// the failure and review reason the left status recorded.
+fn mark_force_completed(stage: &mut Stage) {
+    stage.merged = true;
+    stage.force_status_with_reason(StageStatus::Completed, "force-unsafe knowledge completion");
+    stage.completed_at = Some(chrono::Utc::now());
 }
 
 fn trigger_knowledge_dependents(stage_id: &str, work_dir: &Path) -> Result<()> {
@@ -167,4 +182,78 @@ fn verify_knowledge_acceptance(stage: &Stage, work_dir: &Path) -> Result<()> {
         );
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::failure::{FailureInfo, FailureType};
+    use crate::models::stage::IssueKind;
+
+    /// Each recovery the no-session error names, against what the code allows.
+    #[test]
+    fn the_no_session_error_names_recoveries_the_status_rules_allow() {
+        let message = crate::verify::completion::knowledge::no_session_recovery("k");
+        assert!(
+            message.contains("`loom stage retry k` for a Blocked stage"),
+            "{message}"
+        );
+        assert!(
+            message.contains("`loom stage complete k --no-verify` from a status"),
+            "{message}"
+        );
+        assert!(
+            message.contains("`loom stage complete k --force-unsafe` from any"),
+            "{message}"
+        );
+
+        assert!(StageStatus::Blocked.can_transition_to(&StageStatus::Queued));
+        let mut no_verify = Stage {
+            status: StageStatus::NeedsHumanReview,
+            ..Stage::default()
+        };
+        no_verify.try_complete(None).unwrap();
+        assert_eq!(no_verify.status, StageStatus::Completed);
+        let mut refused = Stage {
+            status: StageStatus::Blocked,
+            ..Stage::default()
+        };
+        refused.try_complete(None).unwrap_err();
+        mark_force_completed(&mut refused);
+        assert_eq!(refused.status, StageStatus::Completed);
+    }
+
+    #[test]
+    fn a_forced_completion_archives_the_review_reason_and_failure() {
+        let mut stage = Stage {
+            id: "knowledge".to_string(),
+            status: StageStatus::NeedsHumanReview,
+            review_reason: Some("acceptance timed out".to_string()),
+            failure_info: Some(FailureInfo {
+                failure_type: FailureType::Timeout,
+                detected_at: chrono::Utc::now(),
+                evidence: vec!["slow".to_string()],
+            }),
+            ..Stage::default()
+        };
+
+        mark_force_completed(&mut stage);
+
+        assert_eq!(stage.status, StageStatus::Completed);
+        assert!(stage.merged && stage.completed_at.is_some());
+        assert_eq!(stage.review_reason, None);
+        assert_eq!(stage.failure_info, None);
+        let ended: Vec<(IssueKind, &str)> = stage
+            .issue_history
+            .iter()
+            .map(|issue| (issue.kind, issue.ended_by.as_str()))
+            .collect();
+        assert_eq!(
+            ended,
+            [
+                (IssueKind::Failure, "NeedsHumanReview -> Completed"),
+                (IssueKind::Review, "NeedsHumanReview -> Completed"),
+            ]
+        );
+    }
 }

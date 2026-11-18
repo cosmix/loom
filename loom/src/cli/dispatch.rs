@@ -1,7 +1,8 @@
+use crate::commands::hook::reviewer_brief::emit_reviewer_brief;
 use crate::commands::{
-    attach, clean, config, context, graph, handoff, hook, init, install_assets, knowledge, map,
-    memory, plan, pressure, project, repair, request, resume, review, run, self_update, sessions,
-    skill_index, status, stop, subagents, target, usage, verify, worktree_cmd,
+    ask, attach, clean, config, context, graph, handoff, hook, init, install_assets, knowledge,
+    map, memory, plan, pressure, project, repair, request, resume, review, run, self_update,
+    sessions, skill_index, status, stop, subagents, target, usage, verify, worktree_cmd,
 };
 use crate::completions::{complete_dynamic, generate_completions, CompletionContext, Shell};
 use anyhow::Result;
@@ -11,9 +12,11 @@ use std::str::FromStr;
 use super::dispatch_admin;
 use super::dispatch_stage;
 use super::types::{
-    Commands, ContextCommands, HookCommands, KnowledgeCommands, MemoryCommands, PlanCommands,
-    ProjectCommands, RequestCommands, SessionsCommands, TargetCommands, WorktreeCommands,
+    Commands, CompletionsArgs, ContextCommands, HookCommands, KnowledgeCommands, MemoryCommands,
+    PlanCommands, PlanServeArgs, ProjectCommands, RequestCommands, RunArgs, SessionsCommands,
+    StatusArgs, TargetCommands, WorktreeCommands,
 };
+use super::types_memory::KnowledgeContextArgs;
 
 // `dispatch_stage` reaches these through `super::dispatch::{..}`; re-exporting
 // here keeps that path working now that the implementations live in
@@ -21,11 +24,11 @@ use super::types::{
 pub(super) use dispatch_admin::{print_minted_proof, resolve_completion_proof};
 
 /// `loom knowledge <subcommand>` dispatch.
-///
-/// Broken out of `dispatch` because this stage's new context/sync
-/// subcommands pushed the parent match past the line limit.
 fn dispatch_knowledge(command: KnowledgeCommands) -> Result<()> {
     match command {
+        KnowledgeCommands::RecoverBaseline { stage, commit } => {
+            knowledge::recovery::recover_baseline(&stage, &commit)
+        }
         KnowledgeCommands::Update { file, content } => knowledge::update(file, content),
         KnowledgeCommands::ReplaceSection {
             file,
@@ -36,7 +39,7 @@ fn dispatch_knowledge(command: KnowledgeCommands) -> Result<()> {
             knowledge::delete_section(file, heading)
         }
         KnowledgeCommands::Annotate(args) => knowledge::annotate::annotate(args),
-        context @ KnowledgeCommands::Context { .. } => dispatch_knowledge_context(context),
+        KnowledgeCommands::Context(args) => dispatch_knowledge_context(args),
         KnowledgeCommands::Eval {
             cases,
             budget_tokens,
@@ -66,49 +69,36 @@ fn dispatch_knowledge(command: KnowledgeCommands) -> Result<()> {
     }
 }
 
-/// `loom knowledge context` dispatch, broken out to keep `dispatch_knowledge`
-/// under the line ceiling.
-fn dispatch_knowledge_context(command: KnowledgeCommands) -> Result<()> {
-    let KnowledgeCommands::Context {
-        stage,
-        query,
-        budget_tokens: budget, // bound short so the call below stays compact
-        scope,
-        require_id,
-        history,
-        require_compact,
-        explain,
-        json,
-    } = command
-    else {
-        unreachable!("dispatch_knowledge routes only Context here");
-    };
+fn dispatch_knowledge_context(args: KnowledgeContextArgs) -> Result<()> {
     knowledge::context::context(
-        stage,
-        query,
-        budget,
-        scope,
-        require_id,
-        history,
-        require_compact,
-        explain,
-        json,
+        args.stage,
+        args.query,
+        args.budget_tokens,
+        args.scope,
+        args.require_id,
+        args.history,
+        args.require_compact,
+        args.explain,
+        args.json,
     )
 }
 
-/// `loom plan <subcommand>` dispatch.
-///
-/// Broken out for the same reason as `dispatch_knowledge`: the top-level match
-/// sits at its line ceiling, so every new top-level arm has to buy its line back
-/// from an existing one.
-fn dispatch_plan(command: PlanCommands) -> Result<()> {
+/// `loom plan [<subcommand>]` dispatch: bare `loom plan` serves the planning app.
+fn dispatch_plan(command: Option<PlanCommands>, serve: PlanServeArgs) -> Result<()> {
     match command {
-        PlanCommands::Verify {
+        None => plan::serve::execute(&serve),
+        Some(PlanCommands::Verify {
             path,
             strict,
             json,
             no_color,
-        } => plan::verify::execute(&path, strict, json, no_color),
+            dry_run,
+        }) => plan::verify::execute(&path, strict, json, no_color, dry_run),
+        Some(PlanCommands::Check { json }) => crate::commands::plan::check::execute(json),
+        Some(PlanCommands::Hook { event, session_dir }) => {
+            crate::commands::plan::hook::execute(&event, &session_dir)
+        }
+        Some(PlanCommands::Summary { command }) => crate::commands::plan::summary::execute(command),
     }
 }
 
@@ -131,15 +121,23 @@ fn dispatch_context(command: ContextCommands) -> Result<()> {
 /// work, never a model call and never a network call.
 fn dispatch_hook(command: HookCommands) -> Result<()> {
     match command {
+        HookCommands::Blocks {
+            since_hours,
+            by_rule,
+        } => hook::blocks::blocks(since_hours, by_rule),
         HookCommands::UserPrompt => hook::user_prompt::user_prompt(),
         HookCommands::ReconcileGraph { cancel } => hook::reconcile_graph::reconcile_graph(cancel),
         HookCommands::PreCompact => hook::pre_compact::pre_compact(),
         HookCommands::ContextCeilings => hook::context_ceilings::context_ceilings(),
         HookCommands::ForwardReceipt => hook::forward_receipt::forward_receipt(),
         HookCommands::WorkerBrief => hook::worker_brief::worker_brief(),
+        HookCommands::ReviewerModel => hook::reviewer_model::reviewer_model(),
+        HookCommands::CodexBackend => hook::codex_backend::codex_backend(),
+        HookCommands::ReviewerBrief => emit_reviewer_brief(),
         HookCommands::ProjectTypes => hook::project_types::execute(),
         HookCommands::Relay { allowed_kinds } => hook::relay::relay(&allowed_kinds),
         HookCommands::ReviewHarvest => hook::review_harvest::review_harvest(),
+        HookCommands::ReviewStart => hook::review_start::review_start(),
     }
 }
 
@@ -153,24 +151,20 @@ fn dispatch_request(command: RequestCommands) -> Result<()> {
 }
 
 /// `loom completions` dispatch.
-///
-/// Broken out for the same reason as `dispatch_knowledge`: the top-level
-/// match sits at its line ceiling, so every new arm has to buy its line back
-/// from an existing one.
-fn dispatch_completions(shell: Option<String>, install: bool, migrate: bool) -> Result<()> {
-    if migrate {
+fn dispatch_completions(args: CompletionsArgs) -> Result<()> {
+    if args.migrate {
         return crate::completions::install::check_migration();
     }
 
-    if install {
-        let shell = match shell {
+    if args.install {
+        let shell = match args.shell {
             Some(s) => Shell::from_str(&s)?,
             None => crate::completions::install::detect_shell()?,
         };
         return crate::completions::install::install(shell);
     }
 
-    let shell = shell.ok_or_else(|| {
+    let shell = args.shell.ok_or_else(|| {
         anyhow::anyhow!("Shell argument required. Usage: loom completions <bash|zsh|fish>")
     })?;
     let shell = Shell::from_str(&shell)?;
@@ -178,15 +172,12 @@ fn dispatch_completions(shell: Option<String>, install: bool, migrate: bool) -> 
     Ok(())
 }
 
-/// `loom complete` dispatch, extracted so the `loom project` arm fits in the
-/// top-level match without growing its ledgered line count.
+/// `loom complete` dispatch.
 fn dispatch_complete(shell: &str, args: &[String]) -> Result<()> {
     complete_dynamic(&CompletionContext::from_args(shell, args))
 }
 
-/// `loom check` dispatch, extracted so `--no-cache` can toggle the acceptance
-/// pass cache before running verification without growing the already
-/// oversized `dispatch` match arm.
+/// Apply the cache option before running `loom check`.
 fn run_check(stage_id: String, suggest: bool, args: verify::CheckArgs) -> Result<()> {
     if args.no_cache {
         // Single-threaded at this point in a one-shot CLI invocation — no
@@ -198,34 +189,27 @@ fn run_check(stage_id: String, suggest: bool, args: verify::CheckArgs) -> Result
     verify::execute(&stage_id, suggest, &args.criterion)
 }
 
-/// `loom {sessions,worktree} <subcommand>` dispatch.
-///
-/// Extracted for the same reason as `dispatch_knowledge`: grouping these two
-/// small, self-contained command groups keeps the top-level `dispatch` match
-/// under its line ceiling as new commands are added elsewhere.
-fn dispatch_tools(command: Commands) -> Result<()> {
+/// `loom sessions <subcommand>` dispatch.
+fn dispatch_sessions(command: SessionsCommands) -> Result<()> {
     match command {
-        Commands::Sessions { command } => match command {
-            SessionsCommands::List => sessions::list(),
-            SessionsCommands::Kill { session_ids, stage } => sessions::kill(session_ids, stage),
-        },
-        Commands::Worktree { command } => match command {
-            WorktreeCommands::List => worktree_cmd::list(),
-            WorktreeCommands::Remove {
-                stage_id,
-                force,
-                confirmation,
-            } => worktree_cmd::remove(stage_id, force, confirmation),
-        },
-        _ => unreachable!("dispatch routes only the sessions/worktree group here"),
+        SessionsCommands::List => sessions::list(),
+        SessionsCommands::Kill { session_ids, stage } => sessions::kill(session_ids, stage),
+    }
+}
+
+/// `loom worktree <subcommand>` dispatch.
+fn dispatch_worktree(command: WorktreeCommands) -> Result<()> {
+    match command {
+        WorktreeCommands::List => worktree_cmd::list(),
+        WorktreeCommands::Remove {
+            stage_id,
+            force,
+            confirmation,
+        } => worktree_cmd::remove(stage_id, force, confirmation),
     }
 }
 
 /// `loom memory <subcommand>` dispatch.
-///
-/// Broken out for the same reason as `dispatch_knowledge`: the top-level match
-/// sits at its line ceiling, so every new subcommand has to buy its line back
-/// from an existing one.
 fn dispatch_memory(command: MemoryCommands) -> Result<()> {
     match command {
         MemoryCommands::Note {
@@ -272,36 +256,48 @@ fn dispatch_memory(command: MemoryCommands) -> Result<()> {
     }
 }
 
-/// `loom run` dispatch, extracted so the `loom target` arm fits in the
-/// top-level match without growing its ledgered line count.
-fn dispatch_run(command: Commands) -> Result<()> {
-    let Commands::Run {
-        manual,
-        max_parallel,
-        foreground,
-        watch,
-        no_merge,
-        backend,
-        accept_unix_socket_risk: accept,
-        daemon_child: child,
-    } = command
-    else {
-        unreachable!("dispatch routes only Run here");
-    };
-    let auto_merge = !no_merge;
-    if foreground {
-        run::execute(manual, max_parallel, watch, auto_merge, backend, accept)
-    } else {
-        run::execute_background(manual, max_parallel, auto_merge, backend, accept, child)
-    }
-}
-
 /// `loom target <subcommand>` dispatch.
 fn dispatch_target(command: TargetCommands) -> Result<()> {
     match command {
         TargetCommands::Status => target::status::execute(),
         TargetCommands::Accept { to } => target::accept::execute(&to),
     }
+}
+
+fn dispatch_run(args: RunArgs) -> Result<()> {
+    let auto_merge = !args.no_merge;
+    if args.foreground {
+        run::execute(
+            args.manual,
+            args.max_parallel,
+            args.watch,
+            auto_merge,
+            args.backend,
+            args.accept_unix_socket_risk,
+        )
+    } else {
+        run::execute_background(
+            args.manual,
+            args.max_parallel,
+            auto_merge,
+            args.backend,
+            args.accept_unix_socket_risk,
+            args.daemon_child,
+        )
+    }
+}
+
+fn dispatch_status(args: StatusArgs) -> Result<()> {
+    let web_args = args.web_args;
+    match web_args.web {
+        Some(port) => status::web::execute(port, web_args.terminals, web_args.resolved_host()),
+        None => status::execute(args.live, args.compact, args.verbose),
+    }
+}
+
+fn dispatch_project(command: ProjectCommands) -> Result<()> {
+    let ProjectCommands::Detect { path, json } = command;
+    project::execute(path, json)
 }
 
 pub fn dispatch(command: Commands) -> Result<()> {
@@ -312,18 +308,11 @@ pub fn dispatch(command: Commands) -> Result<()> {
             backend,
             no_repair,
         } => init::execute(Some(PathBuf::from(plan_path)), clean, backend, no_repair),
-        cmd @ Commands::Run { .. } => dispatch_run(cmd),
-        Commands::Status {
-            live,
-            compact,
-            verbose,
-            web_args,
-        } => match web_args.web {
-            Some(port) => status::web::execute(port, web_args.terminals, web_args.resolved_host()),
-            None => status::execute(live, compact, verbose),
-        },
+        Commands::Run(args) => dispatch_run(args),
+        Commands::Status(args) => dispatch_status(args),
         Commands::Resume { stage_id } => resume::execute(stage_id),
-        cmd @ (Commands::Sessions { .. } | Commands::Worktree { .. }) => dispatch_tools(cmd),
+        Commands::Sessions { command } => dispatch_sessions(command),
+        Commands::Worktree { command } => dispatch_worktree(command),
         Commands::Attach { stage_id } => attach::execute(stage_id),
         Commands::Target { command } => dispatch_target(command),
         Commands::Graph => graph::show(),
@@ -348,26 +337,21 @@ pub fn dispatch(command: Commands) -> Result<()> {
             state,
         } => clean::execute(all, worktrees, sessions, state),
         Commands::Repair { fix } => repair::execute(fix),
+        Commands::Ask { args } => ask::execute(args),
         Commands::Map { args } => map::execute(args),
         Commands::Subagents { args } => subagents::execute(args),
         Commands::Usage { args } => usage::execute(args),
         Commands::Pressure(args) => pressure::execute(args),
         Commands::Stop => stop::execute(),
-        Commands::Plan { command } => dispatch_plan(command),
-        Commands::Project {
-            command: ProjectCommands::Detect { path, json },
-        } => project::execute(path, json),
+        Commands::Plan { command, serve } => dispatch_plan(command, serve),
+        Commands::Project { command } => dispatch_project(command),
         Commands::Check {
             stage_id,
             suggest,
             args,
         } => run_check(stage_id, suggest, args),
         Commands::SkillIndex => skill_index::execute(),
-        Commands::Completions {
-            shell,
-            install,
-            migrate,
-        } => dispatch_completions(shell, install, migrate),
+        Commands::Completions(args) => dispatch_completions(args),
         Commands::Context { command } => dispatch_context(command),
         Commands::Hook { command } => dispatch_hook(command),
         Commands::Complete { shell, args } => dispatch_complete(&shell, &args),

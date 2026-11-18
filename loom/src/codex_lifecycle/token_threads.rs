@@ -3,7 +3,7 @@
 use std::collections::BTreeSet;
 use std::path::Path;
 
-use crate::models::forward_receipt::is_safe_id;
+use crate::agent_state::is_safe_id;
 use crate::models::session::Session;
 
 use super::authorization::canonical_daemon_state_root;

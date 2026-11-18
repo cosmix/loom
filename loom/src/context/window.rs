@@ -1,18 +1,20 @@
 //! Source windows: the exact lines of a graph node or call site.
 //!
-//! A window is served only for ids the graph itself names, and only while the
-//! file on disk still hashes to the snapshot's `content_hash`. The path that is
-//! opened is always a key of `ResolvedGraph::files`, never text the caller
-//! supplied, so an id such as `../outside.txt@0-5` cannot reach past the
-//! graph.
+//! Node and call-site IDs resolve through the graph. Numeric `path@start-end`
+//! ranges are also accepted for graph-backed files and clamped to the file.
+//! The file on disk must still match the snapshot's `content_hash`; only paths
+//! in `ResolvedGraph::files` can be opened.
 
 use std::fmt;
 use std::path::Path;
 
 use crate::context::graph_store::ResolvedGraph;
-use crate::context::source_graph::{body_hash, FileCoverage, Span, MAX_EXTRACTED_FILE_BYTES};
+use crate::context::source_graph::{FileCoverage, Span, MAX_EXTRACTED_FILE_BYTES};
 use crate::context::untrusted::{flatten_char, inline_safe};
-use crate::fs::safe_read::{is_not_found, read_bounded, OverLimit};
+use crate::fs::safe_read::is_not_found;
+
+#[path = "window_stream.rs"]
+mod stream;
 
 /// The whole lines a node or site covers, truncated to the caller's line cap.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -81,29 +83,25 @@ pub fn read_window(
     let expected = entry
         .map(|entry| entry.content_hash.as_str())
         .unwrap_or_default();
-    // A file past the size it had when indexed has changed, so it is never
-    // read whole.
-    let read = read_bounded(
+    match stream::read(
         project_root,
-        Path::new(&target.path),
+        &target,
+        max_lines.max(1),
         read_limit(entry.map(|entry| &entry.coverage)),
-    );
-    let bytes = match read {
-        Ok(bytes) => bytes,
-        Err(error) if is_not_found(&error) || is_over_limit(&error) => {
-            return Err(WindowError::ChangedSinceSnapshot { path: target.path });
+        expected,
+    ) {
+        Ok(window) => Ok(window),
+        Err(stream::ReadError::Changed) => {
+            Err(WindowError::ChangedSinceSnapshot { path: target.path })
         }
-        Err(error) => {
-            return Err(WindowError::Unreadable {
-                path: target.path,
-                detail: format!("{error:#}"),
-            });
+        Err(stream::ReadError::Io(error)) if is_not_found(&error) => {
+            Err(WindowError::ChangedSinceSnapshot { path: target.path })
         }
-    };
-    if body_hash(&bytes) != expected {
-        return Err(WindowError::ChangedSinceSnapshot { path: target.path });
+        Err(stream::ReadError::Io(error)) => Err(WindowError::Unreadable {
+            path: target.path,
+            detail: format!("{error:#}"),
+        }),
     }
-    Ok(slice_lines(target, &bytes, max_lines.max(1)))
 }
 
 /// The most bytes a file may hold and still match its snapshot: the size
@@ -113,11 +111,6 @@ fn read_limit(coverage: Option<&FileCoverage>) -> usize {
         Some(FileCoverage::Oversized { bytes, .. }) => *bytes,
         _ => MAX_EXTRACTED_FILE_BYTES,
     }
-}
-
-/// Whether `error` is `read_bounded` refusing a file over its byte limit.
-fn is_over_limit(error: &anyhow::Error) -> bool {
-    error.downcast_ref::<OverLimit>().is_some()
 }
 
 /// Map an id onto a graph file and byte range. A node id wins over a site
@@ -146,58 +139,6 @@ fn live_file(graph: &ResolvedGraph, path: &str) -> bool {
         .files
         .get(path)
         .is_some_and(|entry| !matches!(entry.coverage, FileCoverage::Deleted))
-}
-
-/// Widen `target` to whole lines of `bytes` and cut it to `max_lines`. Offsets
-/// past EOF are clamped; slicing is by bytes and only ever cuts at `\n`, so no
-/// span can split a character (invalid UTF-8 is replaced when decoding).
-fn slice_lines(target: Target, bytes: &[u8], max_lines: usize) -> SourceWindow {
-    let start = target.start.min(bytes.len());
-    let end = target.end.clamp(start, bytes.len());
-    let begin = bytes[..start]
-        .iter()
-        .rposition(|byte| *byte == b'\n')
-        .map_or(0, |index| index + 1);
-    // The last covered byte is `end - 1`; an empty span covers its own line.
-    let last = end.saturating_sub(1).max(start);
-    let mut stop = bytes[last.min(bytes.len())..]
-        .iter()
-        .position(|byte| *byte == b'\n')
-        .map_or(bytes.len(), |index| last + index + 1);
-    stop = stop.max(begin);
-
-    let mut truncated = false;
-    if let Some(cut) = nth_line_end(&bytes[begin..stop], max_lines) {
-        truncated = begin + cut < stop;
-        stop = begin + cut;
-    }
-
-    let region = &bytes[begin..stop];
-    let line_start = 1 + bytes[..begin].iter().filter(|byte| **byte == b'\n').count();
-    let newlines = region.iter().filter(|byte| **byte == b'\n').count();
-    let partial_last_line = !region.is_empty() && !region.ends_with(b"\n");
-    SourceWindow {
-        path: target.path,
-        span: Span {
-            start_byte: begin,
-            end_byte: stop,
-            line_start,
-            line_end: line_start + (newlines + usize::from(partial_last_line)).saturating_sub(1),
-        },
-        text: String::from_utf8_lossy(region).into_owned(),
-        truncated,
-    }
-}
-
-/// Offset just past the `n`th newline of `region`, or `None` when `region`
-/// holds fewer than `n` complete lines.
-fn nth_line_end(region: &[u8], n: usize) -> Option<usize> {
-    region
-        .iter()
-        .enumerate()
-        .filter(|(_, byte)| **byte == b'\n')
-        .nth(n - 1)
-        .map(|(index, _)| index + 1)
 }
 
 #[cfg(test)]

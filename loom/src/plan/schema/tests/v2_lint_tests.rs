@@ -19,6 +19,7 @@ use crate::plan::schema::validation::v2_lints::{run, LintContext, LintFinding};
 use crate::plan::schema::{
     AcceptanceCriterion, LoomConfig, LoomMetadata, StageDefinition, StageType,
 };
+use crate::test_git::{git, TestRepo};
 
 #[path = "v2_lint_bookend_tests.rs"]
 mod bookend_lints;
@@ -77,19 +78,8 @@ fn matching(metadata: &LoomMetadata, repo_root: Option<&Path>, needle: &str) -> 
 /// A git repository with one empty commit.
 fn git_repo() -> TempDir {
     let dir = TempDir::new().expect("temp dir");
-    run_git_checked(&["init", "-q"], dir.path()).expect("git init");
-    let identity = ["-c", "user.name=lint", "-c", "user.email=lint@example.com"];
-    let commit = [
-        "-c",
-        "commit.gpgsign=false",
-        "commit",
-        "-q",
-        "--allow-empty",
-        "-m",
-        "init",
-    ];
-    let args: Vec<&str> = identity.iter().chain(&commit).copied().collect();
-    run_git_checked(&args, dir.path()).expect("git commit");
+    TestRepo::builder().no_seed().init_in(dir.path());
+    git(dir.path(), &["commit", "-q", "--allow-empty", "-m", "init"]);
     dir
 }
 
@@ -213,8 +203,17 @@ fn network_binary_without_domains_is_error_in_v2() {
         StageType::Standard,
         &["curl https://x"],
     )]);
-    let needle = "runs `curl` while the stage's sandbox allows no network domain";
+    // A plan's default is the confined runner, which no domain can reach, so
+    // the finding must not offer one; `inherit` runs under the session sandbox.
+    let needle = "runs `curl` in the confined completion runner";
     let found = matching(&metadata, None, needle);
+    assert_eq!(found.len(), 1, "{found:?}");
+    assert!(found[0].error_in_v2);
+
+    let mut inherited = metadata;
+    inherited.loom.sandbox.command_confinement = crate::plan::schema::CommandConfinement::Inherit;
+    let needle = "runs `curl` while the stage's sandbox allows no network domain";
+    let found = matching(&inherited, None, needle);
     assert_eq!(found.len(), 1, "{found:?}");
     assert!(found[0].error_in_v2);
 }

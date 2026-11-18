@@ -21,6 +21,8 @@ mod rank;
 mod rank_evidence;
 mod rank_fixtures;
 mod rank_ladder;
+#[path = "../rank/tests_prior.rs"]
+mod rank_prior;
 mod rank_protected;
 mod rank_source;
 mod rank_source_candidacy;
@@ -34,6 +36,7 @@ mod rank_stopwords;
 mod rank_stopwords_rescue;
 mod render_source_fields;
 mod retrieve;
+mod retrieve_revision;
 mod retrieve_source;
 mod retrieve_windows;
 mod schema;

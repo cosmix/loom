@@ -8,9 +8,9 @@ use std::path::{Path, PathBuf};
 
 use crate::git::worktree::find_repo_root_from_cwd;
 use crate::models::stage::Stage;
+use crate::utils::text::single_line;
 use crate::verify::review::fingerprint::{self, ChangeFingerprint};
-use crate::verify::review::gate::harvest_hint;
-use crate::verify::review::report::single_line;
+use crate::verify::review::gate::{self, harvest_hint};
 use crate::verify::review::store::{self, OpenFinding, ReviewRound};
 use crate::verify::transitions::load_stage;
 
@@ -35,7 +35,8 @@ pub fn review_status(stage_id: String) -> Result<()> {
             if let Some(note) = note {
                 println!("Note: {}", single_line(&note));
             }
-            print_freshness(&rounds, &current)
+            print_freshness(&rounds, &current);
+            print_base_move_cover(&stage, &work_dir, &rounds, &current);
         }
         Err(error) => println!(
             "Current fingerprint: unavailable ({})",
@@ -60,7 +61,7 @@ fn current_fingerprint(
 /// The stage's worktree and the target branch the completion gates diff it
 /// against, resolved from the CWD's repository root as `loom stage complete`
 /// resolves it, so the `loom stage review` commands and completion agree.
-pub(super) fn stage_worktree_and_target(
+pub(crate) fn stage_worktree_and_target(
     work_dir: &Path,
     stage: &Stage,
 ) -> Result<(PathBuf, String)> {
@@ -131,6 +132,27 @@ fn print_freshness(rounds: &[ReviewRound], current: &ChangeFingerprint) {
     }
 }
 
+/// A note when the latest well-formed round matches no fingerprint but still
+/// covers the worktree because only the merge base moved under the reviewed
+/// changes, so the gate accepts it (`gate::round_covers`).
+fn print_base_move_cover(
+    stage: &Stage,
+    work_dir: &Path,
+    rounds: &[ReviewRound],
+    current: &ChangeFingerprint,
+) {
+    let Some(round) = rounds.iter().rev().find(|round| round.is_well_formed()) else {
+        return;
+    };
+    if !gate::covers_review(round, current) && gate::round_covers(stage, work_dir, round, current) {
+        println!(
+            "Round {} still covers the worktree: the merge base moved, and the stage's \
+             changes are the reviewed ones.",
+            round.round
+        );
+    }
+}
+
 /// The lines [`print_freshness`] prints, as data: the current fingerprint,
 /// the true latest round's match/malformed state, and the files changed
 /// since the latest **well-formed** round — the same baseline the review
@@ -142,7 +164,7 @@ fn freshness_report(rounds: &[ReviewRound], current: &ChangeFingerprint) -> Vec<
     let latest = rounds.last();
     match latest {
         Some(round) => {
-            let matches = if round.fingerprint == current.value {
+            let matches = if crate::verify::review::gate::covers_review(round, current) {
                 "yes"
             } else {
                 "no"
@@ -151,6 +173,7 @@ fn freshness_report(rounds: &[ReviewRound], current: &ChangeFingerprint) -> Vec<
                 "Latest round ({}) matches the current fingerprint: {matches}",
                 round.round
             ));
+            append_exempt_changes(&mut lines, round, current);
             if round.malformed.is_some() {
                 lines.push(
                     "The latest round is malformed; the gate needs a well-formed round at the \
@@ -172,6 +195,21 @@ fn freshness_report(rounds: &[ReviewRound], current: &ChangeFingerprint) -> Vec<
         lines.push(format!("  {}", single_line(&path)));
     }
     lines
+}
+
+fn append_exempt_changes(
+    lines: &mut Vec<String>,
+    round: &ReviewRound,
+    current: &ChangeFingerprint,
+) {
+    if round.fingerprint != current.value
+        && crate::verify::review::gate::covers_review(round, current)
+    {
+        lines.push("Matches the worktree through prose changes alone:".to_string());
+        for path in fingerprint::changed_since(&round.files, &current.files) {
+            lines.push(format!("  {}", single_line(&path)));
+        }
+    }
 }
 
 /// Picks the diff baseline: the latest **well-formed** round's recorded

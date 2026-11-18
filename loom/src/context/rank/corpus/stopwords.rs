@@ -41,9 +41,9 @@ use std::collections::{BTreeMap, BTreeSet};
 /// makes four right.
 ///
 /// A rescued term ranks, but it never counts toward the prompt hook's emit
-/// floor ([`super::LexicalCorpus::naming_matches`]): it is ubiquitous and names
-/// nothing, so a prompt answered only on rescued terms gets candidates for
-/// `loom knowledge context` and a stage brief, and silence from the hook.
+/// floor ([`super::LexicalCorpus::naming_matches`]): terms rejected by the
+/// normal stopword filter do not establish the evidence needed to emit a hook.
+/// A query answered only on rescued terms can still serve context and briefs.
 const RESCUE_LIMIT: usize = 3;
 
 /// English function words: never protected, and never evidence that a prompt
@@ -225,57 +225,9 @@ fn readmit(
         .collect()
 }
 
-/// The rarest dropped terms to put back once [`over_stopworded`] has judged the
-/// query unanswerable — empty when nothing dropped is rare enough to deserve it.
-///
-/// At most [`RESCUE_LIMIT`] terms come back however thin the survivors are, so
-/// the cap is the same for a query that lost every term and one that kept a
-/// single generic word. Sizing it to the deficit instead — enough to reach
-/// `min_knowledge_terms` and no more — was considered and rejected: on the
-/// measured case ("sandbox settings rules for claude code worktree sessions",
-/// where only `rules` survived) it would restore `sessions` alone and leave the
-/// question still answered on two of its weakest words, while the flat cap
-/// restores `sessions`, `settings` and `sandbox` together, which is what the
-/// asker actually asked about.
-///
-/// A.2 allowed the surviving set to be empty, reasoning that a query of pure
-/// stopwords describes nothing and should retrieve nothing. That reasoning
-/// holds for "the the the" and broke the moment A.15 indexed the project's own
-/// prose into the same corpus: the prose is written in the vocabulary the
-/// questions are asked in, so it lifts exactly the query's terms past the
-/// floor. Measured on this repository, "worktree claude code sandbox settings
-/// rules sessions" ranked its expected chunk at 34 over the 658 curated
-/// documents (floor 65.8: `settings` 57, `rules` 48, `sessions` 65 survived) and
-/// returned an EMPTY pack over the 904 documents that include prose (floor 90.4:
-/// the same three terms reached 105, 93 and 102). An ordinary, well-formed
-/// question about the codebase retrieved nothing, and every document added
-/// makes that more likely, not less.
-///
-/// The ceiling is what keeps this from being an undo. A term above
-/// `stop_rescue_max_ratio` of the corpus is ubiquitous under any reading and
-/// stays dropped however empty the query gets: `the` at 90% of the corpus is
-/// never resurrected, `settings` at 11.6% is, but only for a query
-/// [`over_stopworded`] judged unanswerable. On a corpus small enough that the
-/// ceiling falls below
-/// [`ubiquity_floor`] the rescue is simply vacuous — nothing dropped for
-/// ubiquity can clear it — which is the right outcome, because on a small corpus
-/// the floor's `df_ident_max` arm has already kept the query's terms.
-///
-/// The alternative — computing document frequencies over the curated documents
-/// only, leaving prose out of the statistics — was considered and rejected.
-/// `ExactGate::is_rare` (`context/lexical/evidence.rs:227`) reads THIS SAME df
-/// map from the opposite end, to decide whether a candidate's name is
-/// corpus-rare enough to claim an exact-match rung on its own. Two different
-/// notions of "rare", one counting prose and one not, would let a single term be
-/// simultaneously too common to score and rare enough to claim an exact symbol
-/// match — a contradiction with no principled resolution at either call site.
-/// One df map, plus a guarantee that the surviving set is non-empty whenever
-/// anything is rescuable, keeps that notion shared.
-///
-/// Terms dropped for length rather than ubiquity are rescuable on the same
-/// terms. A two-letter token is a poor query, but a poor query that retrieves
-/// its rarest term beats one that retrieves nothing, and a short ubiquitous
-/// token is stopped by the ceiling like any other.
+/// Restore up to `RESCUE_LIMIT` rare dropped terms when the query is
+/// over-stopworded. The frequency ceiling excludes ubiquitous terms, including
+/// short tokens, and uses the same document frequencies as exact-match gating.
 fn rescue_rarest(
     dropped: &[String],
     document_frequencies: &BTreeMap<String, usize>,

@@ -10,12 +10,13 @@ mod helpers;
 use std::fs;
 use std::os::unix::fs::{symlink, PermissionsExt};
 use std::path::Path;
-use std::process::{Command, Output};
 
 use loom::orchestrator::provision::run_provision;
 use loom::plan::schema::{validate, LoomMetadata, ProvisionEntry};
 use serde_json::Value;
 use tempfile::TempDir;
+
+use helpers::test_support::git_repo::{git, isolate, TestRepo};
 
 fn entry(working_dir: &str, command: &str) -> ProvisionEntry {
     ProvisionEntry {
@@ -140,23 +141,6 @@ fn provision_working_dir_cannot_escape() {
     }
 }
 
-fn git(root: &Path, args: &[&str]) -> Output {
-    let output = Command::new("git")
-        .args(args)
-        .current_dir(root)
-        .env("GIT_CONFIG_GLOBAL", root.join(".loom-test-no-global"))
-        .env("GIT_CONFIG_SYSTEM", root.join(".loom-test-no-system"))
-        .env("GIT_CONFIG_NOSYSTEM", "1")
-        .output()
-        .expect("spawn git");
-    assert!(
-        output.status.success(),
-        "git {args:?} failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    output
-}
-
 fn write_file(root: &Path, path: &str, body: &str) {
     let full = root.join(path);
     fs::create_dir_all(full.parent().expect("file has a parent")).expect("create dirs");
@@ -167,9 +151,10 @@ fn write_file(root: &Path, path: &str, body: &str) {
 fn repo(files: &[(&str, &str)]) -> TempDir {
     let temp = TempDir::new().expect("create repo dir");
     let root = temp.path();
-    git(root, &["init", "-q"]);
-    git(root, &["config", "user.name", "t"]);
-    git(root, &["config", "user.email", "t@t"]);
+    TestRepo::builder()
+        .identity("t", "t@t")
+        .no_seed()
+        .init_in(root);
     for (path, body) in files {
         write_file(root, path, body);
     }
@@ -253,12 +238,11 @@ fn sandbox_domains(domains: &str) -> String {
 /// Run `loom plan verify --json PLAN.md` from `root` and return the messages
 /// of its `errors`, checking the exit status agrees with them.
 fn verify_errors(root: &Path) -> Vec<String> {
-    let output = helpers::loom_cmd()
+    let mut command = helpers::loom_cmd();
+    isolate(&mut command);
+    let output = command
         .args(["plan", "verify", "--json", "PLAN.md"])
         .current_dir(root)
-        .env("GIT_CONFIG_GLOBAL", root.join(".loom-test-no-global"))
-        .env("GIT_CONFIG_SYSTEM", root.join(".loom-test-no-system"))
-        .env("GIT_CONFIG_NOSYSTEM", "1")
         .output()
         .expect("spawn loom plan verify");
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -341,8 +325,8 @@ fn registry_tool_without_registry_domain_is_an_error() {
         "a confined criterion needs a provision entry whatever the domains: {errors:?}"
     );
 
-    // Without confinement the criterion runs in the session's sandbox, where
-    // `*.npmjs.org` covers registry.npmjs.org.
+    // Inherit adds no completion confinement; the lint accepts the session's
+    // `*.npmjs.org` domain grant for registry.npmjs.org.
     let inherit = "  sandbox:\n    command_confinement: inherit\n    network:\n      allowed_domains: [\"crates.io\", \"*.npmjs.org\"]\n";
     write_file(repo.path(), "PLAN.md", &plan(inherit, bunx));
 

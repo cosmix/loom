@@ -9,9 +9,7 @@ use std::os::unix::fs::PermissionsExt;
 use tempfile::TempDir;
 
 use crate::commands::self_update::client::create_http_client;
-use crate::commands::self_update::signature::{
-    compute_sha256_checksum, minisign_public_key, verify_binary_signature,
-};
+use crate::commands::self_update::signature::{minisign_public_key, verify_binary_signature};
 use crate::commands::self_update::{
     asset_download_url, latest_release_url, release_asset_for_target, run_asset_install,
     signature_asset_name,
@@ -54,21 +52,6 @@ fn embedded_public_key_parses() {
 }
 
 #[test]
-fn test_compute_sha256_checksum_consistency() {
-    let checksum = compute_sha256_checksum(b"test data");
-    assert_eq!(checksum, compute_sha256_checksum(b"test data"));
-    assert_eq!(checksum.len(), 64);
-}
-
-#[test]
-fn test_compute_sha256_checksum_different_data() {
-    assert_ne!(
-        compute_sha256_checksum(b"original"),
-        compute_sha256_checksum(b"modified")
-    );
-}
-
-#[test]
 fn test_create_http_client_succeeds() {
     assert!(create_http_client().is_ok());
 }
@@ -76,17 +59,17 @@ fn test_create_http_client_succeeds() {
 /// An `https_only` client must reject a plaintext URL before dialling out -
 /// this is what stops a scheme-downgraded redirect (or a caller mistake)
 /// from ever opening an unencrypted connection. Port 1 on the loopback
-/// address is never listening, so a client that did attempt to connect would
-/// fail with a connection error instead of the scheme rejection asserted
-/// here.
+/// address needs no listener: a connection error is not a scheme rejection.
 #[test]
 fn http_client_refuses_a_plaintext_url() {
     let client = create_http_client().unwrap();
-    let result = client.get("http://127.0.0.1:1/x").send();
+    let error = client.get("http://127.0.0.1:1/x").send().unwrap_err();
     assert!(
-        result.is_err(),
-        "expected the https-only client to refuse a plaintext URL"
+        error.is_builder(),
+        "expected a URL builder rejection, got {error:?}"
     );
+    let source = std::error::Error::source(&error).expect("scheme rejection cause");
+    assert_eq!(source.to_string(), "URL scheme is not allowed");
 }
 
 #[test]

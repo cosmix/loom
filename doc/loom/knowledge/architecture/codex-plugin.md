@@ -1,6 +1,6 @@
 # Codex Plugin
 
-> Codex plugin, forwarding
+>
 
 ## Install and identity
 
@@ -83,17 +83,20 @@ Three moving parts:
    (`plan/schema/types.rs`) and `Stage` (`models/stage/types.rs`), both `#[serde(default)]`; copied
    at `commands/init/plan_setup.rs` and onto the signal's `EmbeddedContext` at
    `orchestrator/signals/generate.rs`. Query it through `includes_codex()` / `includes_claude()` /
-   `preferred()` / `is_mixed()` — never by comparing the whole list, which is what made the original
-   scalar design wrong.
-2. **ORDER IS THE PREFERENCE, MEMBERSHIP IS THE LICENSE.** These are two different questions and
-   the code must not conflate them:
-   - `preferred()` (first element) = the lane routine implementation reaches for.
+   `first_listed()` / `is_mixed()` — never by comparing the whole list, which is what made the
+   original scalar design wrong.
+2. **MEMBERSHIP IS THE LICENSE; ORDER CARRIES NO ROUTING MEANING.** These are two different
+   questions and the code must not conflate them:
+   - `first_listed()` (first element, `models/stage/implementers.rs`) reports the first lane and
+     nothing more. No lane is first, preferred or default: the orchestrator picks a lane per piece by
+     its nature and by quota ([Codex when appropriate](../patterns/subagent-hierarchy.md#model-playbook-orchestration-model-is-per-stage-type-configurable)).
+     Only tests call it.
    - `includes_codex()` = whether the codex safety doctrine must be emitted.
 
-   Gating doctrine on the _preference_ rather than on _membership_ is a real bug: a stage listing
-   `["claude", "codex"]` may still spawn a codex subagent, and would then run with none of the
-   blast-radius rules. That is exactly the hole the original `implementer == Codex` equality check
-   left, and `tests_cache.rs` now pins both the mixed-signal and mixed-recovery cases against it.
+   Gating doctrine on the first-listed lane rather than on _membership_ is a real bug: a stage
+   listing `["claude", "codex"]` may still spawn a codex subagent, and would then run with none of
+   the blast-radius rules. That is exactly the hole the original `implementer == Codex` equality
+   check left, and `tests_cache.rs` pins both the mixed-signal and mixed-recovery cases against it.
 
    Validation (`plan/schema/validation.rs`) REJECTS an empty list and a repeated lane (order would
    be ambiguous), and WARNS when codex is listed on a knowledge, knowledge-distill, or
@@ -107,19 +110,22 @@ Three moving parts:
    (regenerated per stage), NOT the stable prefix — the stable prefix only forward-references it
    (`cache.rs`). The recovery path emits it too (`recovery_format.rs`), which was a real gap fixed
    by `d1530e0c`; without it a recovered or retried codex stage loses its whole doctrine block.
-   Model/effort are interpolated from `CODEX_IMPLEMENTER_MODEL_TERRA = "gpt-5.6-terra"`,
-   `CODEX_IMPLEMENTER_MODEL_LUNA = "gpt-6-luna"`, and `CODEX_IMPLEMENTER_EFFORT = "xhigh"`
-   (`loom/src/codex.rs`) rather than hardcoded, and `tests_doctrine.rs` asserts BLOCK-B contains
-   all three — so changing `codex.rs` without updating the prose surfaces fails the build. Terra is
-   the tier for common implementation and integration tests; luna does boilerplate, scaffolding,
-   and simple unit tests only when the user or plan asks for it; haiku takes that work by default.
+   Model/effort are interpolated from `CODEX_IMPLEMENTER_MODEL_TERRA = "gpt-6.1-terra"`,
+   `CODEX_IMPLEMENTER_MODEL_SOL = "gpt-6.2-sol"`, `CODEX_IMPLEMENTER_MODEL_LUNA = "gpt-6-luna"`,
+   and `CODEX_IMPLEMENTER_EFFORT = "xhigh"` (`loom/src/codex.rs:7-16`) rather than hardcoded, and
+   `tests_doctrine.rs` asserts BLOCK-B contains all four — so changing `codex.rs` without
+   updating the prose surfaces fails the build. Tiers: terra takes well-specified implementation,
+   integration tests, boilerplate, scaffolding and simple unit tests; sol takes a substantial
+   well-specified unit (about 4 to 6 file-sized changes) or a terra unit that failed once; luna
+   runs only when the user or plan asks for it. The failure ladder is terra, sol, then Claude at
+   the tier the piece needs. The section sits in `format/codex.rs`, not `format/sections.rs`.
 4. **Settings carry-forward.** `PRESERVED_SETTINGS_KEYS` / `preserve_unowned_keys`
    (`loom/src/sandbox/settings.rs`) — see the scope section below.
 
-Do NOT confuse the two implementer-lane tiers — `gpt-5.6-terra` and `gpt-6-luna` (both
-`codex.rs`) — with the `loom pressure` review model: `gpt-6.1-sol` by default
-(`DEFAULT_PRESSURE_CODEX_MODEL` in `codex.rs`), falling back to `gpt-6-sol` when the account
-lacks it. The forwarder lane never falls back. `CODEX_MODELS` in `codex.rs` lists every id.
+Do NOT confuse the implementer-lane tiers (`CODEX_IMPLEMENTER_MODEL_*` in `codex.rs`) with the
+`loom pressure` review model: `gpt-6.2-sol` by default (`DEFAULT_PRESSURE_CODEX_MODEL` in
+`codex.rs`), falling back within its family when the account lacks it (no family has a second
+member now). The forwarder lane never falls back. `CODEX_MODELS` in `codex.rs` lists every id.
 
 ## Install scope: user or project, not local
 
@@ -174,44 +180,12 @@ this instance follows.
 
 ## The loom-codex-forwarder lane
 
-Loom's doctrine now spawns `subagent_type: "loom-codex-forwarder"` for all codex implementation
-work, never the plugin agent directly. The rogue-wrapper incident (see
-[Codex Lane Rogue Wrapper](../mistakes/codex-lane-rogue-wrapper.md)) showed the plugin agent's
-`tools: Bash` frontmatter is not enforced for in-process subagents: a wrapper holding a codex
-prompt implemented all the edits itself on sonnet and nothing surfaced it. Three shipped layers:
+This section describes the Legacy lane (`codex.backend = legacy`; the default is native). The Native lane runs no forwarder and no plugin: see [Native Codex Workers](native-codex-workers.md).
 
-1. **`agents/loom-codex-forwarder.md`** — loom-owned forwarding shim (sonnet, `tools: Bash`),
-   installed by `install.sh` with the other `loom-*` agents. Unlike the plugin wrapper, its
-   `tools:` allowlist IS hard-enforced — user-scope agents enforce the field, plugin agents
-   ignore it by design (code.claude.com/docs/en/sub-agents#available-tools) — so Edit/Read are
-   blocked at the harness level and the hook only has to police Bash-shaped escapes. Contract: resolve the companion by
-   glob (`~/.claude/plugins/cache/openai-codex/codex/*/scripts/codex-companion.mjs`, highest
-   version — `${CLAUDE_PLUGIN_ROOT}` is unset outside plugin agents), ONE Bash call, `--write`
-   plus `--model`/`--effort` exactly as the prompt states, stdout verbatim followed by a
-   `--- LOOM-CODEX-EVIDENCE ---` trailer (`exit:`, `mode:`, then either the newest
-   `state/*/jobs/*.json` paths in companion mode or the `session:` rollout path in direct mode —
-   see the macOS section below).
-   On failure: report verbatim prefixed `LOOM-CODEX-FORWARD-ERROR`, never implement.
-2. **`loom-hooks/codex-forward-guard.sh`** — PreToolUse on Bash/Edit/Write/Read/Task/Agent. Primary
-   gate: payload `agent_type` ∈ {`loom-codex-forwarder`, `codex:codex-rescue`} → only the exact
-   `~/.claude/hooks/loom/codex-forward.sh task ...` wrapper invocation passes
-   (`is_exact_forward_command`, `codex-forward-guard.sh::valid_identity_id`); everything else exits 2 with
-   forwarding doctrine on stderr. Every block first runs `require_stage_evidence`, so without
-   stage evidence the guard enforces nothing and the stock plugin runs untouched. Fallback gate: `transcript_path` under `*/subagents/agent-*.jsonl` whose
-   opening bytes carry `LOOM-CODEX-FORWARD-ONLY`. Fail-open everywhere else. `loom_is_subagent`
-   was unusable here — it is process-tree based and returns false for in-process subagents.
-3. **Signal doctrine** (`format_codex_implementers_section`, also emitted on the recovery path):
-   spawn the forwarder by type, put `CODEX_FORWARD_SENTINEL` (`loom/src/codex.rs`) as the codex
-   prompt's FIRST line, and accept a codex report only with the evidence trailer — verify the
-   newest listed job record for the worktree exists with `phase: done`, or, for `mode: direct`,
-   that the listed session rollout exists and postdates the spawn. A report without the
-   trailer, or edits with no matching record, is a failed delegation: revert and respawn, or
-   keep only after a full review.
-
-Cross-surface pins: `tests_doctrine.rs::codex_forward_sentinel_agrees_across_surfaces` ties the
-sentinel constant to the hook script and the agent definition, and requires CLAUDE.md.template
-and the plan-writer SKILL to name the forwarder; `tests_cache.rs` pins the generated section to
-carry the sentinel, the trailer name, and the `loom-codex-forwarder` spawn line.
+On the Legacy lane loom stages spawn `subagent_type: "loom-codex-forwarder"`. The agent definition
+(`agents/loom-codex-forwarder.md`) selects haiku and Bash; the shim forwards one
+brief-path task through `~/.claude/hooks/loom/codex-forward.sh task ...`, preserving
+model, effort and unit id. It never implements or verifies.
 
 ## The sandbox must grant codex its state dirs
 
@@ -229,7 +203,7 @@ Both are declared once as `CODEX_SANDBOX_WRITE_PATHS` (`loom/src/codex.rs`) and 
 settings schema names for exactly this. `CODEX_SANDBOX_DOMAINS` does the same for the hosts codex
 reaches (no domain is pre-allowed by default, and an unlisted host raises a mid-run permission
 decision). `sandbox/settings/policy.rs::filesystem_settings` emits them into a codex-licensed
-stage's settings (every stage worktree and `loom repair --fix`), and
+stage's settings (every stage worktree and `loom repair --fix`) only while `codex.backend` is `legacy`: `policy.rs::codex_granted` is false on the native backend, whose session gets no `~/.codex` write, no OpenAI domains and no readable `auth.json` because the supervisor, not the session, talks to Codex. And
 `sandbox/control_surfaces.rs::session_writable_roots` counts them among the session's writable
 roots, so no hook path or `LOOM_BIN` under them is accepted. `fs/permissions/settings.rs` emits no
 codex grant. Sessions outside a loom repo need the same block in `~/.claude/settings.json` — loom
@@ -275,27 +249,12 @@ directory find a phantom repository.
 
 ## Availability fallback: codex CLI/plugin not installed
 
-Stage licensing (`implementers` listing `codex`) says a stage MAY use the lane; it says nothing
-about whether the lane is actually reachable on this machine. `loom/src/codex.rs` adds a second,
-independent gate for that: `codex_lane_status()` does the real check (codex CLI resolvable via
-`find_codex_path()`, and the plugin's companion runtime present at
-`~/.claude/plugins/cache/openai-codex/codex/*/scripts/codex-companion.mjs`), and a memoized
-`codex_lane_available()` wraps it as a cheap per-spawn boolean — the same
-capability/preflight/resolve shape as [Remote Control](remote-control.md)'s `preflight()` /
-`resolve()`.
+Stage licensing (`implementers` listing `codex`) permits the lane; availability additionally requires a resolvable Codex CLI and a regular, non-symlink companion file at the version pinned by `loom-hooks/codex-forward.sh`. `loom/src/codex.rs` reads that same embedded wrapper pin and `codex_lane_available()` caches the result for the daemon lifetime. The check conservatively requires the companion even where the direct lane can run.
 
-- **`commands/run/`** runs the check once at startup and prints an advisory warning when the lane
-  is unavailable, mirroring `run_startup_preflight` for Remote Control: informative, never a hard
-  failure — a missing codex install must not block a run that never intended to use codex on most
-  of its stages.
-- **Signal doctrine.** When the lane is unavailable, `format_codex_implementers_section` emits a
-  fallback note in place of the normal codex doctrine block: terra-tier work routes to
-  sonnet and luna-tier work to haiku for the run, and the orchestrator must NOT spawn `loom-codex-forwarder` — spawning it
-  against a missing companion runtime would just fail the one Bash call the forwarder is allowed
-  to make.
-- **Scope.** The check does not mutate `implementers` or stage state; it only changes what the
-  signal tells the orchestrator to do at spawn time, the same way Remote Control's `resolve()`
-  gates the `--remote-control` flag without touching `.loom/work/config.toml`.
+- `commands/run/` emits an advisory warning when the lane is unavailable; it does not block a run.
+- Signal generation supplies fallback guidance instead of licensing `loom-codex-forwarder` when the lane is unavailable: terra- and sol-tier work goes to sonnet (`loom-software-engineer`), boilerplate, scaffolding and simple unit tests to haiku (`loom-software-developer`) (`format/codex.rs:51-52`).
+- The check does not mutate stage state or the `implementers` list.
+- The check above is the Legacy lane's. `codex_backend.rs::codex_lane` selects `Legacy`, `Native` or `Unavailable(reason)` from `codex.backend`; a configured native backend whose boundary does not qualify is `Unavailable`, never Legacy ([Native Codex Workers](native-codex-workers.md#backend-and-lane-selection)).
 
 ## What Codex Actually Reads
 
@@ -337,7 +296,7 @@ hostnames or editing `~/.codex/config.toml` fixes nothing.
 
 **Detection rule.** Judge a forwarded run by the evidence trailer and the files, never by stderr: `exit:
 0` in the `--- LOOM-CODEX-EVIDENCE ---` trailer, a `session:` rollout newer than the spawn, and the
-task's files present and correct. Probed spawns (gpt-6-luna and gpt-5.6-terra, effort
+task's files present and correct. Probed spawns (gpt-6-luna and gpt-6.1-terra, effort
 xhigh) printed the pair throughout and wrote both files byte-exact.
 
 **Stdin.** The same runs printed `Reading additional input from stdin...`. `codex exec` treats an open
@@ -375,10 +334,13 @@ through its receipt first (`codex_lifecycle/direct.rs::receipt_outcome`, matched
 - a direct receipt records a `CodexExecution::Direct` row with producer `codex_direct` (state from the
   receipt: `running`, `succeeded`, `failed` with its exit code, `canceled` and `timed_out` both Cancelled);
 - a companion receipt, or no receipt, falls through to `locate_job`;
-- an authorization with neither a receipt nor a job stays Active for `RECEIPT_WINDOW_SECS = 600` after
-  `authorized_at` (the wrapper's 540 s unit deadline plus the receipt write), then is Unknown;
+- an authorization with neither a receipt nor a job stays Active for `RECEIPT_WINDOW_SECS = 1560` after
+  `authorized_at` (the wrapper's 1500 s job deadline plus the receipt write), then is Unknown;
 - a damaged receipt journal (truncated or malformed rows), a receipt that disagrees with its authorization,
   or a `queued`/`unknown` direct receipt is Unknown and records nothing, companion rows included.
+
+Reconcile's Active is lifecycle state and earns no stall hold. A hold takes host-observed progress of the authorized
+launch (`codex_lifecycle.rs::forward_is_fresh`; [Long Codex Runs](../concerns/codex-heartbeat-starvation.md#long-codex-runs-starve-the-loom-heartbeat)).
 
 A direct record's `turn_id` is optional (`subagent_lifecycle/codex_evidence.rs`); a companion record's is
 exact. `loom subagents watch` binds a stage's codex children the same way (`wait/codex_binding.rs::receipt_matches`

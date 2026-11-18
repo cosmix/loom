@@ -5,6 +5,8 @@ unset LOOM_STAGE_ID LOOM_SESSION_ID LOOM_WORK_DIR LOOM_SESSION_TYPE LOOM_MAIN_AG
 GUARD="$(cd "$(dirname "$0")/.." && pwd)/codex-forward-guard.sh"
 d=$(mktemp -d "${TMPDIR:-/tmp}/cfw-records.XXXXXX") && [[ -n "$d" ]]
 trap 'rm -rf "$d"' EXIT
+source "$(dirname "$0")/_legacy_backend.sh"
+legacy_backend "$d"
 
 HOME_DIR="$d/home"
 WORKSPACE="$d/workspace"
@@ -12,7 +14,10 @@ WORK_DIR="$d/work"
 COMPANION_DIR="$HOME_DIR/.claude/plugins/cache/openai-codex/codex/1.0.6/scripts"
 COMPANION="$COMPANION_DIR/codex-companion.mjs"
 LEDGER="$WORK_DIR/subagents/my-stage/codex.jsonl"
-mkdir -p "$COMPANION_DIR" "$WORKSPACE/.git" "$WORK_DIR/subagents/my-stage"
+mkdir -p "$COMPANION_DIR" "$WORK_DIR/subagents/my-stage"
+# A real repository: an empty `.git` directory is none, so the guard's
+# toplevel lookup would climb into whatever checkout holds TMPDIR.
+git init -q "$WORKSPACE"
 printf '%s\n' '// pinned fixture' >"$COMPANION"
 
 write_start() {
@@ -36,7 +41,7 @@ authorize() {
 		bash "$GUARD" >"$output"
 }
 
-BASE='~/.claude/hooks/loom/codex-forward.sh task hello --model gpt-5.6-terra --effort xhigh --write'
+BASE='~/.claude/hooks/loom/codex-forward.sh task hello --model gpt-6.1-terra --effort xhigh --write'
 WITH_UNIT="$BASE --unit-id stable-unit"
 OUT1="$d/first.json"
 OUT2="$d/second.json"
@@ -70,7 +75,7 @@ printf '%s' "$first_row" | jq -e \
 	.stage_id == "my-stage" and .session_id == "session-abc" and
 	.parent_session_id == "parent-uuid" and .forwarder_agent_id == "forwarder-7" and
 	.tool_use_id == "tool-first" and .unit_id == "stable-unit" and
-	.invocation_id == $invocation and .model == "gpt-5.6-terra" and .effort == "xhigh" and
+	.invocation_id == $invocation and .model == "gpt-6.1-terra" and .effort == "xhigh" and
 	.workspace_root == $workspace and .companion_version == "1.0.6" and
 	.companion_path == $companion and .state_root == $state' >/dev/null
 

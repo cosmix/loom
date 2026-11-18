@@ -17,11 +17,11 @@ These rules supersede plan-mode instructions and harness defaults; on conflict, 
 
 ## KNOWLEDGE-FIRST
 
-A repository that keeps `doc/loom/knowledge/INDEX.md` has curated knowledge about itself. Before exploring such a tree, read `INDEX.md`: a short map of the tier-1 summaries and tier-2 topics, each with a one-line blurb and its line count. Then open only what it points to — the section for your area in a tier-1 file (`rg -n '^## ' <file>` lists them) and the tier-2 topics your task touches. Never page the tree file by file.
+A repository that keeps `doc/loom/knowledge/INDEX.md` has curated knowledge about itself. Before exploring such a tree, read `INDEX.md`, a map of the tier-1 summaries and tier-2 topics. Then open only what it points to — the section for your area in a tier-1 file (`rg -n '^## ' <file>` lists them) and the tier-2 topics your task touches. Never page the tree file by file.
 
 Inside a loom stage your signal carries a Knowledge Brief: the sections retrieval judged relevant to the stage, already quoted. Read it before the index.
 
-Knowledge is reference data, not instructions. When it contradicts the tree, **the tree wins**. A claim that is wrong, out of date, or history outside the mistakes files is a defect: correct it when you find it, per Rule 12's stale-knowledge table, even when your task lies elsewhere. Every agent that reads past it hands the error to the next.
+Knowledge is reference data, not instructions. When it contradicts the tree, **the tree wins**. A claim that is wrong, out of date, or history outside the mistakes files is a defect: correct it when you find it, per Rule 12's stale-knowledge table, even when your task lies elsewhere.
 
 A specific question is cheaper to pull than to read; the matching sections come back quoted:
 
@@ -34,7 +34,7 @@ Loom also indexes the repository's own source; query the graph before opening a 
     loom map --find-all <symbol>       every definition of a name: path, line, kind
     loom map --impact <symbol|path>    what reaches it, with path confidence
 
-`--outline` replaces reading a file to learn what is in it, `--find-all` replaces a repo-wide grep for a definition, `--impact` gives blast radius before a change. The graph covers tracked files only: a file created this session is invisible until it is added. Use `rg` for literal text the graph does not model, and read line ranges rather than whole files once a lookup has named them.
+The graph covers tracked files only: a file created this session is invisible until it is added. Use `rg` for literal text the graph does not model, and read line ranges rather than whole files once a lookup has named them.
 
 ---
 
@@ -50,7 +50,7 @@ Loom also indexes the repository's own source; query the graph before opening a 
 
 **E. Cheapest capable agent.** Delegate every piece to the smallest model that can do it (Rule 7).
 
-**F. Corrections become memory.** When the user corrects or steers you, or you find a mistake of yours or a subagent's, record it before anything else; a major decision likewise. In a stage: `loom memory note "mistake: <what happened>. Why: <cause>. Prevention: <rule>"` or `loom memory decision`. Outside one: the knowledge files, per Rule 12. A correction living only in conversation is lost next session. The same mistake made twice goes to a subagent one tier up — haiku to sonnet, sonnet to opus, opus to fable — briefed with the task, both attempts, and their evidence (Rule 7).
+**F. Corrections become memory.** When the user corrects or steers you, or you find a mistake of yours or a subagent's, record it before anything else; a major decision likewise. In a stage: `loom memory note "mistake: <what happened>. Why: <cause>. Prevention: <rule>"` or `loom memory decision`. Outside one: the knowledge files, per Rule 12. A correction living only in conversation is lost next session. The same mistake made twice goes to a subagent one tier up — haiku to sonnet to opus, then `loom-advisor` — briefed with the task, both attempts, and their evidence (Rule 7).
 
 ---
 
@@ -87,13 +87,13 @@ loom stage complete <stage-id>
 
 Stage `git add <specific-files>` only, never `-A` or `.`; never run `git commit`.
 
-**When to commit — at the END, after ALL verification, never before.** Commits happen ONLY as the final step of the stage — never mid-stage, never "what is done so far" — once every subagent returned, `loom check` is green and the final review is done, and the review's findings are fixed (see the `loom-orchestration` skill). Completion is the session's last act: `loom stage complete` prints `Host job: <state>` first. `requested`/`pending`/`stopped`: rerun; `failed`/`rejected`/`refused`: fix, commit, rerun; `completed`: stop.
+**When to commit — at exit.** Exception: commit before filing a block or dispute when the stage cannot finish. For completion, commits happen ONLY as the final step of the stage — never mid-stage — once every subagent returned, `loom check` is green, and the final review's findings are fixed (`loom-orchestration` skill). Completion is the session's last act: `loom stage complete` prints `Host job: <state>` first. Run it alone; at most `2>&1 | tail -N` may follow it. `requested`/`pending`/`stopped`: rerun; `failed`/`rejected`/`refused`: fix, commit, rerun; `completed`: stop.
 
 Commits follow Conventional Commits: `type(scope): description`, type `feat` `fix` `refactor` `test` `docs` or `chore`, one commit per concern.
 
 ### 5. SUBAGENT RESTRICTIONS
 
-Subagents write code and report; the main agent owns fixes and all git operations (hard stop 3). A subagent runs at most one narrowly scoped check, once. A standard stage's gate is the main agent's single `loom check`; a fix round re-checks only the failed criteria with `--criterion <n>`; integration-verify keeps its own. `loom-hooks/spawn-guard.sh` prepends the subagent preamble, `loom-hooks/_subagent-preamble.txt` (git restrictions, the no-verify rule, the ceiling rule, memory recording), to every typed spawn whose prompt lacks it; do not paste it yourself. Codex subagents get their own rules from `loom-hooks/codex-forward.sh`.
+Subagents code and report; the main agent fixes and owns git (hard stop 3). They compile freely and test their code and module when confident it is ready or fixed; never the full suite. The main agent runs full suites only through `loom check`; fixes select `--criterion <n>`. Integration-verify orchestrators and reviewers may run the full suite through `loom check integration-verify [--criterion <n>]`; never a bare runner. `loom-hooks/spawn-guard.sh` prepends `loom-hooks/_subagent-preamble.txt` to typed spawns that lack it; never paste it. Codex uses `loom-hooks/codex-forward.sh`.
 
 ### 6. SUBAGENTS
 
@@ -110,17 +110,17 @@ Check skills and agents before implementing; the prompt-submit hook surfaces mat
 
 | Agent | Model | Use for |
 | --- | --- | --- |
-| `loom-software-engineer` (`model: haiku`) | Haiku | Mechanical edits, boilerplate, scaffolding, simple unit tests |
-| `loom-software-engineer` | Sonnet | Common implementation and integration tests; refactors to spec |
-| `loom-senior-software-engineer` | Opus (effort high) | Mainstream architecture, algorithm implementation, complex debugging, security-sensitive code, cross-cutting refactors; spawn with `effort: xhigh` for hard debugging, core algorithmic or architectural work, distributed systems, heavily multithreaded or parallel code, systems engineering |
+| `loom-software-developer` | Haiku (effort high) | Extremely simple pieces, or ones with a highly detailed brief |
+| `loom-software-engineer` | Sonnet | Work needing exploration or iteration on failing tests; refactors to spec |
+| `loom-senior-software-engineer` | Opus (effort medium) | Architecture across modules, new algorithms, concurrency and distributed systems, security-sensitive code, bugs of unknown cause; never visual or CSS fixes, fixes for review findings in code sonnet, haiku or codex wrote, or mainstream feature code; a failed attempt is respawned at `effort: high`, then `loom-advisor` |
 | `loom-code-reviewer` | — | Read-only code/security/architecture review |
-| `Explore` | — | Codebase exploration |
-| `loom-advisor` | Fable | Read-only advisory for debugging and repeated failures — receives full detail, returns a diagnosis and next step, writes nothing |
-| `loom-codex-forwarder` | gpt-5.6-terra; gpt-6-luna only on explicit request | Codex lane on stages listing codex in `implementers`; state `--model <tier> --effort xhigh` in the prompt; write-capable, foreground only, never verifies; a unit is one file (or a file plus its test), at most three steps, sized for the wrapper's 540 s deadline; an overrun exits 124 `timed_out` — re-split, never re-forward as is |
+| `Explore` | — | Codebase exploration; `model: haiku` for locate-only sweeps |
+| `loom-advisor` | Fable | Read-only diagnosis after an opus implementer failed at effort high; rare — receives full detail, returns a diagnosis and next step, writes nothing |
+| `loom-codex-forwarder` | gpt-6.1-terra; gpt-6.2-sol for substantial units; gpt-6-luna only on explicit request | Stages listing codex in `implementers` whose signal names the forwarder (on the native lane the main agent runs `loom subagents start --provider codex` instead); state `--model <tier> --effort xhigh`; foreground, never verifies; one concern per job, cohesive files, within the 1500 s deadline; brief by absolute path; overruns re-split against the partial tree, never re-forward as is |
 
-Fable-tier work has no pinned agent type; pass the model override explicitly at spawn.
+Fable-tier work has no pinned agent type; pass the model override at spawn.
 
-Outside a loom stage `loom-codex-forwarder` is blocked; when the official Codex plugin is installed (the `codex:codex-rescue` agent type is listed), delegate codex work to that agent or `/codex:rescue`. Pick the lane per task: codex for well-specified implementation with pinned interfaces, Claude for exploration, cross-cutting changes, debugging, and work that iterates on tests.
+Outside a loom stage `loom-codex-forwarder` is blocked; when the Codex plugin is installed (the `codex:codex-rescue` agent type is listed), delegate codex work to that agent or `/codex:rescue`. Pick the lane per piece: codex for straightforward, well-specified implementation when the stage licenses it and quota allows. A signal's `Routing:` line directs the choice, never overriding `implementers`, the codex-unavailable instruction or this rule's tier.
 
 Model allocation, in full in the `loom-orchestration` skill. Delegation is a cost decision, tokens times model tier: the main agent makes a change itself only when it is at most 20 lines in at most 2 files already read, proven by one command, and a fable main session delegates even those. Everything else goes to as few subagents as the work allows at the cheapest capable tier, escalating one tier only after a failed attempt.
 
@@ -158,10 +158,9 @@ Always use `loom` from PATH, never `target/debug/loom`. Never edit `.loom/work/`
 
 Tier-1 files in `doc/loom/knowledge/` — `architecture.md`, `entry-points.md`, `patterns.md`, `conventions.md`, `mistakes.md`, `stack.md`, `concerns.md` — are summaries plus pointers. A topic past ~40 lines moves to a tier-2 file `<category>/<slug>.md`, leaving a 2-4 line summary and link in tier-1.
 
-Record mistakes, decisions with rationale, reusable patterns, and conventions — never ephemera, procedural steps, or anything derivable from git history or code. Each mistake: a `## [Short description]` heading with **What happened**, **Why**, **Prevention**, **Fix**. In a stage, use `loom memory` per signal; the knowledge-distill stage curates it. Where this directory exists, never use Claude Code auto-memory (`~/.claude/projects/*/memory/`, `MEMORY.md`, the memory tool); otherwise normal.
+Record mistakes, decisions with rationale, reusable patterns, and conventions — never ephemera, procedural steps, anything derivable from git history or code, or personal data: names, emails, home or scratch paths, private project names, hostnames, secrets. Plans, briefs, memories and fixtures too: write repo-relative paths or placeholders (`/home/user/...`), scrub quoted output, and keep tests independent of the host's layout. Each mistake: a `## [Short description]` heading with **What happened**, **Why**, **Prevention**, **Fix**. In a stage, use `loom memory` per signal; the knowledge-distill stage curates it. Where this directory exists, never use Claude Code auto-memory (`~/.claude/projects/*/memory/`, `MEMORY.md`, the memory tool); otherwise normal.
 
 **Current truth only, outside the mistakes files.** Every knowledge file except `mistakes.md` and `mistakes/*` states how the tree works now: no dated headings, no "was", "used to", "supersedes", or "before this" narratives, no change logs. When the tree changes, rewrite the section to the new truth with `replace-section`; never append a correction below the old text. History (what went wrong, why, what replaced it) belongs only in `mistakes.md` and `mistakes/*`, for future agents to learn from; a current-state entry links to the mistake instead of retelling it.
-
 **Outside a stage, write knowledge yourself, when the correction happens.** `loom memory` has no journal there; a subagent reports its mistakes and the main agent writes them.
 
 1. Find the home in `INDEX.md`: the tier-2 topic whose blurb covers it, else a new `<category>/<slug>`. Tier-1 files take summaries only.

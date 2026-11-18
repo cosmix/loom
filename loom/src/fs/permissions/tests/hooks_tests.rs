@@ -29,7 +29,7 @@ fn test_hooks_config_structure() {
         ("Glob", "worktree-file-guard.sh"),
         ("Grep", "worktree-file-guard.sh"),
     ];
-    assert_eq!(pre_tool.len(), 47);
+    assert_eq!(pre_tool.len(), 51);
     for (entry, (matcher, script)) in pre_tool.iter().zip(expected_prefix) {
         assert_hook(entry, matcher, script);
     }
@@ -55,6 +55,8 @@ fn assert_sourced_libraries_not_registered(hooks: &Value) {
         "_progress-classification.sh",
         "_post-tool-heartbeat.sh",
         "_subagent-preamble.txt",
+        "_verify_matchers.sh",
+        "_relay_kinds.sh",
     ] {
         let registered_globally = hooks
             .as_object()
@@ -123,8 +125,10 @@ fn assert_codex_forward_guard_matchers(pre_tool: &[Value]) {
             "Agent",
             "Bash",
             "Edit",
+            "Monitor",
             "MultiEdit",
             "NotebookEdit",
+            "PowerShell",
             "Read",
             "SendMessage",
             "Task",
@@ -173,7 +177,7 @@ fn test_hook_event_surface_has_eight_events() {
         HookEvent::all().len(),
         8,
         "HookEvent::all() surface changed - verify Display, script_name(), \
-         and to_settings_hooks() were all updated to match"
+         and the shared session-event rules were all updated to match"
     );
 }
 
@@ -181,7 +185,7 @@ fn test_hook_event_surface_has_eight_events() {
 /// `HookEvent`'s `script_name()` must be embedded in `LOOM_HOOKS`
 /// (`fs/permissions/constants.rs`), or `install_loom_hooks_to` never writes
 /// the script to `~/.claude/hooks/loom/` even though a settings.json entry
-/// (from `HooksConfig::to_settings_hooks`) points at it.
+/// (from the session capsule emitter) points at it.
 #[test]
 fn test_hook_event_scripts_are_all_embedded() {
     let embedded: Vec<&str> = LOOM_HOOKS.iter().map(|(name, _)| *name).collect();
@@ -222,8 +226,9 @@ fn assert_lifecycle_hooks(hooks: &Value) {
     ));
 
     let stop = hooks["Stop"].as_array().unwrap();
-    assert_eq!(stop.len(), 1);
+    assert_eq!(stop.len(), 2);
     assert_hook(&stop[0], "*", "commit-guard.sh");
+    assert_hook(&stop[1], "*", "loom-relay-stop.sh");
 
     let prompt = hooks["UserPromptSubmit"].as_array().unwrap();
     assert_eq!(prompt.len(), 2);

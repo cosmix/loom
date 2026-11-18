@@ -33,6 +33,10 @@ PATH="${LOOM_HOOK_PATH:-$PATH}"
 set -euo pipefail
 umask 077
 
+if [[ -n "${LOOM_CODEX_FORWARD:-}" ]]; then
+	exit 0
+fi
+
 # Read JSON input from stdin (Claude Code passes prompt info via stdin)
 source "$(dirname "${BASH_SOURCE[0]}")/_bounded.sh"
 INPUT_JSON=$(loom_read_input 1 2>/dev/null || true)
@@ -73,12 +77,8 @@ fi
 # Delegate to the Rust binary under a hard command timeout - a hung or slow
 # retrieval must never hang the prompt submit path.
 OUTPUT=""
-if command -v gtimeout &>/dev/null; then
-	OUTPUT=$(printf '%s' "$INPUT_JSON" | LOOM_HOOK_CONTEXT=1 gtimeout 5 "${LOOM_BIN:-loom}" hook user-prompt 2>/dev/null || true)
-elif command -v timeout &>/dev/null; then
-	OUTPUT=$(printf '%s' "$INPUT_JSON" | LOOM_HOOK_CONTEXT=1 timeout 5 "${LOOM_BIN:-loom}" hook user-prompt 2>/dev/null || true)
-else
-	OUTPUT=$(printf '%s' "$INPUT_JSON" | LOOM_HOOK_CONTEXT=1 "${LOOM_BIN:-loom}" hook user-prompt 2>/dev/null || true)
+if ! OUTPUT=$(printf '%s' "$INPUT_JSON" | LOOM_HOOK_CONTEXT=1 loom_run_bounded 5 "${LOOM_BIN:-loom}" hook user-prompt 2>/dev/null); then
+	exit 0
 fi
 
 # A failed, timed-out, or empty delegate call means nothing to inject.

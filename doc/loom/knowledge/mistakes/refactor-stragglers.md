@@ -1,6 +1,6 @@
 # Refactor Stragglers
 
-> What a rename leaves behind
+>
 
 ## Source vs Installed: Editing Wrong File
 
@@ -66,7 +66,7 @@ Use `rg -i "container\|docker\|dispatcher" loom/src/ --include="*.rs"` to catch 
 **What happened:** a stage nearly shipped a branch whose committed tree could not compile.
 The first commit was staged with an EXPLICIT file list taken from the subagent's report, but
 the subagent had split `loom/src/commands/status/web/connection.rs` and created
-`loom/src/commands/status/web/head.rs`, which its report never named.
+`loom/src/web_server/head.rs`, which its report never named.
 `loom/src/commands/status/web/mod.rs` (committed) carried `mod head;` while the split-off
 file stayed untracked — HEAD referenced a file not in git. `cargo build`, clippy, the full
 test suite, the smoke script and the pre-commit hook all read the WORKING TREE, where the
@@ -310,3 +310,26 @@ before the parent's import can go.
 **Why:** the plan's worker table listed the owners of the struct, not its literal construction sites.
 
 **Prevention:** when a plan adds a field to a struct without `Default`, grep the struct literals (`rg 'StructName \{'`) and assign every site to a worker's territory before spawning.
+
+## Tmux Default Requested but the Enum Default Stayed Native
+
+**What happened:** the operator had asked for tmux as the default terminal backend, but only their ~/.loom/config.toml was set; `SessionBackendKind` kept `#[default] Native`, so the web settings showed native as the built-in default.
+**Why:** the request was met through the operator's own config rather than the built-in default every surface reads.
+**Prevention:** a change to a default goes into the single source (the enum or constant the config surfaces read), not into one operator's config file.
+**Fix:** `#[default]` moved to `Tmux` in `models/session/types.rs`; CLI, TUI, web and `loom init` read it from there.
+
+## Explain relocated tests before deleting old paths
+
+**What happened:** During VER-03 extraction, the old completion v2 implementation and test paths were deleted after copying them to `verify/completion/`, before the moved tests were run or their destinations were reported. The user asked for the exact mapping and verification state and paused further deletions.
+
+**Why:** The move was treated as an internal compile-preserving step, but deleting the old test path made coverage hard to inspect while the tree was still changing.
+
+**Prevention:** Report the destination, test-name and assertion parity, and verification status before removing a test path in a shared checkout. Keep the old path until the replacement is wired and a focused test passes when practical.
+
+**Fix:** Paused further deletions and reported both moved destinations and unchanged test assertions. Focused VER-03 verification remains pending until the extraction is stable.
+
+## A Moved Test Left a Helper After `mod tests`
+
+**What happened:** a plan step moved a module-level `#[test]` into `mod tests` in `commands/verify.rs` and left `normalized_criteria` below the test module. `clippy::items_after_test_module` fails under `-D warnings`.
+
+**Prevention:** keep non-test items above `#[cfg(test)] mod tests`; a plan step that moves a test says so.

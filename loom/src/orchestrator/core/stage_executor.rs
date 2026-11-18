@@ -1,33 +1,23 @@
 //! Stage execution logic - creating worktrees, spawning sessions
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use chrono::Utc;
 
-use crate::models::failure::{FailureInfo, FailureType};
 use crate::models::stage::{Stage, StageStatus, StageType};
 use crate::orchestrator::scheduling_report::{self, BlockReason, BlockedStage, SchedulingReport};
 use crate::orchestrator::signals::DependencyStatus;
 
 use super::persistence::Persistence;
+use super::session_adoption::AdoptionResult;
 use super::Orchestrator;
 
 impl Orchestrator {
-    pub(super) fn persist_blocked_stage(
-        &self,
-        stage_id: &str,
-        failure_type: FailureType,
-        evidence: Vec<String>,
-    ) -> Result<()> {
-        self.update_stage(stage_id, |current| {
-            current.try_mark_blocked()?;
-            current.failure_info = Some(FailureInfo {
-                failure_type,
-                detected_at: Utc::now(),
-                evidence,
-            });
-            Ok(())
-        })?;
-        Ok(())
+    fn adoption_disposition(&mut self, stage_id: &str) -> Result<Option<StartDisposition>> {
+        Ok(match self.adopt_live_session_if_present(stage_id)? {
+            AdoptionResult::Adopted => Some(StartDisposition::Adopted),
+            AdoptionResult::Unknown => Some(StartDisposition::Deferred),
+            AdoptionResult::Absent => None,
+        })
     }
 
     fn start_worktree_stage(&mut self, stage: Stage) -> Result<StartDisposition> {
@@ -142,15 +132,19 @@ impl StageExecutor for Orchestrator {
                 );
                 continue;
             }
-            match self
-                .start_stage(stage_id)
-                .with_context(|| format!("Failed to start stage: {stage_id}"))?
-            {
-                StartDisposition::Deferred => {}
-                StartDisposition::Launched | StartDisposition::Adopted => {
+            match self.start_stage(stage_id) {
+                Ok(StartDisposition::Deferred) => {}
+                Ok(StartDisposition::Launched | StartDisposition::Adopted) => {
                     started += 1;
                     self.queued_since.remove(stage_id);
                     self.spawn_blocks.remove(stage_id);
+                }
+                // One stage's lock or file must not end the daemon for the rest.
+                Err(error) => {
+                    let detail = format!("failed to start: {error:#}");
+                    tracing::warn!(stage_id = %stage_id, %detail, "Stage not started; retrying next tick");
+                    self.spawn_blocks
+                        .insert(stage_id.clone(), BlockReason::OwnershipUncertain { detail });
                 }
             }
         }
@@ -166,6 +160,11 @@ impl StageExecutor for Orchestrator {
     }
 
     fn start_stage(&mut self, stage_id: &str) -> Result<StartDisposition> {
+        // Reset holds this same per-stage lock from its liveness scan through
+        // retirement and publication. Keep it through launch so reset cannot
+        // inspect a write-ahead session before its process exists.
+        let _admission =
+            crate::fs::stage_admission::lock_for_daemon(&self.config.work_dir, stage_id)?;
         let mut stage = self.load_stage(stage_id)?;
 
         // The graph handed this stage over as Queued; its file decides.
@@ -186,8 +185,10 @@ impl StageExecutor for Orchestrator {
         // Adopt a still-live agent instead of spawning a duplicate into its
         // worktree. Only a Queued stage adopts; a WaitingForDeps one is
         // offered adoption once the dependency check below has queued it.
-        if stage.status == StageStatus::Queued && self.adopt_live_session_if_present(stage_id)? {
-            return Ok(StartDisposition::Adopted);
+        if stage.status == StageStatus::Queued {
+            if let Some(disposition) = self.adoption_disposition(stage_id)? {
+                return Ok(disposition);
+            }
         }
 
         if !self.spawn_dependencies_satisfied(&stage) {
@@ -197,8 +198,8 @@ impl StageExecutor for Orchestrator {
         // Transition through Queued if currently WaitingForDeps to reduce race window
         if stage.status == StageStatus::WaitingForDeps {
             stage = self.update_stage(stage_id, |current| current.try_mark_queued())?;
-            if self.adopt_live_session_if_present(stage_id)? {
-                return Ok(StartDisposition::Adopted);
+            if let Some(disposition) = self.adoption_disposition(stage_id)? {
+                return Ok(disposition);
             }
         }
 

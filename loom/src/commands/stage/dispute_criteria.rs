@@ -14,7 +14,7 @@ use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
 
 use super::dispute_transport::{send, Dispute};
-use crate::models::dispute::{truncate_to_byte_limit, CriterionField, FAILURE_OUTPUT_MAX_BYTES};
+use crate::models::dispute::{truncate_to_byte_limit, CriterionTarget, FAILURE_OUTPUT_MAX_BYTES};
 use crate::relay::emit::{mode, EnvSnapshot, RelayMode, RelaySink, StdSink};
 
 /// Dispute entries of a stage's acceptance, wiring or wiring-tests list.
@@ -25,8 +25,7 @@ use crate::relay::emit::{mode, EnvSnapshot, RelayMode, RelaySink, StdSink};
 /// mutate process-wide environment.
 pub fn dispute_criteria(
     stage_id: String,
-    field: CriterionField,
-    criterion_indices: Vec<usize>,
+    target: CriterionTarget,
     reason: String,
     evidence_commit: Option<String>,
     failure_output_path: Option<PathBuf>,
@@ -39,8 +38,7 @@ pub fn dispute_criteria(
     let cwd = std::env::current_dir().context("Failed to get current directory")?;
     dispute_criteria_with_mode(
         stage_id,
-        field,
-        criterion_indices,
+        target,
         reason,
         evidence_commit,
         failure_output,
@@ -55,8 +53,7 @@ pub fn dispute_criteria(
 #[allow(clippy::too_many_arguments)]
 fn dispute_criteria_with_mode(
     stage_id: String,
-    field: CriterionField,
-    criterion_indices: Vec<usize>,
+    target: CriterionTarget,
     reason: String,
     evidence_commit: Option<String>,
     failure_output: Option<String>,
@@ -64,14 +61,7 @@ fn dispute_criteria_with_mode(
     cwd: &Path,
     sink: &mut dyn RelaySink,
 ) -> Result<()> {
-    let dispute = Dispute::criterion(
-        stage_id,
-        field,
-        criterion_indices,
-        reason,
-        evidence_commit,
-        failure_output,
-    );
+    let dispute = Dispute::criterion(stage_id, target, reason, evidence_commit, failure_output);
     send(dispute, relay_mode, cwd, sink)
 }
 

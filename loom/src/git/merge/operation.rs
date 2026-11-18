@@ -19,7 +19,7 @@ const OPERATOR_MARKERS: [&str; 6] = [
 
 /// The marker of an operator operation in progress in the main checkout.
 /// A git dir that cannot be read is an error, never "no operation".
-pub(super) fn operator_operation(repo_root: &Path) -> Result<Option<String>> {
+pub(crate) fn operator_operation(repo_root: &Path) -> Result<Option<String>> {
     let git_dir = git_dir_for_repo_path(repo_root)?;
     for marker in OPERATOR_MARKERS {
         if path_present(&git_dir.join(marker))? {

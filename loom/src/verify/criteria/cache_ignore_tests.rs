@@ -31,10 +31,11 @@ fn check_ignore_exit(dir: &Path, path: &str) -> Option<i32> {
 fn an_honest_worktree_answers_from_its_own_ignore_rules() {
     let tmp = TempDir::new().unwrap();
     let worktree = contract_worktree(&tmp.path().join("repo"), "s1");
-    std::fs::write(worktree.join(".gitignore"), "target/\n").unwrap();
+    std::fs::write(worktree.join(".gitignore"), "target/\nmissing\n").unwrap();
     let nested = worktree.join("tests");
 
     assert!(references_ignored_path("./target/debug/loom", &worktree));
+    assert!(references_ignored_path("test ! -e missing", &worktree));
     assert!(references_ignored_path("cat ../target/out", &nested));
     assert!(!references_ignored_path("cat README.md", &worktree));
     assert!(!references_ignored_path("cat x_contract.rs", &nested));

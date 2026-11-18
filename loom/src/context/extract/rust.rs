@@ -149,7 +149,7 @@ impl QueryHarness for RustExtractor {
             dialect: "rust",
             grammar_version: "0.24.2",
             query_digest: crate::context::source_graph::body_hash(QUERY.as_bytes()),
-            extractor_version: 5,
+            extractor_version: 6,
         }
     }
 

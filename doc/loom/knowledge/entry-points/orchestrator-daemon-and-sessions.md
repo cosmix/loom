@@ -3,7 +3,7 @@
 
 # Orchestrator Daemon And Sessions
 
-> Orchestrator, daemon
+>
 
 ## Orchestrator Core
 
@@ -48,7 +48,9 @@
 - `orchestrator/monitor/detection.rs` - Stage/session state change detection, budget checks
 - `orchestrator/monitor/heartbeat.rs` - Hung detection (300s timeout)
 - `orchestrator/monitor/context.rs` - `context_health(tokens, ceiling)`: Green `<60%`, Yellow `60-90%`, Red `>=90%` of the resolved absolute `context_ceiling_tokens` (not a fixed 200k window — see architecture.md "Context Budget Enforcement")
-- `orchestrator/monitor/failure_tracking.rs` - Consecutive failure escalation
+- `orchestrator/monitor/crash_redelivery.rs` - Delivers a reported crash again until its stage has moved on, with doubling waits
+- `orchestrator/monitor/foreground.rs`, `foreground_progress.rs` - Bounded foreground work evidence, shared by stall decisions and the activity badge
+- `orchestrator/monitor/direct_worker.rs` - Host-observed progress of an authorized direct Codex worker
 
 ## Signal System
 
@@ -56,6 +58,7 @@
 - `orchestrator/signals/cache.rs` - Stable prefix generation (4 stage-type variants, SHA-256 hash)
 - `orchestrator/signals/format/mod.rs` - Full signal formatting (Manus 4-section KV-cache pattern)
 - `orchestrator/signals/format/sections.rs` - Section formatters (stable, semi-stable, dynamic, recitation)
+- `orchestrator/signals/format/budget.rs` - `## Model Budget` section: fresh quota windows plus one routing line ([Signal Generation](../architecture/signal-generation.md#model-budget-section-formatbudgetrs))
 - `orchestrator/signals/format/skills.rs` - Recommended Skills section: per-skill invocations plus one combined `loom-skills` loader call
 - `orchestrator/signals/helpers.rs` - write_signal_file() (disk I/O)
 - `orchestrator/signals/types.rs` - EmbeddedContext, DependencyStatus, SandboxSummary
@@ -130,13 +133,14 @@ written for the tokens at all; the OS-level `sandbox.filesystem.denyRead` list a
 `loom-hooks/credential-guard.sh` cover them, for the reason in concerns.md § "No `Read(...)` Deny Rule
 May Exist in Any Settings File".
 
-Privileged actions do not treat the mere presence of `.loom/work/admin.token` as authorization. The
-operator supplies that secret only to the proof-minting process through `LOOM_ADMIN_TOKEN`; the
-target command receives an action-bound proof through `LOOM_ADMIN_PROOF` and never reads the token.
-Proofs are HMAC-SHA256-bound to the project, action, stage (when applicable), and privileged flag
-set, then consumed through a private atomic replay marker. The integrated shutdown flow is
-`loom stage admin-proof --daemon-stop`, followed by `loom stop` with the minted proof in
-`LOOM_ADMIN_PROOF`.
+Privileged actions (`loom stop`, `--no-verify`, `--force-unsafe`, `--assume-merged`) authorize
+themselves: `admin_proof::authorize` derives the proof from `.loom/work/admin.token`, which the
+operator can read and a sandboxed stage agent cannot (the sandbox denies it to the whole process
+tree, and `refuse_operator_inside_a_session` turns a session away first). The operator mints and
+carries nothing. Proofs are HMAC-SHA256-bound to the project, action, stage (when applicable), and
+privileged flag set, then consumed through a private atomic replay marker. A `LOOM_ADMIN_PROOF` in
+the environment wins over the derived one: `loom stage admin-proof` (secret through
+`LOOM_ADMIN_TOKEN`) exists only to mint a narrowly scoped capability for another process.
 
 `daemon/server/client.rs` verifies the preface in constant time and fails closed on missing or
 malformed credentials. `commands/stage/admin_proof.rs` owns minting, exact-request verification,
@@ -157,7 +161,7 @@ pub fn dispute_criteria(
 ) -> Result<()>
 ```
 
-- CLI: `loom stage dispute-criteria <stage-id> [--field acceptance|wiring|wiring-tests] --criterion-index N [--criterion-index N ...] --reason <text> [--evidence-commit <sha>] [--failure-output <path>]`. `--field` defaults to `acceptance`; each index is into the list the field names, repeated or given as a list, sorted and deduplicated (`cli/types_stage_disputes.rs`, `daemon/server/dispute.rs`, which range-checks every index).
+- CLI: `loom stage dispute-criteria <stage-id> [--field acceptance|wiring|wiring-tests] --criterion-index N [--criterion-index N ...] [--owner-stage <id>] --reason <text> [--evidence-commit <sha>] [--failure-output <path>]`. `--field` defaults to `acceptance`; each index is into the list the field names, repeated or given as a list, sorted and deduplicated (`cli/types_stage_disputes.rs`, `stage_service/dispute.rs`, which range-checks every index). `--owner-stage` (wiring only, integration-verify only) makes the indices name a completed stage's wiring list, the one the aggregated re-verification failed.
 - Sends `Request::DisputeCriteria { auth_token, stage_id, session_id, field, criterion_indices, reason, evidence_commit, failure_output }` (`daemon/protocol.rs`) over the daemon socket. The **daemon** checks the stage transition, writes `.loom/work/disputes/<stage>/<n>/request.md` (its `kind: criterion` record carries `field`) and transitions the stage to `NeedsAdjudication`, then returns the allocated id.
 - **Credentials: a missing `.loom/work/user.token` is the NORMAL case here, not an error.** The sandbox denies a stage agent that read by design (S-1: the token authorizes every User RPC, not just the ones a stage agent is entitled to). The client presents `daemon::rpc::user_credential()`, which falls back to a non-empty placeholder, and names the session it is running inside via `LOOM_SESSION_ID`. The daemon authorizes it by the connection instead — see `daemon/server/self_service.rs`.
 - `--failure-output` is a path; the client loads it and truncates to 4KB on a UTF-8 char boundary. `models/dispute.rs` holds the one `truncate_to_byte_limit` and `FAILURE_OUTPUT_MAX_BYTES`; the daemon truncates again defensively.
@@ -202,13 +206,13 @@ The legacy `ToolEvent` reader remains able to consume an older `.loom/work/tool-
 ## Status Command (commands/status/)
 
 - `commands/status.rs` - Entry point; dispatches to 3 modes
-- `commands/status/data/collector.rs` - `collect_status_data()` — loads stages, sessions, plan into `StatusData` (module root `commands/status/data/mod.rs` re-exports it)
+- `status/data/collector.rs` - `collect_status_data()` — loads stages, sessions, plan into `StatusData` (module root `status/data/mod.rs` re-exports it)
 - `commands/status/render/` - Renderers: `render_progress()`, `render_graph()`, `render_merge_status()`, `render_compact()`, `render_attention()`
 - `commands/status/ui/` - TUI for `--live` mode (subscribes to daemon via IPC); entry point `commands/status/ui/tui/mod.rs` (`run_tui`)
 - `commands/status/diagnostics.rs` - `check_directory_structure()`, `check_parsing_errors()` for `loom status validate` / `doctor`
 - `commands/status/display/mod.rs` - `count_files()` helper
 - `commands/status/merge_status.rs` - Merge section data
-- `commands/status/validation.rs` - `validate_markdown_files()`, `validate_references()`
+- `commands/status/validation.rs` - `validate_markdown_files()`
 
 **3 display modes:**
 
@@ -227,7 +231,7 @@ The legacy `ToolEvent` reader remains able to consume an older `.loom/work/tool-
 - `loom/src/tokens/pass_memo.rs` - `PassMemo`: what a pass reuses from the last (checkpoint, unchanged flow, quota time left)
 - `loom/src/tokens/discover.rs`, `tail.rs`, `accumulate.rs`, `claude_line.rs`, `codex_line.rs` - sources, incremental reads, dedupe, line parsers
 - `loom/src/tokens/flow_build.rs`, `quota_left.rs`, `quota_points.rs`, `checkpoint.rs` - buckets to rates and series, time-left estimate, restart state
-- `loom/src/commands/status/data/sanitize_token_flow.rs` - collector-side hygiene of the flow
+- `loom/src/status/data/sanitize_token_flow.rs` - collector-side hygiene of the flow
 - `loom/src/commands/status/ui/tui/ledger/tokens_pane.rs`, `tokens_models.rs`, `layout_tokens.rs` - the `t` pane, its by-model block and the row budget
 - `web/src/lib/tokens.ts`, `web/src/components/token-flow-panel.tsx`, `token-models.tsx`, `stage-tokens.tsx`, `graph/node-tokens.tsx` - web helpers and surfaces
 
@@ -237,12 +241,22 @@ Design and limits: [architecture/token-flow-sources.md](../architecture/token-fl
 
 | Path                                                             | Role                                                                                                                                                         |
 | ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `loom-hooks/subagent-verify-guard.sh`                            | PreToolUse:Bash guard — blocks project-wide verification for subagents (over the Rule 17 400-line cap — see [concerns.md](../concerns.md))                   |
+| `loom-hooks/subagent-verify-guard.sh` | PreToolUse:Bash guard: role and stage detection, runner matching, block output and token walk in one file |
 | `loom-hooks/_common.sh`                                          | `loom_is_subagent()` — payload-first detection gate, process-tree walk as fallback; 619 lines, also over the Rule 17 cap — see [concerns.md](../concerns.md) |
-| `loom/src/orchestrator/signals/tests_doctrine.rs`                | pins the doctrine blocks byte-for-byte across signal, template, and hook                                                                                     |
+| `loom/src/orchestrator/signals/tests_doctrine.rs` | Pins doctrine blocks across signals, the subagent preamble and the guard |
 | `loom/tests/integration/hooks_subagent_verify_guard.rs`          | harness: process-tree construction, env scrubbing, payload building                                                                                          |
 | `loom/tests/integration/hooks_subagent_verify_guard_cases.rs`    | `BLOCK_CASES` / `ALLOW_CASES` table data                                                                                                                     |
 | `loom/tests/integration/hooks_subagent_verify_guard_carveout.rs` | integration-verify carve-out **refusal** directions (decoy, wrong type, missing)                                                                             |
 
 Split into three files because they grow for different reasons; wired with `#[path]` submodules
 so the children reach the parent's private helpers via `use super::*` without widening visibility.
+
+## Native Codex Worker Files (`loom/src/native_worker/`, `codex_backend.rs`)
+
+- `codex_backend.rs` - `CodexBackend`, `CodexLane`, `configured_backend`, `codex_lane`; the `codex.backend` key is registered in `user_config/keys.rs`.
+- `native_worker/index.rs` - the only read API for consumers: `stage_disposition`, `unit_state`, `stage_units`, `stage_threads`, `stages`. `store.rs` and `store_io.rs` write the record directory; `model.rs` and `ids.rs` hold the types and constants.
+- `native_worker/admission.rs` (+ `admission_brief.rs`) - daemon-side `admit_start`, `accept_message`, `accept_cancel`; called from `orchestrator/core/inbox_drain/worker_control.rs`. `runner.rs` and `runner_recover.rs` start and settle supervisors.
+- `native_worker/supervisor/`, `machine/`, `protocol/` - the per-worker loop, the pure reducer and the app-server wire. `boundary/`, `proxy/`, `bridge.rs` - the bubblewrap boundary, allowlist proxy and in-boundary forwarder.
+- `commands/subagents/native_start.rs`, `native_control.rs` and `wait/native.rs` - the CLI verbs and the wait binding; `commands/stage/native_gate.rs` - the shared gate; `relay/payload_native.rs` - the `subagents:control` payload; `loom-hooks/loom-control-subagents.sh` - the command pin.
+
+Design and gates: [Native Codex Workers](../architecture/native-codex-workers.md).

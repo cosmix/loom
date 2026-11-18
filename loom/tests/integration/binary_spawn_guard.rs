@@ -1,5 +1,4 @@
-//! Guard: only the sanctioned spawner files may spawn the loom test binary
-//! directly.
+//! Guard two common textual forms of direct loom binary spawning.
 //!
 //! The binary these tests spawn is not built with `cfg(test)`, so it reads
 //! its `LOOM_*` session variables straight from the real process environment.
@@ -7,7 +6,8 @@
 //! spawn (see its doc comment); a raw call to `Command::new` around
 //! `env!("CARGO_BIN_EXE_loom")` elsewhere skips that scrub and would inherit
 //! whatever `LOOM_*` identity the `cargo test` process itself happens to be
-//! running under — including this very suite's own loom session.
+//! running under — including this very suite's own loom session. Aliases and
+//! other spellings are outside this textual guard's coverage.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -33,21 +33,45 @@ fn strip_whitespace(s: &str) -> String {
     s.chars().filter(|c| !c.is_whitespace()).collect()
 }
 
-/// Paths (relative to `loom/tests/`, using `/` separators) of the only files
-/// permitted to spawn the loom binary directly. Each one owns a spawn helper
+/// Paths (relative to `loom/tests/`, using `/` separators) exempted from the
+/// two textual patterns above. Each one owns a spawn helper
 /// that removes every `LOOM_*` variable from the child's environment before
 /// every spawn: `helpers::loom_cmd()`, `worker_evidence::support`'s
 /// `cli_command`/`configure`, and `codex_evidence::fixture_runtime`'s
 /// `cli_command`/`configure_child`, and `subagent_owned_wait::support`'s
-/// `cli_command`, and
-/// `merge_off_checkout_cli`'s `merge_resolved`. A new test target that spawns
-/// the binary directly must scrub the same way and be added to this list.
+/// `cli_command`, `merge_off_checkout_cli`'s `merge_resolved`,
+/// `planning_check_cli_contracts`'s `check`, `plan_server_cli`'s `command`,
+/// `plan_server_contracts`'s `spawn_loom_plan`, `file_mode_contracts`'s
+/// `verify_text_agrees_with_verify_json`, `planning_summary_support`'s
+/// `loom_summary`, `planning_guidance_contracts`'s
+/// `template_skeleton_carries_implements_and_verifies`,
+/// `pressure_pipeline_contracts::support`'s `run_loom`,
+/// `plan_handoff_operator`'s `loom` closure,
+/// `plan_handoff_operator::common`'s `spawn_loom_plan`,
+/// `memory_spool_query`'s `memory_cli`,
+/// `hook_false_positive_contracts::ledger`'s `blocks_report`, and
+/// `plan_owner_watch_session`, which has no helper and scrubs inline in its
+/// test body before it spawns the `OwnerWatch` hook. A new test target that
+/// spawns the binary directly must scrub the same way and be added to this
+/// list.
 const SANCTIONED_SPAWNERS: &[&str] = &[
     "integration/helpers.rs",
     "worker_evidence/support.rs",
     "codex_evidence/fixture_runtime.rs",
     "subagent_owned_wait/support.rs",
     "merge_off_checkout_cli.rs",
+    "planning_check_cli_contracts.rs",
+    "plan_owner_watch_session.rs",
+    "plan_server_cli.rs",
+    "plan_server_contracts.rs",
+    "file_mode_contracts.rs",
+    "planning_summary_support/mod.rs",
+    "planning_guidance_contracts.rs",
+    "pressure_pipeline_contracts/support.rs",
+    "plan_handoff_operator.rs",
+    "plan_handoff_operator/common.rs",
+    "memory_spool_query.rs",
+    "hook_false_positive_contracts/ledger.rs",
 ];
 
 fn rust_files_under(dir: &Path, out: &mut Vec<PathBuf>) {

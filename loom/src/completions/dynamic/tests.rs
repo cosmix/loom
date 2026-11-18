@@ -8,7 +8,36 @@ use tempfile::TempDir;
 mod tests_commands;
 mod tests_other;
 mod tests_parser;
+mod tests_routing;
 mod tests_stage;
+
+#[test]
+fn fish_pressure_completion_falls_back_to_paths() {
+    let temp = TempDir::new().unwrap();
+    fs::write(temp.path().join("plan-example.md"), "").unwrap();
+    let script = format!(
+        "function loom; end\n{}\ncomplete -C 'loom pressure plan-ex'\n",
+        crate::completions::scripts::FISH_COMPLETION
+    );
+    let output = match std::process::Command::new("fish")
+        .args(["-c", &script])
+        .current_dir(temp.path())
+        .output()
+    {
+        Ok(output) => output,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            eprintln!("fish unavailable; skipping pressure path completion fixture");
+            return;
+        }
+        Err(error) => panic!("failed to run fish: {error}"),
+    };
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(String::from_utf8_lossy(&output.stdout).contains("plan-example.md"));
+}
 
 pub fn setup_test_workspace() -> TempDir {
     let temp_dir = TempDir::new().unwrap();
@@ -209,6 +238,22 @@ fn test_completion_context_from_args_empty() {
 }
 
 #[test]
+fn test_removed_stage_verify_has_no_dynamic_route() {
+    let temp_dir = setup_test_workspace();
+    let stage_path = temp_dir
+        .path()
+        .join(".loom/work/stages/01-core-architecture.md");
+    fs::write(stage_path, "---\nstatus: executing\n---\n").unwrap();
+
+    let results = complete_after_subcommand(temp_dir.path(), "", "stage", "verify").unwrap();
+
+    assert!(
+        results.is_empty(),
+        "removed stage verify must not suggest IDs"
+    );
+}
+
+#[test]
 fn test_complete_dynamic_init() {
     let temp_dir = setup_test_workspace();
     let root = temp_dir.path();
@@ -272,22 +317,6 @@ fn test_complete_dynamic_stage_complete() {
     };
 
     assert!(complete_dynamic(&ctx).is_ok());
-}
-
-#[test]
-fn test_removed_stage_verify_has_no_dynamic_route() {
-    let temp_dir = setup_test_workspace();
-    let stage_path = temp_dir
-        .path()
-        .join(".loom/work/stages/01-core-architecture.md");
-    fs::write(stage_path, "---\nstatus: executing\n---\n").unwrap();
-
-    let results = complete_after_subcommand(temp_dir.path(), "", "stage", "verify").unwrap();
-
-    assert!(
-        results.is_empty(),
-        "removed stage verify must not suggest IDs"
-    );
 }
 
 #[test]

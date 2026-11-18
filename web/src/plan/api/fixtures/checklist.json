@@ -1,0 +1,159 @@
+{
+  "type": "checklist",
+  "checklists": [
+    {
+      "feature": "demo",
+      "pitch": "Turn product ideas into clear specifications and executable plans your team can follow.",
+      "has_product": true,
+      "sections": [
+        {
+          "number": "05",
+          "name": "Example",
+          "written": false,
+          "open_questions": 0
+        }
+      ],
+      "metaplans": [
+        {
+          "path": "doc/plans/demo/index.md",
+          "title": "Demo Metaplan"
+        }
+      ],
+      "plan_rows": [
+        {
+          "slug": "alpha",
+          "path": "doc/plans/demo/PLAN-alpha.md",
+          "title": "Alpha plan",
+          "state": "written",
+          "pressure_date": "2026-10-20",
+          "listed": true
+        },
+        {
+          "slug": "beta",
+          "path": "doc/plans/demo/PLAN-beta.md",
+          "title": "Beta plan",
+          "state": "written",
+          "pressure_date": null,
+          "listed": false
+        }
+      ],
+      "plans": {
+        "listed": 1,
+        "total": 2,
+        "written": 2,
+        "running": 0,
+        "done": 0
+      },
+      "untested": 1,
+      "current": {
+        "kind": "step",
+        "number": 2
+      },
+      "steps": [
+        {
+          "number": 1,
+          "name": "Vision",
+          "mark": "done",
+          "count": "1",
+          "label": "Vision"
+        },
+        {
+          "number": 2,
+          "name": "Product spec",
+          "mark": "gap",
+          "count": "0/1",
+          "label": "Product spec"
+        },
+        {
+          "number": 3,
+          "name": "Metaplan",
+          "mark": "done",
+          "count": "1",
+          "label": "Metaplan"
+        },
+        {
+          "number": 4,
+          "name": "Plans",
+          "mark": "done",
+          "count": "1/1",
+          "label": "Plans"
+        },
+        {
+          "number": 5,
+          "name": "Pressure test",
+          "mark": "optional",
+          "count": "1",
+          "label": "Untested"
+        },
+        {
+          "number": 6,
+          "name": "Run",
+          "mark": "optional",
+          "count": null,
+          "label": "Run"
+        }
+      ],
+      "primary": {
+        "id": "write-section:05",
+        "kind": "write_section",
+        "label": "Write section 05",
+        "blocked_reason": null,
+        "target": "doc/product/demo/section_05.md",
+        "feature": "demo",
+        "number": 5
+      },
+      "secondary": [
+        {
+          "id": "start-metaplan",
+          "kind": "start_metaplan",
+          "label": "Start the metaplan",
+          "blocked_reason": null,
+          "target": null,
+          "feature": "demo"
+        }
+      ],
+      "items": [
+        {
+          "step": 1,
+          "text": "product vision",
+          "path": "doc/product/demo/index.md",
+          "offer": null
+        },
+        {
+          "step": 2,
+          "text": "section 05: Example",
+          "path": "doc/product/demo/section_05.md",
+          "offer": {
+            "id": "write-section:05",
+            "kind": "write_section",
+            "label": "Write section 05",
+            "blocked_reason": null,
+            "target": "doc/product/demo/section_05.md",
+            "feature": "demo",
+            "number": 5
+          }
+        }
+      ]
+    }
+  ],
+  "standalone": [
+    {
+      "slug": "example",
+      "path": "doc/plans/PLAN-example.md",
+      "state": "written",
+      "title": "Example plan",
+      "last_change": "2026-10-30T09:12:00Z",
+      "pressure_date": "2026-11-05",
+      "has_summary": true
+    }
+  ],
+  "moves": [
+    {
+      "id": "move-into-feature:doc/product/index.md",
+      "kind": "move_into_feature",
+      "label": "Move doc/product/index.md into a feature",
+      "blocked_reason": null,
+      "target": "doc/product/index.md"
+    }
+  ]
+}

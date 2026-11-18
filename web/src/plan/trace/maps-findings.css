@@ -1,0 +1,65 @@
+/*
+ * The findings page's head and the action row of the finding dialog. The page's own board and
+ * dialog are findings-board.css and findings-sheet.css; the Dismiss form's reason field is
+ * maps-findings-forms.css, imported first so the rules here win.
+ * The page head is shared with Coverage (maps.css). Every rule sits on the scales of ui/design.css
+ * and the tokens of index.css; nothing names a colour. ui/DESIGN.md, Page rhythm ("Map pages")
+ * and Status.
+ */
+@import "./maps-findings-forms.css";
+
+[data-loom-plan] .maps-findings-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3) var(--space-4);
+  margin: calc(-1 * var(--space-2)) 0 var(--space-5);
+}
+
+/* The ledger in one line under the lede: how many findings, and from which reviews. */
+[data-loom-plan] .maps-findings-summary {
+  min-width: 0;
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: var(--type-body);
+  line-height: var(--leading-ui);
+  font-variant-numeric: tabular-nums;
+}
+
+[data-loom-plan] .maps-findings-run {
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: var(--type-ui);
+}
+
+/* The team panel of a live address run sits above the board. */
+[data-loom-plan] .maps-findings > .plan-team {
+  margin-bottom: var(--space-6);
+}
+
+/* The actions on one line, wrapping; the reason form and an error take a line each. */
+[data-loom-plan] .maps-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  margin-top: var(--space-1);
+}
+
+[data-loom-plan] .maps-actions > .maps-dismiss,
+[data-loom-plan] .maps-actions > [role="alert"] {
+  flex: 1 0 100%;
+  min-width: 0;
+}
+
+[data-loom-plan] .maps-actions > [role="alert"] {
+  margin: 0;
+  font-size: var(--type-ui);
+  line-height: var(--leading-ui);
+}
+
+[data-loom-plan] .maps-actions > .plan-fine {
+  font-size: var(--type-ui);
+}

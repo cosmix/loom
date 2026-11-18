@@ -7,6 +7,7 @@ use crate::plan::schema::{CodeReviewConfig, ContractSpec, ReachableCheck};
 
 use super::checks::{default_plan_version, AcceptanceCriterion, TruthCheck, WiringCheck};
 use super::dispute_budgets::DisputeTally;
+use super::implementers::Implementers;
 use super::merge_block::MergeRecord;
 use super::persisted::deserialize_persisted_reasoning_effort;
 use super::sandbox_config::StageSandboxConfig;
@@ -83,119 +84,10 @@ impl PermissionMode {
     }
 }
 
-/// A single agent lane a stage may delegate implementation work to.
-///
-/// Serialized as kebab-case in YAML (`claude`, `codex`). A closed enum rather
-/// than a validated string: serde rejects unknown variants on its own, and the
-/// closed set gives compile-time exhaustiveness at every match site.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum Implementer {
-    /// The Claude subagent lane (haiku for mechanical edits, boilerplate and simple unit tests,
-    /// sonnet for common implementation and integration tests, opus for architecture and
-    /// algorithm implementation (xhigh effort for the hardest), fable only for visual/UI
-    /// design, a bug that survived a delegated fix attempt, or very hard algorithmic design).
-    #[default]
-    Claude,
-    /// The codex implementation lane: spawned as `loom-codex-forwarder`, a
-    /// loom-owned shim over the codex plugin's companion runtime (never the
-    /// plugin's `codex:codex-rescue` directly).
-    Codex,
-}
-
-impl std::fmt::Display for Implementer {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let s = match self {
-            Implementer::Claude => "claude",
-            Implementer::Codex => "codex",
-        };
-        write!(f, "{s}")
-    }
-}
-
-/// The set of agent lanes a stage is licensed to spawn subagents from.
-///
-/// A stage mixes lanes freely: routine implementation may go to codex while
-/// tests go to sonnet and an architectural call stays with opus. Order is
-/// meaningful — the FIRST lane is the one to reach for on routine
-/// implementation ([`Implementers::preferred`]) — but every listed lane is
-/// available for the parts of the stage that call for it.
-///
-/// Serialized transparently as a YAML sequence (`["codex", "claude"]`), so a
-/// stage declares lanes the same way it declares any other list. An omitted
-/// key defaults to `["claude"]`: the Claude lane is the harness the session
-/// already runs in, so it needs no opt-in. Codex does — it needs a plugin, and
-/// it needs the safety doctrine that [`Implementers::includes_codex`] gates.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(transparent)]
-pub struct Implementers(Vec<Implementer>);
-
-impl Default for Implementers {
-    fn default() -> Self {
-        Self(vec![Implementer::Claude])
-    }
-}
-
-impl Implementers {
-    /// Build a lane set from an ordered list.
-    pub fn new(lanes: Vec<Implementer>) -> Self {
-        Self(lanes)
-    }
-
-    /// The lane to reach for on ROUTINE implementation work — the first listed.
-    ///
-    /// Falls back to [`Implementer::Claude`] for an empty set. Validation
-    /// rejects an explicitly empty list, so the fallback only covers a value
-    /// constructed in code rather than parsed from a plan.
-    pub fn preferred(&self) -> Implementer {
-        self.0.first().copied().unwrap_or_default()
-    }
-
-    /// Whether the codex lane is licensed for this stage.
-    ///
-    /// This is the gate for the codex safety doctrine: any stage that may
-    /// spawn even ONE codex subagent has to carry the blast-radius rules,
-    /// whether or not codex is its preferred lane.
-    pub fn includes_codex(&self) -> bool {
-        self.0.contains(&Implementer::Codex)
-    }
-
-    /// Whether the Claude subagent lane is licensed for this stage.
-    pub fn includes_claude(&self) -> bool {
-        self.0.contains(&Implementer::Claude)
-    }
-
-    /// Whether more than one lane is licensed.
-    pub fn is_mixed(&self) -> bool {
-        self.0.len() > 1
-    }
-
-    /// True when no lane is listed at all — an invalid state that validation rejects.
-    pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
-    }
-}
-
-impl<'a> IntoIterator for &'a Implementers {
-    type Item = &'a Implementer;
-    type IntoIter = std::slice::Iter<'a, Implementer>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.0.iter()
-    }
-}
-
-impl std::fmt::Display for Implementers {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let rendered: Vec<String> = self.0.iter().map(|l| l.to_string()).collect();
-        write!(f, "{}", rendered.join(", "))
-    }
-}
-
 /// Success criteria for wiring tests.
 ///
 /// Defines how to determine if a wiring test passed.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SuccessCriteria {
     /// Expected exit code (default: 0)
@@ -219,7 +111,7 @@ pub struct SuccessCriteria {
 ///
 /// Unlike WiringCheck (grep-based pattern matching), WiringTest runs
 /// actual commands to verify runtime behavior of component connections.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct WiringTest {
     /// Human-readable name for this test
@@ -264,11 +156,8 @@ pub struct RegressionTest {
     pub must_contain: Vec<String>,
 }
 
-/// Allowed values for `reasoning_effort` on a stage.
-///
-/// Anchored to the set Claude Code itself accepts on its CLI. Adding a new
-/// value here requires a coordinated change in `native/mod.rs` where the
-/// effort is concatenated into the command line as `--effort <value>`.
+/// Allowed values for `reasoning_effort` on a stage: the set Claude Code accepts on its CLI.
+/// A new value needs a matching change in `native/mod.rs`, which passes it as `--effort <value>`.
 pub const ALLOWED_REASONING_EFFORTS: &[&str] = &["low", "medium", "high", "xhigh", "max"];
 
 /// Status of goal-backward verification for a stage
@@ -489,6 +378,9 @@ pub struct Stage {
     /// Reason the stage was flagged for human review
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub review_reason: Option<String>,
+    /// Every issue the stage has moved past, oldest first ([`StageIssue`](super::StageIssue)).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub issue_history: Vec<super::StageIssue>,
     /// Whether this stage is a bug fix that requires a regression test
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub bug_fix: Option<bool>,
@@ -513,8 +405,8 @@ pub struct Stage {
     /// (multi-agent fan-out). Copied from the plan's StageDefinition.
     #[serde(default)]
     pub ultracode: bool,
-    /// Which agent lanes this stage may spawn subagents from, in preference
-    /// order. Copied from the plan's StageDefinition.
+    /// Which agent lanes this stage may spawn subagents from, in listed
+    /// order (informational only). Copied from the plan's StageDefinition.
     #[serde(default)]
     pub implementers: Implementers,
     /// How long (seconds) this stage's session may go without a heartbeat before
@@ -542,6 +434,9 @@ pub struct Stage {
     /// Files changed only through an accepted integrity review. Copied from `loom.ratchet_files`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub ratchet_files: Vec<String>,
+    /// One-line reason no consumer of this stage's new units exists. Copied from the plan's StageDefinition.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub consumer_deferred: Option<String>,
 }
 
 /// Status of a stage in the execution lifecycle.
@@ -561,12 +456,12 @@ pub struct Stage {
 /// - `status == Completed` (work is done)
 /// - `merged == true` (changes merged to main)
 ///
-/// This ensures dependent stages can use main as their base, containing all
-/// dependency work.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+/// This ensures dependent stages can use main as their base, with all dependency work.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub enum StageStatus {
     /// Stage is waiting for upstream dependencies to complete AND merge.
     /// Cannot be executed until all dependencies are Completed with `merged: true`.
+    #[default]
     #[serde(rename = "waiting-for-deps", alias = "pending")]
     WaitingForDeps,
 

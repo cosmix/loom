@@ -6,11 +6,14 @@
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use std::fs::{self, OpenOptions};
+use std::fs;
 use std::io::Write;
 use std::path::Path;
 
 use super::config::HookEvent;
+use crate::fs::safe_fs::safe_open_append;
+
+const EVENTS_FILE: &str = "events.jsonl";
 
 /// A logged hook event
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -109,10 +112,12 @@ impl HookEventLog {
 /// Log a hook event to the events file
 ///
 /// Events are appended to `.loom/work/hooks/events.jsonl` in JSON Lines format.
-/// Each line is a complete JSON object representing one event.
+/// Each line is a complete JSON object representing one event. The append is
+/// locked and refuses a symlinked or hard-linked events file; the file is
+/// created with mode 0600.
 pub fn log_hook_event(work_dir: &Path, event: HookEventLog) -> Result<()> {
     let hooks_dir = work_dir.join("hooks");
-    let events_file = hooks_dir.join("events.jsonl");
+    let events_file = hooks_dir.join(EVENTS_FILE);
 
     // Ensure hooks directory exists
     if !hooks_dir.exists() {
@@ -121,17 +126,14 @@ pub fn log_hook_event(work_dir: &Path, event: HookEventLog) -> Result<()> {
         })?;
     }
 
-    // Serialize event to JSON line
-    let json_line = event.to_json_line()?;
+    let mut line = event.to_json_line()?;
+    line.push('\n');
 
-    // Append to events file
-    let mut file = OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&events_file)
+    // Anchored at the hooks directory, so a worktree's `.loom/work` symlink
+    // above it is followed while the events file itself must be plain.
+    let mut file = safe_open_append(&hooks_dir, Path::new(EVENTS_FILE))
         .with_context(|| format!("Failed to open events file: {}", events_file.display()))?;
-
-    writeln!(file, "{json_line}")
+    file.write_all(line.as_bytes())
         .with_context(|| format!("Failed to write event: {}", events_file.display()))?;
 
     Ok(())
@@ -141,12 +143,13 @@ pub fn log_hook_event(work_dir: &Path, event: HookEventLog) -> Result<()> {
 ///
 /// Returns the last `limit` events, or all events if limit is None.
 pub fn read_recent_events(work_dir: &Path, limit: Option<usize>) -> Result<Vec<HookEventLog>> {
-    let events_file = work_dir.join("hooks").join("events.jsonl");
+    let events_file = work_dir.join("hooks").join(EVENTS_FILE);
 
     if !events_file.exists() {
         return Ok(Vec::new());
     }
 
+    // Uncapped, unlike `jsonl_spool::read_complete_lines`: this log only grows, so a cap would turn its size into a read failure.
     let content = fs::read_to_string(&events_file)
         .with_context(|| format!("Failed to read events file: {}", events_file.display()))?;
 

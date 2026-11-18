@@ -24,18 +24,17 @@ use super::test_support::{entry_for, fixture, FakeHost, Fixture, STAGE};
 mod guarded;
 #[path = "commit_tests_signing.rs"]
 mod signing;
+#[path = "commit_tests_snapshot.rs"]
+mod snapshot;
 
 const BRANCH: &str = "refs/heads/loom/s1";
 
 /// The fixture's repository on `main` with the stage worktree on `loom/s1`;
-/// an identity and unsigned commits are set repo-locally, because the daemon
-/// runs git without this module's environment. Returns the worktree.
+/// `contract_worktree` sets an identity and unsigned commits repo-locally,
+/// because the daemon runs git without this module's environment. Returns the
+/// worktree.
 fn repository(fx: &Fixture) -> PathBuf {
-    let worktree = contract_worktree(&fx.repo_root, STAGE);
-    git_in(&fx.repo_root, &["config", "user.name", "t"]);
-    git_in(&fx.repo_root, &["config", "user.email", "t@t.com"]);
-    git_in(&fx.repo_root, &["config", "commit.gpgsign", "false"]);
-    worktree
+    contract_worktree(&fx.repo_root, STAGE)
 }
 
 /// The stage branch and `main` one commit apart each, then `main` merged
@@ -105,6 +104,13 @@ fn knowledge_session(fx: &Fixture) -> Session {
 fn merge_session(fx: &Fixture) -> Session {
     let mut record = fx.record(SessionType::Merge, SessionStatus::Running);
     record.merge_source_branch = Some(format!("loom/{STAGE}"));
+    crate::orchestrator::signals::publish_merge_snapshot(
+        &fx.repo_root,
+        &fx.work_dir,
+        &record.id,
+        "main",
+    )
+    .unwrap();
     save_session(&record, &fx.work_dir).unwrap();
     record
 }

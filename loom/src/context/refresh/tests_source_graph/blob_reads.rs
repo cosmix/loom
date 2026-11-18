@@ -83,3 +83,108 @@ fn oversized_blob_and_worktree_share_streamed_identity() {
         FileCoverage::Oversized { .. }
     ));
 }
+
+fn local_scope(root: &Path) -> SourceGraphScope {
+    let (plan, stage) = crate::context::local_overlay::local_overlay_key(root);
+    SourceGraphScope::Overlay { plan, stage }
+}
+
+#[cfg(feature = "source-graph")]
+#[test]
+fn restoring_one_of_two_dirty_files_removes_its_old_overlay_entry() {
+    let temp = init_repo();
+    let root = temp.path();
+    let (store, graph) = stores(&temp);
+    reconcile_source_graph(&store, &graph, root, base_scope(root)).unwrap();
+    std::fs::write(root.join("src.rs"), "fn dirty_symbol() {}\n").unwrap();
+    std::fs::write(root.join("docs/notes.txt"), "dirty notes\n").unwrap();
+    reconcile_source_graph(&store, &graph, root, local_scope(root)).unwrap();
+    let (plan, stage) = crate::context::local_overlay::local_overlay_key(root);
+    let dirty = graph.load_overlay(&plan, &stage).unwrap().unwrap();
+    assert!(layer_mentions(&dirty, "src.rs", "dirty_symbol"));
+    assert!(!dirty.blob_index.contains_key("src.rs"));
+
+    git_ok(root, &["restore", "src.rs"]);
+    reconcile_source_graph(&store, &graph, root, local_scope(root)).unwrap();
+    let resolved = graph
+        .resolved(&head_sha(root), Some((&plan, &stage)))
+        .unwrap();
+    assert_eq!(
+        resolved.files["src.rs"].content_hash,
+        body_hash(b"fn main() {}\n")
+    );
+    assert!(resolved.files["src.rs"]
+        .nodes
+        .iter()
+        .any(|node| node.signature.contains("main")));
+    assert!(!resolved.files["src.rs"]
+        .nodes
+        .iter()
+        .any(|node| node.signature.contains("dirty_symbol")));
+    assert_eq!(
+        resolved.files["docs/notes.txt"].content_hash,
+        body_hash(b"dirty notes\n")
+    );
+}
+
+#[cfg(feature = "source-graph")]
+#[test]
+fn restored_overlay_entry_cannot_contaminate_a_new_base() {
+    let temp = init_repo();
+    let root = temp.path();
+    let (store, graph) = stores(&temp);
+    reconcile_source_graph(&store, &graph, root, base_scope(root)).unwrap();
+    std::fs::write(root.join("src.rs"), "fn dirty_symbol() {}\n").unwrap();
+    reconcile_source_graph(&store, &graph, root, local_scope(root)).unwrap();
+    git_ok(root, &["restore", "src.rs"]);
+    std::fs::write(root.join("docs/notes.txt"), "unrelated commit\n").unwrap();
+    git_ok(root, &["add", "docs/notes.txt"]);
+    git_ok(root, &["commit", "-m", "unrelated"]);
+    reconcile_source_graph(&store, &graph, root, base_scope(root)).unwrap();
+    let base = graph.load_base(&head_sha(root)).unwrap().unwrap();
+    assert_eq!(
+        base.files["src.rs"].content_hash,
+        body_hash(b"fn main() {}\n")
+    );
+    assert!(layer_mentions(&base, "src.rs", "main"));
+    assert!(!layer_mentions(&base, "src.rs", "dirty_symbol"));
+}
+
+#[cfg(feature = "source-graph")]
+#[test]
+fn old_schema_overlay_with_ambiguous_oids_is_not_reused() {
+    let temp = init_repo();
+    let root = temp.path();
+    let (store, graph) = stores(&temp);
+    reconcile_source_graph(&store, &graph, root, base_scope(root)).unwrap();
+    std::fs::write(root.join("src.rs"), "fn dirty_symbol() {}\n").unwrap();
+    std::fs::write(root.join("docs/notes.txt"), "dirty notes\n").unwrap();
+    reconcile_source_graph(&store, &graph, root, local_scope(root)).unwrap();
+    let (plan, stage) = crate::context::local_overlay::local_overlay_key(root);
+    let mut old = graph.load_overlay(&plan, &stage).unwrap().unwrap();
+    old.schema_version = crate::context::source_graph::GRAPH_SCHEMA_VERSION - 1;
+    old.blob_index = graph
+        .load_base(&head_sha(root))
+        .unwrap()
+        .unwrap()
+        .blob_index;
+    graph.save_overlay(&plan, &stage, &old).unwrap();
+
+    git_ok(root, &["restore", "src.rs"]);
+    reconcile_source_graph(&store, &graph, root, local_scope(root)).unwrap();
+    let resolved = graph
+        .resolved(&head_sha(root), Some((&plan, &stage)))
+        .unwrap();
+    assert_eq!(
+        resolved.files["src.rs"].content_hash,
+        body_hash(b"fn main() {}\n")
+    );
+    assert!(!resolved.files["src.rs"]
+        .nodes
+        .iter()
+        .any(|node| node.signature.contains("dirty_symbol")));
+    assert_eq!(
+        resolved.files["docs/notes.txt"].content_hash,
+        body_hash(b"dirty notes\n")
+    );
+}

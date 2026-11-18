@@ -94,6 +94,7 @@ fn write_overlay(root: &Path) {
                 files,
                 blob_index: BTreeMap::new(),
                 schema_version: crate::context::source_graph::GRAPH_SCHEMA_VERSION,
+                complete: false,
             },
         )
         .unwrap();

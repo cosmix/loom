@@ -10,7 +10,7 @@
 //! 1. Worktree removal - Remove the isolated git worktree
 //! 2. Branch deletion - Delete the loom/{stage-id} branch
 //! 3. Base branch deletion - Delete loom/_base/{stage-id} if it exists
-//! 4. Git pruning - Clean up any stale worktree references
+//! 4. Global Git pruning - Only during explicitly forced cleanup
 //!
 //! ## Usage
 //!
@@ -32,6 +32,8 @@ mod worktree_failure;
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_cleanup_ownership;
 #[cfg(test)]
 mod tests_spool;
 #[cfg(test)]

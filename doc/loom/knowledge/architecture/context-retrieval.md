@@ -7,7 +7,7 @@ verified: 6642fab24c3bdda26a2f32a751552411eca2039b
 
 # Context Retrieval
 
-> Graphs, lanes, gating, packs
+>
 
 ## What This Subsystem Is
 
@@ -280,15 +280,14 @@ doc/**/*.md (prose) ──────┼──> KnowledgeChunk ──catalog─
  lexical_index (per-revision cache; scan is the oracle)
 ```
 
-- **One evaluate per retrieval.** `retrieve_for_stage` → `resolve_catalog` →
-  `refresh(store, knowledge_root, structural_only = true)`, which runs
-  `evaluate_inner` exactly once — one fingerprint pass — and hands those
-  fingerprints to the rebuild when the catalog is stale; this path never rebuilds
-  the semantic layer. The standalone `evaluate_state` runs only when that refresh
-  fails (an in-memory catalog is built instead) or when there is no knowledge
-  tree. A stored semantic revision behind `HEAD` is reported stale, and
-  `retrieve::graph::load_resolved_graph` also marks it stale when the working
-  tree's generation no longer matches the overlay being read.
+- **One snapshot per retrieval.** `resolve_catalog` calls `refresh_snapshot` with
+  `structural_only = true`, returning its validated or built catalog and freshness.
+  Snapshot reads and publication hold one directory lock; publication preserves the
+  latest semantic state. Unreadable cache artifacts are reported and rebuilt, and
+  denied publication serves the built catalog without a second fingerprint or ingest.
+  Authoritative knowledge read errors propagate. A missing tree uses `evaluate_state`.
+  Retrieval binds a source overlay to its recorded base revision (a complete overlay needs
+  none), or chooses the checkout HEAD without an overlay; missing bases and legacy overlays are degraded.
 - `rank` scores each requested channel independently, through the shared BM25 +
   exact-rung machinery described above; the source channel adds its graph
   neighbours before truncation.
@@ -329,8 +328,9 @@ consumer means calling that function, not reimplementing the pipeline.
 ## Layering
 
 `context` uses the neutral filesystem, model, language and Git layers. Source graph
-refresh reads scalar Git values through `run_git_checked`, NUL-delimited records
-through `run_git_records`, and committed source bytes through `run_git_stream`.
+refresh reads Git values and NUL-delimited records through `WorktreeGit::run_checked`,
+parses status through `git::status_entries::parse_porcelain_v1_z`, and reads committed
+source bytes through `run_git_stream`.
 `context::worktree_graph` also uses branch/worktree helpers and byte-preserving
 record readers. `source_graph::read::SourceRead` hashes the complete input through
 a fixed buffer while retaining at most the extraction cap.

@@ -45,6 +45,11 @@ pub(super) fn run(command: &Command) -> Option<Output> {
     })
 }
 
+#[cfg(target_os = "linux")]
+pub(super) fn is_capturing() -> bool {
+    SCRIPT.with(|script| script.borrow().is_some())
+}
+
 pub(super) fn capture<T>(
     replies: impl IntoIterator<Item = Option<Output>>,
     action: impl FnOnce() -> T,

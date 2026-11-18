@@ -1,10 +1,5 @@
-import type {
-  DaemonState,
-  FailureType,
-  OutgoingSessionExitReason,
-  StageStatus,
-  StageSummary,
-} from "@/api/schema";
+import type { Busy, DaemonState, StageStatus, StageSummary } from "@/api/schema";
+import { displayState, type DisplayState } from "@/lib/display-state";
 
 export type Tone =
   | "executing"
@@ -23,7 +18,7 @@ export interface StateMeta {
   bold: boolean;
 }
 
-const STATE_META: Record<StageStatus, StateMeta> = {
+const STATE_META: Record<DisplayState, StateMeta> = {
   "waiting-for-deps": { tone: "pending", bold: false },
   queued: { tone: "queued", bold: true },
   executing: { tone: "executing", bold: true },
@@ -37,6 +32,8 @@ const STATE_META: Record<StageStatus, StateMeta> = {
   "merge-blocked": { tone: "blocked", bold: true },
   "needs-human-review": { tone: "warning", bold: false },
   "needs-adjudication": { tone: "warning", bold: true },
+  "completion-pending": { tone: "warning", bold: true },
+  "completion-blocked": { tone: "blocked", bold: true },
 };
 
 export function formatElapsed(seconds: number): string {
@@ -49,218 +46,29 @@ export function formatElapsed(seconds: number): string {
   return `${Math.trunc(seconds / 3600)}h${Math.trunc((seconds % 3600) / 60)}m`;
 }
 
-export function stateMeta(status: StageStatus): StateMeta {
+export function stateMeta(status: DisplayState): StateMeta {
   return STATE_META[status];
 }
 
 /// Which caution tape a state wears: red for a failure the daemon could not
 /// get past, amber for a state waiting on a person or a merge, none otherwise.
-export function hazardTone(status: StageStatus): "error" | "warning" | null {
+export function hazardTone(status: DisplayState): "error" | "warning" | null {
   switch (status) {
     case "blocked":
     case "completed-with-failures":
     case "merge-blocked":
+    case "completion-blocked":
       return "error";
     case "merge-conflict":
     case "needs-human-review":
     case "needs-adjudication":
     case "waiting-for-input":
     case "needs-handoff":
+    case "completion-pending":
       return "warning";
     default:
       return null;
   }
-}
-
-/// A v2 standard stage's contract-writer phase: a "stage" session status but
-/// spawned to write and freeze failing contract tests before the
-/// implementing session starts. The wire status stays "executing" through
-/// this phase; only `session_type` tells the two apart.
-export function isContractPhase(stage: StageSummary): boolean {
-  return stage.status === "executing" && stage.session_type === "contract";
-}
-
-/// `session_type` as the raw wire value except "contract", which reads as
-/// what it spawns rather than the phase it belongs to.
-export function sessionTypeLabel(type: StageSummary["session_type"]): string | null {
-  if (type === null) return null;
-  return type === "contract" ? "contract writer" : type;
-}
-
-export function failureLabel(type: FailureType): string {
-  const labels: Record<FailureType, string> = {
-    "session-crash": "crash",
-    "test-failure": "test",
-    "build-failure": "build",
-    "code-error": "code",
-    timeout: "timeout",
-    "context-exhausted": "context",
-    "user-blocked": "user",
-    "merge-conflict": "merge",
-    "infrastructure-error": "infra",
-    "sandbox-setup-failure": "sandbox",
-    "startup-refusal": "startup",
-    unknown: "error",
-  };
-  return labels[type];
-}
-
-function retryText(stage: StageSummary, label: string): { text: string; tone: Tone } {
-  return {
-    text: `${label} ${stage.retry_count}/${stage.max_retries ?? 3}`,
-    tone: "blocked",
-  };
-}
-
-/// A session with a tool call open is working even though its heartbeat is
-/// silent, so the activity instruments treat it like `Working`.
-export function sessionIsWorking(stage: StageSummary): boolean {
-  return stage.activity_status === "Working" || stage.activity_status === "Busy";
-}
-
-function executingActivity(stage: StageSummary): { text: string; tone: Tone } {
-  if (isContractPhase(stage)) {
-    if (stage.activity_status === "Stale") {
-      return stalenessText("contract writer idle", stage.staleness_secs, "warning");
-    }
-    if (stage.activity_status === "Quiet") {
-      return stalenessText("contract writer quiet", stage.staleness_secs, "dimmed");
-    }
-    if (stage.activity_status === "Busy") {
-      return busyText(stage, "contract writer ", "contract");
-    }
-    if (stage.activity_status !== "Orphaned" && stage.activity_status !== "Error") {
-      return { text: "writing contract tests", tone: "contract" };
-    }
-  }
-  switch (stage.activity_status) {
-    case "Working":
-      return {
-        text: stage.last_tool ? `working · ${stage.last_tool}` : "working",
-        tone: "completed",
-      };
-    case "Busy":
-      return busyText(stage, "", "completed");
-    case "Idle":
-      return stalenessText("idle", stage.staleness_secs, "dimmed");
-    case "Quiet":
-      return stalenessText("quiet", stage.staleness_secs, "dimmed");
-    case "Stale":
-      return stalenessText("stale", stage.staleness_secs, "warning");
-    case "Orphaned":
-      return { text: "orphaned", tone: "blocked" };
-    case "Error":
-      return { text: "crashed", tone: "blocked" };
-  }
-}
-
-/// `running <tool> 12m`, or `in tool call 12m` when the open call's name is
-/// unknown. The silence stays in the text so a command that never returns is
-/// still visible.
-function busyText(stage: StageSummary, lead: string, tone: Tone): { text: string; tone: Tone } {
-  const action = stage.last_tool ? `running ${stage.last_tool}` : "in tool call";
-  return stalenessText(`${lead}${action}`, stage.staleness_secs, tone);
-}
-
-function stalenessText(
-  prefix: string,
-  seconds: number | null,
-  tone: Tone,
-): { text: string; tone: Tone } {
-  return { text: seconds === null ? prefix : `${prefix} ${formatElapsed(seconds)}`, tone };
-}
-
-function baseActivity(stage: StageSummary): { text: string; tone: Tone } | null {
-  if (stage.status === "executing" && stage.incoherence !== null) {
-    return { text: "incoherent", tone: "blocked" };
-  }
-  switch (stage.status) {
-    case "queued":
-      return { text: "ready", tone: "queued" };
-    case "executing":
-      return executingActivity(stage);
-    case "waiting-for-input":
-      return { text: "awaiting input", tone: "warning" };
-    case "needs-handoff":
-      return { text: "handing off", tone: "warning" };
-    case "blocked":
-      return retryText(
-        stage,
-        stage.failure_info ? failureLabel(stage.failure_info.failure_type) : "error",
-      );
-    case "completed-with-failures":
-      return retryText(stage, "failed");
-    case "merge-conflict":
-      return { text: "conflict", tone: "warning" };
-    case "merge-blocked":
-      return { text: "merge error", tone: "blocked" };
-    case "needs-human-review":
-      return { text: "awaiting you", tone: "warning" };
-    case "needs-adjudication":
-      return adjudicationText(stage);
-    default:
-      return null;
-  }
-}
-
-function adjudicationText(stage: StageSummary): { text: string; tone: Tone } {
-  const judge =
-    stage.judge_heartbeat_secs === null
-      ? "none"
-      : stage.judge_heartbeat_secs <= 300
-        ? "working"
-        : "stale";
-  return { text: `dispute ${stage.dispute_count} · judge ${judge}`, tone: "warning" };
-}
-
-function completionActivity(stage: StageSummary): { text: string; tone: Tone } | null {
-  const blocker = stage.completion_blocker;
-  if (!blocker || (stage.status !== "executing" && stage.status !== "needs-human-review")) {
-    return null;
-  }
-  const detail = blocker.summary || blocker.failure_code;
-  switch (blocker.state) {
-    case "pending":
-      return { text: `completion pending: ${detail}`, tone: "warning" };
-    case "blocked":
-      return { text: `completion blocked: ${detail}`, tone: "blocked" };
-    case "ownership_unknown":
-      return {
-        text: `completion blocked, writer unconfirmed: ${detail}`,
-        tone: "blocked",
-      };
-  }
-}
-
-export function activityText(stage: StageSummary): { text: string; tone: Tone } | null {
-  let activity = completionActivity(stage) ?? baseActivity(stage);
-  if (
-    !stage.completion_blocker &&
-    stage.status !== "executing" &&
-    stage.outgoing_session_exit_reason
-  ) {
-    const lastExit = `last: ${exitReasonLabel(stage.outgoing_session_exit_reason)}`;
-    activity = activity
-      ? { ...activity, text: `${activity.text} · ${lastExit}` }
-      : { text: lastExit, tone: "neutral" };
-  }
-  if (!activity || !stage.held) {
-    return activity;
-  }
-  return { text: `held · ${activity.text}`, tone: "warning" };
-}
-
-export function exitReasonLabel(reason: OutgoingSessionExitReason): string {
-  const labels: Record<OutgoingSessionExitReason, string> = {
-    completed: "completed",
-    crashed: "crashed",
-    "context-ceiling": "context ceiling",
-    stalled: "stalled",
-    "operator-stop": "operator stop",
-    "criteria-blocked": "criteria blocked",
-    replaced: "replaced",
-  };
-  return labels[reason];
 }
 
 export function contextUsage(stage: StageSummary): {
@@ -292,11 +100,20 @@ export function modelsOf(stage: StageSummary): { model: string; execution: strin
   return { model: stage.model, execution: [...stage.execution_models] };
 }
 
+/// "model/effort", or the model alone while no effort is known.
+export function modelWithEffort(model: string, effort: string | null | undefined): string {
+  return effort ? `${model}/${effort}` : model;
+}
+
 export function timeText(stage: StageSummary): string | null {
   if (stage.status === "waiting-for-deps" || stage.status === "queued") {
     return null;
   }
-  const seconds = stage.execution_secs ?? stage.elapsed_secs;
+  // Completion covers the whole run, including contract writing and phase transitions.
+  const completed = stage.status === "completed" || stage.status === "completed-with-failures";
+  const seconds = completed
+    ? (stage.elapsed_secs ?? stage.execution_secs)
+    : (stage.execution_secs ?? stage.elapsed_secs);
   return seconds === null ? "" : formatElapsed(seconds);
 }
 
@@ -335,13 +152,27 @@ export function progressPercent(completed: number, total: number): number {
   return Math.trunc((completed * 100 + Math.trunc(total / 2)) / total);
 }
 
+// An unparseable `started_at` (NaN) counts as just started.
+function busyElapsedSecs(busy: Busy, nowMs: number): number {
+  // Truncates like the daemon's `num_seconds`, so both sides agree on a ceiling boundary.
+  const elapsed = Math.floor((nowMs - Date.parse(busy.started_at)) / 1000);
+  return Number.isNaN(elapsed) ? 0 : Math.max(0, elapsed);
+}
+
 /// `staleSecs` is null while the page has a live feed; a number is how long
 /// the page has been without one, in which case the daemon's real state is
 /// unknown and must not be reported as running.
+///
+/// `busy` is the operation the scheduler thread is wrapped in. It only shows
+/// for a daemon whose tick is fresh: a stale tick wins (and prints the tick's
+/// age), and a stopped daemon never shows a leftover busy line. Elapsed time
+/// comes from `nowMs` against the daemon's `started_at`.
 export function daemonLine(
   daemon: DaemonState,
   tickAgeSecs: number | null,
   staleSecs: number | null,
+  busy: Busy | null,
+  nowMs: number,
 ): { text: string; detail?: string; tone: Tone } {
   if (staleSecs !== null) {
     return {
@@ -362,8 +193,19 @@ export function daemonLine(
   if (tickAgeSecs !== null && tickAgeSecs >= 60) {
     return { text: `loop stalled ${formatElapsed(tickAgeSecs)}`, tone: "warning" };
   }
+  const elapsed = busy ? busyElapsedSecs(busy, nowMs) : 0;
+  if (busy && elapsed >= busy.global_ceiling_secs) {
+    return { text: `loop stalled ${formatElapsed(elapsed)}`, tone: "warning" };
+  }
   if (daemon === "unreachable") {
     return { text: "daemon running", detail: "socket unreachable", tone: "warning" };
+  }
+  if (busy) {
+    return {
+      text: "daemon running",
+      detail: `busy ${busy.what} ${formatElapsed(elapsed)}`,
+      tone: elapsed >= busy.ceiling_secs ? "warning" : "completed",
+    };
   }
   return {
     text: "daemon running",
@@ -395,6 +237,26 @@ export function formatClock(value: string | number | Date): string {
   return Number.isNaN(date.getTime()) ? "—" : CLOCK_FORMAT.format(date);
 }
 
+const DAY_FORMAT = new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" });
+
+const YEAR_DAY_FORMAT = new Intl.DateTimeFormat(undefined, {
+  year: "numeric",
+  month: "short",
+  day: "numeric",
+});
+
+/// The calendar day of `value` when it is not `now`'s: "Oct 27", with the
+/// year when that differs too. Null for today and for an unparseable input,
+/// so a time column shows the clock alone for today's events.
+export function formatDayUnlessToday(
+  value: string | number | Date,
+  now: Date = new Date(),
+): string | null {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime()) || date.toDateString() === now.toDateString()) return null;
+  return (date.getFullYear() === now.getFullYear() ? DAY_FORMAT : YEAR_DAY_FORMAT).format(date);
+}
+
 /// 24-hour date + time; "—" for an unparseable input.
 export function formatStamp(value: string | number | Date): string {
   const date = new Date(value);
@@ -405,7 +267,9 @@ export function summaryCounts(
   stages: readonly StageSummary[],
   attentionCount: number,
 ): { executing: number; queued: number; waiting: number; attention: number; done: number } {
-  const count = (status: StageStatus) => stages.filter((stage) => stage.status === status).length;
+  // An executing stage held by a completion blocker counts under attention.
+  const count = (status: StageStatus) =>
+    stages.filter((stage) => displayState(stage) === status).length;
   return {
     executing: count("executing"),
     queued: count("queued"),

@@ -2,6 +2,28 @@ use std::fs;
 
 use super::{RequestedModels, AMBIGUOUS_MODEL};
 
+#[test]
+fn requested_model_ledger_refuses_oversize_fifo_and_parent_symlink() {
+    use std::os::unix::ffi::OsStrExt;
+    let root = tempfile::tempdir().unwrap();
+    let stage = root.path().join("subagents/stage");
+    std::fs::create_dir_all(&stage).unwrap();
+    let path = stage.join("spawns.jsonl");
+    let limit = crate::provider_data::ledger::MAX_LEDGER_BYTES;
+    std::fs::write(&path, vec![b' '; limit + 1]).unwrap();
+    assert!(super::json_lines(&path).is_empty());
+    std::fs::remove_file(&path).unwrap();
+    let c_path = std::ffi::CString::new(path.as_os_str().as_bytes()).unwrap();
+    // SAFETY: c_path is a valid NUL-terminated pathname.
+    assert_eq!(unsafe { libc::mkfifo(c_path.as_ptr(), 0o600) }, 0);
+    assert!(super::json_lines(&path).is_empty());
+    let outside = tempfile::tempdir().unwrap();
+    std::fs::write(outside.path().join("spawns.jsonl"), "{}\n").unwrap();
+    let link = root.path().join("subagents/link");
+    std::os::unix::fs::symlink(outside.path(), &link).unwrap();
+    assert!(super::json_lines(&link.join("spawns.jsonl")).is_empty());
+}
+
 fn write_ledger(work_dir: &tempfile::TempDir, name: &str, rows: &str) {
     let stage_dir = work_dir.path().join("subagents/stage-a");
     fs::create_dir_all(&stage_dir).unwrap();
@@ -30,6 +52,39 @@ fn requested_models_joins_one_spawn_to_one_start() {
         requested.requested_model("agent-a", "parent-a"),
         Some("sonnet")
     );
+}
+
+/// A linked worktree reaches the work directory through its `.loom/work` symlink.
+#[test]
+fn requested_models_read_through_a_symlinked_work_directory_and_refuse_below_it() {
+    let work_dir = tempfile::tempdir().unwrap();
+    write_ledger(
+        &work_dir,
+        "spawns.jsonl",
+        r#"{"ts":"2026-10-01T00:00:00Z","session_id":"loom-a","agent_type":"loom-software-engineer","model":"sonnet"}
+"#,
+    );
+    write_ledger(
+        &work_dir,
+        "starts.jsonl",
+        r#"{"ts":"2026-10-01T00:00:01Z","agent_id":"agent-a","agent_type":"loom-software-engineer","parent_session_id":"parent-a","loom_session_id":"loom-a"}
+"#,
+    );
+    let checkout = tempfile::tempdir().unwrap();
+    let alias = checkout.path().join("work");
+    std::os::unix::fs::symlink(work_dir.path(), &alias).unwrap();
+
+    let requested = RequestedModels::load(Some(&alias));
+
+    assert_eq!(
+        requested.requested_model("agent-a", "parent-a"),
+        Some("sonnet")
+    );
+    let outside = tempfile::tempdir().unwrap();
+    fs::write(outside.path().join("spawns.jsonl"), "{}\n").unwrap();
+    let link = work_dir.path().join("subagents/link");
+    std::os::unix::fs::symlink(outside.path(), &link).unwrap();
+    assert!(super::json_lines(&alias.join("subagents/link/spawns.jsonl")).is_empty());
 }
 
 #[test]

@@ -73,27 +73,37 @@ describe("HeatStrip", () => {
       "3",
       "4",
     ]);
-    expect(strip.querySelector("span")?.style.background).toBe("transparent");
+    expect(strip.children[0]?.getAttribute("style")).toContain(
+      "color-mix(in oklch, var(--tone-completed) 8%, transparent)",
+    );
     expect(strip.children[3]?.getAttribute("style")).toContain(
-      "color-mix(in oklch, var(--tone-executing) 59%, transparent)",
+      "color-mix(in oklch, var(--tone-completed) 75%, transparent)",
     );
     expect(strip.lastElementChild?.getAttribute("style")).toContain(
-      "color-mix(in oklch, var(--tone-executing) 100%, transparent)",
+      "color-mix(in oklch, var(--tone-completed) 100%, transparent)",
     );
   });
 
-  it("renders transparent zero cells with a zero maximum", () => {
+  it("glows only the hottest cells", () => {
+    const { container } = render(<HeatStrip values={[10, 74, 75, 100]} max={100} label="Glow" />);
+
+    expect(
+      Array.from(container.querySelectorAll("span"), (cell) => cell.style.boxShadow !== ""),
+    ).toEqual([false, false, true, true]);
+  });
+
+  it("renders floor-intensity zero cells with a zero maximum", () => {
     const { container } = render(<HeatStrip values={[0, 0]} max={0} label="Idle" />);
 
     expect(container.innerHTML).not.toMatch(/NaN|Infinity/);
     expect(
       Array.from(container.querySelectorAll("span"), (cell) => [
         cell.dataset.level,
-        cell.style.background,
+        cell.getAttribute("style")?.includes("var(--tone-completed) 8%"),
       ]),
     ).toEqual([
-      ["0", "transparent"],
-      ["0", "transparent"],
+      ["0", true],
+      ["0", true],
     ]);
   });
 

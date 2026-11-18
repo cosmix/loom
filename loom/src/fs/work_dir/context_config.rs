@@ -121,13 +121,8 @@ impl ContextConfig {
     /// built-in window) keeps it a trigger the daemon can actually observe,
     /// with headroom left for the forced handoff it performs.
     ///
-    /// **Every daemon-side comparison against `DAEMON_CEILING_MULTIPLIER` must
-    /// call this method instead of applying the multiplier directly** — see
-    /// `orchestrator/monitor/detection.rs::detect_backstop_crossing`, whose
-    /// `ceiling as f32 * DAEMON_CEILING_MULTIPLIER` this method is meant to
-    /// replace. That call site is owned outside this module; wiring the call
-    /// through is a separate, explicit step, not implied by this method's
-    /// existence.
+    /// Daemon backstop comparisons use this method so both the ceiling
+    /// multiplier and model-window clamp apply.
     pub fn backstop_tokens(&self, ceiling: u32) -> u32 {
         let window = self
             .model_window_tokens

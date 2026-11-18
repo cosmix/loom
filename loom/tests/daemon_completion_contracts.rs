@@ -84,6 +84,7 @@ fn variant(applied: &Applied) -> &'static str {
         Applied::FreezeAccepted { .. } => "FreezeAccepted",
         Applied::FreezeRefused(_) => "FreezeRefused",
         Applied::Ignored(_) => "Ignored",
+        Applied::HandedBack(_) => "HandedBack",
     }
 }
 

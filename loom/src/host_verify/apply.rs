@@ -1,10 +1,11 @@
 //! What the daemon does with a finished host job: complete the stage a
-//! passing `Complete` run verified, record the checkpoint of a failed one, or
-//! hand a `Freeze` job to `freeze::apply_freeze_result`.
+//! passing `Complete` run verified, record the checkpoint of a failed one,
+//! hand a `VerdictComplete` job to `verdict_complete::apply_verdict_completion`,
+//! or a `Freeze` job to `freeze::apply_freeze_result`.
 //!
 //! The orchestrator calls [`apply_finished`] for every record the runner
-//! reports and, at startup, for every terminal current record
-//! [`unapplied_terminal_records`] lists. A binding or ownership failure is an
+//! reports and, at startup, for every terminal record the retry owner lists.
+//! A binding or ownership failure is an
 //! `Ok` outcome; `Err` is an I/O or state-file failure a later attempt may
 //! not hit. Every step is safe to repeat after a crash between the stage
 //! transition and the `applied` marker. The marker is written last: the
@@ -20,12 +21,15 @@ use anyhow::{Context, Result};
 use super::apply_rejection::{
     receipt_recorded, record_acceptance, record_failure, record_rejection,
 };
-use super::{bounded_detail, freeze, store, JobKind, JobRecord, JobResult, JobState};
+use super::{
+    bounded_detail, freeze, gates, store, verdict_complete, JobKind, JobRecord, JobResult, JobState,
+};
 use crate::fs::locking::locked_dir_update;
 use crate::fs::session_files::load_session_exact;
 use crate::handoff::completion::content::VerificationSnapshot;
 use crate::models::session::{Session, SessionStatus, SessionType};
 use crate::models::stage::{Stage, StageStatus, StageType};
+use crate::native_worker::index::stage_disposition;
 use crate::stage_service::ownership::owns_stage_as;
 use crate::verify::transitions::{load_stage, update_stage};
 
@@ -50,6 +54,8 @@ pub enum Applied {
     FreezeRefused(String),
     /// Nothing was applied, for the reason given.
     Ignored(String),
+    /// The stage went back to a fresh session, for the reason given.
+    HandedBack(String),
 }
 
 /// A binding the passing run no longer satisfies. Raised inside the stage
@@ -66,7 +72,7 @@ impl fmt::Display for BindingFailed {
 
 impl std::error::Error for BindingFailed {}
 
-fn binding_failed(reason: impl Into<String>) -> anyhow::Error {
+pub(super) fn binding_failed(reason: impl Into<String>) -> anyhow::Error {
     anyhow::Error::new(BindingFailed(reason.into()))
 }
 
@@ -81,8 +87,9 @@ pub fn apply_finished(work_dir: &Path, record: &JobRecord) -> Result<Applied> {
     }
     let applied = match record.kind {
         JobKind::Check => Applied::Ignored("a check changes no stage state".to_string()),
-        JobKind::Freeze => freeze::apply_freeze_result(work_dir, record)?,
+        JobKind::Freeze => apply_freeze(work_dir, record)?,
         JobKind::Complete => apply_complete(work_dir, record)?,
+        JobKind::VerdictComplete => verdict_complete::apply_verdict_completion(work_dir, record)?,
     };
     let note = bounded_detail(&describe(&applied));
     store::save_job_file(
@@ -93,35 +100,6 @@ pub fn apply_finished(work_dir: &Path, record: &JobRecord) -> Result<Applied> {
         note.as_bytes(),
     )?;
     Ok(applied)
-}
-
-/// Every stage's current record that is terminal and has no `applied`
-/// marker: the jobs a crash or a failed application left unapplied. A stage
-/// whose state cannot be read is logged and skipped.
-pub fn unapplied_terminal_records(work_dir: &Path) -> Result<Vec<JobRecord>> {
-    let mut unapplied = Vec::new();
-    for stage_id in store::stage_ids(work_dir)? {
-        match unapplied_of(work_dir, &stage_id) {
-            Ok(Some(record)) => unapplied.push(record),
-            Ok(None) => {}
-            Err(error) => tracing::warn!(
-                stage_id = %stage_id,
-                error = %format!("{error:#}"),
-                "could not read the stage's host job to find unapplied jobs",
-            ),
-        }
-    }
-    Ok(unapplied)
-}
-
-fn unapplied_of(work_dir: &Path, stage_id: &str) -> Result<Option<JobRecord>> {
-    let Some(record) = store::load_current(work_dir, stage_id)? else {
-        return Ok(None);
-    };
-    if !record.state.is_terminal() || is_applied(work_dir, &record)? {
-        return Ok(None);
-    }
-    Ok(Some(record))
 }
 
 fn is_applied(work_dir: &Path, record: &JobRecord) -> Result<bool> {
@@ -137,7 +115,34 @@ fn describe(applied: &Applied) -> String {
         Applied::FreezeAccepted { files } => format!("froze the contracts ({files} files)"),
         Applied::FreezeRefused(message) => format!("refused the contract run: {message}"),
         Applied::Ignored(reason) => reason.clone(),
+        Applied::HandedBack(reason) => format!("handed the stage to a fresh session: {reason}"),
     }
+}
+
+fn apply_freeze(work_dir: &Path, record: &JobRecord) -> Result<Applied> {
+    let stage = load_stage(&record.stage_id, work_dir)?;
+    let session = load_session_exact(work_dir, &record.session_id)?;
+    let owns = session.is_some_and(|session| {
+        owns_stage_as(
+            &stage,
+            &session,
+            &record.stage_id,
+            &record.session_id,
+            &[SessionType::Contract],
+        )
+    });
+    // A writer parked on `AskUserQuestion` still owns the stage, and the freeze
+    // takes it back to `Executing`.
+    let running = matches!(
+        stage.status,
+        StageStatus::Executing | StageStatus::WaitingForInput
+    );
+    if !owns || !running {
+        return Ok(Applied::Ignored(
+            "contract writer no longer owns the stage".to_string(),
+        ));
+    }
+    freeze::apply_freeze_result(work_dir, record)
 }
 
 fn apply_complete(work_dir: &Path, record: &JobRecord) -> Result<Applied> {
@@ -215,25 +220,21 @@ fn resume_completed(
 
 /// The checks that only read, so they run outside the lock: the stage and
 /// session bindings, and the completion gates that compare against a
-/// recorded fingerprint. `Some(reason)` refuses the run; `Err` is a failure to
-/// read state. The gates report a verdict and a git or I/O failure as the same
-/// untyped error, so any gate error is a refusal (the gate re-runs in the
-/// session's next completion).
+/// recorded fingerprint (`gates::refusal`), run again here because the tree
+/// or the review can change while the run goes. `Some(reason)` refuses the
+/// run; `Err` is a failure to read state.
 fn check_outside_lock(work_dir: &Path, record: &JobRecord) -> Result<Option<String>> {
     load_stage(&record.stage_id, work_dir)?;
     load_session_exact(work_dir, &record.session_id)?;
     if let Err(error) = validate_active_identity(work_dir, &record.stage_id, &record.session_id) {
         return binding_reason(error).map(Some);
     }
-    let gates = crate::daemon::check_completion_gates(work_dir, &record.stage_id);
-    Ok(gates
-        .err()
-        .map(|error| format!("completion gates: {error:#}")))
+    Ok(gates::refusal(work_dir, &record.stage_id))
 }
 
 /// The reason of a binding failure; any other error is a failure to read or
 /// write state and stays an error.
-fn binding_reason(error: anyhow::Error) -> Result<String> {
+pub(super) fn binding_reason(error: anyhow::Error) -> Result<String> {
     match error.downcast_ref::<BindingFailed>() {
         Some(failed) => Ok(failed.0.clone()),
         None => Err(error),
@@ -298,6 +299,26 @@ fn bind_and_complete(
             "stage session changed before completion was applied",
         ));
     }
+    verify_bound_run(stage, work_dir, record, result)?;
+    if stage.stage_type == StageType::Knowledge {
+        stage.merged = true;
+    }
+    stage.completed_commit = Some(result.head.clone());
+    stage.try_complete(None)
+}
+
+/// The binding every completion from a run requires: the run passed at the
+/// requested head, the stage's committed content is still that head, and the
+/// check definition is the one the run was bound to.
+pub(super) fn verify_bound_run(
+    stage: &Stage,
+    work_dir: &Path,
+    record: &JobRecord,
+    result: &JobResult,
+) -> Result<()> {
+    if let Some(blocker) = stage_disposition(work_dir, &stage.id).blocker(&stage.id) {
+        return Err(binding_failed(blocker));
+    }
     if !result.passed || result.head != record.head {
         return Err(binding_failed("the run does not verify the requested head"));
     }
@@ -315,11 +336,7 @@ fn bind_and_complete(
             "the stage's check definition changed since the run",
         ));
     }
-    if stage.stage_type == StageType::Knowledge {
-        stage.merged = true;
-    }
-    stage.completed_commit = Some(result.head.clone());
-    stage.try_complete(None)
+    Ok(())
 }
 
 /// The steps after the transition, each skipped once done: retiring the
@@ -359,12 +376,19 @@ fn retire_session(work_dir: &Path, session: &Session) {
         return;
     }
     let completed = SessionStatus::Completed;
-    if let Err(error) =
-        crate::commands::stage::session::update_session_status(work_dir, &session.id, completed)
-    {
+    if let Err(error) = crate::fs::session_files::mark_session_terminal_reason(
+        work_dir,
+        &session.id,
+        completed,
+        crate::models::session::SessionExitReason::Completed,
+    ) {
         tracing::warn!(session_id = %session.id, error = %format!("{error:#}"), "failed to mark the completed session's record Completed");
     }
     if let Err(error) = crate::orchestrator::signals::remove_signal(&session.id, work_dir) {
         tracing::warn!(session_id = %session.id, error = %format!("{error:#}"), "failed to remove the completed session's signal file");
     }
 }
+
+#[cfg(test)]
+#[path = "apply_waiting_tests.rs"]
+mod waiting_tests;

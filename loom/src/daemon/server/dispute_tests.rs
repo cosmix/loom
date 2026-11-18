@@ -8,6 +8,9 @@ use tempfile::TempDir;
 #[path = "dispute_multi_tests.rs"]
 mod multi;
 
+#[path = "dispute_owner_tests.rs"]
+mod owner;
+
 fn setup(stage_status: StageStatus, acceptance_len: usize) -> (TempDir, std::path::PathBuf) {
     let tmp = TempDir::new().unwrap();
     let wd = WorkDir::new(tmp.path()).unwrap();
@@ -223,7 +226,14 @@ fn dispute_rejects_when_budget_exhausted() {
         Ok(())
     })
     .unwrap();
-    let resp = file_acceptance(&work_dir, "stage-disp", 0, "x");
+    let worker_dir = work_dir.clone();
+    let (sender, receiver) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = sender.send(file_acceptance(&worker_dir, "stage-disp", 0, "x"));
+    });
+    let resp = receiver
+        .recv_timeout(std::time::Duration::from_secs(5))
+        .expect("budget refusal deadlocked on the stage lock");
     match resp {
         Response::Error { message } => assert!(message.contains("budget"), "msg: {message}"),
         other => panic!("expected Error, got {other:?}"),

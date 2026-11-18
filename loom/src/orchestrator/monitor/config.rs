@@ -17,8 +17,6 @@ pub struct MonitorConfig {
     pub context: ContextConfig,
     /// Timeout for considering a session hung (no heartbeat)
     pub hung_timeout: Duration,
-    /// Maximum consecutive failures before escalating
-    pub max_failures_before_escalation: u32,
 }
 
 impl Default for MonitorConfig {
@@ -28,7 +26,6 @@ impl Default for MonitorConfig {
             work_dir: PathBuf::from(".loom/work"),
             context: ContextConfig::default(),
             hung_timeout: Duration::from_secs(DEFAULT_HUNG_TIMEOUT_SECS),
-            max_failures_before_escalation: 3,
         }
     }
 }

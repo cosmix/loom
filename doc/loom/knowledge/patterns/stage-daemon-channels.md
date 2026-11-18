@@ -1,7 +1,7 @@
 # Stage-to-Daemon Channels
 
-> Stage agent to daemon
-> routes rather than one.
+>
+>
 
 ## Three Routes, Chosen by What the Caller Can Actually Do
 
@@ -66,10 +66,7 @@ too).
 new sandbox grant is needed, and the daemon drains it from `orchestrator/core/spool_drain.rs` on its
 poll loop.
 
-**The payload carries no stage id and no session id, on purpose.** Attribution comes from WHICH
-WORKTREE the daemon drained the entry from: a worktree agent cannot write outside its own worktree,
-and a field it wrote would be forgeable. That is what replaces peer identity when there is no
-connection to identify.
+**The worktree identifies the stage; the envelope carries the session id.** The daemon checks the session against the freshly locked stage before applying the request. Legacy records without a session id are discarded, so a previous attempt cannot control a later one.
 
 **The guarantee holds only against worktree agents.** Main-checkout sessions
 (Knowledge, Merge, Adjudication) run with the whole checkout writable, every
@@ -80,7 +77,7 @@ attributes to another stage. Closing that is part of the pending `.loom` confine
 Two rules the drain depends on:
 
 - **Apply through the daemon's own handlers**, not a second implementation. A spooled block calls
-  the same `handle_agent_block_stage` the RPC calls for a request naming a session (refused while
+  the same `handle_agent_block_for_session` the RPC calls for a request naming a session (refused while
   the session's latest trusted completion checkpoint shows a failing criterion), so the id allocation, the `validate_id` guard, the
   dispute budget and every refusal message cannot drift between the two ways a request arrives.
 - **A refusal is counted, never returned as `Err`.** An `Err` from the sink stops the spool being
@@ -99,11 +96,26 @@ Deliberately not a blanket `.loom/` — a project may legitimately track `.loom/
 
 A session Bash call that relays a request prints one `LOOM_RELAY_V1` line as its last stdout line.
 The PostToolUse hook `loom-hooks/loom-relay.sh` derives the kinds the command may write from its
-argv (`relay_kind_at`), and `loom hook relay` admits the line only when the ticket's kind equals the
-line's kind (`commands/hook/relay/ticket_check.rs`). A command whose kind the hook does not derive
-is never relayed. The nine control kinds (`RequestKind::is_control`, `loom/src/relay/kind.rs`) are
-dropped from a subagent by `drop_control_kinds` before an inbox entry exists, so a new control kind
-needs an entry there.
+argv (`relay_kind_at`, in the sourced library `loom-hooks/_relay_kinds.sh`), and `loom hook relay`
+admits the line only when the ticket's kind equals the line's kind
+(`commands/hook/relay/ticket_check.rs`). A command whose kind the hook does not derive is never
+relayed. The ten control kinds (`RequestKind::is_control`, `loom/src/relay/kind.rs`) are dropped
+from a subagent by `drop_control_kinds` before an inbox entry exists; it asks
+`_relay_kinds.sh::relay_kind_is_control`, which `relay/kind_hook_parity_tests.rs` pins to
+`is_control()` for every kind.
+
+**Two more hooks guard the relay line.** The PreToolUse guard `loom-hooks/loom-relay-guard.sh`
+(global, self-gated on `LOOM_SESSION_ID` and `LOOM_SCRATCH_DIR`) refuses with exit 2 a `block`,
+`commit`, `dispute`, `file-dispute`, `merge-resolved`, `verdict`, `freeze-contracts`, `handoff` or
+`check` invocation that runs with `run_in_background`, inside a capture (`$(...)`, backticks, a
+subshell, a `bash -c` payload), or with stdout redirected, detached or piped into anything but a
+final `tail -N` / `tail -n N` (`relay-stdout`, decided by `_relay_kinds.sh::relay_stdout_fate`).
+It also refuses any pipeline with a loom invocation whose filter consumer names `LOOM_R`,
+`RELAY_V1` or `^LOOM` (`relay-filter`, memory included). `complete` and `subagents:control` are
+left to their pins, and `memory` and `telemetry` are swept. The Stop hook
+`loom-hooks/loom-relay-stop.sh` blocks a stop once per control ticket still in the scratch
+directory (a `.stop-warned-<id>` marker), never while `stop_hook_active` is set, and tells the
+agent to run `loom request status <id>` before any rerun.
 
 | Session command                                                        | Kind                                                  | Control |
 | ---------------------------------------------------------------------- | ----------------------------------------------------- | ------- |
@@ -116,6 +128,7 @@ needs an entry there.
 | `loom stage merge --resolved`                                          | `merge-resolved`                                      | yes     |
 | `loom stage adjudicate`                                                | `verdict`                                             | yes     |
 | `loom stage contracts freeze`                                          | `freeze-contracts`                                    | yes     |
+| `loom subagents start`, `message`, in-session `cancel`                 | `subagents:control` (`WorkerControl`, Stage sessions only) | yes |
 | `loom knowledge context`                                               | `telemetry`                                           | no      |
 | `loom check`                                                           | `check`                                               | no      |
 | `loom handoff`                                                         | `handoff`                                             | yes     |
@@ -131,6 +144,13 @@ heartbeat the stall monitor reads. It carries no verdict. A Bash call whose text
 completion subcommand is refused unless it is that exact command, so a heredoc that edits relay or
 hook scripts is refused too: make such edits with the Edit tool. Run the pinned command bare, with
 no redirect or pipe, since the verdict comes from the daemon's host job rather than from output.
+
+**The worker-control pin follows the same shape.** `loom-hooks/loom-control-subagents.sh` admits
+exactly one spelling of `loom subagents start`, `message` and `cancel` (`<bin> subagents <verb>`,
+then `--flag value` pairs, then an optional `2>&1`), rewrites it to the trusted absolute loom
+binary, and refuses every other spelling and every caller other than the stage's main agent. It
+writes no heartbeat. A local refusal in these commands exits 3 before any ticket exists; once a
+ticket is written they exit 0 ([Native Codex Workers](../architecture/native-codex-workers.md#admission-and-ingress)).
 
 ## Every Relay Command Exits 0
 
@@ -166,11 +186,7 @@ A `complete` call that follows a passing run waits for the daemon's application,
 appears for it. A session that cannot relay (no `LOOM_SCRATCH_DIR`) is refused; the operator's shell
 completes locally.
 
-**Known limit.** `wait_or_request` writes the `requested` lines before the emit closure runs. If the
-emit then fails, the call prints `Host job: refused` after them, so a call can open with `requested`
-and end with `refused`. The test that pins the order (`host_verify/tests_wait.rs`,
-`with_no_state_the_request_lines_print_before_the_relay_runs`) must change before the order can
-change. Revisit when the relay sink can fail before the first line is written.
+The relay request is formed first, followed by atomic scratch-state publication and the `requested` output. If writing the output fails, the caller removes only its own request state. Ticket publication follows the requested output; failures preserve newer owners through the shared state lock.
 
 ## The Host Job State Directory
 
@@ -189,3 +205,7 @@ functions) require the job directory to exist: `write_atomic` does not recreate 
 pruned. `save_current` creates the job directory, so a test or a caller that writes a job file first
 gets `ENOENT`. `save_job_file` refuses the five store files (`record.json`, `progress.jsonl`,
 `result.json`, `groups`, `child.log`) and accepts other names, including `applied`.
+
+## Worker Control Runs Through a Relayed Control Kind
+
+`loom subagents start`, `message` and in-session `cancel` follow the relay contract above: validate locally (exit 3 before any ticket), write one `subagents:control` ticket, print the `LOOM_RELAY_V1` line and exit 0. The daemon drains the ticket under the stage admission lock (`inbox_drain/worker_control.rs`) and the answer is read with `loom request status`. A new relayed worker command needs the hook pin, the `RequestKind` arm, the relay matrix policy and a drain handler, as for any control kind.

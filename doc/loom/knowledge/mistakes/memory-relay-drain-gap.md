@@ -1,14 +1,14 @@
 ---
 sources:
-  - loom-hooks/loom-relay.sh
-  - loom/src/commands/hook/relay/sweep.rs
-  - loom/src/commands/hook/relay/tests_sweep.rs
+- loom-hooks/loom-relay.sh
+- loom/src/commands/hook/relay/sweep.rs
+- loom/src/commands/hook/relay/tests_sweep.rs
 verified: e88e8294c12301e520f82aaf968b1456d5f4ce92
 ---
 
 # Memory Relay Drain Gap
 
-> Relay tickets leaked
+>
 
 ## A Ticket Whose Line Never Reached the Hook Was Leaked Forever (2026-09-18)
 
@@ -21,6 +21,8 @@ verified: e88e8294c12301e520f82aaf968b1456d5f4ce92
 **Fix:** `loom hook relay` sweeps leftover `memory` and `telemetry` tickets on every call whose command text allows that kind (`commands/hook/relay/sweep.rs`; control kinds are never swept, see [Session Requests Travel Through a Hook-Written Inbox](../architecture/security-and-isolation.md)). `loom-relay.sh`'s fast path lets a payload containing `memory` reach the helper even with no relay line. The quota error now names the recovery: run `loom memory note --help` in the foreground with its output unfiltered. The knowledge-distill signal's receipt step tells the curator to keep `resolve` output unfiltered. Sessions still running a pre-fix binary or hook need the manual Recovery below.
 
 **Recurred (2026-10-22):** an orchestrator ran `loom check integration-verify > file` in a background Bash call. The relay hook refused the redirected stdout, and the next bare call reported `refused: the request never reached the daemon`. `loom check`, like every relay-eligible command, runs bare, foreground and unredirected; to wait, repeat the same bare command. Template Rule 14 now says "Never redirect `loom` commands".
+
+**Recurred again (2026-11-02):** an integration-verify orchestrator ran `loom check integration-verify` in the background piped through `tail`; the host job ended `refused: the request never reached the daemon` and a bare foreground rerun fixed it. Two prose rules did not stop a third occurrence; the proposed hook guard is in [`loom ask` and Read Gate Concerns](../concerns/loom-ask-and-read-gate.md#proposed-guards-for-recurring-mistakes).
 
 ## `loom-relay.sh` Never Recognizes `loom memory resolve`, So Its Tickets Can Deadlock a Sandboxed Session (2026-09-14)
 
@@ -35,3 +37,15 @@ Piping a `resolve` call's stdout to a file (to keep noise out of context) makes 
 **Recovery (verified working, 2026-09-14, still needed for sessions stuck under the old hook):** an unconsumed `.req` ticket file in `$LOOM_SCRATCH_DIR` is immutable and self-describing (`{"v":1,"id":...,"kind":"memory",...}`); its announced `sha256`/`bytes` are just the hash and length of that exact file. Recompute them (`sha256sum` or equivalent) for every stuck ticket, build the `LOOM_RELAY_V1 kind=memory id=<id> sha256=<hash> bytes=<n>` lines yourself, `cat` them to real stdout in the SAME (unredirected, foreground) Bash call as one genuinely recognized command — `loom memory note --help` is ideal: it tokenizes as `memory:note` (so `relay_allowed_kinds` includes `memory`) but creates NO new ticket of its own (a `--help` invocation never writes one), so this recovery step never grows the backlog it is draining. The real hook (unsandboxed, so `caller_is_inside_session`'s process-tree check succeeds where a manual sandboxed `loom hook relay` invocation cannot — the stage sandbox's own PID namespace hides the host PID the session record was registered under, the same limitation documented in [`loom status` Marks the Caller's Own Executing Stage Orphaned](../architecture/execution-containment.md)) then relays every ticket whose reconstructed line matches a real file on disk — up to 16 per call (`MAX_LINES_PER_CALL`, `loom/src/relay/mod.rs::MAX_LINES_PER_CALL`; an earlier version of this entry wrongly named `MAX_PENDING_ENTRIES`, which is the 128-entry inbox capacity); repeat for more. This is recovery of the session's OWN genuine tickets by their real on-disk hash, not forgery: it cannot relay a ticket that was not already legitimately written.
 
 **Fixed 2026-09-16:** `memory:resolve` was added to `relay_kind_at()`'s case statement in `loom-hooks/loom-relay.sh`, pinned by a new `expect memory 'loom memory resolve ...'` (and a companion `expect '' 'loom memory pending'`, confirming that read-only verb still relays nothing) in `loom-hooks/tests/loom-relay-kinds.sh`. An audit of every `context.emit(RequestKind::...)` call site confirmed the other emitted kinds — `block`, `dispute-criteria`, `merge --resolved`, `adjudicate`, `handoff`, and `knowledge context`'s telemetry — were already recognized by the case statement; `resolve` was the only gap. Sessions launched before their installed hook copy is refreshed with this fix still run the old `loom-relay.sh` and will keep hitting the deadlock described above — the Recovery procedure remains the only way to drain tickets already stuck under those sessions.
+
+## `loom check` Run in the Background Strands Its Request
+
+**What happened:** `loom check integration-verify` run with Bash `run_in_background` left its request at `pending relay`; the next call reported `refused: the request never reached the daemon`.
+
+**Why:** the relay is a PostToolUse hook that reads the `LOOM_RELAY_V1` line from foreground stdout only.
+
+**Prevention:** run `loom check`, `loom stage complete` and every other relayed command in the foreground. The next foreground loom call's hook recovers a stranded request.
+
+**Recurred (2026-11-17, collaterai kit-consumers):** the stage agent ran `loom stage dispute-contract ... 2>&1 | grep -v '^LOOM_RELAY' | tail -15`, deleting the relay line by name. The output said PENDING RELAY and told it to stop if no 'LOOM relay: received' confirmation followed; it reported the dispute filed and ended its turn. `loom request status` answered 'not found', and the user read the daemon as stuck. `file-dispute` is a control kind, so the leftover-ticket sweep never relays it; only a foreground, unfiltered rerun files it. A filter that names `LOOM_RELAY` is the strongest case for a mechanical guard.
+
+**Fix (2026-11-17):** four mechanical changes replace the prose rules. The PENDING RELAY notice is kind-aware: a control kind tells the agent to run `loom request status <id>` first and rerun only when the request was not filed (`relay/emit/stderr_text.rs`). The PreToolUse guard `loom-relay-guard.sh` refuses a relayed command that is backgrounded, redirected, captured or piped into anything but `tail -N`, and any pipeline that filters a `LOOM_RELAY` line. Control tickets older than 60 s stop counting against the 32-ticket quota (`relay/emit/stale.rs`). The Stop hook `loom-relay-stop.sh` blocks a stop once per stranded control ticket. Current behavior: [Relay Kinds and Their Hook Mapping](../patterns/stage-daemon-channels.md#relay-kinds-and-their-hook-mapping).

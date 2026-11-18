@@ -195,10 +195,10 @@ impl TextSearchHint {
     /// a POSIX shell, so each `'` inside it closes the quote, writes an escaped
     /// quote and reopens it: `it's` becomes `'it'\''s'`.
     pub fn for_pattern(pattern: &str) -> Self {
-        let quoted = pattern.replace('\'', r"'\''");
+        let quoted = crate::testrun::command::shell_quote(pattern);
         Self {
             pattern: pattern.to_string(),
-            command: format!("rg -n -F -- '{quoted}'"),
+            command: format!("rg -n -F -- {quoted}"),
         }
     }
 }

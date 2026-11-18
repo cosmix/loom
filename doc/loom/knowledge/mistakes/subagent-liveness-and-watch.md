@@ -1,6 +1,6 @@
 # Subagent Liveness And Watch
 
-> Liveness, watch traps
+>
 
 ## A Missing Report Is Not a Missing Result
 
@@ -375,3 +375,13 @@ applies only below it. Never weaken the refusal to admit a symlinked root.
 **Why:** exit 3 records a bound worker's failure from the evidence at that moment, and a codex job process that is gone is not final until the job record says so.
 
 **Prevention:** on exit 3 for a codex worker, read the job's own status once before re-delegating, and do not start a duplicate unit while the original may still land its files.
+
+## Operator monitoring cadence
+
+**What happened:** Monitoring was too frequent, and a cold-start handoff included resolved incidents and an obsolete filename. The operator requested quiet five-minute checks and handoffs limited to information needed to continue.
+
+**Why:** Session history was mistaken for actionable handoff context.
+
+**Prevention:** Check status roughly every five minutes and stay quiet between checks. Handoffs contain the objective, current plan and stage state, next actions, active constraints and unresolved blockers. Omit superseded names and resolved incidents unless they directly affect the next action. Preserve concurrent edits; record new blockages in root blockages.md. Use the installed PATH loom for orchestration.
+
+**Fix:** Continue feat-planner plans 07–11 in order when healthy, cleaning completed resources and committing task-related changes between plans. Keep takeover prompts concise and current.

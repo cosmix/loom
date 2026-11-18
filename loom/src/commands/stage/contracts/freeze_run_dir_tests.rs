@@ -7,11 +7,12 @@
 
 use super::*;
 use crate::models::stage::Stage;
-use crate::relay::sha256_hex;
-use crate::verify::contracts::completion;
+use crate::utils::sha256_hex;
+use crate::verify::contracts::run_dir::resolve_run;
 use crate::verify::contracts::store::{
     write_freeze, FreezeRecord, FrozenContract, FrozenFile, FREEZE_RECORD_VERSION,
 };
+use crate::verify::contracts::{completion, resolve_adapter};
 use chrono::Utc;
 use std::path::PathBuf;
 use tempfile::TempDir;
@@ -38,7 +39,7 @@ fn spec() -> ContractSpec {
     ContractSpec {
         id: "a".to_string(),
         file: FILE.to_string(),
-        test: "widget renders".to_string(),
+        test: Some("widget renders".to_string()),
         runner: Some("bun-test".to_string()),
         cwd: None,
         scenario: "the widget renders in a DOM set up by the web preload".to_string(),
@@ -104,8 +105,18 @@ fn freeze_into(tmp: &Path, name: &str, contract: FrozenContract) -> PathBuf {
 /// the freeze handler resolves.
 fn freeze_red(root: &Path) -> FrozenContract {
     let contract = spec();
-    let judged = run_contract(root, root, &contract, CommandConfinement::Confined).unwrap();
-    let report = judged.unwrap_or_else(|problem| panic!("freeze refused: {problem}"));
+    let prepared = prepare_contract(root, root, &contract).unwrap();
+    let ran = run_prepared(
+        root,
+        &contract,
+        &prepared,
+        CommandConfinement::Confined,
+        |_| {},
+    )
+    .unwrap();
+    let report = ran
+        .judged
+        .unwrap_or_else(|problem| panic!("freeze refused: {problem}"));
     assert_eq!(report.outcome, "failed", "{report:?}");
     let adapter = resolve_adapter(&contract, root);
     let run = resolve_run(&contract, adapter, root, root, None).unwrap();

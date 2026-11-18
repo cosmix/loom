@@ -70,7 +70,7 @@ impl EvidenceCollector {
             verified: verified.to_string(),
             sources: sources
                 .iter()
-                .map(|source| normalize_path(source))
+                .map(|source| forward_slashes(source))
                 .collect(),
         };
         self.groups.entry(key).or_default().push(EvidenceRequest {
@@ -146,7 +146,7 @@ impl EvidenceCollector {
                 request
                     .sources
                     .iter()
-                    .filter(|source| paths.contains(&normalize_path(source)))
+                    .filter(|source| paths.contains(&forward_slashes(source)))
                     .map(|source_path| CatalogIssue::EvidenceChanged {
                         file: request.file.clone(),
                         source_path: source_path.clone(),
@@ -207,6 +207,7 @@ fn validate_revision(project_root: &Path, verified: &str) -> Result<(), Evidence
         .ok_or(EvidenceUnavailableReason::InvalidRevision)
 }
 
+// Unlike crate::git::changes::changed_names, evidence caps output and keeps rename semantics.
 fn committed_paths(
     project_root: &Path,
     key: &EvidenceKey,
@@ -229,6 +230,7 @@ fn committed_paths(
         .ok_or(EvidenceUnavailableReason::CommandFailed)
 }
 
+// Unlike crate::git::changes::{changed_names, untracked_names}, status keeps the output cap and staged edits.
 fn working_tree_paths(
     project_root: &Path,
     key: &EvidenceKey,
@@ -253,9 +255,8 @@ fn working_tree_paths(
 fn git_output(project_root: &Path, args: Vec<String>) -> Result<Output, EvidenceUnavailableReason> {
     let refs: Vec<_> = args.iter().map(String::as_str).collect();
     let output = run_git(&refs, project_root).map_err(classify_git_error)?;
-    // `run_bounded_output` bounds wall-clock time and drains pipes fully, so this caps the
-    // accepted result rather than peak memory; memory is bounded in practice because every call
-    // restricts output to declared literal paths.
+    // Reject results exceeding the evidence cap; this check does not bound
+    // process-output allocation.
     if output.stdout.len() > MAX_GIT_OUTPUT_BYTES || output.stderr.len() > MAX_GIT_OUTPUT_BYTES {
         return Err(EvidenceUnavailableReason::ResourceLimit);
     }
@@ -290,20 +291,24 @@ fn parse_diff_paths(bytes: &[u8]) -> BTreeSet<String> {
         let Some(path) = fields.next() else {
             break;
         };
-        paths.insert(normalize_bytes(path));
+        paths.insert(forward_slashes_lossy(path));
         if status
             .first()
             .is_some_and(|code| matches!(*code, b'R' | b'C'))
         {
             if let Some(other_path) = fields.next() {
-                paths.insert(normalize_bytes(other_path));
+                paths.insert(forward_slashes_lossy(other_path));
             }
         }
     }
     paths
 }
 
-/// Unlike `loom/src/context/refresh/source_graph/generation.rs::parse_status`, this parses raw bytes because that parser takes `run_git_checked`'s trimmed `String`; both rely on porcelain v1 `-z` rename records listing destination first and the source in the next NUL field.
+/// Paths of a porcelain v1 `-z` listing, destination and source of a rename or copy alike.
+///
+/// Kept beside `crate::git::status_entries::parse_porcelain_v1_z`: this parses the raw bytes
+/// lossily and never fails, so a non-UTF-8 path is still compared as evidence, where that
+/// parser rejects the whole listing.
 fn parse_status_paths(bytes: &[u8]) -> BTreeSet<String> {
     let mut fields = bytes.split(|byte| *byte == b'\0');
     let mut paths = BTreeSet::new();
@@ -312,10 +317,10 @@ fn parse_status_paths(bytes: &[u8]) -> BTreeSet<String> {
             continue;
         }
         if let Some((destination, source)) = status_rename_paths(record, &mut fields) {
-            paths.insert(normalize_bytes(destination));
-            paths.insert(normalize_bytes(source));
+            paths.insert(forward_slashes_lossy(destination));
+            paths.insert(forward_slashes_lossy(source));
         } else {
-            paths.insert(normalize_bytes(&record[3..]));
+            paths.insert(forward_slashes_lossy(&record[3..]));
         }
     }
     paths
@@ -342,11 +347,11 @@ fn literal_pathspec(source: &str) -> String {
     format!(":(literal){source}")
 }
 
-fn normalize_bytes(path: &[u8]) -> String {
-    normalize_path(&String::from_utf8_lossy(path))
+fn forward_slashes_lossy(path: &[u8]) -> String {
+    forward_slashes(&String::from_utf8_lossy(path))
 }
 
-fn normalize_path(path: &str) -> String {
+fn forward_slashes(path: &str) -> String {
     path.replace('\\', "/")
 }
 

@@ -5,47 +5,34 @@
 //! them. One test in its own process: the installed environment is a
 //! process-wide `OnceLock`, and the environment itself is global state.
 
+// bespoke-git-fixture: the test sets the process-wide GIT_CONFIG_GLOBAL, GIT_CONFIG_SYSTEM and GIT_CONFIG_NOSYSTEM at missing files (set_var) so the daemon's own git calls (`commit_staged`, `commit_merge`) inherit that isolation; the shared runner isolates only the git it spawns itself.
+
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 use loom::git::merge::commit_merge;
 use loom::git::signing;
 use loom::git::stage_commit::{commit_staged, CommitRequest, CommitScope};
 use tempfile::TempDir;
 
-/// Run git in `root`; the test process already points the global and system
-/// configuration at missing files. Returns trimmed stdout.
-fn git(root: &Path, args: &[&str]) -> String {
-    let output = Command::new("git")
-        .args(args)
-        .current_dir(root)
-        .output()
-        .unwrap();
-    assert!(
-        output.status.success(),
-        "git {args:?} failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    String::from_utf8_lossy(&output.stdout).trim().to_string()
-}
+#[path = "test_support/mod.rs"]
+mod test_support;
+
+use test_support::git_repo::{git, TestRepo};
 
 /// A repository with one commit on `main`, checked out on `loom/s1`, with
 /// every setting the code under test could inherit pinned repo-locally.
 fn repo(root: &Path) {
     fs::create_dir_all(root).unwrap();
-    git(root, &["init", "-b", "main"]);
-    git(root, &["config", "user.email", "t@t.com"]);
-    git(root, &["config", "user.name", "t"]);
-    git(root, &["config", "commit.gpgsign", "false"]);
+    TestRepo::builder()
+        .identity("t", "t@t.com")
+        .seed("README.md", "base\n", "init")
+        .init_in(root);
     git(root, &["config", "gpg.format", "openpgp"]);
     let hooks = root.join(".git").join("hooks");
     fs::create_dir_all(&hooks).unwrap();
     git(root, &["config", "core.hooksPath", hooks.to_str().unwrap()]);
-    fs::write(root.join("README.md"), "base\n").unwrap();
-    git(root, &["add", "README.md"]);
-    git(root, &["commit", "-m", "init"]);
     git(root, &["checkout", "-b", "loom/s1"]);
 }
 

@@ -100,13 +100,13 @@ fn subagent_budget_is_cadence_not_deadline_in_emitted_signal() {
 
     assert!(
         content.contains("never a deadline on the subagent's own work"),
-        "the block must say the budget is the idle threshold death is judged \
-         against, never a deadline on the subagent's own work"
+        "the block must say the budget is the idle threshold for a stall, never a \
+         deadline on the subagent's own work"
     );
     assert!(
-        content.contains("positive evidence of death"),
-        "the block must require positive evidence before a takeover, not elapsed \
-         time alone"
+        content.contains("a stall is no proof of death"),
+        "the block must describe idle time as a stall signal, matching the \
+         orchestration skill, since the runtime proves death with separate probes"
     );
     assert!(
         content.contains("loom subagents watch"),
@@ -159,7 +159,6 @@ fn integration_verify_prefix_retains_required_quality_and_isolation_guards() {
         "warnings even when tests pass",
         "is a BLOCKER, not a workaround",
         "gate is green AGAIN after those fixes",
-        "VERIFICATION IS THE MAIN AGENT'S JOB - NOT YOURS",
         "CONTEXT CEILING - HOOK-REPORTED ONLY",
         "SUBAGENT CEILING REACHED",
         "Build/test/sandbox",
@@ -186,6 +185,9 @@ fn integration_verify_prefix_retains_required_review_and_doctrine_guards() {
         "loom-security-audit",
         "spawn these as PARALLEL subagents",
         "OWASP Top 10",
+        "**Performance**",
+        "**Build/test/sandbox** — spawn this one as `loom-software-engineer`",
+        "**Functional** — spawn this one as `loom-software-engineer`",
         "Mini Adversarial Code Review",
         "search the WHOLE codebase",
     ] {
@@ -207,6 +209,10 @@ fn integration_verify_prefix_retains_required_review_and_doctrine_guards() {
             "IV prefix lost review dimension: {dimension}"
         );
     }
+    assert!(
+        prefix.contains("review it against the plan's stage briefs"),
+        "IV prefix lost the plan-wide briefs instruction of the Performance dimension"
+    );
     assert!(!prefix.contains("Knowledge Distillation (MANDATORY)"));
     assert!(!prefix.contains("Agent Teams"));
     assert!(!prefix.contains("loom subagents watch"));
@@ -217,40 +223,51 @@ fn integration_verify_prefix_assigns_one_canonical_gate_owner() {
     let prefix = generate_integration_verify_stable_prefix();
 
     for needle in [
-        "runs `loom check integration-verify` ONCE",
+        "The IV orchestrator runs `loom check integration-verify`; it carries the COMPLETE suite",
+        "every full run goes through `loom check integration-verify [--criterion <n>]`, never a bare test runner",
         "immutable tree, environment, and criterion contract",
-        "Rule 5's complete-suite instruction",
-        "Reviewers inspect independently and run only targeted",
-        "targeted checks are additional evidence, never a substitute",
+        "Give reviewers the check summaries and evidence pointers",
+        "Reviewers inspect independently and run `loom check integration-verify` themselves",
+        "those are additional evidence, never a substitute",
         "command, real exit, criterion verdict, input/contract identity, elapsed time",
         "evidence pointer when available",
         "A missing receipt means run the check",
         "orchestrator re-evaluates invalidated checks",
         "only the repaired criteria cache decides reuse",
         "stale evidence never waives a failing gate",
+        "its verdict can list criteria it did not select",
     ] {
         assert!(
             prefix.contains(needle),
             "IV ownership doctrine lost: {needle}"
         );
     }
-    assert!(prefix.contains("cargo clippy -- -D warnings"));
+    assert!(prefix.contains("every acceptance criterion the plan gives this stage"));
+    assert!(
+        !prefix.contains("cargo clippy"),
+        "the IV prefix names no language's gate commands"
+    );
+    assert!(
+        !prefix.contains(concat!("AT MOST ONE ", "narrowly")),
+        "IV carries no standard-stage test rule"
+    );
     assert!(
         !prefix.contains("tell every build/test/sandbox or functional verifier you spawn"),
         "the retired blanket verifier assignment must not return"
     );
 }
 
-/// The subagent preamble reaches every typed spawn, integration-verify
-/// reviewers included: it must send them to targeted checks and leave the one
-/// `loom check integration-verify` run to the orchestrator, as the prefix does.
+/// The subagent preamble reaches every typed spawn, integration-verify reviewers
+/// included: it exempts them from the test rule and routes their full runs
+/// through `loom check integration-verify`.
 #[test]
-fn subagent_preamble_limits_iv_reviewers_to_targeted_checks() {
+fn subagent_preamble_routes_iv_full_runs_through_loom_check() {
     use crate::fs::permissions::constants::HOOK_SUBAGENT_PREAMBLE;
 
     for needle in [
-        "- EXCEPTION - integration-verify stages: the orchestrator runs loom check",
-        "reviewers run only targeted checks, never",
+        "- EXCEPTION - integration-verify stages are exempt from the test rule",
+        "through `loom check integration-verify [--criterion <n>]`, never as a",
+        "- A subagent never runs the stage's gate, except in integration-verify",
     ] {
         assert!(
             HOOK_SUBAGENT_PREAMBLE.contains(needle),
@@ -259,11 +276,15 @@ fn subagent_preamble_limits_iv_reviewers_to_targeted_checks() {
     }
     assert!(
         !HOOK_SUBAGENT_PREAMBLE.contains("if you were spawned to review or"),
-        "the preamble must not tell integration-verify reviewers to run the full suite"
+        "the preamble must not restore the retired blanket verifier assignment"
+    );
+    assert!(
+        !HOOK_SUBAGENT_PREAMBLE.contains(concat!("reviewers run only ", "targeted checks")),
+        "the preamble must not limit integration-verify reviewers to targeted checks"
     );
     assert!(
         generate_integration_verify_stable_prefix().contains("loom check integration-verify"),
-        "the integration-verify prefix must name the orchestrator's one gate run"
+        "the integration-verify prefix must route full suite runs through loom check"
     );
 }
 

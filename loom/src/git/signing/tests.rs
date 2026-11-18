@@ -4,29 +4,16 @@ use super::*;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
-use std::process::Command;
 use tempfile::TempDir;
 
 use crate::git::merge::commit_merge;
+use crate::test_git::TestRepo;
 
-/// `git` in `dir` with the global and system configuration pointed at
-/// missing files; returns trimmed stdout and panics on a failure.
-pub(crate) fn git_in(dir: &Path, args: &[&str]) -> String {
-    let output = Command::new("git")
-        .args(args)
-        .current_dir(dir)
-        .env("GIT_CONFIG_GLOBAL", dir.join(".loom-test-no-global"))
-        .env("GIT_CONFIG_SYSTEM", dir.join(".loom-test-no-system"))
-        .env("GIT_CONFIG_NOSYSTEM", "1")
-        .output()
-        .unwrap();
-    assert!(
-        output.status.success(),
-        "git {args:?} failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    String::from_utf8_lossy(&output.stdout).trim().to_string()
-}
+pub(crate) use crate::test_git::git as git_in;
+
+// bespoke-git-fixture: `isolated_env` builds the process environment handed to
+// `signing_enabled_in` and its siblings, so its `GIT_CONFIG_*` variables and `HOME`
+// are the input under test and the shared runner cannot stand in for them.
 
 /// A complete environment for the `*_in` helpers: this process's `PATH`,
 /// `HOME` at `dir`, and the global and system configuration at missing files.
@@ -79,16 +66,11 @@ pub(crate) fn fake_signer(repo: &Path, fail: bool) -> PathBuf {
 
 /// A repository on `main` with one commit, signing off.
 fn repo() -> TempDir {
-    let temp = TempDir::new().unwrap();
-    let root = temp.path();
-    git_in(root, &["init", "-b", "main"]);
-    git_in(root, &["config", "user.email", "t@t.com"]);
-    git_in(root, &["config", "user.name", "t"]);
-    git_in(root, &["config", "commit.gpgsign", "false"]);
-    fs::write(root.join("a.txt"), "a\n").unwrap();
-    git_in(root, &["add", "a.txt"]);
-    git_in(root, &["commit", "-m", "init"]);
-    temp
+    TestRepo::builder()
+        .identity("t", "t@t.com")
+        .seed("a.txt", "a\n", "init")
+        .create()
+        .into_temp_dir()
 }
 
 fn head_tree(root: &Path) -> (String, String) {
@@ -127,6 +109,34 @@ fn signing_enabled_reads_the_bool_forms() {
     }
     git_in(root, &["config", "--unset", "commit.gpgsign"]);
     assert!(!signing_enabled_in(root, &isolated_env(root)).unwrap());
+}
+
+#[test]
+fn signing_preflight_uses_anchored_linked_checkout_after_pointer_change() {
+    let original = repo();
+    let foreign = repo();
+    let linked_parent = TempDir::new().unwrap();
+    let linked = linked_parent.path().join("checkout");
+    git_in(
+        original.path(),
+        &["worktree", "add", "-b", "linked", linked.to_str().unwrap()],
+    );
+    let log = fake_signer(original.path(), false);
+    let foreign_log = fake_signer(foreign.path(), false);
+    let state = linked.join(".loom/work");
+    fs::create_dir_all(&state).unwrap();
+    crate::git::worktree::capture_main_identity(&linked, &state).unwrap();
+    fs::write(
+        linked.join(".git"),
+        format!("gitdir: {}\n", foreign.path().join(".git").display()),
+    )
+    .unwrap();
+
+    let env = isolated_env(&linked);
+    assert!(signing_enabled_in(&linked, &env).unwrap());
+    probe_in(&linked, &env).unwrap();
+    assert_eq!(log_lines(&log).len(), 1);
+    assert!(log_lines(&foreign_log).is_empty());
 }
 
 #[test]

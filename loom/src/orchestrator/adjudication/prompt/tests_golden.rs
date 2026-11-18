@@ -4,7 +4,47 @@
 
 use super::*;
 use crate::plan::schema::AcceptanceCriterion;
+use crate::test_git::{git, TestRepo};
 use chrono::Utc;
+
+#[test]
+fn briefing_lists_the_stage_worktree() {
+    let tmp = tempfile::tempdir().unwrap();
+    let work = tmp.path().join(".loom/work");
+    let tree = tmp.path().join(".worktrees/demo");
+    std::fs::create_dir_all(&work).unwrap();
+    std::fs::create_dir_all(&tree).unwrap();
+    std::fs::write(tree.join("only-in-worktree"), "present").unwrap();
+    TestRepo::builder()
+        .seed("tracked", "requested-content\n", "first")
+        .init_in(tmp.path());
+    let revision = git(tmp.path(), &["rev-parse", "HEAD"]);
+    std::fs::write(tmp.path().join("tracked"), "head-content\n").unwrap();
+    git(tmp.path(), &["commit", "-qam", "second"]);
+    let plan = tmp.path().join("PLAN.md");
+    std::fs::write(&plan, "```yaml\nwrong: fence\n```\n<!-- loom METADATA\n```yaml\nloom:\n  stages:\n    - id: demo10\n      name: wrong-stage\n    - id: 'demo'\n      name: selected-stage\n```\n<!-- END loom METADATA -->\n").unwrap();
+    let stage = Stage {
+        id: "demo".into(),
+        ..Stage::default()
+    };
+    let request = DisputeRequest {
+        id: 1,
+        stage_id: "demo".into(),
+        kind: DisputeKind::criterion(CriterionField::Acceptance, vec![0]),
+        reason: "disputed".into(),
+        evidence_commit: Some(revision.trim().into()),
+        failure_output: None,
+        fix_attempts_at_dispute: 0,
+        created_at: Utc::now(),
+    };
+    let rendered = build(&plan, &stage, &request, &work).render();
+    assert!(rendered.contains("./only-in-worktree"));
+    assert!(rendered.contains("selected-stage"));
+    assert!(!rendered.contains("wrong-stage"));
+    assert!(!rendered.contains("wrong: fence"));
+    assert!(rendered.contains("+requested-content"));
+    assert!(!rendered.contains("+head-content"));
+}
 
 #[test]
 fn criterion_briefing_matches_the_expected_instructions_and_evidence() {
@@ -37,12 +77,18 @@ fn criterion_briefing_matches_the_expected_instructions_and_evidence() {
 
     let exec = ExecutionSite::resolve(&work, &stage).path;
     let draft = crate::orchestrator::adjudication::verdict_draft_file(&work, "demo", 1);
-    let listing =
-        super::sources::run_listing(&work).unwrap_or_else(|e| format!("(listing failed: {e})"));
+    let listing = super::sources::run_listing(tmp.path())
+        .unwrap_or_else(|e| format!("(listing failed: {e})"));
     let expected = GOLDEN
         .replace("{exec}", &exec.display().to_string())
         .replace("{draft}", &draft.display().to_string())
-        .replace("{listing}", &listing);
+        .replace(
+            "{listing}\n",
+            &format!(
+                "{listing}{}",
+                if listing.ends_with('\n') { "" } else { "\n" }
+            ),
+        );
     assert_eq!(rendered, expected);
 }
 
@@ -197,9 +243,14 @@ loom stage adjudicate --stage demo --dispute 1 --verdict-file <draft file>
 The command validates the JSON and hands the verdict to the orchestrator,
 which applies it on its next poll. If it prints a PENDING RELAY notice, keep
 its output unfiltered and in the foreground and follow that notice. If it
-reports an error, correct the JSON and run it again. Once it succeeds, your
-work is done — end your turn. The daemon closes this session once the
-verdict is applied.
+reports an error, correct the JSON and run it again.
+
+3. In your NEXT Bash call, run the `loom request status <id> --wait 90`
+   command it prints. The orchestrator checks the verdict again when it
+   records it; if the status is refused, correct the JSON as the reason
+   says and repeat from step 2. Never ask anyone and never wait for input.
+   Once the status is no longer pending or refused, your work is done — end
+   your turn. The daemon closes this session once the verdict is applied.
 
 
 ## Dispute
@@ -215,7 +266,9 @@ Fix attempts before dispute: 2
 
 ## Agent's reason
 
+```text
 criterion impossible
+```
 
 ## Stage acceptance criteria (all)
 

@@ -1,7 +1,7 @@
 //! Peak resident context by scope, so orchestration policy can see how much
 //! headroom a session actually used rather than only its running totals.
 //! A subagent's peak is also compared against its own boot cost: a peak
-//! that never exceeds twice the first request's resident size never grew
+//! that stays below twice the first request's resident size never grew
 //! past whatever context its spawn prompt itself carried in.
 
 use crate::commands::usage::transcript::{Scope, Transcript};
@@ -27,7 +27,7 @@ pub struct ScopePeaks {
     pub max: u64,
     pub share_above_250k: f64,
     pub share_above_400k: f64,
-    /// Subagents only: share of transcripts whose peak never exceeded twice
+    /// Subagents only: share of transcripts whose peak stayed below twice
     /// their first request's resident size. `None` for the main scope.
     pub boot_dominated_share: Option<f64>,
 }

@@ -3,38 +3,22 @@
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::Path;
-use std::process::Command;
 
 use serial_test::serial;
 use tempfile::TempDir;
 
 use crate::models::stage::CommandConfinement;
+use crate::test_git::{git, TestRepo};
 use crate::verify::criteria::cache::is_cacheable;
 use crate::verify::criteria::cache_fingerprint::{
     capture, capture_with_budget, ExecutionIdentity, InputFingerprint,
 };
 use crate::verify::criteria::confine::{prepare_confined, CommandSpec};
 
-const TEST_IDENTITY: &[&str] = &["-c", "user.name=Test", "-c", "user.email=test@example.com"];
-
-fn git(args: &[&str], dir: &Path) {
-    let mut full = TEST_IDENTITY.to_vec();
-    full.extend_from_slice(args);
-    let status = Command::new("git")
-        .args(&full)
-        .current_dir(dir)
-        .status()
-        .unwrap();
-    assert!(status.success(), "git {args:?} failed in {}", dir.display());
-}
-
-fn init_repo() -> TempDir {
-    let temp = TempDir::new().unwrap();
-    git(&["init", "-q"], temp.path());
-    std::fs::write(temp.path().join("file.txt"), "hello\n").unwrap();
-    git(&["add", "file.txt"], temp.path());
-    git(&["commit", "-q", "-m", "init"], temp.path());
-    temp
+fn init_repo() -> TestRepo {
+    TestRepo::builder()
+        .seed("file.txt", "hello\n", "init")
+        .create()
 }
 
 fn execution_identity(repo: &Path) -> ExecutionIdentity {
@@ -198,8 +182,8 @@ fn source_symlink_and_unreadable_input_are_ineligible() {
 
     let symlink_repo = init_repo();
     symlink("file.txt", symlink_repo.path().join("source-link")).unwrap();
-    git(&["add", "source-link"], symlink_repo.path());
-    git(&["commit", "-q", "-m", "symlink"], symlink_repo.path());
+    git(symlink_repo.path(), &["add", "source-link"]);
+    git(symlink_repo.path(), &["commit", "-q", "-m", "symlink"]);
     assert!(fingerprint(symlink_repo.path()).is_none());
 
     let unreadable_repo = init_repo();

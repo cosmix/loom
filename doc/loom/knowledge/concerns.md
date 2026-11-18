@@ -1,6 +1,6 @@
 # Concerns & Technical Debt
 
-> Debt, warnings, open issues
+> Debt and open issues
 > Every section here must be an OPEN concern. When one is resolved, DELETE it — do not strike the
 > heading and leave the body, which is how eleven dead entries accumulated before 2026-08-26. Git
 > history keeps the record and [mistakes.md](mistakes.md) keeps the lesson. If a resolved concern
@@ -23,15 +23,17 @@ Lower layers import from higher ones:
 
 ### Oversized Rust Units Remain Controlled Debt
 
-The maintainability gate does not yet prove every production Rust file is at most 400 lines or
-every function at most 50 lines; exceptions are tracked by exact identity and size in
-`loom/maintainability-baseline.txt` and pinned by `loom/tests/maintainability.rs`, which rejects
-new entries, growth of an existing entry, or a stale one, so the exception set can only shrink.
-This entry now also covers the wider code-quality/hook-debt cluster: duplicated
-extension-to-language tables, hook files over the 400-line cap, the
-`subagent-verify-guard.sh` raw-regex gap, and undelivered remote hooks.
+`loom/maintainability-baseline.txt` and `loom/tests/maintainability.rs` track exact Rust size exceptions and reject growth or stale entries; they do not establish universal compliance. Several shell hook owners also exceed the repository's 400-line limit.
+
+Extension-to-language lookup is shared; project manifest detection still has competing registries. The subagent verification hook uses a private command-position scanner, while its stage-type exemption scans whole Markdown. Remote hooks ship through the embedded binary's `install-assets` command.
 
 → [Code Quality and Hook Debt](concerns/code-quality-and-hook-debt.md)
+
+### Hook False-Positive Plan Follow-Ups
+
+`commit-filter.sh` (463 lines) needs a split; `subagent-verify-guard.sh` sources its runner matchers from `_verify_matchers.sh`. Seven guards and the codex lane record no blocks. The scratch-repo exemption reads repository state at hook time, and several tokenizer and resolver gaps remain (backslash-newline, `function`/`coproc`, logical `..`, `HOME`). `spawn-guard.sh`'s header still describes the old `updatedInput` behaviour.
+
+→ [Hook False-Positive Plan Follow-Ups](concerns/code-quality-and-hook-debt.md#hook-false-positive-plan-follow-ups)
 
 ## Long Codex Runs Starve the Loom Heartbeat
 
@@ -43,7 +45,7 @@ Mitigation is doctrine (bound the task, set `subagent_timeout_secs`), not a moni
 the global timeout was considered and rejected. The `loom status` badge shows such a stage as `Busy`
 (open tool call) and measures silence against the same per-stage budget as the monitor.
 
-Full detail: [codex-heartbeat-starvation.md](concerns/codex-heartbeat-starvation.md).
+Full detail: [codex-heartbeat-starvation.md](concerns/codex-heartbeat-starvation.md). Native backend gaps (eight qualification checks, exposure facts, unimplemented review suggestions): [native-codex-qualification](concerns/native-codex-qualification.md).
 
 ## Automatic-Knowledge Plan Followups
 
@@ -90,11 +92,7 @@ grouped by area in the backlog.
 
 ## Platform, Commit-Relay and Stall Gaps
 
-Open items from the macOS, daemon-launch, daemon-owned-commit and stall-parking work: macOS CI gaps (hook
-stdin reads unbounded on stock macOS, no `ulimit -u` cap on hook steps), no automated test of the production daemon re-exec (only the operator's
-host smoke test covers it), sessions get no proxy, CA or `CLAUDE_CONFIG_DIR` variables, the commit relay's
-tick cost and `MERGE_HEAD` ancestor gap, the park-time login probe on the tick thread, and mistakes that
-recurred and want a check (the signal dropping `exit_code`, the watch exiting 6 after a hand-back).
+Remaining platform/runtime questions include live macOS branch coverage, process limits on hook tests, full daemon re-exec coverage, intentionally filtered session environment, synchronous commit and login-probe costs, merge-side authorization, and status/watch evidence. Hook stdin reads use the portable bounded helper; separate direct-command timeout fallbacks remain. A dedicated Linux capsule step requires sandbox availability, while general test jobs can still skip capability-gated cases. Open items on the busy line and `busy::while_busy` are in [Busy Status Follow-Ups](concerns/platform-and-commit-gaps.md#busy-status-follow-ups).
 
 → [Platform and Commit Gaps](concerns/platform-and-commit-gaps.md)
 
@@ -103,6 +101,12 @@ recurred and want a check (the signal dropping `exit_code`, the watch exiting 6 
 Open follow-ups from the token-accounting plans: git and bounded-runner hygiene, whether a failed forward fires PostToolUse, two fail-open guard choices, and the unimplemented reviewer suggestions of the delivery-truth and usage-evidence plans.
 
 → [Token Accounting Follow-Ups](concerns/token-accounting-and-proof-defects.md). Token flow limits, hardening and structure: [Token Flow Gaps](concerns/token-accounting-and-proof-defects.md#token-flow-gaps).
+
+## `loom ask` and Read Gate Concerns
+
+`loom ask` has no evaluation and no isolation probe yet, and its Codex lane is experimental, so no agent, skill, hook or doctrine text may tell an agent to use it until the evaluation and the replays pass. The read gate ships on by default with no replay behind it. Also the unimplemented reviewer suggestions for both, and proposed guards for two recurring mistakes.
+
+→ [`loom ask` and Read Gate Concerns](concerns/loom-ask-and-read-gate.md)
 
 ## Host-Verification Review Suggestions
 
@@ -113,9 +117,8 @@ Open and fixed reviewer findings on the host-verification code, one bullet per d
 ## Pressure Gaps
 
 `loom pressure`'s two real-invocation smokes are manual-only, its dry-run argv is not shell-quoted so it cannot be
-pasted into a shell, and repo-root resolution is duplicated in two places.
-
-→ [Pressure Gaps](concerns/automatic-knowledge-source-graph-followups.md)
+pasted into a shell, and repo-root resolution is duplicated in two places. The app pressure and run-lane backlog is in
+[Handoff Follow-ups](concerns/handoff-followups.md).
 
 ## Execution Graph and Forward Guard Gaps
 
@@ -130,15 +133,6 @@ never run; the topic lists the checks to do on a Mac.
 Two residuals in worktree cleanup: daemon cleanup can still race SessionEnd hooks during the short
 SIGTERM teardown window, and manual `loom stage complete` with no daemon running defers cleanup
 until the next recovery pass or an explicit `loom worktree remove`.
-
-## iTerm2 Windows Survive Stage Completion — Spawn Never Names the Window (GitHub #7)
-
-Teardown closes an iTerm2 window by title, but the spawn arm never names the window, so the close
-query matches nothing and only the `claude` process dies; the shell and window survive. A second
-defect in the same path: teardown addresses `tell application "iTerm2"` while the scriptable name is
-`iTerm`. Naming the window alone is not enough. Terminal.app is unverified (needs a macOS host).
-
-Full detail: [iterm2-window-teardown.md](concerns/iterm2-window-teardown.md).
 
 ## Guard Hooks: Four Design Questions Deliberately Left Open
 
@@ -160,11 +154,7 @@ Shared package-manager caches stay session-writable, so a stage can edit an extr
 
 ## Agent Rule-Bending Hardening
 
-Only the OS sandbox, the capsule denies and the daemon's ancestry checks carry authority. Eight
-gaps, led by text-matched commits, the whole git common directory writable from a stage (Claude
-Code's own grant; host git follows the agent's `.git` pointer; the merge gate fails open), no
-live proof that any denial holds, and a knowledge-file guard that gates tool names over a directory
-the sandbox grants to every stage (G8). No plan addresses G1-G3, G7's caches or G8.
+The OS sandbox, attached session capsule and daemon ancestry checks carry authority; hook command matching is best effort. Remaining questions concern broad git/cache/Codex write grants, native file-tool credential coverage, live enforcement probes and knowledge-result validation. The authoritative merge-stage control-path gate fails closed on a diff error; the early orchestrator filter can defer to it.
 
 → [Agent Rule-Bending Hardening](concerns/agent-rule-bending-hardening.md)
 
@@ -182,7 +172,7 @@ gaps, duplicated helpers, provision and environment-lint gaps, gate and dispute 
 
 The merge/recovery edge cases: `loom stage merge`'s worktree-cwd requirement, a git-error-as-unverified
 revert path, the `BranchMissing` phantom-merge risk, the heuristic `BaseConflict` carve-out,
-`retry --force` racing orphan-recovery, `started_at` not resetting on retry, the completion-broker's
+`retry --force` racing orphan-recovery, the completion-broker's
 post-transition nonce-burn ordering, the attribution code that has nothing left to attribute, the
 editor residual between stash and pop, the `update-ref` window,
 accumulating autostash backup refs, `human-review --force-complete` requiring no operator proof by design, a
@@ -193,27 +183,66 @@ dispute covers loom's own gates, a deliberate block is never retried; proposed: 
 
 ## Sandbox Denial Is Unproven End to End
 
-The capsule's denies are proven on the emitted capsule and, in CI, under bubblewrap (sibling
-administrative directories, credential files); nothing in CI proves them against a live Claude Code
-runtime, and the srt stand-in misses the git-dir grant. The manual release checklist
-(`doc/sandbox-release-checklist.md`) is the only live check. Open: credential files outside the nine
-listed (and a checkout-rooted session's file tools, which no hook checks against them), sibling
-worktrees and the main checkout readable from Bash, refs and objects writable (ref denies
-unmeasured), the residuals of the sibling-directory denies (unregistered or later-registered
-worktrees, a rewritten `gitdir`), tools still allowed and unmeasured (`Monitor`, `EnterWorktree`,
-`ExitWorktree` and others), unconfined `loom knowledge bootstrap`, the codex lane's whole `~/.codex`
-grant, an inert credential-guard rule, three stage-env allowlists (sessions get no proxy, CA or
-`CLAUDE_CONFIG_DIR` names), and the `Read(...)` deny-rule ban, among others.
-"Tool Routes That Run Outside the Bash Sandbox" lists what the capsule denies (`LSP`,
-`RemoteTrigger`, `CronCreate`, `PushNotification`, and `Workflow` except in an ultracode Stage
-session) and what stays allowed (`WebFetch`, `WebSearch`, `SendMessage`, `ListAgents`, plugins).
-The sibling-directory residuals, the other open route-closure items and the unimplemented reviewer
-suggestions are in [Agent Rule-Bending Hardening](concerns/agent-rule-bending-hardening.md#sibling-directory-denies-residuals).
+CI proves selected emitted capsule denies under bubblewrap; it does not exercise a credentialed Claude Code session or every native tool route. The srt stand-in emulates the linked-worktree common-directory grant and built-in git denies. The release checklist (`doc/sandbox-release-checklist.md`) remains the live runtime check.
 
-→ [Sandbox and Confinement Gaps](concerns/sandbox-and-confinement-gaps.md)
+Open boundaries include native file-tool credential coverage in checkout-rooted sessions, broad git/common-cache/Codex grants, spawn-time sibling-directory enumeration, unmeasured tool routes, and bootstrap launches without the shared capsule. Codex AGENTS, prompts, catalog and Loom-installed skills are denied; remaining Codex state needs separate assessment. Preserve the ban on `Read(...)` permission denies and keep stage environment filtering explicit.
+
+→ [Sandbox and Confinement Gaps](concerns/sandbox-and-confinement-gaps.md), [Agent Rule-Bending Hardening](concerns/agent-rule-bending-hardening.md)
 
 ## Dependency Findings Follow-Ups
 
 The plan 4 harness printed a stop-rule FAIL on all three recorded pairs (guard-core to guard-integration gains -444 and -2,221 tokens against a 12,190 cost); the operator overrode it and the verdict is printed, not asserted. Also open: spool id validation, render and path-normalization cost bounds, evidence-matching edges, test gaps, and the finalization-guard heredoc scan.
 
 → [Dependency Findings Follow-Ups](concerns/token-accounting-and-proof-defects.md#dependency-findings-follow-ups)
+
+## Planning Document Model Open Items
+
+Unapplied reviewer suggestions for `loom::planning`: heading and cross-reference parsing edges, refresh and lock-scan cost, symlink and non-UTF-8 handling in `LockedSet::scan` and `collect_inputs`, Unicode folding in the locked-name rules, and untested branches; plus the summary store's open robustness items (store lock timeout, unreadable summary files, claim-removal failure after a seal) and test gaps.
+
+The planning trace's open checks (journeys that need a real session or tmux, the settle stale window, the `Settled:` prose-line hash, signed-commit `git log` output) and its unapplied reviewer suggestions are in [Planning Trace Limits](concerns/planning-document-model-followups.md#planning-trace-limits).
+
+→ [Planning Document Model Followups](concerns/planning-document-model-followups.md)
+
+## Every Stage Worktree Builds From Cold [DETAILED]
+
+A new stage worktree has no build state, so its first compile or install is cold in every ecosystem; the contract freeze pays it first (about 2 min 20 s of a 3.5-minute contract phase on loom). sccache is gated off in sandboxed sessions and stripped from confined host jobs, so nothing is shared. Options, constraints (parallel stages, all languages, macOS and Linux, no copies, no worktree pool) and next steps:
+
+→ [Every Stage Worktree Builds From Cold](concerns/worktree-build-cold-start.md)
+
+## Concept Mode Open Items
+
+Reviewer suggestions left open on concept mode: engine-failure and claims-fallback paths that name no pages or call no listener, a summary hash read apart from its evaluation, accessibility and path-rendering gaps, passage provenance scope, and presence not wired to concept pages.
+
+→ [Planning Document Model Followups](concerns/planning-document-model-followups.md#concept-mode-server-gaps)
+
+## Planning Session Sandbox Limits
+
+Accepted limits of the planning sandbox (Bash writes inside `doc/loom/`, new top-level paths, locks taken mid-session, the guard's check-to-write race), the untested Seatbelt and provenance paths, and the unimplemented reviewer suggestions. → [Planning Session Sandbox Limits](concerns/planning-session-sandbox-limits.md)
+
+## Planning Session Bridge Follow-ups
+
+Open teardown, race, transcript-mapper, chat-wire and trust-entry items from the bridge plan, the unverified operator e2e, and a recurring flock-after-drop proposal. The background-task and slash-command work added open items (native table pinned to Claude Code 2.1.321, an agent that never stalls, test gaps, web nits, the sandbox journeys). → [Planning Session Sandbox Limits](concerns/planning-session-sandbox-limits.md#planning-session-bridge-follow-ups)
+
+## Plan Chat Follow-ups
+
+The chat plan left the live-session operator test unrun, a SHA-256 ref gap and git edge cases in the review server, reconnect, draft and layout-state defects in the chat model, accessibility notes, and a list of duplicated helpers and missing tests, each with its file. → [Plan Chat Follow-ups](concerns/plan-chat-followups.md) The planner UI repair left the Codex summary backend unrun live, raw server strings outside the Untrusted rule, duplicated helpers and unshot layout details. → [Planner UI Repair Follow-ups](concerns/planner-ui-repair-followups.md) The planner redesign left the pressure mark split between the spine and the Rust step mark, owner-watch limits (one start, one kill attempt, children not terminated), chat context-attach edges, journey-script and bundle-rule gaps, and tracked-bundle and sealed-summary rebuilds, in the same file under "Planner redesign follow-ups". Claude Code's TMPDIR stays writable in sandboxed sessions because a deny would break Bash exit codes and relayed loom commands. → [State Confinement Gaps](concerns/state-confinement-gaps.md)
+
+## macOS Window Teardown Closes by Title and Is Unverified (GitHub #7)
+
+Teardown closes an iTerm2 or Terminal.app window by its title. The iTerm2 spawn arm names the window and spawn and teardown address the same application name, but no macOS run of the close is on record, and Terminal.app's displayed title may not match. Full detail: [platform-and-commit-gaps.md](concerns/platform-and-commit-gaps.md#macos-window-teardown-closes-by-title-and-is-unverified-github-7).
+
+## Planner Review Fixes Follow-ups
+
+Operator checks no stage sandbox can run (rebuilt summaries, a real image read, a kickoff round trip, journeys J2-J5 and J8), one open question about server-written sends returned on end, and about forty unimplemented reviewer suggestions on uploads, drafts, summaries and the web screens. → [Planner UI Repair Follow-ups](concerns/planner-ui-repair-followups.md#planner-review-fixes-unchecked-here-and-reviewer-suggestions)
+
+## Planner Polish Follow-ups
+
+Operator checks no stage sandbox can run (a rebuilt metaplan summary, a real Stop, journeys J3-J5 and J8) and about twenty unimplemented reviewer suggestions on chat tests, the Stop button look, roundel CSS, spine row accessibility and metaplan breadcrumbs. → [Planner UI Repair Follow-ups](concerns/planner-ui-repair-followups.md#planner-polish-unchecked-here-and-reviewer-suggestions) Planner feedback fixes: the scope gap of the spine heads (Home cards, the queue and the progress strip read only the server step mark), open reviewer suggestions on bulk settle, `/api/built`, the diff view and the chat ending, layout shift, the bundle budget. → [Planner UI Repair Follow-ups](concerns/planner-ui-repair-followups.md#home-cards-the-queue-and-the-progress-strip-read-only-the-server-step-mark)
+
+## Planner Follow-ups Follow-ups
+
+Open items from the plan-summary levels and fragment column, the three-theme palette, the Hearth chat (client `userWrote` mirror, closing block limits), the spine and run reviews, the requirement walk's "could not check here" lines and the operator checks no stage sandbox can run. → [Planner follow-ups open items](concerns/planner-follow-ups-followups.md) Trace screens: unapplied review suggestions on the trace screens (focus and status regions on the Coverage and Findings pages, popover overflow, comment and DESIGN.md drift, two missing tests), a server/browser mismatch on `(my call` inside code fences, four open questions (spine group counts, the chat greeting's face, mermaid chunk warnings) and two screens no stage sandbox can walk. → [Trace Screens Follow-ups](concerns/planner-follow-ups-followups.md)
+
+## Open Items After the Helper Consolidation
+
+Symlink, FIFO and size-cap gaps in writers the consolidation left alone, remaining private-index and read-only-runner copies, process-group diagnostics, frontmatter and path edge cases, and a proposal to make `loom subagents watch` wait for codex forwarder registration. See [consolidation-followups](concerns/consolidation-followups.md). Guard gaps and leftover unisolated git calls in tests: [consolidation-followups](concerns/consolidation-followups.md).

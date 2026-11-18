@@ -1,59 +1,64 @@
 //! Snapshot production from the daemon subscription or the local work files.
 
-use std::io;
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{mpsc, Arc, Mutex};
+use std::sync::{mpsc, Arc, Mutex, MutexGuard};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
-use chrono::{DateTime, Utc};
+use chrono::Utc;
 
-use crate::commands::status::data::{collect_status_data, StatusData};
 use crate::commands::status::ui::tui::daemon_client;
-use crate::daemon::{read_message, Response};
+use crate::daemon::{Response, ResponseFrameReader};
 use crate::fs::work_dir::WorkDir;
+use crate::status::data::{collect_status_data, StatusData};
+use crate::web_server::hub::Hub;
 
+use super::feed::Feed;
 use super::model::{collect_snapshot, SnapshotSource, WebSnapshot};
+
+#[cfg(test)]
+#[path = "broadcast_tests.rs"]
+mod tests;
 
 const RECONNECT_ATTEMPTS: usize = 3;
 const FILE_POLL_COUNT: usize = 5;
 const FILE_POLL_INTERVAL: Duration = Duration::from_secs(2);
 
-/// Frames a subscriber may fall behind by before it is disconnected.
+/// Messages a subscriber may fall behind by before it is disconnected.
 ///
-/// Frames are produced at most every [`FILE_POLL_INTERVAL`] on the file lane,
-/// and only on a genuine tree change on the daemon lane, so a client that has
-/// not drained eight of them is wedged rather than merely busy — a suspended
-/// tab whose TCP window has closed, say. Buffering more for it would pin every
-/// queued snapshot for the life of the process; disconnecting costs it only a
-/// reconnect, which the client already performs.
-pub(super) const SUBSCRIBER_QUEUE_DEPTH: usize = 8;
+/// The daemon lane collects every ~1s (`STATUS_BROADCAST_INTERVAL_MS` in
+/// `daemon/server/broadcast.rs`) and the file lane every [`FILE_POLL_INTERVAL`].
+/// Each collect emits up to three small messages (`state`, `tokens`, `tick`),
+/// plus a `full` every 30s, so 32 is a client that has not drained roughly ten
+/// seconds of traffic: wedged rather than merely busy, a suspended tab whose
+/// TCP window has closed, say. The write timeout in `web_server/ws.rs` cuts a
+/// wedged peer as well. Buffering more would pin every queued message for the
+/// life of the process; disconnecting costs the client a reconnect, which it
+/// already performs and which yields a fresh `full`.
+pub(super) const SUBSCRIBER_QUEUE_DEPTH: usize = 32;
 
-/// Fans JSON snapshot frames out to all connected WebSocket clients.
+/// Fans the dashboard's `/ws` messages out to all connected WebSocket clients.
 #[derive(Clone)]
 pub struct Broadcaster {
     inner: Arc<Inner>,
 }
 
-/// Lock order, taken by both [`Broadcaster::publish`] and
-/// [`Broadcaster::subscribe`]: `last_body`, then `subscribers`, then `latest`.
-/// Registering a subscriber reads `latest` while holding `subscribers`, so a
-/// concurrent `publish` cannot slip a frame past a half-registered client —
-/// which would otherwise strand it on a stale snapshot for as long as the tree
-/// stayed unchanged, because `publish` suppresses unchanged frames.
+/// Lock order: `feed`, then the hub's `subscribers`. Both
+/// [`Broadcaster::publish`] and [`Broadcaster::subscribe`] hold `feed` across
+/// their hub call, so a new subscriber's `full` primer and the messages
+/// published after it can neither interleave nor leave a gap between them.
 struct Inner {
-    latest: Mutex<Option<Arc<String>>>,
-    last_body: Mutex<Option<String>>,
-    subscribers: Mutex<Vec<mpsc::SyncSender<Arc<String>>>>,
+    feed: Mutex<Feed>,
+    hub: Hub,
     terminals: bool,
 }
 
 /// The result of interpreting one daemon response.
 pub enum DaemonStep {
-    Frame(String),
+    Snapshot(Box<WebSnapshot>),
     Ignore,
     Degraded(String),
 }
@@ -73,28 +78,17 @@ impl Broadcaster {
         this
     }
 
-    /// Queue the most recent frame, if any, for a newly-connected client.
+    /// Register a client. Its queue starts with a `full` message for the
+    /// latest snapshot, if there is one.
     pub fn subscribe(&self) -> mpsc::Receiver<Arc<String>> {
-        let (sender, receiver) = mpsc::sync_channel(SUBSCRIBER_QUEUE_DEPTH);
-        let mut subscribers = self
-            .inner
-            .subscribers
-            .lock()
-            .expect("dashboard subscribers poisoned");
-        if let Some(frame) = self.latest() {
-            let _ = sender.try_send(frame);
-        }
-        subscribers.push(sender);
-        receiver
+        let mut feed = self.feed();
+        let primer = feed.full_frame();
+        self.inner.hub.subscribe(primer)
     }
 
-    /// Return the latest frame delivered to subscribers.
+    /// Return the latest snapshot as the bare JSON `/api/status` serves.
     pub fn latest(&self) -> Option<Arc<String>> {
-        self.inner
-            .latest
-            .lock()
-            .expect("dashboard latest frame poisoned")
-            .clone()
+        self.feed().snapshot_json()
     }
 
     #[cfg(test)]
@@ -105,9 +99,8 @@ impl Broadcaster {
     fn with_terminals(terminals: bool) -> Self {
         Self {
             inner: Arc::new(Inner {
-                latest: Mutex::new(None),
-                last_body: Mutex::new(None),
-                subscribers: Mutex::new(Vec::new()),
+                feed: Mutex::new(Feed::default()),
+                hub: Hub::new(SUBSCRIBER_QUEUE_DEPTH),
                 terminals,
             }),
         }
@@ -117,30 +110,27 @@ impl Broadcaster {
         self.inner.terminals
     }
 
-    pub(super) fn publish(&self, json: String) {
-        let body = body_without_timestamp(&json);
-        let mut last_body = self
-            .inner
-            .last_body
-            .lock()
-            .expect("dashboard body poisoned");
-        if last_body.as_deref() == Some(body.as_str()) {
-            return;
-        }
-        *last_body = Some(body);
+    fn feed(&self) -> MutexGuard<'_, Feed> {
+        self.inner.feed.lock().expect("dashboard feed poisoned")
+    }
 
-        let frame = Arc::new(json);
-        let mut subscribers = self
-            .inner
-            .subscribers
-            .lock()
-            .expect("dashboard subscribers poisoned");
-        *self
-            .inner
-            .latest
-            .lock()
-            .expect("dashboard latest frame poisoned") = Some(frame.clone());
-        subscribers.retain(|sender| sender.try_send(frame.clone()).is_ok());
+    /// Send the messages that bring subscribers to `snapshot`.
+    pub(super) fn publish(&self, snapshot: WebSnapshot) {
+        let mut feed = self.feed();
+        self.publish_locked(&mut feed, snapshot);
+    }
+
+    /// [`Self::publish`] for a caller already holding the feed lock. The hub
+    /// publish stays under it so two producers cannot interleave their messages.
+    fn publish_locked(&self, feed: &mut Feed, snapshot: WebSnapshot) {
+        match feed.accept(snapshot, Instant::now()) {
+            Ok(frames) => {
+                for frame in frames {
+                    self.inner.hub.publish(frame);
+                }
+            }
+            Err(error) => tracing::warn!("dashboard could not build frames: {error:#}"),
+        }
     }
 }
 
@@ -156,18 +146,16 @@ pub fn snapshot_frame(
 }
 
 /// Classify a daemon response without opening a daemon socket.
-pub fn classify_response(
-    work_path: &Path,
-    response: Response,
-    terminals: bool,
-) -> Result<DaemonStep> {
+pub fn classify_response(work_path: &Path, response: Response, terminals: bool) -> DaemonStep {
     match response {
-        Response::StatusUpdate { data } => {
-            snapshot_frame(work_path, *data, SnapshotSource::Daemon, terminals)
-                .map(DaemonStep::Frame)
-        }
-        Response::Error { message } => Ok(DaemonStep::Degraded(message)),
-        _ => Ok(DaemonStep::Ignore),
+        Response::StatusUpdate { data } => DaemonStep::Snapshot(Box::new(collect_snapshot(
+            work_path,
+            *data,
+            SnapshotSource::Daemon,
+            terminals,
+        ))),
+        Response::Error { message } => DaemonStep::Degraded(message),
+        _ => DaemonStep::Ignore,
     }
 }
 
@@ -240,21 +228,21 @@ fn forward_daemon(
     terminals: bool,
 ) -> DaemonExit {
     let mut received_frame = false;
+    let mut reader = ResponseFrameReader::new(Duration::from_secs(30));
     while running.load(Ordering::SeqCst) {
-        match read_message::<Response, _>(&mut stream) {
-            Ok(response) => match classify_response(work_path, response, terminals) {
-                Ok(DaemonStep::Frame(frame)) => {
-                    broadcaster.publish(frame);
+        match reader.poll(&mut stream) {
+            Ok(Some(response)) => match classify_response(work_path, response, terminals) {
+                DaemonStep::Snapshot(snapshot) => {
+                    broadcaster.publish(*snapshot);
                     received_frame = true;
                 }
-                Ok(DaemonStep::Ignore) => {}
-                Ok(DaemonStep::Degraded(message)) => return DaemonExit::Degraded(message),
-                Err(error) => tracing::warn!("dashboard could not serialize daemon frame: {error}"),
+                DaemonStep::Ignore => {}
+                DaemonStep::Degraded(message) => return DaemonExit::Degraded(message),
             },
+            Ok(None) => {}
             Err(error) if daemon_client::is_socket_disconnected(&error) => {
                 return DaemonExit::Disconnected { received_frame };
             }
-            Err(error) if is_read_timeout(&error) => {}
             Err(error) => {
                 tracing::warn!("dashboard daemon stream error: {error}");
                 return DaemonExit::StreamError { received_frame };
@@ -303,39 +291,25 @@ pub(super) fn poll_files_once(
         }
     };
     let mut snapshot = collect_snapshot(work_path, data, SnapshotSource::Files, terminals);
-    snapshot.notice = notice.map(str::to_owned);
-    broadcaster.publish(serde_json::to_string(&snapshot).context("serialize file snapshot")?);
+    if let Some(notice) = notice {
+        snapshot.notice = Some(notice.to_owned());
+    }
+    broadcaster.publish(snapshot);
     Ok(())
 }
 
-/// Publish the latest frame again with `notice` set, so the browser shows the
-/// failure above the rows it last received. Returns false when there is no
-/// frame to carry the notice (nothing was published yet, or it is unparseable).
+/// Publish the latest snapshot again with `notice` set, so the browser shows
+/// the failure above the rows it last received. Returns false when there is no
+/// snapshot to carry the notice (nothing was published yet).
 pub(super) fn republish_with_notice(broadcaster: &Broadcaster, notice: &str) -> bool {
-    let Some(latest) = broadcaster.latest() else {
-        return false;
-    };
-    let Ok(mut snapshot) = serde_json::from_str::<WebSnapshot>(&latest) else {
+    let mut feed = broadcaster.feed();
+    let Some(mut snapshot) = feed.latest().cloned() else {
         return false;
     };
     snapshot.notice = Some(notice.to_owned());
-    // Restamped: the browser skips a frame no newer than the one it holds.
     snapshot.generated_at = Utc::now();
-    match serde_json::to_string(&snapshot) {
-        Ok(json) => {
-            broadcaster.publish(json);
-            true
-        }
-        Err(_) => false,
-    }
-}
-
-fn body_without_timestamp(json: &str) -> String {
-    let Ok(mut snapshot) = serde_json::from_str::<WebSnapshot>(json) else {
-        return json.to_owned();
-    };
-    snapshot.generated_at = DateTime::<Utc>::UNIX_EPOCH;
-    serde_json::to_string(&snapshot).unwrap_or_else(|_| json.to_owned())
+    broadcaster.publish_locked(&mut feed, snapshot);
+    true
 }
 
 fn sleep_while_running(running: &AtomicBool, duration: Duration) {
@@ -345,15 +319,4 @@ fn sleep_while_running(running: &AtomicBool, duration: Duration) {
         thread::sleep(slice);
         remaining = remaining.saturating_sub(slice);
     }
-}
-
-fn is_read_timeout(error: &anyhow::Error) -> bool {
-    error.chain().any(|cause| {
-        cause.downcast_ref::<io::Error>().is_some_and(|io_error| {
-            matches!(
-                io_error.kind(),
-                io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut
-            )
-        })
-    })
 }

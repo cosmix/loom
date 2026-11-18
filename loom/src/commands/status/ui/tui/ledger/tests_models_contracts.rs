@@ -6,6 +6,7 @@ use super::super::LedgerView;
 use crate::commands::status::data::{StageSummary, StatusData};
 use crate::commands::status::render::attention_model::attention_entries;
 use crate::commands::status::ui::tui::state::TuiActivityLog;
+use crate::orchestrator::busy::LoopState;
 use crate::plan::graph::levels;
 use crate::tokens::{AgentFlow, AgentKind, ModelUsage, PlanFlow, StageFlow, TokenFlow, TokenUsage};
 
@@ -42,7 +43,7 @@ fn models() -> Vec<ModelUsage> {
             usage(30_000, 450_000, 7_000_000, 80_000),
         ),
         entry(
-            "gpt-6.1-sol",
+            "gpt-6.2-sol",
             "xhigh",
             usage(30_000, 300_000, 4_000_000, 50_000),
         ),
@@ -58,9 +59,12 @@ fn flow() -> TokenFlow {
     let total = usage(120_000, 1_800_000, 26_000_000, 310_000);
     let rate = usage(2_000, 36_000, 600_000, 5_200);
     let main = AgentFlow {
+        effort: None,
+        unit_id: None,
         id: "main-01ed9f4c".to_owned(),
         kind: AgentKind::Main,
         agent_type: None,
+        forwarder: None,
         model: Some("claude-opus-5-5".to_owned()),
         active: true,
         total,
@@ -108,7 +112,7 @@ fn rows(data: &StatusData, width: u16, height: u16) -> Vec<String> {
         spinner: '⠋',
         scroll_y: 0,
         legend_open: false,
-        tick_age_secs: Some(2),
+        loop_state: LoopState::Ticking { age_secs: 2 },
         last_error: None,
         now_epoch: NOW,
         scrollable: false,

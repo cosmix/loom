@@ -7,6 +7,7 @@
 
 use chrono::Utc;
 
+use crate::git::revision::require_head_commit;
 use crate::git::worktree::WorktreeGit;
 use crate::host_verify::submit::{is_lower_hex, submit, Submission, SubmitRequest};
 use crate::host_verify::JobKind;
@@ -16,9 +17,13 @@ use crate::relay::HostJobRequest;
 use crate::verify::criteria::CriteriaConfig;
 use crate::verify::transitions::load_stage;
 
-use super::apply::{is_live_judge, require_owner};
+use super::apply::{is_live_judge, require_merge_resolver, require_owner};
 use super::commit::pinned_worktree;
 use super::{InboxHost, Settle};
+
+#[cfg(test)]
+#[path = "check_merge_tests.rs"]
+mod merge_tests;
 
 /// Validate and queue one relayed `check`.
 pub(super) fn apply_check(
@@ -44,7 +49,9 @@ pub(super) fn apply_check(
             kind: JobKind::Check,
             head: &request.head,
             tree_digest: &request.tree_digest,
-            no_cache: request.no_cache,
+            // A resolver's job never reads the pass cache (child_policy.rs), so
+            // its request must not join a job that does.
+            no_cache: request.no_cache || record.session_type == SessionType::Merge,
             criteria: request.criteria.clone(),
         },
         Utc::now(),
@@ -61,16 +68,23 @@ pub(super) fn settle_submission(submission: anyhow::Result<Submission>) -> Settl
             "host job {} queued; {} cancelled",
             queued.id, cancelled.id
         ))),
+        Ok(Submission::Waiting { pending, behind }) => Settle::Applied(Some(format!(
+            "host job {} queued behind {behind}",
+            pending.id
+        ))),
         Ok(Submission::Refused(reason)) => Settle::Refused(reason),
         Err(error) => Settle::Refused(format!("could not be applied: {error:#}")),
     }
 }
 
-/// A stage or knowledge session must own the stage; a judge must be the
-/// live adjudication session of this stage.
+/// A stage or knowledge session must own the stage; a merge session must be
+/// resolving this stage's merge; a judge must be the live adjudication session
+/// of this stage.
 fn admit_session(host: &dyn InboxHost, stage_id: &str, record: &Session) -> Result<Stage, String> {
-    if record.session_type != SessionType::Adjudication {
-        return require_owner(host.work_dir(), stage_id, record);
+    match record.session_type {
+        SessionType::Merge => return require_merge_resolver(host.work_dir(), stage_id, record),
+        SessionType::Adjudication => {}
+        _ => return require_owner(host.work_dir(), stage_id, record),
     }
     if !is_live_judge(host, record) {
         return Err(format!(
@@ -123,23 +137,12 @@ fn checkout_head(host: &dyn InboxHost, stage: &Stage) -> Result<String, String> 
     } else {
         pinned_worktree(host.repo_root(), stage)?
     };
-    let output = git
-        .run(&["rev-parse", "HEAD"])
-        .map_err(|error| format!("the checkout's HEAD could not be read: {error:#}"))?;
-    if !output.status.success() {
-        return Err(format!(
-            "the checkout's HEAD could not be read: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
-        ));
-    }
-    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+    require_head_commit(&git)
+        .map_err(|error| format!("the checkout's HEAD could not be read: {error:#}"))
 }
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-    use std::process::Command;
-
     use chrono::Utc;
     use serde_json::{json, Value};
 
@@ -149,29 +152,19 @@ mod tests {
     use crate::models::session::{Session, SessionStatus, SessionType};
     use crate::models::stage::StageStatus;
     use crate::relay::{AgentRole, RequestKind};
+    use crate::test_git::{git, TestRepo};
 
     use super::super::test_support::{entry_for, fixture, Fixture, STAGE};
     use super::super::{run_pass, Settle};
 
-    fn git(dir: &Path, args: &[&str]) -> String {
-        let output = Command::new("git")
-            .args(["-c", "commit.gpgsign=false", "-c", "user.name=t"])
-            .args(["-c", "user.email=t@t"])
-            .args(args)
-            .current_dir(dir)
-            .env_remove("GIT_DIR")
-            .env_remove("GIT_WORK_TREE")
-            .env_remove("GIT_INDEX_FILE")
-            .output()
-            .unwrap();
-        assert!(output.status.success(), "git {args:?}: {output:?}");
-        String::from_utf8_lossy(&output.stdout).trim().to_string()
-    }
-
     /// A repository at the fixture's repo root with `s1`'s registered
     /// worktree; returns the worktree's HEAD.
-    fn repository(fx: &Fixture) -> String {
-        git(&fx.repo_root, &["init", "-q", "-b", "main"]);
+    pub(super) fn repository(fx: &Fixture) -> String {
+        TestRepo::builder()
+            .identity("t", "t@t")
+            .no_seed()
+            .init_in(&fx.repo_root);
+        crate::git::worktree::capture_main_identity(&fx.repo_root, &fx.work_dir).unwrap();
         git(
             &fx.repo_root,
             &["commit", "-q", "--allow-empty", "-m", "base"],
@@ -182,12 +175,12 @@ mod tests {
         git(&worktree, &["rev-parse", "HEAD"])
     }
 
-    fn request(head: &str) -> Value {
+    pub(super) fn request(head: &str) -> Value {
         json!({"head": head, "tree_digest": "0".repeat(64), "no_cache": false})
     }
 
     /// Relay `payload` as `agent` and return how the drain settled it.
-    fn settle(
+    pub(super) fn settle(
         fx: &Fixture,
         record: &Session,
         agent: AgentRole,
@@ -203,14 +196,14 @@ mod tests {
         found.unwrap().1
     }
 
-    fn refused(settled: Settle) -> String {
+    pub(super) fn refused(settled: Settle) -> String {
         match settled {
             Settle::Refused(reason) => reason,
             other => panic!("expected a refusal, got {other:?}"),
         }
     }
 
-    fn queued_check(fx: &Fixture) -> bool {
+    pub(super) fn queued_check(fx: &Fixture) -> bool {
         load_current(&fx.work_dir, STAGE)
             .unwrap()
             .is_some_and(|job| job.state == JobState::Queued)
@@ -239,6 +232,38 @@ mod tests {
     }
 
     #[test]
+    fn a_check_waiting_behind_another_settles_with_the_waiting_job_id() {
+        use crate::host_verify::submit::{submit, Submission, SubmitRequest};
+        let tmp = tempfile::tempdir().unwrap();
+        let request = SubmitRequest {
+            stage_id: "s1",
+            session_id: "session-a",
+            request_id: "r1",
+            kind: crate::host_verify::JobKind::Check,
+            head: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            tree_digest: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            no_cache: false,
+            criteria: Some(vec![1]),
+        };
+        submit(tmp.path(), &request, Utc::now()).unwrap();
+        let request = SubmitRequest {
+            request_id: "r2",
+            criteria: Some(vec![2]),
+            ..request
+        };
+        let waiting = submit(tmp.path(), &request, Utc::now()).unwrap();
+        let expected = match &waiting {
+            Submission::Waiting { pending, behind } => {
+                format!("host job {} queued behind {behind}", pending.id)
+            }
+            other => panic!("expected a waiting job, got {other:?}"),
+        };
+        assert!(
+            matches!(super::settle_submission(Ok(waiting)), Settle::Applied(Some(note)) if note == expected)
+        );
+    }
+
+    #[test]
     fn a_live_judge_of_the_stage_is_queued() {
         let fx = fixture();
         let head = repository(&fx);
@@ -247,6 +272,9 @@ mod tests {
         let settled = settle(&fx, &judge, AgentRole::Main, request(&head), true);
         assert!(matches!(settled, Settle::Applied(Some(_))), "{settled:?}");
         assert!(queued_check(&fx));
+        // Only a merge resolver forces a fresh run; a judge keeps the request's policy.
+        let job = load_current(&fx.work_dir, STAGE).unwrap().unwrap();
+        assert!(!job.no_cache);
     }
 
     #[test]

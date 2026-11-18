@@ -1,17 +1,16 @@
 //! Builds the "Changes by Stage" section of the review document.
 
-use std::collections::HashMap;
-
 use crate::fs::memory::{MemoryEntry, MemoryEntryType};
 
 use super::stages::{render_stage_section, StageInfo};
+use super::Journals;
 
 /// Append the "Changes by Stage" section: one subsection per stage with
 /// recorded memory entries, skipping any stage that has none.
 pub(super) fn append_changes_by_stage_section(
     doc: &mut String,
     stages: &[StageInfo],
-    journals: &HashMap<String, Vec<MemoryEntry>>,
+    journals: &Journals,
 ) {
     doc.push_str("## Changes by Stage\n\n");
 

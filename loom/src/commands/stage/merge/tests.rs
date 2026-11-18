@@ -4,6 +4,8 @@ use super::*;
 use crate::git::get_conflicting_files;
 use crate::git::merge::merge_head_exists;
 use crate::models::stage::Stage;
+use crate::test_git::{git, TestRepo};
+use crate::verify::transitions::update_stage;
 use std::process::Command;
 use tempfile::TempDir;
 
@@ -58,8 +60,7 @@ fn test_merge_rejects_wrong_status() {
     let temp_dir = TempDir::new().unwrap();
     let work_dir = temp_dir.path();
 
-    // Create stages directory and a stage in Executing status
-    let stages_dir = work_dir.join(".loom").join("work").join("stages");
+    let stages_dir = work_dir.join("stages");
     std::fs::create_dir_all(&stages_dir).unwrap();
 
     let stage = create_test_stage("test-stage", StageStatus::Executing);
@@ -67,29 +68,27 @@ fn test_merge_rejects_wrong_status() {
     let content = crate::verify::transitions::serialize_stage_to_markdown(&stage).unwrap();
     std::fs::write(stage_path, content).unwrap();
 
-    // merge should fail since we're not in a worktree and status is wrong
-    // We test the status check by calling the function parts directly
-    assert!(!matches!(
-        stage.status,
-        StageStatus::MergeConflict | StageStatus::MergeBlocked
-    ));
+    assert!(super::preflight::admit_retry("test-stage", work_dir).is_err());
 }
 
 #[test]
 fn test_merge_accepts_merge_conflict() {
     let stage = create_test_stage("test-stage", StageStatus::MergeConflict);
-    assert!(matches!(
-        stage.status,
-        StageStatus::MergeConflict | StageStatus::MergeBlocked
-    ));
+    assert_merge_admitted(&stage);
 }
 
 #[test]
 fn test_merge_accepts_merge_blocked() {
     let stage = create_test_stage("test-stage", StageStatus::MergeBlocked);
+    assert_merge_admitted(&stage);
+}
+
+fn assert_merge_admitted(stage: &Stage) {
+    let dir = TempDir::new().unwrap();
+    crate::verify::transitions::save_stage(stage, dir.path()).unwrap();
     assert!(matches!(
-        stage.status,
-        StageStatus::MergeConflict | StageStatus::MergeBlocked
+        super::preflight::admit_retry(&stage.id, dir.path()).unwrap(),
+        super::preflight::RetryAdmission::Admitted(_)
     ));
 }
 
@@ -158,34 +157,22 @@ fn test_find_repo_root_from_subdir() {
     );
 }
 
-fn git_in(root: &Path, args: &[&str]) {
-    let out = Command::new("git")
-        .args(args)
-        .current_dir(root)
-        .output()
-        .unwrap();
-    assert!(out.status.success(), "git {args:?}");
-}
-
 /// A repo on `main` with `loom/gated` one commit ahead, adding
 /// `.claude/settings.json`, and the stage saved as `MergeConflict`.
 fn gated_repo() -> (TempDir, std::path::PathBuf, Stage) {
     let temp_dir = TempDir::new().unwrap();
     let root = temp_dir.path();
-    git_in(root, &["init", "-b", "main"]);
-    git_in(root, &["config", "user.email", "t@t.com"]);
-    git_in(root, &["config", "user.name", "t"]);
-    std::fs::write(root.join("a.txt"), "a").unwrap();
-    git_in(root, &["add", "a.txt"]);
-    git_in(root, &["commit", "-m", "seed"]);
-    git_in(root, &["checkout", "-b", "loom/gated"]);
+    TestRepo::builder().seed("a.txt", "a", "seed").init_in(root);
+    git(root, &["checkout", "-b", "loom/gated"]);
     std::fs::create_dir_all(root.join(".claude")).unwrap();
     std::fs::write(root.join(".claude/settings.json"), "{}").unwrap();
-    git_in(root, &["add", ".claude/settings.json"]);
-    git_in(root, &["commit", "-m", "stage work"]);
-    git_in(root, &["checkout", "main"]);
+    git(root, &["add", ".claude/settings.json"]);
+    git(root, &["commit", "-m", "stage work"]);
+    git(root, &["checkout", "main"]);
     let work_dir = root.join(".loom").join("work");
-    git_in(root, &["worktree", "add", ".worktrees/gated", "loom/gated"]);
+    std::fs::create_dir_all(&work_dir).unwrap();
+    crate::git::worktree::capture_main_identity(root, &work_dir).unwrap();
+    git(root, &["worktree", "add", ".worktrees/gated", "loom/gated"]);
     let mut stage = create_test_stage("gated", StageStatus::MergeConflict);
     stage.completed_commit = Some(crate::git::branch::get_branch_head("loom/gated", root).unwrap());
     crate::verify::transitions::save_stage(&stage, &work_dir).unwrap();
@@ -261,6 +248,11 @@ fn the_cli_resolver_spawn_fails_when_the_diff_cannot_be_computed() {
 fn the_cli_resolver_spawn_refuses_a_typed_blocked_stage() {
     let (repo, work_dir, mut stage) = gated_repo();
     stage.block_merge(crate::git::MergeBlock::TargetMoved);
+    update_stage("gated", &work_dir, |current| {
+        current.block_merge(crate::git::MergeBlock::TargetMoved);
+        Ok(())
+    })
+    .unwrap();
 
     let result = crate::commands::stage::merge_resolver::spawn_merge_resolver(
         &stage,
@@ -299,13 +291,8 @@ fn record_block_leaves_a_merged_stage_alone() {
 fn zero_commit_repo(completed_commit: Option<String>) -> (TempDir, std::path::PathBuf, Stage) {
     let temp_dir = TempDir::new().unwrap();
     let root = temp_dir.path();
-    git_in(root, &["init", "-b", "main"]);
-    git_in(root, &["config", "user.email", "t@t.com"]);
-    git_in(root, &["config", "user.name", "t"]);
-    std::fs::write(root.join("a.txt"), "a").unwrap();
-    git_in(root, &["add", "a.txt"]);
-    git_in(root, &["commit", "-m", "seed"]);
-    git_in(root, &["branch", "loom/zero"]);
+    TestRepo::builder().seed("a.txt", "a", "seed").init_in(root);
+    git(root, &["branch", "loom/zero"]);
     let work_dir = root.join(".loom").join("work");
     let mut stage = create_test_stage("zero", StageStatus::MergeBlocked);
     stage.completed_commit = completed_commit;
@@ -330,12 +317,12 @@ fn a_retried_merge_of_a_zero_commit_branch_is_routed_to_review_not_merged() {
 fn completing_a_retried_merge_whose_recorded_commit_is_not_in_the_target_is_refused() {
     let (repo, work_dir, _) = zero_commit_repo(None);
     // The recorded commit lives on a side branch the target never merged.
-    git_in(repo.path(), &["checkout", "-q", "-b", "side"]);
+    git(repo.path(), &["checkout", "-q", "-b", "side"]);
     std::fs::write(repo.path().join("side.txt"), "side").unwrap();
-    git_in(repo.path(), &["add", "side.txt"]);
-    git_in(repo.path(), &["commit", "-m", "side"]);
+    git(repo.path(), &["add", "side.txt"]);
+    git(repo.path(), &["commit", "-m", "side"]);
     let side = crate::git::runner::run_git_checked(&["rev-parse", "HEAD"], repo.path()).unwrap();
-    git_in(repo.path(), &["checkout", "-q", "main"]);
+    git(repo.path(), &["checkout", "-q", "main"]);
     let stage = update_stage("zero", &work_dir, |s| {
         s.completed_commit = Some(side.clone());
         Ok(())
@@ -349,4 +336,26 @@ fn completing_a_retried_merge_whose_recorded_commit_is_not_in_the_target_is_refu
     let on_disk = load_stage("zero", &work_dir).unwrap();
     assert!(!on_disk.merged);
     assert_eq!(on_disk.status, StageStatus::MergeBlocked);
+}
+
+#[test]
+fn completing_a_retried_merge_refuses_a_replaced_completion_proof() {
+    let (repo, work_dir, _) = zero_commit_repo(None);
+    let commit = crate::git::runner::run_git_checked(&["rev-parse", "main"], repo.path()).unwrap();
+    let observed = update_stage("zero", &work_dir, |stage| {
+        stage.completed_commit = Some(commit.clone());
+        Ok(())
+    })
+    .unwrap();
+    update_stage("zero", &work_dir, |stage| {
+        stage.completed_commit = Some("replacement".into());
+        Ok(())
+    })
+    .unwrap();
+    assert!(
+        landing::complete_retried_merge(&observed, &work_dir, repo.path(), "main", "done").is_err()
+    );
+    let current = load_stage("zero", &work_dir).unwrap();
+    assert!(!current.merged);
+    assert_eq!(current.completed_commit.as_deref(), Some("replacement"));
 }

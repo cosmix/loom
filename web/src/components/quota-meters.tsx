@@ -190,6 +190,9 @@ function QuotaGauge({
         <p className="font-medium">
           {provider} · {label} window · {usage}
         </p>
+        {reading === null && (
+          <p className="opacity-80">The provider did not report a {label} quota.</p>
+        )}
         {resetsAt !== null && <p className="opacity-80">resets {localTime(resetsAt)}</p>}
         <p className="opacity-80">
           observed {localTime(quota.observed_at)}

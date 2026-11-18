@@ -1,0 +1,340 @@
+/*
+ * The Findings board (`findings-page.tsx`, `findings-cards.tsx`, `findings-marks.tsx`): four lanes
+ * in the order a finding moves, each with its count, what its state means and its action, and a
+ * card per finding. The dialog a card opens is findings-sheet.css. Every rule sits on the scales
+ * of ui/design.css and the tokens of index.css; nothing names a colour. ui/DESIGN.md, Page rhythm
+ * (the Findings page).
+ *
+ * The board lays out by its own width (the spine and the chat panel take the viewport's), so the
+ * steps are container queries on `.findings-board`, never on the viewport: four lanes across from
+ * 62rem, two from 38rem, one under it.
+ */
+
+/* The board is wider than the 48rem reading width maps.css gives the page (that rule is shared
+   with the empty ledger's text). The doubled class lifts this over it whatever the load order. */
+[data-loom-plan] .plan-page.plan-page:has(> .maps-findings-head, > .maps-findings) {
+  max-width: calc(76rem + 2 * var(--page-gutter));
+}
+
+[data-loom-plan] .findings-board {
+  container: findings-board / inline-size;
+  min-width: 0;
+}
+
+[data-loom-plan] .findings-board__lanes {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-6) var(--space-5);
+  align-items: start;
+}
+
+/* ── Lane ──────────────────────────────────────────────────────────────────── */
+
+[data-loom-plan] .findings-lane {
+  display: grid;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+/* The top rule is the lane's edge; Yours to decide takes the heavier one, and Set aside, which is
+   off the path, a dashed one. */
+[data-loom-plan] .findings-lane__head {
+  position: relative;
+  display: grid;
+  align-content: start;
+  gap: var(--space-1);
+  padding-top: var(--space-3);
+  border-top: 2px solid var(--border);
+}
+
+[data-loom-plan] .findings-lane[data-hot] .findings-lane__head {
+  border-top-color: var(--foreground);
+}
+
+[data-loom-plan] .findings-lane[data-lane="aside"] .findings-lane__head {
+  border-top-style: dashed;
+}
+
+[data-loom-plan] .findings-lane__head h2 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  font-family: var(--font-sans);
+  font-size: 22px;
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+}
+
+/* Attention on a count: an amber dot before the lane that waits on the reader (DESIGN.md). */
+[data-loom-plan] .findings-lane[data-hot] h2::before {
+  content: "";
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--tone-warning);
+}
+
+[data-loom-plan] .findings-lane__count {
+  color: var(--muted-foreground);
+  font-size: var(--type-title);
+  font-weight: 400;
+  letter-spacing: 0;
+}
+
+[data-loom-plan] .findings-lane__head > p {
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: var(--type-body);
+  line-height: var(--leading-body);
+  text-wrap: pretty;
+}
+
+[data-loom-plan] .findings-lane__action {
+  margin-top: var(--space-2);
+}
+
+[data-loom-plan] .findings-lane__action:empty {
+  display: none;
+}
+
+[data-loom-plan] .findings-lane__cards {
+  display: grid;
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* A lane with nothing in it says so in a dashed well rather than going blank. */
+[data-loom-plan] .findings-lane__none {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  padding: var(--space-5) var(--space-4);
+  border: 1px dashed var(--border);
+  border-radius: 10px;
+  color: var(--muted-foreground);
+  font-size: var(--type-body);
+}
+
+[data-loom-plan] .findings-lane__none svg {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  color: var(--tone-completed);
+}
+
+/* ── Card ──────────────────────────────────────────────────────────────────── */
+
+[data-loom-plan] .findings-card {
+  min-width: 0;
+  scroll-margin-top: var(--space-5);
+}
+
+/* The whole card is the button that opens the finding. */
+[data-loom-plan] .findings-card > button {
+  display: grid;
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
+  padding: 14px var(--space-4);
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+  background: var(--card);
+  color: var(--foreground);
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+[data-loom-plan] .findings-card > button:hover {
+  border-color: color-mix(in oklab, var(--foreground) 28%, var(--border));
+}
+
+[data-loom-plan] .findings-card > button:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+/* A finding that is past (addressed, set aside) drops its fill and its weight. */
+[data-loom-plan]
+  .findings-lane:is([data-lane="addressed"], [data-lane="aside"])
+  .findings-card
+  > button {
+  background: transparent;
+}
+
+[data-loom-plan] .findings-card__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+[data-loom-plan] .findings-id {
+  color: var(--muted-foreground);
+  font-family: var(--font-mono);
+  font-size: var(--type-fine);
+  white-space: nowrap;
+}
+
+[data-loom-plan] .findings-card__title {
+  font-family: var(--font-sans);
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.3;
+  letter-spacing: -0.01em;
+  overflow-wrap: anywhere;
+  text-wrap: pretty;
+}
+
+[data-loom-plan] .findings-lane[data-lane="decide"] .findings-card__title {
+  font-size: 17px;
+}
+
+[data-loom-plan]
+  .findings-lane:is([data-lane="addressed"], [data-lane="aside"])
+  .findings-card__title {
+  font-weight: 500;
+}
+
+[data-loom-plan]
+  .findings-card:is([data-state="dismissed"], [data-state="duplicate"])
+  .findings-card__title {
+  color: var(--muted-foreground);
+}
+
+[data-loom-plan] .findings-card__where {
+  overflow: hidden;
+  color: var(--muted-foreground);
+  font-size: var(--type-ui);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The state line, only where it adds to the lane: stale, unverified, could not address,
+   dismissed, a duplicate, what an addressed finding changed. */
+[data-loom-plan] .findings-card__reason {
+  display: grid;
+  gap: 2px;
+  padding-top: 6px;
+  border-top: 1px solid var(--hairline);
+  color: var(--muted-foreground);
+  font-size: var(--type-ui);
+}
+
+[data-loom-plan] .findings-card__detail {
+  overflow-wrap: anywhere;
+}
+
+[data-loom-plan] .findings-card__source {
+  color: var(--muted-foreground);
+  font-family: var(--font-mono);
+  font-size: var(--type-fine);
+}
+
+/* ── Marks ─────────────────────────────────────────────────────────────────── */
+
+/* A state is a glyph and its word; only the glyph takes a tone. */
+[data-loom-plan] .findings-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--foreground);
+  font-weight: 500;
+}
+
+[data-loom-plan] .findings-glyph {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  color: var(--muted-foreground);
+}
+
+[data-loom-plan] .findings-state[data-tone="warning"] .findings-glyph {
+  color: var(--tone-warning);
+}
+
+[data-loom-plan] .findings-state[data-tone="completed"] .findings-glyph {
+  color: var(--tone-completed);
+}
+
+[data-loom-plan] .findings-state[data-tone="blocked"] .findings-glyph {
+  color: var(--tone-blocked);
+}
+
+/* Severity: three bars filled to the level, and its word. The glyph is toned, as a state's is. */
+[data-loom-plan] .findings-severity {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--foreground);
+  font-size: var(--type-ui);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+[data-loom-plan] .findings-severity .findings-glyph {
+  fill: currentColor;
+  stroke: none;
+}
+
+[data-loom-plan] .findings-severity[data-severity="high"] .findings-glyph {
+  color: var(--tone-blocked);
+}
+
+[data-loom-plan] .findings-severity[data-severity="medium"] .findings-glyph {
+  color: var(--tone-warning);
+}
+
+[data-loom-plan] .findings-severity[data-severity="medium"] [data-bar="3"],
+[data-loom-plan] .findings-severity[data-severity="low"] :is([data-bar="2"], [data-bar="3"]),
+[data-loom-plan] .findings-severity[data-severity="none"] rect {
+  opacity: 0.22;
+}
+
+/* ── Width steps (the board's own width) ───────────────────────────────────── */
+
+/* Under 38rem one lane per row, so nothing scrolls sideways. */
+@container findings-board (max-width: 37.99rem) {
+  [data-loom-plan] .findings-board__lanes {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  [data-loom-plan] .findings-lane__head {
+    padding-bottom: var(--space-1);
+  }
+}
+
+@container findings-board (min-width: 62rem) {
+  [data-loom-plan] .findings-board__lanes {
+    grid-template-columns:
+      minmax(0, 1fr) minmax(0, 1.35fr) minmax(0, 1fr)
+      minmax(0, 1fr);
+  }
+
+  /* Heads stand level so the first card of every lane starts on one line. */
+  [data-loom-plan] .findings-lane__head {
+    min-height: 10.75rem;
+  }
+
+  /* An arrowhead on each top rule that leads to the next step; Addressed leads nowhere, and Set
+     aside is off the path. */
+  [data-loom-plan]
+    .findings-lane:is([data-lane="verify"], [data-lane="decide"])
+    .findings-lane__head::after {
+    content: "";
+    position: absolute;
+    top: -6px;
+    right: -16px;
+    width: 8px;
+    height: 8px;
+    border-top: 2px solid var(--border);
+    border-right: 2px solid var(--border);
+    transform: rotate(45deg);
+  }
+}

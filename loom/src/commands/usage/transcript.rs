@@ -1,8 +1,7 @@
 //! Reads Claude Code transcripts without treating their JSONL framing as a
 //! transaction log. Assistant responses are flushed in several lines, and
-//! real transcripts show that counting each line overstates usage by about
-//! 2.3x. We therefore select the whole usage vector with the latest timestamp
-//! for each `message.id`, breaking ties by arrival order, while merging every
+//! each line can repeat usage. Select the whole usage vector with the latest timestamp
+//! for each `message.id`, keeping the first on ties, while merging every
 //! line's content blocks into one request. Absent counters in a partial vector
 //! are zero, as in the live tracker.
 //!
@@ -18,20 +17,31 @@ pub(super) use super::transcript_types::{
 use anyhow::Context;
 use chrono::{DateTime, Utc};
 use serde_json::Value;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
 
+use super::transcript_attachment::attachment_entry;
 use super::transcript_merge::merge_request;
+use super::transcript_types::{AttachmentEntry, SYNTHETIC_MODEL};
 
-struct ScanResult {
+#[derive(Default)]
+struct Scan {
     entries: Vec<Entry>,
+    attachments: Vec<AttachmentEntry>,
     first_user_entry: Option<UserEntry>,
     project_path: Option<PathBuf>,
     diagnostics: TranscriptDiagnostics,
     had_prior_request: bool,
     chronology_uncertain: bool,
+    /// Where each message id's request sits in `entries`.
+    request_indices: HashMap<String, usize>,
+    /// Uuids of the `user` and `attachment` rows already seen: a later row with
+    /// the same uuid is a copy of one the model saw once.
+    row_uuids: HashSet<String>,
+    /// Non-synthetic requests retained so far.
+    retained_requests: usize,
 }
 
 /// Parse one JSONL transcript, dropping entries older than `since`. Never
@@ -48,41 +58,91 @@ pub fn parse(
     Ok(build_transcript(file, scan))
 }
 
-fn scan_lines(reader: BufReader<File>, range: &super::time_range::TimeRange) -> ScanResult {
-    let mut entries = Vec::new();
-    let mut request_indices = HashMap::new();
-    let mut first_user_entry = None;
-    let mut project_path = None;
-    let mut diagnostics = TranscriptDiagnostics::default();
-    let mut had_prior_request = false;
-    let mut chronology_uncertain = false;
+fn scan_lines(reader: BufReader<File>, range: &super::time_range::TimeRange) -> Scan {
+    let mut scan = Scan::default();
     for (ordinal, line) in reader.lines().enumerate() {
-        let Some(value) = decoded_line(line, &mut diagnostics) else {
-            chronology_uncertain = true;
+        let Some(value) = decoded_line(line, &mut scan.diagnostics) else {
+            scan.note_unplaced_row();
             continue;
         };
-        if first_user_entry.is_none() {
-            first_user_entry = first_user_entry_from(&value);
+        if scan.first_user_entry.is_none() {
+            scan.first_user_entry = first_user_entry_from(&value);
         }
-        capture_project_path(&mut project_path, &value);
-        scan_value(
-            &mut entries,
-            &mut request_indices,
-            &value,
-            ordinal,
-            range,
-            &mut diagnostics,
-            &mut had_prior_request,
-            &mut chronology_uncertain,
-        );
+        capture_project_path(&mut scan.project_path, &value);
+        scan.add_row(&value, ordinal, range);
     }
-    ScanResult {
-        entries,
-        first_user_entry,
-        project_path,
-        diagnostics,
-        had_prior_request,
-        chronology_uncertain,
+    scan
+}
+
+impl Scan {
+    /// A row with no place in time may be context or a request that came before
+    /// the first retained request, which then cannot be called the start. After
+    /// that request it changes nothing about the start.
+    fn note_unplaced_row(&mut self) {
+        self.chronology_uncertain |= self.retained_requests == 0;
+    }
+
+    fn add_row(&mut self, value: &Value, ordinal: usize, range: &super::time_range::TimeRange) {
+        let kind = value.get("type").and_then(Value::as_str);
+        let Some(timestamp) = timestamp(value) else {
+            self.diagnostics.missing_timestamp_rows += 1;
+            if matches!(kind, Some("user" | "assistant" | "attachment")) {
+                self.note_unplaced_row();
+            }
+            return;
+        };
+        if matches!(kind, Some("user" | "attachment")) && self.is_repeated_row(value) {
+            return;
+        }
+        let synthetic =
+            value.pointer("/message/model").and_then(Value::as_str) == Some(SYNTHETIC_MODEL);
+        if kind == Some("assistant") && !synthetic && timestamp < range.since {
+            self.had_prior_request = true;
+        }
+        if !range.includes(timestamp) {
+            return;
+        }
+        match kind {
+            Some("assistant") => self.add_request(value, timestamp, ordinal),
+            Some("user") => self.entries.extend(
+                super::transcript_content::user_entries(value, timestamp)
+                    .into_iter()
+                    .map(Entry::User),
+            ),
+            Some("attachment") => self
+                .attachments
+                .extend(attachment_entry(value, self.retained_requests)),
+            _ => {}
+        }
+    }
+
+    /// Whether this row's uuid was seen before. A row with no uuid never repeats.
+    fn is_repeated_row(&mut self, value: &Value) -> bool {
+        value
+            .get("uuid")
+            .and_then(Value::as_str)
+            .filter(|uuid| !uuid.is_empty())
+            .is_some_and(|uuid| !self.row_uuids.insert(uuid.to_owned()))
+    }
+
+    fn add_request(&mut self, value: &Value, timestamp: DateTime<Utc>, ordinal: usize) {
+        let Some(request) = request(value, timestamp, ordinal) else {
+            return;
+        };
+        if let Some(id) = request.message_id.as_ref() {
+            if let Some(index) = self.request_indices.get(id) {
+                if let Some(Entry::Assistant(first)) = self.entries.get_mut(*index) {
+                    // A merge can take the later line's model.
+                    self.retained_requests -= usize::from(first.model != SYNTHETIC_MODEL);
+                    merge_request(first.as_mut(), request);
+                    self.retained_requests += usize::from(first.model != SYNTHETIC_MODEL);
+                }
+                return;
+            }
+            self.request_indices.insert(id.clone(), self.entries.len());
+        }
+        self.retained_requests += usize::from(request.model != SYNTHETIC_MODEL);
+        self.entries.push(Entry::Assistant(Box::new(request)));
     }
 }
 
@@ -117,7 +177,7 @@ fn decoded_line(
     }
 }
 
-fn build_transcript(file: &super::discovery::DiscoveredFile, scan: ScanResult) -> Transcript {
+fn build_transcript(file: &super::discovery::DiscoveredFile, scan: Scan) -> Transcript {
     Transcript {
         path: file.path.clone(),
         scope: file.scope,
@@ -126,6 +186,7 @@ fn build_transcript(file: &super::discovery::DiscoveredFile, scan: ScanResult) -
         session_id: file.session_id.clone(),
         agent_id: file.agent_id.clone(),
         agent_type: None,
+        agent_type_from_sidecar: false,
         requested_model: None,
         stage_id: None,
         loom_session_id: None,
@@ -133,6 +194,7 @@ fn build_transcript(file: &super::discovery::DiscoveredFile, scan: ScanResult) -
         forward_candidate: false,
         first_user_entry: scan.first_user_entry,
         entries: scan.entries,
+        attachments: scan.attachments,
         diagnostics: scan.diagnostics,
     }
 }
@@ -147,74 +209,6 @@ fn first_user_entry_from(value: &Value) -> Option<UserEntry> {
     super::transcript_content::user_entries(value, stamp)
         .into_iter()
         .next()
-}
-
-fn add_value(
-    entries: &mut Vec<Entry>,
-    seen: &mut HashMap<String, usize>,
-    value: &Value,
-    timestamp: DateTime<Utc>,
-    ordinal: usize,
-) {
-    match value.get("type").and_then(Value::as_str) {
-        Some("assistant") => add_request(entries, seen, value, timestamp, ordinal),
-        Some("user") => entries.extend(
-            super::transcript_content::user_entries(value, timestamp)
-                .into_iter()
-                .map(Entry::User),
-        ),
-        _ => {}
-    }
-}
-
-#[allow(clippy::too_many_arguments)]
-fn scan_value(
-    entries: &mut Vec<Entry>,
-    seen: &mut HashMap<String, usize>,
-    value: &Value,
-    ordinal: usize,
-    range: &super::time_range::TimeRange,
-    diagnostics: &mut TranscriptDiagnostics,
-    had_prior_request: &mut bool,
-    chronology_uncertain: &mut bool,
-) {
-    let Some(timestamp) = timestamp(value) else {
-        diagnostics.missing_timestamp_rows += 1;
-        *chronology_uncertain = true;
-        return;
-    };
-    let synthetic = value.pointer("/message/model").and_then(Value::as_str)
-        == Some(super::transcript_types::SYNTHETIC_MODEL);
-    if value.get("type").and_then(Value::as_str) == Some("assistant")
-        && !synthetic
-        && timestamp < range.since
-    {
-        *had_prior_request = true;
-    }
-    if range.includes(timestamp) {
-        add_value(entries, seen, value, timestamp, ordinal);
-    }
-}
-
-fn add_request(
-    entries: &mut Vec<Entry>,
-    seen: &mut HashMap<String, usize>,
-    value: &Value,
-    timestamp: DateTime<Utc>,
-    ordinal: usize,
-) {
-    let request = request(value, timestamp, ordinal);
-    let Some(request) = request else { return };
-    if let Some(id) = request.message_id.as_ref() {
-        if let Some(index) = seen.get(id) {
-            if let Some(Entry::Assistant(first)) = entries.get_mut(*index) {
-                merge_request(first.as_mut(), request);
-            }
-            return;
-        }
-        seen.insert(id.clone(), entries.len());
-    }
-    entries.push(Entry::Assistant(Box::new(request)));
 }
 
 fn request(value: &Value, timestamp: DateTime<Utc>, ordinal: usize) -> Option<Request> {
@@ -244,12 +238,12 @@ fn request(value: &Value, timestamp: DateTime<Utc>, ordinal: usize) -> Option<Re
     })
 }
 
-fn mark_fresh_start(scan: &mut ScanResult) {
+fn mark_fresh_start(scan: &mut Scan) {
     let mut first = true;
     for entry in &mut scan.entries {
         if let Entry::Assistant(request) = entry {
             let request = request.as_mut();
-            if request.model == super::transcript_types::SYNTHETIC_MODEL {
+            if request.model == SYNTHETIC_MODEL {
                 request.normalization.first_observed_in_range = false;
                 request.normalization.true_fresh_start = None;
                 continue;
@@ -275,6 +269,9 @@ fn timestamp(value: &Value) -> Option<DateTime<Utc>> {
         .ok()
 }
 
+#[cfg(test)]
+#[path = "transcript_row_tests.rs"]
+mod row_tests;
 #[cfg(test)]
 #[path = "transcript_tests.rs"]
 mod tests;

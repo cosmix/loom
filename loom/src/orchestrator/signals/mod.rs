@@ -7,6 +7,10 @@ mod generate;
 mod helpers;
 mod knowledge;
 mod merge;
+mod merge_discovery;
+mod merge_launch;
+#[cfg(test)]
+pub(crate) use merge_launch::test_backend as merge_test_backend;
 mod parse;
 mod recovery;
 mod recovery_format;
@@ -18,11 +22,20 @@ mod types;
 mod v2_section;
 
 #[cfg(test)]
-mod tests;
+mod allocation_contract_tests;
 
-// Declared here rather than nested under `tests` so `cargo test signals::tests_size`
-// filters to exactly this module's tests (nesting under `tests` would make the
-// path `signals::tests::tests_size`, which that filter would not match).
+#[cfg(test)]
+mod budget_contract_tests;
+
+#[cfg(test)]
+mod native_doctrine_contract_tests;
+
+#[cfg(test)]
+mod tests;
+#[cfg(test)]
+#[path = "tests_model_budget.rs"]
+mod tests_model_budget;
+
 #[cfg(test)]
 #[path = "tests_dependency_harness.rs"]
 mod tests_dependency_harness;
@@ -30,10 +43,9 @@ mod tests_dependency_harness;
 #[path = "tests_size.rs"]
 mod tests_size;
 
-// Declared here for the same reason as `tests_size` above: the stage's wiring
-// check filters on `signals::tests_doctrine`, and a module nested under
-// `tests` would make the path `signals::tests::tests_doctrine`, which that
-// filter silently misses - exit 0, zero tests run.
+#[cfg(test)]
+#[path = "tests_codex_lane.rs"]
+mod tests_codex_lane;
 #[cfg(test)]
 #[path = "tests_doctrine.rs"]
 mod tests_doctrine;
@@ -72,22 +84,23 @@ pub use format::{
     format_dependency_table, format_signal_with_metrics, format_skill_recommendations,
     FormattedSignal,
 };
-// Crate-internal re-exports. `mod cache` and `mod format` are private, and
-// visibility is capped by path reachability, so a `pub(crate)` item inside
-// them is unreachable from outside `signals/` unless it is re-exported here.
-// Both of these have consumers in other modules: the session launcher writes
-// the stable prefix to its own file for the prompt-cache split
-// (`orchestrator::terminal::native::launch`), and the UserPromptSubmit hook
-// renders its brief with the SAME untrusted-excerpt fencing rules the signal
-// path uses (`commands::hook::user_prompt`) rather than a second copy.
+// Internal exports share prefix and brief formatting with their consumers.
 pub use adjudication::generate_adjudication_signal;
 pub(crate) use cache::stable_prefix_for;
 pub use contract::generate_contract_signal;
 pub(crate) use contract::scaffold_line;
+pub(crate) use format::budget::current_model_budget;
 pub(crate) use format::format_knowledge_brief;
 pub use generate::{
     build_embedded_context_with_stage, generate_signal, generate_signal_with_metrics,
     generate_signal_with_skills, DEFAULT_MAX_SKILL_RECOMMENDATIONS,
 };
 pub use knowledge::generate_knowledge_signal;
-pub use merge::{find_live_merge_session_for_stage, generate_merge_signal, read_merge_signal};
+pub use merge::{generate_merge_signal, read_merge_signal};
+pub use merge_discovery::find_live_merge_session_for_stage;
+pub(crate) use merge_discovery::find_live_merge_session_for_stage_unlocked;
+mod merge_snapshot;
+pub(crate) use merge::generate_merge_snapshot_signal;
+pub(crate) use merge_launch::with_merge_resolver_lock;
+pub(crate) use merge_launch::{publish_merge_session, write_ahead_merge_session};
+pub(crate) use merge_snapshot::{load_merge_snapshot, publish_merge_snapshot};

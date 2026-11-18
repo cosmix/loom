@@ -1,6 +1,6 @@
 # Knowledge Cli Gaps
 
-> Knowledge CLI gaps
+>
 
 ## `loom knowledge update` Cannot Set a Topic Blurb
 
@@ -73,10 +73,7 @@ What remains is discipline, not backlog:
   `--strict` stays green. After `./dev-install.sh`, run `loom knowledge check --strict`: exit 0 means no baseline
   file to generate. If a newer binary reports issues this one does not, record them with
   `loom knowledge check --write-baseline doc/loom/knowledge/check-baseline.txt` and gate with `--baseline`.
-- **Source references resolve only as a fully qualified path relative to a package's src root** (for example
-  `commands/status/data/collector.rs`, `loom-hooks/spawn-guard.sh`). A bare filename or a partial suffix fails even
-  when the suffix is unique, and a sentence quoting a path that does not exist reports `MissingSourceRef`; reword it
-  with an example marker or "does not exist".
+- **Source references accept project-relative and Cargo-module-relative paths, bare basenames, and path suffixes.** `fs/knowledge/catalog/source_roots.rs::repository_source_path_exists` accepts a bare basename when any indexed project file has that name; a slash-containing suffix must identify exactly one file. An unresolved live project reference produces `MissingSourceRef`; example and external-reference classification are handled separately.
 - **A topic's blurb is set with `loom knowledge annotate <target> --blurb "<text>"`** (at most 80 characters), which
   works from inside a stage. `update` still cannot set it, so a new topic takes two calls.
 - **Moving a section between topics has no verb.** The split record used `update <dst>` then `delete-section <src>`. An
@@ -101,3 +98,11 @@ blurbs (`loom knowledge annotate <target> --blurb`) or by merging small topics.
 ## `loom knowledge update` Run From Inside the Knowledge Directory Scaffolds a Nested Tree
 
 Run with the cwd at `doc/loom/knowledge`, `loom knowledge update <category>/<slug>` resolves the knowledge root relative to the cwd instead of the repository root: it scaffolds a second tree at `doc/loom/knowledge/doc/loom/knowledge/` (every tier-1 file, an `INDEX.md`, and the topic with the scaffold blurb) and writes the entry there. `loom knowledge check` then reports the scaffold blurb as an issue. Run knowledge commands from the repository root until the CLI resolves the root itself.
+
+## No Command Edits Text Above a Knowledge File's First `##` Heading
+
+`replace-section` and `delete-section` match levels 2-6 (`loom/src/fs/knowledge/dir.rs`), `update` only appends, and the worktree file guard (`loom-hooks/worktree-file-guard.sh`) refuses Edit and Write under `doc/loom/knowledge/`. A stage therefore cannot correct a stale claim in the text under a level-1 title. A knowledge-distill stage whose `loom knowledge check` fails on such a claim parks in review once its dispute is rejected. Proposal: a CLI verb that addresses this leading text.
+
+Operator recovery that leaves the guard in place: from the main checkout, fix the line with Edit, run `loom knowledge sync` and commit on the target. Run `git merge <target>` in the stage worktree, confirm with `loom check <stage-id>`, then run `loom stage human-review <stage-id> --approve` and `loom run`. The direct commit holds the target ("moved outside loom"), so merges wait for `loom target status` review and `loom target accept --to <tip>`.
+
+The guards decide by the session's current directory. An operator session that runs `cd .worktrees/<stage-id>` is confined like that stage's session until it changes back.

@@ -1,0 +1,95 @@
+/*
+ * The Dismiss form of a finding (`findings-controls.tsx`, in the dialog's foot): the reason field,
+ * and the page's button sizes. maps-findings.css imports this sheet first, so its narrow steps win
+ * on equal specificity.
+ */
+
+/* ── Dismiss ───────────────────────────────────────────────────────────────── */
+
+/* Under a hairline in the dialog's foot. The reason field grows on the line, the confirm and
+   Cancel after it; the field is the foot's one bordered thing. */
+[data-loom-plan] .maps-dismiss {
+  min-width: 0;
+  margin: var(--space-2) 0 0;
+  padding: var(--space-4) 0 0;
+  border: 0;
+  border-top: 1px solid var(--hairline);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-2) var(--space-3);
+}
+
+[data-loom-plan] .maps-reason {
+  display: grid;
+  flex: 1 1 16rem;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+[data-loom-plan] .maps-reason > .plan-fine {
+  font-size: var(--type-ui);
+}
+
+[data-loom-plan] .maps-reason > input {
+  height: 32px;
+  min-width: 0;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--corner-control);
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  font-size: 15px;
+}
+
+[data-loom-plan] .maps-reason > input:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+/* ── Buttons ───────────────────────────────────────────────────────────────── */
+
+/* Every action on the page (Address the findings, Review the feature, Dismiss, and the form's
+   confirm and Cancel) is a 32px button at --type-body with a 16px glyph, and a reason beside one
+   is --type-ui: the page's chrome keeps the 13px floor. */
+[data-loom-plan]
+  :is(
+    .maps-findings-head,
+    .findings-lane__action,
+    .findings-sheet__foot,
+    .maps-actions,
+    .maps-dismiss
+  )
+  .plan-button {
+  height: 32px;
+  gap: var(--space-2);
+  padding: 0 var(--space-3);
+  font-size: var(--type-body);
+}
+
+[data-loom-plan]
+  :is(
+    .maps-findings-head,
+    .findings-lane__action,
+    .findings-sheet__foot,
+    .maps-actions,
+    .maps-dismiss
+  )
+  .plan-button
+  svg {
+  width: 16px;
+  height: 16px;
+}
+
+[data-loom-plan]
+  :is(
+    .maps-findings-head,
+    .findings-lane__action,
+    .findings-sheet__foot,
+    .maps-actions,
+    .maps-dismiss
+  )
+  .plan-fine {
+  font-size: var(--type-ui);
+}

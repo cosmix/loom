@@ -1,6 +1,6 @@
 # Completion Runner Blocks
 
-> Runner-env blocks
+>
 
 ## Criteria the Confined Runner Cannot Run Ended in a Manual Block (2026-10-20)
 
@@ -183,7 +183,7 @@ each diagnostic to stderr.
 
 The unfiltered suite ran only inside host jobs.
 
-**Why:** the verifier round re-ran criteria that `loom stage complete` runs again. Completion could not reuse the check's passes, because the cache key pins HEAD ([Acceptance Cache Key Pins the Commit](../concerns/verification-v2-followups.md#acceptance-cache-key-pins-the-commit)).
+**Why:** the verifier round re-ran criteria that `loom stage complete` runs again. Completion could not reuse the check's passes, because the cache key then hashed the HEAD commit, so the commit between check and complete invalidated every pass. Commit 865eed49 rekeyed the cache on a content manifest of the tree; `host_verify/tests_child_reuse.rs` pins the reuse ([Acceptance Cache Rekeyed on Content](completion-runtime.md)).
 
 **Prevention:** the orchestrator runs `loom check` once per tree, fix rounds run `loom check <stage-id> --criterion <n>`, and completion runs once on the final committed tree. Count gate commands in transcripts before accepting a claim about gate cost.
 
@@ -194,3 +194,23 @@ The unfiltered suite ran only inside host jobs.
 **Why:** the brief assumed a stage session could reach a daemon-run stage.
 
 **Prevention:** brief a functional check through the stage's own `loom check --criterion`, or name the fixture the contract test uses (`loom/tests/gate_dedup_contracts.rs::check_criterion_runs_only_named_criteria`, `check_criterion_runs_only_named_criteria`).
+
+## A Codex Driver Ran the Operator-Gated Host Tests Unconfined (2026-10-28)
+
+**What happened:** plan 07's integration-verify blocked, asking for the Claude Code end-to-end and real-tmux suites to be run outside the sandbox (`LOOM_TEST_REQUIRE_SANDBOX_FREE=1`, `--include-ignored`). The codex session driving loom ran them on the host repeatedly, with the operator's real `HOME` and network, and no person approved any of those runs.
+
+**Why:** a stage that blocks for a host test run hands that run to whatever drives loom. The driving codex used `approvals_reviewer = "auto_review"`, whose reviewer treats an escalation after a sandbox denial as not suspicious, and `~/.codex/rules/default.rules` held standing allow rules such as `prefix_rule(pattern=["cargo", "test"], decision="allow")`. An allow rule runs the matching command outside the sandbox without asking (<https://developers.openai.com/codex/rules>).
+
+**Prevention:** no criterion, stage description or block may ask anyone to run tests outside loom's confinement. A test that needs the host stays `#[ignore]` and is reported unverified until loom has a confined route for it (the live-test-lane plan). A loom driver never runs with an automatic approval reviewer, or with standing allow rules for test runners, shells or network tools.
+
+**Fix:** the operator removed `approvals_reviewer` from the codex configuration, and the integration-verify stages of plans 08 to 11 defer operator tests instead of requesting host runs.
+
+## The Exact Pinned Completion Was Left to the Auto-Mode Classifier
+
+**What happened:** the hook-guards stage session typed the pinned `/home/<user>/.local/bin/loom stage complete hook-guards`; Claude Code's auto-mode classifier refused it as "Production Deploy" and the session stopped before completion.
+
+**Why:** `loom-hooks/loom-control-complete.sh` returned its own allow only for the plain spelling it rewrites; for the exact pinned form it wrote the heartbeat and exited 0 with no decision. No permission rule matches the absolute path (sessions grant `Bash(loom *)`), so the classifier decided.
+
+**Prevention:** a command a guard hook pins gets the hook's own `permissionDecision: "allow"`. A settings allow rule for it would be a second source that drifts from `resolve_trusted_loom`'s fallback.
+
+**Fix:** `emit_pinned_allow` serves the exact pinned command and the rewritten plain spelling for a main agent; `loom-hooks/tests/loom-control-complete-rewrite.sh` asserts the allow, the carried `timeout`, the dropped `run_in_background`, and no allow for a subagent.

@@ -1,6 +1,6 @@
 # Code Quality And Hook Debt
 
-> Oversized units, hooks
+> Debt
 
 ## Oversized Rust Units Remain Controlled Debt
 
@@ -17,64 +17,22 @@ Remote releases deliver hooks through the embedded-assets binary. `install.sh::m
 
 ## No-Verify Doctrine Block Carries Only a Rust Example
 
-The doctrine block must stay byte-identical across the signal, the template, and the hook's
-refusal message, so it carries a single scoped-command example — a `cargo` one. A blocked Python
-or Go subagent is shown a Rust example. `loom-hooks/subagent-verify-guard.sh` is over the 400-line cap
-(591 lines). The fix is to append language-specific examples **after** the pinned block as
-explicitly hook-local guidance, the same way the `BLOCKED:` framing line already sits outside it.
+The shared no-verify doctrine is pinned across signals, `loom-hooks/_subagent-preamble.txt`, and the guard refusal. It carries one scoped-command example, using `cargo`; a blocked Python or Go subagent therefore sees a Rust example. Language-specific examples can be appended as hook-local guidance outside the pinned block.
 
-## `subagent-verify-guard.sh` Still Regexes Raw Command Strings
+## Subagent verification keeps a private shell scanner
 
-It is the last hook that matches patterns against the raw command string, so it still cannot tell
-an argument's _value_ from an argument's _mention_: text quoted inside a command is scanned as if
-it were shell. The shared `loom_tokens_*` helpers it needs already exist in `loom-hooks/_common.sh`.
+`subagent-verify-guard.sh` strips embedded content, normalizes separators and walks command-position tokens with quote tracking; its runner-specific matchers live in the sourced `_verify_matchers.sh`. The private whitespace splitter is not a complete shell parser. Review quoted separators, wrappers, substitutions and scoped-runner options with differential adversarial fixtures before replacing it. The stage-type exemption greps the entire stage Markdown, so it should use frontmatter-only state. Shared token helpers alone do not establish shell equivalence.
 
-It was left for last because its failure direction is the mild one — it blocks project-wide
-build/test/lint runs by subagents, so a false positive strands a subagent rather than admitting a
-dangerous command. That is a reason to do it last, not a reason it is safe.
-
-**Converting the fifth hook is not a mechanical edit.** The 2026-08-26 conversion of three hooks
-opened seven bypasses that the raw regexes had blocked, all found only by adversarial probing
-against the OLD pattern — a fully green suite showed nothing. Read
-`mistakes/shell-command-matchers.md` § "Converting a Raw-String Matcher to Token Scanning
-Silently Narrows It" before starting, and budget for the differential testing it describes.
-
-## Seven Hook Files Exceed Rule 17's 400-Line Cap
+## Hook responsibility boundaries and file sizes
 
 Several shell hooks exceed the repository file-size limit. Refactor by responsibility while preserving shell sourcing order and hook registration.
 
-- `loom-hooks/_common.sh` 1665 lines
-- `loom-hooks/commit-guard.sh` 606 lines
-- `loom-hooks/subagent-verify-guard.sh` 591 lines
-- `loom-hooks/credential-guard.sh` 570 lines
-- `loom-hooks/commit-filter.sh` 487 lines
-- `loom-hooks/codex-forward.sh` 406 lines
+- `loom-hooks/credential-guard.sh` 599 lines
+- `loom-hooks/commit-filter.sh` 463 lines
+- `loom-hooks/codex-forward.sh` 412 lines
 - `loom-hooks/prefer-modern-tools.sh` 402 lines
 
 `loom/src/fs/permissions/constants.rs` embeds hook sources and lists `LOOM_HOOKS`; the hook configuration builder registers invoked hooks, and asset tests check installed inventory. `install.sh` invokes the binary asset installer and has no duplicated `all_hooks` arrays. Add a new embedded helper to the inventory, and register it as an event hook only if it is invoked directly.
-
-## Duplicated Manifest-to-Language Tables
-
-File extensions have one table: `context/extract/dialect.rs::DIALECTS`. `language.rs::language_for_path`
-and `context/extract/lexical.rs::language_for_path` both derive from `dialect_for_path`, and
-`language/tests.rs` asserts every `DIALECTS` extension maps to a `DetectedLanguage`.
-
-Manifest files still have two tables that nothing pins together:
-
-- `language.rs::detect_project_languages` feeds `DetectedLanguage` (the orchestrator's fallback skill
-  recommendations and the `loom init` sandbox-domain suggestions).
-- `skills/project/markers.rs::FILE_MARKERS` plus its probes decide project kinds for `loom project detect`,
-  runner selection and package skills.
-
-They disagree today: markers counts a `package.json` with a `typescript` dependency as TypeScript while
-`language.rs` needs `tsconfig.json`; markers maps `build.gradle.kts` to `kotlin` while `language.rs` maps it to
-Java; `language.rs` takes `meson.build`, `conanfile.*` and `vcpkg.json` as C++ while markers takes only
-`CMakeLists.txt`; markers has kinds (`kotlin`, `scala`, `swift`, `elixir`, `dart`) with no `DetectedLanguage`
-variant.
-
-**Failure mode:** a project gets one language from `loom project detect` and another from the stage signal's
-fallback recommendations. **Fix:** derive `detect_project_languages` from the markers probe, or move both onto
-one manifest table.
 
 ## Low-Severity Cleanups Deferred From the Verification Gate
 
@@ -84,14 +42,11 @@ one manifest table.
   delivery records under a different namespace than the graph overlay and dirty paths. Route
   all three through one derivation.
 
-## Telemetry Under-Reports the Failures It Exists to Measure
+## Context Telemetry Delivery Evidence
 
-`orchestrator/core/stage_telemetry.rs::record_context_telemetry` calls `.ok()` on
-`load_deliveries`, collapsing a genuine I/O error into the same
-`ContextUnavailable { reason: "no delivery record for this session" }` as a real
-miss. The file exists to measure how often stages spawn without a context brief, so
-folding read failures into "no record" under-reports precisely the failures it is
-for. **Fix:** give the error branch its own reason string.
+`orchestrator/core/stage_telemetry.rs::record_context_telemetry` uses the strict delivery
+observer to distinguish an absent record from an unreadable or corrupt ledger. The ordinary
+retrieval loader remains tolerant; the observer treats any corrupt ledger row as unavailable.
 
 ## `git/worktree/settings.rs` Is Over the File Cap
 
@@ -106,18 +61,16 @@ that grows it (see `mistakes/testing-and-lint.md`).
 ## Ledger TUI: Tech Debt From the Live-Ledger-Dashboard Plan
 
 - **`StageSummary.session_backend` has no Rust reader.** Populated by `build_stage_summary`
-  (`commands/status/data/collector.rs`, from `session.backend`), but no ledger column, static
+  (`status/data/collector.rs`, from `session.backend`), but no ledger column, static
   renderer line, or attention entry reads it; every other Rust occurrence is a test-fixture struct
   literal. Its only reader is the web stage page (`web/src/routes/stage.tsx`), which shows the
   `loom run --backend tmux` command when the backend is `native`. Either give the ledger a BACKEND
   cell or accept the web as the sole consumer.
-- **`render_context_bar` (`commands/status/render/progress.rs::render_context_bar`, re-exported at `commands/status/render/mod.rs`) is dead**, with
-  no caller anywhere in the tree — `commands/status/ui/tui/ledger/cells.rs::tokens_cell` independently reimplements the
-  same five-cell bar with the same characters. Also apparently unused: `pub use theme::{StatusColors,
+- **Apparently unused:** `pub use theme::{StatusColors,
 Theme}` (`commands/status/ui/mod.rs`, every consumer imports `ui::theme::Theme` directly) and `pub use
 app::TuiApp` (`commands/status/ui/tui/mod.rs`, used only by `run_tui` in the same file).
 - **The stage-id path-component check exists in several independent forms.** Rust
-  `commands/status/data/sanitize.rs::valid_stage_id` (used by `execution_models_for_stage`) rejects `.`, any `..`
+  `status/data/sanitize.rs::valid_stage_id` (used by `execution_models_for_stage`) rejects `.`, any `..`
   and characters outside `[A-Za-z0-9._-]`; `commands/memory/handlers/work_dir.rs::validate_stage_id` rejects only
   path separators and `..` (a lone `.` passes); the shell writers use a leading-alphanumeric regex
   (`loom-hooks/codex-forward.sh`, `codex-forward-guard.sh`, `_read_discipline.sh`) or an explicit `.`/`..` case
@@ -125,12 +78,12 @@ app::TuiApp` (`commands/status/ui/tui/mod.rs`, used only by `run_tui` in the sam
   shared helper.
 - **Model-name display normalization (strip `claude-` prefix, strip trailing `-YYYYMMDD`) is
   implemented twice**: `commands/subagents/table.rs::display_model`/`strip_date_suffix` and
-  `commands/status/data/execution_models.rs::normalize_model`. The status/ copy was written
+  `status/data/execution_models.rs::normalize_model`. The status/ copy was written
   independently because `commands/subagents/table.rs` sits outside the payload-parity stage's declared files. Worth
   collapsing into one shared helper in a stage that owns both paths.
-- **`commands/status/ui/tui/app.rs` is pinned at exactly the 400-line file cap** after this plan's fixes (doc comment,
-  reconnect retry loop + constants). Any future addition must trim an equal number of lines elsewhere
-  or move content into `commands/status/ui/tui/app_tests.rs`. Relatedly, `TuiApp::reconnect_after_read_error` cannot get a
+- **`commands/status/ui/tui/app.rs` is below the 400-line file cap.** Its live daemon reader keeps partial frames
+  across idle polls in `daemon/wire.rs`; focused split-frame tests live in `daemon/wire_response_frame_tests.rs`.
+  `TuiApp::reconnect_after_read_error` cannot get a
   narrow unit test without mocking a live Unix socket plus a real
   `Terminal<CrosstermBackend<Stdout>>` — `TuiApp` owns both directly with no trait seam — so it is
   covered only by the full build.
@@ -140,16 +93,15 @@ app::TuiApp` (`commands/status/ui/tui/mod.rs`, used only by `run_tui` in the sam
 
 ## Efficiency-Plan Debt: Hook File Size, Unwired False Positives, Baseline Pressure, Criterion Rendering
 
-- **`loom-hooks/commit-filter.sh` is 494 lines** (491 before the hook-guards stage added one attribution sentence).
-  Rule 17's 400-line file cap is not enforced for `loom-hooks/*.sh`: `loom/tests/maintainability.rs`'s scanner walks
+- **`loom-hooks/commit-filter.sh` is 463 lines**.
+  The repository's 400-line file cap is not enforced for `loom-hooks/*.sh`: `loom/tests/maintainability.rs`'s scanner walks
   only the loom crate's `build`, `src` and `tests` Rust files, so no gate sees hook scripts. A refactor stage should
   either split the script or extend the scanner to hooks.
-- **The stage-completion unwired-file detector does not follow `#[path]` test modules.** It flagged
-  `commands/knowledge/tests_check_baseline.rs` as unwired although `orchestrator/core/inbox_drain/check.rs::a_head_that_is_not_the_checkouts_is_refused` compiles it through
-  `#[path = "tests_check_baseline.rs"] mod`; `signals/generate_declared_skills_tests.rs` and
-  `generate_missing_allow_write_tests.rs` are wired the same way from `orchestrator/signals/generate.rs::append_stage_feedback`. The detector
-  (`verify/wiring_detection.rs`) greps for the file's importable name, so a `#[path]` include declared outside a
-  `mod.rs` reads as unreferenced. Teach it the attribute or accept the false positive knowingly.
+- **The stage-completion unwired-file detector uses the resolved source graph.**
+  `verify/wiring_detection.rs:37-115` inspects resolved edges, marks missing or incomplete graph
+  evidence uncertain, and excludes conventional test paths. `#[path]` support depends on graph
+  extraction and resolution; any remaining false positive needs a current fixture with its graph
+  evidence. It is not a grep of importable names in `mod.rs`.
 - **Every new `Stage` field costs a baseline line.** `Stage::default` (`models/stage/defaults.rs`) is the single
   exhaustive literal and its `loom/maintainability-baseline.txt` entry (`function src/models/stage/defaults.rs default 76`)
   is exact; the next field needs a field-grouping refactor (nested structs) rather than another raise.
@@ -203,7 +155,7 @@ node is already terminal.
 
 ## Pinned Git Gitlink Route Is Unverified
 
-- `loom/src/git/worktree/pinned.rs::run`: a pinned `git status` or `git diff` runs `git status --porcelain=2` inside a gitlink (160000) entry, using the nested repo config, so a `filter.<name>.clean` there could run outside the sandbox. Not reproduced. Probe: add a gitlink to a stage index and check for a marker file.
+The route is closed in the runner and has its fixtures: `without_gitlink_recursion` (`git/runner.rs`) adds `--ignore-submodules=dirty` behind every global option form, so a pinned or unpinned `git status` or `git diff` starts nothing inside a gitlink (`git/runner/tests.rs`, `git/runner/global_option_tests.rs`). `git stash create` and `git stash push` have no such option, so `git/merge/checkout_stash.rs` avoids them. The cost: uncommitted content inside a gitlink no longer shows in `status`, `diff` or the completion check; a moved gitlink commit still shows.
 
 ## Observer Source Uses Path-Only Locate
 
@@ -221,7 +173,7 @@ node is already terminal.
 
 - `loom-hooks/loom-control-complete.sh` (PreToolUse) rejects any Bash command whose text contains a stage-complete-like phrase, such as a Python heredoc that mentions "complete" near "request" or "stage". Put the edit script in a scratch file with the Write tool, or use the Edit tool.
 - A subagent Bash command that names `src/commands/stage/complete_relay.rs` is refused as an unpinned `stage complete` call. Read such files with the Read tool.
-- `subagent-verify-guard.sh` refuses `cargo build --all-targets` in a subagent even when the brief asks for it. Briefs should name only the scoped `cargo test` check as runnable.
+- `subagent-verify-guard.sh` lets a subagent compile (`cargo check`, `cargo build`, `cargo test --no-run`) but still refuses `cargo clippy`, `cargo fmt` and an unfiltered `cargo test`, even when the brief asks for them. Briefs may name targeted tests for the code and module without a run-count limit; full suites run through the stage gate.
 
 ## Guidance-and-Gate-Output Plan Follow-Ups
 
@@ -241,7 +193,6 @@ Reviewer suggestions and findings the plan left unimplemented, with no fix in th
 
 **Doctrine text**
 
-- **`INTEGRATION_VERIFY_OVERRIDE` (`signals/cache.rs`) says "Rule 5's complete-suite instruction"**, but template Rule 5 has no such text, and its heading "does NOT apply here" reads against `_subagent-preamble.txt` (reviewers run only targeted checks). Reword both together; `tests_doctrine_prefixes.rs` pins them.
 - **Review dimension 3 (`signals/cache/blocks.rs`) hands a reviewer "`loom check` output plus ALL stderr"** while the preamble forbids reviewers from running the gate; nothing tells the orchestrator to pass the check summary and the full-log paths to that reviewer.
 - **`ORCHESTRATOR_GATE` says "for each failed criterion"**, which reads as one run per criterion; the repeatable `--criterion <n>` survives only in `README.md` and the CLI help (`commands/verify.rs`). "One run with a repeated `--criterion <n>`" would be exact.
 - **The knowledge (bootstrap) stable prefix never carried BLOCK-F**, and template Rule 13 lacks "Filing ends this session" and "Commit before filing". Decide whether bootstrap sessions carry `STAGE_EXIT_RULES`.
@@ -253,3 +204,112 @@ Reviewer suggestions and findings the plan left unimplemented, with no fix in th
 - **`CLAUDE_MD_TEMPLATE` and `ORCHESTRATION_SKILL` `include_str!` constants are declared in seven test files.** A shared test-constants module would remove it.
 - **Go skill triggers.** `skills/loom-golang/SKILL.md` keeps the two-word triggers `go code`, `go test`, `go mod` and `in go` as weight-2 solo qualifiers; an imperative-"go" Rust prompt could hit them. `error` and `sync` are dropped by the indexer's `STOPWORDS` (`skill_index.rs`). `hooks_skill_trigger_evidence.rs` skips silently when `python3` is missing (`skip_unless_python3`); run the gate with `LOOM_TEST_REQUIRE_SANDBOX_FREE=1` so a skip fails. The Go test fails only when two or more removed bare words return, since one bare hit scores 1 against `MIN_SCORE` 2 (`skill-trigger.sh`); asserting that the built `skill-keywords.json` has no bare key for the ten removed words would catch a single one.
 - **`loom/tests/guidance_gate_contracts.rs` spawns about 320 bash plus `jq` pipelines serially.** It is isolated and correct, and the slowest test of the suite for its size.
+
+## The Binary Spawn Guard Runs Only in integration-verify
+
+`tests/integration/binary_spawn_guard.rs` fails a test target that spawns the loom binary without scrubbing every `LOOM_*` variable or without joining `SANCTIONED_SPAWNERS`, but no stage gate runs it before integration-verify, so two consecutive plans (checklist-check's contract, plan-server-core's `plan_server_cli.rs` and `plan_server_contracts.rs`, the redesign's owner-watch test `plan_owner_watch_session.rs`) found the failure last ([Plan-Server Delivery](../mistakes/plan-server-delivery.md)). Proposal: have `loom plan verify` warn on a stage whose `files` list a `loom/tests/*.rs` that uses `CARGO_BIN_EXE_loom` and whose acceptance lacks `cargo test --test integration binary_spawn_guard`.
+
+## Proposal: Run the Maintainability Test for Any File Within a Few Lines of a Size Limit
+
+A worker whose one narrow check is a lib filter never runs `tests/maintainability.rs`, so a function grown past 50 lines or a file past 400 is caught only by the stage's full gate; it happened twice ([contract-autonomy-delivery](../mistakes/contract-autonomy-delivery.md#a-workers-one-scoped-check-missed-its-consumers-and-the-maintainability-test), [briefs-and-bug-reports](../mistakes/briefs-and-bug-reports.md#a-workers-compile-signal-never-existed)). Proposal, not built: a PostToolUse or `loom check` pre-step that compares the edited file and function lengths with `loom/maintainability-baseline.txt` and prints the offending function while the worker can still fix it; until then a brief for a function near the limit names `cargo test --manifest-path loom/Cargo.toml --test maintainability` as the worker's check.
+
+## Hook False-Positive Plan Follow-Ups
+
+State after the hook-guards work; the guard behaviour itself is in [Hook System](../architecture/hook-system.md#what-each-changed-guard-decides).
+
+- **`commit-filter.sh` exceeds the 400-line cap.** Its 463 lines cover attribution, subagent git and the scratch exemption. `loom/tests/maintainability.rs` walks only Rust files, so it does not enforce the shell-hook cap.
+- **Blocks the ledger does not record.** `commit-guard.sh`, `credential-guard.sh`, `spawn-guard.sh`, `plans-path-guard.sh`, `stage-terminal-guard.sh`, `codex-forward-guard.sh` and `poll-guard.sh`'s `loom_hook_deny_or_warn` never call `loom_record_block`, so `loom hook blocks` undercounts them. Codex-lane hooks cannot write the ledger at all: their sandbox denies `<repo>/.loom` and `loom_record_block` returns early on `LOOM_CODEX_FORWARD`. Infrastructure exits are also unrecorded: `worktree-file-guard.sh:45` (policy-load and `pwd` failures) writes no line while `worktree-isolation.sh`'s `block_policy_load` records `policy-load`, an inconsistency with the rule that infrastructure exits stay out. A comparison with the transcript evidence needs a transcript re-mine, not the ledger. The ledger records `role: main` for an unknown verdict; recording `unknown` would keep the by-rule main/subagent counts exact. A subject can still carry Unicode bidi format characters (U+202A-202E, U+2066-2069), which `char::is_control` does not replace in `blocks.rs`.
+- **A `.git` gitfile in a scratch repository retargets plain git** just as in-worktree git shares refs. `loom_git_targets_scratch_only` reads repository state at hook time and rejects tokens naming a `.git` component, but a script or git hook the command runs can still reach elsewhere. The exemption is best-effort like the rest of `commit-filter.sh`; the capsule stays the write boundary. A redirected git segment (`git commit -qm x 2>&1 | tail -3`) never gets the exemption, so a subagent hits a block there; `LOOM_TOKEN_LITERAL_DOLLAR` is command-wide, so one single-quoted `$` (`-m 'cost $5'`) disables scratch expansion for the whole command. Both err toward blocking.
+- **Resolver and tokenizer limits (fail open or over-restrictive).**
+  - A backslash-newline yields a newline token that `loom_tokens_command_word_index` reports as the command word, hiding `git` from `loom_policy_git_tokens` and `loom_git_runs_commit` (`cd x && \<nl> git -C /elsewhere commit`); a segment starting with a redirection is likewise invisible.
+  - `eval`/`source`/`.` count only at a command word, so `function f { . ./g; }; f` can reassign `LOOM_SCRATCH_DIR` for worktree-isolation's classing; treating `function` and `coproc` as unsafe command words closes that spelling.
+  - The resolver resolves `..` physically where bash `cd` is logical: `cd .loom/work/..` is tracked as `<repo>/.loom`, bash lands in `<wt>/.loom`. Over-restrictive.
+  - `~` expands to the hook's `HOME`; a quoted `'~'` or an earlier `HOME=` assignment differs from bash. It fails closed unless `HOME` lies in the worktree or scratch. An inherited `CDPATH` is not seen (only a `CDPATH` token in the command is).
+  - The git global-option scan in `_worktree_policy.sh` and `_git-command.sh` stops at an unlisted option that takes a separate value (older git's `--super-prefix`), hiding a following `-C`; list it or fail closed on an unlisted `--long` option without `=`.
+  - The tokenizer drops quotes, so `git -C '$LOOM_SCRATCH_DIR'` reads as the variable; the real target is `<cwd>/$LOOM_SCRATCH_DIR`, so there is no new exposure. Revisit if the tokenizer ever reports quote kinds.
+  - `own_re` in `check_cross_worktree_tokens` is unanchored, so `<repo>/.worktrees/other/.worktrees/<stage>/f` matches the own-stage exemption.
+  - `traversal_kind` and `traversal_path_part` run in command substitutions per token: hundreds of forks on a long command, costly on macOS; return the kind through a global.
+- **File-guard residuals.** `allow_tmpdir` refuses another session's uuid directory only at depth 2; sibling stages' temp files directly under `/tmp/claude-<uid>` stay readable to the Read tool. `allow_tmpdir` and `allow_tool_results` leave a gap between the hook's check and the harness read (a symlink swapped in by a background process); Bash already reads the target, so no capability is added, but a comment should name it.
+- **`subagent-verify-guard.sh` gaps.** `tsc --noEmit false` is read as tsc with file argument `false` and passes although tsc emits the whole project; only `tsc --noEmit false -p .` is pinned as blocked.
+- **`spawn-guard.sh` header (lines 37-39) is stale.** It says Claude Code discards an `updatedInput` that carries no `permissionDecision`; Claude Code 2.1.319 no longer does.
+- **Test and portability gaps.**
+  - No gate exercises bash 3.2: the `LOOM_HOOK_TEST_BSD=1` run shims only `wc`, `stat` and `date`, not bash 3.2, `/private` symlinks, BSD `ls -ldn`, `env -u`, `mktemp`, `sed` or `iconv`, and `check-hook-syntax.sh` uses the host `bash -n`. Whether bash 3.2 honours `local LC_ALL=C` in `_loom_utf8_cut` is unverified; if not the cut is 300 characters (up to 1,200 bytes), still under the reader's 4,096-byte limit.
+  - `loom-hooks/loom-control-complete.sh`'s process-walk branch of `completion_caller_is_main` (unknown verdict, no `transcript_path`, `! loom_is_subagent`) is untested; a fake live claude chain with a payload stripped of `agent_type` and `transcript_path` would pin it.
+  - `loom/src/commands/hook/tests_blocks.rs`'s FIFO test would hang until the suite timeout, not fail, if `O_NONBLOCK` regressed; bound it with a thread join. `loom/tests/read_gate_contracts.rs::control_inputs_are_exempt` runs the exemption only against the warn path (`Gate::live`); running it under `Gate::outlined` would pin the deny path.
+  - `loom-hooks/tests/_fixture_base.sh` leaves an empty `/tmp/claude-<uid>/loom-fixtures/<uuid>` directory after each run.
+  - `loom/tests/integration/hooks_subagent_verify_guard.rs` panics at `temp_dir_no_claude` when `TMPDIR` contains `claude`, as the Claude Code sandbox's does; run it with `TMPDIR` set to a claude-free writable directory (`$LOOM_SCRATCH_DIR`).
+
+## Hook Tests That Rebuild PATH Keep Leaking `LOOM_HOOK_PATH`
+
+`LOOM_HOOK_PATH` leaked into a hook test a second time: `loom-hooks/tests/require-jq-advisory.sh` printed `FAIL: expected exit 1 when jq is missing, got 0` from a live stage shell, because `_read_discipline.sh` restores `PATH="${LOOM_HOOK_PATH:-$PATH}"` over the test's `path_without` PATH (it passed in the host job, where the variable is unset). Each new test must remember its own `unset`. Proposal: `loom-hooks/tests/_path_without.sh` unsets `LOOM_HOOK_PATH` itself, or `run-all.sh` runs every test under `env -u LOOM_HOOK_PATH -u LOOM_WORK_DIR -u LOOM_SESSION_ID -u LOOM_STAGE_ID`, so no test can forget. The mistake is in [Hook Tests Inherit the Live Session's Environment](../mistakes/hooks-shell-portability.md#hook-tests-inherit-the-live-sessions-environment-2026-09-19).
+
+## Rule 6 Coordinators Contradict the Spawn Guard
+
+`skills/loom-orchestration/SKILL.md` Rule 6 says a coordinator is spawned as `general-purpose` with a
+`model` override, because the engineer agent types carry no Task tool. The spawn guard
+(`loom-hooks/spawn-guard.sh:223`) denies every `general-purpose` spawn inside a gated stage session,
+and the same skill says inside a stage untyped spawns are denied. A stage main agent therefore cannot
+spawn a 2-level coordinator as written. Decide in a follow-up plan between allowing a typed
+coordinator agent (with the Task tool) and removing the 2-level hierarchy from stage sessions.
+
+## Budget and Routing Followups
+
+- **Rounding.** `budget.rs` prints `{:.0}` (half to even) while `under_pressure` compares the raw
+  percent, so 74.6% shows "75% used" with no routing line. Rounding once and comparing the rounded
+  value flips the unfrozen `budget_tests.rs:48` case (74.9, 1801 s, false); decide whether the 75%
+  threshold applies to the raw or the displayed value first.
+- **Future readings.** `fresh()` treats an `observed_at` in the future as fresh indefinitely
+  (negative age); `quota/cache.rs` `sanitize` does not clamp it. Only constant routing text is
+  affected. Treat `observed_at` beyond now plus a skew as stale.
+- **No omission test.** Knowledge and contract signals read the quota cache for a `model_budget`
+  they never render (`signals/knowledge.rs:33`), and no test pins that they omit `## Model Budget`.
+- **`first_listed()`** (`models/stage/implementers.rs:70`) has only test callers; remove it or mark
+  it test-only. `implementer_tests.rs:36,60-64` still names "preference order" in a test name and
+  comments; rename to listed-order wording.
+
+## Usage Attribution Limits
+
+- `discovery.rs::filter_stages` matches `ends_with("-worktrees-<stage>")`, so `--stage b` also
+  selects the slug of stage `a-b`; reuse `stage_from_project_slug` for one rule.
+- With `--all` or no readable work dir `ParentSpawns` holds no stage set, so `.worktrees/foo/loom`
+  yields stage `foo-loom`, marked known (`parent_spawns.rs:52`). Leave the stage null when
+  `work_dir` is `None`, or document the limit at `:31-35`; revisit if `--all` gains per-repo stage
+  lists.
+- A transcript from a session started in a worktree subdirectory has slug
+  `<repo>--worktrees-<stage>-loom`; the recorded-stage check turns it into no stage. If Claude Code
+  maps `_` to `-` in slugs (unverified), `a_b` parses as `a-b`.
+- The 10-byte-needle byte-window `contains` in `parent_spawns.rs:125` and `git/hooks.rs:214` is the
+  same idiom; share a helper only if a third caller appears.
+
+## Spawn Guard and Hook Fixture Edges
+
+- A non-object `tool_input` makes the `. + {model}` merge in `spawn-guard.sh:235` fail; the hook
+  exits non-zero and fails open without the sonnet rewrite. Claude Code always sends an object.
+- `loom-hooks/tests/_fixture_base.sh:25`: `mkdir -p` in the `/tmp/claude-<uid>` branch has no
+  explicit failure check, and inside a command substitution `errexit` may not propagate. Add
+  `|| return 1`.
+- The prefer-modern-tools hook warns after a `grep` inside `bash -c` has run. A blocking check on
+  the wrapper form would stop the recurrence recorded in
+  [review-integration-verification](../mistakes/review-integration-verification.md).
+
+## Other Open Observations
+
+- Adjudication prompt builders re-inline the `## Dispute` header: `push_dispute_header`
+  (`orchestrator/adjudication/prompt/criterion.rs:310`) exists, but `findings.rs:64`, `impact.rs:66`,
+  `integrity.rs:61`, `contract.rs:252` and `freeze_refusal_evidence.rs:62` do not call it.
+- The planner spine's Findings well counts `decided = findings.length - openCount`
+  (`web/src/plan/feature/spine-instruments.ts:79`), so unverified, stale and duplicate open
+  findings read as decided once `openCount` counts only actionable ones.
+- The design record for the chat background line (`ui/DESIGN.md`, Chat) was not in this tree to
+  check against the widened `waitsOnBackground` condition; compare it when the file is next edited.
+
+## The Retry Silence Report Mirrors `MAX_STALL_RECOVERIES`
+
+`commands/stage/skip_retry_silence.rs` keeps its own `MAX_STALL_RECOVERIES = 2`, because the constant is private to `orchestrator/core/event_handler/recover_hung.rs`, and it derives the escalation threshold by probing `never_worked::is_escalation` since `STALL_ESCALATION_MULTIPLIER` is private to `orchestrator/monitor/stall_line.rs`. A change to either value leaves the retry report wrong without a failing test. Fix: make both `pub(crate)` in `stall_line.rs`, import them in `recover_hung.rs` and `skip_retry_silence.rs`, and delete the local copy.
+
+## Relay Guard Tokenizer Edges
+
+Two accepted edges of `loom-hooks/loom-relay-guard.sh`, both from the shared tokenizer (`loom-hooks/_parser.sh`):
+
+- **Quoted descriptor digit.** `loom check s --criterion '2'>log` redirects stdout in bash (a quoted `2` is not a descriptor), but the glued flag in `LOOM_TOKEN_META` reads it as fd 2, so the guard passes it. Fix: mark quote-derived words as non-descriptors.
+- **Comments are not modelled.** An unmatched `(` inside a `#` comment (`# (draft` on one line, `loom check s` on the next) raises the next command's depth to 1, and the guard falsely refuses it as captured. Modelling `#` in the tokenizer changes every hook that sources `_parser.sh`, so it needs its own change with the full hook suite.

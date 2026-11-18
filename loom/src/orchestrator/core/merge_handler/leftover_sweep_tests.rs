@@ -6,7 +6,7 @@ use std::time::{Duration, Instant};
 use tempfile::TempDir;
 
 use super::super::resolver_spawn::test_fixtures::{
-    commit_on_stage_branch, git_ok, repo_with_stage_branches,
+    commit_on_stage_branch, repo_with_stage_branches,
 };
 use crate::fs::work_dir::write_terminal_config;
 use crate::models::session::{SessionBackendKind, SessionType, TerminalConfig};
@@ -15,6 +15,7 @@ use crate::orchestrator::core::{Orchestrator, OrchestratorConfig};
 use crate::orchestrator::merge_lifecycle::test_support::{finish_session, write_live_session};
 use crate::plan::schema::StageDefinition;
 use crate::plan::ExecutionGraph;
+use crate::test_git::git;
 use crate::verify::transitions::{load_stage, save_stage, update_stage};
 
 const ID: &str = "swept";
@@ -57,7 +58,7 @@ fn merged_stage(stage_type: StageType, ahead: bool) -> (TempDir, Orchestrator) {
     if ahead {
         commit_on_stage_branch(root, ID, "work.txt");
     }
-    git_ok(
+    git(
         root,
         &[
             "worktree",

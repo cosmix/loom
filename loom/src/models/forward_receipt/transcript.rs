@@ -6,16 +6,17 @@ use anyhow::{ensure, Context, Result};
 use chrono::{DateTime, Utc};
 use serde_json::Value;
 
-use super::is_safe_id;
 use super::locator::{read_bounded_prefix, validate_task_output_path};
 use super::marker::{decode_marker_channel, MarkerChannel, MAX_PREFIX_BYTES};
+use crate::agent_state::background_task_id;
+use crate::agent_state::is_safe_id;
 
 mod argv;
 mod identity;
-pub use argv::{exact_forward_argv, forward_argv};
+pub use argv::{exact_forward_argv, forward_argv, ForwardArgv};
 pub use identity::TranscriptIdentity;
 
-const MAX_TRANSCRIPT_BYTES: usize = 16 * 1024 * 1024;
+pub(crate) const MAX_TRANSCRIPT_BYTES: usize = 16 * 1024 * 1024;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ForwardingResult {
@@ -136,9 +137,7 @@ fn scan_entry(
 }
 
 fn timestamp(value: &Value) -> Option<DateTime<Utc>> {
-    DateTime::parse_from_rfc3339(value.get("timestamp")?.as_str()?)
-        .ok()
-        .map(|value| value.with_timezone(&Utc))
+    crate::utils::parse_rfc3339_utc(value.get("timestamp")?.as_str()?)
 }
 
 fn content(row: &Value) -> Option<&[Value]> {
@@ -161,7 +160,7 @@ fn add_invocation(
     let Some(command) = block.pointer("/input/command").and_then(Value::as_str) else {
         return;
     };
-    let Some((model, effort)) = exact_forward_argv(command) else {
+    let Some(ForwardArgv { model, effort, .. }) = forward_argv(command) else {
         return;
     };
     insert_unique(
@@ -195,16 +194,7 @@ fn add_result(
         .iter()
         .find_map(|value| value.get("stdout").and_then(Value::as_str))
         .map_or_else(|| fallback.clone(), str::to_owned);
-    let background_task_id = metadata
-        .iter()
-        .find_map(|value| {
-            value
-                .get("backgroundTaskId")
-                .or_else(|| value.get("background_task_id"))
-                .and_then(Value::as_str)
-        })
-        .filter(|value| is_safe_id(value))
-        .map(str::to_owned);
+    let background_task_id = metadata.iter().find_map(|value| background_task_id(value));
     let mut task_output_path_text = vec![fallback];
     for value in metadata {
         collect_strings(value, &mut task_output_path_text);

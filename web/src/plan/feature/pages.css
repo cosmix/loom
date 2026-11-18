@@ -1,0 +1,25 @@
+/*
+ * A feature's own pages (Coverage, Findings): an eyebrow, the page title, then the content
+ * (DESIGN.md, Page rhythm). The page keeps its own column inside the layout's scroll container,
+ * so nothing here scrolls sideways at 390px.
+ */
+[data-loom-plan] .plan-page {
+  width: 100%;
+  max-width: calc(68ch + 2 * var(--page-gutter));
+  margin: 0 auto;
+  padding: var(--space-6) var(--page-gutter) var(--space-7);
+}
+
+/* Title block: eyebrow, title, one sentence of chrome prose, then --space-5 to the content. */
+[data-loom-plan] .plan-page__head {
+  display: grid;
+  gap: var(--space-1);
+  margin-bottom: var(--space-5);
+}
+
+[data-loom-plan] .plan-page__lede {
+  max-width: 48ch;
+  margin: var(--space-2) 0 0;
+  font-size: var(--type-body);
+  line-height: var(--leading-body);
+}

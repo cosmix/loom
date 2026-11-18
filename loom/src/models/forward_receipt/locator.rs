@@ -7,15 +7,17 @@ use std::path::{Component, Path, PathBuf};
 
 use anyhow::{bail, ensure, Context};
 
-use super::is_safe_id;
+use crate::agent_state::is_safe_id;
 
 const MAX_LOCATOR_BYTES: u64 = 1024 * 1024;
 const MAX_WORKSPACE_CHILDREN: usize = 256;
 
+// Unlike safe_read::read_bounded, this checks effective-user ownership on the read fd.
 pub fn read_bounded_prefix(path: &Path, max_bytes: usize) -> anyhow::Result<String> {
     let file = OpenOptions::new()
         .read(true)
-        .custom_flags(libc::O_NOFOLLOW)
+        // A FIFO must not block the open before descriptor type validation.
+        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
         .open(path)
         .with_context(|| format!("opening {} without following symlinks", path.display()))?;
     let metadata = file
@@ -57,7 +59,7 @@ fn decode_utf8_prefix(bytes: Vec<u8>) -> anyhow::Result<String> {
     }
 }
 
-fn effective_uid() -> u32 {
+pub(crate) fn effective_uid() -> u32 {
     // SAFETY: geteuid has no arguments and only reads process credentials.
     unsafe { libc::geteuid() }
 }

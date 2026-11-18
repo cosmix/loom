@@ -1,9 +1,9 @@
 //! Build a deterministic catalog over the whole knowledge tree.
 
 use crate::fs::knowledge::chunker::{self, KnowledgeChunk};
+use crate::fs::lexical::normalize_lexically;
 use anyhow::Context;
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 use std::fs;
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
@@ -174,8 +174,9 @@ pub fn build(root: &Path) -> anyhow::Result<Catalog> {
     })
 }
 
-/// The issues `loom knowledge check --strict` fails on — [`build`]'s issues
-/// that are not [`CatalogIssue::is_review_only`] — for a reader that must stay
+/// [`build`]'s issues that are not [`CatalogIssue::is_review_only`]: the
+/// catalog part of what `loom knowledge check --strict` fails on (it also fails
+/// on `StaleIndex`, which `check` adds from the index file and this omits), for a reader that must stay
 /// free of side effects (`loom plan verify`). Skips the two parts of `build`
 /// that cannot add one: the evidence pass, which runs `git` and reports only
 /// review-only issues, and prose indexing, which reports none. Reads the tree;
@@ -295,7 +296,7 @@ fn revision_for(chunks: &[KnowledgeChunk]) -> String {
         .map(|chunk| format!("{}:{}\n", chunk.id, chunk.content_hash))
         .collect();
     lines.sort();
-    hex::encode(Sha256::digest(lines.concat().as_bytes()))
+    crate::utils::sha256_hex(lines.concat().as_bytes())
 }
 
 fn generic_blurb(content: &str, relative_path: &Path) -> Option<String> {
@@ -339,25 +340,8 @@ fn contained_link_target(root: &Path, relative_path: &Path, target: &str) -> Opt
     }
 
     let start = relative_path.parent().unwrap_or(Path::new(""));
-    let mut normalized = PathBuf::new();
-    for component in start.components().chain(Path::new(target).components()) {
-        match component {
-            std::path::Component::CurDir => {}
-            std::path::Component::ParentDir => {
-                if !normalized.pop() {
-                    // Popped past the knowledge root itself: the target
-                    // escapes the tree.
-                    return None;
-                }
-            }
-            std::path::Component::Normal(part) => normalized.push(part),
-            // `target` is already confirmed relative above, and `start` is
-            // always relative (it comes from a knowledge-relative file
-            // path), so neither a root nor a Windows prefix component can
-            // occur here.
-            std::path::Component::RootDir | std::path::Component::Prefix(_) => return None,
-        }
-    }
+    // `None` when the target climbs past the knowledge root itself.
+    let normalized = normalize_lexically(&start.join(target))?;
 
     Some(root.join(normalized))
 }

@@ -16,7 +16,7 @@ use crate::daemon::{
     current_session_id, try_send_request, user_credential, DaemonReach, Request, Response,
 };
 use crate::fs::stage_request::{append_to_spool, spool_path, spool_target_from_cwd, StageRequest};
-use crate::models::dispute::{CriterionField, DisputeKind};
+use crate::models::dispute::{CriterionField, CriterionTarget, DisputeKind};
 use crate::relay::emit::{RelayContext, RelayMode, RelaySink};
 use crate::relay::RequestKind;
 
@@ -36,15 +36,14 @@ impl Dispute {
     /// `loom stage dispute-criteria`.
     pub(super) fn criterion(
         stage_id: String,
-        field: CriterionField,
-        criterion_indices: Vec<usize>,
+        target: CriterionTarget,
         reason: String,
         evidence_commit: Option<String>,
         failure_output: Option<String>,
     ) -> Self {
         Self {
             stage_id,
-            kind: DisputeKind::criterion(field, criterion_indices),
+            kind: DisputeKind::from_target(target),
             reason,
             evidence_commit,
             failure_output,
@@ -76,9 +75,11 @@ impl Dispute {
             DisputeKind::Criterion {
                 criterion_indices,
                 field,
+                owner_stage,
             } => StageRequest::Dispute {
                 field: *field,
                 criterion_indices: criterion_indices.clone(),
+                owner_stage: owner_stage.clone(),
                 reason,
                 evidence_commit,
                 failure_output: self.failure_output.clone(),
@@ -89,6 +90,22 @@ impl Dispute {
                 evidence_commit,
             },
         }
+    }
+
+    /// What the confirmation says about a contract dispute's replacement file.
+    fn replacement_note(&self) -> Option<String> {
+        let DisputeKind::Contract {
+            replacement: Some(replacement),
+            ..
+        } = &self.kind
+        else {
+            return None;
+        };
+        Some(format!(
+            "Replacement attached: {} bytes; the daemon writes it into the worktree if the \
+             adjudicator accepts.",
+            replacement.len()
+        ))
     }
 
     /// The RPC the daemon expects.
@@ -107,12 +124,14 @@ impl Dispute {
             DisputeKind::Criterion {
                 criterion_indices,
                 field,
+                owner_stage,
             } => Request::DisputeCriteria {
                 auth_token,
                 stage_id,
                 session_id,
                 field: *field,
                 criterion_indices: criterion_indices.clone(),
+                owner_stage: owner_stage.clone(),
                 reason,
                 evidence_commit,
                 failure_output: self.failure_output.clone(),
@@ -136,6 +155,15 @@ impl Dispute {
                 "DisputeCriteria",
                 RequestKind::Dispute,
             ),
+            DisputeKind::Findings { .. }
+            | DisputeKind::Integrity { .. }
+            | DisputeKind::ImpactTests { .. } => (
+                "with the verdict applied, unless the verdict accepts this dispute (for findings: upholds \
+                 none) and loom's rerun of the completion of the tree your latest `loom stage complete` ran \
+                 on passes, when loom completes the stage without one",
+                "FileDispute",
+                RequestKind::FileDispute,
+            ),
             _ => (
                 "with the verdict applied",
                 "FileDispute",
@@ -158,8 +186,9 @@ impl Dispute {
             DisputeKind::Criterion {
                 criterion_indices,
                 field,
+                owner_stage,
             } => (
-                criterion_subject(*field, criterion_indices),
+                criterion_subject(*field, criterion_indices, owner_stage.as_deref()),
                 "The criterion stands",
                 "stage dispute-criteria",
             ),
@@ -168,7 +197,7 @@ impl Dispute {
                 "The findings stand",
                 "stage dispute-findings",
             ),
-            DisputeKind::Contract { contract_id } => (
+            DisputeKind::Contract { contract_id, .. } => (
                 format!("contract {contract_id}"),
                 "The contract stands",
                 "stage dispute-contract",
@@ -194,13 +223,17 @@ impl Dispute {
     }
 }
 
-/// `criterion 13`, `criteria 13, 14`, `wiring 1, 2`.
-fn criterion_subject(field: CriterionField, indices: &[usize]) -> String {
+/// `criterion 13`, `criteria 13, 14`, `wiring 1, 2`, or `stage 'a' wiring 3`
+/// for another stage's wiring.
+fn criterion_subject(field: CriterionField, indices: &[usize], owner: Option<&str>) -> String {
     let list = indices
         .iter()
         .map(usize::to_string)
         .collect::<Vec<_>>()
         .join(", ");
+    if let Some(owner) = owner {
+        return format!("stage '{owner}' {} {list}", field.as_str());
+    }
     match field {
         CriterionField::Acceptance if indices.len() == 1 => format!("criterion {list}"),
         CriterionField::Acceptance => format!("criteria {list}"),
@@ -273,6 +306,9 @@ fn send_via_relay(
 
     let payload =
         serde_json::to_value(dispute.queued()).context("failed to serialize dispute request")?;
+    if let Some(note) = dispute.replacement_note() {
+        writeln!(sink.stderr(), "{note}").context("failed to write the replacement note")?;
+    }
     context.emit(wording.relay_kind, payload, wording.command, true, sink)?;
     Ok(())
 }
@@ -312,6 +348,9 @@ fn handle_response(dispute: &Dispute, wording: &Wording, response: Response) -> 
                 wording.subject
             );
             println!("Reason: {}", dispute.reason);
+            if let Some(note) = dispute.replacement_note() {
+                println!("{note}");
+            }
             println!();
             println!(
                 "The stage is now in NeedsAdjudication and this session's turn is over. When \

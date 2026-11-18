@@ -17,6 +17,8 @@ mod yaml;
 mod tests;
 
 // Re-export git helpers
+pub(crate) use git::git_checked;
+pub(crate) use git::write_main_checkout_identity;
 pub use git::{create_temp_git_repo, init_loom_with_plan};
 
 // Re-export stage I/O

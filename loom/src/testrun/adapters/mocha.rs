@@ -7,7 +7,7 @@ use std::sync::LazyLock;
 use regex::Regex;
 
 use crate::testrun::command::{
-    distinct_files, package_runner, regex_literal, shell_quote, shell_word, shell_words,
+    distinct_files, exact_regex_literal, package_runner, shell_quote, shell_word, shell_words,
 };
 use crate::testrun::recognize::{
     combined_output, command_args, has_flag, last_match, pattern, positionals, summary_from_counts,
@@ -99,7 +99,7 @@ impl TestRunnerAdapter for Mocha {
     fn single_test_command(&self, file: &str, test: &str, package_dir: &Path) -> String {
         let runner = package_runner(package_dir);
         let file = shell_word(file);
-        let name = shell_quote(&regex_literal(test));
+        let name = shell_quote(&exact_regex_literal(test));
         format!("{runner} mocha {file} --grep {name}")
     }
 
@@ -140,7 +140,7 @@ mod tests {
         let dir = tempfile::tempdir().expect("temporary package directory");
         assert_eq!(
             ADAPTER.single_test_command("test/math.js", "math adds", dir.path()),
-            "npx mocha test/math.js --grep 'math adds'"
+            "npx mocha test/math.js --grep '^math adds$'"
         );
     }
 
@@ -151,7 +151,7 @@ mod tests {
             std::fs::write(dir.path().join(lock), "").expect("write bun lockfile");
             assert_eq!(
                 ADAPTER.single_test_command("test/math.js", "math adds", dir.path()),
-                "bunx mocha test/math.js --grep 'math adds'"
+                "bunx mocha test/math.js --grep '^math adds$'"
             );
         }
     }
@@ -160,7 +160,49 @@ mod tests {
     fn hostile_test_name_stays_one_escaped_pattern() {
         let dir = tempfile::tempdir().expect("temporary package directory");
         let command = ADAPTER.single_test_command("a.test.js", HOSTILE_NAME, dir.path());
-        assert_one_word(&command, &regex_literal(HOSTILE_NAME));
+        assert_one_word(&command, &exact_regex_literal(HOSTILE_NAME));
+    }
+
+    #[test]
+    fn installed_mocha_selects_only_the_exact_nested_name() {
+        let Some(runner) = std::env::var_os("LOOM_TEST_MOCHA_BIN") else {
+            return;
+        };
+        let fixture = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("src/testrun/fixtures/mocha/collision.test.cjs");
+        let dir = tempfile::Builder::new()
+            .prefix("ver01-")
+            .tempdir_in(fixture.parent().expect("Mocha fixture directory"))
+            .expect("temporary Mocha project");
+        std::fs::copy(&fixture, dir.path().join("collision.test.cjs"))
+            .expect("copy collision fixture");
+
+        for (skip_exact, expected) in [(false, RunOutcome::Passed), (true, RunOutcome::NotSelected)]
+        {
+            let mut command = std::process::Command::new("node");
+            command
+                .arg(&runner)
+                .args(["collision.test.cjs", "--grep"])
+                .arg(exact_regex_literal("suite value (a)+"))
+                .current_dir(dir.path());
+            if skip_exact {
+                command.env("VER01_SKIP_EXACT", "1");
+            }
+            let output = command.output().expect("run installed Mocha");
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            let summary = ADAPTER.parse(&RunOutput {
+                stdout: &stdout,
+                stderr: &stderr,
+                exit_code: output.status.code(),
+            });
+            assert_eq!(
+                classify(&summary, output.status.code()),
+                expected,
+                "{stdout}\n{stderr}"
+            );
+            assert_eq!(summary.executed, Some(if skip_exact { 0 } else { 1 }));
+        }
     }
 
     #[test]

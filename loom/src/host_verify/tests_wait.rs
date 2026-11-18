@@ -3,8 +3,7 @@
 
 use std::cell::RefCell;
 use std::io::Write;
-use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::path::PathBuf;
 use std::rc::Rc;
 use std::time::Duration;
 
@@ -17,6 +16,7 @@ use super::wait::{exit_code, wait_or_request, WaitOutcome, WaitSite};
 use super::{CriterionOutcome, JobKind, JobRecord, JobResult, JobState};
 use crate::fs::inbox::{append_ledger, LedgerOutcome, LedgerRecord};
 use crate::relay::RequestKind;
+use crate::test_git::{git, TestRepo};
 
 const STAGE: &str = "s1";
 const SESSION: &str = "session-1";
@@ -30,20 +30,6 @@ pub(super) struct Fx {
     scratch: PathBuf,
 }
 
-fn git(dir: &Path, args: &[&str]) {
-    let output = Command::new("git")
-        .args(["-c", "commit.gpgsign=false", "-c", "user.name=t"])
-        .args(["-c", "user.email=t@t"])
-        .args(args)
-        .current_dir(dir)
-        .env_remove("GIT_DIR")
-        .env_remove("GIT_WORK_TREE")
-        .env_remove("GIT_INDEX_FILE")
-        .output()
-        .unwrap();
-    assert!(output.status.success(), "git {args:?}: {output:?}");
-}
-
 pub(super) fn fixture() -> Fx {
     let tmp = tempfile::tempdir().unwrap();
     let checkout = tmp.path().join("checkout");
@@ -52,7 +38,7 @@ pub(super) fn fixture() -> Fx {
     for dir in [&checkout, &work_dir, &scratch] {
         std::fs::create_dir_all(dir).unwrap();
     }
-    git(&checkout, &["init", "-q", "-b", "main"]);
+    TestRepo::builder().no_seed().init_in(&checkout);
     std::fs::write(checkout.join("a.txt"), "one\n").unwrap();
     git(&checkout, &["add", "."]);
     git(&checkout, &["commit", "-q", "-m", "base"]);
@@ -81,12 +67,17 @@ impl Fx {
     }
 
     pub(super) fn state_file(&self) -> PathBuf {
-        self.scratch.join("host-verify").join("s1-check.json")
+        self.state_file_for(false)
+    }
+
+    pub(super) fn state_file_for(&self, no_cache: bool) -> PathBuf {
+        super::wait_state::state_path(&self.site(Duration::ZERO, no_cache)).unwrap()
     }
 
     pub(super) fn job(&self, id: &str, state: JobState, requests: &[&str]) -> JobRecord {
         JobRecord {
             id: id.to_string(),
+            submission_order: 0,
             stage_id: STAGE.to_string(),
             session_id: SESSION.to_string(),
             kind: JobKind::Check,
@@ -104,7 +95,7 @@ impl Fx {
         }
     }
 
-    fn ledger(&self, id: &str, outcome: LedgerOutcome, reason: &str) {
+    pub(super) fn ledger(&self, id: &str, outcome: LedgerOutcome, reason: &str) {
         let record = LedgerRecord {
             id: id.to_string(),
             kind: RequestKind::Check,
@@ -119,7 +110,12 @@ impl Fx {
     /// Run a first call that relays `request_id`, leaving the state file.
     fn request(&self, request_id: &str) {
         let outcome = self.call(Duration::ZERO, false, request_id).0;
-        assert_eq!(outcome, WaitOutcome::Requested);
+        assert_eq!(
+            outcome,
+            WaitOutcome::Requested {
+                request_id: request_id.into()
+            }
+        );
     }
 
     fn call(&self, budget: Duration, no_cache: bool, request_id: &str) -> (WaitOutcome, String) {
@@ -176,7 +172,12 @@ fn with_no_state_the_request_lines_print_once_the_request_is_recorded() {
     };
     let mut sink = out.clone();
     let outcome = wait_or_request(&fx.site(Duration::ZERO, false), &mut relay, &mut sink).unwrap();
-    assert_eq!(outcome, WaitOutcome::Requested);
+    assert_eq!(
+        outcome,
+        WaitOutcome::Requested {
+            request_id: "r1".into()
+        }
+    );
     assert_eq!(exit_code(&outcome), 0);
     assert_eq!(calls, 1);
     assert!(
@@ -329,16 +330,26 @@ fn a_changed_no_cache_or_tree_starts_a_new_request() {
     let fx = fixture();
     fx.request("r1");
     let (waited, text) = fx.call(Duration::from_secs(5), true, "r2");
-    assert_eq!(waited, WaitOutcome::Requested);
+    assert_eq!(
+        waited,
+        WaitOutcome::Requested {
+            request_id: "r2".into()
+        }
+    );
     assert!(text.starts_with("Host job: requested"), "{text}");
-    assert!(std::fs::read_to_string(fx.state_file())
+    assert!(std::fs::read_to_string(fx.state_file_for(true))
         .unwrap()
         .contains("r2"));
 
     std::fs::write(fx.checkout.join("new.txt"), "x\n").unwrap();
     let (waited, _) = fx.call(Duration::from_secs(5), true, "r3");
-    assert_eq!(waited, WaitOutcome::Requested);
-    assert!(std::fs::read_to_string(fx.state_file())
+    assert_eq!(
+        waited,
+        WaitOutcome::Requested {
+            request_id: "r3".into()
+        }
+    );
+    assert!(std::fs::read_to_string(fx.state_file_for(true))
         .unwrap()
         .contains("r3"));
 }

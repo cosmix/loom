@@ -6,21 +6,19 @@ use std::sync::mpsc::TryRecvError;
 use std::time::Duration;
 use std::{fs::OpenOptions, os::fd::AsRawFd, path::Path};
 
-use clap::CommandFactory;
 use serial_test::serial;
 
-use super::{assert_security_headers, workspace};
-use crate::cli::Cli;
+use super::{parse_full, workspace};
 use crate::commands::status::data::StatusData;
+use crate::commands::status::web::adopt_for;
 use crate::commands::status::web::broadcast::{self, DaemonStep, SUBSCRIBER_QUEUE_DEPTH};
 use crate::commands::status::web::connection::{self, Route};
-use crate::commands::status::web::model::{SnapshotSource, WebSnapshot};
-use crate::commands::status::web::{
-    adopt_for, assets, http, wildcard_bootstrap_lines, DEFAULT_PORT,
-};
+use crate::commands::status::web::model::{collect_snapshot, SnapshotSource, WebSnapshot};
+use crate::commands::status::web::startup::wildcard_bootstrap_lines;
 use crate::daemon::Response;
 use crate::fs::tmux_tmpdir::{adopt_recorded_tmux_tmpdir, TmuxTmpdirAdoption};
 use crate::fs::work_dir::WorkDir;
+use crate::web_server::{assets, http};
 
 fn hold_lock(path: &Path) -> std::fs::File {
     let lock = OpenOptions::new()
@@ -48,6 +46,9 @@ fn restore_tmpdir(value: Option<std::ffi::OsString>) {
         None => std::env::remove_var("TMUX_TMPDIR"),
     }
 }
+
+#[path = "pure/security_headers.rs"]
+mod security_headers;
 
 #[test]
 fn parse_head_reads_method_path_and_upgrade() {
@@ -217,7 +218,7 @@ fn oversized_daemon_response_is_degraded() {
         },
         false,
     ) {
-        Ok(DaemonStep::Degraded(actual)) => assert_eq!(actual, message),
+        DaemonStep::Degraded(actual) => assert_eq!(actual, message),
         _ => panic!("Response::Error must degrade to the file lane"),
     }
     assert!(matches!(
@@ -228,12 +229,35 @@ fn oversized_daemon_response_is_degraded() {
             },
             false,
         ),
-        Ok(DaemonStep::Frame(_))
+        DaemonStep::Snapshot(_)
     ));
 }
 
 #[test]
-fn publish_skips_an_unchanged_tree() {
+fn file_snapshots_keep_terminal_failure_after_daemon_disconnect() {
+    let (_temp, base) = workspace();
+    let work = WorkDir::new(&base).unwrap();
+    std::fs::write(
+        work.root().join("orchestrator.complete"),
+        r#"{"kind":"scheduler_failure","message":"panic"}"#,
+    )
+    .unwrap();
+    let frame = broadcast::snapshot_frame(
+        work.root(),
+        StatusData::default(),
+        SnapshotSource::Files,
+        false,
+    )
+    .unwrap();
+    let snapshot: WebSnapshot = serde_json::from_str(&frame).unwrap();
+    assert!(snapshot
+        .notice
+        .unwrap()
+        .contains("Scheduler failure: panic"));
+}
+
+#[test]
+fn second_poll_of_an_unchanged_tree_sends_only_a_tick() {
     let (_temp, base) = workspace();
     let work_dir = WorkDir::new(&base).expect("build work dir");
     let broadcaster = broadcast::Broadcaster::new();
@@ -242,9 +266,16 @@ fn publish_skips_an_unchanged_tree() {
         .expect("first file poll");
     broadcast::poll_files_once(&broadcaster, &work_dir, work_dir.root(), None, false)
         .expect("second file poll");
-    receiver
+    let first = receiver
         .recv_timeout(Duration::from_secs(1))
         .expect("first frame");
+    let second = receiver
+        .recv_timeout(Duration::from_secs(1))
+        .expect("second frame");
+    assert!(first.starts_with(r#"{"t":"full""#), "{first:.80}");
+    let tick: serde_json::Value = serde_json::from_str(&second).expect("tick JSON");
+    assert_eq!(tick["t"], "tick");
+    assert_eq!(tick["stages"], serde_json::json!({}));
     assert!(receiver.recv_timeout(Duration::from_millis(150)).is_err());
 }
 
@@ -265,7 +296,7 @@ fn poll_files_once_carries_the_degrade_notice() {
     let frame = receiver
         .recv_timeout(Duration::from_secs(1))
         .expect("degraded frame");
-    let snapshot: WebSnapshot = serde_json::from_str(&frame).expect("snapshot JSON");
+    let snapshot = parse_full(&frame);
     assert_eq!(snapshot.notice.as_deref(), Some("daemon lane degraded"));
     // Pins the real publish path (not just the fixture helper) to the
     // build's tag-derived version.
@@ -274,12 +305,22 @@ fn poll_files_once_carries_the_degrade_notice() {
 
 #[test]
 fn a_stalled_subscriber_is_dropped_once_its_queue_fills() {
+    let (_temp, base) = workspace();
+    let work_dir = WorkDir::new(&base).expect("build work dir");
+    let snapshot = collect_snapshot(
+        work_dir.root(),
+        StatusData::default(),
+        SnapshotSource::Files,
+        false,
+    );
     let broadcaster = broadcast::Broadcaster::new();
     let receiver = broadcaster.subscribe();
-    // Frames that never parse as a snapshot fall back to comparing the raw
-    // JSON, so each of these counts as a change and is published.
+    // The first publish is a `full`, every later one a lone `tick`: one
+    // message each, so the queue fills after exactly its depth in publishes.
     for index in 0..SUBSCRIBER_QUEUE_DEPTH + 4 {
-        broadcaster.publish(format!("{{\"frame\":{index}}}"));
+        let mut next = snapshot.clone();
+        next.generated_at += chrono::Duration::seconds(i64::try_from(index).unwrap());
+        broadcaster.publish(next);
     }
     let mut delivered = 0;
     while receiver.try_recv().is_ok() {
@@ -287,58 +328,6 @@ fn a_stalled_subscriber_is_dropped_once_its_queue_fills() {
     }
     assert_eq!(delivered, SUBSCRIBER_QUEUE_DEPTH);
     assert_eq!(receiver.try_recv(), Err(TryRecvError::Disconnected));
-}
-
-#[test]
-fn the_cli_preserves_omitted_and_explicit_dashboard_ports() {
-    let absent = Cli::command()
-        .try_get_matches_from(["loom", "status"])
-        .expect("parse `loom status`");
-    let absent_status = absent
-        .subcommand_matches("status")
-        .expect("status subcommand");
-    assert!(!absent_status.contains_id("web"));
-
-    let bare = Cli::command()
-        .try_get_matches_from(["loom", "status", "--web"])
-        .expect("parse `loom status --web`");
-    let bare_status = bare
-        .subcommand_matches("status")
-        .expect("status subcommand");
-    assert!(bare_status.contains_id("web"));
-    assert_eq!(bare_status.get_one::<u16>("web"), None);
-
-    for port in [0, DEFAULT_PORT] {
-        let port = port.to_string();
-        let expected = port.parse::<u16>().expect("valid test port");
-        let matches = Cli::command()
-            .try_get_matches_from(["loom", "status", "--web", &port])
-            .expect("parse explicit dashboard port");
-        let status = matches
-            .subcommand_matches("status")
-            .expect("status subcommand");
-        assert!(status.contains_id("web"));
-        assert_eq!(status.get_one::<u16>("web"), Some(&expected));
-    }
-}
-
-#[test]
-fn terminals_requires_web() {
-    let error = Cli::command()
-        .try_get_matches_from(["loom", "status", "--terminals"])
-        .expect_err("terminals alone must fail");
-    assert!(error.to_string().contains("required"), "{error}");
-}
-
-#[test]
-fn terminals_parses_with_web() {
-    let matches = Cli::command()
-        .try_get_matches_from(["loom", "status", "--web", "--terminals"])
-        .expect("parse terminals dashboard");
-    let status = matches
-        .subcommand_matches("status")
-        .expect("status command");
-    assert!(status.get_flag("terminals"));
 }
 
 #[test]
@@ -361,35 +350,4 @@ fn adopt_is_called_with_the_state_dir() {
     );
     drop(lock);
     restore_tmpdir(ambient);
-}
-
-#[test]
-fn every_http_response_carries_the_security_headers() {
-    for (status, reason) in [
-        (200, "OK"),
-        (403, "Forbidden"),
-        (404, "Not Found"),
-        (405, "Method Not Allowed"),
-        (408, "Request Timeout"),
-        (431, "Request Header Fields Too Large"),
-        (500, "Internal Server Error"),
-        (503, "Service Unavailable"),
-    ] {
-        let response =
-            String::from_utf8(http::response_bytes(status, reason, "text/plain", b"body"))
-                .expect("response bytes are UTF-8");
-        assert_security_headers(&response);
-        for directive in [
-            "connect-src 'self';",
-            "base-uri 'none';",
-            "form-action 'none';",
-            "frame-ancestors 'none'",
-        ] {
-            assert!(response.contains(directive), "missing {directive}");
-        }
-        assert!(
-            !response.contains("ws://"),
-            "connect-src must not name loopback WebSocket ports"
-        );
-    }
 }

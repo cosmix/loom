@@ -4,34 +4,13 @@
 
 use super::*;
 use crate::fs::permissions::scratch_home::ScratchHome;
+use crate::test_git::{git, TestRepo};
 use serial_test::serial;
-use std::process::Command;
-use tempfile::TempDir;
 
 const ID: &str = "s";
 const BRANCH: &str = "loom/s";
 /// A start point git cannot resolve.
 const MISSING: &str = "no-such-rev";
-
-/// Run `git` in `dir` with ambient configuration shut out, assert it
-/// succeeded, and return its trimmed stdout.
-fn git(dir: &Path, args: &[&str]) -> String {
-    let out = Command::new("git")
-        .args(args)
-        .current_dir(dir)
-        .env("GIT_CONFIG_GLOBAL", dir.join(".loom-test-no-global"))
-        .env("GIT_CONFIG_SYSTEM", dir.join(".loom-test-no-system"))
-        .env("GIT_CONFIG_NOSYSTEM", "1")
-        .env("GIT_AUTHOR_NAME", "t")
-        .env("GIT_AUTHOR_EMAIL", "t@t.com")
-        .env("GIT_COMMITTER_NAME", "t")
-        .env("GIT_COMMITTER_EMAIL", "t@t.com")
-        .output()
-        .unwrap();
-    let stderr = String::from_utf8_lossy(&out.stderr);
-    assert!(out.status.success(), "git {args:?} failed: {stderr}");
-    String::from_utf8_lossy(&out.stdout).trim().to_string()
-}
 
 fn tip(dir: &Path, rev: &str) -> String {
     git(dir, &["rev-parse", rev])
@@ -39,10 +18,9 @@ fn tip(dir: &Path, rev: &str) -> String {
 
 /// A repository whose `main` holds three commits; returns it with their ids,
 /// oldest first.
-fn repo_with_history() -> (TempDir, [String; 3]) {
-    let repo = TempDir::new().unwrap();
+fn repo_with_history() -> (TestRepo, [String; 3]) {
+    let repo = TestRepo::builder().no_seed().create();
     let root = repo.path();
-    git(root, &["init", "-q", "-b", "main"]);
     let tips = ["one", "two", "three"].map(|name| {
         std::fs::write(root.join(name), name).unwrap();
         git(root, &["add", name]);
@@ -73,7 +51,10 @@ fn a_leftover_branch_with_nothing_beyond_the_start_point_is_recreated_at_it() {
         "the branch was not recreated at the start point"
     );
     assert_eq!(tip(&worktree.path, "HEAD"), accepted);
-    assert_eq!(git(&worktree.path, &["branch", "--show-current"]), BRANCH);
+    assert_eq!(
+        git(&worktree.path, &["rev-parse", "--abbrev-ref", "HEAD"]),
+        BRANCH
+    );
     assert_eq!(tip(root, "main"), live, "the live base moved");
 }
 
@@ -130,5 +111,8 @@ fn a_start_point_that_does_not_resolve_keeps_the_leftover_branch() {
         "the branch was deleted or moved"
     );
     assert_eq!(tip(&worktree_path, "HEAD"), leftover);
-    assert_eq!(git(&worktree_path, &["branch", "--show-current"]), BRANCH);
+    assert_eq!(
+        git(&worktree_path, &["rev-parse", "--abbrev-ref", "HEAD"]),
+        BRANCH
+    );
 }

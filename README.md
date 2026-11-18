@@ -25,6 +25,7 @@ Loom is for engineers who would rather spend their own judgment than someone els
 ## Why Loom
 
 - **Your expertise where it counts, tokens everywhere else** — you do the thinking and put it into the plan. Loom executes it unattended and comes back to you only when a stage needs a person; you can monitor, steer, or take over whenever you like. ([Human Expertise Where It Matters](#human-expertise-where-it-matters))
+- **Plan in the browser** — `loom plan` is a feature planner: a chat with a planning session writes a feature's vision, product spec, metaplan and plans, and every document opens as a summary you can follow down to its source and settle. ([Feature Planner](#feature-planner))
 - **It learns your project** — every session records what it got wrong and what it decided. Each plan ends by distilling that into a knowledge base in your repo, so every plan starts from what the earlier ones learned. ([It Learns From Every Plan](#it-learns-from-every-plan))
 - **Parallel by default** — stages form a dependency graph, everything independent runs at once in its own git worktree, and each stage merges back as it finishes. ([Parallel execution and progressive merge](#parallel-execution-and-progressive-merge))
 - **Done means verified** — loom runs each stage's acceptance criteria itself and inspects the tree for stubs, unwired code, and code nothing calls. The agent's own account of its work does not count. Once every stage has merged, an `integration-verify` stage reviews and tests the combined work as one system. ([Verification Model](#verification-model))
@@ -46,7 +47,18 @@ You need `git`, the `claude` CLI, and `jq`, plus `minisign` for release download
 
 ### 2. Write a plan
 
-Plans are how loom knows what to build. Open Claude Code in your target project and use the `/loom-plan-writer` skill to create one:
+Plans are how loom knows what to build. You can write one in the browser, with the Feature Planner, or in Claude Code, with the `/loom-plan-writer` skill.
+
+**In the browser.** Run `loom plan` in your project:
+
+```bash
+cd /path/to/project
+loom plan
+```
+
+It opens the [Feature Planner](#feature-planner), where a chat with a planning session writes a feature's vision, product spec, metaplan and plans. You read each one as a summary that opens down to its source, settle the ones you agree with, then pressure-test a plan and start its run from the same page. The next section shows it in full.
+
+**In Claude Code.** Open Claude Code in your target project and use the skill to create the plan:
 
 ```bash
 cd /path/to/project
@@ -59,7 +71,7 @@ Inside the Claude Code session:
 2. Describe what you want to build and discuss with Claude, as you would in plan mode.
 3. When done, Claude will write the plan to `doc/plans/PLAN-<name>.md`.
 
-Validate the draft before you spend anything on it:
+However you wrote it, validate the plan file before you spend anything on it:
 
 ```bash
 loom plan verify doc/plans/PLAN-<name>.md
@@ -76,19 +88,75 @@ loom status --live
 loom stop
 ```
 
-`loom init` parses the plan, creates stage state, and installs the project hook wiring. `loom run` starts the daemon and orchestrator. `loom status --live` follows the run in your terminal, and `loom status --web` puts it in a browser. Add `--terminals` (tmux backend only) to watch or take over the Claude Code sessions from the browser. `--host <addr>` binds the dashboard to an address other than `127.0.0.1`; read [Web Dashboard Remote Access](#web-dashboard-remote-access) first, since a non-loopback bind serves plain HTTP.
+`loom init` parses the plan, creates stage state, and installs the project hook wiring. `loom run` starts the daemon and orchestrator. (The Feature Planner's Run panel does both for you.) `loom status --live` follows the run in your terminal, and `loom status --web` puts it in a browser. Add `--terminals` (tmux backend only) to watch or take over the Claude Code sessions from the browser. `--host <addr>` binds the dashboard to an address other than `127.0.0.1`; read [Web Dashboard Remote Access](#web-dashboard-remote-access) first, since a non-loopback bind serves plain HTTP.
 
 `loom stop` stops the daemon, and the orchestrator with it.
 
-Next: the two ideas loom is built on, [human expertise where it matters](#human-expertise-where-it-matters) and [learning from every plan](#it-learns-from-every-plan). Then [How It Works](#how-it-works) and the [Feature Tour](#feature-tour), a map of everything below.
+Next: the [Feature Planner](#feature-planner) in detail. After it come the two ideas loom is built on, [human expertise where it matters](#human-expertise-where-it-matters) and [learning from every plan](#it-learns-from-every-plan), then [How It Works](#how-it-works) and the [Feature Tour](#feature-tour), a map of everything below.
+
+## Feature Planner
+
+```bash
+loom plan [--port <PORT>] [--host <HOST>] [--no-open]
+```
+
+`loom plan` serves a local web app for planning a project. You talk to a Claude Code session in a chat panel, it writes the documents under `doc/` in loom's conventions, and you read, question and settle them in the browser. It ends at a reviewed plan, a run, and the follow-up plans the run leaves behind. The files stay plain Markdown that any editor can change, and the app picks up the edits.
+
+<p align="center">
+  <img src="doc/images/loom-planner.gif" alt="The feature planner from a new idea to plans: describing the work on the New work page, the planning session settling it as a feature, then the vision, product spec, metaplan and plans each created with a button; each document opens as a summary whose sentences open to the sentences they rest on and to the source passage, then fold closed; revising a document by attaching a sentence to the chat; and the settings dialog switching the theme from Ledger to Aubergine" width="880">
+</p>
+
+<p align="center">
+  <em>One feature from the first description to plans: each document as a summary that opens down to its source and folds back, a revision made by attaching a sentence to the chat, and a theme change in Settings.</em>
+</p>
+
+### Starting it
+
+Run `loom plan` in a git repository. It prints a URL with an access token and opens it in a browser, unless you pass `--no-open`, the session is over SSH, or Linux has no display. It binds `127.0.0.1` starting at port 7272 and takes the next free port if that one is busy; `--port` binds exactly that port, and `--host` accepts the same values as the dashboard's. One planning server runs per project, and no `loom init` is needed. The app needs tmux, Claude Code and its login, and on Linux the sandbox prerequisites; without them it starts read-only and says what is missing. Details: [Plan Commands](#plan-commands).
+
+The home page lists the project's features, each with its progress and what needs you. `/new` is the kickoff: describe the work, and the session settles whether it is a feature or a standalone plan before it writes anything.
+
+### One feature, four documents
+
+A feature lives at `/f/<feature>`. A spine on the left lists its documents in workflow order and is the only place its progress is drawn:
+
+1. **Vision**: what the product is, and which sections its spec needs.
+2. **Product spec**: one numbered section per topic, under `doc/product/<feature>/`. A Coverage ledger shows which spec headings the metaplan, plans and stages cover.
+3. **Metaplan**: one entry per loom plan, in `doc/plans/<feature>/index.md`.
+4. **Plans**: the loom plans, plus a Findings ledger for what runs leave open.
+
+Each document opens as a summary, with its source one click away. In a summary, opening a sentence replaces it with the sentences it rests on, and opening one of those shows the source passage; folding closes it again. Nobody has to read every document to form a view, and every claim traces to its text. Summaries are generated, kept in `doc/loom/summaries/`, and rebuilt when their sources change.
+
+You mark a document settled when you agree with it. The mark is a `Settled:` line in the file. The spine flags a settled document that was revised, or whose vision row, metaplan entry or upstream section changed since.
+
+### The chat
+
+The chat panel is the conversation with a planning session. Loom starts the session in tmux under your Claude Code login, and `loom-plan:*` skills from `plan-plugin/` (vision, section, metaplan, plan, refine, review) give it loom's conventions for the step at hand. Offers on empty pages and the New chat control start one. The panel knows which document you are viewing, attaches a passage or a summary sentence to your next message, shows permission prompts as cards, and lists the files each turn changed with a diff and a Restore. An idle chat shows the background tasks it waits on, and `/` opens a list of the session's skills and commands with the terminal-only ones disabled and the reason shown. One browser holds the authoring seat at a time; other viewers read.
+
+### From plan to run to follow-ups
+
+1. **Pressure test.** A written plan's page offers a pressure test, the `loom pressure` rounds with two model families. Their dated record is appended to the plan's `## Pressure tests` section, and the spine shows which plans have one.
+2. **Run.** The metaplan page, the Plans home, has a Run panel. Start a run does `loom init` and `loom run` for the plan (only `loom run` to resume a stopped one), and Open dashboard links to the [Web Dashboard](#web-dashboard).
+3. **Review.** When plans have run, loom writes `doc/plans/REVIEW-<plan id>.md`: spec conformance, open questions and open findings. The review is never edited. "Review the feature" starts a session with `loom-plan:review`, which records what it finds in the feature's findings ledger, `doc/plans/<feature>/findings.md`.
+4. **Follow-ups.** The Findings page groups the ledger by run review. Plan this and Fold into entry send a finding to a session that adds an entry under `## Follow-ups` in the metaplan, from which the next plan is written; Dismiss closes it with a reason. A finished feature offers "Plan follow-ups" for the same purpose.
+
+### File mode
+
+`/files/*` browses everything under `doc/`: product spec, metaplan, plans, briefs, run reviews and the knowledge base. It renders Markdown, searches, diffs against `HEAD` or a chat turn, and edits plain documents in an editor that validates a plan before saving. Plans that are running or done, knowledge files and the summary store are read-only. A dot marks documents that changed since you last looked.
+
+### Planning sessions
+
+Each planning session runs in its own tmux server named `loom-plan-<id>`, and `tmux -L <socket> attach -r` watches it read-only. Ctrl-C stops new sessions and waits for running ones to finish writing; a second Ctrl-C exits at once.
 
 ## Human Expertise Where It Matters
+
+Writing the plan, in the planner or in Claude Code, is your part of the work. This section is about why it comes first.
 
 Loop engineering presents itself as the end of the story: give an agent a high-level goal, let it try, fail, read the error, and try again until the checks pass, and finished software comes out. It does produce software, at a high price and with little elegance. Every wrong turn is paid for in tokens, and much of what those tokens buy is the rediscovery of something an engineer on the team already knew. A frontier lab can afford that. Most organisations cannot.
 
 Human engineers have a lot to offer: experience, judgment, and a working theory of the system that no loop recovers cheaply. Loom puts that first and spends tokens on the rest:
 
-- **Up front, in the plan.** You discuss the design, form theories and test them, explore the code, and decide what gets built, how it splits into stages, and what proves each stage is done. `loom plan verify` and `loom pressure` find the weak spots before anything is spent on execution. This is where an hour of your time saves the most tokens.
+- **Up front, in the plan.** In the [Feature Planner](#feature-planner) or in Claude Code, you discuss the design, form theories and test them, explore the code, and decide what gets built, how it splits into stages, and what proves each stage is done. `loom plan verify` and `loom pressure` find the weak spots before anything is spent on execution. This is where an hour of your time saves the most tokens.
 - **During the run, only when needed.** A stage that needs a person says so: `WaitingForInput` when an agent asks a question, `NeedsHumanReview` when it is escalated, a criteria dispute when an agent believes a check is wrong. Everything else runs unattended.
 - **Whenever you choose to look.** The terminal dashboard (`loom status --live`) and the web dashboard (`loom status --web`) show every stage, what it is doing, which models it is running, and how much context it has used. You can open any session, from tmux with `loom attach` or from a terminal in the browser, and watch it or take the keyboard and steer it.
 
@@ -155,7 +223,7 @@ Everything else is an explicit, inspectable outcome rather than a hang:
 | `MergeBlocked`          | Merge held by an operation in progress in your checkout, the target checked out elsewhere, or overlapping local changes (retried automatically); other failures get a resolver   |
 | `CompletedWithFailures` | Work finished but acceptance did not pass                                                                                                                                        |
 | `NeedsHumanReview`      | Escalated to a person                                                                                                                                                            |
-| `NeedsAdjudication`     | A disputed acceptance criterion is awaiting a verdict                                                                                                                            |
+| `NeedsAdjudication`     | A dispute is awaiting a verdict, or a verdict changed nothing and the daemon's completion job is running                                                                         |
 | `Skipped`               | Explicitly skipped                                                                                                                                                               |
 
 ## Feature Tour
@@ -165,6 +233,12 @@ Everything loom does, one line each, grouped by what you are doing at the time. 
 **Plan**
 
 - Draft a plan interactively with the `/loom-plan-writer` skill. ([Write a plan](#2-write-a-plan))
+- Plan a feature in the browser with `loom plan`: vision, product spec, metaplan and plans, each written in a chat with a planning session. ([Feature Planner](#feature-planner))
+- Read any planning document as a summary that opens, sentence by sentence, down to the source passage it rests on, and settle the ones you agree with. ([Feature Planner](#feature-planner))
+- Trace spec headings to the plans and stages that cover them in a Coverage ledger. ([Feature Planner](#feature-planner))
+- Pressure-test a plan, start its run and open the dashboard from the planner's Run panel. ([Feature Planner](#feature-planner))
+- Turn a run review's open findings into follow-up plans through a Findings ledger. ([Feature Planner](#feature-planner))
+- Browse, search, diff and edit everything under `doc/` in file mode. ([Feature Planner](#feature-planner))
 - Validate a plan with no side effects: schema, sandbox limits, and worker-ownership overlaps. ([Plan Commands](#plan-commands))
 - Harden a plan through adversarial review rounds from two model families. ([Primary Commands](#primary-commands))
 - Give each stage a type: `knowledge`, `standard`, `integration-verify`, or `knowledge-distill`, each with its own verification rules. ([Stage Type Behavior](#stage-type-behavior))
@@ -237,6 +311,7 @@ Everything loom does, one line each, grouped by what you are doing at the time. 
 
 - [Why Loom](#why-loom)
 - [Quick Start](#quick-start)
+- [Feature Planner](#feature-planner)
 - [Human Expertise Where It Matters](#human-expertise-where-it-matters)
 - [It Learns From Every Plan](#it-learns-from-every-plan)
 - [How It Works](#how-it-works)
@@ -298,7 +373,7 @@ Subagent detection is a live process-tree ancestry check, not a PPID comparison.
 - **`dead_code_check`** — command output patterns catching code that exists but is never called
 - **`before_stage` / `after_stage`** — pre-spawn and post-acceptance gates; a failed pre-check blocks the stage before a session is even spawned
 
-The escape hatches (`--no-verify`, `--force-unsafe`, `--assume-merged`) require a one-time operator proof bound to the project, stage, action, and exact flag set. The operator supplies the daemon secret only while minting the proof; the target command cannot fetch that credential for its caller or reuse the proof for another action.
+The escape hatches (`--no-verify`, `--force-unsafe`, `--assume-merged`) require a one-time proof bound to the project, stage, action, and exact flag set. The command derives it from the daemon token, which the operator can read and a sandboxed agent cannot; the proof cannot be reused for another action.
 
 ### Knowledge capture and distillation
 
@@ -315,13 +390,13 @@ Knowledge lives in `doc/loom/knowledge/`; agents write it through loom, and `loo
 Loom's savings come from **delegation, not downgrade**:
 
 - **Orchestration's model and effort come from the stage type's default** — every stage's main agent plans, decomposes, fixes what the gate reports, and commits, the judgment-heavy work that is worst to economize on — and both are overridable, in `[models]` in either config file or per stage; see [Model Allocation](#model-allocation).
-- **Delegation is a cost decision, tokens times model tier.** A stage's main agent makes a change itself only when it is at most 20 lines in at most 2 files it has already read, needs no further exploration, and one command proves it; a Fable main session delegates even those. A stage main session that edits past that limit gets a one-time advisory from the PostToolUse hook; it warns and never blocks. Everything larger goes to the cheapest subagent that can do it, spawned by agent type so the choice is explicit rather than inherited: Haiku for mechanical edits, boilerplate, scaffolding, and simple unit tests; Fable only for visual/UI design, a bug that survived a delegated fix attempt, and extremely challenging algorithmic design (no agent type pins it — the model override is stated explicitly at spawn); Opus (effort high; the orchestrator spawns it with `effort: xhigh` for hard debugging, core algorithmic or architectural work, distributed systems, heavily multithreaded or parallel code, and systems engineering) for mainstream architecture and algorithm implementation; Sonnet or Codex GPT-5.6 Terra for common implementation and integration tests; Codex GPT-6 Luna does the boilerplate tier only when the user or the plan asks for it. The codex tiers are licensed only on stages listing codex in `implementers`, and additionally require the `codex` CLI and its plugin to be installed — when either is missing, `loom run` prints an advisory warning at startup (it never aborts) and Terra-tier work falls back to Sonnet and Luna-tier work to Haiku.
+- **Delegation is a cost decision, tokens times model tier.** A stage's main agent makes a change itself only when it is at most 20 lines in at most 2 files it has already read, needs no further exploration, and one command proves it; a Fable main session delegates even those. A stage main session that edits past that limit gets a one-time advisory from the PostToolUse hook; it warns and never blocks. Everything larger goes to the cheapest subagent that can do it, spawned by agent type so the choice is explicit rather than inherited: Haiku (effort high) for pieces that are extremely simple or have a highly detailed brief, and for `Explore` locate-only sweeps; Fable only for visual/UI design and extremely challenging algorithmic design (no agent type pins it — the model override is stated explicitly at spawn); Opus (effort medium; a failed attempt is respawned at `effort: high` with every attempt in the brief, and `effort: xhigh` is not a subagent setting) for architecture across modules, new algorithms, concurrency and distributed systems, security-sensitive code, and bugs of unknown cause — never for visual or CSS fixes, mainstream feature code, or fixes to review findings in code a cheaper tier wrote, which return to the tier that wrote the piece and escalate only on a failed fix; Sonnet for pieces that need exploration or the initial iteration on failing tests, or are too large to brief in that detail, and for any piece between Sonnet and Opus. Codex is a lane chosen per piece, never a default or first choice: Claude keeps verification, review, planning, exploration, debugging and anything that iterates on failing tests, and Codex takes straightforward, well-specified implementation. GPT-6.1 Terra takes implementation, integration tests, boilerplate, scaffolding and simple unit tests; GPT-6.2 Sol takes a substantial well-specified unit (about 4 to 6 file-sized changes) or a Terra unit that failed once; GPT-6 Luna runs only when the user or the plan asks, all at effort `xhigh`. The codex tiers are licensed only on stages listing codex in `implementers` (the list order carries no routing meaning), and additionally require the `codex` CLI and its plugin to be installed — when either is missing, `loom run` prints an advisory warning at startup (it never aborts) and Terra- and Sol-tier work falls back to Sonnet while boilerplate and simple unit tests fall back to Haiku. A stage signal's `## Model Budget` section shows each provider's fresh quota windows; when Claude is at 75% or more, straightforward pieces go to Codex where licensed and fully briefed pieces to Haiku, and when Codex is, they go to the matching Claude tier (`loom usage --quota` prints the same section).
 - **The gate is one `loom check`.** In a `standard` stage the orchestrator, at effort medium, formats the tree and runs `loom check <stage-id>` once while the final review round runs; the check prints a per-criterion summary and writes full logs to files. A fix round re-runs only the failed criteria with `--criterion <n>`. The orchestrator delegates the fixes and commits. An `integration-verify` stage keeps its own gate.
 - **Signals are built for cache reuse.** Each signal is a four-section layout with a per-stage-type stable prefix that is byte-identical across sessions, so the large doctrine block is a cache hit rather than a re-read.
 - **The orchestrator's rulebook loads when it is needed.** Delegation, briefs, file ownership, waiting on subagents and commit timing live in the `loom-orchestration` core skill, which a session loads before it fans out; the installed `CLAUDE.md` keeps the hard stops and a pointer, under a 20 KB ceiling. `spawn-guard.sh` prepends the subagent preamble to every typed spawn, so an orchestrator no longer pastes it.
 - **Context budgets prevent compaction**, which is the expensive failure: an uncached re-read that costs more and produces worse work.
 - **Tiered knowledge and a skill index** keep the working set small — at most 5 matched skills are injected per stage, out of 75 installed.
-- **Waits are settled by receipts, never by polling.** An orchestrator waits on a backgrounded Codex forward by its exact receipt (`loom subagents wait --receipt <id>`), and repeated `loom subagents list` polling is counted by the poll guard. A whole-file read that another agent of the session already requested is advised once, from the session's ledger of requested reads, which records an attempt and proves no delivery.
+- **Waits are settled by receipts, never by polling.** An orchestrator waits on a backgrounded Codex forward by its exact receipt (`loom subagents wait --receipt <id>`), and repeated `loom subagents list` polling is counted by the poll guard. A whole-file read that another agent of the session already requested is advised once, from the session's ledger of requested reads, which records an attempt and proves no delivery. An agent's first whole read of a large file is denied once with an outline (the [read gate](#read-gate), switchable with `[hooks] read_gate = false`).
 - **Consumption is measured, not assumed.** `loom usage` reports Claude and Codex separately from provider-native telemetry, and `loom usage --compare` judges a candidate policy offline against paired runs. A token-proxy gain alone never counts as a subscription saving, and any quality regression, or a latency regression beyond a declared tolerance, rejects the candidate; see [the evaluation contract](doc/loom/knowledge/architecture/token-accounting-and-receipts.md#offline-comparison-loom-usage---compare).
 
 Per-stage `model`, `reasoning_effort`, and `ultracode` fields let you override any of this explicitly.
@@ -358,7 +433,7 @@ Loom is under active development. Signed binaries are published for Linux x86_64
 | `jq`                       | every loom hook parses the Claude Code hook payload with it       | yes; `install.sh` and `loom run` refuse to proceed without it, `loom repair` reports it |
 | `minisign`                 | verifies downloaded release binaries before execution             | required for release downloads; install with `brew install minisign` or `sudo apt install minisign` |
 | `rg` (ripgrep) and `fd`    | the installed CLAUDE.md steers agents to these over `grep`/`find` | recommended; `install.sh` and `loom run` warn when missing                              |
-| `tmux`                     | the tmux terminal backend                                         | optional                                                                                |
+| `tmux`                     | the tmux terminal backend                                         | required unless `terminal.backend = "native"`                                           |
 | `sccache`                  | shared dependency compiles across stage worktrees                 | optional                                                                                |
 | `codex` CLI                | the codex implementer lane and `loom pressure`                    | optional                                                                                |
 
@@ -405,7 +480,7 @@ It then runs `install.sh`, which installs `loom-*` prefixed agents and skills (n
 
 | Location                               | Contents                                                                          |
 | -------------------------------------- | --------------------------------------------------------------------------------- |
-| `~/.claude/agents/loom-*.md`           | 5 specialized subagents (per-item, non-destructive)                               |
+| `~/.claude/agents/loom-*.md`           | 6 specialized subagents (per-item, non-destructive)                               |
 | `~/.claude/skills/loom-*/`             | 10 core domain knowledge modules, always loaded (per-item, non-destructive)       |
 | `~/.claude/loom-skill-catalog/loom-*/` | 65 more domain knowledge modules, loaded on demand (`--skills core`, the default) |
 | `~/.claude/commands/*.md`              | Loom slash commands (`/pressure`, `/address`, `/distill`)                         |
@@ -433,17 +508,19 @@ loom pressure <plan-path> [--rounds N] [--claude-model M] [--claude-effort E] [-
 
 When `loom run` stops — every stage settled, or interrupted by `loom stop` — it prints stages by outcome: `Completed`; `Failed` (`Blocked`, `MergeConflict`, `CompletedWithFailures`, `MergeBlocked`, `NeedsHumanReview` — terminal, needing intervention); `Unfinished` (`WaitingForDeps`, `Queued`, `Executing`, `WaitingForInput`, `NeedsAdjudication` — still in progress when the run stopped); and `Needs Handoff`. The run succeeds only when `Failed`, `Unfinished`, and `Needs Handoff` are all empty.
 
-`loom pressure` hardens a plan before you run it by combining two external agents over `--rounds` rounds (default 2). Each round runs both pressure-tests in parallel: Claude `/pressure` edits the plan in place in the foreground (you watch it live), while Codex `$pressure` writes an independent review next to it (`codex-<plan>.md`) in the background (its output is captured to a temp log to keep the terminal clean). Once both finish, Claude `/address` folds the review back in. Claude stays interactive and auto-closes when done; Codex runs from the repo root. Requires both the `claude` and `codex` CLIs on PATH. `--dry-run` prints the exact commands without spawning anything.
+`loom pressure` hardens a plan before you run it by combining two external agents over `--rounds` rounds (default 1, or `pressure.rounds`). Each round runs both pressure-tests in parallel: Claude `/pressure` edits the plan in place in the foreground (you watch it live), while Codex `$pressure` writes an independent review next to it (`codex-<plan>.md`) in the background (its output is captured to a temp log to keep the terminal clean). Once both finish, Claude `/address` folds the review back in. Claude stays interactive and auto-closes when done; Codex runs from the repo root. Requires both the `claude` and `codex` CLIs on PATH. `--dry-run` prints the exact commands without spawning anything.
 
-Each of the three steps spawns with an independently selectable model and reasoning effort: `--claude-model`/`--claude-effort` for `/pressure` (model accepts `haiku`, `sonnet`, `opus`, or `fable`; effort accepts `low`, `medium`, `high`, `xhigh`, or `max`), `--address-model`/`--address-effort` for `/address` (same value sets), and `--codex-model`/`--codex-effort` for `$pressure` (model accepts `gpt-6-astra`, `gpt-6.1-sol`, `gpt-6-sol`, `gpt-5.6-terra`, or `gpt-6-luna`; effort accepts `low`, `medium`, `high`, or `xhigh` — no `max`, that value is Claude-only). Absent a flag, each key falls back independently: the project config's `.loom/work/config.toml` `[pressure]` section first (if it sets that key), then `~/.loom/config.toml` (`loom config -k pressure.claude_model <value>`), then its built-in default. `[pressure]` resolves per key, so a project section that sets only `claude_model` still lets `codex_effort` fall through to your user config.
+Each of the three steps spawns with an independently selectable model and reasoning effort: `--claude-model`/`--claude-effort` for `/pressure` (model accepts `haiku`, `sonnet`, `opus`, or `fable`; effort accepts `low`, `medium`, `high`, `xhigh`, or `max`), `--address-model`/`--address-effort` for `/address` (same value sets), and `--codex-model`/`--codex-effort` for `$pressure` (model accepts `gpt-6.2-astra`, `gpt-6.2-sol`, `gpt-6.1-terra`, or `gpt-6-luna`; effort accepts `low`, `medium`, `high`, or `xhigh` — no `max`, that value is Claude-only). Absent a flag, each key falls back independently: the project config's `.loom/work/config.toml` `[pressure]` section first (if it sets that key), then `~/.loom/config.toml` (`loom config -k pressure.claude_model <value>`), then its built-in default. `--rounds` resolves the same way: the flag, then the project `[pressure] rounds`, then `~/.loom/config.toml` (`loom config -k pressure.rounds <n>`, at least 1), then 1. `[pressure]` resolves per key, so a project section that sets only `claude_model` still lets `codex_effort` fall through to your user config.
 
-When the codex model is unavailable to the account (codex rejects it as not supported or not found), `loom pressure` retries with the same family's nearest newer version first and then the nearest older one, never another tier; the default `gpt-6.1-sol` falls back to `gpt-6-sol`. The fallback notice prints after the Claude session ends. When every model in the family is unavailable the run fails and shows the codex error.
+When the codex model is unavailable to the account (codex rejects it as not supported or not found), `loom pressure` retries with the same family's nearest newer version first and then the nearest older one, never another tier; every listed family currently has one model, so no fallback is tried. The fallback notice prints after the Claude session ends. When every model in the family is unavailable the run fails and shows the codex error.
+
+A run that finishes all its rounds appends one line to a `## Pressure tests` section of the plan (created after the plan's `END loom METADATA` marker when missing): the date, the Claude model, the Codex model that wrote each round's review, the round count, and whether the review was addressed. A stopped or failed run writes no record, and neither does a run whose plan moved or was replaced while it ran. The planning app's pressure dialog runs the same pipeline and writes the same record.
 
 | Key                       | Default       |
 | ------------------------- | ------------- |
 | `pressure.claude_model`   | `opus`        |
 | `pressure.claude_effort`  | `xhigh`       |
-| `pressure.codex_model`    | `gpt-6.1-sol` |
+| `pressure.codex_model`    | `gpt-6.2-sol` |
 | `pressure.codex_effort`   | `xhigh`       |
 | `pressure.address_model`  | `opus`        |
 | `pressure.address_effort` | `high`        |
@@ -457,10 +534,35 @@ When the codex model is unavailable to the account (codex rejects it as not supp
 ### Plan Commands
 
 ```bash
-loom plan verify <plan-path> [--strict] [--json] [--no-color]
+loom plan [--port <PORT>] [--host <HOST>] [--no-open]    # Serve the feature planner for this repository; see Feature Planner
+loom plan verify <plan-path> [--strict] [--json] [--no-color] [--dry-run]
+loom plan check [--json]
+loom plan hook <event> --session-dir <dir>              # Hidden internal PreToolUse path guard run by Claude Code for planning sessions; not run by hand
+loom plan summary brief <IDS>... [--note <NOTE>]         # Claim summaries and print rebuild briefs
+loom plan summary seal <ID> [--force]                    # Validate and save a draft
+loom plan summary status [--json]                        # List summary states
+loom plan summary release <IDS>...                       # Release claims
 ```
 
-`loom plan verify` validates a plan file without touching `.loom/work/` or requiring a git repo. It runs the same fatal validation as `loom init` (schema errors, unknown or retired fields at every nested policy layer, duplicate IDs, unknown dependencies, path safety) plus advisory warnings (structural issues, a stage without a `summary`, a missing knowledge-bootstrap stage when the repository's knowledge tree is missing or holds only the scaffold, sandbox gaps). A retired top-level `truths` block is rejected; move behavioral commands to `acceptance`. It additionally rejects requirements a sandboxed stage cannot satisfy — an `allow_write` grant under `/tmp` or missing on the host, a `TMPDIR=<absolute path>` override, a hardcoded `/tmp/` path, and a `mkdir`, `touch` or output redirect aimed outside the worktree in `acceptance`, `setup`, `wiring_tests`, `before_stage` or `after_stage` commands — because the stage sandbox already provides a writable `$TMPDIR`. It rejects commands that cannot mean what they say inside a sandbox — an exit status masked by a final `|| true`, `|| :`, `|| exit 0` or `; true`, `HOME` assigned from a variable or substitution, and a bare `mktemp -d` — and warns on network tools, reads of `doc/plans/`, `rg -r`, and hardcoded `/tmp/` paths. A single `rg` or `grep` acceptance criterion that already passes at `HEAD` earns a `baseline` warning, since it cannot tell a stage that did its work from one that did nothing. A stage's `skills:` list is checked against the skill index: an empty, duplicate or unknown name is an error. It also warns when a stage description's worker/files-owned table claims overlapping paths between workers, or a claim outside the stage's declared `files`. Exits 0 on success, non-zero on fatal errors; `--strict` promotes warnings to errors.
+Bare `loom plan` starts the planning app for the current git repository and prints a URL with an access token. It opens the URL in a browser unless `--no-open` is given, the session is over SSH, or Linux has no display. By default it binds to `127.0.0.1`, starting at port 7272 and trying the next port if that one is in use. `--host` selects the bind address; `--port` binds exactly the given port, with `0` asking the OS for a free port.
+
+File mode in the planning app browses the repository's `doc/` tree: it renders Markdown documents (raw HTML is shown as text and images as links), searches them, shows diffs against `HEAD` or a chat turn, and edits and saves plain `doc/` documents in a CodeMirror editor. Saving needs the authoring seat, refuses a document that changed since you opened it (you merge the current text), and validates a plan before it writes unless you choose "Save with errors". Plans that are running or done, knowledge files and the summary store are read-only.
+
+Concept mode is the reading view over the summaries in `doc/loom/summaries/`. The Product spec group (`/product`) opens on a product overview: a colour-keyed row of document chips, then the overview's sentences, each marked with the colour of the document it cites. The Plans group opens the metaplan page (`/metaplan`); `/engineering` and `/run` redirect there. A chip opens that document's summary page (`/product/<doc>`, `/engineering/<slug>`). Opening a sentence expands it in place to the summary sentences it cites, and opening one of those shows the source passages it rests on; a passage header links into file mode, and Fold all or folding a run closes what you opened. A summary whose sources changed since it was built shows dashed marks at once and refreshes where you stand: an open run stays open when the source sections it rests on survive, and leaves a note where it had to fold. Open runs are kept for the browser session, not in the URL. Keys: `j`/`k` or the arrows move between sentences, `Enter` or `→` opens the focused sentence, `Esc` or `←` folds the innermost run, `f` opens file mode at the first source section, `d` opens the summary page of the sentence's first document, `a` attaches the focused sentence to the next chat message, `g p` opens the product overview and `g e` opens the metaplan. The "build" and "start" offers on empty pages start a chat; see the next paragraph.
+
+The chat panel is the conversation with the planning Claude Code session. It sits beside the page on wide windows and opens as a sheet on narrow ones; `c` moves focus to the message box. An offer on an empty page, or the New chat control, starts a chat, and asks before it replaces a running one. Sending, interrupting, stopping and ending need the authoring seat. Attach a passage or a summary sentence to the next message (up to ten); each attachment shows as a chip, is cut to 2,000 characters and is marked changed when the document changed after you selected it. A message may be up to 100,000 bytes with its attachments. An idle chat that is waiting on background agents or shells shows "Waiting on N background tasks" under its title, and a button opens the list with each task's state, time and, for agents, model and token rate. Typing `/` opens a list of the session's skills and commands; commands that only work in the terminal are shown disabled with the reason, and the rest are sent as typed. Your draft and attachments are kept in this browser's local storage, per project. When Claude asks for permission, a card appears in the panel; `y` and `n` answer while the pinned card has focus. Each turn lists the documents it changed. Restore writes a file back to its text from before the turn through the same save path as the editor, so it refuses while a turn runs and when the turn created or deleted the file, and if you edited the file after the turn it opens the editor so you can merge. A viewer without the seat can use Send to author on a selected passage: the holder gets a card to attach or dismiss, at most 20 wait at once, and they are dropped when the seat changes hands. A document that changed since you last looked is marked with a dot in the tree and on its chips, and the header lists them; compare against a commit or ref, or mark everything seen. That checkpoint is also kept in local storage.
+
+The planning server rebuilds out-of-date summaries itself, one summary session at a time. Up to five summaries rebuild without asking; when more are out of date, the header's summary status opens a "Rebuild all?" question and starts nothing until you answer. "Not now" remembers the declined summaries until a rebuild button for them is pressed or they are current again. Nothing starts during an authoring turn or in read-only mode, and a summary that a session leaves unsealed twice is marked failed instead of rebuilding forever. The summary panel in the header lists the running rebuild and shows the last rebuild's token cost, token totals for today and the last seven days, and the shared quota meters; the cost of each rebuild is appended to `summary-cost.jsonl` in the runtime directory, and the estimate before a rebuild comes from that log, falling back to fixed starting figures until it has lines. With `plan.summary_backend` set to `codex`, each batch runs as one background `codex exec` job in the workspace-write sandbox, which can write outside the project only to `drafts/` and `claims/` in the runtime directory; the running rebuild shows the job's log path in place of a tmux attach link, and the job records no cost.
+
+Only one planning server runs per project. A second invocation exits non-zero and prints the running server's URL, or asks you to retry if it is still starting. Runtime state lives under `~/.loom/plan/<project-key>/`; no `loom init` is needed. If tmux, Claude Code, its login, or the Linux sandbox prerequisites are missing, the app starts read-only and reports how to fix them.
+
+Each Claude Code session of the planning app runs in its own tmux server named `loom-plan-<id>` (the chat names it), and you can watch it read-only with `tmux -L <socket> attach -r`. The server runs in the foreground after browser tabs close. The first Ctrl-C stops new sessions and messages and waits for running sessions to finish writing; a second Ctrl-C exits at once.
+
+`loom plan verify` validates a plan file without touching `.loom/work/` or requiring a git repo. It runs the same fatal validation as `loom init` (schema errors, unknown or retired fields at every nested policy layer, duplicate IDs, unknown dependencies, path safety) plus advisory warnings (structural issues, a stage without a `summary`, a missing knowledge-bootstrap stage when the repository's knowledge tree is missing or holds only the scaffold, sandbox gaps). A retired top-level `truths` block is rejected; move behavioral commands to `acceptance`. It additionally rejects requirements a sandboxed stage cannot satisfy — an `allow_write` grant under `/tmp` or missing on the host, a `TMPDIR=<absolute path>` override, a hardcoded `/tmp/` path, and a `mkdir`, `touch` or output redirect aimed outside the worktree in `acceptance`, `setup`, `wiring_tests`, `before_stage` or `after_stage` commands — because the stage sandbox already provides a writable `$TMPDIR`. It rejects commands that cannot mean what they say inside a sandbox — an exit status masked by a final `|| true`, `|| :`, `|| exit 0` or `; true`, `HOME` assigned from a variable or substitution, and a bare `mktemp -d` — and warns on network tools, reads of `doc/plans/`, `rg -r`, and hardcoded `/tmp/` paths. A single `rg` or `grep` acceptance criterion that already passes at `HEAD` earns a `baseline` warning, since it cannot tell a stage that did its work from one that did nothing. A stage's `skills:` list is checked against the skill index: an empty, duplicate or unknown name is an error. It also warns when a stage description's worker/files-owned table claims overlapping paths between workers, or a claim outside the stage's declared `files`. `--dry-run` additionally runs the plan's `provision` entries in a checkout of HEAD, then every acceptance, after_stage and wiring_tests command once in that checkout under each stage's confinement and timeout; it needs a shell where loom can confine commands. It reports environment failures and timeouts as errors, an empty test selection as a note, a criterion that already passes as a note (a warning only when every acceptance criterion of a standard stage with no dependencies passes), and a plain failure as a note. A wiring pattern that starts with a definition keyword is an error in a version 2 plan and a warning in version 1. Exits 0 on success, non-zero on fatal errors; `--strict` promotes warnings to errors.
+
+`loom plan check` prints the six-step checklist, current step, offers, and convention problems. It reads only files and needs no server. It exits 0 when there are no problems, 1 when there are problems, and 2 on an error such as running outside a repository. `--json` outputs the schema used by the planning app and sessions.
+
+`loom plan summary` stores drafts and claims under `~/.loom/plan/<project-key>/` and needs no server. Seal refuses a summary claimed by another session. The commands exit 0 on success, 1 for a rejected seal, claimed brief, or refused release, and 2 for other errors.
 
 ### Stage Commands
 
@@ -479,11 +581,12 @@ loom stage merge [stage-id] [--resolved]
 loom stage human-review <stage-id> [--approve|--force-complete|--reject <reason>]
 loom stage dispute-criteria <stage-id> [--field acceptance|wiring|wiring-tests] --criterion-index N --reason <text> [--evidence-commit <sha>] [--failure-output <path>]
 loom stage dispute-findings <stage-id> --finding <id>... --reason <text>       # Plan version 2: challenge open review findings
-loom stage dispute-contract <stage-id> --contract <id> --reason <text>        # Plan version 2: challenge a frozen contract
+loom stage dispute-contract <stage-id> --contract <id> [--replacement <path>] --reason <text>  # Plan version 2: challenge a frozen contract; --replacement names an edited copy outside the worktree (max 32 KiB) that an accept writes in
 loom stage dispute-integrity <stage-id> --event <id>... --reason <text>       # Plan version 2: challenge a test-integrity event
 loom stage dispute-criteria <stage-id> --field impact-tests --test <id>... --reason <text>  # Plan version 2: challenge failing impact-selected tests the stage did not cause
 loom stage adjudicate --stage <stage-id> --dispute <n> --verdict-file <path>
-loom stage contracts freeze|show|restore <stage-id> [--contract <id>]         # Plan version 2: freeze (contract session), inspect, or restore frozen contract files
+loom stage contracts freeze <stage-id> [--test <id>=<identifier>]... [--runner <id>=<adapter>]... [--cwd <id>=<dir>]...   # Plan version 2: freeze (contract session); each flag repeats
+loom stage contracts show|restore <stage-id> [--contract <id>]   # Plan version 2: inspect, or restore frozen contract files
 loom stage review status|integrity <stage-id>                                 # Plan version 2: review rounds and open findings; test-integrity events
 loom stage admin-proof [stage-id] [--daemon-stop] [--no-verify] [--force-unsafe] [--assume-merged]
 loom stage amend <stage-id> --field acceptance|wiring|wiring-tests|contracts|harness --op replace|insert|delete --index N [--value <yaml|glob>] [--reason <text>]   # --value: a YAML body for every field except harness, which takes a plain glob verbatim (trimmed, never parsed as YAML, so do not quote it)
@@ -491,7 +594,7 @@ loom stage amend <stage-id> --field acceptance|wiring|wiring-tests|contracts|har
 
 `loom stage human-review <stage-id> --force-complete` lands a stage parked in `NeedsHumanReview` without acceptance checks: it records the committed tip of `loom/<stage-id>` as the completion commit, replacing any earlier one, and merges it; it refuses a missing or zero-commit branch. `loom stage complete --force-unsafe` without `--assume-merged` records the same tip and leaves the stage unmerged for the daemon's auto-merge; `--no-verify` adds nothing to it.
 
-`loom stage dispute-criteria` is the sanctioned way for an agent to challenge a criterion it believes is wrong or impossible, instead of quietly weakening it. The daemon writes `request.md` and moves the stage to `NeedsAdjudication`; the verdict is daemon-written and never authored by the agent. `loom stage adjudicate` records that verdict from the adjudication session; `loom stage admin-proof` mints a one-time proof for a privileged action, to hand to another process through `LOOM_ADMIN_PROOF` (operators' own commands authorize themselves); `loom stage amend` is the audited, operator-facing way to edit a stage's `acceptance`, `wiring`, `wiring_tests`, `contracts` or `harness` array directly. See [Disputes, Adjudication, and Amendments](#disputes-adjudication-and-amendments).
+`loom stage dispute-criteria` is the sanctioned way for an agent to challenge a criterion it believes is wrong or impossible, instead of quietly weakening it. The daemon writes `request.md` and moves the stage to `NeedsAdjudication`; the verdict is daemon-written and never authored by the agent. `loom stage adjudicate` records that verdict from the adjudication session; `loom stage admin-proof` mints a one-time proof for a privileged action, to hand to another process through `LOOM_ADMIN_PROOF` (operators' own commands authorize themselves); `loom stage amend` is the audited, operator-facing way to edit a stage's `acceptance`, `wiring`, `wiring_tests`, `contracts`, `harness` or `reachable` array directly. See [Disputes, Adjudication, and Amendments](#disputes-adjudication-and-amendments).
 
 ### Stage Outputs
 
@@ -549,15 +652,29 @@ loom usage [--since <duration|date|rfc3339>] [--until <rfc3339>] [--provider cla
                                                                              # Report what agent sessions actually consumed, per provider (Claude and Codex are never summed), including peak resident context by scope in a `peaks` section (main vs subagent p50/p90/max, share above 250k and 400k tokens)
 loom usage [--claude-root <dir>] [--codex-root <dir>] [--receipts-root <dir>] [--forward-receipts-root <dir>]
                                                                              # Read explicit telemetry roots; a supplied root never falls back
+loom usage --quota                                                           # Print the `## Model Budget` section a stage signal carries: each provider's fresh 5h and 7d windows and at most one routing line; plan authors read it when choosing lanes
 loom usage --compare <artifact.json> [--json]                                # Offline paired evaluation: exit 0 supported, 1 rejected, 2 inconclusive (doc/loom/knowledge/architecture/token-accounting-and-receipts.md)
 loom usage --run-evidence <declaration.json> --project <dir> --since <rfc3339> --until <rfc3339> [--claude-root <dir>] [--codex-root <dir>]
                                                                              # Print one run's RunEvidence for --compare
+loom ask --question <Q> --paths <P>... [--backend claude|codex] [--model <M>] [--timeout-secs <N>] [--json]
+loom ask --eval <cases.json> [--backend claude|codex] [--model <M>] [--timeout-secs <N>]
+                                                                             # Evaluation only: one-shot worker answers a question about named files; --eval scores a backend against a cases file (exit 0 at 90% accuracy)
 loom subagents list | harvest [--id <id>] [--json]                           # One-shot diagnostics only: list shows liveness, harvest prints a terminal report (optionally one agent's); watch/wait below are the blocking waits
 loom subagents watch --worker <kind>:<id> [--worker <kind>:<id> ...] [--session <claude-parent-uuid>] --timeout <secs> [--json]
                                                                              # One owned wait, inside a loom stage only (needs LOOM_STAGE_ID/LOOM_SESSION_ID/LOOM_WORK_DIR): exit 0 all bound workers have fresh correlated success; 2 deadline passed; 3 worker failed/cancelled
-                                                                             # kind is claude (spawned agent ID) or codex (--unit-id); exit 4 AlreadyWaiting/Busy (no second monitor)
-                                                                             # Exit 5 identity/evidence unknown; --dir or no --worker is rejected with migration guidance
+                                                                             # kind is claude (spawned agent ID) or codex (--unit-id, or the --unit-id of a native start); exit 4 AlreadyWaiting/Busy (no second monitor)
+                                                                             # Exit 5 identity/evidence unknown; --dir or no --worker is rejected with migration guidance; exit 6 bound worker hung: a Claude transcript grew nothing past the stall budget, or a codex job's process is gone or its log stopped growing
 loom subagents wait --receipt <id> [--timeout <secs>] [--json]               # Wait on one exact forwarded Codex job; exit 0 succeeded, 1 failed/canceled, 2 still running/unknown
+loom subagents start --provider codex --unit-id <unit> --brief <absolute path> --model <model> --effort <effort>
+                                                                             # Native Codex backend, stage main agent only: relays one worker start; read the verdict with loom request status <id> --wait 90
+loom subagents message --worker codex:<unit> --invocation <id> --delivery steer|next-turn --message-id <id> (--text <text> | --file <path>)
+                                                                             # Native backend: relays a steer or next-turn message to a running worker
+loom subagents cancel --worker codex:<unit> --invocation <id> --reason <text>
+                                                                             # Native backend, inside a stage: relays a cancel; an operator outside a session passes --stage <stage> instead of --invocation
+loom subagents status --worker codex:<unit> [--stage <stage>] [--json]       # Native backend: one-shot state of the unit's newest worker
+loom subagents result --worker codex:<unit> [--stage <stage>] [--full] [--json]
+                                                                             # Native backend: the worker's final report once it has ended
+loom subagents release --stage <stage> --invocation <id>                     # Native backend, operator only: records that a worker's processes are gone after an unverified stop
 loom attach [stage-id]                                                       # tmux backend only; omit the id for a tiled overview
 loom sessions list
 loom sessions kill <session-id...> | --stage <stage-id>
@@ -567,8 +684,9 @@ loom worktree list
 loom worktree remove <stage-id>
 loom graph
 loom project detect [PATH] [--json]                                          # Per package: language kinds, the test runner loom would use (or unsupported), and the matching skills
-loom context record-edit --stage <id> --path <path> [--path <path>...]       # Keep a stage's context overlay current
+loom context record-edit --stage <id> --path <path> [--path <path>...]       # Deprecated compatibility no-op; validates the stage ID
 loom hook user-prompt                                                        # UserPromptSubmit entry point; invoked by loom's hooks
+loom hook blocks [--since-hours N] [--by-rule]                               # Summarize the guard block ledgers in $LOOM_WORK_DIR/heartbeat (default 168 h): the 20 newest blocks, or with --by-rule counts per guard/rule by role
 loom request status <id> [--session <id>] [--wait <secs>]                    # Plumbing: has the daemon applied a request relayed through the sandbox? <id> is printed after the originating command
 loom skill-index                                                             # Plumbing: rebuild the skill keyword index the skill-trigger hook reads
 loom repair [--fix]
@@ -581,11 +699,15 @@ loom install-assets [--skills core|all]  # Install loom's agents, skills, comman
 loom completions [<shell>] [--install] [--migrate]
 ```
 
+`loom usage` also prints an **Attribution** section: an estimate, per session, of where cost went by what entered the context (`read:skill`, `read:knowledge`, `read:source-other`, `bash:*`, agent reports, and so on), the startup context each agent type begins with, and a residual that is reported rather than hidden. It is an estimate from transcripts, not a provider measurement, and it overstates rows in sessions that compacted. Together with the `reads` section it is how the read gate and the `loom-software-developer` agent are judged (see [Read gate](#read-gate)).
+
+`loom ask` is an **evaluation instrument**, not a tool for agents. It starts one worker with no tools, no settings and no project instructions, hands it the named files (400,000 bytes at most; credential files, symlinks and paths outside the project are refused) and prints its answer with a usage line. `loom ask --eval` runs a JSON cases file and reports accuracy, worker tokens, latency and what reading the files directly would have cost. The Claude lane is the default; the Codex lane is experimental until an isolation probe passes against the real provider. Nothing in loom's agents, skills or hooks tells an agent to call it, and none should until the evaluation and replays show a saving.
+
 `loom usage --project` also reads the transcripts of the project's removed stage worktrees. Each provider reads `measured` or `partial` with reasons: a session record naming an unread transcript, an unreadable session record, unparseable lines, unknown or ambiguous rows, a forward receipt whose thread has no rollout, or a damaged forward receipt. Codex rows count for a project only through the threads its forward receipts name, so `--all` is the way to see every Codex rollout. `--run-evidence` takes the run identities from the declaration (the fields of the artifact contract, minus the measured ones) and measures tokens, retries, fixes, the critical path and the open review findings of the stages that started inside the `--since`/`--until` window; both bounds must be RFC3339, and a stage straddling either bound aborts the producer. It refuses usage from a provider the declaration does not assign. Review severities critical, major, minor and unspecified map to critical, high, medium and low. An artifact may declare `"token_rule": "net-total"` and `"latency_tolerance_ms"`. Produced evidence always carries `notification_latency_ms: null`, so a comparison of produced runs reads `missing-latency-evidence` unless the artifact declares `latency_tolerance_ms`; produced evidence needs that declaration to reach `supported-candidate`.
 
 `loom handoff` writes the document a successor session resumes from, under `.loom/work/handoffs/`. Loom's `pre-compact` hook calls it automatically before a compaction, and an agent that reaches its context ceiling calls it explicitly with `--trigger ceiling`.
 
-`loom target` is the operator side of the target guard. Loom records the last tip of the target branch (`[plan] base_branch`, normally `main`) it accepted, and a git `reference-transaction` hook installed by `loom init` and `loom repair --fix` attests moves made by host-side git. A move loom did not make that rewrites history, touches a merge-gate control path, carries unmerged `loom/*` stage work, or (with attestation on) has no hook record holds every merge into the target and shows a warning in `loom status`; running stages continue, and new worktrees start at the accepted tip. Loom never restores the ref: review the move with `loom target status`, then either run `loom target accept --to <commit>` or restore the ref with the command `status` prints. `loom clean --state|--all` and `loom init --clean` refuse while a target is held, because deleting the record would let the next run trust an unreviewed move. Where `core.hooksPath` is set (husky and similar), git ignores `.git/hooks`, attestation is off, and only the history, control-path and stage-work checks apply.
+`loom target` is the operator side of the target guard. Loom records the last tip of the target branch (`[plan] base_branch`, normally `main`) it accepted, and a git `reference-transaction` hook installed by `loom init` and `loom repair --fix` attests moves made by host-side git. A move loom did not make that rewrites history, touches a merge-gate control path, carries unmerged `loom/*` stage work, or (with attestation on) has no hook record holds every merge into the target and shows a warning in `loom status`; running stages continue, and new worktrees start at the accepted tip. Loom never restores the ref: review the move with `loom target status`, then either run `loom target accept --to <commit>` or restore the ref with the command `status` prints. `loom clean --state|--all` and `loom init --clean` refuse while a target is held, because deleting the record would let the next run trust an unreviewed move. Git runs hooks from `core.hooksPath` when it is set. Loom installs there only when the directory is inside the repository and untracked. Where it is outside the repository or git tracks it (husky and similar), attestation is off, and only the history, control-path and stage-work checks apply.
 
 `loom request status` and `loom skill-index` are plumbing for loom's own hooks and its sandbox relay rather than commands a plan author types; they are listed so hook output that names them is traceable.
 
@@ -603,7 +725,7 @@ Neither file needs to exist: every key has a built-in default. `LOOM_HOME` reloc
 There are three ways to change a setting:
 
 1. **`loom config`.** Run bare in a terminal it opens a settings screen; with flags it is scriptable. `loom config -k <key>` prints one key, `loom config -k <key> <value>` writes it (validated against the key's type and value set), `loom config --list` prints every key with its value and where it came from, and `loom config --print` prints the resolved user config as TOML. It reads and writes the user file only. The settings screen edits each row by its type: `↑↓`/`k`/`j` move, `←→`/`h`/`l`/space cycle an enum's variants or toggle a bool, `Enter` opens a text editor for a number or free-text key (and steps a bool/enum forward otherwise, so no keystroke opens a text field on a closed vocabulary), `s` saves, `Esc`/`q` quits, `*` marks a pending change.
-2. **Edit the files.** Both files use the same `[section]` / `key = value` layout as the table below; project sections may be partial. `loom init` writes a `[context]` section into the project file, everything else is opt-in.
+2. **Edit the files.** Both files use the same `[section]` / `key = value` layout as the table below, except `plan.*` keys use `[plan]` in the user file and `[planning]` in the project file; project sections may be partial. `loom init` writes a `[context]` section into the project file, everything else is opt-in.
 3. **The dashboard.** `loom status --web` has a settings dialog that edits both files, one key at a time, with the resolution shown per key ([Web Dashboard Settings](#web-dashboard-settings)).
 
 The keys, with their built-in defaults:
@@ -612,24 +734,49 @@ The keys, with their built-in defaults:
 | ---------------------------------- | ------------- | ------------------------------------------------------------------------ | ------------- |
 | `update.check`                     | `true`        | `true`, `false`                                                          | no            |
 | `update.check_interval_hours`      | `24`          | integer                                                                  | no            |
-| `terminal.backend`                 | `native`      | `native`, `tmux`                                                         | whole section |
+| `terminal.backend`                 | `tmux`        | `native`, `tmux`                                                         | whole section |
 | `context.ceiling_tokens`           | `800000`      | integer                                                                  | whole section |
+| `codex.backend`                    | `native`      | `legacy`, `native`                                                       | per key       |
 | `pressure.claude_model`            | `opus`        | `haiku`, `sonnet`, `opus`, `fable`                                       | per key       |
 | `pressure.claude_effort`           | `xhigh`       | `low`, `medium`, `high`, `xhigh`, `max`                                  | per key       |
-| `pressure.codex_model`             | `gpt-6.1-sol` | `gpt-6-astra`, `gpt-6.1-sol`, `gpt-6-sol`, `gpt-5.6-terra`, `gpt-6-luna` | per key       |
+| `pressure.codex_model`             | `gpt-6.2-sol` | `gpt-6.2-astra`, `gpt-6.2-sol`, `gpt-6.1-terra`, `gpt-6-luna`            | per key       |
 | `pressure.codex_effort`            | `xhigh`       | `low`, `medium`, `high`, `xhigh`                                         | per key       |
 | `pressure.address_model`           | `opus`        | `haiku`, `sonnet`, `opus`, `fable`                                       | per key       |
 | `pressure.address_effort`          | `high`        | `low`, `medium`, `high`, `xhigh`, `max`                                  | per key       |
-| `models.standard_model`            | `opus`        | `haiku`, `sonnet`, `opus`, `fable`                                       | per key       |
-| `models.standard_effort`           | `medium`      | `low`, `medium`, `high`, `xhigh`, `max`                                  | per key       |
+| `pressure.rounds`                  | `1`           | integer, at least 1                                                      | per key       |
+| `plan.document_summary_model`      | `haiku`         | `haiku`, `sonnet`, `opus`, `fable`                                      | per key       |
+| `plan.document_summary_effort`     | `high`          | `low`, `medium`, `high`, `xhigh`, `max`                                 | per key       |
+| `plan.overview_model`              | `sonnet`        | `haiku`, `sonnet`, `opus`, `fable`                                      | per key       |
+| `plan.overview_effort`             | `high`          | `low`, `medium`, `high`, `xhigh`, `max`                                 | per key       |
+| `plan.summary_backend`             | `claude`        | `claude`, `codex`                                                       | per key       |
+| `plan.summary_codex_model`         | `gpt-6.1-terra` | `gpt-6.2-astra`, `gpt-6.2-sol`, `gpt-6.1-terra`, `gpt-6-luna`           | per key       |
+| `plan.summary_codex_effort`        | `high`          | `low`, `medium`, `high`, `xhigh`                                        | per key       |
+| `plan.spec_authoring_model`        | `opus`          | `haiku`, `sonnet`, `opus`, `fable`                                      | per key       |
+| `plan.spec_authoring_effort`       | `medium`        | `low`, `medium`, `high`, `xhigh`, `max`                                 | per key       |
+| `plan.plan_authoring_model`        | `opus`          | `haiku`, `sonnet`, `opus`, `fable`                                      | per key       |
+| `plan.plan_authoring_effort`       | `high`          | `low`, `medium`, `high`, `xhigh`, `max`                                 | per key       |
+| `models.standard_model`            | `sonnet`      | `haiku`, `sonnet`, `opus`, `fable`                                       | per key       |
+| `models.standard_effort`           | `high`        | `low`, `medium`, `high`, `xhigh`, `max`                                  | per key       |
 | `models.knowledge_model`           | `opus`        | `haiku`, `sonnet`, `opus`, `fable`                                       | per key       |
 | `models.knowledge_effort`          | `medium`      | `low`, `medium`, `high`, `xhigh`, `max`                                  | per key       |
 | `models.knowledge_distill_model`   | `sonnet`      | `haiku`, `sonnet`, `opus`, `fable`                                       | per key       |
 | `models.knowledge_distill_effort`  | `high`        | `low`, `medium`, `high`, `xhigh`, `max`                                  | per key       |
 | `models.integration_verify_model`  | `opus`        | `haiku`, `sonnet`, `opus`, `fable`                                       | per key       |
 | `models.integration_verify_effort` | `xhigh`       | `low`, `medium`, `high`, `xhigh`, `max`                                  | per key       |
+| `models.code_reviewer_model`       | `opus`        | `haiku`, `sonnet`, `opus`, `fable`                                       | per key       |
+| `models.code_reviewer_effort`      | `high`        | `low`, `medium`, `high`, `xhigh`, `max`                                  | per key       |
+| `models.contract_writer_model`     | `opus`        | `haiku`, `sonnet`, `opus`, `fable`                                       | per key       |
+| `models.contract_writer_effort`    | `high`        | `low`, `medium`, `high`, `xhigh`, `max`                                  | per key       |
 
-"Whole section" means a project `[terminal]` or `[context]` section replaces the user tier's section outright, so a key it omits takes the built-in. "Per key" means a project `[pressure]` or `[models]` section overrides only the keys it names and the rest fall through to the user file. The `pressure.*` keys are explained under [Primary Commands](#primary-commands), the `models.*` keys under [Model Allocation](#model-allocation).
+"Whole section" means a project `[terminal]` or `[context]` section replaces the user tier's section outright, so a key it omits takes the built-in. "Per key" means a project `[pressure]`, `[planning]`, `[models]`, or `[codex]` section overrides only the keys it names and the rest fall through to the user file. The `pressure.*` keys are explained under [Primary Commands](#primary-commands), the `models.*` keys under [Model Allocation](#model-allocation).
+
+### Read gate
+
+Inside a live stage, an agent's first whole read of a file over 400 lines is denied once with the file's `loom map --outline` (a Markdown file gets a heading outline directly), and the agent's next whole read of that file passes. The key is the agent and the absolute path, so a `Read` and a Bash `cat` share one denial. Outside a stage the same message is only a warning. The gate is on by default. Hook changes take effect only after install, and installed hooks apply to every checkout at once, so install only when no other loom run is active.
+
+The gate is an operator decision with no replay behind it. After install, compare the `reads` section and the Attribution `read:*` rows for 14 days before and after, and count the rows under `.loom/work/hooks/read-denials/`. Each row is a denied call that cost one request, and `same_transcript_rereads` counts the retry. Turn the gate off unless the `read:*` cost falls by more than those denied calls cost, about 15K units each at 150K resident.
+
+To turn it off, set `read_gate = false` under `[hooks]` in `.loom/work/config.toml` after `loom init` and before `loom run`. `loom clean` and `loom init --clean` drop the setting, `loom config` does not manage it, and editing the file during a host job fails that job with `verification policy changed`.
 
 ## Web Dashboard
 
@@ -637,24 +784,9 @@ The keys, with their built-in defaults:
 loom status --web [PORT] [--host HOST] [--terminals]
 ```
 
-The dashboard binds to `127.0.0.1` by default and serves the live ledger over a WebSocket in the browser; see [Web Dashboard Remote Access](#web-dashboard-remote-access) for `--host`. Two views share the same data: the graph (below) draws the plan as a dependency graph colored by stage state, and `/ledger` puts one row per stage in a table with the same columns as `loom status --live`. Both carry a "needs attention" panel naming the stages that need a person, with a suggested command for each.
+The dashboard binds to `127.0.0.1` by default and serves the live ledger over a WebSocket in the browser; see [Web Dashboard Remote Access](#web-dashboard-remote-access) for `--host`. Two views share the same data: the graph draws the plan as a dependency graph colored by stage state, and `/ledger` puts one row per stage in a table with the same columns as `loom status --live`. Both carry a "needs attention" panel naming the stages that need a person, with a suggested command for each.
 
 A daemon poller checks Claude and Codex quota roughly every 180 seconds; whenever either has data, the dashboard's sticky footer shows a percent bar and reset countdown for each, the same meter drawn above the legend in `loom status --live`.
-
-<p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="doc/images/webui-overview-dark.png">
-    <img src="doc/images/webui-overview.png" alt="The loom web dashboard showing a plan as a dependency graph of stages" width="880">
-  </picture>
-</p>
-
-<p align="center">
-  <img src="doc/images/webui-ledger.png" alt="The loom web dashboard ledger view, one row per stage" width="880">
-</p>
-
-<p align="center">
-  <em>The <code>/ledger</code> view: state, dependencies, models, activity and context for every stage.</em>
-</p>
 
 Without `PORT`, it starts at port 7373 and automatically tries the next available port when a candidate is occupied. Supplying a nonzero `PORT` requests that exact port; `PORT` 0 asks the OS for any free port. It works without the daemon by polling `.loom/work/` files directly when the daemon socket is unreachable. Besides the ledger, it exposes a settings dialog for editing loom's configuration and, with `--terminals`, a way to open a stage's terminal from the browser.
 
@@ -679,9 +811,9 @@ Limits:
 
 ### Web Dashboard Settings
 
-The dashboard header has a settings button; opening it (or navigating to `?settings=1`) edits loom's configuration in place, so the browser's back button closes the dialog. Each row shows all three tiers — built-in, user, project — side by side as table columns, or as one card per row below 700px wide. It edits every key in the registry `loom config` does — eighteen keys across `update`, `terminal`, `context`, `pressure`, and `models`: `update.check` / `update.check_interval_hours` (loom's self-update check), `terminal.backend` (see [Terminal Backends](#terminal-backends)), `context.ceiling_tokens` (see [Plan-Level Context Fields](#plan-level-context-fields)), the six `pressure.*` model and effort picks described under [Primary Commands](#primary-commands), and the eight `models.*` model and effort picks described under [Model Allocation](#model-allocation). `loom config --list` prints every key with its current value and origin. Every control here writes immediately on change, one key at a time; there is no separate Save step, and validation errors from the server surface next to the control that triggered them.
+The dashboard header has a settings button; opening it (or navigating to `?settings=1`) edits loom's configuration in place, so the browser's back button closes the dialog. Each row shows all three tiers — built-in, user, project — side by side as table columns, or as one card per row below 700px wide. It edits every key in the registry `loom config` does — thirty-six keys across `update`, `terminal`, `context`, `pressure`, `models`, `plan`, and `codex`: `update.check` / `update.check_interval_hours` (loom's self-update check), `terminal.backend` (see [Terminal Backends](#terminal-backends)), `context.ceiling_tokens` (see [Plan-Level Context Fields](#plan-level-context-fields)), the six `pressure.*` model and effort picks described under [Primary Commands](#primary-commands) plus `pressure.rounds`, the thirteen `models.*` model and effort picks described under [Model Allocation](#model-allocation), the eleven `plan.*` model, effort and summary-backend keys, and `codex.backend`, which selects the default [native Codex worker lane](#native-codex-workers) or the legacy forwarder. `loom config --list` prints every key with its current value and origin. Every control here writes immediately on change, one key at a time; there is no separate Save step, and validation errors from the server surface next to the control that triggered them.
 
-Above that config table sits a **dashboard** section that never touches those files — two preferences kept entirely in the browser's `localStorage`: a theme picker (Ledger, Aubergine, Pacific, Graphite, each drawn as a miniature of the stage graph in that theme's own colors) and a desktop-notification switch that raises an OS notification when a stage needs a human, needs a handoff, or the whole run finishes. The section renders even when `/api/config` is unreachable, and stays visible under any filter that matches it. Desktop notifications need a secure context — `https`, `localhost`, or a loopback address — so the switch disables itself and explains why when the dashboard is served over plain HTTP to a non-loopback host.
+Above that config table sits a **dashboard** section that never touches those files — two preferences kept entirely in the browser's `localStorage`: a theme picker (Ledger, Harbor, Aubergine, Graphite, Midnight, Obsidian, Indigo Night, each drawn as a miniature of the stage graph in that theme's own colors) and a desktop-notification switch that raises an OS notification when a stage needs a human, needs a handoff, or the whole run finishes. The section renders even when `/api/config` is unreachable, and stays visible under any filter that matches it. Desktop notifications need a secure context — `https`, `localhost`, or a loopback address — so the switch disables itself and explains why when the dashboard is served over plain HTTP to a non-loopback host.
 
 Two scopes:
 
@@ -690,7 +822,7 @@ Two scopes:
 | `user`    | `~/.loom/config.toml`           | Every workspace on this machine |
 | `project` | `<repo>/.loom/work/config.toml` | This workspace only             |
 
-Sixteen of the eighteen keys have a project tier: `terminal.backend`, `context.ceiling_tokens`, and every `pressure.*` and `models.*` key; the dialog marks the remaining `update.*` keys as machine-wide rather than offering a project control that would do nothing. A key's effective value resolves **project → user → built-in default**, and each row shows which tier is currently in force plus what clearing an override would fall back to.
+Thirty-four of the thirty-six keys have a project tier: `terminal.backend`, `context.ceiling_tokens`, and every `pressure.*`, `models.*`, `plan.*` and `codex.backend` key; the dialog marks the remaining `update.*` keys as machine-wide rather than offering a project control that would do nothing. A key's effective value resolves **project → user → built-in default**, and each row shows which tier is currently in force plus what clearing an override would fall back to.
 
 The fallback is not uniform across sections. For `[pressure]` and `[models]`, the project tier resolves **per key** — a project section that sets only one key still lets every other key in that section fall through to your user config. For `[terminal]` and `[context]`, a project override still replaces the whole `.loom/work/config.toml` section, not just one key: clearing the override removes the key and, if that empties the section, the section too — but if a sibling key is still in there (as with `[context]`, since `loom init` writes `ceiling_tokens` alongside `subagent_ceiling_tokens`), the section still wins as a whole and the value resolves to the built-in default rather than falling through to your user setting. The dialog reports each case accurately; for `[terminal]`/`[context]` that section-level fallback just may not be what you expected.
 
@@ -699,14 +831,6 @@ On the default loopback bind, the dashboard stays an unauthenticated tool for th
 ### Web Dashboard Terminals
 
 `loom status --web --terminals` (tmux backend only) adds a "Take control" view to each stage's detail dialog: an xterm.js terminal opens right in the browser, attached to that stage's live tmux session. It starts in a read-only View mode; switching to Control sends every keystroke to the running agent. Enabling `--terminals` mints a one-time token and prints it in the startup URL — open that exact link once to set an auth cookie for the dashboard; a plain `--web` link never gets the "Take control" option. With a non-loopback `--host`, the same startup token already covers the dashboard cookie; the cookie alone still never grants "Take control" — that capability comes only from passing `--terminals`.
-
-<p align="center">
-  <img src="doc/images/webui-terminal-dark.png" alt="The loom web dashboard's terminal view attached to a live stage session" width="880">
-</p>
-
-<p align="center">
-  <em>A stage's terminal, opened from its detail dialog: live output, viewable read-only or with control handed over.</em>
-</p>
 
 ## Plan Format
 
@@ -799,6 +923,7 @@ into `.loom/work/config.toml`'s `[context]` section at `loom init`.
 | `implementers`                     | No                     | Licensed agent lanes as a list, first = preferred for routine work: `["codex", "claude"]`. Default `["claude"]`. Listing a lane makes it available, not mandatory — a stage mixes lanes per subagent                                 |
 | `ultracode`                        | No                     | License this stage for large multi-agent fan-out; per-stage opt-in (default `false`)                                                                                                                                                 |
 | `skills`                           | No                     | Skills this stage's agents need, by catalog name (`["loom-rust", "loom-debugging"]`). `loom plan verify` rejects an empty, duplicate or unknown name; the signal lists each as a skill to load before the detected ones, and a subagent's brief names them|
+| `consumer_deferred`                | No                     | One line (at most 300 bytes) saying why no consumer of the stage's new units exists in the plan; satisfies the wiring-coverage warning and the version 1 leaf rule for a stage with artifacts and no wiring, and waives nothing else |
 | `subagent_timeout_secs`            | No                     | Seconds of tool silence before the monitor warns `appears hung` (default 300); the advisory idle budget death is judged against — never the `--timeout` on the single owned `loom subagents watch --worker ... --timeout 3600` call  |
 | `context_ceiling_tokens`           | No                     | Absolute resident-token ceiling for this stage's session (minimum 60000). Resolved stage value → plan-level `context_ceiling_tokens` → 150000. The session hook warns at 80% and blocks at 100%; the daemon forces a handoff at 125% |
 | `plan_overview`                    | No                     | Set `false` to suppress the embedded plan overview in this stage's signal                                                                                                                                                            |
@@ -823,7 +948,7 @@ into `.loom/work/config.toml`'s `[context]` section at `loom init`.
 | `harness` | stage | Globs of extra test-only files the contract writer may edit. Every matched file is frozen with the contracts, so do not glob production files. Module declarations a Rust contract needs are derived by loom (scaffold) and are not frozen. |
 | `reachable` | stage | `symbol`, `from`, `description`, optional `min_confidence`: the new unit must be reachable from an entry point in the source graph |
 | `literal: true`, glob `source` | `wiring` entry | Match the pattern as literal text; let `source` be a glob (`*`, `?`, `[`). A pattern that matches only a definition of a name defined in that file is rejected, so point it at a consumer |
-| `ratchet_files` | plan | Exact paths of baseline or ledger files a stage could loosen; any change to one raises a test-integrity event |
+| `ratchet_files` | plan | Exact paths of baseline or ledger files a stage could loosen; a change that loosens one raises a test-integrity event |
 | `provision` | plan | Host commands that prepare each worktree (for example a dependency install), each with a `working_dir` and a `command`. `loom init` snapshots the entries into the work directory's `config.toml`; the daemon runs that snapshot, never the plan file, on the host in each worktree after the `before_stage` checks and before the session spawns. A failing entry blocks the stage. Entries must be idempotent, and `loom plan verify` rejects an install without the hardening flags and a JS package with no entry |
 
 ```yaml
@@ -847,11 +972,13 @@ loom:
 
 In a `version: 2` plan, `loom plan verify` rejects a plan that does not have exactly one `knowledge-distill` stage, a distill stage that another stage depends on, a stage that is not an ancestor of the distill stage, and a `standard` stage that is not an ancestor of an `integration-verify` stage; a version-1 plan gets each of these as a warning. Stage types are resolved as the plan runs them, so an omitted `stage_type` counts by the stage's id and name.
 
-A v2 standard stage starts with a separate contract session that writes the contract tests, runs them red, and ends with `loom stage contracts freeze`; loom then hands the stage to the implementing session. `loom project detect` shows which test runner loom will use for each package. Runners without an adapter fall back to running the contract's `test` string and judging its exit code.
+A v2 standard stage starts with a separate contract session that writes the contract tests, runs them red, and ends with `loom stage contracts freeze`; loom then hands the stage to the implementing session. The writer names each contract's test on that command (and, where the plan leaves them open, the runner and directory), and the freeze also runs the stage's lint and search checks over what the writer wrote. `loom project detect` shows which test runner loom will use for each package. Runners without an adapter fall back to running the contract's `test` string and judging its exit code.
 
 The contract phase is visible wherever `loom status` renders: a magenta `contracts` tag next to the stage's `[model]` tag (added to the legend while such a stage exists), the live TUI's activity cell reading `writing contract tests` or, once stale, `contract writer idle <duration>`, and the web dashboard's violet `contracts` tag with a dashed node outline, the same activity text, a `... · contract phase` stage-strip label, and a `contract writer` row in the stage dialog's session type.
 
-A refused freeze — a file changed outside the contracts and harness globs, a contract not reported red, or (checked by the daemon) a FIFO, socket or device node left in the worktree — does not park the stage. Loom files it as a `freeze-refusal` dispute and an independent adjudicator decides: at once for a refusal the daemon made, and after five quiet minutes with no running subagent for one recorded by the writer's own pre-check. `reject` starts a fresh contract writer with the adjudicator's instructions; `accept` amends `contracts` or `harness`, or replaces a format criterion, with a cited reason; `needs-more-evidence` is answered by the writer through `loom memory note` and a re-freeze. The fourth refusal escalates to `NeedsHumanReview`. Agents never file this dispute; only loom does. A writer that stops before its first freeze attempt is not disputed.
+While the daemon runs the frozen contracts as a host job, the writer is blocked and silent, so every surface says so instead: the static tag and the live TUI's activity cell read `contracts written, testing 9/11 · 6m12s` (`contracts written, waiting to test` while the run is queued), the dashboard shows the same text with a `... · testing contracts` stage-strip label, a separate `testing contracts` chip in the state key and a `contract testing` row in the stage dialog, and the stage line drops its idle marker. An orphaned or crashed writer keeps its own state.
+
+A refused freeze — a file changed outside the contracts and harness globs, a contract not reported red, a lint or search check of the stage that fails on a file the writer wrote, or (checked by the daemon) a FIFO, socket or device node left in the worktree — does not park the stage. A failed lint or search check comes back to the live writer session with the failing output, and only the third such return in one session, or five quiet minutes after one, files the dispute. Loom files it as a `freeze-refusal` dispute and an independent adjudicator decides: at once for a refusal the daemon made, and after five quiet minutes with no running subagent for one recorded by the writer's own pre-check. `reject` starts a fresh contract writer with the adjudicator's instructions; `accept` amends `contracts` or `harness`, or replaces a format criterion, with a cited reason; `needs-more-evidence` is answered by the writer through `loom memory note` and a re-freeze. The fourth refusal escalates to `NeedsHumanReview`. Agents never file this dispute; only loom does. A writer that stops before its first freeze attempt is not disputed.
 
 Completion runs a Rust contract by test name, so the freeze and completion also prove that the frozen file is the one compiled under that name. The module declarations a contract file needs are derived from the stage base, and the writer may add exactly those (any other change outside the contracts and harness is refused). Loom then walks the `mod` chain from a libtest test target root to the file and refuses `#[path]`, `#[cfg_attr]`, any `cfg` other than `#[cfg(test)]` on a chain `mod` item or as an inner attribute of a chain file, inline modules, a target with `test = false`, `harness = false` or `required-features`, a chain no test target compiles, and a run directory whose `Cargo.toml` does not select the contract's package (a workspace root whose `default-members` leave it out). A contract that needs one of these belongs in a `tests/` file. `cargo` runner overrides in `.cargo/config.toml`, `build.rs` and code elsewhere in the same test binary can still change a run; the check does not see them.
 
@@ -859,7 +986,7 @@ Completion runs a Rust contract by test name, so the freeze and completion also 
 
 `loom check <stage-id>` validates outcomes, not just compilation/tests. A `standard` stage's orchestrator runs it once on the formatted tree, beside the final review round, and a fix round re-runs only the failed criteria with `--criterion <n>` (0-based, repeatable, plus the lint and format criteria). It checks:
 
-- `acceptance`: shell criteria (simple strings or extended objects with `stdout_contains`, `exit_code`, etc.)
+- `acceptance`: shell criteria (simple strings or extended objects with `stdout_contains`, `exit_code`, etc.; an extended criterion without `timeout_secs` runs for up to 300 s, while `before_stage`, `after_stage` and `wiring_tests` commands keep 30 s)
 - `artifacts`: real implementation files exist
 - `wiring`: critical integration links exist
 - `wiring_tests`: runtime integration checks
@@ -867,11 +994,13 @@ Completion runs a Rust contract by test name, so the freeze and completion also 
 
 For `standard` and `integration-verify` stages, acceptance criteria or at least one goal-backward check must be defined.
 
-In a version 2 plan, `loom stage complete` also runs, in order: the contract check (every frozen contract file unchanged, every contract test passing), test integrity (fewer test declarations or assertions, removed or changed assertion lines, or a changed `ratchet_files` entry each raise an event that must be fixed or accepted through an adjudicated dispute), the tests reached from the changed code in the source graph, and the review gate. A criterion that runs a recognised test runner and selects zero tests fails. The gate needs a `loom-code-reviewer` round on the final change fingerprint with every finding fixed or ruled on; editing any file after the last round, formatting included, needs another round, while committing does not. The loom daemon that owns the worktree computes this fingerprint, once, for both the round a review records and the completion that checks it; a session runs no check locally: its `loom stage complete` relays the request, and the daemon runs test integrity and the review gate once, when it applies a passing run. Integration-verify re-checks every stage's `reachable` and wiring on the merged tree and lists the full test command.
+In a version 2 plan, `loom stage complete` also runs, in order: the contract check (every frozen contract file unchanged, every contract test passing), test integrity (fewer test declarations or assertions, removed or changed assertion statements, or a loosened `ratchet_files` entry each raise an event that must be fixed or accepted through an adjudicated dispute; a reflow, a multi-line rewrap, a test moved to a file the runner still collects and a tightened ratchet raise nothing, and every final code review sees the stage's events in a brief loom computes), the tests reached from the changed code in the source graph, and the review gate. A criterion that runs a recognised test runner and selects zero tests fails. The gate needs a `loom-code-reviewer` round on the final change fingerprint with every finding fixed or ruled on; editing any file after the last round, formatting included, needs another round, while committing does not. The loom daemon that owns the worktree computes this fingerprint, once, for both the round a review records and the completion that checks it; a session runs no check locally: its `loom stage complete` relays the request, and the daemon runs test integrity and the review gate once, when it applies a passing run. Integration-verify re-checks every stage's `reachable` and wiring on the merged tree and lists the full test command.
 
 ### Verification Is Enforced, Not Self-Reported
 
 `loom stage complete` is the only way a stage finishes, and it runs the acceptance criteria itself before doing anything else. If they fail, the stage stays `Executing` — the agent must fix the work and re-run, and `fix_attempts` is incremented so repeated failures surface rather than accumulate silently. `after_stage` checks then run post-acceptance, and goal-backward verification runs before the progressive merge. A passing criterion is cached against an exact fingerprint of its command and the tree's content, so an unchanged criterion is not re-run on the next attempt, including the completion that follows a commit of the tree `loom check` passed; `--no-cache` on `loom check`, or on `loom stage complete` from the operator's shell, forces a real run regardless and still stores its passes.
+
+Checks for the same session, commit and tree join a running job when it covers the requested criteria. An uncovered selection waits behind it; waiting selections are combined, so a waiting reviewer can see failures from criteria another reviewer requested. Repeated calls follow their job until it finishes.
 
 Artifact verification treats a stub as a failure: a file that exists but contains `TODO`, `FIXME`, `unimplemented!`, `todo!`, a bare `pass`, or `raise NotImplementedError` does not count as delivered.
 
@@ -900,13 +1029,15 @@ An agent that genuinely believes a criterion is wrong or impossible has a sancti
 
 ### Implementers Do Not Verify
 
-An implementing subagent may run **at most one narrowly-scoped check** covering the files it just changed. Project-wide builds, full test suites, and repo-wide lint or typecheck runs belong to the stage's gate: in a `standard` stage the orchestrator runs one `loom check` on the finished tree, and an `integration-verify` stage keeps its own gate, as its signal directs. The orchestrator acts on the result: it delegates the fixes and commits.
+In an orchestrated Loom stage, an implementing subagent compiles the files it wrote freely (`cargo check`, `cargo build`, `cargo test --no-run`, `tsc --noEmit`, `<pm> run build`) and runs the tests for the code it wrote and its module when it is confident the code is ready or the fix is correct, never the whole suite. Full test suites, `cargo clippy`, every `cargo fmt` form and repo-wide lint or typecheck runs belong to the stage's gate: in a `standard` stage the orchestrator runs `loom check` on the finished tree, and an `integration-verify` stage is exempt: its orchestrator and reviewers run the full suite through `loom check integration-verify [--criterion <n>]`. The orchestrator acts on the result: it delegates the fixes and commits.
 
-This is enforced, not just advised: `loom-hooks/subagent-verify-guard.sh` (a `PreToolUse:Bash` hook) blocks project-wide runners — `cargo build`, `cargo test`, `make test`, `tsc`, `go build` and friends — when the caller is detected as a subagent. Scoped invocations pass, quoted mentions are ignored, and unrecognised commands are always allowed: a false block would strand a subagent mid-task. The main agent of a live loom `standard` stage is held to one rule: an unfiltered test suite of any runner loom has an adapter for (`cargo test`, `cargo nextest run`, `go test`, `bun test`, `jest`, `pytest`, `rake test`, `sbt test` and the rest) is refused, because the gate runs once in `loom check`; filtered runs, builds, clippy, fmt and lint pass. The hook is installed globally, so it acts only when `LOOM_MAIN_AGENT_PID` names a live process-tree ancestor: an ordinary Claude Code session is never blocked.
+This is enforced, not just advised: `loom-hooks/subagent-verify-guard.sh` (a `PreToolUse:Bash` hook) blocks project-wide verification — an unfiltered `cargo test`, `cargo clippy`, every `cargo fmt` form, `make test`, a whole-project `tsc`, lint and typecheck scripts — when the caller is detected as a subagent. Compile commands (`cargo check`, `cargo build`, `cargo test --no-run`, `tsc --noEmit`, `<pm> run build`) and scoped invocations pass, quoted mentions are ignored, and unrecognised commands are always allowed: a false block would strand a subagent mid-task. The main agent of a live loom `standard` stage is held to one rule: an unfiltered test suite of any runner loom has an adapter for (`cargo test`, `cargo nextest run`, `go test`, `bun test`, `jest`, `pytest`, `rake test`, `sbt test` and the rest) is refused, because the full suite runs only through `loom check`; filtered runs, builds, clippy, fmt and lint pass. The hook is installed globally, so it acts only when `LOOM_MAIN_AGENT_PID` names a live process-tree ancestor: an ordinary Claude Code session is never blocked.
+
+Outside an orchestrated stage, operators and contributors run the native checks appropriate to their work; no Loom stage is required for verification.
 
 Two things worth knowing:
 
-- **One carve-out: `integration-verify` stages.** That stage type keeps its own gate: its orchestrator runs `loom check integration-verify` once, and its reviewers run only targeted checks, never the full suite. The hook does not enforce that limit; it only lets those subagents through. The carve-out is read from the stage file and fails safe — an ambiguous or missing stage file means no relaxation.
+- **One carve-out: `integration-verify` stages.** That stage type is exempt from the test rule: its orchestrator and reviewers may run the full suite, always through `loom check integration-verify [--criterion <n>]`, never a bare runner. The hook does not enforce that; it only lets those subagents through. The carve-out is read from the stage file and fails safe — an ambiguous or missing stage file means no relaxation.
 - **There is deliberately no opt-out environment variable.** An escape hatch would only serve to defeat the rule.
 
 ### Bug-Fix Stages
@@ -921,9 +1052,11 @@ A criterion that fails only because of where completion runs (no network, unread
 
 A verdict does one of three things: `Accept` patches the disputed list (`acceptance`, `wiring` or `wiring_tests`; an acceptance dispute may also patch `wiring`) and re-queues the stage; `NeedsMoreEvidence` appends the judge's questions to the next signal and re-queues, up to a capped number of rounds; `Reject` moves the stage to `NeedsHumanReview`. Every accepted amendment writes a numbered snapshot under `.loom/work/plan_versions/` plus an audit row.
 
-Version 2 plans add five more dispute kinds, each filed once per review round with several ids: `dispute-findings` (a judge rules each finding `uphold`, `dismiss` or `defer` to a dependent stage that is not yet finished; integration-verify never defers), `dispute-contract` (`Accept` re-freezes the stage's whole frozen set — every contract file and every harness match at its current content, with deleted harness files dropped — and may amend `contracts`; `Reject` sends the agent to `loom stage contracts restore`), `dispute-integrity` (`Accept` records the event as accepted at its current count or hash) and `dispute-criteria --field impact-tests` (for a failing impact-selected test selection the stage did not cause; `Accept` records the failure, and completion notes it while it fails no worse). A selection whose tests fail at the stage's merge base with at least as many failures counted is noted without a dispute; a build failure or unreadable output there still fails. The dispute names the ids (`IT-<runner>:<package>`) the last failing `loom stage complete` listed, and the judge reads loom's own record of those failures. `freeze-refusal` is filed by loom itself when a contract freeze is refused (the adjudicator may accept it with `contracts`, `harness` or `acceptance` patches). Each kind has its own budget of three disputes per stage.
+Version 2 plans add five more dispute kinds, each filed once per review round with several ids: `dispute-findings` (a judge rules each finding `uphold`, `dismiss` or `defer` to a dependent stage that is not yet finished; integration-verify never defers), `dispute-contract` (`--replacement <path>` attaches the complete replacement file, copied to `$LOOM_SCRATCH_DIR` and edited there, never the frozen file itself; the judge reviews it by reading it. `Accept` writes the replacement into the worktree when one is attached, re-freezes the stage's whole frozen set — every contract file and every harness match at its current content, with deleted harness files dropped — and may amend `contracts`; `Reject` discards the replacement, or without one sends the agent to `loom stage contracts restore`), `dispute-integrity` (`Accept` records the event as accepted at its current count or hash) and `dispute-criteria --field impact-tests` (for a failing impact-selected test selection the stage did not cause; `Accept` records the failure, and completion notes it while it fails no worse). A selection whose tests fail at the stage's merge base with at least as many failures counted is noted without a dispute; a build failure or unreadable output there still fails. The dispute names the ids (`IT-<runner>:<package>`) the last failing `loom stage complete` listed, and the judge reads loom's own record of those failures. `freeze-refusal` is filed by loom itself when a contract freeze is refused (the adjudicator may accept it with `contracts`, `harness` or `acceptance` patches). Each kind has its own budget of three disputes per stage.
 
-The plan-level `adjudication.max_amendments_per_stage` field bounds autonomous amendments per stage (default 10), so a multi-fix plan is not sent to a human part-way through. `loom stage amend` gives an operator the same audited path directly: it replaces, inserts, or deletes one element of a stage's `acceptance`, `wiring`, `wiring_tests`, `contracts` or `harness` array, snapshotting and logging the change the same way.
+When an accepted `dispute-integrity` or impact-tests dispute, or a findings verdict that upholds nothing, is the stage's last open dispute and the worktree is clean, the stage stays in `NeedsAdjudication` with no session. The daemon runs one completion job (`VerdictComplete`) on the committed tree, and `loom status` shows the stage adjudicating with no judge. A pass completes and merges the stage; a failure, a cancel or an interrupt re-queues it for a fresh session with the failures in its feedback. An operator-held stage is re-queued and stays held.
+
+The plan-level `adjudication.max_amendments_per_stage` field bounds autonomous amendments per stage (default 10), so a multi-fix plan is not sent to a human part-way through. `loom stage amend` gives an operator the same audited path directly: it replaces, inserts, or deletes one element of a stage's `acceptance`, `wiring`, `wiring_tests`, `contracts`, `harness` or `reachable` array, snapshotting and logging the change the same way.
 
 ## Knowledge System
 
@@ -1010,46 +1143,69 @@ Every stage's main agent is an **orchestrator**; the model and effort it runs co
 
 | Stage type           | Default model | Default effort |
 | -------------------- | ------------- | -------------- |
-| `standard`           | `opus`        | `medium`       |
+| `standard`           | `sonnet`      | `high`         |
 | `knowledge`          | `opus`        | `medium`       |
 | `knowledge-distill`  | `sonnet`      | `high`         |
 | `integration-verify` | `opus`        | `xhigh`        |
 
-Configure either default per stage type in the `[models]` section of `~/.loom/config.toml` (user tier) or `<repo>/.loom/work/config.toml` (project tier, resolved per key — a project section that sets only one of these eight keys still lets the rest fall through to the user config):
+Configure either default per stage type in the `[models]` section of `~/.loom/config.toml` (user tier) or `<repo>/.loom/work/config.toml` (project tier, resolved per key — a project section that sets only one of these keys still lets the rest fall through to the user config):
 
 ```toml
 # ~/.loom/config.toml or .loom/work/config.toml
 [models]
-standard_model = "opus"
-standard_effort = "medium"
+standard_model = "sonnet"
+standard_effort = "high"
 knowledge_model = "opus"
 knowledge_effort = "medium"
 knowledge_distill_model = "sonnet"
 knowledge_distill_effort = "high"
 integration_verify_model = "opus"
 integration_verify_effort = "xhigh"
+code_reviewer_model = "opus"
+code_reviewer_effort = "high"
+contract_writer_model = "opus"
+contract_writer_effort = "high"
 ```
 
-A plan stage's `model` / `reasoning_effort` field overrides both config tiers for that one stage. Merge and base-conflict sessions stay pinned at opus/high and adjudication keeps its own `[adjudication] model`; neither is configurable through `[models]`.
+A plan stage's `model` / `reasoning_effort` field overrides both config tiers for that one stage. `standard_model`/`standard_effort` set the orchestrator of standard (implementation) stages. `code_reviewer_model`/`code_reviewer_effort` are not a stage type: they set the model and effort of the `loom-code-reviewer` subagent, applied by the spawn guard to every `loom-code-reviewer` spawn and overriding a model the caller passes. `contract_writer_model`/`contract_writer_effort` set the model and effort of the contract test writer session; a plan stage's `model`/`reasoning_effort` do not apply to it. Merge and base-conflict sessions stay pinned at opus/high and adjudication keeps its own `[adjudication] model`; neither is configurable through `[models]`.
 
-The orchestrator decomposes the work, hands each subagent full context, then runs the gate and commits. In a `standard` stage the gate is the orchestrator's single `loom check`, and a fix round re-checks with `--criterion <n>`; an `integration-verify` stage keeps its own gate. Either way the orchestrator owns the fixes and the commit. It makes a change itself only when that is cheaper than a spawn: at most 20 changed lines in at most 2 files it has already read, proven by one command; a fable session delegates even those. Implementation is delegated to as few subagents as the work allows, each spawned **by agent type** so the model choice is explicit:
+The orchestrator decomposes the work, hands each subagent full context, then runs the gate and commits. In a `standard` stage the gate is the orchestrator's `loom check`, the only place the full suite runs, and a fix round re-checks with `--criterion <n>`; an `integration-verify` stage keeps its own gate. Either way the orchestrator owns the fixes and the commit. It makes a change itself only when that is cheaper than a spawn: at most 20 changed lines in at most 2 files it has already read, proven by one command; a fable session delegates even those. Implementation is delegated to as few subagents as the work allows, each spawned **by agent type** so the model choice is explicit:
 
-| Agent                                     | Model                                                | Use for                                                                                                                                                                                                          |
-| ----------------------------------------- | ---------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `loom-software-engineer`                  | Sonnet                                               | Common implementation and integration tests to detailed instructions                                                                                                                                             |
-| `loom-software-engineer` (`model: haiku`) | Haiku                                                | Mechanical edits, boilerplate, scaffolding, and simple unit tests                                                                                                                                                |
-| `loom-codex-forwarder`                    | Codex GPT-5.6 Terra (GPT-6 Luna on explicit request) | Codex lane, licensed only on stages listing codex in `implementers`: Terra for common implementation/integration tests, Luna for boilerplate, scaffolding, and simple unit tests only when the user or plan asks |
-| `loom-senior-software-engineer`           | Opus (effort high)                                   | Mainstream architecture and algorithm implementation, complex debugging, security-sensitive or cross-cutting work; spawned with `effort: xhigh` for the hardest cases                                            |
-| `loom-code-reviewer`                      | Opus                                                 | Read-only code, security, and architecture review                                                                                                                                                                |
-| `loom-advisor`                            | Fable                                                | Diagnosis after a repeated failure — advice returned, nothing written                                                                                                                                            |
+| Agent                           | Model                                                               | Use for                                                                                                                                                                                                                                                                                                                |
+| ------------------------------- | ------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `loom-software-engineer`        | Sonnet                                                              | Pieces that need exploration or the initial iteration on failing tests, or too large to brief in detail                                                                                                                                                                                                                |
+| `loom-software-developer`       | Haiku (effort high)                                                 | Extremely simple pieces, or ones with a highly detailed brief: feature code and unit tests                                                                                                                                                                                                                             |
+| `loom-codex-forwarder`          | Codex GPT-6.1 Terra or GPT-6.2 Sol (GPT-6 Luna on explicit request) | Codex lane, licensed only on stages listing codex in `implementers` and chosen per piece: Terra for well-specified implementation, integration tests, boilerplate, scaffolding and simple unit tests; Sol for a substantial well-specified unit or a Terra unit that failed once; Luna only when the user or plan asks |
+| `loom-senior-software-engineer` | Opus (effort medium)                                                | Architecture across modules, new algorithms, concurrency and distributed systems, security-sensitive code, bugs of unknown cause; a failed attempt is respawned at `effort: high`                                                                                                                                      |
+| `loom-code-reviewer`            | Opus                                                                | Read-only code, security, and architecture review                                                                                                                                                                                                                                                                      |
+| `loom-advisor`                  | Fable                                                               | Diagnosis after an Opus implementer failed — advice returned, nothing written                                                                                                                                                                                                                                          |
 
-Fable-tier work — visual/UI design, a bug that survived a delegated fix attempt, or extremely challenging algorithmic design — has no dedicated agent type; it is spawned with an explicit model override rather than relying on inheritance.
+`loom-software-developer` has the `Skill` tool and loads the skills its brief names. It is a default, not a proven saving: after a run that used it, read the Attribution section for its median first-request resident, then compare its whole cost per transcript with Haiku `loom-software-engineer` transcripts (divide each type's `by_agent_model` usage row by that row's `transcripts`, and count any task respawned at a higher tier against it). Route its work back to `loom-software-engineer` if the whole cost does not fall.
 
-The `loom-codex-forwarder` row additionally depends on the `codex` CLI and its plugin's companion runtime being installed. `loom run` checks this at startup and prints an advisory warning if either is missing — it never blocks the run — and terra-tier work falls back to Sonnet and luna-tier work to Haiku for the duration; the stage signal states the fallback explicitly and does not spawn `loom-codex-forwarder`.
+Fable-tier work — visual/UI design or extremely challenging algorithmic design — has no dedicated agent type; it is spawned with an explicit model override rather than relying on inheritance.
 
-This is why savings come from delegation rather than downgrade: an untyped subagent silently inherits the stage's own (usually Opus) model, making every worker expensive. Two failures on the same task should produce a `loom-advisor` diagnosis, not a blind retry at a larger model.
+The `loom-codex-forwarder` row additionally depends on the `codex` CLI and its plugin's companion runtime being installed. `loom run` checks this at startup and prints an advisory warning if either is missing — it never blocks the run — and terra- and sol-tier work falls back to Sonnet and boilerplate and simple unit tests to Haiku for the duration; the stage signal states the fallback explicitly and does not spawn `loom-codex-forwarder`.
+
+This is why savings come from delegation rather than downgrade: an untyped subagent inherits the spawning session's model, so the spawn guard denies it inside a stage and sets `model: sonnet` on it elsewhere. A failure against clear acceptance moves the work up one tier: Haiku to Sonnet, Sonnet to Opus at medium, Opus at medium to Opus at `effort: high`; Codex Terra to Sol, then Claude. Only after an Opus implementer fails at `effort: high` does `loom-advisor` diagnose, which is rare. `loom usage` attributes every transcript to its stage and every subagent to its requested model, from the worktree directory name and the spawn record when no hook ledger exists, so a misrouting shows in `by_agent_model`.
 
 A stage omits `model` and `reasoning_effort` by default, so the stage type's configured default applies. Set either field only as a deliberate per-stage override (`low`, `medium`, `high`, `xhigh`, `max` for effort). `ultracode: true` licenses a stage for large multi-agent fan-out; it is per-stage opt-in so the cost decision stays explicit.
+
+### Native Codex workers
+
+By default (`codex.backend = native`) a stage's main agent reaches Codex through relayed commands; `codex.backend = legacy` (`loom config -k codex.backend legacy`) selects the `loom-codex-forwarder` subagent instead. On the native lane the main agent starts each worker with `loom subagents start`, loom's daemon admits it and runs one supervisor per worker, and the worker's record lives under `.loom/work/native-workers/`. The worker runs `codex app-server` inside a bubblewrap boundary with its own pid namespace, no network except an allowlist proxy to the model provider, and a private Codex home, so no `config.toml`, rules, hooks or MCP servers from your own `~/.codex` load. The worktree is writable except `.loom`, `.git` and `.claude`, so the worker cannot commit or change the repository's git state and cannot change `.loom/`; the instruction not to run git stays as a second layer, and no Loom or Claude hook runs for its commands. Briefs, model tiers, sizing rules, the cap of 6 workers per stage and the 1500000 ms deadline are the same as on the forwarder lane.
+
+```text
+loom subagents start --provider codex --unit-id <unit> --brief <absolute path> --model <model> --effort xhigh
+loom request status <id> --wait 90
+loom subagents watch --worker codex:<unit> --timeout 3600
+loom subagents result --worker codex:<unit>
+loom subagents message --worker codex:<unit> --invocation <id> --delivery steer|next-turn --message-id <id> --text <text>
+loom subagents cancel --worker codex:<unit> --invocation <id> --reason <text>
+```
+
+Only the stage's main agent can start, message or cancel a worker, and each of those commands runs alone in its own Bash call. While a worker of the stage runs, or its processes cannot be proven stopped, `loom stage reset`, `retry` (even with `--force`), `skip`, `commit`, `loom check` and `loom stage complete` are refused; an operator checks a worker with `loom subagents status` and, after inspecting the worktree, clears an unverified one with `loom subagents release --stage <stage> --invocation <id>`.
+
+The native backend works on Linux only, where bubblewrap can create a pid namespace. When the key is `native` and the host cannot run it, the stage signal reports the Codex lane as unavailable with the reason; it does not fall back to the forwarder; set `codex.backend = legacy` to use the forwarder lane. `native` is the default. loom's own tests drive it with a scripted peer, so on a new host check that `codex --version` is 0.169.0 (the version the protocol was measured against) and run one real job on a disposable worktree, confirming that the report arrives, `git status` shows only the briefed files, and `loom usage` attributes the thread.
 
 ## Sandbox Configuration
 
@@ -1179,8 +1335,8 @@ Loom spawns each stage's Claude Code session through a terminal backend. Two are
 
 | Backend  | Default | Sessions run in                    | Needs a GUI? |
 | -------- | ------- | ---------------------------------- | ------------ |
-| `native` | ✅ yes  | a host terminal emulator window    | yes          |
-| `tmux`   | opt-in  | a detached tmux server (no window) | no           |
+| `native` | opt-in  | a host terminal emulator window    | yes          |
+| `tmux`   | ✅ yes  | a detached tmux server (no window) | no           |
 
 The `native` backend opens a real terminal window per session — you watch stages run in your own
 terminal emulator. It requires a detectable emulator, so it cannot run headless.
@@ -1194,7 +1350,7 @@ and on `PATH`.**
 ```toml
 # .loom/work/config.toml
 [terminal]
-backend = "tmux"   # or "native" (default)
+backend = "tmux"   # default; or "native"
 ```
 
 Or from the CLI:
@@ -1204,7 +1360,7 @@ loom init <plan> --backend tmux   # skips the interactive backend prompt
 loom run --backend tmux           # persists the choice to [terminal]
 ```
 
-`loom init` prompts for a backend when run interactively; with no TTY it defaults to `native`.
+`loom init` prompts for a backend when run interactively; with no TTY it inherits `~/.loom/config.toml`, then the built-in default, `tmux`. The built-in default is tmux; set `terminal.backend = "native"` to keep native terminal windows.
 Changing the backend while the daemon is running is refused with a hint — `loom stop` first, then
 re-run with `--backend`. Selecting a backend takes effect on the next spawn.
 

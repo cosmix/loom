@@ -4,6 +4,8 @@
 //! answered here, from the filesystem alone. No subcommand under this module
 //! may make a model call or a network call.
 
+pub mod blocks;
+pub mod codex_backend;
 pub mod context_ceilings;
 pub mod forward_receipt;
 pub mod pre_compact;
@@ -11,10 +13,18 @@ pub mod project_types;
 pub mod reconcile_graph;
 pub mod relay;
 pub mod review_harvest;
+pub mod review_start;
 mod review_transcript;
+pub mod reviewer_brief;
+mod reviewer_brief_plan;
+pub mod reviewer_model;
 pub(crate) mod target;
 pub mod user_prompt;
 pub mod worker_brief;
 
+#[cfg(test)]
+mod tests_blocks;
+#[cfg(test)]
+mod tests_blocks_files;
 #[cfg(test)]
 mod tests_cli_surface;

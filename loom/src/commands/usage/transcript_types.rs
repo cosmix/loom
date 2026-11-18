@@ -1,8 +1,19 @@
 //! Record and entry type definitions for parsed Claude Code transcripts.
-//!
-//! Split out of `transcript` to keep that module under the 400-line cap:
-//! this owns the shapes parsing produces, `transcript` owns turning JSONL
-//! lines into them.
+
+use std::sync::atomic::{AtomicBool, Ordering};
+
+static COUNTER_OVERFLOW_REPORTED: AtomicBool = AtomicBool::new(false);
+
+pub(crate) fn saturated_counter(left: u64, right: u64) -> u64 {
+    left.checked_add(right).unwrap_or_else(|| {
+        if !COUNTER_OVERFLOW_REPORTED.swap(true, Ordering::Relaxed) {
+            eprintln!(
+                "loom usage: token totals saturated after u64 overflow; these totals are not exact"
+            );
+        }
+        u64::MAX
+    })
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize)]
 #[serde(rename_all = "kebab-case")]
@@ -24,16 +35,19 @@ pub struct TokenUsage {
 impl TokenUsage {
     /// Tokens the model had resident for this request.
     pub fn resident(&self) -> u64 {
-        self.input + self.cache_creation + self.cache_read
+        saturated_counter(
+            saturated_counter(self.input, self.cache_creation),
+            self.cache_read,
+        )
     }
     /// Field-wise sum, for rolling totals.
     pub fn add(&mut self, other: &TokenUsage) {
-        self.input += other.input;
-        self.cache_creation += other.cache_creation;
-        self.cache_read += other.cache_read;
-        self.output += other.output;
-        self.ephemeral_5m += other.ephemeral_5m;
-        self.ephemeral_1h += other.ephemeral_1h;
+        self.input = saturated_counter(self.input, other.input);
+        self.cache_creation = saturated_counter(self.cache_creation, other.cache_creation);
+        self.cache_read = saturated_counter(self.cache_read, other.cache_read);
+        self.output = saturated_counter(self.output, other.output);
+        self.ephemeral_5m = saturated_counter(self.ephemeral_5m, other.ephemeral_5m);
+        self.ephemeral_1h = saturated_counter(self.ephemeral_1h, other.ephemeral_1h);
     }
 }
 
@@ -80,22 +94,8 @@ pub struct TranscriptDiagnostics {
     pub missing_timestamp_rows: usize,
 }
 
-/// Claude Code writes this literal into [`Request::model`] for a synthetic
-/// assistant row -- an API-error entry (`isApiErrorMessage: true`) that
-/// never reached the API, so its `usage` is all zero.
-///
-/// `Transcript::requests()` deliberately does NOT filter it out at the
-/// source: several consumers (raw request/turn counts in
-/// `usage::sections::{edits, lifecycle, reads, tools, polling, lengths}`)
-/// may legitimately want to count an errored-but-attempted request, and
-/// `usage::sections::rewrites`'s pairing loop does not even go through
-/// `requests()` in the first place, so a source-level filter would miss that
-/// site regardless. Every consumer that instead groups, counts, or picks a
-/// "the model" value from `Request.model` -- where counting or grouping by
-/// a request that never actually reached a model would misreport a local
-/// error as a model choice -- must skip this sentinel itself: see
-/// `subagents::metrics::extract` and `usage::sections::{agents, by_model,
-/// rewrites, totals}`.
+/// Model marker for a synthetic API-error row that never reached the API.
+/// `Transcript::requests()` includes these attempted requests.
 pub(crate) use crate::provider_data::SYNTHETIC_MODEL;
 
 #[derive(Debug, Clone)]
@@ -123,6 +123,17 @@ impl Entry {
     }
 }
 
+/// A rendered `attachment` row: context Claude Code added to the prompt.
+#[derive(Debug, Clone)]
+pub struct AttachmentEntry {
+    /// Non-synthetic requests retained before this row; the row first reaches
+    /// the model on request `requests_before + 1`.
+    pub requests_before: usize,
+    pub kind: String,
+    /// Characters across the row's rendered content strings.
+    pub chars: usize,
+}
+
 #[derive(Debug, Clone)]
 pub struct Transcript {
     pub path: std::path::PathBuf,
@@ -135,9 +146,14 @@ pub struct Transcript {
     /// that is what makes the parent/child tree the report needs.
     pub session_id: String,
     pub agent_id: Option<String>,
-    /// Spawn type from loom's hook-side `starts.jsonl` ledger. `None` for
-    /// transcripts outside a loom run or when the optional ledger is absent.
+    /// Spawn type from loom's hook-side `starts.jsonl` ledger, else (subagents
+    /// only) from the `agent-<id>.meta.json` sidecar Claude Code writes beside
+    /// the transcript; see `agent_type_from_sidecar`. `None` when neither
+    /// exists.
     pub agent_type: Option<String>,
+    /// True when `agent_type` came from the sidecar because the ledger had no
+    /// row. Ledger-coverage diagnostics must not count such a transcript.
+    pub agent_type_from_sidecar: bool,
     /// The model the spawn guard recorded for this agent, joined from
     /// `spawns.jsonl`; `ambiguous` when the order join cannot decide.
     pub requested_model: Option<String>,
@@ -155,6 +171,9 @@ pub struct Transcript {
     pub first_user_entry: Option<UserEntry>,
     /// File order, deduplicated, entries older than the `since` cutoff dropped.
     pub entries: Vec<Entry>,
+    /// Context rows the model saw that are neither requests nor user entries,
+    /// older than the `since` cutoff dropped.
+    pub attachments: Vec<AttachmentEntry>,
     pub diagnostics: TranscriptDiagnostics,
 }
 

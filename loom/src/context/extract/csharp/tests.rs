@@ -144,10 +144,10 @@ fn a_bare_call_reaches_a_member_of_an_outer_class() {
 }
 
 #[test]
-fn a_dynamic_receiver_stays_unresolved_and_keeps_its_text() {
+fn a_dynamic_receiver_stays_unresolved_without_retaining_expression_text() {
     let extraction = extract(WIDGET);
 
-    for (symbol, receiver) in [("Assist", "helper"), ("Go", "Make()")] {
+    for (symbol, receiver) in [("Assist", "helper"), ("Go", "")] {
         let edges = calls(&extraction, symbol);
         let member: Vec<_> = edges.iter().filter(|e| e.receiver.is_some()).collect();
         assert_eq!(member.len(), 1, "symbol {symbol}: {edges:#?}");

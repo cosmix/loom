@@ -29,8 +29,7 @@ pub struct DiscoveryOptions {
     pub claude_root: Option<std::path::PathBuf>,
     pub project: Option<std::path::PathBuf>,
     pub all: bool,
-    pub stage: Option<String>,
-    pub plan: Option<String>,
+    pub selected_stages: Option<HashSet<String>>,
 }
 
 /// Parse `--since`: a duration (`7d`, `24h`, `30m`), an ISO date
@@ -55,11 +54,8 @@ pub fn discover(options: &DiscoveryOptions) -> anyhow::Result<Vec<DiscoveredFile
         return Ok(Vec::new());
     }
     let mut files = collect_projects(&projects_root, options)?;
-    if let Some(stage) = options.stage.as_deref() {
-        files = filter_stage(files, stage);
-    }
-    if let Some(plan) = options.plan.as_deref() {
-        files = filter_plan(files, plan)?;
+    if let Some(stages) = options.selected_stages.as_ref() {
+        files = filter_stages(files, stages);
     }
     files.sort_by(|left, right| left.path.cmp(&right.path));
     Ok(files)
@@ -187,16 +183,9 @@ fn repository_root() -> Result<PathBuf> {
     Ok(ancestor.to_path_buf())
 }
 
-/// Inside a git worktree (loom's own `.worktrees/<stage>` included), `.git`
-/// is a FILE, not a directory, and still satisfies `exists()` — so without
-/// this, `repository_root` would stop at the worktree and report it as the
-/// whole repository, silently narrowing `loom usage` to one worktree instead
-/// of the repository plus all of its worktrees.
-///
-/// The file's single line is `gitdir: <repo>/.git/worktrees/<name>`; walk
-/// back up three components (`<name>`, `worktrees`, `.git`) to recover
-/// `<repo>`. `None` when the file can't be read or doesn't match that shape,
-/// so the caller falls back to treating the worktree itself as the root.
+/// Reads a `gitdir:` file and takes three parents of its path. Relative paths
+/// remain relative and nonstandard paths are not validated. If reading or
+/// traversal fails, the caller falls back to the worktree root.
 fn worktree_repository_root(git_file: &Path) -> Option<PathBuf> {
     let contents = fs::read_to_string(git_file).ok()?;
     let gitdir = contents.trim().strip_prefix("gitdir:")?.trim();
@@ -260,37 +249,59 @@ fn add_subagents(files: &mut Vec<DiscoveredFile>, session: &Path, slug: &str) {
     }
 }
 
-fn filter_stage(files: Vec<DiscoveredFile>, stage: &str) -> Vec<DiscoveredFile> {
-    let suffix = format!("-worktrees-{stage}");
-    files
-        .into_iter()
-        .filter(|file| file.project_slug.ends_with(&suffix))
-        .collect()
+const WORKTREES_DELIMITER: &str = "--worktrees-";
+
+/// The stage a worktree project slug names, or `None` when it names none.
+///
+/// A wrong stage is worse than none, because normalization marks any
+/// non-null `stage_id` known. With `repo_slug` (the slug of the project the
+/// report covers) the slug must be that project's worktree and the stage is
+/// the exact remainder, so a stage id that contains the delimiter survives.
+/// Without it the remainder after the first delimiter counts only when it
+/// holds no second one (a nested checkout is ambiguous). A remainder that is
+/// empty or holds a character outside `[A-Za-z0-9_-]`, the set stage-id
+/// validation allows, names no stage.
+pub(super) fn stage_from_project_slug<'a>(
+    slug: &'a str,
+    repo_slug: Option<&str>,
+) -> Option<&'a str> {
+    let stage = match repo_slug {
+        Some(repo) => slug.strip_prefix(repo)?.strip_prefix(WORKTREES_DELIMITER)?,
+        None => {
+            let (_, rest) = slug.split_once(WORKTREES_DELIMITER)?;
+            if rest.contains(WORKTREES_DELIMITER) {
+                return None;
+            }
+            rest
+        }
+    };
+    let valid = !stage.is_empty()
+        && stage
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-' || byte == b'_');
+    valid.then_some(stage)
 }
 
-fn filter_plan(files: Vec<DiscoveredFile>, plan: &str) -> Result<Vec<DiscoveredFile>> {
-    let Some(stages) = plan_stage_ids(plan)? else {
-        return Ok(Vec::new());
-    };
-    Ok(files
+fn filter_stages(files: Vec<DiscoveredFile>, stages: &HashSet<String>) -> Vec<DiscoveredFile> {
+    files
         .into_iter()
         .filter(|file| {
             stages
                 .iter()
                 .any(|stage| file.project_slug.ends_with(&format!("-worktrees-{stage}")))
         })
-        .collect())
+        .collect()
 }
 
-pub(crate) fn plan_stage_ids(plan: &str) -> Result<Option<HashSet<String>>> {
-    let work_dir = match crate::commands::common::work_dir_path() {
-        Ok(work_dir) => work_dir,
-        Err(error) => {
-            eprintln!("plan could not be resolved: no state directory ({error})");
-            return Ok(None);
-        }
+pub(crate) fn plan_stage_ids(
+    plan: &str,
+    work_dir: Option<&Path>,
+) -> Result<Option<HashSet<String>>> {
+    let Some(work_dir) = work_dir else {
+        eprintln!("plan could not be resolved: no selected state directory");
+        return Ok(None);
     };
-    let Some(config) = crate::fs::work_dir::load_config(&work_dir)? else {
+    let Some(config) = crate::fs::work_dir::load_config(work_dir)? else {
         eprintln!("plan could not be resolved: config.toml is missing");
         return Ok(None);
     };
@@ -302,10 +313,10 @@ pub(crate) fn plan_stage_ids(plan: &str) -> Result<Option<HashSet<String>>> {
         eprintln!("plan could not be resolved: requested plan does not match the active plan");
         return Ok(None);
     }
-    stage_ids(&work_dir)
+    stage_ids(work_dir)
 }
 
-/// Strip the status prefix (`IN_PROGRESS-`/`DONE-`) FIRST, then strip
+/// Strip the status prefix (`IN_PROGRESS-`/`DONE-`/`RETIRED-`) FIRST, then strip
 /// `PLAN-` from what remains - the two prefixes are sequential, not
 /// alternatives, so `IN_PROGRESS-PLAN-foo` only normalizes to `foo` when
 /// both strips run in order.
@@ -314,7 +325,7 @@ fn normalize_plan(path: &Path) -> String {
         .file_stem()
         .and_then(|name| name.to_str())
         .unwrap_or_default();
-    let without_status = ["IN_PROGRESS-", "DONE-"]
+    let without_status = ["IN_PROGRESS-", "DONE-", "RETIRED-"]
         .iter()
         .find_map(|prefix| value.strip_prefix(prefix))
         .unwrap_or(value);
@@ -324,33 +335,39 @@ fn normalize_plan(path: &Path) -> String {
         .to_ascii_lowercase()
 }
 
+/// Ids of the stage files in `stages`, depth prefix removed (`01-core.md` is
+/// stage `core`).
+fn read_stage_ids(stages: &Path) -> std::io::Result<HashSet<String>> {
+    Ok(fs::read_dir(stages)?
+        .flatten()
+        .filter_map(|entry| {
+            let path = entry.path();
+            if path.extension().and_then(|extension| extension.to_str()) != Some("md") {
+                return None;
+            }
+            crate::fs::stage_files::extract_stage_id(path.file_name()?.to_str()?)
+        })
+        .collect())
+}
+
+/// The stage ids recorded under `work_dir`, `None` when the stage directory
+/// cannot be read (nothing to check a slug against).
+pub(super) fn recorded_stage_ids(work_dir: &Path) -> Option<HashSet<String>> {
+    read_stage_ids(&work_dir.join("stages")).ok()
+}
+
 fn stage_ids(work_dir: &Path) -> Result<Option<HashSet<String>>> {
     let stages = work_dir.join("stages");
-    let entries = match fs::read_dir(&stages) {
-        Ok(entries) => entries,
+    match read_stage_ids(&stages) {
+        Ok(ids) => Ok(Some(ids)),
         Err(error) => {
             eprintln!(
                 "plan could not be resolved: cannot read {} ({error})",
                 stages.display()
             );
-            return Ok(None);
+            Ok(None)
         }
-    };
-    Ok(Some(
-        entries
-            .flatten()
-            .filter_map(|entry| {
-                let path = entry.path();
-                (path.extension().and_then(|extension| extension.to_str()) == Some("md"))
-                    .then(|| {
-                        path.file_stem()
-                            .and_then(|stem| stem.to_str())
-                            .map(str::to_owned)
-                    })
-                    .flatten()
-            })
-            .collect(),
-    ))
+    }
 }
 
 #[cfg(test)]

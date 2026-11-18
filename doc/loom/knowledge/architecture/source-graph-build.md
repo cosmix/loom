@@ -1,6 +1,6 @@
 # Source Graph Build
 
-> Builder, freshness, lease
+>
 
 Builder and freshness of the source graph: how a layer is enumerated, reused and persisted,
 which states it reports, and the lease that keeps the prompt hook from stacking rebuilds.
@@ -40,7 +40,7 @@ drives the same builder.
 - **`GraphLayer`**: `revision` (a base's commit; for an overlay, the `HEAD` it was
   cut from), `generation` (the tree generation for an overlay, empty for a base),
   `built_at`, `files` (path → `FileEntry`), and `blob_index` (path → the git blob id
-  whose bytes produced that entry). An overlay write is skipped when revision,
+  whose bytes produced that entry). Overlay indexes omit dirty working-tree entries, tombstones and unreadable entries so OID reuse only uses proven content. An overlay write is skipped when revision,
   generation, files and `blob_index` all equal the previous overlay's;
   `GraphStore::publish_base` never overwrites a revision already published.
 - **`SourceGraphOutcome { nodes, edges, freshness, counters }`** describes the layer
@@ -57,8 +57,9 @@ drives the same builder.
   (`refresh/source_graph.rs`), matched against the FIRST path segment only, applied to
   enumerated, untracked and dirty paths alike. `.loom` and `.work` are two separate
   top-level entries; there is no compound `.loom/work` entry.
-- Git scalar results use `run_git_checked`; NUL-delimited enumeration and status
-  use untrimmed `run_git_records`. Dirty base blobs use `run_git_stream` and
+- Git results, scalar and NUL-delimited enumeration, go through `WorktreeGit::run_checked`;
+  status listings parse untrimmed through `git::status_entries::parse_porcelain_v1_z`.
+  Dirty base blobs use `run_git_stream` and
   `SourceRead::read`, preserving leading/trailing whitespace and non-UTF8 bytes.
   On-disk refresh and verification graph reads share `source_graph::read`:
   fixed-buffer full-input hashes and line counts, with at most 512 KiB retained.
@@ -102,8 +103,9 @@ and `spawn_if_needed` calls nothing else:
 A never-built graph is built only by explicit commands: `loom init`, `loom run`, `loom map` and
 `loom knowledge sync`.
 
-**The lease** is one line, `"<epoch> <pid> <failures> <pending>"`, in `reconcile.lock` under the
-context cache; a line that does not parse as four fields is no lock. Every write is a
+**The lease** is one line, `"<epoch> <pid> <failures> <pending> <claim>"`, in `reconcile.lock` under
+the context cache. Legacy four-field records remain readable; new runs use a unique claim to bind
+startup and completion to the holder. Every write is a
 read-modify-write under ONE directory flock (`fs::locking::locked_dir_update` plus
 `atomic_write_locked`, `lock.rs::update_lock`), never a remove / `create_new` / write sequence:
 between those steps a reader sees no file, `decide` returns `Spawn`, and a second reconcile runs

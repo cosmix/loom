@@ -81,6 +81,8 @@ fn round_with(id: &str, severity: &str) -> ReviewRound {
         agent_id: "agent".to_string(),
         harvested_at: at("2026-10-14T06:09:00Z"),
         fingerprint: format!("sha256:{}", "a".repeat(64)),
+        base: String::new(),
+        behaviour: Default::default(),
         files: Default::default(),
         malformed: None,
         findings: vec![RecordedFinding {

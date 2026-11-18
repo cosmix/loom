@@ -49,7 +49,7 @@ impl TerminalConfig {
 /// empty, or holding some other key — falls through to
 /// `~/.loom/config.toml`'s `terminal.backend` (see
 /// [`crate::user_config::UserConfig`]), then to `TerminalConfig::default()`
-/// (native) when neither sets it. A malformed section still errors.
+/// (tmux) when neither sets it. A malformed section still errors.
 pub fn read_terminal_config(work_dir: &Path) -> Result<TerminalConfig> {
     let section = super::read_section::<toml::Value>(work_dir, TERMINAL_SECTION)?;
     let backend = TerminalConfig::backend_from_section(section)?
@@ -61,3 +61,6 @@ pub fn read_terminal_config(work_dir: &Path) -> Result<TerminalConfig> {
 pub fn write_terminal_config(work_dir: &Path, config: &TerminalConfig) -> Result<()> {
     super::write_section(work_dir, TERMINAL_SECTION, config)
 }
+
+#[cfg(test)]
+mod tests;

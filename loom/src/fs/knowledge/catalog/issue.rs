@@ -73,6 +73,10 @@ pub enum CatalogIssue {
     OversizedIndex {
         bytes: u64,
     },
+    /// `INDEX.md` is not what the tree generates. Only `loom knowledge check`
+    /// reports it: the landing gate compares the index itself, and a baseline
+    /// never records it because `--write-baseline` reads the catalog alone.
+    StaleIndex,
     /// The same heading in two or more files: a topic kept in several places.
     DuplicateHeadingAcrossFiles {
         heading: String,

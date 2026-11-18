@@ -1,5 +1,6 @@
 //! Worktree spawn preflight and hook gates.
 use super::persistence::Persistence;
+use super::stage_block::StageBlock;
 use super::stage_executor::install_required_hooks;
 use super::Orchestrator;
 use crate::git;
@@ -14,7 +15,7 @@ use anyhow::Result;
 /// `stage_spawn.rs`; this impl keeps what is specific to the spawn sequence.
 impl Orchestrator {
     /// Merge, validate and expand this stage's sandbox config at spawn time.
-    /// Mirrors `spawn_setup.rs::validate_knowledge_sandbox`. Writes nothing:
+    /// Writes nothing:
     /// the capsule (`native/session_settings.rs`) carries the resolved
     /// settings into the session, not `T/.claude/settings.local.json`.
     ///
@@ -25,30 +26,29 @@ impl Orchestrator {
         stage_id: &str,
         session_id: &str,
     ) -> bool {
-        let mut merged_sandbox = crate::sandbox::merge_config(
-            &self.config.sandbox_config,
-            &stage.sandbox,
-            stage.stage_type,
-            &stage.implementers,
-        );
         // Defense-in-depth: re-validate at spawn time in case the on-disk
         // config became invalid after `loom init` last accepted it.
-        if let Err(e) = crate::sandbox::validate_config(&merged_sandbox) {
-            self.block_and_undo_session(
-                stage_id,
-                session_id,
-                FailureType::SandboxSetupFailure,
-                format!("invalid sandbox config at spawn: {e:#}"),
-            );
-            return false;
-        }
-        crate::sandbox::expand_paths(&mut merged_sandbox);
+        let merged_sandbox = match crate::sandbox::preflight::resolve_spawn_policy(
+            &self.config.sandbox_config,
+            stage,
+        ) {
+            Ok(merged) => merged,
+            Err(e) => {
+                self.block_and_undo_session(
+                    stage_id,
+                    session_id,
+                    FailureType::SandboxSetupFailure,
+                    format!("invalid sandbox config at spawn: {e:#}"),
+                );
+                return false;
+            }
+        };
         crate::sandbox::warn_missing_grants(&merged_sandbox, stage_id);
         true
     }
 
     /// Require the Claude Code hooks directory to exist for a stage spawn.
-    /// Mirrors `spawn_setup.rs::require_knowledge_hooks`. Writes nothing: the
+    /// Writes nothing: the
     /// capsule already embeds the hooks configuration itself.
     ///
     /// Returns `false` if the stage was blocked instead (hook install failure).
@@ -77,10 +77,9 @@ impl Orchestrator {
             let err_msg = format!(
                 "Failed to write contract session record ahead of spawn for {stage_id}: {e:#}"
             );
-            let _ = self.persist_blocked_stage(
+            self.block_stage(
                 stage_id,
-                FailureType::InfrastructureError,
-                vec![err_msg],
+                StageBlock::new(FailureType::InfrastructureError, vec![err_msg]),
             );
             return None;
         }
@@ -130,10 +129,10 @@ impl Orchestrator {
                     "Before-stage verification failed for '{stage_id}' - pre-conditions not met"
                 );
 
-                let _ = self.persist_blocked_stage(
+                let evidence = gaps.iter().map(|gap| gap.description.clone()).collect();
+                self.block_stage(
                     &stage_id,
-                    FailureType::TestFailure,
-                    gaps.iter().map(|gap| gap.description.clone()).collect(),
+                    StageBlock::new(FailureType::TestFailure, evidence),
                 );
                 Ok(false)
             }

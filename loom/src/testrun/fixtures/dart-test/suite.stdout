@@ -7,7 +7,7 @@
   test/fixture_test.dart 11:5  main.<fn>
   
 
-[1m[36mTo run this test again:[0m /home/dkaponis/dev/flutter/bin/cache/dart-sdk/bin/dart test test/fixture_test.dart -p vm --plain-name 'beta_fails'
+[1m[36mTo run this test again:[0m /home/username/dev/flutter/bin/cache/dart-sdk/bin/dart test test/fixture_test.dart -p vm --plain-name 'beta_fails'
 00:00 [32m+1[0m[31m -1[0m: gamma_passes[0m                                                                                                                                                                              00:00 [32m+2[0m[31m -1[0m: gamma_passes[0m                                                                                                                                                                              00:00 [32m+2[0m[31m -1[0m: [31mSome tests failed.[0m                                                                                                                                                                        
 
 Consider enabling the flag chain-stack-traces to receive more detailed exceptions.

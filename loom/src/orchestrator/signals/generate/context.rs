@@ -1,6 +1,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use super::super::format::budget::current_model_budget;
 use super::super::types::EmbeddedContext;
 use crate::fs::memory::format_memory_for_signal;
 use crate::handoff::schema::ParsedHandoff;
@@ -24,7 +25,7 @@ pub fn build_embedded_context_with_stage(
     build_embedded_context_with_stage_and_session(work_dir, handoff_file, stage_id)
 }
 
-/// Build embedded context with both stage and session info for full recitation
+/// Build embedded context with optional stage state for recitation.
 pub fn build_embedded_context_with_stage_and_session(
     work_dir: &Path,
     handoff_file: Option<&str>,
@@ -33,7 +34,8 @@ pub fn build_embedded_context_with_stage_and_session(
     // Availability is resolved here, not in the formatters, so the formatting
     // path stays pure and tests can pin both branches deterministically.
     let mut context = EmbeddedContext {
-        codex_available: crate::codex::codex_lane_available(),
+        codex_lane: crate::codex::codex_lane(work_dir),
+        model_budget: current_model_budget(work_dir),
         ..EmbeddedContext::default()
     };
 

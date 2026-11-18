@@ -16,6 +16,22 @@ use crate::verify::transitions::save_stage;
 
 const STAGE: &str = "stage-blk";
 
+#[test]
+fn a_prechecked_old_session_cannot_block_the_new_attempt() {
+    let (temp, session, _) = fixture();
+    crate::verify::transitions::update_stage(STAGE, temp.path(), |stage| {
+        stage.session = Some("replacement-session".into());
+        Ok(())
+    })
+    .unwrap();
+    let response =
+        handle_agent_block_for_session(temp.path(), STAGE, "stale", Some(&session.id)).unwrap();
+    assert!(matches!(response, Response::Error { .. }));
+    let current = crate::verify::transitions::load_stage(STAGE, temp.path()).unwrap();
+    assert_eq!(current.status, StageStatus::Executing);
+    assert_eq!(current.session.as_deref(), Some("replacement-session"));
+}
+
 /// An executing stage whose current session is `session-blk`.
 fn fixture() -> (TempDir, Session, Stage) {
     let temp = TempDir::new().unwrap();

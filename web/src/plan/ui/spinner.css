@@ -1,0 +1,99 @@
+/*
+ * The loading spinner (`ui/spinner.tsx`): a hairline track and one round-capped arc that turns
+ * while its length breathes. Colour is `currentColor`, so it takes the muted text it sits in.
+ * Under `prefers-reduced-motion` nothing turns: the arc rests at the top and its opacity eases.
+ */
+.plan-spinner {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  overflow: visible;
+  transform-origin: 50% 50%;
+  animation: plan-spinner-turn 900ms linear infinite;
+}
+
+.plan-spinner circle {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+}
+
+.plan-spinner__track {
+  opacity: 0.18;
+}
+
+.plan-spinner__arc {
+  stroke-linecap: round;
+  stroke-dasharray: 26 74;
+  /* The arc starts at twelve o'clock: SVG circles start at three. */
+  transform: rotate(-90deg);
+  transform-origin: 50% 50%;
+  animation: plan-spinner-breathe 1800ms ease-in-out infinite alternate;
+}
+
+@keyframes plan-spinner-turn {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes plan-spinner-breathe {
+  from {
+    stroke-dasharray: 14 86;
+  }
+  to {
+    stroke-dasharray: 38 62;
+  }
+}
+
+@keyframes plan-spinner-rest {
+  from {
+    opacity: 0.35;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .plan-spinner {
+    animation: none;
+  }
+
+  .plan-spinner__arc {
+    stroke-dasharray: 26 74;
+    animation: plan-spinner-rest 1600ms ease-in-out infinite alternate;
+  }
+}
+
+/*
+ * The arrow spinner (`ui/spinner.tsx` `ArrowSpinner`): work in progress at glyph size. The 14px
+ * glyph box sits in the components layer at zero specificity, so a class that sizes the glyph (`size-4`, `.activity-glyph`)
+ * wins as it would over a lucide icon; the `size` prop sets it inline.
+ */
+@layer components {
+  :where(.plan-arrow-spinner) {
+    width: 14px;
+    height: 14px;
+  }
+}
+
+.plan-arrow-spinner {
+  flex: none;
+  vertical-align: middle;
+  transform-origin: 50% 50%;
+}
+
+.plan-arrow-spinner[data-busy="true"] {
+  animation: plan-spinner-turn 1100ms linear infinite;
+}
+
+.plan-arrow-spinner[data-busy="false"] {
+  opacity: 0.55;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .plan-arrow-spinner[data-busy="true"] {
+    animation: none;
+  }
+}

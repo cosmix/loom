@@ -1,15 +1,14 @@
 //! Exercise the installed hook against the freshly built shared detector.
 
 use std::fs;
-use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output, Stdio};
+use std::process::{Command, Output};
 
 use loom::fs::permissions::constants::{HOOK_BOUNDED_INPUT, HOOK_SKILL_TRIGGER};
 use serde_json::{json, Value};
 use tempfile::TempDir;
 
-use super::helpers::loom_cmd;
+use super::helpers::{clear_relay_env, loom_cmd, run_hook_process};
 
 struct Fixture {
     home: TempDir,
@@ -69,27 +68,13 @@ impl Fixture {
         if codex {
             command.arg("--codex");
         }
-        let mut child = command
+        clear_relay_env(&mut command)
             .env("HOME", self.home.path())
             .env("CODEX_HOME", self.agent_root(true))
             .env("LOOM_BIN", env!("CARGO_BIN_EXE_loom"))
-            .env_remove("LOOM_SKILL_DEBUG")
-            .env_remove("LOOM_WORK_DIR")
-            .env_remove("LOOM_SESSION_ID")
-            .env_remove("LOOM_STAGE_ID")
-            .current_dir(cwd)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .expect("python3 must be available for skill hooks");
-        child
-            .stdin
-            .take()
-            .unwrap()
-            .write_all(json!({"cwd": cwd, "prompt": prompt}).to_string().as_bytes())
-            .unwrap();
-        read_context(child.wait_with_output().unwrap())
+            .current_dir(cwd);
+        let payload = json!({"cwd": cwd, "prompt": prompt}).to_string();
+        read_context(run_hook_process(&mut command, payload.as_bytes()))
     }
 }
 

@@ -1,0 +1,337 @@
+/* The composer: the foot of the panel, over the hearth glow (chat-surface.css). The box is one
+ * round bordered input on the page ground (DESIGN.md, Surfaces and Chat), so the place to type
+ * stands apart from the transcript. It holds what the next message carries (the context row, the
+ * attachment rows) above the text, and the tools (the paperclip, Stop, Send) at the end of the
+ * text's last line; it is the drop target for files. Under the box one fine line: Send's reason
+ * while it is blocked, else a hint, then the composer's notes. Imported by chat-surface.css; see
+ * its header for why these rules are unlayered. The rows inside the box are in chat-chips.css.
+ * How tall each part is, and which of them shrink or scroll, is in chat-column.css alone.
+ */
+
+.chat-composer {
+  gap: var(--space-3);
+  padding: var(--space-2) var(--chat-gutter) var(--space-4);
+  font-size: var(--type-body);
+  line-height: var(--leading-body);
+  /* `backwards`, never `both`: a fill held after the rise keeps `transform: translateY(0)`, and
+   * any transform makes the composer the containing block of the fixed command list
+   * (command-menu.css), which then lands off screen by the composer's own offset. */
+  animation: hearth-rise 460ms cubic-bezier(0.16, 1, 0.3, 1) backwards;
+}
+
+/* The queue strip and the suggestion cards; empty, they take no room in the column. */
+.chat-composer-extras {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.chat-composer-extras:empty {
+  display: none;
+}
+
+/* ── The box ────────────────────────────────────────────────────────────── */
+
+/* The attached rows, then one line: the text, and the tools at the end of its last line. The edge
+ * sits on the gutter, so it lines up with the transcript. */
+.chat-composer-box {
+  position: relative;
+  gap: var(--space-1);
+  box-sizing: border-box;
+  min-width: 0;
+  padding: 10px 8px 8px 16px;
+  border: 1px solid var(--border);
+  border-radius: 22px;
+  background: var(--background);
+  color: var(--foreground);
+  transition: border-color 120ms;
+}
+
+/* Focus in the text: the one ring stands off the box's resting edge, as on every focusable thing
+ * (DESIGN.md, Focus and hover); the edge itself never recolours, which drew a second ring inside
+ * the first. Keyed on the field, not `:focus-within`, so a focused tool keeps its own ring alone. */
+.chat-composer-box:has(.chat-composer-field:focus-visible) {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+/* While a file is dragged over it the edge dashes and the words cover the box from inside, so
+ * nothing moves. The cover takes no pointer events: the drag stays on the box under it. */
+.chat-composer-box[data-dragging] {
+  border-style: dashed;
+  border-color: var(--foreground);
+}
+
+.chat-drop-target {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  margin: 0;
+  border-radius: 21px;
+  background: var(--background);
+  color: var(--foreground);
+  font-size: var(--type-body);
+  font-weight: 500;
+  pointer-events: none;
+}
+
+/* The text itself: no edge of its own, the box draws it. It is set at the user's size, the same
+ * as the user's turns in the transcript, so the words do not change size when sent. */
+.chat-composer-field {
+  display: block;
+  box-sizing: border-box;
+  margin: 0;
+  padding: var(--space-1) 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-size: var(--type-title);
+  line-height: var(--leading-body);
+  resize: none;
+}
+
+.chat-composer-field::placeholder {
+  color: var(--muted-foreground);
+}
+
+.chat-composer-field:focus-visible {
+  outline: none;
+}
+
+/* What the next message carries, as rows above the text; empty, it takes no space. The area
+ * scrolls inside the box (chat-column.css). */
+.chat-composer-attached {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0;
+  min-width: 0;
+}
+
+.chat-composer-attached:empty {
+  display: none;
+}
+
+.chat-composer-attached:not(:empty) {
+  padding-block-end: var(--space-1);
+  border-block-end: 1px solid var(--hairline);
+}
+
+/* ── The tools ──────────────────────────────────────────────────────────── */
+
+/* One centre line at the end of the text's last line: the paperclip, then New chat (after a
+ * concluded chat), Stop (while a turn runs) and Send, each a 32px round or pill. */
+.chat-composer-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+/* The paperclip: a round quiet button (`DocumentStarter` takes no shape, so the rounding is here). */
+.chat-attach {
+  width: 32px;
+  height: 32px;
+  flex: none;
+  padding: 0;
+  border-radius: 999px;
+  justify-content: center;
+}
+
+.chat-composer-actions .chat-attach svg {
+  width: 15px;
+  height: 15px;
+}
+
+.chat-attach:active {
+  transform: scale(0.98);
+}
+
+.chat-composer-end {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+/* Stop's reason ("Stopping the current turn") follows it on the line for the moment the request
+ * takes; a failed request's error hangs under it, at the line's end. */
+.chat-composer-stop {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.chat-composer-stop .plan-fine {
+  overflow-wrap: anywhere;
+  text-align: end;
+}
+
+.chat-composer-send {
+  display: flex;
+  flex: none;
+}
+
+/* ── The foot ───────────────────────────────────────────────────────────── */
+
+/* The fine line under the box, 6px off its edge: Send's reason or the hint, then the notes. */
+.chat-composer-foot {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+  margin-block-start: calc(6px - var(--space-3));
+  padding: 0 var(--space-2);
+  color: var(--muted-foreground);
+  font-size: var(--type-fine);
+  line-height: var(--leading-ui);
+}
+
+.chat-composer-foot > p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+/* The chat lifts `.plan-fine` to 13px (chat-surface.css); the foot's note keeps the foot's size. */
+.chat-composer .chat-composer-foot .plan-fine {
+  font-size: var(--type-fine);
+}
+
+.chat-composer-note,
+.chat-composer-status {
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: var(--type-fine);
+  line-height: var(--leading-ui);
+}
+
+/* Messages the server has not confirmed: each with its own Resend. With none, the list takes
+ * no room, and no gap, under the foot. */
+.chat-unconfirmed {
+  display: grid;
+  gap: var(--space-2);
+  font-size: var(--type-ui);
+}
+
+.chat-unconfirmed:empty {
+  display: none;
+}
+
+.chat-unconfirmed p {
+  margin: 0 0 var(--space-1);
+}
+
+/* ── Ending and ended ───────────────────────────────────────────────────── */
+
+/* The composer steps back to one upright line in the chrome face; ended, the line shares it with
+ * Start a new chat, the primary pill, over the glow. */
+.chat-composer-ending,
+.chat-composer-ended {
+  margin: 0;
+  color: var(--muted-foreground);
+  font-family: var(--font-sans);
+  font-size: var(--type-title);
+  font-weight: 400;
+  line-height: 1.4;
+}
+
+.chat-composer-concluded {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  padding: var(--space-1) var(--space-1);
+}
+
+.chat-composer-concluded > p {
+  flex: 1 1 auto;
+}
+
+/* ── Queued messages ────────────────────────────────────────────────────── */
+
+.chat-queue {
+  display: grid;
+  gap: var(--space-1);
+  font-size: var(--type-body);
+}
+
+.chat-queue > p,
+.chat-queue ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.chat-queue > p {
+  color: var(--muted-foreground);
+  font-size: var(--type-ui);
+  font-weight: 500;
+  line-height: var(--leading-ui);
+}
+
+.chat-queue-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  min-height: var(--control-height-sm);
+}
+
+.chat-queue-row > span {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-queue summary {
+  color: var(--muted-foreground);
+  font-size: var(--type-ui);
+  cursor: pointer;
+}
+
+/* ── Suggestions ────────────────────────────────────────────────────────── */
+
+/* A suggestion is a row on the panel, set off by the hairline above it: no card and no edge
+ * around it. The list that holds them draws nothing of its own. */
+.chat-suggestions {
+  padding-block: var(--space-1);
+}
+
+.chat-suggestion {
+  display: grid;
+  min-width: 0;
+  gap: var(--space-2);
+  padding-block: var(--space-3);
+  border-block-start: 1px solid var(--hairline);
+  font-size: var(--type-body);
+  line-height: var(--leading-body);
+}
+
+.chat-suggestion:first-child {
+  padding-block-start: var(--space-2);
+  border-block-start: 0;
+}
+
+.chat-suggestion-actions {
+  display: flex;
+  gap: var(--space-2);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-composer {
+    animation: none;
+  }
+
+  .chat-composer-box {
+    transition: none;
+  }
+
+  .chat-attach:active {
+    transform: none;
+  }
+}

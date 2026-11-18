@@ -8,26 +8,30 @@ use tempfile::TempDir;
 
 use super::super::landing::Landing;
 use super::super::resolver_spawn::test_fixtures::{
-    git_ok, orchestrator_with_conflict, repo_with_stage_branches,
+    orchestrator_with_conflict, repo_with_stage_branches,
 };
 use super::watches_directory;
 use crate::git::MergeBlock;
 use crate::models::stage::{Stage, StageStatus};
 use crate::orchestrator::core::Orchestrator;
+use crate::test_git::git;
 use crate::verify::transitions::{load_stage, update_stage};
 
 const ID: &str = "s";
+
+#[path = "blocked_retry_backup_ref_tests.rs"]
+mod backup_ref;
 
 /// A stage `s` with a worktree on `loom/s` holding one commit, an
 /// orchestrator over it, and an untracked `stage.txt` in the main checkout
 /// that blocks the merge. The state directories are excluded from the
 /// checkout's status, as they are in a real project.
-fn blocked_stage() -> (TempDir, Orchestrator) {
+pub(super) fn blocked_stage() -> (TempDir, Orchestrator) {
     let repo = repo_with_stage_branches(&[]);
     let root = repo.path();
     std::fs::write(root.join(".git/info/exclude"), ".loom/\n.worktrees/\n").unwrap();
     let worktree = root.join(".worktrees").join(ID);
-    git_ok(
+    git(
         root,
         &[
             "worktree",
@@ -39,8 +43,8 @@ fn blocked_stage() -> (TempDir, Orchestrator) {
         ],
     );
     std::fs::write(worktree.join("stage.txt"), "stage").unwrap();
-    git_ok(&worktree, &["add", "stage.txt"]);
-    git_ok(&worktree, &["commit", "-q", "-m", "stage"]);
+    git(&worktree, &["add", "stage.txt"]);
+    git(&worktree, &["commit", "-q", "-m", "stage"]);
 
     let mut orchestrator = orchestrator_with_conflict(root, ID);
     update_stage(ID, &orchestrator.config.work_dir, |stage| {
@@ -54,7 +58,7 @@ fn blocked_stage() -> (TempDir, Orchestrator) {
     (repo, orchestrator)
 }
 
-fn on_disk(orchestrator: &Orchestrator) -> Stage {
+pub(super) fn on_disk(orchestrator: &Orchestrator) -> Stage {
     load_stage(ID, &orchestrator.config.work_dir).unwrap()
 }
 
@@ -101,7 +105,7 @@ fn a_cleared_block_is_retried_and_lands() {
     orchestrator.retry_blocked_merge(&on_disk(&orchestrator));
     orchestrator.retry_blocked_merge(&on_disk(&orchestrator));
 
-    git_ok(repo.path(), &["stash", "push", "-q", "--include-untracked"]);
+    git(repo.path(), &["stash", "push", "-q", "--include-untracked"]);
     orchestrator.retry_blocked_merge(&on_disk(&orchestrator));
 
     let stage = on_disk(&orchestrator);
@@ -155,7 +159,7 @@ fn a_fast_forward_refusal_is_timed_and_never_memoized() {
 fn a_refused_merge_is_not_retried_within_a_minute_and_is_after() {
     let (repo, mut orchestrator) = blocked_stage();
     let now = Instant::now();
-    git_ok(repo.path(), &["stash", "push", "-q", "--include-untracked"]);
+    git(repo.path(), &["stash", "push", "-q", "--include-untracked"]);
     orchestrator
         .refused_merge_attempts
         .insert(ID.to_string(), now);
@@ -226,65 +230,6 @@ fn a_stage_that_left_merge_blocked_loses_its_retry_memo() {
     assert!(!orchestrator.refused_merge_attempts.contains_key(ID));
 }
 
-const BACKUP_REF: &str = "refs/loom/autostash/s-1-abc";
-
-fn stash_list(root: &Path) -> String {
-    let out = std::process::Command::new("git")
-        .args(["stash", "list"])
-        .current_dir(root)
-        .output()
-        .unwrap();
-    String::from_utf8_lossy(&out.stdout).into_owned()
-}
-
-#[test]
-fn a_block_with_the_operator_work_in_a_backup_stash_is_not_retried_until_the_ref_is_gone() {
-    let (repo, mut orchestrator) = blocked_stage();
-    let root = repo.path();
-    // The cause of the block is gone: only the backup ref holds the retry.
-    git_ok(root, &["stash", "push", "-q", "--include-untracked"]);
-    git_ok(root, &["update-ref", BACKUP_REF, "HEAD"]);
-    update_stage(ID, &orchestrator.config.work_dir, |stage| {
-        stage.block_merge(MergeBlock::StashNotRestored {
-            backup_ref: BACKUP_REF.to_string(),
-        });
-        Ok(())
-    })
-    .unwrap();
-    let (objects, stage_file, stashes) = (
-        object_counts(root),
-        stage_file_text(&orchestrator),
-        stash_list(root),
-    );
-
-    orchestrator.retry_blocked_merge(&on_disk(&orchestrator));
-
-    assert_eq!(object_counts(root), objects);
-    assert_eq!(stage_file_text(&orchestrator), stage_file);
-    assert_eq!(stash_list(root), stashes);
-    assert_eq!(on_disk(&orchestrator).status, StageStatus::MergeBlocked);
-
-    git_ok(root, &["update-ref", "-d", BACKUP_REF]);
-    orchestrator.retry_blocked_merge(&on_disk(&orchestrator));
-
-    let stage = on_disk(&orchestrator);
-    assert_eq!(stage.status, StageStatus::Completed);
-    assert!(stage.merged);
-}
-
-#[test]
-fn a_stage_with_an_unrestored_backup_ref_that_still_exists_is_not_retried() {
-    let (repo, mut orchestrator) = blocked_stage();
-    git_ok(repo.path(), &["stash", "push", "-q", "--include-untracked"]);
-    git_ok(repo.path(), &["update-ref", BACKUP_REF, "HEAD"]);
-    let mut stage = on_disk(&orchestrator);
-    stage.merge.unrestored.push(BACKUP_REF.to_string());
-
-    orchestrator.retry_blocked_merge(&stage);
-
-    assert_eq!(on_disk(&orchestrator).status, StageStatus::MergeBlocked);
-}
-
 #[test]
 fn a_memo_survives_a_stage_file_that_cannot_be_read() {
     let (_repo, mut orchestrator) = blocked_stage();
@@ -299,4 +244,74 @@ fn a_memo_survives_a_stage_file_that_cannot_be_read() {
     orchestrator.prune_retry_memos();
 
     assert!(orchestrator.blocked_merge_inputs.contains_key(ID));
+}
+
+/// A git error while the block's retry runs says nothing about the block: it
+/// stays, and with it the promise that no resolver spawns for a merge with no
+/// conflict. The error is recorded beside it, so the stage says what the retry
+/// hits. The next retry lands once git answers again.
+#[test]
+fn an_infrastructure_error_in_a_retry_keeps_the_typed_block() {
+    let (repo, mut orchestrator) = blocked_stage();
+    let before = on_disk(&orchestrator);
+    let block = before.merge.block.clone().expect("the fixture is blocked");
+    let tip = crate::git::get_branch_head("main", repo.path()).unwrap();
+    git(repo.path(), &["update-ref", "-d", "refs/heads/main"]);
+
+    orchestrator.retry_blocked_merge(&before);
+
+    let failed = on_disk(&orchestrator);
+    assert_eq!(failed.status, StageStatus::MergeBlocked);
+    assert_eq!(failed.merge.block.as_ref(), Some(&block));
+    assert_ne!(failed.failure_info, before.failure_info);
+
+    assert_eq!(orchestrator.spawn_merge_resolution_sessions().unwrap(), 0);
+    assert!(!orchestrator.active_sessions.contains_key(ID));
+    assert_eq!(
+        super::super::resolver_attempts::merge_resolver_attempts(&orchestrator.config.work_dir, ID),
+        0
+    );
+
+    git(repo.path(), &["update-ref", "refs/heads/main", &tip]);
+    git(repo.path(), &["stash", "push", "-q", "--include-untracked"]);
+    orchestrator.retry_blocked_merge(&on_disk(&orchestrator));
+    assert!(on_disk(&orchestrator).merged);
+}
+
+#[test]
+fn persisting_a_different_block_archives_the_first_failure_once_and_an_identical_one_nothing() {
+    let (_repo, mut orchestrator) = blocked_stage();
+    let mut stage = on_disk(&orchestrator);
+    let first = stage.failure_info.clone().expect("the block recorded one");
+
+    orchestrator.persist_merge_blocked(&mut stage, ID, "a different error");
+    let second = on_disk(&orchestrator);
+    assert_eq!(second.issue_history.len(), 1);
+    assert_eq!(second.issue_history[0].evidence, first.evidence);
+    let recorded = second.failure_info.clone().expect("the new failure stands");
+    assert_eq!(recorded.evidence, ["a different error"]);
+
+    orchestrator.persist_merge_blocked(&mut stage, ID, "a different error");
+    let third = on_disk(&orchestrator);
+    assert_eq!(third.issue_history.len(), 1);
+    let kept = third.failure_info.expect("still recorded");
+    assert_eq!(kept.detected_at, recorded.detected_at);
+}
+
+#[test]
+fn a_stage_that_became_final_on_disk_is_not_moved_to_merge_blocked() {
+    let (_repo, mut orchestrator) = blocked_stage();
+    let mut stale = on_disk(&orchestrator);
+    update_stage(ID, &orchestrator.config.work_dir, |stage| {
+        stage.status = StageStatus::Completed;
+        stage.merged = true;
+        Ok(())
+    })
+    .unwrap();
+
+    orchestrator.persist_merge_blocked(&mut stale, ID, "late failure");
+
+    let fresh = on_disk(&orchestrator);
+    assert_eq!(fresh.status, StageStatus::Completed);
+    assert!(fresh.merged);
 }

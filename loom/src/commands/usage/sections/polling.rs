@@ -17,9 +17,9 @@ pub struct Polling {
     pub observation: ObservationTokens,
 }
 
-/// Requests whose every tool use only observes: waiting on a subagent,
-/// checking status, sleeping, or repeating a command. Their resident tokens
-/// are what a wait or an event would save.
+/// Requests classified as observation or repeated activity. Repeated commands
+/// and shell prefixes can include writes, so token totals are a heuristic upper
+/// bound rather than known savings from waiting or events.
 #[derive(Debug, serde::Serialize, Default)]
 pub struct ObservationTokens {
     pub requests: usize,
@@ -113,7 +113,7 @@ fn repeated_commands(transcripts: &[Transcript]) -> Vec<RepeatedCommand> {
         {
             repeated.push(RepeatedCommand {
                 transcript: transcript_name(transcript),
-                command: truncate_command(&command),
+                command: crate::utils::truncate_for_display(&command, 96),
                 count,
             });
         }
@@ -269,18 +269,6 @@ fn transcript_name(transcript: &Transcript) -> String {
             .map(str::to_owned)
             .unwrap_or_else(|| "unknown".to_owned())
     })
-}
-
-fn truncate_command(command: &str) -> String {
-    const LIMIT: usize = 96;
-    if command.chars().count() <= LIMIT {
-        return command.to_owned();
-    }
-    let prefix = command
-        .chars()
-        .take(LIMIT.saturating_sub(1))
-        .collect::<String>();
-    format!("{prefix}…")
 }
 
 #[cfg(test)]

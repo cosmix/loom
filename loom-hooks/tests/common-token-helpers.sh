@@ -13,6 +13,13 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 # shellcheck source=../_common.sh
 source "$SCRIPT_DIR/../_common.sh"
+source "$SCRIPT_DIR/../_common.sh"
+
+# Spawn policy stays private to the spawn guard.
+if declare -F loom_worker_brief >/dev/null || declare -F loom_reviewer_model_override >/dev/null; then
+    echo "FAIL: spawn policy leaked into common helpers"
+    exit 1
+fi
 
 FAILED=0
 
@@ -75,7 +82,7 @@ assert_tokenize_fails() {
 # single-quoted positional argument. The prompt itself contains prose about
 # git, a relative import, and an ARR.find call - none of it is a real
 # command or argument position.
-CODEX_FORWARD_CMD=$'~/.claude/hooks/loom/codex-forward.sh task \'Fix the bug.\nDo NOT run git at all (no git add, no git commit).\nimport { helper } from "../../../src/y";\nARR.find((c) => c.k === k)\n\' --model gpt-5.6-terra --effort xhigh --write'
+CODEX_FORWARD_CMD=$'~/.claude/hooks/loom/codex-forward.sh task \'Fix the bug.\nDo NOT run git at all (no git add, no git commit).\nimport { helper } from "../../../src/y";\nARR.find((c) => c.k === k)\n\' --model gpt-6.1-terra --effort xhigh --write'
 
 assert_false "codex-forward prompt: git is not invoked" "$CODEX_FORWARD_CMD" \
     loom_tokens_invoke 'git'
@@ -271,10 +278,10 @@ assert_true 'a $( ) inside double quotes still opens a command position' \
     'echo "today is $(date)"' \
     loom_tokens_invoke 'date'
 assert_false "a double-quoted brief with a backtick keeps its prose out of word checks" \
-    '~/.claude/hooks/loom/codex-forward.sh task "Fix it. Use `pwd`; import from ../../../src/y" --model gpt-5.6-terra' \
+    '~/.claude/hooks/loom/codex-forward.sh task "Fix it. Use `pwd`; import from ../../../src/y" --model gpt-6.1-terra' \
     loom_tokens_word_matches '\.\./\.\.'
 assert_false "a double-quoted brief with a \$( ) keeps its prose out of word checks" \
-    '~/.claude/hooks/loom/codex-forward.sh task "See $(pwd) and import from ../../../src/y" --model gpt-5.6-terra' \
+    '~/.claude/hooks/loom/codex-forward.sh task "See $(pwd) and import from ../../../src/y" --model gpt-6.1-terra' \
     loom_tokens_word_matches '\.\./\.\.'
 
 # An arg-taking flag at a segment boundary must not reach into the NEXT

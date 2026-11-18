@@ -1,15 +1,10 @@
 import dagre from "@dagrejs/dagre";
 
-import type { StageStatus, StageSummary } from "@/api/schema";
+import type { StageSummary } from "@/api/schema";
 import { routeEdges, type Point } from "@/lib/edge-routing";
-import {
-  activityText,
-  contextUsage,
-  mergeText,
-  stateMeta,
-  timeText,
-  type Tone,
-} from "@/lib/format";
+import { displayState, type DisplayState } from "@/lib/display-state";
+import { contextUsage, mergeText, stateMeta, timeText, type Tone } from "@/lib/format";
+import { activityText } from "@/lib/format-activity";
 
 /// Card geometry shared by the layout and the node component so the two
 /// never disagree: dagre lays out the size the card will actually render at.
@@ -61,7 +56,7 @@ export interface Thread {
   style: ThreadStyle;
 }
 
-const THREAD_STYLE: Record<StageStatus, ThreadStyle> = {
+const THREAD_STYLE: Record<DisplayState, ThreadStyle> = {
   "waiting-for-deps": "hairline",
   queued: "hairline",
   executing: "running",
@@ -75,19 +70,29 @@ const THREAD_STYLE: Record<StageStatus, ThreadStyle> = {
   "merge-blocked": "dashed",
   "needs-human-review": "dashed",
   "needs-adjudication": "dashed",
+  "completion-pending": "dashed",
+  "completion-blocked": "dashed",
 };
 
 export function threadOf(source: StageSummary): Thread {
-  return { tone: stateMeta(source.status).tone, style: THREAD_STYLE[source.status] };
+  const state = displayState(source);
+  return { tone: stateMeta(state).tone, style: THREAD_STYLE[state] };
 }
 
 export interface LaidOutNode {
-  stage: StageSummary;
+  id: string;
   x: number;
   y: number;
   width: number;
   height: number;
   /// Whether the card carries a token line; the component reads the same flag.
+  hasTokens: boolean;
+}
+
+export interface StageGeometry {
+  id: string;
+  dependencies: string[];
+  height: number;
   hasTokens: boolean;
 }
 
@@ -133,7 +138,22 @@ export function layoutStages(
   stages: readonly StageSummary[],
   withTokens: ReadonlySet<string> = new Set(),
 ): GraphLayout {
-  const unique = uniqueStages(stages);
+  return layoutGeometry(stageGeometry(stages, withTokens));
+}
+
+export function stageGeometry(
+  stages: readonly StageSummary[],
+  withTokens: ReadonlySet<string>,
+): StageGeometry[] {
+  return uniqueStages(stages).map((stage) => ({
+    id: stage.id,
+    dependencies: stage.dependencies,
+    height: nodeHeight(stage, withTokens.has(stage.id)),
+    hasTokens: withTokens.has(stage.id),
+  }));
+}
+
+export function layoutGeometry(unique: readonly StageGeometry[]): GraphLayout {
   const ids = new Set(unique.map((stage) => stage.id));
   const graph = new dagre.graphlib.Graph();
   graph.setGraph({
@@ -148,7 +168,7 @@ export function layoutStages(
   for (const stage of unique) {
     graph.setNode(stage.id, {
       width: NODE_WIDTH,
-      height: nodeHeight(stage, withTokens.has(stage.id)),
+      height: stage.height,
     });
   }
   for (const stage of unique) {
@@ -163,12 +183,12 @@ export function layoutStages(
   const nodes: LaidOutNode[] = unique.map((stage) => {
     const { x, y, width, height } = graph.node(stage.id);
     return {
-      stage,
+      id: stage.id,
       x: x - width / 2,
       y: y - height / 2,
       width,
       height,
-      hasTokens: withTokens.has(stage.id),
+      hasTokens: stage.hasTokens,
     };
   });
   const edges = routeEdges(

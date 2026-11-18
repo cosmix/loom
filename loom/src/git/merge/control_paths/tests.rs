@@ -56,6 +56,10 @@ fn hooks_directory_matches_exact_nested_and_upper_cased() {
         assert!(!is_control_path(path, None), "{path} without a hooks dir");
     }
     assert!(is_control_path("githooks/x", Some("./githooks/")));
+    assert!(
+        is_control_path("loom", prefix),
+        "an ancestor may redirect the hooks directory"
+    );
 }
 
 #[test]
@@ -200,7 +204,74 @@ fn hooks_dir_prefix_reads_a_relative_core_hooks_path() {
     let root = repo.path();
     git_ok(root, &["config", "core.hooksPath", "loom/.githooks"]);
 
-    assert_eq!(hooks_dir_prefix(root), Some("loom/.githooks/".to_string()));
+    assert_eq!(
+        hooks_dir_prefix_checked(root).unwrap(),
+        Some("loom/.githooks/".to_string())
+    );
+    assert_eq!(hooks_dir_prefix(root).as_deref(), Some("loom/.githooks/"));
+}
+
+#[test]
+fn configured_hook_spellings_hold_the_effective_directory() {
+    for configured in [".", "././.githooks", "x/../.githooks", ".githooks"] {
+        let repo = init_repo();
+        let root = repo.path();
+        std::fs::create_dir_all(root.join("x")).unwrap();
+        git_ok(root, &["config", "core.hooksPath", configured]);
+        let hook = if configured == "." {
+            "pre-commit"
+        } else {
+            ".githooks/pre-commit"
+        };
+        branch_adding(root, "hook", &[hook]);
+        let reason = violation(root, "hook").expect("configured hook directory must be gated");
+        assert!(reason.contains(hook), "{configured}: {reason}");
+        assert!(
+            !is_control_path(
+                "unrelated/file",
+                hooks_dir_prefix_checked(root).unwrap().as_deref()
+            ) || configured == "."
+        );
+    }
+}
+
+#[test]
+fn absolute_hook_path_with_dot_components_is_normalized() {
+    let repo = init_repo();
+    let root = repo.path();
+    std::fs::create_dir_all(root.join("x")).unwrap();
+    let configured = root.join("x/../.githooks");
+    git_ok(
+        root,
+        &["config", "core.hooksPath", configured.to_str().unwrap()],
+    );
+    assert_eq!(
+        hooks_dir_prefix_checked(root).unwrap().as_deref(),
+        Some(".githooks/")
+    );
+    branch_adding(root, "hook", &[".githooks/pre-commit"]);
+    assert!(violation(root, "hook").is_some());
+}
+
+#[test]
+fn absent_hook_directory_is_gated_and_symlink_ancestor_fails_closed() {
+    let repo = init_repo();
+    let root = repo.path();
+    git_ok(root, &["config", "core.hooksPath", "future/hooks"]);
+    assert_eq!(
+        hooks_dir_prefix_checked(root).unwrap().as_deref(),
+        Some("future/hooks/")
+    );
+    branch_adding(root, "future", &["future/hooks/pre-commit"]);
+    assert!(violation(root, "future").is_some());
+
+    let other = tempfile::TempDir::new().unwrap();
+    std::fs::create_dir_all(root.join("future")).unwrap();
+    std::fs::remove_dir_all(root.join("future")).unwrap();
+    std::os::unix::fs::symlink(other.path(), root.join("future")).unwrap();
+    assert!(hooks_dir_prefix_checked(root).is_err());
+    assert_eq!(hooks_dir_prefix(root).as_deref(), Some(""));
+    assert!(control_path_violation(root, "main", "loom/future").is_err());
 }
 
 #[test]
@@ -213,10 +284,13 @@ fn hooks_dir_prefix_reads_a_worktree_scoped_core_hooks_path() {
         &["config", "--worktree", "core.hooksPath", ".githooks"],
     );
 
-    assert_eq!(hooks_dir_prefix(root), Some(".githooks/".to_string()));
+    assert_eq!(
+        hooks_dir_prefix_checked(root).unwrap(),
+        Some(".githooks/".to_string())
+    );
     assert!(is_control_path(
         ".githooks/pre-commit",
-        hooks_dir_prefix(root).as_deref()
+        hooks_dir_prefix_checked(root).unwrap().as_deref()
     ));
 }
 
@@ -224,58 +298,72 @@ fn hooks_dir_prefix_reads_a_worktree_scoped_core_hooks_path() {
 fn hooks_dir_prefix_is_none_when_unset() {
     let repo = init_repo();
 
-    assert_eq!(hooks_dir_prefix(repo.path()), None);
+    assert_eq!(hooks_dir_prefix_checked(repo.path()).unwrap(), None);
 }
 
 #[test]
 fn resolve_hooks_dir_prefix_local_beats_global() {
-    let root = Path::new("/repo");
+    let repo = init_repo();
+    let root = repo.path();
     assert_eq!(
-        resolve_hooks_dir_prefix(root, Some("local/hooks"), Some("global/hooks"), None),
+        resolve_hooks_dir_prefix_checked(root, Some("local/hooks"), Some("global/hooks"), None)
+            .unwrap(),
         Some("local/hooks/".to_string())
+    );
+    assert_eq!(
+        resolve_hooks_dir_prefix(root, Some("local/hooks"), Some("global/hooks"), None).as_deref(),
+        Some("local/hooks/")
     );
 }
 
 #[test]
 fn resolve_hooks_dir_prefix_uses_a_relative_global_when_local_is_unset() {
-    let root = Path::new("/repo");
+    let repo = init_repo();
+    let root = repo.path();
     assert_eq!(
-        resolve_hooks_dir_prefix(root, None, Some(".githooks"), None),
+        resolve_hooks_dir_prefix_checked(root, None, Some(".githooks"), None).unwrap(),
         Some(".githooks/".to_string())
     );
 }
 
 #[test]
 fn resolve_hooks_dir_prefix_falls_back_to_system_when_local_and_global_are_unset() {
-    let root = Path::new("/repo");
+    let repo = init_repo();
+    let root = repo.path();
     assert_eq!(
-        resolve_hooks_dir_prefix(root, None, None, Some("system/hooks")),
+        resolve_hooks_dir_prefix_checked(root, None, None, Some("system/hooks")).unwrap(),
         Some("system/hooks/".to_string())
     );
 }
 
 #[test]
 fn resolve_hooks_dir_prefix_is_none_for_an_absolute_path_outside_the_repo() {
-    let root = Path::new("/repo");
+    let repo = init_repo();
+    let root = repo.path();
     assert_eq!(
-        resolve_hooks_dir_prefix(root, Some("/elsewhere/hooks"), None, None),
+        resolve_hooks_dir_prefix_checked(root, Some("/elsewhere/hooks"), None, None).unwrap(),
         None
     );
 }
 
 #[test]
 fn resolve_hooks_dir_prefix_resolves_an_absolute_path_inside_the_repo() {
-    let root = Path::new("/repo");
+    let repo = init_repo();
+    let root = repo.path();
+    let absolute = root.join("loom/.githooks");
     assert_eq!(
-        resolve_hooks_dir_prefix(root, Some("/repo/loom/.githooks"), None, None),
+        resolve_hooks_dir_prefix_checked(root, absolute.to_str(), None, None).unwrap(),
         Some("loom/.githooks/".to_string())
     );
 }
 
 #[test]
 fn resolve_hooks_dir_prefix_is_none_when_every_scope_is_unset() {
-    let root = Path::new("/repo");
-    assert_eq!(resolve_hooks_dir_prefix(root, None, None, None), None);
+    let repo = init_repo();
+    assert_eq!(
+        resolve_hooks_dir_prefix_checked(repo.path(), None, None, None).unwrap(),
+        None
+    );
 }
 
 #[test]

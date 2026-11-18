@@ -1,11 +1,12 @@
 import { cleanup, render, screen, within } from "@testing-library/react";
 import { createStore } from "jotai";
 import { Provider } from "jotai/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import fixture from "@/api/fixtures/snapshot.json";
 import { snapshotSchema } from "@/api/schema";
 import { TokenFlowPanel } from "@/components/token-flow-panel";
+import { resetModelColors } from "@/lib/model-color";
 import { applySnapshot } from "@/state/apply";
 
 function renderPanel(mutate?: (raw: typeof fixture) => void) {
@@ -20,10 +21,11 @@ function renderPanel(mutate?: (raw: typeof fixture) => void) {
   );
 }
 
+beforeEach(resetModelColors);
 afterEach(cleanup);
 
 describe("TokenModels", () => {
-  it("uses distinct model colors without cycling after six models", () => {
+  it("gives each of seven models its own color, matching the legend swatches", () => {
     renderPanel((raw) => {
       raw.status.tokens.models = Array.from({ length: 7 }, (_, index) => ({
         model: `model-${index}`,
@@ -36,11 +38,6 @@ describe("TokenModels", () => {
       slice.getAttribute("stroke")!,
     );
     expect(new Set(colors).size).toBe(7);
-    const hues = colors.map((color) => Number(color.split(" ")[2]?.replace(")", "")));
-    for (let index = 0; index < 3; index++) {
-      const gap = (hues[(index + 1) % 3]! - hues[index]! + 360) % 360;
-      expect(Math.min(gap, 360 - gap)).toBeGreaterThanOrEqual(75);
-    }
     const swatches = screen.getByRole("list", { name: "models" }).querySelectorAll("[aria-hidden]");
     swatches.forEach((swatch, index) => {
       const expected = document.createElement("span");
@@ -63,7 +60,7 @@ describe("TokenModels", () => {
     const before = colors();
     cleanup();
     renderPanel((raw) => {
-      raw.status.tokens.models.find((entry) => entry.model === "gpt-6.1-sol")!.total.input =
+      raw.status.tokens.models.find((entry) => entry.model === "gpt-6.2-sol")!.total.input =
         99999999;
     });
     expect(colors()).toEqual(before);
@@ -77,7 +74,7 @@ describe("TokenModels", () => {
     expect(slices.map((slice) => slice.getAttribute("data-model"))).toEqual([
       "claude-sonnet-5-5",
       "claude-opus-5-5",
-      "gpt-6.1-sol",
+      "gpt-6.2-sol",
     ]);
     expect(pie.querySelectorAll("text")).toHaveLength(0);
   });

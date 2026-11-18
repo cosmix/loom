@@ -3,7 +3,7 @@ use anyhow::{Context, Result};
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
-use crate::parser::markdown::MarkdownDocument;
+use crate::parser::markdown::parse_frontmatter_strings;
 
 pub struct SessionRecord {
     pub path: PathBuf,
@@ -59,13 +59,10 @@ pub fn enumerate_sessions(work_dir: &Path) -> Result<SessionEnumeration> {
 fn read_record(work_dir: &Path, path: &Path) -> Result<SessionRecord> {
     let relative = path.strip_prefix(work_dir)?;
     let content = crate::fs::safe_read::read_to_string_bounded(work_dir, relative, 1024 * 1024)?;
-    let document = MarkdownDocument::parse(&content)?;
-    let id = document
-        .get_frontmatter("id")
-        .context("Missing session id")?
-        .clone();
+    let frontmatter = parse_frontmatter_strings(&content)?;
+    let id = frontmatter.get("id").context("Missing session id")?.clone();
     super::validate_session_file_id(&id)?;
-    let stage_id = document.get_frontmatter("stage_id").cloned();
+    let stage_id = frontmatter.get("stage_id").cloned();
     if let Some(stage_id) = &stage_id {
         crate::validation::validate_id(stage_id)?;
     }

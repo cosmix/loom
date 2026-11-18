@@ -1,6 +1,6 @@
 # Ambient Filesystem Trust
 
-> A .git dir is no proof
+>
 
 ## An Ancestor Named `.git` Is Not a Repository (2026-08-29)
 
@@ -154,3 +154,33 @@ which this bound was added to fix.
 **Prevention:** Decide whether a path is ignored with `git check-ignore`, never by matching `.gitignore` lines. Before telling an operator a branch is ready for `loom run`, include `loom init` in the check and confirm `git status --porcelain` lists no tracked change.
 
 **Fix:** Both checks take `git check-ignore`'s verdict when the repository root is a git work tree, with discovery capped at the root (`GIT_CEILING_DIRECTORIES`) so an enclosing repository's rules never count, and fall back to the literal lines otherwise (`git_ignores`, `gitignore_lists`). A loom binary built before the fix still dirties `.gitignore` on `loom init`: run `git checkout -- .gitignore` after it.
+
+## Admission lock initially rejected worktree state symlink
+
+**What happened:** A new per-stage admission lock opened the work directory with a no-follow helper, although a worktree deliberately exposes `.loom/work` as a symlink.
+
+**Why:** The helper was chosen for child-path safety without checking its root-path contract against the repository worktree layout.
+
+**Prevention:** When using safe filesystem helpers, trace whether the caller passes a real root or a deliberate root symlink; canonicalize the root once and keep no-follow traversal below it.
+
+**Fix:** Canonicalize `work_dir` before `safe_open_dirfd`, while retaining no-follow opens for the lock directory and file.
+
+## Read-only openat2 mode must be zero
+
+**What happened:** An inbox ledger reader passed creation mode 0600 to openat2 without O_CREAT, causing EINVAL.
+
+**Why:** The reader and writer shared an open helper but applied the writer mode to both.
+
+**Prevention:** Pass mode zero when O_CREAT and O_TMPFILE are absent and exercise both open paths.
+
+**Fix:** Select the mode alongside the flags and retain the read and append regressions.
+
+## Hook fixture under CARGO_TARGET_TMPDIR failed only in the plan dry-run checkout
+
+**What happened:** `loom plan verify --dry-run` reported `cargo test --all-targets` failing at HEAD while the suite passed in the main checkout. The one failing test was `first_large_unoutlined_read_warns_instead_of_blocking` (`loom/tests/hook_false_positive_contracts.rs`): `read-guard.sh` printed nothing where the test expects a "no outline is available" warning.
+
+**Why:** the dry run checks HEAD out under `<repository>/.loom/dry-run/<run>/checkout/` (`loom/src/commands/plan/verify/dry_run.rs`), and the fixture root came from `CARGO_TARGET_TMPDIR`, which lies inside that checkout. `_loom_path_is_control_input` in `loom-hooks/_read_discipline.sh` exempts every `*/.loom/*` path from the read gate, so the hook treated the fixture file as a control input. Two reproductions misled the diagnosis: a scratch worktree under `/tmp` fails a different test (`tmux::tests_spawn::a_failed_spawn_aborts_and_leaves_no_pid_file`, because `/tmp` is a session-writable root), and pointing `CARGO_TARGET_DIR` at the main checkout removes `/.loom/` from the path and hides the failure.
+
+**Prevention:** a test that feeds a path to a hook picks a fixture root the hook treats as ordinary: no `claude` component and no `/.loom/` component. Reproduce a dry-run failure at the dry run location, a HEAD worktree under `.loom/dry-run/` with its own target directory, never under `/tmp`. The dry-run report carries no test output; the checkout is deleted when the run ends, so copy a log out of `.loom/dry-run/*/checkout/loom/` while the run is live.
+
+**Fix:** `temp_dir_no_claude` in `loom/tests/hook_false_positive_contracts/support.rs` takes the first of `CARGO_TARGET_TMPDIR` and `std::env::temp_dir()` that `confuses_hooks` accepts.

@@ -9,12 +9,10 @@ use std::path::Path;
 
 use chrono::{DateTime, Utc};
 
-use crate::daemon::{
-    handle_agent_block_stage, handle_dispute_criteria, handle_file_dispute,
-    handle_freeze_contracts, Response,
-};
+use crate::daemon::Response;
 use crate::fs::memory::{append_entry, validate_spooled_entry, MemoryEntry};
 use crate::fs::stage_request::StageRequest;
+use crate::git::branch::branch_name_for_stage;
 use crate::handoff::session_content::{write_session_handoff, SessionHandoff, CEILING_TRIGGER};
 use crate::models::session::{Session, SessionStatus, SessionType};
 use crate::models::stage::{Stage, StageStatus};
@@ -27,8 +25,16 @@ use crate::telemetry::{append_record, TelemetryEvent, TelemetryRecord};
 use crate::verify::transitions::{load_stage, update_stage};
 
 use super::commit::{self, CommitSite};
-use super::{check, complete, freeze};
+use super::{check, complete, worker_control};
 use super::{InboxHost, Settle};
+
+#[path = "stage_request_dispatch.rs"]
+mod stage_request_dispatch;
+use stage_request_dispatch::{dispatch_stage_request, settle_freeze};
+
+#[cfg(test)]
+#[path = "tests_memory_validation.rs"]
+mod memory_validation_tests;
 
 /// An entry the matrix lets through, with its payload decoded.
 pub(super) struct Admitted {
@@ -111,6 +117,9 @@ pub(super) fn apply(host: &mut dyn InboxHost, record: &Session, admitted: Admitt
         RequestPayload::Complete(request) => {
             complete::apply_complete(host, stage_id, record, &request, request_id)
         }
+        RequestPayload::WorkerControl(request) => {
+            worker_control::apply_worker_control(host, stage_id, record, request)
+        }
     }
 }
 
@@ -153,41 +162,24 @@ fn stage_request(
     if let Err(reason) = require_owner(work_dir, stage_id, record) {
         return Settle::Refused(reason);
     }
-    let response = match request {
-        StageRequest::Block { reason } => handle_agent_block_stage(work_dir, stage_id, &reason),
-        StageRequest::Dispute {
-            field,
-            criterion_indices,
-            reason,
-            evidence_commit,
-            failure_output,
-        } => handle_dispute_criteria(
+    if let StageRequest::FreezeContracts {
+        head,
+        tree_digest,
+        choices,
+    } = &request
+    {
+        return settle_freeze(
             work_dir,
             stage_id,
-            field,
-            criterion_indices,
-            reason,
-            evidence_commit,
-            failure_output,
-        ),
-        StageRequest::FreezeContracts { head, tree_digest } => {
-            let queued = handle_freeze_contracts(
-                work_dir,
-                stage_id,
-                &record.id,
-                &head,
-                &tree_digest,
-                request_id,
-            );
-            return freeze::settle(work_dir, stage_id, &record.id, request_id, queued);
-        }
-        StageRequest::FileDispute {
-            kind,
-            reason,
-            evidence_commit,
-        } => handle_file_dispute(work_dir, stage_id, kind, reason, evidence_commit),
-    };
-    settle_response(response)
+            &record.id,
+            request_id,
+            (head, tree_digest),
+            choices,
+        );
+    }
+    settle_response(dispatch_stage_request(
+        work_dir, stage_id, record, request, request_id,
+    ))
 }
 
 /// Settles a stage handler's daemon answer: an error reply refuses the request
@@ -220,6 +212,38 @@ pub(super) fn require_owner(
         return Err(format!(
             "session '{}' is not the active session of stage '{stage_id}'",
             record.id
+        ));
+    }
+    Ok(stage)
+}
+
+/// A merge session acts on a stage only while it resolves that stage's merge.
+/// It is not the stage's `session`, so it is attributed by the branch it was
+/// spawned for. Returns the stage as loaded for the check.
+pub(super) fn require_merge_resolver(
+    work_dir: &Path,
+    stage_id: &str,
+    record: &Session,
+) -> Result<Stage, String> {
+    if record.status != SessionStatus::Running {
+        return Err(format!("session '{}' is no longer running", record.id));
+    }
+    let branch = branch_name_for_stage(stage_id);
+    if record.merge_source_branch.as_deref() != Some(branch.as_str()) {
+        return Err(format!(
+            "session '{}' is not resolving the merge of {branch}",
+            record.id
+        ));
+    }
+    let stage = load_stage(stage_id, work_dir)
+        .map_err(|error| format!("stage '{stage_id}' could not be loaded: {error:#}"))?;
+    if !matches!(
+        stage.status,
+        StageStatus::MergeConflict | StageStatus::MergeBlocked
+    ) {
+        return Err(format!(
+            "stage '{stage_id}' is {}, not MergeConflict or MergeBlocked",
+            stage.status
         ));
     }
     Ok(stage)

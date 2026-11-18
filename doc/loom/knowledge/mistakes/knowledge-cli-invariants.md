@@ -1,6 +1,6 @@
 # Knowledge Cli Invariants
 
-> Invariants in constructor
+> Rules
 
 ## A CLI Handler Is Rarely the Only Caller of the Constructor It Guards (2026-07-28)
 
@@ -204,3 +204,38 @@ an added line is a knowledge defect to fix.
 **Prevention:** Put `--` immediately before a positional Markdown body that may begin with a hyphen.
 
 **Fix:** Repeat the replacement with the option terminator and confirm the CLI reports that the existing heading was replaced.
+
+## Knowledge replacement text beginning with a dash
+
+**What happened:** A section replacement failed because the content began with a Markdown list marker.
+
+**Why:** The CLI parsed the content argument as an option.
+
+**Prevention:** Pass `--` before positional replacement content that may begin with a dash.
+
+**Fix:** Repeat the unchanged replacement with the option terminator.
+
+## An emptied blurb falls back to a later blockquote and the INDEX goes stale
+
+**What happened**: knowledge-distill trimmed `INDEX.md` under its 16,384-byte budget by running `loom knowledge annotate <topic> --blurb ""` on about forty topics. The check passed before the commit and failed after it with "INDEX.md is stale". A full regeneration reads a topic's blurb as the first line starting with `>` (`fs/knowledge/index.rs` `extract_title_and_blurb`), so the bare `>` that an empty blurb leaves matches nothing and a later blockquote line in the file becomes the blurb for 13 topics, which also pushed the INDEX back over the budget.
+**Why**: the INDEX that `annotate` writes and the INDEX a regeneration produces differ for a topic with a blockquote further down. Each `annotate --blurb ""` also appends one line to the topic file, so a repeat run changes line counts.
+**Prevention**: after trimming blurbs, run `loom knowledge sync` (its index step writes `INDEX.md` before the derived-cache step that a stage sandbox refuses) and check that `INDEX.md` does not change, then run `loom knowledge check`. A topic whose body holds a `>` line needs a short non-empty blurb; only a topic without one can be blank.
+**Fix**: those 13 topics carry one-word blurbs and the rest are blank.
+
+## A CLI Probe Used a Real `loom memory resolve` With a Guessed Id and Redirected Output
+
+**What happened:** the integration-verify orchestrator ran one `loom memory resolve` with a guessed suggestion id and output sent to `/dev/null`, to learn the command's flags. The relay hook reads the command's stdout, so a real write was attempted blind and its result unseen.
+
+**Why:** probing a write command with a real call instead of `--help`.
+
+**Prevention:** read `loom memory resolve --help` first, take ids from the signal with `rg -o`, and never redirect a `loom` command (the relay reads its stdout).
+
+## Leading-hyphen knowledge section bodies need stdin
+
+**What happened:** A proposal audit passed a replacement body beginning with a Markdown list directly as a CLI positional argument, and clap rejected it as an option.
+
+**Why:** Argument-list execution prevents shell expansion but does not disable CLI option parsing.
+
+**Prevention:** Send arbitrary knowledge content through stdin using the documented dash argument.
+
+**Fix:** Use subprocess input with loom knowledge replace-section <topic> <heading> -.

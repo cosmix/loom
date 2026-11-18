@@ -1,8 +1,4 @@
-//! Amendment-application happy-path tests for adjudication, split out of the
-//! parent module (`adjudication_e2e.rs`) to keep it under the
-//! maintainability line limit. `use super::*;` reaches every fixture in the
-//! parent — Rust visibility lets a child module see its ancestors' private
-//! items.
+//! Amendment-application happy-path tests sharing the parent module's fixtures.
 
 use super::*;
 

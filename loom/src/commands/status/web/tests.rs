@@ -13,10 +13,13 @@ use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 
+use crate::commands::status::web::model::WebSnapshot;
 use crate::fs::work_dir::WorkDir;
 use crate::process::sandbox_probe::{loopback_bindable, skip_unless};
 use tempfile::TempDir;
 
+#[path = "tests/cli_flags.rs"]
+mod cli_flags;
 #[path = "tests/config_api.rs"]
 mod config_api;
 #[path = "tests/embedded.rs"]
@@ -45,6 +48,13 @@ pub(super) fn workspace() -> (TempDir, PathBuf) {
     (temp, base)
 }
 
+/// The snapshot inside a `full` message of the `/ws` stream.
+pub(super) fn parse_full(frame: &str) -> WebSnapshot {
+    let mut message: serde_json::Value = serde_json::from_str(frame).expect("frame JSON");
+    assert_eq!(message["t"], "full", "expected a full frame: {frame:.80}");
+    serde_json::from_value(message["snapshot"].take()).expect("snapshot JSON")
+}
+
 /// Assert a response carries every header the dashboard always sends.
 pub(super) fn assert_security_headers(response: &str) {
     for header in [
@@ -67,16 +77,13 @@ pub(super) fn start(base: PathBuf) -> (u16, Arc<AtomicBool>) {
 pub(super) fn start_with(
     base: PathBuf,
     options: crate::commands::status::web::ServeOptions,
-) -> (
-    u16,
-    Arc<AtomicBool>,
-    Arc<crate::commands::status::web::limits::Limits>,
-) {
+) -> (u16, Arc<AtomicBool>, Arc<crate::web_server::limits::Limits>) {
     let listener = TcpListener::bind("127.0.0.1:0").expect("bind test server");
     let port = listener.local_addr().expect("server address").port();
     let running = Arc::new(AtomicBool::new(true));
     let serve_running = running.clone();
-    let limits = crate::commands::status::web::limits::Limits::new();
+    let limits =
+        crate::web_server::limits::Limits::new(crate::commands::status::web::MAX_INBOUND_BYTES);
     let serve_limits = limits.clone();
     thread::spawn(move || {
         let _ = crate::commands::status::web::serve_with(

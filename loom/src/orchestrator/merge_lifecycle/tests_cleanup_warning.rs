@@ -90,3 +90,32 @@ fn a_failed_removal_is_recorded_on_the_stage() {
         "warning must be tagged as a failure: {warning}"
     );
 }
+
+#[test]
+fn reconciled_git_resources_keep_a_retained_directory_warning_across_recovery() {
+    let stage_id = "retained-scaffold-stage";
+    let (temp, head) = repo_with_stage_commit(stage_id);
+    let root = temp.path();
+    let work_dir = root.join(".loom/work");
+    write_stage_record(&work_dir, stage_id, &head);
+    merge_stage_branch(root, stage_id);
+    let worktree = worktree_of(root, stage_id);
+    fs::remove_dir_all(&worktree).unwrap();
+    fs::remove_dir_all(root.join(".git/worktrees").join(stage_id)).unwrap();
+    fs::create_dir_all(worktree.join(".claude/.cc-writes")).unwrap();
+
+    for _ in 0..2 {
+        let CleanupOutcome::Done(result) = cleanup_from_outside(root, stage_id) else {
+            panic!("Git reconciliation must complete with an explicit retained path");
+        };
+        assert!(!result.worktree_removed);
+        assert!(!result.warnings.is_empty());
+        let warning = load_stage(stage_id, &work_dir)
+            .unwrap()
+            .cleanup_warning
+            .unwrap();
+        assert!(warning.contains(worktree.to_str().unwrap()));
+        assert!(warning.contains("registry reconciled"));
+        assert!(worktree.join(".claude/.cc-writes").is_dir());
+    }
+}

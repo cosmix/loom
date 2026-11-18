@@ -15,7 +15,7 @@ FORWARDER=forwarder-7
 TOOL=tool-direct
 UNIT=unit-a
 INVOCATION=inv-0123456789abcdef0123456789abcdef
-MODEL=gpt-5.6-terra
+MODEL=gpt-6.1-terra
 EFFORT=xhigh
 AUTH_TS=2026-09-14T12:00:00.000Z
 TERMINAL_AT=2026-09-14T12:01:02.345Z
@@ -39,6 +39,7 @@ jq -nc --arg ts "$AUTH_TS" --arg stage "$STAGE" --arg session "$SESSION" \
 	 model:$model,effort:$effort,workspace_root:"/",companion_version:"1.0.6",
 	 companion_path:"/unused/codex-companion.mjs",state_root:"/unused/state"}' \
 	>"$WORK_DIR/subagents/$STAGE/codex.jsonl"
+cp -R "$WORK_DIR" "$d/work-template"
 
 cat >"$PERSISTED" <<EOF
 LOOM-FORWARD-START {"v":1,"backend":"direct","thread_id":"thread-exact"}
@@ -47,7 +48,7 @@ LOOM-FORWARD-END {"v":1,"backend":"direct","thread_id":"thread-exact","outcome":
 {"type":"thread.started","thread_id":"thread-exact"}
 {"type":"turn.started"}
 {"type":"turn.completed","usage":{"input_tokens":10,"cached_input_tokens":2,"output_tokens":3}}
-LOOM-CODEX-DIRECT-RESULT {"v":1,"state":"succeeded","thread_id":"thread-exact","turn_id":null,"terminal_at":"$TERMINAL_AT","exit_code":0,"ownership_retained":false}
+LOOM-CODEX-DIRECT-RESULT {"v":1,"state":"succeeded","thread_id":"thread-exact","turn_id":null,"terminal_at":"$TERMINAL_AT","exit_code":0,"ownership_retained":false,"announced_thread_id":"thread-exact"}
 note: the outer sandbox refuses a nested Seatbelt profile; running codex exec with --sandbox danger-full-access (the outer sandbox is the boundary)
 --- LOOM-CODEX-EVIDENCE ---
 exit: 0
@@ -83,8 +84,8 @@ run_hook "$(payload "$ACK" false 0 "$PERSISTED")"
 
 EXPECTED="$d/expected.jsonl"
 cat >"$EXPECTED" <<'EOF'
-{"version":1,"event_id":"sha256:a795a3c76bbfffa7e3f029b578d369e304cb77543d0c482fa25b8f66f1f0d7d6","producer":"codex_direct","identity":{"kind":"codex","stage_id":"stage-one","loom_session_id":"session-one","parent_session_id":"parent-uuid","forwarder_agent_id":"forwarder-7","unit_id":"unit-a","invocation_id":"inv-0123456789abcdef0123456789abcdef","workspace_root":"/","execution":{"mode":"direct","thread_id":"thread-exact","tool_use_id":"tool-direct"}},"observed_at":"2026-09-14T12:00:00.000Z","state":"running","evidence":{"evidence_kind":"authorization","requested_model":"gpt-5.6-terra","requested_effort":"xhigh","invocation_id":"inv-0123456789abcdef0123456789abcdef","job_id":null,"thread_id":"thread-exact","turn_id":null,"tool_use_id":"tool-direct","terminal_at":null,"outcome":"running","detail":null}}
-{"version":1,"event_id":"sha256:107a4a28f53906bc9b0b4c478e0cf4ab9b0846b6f10a9ee2776c88b27c99ebc1","producer":"codex_direct","identity":{"kind":"codex","stage_id":"stage-one","loom_session_id":"session-one","parent_session_id":"parent-uuid","forwarder_agent_id":"forwarder-7","unit_id":"unit-a","invocation_id":"inv-0123456789abcdef0123456789abcdef","workspace_root":"/","execution":{"mode":"direct","thread_id":"thread-exact","tool_use_id":"tool-direct"}},"observed_at":"2026-09-14T12:01:02.345Z","state":"completed","evidence":{"evidence_kind":"observation","requested_model":"gpt-5.6-terra","requested_effort":"xhigh","invocation_id":"inv-0123456789abcdef0123456789abcdef","job_id":null,"thread_id":"thread-exact","turn_id":null,"tool_use_id":"tool-direct","terminal_at":"2026-09-14T12:01:02.345Z","outcome":"succeeded","detail":null}}
+{"version":1,"event_id":"sha256:a68754e0188b66ee235dbec88ff3866b2e06f1d30e6be1f9ce7a2ab72411b129","producer":"codex_direct","identity":{"kind":"codex","stage_id":"stage-one","loom_session_id":"session-one","parent_session_id":"parent-uuid","forwarder_agent_id":"forwarder-7","unit_id":"unit-a","invocation_id":"inv-0123456789abcdef0123456789abcdef","workspace_root":"/","execution":{"mode":"direct","thread_id":"thread-exact","tool_use_id":"tool-direct"}},"observed_at":"2026-09-14T12:00:00.000Z","state":"running","evidence":{"evidence_kind":"authorization","requested_model":"gpt-6.1-terra","requested_effort":"xhigh","invocation_id":"inv-0123456789abcdef0123456789abcdef","job_id":null,"thread_id":"thread-exact","turn_id":null,"tool_use_id":"tool-direct","terminal_at":null,"outcome":"running","detail":null}}
+{"version":1,"event_id":"sha256:88f5598189f9e54be2db3fba94fe1f1f3cfb19dd9ca1525e2bafb16e393c01ae","producer":"codex_direct","identity":{"kind":"codex","stage_id":"stage-one","loom_session_id":"session-one","parent_session_id":"parent-uuid","forwarder_agent_id":"forwarder-7","unit_id":"unit-a","invocation_id":"inv-0123456789abcdef0123456789abcdef","workspace_root":"/","execution":{"mode":"direct","thread_id":"thread-exact","tool_use_id":"tool-direct"}},"observed_at":"2026-09-14T12:01:02.345Z","state":"completed","evidence":{"evidence_kind":"observation","requested_model":"gpt-6.1-terra","requested_effort":"xhigh","invocation_id":"inv-0123456789abcdef0123456789abcdef","job_id":null,"thread_id":"thread-exact","turn_id":null,"tool_use_id":"tool-direct","terminal_at":"2026-09-14T12:01:02.345Z","outcome":"succeeded","detail":null}}
 EOF
 cmp "$EXPECTED" "$JOURNAL"
 
@@ -109,5 +110,51 @@ outside_path="$outside_dir/untrusted.txt"
 printf 'untrusted content\n' >"$outside_path"
 run_hook "$(payload "Full output saved to: $outside_path" false 0)"
 [[ $(wc -l <"$JOURNAL") -eq $before ]]
+
+# Each case below runs against a fresh work dir. Args: case name, result state,
+# exit status, ownership_retained, announced_thread_id (JSON).
+run_direct_case() {
+	local name="$1" state="$2" status="$3" retained="$4" announced="$5" reason="${6:-Seatbelt}" error=true
+	local file="$HOME_DIR/.claude/projects/project/tool-results/$name.txt"
+	cp -R "$d/work-template" "$d/work-$name"
+	cat >"$file" <<EOF
+LOOM-FORWARD-START {"v":1,"backend":"direct","thread_id":"thread-exact"}
+LOOM-FORWARD-END {"v":1,"backend":"direct","thread_id":"thread-exact","outcome":"$state","exit_code":$status}
+--- LOOM-FORWARD-OUTPUT ---
+{"type":"thread.started","thread_id":"thread-exact"}
+LOOM-CODEX-DIRECT-RESULT {"v":1,"state":"$state","thread_id":"thread-exact","turn_id":null,"terminal_at":"$TERMINAL_AT","exit_code":$status,"ownership_retained":$retained,"announced_thread_id":$announced}
+--- LOOM-CODEX-EVIDENCE ---
+exit: $status
+mode: direct (codex exec --sandbox danger-full-access; nested $reason refused)
+thread: thread-exact
+unit: $UNIT
+invocation: $INVOCATION
+state: $state
+EOF
+	[[ "$status" != 0 ]] || error=false
+	WORK_DIR="$d/work-$name" run_hook "$(payload "Full output saved to: $file" "$error" "$status" "$file")"
+}
+
+# An `unknown` END (exit 125) is a recorded non-success; the detail says whether
+# the supervisor kept ownership of a live descendant.
+for retained in true false; do
+	run_direct_case "unknown-$retained" unknown 125 "$retained" '"thread-exact"'
+	case_journal="$d/work-unknown-$retained/subagents/$STAGE/lifecycle.jsonl"
+	[[ $(wc -l <"$case_journal") -eq 2 ]]
+	detail='incomplete event stream'
+	[[ "$retained" == false ]] || detail='ownership retained'
+	tail -n 1 "$case_journal" | jq -e --arg detail "$detail" '
+		.state == "unknown" and .evidence.outcome == "unknown" and
+		.evidence.detail == $detail and .identity.execution.thread_id == "thread-exact"' >/dev/null
+done
+
+run_direct_case bubblewrap succeeded 0 false '"thread-exact"' bubblewrap
+[[ $(wc -l <"$d/work-bubblewrap/subagents/$STAGE/lifecycle.jsonl") -eq 2 ]]
+run_direct_case bad-reason succeeded 0 false '"thread-exact"' unknown
+[[ ! -s "$d/work-bad-reason/subagents/$STAGE/lifecycle.jsonl" ]]
+
+# A result whose announced START thread differs from its thread records nothing.
+run_direct_case announced-mismatch succeeded 0 false '"thread-other"'
+[[ ! -s "$d/work-announced-mismatch/subagents/$STAGE/lifecycle.jsonl" ]]
 
 printf '%s\n' PASS

@@ -1,39 +1,21 @@
 //! Base-tree evaluation of search criteria against a temporary repository.
 
 use std::fs;
-use std::path::Path;
-use std::process::Command;
 
 use tempfile::TempDir;
 
 use crate::plan::schema::tests::make_stage;
 use crate::plan::schema::types::{AcceptanceCriterion, StageDefinition, StageType, TruthCheck};
 use crate::plan::schema::validation::base_tree::check_base_tree;
+use crate::test_git::{git, TestRepo};
 
 const UNTOUCHED: &str = "criterion passes on the untouched tree";
-
-fn git(root: &Path, args: &[&str]) {
-    let output = Command::new("git")
-        .args(args)
-        .current_dir(root)
-        .env("GIT_CONFIG_GLOBAL", root.join(".no-global-config"))
-        .env("GIT_CONFIG_NOSYSTEM", "1")
-        .output()
-        .unwrap();
-    assert!(
-        output.status.success(),
-        "git {args:?} failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-}
 
 /// A repository whose only commit tracks `src/lib.rs` with `fn present`.
 fn repo() -> TempDir {
     let temp = TempDir::new().unwrap();
     let root = temp.path();
-    git(root, &["init", "-q", "-b", "main"]);
-    git(root, &["config", "user.email", "test@example.com"]);
-    git(root, &["config", "user.name", "Test"]);
+    TestRepo::builder().no_seed().init_in(root);
     fs::create_dir_all(root.join("src")).unwrap();
     fs::write(root.join("src/lib.rs"), "pub fn present() {}\n").unwrap();
     git(root, &["add", "src/lib.rs"]);
@@ -161,4 +143,19 @@ fn skips_with_one_note_when_head_does_not_resolve() {
     let report = check_base_tree(&[stage], Some(temp.path()));
     assert!(report.warnings.is_empty());
     assert!(report.note.is_some_and(|note| note.contains("HEAD")));
+}
+
+/// A git failure inside a directory that claims a repository is named in the note, not read as
+/// "no HEAD".
+#[test]
+fn a_git_failure_is_named_in_the_skip_note() {
+    let temp = TempDir::new().unwrap();
+    std::fs::create_dir(temp.path().join(".git")).unwrap();
+    let stage = standard_stage(vec![simple("rg -q present src/lib.rs")]);
+
+    let report = check_base_tree(&[stage], Some(temp.path()));
+
+    assert!(report.warnings.is_empty());
+    let note = report.note.expect("a skipped check leaves a note");
+    assert!(note.contains("git cannot read HEAD"), "{note}");
 }

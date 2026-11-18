@@ -4,11 +4,10 @@
 
 use super::super::VerificationChecks;
 use super::run_v2;
-use crate::git::runner::run_git_checked;
 use crate::models::stage::{Stage, StageStatus, StageType};
+use crate::test_git::{git, TestRepo};
 use crate::verify::transitions::save_stage;
 use std::fs;
-use std::path::Path;
 use tempfile::TempDir;
 
 /// The merged tree: `main` calls `run`; nothing calls `orphan` any more.
@@ -18,20 +17,6 @@ const MAIN_RS: &str = "fn main() {\n    run();\n}\n\nfn run() {}\n\nfn orphan() 
 const COMPLETED: [(&str, &str); 2] = [("wire-run", "run"), ("wire-orphan", "orphan")];
 
 const IV_STAGE: &str = "integration-verify";
-
-fn git(dir: &Path, args: &[&str]) {
-    let identity = [
-        "-c",
-        "user.name=t",
-        "-c",
-        "user.email=t@t",
-        "-c",
-        "commit.gpgsign=false",
-        "-c",
-        "core.hooksPath=/dev/null",
-    ];
-    run_git_checked(&[&identity[..], args].concat(), dir).unwrap();
-}
 
 /// The merged worktree on `main` with everything committed, plus a `docs`
 /// directory standing in for the integration stage's resolved
@@ -43,9 +28,19 @@ fn merged_worktree() -> TempDir {
     fs::create_dir_all(root.join("docs")).unwrap();
     fs::write(root.join("src/main.rs"), MAIN_RS).unwrap();
     fs::write(root.join("docs/README.md"), "# Docs\n").unwrap();
-    git(root, &["init", "-q", "-b", "main"]);
+    TestRepo::builder().no_seed().init_in(root);
     git(root, &["add", "src/main.rs", "docs/README.md"]);
-    git(root, &["commit", "-q", "-m", "merged"]);
+    git(
+        root,
+        &[
+            "-c",
+            "core.hooksPath=/dev/null",
+            "commit",
+            "-q",
+            "-m",
+            "merged",
+        ],
+    );
     repo
 }
 
@@ -143,6 +138,8 @@ fn aggregated_reachable_reverified_in_iv() {
         worktree_root: Some(repo.path()),
         daemon_gates: false,
         fail_closed: false,
+        expected_policy: None,
+        emit: |_, _| {},
         work_dir: work.path(),
     };
 

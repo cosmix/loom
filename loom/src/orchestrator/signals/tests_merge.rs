@@ -13,6 +13,9 @@ use super::{create_test_session, create_test_stage, create_test_worktree};
 #[path = "tests_merge_protected.rs"]
 mod protected;
 
+#[path = "tests_merge_task.rs"]
+mod task;
+
 #[test]
 fn test_generate_merge_signal_basic() {
     let temp_dir = TempDir::new().unwrap();
@@ -184,7 +187,7 @@ fn signal_directs_the_resolver_to_the_stage_worktree() {
         "the resolver merges the target into the stage branch: {content}"
     );
     assert!(
-        content.contains("continue it; do not start a new `git merge`"),
+        content.contains("continue it only when `git rev-parse MERGE_HEAD` equals `main`"),
         "{content}"
     );
     assert!(
@@ -216,9 +219,12 @@ fn signal_has_the_acceptance_step_and_section_for_a_stage_with_criteria() {
 
     let content = format_merge_signal_content(&session, &stage, "loom/stage-1", "main", &[], "");
     assert!(
-        content.contains("acceptance criteria (listed below) in this worktree"),
+        content.contains("acceptance criteria (listed below) with `loom check stage-1`"),
         "{content}"
     );
+    for sandbox_reason in ["no sockets", "no nested bwrap", "read-only /tmp"] {
+        assert!(content.contains(sandbox_reason), "{content}");
+    }
     assert!(content.contains("## Acceptance Criteria"), "{content}");
     assert!(content.contains("- [ ] All tests pass"), "{content}");
     assert!(!content.contains("Do NOT re-run"), "{content}");
@@ -238,7 +244,7 @@ fn signal_omits_the_acceptance_section_for_a_stage_without_criteria() {
     assert!(!content.contains("## Acceptance Criteria"), "{content}");
     assert!(!content.contains("(listed below)"), "{content}");
     assert!(
-        content.contains("Rerun the stage's acceptance criteria"),
+        content.contains("Rerun the stage's acceptance criteria with `loom check stage-1`"),
         "{content}"
     );
 }

@@ -12,7 +12,7 @@ use crate::git::branch::branch_name_for_stage;
 use crate::git::merge::check_resolved_worktree;
 use crate::git::{merge_stage, MergeGate, MergeResult};
 use crate::models::stage::StageStatus;
-use crate::verify::transitions::{load_stage, update_stage};
+use crate::verify::transitions::load_stage;
 
 mod conflict;
 mod finish;
@@ -24,7 +24,7 @@ use landing::{
     attempt_retried_merge, complete_resolved_merge, hold_for_review, main_repo_root, record_block,
 };
 use next_step::print_fix_limit_options;
-use preflight::{retry_preflight, RetryPreflight};
+use preflight::{admit_retry, retry_preflight, RetryAdmission, RetryPreflight};
 
 use super::progressive_complete::note_merge_stash;
 
@@ -45,7 +45,8 @@ pub fn merge(stage_id: Option<String>, resolved: bool) -> Result<()> {
 ///
 /// This path:
 /// 1. Resolves stage ID (provided or auto-detected from branch)
-/// 2. Verifies the stage is in MergeConflict or MergeBlocked status
+/// 2. Verifies the stage is in MergeConflict or MergeBlocked status, with no
+///    host job still live in its worktree
 /// 3. Checks the stage worktree (`check_resolved_worktree`): the stage's
 ///    recorded commit still in the branch, committed, no unmerged path
 /// 4. Merges the stage into the target with `merge_stage`, which leaves the
@@ -70,6 +71,8 @@ fn merge_resolved(stage_id: Option<String>) -> Result<()> {
             stage.status
         );
     }
+
+    refuse_live_host_job(&stage_id, work_dir)?;
 
     // The resolver runs inside the stage worktree, so the repository root is
     // the main repository the state directory belongs to, not the cwd.
@@ -97,6 +100,67 @@ fn merge_resolved(stage_id: Option<String>) -> Result<()> {
     }
 }
 
+/// Clear the stage's host job before the acceptance run this command starts,
+/// since its criteria share the worktree with that run.
+fn refuse_live_host_job(stage_id: &str, work_dir: &Path) -> Result<()> {
+    withdraw_or_refuse_host_job(
+        stage_id,
+        work_dir,
+        crate::daemon::DaemonServer::is_running(work_dir),
+    )
+}
+
+/// With a daemon running, its runner owns the job's child and kills it on its
+/// own tick, so a live (current or waiting) job is only waited for. Without
+/// one nothing would ever end the record: a queued job is withdrawn and the
+/// merge continues; a running job is withdrawn too, but its orphaned
+/// `verify-host` child still holds the worktree until `child_watchdog` sees
+/// the record is no longer `Running` (it polls every 50 ms and kills the
+/// child's process group), so the operator reruns shortly. A record that
+/// cannot be read refuses.
+fn withdraw_or_refuse_host_job(
+    stage_id: &str,
+    work_dir: &Path,
+    daemon_running: bool,
+) -> Result<()> {
+    use crate::host_verify::JobState;
+
+    // A daemon shutdown cancels current and leaves its waiting job queued for
+    // the next start, so a live waiting job keeps the worktree as busy as a
+    // live current one. `submit::cancel` below withdraws both slots. Read
+    // pending BEFORE current, as `submit::cancel` does: promotion saves the
+    // waiting job as current and then clears pending, so this order sees a
+    // job moving between the slots.
+    let live = |job: &crate::host_verify::JobRecord| !job.state.is_terminal();
+    let waiting = crate::host_verify::store::load_pending(work_dir, stage_id)?.filter(live);
+    let current = crate::host_verify::store::load_current(work_dir, stage_id)?.filter(live);
+    let Some(job) = current.or(waiting) else {
+        return Ok(());
+    };
+    if daemon_running {
+        bail!(
+            "Stage '{stage_id}' has host job {} still {:?}, which runs in the stage worktree. \
+             Wait for it to end, then rerun --resolved.",
+            job.id,
+            job.state
+        );
+    }
+    crate::host_verify::submit::cancel(
+        work_dir,
+        stage_id,
+        "withdrawn by merge --resolved: no daemon is running",
+    )?;
+    if job.state == JobState::Running {
+        bail!(
+            "Stage '{stage_id}' had host job {} running in the stage worktree with no daemon to \
+             stop it. The job was withdrawn, and its orphaned verify-host process stops itself \
+             through its watchdog within moments. Rerun --resolved shortly.",
+            job.id
+        );
+    }
+    Ok(())
+}
+
 /// Re-attempt merge for a stage in MergeConflict or MergeBlocked status.
 ///
 /// This path:
@@ -117,38 +181,25 @@ fn merge_retry(stage_id: Option<String>) -> Result<()> {
     // a fix attempt on this run.
     let RetryPreflight {
         stage_id,
-        mut stage,
         repo_root,
         worktree_root: _worktree_root,
     } = retry_preflight(stage_id, work_dir)?;
 
+    let stage = match admit_retry(&stage_id, work_dir)? {
+        RetryAdmission::Admitted(stage) => stage,
+        RetryAdmission::LimitReached(stage) => {
+            println!(
+                "\nStage '{}' has reached the fix attempt limit ({}/{}).\n",
+                stage_id,
+                stage.fix_attempts,
+                stage.get_effective_max_fix_attempts()
+            );
+            print_fix_limit_options(&stage_id);
+            return Ok(());
+        }
+    };
+    let attempts = stage.fix_attempts;
     let max_attempts = stage.get_effective_max_fix_attempts();
-
-    // Check the limit BEFORE incrementing so each attempt number is consumed
-    // only when actually attempted. Checking after increment burns one extra
-    // attempt at the boundary (off-by-one: with max=3, only 2 real attempts ran).
-    if stage.is_at_fix_limit() {
-        println!();
-        println!(
-            "Stage '{}' has reached the fix attempt limit ({}/{}).",
-            stage_id, stage.fix_attempts, max_attempts
-        );
-        println!();
-        print_fix_limit_options(&stage_id);
-        return Ok(());
-    }
-
-    // Increment fix_attempts after the limit guard so the count is accurate.
-    // Persist the increment via a locked read-modify-write on the FRESH on-disk
-    // stage so a concurrent daemon/CLI write is not reverted, and so the count
-    // is incremented from the current persisted value rather than a stale
-    // in-memory one (A-5). Mirror the new value into the local copy for display.
-    let attempts = update_stage(&stage_id, work_dir, |s| {
-        s.increment_fix_attempts();
-        Ok(())
-    })?
-    .fix_attempts;
-    stage.fix_attempts = attempts;
 
     println!("Retrying merge for stage '{stage_id}' (attempt {attempts}/{max_attempts})");
 
@@ -206,6 +257,9 @@ fn find_repo_root(cwd: &Path) -> Result<std::path::PathBuf> {
         }
     }
 }
+
+#[cfg(test)]
+mod live_job_tests;
 
 #[cfg(test)]
 mod tests;

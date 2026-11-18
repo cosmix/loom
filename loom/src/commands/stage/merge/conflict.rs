@@ -33,7 +33,10 @@ pub(super) fn record_conflict_and_report(
     }
     println!();
 
-    let recorded = update_stage(stage_id, work_dir, mark_conflict)?;
+    let recorded = update_stage(stage_id, work_dir, |current| {
+        crate::stage_service::merge_outcome::check_stage(current, stage)?;
+        mark_conflict(current)
+    })?;
     if recorded.status == StageStatus::MergeConflict {
         println!("Stage '{stage_id}' is now MergeConflict.");
         print_daemon_next_step(&recorded, work_dir, repo_root);
@@ -44,21 +47,19 @@ pub(super) fn record_conflict_and_report(
 }
 
 /// Record the conflict on the fresh on-disk stage: `MergeConflict` with
-/// `merge_conflict` set, and `failure_info` and `merge_block` cleared (no
-/// conflict path records one, and the error an earlier `MergeBlocked` stored
-/// would misdescribe the stage). Completion proof is preserved as recorded.
+/// `merge_conflict` set, and `merge_block` with any `failure_info` moved into
+/// `issue_history` by the transition (no conflict path records one, and the
+/// error an earlier `MergeBlocked` stored would misdescribe the stage).
+/// Completion proof is preserved as recorded.
 ///
 /// A `Completed` stage that was never merged (its plan disables auto-merge)
 /// is left untouched: no edge leads from `Completed` to `MergeConflict`, and
 /// a `MergeConflict` stage gets the daemon resolver the plan opted out of.
 fn mark_conflict(stage: &mut Stage) -> Result<()> {
-    if stage.status == StageStatus::Completed && !stage.merged {
-        return Ok(());
-    }
-    stage.try_mark_merge_conflict()?;
-    stage.clear_merge_block();
-    stage.failure_info = None;
-    Ok(())
+    crate::stage_service::merge_outcome::apply_conflict(
+        stage,
+        crate::stage_service::merge_outcome::ConflictAuthority::Manual,
+    )
 }
 
 /// The manual way to resolve the conflict, by whether fix attempts remain.
@@ -114,6 +115,15 @@ mod tests {
         assert!(stage.merge_conflict);
         assert!(stage.failure_info.is_none());
         assert!(stage.merge.block.is_none());
+        assert_eq!(stage.issue_history.len(), 1, "{:?}", stage.issue_history);
+        assert_eq!(
+            stage.issue_history[0].evidence,
+            infrastructure_failure().evidence
+        );
+        assert_eq!(
+            stage.issue_history[0].ended_by,
+            "MergeBlocked -> MergeConflict"
+        );
     }
 
     #[test]

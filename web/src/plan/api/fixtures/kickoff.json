@@ -1,0 +1,17 @@
+{
+  "type": "kickoff",
+  "session": "kickoff-1",
+  "shape": {
+    "size": "feature",
+    "name": "planner-ui",
+    "proposal": true,
+    "problem": "Make planning progress visible while drafting a feature.",
+    "decisions": ["Show teammate progress alongside the draft."],
+    "questions": ["Which sections need a separate review?"],
+    "sections": [
+      { "title": "Problem", "state": "settled" },
+      { "title": "Design", "state": "wording" }
+    ]
+  },
+  "target": "doc/product/planner-ui/index.md"
+}

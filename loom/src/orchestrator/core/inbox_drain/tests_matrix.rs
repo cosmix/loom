@@ -7,17 +7,20 @@
 use chrono::Utc;
 
 use crate::fs::stage_request::StageRequest;
+use crate::git::runner::run_git_checked;
+use crate::git::worktree::capture_main_identity;
 use crate::host_verify::store::load_current;
 use crate::host_verify::{digest, JobKind};
 use crate::models::dispute::{request_file, verdict_file};
 use crate::models::session::{SessionStatus, SessionType};
 use crate::models::stage::StageStatus;
+use crate::native_worker::store;
 use crate::relay::RequestKind;
 use crate::verify::contracts::store::load_freeze;
 use crate::verify::contracts::test_support::{contract_stage, contract_worktree};
 use crate::verify::transitions::{load_stage, save_stage};
 
-use super::test_support::{fixture, payload_for, FakeHost, Fixture, STAGE};
+use super::test_support::{fixture, payload_for, seed_native_invocation, FakeHost, Fixture, STAGE};
 use super::{run_pass, Settle};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -53,6 +56,43 @@ fn the_drain_applies_exactly_the_section_5_matrix() {
     }
 }
 
+#[test]
+fn the_drain_applies_worker_control_for_the_stage_session_only() {
+    for (session_type, _) in SECTION_5 {
+        let fx = fixture();
+        let record = fx.record(session_type, SessionStatus::Running);
+        fx.stage(StageStatus::Executing, Some(&record.id));
+        let invocation_id = seed_native_invocation(&fx, "unit-a");
+        let entry = fx.relay(
+            &record,
+            RequestKind::WorkerControl,
+            serde_json::json!({
+                "op": "cancel", "unit_id": "unit-a",
+                "invocation_id": invocation_id, "reason": "stop",
+            }),
+        );
+        let report = run_pass(&mut fx.host(true), &fx.tick(Utc::now()));
+        let settled = &report
+            .settled
+            .iter()
+            .find(|(id, _)| *id == entry.id)
+            .unwrap()
+            .1;
+        let dir = store::invocation_dir(&fx.work_dir, STAGE, &invocation_id);
+        if session_type == SessionType::Stage {
+            assert_eq!(
+                settled,
+                &Settle::Applied(Some(format!("cancel requested for {invocation_id}")))
+            );
+            assert!(store::read_cancel(&dir).unwrap().is_some());
+        } else {
+            assert!(matches!(settled, Settle::Refused(reason)
+                if reason.contains("may not relay a 'subagents:control' request")));
+            assert!(store::read_cancel(&dir).unwrap().is_none());
+        }
+    }
+}
+
 fn run_cell(session_type: SessionType, kind: RequestKind) -> Cell {
     let fx = fixture();
     let record = fx.record(session_type, SessionStatus::Running);
@@ -75,6 +115,13 @@ fn run_cell(session_type: SessionType, kind: RequestKind) -> Cell {
         // A v2 stage with a frozen contract to dispute, so a refusal can only
         // come from the matrix.
         RequestKind::FileDispute => fx.frozen_contract_stage(&record.id),
+        // A handoff reads the checkout through the pinned git facade, so a
+        // refusal can only come from the matrix.
+        RequestKind::Handoff => {
+            run_git_checked(&["init", "-q", "-b", "main"], &fx.repo_root).unwrap();
+            capture_main_identity(&fx.repo_root, &fx.work_dir).unwrap();
+            fx.stage(StageStatus::Executing, Some(&record.id));
+        }
         _ => fx.stage(StageStatus::Executing, Some(&record.id)),
     }
     let entry = fx.relay(&record, kind, cell_payload(&fx, kind));
@@ -106,6 +153,7 @@ fn cell_payload(fx: &Fixture, kind: RequestKind) -> serde_json::Value {
             serde_json::to_value(StageRequest::FreezeContracts {
                 head: digest::head(&worktree).unwrap(),
                 tree_digest: digest::tree_digest(&worktree).unwrap(),
+                choices: Default::default(),
             })
             .unwrap()
         }
@@ -158,6 +206,9 @@ fn classify_applied(
         RequestKind::Complete => {
             unreachable!("SECTION_5 has no complete column; complete.rs tests cover the kind")
         }
+        RequestKind::WorkerControl => unreachable!(
+            "SECTION_5 has no worker-control column; worker_control_tests.rs covers the kind"
+        ),
     }
     Cell::Apply
 }

@@ -1,12 +1,13 @@
 use super::claude::{ClaudeEvidenceError, TranscriptEvidence};
+use super::claude_event::malformed;
 use serde_json::Value;
 use std::fs::{self, OpenOptions};
 use std::io::{Read, Seek, SeekFrom};
 use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
 use std::path::{Component, Path, PathBuf};
 
+use crate::agent_state::is_safe_id;
 use crate::fs::stage_files::{extract_stage_id, find_stage_file};
-use crate::models::forward_receipt::is_safe_id;
 use crate::parser::frontmatter::extract_frontmatter_field;
 
 const MAX_FINAL_RECORD_BYTES: u64 = 1024 * 1024;
@@ -15,8 +16,7 @@ pub(super) fn transcript_evidence(path: &Path) -> Result<TranscriptEvidence, Cla
     let (transcript_bytes, mut tail) = read_stable_transcript_tail(path)?;
     tail.pop();
     let line = final_record_line(&tail, transcript_bytes)?;
-    let final_record = serde_json::from_slice::<Value>(line)
-        .map_err(|error| ClaudeEvidenceError::Malformed(error.to_string()))?;
+    let final_record = serde_json::from_slice::<Value>(line).map_err(malformed)?;
     if !final_record.is_object() {
         return Err(ClaudeEvidenceError::Malformed(
             "final transcript record is not an object".into(),
@@ -244,8 +244,4 @@ fn identity_field(content: &str, field: &str) -> Result<Option<String>, ClaudeEv
         ));
     }
     Ok(value)
-}
-
-fn malformed(error: impl std::fmt::Display) -> ClaudeEvidenceError {
-    ClaudeEvidenceError::Malformed(error.to_string())
 }

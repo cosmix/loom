@@ -1,29 +1,26 @@
 //! [`checkout_git`] gives a process outside the stage's sandbox the git of
 //! the checkout holding a directory: pinned to the registered git directory
 //! for a path in a stage worktree, whatever `.git` entries the stage made in
-//! it, and as git finds it for any other checkout.
+//! it, and pinned to the main git directory for any other checkout.
 
 use std::path::Path;
-use std::process::Command;
 
 use tempfile::TempDir;
 
-use super::{checkout_git, local_git};
+use super::{checkout_git, local_git, source, Source};
 use crate::git::worktree::WorktreeGit;
+use crate::test_git::{git, git_with_env};
 use crate::verify::contracts::test_support::{contract_worktree, plant_foreign_git_dir};
 use crate::verify::duplicate_detection::graph::{changed_files, repository_root};
 
-fn git(dir: &Path, args: &[&str]) -> String {
-    let output = Command::new("git")
-        .args(["-c", "user.name=t", "-c", "user.email=t@t"])
-        .args(["-c", "commit.gpgsign=false"])
-        .args(args)
-        .current_dir(dir)
-        .output()
-        .unwrap();
-    assert!(output.status.success(), "git {args:?}: {output:?}");
-    String::from_utf8(output.stdout).unwrap().trim().to_string()
-}
+/// Author and committer for the commits made in repositories the shared
+/// builder did not create: the planted nested repositories and the bare clone.
+const IDENTITY: [(&str, &str); 4] = [
+    ("GIT_AUTHOR_NAME", "t"),
+    ("GIT_AUTHOR_EMAIL", "t@t"),
+    ("GIT_COMMITTER_NAME", "t"),
+    ("GIT_COMMITTER_EMAIL", "t@t"),
+];
 
 /// The positive control runs last: git that follows the repointed `.git`
 /// file reports the planted git directory's HEAD and common directory, so
@@ -36,7 +33,11 @@ fn a_repointed_git_file_moves_neither_the_toplevel_nor_the_git_directories() {
     let honest_head = git(&worktree, &["rev-parse", "HEAD"]);
     let marker = plant_foreign_git_dir(&worktree);
     let foreign = tmp.path().join("foreign.git");
-    let forged = git(&foreign, &["commit-tree", "HEAD^{tree}", "-m", "forged"]);
+    let forged = git_with_env(
+        &foreign,
+        &["commit-tree", "HEAD^{tree}", "-m", "forged"],
+        &IDENTITY,
+    );
     git(&foreign, &["update-ref", "refs/heads/loom/s1", &forged]);
     let nested = worktree.join("tests");
 
@@ -62,6 +63,27 @@ fn a_repointed_git_file_moves_neither_the_toplevel_nor_the_git_directories() {
     assert!(marker.exists(), "the fixture's filter never runs");
 }
 
+#[test]
+fn nested_observer_uses_the_enclosing_registered_worktree() {
+    let tmp = TempDir::new().unwrap();
+    let repo = tmp.path().join("repo");
+    let worktree = contract_worktree(&repo, "s1");
+    let workspace = crate::fs::work_dir::WorkDir::new(&repo).unwrap();
+    workspace.adopt_existing().unwrap();
+    let marker = plant_foreign_git_dir(&worktree);
+    let nested = worktree.join("tests");
+    std::fs::create_dir_all(&nested).unwrap();
+    let Source::ThisProcess(git) = source(&nested).unwrap() else {
+        panic!("unexpected daemon")
+    };
+    git.run_checked(&["status", "--porcelain"]).unwrap();
+    assert!(!marker.exists());
+    WorktreeGit::discovered(&worktree)
+        .run(&["status", "--porcelain"])
+        .unwrap();
+    assert!(marker.exists());
+}
+
 /// Make `dir` a repository of its own, its git directory at `git_dir` behind a
 /// `.git` file when one is given, whose clean filter creates `marker`. Its
 /// tracked `a.txt` is left stat-dirty, so git that reads this repository
@@ -82,7 +104,7 @@ fn plant_nested_repository(dir: &Path, git_dir: Option<&Path>, marker: &Path) {
     };
     std::fs::write(dir.join("a.txt"), "base\n").unwrap();
     git(dir, &["add", "a.txt"]);
-    git(dir, &["commit", "-q", "-m", "planted"]);
+    git_with_env(dir, &["commit", "-q", "-m", "planted"], &IDENTITY);
     let filter = format!("touch '{}'; cat", marker.display());
     git(dir, &["config", "filter.evil.clean", &filter]);
     std::fs::write(dir.join(".gitattributes"), "* filter=evil\n").unwrap();
@@ -156,7 +178,9 @@ fn a_stage_worktree_planted_inside_a_stage_worktree_chooses_no_git() {
     let fake_project = worktree.join("fake");
     let marker = tmp.path().join("filter-ran");
     plant_nested_repository(&fake_project, None, &marker);
-    std::fs::create_dir_all(fake_project.join(".loom/work")).unwrap();
+    let fake_state = fake_project.join(".loom/work");
+    std::fs::create_dir_all(&fake_state).unwrap();
+    crate::git::worktree::capture_main_identity(&fake_project, &fake_state).unwrap();
     git(
         &fake_project,
         &["worktree", "add", "-q", "-b", "loom/s2", ".worktrees/s2"],
@@ -185,7 +209,7 @@ fn a_stage_worktree_planted_inside_a_stage_worktree_chooses_no_git() {
 }
 
 #[test]
-fn a_checkout_that_is_no_stage_worktree_is_read_as_git_finds_it() {
+fn a_checkout_that_is_no_stage_worktree_is_pinned_as_main() {
     let tmp = TempDir::new().unwrap();
     let root = tmp.path().join("plain");
     let nested = root.join("a/b");

@@ -3,7 +3,7 @@
 //! daemon does.
 
 use super::*;
-use crate::git::run_git_checked;
+use crate::test_git::{git, git_with_env, TestRepo};
 use crate::verify::tool_artifacts::NAMES;
 
 #[test]
@@ -37,6 +37,33 @@ fn fingerprint_from_sorts_paths_before_hashing() {
 }
 
 #[test]
+fn behaviour_is_additive_and_does_not_change_the_content_fingerprint() {
+    let before = fingerprint_from(
+        "base",
+        &[
+            ("a.rs".into(), Some(b"fn a() {}\n".to_vec())),
+            ("doc/x.md".into(), Some(b"old".to_vec())),
+        ],
+    );
+    let after = fingerprint_from(
+        "base",
+        &[
+            ("a.rs".into(), Some(b"fn a() {}\n".to_vec())),
+            ("doc/x.md".into(), Some(b"new".to_vec())),
+        ],
+    );
+    assert_ne!(before.value, after.value);
+    assert_ne!(before.files, after.files);
+    assert_eq!(before.behaviour, after.behaviour);
+    assert_eq!(before.behaviour.len(), 1);
+    let wire = serde_json::to_vec(&after).unwrap();
+    assert_eq!(
+        serde_json::from_slice::<ChangeFingerprint>(&wire).unwrap(),
+        after
+    );
+}
+
+#[test]
 fn changed_since_includes_one_sided_paths() {
     let previous = BTreeMap::from([
         ("a.txt".to_string(), "old".to_string()),
@@ -50,33 +77,73 @@ fn changed_since_includes_one_sided_paths() {
     assert_eq!(changed_since(&previous, &current), ["a.txt", "c.txt"]);
 }
 
-fn git_ok(root: &Path, args: &[&str]) -> Result<()> {
-    run_git_checked(args, root)?;
-    Ok(())
+#[test]
+fn behaviour_tracks_code_additions_deletions_and_directives() {
+    let before = fingerprint_from("base", &[("a.ts".into(), Some(b"run();\n".to_vec()))]);
+    for content in [
+        None,
+        Some(b"/// <reference types=\"x\" />\nrun();\n".to_vec()),
+    ] {
+        let after = fingerprint_from("base", &[("a.ts".into(), content)]);
+        assert_ne!(before.value, after.value);
+        assert_ne!(before.behaviour, after.behaviour);
+    }
+    let added = fingerprint_from(
+        "base",
+        &[
+            ("a.ts".into(), Some(b"run();\n".to_vec())),
+            ("b.rs".into(), Some(b"// comment only\n".to_vec())),
+        ],
+    );
+    assert_ne!(before.behaviour, added.behaviour);
+    assert!(added.behaviour.contains_key("b.rs"));
+}
+
+#[test]
+fn daemon_response_preserves_behaviour_hashes() {
+    use crate::daemon::Response;
+
+    let fingerprint = fingerprint_from("base", &[("a.rs".into(), Some(b"fn a() {}\n".to_vec()))]);
+    let response = Response::ChangesObserved {
+        target_branch: "main".into(),
+        fingerprint: fingerprint.clone(),
+    };
+    let wire = serde_json::to_vec(&response).unwrap();
+    match serde_json::from_slice::<Response>(&wire).unwrap() {
+        Response::ChangesObserved {
+            fingerprint: observed,
+            ..
+        } => {
+            assert!(!observed.behaviour.is_empty());
+            assert_eq!(observed, fingerprint);
+        }
+        other => panic!("expected changes, got {other:?}"),
+    }
 }
 
 /// A repository on `main` with `files` committed, switched to `feature`.
-fn repo_on_feature(root: &Path, files: &[(&str, &str)]) -> Result<()> {
-    git_ok(root, &["init", "-b", "main"])?;
-    git_ok(root, &["config", "user.email", "review-test@example.com"])?;
-    git_ok(root, &["config", "user.name", "Review Test"])?;
+fn repo_on_feature(root: &Path, files: &[(&str, &str)]) {
+    TestRepo::builder()
+        .identity("Review Test", "review-test@example.com")
+        .no_seed()
+        .init_in(root);
     for &(path, content) in files {
-        std::fs::write(root.join(path), content)?;
-        git_ok(root, &["add", "-f", path])?;
+        std::fs::write(root.join(path), content).unwrap();
+        git(root, &["add", "-f", path]);
     }
-    git_ok(root, &["commit", "-m", "initial"])?;
-    git_ok(root, &["switch", "-c", "feature"])
+    git(root, &["commit", "-m", "initial"]);
+    git(root, &["switch", "-c", "feature"]);
 }
 
 #[test]
 fn fingerprint_ignores_commits() -> Result<()> {
     let temp = tempfile::tempdir()?;
     let root = temp.path();
-    repo_on_feature(root, &[("file.txt", "initial")])?;
+    repo_on_feature(root, &[("file.txt", "initial")]);
 
     std::fs::write(root.join("file.txt"), b"first change")?;
     let a = compute(root, "main")?;
-    git_ok(root, &["commit", "-am", "x"])?;
+    git(root, &["commit", "-am", "x"]);
     let b = compute(root, "main")?;
     assert_eq!(a.value, b.value);
     assert_eq!(a.files, b.files);
@@ -94,7 +161,7 @@ fn fingerprint_ignores_commits() -> Result<()> {
 fn fingerprint_leaves_out_sandbox_artifacts() -> Result<()> {
     let temp = tempfile::tempdir()?;
     let root = temp.path();
-    repo_on_feature(root, &[("file.txt", "initial")])?;
+    repo_on_feature(root, &[("file.txt", "initial")]);
     nix::unistd::mkfifo(&root.join(".bashrc"), nix::sys::stat::Mode::S_IRWXU)?;
     std::fs::write(root.join(".gitconfig"), b"")?;
     std::fs::write(root.join(".profile"), b"export EDITOR=vi\n")?;
@@ -115,7 +182,7 @@ fn fingerprint_leaves_out_sandbox_artifacts() -> Result<()> {
 fn a_listed_name_tracked_at_base_stays_a_change() -> Result<()> {
     let temp = tempfile::tempdir()?;
     let root = temp.path();
-    repo_on_feature(root, &[(".gitconfig", "[core]\n")])?;
+    repo_on_feature(root, &[(".gitconfig", "[core]\n")]);
     std::fs::write(root.join(".gitconfig"), b"")?;
 
     let fingerprint = compute(root, "main")?;
@@ -131,7 +198,7 @@ fn a_listed_name_tracked_at_base_stays_a_change() -> Result<()> {
 fn placeholders_do_not_split_a_round_from_its_completion() -> Result<()> {
     let temp = tempfile::tempdir()?;
     let root = temp.path();
-    repo_on_feature(root, &[("file.txt", "initial")])?;
+    repo_on_feature(root, &[("file.txt", "initial")]);
     std::fs::write(root.join("file.txt"), b"reviewed change")?;
 
     for name in NAMES {
@@ -154,18 +221,84 @@ fn placeholders_do_not_split_a_round_from_its_completion() -> Result<()> {
 fn a_commit_on_the_target_after_the_branch_point_is_not_a_stage_change() -> Result<()> {
     let temp = tempfile::tempdir()?;
     let root = temp.path();
-    repo_on_feature(root, &[("file.txt", "initial")])?;
+    repo_on_feature(root, &[("file.txt", "initial")]);
     std::fs::write(root.join("stage.txt"), b"from the stage")?;
-    git_ok(root, &["add", "stage.txt"])?;
-    git_ok(root, &["commit", "-m", "the stage's commit"])?;
-    git_ok(root, &["switch", "main"])?;
+    git(root, &["add", "stage.txt"]);
+    git(root, &["commit", "-m", "the stage's commit"]);
+    git(root, &["switch", "main"]);
     std::fs::write(root.join("landed.txt"), b"from another stage")?;
-    git_ok(root, &["add", "landed.txt"])?;
-    git_ok(root, &["commit", "-m", "landed on main"])?;
-    git_ok(root, &["switch", "feature"])?;
+    git(root, &["add", "landed.txt"]);
+    git(root, &["commit", "-m", "landed on main"]);
+    git(root, &["switch", "feature"]);
 
     let fingerprint = compute(root, "main")?;
 
     assert_eq!(fingerprint.files.keys().collect::<Vec<_>>(), ["stage.txt"]);
+    Ok(())
+}
+
+/// `git` in `root` with fixed identity and dates, so every object id it writes
+/// is the same on every run.
+fn fixed_git(root: &Path, args: &[&str]) {
+    const PINNED: [(&str, &str); 6] = [
+        ("GIT_AUTHOR_NAME", "Pin Test"),
+        ("GIT_AUTHOR_EMAIL", "pin@example.invalid"),
+        ("GIT_COMMITTER_NAME", "Pin Test"),
+        ("GIT_COMMITTER_EMAIL", "pin@example.invalid"),
+        ("GIT_AUTHOR_DATE", "2026-01-01T00:00:00Z"),
+        ("GIT_COMMITTER_DATE", "2026-01-01T00:00:00Z"),
+    ];
+    let mut full = vec!["-c", "commit.gpgsign=false"];
+    full.extend_from_slice(args);
+    git_with_env(root, &full, &PINNED);
+}
+
+/// The review gate compares fingerprints across rounds, so the value for one
+/// tree is pinned: committed, staged, unstaged, moved, deleted and untracked
+/// changes, a sandbox placeholder and worktree scaffolding.
+#[test]
+fn fingerprint_of_a_fixed_tree_is_pinned() -> Result<()> {
+    let temp = tempfile::tempdir()?;
+    let root = temp.path();
+    fixed_git(root, &["init", "-q", "-b", "main"]);
+    for (path, content) in [
+        ("kept.txt", "kept\n"),
+        ("moved.rs", "fn m() {}\n"),
+        ("gone.txt", "x\n"),
+    ] {
+        std::fs::write(root.join(path), content)?;
+    }
+    fixed_git(root, &["add", "."]);
+    fixed_git(root, &["commit", "-q", "-m", "base"]);
+    fixed_git(root, &["switch", "-q", "-c", "feature"]);
+    fixed_git(root, &["mv", "moved.rs", "src.rs"]);
+    fixed_git(root, &["rm", "-q", "gone.txt"]);
+    fixed_git(root, &["commit", "-q", "-m", "stage work"]);
+    std::fs::write(root.join("kept.txt"), "kept, edited\n")?;
+    std::fs::write(root.join("staged.txt"), "staged\n")?;
+    fixed_git(root, &["add", "staged.txt"]);
+    std::fs::write(root.join("new.txt"), "untracked\n")?;
+    std::fs::write(root.join(".gitconfig"), "")?;
+    std::fs::create_dir_all(root.join(".claude"))?;
+    std::fs::write(root.join(".claude/settings.json"), "{}\n")?;
+
+    let fingerprint = compute_local(&WorktreeGit::discovered(root), "main")?;
+
+    assert_eq!(fingerprint.base, "ff5952ec9fe4288e8b38bf0bba005f6f2ac54706");
+    assert_eq!(
+        fingerprint.value,
+        "sha256:46ca41d297b0555e2d47d923fdaf14f1233cf6202000623822c712f920e46a89"
+    );
+    assert_eq!(
+        fingerprint.files.keys().collect::<Vec<_>>(),
+        [
+            "gone.txt",
+            "kept.txt",
+            "moved.rs",
+            "new.txt",
+            "src.rs",
+            "staged.txt"
+        ]
+    );
     Ok(())
 }

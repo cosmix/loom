@@ -12,10 +12,27 @@ use std::path::Path;
 
 /// Issue detected during repair check
 #[derive(Debug)]
-pub struct RepairIssue {
-    pub severity: Severity,
-    pub description: String,
-    pub fix_description: String,
+pub(crate) struct DetectedIssue {
+    severity: Severity,
+    description: String,
+    fix_description: String,
+    action: RepairAction,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum RepairAction {
+    Manual,
+    Workspace(workspace::WorkspaceFix),
+    RewriteLocal,
+    CleanSettings,
+    ReadDenies,
+    IdentityDrift,
+    OldSkill(std::path::PathBuf),
+    OldAgent(std::path::PathBuf),
+    SkillRefs,
+    CodexSlashTmp(std::path::PathBuf),
+    PhantomMerge(String),
+    IncoherentStage { stage_id: String, reason: String },
 }
 
 /// Severity of the issue
@@ -154,7 +171,7 @@ pub fn execute(fix: bool) -> Result<()> {
 /// `$HOME/.claude` asset checks, then the phantom-merge audit, daemon
 /// health, the stale knowledge-directory deny, the `Read(...)` deny rules
 /// that make every search prompt, and finally incoherent executing stages.
-fn check_all_issues(repo_root: &Path) -> Vec<RepairIssue> {
+fn check_all_issues(repo_root: &Path) -> Vec<DetectedIssue> {
     let mut issues = Vec::new();
 
     issues.extend(workspace::check(repo_root));
@@ -173,7 +190,7 @@ fn check_all_issues(repo_root: &Path) -> Vec<RepairIssue> {
 }
 
 /// Attempt to fix detected issues
-fn apply_fixes(repo_root: &Path, issues: &[RepairIssue]) -> Result<RepairResult> {
+fn apply_fixes(repo_root: &Path, issues: &[DetectedIssue]) -> Result<RepairResult> {
     let mut fixed = 0;
     let mut failed = 0;
 
@@ -209,75 +226,31 @@ fn apply_fixes(repo_root: &Path, issues: &[RepairIssue]) -> Result<RepairResult>
     })
 }
 
-/// Fix a single issue
-fn fix_issue(repo_root: &Path, issue: &RepairIssue) -> Result<bool> {
-    // Match based on description (not ideal, but works for now). The needles
-    // below are the fragments that stay identical across both the nested and
-    // legacy spelling of the state-directory path (see `check_all_issues`).
-    fix_workspace_issue(repo_root, issue)
-        .or_else(|| fix_settings_or_state_issue(repo_root, issue))
-        // Everything else — "marked merged but has no completed_commit" (no SHA
-        // to verify or re-merge against), "Stale:" (branch gone without a merge
-        // record), and any unknown issue — returns false so the dispatcher
-        // prints "Skipped" and the user knows to investigate manually.
-        .unwrap_or(Ok(false))
-}
-
-/// Fixes for workspace-shape issues: symlink corruption, missing gitignore
-/// entries, and missing or incomplete hook installation. `None` means this
-/// issue is not one of these.
-fn fix_workspace_issue(repo_root: &Path, issue: &RepairIssue) -> Option<Result<bool>> {
-    workspace::WorkspaceFix::classify(&issue.description).map(|fix| fix.apply(repo_root, true))
-}
-
-/// Fixes for settings-file drift and stage-state issues: stale
-/// `settings.local.json` entries, old-style skill/agent references, phantom
-/// merges, and incoherent executing stages. `None` means this issue is not
-/// one of these.
-fn fix_settings_or_state_issue(repo_root: &Path, issue: &RepairIssue) -> Option<Result<bool>> {
-    if let Some(result) = settings_checks::fix_settings_issue(repo_root, &issue.description) {
-        // Claims "Settings not found (.claude/settings.local.json)", "Stale
-        // knowledge-directory deny in", "Loom-written keys in", "Read deny
-        // rule in", "Stale loom session env in", and the generic
-        // ".claude/settings.local.json" — see its doc comment for the
-        // required order between those arms.
-        // "Operator-authored Read deny rule" deliberately falls through with
-        // `None`: loom never removes an operator's own rule, so the chain
-        // below reaches `Ok(false)` and the issue prints as skipped.
-        return Some(result.map(|()| true));
+/// Apply the action selected by the detector, independently of its display text.
+fn fix_issue(repo_root: &Path, issue: &DetectedIssue) -> Result<bool> {
+    match &issue.action {
+        RepairAction::Manual => Ok(false),
+        RepairAction::Workspace(fix) => fix.apply(repo_root, true),
+        RepairAction::RewriteLocal => settings_checks::fix_hooks_local(repo_root).map(|()| true),
+        RepairAction::CleanSettings => sandbox_settings::fix_sandbox_settings(repo_root)
+            .and_then(|()| settings_checks::fix_hooks_local(repo_root))
+            .map(|()| true),
+        RepairAction::ReadDenies => sandbox_settings::fix_read_denies(repo_root).map(|()| true),
+        RepairAction::IdentityDrift => {
+            crate::fs::permissions::scrub_main_repo_settings_identity(repo_root);
+            Ok(true)
+        }
+        RepairAction::OldSkill(path) => home_assets::fix_old_skill(path).map(|()| true),
+        RepairAction::OldAgent(path) => home_assets::fix_old_agent(path).map(|()| true),
+        RepairAction::SkillRefs => home_assets::fix_settings_skill_refs().map(|()| true),
+        RepairAction::CodexSlashTmp(path) => settings_checks::fix_codex_slash_tmp(path),
+        RepairAction::PhantomMerge(stage) => {
+            merge_state::fix_phantom_merge(repo_root, stage).map(|()| true)
+        }
+        RepairAction::IncoherentStage { stage_id, reason } => {
+            repair_coherence::fix_incoherent_executing_stage(repo_root, stage_id, reason)
+        }
     }
-    if issue.description.contains("Old unprefixed skill") {
-        return Some(home_assets::fix_old_skill(&issue.description).map(|()| true));
-    }
-    if issue.description.contains("Old unprefixed agent") {
-        return Some(home_assets::fix_old_agent(&issue.description).map(|()| true));
-    }
-    if issue
-        .description
-        .contains("Settings.json references old-style skill names")
-    {
-        return Some(home_assets::fix_settings_skill_refs().map(|()| true));
-    }
-    if issue.description.contains("exclude_slash_tmp") {
-        return Some(settings_checks::fix_codex_slash_tmp());
-    }
-    if issue.description.starts_with("Phantom merge:") {
-        // Revert the spurious merged=true flag so the orchestrator knows the stage's work
-        // has NOT landed in the target branch. We do NOT attempt a re-merge here because
-        // the user likely has lost work that needs manual investigation first (e.g.,
-        // cherry-pick from the stranded branch, resolve conflicts with later stages).
-        return Some(merge_state::fix_phantom_merge(repo_root, &issue.description).map(|()| true));
-    }
-    if issue
-        .description
-        .starts_with("Incoherent executing stage '")
-    {
-        return Some(repair_coherence::fix_incoherent_executing_stage(
-            repo_root,
-            &issue.description,
-        ));
-    }
-    None
 }
 
 mod daemon_checks;
@@ -291,6 +264,10 @@ pub mod workspace;
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_actions;
+#[cfg(test)]
+mod tests_home_assets;
 #[cfg(test)]
 mod tests_hook_drift;
 #[cfg(test)]

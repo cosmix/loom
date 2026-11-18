@@ -1,4 +1,5 @@
 use super::*;
+use crate::test_git::TestRepo;
 use clap::{CommandFactory, Parser};
 
 #[derive(Debug, Parser)]
@@ -64,6 +65,20 @@ fn map_without_a_view_flag_names_all_available_views() {
          --impact <SYMBOL_OR_PATH>, --callers <SYMBOL>, --callees <SYMBOL>, \
          --references <SYMBOL>, --window <ID>, --census, or --eval-edges <DIR>"
     );
+}
+
+#[test]
+fn a_markdown_outline_is_read_directly_only_when_it_is_the_only_view() {
+    let root = Path::new(".");
+    let alone = MapHarness::try_parse_from(["map", "--outline", "x.md"]).unwrap();
+    assert!(markdown_outline_output(&alone.args, root).is_some());
+
+    let combined =
+        MapHarness::try_parse_from(["map", "--outline", "x.md", "--find-all", "sym"]).unwrap();
+    assert!(markdown_outline_output(&combined.args, root).is_none());
+
+    let source = MapHarness::try_parse_from(["map", "--outline", "x.rs"]).unwrap();
+    assert!(markdown_outline_output(&source.args, root).is_none());
 }
 
 #[test]
@@ -167,4 +182,66 @@ fn eval_edges_conflicts_with_census_and_takes_no_root() {
         require_view(&stray.args).unwrap_err().to_string(),
         "--root only applies to --census"
     );
+}
+
+fn set_mode(path: &Path, mode: u32) {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode)).unwrap();
+}
+
+/// `loom map` run where the sandbox denies writes under `.loom` and the cache directory was
+/// never created: the view still resolves from memory and nothing appears on disk.
+#[test]
+fn load_graph_answers_when_the_cache_directory_cannot_be_created() {
+    let temp = TestRepo::builder()
+        .seed("src.rs", "fn main() {}\n", "seed")
+        .create()
+        .into_temp_dir();
+    let root = temp.path();
+    let work = root.join(".loom").join("work");
+    std::fs::create_dir_all(&work).unwrap();
+    crate::git::worktree::capture_main_identity(root, &work).unwrap();
+    let work_dir = WorkDir::new(root).unwrap();
+
+    let loom_dir = root.join(".loom");
+    set_mode(&work, 0o555);
+    set_mode(&loom_dir, 0o555);
+    if std::fs::write(loom_dir.join(".write-probe"), b"x").is_ok() {
+        set_mode(&loom_dir, 0o755);
+        set_mode(&work, 0o755);
+        eprintln!(
+            "SKIP load_graph_answers_when_the_cache_directory_cannot_be_created: this \
+             environment does not enforce 0o555 directory permissions"
+        );
+        return;
+    }
+
+    let loaded = load_graph(root, &work_dir, &mut Timings::default());
+
+    // Unlock before asserting so a failure never leaves an undeletable TempDir.
+    set_mode(&loom_dir, 0o755);
+    set_mode(&work, 0o755);
+    let loaded = loaded.expect("a read-only .loom must not fail the view");
+    assert!(
+        loaded.graph.files.contains_key("src.rs"),
+        "files: {:?}",
+        loaded.graph.files.keys().collect::<Vec<_>>()
+    );
+    assert!(!loom_dir.join("cache").exists());
+}
+
+/// With no graph and no base to serve, `loom map` fails instead of printing
+/// empty views as if the file had no symbols.
+#[test]
+fn load_graph_fails_when_the_source_graph_is_unavailable() {
+    let temp = tempfile::TempDir::new().unwrap();
+    let root = temp.path();
+    let work_dir = WorkDir::new(root).unwrap();
+
+    let error = match load_graph(root, &work_dir, &mut Timings::default()) {
+        Ok(_) => panic!("a directory without git has no graph to answer from"),
+        Err(error) => format!("{error:#}"),
+    };
+
+    assert!(error.starts_with("source graph unavailable: "), "{error}");
 }

@@ -1,39 +1,14 @@
 use crate::fs::knowledge::catalog::{build, CatalogIssue, EvidenceUnavailableReason};
 use crate::fs::knowledge::frontmatter;
+use crate::test_git::{git, TestRepo};
 use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use tempfile::TempDir;
-
-fn git(root: &Path, args: &[&str]) -> String {
-    let output = Command::new("git")
-        .current_dir(root)
-        .args(args)
-        .output()
-        .unwrap();
-    assert!(
-        output.status.success(),
-        "git {args:?} failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    String::from_utf8_lossy(&output.stdout).trim().to_string()
-}
 
 fn commit_all(root: &Path, message: &str) {
     git(root, &["add", "."]);
-    git(
-        root,
-        &[
-            "-c",
-            "user.name=Loom Test",
-            "-c",
-            "user.email=loom@example.invalid",
-            "commit",
-            "-m",
-            message,
-        ],
-    );
+    git(root, &["commit", "-m", message]);
 }
 
 struct Fixture {
@@ -69,7 +44,7 @@ fn fixture(sources: &[&str]) -> Fixture {
         fs::create_dir_all(path.parent().unwrap()).unwrap();
         fs::write(path, "pub const VALUE: u8 = 1;\n").unwrap();
     }
-    git(&project, &["init", "-q"]);
+    TestRepo::builder().no_seed().init_in(&project);
     commit_all(&project, "initial sources");
     let verified = git(&project, &["rev-parse", "HEAD"]);
     fs::write(
@@ -122,7 +97,7 @@ fn evidence_changed_fires_only_for_a_source_that_changed_since_verified() {
     fs::create_dir_all(&knowledge).unwrap();
     fs::write(project.join("src/changed.rs"), "pub const VALUE: u8 = 1;\n").unwrap();
     fs::write(project.join("src/stable.rs"), "pub const VALUE: u8 = 1;\n").unwrap();
-    git(project, &["init", "-q"]);
+    TestRepo::builder().no_seed().init_in(project);
     commit_all(project, "initial sources");
     let verified = git(project, &["rev-parse", "HEAD"]);
 

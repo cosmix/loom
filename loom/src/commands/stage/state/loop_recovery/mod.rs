@@ -1,14 +1,19 @@
 //! Fail-closed retirement for the manual stage reset command.
 
 use anyhow::{Context, Result};
+use chrono::Utc;
 use std::collections::HashSet;
 use std::path::Path;
 use std::time::Duration;
 
 use crate::fs::session_files::{load_session_exact, mark_session_terminal_reason};
 use crate::models::session::{Session, SessionExitReason, SessionStatus, SessionType};
-use crate::orchestrator::adjudication::close_open_disputes;
-use crate::orchestrator::session_registry::in_progress_sessions_for_stage;
+use crate::orchestrator::adjudication::{
+    close_open_disputes_except_locked, lock_stage_dispute_dir,
+};
+use crate::orchestrator::session_registry::{
+    identityless_record_is_dead, in_progress_sessions_for_stage, Admission,
+};
 use crate::orchestrator::terminal::backend::SessionBackend;
 use crate::orchestrator::terminal::native::{session_process_status, SessionProcessStatus};
 use crate::orchestrator::DEFAULT_KILL_CONFIRM_TIMEOUT;
@@ -26,9 +31,13 @@ const CONFIRM_ATTEMPTS: usize =
 
 pub(super) trait ResetRuntime {
     fn kill(&self, work_dir: &Path, agents: &[LiveAgent]);
+    /// Whether `agent` has no identity to confirm its death by, and a process
+    /// may still run for it. Asked under the stage's admission lock.
     fn identity_missing(&self, work_dir: &Path, agent: &LiveAgent) -> bool;
     fn is_alive(&self, work_dir: &Path, agent: &LiveAgent) -> Result<bool>;
     fn wait(&self);
+    #[cfg(test)]
+    fn after_scan(&self, _work_dir: &Path, _stage_id: &str) {}
 }
 
 pub(super) struct OsRuntime {
@@ -49,7 +58,9 @@ impl ResetRuntime for OsRuntime {
     }
 
     fn identity_missing(&self, work_dir: &Path, agent: &LiveAgent) -> bool {
-        session_process_status(work_dir, &agent_session(agent)) == SessionProcessStatus::Missing
+        let session = agent_session(agent);
+        session_process_status(work_dir, &session) == SessionProcessStatus::Missing
+            && !identityless_record_is_dead(work_dir, &session, Admission::Held, Utc::now())
     }
 
     fn is_alive(&self, work_dir: &Path, agent: &LiveAgent) -> Result<bool> {
@@ -68,6 +79,7 @@ impl ResetRuntime for OsRuntime {
     }
 }
 
+#[cfg(test)]
 pub(super) fn reset_with(
     work_dir: &Path,
     stage_id: &str,
@@ -75,12 +87,62 @@ pub(super) fn reset_with(
     kill_session: bool,
     runtime: &impl ResetRuntime,
 ) -> Result<()> {
+    let _admission = crate::fs::stage_admission::lock(work_dir, stage_id)?;
+    reset_under_admission(work_dir, stage_id, hard, kill_session, runtime)
+}
+
+/// Reset and cancel only the job observed under the stage admission lock.
+pub(super) fn reset_and_cancel(
+    work_dir: &Path,
+    stage_id: &str,
+    hard: bool,
+    kill_session: bool,
+    runtime: &impl ResetRuntime,
+) -> Result<()> {
+    let _admission = crate::fs::stage_admission::lock(work_dir, stage_id)?;
+    let job_ids = observed_host_jobs(work_dir, stage_id)?;
+    reset_under_admission(work_dir, stage_id, hard, kill_session, runtime)?;
+    for id in job_ids {
+        if let Err(error) =
+            crate::host_verify::submit::cancel_if_id(work_dir, stage_id, &id, "stage reset")
+        {
+            eprintln!("Warning: could not cancel the host job of stage '{stage_id}': {error:#}");
+        }
+    }
+    Ok(())
+}
+
+/// The runner may promote the waiting job while reset retires agents. Observe
+/// both slots together, then cancel by identity so later replacements survive.
+fn observed_host_jobs(work_dir: &Path, stage_id: &str) -> Result<Vec<String>> {
+    use crate::host_verify::store;
+    let _lock = store::lock_stage(work_dir, stage_id)?;
+    Ok([
+        store::load_current(work_dir, stage_id)?,
+        store::load_pending(work_dir, stage_id)?,
+    ]
+    .into_iter()
+    .flatten()
+    .filter(|record| !record.state.is_terminal())
+    .map(|record| record.id)
+    .collect())
+}
+
+pub(super) fn reset_under_admission(
+    work_dir: &Path,
+    stage_id: &str,
+    hard: bool,
+    kill_session: bool,
+    runtime: &impl ResetRuntime,
+) -> Result<()> {
     let stage = load_stage(stage_id, work_dir)?;
+    crate::commands::stage::native_gate::ensure_no_native_workers(work_dir, stage_id)?;
     if !kill_session {
         let live = live_agents_for(work_dir, stage_id)?;
         if !live.is_empty() {
             return Err(live_agent_refusal(stage_id, &live));
         }
+        retire_identityless_records(work_dir, stage_id)?;
     } else {
         let targets = retirement_targets(work_dir, stage_id, stage.session.as_deref())?;
         if targets.is_empty() {
@@ -90,19 +152,54 @@ pub(super) fn reset_with(
         }
     }
 
+    #[cfg(test)]
+    runtime.after_scan(work_dir, stage_id);
+
     eprintln!(
         "Warning: Bypassing state machine to reset stage to initial state (was: {:?})",
         stage.status
     );
+    let _lifecycle = lock_stage_dispute_dir(&work_dir.join("disputes").join(stage_id))?;
     update_stage(stage_id, work_dir, |current| {
         apply_reset(current);
         Ok(())
     })?;
-    // After the stage lock is released: a dispute filing takes the dispute
-    // lock, then the stage lock, and closing takes them in that order too.
-    close_open_disputes(work_dir, stage_id);
+    close_open_disputes_except_locked(work_dir, stage_id, None)?;
     let mode = if hard { "hard" } else { "soft" };
     println!("Stage '{stage_id}' reset to pending ({mode} reset)");
+    Ok(())
+}
+
+/// Close what the scan above found no process behind, so the next attempt's
+/// inventory is not left with a record no one will ever finish.
+fn retire_identityless_records(work_dir: &Path, stage_id: &str) -> Result<()> {
+    for session in in_progress_sessions_for_stage(work_dir, stage_id)? {
+        if session.session_type != SessionType::Adjudication
+            && session_process_status(work_dir, &session) == SessionProcessStatus::Missing
+        {
+            record_operator_stop(work_dir, &session)?;
+        }
+    }
+    Ok(())
+}
+
+/// Record the stop of `session`. One with no PID identity gets the operator
+/// told: an agent started by hand for it is beyond what loom can stop.
+fn record_operator_stop(work_dir: &Path, session: &Session) -> Result<()> {
+    if session_process_status(work_dir, session) == SessionProcessStatus::Missing {
+        eprintln!(
+            "Note: Session '{}' never reported a PID. If you started it by hand, stop it \
+             yourself: loom cannot.",
+            session.id
+        );
+    }
+    mark_session_terminal_reason(
+        work_dir,
+        &session.id,
+        SessionStatus::ContextExhausted,
+        SessionExitReason::OperatorStop,
+    )
+    .with_context(|| format!("recording operator stop for session '{}'", session.id))?;
     Ok(())
 }
 
@@ -171,13 +268,7 @@ fn retire_targets(
     confirm_all_gone(work_dir, stage_id, targets, &missing, runtime)?;
     for target in targets {
         if let LiveAgent::Known(session) = target {
-            mark_session_terminal_reason(
-                work_dir,
-                &session.id,
-                SessionStatus::ContextExhausted,
-                SessionExitReason::OperatorStop,
-            )
-            .with_context(|| format!("recording operator stop for session '{}'", session.id))?;
+            record_operator_stop(work_dir, session)?;
         }
     }
     Ok(())
@@ -238,6 +329,48 @@ fn agent_session(agent: &LiveAgent) -> Session {
             session.backend = evidence.backend;
             session.pid = Some(evidence.pid);
             session
+        }
+    }
+}
+
+#[cfg(test)]
+#[path = "identityless_tests.rs"]
+mod identityless_tests;
+
+#[cfg(test)]
+mod native_gate_tests {
+    use super::*;
+    use crate::models::stage::{Stage, StageStatus};
+    use crate::verify::transitions::create_stage;
+
+    struct Runtime;
+    impl ResetRuntime for Runtime {
+        fn kill(&self, _: &Path, _: &[LiveAgent]) {}
+        fn identity_missing(&self, _: &Path, _: &LiveAgent) -> bool {
+            false
+        }
+        fn is_alive(&self, _: &Path, _: &LiveAgent) -> Result<bool> {
+            Ok(false)
+        }
+        fn wait(&self) {}
+    }
+
+    #[test]
+    fn reset_refuses_active_worker_even_with_kill_session() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let work = temp.path();
+        let mut stage = Stage::new("s1".into(), None);
+        stage.id = "s1".into();
+        stage.status = StageStatus::Executing;
+        create_stage(&stage, work).unwrap();
+        crate::commands::stage::native_gate::tests::seed_active_worker(work, "s1", "unit");
+        for kill in [true, false] {
+            let error = reset_with(work, "s1", false, kill, &Runtime).unwrap_err();
+            assert!(format!("{error:#}").contains("running native Codex workers"));
+            assert_eq!(
+                load_stage("s1", work).unwrap().status,
+                StageStatus::Executing
+            );
         }
     }
 }

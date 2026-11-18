@@ -3,7 +3,8 @@
 //! private /tmp and /var/tmp under bubblewrap; runtime and compiler
 //! installation directories and a linked worktree's Git metadata
 //! (`confine_git.rs`) are readable. Verification denies network access;
-//! plan-approved provisioning can fetch dependencies.
+//! plan-approved provisioning can fetch dependencies. Warm uv and Bun caches are
+//! read-only lowers beneath each command's private cache (`confine_scratch.rs`).
 //! A missing or unusable OS facility fails before executing repository code.
 //! A command may start below its working tree's root (a package of a monorepo);
 //! the whole tree stays visible so sibling packages and shared stores resolve.
@@ -24,8 +25,18 @@ mod protected;
 #[path = "confine_developer_tools.rs"]
 mod developer_tools;
 
+#[cfg(any(target_os = "macos", test))]
+#[path = "confine_ancestors.rs"]
+mod ancestors;
+
+#[cfg(target_os = "macos")]
+#[path = "confine_seatbelt.rs"]
+mod seatbelt;
+#[cfg(target_os = "macos")]
+use seatbelt::platform_command;
+
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub(super) enum NetworkAccess {
+pub(crate) enum NetworkAccess {
     Denied,
     Provision,
 }
@@ -116,7 +127,7 @@ fn confined_tree(tree: Option<&Path>, cwd: &Path) -> Result<PathBuf> {
     Ok(tree)
 }
 
-fn environment_path(command: &Command, key: &str) -> Option<PathBuf> {
+pub(super) fn environment_path(command: &Command, key: &str) -> Option<PathBuf> {
     command
         .get_envs()
         .find_map(|(name, value)| (name == key).then_some(value).flatten().map(PathBuf::from))
@@ -127,7 +138,7 @@ pub(super) fn cargo_home(command: &Command) -> Option<PathBuf> {
         .or_else(|| environment_path(command, "HOME").map(|home| home.join(".cargo")))
 }
 
-fn read_roots(command: &Command) -> Vec<PathBuf> {
+pub(crate) fn read_roots(command: &Command) -> Vec<PathBuf> {
     let mut roots: Vec<PathBuf> = [
         "/usr",
         "/bin",
@@ -180,75 +191,6 @@ fn writable_roots<'a>(tree: &'a Path, scratch: &'a CargoScratch) -> Vec<&'a Path
         .collect()
 }
 
-/// Seatbelt read, write and deny rules for the tree, scratch, Cargo home, git
-/// roots and the command's own read-only roots.
-#[cfg(target_os = "macos")]
-fn seatbelt_path_rules(
-    original: &Command,
-    tree: &Path,
-    scratch: &CargoScratch,
-    git: Option<&git_roots::GitDirs>,
-) -> Result<String> {
-    let quote = |path: &Path| serde_json::to_string(&path.to_string_lossy()).unwrap();
-    let mut profile = String::new();
-    let writable = writable_roots(tree, scratch);
-    let readable = writable.iter().map(|path| path.to_path_buf());
-    let readable = readable.chain(git.into_iter().flat_map(|git| git.roots.iter().cloned()));
-    for root in read_roots(original).into_iter().chain(readable) {
-        profile.push_str(&format!(
-            "(allow file-read* (subpath {}))",
-            quote(&root.canonicalize().unwrap_or(root))
-        ));
-    }
-    let writable: Vec<_> = writable.into_iter().map(quote).collect();
-    profile.push_str(&format!(
-        "(allow file-write* (subpath {}))(allow file-write-data (literal \"/dev/null\"))",
-        writable.join(")(subpath ")
-    ));
-    for root in read_roots(original)
-        .into_iter()
-        .filter(|p| p != Path::new("/dev"))
-    {
-        profile.push_str(&format!(
-            "(deny file-write* (subpath {}))",
-            quote(&root.canonicalize()?)
-        ));
-    }
-    let paths = protected::protected(tree);
-    profile.push_str(&protected::seatbelt_rules(&paths, quote));
-    Ok(profile)
-}
-
-#[cfg(target_os = "macos")]
-fn platform_command(
-    original: &Command,
-    tree: &Path,
-    // Seatbelt keeps the process's own working directory, set by `wrap`.
-    _cwd: &Path,
-    program: &Path,
-    scratch: &CargoScratch,
-    network: NetworkAccess,
-    git: Option<&git_roots::GitDirs>,
-) -> Result<Command> {
-    let launcher = Path::new("/usr/bin/sandbox-exec");
-    if !launcher.is_file() {
-        anyhow::bail!("confined verification requires sandbox-exec");
-    }
-    // dyld opens the root directory while discovering the system Cryptex cache.
-    let mut profile = String::from("(version 1)(deny default)(allow process*)(allow sysctl-read)(allow mach-lookup)(allow file-read-metadata)(allow file-read* (literal \"/\"))");
-    if network == NetworkAccess::Provision {
-        profile.push_str("(allow network-outbound)");
-    }
-    profile.push_str(&seatbelt_path_rules(original, tree, scratch, git)?);
-    let mut command = Command::new(launcher);
-    command
-        .arg("-p")
-        .arg(profile)
-        .arg(program)
-        .args(original.get_args());
-    Ok(command)
-}
-
 #[cfg(target_os = "linux")]
 fn platform_command(
     original: &Command,
@@ -259,32 +201,16 @@ fn platform_command(
     network: NetworkAccess,
     git: Option<&git_roots::GitDirs>,
 ) -> Result<Command> {
-    let launcher =
-        which::which("bwrap").context("confined verification requires bubblewrap (bwrap)")?;
-    let mut command = Command::new(launcher);
-    command.args([
-        "--die-with-parent",
-        "--unshare-all",
-        "--new-session",
-        "--proc",
-        "/proc",
-        "--dev",
-        "/dev",
-        // Private temporary directories, mounted before any bind so a tree
-        // or scratch below them is mounted on top instead of hidden.
-        "--tmpfs",
-        "/tmp",
-        "--tmpfs",
-        "/var/tmp",
-    ]);
-    if network == NetworkAccess::Provision {
-        command.arg("--share-net");
-    }
+    let mut command = bubblewrap(network, None)?;
     for writable in writable_roots(tree, scratch) {
         command.arg("--bind").arg(writable).arg(writable);
     }
     command.arg("--chdir").arg(cwd);
     bind_read_roots(&mut command, original, scratch);
+    for (source, upper, work, target) in scratch.cache_overlays() {
+        command.arg("--overlay-src").arg(source);
+        command.arg("--overlay").arg(upper).arg(work).arg(target);
+    }
     for root in git.into_iter().flat_map(|git| &git.roots) {
         command.arg("--ro-bind").arg(root).arg(root);
     }
@@ -300,11 +226,35 @@ fn platform_command(
     Ok(command)
 }
 
+/// The launcher with its namespaces and private system mounts, before any bind.
+/// `tmpfs_bytes` bounds `/tmp` and `/var/tmp` (bubblewrap 0.10 or later);
+/// `None` leaves each the kernel default, half of RAM.
+#[cfg(target_os = "linux")]
+pub(crate) fn bubblewrap(network: NetworkAccess, tmpfs_bytes: Option<[u64; 2]>) -> Result<Command> {
+    let launcher =
+        which::which("bwrap").context("confined verification requires bubblewrap (bwrap)")?;
+    let mut command = Command::new(launcher);
+    command.args(["--die-with-parent", "--unshare-all", "--new-session"]);
+    command.args(["--proc", "/proc", "--dev", "/dev"]);
+    // Private temporary directories, mounted before any bind so a tree or
+    // scratch below them is mounted on top instead of hidden.
+    for (index, dir) in ["/tmp", "/var/tmp"].into_iter().enumerate() {
+        if let Some(bytes) = tmpfs_bytes {
+            command.arg("--size").arg(bytes[index].to_string());
+        }
+        command.args(["--tmpfs", dir]);
+    }
+    if network == NetworkAccess::Provision {
+        command.arg("--share-net");
+    }
+    Ok(command)
+}
+
 /// Read-only installation roots, and the private Cargo home when it is mounted.
 /// Cargo's sources go read-only over that home, so they bind after it, and the
 /// home binds after every other root in case one contains it.
 #[cfg(target_os = "linux")]
-fn bind_read_roots(command: &mut Command, original: &Command, scratch: &CargoScratch) {
+pub(crate) fn bind_read_roots(command: &mut Command, original: &Command, scratch: &CargoScratch) {
     let mount = scratch.cargo_mount();
     let (cargo_roots, roots): (Vec<_>, Vec<_>) = read_roots(original)
         .into_iter()
@@ -380,3 +330,7 @@ mod tool_tests;
 #[cfg(test)]
 #[path = "confine_cargo_home_tests.rs"]
 mod cargo_home_tests;
+
+#[cfg(all(test, target_os = "linux"))]
+#[path = "confine_scratch/warm_cache_tests.rs"]
+mod warm_cache_tests;

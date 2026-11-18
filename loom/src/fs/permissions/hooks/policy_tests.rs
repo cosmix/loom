@@ -7,98 +7,16 @@ use crate::fs::permissions::constants::{
 };
 use serde_json::{json, Value};
 use std::fs;
-use std::io::Write;
 use std::os::unix::fs::{symlink, PermissionsExt};
-use std::path::{Path, PathBuf};
-use std::process::{Command, Output, Stdio};
-use tempfile::TempDir;
+use std::path::Path;
+use std::process::Output;
+
+#[path = "policy_tests_fixture.rs"]
+mod fixture;
+use fixture::{run_hook, HookFixture};
 
 #[path = "policy_tests_stage_gate.rs"]
 mod stage_gate;
-
-struct HookFixture {
-    _temp: TempDir,
-    hooks: PathBuf,
-    worktree: PathBuf,
-    sibling: PathBuf,
-    outside: PathBuf,
-    home: PathBuf,
-    work_dir: PathBuf,
-}
-
-impl HookFixture {
-    fn new() -> Self {
-        let temp = TempDir::new().unwrap();
-        let repo = temp.path().join("repo");
-        let home = temp.path().join("home");
-        // The default install location: the forward guard accepts the
-        // `~/.claude/hooks/loom/...` spelling only from a tree that is it.
-        let hooks = home.join(".claude/hooks/loom");
-        let worktree = repo.join(".worktrees/stage");
-        let sibling = repo.join(".worktrees/stage-sibling");
-        let outside = temp.path().join("outside.txt");
-        let work_dir = repo.join(".loom").join("work");
-
-        for path in [&hooks, &worktree, &sibling, &home, &work_dir] {
-            fs::create_dir_all(path).unwrap();
-        }
-        fs::write(hooks.join("_common.sh"), HOOK_COMMON).unwrap();
-        fs::write(hooks.join("_bounded.sh"), HOOK_BOUNDED).unwrap();
-        fs::write(hooks.join("_lifecycle.sh"), HOOK_LIFECYCLE).unwrap();
-        fs::write(hooks.join("_codex_forward.sh"), HOOK_CODEX_FORWARD_COMMON).unwrap();
-        fs::write(
-            hooks.join("_progress-classification.sh"),
-            HOOK_PROGRESS_CLASSIFICATION,
-        )
-        .unwrap();
-        fs::write(
-            hooks.join("_post-tool-heartbeat.sh"),
-            HOOK_POST_TOOL_HEARTBEAT,
-        )
-        .unwrap();
-        fs::write(hooks.join("_read_ledger.sh"), HOOK_READ_LEDGER).unwrap();
-        fs::write(hooks.join("_read_discipline.sh"), HOOK_READ_DISCIPLINE).unwrap();
-        fs::write(&outside, "outside").unwrap();
-        fs::write(sibling.join("file.txt"), "sibling").unwrap();
-        fs::create_dir_all(worktree.join(".loom")).unwrap();
-        fs::create_dir(worktree.join(".git")).unwrap();
-        symlink("../../../.loom/work", worktree.join(".loom").join("work")).unwrap();
-        Self {
-            _temp: temp,
-            hooks,
-            worktree,
-            sibling,
-            outside,
-            home,
-            work_dir,
-        }
-    }
-
-    fn install(&self, name: &str, contents: &str) -> PathBuf {
-        let path = self.hooks.join(name);
-        fs::write(&path, contents).unwrap();
-        path
-    }
-}
-
-fn run_hook(script: &Path, cwd: &Path, envs: &[(&str, &Path)], payload: &Value) -> Output {
-    let mut child = Command::new("bash")
-        .arg(script)
-        .current_dir(cwd)
-        .envs(envs.iter().map(|(key, value)| (*key, value.as_os_str())))
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .unwrap();
-    child
-        .stdin
-        .take()
-        .unwrap()
-        .write_all(payload.to_string().as_bytes())
-        .unwrap();
-    child.wait_with_output().unwrap()
-}
 
 fn file_call(fixture: &HookFixture, tool: &str, path: &str) -> Output {
     let script = fixture.install("worktree-file-guard.sh", HOOK_WORKTREE_FILE_GUARD);
@@ -227,7 +145,7 @@ fn forward_call_in_stage(fixture: &HookFixture, payload: Value) -> Output {
 #[test]
 fn forward_guard_allows_only_exact_forward_wrapper_command() {
     let fixture = HookFixture::new();
-    let command = "~/.claude/hooks/loom/codex-forward.sh task 'hello; literal' --model gpt-5.6-terra --effort xhigh --write --unit-id policy-unit";
+    let command = "~/.claude/hooks/loom/codex-forward.sh task 'hello; literal' --model gpt-6.1-terra --effort xhigh --write --unit-id policy-unit";
     install_forward_companion(&fixture);
 
     let invocation = assert_forward_allowed(&fixture, command);
@@ -246,6 +164,14 @@ fn install_forward_companion(fixture: &HookFixture) {
 }
 
 fn install_forward_start(fixture: &HookFixture) {
+    // The forward wrapper is the legacy lane. Unpinned, the guard runs
+    // `${LOOM_BIN:-loom} hook codex-backend` (LOOM_BIN is inherited), whose
+    // default with no user config (native) refuses it.
+    fs::write(
+        fixture.work_dir.join("config.toml"),
+        "[codex]\nbackend = \"legacy\"\n",
+    )
+    .unwrap();
     let directory = fixture.work_dir.join("subagents/policy-stage");
     fs::create_dir_all(&directory).unwrap();
     let row = json!({"agent_id":"policy-forwarder","agent_type":"loom-codex-forwarder",
@@ -304,7 +230,7 @@ fn assert_authorization_row(fixture: &HookFixture, invocation: &str) {
     assert_eq!(row["tool_use_id"], "policy-tool");
     assert_eq!(row["unit_id"], "policy-unit");
     assert_eq!(row["invocation_id"], invocation);
-    assert_eq!(row["model"], "gpt-5.6-terra");
+    assert_eq!(row["model"], "gpt-6.1-terra");
     assert_eq!(row["effort"], "xhigh");
 }
 
@@ -335,12 +261,12 @@ fn assert_missing_companion_rejected(command: &str) {
 #[test]
 fn forward_guard_rejects_shell_operators_substrings_and_missing_metadata() {
     let fixture = HookFixture::new();
-    let base = "~/.claude/hooks/loom/codex-forward.sh task hello --model gpt-5.6-terra --effort xhigh --write";
+    let base = "~/.claude/hooks/loom/codex-forward.sh task hello --model gpt-6.1-terra --effort xhigh --write";
     for command in [
         format!("{base}; touch escaped"),
         format!("{base} | sh"),
         format!("{base}\t--background"),
-        "/tmp/codex-forward.sh task hello --model gpt-5.6-terra --effort xhigh --write".to_string(),
+        "/tmp/codex-forward.sh task hello --model gpt-6.1-terra --effort xhigh --write".to_string(),
         "printf codex-forward.sh".to_string(),
     ] {
         let payload = json!({

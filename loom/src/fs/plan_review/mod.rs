@@ -1,18 +1,28 @@
 //! Shared review generation for the CLI and plan finalization.
-use crate::fs::memory::{list_journals, read_journal, MemoryEntry, MemoryEntryType};
+use crate::fs::memory::{list_journals, read_journal, MemoryEntry};
 use crate::fs::work_dir::load_config;
 use anyhow::{Context, Result};
 use changes_section::append_changes_by_stage_section;
 use chrono::Utc;
+use sections::{append_open_findings, append_questions, append_spec_conformance};
 use stages::{load_stage_infos, StageInfo};
 use std::{
     collections::HashMap,
     fs,
     path::{Path, PathBuf},
 };
+/// Memory entries of each stage, keyed by stage id.
+type Journals = HashMap<String, Vec<MemoryEntry>>;
+
 mod changes_section;
+mod sections;
 mod stages;
 mod summary;
+
+pub use sections::{
+    review_item_line, OPEN_FINDINGS_HEADING, OPEN_QUESTIONS_HEADING, SPEC_CONFORMANCE_HEADING,
+    SPEC_CONFORMANCE_PREFIX,
+};
 
 /// Generate a review in an explicit checkout. Automatic finalization never requests AI.
 pub fn generate(
@@ -50,11 +60,11 @@ fn plan_description(source: Option<PathBuf>, root: &Path, ai: bool) -> String {
         .map(|text| summary::fallback_description(&text))
         .unwrap_or_else(|_| "No plan description available.".to_string())
 }
-fn load_journals(work_dir: &Path) -> Result<HashMap<String, Vec<MemoryEntry>>> {
+fn load_journals(work_dir: &Path) -> Result<Journals> {
     // Load all memory journals, keyed by stage_id
     let journal_names = list_journals(work_dir).context("Failed to list memory journals")?;
 
-    let mut journals: HashMap<String, Vec<MemoryEntry>> = HashMap::new();
+    let mut journals: Journals = HashMap::new();
     for stage_id in &journal_names {
         let journal = read_journal(work_dir, stage_id)
             .with_context(|| format!("Failed to read memory journal for stage '{stage_id}'"))?;
@@ -70,7 +80,7 @@ fn render(
     plan_name: &str,
     plan_description: &str,
     stages: &[StageInfo],
-    journals: &HashMap<String, Vec<MemoryEntry>>,
+    journals: &Journals,
 ) -> String {
     // Generate the review document
     let timestamp = Utc::now().format("%Y-%m-%d %H:%M UTC").to_string();
@@ -90,36 +100,11 @@ fn render(
     // Changes by Stage
     append_changes_by_stage_section(&mut doc, stages, journals);
 
+    append_spec_conformance(&mut doc, stages, journals);
     append_questions(&mut doc, stages, journals);
+    append_open_findings(&mut doc, stages, journals);
     doc
 }
 
-fn append_questions(
-    doc: &mut String,
-    stages: &[StageInfo],
-    journals: &HashMap<String, Vec<MemoryEntry>>,
-) {
-    // Open Questions — collect all question entries across all stages
-    doc.push_str("## Open Questions\n\n");
-
-    let mut all_questions: Vec<(&str, &MemoryEntry)> = Vec::new();
-    for stage in stages {
-        if let Some(entries) = journals.get(&stage.id) {
-            for entry in entries {
-                if entry.entry_type == MemoryEntryType::Question {
-                    all_questions.push((&stage.name, entry));
-                }
-            }
-        }
-    }
-
-    if all_questions.is_empty() {
-        doc.push_str("No open questions.\n");
-    } else {
-        for (stage_name, entry) in &all_questions {
-            doc.push_str(&format!("- **[{}]** {}\n", stage_name, entry.content));
-        }
-    }
-
-    doc.push('\n');
-}
+#[cfg(test)]
+mod tests;

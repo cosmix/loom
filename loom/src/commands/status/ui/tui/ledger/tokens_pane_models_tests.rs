@@ -33,7 +33,7 @@ fn four_models() -> Vec<ModelUsage> {
             usage(30_000, 450_000, 7_000_000, 80_000),
         ),
         entry(
-            "gpt-6.1-sol",
+            "gpt-6.2-sol",
             "xhigh",
             usage(30_000, 300_000, 4_000_000, 50_000),
         ),
@@ -49,9 +49,12 @@ fn flow(active: bool, models: Vec<ModelUsage>) -> TokenFlow {
     let total = usage(120_000, 1_800_000, 26_000_000, 310_000);
     let rate = usage(2_000, 36_000, 600_000, 5_200);
     let main = AgentFlow {
+        effort: None,
+        unit_id: None,
         id: "main-01ed9f4c".into(),
         kind: AgentKind::Main,
         agent_type: None,
+        forwarder: None,
         model: Some("claude-opus-5-5".into()),
         active,
         total,
@@ -97,11 +100,13 @@ fn position(rows: &[String], needle: &str) -> usize {
 fn test_block_follows_the_live_rows_after_a_blank_line() {
     let rows = texts(&tokens_pane_lines(
         &flow(true, four_models()),
+        &[],
         132,
         PANE_MAX_ROWS,
     ));
     let live = texts(&tokens_pane_lines(
         &flow(true, Vec::new()),
+        &[],
         132,
         PANE_MAX_ROWS,
     ));
@@ -115,6 +120,7 @@ fn test_block_follows_the_live_rows_after_a_blank_line() {
 fn test_block_shows_without_an_active_agent() {
     let rows = texts(&tokens_pane_lines(
         &flow(false, four_models()),
+        &[],
         132,
         PANE_MAX_ROWS,
     ));
@@ -125,15 +131,15 @@ fn test_block_shows_without_an_active_agent() {
 
 #[test]
 fn test_empty_models_leave_the_pane_unchanged() {
-    let rows = tokens_pane_lines(&flow(true, Vec::new()), 132, PANE_MAX_ROWS);
+    let rows = tokens_pane_lines(&flow(true, Vec::new()), &[], 132, PANE_MAX_ROWS);
     assert_eq!(rows.len(), 3);
     assert!(!texts(&rows).iter().any(|row| row.contains("BY MODEL")));
 }
 
 #[test]
 fn test_small_max_rows_cut_from_the_bottom() {
-    let full = tokens_pane_lines(&flow(true, four_models()), 132, PANE_MAX_ROWS);
-    let cut = tokens_pane_lines(&flow(true, four_models()), 132, 6);
+    let full = tokens_pane_lines(&flow(true, four_models()), &[], 132, PANE_MAX_ROWS);
+    let cut = tokens_pane_lines(&flow(true, four_models()), &[], 132, 6);
     assert_eq!(cut.len(), 6);
     assert_eq!(texts(&cut), texts(&full)[..6]);
 }

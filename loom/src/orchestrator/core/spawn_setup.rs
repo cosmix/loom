@@ -9,12 +9,11 @@ use anyhow::{Context, Result};
 use crate::git;
 use crate::git::target_guard;
 use crate::git::BaseBranchError;
-use crate::hooks::find_hooks_dir;
 use crate::models::failure::FailureType;
 use crate::models::stage::Stage;
 use crate::orchestrator::scheduling_report::BlockReason;
 
-use super::stage_executor::install_required_hooks;
+use super::stage_block::StageBlock;
 use super::Orchestrator;
 
 impl Orchestrator {
@@ -100,10 +99,9 @@ impl Orchestrator {
                 eprintln!("Stage '{stage_id}' blocked due to worktree error: {err_msg}");
 
                 // Stage is Queued here and may transition directly to Blocked.
-                let _ = self.persist_blocked_stage(
+                self.block_stage(
                     stage_id,
-                    FailureType::InfrastructureError,
-                    vec![err_msg],
+                    StageBlock::new(FailureType::InfrastructureError, vec![err_msg]),
                 );
                 return Ok(None);
             }
@@ -150,67 +148,35 @@ impl Orchestrator {
     /// (`native/session_settings.rs`) carries the resolved config directly
     /// into the session, not the main repo's `.claude/settings.local.json`.
     ///
-    /// Returns `Ok(None)` if the stage was marked Blocked instead (invalid
+    /// Returns `Ok(false)` if the stage was marked Blocked instead (invalid
     /// config); the caller should return without spawning.
     pub(super) fn validate_knowledge_sandbox(
         &mut self,
         stage: &Stage,
         stage_id: &str,
-    ) -> Result<Option<crate::sandbox::MergedSandboxConfig>> {
-        let mut merged_sandbox = crate::sandbox::merge_config(
-            &self.config.sandbox_config,
-            &stage.sandbox,
-            stage.stage_type,
-            &stage.implementers,
-        );
+    ) -> Result<bool> {
         // Defense-in-depth: re-validate at spawn time even for knowledge
         // stages. An invalid config means the session's security boundary
         // cannot be installed, which is exactly what `SandboxSetupFailure`
         // means.
-        if let Err(e) = crate::sandbox::validate_config(&merged_sandbox) {
-            let err_msg = format!("{e:#}");
-            eprintln!(
-                "Knowledge stage '{stage_id}' blocked: invalid sandbox config at spawn: {err_msg}"
-            );
-            let _ = self.persist_blocked_stage(
-                stage_id,
-                FailureType::SandboxSetupFailure,
-                vec![err_msg],
-            );
-            return Ok(None);
-        }
-        crate::sandbox::expand_paths(&mut merged_sandbox);
+        let merged_sandbox = match crate::sandbox::preflight::resolve_spawn_policy(
+            &self.config.sandbox_config,
+            stage,
+        ) {
+            Ok(merged) => merged,
+            Err(e) => {
+                let err_msg = format!("{e:#}");
+                eprintln!(
+                    "Knowledge stage '{stage_id}' blocked: invalid sandbox config at spawn: {err_msg}"
+                );
+                self.block_stage(
+                    stage_id,
+                    StageBlock::new(FailureType::SandboxSetupFailure, vec![err_msg]),
+                );
+                return Ok(false);
+            }
+        };
         crate::sandbox::warn_missing_grants(&merged_sandbox, stage_id);
-        Ok(Some(merged_sandbox))
-    }
-
-    /// Require the Claude Code hooks directory to exist for a knowledge-stage
-    /// spawn (it has no worktree of its own; the main repo root is where the
-    /// session runs). Writes nothing: the capsule already embeds the hooks
-    /// configuration itself, not the main repo's `.claude/settings.local.json`
-    /// or its gitignore.
-    ///
-    /// Returns `Ok(false)` if the stage was marked Blocked instead (hook
-    /// install failure); the caller should return without spawning.
-    pub(super) fn require_knowledge_hooks(
-        &mut self,
-        stage_id: &str,
-        session_id: &str,
-    ) -> Result<bool> {
-        // Claude Code hooks are the knowledge stage's security boundary, not
-        // an optional enhancement: a session is never spawned without them.
-        // Contain a setup failure as Blocked rather than propagating it, which
-        // would kill the daemon while the stage sits Executing with no session.
-        if let Err(e) = install_required_hooks(find_hooks_dir(), stage_id) {
-            self.block_and_undo_session(
-                stage_id,
-                session_id,
-                FailureType::SandboxSetupFailure,
-                format!("{e:#}"),
-            );
-            return Ok(false);
-        }
-
         Ok(true)
     }
 
@@ -226,9 +192,9 @@ impl Orchestrator {
         stage_id: &str,
         session_id: &str,
     ) -> Result<bool> {
-        if self.validate_knowledge_sandbox(stage, stage_id)?.is_none() {
+        if !self.validate_knowledge_sandbox(stage, stage_id)? {
             return Ok(false);
         }
-        self.require_knowledge_hooks(stage_id, session_id)
+        Ok(self.require_stage_hooks(stage_id, session_id))
     }
 }

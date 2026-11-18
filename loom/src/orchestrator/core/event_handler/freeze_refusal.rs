@@ -10,6 +10,11 @@
 //! - a refusal the daemon recorded (`contracts/<stage>/refused.json`, written
 //!   by the inbox drain and the freeze host job's application) is filed at
 //!   once when it names the current writer, and dropped as stale otherwise;
+//! - a static refusal is returned to the writer; it is filed as a
+//!   `freeze-refusal` dispute on the third static refusal in the session, or
+//!   when the writer stays quiet 5 minutes after a refusal: a record with
+//!   `returned > 0` waits until the refusal and the session's latest heartbeat
+//!   are both [`REFUSAL_QUIET_SECS`] old and the session runs no subagent;
 //! - a refusal the writer's CLI left in its scratch directory is recorded and
 //!   filed once the file and the session's latest heartbeat are both
 //!   [`REFUSAL_QUIET_SECS`] old and the session runs no subagent: the writer
@@ -35,7 +40,7 @@ use crate::models::stage::{dispute_budgets, Stage, StageStatus, StageType};
 use crate::orchestrator::monitor::heartbeat::{heartbeat_path, read_heartbeat};
 use crate::relay::scratch_root_from_env;
 use crate::stage_service::{escalate_freeze_refusal, file_freeze_refusal, FreezeRefusalFiling};
-use crate::subagent_lifecycle::store::{replay, ChildDisposition};
+use crate::subagent_lifecycle::store::ChildDisposition;
 use crate::verify::contracts::refusal::{
     daemon_refusal, local_refusal, mark_declined, record_daemon_refusal, take_daemon_refusal,
     DaemonRefusal, RefusalSource, WRITER_PREFIX,
@@ -103,6 +108,12 @@ impl Orchestrator {
             return Ok(());
         };
         if refusal.declined.is_some() {
+            return Ok(());
+        }
+        // A returned refusal is the writer's to fix while it works on it.
+        if refusal.returned > 0
+            && !self.writer_is_quiet(&stage.id, &session_id, SystemTime::from(refusal.at), now)
+        {
             return Ok(());
         }
         self.file_refusal(&stage, &refusal)
@@ -209,9 +220,7 @@ impl Orchestrator {
         if !aged(written) || heartbeat.is_some_and(|hb| !aged(SystemTime::from(hb.timestamp))) {
             return false;
         }
-        let children = replay(work_dir)
-            .map(|index| index.session_child_disposition(stage_id, session_id))
-            .unwrap_or_else(|error| ChildDisposition::Unknown(format!("{error:#}")));
+        let children = self.session_child_disposition(stage_id, session_id);
         self.note_child_disposition(stage_id, session_id, &children);
         children == ChildDisposition::NoChildren
     }
@@ -333,3 +342,7 @@ fn filed_problems(refusal: &DaemonRefusal) -> Vec<String> {
 #[cfg(test)]
 #[path = "freeze_refusal_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "freeze_refusal_returned_tests.rs"]
+mod returned_tests;

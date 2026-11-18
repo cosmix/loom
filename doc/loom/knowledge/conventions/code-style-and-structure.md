@@ -1,12 +1,12 @@
 ---
 sources:
-  - loom/src/models/constants.rs
+- loom/src/models/constants.rs
 verified: 7d6a14caf1750cc1e516519e650e2ee68641e0a1
 ---
 
 # Code Style And Structure
 
-> Rust naming, errors, limits
+>
 
 ## File & Branch Naming
 
@@ -17,6 +17,7 @@ verified: 7d6a14caf1750cc1e516519e650e2ee68641e0a1
 | Signal files   | `{session-id}.md`                                          | `.loom/work/signals/`  |
 | Handoff files  | `{stage-id}-handoff-{NNN:03d}.md`                          | `.loom/work/handoffs/` |
 | Plan files     | `PLAN-*` -> `IN_PROGRESS-PLAN-*` -> `DONE-PLAN-*`          | `doc/plans/`           |
+| Retired plans  | `RETIRED-PLAN-*` (abandoned before or during its run)      | `doc/plans/archive/`   |
 | Stage branches | `loom/{stage-id}`                                          |                        |
 | Base branches  | `loom/_base/{stage-id}` (multi-dep merges)                 |                        |
 
@@ -62,6 +63,7 @@ parent's `mod` declaration does not surface it any further up on its own.
 - Naming: `test_<action>_<condition>`
 - Inline `#[cfg(test)] mod tests {}` for simple cases; separate `tests.rs` for complex suites
 - Integration tests in `loom/tests/integration/`, shared helpers in `helpers.rs`
+- Git fixtures: a test that needs a repository or runs git takes it from `loom/tests/test_support/git_repo.rs` (`crate::test_git` in unit tests, `test_support::git_repo` in integration targets): `TestRepo::builder()` / `RepoBuilder` for the repository, `git`, `git_checked`, `git_unchecked`, `git_with_env`, `commit_file` for commands. The module owns the isolation (every `GIT_*` and `LOOM_*` variable removed, `GIT_CONFIG_GLOBAL=/dev/null`, `GIT_CONFIG_NOSYSTEM=1`, `XDG_CONFIG_HOME` pinned, `LC_ALL=C`), the local-config identity and the setup-step assertions. A fixture whose subject is git configuration, signing, hooks or the production git wrapper keeps its own and carries a `bespoke-git-fixture: <reason>` comment; `loom/tests/test_git_guard_contracts.rs` fails any test file with a local runner, a copy of the isolation, or an identity set outside the shared module that has no marker. The marker exempts its whole file from all three rules, so place it beside the test it excuses and keep the rest of that file on the shared helpers.
 - Probe guards: `process/sandbox_probe.rs::skip_unless(probe_ok, ..)` returns `true` when the test must skip, so the guard is `if skip_unless(..) { return; }`. `if !skip_unless(..)` runs the test only when the probe fails.
 - Tests that spawn the real `loom verify-host` binary belong in an integration target (`loom/tests/host_verification_e2e.rs` holds the freeze deadline test). `CARGO_BIN_EXE_loom` is set only for integration test targets, so `cargo test --lib` cannot build the binary.
 - Process-group tests: spawn the stand-in criterion from Rust with `process_group(0)` and record its pid with `store::append_group` (`host_verify/tests_runner.rs`). Under `/bin/sh` (dash) without a tty, `set -m; sleep 600 &` leaves the job in the shell's process group, so the test passes without exercising groups.
@@ -110,7 +112,7 @@ Status icons: Completed=`✓` Executing=`●` Queued=`▶` WaitingForDeps=`○` 
 
 Colors (`colored` crate): Executing=blue.bold, Completed=green, Blocked=red.bold, Pending=dimmed, Queued=cyan, Warning=yellow
 
-Context bar: renders absolute `tokens`/`ceiling` and colours off `context_health(tokens, ceiling)` (`commands/status/render/progress.rs::render_context_bar`) — Green `<60%`, Yellow `60-90%`, Red `>=90%` of the resolved ceiling, not a fixed percentage of a 200k window.
+Context bar: renders absolute `tokens`/`ceiling` and colours off `context_health(tokens, ceiling)` (`Theme::context_style` in `commands/status/ui/theme.rs`, used by the ledger's `tokens_cell` in `commands/status/ui/tui/ledger/cells.rs`; `render/compact.rs` and `render/graph.rs` call `context_health` directly) — Green `<60%`, Yellow `60-90%`, Red `>=90%` of the resolved ceiling, not a fixed percentage of a 200k window.
 
 ## Enum Conventions
 
@@ -280,3 +282,17 @@ to 401 lines. `loom/src/assets/tests.rs` avoided that with a bare `mod skill_ref
 non-`mod.rs` parent, and reserve `#[path]` for a sibling that must keep its flat `tests_*.rs` name. The stage-completion
 unwired-file detector reads a `#[path]` include as unreferenced (see
 [code-quality-and-hook-debt](../concerns/code-quality-and-hook-debt.md)); the bare form does not have that problem.
+
+## Imports and child test modules
+
+A child test module that starts with `use super::*;` sees only what its parent imports. An import that only the tests use looks unused in a normal build, and removing it breaks the tests without touching their file; `cargo check` without `--tests` does not show that. After removing an import from a module, compile with `cargo check --tests` before finishing.
+
+## No Private Copy of a Canonical Helper
+
+Each cluster in [canonical-helpers](../patterns/canonical-helpers.md) has one implementation. A change that needs git change listings, status parsing, stage blocking, an append, an atomic write, a bounded read, frontmatter splitting, lexical path normalization, truncation, a hash, an RFC 3339 parse or a process-group kill calls that helper.
+
+- A site that must differ keeps its copy and says so in a one-line comment naming the canonical helper and the reason (an output cap, a different error contract, a null-signal probe). A copy without the comment is a defect the review finds.
+- A copy that changes behaviour gets a regression test that fails on the old behaviour. A safety property (symlink refusal, locking, size cap, UTF-8 strictness, bidi stripping) is never weakened to route a caller.
+- Deleting a helper deletes its re-exports and wrappers too; list every caller file before the change, because a caller in a file nobody owns breaks the build.
+- A function renamed to dodge a one-definition check (`absolute_lexical`, `forward_slashes`) is a kept adapter or a distinct function, never a disguised copy; its doc names the canonical helper.
+- Test git goes through `loom/tests/test_support/git_repo.rs` (`crate::test_git`), which holds the isolation recipe once; see the git fixtures bullet in Testing and `loom/tests/test_git_guard_contracts.rs` for the enforcement. A test that expects "not a repository" first asserts its `TempDir` is outside any repository (`git/queries_contract_tests.rs`).

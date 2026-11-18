@@ -262,3 +262,11 @@ fn coverage_reports_whether_symbols_are_expected() {
         "lexical-only"
     );
 }
+
+#[test]
+fn body_hash_is_the_prefixed_sha256_of_the_bytes() {
+    assert_eq!(
+        body_hash(b"abc"),
+        "sha256:ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+    );
+}

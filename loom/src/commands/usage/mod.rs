@@ -13,6 +13,7 @@
 //! partial write (dropped rather than mis-parsed).
 
 mod accounting;
+mod agent_sidecar;
 mod args;
 mod claude_provider;
 mod claude_usage;
@@ -35,10 +36,12 @@ mod cross_surface_tests;
 mod discovery;
 mod forward_join;
 mod json;
+mod parent_spawns;
 mod provider;
 mod provider_normalization;
 mod provider_report;
 mod provider_types;
+mod quota;
 mod quota_history;
 mod receipt_provider;
 mod report_types;
@@ -49,12 +52,14 @@ mod spawn_join;
 mod stream_types;
 mod time_range;
 mod transcript;
+mod transcript_attachment;
 mod transcript_content;
 mod transcript_merge;
 // `pub(crate)`, not private: `transcript_types::SYNTHETIC_MODEL` is the
 // canonical model-sentinel constant shared with `commands::subagents`, a
 // sibling module tree that a plain `mod` declaration would not reach.
 pub(crate) mod transcript_types;
+mod work_dirs;
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
@@ -62,6 +67,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{ensure, Result};
 
 pub use args::{ProviderSelection, UsageArgs};
+use work_dirs::{project_work_dir, usage_work_dir};
 
 /// Parses every discovered transcript, warning on and skipping any file that
 /// fails to parse rather than failing the whole report.
@@ -74,6 +80,7 @@ fn parse_all(
     let started_agent_types =
         crate::commands::subagents::ledger::StartedAgentTypeIndex::load(work_dir);
     let requested_models = spawn_join::RequestedModels::load(work_dir);
+    let mut parent_spawns = parent_spawns::ParentSpawns::new(work_dir);
     let mut transcripts = Vec::with_capacity(files.len());
     for file in files {
         let metadata = file
@@ -94,6 +101,7 @@ fn parse_all(
                         })
                         .map(str::to_owned);
                 }
+                parent_spawns.fill_fallbacks(&mut transcript, file);
                 forward_join.join_transcript(&mut transcript);
                 transcripts.push(transcript);
             }
@@ -103,36 +111,11 @@ fn parse_all(
     transcripts
 }
 
-/// Resolve the optional hook ledger for the project being reported. An
-/// explicit project must use its own state directory; falling back to the
-/// caller's repository would silently attach unrelated spawn metadata.
-/// `--all` likewise spans repositories and therefore has no single safe
-/// ledger.
-fn usage_work_dir(project: Option<&Path>, all: bool) -> Option<PathBuf> {
-    if all {
-        return None;
-    }
-    match project {
-        Some(project) => project_work_dir(project).filter(|candidate| candidate.is_dir()),
-        None => crate::commands::common::work_dir_path().ok(),
-    }
-}
-
-fn project_work_dir(project: &Path) -> Option<PathBuf> {
-    let project = if project.is_absolute() {
-        project.to_path_buf()
-    } else {
-        std::env::current_dir().ok()?.join(project)
-    };
-    Some(
-        crate::fs::work_dir::WorkDir::new(project)
-            .ok()?
-            .root()
-            .to_path_buf(),
-    )
-}
-
 pub fn execute(args: UsageArgs) -> Result<()> {
+    if args.quota {
+        quota::print_model_budget(crate::commands::common::work_dir_path().ok().as_deref());
+        return Ok(());
+    }
     if let Some(artifact) = args.compare.as_deref() {
         let exit_code = comparison::compare(artifact, &args)?;
         if exit_code != 0 {
@@ -172,20 +155,28 @@ fn normalize_usage(
     range: time_range::TimeRange,
     work_dir: Option<&Path>,
 ) -> Result<provider::NormalizedProviderEvents> {
-    let forward_root = forward_receipts_root(
-        args.all,
-        args.forward_receipts_root.as_deref(),
-        args.project.as_deref(),
+    let forward_join = load_forward_join(args, work_dir)?;
+    let (selected_stages, selection_unavailable) = session_stage_filter(args, work_dir)?;
+    let claude = discover_claude(
+        args,
+        selection,
+        range,
         work_dir,
+        &forward_join,
+        selected_stages.as_ref(),
     )?;
-    let forward_join = forward_join::ForwardJoin::load(forward_root);
-    let claude = discover_claude(args, selection, range, work_dir, &forward_join)?;
     let codex = if selection.includes(provider_types::Provider::Codex) {
         codex_discovery::discover(args.codex_root.as_deref())
     } else {
         codex_discovery::CodexDiscovery::default()
     };
-    let scope = codex_scope::CodexScope::for_selection(args.all, &forward_join, &range);
+    // An unresolved plan has no trustworthy thread set to claim Codex rows.
+    let scope = codex_scope::CodexScope::for_selection(
+        args.all || selection_unavailable,
+        &forward_join,
+        &range,
+        selected_stages.as_ref(),
+    );
     let mut normalized = provider::normalize_provider_events(provider::ProviderEventInput {
         selection,
         range,
@@ -198,15 +189,36 @@ fn normalize_usage(
         codex_unreadable_directories: codex.unreadable_directories,
         codex_scope: &scope,
         receipts_root: args.receipts_root.as_deref(),
+        selected_stages: selected_stages.as_ref(),
+        selection_unavailable,
     });
-    forward_join.join_ledger(&mut normalized.ledger);
-    // `join_ledger` merges the receipt-load diagnostics after the reports were
-    // built, so their assessment is stale until repeated.
-    for report in &mut normalized.ledger.providers {
+    attach_forward_diagnostics(&forward_join, &mut normalized.ledger);
+    Ok(normalized)
+}
+
+fn load_forward_join(
+    args: &UsageArgs,
+    work_dir: Option<&Path>,
+) -> Result<forward_join::ForwardJoin> {
+    let root = forward_receipts_root(
+        args.all,
+        args.forward_receipts_root.as_deref(),
+        args.project.as_deref(),
+        work_dir,
+    )?;
+    Ok(forward_join::ForwardJoin::load(root))
+}
+
+fn attach_forward_diagnostics(
+    forward_join: &forward_join::ForwardJoin,
+    ledger: &mut provider_types::ProviderLedger,
+) {
+    forward_join.join_ledger(ledger);
+    // Receipt-load diagnostics arrive after report construction.
+    for report in &mut ledger.providers {
         report.completeness =
             completeness::assess(report.provider, &report.coverage, &report.diagnostics);
     }
-    Ok(normalized)
 }
 
 struct ClaudeInput {
@@ -222,6 +234,7 @@ fn discover_claude(
     range: time_range::TimeRange,
     work_dir: Option<&Path>,
     forward_join: &forward_join::ForwardJoin,
+    selected_stages: Option<&HashSet<String>>,
 ) -> Result<ClaudeInput> {
     let included = selection.includes(provider_types::Provider::Claude);
     let options = discovery::DiscoveryOptions {
@@ -229,8 +242,7 @@ fn discover_claude(
         claude_root: args.claude_root.clone(),
         project: args.project.clone(),
         all: args.all,
-        stage: args.stage.clone(),
-        plan: args.plan.clone(),
+        selected_stages: selected_stages.cloned(),
     };
     let missing_roots = usize::from(included && discovery::root_is_missing(&options));
     let files = if included {
@@ -240,8 +252,7 @@ fn discover_claude(
     };
     let sessions = if included && !args.all {
         let read: Vec<PathBuf> = files.iter().map(|file| file.path.clone()).collect();
-        let stages = session_stage_filter(args);
-        completeness::missed_claude_transcripts(work_dir, &read, &range, stages.as_ref())
+        completeness::missed_claude_transcripts(work_dir, &read, &range, selected_stages)
     } else {
         completeness::SessionInventory::default()
     };
@@ -256,17 +267,25 @@ fn discover_claude(
 /// The stages whose session records count toward missed transcripts: the
 /// `--stage`, the `--plan`'s stages (none when the plan cannot be resolved),
 /// or every stage.
-fn session_stage_filter(args: &UsageArgs) -> Option<HashSet<String>> {
-    if let Some(stage) = &args.stage {
-        return Some(HashSet::from([stage.clone()]));
+fn session_stage_filter(
+    args: &UsageArgs,
+    work_dir: Option<&Path>,
+) -> Result<(Option<HashSet<String>>, bool)> {
+    let plan_stages = args
+        .plan
+        .as_deref()
+        .map(|plan| discovery::plan_stage_ids(plan, work_dir))
+        .transpose()?;
+    let unavailable = matches!(plan_stages, Some(None));
+    let plan_stages = plan_stages.map(|stages| stages.unwrap_or_default());
+    match (&args.stage, plan_stages) {
+        (Some(stage), Some(stages)) => Ok((
+            Some(stages.into_iter().filter(|id| id == stage).collect()),
+            unavailable,
+        )),
+        (Some(stage), None) => Ok((Some(HashSet::from([stage.clone()])), false)),
+        (None, stages) => Ok((stages, unavailable)),
     }
-    let plan = args.plan.as_deref()?;
-    Some(
-        discovery::plan_stage_ids(plan)
-            .ok()
-            .flatten()
-            .unwrap_or_default(),
-    )
 }
 
 fn forward_receipts_root<'a>(
@@ -352,6 +371,8 @@ mod tests;
 #[path = "forward_root_tests.rs"]
 mod forward_root_tests;
 
+#[cfg(test)]
+mod attribution_contract_tests;
 #[cfg(test)]
 #[path = "comparison_tests.rs"]
 mod comparison_tests;

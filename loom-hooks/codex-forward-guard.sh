@@ -77,7 +77,7 @@ This session was classified as a loom stage by: $LOOM_STAGE_EVIDENCE" ;;
 		printf '%s\n' '⛔ BLOCKED: codex forwarding policy could not authorize this tool call.' '' \
 			"Reason: $reason$evidence_note" '' \
 			'The forwarding shim may make one direct Bash call of this form, the ~ unquoted:' \
-			"  ~/.claude/hooks/loom/codex-forward.sh task '<prompt>' --model gpt-5.6-terra --effort xhigh --write [--unit-id <unit>]"
+			"  ~/.claude/hooks/loom/codex-forward.sh task '<prompt>' --model gpt-6.1-terra --effort xhigh --write [--unit-id <unit>]"
 		if [[ -n "${HOME:-}" ]]; then
 			printf '%s\n' 'The wrapper path may instead be written out in full as' \
 				"  $HOME/.claude/hooks/loom/codex-forward.sh" \
@@ -113,7 +113,7 @@ is_exact_forward_command() {
 	loom_is_forward_wrapper "${PARSED_WORDS[0]}" "$PARSED_WORD0_PLAIN" || return 1
 	[[ "${PARSED_WORDS[1]}" == task && -n "${PARSED_WORDS[2]}" ]] || return 1
 	[[ "${PARSED_WORDS[3]}" == --model ]] || return 1
-	case "${PARSED_WORDS[4]}" in gpt-6-astra | gpt-6.1-sol | gpt-6-sol | gpt-5.6-terra | gpt-6-luna) ;; *) return 1 ;; esac
+	case "${PARSED_WORDS[4]}" in gpt-6.2-astra | gpt-6.2-sol | gpt-6.1-terra | gpt-6-luna) ;; *) return 1 ;; esac
 	[[ "${PARSED_WORDS[5]}" == --effort ]] || return 1
 	case "${PARSED_WORDS[6]}" in low | medium | high | xhigh | max | ultra) ;; *) return 1 ;; esac
 	[[ "${PARSED_WORDS[7]}" == --write ]] || return 1
@@ -333,6 +333,58 @@ enforce_forwarder() {
 	emit_authorized_input "$command" "$unit" "$INVOCATION_ID" "$has_unit"
 	exit 0
 }
+
+# The stall monitor treats a minted invocation id in a tool call's kernel-visible
+# argv as proof of the launch this guard authorized (monitor/direct_worker.rs).
+# The ledger is readable from the stage, so that proof holds only while this
+# guard is the sole route for a literal id into a tool call: refuse every other
+# tool command quoting one. Monitor and PowerShell run tool_input.command as a
+# shell command under the agent as Bash does, and a Bash matcher does not cover
+# them. A computed id stays out of the launcher's argv.
+refuse_quoted_invocation() {
+	case "$TOOL_NAME" in
+	Bash | Monitor | PowerShell) ;;
+	*) return 0 ;;
+	esac
+	local command ledger candidate
+	command=$(printf '%s' "$INPUT_JSON" | jq -r '.tool_input.command // empty' 2>/dev/null || true)
+	[[ "$command" =~ inv-[0-9a-f]{32} ]] || return 0
+	require_stage_evidence
+	resolve_active_stage || return 0
+	ledger="$ACTIVE_WORK_DIR/subagents/$LOOM_STAGE_ID/codex.jsonl"
+	[[ -f "$ledger" && ! -L "$ledger" ]] || return 0
+	while [[ "$command" =~ inv-[0-9a-f]{32} ]]; do
+		candidate=${BASH_REMATCH[0]}
+		if LC_ALL=C grep -qF "\"invocation_id\":\"$candidate\"" "$ledger" 2>/dev/null; then
+			block_quoted_invocation "$candidate"
+		fi
+		command=${command/"$candidate"/}
+	done
+}
+
+block_quoted_invocation() {
+	# Same exit discipline as block_forwarder: the message must never stop exit 2.
+	trap '' PIPE
+	{
+		printf '%s\n' "⛔ BLOCKED: this $TOOL_NAME command quotes a Codex invocation id minted for this stage." '' \
+			"Id: $1" '' \
+			'The stall monitor reads that id in a launch as proof of an authorized forward,' \
+			'so only the forward guard may place it in a command. Refer to the worker by its' \
+			'unit id, and use loom subagents commands to inspect it.'
+	} >&2 || true
+	exit 2
+}
+
+refuse_quoted_invocation
+
+# The native Codex lane runs no forward, whoever calls the wrapper. The refusal
+# matches only the wrapper as word 0 of a simple command: it steers the agent
+# and is not a security boundary. The native session's capsule grants no
+# wrapper or ~/.codex access (orchestrator/terminal/native/session_settings/
+# contents.rs, sandbox/settings/policy.rs::codex_granted).
+if loom_native_lane_forward "$TOOL_NAME" "$INPUT_JSON"; then
+	require_stage_evidence && loom_native_lane_refusal 'a codex-forward.sh call' && exit 2
+fi
 
 # A hook payload without either authoritative agent type or transcript metadata
 # cannot establish that the caller is not a forwarder. This fail-closed check

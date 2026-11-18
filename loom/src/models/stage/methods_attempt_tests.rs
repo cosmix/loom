@@ -32,6 +32,23 @@ fn test_begin_attempt_preserves_existing_execution_secs() {
 }
 
 #[test]
+fn test_begin_attempt_banks_an_attempt_still_open() {
+    // An attempt approved out of NeedsHumanReview never ended; the status
+    // surfaces counted it live, so the next attempt must not drop it.
+    let now = Utc::now();
+    let mut stage = Stage {
+        execution_secs: Some(60),
+        attempt_started_at: Some(now - Duration::seconds(30)),
+        ..Stage::default()
+    };
+
+    stage.begin_attempt(now);
+
+    assert_eq!(stage.execution_secs, Some(90));
+    assert_eq!(stage.attempt_started_at, Some(now));
+}
+
+#[test]
 fn test_accumulate_attempt_time() {
     let mut stage = Stage::default();
     let start = Utc::now() - Duration::seconds(30);

@@ -1,6 +1,6 @@
 # Platform And Commit Gaps
 
-> Commit, launch, stall gaps
+>
 
 ## macOS CI Jobs and Remaining BSD Gaps
 
@@ -8,9 +8,7 @@ CI runs every gate whose result depends on the target OS on `macos-latest` as we
 `lint-macos` (clippy, rustdoc), `test-macos` (`cargo test --all-targets --no-fail-fast`, both smoke
 scripts), `flake-check-macos`, and `hooks-macos` (hook syntax, the hook suite and the partial-staging
 regression under `/bin/bash` 3.2, which a step asserts). fmt, audit, deny and the web job stay Linux-only.
-Every macOS job is green from run 38397957790 (commit `44095fa4`) on. The causes of the earlier macOS
-failures are in
-[The First macOS Hook Run](../mistakes/hooks-shell-portability.md#the-first-macos-hook-run-found-bash-32-and-bsd-faults-the-linux-shims-hid-2026-10-13),
+Related portability lessons: [The First macOS Hook Run](../mistakes/hooks-shell-portability.md#the-first-macos-hook-run-found-bash-32-and-bsd-faults-the-linux-shims-hid-2026-10-13),
 [Rust Fixtures Assumed Linux](../mistakes/ci-toolchain-and-cargo.md#rust-fixtures-assumed-linux-paths-ptys-and-tool-output-2026-10-13)
 and [macOS `proc_pidinfo` Hid Zombies](../mistakes/sessions-and-liveness.md#macos-proc_pidinfo-hid-zombies-so-an-unreaped-dead-session-read-as-alive-2026-10-13).
 Open gaps:
@@ -40,9 +38,10 @@ Open gaps:
   extensionless shims too.
 - `knowledge-orient-emits.sh` asserts `3 entries` but not the byte count, so dropping the padded-`wc`
   strip in `knowledge-orient.sh` survives under the shim (cosmetic).
-- About 20 hooks (`codex-forward-guard.sh`, `read-guard.sh`, `stage-terminal-guard.sh` and others) read
-  stdin through their own `gtimeout` → `timeout` → bare `cat` cascade, not `loom_run_bounded`, so on
-  stock macOS those reads have no bound.
+- Hook stdin reads use `loom_read_input` from `loom-hooks/_bounded.sh:63-65`; its portable
+  `loom_run_bounded` fallback provides a deadline when GNU timeout is absent. Separate direct
+  command-execution fallbacks remain in `user-prompt-context.sh:77-86`,
+  `codex-apply-patch.sh:97-103` and `loom-relay.sh:196-204`; audit those independently.
 - Bash 3.2 writes every here-string and here-document to a temp file. It tries `$TMPDIR`, `/tmp`,
   `/var/tmp`, `/usr/tmp`, then the current directory, and leaves an `sh-thd-*` file behind when
   killed mid-command. Only when none is writable does the redirect fail ("cannot create temp file for
@@ -192,19 +191,56 @@ Each recurred after its lesson was recorded, so a check beats another paragraph:
   `loom plan verify` flag a plan whose negative `rg` criterion text contains the matched phrase.
 - **`loom subagents watch` exits 6 for a worker that already handed back.** It recurred in a second plan. Proposal: treat a
   recorded `SubagentHandback` as terminal evidence in the hung rule (`commands/subagents/wait/stall.rs`).
+- **`loom subagents watch --worker codex:<unit>` exits 5 after a forwarder spawn.** It recurred in at least eight stages of the planner-ui-redesign plan (help, feature-ui, kickoff-session, document-ui, reading-experience, design-foundation, and a rejected mix of `claude:` and `codex:` workers): "worker set does not resolve to one Claude parent UUID", or "expected exactly one Codex execution, found 0" for direct-backend forwards. Binding the forwarders as `claude:<agent-id>` works but exits 0 when the forwarders stop, not when the backgrounded Codex job ends. Proposal: resolve a codex unit from the forwarder's `LOOM-FORWARD` markers for direct-backend forwards, or have `loom-orchestration` say plainly to wait on the forwarders' own completion notices and verify by `git diff` ([the mistake](../mistakes/subagent-liveness-and-watch.md#loom-subagents-watch-rejects-a-codex-worker-issued-right-after-its-forwarder-spawn-and-exits-6-for-a-handed-back-worker-2026-10-06)).
+- **Reviewer rounds go unrecorded.** Six more `loom-code-reviewer` runs (design-foundation, help, reading-experience, feature-model) ended with `loom stage review status` showing 0 rounds and N stop events not harvested. Causes seen: the reviewer delivers through `SubagentHandback` even when told not to and the harness indents the report, so the `loom-review` fence is not at column zero; the daemon socket is unreachable from the stage sandbox; and a version 1 plan never records rounds at all. Proposal: let the harvest accept an indented fence, and have `loom stage review status` say when the plan is version 1.
 - **Completion started in the background.** The plan-writer gate conventions advise `run_in_background` for the
   completion command, which the broker cannot read. Proposal: drop the advice and add a `loom plan verify` note
   for gate text that names it ([Completion Started With `run_in_background`](../mistakes/completion-broker-credential.md#completion-started-with-run_in_background-reached-no-broker-2026-10-06)).
 
-## Tooling Gaps Found While Running the Plan
+## Tooling and test-fixture constraints
 
-- **The unwired-file check does not follow `#[path]`.** The stage-completion check flags a test file wired
-  by a `#[path = "..."] mod tests;` declaration as unwired; a `wiring:` memory note per file clears it. Files
-  hit: `claude/auth_tests.rs`, `commands/stage/human_review_tests.rs`, `remote_control_tests.rs`,
-  `git/stage_commit/tests_paths.rs`, `inbox_drain/commit_tests_signing.rs` and
-  `merge_handler/landing_signing_tests.rs`. Proposal: make the check follow `#[path]` declarations.
-- **Stage wall clock.** The platform-portability stage ran 75+ minutes. One oversized worker brief (hooks, 18
-  files, 31 minutes against 2 to 14 for the others) set the wave time. Candidate fix: have the plan-writer
-  balance worker briefs so none exceeds about twice the median.
-- **A load-sensitive timing bound.** `commands::status::web::terminal::tests_pty::pty_child_shutdown_reaps_the_child`
-  failed once during the completion run on its `started.elapsed() < 1s` bound while passing 15 of 15 alone.
+The unwired-file detector is graph-based (`verify/wiring_detection.rs:37-115`), with incomplete or unresolved evidence reported as uncertain. Any remaining `#[path]` false-positive report needs a fixture showing the current extractor/resolver evidence; it is not a grep-only detector.
+
+A stage's longest worker bounds its wall-clock progress. Brief balancing remains a planning consideration, with no automatic balancing policy. PTY shutdown tests using subsecond wall-clock assertions can be load-sensitive; prefer observable retirement plus a generous bounded deadline when revising those fixtures.
+
+## Busy Status Follow-Ups
+
+Open items left by the scheduler busy-status plan (`busy::while_busy`, the tick's busy line, `busy::loop_state`; see [Daemon Liveness and Loop Health](../architecture/status-data-model.md#daemon-liveness-and-loop-health)). None blocks the feature.
+
+### Derivation Duplicated Across Surfaces
+
+- The stall cause (stale tick versus global ceiling) is re-derived in `scheduling_report_loop.rs` (`age_secs < STALL_THRESHOLD_SECS`) and `ui/tui/ledger/header_daemon.rs`, so a change to a `loop_state` rule can leave surfaces disagreeing. Carry the cause in `LoopState::Stalled`, with a `stalled_by_global_ceiling()` helper that keeps the Stalled shape.
+- `tick::read` runs twice per invocation: `alerts()` and `loop_state_for()` in `commands/status.rs`, and `alerts()` and the snapshot in `commands/status/web/model.rs`. A frame crossing a boundary can show a busy payload that disagrees with its alert. Read once and pass the `Tick` to both.
+- `BusyOp` variants are listed in `parse`, `busy_tests.rs` and `schema_parity.rs`. A `BusyOp::ALL` const helps only when paired with a compile-time exhaustive match (as `schema_parity.rs` has); used alone it would hide a missing variant.
+- `valid_stage_id` in `tick.rs` overlaps `agent_state::is_safe_id` (`agent_state/safe_id.rs`); the busy-line rule does not require an alphanumeric first byte, so the two stay separate. Keep the local one and say why in its comment if it is touched.
+
+### `while_busy` Hardening Not Enforced
+
+- No nesting, and the closure must not write the tick: documented in `busy.rs`, not checked. A `debug_assert` or thread-local depth guard in `while_busy_every` would catch a violation.
+- `while_busy_every` with interval 0 makes `park_timeout(0)` spin and rewrite the tick continuously. Floor the interval in `restamp` (for example `interval.max(10ms)`); only tests call it.
+- `record_busy` has a `debug_assert` on the stage-id rule, which panics the scheduler thread in a debug build for a hand-edited id. Ids that passed `validate_id` cannot trigger it.
+- `tick::read` uses an unbounded `read_to_string` on every TUI refresh and web frame; cap it (`take(1024)`).
+- The fixed temp name `orchestrator.tick.tmp` follows a planted symlink on write. The direct write had the same exposure; `.loom/work` is already trusted state.
+
+### Test Gaps
+
+- Only provisioning has a regression test that proves the busy line while the wrapped call runs. The other call sites have none: `stage_spawn_signal.rs`, `stage_spawn.rs`, `stage_knowledge.rs`, `merge_resolved.rs`, `resolver_exit.rs`.
+- `daemon_line.rs` `only_the_loop_state_makes_the_headline_stalled` takes no alerts, so its name overclaims; it is the only Running plus Ticking assertion, so rename it rather than delete.
+- The 64-column fallback test in `header_daemon.rs` hard-codes `64 - 19 - 12`; render through `top_line` at `MIN_COLS` so it tracks `NAME_ROOM` and logo width.
+- `provision_gate_pin_tests.rs` ordering check uses `sleep 1`. It is unnecessary while `started_at` keeps nanosecond precision (a single wrap yields an equal `started_at`, so `>` still rejects the regression); drop it, or keep at least 1 s if `started_at` ever truncates coarser.
+
+### Web Clock
+
+`web/src/lib/format.ts` computes busy elapsed time from the browser clock against the daemon's `started_at`, so a remote browser with clock skew misreports the ceiling tone; anchoring on the snapshot's `generated_at` would fix it. It truncates with `Math.floor`, matching Rust's `num_seconds`.
+
+## macOS Window Teardown Closes by Title and Is Unverified (GitHub #7)
+
+Teardown closes by window title: `orchestrator/core/completion_handler.rs::record_completion_time` → `NativeBackend::kill_session` (`terminal/native/mod.rs::kill_session`) → `close_iterm2_window` (`terminal/native/window_ops/macos.rs`), which runs `every window whose name is "loom-<stage-id>"`.
+
+**iTerm2.** The spawn arm (`terminal/emulator.rs::build_command`) sets `set name of loomWindow` before `write text`, and spawn, close and `iterm2_window_exists` all address `tell application "iTerm"`, so the `is_session_alive` title fallback can match too. `write text` types the wrapper into an interactive shell, so a close that misses leaves the window at a shell prompt after `pid_only_terminate` kills `claude`. `test_iterm2_build_command` asserts the name and the application in the generated script; no macOS run of the close is on record.
+
+**Terminal.app.** Unverified, needs a macOS host. Its arm does `set custom title of front window` (`emulator.rs::build_command`), so the close can match, with two risks: a Terminal.app window's AppleScript `name` is the full displayed title (custom title plus process and size components under default profile settings), and nothing pins the title against Claude Code's own OSC title updates. The wrapper (`native/wrapper.rs`, `exec env -i …`) emits no title escape and passes no `CLAUDE_CODE_DISABLE_TERMINAL_TITLE`.
+
+**Linux** emulators launch with `-e <wrapper>`: the window closes when the exec'd `claude` dies, and `wmctrl -F -c` also matches the `--title` given at launch.
+
+**Remaining work.** Consider exporting `CLAUDE_CODE_DISABLE_TERMINAL_TITLE=1` through `AGENT_SESSION_ENV_NAMES` (the wrapper's list, which the subset tests also require in `STAGE_HOST_ENV_ALLOWLIST` and the daemon list; see "Three Stage Environment Allowlists" in concerns.md) so neither macOS terminal's window name drifts before teardown. Verify on macOS with both terminals before closing #7.

@@ -15,7 +15,7 @@ use crate::models::dispute::{
     Citation, DisputeKind, DisputeVerdict, FindingRuling, FindingSnapshot, PlanPatch,
 };
 use crate::models::stage::{Stage, StageStatus, StageType};
-use crate::relay::sha256_hex;
+use crate::utils::sha256_hex;
 use crate::verify::contracts::store::{
     self as contract_store, FreezeRecord, FrozenContract, FrozenFile,
 };
@@ -80,6 +80,8 @@ fn stage_with_finding(work: &Path, stage: &Stage) {
         agent_id: "reviewer".to_string(),
         harvested_at: Utc::now(),
         fingerprint: "sha256:0".to_string(),
+        base: String::new(),
+        behaviour: Default::default(),
         files: BTreeMap::new(),
         malformed: None,
         findings: vec![RecordedFinding {
@@ -132,7 +134,7 @@ fn dismiss_ruling_closes_finding() {
     apply(work, "s1");
 
     assert!(open_ids(work, "s1").is_empty());
-    assert_eq!(status(work, "s1"), StageStatus::Queued);
+    assert_eq!(status(work, "s1"), StageStatus::NeedsAdjudication);
 }
 
 #[test]
@@ -156,7 +158,7 @@ fn defer_ruling_carries_finding_to_target() {
     assert_eq!(carried[0].origin_stage, "s1");
     assert_eq!(open_ids(work, "s2"), ["s1/F-1-1"]);
     assert!(open_ids(work, "s1").is_empty());
-    assert_eq!(status(work, "s1"), StageStatus::Queued);
+    assert_eq!(status(work, "s1"), StageStatus::NeedsAdjudication);
 }
 
 #[test]
@@ -220,6 +222,8 @@ fn contract_accept_refreezes_current_content() {
     std::fs::write(worktree.join(CONTRACT_FILE), edited).unwrap();
     let kind = DisputeKind::Contract {
         contract_id: CONTRACT_ID.to_string(),
+        replacement: None,
+        replacement_base_sha256: None,
     };
     write_request(&work, "s1", 1, kind);
     write_verdict(&work, "s1", 1, accept_without_patch(), 1);
@@ -242,6 +246,8 @@ fn contract_reject_requeues_with_restore_feedback() {
     write_stage(work, &make_stage("s1"));
     let kind = DisputeKind::Contract {
         contract_id: "rejects-x".to_string(),
+        replacement: None,
+        replacement_base_sha256: None,
     };
     write_request(work, "s1", 1, kind);
     write_verdict(work, "s1", 1, reject_verdict(), 1);
@@ -254,6 +260,70 @@ fn contract_reject_requeues_with_restore_feedback() {
         notice.contains("loom stage contracts restore s1 --contract rejects-x"),
         "{notice}"
     );
+}
+
+#[test]
+fn unreadable_request_never_changes_noncriterion_verdict_policy() {
+    let kinds = [
+        DisputeKind::Contract {
+            contract_id: "c".into(),
+            replacement: None,
+            replacement_base_sha256: None,
+        },
+        DisputeKind::Integrity {
+            event_ids: vec![],
+            evidence: vec![],
+        },
+        DisputeKind::ImpactTests {
+            test_ids: vec![],
+            evidence: vec![],
+        },
+        DisputeKind::FreezeRefusal {
+            problems: vec!["freeze refused".into()],
+        },
+        DisputeKind::Findings {
+            finding_ids: vec![],
+            evidence: vec![],
+        },
+    ];
+    for kind in kinds {
+        assert_unreadable_request_preserves_policy(kind);
+    }
+}
+
+fn assert_unreadable_request_preserves_policy(kind: DisputeKind) {
+    let tmp = work_dir();
+    let work = tmp.path();
+    write_stage(work, &make_stage("s1"));
+    write_request(work, "s1", 1, kind.clone());
+    let verdict = if matches!(kind, DisputeKind::Findings { .. }) {
+        DisputeVerdict::Rulings { rulings: vec![] }
+    } else {
+        reject_verdict()
+    };
+    write_verdict(work, "s1", 1, verdict, 1);
+    let request = work.join("disputes/s1/1/request.md");
+    std::fs::write(&request, "invalid request").unwrap();
+
+    let registry = AdjudicatorRegistry::new();
+    assert!(registry.apply_verdict(work, "s1", 1).is_err(), "{kind:?}");
+    assert_eq!(
+        status(work, "s1"),
+        StageStatus::NeedsAdjudication,
+        "{kind:?}"
+    );
+    assert!(
+        feedback::read_feedback(work, "s1").unwrap().is_none(),
+        "{kind:?}"
+    );
+    assert!(
+        !work.join("disputes/s1/1/applied.marker").exists(),
+        "{kind:?}"
+    );
+
+    write_request(work, "s1", 1, kind.clone());
+    registry.apply_verdict(work, "s1", 1).unwrap();
+    assert_eq!(status(work, "s1"), StageStatus::Queued, "{kind:?}");
 }
 
 #[test]
@@ -286,5 +356,5 @@ fn integrity_accept_records_counts() {
     assert_eq!(accepted[0].base, Some(120));
     assert_eq!(accepted[0].accepted_current, Some(118));
     assert_eq!(accepted[0].dispute, 1);
-    assert_eq!(status(work, "s1"), StageStatus::Queued);
+    assert_eq!(status(work, "s1"), StageStatus::NeedsAdjudication);
 }

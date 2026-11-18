@@ -42,6 +42,20 @@ describe("stage session details", () => {
     expect(sessionLabels(stage)).not.toContain("last activity");
   });
 
+  it("describes busy as verified foreground progress on Stage sessions", () => {
+    const stage = fixtureStage({ activity_status: "Busy", last_tool: "Bash" });
+    const session = stageSections(stage, null).find((section) => section.title === "session");
+    const hint = (label: string) => session?.rows.find((entry) => entry.label === label)?.hint;
+
+    expect(hint("activity")).toMatch(/Busy: a Stage session's foreground command/);
+    expect(hint("activity")).toMatch(/within a bounded hold/);
+    expect(hint("activity")).toMatch(/a long tool call can still read stale/);
+    expect(hint("last tool")).toMatch(/while busy, the tool running the foreground command/);
+    for (const label of ["activity", "last tool"]) {
+      expect(hint(label)).not.toMatch(/tool call (is still|that is still) open|no tool call open/);
+    }
+  });
+
   it("keeps a non-tool heartbeat activity", () => {
     const stage = fixtureStage({ last_tool: null, last_activity: "Session started" });
 
@@ -91,68 +105,17 @@ describe("stage session details", () => {
   });
 });
 
-describe("stage failure details", () => {
-  const failure = fixture.status.stages.find((stage) => stage.id === "client")?.failure_info;
-
-  if (!failure) throw new Error("fixture client failure is missing");
-
-  it.each(["queued", "executing"] as const)(
-    "hides a previous attempt's failure while a retry is %s",
-    (status) => {
-      renderSections(fixtureStage({ status, retry_count: 1, failure_info: failure }));
-
-      expect(screen.queryByText("failure · test")).toBeNull();
-    },
-  );
-
-  it("shows failure details while the stage is currently failed", () => {
-    renderSections(fixtureStage({ status: "blocked", retry_count: 1, failure_info: failure }));
-
-    expect(screen.getByText("failure · test")).toBeTruthy();
-  });
-});
-
-describe("review notes panel", () => {
-  const notes = Array.from({ length: 12 }, (_, i) => `criterion ${i} was disputed`).join("\n");
-
-  it("shows the complete multi-line notes in a full-width panel", () => {
-    expect(notes.length).toBeGreaterThan(300);
-    renderSections(fixtureStage({ review_notes: notes }));
-
-    const box = screen.getByLabelText("review notes text");
-    expect(box.textContent).toBe(notes);
-    expect(box.className).toContain("whitespace-pre-wrap");
-    expect(box.getAttribute("tabindex")).toBe("0");
-    const wrapper = box.closest("section")?.parentElement;
-    expect(wrapper?.className).toContain("md:col-span-2");
-    expect(wrapper?.className).not.toContain("xl:col-span-3");
-  });
-
-  it("spans every column on the wide page", () => {
-    render(
-      <TooltipProvider>
-        <StageSectionGrid stage={fixtureStage({ review_notes: notes })} level={null} wide />
-      </TooltipProvider>,
+describe("what the details leave to the now card", () => {
+  it("lists no failure and no review notes, whatever the stage carries", () => {
+    const failure = fixture.status.stages.find((stage) => stage.id === "client")?.failure_info;
+    if (!failure) throw new Error("fixture client failure is missing");
+    renderSections(
+      fixtureStage({ status: "blocked", failure_info: failure, review_notes: "needs a look" }),
     );
 
-    const wrapper = screen.getByLabelText("review notes text").closest("section")?.parentElement;
-    expect(wrapper?.className).toContain("xl:col-span-3");
-  });
-
-  it("renders no panel when there are no notes", () => {
-    renderSections(fixtureStage({ review_notes: null }));
-
-    expect(screen.queryByText("review notes")).toBeNull();
-  });
-
-  it("no longer lists a review reason row", () => {
-    const stage = fixtureStage({ review_reason: "needs a look", review_notes: notes });
-    renderSections(stage);
-
+    expect(screen.queryByText(/^failure · /)).toBeNull();
+    expect(screen.queryByText("needs a look")).toBeNull();
     expect(screen.queryByText("review reason")).toBeNull();
-    expect(stageSections(stage, null).flatMap((s) => s.rows.map((r) => r.label))).not.toContain(
-      "review reason",
-    );
   });
 });
 

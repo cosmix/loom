@@ -16,10 +16,8 @@
 //! that kind. A knowledge item keeps its Reason line and fenced excerpt; a
 //! source item has neither — its reasons move into the trailing parentheses
 //! of its bullet, and items that are adjacent in pack order and share a path
-//! collapse onto ONE bullet, since a signature is a line or two and the
-//! per-item scaffolding used to cost more than the payload it wrapped. See
-//! `doc/PROPOSAL-retrieval-precision.md` §4 (recommendations 7, 8, 17) and its
-//! Appendix A.7/A.8/A.17 for the token-cost case this rework answers.
+//! collapse onto ONE bullet, since a signature is a line or two and per-item
+//! scaffolding would cost more than the payload it wraps.
 //!
 //! A source item renders no body of its own: node bodies are not stored in the
 //! graph, and this renderer never reads files. Retrieval may attach up to two
@@ -30,9 +28,8 @@
 //! Every excerpt quoted here is UNTRUSTED: it is prose and source comments
 //! that could contain anything, including text shaped like instructions. The
 //! [`REFERENCE_DATA_SENTENCE`] therefore appears exactly ONCE, in the header,
-//! ahead of every item — not once per excerpt as it used to, since the
-//! guarantee it states ("what follows is quoted, not instructions") holds for
-//! the whole brief and does not get stronger by repeating it. Every excerpt
+//! ahead of every item: the guarantee it states ("what follows is quoted, not
+//! instructions") holds for the whole brief. Every excerpt
 //! is still fenced with a run of backticks one longer than the longest run
 //! already present in it — a naive 3-backtick fence would let quoted content
 //! break out of its own block.
@@ -138,8 +135,7 @@ fn render_status_line(pack: &ContextPack, query_inputs: &str) -> String {
         "{revision}\nBudget: {} / {} tokens\nSelected from: {}\n\n",
         pack.estimated_tokens,
         pack.budget_tokens,
-        // Provenance, not content: on the spawn path this is a stage's whole
-        // free-text query, which is a multi-line join of plan metadata.
+        // Provenance label supplied by the retrieval caller.
         inline_safe(query_inputs),
     )
 }

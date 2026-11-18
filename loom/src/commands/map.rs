@@ -9,7 +9,7 @@ use serde_json::Value;
 use crate::context::census::{self, CensusOptions};
 use crate::context::freshness::GraphState;
 use crate::context::graph_store::{GraphStore, ResolvedGraph};
-use crate::context::refresh::{ensure_snapshot, SnapshotAction, SnapshotOutcome, SnapshotPolicy};
+use crate::context::refresh::{ensure_snapshot, SnapshotAction, SnapshotPolicy};
 use crate::context::source_graph::{EdgeProvenance, SourceEdgeKind};
 use crate::context::store::ContextStore;
 use crate::context::view::ViewOrigin;
@@ -20,8 +20,8 @@ use crate::map::views::eval_edges;
 use crate::map::views::snapshot::{identity_of, SnapshotIdentity};
 use crate::map::views::timings::{timed, Timings};
 use crate::map::views::{
-    human_text, human_views, json_payload, json_views, parse_language, parse_provenance,
-    ViewContext, ViewFilters, ViewOptions, ViewQuery,
+    human_text, human_views, json_payload, json_views, markdown_outline, parse_language,
+    parse_provenance, ViewContext, ViewFilters, ViewOptions, ViewQuery, MAP_SCHEMA,
 };
 
 const EDGE_KIND_NAMES: &str = "contains, imports, calls, references, implements, extends";
@@ -167,7 +167,9 @@ fn execute_graph_views(args: &MapArgs) -> Result<()> {
         .to_path_buf();
 
     let mut timings = Timings::default();
-    let output = if args.census {
+    let output = if let Some(output) = markdown_outline_output(args, &project_root) {
+        output
+    } else if args.census {
         census_output(&work_dir, &project_root, args, &mut timings)?
     } else {
         let loaded = load_graph(&project_root, &work_dir, &mut timings)?;
@@ -186,6 +188,20 @@ fn execute_graph_views(args: &MapArgs) -> Result<()> {
         eprintln!("{}", timings.summary(started.elapsed()));
     }
     Ok(())
+}
+
+/// A Markdown `--outline` that is the only view is read from the file: no graph is loaded.
+fn markdown_outline_output(args: &MapArgs, root: &Path) -> Option<Output> {
+    let path = args
+        .outline
+        .as_deref()
+        .filter(|path| requested_views(args) == 1 && markdown_outline::is_markdown_path(path))?;
+    Some(if args.json {
+        let outline = markdown_outline::to_json(root, path);
+        Output::Json(serde_json::json!({"schema": MAP_SCHEMA, "views": {"outline": outline}}))
+    } else {
+        Output::Text(markdown_outline::render(root, path))
+    })
 }
 
 fn require_view(args: &MapArgs) -> Result<()> {
@@ -320,9 +336,11 @@ fn read_source_window(
 }
 
 /// Ensure the local snapshot, then read the resolved view it selected.
+///
+/// The cache directory is not created up front: every cache write creates its own parent, and
+/// a write the sandbox denies falls back to memory, so a read-only `.loom` still answers.
 fn load_graph(project_root: &Path, work_dir: &WorkDir, timings: &mut Timings) -> Result<Loaded> {
     let store = ContextStore::open(work_dir)?;
-    store.ensure()?;
     let graph_store = GraphStore::new(store.root(), work_dir.root());
     let snapshot = timed(&mut timings.snapshot, || {
         ensure_snapshot(
@@ -332,7 +350,16 @@ fn load_graph(project_root: &Path, work_dir: &WorkDir, timings: &mut Timings) ->
             SnapshotPolicy::LocalCurrent,
         )
     });
-    report_snapshot(&snapshot);
+    // With no graph and no older base to serve there is nothing to answer
+    // from: every view would print an empty result an agent reads as "no
+    // symbols", so the command fails like `--window` does when it cannot answer.
+    let state = snapshot.state();
+    if matches!(state, GraphState::Unavailable | GraphState::NeverBuilt) {
+        bail!("source graph {}: {}", state.as_str(), snapshot.reason);
+    }
+    if snapshot.action != SnapshotAction::Reused {
+        eprintln!("{}", snapshot.describe());
+    }
     let view_started = Instant::now();
     let overlay = snapshot
         .overlay
@@ -351,15 +378,6 @@ fn load_graph(project_root: &Path, work_dir: &WorkDir, timings: &mut Timings) ->
         stats: view.stats,
         snapshot: identity,
     })
-}
-
-/// One stderr line about the snapshot, unless it was reused untouched.
-fn report_snapshot(snapshot: &SnapshotOutcome) {
-    if snapshot.state() == GraphState::NeverBuilt {
-        eprintln!("source graph never built: {}", snapshot.reason);
-    } else if snapshot.action != SnapshotAction::Reused {
-        eprintln!("{}", snapshot.describe());
-    }
 }
 
 fn parse_edge_kind(value: &str) -> std::result::Result<SourceEdgeKind, String> {

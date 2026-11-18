@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "public_id": "0123456789abcdef",
+      "name": "Ada",
+      "holder": true,
+      "away": false,
+      "reading": "doc/plans/PLAN-example.md",
+      "tabs": 2
+    }
+  ]
+}

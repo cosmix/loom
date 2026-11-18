@@ -56,6 +56,9 @@ mod config;
 mod confine;
 mod criterion_eval;
 mod executor;
+pub(crate) mod output;
+#[cfg(target_os = "linux")]
+pub(crate) mod pid_namespace;
 mod probe;
 mod result;
 mod runner;
@@ -68,10 +71,17 @@ mod tests;
 // Re-export public types and functions
 pub use cache::CachePolicy;
 pub use config::{
-    CriteriaConfig, CriterionObserver, DEFAULT_CHECK_TIMEOUT, DEFAULT_COMMAND_TIMEOUT,
+    extended_criterion_timeout, CriteriaConfig, CriterionObserver, DEFAULT_CHECK_TIMEOUT,
+    DEFAULT_COMMAND_TIMEOUT, DEFAULT_EXTENDED_CRITERION_TIMEOUT,
 };
 #[cfg(test)]
 pub(crate) use confine::host_launcher;
+#[cfg(target_os = "linux")]
+pub(crate) use confine::{
+    git_dirs,
+    host::{bind_read_roots, bubblewrap, read_roots, NetworkAccess},
+    CargoScratch,
+};
 pub use confine::{
     plan_confinement, resolve_confinement, spawn_confined, CommandSpec, ConfinedChild,
 };
@@ -80,7 +90,9 @@ pub use executor::{
     run_single_criterion, run_single_criterion_with_timeout, run_spec_in_optional_tree,
     run_spec_with_timeout,
 };
+pub(crate) use output::format_criterion_result;
 pub(in crate::verify) use probe::{CachedRun, CriteriaProbe, ProbeRun, ProbeRunner};
 pub use result::{AcceptanceResult, CriterionResult};
 pub use runner::{run_acceptance, run_acceptance_with_config};
-pub use spawn_observer::{set_spawn_observer, SpawnObserver, SpawnObserverGuard};
+pub use spawn_observer::{set_spawn_observer, GroupAnchor, SpawnObserver, SpawnObserverGuard};
+pub(crate) use zero_tests::has_test_summary;

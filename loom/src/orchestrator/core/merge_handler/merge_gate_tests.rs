@@ -5,30 +5,9 @@ use super::*;
 use crate::models::stage::{Stage, StageStatus};
 use crate::orchestrator::core::OrchestratorConfig;
 use crate::plan::ExecutionGraph;
+use crate::test_git::{git, git_unchecked, TestRepo};
 use serial_test::serial;
 use std::path::{Path, PathBuf};
-
-/// Run `git` in `root` with ambient global/system config neutralized (mirrors
-/// `merge_handler_attempt_tests::isolated_git`).
-fn isolated_git(root: &Path, args: &[&str]) -> std::process::Output {
-    std::process::Command::new("git")
-        .args(args)
-        .current_dir(root)
-        .env("GIT_CONFIG_GLOBAL", root.join(".loom-test-no-global"))
-        .env("GIT_CONFIG_SYSTEM", root.join(".loom-test-no-system"))
-        .env("GIT_CONFIG_NOSYSTEM", "1")
-        .output()
-        .unwrap()
-}
-
-fn git_ok(root: &Path, args: &[&str]) {
-    let out = isolated_git(root, args);
-    assert!(
-        out.status.success(),
-        "git {args:?} failed: {}",
-        String::from_utf8_lossy(&out.stderr)
-    );
-}
 
 /// Pin `LOOM_TERMINAL` so `Orchestrator::new` (which eagerly constructs a
 /// `NativeBackend`) does not probe a headless test runner for an emulator.
@@ -84,19 +63,19 @@ fn save_completed_unmerged_stage(stage_id: &str, work_dir: &Path) {
 /// `touch`. Returns the tempdir (kept alive for the test's duration) and the
 /// worktree path.
 fn repo_with_stage_branch(stage_id: &str, touch: &[(&str, &str)]) -> (tempfile::TempDir, PathBuf) {
-    let temp = tempfile::tempdir().unwrap();
+    let temp = TestRepo::builder()
+        .identity("t", "t@t.com")
+        .seed("seed.txt", "seed", "seed")
+        .create()
+        .into_temp_dir();
     let root = temp.path();
-
-    git_ok(root, &["init", "-b", "main"]);
-    git_ok(root, &["config", "user.email", "t@t.com"]);
-    git_ok(root, &["config", "user.name", "t"]);
-    std::fs::write(root.join("seed.txt"), "seed").unwrap();
-    git_ok(root, &["add", "seed.txt"]);
-    git_ok(root, &["commit", "-m", "seed"]);
+    let work_dir = root.join(".loom").join("work");
+    std::fs::create_dir_all(&work_dir).unwrap();
+    crate::git::worktree::capture_main_identity(root, &work_dir).unwrap();
 
     let worktree_path = root.join(".worktrees").join(stage_id);
     let branch = format!("loom/{stage_id}");
-    git_ok(
+    git(
         root,
         &[
             "worktree",
@@ -112,9 +91,9 @@ fn repo_with_stage_branch(stage_id: &str, touch: &[(&str, &str)]) -> (tempfile::
             std::fs::create_dir_all(parent).unwrap();
         }
         std::fs::write(&file_path, content).unwrap();
-        git_ok(&worktree_path, &["add", path]);
+        git(&worktree_path, &["add", path]);
     }
-    git_ok(&worktree_path, &["commit", "-m", "stage work"]);
+    git(&worktree_path, &["commit", "-m", "stage work"]);
 
     (temp, worktree_path)
 }
@@ -132,8 +111,8 @@ fn repo_with_conflicting_stage_branch(stage_id: &str) -> (tempfile::TempDir, Pat
     );
     let root = temp.path();
     std::fs::write(root.join("shared.txt"), "main change\n").unwrap();
-    git_ok(root, &["add", "shared.txt"]);
-    git_ok(root, &["commit", "-m", "main diverges"]);
+    git(root, &["add", "shared.txt"]);
+    git(root, &["commit", "-m", "main diverges"]);
     (temp, worktree_path)
 }
 
@@ -202,7 +181,7 @@ fn a_branch_touching_the_configured_hooks_dir_is_held() {
     let (temp, _worktree) =
         repo_with_stage_branch(stage_id, &[("loom/.githooks/pre-commit", "#!/bin/sh\n")]);
     let root = temp.path();
-    git_ok(root, &["config", "core.hooksPath", "loom/.githooks"]);
+    git(root, &["config", "core.hooksPath", "loom/.githooks"]);
     let work_dir = root.join(".loom").join("work");
     save_completed_unmerged_stage(stage_id, &work_dir);
 
@@ -225,7 +204,7 @@ fn a_branch_touching_only_ordinary_source_merges_as_before() {
     );
     let reloaded = crate::verify::transitions::load_stage(stage_id, &work_dir).unwrap();
     assert!(reloaded.merged);
-    assert!(isolated_git(root, &["show", "main:src/x.rs"])
+    assert!(git_unchecked(root, &["show", "main:src/x.rs"])
         .status
         .success());
 }

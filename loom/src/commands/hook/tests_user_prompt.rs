@@ -252,9 +252,8 @@ fn units_already_delivered_in_this_epoch_are_dropped() {
 
 /// The invariant `context::tests::pack::property_pack_never_exceeds_budget`
 /// holds the packer to (`included + omitted == candidates`) must survive a
-/// dedupe drop too: `carrying` is the one place both `undelivered` and
-/// `without_weakest` narrow a pack's items, so fixing it there closes the gap
-/// for both callers at once.
+/// dedupe drop too, through the shared pack accounting used by both
+/// `undelivered` and `without_weakest`.
 #[test]
 fn a_dedupe_drop_keeps_coverage_consistent_with_the_omitted_count() {
     let mut pack = pack_of(vec![
@@ -349,22 +348,11 @@ fn an_item_without_an_excerpt_contributes_a_pointer_and_no_quote() {
     );
 }
 
-// End-to-end tests against a real state-directory tree and a real source-graph
-// overlay are their own file — this one was over the maintainability line
-// limit with them inlined. Same idiom `tests_brief.rs` uses for its own
-// `tests_brief_e2e` child: no repeated `#[cfg(test)]`, since this whole file
-// is already gated by it.
 #[path = "tests_user_prompt_e2e.rs"]
 mod e2e;
 
-// Emit-floor and dedupe-omitted-count tests are their own file for the same
-// reason `e2e` is: this file was over the maintainability line limit with
-// them inlined.
 #[path = "tests_user_prompt_gates.rs"]
 mod gates;
 
-// Byte-ceiling and shedding tests are their own file for the same reason
-// `e2e` and `gates` are: this file was over the maintainability line limit
-// with them inlined.
 #[path = "tests_user_prompt_ceiling.rs"]
 mod ceiling;

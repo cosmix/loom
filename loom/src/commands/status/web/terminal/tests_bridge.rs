@@ -16,7 +16,7 @@ use super::protocol::{
     CLOSE_TOO_LARGE,
 };
 use super::pty::PtyChild;
-use crate::commands::status::web::limits::MAX_INBOUND_BYTES;
+use crate::commands::status::web::MAX_INBOUND_BYTES;
 mod backpressure;
 mod sockets;
 mod spin;

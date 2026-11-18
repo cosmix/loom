@@ -1,11 +1,11 @@
+use crate::models::dispute::strip_control;
 use crate::models::stage::Stage;
 
 /// The `## Goal-Backward Verification` block: outcome checks beyond acceptance
 /// criteria (artifacts, wiring, wiring tests, dead code, regression test,
 /// reachable units).
 ///
-/// Split out of `sections.rs` to keep it under its maintainability
-/// line-count baseline. Call only when `stage.has_any_goal_checks()` is true.
+/// Call only when `stage.has_any_goal_checks()` is true.
 pub(super) fn format_goal_backward_verification_section(stage: &Stage) -> String {
     let mut content = String::new();
     content.push_str("\n## Goal-Backward Verification\n\n");
@@ -16,6 +16,7 @@ pub(super) fn format_goal_backward_verification_section(stage: &Stage) -> String
     content.push_str(&format_dead_code_subsection(stage));
     content.push_str(&format_regression_test_subsection(stage));
     content.push_str(&format_reachable_subsection(stage));
+    content.push_str(&format_consumer_deferred_subsection(stage));
     content.push_str("Run `loom check <stage-id> --suggest` to check these automatically.\n\n");
     content
 }
@@ -144,11 +145,45 @@ fn format_reachable_subsection(stage: &Stage) -> String {
     content
 }
 
+/// The plan's declaration that nothing consumes this stage's new units yet.
+/// The reason is plan text, so control characters are stripped.
+fn format_consumer_deferred_subsection(stage: &Stage) -> String {
+    let Some(reason) = &stage.consumer_deferred else {
+        return String::new();
+    };
+    let reason = strip_control(reason, &[]);
+    format!(
+        "### Consumer deferred\n\nThis stage declares that no consumer of its new units \
+         exists in this plan: {reason}. It waives only the leaf wiring rule; reachable \
+         checks, the unwired-file detection and the definition-site rule still apply.\n\n"
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::models::stage::RegressionTest;
     use crate::plan::schema::ReachableCheck;
+
+    #[test]
+    fn renders_consumer_deferred_subsection_with_its_reason_only_when_set() {
+        let deferred = Stage {
+            artifacts: vec!["src/x.rs".to_string()],
+            consumer_deferred: Some("the next plan wires\x1b[0m it".to_string()),
+            ..Default::default()
+        };
+        let rendered = format_goal_backward_verification_section(&deferred);
+        assert!(rendered.contains("### Consumer deferred"));
+        assert!(rendered.contains("exists in this plan: the next plan wires[0m it. It waives"));
+        assert!(!rendered.contains('\x1b'));
+
+        let plain = Stage {
+            consumer_deferred: None,
+            ..deferred
+        };
+        let rendered = format_goal_backward_verification_section(&plain);
+        assert!(!rendered.contains("Consumer deferred"));
+    }
 
     #[test]
     fn renders_regression_test_subsection_with_file_and_pattern() {

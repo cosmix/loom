@@ -103,7 +103,17 @@ impl Orchestrator {
             return;
         };
 
-        let live = live_worker_sessions(work_dir, &stage).unwrap_or_default();
+        let live = match live_worker_sessions(work_dir, &stage) {
+            Ok(live) => live,
+            Err(error) => {
+                tracing::warn!(
+                    stage_id = %stage.id,
+                    %error,
+                    "Session inventory is uncertain; leaving executing stage unchanged this tick"
+                );
+                return;
+            }
+        };
         match live.into_iter().max_by_key(|s| s.created_at) {
             Some(live_session) => self.repair_incoherent_stage(&stage.id, &reason, live_session),
             None => self.escalate_incoherent_stage(work_dir, &stage.id, &reason),
@@ -151,7 +161,13 @@ impl Orchestrator {
     fn escalate_incoherent_stage(&mut self, work_dir: &Path, stage_id: &str, reason: &str) {
         match block_incoherent_stage(work_dir, stage_id, reason) {
             Ok(Some(_)) => {
-                let _ = self.graph.mark_status(stage_id, StageStatus::Blocked);
+                if let Err(error) = self.graph.mark_status(stage_id, StageStatus::Blocked) {
+                    tracing::warn!(
+                        stage_id = %stage_id,
+                        %error,
+                        "stage persisted Blocked but graph not marked"
+                    );
+                }
                 self.active_sessions.remove(stage_id);
                 clear_status_line();
                 eprintln!(

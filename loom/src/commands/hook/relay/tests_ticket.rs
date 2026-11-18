@@ -3,6 +3,7 @@
 
 use super::*;
 use crate::relay::{new_request_id, RequestKind};
+use crate::utils::sha256_hex;
 use chrono::Utc;
 use serde_json::json;
 use std::path::PathBuf;

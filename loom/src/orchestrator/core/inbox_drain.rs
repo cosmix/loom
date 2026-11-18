@@ -19,6 +19,7 @@
 //! the session's staged index, because a session cannot sign and so never
 //! runs `git commit`. A relayed `check` or `complete` queues a host job
 //! (`check`, `complete`), which the daemon runs on the host.
+//! A relayed `subagents:control` starts, messages or cancels a native Codex worker.
 
 mod apply;
 mod check;
@@ -29,6 +30,7 @@ mod freeze;
 mod merge_resolved;
 mod session_pass;
 mod sweep;
+mod worker_control;
 
 #[cfg(test)]
 mod commit_tests;
@@ -41,7 +43,13 @@ mod tests_matrix;
 #[cfg(test)]
 mod tests_merge;
 #[cfg(test)]
+mod tests_merge_check;
+#[cfg(test)]
+mod tests_merge_handback;
+#[cfg(test)]
 mod tests_sweep;
+#[cfg(test)]
+mod worker_control_tests;
 
 use std::path::Path;
 

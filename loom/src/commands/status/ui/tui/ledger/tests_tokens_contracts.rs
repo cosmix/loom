@@ -7,6 +7,7 @@ use super::super::LedgerView;
 use crate::commands::status::data::{StageSummary, StatusData};
 use crate::commands::status::render::attention_model::attention_entries;
 use crate::commands::status::ui::tui::state::TuiActivityLog;
+use crate::orchestrator::busy::LoopState;
 use crate::plan::graph::levels;
 use crate::quota::{ProviderQuota, QuotaSnapshot, QuotaWindow, WindowKind};
 use crate::tokens::{
@@ -26,9 +27,12 @@ fn usage(input: u64, cache_write: u64, cache_read: u64, output: u64) -> TokenUsa
 
 fn agent(id: &str, kind: AgentKind, model: &str, usages: [TokenUsage; 2], per: u64) -> AgentFlow {
     AgentFlow {
+        effort: None,
+        unit_id: None,
         id: id.to_owned(),
         kind,
         agent_type: None,
+        forwarder: None,
         model: Some(model.to_owned()),
         active: true,
         total: usages[0],
@@ -70,7 +74,7 @@ fn agents() -> Vec<AgentFlow> {
         agent(
             "codex-01a1396b",
             AgentKind::Codex,
-            "gpt-6.1-sol",
+            "gpt-6.2-sol",
             codex_usage,
             1_900,
         ),
@@ -132,7 +136,7 @@ fn rows(data: &StatusData, width: u16, height: u16, show_tokens: bool) -> Vec<St
         spinner: '⠋',
         scroll_y: 0,
         legend_open: false,
-        tick_age_secs: Some(2),
+        loop_state: LoopState::Ticking { age_secs: 2 },
         last_error: None,
         now_epoch: NOW,
         scrollable: false,

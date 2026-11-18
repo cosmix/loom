@@ -34,8 +34,9 @@ use crate::models::stage::Stage;
 const DAEMON_REJECTED: &str = "daemon_rejected";
 
 /// Record the passing run `record` the daemon completed `stage` from: its
-/// attempt, then the receipt that names it (`record_accepted_handoff` refuses
-/// a receipt whose nonce no observation carries).
+/// attempt, then the receipt that names it. An attempt that overflowed the
+/// session's evidence nonces has no observation to back a receipt, and
+/// `record_accepted_handoff` settles it on its signed evidence without one.
 pub(super) fn record_acceptance(
     work_dir: &Path,
     stage: &Stage,
@@ -65,10 +66,13 @@ pub(super) fn record_acceptance(
     Ok(())
 }
 
-/// Whether the session's checkpoint already holds the receipt of `record`.
+/// Whether the session's checkpoint already holds the signed receipt of `record`.
 pub(super) fn receipt_recorded(work_dir: &Path, record: &JobRecord) -> Result<bool> {
-    let checkpoint =
-        crate::handoff::load_session_checkpoint(&record.stage_id, &record.session_id, work_dir)?;
+    let checkpoint = crate::handoff::load_trusted_session_checkpoint(
+        &record.stage_id,
+        &record.session_id,
+        work_dir,
+    )?;
     Ok(checkpoint
         .and_then(|checkpoint| checkpoint.accepted)
         .is_some_and(|receipt| receipt.evidence_nonce == record.id))
@@ -225,13 +229,18 @@ fn criteria(outcomes: &[CriterionOutcome]) -> Vec<CriterionResult> {
 /// `<label>: <first line of its summary>` for the first failed outcome.
 fn first_failure(outcomes: &[CriterionOutcome]) -> Option<String> {
     let outcome = outcomes.iter().find(|outcome| !outcome.passed)?;
-    let line = outcome
-        .summary
+    let line = first_summary_line(&outcome.summary);
+    Some(format!("{}: {line}", outcome.label))
+}
+
+/// The first non-empty line of an outcome's summary, trimmed; empty when it
+/// has none.
+pub(super) fn first_summary_line(summary: &str) -> &str {
+    summary
         .lines()
         .map(str::trim)
         .find(|line| !line.is_empty())
-        .unwrap_or_default();
-    Some(format!("{}: {line}", outcome.label))
+        .unwrap_or_default()
 }
 
 fn bounded_diagnostic(diagnostic: Option<&str>) -> Option<String> {
@@ -249,3 +258,7 @@ fn bounded_diagnostic(diagnostic: Option<&str>) -> Option<String> {
 fn observed_at() -> String {
     Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true)
 }
+
+#[cfg(test)]
+#[path = "apply_rejection_tests.rs"]
+mod tests;

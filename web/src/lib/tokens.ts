@@ -8,6 +8,38 @@ import type {
 } from "@/api/schema";
 import type { Tone } from "@/lib/format";
 
+/// The subagent type that forwards work to a codex job.
+export const FORWARDER_TYPE = "loom-codex-forwarder";
+
+export function isCodexLane(agent: AgentFlow): boolean {
+  return agent.kind === "codex" || agent.agent_type === FORWARDER_TYPE;
+}
+
+/// The codex lanes of `rows` (in `flow.agents` order) grouped into clusters: each
+/// forwarder subagent with the codex job(s) it forwarded to, forwarder first. A
+/// job whose forwarder is null or not among `rows` is a cluster of its own, as
+/// is a forwarder with no job yet. Clusters are ordered by their first lane's
+/// position in `rows`.
+export function codexPairs<T extends { agent: AgentFlow }>(rows: readonly T[]): T[][] {
+  const forwarders = new Set(
+    rows.filter(({ agent }) => agent.kind !== "codex").map(({ agent }) => agent.id),
+  );
+  const clusters: T[][] = [];
+  for (const row of rows) {
+    const { agent } = row;
+    if (!isCodexLane(agent)) continue;
+    if (agent.kind === "codex") {
+      if (agent.forwarder === null || !forwarders.has(agent.forwarder)) clusters.push([row]);
+    } else {
+      const jobs = rows.filter(
+        ({ agent: job }) => job.kind === "codex" && job.forwarder === agent.id,
+      );
+      clusters.push([row, ...jobs]);
+    }
+  }
+  return clusters;
+}
+
 export function fresh(u: TokenUsage): number {
   return u.input + u.cache_write + u.output;
 }
@@ -44,13 +76,43 @@ export function cacheHitPercent(u: TokenUsage): number | null {
   return denominator === 0 ? null : (u.cache_read / denominator) * 100;
 }
 
+/// Price of one token of each kind, relative to an uncached input token
+/// (cache read 0.1x, cache write 1.25x, output 5x). The weights are the usual
+/// ratios across models, so the shares stay meaningful without a price table.
+export const COST_WEIGHT: Readonly<Record<keyof TokenUsage, number>> = {
+  input: 1,
+  cache_write: 1.25,
+  output: 5,
+  cache_read: 0.1,
+};
+
+/// Each kind's share (0 to 1) of the usage's relative cost. Raw token counts put
+/// cache reads at 99% of every bar; weighting by price shows where the spend goes.
+/// All zeros when the usage carries no cost.
+export function costShares(u: TokenUsage): Record<keyof TokenUsage, number> {
+  const cost = {
+    input: u.input * COST_WEIGHT.input,
+    cache_write: u.cache_write * COST_WEIGHT.cache_write,
+    output: u.output * COST_WEIGHT.output,
+    cache_read: u.cache_read * COST_WEIGHT.cache_read,
+  };
+  const total = cost.input + cost.cache_write + cost.output + cost.cache_read;
+  if (total === 0) return { input: 0, cache_write: 0, output: 0, cache_read: 0 };
+  return {
+    input: cost.input / total,
+    cache_write: cost.cache_write / total,
+    output: cost.output / total,
+    cache_read: cost.cache_read / total,
+  };
+}
+
 export function stageFlow(flow: TokenFlow | undefined, stageId: string): StageFlow | undefined {
   return flow?.stages.find((stage) => stage.stage_id === stageId);
 }
 
 export function agentLabel(a: AgentFlow): string {
   if (a.kind === "main") return "main session";
-  if (a.kind === "codex") return "codex job";
+  if (a.kind === "codex") return a.unit_id ?? "codex job";
   return a.agent_type ?? "subagent";
 }
 

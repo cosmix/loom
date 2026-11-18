@@ -1,6 +1,6 @@
 # Source Graph Resolution
 
-> Binding rules, paths
+>
 
 Cross-file binding of source-graph edges: what extraction decides alone, what `context::resolve`
 decides with the whole graph, and the refusal rules that keep both honest. Edge classes and
@@ -18,6 +18,8 @@ is `BTreeMap<String, Vec<String>>`: every id that answers to a spelling, in sour
    two or more become candidates; none emits `Syntax` with the receiver kept. When no `T` exists
    (Python module-level `def attach(self)`, JS `function Widget() { this.render(); }`) nothing
    binds, except Ruby, whose `top_level_self()` hook treats a top-level `self` as `main`.
+   ECMAScript `this` inside a nested ordinary function is dynamically bound: a matching outer
+   member remains a candidate instead of a resolved receiver, including during graph resolution.
 2. **Other member call** (`obj.m()`). Never bound at extraction: `Syntax` with `receiver` kept.
 3. **Plain or qualified call.** An import-bound first segment, or an owner carried in the file only
    by `Implementation` nodes (`String::from` beside `impl From<Name> for String`), emits `Syntax`

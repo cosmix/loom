@@ -1,0 +1,196 @@
+/*
+ * The chrome around a summary's reading column: the document key and the empty states. All sit on
+ * the page ground in the chrome face with no box, no border and no fill (DESIGN.md, Surfaces).
+ */
+
+/* ── Page column ──────────────────────────────────────────────────────────── */
+
+/* A summary page's document heading takes no inset of its own: its breadcrumb, title and status
+   start on the column's left edge with the key and the text, and its action row ends on the
+   column's right edge, where Open all ends (doc-heading.css). */
+.concept-page-column {
+  --doc-heading-inset: 0;
+}
+
+/* ── Document key ─────────────────────────────────────────────────────────── */
+
+/* The key is the last row of the overview heading's ledger (header-ledger.css): the lede, then one
+   row per document on four shared tracks (mark, number, title, state) so a long number or a
+   long title never throws the other rows out. A title wraps; none is cut. */
+.concept-key-lede {
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: var(--type-body);
+  line-height: 24px;
+}
+
+.concept-key-list {
+  display: grid;
+  grid-template-columns: 22px max-content minmax(0, 1fr) auto;
+  gap: 0 var(--space-3);
+  min-width: 0;
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.concept-key-list > li {
+  display: grid;
+  grid-template-columns: subgrid;
+  grid-column: 1 / -1;
+  align-items: start;
+  min-width: 0;
+  padding-block: 5px;
+}
+
+/* A document: its mark, its number and its title. The link spans the first three tracks and the
+   state after it stays outside it, so the link's name is the number and the title alone. */
+.concept-key-doc {
+  display: grid;
+  grid-template-columns: subgrid;
+  grid-column: 1 / 4;
+  align-items: start;
+  min-width: 0;
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  text-decoration: none;
+}
+
+.concept-key-doc:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.concept-key-doc .concept-key-mark {
+  align-self: start;
+  margin-top: 1px;
+}
+
+.concept-key-label {
+  color: var(--muted-foreground);
+  font-family: var(--font-mono);
+  font-size: var(--type-ui);
+  line-height: 22px;
+  overflow-wrap: anywhere;
+}
+
+.concept-key-title {
+  min-width: 0;
+  font-size: var(--type-title);
+  font-weight: 500;
+  line-height: 22px;
+  overflow-wrap: anywhere;
+}
+
+a.concept-key-doc:hover .concept-key-title {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* "changed", "no plan" and the summary state end the row, right-aligned on one line. */
+.concept-key-end {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: flex-end;
+  gap: 0 var(--space-3);
+  grid-column: 4;
+  font-size: var(--type-ui);
+  line-height: 22px;
+}
+
+.concept-key-end .plan-fine {
+  font-size: var(--type-ui);
+  white-space: nowrap;
+}
+
+.concept-key-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--muted-foreground);
+  white-space: nowrap;
+}
+
+.concept-key-state svg {
+  width: 14px;
+  height: 14px;
+}
+
+.concept-key-state[data-state="current"] > svg {
+  color: var(--tone-completed);
+}
+
+.concept-key-state[data-state="stale"] > svg {
+  color: var(--tone-warning);
+}
+
+.concept-key-state[data-state="rebuilding"] > svg {
+  color: var(--tone-executing);
+}
+
+.concept-key-more-item {
+  display: block;
+  grid-column: 1 / -1;
+  padding-block: 0;
+}
+
+.concept-key-more {
+  display: inline-flex;
+  align-items: center;
+  margin-inline-start: calc(-1 * var(--space-3));
+}
+
+/* A document's swatch: its icon in the document colour on a wash of it (`--key-colour`, set
+   inline) at 16% in light themes and 20% in dark ones. */
+.concept-key-mark {
+  display: inline-flex;
+  flex: none;
+  border-radius: 5px;
+  background-color: color-mix(in oklch, var(--key-colour) 16%, transparent);
+}
+
+.dark .concept-key-mark {
+  background-color: color-mix(in oklch, var(--key-colour) 20%, transparent);
+}
+
+/* ── Empty states ─────────────────────────────────────────────────────────── */
+
+/* A page not loaded yet, or missing: the gaps above, then the state centred in what is left. */
+.concept-unloaded {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+}
+
+.concept-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding-block: var(--space-5);
+}
+
+.concept-empty-title {
+  display: block;
+  color: var(--foreground);
+  font-weight: 600;
+}
+
+.concept-empty-docs {
+  align-self: stretch;
+  max-width: 68ch;
+  margin-top: var(--space-2);
+}
+
+.concept-empty-docs > li {
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
+}
+
+.concept-empty-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-4);
+  font-size: var(--type-ui);
+}

@@ -11,22 +11,22 @@ use crate::models::stage::Stage;
 #[cfg(test)]
 use std::fs;
 
-use super::generate::{build_dependency_findings, build_embedded_context_with_stage};
+use super::generate::{build_dependency_findings_with_changes, build_embedded_context_with_stage};
 use super::recovery_format::format_recovery_signal;
 use super::recovery_types::RecoverySignalContent;
+use super::types::EmbeddedContext;
 
-/// Generate a recovery signal file
+/// Build a recovery signal's context, including any available handoff.
 ///
-/// The Dependency Findings section is appended here, after
-/// `format_recovery_signal`, rather than rendered inside it: the
-/// maintainability ledger pins that function's length, and a stage resumed by
-/// `loom stage retry` must keep the findings its fresh signal carried.
-pub fn generate_recovery_signal(
+/// The shared context builder takes a stage ID, not a `Stage`, so it cannot build
+/// the retrieval query: the brief and dependency findings are resolved here from
+/// one dependency snapshot. Retrieval degrades to `None` on failure: a retry must
+/// never fail because a brief could not be built.
+fn build_recovery_context(
     content: &RecoverySignalContent,
     stage: &Stage,
     work_dir: &Path,
-) -> Result<PathBuf> {
-    // Build embedded context including any available handoff
+) -> Result<EmbeddedContext> {
     let handoff_file = find_recovery_handoff_for_session(
         work_dir,
         &content.stage_id,
@@ -37,18 +37,28 @@ pub fn generate_recovery_signal(
         handoff_file.as_deref(),
         Some(&content.stage_id),
     );
-
-    // The shared context builder takes a stage ID, not a `Stage`, so it cannot
-    // build the retrieval query and leaves `context_pack` empty. Populate it
-    // HERE, the one place on this path that holds the `Stage` — without it the
-    // brief's `if let Some(pack)` in `format_recovery_signal` is dead code and
-    // every recovery signal tells the agent to "read the Knowledge Brief first"
-    // while carrying no brief at all. Retrieval still degrades to `None` on
-    // failure: a retry must never fail because a brief could not be built.
-    embedded_context.context_pack = super::helpers::retrieve_stage_pack(work_dir, stage);
+    let changes = super::retrieval::dependency_changes(work_dir, stage);
+    embedded_context.context_pack =
+        super::retrieval::retrieve_stage_pack_with_changes(work_dir, stage, &changes);
     embedded_context.knowledge_tree_empty = super::helpers::knowledge_tree_is_empty(work_dir);
-    embedded_context.dependency_findings =
-        build_dependency_findings(work_dir, stage, embedded_context.context_pack.as_ref());
+    embedded_context.dependency_findings = build_dependency_findings_with_changes(
+        work_dir,
+        stage,
+        embedded_context.context_pack.as_ref(),
+        &changes,
+    );
+    Ok(embedded_context)
+}
+
+/// Generate a recovery signal file
+///
+/// Append dependency findings so resumed stages retain the fresh signal context.
+pub fn generate_recovery_signal(
+    content: &RecoverySignalContent,
+    stage: &Stage,
+    work_dir: &Path,
+) -> Result<PathBuf> {
+    let embedded_context = build_recovery_context(content, stage, work_dir)?;
 
     let mut signal_content = format_recovery_signal(content, stage, &embedded_context);
     if let Some(findings) = &embedded_context.dependency_findings {
@@ -59,13 +69,19 @@ pub fn generate_recovery_signal(
     // spawns only once a v2 stage's contracts are frozen: it needs the same
     // frozen-contracts block a fresh implementation signal carries.
     super::v2_section::append_v2_section(&mut signal_content, stage, work_dir);
+    // A resumed integration-verify stage keeps the spec-conformance duty and its section list.
+    super::generate::append_product_sections(&mut signal_content, stage, work_dir);
+    // A stage handed back from a merge resolver must see the failure it has to
+    // fix on every resume, not only in its first signal.
+    super::section_formatters::append_merge_handback_section(&mut signal_content, stage);
 
-    // Same contract as both fresh-spawn paths (`generate.rs`): the delivery
-    // record goes down BEFORE the signal that quotes it, so a resumed session
-    // that WAS briefed is never reported as `ContextUnavailable` and the prompt
-    // hook does not re-deliver what this signal already carries.
-    super::helpers::persist_delivery(work_dir, stage, &content.session_id, &embedded_context);
-    super::helpers::write_signal_file(&content.session_id, &signal_content, work_dir)
+    super::helpers::publish_signal(
+        &content.session_id,
+        &signal_content,
+        work_dir,
+        stage,
+        &embedded_context,
+    )
 }
 
 /// Find the newest valid handoff written by the session being recovered.
@@ -214,10 +230,6 @@ mod tests {
         // Code stage (Standard, the default): the recovery signal embeds the full
         // stable prefix, so a resumed stage gets the same execution guidance as a
         // fresh spawn — the mini adversarial code review AND the rest of the rules.
-        // The prefix no longer restates CLAUDE.md doctrine (that now lives only in
-        // ~/.claude/CLAUDE.md, resident in the agent's context already), so
-        // "Subagent Restrictions" and "git add <specific-files>" are gone from
-        // every prefix and are not asserted here anymore.
         assert!(signal_content.contains("Mini Adversarial Code Review"));
         assert!(signal_content.contains("**No duplication (DRY)**"));
         assert!(signal_content.contains("## Execution Rules"));
@@ -285,6 +297,41 @@ mod tests {
         };
         let path = generate_recovery_signal(&content, &v1, work_dir)?;
         assert!(!fs::read_to_string(&path)?.contains("## Frozen Contracts"));
+        Ok(())
+    }
+
+    /// A resumed integration-verify stage keeps the section list and the spec-conformance duty.
+    #[test]
+    fn recovery_signal_carries_product_sections_for_integration_verify() -> Result<()> {
+        use crate::orchestrator::signals::recovery_types::RecoverySignalContent;
+        let tmp = TempDir::new()?;
+        let work_dir = tmp.path().join(".loom/work");
+        fs::create_dir_all(work_dir.join("signals"))?;
+        let plan = "doc/plans/alpha/IN_PROGRESS-PLAN-x.md";
+        let config = format!("[plan]\nplan_id = \"PLAN-x\"\nsource_path = \"{plan}\"\n");
+        fs::write(work_dir.join("config.toml"), config)?;
+        fs::create_dir_all(tmp.path().join("doc/plans/alpha"))?;
+        fs::write(tmp.path().join(plan), "# X\n\nImplements: section_02\n")?;
+        let content = RecoverySignalContent::for_crash(
+            "session-recovery".to_string(),
+            "test-stage".to_string(),
+            "session-crashed".to_string(),
+            None,
+            1,
+        );
+
+        let verify = Stage {
+            stage_type: crate::models::stage::StageType::IntegrationVerify,
+            ..create_test_stage()
+        };
+        let path = generate_recovery_signal(&content, &verify, &work_dir)?;
+        let signal = fs::read_to_string(&path)?;
+        assert!(signal.contains("## Product Sections"), "{signal}");
+        assert!(signal.contains("- `doc/product/alpha/section_02.md`\n"));
+        assert!(signal.contains("loom memory question \"spec-conformance:"));
+
+        let path = generate_recovery_signal(&content, &create_test_stage(), &work_dir)?;
+        assert!(!fs::read_to_string(&path)?.contains("## Product Sections"));
         Ok(())
     }
 }

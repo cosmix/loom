@@ -12,11 +12,18 @@ use std::collections::HashSet;
 use std::path::PathBuf;
 
 use crate::models::session::SessionType;
-use crate::plan::amendment::AmendmentField;
 use crate::verify::impact_tests::ImpactFailure;
 use crate::verify::integrity::IntegrityEvent;
 use crate::verify::review::report::Finding;
 use crate::verify::review::store::{OpenFinding, RulingKind};
+
+#[path = "dispute_criterion.rs"]
+mod criterion;
+pub use criterion::{CriterionField, CriterionTarget};
+
+#[path = "dispute_replacement.rs"]
+mod replacement;
+pub use replacement::MAX_REPLACEMENT_BYTES;
 
 /// A disputed review finding as it stood open when the dispute was filed:
 /// `origin_stage` is set for a finding carried from another stage, `round` is
@@ -37,48 +44,6 @@ pub type IntegritySnapshot = IntegrityEvent;
 /// daemon copies it from that record; the filing client sends only ids.
 pub type ImpactSnapshot = ImpactFailure;
 
-/// Which list of a stage a criterion dispute contests.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum CriterionField {
-    /// `acceptance`: the stage's acceptance criteria.
-    #[default]
-    Acceptance,
-    /// `wiring`: the stage's wiring checks.
-    Wiring,
-    /// `wiring_tests`: the stage's wiring tests.
-    WiringTests,
-}
-
-impl CriterionField {
-    /// The CLI and serde spelling.
-    pub fn as_str(self) -> &'static str {
-        match self {
-            CriterionField::Acceptance => "acceptance",
-            CriterionField::Wiring => "wiring",
-            CriterionField::WiringTests => "wiring-tests",
-        }
-    }
-
-    /// The label `loom stage complete` prints as `[<label> n]`.
-    pub fn gap_label(self) -> &'static str {
-        match self {
-            CriterionField::Acceptance => "criterion",
-            CriterionField::Wiring => "wiring",
-            CriterionField::WiringTests => "wiring_tests",
-        }
-    }
-
-    /// The plan-amendment field that mutates this list.
-    pub fn amendment_field(self) -> AmendmentField {
-        match self {
-            CriterionField::Acceptance => AmendmentField::Acceptance,
-            CriterionField::Wiring => AmendmentField::Wiring,
-            CriterionField::WiringTests => AmendmentField::WiringTests,
-        }
-    }
-}
-
 /// What a dispute contests (DESIGN D15). `request.md` carries it as a `kind`
 /// key beside the kind's own fields.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -90,14 +55,29 @@ pub enum DisputeKind {
     Criterion {
         criterion_indices: Vec<usize>,
         field: CriterionField,
+        /// The completed stage whose `wiring` list the indices name, when an
+        /// integration-verify stage disputes an entry its aggregated wiring
+        /// re-verification failed; `None` for the filing stage's own lists.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        owner_stage: Option<String>,
     },
     /// Open review findings, own or carried: `loom stage dispute-findings`.
     Findings {
         finding_ids: Vec<String>,
         evidence: Vec<FindingSnapshot>,
     },
-    /// One frozen contract: `loom stage dispute-contract`.
-    Contract { contract_id: String },
+    /// One frozen contract: `loom stage dispute-contract`. `replacement` is
+    /// the complete file the agent proposes in place of the frozen one.
+    /// `replacement_base_sha256` is the frozen file's sha256 the replacement
+    /// was filed against: only admission sets it, and it overwrites any value
+    /// a client sent.
+    Contract {
+        contract_id: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        replacement: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        replacement_base_sha256: Option<String>,
+    },
     /// Current test-integrity events: `loom stage dispute-integrity`.
     Integrity {
         event_ids: Vec<String>,
@@ -120,9 +100,27 @@ pub enum DisputeKind {
 impl DisputeKind {
     /// A criterion dispute over entries `criterion_indices` of `field`'s list.
     pub fn criterion(field: CriterionField, criterion_indices: Vec<usize>) -> Self {
+        Self::from_target(CriterionTarget::own(field, criterion_indices))
+    }
+
+    /// A criterion dispute over `target`'s entries.
+    pub fn from_target(target: CriterionTarget) -> Self {
         DisputeKind::Criterion {
-            criterion_indices,
-            field,
+            criterion_indices: target.criterion_indices,
+            field: target.field,
+            owner_stage: target.owner_stage,
+        }
+    }
+
+    /// The stage whose list a verdict on this dispute amends: the owner an
+    /// aggregated-wiring dispute names, else `filing_stage`.
+    pub fn amended_stage<'a>(&'a self, filing_stage: &'a str) -> &'a str {
+        match self {
+            DisputeKind::Criterion {
+                owner_stage: Some(owner),
+                ..
+            } => owner,
+            _ => filing_stage,
         }
     }
 
@@ -286,16 +284,13 @@ pub struct Citation {
     pub claim: String,
 }
 
-/// Forward-declaration of the typed plan amendment shape that Stage 3
-/// will introduce. The placeholder accepts an opaque JSON object so
-/// the schema can be tightened in Stage 3 without breaking Stage 2.
-///
-/// Stage 3 will replace this with structured `AmendmentField` + `AmendmentPatch`
-/// types. Stage 2 only persists the JSON so deserialisation remains
-/// stable across the transition.
+/// Persisted verdict envelope decoded according to the dispute kind.
+/// Criterion and contract patches are decoded by adjudication's `plan_patch`
+/// module; freeze-refusal patches use `verdict_freeze_refusal`. Accepted
+/// impact disputes may carry an empty object.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct PlanPatch {
-    /// Opaque JSON until Stage 3 lands the typed amendment schema.
+    /// JSON in the compatible shape for the verdict's dispute kind.
     #[serde(flatten)]
     pub inner: serde_json::Value,
 }
@@ -356,8 +351,12 @@ pub struct DisputeVerdictRecord {
     pub session_id: Option<String>,
 }
 
+/// Zero-byte marker written into the directory of a dispute closed without
+/// an applied outcome (`orchestrator::adjudication::close_open_disputes`).
+pub const CLOSED_MARKER: &str = "closed.marker";
+
 /// Layout helpers for the on-disk dispute directory:
-/// `.loom/work/disputes/<stage>/<n>/{request.md,verdict.md,applied.marker}`.
+/// `.loom/work/disputes/<stage>/<n>/{request.md,verdict.md,applied.marker,closed.marker}`.
 pub fn dispute_dir(disputes_root: &std::path::Path, stage_id: &str, id: u32) -> PathBuf {
     disputes_root.join(stage_id).join(id.to_string())
 }

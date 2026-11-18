@@ -9,7 +9,6 @@ mod cleanup;
 mod execute;
 mod git_hooks;
 mod plan_setup;
-mod work_state;
 
 #[cfg(test)]
 mod backend_tests;
@@ -19,3 +18,4 @@ mod repair_tests;
 mod tests;
 
 pub use execute::execute;
+pub use plan_setup::preflight_plan;

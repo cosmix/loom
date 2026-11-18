@@ -12,6 +12,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 HOOK="$SCRIPT_DIR/../loom-control-complete.sh"
 POST_HOOK="$SCRIPT_DIR/../post-tool-use.sh"
 STALL_LINE="$SCRIPT_DIR/../../loom/src/orchestrator/monitor/stall_line.rs"
+export LOOM_BIN="${LOOM_BIN:-$SCRIPT_DIR/../../loom/target/debug/loom}"
 TMP=""
 TMP=$(mktemp -d "${TMPDIR:-/tmp}/loom-control-complete-heartbeat.XXXXXX") && [[ -n "$TMP" ]] || {
 	echo "FAIL: could not create scratch directory"
@@ -71,12 +72,21 @@ jq -e --arg activity "$ACTIVITY" '.activity == $activity and .session_id == "ses
 
 # A rejected completion attempt leaves the heartbeat alone.
 write_prior session-123
-run_pre "loom stage complete build-api"
+run_pre "loom stage complete build-api; true"
 [[ "$HOOK_RC" == 2 ]] || fail "unpinned command was not rejected (rc $HOOK_RC)"
 jq -e '.activity == "Tool executed: Read"' "$HEARTBEAT" >/dev/null ||
 	fail "rejected completion rewrote the heartbeat"
 
-# Neither does an unrelated command.
+# The bare form, rewritten to the pinned command, marks it like the pinned form.
+write_prior session-123
+run_pre "loom stage complete build-api"
+[[ "$HOOK_RC" == 0 ]] || fail "bare command was not rewritten (rc $HOOK_RC)"
+jq -e --arg activity "$ACTIVITY" '.activity == $activity and .session_id == "session-123"
+	and .activity_kind == "progress" and .context_tokens == 4242' "$HEARTBEAT" >/dev/null ||
+	fail "rewritten completion did not mark the heartbeat: $(cat "$HEARTBEAT")"
+
+# An unrelated command leaves it alone too.
+write_prior session-123
 run_pre "cargo test"
 [[ "$HOOK_RC" == 0 ]] || fail "unrelated command was blocked"
 jq -e '.activity == "Tool executed: Read"' "$HEARTBEAT" >/dev/null ||

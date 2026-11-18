@@ -2,12 +2,14 @@
 //! Ancestry alone never supplies missing completion proof. Full daemon
 //! recovery coverage also lives in merge-handler and phantom-merge tests.
 use super::*;
+use crate::test_git::TestRepo;
 use std::process::Command;
 use tempfile::TempDir;
 
 use crate::git::branch::{
     branch_name_for_stage, commits_ahead_of, get_branch_head, is_ancestor_of,
 };
+use crate::verify::transitions::update_stage_at_path;
 
 #[test]
 fn stage_enumeration_and_direct_load_remain_linear_at_scale() {
@@ -45,7 +47,7 @@ fn verified_commit_and_merge_reconciliation_preserve_each_other() {
 
     let temp = TempDir::new().unwrap();
     let work_dir = temp.path().to_path_buf();
-    let stage_path = create_merged_recovery_stage(&work_dir);
+    let stage_path = create_completed_recovery_stage(&work_dir);
     let barrier = Arc::new(Barrier::new(3));
 
     let recovery_dir = work_dir.clone();
@@ -87,12 +89,11 @@ fn verified_commit_and_merge_reconciliation_preserve_each_other() {
     assert!(!stage.merged);
 }
 
-fn create_merged_recovery_stage(work_dir: &std::path::Path) -> std::path::PathBuf {
+fn create_completed_recovery_stage(work_dir: &std::path::Path) -> std::path::PathBuf {
     let stage = Stage {
         id: "recovery-merge-race".to_string(),
         name: "Recovery merge race".to_string(),
         status: StageStatus::Completed,
-        merged: true,
         ..Stage::default()
     };
     crate::verify::transitions::create_stage(&stage, work_dir).unwrap();
@@ -131,42 +132,11 @@ fn extract_stage_id_preserves_digit_leading_ids() {
 }
 
 fn init_repo() -> TempDir {
-    let tmp = TempDir::new().unwrap();
-    let root = tmp.path();
-
-    Command::new("git")
-        .args(["init", "-b", "main"])
-        .current_dir(root)
-        .output()
-        .unwrap();
-    Command::new("git")
-        .args(["config", "user.email", "test@test.com"])
-        .current_dir(root)
-        .output()
-        .unwrap();
-    Command::new("git")
-        .args(["config", "user.name", "Test"])
-        .current_dir(root)
-        .output()
-        .unwrap();
-    std::fs::write(root.join("seed.txt"), "seed").unwrap();
-    Command::new("git")
-        .args(["add", "seed.txt"])
-        .current_dir(root)
-        .output()
-        .unwrap();
-    Command::new("git")
-        .args(["commit", "-m", "seed"])
-        .current_dir(root)
-        .output()
-        .unwrap();
-    Command::new("git")
-        .args(["branch", "-M", "main"])
-        .current_dir(root)
-        .output()
-        .unwrap();
-
-    tmp
+    TestRepo::builder()
+        .identity("Test", "test@test.com")
+        .seed("seed.txt", "seed", "seed")
+        .create()
+        .into_temp_dir()
 }
 
 /// A branch tip outside the target cannot establish landed ancestry.

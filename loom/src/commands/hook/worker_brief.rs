@@ -133,13 +133,14 @@ fn issue(raw: &str, config: &Config) -> Option<Envelope> {
     }
     let paths = declared_paths(&payload.tool_input.prompt);
     let pack = retrieve_pack(config, &payload, &paths)?;
+    let skills: &[String] = &config.stage.skills;
     // Declared skills must reach the worker even with an empty context pack.
-    if pack.items.is_empty() && pack.unmet_required.is_empty() && config.stage.skills.is_empty() {
+    if pack.items.is_empty() && pack.unmet_required.is_empty() && skills.is_empty() {
         return None;
     }
 
     let nonce = Uuid::new_v4().simple().to_string();
-    let brief = render_brief(&pack, &config.stage, &nonce)?;
+    let brief = render_brief(&pack, &config.stage, skills, &nonce)?;
     let envelope = Envelope { nonce, brief };
     let encoded = serde_json::to_string(&envelope).ok()?;
     if encoded.len() > config.retrieval.max_payload_bytes {
@@ -182,12 +183,11 @@ fn retrieve_pack(config: &Config, payload: &HookPayload, paths: &[String]) -> Op
 
 pub(crate) fn scope_pack(pack: &mut ContextPack, required_ids: &[String]) {
     let mut scoped = Vec::with_capacity(pack.items.len());
-    for item in std::mem::take(&mut pack.items) {
-        if worker_material(&item) {
-            scoped.push(item);
+    for item in &pack.items {
+        if worker_material(item) {
+            scoped.push(item.clone());
             continue;
         }
-        pack.omitted.omitted += 1;
         if required_ids.iter().any(|id| id == item.id.as_str()) {
             pack.unmet_required.push(UnmetRequirement {
                 id: item.id.as_str().to_string(),
@@ -197,8 +197,7 @@ pub(crate) fn scope_pack(pack: &mut ContextPack, required_ids: &[String]) {
             });
         }
     }
-    pack.items = scoped;
-    pack.recompute_estimate();
+    pack.retain_items(scoped);
 }
 
 fn worker_material(item: &ContextItem) -> bool {
@@ -211,13 +210,18 @@ fn plan_document(path: &str) -> bool {
         .is_some_and(|name| !name.contains('/') && name.contains("PLAN-"))
 }
 
-fn render_brief(pack: &ContextPack, stage: &Stage, nonce: &str) -> Option<String> {
+fn render_brief(
+    pack: &ContextPack,
+    stage: &Stage,
+    skills: &[String],
+    nonce: &str,
+) -> Option<String> {
     let rendered = format_knowledge_brief(pack, Some(&stage.id), QUERY_INPUTS);
     if rendered.lines().any(|line| marker_nonce(line).is_some()) {
         return None;
     }
     let mut brief = format!("<!-- loom-worker-brief nonce={nonce} -->\n{rendered}");
-    if let Some(line) = skills_line(&stage.skills) {
+    if let Some(line) = skills_line(skills) {
         brief.push_str(&line);
     }
     Some(brief)

@@ -3,6 +3,7 @@
 use super::types::{
     EntryBuilder, MemoryEntry, MemoryEntryType, MemoryJournal, Receipt, ReceiptOutcome,
 };
+use crate::utils::text::single_line;
 use anyhow::Result;
 use chrono::{DateTime, NaiveDateTime, Utc};
 
@@ -81,7 +82,7 @@ fn parse_header(header: &str) -> Option<EntryBuilder> {
     })
 }
 
-fn is_event_id(id: &str) -> bool {
+pub(super) fn is_event_id(id: &str) -> bool {
     id.len() == 32
         && id
             .bytes()
@@ -167,12 +168,6 @@ fn escape_body(content: &str) -> String {
         .join("\n")
 }
 
-/// `value` on one line: the parser keeps only the rest of a metadata line, and
-/// a line break in it could end the entry or start another.
-fn one_line(value: &str) -> String {
-    value.replace(['\r', '\n'], " ")
-}
-
 /// Format a memory entry for markdown output.
 pub fn format_entry(entry: &MemoryEntry) -> String {
     let mut output = format!(
@@ -180,7 +175,7 @@ pub fn format_entry(entry: &MemoryEntry) -> String {
         entry.entry_type.emoji(),
         entry.entry_type.display_name(),
         entry.timestamp.format("%Y-%m-%d %H:%M:%S"),
-        one_line(&entry.id),
+        single_line(&entry.id),
         escape_body(&entry.content)
     );
     let has_metadata = entry.context.is_some()
@@ -189,7 +184,7 @@ pub fn format_entry(entry: &MemoryEntry) -> String {
         || entry.receipt.is_some();
 
     if let Some(context) = &entry.context {
-        output.push_str(&format!("*Context:* {}\n", one_line(context)));
+        output.push_str(&format!("*Context:* {}\n", single_line(context)));
     }
     if !entry.evidence.is_empty() {
         let evidence = entry
@@ -201,15 +196,15 @@ pub fn format_entry(entry: &MemoryEntry) -> String {
         output.push_str(&format!("*Evidence:* {evidence}\n"));
     }
     if let Some(session) = &entry.session {
-        output.push_str(&format!("*Session:* {}\n", one_line(session)));
+        output.push_str(&format!("*Session:* {}\n", single_line(session)));
     }
     if let Some(receipt) = &entry.receipt {
         let target = receipt.target.as_deref().unwrap_or("-");
         output.push_str(&format!(
             "*Receipt:* event={} outcome={} target={}\n",
-            one_line(&receipt.event_id),
+            single_line(&receipt.event_id),
             receipt.outcome,
-            one_line(target)
+            single_line(target)
         ));
     }
     if has_metadata {
@@ -222,3 +217,34 @@ pub fn format_entry(entry: &MemoryEntry) -> String {
 #[cfg(test)]
 #[path = "tests/parser_escaping.rs"]
 mod escaping_tests;
+
+#[cfg(test)]
+mod normalization_tests {
+    use super::{
+        format_entry, parse_journal, MemoryEntry, MemoryEntryType, Receipt, ReceiptOutcome,
+    };
+
+    #[test]
+    fn entry_ids_and_metadata_strip_format_characters_and_collapse_whitespace() {
+        let mut entry = MemoryEntry::new(MemoryEntryType::Receipt, "Body.".into());
+        entry.id = format!("{}\u{202e}", "a".repeat(32));
+        entry.context = Some("  why\u{200b}\t  now\n ".into());
+        entry.session = Some("  session\u{202e}\n\t one  ".into());
+        entry.receipt = Some(Receipt {
+            event_id: format!("{}\u{202e}", "b".repeat(32)),
+            outcome: ReceiptOutcome::Promoted,
+            target: Some("  target\u{200b}\t one  ".into()),
+        });
+        let rendered = format_entry(&entry);
+        assert!(!rendered.contains(['\u{202e}', '\u{200b}']));
+        assert!(rendered.contains(&format!("id={}\n", "a".repeat(32))));
+        assert!(rendered.contains("*Context:* why now\n"));
+        assert!(rendered.contains("*Session:* session one\n"));
+        assert!(rendered.contains(&format!(
+            "*Receipt:* event={} outcome=promoted target=target one\n",
+            "b".repeat(32)
+        )));
+        let journal = parse_journal(&rendered, "test").unwrap();
+        assert_eq!(journal.entries[0].id, "a".repeat(32));
+    }
+}

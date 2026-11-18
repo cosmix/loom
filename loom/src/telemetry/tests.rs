@@ -94,7 +94,10 @@ fn drain_moves_spooled_lines_and_truncates() {
     spool::append_to_spool(worktree.path(), &expected).unwrap();
     let path = spool::spool_path(worktree.path());
     writeln!(
-        OpenOptions::new().append(true).open(&path).unwrap(),
+        std::fs::OpenOptions::new()
+            .append(true)
+            .open(&path)
+            .unwrap(),
         "not-json"
     )
     .unwrap();
@@ -105,6 +108,53 @@ fn drain_moves_spooled_lines_and_truncates() {
     assert_eq!(outcome.skipped_malformed, 1);
     assert_eq!(read_events(work_dir.path()).unwrap(), vec![expected]);
     assert_eq!(std::fs::read_to_string(path).unwrap(), "");
+}
+
+#[test]
+fn oversized_spool_is_neither_delivered_nor_truncated_and_append_respects_cap() {
+    let worktree = TempDir::new().unwrap();
+    let work_dir = TempDir::new().unwrap();
+    let event = record(10, delivered("stage-a"));
+    spool::append_to_spool(worktree.path(), &event).unwrap();
+    let path = spool::spool_path(worktree.path());
+    let cap = crate::fs::jsonl_spool::MAX_BYTES as usize;
+    std::fs::write(&path, vec![b' '; cap + 1]).unwrap();
+    assert!(spool::drain_into_events(work_dir.path(), worktree.path()).is_err());
+    assert_eq!(std::fs::metadata(&path).unwrap().len(), (cap + 1) as u64);
+    assert!(read_events(work_dir.path()).unwrap().is_empty());
+    std::fs::write(&path, vec![b' '; cap - 1]).unwrap();
+    assert!(spool::append_to_spool(worktree.path(), &event).is_err());
+    assert_eq!(std::fs::metadata(&path).unwrap().len(), (cap - 1) as u64);
+}
+
+#[test]
+fn failed_delivery_keeps_spool_for_retry() {
+    let worktree = TempDir::new().unwrap();
+    let work_dir = TempDir::new().unwrap();
+    let event = record(10, delivered("stage-a"));
+    spool::append_to_spool(worktree.path(), &event).unwrap();
+    std::fs::write(work_dir.path().join("telemetry"), "not a directory").unwrap();
+    assert!(spool::drain_into_events(work_dir.path(), worktree.path()).is_err());
+    assert_eq!(spool::read_pending(worktree.path()).unwrap(), vec![event]);
+}
+
+#[test]
+fn drain_refuses_hardlink_and_fifo() {
+    use std::os::unix::ffi::OsStrExt;
+    let worktree = TempDir::new().unwrap();
+    let work_dir = TempDir::new().unwrap();
+    let victim = worktree.path().join("victim");
+    std::fs::write(&victim, VICTIM).unwrap();
+    std::fs::create_dir(worktree.path().join(".loom")).unwrap();
+    let path = spool::spool_path(worktree.path());
+    std::fs::hard_link(&victim, &path).unwrap();
+    assert!(spool::drain_into_events(work_dir.path(), worktree.path()).is_err());
+    assert_eq!(std::fs::read_to_string(&victim).unwrap(), VICTIM);
+    std::fs::remove_file(&path).unwrap();
+    let c_path = std::ffi::CString::new(path.as_os_str().as_bytes()).unwrap();
+    // SAFETY: c_path is a valid NUL-terminated pathname.
+    assert_eq!(unsafe { libc::mkfifo(c_path.as_ptr(), 0o600) }, 0);
+    assert!(spool::drain_into_events(work_dir.path(), worktree.path()).is_err());
 }
 
 const VICTIM: &str = "outside the worktree; a drain must never read or truncate this\n";
@@ -251,4 +301,17 @@ fn relay_mode_refusal_is_silent_and_never_fails_the_caller() {
     assert!(result.is_ok());
     assert!(sink.stdout.is_empty());
     assert!(sink.stderr.is_empty());
+}
+
+#[test]
+fn append_record_refuses_a_symlinked_events_file() {
+    let work_dir = TempDir::new().unwrap();
+    let outside = TempDir::new().unwrap();
+    let target = outside.path().join("target.jsonl");
+    std::fs::write(&target, "untouched\n").unwrap();
+    std::fs::create_dir(work_dir.path().join("telemetry")).unwrap();
+    std::os::unix::fs::symlink(&target, events_path(work_dir.path())).unwrap();
+
+    assert!(append_record(work_dir.path(), &record(10, delivered("stage-a"))).is_err());
+    assert_eq!(std::fs::read_to_string(&target).unwrap(), "untouched\n");
 }

@@ -8,7 +8,7 @@
 //! negative: live, valid, and not us.
 
 use super::*;
-use crate::daemon::protocol::read_message;
+use crate::daemon::protocol::{read_message, write_message};
 use crate::daemon::server::tokens::USER_TOKEN_FILE;
 use crate::fs::session_files::save_session;
 use crate::models::session::{Session, SessionStatus};
@@ -101,6 +101,7 @@ fn dispute_request(stage_id: &str, session_id: &str) -> Request {
         session_id: session_id.to_string(),
         field: crate::models::dispute::CriterionField::Acceptance,
         criterion_indices: vec![0],
+        owner_stage: None,
         reason: "criterion 41 contradicts its own data source".to_string(),
         evidence_commit: None,
         failure_output: None,

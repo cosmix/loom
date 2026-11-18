@@ -12,7 +12,7 @@ use std::net::TcpStream;
 use super::{
     assert_security_headers, body, request, skip_without_loopback, start, stop, workspace,
 };
-use crate::commands::status::web::http::MAX_BODY_BYTES;
+use crate::web_server::http::MAX_BODY_BYTES;
 
 /// The token the running server will accept — the same process, so the same
 /// `OnceLock`.

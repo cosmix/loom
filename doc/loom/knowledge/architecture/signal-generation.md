@@ -1,15 +1,15 @@
 ---
 sources:
-  - loom/src/telemetry/mod.rs
-  - loom/src/telemetry/spool.rs
-  - loom/src/commands/knowledge/telemetry.rs
-  - loom/src/orchestrator/core/stage_telemetry.rs
+- loom/src/telemetry/mod.rs
+- loom/src/telemetry/spool.rs
+- loom/src/commands/knowledge/telemetry.rs
+- loom/src/orchestrator/core/stage_telemetry.rs
 verified: 5546d3c47ddc1f8890b40157134f057393b8b90e
 ---
 
 # Signal Generation
 
-> Signal assembly, cache
+>
 
 ## Signal Generation Pipeline (orchestrator/signals/) [DETAILED]
 
@@ -51,7 +51,7 @@ worked.
    back to `MonitorConfig.hung_timeout`, default 300 s / `DEFAULT_HUNG_TIMEOUT_SECS`). A heartbeat
    naming another session is a previous attempt's and says nothing about this one. A session with
    no heartbeat at all is measured from `created_at` (`silence_without_heartbeat`).
-2. `hung_latch::is_stall_escalation` reports a silence twice, never more: once when the budget is
+2. `orchestrator/monitor/stall_line.rs::is_stall_escalation` reports a silence twice, never more: once when the budget is
    first crossed (a warning), and once more when the silence reaches `STALL_ESCALATION_MULTIPLIER`
    (3x) the budget. A session that answers again clears both latches (`clear_hung_report`), so a
    blip cannot creep toward escalation across unrelated silences.
@@ -134,7 +134,7 @@ Changes per **stage type**, not per session. Sub-sections, in order:
 - **`## Knowledge Management`** (Knowledge, KnowledgeDistill): with `knowledge_tree_empty` a "KNOWLEDGE BASE IS EMPTY" warning and the exploration order, otherwise "Extend the knowledge base as you work"; then the `loom knowledge update` command table. KnowledgeDistill adds `loom review` and the DOCUMENTATION UPDATE REQUIRED box.
 - **`## Stage Memory`** (Standard, IntegrationVerify): the SESSION MEMORY REQUIRED table (`mistake:`, `found:` and `gotcha:` notes, decisions, changes, questions, with `--evidence`), "NEVER use 'loom knowledge' in this stage — knowledge-distill curates memory into knowledge." and the auto-memory prohibition (`format_semi_stable_section` in `orchestrator/signals/format/sections.rs`).
 - **Codex implementers** (`format/codex.rs::format_codex_implementers_section`): only when `implementers` includes codex.
-- **`## Ultracode Mode`**: only when `embedded_context.ultracode`. It licenses the Workflow tool and states that Workflow fan-out spawns Claude subagents only: the codex lane (`gpt-5.6-terra`/`gpt-6-luna`) is not addressable from a Workflow script, so on a stage licensed for both, codex-tier work goes through ordinary `loom-codex-forwarder` Agent spawns outside the Workflow.
+- **`## Ultracode Mode`**: only when `embedded_context.ultracode`. It licenses the Workflow tool and states that Workflow fan-out spawns Claude subagents only: the codex lane (`gpt-6.1-terra`/`gpt-6.2-sol`/`gpt-6-luna`) is not addressable from a Workflow script, so on a stage licensed for both, codex-tier work goes through ordinary `loom-codex-forwarder` Agent spawns outside the Workflow.
 - **Sandbox restrictions** (`format/sandbox_section.rs::format_sandbox_section`): when a sandbox summary exists. With the sandbox enabled it always carries `append_package_cache_note()`, the package-manager-cache carve-out, after the filesystem deny/allow-write block and before the network section.
 - **Skill recommendations** (`format/skills.rs::format_skill_recommendations`): skill-index matches, when there are any.
 
@@ -142,7 +142,23 @@ The semi-stable section carries no delegation guidance of its own.
 
 ### Dynamic Section (`format/sections.rs::format_dynamic_section`)
 
-Per-session content: Target (session, stage and plan ids, working_dir, execution path), Worktree Isolation, Plan Overview, the cross-stage summary (IntegrationVerify and KnowledgeDistill only), the Dependency Findings section (every stage with eligible direct dependencies, KnowledgeDistill excluded), Assignment, Dependencies Status and Dependency Outputs, the previous session's handoff (structured, prose, or a pointer to `.loom/work/handoffs/<file>.md`), Acceptance Criteria, Goal-Backward Verification (artifacts, wiring, wiring_tests, dead_code; `format/sections/goal_backward_section.rs`) and Files to Modify.
+Per-session content: Target (session, stage and plan ids, working_dir, execution path), Worktree Isolation, Plan Overview, the cross-stage summary (IntegrationVerify and KnowledgeDistill only), the Dependency Findings section (every stage with eligible direct dependencies, KnowledgeDistill excluded), the `## Model Budget` section when a provider has a fresh quota reading (below), Assignment, Dependencies Status and Dependency Outputs, the previous session's handoff (structured, prose, or a pointer to `.loom/work/handoffs/<file>.md`), Acceptance Criteria, Goal-Backward Verification (artifacts, wiring, wiring_tests, dead_code; `format/sections/goal_backward_section.rs`) and Files to Modify.
+
+### Model Budget Section (`format/budget.rs`)
+
+`## Model Budget` carries each provider's fresh 5h and 7d quota windows and at most one `Routing:` line. It is spliced between the dependency findings and `## Assignment` by `push_model_budget` (`format/sections.rs:400`, and `recovery_format.rs` for a recovered stage), so standard, integration-verify and recovery signals carry it; knowledge-bootstrap and contract-session signals never render it (`signals/knowledge.rs` does not call `format_dynamic_section`).
+
+- **Source.** `current_model_budget(work_dir)` (`budget.rs:78`) reads `quota::read_snapshot` at the wall clock and formats it with `format_model_budget_section(&QuotaSnapshot, now)`. `generate/context.rs:38` stores the string on `EmbeddedContext::model_budget`. `usage --quota` calls the same `current_model_budget` through the `signals` re-export (`signals/mod.rs:86`), so a plan author sees the text an agent would. A wiring entry on that re-export pins it: read the entry in `.loom/work/stages/<NN>-<stage>.md`, which human review may have amended, before changing the symbol.
+- **Freshness.** `fresh()` keeps a provider only when it has no `error`, at least one window, and `age_secs < quota::STALE_AFTER_SECS` (600 s). With no fresh provider the function returns `None` and the section is absent.
+- **Pressure.** A provider is under pressure when any window has `used_percent >= 75` (`QUOTA_PRESSURE_PERCENT`) and does not reset within 1800 s (`PRESSURE_MIN_SECS_TO_RESET`; a window with no `resets_at` counts). `under_pressure` compares the raw percent, while the display prints `{:.0}`, so 74.6% prints "75% used" with no routing line.
+- **Routing line.** Claude under pressure: codex-fit pieces go to codex where the stage licenses it and the `## Codex Implementers` section says it is available, fully briefed pieces to haiku. Codex under pressure: terra- and sol-tier work to sonnet, boilerplate and simple unit tests to haiku. Both: "Allocate as Rule 7 says." The line carries its own licensing condition because the formatter takes no lane context, and it never moves a piece below the tier Rule 7 names, overrides `implementers`, or overrides the codex-unavailable instruction.
+- **Tests.** `tests_model_budget.rs` and `budget_tests.rs`; mutation-checked cases: stale readings omitted, reset-proximity window respected. No test pins that knowledge and contract signals omit the section ([model-allocation-followups.md](../concerns/code-quality-and-hook-debt.md)).
+
+### Product Sections block (integration-verify only)
+
+`orchestrator/signals/generate/product_sections.rs` `append_product_sections` adds `## Product Sections` to the dynamic suffix after the v2 section and before the merge handback and adjudicator feedback (`generate.rs` `assemble_signal` calls it as `product_sections::append_product_sections(`, and `recovery.rs` calls it through the `generate` re-export). It is emitted only for an `IntegrationVerify` stage whose plan's `Implements:` line names product sections (`planning::implements::implemented_section_paths` over the plan source resolved by `fs::resolve_source`; a read failure logs a warning and emits nothing): the section paths, then the **spec-conformance duty**. For each behaviour a section states that the build lacks or contradicts, fix the code; when the build is right and the section wrong, edit the section to match the build and record `loom memory decision "spec-conformance: <section path>: <what changed and why>"`; a gap neither fixed nor corrected becomes `loom memory question "spec-conformance: <section path>: <the gap>"`. The run review lists those entries under `## Spec Conformance` ([run reviews](planner-feature-screens.md#run-reviews)).
+
+The block lives in the dynamic section, not in the stable prefix: the duty has nothing to act on without sections, and `cache.rs` is pinned at 511 lines in `maintainability-baseline.txt` (a ratchet; a raise there raises `TI-ratchet`). A plan with `Implements: none` gets no block. Integration-verify may write `doc/product/`: the default `deny_write` is only `../../**` (`models/stage/sandbox_config.rs`), the merge special-cases only `doc/loom/knowledge` (`sandbox/config.rs`), settings emission skips `../` and knowledge denies (`sandbox/settings.rs`), and `worktree-file-guard.sh` allows any path inside the worktree.
 
 ### Recitation Section (`format/sections.rs::format_recitation_section`)
 
@@ -167,7 +183,7 @@ pub struct EmbeddedContext {
     pub cross_stage_summary: Option<String>,  // IV/KnowledgeDistill only
     pub dependency_findings: Option<String>,  // relevant findings of the accepted direct dependencies
     pub ultracode: bool,
-    pub implementers: Implementers,           // Licensed lanes, in preference order
+    pub implementers: Implementers,           // Licensed lanes; order carries no routing meaning
     pub codex_available: bool,                // codex CLI + plugin installed; resolved once at build time
     pub subagent_timeout_secs: Option<u64>,   // Per-stage override; None emits nothing
 }
@@ -239,3 +255,7 @@ brief_bytes=26569 asset_bytes=1619933 resident_estimate=19651501`; the usage-evi
 - **Render.** One fenced block, heading through closing fence at most `MAX_DEPENDENCY_FINDINGS_BYTES` = 1,600 bytes. Each dependency gets a headline (`<id> accepted at <commit8>: <shown> of <total> entries | git diff --stat <base8> <commit8> | loom memory list --stage <id>`), then lines `- [<type> <id8>] <claim> | why: <rationale> | <evidence>`, every field through `single_line`, cut at 200 characters for the claim and 100 for the rest. A footer counts what was skipped. The reference-data sentence is `format::REFERENCE_DATA_SENTENCE`.
 - **Offline harness.** `orchestrator/signals/tests_dependency_harness.rs` replays recorded worker transcripts (`loom/tests/fixtures/dependency_findings/`) and compares the old and new retrieval arms, by first-arrival and replay-weighted gain, against the section's cost. A covered file counts as reached only through the boost when every matching source item in its pack carries `SelectionReason::StageDependency`. The guard-core harness prints its PASS or FAIL verdict instead of asserting it; see [Dependency Findings Follow-Ups](../concerns/token-accounting-and-proof-defects.md#dependency-findings-follow-ups).
 - **Tests.** `MAX_DEPENDENCY_FINDINGS_BYTES` is re-exported from `generate.rs` under `#[cfg(test)]` on its own line, since its only users outside `findings.rs` are tests. `findings_render_tests` is declared inside `findings_tests.rs` to keep `findings.rs` under the 400-line limit. The contract tests in `tests/dependency_findings_contracts.rs` measure the cap from the heading line to the first line equal to the opening fence minus `text`, joined by newlines with no trailing newline.
+
+## `loom stage retry` Reports a Live Session's Silence
+
+`loom stage retry` still refuses a stage whose session is live (`commands/stage/skip_retry.rs::ensure_retry_session_safe`; `--force` overrides). When the stage and either the session record or a heartbeat naming that session exist, the refusal adds a silence report (`commands/stage/skip_retry_silence.rs::silence_report`): the silence age (`now - effective_progress_at()`), the response budget, and when the daemon would act at the earliest, computed through the monitor's own `never_worked::never_worked` and `never_worked::is_escalation`. The action is "requeue" for a worked, Executing session under `MAX_STALL_RECOVERIES`, and "park in NeedsHumanReview" for a never-worked session or an exhausted recovery budget. A non-Executing stage, a stage owned by another session, a stopped daemon, a zero budget or a running host job (`hung_latch::host_job_holds_session`) prints that reason instead of a threshold. The report always adds that a foreground command, codex run or completion blocker can hold recovery longer: those holds live in monitor state the CLI cannot read.

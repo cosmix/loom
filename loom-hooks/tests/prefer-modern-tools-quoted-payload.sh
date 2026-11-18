@@ -58,7 +58,7 @@ assert_no_warning "codex-forward brief discussing grep as prose" \
 # JavaScript `.find(` call and prose about git/grep - none of it a real
 # command or argument position. Mirrors common-token-helpers.sh's
 # CODEX_FORWARD_CMD fixture.
-CODEX_FORWARD_CMD=$'~/.claude/hooks/loom/codex-forward.sh task \'Fix the bug.\nDo NOT run grep at all (no grep, no find).\nconst spec = INDICATOR_PROPERTIES.find((candidate) => candidate.key === key);\n\' --model gpt-5.6-terra --effort xhigh --write'
+CODEX_FORWARD_CMD=$'~/.claude/hooks/loom/codex-forward.sh task \'Fix the bug.\nDo NOT run grep at all (no grep, no find).\nconst spec = INDICATOR_PROPERTIES.find((candidate) => candidate.key === key);\n\' --model gpt-6.1-terra --effort xhigh --write'
 assert_no_warning "codex-forward prompt with JS .find( call" "$CODEX_FORWARD_CMD"
 
 # A quoted grep followed by a trailing space - the existing

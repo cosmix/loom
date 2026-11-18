@@ -10,7 +10,7 @@ not ok 2 - beta_fails
   ---
   duration_ms: 0.548888
   type: 'test'
-  location: '/tmp/claude-1000/-home-dkaponis-src-loom/99212933-6012-4c4f-a6a4-f4e7f5668350/scratchpad/runner-projects/node-test/fixture.test.js:12:1'
+  location: '/tmp/claude-1000/-home-username-src-loom/99212933-6012-4c4f-a6a4-f4e7f5668350/scratchpad/runner-projects/node-test/fixture.test.js:12:1'
   failureType: 'testCodeFailure'
   error: |-
     deliberate failure
@@ -23,7 +23,7 @@ not ok 2 - beta_fails
   actual: 4
   operator: 'strictEqual'
   stack: |-
-    TestContext.<anonymous> (/tmp/claude-1000/-home-dkaponis-src-loom/99212933-6012-4c4f-a6a4-f4e7f5668350/scratchpad/runner-projects/node-test/fixture.test.js:13:10)
+    TestContext.<anonymous> (/tmp/claude-1000/-home-username-src-loom/99212933-6012-4c4f-a6a4-f4e7f5668350/scratchpad/runner-projects/node-test/fixture.test.js:13:10)
     Test.runInAsyncScope (node:async_hooks:214:14)
     Test.run (node:internal/test_runner/test:1047:25)
     Test.processPendingSubtests (node:internal/test_runner/test:744:18)

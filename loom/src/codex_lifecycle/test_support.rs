@@ -2,21 +2,23 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
+use chrono::{DateTime, Duration, Utc};
 use serde_json::{json, Value};
 use tempfile::TempDir;
 
 use crate::models::forward_receipt::{ForwardIdentity, RECEIPTS_FILE_NAME};
 use crate::models::session::{Session, SessionStatus};
-use crate::subagent_lifecycle::{CodexExecution, WorkerIdentity};
+use crate::subagent_lifecycle::{CodexExecution, LifecycleRecord, WorkerIdentity, WorkerOutcome};
 
 use super::authorization::CodexAuthorization;
 use super::jobs::workspace_state_dir;
+use super::ReconcileReport;
 
 pub(crate) const STAGE: &str = "stage-1";
 pub(super) const SESSION: &str = "session-1";
 pub(super) const PARENT: &str = "parent-1";
 pub(super) const FORWARDER: &str = "agent-1";
-pub(super) const MODEL: &str = "gpt-6-sol";
+pub(super) const MODEL: &str = "gpt-6.2-sol";
 pub(super) const EFFORT: &str = "xhigh";
 pub(crate) const INV_A: &str = "inv-0123456789abcdef0123456789abcdef";
 pub(super) const INV_B: &str = "inv-fedcba9876543210fedcba9876543210";
@@ -25,9 +27,9 @@ pub(super) const INV_B: &str = "inv-fedcba9876543210fedcba9876543210";
 /// for shortened paths; `workspace_root` is replaced by the fixture's.
 pub(crate) const LIQUIDMON_STAGE: &str = "fix-instance-lock";
 pub(crate) const LIQUIDMON_SESSION: &str = "session-04b928d3-1792774508";
-pub(crate) const LIQUIDMON_AUTHORIZATION: &str = r#"{"v":2,"ts":"2026-10-23T16:55:45.000Z","stage_id":"fix-instance-lock","session_id":"session-04b928d3-1792774508","parent_session_id":"cc32e257-3029-4638-9ca4-d5113f0e1247","forwarder_agent_id":"a1e1311ac1c59874b","tool_use_id":"toolu_01QYmUhYVRs82rXC1TawQ4oe","unit_id":"L1-device-lock","invocation_id":"inv-0f4dcc11d81ad6f26cb08d4b1a0c59ba","model":"gpt-5.6-terra","effort":"xhigh","workspace_root":"/repo/.worktrees/fix-instance-lock","companion_version":"1.0.6","companion_path":"/home/u/.claude/plugins/cache/openai-codex/codex/1.0.6/scripts/codex-companion.mjs","state_root":"/home/u/.codex/plugin-data/state"}"#;
-pub(crate) const LIQUIDMON_RUNNING: &str = r#"{"schema":1,"receipt_id":"096464e5f3005de684f92df63d8bbdca0585c7cef4fc98b8365ada2b4c052e74","parent_session_id":"cc32e257-3029-4638-9ca4-d5113f0e1247","agent_id":"a1e1311ac1c59874b","tool_use_id":"toolu_01QYmUhYVRs82rXC1TawQ4oe","stage_id":"fix-instance-lock","loom_session_id":"session-04b928d3-1792774508","backend":"direct","backend_id":"01a169b0-a2fd-7793-9874-db0889fa035c","state":"running","observed_at":"2026-10-23T17:00:37.322417869Z","exit_code":null,"codex_thread_id":"01a169b0-a2fd-7793-9874-db0889fa035c","locator":null,"model":"gpt-5.6-terra","effort":"xhigh"}"#;
-pub(crate) const LIQUIDMON_SUCCEEDED: &str = r#"{"schema":1,"receipt_id":"096464e5f3005de684f92df63d8bbdca0585c7cef4fc98b8365ada2b4c052e74","parent_session_id":"cc32e257-3029-4638-9ca4-d5113f0e1247","agent_id":"a1e1311ac1c59874b","tool_use_id":"toolu_01QYmUhYVRs82rXC1TawQ4oe","stage_id":"fix-instance-lock","loom_session_id":"session-04b928d3-1792774508","backend":"direct","backend_id":"01a169b0-a2fd-7793-9874-db0889fa035c","state":"succeeded","observed_at":"2026-10-23T17:00:37.322417869Z","exit_code":0,"codex_thread_id":"01a169b0-a2fd-7793-9874-db0889fa035c","locator":null,"model":"gpt-5.6-terra","effort":"xhigh"}"#;
+pub(crate) const LIQUIDMON_AUTHORIZATION: &str = r#"{"v":2,"ts":"2026-10-23T16:55:45.000Z","stage_id":"fix-instance-lock","session_id":"session-04b928d3-1792774508","parent_session_id":"cc32e257-3029-4638-9ca4-d5113f0e1247","forwarder_agent_id":"a1e1311ac1c59874b","tool_use_id":"toolu_01QYmUhYVRs82rXC1TawQ4oe","unit_id":"L1-device-lock","invocation_id":"inv-0f4dcc11d81ad6f26cb08d4b1a0c59ba","model":"gpt-6.1-terra","effort":"xhigh","workspace_root":"/repo/.worktrees/fix-instance-lock","companion_version":"1.0.6","companion_path":"/home/u/.claude/plugins/cache/openai-codex/codex/1.0.6/scripts/codex-companion.mjs","state_root":"/home/u/.codex/plugin-data/state"}"#;
+pub(crate) const LIQUIDMON_RUNNING: &str = r#"{"schema":1,"receipt_id":"096464e5f3005de684f92df63d8bbdca0585c7cef4fc98b8365ada2b4c052e74","parent_session_id":"cc32e257-3029-4638-9ca4-d5113f0e1247","agent_id":"a1e1311ac1c59874b","tool_use_id":"toolu_01QYmUhYVRs82rXC1TawQ4oe","stage_id":"fix-instance-lock","loom_session_id":"session-04b928d3-1792774508","backend":"direct","backend_id":"01a169b0-a2fd-7793-9874-db0889fa035c","state":"running","observed_at":"2026-10-23T17:00:37.322417869Z","exit_code":null,"codex_thread_id":"01a169b0-a2fd-7793-9874-db0889fa035c","locator":null,"model":"gpt-6.1-terra","effort":"xhigh"}"#;
+pub(crate) const LIQUIDMON_SUCCEEDED: &str = r#"{"schema":1,"receipt_id":"096464e5f3005de684f92df63d8bbdca0585c7cef4fc98b8365ada2b4c052e74","parent_session_id":"cc32e257-3029-4638-9ca4-d5113f0e1247","agent_id":"a1e1311ac1c59874b","tool_use_id":"toolu_01QYmUhYVRs82rXC1TawQ4oe","stage_id":"fix-instance-lock","loom_session_id":"session-04b928d3-1792774508","backend":"direct","backend_id":"01a169b0-a2fd-7793-9874-db0889fa035c","state":"succeeded","observed_at":"2026-10-23T17:00:37.322417869Z","exit_code":0,"codex_thread_id":"01a169b0-a2fd-7793-9874-db0889fa035c","locator":null,"model":"gpt-6.1-terra","effort":"xhigh"}"#;
 
 pub(crate) struct Fixture {
     _temp: TempDir,
@@ -279,4 +281,61 @@ fn job_error(status: &str) -> Option<&str> {
         "cancelled" => Some("companion cancelled"),
         _ => None,
     }
+}
+
+pub(crate) const THREAD: &str = "01a169b0-a2fd-7793-9874-db0889fa035c";
+
+/// `secs` after the liquidmon authorization's `ts`.
+pub(crate) fn at(secs: i64) -> DateTime<Utc> {
+    let authorized_at: DateTime<Utc> = "2026-10-23T16:55:45Z".parse().expect("fixture ts");
+    authorized_at + Duration::seconds(secs)
+}
+
+pub(crate) fn run(fixture: &Fixture, now: DateTime<Utc>) -> Result<ReconcileReport> {
+    super::reconcile_at(
+        &fixture.work_dir,
+        std::slice::from_ref(&fixture.session),
+        &fixture.state_root,
+        now,
+    )
+}
+
+/// The liquidmon fixture with `lines` as its receipt journal.
+pub(crate) fn liquidmon<S: AsRef<str>>(lines: &[S]) -> Result<(Fixture, CodexAuthorization)> {
+    let fixture = liquidmon_direct_fixture()?;
+    fixture.write_receipts(lines)?;
+    let authorization =
+        CodexAuthorization::from_v2_value(&fixture.liquidmon_authorization_value()?)?;
+    Ok((fixture, authorization))
+}
+
+pub(crate) fn direct_identity(
+    authorization: &CodexAuthorization,
+    thread_id: &str,
+) -> WorkerIdentity {
+    let execution = CodexExecution::Direct {
+        thread_id: thread_id.into(),
+        tool_use_id: authorization.tool_use_id.clone(),
+    };
+    super::codex_worker_identity(authorization, execution)
+}
+
+pub(crate) fn records(fixture: &Fixture) -> Result<Vec<LifecycleRecord>> {
+    fs::read_to_string(fixture.stage_path("lifecycle.jsonl"))?
+        .lines()
+        .map(|line| serde_json::from_str(line).context("lifecycle record"))
+        .collect()
+}
+
+pub(crate) fn only_outcome(report: &ReconcileReport) -> Result<&WorkerOutcome> {
+    assert_eq!(report.entries.len(), 1, "{report:?}");
+    Ok(&report.entries.first().context("one entry")?.outcome)
+}
+
+pub(crate) fn assert_nothing_written(fixture: &Fixture, authorization: &CodexAuthorization) {
+    assert!(!fixture.stage_path("lifecycle.jsonl").exists());
+    assert!(!super::has_correlated_lifecycle(
+        &fixture.work_dir,
+        authorization
+    ));
 }

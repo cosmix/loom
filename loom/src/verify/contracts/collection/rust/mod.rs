@@ -9,10 +9,16 @@
 
 mod chain;
 mod items;
+mod path_mods;
+mod run_dir;
 mod scaffold;
+mod scope;
 mod targets;
 
 use super::{FileSource, ScaffoldEdit};
+use crate::testrun::TargetScope;
+
+pub(crate) use path_mods::path_modules;
 
 /// What a build without tree-sitter reports instead of a verdict (fail
 /// closed: the chain cannot be proven without parsing Rust).
@@ -51,11 +57,23 @@ pub fn scaffold_problems(
     scaffold::problems(edits, base, current)
 }
 
+/// The one cargo target that compiles `contract_file` as `test`, run from
+/// `run_dir` (relative to the source root); `None` when it cannot be told
+/// for certain, which keeps the unscoped command.
+pub fn target_scope(
+    source: FileSource<'_>,
+    contract_file: &str,
+    test: &str,
+    run_dir: &str,
+) -> Option<TargetScope> {
+    scope::target_scope(source, contract_file, test, run_dir)
+}
+
 /// Empty when the nearest `Cargo.toml` at or above `run_dir` ("" or "." is the
 /// source root) is the manifest of the package that owns `contract_file`;
 /// otherwise one problem naming both directories.
 pub fn run_dir_problems(source: FileSource<'_>, contract_file: &str, run_dir: &str) -> Vec<String> {
-    targets::run_dir_problems(source, contract_file, run_dir)
+    run_dir::run_dir_problems(source, contract_file, run_dir)
 }
 
 /// `name` inside the directory `dir` ("" is the source root).
@@ -68,7 +86,7 @@ pub(super) fn join(dir: &str, name: &str) -> String {
 }
 
 /// The directory holding `path`, "" for a path at the source root.
-fn parent(path: &str) -> &str {
+pub(crate) fn parent(path: &str) -> &str {
     path.rsplit_once('/').map_or("", |(dir, _)| dir)
 }
 
@@ -98,13 +116,7 @@ fn contract_path(contract_file: &str) -> Result<String, String> {
 /// `text` on one line, whitespace runs collapsed and cut at 120 characters,
 /// for quoting source in a problem.
 fn quote(text: &str) -> String {
-    const LIMIT: usize = 120;
-    let line = text.split_whitespace().collect::<Vec<_>>().join(" ");
-    if line.chars().count() <= LIMIT {
-        return line;
-    }
-    let cut: String = line.chars().take(LIMIT).collect();
-    format!("{cut}...")
+    crate::utils::truncate_for_display(text, 120)
 }
 
 /// An in-memory source tree for the unit tests: `path -> content`.

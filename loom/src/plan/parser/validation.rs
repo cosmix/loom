@@ -30,23 +30,35 @@ fn retired_field_guidance(error_message: &str) -> Option<&'static str> {
         .map(|(_, guidance)| *guidance)
 }
 
-/// Parse and validate YAML metadata
-/// Returns the full LoomMetadata to allow callers to access sandbox config, etc.
-pub fn parse_and_validate(yaml_content: &str) -> Result<LoomMetadata> {
+/// Parse YAML metadata without validation, including guidance for retired fields.
+pub fn parse_metadata(yaml_content: &str) -> Result<LoomMetadata> {
     // Parse YAML. A retired field (e.g. `truths`) fails here with serde's raw
     // `unknown field` message, which includes the line/column - surface that
     // message plus migration guidance instead of swallowing it under the
     // generic context below.
-    let metadata: LoomMetadata = match crate::yaml::from_str(yaml_content) {
-        Ok(metadata) => metadata,
+    match crate::yaml::from_str(yaml_content) {
+        Ok(metadata) => Ok(metadata),
         Err(e) => {
             let message = e.to_string();
             if let Some(guidance) = retired_field_guidance(&message) {
                 bail!("{message}\n\n{guidance}");
             }
-            return Err(e).with_context(|| "Failed to parse YAML metadata");
+            Err(e).with_context(|| "Failed to parse YAML metadata")
         }
-    };
+    }
+}
+
+/// The failure text for a [`parse_metadata`] error, shared by the plan panel and
+/// `loom plan verify`: the parser's own message (with any retired-field guidance), without
+/// the "Failed to parse YAML metadata" context line.
+pub fn parse_error_text(error: &anyhow::Error) -> String {
+    format!("YAML parse error: {}", error.root_cause())
+}
+
+/// Parse and validate YAML metadata
+/// Returns the full LoomMetadata to allow callers to access sandbox config, etc.
+pub fn parse_and_validate(yaml_content: &str) -> Result<LoomMetadata> {
+    let metadata = parse_metadata(yaml_content)?;
 
     // Validate metadata
     if let Err(errors) = validate(&metadata) {
@@ -60,6 +72,43 @@ pub fn parse_and_validate(yaml_content: &str) -> Result<LoomMetadata> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_parse_metadata_retired_field_guidance() {
+        for field in ["truths", "truth_checks"] {
+            let yaml = format!(
+                "loom:\n  version: 1\n  stages:\n    - id: stage-1\n      name: Stage One\n      working_dir: .\n      {field}: [x]\n"
+            );
+            let error = parse_metadata(&yaml).unwrap_err();
+            let rendered = format!("{error:#}");
+            assert!(rendered.contains(&format!("unknown field `{field}`")));
+            assert!(rendered.contains(RETIRED_TRUTHS_GUIDANCE));
+            assert_eq!(
+                rendered,
+                format!("{:#}", parse_and_validate(&yaml).unwrap_err())
+            );
+        }
+    }
+
+    #[test]
+    fn test_parse_metadata_does_not_validate_duplicate_ids() {
+        let yaml = r#"
+loom:
+  version: 1
+  stages:
+    - id: duplicate
+      name: First
+      working_dir: .
+    - id: duplicate
+      name: Second
+      working_dir: .
+"#;
+        let metadata = parse_metadata(yaml).unwrap();
+        assert_eq!(metadata.loom.stages.len(), 2);
+        assert_eq!(metadata.loom.stages[0].name, "First");
+        assert_eq!(metadata.loom.stages[1].name, "Second");
+        assert!(parse_and_validate(yaml).is_err());
+    }
 
     #[test]
     fn test_parse_valid_yaml() {

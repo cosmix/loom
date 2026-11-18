@@ -16,3 +16,5 @@ After folding all fixes, run two closing sweeps: (1) self-consistency — rg eac
 ⚠️ THE PLAN MUST STAY SELF-CONTAINED: fold every accepted fix directly into the plan file, because the executor reads only the plan. Do not move required detail into external notes.
 
 Record any omissions, mistakes, or bad assumptions this review surfaced about your original plan in planning-omissions.md at the root of the repo. If the file is still there, append to it.
+
+Never edit the plan's `## Pressure tests` section: the driver that ran this command writes that record.

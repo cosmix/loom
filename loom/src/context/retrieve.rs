@@ -18,10 +18,9 @@ pub(crate) mod windows;
 use crate::context::config::RetrievalConfig;
 use crate::context::fuse::fuse;
 use crate::context::graph_store::ResolvedGraph;
-use crate::context::ingest::ingest;
 use crate::context::local_overlay::OverlayScope;
 use crate::context::pack::pack;
-use crate::context::refresh::{evaluate, refresh};
+use crate::context::refresh::{evaluate, refresh_snapshot};
 use crate::context::schema::{
     Channel, ContextPack, Freshness, LifecyclePolicy, RequiredRepresentation,
 };
@@ -175,9 +174,8 @@ pub(crate) fn resolve_roots(work_dir_hint: &Path) -> Result<(PathBuf, ContextSto
     Ok((knowledge_root, roots.store))
 }
 
-/// Bring the catalog current and return it. A read-only query must never die
-/// because the cache is unwritable: a `refresh` failure is downgraded to a
-/// warning and the catalog is built in memory instead.
+/// Return the current catalog, using the built in-memory snapshot if cache
+/// publication fails. Authoritative knowledge read failures still propagate.
 ///
 /// With no knowledge tree there is nothing to ingest, so the catalog is empty
 /// and the knowledge channel contributes no candidates. [`evaluate_state`] is
@@ -195,28 +193,13 @@ fn resolve_catalog(
         return Ok((catalog, evaluate_state(store, None)?));
     };
 
-    match refresh(store, knowledge_root, true) {
-        Ok(outcome) => {
-            let catalog = match store.load_catalog()? {
-                Some(catalog) => catalog,
-                None => ingest(knowledge_root)?.0,
-            };
-            let state = StoreState {
-                structural: outcome.structural,
-                semantic: outcome.semantic.freshness,
-                catalog_revision: catalog.revision.clone(),
-            };
-            Ok((catalog, state))
-        }
-        Err(error) => {
-            eprintln!(
-                "warning: failed to refresh the context cache ({error}); using an in-memory catalog for this query"
-            );
-            let (catalog, _report) = ingest(knowledge_root)?;
-            let state = evaluate_state(store, Some(knowledge_root))?;
-            Ok((catalog, state))
-        }
-    }
+    let (outcome, catalog) = refresh_snapshot(store, knowledge_root, true)?;
+    let state = StoreState {
+        structural: outcome.structural,
+        semantic: outcome.semantic.freshness,
+        catalog_revision: catalog.revision.clone(),
+    };
+    Ok((catalog, state))
 }
 
 /// Freshness of both derived layers for this query.
@@ -224,15 +207,25 @@ fn resolve_catalog(
 /// With a knowledge tree this is [`evaluate`] verbatim. Without one there is
 /// nothing to fingerprint, so the structural layer reports itself never built
 /// while the semantic layer keeps whatever the store records — the source graph
-/// is not derived from the knowledge tree, and its revision is what
-/// [`graph::load_resolved_graph`] reads the base layer by.
+/// is not derived from the knowledge tree; `load_resolved_graph` uses that
+/// revision only when the checkout's HEAD cannot be read.
 fn evaluate_state(store: &ContextStore, knowledge_root: Option<&Path>) -> Result<StoreState> {
     #[cfg(test)]
     EVALUATE_STATE_CALLS.with(|count| count.set(count.get() + 1));
 
     let Some(knowledge_root) = knowledge_root else {
-        let stored = store.load_state()?;
-        let semantic = if stored.semantic.revision.is_empty() {
+        let (stored, unavailable) = store
+            .load_state()
+            .map(|state| (state, false))
+            .unwrap_or_else(|error| {
+                eprintln!(
+                    "warning: context state unreadable ({error}); semantic freshness unavailable"
+                );
+                (StoreState::default(), true)
+            });
+        let semantic = if unavailable {
+            Freshness::unavailable("semantic freshness unavailable: context state unreadable")
+        } else if stored.semantic.revision.is_empty() {
             Freshness::never_built(NO_SOURCE_GRAPH_DETAIL)
         } else {
             stored.semantic
@@ -255,15 +248,10 @@ fn evaluate_state(store: &ContextStore, knowledge_root: Option<&Path>) -> Result
 /// gets a successful pack with no signal that the requested id was never
 /// included.
 ///
-/// `graph` is consulted only when the caller passes `Some` — which
-/// `retrieve_for_stage` does only when `Channel::Source` is in the query's
-/// scope. A source-node id accepted while the source channel is out of scope
-/// would pass this check and then never be ranked (`rank_source` is the only
-/// reader of `graph`, and it never runs for a channel outside `scope`): the
-/// exact silent no-op this function exists to prevent, just moved one step
-/// later.
+/// Callers pass only the corpora belonging to channels in scope. Lifecycle
+/// eligibility and packing budget are evaluated separately after validation.
 pub(crate) fn reject_unknown_require_ids(
-    catalog: &Catalog,
+    catalog: Option<&Catalog>,
     graph: Option<&ResolvedGraph>,
     require_id: &[String],
 ) -> Result<()> {
@@ -271,8 +259,8 @@ pub(crate) fn reject_unknown_require_ids(
         return Ok(());
     }
     let mut known_ids: BTreeSet<&str> = catalog
-        .chunks
-        .iter()
+        .into_iter()
+        .flat_map(|catalog| &catalog.chunks)
         .map(|chunk| chunk.id.as_str())
         .collect();
     if let Some(graph) = graph {
@@ -300,7 +288,7 @@ pub(crate) fn reject_unknown_require_ids(
 /// The result is a pure function of the bytes on disk and `query`.
 ///
 /// Returns `Err` when the catalog cannot be built or `query.required_ids` names
-/// an id the catalog does not hold. An ABSENT knowledge directory is not an
+/// an id absent from the requested scope. An ABSENT knowledge directory is not an
 /// error: retrieval runs source-only, over the resolved graph alone, and the
 /// pack says the structural layer was never built. Callers on a hot path —
 /// signal generation, the prompt hook — must degrade rather than propagate: log
@@ -319,10 +307,7 @@ pub fn retrieve_for_stage(query: &StageQuery, budget_tokens: usize) -> Result<Co
         &state.semantic.revision,
         &query.overlay,
     );
-    if let Some(detail) = graph_load.working_tree_stale {
-        state.semantic.stale = true;
-        state.semantic.detail = Some(detail);
-    }
+    graph_load.apply_freshness(&mut state);
     let graph = graph_load.graph;
 
     request::check_require_ids(query, &catalog, graph.as_ref())?;

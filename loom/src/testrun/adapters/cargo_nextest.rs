@@ -8,9 +8,12 @@ use regex::Regex;
 
 use crate::testrun::command::shell_quote;
 use crate::testrun::recognize::{
-    combined_output, command_args, has_flag, last_match, pattern, positionals,
+    cargo_could_not_compile, cargo_target_unselected, combined_output, command_args, has_flag,
+    last_match, pattern, positionals,
 };
-use crate::testrun::{RunOutput, RunSummary, SelectionNames, TestRunnerAdapter, TestTarget};
+use crate::testrun::{
+    RunOutput, RunSummary, SelectionNames, TargetScope, TestRunnerAdapter, TestTarget,
+};
 
 pub struct CargoNextest;
 
@@ -139,6 +142,18 @@ impl TestRunnerAdapter for CargoNextest {
         format!("cargo nextest run -E {filter}")
     }
 
+    /// Builds only the target holding the test.
+    fn scoped_test_command(
+        &self,
+        scope: &TargetScope,
+        _file: &str,
+        test: &str,
+        _package_dir: &Path,
+    ) -> String {
+        let filter = shell_quote(&format!("test(={test})"));
+        format!("cargo nextest run {} -E {filter}", scope.cargo_flags())
+    }
+
     fn select_command(&self, targets: &[TestTarget], _package_dir: &Path) -> Option<String> {
         let filters: Vec<String> = targets
             .iter()
@@ -154,7 +169,8 @@ impl TestRunnerAdapter for CargoNextest {
 
     /// The final `Summary` gives executed tests; nextest may omit zero-valued
     /// passed, failed or skipped counts. A compiler error is a build failure
-    /// only when no summary says tests ran.
+    /// only when no summary says tests ran; a target cargo does not know ran
+    /// nothing.
     fn parse(&self, out: &RunOutput<'_>) -> RunSummary {
         let text = combined_output(out);
         let total = last_match(&TOTAL, &text);
@@ -167,7 +183,7 @@ impl TestRunnerAdapter for CargoNextest {
                 build_failed: false,
             };
         }
-        if NO_TESTS.is_match(&text) {
+        if NO_TESTS.is_match(&text) || cargo_target_unselected(&text) {
             return RunSummary {
                 executed: Some(0),
                 ..RunSummary::default()
@@ -178,23 +194,52 @@ impl TestRunnerAdapter for CargoNextest {
             ..RunSummary::default()
         }
     }
+
+    /// Only cargo's `could not compile` is a rejection; a killed rustc or a
+    /// missing `cargo nextest` also sets `build_failed` and must not be shared.
+    fn compile_rejected(&self, out: &RunOutput<'_>) -> bool {
+        self.parse(out).build_failed && cargo_could_not_compile(&combined_output(out))
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::testrun::command::{assert_one_word, HOSTILE_NAME};
+    use crate::testrun::fixture_support::words;
     use crate::testrun::{classify, fixture_support, RunOutcome};
-
-    fn words(command: &str) -> Vec<String> {
-        command.split_whitespace().map(str::to_string).collect()
-    }
 
     fn target(name: Option<&str>) -> TestTarget {
         TestTarget {
             file: "src/lib.rs".to_string(),
             name: name.map(str::to_string),
         }
+    }
+
+    #[test]
+    fn scoped_command_names_the_target_and_keeps_the_filterset() {
+        let dir = Path::new(".");
+        let lib = ADAPTER.scoped_test_command(&TargetScope::Lib, "src/lib.rs", "a::b", dir);
+        assert_eq!(lib, "cargo nextest run --lib -E 'test(=a::b)'");
+        let scope = TargetScope::Test("it".into());
+        let command = ADAPTER.scoped_test_command(&scope, "tests/it.rs", "a::b", dir);
+        assert_eq!(command, "cargo nextest run --test it -E 'test(=a::b)'");
+        assert!(ADAPTER.recognizes(&words(&command)));
+        assert!(!ADAPTER.is_full_run(&words(&command)));
+    }
+
+    #[test]
+    fn only_a_compile_rejection_is_shared() {
+        let out = |stderr| RunOutput {
+            stdout: "",
+            stderr,
+            exit_code: Some(101),
+        };
+        let rejected = out("error[E0425]: no `x`\nerror: could not compile `fx` (lib)\n");
+        assert!(ADAPTER.compile_rejected(&rejected));
+        let missing = out("error: no such command: `nextest`\n");
+        assert!(ADAPTER.parse(&missing).build_failed);
+        assert!(!ADAPTER.compile_rejected(&missing));
     }
 
     #[test]
@@ -259,6 +304,26 @@ mod tests {
             ADAPTER.select_command(&[target(None)], Path::new(".")),
             None
         );
+    }
+
+    /// Nextest runs cargo, which refuses an unknown target with this text
+    /// before building anything.
+    #[test]
+    fn a_target_cargo_does_not_know_selected_nothing() {
+        for stderr in [
+            "error: no test target named `.x` in default-run packages\n",
+            "error: no bin target named `no_such_target` in default-run packages\n",
+            "error: no library targets found in package `pk`\n",
+        ] {
+            let out = RunOutput {
+                stdout: "",
+                stderr,
+                exit_code: Some(101),
+            };
+            let summary = ADAPTER.parse(&out);
+            assert!(!summary.build_failed, "{stderr}");
+            assert_eq!(classify(&summary, out.exit_code), RunOutcome::NotSelected);
+        }
     }
 
     #[test]
