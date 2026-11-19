@@ -6,52 +6,32 @@
 //! a symlink anywhere along the path cannot redirect a `.loom/work/` write to an
 //! arbitrary file (`MN8`).
 //!
-//! Linux preferred path uses the `openat2(2)` syscall with
-//! `RESOLVE_NO_SYMLINKS | RESOLVE_BENEATH | RESOLVE_NO_MAGICLINKS` for atomic,
-//! kernel-enforced safety. When `openat2` is unavailable (older Linux, macOS,
-//! Apple Container) the portable component-by-component openat walk takes
-//! over, refusing intermediate or terminal symlinks via `O_NOFOLLOW`.
+//! The preferred path is one kernel-enforced open of the whole relative path
+//! (`single_open`): `openat2(2)` with `RESOLVE_NO_SYMLINKS | RESOLVE_BENEATH |
+//! RESOLVE_NO_MAGICLINKS` on Linux, `openat(2)` with `O_NOFOLLOW_ANY` on macOS.
+//! When neither is available (older kernels, seccomp, Apple Container) the
+//! portable component-by-component openat walk takes over, refusing
+//! intermediate or terminal symlinks via `O_NOFOLLOW`.
 //!
 //! Universally refused: paths containing `..` components, absolute paths,
 //! symlinks at any segment of the resolved path.
 
 use anyhow::{bail, Context, Result};
-use std::ffi::CString;
+use std::ffi::{CString, OsStr};
 use std::io;
 use std::os::unix::ffi::OsStrExt;
 use std::os::unix::io::{AsRawFd, FromRawFd, OwnedFd, RawFd};
 use std::path::{Component, Path};
-#[cfg(target_os = "linux")]
-use std::sync::atomic::{AtomicU8, Ordering};
 
 mod append;
+mod single_open;
 pub(crate) use append::safe_open_append;
+#[cfg(test)]
+pub(crate) use single_open::force_disable_openat2_for_tests;
 
 /// Maximum bytes accepted in one write or append call. Append callers must
 /// enforce any total-file or retention bound separately.
 pub const MAX_LOG_BYTES: usize = 4 * 1024 * 1024;
-
-// openat2 syscall number and resolve flags (Linux, kernel 5.6+).
-#[cfg(target_os = "linux")]
-const SYS_OPENAT2: libc::c_long = 437;
-#[cfg(target_os = "linux")]
-const RESOLVE_NO_MAGICLINKS: u64 = 0x02;
-#[cfg(target_os = "linux")]
-const RESOLVE_NO_SYMLINKS: u64 = 0x04;
-#[cfg(target_os = "linux")]
-const RESOLVE_BENEATH: u64 = 0x08;
-
-#[cfg(target_os = "linux")]
-#[repr(C)]
-struct OpenHow {
-    flags: u64,
-    mode: u64,
-    resolve: u64,
-}
-
-// Cached probe of openat2 kernel support: 0 = unknown, 1 = supported, 2 = unsupported.
-#[cfg(target_os = "linux")]
-static OPENAT2_SUPPORT: AtomicU8 = AtomicU8::new(0);
 
 /// Open `work_dir` as a dirfd suitable as a base for the rest of this module.
 ///
@@ -109,56 +89,6 @@ fn validate_relpath(relpath: &Path) -> Result<Vec<Vec<u8>>> {
 
 fn path_to_cstring(bytes: &[u8]) -> Result<CString> {
     CString::new(bytes).context("safe_fs: path contains interior NUL byte")
-}
-
-/// Try `openat2` once: `Ok(Some(fd))` on success, `Ok(None)` when the kernel
-/// lacks it or seccomp blocks it (ENOSYS / EPERM, cached process-wide) or a
-/// test thread forced the portable path, `Err` for any other failure.
-#[cfg(target_os = "linux")]
-fn try_openat2(dirfd: RawFd, path: &[u8], flags: i32, mode: u32) -> Result<Option<RawFd>> {
-    #[cfg(test)]
-    if FORCE_PORTABLE.get() {
-        return Ok(None);
-    }
-    if OPENAT2_SUPPORT.load(Ordering::Relaxed) == 2 {
-        return Ok(None);
-    }
-    let c = path_to_cstring(path)?;
-    let how = OpenHow {
-        flags: flags as u64,
-        mode: mode as u64,
-        resolve: RESOLVE_NO_SYMLINKS | RESOLVE_BENEATH | RESOLVE_NO_MAGICLINKS,
-    };
-    // SAFETY: openat2 is a stable syscall; we pass a well-formed open_how.
-    let ret = unsafe {
-        libc::syscall(
-            SYS_OPENAT2,
-            dirfd,
-            c.as_ptr(),
-            &how as *const _,
-            std::mem::size_of::<OpenHow>(),
-        )
-    };
-    if ret >= 0 {
-        if OPENAT2_SUPPORT.load(Ordering::Relaxed) == 0 {
-            OPENAT2_SUPPORT.store(1, Ordering::Relaxed);
-        }
-        return Ok(Some(ret as RawFd));
-    }
-    let err = io::Error::last_os_error();
-    let raw = err.raw_os_error().unwrap_or(0);
-    if raw == libc::ENOSYS || raw == libc::EPERM {
-        // Kernel does not support openat2 (older than 5.6) or seccomp blocks
-        // it; fall through to the portable path.
-        OPENAT2_SUPPORT.store(2, Ordering::Relaxed);
-        return Ok(None);
-    }
-    Err(err).context("safe_fs: openat2 failed")
-}
-
-#[cfg(not(target_os = "linux"))]
-fn try_openat2(_dirfd: RawFd, _path: &[u8], _flags: i32, _mode: u32) -> Result<Option<RawFd>> {
-    Ok(None)
 }
 
 /// Bounded retries for a racing `O_CREAT` open. Small: the window is a single
@@ -243,35 +173,25 @@ fn portable_open_walk(
 }
 
 /// Open a file under `dirfd` with the requested flags/mode, refusing every
-/// symlink along the path. Tries `openat2` first; falls back to the portable
-/// openat-walk if unsupported.
+/// symlink along the path. Tries the single-syscall open first (`openat2` on
+/// Linux, `O_NOFOLLOW_ANY` on macOS); falls back to the portable openat-walk
+/// if unsupported.
 pub(crate) fn open_safely(dirfd: RawFd, relpath: &Path, flags: i32, mode: u32) -> Result<OwnedFd> {
     let components = validate_relpath(relpath)?;
-
-    // Linux fast path: single syscall, kernel-enforced.
-    let joined: Vec<u8> = {
-        let mut buf = Vec::new();
-        for (i, c) in components.iter().enumerate() {
-            if i > 0 {
-                buf.push(b'/');
-            }
-            buf.extend_from_slice(c);
-        }
-        buf
-    };
-    if let Some(fd) = try_openat2(
-        dirfd,
-        &joined,
-        flags | libc::O_NOFOLLOW | libc::O_CLOEXEC,
-        mode,
-    )? {
-        // SAFETY: openat2 returned a valid fd we now own.
+    let fast_flags = flags | libc::O_NOFOLLOW | libc::O_CLOEXEC;
+    if let Some(fd) = single_open::try_single_open(dirfd, &joined(&components), fast_flags, mode)? {
+        // SAFETY: the single-syscall open returned a valid fd we now own.
         return Ok(unsafe { OwnedFd::from_raw_fd(fd) });
     }
 
     let fd = portable_open_walk(dirfd, &components, flags, mode)?;
     // SAFETY: portable walk returned a valid fd we now own.
     Ok(unsafe { OwnedFd::from_raw_fd(fd) })
+}
+
+/// Validated components joined by `/`.
+fn joined(components: &[Vec<u8>]) -> Vec<u8> {
+    components.join(&b'/')
 }
 
 /// Open a directory (intermediate) under `dirfd`, refusing every symlink.
@@ -283,15 +203,20 @@ fn open_dir_safely(dirfd: RawFd, relpath: &Path) -> Result<OwnedFd> {
 /// Create every component of `relpath` as a directory under `dirfd`,
 /// refusing to traverse any symlink. Idempotent: existing directories are
 /// accepted, existing non-directories are rejected.
+///
+/// The walk starts at the deepest prefix that already exists, opened through
+/// `open_safely`, so an existing prefix's own ancestors are never opened one
+/// by one: under a Seatbelt profile that hides them, creating inside a
+/// readable grant still works.
 pub fn safe_create_dir_all_in_workdir(
     dirfd: RawFd,
     relpath: &Path,
     mode: libc::mode_t,
 ) -> Result<()> {
     let components = validate_relpath(relpath)?;
-    let mut cur: RawFd = dirfd;
-    let mut owned: Option<OwnedFd> = None;
-    for comp in &components {
+    let (depth, mut owned) = deepest_existing_dir(dirfd, &components)?;
+    let mut cur: RawFd = owned.as_ref().map_or(dirfd, AsRawFd::as_raw_fd);
+    for comp in &components[depth..] {
         let c = path_to_cstring(comp)?;
         // SAFETY: cur is a valid dirfd; c is NUL-terminated.
         let r = unsafe { libc::mkdirat(cur, c.as_ptr(), mode) };
@@ -325,6 +250,22 @@ pub fn safe_create_dir_all_in_workdir(
     }
     drop(owned);
     Ok(())
+}
+
+/// The depth of the longest prefix of `components` that opens as a directory,
+/// with its descriptor; `(0, None)` when even the first component is missing.
+/// Only `ENOENT` moves to a shorter prefix: a symlink, a non-directory or a
+/// denied open is an error, as the walk would report it.
+fn deepest_existing_dir(dirfd: RawFd, components: &[Vec<u8>]) -> Result<(usize, Option<OwnedFd>)> {
+    for depth in (1..=components.len()).rev() {
+        let prefix = joined(&components[..depth]);
+        match open_dir_safely(dirfd, Path::new(OsStr::from_bytes(&prefix))) {
+            Ok(fd) => return Ok((depth, Some(fd))),
+            Err(error) if super::safe_read::is_not_found(&error) => {}
+            Err(error) => return Err(error),
+        }
+    }
+    Ok((0, None))
 }
 
 /// Write `content` to `relpath` under `dirfd` with an exclusive flock,
@@ -605,14 +546,6 @@ pub fn safe_create_new(work_dir: &Path, relpath: &Path, content: &[u8]) -> Resul
 pub fn safe_create_dir_all(work_dir: &Path, relpath: &Path, mode: libc::mode_t) -> Result<()> {
     let dirfd = safe_open_dirfd(work_dir)?;
     safe_create_dir_all_in_workdir(dirfd.as_raw_fd(), relpath, mode)
-}
-
-#[cfg(test)]
-thread_local!(static FORCE_PORTABLE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) });
-/// Forces the portable path on the calling test thread only, so it never leaks into other tests.
-#[cfg(test)]
-pub(crate) fn force_disable_openat2_for_tests() {
-    FORCE_PORTABLE.set(true);
 }
 
 #[cfg(test)]

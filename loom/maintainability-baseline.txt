@@ -8,7 +8,7 @@
 # refactor it back. New violations must be refactored or explicitly recorded.
 
 file src/commands/graph/tests.rs 425
-file src/fs/safe_fs.rs 624
+file src/fs/safe_fs.rs 557
 file src/fs/work_dir.rs 429
 file src/fs/work_dir/tests.rs 869
 file src/models/stage/methods.rs 492

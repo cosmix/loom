@@ -34,7 +34,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{anyhow, Context};
 
-use super::claims::{current_session, delete_claim, draft_rel, list_claims};
+use super::claims::{below_base, current_session, delete_claim, draft_rel, list_claims};
 use super::evaluate::{bundle_hashes, evaluate, members_hash, Evaluation};
 use super::format::{
     parse_draft, render, Block, FormatError, FrontMatter, SummaryBody, SummaryFile, SummaryKind,
@@ -111,7 +111,9 @@ pub fn seal(
         return Err(rejected(format!("no such summary in this project: {id}")));
     }
     let draft = draft_rel(id);
-    let text = read_to_string_bounded(&paths.dir, &draft, MAX_DRAFT_BYTES)
+    let text = paths
+        .base()
+        .and_then(|base| read_to_string_bounded(base, &below_base(paths, &draft)?, MAX_DRAFT_BYTES))
         .with_context(|| format!("cannot read the draft of {id}"))?;
     let claimed = check_claim(paths, id, force)?;
     let body = parse_draft(id, &text).map_err(SealError::Rejected)?;
@@ -269,8 +271,8 @@ fn document_front(
 
 /// Delete the draft; an absent draft is fine.
 fn remove_draft(paths: &RuntimePaths, draft_rel: &Path) -> anyhow::Result<()> {
-    let dirfd = safe_open_dirfd(&paths.dir)?;
-    match safe_remove_in_workdir(dirfd.as_raw_fd(), draft_rel) {
+    let dirfd = safe_open_dirfd(paths.base()?)?;
+    match safe_remove_in_workdir(dirfd.as_raw_fd(), &below_base(paths, draft_rel)?) {
         Err(error) if !is_not_found(&error) => Err(error),
         _ => Ok(()),
     }

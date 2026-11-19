@@ -33,7 +33,7 @@ impl Drop for StoreLock {
 /// directory is missing. An existing real directory is used as it is, so a session whose
 /// planning root is read-only never tries to create anything.
 pub(crate) fn ensure_runtime_dir(paths: &RuntimePaths) -> Result<()> {
-    if safe_open_dirfd(&paths.dir).is_ok() {
+    if runtime_dir_present(paths) {
         return Ok(());
     }
     create_runtime_dir(paths).with_context(|| {
@@ -42,6 +42,25 @@ pub(crate) fn ensure_runtime_dir(paths: &RuntimePaths) -> Result<()> {
             paths.dir.display()
         )
     })
+}
+
+/// Whether the runtime directory or one of its directory grants opens from the loom user
+/// directory, refusing a symlink below it. A macOS planning session's Seatbelt profile hides the
+/// runtime directory itself and carves `drafts/` and `claims/` back in (the server creates both
+/// before any launch), so there a grant opening is what shows the directory exists.
+fn runtime_dir_present(paths: &RuntimePaths) -> bool {
+    let Ok(anchor) = paths.base().and_then(safe_open_dirfd) else {
+        return false;
+    };
+    let flags = libc::O_RDONLY | libc::O_DIRECTORY;
+    [&paths.dir, &paths.drafts, &paths.claims]
+        .into_iter()
+        .any(|dir| {
+            paths
+                .below_base(dir)
+                .and_then(|rel| open_safely(anchor.as_raw_fd(), rel, flags, 0))
+                .is_ok()
+        })
 }
 
 /// True when an open failed because the caller may not write there: EROFS under a read-only bind,
@@ -75,19 +94,11 @@ fn open_lock(dirfd: RawFd, name: &Path) -> Result<OwnedFd> {
 }
 
 /// Open (creating it, mode 0600) and exclusively lock the store lock file, refusing a
-/// symlink at the lock file or any directory component below the runtime directory.
+/// symlink at the lock file or any directory component below the loom user directory.
 fn acquire(paths: &RuntimePaths) -> Result<StoreLock> {
     ensure_runtime_dir(paths)?;
-    let name: &Path = paths
-        .summaries_lock
-        .strip_prefix(&paths.dir)
-        .with_context(|| {
-            format!(
-                "store lock {} is outside the runtime directory",
-                paths.summaries_lock.display()
-            )
-        })?;
-    let dirfd = safe_open_dirfd(&paths.dir)?;
+    let name = paths.below_base(&paths.summaries_lock)?;
+    let dirfd = safe_open_dirfd(paths.base()?)?;
     let fd = open_lock(dirfd.as_raw_fd(), name).with_context(|| {
         format!(
             "cannot open the store lock {}",

@@ -10,7 +10,7 @@ mod tests;
 
 use std::fmt;
 use std::io;
-use std::os::fd::AsRawFd;
+use std::os::fd::{AsRawFd, OwnedFd};
 use std::path::{Path, PathBuf};
 
 use anyhow::{bail, Context, Result};
@@ -92,6 +92,17 @@ fn sanitize_session(raw: &str) -> Option<String> {
     (!clean.is_empty()).then_some(clean)
 }
 
+/// `runtime_rel`, a path relative to the runtime directory, as a path relative to the loom user
+/// directory, from which every store open is anchored ([`RuntimePaths::below_base`] says why).
+pub(crate) fn below_base(paths: &RuntimePaths, runtime_rel: &Path) -> Result<PathBuf> {
+    Ok(paths.below_base(&paths.dir)?.join(runtime_rel))
+}
+
+/// The loom user directory opened as the anchor of the store's opens.
+fn open_base(paths: &RuntimePaths) -> Result<OwnedFd> {
+    safe_open_dirfd(paths.base()?)
+}
+
 /// Runtime-relative path of the claim file of `id`.
 fn claim_rel(id: &str) -> PathBuf {
     Path::new(CLAIMS_DIR).join(format!("{}.json", id.replace('/', "__")))
@@ -139,11 +150,13 @@ pub(crate) fn create_claim_as(
 ) -> Result<Result<Claim, Claim>> {
     store::validate_id(id)?;
     ensure_runtime_dir(paths)?;
-    let dirfd = safe_open_dirfd(&paths.dir)?;
-    safe_create_dir_all_in_workdir(dirfd.as_raw_fd(), Path::new(CLAIMS_DIR), 0o700)?;
+    let dirfd = open_base(paths)?;
+    let claims = below_base(paths, Path::new(CLAIMS_DIR))?;
+    safe_create_dir_all_in_workdir(dirfd.as_raw_fd(), &claims, 0o700)?;
     let draft = draft_rel(id);
-    let parent = draft.parent().context("draft path has no parent")?;
-    safe_create_dir_all_in_workdir(dirfd.as_raw_fd(), parent, 0o700)?;
+    let parent = below_base(paths, draft.parent().context("draft path has no parent")?)?;
+    safe_create_dir_all_in_workdir(dirfd.as_raw_fd(), &parent, 0o700)?;
+    let claim_file = below_base(paths, &claim_rel(id))?;
     let claim = Claim {
         summary: id.to_string(),
         session,
@@ -152,7 +165,7 @@ pub(crate) fn create_claim_as(
     };
     let json = serde_json::to_vec(&claim).context("cannot encode the claim")?;
     for _ in 0..CLAIM_ATTEMPTS {
-        match safe_create_new_in_workdir(dirfd.as_raw_fd(), &claim_rel(id), &json) {
+        match safe_create_new_in_workdir(dirfd.as_raw_fd(), &claim_file, &json) {
             Ok(()) => return Ok(Ok(claim)),
             Err(error) if already_exists(&error) => {
                 // `None` means the holder released after our create failed: create again.
@@ -177,7 +190,14 @@ fn already_exists(error: &anyhow::Error) -> bool {
 /// that cannot be read or parsed, or that names another summary, is a claim on `id` with no
 /// session.
 fn read_claim(paths: &RuntimePaths, id: &str) -> Option<Claim> {
-    let bytes = match read_bounded(&paths.dir, &claim_rel(id), MAX_CLAIM_BYTES) {
+    let read = || {
+        read_bounded(
+            paths.base()?,
+            &below_base(paths, &claim_rel(id))?,
+            MAX_CLAIM_BYTES,
+        )
+    };
+    let bytes = match read() {
         Ok(bytes) => Some(bytes),
         Err(error) if is_not_found(&error) => return None,
         Err(_) => None,
@@ -202,12 +222,13 @@ fn read_claim(paths: &RuntimePaths, id: &str) -> Option<Claim> {
 /// Every claim, sorted by summary id. An absent runtime or claims directory has none; a
 /// symlinked `claims/` is refused.
 pub fn list_claims(paths: &RuntimePaths) -> Result<Vec<Claim>> {
-    let dirfd = match safe_open_dirfd(&paths.dir) {
+    let dirfd = match open_base(paths) {
         Ok(fd) => fd,
         Err(error) if is_not_found(&error) => return Ok(Vec::new()),
         Err(error) => return Err(error),
     };
-    let entries = match list_dir_no_follow(&dirfd, Path::new(CLAIMS_DIR)) {
+    let claims = below_base(paths, Path::new(CLAIMS_DIR))?;
+    let entries = match list_dir_no_follow(&dirfd, &claims) {
         Ok(entries) => entries,
         Err(error) if is_not_found(&error) => return Ok(Vec::new()),
         Err(error) => return Err(error.context("cannot list the claims directory")),
@@ -223,12 +244,15 @@ pub fn list_claims(paths: &RuntimePaths) -> Result<Vec<Claim>> {
 /// Delete the claim of `id`; an absent claim is not an error.
 pub fn delete_claim(paths: &RuntimePaths, id: &str) -> Result<()> {
     store::validate_id(id)?;
-    let dirfd = match safe_open_dirfd(&paths.dir) {
-        Ok(fd) => fd,
-        Err(error) if is_not_found(&error) => return Ok(()),
-        Err(error) => return Err(error),
+    let remove = || {
+        let dirfd = open_base(paths)?;
+        safe_remove_in_workdir(dirfd.as_raw_fd(), &below_base(paths, &claim_rel(id))?)
     };
-    safe_remove_in_workdir(dirfd.as_raw_fd(), &claim_rel(id))
+    // A missing loom user, runtime or claims directory holds no claim.
+    match remove() {
+        Err(error) if is_not_found(&error) => Ok(()),
+        removed => removed,
+    }
 }
 
 /// Give up the claims on `ids` for `$LOOM_PLAN_SESSION`; returns the ids released.

@@ -62,6 +62,32 @@ impl RuntimePaths {
             dir,
         }
     }
+
+    /// The loom user directory: the anchor of every no-follow open below it. Its ancestors are
+    /// trusted (`/tmp` may itself be a symlink); a symlink anywhere below it is refused.
+    pub(crate) fn base(&self) -> Result<&Path> {
+        self.planning_root
+            .parent()
+            .context("the planning root has no parent directory")
+    }
+
+    /// `path`, a runtime path, relative to [`Self::base`].
+    ///
+    /// Runtime files are addressed from the loom user directory, never from a descriptor of the
+    /// runtime directory itself: on macOS a planning session's Seatbelt profile denies reading
+    /// the planning root and allows only the session grants (`drafts/`, `claims/`,
+    /// `summaries.lock`, `attachments/`), so the runtime directory cannot be opened there while
+    /// a single no-follow open of a grant path can (`safe_fs::open_safely`).
+    pub(crate) fn below_base<'a>(&self, path: &'a Path) -> Result<&'a Path> {
+        let base = self.base()?;
+        path.strip_prefix(base).with_context(|| {
+            format!(
+                "{} is outside the loom user directory {}",
+                path.display(),
+                base.display()
+            )
+        })
+    }
 }
 
 /// The stable key of a project: `<sanitised dir name>-<12 hex of sha256(canonical root)>`.
@@ -232,16 +258,9 @@ pub fn runtime_paths(root: &Path) -> Result<RuntimePaths> {
 /// Create the runtime directory mode 0700, and the loom user directory above it when that is
 /// missing, refusing a symlink or a non-directory anywhere below the loom user directory.
 pub fn create_runtime_dir(paths: &RuntimePaths) -> Result<()> {
-    let base = paths
-        .planning_root
-        .parent()
-        .context("the planning root has no parent directory")?;
+    let base = paths.base()?;
     std::fs::create_dir_all(base).with_context(|| format!("cannot create {}", base.display()))?;
-    let rel = paths
-        .dir
-        .strip_prefix(base)
-        .context("the runtime directory is outside the loom user directory")?;
-    safe_create_dir_all(base, rel, 0o700)?;
+    safe_create_dir_all(base, paths.below_base(&paths.dir)?, 0o700)?;
     let dir = File::from(safe_open_dirfd(&paths.dir)?);
     dir.set_permissions(Permissions::from_mode(0o700))
         .with_context(|| format!("cannot restrict {} to mode 0700", paths.dir.display()))
@@ -254,18 +273,10 @@ pub(crate) fn open_runtime_dir(runtime: &RuntimePaths, create: bool) -> Result<O
     if create {
         create_runtime_dir(runtime)?;
     }
-    let base = runtime
-        .planning_root
-        .parent()
-        .context("the planning root has no parent directory")?;
-    let relative = runtime
-        .dir
-        .strip_prefix(base)
-        .context("the runtime directory is outside the loom user directory")?;
-    let anchor = safe_open_dirfd(base)?;
+    let anchor = safe_open_dirfd(runtime.base()?)?;
     open_safely(
         anchor.as_raw_fd(),
-        relative,
+        runtime.below_base(&runtime.dir)?,
         libc::O_RDONLY | libc::O_DIRECTORY,
         0,
     )
