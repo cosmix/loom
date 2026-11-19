@@ -83,16 +83,16 @@ fn cancel_groups(control: &Mutex<RunControl>) -> Result<()> {
         .groups
         .retain(|&group| match killpg(group, Signal::SIGKILL) {
             Ok(()) => true,
-            Err(Errno::ESRCH) => false,
+            // macOS answers EPERM for a group of zombies only; a recycled id is not ours either.
+            Err(Errno::ESRCH | Errno::EPERM) => false,
             Err(error) => {
                 failure.get_or_insert(error);
                 true
             }
         });
-    if let Some(error) = failure {
-        return Err(anyhow!("failed to stop codex process group: {error}"));
-    }
-    Ok(())
+    failure.map_or(Ok(()), |error| {
+        Err(anyhow!("failed to stop codex process group: {error}"))
+    })
 }
 
 impl CodexRun {
