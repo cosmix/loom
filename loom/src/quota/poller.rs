@@ -31,6 +31,9 @@ const MAX_BACKOFF: Duration = Duration::from_secs(900);
 const RATE_LIMIT_MIN_BACKOFF: Duration = Duration::from_secs(300);
 const CODEX_DEADLINE: Duration = Duration::from_secs(15);
 const SLEEP_SLICE: Duration = Duration::from_millis(250);
+/// Set by the test environment only: the poller returns at once. Not `LOOM_`-prefixed:
+/// test helpers strip every `LOOM_*` variable from the `loom` processes they spawn.
+const TEST_DISABLE_ENV: &str = "TEST_LOOM_NO_QUOTA_POLL";
 
 /// Spawn the quota-polling thread.
 ///
@@ -68,6 +71,12 @@ impl ProviderState {
 }
 
 fn run_quota_poller(work_root: &Path, shutdown: &AtomicBool) {
+    // A test must not read the login keychain, call the usage endpoint, run `codex`,
+    // or write `~/.loom/quota`. The workspace `.cargo/config.toml` sets this for every
+    // Cargo-run test binary and the `loom` processes those tests spawn.
+    if std::env::var_os(TEST_DISABLE_ENV).is_some() {
+        return;
+    }
     let mut claude_state = ProviderState::new();
     let mut codex_state = ProviderState::new();
 
@@ -76,7 +85,8 @@ fn run_quota_poller(work_root: &Path, shutdown: &AtomicBool) {
         if now >= claude_state.next_due {
             poll_claude(work_root, &mut claude_state);
         }
-        if now >= codex_state.next_due {
+        // A Claude poll can outlast a stop: spawn no `codex` child after it.
+        if now >= codex_state.next_due && !shutdown.load(Ordering::SeqCst) {
             poll_codex(work_root, &mut codex_state, shutdown);
         }
         thread::sleep(SLEEP_SLICE);

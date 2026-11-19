@@ -20,7 +20,10 @@ filter out failures. Documentation tests are a separate invocation:
 The root `.cargo/config.toml` limits concurrent Cargo build jobs to four and
 supplies `RUST_TEST_THREADS=4` for ordinary Cargo
 commands. An existing environment value overrides that default; libtest's
-explicit `--test-threads` option overrides its environment. The launcher defaults
+explicit `--test-threads` option overrides its environment. It also sets
+`TEST_LOOM_NO_QUOTA_POLL`, which stops the quota poller before its first poll, so
+no test (or `cargo run`) reads the keychain, calls the usage endpoint, runs `codex`,
+or writes `~/.loom/quota`. The launcher defaults
 to four workers for all targets and one for doctests, honors `RUST_TEST_THREADS`,
 and accepts `--test-threads N` as an explicit override. Doctest mode uses
 `--doc --workspace --all-features`. The libtest limit does not bound runtime worker pools or threads created by

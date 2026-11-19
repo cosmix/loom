@@ -4,3 +4,7 @@ jobs = 4
 [env]
 # Libtest workers, not Cargo build jobs; explicit environment/CLI values win.
 RUST_TEST_THREADS = { value = "4", force = false }
+# The quota poller returns at once: no test reads the login keychain, calls the
+# usage endpoint, runs `codex`, or writes `~/.loom/quota`. `cargo run` gets it too.
+# Not `LOOM_`-prefixed: test helpers strip `LOOM_*` from the processes they spawn.
+TEST_LOOM_NO_QUOTA_POLL = "1"

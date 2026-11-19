@@ -12,9 +12,10 @@ mod tests_shutdown;
 
 pub use routes::routes;
 
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Weak};
-use std::thread;
+use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
 use self::backend::BackendSpawner;
@@ -68,12 +69,28 @@ pub fn install(ctx: &Arc<PlanContext>) {
         follow_engine(concept, &rebuilds);
     }
     spawn_tick(ctx, &rebuilds);
+    let stop = start_quota_poller(ctx, spawn_quota_poller);
+    register_shutdown(ctx, &rebuilds, stop);
+}
+
+/// Start the quota poller detached from the server's stop, and return its stop flag.
+///
+/// Stop holds the listener until owned work has settled, so a stopped server's state is
+/// final when its address frees. The poller writes only the quota caches (the project's
+/// `quota/` under the runtime dir and the machine-wide `~/.loom/quota`), which the daemon's
+/// own poller writes concurrently and every reader takes as a timestamped snapshot. A poll
+/// in flight cannot be interrupted (keychain subprocess, account file lock, HTTPS call up
+/// to 10 s), so joining it would make stop report "still stopping". It is told to stop
+/// and left to finish its current poll. Revisit if the poller ever writes server state.
+fn start_quota_poller(
+    ctx: &Arc<PlanContext>,
+    spawn: impl FnOnce(PathBuf, Arc<AtomicBool>) -> JoinHandle<()>,
+) -> Arc<AtomicBool> {
     let stop = Arc::new(AtomicBool::new(false));
-    let poller = spawn_quota_poller(ctx.runtime().dir.clone(), Arc::clone(&stop));
-    ctx.own_worker("summary quota poller", poller, Some(Arc::clone(&stop)));
+    drop(spawn(ctx.runtime().dir.clone(), Arc::clone(&stop)));
     ctx.extensions()
         .insert(Arc::new(PollerStop(Arc::clone(&stop))));
-    register_shutdown(ctx, &rebuilds, stop);
+    stop
 }
 
 /// Plan 7's recovery ends the sessions of the last server before this callback runs (at once

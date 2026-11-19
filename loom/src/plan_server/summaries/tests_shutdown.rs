@@ -77,3 +77,37 @@ fn the_drain_waits_on_the_jobs_and_the_abort_ends_the_wait() {
         "the abort forces at once"
     );
 }
+
+/// A quota poll in flight cannot be interrupted, so the server's stop must not wait on it.
+#[test]
+fn a_quota_poll_in_flight_does_not_hold_up_stop() {
+    use crate::plan_server::lock::Ownership;
+    use crate::plan_server::worker_owner::Workers;
+    use std::sync::mpsc;
+
+    if crate::plan_server::tests::support::skip("a_quota_poll_in_flight_does_not_hold_up_stop") {
+        return;
+    }
+    let root = project();
+    let ctx = context(root.path());
+    let (release, polling) = mpsc::channel::<()>();
+    let stop = start_quota_poller(&ctx, move |_, _| {
+        thread::spawn(move || {
+            let _ = polling.recv_timeout(Duration::from_secs(30));
+        })
+    });
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let workers = Workers::launch(
+        listener,
+        Arc::new(Ownership::default()),
+        ctx,
+        &AtomicBool::new(false),
+        &AtomicBool::new(true),
+        |_, _| Ok(()),
+    )
+    .unwrap();
+    let stopped = workers.stop();
+    drop(release);
+    stopped.expect("stop returns while the poll is still in flight");
+    assert!(stop.load(Ordering::SeqCst), "the poller was told to stop");
+}
