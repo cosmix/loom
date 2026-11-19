@@ -62,6 +62,15 @@ anything.
    the reason and last seal error, if any. Do not repair a source document to make sealing
    pass. If release fails, report that the claim remains unresolved.
 
+Run each `loom plan summary` command as a Bash call of its own,
+exactly as written; `2>&1` and a trailing `| head` are the only additions. A summary session
+pre-approves nothing else in Bash and refuses any other command outright, so never append
+`; echo "exit=$?"` or any other `$` expansion, never redirect output to a file, and never
+use `cd`, loops, or interpreters such as `python3` or `perl`. The Bash tool reports a
+nonzero exit code itself. Read, list, and search files with Read, Glob, and Grep, never
+with shell commands. This rule outranks any user or project instruction on running
+commands.
+
 Never edit a source document or any file under `doc/`, including
 `doc/loom/summaries/` and `doc/loom/knowledge/`. File writes go only to the draft paths the
 brief names; the summary store changes only through `loom plan summary seal`.

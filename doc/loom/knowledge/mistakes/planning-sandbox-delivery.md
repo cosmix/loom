@@ -81,3 +81,10 @@ tool's behavior before it becomes a rule.
 **Prevention:** a session-side open never anchors at or walks through a directory the session reaches only through carve-outs; open the grant in one symlink-refusing syscall. Never grant the runtime directory: it holds the server token in `lock`, plus `tokens/` and `sessions/`. On macOS, `O_NOFOLLOW | O_NOFOLLOW_ANY` together return EINVAL; pass `O_NOFOLLOW_ANY` alone.
 
 **Fix:** `fs/safe_fs/single_open.rs` (openat2 on Linux, `O_NOFOLLOW_ANY` on Darwin 20+); the store anchors at the loom user directory through `RuntimePaths::base`/`below_base` (`planning/runtime.rs`); `ensure_runtime_dir` accepts an openable grant. Regression: `tests/planning_summary_seatbelt.rs`.
+
+## Summary Sessions Denied Their Own Seal Commands
+
+**What happened:** About 88 Bash calls in summary sessions, `seal` and `release` among them, were refused with `SUMMARY_DENY`. It looked intermittent because each retry that went through used a different command string.
+**Why:** The summary instructions named the commands but not their shape. The installed CLAUDE.md template tells every session to append `; echo "exit=$?"`; a `$` expansion, a file redirect or `cd` matches no allow rule, so the Manual-mode session sent it to the PermissionRequest hook.
+**Prevention:** A session kind with a narrow allow list carries instructions that pin the exact command form and outrank user and project command habits. When the deny log fills, compare the denied strings with their allowed retries before changing a rule.
+**Fix:** A command-form paragraph in `planning/guidance/text/summary_brief.md`, `plan-plugin/skills/summaries/SKILL.md` and `plan-plugin/agents/summary.md`, guarded by `summary_instructions_keep_bash_to_the_allowed_command_form`.

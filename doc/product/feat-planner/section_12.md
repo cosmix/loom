@@ -465,7 +465,8 @@ every other session denies them (`PEER_TOOLS`, `base_denies` in `sandbox/permiss
 
 Summary sessions run in Manual mode so that anything outside their rules reaches the
 `PermissionRequest` hook, which denies it and logs the request. A logged request means the
-rules here are wrong, and the log is how that gets found. Authoring and pressure sessions run
+rules here or the session's command instructions are wrong, and the log is how that gets found:
+compare each denied command with the retry that went through before changing a rule. Authoring and pressure sessions run
 in auto mode: the classifier decides whatever no rule lists, and only an ask rule reaches the
 holder. A block arrives through the `PermissionDenied` hook, which the server shows as a notice
 and answers with nothing, so no retry is requested (section 07).

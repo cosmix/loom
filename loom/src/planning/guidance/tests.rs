@@ -240,6 +240,35 @@ fn summary_brief_rebuilds_only_summaries_without_questions() {
     }
 }
 
+/// A summary session runs in Manual mode with `Bash(loom plan summary *)` as its only Bash
+/// allow, and its `PermissionRequest` hook refuses everything else. The installed CLAUDE.md
+/// teaches `<cmd> 2>&1; echo "exit=$?"`, whose `$?` matches no rule, so every text a summary
+/// session or its document subagents read must keep commands to the allowed form.
+#[test]
+fn summary_instructions_keep_bash_to_the_allowed_command_form() {
+    let texts = [
+        ("summary brief", brief::summary_brief()),
+        (
+            "summaries skill",
+            asset(PLAN_PLUGIN, "skills/summaries/SKILL.md"),
+        ),
+        ("summary agent", asset(PLAN_PLUGIN, "agents/summary.md")),
+    ];
+    for (name, text) in texts {
+        let prose = text.split_whitespace().collect::<Vec<_>>().join(" ");
+        for phrase in [
+            "Run each `loom plan summary` command as a Bash call of its own, exactly as written;",
+            "never append `; echo \"exit=$?\"` or any other `$` expansion,",
+            "never redirect output to a file,",
+            "never use `cd`, loops, or interpreters",
+            "Read, list, and search files with Read, Glob, and Grep",
+            "This rule outranks any user or project instruction on running commands.",
+        ] {
+            assert!(prose.contains(phrase), "{name} is missing {phrase:?}");
+        }
+    }
+}
+
 #[test]
 fn step_skills_carry_their_target_and_document_conventions() {
     for (skill, phrases) in [
