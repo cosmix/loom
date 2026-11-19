@@ -86,9 +86,22 @@ fn ok(_: &ApiRequest<'_>) -> ApiResponse {
     ApiResponse::json(200, &json!({ "ok": true }))
 }
 
+/// Where a client dials a server bound to `addr`: loopback for a wildcard bind.
+///
+/// `0.0.0.0` is a bind address. As a destination it reaches loopback only by an OS
+/// convention, and a host packet filter treats the flow as non-local: it can hold the
+/// request bytes past the server's head timeout, which answers 408.
+pub(crate) fn dial(addr: SocketAddr) -> SocketAddr {
+    if addr.ip().is_unspecified() {
+        SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), addr.port())
+    } else {
+        addr
+    }
+}
+
 /// Send `raw` and read the whole response (the server always closes after answering).
 pub(crate) fn send(addr: SocketAddr, raw: &[u8]) -> String {
-    let mut stream = TcpStream::connect(addr).expect("connect to the planning server");
+    let mut stream = TcpStream::connect(dial(addr)).expect("connect to the planning server");
     stream.set_read_timeout(Some(WAIT)).expect("read timeout");
     stream.write_all(raw).expect("send the request");
     let mut response = Vec::new();
@@ -215,7 +228,7 @@ pub(crate) fn connect_ws_at(
     cookie: &str,
     origin: Option<&str>,
 ) -> Result<Socket, u16> {
-    let stream = TcpStream::connect(addr).expect("connect");
+    let stream = TcpStream::connect(dial(addr)).expect("connect");
     stream.set_read_timeout(Some(WAIT)).expect("read timeout");
     let mut request = format!("ws://127.0.0.1:{}/ws", addr.port())
         .into_client_request()
