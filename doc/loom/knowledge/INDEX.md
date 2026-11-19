@@ -166,7 +166,7 @@
 | [phantom-merges](mistakes/phantom-merges.md) | Merges | 347 |
 | [pinned-literals-ledgers-and-wiring](mistakes/pinned-literals-ledgers-and-wiring.md) | Pins | 332 |
 | [plan-authoring](mistakes/plan-authoring.md) |  | 268 |
-| [plan-server-delivery](mistakes/plan-server-delivery.md) | Slips | 369 |
+| [plan-server-delivery](mistakes/plan-server-delivery.md) | Slips | 376 |
 | [planner-design-brainstorm](mistakes/planner-design-brainstorm.md) | Stubs | 134 |
 | [planner-follow-ups-delivery](mistakes/planner-follow-ups-delivery.md) | Slips | 196 |
 | [planner-polish](mistakes/planner-polish.md) | Polish | 127 |
@@ -174,7 +174,7 @@
 | [planner-review-fixes](mistakes/planner-review-fixes.md) |  | 139 |
 | [planner-ui-repair](mistakes/planner-ui-repair.md) | Repair | 215 |
 | [planner-visual-feedback-shortfall](mistakes/planner-visual-feedback-shortfall.md) | Visual | 24 |
-| [planning-sandbox-delivery](mistakes/planning-sandbox-delivery.md) |  | 83 |
+| [planning-sandbox-delivery](mistakes/planning-sandbox-delivery.md) |  | 90 |
 | [pre-commit-hardening](mistakes/pre-commit-hardening.md) |  | 93 |
 | [refactor-stragglers](mistakes/refactor-stragglers.md) |  | 335 |
 | [review-continuation-verification](mistakes/review-continuation-verification.md) | Repair | 331 |

@@ -358,3 +358,21 @@ fn an_unsubmitted_opening_requeues_once_then_fails_with_its_reason() {
         vec![(a[0].clone(), reason.to_owned())]
     );
 }
+
+#[test]
+fn a_pressed_summary_whose_document_vanished_mid_session_is_not_restarted() {
+    let (mut s, stub, now) = setup();
+    let a = ids(&["a"]);
+    s.set_known(a.iter().cloned().collect());
+    s.press(&a, now, &stub);
+    assert_eq!(stub.starts(), vec![a.clone()]);
+    s.set_known(BTreeSet::new());
+    s.session_ended("s1", now, &stub);
+    assert_eq!(
+        stub.starts().len(),
+        1,
+        "no new session for a removed summary"
+    );
+    assert!(s.panel_state().queue.is_empty());
+    assert!(s.panel_state().failed.is_empty());
+}

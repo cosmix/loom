@@ -69,7 +69,8 @@ impl Scheduler {
             Err(error) => {
                 self.start_error = Some(format!("{error:#}"));
                 let running = self.running.take()?;
-                self.requeue(running.ids, &running.vias);
+                let ids = self.drop_unlisted(running.ids);
+                self.requeue(ids, &running.vias);
                 None
             }
         }
@@ -208,6 +209,7 @@ impl Scheduler {
             .filter(|id| !running.sealed.contains(*id) && !self.failed.contains_key(*id))
             .cloned()
             .collect();
+        let unsealed = self.drop_unlisted(unsealed);
         let reason = match end {
             SessionEnd::Closed | SessionEnd::JobClosed => StopReason::Ended,
             SessionEnd::OpeningUnsubmitted(why) | SessionEnd::Failed(why) => {
@@ -230,6 +232,22 @@ impl Scheduler {
             SessionEnd::Failed(why) => self.fail(unsealed, why),
         }
         self.try_start(now, spawner);
+    }
+
+    /// Keep the ids the latest evaluation still lists (all of them before the first one). A
+    /// document that stopped being a summary source while its session ran has no summary to
+    /// claim, so requeueing it would restart sessions forever: its marks go, as `prune` drops them.
+    fn drop_unlisted(&mut self, ids: Vec<String>) -> Vec<String> {
+        let Some(known) = self.known.as_ref() else {
+            return ids;
+        };
+        let (listed, gone): (Vec<String>, Vec<String>) =
+            ids.into_iter().partition(|id| known.contains(id));
+        for id in &gone {
+            self.unsealed.remove(id);
+        }
+        self.quiet.retain(|id| !gone.iter().any(|g| g == id));
+        listed
     }
 
     /// Requeue the unsealed ids, bounded: an id `worked` says the session spent itself on gets
