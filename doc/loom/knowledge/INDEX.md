@@ -12,7 +12,7 @@
 | [entry-points.md](entry-points.md) | Key files agents should read first | 86 |
 | [patterns.md](patterns.md) | Architectural patterns discovered in the codebase | 200 |
 | [conventions.md](conventions.md) | Coding conventions discovered in the codebase | 250 |
-| [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 250 |
+| [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 254 |
 | [stack.md](stack.md) | Dependencies, frameworks, and tooling used in the project | 116 |
 | [concerns.md](concerns.md) | Technical debt, warnings, and issues to address | 248 |
 
@@ -182,6 +182,7 @@
 | [review-integration-verification](mistakes/review-integration-verification.md) |  | 283 |
 | [review-tracker](mistakes/review-tracker.md) |  | 353 |
 | [sandbox-and-settings](mistakes/sandbox-and-settings.md) |  | 391 |
+| [sandbox-hook-preflight](mistakes/sandbox-hook-preflight.md) | Check 5 hook preflight: why extending its program denylist fails | 13 |
 | [sandbox-protected-hooks-dir](mistakes/sandbox-protected-hooks-dir.md) |  | 37 |
 | [sandbox-state-channels](mistakes/sandbox-state-channels.md) |  | 299 |
 | [sandbox-tooling-and-network](mistakes/sandbox-tooling-and-network.md) |  | 387 |
