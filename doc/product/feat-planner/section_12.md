@@ -213,7 +213,11 @@ Authoring sessions have one of three scopes (`plan_session/scope.rs`):
   both the directory snapshot taken at session start and a fresh scan, case-insensitively;
   the target must exist in neither. Symlinked `doc/`, `doc/product`, `doc/plans` and brief
   bundles are refused. An existing feature directory, plan or bundle cannot be reused, even
-  if removed during the session. Only one confirmation is accepted. The session continues
+  if removed during the session. The one exception is a continued draft: continuing a confirmed
+  draft whose document exists starts a Kickoff scope that already holds the grant for that same
+  stored target, checked against the kickoff's own spelling of its size and name, so the session
+  can finish the document; nothing else is widened. Only one confirmation is accepted, and one
+  whose size differs from the start offer's is refused. The session continues
   writing its vision or plan within this grant; loading another skill does not widen it.
   Bash pre-allows only read-only `loom plan summary status*` among the `doc/loom/` commands;
   `loom knowledge *`, `loom plan summary seal*`, `brief*` and `release*` ask the holder through

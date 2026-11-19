@@ -357,6 +357,16 @@ open tab. An edit from an editor, another session, or a `git pull` moves the spi
 Read-only tabs (vision, Decisions, "One authoring session per project") see the same feature
 checklists but no offers.
 
+## Open questions
+
+- Seven decisions in this section still carry a `(My call.)` marker and wait on the reader:
+  open questions not making a section a gap ("Product sections"); what the pressure-test line
+  records, and an edit after a test not marking the plan untested ("Pressure tests"); settling
+  with open marks only asking for confirmation ("Document maturity"); the Findings page owning
+  its two offers ("What the app offers"); hints starting no session ("The frontier"); and
+  dismissals lasting only for the browser session ("Skipped and reordered steps"). The reader
+  can confirm each one, change it, or drop it. Recommendation: confirm all seven as written.
+
 ## Out of scope for this section
 
 - The full document conventions, `Implements:` lines, and cross-references: section 03.

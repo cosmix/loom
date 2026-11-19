@@ -102,19 +102,41 @@ restart every draft reads as ended.
 
 - **Naming.** The user names or renames the work in the conversation and the agent writes the name
   into its block; the Name row in Taking shape only displays it. The size is the offer the kickoff
-  began with. Write the vision or Write the plan confirms the shape's size and name, which arms the
-  write grant.
-- **Set aside.** Ends the open kickoff and keeps its draft.
+  began with (Feature or Standalone plan), fixed by the server at start and stored in the draft: the
+  opening names it, Taking shape, the Write button and the draft show it whatever size the agent's
+  block states, and a confirmation with another size is refused. Write the vision or Write the plan
+  confirms that size and the shape's name, which arms the write grant.
+- **Set aside.** Ends the open kickoff and keeps its draft, in every session state. An unconfirmed
+  kickoff is torn down at once, with no closing write. A confirmed one has its running turn
+  interrupted and then gets a closing write bounded at 60 s. While it ends, the notice reads
+  "<name> is being set aside…", Set it aside is disabled with the reason "Setting aside", and
+  **Stop now** tears the session down at once. When the session has ended the notice disappears.
 - **Continue.** `/new?session=<id>` opens a draft. A live draft shows its conversation. An ended
   draft shows its problem, decisions, questions and the user's messages, with "Continue this
   draft", which starts a new kickoff carrying the name, the size, the whole shape and
   the attachments that still resolve; one that does not is named in the opening as no longer
-  available. The old draft is deleted only after the new session started and its draft is
-  written; a refused or failed start leaves it as it was.
-- **Discard.** Deletes an ended draft; a live one is set aside first.
-- **Landed.** A draft whose confirmed document exists (a plan under any lifecycle prefix, or in
-  `archive/`) is deleted, never listed. Ended drafts untouched for 30 days are removed when the
-  server starts.
+  available. A confirmed draft whose document exists continues with the grant for that same
+  target already held, and its opening says the document exists and is to be finished. The old
+  draft is deleted only after the new session started and its draft is written; a refused or
+  failed start leaves it as it was.
+- **Discard and Delete.** Only an ended draft can be removed; a live one answers "Set it aside
+  first". A draft that wrote no files shows **Discard**, which deletes the draft. A draft whose
+  confirmed target has files on disk shows **Delete** instead. Its in-page confirm (never a browser
+  dialog) reads "Delete this draft and the files it wrote?", lists each existing path in
+  monospace, adds "Some of these files are committed; git history still has them." when HEAD
+  holds any of them, and offers **Delete for good** and **Keep it**. Delete for good removes the
+  draft and exactly the files its confirmed target names: for a plan `doc/plans/PLAN-<slug>.md`
+  and `doc/plans/briefs/<slug>/`; for a feature `doc/product/<name>/index.md`, then the
+  `doc/product/<name>/` directory if it is then empty. The server derives these paths from the
+  stored target, never from the browser, refuses a stored target that is not the kickoff's own
+  spelling, and never follows a symlink. Discarding a draft that wrote files without deleting them
+  is refused ("This draft wrote files; delete them too or keep the draft"). Deleting a finished
+  plan from its own page is not offered here.
+- **Landed.** A draft lands (is deleted, never listed) only when its session finished, ending on
+  the agent's own done signal with its confirmed document present, or when a locked spelling of
+  the document exists (a plan under any lifecycle prefix, or in `archive/`). A draft whose session
+  was set aside, interrupted, crashed or ended by a restart stays under Unfinished even when its
+  document exists. Ended drafts untouched for 30 days are removed when the server starts.
 
 ## Message rendering
 

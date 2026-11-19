@@ -132,13 +132,26 @@ file. The authoring session emits a fenced `loom-kickoff` block with the taking-
 size, name, problem, decisions, open questions and sections, with entries marked `settled`,
 `wording` or `open`. The server parses the block and sends a `kickoff` message to the browser.
 
-Only the holder may use "Confirm name". It arms a one-time grant to create exactly one target
+The size comes from the start offer (`kickoff` is a feature, `kickoff-small` a standalone plan):
+the opening names it (`loom plan: Kickoff, feature.` or `loom plan: Kickoff, standalone plan.`),
+the server stores it in the session's Kickoff scope and in the draft, and every published shape
+carries it whatever size the agent's block states. A confirmation with another size is refused.
+
+Only the holder may confirm (Write the vision or Write the plan). It arms a one-time grant to create exactly one target
 that did not exist at session start: `doc/product/<name>/index.md` for a feature, or
 `doc/plans/PLAN-<slug>.md` plus its `doc/plans/briefs/<slug>/` bundle for a standalone plan.
 Names follow the feature-name rule, with at most 64 characters. A second confirmation is
 refused. The session keeps Kickoff scope for the rest of its life: file-tool writes stay within
 the granted target and, for a standalone plan, its brief bundle. `loom knowledge` and
 `loom plan summary` commands other than read-only `status` still ask the holder (section 12).
+Continuing a confirmed draft whose document exists starts a kickoff whose scope already holds
+the grant for that same target, so the new session can finish the document.
+
+Setting a kickoff aside ends it without the general 10-minute bound: an unconfirmed kickoff is
+torn down at once; a confirmed one has its running turn interrupted and gets a closing write
+bounded at 60 s; a second set-aside with `now` tears it down at once, also during that closing
+write. The bound is per end, so other ends keep 10 minutes. A session's end records its cause;
+a draft lands only when the agent's done signal ended its session (section 08, "Landed").
 
 ### Draft-all team
 

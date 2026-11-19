@@ -162,9 +162,10 @@ changes listed above under "The plugin". The step skill that loaded it names the
 
 ### `loom-plan:kickoff`: starting new work
 
-Starts without a target file. The skill asks what the user wants to build and settles the size:
-a feature with a vision, product sections, a metaplan and plans, or one standalone plan with no
-product spec or metaplan. It asks before writing and proposes the size, a name and, for a feature,
+Starts without a target file. The skill asks what the user wants to build. The size is not its
+choice: it reads it from the opening line (`loom plan: Kickoff, feature.` for a feature with a
+vision, product sections, a metaplan and plans; `loom plan: Kickoff, standalone plan.` for one
+standalone plan with no product spec or metaplan). It asks before writing and proposes a name and, for a feature,
 sections with clear topic ownership in the proposal block the app renders.
 
 After each turn that changes the state, the skill ends its reply with a `loom-kickoff` fenced

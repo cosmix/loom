@@ -279,9 +279,13 @@ Each becomes `doc/product/<feature>/section_NN.md`. Order is a first proposal fo
   `plan` step skill and `Implements: none`. The session keeps Kickoff scope: file-tool writes
   stay within the target and a standalone plan's brief bundle; `loom knowledge` and `loom plan summary`
   commands other than read-only `status` still ask the holder. Writing a vision opens `/f/<name>`.
-  A kickoff persists as a draft that outlives its session and a server restart: `/new` always
-  starts a fresh one, Home lists the rest as "Unfinished", and a draft can be set aside,
-  continued (a new kickoff carrying its name, size, shape and attachments) or discarded.
+  The size is the start offer's, fixed by the server; the agent cannot change it. A kickoff
+  persists as a draft that outlives its session and a server restart: `/new` always starts a
+  fresh one, Home lists the rest as "Unfinished", and a draft can be set aside (at once before
+  confirmation, within 60 s after, with Stop now), continued (a new kickoff carrying its name,
+  size, shape and attachments, and its grant when its document exists) or discarded; a draft
+  that wrote files is deleted together with exactly those files. A draft leaves Unfinished on its
+  own only when its session finished with the document written.
 - **Draft all (09; D10).** One authoring session leads an agent team of up to five to draft all
   sections or plans. The drafters coordinate so the documents stay consistent.
 - **Reading face (05, 06, 08; D7).** Source Serif 4 is the default body face; Settings offers
