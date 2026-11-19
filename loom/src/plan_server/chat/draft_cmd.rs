@@ -1,44 +1,43 @@
 //! Kickoff drafts in the chat: what each command and event writes, and the holder commands that
-//! set aside, continue and discard one.
+//! set aside and discard one. Continuing one is `draft_continue`.
 
-use std::sync::Arc;
+use std::time::Duration;
 
-use super::dispatch::{
-    bridge, chat_state, checked, launch, on_chat, refuse_new_work, take_authoring, ChatOwner,
-    Outcome, CLOSING,
-};
+use super::dispatch::{chat_state, on_chat, refuse_new_work, Outcome, CLOSING};
 use super::drafts::{self, Draft, Seed};
-use super::release::give_back;
-use super::{lock, ChatState};
+use super::team::offer_size;
+use super::ChatState;
 use crate::plan_server::authoring::{Refusal, Take};
 use crate::plan_server::context::PlanContext;
 use crate::plan_server::ids::ConnCtx;
-use crate::plan_server::wire::kickoff::{KickoffShape, KickoffView};
-use crate::plan_server::wire::message::PlanMessage;
-use crate::plan_session::attachments::{
-    format_message, resolve_input, AttachmentInput, MAX_ATTACHMENTS,
-};
+use crate::plan_server::wire::kickoff::KickoffShape;
+use crate::plan_session::attachments::{AttachmentInput, MAX_ATTACHMENTS};
 use crate::plan_session::bridge::{Bridge, BridgeError, EndCause, EndMode};
 use crate::plan_session::input::sanitize;
-use crate::plan_session::scope::KickoffSize;
-use crate::planning::guidance::{continuation_message, DraftContinuation};
 
 const UNKNOWN: &str = "There is no such unfinished kickoff";
+const WROTE_FILES: &str = "This draft wrote files; delete them too or keep the draft";
+
+/// How long a confirmed kickoff's closing write may take once the holder sets it aside; the
+/// server's 600 s bound is for an end nobody is watching. Revisit if a slow closing write loses
+/// work the user wanted kept.
+const SET_ASIDE_BOUND: Duration = Duration::from_secs(60);
 
 /// What a kickoff start puts into its first draft: the typed text and the attachment inputs.
 pub(super) struct StartDraft(Option<Seed>);
 
 impl StartDraft {
-    /// The draft of a start with `offer`; nothing for any other start.
+    /// The draft of a start with `offer`, sized by it; nothing for any other start.
     pub(super) fn of(offer: Option<&str>, text: &str, inputs: &[AttachmentInput]) -> StartDraft {
-        if !matches!(offer, Some("kickoff" | "kickoff-small")) {
+        let Some(size) = offer_size(offer) else {
             return StartDraft(None);
-        }
+        };
         let typed = sanitize(text);
         StartDraft(Some(Seed {
             messages: vec![typed],
             attachments: inputs.iter().take(MAX_ATTACHMENTS).cloned().collect(),
-            ..Seed::default()
+            shape: None,
+            size,
         }))
     }
 
@@ -72,10 +71,14 @@ pub(super) fn on_confirm(ctx: &PlanContext, state: &ChatState, session: &str, ta
     });
 }
 
-/// `session` ended: its draft stays, no longer live. Every ended session passes here, and only a
-/// kickoff has a file.
-pub(super) fn ended(ctx: &PlanContext, state: &ChatState, session: &str) {
-    drafts::update(ctx, state, session, |draft| draft.live = false);
+/// `session` ended: its draft stays, no longer live, and is finished only when the agent's done
+/// fence asked for the end (a set aside, a crash or a restart leaves it unfinished). Every ended
+/// session passes here, and only a kickoff has a file.
+pub(super) fn ended(ctx: &PlanContext, state: &ChatState, session: &str, cause: Option<EndCause>) {
+    drafts::update(ctx, state, session, |draft| {
+        draft.live = false;
+        draft.finished = cause == Some(EndCause::Agent);
+    });
 }
 
 /// Refuse a command the stopping server or read-only mode does not take.
@@ -87,31 +90,61 @@ pub(super) fn writable(ctx: &PlanContext) -> Result<(), String> {
     }
 }
 
-fn known_draft(ctx: &PlanContext, state: &ChatState, session: &str) -> Result<Draft, String> {
+pub(super) fn known_draft(
+    ctx: &PlanContext,
+    state: &ChatState,
+    session: &str,
+) -> Result<Draft, String> {
     if !drafts::canonical(session) {
         return Err(format!("{session:?} is not a kickoff session id"));
     }
     drafts::get(ctx, state, session).ok_or_else(|| UNKNOWN.to_owned())
 }
 
-fn announce(ctx: &PlanContext, view: KickoffView) {
-    ctx.hub().broadcast(&PlanMessage::Kickoff(Box::new(view)));
-}
-
-/// `set_aside_kickoff`: end the running kickoff `session` and keep its draft.
-pub(super) fn set_aside(ctx: &PlanContext, conn: &ConnCtx, session: &str) -> Outcome {
+/// `set_aside_kickoff`: end the running kickoff `session` and keep its draft. An unconfirmed
+/// kickoff has nothing to write and `now` means stop at once: both tear down. A confirmed one is
+/// interrupted, then given a bounded closing write.
+pub(super) fn set_aside(ctx: &PlanContext, conn: &ConnCtx, session: &str, now: bool) -> Outcome {
     let state = chat_state(ctx)?;
     let draft = known_draft(ctx, &state, session)?;
     on_chat(ctx, conn, CLOSING, |bridge, id| {
         if id != draft.session {
             return Err(BridgeError::Refused("That kickoff is not open".to_owned()));
         }
-        bridge.end(id, EndMode::FinalWrite, EndCause::Holder)
+        match now || draft.target.is_none() {
+            true => bridge.end(id, EndMode::Teardown, EndCause::Holder),
+            false => close_within_bound(bridge, id),
+        }
     })
 }
 
-/// `discard_kickoff`: delete the draft of an ended kickoff.
-pub(super) fn discard(ctx: &PlanContext, conn: &ConnCtx, session: &str) -> Outcome {
+/// Stop the running turn so the closing message reaches an idle agent, then end with a final
+/// write bounded by [`SET_ASIDE_BOUND`]. The texts the interrupt and the end take off the queue
+/// both go back to the caller.
+fn close_within_bound(bridge: &Bridge, id: &str) -> Result<Vec<String>, BridgeError> {
+    let mut returned = match bridge.interrupt(id) {
+        Ok(texts) => texts,
+        // No turn is running: the closing write can go out at once.
+        Err(BridgeError::NotRunning) => Vec::new(),
+        Err(error) => {
+            tracing::debug!(session = %id, %error, "set aside: the turn was not interrupted");
+            Vec::new()
+        }
+    };
+    let ended = bridge.end_within(id, EndMode::FinalWrite, EndCause::Holder, SET_ASIDE_BOUND)?;
+    returned.extend(ended);
+    Ok(returned)
+}
+
+/// `discard_kickoff`: delete the draft of an ended kickoff, and with `delete_files` the files its
+/// confirmed target wrote. The files come from the stored target through `drafts`, never from
+/// the request.
+pub(super) fn discard(
+    ctx: &PlanContext,
+    conn: &ConnCtx,
+    session: &str,
+    delete_files: bool,
+) -> Outcome {
     writable(ctx)?;
     let state = chat_state(ctx)?;
     // Nobody holds authoring once a chat has ended; another browser's hold still refuses.
@@ -123,102 +156,21 @@ pub(super) fn discard(ctx: &PlanContext, conn: &ConnCtx, session: &str) -> Outco
     if drafts::is_live(ctx, &draft) {
         return Err("Set it aside first".to_owned());
     }
+    if let Some(target) = draft.target.as_deref() {
+        match delete_files {
+            true => {
+                drafts::remove_written(ctx.root(), target)?;
+            }
+            false if wrote_files(ctx, target) => return Err(WROTE_FILES.to_owned()),
+            false => {}
+        }
+    }
     drafts::remove(ctx, &state, session);
     Ok(Vec::new())
 }
 
-/// `continue_kickoff`: start a new kickoff that carries the draft of `session`.
-pub(super) fn resume(ctx: &Arc<PlanContext>, conn: &ConnCtx, session: &str) -> Outcome {
-    writable(ctx)?;
-    let (bridge, state) = (bridge(ctx)?, chat_state(ctx)?);
-    let draft = known_draft(ctx, &state, session)?;
-    let _starting = state.starting();
-    let took = take_authoring(ctx, conn)?;
-    let started = continue_draft(ctx, conn, &bridge, &state, &draft);
-    if started.is_err() {
-        give_back(ctx, conn, &bridge, took);
-    }
-    started.map(|_| Vec::new())
-}
-
-/// Start the continuation, write its draft, then retire the old one. The old file is touched
-/// only after the new session started and its draft is in place.
-fn continue_draft(
-    ctx: &Arc<PlanContext>,
-    conn: &ConnCtx,
-    bridge: &Bridge,
-    state: &Arc<ChatState>,
-    draft: &Draft,
-) -> Result<String, String> {
-    let (inputs, unavailable, reserved) = available(ctx, &draft.attachments);
-    let small = draft.shape.as_ref().and_then(|shape| shape.size) == Some(KickoffSize::Plan);
-    let offer = if small { "kickoff-small" } else { "kickoff" };
-    let text = continuation(draft, &unavailable, reserved);
-    let message = checked(ctx, &text, inputs.clone())?;
-    let owner = ChatOwner::default();
-    let id = launch(
-        ctx,
-        conn,
-        bridge,
-        state,
-        Some(offer.into()),
-        Some(message),
-        owner,
-    )?;
-    let seed = Seed {
-        messages: draft.messages.clone(),
-        attachments: inputs,
-        shape: draft.shape.clone(),
-    };
-    if let Err(error) = drafts::create(ctx, state, &id, seed) {
-        // A running session with no draft is lost at the next restart: end it and refuse.
-        if let Err(end) = bridge.end(&id, EndMode::Teardown, EndCause::Caller) {
-            tracing::warn!(session = %id, %end, "the continuation could not be ended");
-        }
-        return Err(error);
-    }
-    if let Some(shape) = draft.shape.clone() {
-        let view = lock(&state.kickoff).seed(&id, shape);
-        announce(ctx, view);
-    }
-    drafts::remove(ctx, state, &draft.session);
-    Ok(id)
-}
-
-fn continuation(draft: &Draft, unavailable: &[String], reserved: usize) -> String {
-    let shape = draft.shape.as_ref();
-    let none: &[String] = &[];
-    continuation_message(&DraftContinuation {
-        name: draft.name(),
-        problem: shape.map_or("", |shape| shape.problem.as_str()),
-        decisions: shape.map_or(none, |shape| shape.decisions.as_slice()),
-        questions: shape.map_or(none, |shape| shape.questions.as_slice()),
-        messages: &draft.messages,
-        unavailable,
-        reserved,
-    })
-}
-
-/// The inputs that still resolve, the names of those that do not (a stored file that was
-/// swept, a document that was removed: one missing attachment must not refuse the rest), and the
-/// bytes the attachment block of the resolved ones adds to a message.
-fn available(
-    ctx: &PlanContext,
-    inputs: &[AttachmentInput],
-) -> (Vec<AttachmentInput>, Vec<String>, usize) {
-    let project = ctx.project();
-    let (mut kept, mut missing, mut resolved) = (Vec::new(), Vec::new(), Vec::new());
-    for input in inputs {
-        match resolve_input(&project, &ctx.runtime().attachments, input.clone()) {
-            Ok(attachment) => {
-                kept.push(input.clone());
-                resolved.push(attachment);
-            }
-            Err(_) => missing.push(match input {
-                AttachmentInput::File(file) => file.name.clone(),
-                AttachmentInput::Document(document) => document.path.clone(),
-            }),
-        }
-    }
-    (kept, missing, format_message("", &resolved).len())
+/// Whether the confirmed `target` has files on disk. A target that is no kickoff target
+/// has none to protect: only the draft goes.
+fn wrote_files(ctx: &PlanContext, target: &str) -> bool {
+    drafts::written(ctx.root(), target).is_ok_and(|written| !written.paths.is_empty())
 }

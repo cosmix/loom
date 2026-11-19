@@ -89,7 +89,7 @@ fn open_chat_assistant_text_does_not_publish_or_replay_kickoff_shapes() {
         .iter()
         .any(|frame| frame["type"] == "kickoff"));
     let state = f.ctx.extensions().get::<ChatState>().unwrap();
-    assert_eq!(lock(&state.kickoff_scopes).get(&s.id), Some(&false));
+    assert_eq!(lock(&state.kickoff_scopes).get(&s.id), Some(&None));
     f.bridge
         .end(&s.id, EndMode::Teardown, EndCause::Caller)
         .unwrap();

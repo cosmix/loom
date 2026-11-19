@@ -9,6 +9,7 @@ use serde_json::{json, Value};
 use super::drafts::{self, Seed, MAX_FILE_BYTES, MAX_MESSAGES, MAX_MESSAGE_BYTES};
 use super::tests::{browser, wait_for, Fixture};
 use super::ChatState;
+use crate::plan_session::scope::KickoffSize;
 
 const SESSION: &str = "11111111-1111-4111-8111-111111111111";
 const OTHER: &str = "22222222-2222-4222-8222-222222222222";
@@ -19,9 +20,20 @@ fn dir(f: &Fixture) -> PathBuf {
     dir
 }
 
+/// A seed with no content, of a standalone plan.
+fn seed() -> Seed {
+    Seed {
+        size: KickoffSize::Plan,
+        messages: Vec::new(),
+        attachments: Vec::new(),
+        shape: None,
+    }
+}
+
 fn body(session: &str, patch: Value) -> Value {
     let mut draft = json!({
         "session": session,
+        "size": "plan",
         "started_at": "2026-11-04T10:47:11Z",
         "updated_at": "2026-11-04T10:50:00Z",
         "messages": ["first idea"],
@@ -56,7 +68,7 @@ fn messages_are_capped_on_write() {
     let state = ChatState::default();
     let seed = Seed {
         messages: (0..45).map(|n| format!("m{n:02}")).collect(),
-        ..Seed::default()
+        ..seed()
     };
     drafts::create(&f.ctx, &state, SESSION, seed).unwrap();
 
@@ -80,7 +92,7 @@ fn messages_are_capped_on_write() {
 fn a_blank_message_is_not_recorded() {
     let f = Fixture::new(false);
     let state = ChatState::default();
-    drafts::create(&f.ctx, &state, SESSION, Seed::default()).unwrap();
+    drafts::create(&f.ctx, &state, SESSION, seed()).unwrap();
 
     drafts::update(&f.ctx, &state, SESSION, |d| d.push_message(" \n\t"));
 
@@ -164,7 +176,7 @@ fn a_session_id_that_is_not_canonical_never_becomes_a_path() {
         "ABCDEF12-1111-4111-8111-111111111111",
         "1111",
     ] {
-        assert!(drafts::create(&f.ctx, &state, session, Seed::default()).is_err());
+        assert!(drafts::create(&f.ctx, &state, session, seed()).is_err());
         assert!(drafts::get(&f.ctx, &state, session).is_none());
         assert!(!drafts::update(&f.ctx, &state, session, |d| d.live = false));
         assert!(!drafts::remove(&f.ctx, &state, session));
@@ -178,7 +190,7 @@ fn a_session_id_that_is_not_canonical_never_becomes_a_path() {
 fn an_update_never_recreates_a_draft_that_is_gone() {
     let f = Fixture::new(false);
     let state = ChatState::default();
-    drafts::create(&f.ctx, &state, SESSION, Seed::default()).unwrap();
+    drafts::create(&f.ctx, &state, SESSION, seed()).unwrap();
     assert!(drafts::remove(&f.ctx, &state, SESSION));
 
     assert!(!drafts::update(&f.ctx, &state, SESSION, |d| d.live = false));
@@ -226,7 +238,7 @@ fn a_draft_created_for_a_session_that_is_not_running_is_stored_ended() {
     let state = ChatState::default();
     assert_eq!(f.bridge.chat_session_id(), None);
 
-    drafts::create(&f.ctx, &state, SESSION, Seed::default()).unwrap();
+    drafts::create(&f.ctx, &state, SESSION, seed()).unwrap();
 
     let stored = fs::read(dir(&f).join(format!("{SESSION}.json"))).unwrap();
     let stored: Value = serde_json::from_slice(&stored).unwrap();
@@ -243,7 +255,7 @@ fn a_draft_over_the_file_cap_loses_its_oldest_messages_and_still_reads_back() {
         messages: (0..MAX_MESSAGES)
             .map(|n| format!("{n:02}{message}"))
             .collect(),
-        ..Seed::default()
+        ..seed()
     };
 
     drafts::create(&f.ctx, &state, SESSION, seed).unwrap();
@@ -266,9 +278,10 @@ fn a_draft_over_the_file_cap_loses_its_oldest_messages_and_still_reads_back() {
 fn reading_a_landed_draft_deletes_it_and_tells_the_open_tabs() {
     let f = Fixture::new(false);
     let state = ChatState::default();
-    drafts::create(&f.ctx, &state, SESSION, Seed::default()).unwrap();
+    drafts::create(&f.ctx, &state, SESSION, seed()).unwrap();
     drafts::update(&f.ctx, &state, SESSION, |d| {
         d.target = Some("doc/product/landed/index.md".to_owned());
+        d.finished = true;
     });
     let tab = f.connect(&browser());
     let document = f.ctx.root().join("doc/product/landed/index.md");
@@ -284,4 +297,82 @@ fn reading_a_landed_draft_deletes_it_and_tells_the_open_tabs() {
             .find(|frame| frame["type"] == "kickoff_drafts")
     });
     assert_eq!(shelf["drafts"], json!([]));
+}
+
+const PLAN: &str = "doc/plans/PLAN-demo-work.md";
+
+fn touch(f: &Fixture, relative: &str) {
+    let path = f.ctx.root().join(relative);
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(path, "# file\n").unwrap();
+}
+
+#[test]
+fn a_document_without_a_finished_session_leaves_the_draft_listed() {
+    let f = Fixture::new(false);
+    put_draft(&f, SESSION, json!({"target": PLAN, "finished": false}));
+    touch(&f, PLAN);
+
+    assert_eq!(sessions(&f), vec![SESSION.to_owned()]);
+    assert!(dir(&f).join(format!("{SESSION}.json")).exists());
+}
+
+#[test]
+fn a_finished_session_whose_document_is_missing_has_not_landed() {
+    let f = Fixture::new(false);
+    put_draft(&f, SESSION, json!({"target": PLAN, "finished": true}));
+
+    assert_eq!(sessions(&f), vec![SESSION.to_owned()]);
+}
+
+#[test]
+fn a_finished_session_with_its_document_lands() {
+    let f = Fixture::new(false);
+    let path = put_draft(&f, SESSION, json!({"target": PLAN, "finished": true}));
+    touch(&f, PLAN);
+
+    assert!(sessions(&f).is_empty());
+    assert!(!path.exists(), "the landed draft is deleted");
+}
+
+#[test]
+fn a_locked_spelling_lands_a_draft_whose_session_did_not_finish() {
+    for locked in [
+        "doc/plans/IN_PROGRESS-PLAN-demo-work.md",
+        "doc/plans/DONE-PLAN-demo-work.md",
+        "doc/plans/RETIRED-PLAN-demo-work.md",
+        "doc/plans/archive/DONE-PLAN-demo-work.md",
+        "doc/plans/archive/PLAN-demo-work.md",
+    ] {
+        let f = Fixture::new(false);
+        let path = put_draft(&f, SESSION, json!({"target": PLAN, "finished": false}));
+        touch(&f, locked);
+
+        assert!(sessions(&f).is_empty(), "{locked}");
+        assert!(!path.exists(), "{locked}");
+    }
+}
+
+#[test]
+fn the_listed_size_is_the_drafts_not_the_agents() {
+    let f = Fixture::new(false);
+    let shape = json!({"size": "plan", "name": "demo-work", "proposal": false, "problem": "P"});
+    put_draft(&f, SESSION, json!({"size": "feature", "shape": shape}));
+
+    let listed = drafts::list(&f.ctx, &ChatState::default());
+
+    assert_eq!(listed.len(), 1);
+    assert_eq!(listed[0].size, KickoffSize::Feature);
+}
+
+#[test]
+fn a_draft_file_without_a_size_is_skipped_and_left_in_place() {
+    let f = Fixture::new(false);
+    let mut stored = body(SESSION, json!({}));
+    stored.as_object_mut().unwrap().remove("size");
+    let bytes = serde_json::to_vec(&stored).unwrap();
+    let path = put(&f, &format!("{SESSION}.json"), &bytes);
+
+    assert!(sessions(&f).is_empty());
+    assert!(path.exists());
 }

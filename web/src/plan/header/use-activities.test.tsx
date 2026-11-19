@@ -5,7 +5,7 @@ import { afterEach, expect, it } from "vitest";
 
 import draftsFixture from "@/plan/api/fixtures/kickoff-drafts.json";
 import panelFixture from "@/plan/api/fixtures/summary-panel.json";
-import { kickoffDraftViewSchema } from "@/plan/api/schema-kickoff";
+import { kickoffDraftDetailSchema, kickoffDraftViewSchema } from "@/plan/api/schema-kickoff";
 import { summaryPanelSchema } from "@/plan/api/schema-summaries";
 import { kickoffDraftsAtom } from "@/plan/state/atoms";
 import { snapshotAtom } from "@/plan/chat/model";
@@ -356,4 +356,25 @@ it("gives a pressure run's row the plan's file name, the current step and counte
     since: startedMs,
     progress: { done: 1, total: 6 },
   });
+});
+
+it("a kickoff draft entry must name its size, and its detail lists the written files", () => {
+  const draft = draftsFixture.drafts[0];
+  const { size: _size, ...unsized } = draft;
+  const detail = {
+    draft,
+    shape: null,
+    messages: [],
+    written: ["doc/plans/PLAN-example.md", "doc/plans/briefs/example"],
+    committed: false,
+  };
+
+  expect(["feature", "plan"]).toContain(kickoffDraftViewSchema.parse(draft).size);
+  expect(kickoffDraftViewSchema.safeParse(unsized).success).toBe(false);
+  expect(kickoffDraftViewSchema.safeParse({ ...draft, size: null }).success).toBe(false);
+  expect(kickoffDraftDetailSchema.parse(detail)).toEqual(detail);
+  const { written: _written, ...unlisted } = detail;
+  expect(kickoffDraftDetailSchema.safeParse(unlisted).success).toBe(false);
+  const { committed: _committed, ...uncommitted } = detail;
+  expect(kickoffDraftDetailSchema.safeParse(uncommitted).success).toBe(false);
 });

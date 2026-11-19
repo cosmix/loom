@@ -98,7 +98,7 @@ fn kickoff_ids_need_no_feature_or_documents() {
     fs::create_dir(temp.path().join("doc")).unwrap();
     let project = Project::load(temp.path()).unwrap();
     for (id, small, label) in [
-        ("kickoff", false, "New work"),
+        ("kickoff", false, "New feature"),
         ("kickoff-small", true, "New standalone plan"),
     ] {
         let start = AuthoringStart::from_offer_id(id, &project, None).unwrap();

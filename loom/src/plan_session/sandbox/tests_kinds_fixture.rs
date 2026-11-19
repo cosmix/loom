@@ -6,7 +6,7 @@ use serde_json::{json, Value};
 
 use super::tests_kinds::Fixture;
 use crate::plan_session::kind::SessionKind;
-use crate::plan_session::scope::{KickoffScope, SessionScope};
+use crate::plan_session::scope::{KickoffScope, KickoffSize, SessionScope};
 use crate::planning::runtime::RuntimePaths;
 
 pub(super) fn kinds() -> [SessionKind; 3] {
@@ -157,6 +157,7 @@ pub(super) fn scope_cases(root: &Path) -> anyhow::Result<Vec<(SessionScope, Valu
         ),
         (
             SessionScope::Kickoff(KickoffScope {
+                size: KickoffSize::Feature,
                 existing: Vec::new(),
                 grant: None,
             }),

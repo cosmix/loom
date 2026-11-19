@@ -57,7 +57,7 @@ pub struct KickoffView {
 pub struct KickoffDraftView {
     pub session: String,
     pub name: Option<String>,
-    pub size: Option<KickoffSize>,
+    pub size: KickoffSize,
     pub problem: Option<String>,
     pub started_at: String,
     pub updated_at: String,
@@ -72,13 +72,18 @@ pub struct KickoffDraftList {
 }
 
 /// The body of `GET /api/kickoffs/<session>`: the entry, the agent's last shape (its name
-/// already replaced by a rename) and the texts the user typed.
+/// already replaced by a rename), the texts the user typed, the files its confirmed kickoff
+/// wrote and whether HEAD holds any of them.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct KickoffDraftDetail {
     pub draft: KickoffDraftView,
     pub shape: Option<KickoffShape>,
     pub messages: Vec<String>,
+    /// Repository-relative files the confirmed kickoff wrote that exist, document first.
+    pub written: Vec<String>,
+    /// Whether HEAD holds any of `written`.
+    pub committed: bool,
 }
 
 #[cfg(test)]
@@ -92,7 +97,7 @@ mod tests {
             draft: KickoffDraftView {
                 session: "11111111-1111-4111-8111-111111111111".into(),
                 name: None,
-                size: None,
+                size: KickoffSize::Feature,
                 problem: None,
                 started_at: "2026-11-04T10:47:11Z".into(),
                 updated_at: "2026-11-04T10:50:00Z".into(),
@@ -100,13 +105,17 @@ mod tests {
             },
             shape: None,
             messages: vec!["first".into()],
+            written: vec![],
+            committed: false,
         };
         let expected = json!({
             "draft": {"session": "11111111-1111-4111-8111-111111111111", "name": null,
-                "size": null, "problem": null, "started_at": "2026-11-04T10:47:11Z",
+                "size": "feature", "problem": null, "started_at": "2026-11-04T10:47:11Z",
                 "updated_at": "2026-11-04T10:50:00Z", "live": true},
             "shape": null,
-            "messages": ["first"]
+            "messages": ["first"],
+            "written": [],
+            "committed": false
         });
 
         assert_eq!(serde_json::to_value(&detail).unwrap(), expected);
@@ -193,6 +202,53 @@ mod tests {
             );
         }
         assert!(serde_json::from_str::<KickoffSize>(r#""Feature""#).is_err());
+    }
+
+    #[test]
+    fn draft_view_requires_a_size() {
+        assert!(serde_json::from_value::<KickoffDraftView>(json!({
+            "session": "kickoff-1", "name": null, "size": null, "problem": null,
+            "started_at": "2026-11-04T10:47:11Z", "updated_at": "2026-11-04T10:50:00Z",
+            "live": false
+        }))
+        .is_err());
+    }
+
+    #[test]
+    fn draft_detail_round_trips_written_files_and_committed() {
+        let detail = KickoffDraftDetail {
+            draft: KickoffDraftView {
+                session: "kickoff-1".into(),
+                name: Some("demo".into()),
+                size: KickoffSize::Plan,
+                problem: None,
+                started_at: "2026-11-04T10:47:11Z".into(),
+                updated_at: "2026-11-04T10:50:00Z".into(),
+                live: false,
+            },
+            shape: None,
+            messages: vec![],
+            written: vec![
+                "doc/plans/PLAN-demo.md".into(),
+                "doc/plans/briefs/demo".into(),
+            ],
+            committed: true,
+        };
+        let expected = json!({
+            "draft": {"session": "kickoff-1", "name": "demo", "size": "plan", "problem": null,
+                "started_at": "2026-11-04T10:47:11Z", "updated_at": "2026-11-04T10:50:00Z",
+                "live": false},
+            "shape": null,
+            "messages": [],
+            "written": ["doc/plans/PLAN-demo.md", "doc/plans/briefs/demo"],
+            "committed": true
+        });
+
+        assert_eq!(serde_json::to_value(&detail).unwrap(), expected);
+        assert_eq!(
+            serde_json::from_value::<KickoffDraftDetail>(expected).unwrap(),
+            detail
+        );
     }
 
     #[test]

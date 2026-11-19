@@ -35,9 +35,9 @@ impl Rebuilds {
             BridgeEvent::SubagentStopped { id, agent_id } => {
                 self.subagent_stopped(bridge, id, agent_id);
             }
-            BridgeEvent::Ended { id, kind, outcome } => {
-                self.session_gone(bridge, id, kind, outcome)
-            }
+            BridgeEvent::Ended {
+                id, kind, outcome, ..
+            } => self.session_gone(bridge, id, kind, outcome),
             BridgeEvent::Team { id, teammates } => self.team_changed(id, teammates),
             BridgeEvent::Background { .. } => {}
         }

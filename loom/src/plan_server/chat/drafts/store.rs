@@ -82,14 +82,20 @@ impl Files {
         removed.is_ok()
     }
 
-    /// The confirmed document exists, under its own name or any lifecycle spelling of a plan
-    /// (`IN_PROGRESS-`, `DONE-`, `RETIRED-`, or moved to `archive/`): the work has landed.
+    /// The work has landed when a locked spelling of the plan exists (`IN_PROGRESS-`, `DONE-`,
+    /// `RETIRED-`, or any spelling under `archive/`: it went into execution), or when the session
+    /// finished (its done fence) and the confirmed document exists. A document that exists
+    /// while the session did not finish is half-written work: the draft stays so it can be
+    /// continued or deleted.
     pub(super) fn landed(&self, draft: &Draft) -> bool {
         let Some(target) = draft.target.as_deref() else {
             return false;
         };
         let exists = |rel: &Path| fs::symlink_metadata(self.root.join(rel)).is_ok();
-        spellings(Path::new(target)).iter().any(|rel| exists(rel))
+        (draft.finished && exists(Path::new(target)))
+            || locked_spellings(Path::new(target))
+                .iter()
+                .any(|rel| exists(rel))
     }
 
     /// Delete every draft last changed more than [`KEEP_DAYS`] before `now`. It runs once at
@@ -110,9 +116,12 @@ fn skipped(session: &str, why: &dyn std::fmt::Display) -> Option<Draft> {
     None
 }
 
-/// `target` and, for a plan, every other file name the plan can have.
-fn spellings(target: &Path) -> Vec<PathBuf> {
-    let mut all = vec![target.to_path_buf()];
+/// For a plan `target`, every locked file name the plan can have: the `IN_PROGRESS-`, `DONE-`
+/// and `RETIRED-` spellings beside it and under `archive/`, and the bare spelling under
+/// `archive/`. `target` itself is not one. A target that is not a plan file (a feature's
+/// `index.md`) has none.
+pub(super) fn locked_spellings(target: &Path) -> Vec<PathBuf> {
+    let mut all = Vec::new();
     let (Some(dir), Some(name)) = (target.parent(), target.file_name().and_then(|n| n.to_str()))
     else {
         return all;
@@ -120,7 +129,8 @@ fn spellings(target: &Path) -> Vec<PathBuf> {
     let Some(slug) = plan_slug(name) else {
         return all;
     };
-    for prefix in ["", IN_PROGRESS_PREFIX, DONE_PREFIX, RETIRED_PREFIX] {
+    all.push(dir.join("archive").join(format!("PLAN-{slug}.md")));
+    for prefix in [IN_PROGRESS_PREFIX, DONE_PREFIX, RETIRED_PREFIX] {
         let file = format!("{prefix}PLAN-{slug}.md");
         all.push(dir.join(&file));
         all.push(dir.join("archive").join(file));

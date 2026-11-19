@@ -7,6 +7,9 @@ use std::io;
 use std::os::unix::io::{AsRawFd, FromRawFd, OwnedFd, RawFd};
 use std::path::Path;
 
+mod tree;
+pub use tree::{safe_remove_empty_dir_in_workdir, safe_remove_tree_in_workdir};
+
 /// Write `content` to `relpath` under `dirfd` with an exclusive flock,
 /// refusing every symlink along the path. This in-place writer locks the opened
 /// data inode before truncation; it does not provide the crash-atomic

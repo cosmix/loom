@@ -63,6 +63,7 @@ fn open_and_kickoff_scopes_keep_the_same_other_permissions() -> Result<()> {
     scope::write(
         &dir,
         &SessionScope::Kickoff(KickoffScope {
+            size: KickoffSize::Feature,
             existing: Vec::new(),
             grant: None,
         }),
@@ -110,6 +111,7 @@ fn unconfirmed_kickoff_authoring_prompts_for_doc_loom_writers() -> Result<()> {
     scope::write(
         &dir,
         &SessionScope::Kickoff(KickoffScope {
+            size: KickoffSize::Feature,
             existing: Vec::new(),
             grant: None,
         }),
@@ -134,6 +136,7 @@ fn confirmed_kickoff_authoring_prompts_for_doc_loom_writers() -> Result<()> {
     scope::write(
         &dir,
         &SessionScope::Kickoff(KickoffScope {
+            size: KickoffSize::Feature,
             existing: Vec::new(),
             grant: Some(KickoffGrant {
                 size: KickoffSize::Feature,

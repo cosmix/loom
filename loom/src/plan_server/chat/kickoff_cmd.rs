@@ -1,6 +1,8 @@
 //! Holder confirmation of the kickoff's one creation grant.
 
-use super::dispatch::{bridge, chat_state, checked, remember_holder, Outcome, NO_CHAT};
+use super::dispatch::{bridge, chat_state, remember_holder, Outcome, NO_CHAT};
+use super::drafts;
+use super::message::checked;
 use super::{draft_cmd, lock};
 use crate::plan_server::authoring::Take;
 use crate::plan_server::context::PlanContext;
@@ -19,6 +21,13 @@ pub(super) fn confirm(ctx: &PlanContext, conn: &ConnCtx, size: KickoffSize, name
         .map_err(|refusal| ctx.refusal_message(&refusal))?;
     remember_holder(ctx, conn);
     let id = bridge.chat_session_id().ok_or_else(|| NO_CHAT.to_owned())?;
+    let held = scope::kickoff_target(size, name).document;
+    if drafts::holder_of(ctx, &state, &held.to_string_lossy(), &id).is_some() {
+        return Err(format!(
+            "Another unfinished kickoff already holds {}. Continue or delete it from the draft shelf first.",
+            held.display()
+        ));
+    }
     let dir = SessionDir::new(ctx.runtime().sessions.join(&id));
     let target = arm_and_send(ctx, &bridge, &dir, &id, size, name)?;
     record_owner(&bridge, &id, size, name);
@@ -56,7 +65,7 @@ fn arm_and_send(
 /// The confirmed name owns the session from here on, so it shows on that feature's or plan's
 /// screens and nowhere else. The grant is armed and sent by now: a session gone in between has
 /// nothing left to show.
-fn record_owner(bridge: &Bridge, id: &str, size: KickoffSize, name: &str) {
+pub(super) fn record_owner(bridge: &Bridge, id: &str, size: KickoffSize, name: &str) {
     let name = Some(name.to_owned());
     let (feature, plan) = match size {
         KickoffSize::Feature => (name, None),

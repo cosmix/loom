@@ -13,7 +13,9 @@ use serde_json::{json, Value};
 use super::fake_host::{FakeHost, FakePins};
 use super::tests::{append_record, wait_for, wait_until};
 use super::TurnPins;
-use super::{Bridge, BridgeConfig, BridgeEvent, EndOutcome, LaunchGuidance, StartRequest};
+use super::{
+    Bridge, BridgeConfig, BridgeEvent, EndCause, EndOutcome, LaunchGuidance, StartRequest,
+};
 use crate::plan_session::kind::{SessionDir, SessionKind};
 use crate::plan_session::model::{ChatDelta, DenyReason, SessionState};
 use crate::plan_session::permission::{Answer, Behavior};
@@ -239,6 +241,17 @@ impl Harness {
             BridgeEvent::Ended {
                 id: ended, outcome, ..
             } if ended == id => Some(outcome.clone()),
+            _ => None,
+        })
+    }
+
+    /// The cause the session's `Ended` carried: `None` until the event arrives.
+    pub(super) fn ended_cause(&self, id: &str) -> Option<Option<EndCause>> {
+        let events = self.events.lock().unwrap();
+        events.iter().find_map(|event| match event {
+            BridgeEvent::Ended {
+                id: ended, cause, ..
+            } if ended == id => Some(*cause),
             _ => None,
         })
     }

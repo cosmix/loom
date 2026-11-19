@@ -11,7 +11,7 @@ import { continueKickoff, discardKickoff, setAsideKickoff } from "@/plan/chat/co
 import { sessionAtom } from "@/plan/chat/model";
 import { Untrusted } from "@/plan/chat/visible-controls";
 import { draftTitle, kickoffHref, waitForKickoffSession } from "@/plan/new/kickoff-state";
-import { KIND_UNDECIDED, KIND_WORD } from "@/plan/new/kickoff-head";
+import { KIND_WORD } from "@/plan/new/kickoff-head";
 import { DecisionsRow, ProblemRow, QuestionsRow } from "@/plan/new/taking-shape";
 import { authorBlockReasonAtom, canAuthorAtom, kickoffDraftsAtom } from "@/plan/state/atoms";
 import { DisabledReason } from "@/plan/ui/disabled-reason";
@@ -67,26 +67,39 @@ function CommandStatus({ status }: { status: string | null }) {
 /**
  * Above the empty New work form while a kickoff is running: the way back into it, or a way to put
  * it down. Setting it aside ends the session and keeps the draft, so the form is usable again.
+ * While the session is closing, the notice says so and offers Stop now, which skips the closing
+ * write.
  */
 export function OpenDraftNotice({ draft }: { draft: KickoffDraftView }) {
   const store = useStore();
   const { reason, status, run } = useDraftCommand();
+  const session = useAtomValue(sessionAtom);
+  const ending = session?.id === draft.session && session.state === "ending";
   return (
     <div className="kickoff-open">
       <p className="kickoff-open__text">
-        <Untrusted text={draftTitle(draft)} /> is still open
+        <Untrusted text={draftTitle(draft)} /> {ending ? "is being set aside…" : "is still open"}
       </p>
       <div className="kickoff-open__actions">
         <Link to={kickoffHref(draft.session)} data-look="secondary" className="plan-button">
           Continue
         </Link>
         <DisabledReason
-          reason={reason}
+          reason={ending ? "Setting aside" : reason}
           look="quiet"
           onClick={() => void run(() => setAsideKickoff(store, draft.session))}
         >
           Set it aside
         </DisabledReason>
+        {ending && (
+          <DisabledReason
+            reason={reason}
+            look="quiet"
+            onClick={() => void run(() => setAsideKickoff(store, draft.session, true))}
+          >
+            Stop now
+          </DisabledReason>
+        )}
       </div>
       <CommandStatus status={status} />
     </div>
@@ -124,7 +137,64 @@ function useDraftDetail(id: string): Load {
   return loaded?.id === id ? loaded.state : { status: "loading" };
 }
 
-function DraftActions({ session }: { session: string }) {
+/**
+ * The in-page confirm (never a browser dialog). A draft that wrote nothing is discarded as the
+ * draft file alone; one that wrote files lists them and asks before deleting them too.
+ */
+function DiscardConfirm({
+  written,
+  committed,
+  reason,
+  onDiscard,
+  onKeep,
+}: {
+  written: string[];
+  committed: boolean;
+  reason: string | null;
+  onDiscard: (deleteFiles: boolean) => void;
+  onKeep: () => void;
+}) {
+  const deleting = written.length > 0;
+  return (
+    <div
+      role="group"
+      aria-label={deleting ? "Confirm delete" : "Confirm discard"}
+      className="kickoff-draft__confirm"
+    >
+      <p>
+        {deleting
+          ? "Delete this draft and the files it wrote?"
+          : "Discard this draft? It cannot be brought back."}
+      </p>
+      {deleting && (
+        <>
+          <ul className="m-0 basis-full list-none p-0 font-mono text-xs break-all">
+            {written.map((path) => (
+              <li key={path}>
+                <Untrusted text={path} />
+              </li>
+            ))}
+          </ul>
+          {committed && (
+            <p className="plan-fine">
+              Some of these files are committed; git history still has them.
+            </p>
+          )}
+        </>
+      )}
+      <DisabledReason reason={reason} onClick={() => onDiscard(deleting)}>
+        {deleting ? "Delete for good" : "Discard for good"}
+      </DisabledReason>
+      <DisabledReason reason={null} look="quiet" onClick={onKeep}>
+        Keep it
+      </DisabledReason>
+    </div>
+  );
+}
+
+function DraftActions({ detail }: { detail: KickoffDraftDetail }) {
+  const session = detail.draft.session;
+  const { written, committed } = detail;
   const store = useStore();
   const navigate = useNavigate();
   const { reason, status, run } = useDraftCommand();
@@ -140,28 +210,28 @@ function DraftActions({ session }: { session: string }) {
     setLate(false);
     void waitForKickoffSession(store, previous, wait.current.signal, () => setLate(true));
   };
-  const discard = async () => {
-    if (await run(() => discardKickoff(store, session))) void navigate("/new", { replace: true });
+  const discard = async (deleteFiles: boolean) => {
+    if (await run(() => discardKickoff(store, session, deleteFiles))) {
+      void navigate("/new", { replace: true });
+    }
   };
   return (
     <div className="kickoff-draft__actions">
       {confirming ? (
-        <div role="group" aria-label="Confirm discard" className="kickoff-draft__confirm">
-          <p>Discard this draft? It cannot be brought back.</p>
-          <DisabledReason reason={reason} onClick={() => void discard()}>
-            Discard for good
-          </DisabledReason>
-          <DisabledReason reason={null} look="quiet" onClick={() => setConfirming(false)}>
-            Keep it
-          </DisabledReason>
-        </div>
+        <DiscardConfirm
+          written={written}
+          committed={committed}
+          reason={reason}
+          onDiscard={(deleteFiles) => void discard(deleteFiles)}
+          onKeep={() => setConfirming(false)}
+        />
       ) : (
         <>
           <DisabledReason reason={reason} look="primary" onClick={() => void resume()}>
             Continue this draft
           </DisabledReason>
           <DisabledReason reason={reason} look="quiet" onClick={() => setConfirming(true)}>
-            Discard
+            {written.length > 0 ? "Delete" : "Discard"}
           </DisabledReason>
         </>
       )}
@@ -211,7 +281,7 @@ function DraftShape({ detail }: { detail: KickoffDraftDetail }) {
 function DraftBody({ detail }: { detail: KickoffDraftDetail }) {
   const headingId = useId();
   const { draft } = detail;
-  const kind = draft.size === null ? KIND_UNDECIDED : KIND_WORD[draft.size];
+  const kind = KIND_WORD[draft.size];
   return (
     <div className="kickoff-page kickoff-draft" data-state="draft">
       <section aria-labelledby={headingId} className="kickoff-main">
@@ -229,7 +299,7 @@ function DraftBody({ detail }: { detail: KickoffDraftDetail }) {
             </span>
           </div>
         </header>
-        <DraftActions session={draft.session} />
+        <DraftActions detail={detail} />
         <DraftShape detail={detail} />
         <DraftMessages messages={detail.messages} />
       </section>

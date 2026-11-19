@@ -1,7 +1,7 @@
 import { createStore } from "jotai/vanilla";
 import { expect, it } from "vitest";
 
-import { isKickoffSession, kickoffSessionAtom } from "@/plan/new/kickoff-state";
+import { isKickoffSession, kickoffSessionAtom, kindOf } from "@/plan/new/kickoff-state";
 
 it.each([
   { session: null, requested: null, expected: false },
@@ -21,4 +21,16 @@ it("keeps the started session in its own store", () => {
 
   expect(tab.get(kickoffSessionAtom)).toBe("tab-kickoff");
   expect(otherTab.get(kickoffSessionAtom)).toBeNull();
+});
+
+it.each([
+  { size: "plan", offer: "kickoff", expected: "feature" },
+  { size: "feature", offer: "kickoff-small", expected: "plan" },
+  { size: null, offer: "kickoff", expected: "feature" },
+  { size: null, offer: "kickoff-small", expected: "plan" },
+  { size: "plan", offer: null, expected: "plan" },
+  { size: "feature", offer: "something-else", expected: "feature" },
+  { size: null, offer: null, expected: null },
+] as const)("reads size $size under offer $offer as $expected", ({ size, offer, expected }) => {
+  expect(kindOf(size, offer)).toBe(expected);
 });

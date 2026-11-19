@@ -35,6 +35,8 @@ const detail: KickoffDraftDetail = {
     sections: [],
   },
   messages: ["I would like microvm support.", "Firecracker, probably."],
+  written: [],
+  committed: false,
 };
 
 class FakeSocket {
@@ -84,8 +86,8 @@ function mount(
   return { store, socket, router };
 }
 
-function liveSession(id: string) {
-  return sessionViewSchema.parse({ ...snapshotFixture.session, id, state: "idle" });
+function liveSession(id: string, state: "idle" | "ending" = "idle") {
+  return sessionViewSchema.parse({ ...snapshotFixture.session, id, state });
 }
 
 beforeEach(() => {
@@ -195,7 +197,7 @@ it("Discard asks first, then sends discard_kickoff and returns to New work", asy
   fireEvent.click(screen.getByRole("button", { name: "Discard" }));
   fireEvent.click(screen.getByRole("button", { name: "Discard for good" }));
   expect(socket.send).toHaveBeenCalledExactlyOnceWith(
-    expect.objectContaining({ command: "discard_kickoff", session: ID }),
+    expect.objectContaining({ command: "discard_kickoff", session: ID, delete_files: false }),
   );
   await act(async () => socket.result());
   await waitFor(() => expect(router.state.location.search).toBe(""));
@@ -232,7 +234,79 @@ it("a running kickoff is offered above the empty form and can be set aside", asy
 
   fireEvent.click(screen.getByRole("button", { name: "Set it aside" }));
   expect(socket.send).toHaveBeenCalledExactlyOnceWith(
-    expect.objectContaining({ command: "set_aside_kickoff", session: ID }),
+    expect.objectContaining({ command: "set_aside_kickoff", session: ID, now: false }),
   );
   await act(async () => socket.result());
+  expect(screen.queryByRole("button", { name: "Stop now" })).toBeNull();
+});
+
+it("while the kickoff is being set aside the notice says so and Stop now sends now: true", async () => {
+  const running = { ...draft, name: null, live: true };
+  const { store, socket } = mount("", liveSession(ID, "ending"), [running]);
+  const note = screen.getByText(
+    (_, element) => element?.textContent === `${draftTitle(running)} is being set aside…`,
+  );
+  expect(note).toBeTruthy();
+  // The reason rides on the disabled button; its name stays "Set it aside".
+  const aside = screen.getByRole("button", { name: "Set it aside" });
+  expect(aside.getAttribute("aria-disabled")).toBe("true");
+  expect(screen.getByText("Setting aside")).toBeTruthy();
+
+  fireEvent.click(screen.getByRole("button", { name: "Stop now" }));
+  expect(socket.send).toHaveBeenCalledExactlyOnceWith(
+    expect.objectContaining({ command: "set_aside_kickoff", session: ID, now: true }),
+  );
+  await act(async () => socket.result());
+
+  // The server stops running it: the notice goes with a store update, no remount.
+  act(() => store.set(kickoffDraftsAtom, [{ ...running, live: false }]));
+  expect(screen.queryByText(/being set aside/)).toBeNull();
+  expect(screen.queryByRole("button", { name: "Stop now" })).toBeNull();
+});
+
+it("an ending session of another draft leaves the notice as it was", () => {
+  const running = { ...draft, name: null, live: true };
+  mount("", liveSession("33333333-3333-4333-8333-333333333333", "ending"), [running]);
+  expect(screen.queryByRole("button", { name: "Stop now" })).toBeNull();
+  expect(screen.queryByText(/being set aside/)).toBeNull();
+});
+
+it("a draft that wrote files offers Delete, lists them and sends delete_files: true", async () => {
+  const written = ["doc/plans/PLAN-microvm.md", "doc/plans/features/microvm/vision.md"];
+  served = { status: 200, body: { ...detail, written, committed: true } };
+  const { socket, router } = mount(`?session=${ID}`);
+  expect(await screen.findByRole("heading", { name: "microvm-test-env" })).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Discard" })).toBeNull();
+
+  fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+  const confirm = within(screen.getByRole("group", { name: "Confirm delete" }));
+  expect(confirm.getByText("Delete this draft and the files it wrote?")).toBeTruthy();
+  for (const path of written) {
+    expect(confirm.getByText(path).closest("ul")?.classList.contains("font-mono")).toBe(true);
+  }
+  expect(
+    confirm.getByText("Some of these files are committed; git history still has them."),
+  ).toBeTruthy();
+
+  fireEvent.click(confirm.getByRole("button", { name: "Keep it" }));
+  expect(socket.send).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+  fireEvent.click(screen.getByRole("button", { name: "Delete for good" }));
+  expect(socket.send).toHaveBeenCalledExactlyOnceWith(
+    expect.objectContaining({ command: "discard_kickoff", session: ID, delete_files: true }),
+  );
+  await act(async () => socket.result());
+  await waitFor(() => expect(router.state.location.search).toBe(""));
+});
+
+it("the committed note shows only for committed files, and a refusal keeps the draft", async () => {
+  served = { status: 200, body: { ...detail, written: ["doc/plans/PLAN-microvm.md"] } };
+  const { socket } = mount(`?session=${ID}`);
+  fireEvent.click(await screen.findByRole("button", { name: "Delete" }));
+  expect(screen.queryByText(/git history still has them/)).toBeNull();
+
+  fireEvent.click(screen.getByRole("button", { name: "Delete for good" }));
+  await act(async () => socket.result("Files changed since they were written"));
+  expect(screen.getByRole("status").textContent).toBe("Files changed since they were written");
+  expect(screen.getByRole("group", { name: "Confirm delete" })).toBeTruthy();
 });

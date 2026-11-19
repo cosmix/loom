@@ -52,20 +52,24 @@ pub enum ChatCommand {
         size: KickoffSize,
         name: String,
     },
-    /// End a running kickoff and keep its draft.
+    /// End a running kickoff and keep its draft. `now` tears the session down at once instead
+    /// of waiting for its closing write.
     SetAsideKickoff {
         client_id: Option<String>,
         session: String,
+        now: bool,
     },
     /// Start a new kickoff that carries an unfinished draft.
     ContinueKickoff {
         client_id: Option<String>,
         session: String,
     },
-    /// Delete an unfinished draft.
+    /// Delete an unfinished draft. `delete_files` also removes the files its confirmed kickoff
+    /// wrote.
     DiscardKickoff {
         client_id: Option<String>,
         session: String,
+        delete_files: bool,
     },
     Withdraw {
         client_id: Option<String>,
@@ -157,5 +161,59 @@ mod tests {
         ] {
             assert!(serde_json::from_value::<ChatCommand>(invalid).is_err());
         }
+    }
+
+    #[test]
+    fn set_aside_kickoff_round_trips_with_its_now_flag() {
+        let command = ChatCommand::SetAsideKickoff {
+            client_id: Some("set-aside-1".into()),
+            session: "11111111-1111-4111-8111-111111111111".into(),
+            now: true,
+        };
+        let expected = json!({
+            "command": "set_aside_kickoff", "client_id": "set-aside-1",
+            "session": "11111111-1111-4111-8111-111111111111", "now": true
+        });
+
+        assert_eq!(serde_json::to_value(&command).unwrap(), expected);
+        assert_eq!(
+            serde_json::from_value::<ChatCommand>(expected).unwrap(),
+            command
+        );
+    }
+
+    #[test]
+    fn set_aside_kickoff_requires_the_now_flag() {
+        assert!(serde_json::from_value::<ChatCommand>(json!({
+            "command": "set_aside_kickoff", "session": "kickoff-1"
+        }))
+        .is_err());
+    }
+
+    #[test]
+    fn discard_kickoff_round_trips_with_its_delete_files_flag() {
+        let command = ChatCommand::DiscardKickoff {
+            client_id: None,
+            session: "11111111-1111-4111-8111-111111111111".into(),
+            delete_files: false,
+        };
+        let expected = json!({
+            "command": "discard_kickoff", "client_id": null,
+            "session": "11111111-1111-4111-8111-111111111111", "delete_files": false
+        });
+
+        assert_eq!(serde_json::to_value(&command).unwrap(), expected);
+        assert_eq!(
+            serde_json::from_value::<ChatCommand>(expected).unwrap(),
+            command
+        );
+    }
+
+    #[test]
+    fn discard_kickoff_requires_the_delete_files_flag() {
+        assert!(serde_json::from_value::<ChatCommand>(json!({
+            "command": "discard_kickoff", "session": "kickoff-1"
+        }))
+        .is_err());
     }
 }

@@ -3,7 +3,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import type { connectPlanSocket } from "@/plan/api/socket";
 import { connectionAtom, planSocketAtom } from "@/plan/state/atoms";
-import { setAsideKickoff } from "./commands";
+import { discardKickoff, setAsideKickoff } from "./commands";
 import { installChatSubscription, queueReturnedAtom } from "./model";
 
 function harness(store = createStore()) {
@@ -60,4 +60,32 @@ it("setting a kickoff aside permits queue_returned after its result, once", asyn
   await pending;
   expect(store.get(queueReturnedAtom)).toEqual(["Typed while it ran"]);
   dispose();
+});
+
+const SESSION = "11111111-1111-4111-8111-111111111111";
+
+it("set aside sends now: false by default and now: true for Stop now", async () => {
+  const { store, send, result } = harness();
+
+  const gentle = setAsideKickoff(store, SESSION);
+  const immediate = setAsideKickoff(store, SESSION, true);
+
+  expect(send.mock.calls[0]![0]).toMatchObject({ command: "set_aside_kickoff", now: false });
+  expect(send.mock.calls[1]![0]).toMatchObject({ command: "set_aside_kickoff", now: true });
+  result(0);
+  result(1);
+  await Promise.all([gentle, immediate]);
+});
+
+it("discard sends delete_files exactly as the caller chose", async () => {
+  const { store, send, result } = harness();
+
+  const keep = discardKickoff(store, SESSION, false);
+  const remove = discardKickoff(store, SESSION, true);
+
+  expect(send.mock.calls[0]![0]).toMatchObject({ command: "discard_kickoff", delete_files: false });
+  expect(send.mock.calls[1]![0]).toMatchObject({ command: "discard_kickoff", delete_files: true });
+  result(0);
+  result(1);
+  await Promise.all([keep, remove]);
 });

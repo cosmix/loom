@@ -145,6 +145,7 @@ fn a_failed_id_shows_the_session_error() {
             id: SESSION.into(),
             kind: SessionKind::Summary,
             outcome: EndOutcome::Failed("the summary session failed".into()),
+            cause: None,
         },
     );
 

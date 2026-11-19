@@ -32,7 +32,7 @@ export const kickoffViewSchema = z.strictObject({
 export const kickoffDraftViewSchema = z.strictObject({
   session: z.string(),
   name: z.string().nullable(),
-  size: kickoffSizeSchema.nullable(),
+  size: kickoffSizeSchema,
   problem: z.string().nullable(),
   started_at: z.string(),
   updated_at: z.string(),
@@ -42,6 +42,8 @@ export const kickoffDraftDetailSchema = z.strictObject({
   draft: kickoffDraftViewSchema,
   shape: kickoffShapeSchema.nullable(),
   messages: z.array(z.string()),
+  written: z.array(z.string()),
+  committed: z.boolean(),
 });
 export const tokenCountsSchema = z.strictObject({
   input: u64,

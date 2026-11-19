@@ -84,7 +84,15 @@ impl SessionSpawner for Probe {
         let rebuilds = self.rebuilds.get().and_then(Weak::upgrade);
         if let (Some((bridge, outcome)), Some(rebuilds)) = (end_first, rebuilds) {
             let (id, kind) = (session.clone(), SessionKind::Summary);
-            rebuilds.on_bridge_event(&bridge, &BridgeEvent::Ended { id, kind, outcome });
+            rebuilds.on_bridge_event(
+                &bridge,
+                &BridgeEvent::Ended {
+                    id,
+                    kind,
+                    outcome,
+                    cause: None,
+                },
+            );
         }
         Ok(session)
     }

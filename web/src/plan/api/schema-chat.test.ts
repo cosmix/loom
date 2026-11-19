@@ -188,6 +188,28 @@ describe("chat wire tags and integer ranges", () => {
   });
 });
 
+describe("kickoff command wire fields", () => {
+  const setAside = commands.find((command) => command.command === "set_aside_kickoff");
+  const discard = commands.find((command) => command.command === "discard_kickoff");
+
+  it("carries now on set_aside_kickoff and delete_files on discard_kickoff", () => {
+    expect(setAside).toMatchObject({ now: expect.any(Boolean) });
+    expect(discard).toMatchObject({ delete_files: expect.any(Boolean) });
+    expect(chatCommandSchema.parse(setAside)).toEqual(setAside);
+    expect(chatCommandSchema.parse(discard)).toEqual(discard);
+  });
+
+  it("rejects the commands without their flag or with a non-boolean one", () => {
+    const { now: _now, ...bareSetAside } = setAside as Record<string, unknown>;
+    const { delete_files: _deleteFiles, ...bareDiscard } = discard as Record<string, unknown>;
+
+    expect(chatCommandSchema.safeParse(bareSetAside).success).toBe(false);
+    expect(chatCommandSchema.safeParse(bareDiscard).success).toBe(false);
+    expect(chatCommandSchema.safeParse({ ...setAside, now: "yes" }).success).toBe(false);
+    expect(chatCommandSchema.safeParse({ ...discard, delete_files: 1 }).success).toBe(false);
+  });
+});
+
 describe("chat attachment wire boundaries", () => {
   const input = commands[0].attachments?.[0];
   it("preserves repo-relative attachment paths and rests_on addresses", () => {

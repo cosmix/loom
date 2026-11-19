@@ -5,9 +5,10 @@ description: Load when a planning session starts new work, settles its size and 
 
 # Start new work
 
-The user chose the size of the work before the conversation started: this skill came from
-the feature offer or from the standalone-plan offer. Work in that size and do not ask them to
-choose again:
+The user chose the size of the work before the conversation started. The opening line names
+it, `Kickoff, feature` or `Kickoff, standalone plan`; every `loom-kickoff` block carries that
+size, and the app ignores any other size. Work in that size and do not ask them to choose
+again:
 
 - A feature has a vision, product sections, a metaplan and plans, under
   `doc/product/<name>/` and `doc/plans/<name>/`.

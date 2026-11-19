@@ -37,6 +37,8 @@ pub(super) fn stored(f: &Fixture, session: &str) -> Value {
 pub(super) fn write_draft(f: &Fixture, session: &str, patch: Value) -> PathBuf {
     let mut draft = json!({
         "session": session,
+        "size": "feature",
+        "finished": false,
         "started_at": "2026-11-04T10:47:11Z",
         "updated_at": "2026-11-04T10:50:00Z",
         "messages": ["first idea"],
@@ -75,6 +77,7 @@ pub(super) fn set_aside_cmd(session: &str) -> ChatCommand {
     ChatCommand::SetAsideKickoff {
         client_id: Some("c1".into()),
         session: session.into(),
+        now: false,
     }
 }
 
@@ -85,10 +88,16 @@ pub(super) fn continue_cmd(session: &str) -> ChatCommand {
     }
 }
 
+/// Discard that also deletes the files the draft's target wrote.
 pub(super) fn discard_cmd(session: &str) -> ChatCommand {
+    discard_files_cmd(session, true)
+}
+
+pub(super) fn discard_files_cmd(session: &str, delete_files: bool) -> ChatCommand {
     ChatCommand::DiscardKickoff {
         client_id: Some("c1".into()),
         session: session.into(),
+        delete_files,
     }
 }
 
@@ -111,9 +120,12 @@ pub(super) fn idle(f: &Fixture, s: &LaunchSpec) {
 }
 
 pub(super) fn end_now(f: &Fixture, s: &LaunchSpec) {
-    f.bridge
-        .end(&s.id, EndMode::Teardown, EndCause::Caller)
-        .unwrap();
+    end_by(f, s, EndCause::Caller);
+}
+
+/// End `s` at once, as `cause` asked: the agent's done fence ends a session with `Agent`.
+pub(super) fn end_by(f: &Fixture, s: &LaunchSpec, cause: EndCause) {
+    f.bridge.end(&s.id, EndMode::Teardown, cause).unwrap();
     wait_until("the ended session", || !f.ended(&s.id).is_empty());
 }
 
@@ -129,6 +141,8 @@ fn a_started_kickoff_writes_its_draft() {
 
     let draft = stored(&f, &id);
     assert_eq!(draft["session"], id.as_str());
+    assert_eq!(draft["size"], "feature", "the offer's size");
+    assert_eq!(draft["finished"], false);
     assert_eq!(draft["messages"], json!([typed]));
     let input = json!({"kind": "file", "id": ID, "name": "client-name.png"});
     assert_eq!(draft["attachments"], json!([input]));
@@ -170,7 +184,7 @@ fn assert_read_back_after_restart(f: &Fixture, id: &str, typed: &str) {
     let listed = drafts::list(&f.ctx, &fresh);
     assert_eq!(listed.len(), 1);
     assert_eq!(listed[0].name.as_deref(), Some("agent-name"));
-    assert_eq!(listed[0].size, Some(KickoffSize::Feature));
+    assert_eq!(listed[0].size, KickoffSize::Feature);
     assert_eq!(listed[0].problem.as_deref(), Some("P1"));
     assert!(!listed[0].live);
     let kept = drafts::get(&f.ctx, &fresh, id).unwrap();
@@ -180,17 +194,13 @@ fn assert_read_back_after_restart(f: &Fixture, id: &str, typed: &str) {
 }
 
 #[test]
-fn a_landed_kickoff_leaves_the_drafts() {
+fn a_kickoff_the_agent_finished_leaves_the_drafts() {
     let f = fixture(false);
     let tab = f.connect(&browser());
     let s = start_kickoff(&f, &tab, start_cmd("kickoff", Some("idea"), Vec::new()));
     working(&f, &s);
-    block(
-        &f,
-        &s,
-        &tab,
-        json!({"size": "feature", "name": "fresh", "problem": "P"}),
-    );
+    let shape = json!({"size": "feature", "name": "fresh", "problem": "P"});
+    block(&f, &s, &tab, shape);
     idle(&f, &s);
     assert_eq!(
         f.command(&tab, confirm(KickoffSize::Feature, "fresh")),
@@ -202,16 +212,20 @@ fn a_landed_kickoff_leaves_the_drafts() {
     let document = f.ctx.root().join("doc/product/fresh/index.md");
     fs::create_dir_all(document.parent().unwrap()).unwrap();
     fs::write(&document, "# Fresh\n").unwrap();
+    assert_eq!(
+        drafts::list(&f.ctx, &ChatState::default()).len(),
+        1,
+        "a document alone does not land a draft whose session has not finished"
+    );
 
-    assert!(drafts::list(&f.ctx, &ChatState::default()).is_empty());
+    end_by(&f, &s, EndCause::Agent);
+
+    wait_until("the landing", || {
+        drafts::list(&f.ctx, &ChatState::default()).is_empty()
+    });
     assert!(
         !draft_file(&f, &s.id).exists(),
         "the landed draft is deleted"
-    );
-    end_now(&f, &s);
-    assert!(
-        !draft_file(&f, &s.id).exists(),
-        "the end does not bring it back"
     );
 }
 
@@ -238,7 +252,7 @@ fn every_spelling_of_a_landed_plan_counts() {
         ),
         (
             "55555555-5555-4555-8555-555555555555",
-            "PLAN-four.md",
+            "DONE-PLAN-four.md",
             "archive/",
         ),
     ];
@@ -249,12 +263,22 @@ fn every_spelling_of_a_landed_plan_counts() {
         write_draft(&f, session, json!({"target": target}));
     }
     write_draft(&f, OLD, json!({"target": "doc/plans/PLAN-absent.md"}));
+    // The bare target is not locked: an unfinished draft whose session has not ended stays
+    // listed. A bare spelling under archive/ is locked and lands its draft.
+    let bare = "66666666-6666-4666-8666-666666666666";
+    fs::write(plans.join("PLAN-five.md"), "# Plan\n").unwrap();
+    write_draft(&f, bare, json!({"target": "doc/plans/PLAN-five.md"}));
+    let archived = "77777777-7777-4777-8777-777777777777";
+    fs::write(plans.join("archive/PLAN-six.md"), "# Plan\n").unwrap();
+    write_draft(&f, archived, json!({"target": "doc/plans/PLAN-six.md"}));
 
     let listed = drafts::list(&f.ctx, &ChatState::default());
 
-    assert_eq!(listed.len(), 1, "{listed:?}");
-    assert_eq!(listed[0].session, OLD);
+    let mut sessions: Vec<&str> = listed.iter().map(|d| d.session.as_str()).collect();
+    sessions.sort_unstable();
+    assert_eq!(sessions, [OLD, bare], "{listed:?}");
     assert!(!draft_file(&f, "22222222-2222-4222-8222-222222222222").exists());
+    assert!(!draft_file(&f, "55555555-5555-4555-8555-555555555555").exists());
 }
 
 /// A message pasted and its turn run to Idle, as a real session takes it. The fake host never
@@ -271,7 +295,20 @@ fn user_turn(f: &Fixture, tab: &Tab, s: &LaunchSpec, text: &str) {
     idle(f, s);
 }
 
-/// A small kickoff with a file attached, shaped and set aside; returns its session.
+/// The confirmation message pasted and its turn run to Idle, like `user_turn`.
+fn confirmation_turn(f: &Fixture, s: &LaunchSpec) {
+    let notice = wait_for("the confirmation paste", || {
+        let delivered = f.host.delivered_to(&s.socket).into_iter();
+        delivered
+            .rev()
+            .find(|pasted| pasted.contains("confirmed the"))
+    });
+    f.spool(s, "UserPromptSubmit", json!({"prompt": notice}));
+    f.wait_state(s, SessionState::Working);
+    idle(f, s);
+}
+
+/// A small kickoff with a file attached, shaped, confirmed and set aside; returns its session.
 fn set_aside_small_kickoff(f: &Fixture, tab: &Tab) -> LaunchSpec {
     store_file(f);
     let cmd = start_cmd("kickoff-small", None, vec![file_input(ID)]);
@@ -280,6 +317,11 @@ fn set_aside_small_kickoff(f: &Fixture, tab: &Tab) -> LaunchSpec {
     let shape = json!({"size": "plan", "name": "my-plan", "problem": "P", "decisions": ["D1"]});
     block(f, &s, tab, shape);
     idle(f, &s);
+    assert_eq!(
+        f.command(tab, confirm(KickoffSize::Plan, "my-plan")),
+        ok_result()
+    );
+    confirmation_turn(f, &s);
     user_turn(f, tab, &s, "keep it small");
     assert_eq!(f.command(tab, set_aside_cmd(&s.id)), ok_result());
     f.finish_final_write(&s);
@@ -293,7 +335,7 @@ fn assert_ended_draft_listed(f: &Fixture) {
     let fresh = drafts::list(&f.ctx, &ChatState::default());
     assert_eq!(fresh.len(), 1, "the draft reads back from its file alone");
     assert_eq!(fresh[0].name.as_deref(), Some("my-plan"));
-    assert_eq!(fresh[0].size, Some(KickoffSize::Plan));
+    assert_eq!(fresh[0].size, KickoffSize::Plan);
     assert!(!fresh[0].live);
 }
 

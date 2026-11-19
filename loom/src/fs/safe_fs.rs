@@ -33,8 +33,9 @@ pub(crate) use write::flock_exclusive;
 use write::open_locked_regular;
 pub use write::{
     safe_append_in_workdir, safe_create_new_dir_in_workdir, safe_create_new_in_workdir,
-    safe_locked_write_in_workdir, safe_remove_in_workdir, safe_rename_in_workdir,
-    safe_replace_outside_workdir, safe_write_with_mode_in_workdir,
+    safe_locked_write_in_workdir, safe_remove_empty_dir_in_workdir, safe_remove_in_workdir,
+    safe_remove_tree_in_workdir, safe_rename_in_workdir, safe_replace_outside_workdir,
+    safe_write_with_mode_in_workdir,
 };
 
 /// Maximum bytes accepted in one write or append call. Append callers must

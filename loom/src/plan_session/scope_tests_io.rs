@@ -8,6 +8,7 @@ fn scope_file_round_trips_large_kickoff_and_replaces_with_private_permissions() 
     for scope in [
         SessionScope::Open,
         SessionScope::Kickoff(KickoffScope {
+            size: KickoffSize::Feature,
             existing: (0..3000)
                 .map(|i| format!("doc/plans/PLAN-entry-{i}.md").into())
                 .collect(),

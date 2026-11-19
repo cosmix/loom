@@ -1,7 +1,6 @@
 //! Per-session limits on authoring new planning documents.
 
 use std::collections::HashSet;
-use std::fmt;
 use std::path::{Component, Path, PathBuf};
 
 use anyhow::{ensure, Context, Result};
@@ -11,7 +10,9 @@ use crate::fs::safe_fs::{safe_open_dirfd, safe_replace_outside_workdir};
 use crate::fs::safe_read::{is_not_found, read_to_string_bounded};
 use crate::planning::kinds::is_feature_name;
 use crate::planning::paths::symlink_component;
-use crate::planning::slug::{plan_home, plan_slug};
+
+mod arm;
+pub use arm::{arm_kickoff, ArmRefusal};
 
 #[path = "scope_snapshot.rs"]
 mod scope_snapshot;
@@ -38,6 +39,8 @@ pub struct KickoffGrant {
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct KickoffScope {
+    /// The size the session was started with; confirming any other is refused.
+    pub size: KickoffSize,
     pub existing: Vec<PathBuf>,
     pub grant: Option<KickoffGrant>,
 }
@@ -70,34 +73,32 @@ pub struct ArmedTarget {
     pub bundle: Option<PathBuf>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ArmRefusal {
-    NotKickoff,
-    AlreadyConfirmed,
-    InvalidName(String),
-    Exists(PathBuf),
-    Unreadable(String),
-}
-
-impl fmt::Display for ArmRefusal {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::NotKickoff => write!(f, "This session is not a kickoff session."),
-            Self::AlreadyConfirmed => write!(f, "This kickoff already has a confirmed target."),
-            Self::InvalidName(name) => write!(f, "{name:?} is not a valid feature or plan name."),
-            Self::Exists(path) => write!(f, "The target already exists at {}.", path.display()),
-            Self::Unreadable(reason) => write!(f, "Cannot confirm the kickoff: {reason}."),
-        }
-    }
-}
-
-impl std::error::Error for ArmRefusal {}
-
 impl SessionScope {
-    pub fn kickoff(project_root: &Path) -> Result<SessionScope> {
+    pub fn kickoff(project_root: &Path, size: KickoffSize) -> Result<SessionScope> {
         Ok(Self::Kickoff(KickoffScope {
+            size,
             existing: snapshot(project_root)?,
             grant: None,
+        }))
+    }
+
+    /// The scope of a continued kickoff whose target is already confirmed. The grant is held
+    /// at once, so the target and bundle stay writable although they exist; they are the
+    /// draft's own, so no existing-target check runs and `existing` stays empty (only
+    /// `arm_kickoff` reads it, and it refuses a scope that already has a grant).
+    pub fn kickoff_resumed(
+        _project_root: &Path,
+        size: KickoffSize,
+        name: &str,
+    ) -> Result<SessionScope> {
+        ensure!(is_feature_name(name), "Invalid kickoff grant name");
+        Ok(Self::Kickoff(KickoffScope {
+            size,
+            existing: Vec::new(),
+            grant: Some(KickoffGrant {
+                size,
+                name: name.to_owned(),
+            }),
         }))
     }
 
@@ -159,7 +160,7 @@ impl SessionScope {
             Self::Kickoff(KickoffScope {
                 grant: Some(grant), ..
             }) => {
-                let target = target(grant.size, &grant.name);
+                let target = kickoff_target(grant.size, &grant.name);
                 if rel == target.document
                     || target
                         .bundle
@@ -213,7 +214,8 @@ fn inside(path: &Path, directory: &Path) -> bool {
     path != directory && path.starts_with(directory)
 }
 
-fn target(size: KickoffSize, name: &str) -> ArmedTarget {
+/// The document, and for a plan its brief bundle, a kickoff of `size` named `name` writes.
+pub fn kickoff_target(size: KickoffSize, name: &str) -> ArmedTarget {
     match size {
         KickoffSize::Feature => ArmedTarget {
             document: Path::new("doc/product").join(name).join("index.md"),
@@ -274,105 +276,6 @@ pub fn write(dir: &SessionDir, scope: &SessionScope) -> Result<()> {
     );
     safe_replace_outside_workdir(&dir.scope(), dir.path(), &bytes)
         .with_context(|| format!("cannot write {}", dir.scope().display()))
-}
-
-pub fn arm_kickoff(
-    dir: &SessionDir,
-    project_root: &Path,
-    size: KickoffSize,
-    name: &str,
-) -> Result<ArmedTarget, ArmRefusal> {
-    let mut scope = load(dir).map_err(unreadable)?;
-    let SessionScope::Kickoff(kickoff) = &mut scope else {
-        return Err(ArmRefusal::NotKickoff);
-    };
-    if kickoff.grant.is_some() {
-        return Err(ArmRefusal::AlreadyConfirmed);
-    }
-    if !is_feature_name(name) {
-        return Err(ArmRefusal::InvalidName(name.to_owned()));
-    }
-    let target = target(size, name);
-    refuse_existing(&kickoff.existing, size, name, &target)?;
-    refuse_existing(
-        &snapshot(project_root).map_err(unreadable)?,
-        size,
-        name,
-        &target,
-    )?;
-    refuse_live(project_root, size, name, &target)?;
-    kickoff.grant = Some(KickoffGrant {
-        size,
-        name: name.to_owned(),
-    });
-    write(dir, &scope).map_err(unreadable)?;
-    Ok(target)
-}
-
-fn unreadable(error: anyhow::Error) -> ArmRefusal {
-    ArmRefusal::Unreadable(format!("{error:#}"))
-}
-
-fn refuse_existing(
-    existing: &[PathBuf],
-    size: KickoffSize,
-    name: &str,
-    target: &ArmedTarget,
-) -> Result<(), ArmRefusal> {
-    let document = PathBuf::from(target.document.as_os_str().to_ascii_lowercase());
-    let bundle = target
-        .bundle
-        .as_ref()
-        .map(|path| PathBuf::from(path.as_os_str().to_ascii_lowercase()));
-    let feature = Path::new("doc/plans").join(name.to_ascii_lowercase());
-    for path in existing {
-        let lower = PathBuf::from(path.as_os_str().to_ascii_lowercase());
-        let clash = size == KickoffSize::Plan
-            && plan_home(path).is_some()
-            && path
-                .file_name()
-                .and_then(|file| file.to_str())
-                .and_then(plan_slug)
-                .is_some_and(|slug| slug.eq_ignore_ascii_case(name));
-        if clash
-            || (size == KickoffSize::Feature && lower == feature)
-            || document.starts_with(&lower)
-            || bundle
-                .as_ref()
-                .is_some_and(|bundle| bundle.starts_with(&lower))
-        {
-            return Err(ArmRefusal::Exists(path.clone()));
-        }
-    }
-    Ok(())
-}
-
-fn refuse_live(
-    root: &Path,
-    size: KickoffSize,
-    name: &str,
-    target: &ArmedTarget,
-) -> Result<(), ArmRefusal> {
-    let paths = match size {
-        KickoffSize::Feature => vec![
-            Path::new("doc/product").join(name),
-            Path::new("doc/plans").join(name),
-        ],
-        KickoffSize::Plan => std::iter::once(target.document.clone())
-            .chain(target.bundle.clone())
-            .collect(),
-    };
-    let fd = safe_open_dirfd(root).map_err(unreadable)?;
-    for path in paths {
-        if let (Some(parent), Some(name)) = (path.parent(), path.file_name()) {
-            for (entry, _) in entries(&fd, parent).map_err(unreadable)? {
-                if entry.eq_ignore_ascii_case(name) {
-                    return Err(ArmRefusal::Exists(parent.join(entry)));
-                }
-            }
-        }
-    }
-    Ok(())
 }
 
 #[cfg(test)]

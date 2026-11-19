@@ -1,8 +1,14 @@
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { Provider } from "jotai";
 import { afterEach, describe, expect, it } from "vitest";
 
 import type { KickoffShape } from "@/plan/api/schema-kickoff";
+import type { connectPlanSocket } from "@/plan/api/socket";
+import { snapshotAtom } from "@/plan/chat/model";
+import { storeFor } from "@/plan/chat/panel-test-kit";
+import { FakeSocket, session } from "@/plan/new/kickoff-route-kit";
 import { TakingShape } from "@/plan/new/taking-shape";
+import { planSocketAtom } from "@/plan/state/atoms";
 
 afterEach(cleanup);
 
@@ -194,5 +200,52 @@ describe("the Name row", () => {
     cleanup();
     render(<TakingShape shape={{ ...featureShape, name: null }} target={null} />);
     expect(screen.getByText("Not named yet")).toBeTruthy();
+  });
+});
+
+describe("the size the kickoff was offered", () => {
+  /** The panel for a kickoff started from `offer`, with the socket its Write button sends on. */
+  function showOffered(offer: string, shape: KickoffShape) {
+    const store = storeFor();
+    const socket = new FakeSocket();
+    store.set(planSocketAtom, socket as unknown as ReturnType<typeof connectPlanSocket>);
+    store.set(snapshotAtom, {
+      session: { ...session, offer },
+      turns: [],
+      queue: [],
+      previous: null,
+    });
+    render(
+      <Provider store={store}>
+        <TakingShape shape={shape} target={null} />
+      </Provider>,
+    );
+    return socket;
+  }
+
+  it("keeps a feature kickoff a feature when the shape says plan", () => {
+    const socket = showOffered("kickoff", { ...featureShape, size: "plan" });
+
+    expect(screen.getByRole("region", { name: "Sections" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Write the plan" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Write the vision" }));
+    expect(socket.send).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({
+        command: "confirm_kickoff",
+        size: "feature",
+        name: "planner-search",
+      }),
+    );
+  });
+
+  it("keeps a standalone kickoff a plan when the shape says feature", () => {
+    const socket = showOffered("kickoff-small", featureShape);
+
+    expect(screen.queryByRole("heading", { name: "Sections" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Write the vision" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Write the plan" }));
+    expect(socket.send).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ command: "confirm_kickoff", size: "plan" }),
+    );
   });
 });
