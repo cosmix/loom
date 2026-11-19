@@ -198,6 +198,7 @@
 | [subagent-liveness-and-watch](mistakes/subagent-liveness-and-watch.md) |  | 387 |
 | [subagent-orchestration](mistakes/subagent-orchestration.md) | Agents | 397 |
 | [test-concurrency-and-fixtures](mistakes/test-concurrency-and-fixtures.md) | Races | 398 |
+| [test-hermeticity](mistakes/test-hermeticity.md) | Tests that reached real network, keychain or home state | 13 |
 | [test-sweep-and-fixture-discipline](mistakes/test-sweep-and-fixture-discipline.md) |  | 398 |
 | [testing-and-lint](mistakes/testing-and-lint.md) |  | 408 |
 | [tests-that-cannot-fail](mistakes/tests-that-cannot-fail.md) |  | 392 |
