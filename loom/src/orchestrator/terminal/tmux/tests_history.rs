@@ -239,10 +239,16 @@ fn a_scrollback_past_the_capture_limit_keeps_its_tail() {
     std::fs::create_dir_all(socket.parent().unwrap()).unwrap();
     std::fs::write(&socket, b"").unwrap();
     let bin = tempfile::TempDir::new().unwrap();
+    // The fake pane prints a prepared file: generating 17 MB in the shell
+    // (`head | tr`) can outlast the capture timeout on a loaded CI runner.
+    let pane = bin.path().join("pane");
+    let mut scrollback = vec![b'x'; 17_000_000];
+    scrollback.extend_from_slice(b"\nSCROLLBACK-LAST-LINE\n");
+    std::fs::write(&pane, scrollback).unwrap();
     write_script(
         bin.path(),
         "tmux",
-        "#!/bin/sh\nhead -c 17000000 /dev/zero | tr '\\0' x\necho\necho SCROLLBACK-LAST-LINE\n",
+        &format!("#!/bin/sh\nexec cat '{}'\n", pane.display()),
     );
     let _path = PathGuard::lead_with(bin.path());
 
