@@ -264,3 +264,13 @@ and the contradictory-path-rules lesson as relevant. Eval passes at hit@5 1.00, 
 **Why:** the fixture hand-copied a production constant, and the test skips silently in nested sandboxes, so stage gates never ran it.
 **Prevention:** a fixture that must match a production list imports it. Call a failure a location artifact only when its message names /tmp as the refused root, not merely a /tmp path.
 **Fix:** the test builds the state dir from loom::fs::work_dir::STATE_SUBDIRS.
+
+## Verify adjacent claims during a knowledge correction
+
+**What happened:** A signal-generation correction retained an incorrect claim that recovery calls the dependency-findings wrapper.
+
+**Why:** The normal-generation call path was checked before the adjacent recovery claim.
+
+**Prevention:** Verify each call-path claim in a replacement paragraph against its caller.
+
+**Fix:** The recovery caller uses `build_dependency_findings_with_changes`; the current-state paragraph names that shared-snapshot path.

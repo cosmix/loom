@@ -153,7 +153,7 @@
 | [doctrine-and-acceptance](mistakes/doctrine-and-acceptance.md) |  | 392 |
 | [hooks-shell-portability](mistakes/hooks-shell-portability.md) |  | 402 |
 | [host-verify-group-containment](mistakes/host-verify-group-containment.md) |  | 47 |
-| [knowledge-base-drift](mistakes/knowledge-base-drift.md) |  | 266 |
+| [knowledge-base-drift](mistakes/knowledge-base-drift.md) |  | 276 |
 | [knowledge-cli-invariants](mistakes/knowledge-cli-invariants.md) | Rules | 241 |
 | [knowledge-write-channel](mistakes/knowledge-write-channel.md) | Writes | 134 |
 | [ledger-tui-rendering](mistakes/ledger-tui-rendering.md) |  | 84 |
