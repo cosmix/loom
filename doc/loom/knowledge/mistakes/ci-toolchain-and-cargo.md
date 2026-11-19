@@ -421,3 +421,13 @@ This catches macOS dead code and unused imports. It cannot run tests, so macOS r
 **Prevention:** to hide a path from a Seatbelt profile that allows metadata globally, deny the operations by name: `(deny file-read-metadata file-test-existence (literal P))` plus `(deny file-read* (literal P))`, on the canonical `/private/...` path. Test it under the real `sandbox-exec` (`confine_seatbelt_tests.rs`), never by asserting profile text alone. A macOS test that can fail in CI prints its diagnostics in the assertion message, so one CI round settles the cause.
 
 **Fix:** `confine_ancestors.rs` emits the named-operation denies for every spelling `seatbelt_spellings` produces. `confine_seatbelt_probe_tests.rs` prints the profile in use and the results of six rule variants when the absence test fails.
+
+## killpg Answers EPERM on macOS for a Zombie-Only Group, and a CPU-Bound Test Fixture Outran a Timeout (2026-11-19)
+
+**What happened:** CI failed on both platforms with one test each. On macOS, `pressure::codex_run::tests::an_attempts_group_is_dropped_once_empty_and_kept_while_a_child_outlives_it` failed with `failed to stop codex process group: EPERM`. On Linux, `tmux::tests_history::a_scrollback_past_the_capture_limit_keeps_its_tail` found no history file.
+
+**Why:** macOS returns `EPERM` from `killpg` when every member of the group is a zombie (an orphan launchd has not reaped yet); `cancel_groups` treated only `ESRCH` as an empty group. The tmux test's fake `tmux` generated 17 MB with `head -c | tr`, which takes about 0.6 s on an idle machine and can pass the 5 s `TMUX_PROBE_TIMEOUT` on a loaded runner, so the capture timed out and nothing was saved.
+
+**Prevention:** when probing or signalling a process group of our own children, treat `EPERM` like `ESRCH`. A test fixture that must produce a large output prints a file prepared in Rust (`cat`), never shell generation, when a timeout bounds the command.
+
+**Fix:** `src/pressure/codex_run.rs` `cancel_groups` drops a group on `ESRCH | EPERM`; the tmux test writes the scrollback file once and its script `exec cat`s it.
