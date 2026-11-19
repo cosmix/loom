@@ -70,6 +70,13 @@ fn options_are_available_with_the_written_plans_and_defaults() {
 #[test]
 #[serial]
 fn options_say_codex_is_missing_without_codex_on_path() {
+    let installed = crate::codex::SYSTEM_CODEX_PATHS
+        .iter()
+        .find(|path| std::path::Path::new(path).exists());
+    if let Some(path) = installed {
+        eprintln!("skipped: codex is installed at {path}, which PATH and HOME cannot hide");
+        return;
+    }
     let mut f = Fixture::new();
     let path = std::env::var_os("PATH").unwrap_or_default();
     let has_codex = |dir: &PathBuf| dir.join("codex").exists();

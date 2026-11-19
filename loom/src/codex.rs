@@ -238,6 +238,11 @@ pub fn ensure_codex_config_excludes_slash_tmp(config_path: &Path) -> Result<bool
 /// stay byte-identical to this constant; `tests_doctrine.rs` pins all three.
 pub const CODEX_FORWARD_SENTINEL: &str = "LOOM-CODEX-FORWARD-ONLY";
 
+/// The fixed install locations [`find_codex_path`] checks after `PATH` and the home directory;
+/// neither `PATH` nor `HOME` can hide a codex installed here.
+pub(crate) const SYSTEM_CODEX_PATHS: [&str; 2] =
+    ["/usr/local/bin/codex", "/opt/homebrew/bin/codex"];
+
 /// Find the absolute path to the codex binary.
 ///
 /// Mirrors [`crate::claude::find_claude_path`]: try `which::which` first (uses
@@ -257,8 +262,8 @@ pub fn find_codex_path() -> Result<PathBuf> {
         dirs::home_dir().map(|h| h.join(".local/bin/codex")),
         dirs::home_dir().map(|h| h.join(".npm-global/bin/codex")),
         dirs::home_dir().map(|h| h.join(".cargo/bin/codex")),
-        Some(PathBuf::from("/usr/local/bin/codex")),
-        Some(PathBuf::from("/opt/homebrew/bin/codex")),
+        Some(PathBuf::from(SYSTEM_CODEX_PATHS[0])),
+        Some(PathBuf::from(SYSTEM_CODEX_PATHS[1])),
     ];
 
     for candidate in candidates.into_iter().flatten() {
