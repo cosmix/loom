@@ -71,3 +71,13 @@ tool's behavior before it becomes a rule.
 - **Test-integrity text matching.** An edit to a line containing `tests_assert` raised a `TI-edit`
   event because the check counts it as an assertion line; leave such a doc line alone or dispute the
   event (see [Plan Server Delivery](plan-server-delivery.md) for the split-file rule).
+
+## Summary Store Anchored at a Read-Denied Directory on macOS
+
+**What happened:** every `loom plan summary` command inside a macOS planning session failed with `Failed to open dirfd at <loom home>/plan/<key>: Operation not permitted`; the same sessions worked on Linux.
+
+**Why:** the session's `denyRead` covers the planning root and `allowRead` re-grants only `drafts/`, `claims/`, `summaries.lock` and `attachments/`. Linux srt covers the denied directory with a tmpfs and re-binds the grants, so the runtime directory itself still opens. macOS srt emits Seatbelt subpath rules, so opening the runtime directory returns EPERM while an open of a grant succeeds. The summary store anchored at `safe_open_dirfd(&paths.dir)`, and `open_safely` on macOS walked every intermediate directory. The Linux-only confinement test never caught it.
+
+**Prevention:** a session-side open never anchors at or walks through a directory the session reaches only through carve-outs; open the grant in one symlink-refusing syscall. Never grant the runtime directory: it holds the server token in `lock`, plus `tokens/` and `sessions/`. On macOS, `O_NOFOLLOW | O_NOFOLLOW_ANY` together return EINVAL; pass `O_NOFOLLOW_ANY` alone.
+
+**Fix:** `fs/safe_fs/single_open.rs` (openat2 on Linux, `O_NOFOLLOW_ANY` on Darwin 20+); the store anchors at the loom user directory through `RuntimePaths::base`/`below_base` (`planning/runtime.rs`); `ensure_runtime_dir` accepts an openable grant. Regression: `tests/planning_summary_seatbelt.rs`.

@@ -174,7 +174,7 @@
 | [planner-review-fixes](mistakes/planner-review-fixes.md) |  | 139 |
 | [planner-ui-repair](mistakes/planner-ui-repair.md) | Repair | 215 |
 | [planner-visual-feedback-shortfall](mistakes/planner-visual-feedback-shortfall.md) | Visual | 24 |
-| [planning-sandbox-delivery](mistakes/planning-sandbox-delivery.md) |  | 73 |
+| [planning-sandbox-delivery](mistakes/planning-sandbox-delivery.md) |  | 83 |
 | [pre-commit-hardening](mistakes/pre-commit-hardening.md) |  | 93 |
 | [refactor-stragglers](mistakes/refactor-stragglers.md) |  | 335 |
 | [review-continuation-verification](mistakes/review-continuation-verification.md) | Repair | 331 |
