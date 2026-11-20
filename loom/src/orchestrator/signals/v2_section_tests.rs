@@ -95,10 +95,35 @@ fn frozen_contracts_block_teaches_the_replacement_dispute() {
 
     assert!(content.contains(
         "- Every change to a frozen file travels as a replacement. Copy the frozen file to \
-         `$LOOM_SCRATCH_DIR`, edit the copy there, run the stage's formatter check on it, and \
-         file `loom stage dispute-contract s1 --contract <contract-id> --replacement \
-         <frozen-file>=<path> --reason \"...\"`, with one `--replacement` for each file. On \
-         accept the daemon writes it into the worktree."
+         `$LOOM_SCRATCH_DIR`, edit the copy there, run the stage's formatter check on it, trial \
+         it with `loom check s1 --contracts --replacement <frozen-file>=<path>` (one \
+         `--replacement` for each file), and when the trial passes file ONE `loom stage \
+         dispute-contract s1 --contract <contract-id> [--contract <contract-id> ...] \
+         --replacement <frozen-file>=<path> --reason \"...\"` naming every affected contract, \
+         with the same `--replacement` values. On accept the daemon writes it into the \
+         worktree."
+    ));
+    // One sequence: no bullet files a replacement before its trial.
+    assert!(!content.contains("formatter check on it, and file"));
+    assert_eq!(content.matches("travels as a replacement").count(), 1);
+}
+
+/// The agent runs the contracts early and disputes an environment red with a
+/// trial-checked replacement, filed as one dispute.
+#[test]
+fn frozen_contracts_block_teaches_the_early_check_and_the_trial() {
+    let temp = tempfile::tempdir().unwrap();
+    write_test_freeze(temp.path(), "s1", "session-1");
+    let content = render(&v2_stage(), temp.path());
+
+    assert!(content.contains(
+        "- Run `loom check s1 --contracts` as soon as the contract tests compile, before the \
+         rest of the work."
+    ));
+    assert!(content.contains(
+        "A contract that fails there for a reason no implementation can change is disputed at \
+         once with a replacement that checks the same scenario in a form that runs under \
+         confinement, trialled and filed as above."
     ));
 }
 

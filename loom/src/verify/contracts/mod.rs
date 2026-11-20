@@ -25,6 +25,7 @@ mod drift_contract_tests;
 pub(crate) mod failed_builds;
 pub mod format_gate;
 pub(crate) mod freeze;
+pub(crate) mod frozen_restore;
 pub mod frozen_set;
 mod record_view;
 pub mod refusal;
@@ -34,6 +35,9 @@ mod special_walk;
 pub mod store;
 #[cfg(test)]
 pub(crate) mod test_support;
+pub mod trial;
+#[cfg(test)]
+mod trial_contract_tests;
 
 use glob::{MatchOptions, Pattern};
 use std::path::{Component, Path};

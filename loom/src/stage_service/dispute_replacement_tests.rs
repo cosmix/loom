@@ -19,9 +19,13 @@ use crate::verify::contracts::store::{
     write_freeze, FreezeRecord, FrozenContract, FrozenFile, FREEZE_RECORD_VERSION,
 };
 use crate::verify::contracts::test_support::{
-    contract, CONTRACT_CONTENT, CONTRACT_FILE, CONTRACT_ID,
+    contract, contract_worktree, CONTRACT_CONTENT, CONTRACT_FILE, CONTRACT_ID,
 };
 use crate::verify::transitions::save_stage;
+
+#[path = "dispute_trial_tests.rs"]
+mod trial_tests;
+use trial_tests::file_trialed;
 
 const STAGE: &str = "stage-repl";
 const OTHER_ID: &str = "rejects-y";
@@ -54,7 +58,9 @@ fn frozen_stage_with(contracts: Vec<ContractSpec>, files: &[(&str, &[u8])]) -> (
     let workspace = WorkDir::new(tmp.path()).unwrap();
     workspace.initialize().unwrap();
     let work_dir = workspace.root().to_path_buf();
-    let worktree = tmp.path().join(".worktrees").join(STAGE);
+    // A registered worktree on a committed base: admission reads its HEAD to
+    // match a replacement trial.
+    let worktree = contract_worktree(tmp.path(), STAGE);
     for (path, content) in files {
         let path = worktree.join(path);
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
@@ -253,7 +259,7 @@ fn a_contract_an_amendment_deleted_neither_holds_its_file_nor_can_be_disputed() 
         vec![replacement(CONTRACT_FILE, TRICKY, None)],
     );
     assert!(matches!(
-        file(&work_dir, kind),
+        file_trialed(&work_dir, kind),
         Response::DisputeCreated { .. }
     ));
 }
@@ -290,7 +296,7 @@ fn a_two_contract_two_file_filing_spends_one_dispute() {
         ],
     );
 
-    let Response::DisputeCreated { id } = file(&work_dir, kind) else {
+    let Response::DisputeCreated { id } = file_trialed(&work_dir, kind) else {
         panic!("the dispute was refused");
     };
 
@@ -318,7 +324,8 @@ fn a_two_contract_two_file_filing_spends_one_dispute() {
 fn request_md_keeps_the_replacement_byte_exact() {
     let (_tmp, work_dir) = frozen_stage();
 
-    let Response::DisputeCreated { id } = file(&work_dir, dispute(Some(TRICKY), None)) else {
+    let Response::DisputeCreated { id } = file_trialed(&work_dir, dispute(Some(TRICKY), None))
+    else {
         panic!("the dispute was refused");
     };
 
@@ -334,7 +341,8 @@ fn request_md_keeps_the_replacement_byte_exact() {
 fn admission_binds_the_replacement_to_the_frozen_hash_over_a_client_value() {
     let (_tmp, work_dir) = frozen_stage();
 
-    let Response::DisputeCreated { id } = file(&work_dir, dispute(Some(TRICKY), Some("c0ffee")))
+    let Response::DisputeCreated { id } =
+        file_trialed(&work_dir, dispute(Some(TRICKY), Some("c0ffee")))
     else {
         panic!("the dispute was refused");
     };

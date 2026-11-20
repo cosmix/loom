@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use serial_test::serial;
 
-use super::{acceptance_config, Progress};
+use super::child::{acceptance_config, Progress};
 use crate::models::stage::Stage;
 use crate::plan::schema::CommandConfinement;
 use crate::test_cache_env::{repo_with_work_dir, CacheEnv};

@@ -257,6 +257,7 @@ fn job_record(session: &str, order: u64) -> JobRecord {
         tree_digest: "tree-digest".to_string(),
         no_cache: false,
         criteria: None,
+        contracts: false,
         state: JobState::Failed,
         requests: Vec::new(),
         queued_at: now,

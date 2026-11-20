@@ -10,10 +10,13 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 
+use super::CheckSelection;
+use crate::commands::stage::read_replacements;
 use crate::fs::work_dir::WorkDir;
 use crate::git::worktree::stage_worktree_path;
 use crate::host_verify::wait::{self, TicketSink, WaitOutcome, WaitSite};
 use crate::host_verify::JobKind;
+use crate::models::dispute::FileReplacement;
 use crate::models::stage::{Stage, StageType};
 use crate::relay::emit::{mode, EnvSnapshot, RelayContext, RelayMode};
 use crate::relay::{HostJobRequest, RequestKind};
@@ -24,12 +27,12 @@ const LEGACY_REFUSAL: &str = "This session cannot relay verification (no LOOM_SC
 
 /// Route `loom check <stage_id>` by where it runs. Returns for the operator's
 /// shell, which then runs locally; a session's outcome ends the process here.
-/// `criteria` is the `--criterion` selection; empty requests every criterion.
+/// `selection` is what the call runs; the daemon's job runs only it.
 pub(super) fn run(
     stage_id: &str,
     work_dir: &Path,
     suggest: bool,
-    criteria: &[usize],
+    selection: &CheckSelection,
 ) -> Result<()> {
     let mut out = std::io::stdout();
     match mode(&EnvSnapshot::from_process_env()) {
@@ -44,7 +47,7 @@ pub(super) fn run(
             }
             // Every session outcome ends here: requested and pending exit 0
             // too, and must never fall through to the local run.
-            let code = request_or_wait(&context, stage_id, work_dir, criteria, &mut out)?;
+            let code = request_or_wait(&context, stage_id, work_dir, selection, &mut out)?;
             let _ = out.flush();
             std::process::exit(code)
         }
@@ -92,17 +95,40 @@ fn target(context: &RelayContext, stage_id: &str, work_dir: &Path) -> Result<Tar
     })
 }
 
+/// The replacement files a trial lays over frozen files, read under the
+/// rules a contract dispute's replacements follow; none for any other run.
+fn replacements(
+    work_dir: &Path,
+    stage_id: &str,
+    selection: &CheckSelection,
+) -> Result<Vec<FileReplacement>> {
+    match selection {
+        CheckSelection::Trial(files) => read_replacements(work_dir, stage_id, files),
+        _ => Ok(Vec::new()),
+    }
+}
+
 fn request_or_wait(
     context: &RelayContext,
     stage_id: &str,
     work_dir: &Path,
-    criteria: &[usize],
+    selection: &CheckSelection,
     out: &mut dyn Write,
 ) -> Result<i32> {
-    let target = match target(context, stage_id, work_dir) {
-        Ok(target) => target,
+    let found = target(context, stage_id, work_dir)
+        .and_then(|target| Ok((target, replacements(work_dir, stage_id, selection)?)));
+    let (target, replacements) = match found {
+        Ok(found) => found,
         Err(error) => return refuse(out, &format!("{error:#}")),
     };
+    let criteria = match selection {
+        CheckSelection::Criteria(criteria) => Some(criteria.as_slice()),
+        _ => None,
+    };
+    let contracts = matches!(
+        selection,
+        CheckSelection::Contracts | CheckSelection::Trial(_)
+    );
     let site = WaitSite {
         work_dir,
         stage_id,
@@ -112,7 +138,8 @@ fn request_or_wait(
         kind: JobKind::Check,
         no_cache: std::env::var("LOOM_ACCEPTANCE_CACHE").as_deref() == Ok("0"),
         // The selection rides on the ticket; the daemon's job runs only it.
-        criteria: (!criteria.is_empty()).then_some(criteria),
+        criteria,
+        contracts: contracts.then_some(replacements.as_slice()),
         scratch_dir: &context.scratch_dir,
         budget: wait::budget_for(&target.stage),
     };

@@ -147,6 +147,7 @@ impl Fixture {
             tree_digest,
             no_cache,
             criteria: None,
+            contracts: false,
             state,
             requests: vec!["r1".to_string()],
             queued_at: now,

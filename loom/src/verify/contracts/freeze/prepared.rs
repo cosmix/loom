@@ -117,7 +117,13 @@ fn judge_prepared_result(
         exit_code: run.exit_code,
     };
     let summary = adapter.map_or_else(RunSummary::default, |adapter| adapter.parse(&output));
-    let judged = judge_run(contract, adapter, summary, run.exit_code);
+    let judged = judge_run(
+        contract,
+        adapter,
+        summary,
+        output.exit_code,
+        Some((output.stdout, output.stderr)),
+    );
     warn_if_unverified(contract, adapter, &judged, emit);
     let compile_failed = adapter.is_some_and(|adapter| adapter.compile_rejected(&output));
     if !compile_failed {

@@ -13,16 +13,18 @@ use chrono::Utc;
 
 use super::digest::{head, knowledge_tree_digest, tree_digest};
 use super::store::{load_result, read_progress};
-use super::wait_report::report;
+use super::wait_report::{report, site_heading, site_refusal};
 use super::wait_state::{
     find_job, job_id_of, ledger_outcome, read_state, remove_state_if_owned, state_path,
     write_state, RequestState,
 };
 use super::{JobKind, JobRecord, JobResult, JobState};
 use crate::fs::inbox::LedgerOutcome;
+use crate::models::dispute::FileReplacement;
 use crate::models::stage::Stage;
 use crate::relay::emit::{RelaySink, StdSink};
 use crate::relay::HostJobRequest;
+use crate::verify::contracts::trial::trial_files;
 
 pub use super::wait_report::{head_or_empty, heading, refusal};
 
@@ -44,6 +46,10 @@ pub struct WaitSite<'a> {
     /// is followed only by a call selecting the same criteria, so a subset
     /// result never answers a full check.
     pub criteria: Option<&'a [usize]>,
+    /// A check of the frozen contracts (`loom check --contracts`) with the
+    /// replacement files it trials, none for a plain contracts check; `None`
+    /// for every other job.
+    pub contracts: Option<&'a [FileReplacement]>,
     pub scratch_dir: &'a Path,
     pub budget: Duration,
 }
@@ -146,7 +152,7 @@ pub fn wait_or_request(
         Ok(outcome) => Ok(outcome),
         Err(error) => {
             let message = format!("{error:#}");
-            refusal(out, site.kind, &head_or_empty(site.checkout), &message)?;
+            site_refusal(out, site, &head_or_empty(site.checkout), &message)?;
             Ok(WaitOutcome::Refused(message))
         }
     }
@@ -191,6 +197,7 @@ fn state_matches(site: &WaitSite<'_>, state: &RequestState, head: &str, digest: 
         && state.tree_digest == digest
         && state.no_cache == site.no_cache
         && state.criteria.as_deref() == site.criteria
+        && state.contracts == site.contracts.map(trial_files)
 }
 
 /// A passed completion, and a freeze job that passed or failed, are decided
@@ -263,6 +270,8 @@ fn request(
         tree_digest: tree_digest.clone(),
         no_cache: site.no_cache,
         criteria: site.criteria.map(<[usize]>::to_vec),
+        contracts: site.contracts.is_some(),
+        replacements: site.contracts.map(<[_]>::to_vec).unwrap_or_default(),
     })
     .context("the request was not sent")?;
     let state = RequestState {
@@ -271,11 +280,12 @@ fn request(
         tree_digest,
         no_cache: site.no_cache,
         criteria: site.criteria.map(<[usize]>::to_vec),
+        contracts: site.contracts.map(trial_files),
         submitted_at: Utc::now(),
     };
     write_state(path, &state).context("the request was not sent")?;
     let printed = (|| -> Result<()> {
-        writeln!(out, "{}", heading(site.kind, "requested", &head))?;
+        writeln!(out, "{}", site_heading(site, "requested", &head))?;
         writeln!(
             out,
             "This is not a result. Run the same command again in your next Bash call to wait for it."

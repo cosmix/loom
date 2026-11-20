@@ -80,10 +80,17 @@ fn append_frozen_contract_commands(content: &mut String, id: &str) {
          names every contract with the same cause. A filing is refused while a frozen file in \
          the worktree is edited: restore it first.\n\
          - Every change to a frozen file travels as a replacement. Copy the frozen file to \
-         `$LOOM_SCRATCH_DIR`, edit the copy there, run the stage's formatter check on it, and \
-         file `loom stage dispute-contract {id} --contract <contract-id> --replacement \
-         <frozen-file>=<path> --reason \"...\"`, with one `--replacement` for each file. On \
-         accept the daemon writes it into the worktree.\n"
+         `$LOOM_SCRATCH_DIR`, edit the copy there, run the stage's formatter check on it, trial \
+         it with `loom check {id} --contracts --replacement <frozen-file>=<path>` (one \
+         `--replacement` for each file), and when the trial passes file ONE `loom stage \
+         dispute-contract {id} --contract <contract-id> [--contract <contract-id> ...] \
+         --replacement <frozen-file>=<path> --reason \"...\"` naming every affected contract, \
+         with the same `--replacement` values. On accept the daemon writes it into the \
+         worktree.\n\
+         - Run `loom check {id} --contracts` as soon as the contract tests compile, before the \
+         rest of the work. A contract that fails there for a reason no implementation can \
+         change is disputed at once with a replacement that checks the same scenario in a form \
+         that runs under confinement, trialled and filed as above.\n"
     ));
 }
 

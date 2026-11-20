@@ -1,6 +1,6 @@
 //! What the writer signal shows of the choices the writer makes at the freeze:
 //! the plan's hint, `(you choose)`, a test an earlier freeze saved, the flags
-//! the plan leaves open and rule 7.
+//! the plan leaves open and rule 8.
 
 use super::*;
 use crate::models::stage::StageType;
@@ -139,13 +139,13 @@ fn the_choices_paragraph_says_none_when_the_plan_fixes_nothing() {
 }
 
 #[test]
-fn rule_seven_names_the_flags_and_the_wait() {
+fn rule_eight_names_the_flags_and_the_wait() {
     let mut content = String::new();
     append_rules(&mut content, "s1");
 
     assert!(
         content.contains(
-            "7. Finish with `loom stage contracts freeze s1 --test <id>=<identifier> ...`"
+            "8. Finish with `loom stage contracts freeze s1 --test <id>=<identifier> ...`"
         ),
         "{content}"
     );

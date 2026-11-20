@@ -37,6 +37,7 @@ fn record(state: JobState) -> JobRecord {
         tree_digest: "b".repeat(64),
         no_cache: false,
         criteria: None,
+        contracts: false,
         state,
         requests: vec!["r1".to_string()],
         queued_at: Utc::now(),

@@ -35,6 +35,8 @@ fn relay_complete(fx: &Fixture) -> Settle {
         tree_digest: digest::tree_digest(&fx.worktree).expect("the tree digest"),
         no_cache: false,
         criteria: None,
+        contracts: false,
+        replacements: Vec::new(),
     };
     apply_complete(&host(fx), STAGE, &session, &request, "r1")
 }

@@ -18,6 +18,7 @@ fn record(kind: JobKind, state: JobState, now: DateTime<Utc>) -> JobRecord {
         tree_digest: "digest".to_string(),
         no_cache: false,
         criteria: None,
+        contracts: false,
         state,
         requests: vec![],
         queued_at: now - Duration::seconds(400),

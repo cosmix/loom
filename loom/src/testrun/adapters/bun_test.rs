@@ -207,7 +207,13 @@ describe("suite", () => {{
             ..crate::verify::contracts::test_support::contract()
         };
         let refused =
-            crate::verify::contracts::freeze::judge_run(&spec, Some(&ADAPTER), parsed, exit_code)
+            crate::verify::contracts::freeze::judge_run(
+                &spec,
+                Some(&ADAPTER),
+                parsed,
+                exit_code,
+                None,
+            )
                 .expect_err("a failing sibling must not stand in for the missing exact test");
         assert!(refused.contains("did not select"), "{refused}");
     }

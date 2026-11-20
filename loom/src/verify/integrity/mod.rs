@@ -9,6 +9,9 @@
 mod count;
 mod edits;
 mod gate;
+mod lost;
+#[cfg(test)]
+mod lost_contract_tests;
 mod moves;
 mod moves_collect;
 mod ratchet_diff;
@@ -24,6 +27,7 @@ use crate::verify::review::fingerprint::{self, ChangeFingerprint};
 use crate::verify::review::store::{self, RECORD_VERSION};
 
 pub use gate::{check, check_changes, describe, shortfall};
+pub use lost::lost_statements;
 
 pub(in crate::verify) const ACCEPTED_FILE: &str = "integrity.json";
 /// Directory names whose files are tests whatever their language.

@@ -48,7 +48,7 @@ fn contract_dispute(content: String) -> DisputeKind {
 }
 
 fn read_all(work: &Path, values: &[String]) -> Result<Vec<FileReplacement>> {
-    read_replacements(work, "s1", values)
+    read_replacements(work, "s1", &parse_replacements(values)?)
 }
 
 #[test]

@@ -180,6 +180,7 @@ pub(super) fn running_record(stage_id: &str, pid: Option<u32>) -> JobRecord {
         tree_digest: "d".to_string(),
         no_cache: false,
         criteria: None,
+        contracts: false,
         state: JobState::Running,
         requests: vec!["r1".to_string()],
         queued_at: Utc::now(),

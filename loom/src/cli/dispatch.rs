@@ -186,7 +186,7 @@ fn run_check(stage_id: String, suggest: bool, args: verify::CheckArgs) -> Result
         // `run_acceptance_with_display`) reads this once.
         std::env::set_var("LOOM_ACCEPTANCE_CACHE", "0");
     }
-    verify::execute(&stage_id, suggest, &args.criterion)
+    verify::execute(&stage_id, suggest, &args)
 }
 
 /// `loom sessions <subcommand>` dispatch.

@@ -1,11 +1,7 @@
 //! The session-side wait protocol, against a real checkout and a temp state
 //! root, with job records written through the store.
 
-use std::cell::RefCell;
-use std::io::Write;
-use std::path::PathBuf;
-use std::rc::Rc;
-use std::time::Duration;
+use std::{cell::RefCell, io::Write, path::PathBuf, rc::Rc, time::Duration};
 
 use chrono::Utc;
 use tempfile::TempDir;
@@ -61,6 +57,7 @@ impl Fx {
             kind: JobKind::Check,
             no_cache,
             criteria: None,
+            contracts: None,
             scratch_dir: &self.scratch,
             budget,
         }
@@ -85,6 +82,7 @@ impl Fx {
             tree_digest: tree_digest(&self.checkout).unwrap(),
             no_cache: false,
             criteria: None,
+            contracts: false,
             state,
             requests: requests.iter().map(|id| id.to_string()).collect(),
             queued_at: Utc::now(),

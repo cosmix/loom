@@ -2,10 +2,10 @@
 //!
 //! The daemon's runner starts it for a job it has set `Running`. The child
 //! verifies the tree the request named, records each criterion's outcome as
-//! it finishes, and writes the job's result. A check runs the stage's gate, a
-//! completion or a verdict completion its full completion run
-//! (`child_complete`), a freeze its contracts (`freeze`). The CLI wrapper prints the result summary; some
-//! verification checks also print progress into the captured `child.log`.
+//! it finishes, and writes the job's result. A check runs the stage's gate or
+//! its contracts (`child_contracts`), a completion or a verdict completion its
+//! full run (`child_complete`), a freeze its contracts (`freeze`). The CLI
+//! wrapper prints the result summary; checks may print progress to `child.log`.
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
@@ -14,7 +14,7 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use anyhow::{bail, ensure, Context, Result};
 
 use super::child_policy::{check_cache_policy, requested_cache};
-use super::{child_complete, digest, freeze, store};
+use super::{child_complete, child_contracts, digest, freeze, store};
 use super::{CriterionOutcome, JobKind, JobRecord, JobResult, JobState};
 use crate::git::worktree::WorktreeGit;
 use crate::models::dispute::truncate_to_byte_limit;
@@ -99,15 +99,21 @@ fn check(work_dir: &Path, record: &JobRecord, progress: &Arc<Progress>) -> Resul
     if let Some(mismatch) = tree.differences(record)? {
         bail!("the tree does not match the request: {mismatch}");
     }
+    if record.contracts {
+        return child_contracts::run(work_dir, record, &stage, &tree, progress);
+    }
     let only = record.criteria.clone().map(BTreeSet::from_iter);
     let cache = check_cache_policy(work_dir, record)?;
     let root = tree.paths.worktree_root.as_deref();
     let config = acceptance_config(&stage, root, work_dir, cache, progress)?;
     run_configured(&stage, &tree, &config.with_only(only))?;
     progress.take_failure()?;
-    // The goal-backward checks belong to a run of every criterion.
-    if goal.has_checks() && record.criteria.is_none() {
-        run_goal(&stage, &tree, progress, &goal)?;
+    // The goal-backward checks and the contracts belong to a run of every criterion.
+    if record.criteria.is_none() {
+        if goal.has_checks() {
+            run_goal(&stage, &tree, progress, &goal)?;
+        }
+        child_contracts::run_full(&stage, &tree, work_dir, progress)?;
         progress.take_failure()?;
     }
     tree.differences(record)
@@ -237,7 +243,7 @@ pub(super) struct JobTree {
     /// worktree's `.git` file cannot choose the configuration git runs. A
     /// knowledge stage's checkout is the repository root, whose git directory
     /// every daemon git call trusts.
-    git: WorktreeGit,
+    pub(super) git: WorktreeGit,
     pub(super) paths: StageExecutionPaths,
     pub(super) knowledge: bool,
 }
@@ -390,7 +396,3 @@ impl Progress {
         std::mem::take(&mut self.lock().outcomes)
     }
 }
-
-#[cfg(test)]
-#[path = "child_cache_tests.rs"]
-mod cache_tests;

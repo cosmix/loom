@@ -2,6 +2,7 @@
 //! outcome it is, how serious that is for a stage of a given shape, and when a
 //! first timeout earns a second run.
 
+use crate::verify::criteria::environment::environment_marker;
 use crate::verify::criteria::CriterionResult;
 
 /// What one criterion did at the base commit.
@@ -30,19 +31,6 @@ pub enum DrySeverity {
     Note,
 }
 
-/// Output text that means the environment, not the criterion, failed.
-const ENVIRONMENT_MARKERS: [&str; 9] = [
-    "bwrap:",
-    "operation not permitted",
-    "temporary failure in name resolution",
-    "could not resolve host",
-    "couldn't resolve host",
-    "network is unreachable",
-    "connection refused",
-    "read-only file system",
-    "no space left on device",
-];
-
 /// The zero-test guard's failure text (`verify::criteria::zero_tests`).
 const ZERO_TESTS: &str = "selected zero tests";
 
@@ -68,7 +56,7 @@ pub(super) fn classify_with(
     }
     let failed_run = !result.success && result.exit_code.is_some_and(|code| code != 0);
     if failed_run && !has_summary {
-        if let Some(marker) = environment_marker(result) {
+        if let Some(marker) = environment_marker(&result.stdout, &result.stderr) {
             return DryOutcome::Environment(marker.to_string());
         }
     }
@@ -80,13 +68,6 @@ pub(super) fn classify_with(
     } else {
         DryOutcome::Failed
     }
-}
-
-fn environment_marker(result: &CriterionResult) -> Option<&'static str> {
-    let output = format!("{}\n{}", result.stderr, result.stdout).to_lowercase();
-    ENVIRONMENT_MARKERS
-        .into_iter()
-        .find(|marker| output.contains(marker))
 }
 
 /// How serious `outcome` is for a stage with or without dependencies.

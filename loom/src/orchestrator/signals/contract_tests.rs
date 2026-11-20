@@ -124,8 +124,18 @@ fn contract_rules_name_the_formatter_and_size_limits() {
     assert!(content.contains("`cargo fmt --all`"));
     assert!(content.contains("every test function under 50 lines and every file under 400"));
     assert!(content
-        .contains("7. Finish with `loom stage contracts freeze s1 --test <id>=<identifier> ...`"));
+        .contains("8. Finish with `loom stage contracts freeze s1 --test <id>=<identifier> ...`"));
     assert!(content.contains("fix what it names and run it again"));
+}
+
+#[test]
+fn contract_rules_state_the_confinement_the_contracts_run_in() {
+    let mut content = String::new();
+    append_rules(&mut content, "s1");
+
+    assert!(content.contains("7. Every contract runs inside loom's confinement at freeze"));
+    assert!(content.contains("no nested OS sandbox"));
+    assert!(content.contains("The freeze refuses a red caused by the environment."));
 }
 
 #[test]
