@@ -21,7 +21,6 @@ uuid = { version = "1.26.1", features = ["v4"] }
 toml = "1"
 serde_json = "1.0.151"
 shell-escape = "0.1.5"
-wait-timeout = "0.2.1"
 nix = { version = "0.31", features = ["process", "fs", "signal", "term", "poll", "dir"], default-features = false }
 libc = "0.2.189"
 ctrlc = { version = "3.5.2", features = ["termination"] }
@@ -57,6 +56,7 @@ url = "2.5"
 
 [dev-dependencies]
 serial_test = "4.0.1"
+wait-timeout = "0.2.1"
 
 [[test]]
 name = "e2e"
