@@ -11,7 +11,7 @@ use loom::fs::inbox::{read_ledger, LedgerOutcome};
 use loom::fs::stage_request::StageRequest;
 use loom::models::dispute::{DisputeKind, FileReplacement, MAX_REPLACEMENT_BYTES};
 use loom::orchestrator::adjudication::read_request;
-use loom::process::sandbox_probe::skip_unless;
+use loom::process::sandbox_probe::{skip_unless, skip_without_process_tree};
 use loom::relay::{new_request_id, RelayLine, RequestKind, Ticket, MAX_TICKET_BYTES};
 use serial_test::serial;
 
@@ -27,6 +27,7 @@ use fixture::{
 /// File `text` as a replacement through the CLI, the hook and the drain, and
 /// assert admission recorded exactly those bytes in dispute 1's `request.md`.
 fn file_and_assert_recorded(fx: &Fixture, text: &str) {
+    fx.record_trial(text);
     let replacement = fx.write_replacement(text);
     let filed = fx.run_dispute(&replacement);
     assert!(
@@ -116,6 +117,7 @@ fn skip_for_missing_tools(test_name: &str) -> bool {
         .iter()
         .all(|tool| helpers::tool_available(tool));
     skip_unless(present, test_name, "jq, bash or git was not found on PATH")
+        || skip_without_process_tree(test_name)
 }
 
 /// A 30 KiB replacement of ordinary text reaches `request.md` byte for byte.
@@ -177,4 +179,39 @@ fn an_oversize_replacement_is_refused_before_any_ticket_is_written() {
         }
         assert!(fx.tickets().is_empty(), "no ticket may be written");
     }
+}
+
+/// Admission refuses a replacement no passing trial covered: the ledger row
+/// is `Refused` and no `request.md` is written.
+#[test]
+#[serial]
+fn a_replacement_without_a_passing_trial_is_refused_at_admission() {
+    if skip_for_missing_tools("a_replacement_without_a_passing_trial_is_refused_at_admission") {
+        return;
+    }
+    let _terminal_env = helpers::EnvVarGuard::set("LOOM_TERMINAL", "xterm");
+    let fx = build_fixture();
+    let replacement = fx.write_replacement("#[test]\nfn rejects_x() { assert!(true); }\n");
+    let filed = fx.run_dispute(&replacement);
+    assert!(
+        filed.status.success(),
+        "{}",
+        String::from_utf8_lossy(&filed.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&filed.stdout);
+    let line = RelayLine::parse(stdout.lines().next_back().expect("stdout carries a line"))
+        .expect("last stdout line is a relay line");
+
+    let hook = run_hook(&fx, &fx.dispute_command(&replacement), &filed);
+    assert!(hook.status.success());
+    drain_once(&fx);
+
+    let ledger = read_ledger(&fx.work_dir, &fx.session_id).expect("read ledger");
+    let last = ledger.iter().rev().find(|record| record.id == line.id);
+    let last = last.unwrap_or_else(|| panic!("ledger has no row for request {}", line.id));
+    assert_eq!(last.outcome, Some(LedgerOutcome::Refused), "{last:?}");
+    assert!(
+        read_request(&fx.work_dir, STAGE, 1).is_err(),
+        "a refused filing writes no request.md"
+    );
 }

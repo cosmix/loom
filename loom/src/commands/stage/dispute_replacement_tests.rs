@@ -194,3 +194,64 @@ fn a_dispute_without_a_replacement_is_never_measured() {
 
     ensure_fits_ticket(&kind, &"r".repeat(10 * 1024 * 1024), None).unwrap();
 }
+
+/// Two scratch files and the `<frozen-file>=<path>` values that replace the
+/// frozen files `tests/a_contract.rs` and `tests/b_contract.rs` with them.
+fn two_replacements(scratch: &Path, a: &str, b: &str) -> Vec<String> {
+    let (path_a, path_b) = (scratch.join("a.rs"), scratch.join("b.rs"));
+    std::fs::write(&path_a, a).unwrap();
+    std::fs::write(&path_b, b).unwrap();
+    vec![
+        format!("tests/a_contract.rs={}", path_a.display()),
+        format!("tests/b_contract.rs={}", path_b.display()),
+    ]
+}
+
+fn contract_target(replacements: Vec<String>) -> DisputeTarget {
+    DisputeTarget::Contract {
+        contract_ids: vec!["rejects-a".to_string(), "rejects-b".to_string()],
+        replacements,
+    }
+}
+
+#[test]
+fn several_contracts_and_replacements_all_reach_the_ticket_payload() {
+    let (_tmp, work, _worktree, scratch) = site();
+    let values = two_replacements(&scratch, "fn a() {}\n", "fn b() {}\n");
+
+    let kind = snapshot(&work, "s1", contract_target(values)).unwrap();
+    ensure_fits_ticket(&kind, "why", None).unwrap();
+    let dispute = Dispute::of_kind("s1".to_string(), kind, "why".to_string(), None);
+    let payload = serde_json::to_value(dispute.queued()).unwrap();
+
+    let recorded = &payload["kind"]["contract_ids"];
+    assert_eq!(recorded, &serde_json::json!(["rejects-a", "rejects-b"]));
+    let files: Vec<(&str, &str)> = payload["kind"]["replacements"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| (r["file"].as_str().unwrap(), r["content"].as_str().unwrap()))
+        .collect();
+    assert_eq!(
+        files,
+        [
+            ("tests/a_contract.rs", "fn a() {}\n"),
+            ("tests/b_contract.rs", "fn b() {}\n")
+        ]
+    );
+}
+
+#[test]
+fn replacements_that_fit_alone_but_not_together_are_refused_and_split_by_file() {
+    let (_tmp, work, _worktree, scratch) = site();
+    let full = "x".repeat(MAX_REPLACEMENT_BYTES);
+    let values = two_replacements(&scratch, &full, &full);
+
+    let one_file = snapshot(&work, "s1", contract_target(values[..1].to_vec())).unwrap();
+    ensure_fits_ticket(&one_file, "why", None).unwrap();
+
+    let both = snapshot(&work, "s1", contract_target(values)).unwrap();
+    let error = format!("{:#}", ensure_fits_ticket(&both, "why", None).unwrap_err());
+    assert!(error.contains(&MAX_TICKET_BYTES.to_string()), "{error}");
+    assert!(error.contains("separate filings, one file each"), "{error}");
+}

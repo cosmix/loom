@@ -6,6 +6,7 @@
 use crate::helpers::create_temp_git_repo;
 use loom::models::stage::Stage;
 use loom::plan::schema::AcceptanceCriterion;
+use loom::process::sandbox_probe::confined_commands_runnable as runnable;
 use loom::verify::context::CriteriaContext;
 use loom::verify::criteria::run_acceptance;
 use std::fs;
@@ -164,9 +165,7 @@ fn test_find_unresolved_variables() {
 /// Test that acceptance criteria with variables execute correctly
 #[test]
 fn test_acceptance_criteria_with_worktree_variable() {
-    if !loom::process::sandbox_probe::confined_commands_runnable() {
-        return;
-    }
+    let true = runnable() else { return };
     let temp_dir = tempdir().expect("failed to create temp dir");
 
     let mut stage = Stage::new("test-stage".to_string(), None);
@@ -193,9 +192,7 @@ fn test_acceptance_criteria_with_worktree_variable() {
 /// Test that acceptance criteria with PROJECT_ROOT execute correctly
 #[test]
 fn test_acceptance_criteria_with_project_root_variable() {
-    if !loom::process::sandbox_probe::confined_commands_runnable() {
-        return;
-    }
+    let true = runnable() else { return };
     let temp_dir = tempdir().expect("failed to create temp dir");
 
     // Create Cargo.toml so PROJECT_ROOT is detected
@@ -224,9 +221,7 @@ fn test_acceptance_criteria_with_project_root_variable() {
 /// Test that setup commands also have variables expanded
 #[test]
 fn test_setup_commands_with_variables() {
-    if !loom::process::sandbox_probe::confined_commands_runnable() {
-        return;
-    }
+    let true = runnable() else { return };
     let temp_dir = tempdir().expect("failed to create temp dir");
 
     let mut stage = Stage::new("test-stage".to_string(), None);
@@ -336,9 +331,7 @@ fn test_variable_expansion_edge_cases() {
 /// Integration test: Run acceptance criteria in a git worktree context
 #[test]
 fn test_acceptance_in_git_worktree_context() {
-    if !loom::process::sandbox_probe::confined_commands_runnable() {
-        return;
-    }
+    let true = runnable() else { return };
     let repo = create_temp_git_repo().expect("failed to create git repo");
 
     // Create Cargo.toml so it looks like a Rust project
@@ -379,9 +372,7 @@ fn test_acceptance_in_git_worktree_context() {
 /// Test that variable expansion works with complex shell commands
 #[test]
 fn test_variables_in_complex_shell_commands() {
-    if !loom::process::sandbox_probe::confined_commands_runnable() {
-        return;
-    }
+    let true = runnable() else { return };
     let temp_dir = tempdir().expect("failed to create temp dir");
 
     // Create a test file

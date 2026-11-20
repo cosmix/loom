@@ -3,11 +3,11 @@
 use std::fs;
 use std::os::unix::fs::symlink;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 use tempfile::TempDir;
 
 use super::delete::*;
+use crate::test_git::{git, TestRepo};
 
 const PLAN: &str = "doc/plans/PLAN-demo-work.md";
 const BUNDLE: &str = "doc/plans/briefs/demo-work";
@@ -22,18 +22,6 @@ fn touch(root: &Path, relative: &str) -> PathBuf {
     fs::create_dir_all(path.parent().unwrap()).unwrap();
     fs::write(&path, "# file\n").unwrap();
     path
-}
-
-fn git(root: &Path, args: &[&str]) {
-    let output = Command::new("git")
-        .args(["-c", "user.name=Test", "-c", "user.email=test@example.com"])
-        .args(["-c", "commit.gpgsign=false"])
-        .args(args)
-        .current_dir(root)
-        .output()
-        .expect("run git");
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(output.status.success(), "git {args:?}: {stderr}");
 }
 
 /// Every file of the tree under `root`, relative, sorted.
@@ -77,7 +65,7 @@ fn written_lists_only_what_exists() {
 #[test]
 fn committed_reads_head() {
     let dir = project();
-    git(dir.path(), &["init", "-q", "-b", "main"]);
+    TestRepo::builder().no_seed().init_in(dir.path());
     touch(dir.path(), PLAN);
     assert!(!written(dir.path(), PLAN).unwrap().committed, "no HEAD");
     git(dir.path(), &["add", "--", PLAN]);
@@ -93,7 +81,7 @@ fn committed_reads_head() {
 #[test]
 fn committed_is_false_when_head_lacks_the_files() {
     let dir = project();
-    git(dir.path(), &["init", "-q", "-b", "main"]);
+    TestRepo::builder().no_seed().init_in(dir.path());
     touch(dir.path(), "README.md");
     git(dir.path(), &["add", "--", "README.md"]);
     git(dir.path(), &["commit", "-q", "-m", "readme"]);

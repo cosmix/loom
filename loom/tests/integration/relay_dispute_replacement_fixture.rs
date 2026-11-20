@@ -10,11 +10,14 @@ use std::process::{Command, Output, Stdio};
 
 use chrono::Utc;
 use loom::fs::session_files::save_session;
+use loom::git::worktree::WorktreeGit;
+use loom::host_verify::{digest, new_job_id, store, JobKind, JobRecord, JobResult, JobState};
 use loom::models::session::{Session, SessionStatus, SessionType};
 use loom::models::stage::{Stage, StageStatus};
 use loom::orchestrator::{Orchestrator, OrchestratorConfig};
 use loom::plan::schema::{AcceptanceCriterion, ContractSpec};
 use loom::verify::contracts::store::{write_freeze, FreezeRecord, FrozenContract, FrozenFile};
+use loom::verify::contracts::trial::{TrialFile, TrialReceipt, RECEIPT_FILE};
 use loom::verify::transitions::save_stage;
 use tempfile::TempDir;
 use uuid::Uuid;
@@ -187,6 +190,55 @@ impl Fixture {
             .env("HOME", &self.home);
         git_repo::isolate(&mut command);
         command
+    }
+
+    /// Record a passing contracts trial at the worktree's HEAD whose receipt
+    /// covers exactly `text` as the replacement of [`CONTRACT_FILE`], in the
+    /// on-disk form the host job leaves (`load_receipt` reads it back).
+    pub(super) fn record_trial(&self, text: &str) {
+        let git = WorktreeGit::pinned(&self.repo_root, &self.worktree_path)
+            .expect("pin the stage worktree");
+        let head = digest::head_in(&git).expect("read the worktree HEAD");
+        let record = JobRecord {
+            id: new_job_id(),
+            submission_order: 1,
+            stage_id: STAGE.to_string(),
+            session_id: self.session_id.clone(),
+            kind: JobKind::Check,
+            head: head.clone(),
+            tree_digest: "digest".to_string(),
+            no_cache: false,
+            criteria: None,
+            contracts: true,
+            at_base: false,
+            state: JobState::Passed,
+            requests: Vec::new(),
+            queued_at: Utc::now(),
+            started_at: None,
+            finished_at: None,
+            pid: None,
+            detail: None,
+        };
+        store::save_current(&self.work_dir, &record).expect("save the trial job");
+        let result = JobResult {
+            job_id: record.id.clone(),
+            head: head.clone(),
+            passed: true,
+            criteria: Vec::new(),
+            error: None,
+            policy_hash: None,
+        };
+        store::save_result(&self.work_dir, STAGE, &result).expect("save the trial result");
+        let receipt = TrialReceipt {
+            head,
+            files: vec![TrialFile {
+                path: CONTRACT_FILE.to_string(),
+                sha256: sha256_hex(text),
+            }],
+        };
+        let bytes = serde_json::to_vec(&receipt).expect("serialize the receipt");
+        store::save_job_file(&self.work_dir, STAGE, &record.id, RECEIPT_FILE, &bytes)
+            .expect("save the trial receipt");
     }
 
     /// Write `text` to a replacement file in the scratch directory.
